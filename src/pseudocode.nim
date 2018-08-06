@@ -5,6 +5,7 @@ type
   Relation = enum
     rEquals = "="
     rImplies = "->"
+    rIsIn = ":"
   DomainType = enum
     dtContainer
     dtRange
@@ -23,6 +24,7 @@ type
     etRelation
     etValue
     etApplication
+    etSize
   Expression = ref object
     case exprType: ExpressionType
     of etRelation:
@@ -31,6 +33,8 @@ type
       exprRelation: Relation
     of etValue:
       exprName: string
+    of etSize:
+      exprUnary: Expression
     of etApplication:
       exprFun: Expression
       exprArg: Expression
@@ -48,22 +52,45 @@ type
     name: string
     domain: Domain
 
-proc value(name: string): Domain = Domain(domType: dtValue, name: name)
-proc list(e: Domain): Domain = Domain(domType: dtContainer, containerType: ctList, contents: e)
-proc str(valueName: string): Domain =
+converter varName*(name: string): Expression = Expression(
+  exprType: etValue,
+  exprName: name
+)
+
+# Domains    
+
+proc value*(name: string): Domain = Domain(domType: dtValue, name: name)
+proc list*(e: Domain): Domain = Domain(domType: dtContainer, containerType: ctList, contents: e)
+proc str*(valueName: string): Domain =
   Domain(domType: dtContainer, containerType: ctString, contents: value(valueName))
-proc set(e: Domain): Domain = Domain(domType: dtContainer, containerType: ctSet, contents: e)
-proc bunch(e: Domain): Domain = Domain(domType: dtContainer, containerType: ctBunch, contents: e)
-proc range(low, high: Number): Domain = Domain(domType: dtRange, high: high, low: low)
-proc declare(name: string, clauses: varargs[seq[FunctionArg]]): FunctionDeclaration =
+proc set*(e: Domain): Domain = Domain(domType: dtContainer, containerType: ctSet, contents: e)
+proc bunch*(e: Domain): Domain = Domain(domType: dtContainer, containerType: ctBunch, contents: e)
+proc range*(low, high: Number): Domain = Domain(domType: dtRange, high: high, low: low)
+
+# Function Declaration
+
+proc declare*(name: string, clauses: varargs[seq[FunctionArg]]): FunctionDeclaration =
   FunctionDeclaration(name: name, clauses: @clauses)
 
+# Expression Relations  
+
+proc relation(left, right: Expression, relation: Relation): Expression =
+  Expression(exprType: etRelation, exprRelation: relation, left: left, right: right)
+proc `->`*(left, right: Expression): Expression = relation(left, right, rImplies)
+proc `==`*(left, right: Expression): Expression = relation(left, right, rEquals)
+proc `in`*(left, right: Expression): Expression = relation(left, right, rIsIn)
+
+# Unary Functions
+
+proc size*(e: Expression): Expression =
+  Expression(exprType: etSize, exprUnary: e)
+
 let
-  N = range(1, int.high)
-  Z = range(0, int.high)
-  B = range(0, 1)
-  
-proc `$`(d: Domain): string =
+  N* = range(1, int.high)
+  Z* = range(0, int.high)
+  B* = range(0, 1)
+
+proc `$`*(d: Domain): string =
   case d.domType
   of dtValue:
     result = d.name
@@ -83,12 +110,7 @@ proc `$`(d: Domain): string =
       return "𝔹"
     result = "$#..$#" % [$d.low, $d.high]
 
-proc varName(name: string): Expression = Expression(
-  exprType: etValue,
-  exprName: name
-)  
-
-proc `$`(e: Expression): string =
+proc `$`*(e: Expression): string =
   case e.exprType:
   of etNull:
     result = ""  
@@ -96,13 +118,15 @@ proc `$`(e: Expression): string =
     result = "$1 $2 $3" % [$e.left, $e.exprRelation, $e.right]
   of etValue:
     result = e.exprName
+  of etSize:
+    result = "#" & $e.exprUnary  
   of etApplication:
     if not e.exprFun.isNil:
       result = $e.exprFun
       if not e.exprArg.isNil:
         result &=  " " & $e.exprArg
 
-proc `$`(f: FunctionDeclaration): string =
+proc `$`*(f: FunctionDeclaration): string =
   var clausesStrings = newSeq[string]()
   for clause in f.clauses:
     let
@@ -111,16 +135,7 @@ proc `$`(f: FunctionDeclaration): string =
     clausesStrings.add "$1: $2" % [argString, domainString]
   "$1<$2>" % [f.name, clausesStrings.join(", ")]
 
-proc maybeApplyFun(e: Expression, args: seq[Expression]): Expression =
-  if args.len == 0:
-    result = e
-  else:
-    let
-      arg = args[0]
-      e2 = Expression(exprType: etApplication, exprFun: e, exprArg: arg)
-    result = maybeApplyFun(e2, args[1..args.high])
-
-proc applyFun(args: varargs[Expression, varName]): Expression =
+proc applyFun*(args: varargs[Expression, varName]): Expression =
   result = Expression(exprType: etApplication)
   var
     tail = result
@@ -131,15 +146,3 @@ proc applyFun(args: varargs[Expression, varName]): Expression =
     if toApply.len > 0:
       tail.exprArg = Expression(exprType: etApplication)
       tail = tail.exprArg
-
-when isMainModule:
-  let decl = declare(
-    "f",
-    @[("x", str("y"))],
-    @[("y", B)]
-  )  
-  echo decl
-  let decl2 = declare("g", @[("x", str("y")), ("i", Z)])
-  echo decl2
-  let application = applyFun("a", "b", "c")
-  echo application
