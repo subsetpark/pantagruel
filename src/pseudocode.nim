@@ -14,6 +14,8 @@ type
     rEquals = "="
     rImplies = "->"
     rIsIn = ":"
+    rAnd = "∧"
+    rOr = "∨"
   ContainerType = enum
     ctList,
     ctString,
