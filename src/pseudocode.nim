@@ -1,11 +1,24 @@
 import strutils, sequtils, algorithm
 
 type
-  Number = int
+  NumberKind = enum
+    nkInt
+    nkSymbol
+  Number = object
+    case numberKind: NumberKind
+    of nkInt:
+      numberInt: int
+    of nkSymbol:
+      numberSymbol: string
   Relation = enum
     rEquals = "="
     rImplies = "->"
     rIsIn = ":"
+  ContainerType = enum
+    ctList,
+    ctString,
+    ctSet,
+    ctBunch
   DomainType = enum
     dtContainer
     dtRange
@@ -13,7 +26,7 @@ type
   Domain = ref object
     case domType: DomainType
     of dtValue:
-      name: string
+      domainName: string
     of dtContainer:
       containerType: ContainerType
       contents: Domain
@@ -25,6 +38,8 @@ type
     etValue
     etApplication
     etSize
+    etComprehension
+    etContainer
   Expression = ref object
     case exprType: ExpressionType
     of etRelation:
@@ -38,13 +53,15 @@ type
     of etApplication:
       exprFun: Expression
       exprArg: Expression
+    of etComprehension:
+      exprCompDomain: Domain
+      exprCompElement: string
+      exprCompExpr: Expression
+    of etContainer:
+      exprContainerType: ContainerType
+      exprContents: Expression
     of etNull:
       discard
-  ContainerType = enum
-    ctList,
-    ctString,
-    ctSet,
-    ctBunch
   FunctionDeclaration = object
     name: string
     clauses: seq[seq[FunctionArg]]
@@ -52,55 +69,51 @@ type
     name: string
     domain: Domain
 
-converter varName*(name: string): Expression = Expression(
+converter e*(name: string): Expression = Expression(
   exprType: etValue,
   exprName: name
 )
 
-# Domains    
+converter d*(name: string): Domain = Domain(
+  domType: dtValue,
+  domainName: name
+)
 
-proc value*(name: string): Domain = Domain(domType: dtValue, name: name)
-proc list*(e: Domain): Domain = Domain(domType: dtContainer, containerType: ctList, contents: e)
-proc str*(valueName: string): Domain =
-  Domain(domType: dtContainer, containerType: ctString, contents: value(valueName))
-proc set*(e: Domain): Domain = Domain(domType: dtContainer, containerType: ctSet, contents: e)
-proc bunch*(e: Domain): Domain = Domain(domType: dtContainer, containerType: ctBunch, contents: e)
-proc range*(low, high: Number): Domain = Domain(domType: dtRange, high: high, low: low)
+converter intToNumber*(n: int): Number = Number(
+  numberKind: nkInt,
+  numberInt: n
+)
 
-# Function Declaration
+converter stringToNumber*(s: string): Number = Number(
+  numberKind: nkSymbol,
+  numberSymbol: s
+)
 
-proc declare*(name: string, clauses: varargs[seq[FunctionArg]]): FunctionDeclaration =
-  FunctionDeclaration(name: name, clauses: @clauses)
-
-# Expression Relations  
-
-proc relation(left, right: Expression, relation: Relation): Expression =
-  Expression(exprType: etRelation, exprRelation: relation, left: left, right: right)
-proc `->`*(left, right: Expression): Expression = relation(left, right, rImplies)
-proc `==`*(left, right: Expression): Expression = relation(left, right, rEquals)
-proc `in`*(left, right: Expression): Expression = relation(left, right, rIsIn)
-
-# Unary Functions
-
-proc size*(e: Expression): Expression =
-  Expression(exprType: etSize, exprUnary: e)
+proc `...`*(low, high: Number): Domain
 
 let
-  N* = range(1, int.high)
-  Z* = range(0, int.high)
-  B* = range(0, 1)
+  N* = 1...int.high
+  Z* = 0...int.high
+  B* = 0...1
 
-proc `$`*(d: Domain): string =
-  case d.domType
-  of dtValue:
-    result = d.name
-  of dtContainer:
-    let wrapper = case d.containerType
+proc `$`*(n: Number): string =
+  case n.numberKind
+  of nkInt: $n.numberInt
+  of nkSymbol: $n.numberSymbol
+
+proc containerWrapper(ct: ContainerType): string =
+    case ct
     of ctList: "[$#]"
     of ctString: "\"$#\""
     of ctSet: "{$#}"
     of ctBunch: "($#)"
-    result = wrapper % $d.contents
+
+proc `$`*(d: Domain): string =
+  case d.domType
+  of dtValue:
+    result = d.domainName
+  of dtContainer:
+    result = containerWrapper(d.containerType) % $d.contents
   of dtRange:
     if d == N:
       return "ℕ"
@@ -125,6 +138,59 @@ proc `$`*(e: Expression): string =
       result = $e.exprFun
       if not e.exprArg.isNil:
         result &=  " " & $e.exprArg
+  of etComprehension:
+    result = "$3 : $2 ∈ $1" % [
+      $e.exprCompDomain,
+      $e.exprCompElement,
+      $e.exprCompExpr
+    ]
+  of etContainer:
+    result = containerWrapper(e.exprContainerType) % $e.exprContents
+
+# Domains    
+
+proc domainContainer(d: Domain, containerType: ContainerType): Domain =
+  Domain(domType: dtContainer, containerType: containerType, contents: d)
+proc listOf*(d: Domain): Domain = domainContainer(d, ctList)
+proc strOf*(d: Domain): Domain = domainContainer(d, ctString)
+proc setOf*(d: Domain): Domain = domainContainer(d, ctSet)
+proc bunchOf*(d: Domain): Domain = domainContainer(d, ctBunch)
+proc `...`*(low, high: Number): Domain = Domain(domType: dtRange, high: high, low: low)
+
+# Function Declaration
+
+proc declare*(name: string, clauses: varargs[seq[FunctionArg]]): FunctionDeclaration =
+  FunctionDeclaration(name: name, clauses: @clauses)
+
+# Expression Relations  
+
+proc relation(left, right: Expression, relation: Relation): Expression =
+  Expression(exprType: etRelation, exprRelation: relation, left: left, right: right)
+proc `->`*(left, right: Expression): Expression = relation(left, right, rImplies)
+proc `==`*(left, right: Expression): Expression = relation(left, right, rEquals)
+proc `in`*(left, right: Expression): Expression = relation(left, right, rIsIn)
+
+# Unary Functions
+
+proc size*(e: Expression): Expression =
+  Expression(exprType: etSize, exprUnary: e)
+proc listOf*(e: Expression): Expression= Expression(exprType: etContainer, exprContainerType: ctList, exprContents: e)
+proc strOf*(e: Expression): Expression =
+  Expression(exprType: etContainer, exprContainerType: ctString, exprContents: e)
+proc setOf*(e: Expression): Expression = Expression(exprType: etContainer, exprContainerType: ctSet, exprContents: e)
+proc bunchOf*(e: Expression): Expression = Expression(exprType: etContainer, exprContainerType: ctBunch, exprContents: e)
+
+proc sizeDomain*(e: Expression): Domain = Domain(domType: dtRange, low: 0, high: $size(e))
+
+# Map / Reduce
+
+proc map*(domain: Domain, element: string, expr: Expression): Expression =
+  Expression(
+    exprType: etComprehension,
+    exprCompDomain: domain,
+    exprCompElement: element,
+    exprCompExpr: expr
+  )  
 
 proc `$`*(f: FunctionDeclaration): string =
   var clausesStrings = newSeq[string]()
@@ -135,7 +201,7 @@ proc `$`*(f: FunctionDeclaration): string =
     clausesStrings.add "$1: $2" % [argString, domainString]
   "$1<$2>" % [f.name, clausesStrings.join(", ")]
 
-proc applyFun*(args: varargs[Expression, varName]): Expression =
+proc applyFun*(args: varargs[Expression, e]): Expression =
   result = Expression(exprType: etApplication)
   var
     tail = result
