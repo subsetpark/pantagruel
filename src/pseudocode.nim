@@ -12,6 +12,7 @@ type
       numberSymbol: string
   Relation = enum
     rEquals = "="
+    rNotEqual = "≠"
     rImplies = "->"
     rIsIn = ":"
     rAnd = "∧"
@@ -42,6 +43,9 @@ type
     etSize
     etComprehension
     etContainer
+    etExists
+    etForAll
+    etBinding
   Expression = ref object
     case exprType: ExpressionType
     of etRelation:
@@ -62,6 +66,13 @@ type
     of etContainer:
       exprContainerType: ContainerType
       exprContents: Expression
+    of etExists, etForAll:
+      exprQuantifierName: string
+      exprQuantifierDomain: Domain
+      exprQuantifierExpr: Expression
+    of etBinding:
+      exprBindingName: string
+      exprBindingExpr: Expression
     of etNull:
       discard
   FunctionDeclaration = object
@@ -126,7 +137,7 @@ proc `$`*(d: Domain): string =
     result = "$#..$#" % [$d.low, $d.high]
 
 proc `$`*(e: Expression): string =
-  case e.exprType:
+  case e.exprType
   of etNull:
     result = ""  
   of etRelation:
@@ -148,6 +159,52 @@ proc `$`*(e: Expression): string =
     ]
   of etContainer:
     result = containerWrapper(e.exprContainerType) % $e.exprContents
+  of etExists, etForAll:
+    let
+      quantifier = case e.exprType
+        of etForAll: "∀"
+        else: "∃"
+    result = "$4 $1 ∈ $2 $3" % [
+      $e.exprQuantifierName,
+      $e.exprQuantifierDomain,
+      $e.exprQuantifierExpr,
+      quantifier,
+    ]
+  of etBinding:
+    result = "∃ $1 = $2" % [$e.exprBindingName, $e.exprBindingExpr]
+
+
+proc astStr*(e: Expression): string =
+  if e.isNil: "#nil"
+  else:
+    case e.exprType
+    of etNull: "#nil"
+    of etRelation: "($1 $2 $3)" % [
+      $e.exprRelation, e.left.astStr, e.right.astStr
+    ]
+    of etValue: e.exprName
+    of etSize: "(# $1)" % e.exprUnary.astStr
+    of etApplication: "($1 $2)" % [e.exprFun.astStr, e.exprArg.astStr]
+    of etComprehension: "{$3 | $2 <- $1}" % [
+      $e.exprCompDomain,
+      e.exprCompElement.astStr,
+      e.exprCompExpr.astStr
+    ]
+    of etContainer: "($1 $2)" % [
+      $e.exprContainerType,
+      e.exprContents.astStr
+    ]
+    of etExists, etForAll: "{$4 | $1 $2 <- $3}" % [
+      $e.exprType,
+      $e.exprQuantifierName,
+      $e.exprQuantifierDomain,
+      e.exprQuantifierExpr.astStr
+    ]
+    of etBinding: "{$2 | $1}" % [
+      $e.exprBindingName,
+      e.exprBindingExpr.astStr
+    ]
+
 
 # Domains    
 
@@ -171,6 +228,7 @@ proc relation(left, right: Expression, relation: Relation): Expression =
 proc `->`*(left, right: Expression): Expression = relation(left, right, rImplies)
 proc `==`*(left, right: Expression): Expression = relation(left, right, rEquals)
 proc `in`*(left, right: Expression): Expression = relation(left, right, rIsIn)
+proc `!=`*(left, right: Expression): Expression = relation(left, right, rNotEqual)
 
 # Unary Functions
 
@@ -209,8 +267,31 @@ proc applyFun*(args: varargs[Expression, e]): Expression =
     tail = result
     toApply = args.reversed()
   while toApply.len > 0:
-    let arg = toApply.pop()
-    tail.exprFun = arg
-    if toApply.len > 0:
+    tail.exprFun = toApply.pop()
+    if toApply.len > 1:
       tail.exprArg = Expression(exprType: etApplication)
       tail = tail.exprArg
+    else:
+      tail.exprArg = toApply.pop()
+
+# Quantifiers
+
+proc some*(name: string, domain: Domain, expression: Expression): Expression = Expression(
+  exprType: etExists,
+  exprQuantifierName: name,
+  exprQuantifierDomain: domain,
+  exprQuantifierExpr: expression
+)
+
+proc all*(name: string, domain: Domain, expression: Expression): Expression = Expression(
+  exprType: etForAll,
+  exprQuantifierName: name,
+  exprQuantifierDomain: domain,
+  exprQuantifierExpr: expression
+)
+
+proc assign*(name: string, expression: Expression): Expression = Expression(
+  exprType: etBinding,
+  exprBindingName: name,
+  exprBindingExpr: expression
+)

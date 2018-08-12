@@ -23,7 +23,9 @@ suite "toString":
     check "a b c -> d e" == $(application -> applyFun("d", "e"))
 
   test "iff":
-    check "a b c = d e" == $(application == applyFun("d", "e"))
+    let iff = application == applyFun("d", "e")
+    check "a b c = d e" == $(iff)
+    check "(= (a (b c)) (d e))" == iff.astStr
 
   test "is in":
     check "a b c : x" == $(application in "x")
@@ -43,5 +45,21 @@ suite "toString":
       comp = map(sizeDomain("x"), "i", applyFun("g", "x", "i"))
       compStr = "g x i : i ∈ 0..#x"
     check compStr == $comp
+    check "{(g (x i)) | i <- 0..#x}" == comp.astStr
     check "{$#}" % compStr == $(setOf(comp))
     check "[$#]" % compStr == $(listOf(comp))
+
+  test "exists":
+    let quantifier = some("x", N, e"x" != e"1")
+    check "∃ x ∈ ℕ x ≠ 1" == $quantifier
+    check "{(≠ x 1) | etExists x <- ℕ}" == quantifier.astStr
+
+  test "for all":
+    let quantifier = all("x", N, e"x" != e"1")
+    check "∀ x ∈ ℕ x ≠ 1" == $quantifier
+    check "{(≠ x 1) | etForAll x <- ℕ}" == quantifier.astStr
+
+  test "binding":
+    let binding = assign("x", e"y" != e"1")
+    check "∃ x = y ≠ 1" == $binding
+    check "{(≠ y 1) | x}" == binding.astStr
