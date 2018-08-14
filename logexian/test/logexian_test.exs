@@ -13,6 +13,12 @@ defmodule LogexianTest do
     assert yield_domain == {:yield_domain, "D"}
   end
 
+  describe "relation parsing" do
+    test "parse inequality" do
+      {:ok, [left: "x", operator: "!=", right: "y"], "", %{}, _, _} = Logexian.relation("x != y")
+    end
+  end
+
   describe "declaration parsing" do
     test "empty heading parsing" do
       text = """
@@ -37,12 +43,12 @@ defmodule LogexianTest do
       do_decl_asserts(text)
     end
 
-    test "optional parens heading parsing" do
+    test "heading with multiple clauses" do
       text = """
-      f<(a, b):(B, C)>::D
+      f<x: Y and x != 1>
       """
 
-      do_decl_asserts(text)
+      :ok = Logexian.program(text)
     end
   end
 
