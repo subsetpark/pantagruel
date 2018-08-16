@@ -5,3 +5,4 @@ f x y -> x ^ y
 x <> => Real
 x = 1.5
 x > 10
+y = <x : <z:D> :: D > :: D

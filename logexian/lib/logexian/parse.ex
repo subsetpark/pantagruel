@@ -55,13 +55,32 @@ defmodule Logexian.Parse do
     |> ascii_string([?0..?9], min: 1)
     |> reduce({Enum, :join, [""]})
 
-  variable = choice([float, integer(min: 1), identifier])
+  domain = ascii_string([?A..?Z, ?a..?z], min: 1)
 
   log_and = choice(strings(["and", "∧"]))
   log_or = choice(strings(["or", "∨"]))
   log_op = choice([log_and, log_or])
 
-  domain = ascii_string([?A..?Z, ?a..?z], min: 1)
+  decl_args =
+    tag(comma_join(identifier), :decl_args)
+    |> ignore(repeat(space))
+    |> ignore(string(":"))
+    |> ignore(repeat(space))
+    |> concat(
+      tag(
+        comma_join(choice([domain, parsec(:lambda)])),
+        :decl_doms
+      )
+    )
+
+  decl_yields =
+    ignore(repeat(space))
+    |> choice(strings(["::", "=>"]))
+    |> unwrap_and_tag(:yield_type)
+    |> ignore(repeat(space))
+    |> concat(unwrap_and_tag(domain, :yield_domain))
+
+  variable = choice([float, integer(min: 1), identifier])
 
   relation =
     choice(
@@ -79,7 +98,7 @@ defmodule Logexian.Parse do
   operator = choice(strings(["+", "_", "*", "/", "^"]))
 
   entailment = choice(strings(["=", "->"]))
-  symbol = choice([log_op, relation, operator, variable, domain])
+  symbol = choice([parsec(:lambda), log_op, relation, operator, variable, domain])
 
   expression =
     optional(unwrap_and_tag(log_op, :intro_op) |> ignore(times(space, min: 1)))
@@ -93,24 +112,8 @@ defmodule Logexian.Parse do
     |> ignore(repeat(space))
     |> tag(:expr)
 
-  decl_args =
-    tag(comma_join(identifier), :decl_args)
-    |> ignore(repeat(space))
-    |> ignore(string(":"))
-    |> ignore(repeat(space))
-    |> concat(tag(comma_join(domain), :decl_doms))
-
-  decl_yields =
-    ignore(repeat(space))
-    |> choice(strings(["::", "=>"]))
-    |> unwrap_and_tag(:yield_type)
-    |> ignore(repeat(space))
-    |> concat(unwrap_and_tag(domain, :yield_domain))
-
-  decl =
-    identifier
-    |> unwrap_and_tag(:decl_ident)
-    |> ignore(repeat(space) |> string("<") |> repeat(space))
+  fun =
+    ignore(string("<") |> repeat(space))
     |> optional(
       decl_args
       |> optional(
@@ -122,6 +125,18 @@ defmodule Logexian.Parse do
     )
     |> ignore(repeat(space) |> string(">") |> repeat(space))
     |> concat(optional(decl_yields))
+
+  defcombinatorp(
+    :lambda,
+    fun
+    |> tag(:lambda)
+  )
+
+  decl =
+    identifier
+    |> unwrap_and_tag(:decl_ident)
+    |> ignore(repeat(space))
+    |> concat(fun)
     |> tag(:decl)
 
   section =
