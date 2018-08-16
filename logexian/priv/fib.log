@@ -1,0 +1,5 @@
+fib <x : Nat> :: Nat
+; A specification for the fibonacci function.
+fib x -> fib x _ 1 + fib x _ 2
+fib 1 -> 1
+fib 2 -> 1
