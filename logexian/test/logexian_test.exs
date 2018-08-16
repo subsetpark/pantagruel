@@ -23,8 +23,8 @@ defmodule LogexianTest do
                  decl: [
                    decl_ident: "f"
                  ],
-                 expr: [left: ["x"], op: "!=", right: ["y"]],
-                 expr: [left: ["y"], op: ">", right: [1]]
+                 expr: [right: ["x", "!=", "y"]],
+                 expr: [right: ["y", ">", 1]]
                ]
              ] == prog
     end
@@ -38,8 +38,8 @@ defmodule LogexianTest do
                  decl: [
                    decl_ident: "f"
                  ],
-                 expr: [left: ["x"], op: "!=", right: ["y"]],
-                 expr: [intro_op: "or", left: ["y"], op: ">", right: [1]]
+                 expr: [right: ["x", "!=", "y"]],
+                 expr: [intro_op: "or", right: ["y", ">", 1]]
                ]
              ] == prog
     end
@@ -54,7 +54,25 @@ defmodule LogexianTest do
                    decl_ident: "f",
                    decl_args: ["x"],
                    decl_doms: ["Y"],
-                   expr: [left: ["a"], op: ":", right: ["Y"]]
+                   expr: [right: ["a", ":", "Y"]]
+                 ]
+               ]
+             ] == prog
+    end
+
+    test "parse expression with relation in it" do
+      text = "f<>\nx = y and y > 1"
+      {:ok, prog, "", %{}, _, _} = Logexian.program(text)
+
+      assert [
+               sect: [
+                 decl: [
+                   decl_ident: "f"
+                 ],
+                 expr: [
+                   left: ["x"],
+                   op: "=",
+                   right: ["y", "and", "y", ">", 1]
                  ]
                ]
              ] == prog
@@ -100,7 +118,7 @@ defmodule LogexianTest do
                    decl_ident: "f",
                    decl_args: ["x"],
                    decl_doms: ["Y"],
-                   expr: [left: ["x"], op: "!=", right: [1]]
+                   expr: [right: ["x", "!=", 1]]
                  ]
                ]
              ] == prog

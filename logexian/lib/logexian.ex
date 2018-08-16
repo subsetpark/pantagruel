@@ -19,6 +19,14 @@ defmodule ParserHelpers do
     |> concat(c)
   end
 
+  def space_join(c) do
+    c
+    |> repeat(
+      ignore(times(string(" "), min: 1))
+      |> concat(c)
+    )
+  end
+
   def comma_join(c), do: join(c, string(","))
 
   def strings(ss), do: for(s <- ss, do: string(s))
@@ -43,23 +51,36 @@ defmodule Logexian do
 
   log_and = choice(strings(["and", "∧"]))
   log_or = choice(strings(["or", "∨"]))
+  log_op = choice([log_and, log_or])
 
   variable = choice([integer(min: 1), identifier])
   domain = ascii_string([?A..?Z, ?a..?z], min: 1)
 
-  symbol = choice([variable, domain])
+  relation =
+    choice(
+      strings([
+        "==",
+        "!=",
+        ">",
+        "<",
+        ">=",
+        "<=",
+        ":"
+      ])
+    )
 
-  operator =
-    (strings(["=", "->", "!=", "==", ">", "<", "<=", ">=", ":"]) ++ [log_or, log_and])
-    |> choice
+  entailment = choice(strings(["=", "->"]))
+  symbol = choice([log_op, relation, variable, domain])
 
   expression =
-    optional(unwrap_and_tag(operator, :intro_op) |> ignore(times(space, min: 1)))
-    |> tag(times(symbol, min: 1), :left)
-    |> ignore(times(space, min: 1))
-    |> unwrap_and_tag(operator, :op)
-    |> ignore(times(space, min: 1))
-    |> tag(times(symbol, min: 1), :right)
+    optional(unwrap_and_tag(log_op, :intro_op) |> ignore(times(space, min: 1)))
+    |> optional(
+      tag(space_join(symbol), :left)
+      |> ignore(times(space, min: 1))
+      |> unwrap_and_tag(entailment, :op)
+      |> ignore(times(space, min: 1))
+    )
+    |> tag(space_join(symbol), :right)
     |> ignore(repeat(space))
     |> tag(:expr)
 
