@@ -49,11 +49,18 @@ defmodule Logexian.Parse do
 
   identifier = ascii_string([?a..?z], min: 1)
 
+  float =
+    ascii_string([?0..?9], min: 1)
+    |> string(".")
+    |> ascii_string([?0..?9], min: 1)
+    |> reduce({Enum, :join, [""]})
+
+  variable = choice([float, integer(min: 1), identifier])
+
   log_and = choice(strings(["and", "∧"]))
   log_or = choice(strings(["or", "∨"]))
   log_op = choice([log_and, log_or])
 
-  variable = choice([integer(min: 1), identifier])
   domain = ascii_string([?A..?Z, ?a..?z], min: 1)
 
   relation =
