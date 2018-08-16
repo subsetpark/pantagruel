@@ -13,9 +13,18 @@ defmodule LogexianTest do
     assert yield_domain == {:yield_domain, "D"}
   end
 
-  describe "relation parsing" do
-    test "parse inequality" do
-      {:ok, [left: "x", operator: "!=", right: "y"], "", %{}, _, _} = Logexian.relation("x != y")
+  describe "expression parsing" do
+    test "parse two expressions" do
+      text = "f<>\nx != y\ny > 1"
+      {:ok, decl, "", %{}, _, _} = Logexian.program(text)
+
+      assert [
+               decl: [
+                 decl_ident: "f",
+                 expr: [left: ["x"], op: "!=", right: ["y"]],
+                 expr: [left: ["y"], op: ">", right: [1]]
+               ]
+             ] == decl
     end
   end
 
@@ -48,7 +57,16 @@ defmodule LogexianTest do
       f<x: Y and x != 1>
       """
 
-      :ok = Logexian.program(text)
+      {:ok, decl, "", %{}, _, _} = Logexian.program(text)
+
+      assert [
+               decl: [
+                 decl_ident: "f",
+                 decl_args: ["x"],
+                 decl_doms: ["Y"],
+                 expr: [left: ["x"], op: "!=", right: [1]]
+               ]
+             ] == decl
     end
   end
 

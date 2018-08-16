@@ -32,32 +32,29 @@ defmodule Logexian do
   import NimbleParsec
   import ParserHelpers
 
+  space = string(" ")
+
   where = string(";;\n")
-
-  identifier =
-    ignore_spaces()
-    |> ascii_string([?a..?z], min: 1)
-    |> ignore_spaces()
-
-  operator = choice(strings(["!=", "==", ">", "<", "<=", ">="]))
+  identifier = ascii_string([?a..?z], min: 1)
 
   log_and = choice(strings(["and", "∧"]))
+  log_or = choice(strings(["or", "∨"]))
 
-  defparsec(
-    :expression,
-    choice([parsec(:relation), integer(min: 1), identifier])
-  )
+  symbol = choice([integer(min: 1), identifier])
 
-  defparsec(
-    :relation,
-    parsec(:expression)
-    |> unwrap_and_tag(:left)
-    |> concat(operator |> unwrap_and_tag(:operator))
-    |> concat(
-      parsec(:expression)
-      |> unwrap_and_tag(:right)
-    )
-  )
+  operator =
+    (strings(["=", "->", "!=", "==", ">", "<", "<=", ">="]) ++ [log_or, log_and])
+    |> choice
+
+  expression =
+    tag(times(symbol, min: 1), :left)
+    |> ignore(times(space, min: 1))
+    |> unwrap_and_tag(operator, :op)
+    |> ignore(times(space, min: 1))
+    |> tag(times(symbol, min: 1), :right)
+    |> ignore(repeat(space))
+    |> ignore(optional(string("\n")))
+    |> tag(:expr)
 
   domain =
     ignore_spaces()
@@ -72,7 +69,7 @@ defmodule Logexian do
 
   decl_yields =
     ignore_spaces()
-    |> strings(["::", "=>"])
+    |> choice(strings(["::", "=>"]))
     |> unwrap_and_tag(:yield_type)
     |> ignore_spaces()
     |> concat(unwrap_and_tag(domain, :yield_domain))
@@ -80,18 +77,23 @@ defmodule Logexian do
   decl =
     identifier
     |> unwrap_and_tag(:decl_ident)
+    |> ignore(repeat(space))
     |> ignore(string("<"))
+    |> ignore(repeat(space))
     |> optional(
       decl_args
+      |> ignore(repeat(space))
       |> optional(
-        log_and
-        |> concat(comma_join(parsec(:expression)))
+        ignore(log_and)
+        |> ignore(repeat(space))
+        |> concat(comma_join(expression))
       )
     )
-    |> debug()
+    |> ignore(repeat(space))
     |> ignore(string(">"))
     |> concat(optional(decl_yields))
     |> ignore_spaces()
+    |> repeat(expression)
     |> tag(:decl)
 
   defparsec(
