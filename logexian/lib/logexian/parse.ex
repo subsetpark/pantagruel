@@ -51,7 +51,8 @@ defmodule Logexian.Parse do
   identifier = ascii_string([?a..?z], min: 1)
 
   float =
-    ascii_string([?0..?9], min: 1)
+    optional(string("-"))
+    |> ascii_string([?0..?9], min: 1)
     |> string(".")
     |> ascii_string([?0..?9], min: 1)
     |> reduce({Enum, :join, [""]})
