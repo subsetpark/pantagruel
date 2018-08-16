@@ -77,6 +77,24 @@ defmodule LogexianTest do
                ]
              ] == prog
     end
+
+    test "parse expression with multiple elements on the left" do
+      text = "f<>\nf x = y"
+      {:ok, prog, "", %{}, _, _} = Logexian.program(text)
+
+      assert [
+               sect: [
+                 decl: [
+                   decl_ident: "f"
+                 ],
+                 expr: [
+                   left: ["f", "x"],
+                   op: "=",
+                   right: ["y"]
+                 ]
+               ]
+             ] == prog
+    end
   end
 
   describe "declaration parsing" do
