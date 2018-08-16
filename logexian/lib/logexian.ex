@@ -33,8 +33,12 @@ defmodule Logexian do
   import ParserHelpers
 
   space = string(" ")
+  newline = string("\n")
 
-  where = string(";;\n")
+  where = ignore(repeat(newline))
+  |> string(";;\n")
+  |> ignore(repeat(newline))
+
   identifier = ascii_string([?a..?z], min: 1)
 
   log_and = choice(strings(["and", "∧"]))
