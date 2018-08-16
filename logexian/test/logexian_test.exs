@@ -3,7 +3,7 @@ defmodule LogexianTest do
   doctest Logexian
 
   defp do_decl_asserts(basic_decl) do
-    {:ok, [decl: [ident, vars, doms, yield_type, yield_domain]], "", _, _, _} =
+    {:ok, [sect: [decl: [ident, vars, doms, yield_type, yield_domain]]], "", _, _, _} =
       Logexian.program(basic_decl)
 
     assert ident == {:decl_ident, "f"}
@@ -16,28 +16,48 @@ defmodule LogexianTest do
   describe "expression parsing" do
     test "parse two expressions" do
       text = "f<>\nx != y\ny > 1"
-      {:ok, decl, "", %{}, _, _} = Logexian.program(text)
+      {:ok, prog, "", %{}, _, _} = Logexian.program(text)
 
       assert [
-               decl: [
-                 decl_ident: "f",
+               sect: [
+                 decl: [
+                   decl_ident: "f"
+                 ],
                  expr: [left: ["x"], op: "!=", right: ["y"]],
                  expr: [left: ["y"], op: ">", right: [1]]
                ]
-             ] == decl
+             ] == prog
     end
 
     test "parse two expressions with connecting operator" do
       text = "f<>\nx != y\nor y > 1"
-      {:ok, decl, "", %{}, _, _} = Logexian.program(text)
+      {:ok, prog, "", %{}, _, _} = Logexian.program(text)
 
       assert [
-               decl: [
-                 decl_ident: "f",
+               sect: [
+                 decl: [
+                   decl_ident: "f"
+                 ],
                  expr: [left: ["x"], op: "!=", right: ["y"]],
                  expr: [intro_op: "or", left: ["y"], op: ">", right: [1]]
                ]
-             ] == decl
+             ] == prog
+    end
+
+    test "parse expression with domain" do
+      text = "f<x:Y and a : Y>"
+      {:ok, prog, "", %{}, _, _} = Logexian.program(text)
+
+      assert [
+               sect: [
+                 decl: [
+                   decl_ident: "f",
+                   decl_args: ["x"],
+                   decl_doms: ["Y"],
+                   expr: [left: ["a"], op: ":", right: ["Y"]]
+                 ]
+               ]
+             ] == prog
     end
   end
 
@@ -49,10 +69,12 @@ defmodule LogexianTest do
 
       {:ok,
        [
-         decl: [
-           decl_ident: "f",
-           yield_type: "=>",
-           yield_domain: "D"
+         sect: [
+           decl: [
+             decl_ident: "f",
+             yield_type: "=>",
+             yield_domain: "D"
+           ]
          ]
        ], "", %{}, _, _} = Logexian.program(text)
     end
@@ -70,23 +92,27 @@ defmodule LogexianTest do
       f<x: Y and x != 1>
       """
 
-      {:ok, decl, "", %{}, _, _} = Logexian.program(text)
+      {:ok, prog, "", %{}, _, _} = Logexian.program(text)
 
       assert [
-               decl: [
-                 decl_ident: "f",
-                 decl_args: ["x"],
-                 decl_doms: ["Y"],
-                 expr: [left: ["x"], op: "!=", right: [1]]
+               sect: [
+                 decl: [
+                   decl_ident: "f",
+                   decl_args: ["x"],
+                   decl_doms: ["Y"],
+                   expr: [left: ["x"], op: "!=", right: [1]]
+                 ]
                ]
-             ] == decl
+             ] == prog
     end
   end
 
   describe "program structure" do
-    test "two declarations" do
+    test "two sections" do
       text = "f<x: Y>\n;;\ny<> => Y"
-      {:ok, [decl: decl, decl: decl2], "", %{}, _, _} = Logexian.program(text)
+
+      {:ok, [sect: [decl: decl], sect: [decl: decl2]] = prog, "", %{}, _, _} =
+        Logexian.program(text)
 
       assert [
                decl_ident: "f",
@@ -102,7 +128,7 @@ defmodule LogexianTest do
 
       text2 = "f<x: Y>\n\n;;\n\ny<> => Y"
 
-      {:ok, [decl: ^decl, decl: ^decl2], "", %{}, _, _} = Logexian.program(text2)
+      {:ok, ^prog, "", %{}, _, _} = Logexian.program(text2)
     end
   end
 end

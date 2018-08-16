@@ -17,7 +17,6 @@ defmodule ParserHelpers do
       |> ignore_spaces()
     )
     |> concat(c)
-    |> ignore_spaces()
   end
 
   def comma_join(c), do: join(c, string(","))
@@ -35,19 +34,23 @@ defmodule Logexian do
   space = string(" ")
   newline = string("\n")
 
-  where = ignore(repeat(newline))
-  |> string(";;\n")
-  |> ignore(repeat(newline))
+  where =
+    ignore(repeat(newline))
+    |> string(";;\n")
+    |> ignore(repeat(newline))
 
   identifier = ascii_string([?a..?z], min: 1)
 
   log_and = choice(strings(["and", "∧"]))
   log_or = choice(strings(["or", "∨"]))
 
-  symbol = choice([integer(min: 1), identifier])
+  variable = choice([integer(min: 1), identifier])
+  domain = ascii_string([?A..?Z, ?a..?z], min: 1)
+
+  symbol = choice([variable, domain])
 
   operator =
-    (strings(["=", "->", "!=", "==", ">", "<", "<=", ">="]) ++ [log_or, log_and])
+    (strings(["=", "->", "!=", "==", ">", "<", "<=", ">=", ":"]) ++ [log_or, log_and])
     |> choice
 
   expression =
@@ -58,54 +61,52 @@ defmodule Logexian do
     |> ignore(times(space, min: 1))
     |> tag(times(symbol, min: 1), :right)
     |> ignore(repeat(space))
-    |> ignore(optional(string("\n")))
     |> tag(:expr)
-
-  domain =
-    ignore_spaces()
-    |> ascii_string([?A..?Z, ?a..?z], min: 1)
-    |> ignore_spaces()
 
   decl_args =
     tag(comma_join(identifier), :decl_args)
+    |> ignore(repeat(space))
     |> ignore(string(":"))
+    |> ignore(repeat(space))
     |> concat(tag(comma_join(domain), :decl_doms))
-    |> ignore_spaces()
 
   decl_yields =
-    ignore_spaces()
+    ignore(repeat(space))
     |> choice(strings(["::", "=>"]))
     |> unwrap_and_tag(:yield_type)
-    |> ignore_spaces()
+    |> ignore(repeat(space))
     |> concat(unwrap_and_tag(domain, :yield_domain))
 
   decl =
     identifier
     |> unwrap_and_tag(:decl_ident)
-    |> ignore(repeat(space))
-    |> ignore(string("<"))
-    |> ignore(repeat(space))
+    |> ignore(repeat(space) |> string("<") |> repeat(space))
     |> optional(
       decl_args
-      |> ignore(repeat(space))
       |> optional(
-        ignore(log_and)
-        |> ignore(repeat(space))
+        ignore(times(space, min: 1))
+        |> ignore(log_and)
+        |> ignore(times(space, min: 1))
         |> concat(comma_join(expression))
       )
     )
-    |> ignore(repeat(space))
-    |> ignore(string(">"))
+    |> ignore(repeat(space) |> string(">") |> repeat(space))
     |> concat(optional(decl_yields))
-    |> ignore_spaces()
-    |> repeat(expression)
     |> tag(:decl)
+
+  section =
+    decl
+    |> repeat(
+      ignore(times(newline, min: 1))
+      |> concat(expression)
+    )
+    |> tag(:sect)
 
   defparsec(
     :program,
     empty()
     |> ignore_spaces()
-    |> concat(join(decl, where))
+    |> concat(join(section, where))
     |> ignore_spaces()
   )
 end
