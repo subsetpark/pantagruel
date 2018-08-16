@@ -26,6 +26,18 @@ defmodule LogexianTest do
                ]
              ] == decl
     end
+    test "parse two expressions with connecting operator" do
+      text = "f<>\nx != y\nor y > 1"
+      {:ok, decl, "", %{}, _, _} = Logexian.program(text)
+
+      assert [
+               decl: [
+                 decl_ident: "f",
+                 expr: [left: ["x"], op: "!=", right: ["y"]],
+                 expr: [intro_op: "or", left: ["y"], op: ">", right: [1]]
+               ]
+             ] == decl
+    end
   end
 
   describe "declaration parsing" do

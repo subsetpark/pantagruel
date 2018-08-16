@@ -47,7 +47,8 @@ defmodule Logexian do
     |> choice
 
   expression =
-    tag(times(symbol, min: 1), :left)
+    optional(unwrap_and_tag(operator, :intro_op) |> ignore(times(space, min: 1)))
+    |> tag(times(symbol, min: 1), :left)
     |> ignore(times(space, min: 1))
     |> unwrap_and_tag(operator, :op)
     |> ignore(times(space, min: 1))
