@@ -1,4 +1,4 @@
-defmodule Logexian.MixProject do
+defmodule Pantagruel.MixProject do
   use Mix.Project
 
   def project do

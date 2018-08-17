@@ -1,8 +1,8 @@
-defmodule LogexianTest do
+defmodule PantagruelTest do
   use ExUnit.Case
 
   defp tryexp(text, r) do
-    {:ok, subexp, "", %{}, _, _} = Logexian.Parse.subexpression(text)
+    {:ok, subexp, "", %{}, _, _} = Pantagruel.Parse.subexpression(text)
     assert r == subexp
   end
 
@@ -54,7 +54,7 @@ defmodule LogexianTest do
   end
 
   defp tryparse(text, r) do
-    {:ok, program, "", %{}, _, _} = Logexian.Parse.program(text)
+    {:ok, program, "", %{}, _, _} = Pantagruel.Parse.program(text)
     assert r == program
   end
 
@@ -175,7 +175,7 @@ defmodule LogexianTest do
       text = "f|a,b:B,C|::D"
 
       {:ok, [sect: [decl: [ident, vars, doms, yield_type, yield_domain]]], "", _, _, _} =
-        Logexian.Parse.program(text)
+        Pantagruel.Parse.program(text)
 
       assert ident == {:decl_ident, "f"}
       assert vars == {:decl_args, ["a", "b"]}
@@ -221,7 +221,7 @@ defmodule LogexianTest do
       text = "f|x:Y|\n;;\ny||=>Y"
 
       {:ok, [sect: [decl: decl], sect: [decl: decl2]], "", %{}, _, _} =
-        Logexian.Parse.program(text)
+        Pantagruel.Parse.program(text)
 
       assert [
                decl_ident: "f",

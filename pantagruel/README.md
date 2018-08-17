@@ -1,4 +1,4 @@
-# Logexian
+# Pantagruel
 
 **TODO: Add description**
 

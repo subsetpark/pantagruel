@@ -9,7 +9,7 @@ defmodule ScanLest do
       line3
       """
 
-      scanned = Logexian.Scan.scan(text)
+      scanned = Pantagruel.Scan.scan(text)
       assert "line\nline2 \nline3" == scanned
     end
 
@@ -20,7 +20,7 @@ defmodule ScanLest do
       third
       """
 
-      scanned = Logexian.Scan.scan(text)
+      scanned = Pantagruel.Scan.scan(text)
       assert "first half\nsecond half\nthird" == scanned
     end
 
@@ -29,7 +29,7 @@ defmodule ScanLest do
       x -> y
       """
 
-      scanned = Logexian.Scan.scan(text)
+      scanned = Pantagruel.Scan.scan(text)
       assert "x→y" == scanned
     end
 
@@ -38,7 +38,7 @@ defmodule ScanLest do
       text2 = "first line  \n  \n  second line"
 
       for t <- [text, text2] do
-        scanned = Logexian.Scan.scan(t)
+        scanned = Pantagruel.Scan.scan(t)
         assert "first line\nsecond line" == scanned
       end
     end
@@ -50,7 +50,7 @@ defmodule ScanLest do
 
       where
       """
-      scanned = Logexian.Scan.scan(text)
+      scanned = Pantagruel.Scan.scan(text)
       assert "foo\n;;\nwhere" == scanned
     end
   end

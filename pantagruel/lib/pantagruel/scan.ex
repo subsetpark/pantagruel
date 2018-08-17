@@ -1,4 +1,4 @@
-defmodule Logexian.Scan do
+defmodule Pantagruel.Scan do
   defp scan(<<>>, out, _) do
     out
     |> String.reverse()

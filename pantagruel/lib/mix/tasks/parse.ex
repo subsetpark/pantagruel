@@ -1,10 +1,10 @@
-defmodule Mix.Tasks.Logexian.Parse do
+defmodule Mix.Tasks.Pantagruel.Parse do
   use Mix.Task
 
   def run([filename]) do
     parsed =
       filename
-      |> Logexian.read!()
+      |> Pantagruel.read!()
 
     case parsed do
       {:ok, prog, "", _, _, _} ->
@@ -23,14 +23,14 @@ defmodule Mix.Tasks.Logexian.Parse do
   end
 end
 
-defmodule Mix.Tasks.Logexian.Scan do
+defmodule Mix.Tasks.Pantagruel.Scan do
   use Mix.Task
 
   def run([filename]) do
     scanned =
       filename
       |> File.read!()
-      |> Logexian.Scan.scan()
+      |> Pantagruel.Scan.scan()
 
     IO.inspect(scanned)
   end

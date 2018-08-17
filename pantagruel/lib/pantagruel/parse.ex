@@ -50,9 +50,9 @@ defmodule ParserHelpers do
   end
 end
 
-defmodule Logexian.Parse do
+defmodule Pantagruel.Parse do
   @moduledoc """
-  Documentation for Logexian.
+  Documentation for Pantagruel.
   """
   import NimbleParsec
   import ParserHelpers
