@@ -5,13 +5,17 @@ defmodule Logexian.Scan do
     |> String.trim()
   end
 
-  ## Character replacement
+  ## Space/newline consolidation
   defp scan(<<?\s::utf8, contents::binary>>, <<?\s::utf8, _::binary>>=acc, true), do: scan(contents, acc, true)
   defp scan(<<?\s::utf8, contents::binary>>, <<?\n::utf8, _::binary>>=acc, true), do: scan(contents, acc, true)
   defp scan(<<?\n::utf8, contents::binary>>, <<?\n::utf8, _::binary>>=acc, true), do: scan(contents, acc, true)
   defp scan(<<?\n::utf8, contents::binary>>, <<?\s::utf8, rest::binary>>, true), do: scan(contents, <<?\n::utf8, rest::binary>>, true)
+  ## Character replacement
+  # These will probably want to write the the scan buffer, rather than the accumulator,
+  # so that space consolidation can take a pass at them.
   defp scan(<<" ->"::utf8, contents::binary>>, out, true), do: scan(<<?→::utf8, contents::binary>>, out, true)
   defp scan(<<"->"::utf8, contents::binary>>, out, true), do: scan(<<?→::utf8, contents::binary>>, out, true)
+  defp scan(<<"...\n"::utf8, contents::binary>>, out, true), do: scan(<<?\s::utf8, contents::binary>>, out, true)
   ## Space elimintation
   defp scan(<<?\s::utf8, contents::binary>>, <<"::"::utf8, _::binary>>=acc, true), do: scan(contents, acc, true)
   defp scan(<<" ::"::utf8, contents::binary>>, out, true), do: scan(contents, <<"::"::utf8, out::binary>>, true)
