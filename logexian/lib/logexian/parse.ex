@@ -3,10 +3,7 @@ defmodule ParserHelpers do
 
   def ignore_spaces(c \\ empty()) do
     c
-    |> ignore(
-      choice([string(" "), string("\n")])
-      |> repeat()
-    )
+    |> ignore(optional(choice([string(" "), string("\n")]) |> repeat))
   end
 
   def join(c, joiner) do
@@ -77,9 +74,9 @@ defmodule Logexian.Parse do
   # and the list after is a list of domains of the introduced variables.
   decl_args =
     tag(comma_join(identifier), :decl_args)
-    |> ignore(repeat(space))
+    |> ignore(optional(space))
     |> ignore(string(":"))
-    |> ignore(repeat(space))
+    |> ignore(optional(space))
     |> concat(
       tag(
         comma_join(domain),
@@ -95,10 +92,10 @@ defmodule Logexian.Parse do
   # domain of a function, and => is pronounced "produces" and
   # denotes that the function is a type constructor.
   decl_yields =
-    ignore(repeat(space))
+    ignore(optional(space))
     |> choice(strings(["::", "=>"]))
     |> unwrap_and_tag(:yield_type)
-    |> ignore(repeat(space))
+    |> ignore(optional(space))
     |> concat(unwrap_and_tag(domain, :yield_domain))
 
   # A closed set of non-alphabetic binary
@@ -155,31 +152,31 @@ defmodule Logexian.Parse do
   )
 
   expression =
-    optional(unwrap_and_tag(log_op, :intro_op) |> ignore(times(space, min: 1)))
+    optional(unwrap_and_tag(log_op, :intro_op) |> ignore(space))
     |> optional(
       tag(parsec(:subexpression), :left)
-      |> ignore(times(space, min: 1))
+      |> ignore(space)
       |> unwrap_and_tag(entailment, :op)
-      |> ignore(times(space, min: 1))
+      |> ignore(space)
     )
     |> tag(parsec(:subexpression), :right)
-    |> ignore(repeat(space))
+    |> ignore(optional(space))
     |> tag(:expr)
 
   # A function from (0 or more) = N arguments in N domains,
   # with an optional codomain.
   fun =
-    ignore(string("|") |> repeat(space))
+    ignore(string("|") |> optional(space))
     |> optional(
       decl_args
       |> optional(
-        ignore(times(space, min: 1))
+        ignore(space)
         |> ignore(log_and)
-        |> ignore(times(space, min: 1))
+        |> ignore(space)
         |> concat(comma_join(expression))
       )
     )
-    |> ignore(repeat(space) |> string("|") |> repeat(space))
+    |> ignore(optional(space) |> string("|") |> optional(space))
     |> concat(optional(decl_yields))
 
   # A function form, treated as a value or domain.
@@ -194,7 +191,7 @@ defmodule Logexian.Parse do
   decl =
     identifier
     |> unwrap_and_tag(:decl_ident)
-    |> ignore(repeat(space))
+    |> ignore(optional(space))
     |> concat(fun)
     |> tag(:decl)
 
