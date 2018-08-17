@@ -37,6 +37,13 @@ defmodule LogexianTest do
       {:ok, subexp, "", %{}, _, _} = Logexian.Parse.subexpression(text)
       assert [bunch: ["x", set: ["y", "z"]]] == subexp
     end
+
+    test "parse string followed by integer" do
+      text = ~s("D" 10)
+      {:ok, subexp, "", %{}, _, _} = Logexian.Parse.subexpression(text)
+      assert [{:string, ["D"]}, 10] == subexp
+    end
+
   end
 
   describe "expression parsing" do
