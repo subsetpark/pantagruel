@@ -157,7 +157,9 @@ defmodule Logexian.Parse do
   defparsec(
     :subexpression,
     choice([
-      nested_subexpression,
+      # We have to explicitly include both paths to avoid left-recursion.
+      nested_subexpression
+      |> optional(ignore(optional(space)) |> parsec(:subexpression)),
       symbol
       |> optional(ignore(optional(space)) |> parsec(:subexpression))
     ])
