@@ -126,6 +126,22 @@ defmodule Pantagruel.Parse do
     |> tag(parsec(:subexpression), :right)
     |> tag(:expr)
 
+  defp recognize_expression(["exists", variable, "from", domain | subexpression]) do
+    [:exists, variable, :from, domain, subexpression]
+  end
+
+  defp recognize_expression(["exists", variable, "in", domain | subexpression]) do
+    [:exists, variable, :in, domain, subexpression]
+  end
+
+  defp recognize_expression(e) do
+    e
+  end
+
+  defp recognize_expression(_rest, args, context, _line, _offset) do
+    {args |> Enum.reverse() |> recognize_expression |> Enum.reverse(), context}
+  end
+
   # The arguments to a function. Takes the form of
   #   x1, x2, ... xn : X1, X2 ... XN
   # Where the list before the colon is a list of variable bindings,
@@ -223,6 +239,7 @@ defmodule Pantagruel.Parse do
       |> optional(space |> optional |> ignore |> parsec(:subexpression))
     ]
     |> choice
+    |> traverse(:recognize_expression)
   )
 
   # A series of one or more specification sections separated by ";;",

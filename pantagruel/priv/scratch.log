@@ -15,3 +15,6 @@ y"x""m,n,z"
 y = |x : |z:D| :: D | :: D
 ;;
 z|| => Nat
+;;
+y|| => Y
+exists x from y x > 0
