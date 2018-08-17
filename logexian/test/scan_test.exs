@@ -34,7 +34,7 @@ defmodule ScanLest do
     end
 
     test "space/newline consolidation" do
-      text = "first line \n second line"
+      text = "first line  \n  second line"
 
       scanned = Logexian.Scan.scan(text)
       assert "first line\nsecond line" == scanned
