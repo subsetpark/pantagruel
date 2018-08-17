@@ -160,9 +160,7 @@ defmodule Logexian.Parse do
     optional(unwrap_and_tag(log_op, :intro_op) |> ignore(space))
     |> optional(
       tag(parsec(:subexpression), :left)
-      |> ignore(space)
       |> unwrap_and_tag(entailment, :op)
-      |> ignore(space)
     )
     |> tag(parsec(:subexpression), :right)
     |> ignore(optional(space))
@@ -171,7 +169,7 @@ defmodule Logexian.Parse do
   # A function from (0 or more) = N arguments in N domains,
   # with an optional codomain.
   fun =
-    ignore(string("|") |> optional(space))
+    ignore(string("|"))
     |> optional(
       decl_args
       |> optional(
@@ -181,7 +179,7 @@ defmodule Logexian.Parse do
         |> concat(comma_join(expression))
       )
     )
-    |> ignore(optional(space) |> string("|") |> optional(space))
+    |> ignore(string("|"))
     |> concat(optional(decl_yields))
 
   # A function form, treated as a value or domain.

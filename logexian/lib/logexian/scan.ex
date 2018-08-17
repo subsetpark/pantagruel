@@ -5,16 +5,29 @@ defmodule Logexian.Scan do
     |> String.trim()
   end
 
-  # Character replacement
+  ## Character replacement
   defp scan(<<?\s::utf8, contents::binary>>, <<?\s::utf8, _::binary>>=acc, true), do: scan(contents, acc, true)
   defp scan(<<?\s::utf8, contents::binary>>, <<?\n::utf8, _::binary>>=acc, true), do: scan(contents, acc, true)
   defp scan(<<?\n::utf8, contents::binary>>, <<?\n::utf8, _::binary>>=acc, true), do: scan(contents, acc, true)
   defp scan(<<?\n::utf8, contents::binary>>, <<?\s::utf8, rest::binary>>, true), do: scan(contents, <<?\n::utf8, rest::binary>>, true)
-  defp scan(<<"->"::utf8, contents::binary>>, out, true), do: scan(contents, <<?→::utf8, out::binary>>, true)
-  # Read-mode management
+  defp scan(<<" ->"::utf8, contents::binary>>, out, true), do: scan(<<?→::utf8, contents::binary>>, out, true)
+  defp scan(<<"->"::utf8, contents::binary>>, out, true), do: scan(<<?→::utf8, contents::binary>>, out, true)
+  ## Space elimintation
+  defp scan(<<?\s::utf8, contents::binary>>, <<"::"::utf8, _::binary>>=acc, true), do: scan(contents, acc, true)
+  defp scan(<<" ::"::utf8, contents::binary>>, out, true), do: scan(contents, <<"::"::utf8, out::binary>>, true)
+  defp scan(<<?\s::utf8, contents::binary>>, <<?:::utf8, _::binary>>=acc, true), do: scan(contents, acc, true)
+  defp scan(<<" :"::utf8, contents::binary>>, out, true), do: scan(contents, <<?:::utf8, out::binary>>, true)
+  defp scan(<<?\s::utf8, contents::binary>>, <<?|::utf8, _::binary>>=acc, true), do: scan(contents, acc, true)
+  defp scan(<<" |"::utf8, contents::binary>>, out, true), do: scan(contents, <<?|::utf8, out::binary>>, true)
+  defp scan(<<?\s::utf8, contents::binary>>, <<?=::utf8, _::binary>>=acc, true), do: scan(contents, acc, true)
+  defp scan(<<" ="::utf8, contents::binary>>, out, true), do: scan(contents, <<?=::utf8, out::binary>>, true)
+  defp scan(<<?\s::utf8, contents::binary>>, <<?→::utf8, _::binary>>=acc, true), do: scan(contents, acc, true)
+  defp scan(<<" →"::utf8, contents::binary>>, out, true), do: scan(contents, <<?→::utf8, out::binary>>, true)
+  ## Read-mode management
+  defp scan(<<?\n::utf8, contents::binary>>, <<?\n::utf8, _::binary>>=acc, _), do: scan(contents, acc, true)
   defp scan(<<?\n::utf8, contents::binary>>, out, _), do: scan(contents, <<?\n::utf8, out::binary>>, true)
   defp scan(<<_::utf8, contents::binary>>, out, false), do: scan(contents, out, false)
-  # Special-case ';;' from triggering comments.
+  ## Special-case ';;' from triggering comments.
   defp scan(<<";;"::utf8, contents::binary>>, out, true), do: scan(contents, <<";;"::utf8, out::binary>>, true)
   defp scan(<<?;::utf8, contents::binary>>, out, _), do: scan(contents, out, false)
   defp scan(<<c::utf8, contents::binary>>, out, true), do: scan(contents, <<c::utf8, out::binary>>, true)

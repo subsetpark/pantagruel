@@ -30,7 +30,7 @@ defmodule ScanLest do
       """
 
       scanned = Logexian.Scan.scan(text)
-      assert "x → y" == scanned
+      assert "x→y" == scanned
     end
 
     test "space/newline consolidation" do

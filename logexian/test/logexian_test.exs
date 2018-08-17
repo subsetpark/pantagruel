@@ -87,7 +87,7 @@ defmodule LogexianTest do
     end
 
     test "parse expression with relation in it" do
-      text = "f||\nx = y and y > 1"
+      text = "f||\nx=y and y > 1"
       {:ok, prog, "", %{}, _, _} = Logexian.Parse.program(text)
 
       assert [
@@ -105,7 +105,7 @@ defmodule LogexianTest do
     end
 
     test "parse expression with multiple elements on the left" do
-      text = "f||\nf x = y"
+      text = "f||\nf x=y"
       {:ok, prog, "", %{}, _, _} = Logexian.Parse.program(text)
 
       assert [

@@ -1,8 +1,9 @@
-f<x, y: Nat, Real> :: Real
+f|x, y: Nat, Real| :: Real
 ; This is a comment. Shouldn't show up.
 f x y -> x ^ y
 ;;
-x <> => Real
+x || => Real
+y ||=>Real
 x = 1.5
 x > 10
-y = <x : <z:D> :: D > :: D
+y = |x : |z:D| :: D | :: D
