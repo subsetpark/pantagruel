@@ -198,6 +198,22 @@ defmodule LogexianTest do
         ]
       )
     end
+
+    test "heading with sequenced domain" do
+      text = "f|x:X|::[X]"
+
+      tryparse(text,
+        sect: [
+          decl: [
+            decl_ident: "f",
+            decl_args: ["x"],
+            decl_doms: ["X"],
+            yield_type: :yields,
+            yield_domain: {:list, ["X"]}
+          ]
+        ]
+      )
+    end
   end
 
   describe "program structure" do

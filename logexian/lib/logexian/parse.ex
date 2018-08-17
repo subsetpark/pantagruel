@@ -32,6 +32,22 @@ defmodule ParserHelpers do
   def strings(ss) do
     for(s <- ss, do: _string(s))
   end
+
+  def nested(c) do
+    choice(
+      for {l, r, name} <- [
+            {"(", ")", :bunch},
+            {"[", "]", :list},
+            {"{", "}", :set},
+            {"\"", "\"", :string}
+          ],
+          do:
+            ignore(string(l))
+            |> concat(c)
+            |> ignore(string(r))
+            |> tag(name)
+    )
+  end
 end
 
 defmodule Logexian.Parse do
@@ -41,65 +57,15 @@ defmodule Logexian.Parse do
   import NimbleParsec
   import ParserHelpers
 
+  # Constants
   space = string(" ")
   newline = string("\n")
   # The section separator, pronounced "where".
   where = string("\n;;\n") |> replace(:where)
 
-  # Any variable name. Lower-cased.
-  identifier = utf8_string([?a..?z], min: 1)
-
-  float =
-    optional(string("-"))
-    |> utf8_string([?0..?9], min: 1)
-    |> string(".")
-    |> utf8_string([?0..?9], min: 1)
-    |> reduce({Enum, :join, [""]})
-
-  value = choice([float, integer(min: 1), identifier])
-
-  # The domain of a variable. Can be a type (including a function)
-  # or a set of concrete values.
-  domain =
-    choice([
-      utf8_string([?A..?Z, ?a..?z], min: 1),
-      parsec(:lambda)
-    ])
-
   log_and = string("∧") |> replace(:and)
   log_or = string("∨") |> replace(:or)
   log_op = choice([log_and, log_or])
-
-  # The arguments to a function. Takes the form of
-  #   x1, x2, ... xn : X1, X2 ... XN
-  # Where the list before the colon is a list of variable bindings,
-  # and the list after is a list of domains of the introduced variables.
-  decl_args =
-    tag(comma_join(identifier), :decl_args)
-    |> ignore(string(":"))
-    |> concat(
-      tag(
-        comma_join(domain),
-        :decl_doms
-      )
-    )
-
-  # The codomain of a function. Takes the form of
-  #   :: D
-  # or
-  #   => D
-  # Where :: is pronounced "of the type" and denotes the "return"
-  # domain of a function, and => is pronounced "produces" and
-  # denotes that the function is a type constructor.
-  decl_yields =
-    choice(
-      strings([
-        {"::", :yields},
-        {"=>", :produces}
-      ])
-    )
-    |> unwrap_and_tag(:yield_type)
-    |> concat(unwrap_and_tag(domain, :yield_domain))
 
   # A closed set of non-alphabetic binary
   # operators producing a boolean value.
@@ -120,8 +86,6 @@ defmodule Logexian.Parse do
   # and the value are all in the same domain.
   operator = choice(strings(["+", "-", "*", "/", "^"]))
 
-  symbol = choice([parsec(:lambda), log_op, relation, operator, value, domain])
-
   # A closed set of binary operators between propositions.
   # =, pronounced "equals" or "if and only if", denotes strict
   # logical equivalence. "P -> Q", pronounced "P implies Q" or
@@ -129,31 +93,27 @@ defmodule Logexian.Parse do
   # for non-pure function or for Q to be true without P.
   entailment = choice(strings([{"=", :iff}, {"→", :then}]))
 
-  nested_subexpression =
-    choice(
-      for {l, r, name} <- [
-            {"(", ")", :bunch},
-            {"[", "]", :list},
-            {"{", "}", :set},
-            {"\"", "\"", :string}
-          ],
-          do:
-            ignore(string(l))
-            |> concat(optional(comma_join(wrap(parsec(:subexpression)))))
-            |> ignore(string(r))
-            |> tag(name)
-    )
+  float =
+    optional(string("-"))
+    |> utf8_string([?0..?9], min: 1)
+    |> string(".")
+    |> utf8_string([?0..?9], min: 1)
+    |> reduce({Enum, :join, [""]})
 
-  defparsec(
-    :subexpression,
-    choice([
-      # We have to explicitly include both paths to avoid left-recursion.
-      nested_subexpression
-      |> optional(ignore(optional(space)) |> parsec(:subexpression)),
-      symbol
-      |> optional(ignore(optional(space)) |> parsec(:subexpression))
-    ])
-  )
+  # Any variable name. Lower-cased.
+  identifier = utf8_string([?a..?z], min: 1)
+
+  value = choice([float, integer(min: 1), identifier])
+
+  symbol = choice([parsec(:lambda), log_op, relation, operator, value, parsec(:domain)])
+
+  nested_subexpression =
+    :subexpression
+    |> parsec
+    |> wrap
+    |> comma_join
+    |> optional
+    |> nested
 
   expression =
     optional(unwrap_and_tag(log_op, :intro_op) |> ignore(space))
@@ -164,6 +124,37 @@ defmodule Logexian.Parse do
     |> tag(parsec(:subexpression), :right)
     |> ignore(optional(space))
     |> tag(:expr)
+
+  # The arguments to a function. Takes the form of
+  #   x1, x2, ... xn : X1, X2 ... XN
+  # Where the list before the colon is a list of variable bindings,
+  # and the list after is a list of domains of the introduced variables.
+  decl_args =
+    tag(comma_join(identifier), :decl_args)
+    |> ignore(string(":"))
+    |> concat(
+      tag(
+        comma_join(parsec(:domain)),
+        :decl_doms
+      )
+    )
+
+  # The codomain of a function. Takes the form of
+  #   :: D
+  # or
+  #   => D
+  # Where :: is pronounced "of the type" and denotes the "return"
+  # domain of a function, and => is pronounced "produces" and
+  # denotes that the function is a type constructor.
+  decl_yields =
+    choice(
+      strings([
+        {"::", :yields},
+        {"=>", :produces}
+      ])
+    )
+    |> unwrap_and_tag(:yield_type)
+    |> concat(unwrap_and_tag(parsec(:domain), :yield_domain))
 
   # A function from (0 or more) = N arguments in N domains,
   # with an optional codomain.
@@ -206,6 +197,28 @@ defmodule Logexian.Parse do
       |> concat(newline_join(expression))
     )
     |> tag(:sect)
+
+  # The domain of a variable. Can be a type (including a function)
+  # or a set of concrete values.
+  defparsec(
+    :domain,
+    choice([
+      nested(parsec(:domain)),
+      utf8_string([?A..?Z, ?a..?z], min: 1),
+      parsec(:lambda)
+    ])
+  )
+
+  defparsec(
+    :subexpression,
+    choice([
+      # We have to explicitly include both paths to avoid left-recursion.
+      nested_subexpression
+      |> optional(ignore(optional(space)) |> parsec(:subexpression)),
+      symbol
+      |> optional(ignore(optional(space)) |> parsec(:subexpression))
+    ])
+  )
 
   # A series of one or more specification sections separated by ";;",
   # where each subsequent section defines any variables introduced
