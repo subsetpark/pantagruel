@@ -12,6 +12,7 @@ defmodule ScanLest do
       scanned = Logexian.Scan.scan(text)
       assert "line\nline2 \nline3\n" == scanned
     end
+
     test "scan spaces" do
       text = """
       first half
@@ -21,6 +22,15 @@ defmodule ScanLest do
 
       scanned = Logexian.Scan.scan(text)
       assert "first half\nsecond half\nthird\n" == scanned
+    end
+
+    test "scan right arrow" do
+      text = """
+      x -> y
+      """
+
+      scanned = Logexian.Scan.scan(text)
+      assert "x → y\n" == scanned
     end
   end
 end

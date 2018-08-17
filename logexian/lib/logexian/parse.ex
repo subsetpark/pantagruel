@@ -45,13 +45,13 @@ defmodule Logexian.Parse do
     |> ignore(repeat(newline))
 
   # Any variable name. Lower-cased.
-  identifier = ascii_string([?a..?z], min: 1)
+  identifier = utf8_string([?a..?z], min: 1)
 
   float =
     optional(string("-"))
-    |> ascii_string([?0..?9], min: 1)
+    |> utf8_string([?0..?9], min: 1)
     |> string(".")
-    |> ascii_string([?0..?9], min: 1)
+    |> utf8_string([?0..?9], min: 1)
     |> reduce({Enum, :join, [""]})
 
   value = choice([float, integer(min: 1), identifier])
@@ -60,7 +60,7 @@ defmodule Logexian.Parse do
   # or a set of concrete values.
   domain =
     choice([
-      ascii_string([?A..?Z, ?a..?z], min: 1),
+      utf8_string([?A..?Z, ?a..?z], min: 1),
       parsec(:lambda)
     ])
 
@@ -115,7 +115,7 @@ defmodule Logexian.Parse do
 
   # A closed set of non-alphabetic binary operators where both arguments
   # and the value are all in the same domain.
-  operator = choice(strings(["+", "_", "*", "/", "^"]))
+  operator = choice(strings(["+", "-", "*", "/", "^"]))
 
   symbol = choice([parsec(:lambda), log_op, relation, operator, value, domain])
 
@@ -124,7 +124,7 @@ defmodule Logexian.Parse do
   # logical equivalence. "P -> Q", pronounced "P implies Q" or
   # "if P then Q", denotes non-strict, one-way equivalence, allowing
   # for non-pure function or for Q to be true without P.
-  entailment = choice(strings(["=", "->"]))
+  entailment = choice(strings(["=", "→"]))
 
   nested_subexpression =
     choice(
