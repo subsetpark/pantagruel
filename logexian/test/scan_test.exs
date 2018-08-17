@@ -42,5 +42,16 @@ defmodule ScanLest do
         assert "first line\nsecond line" == scanned
       end
     end
+    test "newline consolidation in where" do
+      text = """
+      foo
+
+      ;;
+
+      where
+      """
+      scanned = Logexian.Scan.scan(text)
+      assert "foo\n;;\nwhere" == scanned
+    end
   end
 end

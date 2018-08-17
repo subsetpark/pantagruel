@@ -29,7 +29,17 @@ defmodule ParserHelpers do
 
   def comma_join(c), do: join(c, string(","))
 
-  def strings(ss), do: for(s <- ss, do: string(s))
+  defp _string({s, r}) do
+    s
+    |> string
+    |> replace(r)
+  end
+
+  defp _string(s), do: string(s)
+
+  def strings(ss) do
+    for(s <- ss, do: _string(s))
+  end
 end
 
 defmodule Logexian.Parse do
@@ -42,10 +52,7 @@ defmodule Logexian.Parse do
   space = string(" ")
   newline = string("\n")
   # The section separator, pronounced "where".
-  where =
-    ignore(repeat(newline))
-    |> string(";;\n")
-    |> ignore(repeat(newline))
+  where = string("\n;;\n") |> replace(:where)
 
   # Any variable name. Lower-cased.
   identifier = utf8_string([?a..?z], min: 1)
@@ -67,8 +74,14 @@ defmodule Logexian.Parse do
       parsec(:lambda)
     ])
 
-  log_and = choice(strings(["and", "∧"]))
-  log_or = choice(strings(["or", "∨"]))
+  log_and =
+    choice(strings(["and", "∧"]))
+    |> replace(:and)
+
+  log_or =
+    choice(strings(["or", "∨"]))
+    |> replace(:or)
+
   log_op = choice([log_and, log_or])
 
   # The arguments to a function. Takes the form of
@@ -93,7 +106,12 @@ defmodule Logexian.Parse do
   # domain of a function, and => is pronounced "produces" and
   # denotes that the function is a type constructor.
   decl_yields =
-    choice(strings(["::", "=>"]))
+    choice(
+      strings([
+        {"::", :yields},
+        {"=>", :produces}
+      ])
+    )
     |> unwrap_and_tag(:yield_type)
     |> concat(unwrap_and_tag(domain, :yield_domain))
 
@@ -102,13 +120,13 @@ defmodule Logexian.Parse do
   relation =
     choice(
       strings([
-        "==",
-        "!=",
-        ">",
-        "<",
-        ">=",
-        "<=",
-        ":"
+        {"==", :equals},
+        {"!=", :notequals},
+        {">", :gt},
+        {"<", :lt},
+        {">=", :gte},
+        {"<=", :lte},
+        {":", :in}
       ])
     )
 
@@ -123,7 +141,7 @@ defmodule Logexian.Parse do
   # logical equivalence. "P -> Q", pronounced "P implies Q" or
   # "if P then Q", denotes non-strict, one-way equivalence, allowing
   # for non-pure function or for Q to be true without P.
-  entailment = choice(strings(["=", "→"]))
+  entailment = choice(strings([{"=", :iff}, {"→", :then}]))
 
   nested_subexpression =
     choice(

@@ -2,7 +2,9 @@ f|x, y: Nat, Real| :: Real
 ; This is a comment. Shouldn't show up.
 f x y -> x ^...
     y
+
 ;;
+
 x || => Real
 y ||=>Real
 x = 1.5

@@ -9,7 +9,7 @@ defmodule LogexianTest do
     assert ident == {:decl_ident, "f"}
     assert vars == {:decl_args, ["a", "b"]}
     assert doms == {:decl_doms, ["B", "C"]}
-    assert yield_type == {:yield_type, "::"}
+    assert yield_type == {:yield_type, :yields}
     assert yield_domain == {:yield_domain, "D"}
   end
 
@@ -49,8 +49,8 @@ defmodule LogexianTest do
                  decl: [
                    decl_ident: "f"
                  ],
-                 expr: [right: ["x", "!=", "y"]],
-                 expr: [right: ["y", ">", 1]]
+                 expr: [right: ["x", :notequals, "y"]],
+                 expr: [right: ["y", :gt, 1]]
                ]
              ] == prog
     end
@@ -64,8 +64,8 @@ defmodule LogexianTest do
                  decl: [
                    decl_ident: "f"
                  ],
-                 expr: [right: ["x", "!=", "y"]],
-                 expr: [intro_op: "or", right: ["y", ">", 1]]
+                 expr: [right: ["x", :notequals, "y"]],
+                 expr: [intro_op: :or, right: ["y", :gt, 1]]
                ]
              ] == prog
     end
@@ -80,7 +80,7 @@ defmodule LogexianTest do
                    decl_ident: "f",
                    decl_args: ["x"],
                    decl_doms: ["Y"],
-                   expr: [right: ["a", ":", "Y"]]
+                   expr: [right: ["a", :in, "Y"]]
                  ]
                ]
              ] == prog
@@ -97,15 +97,15 @@ defmodule LogexianTest do
                  ],
                  expr: [
                    left: ["x"],
-                   op: "=",
-                   right: ["y", "and", "y", ">", 1]
+                   op: :iff,
+                   right: ["y", :and, "y", :gt, 1]
                  ]
                ]
              ] == prog
     end
 
     test "parse expression with multiple elements on the left" do
-      text = "f||\nf x=y"
+      text = "f||\nf x→y"
       {:ok, prog, "", %{}, _, _} = Logexian.Parse.program(text)
 
       assert [
@@ -115,7 +115,7 @@ defmodule LogexianTest do
                  ],
                  expr: [
                    left: ["f", "x"],
-                   op: "=",
+                   op: :then,
                    right: ["y"]
                  ]
                ]
@@ -132,7 +132,7 @@ defmodule LogexianTest do
          sect: [
            decl: [
              decl_ident: "f",
-             yield_type: "=>",
+             yield_type: :produces,
              yield_domain: "D"
            ]
          ]
@@ -156,7 +156,7 @@ defmodule LogexianTest do
                    decl_ident: "f",
                    decl_args: ["x"],
                    decl_doms: ["Y"],
-                   expr: [right: ["x", "!=", 1]]
+                   expr: [right: ["x", :notequals, 1]]
                  ]
                ]
              ] == prog
@@ -178,13 +178,9 @@ defmodule LogexianTest do
 
       assert [
                decl_ident: "y",
-               yield_type: "=>",
+               yield_type: :produces,
                yield_domain: "Y"
              ] == decl2
-
-      text2 = "f|x:Y|\n\n;;\n\ny||=>Y"
-
-      {:ok, ^prog, "", %{}, _, _} = Logexian.Parse.program(text2)
     end
   end
 end
