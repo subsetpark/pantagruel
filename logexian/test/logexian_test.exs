@@ -14,22 +14,42 @@ defmodule LogexianTest do
 
     test "parse bunch symbol sequence" do
       text = "(x y z)"
-      tryexp(text, bunch: ["x", "y", "z"])
+      tryexp(text, bunch: [["x", "y", "z"]])
     end
 
     test "parse set symbol sequence" do
       text = "{x y z}"
-      tryexp(text, set: ["x", "y", "z"])
+      tryexp(text, set: [["x", "y", "z"]])
     end
 
     test "parse bunched set symbol sequence" do
       text = "(x {y z})"
-      tryexp(text, bunch: ["x", set: ["y", "z"]])
+      tryexp(text, bunch: [["x", set: [["y", "z"]]]])
     end
 
     test "parse string followed by integer" do
       text = ~s("D" 10)
-      tryexp(text, [{:string, ["D"]}, 10])
+      tryexp(text, [{:string, [["D"]]}, 10])
+    end
+
+    test "comprehension parsing" do
+      text = "{x * 2,x from X}"
+      tryexp(text, set: [["x", "*", 2], ["x", "from", "X"]])
+    end
+
+    test "comprehension parsing 2 elements" do
+      text = "{x * y,x from X,y from Y}"
+      tryexp(text, set: [["x", "*", "y"], ["x", "from", "X"], ["y", "from", "Y"]])
+    end
+
+    test "empty set" do
+      text = "{}"
+      tryexp(text, set: [])
+    end
+
+    test "empty string" do
+      text = "\"\""
+      tryexp(text, string: [])
     end
   end
 

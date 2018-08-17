@@ -10,6 +10,8 @@ y ||=>Real
 x = 1.5
 x > rand andr "D" 10 x
 and x == 1
+y"x""m,n,z"
+""
 y = |x : |z:D| :: D | :: D
 ;;
 z|| => Nat

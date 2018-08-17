@@ -139,9 +139,7 @@ defmodule Logexian.Parse do
           ],
           do:
             ignore(string(l))
-            |> ignore(optional(space))
-            |> parsec(:subexpression)
-            |> ignore(optional(space))
+            |> concat(optional(comma_join(wrap(parsec(:subexpression)))))
             |> ignore(string(r))
             |> tag(name)
     )
