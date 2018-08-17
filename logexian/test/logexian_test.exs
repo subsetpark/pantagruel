@@ -1,120 +1,119 @@
 defmodule LogexianTest do
   use ExUnit.Case
-  doctest Logexian
+
+  defp tryexp(text, r) do
+    {:ok, subexp, "", %{}, _, _} = Logexian.Parse.subexpression(text)
+    assert r == subexp
+  end
 
   describe "subexpression parsing" do
     test "parse symbol sequence" do
       text = "x y z"
-      {:ok, subexp, "", %{}, _, _} = Logexian.Parse.subexpression(text)
-      assert ["x", "y", "z"] == subexp
+      tryexp(text, ["x", "y", "z"])
     end
 
     test "parse bunch symbol sequence" do
       text = "(x y z)"
-      {:ok, subexp, "", %{}, _, _} = Logexian.Parse.subexpression(text)
-      assert [bunch: ["x", "y", "z"]] == subexp
+      tryexp(text, bunch: ["x", "y", "z"])
     end
 
     test "parse set symbol sequence" do
       text = "{x y z}"
-      {:ok, subexp, "", %{}, _, _} = Logexian.Parse.subexpression(text)
-      assert [set: ["x", "y", "z"]] == subexp
+      tryexp(text, set: ["x", "y", "z"])
     end
 
     test "parse bunched set symbol sequence" do
       text = "(x {y z})"
-      {:ok, subexp, "", %{}, _, _} = Logexian.Parse.subexpression(text)
-      assert [bunch: ["x", set: ["y", "z"]]] == subexp
+      tryexp(text, bunch: ["x", set: ["y", "z"]])
     end
 
     test "parse string followed by integer" do
       text = ~s("D" 10)
-      {:ok, subexp, "", %{}, _, _} = Logexian.Parse.subexpression(text)
-      assert [{:string, ["D"]}, 10] == subexp
+      tryexp(text, [{:string, ["D"]}, 10])
     end
+  end
+
+  defp tryparse(text, r) do
+    {:ok, program, "", %{}, _, _} = Logexian.Parse.program(text)
+    assert r == program
   end
 
   describe "expression parsing" do
     test "parse two expressions" do
       text = "f||\nx != y\ny > 1"
-      {:ok, prog, "", %{}, _, _} = Logexian.Parse.program(text)
 
-      assert [
-               sect: [
-                 decl: [
-                   decl_ident: "f"
-                 ],
-                 expr: [right: ["x", :notequals, "y"]],
-                 expr: [right: ["y", :gt, 1]]
-               ]
-             ] == prog
+      tryparse(text,
+        sect: [
+          decl: [
+            decl_ident: "f"
+          ],
+          expr: [right: ["x", :notequals, "y"]],
+          expr: [right: ["y", :gt, 1]]
+        ]
+      )
     end
 
     test "parse two expressions with connecting operator" do
       text = "f||\nx != y\n∨ y > 1"
-      {:ok, prog, "", %{}, _, _} = Logexian.Parse.program(text)
 
-      assert [
-               sect: [
-                 decl: [
-                   decl_ident: "f"
-                 ],
-                 expr: [right: ["x", :notequals, "y"]],
-                 expr: [intro_op: :or, right: ["y", :gt, 1]]
-               ]
-             ] == prog
+      tryparse(text,
+        sect: [
+          decl: [
+            decl_ident: "f"
+          ],
+          expr: [right: ["x", :notequals, "y"]],
+          expr: [intro_op: :or, right: ["y", :gt, 1]]
+        ]
+      )
     end
 
     test "parse expression with domain" do
       text = "f|x:Y ∧ a:Y|"
-      {:ok, prog, "", %{}, _, _} = Logexian.Parse.program(text)
 
-      assert [
-               sect: [
-                 decl: [
-                   decl_ident: "f",
-                   decl_args: ["x"],
-                   decl_doms: ["Y"],
-                   expr: [right: ["a", :in, "Y"]]
-                 ]
-               ]
-             ] == prog
+      tryparse(text,
+        sect: [
+          decl: [
+            decl_ident: "f",
+            decl_args: ["x"],
+            decl_doms: ["Y"],
+            expr: [right: ["a", :in, "Y"]]
+          ]
+        ]
+      )
     end
 
     test "parse expression with relation in it" do
       text = "f||\nx=y ∧ y > 1"
-      {:ok, prog, "", %{}, _, _} = Logexian.Parse.program(text)
 
-      assert [
-               sect: [
-                 decl: [
-                   decl_ident: "f"
-                 ],
-                 expr: [
-                   left: ["x"],
-                   op: :iff,
-                   right: ["y", :and, "y", :gt, 1]
-                 ]
-               ]
-             ] == prog
+      tryparse(text,
+        sect: [
+          decl: [
+            decl_ident: "f"
+          ],
+          expr: [
+            left: ["x"],
+            op: :iff,
+            right: ["y", :and, "y", :gt, 1]
+          ]
+        ]
+      )
     end
 
     test "parse expression with multiple elements on the left" do
       text = "f||\nf x→y"
-      {:ok, prog, "", %{}, _, _} = Logexian.Parse.program(text)
 
-      assert [
-               sect: [
-                 decl: [
-                   decl_ident: "f"
-                 ],
-                 expr: [
-                   left: ["f", "x"],
-                   op: :then,
-                   right: ["y"]
-                 ]
-               ]
-             ] == prog
+      tryparse(text,
+        sect: [
+          decl: [
+            decl_ident: "f"
+          ],
+          expr: [
+            left: ["f", "x"],
+            op: :then,
+            right: ["y"]
+          ]
+        ]
+      )
     end
   end
 
@@ -122,36 +121,34 @@ defmodule LogexianTest do
     test "empty heading parsing" do
       text = "f||=>D"
 
-      {:ok,
-       [
-         sect: [
-           decl: [
-             decl_ident: "f",
-             yield_type: :produces,
-             yield_domain: "D"
-           ]
-         ]
-       ], "", %{}, _, _} = Logexian.Parse.program(text)
+      tryparse(text,
+        sect: [
+          decl: [
+            decl_ident: "f",
+            yield_type: :produces,
+            yield_domain: "D"
+          ]
+        ]
+      )
     end
 
     test "dual heading parsing" do
       text = "f||=>D\ng||=>E"
 
-      {:ok,
-       [
-         sect: [
-           decl: [
-             decl_ident: "f",
-             yield_type: :produces,
-             yield_domain: "D"
-           ],
-           decl: [
-             decl_ident: "g",
-             yield_type: :produces,
-             yield_domain: "E"
-           ]
-         ]
-       ], "", %{}, _, _} = Logexian.Parse.program(text)
+      tryparse(text,
+        sect: [
+          decl: [
+            decl_ident: "f",
+            yield_type: :produces,
+            yield_domain: "D"
+          ],
+          decl: [
+            decl_ident: "g",
+            yield_type: :produces,
+            yield_domain: "E"
+          ]
+        ]
+      )
     end
 
     test "basic heading parsing" do
@@ -170,18 +167,16 @@ defmodule LogexianTest do
     test "heading with multiple clauses" do
       text = "f|x:Y ∧ x != 1|"
 
-      {:ok, prog, "", %{}, _, _} = Logexian.Parse.program(text)
-
-      assert [
-               sect: [
-                 decl: [
-                   decl_ident: "f",
-                   decl_args: ["x"],
-                   decl_doms: ["Y"],
-                   expr: [right: ["x", :notequals, 1]]
-                 ]
-               ]
-             ] == prog
+      tryparse(text,
+        sect: [
+          decl: [
+            decl_ident: "f",
+            decl_args: ["x"],
+            decl_doms: ["Y"],
+            expr: [right: ["x", :notequals, 1]]
+          ]
+        ]
+      )
     end
   end
 
