@@ -14,9 +14,7 @@ defmodule ParserHelpers do
   def join(c, joiner) do
     repeat(
       c
-      |> ignore_spaces()
       |> ignore(joiner)
-      |> ignore_spaces()
     )
     |> concat(c)
   end
@@ -24,7 +22,7 @@ defmodule ParserHelpers do
   def space_join(c) do
     c
     |> repeat(
-      ignore(times(string(" "), min: 1))
+      ignore(string(" "))
       |> concat(c)
     )
   end
@@ -79,9 +77,7 @@ defmodule Logexian.Parse do
   # and the list after is a list of domains of the introduced variables.
   decl_args =
     tag(comma_join(identifier), :decl_args)
-    |> ignore(optional(space))
     |> ignore(string(":"))
-    |> ignore(optional(space))
     |> concat(
       tag(
         comma_join(domain),
@@ -97,10 +93,8 @@ defmodule Logexian.Parse do
   # domain of a function, and => is pronounced "produces" and
   # denotes that the function is a type constructor.
   decl_yields =
-    ignore(optional(space))
-    |> choice(strings(["::", "=>"]))
+    choice(strings(["::", "=>"]))
     |> unwrap_and_tag(:yield_type)
-    |> ignore(optional(space))
     |> concat(unwrap_and_tag(domain, :yield_domain))
 
   # A closed set of non-alphabetic binary
@@ -214,9 +208,6 @@ defmodule Logexian.Parse do
   # in the previous section.
   defparsec(
     :program,
-    empty()
-    |> ignore_spaces()
-    |> concat(join(section, where))
-    |> ignore_spaces()
+    join(section, where)
   )
 end

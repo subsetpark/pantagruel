@@ -71,7 +71,7 @@ defmodule LogexianTest do
     end
 
     test "parse expression with domain" do
-      text = "f|x:Y and a : Y|"
+      text = "f|x:Y and a:Y|"
       {:ok, prog, "", %{}, _, _} = Logexian.Parse.program(text)
 
       assert [
@@ -125,9 +125,7 @@ defmodule LogexianTest do
 
   describe "declaration parsing" do
     test "empty heading parsing" do
-      text = """
-      f || => D
-      """
+      text = "f||=>D"
 
       {:ok,
        [
@@ -142,17 +140,13 @@ defmodule LogexianTest do
     end
 
     test "basic heading parsing" do
-      text = """
-      f|a, b:B, C| :: D
-      """
+      text = "f|a,b:B,C|::D"
 
       do_decl_asserts(text)
     end
 
     test "heading with multiple clauses" do
-      text = """
-      f|x: Y and x != 1|
-      """
+      text = "f|x:Y and x != 1|"
 
       {:ok, prog, "", %{}, _, _} = Logexian.Parse.program(text)
 
@@ -171,7 +165,7 @@ defmodule LogexianTest do
 
   describe "program structure" do
     test "two sections" do
-      text = "f|x: Y|\n;;\ny|| => Y"
+      text = "f|x:Y|\n;;\ny||=>Y"
 
       {:ok, [sect: [decl: decl], sect: [decl: decl2]] = prog, "", %{}, _, _} =
         Logexian.Parse.program(text)
@@ -188,7 +182,7 @@ defmodule LogexianTest do
                yield_domain: "Y"
              ] == decl2
 
-      text2 = "f|x: Y|\n\n;;\n\ny|| => Y"
+      text2 = "f|x:Y|\n\n;;\n\ny||=>Y"
 
       {:ok, ^prog, "", %{}, _, _} = Logexian.Parse.program(text2)
     end
