@@ -13,9 +13,35 @@ defmodule LogexianTest do
     assert yield_domain == {:yield_domain, "D"}
   end
 
+  describe "subexpression parsing" do
+    test "parse symbol sequence" do
+      text = "x y z"
+      {:ok, subexp, "", %{}, _, _} = Logexian.Parse.subexpression(text)
+      assert ["x", "y", "z"] == subexp
+    end
+
+    test "parse bunch symbol sequence" do
+      text = "(x y z)"
+      {:ok, subexp, "", %{}, _, _} = Logexian.Parse.subexpression(text)
+      assert [bunch: ["x", "y", "z"]] == subexp
+    end
+
+    test "parse set symbol sequence" do
+      text = "{x y z}"
+      {:ok, subexp, "", %{}, _, _} = Logexian.Parse.subexpression(text)
+      assert [set: ["x", "y", "z"]] == subexp
+    end
+
+    test "parse bunched set symbol sequence" do
+      text = "(x {y z})"
+      {:ok, subexp, "", %{}, _, _} = Logexian.Parse.subexpression(text)
+      assert [bunch: ["x", set: ["y", "z"]]] == subexp
+    end
+  end
+
   describe "expression parsing" do
     test "parse two expressions" do
-      text = "f<>\nx != y\ny > 1"
+      text = "f||\nx != y\ny > 1"
       {:ok, prog, "", %{}, _, _} = Logexian.Parse.program(text)
 
       assert [
@@ -30,7 +56,7 @@ defmodule LogexianTest do
     end
 
     test "parse two expressions with connecting operator" do
-      text = "f<>\nx != y\nor y > 1"
+      text = "f||\nx != y\nor y > 1"
       {:ok, prog, "", %{}, _, _} = Logexian.Parse.program(text)
 
       assert [
@@ -45,7 +71,7 @@ defmodule LogexianTest do
     end
 
     test "parse expression with domain" do
-      text = "f<x:Y and a : Y>"
+      text = "f|x:Y and a : Y|"
       {:ok, prog, "", %{}, _, _} = Logexian.Parse.program(text)
 
       assert [
@@ -61,7 +87,7 @@ defmodule LogexianTest do
     end
 
     test "parse expression with relation in it" do
-      text = "f<>\nx = y and y > 1"
+      text = "f||\nx = y and y > 1"
       {:ok, prog, "", %{}, _, _} = Logexian.Parse.program(text)
 
       assert [
@@ -79,7 +105,7 @@ defmodule LogexianTest do
     end
 
     test "parse expression with multiple elements on the left" do
-      text = "f<>\nf x = y"
+      text = "f||\nf x = y"
       {:ok, prog, "", %{}, _, _} = Logexian.Parse.program(text)
 
       assert [
@@ -100,7 +126,7 @@ defmodule LogexianTest do
   describe "declaration parsing" do
     test "empty heading parsing" do
       text = """
-      f <> => D 
+      f || => D 
       """
 
       {:ok,
@@ -117,7 +143,7 @@ defmodule LogexianTest do
 
     test "basic heading parsing" do
       text = """
-      f<a, b:B, C> :: D 
+      f|a, b:B, C| :: D 
       """
 
       do_decl_asserts(text)
@@ -125,7 +151,7 @@ defmodule LogexianTest do
 
     test "heading with multiple clauses" do
       text = """
-      f<x: Y and x != 1>
+      f|x: Y and x != 1|
       """
 
       {:ok, prog, "", %{}, _, _} = Logexian.Parse.program(text)
@@ -145,7 +171,7 @@ defmodule LogexianTest do
 
   describe "program structure" do
     test "two sections" do
-      text = "f<x: Y>\n;;\ny<> => Y"
+      text = "f|x: Y|\n;;\ny|| => Y"
 
       {:ok, [sect: [decl: decl], sect: [decl: decl2]] = prog, "", %{}, _, _} =
         Logexian.Parse.program(text)
@@ -162,7 +188,7 @@ defmodule LogexianTest do
                yield_domain: "Y"
              ] == decl2
 
-      text2 = "f<x: Y>\n\n;;\n\ny<> => Y"
+      text2 = "f|x: Y|\n\n;;\n\ny|| => Y"
 
       {:ok, ^prog, "", %{}, _, _} = Logexian.Parse.program(text2)
     end

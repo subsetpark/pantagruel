@@ -129,22 +129,47 @@ defmodule Logexian.Parse do
   # for non-pure function or for Q to be true without P.
   entailment = choice(strings(["=", "->"]))
 
+  nested_subexpression =
+    choice(
+      for {l, r, name} <- [
+            {"(", ")", :bunch},
+            {"[", "]", :list},
+            {"{", "}", :set},
+            {"\"", "\"", :string}
+          ],
+          do:
+            ignore(string(l))
+            |> ignore(optional(space))
+            |> parsec(:subexpression)
+            |> ignore(optional(space))
+            |> ignore(string(r))
+            |> tag(name)
+    )
+
+  defparsec(
+    :subexpression,
+    choice([
+      nested_subexpression,
+      symbol |> optional(ignore(optional(space)) |> parsec(:subexpression))
+    ])
+  )
+
   expression =
     optional(unwrap_and_tag(log_op, :intro_op) |> ignore(times(space, min: 1)))
     |> optional(
-      tag(space_join(symbol), :left)
+      tag(parsec(:subexpression), :left)
       |> ignore(times(space, min: 1))
       |> unwrap_and_tag(entailment, :op)
       |> ignore(times(space, min: 1))
     )
-    |> tag(space_join(symbol), :right)
+    |> tag(parsec(:subexpression), :right)
     |> ignore(repeat(space))
     |> tag(:expr)
 
   # A function from (0 or more) = N arguments in N domains,
   # with an optional codomain.
   fun =
-    ignore(string("<") |> repeat(space))
+    ignore(string("|") |> repeat(space))
     |> optional(
       decl_args
       |> optional(
@@ -154,7 +179,7 @@ defmodule Logexian.Parse do
         |> concat(comma_join(expression))
       )
     )
-    |> ignore(repeat(space) |> string(">") |> repeat(space))
+    |> ignore(repeat(space) |> string("|") |> repeat(space))
     |> concat(optional(decl_yields))
 
   # A function form, treated as a value or domain.
