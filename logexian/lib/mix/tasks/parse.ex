@@ -22,3 +22,16 @@ defmodule Mix.Tasks.Logexian.Parse do
     end
   end
 end
+
+defmodule Mix.Tasks.Logexian.Scan do
+  use Mix.Task
+
+  def run([filename]) do
+    scanned =
+      filename
+      |> File.read!()
+      |> Logexian.Scan.scan()
+
+    IO.inspect(scanned)
+  end
+end
