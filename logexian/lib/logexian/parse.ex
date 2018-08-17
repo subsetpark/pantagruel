@@ -116,13 +116,14 @@ defmodule Logexian.Parse do
     |> nested
 
   expression =
-    optional(unwrap_and_tag(log_op, :intro_op) |> ignore(space))
+    unwrap_and_tag(log_op, :intro_op)
+    |> ignore(space)
+    |> optional()
     |> optional(
       tag(parsec(:subexpression), :left)
       |> unwrap_and_tag(entailment, :op)
     )
     |> tag(parsec(:subexpression), :right)
-    |> ignore(optional(space))
     |> tag(:expr)
 
   # The arguments to a function. Takes the form of
@@ -154,7 +155,7 @@ defmodule Logexian.Parse do
       ])
     )
     |> unwrap_and_tag(:yield_type)
-    |> concat(unwrap_and_tag(parsec(:domain), :yield_domain))
+    |> unwrap_and_tag(parsec(:domain), :yield_domain)
 
   # A function from (0 or more) = N arguments in N domains,
   # with an optional codomain.
@@ -166,18 +167,11 @@ defmodule Logexian.Parse do
         ignore(space)
         |> ignore(log_and)
         |> ignore(space)
-        |> concat(comma_join(expression))
+        |> concat(expression |> comma_join)
       )
     )
     |> ignore(string("|"))
-    |> concat(optional(decl_yields))
-
-  # A function form, treated as a value or domain.
-  defcombinatorp(
-    :lambda,
-    fun
-    |> tag(:lambda)
-  )
+    |> optional(decl_yields)
 
   # A statement introducing some symbol and defining it
   # as a function - including a type constructor.
@@ -194,30 +188,41 @@ defmodule Logexian.Parse do
     newline_join(decl)
     |> optional(
       ignore(newline)
-      |> concat(newline_join(expression))
+      |> concat(expression |> newline_join)
     )
     |> tag(:sect)
 
+  # Combinators
+
+  # A function form, treated as a value or domain.
+  defcombinatorp(
+    :lambda,
+    fun
+    |> tag(:lambda)
+  )
+
   # The domain of a variable. Can be a type (including a function)
   # or a set of concrete values.
-  defparsec(
+  defcombinatorp(
     :domain,
-    choice([
+    [
       nested(parsec(:domain)),
       utf8_string([?A..?Z, ?a..?z], min: 1),
       parsec(:lambda)
-    ])
+    ]
+    |> choice
   )
 
   defparsec(
     :subexpression,
-    choice([
+    [
       # We have to explicitly include both paths to avoid left-recursion.
       nested_subexpression
-      |> optional(ignore(optional(space)) |> parsec(:subexpression)),
+      |> optional(space |> optional |> ignore |> parsec(:subexpression)),
       symbol
-      |> optional(ignore(optional(space)) |> parsec(:subexpression))
-    ])
+      |> optional(space |> optional |> ignore |> parsec(:subexpression))
+    ]
+    |> choice
   )
 
   # A series of one or more specification sections separated by ";;",
