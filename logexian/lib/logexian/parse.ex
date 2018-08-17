@@ -1,16 +1,6 @@
 defmodule ParserHelpers do
   import NimbleParsec
 
-  def ignore_spaces(c \\ empty()) do
-    c
-    |> concat(
-      [string(" "), string("\n")]
-      |> choice
-      |> optional
-      |> ignore
-    )
-  end
-
   def join(c, joiner) do
     repeat(
       c
@@ -19,15 +9,17 @@ defmodule ParserHelpers do
     |> concat(c)
   end
 
-  def space_join(c) do
+  defp sensitive_join(c, joiner) do
     c
     |> repeat(
-      ignore(string(" "))
+      ignore(joiner)
       |> concat(c)
     )
   end
 
   def comma_join(c), do: join(c, string(","))
+  def newline_join(c), do: sensitive_join(c, string("\n"))
+  def space_join(c), do: sensitive_join(c, string(" "))
 
   defp _string({s, r}) do
     s
@@ -203,7 +195,6 @@ defmodule Logexian.Parse do
   decl =
     identifier
     |> unwrap_and_tag(:decl_ident)
-    |> ignore(optional(space))
     |> concat(fun)
     |> tag(:decl)
 
@@ -211,10 +202,10 @@ defmodule Logexian.Parse do
   # 0 or more expressions which should evaluate to true if the
   # specification holds.
   section =
-    decl
-    |> repeat(
+    newline_join(decl)
+    |> optional(
       ignore(newline)
-      |> concat(expression)
+      |> concat(newline_join(expression))
     )
     |> tag(:sect)
 

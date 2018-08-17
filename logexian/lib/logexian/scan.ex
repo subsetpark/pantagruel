@@ -40,44 +40,22 @@ defmodule Logexian.Scan do
     scan(<<l::utf8, "∨"::utf8, r::utf8, contents::binary>>, out, true)
   end
 
-  ## Space elimintation
-  # Colon
-  defp scan(<<?\s::utf8, contents::binary>>, <<?:::utf8, _::binary>> = acc, true),
-    do: scan(contents, acc, true)
+  ## Space elimination
+  defp scan(<<?\s::utf8, contents::binary>>, <<c::utf8, _::binary>> = acc, true)
+       when c == ?: or c == ?| or c == ?, or c == ?= or c == ?→ or c == ?{ or c == ?} or c == ?[ or
+              c == ?] or c == ?( or c == ?) do
+    scan(contents, acc, true)
+  end
 
-  defp scan(<<" :"::utf8, contents::binary>>, out, true),
-    do: scan(contents, <<?:::utf8, out::binary>>, true)
-
-  # Pipe
-  defp scan(<<?\s::utf8, contents::binary>>, <<?|::utf8, _::binary>> = acc, true),
-    do: scan(contents, acc, true)
-
-  defp scan(<<" |"::utf8, contents::binary>>, out, true),
-    do: scan(contents, <<?|::utf8, out::binary>>, true)
+  defp scan(<<" "::utf8, c::utf8, contents::binary>>, out, true)
+       when c == ?: or c == ?| or c == ?, or c == ?= or c == ?→ or c == ?{ or c == ?} or c == ?[ or
+              c == ?] or c == ?( or c == ?) do
+    scan(contents, <<c::utf8, out::binary>>, true)
+  end
 
   # Produces (only one side needed because of Pipe)
   defp scan(<<"=> "::utf8, contents::binary>>, out, true),
     do: scan(contents, <<">="::utf8, out::binary>>, true)
-
-  # Comma
-  defp scan(<<?\s::utf8, contents::binary>>, <<?,::utf8, _::binary>> = acc, true),
-    do: scan(contents, acc, true)
-
-  defp scan(<<" ,"::utf8, contents::binary>>, out, true),
-    do: scan(contents, <<?,::utf8, out::binary>>, true)
-
-  # Entailment operators
-  defp scan(<<?\s::utf8, contents::binary>>, <<?=::utf8, _::binary>> = acc, true),
-    do: scan(contents, acc, true)
-
-  defp scan(<<" ="::utf8, contents::binary>>, out, true),
-    do: scan(contents, <<?=::utf8, out::binary>>, true)
-
-  defp scan(<<?\s::utf8, contents::binary>>, <<?→::utf8, _::binary>> = acc, true),
-    do: scan(contents, acc, true)
-
-  defp scan(<<" →"::utf8, contents::binary>>, out, true),
-    do: scan(contents, <<?→::utf8, out::binary>>, true)
 
   ## Read-mode management
   defp scan(<<?\n::utf8, contents::binary>>, <<?\n::utf8, _::binary>> = acc, _),

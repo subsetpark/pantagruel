@@ -146,6 +146,26 @@ defmodule LogexianTest do
        ], "", %{}, _, _} = Logexian.Parse.program(text)
     end
 
+    test "dual heading parsing" do
+      text = "f||=>D\ng||=>E"
+
+      {:ok,
+       [
+         sect: [
+           decl: [
+             decl_ident: "f",
+             yield_type: :produces,
+             yield_domain: "D"
+           ],
+           decl: [
+             decl_ident: "g",
+             yield_type: :produces,
+             yield_domain: "E"
+           ]
+         ]
+       ], "", %{}, _, _} = Logexian.Parse.program(text)
+    end
+
     test "basic heading parsing" do
       text = "f|a,b:B,C|::D"
 
