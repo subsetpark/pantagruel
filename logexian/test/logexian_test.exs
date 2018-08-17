@@ -2,17 +2,6 @@ defmodule LogexianTest do
   use ExUnit.Case
   doctest Logexian
 
-  defp do_decl_asserts(basic_decl) do
-    {:ok, [sect: [decl: [ident, vars, doms, yield_type, yield_domain]]], "", _, _, _} =
-      Logexian.Parse.program(basic_decl)
-
-    assert ident == {:decl_ident, "f"}
-    assert vars == {:decl_args, ["a", "b"]}
-    assert doms == {:decl_doms, ["B", "C"]}
-    assert yield_type == {:yield_type, :yields}
-    assert yield_domain == {:yield_domain, "D"}
-  end
-
   describe "subexpression parsing" do
     test "parse symbol sequence" do
       text = "x y z"
@@ -43,7 +32,6 @@ defmodule LogexianTest do
       {:ok, subexp, "", %{}, _, _} = Logexian.Parse.subexpression(text)
       assert [{:string, ["D"]}, 10] == subexp
     end
-
   end
 
   describe "expression parsing" do
@@ -169,7 +157,14 @@ defmodule LogexianTest do
     test "basic heading parsing" do
       text = "f|a,b:B,C|::D"
 
-      do_decl_asserts(text)
+      {:ok, [sect: [decl: [ident, vars, doms, yield_type, yield_domain]]], "", _, _, _} =
+        Logexian.Parse.program(text)
+
+      assert ident == {:decl_ident, "f"}
+      assert vars == {:decl_args, ["a", "b"]}
+      assert doms == {:decl_doms, ["B", "C"]}
+      assert yield_type == {:yield_type, :yields}
+      assert yield_domain == {:yield_domain, "D"}
     end
 
     test "heading with multiple clauses" do
