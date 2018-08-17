@@ -3,7 +3,12 @@ defmodule ParserHelpers do
 
   def ignore_spaces(c \\ empty()) do
     c
-    |> ignore(optional(choice([string(" "), string("\n")]) |> repeat))
+    |> concat(
+      [string(" "), string("\n")]
+      |> choice
+      |> optional
+      |> ignore
+    )
   end
 
   def join(c, joiner) do
@@ -201,7 +206,7 @@ defmodule Logexian.Parse do
   section =
     decl
     |> repeat(
-      ignore(times(newline, min: 1))
+      ignore(newline)
       |> concat(expression)
     )
     |> tag(:sect)

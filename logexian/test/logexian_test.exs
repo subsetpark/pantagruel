@@ -126,7 +126,7 @@ defmodule LogexianTest do
   describe "declaration parsing" do
     test "empty heading parsing" do
       text = """
-      f || => D 
+      f || => D
       """
 
       {:ok,
@@ -143,7 +143,7 @@ defmodule LogexianTest do
 
     test "basic heading parsing" do
       text = """
-      f|a, b:B, C| :: D 
+      f|a, b:B, C| :: D
       """
 
       do_decl_asserts(text)

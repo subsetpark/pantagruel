@@ -10,7 +10,7 @@ defmodule ScanLest do
       """
 
       scanned = Logexian.Scan.scan(text)
-      assert "line\nline2 \nline3\n" == scanned
+      assert "line\nline2 \nline3" == scanned
     end
 
     test "scan spaces" do
@@ -21,7 +21,7 @@ defmodule ScanLest do
       """
 
       scanned = Logexian.Scan.scan(text)
-      assert "first half\nsecond half\nthird\n" == scanned
+      assert "first half\nsecond half\nthird" == scanned
     end
 
     test "scan right arrow" do
@@ -30,14 +30,17 @@ defmodule ScanLest do
       """
 
       scanned = Logexian.Scan.scan(text)
-      assert "x → y\n" == scanned
+      assert "x → y" == scanned
     end
 
     test "space/newline consolidation" do
-      text = "first line  \n  second line"
+      text = "first line  \n\n  second line"
+      text2 = "first line  \n  \n  second line"
 
-      scanned = Logexian.Scan.scan(text)
-      assert "first line\nsecond line" == scanned
+      for t <- [text, text2] do
+        scanned = Logexian.Scan.scan(t)
+        assert "first line\nsecond line" == scanned
+      end
     end
   end
 end

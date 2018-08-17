@@ -2,12 +2,13 @@ defmodule Logexian.Scan do
   defp scan(<<>>, out, _) do
     out
     |> String.reverse()
-    # |> IO.iodata_to_binary()
+    |> String.trim()
   end
 
   # Character replacement
   defp scan(<<?\s::utf8, contents::binary>>, <<?\s::utf8, _::binary>>=acc, true), do: scan(contents, acc, true)
   defp scan(<<?\s::utf8, contents::binary>>, <<?\n::utf8, _::binary>>=acc, true), do: scan(contents, acc, true)
+  defp scan(<<?\n::utf8, contents::binary>>, <<?\n::utf8, _::binary>>=acc, true), do: scan(contents, acc, true)
   defp scan(<<?\n::utf8, contents::binary>>, <<?\s::utf8, rest::binary>>, true), do: scan(contents, <<?\n::utf8, rest::binary>>, true)
   defp scan(<<"->"::utf8, contents::binary>>, out, true), do: scan(contents, <<?→::utf8, out::binary>>, true)
   # Read-mode management
