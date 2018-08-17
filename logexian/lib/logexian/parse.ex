@@ -74,14 +74,8 @@ defmodule Logexian.Parse do
       parsec(:lambda)
     ])
 
-  log_and =
-    choice(strings(["and", "∧"]))
-    |> replace(:and)
-
-  log_or =
-    choice(strings(["or", "∨"]))
-    |> replace(:or)
-
+  log_and = string("∧") |> replace(:and)
+  log_or = string("∨") |> replace(:or)
   log_op = choice([log_and, log_or])
 
   # The arguments to a function. Takes the form of
@@ -164,7 +158,8 @@ defmodule Logexian.Parse do
     :subexpression,
     choice([
       nested_subexpression,
-      symbol |> optional(ignore(optional(space)) |> parsec(:subexpression))
+      symbol
+      |> optional(ignore(optional(space)) |> parsec(:subexpression))
     ])
   )
 

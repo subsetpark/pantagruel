@@ -30,6 +30,16 @@ defmodule Logexian.Scan do
   defp scan(<<"...\n"::utf8, contents::binary>>, out, true),
     do: scan(<<?\s::utf8, contents::binary>>, out, true)
 
+  defp scan(<<l::utf8, "and"::utf8, r::utf8, contents::binary>>, out, true)
+       when (l == ?\n or l == ?\s) and (r == ?\n or r == ?\s) do
+    scan(<<l::utf8, "∧"::utf8, r::utf8, contents::binary>>, out, true)
+  end
+
+  defp scan(<<l::utf8, "or"::utf8, r::utf8, contents::binary>>, out, true)
+       when (l == ?\n or l == ?\s) and (r == ?\n or r == ?\s) do
+    scan(<<l::utf8, "∨"::utf8, r::utf8, contents::binary>>, out, true)
+  end
+
   ## Space elimintation
   # Colon
   defp scan(<<?\s::utf8, contents::binary>>, <<?:::utf8, _::binary>> = acc, true),

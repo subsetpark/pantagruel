@@ -56,7 +56,7 @@ defmodule LogexianTest do
     end
 
     test "parse two expressions with connecting operator" do
-      text = "f||\nx != y\nor y > 1"
+      text = "f||\nx != y\n∨ y > 1"
       {:ok, prog, "", %{}, _, _} = Logexian.Parse.program(text)
 
       assert [
@@ -71,7 +71,7 @@ defmodule LogexianTest do
     end
 
     test "parse expression with domain" do
-      text = "f|x:Y and a:Y|"
+      text = "f|x:Y ∧ a:Y|"
       {:ok, prog, "", %{}, _, _} = Logexian.Parse.program(text)
 
       assert [
@@ -87,7 +87,7 @@ defmodule LogexianTest do
     end
 
     test "parse expression with relation in it" do
-      text = "f||\nx=y and y > 1"
+      text = "f||\nx=y ∧ y > 1"
       {:ok, prog, "", %{}, _, _} = Logexian.Parse.program(text)
 
       assert [
@@ -146,7 +146,7 @@ defmodule LogexianTest do
     end
 
     test "heading with multiple clauses" do
-      text = "f|x:Y and x != 1|"
+      text = "f|x:Y ∧ x != 1|"
 
       {:ok, prog, "", %{}, _, _} = Logexian.Parse.program(text)
 
@@ -167,7 +167,7 @@ defmodule LogexianTest do
     test "two sections" do
       text = "f|x:Y|\n;;\ny||=>Y"
 
-      {:ok, [sect: [decl: decl], sect: [decl: decl2]] = prog, "", %{}, _, _} =
+      {:ok, [sect: [decl: decl], sect: [decl: decl2]], "", %{}, _, _} =
         Logexian.Parse.program(text)
 
       assert [
