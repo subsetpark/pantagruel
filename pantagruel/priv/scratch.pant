@@ -18,3 +18,5 @@ z|| => Nat
 ;;
 y|| => Y
 exists x from y x > 0
+x != 0
+[x * y ^ z, x from X, y from Z, z from Y]

@@ -23,8 +23,8 @@ defmodule ExpressionParserTest do
     end
 
     test "parse bunched set symbol sequence" do
-      text = "(x {y z})"
-      tryexp(text, bunch: [["x", set: [["y", "z"]]]])
+      text = "(x,{y z})"
+      tryexp(text, bunch: [["x"], [set: [["y", "z"]]]])
     end
 
     test "parse string followed by integer" do
@@ -54,7 +54,7 @@ defmodule ExpressionParserTest do
     end
 
     test "exists quantifier parsing" do
-      text = "exists x : X x > 1"
+      text = "∃x:X x>1"
       tryexp(text, [:exists, "x", :in, "X", ["x", :gt, 1]])
     end
 

@@ -22,7 +22,7 @@ defmodule PantagruelTest do
     end
 
     test "parse two expressions with connecting operator" do
-      text = "f||\nx != y\n∨ y > 1"
+      text = "f||\nx != y\n∨y > 1"
 
       tryparse(text,
         sect: [
@@ -36,7 +36,7 @@ defmodule PantagruelTest do
     end
 
     test "parse expression with domain" do
-      text = "f|x:Y ∧ a:Y|"
+      text = "f|x:Y∧a:Y|"
 
       tryparse(text,
         sect: [
@@ -133,7 +133,7 @@ defmodule PantagruelTest do
     end
 
     test "heading with multiple clauses" do
-      text = "f|x:Y ∧ x != 1|"
+      text = "f|x:Y∧x != 1|"
 
       tryparse(text,
         sect: [

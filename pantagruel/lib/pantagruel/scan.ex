@@ -49,16 +49,29 @@ defmodule Pantagruel.Scan do
        when (l == ?\n or l == ?\s) and (r == ?\n or r == ?\s) do
     scan(<<l::utf8, ":"::utf8, r::utf8, contents::binary>>, out, true)
   end
+
+  defp scan(<<l::utf8, "exists"::utf8, r::utf8, contents::binary>>, out, true)
+       when (l == ?\n or l == ?\s) and (r == ?\n or r == ?\s) do
+    scan(<<l::utf8, "∃"::utf8, r::utf8, contents::binary>>, out, true)
+  end
+
+  defp scan(<<l::utf8, "all"::utf8, r::utf8, contents::binary>>, out, true)
+       when (l == ?\n or l == ?\s) and (r == ?\n or r == ?\s) do
+    scan(<<l::utf8, "∀"::utf8, r::utf8, contents::binary>>, out, true)
+  end
+
   ## Space elimination
   defp scan(<<?\s::utf8, contents::binary>>, <<c::utf8, _::binary>> = acc, true)
-       when c == ?: or c == ?| or c == ?, or c == ?= or c == ?→ or c == ?{ or c == ?} or c == ?[ or
-              c == ?] or c == ?( or c == ?) do
+       # Excepting ?; doesn't seem necessary.
+       when c in 40..45 or (c in 58..62 and c != ?;) or c in 91..94 or c in 123..126 or c == ?→ or
+              c == ?∃ or c == ?∀ or c == ?∧ or c == ?∨ or c == ?∀ or c == ?∈ or c == ?¬ or c == ?! do
     scan(contents, acc, true)
   end
 
   defp scan(<<" "::utf8, c::utf8, contents::binary>>, out, true)
-       when c == ?: or c == ?| or c == ?, or c == ?= or c == ?→ or c == ?{ or c == ?} or c == ?[ or
-              c == ?] or c == ?( or c == ?) do
+       # Excepting ?; doesn't seem necessary.
+       when c in 40..45 or (c in 58..62 and c != ?;) or c in 91..94 or c in 123..126 or c == ?→ or
+              c == ?∃ or c == ?∀ or c == ?∧ or c == ?∨ or c == ?∀ or c == ?∈ or c == ?¬ or c == ?! do
     scan(contents, <<c::utf8, out::binary>>, true)
   end
 

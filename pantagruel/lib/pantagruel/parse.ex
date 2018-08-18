@@ -19,8 +19,6 @@ defmodule ParserHelpers do
 
   def comma_join(c), do: join(c, string(","))
   def newline_join(c), do: sensitive_join(c, string("\n"))
-  def space_join(c), do: sensitive_join(c, string(" "))
-
   defp _string({s, r}) do
     s
     |> string
@@ -63,9 +61,12 @@ defmodule Pantagruel.Parse do
   # The section separator, pronounced "where".
   where = string("\n;;\n") |> replace(:where)
 
+  quantifier = choice(strings([{"∃", :exists}, {"∀", :forall}]))
+
   log_and = string("∧") |> replace(:and)
   log_or = string("∨") |> replace(:or)
-  log_op = choice([log_and, log_or])
+  log_not = string("¬") |> replace(:not)
+  log_op = choice([log_and, log_or, log_not])
 
   # A closed set of non-alphabetic binary
   # operators producing a boolean value.
@@ -79,7 +80,7 @@ defmodule Pantagruel.Parse do
         {">=", :gte},
         {"<=", :lte},
         {":", :in},
-        {"∈", :from}
+        {"∈", :from},
       ])
     )
 
@@ -102,11 +103,12 @@ defmodule Pantagruel.Parse do
     |> reduce({Enum, :join, [""]})
 
   # Any variable name. Lower-cased.
-  identifier = utf8_string([?a..?z], min: 1)
+  identifier = utf8_string([?a..?z, ?., ?', ?_], min: 1)
+  # Unbreak syntax'
 
   value = choice([float, integer(min: 1), identifier])
 
-  symbol = choice([parsec(:lambda), log_op, relation, operator, value, parsec(:domain)])
+  symbol = choice([quantifier, parsec(:lambda), log_op, relation, operator, value, parsec(:domain)])
 
   nested_subexpression =
     :subexpression
@@ -117,9 +119,7 @@ defmodule Pantagruel.Parse do
     |> nested
 
   expression =
-    unwrap_and_tag(log_op, :intro_op)
-    |> ignore(space)
-    |> optional()
+    optional(unwrap_and_tag(log_op, :intro_op))
     |> optional(
       tag(parsec(:subexpression), :left)
       |> unwrap_and_tag(entailment, :op)
@@ -135,7 +135,7 @@ defmodule Pantagruel.Parse do
     recognize_comprehension(collection, exp, [{var, dom} | acc], rest)
   end
 
-  defp recognize_expression(["exists", variable, direction, domain | subexpression])
+  defp recognize_expression([:exists, variable, direction, domain | subexpression])
        when direction == :from or direction == :in do
     [:exists, variable, direction, domain, subexpression]
   end
@@ -190,9 +190,7 @@ defmodule Pantagruel.Parse do
     |> optional(
       decl_args
       |> optional(
-        ignore(space)
-        |> ignore(log_and)
-        |> ignore(space)
+        ignore(log_and)
         |> concat(expression |> comma_join)
       )
     )
