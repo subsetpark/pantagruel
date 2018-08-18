@@ -214,7 +214,6 @@ defmodule Pantagruel.Parse do
       ignore(newline)
       |> concat(expression |> newline_join)
     )
-    |> tag(:sect)
 
   # Combinators
 
@@ -253,6 +252,7 @@ defmodule Pantagruel.Parse do
   # A series of one or more specification sections separated by ";;",
   # where each subsequent section defines any variables introduced
   # in the previous section.
+  @spec program(String.t) :: Pantagruel.t
   defparsec(
     :program,
     join(section, where)

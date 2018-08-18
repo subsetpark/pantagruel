@@ -11,13 +11,11 @@ defmodule PantagruelTest do
       text = "f||\nx != y\ny > 1"
 
       tryparse(text,
-        sect: [
-          decl: [
-            decl_ident: "f"
-          ],
-          expr: [right: ["x", :notequals, "y"]],
-          expr: [right: ["y", :gt, 1]]
-        ]
+        decl: [
+          decl_ident: "f"
+        ],
+        expr: [right: ["x", :notequals, "y"]],
+        expr: [right: ["y", :gt, 1]]
       )
     end
 
@@ -25,13 +23,11 @@ defmodule PantagruelTest do
       text = "f||\nx != y\n∨y > 1"
 
       tryparse(text,
-        sect: [
-          decl: [
-            decl_ident: "f"
-          ],
-          expr: [right: ["x", :notequals, "y"]],
-          expr: [intro_op: :or, right: ["y", :gt, 1]]
-        ]
+        decl: [
+          decl_ident: "f"
+        ],
+        expr: [right: ["x", :notequals, "y"]],
+        expr: [intro_op: :or, right: ["y", :gt, 1]]
       )
     end
 
@@ -39,13 +35,11 @@ defmodule PantagruelTest do
       text = "f|x:Y∧a:Y|"
 
       tryparse(text,
-        sect: [
-          decl: [
-            decl_ident: "f",
-            decl_args: ["x"],
-            decl_doms: ["Y"],
-            expr: [right: ["a", :in, "Y"]]
-          ]
+        decl: [
+          decl_ident: "f",
+          decl_args: ["x"],
+          decl_doms: ["Y"],
+          expr: [right: ["a", :in, "Y"]]
         ]
       )
     end
@@ -54,15 +48,13 @@ defmodule PantagruelTest do
       text = "f||\nx=y ∧ y > 1"
 
       tryparse(text,
-        sect: [
-          decl: [
-            decl_ident: "f"
-          ],
-          expr: [
-            left: ["x"],
-            op: :iff,
-            right: ["y", :and, "y", :gt, 1]
-          ]
+        decl: [
+          decl_ident: "f"
+        ],
+        expr: [
+          left: ["x"],
+          op: :iff,
+          right: ["y", :and, "y", :gt, 1]
         ]
       )
     end
@@ -71,15 +63,13 @@ defmodule PantagruelTest do
       text = "f||\nf x→y"
 
       tryparse(text,
-        sect: [
-          decl: [
-            decl_ident: "f"
-          ],
-          expr: [
-            left: ["f", "x"],
-            op: :then,
-            right: ["y"]
-          ]
+        decl: [
+          decl_ident: "f"
+        ],
+        expr: [
+          left: ["f", "x"],
+          op: :then,
+          right: ["y"]
         ]
       )
     end
@@ -90,12 +80,10 @@ defmodule PantagruelTest do
       text = "f||=>D"
 
       tryparse(text,
-        sect: [
-          decl: [
-            decl_ident: "f",
-            yield_type: :produces,
-            yield_domain: "D"
-          ]
+        decl: [
+          decl_ident: "f",
+          yield_type: :produces,
+          yield_domain: "D"
         ]
       )
     end
@@ -104,17 +92,15 @@ defmodule PantagruelTest do
       text = "f||=>D\ng||=>E"
 
       tryparse(text,
-        sect: [
-          decl: [
-            decl_ident: "f",
-            yield_type: :produces,
-            yield_domain: "D"
-          ],
-          decl: [
-            decl_ident: "g",
-            yield_type: :produces,
-            yield_domain: "E"
-          ]
+        decl: [
+          decl_ident: "f",
+          yield_type: :produces,
+          yield_domain: "D"
+        ],
+        decl: [
+          decl_ident: "g",
+          yield_type: :produces,
+          yield_domain: "E"
         ]
       )
     end
@@ -122,7 +108,7 @@ defmodule PantagruelTest do
     test "basic heading parsing" do
       text = "f|a,b:B,C|::D"
 
-      {:ok, [sect: [decl: [ident, vars, doms, yield_type, yield_domain]]], "", _, _, _} =
+      {:ok, [decl: [ident, vars, doms, yield_type, yield_domain]], "", _, _, _} =
         Pantagruel.Parse.program(text)
 
       assert ident == {:decl_ident, "f"}
@@ -136,13 +122,11 @@ defmodule PantagruelTest do
       text = "f|x:Y∧x != 1|"
 
       tryparse(text,
-        sect: [
-          decl: [
-            decl_ident: "f",
-            decl_args: ["x"],
-            decl_doms: ["Y"],
-            expr: [right: ["x", :notequals, 1]]
-          ]
+        decl: [
+          decl_ident: "f",
+          decl_args: ["x"],
+          decl_doms: ["Y"],
+          expr: [right: ["x", :notequals, 1]]
         ]
       )
     end
@@ -151,14 +135,12 @@ defmodule PantagruelTest do
       text = "f|x:X|::[X]"
 
       tryparse(text,
-        sect: [
-          decl: [
-            decl_ident: "f",
-            decl_args: ["x"],
-            decl_doms: ["X"],
-            yield_type: :yields,
-            yield_domain: {:list, ["X"]}
-          ]
+        decl: [
+          decl_ident: "f",
+          decl_args: ["x"],
+          decl_doms: ["X"],
+          yield_type: :yields,
+          yield_domain: {:list, ["X"]}
         ]
       )
     end
@@ -168,8 +150,7 @@ defmodule PantagruelTest do
     test "two sections" do
       text = "f|x:Y|\n;;\ny||=>Y"
 
-      {:ok, [sect: [decl: decl], sect: [decl: decl2]], "", %{}, _, _} =
-        Pantagruel.Parse.program(text)
+      {:ok, [decl: decl, decl: decl2], "", %{}, _, _} = Pantagruel.Parse.program(text)
 
       assert [
                decl_ident: "f",

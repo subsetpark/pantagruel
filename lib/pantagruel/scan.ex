@@ -97,6 +97,7 @@ defmodule Pantagruel.Scan do
   defp scan(<<c::utf8, contents::binary>>, out, true),
     do: scan(contents, <<c::utf8, out::binary>>, true)
 
+  @spec scan(String.t) :: String.t
   def scan(contents) do
     scan(contents, <<>>, true)
   end
