@@ -40,6 +40,15 @@ defmodule Pantagruel.Scan do
     scan(<<l::utf8, "∨"::utf8, r::utf8, contents::binary>>, out, true)
   end
 
+  defp scan(<<l::utf8, "from"::utf8, r::utf8, contents::binary>>, out, true)
+       when (l == ?\n or l == ?\s) and (r == ?\n or r == ?\s) do
+    scan(<<l::utf8, "∈"::utf8, r::utf8, contents::binary>>, out, true)
+  end
+
+  defp scan(<<l::utf8, "in"::utf8, r::utf8, contents::binary>>, out, true)
+       when (l == ?\n or l == ?\s) and (r == ?\n or r == ?\s) do
+    scan(<<l::utf8, ":"::utf8, r::utf8, contents::binary>>, out, true)
+  end
   ## Space elimination
   defp scan(<<?\s::utf8, contents::binary>>, <<c::utf8, _::binary>> = acc, true)
        when c == ?: or c == ?| or c == ?, or c == ?= or c == ?→ or c == ?{ or c == ?} or c == ?[ or

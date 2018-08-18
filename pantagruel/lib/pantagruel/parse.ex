@@ -78,7 +78,8 @@ defmodule Pantagruel.Parse do
         {"<", :lt},
         {">=", :gte},
         {"<=", :lte},
-        {":", :in}
+        {":", :in},
+        {"∈", :from}
       ])
     )
 
@@ -126,12 +127,21 @@ defmodule Pantagruel.Parse do
     |> tag(parsec(:subexpression), :right)
     |> tag(:expr)
 
-  defp recognize_expression(["exists", variable, "from", domain | subexpression]) do
-    [:exists, variable, :from, domain, subexpression]
+  defp recognize_comprehension(collection, exp, acc, []) do
+    [:comprehension, collection, Enum.reverse(acc), exp]
   end
 
-  defp recognize_expression(["exists", variable, "in", domain | subexpression]) do
-    [:exists, variable, :in, domain, subexpression]
+  defp recognize_comprehension(collection, exp, acc, [[var, :from, dom] | rest]) do
+    recognize_comprehension(collection, exp, [{var, dom} | acc], rest)
+  end
+
+  defp recognize_expression(["exists", variable, direction, domain | subexpression])
+       when direction == :from or direction == :in do
+    [:exists, variable, direction, domain, subexpression]
+  end
+
+  defp recognize_expression([{collection, [exp, [var, :from, dom] | rest]}]) do
+    recognize_comprehension(collection, exp, [{var, dom}], rest)
   end
 
   defp recognize_expression(e) do
