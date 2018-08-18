@@ -10,11 +10,11 @@ use Mix.Config
 
 # You can configure your application as:
 #
-#     config :logexian, key: :value
+#     config :pantagruel, key: :value
 #
 # and access this configuration in your application as:
 #
-#     Application.get_env(:logexian, :key)
+#     Application.get_env(:pantagruel, :key)
 #
 # You can also configure a 3rd-party app:
 #
