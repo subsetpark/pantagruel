@@ -16,8 +16,8 @@ defmodule Mix.Tasks.Pantagruel.Parse do
         IO.puts(remaining)
         IO.puts("---")
 
-      r ->
-        IO.puts("Parse error!")
+      %{} = r ->
+        IO.puts("Resulting environment:")
         IO.inspect(r)
     end
   end

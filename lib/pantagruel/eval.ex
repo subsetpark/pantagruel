@@ -1,4 +1,6 @@
-defmodule Variable do
+defmodule Pantagruel.Eval.Variable do
+  alias Pantagruel.Eval.Variable
+
   defstruct name: "", domain: ""
 
   def bind(environment, name, domain) do
@@ -6,19 +8,27 @@ defmodule Variable do
   end
 end
 
-defmodule Function do
-  defstruct name: "", codomain: nil
+defmodule Pantagruel.Eval.Lambda do
+  alias Pantagruel.Eval.Lambda
+  defstruct name: "", domain: [], codomain: nil, type: nil
+
+  def bind(environment, name, domain, codomain, type \\ :function) do
+    Map.put(environment, name, %Lambda{name: name, domain: domain, codomain: codomain, type: type})
+  end
 end
 
-defmodule Constant do
+defmodule Pantagruel.Eval.Constant do
   defstruct name: ""
 end
 
-defmodule UnboundVariablesError do
+defmodule Pantagruel.UnboundVariablesError do
   defexception message: "Unbound variables remain", unbound: MapSet.new()
 end
 
 defmodule Pantagruel.Eval do
+  alias Pantagruel.UnboundVariablesError
+  alias Pantagruel.Eval.{Variable, Constant, Lambda}
+
   @starting_environment %{
     "Real" => %Constant{name: "ℝ"},
     "Nat" => %Constant{name: "ℕ"},
@@ -32,10 +42,10 @@ defmodule Pantagruel.Eval do
   defp is_bound?(variable, environment),
     do: Map.has_key?(@starting_environment, variable) or Map.has_key?(environment, variable)
 
-  defp eval([], environment, _), do: environment
+  defp eval_head([], environment, unbound), do: {environment, unbound}
 
-  defp eval([{:decl, declaration} | program], environment, unbound) do
-    yield_type = declaration[:yield_type]
+  defp eval_head([{:decl, declaration} | program], environment, unbound) do
+    yield_type = declaration[:yield_type] || :function
 
     bind = fn
       {var, dom}, env ->
@@ -47,18 +57,28 @@ defmodule Pantagruel.Eval do
 
     # Variable binding
 
+    # First bind this function as a lambda.
+    environment =
+      Lambda.bind(
+        environment,
+        declaration[:decl_ident],
+        declaration[:decl_doms] || [],
+        declaration[:yield_domain],
+        yield_type
+      )
+
     # First bind any functions introduced in this declaration.
     environment =
       Enum.zip(
-        declaration[:decl_args],
-        declaration[:decl_doms]
+        declaration[:decl_args] || [],
+        declaration[:decl_doms] || []
       )
       |> Enum.reduce(environment, bind)
 
     # If this is a type constructor, bind the codomain of the function.
     environment =
       case yield_type do
-        :produces ->
+        :constructor ->
           Variable.bind(environment, declaration[:yield_domain], declaration[:yield_domain])
 
         _ ->
@@ -72,8 +92,8 @@ defmodule Pantagruel.Eval do
     # bound in the environment.
     # If this is a yielding function, check the codomain for binding.
     unbound =
-      case yield_type do
-        :yields -> MapSet.put(unbound, declaration[:yield_domain])
+      case {yield_type, declaration[:yield_domain]} do
+        {:function, dom} when dom -> MapSet.put(unbound, dom)
         _ -> unbound
       end
 
@@ -88,25 +108,34 @@ defmodule Pantagruel.Eval do
     unbound =
       unbound
       # Check the argument domains for binding.
-      |> MapSet.union(MapSet.new(declaration[:decl_doms]))
+      |> MapSet.union(MapSet.new(declaration[:decl_doms] || []))
       # Filter out bound variables.
       |> Enum.filter(&(not is_bound?(&1, environment)))
       |> MapSet.new()
 
-    # Finally, check to see if all variables have been bound.
-    # TODO: Ultimately this can't be done within declaration handling. It
-    # can only be done after all declarations in a section have been
-    # evaluated, because symbols can be bound in the declaration after
-    # their introduction, as long as it's in the same section.
+    eval_head(program, environment, unbound)
+  end
+
+  defp eval_head([_ | program], environment, unbound) do
+    eval_head(program, environment, unbound)
+  end
+
+  defp eval_body(body, environment, _unbound), do: environment
+
+  defp eval_section({:section, section}, environment) do
+    {environment, unbound} = eval_head(section[:head], environment, MapSet.new())
+    
+    # Check to see if all header variables have been bound.
     case MapSet.size(unbound) do
       0 -> :ok
       _ -> raise UnboundVariablesError, unbound: unbound
     end
 
-    eval(program, environment, unbound)
+    eval_body(section[:body], environment, MapSet.new())
   end
 
   def eval(program) do
-    eval(program, %{}, MapSet.new())
+    program
+    |> Enum.reduce(%{}, &eval_section/2)
   end
 end

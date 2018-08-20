@@ -190,8 +190,8 @@ defmodule Pantagruel.Parse do
   decl_yields =
     choice(
       strings([
-        {"::", :yields},
-        {"=>", :produces}
+        {"::", :function},
+        {"=>", :constructor}
       ])
     )
     |> unwrap_and_tag(:yield_type)
@@ -224,10 +224,13 @@ defmodule Pantagruel.Parse do
   # specification holds.
   section =
     newline_join(decl)
+    |> tag(:head)
     |> optional(
       ignore(newline)
       |> concat(expression |> newline_join)
+      |> tag(:body)
     )
+    |> tag(:section)
 
   # Combinators
 

@@ -1,5 +1,7 @@
 defmodule EvalTest do
   use ExUnit.Case
+  alias Pantagruel.UnboundVariablesError
+  alias Pantagruel.Eval.{Variable, Lambda}
 
   defp scan_and_parse(text) do
     {:ok, parsed, "", %{}, _, _} =
@@ -16,7 +18,7 @@ defmodule EvalTest do
 
       assert %{
                "x" => %Variable{name: "x", domain: "Nat"},
-               "f" => %Function{name: "f", codomain: "Real"}
+               "f" => %Lambda{name: "f", domain: ["Nat"], codomain: "Real", type: :function}
              } == Pantagruel.Eval.eval(parsed)
     end
 
@@ -35,15 +37,38 @@ defmodule EvalTest do
       parsed =
         """
         f|x, y:X, Y| :: Real
-        y|| => Y
+        make_y|| => Y
+        make_x|| => X
         """
         |> scan_and_parse
 
       assert %{
-               "f" => %Function{name: "f", codomain: "Real"},
+               "f" => %Lambda{name: "f", domain: ["X", "Y"], codomain: "Real", type: :function},
                "x" => %Variable{name: "x", domain: "X"},
+               "y" => %Variable{name: "y", domain: "Y"},
+               "X" => %Variable{name: "X", domain: "X"},
                "Y" => %Variable{name: "Y", domain: "Y"},
-               "y" => %Function{name: "y", codomain: "Y"}
+               "make_x" => %Lambda{name: "make_x", domain: [], codomain: "X", type: :constructor},
+               "make_y" => %Lambda{name: "make_y", domain: [], codomain: "Y", type: :constructor}
+             } == Pantagruel.Eval.eval(parsed)
+    end
+
+    test "eval whole section" do
+      parsed = "f|x:Nat|\nf x > 0" |> scan_and_parse
+
+      assert %{
+               "x" => %Variable{name: "x", domain: "Nat"},
+               "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: :function},
+             } == Pantagruel.Eval.eval(parsed)
+    end
+
+    test "eval two sections" do
+      parsed = "f|x:Nat|\n;;\ng|| :: Nat" |> scan_and_parse
+
+      assert %{
+               "x" => %Variable{name: "x", domain: "Nat"},
+               "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: :function},
+               "g" => %Lambda{name: "g", domain: [], codomain: "Nat", type: :function}
              } == Pantagruel.Eval.eval(parsed)
     end
   end
