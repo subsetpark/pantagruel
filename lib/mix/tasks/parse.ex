@@ -14,18 +14,13 @@ defmodule Mix.Tasks.Pantagruel.Parse do
       end
 
     case parsed do
-      {:ok, prog, "", _, _, _} ->
-        IO.inspect(prog)
-
-      {:ok, prog, remaining, _, _, _} ->
-        IO.inspect(prog)
-        IO.puts("File not fully parsed!")
-        IO.puts(remaining)
-        IO.puts("---")
-
       {r, _, _} ->
         IO.puts("Resulting environment:")
         IO.inspect(r)
+
+      other ->
+        IO.puts("Parsing complete.")
+        IO.inspect(other)
     end
   end
 end
