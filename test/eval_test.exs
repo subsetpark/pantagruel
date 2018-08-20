@@ -22,7 +22,7 @@ defmodule EvalTest do
                   "f" => %Lambda{name: "f", domain: ["Nat"], codomain: "Real", type: :function}
                 },
                 parent: nil
-              }, MapSet.new()} == Pantagruel.Eval.eval(parsed)
+              }, MapSet.new(), MapSet.new()} == Pantagruel.Eval.eval(parsed)
     end
 
     test "eval unbound" do
@@ -79,14 +79,32 @@ defmodule EvalTest do
     end
 
     test "bind variables in the next section" do
-      parsed = "f|x:Nat|\nf x = g x\n;;\ng|y:Nat|::Bool" |> scan_and_parse
+      parsed =
+        """
+        f|x:Nat|
+        f x = g x
+        ;;
+        g|y:Nat|::Bool
+        """
+        |> scan_and_parse
 
-      assert {%{
-                "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: :function},
-                "x" => %Variable{name: "x", domain: "Nat"},
-                "g" => %Lambda{name: "g", domain: ["Nat"], codomain: "Bool", type: :function},
-                "y" => %Variable{name: "y", domain: "Nat"}
-              }, MapSet.new()} == Pantagruel.Eval.eval(parsed)
+      assert {
+               %Scope{
+                 bindings: %{
+                   "g" => %Lambda{name: "g", domain: ["Nat"], codomain: "Bool", type: :function},
+                   "y" => %Variable{name: "y", domain: "Nat"}
+                 },
+                 parent: %Scope{
+                   bindings: %{
+                     "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: :function},
+                     "x" => %Variable{name: "x", domain: "Nat"}
+                   },
+                   parent: nil
+                 }
+               },
+               MapSet.new(),
+               MapSet.new()
+             } == Pantagruel.Eval.eval(parsed)
     end
 
     test "variable is bound too late" do

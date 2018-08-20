@@ -3,8 +3,15 @@ defmodule Mix.Tasks.Pantagruel.Parse do
 
   def run([filename]) do
     parsed =
-      filename
-      |> Pantagruel.read!()
+      try do
+        filename
+        |> Pantagruel.read!()
+      rescue
+        e in Pantagruel.Eval.State.UnboundVariablesError ->
+          IO.puts(e.message)
+          IO.inspect(e.unbound)
+          exit("Invalid program.")
+      end
 
     case parsed do
       {:ok, prog, "", _, _, _} ->
@@ -16,7 +23,7 @@ defmodule Mix.Tasks.Pantagruel.Parse do
         IO.puts(remaining)
         IO.puts("---")
 
-      %{} = r ->
+      {r, _, _} ->
         IO.puts("Resulting environment:")
         IO.inspect(r)
     end
