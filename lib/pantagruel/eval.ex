@@ -23,6 +23,7 @@ end
 
 defmodule Pantagruel.Eval.State do
   alias Pantagruel.Eval.Constant
+
   @starting_environment %{
     "Real" => %Constant{name: "ℝ"},
     "Nat" => %Constant{name: "ℕ"},
@@ -40,8 +41,7 @@ defmodule Pantagruel.Eval.State do
   end
 
   defp is_bound?(variable, environment) do
-    Map.has_key?(@starting_environment, variable) or
-      Map.has_key?(environment, variable)
+    Map.has_key?(@starting_environment, variable) or Map.has_key?(environment, variable)
   end
 
   def register_unbound(variables, {environment, unbound}) do
@@ -53,6 +53,7 @@ defmodule Pantagruel.Eval.State do
      |> Enum.filter(&(not is_bound?(&1, environment)))
      |> MapSet.new()}
   end
+
   def check_unbound(unbound) do
     # Check to see if all header variables have been bound.
     case MapSet.size(unbound) do
@@ -60,7 +61,6 @@ defmodule Pantagruel.Eval.State do
       _ -> raise UnboundVariablesError, unbound: unbound
     end
   end
-
 end
 
 defmodule Pantagruel.Eval do
@@ -113,21 +113,24 @@ defmodule Pantagruel.Eval do
     # of unbound variables and filter out any that have been
     # bound in the environment.
     # If this is a yielding function, check the codomain for binding.
-    unbound =
+    unbound_domain_check =
       case {yield_type, declaration[:yield_domain]} do
-        {:function, dom} when dom -> MapSet.put(unbound, dom)
-        _ -> unbound
+        {:function, dom} when dom -> [dom]
+        _ -> []
       end
 
     # If there is any precondition associated with the function, check
     # the symbols there for binding.
-    unbound =
+    unbound_condition_check =
       case declaration[:expr][:right] do
-        nil -> unbound
-        right -> MapSet.union(unbound, MapSet.new(right))
+        nil -> []
+        right -> right
       end
 
-    State.register_unbound(declaration[:decl_doms] || [], {environment, unbound})
+    State.register_unbound(
+      unbound_domain_check ++ unbound_condition_check ++ (declaration[:decl_doms] || []),
+      {environment, unbound}
+    )
   end
 
   defp eval_body({:expr, expression}, state) do
