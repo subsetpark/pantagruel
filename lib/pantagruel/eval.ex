@@ -39,6 +39,7 @@ defmodule Pantagruel.Eval.State do
 
   @starting_environment %{
     "Real" => %Variable{name: "ℝ", domain: "ℝ"},
+    "Int" => %Variable{name: "ℤ", domain: "ℤ"},
     "Nat" => %Variable{name: "ℕ", domain: "ℕ"},
     :equals => %Variable{name: "==", domain: "ℝ"},
     :gt => %Variable{name: ">", domain: "ℝ"},
