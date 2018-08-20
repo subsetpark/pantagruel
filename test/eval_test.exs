@@ -1,7 +1,7 @@
 defmodule EvalTest do
   use ExUnit.Case
   alias Pantagruel.Eval.State.UnboundVariablesError
-  alias Pantagruel.Eval.{Variable, Lambda}
+  alias Pantagruel.Eval.{Variable, Lambda, Scope}
 
   defp scan_and_parse(text) do
     {:ok, parsed, "", %{}, _, _} =
@@ -16,9 +16,12 @@ defmodule EvalTest do
     test "eval happy path" do
       parsed = "f|x:Nat and x > 1| :: Real" |> scan_and_parse
 
-      assert {%{
-                "x" => %Variable{name: "x", domain: "Nat"},
-                "f" => %Lambda{name: "f", domain: ["Nat"], codomain: "Real", type: :function}
+      assert {%Scope{
+                bindings: %{
+                  "x" => %Variable{name: "x", domain: "Nat"},
+                  "f" => %Lambda{name: "f", domain: ["Nat"], codomain: "Real", type: :function}
+                },
+                parent: nil
               }, MapSet.new()} == Pantagruel.Eval.eval(parsed)
     end
 

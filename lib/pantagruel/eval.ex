@@ -1,36 +1,47 @@
-defmodule Pantagruel.Eval.Variable do
-  alias Pantagruel.Eval.Variable
+defmodule Pantagruel.Eval.Scope do
+  defstruct bindings: %{}, parent: nil
+end
 
+defmodule Pantagruel.Eval.Variable do
+  alias Pantagruel.Eval.{Variable, Scope}
   defstruct name: "", domain: ""
 
-  def bind(environment, name, domain) do
-    Map.put(environment, name, %Variable{name: name, domain: domain})
+  def bind(scope, name, value) do
+    to_put =
+      case value do
+        %{} -> value
+        domain -> %Variable{name: name, domain: domain}
+      end
+
+    %Scope{
+      scope
+      | bindings: Map.put(scope.bindings, name, to_put)
+    }
   end
 end
 
 defmodule Pantagruel.Eval.Lambda do
-  alias Pantagruel.Eval.Lambda
+  alias Pantagruel.Eval.{Lambda, Variable}
   defstruct name: "", domain: [], codomain: nil, type: nil
 
   def bind(environment, name, domain, codomain, type \\ :function) do
-    Map.put(environment, name, %Lambda{name: name, domain: domain, codomain: codomain, type: type})
+    Variable.bind(environment, name, %Lambda{
+      name: name,
+      domain: domain,
+      codomain: codomain,
+      type: type
+    })
   end
 end
 
-defmodule Pantagruel.Eval.Constant do
-  defstruct name: ""
-end
-
 defmodule Pantagruel.Eval.State do
-  alias Pantagruel.Eval.Constant
+  alias Pantagruel.Eval.Variable
 
   @starting_environment %{
-    "Real" => %Constant{name: "ℝ"},
-    "Nat" => %Constant{name: "ℕ"},
-    :gt => %Constant{name: ">"}
+    "Real" => %Variable{name: "ℝ", domain: "ℝ"},
+    "Nat" => %Variable{name: "ℕ", domain: "ℕ"},
+    :gt => %Variable{name: ">", domain: "ℝ"}
   }
-  def starting_environment, do: @starting_environment
-
   defmodule UnboundVariablesError do
     defexception message: "Unbound variables remain", unbound: MapSet.new()
   end
@@ -41,7 +52,7 @@ defmodule Pantagruel.Eval.State do
   end
 
   defp is_bound?(variable, environment) do
-    Map.has_key?(@starting_environment, variable) or Map.has_key?(environment, variable)
+    Map.has_key?(@starting_environment, variable) or Map.has_key?(environment.bindings, variable)
   end
 
   def register_unbound(variables, {environment, unbound}) do
@@ -64,7 +75,7 @@ defmodule Pantagruel.Eval.State do
 end
 
 defmodule Pantagruel.Eval do
-  alias Pantagruel.Eval.{Variable, Lambda, State}
+  alias Pantagruel.Eval.{Variable, Lambda, State, Scope}
 
   defp eval_head({:decl, declaration}, {environment, unbound}) do
     yield_type = declaration[:yield_type] || :function
@@ -158,6 +169,6 @@ defmodule Pantagruel.Eval do
 
   def eval(program) do
     program
-    |> Enum.reduce({%{}, MapSet.new()}, &eval_section/2)
+    |> Enum.reduce({%Scope{}, MapSet.new()}, &eval_section/2)
   end
 end
