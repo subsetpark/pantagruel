@@ -67,5 +67,10 @@ defmodule ExpressionParserTest do
       text = "\"\""
       tryexp(text, string: [])
     end
+
+    test "literal" do
+      text = "`foo`"
+      tryexp(text, [literal: "foo"])
+    end
   end
 end

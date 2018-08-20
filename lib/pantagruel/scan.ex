@@ -64,14 +64,16 @@ defmodule Pantagruel.Scan do
   defp scan(<<?\s::utf8, contents::binary>>, <<c::utf8, _::binary>> = acc, true)
        # Excepting ?; doesn't seem necessary.
        when c in 40..45 or (c in 58..62 and c != ?;) or c in 91..94 or c in 123..126 or c == ?→ or
-              c == ?∃ or c == ?∀ or c == ?∧ or c == ?∨ or c == ?∀ or c == ?∈ or c == ?¬ or c == ?! do
+              c == ?∃ or c == ?∀ or c == ?∧ or c == ?∨ or c == ?∀ or c == ?∈ or
+              c == ?¬ or c == ?! or c == ?` do
     scan(contents, acc, true)
   end
 
   defp scan(<<" "::utf8, c::utf8, contents::binary>>, out, true)
        # Excepting ?; doesn't seem necessary.
        when c in 40..45 or (c in 58..62 and c != ?;) or c in 91..94 or c in 123..126 or c == ?→ or
-              c == ?∃ or c == ?∀ or c == ?∧ or c == ?∨ or c == ?∀ or c == ?∈ or c == ?¬ or c == ?! do
+              c == ?∃ or c == ?∀ or c == ?∧ or c == ?∨ or c == ?∀ or c == ?∈ or
+              c == ?¬ or c == ?! or c == ?` do
     scan(contents, <<c::utf8, out::binary>>, true)
   end
 
@@ -97,7 +99,7 @@ defmodule Pantagruel.Scan do
   defp scan(<<c::utf8, contents::binary>>, out, true),
     do: scan(contents, <<c::utf8, out::binary>>, true)
 
-  @spec scan(String.t) :: String.t
+  @spec scan(String.t()) :: String.t()
   def scan(contents) do
     scan(contents, <<>>, true)
   end

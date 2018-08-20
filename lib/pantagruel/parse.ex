@@ -19,6 +19,7 @@ defmodule ParserHelpers do
 
   def comma_join(c), do: join(c, string(","))
   def newline_join(c), do: sensitive_join(c, string("\n"))
+
   defp _string({s, r}) do
     s
     |> string
@@ -80,7 +81,7 @@ defmodule Pantagruel.Parse do
         {">=", :gte},
         {"<=", :lte},
         {":", :in},
-        {"∈", :from},
+        {"∈", :from}
       ])
     )
 
@@ -106,9 +107,22 @@ defmodule Pantagruel.Parse do
   identifier = utf8_string([?a..?z, ?., ?', ?_], min: 1)
   # Unbreak syntax'
 
+  literal =
+    ignore(utf8_char([?`])) |> concat(identifier) |> ignore(utf8_char([?`])) |> unwrap_and_tag(:literal)
+
   value = choice([float, integer(min: 1), identifier])
 
-  symbol = choice([quantifier, parsec(:lambda), log_op, relation, operator, value, parsec(:domain)])
+  symbol =
+    choice([
+      quantifier,
+      parsec(:lambda),
+      log_op,
+      relation,
+      operator,
+      value,
+      literal,
+      parsec(:domain)
+    ])
 
   nested_subexpression =
     :subexpression
@@ -252,7 +266,7 @@ defmodule Pantagruel.Parse do
   # A series of one or more specification sections separated by ";;",
   # where each subsequent section defines any variables introduced
   # in the previous section.
-  @spec program(String.t) :: Pantagruel.t
+  @spec program(String.t()) :: Pantagruel.t()
   defparsec(
     :program,
     join(section, where)
