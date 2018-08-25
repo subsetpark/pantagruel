@@ -118,7 +118,7 @@ defmodule Pantagruel.Parse do
     ])
     |> unwrap_and_tag(:literal)
 
-  value = choice([float, integer(min: 1), identifier])
+  value = choice([float, integer(min: 1), literal, identifier])
 
   symbol =
     choice([
@@ -128,7 +128,6 @@ defmodule Pantagruel.Parse do
       relation,
       operator,
       value,
-      literal,
       parsec(:domain)
     ])
 
