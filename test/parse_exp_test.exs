@@ -34,40 +34,42 @@ defmodule ExpressionParserTest do
 
     test "comprehension parsing" do
       text = "{x * 2,x ∈ X}"
-      tryexp(text, set: [{:comprehension, [{"x", "X"}], ["x", "*", 2]}])
+      comprehension_elements = [[{"x", "X"}], ["x", "*", 2]]
+
+      tryexp(text,
+        set: [comprehension: comprehension_elements]
+      )
     end
 
     test "comprehension parsing 2 elements" do
       text = "{x * y,x ∈ X,y ∈ Y}"
 
+      comprehension_elements = [
+        [{"x", "X"}, {"y", "Y"}],
+        ["x", "*", "y"]
+      ]
+
       tryexp(text,
-        set: [
-          {
-            :comprehension,
-            [{"x", "X"}, {"y", "Y"}],
-            ["x", "*", "y"]
-          }
-        ]
+        set: [comprehension: comprehension_elements]
       )
     end
 
     test "comprehension parsing 3 elements" do
       text = "{x * y ^ z,x ∈ X,y ∈ Y,z ∈ Z}"
 
+      comprehension_elements = [
+        [{"x", "X"}, {"y", "Y"}, {"z", "Z"}],
+        ["x", "*", "y", "^", "z"]
+      ]
+
       tryexp(text,
-        set: [
-          {
-            :comprehension,
-            [{"x", "X"}, {"y", "Y"}, {"z", "Z"}],
-            ["x", "*", "y", "^", "z"]
-          }
-        ]
+        set: [comprehension: comprehension_elements]
       )
     end
 
     test "exists quantifier parsing" do
       text = "∃x:X x>1"
-      tryexp(text, [:exists, "x", :in, "X", ["x", :gt, 1]])
+      tryexp(text, exists: ["x", :in, "X", ["x", :gt, 1]])
     end
 
     test "empty set" do

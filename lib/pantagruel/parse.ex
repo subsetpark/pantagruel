@@ -340,7 +340,7 @@ defmodule Pantagruel.Parse do
   in that expression from some set.
   """
   defp parse_comprehension(collection, exp, acc, []) do
-    [{collection, [{:comprehension, Enum.reverse(acc), exp}]}]
+    [{collection, comprehension: [Enum.reverse(acc), exp]}]
   end
 
   defp parse_comprehension(collection, exp, acc, [[var, :from, dom] | rest]) do
@@ -349,7 +349,7 @@ defmodule Pantagruel.Parse do
 
   defp parse_expression([:exists, variable, direction, domain | subexpression])
        when direction == :from or direction == :in do
-    [:exists, variable, direction, domain, subexpression]
+    [exists: [variable, direction, domain, subexpression]]
   end
 
   defp parse_expression([{collection, [exp, [var, :from, dom] | rest]}]) do
