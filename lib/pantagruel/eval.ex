@@ -1,10 +1,10 @@
-defmodule Pantagruel.Eval.Scope do
-  defstruct bindings: %{}, parent: nil
+defmodule Pantagruel.Eval.Variable do
+  defstruct name: "", domain: ""
 end
 
-defmodule Pantagruel.Eval.Variable do
+defmodule Pantagruel.Eval.Scope do
   alias Pantagruel.Eval.{Variable, Scope}
-  defstruct name: "", domain: ""
+  defstruct bindings: %{}, parent: nil
 
   def bind(scope, name, value) do
     to_put =
@@ -21,11 +21,12 @@ defmodule Pantagruel.Eval.Variable do
 end
 
 defmodule Pantagruel.Eval.Lambda do
-  alias Pantagruel.Eval.{Lambda, Variable}
+  alias Pantagruel.Eval.{Lambda, Scope}
   defstruct name: "", domain: [], codomain: nil, type: nil
 
   def bind(environment, name, domain, codomain, type \\ :function) do
-    Variable.bind(environment, name, %Lambda{
+    environment
+    |> Scope.bind(name, %Lambda{
       name: name,
       domain: domain,
       codomain: codomain,
@@ -138,14 +139,14 @@ defmodule Pantagruel.Eval.State do
 end
 
 defmodule Pantagruel.Eval do
-  alias Pantagruel.Eval.{Variable, Lambda, State, Scope}
+  alias Pantagruel.Eval.{Lambda, State, Scope}
 
   def bind_lambda_args(env, declaration) do
     bind = fn
       {var, dom}, env ->
         case env do
           %{^var => ^dom} -> env
-          _ -> Variable.bind(env, var, dom)
+          _ -> env |> Scope.bind(var, dom)
         end
     end
 
@@ -156,54 +157,57 @@ defmodule Pantagruel.Eval do
     |> Enum.reduce(env, bind)
   end
 
-  defp eval_head({:decl, declaration}, {scope, global_unbound, head_unbound}) do
+  defp bind_declaration_variables(declaration, scope) do
     yield_type = declaration[:yield_type] || :function
-
-    # Variable binding
-
     # First bind this function as a lambda.
-    scope =
-      Lambda.bind(
-        scope,
-        declaration[:decl_ident],
-        declaration[:decl_doms] || [],
-        declaration[:yield_domain],
-        yield_type
-      )
-      |> bind_lambda_args(declaration)
-
+    scope
+    |> Lambda.bind(
+      declaration[:decl_ident],
+      declaration[:decl_doms] || [],
+      declaration[:yield_domain],
+      yield_type
+    )
+    # Bind arguments introduced in this declaration.
+    |> bind_lambda_args(declaration)
     # If this is a type constructor, bind the codomain of the function.
-    scope =
-      case yield_type do
-        :constructor ->
-          Variable.bind(scope, declaration[:yield_domain], declaration[:yield_domain])
+    |> (fn scope ->
+          case yield_type do
+            :constructor ->
+              Scope.bind(
+                scope,
+                declaration[:yield_domain],
+                declaration[:yield_domain]
+              )
 
-        _ ->
-          scope
-      end
+            _ ->
+              scope
+          end
+        end).()
+  end
 
+  defp eval_head({:decl, declaration}, {scope, global_unbound, head_unbound}) do
     # Unbound variable checks
 
     # Add any newly introduced variables to our set
     # of unbound variables and filter out any that have been
     # bound in the environment.
     # If this is a yielding function, check the codomain for binding.
-    unbound_domain_check =
-      case {yield_type, declaration[:yield_domain]} do
-        {:function, dom} when dom -> [dom]
-        _ -> []
-      end
-
+    case {declaration[:yield_type], declaration[:yield_domain]} do
+      {:function, dom} when dom -> [dom]
+      _ -> []
+    end
     # If there is any precondition associated with the function, check
     # the symbols there for binding.
-    unbound_condition_check =
-      case declaration[:expr][:right] do
-        nil -> []
-        right -> right
-      end
-
-    (unbound_domain_check ++ unbound_condition_check ++ (declaration[:decl_doms] || []))
-    |> State.include_and_filter_unbounds({scope, global_unbound, head_unbound}, :head)
+    |> Enum.concat(declaration[:expr][:right] || [])
+    |> Enum.concat(declaration[:decl_doms] || [])
+    |> State.include_and_filter_unbounds(
+      {
+        bind_declaration_variables(declaration, scope),
+        global_unbound,
+        head_unbound
+      },
+      :head
+    )
   end
 
   defp eval_body({:expr, expression}, state) do
@@ -215,6 +219,10 @@ defmodule Pantagruel.Eval do
     |> Enum.reduce(state, include_and_filter)
   end
 
+  @doc """
+  Evaluate a single section: evaluate the head, evaluate the body,
+  then check for any unbound variables.
+  """
   defp eval_section({:section, section}, state) do
     state =
       case state do
@@ -224,7 +232,9 @@ defmodule Pantagruel.Eval do
 
     section[:head]
     |> Enum.reduce(state, &eval_head/2)
-    |> (fn state -> Enum.reduce(section[:body] || [], state, &eval_body/2) end).()
+    |> (fn state ->
+          Enum.reduce(section[:body] || [], state, &eval_body/2)
+        end).()
     |> State.check_unbound()
   end
 
