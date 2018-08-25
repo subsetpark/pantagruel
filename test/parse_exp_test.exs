@@ -34,23 +34,35 @@ defmodule ExpressionParserTest do
 
     test "comprehension parsing" do
       text = "{x * 2,x ∈ X}"
-      tryexp(text, [:comprehension, :set, [{"x", "X"}], ["x", "*", 2]])
+      tryexp(text, set: [{:comprehension, [{"x", "X"}], ["x", "*", 2]}])
     end
 
     test "comprehension parsing 2 elements" do
       text = "{x * y,x ∈ X,y ∈ Y}"
-      tryexp(text, [:comprehension, :set, [{"x", "X"}, {"y", "Y"}], ["x", "*", "y"]])
+
+      tryexp(text,
+        set: [
+          {
+            :comprehension,
+            [{"x", "X"}, {"y", "Y"}],
+            ["x", "*", "y"]
+          }
+        ]
+      )
     end
 
     test "comprehension parsing 3 elements" do
       text = "{x * y ^ z,x ∈ X,y ∈ Y,z ∈ Z}"
 
-      tryexp(text, [
-        :comprehension,
-        :set,
-        [{"x", "X"}, {"y", "Y"}, {"z", "Z"}],
-        ["x", "*", "y", "^", "z"]
-      ])
+      tryexp(text,
+        set: [
+          {
+            :comprehension,
+            [{"x", "X"}, {"y", "Y"}, {"z", "Z"}],
+            ["x", "*", "y", "^", "z"]
+          }
+        ]
+      )
     end
 
     test "exists quantifier parsing" do

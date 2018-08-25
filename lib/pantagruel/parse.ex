@@ -340,7 +340,7 @@ defmodule Pantagruel.Parse do
   in that expression from some set.
   """
   defp parse_comprehension(collection, exp, acc, []) do
-    [:comprehension, collection, Enum.reverse(acc), exp]
+    [{collection, [{:comprehension, Enum.reverse(acc), exp}]}]
   end
 
   defp parse_comprehension(collection, exp, acc, [[var, :from, dom] | rest]) do
