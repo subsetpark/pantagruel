@@ -46,9 +46,10 @@ defmodule Pantagruel.Eval.State do
     :lt => %Variable{name: "<", domain: "ℝ"},
     :gte => %Variable{name: ">=", domain: "ℝ"},
     :lte => %Variable{name: "<=", domain: "ℝ"},
-    "+" => %Variable{name: "^", domain: "ℝ"},
-    "-" => %Variable{name: "^", domain: "ℝ"},
-    "^" => %Variable{name: "^", domain: "ℝ"}
+    "+" => %Variable{name: "+", domain: "ℝ"},
+    "-" => %Variable{name: "-", domain: "ℝ"},
+    "^" => %Variable{name: "^", domain: "ℝ"},
+    :in => %Variable{name: ":", domain: "⊤"}
   }
   defmodule UnboundVariablesError do
     defexception message: "Unbound variables remain", unbound: MapSet.new()
@@ -70,6 +71,23 @@ defmodule Pantagruel.Eval.State do
   defp is_bound?({container, contents}, environment, contents)
        when container == :string or container == :bunch or container == :set or container == :list do
     container_is_bound?(contents, environment, contents)
+  end
+
+  defp is_bound?({:lambda, lambda}, environment, should_recurse) do
+    [
+      lambda[:decl_doms] || [],
+      lambda[:yield_domain] || [],
+      lambda[:expr][:left] || [],
+      lambda[:expr][:right] || []
+    ]
+    |> List.flatten()
+    |> Enum.all?(
+      &is_bound?(
+        &1,
+        Pantagruel.Eval.bind_lambda_args(environment, lambda),
+        should_recurse
+      )
+    )
   end
 
   defp is_bound?(_, nil, _), do: false
@@ -121,9 +139,7 @@ end
 defmodule Pantagruel.Eval do
   alias Pantagruel.Eval.{Variable, Lambda, State, Scope}
 
-  defp eval_head({:decl, declaration}, {scope, global_unbound, head_unbound}) do
-    yield_type = declaration[:yield_type] || :function
-
+  def bind_lambda_args(env, declaration) do
     bind = fn
       {var, dom}, env ->
         case env do
@@ -131,6 +147,16 @@ defmodule Pantagruel.Eval do
           _ -> Variable.bind(env, var, dom)
         end
     end
+
+    Enum.zip(
+      declaration[:decl_args] || [],
+      declaration[:decl_doms] || []
+    )
+    |> Enum.reduce(env, bind)
+  end
+
+  defp eval_head({:decl, declaration}, {scope, global_unbound, head_unbound}) do
+    yield_type = declaration[:yield_type] || :function
 
     # Variable binding
 
@@ -143,14 +169,7 @@ defmodule Pantagruel.Eval do
         declaration[:yield_domain],
         yield_type
       )
-
-    # First bind any functions introduced in this declaration.
-    scope =
-      Enum.zip(
-        declaration[:decl_args] || [],
-        declaration[:decl_doms] || []
-      )
-      |> Enum.reduce(scope, bind)
+      |> bind_lambda_args(declaration)
 
     # If this is a type constructor, bind the codomain of the function.
     scope =

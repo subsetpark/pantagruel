@@ -121,5 +121,68 @@ defmodule EvalTest do
 
       assert_raise UnboundVariablesError, fn -> Pantagruel.Eval.eval(parsed) end
     end
+
+    test "lambda binding failure" do
+      parsed =
+        """
+        f|x:Nat|
+        f x : |z:D|::D
+        """
+        |> scan_and_parse
+
+      assert_raise UnboundVariablesError, fn -> Pantagruel.Eval.eval(parsed) end
+    end
+
+    test "lambda binding" do
+      parsed =
+        """
+        f|x:Nat|
+        f x : |z:D|::D
+        ;;
+        d|| => D
+        """
+        |> scan_and_parse
+
+      assert {
+               %Scope{
+                 bindings: %{
+                   "d" => %Lambda{name: "d", domain: [], codomain: "D", type: :constructor},
+                   "D" => %Variable{name: "D", domain: "D"}
+                 },
+                 parent: %Scope{
+                   bindings: %{
+                     "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: :function},
+                     "x" => %Variable{name: "x", domain: "Nat"}
+                   },
+                   parent: nil
+                 }
+               },
+               MapSet.new(),
+               MapSet.new()
+             } == Pantagruel.Eval.eval(parsed)
+    end
+
+    test "lambdas introduce temporary bindings" do
+      parsed =
+        """
+        f|x:Nat|
+        f x : |z:Nat and z > 100|
+        """
+        |> scan_and_parse
+
+      assert {
+               %Scope{
+                 bindings: %{
+                   "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: :function},
+                   "x" => %Variable{name: "x", domain: "Nat"}
+                   # Notice `z` is not here. It was introduced so that
+                   # `z > 100` checked, but it's not in the resulting scope.
+                 },
+                 parent: nil
+               },
+               MapSet.new(),
+               MapSet.new()
+             } == Pantagruel.Eval.eval(parsed)
+    end
   end
 end
