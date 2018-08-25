@@ -53,28 +53,47 @@ defmodule Pantagruel.Eval.State do
     "^" => %Variable{name: "^", domain: "ℝ"},
     :in => %Variable{name: ":", domain: "⊤"}
   }
+
   defmodule UnboundVariablesError do
     defexception message: "Unbound variables remain", unbound: MapSet.new()
   end
 
-  defp container_is_bound?([], _, _), do: true
+  @doc """
+  Decide if a variable is bound within a given state.
+  """
+  defp is_bound?(v, s), do: is_bound?(v, s, true)
 
-  defp container_is_bound?(contents, environment, should_recurse) do
-    Enum.all?(contents, &is_bound?(&1, environment, should_recurse))
-  end
-
-  defp is_bound?(variable, _, _)
-       when is_integer(variable) or is_float(variable) do
-    true
-  end
-
+  @doc """
+  Boundness checking for literals.
+  """
+  defp is_bound?(v, _, _) when is_integer(v), do: true
+  defp is_bound?(v, _, _) when is_float(v), do: true
   defp is_bound?([?` | _], _, _), do: true
 
+  @doc """
+  A non-value is always unbound within a null state.
+  """
+  defp is_bound?(_, nil, _), do: false
+
+  @doc """
+  Boundness checking for container types.
+  """
   defp is_bound?({container, contents}, environment, contents)
-       when container == :string or container == :bunch or container == :set or container == :list do
-    container_is_bound?(contents, environment, contents)
+       when container in [:string, :bunch, :set, :list] do
+    container_is_bound? = fn
+      [], _, _ ->
+        true
+
+      contents, environment, should_recurse ->
+        Enum.all?(contents, &is_bound?(&1, environment, should_recurse))
+    end
+
+    container_is_bound?.(contents, environment, contents)
   end
 
+  @doc """
+  Boundness checking for functions.
+  """
   defp is_bound?({:lambda, lambda}, environment, should_recurse) do
     [
       lambda[:decl_doms] || [],
@@ -86,41 +105,45 @@ defmodule Pantagruel.Eval.State do
     |> Enum.all?(
       &is_bound?(
         &1,
+        # Lambdas introduce function arguments. Therefore they are bound
+        # in (and only in) the recursive boundness check.
         Pantagruel.Eval.bind_lambda_args(environment, lambda),
         should_recurse
       )
     )
   end
 
-  defp is_bound?(_, nil, _), do: false
-
   defp is_bound?(variable, environment, should_recurse) do
     Map.has_key?(@starting_environment, variable) or Map.has_key?(environment.bindings, variable) or
-      (should_recurse && is_bound?(variable, environment.parent, false))
+      (should_recurse and is_bound?(variable, environment.parent, false))
   end
-
-  defp is_bound?(v, s), do: is_bound?(v, s, true)
 
   @doc """
   Include new values into the data structures tracking unbound variables.
   """
   def include_and_filter_unbounds(variables, {scope, global_unbound, head_unbound}, scope_source) do
-    union = fn unbound ->
-      MapSet.union(unbound, MapSet.new(variables))
-    end
+    is_unbound? = &(not is_bound?(&1, scope))
+    union = &MapSet.union(&1, MapSet.new(variables))
 
-    filter = fn unbound ->
-      unbound
-      |> Enum.filter(&(not is_bound?(&1, scope)))
-      |> MapSet.new()
-    end
+    filter =
+      &(&1
+        |> Enum.filter(is_unbound?)
+        |> MapSet.new())
 
     case scope_source do
       :head ->
-        {scope, filter.(global_unbound), filter.(union.(head_unbound))}
+        {
+          scope,
+          global_unbound |> filter.(),
+          head_unbound |> union.() |> filter.()
+        }
 
       :body ->
-        {scope, filter.(union.(global_unbound)), filter.(head_unbound)}
+        {
+          scope,
+          global_unbound |> union.() |> filter.(),
+          head_unbound |> filter.()
+        }
     end
   end
 
@@ -141,20 +164,21 @@ end
 defmodule Pantagruel.Eval do
   alias Pantagruel.Eval.{Lambda, State, Scope}
 
-  def bind_lambda_args(env, declaration) do
-    bind = fn
-      {var, dom}, env ->
-        case env do
-          %{^var => ^dom} -> env
-          _ -> env |> Scope.bind(var, dom)
-        end
-    end
-
+  @doc """
+  Create bindings for all arguments introduced as arguments to a function.
+  """
+  def bind_lambda_args(scope, declaration) do
     Enum.zip(
       declaration[:decl_args] || [],
       declaration[:decl_doms] || []
     )
-    |> Enum.reduce(env, bind)
+    |> Enum.reduce(scope, fn
+      {var, dom}, env ->
+        case env do
+          %{^var => ^dom} -> scope
+          _ -> Scope.bind(scope, var, dom)
+        end
+    end)
   end
 
   @doc """
