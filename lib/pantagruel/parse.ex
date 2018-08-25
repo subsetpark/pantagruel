@@ -114,6 +114,7 @@ defmodule Pantagruel.Parse do
     |> string(".")
     |> utf8_string([?0..?9], min: 1)
     |> reduce({Enum, :join, [""]})
+    |> traverse(:parse_float)
 
   # Any sequence of lower cased characters, suitable for variable names
   # or atom literals.
@@ -136,14 +137,14 @@ defmodule Pantagruel.Parse do
   # The individual component elements of a subexpression.
   symbol =
     choice([
+      float,
+      integer(min: 1),
+      literal,
       quantifier,
       parsec(:lambda),
       log_op,
       relation,
       operator,
-      float,
-      integer(min: 1),
-      literal,
       identifier,
       parsec(:domain)
     ])
@@ -363,5 +364,9 @@ defmodule Pantagruel.Parse do
      |> Enum.reverse()
      |> parse_expression
      |> Enum.reverse(), context}
+  end
+
+  defp parse_float(_rest, [arg], context, _line, _offset) do
+    {[String.to_float(arg)], context}
   end
 end

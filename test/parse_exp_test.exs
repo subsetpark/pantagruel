@@ -91,5 +91,15 @@ defmodule ExpressionParserTest do
       text = "`foo 0 Bar`"
       tryexp(text, literal: "foo 0 Bar")
     end
+
+    test "float" do
+      text = "1.5"
+      tryexp(text, [1.5])
+    end
+
+    test "negative float" do
+      text = "-1.5"
+      tryexp(text, [-1.5])
+    end
   end
 end
