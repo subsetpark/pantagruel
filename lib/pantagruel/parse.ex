@@ -36,7 +36,7 @@ defmodule ParserHelpers do
         string(s)
     end
 
-    for(s <- ss, do: f.(s))
+    Enum.map(ss, f)
   end
 
   @doc """
