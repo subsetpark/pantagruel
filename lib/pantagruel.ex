@@ -25,4 +25,14 @@ defmodule Pantagruel do
     File.read!(filename)
     |> eval
   end
+
+  def main(filename) do
+    try do
+      read!(filename)
+    rescue
+      e in Pantagruel.Eval.State.UnboundVariablesError ->
+        IO.puts("Unbound variables.")
+        Enum.each(e.unbound, &IO.inspect/1)
+    end
+  end
 end

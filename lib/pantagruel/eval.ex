@@ -41,6 +41,7 @@ defmodule Pantagruel.Eval.State do
     "Real" => %Variable{name: "ℝ", domain: "ℝ"},
     "Int" => %Variable{name: "ℤ", domain: "ℤ"},
     "Nat" => %Variable{name: "ℕ", domain: "ℕ"},
+    "Nat0" => %Variable{name: "ℕ0", domain: "ℕ0"},
     :equals => %Variable{name: "==", domain: "ℝ"},
     :gt => %Variable{name: ">", domain: "ℝ"},
     :lt => %Variable{name: "<", domain: "ℝ"},
