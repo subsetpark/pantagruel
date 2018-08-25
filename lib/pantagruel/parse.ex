@@ -103,12 +103,20 @@ defmodule Pantagruel.Parse do
     |> utf8_string([?0..?9], min: 1)
     |> reduce({Enum, :join, [""]})
 
-  # Any variable name. Lower-cased.
-  identifier = utf8_string([?a..?z, ?., ?', ?_], min: 1)
+  @identifier_ranges [?a..?z, ?., ?', ?_]
   # Unbreak syntax'
+  # Any variable name. Lower-cased.
+  identifier = utf8_string(@identifier_ranges, min: 1)
+  spaced_identifier = utf8_string(@identifier_ranges ++ [?\s], min: 1)
+
+  back_quote = string("`")
 
   literal =
-    ignore(utf8_char([?`])) |> concat(identifier) |> ignore(utf8_char([?`])) |> unwrap_and_tag(:literal)
+    choice([
+      ignore(back_quote) |> concat(spaced_identifier) |> ignore(back_quote),
+      ignore(back_quote) |> concat(identifier)
+    ])
+    |> unwrap_and_tag(:literal)
 
   value = choice([float, integer(min: 1), identifier])
 

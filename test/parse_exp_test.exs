@@ -69,8 +69,13 @@ defmodule ExpressionParserTest do
     end
 
     test "literal" do
-      text = "`foo`"
-      tryexp(text, [literal: "foo"])
+      text = "`foo"
+      tryexp(text, literal: "foo")
+    end
+
+    test "spaced literal" do
+      text = "`foo bar`"
+      tryexp(text, literal: "foo bar")
     end
   end
 end
