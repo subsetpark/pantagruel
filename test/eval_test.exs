@@ -28,7 +28,10 @@ defmodule EvalTest do
     test "eval unbound" do
       parsed = "f|x:X| :: Real" |> scan_and_parse
 
-      exc = assert_raise UnboundVariablesError, fn -> Pantagruel.Eval.eval(parsed) end
+      exc =
+        assert_raise UnboundVariablesError, fn ->
+          Pantagruel.Eval.eval(parsed)
+        end
 
       assert exc.unbound == MapSet.new(["X"])
     end
@@ -75,7 +78,9 @@ defmodule EvalTest do
     test "unbound variable in body" do
       parsed = "f|x:Nat|\nf x = g x" |> scan_and_parse
 
-      assert_raise UnboundVariablesError, fn -> Pantagruel.Eval.eval(parsed) end
+      assert_raise UnboundVariablesError, fn ->
+        Pantagruel.Eval.eval(parsed)
+      end
     end
 
     test "bind variables in the next section" do
@@ -119,7 +124,9 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      assert_raise UnboundVariablesError, fn -> Pantagruel.Eval.eval(parsed) end
+      assert_raise UnboundVariablesError, fn ->
+        Pantagruel.Eval.eval(parsed)
+      end
     end
 
     test "lambda binding failure" do
@@ -130,7 +137,9 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      assert_raise UnboundVariablesError, fn -> Pantagruel.Eval.eval(parsed) end
+      assert_raise UnboundVariablesError, fn ->
+        Pantagruel.Eval.eval(parsed)
+      end
     end
 
     test "lambda binding" do
@@ -219,7 +228,11 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      exc = assert_raise UnboundVariablesError, fn -> Pantagruel.Eval.eval(parsed) end
+      exc =
+        assert_raise UnboundVariablesError, fn ->
+          Pantagruel.Eval.eval(parsed)
+        end
+
       assert exc.unbound == MapSet.new(["y"])
     end
 
