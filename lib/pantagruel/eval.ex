@@ -157,9 +157,13 @@ defmodule Pantagruel.Eval do
     |> Enum.reduce(env, bind)
   end
 
+  @doc """
+  Bind all the variables introduced in a function declaration: function
+  identifier, arguments, and domain.
+  """
   defp bind_declaration_variables(declaration, scope) do
     yield_type = declaration[:yield_type] || :function
-    # First bind this function as a lambda.
+
     scope
     |> Lambda.bind(
       declaration[:decl_ident],
@@ -167,7 +171,6 @@ defmodule Pantagruel.Eval do
       declaration[:yield_domain],
       yield_type
     )
-    # Bind arguments introduced in this declaration.
     |> bind_lambda_args(declaration)
     # If this is a type constructor, bind the codomain of the function.
     |> (fn scope ->
@@ -185,9 +188,11 @@ defmodule Pantagruel.Eval do
         end).()
   end
 
-  defp eval_head({:decl, declaration}, {scope, global_unbound, head_unbound}) do
-    # Unbound variable checks
-
+  @doc """
+  Bind all variables introduced in a function declaration and keep track
+  of unbound ones.
+  """
+  defp eval_declaration({:decl, declaration}, {scope, global_unbound, head_unbound}) do
     # Add any newly introduced variables to our set
     # of unbound variables and filter out any that have been
     # bound in the environment.
@@ -210,30 +215,26 @@ defmodule Pantagruel.Eval do
     )
   end
 
-  defp eval_body({:expr, expression}, state) do
-    include_and_filter = fn variables, state ->
-      State.include_and_filter_unbounds(variables, state, :body)
-    end
-
+  @doc """
+  Evaluate a section body expression. Track any unbound variables.
+  """
+  defp eval_body_expression({:expr, expression}, state) do
     [expression[:left] || [], expression[:right]]
-    |> Enum.reduce(state, include_and_filter)
+    |> Enum.reduce(state, &State.include_and_filter_unbounds(&1, &2, :body))
   end
+
+  defp new_state({nil, g_unbound, h_unbound}), do: {%Scope{}, g_unbound, h_unbound}
+  defp new_state({scope, g_u, h_u}), do: {%Scope{parent: scope}, g_u, h_u}
 
   @doc """
   Evaluate a single section: evaluate the head, evaluate the body,
   then check for any unbound variables.
   """
   defp eval_section({:section, section}, state) do
-    state =
-      case state do
-        {nil, g_u, h_u} -> {%Scope{}, g_u, h_u}
-        {scope, g_u, h_u} -> {%Scope{parent: scope}, g_u, h_u}
-      end
-
     section[:head]
-    |> Enum.reduce(state, &eval_head/2)
+    |> Enum.reduce(new_state(state), &eval_declaration/2)
     |> (fn state ->
-          Enum.reduce(section[:body] || [], state, &eval_body/2)
+          Enum.reduce(section[:body] || [], state, &eval_body_expression/2)
         end).()
     |> State.check_unbound()
   end
