@@ -113,6 +113,13 @@ defmodule Pantagruel.Eval.State do
     )
   end
 
+  defp is_bound?({:exists, [symbol, _, domain, expr]}, scope, should_recurse) do
+    Enum.all?(
+      [symbol, domain | expr],
+      &is_bound?(&1, scope, should_recurse)
+    )
+  end
+
   defp is_bound?(variable, environment, should_recurse) do
     Map.has_key?(@starting_environment, variable) or Map.has_key?(environment.bindings, variable) or
       (should_recurse and is_bound?(variable, environment.parent, false))
@@ -185,7 +192,7 @@ defmodule Pantagruel.Eval do
   Bind all the variables introduced in a function declaration: function
   identifier, arguments, and domain.
   """
-  defp bind_declaration_variables(declaration, scope) do
+  defp bind_declaration_variables(scope, declaration) do
     yield_type = declaration[:yield_type] || :function
 
     scope
@@ -212,6 +219,18 @@ defmodule Pantagruel.Eval do
         end).()
   end
 
+  defp bind_subexpression_variables({:exists, [ident, _, domain, expr]}, scope) do
+    bound = Scope.bind(scope, ident, domain)
+    bind_subexpression_variables(expr, bound)
+  end
+
+  defp bind_subexpression_variables(_, scope), do: scope
+
+  defp bind_expression_variables(scope, expression) do
+    ((expression[:left] || []) ++ (expression[:right] || []))
+    |> Enum.reduce(scope, &bind_subexpression_variables/2)
+  end
+
   @doc """
   Bind all variables introduced in a function declaration and keep track
   of unbound ones.
@@ -231,7 +250,7 @@ defmodule Pantagruel.Eval do
     |> Enum.concat(declaration[:decl_doms] || [])
     |> State.include_and_filter_unbounds(
       {
-        bind_declaration_variables(declaration, scope),
+        bind_declaration_variables(scope, declaration),
         global_unbound,
         head_unbound
       },
@@ -242,9 +261,12 @@ defmodule Pantagruel.Eval do
   @doc """
   Evaluate a section body expression. Track any unbound variables.
   """
-  defp eval_body_expression({:expr, expression}, state) do
+  defp eval_body_expression({:expr, expression}, {scope, global_unbound, head_unbound}) do
     [expression[:left] || [], expression[:right]]
-    |> Enum.reduce(state, &State.include_and_filter_unbounds(&1, &2, :body))
+    |> Enum.reduce(
+      {bind_expression_variables(scope, expression), global_unbound, head_unbound},
+      &State.include_and_filter_unbounds(&1, &2, :body)
+    )
   end
 
   defp new_state({nil, g_unbound, h_unbound}), do: {%Scope{}, g_unbound, h_unbound}

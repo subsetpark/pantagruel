@@ -184,5 +184,27 @@ defmodule EvalTest do
                MapSet.new()
              } == Pantagruel.Eval.eval(parsed)
     end
+
+    test "exists binds" do
+      parsed =
+        """
+        f|x:Nat|
+        exists y : Nat f y > 10
+        """
+        |> scan_and_parse
+
+      assert {
+               %Scope{
+                 bindings: %{
+                   "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: :function},
+                   "x" => %Variable{name: "x", domain: "Nat"},
+                   "y" => %Variable{name: "y", domain: "Nat"}
+                 },
+                 parent: nil
+               },
+               MapSet.new(),
+               MapSet.new()
+             } == Pantagruel.Eval.eval(parsed)
+    end
   end
 end
