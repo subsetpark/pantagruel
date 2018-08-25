@@ -65,6 +65,8 @@ defmodule Pantagruel.Eval.State do
     true
   end
 
+  defp is_bound?([?` | _], _, _), do: true
+
   defp is_bound?({container, contents}, environment, contents)
        when container == :string or container == :bunch or container == :set or container == :list do
     container_is_bound?(contents, environment, contents)

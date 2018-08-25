@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.Pantagruel.Parse do
+defmodule Mix.Tasks.Pantagruel.Eval do
   use Mix.Task
 
   def run([filename]) do
@@ -33,6 +33,20 @@ defmodule Mix.Tasks.Pantagruel.Scan do
       filename
       |> File.read!()
       |> Pantagruel.Scan.scan()
+
+    IO.inspect(scanned)
+  end
+end
+
+defmodule Mix.Tasks.Pantagruel.Parse do
+  use Mix.Task
+
+  def run([filename]) do
+    {:ok, scanned, "", %{}, _, _} =
+      filename
+      |> File.read!()
+      |> Pantagruel.Scan.scan()
+      |> Pantagruel.Parse.program()
 
     IO.inspect(scanned)
   end
