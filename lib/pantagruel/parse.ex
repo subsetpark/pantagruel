@@ -347,9 +347,9 @@ defmodule Pantagruel.Parse do
     parse_comprehension(collection, exp, [{var, dom} | acc], rest)
   end
 
-  defp parse_expression([:exists, variable, direction, domain | subexpression])
-       when direction == :from or direction == :in do
-    [exists: [variable, direction, domain, subexpression]]
+  defp parse_expression([quantifier, variable, direction, domain | subexpression])
+       when direction in [:from, :in] and quantifier in [:exists, :forall] do
+    [{quantifier, [variable, direction, domain, subexpression]}]
   end
 
   defp parse_expression([{collection, [exp, [var, :from, dom] | rest]}]) do

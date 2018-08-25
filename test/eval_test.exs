@@ -185,6 +185,44 @@ defmodule EvalTest do
              } == Pantagruel.Eval.eval(parsed)
     end
 
+    test "alls introduce temporary bindings" do
+      parsed =
+        """
+        f|x:Nat|
+        con||=> X
+        all y : X y < 10
+        """
+        |> scan_and_parse
+
+      assert {
+               %Scope{
+                 bindings: %{
+                   "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: :function},
+                   "con" => %Lambda{name: "con", domain: [], codomain: "X", type: :constructor},
+                   "X" => %Variable{name: "X", domain: "X"},
+                   "x" => %Variable{name: "x", domain: "Nat"}
+                 },
+                 parent: nil
+               },
+               MapSet.new(),
+               MapSet.new()
+             } == Pantagruel.Eval.eval(parsed)
+    end
+
+    test "temporary bindings are temporary" do
+      parsed =
+        """
+        f|x:Nat|
+        con||=> X
+        all y : X y < 10
+        y > 1
+        """
+        |> scan_and_parse
+
+      exc = assert_raise UnboundVariablesError, fn -> Pantagruel.Eval.eval(parsed) end
+      assert exc.unbound == MapSet.new(["y"])
+    end
+
     test "exists binds" do
       parsed =
         """
@@ -196,7 +234,12 @@ defmodule EvalTest do
       assert {
                %Scope{
                  bindings: %{
-                   "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: :function},
+                   "f" => %Lambda{
+                     name: "f",
+                     domain: ["Nat"],
+                     codomain: nil,
+                     type: :function
+                   },
                    "x" => %Variable{name: "x", domain: "Nat"},
                    "y" => %Variable{name: "y", domain: "Nat"}
                  },

@@ -36,7 +36,7 @@ defmodule Pantagruel.Eval.Lambda do
 end
 
 defmodule Pantagruel.Eval.State do
-  alias Pantagruel.Eval.Variable
+  alias Pantagruel.Eval.{Variable, Scope}
 
   @starting_environment %{
     "Real" => %Variable{name: "ℝ", domain: "ℝ"},
@@ -108,6 +108,22 @@ defmodule Pantagruel.Eval.State do
         # Lambdas introduce function arguments. Therefore they are bound
         # in (and only in) the recursive boundness check.
         Pantagruel.Eval.bind_lambda_args(environment, lambda),
+        should_recurse
+      )
+    )
+  end
+
+  @doc """
+  Boundness checking for for-all quantifiers.
+  """
+  defp is_bound?({:forall, [symbol, _, domain, expr]}, scope, should_recurse) do
+    Enum.all?(
+      [symbol, domain | expr],
+      &is_bound?(
+        &1,
+        # Foralls introduce function arguments. Therefore they are bound
+        # in (and only in) the recursive boundness check.
+        Scope.bind(scope, symbol, domain),
         should_recurse
       )
     )
