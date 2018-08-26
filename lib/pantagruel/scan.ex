@@ -1,112 +1,128 @@
 defmodule Pantagruel.Scan do
-  defp scan(<<>>, out, _) do
-    out
-    |> String.reverse()
-    |> String.trim()
+  defp strip_comments(<<>>, acc, _), do: String.reverse(acc)
+
+  defp strip_comments(<<?\n::utf8, contents::binary>>, out, _) do
+    strip_comments(contents, <<?\n::utf8, out::binary>>, true)
   end
 
-  ## Space/newline consolidation
-  defp scan(<<?\s::utf8, contents::binary>>, <<?\s::utf8, _::binary>> = acc, true),
-    do: scan(contents, acc, true)
-
-  defp scan(<<?\s::utf8, contents::binary>>, <<?\n::utf8, _::binary>> = acc, true),
-    do: scan(contents, acc, true)
-
-  defp scan(<<?\n::utf8, contents::binary>>, <<?\n::utf8, _::binary>> = acc, true),
-    do: scan(contents, acc, true)
-
-  defp scan(<<?\n::utf8, contents::binary>>, <<?\s::utf8, rest::binary>>, true),
-    do: scan(contents, <<?\n::utf8, rest::binary>>, true)
-
-  ## Character replacement
-  # These will probably want to write the the scan buffer, rather than the accumulator,
-  # so that space consolidation can take a pass at them.
-  defp scan(<<" ->"::utf8, contents::binary>>, out, true),
-    do: scan(<<?→::utf8, contents::binary>>, out, true)
-
-  defp scan(<<"->"::utf8, contents::binary>>, out, true),
-    do: scan(<<?→::utf8, contents::binary>>, out, true)
-
-  defp scan(<<"<-"::utf8, contents::binary>>, out, true),
-    do: scan(<<?←::utf8, contents::binary>>, out, true)
-
-  defp scan(<<" <-"::utf8, contents::binary>>, out, true),
-    do: scan(<<?←::utf8, contents::binary>>, out, true)
-
-  defp scan(<<"...\n"::utf8, contents::binary>>, out, true),
-    do: scan(<<?\s::utf8, contents::binary>>, out, true)
-
-  defp scan(<<l::utf8, "and"::utf8, r::utf8, contents::binary>>, out, true)
-       when l in [?\n, ?\s] and r in [?\n, ?\s] do
-    scan(<<l::utf8, "∧"::utf8, r::utf8, contents::binary>>, out, true)
+  defp strip_comments(<<_::utf8, contents::binary>>, out, false) do
+    strip_comments(contents, out, false)
   end
 
-  defp scan(<<l::utf8, "or"::utf8, r::utf8, contents::binary>>, out, true)
-       when l in [?\n, ?\s] and r in [?\n, ?\s] do
-    scan(<<l::utf8, "∨"::utf8, r::utf8, contents::binary>>, out, true)
+  ## Special-case ';;' from triggering comments.
+  defp strip_comments(<<";;"::utf8, contents::binary>>, out, true) do
+    strip_comments(contents, <<";;"::utf8, out::binary>>, true)
   end
 
-  defp scan(<<l::utf8, "from"::utf8, r::utf8, contents::binary>>, out, true)
-       when l in [?\n, ?\s] and r in [?\n, ?\s] do
-    scan(<<l::utf8, "∈"::utf8, r::utf8, contents::binary>>, out, true)
+  defp strip_comments(<<?;::utf8, contents::binary>>, out, _) do
+    strip_comments(contents, out, false)
   end
 
-  defp scan(<<l::utf8, "in"::utf8, r::utf8, contents::binary>>, out, true)
-       when l in [?\n, ?\s] and r in [?\n, ?\s] do
-    scan(<<l::utf8, ":"::utf8, r::utf8, contents::binary>>, out, true)
+  defp strip_comments(<<c::utf8, contents::binary>>, out, true) do
+    strip_comments(contents, <<c::utf8, out::binary>>, true)
   end
 
-  defp scan(<<l::utf8, "exists"::utf8, r::utf8, contents::binary>>, out, true)
-       when l in [?\n, ?\s] and r in [?\n, ?\s] do
-    scan(<<l::utf8, "∃"::utf8, r::utf8, contents::binary>>, out, true)
+  defp replace_chars(<<>>, acc), do: String.reverse(acc)
+
+  defp replace_chars(<<"->"::utf8, contents::binary>>, out) do
+    replace_chars(contents, <<?→::utf8, out::binary>>)
   end
 
-  defp scan(<<l::utf8, "all"::utf8, r::utf8, contents::binary>>, out, true)
-       when l in [?\n, ?\s] and r in [?\n, ?\s] do
-    scan(<<l::utf8, "∀"::utf8, r::utf8, contents::binary>>, out, true)
+  defp replace_chars(<<"<-"::utf8, contents::binary>>, out) do
+    replace_chars(contents, <<?←::utf8, out::binary>>)
+  end
+
+  defp replace_chars(<<"...\n"::utf8, contents::binary>>, out) do
+    replace_chars(contents, <<?\s::utf8, out::binary>>)
+  end
+
+  @delimiters [?\n, ?\s, ?(, ?), ?[, ?], ?{, ?}, ?"]
+  # Unbreak syntax "
+
+  defp replace_chars(<<l::utf8, "and"::utf8, r::utf8, contents::binary>>, out)
+       when l in @delimiters and r in @delimiters do
+    replace_chars(contents, <<r::utf8, "∧"::utf8, l::utf8, out::binary>>)
+  end
+
+  defp replace_chars(<<l::utf8, "or"::utf8, r::utf8, contents::binary>>, out)
+       when l in @delimiters and r in @delimiters do
+    replace_chars(contents, <<r::utf8, "∨"::utf8, l::utf8, out::binary>>)
+  end
+
+  defp replace_chars(<<l::utf8, "from"::utf8, r::utf8, contents::binary>>, out)
+       when l in @delimiters and r in @delimiters do
+    replace_chars(contents, <<r::utf8, "∈"::utf8, l::utf8, out::binary>>)
+  end
+
+  defp replace_chars(<<l::utf8, "in"::utf8, r::utf8, contents::binary>>, out)
+       when l in @delimiters and r in @delimiters do
+    replace_chars(contents, <<r::utf8, ":"::utf8, l::utf8, out::binary>>)
+  end
+
+  defp replace_chars(<<l::utf8, "exists"::utf8, r::utf8, contents::binary>>, out)
+       when l in @delimiters and r in @delimiters do
+    replace_chars(contents, <<r::utf8, "∃"::utf8, l::utf8, out::binary>>)
+  end
+
+  defp replace_chars(<<l::utf8, "all"::utf8, r::utf8, contents::binary>>, out)
+       when l in @delimiters and r in @delimiters do
+    replace_chars(contents, <<r::utf8, "∀"::utf8, l::utf8, out::binary>>)
+  end
+
+  defp replace_chars(<<c::utf8, contents::binary>>, out) do
+    replace_chars(contents, <<c::utf8, out::binary>>)
+  end
+
+  defp consolidate_whitespace(<<>>, acc), do: String.reverse(acc)
+
+  defp consolidate_whitespace(<<?\s::utf8, contents::binary>>, <<?\s::utf8, _::binary>> = acc),
+    do: consolidate_whitespace(contents, acc)
+
+  defp consolidate_whitespace(<<?\s::utf8, contents::binary>>, <<?\n::utf8, _::binary>> = acc),
+    do: consolidate_whitespace(contents, acc)
+
+  defp consolidate_whitespace(<<?\n::utf8, contents::binary>>, <<?\n::utf8, _::binary>> = acc),
+    do: consolidate_whitespace(contents, acc)
+
+  defp consolidate_whitespace(<<?\n::utf8, contents::binary>>, <<?\s::utf8, rest::binary>>),
+    do: consolidate_whitespace(contents, <<?\n::utf8, rest::binary>>)
+
+  defp consolidate_whitespace(<<c::utf8, contents::binary>>, rest) do
+    consolidate_whitespace(contents, <<c::utf8, rest::binary>>)
   end
 
   @operators [?→, ?∃, ?∀, ?∧, ?∨, ?∀, ?∈, ?¬, ?!, ?`, ?←]
 
-  ## Space elimination
-  defp scan(<<?\s::utf8, contents::binary>>, <<c::utf8, _::binary>> = acc, true)
+  defp eliminate_spaces(<<>>, acc), do: String.reverse(acc)
+
+  defp eliminate_spaces(<<?\s::utf8, contents::binary>>, <<c::utf8, _::binary>> = acc)
        # Excepting ?; doesn't seem necessary.
        when c in 40..45 or (c in 58..62 and c != ?;) or c in 91..94 or c in 123..126 or
               c in @operators do
-    scan(contents, acc, true)
+    eliminate_spaces(contents, acc)
   end
 
-  defp scan(<<" "::utf8, c::utf8, contents::binary>>, out, true)
+  defp eliminate_spaces(<<" "::utf8, c::utf8, contents::binary>>, out)
        # Excepting ?; doesn't seem necessary.
        when c in 40..45 or (c in 58..62 and c != ?;) or c in 91..94 or c in 123..126 or
               c in @operators do
-    scan(contents, <<c::utf8, out::binary>>, true)
+    eliminate_spaces(contents, <<c::utf8, out::binary>>)
   end
 
-  # Produces (only one side needed because of Pipe)
-  defp scan(<<"=> "::utf8, contents::binary>>, out, true),
-    do: scan(contents, <<">="::utf8, out::binary>>, true)
+  defp eliminate_spaces(<<"=> "::utf8, contents::binary>>, out) do
+    eliminate_spaces(contents, <<">="::utf8, out::binary>>)
+  end
 
-  ## Read-mode management
-  defp scan(<<?\n::utf8, contents::binary>>, <<?\n::utf8, _::binary>> = acc, _),
-    do: scan(contents, acc, true)
-
-  defp scan(<<?\n::utf8, contents::binary>>, out, _),
-    do: scan(contents, <<?\n::utf8, out::binary>>, true)
-
-  defp scan(<<_::utf8, contents::binary>>, out, false), do: scan(contents, out, false)
-
-  ## Special-case ';;' from triggering comments.
-  defp scan(<<";;"::utf8, contents::binary>>, out, true),
-    do: scan(contents, <<";;"::utf8, out::binary>>, true)
-
-  defp scan(<<?;::utf8, contents::binary>>, out, _), do: scan(contents, out, false)
-
-  defp scan(<<c::utf8, contents::binary>>, out, true),
-    do: scan(contents, <<c::utf8, out::binary>>, true)
+  defp eliminate_spaces(<<c::utf8, contents::binary>>, out) do
+    eliminate_spaces(contents, <<c::utf8, out::binary>>)
+  end
 
   @spec scan(String.t()) :: String.t()
   def scan(contents) do
-    scan(contents, <<>>, true)
+    strip_comments(contents, <<>>, true)
+    |> replace_chars(<<>>)
+    |> consolidate_whitespace(<<>>)
+    |> eliminate_spaces(<<>>)
+    |> String.trim()
   end
 end

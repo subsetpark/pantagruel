@@ -6,6 +6,10 @@ defmodule Pantagruel.Eval.Scope do
   alias Pantagruel.Eval.{Variable, Scope}
   defstruct bindings: %{}, parent: nil
 
+  def bind(scope, {:bunch, elements}, value) do
+    Enum.reduce(elements, scope, &bind(&2, hd(&1), value))
+  end
+
   def bind(scope, name, value) do
     to_put =
       case value do
@@ -51,7 +55,8 @@ defmodule Pantagruel.Eval.State do
     "+" => %Variable{name: "+", domain: "ℝ"},
     "-" => %Variable{name: "-", domain: "ℝ"},
     "^" => %Variable{name: "^", domain: "ℝ"},
-    :in => %Variable{name: ":", domain: "⊤"}
+    :in => %Variable{name: ":", domain: "⊤"},
+    :iff => %Variable{name: "=", domain: "𝔹"}
   }
 
   defmodule UnboundVariablesError do
@@ -78,7 +83,7 @@ defmodule Pantagruel.Eval.State do
   @doc """
   Boundness checking for container types.
   """
-  defp is_bound?({container, contents}, environment, contents)
+  defp is_bound?({container, contents}, environment, should_recurse)
        when container in [:string, :bunch, :set, :list] do
     container_is_bound? = fn
       [], _, _ ->
@@ -88,7 +93,7 @@ defmodule Pantagruel.Eval.State do
         Enum.all?(contents, &is_bound?(&1, environment, should_recurse))
     end
 
-    container_is_bound?.(contents, environment, contents)
+    container_is_bound?.(contents, environment, should_recurse)
   end
 
   @doc """
@@ -187,20 +192,42 @@ end
 defmodule Pantagruel.Eval do
   alias Pantagruel.Eval.{Lambda, State, Scope}
 
+  defp pad_list(_, acc, l) when length(acc) == l, do: Enum.reverse(acc)
+
+  defp pad_list([last], acc, l) do
+    pad_list([last], [last | acc], l)
+  end
+
+  defp pad_list([item | rest], acc, l) do
+    pad_list(rest, [item | acc], l)
+  end
+
   @doc """
   Create bindings for all arguments introduced as arguments to a function.
   """
   def bind_lambda_args(scope, declaration) do
+    args = declaration[:decl_args] || []
+    doms = declaration[:decl_doms] || []
+
     Enum.zip(
-      declaration[:decl_args] || [],
-      declaration[:decl_doms] || []
+      args,
+      case {length(doms), length(args)} do
+        {l, l} ->
+          doms
+
+        {longer, l} when longer > l ->
+          raise RuntimeError, "Too many function domains"
+
+        {shorter, l} when shorter < l ->
+          pad_list(doms, [], l)
+      end
     )
     |> Enum.reduce(scope, fn
       {var, dom}, env ->
-        case env do
-          %{^var => ^dom} -> scope
-          _ -> Scope.bind(scope, var, dom)
-        end
+        env
+        |> Scope.bind(var, dom)
+        # Automatically introduce successor variable.
+        |> Scope.bind(var <> "'", dom)
     end)
   end
 
@@ -295,8 +322,8 @@ defmodule Pantagruel.Eval do
   defp eval_section({:section, section}, state) do
     section[:head]
     |> Enum.reduce(new_state(state), &eval_declaration/2)
-    |> (fn state ->
-          Enum.reduce(section[:body] || [], state, &eval_body_expression/2)
+    |> (fn s ->
+          Enum.reduce(section[:body] || [], s, &eval_body_expression/2)
         end).()
     |> State.check_unbound()
   end

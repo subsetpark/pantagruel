@@ -83,10 +83,10 @@ defmodule Pantagruel.Parse do
       | strings([
           {"==", :equals},
           {"!=", :notequals},
-          {">", :gt},
-          {"<", :lt},
           {">=", :gte},
           {"<=", :lte},
+          {">", :gt},
+          {"<", :lt},
           # Denotes belonging to a domain.
           {":", :in},
           # Denotes membership in a concrete set.
@@ -280,7 +280,7 @@ defmodule Pantagruel.Parse do
     :domain,
     [
       parsec(:domain) |> nested,
-      utf8_string([?A..?Z, ?a..?z], min: 1),
+      utf8_string([?A..?Z, ?a..?z, ?0..?9], min: 1),
       parsec(:lambda)
     ]
     |> choice

@@ -262,5 +262,38 @@ defmodule EvalTest do
                MapSet.new()
              } == Pantagruel.Eval.eval(parsed)
     end
+    test "sort" do
+      # Note: this program is incorrect!
+      parsed =
+        """
+        sort|xs : [X]| :: [X]
+        x|| => X
+
+        all (x,y) from xs' x <= y = ind xs' x < ind xs' y
+
+        ;;
+
+        ind|xs, x : [X], X| :: Nat0
+        """
+        |> scan_and_parse
+
+      assert {
+               %Scope{
+                 bindings: %{
+                   "f" => %Lambda{
+                     name: "f",
+                     domain: ["Nat"],
+                     codomain: nil,
+                     type: :function
+                   },
+                   "x" => %Variable{name: "x", domain: "Nat"},
+                   "y" => %Variable{name: "y", domain: "Nat"}
+                 },
+                 parent: nil
+               },
+               MapSet.new(),
+               MapSet.new()
+             } == Pantagruel.Eval.eval(parsed)
+    end
   end
 end
