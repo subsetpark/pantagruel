@@ -6,7 +6,7 @@ defmodule Pantagruel.Eval.Scope do
   alias Pantagruel.Eval.{Variable, Scope}
   defstruct bindings: %{}, parent: nil
 
-  @spec bind(%Scope{}, {:bunch, list()} | String.t(), term()) :: %Scope{}
+  @spec bind(%Scope{}, term(), term()) :: %Scope{}
   def bind(scope, {:bunch, elements}, value) do
     Enum.reduce(elements, scope, &bind(&2, hd(&1), value))
   end
