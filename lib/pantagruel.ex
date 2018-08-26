@@ -28,7 +28,8 @@ defmodule Pantagruel do
 
   def main(filename) do
     try do
-      read!(filename)
+      scope = read!(filename)
+      IO.inspect scope
     rescue
       e in Pantagruel.Eval.State.UnboundVariablesError ->
         IO.puts("Unbound variables.")

@@ -6,6 +6,7 @@ defmodule Pantagruel.Eval.Scope do
   alias Pantagruel.Eval.{Variable, Scope}
   defstruct bindings: %{}, parent: nil
 
+  @spec bind(%Scope{}, {:bunch, list()} | String.t(), term()) :: %Scope{}
   def bind(scope, {:bunch, elements}, value) do
     Enum.reduce(elements, scope, &bind(&2, hd(&1), value))
   end
@@ -220,6 +221,7 @@ defmodule Pantagruel.Eval do
   @doc """
   Create bindings for all arguments introduced as arguments to a function.
   """
+  @spec bind_lambda_args(%Scope{}, decl_args: [String.t()], decl_doms: [term()]) :: %Scope{}
   def bind_lambda_args(scope, declaration) do
     args = declaration[:decl_args] || []
     doms = declaration[:decl_doms] || []
@@ -285,7 +287,7 @@ defmodule Pantagruel.Eval do
   defp bind_subexpression_variables(_, scope), do: scope
 
   defp bind_expression_variables(scope, expression) do
-    ((expression[:left] || []) ++ (expression[:right] || []))
+    (expression[:left] || [] ++ expression[:right] || [])
     |> Enum.reduce(scope, &bind_subexpression_variables/2)
   end
 
@@ -343,6 +345,10 @@ defmodule Pantagruel.Eval do
     |> State.check_unbound()
   end
 
+  @doc """
+  Evaluate a Pantagruel AST for variable binding correctness.
+  """
+  @spec eval(Pantagruel.t()) :: %Pantagruel.Eval.Scope{}
   def eval(program) do
     program
     |> Enum.reduce({nil, MapSet.new(), MapSet.new()}, &eval_section/2)
@@ -351,5 +357,6 @@ defmodule Pantagruel.Eval do
     # if the program is only one section long and thus
     # didn't get a chance to check the body yet)
     |> State.check_unbound(true)
+    |> elem(0)
   end
 end

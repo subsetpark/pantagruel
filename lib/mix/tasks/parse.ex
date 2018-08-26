@@ -14,13 +14,9 @@ defmodule Mix.Tasks.Pantagruel.Eval do
       end
 
     case parsed do
-      {r, _, _} ->
+      %Pantagruel.Eval.Scope{} = r ->
         IO.puts("Resulting environment:")
         IO.inspect(r)
-
-      other ->
-        IO.puts("Parsing complete.")
-        IO.inspect(other)
     end
   end
 end

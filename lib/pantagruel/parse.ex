@@ -314,7 +314,8 @@ defmodule Pantagruel.Parse do
   # A series of one or more specification sections separated by ";;",
   # where each subsequent section defines any variables introduced
   # in the previous section.
-  @spec program(String.t()) :: Pantagruel.t()
+  @spec program(String.t()) ::
+          {:ok, Pantagruel.t(), binary(), map(), {pos_integer(), pos_integer()}, pos_integer()}
   defparsec(
     :program,
     section
