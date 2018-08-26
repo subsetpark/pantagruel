@@ -87,7 +87,7 @@ defmodule EvalTest do
       parsed =
         """
         f|x:Nat|
-        f x = g x
+        f x <- g x
         ;;
         g|y:Nat|::Bool
         """

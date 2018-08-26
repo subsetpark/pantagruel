@@ -72,40 +72,39 @@ defmodule Pantagruel.Parse do
   newline = string("\n")
   # The section separator, pronounced "where".
   where = string("\n;;\n") |> replace(:where)
-  # The two primary ways of binding inside of a body.
-  quantifier = choice(strings([{"∃", :exists}, {"∀", :forall}]))
   # Logical operators.
   log_and = string("∧") |> replace(:and)
   log_or = string("∨") |> replace(:or)
-  log_not = string("¬") |> replace(:not)
-  log_op = choice([log_and, log_or, log_not])
-  # A closed set of non-alphabetic binary
-  # operators producing a boolean value.
-  relation =
-    choice(
-      strings([
-        {"==", :equals},
-        {"!=", :notequals},
-        {">", :gt},
-        {"<", :lt},
-        {">=", :gte},
-        {"<=", :lte},
-        # Denotes belonging to a domain.
-        {":", :in},
-        # Denotes membership in a concrete set.
-        {"∈", :from}
-      ])
-    )
+  # A closed set of non-alphabetic # binary or unary functions.
+  operator =
+    choice([
+      log_and,
+      log_or
+      | strings([
+          {"==", :equals},
+          {"!=", :notequals},
+          {">", :gt},
+          {"<", :lt},
+          {">=", :gte},
+          {"<=", :lte},
+          # Denotes belonging to a domain.
+          {":", :in},
+          # Denotes membership in a concrete set.
+          {"∈", :from},
+          {"¬", :not},
+          {"=", :iff},
+          {"→", :then},
+          "+",
+          "-",
+          "*",
+          "/",
+          "^",
+          {"∃", :exists},
+          {"∀", :forall}
+        ])
+    ])
 
-  # A closed set of non-alphabetic binary operators where both arguments
-  # and the value are all in the same domain.
-  operator = choice(strings(["+", "-", "*", "/", "^"]))
-  # A closed set of binary operators between propositions.
-  # =, pronounced "equals" or "if and only if", denotes strict
-  # logical equivalence. "P -> Q", pronounced "P implies Q" or
-  # "if P then Q", denotes non-strict, one-way equivalence, allowing
-  # for non-pure function or for Q to be true without P.
-  entailment = choice(strings([{"=", :iff}, {"→", :then}]))
+  refinement = string("←") |> replace(:refined)
   # Number values
   float =
     string("-")
@@ -140,10 +139,7 @@ defmodule Pantagruel.Parse do
       float,
       integer(min: 1),
       literal,
-      quantifier,
       parsec(:lambda),
-      log_op,
-      relation,
       operator,
       identifier,
       parsec(:domain)
@@ -159,20 +155,16 @@ defmodule Pantagruel.Parse do
     |> nested
 
   # A single proposition in the language. Takes the form of
-  # L El O Er
+  # L El ← Er
   # Where L is a logical operator like ∧ or ∨, El and Er are the
-  # left and right subexpressions, and O is a logical entailment operator
-  # describing the relationship between the two sides.
+  # left and right subexpressions, and ← is the logical entailment operator.
   expression =
-    unwrap_and_tag(log_op, :intro_op)
+    unwrap_and_tag(choice([log_and, log_or]), :intro_op)
     |> optional
     |> concat(
       parsec(:subexpression)
       |> tag(:left)
-      |> concat(
-        entailment
-        |> unwrap_and_tag(:op)
-      )
+      |> ignore(refinement)
       |> optional
     )
     |> concat(

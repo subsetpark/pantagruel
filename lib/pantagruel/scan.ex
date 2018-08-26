@@ -27,53 +27,57 @@ defmodule Pantagruel.Scan do
   defp scan(<<"->"::utf8, contents::binary>>, out, true),
     do: scan(<<?→::utf8, contents::binary>>, out, true)
 
+  defp scan(<<"<-"::utf8, contents::binary>>, out, true),
+    do: scan(<<?←::utf8, contents::binary>>, out, true)
+
+  defp scan(<<" <-"::utf8, contents::binary>>, out, true),
+    do: scan(<<?←::utf8, contents::binary>>, out, true)
+
   defp scan(<<"...\n"::utf8, contents::binary>>, out, true),
     do: scan(<<?\s::utf8, contents::binary>>, out, true)
 
   defp scan(<<l::utf8, "and"::utf8, r::utf8, contents::binary>>, out, true)
-       when (l == ?\n or l == ?\s) and (r == ?\n or r == ?\s) do
+       when l in [?\n, ?\s] and r in [?\n, ?\s] do
     scan(<<l::utf8, "∧"::utf8, r::utf8, contents::binary>>, out, true)
   end
 
   defp scan(<<l::utf8, "or"::utf8, r::utf8, contents::binary>>, out, true)
-       when (l == ?\n or l == ?\s) and (r == ?\n or r == ?\s) do
+       when l in [?\n, ?\s] and r in [?\n, ?\s] do
     scan(<<l::utf8, "∨"::utf8, r::utf8, contents::binary>>, out, true)
   end
 
   defp scan(<<l::utf8, "from"::utf8, r::utf8, contents::binary>>, out, true)
-       when (l == ?\n or l == ?\s) and (r == ?\n or r == ?\s) do
+       when l in [?\n, ?\s] and r in [?\n, ?\s] do
     scan(<<l::utf8, "∈"::utf8, r::utf8, contents::binary>>, out, true)
   end
 
   defp scan(<<l::utf8, "in"::utf8, r::utf8, contents::binary>>, out, true)
-       when (l == ?\n or l == ?\s) and (r == ?\n or r == ?\s) do
+       when l in [?\n, ?\s] and r in [?\n, ?\s] do
     scan(<<l::utf8, ":"::utf8, r::utf8, contents::binary>>, out, true)
   end
 
   defp scan(<<l::utf8, "exists"::utf8, r::utf8, contents::binary>>, out, true)
-       when (l == ?\n or l == ?\s) and (r == ?\n or r == ?\s) do
+       when l in [?\n, ?\s] and r in [?\n, ?\s] do
     scan(<<l::utf8, "∃"::utf8, r::utf8, contents::binary>>, out, true)
   end
 
   defp scan(<<l::utf8, "all"::utf8, r::utf8, contents::binary>>, out, true)
-       when (l == ?\n or l == ?\s) and (r == ?\n or r == ?\s) do
+       when l in [?\n, ?\s] and r in [?\n, ?\s] do
     scan(<<l::utf8, "∀"::utf8, r::utf8, contents::binary>>, out, true)
   end
 
   ## Space elimination
   defp scan(<<?\s::utf8, contents::binary>>, <<c::utf8, _::binary>> = acc, true)
        # Excepting ?; doesn't seem necessary.
-       when c in 40..45 or (c in 58..62 and c != ?;) or c in 91..94 or c in 123..126 or c == ?→ or
-              c == ?∃ or c == ?∀ or c == ?∧ or c == ?∨ or c == ?∀ or c == ?∈ or
-              c == ?¬ or c == ?! or c == ?` do
+       when c in 40..45 or (c in 58..62 and c != ?;) or c in 91..94 or c in 123..126 or
+              c in [?→, ?∃, ?∀, ?∧, ?∨, ?∀, ?∈, ?¬, ?!, ?`, ?←] do
     scan(contents, acc, true)
   end
 
   defp scan(<<" "::utf8, c::utf8, contents::binary>>, out, true)
        # Excepting ?; doesn't seem necessary.
-       when c in 40..45 or (c in 58..62 and c != ?;) or c in 91..94 or c in 123..126 or c == ?→ or
-              c == ?∃ or c == ?∀ or c == ?∧ or c == ?∨ or c == ?∀ or c == ?∈ or
-              c == ?¬ or c == ?! or c == ?` do
+       when c in 40..45 or (c in 58..62 and c != ?;) or c in 91..94 or c in 123..126 or
+              c in [?→, ?∃, ?∀, ?∧, ?∨, ?∀, ?∈, ?¬, ?!, ?`, ?←] do
     scan(contents, <<c::utf8, out::binary>>, true)
   end
 

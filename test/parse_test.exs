@@ -61,7 +61,7 @@ defmodule PantagruelTest do
     end
 
     test "parse expression with relation in it" do
-      text = "f||\nx=y ∧ y > 1"
+      text = "f||\nx←y ∧ y > 1"
 
       tryparse(text,
         section: [
@@ -73,7 +73,6 @@ defmodule PantagruelTest do
           body: [
             expr: [
               left: ["x"],
-              op: :iff,
               right: ["y", :and, "y", :gt, 1]
             ]
           ]
@@ -82,7 +81,7 @@ defmodule PantagruelTest do
     end
 
     test "parse expression with multiple elements on the left" do
-      text = "f||\nf x→y"
+      text = "f||\nf x←y"
 
       tryparse(text,
         section: [
@@ -94,7 +93,6 @@ defmodule PantagruelTest do
           body: [
             expr: [
               left: ["f", "x"],
-              op: :then,
               right: ["y"]
             ]
           ]
