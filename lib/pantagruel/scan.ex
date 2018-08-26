@@ -66,18 +66,20 @@ defmodule Pantagruel.Scan do
     scan(<<l::utf8, "∀"::utf8, r::utf8, contents::binary>>, out, true)
   end
 
+  @operators [?→, ?∃, ?∀, ?∧, ?∨, ?∀, ?∈, ?¬, ?!, ?`, ?←]
+
   ## Space elimination
   defp scan(<<?\s::utf8, contents::binary>>, <<c::utf8, _::binary>> = acc, true)
        # Excepting ?; doesn't seem necessary.
        when c in 40..45 or (c in 58..62 and c != ?;) or c in 91..94 or c in 123..126 or
-              c in [?→, ?∃, ?∀, ?∧, ?∨, ?∀, ?∈, ?¬, ?!, ?`, ?←] do
+              c in @operators do
     scan(contents, acc, true)
   end
 
   defp scan(<<" "::utf8, c::utf8, contents::binary>>, out, true)
        # Excepting ?; doesn't seem necessary.
        when c in 40..45 or (c in 58..62 and c != ?;) or c in 91..94 or c in 123..126 or
-              c in [?→, ?∃, ?∀, ?∧, ?∨, ?∀, ?∈, ?¬, ?!, ?`, ?←] do
+              c in @operators do
     scan(contents, <<c::utf8, out::binary>>, true)
   end
 
