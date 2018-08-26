@@ -19,6 +19,7 @@ defmodule EvalTest do
       assert {%Scope{
                 bindings: %{
                   "x" => %Variable{name: "x", domain: "Nat"},
+                  "x'" => %Variable{name: "x'", domain: "Nat"},
                   "f" => %Lambda{name: "f", domain: ["Nat"], codomain: "Real", type: :function}
                 },
                 parent: nil
@@ -97,12 +98,14 @@ defmodule EvalTest do
                %Scope{
                  bindings: %{
                    "g" => %Lambda{name: "g", domain: ["Nat"], codomain: "Bool", type: :function},
-                   "y" => %Variable{name: "y", domain: "Nat"}
+                   "y" => %Variable{name: "y", domain: "Nat"},
+                   "y'" => %Variable{name: "y'", domain: "Nat"}
                  },
                  parent: %Scope{
                    bindings: %{
                      "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: :function},
-                     "x" => %Variable{name: "x", domain: "Nat"}
+                     "x" => %Variable{name: "x", domain: "Nat"},
+                     "x'" => %Variable{name: "x'", domain: "Nat"}
                    },
                    parent: nil
                  }
@@ -161,7 +164,8 @@ defmodule EvalTest do
                  parent: %Scope{
                    bindings: %{
                      "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: :function},
-                     "x" => %Variable{name: "x", domain: "Nat"}
+                     "x" => %Variable{name: "x", domain: "Nat"},
+                     "x'" => %Variable{name: "x'", domain: "Nat"}
                    },
                    parent: nil
                  }
@@ -183,7 +187,8 @@ defmodule EvalTest do
                %Scope{
                  bindings: %{
                    "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: :function},
-                   "x" => %Variable{name: "x", domain: "Nat"}
+                   "x" => %Variable{name: "x", domain: "Nat"},
+                   "x'" => %Variable{name: "x'", domain: "Nat"}
                    # Notice `z` is not here. It was introduced so that
                    # `z > 100` checked, but it's not in the resulting scope.
                  },
@@ -209,7 +214,8 @@ defmodule EvalTest do
                    "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: :function},
                    "con" => %Lambda{name: "con", domain: [], codomain: "X", type: :constructor},
                    "X" => %Variable{name: "X", domain: "X"},
-                   "x" => %Variable{name: "x", domain: "Nat"}
+                   "x" => %Variable{name: "x", domain: "Nat"},
+                   "x'" => %Variable{name: "x'", domain: "Nat"}
                  },
                  parent: nil
                },
@@ -254,6 +260,7 @@ defmodule EvalTest do
                      type: :function
                    },
                    "x" => %Variable{name: "x", domain: "Nat"},
+                   "x'" => %Variable{name: "x'", domain: "Nat"},
                    "y" => %Variable{name: "y", domain: "Nat"}
                  },
                  parent: nil
@@ -262,6 +269,7 @@ defmodule EvalTest do
                MapSet.new()
              } == Pantagruel.Eval.eval(parsed)
     end
+
     test "sort" do
       # Note: this program is incorrect!
       parsed =
@@ -287,7 +295,9 @@ defmodule EvalTest do
                      type: :function
                    },
                    "x" => %Variable{name: "x", domain: "Nat"},
-                   "y" => %Variable{name: "y", domain: "Nat"}
+                   "x'" => %Variable{name: "x'", domain: "Nat"},
+                   "y" => %Variable{name: "y", domain: "Nat"},
+                   "y'" => %Variable{name: "y'", domain: "Nat"}
                  },
                  parent: nil
                },
