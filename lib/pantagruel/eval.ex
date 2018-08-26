@@ -28,8 +28,8 @@ defmodule Pantagruel.Eval.Lambda do
   alias Pantagruel.Eval.{Lambda, Scope}
   defstruct name: "", domain: [], codomain: nil, type: nil
 
-  def bind(environment, name, domain, codomain, type \\ :function) do
-    environment
+  def bind(scope, name, domain, codomain, type \\ :function) do
+    scope
     |> Scope.bind(name, %Lambda{
       name: name,
       domain: domain,
@@ -84,32 +84,32 @@ defmodule Pantagruel.Eval.State do
   @doc """
   Boundness checking for container types.
   """
-  defp is_bound?({container, contents}, environment, should_recurse)
+  defp is_bound?({container, contents}, scope, should_recurse)
        when container in [:string, :bunch, :set, :list] do
     container_is_bound? = fn
       # This sucks.
       [], _, _ ->
         true
 
-      contents, environment, should_recurse ->
+      contents, scope, should_recurse ->
         inner_f = fn
           container_item when is_list(container_item) ->
-            Enum.all?(container_item, &is_bound?(&1, environment, should_recurse))
+            Enum.all?(container_item, &is_bound?(&1, scope, should_recurse))
 
           container_item ->
-            is_bound?(container_item, environment, should_recurse)
+            is_bound?(container_item, scope, should_recurse)
         end
 
         Enum.all?(contents, inner_f)
     end
 
-    container_is_bound?.(contents, environment, should_recurse)
+    container_is_bound?.(contents, scope, should_recurse)
   end
 
   @doc """
   Boundness checking for functions.
   """
-  defp is_bound?({:lambda, lambda}, environment, should_recurse) do
+  defp is_bound?({:lambda, lambda}, scope, should_recurse) do
     [
       lambda[:decl_doms] || [],
       lambda[:yield_domain] || [],
@@ -122,7 +122,7 @@ defmodule Pantagruel.Eval.State do
         &1,
         # Lambdas introduce function arguments. Therefore they are bound
         # in (and only in) the recursive boundness check.
-        Pantagruel.Eval.bind_lambda_args(environment, lambda),
+        Pantagruel.Eval.bind_lambda_args(scope, lambda),
         should_recurse
       )
     )
@@ -151,9 +151,14 @@ defmodule Pantagruel.Eval.State do
     )
   end
 
-  defp is_bound?(variable, environment, should_recurse) do
-    Map.has_key?(@starting_environment, variable) or Map.has_key?(environment.bindings, variable) or
-      (should_recurse and is_bound?(variable, environment.parent, false))
+  @doc """
+  A non-composite value is bound if it's present in the current scope or
+  the previous one. This allows for a flow where variables are referred
+  to in one scope and then specified with :where.
+  """
+  defp is_bound?(variable, scope, should_recurse) do
+    Map.has_key?(@starting_environment, variable) or Map.has_key?(scope.bindings, variable) or
+      (should_recurse and is_bound?(variable, scope.parent, false))
   end
 
   @doc """
