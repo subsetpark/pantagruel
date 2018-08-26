@@ -1,6 +1,6 @@
 defmodule EvalTest do
   use ExUnit.Case
-  alias Pantagruel.Eval.State.UnboundVariablesError
+  alias Pantagruel.Eval.Binding.UnboundVariablesError
   alias Pantagruel.Eval.{Variable, Lambda, Scope}
 
   defp scan_and_parse(text) do
