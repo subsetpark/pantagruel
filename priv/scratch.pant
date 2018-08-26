@@ -1,22 +1,16 @@
-f|x, y: Nat, Real| :: Real
-; This is a comment. Shouldn't show up.
-f x y -> x ^...
-    y
-
-;;
-
 x || => Real
 y ||=>Real
-x = 1.5
 x > rand andr "D" 10 x
 and x == 1
-y"x""m,n,z"
+exists (m, n, z) from x y"x""m,n,z"
 ""
 y = |x : |z:D| :: D | :: D
 ;;
 z|| => Z
 d|| => D
 z|| => Nat
+rand|| :: Nat
+andr|x,y : Nat| :: Bool
 ;;
 y|| => Y
 exists x from y x > 0

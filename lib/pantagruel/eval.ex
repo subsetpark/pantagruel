@@ -56,7 +56,8 @@ defmodule Pantagruel.Eval.State do
     "-" => %Variable{name: "-", domain: "ℝ"},
     "^" => %Variable{name: "^", domain: "ℝ"},
     :in => %Variable{name: ":", domain: "⊤"},
-    :iff => %Variable{name: "=", domain: "𝔹"}
+    :iff => %Variable{name: "=", domain: "𝔹"},
+    :then => %Variable{name: "→", domain: "𝔹"}
   }
 
   defmodule UnboundVariablesError do
