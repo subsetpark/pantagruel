@@ -118,8 +118,8 @@ defmodule Pantagruel.Eval.Binding do
   Include new values into the data structures tracking unbound variables.
   """
   def include_and_filter_unbounds(variables, {scope, global_unbound, head_unbound}, scope_source) do
-    is_unbound? = &(not is_bound?(&1, scope))
     union = &MapSet.union(&1, MapSet.new(variables))
+    is_unbound? = &(not is_bound?(&1, scope))
 
     filter =
       &(&1

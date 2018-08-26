@@ -263,6 +263,18 @@ defmodule EvalTest do
       assert exc.unbound == MapSet.new(["y"])
     end
 
+    test "too many domains" do
+      parsed =
+        """
+        f|x:Nat,Real|
+        """
+        |> scan_and_parse
+
+      assert_raise RuntimeError, fn ->
+        Pantagruel.Eval.eval(parsed)
+      end
+    end
+
     test "exists binds" do
       parsed =
         """
