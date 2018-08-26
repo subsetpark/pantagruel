@@ -10,7 +10,7 @@ defmodule ScanLest do
       """
 
       scanned = Pantagruel.Scan.scan(text)
-      assert "line\nline2 \nline3" == scanned
+      assert "line\nline2\nline3" == scanned
     end
 
     test "scan spaces" do
