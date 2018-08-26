@@ -82,29 +82,23 @@ defmodule Pantagruel.Eval.State do
   """
   defp is_bound?(_, nil, _), do: false
 
+  @container_types [:string, :bunch, :set, :list]
   @doc """
   Boundness checking for container types.
   """
+  defp is_bound?({container, []}, _, _)
+       when container in @container_types,
+       do: true
+
   defp is_bound?({container, contents}, scope, should_recurse)
-       when container in [:string, :bunch, :set, :list] do
-    container_is_bound? = fn
-      # This sucks.
-      [], _, _ ->
-        true
+       when container in @container_types do
+    Enum.all?(contents, fn
+      container_item when is_list(container_item) ->
+        Enum.all?(container_item, &is_bound?(&1, scope, should_recurse))
 
-      contents, scope, should_recurse ->
-        inner_f = fn
-          container_item when is_list(container_item) ->
-            Enum.all?(container_item, &is_bound?(&1, scope, should_recurse))
-
-          container_item ->
-            is_bound?(container_item, scope, should_recurse)
-        end
-
-        Enum.all?(contents, inner_f)
-    end
-
-    container_is_bound?.(contents, scope, should_recurse)
+      container_item ->
+        is_bound?(container_item, scope, should_recurse)
+    end)
   end
 
   @doc """
