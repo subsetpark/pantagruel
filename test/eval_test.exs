@@ -288,18 +288,32 @@ defmodule EvalTest do
       assert {
                %Scope{
                  bindings: %{
-                   "f" => %Lambda{
-                     name: "f",
-                     domain: ["Nat"],
-                     codomain: nil,
+                   "x" => %Variable{name: "x", domain: "X"},
+                   "x'" => %Variable{name: "x'", domain: "X"},
+                   "ind" => %Lambda{
+                     domain: [{:list, ["X"]}, "X"],
+                     codomain: "Nat0",
+                     name: "ind",
                      type: :function
                    },
-                   "x" => %Variable{name: "x", domain: "Nat"},
-                   "x'" => %Variable{name: "x'", domain: "Nat"},
-                   "y" => %Variable{name: "y", domain: "Nat"},
-                   "y'" => %Variable{name: "y'", domain: "Nat"}
+                   "xs" => %Variable{domain: {:list, ["X"]}, name: "xs"},
+                   "xs'" => %Variable{domain: {:list, ["X"]}, name: "xs'"}
                  },
-                 parent: nil
+                 parent: %Scope{
+                   bindings: %{
+                     "X" => %Variable{domain: "X", name: "X"},
+                     "sort" => %Lambda{
+                       domain: [list: ["X"]],
+                       codomain: {:list, ["X"]},
+                       name: "sort",
+                       type: :function
+                     },
+                     "x" => %Lambda{codomain: "X", domain: [], name: "x", type: :constructor},
+                     "xs" => %Variable{domain: {:list, ["X"]}, name: "xs"},
+                     "xs'" => %Variable{domain: {:list, ["X"]}, name: "xs'"}
+                   },
+                   parent: nil
+                 }
                },
                MapSet.new(),
                MapSet.new()

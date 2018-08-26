@@ -86,11 +86,20 @@ defmodule Pantagruel.Eval.State do
   defp is_bound?({container, contents}, environment, should_recurse)
        when container in [:string, :bunch, :set, :list] do
     container_is_bound? = fn
+      # This sucks.
       [], _, _ ->
         true
 
       contents, environment, should_recurse ->
-        Enum.all?(contents, &is_bound?(&1, environment, should_recurse))
+        inner_f = fn
+          container_item when is_list(container_item) ->
+            Enum.all?(container_item, &is_bound?(&1, environment, should_recurse))
+
+          container_item ->
+            is_bound?(container_item, environment, should_recurse)
+        end
+
+        Enum.all?(contents, inner_f)
     end
 
     container_is_bound?.(contents, environment, should_recurse)
