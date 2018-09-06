@@ -29,18 +29,17 @@ defmodule Pantagruel.Eval.Binding do
 
   # Quantifiers introduce function arguments. Therefore they are bound
   # in (and only in) the recursive boundness check.
-  defp check_with_bindings(expr, bindings, scope, should_recurse) do
+  defp check_with_bindings(expr, bindings, state) do
     bound_scope =
-      Enum.reduce(bindings, scope, fn [symbol, _, domain], scope2 ->
-        Scope.bind(scope2, symbol, domain)
+      Enum.reduce(bindings, state, fn [symbol, _, domain], state2 ->
+        Scope.bind(state2, symbol, domain)
       end)
 
     Enum.all?(
       for([_, _, domain] <- bindings, do: domain) ++ expr,
       &is_bound?(
         &1,
-        bound_scope,
-        should_recurse
+        bound_scope
       )
     )
   end
@@ -48,43 +47,41 @@ defmodule Pantagruel.Eval.Binding do
   @doc """
   Decide if a variable is bound within a given state.
   """
-  defp is_bound?(v, s), do: is_bound?(v, s, true)
-
   @doc """
   Boundness checking for literals.
   """
-  defp is_bound?(v, _, _) when is_integer(v), do: true
-  defp is_bound?(v, _, _) when is_float(v), do: true
-  defp is_bound?({:literal, _}, _, _), do: true
+  defp is_bound?(v, _) when is_integer(v), do: true
+  defp is_bound?(v, _) when is_float(v), do: true
+  defp is_bound?({:literal, _}, _), do: true
 
   @doc """
   A non-value is always unbound within a null state.
   """
-  defp is_bound?(_, nil, _), do: false
+  defp is_bound?(_, []), do: false
 
   @container_types [:string, :bunch, :set, :list]
   @doc """
   Boundness checking for container types.
   """
-  defp is_bound?({container, []}, _, _)
+  defp is_bound?({container, []}, _)
        when container in @container_types,
        do: true
 
-  defp is_bound?({container, contents}, scope, should_recurse)
+  defp is_bound?({container, contents}, scope)
        when container in @container_types do
     Enum.all?(contents, fn
       container_item when is_list(container_item) ->
-        Enum.all?(container_item, &is_bound?(&1, scope, should_recurse))
+        Enum.all?(container_item, &is_bound?(&1, scope))
 
       container_item ->
-        is_bound?(container_item, scope, should_recurse)
+        is_bound?(container_item, scope)
     end)
   end
 
   @doc """
   Boundness checking for functions.
   """
-  defp is_bound?({:lambda, lambda}, scope, should_recurse) do
+  defp is_bound?({:lambda, lambda}, scope) do
     [
       lambda[:decl_doms] || [],
       lambda[:yield_domain] || [],
@@ -97,8 +94,7 @@ defmodule Pantagruel.Eval.Binding do
         &1,
         # Lambdas introduce function arguments. Therefore they are bound
         # in (and only in) the recursive boundness check.
-        Pantagruel.Eval.bind_lambda_args(scope, lambda),
-        should_recurse
+        Pantagruel.Eval.bind_lambda_args(scope, lambda)
       )
     )
   end
@@ -106,12 +102,12 @@ defmodule Pantagruel.Eval.Binding do
   @doc """
   Boundness checking for for-all quantifiers.
   """
-  defp is_bound?({:quantifier, [_quantifier, bindings, expr]}, scope, should_recurse) do
-    check_with_bindings(expr, bindings, scope, should_recurse)
+  defp is_bound?({:quantifier, [_quantifier, bindings, expr]}, scope) do
+    check_with_bindings(expr, bindings, scope)
   end
 
-  defp is_bound?({:comprehension, [{_container, [expr, bindings]}]}, scope, should_recurse) do
-    check_with_bindings(expr, bindings, scope, should_recurse)
+  defp is_bound?({:comprehension, [{_container, [expr, bindings]}]}, scope) do
+    check_with_bindings(expr, bindings, scope)
   end
 
   @doc """
@@ -119,17 +115,21 @@ defmodule Pantagruel.Eval.Binding do
   the previous one. This allows for a flow where variables are referred
   to in one scope and then specified with :where.
   """
-  defp is_bound?(variable, scope, should_recurse) do
-    Map.has_key?(@starting_environment, variable) or Map.has_key?(scope.bindings, variable) or
-      (should_recurse and is_bound?(variable, scope.parent, false))
+  defp is_bound?(variable, [{scope, _, _} | parent]) do
+    Map.has_key?(@starting_environment, variable) or Map.has_key?(scope, variable) or
+      is_bound?(variable, parent)
   end
 
   @doc """
   Include new values into the data structures tracking unbound variables.
   """
-  def include_and_filter_unbounds(variables, {scope, global_unbound, head_unbound}, scope_source) do
+  def include_and_filter_unbounds(
+        variables,
+        [{scope, global_unbound, head_unbound} | parent] = state,
+        scope_source
+      ) do
     union = &MapSet.union(&1, MapSet.new(variables))
-    is_unbound? = &(not is_bound?(&1, scope))
+    is_unbound? = &(not is_bound?(&1, state))
 
     filter =
       &(&1
@@ -138,27 +138,33 @@ defmodule Pantagruel.Eval.Binding do
 
     case scope_source do
       :head ->
-        {
-          scope,
-          global_unbound |> filter.(),
-          head_unbound |> union.() |> filter.()
-        }
+        [
+          {
+            scope,
+            global_unbound |> filter.(),
+            head_unbound |> union.() |> filter.()
+          }
+          | parent
+        ]
 
       :body ->
-        {
-          scope,
-          global_unbound |> union.() |> filter.(),
-          head_unbound |> filter.()
-        }
+        [
+          {
+            scope,
+            global_unbound |> union.() |> filter.(),
+            head_unbound |> filter.()
+          }
+          | parent
+        ]
     end
   end
 
-  def check_unbound({scope, global_unbound, head_unbound} = state, force \\ false) do
+  def check_unbound([{_, global_unbound, head_unbound} | parent] = state, force \\ false) do
     cond do
       MapSet.size(head_unbound) > 0 ->
         raise UnboundVariablesError, unbound: head_unbound
 
-      (scope.parent || force) && MapSet.size(global_unbound) > 0 ->
+      (parent || force) && MapSet.size(global_unbound) > 0 ->
         raise UnboundVariablesError, unbound: global_unbound
 
       true ->

@@ -1,7 +1,7 @@
 defmodule EvalTest do
   use ExUnit.Case
   alias Pantagruel.Eval.Binding.UnboundVariablesError
-  alias Pantagruel.Eval.{Variable, Lambda, Scope}
+  alias Pantagruel.Eval.{Variable, Lambda}
 
   defp scan_and_parse(text) do
     {:ok, parsed, "", %{}, _, _} =
@@ -16,14 +16,13 @@ defmodule EvalTest do
     test "eval happy path" do
       parsed = "f|x:Nat . x > 1| :: Real" |> scan_and_parse
 
-      assert %Scope{
-               bindings: %{
+      assert [
+               %{
                  "x" => %Variable{name: "x", domain: "Nat"},
                  "x'" => %Variable{name: "x'", domain: "Nat"},
                  "f" => %Lambda{name: "f", domain: ["Nat"], codomain: "Real", type: :function}
-               },
-               parent: nil
-             } == Pantagruel.Eval.eval(parsed)
+               }
+             ] == Pantagruel.Eval.eval(parsed)
     end
 
     test "eval unbound" do
@@ -46,8 +45,8 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      assert %Scope{
-               bindings: %{
+      assert [
+               %{
                  "f" => %Lambda{name: "f", domain: ["X", "Y"], codomain: "Real", type: :function},
                  "x" => %Variable{name: "x", domain: "X"},
                  "x'" => %Variable{name: "x'", domain: "X"},
@@ -67,29 +66,27 @@ defmodule EvalTest do
                    codomain: "Y",
                    type: :constructor
                  }
-               },
-               parent: nil
-             } == Pantagruel.Eval.eval(parsed)
+               }
+             ] == Pantagruel.Eval.eval(parsed)
     end
 
     test "eval whole section" do
       parsed = "f|x:Nat|\nf x > 0" |> scan_and_parse
 
-      assert %Scope{
-               bindings: %{
+      assert [
+               %{
                  "x" => %Variable{name: "x", domain: "Nat"},
                  "x'" => %Variable{name: "x'", domain: "Nat"},
                  "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: :function}
-               },
-               parent: nil
-             } == Pantagruel.Eval.eval(parsed)
+               }
+             ] == Pantagruel.Eval.eval(parsed)
     end
 
     test "eval two sections" do
       parsed = "f|x:Nat|\n;;\ng|| :: Nat" |> scan_and_parse
 
-      assert %Scope{
-               bindings: %{
+      assert [
+               %{
                  "g" => %Lambda{
                    name: "g",
                    domain: [],
@@ -97,20 +94,17 @@ defmodule EvalTest do
                    type: :function
                  }
                },
-               parent: %Scope{
-                 bindings: %{
-                   "x" => %Variable{name: "x", domain: "Nat"},
-                   "x'" => %Variable{name: "x'", domain: "Nat"},
-                   "f" => %Lambda{
-                     name: "f",
-                     domain: ["Nat"],
-                     codomain: nil,
-                     type: :function
-                   }
-                 },
-                 parent: nil
+               %{
+                 "x" => %Variable{name: "x", domain: "Nat"},
+                 "x'" => %Variable{name: "x'", domain: "Nat"},
+                 "f" => %Lambda{
+                   name: "f",
+                   domain: ["Nat"],
+                   codomain: nil,
+                   type: :function
+                 }
                }
-             } == Pantagruel.Eval.eval(parsed)
+             ] == Pantagruel.Eval.eval(parsed)
     end
 
     test "unbound variable in body" do
@@ -131,21 +125,18 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      assert %Scope{
-               bindings: %{
+      assert [
+               %{
                  "g" => %Lambda{name: "g", domain: ["Nat"], codomain: "Bool", type: :function},
                  "y" => %Variable{name: "y", domain: "Nat"},
                  "y'" => %Variable{name: "y'", domain: "Nat"}
                },
-               parent: %Scope{
-                 bindings: %{
-                   "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: :function},
-                   "x" => %Variable{name: "x", domain: "Nat"},
-                   "x'" => %Variable{name: "x'", domain: "Nat"}
-                 },
-                 parent: nil
+               %{
+                 "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: :function},
+                 "x" => %Variable{name: "x", domain: "Nat"},
+                 "x'" => %Variable{name: "x'", domain: "Nat"}
                }
-             } == Pantagruel.Eval.eval(parsed)
+             ] == Pantagruel.Eval.eval(parsed)
     end
 
     test "variable is bound too late" do
@@ -188,20 +179,17 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      assert %Scope{
-               bindings: %{
+      assert [
+               %{
                  "d" => %Lambda{name: "d", domain: [], codomain: "D", type: :constructor},
                  "D" => %Variable{name: "D", domain: "D"}
                },
-               parent: %Scope{
-                 bindings: %{
-                   "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: :function},
-                   "x" => %Variable{name: "x", domain: "Nat"},
-                   "x'" => %Variable{name: "x'", domain: "Nat"}
-                 },
-                 parent: nil
+               %{
+                 "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: :function},
+                 "x" => %Variable{name: "x", domain: "Nat"},
+                 "x'" => %Variable{name: "x'", domain: "Nat"}
                }
-             } == Pantagruel.Eval.eval(parsed)
+             ] == Pantagruel.Eval.eval(parsed)
     end
 
     test "lambdas introduce temporary bindings" do
@@ -212,16 +200,15 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      assert %Scope{
-               bindings: %{
+      assert [
+               %{
                  "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: :function},
                  "x" => %Variable{name: "x", domain: "Nat"},
                  "x'" => %Variable{name: "x'", domain: "Nat"}
                  # Notice `z` is not here. It was introduced so that
                  # `z > 100` checked, but it's not in the resulting scope.
-               },
-               parent: nil
-             } == Pantagruel.Eval.eval(parsed)
+               }
+             ] == Pantagruel.Eval.eval(parsed)
     end
 
     test "alls introduce temporary bindings" do
@@ -233,16 +220,15 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      assert %Scope{
-               bindings: %{
+      assert [
+               %{
                  "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: :function},
                  "con" => %Lambda{name: "con", domain: [], codomain: "X", type: :constructor},
                  "X" => %Variable{name: "X", domain: "X"},
                  "x" => %Variable{name: "x", domain: "Nat"},
                  "x'" => %Variable{name: "x'", domain: "Nat"}
-               },
-               parent: nil
-             } == Pantagruel.Eval.eval(parsed)
+               }
+             ] == Pantagruel.Eval.eval(parsed)
     end
 
     test "temporary bindings are temporary" do
@@ -283,8 +269,8 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      assert %Scope{
-               bindings: %{
+      assert [
+               %{
                  "f" => %Lambda{
                    name: "f",
                    domain: ["Nat"],
@@ -294,9 +280,8 @@ defmodule EvalTest do
                  "x" => %Variable{name: "x", domain: "Nat"},
                  "x'" => %Variable{name: "x'", domain: "Nat"},
                  "y" => %Variable{name: "y", domain: "Nat"}
-               },
-               parent: nil
-             } == Pantagruel.Eval.eval(parsed)
+               }
+             ] == Pantagruel.Eval.eval(parsed)
     end
 
     test "look in earlier scope for variable" do
@@ -311,7 +296,32 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      assert %Scope{} == Pantagruel.Eval.eval(parsed)
+      assert [
+               %{
+                 "y" => %Pantagruel.Eval.Lambda{
+                   name: "y",
+                   domain: [],
+                   codomain: nil,
+                   type: :function
+                 }
+               },
+               %{
+                 "x" => %Pantagruel.Eval.Lambda{
+                   name: "x",
+                   domain: [],
+                   codomain: nil,
+                   type: :function
+                 }
+               },
+               %{
+                 "f" => %Pantagruel.Eval.Lambda{
+                   name: "f",
+                   domain: [],
+                   codomain: nil,
+                   type: :function
+                 }
+               }
+             ] == Pantagruel.Eval.eval(parsed)
     end
 
     test "sort" do
@@ -329,8 +339,8 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      assert %Scope{
-               bindings: %{
+      assert [
+               %{
                  "x" => %Variable{name: "x", domain: "X"},
                  "x'" => %Variable{name: "x'", domain: "X"},
                  "ind" => %Lambda{
@@ -342,22 +352,19 @@ defmodule EvalTest do
                  "xs" => %Variable{domain: {:list, ["X"]}, name: "xs"},
                  "xs'" => %Variable{domain: {:list, ["X"]}, name: "xs'"}
                },
-               parent: %Scope{
-                 bindings: %{
-                   "X" => %Variable{domain: "X", name: "X"},
-                   "sort" => %Lambda{
-                     domain: [list: ["X"]],
-                     codomain: {:list, ["X"]},
-                     name: "sort",
-                     type: :function
-                   },
-                   "x" => %Lambda{codomain: "X", domain: [], name: "x", type: :constructor},
-                   "xs" => %Variable{domain: {:list, ["X"]}, name: "xs"},
-                   "xs'" => %Variable{domain: {:list, ["X"]}, name: "xs'"}
+               %{
+                 "X" => %Variable{domain: "X", name: "X"},
+                 "sort" => %Lambda{
+                   domain: [list: ["X"]],
+                   codomain: {:list, ["X"]},
+                   name: "sort",
+                   type: :function
                  },
-                 parent: nil
+                 "x" => %Lambda{codomain: "X", domain: [], name: "x", type: :constructor},
+                 "xs" => %Variable{domain: {:list, ["X"]}, name: "xs"},
+                 "xs'" => %Variable{domain: {:list, ["X"]}, name: "xs'"}
                }
-             } == Pantagruel.Eval.eval(parsed)
+             ] == Pantagruel.Eval.eval(parsed)
     end
   end
 end

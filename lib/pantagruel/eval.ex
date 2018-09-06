@@ -4,24 +4,19 @@ end
 
 defmodule Pantagruel.Eval.Scope do
   alias Pantagruel.Eval.{Variable, Scope}
-  defstruct bindings: %{}, parent: nil
 
-  @spec bind(%Scope{}, term(), term()) :: %Scope{}
-  def bind(scope, {:bunch, elements}, value) do
-    Enum.reduce(elements, scope, &bind(&2, hd(&1), value))
+  def bind(state, {:bunch, elements}, value) do
+    Enum.reduce(elements, state, &bind(&2, hd(&1), value))
   end
 
-  def bind(scope, name, value) do
+  def bind([{scope, g_u, h_u} | parent], name, value) do
     to_put =
       case value do
         %{} -> value
         domain -> %Variable{name: name, domain: domain}
       end
 
-    %Scope{
-      scope
-      | bindings: Map.put(scope.bindings, name, to_put)
-    }
+    [{Map.put(scope, name, to_put), g_u, h_u} | parent]
   end
 end
 
@@ -29,8 +24,8 @@ defmodule Pantagruel.Eval.Lambda do
   alias Pantagruel.Eval.{Lambda, Scope}
   defstruct name: "", domain: [], codomain: nil, type: nil
 
-  def bind(scope, name, domain, codomain, type \\ :function) do
-    scope
+  def bind(state, name, domain, codomain, type \\ :function) do
+    state
     |> Scope.bind(name, %Lambda{
       name: name,
       domain: domain,
@@ -56,8 +51,7 @@ defmodule Pantagruel.Eval do
   @doc """
   Create bindings for all arguments introduced as arguments to a function.
   """
-  @spec bind_lambda_args(%Scope{}, decl_args: [String.t()], decl_doms: [term()]) :: %Scope{}
-  def bind_lambda_args(scope, declaration) do
+  def bind_lambda_args(state, declaration) do
     args = declaration[:decl_args] || []
     doms = declaration[:decl_doms] || []
 
@@ -76,7 +70,7 @@ defmodule Pantagruel.Eval do
           pad_list(doms, [], l)
       end
     )
-    |> Enum.reduce(scope, fn
+    |> Enum.reduce(state, fn
       {var, dom}, env ->
         env
         |> Scope.bind(var, dom)
@@ -89,10 +83,10 @@ defmodule Pantagruel.Eval do
   Bind all the variables introduced in a function declaration: function
   identifier, arguments, and domain.
   """
-  defp bind_declaration_variables(scope, declaration) do
+  defp bind_declaration_variables(state, declaration) do
     yield_type = declaration[:yield_type] || :function
 
-    scope
+    state
     |> Lambda.bind(
       declaration[:decl_ident],
       declaration[:decl_doms] || [],
@@ -101,43 +95,43 @@ defmodule Pantagruel.Eval do
     )
     |> bind_lambda_args(declaration)
     # If this is a type constructor, bind the codomain of the function.
-    |> (fn scope ->
+    |> (fn state ->
           case yield_type do
             :constructor ->
               Scope.bind(
-                scope,
+                state,
                 declaration[:yield_domain],
                 declaration[:yield_domain]
               )
 
             _ ->
-              scope
+              state
           end
         end).()
   end
 
-  defp bind_subexpression_variables({:quantifier, [:exists, bindings, expr]}, scope) do
+  defp bind_subexpression_variables({:quantifier, [:exists, bindings, expr]}, state) do
     bound =
       bindings
-      |> Enum.reduce(scope, fn [ident, _, domain], scope2 ->
-        Scope.bind(scope2, ident, domain)
+      |> Enum.reduce(state, fn [ident, _, domain], state2 ->
+        Scope.bind(state2, ident, domain)
       end)
 
     bind_subexpression_variables(expr, bound)
   end
 
-  defp bind_subexpression_variables(_, scope), do: scope
+  defp bind_subexpression_variables(_, state), do: state
 
-  defp bind_expression_variables(scope, expression) do
+  defp bind_expression_variables(state, expression) do
     (expression[:left] || [] ++ expression[:right] || [])
-    |> Enum.reduce(scope, &bind_subexpression_variables/2)
+    |> Enum.reduce(state, &bind_subexpression_variables/2)
   end
 
   @doc """
   Bind all variables introduced in a function declaration and keep track
   of unbound ones.
   """
-  defp eval_declaration({:decl, declaration}, {scope, global_unbound, head_unbound}) do
+  defp eval_declaration({:decl, declaration}, state) do
     # Add any newly introduced variables to our set
     # of unbound variables and filter out any that have been
     # bound in the environment.
@@ -151,11 +145,7 @@ defmodule Pantagruel.Eval do
     |> Enum.concat(declaration[:expr][:right] || [])
     |> Enum.concat(declaration[:decl_doms] || [])
     |> Binding.include_and_filter_unbounds(
-      {
-        bind_declaration_variables(scope, declaration),
-        global_unbound,
-        head_unbound
-      },
+      bind_declaration_variables(state, declaration),
       :head
     )
   end
@@ -163,16 +153,18 @@ defmodule Pantagruel.Eval do
   @doc """
   Evaluate a section body expression. Track any unbound variables.
   """
-  defp eval_body_expression({:expr, expression}, {scope, global_unbound, head_unbound}) do
+  defp eval_body_expression(
+         {:expr, expression},
+         [{scope, global_unbound, head_unbound} | parent] = state
+       ) do
     [expression[:left] || [], expression[:right]]
     |> Enum.reduce(
-      {bind_expression_variables(scope, expression), global_unbound, head_unbound},
+      bind_expression_variables(state, expression),
       &Binding.include_and_filter_unbounds(&1, &2, :body)
     )
   end
 
-  defp new_state({nil, g_unbound, h_unbound}), do: {%Scope{}, g_unbound, h_unbound}
-  defp new_state({scope, g_u, h_u}), do: {%Scope{parent: scope}, g_u, h_u}
+  defp new_state(scopes), do: [{%{}, MapSet.new(), MapSet.new()} | scopes]
 
   @doc """
   Evaluate a single section: evaluate the head, evaluate the body,
@@ -190,15 +182,14 @@ defmodule Pantagruel.Eval do
   @doc """
   Evaluate a Pantagruel AST for variable binding correctness.
   """
-  @spec eval(Pantagruel.t()) :: %Pantagruel.Eval.Scope{}
   def eval(program) do
     program
-    |> Enum.reduce({nil, MapSet.new(), MapSet.new()}, &eval_section/2)
+    |> Enum.reduce([], &eval_section/2)
     # Force a check for unbound values. Catches values
     # that are unbound at the end of the program (even
     # if the program is only one section long and thus
     # didn't get a chance to check the body yet)
     |> Binding.check_unbound(true)
-    |> elem(0)
+    |> Enum.map(&elem(&1, 0))
   end
 end
