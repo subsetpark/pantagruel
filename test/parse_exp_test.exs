@@ -33,43 +33,47 @@ defmodule ExpressionParserTest do
     end
 
     test "comprehension parsing" do
-      text = "{x * 2,x ∈ X}"
-      comprehension_elements = [[{"x", "X"}], ["x", "*", 2]]
+      text = "{x * 2⸳x ∈ X}"
+
+      comprehension_elements = [
+        ["x", "*", 2],
+        [["x", :from, "X"]]
+      ]
 
       tryexp(text,
-        set: [comprehension: comprehension_elements]
+        comprehension: [set: comprehension_elements]
       )
     end
 
     test "comprehension parsing 2 elements" do
-      text = "{x * y,x ∈ X,y ∈ Y}"
+      text = "{x * y⸳x ∈ X,y ∈ Y}"
 
       comprehension_elements = [
-        [{"x", "X"}, {"y", "Y"}],
-        ["x", "*", "y"]
+        ["x", "*", "y"],
+        [["x", :from, "X"], ["y", :from, "Y"]]
       ]
 
       tryexp(text,
-        set: [comprehension: comprehension_elements]
+        comprehension: [set: comprehension_elements]
       )
     end
 
     test "comprehension parsing 3 elements" do
-      text = "{x * y ^ z,x ∈ X,y ∈ Y,z ∈ Z}"
+      text = "{x * y ^ z⸳x ∈ X,y ∈ Y,z ∈ Z}"
 
       comprehension_elements = [
-        [{"x", "X"}, {"y", "Y"}, {"z", "Z"}],
-        ["x", "*", "y", "^", "z"]
+        ["x", "*", "y", "^", "z"],
+        [["x", :from, "X"], ["y", :from, "Y"], ["z", :from, "Z"]]
       ]
 
       tryexp(text,
-        set: [comprehension: comprehension_elements]
+        comprehension: [set: comprehension_elements]
       )
     end
 
     test "exists quantifier parsing" do
-      text = "∃x:X x>1"
-      tryexp(text, exists: ["x", :in, "X", ["x", :gt, 1]])
+      text = "∃x:X⸳x>1"
+      tryexp(text, quantifier: [:exists, [["x", :in, "X"]], ["x", :gt, 1]])
     end
 
     test "empty set" do

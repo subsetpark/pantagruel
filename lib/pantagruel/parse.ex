@@ -75,6 +75,9 @@ defmodule Pantagruel.Parse do
   # Logical operators.
   log_and = string("∧") |> replace(:and)
   log_or = string("∨") |> replace(:or)
+  such_that = string("⸳") |> replace(:suchthat)
+  exists = string("∃") |> replace(:exists)
+  forall = string("∀") |> replace(:forall)
   # A closed set of non-alphabetic # binary or unary functions.
   operator =
     choice([
@@ -98,9 +101,7 @@ defmodule Pantagruel.Parse do
           "-",
           "*",
           "/",
-          "^",
-          {"∃", :exists},
-          {"∀", :forall}
+          "^"
         ])
     ])
 
@@ -266,6 +267,21 @@ defmodule Pantagruel.Parse do
     )
     |> tag(:section)
 
+  comprehension =
+    parsec(:subexpression)
+    |> wrap
+    |> ignore(such_that)
+    |> concat(comma_join(parsec(:subexpression) |> wrap) |> wrap)
+    |> nested
+    |> tag(:comprehension)
+
+  quantifier =
+    choice([exists, forall])
+    |> concat(comma_join(parsec(:subexpression) |> wrap) |> wrap)
+    |> ignore(such_that)
+    |> concat(parsec(:subexpression) |> wrap)
+    |> tag(:quantifier)
+
   # Combinators
 
   # A function form, treated as a value or domain.
@@ -298,7 +314,7 @@ defmodule Pantagruel.Parse do
         |> parsec(:subexpression)
         |> optional
       ),
-      symbol
+      choice([quantifier, comprehension, symbol])
       |> concat(
         space
         |> optional
@@ -308,7 +324,6 @@ defmodule Pantagruel.Parse do
       )
     ]
     |> choice
-    |> traverse(:parse_expression)
   )
 
   # A series of one or more specification sections separated by ";;",
@@ -321,43 +336,6 @@ defmodule Pantagruel.Parse do
     section
     |> join(where)
   )
-
-  # Expression Parsing
-  #
-  # Functions for pattern recognition on subexpressions in order to
-  # restructure fixed forms like set comprehensions and existential
-  # qualification.
-  @doc """
-  Parse a set comprehension form, of the form
-  E, Q1, Q2, ... Qn
-  Where E is some expression, and Qn is a binding of the symbols used
-  in that expression from some set.
-  """
-  defp parse_comprehension(collection, exp, acc, []) do
-    [{collection, comprehension: [Enum.reverse(acc), exp]}]
-  end
-
-  defp parse_comprehension(collection, exp, acc, [[var, :from, dom] | rest]) do
-    parse_comprehension(collection, exp, [{var, dom} | acc], rest)
-  end
-
-  defp parse_expression([quantifier, variable, direction, domain | subexpression])
-       when direction in [:from, :in] and quantifier in [:exists, :forall] do
-    [{quantifier, [variable, direction, domain, subexpression]}]
-  end
-
-  defp parse_expression([{collection, [exp, [var, :from, dom] | rest]}]) do
-    parse_comprehension(collection, exp, [{var, dom}], rest)
-  end
-
-  defp parse_expression(e), do: e
-
-  defp parse_expression(_rest, args, context, _line, _offset) do
-    {args
-     |> Enum.reverse()
-     |> parse_expression
-     |> Enum.reverse(), context}
-  end
 
   defp parse_float(_rest, [arg], context, _line, _offset) do
     {[String.to_float(arg)], context}

@@ -69,6 +69,11 @@ defmodule Pantagruel.Scan do
     replace_chars(contents, <<r::utf8, "∀"::utf8, l::utf8, out::binary>>)
   end
 
+  defp replace_chars(<<l::utf8, "."::utf8, r::utf8, contents::binary>>, out)
+       when l in @delimiters and r in @delimiters do
+    replace_chars(contents, <<r::utf8, ?⸳::utf8, l::utf8, out::binary>>)
+  end
+
   defp replace_chars(<<c::utf8, contents::binary>>, out) do
     replace_chars(contents, <<c::utf8, out::binary>>)
   end
@@ -91,7 +96,7 @@ defmodule Pantagruel.Scan do
     consolidate_whitespace(contents, <<c::utf8, rest::binary>>)
   end
 
-  @operators [?→, ?∃, ?∀, ?∧, ?∨, ?∀, ?∈, ?¬, ?!, ?`, ?←]
+  @operators [?→, ?∃, ?∀, ?∧, ?∨, ?∀, ?∈, ?¬, ?!, ?`, ?←, ?⸳]
 
   defp eliminate_spaces(<<>>, acc), do: String.reverse(acc)
 

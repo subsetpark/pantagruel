@@ -40,7 +40,6 @@ defmodule Pantagruel.Eval.Lambda do
   end
 end
 
-
 defmodule Pantagruel.Eval do
   alias Pantagruel.Eval.{Lambda, Binding, Scope}
 
@@ -71,6 +70,8 @@ defmodule Pantagruel.Eval do
         {longer, l} when longer > l ->
           raise RuntimeError, "Too many function domains"
 
+        # If there are more arguments than domains, we will use the last
+        # domain specified for all the extra arguments.
         {shorter, l} when shorter < l ->
           pad_list(doms, [], l)
       end
@@ -115,8 +116,13 @@ defmodule Pantagruel.Eval do
         end).()
   end
 
-  defp bind_subexpression_variables({:exists, [ident, _, domain, expr]}, scope) do
-    bound = Scope.bind(scope, ident, domain)
+  defp bind_subexpression_variables({:quantifier, [:exists, bindings, expr]}, scope) do
+    bound =
+      bindings
+      |> Enum.reduce(scope, fn [ident, _, domain], scope2 ->
+        Scope.bind(scope2, ident, domain)
+      end)
+
     bind_subexpression_variables(expr, bound)
   end
 

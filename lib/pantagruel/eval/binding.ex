@@ -23,6 +23,24 @@ defmodule Pantagruel.Eval.Binding do
     defexception message: "Unbound variables remain", unbound: MapSet.new()
   end
 
+  # Quantifiers introduce function arguments. Therefore they are bound
+  # in (and only in) the recursive boundness check.
+  defp check_with_bindings(expr, bindings, scope, should_recurse) do
+    bound_scope =
+      Enum.reduce(bindings, scope, fn [symbol, _, domain], scope2 ->
+        Scope.bind(scope2, symbol, domain)
+      end)
+
+    Enum.all?(
+      expr,
+      &is_bound?(
+        &1,
+        bound_scope,
+        should_recurse
+      )
+    )
+  end
+
   @doc """
   Decide if a variable is bound within a given state.
   """
@@ -84,24 +102,8 @@ defmodule Pantagruel.Eval.Binding do
   @doc """
   Boundness checking for for-all quantifiers.
   """
-  defp is_bound?({:forall, [symbol, _, domain, expr]}, scope, should_recurse) do
-    Enum.all?(
-      [symbol, domain | expr],
-      &is_bound?(
-        &1,
-        # Foralls introduce function arguments. Therefore they are bound
-        # in (and only in) the recursive boundness check.
-        Scope.bind(scope, symbol, domain),
-        should_recurse
-      )
-    )
-  end
-
-  defp is_bound?({:exists, [symbol, _, domain, expr]}, scope, should_recurse) do
-    Enum.all?(
-      [symbol, domain | expr],
-      &is_bound?(&1, scope, should_recurse)
-    )
+  defp is_bound?({:quantifier, [_quantifier, bindings, expr]}, scope, should_recurse) do
+    check_with_bindings(expr, bindings, scope, should_recurse)
   end
 
   @doc """
