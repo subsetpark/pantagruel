@@ -31,7 +31,7 @@ defmodule Pantagruel do
       scope = read!(filename)
       IO.inspect scope
     rescue
-      e in Pantagruel.Eval.State.UnboundVariablesError ->
+      e in Pantagruel.Eval.Binding.UnboundVariablesError ->
         IO.puts("Unbound variables.")
         Enum.each(e.unbound, &IO.inspect/1)
     end

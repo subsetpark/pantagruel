@@ -71,7 +71,7 @@ defmodule Pantagruel.Scan do
 
   defp replace_chars(<<l::utf8, "."::utf8, r::utf8, contents::binary>>, out)
        when l in @delimiters and r in @delimiters do
-    replace_chars(contents, <<r::utf8, ?⸳::utf8, l::utf8, out::binary>>)
+    replace_chars(contents, <<r::utf8, "⸳"::utf8, l::utf8, out::binary>>)
   end
 
   defp replace_chars(<<c::utf8, contents::binary>>, out) do

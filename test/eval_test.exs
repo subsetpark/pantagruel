@@ -299,6 +299,21 @@ defmodule EvalTest do
              } == Pantagruel.Eval.eval(parsed)
     end
 
+    test "look in earlier scope for variable" do
+      parsed =
+        """
+        f||
+        ;;
+        x||
+        ;;
+        y||
+        y x = f
+        """
+        |> scan_and_parse
+
+      assert %Scope{} == Pantagruel.Eval.eval(parsed)
+    end
+
     test "sort" do
       # Note: this program is incorrect!
       parsed =

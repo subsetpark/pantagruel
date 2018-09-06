@@ -6,15 +6,19 @@ defmodule Pantagruel.Eval.Binding do
     "Int" => %Variable{name: "ℤ", domain: "ℤ"},
     "Nat" => %Variable{name: "ℕ", domain: "ℕ"},
     "Nat0" => %Variable{name: "ℕ0", domain: "ℕ0"},
+    "String" => %Variable{name: "𝕊", domain: "𝕊"},
     :equals => %Variable{name: "==", domain: "ℝ"},
+    :notequals => %Variable{name: "!=", domain: "ℝ"},
     :gt => %Variable{name: ">", domain: "ℝ"},
     :lt => %Variable{name: "<", domain: "ℝ"},
     :gte => %Variable{name: ">=", domain: "ℝ"},
     :lte => %Variable{name: "<=", domain: "ℝ"},
     "+" => %Variable{name: "+", domain: "ℝ"},
     "-" => %Variable{name: "-", domain: "ℝ"},
+    "*" => %Variable{name: "*", domain: "ℝ"},
     "^" => %Variable{name: "^", domain: "ℝ"},
     :in => %Variable{name: ":", domain: "⊤"},
+    :from => %Variable{name: "∈", domain: "⊤"},
     :iff => %Variable{name: "=", domain: "𝔹"},
     :then => %Variable{name: "→", domain: "𝔹"}
   }
@@ -32,7 +36,7 @@ defmodule Pantagruel.Eval.Binding do
       end)
 
     Enum.all?(
-      expr,
+      for([_, _, domain] <- bindings, do: domain) ++ expr,
       &is_bound?(
         &1,
         bound_scope,
@@ -51,7 +55,7 @@ defmodule Pantagruel.Eval.Binding do
   """
   defp is_bound?(v, _, _) when is_integer(v), do: true
   defp is_bound?(v, _, _) when is_float(v), do: true
-  defp is_bound?([?` | _], _, _), do: true
+  defp is_bound?({:literal, _}, _, _), do: true
 
   @doc """
   A non-value is always unbound within a null state.
@@ -103,6 +107,10 @@ defmodule Pantagruel.Eval.Binding do
   Boundness checking for for-all quantifiers.
   """
   defp is_bound?({:quantifier, [_quantifier, bindings, expr]}, scope, should_recurse) do
+    check_with_bindings(expr, bindings, scope, should_recurse)
+  end
+
+  defp is_bound?({:comprehension, [{_container, [expr, bindings]}]}, scope, should_recurse) do
     check_with_bindings(expr, bindings, scope, should_recurse)
   end
 
