@@ -229,7 +229,7 @@ defmodule EvalTest do
         """
         f|x:Nat|
         con||=> X
-        all y : X⸳y < 10
+        all y : X . y < 10
         """
         |> scan_and_parse
 
@@ -250,7 +250,7 @@ defmodule EvalTest do
         """
         f|x:Nat|
         con||=> X
-        all y : X⸳y < 10
+        all y : X . y < 10
         y > 1
         """
         |> scan_and_parse
@@ -279,7 +279,7 @@ defmodule EvalTest do
       parsed =
         """
         f|x:Nat|
-        exists y : Nat⸳f y > 10
+        exists y : Nat . f y > 10
         """
         |> scan_and_parse
 
