@@ -159,7 +159,9 @@ defmodule Pantagruel.Eval.Binding do
     end
   end
 
-  def check_unbound([{_, global_unbound, head_unbound} | parent] = state, force \\ false) do
+  def check_unbound([_ | []] = state, force \\ false), do: state
+
+  def check_unbound([_, {_, global_unbound, head_unbound} | parent] = state, force) do
     cond do
       MapSet.size(head_unbound) > 0 ->
         raise UnboundVariablesError, unbound: head_unbound
