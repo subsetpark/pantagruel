@@ -221,7 +221,7 @@ defmodule Pantagruel.Parse do
     |> concat(
       decl_args
       |> concat(
-        log_and
+        such_that
         |> ignore
         |> concat(
           expression

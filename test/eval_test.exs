@@ -14,7 +14,7 @@ defmodule EvalTest do
 
   describe "program evaluation" do
     test "eval happy path" do
-      parsed = "f|x:Nat and x > 1| :: Real" |> scan_and_parse
+      parsed = "f|x:Nat . x > 1| :: Real" |> scan_and_parse
 
       assert %Scope{
                bindings: %{
@@ -208,7 +208,7 @@ defmodule EvalTest do
       parsed =
         """
         f|x:Nat|
-        f x : |z:Nat and z > 100|
+        f x : |z:Nat . z > 100|
         """
         |> scan_and_parse
 

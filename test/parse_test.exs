@@ -44,7 +44,7 @@ defmodule PantagruelTest do
     end
 
     test "parse expression with domain" do
-      text = "f|x:Y∧a:Y|"
+      text = "f|x:Y⸳a:Y|"
 
       tryparse(text,
         section: [
@@ -158,7 +158,7 @@ defmodule PantagruelTest do
     end
 
     test "heading with multiple clauses" do
-      text = "f|x:Y∧x != 1|"
+      text = "f|x:Y⸳x != 1|"
 
       tryparse(text,
         section: [
