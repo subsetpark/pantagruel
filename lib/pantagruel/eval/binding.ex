@@ -68,9 +68,7 @@ defmodule Pantagruel.Eval.Binding do
     end)
   end
 
-  @doc """
-  Boundness checking for functions.
-  """
+  # Boundness checking for functions.
   defp is_bound?({:lambda, lambda}, scope) do
     [
       lambda[:decl_doms] || [],
@@ -89,9 +87,7 @@ defmodule Pantagruel.Eval.Binding do
     )
   end
 
-  @doc """
-  Boundness checking for for-all quantifiers.
-  """
+  # Boundness checking for for-all quantifiers.
   defp is_bound?({:quantifier, [_quantifier, bindings, expr]}, scope) do
     check_with_bindings(expr, bindings, scope)
   end
@@ -100,12 +96,10 @@ defmodule Pantagruel.Eval.Binding do
     check_with_bindings(expr, bindings, scope)
   end
 
-  @doc """
-  A non-composite value is bound if it's present in the current scope or
-  the previous one. This allows for a flow where variables are referred
-  to in one scope and then specified with :where.
-  """
-  defp is_bound?(variable, [{scope, _, _} | parent]) do
+  # A non-composite value is bound if it's present in the current scope or
+  # the previous one. This allows for a flow where variables are referred
+  # to in one scope and then specified with :where.
+  defp is_bound?(variable, [scope | parent]) do
     Map.has_key?(@starting_environment, variable) or Map.has_key?(scope, variable) or
       is_bound?(variable, parent)
   end

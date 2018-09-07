@@ -127,14 +127,14 @@ defmodule Pantagruel.Eval do
 
   # Bind all variables introduced in a function declaration and keep track
   # of unbound ones.
-  defp eval_declaration({:decl, declaration}, {[scope | scopes], [unbound | unbounds]}) do
+  defp eval_declaration({:decl, declaration}, {[scope | scopes], header_unbounds, unbounds}) do
     # Add any newly introduced variables to our set
     # of unbound variables and filter out any that have been
     # bound in the environment.
     # If this is a yielding function, check the codomain for binding.
     scope = bind_declaration_variables(scope, declaration)
 
-    unbound =
+    header_unbound =
       case {declaration[:yield_type], declaration[:yield_domain]} do
         {:function, dom} when dom -> [dom]
         _ -> []
@@ -143,40 +143,46 @@ defmodule Pantagruel.Eval do
       # the symbols there for binding.
       |> Enum.concat(declaration[:expr][:right] || [])
       |> Enum.concat(declaration[:decl_doms] || [])
-      |> Binding.include_unbounds(unbound)
+      |> Binding.include_unbounds(header_unbounds)
 
-    {[scope | scopes], [unbound | unbounds]}
+    {[scope | scopes], header_unbound, unbounds}
   end
 
   # Evaluate a section body expression. Track any unbound variables.
-  defp eval_body_expression({:expr, expression}, [
-         {scope, current_unbound},
-         {next_scope, unbound} | rest
-       ]) do
+  defp eval_body_expression({:expr, expression}, {
+         [scope | scopes],
+         [unbounds, next_unbounds | rest]
+       }) do
     scope = bind_expression_variables(scope, expression)
 
-    unbound =
+    next_unbounds =
       [expression[:left] || [], expression[:right]]
       |> Enum.reduce(
-        unbound,
+        next_unbounds,
         &Binding.include_unbounds/2
       )
 
-    [{scope, current_unbound}, {next_scope, unbound} | rest]
+    {[scope | scopes], [unbounds, next_unbounds | rest]}
   end
 
-  defp new_state({scopes, unbounds}) do
-    {[%{} | scopes], [MapSet.new() | unbounds]}
+  defp new_state({scopes, header_unbound, unbounds}) do
+    {[%{} | scopes], header_unbound, [MapSet.new() | unbounds]}
   end
 
   # Evaluate a single section: evaluate the head, evaluate the body,
   # then check for any unbound variables.
   defp eval_section({:section, section}, state) do
-    state = Enum.reduce(section[:head], new_state(state), &eval_declaration/2)
-    {scopes, [unbound | rest]} = Enum.reduce(section[:body] || [], state, &eval_body_expression/2)
-    Binding.check_unbound(scopes, unbound)
+    {scopes, header_unbounds, unbounds} =
+      Enum.reduce(section[:head], new_state(state), &eval_declaration/2)
 
-    {scopes, rest}
+    :ok = Binding.check_unbound(scopes, header_unbounds)
+
+    {scopes, [unbounds | rest]} =
+      Enum.reduce(section[:body] || [], {scopes, unbounds}, &eval_body_expression/2)
+
+    :ok = Binding.check_unbound(scopes, unbounds)
+
+    {scopes, MapSet.new(), rest}
   end
 
   @doc """
@@ -184,12 +190,11 @@ defmodule Pantagruel.Eval do
   """
   def eval(program) do
     program
-    |> Enum.reduce({[%{}], [MapSet.new()]}, &eval_section/2)
+    |> Enum.reduce({[], MapSet.new(), [MapSet.new()]}, &eval_section/2)
     # Force a check for unbound values. Catches values
     # that are unbound at the end of the program (even
     # if the program is only one section long and thus
     # didn't get a chance to check the body yet)
-    |> Binding.check_unbound(true)
-    |> Enum.map(&elem(&1, 0))
+    |> elem(0)
   end
 end
