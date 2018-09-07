@@ -54,9 +54,9 @@ defmodule Pantagruel.Eval do
   def bind_lambda_args(scope, declaration) do
     args = declaration[:decl_args] || []
     doms = declaration[:decl_doms] || []
-
-    Enum.zip(
-      args,
+    # If there are more arguments than domains, we will use the last
+    # domain specified for all the extra arguments.
+    doms =
       case {length(doms), length(args)} do
         {l, l} ->
           doms
@@ -64,18 +64,16 @@ defmodule Pantagruel.Eval do
         {longer, l} when longer > l ->
           raise RuntimeError, "Too many function domains"
 
-        # If there are more arguments than domains, we will use the last
-        # domain specified for all the extra arguments.
         {shorter, l} when shorter < l ->
           pad_list(doms, [], l)
       end
-    )
-    |> Enum.reduce(scope, fn
-      {var, dom}, env ->
-        env
-        |> Scope.bind(var, dom)
-        # Automatically introduce successor variable.
-        |> Scope.bind(var <> "'", dom)
+
+    Enum.zip(args, doms)
+    |> Enum.reduce(scope, fn {var, dom}, env ->
+      env
+      |> Scope.bind(var, dom)
+      # Automatically introduce successor variable.
+      |> Scope.bind(var <> "'", dom)
     end)
   end
 
@@ -132,7 +130,7 @@ defmodule Pantagruel.Eval do
       # the symbols there for binding.
       |> Enum.concat(declaration[:expr][:right] || [])
       |> Enum.concat(declaration[:decl_doms] || [])
-      |> Binding.include_unbounds(header_unbounds)
+      |> include_unbound_variables(header_unbounds)
 
     {[scope | scopes], header_unbounds, unbounds}
   end
@@ -145,17 +143,11 @@ defmodule Pantagruel.Eval do
     scope = bind_expression_variables(scope, expression)
 
     next_unbounds =
-      [expression[:left] || [], expression[:right]]
-      |> Enum.reduce(
-        next_unbounds,
-        &Binding.include_unbounds/2
-      )
+      expression[:left] ||
+        ([] ++ expression[:right])
+        |> include_unbound_variables(next_unbounds)
 
     {[scope | scopes], [unbounds, next_unbounds | rest]}
-  end
-
-  defp new_state({scopes, header_unbounds, unbounds}) do
-    {[%{} | scopes], header_unbounds, unbounds ++ [MapSet.new()]}
   end
 
   # Evaluate a single section: evaluate the head, evaluate the body,
@@ -190,4 +182,11 @@ defmodule Pantagruel.Eval do
     |> Enum.reduce({[], MapSet.new(), [MapSet.new()]}, &eval_section/2)
     |> final_check.()
   end
+
+  defp new_state({scopes, header_unbounds, unbounds}) do
+    {[%{} | scopes], header_unbounds, unbounds ++ [MapSet.new()]}
+  end
+
+  def include_unbound_variables(variables, unbounds),
+    do: MapSet.union(unbounds, MapSet.new(variables))
 end
