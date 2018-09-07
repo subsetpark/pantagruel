@@ -1,81 +1,5 @@
-defmodule Pantagruel.Eval.Variable do
-  defstruct name: "", domain: ""
-end
-
-defmodule Pantagruel.Eval.Scope do
-  alias Pantagruel.Eval.{Variable, Scope}
-
-  def bind(state, {:bunch, elements}, value) do
-    Enum.reduce(elements, state, &bind(&2, hd(&1), value))
-  end
-
-  def bind(scope, name, value) do
-    to_put =
-      case value do
-        %{} -> value
-        domain -> %Variable{name: name, domain: domain}
-      end
-
-    Map.put(scope, name, to_put)
-  end
-end
-
-defmodule Pantagruel.Eval.Lambda do
-  alias Pantagruel.Eval.{Lambda, Scope}
-  defstruct name: "", domain: [], codomain: nil, type: nil
-
-  def bind(state, decl, type \\ :function) do
-    state
-    |> Scope.bind(decl[:decl_ident], %Lambda{
-      name: decl[:decl_ident],
-      domain: decl[:lambda_doms] || [],
-      codomain: decl[:lambda_codomain],
-      type: type
-    })
-  end
-end
-
 defmodule Pantagruel.Eval do
-  alias Pantagruel.Eval.{Lambda, Binding, Scope}
-
-  defp pad_list(_, acc, l) when length(acc) == l, do: Enum.reverse(acc)
-
-  defp pad_list([last], acc, l) do
-    pad_list([last], [last | acc], l)
-  end
-
-  defp pad_list([item | rest], acc, l) do
-    pad_list(rest, [item | acc], l)
-  end
-
-  @doc """
-  Create bindings for all arguments introduced as arguments to a function.
-  """
-  def bind_lambda_args(scope, declaration) do
-    args = declaration[:lambda_args] || []
-    doms = declaration[:lambda_doms] || []
-    # If there are more arguments than domains, we will use the last
-    # domain specified for all the extra arguments.
-    doms =
-      case {length(doms), length(args)} do
-        {l, l} ->
-          doms
-
-        {longer, l} when longer > l ->
-          raise RuntimeError, "Too many function domains"
-
-        {shorter, l} when shorter < l ->
-          pad_list(doms, [], l)
-      end
-
-    Enum.zip(args, doms)
-    |> Enum.reduce(scope, fn {var, dom}, env ->
-      env
-      |> Scope.bind(var, dom)
-      # Automatically introduce successor variable.
-      |> Scope.bind(var <> "'", dom)
-    end)
-  end
+  alias Pantagruel.Eval.{Lambda, BindingChecks, Scope}
 
   # Bind all the variables introduced in a function declaration: function
   # identifier, arguments, and domain.
@@ -91,7 +15,6 @@ defmodule Pantagruel.Eval do
 
     state
     |> Lambda.bind(decl, yield_type)
-    |> bind_lambda_args(decl)
     |> bind_codomain.()
   end
 
@@ -156,12 +79,12 @@ defmodule Pantagruel.Eval do
     {scopes, header_unbounds, unbounds} =
       Enum.reduce(section[:head], new_state(state), &eval_declaration/2)
 
-    :ok = Binding.check_unbound(scopes, header_unbounds)
+    :ok = BindingChecks.check_unbound(scopes, header_unbounds)
 
     {scopes, [unbounds | rest]} =
       Enum.reduce(section[:body] || [], {scopes, unbounds}, &eval_body_expression/2)
 
-    :ok = Binding.check_unbound(scopes, unbounds)
+    :ok = BindingChecks.check_unbound(scopes, unbounds)
 
     {scopes, MapSet.new(), rest}
   end
@@ -174,7 +97,7 @@ defmodule Pantagruel.Eval do
     # end of the program; thus the final section cannot introduce any
     # unbound symbols.
     final_check = fn {scopes, _, [unbound]} ->
-      :ok = Binding.check_unbound(scopes, unbound)
+      :ok = BindingChecks.check_unbound(scopes, unbound)
       scopes
     end
 

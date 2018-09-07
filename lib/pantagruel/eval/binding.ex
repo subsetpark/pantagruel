@@ -1,4 +1,4 @@
-defmodule Pantagruel.Eval.Binding do
+defmodule Pantagruel.Eval.BindingChecks do
   alias Pantagruel.Eval.{Variable, Scope}
 
   @starting_environment %{
@@ -68,7 +68,7 @@ defmodule Pantagruel.Eval.Binding do
   defp is_bound?({:lambda, lambda}, scope) do
     # Lambdas introduce function arguments. Therefore they are bound
     # in (and only in) the recursive boundness check.
-    scope = [Pantagruel.Eval.bind_lambda_args(%{}, lambda) | scope]
+    scope = [Pantagruel.Eval.Lambda.bind(%{}, lambda) | scope]
 
     [
       lambda[:lambda_doms] || [],
