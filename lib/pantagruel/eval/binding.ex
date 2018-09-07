@@ -44,25 +44,15 @@ defmodule Pantagruel.Eval.Binding do
     )
   end
 
-  @doc """
-  Decide if a variable is bound within a given state.
-  """
-  @doc """
-  Boundness checking for literals.
-  """
+  @container_types [:string, :bunch, :set, :list]
+  # Decide if a variable is bound within a given state.
+  # Boundness checking for literals.
   defp is_bound?(v, _) when is_integer(v), do: true
   defp is_bound?(v, _) when is_float(v), do: true
   defp is_bound?({:literal, _}, _), do: true
-
-  @doc """
-  A non-value is always unbound within a null state.
-  """
+  # A non-value is always unbound within a null state.
   defp is_bound?(_, []), do: false
-
-  @container_types [:string, :bunch, :set, :list]
-  @doc """
-  Boundness checking for container types.
-  """
+  # Boundness checking for container types.
   defp is_bound?({container, []}, _)
        when container in @container_types,
        do: true
@@ -123,54 +113,15 @@ defmodule Pantagruel.Eval.Binding do
   @doc """
   Include new values into the data structures tracking unbound variables.
   """
-  def include_and_filter_unbounds(
-        variables,
-        [{scope, global_unbound, head_unbound} | parent] = state,
-        scope_source
-      ) do
-    union = &MapSet.union(&1, MapSet.new(variables))
-    is_unbound? = &(not is_bound?(&1, state))
+  def include_unbounds(variables, unbounds), do: MapSet.union(unbounds, MapSet.new(variables))
 
-    filter =
-      &(&1
-        |> Enum.filter(is_unbound?)
-        |> MapSet.new())
-
-    case scope_source do
-      :head ->
-        [
-          {
-            scope,
-            global_unbound |> filter.(),
-            head_unbound |> union.() |> filter.()
-          }
-          | parent
-        ]
-
-      :body ->
-        [
-          {
-            scope,
-            global_unbound |> union.() |> filter.(),
-            head_unbound |> filter.()
-          }
-          | parent
-        ]
-    end
-  end
-
-  def check_unbound([_ | []] = state, force \\ false), do: state
-
-  def check_unbound([_, {_, global_unbound, head_unbound} | parent] = state, force) do
+  def check_unbound(scopes, unbound) do
     cond do
-      MapSet.size(head_unbound) > 0 ->
-        raise UnboundVariablesError, unbound: head_unbound
-
-      (parent || force) && MapSet.size(global_unbound) > 0 ->
-        raise UnboundVariablesError, unbound: global_unbound
+      Enum.all?(unbound, &is_bound?(&1, scopes)) ->
+        :ok
 
       true ->
-        state
+        raise UnboundVariablesError, unbound: unbound
     end
   end
 end
