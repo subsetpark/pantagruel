@@ -81,31 +81,20 @@ defmodule Pantagruel.Eval do
 
   # Bind all the variables introduced in a function declaration: function
   # identifier, arguments, and domain.
-  defp bind_declaration_variables(state, declaration) do
-    yield_type = declaration[:yield_type] || :function
+  defp bind_declaration_variables(state, decl) do
+    yield_type = decl[:yield_type] || :function
+
+    # If this is a type constructor, bind the codomain of the function.
+    bind_codomain =
+      case yield_type do
+        :constructor -> &Scope.bind(&1, decl[:yield_domain], decl[:yield_domain])
+        _ -> & &1
+      end
 
     state
-    |> Lambda.bind(
-      declaration[:decl_ident],
-      declaration[:decl_doms] || [],
-      declaration[:yield_domain],
-      yield_type
-    )
-    |> bind_lambda_args(declaration)
-    # If this is a type constructor, bind the codomain of the function.
-    |> (fn state ->
-          case yield_type do
-            :constructor ->
-              Scope.bind(
-                state,
-                declaration[:yield_domain],
-                declaration[:yield_domain]
-              )
-
-            _ ->
-              state
-          end
-        end).()
+    |> Lambda.bind(decl[:decl_ident], decl[:decl_doms] || [], decl[:yield_domain], yield_type)
+    |> bind_lambda_args(decl)
+    |> bind_codomain.()
   end
 
   defp bind_subexpression_variables({:quantifier, [:exists, bindings, expr]}, state) do
@@ -134,7 +123,7 @@ defmodule Pantagruel.Eval do
     # If this is a yielding function, check the codomain for binding.
     scope = bind_declaration_variables(scope, declaration)
 
-    header_unbound =
+    header_unbounds =
       case {declaration[:yield_type], declaration[:yield_domain]} do
         {:function, dom} when dom -> [dom]
         _ -> []
@@ -145,7 +134,7 @@ defmodule Pantagruel.Eval do
       |> Enum.concat(declaration[:decl_doms] || [])
       |> Binding.include_unbounds(header_unbounds)
 
-    {[scope | scopes], header_unbound, unbounds}
+    {[scope | scopes], header_unbounds, unbounds}
   end
 
   # Evaluate a section body expression. Track any unbound variables.
@@ -165,8 +154,8 @@ defmodule Pantagruel.Eval do
     {[scope | scopes], [unbounds, next_unbounds | rest]}
   end
 
-  defp new_state({scopes, header_unbound, unbounds}) do
-    {[%{} | scopes], header_unbound, unbounds ++ [MapSet.new()]}
+  defp new_state({scopes, header_unbounds, unbounds}) do
+    {[%{} | scopes], header_unbounds, unbounds ++ [MapSet.new()]}
   end
 
   # Evaluate a single section: evaluate the head, evaluate the body,
