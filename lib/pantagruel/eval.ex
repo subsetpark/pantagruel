@@ -51,7 +51,7 @@ defmodule Pantagruel.Eval do
   @doc """
   Create bindings for all arguments introduced as arguments to a function.
   """
-  def bind_lambda_args(state, declaration) do
+  def bind_lambda_args(scope, declaration) do
     args = declaration[:decl_args] || []
     doms = declaration[:decl_doms] || []
 
@@ -70,7 +70,7 @@ defmodule Pantagruel.Eval do
           pad_list(doms, [], l)
       end
     )
-    |> Enum.reduce(state, fn
+    |> Enum.reduce(scope, fn
       {var, dom}, env ->
         env
         |> Scope.bind(var, dom)
@@ -166,7 +166,7 @@ defmodule Pantagruel.Eval do
   end
 
   defp new_state({scopes, header_unbound, unbounds}) do
-    {[%{} | scopes], header_unbound, [MapSet.new() | unbounds]}
+    {[%{} | scopes], header_unbound, unbounds ++ [MapSet.new()]}
   end
 
   # Evaluate a single section: evaluate the head, evaluate the body,
@@ -189,12 +189,16 @@ defmodule Pantagruel.Eval do
   Evaluate a Pantagruel AST for variable binding correctness.
   """
   def eval(program) do
+    # Force a check for unbound values. All symbols must be bound by the
+    # end of the program; thus the final section cannot introduce any
+    # unbound symbols.
+    final_check = fn {scopes, _, [unbound]} ->
+      :ok = Binding.check_unbound(scopes, unbound)
+      scopes
+    end
+
     program
     |> Enum.reduce({[], MapSet.new(), [MapSet.new()]}, &eval_section/2)
-    # Force a check for unbound values. Catches values
-    # that are unbound at the end of the program (even
-    # if the program is only one section long and thus
-    # didn't get a chance to check the body yet)
-    |> elem(0)
+    |> final_check.()
   end
 end

@@ -29,19 +29,17 @@ defmodule Pantagruel.Eval.Binding do
 
   # Quantifiers introduce function arguments. Therefore they are bound
   # in (and only in) the recursive boundness check.
-  defp check_with_bindings(expr, bindings, state) do
-    bound_scope =
-      Enum.reduce(bindings, state, fn [symbol, _, domain], state2 ->
-        Scope.bind(state2, symbol, domain)
+  defp check_with_bindings(expr, bindings, scopes) do
+    scopes = [
+      Enum.reduce(bindings, %{}, fn [symbol, _, domain], s ->
+        Scope.bind(s, symbol, domain)
       end)
+      | scopes
+    ]
 
-    Enum.all?(
-      for([_, _, domain] <- bindings, do: domain) ++ expr,
-      &is_bound?(
-        &1,
-        bound_scope
-      )
-    )
+    symbols = for([_, _, domain] <- bindings, do: domain) ++ expr
+
+    Enum.all?(symbols, &is_bound?(&1, scopes))
   end
 
   @container_types [:string, :bunch, :set, :list]
@@ -70,6 +68,10 @@ defmodule Pantagruel.Eval.Binding do
 
   # Boundness checking for functions.
   defp is_bound?({:lambda, lambda}, scope) do
+    # Lambdas introduce function arguments. Therefore they are bound
+    # in (and only in) the recursive boundness check.
+    scope = [Pantagruel.Eval.bind_lambda_args(%{}, lambda) | scope]
+
     [
       lambda[:decl_doms] || [],
       lambda[:yield_domain] || [],
@@ -77,14 +79,7 @@ defmodule Pantagruel.Eval.Binding do
       lambda[:expr][:right] || []
     ]
     |> List.flatten()
-    |> Enum.all?(
-      &is_bound?(
-        &1,
-        # Lambdas introduce function arguments. Therefore they are bound
-        # in (and only in) the recursive boundness check.
-        Pantagruel.Eval.bind_lambda_args(scope, lambda)
-      )
-    )
+    |> Enum.all?(&is_bound?(&1, scope))
   end
 
   # Boundness checking for for-all quantifiers.
@@ -110,12 +105,12 @@ defmodule Pantagruel.Eval.Binding do
   def include_unbounds(variables, unbounds), do: MapSet.union(unbounds, MapSet.new(variables))
 
   def check_unbound(scopes, unbound) do
-    cond do
-      Enum.all?(unbound, &is_bound?(&1, scopes)) ->
+    case Enum.filter(unbound, &(!is_bound?(&1, scopes))) do
+      [] ->
         :ok
 
-      true ->
-        raise UnboundVariablesError, unbound: unbound
+      still_unbound ->
+        raise UnboundVariablesError, unbound: MapSet.new(still_unbound)
     end
   end
 end
