@@ -178,10 +178,10 @@ defmodule Pantagruel.Parse do
   #   x1, x2, ... xn : X1, X2 ... XN
   # Where the list before the colon is a list of variable bindings,
   # and the list after is a list of domains of the introduced variables.
-  decl_args =
+  lambda_args =
     identifier
     |> comma_join()
-    |> tag(:decl_args)
+    |> tag(:lambda_args)
     |> concat(
       string(":")
       |> ignore
@@ -189,7 +189,7 @@ defmodule Pantagruel.Parse do
     |> concat(
       tag(
         comma_join(parsec(:domain)),
-        :decl_doms
+        :lambda_doms
       )
     )
 
@@ -200,7 +200,7 @@ defmodule Pantagruel.Parse do
   # Where :: is pronounced "of the type" and denotes the "return"
   # domain of a function, and => is pronounced "produces" and
   # denotes that the function is a type constructor.
-  decl_yields =
+  lambda_codomain =
     choice(
       strings([
         {"::", :function},
@@ -210,7 +210,7 @@ defmodule Pantagruel.Parse do
     |> unwrap_and_tag(:yield_type)
     |> concat(
       parsec(:domain)
-      |> unwrap_and_tag(:yield_domain)
+      |> unwrap_and_tag(:lambda_codomain)
     )
 
   # A function from (0 or more) = N arguments in N domains,
@@ -219,7 +219,7 @@ defmodule Pantagruel.Parse do
     string("|")
     |> ignore
     |> concat(
-      decl_args
+      lambda_args
       |> concat(
         such_that
         |> ignore
@@ -236,7 +236,7 @@ defmodule Pantagruel.Parse do
       |> ignore
     )
     |> concat(
-      decl_yields
+      lambda_codomain
       |> optional
     )
 

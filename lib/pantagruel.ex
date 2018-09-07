@@ -3,8 +3,8 @@ defmodule Pantagruel do
   @type section :: [declaration | expression]
   @type declaration :: [
           decl_ident: value,
-          decl_args: [value],
-          decl_doms: [value],
+          lambda_args: [value],
+          lambda_doms: [value],
           yield_type: :yields | :produces,
           yield_domain: value
         ]

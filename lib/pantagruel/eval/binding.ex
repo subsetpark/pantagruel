@@ -71,8 +71,8 @@ defmodule Pantagruel.Eval.Binding do
     scope = [Pantagruel.Eval.bind_lambda_args(%{}, lambda) | scope]
 
     [
-      lambda[:decl_doms] || [],
-      lambda[:yield_domain] || [],
+      lambda[:lambda_doms] || [],
+      lambda[:lambda_codomain] || [],
       lambda[:expr][:left] || [],
       lambda[:expr][:right] || []
     ]

@@ -24,12 +24,12 @@ defmodule Pantagruel.Eval.Lambda do
   alias Pantagruel.Eval.{Lambda, Scope}
   defstruct name: "", domain: [], codomain: nil, type: nil
 
-  def bind(state, name, domain, codomain, type \\ :function) do
+  def bind(state, decl, type \\ :function) do
     state
-    |> Scope.bind(name, %Lambda{
-      name: name,
-      domain: domain,
-      codomain: codomain,
+    |> Scope.bind(decl[:decl_ident], %Lambda{
+      name: decl[:decl_ident],
+      domain: decl[:lambda_doms] || [],
+      codomain: decl[:lambda_codomain],
       type: type
     })
   end
@@ -52,8 +52,8 @@ defmodule Pantagruel.Eval do
   Create bindings for all arguments introduced as arguments to a function.
   """
   def bind_lambda_args(scope, declaration) do
-    args = declaration[:decl_args] || []
-    doms = declaration[:decl_doms] || []
+    args = declaration[:lambda_args] || []
+    doms = declaration[:lambda_doms] || []
     # If there are more arguments than domains, we will use the last
     # domain specified for all the extra arguments.
     doms =
@@ -85,12 +85,12 @@ defmodule Pantagruel.Eval do
     # If this is a type constructor, bind the codomain of the function.
     bind_codomain =
       case yield_type do
-        :constructor -> &Scope.bind(&1, decl[:yield_domain], decl[:yield_domain])
+        :constructor -> &Scope.bind(&1, decl[:lambda_codomain], decl[:lambda_codomain])
         _ -> & &1
       end
 
     state
-    |> Lambda.bind(decl[:decl_ident], decl[:decl_doms] || [], decl[:yield_domain], yield_type)
+    |> Lambda.bind(decl, yield_type)
     |> bind_lambda_args(decl)
     |> bind_codomain.()
   end
@@ -129,7 +129,7 @@ defmodule Pantagruel.Eval do
       # If there is any precondition associated with the function, check
       # the symbols there for binding.
       |> Enum.concat(declaration[:expr][:right] || [])
-      |> Enum.concat(declaration[:decl_doms] || [])
+      |> Enum.concat(declaration[:lambda_doms] || [])
       |> include_unbound_variables(header_unbounds)
 
     {[scope | scopes], header_unbounds, unbounds}

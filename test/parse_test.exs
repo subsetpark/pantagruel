@@ -51,8 +51,8 @@ defmodule PantagruelTest do
           head: [
             decl: [
               decl_ident: "f",
-              decl_args: ["x"],
-              decl_doms: ["Y"],
+              lambda_args: ["x"],
+              lambda_doms: ["Y"],
               expr: [right: ["a", :in, "Y"]]
             ]
           ]
@@ -111,7 +111,7 @@ defmodule PantagruelTest do
             decl: [
               decl_ident: "f",
               yield_type: :constructor,
-              yield_domain: "D"
+              lambda_codomain: "D"
             ]
           ]
         ]
@@ -127,12 +127,12 @@ defmodule PantagruelTest do
             decl: [
               decl_ident: "f",
               yield_type: :constructor,
-              yield_domain: "D"
+              lambda_codomain: "D"
             ],
             decl: [
               decl_ident: "g",
               yield_type: :constructor,
-              yield_domain: "E"
+              lambda_codomain: "E"
             ]
           ]
         ]
@@ -147,10 +147,10 @@ defmodule PantagruelTest do
           head: [
             decl: [
               decl_ident: "f",
-              decl_args: ["a", "b"],
-              decl_doms: ["B", "C"],
+              lambda_args: ["a", "b"],
+              lambda_doms: ["B", "C"],
               yield_type: :function,
-              yield_domain: "D"
+              lambda_codomain: "D"
             ]
           ]
         ]
@@ -165,8 +165,8 @@ defmodule PantagruelTest do
           head: [
             decl: [
               decl_ident: "f",
-              decl_args: ["x"],
-              decl_doms: ["Y"],
+              lambda_args: ["x"],
+              lambda_doms: ["Y"],
               expr: [right: ["x", :notequals, 1]]
             ]
           ]
@@ -182,10 +182,10 @@ defmodule PantagruelTest do
           head: [
             decl: [
               decl_ident: "f",
-              decl_args: ["x"],
-              decl_doms: ["X"],
+              lambda_args: ["x"],
+              lambda_doms: ["X"],
               yield_type: :function,
-              yield_domain: {:list, ["X"]}
+              lambda_codomain: {:list, ["X"]}
             ]
           ]
         ]
@@ -202,8 +202,8 @@ defmodule PantagruelTest do
           head: [
             decl: [
               decl_ident: "f",
-              decl_args: ["x"],
-              decl_doms: ["Y"]
+              lambda_args: ["x"],
+              lambda_doms: ["Y"]
             ]
           ]
         ],
@@ -212,7 +212,7 @@ defmodule PantagruelTest do
             decl: [
               decl_ident: "y",
               yield_type: :constructor,
-              yield_domain: "Y"
+              lambda_codomain: "Y"
             ]
           ]
         ]
