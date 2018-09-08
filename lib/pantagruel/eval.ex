@@ -1,5 +1,6 @@
 defmodule Pantagruel.Eval do
-  alias Pantagruel.Eval.{Lambda, BindingChecks, Scope, Domain}
+  alias Pantagruel.Eval.{Lambda, Domain}
+  alias Pantagruel.Env
 
   # Bind all the variables introduced in a function declaration: function
   # identifier, arguments, and domain.
@@ -22,7 +23,7 @@ defmodule Pantagruel.Eval do
     bound =
       bindings
       |> Enum.reduce(state, fn [ident, _, domain], state2 ->
-        Scope.bind(state2, ident, domain)
+        Env.bind(state2, ident, domain)
       end)
 
     bind_subexpression_variables(expr, bound)
@@ -79,12 +80,12 @@ defmodule Pantagruel.Eval do
     {scopes, header_unbounds, unbounds} =
       Enum.reduce(section[:head], new_state(state), &eval_declaration/2)
 
-    :ok = BindingChecks.check_unbound(scopes, header_unbounds)
+    :ok = Env.check_unbound(scopes, header_unbounds)
 
     {scopes, [unbounds | rest]} =
       Enum.reduce(section[:body] || [], {scopes, unbounds}, &eval_body_expression/2)
 
-    :ok = BindingChecks.check_unbound(scopes, unbounds)
+    :ok = Env.check_unbound(scopes, unbounds)
 
     {scopes, MapSet.new(), rest}
   end
@@ -97,7 +98,7 @@ defmodule Pantagruel.Eval do
     # end of the program; thus the final section cannot introduce any
     # unbound symbols.
     final_check = fn {scopes, _, [unbound]} ->
-      :ok = BindingChecks.check_unbound(scopes, unbound)
+      :ok = Env.check_unbound(scopes, unbound)
       scopes
     end
 

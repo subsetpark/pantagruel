@@ -1,14 +1,66 @@
-defmodule Pantagruel.Eval.BindingChecks do
-  alias Pantagruel.Eval.Scope
+defmodule Pantagruel.Env do
+  alias Pantagruel.Eval.Variable
 
   defmodule UnboundVariablesError do
     defexception message: "Unbound variables remain", unbound: MapSet.new()
   end
 
+  @starting_environment %{
+    "Bool" => %Variable{name: "𝔹", domain: "𝔹"},
+    "Real" => %Variable{name: "ℝ", domain: "ℝ"},
+    "Int" => %Variable{name: "ℤ", domain: "ℤ"},
+    "Nat" => %Variable{name: "ℕ", domain: "ℕ"},
+    "Nat0" => %Variable{name: "ℕ0", domain: "ℕ0"},
+    "String" => %Variable{name: "𝕊", domain: "𝕊"},
+    :equals => %Variable{name: "=", domain: "ℝ"},
+    :notequals => %Variable{name: "≠", domain: "ℝ"},
+    :gt => %Variable{name: ">", domain: "ℝ"},
+    :lt => %Variable{name: "<", domain: "ℝ"},
+    :gte => %Variable{name: "≥", domain: "ℝ"},
+    :lte => %Variable{name: "≤", domain: "ℝ"},
+    "+" => %Variable{name: "+", domain: "ℝ"},
+    "-" => %Variable{name: "-", domain: "ℝ"},
+    "*" => %Variable{name: "×", domain: "ℝ"},
+    "^" => %Variable{name: "^", domain: "ℝ"},
+    :in => %Variable{name: ":", domain: "⊤"},
+    :from => %Variable{name: "∈", domain: "⊤"},
+    :iff => %Variable{name: "⇔", domain: "𝔹"},
+    :then => %Variable{name: "→", domain: "𝔹"},
+    :exists => %Variable{name: "∃", domain: "⊤"},
+    :forall => %Variable{name: "∀", domain: "⊤"}
+  }
+
+  def bind(scope, {:bunch, elements}, value) do
+    Enum.reduce(elements, scope, &bind(&2, hd(&1), value))
+  end
+
+  def bind(scope, name, value) do
+    to_put =
+      case value do
+        %{} -> value
+        domain -> %Variable{name: name, domain: translate_domain(domain)}
+      end
+
+    Map.put(scope, name, to_put)
+  end
+
+  def translate_domain(expr) when is_list(expr) do
+    Enum.map(expr, &translate_domain/1)
+  end
+
+  def translate_domain(domain) when is_binary(domain) or is_atom(domain) do
+    case @starting_environment do
+      # Look up domain name if predefined.
+      %{^domain => variable} -> variable.name
+      _ -> domain
+    end
+  end
+
+  def translate_domain(expr), do: expr
   # Process some temporary bindings and check for boundness.
   defp check_with_bindings(expr, bindings, scopes) do
     bind_bindings = fn [symbol, _, domain], s ->
-      Scope.bind(s, symbol, domain)
+      bind(s, symbol, domain)
     end
 
     with inner_scope <- Enum.reduce(bindings, %{}, bind_bindings),
@@ -79,7 +131,7 @@ defmodule Pantagruel.Eval.BindingChecks do
         variable
       end
 
-    Map.has_key?(Scope.starting_environment(), variable) or Map.has_key?(scope, variable) or
+    Map.has_key?(@starting_environment, variable) or Map.has_key?(scope, variable) or
       is_bound?(variable, parent)
   end
 

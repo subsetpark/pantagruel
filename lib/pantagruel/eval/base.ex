@@ -1,5 +1,4 @@
 defmodule Pantagruel.Eval.Variable do
-  alias Pantagruel.Eval.Variable
   defstruct name: "", domain: ""
 end
 
@@ -9,70 +8,14 @@ defimpl String.Chars, for: Pantagruel.Eval.Variable do
   end
 end
 
-defmodule Pantagruel.Eval.Scope do
-  alias Pantagruel.Eval.{Variable, Scope}
-
-  def starting_environment,
-    do: %{
-      "Bool" => %Variable{name: "𝔹", domain: "𝔹"},
-      "Real" => %Variable{name: "ℝ", domain: "ℝ"},
-      "Int" => %Variable{name: "ℤ", domain: "ℤ"},
-      "Nat" => %Variable{name: "ℕ", domain: "ℕ"},
-      "Nat0" => %Variable{name: "ℕ0", domain: "ℕ0"},
-      "String" => %Variable{name: "𝕊", domain: "𝕊"},
-      :equals => %Variable{name: "=", domain: "ℝ"},
-      :notequals => %Variable{name: "≠", domain: "ℝ"},
-      :gt => %Variable{name: ">", domain: "ℝ"},
-      :lt => %Variable{name: "<", domain: "ℝ"},
-      :gte => %Variable{name: "≥", domain: "ℝ"},
-      :lte => %Variable{name: "≤", domain: "ℝ"},
-      "+" => %Variable{name: "+", domain: "ℝ"},
-      "-" => %Variable{name: "-", domain: "ℝ"},
-      "*" => %Variable{name: "×", domain: "ℝ"},
-      "^" => %Variable{name: "^", domain: "ℝ"},
-      :in => %Variable{name: ":", domain: "⊤"},
-      :from => %Variable{name: "∈", domain: "⊤"},
-      :iff => %Variable{name: "⇔", domain: "𝔹"},
-      :then => %Variable{name: "→", domain: "𝔹"},
-      :exists => %Variable{name: "∃", domain: "⊤"},
-      :forall => %Variable{name: "∀", domain: "⊤"}
-    }
-
-  def bind(scope, {:bunch, elements}, value) do
-    Enum.reduce(elements, scope, &bind(&2, hd(&1), value))
-  end
-
-  def bind(scope, name, value) do
-    to_put =
-      case value do
-        %{} -> value
-        domain -> %Variable{name: name, domain: translate_domain(domain)}
-      end
-
-    Map.put(scope, name, to_put)
-  end
-
-  def translate_domain(expr) when is_list(expr) do
-    Enum.map(expr, &translate_domain/1)
-  end
-
-  def translate_domain(domain) when is_binary(domain) or is_atom(domain) do
-    case starting_environment() do
-      # Look up domain name if predefined.
-      %{^domain => variable} -> variable.name
-      _ -> domain
-    end
-  end
-
-  def translate_domain(expr), do: expr
-end
 
 defmodule Pantagruel.Eval.Domain do
-  alias Pantagruel.Eval.{Scope, Domain}
+  alias Pantagruel.Eval.Domain
+  alias Pantagruel.Env
   defstruct(name: "")
 
   def bind(scope, domain) do
-    Scope.bind(scope, domain, %Domain{name: domain})
+    Env.bind(scope, domain, %Domain{name: domain})
   end
 end
 
@@ -86,7 +29,8 @@ defimpl String.Chars, for: Pantagruel.Eval.Domain do
 end
 
 defmodule Pantagruel.Eval.Lambda do
-  alias Pantagruel.Eval.{Lambda, Scope}
+  alias Pantagruel.Eval.Lambda
+  alias Pantagruel.Env
   defstruct name: "", domain: [], codomain: nil, type: nil
 
   def bind(scope, decl) do
@@ -110,9 +54,9 @@ defmodule Pantagruel.Eval.Lambda do
     Enum.zip(args, padded_doms)
     |> Enum.reduce(scope, fn {var, dom}, env ->
       env
-      |> Scope.bind(var, dom)
+      |> Env.bind(var, dom)
     end)
-    |> Scope.bind(decl[:decl_ident], from_declaration(decl, doms))
+    |> Env.bind(decl[:decl_ident], from_declaration(decl, doms))
   end
 
   def from_declaration(decl, doms \\ nil) do
@@ -120,8 +64,8 @@ defmodule Pantagruel.Eval.Lambda do
 
     %Lambda{
       name: decl[:decl_ident],
-      domain: doms |> Scope.translate_domain(),
-      codomain: decl[:lambda_codomain] |> Scope.translate_domain(),
+      domain: doms |> Env.translate_domain(),
+      codomain: decl[:lambda_codomain] |> Env.translate_domain(),
       type: decl[:yield_type]
     }
   end

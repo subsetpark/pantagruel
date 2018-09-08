@@ -1,6 +1,7 @@
 defmodule Pantagruel.Print do
   alias Pantagruel.Print
-  alias Pantagruel.Eval.{Scope, Lambda}
+  alias Pantagruel.Eval.Lambda
+  alias Pantagruel.Env
 
   def print_program(parsed, scopes) do
     Enum.zip(parsed, scopes)
@@ -63,7 +64,7 @@ defmodule Pantagruel.Print do
   end
 
   defp print_subexpression(symbol) when is_binary(symbol) or is_number(symbol) or is_atom(symbol),
-    do: Scope.translate_domain(symbol)
+    do: Env.translate_domain(symbol)
 
   defp print_subexpression({container, subexprs})
        when container in [:bunch, :list, :string, :set] do
