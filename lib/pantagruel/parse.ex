@@ -96,7 +96,7 @@ defmodule Pantagruel.Parse do
   # A single proposition in the language. Takes the form of
   # L El ← Er
   # Where L is a logical operator like ∧ or ∨, El and Er are the
-  # left and right subexpressions, and ← is the logical entailment operator.
+  # left and right subexpressions, and ← is the logical refinement operator.
   expression =
     unwrap_and_tag(choice([log_and, log_or]), :intro_op)
     |> optional
@@ -242,26 +242,14 @@ defmodule Pantagruel.Parse do
 
   defparsec(
     :subexpression,
-    [
-      # We have to explicitly include both paths to avoid left-recursion.
-      nested_subexpression
-      |> concat(
-        space
-        |> optional
-        |> ignore
-        |> parsec(:subexpression)
-        |> optional
-      ),
-      choice([quantifier, comprehension, symbol])
-      |> concat(
-        space
-        |> optional
-        |> ignore
-        |> parsec(:subexpression)
-        |> optional
-      )
-    ]
-    |> choice
+    choice([nested_subexpression, quantifier, comprehension, symbol])
+    |> concat(
+      space
+      |> optional
+      |> ignore
+      |> parsec(:subexpression)
+      |> optional
+    )
   )
 
   # A series of one or more specification sections separated by ";;",
