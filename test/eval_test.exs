@@ -83,19 +83,19 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "g" => %Lambda{
-                   name: "g",
-                   domain: [],
-                   codomain: "ℕ",
-                   type: :function
-                 }
-               },
-               %{
                  "x" => %Variable{name: "x", domain: "ℕ"},
                  "f" => %Lambda{
                    name: "f",
                    domain: ["ℕ"],
                    codomain: nil,
+                   type: :function
+                 }
+               },
+               %{
+                 "g" => %Lambda{
+                   name: "g",
+                   domain: [],
+                   codomain: "ℕ",
                    type: :function
                  }
                }
@@ -122,12 +122,12 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "g" => %Lambda{name: "g", domain: ["ℕ"], codomain: "𝔹", type: :function},
-                 "y" => %Variable{name: "y", domain: "ℕ"},
+                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: :function},
+                 "x" => %Variable{name: "x", domain: "ℕ"}
                },
                %{
-                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: :function},
-                 "x" => %Variable{name: "x", domain: "ℕ"},
+                 "g" => %Lambda{name: "g", domain: ["ℕ"], codomain: "𝔹", type: :function},
+                 "y" => %Variable{name: "y", domain: "ℕ"}
                }
              ] == Pantagruel.Eval.eval(parsed)
     end
@@ -174,12 +174,12 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "d" => %Lambda{name: "d", domain: [], codomain: "D", type: :constructor},
-                 "D" => %Variable{name: "D", domain: "D"}
+                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: :function},
+                 "x" => %Variable{name: "x", domain: "ℕ"}
                },
                %{
-                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: :function},
-                 "x" => %Variable{name: "x", domain: "ℕ"},
+                 "d" => %Lambda{name: "d", domain: [], codomain: "D", type: :constructor},
+                 "D" => %Variable{name: "D", domain: "D"}
                }
              ] == Pantagruel.Eval.eval(parsed)
     end
@@ -195,7 +195,7 @@ defmodule EvalTest do
       assert [
                %{
                  "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: :function},
-                 "x" => %Variable{name: "x", domain: "ℕ"},
+                 "x" => %Variable{name: "x", domain: "ℕ"}
                  # Notice `z` is not here. It was introduced so that
                  # `z > 100` checked, but it's not in the resulting scope.
                }
@@ -216,7 +216,7 @@ defmodule EvalTest do
                  "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: :function},
                  "con" => %Lambda{name: "con", domain: [], codomain: "X", type: :constructor},
                  "X" => %Variable{name: "X", domain: "X"},
-                 "x" => %Variable{name: "x", domain: "ℕ"},
+                 "x" => %Variable{name: "x", domain: "ℕ"}
                }
              ] == Pantagruel.Eval.eval(parsed)
     end
@@ -287,8 +287,8 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "y" => %Pantagruel.Eval.Lambda{
-                   name: "y",
+                 "f" => %Pantagruel.Eval.Lambda{
+                   name: "f",
                    domain: [],
                    codomain: nil,
                    type: :function
@@ -303,8 +303,8 @@ defmodule EvalTest do
                  }
                },
                %{
-                 "f" => %Pantagruel.Eval.Lambda{
-                   name: "f",
+                 "y" => %Pantagruel.Eval.Lambda{
+                   name: "y",
                    domain: [],
                    codomain: nil,
                    type: :function
@@ -330,16 +330,6 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "x" => %Variable{name: "x", domain: "X"},
-                 "ind" => %Lambda{
-                   domain: [{:list, ["X"]}, "X"],
-                   codomain: "ℕ0",
-                   name: "ind",
-                   type: :function
-                 },
-                 "xs" => %Variable{domain: {:list, ["X"]}, name: "xs"},
-               },
-               %{
                  "X" => %Variable{domain: "X", name: "X"},
                  "sort" => %Lambda{
                    domain: [list: ["X"]],
@@ -348,7 +338,17 @@ defmodule EvalTest do
                    type: :function
                  },
                  "x" => %Lambda{codomain: "X", domain: [], name: "x", type: :constructor},
-                 "xs" => %Variable{domain: {:list, ["X"]}, name: "xs"},
+                 "xs" => %Variable{domain: {:list, ["X"]}, name: "xs"}
+               },
+               %{
+                 "x" => %Variable{name: "x", domain: "X"},
+                 "ind" => %Lambda{
+                   domain: [{:list, ["X"]}, "X"],
+                   codomain: "ℕ0",
+                   name: "ind",
+                   type: :function
+                 },
+                 "xs" => %Variable{domain: {:list, ["X"]}, name: "xs"}
                }
              ] == Pantagruel.Eval.eval(parsed)
     end

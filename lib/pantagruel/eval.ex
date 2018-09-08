@@ -104,6 +104,7 @@ defmodule Pantagruel.Eval do
     program
     |> Enum.reduce({[], MapSet.new(), [MapSet.new()]}, &eval_section/2)
     |> final_check.()
+    |> Enum.reverse()
   end
 
   defp new_state({scopes, header_unbounds, unbounds}) do
