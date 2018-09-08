@@ -1,22 +1,22 @@
 defmodule Pantagruel.Print do
-  alias Pantagruel.Print
   alias Pantagruel.Eval.Lambda
   alias Pantagruel.Env
 
+  @doc """
+  Generate a string representation of an evaluated program.
+  """
   def print_program(parsed, scopes) do
+    f = fn {section, scope} ->
+      [print_scope(scope), print_section(section)]
+      |> Enum.join("\n#{bar("―")}\n")
+    end
+
     Enum.zip(parsed, scopes)
-    |> Enum.map(&Print.print_program/1)
+    |> Enum.map(f)
     |> Enum.join("\n#{bar("═")}\n")
   end
 
-  def print_program({section, scope}) do
-    [print_scope(scope), print_section(section)]
-    |> Enum.join("\n#{bar("―")}\n")
-  end
-
-  defp bar(char), do: String.duplicate(char, 10)
-
-  def print_scope(scope) do
+  defp print_scope(scope) do
     for(
       {_k, v} <- scope,
       do: print_scope_element(v)
@@ -30,28 +30,26 @@ defmodule Pantagruel.Print do
   defp print_section(nil), do: ""
 
   defp print_section({:section, section}) do
-    [print_head(section[:head]), print_body(section[:body])]
+    print_head = fn decls ->
+      decls
+      |> Enum.map(&print_declaration/1)
+      |> Enum.join("\n")
+    end
+
+    print_body = fn exprs ->
+      exprs
+      |> Enum.map(&print_subbody/1)
+      |> Enum.join("\n")
+    end
+
+    [print_head.(section[:head]), print_body.(section[:body] || [])]
     |> Enum.join("\n")
   end
 
-  defp print_head(decls) do
-    decls
-    |> Enum.map(&print_subhead/1)
-    |> Enum.join("\n")
-  end
-
-  defp print_subhead({:decl, declaration}) do
+  defp print_declaration({:decl, declaration}) do
     declaration
     |> (fn d -> Lambda.from_declaration(d) end).()
     |> print_lambda(declaration[:lambda_args])
-  end
-
-  def print_body(nil), do: ""
-
-  def print_body(exprs) do
-    exprs
-    |> Enum.map(&print_subbody/1)
-    |> Enum.join("\n")
   end
 
   defp print_subbody({:expr, expression}) do
@@ -98,7 +96,7 @@ defmodule Pantagruel.Print do
     print_subexpression({container, [inner_str]})
   end
 
-  defp print_subexpression({:lambda, l}), do: print_subhead({:decl, l})
+  defp print_subexpression({:lambda, l}), do: print_declaration({:decl, l})
 
   defp print_subexpression({:literal, literal}) do
     cond do
@@ -141,6 +139,8 @@ defmodule Pantagruel.Print do
       "|#{args_str}#{dom_str}|" <>
       yields_string(lambda.type, lambda.codomain) <> codomain_string(lambda.codomain)
   end
+
+  defp bar(char), do: String.duplicate(char, 10)
 
   defp subexp_join(exprs) do
     exprs
