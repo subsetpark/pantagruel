@@ -13,7 +13,7 @@ end
 defmodule Pantagruel.Eval.Lambda do
   alias Pantagruel.Eval.Lambda
   alias Pantagruel.Env
-  defstruct name: "", domain: [], codomain: nil, type: nil, predicate: []
+  defstruct name: "", domain: [], codomain: nil, type: nil
 
   def bind(scope, decl) do
     args = decl[:lambda_args] || []
@@ -51,7 +51,6 @@ defmodule Pantagruel.Eval.Lambda do
         decl[:lambda_codomain]
         |> Env.lookup_binding_name(),
       type: decl[:yield_type],
-      predicate: decl[:expr] || []
     }
   end
 

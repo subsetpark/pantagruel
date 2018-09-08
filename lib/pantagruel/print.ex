@@ -61,11 +61,11 @@ defmodule Pantagruel.Print do
     |> Enum.join("\n")
   end
 
-  def print_lambda(lambda, decl_args \\ nil)
+  def print_lambda(lambda, decl \\ nil)
 
   def print_lambda(
         %Lambda{name: name, domain: domain, codomain: codomain, type: type},
-        decl_args
+        decl
       ) do
     name_str =
       case name do
@@ -74,12 +74,18 @@ defmodule Pantagruel.Print do
       end
 
     args_str =
-      case decl_args do
+      case decl[:lambda_args] do
         nil -> ""
         args -> subexp_join(args) <> ":"
       end
 
     dom_str = subexp_join(domain)
+
+    predicate_str =
+      case decl[:predicate] do
+        nil -> ""
+        subexpr -> " ⸳ #{subexp_join(subexpr)}"
+      end
 
     yields_str =
       case type do
@@ -90,7 +96,7 @@ defmodule Pantagruel.Print do
 
     [
       name_str,
-      "|#{args_str}#{dom_str}|",
+      "|#{args_str}#{dom_str}#{predicate_str}|",
       yields_str,
       print_subexp(codomain)
     ]
@@ -98,10 +104,10 @@ defmodule Pantagruel.Print do
   end
 
   def print_lambda({:decl, declaration}, _),
-    do: print_lambda(declaration, declaration[:lambda_args])
+    do: print_lambda(declaration, declaration)
 
-  def print_lambda(l, decl_args) do
-    Lambda.from_declaration(l) |> print_lambda(decl_args)
+  def print_lambda(l, decl) do
+    Lambda.from_declaration(l) |> print_lambda(decl)
   end
 
   # Print an individual expression component.
