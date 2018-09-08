@@ -1,27 +1,5 @@
 defmodule Pantagruel.Eval.BindingChecks do
-  alias Pantagruel.Eval.{Variable, Scope}
-
-  @starting_environment %{
-    "Real" => %Variable{name: "ℝ", domain: "ℝ"},
-    "Int" => %Variable{name: "ℤ", domain: "ℤ"},
-    "Nat" => %Variable{name: "ℕ", domain: "ℕ"},
-    "Nat0" => %Variable{name: "ℕ0", domain: "ℕ0"},
-    "String" => %Variable{name: "𝕊", domain: "𝕊"},
-    :equals => %Variable{name: "==", domain: "ℝ"},
-    :notequals => %Variable{name: "!=", domain: "ℝ"},
-    :gt => %Variable{name: ">", domain: "ℝ"},
-    :lt => %Variable{name: "<", domain: "ℝ"},
-    :gte => %Variable{name: ">=", domain: "ℝ"},
-    :lte => %Variable{name: "<=", domain: "ℝ"},
-    "+" => %Variable{name: "+", domain: "ℝ"},
-    "-" => %Variable{name: "-", domain: "ℝ"},
-    "*" => %Variable{name: "*", domain: "ℝ"},
-    "^" => %Variable{name: "^", domain: "ℝ"},
-    :in => %Variable{name: ":", domain: "⊤"},
-    :from => %Variable{name: "∈", domain: "⊤"},
-    :iff => %Variable{name: "=", domain: "𝔹"},
-    :then => %Variable{name: "→", domain: "𝔹"}
-  }
+  alias Pantagruel.Eval.Scope
 
   defmodule UnboundVariablesError do
     defexception message: "Unbound variables remain", unbound: MapSet.new()
@@ -92,7 +70,7 @@ defmodule Pantagruel.Eval.BindingChecks do
   # Check if a given variable is bound given the current scope. Search
   # in the scope or starting environment.
   defp is_bound?(variable, [scope | parent]) do
-    Map.has_key?(@starting_environment, variable) or Map.has_key?(scope, variable) or
+    Map.has_key?(Scope.starting_environment(), variable) or Map.has_key?(scope, variable) or
       is_bound?(variable, parent)
   end
 

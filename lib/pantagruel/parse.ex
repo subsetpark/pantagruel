@@ -261,6 +261,7 @@ defmodule Pantagruel.Parse do
     :program,
     section
     |> join(where)
+    |> optional
   )
 
   defp parse_float(_rest, [arg], context, _line, _offset) do
