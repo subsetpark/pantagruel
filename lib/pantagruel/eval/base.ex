@@ -18,6 +18,10 @@ defmodule Pantagruel.Eval.Scope do
 
     Map.put(scope, name, to_put)
   end
+
+  def puts(scope) do
+    IO.puts "OK"
+  end
 end
 
 defmodule Pantagruel.Eval.Lambda do
