@@ -1,5 +1,5 @@
 defmodule Pantagruel.Print do
-  alias Pantagruel.Eval.Lambda
+  alias Pantagruel.Eval.{Domain, Variable, Lambda}
   alias Pantagruel.Env
 
   @doc """
@@ -25,7 +25,7 @@ defmodule Pantagruel.Print do
       do:
         case v do
           %Lambda{} = l -> print_lambda(l)
-          e -> String.Chars.to_string(e)
+          e -> print_subexp(e)
         end
     )
     |> Enum.join("\n")
@@ -95,6 +95,15 @@ defmodule Pantagruel.Print do
   # Print an individual expression component.
   defp print_subexp(nil), do: ""
 
+  # TODO: This is just cribbed from Z. Can we do better?
+  defp print_subexp(%Domain{name: name}) do
+    "[#{name}]"
+  end
+
+  defp print_subexp(%Variable{name: name, domain: domain}) do
+    "#{name} : #{domain}"
+  end
+
   defp print_subexp(symbol) when is_binary(symbol) or is_number(symbol) or is_atom(symbol),
     do: Env.lookup_binding_name(symbol)
 
@@ -143,7 +152,6 @@ defmodule Pantagruel.Print do
     subexp
     |> Enum.map(&print_subexp/1)
     |> Enum.join(" ")
-    |> String.Chars.to_string()
   end
 
   defp subexp_join(exprs) do

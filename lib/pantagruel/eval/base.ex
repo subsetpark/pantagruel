@@ -2,13 +2,6 @@ defmodule Pantagruel.Eval.Variable do
   defstruct name: "", domain: ""
 end
 
-defimpl String.Chars, for: Pantagruel.Eval.Variable do
-  def to_string(v) do
-    "#{v.name} : #{v.domain}"
-  end
-end
-
-
 defmodule Pantagruel.Eval.Domain do
   alias Pantagruel.Eval.Domain
   alias Pantagruel.Env
@@ -16,15 +9,6 @@ defmodule Pantagruel.Eval.Domain do
 
   def bind(scope, domain) do
     Env.bind(scope, domain, %Domain{name: domain})
-  end
-end
-
-defimpl String.Chars, for: Pantagruel.Eval.Domain do
-  alias Pantagruel.Eval.Domain
-
-  # TODO: This is just cribbed from Z. Can we do better?
-  def to_string(%Domain{name: name}) do
-    "[#{name}]"
   end
 end
 
