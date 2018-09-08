@@ -7,9 +7,7 @@ defmodule Pantagruel.Eval.Domain do
   alias Pantagruel.Env
   defstruct(name: "")
 
-  def bind(scope, domain) do
-    Env.bind(scope, domain, %Domain{name: domain})
-  end
+  def bind(scope, domain), do: Env.bind(scope, domain, %Domain{name: domain})
 end
 
 defmodule Pantagruel.Eval.Lambda do
@@ -44,23 +42,19 @@ defmodule Pantagruel.Eval.Lambda do
   end
 
   def from_declaration(decl, doms \\ nil) do
-    doms = doms || decl[:lambda_doms] || []
-
     %Lambda{
       name: decl[:decl_ident],
-      domain: doms |> Env.lookup_binding_name(),
-      codomain: decl[:lambda_codomain] |> Env.lookup_binding_name(),
+      domain:
+        (doms || decl[:lambda_doms] || [])
+        |> Env.lookup_binding_name(),
+      codomain:
+        decl[:lambda_codomain]
+        |> Env.lookup_binding_name(),
       type: decl[:yield_type]
     }
   end
 
   defp pad_list(_, acc, l) when length(acc) == l, do: Enum.reverse(acc)
-
-  defp pad_list([last], acc, l) do
-    pad_list([last], [last | acc], l)
-  end
-
-  defp pad_list([item | rest], acc, l) do
-    pad_list(rest, [item | acc], l)
-  end
+  defp pad_list([last], acc, l), do: pad_list([last], [last | acc], l)
+  defp pad_list([item | rest], acc, l), do: pad_list(rest, [item | acc], l)
 end
