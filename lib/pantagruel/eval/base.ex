@@ -67,6 +67,24 @@ defmodule Pantagruel.Eval.Scope do
   end
 end
 
+defmodule Pantagruel.Eval.Domain do
+  alias Pantagruel.Eval.{Scope, Domain}
+  defstruct(name: "")
+
+  def bind(scope, domain) do
+    Scope.bind(scope, domain, %Domain{name: domain})
+  end
+end
+
+defimpl String.Chars, for: Pantagruel.Eval.Domain do
+  alias Pantagruel.Eval.Domain
+
+  # TODO: This is just cribbed from Z. Can we do better?
+  def to_string(%Domain{name: name}) do
+    "[#{name}]"
+  end
+end
+
 defmodule Pantagruel.Eval.Lambda do
   alias Pantagruel.Eval.{Lambda, Scope}
   defstruct name: "", domain: [], codomain: nil, type: nil

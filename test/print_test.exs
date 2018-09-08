@@ -35,5 +35,15 @@ defmodule Pantagruel.PrintTest do
 
       assert "f : |ℕ| :: ℝ\nx : ℕ" == string
     end
+    test "constructor" do
+      string =
+        """
+        f|| => F
+        """
+        |> eval
+        |> Print.to_string()
+
+      assert "[F]\nf : || ⇒ F" == string
+    end
   end
 end

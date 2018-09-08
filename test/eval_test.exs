@@ -1,7 +1,7 @@
 defmodule EvalTest do
   use ExUnit.Case
   alias Pantagruel.Eval.BindingChecks.UnboundVariablesError
-  alias Pantagruel.Eval.{Variable, Lambda}
+  alias Pantagruel.Eval.{Variable, Lambda, Domain}
 
   defp scan_and_parse(text) do
     {:ok, parsed, "", %{}, _, _} =
@@ -49,8 +49,8 @@ defmodule EvalTest do
                  "f" => %Lambda{name: "f", domain: ["X", "Y"], codomain: "ℝ", type: :function},
                  "x" => %Variable{name: "x", domain: "X"},
                  "y" => %Variable{name: "y", domain: "Y"},
-                 "X" => %Variable{name: "X", domain: "X"},
-                 "Y" => %Variable{name: "Y", domain: "Y"},
+                 "X" => %Domain{name: "X"},
+                 "Y" => %Domain{name: "Y"},
                  "make_x" => %Lambda{
                    name: "make_x",
                    domain: [],
@@ -179,7 +179,7 @@ defmodule EvalTest do
                },
                %{
                  "d" => %Lambda{name: "d", domain: [], codomain: "D", type: :constructor},
-                 "D" => %Variable{name: "D", domain: "D"}
+                 "D" => %Domain{name: "D"}
                }
              ] == Pantagruel.Eval.eval(parsed)
     end
@@ -215,7 +215,7 @@ defmodule EvalTest do
                %{
                  "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: :function},
                  "con" => %Lambda{name: "con", domain: [], codomain: "X", type: :constructor},
-                 "X" => %Variable{name: "X", domain: "X"},
+                 "X" => %Domain{name: "X"},
                  "x" => %Variable{name: "x", domain: "ℕ"}
                }
              ] == Pantagruel.Eval.eval(parsed)
@@ -330,7 +330,7 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "X" => %Variable{domain: "X", name: "X"},
+                 "X" => %Domain{name: "X"},
                  "sort" => %Lambda{
                    domain: [list: ["X"]],
                    codomain: {:list, ["X"]},

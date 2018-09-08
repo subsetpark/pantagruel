@@ -1,5 +1,5 @@
 defmodule Pantagruel.Eval do
-  alias Pantagruel.Eval.{Lambda, BindingChecks, Scope}
+  alias Pantagruel.Eval.{Lambda, BindingChecks, Scope, Domain}
 
   # Bind all the variables introduced in a function declaration: function
   # identifier, arguments, and domain.
@@ -9,7 +9,7 @@ defmodule Pantagruel.Eval do
     # If this is a type constructor, bind the codomain of the function.
     bind_codomain =
       case yield_type do
-        :constructor -> &Scope.bind(&1, decl[:lambda_codomain], decl[:lambda_codomain])
+        :constructor -> &Domain.bind(&1, decl[:lambda_codomain])
         _ -> & &1
       end
 
