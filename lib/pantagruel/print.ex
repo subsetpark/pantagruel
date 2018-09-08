@@ -54,15 +54,21 @@ defmodule Pantagruel.Print do
       |> Enum.join("\n")
     end
 
-    [print_head.(section[:head]), print_body.(section[:body] || [])]
+    [
+      print_head.(section[:head]),
+      print_body.(section[:body] || [])
+    ]
     |> Enum.join("\n")
   end
 
   def print_lambda(lambda, decl_args \\ nil)
 
-  def print_lambda(%Lambda{} = l, decl_args) do
+  def print_lambda(
+        %Lambda{name: name, domain: domain, codomain: codomain, type: type},
+        decl_args
+      ) do
     name_str =
-      case l.name do
+      case name do
         nil -> ""
         name -> "#{name} : "
       end
@@ -73,16 +79,22 @@ defmodule Pantagruel.Print do
         args -> subexp_join(args) <> ":"
       end
 
-    dom_str = subexp_join(l.domain)
+    dom_str = subexp_join(domain)
 
     yields_str =
-      case l.type do
+      case type do
         nil -> ""
         :function -> " :: "
         :constructor -> " ⇒ "
       end
 
-    name_str <> "|#{args_str}#{dom_str}|" <> yields_str <> print_subexp(l.codomain)
+    [
+      name_str,
+      "|#{args_str}#{dom_str}|",
+      yields_str,
+      print_subexp(codomain)
+    ]
+    |> Enum.join()
   end
 
   def print_lambda({:decl, declaration}, _),
