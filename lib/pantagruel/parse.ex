@@ -206,10 +206,10 @@ defmodule Pantagruel.Parse do
     |> tag(:section)
 
   comprehension =
-    parsec(:subexpression)
+    comma_join(parsec(:subexpression) |> wrap)
     |> wrap
     |> ignore(such_that)
-    |> concat(comma_join(parsec(:subexpression) |> wrap) |> wrap)
+    |> concat(parsec(:subexpression) |> wrap)
     |> nested
     |> tag(:comprehension)
 

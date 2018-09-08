@@ -23,7 +23,7 @@ defmodule Pantagruel do
       {:ok, parsed, "", %{}, _, _} = read!(filename)
       scope = Pantagruel.Eval.eval(parsed)
 
-      Pantagruel.Print.to_string(parsed, scope)
+      Pantagruel.Print.print_program(parsed, scope)
       |> IO.puts()
     rescue
       e in Pantagruel.Eval.Binding.UnboundVariablesError ->

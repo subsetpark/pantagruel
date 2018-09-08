@@ -2,13 +2,13 @@ defmodule Pantagruel.Print do
   alias Pantagruel.Print
   alias Pantagruel.Eval.{Scope, Lambda}
 
-  def to_string(parsed, scopes) do
+  def print_program(parsed, scopes) do
     Enum.zip(parsed, scopes)
-    |> Enum.map(&Print.to_string/1)
+    |> Enum.map(&Print.print_program/1)
     |> Enum.join("\n#{String.duplicate("═", 10)}\n")
   end
 
-  def to_string({section, scope}) do
+  def print_program({section, scope}) do
     [print_scope(scope), print_section(section)]
     |> Enum.join("\n#{String.duplicate("―", 10)}\n")
   end
@@ -73,10 +73,7 @@ defmodule Pantagruel.Print do
         :set -> {"{", "}"}
       end
 
-    inner_str =
-      subexprs
-      |> Enum.map(&print_subexpression/1)
-      |> Enum.join(", ")
+    inner_str = subexp_join(subexprs)
 
     "#{l}#{inner_str}#{r}"
   end
@@ -86,21 +83,17 @@ defmodule Pantagruel.Print do
 
     [
       print_subexpression(quantifier),
-      Enum.map(binding, &print_subexpression/1)
-      |> Enum.join(", "),
+      subexp_join(binding),
       "⸳",
       print_subexpression(expr)
     ]
     |> Enum.join(" ")
   end
 
-  defp print_subexpression({:comprehension, [{container, [expr, binding]}]}) do
-    binding_str =
-      Enum.map(binding, &print_subexpression/1)
-      |> Enum.join(", ")
-
+  defp print_subexpression({:comprehension, [{container, [binding, expr]}]}) do
+    binding_str = subexp_join(binding)
     expr_str = print_subexpression(expr)
-    inner_str = "#{expr_str} ⸳ #{binding_str}"
+    inner_str = "#{binding_str} ⸳ #{expr_str}"
     print_subexpression({container, [inner_str]})
   end
 
@@ -109,7 +102,7 @@ defmodule Pantagruel.Print do
   defp print_subexpression({:literal, literal}) do
     cond do
       String.contains?(literal, " ") -> "`#{literal}`"
-      true -> "`#{literal}"
+      true -> "`" <> literal
     end
   end
 
@@ -137,22 +130,20 @@ defmodule Pantagruel.Print do
 
     args_str =
       case decl_args do
-        nil ->
-          ""
-
-        args ->
-          (args
-           |> Enum.map(&print_subexpression/1)
-           |> Enum.join(", ")) <> ":"
+        nil -> ""
+        args -> "#{subexp_join(args)}:"
       end
 
-    dom_str =
-      lambda.domain
-      |> Enum.map(&print_subexpression/1)
-      |> Enum.join(", ")
+    dom_str = subexp_join(lambda.domain)
 
     name_str <>
       "|#{args_str}#{dom_str}|" <>
       yields_string(lambda.type, lambda.codomain) <> codomain_string(lambda.codomain)
+  end
+
+  defp subexp_join(exprs) do
+    exprs
+    |> Enum.map(&print_subexpression/1)
+    |> Enum.join(", ")
   end
 end

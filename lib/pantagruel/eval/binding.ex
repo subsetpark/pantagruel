@@ -63,7 +63,7 @@ defmodule Pantagruel.Eval.BindingChecks do
     check_with_bindings(expr, bindings, scope)
   end
 
-  defp is_bound?({:comprehension, [{_container, [expr, bindings]}]}, scope) do
+  defp is_bound?({:comprehension, [{_container, [bindings, expr]}]}, scope) do
     check_with_bindings(expr, bindings, scope)
   end
 

@@ -17,8 +17,8 @@ x|| => X
 exists x from y, y from z . x > 0
 x != 0
 
-[x * y ^ z . x from X, y from Z, z from Y]
-[x + `ok . x from String]
+[x from X, y from Z, z from Y . x * y ^ z]
+[x from String . x + `ok]
 ;;
 x||
 z
