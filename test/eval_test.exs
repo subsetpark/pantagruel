@@ -317,7 +317,7 @@ defmodule EvalTest do
       parsed =
         """
         f|x:Nat|
-        [f x > y . y from Nat]
+        [y from Nat . f x > y]
         """
         |> scan_and_parse
 

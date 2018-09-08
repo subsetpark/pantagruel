@@ -5,13 +5,15 @@ defmodule Pantagruel.Print do
   def print_program(parsed, scopes) do
     Enum.zip(parsed, scopes)
     |> Enum.map(&Print.print_program/1)
-    |> Enum.join("\n#{String.duplicate("═", 10)}\n")
+    |> Enum.join("\n#{bar("═")}\n")
   end
 
   def print_program({section, scope}) do
     [print_scope(scope), print_section(section)]
-    |> Enum.join("\n#{String.duplicate("―", 10)}\n")
+    |> Enum.join("\n#{bar("―")}\n")
   end
+
+  defp bar(char), do: String.duplicate(char, 10)
 
   def print_scope(scope) do
     for(
@@ -79,8 +81,6 @@ defmodule Pantagruel.Print do
   end
 
   defp print_subexpression({:quantifier, [quantifier, binding, expr]}) do
-    IO.inspect({quantifier, binding})
-
     [
       print_subexpression(quantifier),
       subexp_join(binding),
@@ -97,7 +97,7 @@ defmodule Pantagruel.Print do
     print_subexpression({container, [inner_str]})
   end
 
-  defp print_subexpression({:lambda, lambda}), do: print_subhead({:decl, lambda})
+  defp print_subexpression({:lambda, l}), do: print_subhead({:decl, l})
 
   defp print_subexpression({:literal, literal}) do
     cond do
