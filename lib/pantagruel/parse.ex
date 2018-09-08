@@ -162,8 +162,10 @@ defmodule Pantagruel.Parse do
         such_that
         |> ignore
         |> concat(
-          expression
+          parsec(:subexpression)
+          |> wrap
           |> comma_join
+          |> tag(:predicate)
         )
         |> optional
       )

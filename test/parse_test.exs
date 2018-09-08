@@ -53,7 +53,7 @@ defmodule PantagruelTest do
               decl_ident: "f",
               lambda_args: ["x"],
               lambda_doms: ["Y"],
-              expr: [right: ["a", :in, "Y"]]
+              predicate: [["a", :in, "Y"]]
             ]
           ]
         ]
@@ -158,7 +158,7 @@ defmodule PantagruelTest do
     end
 
     test "heading with multiple clauses" do
-      text = "f|x:Y⸳x != 1|"
+      text = "f|x:Y⸳x != 1,x > 0|"
 
       tryparse(text,
         section: [
@@ -167,7 +167,7 @@ defmodule PantagruelTest do
               decl_ident: "f",
               lambda_args: ["x"],
               lambda_doms: ["Y"],
-              expr: [right: ["x", :notequals, 1]]
+              predicate: [["x", :notequals, 1], ["x", :gt, 0]]
             ]
           ]
         ]
