@@ -14,7 +14,7 @@ defmodule Pantagruel.Eval do
       end
 
     state
-    |> Lambda.bind(decl, yield_type)
+    |> Lambda.bind(decl)
     |> bind_codomain.()
   end
 

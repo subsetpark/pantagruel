@@ -12,27 +12,20 @@ defmodule Pantagruel do
   @type value :: atom | String.t() | number | [value]
   @type subexpression :: [value]
 
-  def eval(contents) do
-    with {:ok, parsed, "", %{}, _, _} =
-           contents
-           |> Pantagruel.Scan.scan()
-           |> Pantagruel.Parse.program() do
-      Pantagruel.Eval.eval(parsed)
-    end
-  end
-
   def read!(filename) do
     File.read!(filename)
-    |> eval
+    |> Pantagruel.Scan.scan()
+    |> Pantagruel.Parse.program()
   end
 
   def main(filename) do
     try do
-      scope = read!(filename)
-      IO.inspect scope
-      scope
-      |> Pantagruel.Print.to_string()
-      |> IO.puts
+      {:ok, parsed, "", %{}, _, _} = read!(filename)
+      scope = Pantagruel.Eval.eval(parsed)
+      IO.inspect(scope)
+
+      Pantagruel.Print.to_string(parsed, scope)
+      |> IO.puts()
     rescue
       e in Pantagruel.Eval.Binding.UnboundVariablesError ->
         IO.puts("Unbound variables.")

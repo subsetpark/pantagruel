@@ -73,7 +73,7 @@ defmodule EvalTest do
       assert [
                %{
                  "x" => %Variable{name: "x", domain: "ℕ"},
-                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: :function}
+                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: nil}
                }
              ] == Pantagruel.Eval.eval(parsed)
     end
@@ -88,7 +88,7 @@ defmodule EvalTest do
                    name: "f",
                    domain: ["ℕ"],
                    codomain: nil,
-                   type: :function
+                   type: nil
                  }
                },
                %{
@@ -122,7 +122,7 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: :function},
+                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: nil},
                  "x" => %Variable{name: "x", domain: "ℕ"}
                },
                %{
@@ -174,7 +174,7 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: :function},
+                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: nil},
                  "x" => %Variable{name: "x", domain: "ℕ"}
                },
                %{
@@ -194,7 +194,7 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: :function},
+                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: nil},
                  "x" => %Variable{name: "x", domain: "ℕ"}
                  # Notice `z` is not here. It was introduced so that
                  # `z > 100` checked, but it's not in the resulting scope.
@@ -213,7 +213,7 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: :function},
+                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: nil},
                  "con" => %Lambda{name: "con", domain: [], codomain: "X", type: :constructor},
                  "X" => %Domain{name: "X"},
                  "x" => %Variable{name: "x", domain: "ℕ"}
@@ -265,7 +265,7 @@ defmodule EvalTest do
                    name: "f",
                    domain: ["ℕ"],
                    codomain: nil,
-                   type: :function
+                   type: nil
                  },
                  "x" => %Variable{name: "x", domain: "ℕ"},
                  "y" => %Variable{name: "y", domain: "ℕ"}
@@ -291,7 +291,7 @@ defmodule EvalTest do
                    name: "f",
                    domain: [],
                    codomain: nil,
-                   type: :function
+                   type: nil
                  }
                },
                %{
@@ -299,7 +299,7 @@ defmodule EvalTest do
                    name: "x",
                    domain: [],
                    codomain: nil,
-                   type: :function
+                   type: nil
                  }
                },
                %{
@@ -307,8 +307,29 @@ defmodule EvalTest do
                    name: "y",
                    domain: [],
                    codomain: nil,
-                   type: :function
+                   type: nil
                  }
+               }
+             ] == Pantagruel.Eval.eval(parsed)
+    end
+
+    test "comprehensions do not bind their variables to external scope" do
+      parsed =
+        """
+        f|x:Nat|
+        [f x > y . y from Nat]
+        """
+        |> scan_and_parse
+
+      assert [
+               %{
+                 "f" => %Pantagruel.Eval.Lambda{
+                   codomain: nil,
+                   domain: ["ℕ"],
+                   name: "f",
+                   type: nil
+                 },
+                 "x" => %Pantagruel.Eval.Variable{domain: "ℕ", name: "x"}
                }
              ] == Pantagruel.Eval.eval(parsed)
     end

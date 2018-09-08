@@ -5,45 +5,55 @@ defmodule Pantagruel.PrintTest do
   defp eval(text) do
     with scanned <- Pantagruel.Scan.scan(text),
          {:ok, parsed, "", %{}, _, _} <- Pantagruel.Parse.program(scanned) do
-      Pantagruel.Eval.eval(parsed)
+      {parsed, Pantagruel.Eval.eval(parsed)}
     end
   end
 
   describe "scope display" do
     test "null case" do
-      assert "" == "" |> eval |> Print.to_string()
+      {parsed, scopes} = eval("")
+      assert "" == Print.to_string(parsed, scopes)
     end
 
     test "minimal function" do
-      string =
+      {parsed, scopes} =
         """
         f||
         """
         |> eval
-        |> Print.to_string()
 
-      assert "f : ||" == string
+      assert "f : ||\n―――\nf : ||\n" == Print.to_string(parsed, scopes)
     end
 
     test "function" do
-      string =
+      {parsed, scopes} =
         """
         f|x: Nat| :: Real
         """
         |> eval
-        |> Print.to_string()
 
-      assert "f : |ℕ| :: ℝ\nx : ℕ" == string
+      assert "f : |ℕ| :: ℝ\nx : ℕ\n―――\nf : |x:ℕ| :: ℝ\n" == Print.to_string(parsed, scopes)
     end
+
     test "constructor" do
-      string =
+      {parsed, scopes} =
         """
         f|| => F
         """
         |> eval
-        |> Print.to_string()
 
-      assert "[F]\nf : || ⇒ F" == string
+      assert "[F]\nf : || ⇒ F\n―――\nf : || ⇒ F\n" == Print.to_string(parsed, scopes)
+    end
+
+    test "section" do
+      {parsed, scopes} =
+        """
+        f|| => F
+        f 1 = 0
+        """
+        |> eval
+
+      assert "[F]\nf : || ⇒ F\n―――\nf : || ⇒ F\nf 1 ⇔ 0" == Print.to_string(parsed, scopes)
     end
   end
 end

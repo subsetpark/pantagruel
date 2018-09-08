@@ -32,7 +32,7 @@ defmodule Pantagruel.Eval.Scope do
       "^" => %Variable{name: "^", domain: "ℝ"},
       :in => %Variable{name: ":", domain: "⊤"},
       :from => %Variable{name: "∈", domain: "⊤"},
-      :iff => %Variable{name: "=", domain: "𝔹"},
+      :iff => %Variable{name: "⇔", domain: "𝔹"},
       :then => %Variable{name: "→", domain: "𝔹"}
     }
 
@@ -50,7 +50,11 @@ defmodule Pantagruel.Eval.Scope do
     Map.put(scope, name, to_put)
   end
 
-  def translate_domain(domain) do
+  def translate_domain(expr) when is_list(expr) do
+    Enum.map(expr, &translate_domain/1)
+  end
+
+  def translate_domain(domain) when is_binary(domain) or is_atom(domain) do
     case starting_environment() do
       # Look up domain name if predefined.
       %{^domain => variable} -> variable.name
@@ -58,13 +62,8 @@ defmodule Pantagruel.Eval.Scope do
     end
   end
 
-  def to_string(scope) do
-    for(
-      {_k, v} <- scope,
-      do: String.Chars.to_string(v)
-    )
-    |> Enum.join("\n")
-  end
+  def translate_domain(expr), do: expr
+
 end
 
 defmodule Pantagruel.Eval.Domain do
@@ -89,12 +88,9 @@ defmodule Pantagruel.Eval.Lambda do
   alias Pantagruel.Eval.{Lambda, Scope}
   defstruct name: "", domain: [], codomain: nil, type: nil
 
-  def bind(scope, decl, type \\ :function) do
+  def bind(scope, decl) do
     args = decl[:lambda_args] || []
-
-    doms =
-      (decl[:lambda_doms] || [])
-      |> Enum.map(&Scope.translate_domain/1)
+    doms = decl[:lambda_doms] || []
 
     # If there are more arguments than domains, we will use the last
     # domain specified for all the extra arguments.
@@ -115,12 +111,18 @@ defmodule Pantagruel.Eval.Lambda do
       env
       |> Scope.bind(var, dom)
     end)
-    |> Scope.bind(decl[:decl_ident], %Lambda{
+    |> Scope.bind(decl[:decl_ident], from_declaration(decl, doms))
+  end
+
+  def from_declaration(decl, doms \\ nil) do
+    doms = doms || decl[:lambda_doms] || []
+
+    %Lambda{
       name: decl[:decl_ident],
-      domain: doms,
+      domain: doms |> Scope.translate_domain(),
       codomain: decl[:lambda_codomain] |> Scope.translate_domain(),
-      type: type
-    })
+      type: decl[:yield_type]
+    }
   end
 
   defp pad_list(_, acc, l) when length(acc) == l, do: Enum.reverse(acc)
@@ -132,9 +134,7 @@ defmodule Pantagruel.Eval.Lambda do
   defp pad_list([item | rest], acc, l) do
     pad_list(rest, [item | acc], l)
   end
-end
 
-defimpl String.Chars, for: Pantagruel.Eval.Lambda do
   defp yields_string(nil, _), do: ""
   defp yields_string(_, nil), do: ""
   defp yields_string(:function, _), do: " :: "
@@ -143,8 +143,14 @@ defimpl String.Chars, for: Pantagruel.Eval.Lambda do
   defp codomain_string(nil), do: ""
   defp codomain_string(codomain), do: String.Chars.to_string(codomain)
 
-  def to_string(lambda) do
-    "#{lambda.name} : |#{lambda.domain}|#{yields_string(lambda.type, lambda.codomain)}#{
+  def print_lambda(lambda, decl_args \\ nil) do
+    args_str =
+      case decl_args do
+        nil -> ""
+        args -> "#{args}:"
+      end
+
+    "#{lambda.name} : |#{args_str}#{lambda.domain}|#{yields_string(lambda.type, lambda.codomain)}#{
       codomain_string(lambda.codomain)
     }"
   end
