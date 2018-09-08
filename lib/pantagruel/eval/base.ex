@@ -20,20 +20,22 @@ defmodule Pantagruel.Eval.Scope do
       "Nat" => %Variable{name: "ℕ", domain: "ℕ"},
       "Nat0" => %Variable{name: "ℕ0", domain: "ℕ0"},
       "String" => %Variable{name: "𝕊", domain: "𝕊"},
-      :equals => %Variable{name: "==", domain: "ℝ"},
-      :notequals => %Variable{name: "!=", domain: "ℝ"},
+      :equals => %Variable{name: "=", domain: "ℝ"},
+      :notequals => %Variable{name: "≠", domain: "ℝ"},
       :gt => %Variable{name: ">", domain: "ℝ"},
       :lt => %Variable{name: "<", domain: "ℝ"},
-      :gte => %Variable{name: ">=", domain: "ℝ"},
-      :lte => %Variable{name: "<=", domain: "ℝ"},
+      :gte => %Variable{name: "≥", domain: "ℝ"},
+      :lte => %Variable{name: "≤", domain: "ℝ"},
       "+" => %Variable{name: "+", domain: "ℝ"},
       "-" => %Variable{name: "-", domain: "ℝ"},
-      "*" => %Variable{name: "*", domain: "ℝ"},
+      "*" => %Variable{name: "×", domain: "ℝ"},
       "^" => %Variable{name: "^", domain: "ℝ"},
       :in => %Variable{name: ":", domain: "⊤"},
       :from => %Variable{name: "∈", domain: "⊤"},
       :iff => %Variable{name: "⇔", domain: "𝔹"},
-      :then => %Variable{name: "→", domain: "𝔹"}
+      :then => %Variable{name: "→", domain: "𝔹"},
+      :exists => %Variable{name: "∃", domain: "⊤"},
+      :forall => %Variable{name: "∀", domain: "⊤"}
     }
 
   def bind(scope, {:bunch, elements}, value) do
@@ -63,7 +65,6 @@ defmodule Pantagruel.Eval.Scope do
   end
 
   def translate_domain(expr), do: expr
-
 end
 
 defmodule Pantagruel.Eval.Domain do
@@ -135,23 +136,4 @@ defmodule Pantagruel.Eval.Lambda do
     pad_list(rest, [item | acc], l)
   end
 
-  defp yields_string(nil, _), do: ""
-  defp yields_string(_, nil), do: ""
-  defp yields_string(:function, _), do: " :: "
-  defp yields_string(:constructor, _), do: " ⇒ "
-
-  defp codomain_string(nil), do: ""
-  defp codomain_string(codomain), do: String.Chars.to_string(codomain)
-
-  def print_lambda(lambda, decl_args \\ nil) do
-    args_str =
-      case decl_args do
-        nil -> ""
-        args -> "#{args}:"
-      end
-
-    "#{lambda.name} : |#{args_str}#{lambda.domain}|#{yields_string(lambda.type, lambda.codomain)}#{
-      codomain_string(lambda.codomain)
-    }"
-  end
 end

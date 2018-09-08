@@ -22,7 +22,7 @@ defmodule Pantagruel.PrintTest do
         """
         |> eval
 
-      assert "f : ||\n―――\nf : ||\n" == Print.to_string(parsed, scopes)
+      assert "f : ||\n――――――――――\nf : ||\n" == Print.to_string(parsed, scopes)
     end
 
     test "function" do
@@ -32,7 +32,8 @@ defmodule Pantagruel.PrintTest do
         """
         |> eval
 
-      assert "f : |ℕ| :: ℝ\nx : ℕ\n―――\nf : |x:ℕ| :: ℝ\n" == Print.to_string(parsed, scopes)
+      assert "f : |ℕ| :: ℝ\nx : ℕ\n――――――――――\nf : |x:ℕ| :: ℝ\n" ==
+               Print.to_string(parsed, scopes)
     end
 
     test "constructor" do
@@ -42,7 +43,7 @@ defmodule Pantagruel.PrintTest do
         """
         |> eval
 
-      assert "[F]\nf : || ⇒ F\n―――\nf : || ⇒ F\n" == Print.to_string(parsed, scopes)
+      assert "[F]\nf : || ⇒ F\n――――――――――\nf : || ⇒ F\n" == Print.to_string(parsed, scopes)
     end
 
     test "section" do
@@ -53,7 +54,7 @@ defmodule Pantagruel.PrintTest do
         """
         |> eval
 
-      assert "[F]\nf : || ⇒ F\n―――\nf : || ⇒ F\nf 1 ⇔ 0" == Print.to_string(parsed, scopes)
+      assert "[F]\nf : || ⇒ F\n――――――――――\nf : || ⇒ F\nf 1 ⇔ 0" == Print.to_string(parsed, scopes)
     end
   end
 end

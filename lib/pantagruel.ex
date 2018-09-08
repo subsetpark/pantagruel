@@ -22,7 +22,6 @@ defmodule Pantagruel do
     try do
       {:ok, parsed, "", %{}, _, _} = read!(filename)
       scope = Pantagruel.Eval.eval(parsed)
-      IO.inspect(scope)
 
       Pantagruel.Print.to_string(parsed, scope)
       |> IO.puts()
