@@ -96,8 +96,6 @@ defmodule Pantagruel.Eval.Lambda do
     |> Enum.reduce(scope, fn {var, dom}, env ->
       env
       |> Scope.bind(var, dom)
-      # Automatically introduce successor variable.
-      |> Scope.bind(var <> "'", dom)
     end)
     |> Scope.bind(decl[:decl_ident], %Lambda{
       name: decl[:decl_ident],

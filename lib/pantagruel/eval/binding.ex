@@ -70,6 +70,15 @@ defmodule Pantagruel.Eval.BindingChecks do
   # Check if a given variable is bound given the current scope. Search
   # in the scope or starting environment.
   defp is_bound?(variable, [scope | parent]) do
+    # Allow arbitrary suffixes or prefixes of "'" to denote
+    # successor/remainder variables.
+    variable =
+      if is_binary(variable) do
+        String.trim(variable, "'")
+      else
+        variable
+      end
+
     Map.has_key?(Scope.starting_environment(), variable) or Map.has_key?(scope, variable) or
       is_bound?(variable, parent)
   end

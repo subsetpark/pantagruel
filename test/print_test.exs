@@ -33,7 +33,7 @@ defmodule Pantagruel.PrintTest do
         |> eval
         |> Print.to_string()
 
-      assert "f : |ℕ| :: ℝ\nx : ℕ\nx' : ℕ" == string
+      assert "f : |ℕ| :: ℝ\nx : ℕ" == string
     end
   end
 end

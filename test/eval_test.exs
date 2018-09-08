@@ -19,7 +19,6 @@ defmodule EvalTest do
       assert [
                %{
                  "x" => %Variable{name: "x", domain: "ℕ"},
-                 "x'" => %Variable{name: "x'", domain: "ℕ"},
                  "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: "ℝ", type: :function}
                }
              ] == Pantagruel.Eval.eval(parsed)
@@ -49,9 +48,7 @@ defmodule EvalTest do
                %{
                  "f" => %Lambda{name: "f", domain: ["X", "Y"], codomain: "ℝ", type: :function},
                  "x" => %Variable{name: "x", domain: "X"},
-                 "x'" => %Variable{name: "x'", domain: "X"},
                  "y" => %Variable{name: "y", domain: "Y"},
-                 "y'" => %Variable{name: "y'", domain: "Y"},
                  "X" => %Variable{name: "X", domain: "X"},
                  "Y" => %Variable{name: "Y", domain: "Y"},
                  "make_x" => %Lambda{
@@ -76,7 +73,6 @@ defmodule EvalTest do
       assert [
                %{
                  "x" => %Variable{name: "x", domain: "ℕ"},
-                 "x'" => %Variable{name: "x'", domain: "ℕ"},
                  "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: :function}
                }
              ] == Pantagruel.Eval.eval(parsed)
@@ -96,7 +92,6 @@ defmodule EvalTest do
                },
                %{
                  "x" => %Variable{name: "x", domain: "ℕ"},
-                 "x'" => %Variable{name: "x'", domain: "ℕ"},
                  "f" => %Lambda{
                    name: "f",
                    domain: ["ℕ"],
@@ -129,12 +124,10 @@ defmodule EvalTest do
                %{
                  "g" => %Lambda{name: "g", domain: ["ℕ"], codomain: "𝔹", type: :function},
                  "y" => %Variable{name: "y", domain: "ℕ"},
-                 "y'" => %Variable{name: "y'", domain: "ℕ"}
                },
                %{
                  "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: :function},
                  "x" => %Variable{name: "x", domain: "ℕ"},
-                 "x'" => %Variable{name: "x'", domain: "ℕ"}
                }
              ] == Pantagruel.Eval.eval(parsed)
     end
@@ -187,7 +180,6 @@ defmodule EvalTest do
                %{
                  "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: :function},
                  "x" => %Variable{name: "x", domain: "ℕ"},
-                 "x'" => %Variable{name: "x'", domain: "ℕ"}
                }
              ] == Pantagruel.Eval.eval(parsed)
     end
@@ -204,7 +196,6 @@ defmodule EvalTest do
                %{
                  "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: :function},
                  "x" => %Variable{name: "x", domain: "ℕ"},
-                 "x'" => %Variable{name: "x'", domain: "ℕ"}
                  # Notice `z` is not here. It was introduced so that
                  # `z > 100` checked, but it's not in the resulting scope.
                }
@@ -226,7 +217,6 @@ defmodule EvalTest do
                  "con" => %Lambda{name: "con", domain: [], codomain: "X", type: :constructor},
                  "X" => %Variable{name: "X", domain: "X"},
                  "x" => %Variable{name: "x", domain: "ℕ"},
-                 "x'" => %Variable{name: "x'", domain: "ℕ"}
                }
              ] == Pantagruel.Eval.eval(parsed)
     end
@@ -278,7 +268,6 @@ defmodule EvalTest do
                    type: :function
                  },
                  "x" => %Variable{name: "x", domain: "ℕ"},
-                 "x'" => %Variable{name: "x'", domain: "ℕ"},
                  "y" => %Variable{name: "y", domain: "ℕ"}
                }
              ] == Pantagruel.Eval.eval(parsed)
@@ -342,7 +331,6 @@ defmodule EvalTest do
       assert [
                %{
                  "x" => %Variable{name: "x", domain: "X"},
-                 "x'" => %Variable{name: "x'", domain: "X"},
                  "ind" => %Lambda{
                    domain: [{:list, ["X"]}, "X"],
                    codomain: "ℕ0",
@@ -350,7 +338,6 @@ defmodule EvalTest do
                    type: :function
                  },
                  "xs" => %Variable{domain: {:list, ["X"]}, name: "xs"},
-                 "xs'" => %Variable{domain: {:list, ["X"]}, name: "xs'"}
                },
                %{
                  "X" => %Variable{domain: "X", name: "X"},
@@ -362,7 +349,6 @@ defmodule EvalTest do
                  },
                  "x" => %Lambda{codomain: "X", domain: [], name: "x", type: :constructor},
                  "xs" => %Variable{domain: {:list, ["X"]}, name: "xs"},
-                 "xs'" => %Variable{domain: {:list, ["X"]}, name: "xs'"}
                }
              ] == Pantagruel.Eval.eval(parsed)
     end
