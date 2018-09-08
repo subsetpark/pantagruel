@@ -64,7 +64,7 @@ defmodule Pantagruel.Print do
   end
 
   defp print_subexpression(symbol) when is_binary(symbol) or is_number(symbol) or is_atom(symbol),
-    do: Env.translate_domain(symbol)
+    do: Env.lookup_binding_name(symbol)
 
   defp print_subexpression({container, subexprs})
        when container in [:bunch, :list, :string, :set] do

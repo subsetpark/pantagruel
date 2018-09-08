@@ -64,8 +64,8 @@ defmodule Pantagruel.Eval.Lambda do
 
     %Lambda{
       name: decl[:decl_ident],
-      domain: doms |> Env.translate_domain(),
-      codomain: decl[:lambda_codomain] |> Env.translate_domain(),
+      domain: doms |> Env.lookup_binding_name(),
+      codomain: decl[:lambda_codomain] |> Env.lookup_binding_name(),
       type: decl[:yield_type]
     }
   end

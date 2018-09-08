@@ -30,6 +30,9 @@ defmodule Pantagruel.Env do
     :forall => %Variable{name: "∀", domain: "⊤"}
   }
 
+  @doc """
+  Introduce a new variable into this scope.
+  """
   def bind(scope, {:bunch, elements}, value) do
     Enum.reduce(elements, scope, &bind(&2, hd(&1), value))
   end
@@ -37,18 +40,28 @@ defmodule Pantagruel.Env do
   def bind(scope, name, value) do
     to_put =
       case value do
-        %{} -> value
-        domain -> %Variable{name: name, domain: translate_domain(domain)}
+        %{} ->
+          value
+
+        domain ->
+          %Variable{
+            name: name,
+            domain: lookup_binding_name(domain)
+          }
       end
 
     Map.put(scope, name, to_put)
   end
 
-  def translate_domain(expr) when is_list(expr) do
-    Enum.map(expr, &translate_domain/1)
+  @doc """
+  If a value has been defined in the starting environment, find the name
+  it was bound under.
+  """
+  def lookup_binding_name(expr) when is_list(expr) do
+    Enum.map(expr, &lookup_binding_name/1)
   end
 
-  def translate_domain(domain) when is_binary(domain) or is_atom(domain) do
+  def lookup_binding_name(domain) when is_binary(domain) or is_atom(domain) do
     case @starting_environment do
       # Look up domain name if predefined.
       %{^domain => variable} -> variable.name
@@ -56,7 +69,7 @@ defmodule Pantagruel.Env do
     end
   end
 
-  def translate_domain(expr), do: expr
+  def lookup_binding_name(expr), do: expr
   # Process some temporary bindings and check for boundness.
   defp check_with_bindings(expr, bindings, scopes) do
     bind_bindings = fn [symbol, _, domain], s ->
@@ -70,15 +83,27 @@ defmodule Pantagruel.Env do
     end
   end
 
+  @doc """
+  Check a list of values for binding in the given scope, and raise if
+  anything is unbound.
+  """
+  def check_unbound(scopes, candidates) do
+    case Enum.filter(candidates, &(!is_bound?(&1, scopes))) do
+      [] ->
+        :ok
+
+      unbound ->
+        raise UnboundVariablesError, unbound: MapSet.new(unbound)
+    end
+  end
+
   @container_types [:string, :bunch, :set, :list]
-  # Decide if a variable is bound within a given state.
-  # Boundness checking for literals.
+  # Check whether a given value is currently bound in the given scope.
   defp is_bound?(v, _) when is_integer(v), do: true
   defp is_bound?(v, _) when is_float(v), do: true
   defp is_bound?({:literal, _}, _), do: true
-  # A non-value is always unbound within a null state.
   defp is_bound?(_, []), do: false
-  # Boundness checking for container types.
+
   defp is_bound?({container, []}, _)
        when container in @container_types,
        do: true
@@ -94,10 +119,9 @@ defmodule Pantagruel.Env do
     end)
   end
 
-  # Boundness checking for functions.
   defp is_bound?({:lambda, lambda}, scope) do
-    # Lambdas introduce function arguments. Therefore they are bound
-    # in (and only in) the recursive boundness check.
+    # Lambdas introduce function arguments. Therefore they are bound in
+    # (and only in) the recursive boundness check.
     scope = [Pantagruel.Eval.Lambda.bind(%{}, lambda) | scope]
 
     [
@@ -111,16 +135,12 @@ defmodule Pantagruel.Env do
   end
 
   # Boundness checking for for-all quantifiers.
-  defp is_bound?({:quantifier, [_quantifier, bindings, expr]}, scope) do
-    check_with_bindings(expr, bindings, scope)
-  end
+  defp is_bound?({:quantifier, [_, bindings, expr]}, scope),
+    do: check_with_bindings(expr, bindings, scope)
 
-  defp is_bound?({:comprehension, [{_container, [bindings, expr]}]}, scope) do
-    check_with_bindings(expr, bindings, scope)
-  end
+  defp is_bound?({:comprehension, [{_, [bindings, expr]}]}, scope),
+    do: check_with_bindings(expr, bindings, scope)
 
-  # Check if a given variable is bound given the current scope. Search
-  # in the scope or starting environment.
   defp is_bound?(variable, [scope | parent]) do
     # Allow arbitrary suffixes or prefixes of "'" to denote
     # successor/remainder variables.
@@ -131,17 +151,9 @@ defmodule Pantagruel.Env do
         variable
       end
 
-    Map.has_key?(@starting_environment, variable) or Map.has_key?(scope, variable) or
-      is_bound?(variable, parent)
+    has_key?(scope, variable) or is_bound?(variable, parent)
   end
 
-  def check_unbound(scopes, unbound) do
-    case Enum.filter(unbound, &(!is_bound?(&1, scopes))) do
-      [] ->
-        :ok
-
-      still_unbound ->
-        raise UnboundVariablesError, unbound: MapSet.new(still_unbound)
-    end
-  end
+  defp has_key?(scope, variable),
+    do: Map.has_key?(@starting_environment, variable) or Map.has_key?(scope, variable)
 end
