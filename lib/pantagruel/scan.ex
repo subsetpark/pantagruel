@@ -1,4 +1,15 @@
 defmodule Pantagruel.Scan do
+  @moduledoc """
+  Preprocessing for Pantagruel. Processes a text file in several passes:
+  - Removes all commented areas.
+  - Replaces specific character sequences with their unicode
+    equivalents. This allows certain ascii combinations to be treated
+    specially by the parser: arrows are combined into a single character,
+    newline continuations are collapsed and removed, and a small set
+    of identifier-legal characters, if encountered alone, are treated
+    as keywords.
+  - Unnecessary spaces and whitespace are removed.
+  """
   defp strip_comments(<<>>, acc, _), do: String.reverse(acc)
 
   defp strip_comments(<<?\n::utf8, contents::binary>>, out, _) do
