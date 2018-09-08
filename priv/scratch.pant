@@ -11,6 +11,7 @@ d|| => D
 z|| => Nat
 rand|| :: Nat
 andr|x,y : Nat, Real . x > y| :: Bool
+z d <- y
 ;;
 y|| => Y
 x|| => X

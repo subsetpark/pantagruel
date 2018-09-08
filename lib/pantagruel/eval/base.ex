@@ -135,5 +135,4 @@ defmodule Pantagruel.Eval.Lambda do
   defp pad_list([item | rest], acc, l) do
     pad_list(rest, [item | acc], l)
   end
-
 end

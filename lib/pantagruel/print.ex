@@ -56,7 +56,7 @@ defmodule Pantagruel.Print do
 
     case expression[:left] do
       nil -> right_str
-      left -> "#{print_subexpression(left)} ⇒ #{right_str}"
+      left -> "#{print_subexpression(left)} ← #{right_str}"
     end
   end
 
