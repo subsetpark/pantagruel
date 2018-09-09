@@ -11,7 +11,7 @@ defmodule Pantagruel.Eval.Domain do
 end
 
 defmodule Pantagruel.Eval.Lambda do
-  alias Pantagruel.Eval.Lambda
+  alias Pantagruel.Eval.{Lambda, Domain}
   alias Pantagruel.Env
   defstruct name: "", domain: [], codomain: nil, type: nil
 
@@ -32,13 +32,19 @@ defmodule Pantagruel.Eval.Lambda do
         {shorter, l} when shorter < l ->
           pad_list(doms, [], l)
       end
-
+    # If this is a type constructor, bind the codomain of the function.
+    bind_codomain =
+      case (decl[:yield_type] || []) do
+        :constructor -> &Domain.bind(&1, decl[:lambda_codomain])
+        _ -> & &1
+      end
     Enum.zip(args, padded_doms)
     |> Enum.reduce(scope, fn {var, dom}, env ->
       env
       |> Env.bind(var, dom)
     end)
     |> Env.bind(decl[:decl_ident], from_declaration(decl, doms))
+    |> bind_codomain.()
   end
 
   def from_declaration(decl, doms \\ nil) do

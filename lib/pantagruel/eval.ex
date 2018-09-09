@@ -1,23 +1,6 @@
 defmodule Pantagruel.Eval do
-  alias Pantagruel.Eval.{Lambda, Domain}
+  alias Pantagruel.Eval.Lambda
   alias Pantagruel.Env
-
-  # Bind all the variables introduced in a function declaration: function
-  # identifier, arguments, and domain.
-  defp bind_declaration_variables(state, decl) do
-    yield_type = decl[:yield_type] || :function
-
-    # If this is a type constructor, bind the codomain of the function.
-    bind_codomain =
-      case yield_type do
-        :constructor -> &Domain.bind(&1, decl[:lambda_codomain])
-        _ -> & &1
-      end
-
-    state
-    |> Lambda.bind(decl)
-    |> bind_codomain.()
-  end
 
   defp bind_subexpression_variables({:quantifier, [:exists, bindings, expr]}, state) do
     bound =
@@ -43,7 +26,7 @@ defmodule Pantagruel.Eval do
     # of unbound variables and filter out any that have been
     # bound in the environment.
     # If this is a yielding function, check the codomain for binding.
-    scope = bind_declaration_variables(scope, declaration)
+    scope = Lambda.bind(scope, declaration)
 
     header_unbounds =
       case {declaration[:yield_type], declaration[:yield_domain]} do
