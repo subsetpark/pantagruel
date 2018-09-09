@@ -19,6 +19,7 @@ defmodule Pantagruel.Eval do
     |> Enum.reduce(state, &bind_subexpression_variables/2)
   end
 
+  defp eval_declaration({:comment, _}, state), do: state
   # Bind all variables introduced in a function declaration and keep track
   # of unbound ones.
   defp eval_declaration({:decl, declaration}, {[scope | scopes], header_unbounds, unbounds}) do
@@ -42,6 +43,7 @@ defmodule Pantagruel.Eval do
     {[scope | scopes], header_unbounds, unbounds}
   end
 
+  defp eval_body_expression({:comment, _}, state), do: state
   # Evaluate a section body expression. Track any unbound variables.
   defp eval_body_expression({:expr, expression}, {
          [scope | scopes],

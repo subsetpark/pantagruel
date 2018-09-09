@@ -11,14 +11,14 @@ d|| => D
 z|| => Nat
 rand|| :: Nat
 andr|x,y : Nat, Real . x > y| :: Bool
-z d <- y
+z d <- y ; Here is a comment on `z d`.
 ;;
 y|| => Y
 x|| => X
 exists x from y, y from z . x > 0
 x != 0
 
-[x from X, y from Z, z from Y . x * y ^ z]
+[x from X, y from Z, z from Y . x * y ^ z]; Now includes semicolons; much better.
 [x from String . x + `ok]
 ;;
 x|y:Real . y == 1|

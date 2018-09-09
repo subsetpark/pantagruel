@@ -279,6 +279,7 @@ defmodule Pantagruel.Parse do
   defp parse_float(_rest, [arg], context, _line, _offset) do
     {[String.to_float(arg)], context}
   end
+
   defp join_comment(_rest, [string, char], context, _line, _offset) do
     {[String.trim(<<char>> <> string)], context}
   end

@@ -33,13 +33,17 @@ defmodule Pantagruel.Print do
 
   # Re-print the parsed program.
   defp print_section({:section, section}) do
-    print_line = fn {:expr, expression} ->
-      right_str = print_subexp(expression[:right])
+    print_line = fn
+      {:expr, expression} ->
+        right_str = print_subexp(expression[:right])
 
-      case expression[:left] do
-        nil -> right_str
-        left -> "#{print_subexp(left)} ← #{right_str}"
-      end
+        case expression[:left] do
+          nil -> right_str
+          left -> "#{print_subexp(left)} ← #{right_str}"
+        end
+
+      {:comment, comment} ->
+        print_comment(comment)
     end
 
     print_head = fn decls ->
@@ -106,6 +110,9 @@ defmodule Pantagruel.Print do
   def print_lambda({:decl, declaration}, _),
     do: print_lambda(declaration, declaration)
 
+  def print_lambda({:comment, comment}, _),
+    do: print_comment(comment)
+
   def print_lambda(l, decl) do
     Lambda.from_declaration(l) |> print_lambda(decl)
   end
@@ -171,6 +178,8 @@ defmodule Pantagruel.Print do
     |> Enum.map(&print_subexp/1)
     |> Enum.join(" ")
   end
+
+  defp print_comment([comment]), do: "\n" <> comment <> "\n"
 
   defp subexp_join(exprs) do
     exprs
