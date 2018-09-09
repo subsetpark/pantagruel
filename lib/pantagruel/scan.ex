@@ -10,30 +10,17 @@ defmodule Pantagruel.Scan do
     as keywords.
   - Unnecessary spaces and whitespace are removed.
   """
-  defp strip_comments(<<>>, acc, _), do: String.reverse(acc)
-
-  defp strip_comments(<<?\n::utf8, contents::binary>>, out, _) do
-    strip_comments(contents, <<?\n::utf8, out::binary>>, true)
-  end
-
-  defp strip_comments(<<_::utf8, contents::binary>>, out, false) do
-    strip_comments(contents, out, false)
-  end
-
-  ## Special-case ';;' from triggering comments.
-  defp strip_comments(<<";;"::utf8, contents::binary>>, out, true) do
-    strip_comments(contents, <<";;"::utf8, out::binary>>, true)
-  end
-
-  defp strip_comments(<<?;::utf8, contents::binary>>, out, _) do
-    strip_comments(contents, out, false)
-  end
-
-  defp strip_comments(<<c::utf8, contents::binary>>, out, true) do
-    strip_comments(contents, <<c::utf8, out::binary>>, true)
-  end
 
   defp replace_chars(<<>>, acc), do: String.reverse(acc)
+
+  ## Special-case ';;' from triggering comments.
+  defp replace_chars(<<";;"::utf8, contents::binary>>, out) do
+    replace_chars(contents, <<";;"::utf8, out::binary>>)
+  end
+
+  defp replace_chars(<<";"::utf8, contents::binary>>, out) do
+    replace_chars(contents, <<";\n"::utf8, out::binary>>)
+  end
 
   defp replace_chars(<<"->"::utf8, contents::binary>>, out) do
     replace_chars(contents, <<?→::utf8, out::binary>>)
@@ -135,7 +122,7 @@ defmodule Pantagruel.Scan do
 
   @spec scan(String.t()) :: String.t()
   def scan(contents) do
-    strip_comments(contents, <<>>, true)
+    contents
     |> replace_chars(<<>>)
     |> consolidate_whitespace(<<>>)
     |> eliminate_spaces(<<>>)

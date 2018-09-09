@@ -188,18 +188,28 @@ defmodule Pantagruel.Parse do
     |> concat(fun)
     |> tag(:decl)
 
+  comment =
+    string(";")
+    |> ignore()
+    |> utf8_char([{:not, ?;}])
+    |> utf8_string([{:not, ?\n}], min: 1)
+    |> traverse(:join_comment)
+    |> tag(:comment)
+
   # A series of one or more function declarations followed by
   # 0 or more expressions which should evaluate to true if the
   # specification holds.
   section =
-    decl
+    [decl, comment]
+    |> choice
     |> newline_join
     |> tag(:head)
     |> concat(
       newline
       |> ignore
       |> concat(
-        expression
+        [expression, comment]
+        |> choice
         |> newline_join
       )
       |> tag(:body)
@@ -268,5 +278,8 @@ defmodule Pantagruel.Parse do
 
   defp parse_float(_rest, [arg], context, _line, _offset) do
     {[String.to_float(arg)], context}
+  end
+  defp join_comment(_rest, [string, char], context, _line, _offset) do
+    {[String.trim(<<char>> <> string)], context}
   end
 end

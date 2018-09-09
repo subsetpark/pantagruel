@@ -219,4 +219,21 @@ defmodule PantagruelTest do
       )
     end
   end
+
+  describe "comments handling" do
+    test "can parse a comment" do
+      text = "f||\nf>1\n; Here is a comment.\nf<2"
+
+      tryparse(text,
+        section: [
+          head: [decl: [decl_ident: "f"]],
+          body: [
+            expr: [right: ["f", :gt, 1]],
+            comment: ["Here is a comment."],
+            expr: [right: ["f", :lt, 2]]
+          ]
+        ]
+      )
+    end
+  end
 end
