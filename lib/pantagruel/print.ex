@@ -179,7 +179,9 @@ defmodule Pantagruel.Print do
     |> Enum.join(" ")
   end
 
-  defp print_comment([comment]), do: "\n" <> comment <> "\n"
+  defp print_comment([comment]) do
+    "\n" <> String.replace(comment, Pantagruel.Scan.comment_continuation_rev(), "\n") <> "\n"
+  end
 
   defp subexp_join(exprs) do
     exprs

@@ -10,6 +10,8 @@ defmodule Pantagruel.Scan do
     as keywords.
   - Unnecessary spaces and whitespace are removed.
   """
+  def comment_continuation, do: "__COMMENT_CONT__"
+  def comment_continuation_rev, do: String.reverse(comment_continuation())
 
   defp replace_chars(<<>>, acc, _), do: String.reverse(acc)
 
@@ -17,6 +19,14 @@ defmodule Pantagruel.Scan do
   defp replace_chars(<<";;"::utf8, contents::binary>>, out, false) do
     replace_chars(contents, <<";;"::utf8, out::binary>>, false)
   end
+
+  # Comment continuation.
+  defp replace_chars(<<"\n;"::utf8, c::utf8, contents::binary>>, out, true)
+       when c != ?; do
+         IO.inspect({c, contents})
+    replace_chars(contents, <<c::utf8>> <> comment_continuation() <> <<out::binary>>, true)
+  end
+
   # Start a new comment; insert a newline and turn on comment mode.
   defp replace_chars(<<";"::utf8, contents::binary>>, out, false) do
     replace_chars(contents, <<";\n"::utf8, out::binary>>, true)
@@ -71,6 +81,7 @@ defmodule Pantagruel.Scan do
        when l in @delimiters and r in @delimiters do
     replace_chars(contents, <<r::utf8, "⸳"::utf8, l::utf8, out::binary>>, t)
   end
+
   # Turn off comment at a newline.
   defp replace_chars(<<"\n"::utf8, contents::binary>>, out, _) do
     replace_chars(contents, <<"\n"::utf8, out::binary>>, false)
