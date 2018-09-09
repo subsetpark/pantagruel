@@ -23,21 +23,20 @@ defmodule Pantagruel.Eval.Lambda do
     # domain specified for all the extra arguments.
     padded_doms =
       case {length(doms), length(args)} do
-        {l, l} ->
-          doms
-
         {longer, l} when longer > l ->
           raise RuntimeError, "Too many function domains"
 
-        {shorter, l} when shorter < l ->
+        {_, l} ->
           pad_list(doms, [], l)
       end
+
     # If this is a type constructor, bind the codomain of the function.
     bind_codomain =
-      case (decl[:yield_type] || []) do
+      case decl[:yield_type] || [] do
         :constructor -> &Domain.bind(&1, decl[:lambda_codomain])
         _ -> & &1
       end
+
     Enum.zip(args, padded_doms)
     |> Enum.reduce(scope, fn {var, dom}, env ->
       env
@@ -56,7 +55,7 @@ defmodule Pantagruel.Eval.Lambda do
       codomain:
         decl[:lambda_codomain]
         |> Env.lookup_binding_name(),
-      type: decl[:yield_type],
+      type: decl[:yield_type]
     }
   end
 
