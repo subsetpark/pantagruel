@@ -180,7 +180,13 @@ defmodule Pantagruel.Print do
   end
 
   defp print_comment([comment]) do
-    "\n" <> String.replace(comment, Pantagruel.Scan.comment_continuation_rev(), "\n") <> "\n"
+    comment_str =
+      comment
+      |> String.split(Pantagruel.Scan.comment_continuation_rev())
+      |> Enum.map(&String.trim/1)
+      |> Enum.join("\n")
+
+    "\n" <> comment_str <> "\n"
   end
 
   defp subexp_join(exprs) do
