@@ -94,7 +94,7 @@ defmodule Pantagruel.Print do
     yields_str =
       case type do
         nil -> ""
-        :function -> " :: "
+        :function -> " ∷ "
         :constructor -> " ⇒ "
       end
 

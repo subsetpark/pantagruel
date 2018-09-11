@@ -141,8 +141,8 @@ defmodule Pantagruel.Parse do
   lambda_codomain =
     choice(
       strings([
-        {"::", :function},
-        {"=>", :constructor}
+        {"∷", :function},
+        {"⇒", :constructor}
       ])
     )
     |> unwrap_and_tag(:yield_type)

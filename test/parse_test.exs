@@ -103,7 +103,7 @@ defmodule PantagruelTest do
 
   describe "declaration parsing" do
     test "empty heading parsing" do
-      text = "f||=>D"
+      text = "f||⇒D"
 
       tryparse(text,
         section: [
@@ -119,7 +119,7 @@ defmodule PantagruelTest do
     end
 
     test "dual heading parsing" do
-      text = "f||=>D\ng||=>E"
+      text = "f||⇒D\ng||⇒E"
 
       tryparse(text,
         section: [
@@ -140,7 +140,7 @@ defmodule PantagruelTest do
     end
 
     test "basic heading parsing" do
-      text = "f|a,b:B,C|::D"
+      text = "f|a,b:B,C|∷D"
 
       tryparse(text,
         section: [
@@ -175,7 +175,7 @@ defmodule PantagruelTest do
     end
 
     test "heading with sequenced domain" do
-      text = "f|x:X|::[X]"
+      text = "f|x:X|∷[X]"
 
       tryparse(text,
         section: [
@@ -195,7 +195,7 @@ defmodule PantagruelTest do
 
   describe "program structure" do
     test "two sections" do
-      text = "f|x:Y|\n;;\ny||=>Y"
+      text = "f|x:Y|\n;;\ny||⇒Y"
 
       tryparse(text,
         section: [

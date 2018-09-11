@@ -23,7 +23,6 @@ defmodule Pantagruel.Scan do
   # Comment continuation.
   defp replace_chars(<<"\n;"::utf8, c::utf8, contents::binary>>, out, true)
        when c != ?; do
-         IO.inspect({c, contents})
     replace_chars(contents, <<c::utf8>> <> comment_continuation() <> <<out::binary>>, true)
   end
 
@@ -36,8 +35,16 @@ defmodule Pantagruel.Scan do
     replace_chars(contents, <<?→::utf8, out::binary>>, t)
   end
 
+  defp replace_chars(<<"=>"::utf8, contents::binary>>, out, t) do
+    replace_chars(contents, <<?⇒::utf8, out::binary>>, t)
+  end
+
   defp replace_chars(<<"<-"::utf8, contents::binary>>, out, t) do
     replace_chars(contents, <<?←::utf8, out::binary>>, t)
+  end
+
+  defp replace_chars(<<"::"::utf8, contents::binary>>, out, t) do
+    replace_chars(contents, <<?∷::utf8, out::binary>>, t)
   end
 
   defp replace_chars(<<"...\n"::utf8, contents::binary>>, out, t) do
@@ -109,30 +116,31 @@ defmodule Pantagruel.Scan do
     consolidate_whitespace(contents, <<c::utf8, rest::binary>>)
   end
 
-  @operators [?→, ?∃, ?∀, ?∧, ?∨, ?∀, ?∈, ?¬, ?!, ?`, ?←, ?⸳]
+  @operators [?→, ?∃, ?∀, ?∧, ?∨, ?∀, ?∈, ?¬, ?!, ?`, ?←, ?⸳, ?⇒, ?∷]
 
-  defp eliminate_spaces(<<>>, acc), do: String.reverse(acc)
-
-  defp eliminate_spaces(<<?\s::utf8, contents::binary>>, <<c::utf8, _::binary>> = acc)
-       # Excepting ?; doesn't seem necessary.
-       when c in 40..45 or (c in 58..62 and c != ?;) or c in 91..94 or c in 123..126 or
-              c in @operators do
-    eliminate_spaces(contents, acc)
+  defp eliminate_spaces(<<>>, acc, _), do: String.reverse(acc)
+  # Toggle comment mode and don't mess with spaces.
+  defp eliminate_spaces(<<?;::utf8, contents::binary>>, out, false) do
+    eliminate_spaces(contents, <<?;::utf8, out::binary>>, true)
   end
 
-  defp eliminate_spaces(<<" "::utf8, c::utf8, contents::binary>>, out)
-       # Excepting ?; doesn't seem necessary.
-       when c in 40..45 or (c in 58..62 and c != ?;) or c in 91..94 or c in 123..126 or
-              c in @operators do
-    eliminate_spaces(contents, <<c::utf8, out::binary>>)
+  # Exit comment mode.
+  defp eliminate_spaces(<<?\n::utf8, contents::binary>>, out, true) do
+    eliminate_spaces(contents, <<?\n::utf8, out::binary>>, false)
   end
 
-  defp eliminate_spaces(<<"=> "::utf8, contents::binary>>, out) do
-    eliminate_spaces(contents, <<">="::utf8, out::binary>>)
+  defp eliminate_spaces(<<?\s::utf8, contents::binary>>, <<c::utf8, _::binary>> = acc, false)
+       when c in 40..45 or c in 58..62 or c in 91..94 or c in 123..126 or c in @operators do
+    eliminate_spaces(contents, acc, false)
   end
 
-  defp eliminate_spaces(<<c::utf8, contents::binary>>, out) do
-    eliminate_spaces(contents, <<c::utf8, out::binary>>)
+  defp eliminate_spaces(<<" "::utf8, c::utf8, contents::binary>>, out, false)
+       when c in 40..45 or c in 58..62 or c in 91..94 or c in 123..126 or c in @operators do
+    eliminate_spaces(contents, <<c::utf8, out::binary>>, false)
+  end
+
+  defp eliminate_spaces(<<c::utf8, contents::binary>>, out, t) do
+    eliminate_spaces(contents, <<c::utf8, out::binary>>, t)
   end
 
   @spec scan(String.t()) :: String.t()
@@ -140,7 +148,7 @@ defmodule Pantagruel.Scan do
     contents
     |> replace_chars(<<>>, false)
     |> consolidate_whitespace(<<>>)
-    |> eliminate_spaces(<<>>)
+    |> eliminate_spaces(<<>>, false)
     |> String.trim()
   end
 end
