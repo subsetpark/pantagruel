@@ -5,9 +5,9 @@ end
 defmodule Pantagruel.Eval.Domain do
   alias Pantagruel.Eval.Domain
   alias Pantagruel.Env
-  defstruct(name: "")
+  defstruct(name: "", alias: "")
 
-  def bind(scope, domain), do: Env.bind(scope, domain, %Domain{name: domain})
+  def bind(scope, domain, alias), do: Env.bind(scope, domain, %Domain{name: domain, alias: alias})
 
   def is_generic?(domain), do: String.starts_with?(domain, "_")
 
@@ -37,7 +37,7 @@ defmodule Pantagruel.Eval.Lambda do
       doms
       |> Enum.flat_map(&Domain.flatten_domain/1)
       |> Enum.filter(&Domain.is_generic?/1)
-      |> Enum.reduce(scope, &Domain.bind(&2, &1))
+      |> Enum.reduce(scope, &Domain.bind(&2, &1, &1))
 
     # If there are more arguments than domains, we will use the last
     # domain specified for all the extra arguments.
@@ -53,7 +53,7 @@ defmodule Pantagruel.Eval.Lambda do
     # If this is a type constructor, bind the codomain of the function.
     bind_codomain =
       case decl[:yield_type] || [] do
-        :constructor -> &Domain.bind(&1, decl[:lambda_codomain])
+        :constructor -> &Domain.bind(&1, decl[:lambda_codomain], decl[:lambda_codomain])
         _ -> & &1
       end
 

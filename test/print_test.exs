@@ -43,7 +43,7 @@ defmodule Pantagruel.PrintTest do
         """
         |> eval
 
-      assert "[F]\nf : || ⇒ F\n――――――――――\nf : || ⇒ F\n" == Print.print_program(parsed, scopes)
+      assert "F ⇒ F\nf : || ⇒ F\n――――――――――\nf : || ⇒ F\n" == Print.print_program(parsed, scopes)
     end
 
     test "section" do
@@ -54,7 +54,7 @@ defmodule Pantagruel.PrintTest do
         """
         |> eval
 
-      assert "[F]\nf : || ⇒ F\n――――――――――\nf : || ⇒ F\nf 1 ⇔ 0" ==
+      assert "F ⇒ F\nf : || ⇒ F\n――――――――――\nf : || ⇒ F\nf 1 ⇔ 0" ==
                Print.print_program(parsed, scopes)
     end
   end

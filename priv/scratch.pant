@@ -9,6 +9,7 @@ y = |x : |z:D| :: D | :: D
 z|| => Z
 d|| => D
 z|| => Nat
+{`ok, `stop} => Status
 rand|| :: Nat
 andr|x,y : Nat, Real . x > y| :: Bool
 z d <- y ; Here is a comment on `z d`.

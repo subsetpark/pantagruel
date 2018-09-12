@@ -152,6 +152,8 @@ defmodule Pantagruel.Parse do
       )
     )
 
+  yield = string("∷") |> replace(:function)
+  constructor = string("⇒") |> replace(:constructor)
   # The codomain of a function. Takes the form of
   #   :: D
   # or
@@ -160,12 +162,7 @@ defmodule Pantagruel.Parse do
   # domain of a function, and => is pronounced "produces" and
   # denotes that the function is a type constructor.
   lambda_codomain =
-    choice(
-      strings([
-        {"∷", :function},
-        {"⇒", :constructor}
-      ])
-    )
+    choice([yield, constructor])
     |> unwrap_and_tag(:yield_type)
     |> concat(
       parsec(:domain)
@@ -209,6 +206,15 @@ defmodule Pantagruel.Parse do
     |> concat(fun)
     |> tag(:decl)
 
+  domain_aliasing =
+    parsec(:subexpression)
+    |> concat(
+      constructor
+      |> ignore
+    )
+    |> parsec(:domain)
+    |> tag(:alias)
+
   comment =
     string(";")
     |> ignore()
@@ -221,7 +227,7 @@ defmodule Pantagruel.Parse do
   # 0 or more expressions which should evaluate to true if the
   # specification holds.
   section =
-    [decl, comment]
+    [decl, comment, domain_aliasing]
     |> choice
     |> newline_join
     |> tag(:head)

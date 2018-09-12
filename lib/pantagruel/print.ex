@@ -105,6 +105,10 @@ defmodule Pantagruel.Print do
   def print_lambda({:decl, declaration}, _),
     do: print_lambda(declaration, declaration)
 
+  def print_lambda({:alias, [value, domain]}, _) do
+    "#{print_subexp(value)} ⇒ #{print_subexp(domain)}"
+  end
+
   def print_lambda({:comment, comment}, _),
     do: print_comment(comment)
 
@@ -116,8 +120,8 @@ defmodule Pantagruel.Print do
   defp print_subexp(nil), do: ""
 
   # TODO: This is just cribbed from Z. Can we do better?
-  defp print_subexp(%Domain{name: name}) do
-    "[#{name}]"
+  defp print_subexp(%Domain{name: name, alias: alias}) do
+    "#{print_subexp(alias)} ⇒ #{print_subexp(name)}"
   end
 
   defp print_subexp(%Variable{name: name, domain: domain}) do
@@ -160,6 +164,8 @@ defmodule Pantagruel.Print do
   end
 
   defp print_subexp({:lambda, l}), do: print_lambda(l)
+
+  defp print_subexp({:intro_op, op}), do: print_subexp(op)
 
   defp print_subexp({:literal, literal}) do
     cond do

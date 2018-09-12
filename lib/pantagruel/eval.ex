@@ -1,5 +1,5 @@
 defmodule Pantagruel.Eval do
-  alias Pantagruel.Eval.Lambda
+  alias Pantagruel.Eval.{Lambda, Domain}
   alias Pantagruel.Env
 
   defp bind_subexpression_variables({:quantifier, [:exists, bindings, expr]}, state) do
@@ -15,6 +15,16 @@ defmodule Pantagruel.Eval do
   defp bind_subexpression_variables(_, state), do: state
 
   defp eval_declaration({:comment, _}, state), do: state
+
+  defp eval_declaration(
+         {:alias, [subexpression, yields]},
+         {[scope | scopes], header_unbounds, unbounds}
+       ) do
+    scope = Domain.bind(scope, subexpression, yields)
+    header_unbounds = include_unbound_variables(subexpression, header_unbounds)
+    {[scope | scopes], header_unbounds, unbounds}
+  end
+
   # Bind all variables introduced in a function declaration and keep track
   # of unbound ones.
   defp eval_declaration({:decl, declaration}, {[scope | scopes], header_unbounds, unbounds}) do
@@ -97,6 +107,13 @@ defmodule Pantagruel.Eval do
 
   defp new_state({scopes, header_unbounds, unbounds}) do
     {[%{} | scopes], header_unbounds, unbounds ++ [MapSet.new()]}
+  end
+
+  @container_types [:bunch, :set, :list, :string]
+
+  def include_unbound_variables({container, contents}, unbounds)
+      when container in @container_types do
+    include_unbound_variables(List.flatten(contents), unbounds)
   end
 
   def include_unbound_variables(variables, unbounds),

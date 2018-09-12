@@ -26,7 +26,7 @@ defmodule Pantagruel do
       Pantagruel.Print.print_program(parsed, scope)
       |> IO.puts()
     rescue
-      e in Pantagruel.Eval.Binding.UnboundVariablesError ->
+      e in Pantagruel.Env.UnboundVariablesError ->
         IO.puts("Unbound variables.")
         Enum.each(e.unbound, &IO.inspect/1)
     end

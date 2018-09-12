@@ -140,6 +140,8 @@ defmodule Pantagruel.Env do
   defp is_bound?({:comprehension, [{_, [bindings, expr]}]}, scope),
     do: check_with_bindings(expr, bindings, scope)
 
+  defp is_bound?({:intro_op, _}, _), do: true
+
   defp is_bound?(variable, [scope | parent]) do
     # Allow arbitrary suffixes or prefixes of "'" to denote
     # successor/remainder variables.

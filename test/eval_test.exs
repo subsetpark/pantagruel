@@ -49,8 +49,8 @@ defmodule EvalTest do
                  "f" => %Lambda{name: "f", domain: ["X", "Y"], codomain: "ℝ", type: :function},
                  "x" => %Variable{name: "x", domain: "X"},
                  "y" => %Variable{name: "y", domain: "Y"},
-                 "X" => %Domain{name: "X"},
-                 "Y" => %Domain{name: "Y"},
+                 "X" => %Domain{name: "X", alias: "X"},
+                 "Y" => %Domain{name: "Y", alias: "Y"},
                  "make_x" => %Lambda{
                    name: "make_x",
                    domain: [],
@@ -179,7 +179,7 @@ defmodule EvalTest do
                },
                %{
                  "d" => %Lambda{name: "d", domain: [], codomain: "D", type: :constructor},
-                 "D" => %Domain{name: "D"}
+                 "D" => %Domain{name: "D", alias: "D"}
                }
              ] == Pantagruel.Eval.eval(parsed)
     end
@@ -215,7 +215,7 @@ defmodule EvalTest do
                %{
                  "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: nil},
                  "con" => %Lambda{name: "con", domain: [], codomain: "X", type: :constructor},
-                 "X" => %Domain{name: "X"},
+                 "X" => %Domain{name: "X", alias: "X"},
                  "x" => %Variable{name: "x", domain: "ℕ"}
                }
              ] == Pantagruel.Eval.eval(parsed)
@@ -350,7 +350,7 @@ defmodule EvalTest do
                    name: "f",
                    type: nil
                  },
-                 "_A" => %Pantagruel.Eval.Domain{name: "_A"},
+                 "_A" => %Pantagruel.Eval.Domain{name: "_A", alias: "_A"},
                  "x" => %Pantagruel.Eval.Variable{domain: "_A", name: "x"}
                }
              ] == Pantagruel.Eval.eval(parsed)
@@ -373,7 +373,7 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "X" => %Domain{name: "X"},
+                 "X" => %Domain{name: "X", alias: "X"},
                  "sort" => %Lambda{
                    domain: [list: ["X"]],
                    codomain: {:list, ["X"]},
