@@ -69,17 +69,14 @@ defmodule Pantagruel.Eval do
   end
 
   defp eval_declaration({:decl, declaration}, {[scope | scopes], header_unbounds, unbounds}) do
-    # If this is a yielding function, check the codomain for binding.
     scope = Lambda.bind(scope, declaration)
-
+    # Check for binding: domain, predicate, and codomain.
     header_unbounds =
-      case {declaration[:yield_type], declaration[:yield_domain]} do
-        {:function, dom} when dom -> [dom]
-        _ -> []
-      end
-      # If there is any predicate associated with the function, check
-      # the symbols there for binding.
-      |> Enum.concat(List.flatten(declaration[:predicate] || []))
+      [
+        # Replace a nil codomain with a dummy value that will always pass.
+        declaration[:lambda_codomain] || 0
+        | List.flatten(declaration[:predicate] || [])
+      ]
       |> Enum.concat(declaration[:lambda_doms] || [])
       |> include_for_binding_check(header_unbounds)
 
@@ -87,7 +84,7 @@ defmodule Pantagruel.Eval do
   end
 
   defp eval_body_line({:comment, _}, state), do: state
-  # Evaluate a section body expression. Track any unbound variables.
+  # Evaluate a line of a section body.
   defp eval_body_line({:expr, line}, state), do: eval_expression(line, state)
 
   defp eval_expression(expression, {
@@ -102,8 +99,9 @@ defmodule Pantagruel.Eval do
         e ->
           e
       end
-
+    # Include any introduced symbols into scope.
     scope = Enum.reduce(elements, scope, &bind_subexpression_variables/2)
+    # Include all symbols into the binding check for the *next* section.
     next_unbounds = include_for_binding_check(elements, next_unbounds)
 
     {[scope | scopes], [unbounds, next_unbounds | rest]}
