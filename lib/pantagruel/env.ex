@@ -1,4 +1,6 @@
 defmodule Pantagruel.Env do
+  @type scope :: map()
+  @type t :: [scope]
   alias Pantagruel.Eval.Variable
 
   defmodule UnboundVariablesError do
@@ -33,6 +35,7 @@ defmodule Pantagruel.Env do
   @doc """
   Introduce a new variable into this scope.
   """
+  @spec bind(scope, any(), any()) :: scope
   def bind(scope, {:bunch, elements}, value) do
     Enum.reduce(elements, scope, &bind(&2, hd(&1), value))
   end
@@ -70,6 +73,22 @@ defmodule Pantagruel.Env do
   end
 
   def lookup_binding_name(expr), do: expr
+
+  @doc """
+  Check a list of values for binding in the given scope, and raise if
+  anything is unbound.
+  """
+  @spec check_unbound(t, [any]) :: :ok
+  def check_unbound(scopes, candidates) do
+    case Enum.filter(candidates, &(!is_bound?(&1, scopes))) do
+      [] ->
+        :ok
+
+      unbound ->
+        raise UnboundVariablesError, unbound: MapSet.new(unbound)
+    end
+  end
+
   # Process some temporary bindings and check for boundness.
   defp check_with_bindings(expr, bindings, scopes) do
     bind_bindings = fn [symbol, _, domain], s ->
@@ -80,20 +99,6 @@ defmodule Pantagruel.Env do
          scopes <- [inner_scope | scopes],
          symbols <- for([_, _, domain] <- bindings, do: domain) ++ expr do
       Enum.all?(symbols, &is_bound?(&1, scopes))
-    end
-  end
-
-  @doc """
-  Check a list of values for binding in the given scope, and raise if
-  anything is unbound.
-  """
-  def check_unbound(scopes, candidates) do
-    case Enum.filter(candidates, &(!is_bound?(&1, scopes))) do
-      [] ->
-        :ok
-
-      unbound ->
-        raise UnboundVariablesError, unbound: MapSet.new(unbound)
     end
   end
 

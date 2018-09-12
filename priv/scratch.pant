@@ -23,6 +23,7 @@ x != 0
 
 [x from X, y from Z, z from Y . x * y ^ z]; Now includes semicolons; much better.
 [x from String . x + `ok]
+all (j,k):X . j > k
 ;;
 x|y:Real . y == 1|
 z x . x > 1 <- 0

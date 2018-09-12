@@ -2,9 +2,11 @@ defmodule Pantagruel.Print do
   alias Pantagruel.Eval.{Domain, Variable, Lambda}
   alias Pantagruel.Env
 
+  @type t :: String.t()
   @doc """
   Generate a string representation of an evaluated program.
   """
+  @spec print_program(Pantagruel.Parse.t(), Env.t()) :: t
   def print_program(parsed, scopes) do
     bar = &String.duplicate(&1, 10)
 
@@ -18,48 +20,7 @@ defmodule Pantagruel.Print do
     |> Enum.join("\n#{bar.("═")}\n")
   end
 
-  # Print the contents of the environment after program evaluation.
-  defp print_scope(scope) do
-    for(
-      {_k, v} <- scope,
-      do:
-        case v do
-          %Lambda{} = l -> print_lambda(l)
-          e -> print_subexp(e)
-        end
-    )
-    |> Enum.join("\n")
-  end
-
-  # Re-print the parsed program.
-  defp print_section({:section, section}) do
-    print_line = fn
-      {:expr, expression} ->
-        print_subexp(expression)
-
-      {:comment, comment} ->
-        print_comment(comment)
-    end
-
-    print_head = fn decls ->
-      decls
-      |> Enum.map(&print_lambda/1)
-      |> Enum.join("\n")
-    end
-
-    print_body = fn exprs ->
-      exprs
-      |> Enum.map(print_line)
-      |> Enum.join("\n")
-    end
-
-    [
-      print_head.(section[:head]),
-      print_body.(section[:body] || [])
-    ]
-    |> Enum.join("\n")
-  end
-
+  @spec print_lambda(any) :: t
   def print_lambda(lambda, decl \\ nil)
 
   def print_lambda(
@@ -116,23 +77,26 @@ defmodule Pantagruel.Print do
     Lambda.from_declaration(l) |> print_lambda(decl)
   end
 
-  # Print an individual expression component.
-  defp print_subexp(nil), do: ""
+  @doc """
+  Print an individual expression component.
+  """
+  @spec print_subexp(any) :: t
+  def print_subexp(nil), do: ""
 
   # TODO: This is just cribbed from Z. Can we do better?
-  defp print_subexp(%Domain{name: name, alias: alias}) do
+  def print_subexp(%Domain{name: name, alias: alias}) do
     "#{print_subexp(alias)} ⇒ #{print_subexp(name)}"
   end
 
-  defp print_subexp(%Variable{name: name, domain: domain}) do
+  def print_subexp(%Variable{name: name, domain: domain}) do
     "#{name} : #{domain}"
   end
 
-  defp print_subexp(symbol) when is_binary(symbol) or is_number(symbol) or is_atom(symbol),
+  def print_subexp(symbol) when is_binary(symbol) or is_number(symbol) or is_atom(symbol),
     do: Env.lookup_binding_name(symbol)
 
-  defp print_subexp({container, subexps})
-       when container in [:bunch, :list, :string, :set] do
+  def print_subexp({container, subexps})
+      when container in [:bunch, :list, :string, :set] do
     {l, r} =
       case container do
         :bunch -> {"(", ")"}
@@ -146,7 +110,7 @@ defmodule Pantagruel.Print do
     "#{l}#{inner_str}#{r}"
   end
 
-  defp print_subexp({:quantifier, [quantifier, binding, expr]}) do
+  def print_subexp({:quantifier, [quantifier, binding, expr]}) do
     [
       print_subexp(quantifier),
       subexp_join(binding),
@@ -156,25 +120,25 @@ defmodule Pantagruel.Print do
     |> Enum.join(" ")
   end
 
-  defp print_subexp({:comprehension, [{container, [binding, expr]}]}) do
+  def print_subexp({:comprehension, [{container, [binding, expr]}]}) do
     binding_str = subexp_join(binding)
     expr_str = print_subexp(expr)
     inner_str = "#{binding_str} ⸳ #{expr_str}"
     print_subexp({container, [inner_str]})
   end
 
-  defp print_subexp({:lambda, l}), do: print_lambda(l)
+  def print_subexp({:lambda, l}), do: print_lambda(l)
 
-  defp print_subexp({:intro_op, op}), do: print_subexp(op)
+  def print_subexp({:intro_op, op}), do: print_subexp(op)
 
-  defp print_subexp({:literal, literal}) do
+  def print_subexp({:literal, literal}) do
     cond do
       String.contains?(literal, " ") -> "`#{literal}`"
       true -> "`" <> literal
     end
   end
 
-  defp print_subexp({:refinement, refinement}) do
+  def print_subexp({:refinement, refinement}) do
     right_str = print_subexp(refinement[:subexpr])
 
     guard_str =
@@ -186,10 +150,52 @@ defmodule Pantagruel.Print do
     "#{print_subexp(refinement[:pattern])}#{guard_str} ← #{right_str}"
   end
 
-  defp print_subexp(subexp) do
+  def print_subexp(subexp) do
     subexp
     |> Enum.map(&print_subexp/1)
     |> Enum.join(" ")
+  end
+
+  # Print the contents of the environment after program evaluation.
+  defp print_scope(scope) do
+    for(
+      {_k, v} <- scope,
+      do:
+        case v do
+          %Lambda{} = l -> print_lambda(l)
+          e -> print_subexp(e)
+        end
+    )
+    |> Enum.join("\n")
+  end
+
+  # Re-print the parsed program.
+  defp print_section({:section, section}) do
+    print_line = fn
+      {:expr, expression} ->
+        print_subexp(expression)
+
+      {:comment, comment} ->
+        print_comment(comment)
+    end
+
+    print_head = fn decls ->
+      decls
+      |> Enum.map(&print_lambda/1)
+      |> Enum.join("\n")
+    end
+
+    print_body = fn exprs ->
+      exprs
+      |> Enum.map(print_line)
+      |> Enum.join("\n")
+    end
+
+    [
+      print_head.(section[:head]),
+      print_body.(section[:body] || [])
+    ]
+    |> Enum.join("\n")
   end
 
   defp print_comment([comment]) do

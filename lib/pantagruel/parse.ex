@@ -5,6 +5,9 @@ defmodule Pantagruel.Parse do
   import NimbleParsec
   import Pantagruel.Parse.Util
 
+  @type ast_node :: any
+  @type t :: [ast_node]
+
   # Constants
   space = string(" ")
   newline = string("\n")
@@ -295,7 +298,7 @@ defmodule Pantagruel.Parse do
   # where each subsequent section defines any variables introduced
   # in the previous section.
   @spec program(String.t()) ::
-          {:ok, Pantagruel.t(), binary(), map(), {pos_integer(), pos_integer()}, pos_integer()}
+          {:ok, t(), binary(), map(), {pos_integer(), pos_integer()}, pos_integer()}
   defparsec(
     :program,
     section

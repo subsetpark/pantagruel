@@ -1,17 +1,4 @@
 defmodule Pantagruel do
-  @type t :: [section]
-  @type section :: [declaration | expression]
-  @type declaration :: [
-          decl_ident: value,
-          lambda_args: [value],
-          lambda_doms: [value],
-          yield_type: :yields | :produces,
-          yield_domain: value
-        ]
-  @type expression :: [left: subexpression, op: value, right: subexpression]
-  @type value :: atom | String.t() | number | [value]
-  @type subexpression :: [value]
-
   def read!(filename) do
     File.read!(filename)
     |> Pantagruel.Scan.scan()
@@ -27,8 +14,8 @@ defmodule Pantagruel do
       |> IO.puts()
     rescue
       e in Pantagruel.Env.UnboundVariablesError ->
-        IO.puts("Unbound variables.")
-        Enum.each(e.unbound, &IO.inspect/1)
+        IO.puts("Unbound variables:")
+        Enum.each(e.unbound, &IO.puts("- #{Pantagruel.Print.print_subexp(&1)}"))
     end
   end
 end
