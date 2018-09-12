@@ -130,12 +130,12 @@ defmodule Pantagruel.Scan do
   end
 
   defp eliminate_spaces(<<?\s::utf8, contents::binary>>, <<c::utf8, _::binary>> = acc, false)
-       when c in 40..45 or c in 58..62 or c in 91..94 or c in 123..126 or c in @operators do
+       when c in ?(..?- or c in ?:..?= or c in ?[..?^ or c in ?{..?~ or c in @operators do
     eliminate_spaces(contents, acc, false)
   end
 
   defp eliminate_spaces(<<" "::utf8, c::utf8, contents::binary>>, out, false)
-       when c in 40..45 or c in 58..62 or c in 91..94 or c in 123..126 or c in @operators do
+       when c in ?(..?- or c in ?:..?= or c in ?[..?^ or c in ?{..?~ or c in @operators do
     eliminate_spaces(contents, <<c::utf8, out::binary>>, false)
   end
 
