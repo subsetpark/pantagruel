@@ -10,26 +10,32 @@ defmodule Pantagruel.Eval.Domain do
   def bind(scope, domain), do: Env.bind(scope, domain, %Domain{name: domain})
 
   def is_generic?(domain), do: String.starts_with?(domain, "_")
+
+  @container_types [:string, :bunch, :set, :list]
+  def flatten_domain({container, items}) when container in @container_types do
+    items
+  end
+
+  def flatten_domain({:lambda, decl}) do
+    flatten_domain(decl[:lambda_doms])
+  end
+
+  def flatten_domain(items) when is_list(items), do: items
+  def flatten_domain(item), do: [item]
 end
 
 defmodule Pantagruel.Eval.Lambda do
   alias Pantagruel.Eval.{Lambda, Domain}
   alias Pantagruel.Env
   defstruct name: "", domain: [], codomain: nil, type: nil
-  @container_types [:string, :bunch, :set, :list]
+
   def bind(scope, decl) do
     args = decl[:lambda_args] || []
     doms = decl[:lambda_doms] || []
     # Introduce any generic domains into the scope.
     scope =
       doms
-      |> Enum.flat_map(fn
-        {container, items} when container in @container_types ->
-          items
-
-        item ->
-          [item]
-      end)
+      |> Enum.flat_map(&Domain.flatten_domain/1)
       |> Enum.filter(&Domain.is_generic?/1)
       |> Enum.reduce(scope, &Domain.bind(&2, &1))
 

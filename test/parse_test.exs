@@ -18,8 +18,8 @@ defmodule PantagruelTest do
             ]
           ],
           body: [
-            expr: [right: ["x", :notequals, "y"]],
-            expr: [right: ["y", :gt, 1]]
+            expr: ["x", :notequals, "y"],
+            expr: ["y", :gt, 1]
           ]
         ]
       )
@@ -36,8 +36,8 @@ defmodule PantagruelTest do
             ]
           ],
           body: [
-            expr: [right: ["x", :notequals, "y"]],
-            expr: [intro_op: :or, right: ["y", :gt, 1]]
+            expr: ["x", :notequals, "y"],
+            expr: [{:intro_op, :or}, "y", :gt, 1]
           ]
         ]
       )
@@ -72,15 +72,17 @@ defmodule PantagruelTest do
           ],
           body: [
             expr: [
-              left: ["x"],
-              right: ["y", :and, "y", :gt, 1]
+              refinement: [
+                pattern: ["x"],
+                subexpr: ["y", :and, "y", :gt, 1]
+              ]
             ]
           ]
         ]
       )
     end
 
-    test "parse expression with multiple elements on the left" do
+    test "parse expression with multiple elements in the pattern" do
       text = "f||\nf x←y"
 
       tryparse(text,
@@ -92,8 +94,39 @@ defmodule PantagruelTest do
           ],
           body: [
             expr: [
-              left: ["f", "x"],
-              right: ["y"]
+              refinement: [
+                pattern: ["f", "x"],
+                subexpr: ["y"]
+              ]
+            ]
+          ]
+        ]
+      )
+    end
+
+    test "parse guarded refinment" do
+      text = "f||\nf x⸳x<0←y\nf x←1"
+
+      tryparse(text,
+        section: [
+          head: [
+            decl: [
+              decl_ident: "f"
+            ]
+          ],
+          body: [
+            expr: [
+              refinement: [
+                pattern: ["f", "x"],
+                guard: ["x", :lt, 0],
+                subexpr: ["y"]
+              ]
+            ],
+            expr: [
+              refinement: [
+                pattern: ["f", "x"],
+                subexpr: [1]
+              ]
             ]
           ]
         ]
@@ -247,9 +280,9 @@ defmodule PantagruelTest do
         section: [
           head: [decl: [decl_ident: "f"]],
           body: [
-            expr: [right: ["f", :gt, 1]],
+            expr: ["f", :gt, 1],
             comment: ["Here is a comment."],
-            expr: [right: ["f", :lt, 2]]
+            expr: ["f", :lt, 2]
           ]
         ]
       )

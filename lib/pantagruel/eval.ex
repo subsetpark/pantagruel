@@ -14,11 +14,6 @@ defmodule Pantagruel.Eval do
 
   defp bind_subexpression_variables(_, state), do: state
 
-  defp bind_expression_variables(state, expression) do
-    (expression[:left] || [] ++ expression[:right] || [])
-    |> Enum.reduce(state, &bind_subexpression_variables/2)
-  end
-
   defp eval_declaration({:comment, _}, state), do: state
   # Bind all variables introduced in a function declaration and keep track
   # of unbound ones.
@@ -36,25 +31,32 @@ defmodule Pantagruel.Eval do
       end
       # If there is any precondition associated with the function, check
       # the symbols there for binding.
-      |> Enum.concat(declaration[:expr][:right] || [])
+      |> Enum.concat(declaration[:expr][:subexpr] || [])
       |> Enum.concat(declaration[:lambda_doms] || [])
       |> include_unbound_variables(header_unbounds)
 
     {[scope | scopes], header_unbounds, unbounds}
   end
 
-  defp eval_body_expression({:comment, _}, state), do: state
+  defp eval_body_line({:comment, _}, state), do: state
   # Evaluate a section body expression. Track any unbound variables.
-  defp eval_body_expression({:expr, expression}, {
+  defp eval_body_line({:expr, line}, state), do: eval_expression(line, state)
+
+  defp eval_expression(expression, {
          [scope | scopes],
          [unbounds, next_unbounds | rest]
        }) do
-    scope = bind_expression_variables(scope, expression)
+    elements =
+      case expression do
+        [refinement: refinement] ->
+          refinement[:pattern] || [] ++ refinement[:guard] || [] ++ refinement[:subexpr] || []
 
-    next_unbounds =
-      expression[:left] ||
-        ([] ++ expression[:right])
-        |> include_unbound_variables(next_unbounds)
+        e ->
+          e
+      end
+
+    scope = Enum.reduce(elements, scope, &bind_subexpression_variables/2)
+    next_unbounds = include_unbound_variables(elements, next_unbounds)
 
     {[scope | scopes], [unbounds, next_unbounds | rest]}
   end
@@ -68,7 +70,7 @@ defmodule Pantagruel.Eval do
     :ok = Env.check_unbound(scopes, header_unbounds)
 
     {scopes, [unbounds | rest]} =
-      Enum.reduce(section[:body] || [], {scopes, unbounds}, &eval_body_expression/2)
+      Enum.reduce(section[:body] || [], {scopes, unbounds}, &eval_body_line/2)
 
     :ok = Env.check_unbound(scopes, unbounds)
 

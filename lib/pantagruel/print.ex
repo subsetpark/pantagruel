@@ -35,12 +35,7 @@ defmodule Pantagruel.Print do
   defp print_section({:section, section}) do
     print_line = fn
       {:expr, expression} ->
-        right_str = print_subexp(expression[:right])
-
-        case expression[:left] do
-          nil -> right_str
-          left -> "#{print_subexp(left)} ← #{right_str}"
-        end
+        print_subexp(expression)
 
       {:comment, comment} ->
         print_comment(comment)
@@ -173,6 +168,18 @@ defmodule Pantagruel.Print do
     end
   end
 
+  defp print_subexp({:refinement, refinement}) do
+    right_str = print_subexp(refinement[:subexpr])
+
+    guard_str =
+      case refinement[:guard] do
+        nil -> ""
+        guard -> " ⸳ #{print_subexp(guard)}"
+      end
+
+    "#{print_subexp(refinement[:pattern])}#{guard_str} ← #{right_str}"
+  end
+
   defp print_subexp(subexp) do
     subexp
     |> Enum.map(&print_subexp/1)
@@ -182,7 +189,7 @@ defmodule Pantagruel.Print do
   defp print_comment([comment]) do
     comment_str =
       comment
-      |> String.split(Pantagruel.Scan.comment_continuation_rev())
+      |> String.split(Pantagruel.Scan.comment_continuation())
       |> Enum.map(&String.trim/1)
       |> Enum.join("\n")
 

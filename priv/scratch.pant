@@ -24,4 +24,4 @@ x != 0
 [x from String . x + `ok]
 ;;
 x|y:Real . y == 1|
-z
+z x . x > 1 <- 0

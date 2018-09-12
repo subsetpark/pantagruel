@@ -100,12 +100,28 @@ defmodule Pantagruel.Parse do
 
   # A sequence of one or more symbols.
   nested_subexpression =
-    :subexpression
-    |> parsec
+    parsec(:subexpression)
     |> wrap
     |> comma_join
     |> optional
     |> nested
+
+  guarded_refinement =
+    parsec(:subexpression)
+    |> tag(:pattern)
+    |> concat(
+      such_that
+      |> ignore
+      |> parsec(:subexpression)
+      |> tag(:guard)
+      |> optional
+    )
+    |> concat(
+      refinement
+      |> ignore
+    )
+    |> concat(parsec(:subexpression) |> tag(:subexpr))
+    |> tag(:refinement)
 
   # A single proposition in the language. Takes the form of
   # L El ← Er
@@ -114,16 +130,7 @@ defmodule Pantagruel.Parse do
   expression =
     unwrap_and_tag(choice([log_and, log_or]), :intro_op)
     |> optional
-    |> concat(
-      parsec(:subexpression)
-      |> tag(:left)
-      |> ignore(refinement)
-      |> optional
-    )
-    |> concat(
-      parsec(:subexpression)
-      |> tag(:right)
-    )
+    |> choice([guarded_refinement, parsec(:subexpression)])
     |> tag(:expr)
 
   # The arguments to a function. Takes the form of

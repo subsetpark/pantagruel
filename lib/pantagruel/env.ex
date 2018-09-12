@@ -127,8 +127,9 @@ defmodule Pantagruel.Env do
     [
       lambda[:lambda_doms] || [],
       lambda[:lambda_codomain] || [],
-      lambda[:expr][:left] || [],
-      lambda[:expr][:right] || []
+      lambda[:expr][:pattern] || [],
+      lambda[:expr][:guard] || [],
+      lambda[:expr][:subexpr] || []
     ]
     |> List.flatten()
     |> Enum.all?(&is_bound?(&1, scope))

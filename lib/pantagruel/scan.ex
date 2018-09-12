@@ -10,8 +10,16 @@ defmodule Pantagruel.Scan do
     as keywords.
   - Unnecessary spaces and whitespace are removed.
   """
-  def comment_continuation, do: "__COMMENT_CONT__"
-  def comment_continuation_rev, do: String.reverse(comment_continuation())
+  @spec scan(String.t()) :: String.t()
+  def scan(contents) do
+    contents
+    |> replace_chars(<<>>, false)
+    |> consolidate_whitespace(<<>>)
+    |> eliminate_spaces(<<>>, false)
+    |> String.trim()
+  end
+
+  def comment_continuation, do: <<0xE0B0::utf8>>
 
   defp replace_chars(<<>>, acc, _), do: String.reverse(acc)
 
@@ -22,7 +30,11 @@ defmodule Pantagruel.Scan do
   # Comment continuation.
   defp replace_chars(<<"\n;"::utf8, c::utf8, contents::binary>>, out, true)
        when c != ?; do
-    replace_chars(contents, <<c::utf8>> <> comment_continuation() <> <<out::binary>>, true)
+    replace_chars(
+      contents,
+      <<c::utf8>> <> comment_continuation() <> <<out::binary>>,
+      true
+    )
   end
 
   # Start a new comment; insert a newline and turn on comment mode.
@@ -120,13 +132,4 @@ defmodule Pantagruel.Scan do
 
   defp eliminate_spaces(<<c::utf8, contents::binary>>, out, t),
     do: eliminate_spaces(contents, <<c::utf8, out::binary>>, t)
-
-  @spec scan(String.t()) :: String.t()
-  def scan(contents) do
-    contents
-    |> replace_chars(<<>>, false)
-    |> consolidate_whitespace(<<>>)
-    |> eliminate_spaces(<<>>, false)
-    |> String.trim()
-  end
 end
