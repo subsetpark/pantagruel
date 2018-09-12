@@ -191,6 +191,25 @@ defmodule PantagruelTest do
         ]
       )
     end
+
+    test "heading with generic domain" do
+      text = "f|x:_A⸳x*y>10|∷[_A]"
+
+      tryparse(text,
+        section: [
+          head: [
+            decl: [
+              decl_ident: "f",
+              lambda_args: ["x"],
+              lambda_doms: ["_A"],
+              predicate: [["x", "*", "y", :gt, 10]],
+              yield_type: :function,
+              lambda_codomain: {:list, ["_A"]}
+            ]
+          ]
+        ]
+      )
+    end
   end
 
   describe "program structure" do

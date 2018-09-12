@@ -56,11 +56,11 @@ defmodule Pantagruel.Parse do
 
   # Any sequence of lower cased characters, suitable for variable names
   # or atom literals.
-  @identifier_ranges [?a..?z, ?., ?', ?_]
+  @identifier_ranges [?a..?z, ?A..?Z, ?0..?9, ?., ?', ?_]
   # Unbreak syntax'
   identifier = utf8_string(@identifier_ranges, min: 1)
   # The full range of strings allowed inside of a string literal.
-  spaced_text = utf8_string(@identifier_ranges ++ [?\s, ?A..?Z, ?0..?9], min: 1)
+  spaced_text = utf8_string(@identifier_ranges ++ [?\s], min: 1)
   # Literals
   back_quote = string("`")
   # A text value that evaluates to itself. Either an identifier prefixed
@@ -246,7 +246,7 @@ defmodule Pantagruel.Parse do
     :domain,
     [
       parsec(:domain) |> nested,
-      utf8_string([?A..?Z, ?a..?z, ?0..?9], min: 1),
+      identifier,
       parsec(:lambda)
     ]
     |> choice

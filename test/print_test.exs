@@ -32,7 +32,7 @@ defmodule Pantagruel.PrintTest do
         """
         |> eval
 
-      assert "f : |ℕ| :: ℝ\nx : ℕ\n――――――――――\nf : |x:ℕ| :: ℝ\n" ==
+      assert "f : |ℕ| ∷ ℝ\nx : ℕ\n――――――――――\nf : |x:ℕ| ∷ ℝ\n" ==
                Print.print_program(parsed, scopes)
     end
 

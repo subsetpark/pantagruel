@@ -8,16 +8,30 @@ defmodule Pantagruel.Eval.Domain do
   defstruct(name: "")
 
   def bind(scope, domain), do: Env.bind(scope, domain, %Domain{name: domain})
+
+  def is_generic?(domain), do: String.starts_with?(domain, "_")
 end
 
 defmodule Pantagruel.Eval.Lambda do
   alias Pantagruel.Eval.{Lambda, Domain}
   alias Pantagruel.Env
   defstruct name: "", domain: [], codomain: nil, type: nil
-
+  @container_types [:string, :bunch, :set, :list]
   def bind(scope, decl) do
     args = decl[:lambda_args] || []
     doms = decl[:lambda_doms] || []
+    # Introduce any generic domains into the scope.
+    scope =
+      doms
+      |> Enum.flat_map(fn
+        {container, items} when container in @container_types ->
+          items
+
+        item ->
+          [item]
+      end)
+      |> Enum.filter(&Domain.is_generic?/1)
+      |> Enum.reduce(scope, &Domain.bind(&2, &1))
 
     # If there are more arguments than domains, we will use the last
     # domain specified for all the extra arguments.

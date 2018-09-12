@@ -334,6 +334,28 @@ defmodule EvalTest do
              ] == Pantagruel.Eval.eval(parsed)
     end
 
+    test "generics are bound into scope" do
+      parsed =
+        """
+        f|x:_A|
+        [y from _A . f x > y]
+        """
+        |> scan_and_parse
+
+      assert [
+               %{
+                 "f" => %Pantagruel.Eval.Lambda{
+                   codomain: nil,
+                   domain: ["_A"],
+                   name: "f",
+                   type: nil
+                 },
+                 "_A" => %Pantagruel.Eval.Domain{name: "_A"},
+                 "x" => %Pantagruel.Eval.Variable{domain: "_A", name: "x"}
+               }
+             ] == Pantagruel.Eval.eval(parsed)
+    end
+
     test "sort" do
       # Note: this program is incorrect!
       parsed =
