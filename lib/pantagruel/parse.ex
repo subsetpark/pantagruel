@@ -56,8 +56,22 @@ defmodule Pantagruel.Parse do
 
   # Any sequence of lower cased characters, suitable for variable names
   # or atom literals.
-  @identifier_ranges [?a..?z, ?A..?Z, ?0..?9, ?., ?', ?_]
-  # Unbreak syntax'
+  @identifier_ranges [
+    ?a..?z,
+    ?A..?Z,
+    ?0..?9,
+    ?.,
+    ?',
+    ?_,
+    ?-,
+    ?¿..?ƿ,
+    {:not, ?×},
+    {:not, ?÷},
+    ?Α..?Ֆ,
+    {:not, ?΢},
+    {:not, ?԰}
+  ]
+  # 'Unbreak syntax
   identifier = utf8_string(@identifier_ranges, min: 1)
   # The full range of strings allowed inside of a string literal.
   spaced_text = utf8_string(@identifier_ranges ++ [?\s], min: 1)
