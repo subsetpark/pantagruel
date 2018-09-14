@@ -139,8 +139,8 @@ defmodule Pantagruel.Env do
   end
 
   # Boundness checking for for-all quantifiers.
-  defp is_bound?({:quantifier, [_, bindings, expr]}, scope),
-    do: check_with_bindings(expr, bindings, scope)
+  defp is_bound?({:quantifier, quantifier}, scope),
+    do: check_with_bindings(quantifier[:quant_expression], quantifier[:quant_bindings], scope)
 
   defp is_bound?({:comprehension, [{_, [bindings, expr]}]}, scope),
     do: check_with_bindings(expr, bindings, scope)
