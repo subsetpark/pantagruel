@@ -9,35 +9,35 @@ defmodule ExpressionParserTest do
   describe "subexpression parsing" do
     test "parse symbol sequence" do
       text = "x y z"
-      tryexp(text, ["x", "y", "z"])
+      tryexp(text, appl: [f: "x", x: {:appl, [f: "y", x: "z"]}])
     end
 
     test "parse bunch symbol sequence" do
       text = "(x y z)"
-      tryexp(text, bunch: [["x", "y", "z"]])
+      tryexp(text, bunch: [appl: [f: "x", x: {:appl, [f: "y", x: "z"]}]])
     end
 
     test "parse set symbol sequence" do
       text = "{x y z}"
-      tryexp(text, set: [["x", "y", "z"]])
+      tryexp(text, set: [appl: [f: "x", x: {:appl, [f: "y", x: "z"]}]])
     end
 
     test "parse bunched set symbol sequence" do
       text = "(x,{y z})"
-      tryexp(text, bunch: [["x"], [set: [["y", "z"]]]])
+      tryexp(text, bunch: ["x", set: [{:appl, [f: "y", x: "z"]}]])
     end
 
     test "parse string followed by integer" do
       text = ~s("D" 10)
-      tryexp(text, [{:string, [["D"]]}, 10])
+      tryexp(text, [{:appl, [f: {:string, ["D"]}, x: 10]}])
     end
 
     test "comprehension parsing" do
       text = "{x∈X⸳x * 2}"
 
       comprehension_elements = [
-        [["x", :from, "X"]],
-        ["x", "*", 2]
+        [appl: [operator: :from, x: "x", y: "X"]],
+        appl: [operator: "*", x: "x", y: 2]
       ]
 
       tryexp(text,
@@ -49,8 +49,17 @@ defmodule ExpressionParserTest do
       text = "{x∈X,y∈Y⸳x * y}"
 
       comprehension_elements = [
-        [["x", :from, "X"], ["y", :from, "Y"]],
-        ["x", "*", "y"]
+        [
+          appl: [operator: :from, x: "x", y: "X"],
+          appl: [operator: :from, x: "y", y: "Y"]
+        ],
+        appl: [operator: "*", x: "x", y: "y"]
+      ]
+
+      [
+        [appl: [operator: :from, x: "x", y: "X"]],
+        [appl: [operator: :from, x: "y", y: "Y"]],
+        [appl: [operator: "*", x: "x", y: "y"]]
       ]
 
       tryexp(text,
@@ -62,18 +71,31 @@ defmodule ExpressionParserTest do
       text = "{x∈X,y∈Y,z∈Z⸳x * y ^ z}"
 
       comprehension_elements = [
-        [["x", :from, "X"], ["y", :from, "Y"], ["z", :from, "Z"]],
-        ["x", "*", "y", "^", "z"]
+        set: [
+          [
+            appl: [operator: :from, x: "x", y: "X"],
+            appl: [operator: :from, x: "y", y: "Y"],
+            appl: [operator: :from, x: "z", y: "Z"]
+          ],
+          appl: [operator: "*", x: "x", y: {:appl, [operator: "^", x: "y", y: "z"]}]
+        ]
       ]
 
       tryexp(text,
-        comprehension: [set: comprehension_elements]
+        comprehension: comprehension_elements
       )
     end
 
     test "exists quantifier parsing" do
       text = "∃x:X⸳x>1"
-      tryexp(text, quantifier: [:exists, [["x", :in, "X"]], ["x", :gt, 1]])
+
+      tryexp(text,
+        quantifier: [
+          quant_operator: :exists,
+          quant_bindings: [{:appl, [operator: :in, x: "x", y: "X"]}],
+          quant_expression: {:appl, [operator: :gt, x: "x", y: 1]}
+        ]
+      )
     end
 
     test "empty set" do
@@ -104,6 +126,16 @@ defmodule ExpressionParserTest do
     test "negative float" do
       text = "-1.5"
       tryexp(text, [-1.5])
+    end
+
+    test "application parsing" do
+      text = "x X"
+      tryexp(text, [{:appl, [f: "x", x: "X"]}])
+    end
+
+    test "operator parsing" do
+      text = "x∈X"
+      tryexp(text, [{:appl, [operator: :from, x: "x", y: "X"]}])
     end
   end
 end

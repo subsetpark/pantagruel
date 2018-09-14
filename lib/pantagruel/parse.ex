@@ -20,7 +20,6 @@ defmodule Pantagruel.Parse do
   exists = string("∃") |> replace(:exists)
   forall = string("∀") |> replace(:forall)
   # Denotes membership in a concrete set.
-  from = string("∈") |> replace(:from)
   # A closed set of non-alphabetic # binary or unary functions.
   operator =
     choice([
@@ -38,6 +37,7 @@ defmodule Pantagruel.Parse do
           {"¬", :not},
           {"=", :iff},
           {"→", :then},
+          {"∈", :from},
           "+",
           "-",
           "*",
@@ -45,6 +45,27 @@ defmodule Pantagruel.Parse do
           "^"
         ])
     ])
+
+  @operators [
+    :and,
+    :or,
+    :equals,
+    :notequals,
+    :gte,
+    :lte,
+    :gt,
+    :lt,
+    :in,
+    :not,
+    :iff,
+    :then,
+    :from,
+    "+",
+    "-",
+    "*",
+    "/",
+    "^"
+  ]
 
   refinement = string("←") |> replace(:refined)
   # Number values
@@ -104,7 +125,6 @@ defmodule Pantagruel.Parse do
   # A sequence of one or more symbols.
   nested_subexpression =
     parsec(:subexpression)
-    |> wrap
     |> comma_join
     |> optional
     |> nested
@@ -248,18 +268,19 @@ defmodule Pantagruel.Parse do
     |> tag(:section)
 
   comprehension =
-    comma_join(parsec(:subexpression) |> wrap)
+    comma_join(parsec(:subexpression))
     |> wrap
     |> ignore(such_that)
-    |> concat(parsec(:subexpression) |> wrap)
+    |> concat(parsec(:subexpression))
     |> nested
     |> tag(:comprehension)
 
   quantifier =
     choice([exists, forall])
-    |> concat(comma_join(parsec(:subexpression) |> wrap) |> wrap)
+    |> unwrap_and_tag(:quant_operator)
+    |> concat(comma_join(parsec(:subexpression)) |> tag(:quant_bindings))
     |> ignore(such_that)
-    |> concat(parsec(:subexpression) |> wrap)
+    |> concat(parsec(:subexpression) |> unwrap_and_tag(:quant_expression))
     |> tag(:quantifier)
 
   # Combinators
@@ -282,13 +303,7 @@ defmodule Pantagruel.Parse do
     |> choice
   )
 
-  set_membership =
-    symbol
-    |> concat(from)
-    |> parsec(:subexpression)
-
-  expression_component =
-    choice([set_membership, nested_subexpression, quantifier, comprehension, symbol])
+  expression_component = choice([nested_subexpression, quantifier, comprehension, symbol])
 
   defparsec(
     :subexpression,
@@ -300,10 +315,20 @@ defmodule Pantagruel.Parse do
         |> ignore
         |> parsec(:subexpression)
       )
-      |> tag(:f),
+      |> traverse(:parse_function_application),
       expression_component
     ])
   )
+
+  # Special-case function application to handle rearranging operators.
+  defp parse_function_application(_rest, [y, x], %{operator: operator}, _line, _offset),
+    do: {[appl: [operator: operator, x: x, y: y]], %{}}
+
+  defp parse_function_application(_rest, [x, f], context, _line, _offset) when f in @operators,
+    do: {[x], Map.put(context, :operator, f)}
+
+  defp parse_function_application(_rest, [x, f], context, _line, _offset),
+    do: {[appl: [f: f, x: x]], context}
 
   # A series of one or more specification sections separated by ";;",
   # where each subsequent section defines any variables introduced
