@@ -86,7 +86,7 @@ defmodule Pantagruel.Print do
       name_str,
       "|#{args_str}#{dom_str}#{predicate_str}|",
       yields_str,
-      print_subexp(codomain)
+      print_subexp(codomain, scope)
     ]
     |> Enum.join()
   end
@@ -101,22 +101,27 @@ defmodule Pantagruel.Print do
   @spec print_subexp(any, [%{}]) :: t
   def print_subexp(value, scope \\ [])
 
-  def print_subexp(%Domain{name: name, alias: alias}, _) do
-    "#{print_subexp(alias)} ⇒ #{print_subexp(name)}"
+  def print_subexp(%Domain{name: name, alias: alias}, scope) do
+    "#{print_subexp(alias, scope)} ⇒ #{print_subexp(name, scope)}"
   end
 
-  def print_subexp(%Variable{name: name, domain: domain}, _) do
-    "#{name} : #{domain}"
+  def print_subexp(%Variable{name: name, domain: domain}, scope) do
+    "#{print_subexp(name, scope)} : #{print_subexp(domain, scope)}"
   end
 
   def print_subexp(symbol, scopes)
       when is_binary(symbol) or is_number(symbol) or is_atom(symbol) do
     name = Env.lookup_binding_name(symbol)
 
-    case {scopes, Env.is_bound?(symbol, scopes)} do
-      {[], _} -> name
-      {_, true} -> name
-      _ -> "*#{name}*"
+    case scopes do
+      [] ->
+        name
+
+      s ->
+        cond do
+          Env.is_bound?(symbol, s) -> name
+          true -> "*#{name}*"
+        end
     end
   end
 
@@ -155,7 +160,7 @@ defmodule Pantagruel.Print do
     print_subexp({container, [inner_str]}, s)
   end
 
-  def print_subexp({:lambda, l}, s), do: print_lambda(l, s)
+  def print_subexp({:lambda, l}, s), do: print_lambda(l, scope: s)
 
   def print_subexp({:intro_op, op}, s), do: print_subexp(op, s)
 
