@@ -16,18 +16,13 @@ z d <- y ; Here is a comment on `z d`.
 ;;
 y|| => Y
 x|| => X
-x : Crap
-zelig : Nat
-piss : poor
 exists x from y, y from z . x > 0
 x != 0
 ; This is two comments together.
 ; They should be one paragraph.
-elephant x y
 [x from X, y from Z, z from Y . x * y ^ z]; Now includes semicolons; much better.
 [x from String . x + `ok]
 all (j,k):X . j > k
-f : |zamoo : FARZLE| :: Greps
 ;;
 x|y:Real . y == 1|
 z x . x > 1 <- 0

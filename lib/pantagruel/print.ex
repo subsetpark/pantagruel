@@ -21,17 +21,7 @@ defmodule Pantagruel.Print do
   end
 
   # Print the contents of the environment after program evaluation.
-  defp print_scope(scope) do
-    for(
-      {_k, v} <- scope,
-      do:
-        case v do
-          %Lambda{} = l -> print_lambda(l)
-          e -> print_subexp(e)
-        end
-    )
-    |> Enum.join("\n")
-  end
+  defp print_scope(scope), do: Map.values(scope) |> Enum.map(&print_subexp/1) |> Enum.join("\n")
 
   defp print_section({:section, section}) do
     print_line = fn
@@ -46,7 +36,7 @@ defmodule Pantagruel.Print do
     |> Enum.join("\n")
   end
 
-  @spec print_lambda(any) :: t
+  @spec print_lambda(any, keyword) :: t
   def print_lambda(lambda, opts \\ [])
 
   def print_lambda(
@@ -161,6 +151,7 @@ defmodule Pantagruel.Print do
   end
 
   def print_subexp({:lambda, l}, s), do: print_lambda(l, scope: s)
+  def print_subexp(%Lambda{} = l, s), do: print_lambda(l, scope: s)
 
   def print_subexp({:intro_op, op}, s), do: print_subexp(op, s)
 
