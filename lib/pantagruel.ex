@@ -15,7 +15,7 @@ defmodule Pantagruel do
     rescue
       e in Pantagruel.Env.UnboundVariablesError ->
         IO.puts("Unbound variables:")
-        Enum.each(e.unbound, &IO.puts("- #{Pantagruel.Print.print_subexp(&1)}"))
+        Enum.each(e.unbound, &IO.puts("- #{Pantagruel.Print.print_subexp(&1, e.scopes)}"))
     end
   end
 end

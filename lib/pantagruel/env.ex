@@ -4,7 +4,7 @@ defmodule Pantagruel.Env do
   alias Pantagruel.Eval.Variable
 
   defmodule UnboundVariablesError do
-    defexception message: "Unbound variables remain", unbound: MapSet.new()
+    defexception message: "Unbound variables remain", unbound: MapSet.new(), scopes: []
   end
 
   @starting_environment %{
@@ -87,7 +87,7 @@ defmodule Pantagruel.Env do
         :ok
 
       unbound ->
-        raise UnboundVariablesError, unbound: MapSet.new(unbound)
+        raise UnboundVariablesError, unbound: MapSet.new(unbound), scopes: scopes
     end
   end
 
@@ -115,16 +115,16 @@ defmodule Pantagruel.Env do
 
   @container_types [:string, :bunch, :set, :list]
   # Check whether a given value is currently bound in the given scope.
-  defp is_bound?(v, _) when is_integer(v), do: true
-  defp is_bound?(v, _) when is_float(v), do: true
-  defp is_bound?({:literal, _}, _), do: true
-  defp is_bound?(_, []), do: false
+  def is_bound?(v, _) when is_integer(v), do: true
+  def is_bound?(v, _) when is_float(v), do: true
+  def is_bound?({:literal, _}, _), do: true
+  def is_bound?(_, []), do: false
 
-  defp is_bound?({container, []}, _)
+  def is_bound?({container, []}, _)
        when container in @container_types,
        do: true
 
-  defp is_bound?({container, contents}, scope)
+  def is_bound?({container, contents}, scope)
        when container in @container_types do
     Enum.all?(contents, fn
       container_item when is_list(container_item) ->
@@ -135,7 +135,7 @@ defmodule Pantagruel.Env do
     end)
   end
 
-  defp is_bound?({:lambda, lambda}, scope) do
+  def is_bound?({:lambda, lambda}, scope) do
     # Lambdas introduce function arguments. Therefore they are bound in
     # (and only in) the recursive boundness check.
     scope = [Pantagruel.Eval.Lambda.bind(%{}, lambda) | scope]
@@ -150,20 +150,20 @@ defmodule Pantagruel.Env do
   end
 
   # Boundness checking for for-all quantifiers.
-  defp is_bound?({:quantifier, quantifier}, scope),
+  def is_bound?({:quantifier, quantifier}, scope),
     do: check_with_bindings(quantifier[:quant_expression], quantifier[:quant_bindings], scope)
 
-  defp is_bound?({:comprehension, [{_, [bindings, expr]}]}, scope),
+  def is_bound?({:comprehension, [{_, [bindings, expr]}]}, scope),
     do: check_with_bindings(expr, bindings, scope)
 
-  defp is_bound?({:intro_op, _}, _), do: true
+  def is_bound?({:intro_op, _}, _), do: true
 
-  defp is_bound?({:appl, f: f, x: x}, scopes), do: is_bound?(f, scopes) && is_bound?(x, scopes)
+  def is_bound?({:appl, f: f, x: x}, scopes), do: is_bound?(f, scopes) && is_bound?(x, scopes)
 
-  defp is_bound?({:appl, operator: _, x: x, y: y}, scopes),
+  def is_bound?({:appl, operator: _, x: x, y: y}, scopes),
     do: is_bound?(x, scopes) && is_bound?(y, scopes)
 
-  defp is_bound?(variable, [scope | parent]) do
+  def is_bound?(variable, [scope | parent]) do
     # Allow arbitrary suffixes or prefixes of "'" to denote
     # successor/remainder variables.
     variable =
