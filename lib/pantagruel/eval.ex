@@ -49,7 +49,7 @@ defmodule Pantagruel.Eval do
   @spec include_for_binding_check(MapSet.t(), any) :: MapSet.t()
   def include_for_binding_check(unbounds, {container, contents})
       when container in @container_types do
-    include_for_binding_check(unbounds, List.flatten(contents))
+    include_for_binding_check(unbounds, contents)
   end
 
   def include_for_binding_check(unbounds, {:appl, [operator: _, x: x, y: y]}) do
@@ -89,7 +89,7 @@ defmodule Pantagruel.Eval do
         declaration[:lambda_codomain] || 0
         | List.flatten(declaration[:predicate] || [])
       ]
-      |> Enum.concat(declaration[:lambda_doms] || [])
+      |> Stream.concat(declaration[:lambda_doms] || [])
 
     header_unbounds = include_for_binding_check(header_unbounds, symbols)
 

@@ -41,8 +41,8 @@ defmodule Pantagruel.Print do
       {:expr, expression} -> print_subexp(expression)
     end
 
-    (section[:head] ++ (section[:body] || []))
-    |> Enum.map(print_line)
+    Stream.concat(section[:head], section[:body] || [])
+    |> Stream.map(print_line)
     |> Enum.join("\n")
   end
 
