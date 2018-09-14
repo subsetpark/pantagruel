@@ -150,6 +150,14 @@ defmodule Pantagruel.Print do
     "#{print_subexp(refinement[:pattern])}#{guard_str} ← #{right_str}"
   end
 
+  def print_subexp({:appl, operator: op, x: x, y: y}) do
+    "#{print_subexp(x)} #{print_subexp(op)} #{print_subexp(y)}"
+  end
+
+  def print_subexp({:appl, f: f, x: x}) do
+    "#{print_subexp(f)} #{print_subexp(x)}"
+  end
+
   def print_subexp(subexp) do
     subexp
     |> Enum.map(&print_subexp/1)

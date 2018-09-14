@@ -236,7 +236,7 @@ defmodule EvalTest do
           Pantagruel.Eval.eval(parsed)
         end
 
-      assert exc.unbound == MapSet.new(["y"])
+      assert exc.unbound == MapSet.new([appl: [operator: :gt, x: "y", y: 1]])
     end
 
     test "too many domains" do

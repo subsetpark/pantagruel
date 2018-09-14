@@ -46,13 +46,25 @@ defmodule Pantagruel.Eval do
   @doc """
   Include symbols in a set of values to check for binding.
   """
-  @spec include_for_binding_check(any, MapSet.t()) :: MapSet.t()
-  def include_for_binding_check({container, contents}, unbounds)
+  @spec include_for_binding_check(MapSet.t(), any) :: MapSet.t()
+  def include_for_binding_check(unbounds, {container, contents})
       when container in @container_types do
-    include_for_binding_check(List.flatten(contents), unbounds)
+    include_for_binding_check(unbounds, List.flatten(contents))
   end
 
-  def include_for_binding_check(variables, unbounds),
+  def include_for_binding_check(unbounds, {:appl, [operator: _, x: x, y: y]}) do
+    unbounds
+    |> include_for_binding_check(x)
+    |> include_for_binding_check(y)
+  end
+
+  def include_for_binding_check(unbounds, {:appl, [f: f, x: x]}) do
+    unbounds
+    |> include_for_binding_check(f)
+    |> include_for_binding_check(x)
+  end
+
+  def include_for_binding_check(unbounds, variables),
     do: MapSet.union(unbounds, MapSet.new(variables))
 
   # Evaluate the statement types ("declarations") found in section
@@ -64,21 +76,22 @@ defmodule Pantagruel.Eval do
          {[scope | scopes], header_unbounds, unbounds}
        ) do
     scope = Domain.bind(scope, subexpression, yields)
-    header_unbounds = include_for_binding_check(subexpression, header_unbounds)
+    header_unbounds = include_for_binding_check(header_unbounds, subexpression)
     {[scope | scopes], header_unbounds, unbounds}
   end
 
   defp eval_declaration({:decl, declaration}, {[scope | scopes], header_unbounds, unbounds}) do
     scope = Lambda.bind(scope, declaration)
     # Check for binding: domain, predicate, and codomain.
-    header_unbounds =
+    symbols =
       [
         # Replace a nil codomain with a dummy value that will always pass.
         declaration[:lambda_codomain] || 0
         | List.flatten(declaration[:predicate] || [])
       ]
       |> Enum.concat(declaration[:lambda_doms] || [])
-      |> include_for_binding_check(header_unbounds)
+
+    header_unbounds = include_for_binding_check(header_unbounds, symbols)
 
     {[scope | scopes], header_unbounds, unbounds}
   end
@@ -94,26 +107,30 @@ defmodule Pantagruel.Eval do
     elements =
       case expression do
         [refinement: refinement] ->
-          refinement[:pattern] || [] ++ refinement[:guard] || [] ++ refinement[:subexpr] || []
+          [refinement[:pattern], refinement[:guard], refinement[:subexpr]] |> Enum.filter(& &1)
 
         e ->
           e
       end
+
     # Include any introduced symbols into scope.
     scope = Enum.reduce(elements, scope, &bind_subexpression_variables/2)
     # Include all symbols into the binding check for the *next* section.
-    next_unbounds = include_for_binding_check(elements, next_unbounds)
+    next_unbounds = include_for_binding_check(next_unbounds, elements)
 
     {[scope | scopes], [unbounds, next_unbounds | rest]}
   end
 
   # Existence quantifiers don't just introduce variables for the scope of
   # their predicates; the introduce variables into global scope.
-  defp bind_subexpression_variables({:quantifier, [:exists, bindings, expr]}, state) do
+  defp bind_subexpression_variables(
+         {:quantifier, quant_operator: :exists, quant_bindings: bindings, quant_expression: expr},
+         state
+       ) do
     bound =
       bindings
-      |> Enum.reduce(state, fn [ident, _, domain], state2 ->
-        Env.bind(state2, ident, domain)
+      |> Enum.reduce(state, fn {:appl, [operator: _, x: x, y: domain]}, s ->
+        Env.bind(s, x, domain)
       end)
 
     bind_subexpression_variables(expr, bound)
