@@ -110,9 +110,9 @@ defmodule Pantagruel.Print do
     "#{l}#{inner_str}#{r}"
   end
 
-  def print_subexp({:quantifier, [quantifier, binding, expr]}) do
+  def print_subexp({:quantifier, quant_operator: op, quant_bindings: binding, quant_expression: expr}) do
     [
-      print_subexp(quantifier),
+      print_subexp(op),
       subexp_join(binding),
       "⸳",
       print_subexp(expr)
