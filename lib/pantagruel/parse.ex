@@ -19,7 +19,6 @@ defmodule Pantagruel.Parse do
   such_that = string("⸳") |> replace(:suchthat)
   exists = string("∃") |> replace(:exists)
   forall = string("∀") |> replace(:forall)
-  # Denotes membership in a concrete set.
   # A closed set of non-alphabetic # binary or unary functions.
   operator =
     choice([
@@ -34,10 +33,11 @@ defmodule Pantagruel.Parse do
           {"<", :lt},
           # Denotes belonging to a domain.
           {":", :in},
+          # Denotes membership in a concrete set.
+          {"∈", :from},
           {"¬", :not},
           {"=", :iff},
           {"→", :then},
-          {"∈", :from},
           "+",
           "-",
           "*",
