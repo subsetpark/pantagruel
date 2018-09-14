@@ -37,7 +37,7 @@ defmodule Pantagruel.Env do
   """
   @spec bind(scope, any(), any()) :: scope
   def bind(scope, {:bunch, elements}, value) do
-    Enum.reduce(elements, scope, &bind(&2, hd(&1), value))
+    Enum.reduce(elements, scope, &bind(&2, &1, value))
   end
 
   def bind(scope, name, value) do
@@ -55,6 +55,8 @@ defmodule Pantagruel.Env do
 
     Map.put(scope, name, to_put)
   end
+
+  def bind(scope, {name, value}), do: bind(scope, name, value)
 
   @doc """
   If a value has been defined in the starting environment, find the name
@@ -91,14 +93,23 @@ defmodule Pantagruel.Env do
 
   # Process some temporary bindings and check for boundness.
   defp check_with_bindings(expr, bindings, scopes) do
-    bind_bindings = fn [symbol, _, domain], s ->
-      bind(s, symbol, domain)
-    end
+    binding_symbols = Enum.map(bindings, &extract_binding_symbol/1)
+    binding_domains = Enum.map(bindings, &extract_binding_domain/1)
 
-    with inner_scope <- Enum.reduce(bindings, %{}, bind_bindings),
-         scopes <- [inner_scope | scopes],
-         symbols <- for([_, _, domain] <- bindings, do: domain) ++ expr do
-      Enum.all?(symbols, &is_bound?(&1, scopes))
+    inner_scope =
+      Enum.zip(binding_symbols, binding_domains)
+      |> Enum.reduce(%{}, &bind(&2, &1))
+
+    scopes = [inner_scope | scopes]
+    Enum.all?(binding_symbols, &is_bound?(&1, scopes)) && is_bound?(expr, scopes)
+  end
+
+  defp extract_binding_symbol({:appl, [operator: op, x: x, y: _]}) when op in [:from, :in], do: x
+
+  defp extract_binding_domain({:appl, [operator: op, x: _, y: dom]}) do
+    cond do
+      op in [:from, :in] -> dom
+      true -> extract_binding_domain(dom)
     end
   end
 
@@ -139,13 +150,18 @@ defmodule Pantagruel.Env do
   end
 
   # Boundness checking for for-all quantifiers.
-  defp is_bound?({:quantifier, [_, bindings, expr]}, scope),
-    do: check_with_bindings(expr, bindings, scope)
+  defp is_bound?({:quantifier, quantifier}, scope),
+    do: check_with_bindings(quantifier[:quant_expression], quantifier[:quant_bindings], scope)
 
   defp is_bound?({:comprehension, [{_, [bindings, expr]}]}, scope),
     do: check_with_bindings(expr, bindings, scope)
 
   defp is_bound?({:intro_op, _}, _), do: true
+
+  defp is_bound?({:appl, f: f, x: x}, scopes), do: is_bound?(f, scopes) && is_bound?(x, scopes)
+
+  defp is_bound?({:appl, operator: _, x: x, y: y}, scopes),
+    do: is_bound?(x, scopes) && is_bound?(y, scopes)
 
   defp is_bound?(variable, [scope | parent]) do
     # Allow arbitrary suffixes or prefixes of "'" to denote

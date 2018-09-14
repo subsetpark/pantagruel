@@ -18,8 +18,8 @@ defmodule PantagruelTest do
             ]
           ],
           body: [
-            expr: ["x", :notequals, "y"],
-            expr: ["y", :gt, 1]
+            expr: [appl: [operator: :notequals, x: "x", y: "y"]],
+            expr: [appl: [operator: :gt, x: "y", y: 1]]
           ]
         ]
       )
@@ -36,8 +36,8 @@ defmodule PantagruelTest do
             ]
           ],
           body: [
-            expr: ["x", :notequals, "y"],
-            expr: [{:intro_op, :or}, "y", :gt, 1]
+            expr: [appl: [operator: :notequals, x: "x", y: "y"]],
+            expr: [intro_op: :or, appl: [operator: :gt, x: "y", y: 1]]
           ]
         ]
       )
@@ -53,7 +53,7 @@ defmodule PantagruelTest do
               decl_ident: "f",
               lambda_args: ["x"],
               lambda_doms: ["Y"],
-              predicate: [["a", :in, "Y"]]
+              predicate: [{:appl, [operator: :in, x: "a", y: "Y"]}]
             ]
           ]
         ]
@@ -65,16 +65,13 @@ defmodule PantagruelTest do
 
       tryparse(text,
         section: [
-          head: [
-            decl: [
-              decl_ident: "f"
-            ]
-          ],
+          head: [decl: [decl_ident: "f"]],
           body: [
             expr: [
               refinement: [
-                pattern: ["x"],
-                subexpr: ["y", :and, "y", :gt, 1]
+                pattern: "x",
+                subexpr:
+                  {:appl, [operator: :and, x: "y", y: {:appl, [operator: :gt, x: "y", y: 1]}]}
               ]
             ]
           ]
@@ -95,8 +92,8 @@ defmodule PantagruelTest do
           body: [
             expr: [
               refinement: [
-                pattern: ["f", "x"],
-                subexpr: ["y"]
+                pattern: {:appl, [f: "f", x: "x"]},
+                subexpr: "y"
               ]
             ]
           ]
@@ -109,25 +106,16 @@ defmodule PantagruelTest do
 
       tryparse(text,
         section: [
-          head: [
-            decl: [
-              decl_ident: "f"
-            ]
-          ],
+          head: [decl: [decl_ident: "f"]],
           body: [
             expr: [
               refinement: [
-                pattern: ["f", "x"],
-                guard: ["x", :lt, 0],
-                subexpr: ["y"]
+                pattern: {:appl, [f: "f", x: "x"]},
+                guard: {:appl, [operator: :lt, x: "x", y: 0]},
+                subexpr: "y"
               ]
             ],
-            expr: [
-              refinement: [
-                pattern: ["f", "x"],
-                subexpr: [1]
-              ]
-            ]
+            expr: [refinement: [pattern: {:appl, [f: "f", x: "x"]}, subexpr: 1]]
           ]
         ]
       )
@@ -200,7 +188,10 @@ defmodule PantagruelTest do
               decl_ident: "f",
               lambda_args: ["x"],
               lambda_doms: ["Y"],
-              predicate: [["x", :notequals, 1], ["x", :gt, 0]]
+              predicate: [
+                {:appl, [operator: :notequals, x: "x", y: 1]},
+                {:appl, [operator: :gt, x: "x", y: 0]}
+              ]
             ]
           ]
         ]
@@ -235,7 +226,9 @@ defmodule PantagruelTest do
               decl_ident: "f",
               lambda_args: ["x"],
               lambda_doms: ["_A"],
-              predicate: [["x", "*", "y", :gt, 10]],
+              predicate: [
+                appl: [operator: "*", x: "x", y: {:appl, [operator: :gt, x: "y", y: 10]}]
+              ],
               yield_type: :function,
               lambda_codomain: {:list, ["_A"]}
             ]
@@ -280,9 +273,9 @@ defmodule PantagruelTest do
         section: [
           head: [decl: [decl_ident: "f"]],
           body: [
-            expr: ["f", :gt, 1],
+            expr: [appl: [operator: :gt, x: "f", y: 1]],
             comment: ["Here is a comment."],
-            expr: ["f", :lt, 2]
+            expr: [appl: [operator: :lt, x: "f", y: 2]]
           ]
         ]
       )

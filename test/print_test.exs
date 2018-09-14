@@ -22,7 +22,7 @@ defmodule Pantagruel.PrintTest do
         """
         |> eval
 
-      assert "f : ||\n――――――――――\nf : ||\n" == Print.print_program(parsed, scopes)
+      assert "f : ||\n――――――――――\nf : ||" == Print.print_program(parsed, scopes)
     end
 
     test "function" do
@@ -32,7 +32,7 @@ defmodule Pantagruel.PrintTest do
         """
         |> eval
 
-      assert "f : |ℕ| ∷ ℝ\nx : ℕ\n――――――――――\nf : |x:ℕ| ∷ ℝ\n" ==
+      assert "f : |ℕ| ∷ ℝ\nx : ℕ\n――――――――――\nf : |x:ℕ| ∷ ℝ" ==
                Print.print_program(parsed, scopes)
     end
 
@@ -43,7 +43,7 @@ defmodule Pantagruel.PrintTest do
         """
         |> eval
 
-      assert "F ⇒ F\nf : || ⇒ F\n――――――――――\nf : || ⇒ F\n" == Print.print_program(parsed, scopes)
+      assert "F ⇒ F\nf : || ⇒ F\n――――――――――\nf : || ⇒ F" == Print.print_program(parsed, scopes)
     end
 
     test "section" do
