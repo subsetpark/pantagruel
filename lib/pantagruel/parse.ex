@@ -131,19 +131,19 @@ defmodule Pantagruel.Parse do
 
   guarded_refinement =
     parsec(:subexpression)
-    |> tag(:pattern)
+    |> unwrap_and_tag(:pattern)
     |> concat(
       such_that
       |> ignore
       |> parsec(:subexpression)
-      |> tag(:guard)
+      |> unwrap_and_tag(:guard)
       |> optional
     )
     |> concat(
       refinement
       |> ignore
     )
-    |> concat(parsec(:subexpression) |> tag(:subexpr))
+    |> concat(parsec(:subexpression) |> unwrap_and_tag(:subexpr))
     |> tag(:refinement)
 
   # A single proposition in the language. Takes the form of
@@ -204,7 +204,6 @@ defmodule Pantagruel.Parse do
         |> ignore
         |> concat(
           parsec(:subexpression)
-          |> wrap
           |> comma_join
           |> tag(:predicate)
         )
