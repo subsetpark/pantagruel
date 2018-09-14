@@ -19,6 +19,8 @@ defmodule Pantagruel.Parse do
   such_that = string("⸳") |> replace(:suchthat)
   exists = string("∃") |> replace(:exists)
   forall = string("∀") |> replace(:forall)
+  # Denotes membership in a concrete set.
+  from = string("∈") |> replace(:from)
   # A closed set of non-alphabetic # binary or unary functions.
   operator =
     choice([
@@ -33,8 +35,6 @@ defmodule Pantagruel.Parse do
           {"<", :lt},
           # Denotes belonging to a domain.
           {":", :in},
-          # Denotes membership in a concrete set.
-          {"∈", :from},
           {"¬", :not},
           {"=", :iff},
           {"→", :then},
@@ -282,16 +282,27 @@ defmodule Pantagruel.Parse do
     |> choice
   )
 
+  set_membership =
+    symbol
+    |> concat(from)
+    |> parsec(:subexpression)
+
+  expression_component =
+    choice([set_membership, nested_subexpression, quantifier, comprehension, symbol])
+
   defparsec(
     :subexpression,
-    choice([nested_subexpression, quantifier, comprehension, symbol])
-    |> concat(
-      space
-      |> optional
-      |> ignore
-      |> parsec(:subexpression)
-      |> optional
-    )
+    choice([
+      expression_component
+      |> concat(
+        space
+        |> optional
+        |> ignore
+        |> parsec(:subexpression)
+      )
+      |> tag(:f),
+      expression_component
+    ])
   )
 
   # A series of one or more specification sections separated by ";;",

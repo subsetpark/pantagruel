@@ -33,7 +33,7 @@ defmodule ExpressionParserTest do
     end
 
     test "comprehension parsing" do
-      text = "{x ∈ X⸳x * 2}"
+      text = "{x∈X⸳x * 2}"
 
       comprehension_elements = [
         [["x", :from, "X"]],
@@ -46,7 +46,7 @@ defmodule ExpressionParserTest do
     end
 
     test "comprehension parsing 2 elements" do
-      text = "{x ∈ X,y ∈ Y⸳x * y}"
+      text = "{x∈X,y∈Y⸳x * y}"
 
       comprehension_elements = [
         [["x", :from, "X"], ["y", :from, "Y"]],
@@ -59,7 +59,7 @@ defmodule ExpressionParserTest do
     end
 
     test "comprehension parsing 3 elements" do
-      text = "{x ∈ X,y ∈ Y,z ∈ Z⸳x * y ^ z}"
+      text = "{x∈X,y∈Y,z∈Z⸳x * y ^ z}"
 
       comprehension_elements = [
         [["x", :from, "X"], ["y", :from, "Y"], ["z", :from, "Z"]],
