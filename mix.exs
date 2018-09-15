@@ -11,7 +11,14 @@ defmodule Pantagruel.MixProject do
       escript: escript_config(),
       dialyzer: [plt_add_apps: [:mix]],
       description: description(),
-      package: package()
+      package: package(),
+
+      # Docs
+      name: "Pantagruel",
+      source_url: "https://github.com/subsetpark/pantagruel",
+      docs: [
+        extras: ["README.md"]
+      ]
     ]
   end
 
