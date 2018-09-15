@@ -1,6 +1,6 @@
-defmodule Pantagruel.PrintTest do
+defmodule Pantagruel.FormatTest do
   use ExUnit.Case
-  alias Pantagruel.Print
+  alias Pantagruel.Format
 
   defp eval(text) do
     with scanned <- Pantagruel.Scan.scan(text),
@@ -12,7 +12,7 @@ defmodule Pantagruel.PrintTest do
   describe "scope display" do
     test "null case" do
       {parsed, scopes} = eval("")
-      assert "" == Print.print_program(parsed, scopes)
+      assert "" == Format.format_program(parsed, scopes)
     end
 
     test "minimal function" do
@@ -22,7 +22,7 @@ defmodule Pantagruel.PrintTest do
         """
         |> eval
 
-      assert "f : ||\n――――――――――\nf : ||" == Print.print_program(parsed, scopes)
+      assert "f : ||\n――――――――――\nf : ||" == Format.format_program(parsed, scopes)
     end
 
     test "function" do
@@ -33,7 +33,7 @@ defmodule Pantagruel.PrintTest do
         |> eval
 
       assert "f : |ℕ| ∷ ℝ\nx : ℕ\n――――――――――\nf : |x:ℕ| ∷ ℝ" ==
-               Print.print_program(parsed, scopes)
+               Format.format_program(parsed, scopes)
     end
 
     test "constructor" do
@@ -43,7 +43,7 @@ defmodule Pantagruel.PrintTest do
         """
         |> eval
 
-      assert "F ⇒ F\nf : || ⇒ F\n――――――――――\nf : || ⇒ F" == Print.print_program(parsed, scopes)
+      assert "F ⇒ F\nf : || ⇒ F\n――――――――――\nf : || ⇒ F" == Format.format_program(parsed, scopes)
     end
 
     test "section" do
@@ -55,7 +55,7 @@ defmodule Pantagruel.PrintTest do
         |> eval
 
       assert "F ⇒ F\nf : || ⇒ F\n――――――――――\nf : || ⇒ F\nf 1 ⇔ 0" ==
-               Print.print_program(parsed, scopes)
+               Format.format_program(parsed, scopes)
     end
   end
 end

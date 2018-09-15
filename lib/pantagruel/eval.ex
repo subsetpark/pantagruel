@@ -1,6 +1,40 @@
 defmodule Pantagruel.Eval do
+  @moduledoc """
+  Evaluation of a Pantagruel program.
+
+  Evaluation of a Pantagruel AST consists of walking the tree, binding any
+  symbols that are introduced in binding forms (function declarations,
+  quantifiers, domain aliases), and checking that all symbols have been
+  properly bound.
+  """
   alias Pantagruel.Eval.{Lambda, Domain}
   alias Pantagruel.Env
+
+  @typedoc """
+  A Pantagruel AST is a sequence of *sections*, each of which consists
+  of a header and optional body.
+
+  The state of a running Pantagruel program as of any section consists
+  of three elements:
+
+  - The execution environment, a list of scopes, one for each section. The
+  head of the environment corresponds to the current section. At any
+  given section, any symbol introduced in that section will be bound
+  into the scope at the head of the environment.
+
+  - The header symbols to check for boundness. Any symbol used in a
+  section header that is not in a declaration position is included here
+  to be checked for boundness. Every symbol used in a header must be
+  bound *by the end of that header*.
+
+  - The body symbols to check for boundness. Any symbol used in a
+  section body that is not in a declaration position is included here
+  to be checked for boundness. Every symbol used in a body must be
+  bound *by the end of the _following_ body*. Unlike with headers,
+  symbols *may* be referred to before they are defined, but they must
+  be defined in the following section at the latest.
+  """
+  @type t :: {Env.t(), MapSet.t(), [MapSet.t()]}
 
   @doc """
   Evaluate a Pantagruel AST for variable binding, returning the resulting
@@ -12,14 +46,14 @@ defmodule Pantagruel.Eval do
       # Evaluate a single section:
       # 1. evaluate the head
       {scopes, header_unbounds, unbounds} =
-        Enum.reduce(section[:head], new_state(state), &eval_declaration/2)
+        Enum.reduce(section[:head], new_state(state), &eval_header_statement/2)
 
       # 2. check for any unbound symbols in the head
       :ok = Env.check_unbound(scopes, header_unbounds)
 
       # 3. evaluate the body
       {scopes, [unbounds | rest]} =
-        Enum.reduce(section[:body] || [], {scopes, unbounds}, &eval_body_line/2)
+        Enum.reduce(section[:body] || [], {scopes, unbounds}, &eval_body_statement/2)
 
       # 4. check for any unbound symbols from the *previous* section body (ie,
       #    which should have been defined in this section)
@@ -43,35 +77,34 @@ defmodule Pantagruel.Eval do
   end
 
   @container_types [:bunch, :set, :list, :string]
-  @doc """
-  Include symbols in a set of values to check for binding.
-  """
+  # Include symbols in a set of values to check for binding.
   @spec include_for_binding_check(MapSet.t(), any) :: MapSet.t()
-  def include_for_binding_check(unbounds, {container, contents})
-      when container in @container_types do
+  defp include_for_binding_check(unbounds, {container, contents})
+       when container in @container_types do
     include_for_binding_check(unbounds, contents)
   end
 
-  def include_for_binding_check(unbounds, {:appl, [operator: _, x: x, y: y]}) do
+  defp include_for_binding_check(unbounds, {:appl, [operator: _, x: x, y: y]}) do
     unbounds
     |> include_for_binding_check(x)
     |> include_for_binding_check(y)
   end
 
-  def include_for_binding_check(unbounds, {:appl, [f: f, x: x]}) do
+  defp include_for_binding_check(unbounds, {:appl, [f: f, x: x]}) do
     unbounds
     |> include_for_binding_check(f)
     |> include_for_binding_check(x)
   end
 
-  def include_for_binding_check(unbounds, variables),
+  defp include_for_binding_check(unbounds, variables),
     do: MapSet.union(unbounds, MapSet.new(variables))
 
   # Evaluate the statement types ("declarations") found in section
-  # headers.
-  defp eval_declaration({:comment, _}, state), do: state
-
-  defp eval_declaration(
+  # headers. Header statements come in three forms:
+  # 1. Comments, which are ignored;
+  defp eval_header_statement({:comment, _}, state), do: state
+  # 2. Domain aliases, which bind symbols as aliases to concrete domains;
+  defp eval_header_statement(
          {:alias, [expression, yields]},
          {[scope | scopes], header_unbounds, unbounds}
        ) do
@@ -80,7 +113,8 @@ defmodule Pantagruel.Eval do
     {[scope | scopes], header_unbounds, unbounds}
   end
 
-  defp eval_declaration({:decl, declaration}, {[scope | scopes], header_unbounds, unbounds}) do
+  # 3. Function declarations, which bind new functions into scope.
+  defp eval_header_statement({:decl, declaration}, {[scope | scopes], header_unbounds, unbounds}) do
     scope = Lambda.bind(scope, declaration)
     # Check for binding: domain, predicate, and codomain.
     symbols =
@@ -96,9 +130,10 @@ defmodule Pantagruel.Eval do
     {[scope | scopes], header_unbounds, unbounds}
   end
 
-  defp eval_body_line({:comment, _}, state), do: state
-  # Evaluate a line of a section body.
-  defp eval_body_line({:expr, line}, state), do: eval_expression(line, state)
+  # Evaluate a line of a section body. Body statements can be either
+  # comments, which are ignored, or expression statements.
+  defp eval_body_statement({:comment, _}, state), do: state
+  defp eval_body_statement({:expr, line}, state), do: eval_expression(line, state)
 
   defp eval_expression(expression, {
          [scope | scopes],
@@ -139,6 +174,7 @@ defmodule Pantagruel.Eval do
   # In this respect they're unique among expression types.
   defp bind_expression_variables(_, state), do: state
   # Extend the environment for a new section.
+  @spec new_state(t) :: t
   defp new_state({scopes, header_unbounds, unbounds}) do
     {[%{} | scopes], header_unbounds, unbounds ++ [MapSet.new()]}
   end

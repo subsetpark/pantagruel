@@ -1,12 +1,29 @@
 defmodule Pantagruel.Parse do
   @moduledoc """
-  Documentation for Pantagruel.
+  The parser takes a binary representing a Pantagruel program and
+  constructs an AST. It expects the binary to have been preprocessed by
+  the Scan module.
   """
   import NimbleParsec
   import Pantagruel.Parse.Util
 
-  @type ast_node :: any
-  @type t :: [ast_node]
+  @type comment :: {:comment, [binary()]}
+  @type head_stmt :: {:decl, keyword} | {:alias, keyword} | comment
+  @type body_stmt :: {:expr, keyword} | comment
+  @type section :: [head: [head_stmt], body: [body_stmt]]
+  @typedoc """
+  A Pantagruel AST consists of a list of *section* nodes, each of which
+  represent one section of the program delimited by the `;;` separator.
+
+  A section has two components: the head and the body. The head
+  contains declarations, either function declarations or domain alias
+  declarations. The body contains expressions which should evaluate to
+  true propositions about the program being described.
+
+  A section must have at least one statement in its head. The body
+  is optional.
+  """
+  @type t :: [section]
 
   # Logical operators.
   log_and = string("∧") |> replace(:and)

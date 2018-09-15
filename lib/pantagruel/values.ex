@@ -1,17 +1,37 @@
 defmodule Pantagruel.Eval.Variable do
+  @moduledoc """
+  A bound value in an evaluated Pantagruel program, with a name and the
+  domain it is in.
+  """
   defstruct name: "", domain: ""
 end
 
 defmodule Pantagruel.Eval.Domain do
+  @moduledoc """
+  A domain in an evaluated Pantagruel program, with a name and whatever
+  domain it is an alias for (or itself, otherwise).
+  """
   alias Pantagruel.Eval.Domain
   alias Pantagruel.Env
   defstruct(name: "", alias: "")
 
+  @doc """
+  Introduce a new domain into scope.
+  """
   def bind(scope, domain, alias), do: Env.bind(scope, domain, %Domain{name: domain, alias: alias})
 
+  @doc """
+  Generic domains can be introduced by prepending their name with an
+  underscore. This distinction allows generics to be referred to as a
+  part of a function definition without being defined first.
+  """
   def is_generic?(domain), do: String.starts_with?(domain, "_")
 
   @container_types [:string, :bunch, :set, :list]
+  @doc """
+  Flatten nested or composite domains to retrieve the basic domains they
+  are composed of.
+  """
   def flatten_domain({container, items}) when container in @container_types do
     items
   end
@@ -25,10 +45,27 @@ defmodule Pantagruel.Eval.Domain do
 end
 
 defmodule Pantagruel.Eval.Lambda do
+  @moduledoc """
+  A function in an evaluated Pantagruel program, either as introduced
+  in a header declaration or referred to as an anonymous function inside
+  of a section body.
+
+  The `type` of a lambda is either `:function`, which is a normal
+  function from 0 or more arguments with an optional return type, or
+  `:constructor`, which defines the construction function for complex
+  types such as List[Int] or of objects with named fields.
+
+  The evaluation behavior of constructors is such that they also bind
+  their codomain into scope; functions must have their codomains defined
+  elsewhere.
+  """
   alias Pantagruel.Eval.{Lambda, Domain}
   alias Pantagruel.Env
   defstruct name: "", domain: [], codomain: nil, type: nil
 
+  @doc """
+  Bind a lambda form into scope.
+  """
   def bind(scope, decl) do
     args = decl[:lambda_args] || []
     doms = decl[:lambda_doms] || []
@@ -66,6 +103,9 @@ defmodule Pantagruel.Eval.Lambda do
     |> bind_codomain.()
   end
 
+  @doc """
+  Given a function declaration, build a Lambda struct.
+  """
   def from_declaration(decl, doms \\ nil) do
     %Lambda{
       name: decl[:decl_ident],

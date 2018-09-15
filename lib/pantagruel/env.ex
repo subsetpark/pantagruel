@@ -1,5 +1,14 @@
 defmodule Pantagruel.Env do
+  @moduledoc """
+  The evaluation environment for a Pantagruel program.
+  """
   @type scope :: map()
+  @typedoc """
+  An environment is a list of binding contexts, one scope for each section
+  of the program. Symbols are bound into scope by being referred to in
+  one of several declaration forms, at which point they are inserted
+  into the scope for that section.
+  """
   @type t :: [scope]
   alias Pantagruel.Eval.Variable
 
@@ -93,7 +102,11 @@ defmodule Pantagruel.Env do
   end
 
   @container_types [:string, :bunch, :set, :list]
-  # Check whether a given value is currently bound in the given scope.
+  @doc """
+  Return whether a given value is bound in any of: the current scope,
+  any of the previous scopes, the starting environment. Given any complex
+  value, recurse into its component symbols and check them for binding.
+  """
   def is_bound?(v, _) when is_integer(v), do: true
   def is_bound?(v, _) when is_float(v), do: true
   def is_bound?({:literal, _}, _), do: true
@@ -128,11 +141,15 @@ defmodule Pantagruel.Env do
     |> Enum.all?(&is_bound?(&1, scope))
   end
 
-  # Boundness checking for for-all quantifiers.
+  # Boundness checking for :forall and :exists quantifiers.
   def is_bound?({:quantifier, quantifier}, scope),
+    # Introduce any internal bindings for the purpose of boundness
+    # checking of the whole expression.
     do: check_with_bindings(quantifier[:quant_expression], quantifier[:quant_bindings], scope)
 
   def is_bound?({:comprehension, [{_, [bindings, expr]}]}, scope),
+    # Introduce any internal bindings for the purpose of boundness
+    # checking of the whole expression.
     do: check_with_bindings(expr, bindings, scope)
 
   def is_bound?({:intro_op, _}, _), do: true
@@ -143,19 +160,19 @@ defmodule Pantagruel.Env do
     do: is_bound?(x, scopes) && is_bound?(y, scopes)
 
   def is_bound?(variable, [scope | parent]) do
-    # Allow arbitrary suffixes or prefixes of "'" to denote
-    # successor/remainder variables.
     variable =
-      if is_binary(variable) do
-        String.trim(variable, "'")
-      else
-        variable
+      cond do
+        # Allow arbitrary suffixes or prefixes of "'" to denote
+        # successor/remainder variables.
+        is_binary(variable) -> String.trim(variable, "'")
+        true -> variable
       end
 
     has_key?(scope, variable) or is_bound?(variable, parent)
   end
 
-  # Process some temporary bindings and check for boundness.
+  # Process some temporary bindings and check for boundness, without
+  # those bindings being valid outside of this context.
   defp check_with_bindings(expr, bindings, scopes) do
     binding_symbols = Enum.map(bindings, &extract_binding_symbol/1)
     binding_domains = Enum.map(bindings, &extract_binding_domain/1)
@@ -167,9 +184,9 @@ defmodule Pantagruel.Env do
     scopes = [inner_scope | scopes]
     Enum.all?(binding_symbols, &is_bound?(&1, scopes)) && is_bound?(expr, scopes)
   end
-
+  # Given a binding pattern, return the symbol being bound.
   defp extract_binding_symbol({:appl, [operator: op, x: x, y: _]}) when op in [:from, :in], do: x
-
+  # Given a binding pattern, return the domain being bound from.
   defp extract_binding_domain({:appl, [operator: op, x: _, y: dom]}) do
     cond do
       op in [:from, :in] -> dom

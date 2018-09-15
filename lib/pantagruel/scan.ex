@@ -1,14 +1,17 @@
 defmodule Pantagruel.Scan do
   @moduledoc """
-  Preprocessing for Pantagruel. Processes a text file in several passes:
-  - Removes all commented areas.
-  - Replaces specific character sequences with their unicode
-    equivalents. This allows certain ascii combinations to be treated
-    specially by the parser: arrows are combined into a single character,
-    newline continuations are collapsed and removed, and a small set
-    of identifier-legal characters, if encountered alone, are treated
-    as keywords.
-  - Unnecessary spaces and whitespace are removed.
+  Preprocessing for Pantagruel. Prepares a raw text file for parsing.
+  """
+  @doc """
+  Processes a text file in several passes:
+    - Removes all commented areas.
+    - Replaces specific character sequences with their unicode
+      equivalents. This allows certain ascii combinations to be treated
+      specially by the parser: arrows are combined into a single character,
+      newline continuations are collapsed and removed, and a small set
+      of identifier-legal characters, if encountered alone, are treated
+      as keywords.
+    - Unnecessary spaces and whitespace are removed.
   """
   @spec scan(String.t()) :: String.t()
   def scan(contents) do
@@ -19,6 +22,10 @@ defmodule Pantagruel.Scan do
     |> String.trim()
   end
 
+  @doc """
+  Magic unicode character inserted into comments to indicate where to
+  split lines.
+  """
   def comment_continuation, do: <<0xE0B0::utf8>>
 
   defp replace_chars(<<>>, acc, _), do: String.reverse(acc)
