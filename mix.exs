@@ -9,8 +9,17 @@ defmodule Pantagruel.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       escript: escript_config(),
-      dialyzer: [plt_add_apps: [:mix]]
+      dialyzer: [plt_add_apps: [:mix]],
+      description: description(),
+      package: package()
     ]
+  end
+
+  defp description do
+    """
+    A program specification language with a defined syntax, but ad-hoc
+    semantics.
+    """
   end
 
   # Run "mix help compile.app" to learn about applications.
@@ -29,5 +38,13 @@ defmodule Pantagruel.MixProject do
 
   defp escript_config do
     [main_module: Pantagruel]
+  end
+
+  defp package do
+    [
+      name: "pantagruel",
+      licenses: ["BSD3"],
+      links: %{"GitHub" => "https://github.com/subsetpark/pantagruel"}
+    ]
   end
 end
