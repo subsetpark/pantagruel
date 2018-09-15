@@ -86,6 +86,8 @@ fib 2 <- 1
 
 pretty printed, that's:
 
+----------------
+
 fib : |x:ℕ| ∷ ℕ
 
 A specification for the fibonacci function.
@@ -93,6 +95,8 @@ A specification for the fibonacci function.
 fib x ← fib x − 1 + fib x − 2  \
 fib 1 ← 1  \
 fib 2 ← 1
+
+---------------
 
 Line 1: A function declaration, introducing the `fib` function, which
 takes some `x` in the domain of the natural numbers and returns some
