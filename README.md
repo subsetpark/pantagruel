@@ -11,9 +11,12 @@ as I haven't become anything close to expert in any of them and haven't
 had the opportunity to use them in a professional setting.
 
 [FM]: https://users.ece.cmu.edu/~koopman/des_s99/formal_methods/
+
 [Z]: https://staff.washington.edu/jon/z-book/index.html
+
 [TLA+]: http://lamport.azurewebsites.net/tla/tla.html
-[practho]: http://www.cs.toronto.edu/~hehner/aPToP/
+
+[practheo]: http://www.cs.toronto.edu/~hehner/aPToP/
 
 The desire to put together something of my own came after reading
 *aPToP*. Hehner's rationale for formal methods is, paraphrased, is:
