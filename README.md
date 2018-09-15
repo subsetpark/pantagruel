@@ -79,7 +79,7 @@ even if there are no constraints placed on what is said.
 
 Here's a trivial but complete Pantagruel program.
 
-```
+```pantagruel
 fib |x : Nat| :: Nat
 ; A specification for the fibonacci function.
 fib x <- fib x - 1 + fib x - 2
