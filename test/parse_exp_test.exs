@@ -2,11 +2,11 @@ defmodule ExpressionParserTest do
   use ExUnit.Case
 
   defp tryexp(text, r) do
-    {:ok, subexp, "", %{}, _, _} = Pantagruel.Parse.subexpression(text)
-    assert r == subexp
+    {:ok, exp, "", %{}, _, _} = Pantagruel.Parse.expression(text)
+    assert r == exp
   end
 
-  describe "subexpression parsing" do
+  describe "expression parsing" do
     test "parse symbol sequence" do
       text = "x y z"
       tryexp(text, appl: [f: "x", x: {:appl, [f: "y", x: "z"]}])
@@ -37,7 +37,7 @@ defmodule ExpressionParserTest do
 
       comprehension_elements = [
         [appl: [operator: :from, x: "x", y: "X"]],
-        appl: [operator: "*", x: "x", y: 2]
+        appl: [operator: :times, x: "x", y: 2]
       ]
 
       tryexp(text,
@@ -53,13 +53,13 @@ defmodule ExpressionParserTest do
           appl: [operator: :from, x: "x", y: "X"],
           appl: [operator: :from, x: "y", y: "Y"]
         ],
-        appl: [operator: "*", x: "x", y: "y"]
+        appl: [operator: :times, x: "x", y: "y"]
       ]
 
       [
         [appl: [operator: :from, x: "x", y: "X"]],
         [appl: [operator: :from, x: "y", y: "Y"]],
-        [appl: [operator: "*", x: "x", y: "y"]]
+        [appl: [operator: :times, x: "x", y: "y"]]
       ]
 
       tryexp(text,
@@ -77,7 +77,7 @@ defmodule ExpressionParserTest do
             appl: [operator: :from, x: "y", y: "Y"],
             appl: [operator: :from, x: "z", y: "Z"]
           ],
-          appl: [operator: "*", x: "x", y: {:appl, [operator: "^", x: "y", y: "z"]}]
+          appl: [operator: :times, x: "x", y: {:appl, [operator: :exp, x: "y", y: "z"]}]
         ]
       ]
 
@@ -136,6 +136,15 @@ defmodule ExpressionParserTest do
     test "operator parsing" do
       text = "x∈X"
       tryexp(text, [{:appl, [operator: :from, x: "x", y: "X"]}])
+    end
+
+    test "cardinality testing" do
+      text = "#x > 3"
+      text2 = "# x > 3"
+      expected = [appl: [f: :card, x: {:appl, [operator: :gt, x: "x", y: 3]}]]
+
+      tryexp(text, expected)
+      tryexp(text2, expected)
     end
   end
 end

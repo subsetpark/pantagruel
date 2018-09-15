@@ -70,7 +70,7 @@ defmodule PantagruelTest do
             expr: [
               refinement: [
                 pattern: "x",
-                subexpr:
+                expr:
                   {:appl, [operator: :and, x: "y", y: {:appl, [operator: :gt, x: "y", y: 1]}]}
               ]
             ]
@@ -93,7 +93,7 @@ defmodule PantagruelTest do
             expr: [
               refinement: [
                 pattern: {:appl, [f: "f", x: "x"]},
-                subexpr: "y"
+                expr: "y"
               ]
             ]
           ]
@@ -112,10 +112,10 @@ defmodule PantagruelTest do
               refinement: [
                 pattern: {:appl, [f: "f", x: "x"]},
                 guard: {:appl, [operator: :lt, x: "x", y: 0]},
-                subexpr: "y"
+                expr: "y"
               ]
             ],
-            expr: [refinement: [pattern: {:appl, [f: "f", x: "x"]}, subexpr: 1]]
+            expr: [refinement: [pattern: {:appl, [f: "f", x: "x"]}, expr: 1]]
           ]
         ]
       )
@@ -227,7 +227,7 @@ defmodule PantagruelTest do
               lambda_args: ["x"],
               lambda_doms: ["_A"],
               predicate: [
-                appl: [operator: "*", x: "x", y: {:appl, [operator: :gt, x: "y", y: 10]}]
+                appl: [operator: :times, x: "x", y: {:appl, [operator: :gt, x: "y", y: 10]}]
               ],
               yield_type: :function,
               lambda_codomain: {:list, ["_A"]}

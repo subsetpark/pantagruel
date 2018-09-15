@@ -21,24 +21,14 @@ defmodule Pantagruel.Print do
   end
 
   # Print the contents of the environment after program evaluation.
-  defp print_scope(scope) do
-    for(
-      {_k, v} <- scope,
-      do:
-        case v do
-          %Lambda{} = l -> print_lambda(l)
-          e -> print_subexp(e)
-        end
-    )
-    |> Enum.join("\n")
-  end
+  defp print_scope(scope), do: Map.values(scope) |> Enum.map(&print_exp/1) |> Enum.join("\n")
 
   defp print_section({:section, section}) do
     print_line = fn
-      {:decl, declaration} -> print_lambda(declaration, declaration)
-      {:alias, [value, domain]} -> "#{print_subexp(value)} ⇒ #{print_subexp(domain)}"
+      {:decl, declaration} -> print_lambda(declaration, decl: declaration)
+      {:alias, [value, domain]} -> "#{print_exp(value)} ⇒ #{print_exp(domain)}"
       {:comment, comment} -> print_comment(comment)
-      {:expr, expression} -> print_subexp(expression)
+      {:expr, expression} -> print_exp(expression)
     end
 
     Stream.concat(section[:head], section[:body] || [])
@@ -46,13 +36,15 @@ defmodule Pantagruel.Print do
     |> Enum.join("\n")
   end
 
-  @spec print_lambda(any) :: t
-  def print_lambda(lambda, decl \\ nil)
+  @spec print_lambda(any, keyword) :: t
+  def print_lambda(lambda, opts \\ [])
 
   def print_lambda(
         %Lambda{name: name, domain: domain, codomain: codomain, type: type},
-        decl
+        opts
       ) do
+    scope = opts[:scope] || []
+
     name_str =
       case name do
         nil -> ""
@@ -60,17 +52,17 @@ defmodule Pantagruel.Print do
       end
 
     args_str =
-      case decl[:lambda_args] do
+      case opts[:decl][:lambda_args] do
         nil -> ""
-        args -> subexp_join(args) <> ":"
+        args -> exp_join(args, scope) <> ":"
       end
 
-    dom_str = subexp_join(domain)
+    dom_str = exp_join(domain, scope)
 
     predicate_str =
-      case decl[:predicate] do
+      case opts[:decl][:predicate] do
         nil -> ""
-        subexpr -> " ⸳ #{subexp_join(subexpr)}"
+        expr -> " ⸳ #{exp_join(expr, scope)}"
       end
 
     yields_str =
@@ -84,31 +76,46 @@ defmodule Pantagruel.Print do
       name_str,
       "|#{args_str}#{dom_str}#{predicate_str}|",
       yields_str,
-      print_subexp(codomain)
+      print_exp(codomain, scope)
     ]
     |> Enum.join()
   end
 
-  def print_lambda(l, decl) do
-    Lambda.from_declaration(l) |> print_lambda(decl)
+  def print_lambda(l, opts) do
+    Lambda.from_declaration(l) |> print_lambda(opts)
   end
 
   @doc """
   Print an individual expression component.
   """
-  @spec print_subexp(any) :: t
-  def print_subexp(%Domain{name: name, alias: alias}) do
-    "#{print_subexp(alias)} ⇒ #{print_subexp(name)}"
+  @spec print_exp(any, [%{}]) :: t
+  def print_exp(value, scope \\ [])
+
+  def print_exp(%Domain{name: name, alias: alias}, scope) do
+    "#{print_exp(alias, scope)} ⇒ #{print_exp(name, scope)}"
   end
 
-  def print_subexp(%Variable{name: name, domain: domain}) do
-    "#{name} : #{domain}"
+  def print_exp(%Variable{name: name, domain: domain}, scope) do
+    "#{print_exp(name, scope)} : #{print_exp(domain, scope)}"
   end
 
-  def print_subexp(symbol) when is_binary(symbol) or is_number(symbol) or is_atom(symbol),
-    do: Env.lookup_binding_name(symbol)
+  def print_exp(symbol, scopes)
+      when is_binary(symbol) or is_number(symbol) or is_atom(symbol) do
+    name = Env.lookup_binding_name(symbol)
 
-  def print_subexp({container, subexps})
+    case scopes do
+      [] ->
+        name
+
+      s ->
+        cond do
+          Env.is_bound?(symbol, s) -> name
+          true -> "*#{name}*"
+        end
+    end
+  end
+
+  def print_exp({container, exps}, s)
       when container in [:bunch, :list, :string, :set] do
     {l, r} =
       case container do
@@ -118,64 +125,66 @@ defmodule Pantagruel.Print do
         :set -> {"{", "}"}
       end
 
-    inner_str = subexp_join(subexps)
+    inner_str = exp_join(exps, s)
 
     "#{l}#{inner_str}#{r}"
   end
 
-  def print_subexp(
-        {:quantifier, quant_operator: op, quant_bindings: binding, quant_expression: expr}
+  def print_exp(
+        {:quantifier, quant_operator: op, quant_bindings: binding, quant_expression: expr},
+        s
       ) do
     [
-      print_subexp(op),
-      subexp_join(binding),
+      print_exp(op, s),
+      exp_join(binding, s),
       "⸳",
-      print_subexp(expr)
+      print_exp(expr, s)
     ]
     |> Enum.join(" ")
   end
 
-  def print_subexp({:comprehension, [{container, [binding, expr]}]}) do
-    binding_str = subexp_join(binding)
-    expr_str = print_subexp(expr)
+  def print_exp({:comprehension, [{container, [binding, expr]}]}, s) do
+    binding_str = exp_join(binding, s)
+    expr_str = print_exp(expr)
     inner_str = "#{binding_str} ⸳ #{expr_str}"
-    print_subexp({container, [inner_str]})
+    print_exp({container, [inner_str]}, s)
   end
 
-  def print_subexp({:lambda, l}), do: print_lambda(l)
+  def print_exp({:lambda, l}, s), do: print_lambda(l, scope: s)
+  def print_exp(%Lambda{} = l, s), do: print_lambda(l, scope: s)
 
-  def print_subexp({:intro_op, op}), do: print_subexp(op)
+  def print_exp({:intro_op, op}, s), do: print_exp(op, s)
 
-  def print_subexp({:literal, literal}) do
+  def print_exp({:literal, literal}, _) do
     cond do
       String.contains?(literal, " ") -> "`#{literal}`"
       true -> "`" <> literal
     end
   end
 
-  def print_subexp({:refinement, refinement}) do
-    right_str = print_subexp(refinement[:subexpr])
+  def print_exp({:refinement, refinement}, s) do
+    right_str = print_exp(refinement[:expr], s)
 
     guard_str =
       case refinement[:guard] do
         nil -> ""
-        guard -> " ⸳ #{print_subexp(guard)}"
+        guard -> " ⸳ #{print_exp(guard, s)}"
       end
 
-    "#{print_subexp(refinement[:pattern])}#{guard_str} ← #{right_str}"
+    "#{print_exp(refinement[:pattern], s)}#{guard_str} ← #{right_str}"
   end
 
-  def print_subexp({:appl, operator: op, x: x, y: y}) do
-    "#{print_subexp(x)} #{print_subexp(op)} #{print_subexp(y)}"
+  def print_exp({:appl, operator: op, x: x, y: y}, s) do
+    "#{print_exp(x, s)} #{print_exp(op, s)} #{print_exp(y, s)}"
   end
 
-  def print_subexp({:appl, f: f, x: x}) do
-    "#{print_subexp(f)} #{print_subexp(x)}"
+  def print_exp({:appl, f: f, x: x}, s) do
+    "#{print_exp(f, s)} #{print_exp(x, s)}"
   end
 
-  def print_subexp(subexp) do
-    subexp
-    |> Enum.map(&print_subexp/1)
+  def print_exp(exp, s) do
+    exp
+    |> Enum.map(&print_exp(&1, s))
     |> Enum.join(" ")
   end
 
@@ -189,9 +198,9 @@ defmodule Pantagruel.Print do
     "\n" <> comment_str <> "\n"
   end
 
-  defp subexp_join(exprs) do
+  defp exp_join(exprs, s) do
     exprs
-    |> Enum.map(&print_subexp/1)
+    |> Enum.map(&print_exp(&1, s))
     |> Enum.join(", ")
   end
 end

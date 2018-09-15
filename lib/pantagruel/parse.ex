@@ -8,18 +8,10 @@ defmodule Pantagruel.Parse do
   @type ast_node :: any
   @type t :: [ast_node]
 
-  # Constants
-  space = string(" ")
-  newline = string("\n")
-  # The section separator, pronounced "where".
-  where = string("\n;;\n") |> replace(:where)
   # Logical operators.
   log_and = string("∧") |> replace(:and)
   log_or = string("∨") |> replace(:or)
-  such_that = string("⸳") |> replace(:suchthat)
-  exists = string("∃") |> replace(:exists)
-  forall = string("∀") |> replace(:forall)
-  # A closed set of non-alphabetic # binary or unary functions.
+  # A closed set of non-alphabetic binary or unary functions.
   operator =
     choice([
       log_and,
@@ -38,15 +30,16 @@ defmodule Pantagruel.Parse do
           {"¬", :not},
           {"=", :iff},
           {"→", :then},
-          "+",
-          "-",
-          "*",
-          "/",
-          "^"
+          {"+", :plus},
+          {"-", :minus},
+          {"*", :times},
+          {"/", :divides},
+          {"^", :exp},
+          {"#", :card}
         ])
     ])
 
-  @operators [
+  @binary_operators [
     :and,
     :or,
     :equals,
@@ -56,15 +49,14 @@ defmodule Pantagruel.Parse do
     :gt,
     :lt,
     :in,
-    :not,
     :iff,
     :then,
     :from,
-    "+",
-    "-",
-    "*",
-    "/",
-    "^"
+    :plus,
+    :minus,
+    :times,
+    :divides,
+    :exp
   ]
 
   refinement = string("←") |> replace(:refined)
@@ -110,7 +102,7 @@ defmodule Pantagruel.Parse do
     ])
     |> unwrap_and_tag(:literal)
 
-  # The individual component elements of a subexpression.
+  # The individual component elements of an expression.
   symbol =
     choice([
       float,
@@ -123,19 +115,24 @@ defmodule Pantagruel.Parse do
     ])
 
   # A sequence of one or more symbols.
-  nested_subexpression =
-    parsec(:subexpression)
+  nested_expression =
+    parsec(:expression)
     |> comma_join
     |> optional
     |> nested
 
+  such_that = string("⸳") |> replace(:suchthat)
+  # An expression of the form
+  # P . G ← E
+  # Where P is some pattern to match, `. G` is an optional guard
+  # expression, and E is an expression that refines that pattern.
   guarded_refinement =
-    parsec(:subexpression)
+    parsec(:expression)
     |> unwrap_and_tag(:pattern)
     |> concat(
       such_that
       |> ignore
-      |> parsec(:subexpression)
+      |> parsec(:expression)
       |> unwrap_and_tag(:guard)
       |> optional
     )
@@ -143,17 +140,17 @@ defmodule Pantagruel.Parse do
       refinement
       |> ignore
     )
-    |> concat(parsec(:subexpression) |> unwrap_and_tag(:subexpr))
+    |> concat(parsec(:expression) |> unwrap_and_tag(:expr))
     |> tag(:refinement)
 
   # A single proposition in the language. Takes the form of
-  # L El ← Er
-  # Where L is a logical operator like ∧ or ∨, El and Er are the
-  # left and right subexpressions, and ← is the logical refinement operator.
-  expression =
+  # L E
+  # Where L is a logical operator like ∧ or ∨, El and E is either
+  # a guarded refinement or a single expression.
+  statement =
     unwrap_and_tag(choice([log_and, log_or]), :intro_op)
     |> optional
-    |> choice([guarded_refinement, parsec(:subexpression)])
+    |> choice([guarded_refinement, parsec(:expression)])
     |> tag(:expr)
 
   # The arguments to a function. Takes the form of
@@ -192,7 +189,7 @@ defmodule Pantagruel.Parse do
       |> unwrap_and_tag(:lambda_codomain)
     )
 
-  # A function from (0 or more) = N arguments in N domains,
+  # A function from (0 or more) = N arguments in <= N domains,
   # with an optional codomain.
   fun =
     string("|")
@@ -203,7 +200,7 @@ defmodule Pantagruel.Parse do
         such_that
         |> ignore
         |> concat(
-          parsec(:subexpression)
+          parsec(:expression)
           |> comma_join
           |> tag(:predicate)
         )
@@ -220,16 +217,20 @@ defmodule Pantagruel.Parse do
       |> optional
     )
 
-  # A statement introducing some symbol and defining it
-  # as a function - including a type constructor.
+  # A header statement binding some symbol as a function or a type
+  # constructor (which latter also binds the resulting type).
   decl =
     identifier
     |> unwrap_and_tag(:decl_ident)
     |> concat(fun)
     |> tag(:decl)
 
+  # A header statement of the form
+  # D => A
+  # Where D is some concrete domain and A is new binding that refers to
+  # that domain.
   domain_aliasing =
-    parsec(:subexpression)
+    parsec(:expression)
     |> concat(
       constructor
       |> ignore
@@ -237,6 +238,8 @@ defmodule Pantagruel.Parse do
     |> parsec(:domain)
     |> tag(:alias)
 
+  # Any line started with a `;`. Is not parsed, but included in the AST
+  # for later reprinting.
   comment =
     string(";")
     |> ignore()
@@ -245,9 +248,10 @@ defmodule Pantagruel.Parse do
     |> traverse(:join_comment)
     |> tag(:comment)
 
-  # A series of one or more function declarations followed by
-  # 0 or more expressions which should evaluate to true if the
-  # specification holds.
+  newline = string("\n")
+  # A series of one or more function declarations or domain aliases
+  # followed by 0 or more expressions which should evaluate to true if
+  # the specification holds.
   section =
     [decl, comment, domain_aliasing]
     |> choice
@@ -257,7 +261,7 @@ defmodule Pantagruel.Parse do
       newline
       |> ignore
       |> concat(
-        [expression, comment]
+        [statement, comment]
         |> choice
         |> newline_join
       )
@@ -266,24 +270,59 @@ defmodule Pantagruel.Parse do
     )
     |> tag(:section)
 
+  # A expression of the form
+  # {B1, B2, BN ⸳ E}
+  # Where {} can stand for any of the group delimiters, B is a series
+  # of variable bindings of the form `x ∈ X`/`x : X` or predicates on
+  # introduced variables and E is a expression formed from the bound
+  # variable. Represents the map and filter operations across any container.
   comprehension =
-    parsec(:subexpression)
+    parsec(:expression)
     |> comma_join()
     |> wrap
     |> ignore(such_that)
-    |> concat(parsec(:subexpression))
+    |> concat(parsec(:expression))
     |> nested
     |> tag(:comprehension)
 
+  exists = string("∃") |> replace(:exists)
+  forall = string("∀") |> replace(:forall)
+
+  # An expression of the form
+  # Q B1, B2, B3 ⸳ E
+  # Where Q is either the universal quantifier ∀ or the existential
+  # quantifier ∃, B is a series of bindings/predicates as above, and
+  # E is an expression that holds for all members of the sets/domains in
+  # the bindings, as in ∀, or at least one, as in ∃.
   quantifier =
     choice([exists, forall])
     |> unwrap_and_tag(:quant_operator)
-    |> concat(parsec(:subexpression) |> comma_join() |> tag(:quant_bindings))
+    |> concat(parsec(:expression) |> comma_join() |> tag(:quant_bindings))
     |> ignore(such_that)
-    |> concat(parsec(:subexpression) |> unwrap_and_tag(:quant_expression))
+    |> concat(parsec(:expression) |> unwrap_and_tag(:quant_expression))
     |> tag(:quantifier)
 
-  # Combinators
+  # COMBINATORS
+
+  # A single space-delimited element of a expression.
+  space = string(" ")
+  expression_component = choice([nested_expression, quantifier, comprehension, symbol])
+  # Some single recursive expression, consisting of a single expression
+  # component, or a function application tree of expression components.
+  defparsec(
+    :expression,
+    choice([
+      expression_component
+      |> concat(
+        space
+        |> optional
+        |> ignore
+        |> parsec(:expression)
+      )
+      |> traverse(:parse_function_application),
+      expression_component
+    ])
+  )
 
   # A function form, treated as a value or domain.
   defcombinatorp(
@@ -303,34 +342,19 @@ defmodule Pantagruel.Parse do
     |> choice
   )
 
-  expression_component = choice([nested_subexpression, quantifier, comprehension, symbol])
-
-  defparsec(
-    :subexpression,
-    choice([
-      expression_component
-      |> concat(
-        space
-        |> optional
-        |> ignore
-        |> parsec(:subexpression)
-      )
-      |> traverse(:parse_function_application),
-      expression_component
-    ])
-  )
-
   # Special-case function application to handle rearranging operators.
   defp parse_function_application(_rest, [y, x], %{operator: operator}, _line, _offset),
     do: {[appl: [operator: operator, x: x, y: y]], %{}}
 
-  defp parse_function_application(_rest, [x, f], context, _line, _offset) when f in @operators,
-    do: {[x], Map.put(context, :operator, f)}
+  defp parse_function_application(_rest, [x, f], context, _line, _offset)
+       when f in @binary_operators,
+       do: {[x], Map.put(context, :operator, f)}
 
   defp parse_function_application(_rest, [x, f], context, _line, _offset),
     do: {[appl: [f: f, x: x]], context}
 
-  # A series of one or more specification sections separated by ";;",
+  where = string("\n;;\n") |> replace(:where)
+  # A series of one or more specification sections separated by :where,
   # where each subsequent section defines any variables introduced
   # in the previous section.
   @spec program(String.t()) ::
