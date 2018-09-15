@@ -161,8 +161,8 @@ If [available in Hex](https://hex.pm/docs/publish), the package can
 be installed by adding `pantagruel` to your list of dependencies in
 `mix.exs`:
 
-```
-elixir def deps do
+```elixir
+def deps do
   [
     {:pantagruel, "~> 0.1.0"}
   ]
