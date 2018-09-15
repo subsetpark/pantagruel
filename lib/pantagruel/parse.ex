@@ -79,7 +79,7 @@ defmodule Pantagruel.Parse do
     ?.,
     ?',
     ?_,
-    ?-,
+    # ?-,
     ?¿..?ƿ,
     {:not, ?×},
     {:not, ?÷},
