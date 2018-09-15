@@ -72,11 +72,11 @@ defmodule Pantagruel.Eval do
   defp eval_declaration({:comment, _}, state), do: state
 
   defp eval_declaration(
-         {:alias, [subexpression, yields]},
+         {:alias, [expression, yields]},
          {[scope | scopes], header_unbounds, unbounds}
        ) do
-    scope = Domain.bind(scope, subexpression, yields)
-    header_unbounds = include_for_binding_check(header_unbounds, subexpression)
+    scope = Domain.bind(scope, expression, yields)
+    header_unbounds = include_for_binding_check(header_unbounds, expression)
     {[scope | scopes], header_unbounds, unbounds}
   end
 
@@ -107,14 +107,14 @@ defmodule Pantagruel.Eval do
     elements =
       case expression do
         [refinement: refinement] ->
-          [refinement[:pattern], refinement[:guard], refinement[:subexpr]] |> Enum.filter(& &1)
+          [refinement[:pattern], refinement[:guard], refinement[:expr]] |> Enum.filter(& &1)
 
         e ->
           e
       end
 
     # Include any introduced symbols into scope.
-    scope = Enum.reduce(elements, scope, &bind_subexpression_variables/2)
+    scope = Enum.reduce(elements, scope, &bind_expression_variables/2)
     # Include all symbols into the binding check for the *next* section.
     next_unbounds = include_for_binding_check(next_unbounds, elements)
 
@@ -123,7 +123,7 @@ defmodule Pantagruel.Eval do
 
   # Existence quantifiers don't just introduce variables for the scope of
   # their predicates; the introduce variables into global scope.
-  defp bind_subexpression_variables(
+  defp bind_expression_variables(
          {:quantifier, quant_operator: :exists, quant_bindings: bindings, quant_expression: expr},
          state
        ) do
@@ -133,11 +133,11 @@ defmodule Pantagruel.Eval do
         Env.bind(s, x, domain)
       end)
 
-    bind_subexpression_variables(expr, bound)
+    bind_expression_variables(expr, bound)
   end
 
   # In this respect they're unique among expression types.
-  defp bind_subexpression_variables(_, state), do: state
+  defp bind_expression_variables(_, state), do: state
   # Extend the environment for a new section.
   defp new_state({scopes, header_unbounds, unbounds}) do
     {[%{} | scopes], header_unbounds, unbounds ++ [MapSet.new()]}
