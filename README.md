@@ -100,9 +100,11 @@ fib 2 ← 1
 
 Line 1: A function declaration, introducing the `fib` function, which
 takes some `x` in the domain of the natural numbers and returns some
-natural number.  Line 2: A comment describing the program.  Line 3:
-`fib x`, that is, `fib` of any `x`, is *refined* by `fib` of `x - 1`
-plus `fib` of `x - 2`.  Lines 4,5: `fib` of 1 is 1 and `fib` of 2 is 1.
+natural number.  \
+Line 2: A comment describing the program.  \
+Line 3: `fib x`, that is, `fib` of any `x`, is *refined* by `fib` of
+`x - 1` plus `fib` of `x - 2`.  \
+Lines 4,5: `fib` of 1 is 1 and `fib` of 2 is 1.
 
 There are a few components to this, none of which should be particularly
 novel: line 1 introduces a function and describes the arguments it takes,
@@ -130,7 +132,27 @@ than 0) are not a type; they're a set. In Pantagruel the expression `x :
 X` says that `x` is *in the domain* `X`, but X can be a set of specific
 values, a generic data type, or anything in between.
 
-## Installation
+
+## Who would be interested in this?
+
+It's not clear, aside from "me". My hypothesis is that this will be
+interesting and maybe even useful to anybody who a) has an interest in
+formal methods or formal reasoning but b) is not working on projects of
+sufficient seriousness, or is not sufficiently clever and mathematically
+literate, to be using proper formal methods. It seems to me that it will
+be useful to have a well-defined language for communicating algorithms to
+oneself and others, and that if we can exploit its definition to subject
+it to automatic analysis and impose certain lightweight constraints, all
+the better.
+
+To that end, the language itself needs lots of battle testing; lots
+of thinking or whiteboarding done in it, to see what is still awkward
+to express, what constructs are unnecessary or redundant. At the same
+time I will continue to work on `pantagruel` the computer program, to
+build something that is capable of providing some amount of value given
+a Pantagruel text file.
+
+# Installation
 
 If [available in Hex](https://hex.pm/docs/publish), the package can
 be installed by adding `pantagruel` to your list of dependencies in
