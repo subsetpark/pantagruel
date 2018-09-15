@@ -21,7 +21,7 @@ defmodule Pantagruel.Env do
     :gte => %Variable{name: "≥", domain: "ℝ"},
     :lte => %Variable{name: "≤", domain: "ℝ"},
     :plus => %Variable{name: "+", domain: "ℝ"},
-    :minus => %Variable{name: "-", domain: "ℝ"},
+    :minus => %Variable{name: "−", domain: "ℝ"},
     :times => %Variable{name: "×", domain: "ℝ"},
     :divides => %Variable{name: "÷", domain: "ℝ"},
     :exp => %Variable{name: "^", domain: "ℝ"},
