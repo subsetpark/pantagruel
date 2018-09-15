@@ -90,7 +90,7 @@ fib : |x:ℕ| ∷ ℕ
 
 A specification for the fibonacci function.
 
-fib x ← fib x - 1 + fib x - 2  \
+fib x ← fib x − 1 + fib x − 2  \
 fib 1 ← 1  \
 fib 2 ← 1
 
