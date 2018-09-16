@@ -389,6 +389,27 @@ defmodule EvalTest do
              ] == Pantagruel.Eval.eval(parsed)
     end
 
+    test "multiple aliasing" do
+      parsed =
+        """
+        {`ok} => Status, State
+        """
+        |> scan_and_parse
+
+      assert [
+               %{
+                 "Status" => %Pantagruel.Eval.Domain{
+                   ref: {:set, [literal: "ok"]},
+                   name: "Status"
+                 },
+                 "State" => %Pantagruel.Eval.Domain{
+                   ref: {:set, [literal: "ok"]},
+                   name: "State"
+                 }
+               }
+             ] == Pantagruel.Eval.eval(parsed)
+    end
+
     test "sort" do
       # Note: this program is incorrect!
       parsed =
