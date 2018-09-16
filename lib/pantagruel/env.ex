@@ -2,6 +2,10 @@ defmodule Pantagruel.Env do
   @moduledoc """
   The evaluation environment for a Pantagruel program.
   """
+
+  import Pantagruel.Guards
+  alias Pantagruel.Eval.Variable
+
   @type scope :: map()
   @typedoc """
   An environment is a list of binding contexts, one scope for each section
@@ -10,7 +14,6 @@ defmodule Pantagruel.Env do
   into the scope for that section.
   """
   @type t :: [scope]
-  alias Pantagruel.Eval.Variable
 
   defmodule UnboundVariablesError do
     defexception message: "Unbound variables remain", unbound: MapSet.new(), scopes: []
@@ -105,7 +108,6 @@ defmodule Pantagruel.Env do
     end
   end
 
-  @container_types [:string, :bunch, :set, :list]
   @doc """
   Return whether a given value is bound in any of: the current scope,
   any of the previous scopes, the starting environment. Given any complex
@@ -116,12 +118,10 @@ defmodule Pantagruel.Env do
   def is_bound?({:literal, _}, _), do: true
   def is_bound?(_, []), do: false
 
-  def is_bound?({container, []}, _)
-      when container in @container_types,
-      do: true
+  def is_bound?({container, []}, _) when is_container(container),
+    do: true
 
-  def is_bound?({container, contents}, scope)
-      when container in @container_types do
+  def is_bound?({c, contents}, scope) when is_container(c) do
     Enum.all?(contents, fn
       container_item when is_list(container_item) ->
         Enum.all?(container_item, &is_bound?(&1, scope))

@@ -7,6 +7,7 @@ defmodule Pantagruel.Eval do
   quantifiers, domain aliases), and checking that all symbols have been
   properly bound.
   """
+  import Pantagruel.Guards
   alias Pantagruel.Eval.{Lambda, Domain}
   alias Pantagruel.Env
 
@@ -76,11 +77,9 @@ defmodule Pantagruel.Eval do
     |> Enum.reverse()
   end
 
-  @container_types [:bunch, :set, :list, :string]
   # Include symbols in a set of values to check for binding.
   @spec include_for_binding_check(MapSet.t(), any) :: MapSet.t()
-  defp include_for_binding_check(unbounds, {container, contents})
-       when container in @container_types do
+  defp include_for_binding_check(unbounds, {e, contents}) when is_container(e) do
     include_for_binding_check(unbounds, contents)
   end
 

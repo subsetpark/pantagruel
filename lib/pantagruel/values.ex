@@ -11,6 +11,7 @@ defmodule Pantagruel.Eval.Domain do
   A domain in an evaluated Pantagruel program, with a name and whatever
   domain it is an alias for (or itself, otherwise).
   """
+  import Pantagruel.Guards
   alias Pantagruel.Eval.Domain
   alias Pantagruel.Env
   defstruct(name: "", ref: "")
@@ -27,19 +28,12 @@ defmodule Pantagruel.Eval.Domain do
   """
   def is_generic?(domain), do: String.starts_with?(domain, "_")
 
-  @container_types [:string, :bunch, :set, :list]
   @doc """
   Flatten nested or composite domains to retrieve the basic domains they
   are composed of.
   """
-  def flatten_domain({container, items}) when container in @container_types do
-    items
-  end
-
-  def flatten_domain({:lambda, decl}) do
-    flatten_domain(decl[:lambda_doms])
-  end
-
+  def flatten_domain({e, items}) when is_container(e), do: items
+  def flatten_domain({:lambda, decl}), do: flatten_domain(decl[:lambda_doms])
   def flatten_domain(items) when is_list(items), do: items
   def flatten_domain(item), do: [item]
 end

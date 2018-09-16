@@ -3,6 +3,7 @@ defmodule Pantagruel.Format do
   Takes an evaluated Pantagruel program and generates a formatted text
   representation of it.
   """
+  import Pantagruel.Guards
   alias Pantagruel.Eval.{Domain, Variable, Lambda}
   alias Pantagruel.Env
 
@@ -40,6 +41,8 @@ defmodule Pantagruel.Format do
     |> Enum.join("\n")
   end
 
+  defguard is_symbol(s) when is_binary(s) or is_number(s) or is_atom(s)
+
   @doc """
   Print an individual expression.
   """
@@ -54,26 +57,20 @@ defmodule Pantagruel.Format do
     "#{format_exp(name, scope)} : #{format_exp(domain, scope)}"
   end
 
-  def format_exp(symbol, scopes)
-      when is_binary(symbol) or is_number(symbol) or is_atom(symbol) do
-    name = Env.lookup_binding_name(symbol)
+  def format_exp(s, []) when is_symbol(s), do: Env.lookup_binding_name(s)
 
-    case scopes do
-      [] ->
-        name
+  def format_exp(s, scopes) when is_symbol(s) do
+    name = Env.lookup_binding_name(s)
 
-      s ->
-        cond do
-          Env.is_bound?(symbol, s) -> name
-          true -> "*#{name}*"
-        end
+    cond do
+      Env.is_bound?(s, scopes) -> name
+      true -> "*#{name}*"
     end
   end
 
-  def format_exp({container, exps}, s)
-      when container in [:bunch, :list, :string, :set] do
+  def format_exp({c, exps}, s) when is_container(c) do
     {l, r} =
-      case container do
+      case c do
         :bunch -> {"(", ")"}
         :list -> {"[", "]"}
         :string -> {"\"", "\""}
