@@ -28,6 +28,10 @@ defmodule Pantagruel.Scan do
   """
   def comment_continuation, do: <<0xE0B0::utf8>>
 
+  @delimiters [?\n, ?\s, ?(, ?), ?[, ?], ?{, ?}, ?"]
+  # Unbreak syntax "
+  defguard are_delimiters(l, r) when l in @delimiters and r in @delimiters
+
   defp replace_chars(<<>>, acc, _), do: String.reverse(acc)
 
   ## Special-case ';;' from triggering comments.
@@ -63,35 +67,32 @@ defmodule Pantagruel.Scan do
   defp replace_chars(<<"...\n"::utf8, contents::binary>>, out, t),
     do: replace_chars(contents, <<?\s::utf8, out::binary>>, t)
 
-  @delimiters [?\n, ?\s, ?(, ?), ?[, ?], ?{, ?}, ?"]
-  # Unbreak syntax "
-
   defp replace_chars(<<l::utf8, "and"::utf8, r::utf8, contents::binary>>, out, t)
-       when l in @delimiters and r in @delimiters,
+       when are_delimiters(l, r),
        do: replace_chars(contents, <<r::utf8, "∧"::utf8, l::utf8, out::binary>>, t)
 
   defp replace_chars(<<l::utf8, "or"::utf8, r::utf8, contents::binary>>, out, t)
-       when l in @delimiters and r in @delimiters,
+       when are_delimiters(l, r),
        do: replace_chars(contents, <<r::utf8, "∨"::utf8, l::utf8, out::binary>>, t)
 
   defp replace_chars(<<l::utf8, "from"::utf8, r::utf8, contents::binary>>, out, t)
-       when l in @delimiters and r in @delimiters,
+       when are_delimiters(l, r),
        do: replace_chars(contents, <<r::utf8, "∈"::utf8, l::utf8, out::binary>>, t)
 
   defp replace_chars(<<l::utf8, "in"::utf8, r::utf8, contents::binary>>, out, t)
-       when l in @delimiters and r in @delimiters,
+       when are_delimiters(l, r),
        do: replace_chars(contents, <<r::utf8, ":"::utf8, l::utf8, out::binary>>, t)
 
   defp replace_chars(<<l::utf8, "exists"::utf8, r::utf8, contents::binary>>, out, t)
-       when l in @delimiters and r in @delimiters,
+       when are_delimiters(l, r),
        do: replace_chars(contents, <<r::utf8, "∃"::utf8, l::utf8, out::binary>>, t)
 
   defp replace_chars(<<l::utf8, "all"::utf8, r::utf8, contents::binary>>, out, t)
-       when l in @delimiters and r in @delimiters,
+       when are_delimiters(l, r),
        do: replace_chars(contents, <<r::utf8, "∀"::utf8, l::utf8, out::binary>>, t)
 
   defp replace_chars(<<l::utf8, "."::utf8, r::utf8, contents::binary>>, out, t)
-       when l in @delimiters and r in @delimiters,
+       when are_delimiters(l, r),
        do: replace_chars(contents, <<r::utf8, "⸳"::utf8, l::utf8, out::binary>>, t)
 
   # Turn off comment at a newline.
@@ -119,6 +120,8 @@ defmodule Pantagruel.Scan do
     do: consolidate_whitespace(contents, <<c::utf8, rest::binary>>)
 
   @operators [?→, ?∃, ?∀, ?∧, ?∨, ?∀, ?∈, ?¬, ?!, ?`, ?←, ?⸳, ?⇒, ?∷]
+  defguard is_operator(c)
+           when c in ?(..?- or c in ?:..?= or c in ?[..?^ or c in ?{..?~ or c in @operators
 
   defp eliminate_spaces(<<>>, acc, _), do: String.reverse(acc)
   # Toggle comment mode and don't mess with spaces.
@@ -130,12 +133,11 @@ defmodule Pantagruel.Scan do
     do: eliminate_spaces(contents, <<?\n::utf8, out::binary>>, false)
 
   defp eliminate_spaces(<<?\s::utf8, contents::binary>>, <<c::utf8, _::binary>> = acc, false)
-       when c in ?(..?- or c in ?:..?= or c in ?[..?^ or c in ?{..?~ or c in @operators,
+       when is_operator(c),
        do: eliminate_spaces(contents, acc, false)
 
-  defp eliminate_spaces(<<" "::utf8, c::utf8, contents::binary>>, out, false)
-       when c in ?(..?- or c in ?:..?= or c in ?[..?^ or c in ?{..?~ or c in @operators,
-       do: eliminate_spaces(contents, <<c::utf8, out::binary>>, false)
+  defp eliminate_spaces(<<" "::utf8, c::utf8, contents::binary>>, out, false) when is_operator(c),
+    do: eliminate_spaces(contents, <<c::utf8, out::binary>>, false)
 
   defp eliminate_spaces(<<c::utf8, contents::binary>>, out, t),
     do: eliminate_spaces(contents, <<c::utf8, out::binary>>, t)
