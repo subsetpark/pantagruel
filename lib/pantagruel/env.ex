@@ -147,10 +147,11 @@ defmodule Pantagruel.Env do
   end
 
   # Boundness checking for :forall and :exists quantifiers.
-  def is_bound?({:quantifier, quantifier}, scope),
+  def is_bound?({:quantifier, quantifier}, scope) do
     # Introduce any internal bindings for the purpose of boundness
     # checking of the whole expression.
-    do: check_with_bindings(quantifier[:quant_expression], quantifier[:quant_bindings], scope)
+    check_with_bindings(quantifier[:quant_expression], quantifier[:quant_bindings], scope)
+  end
 
   def is_bound?({:comprehension, [{_, [bindings, expr]}]}, scope),
     # Introduce any internal bindings for the purpose of boundness
@@ -188,10 +189,11 @@ defmodule Pantagruel.Env do
   defp check_with_bindings(expr, bindings, scopes) do
     case extract_bindings(bindings) do
       {:ok, bindings} ->
+        # Bind the extracted symbols.
         inner_scope = Enum.reduce(bindings, %{}, &bind(&2, &1))
         scopes = [inner_scope | scopes]
-
-        for({symbol, _} <- bindings, do: symbol)
+        for({_, domain} <- bindings, do: domain)
+        # Check the extract domains, as well as the expression itself.
         |> Enum.all?(&is_bound?(&1, scopes)) && is_bound?(expr, scopes)
 
       {:error, :malformed_bindings} ->

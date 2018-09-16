@@ -48,48 +48,55 @@ defmodule Pantagruel.Scan do
   defp replace_chars(<<";"::utf8, contents::binary>>, out, false),
     do: replace_chars(contents, <<";\n"::utf8, out::binary>>, true)
 
-  defp replace_chars(<<"->"::utf8, contents::binary>>, out, t),
-    do: replace_chars(contents, <<?→::utf8, out::binary>>, t)
+  defp replace_chars(<<"->"::utf8, contents::binary>>, out, false),
+    do: replace_chars(contents, <<?→::utf8, out::binary>>, false)
 
-  defp replace_chars(<<"=>"::utf8, contents::binary>>, out, t),
-    do: replace_chars(contents, <<?⇒::utf8, out::binary>>, t)
+  defp replace_chars(<<"=>"::utf8, contents::binary>>, out, false),
+    do: replace_chars(contents, <<?⇒::utf8, out::binary>>, false)
 
-  defp replace_chars(<<"<-"::utf8, contents::binary>>, out, t),
-    do: replace_chars(contents, <<?←::utf8, out::binary>>, t)
+  defp replace_chars(<<"<-"::utf8, contents::binary>>, out, false),
+    do: replace_chars(contents, <<?←::utf8, out::binary>>, false)
 
-  defp replace_chars(<<"::"::utf8, contents::binary>>, out, t),
-    do: replace_chars(contents, <<?∷::utf8, out::binary>>, t)
+  defp replace_chars(<<"::"::utf8, contents::binary>>, out, false),
+    do: replace_chars(contents, <<?∷::utf8, out::binary>>, false)
 
-  defp replace_chars(<<"...\n"::utf8, contents::binary>>, out, t),
-    do: replace_chars(contents, <<?\s::utf8, out::binary>>, t)
+  defp replace_chars(<<"...\n"::utf8, contents::binary>>, out, false),
+    do: replace_chars(contents, <<?\s::utf8, out::binary>>, false)
 
-  defp replace_chars(<<l::utf8, "and"::utf8, r::utf8, contents::binary>>, out, t)
+  defp replace_chars(<<l::utf8, "and"::utf8, r::utf8, contents::binary>>, out, false)
        when are_delimiters(l, r),
-       do: replace_chars(contents, <<r::utf8, "∧"::utf8, l::utf8, out::binary>>, t)
+       do:
+         replace_chars(<<r::utf8, contents::binary>>, <<"∧"::utf8, l::utf8, out::binary>>, false)
 
-  defp replace_chars(<<l::utf8, "or"::utf8, r::utf8, contents::binary>>, out, t)
+  defp replace_chars(<<l::utf8, "or"::utf8, r::utf8, contents::binary>>, out, false)
        when are_delimiters(l, r),
-       do: replace_chars(contents, <<r::utf8, "∨"::utf8, l::utf8, out::binary>>, t)
+       do:
+         replace_chars(<<r::utf8, contents::binary>>, <<"∨"::utf8, l::utf8, out::binary>>, false)
 
-  defp replace_chars(<<l::utf8, "from"::utf8, r::utf8, contents::binary>>, out, t)
+  defp replace_chars(<<l::utf8, "from"::utf8, r::utf8, contents::binary>>, out, false)
        when are_delimiters(l, r),
-       do: replace_chars(contents, <<r::utf8, "∈"::utf8, l::utf8, out::binary>>, t)
+       do:
+         replace_chars(<<r::utf8, contents::binary>>, <<"∈"::utf8, l::utf8, out::binary>>, false)
 
-  defp replace_chars(<<l::utf8, "in"::utf8, r::utf8, contents::binary>>, out, t)
+  defp replace_chars(<<l::utf8, "in"::utf8, r::utf8, contents::binary>>, out, false)
        when are_delimiters(l, r),
-       do: replace_chars(contents, <<r::utf8, ":"::utf8, l::utf8, out::binary>>, t)
+       do:
+         replace_chars(<<r::utf8, contents::binary>>, <<":"::utf8, l::utf8, out::binary>>, false)
 
-  defp replace_chars(<<l::utf8, "exists"::utf8, r::utf8, contents::binary>>, out, t)
+  defp replace_chars(<<l::utf8, "exists"::utf8, r::utf8, contents::binary>>, out, false)
        when are_delimiters(l, r),
-       do: replace_chars(contents, <<r::utf8, "∃"::utf8, l::utf8, out::binary>>, t)
+       do:
+         replace_chars(<<r::utf8, contents::binary>>, <<"∃"::utf8, l::utf8, out::binary>>, false)
 
-  defp replace_chars(<<l::utf8, "all"::utf8, r::utf8, contents::binary>>, out, t)
+  defp replace_chars(<<l::utf8, "all"::utf8, r::utf8, contents::binary>>, out, false)
        when are_delimiters(l, r),
-       do: replace_chars(contents, <<r::utf8, "∀"::utf8, l::utf8, out::binary>>, t)
+       do:
+         replace_chars(<<r::utf8, contents::binary>>, <<"∀"::utf8, l::utf8, out::binary>>, false)
 
-  defp replace_chars(<<l::utf8, "."::utf8, r::utf8, contents::binary>>, out, t)
+  defp replace_chars(<<l::utf8, "."::utf8, r::utf8, contents::binary>>, out, false)
        when are_delimiters(l, r),
-       do: replace_chars(contents, <<r::utf8, "⸳"::utf8, l::utf8, out::binary>>, t)
+       do:
+         replace_chars(<<r::utf8, contents::binary>>, <<"⸳"::utf8, l::utf8, out::binary>>, false)
 
   # Turn off comment at a newline.
   defp replace_chars(<<"\n"::utf8, contents::binary>>, out, _),
