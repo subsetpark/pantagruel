@@ -410,6 +410,29 @@ defmodule EvalTest do
              ] == Pantagruel.Eval.eval(parsed)
     end
 
+    test "object access" do
+      parsed =
+        """
+        f|x, y:Nat|
+        f.x
+        f.y
+        """
+        |> scan_and_parse
+
+      assert [
+               %{
+                 "f" => %Pantagruel.Eval.Lambda{
+                   codomain: nil,
+                   domain: ["ℕ"],
+                   name: "f",
+                   type: nil
+                 },
+                 "x" => %Pantagruel.Eval.Variable{domain: "ℕ", name: "x"},
+                 "y" => %Pantagruel.Eval.Variable{domain: "ℕ", name: "y"}
+               }
+             ] == Pantagruel.Eval.eval(parsed)
+    end
+
     test "sort" do
       # Note: this program is incorrect!
       parsed =

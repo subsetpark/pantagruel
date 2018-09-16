@@ -46,7 +46,8 @@ defmodule Pantagruel.Env do
     :iff => %Variable{name: "⇔", domain: "𝔹"},
     :then => %Variable{name: "→", domain: "𝔹"},
     :exists => %Variable{name: "∃", domain: "⊤"},
-    :forall => %Variable{name: "∀", domain: "⊤"}
+    :forall => %Variable{name: "∀", domain: "⊤"},
+    :card => %Variable{name: "#", domain: "⊤"}
   }
 
   @doc """
@@ -163,16 +164,23 @@ defmodule Pantagruel.Env do
   def is_bound?({:appl, operator: _, x: x, y: y}, scopes),
     do: is_bound?(x, scopes) && is_bound?(y, scopes)
 
-  def is_bound?(variable, [scope | parent]) do
-    variable =
-      cond do
-        # Allow arbitrary suffixes or prefixes of "'" to denote
-        # successor/remainder variables.
-        is_binary(variable) -> String.trim(variable, "'")
-        true -> variable
-      end
+  def is_bound?(variable, [scope | parent] = scopes) do
+    f = &(has_key?(scope, &1) or is_bound?(&1, parent))
 
-    has_key?(scope, variable) or is_bound?(variable, parent)
+    cond do
+      # Allow arbitrary suffixes or prefixes of "'" to denote
+      # successor/remainder variables.
+      is_binary(variable) ->
+        case variable
+             |> String.trim("'")
+             |> String.split(".") do
+          [variable] -> f.(variable)
+          variables -> Enum.all?(variables, &is_bound?(&1, scopes))
+        end
+
+      true ->
+        f.(variable)
+    end
   end
 
   # Process some temporary bindings and check for boundness, without
