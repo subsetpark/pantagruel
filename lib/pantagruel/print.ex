@@ -25,6 +25,22 @@ defmodule Pantagruel.Format do
   end
 
   @doc """
+  Generate a string representation of a parsed program section.
+  """
+  def format_section({:section, section}) do
+    format_line = fn
+      {:decl, declaration} -> format_lambda(declaration, decl: declaration)
+      {:alias, [alias_expr: ref, alias_name: name]} -> "#{format_exp(ref)} ⇒ #{format_exp(name)}"
+      {:comment, comment} -> format_comment(comment)
+      {:expr, expression} -> format_exp(expression)
+    end
+
+    Stream.concat(section[:head], section[:body] || [])
+    |> Stream.map(format_line)
+    |> Enum.join("\n")
+  end
+
+  @doc """
   Print an individual expression.
   """
   @spec format_exp(any, [%{}]) :: t
@@ -128,20 +144,8 @@ defmodule Pantagruel.Format do
   end
 
   # Print the contents of the environment after program evaluation.
-  defp format_scope(scope), do: scope |> Map.values() |> Enum.map(&format_exp/1) |> Enum.join("\n")
-
-  def format_section({:section, section}) do
-    format_line = fn
-      {:decl, declaration} -> format_lambda(declaration, decl: declaration)
-      {:alias, [alias_expr: ref, alias_name: name]} -> "#{format_exp(ref)} ⇒ #{format_exp(name)}"
-      {:comment, comment} -> format_comment(comment)
-      {:expr, expression} -> format_exp(expression)
-    end
-
-    Stream.concat(section[:head], section[:body] || [])
-    |> Stream.map(format_line)
-    |> Enum.join("\n")
-  end
+  defp format_scope(scope),
+    do: scope |> Map.values() |> Enum.map(&format_exp/1) |> Enum.join("\n")
 
   @spec format_lambda(any, keyword) :: t
   defp format_lambda(
