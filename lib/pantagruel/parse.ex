@@ -93,6 +93,7 @@ defmodule Pantagruel.Parse do
     ?a..?z,
     ?A..?Z,
     ?0..?9,
+    ??,
     ?.,
     ?',
     ?_,
@@ -356,7 +357,9 @@ defmodule Pantagruel.Parse do
   defcombinatorp(
     :domain,
     [
-      parsec(:domain) |> nested,
+      parsec(:domain)
+      |> comma_join()
+      |> nested,
       identifier,
       parsec(:lambda)
     ]
