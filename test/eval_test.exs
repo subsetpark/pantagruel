@@ -49,8 +49,8 @@ defmodule EvalTest do
                  "f" => %Lambda{name: "f", domain: ["X", "Y"], codomain: "ℝ", type: :function},
                  "x" => %Variable{name: "x", domain: "X"},
                  "y" => %Variable{name: "y", domain: "Y"},
-                 "X" => %Domain{name: "X", alias: "X"},
-                 "Y" => %Domain{name: "Y", alias: "Y"},
+                 "X" => %Domain{name: "X", ref: "X"},
+                 "Y" => %Domain{name: "Y", ref: "Y"},
                  "make_x" => %Lambda{
                    name: "make_x",
                    domain: [],
@@ -179,7 +179,7 @@ defmodule EvalTest do
                },
                %{
                  "d" => %Lambda{name: "d", domain: [], codomain: "D", type: :constructor},
-                 "D" => %Domain{name: "D", alias: "D"}
+                 "D" => %Domain{name: "D", ref: "D"}
                }
              ] == Pantagruel.Eval.eval(parsed)
     end
@@ -215,7 +215,7 @@ defmodule EvalTest do
                %{
                  "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: nil},
                  "con" => %Lambda{name: "con", domain: [], codomain: "X", type: :constructor},
-                 "X" => %Domain{name: "X", alias: "X"},
+                 "X" => %Domain{name: "X", ref: "X"},
                  "x" => %Variable{name: "x", domain: "ℕ"}
                }
              ] == Pantagruel.Eval.eval(parsed)
@@ -236,7 +236,7 @@ defmodule EvalTest do
           Pantagruel.Eval.eval(parsed)
         end
 
-      assert exc.unbound == MapSet.new([appl: [operator: :gt, x: "y", y: 1]])
+      assert exc.unbound == MapSet.new(appl: [operator: :gt, x: "y", y: 1])
     end
 
     test "too many domains" do
@@ -350,8 +350,25 @@ defmodule EvalTest do
                    name: "f",
                    type: nil
                  },
-                 "_A" => %Pantagruel.Eval.Domain{name: "_A", alias: "_A"},
+                 "_A" => %Pantagruel.Eval.Domain{name: "_A", ref: "_A"},
                  "x" => %Pantagruel.Eval.Variable{domain: "_A", name: "x"}
+               }
+             ] == Pantagruel.Eval.eval(parsed)
+    end
+
+    test "aliasing" do
+      parsed =
+        """
+        {`ok} => Status
+        """
+        |> scan_and_parse
+
+      assert [
+               %{
+                 "Status" => %Pantagruel.Eval.Domain{
+                   ref: {:set, [literal: "ok"]},
+                   name: "Status"
+                 }
                }
              ] == Pantagruel.Eval.eval(parsed)
     end
@@ -373,7 +390,7 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "X" => %Domain{name: "X", alias: "X"},
+                 "X" => %Domain{name: "X", ref: "X"},
                  "sort" => %Lambda{
                    domain: [list: ["X"]],
                    codomain: {:list, ["X"]},

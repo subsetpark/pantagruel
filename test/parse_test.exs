@@ -70,8 +70,7 @@ defmodule PantagruelTest do
             expr: [
               refinement: [
                 pattern: "x",
-                expr:
-                  {:appl, [operator: :and, x: "y", y: {:appl, [operator: :gt, x: "y", y: 1]}]}
+                expr: {:appl, [operator: :and, x: "y", y: {:appl, [operator: :gt, x: "y", y: 1]}]}
               ]
             ]
           ]
@@ -234,6 +233,14 @@ defmodule PantagruelTest do
             ]
           ]
         ]
+      )
+    end
+
+    test "domain aliasing" do
+      text = "{`ok}⇒Status"
+
+      tryparse(text,
+        section: [head: [alias: [alias_expr: {:set, [literal: "ok"]}, alias_name: "Status"]]]
       )
     end
   end

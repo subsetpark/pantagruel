@@ -13,12 +13,12 @@ defmodule Pantagruel.Eval.Domain do
   """
   alias Pantagruel.Eval.Domain
   alias Pantagruel.Env
-  defstruct(name: "", alias: "")
+  defstruct(name: "", ref: "")
 
   @doc """
   Introduce a new domain into scope.
   """
-  def bind(scope, domain, alias), do: Env.bind(scope, domain, %Domain{name: domain, alias: alias})
+  def bind(scope, domain, ref), do: Env.bind(scope, domain, %Domain{name: domain, ref: ref})
 
   @doc """
   Generic domains can be introduced by prepending their name with an

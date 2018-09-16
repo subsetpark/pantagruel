@@ -247,11 +247,15 @@ defmodule Pantagruel.Parse do
   # that domain.
   domain_aliasing =
     parsec(:expression)
+    |> unwrap_and_tag(:alias_expr)
     |> concat(
       constructor
       |> ignore
     )
-    |> parsec(:domain)
+    |> concat(
+      parsec(:domain)
+      |> unwrap_and_tag(:alias_name)
+    )
     |> tag(:alias)
 
   # Any line started with a `;`. Is not parsed, but included in the AST

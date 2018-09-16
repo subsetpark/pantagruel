@@ -46,6 +46,16 @@ defmodule Pantagruel.FormatTest do
       assert "F ⇒ F\nf : || ⇒ F\n――――――――――\nf : || ⇒ F" == Format.format_program(parsed, scopes)
     end
 
+    test "aliasing" do
+      {parsed, scopes} =
+        """
+        {`ok} => Status
+        """
+        |> eval
+
+      assert "{`ok} ⇒ Status\n――――――――――\n{`ok} ⇒ Status" == Format.format_program(parsed, scopes)
+    end
+
     test "section" do
       {parsed, scopes} =
         """

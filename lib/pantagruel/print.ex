@@ -30,8 +30,8 @@ defmodule Pantagruel.Format do
   @spec format_exp(any, [%{}]) :: t
   def format_exp(value, scope \\ [])
 
-  def format_exp(%Domain{name: name, alias: alias}, scope) do
-    "#{format_exp(alias, scope)} ⇒ #{format_exp(name, scope)}"
+  def format_exp(%Domain{name: name, ref: ref}, scope) do
+    "#{format_exp(ref, scope)} ⇒ #{format_exp(name, scope)}"
   end
 
   def format_exp(%Variable{name: name, domain: domain}, scope) do
@@ -133,7 +133,7 @@ defmodule Pantagruel.Format do
   defp format_section({:section, section}) do
     format_line = fn
       {:decl, declaration} -> format_lambda(declaration, decl: declaration)
-      {:alias, [value, domain]} -> "#{format_exp(value)} ⇒ #{format_exp(domain)}"
+      {:alias, [alias_expr: ref, alias_name: name]} -> "#{format_exp(ref)} ⇒ #{format_exp(name)}"
       {:comment, comment} -> format_comment(comment)
       {:expr, expression} -> format_exp(expression)
     end
