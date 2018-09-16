@@ -30,10 +30,21 @@ defmodule Pantagruel.Format do
   """
   def format_section({:section, section}) do
     format_line = fn
-      {:decl, declaration} -> format_lambda(declaration, decl: declaration)
-      {:alias, [alias_expr: ref, alias_name: name]} -> "#{format_exp(ref)} ⇒ #{format_exp(name)}"
-      {:comment, comment} -> format_comment(comment)
-      {:expr, expression} -> format_exp(expression)
+      {:decl, declaration} ->
+        format_lambda(declaration, decl: declaration)
+
+      {:alias, [alias_expr: ref, alias_name: names]} ->
+        alias_names =
+          Enum.map(names, &format_exp/1)
+          |> Enum.join(", ")
+
+        "#{format_exp(ref)} ⇒ #{alias_names}"
+
+      {:comment, comment} ->
+        format_comment(comment)
+
+      {:expr, expression} ->
+        format_exp(expression)
     end
 
     Stream.concat(section[:head], section[:body] || [])
