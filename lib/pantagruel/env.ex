@@ -16,6 +16,10 @@ defmodule Pantagruel.Env do
     defexception message: "Unbound variables remain", unbound: MapSet.new(), scopes: []
   end
 
+  defmodule SymbolExtractionError do
+    defexception message: "Expected binding expression form", expr: nil, bindings: nil, scopes: []
+  end
+
   @starting_environment %{
     "Bool" => %Variable{name: "𝔹", domain: "𝔹"},
     "Real" => %Variable{name: "ℝ", domain: "ℝ"},
@@ -174,18 +178,38 @@ defmodule Pantagruel.Env do
   # Process some temporary bindings and check for boundness, without
   # those bindings being valid outside of this context.
   defp check_with_bindings(expr, bindings, scopes) do
-    binding_symbols = Enum.map(bindings, &extract_binding_symbol/1)
-    binding_domains = Enum.map(bindings, &extract_binding_domain/1)
+    case extract_bindings(bindings) do
+      {:ok, bindings} ->
+        inner_scope = Enum.reduce(bindings, %{}, &bind(&2, &1))
+        scopes = [inner_scope | scopes]
 
-    inner_scope =
-      Enum.zip(binding_symbols, binding_domains)
-      |> Enum.reduce(%{}, &bind(&2, &1))
+        for({symbol, _} <- bindings, do: symbol)
+        |> Enum.all?(&is_bound?(&1, scopes)) && is_bound?(expr, scopes)
 
-    scopes = [inner_scope | scopes]
-    Enum.all?(binding_symbols, &is_bound?(&1, scopes)) && is_bound?(expr, scopes)
+      {:error, :malformed_bindings} ->
+        raise SymbolExtractionError, expr: expr, bindings: bindings, scopes: scopes
+    end
   end
+
+  # Extract {symbol, domain} tuples from a list of binding expressions.
+  defp extract_bindings(bindings) do
+    try do
+      bindings =
+        for b <- bindings do
+          {extract_binding_symbol(b), extract_binding_domain(b)}
+        end
+
+      {:ok, bindings}
+    rescue
+      # Raise if we've encountered an AST that we can't parse as a
+      # binding expression.
+      FunctionClauseError -> {:error, :malformed_bindings}
+    end
+  end
+
   # Given a binding pattern, return the symbol being bound.
   defp extract_binding_symbol({:appl, [operator: op, x: x, y: _]}) when op in [:from, :in], do: x
+
   # Given a binding pattern, return the domain being bound from.
   defp extract_binding_domain({:appl, [operator: op, x: _, y: dom]}) do
     cond do

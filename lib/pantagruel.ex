@@ -29,7 +29,20 @@ defmodule Pantagruel do
         IO.puts("Unbound variables:")
         Enum.each(e.unbound, &IO.puts("- #{Pantagruel.Format.format_exp(&1, e.scopes)}"))
 
-        Pantagruel.Format.format_program(parsed, for(_ <- parsed, do: []))
+        Pantagruel.Format.format_program(parsed, for(_ <- parsed, do: %{}))
+        |> IO.puts()
+
+      e in Pantagruel.Env.SymbolExtractionError ->
+        expr =
+          {:quantifier, quant_operator: "…", quant_bindings: e.bindings, quant_expression: e.expr}
+
+        IO.puts("Syntax error.\n")
+
+        IO.puts(
+          "Expected binding form. Found: \"#{Pantagruel.Format.format_exp(expr, [])}\""
+        )
+
+        Pantagruel.Format.format_program(parsed, for(_ <- parsed, do: %{}))
         |> IO.puts()
     end
   end

@@ -128,7 +128,7 @@ defmodule Pantagruel.Format do
   end
 
   # Print the contents of the environment after program evaluation.
-  defp format_scope(scope), do: Map.values(scope) |> Enum.map(&format_exp/1) |> Enum.join("\n")
+  defp format_scope(scope), do: scope |> Map.values() |> Enum.map(&format_exp/1) |> Enum.join("\n")
 
   defp format_section({:section, section}) do
     format_line = fn

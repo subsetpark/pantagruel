@@ -1,6 +1,6 @@
 defmodule EvalTest do
   use ExUnit.Case
-  alias Pantagruel.Env.UnboundVariablesError
+  alias Pantagruel.Env.{UnboundVariablesError, SymbolExtractionError}
   alias Pantagruel.Eval.{Variable, Lambda, Domain}
 
   defp scan_and_parse(text) do
@@ -249,6 +249,22 @@ defmodule EvalTest do
       assert_raise RuntimeError, fn ->
         Pantagruel.Eval.eval(parsed)
       end
+    end
+
+    test "binding without bunching evals as two malformed bindings" do
+      parsed =
+        """
+        w||
+        all j, k : X . j > k
+        """
+        |> scan_and_parse
+
+      e =
+        assert_raise SymbolExtractionError, fn ->
+          Pantagruel.Eval.eval(parsed)
+        end
+
+      assert e.bindings == ["j", {:appl, [operator: :in, x: "k", y: "X"]}]
     end
 
     test "exists binds" do
