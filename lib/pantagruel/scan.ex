@@ -39,13 +39,9 @@ defmodule Pantagruel.Scan do
     do: replace_chars(contents, <<";;"::utf8, out::binary>>, false)
 
   # Comment continuation.
-  defp replace_chars(<<"\n;"::utf8, c::utf8, contents::binary>>, out, true)
-       when c != ?; do
-    replace_chars(
-      contents,
-      <<c::utf8>> <> comment_continuation() <> <<out::binary>>,
-      true
-    )
+  defp replace_chars(<<"\n;"::utf8, c::utf8, contents::binary>>, out, true) when c != ?; do
+    out = <<c::utf8>> <> comment_continuation() <> <<out::binary>>
+    replace_chars(contents, out, true)
   end
 
   # Start a new comment; insert a newline and turn on comment mode.
