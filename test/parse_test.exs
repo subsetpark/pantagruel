@@ -240,7 +240,22 @@ defmodule PantagruelTest do
       text = "{`ok}⇒Status"
 
       tryparse(text,
-        section: [head: [alias: [alias_expr: {:set, [literal: "ok"]}, alias_name: "Status"]]]
+        section: [head: [alias: [alias_expr: {:set, [literal: "ok"]}, alias_name: ["Status"]]]]
+      )
+    end
+
+    test "multiple domain aliasing" do
+      text = "{`ok}⇒Status,State"
+
+      tryparse(text,
+        section: [
+          head: [
+            alias: [
+              alias_expr: {:set, [literal: "ok"]},
+              alias_name: ["Status", "State"]
+            ]
+          ]
+        ]
       )
     end
   end

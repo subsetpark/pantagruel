@@ -104,10 +104,10 @@ defmodule Pantagruel.Eval do
   defp eval_header_statement({:comment, _}, state), do: state
   # 2. Domain aliases, which bind symbols as aliases to concrete domains;
   defp eval_header_statement(
-         {:alias, [alias_expr: alias_exp, alias_name: alias_name]},
+         {:alias, [alias_expr: alias_exp, alias_name: alias_names]},
          {[scope | scopes], header_unbounds, unbounds}
        ) do
-    scope = Domain.bind(scope, alias_name, alias_exp)
+    scope = Enum.reduce(alias_names, scope, &Domain.bind(&2, &1, alias_exp))
     header_unbounds = include_for_binding_check(header_unbounds, alias_exp)
     {[scope | scopes], header_unbounds, unbounds}
   end

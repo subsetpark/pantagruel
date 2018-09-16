@@ -254,7 +254,8 @@ defmodule Pantagruel.Parse do
     )
     |> concat(
       parsec(:domain)
-      |> unwrap_and_tag(:alias_name)
+      |> comma_join
+      |> tag(:alias_name)
     )
     |> tag(:alias)
 
