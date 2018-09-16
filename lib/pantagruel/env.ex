@@ -23,6 +23,10 @@ defmodule Pantagruel.Env do
     defexception message: "Expected binding expression form", expr: nil, bindings: nil, scopes: []
   end
 
+  defmodule UndefinedAtomError do
+    defexception message: "Received atom without string representation", atom: nil
+  end
+
   @starting_environment %{
     "Bool" => %Variable{name: "𝔹", domain: "𝔹"},
     "Real" => %Variable{name: "ℝ", domain: "ℝ"},
@@ -45,6 +49,8 @@ defmodule Pantagruel.Env do
     :from => %Variable{name: "∈", domain: "⊤"},
     :iff => %Variable{name: "⇔", domain: "𝔹"},
     :then => %Variable{name: "→", domain: "𝔹"},
+    :and => %Variable{name: "∧", domain: "𝔹"},
+    :or => %Variable{name: "∨", domain: "𝔹"},
     :exists => %Variable{name: "∃", domain: "⊤"},
     :forall => %Variable{name: "∀", domain: "⊤"},
     :card => %Variable{name: "#", domain: "⊤"}
@@ -88,7 +94,8 @@ defmodule Pantagruel.Env do
     case @starting_environment do
       # Look up symbol name if predefined.
       %{^symbol => variable} -> variable.name
-      _ -> symbol
+      _ when is_binary(symbol) or is_nil(symbol) -> symbol
+      _ when is_atom(symbol) -> raise UndefinedAtomError, atom: symbol
     end
   end
 
@@ -174,7 +181,7 @@ defmodule Pantagruel.Env do
       is_binary(variable) ->
         case variable
              |> String.trim("'")
-             |> String.split(".") do
+             |> String.split(".", trim: true) do
           [variable] -> f.(variable)
           variables -> Enum.all?(variables, &is_bound?(&1, scopes))
         end
@@ -192,6 +199,7 @@ defmodule Pantagruel.Env do
         # Bind the extracted symbols.
         inner_scope = Enum.reduce(bindings, %{}, &bind(&2, &1))
         scopes = [inner_scope | scopes]
+
         for({_, domain} <- bindings, do: domain)
         # Check the extract domains, as well as the expression itself.
         |> Enum.all?(&is_bound?(&1, scopes)) && is_bound?(expr, scopes)

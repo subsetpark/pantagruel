@@ -17,12 +17,12 @@ defmodule Pantagruel.Format do
 
     f = fn {section, scope} ->
       [format_scope(scope), format_section(section)]
-      |> Enum.join("\n#{bar.("―")}\n")
+      |> Enum.join("\n#{bar.("―")}\n\n")
     end
 
     Enum.zip(parsed, scopes)
     |> Enum.map(f)
-    |> Enum.join("\n#{bar.("═")}\n")
+    |> Enum.join("\n\n#{bar.("═")}\n\n")
   end
 
   @doc """
