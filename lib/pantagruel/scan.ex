@@ -99,8 +99,8 @@ defmodule Pantagruel.Scan do
          replace_chars(<<r::utf8, contents::binary>>, <<"⸳"::utf8, l::utf8, out::binary>>, false)
 
   # Turn off comment at a newline.
-  defp replace_chars(<<"\n"::utf8, contents::binary>>, out, _),
-    do: replace_chars(contents, <<"\n"::utf8, out::binary>>, false)
+  defp replace_chars(<<"\n"::utf8, _::binary>> = comments, out, true),
+    do: replace_chars(comments, out, false)
 
   defp replace_chars(<<c::utf8, contents::binary>>, out, t),
     do: replace_chars(contents, <<c::utf8, out::binary>>, t)
