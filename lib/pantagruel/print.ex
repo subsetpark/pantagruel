@@ -68,6 +68,9 @@ defmodule Pantagruel.Format do
     "#{format_exp(name, scope)} : #{format_exp(domain, scope)}"
   end
 
+  def format_exp(s, []) when is_binary(s),
+    do: Env.lookup_binding_name(s) |> String.replace("_", "-")
+
   def format_exp(s, []) when is_symbol(s), do: Env.lookup_binding_name(s)
 
   def format_exp(s, scopes) when is_symbol(s) do
@@ -165,7 +168,7 @@ defmodule Pantagruel.Format do
     name_str =
       case name do
         nil -> ""
-        name -> "#{name} : "
+        name -> "#{format_exp(name)} : "
       end
 
     args_str =
@@ -207,9 +210,9 @@ defmodule Pantagruel.Format do
       comment
       |> String.split(Pantagruel.Scan.comment_continuation())
       |> Enum.map(&String.trim/1)
-      |> Enum.join("\n")
+      |> Enum.join("\n> ")
 
-    "\n" <> comment_str <> "\n"
+    "\n> " <> comment_str <> "\n"
   end
 
   defp exp_join(exprs, s) do
