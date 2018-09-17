@@ -4,7 +4,7 @@ defmodule Pantagruel.MixProject do
   def project do
     [
       app: :pantagruel,
-      version: "0.0.1",
+      version: "0.0.2",
       elixir: "~> 1.7",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -17,7 +17,7 @@ defmodule Pantagruel.MixProject do
       name: "Pantagruel",
       source_url: "https://github.com/subsetpark/pantagruel",
       docs: [
-        extras: ["README.md"]
+        extras: ["README.md", "priv/a_full_specification.md"]
       ]
     ]
   end

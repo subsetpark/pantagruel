@@ -38,12 +38,13 @@ defmodule Mix.Tasks.Pantagruel.Parse do
   use Mix.Task
 
   def run([filename]) do
-    {:ok, scanned, "", %{}, _, _} =
+    {:ok, scanned, rest, %{}, _, _} =
       filename
       |> File.read!()
       |> Pantagruel.Scan.scan()
       |> Pantagruel.Parse.program()
 
     IO.inspect(scanned)
+    IO.inspect rest
   end
 end

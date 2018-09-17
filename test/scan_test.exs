@@ -42,6 +42,7 @@ defmodule ScanLest do
         assert "first line\nsecond line" == scanned
       end
     end
+
     test "newline consolidation in where" do
       text = """
       foo
@@ -50,8 +51,15 @@ defmodule ScanLest do
 
       where
       """
+
       scanned = Pantagruel.Scan.scan(text)
       assert "foo\n;;\nwhere" == scanned
+    end
+
+    test "two replaced characters in a row" do
+      text = "(all h from sect.head . all sym from h . is_bound? sym)"
+      scanned = Pantagruel.Scan.scan(text)
+      assert "(∀h∈sect.head⸳∀sym∈h⸳is_bound? sym)" == scanned
     end
   end
 end

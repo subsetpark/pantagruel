@@ -22,7 +22,7 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "f : ||\n――――――――――\nf : ||" == Format.format_program(parsed, scopes)
+      assert "f : ||\n――――――――――\n\nf : ||" == Format.format_program(parsed, scopes)
     end
 
     test "function" do
@@ -32,7 +32,7 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "f : |ℕ| ∷ ℝ\nx : ℕ\n――――――――――\nf : |x:ℕ| ∷ ℝ" ==
+      assert "f : |ℕ| ∷ ℝ\nx : ℕ\n――――――――――\n\nf : |x:ℕ| ∷ ℝ" ==
                Format.format_program(parsed, scopes)
     end
 
@@ -43,7 +43,7 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "F ⇒ F\nf : || ⇒ F\n――――――――――\nf : || ⇒ F" == Format.format_program(parsed, scopes)
+      assert "F ⇒ F\nf : || ⇒ F\n――――――――――\n\nf : || ⇒ F" == Format.format_program(parsed, scopes)
     end
 
     test "aliasing" do
@@ -53,7 +53,7 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "{`ok} ⇒ Status\n――――――――――\n{`ok} ⇒ Status" == Format.format_program(parsed, scopes)
+      assert "{`ok} ⇒ Status\n――――――――――\n\n{`ok} ⇒ Status" == Format.format_program(parsed, scopes)
     end
 
     test "section" do
@@ -64,7 +64,7 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "F ⇒ F\nf : || ⇒ F\n――――――――――\nf : || ⇒ F\nf 1 ⇔ 0" ==
+      assert "F ⇒ F\nf : || ⇒ F\n――――――――――\n\nf : || ⇒ F\nf 1 ⇔ 0" ==
                Format.format_program(parsed, scopes)
     end
   end

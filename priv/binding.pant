@@ -1,0 +1,33 @@
+eval |p: Program| :: Bool
+"Section" => Program
+; A section head must have at least one statement; a section body can be empty.
+section |head, body: Head, Body . #head > 0 | => Section
+"Comment, Declaration, Alias" => Head
+"Comment, Expression" => Body
+"String" => Comment, Declaration, Alias, Expression
+
+eval p <- all sect from p . (is_bound? sect)
+
+;;
+
+is_bound? |sect: Section| :: Bool
+
+; All variables referred to in a section head must be defined by the
+; end of that section head. All the variables in a section body, however,
+; must be defined by the end of the *next* section body.
+is_bound? sect <-                                           ...
+    (all h from sect.head . all sym from h . is_bound? sym) ...
+    and                                                     ...
+    (all b from (p (p sect) - 1).body . all sym from b . is_bound? sym)
+
+;;
+
+is_bound |sym: String| :: Bool
+
+is_bound sym <- sym from (env p) (p sect) or sym from init_scope
+
+;;
+
+env |p: Program| :: "Scope"
+init_scope|| :: Scope
+{String} => Scope

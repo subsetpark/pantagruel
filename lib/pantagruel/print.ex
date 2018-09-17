@@ -3,6 +3,7 @@ defmodule Pantagruel.Format do
   Takes an evaluated Pantagruel program and generates a formatted text
   representation of it.
   """
+  import Pantagruel.Guards
   alias Pantagruel.Eval.{Domain, Variable, Lambda}
   alias Pantagruel.Env
 
@@ -16,13 +17,42 @@ defmodule Pantagruel.Format do
 
     f = fn {section, scope} ->
       [format_scope(scope), format_section(section)]
-      |> Enum.join("\n#{bar.("―")}\n")
+      |> Enum.join("\n#{bar.("―")}\n\n")
     end
 
     Enum.zip(parsed, scopes)
     |> Enum.map(f)
-    |> Enum.join("\n#{bar.("═")}\n")
+    |> Enum.join("\n\n#{bar.("═")}\n\n")
   end
+
+  @doc """
+  Generate a string representation of a parsed program section.
+  """
+  def format_section({:section, section}) do
+    format_line = fn
+      {:decl, declaration} ->
+        format_lambda(declaration, decl: declaration)
+
+      {:alias, [alias_expr: ref, alias_name: names]} ->
+        alias_names =
+          Enum.map(names, &format_exp/1)
+          |> Enum.join(", ")
+
+        "#{format_exp(ref)} ⇒ #{alias_names}"
+
+      {:comment, comment} ->
+        format_comment(comment)
+
+      {:expr, expression} ->
+        format_exp(expression)
+    end
+
+    Stream.concat(section[:head], section[:body] || [])
+    |> Stream.map(format_line)
+    |> Enum.join("\n")
+  end
+
+  defguard is_symbol(s) when is_binary(s) or is_number(s) or is_atom(s)
 
   @doc """
   Print an individual expression.
@@ -38,26 +68,23 @@ defmodule Pantagruel.Format do
     "#{format_exp(name, scope)} : #{format_exp(domain, scope)}"
   end
 
-  def format_exp(symbol, scopes)
-      when is_binary(symbol) or is_number(symbol) or is_atom(symbol) do
-    name = Env.lookup_binding_name(symbol)
+  def format_exp(s, []) when is_binary(s),
+    do: Env.lookup_binding_name(s) |> String.replace("_", "-")
 
-    case scopes do
-      [] ->
-        name
+  def format_exp(s, []) when is_symbol(s), do: Env.lookup_binding_name(s)
 
-      s ->
-        cond do
-          Env.is_bound?(symbol, s) -> name
-          true -> "*#{name}*"
-        end
+  def format_exp(s, scopes) when is_symbol(s) do
+    name = Env.lookup_binding_name(s)
+
+    cond do
+      Env.is_bound?(s, scopes) -> name
+      true -> "*#{name}*"
     end
   end
 
-  def format_exp({container, exps}, s)
-      when container in [:bunch, :list, :string, :set] do
+  def format_exp({c, exps}, s) when is_container(c) do
     {l, r} =
-      case container do
+      case c do
         :bunch -> {"(", ")"}
         :list -> {"[", "]"}
         :string -> {"\"", "\""}
@@ -128,20 +155,8 @@ defmodule Pantagruel.Format do
   end
 
   # Print the contents of the environment after program evaluation.
-  defp format_scope(scope), do: Map.values(scope) |> Enum.map(&format_exp/1) |> Enum.join("\n")
-
-  defp format_section({:section, section}) do
-    format_line = fn
-      {:decl, declaration} -> format_lambda(declaration, decl: declaration)
-      {:alias, [alias_expr: ref, alias_name: name]} -> "#{format_exp(ref)} ⇒ #{format_exp(name)}"
-      {:comment, comment} -> format_comment(comment)
-      {:expr, expression} -> format_exp(expression)
-    end
-
-    Stream.concat(section[:head], section[:body] || [])
-    |> Stream.map(format_line)
-    |> Enum.join("\n")
-  end
+  defp format_scope(scope),
+    do: scope |> Map.values() |> Enum.map(&format_exp/1) |> Enum.join("\n")
 
   @spec format_lambda(any, keyword) :: t
   defp format_lambda(
@@ -153,7 +168,7 @@ defmodule Pantagruel.Format do
     name_str =
       case name do
         nil -> ""
-        name -> "#{name} : "
+        name -> "#{format_exp(name)} : "
       end
 
     args_str =
@@ -195,9 +210,9 @@ defmodule Pantagruel.Format do
       comment
       |> String.split(Pantagruel.Scan.comment_continuation())
       |> Enum.map(&String.trim/1)
-      |> Enum.join("\n")
+      |> Enum.join("\n> ")
 
-    "\n" <> comment_str <> "\n"
+    "\n> " <> comment_str <> "\n"
   end
 
   defp exp_join(exprs, s) do

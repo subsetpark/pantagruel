@@ -93,6 +93,7 @@ defmodule Pantagruel.Parse do
     ?a..?z,
     ?A..?Z,
     ?0..?9,
+    ??,
     ?.,
     ?',
     ?_,
@@ -254,7 +255,8 @@ defmodule Pantagruel.Parse do
     )
     |> concat(
       parsec(:domain)
-      |> unwrap_and_tag(:alias_name)
+      |> comma_join
+      |> tag(:alias_name)
     )
     |> tag(:alias)
 
@@ -355,7 +357,9 @@ defmodule Pantagruel.Parse do
   defcombinatorp(
     :domain,
     [
-      parsec(:domain) |> nested,
+      parsec(:domain)
+      |> comma_join()
+      |> nested,
       identifier,
       parsec(:lambda)
     ]
@@ -369,6 +373,16 @@ defmodule Pantagruel.Parse do
   defp parse_function_application(_rest, [x, f], context, _line, _offset)
        when f in @binary_operators,
        do: {[x], Map.put(context, :operator, f)}
+  # An expression like (x + x).foo should be interpreted as the
+  # application of .foo on (x + x).
+  defp parse_function_application(
+         _rest,
+         [<<?.::utf8, _::binary>> = x, f],
+         context,
+         _line,
+         _offset
+       ),
+       do: {[appl: [f: x, x: f]], context}
 
   defp parse_function_application(_rest, [x, f], context, _line, _offset),
     do: {[appl: [f: f, x: x]], context}

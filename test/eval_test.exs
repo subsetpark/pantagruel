@@ -1,6 +1,6 @@
 defmodule EvalTest do
   use ExUnit.Case
-  alias Pantagruel.Env.UnboundVariablesError
+  alias Pantagruel.Env.{UnboundVariablesError, SymbolExtractionError}
   alias Pantagruel.Eval.{Variable, Lambda, Domain}
 
   defp scan_and_parse(text) do
@@ -251,6 +251,22 @@ defmodule EvalTest do
       end
     end
 
+    test "binding without bunching evals as two malformed bindings" do
+      parsed =
+        """
+        w||
+        all j, k : X . j > k
+        """
+        |> scan_and_parse
+
+      e =
+        assert_raise SymbolExtractionError, fn ->
+          Pantagruel.Eval.eval(parsed)
+        end
+
+      assert e.bindings == ["j", {:appl, [operator: :in, x: "k", y: "X"]}]
+    end
+
     test "exists binds" do
       parsed =
         """
@@ -368,6 +384,91 @@ defmodule EvalTest do
                  "Status" => %Pantagruel.Eval.Domain{
                    ref: {:set, [literal: "ok"]},
                    name: "Status"
+                 }
+               }
+             ] == Pantagruel.Eval.eval(parsed)
+    end
+
+    test "multiple aliasing" do
+      parsed =
+        """
+        {`ok} => Status, State
+        """
+        |> scan_and_parse
+
+      assert [
+               %{
+                 "Status" => %Pantagruel.Eval.Domain{
+                   ref: {:set, [literal: "ok"]},
+                   name: "Status"
+                 },
+                 "State" => %Pantagruel.Eval.Domain{
+                   ref: {:set, [literal: "ok"]},
+                   name: "State"
+                 }
+               }
+             ] == Pantagruel.Eval.eval(parsed)
+    end
+
+    test "object access" do
+      parsed =
+        """
+        f|x, y:Nat|
+        f.x
+        f.y
+        """
+        |> scan_and_parse
+
+      assert [
+               %{
+                 "f" => %Pantagruel.Eval.Lambda{
+                   codomain: nil,
+                   domain: ["ℕ"],
+                   name: "f",
+                   type: nil
+                 },
+                 "x" => %Pantagruel.Eval.Variable{domain: "ℕ", name: "x"},
+                 "y" => %Pantagruel.Eval.Variable{domain: "ℕ", name: "y"}
+               }
+             ] == Pantagruel.Eval.eval(parsed)
+    end
+    test "object access on expression" do
+      parsed =
+        """
+        f|x, y:Nat|
+        (f 1).x
+        """
+        |> scan_and_parse
+
+      assert [
+               %{
+                 "f" => %Pantagruel.Eval.Lambda{
+                   codomain: nil,
+                   domain: ["ℕ"],
+                   name: "f",
+                   type: nil
+                 },
+                 "x" => %Pantagruel.Eval.Variable{domain: "ℕ", name: "x"},
+                 "y" => %Pantagruel.Eval.Variable{domain: "ℕ", name: "y"}
+               }
+             ] == Pantagruel.Eval.eval(parsed)
+    end
+
+    test "nested quantifiers" do
+      parsed =
+        """
+        f||
+        (all x from Nat . all y from x . y > 0)
+        """
+        |> scan_and_parse
+
+      assert [
+               %{
+                 "f" => %Pantagruel.Eval.Lambda{
+                   codomain: nil,
+                   domain: [],
+                   name: "f",
+                   type: nil
                  }
                }
              ] == Pantagruel.Eval.eval(parsed)

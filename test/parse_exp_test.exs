@@ -146,5 +146,31 @@ defmodule ExpressionParserTest do
       tryexp(text, expected)
       tryexp(text2, expected)
     end
+
+    test "lambda with comma-joined domain" do
+      text = "|x:(Y,Z)|"
+
+      expected = [
+        lambda: [
+          lambda_args: ["x"],
+          lambda_doms: [bunch: ["Y", "Z"]]
+        ]
+      ]
+
+      tryexp(text, expected)
+    end
+
+    test "object access is treated as special case of function application" do
+      text = "(x - 1).foo"
+
+      expected = [
+        appl: [
+          f: ".foo",
+          x: {:bunch, [appl: [operator: :minus, x: "x", y: 1]]},
+        ]
+      ]
+
+      tryexp(text, expected)
+    end
   end
 end

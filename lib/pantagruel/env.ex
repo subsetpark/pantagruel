@@ -2,6 +2,10 @@ defmodule Pantagruel.Env do
   @moduledoc """
   The evaluation environment for a Pantagruel program.
   """
+
+  import Pantagruel.Guards
+  alias Pantagruel.Eval.Variable
+
   @type scope :: map()
   @typedoc """
   An environment is a list of binding contexts, one scope for each section
@@ -10,10 +14,17 @@ defmodule Pantagruel.Env do
   into the scope for that section.
   """
   @type t :: [scope]
-  alias Pantagruel.Eval.Variable
 
   defmodule UnboundVariablesError do
     defexception message: "Unbound variables remain", unbound: MapSet.new(), scopes: []
+  end
+
+  defmodule SymbolExtractionError do
+    defexception message: "Expected binding expression form", expr: nil, bindings: nil, scopes: []
+  end
+
+  defmodule UndefinedAtomError do
+    defexception message: "Received atom without string representation", atom: nil
   end
 
   @starting_environment %{
@@ -38,8 +49,11 @@ defmodule Pantagruel.Env do
     :from => %Variable{name: "∈", domain: "⊤"},
     :iff => %Variable{name: "⇔", domain: "𝔹"},
     :then => %Variable{name: "→", domain: "𝔹"},
+    :and => %Variable{name: "∧", domain: "𝔹"},
+    :or => %Variable{name: "∨", domain: "𝔹"},
     :exists => %Variable{name: "∃", domain: "⊤"},
-    :forall => %Variable{name: "∀", domain: "⊤"}
+    :forall => %Variable{name: "∀", domain: "⊤"},
+    :card => %Variable{name: "#", domain: "⊤"}
   }
 
   @doc """
@@ -80,7 +94,8 @@ defmodule Pantagruel.Env do
     case @starting_environment do
       # Look up symbol name if predefined.
       %{^symbol => variable} -> variable.name
-      _ -> symbol
+      _ when is_binary(symbol) or is_nil(symbol) -> symbol
+      _ when is_atom(symbol) -> raise UndefinedAtomError, atom: symbol
     end
   end
 
@@ -101,7 +116,6 @@ defmodule Pantagruel.Env do
     end
   end
 
-  @container_types [:string, :bunch, :set, :list]
   @doc """
   Return whether a given value is bound in any of: the current scope,
   any of the previous scopes, the starting environment. Given any complex
@@ -112,12 +126,10 @@ defmodule Pantagruel.Env do
   def is_bound?({:literal, _}, _), do: true
   def is_bound?(_, []), do: false
 
-  def is_bound?({container, []}, _)
-      when container in @container_types,
-      do: true
+  def is_bound?({container, []}, _) when is_container(container),
+    do: true
 
-  def is_bound?({container, contents}, scope)
-      when container in @container_types do
+  def is_bound?({c, contents}, scope) when is_container(c) do
     Enum.all?(contents, fn
       container_item when is_list(container_item) ->
         Enum.all?(container_item, &is_bound?(&1, scope))
@@ -142,10 +154,11 @@ defmodule Pantagruel.Env do
   end
 
   # Boundness checking for :forall and :exists quantifiers.
-  def is_bound?({:quantifier, quantifier}, scope),
+  def is_bound?({:quantifier, quantifier}, scope) do
     # Introduce any internal bindings for the purpose of boundness
     # checking of the whole expression.
-    do: check_with_bindings(quantifier[:quant_expression], quantifier[:quant_bindings], scope)
+    check_with_bindings(quantifier[:quant_expression], quantifier[:quant_bindings], scope)
+  end
 
   def is_bound?({:comprehension, [{_, [bindings, expr]}]}, scope),
     # Introduce any internal bindings for the purpose of boundness
@@ -159,33 +172,62 @@ defmodule Pantagruel.Env do
   def is_bound?({:appl, operator: _, x: x, y: y}, scopes),
     do: is_bound?(x, scopes) && is_bound?(y, scopes)
 
-  def is_bound?(variable, [scope | parent]) do
-    variable =
-      cond do
-        # Allow arbitrary suffixes or prefixes of "'" to denote
-        # successor/remainder variables.
-        is_binary(variable) -> String.trim(variable, "'")
-        true -> variable
-      end
+  def is_bound?(variable, [scope | parent] = scopes) do
+    f = &(has_key?(scope, &1) or is_bound?(&1, parent))
 
-    has_key?(scope, variable) or is_bound?(variable, parent)
+    cond do
+      # Allow arbitrary suffixes or prefixes of "'" to denote
+      # successor/remainder variables.
+      is_binary(variable) ->
+        case variable
+             |> String.trim("'")
+             |> String.split(".", trim: true) do
+          [variable] -> f.(variable)
+          variables -> Enum.all?(variables, &is_bound?(&1, scopes))
+        end
+
+      true ->
+        f.(variable)
+    end
   end
 
   # Process some temporary bindings and check for boundness, without
   # those bindings being valid outside of this context.
   defp check_with_bindings(expr, bindings, scopes) do
-    binding_symbols = Enum.map(bindings, &extract_binding_symbol/1)
-    binding_domains = Enum.map(bindings, &extract_binding_domain/1)
+    case extract_bindings(bindings) do
+      {:ok, bindings} ->
+        # Bind the extracted symbols.
+        inner_scope = Enum.reduce(bindings, %{}, &bind(&2, &1))
+        scopes = [inner_scope | scopes]
 
-    inner_scope =
-      Enum.zip(binding_symbols, binding_domains)
-      |> Enum.reduce(%{}, &bind(&2, &1))
+        for({_, domain} <- bindings, do: domain)
+        # Check the extract domains, as well as the expression itself.
+        |> Enum.all?(&is_bound?(&1, scopes)) && is_bound?(expr, scopes)
 
-    scopes = [inner_scope | scopes]
-    Enum.all?(binding_symbols, &is_bound?(&1, scopes)) && is_bound?(expr, scopes)
+      {:error, :malformed_bindings} ->
+        raise SymbolExtractionError, expr: expr, bindings: bindings, scopes: scopes
+    end
   end
+
+  # Extract {symbol, domain} tuples from a list of binding expressions.
+  defp extract_bindings(bindings) do
+    try do
+      bindings =
+        for b <- bindings do
+          {extract_binding_symbol(b), extract_binding_domain(b)}
+        end
+
+      {:ok, bindings}
+    rescue
+      # Raise if we've encountered an AST that we can't parse as a
+      # binding expression.
+      FunctionClauseError -> {:error, :malformed_bindings}
+    end
+  end
+
   # Given a binding pattern, return the symbol being bound.
   defp extract_binding_symbol({:appl, [operator: op, x: x, y: _]}) when op in [:from, :in], do: x
+
   # Given a binding pattern, return the domain being bound from.
   defp extract_binding_domain({:appl, [operator: op, x: _, y: dom]}) do
     cond do
