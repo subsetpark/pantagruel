@@ -12,7 +12,8 @@ defmodule Pantagruel.FormatTest do
   describe "scope display" do
     test "null case" do
       {parsed, scopes} = eval("")
-      assert "" == Format.format_program(parsed, scopes)
+      assert "" == Format.format_program(parsed)
+      assert "" == Format.format_scopes(scopes)
     end
 
     test "minimal function" do
@@ -22,7 +23,8 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "f : ||\n――――――――――\n\nf : ||" == Format.format_program(parsed, scopes)
+      assert "f ||" == Format.format_program(parsed)
+      assert "f ||" == Format.format_scopes(scopes)
     end
 
     test "function" do
@@ -32,8 +34,8 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "f : |ℕ| ∷ ℝ\nx : ℕ\n――――――――――\n\nf : |x:ℕ| ∷ ℝ" ==
-               Format.format_program(parsed, scopes)
+      assert "f |x:ℕ| ∷ ℝ" == Format.format_program(parsed)
+      assert "f |ℕ| ∷ ℝ\nx : ℕ" == Format.format_scopes(scopes)
     end
 
     test "constructor" do
@@ -43,7 +45,8 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "F ⇒ F\nf : || ⇒ F\n――――――――――\n\nf : || ⇒ F" == Format.format_program(parsed, scopes)
+      assert "f || ⇒ F" == Format.format_program(parsed)
+      assert "F ⇒ F\nf || ⇒ F" == Format.format_scopes(scopes)
     end
 
     test "aliasing" do
@@ -53,7 +56,8 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "{`ok} ⇒ Status\n――――――――――\n\n{`ok} ⇒ Status" == Format.format_program(parsed, scopes)
+      assert "{`ok} ⇒ Status" == Format.format_program(parsed)
+      assert "{`ok} ⇒ Status" == Format.format_scopes(scopes)
     end
 
     test "section" do
@@ -64,8 +68,8 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "F ⇒ F\nf : || ⇒ F\n――――――――――\n\nf : || ⇒ F\nf 1 ⇔ 0" ==
-               Format.format_program(parsed, scopes)
+      assert "f || ⇒ F\nf 1 ⇔ 0" == Format.format_program(parsed)
+      assert "F ⇒ F\nf || ⇒ F" == Format.format_scopes(scopes)
     end
   end
 end

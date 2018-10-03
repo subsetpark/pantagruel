@@ -11,18 +11,18 @@ defmodule Pantagruel.Format do
   @doc """
   Generate a string representation of an evaluated program.
   """
-  @spec format_program(Pantagruel.Parse.t(), Env.t()) :: t
-  def format_program(parsed, scopes) do
-    bar = &String.duplicate(&1, 10)
+  @spec format_program(Pantagruel.Parse.t()) :: t
+  def format_program(parsed), do: format_with(parsed, &format_section/1)
 
-    f = fn {section, scope} ->
-      [format_scope(scope), format_section(section)]
-      |> Enum.join("\n#{bar.("―")}\n\n")
-    end
+  @spec format_scopes(Env.t()) :: t
+  def format_scopes(scopes), do: format_with(scopes, &format_scope/1)
 
-    Enum.zip(parsed, scopes)
+  defp format_with(data, f) do
+    bar = "***"
+
+    data
     |> Enum.map(f)
-    |> Enum.join("\n\n#{bar.("═")}\n\n")
+    |> Enum.join("\n\n#{bar}\n\n")
   end
 
   @doc """
@@ -155,8 +155,21 @@ defmodule Pantagruel.Format do
   end
 
   # Print the contents of the environment after program evaluation.
-  defp format_scope(scope),
-    do: scope |> Map.values() |> Enum.map(&format_exp/1) |> Enum.join("\n")
+  defp format_scope(scope) do
+    sort = fn
+      %Domain{}, %Lambda{} -> true
+      %Domain{}, %Variable{} -> true
+      %Lambda{}, %Variable{} -> true
+      %Lambda{type: :constructor}, %Lambda{type: :function} -> true
+      %Lambda{type: :function}, %Lambda{type: :constructor} -> false
+      %Lambda{type: t}, %Lambda{type: nil} when not is_nil(t) -> true
+      %Domain{ref: a}, %Domain{ref: b} -> a <= b
+      %{__struct__: t, name: a}, %{__struct__: t, name: b} -> a <= b
+      _, _ -> false
+    end
+
+    scope |> Map.values() |> Enum.sort(sort) |> Enum.map(&format_exp/1) |> Enum.join("\n")
+  end
 
   @spec format_lambda(any, keyword) :: t
   defp format_lambda(
@@ -168,7 +181,7 @@ defmodule Pantagruel.Format do
     name_str =
       case name do
         nil -> ""
-        name -> "#{format_exp(name)} : "
+        name -> "#{format_exp(name)} "
       end
 
     args_str =

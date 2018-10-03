@@ -106,64 +106,34 @@ The `pantagruel` interpreter will evaluate a Pantagruel program, checking that s
 When the above program is put into a text file called *binding.pant*, and we run `pantagruel binding.pant`, this is what's output:
 
 -----
-
-"𝕊" ⇒ Alias  \
-"Comment, Expression" ⇒ Body  \
-"𝕊" ⇒ Comment  \
-"𝕊" ⇒ Declaration  \
-"𝕊" ⇒ Expression  \
-"Comment, Declaration, Alias" ⇒ Head  \
-"Section" ⇒ Program  \
-Section ⇒ Section  \
-body : Body  \
-eval : |Program| ∷ 𝔹  \
-head : Head  \
-p : Program  \
-section : |Head, Body| ⇒ Section  \
-――――――――――
-
-eval : |p:Program| ∷ 𝔹  \
+eval |p:Program| ∷ 𝔹
 "Section" ⇒ Program
 
 > A section head must have at least one statement; a section body can be empty.
 
-section : |head, body:Head, Body ⸳ # head > 0| ⇒ Section  \
-"Comment, Declaration, Alias" ⇒ Head  \
-"Comment, Expression" ⇒ Body  \
-"𝕊" ⇒ Comment, Declaration, Alias, Expression  \
+section |head, body:Head, Body ⸳ # head > 0| ⇒ Section
+"Comment, Declaration, Alias" ⇒ Head
+"Comment, Expression" ⇒ Body
+"𝕊" ⇒ Comment, Declaration, Alias, Expression
 eval p ← ∀ sect ∈ p ⸳ (is-bound? sect)
 
-══════════
+***
 
-is-bound? : |Section| ∷ 𝔹  \
-sect : Section  \
-――――――――――
-
-is-bound? : |sect:Section| ∷ 𝔹
+is-bound? |sect:Section| ∷ 𝔹
 
 > All variables referred to in a section head must be defined by the
 > end of that section head. All the variables in a section body, however,
 > must be defined by the end of the *next* section body.
 
-is-bound? sect ← (∀ h ∈ sect.head ⸳ ∀ sym ∈ h ⸳ is-bound? sym) ∧ (∀ b ∈ .body (p (p sect) - 1) ⸳ ∀ sym ∈ b ⸳ is-bound? sym)
+is-bound? sect ← (∀ h ∈ sect.head ⸳ ∀ sym ∈ h ⸳ is-bound? sym) ∧ (∀ b ∈ .body (p (p sect) − 1) ⸳ ∀ sym ∈ b ⸳ is-bound? sym)
 
-══════════
+***
 
-is-bound : |𝕊| ∷ 𝔹  \
-sym : 𝕊  \
-――――――――――
-
-is-bound : |sym:𝕊| ∷ 𝔹  \
+is-bound |sym:𝕊| ∷ 𝔹
 is-bound sym ← sym ∈ (env p) (p sect) ∨ sym ∈ init-scope
 
-══════════
+***
 
-{𝕊} ⇒ Scope  \
-env : |Program| ∷ "Scope"  \
-init-scope : || ∷ Scope  \
-p : Program  \
-――――――――――
-
-env : |p:Program| ∷ "Scope"  \
-init-scope : || ∷ Scope  \
+env |p:Program| ∷ "Scope"
+init-scope || ∷ Scope
 {𝕊} ⇒ Scope

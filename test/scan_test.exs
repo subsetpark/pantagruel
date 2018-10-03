@@ -61,5 +61,15 @@ defmodule ScanLest do
       scanned = Pantagruel.Scan.scan(text)
       assert "(∀h∈sect.head⸳∀sym∈h⸳is_bound? sym)" == scanned
     end
+
+    test "or at the beginning?" do
+      text = """
+      [x from X, y from Z, z from Y . x * y ^ z]; Now includes semicolons; much better.
+      or [x from String . x + `ok]
+      """
+
+      scanned = Pantagruel.Scan.scan(text)
+      assert "[x∈X,y∈Z,z∈Y⸳x*y^z]\n; Now includes semicolons; much better.\n∨[x∈String⸳x+`ok]" == scanned
+    end
   end
 end
