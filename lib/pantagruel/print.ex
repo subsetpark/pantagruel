@@ -207,7 +207,7 @@ defmodule Pantagruel.Format do
 
     [
       name_str,
-      "|#{args_str}#{dom_str}#{predicate_str}|",
+      "«#{args_str}#{dom_str}#{predicate_str}»",
       yields_str,
       format_exp(codomain, scope)
     ]

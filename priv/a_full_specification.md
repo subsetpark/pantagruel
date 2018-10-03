@@ -101,25 +101,26 @@ The fact that the syntax and binding rules of Pantagruel are enforced by the `pa
 
 ## Program output
 
-The `pantagruel` interpreter will evaluate a Pantagruel program, checking that symbols have been defined according to the rules described here, and then print out, section by section, the contents of its binding scope along with a formatted version of the section.
+The `pantagruel` interpreter will evaluate a Pantagruel program, checking that symbols have been defined according to the rules described here, and then print out a formatted version of the section.
 
 When the above program is put into a text file called *binding.pant*, and we run `pantagruel binding.pant`, this is what's output:
 
 -----
-eval |p:Program| ∷ 𝔹
+
+eval «p:Program» ∷ 𝔹 \
 "Section" ⇒ Program
 
 > A section head must have at least one statement; a section body can be empty.
 
-section |head, body:Head, Body ⸳ # head > 0| ⇒ Section
-"Comment, Declaration, Alias" ⇒ Head
-"Comment, Expression" ⇒ Body
-"𝕊" ⇒ Comment, Declaration, Alias, Expression
+section «head, body:Head, Body ⸳ # head > 0» ⇒ Section \
+"Comment, Declaration, Alias" ⇒ Head \
+"Comment, Expression" ⇒ Body \
+"𝕊" ⇒ Comment, Declaration, Alias, Expression \
 eval p ← ∀ sect ∈ p ⸳ (is-bound? sect)
 
 ***
 
-is-bound? |sect:Section| ∷ 𝔹
+is-bound? «sect:Section» ∷ 𝔹
 
 > All variables referred to in a section head must be defined by the
 > end of that section head. All the variables in a section body, however,
@@ -129,11 +130,11 @@ is-bound? sect ← (∀ h ∈ sect.head ⸳ ∀ sym ∈ h ⸳ is-bound? sym) ∧
 
 ***
 
-is-bound |sym:𝕊| ∷ 𝔹
+is-bound «sym:𝕊» ∷ 𝔹 \
 is-bound sym ← sym ∈ (env p) (p sect) ∨ sym ∈ init-scope
 
 ***
 
-env |p:Program| ∷ "Scope"
-init-scope || ∷ Scope
+env «p:Program» ∷ "Scope" \
+init-scope «» ∷ Scope \
 {𝕊} ⇒ Scope
