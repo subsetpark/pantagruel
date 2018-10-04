@@ -144,3 +144,42 @@ Which says that `f x` or "`f` of `x`" is *refined by* the more concrete expressi
 `f x . x > 5 <- g (x * 2)`
 
 Which says that `f` of `x` is refined by `g (x * 2)` *when `x` is greater than five*. The expression between the `.` and the `<-` is a **guard**, and performs a very similar function to predicate in a procedure declaration.
+
+#### Propositions
+
+A proposition is just any other expression that should evaluate to true for an implementation to be correct. Since there are no hard semantics imposed on expression evaluation, there are no syntactic constraints on propositions; any valid expression can be a proposition. `f x` by itself on a line is a synctactically valid body statement, though it might be hard to gain much insight from it as a reader.
+
+#### Statement Logic
+
+Ordinarily, every statement in a body must be true. Thus they can be considered as a single expression by reading them with an implicit `and` between them, referring to the logical operator *∧*. At the beginning of any statement, there may be written an `and` to make this explicit, or an `or` to indicate disjunction *∨* rather than conjunction.
+
+### Expressions
+
+The most common syntactic element is the expression; this is anything that should evaluate to some value. Expressions are found in the predicate of a procedure or constructor declaration, the guard and right-hand side of a refinement, and by themselves as propositions. And expressions are recursive, so a single expression is very often a compound of multiple expressions.
+
+#### Values
+
+- int
+- float
+- literal
+- spaced literal
+- symbol
+- lambda
+- operator
+
+#### Containers
+
+- set
+- list
+- string
+- bunch
+
+#### Applications
+
+- procedure
+- operator
+
+#### Special forms
+
+- comprehension
+- quantifier
