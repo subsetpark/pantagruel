@@ -1,0 +1,146 @@
+# Pantagruel Language Reference
+
+Pantagruel is a notation designed for *specifying the behavior of a
+computer program*. It consists of a closed set of notational forms,
+drawn, where available, from mathematics and logic, designed to allow
+the writer to express the behavior of some computer program in terms
+of **refinements**, where some introduced program is expressed in more
+specific and therefore stronger terms, and **propositions**, which are
+statements that must be true under some specific implementation of the
+program for the implementation to be considered correct.
+
+Unlike some other formal specification methods, Pantagruel expressions
+cannot be evaluated in terms of the values they represent. To give a
+trivial example, while `1 + 1` is a valid expression in Pantagruel and
+represents the application of the `+` operator with 1 on the left side
+and 1 on the right side, Pantagruel cannot *evaluate* that expression to
+arrive at `2`. By extension, Pantagruel has no capacity to validate that
+`1 + 1 == 2` is a true expression or to demonstrate that `1 + 1 == 3`
+is a false one. This obviously reduces Pantagruel's capacity for program
+correctness verification and validation to effectively nil; however,
+hopefully its semantic neutrality means that it is more available to the
+programmer or even non-programmer who wants to sketch out their ideas for
+themselves or others, waving their hands where it's useful to wave them,
+without establishing everything from first principles.
+
+Roughly speaking, Pantagruel can be said to consist of a *syntax*,
+which is designed to be convenient to write by hand and to parse by a
+computer, and a *semantics*, which is largely not parsed by the Pantagruel
+interpreter. Thus the semantics of Pantagruel, while not undefined, are
+mostly a set of *suggested readings*, a system of of interpretations
+that it would be useful to share among the humans that read and write
+Pantagruel programs.[^1]
+
+[^1] As Pantagruel evolves, there is the constant threat that any
+semantics which is currently only a suggested reading will get implemented
+in the interpreter if there is a use for it.
+
+## Pantagruel Syntax
+
+A Pantagruel **program** consists of a series of **sections**. Each
+section consists of a **head** and an optional **body**.
+
+### Section Heads
+
+A Pantagruel section head introduces one or more symbols, of two
+primary kinds: **procedures** and **domains**. A procedure might be
+a computer program, or a function. For instance, `+` is a procedure,
+and most Pantagruel programs will introduce at least one procedure,
+which is the program or business logic they are specifying.
+
+A domain is some set of values, which variables will be taken from. For
+instance, the natural numbers (abbreviated ℕ) make up a domain, as
+do the reals (ℝ). But so could the values ``{`ok, `error}`` or some
+business logic-specific concept like `User` or `Post`. In this way
+domains are like types, though more flexible.
+
+There are three expression forms possible in a section head:
+
+#### Procedure declaration
+
+Here is an example procedure declaration:
+
+`fib|n : Nat| :: Nat`
+
+It introduces a procedure called `fib`, which takes one argument, `n`
+in the domain `Nat`. The `::` indicates that this procedure **yields**
+a value in some domain, which in this case is also `Nat`.
+
+#### Constructor declaration
+
+**constructors** are a special type of procedure that introduce a
+user-defined domain. They are written identically to normal procedures,
+except instead of the **yields** symbol, they are written with the
+**produces** symbol `=>`:
+
+`user|name, age : String, Nat| => User`
+
+This introduces both the domain `User`, as well as the constructor
+`user`. `user` takes two arguments, the first of which is a `String` and
+the second of which is a `Nat`, and produces a value in the domain `User`.
+
+#### Advanced procedure syntax
+
+Procedures can be declared with or without arguments, return domains,
+and predicates. Here's a declaration of a procedure with no arguments
+and an undefined return:
+
+`f||`
+
+Arguments, as above, are specified by a comma separated list of argument
+names, followed by a colon, followed by a comma separated list of
+argument domains.
+
+Finally, procedures can be declared with a comma separated list
+of **predicates** representing some constraint on the procedure
+domain. Here's a procedure declaration with a predicate:
+
+`f|x:Nat . x > 5|`
+
+The expression after the `.` indicates that `f` is defined for any
+natural number `x` greater than 5.  `f|x:Nat . x > 5, x < 10|`
+
+This declares a procedure `f` that's defined for any natural number `x`
+greater than 5 and less than 10.
+
+#### Domain Aliasing
+
+The final type of expression available in a section head is a **domain
+alias**. This is a simple statement of equivalence between a new domain
+and some existing one. It also uses the **produces** symbol `=>`.
+
+Here's an example domain alias:
+
+``{`ok, `error} => Status``
+
+Introduces a domain `Status` which is equivalent to the set of values
+`ok` and `error`.
+
+Here's an example section head:
+
+```
+Nat => Score
+halve|score: Score . score mod 2 == 0| :: Score
+```
+
+It introduces a procedure, `halve`, which operates on all even
+`Score`s. It also clarifies that `Score` in this case is just an alias
+for `Nat`.
+
+### Section Bodies
+
+Section **bodies** consist of one or more **statements**. Each statement is a single line expressing either a **refinement** of a procedure or a **proposition** about a procedure.
+
+The most basic **expression** in any statement is **application**, represented by separating two values with a space, like this: `f x`.
+
+#### Refinements
+
+A refinement is any expression, followed by the refinement operator `<-`, followed by another expression. Here's an example:
+
+`f x <- x + 2`
+
+Which says that `f x` or "`f` of `x`" is *refined by* the more concrete expression `x + 2`. A more complex example might be
+
+`f x . x > 5 <- g (x * 2)`
+
+Which says that `f` of `x` is refined by `g (x * 2)` *when `x` is greater than five*. The expression between the `.` and the `<-` is a **guard**, and performs a very similar function to predicate in a procedure declaration.
