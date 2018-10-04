@@ -236,6 +236,32 @@ defmodule PantagruelTest do
       )
     end
 
+    test "heading with lambda" do
+      text = "f|x:|z:Nat|∷z|∷Bool"
+
+      tryparse(text,
+        section: [
+          head: [
+            decl: [
+              decl_ident: "f",
+              lambda_args: ["x"],
+              lambda_doms: [
+                {:lambda,
+                 [
+                   lambda_args: ["z"],
+                   lambda_doms: ["Nat"],
+                   yield_type: :function,
+                   lambda_codomain: "z"
+                 ]}
+              ],
+              yield_type: :function,
+              lambda_codomain: "Bool"
+            ]
+          ]
+        ]
+      )
+    end
+
     test "domain aliasing" do
       text = "{`ok}⇒Status"
 
