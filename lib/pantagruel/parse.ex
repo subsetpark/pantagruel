@@ -364,29 +364,36 @@ defmodule Pantagruel.Parse do
     parsed =
       expressions
       # Handle "foo.bar" dot-access expressions.
-      |> Enum.flat_map(&String.split(&1, "."))
+      |> Enum.flat_map(&split_object/1)
       |> Enum.reverse()
-      |> parse_function_application(nil)
+      |> assoc(nil, :left)
 
     {[parsed], context}
   end
 
-  defp parse_function_application([], appl), do: appl
-  defp parse_function_application([x | rest], nil), do: parse_function_application(rest, x)
-
-  defp parse_function_application([x | rest], appl) when x in @binary_operators do
-    parse_function_application(rest, appl, x)
+  defp split_object(v) when is_binary(v) do
+    v
+    |> String.split(".")
+    |> assoc(nil, :right)
+    |> List.wrap()
   end
 
-  defp parse_function_application([x | rest], appl) do
-    application = {:appl, [f: appl, x: x]}
-    parse_function_application(rest, application)
-  end
+  defp split_object(v), do: [v]
 
-  defp parse_function_application([y | rest], appl, operator) do
-    application = {:appl, operator: operator, x: appl, y: y}
-    parse_function_application(rest, application)
-  end
+  defp assoc([], appl, _), do: appl
+  defp assoc([x | rest], nil, prec), do: assoc(rest, x, prec)
+
+  defp assoc([x | rest], appl, :left) when x in @binary_operators,
+    do: handle_operator(rest, appl, x)
+
+  defp assoc([x | rest], appl, :left), do: assoc(rest, apply_f(appl, x), :left)
+  defp assoc([x | rest], appl, :right), do: assoc(rest, apply_f(x, appl), :right)
+
+  defp handle_operator([y | rest], appl, operator),
+    do: assoc(rest, apply_f(operator, appl, y), :left)
+
+  defp apply_f(f, x), do: {:appl, [f: f, x: x]}
+  defp apply_f(operator, x, y), do: {:appl, operator: operator, x: x, y: y}
 
   where = string("\n;;\n") |> replace(:where)
   # A series of one or more specification sections separated by :where,

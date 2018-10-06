@@ -192,7 +192,7 @@ defmodule ExpressionParserTest do
       expected = [
         appl: [
           f: "baz",
-          x: [appl: [f: "bar", x: "foo"]]
+          x: {:appl, [f: "bar", x: "foo"]}
         ]
       ]
 
@@ -205,18 +205,33 @@ defmodule ExpressionParserTest do
       expected = [
         appl: [
           operator: :gt,
-          x: [
-            appl: [
+          x: {
+            :appl,
+            [
               f: "f",
-              x: [
-                appl: [
+              x: {
+                :appl,
+                [
                   f: "baz",
-                  x: [appl: [f: "bar", x: "foo"]]
+                  x: {:appl, [f: "bar", x: "foo"]}
                 ]
-              ]
-            ],
-            y: 1
-          ]
+              }
+            ]
+          },
+          y: 1
+        ]
+      ]
+
+      tryexp(text, expected)
+    end
+
+    test "function application with float" do
+      text = "f 1.0"
+
+      expected = [
+        appl: [
+          f: "f",
+          x: 1.0
         ]
       ]
 
