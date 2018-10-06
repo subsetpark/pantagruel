@@ -327,23 +327,13 @@ defmodule Pantagruel.Parse do
   # COMBINATORS
 
   # A single space-delimited element of a expression.
-  space = string(" ")
   expression_component = choice([nested_expression, quantifier, comprehension, symbol])
   # Some single recursive expression, consisting of a single expression
   # component, or a function application tree of expression components.
   defparsec(
     :expression,
-    choice([
-      expression_component
-      |> concat(
-        space
-        |> optional
-        |> ignore
-        |> parsec(:expression)
-      )
-      |> traverse(:parse_function_application),
-      expression_component
-    ])
+    space_join(expression_component)
+    |> traverse(:parse_function_application)
   )
 
   # A function form, treated as a value or domain.
@@ -373,6 +363,7 @@ defmodule Pantagruel.Parse do
   defp parse_function_application(_rest, [x, f], context, _line, _offset)
        when f in @binary_operators,
        do: {[x], Map.put(context, :operator, f)}
+
   # An expression like (x + x).foo should be interpreted as the
   # application of .foo on (x + x).
   defp parse_function_application(
@@ -383,9 +374,23 @@ defmodule Pantagruel.Parse do
          _offset
        ),
        do: {[appl: [f: x, x: f]], context}
+  # Parse a list of expressions, building up a function application tree
+  # from the left.
+  defp parse_function_application(_rest, expressions, context, _line, _offset) do
+    parsed =
+      Enum.reverse(expressions)
+      |> parse_function_application(nil)
 
-  defp parse_function_application(_rest, [x, f], context, _line, _offset),
-    do: {[appl: [f: f, x: x]], context}
+    {[parsed], context}
+  end
+
+  defp parse_function_application([], appl), do: appl
+  defp parse_function_application([y | rest], nil), do: parse_function_application(rest, y)
+
+  defp parse_function_application([y | rest], appl) do
+    application = {:appl, [f: appl, x: y]}
+    parse_function_application(rest, application)
+  end
 
   where = string("\n;;\n") |> replace(:where)
   # A series of one or more specification sections separated by :where,

@@ -9,7 +9,7 @@ defmodule ExpressionParserTest do
   describe "expression parsing" do
     test "parse symbol sequence" do
       text = "x y z"
-      tryexp(text, appl: [f: "x", x: {:appl, [f: "y", x: "z"]}])
+      tryexp(text, appl: [f: {:appl, [f: "x", x: "y"]}, x: "z"])
     end
 
     test "parse bunch symbol sequence" do
