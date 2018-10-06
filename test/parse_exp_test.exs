@@ -178,7 +178,7 @@ defmodule ExpressionParserTest do
 
       expected = [
         appl: [
-          f: "foo",
+          f: ".foo",
           x: "car"
         ]
       ]
@@ -191,8 +191,8 @@ defmodule ExpressionParserTest do
 
       expected = [
         appl: [
-          f: "baz",
-          x: {:appl, [f: "bar", x: "foo"]}
+          f: ".baz",
+          x: {:appl, [f: ".bar", x: "foo"]}
         ]
       ]
 
@@ -202,23 +202,15 @@ defmodule ExpressionParserTest do
     test "object access chaining with an operator" do
       text = "f foo.bar.baz > 1"
 
+      chain = {:appl, [f: ".baz", x: {:appl, [f: ".bar", x: "foo"]}]}
+      left_side = {:appl, [f: "f", x: chain]}
+      right_side = 1
+
       expected = [
         appl: [
           operator: :gt,
-          x: {
-            :appl,
-            [
-              f: "f",
-              x: {
-                :appl,
-                [
-                  f: "baz",
-                  x: {:appl, [f: "bar", x: "foo"]}
-                ]
-              }
-            ]
-          },
-          y: 1
+          x: left_side,
+          y: right_side
         ]
       ]
 

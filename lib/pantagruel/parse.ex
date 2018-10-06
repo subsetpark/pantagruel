@@ -327,11 +327,10 @@ defmodule Pantagruel.Parse do
   # COMBINATORS
 
   # A single space-delimited element of a expression.
+  space = string(" ")
   expression_component = choice([nested_expression, quantifier, comprehension, symbol])
   # Some single recursive expression, consisting of a single expression
   # component, or a function application tree of expression components.
-  space = string(" ")
-
   defparsec(
     :expression,
     join(expression_component, optional(space))
@@ -363,34 +362,46 @@ defmodule Pantagruel.Parse do
   defp parse_function_application(_rest, expressions, context, _line, _offset) do
     parsed =
       expressions
-      # Handle "foo.bar" dot-access expressions.
       |> Enum.flat_map(&split_object/1)
       |> Enum.reverse()
-      |> assoc(nil, :left)
+      |> assoc(nil)
 
     {[parsed], context}
   end
 
+  # Handle "foo.bar" dot-access expressions.
   defp split_object(v) when is_binary(v) do
-    v
-    |> String.split(".")
-    |> assoc(nil, :right)
-    |> List.wrap()
+    dot = &("." <> &1)
+    [head | tail] = String.split(v, ".", trim: true)
+
+    head =
+      case String.starts_with?(v, ".") do
+        true -> dot.(head)
+        false -> head
+      end
+
+    # Dot access binds more tightly; parse first and return as an
+    # expression.
+    [head | Enum.map(tail, dot)] |> assoc(nil) |> List.wrap()
   end
 
   defp split_object(v), do: [v]
 
-  defp assoc([], appl, _), do: appl
-  defp assoc([x | rest], nil, prec), do: assoc(rest, x, prec)
+  defp assoc([], appl), do: appl
+  defp assoc([x | rest], nil), do: assoc(rest, x)
 
-  defp assoc([x | rest], appl, :left) when x in @binary_operators,
+  defp assoc([x | rest], appl) when x in @binary_operators,
     do: handle_operator(rest, appl, x)
 
-  defp assoc([x | rest], appl, :left), do: assoc(rest, apply_f(appl, x), :left)
-  defp assoc([x | rest], appl, :right), do: assoc(rest, apply_f(x, appl), :right)
+  defp assoc([x | rest], appl) do
+    case is_binary(x) and String.starts_with?(x, ".") do
+      true -> assoc(rest, apply_f(x, appl))
+      false -> assoc(rest, apply_f(appl, x))
+    end
+  end
 
   defp handle_operator([y | rest], appl, operator),
-    do: assoc(rest, apply_f(operator, appl, y), :left)
+    do: assoc(rest, apply_f(operator, appl, y))
 
   defp apply_f(f, x), do: {:appl, [f: f, x: x]}
   defp apply_f(operator, x, y), do: {:appl, operator: operator, x: x, y: y}
