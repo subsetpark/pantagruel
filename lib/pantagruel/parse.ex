@@ -330,9 +330,11 @@ defmodule Pantagruel.Parse do
   expression_component = choice([nested_expression, quantifier, comprehension, symbol])
   # Some single recursive expression, consisting of a single expression
   # component, or a function application tree of expression components.
+  space = string(" ")
+
   defparsec(
     :expression,
-    space_join(expression_component)
+    join(expression_component, optional(space))
     |> traverse(:parse_function_application)
   )
 
@@ -356,14 +358,6 @@ defmodule Pantagruel.Parse do
     |> choice
   )
 
-  # Special-case function application to handle rearranging operators.
-  defp parse_function_application(_rest, [y, x], %{operator: operator}, _line, _offset),
-    do: {[appl: [operator: operator, x: x, y: y]], %{}}
-
-  defp parse_function_application(_rest, [x, f], context, _line, _offset)
-       when f in @binary_operators,
-       do: {[x], Map.put(context, :operator, f)}
-
   # An expression like (x + x).foo should be interpreted as the
   # application of .foo on (x + x).
   defp parse_function_application(
@@ -374,6 +368,7 @@ defmodule Pantagruel.Parse do
          _offset
        ),
        do: {[appl: [f: x, x: f]], context}
+
   # Parse a list of expressions, building up a function application tree
   # from the left.
   defp parse_function_application(_rest, expressions, context, _line, _offset) do
@@ -385,10 +380,19 @@ defmodule Pantagruel.Parse do
   end
 
   defp parse_function_application([], appl), do: appl
-  defp parse_function_application([y | rest], nil), do: parse_function_application(rest, y)
+  defp parse_function_application([x | rest], nil), do: parse_function_application(rest, x)
 
-  defp parse_function_application([y | rest], appl) do
-    application = {:appl, [f: appl, x: y]}
+  defp parse_function_application([x | rest], appl) when x in @binary_operators do
+    parse_function_application(rest, appl, x)
+  end
+
+  defp parse_function_application([x | rest], appl) do
+    application = {:appl, [f: appl, x: x]}
+    parse_function_application(rest, application)
+  end
+
+  defp parse_function_application([y | rest], appl, operator) do
+    application = {:appl, operator: operator, x: appl, y: y}
     parse_function_application(rest, application)
   end
 

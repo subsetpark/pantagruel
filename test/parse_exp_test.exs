@@ -14,12 +14,12 @@ defmodule ExpressionParserTest do
 
     test "parse bunch symbol sequence" do
       text = "(x y z)"
-      tryexp(text, bunch: [appl: [f: "x", x: {:appl, [f: "y", x: "z"]}]])
+      tryexp(text, bunch: [appl: [f: {:appl, [f: "x", x: "y"]}, x: "z"]])
     end
 
     test "parse set symbol sequence" do
       text = "{x y z}"
-      tryexp(text, set: [appl: [f: "x", x: {:appl, [f: "y", x: "z"]}]])
+      tryexp(text, set: [appl: [f: {:appl, [f: "x", x: "y"]}, x: "z"]])
     end
 
     test "parse bunched set symbol sequence" do
@@ -77,7 +77,7 @@ defmodule ExpressionParserTest do
             appl: [operator: :from, x: "y", y: "Y"],
             appl: [operator: :from, x: "z", y: "Z"]
           ],
-          appl: [operator: :times, x: "x", y: {:appl, [operator: :exp, x: "y", y: "z"]}]
+          appl: [operator: :exp, x: {:appl, [operator: :times, x: "x", y: "y"]}, y: "z"]
         ]
       ]
 
@@ -141,7 +141,7 @@ defmodule ExpressionParserTest do
     test "cardinality testing" do
       text = "#x > 3"
       text2 = "# x > 3"
-      expected = [appl: [f: :card, x: {:appl, [operator: :gt, x: "x", y: 3]}]]
+      expected = [appl: [operator: :gt, x: {:appl, [f: :card, x: "x"]}, y: 3]]
 
       tryexp(text, expected)
       tryexp(text2, expected)
