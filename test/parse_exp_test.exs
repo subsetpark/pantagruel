@@ -166,7 +166,57 @@ defmodule ExpressionParserTest do
       expected = [
         appl: [
           f: ".foo",
-          x: {:bunch, [appl: [operator: :minus, x: "x", y: 1]]},
+          x: {:bunch, [appl: [operator: :minus, x: "x", y: 1]]}
+        ]
+      ]
+
+      tryexp(text, expected)
+    end
+
+    test "object access with string splitting" do
+      text = "car.foo"
+
+      expected = [
+        appl: [
+          f: "foo",
+          x: "car"
+        ]
+      ]
+
+      tryexp(text, expected)
+    end
+
+    test "object access chaining" do
+      text = "foo.bar.baz"
+
+      expected = [
+        appl: [
+          f: "baz",
+          x: [appl: [f: "bar", x: "foo"]]
+        ]
+      ]
+
+      tryexp(text, expected)
+    end
+
+    test "object access chaining with an operator" do
+      text = "f foo.bar.baz > 1"
+
+      expected = [
+        appl: [
+          operator: :gt,
+          x: [
+            appl: [
+              f: "f",
+              x: [
+                appl: [
+                  f: "baz",
+                  x: [appl: [f: "bar", x: "foo"]]
+                ]
+              ]
+            ],
+            y: 1
+          ]
         ]
       ]
 

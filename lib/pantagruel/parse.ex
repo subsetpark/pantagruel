@@ -358,22 +358,14 @@ defmodule Pantagruel.Parse do
     |> choice
   )
 
-  # An expression like (x + x).foo should be interpreted as the
-  # application of .foo on (x + x).
-  defp parse_function_application(
-         _rest,
-         [<<?.::utf8, _::binary>> = x, f],
-         context,
-         _line,
-         _offset
-       ),
-       do: {[appl: [f: x, x: f]], context}
-
   # Parse a list of expressions, building up a function application tree
   # from the left.
   defp parse_function_application(_rest, expressions, context, _line, _offset) do
     parsed =
-      Enum.reverse(expressions)
+      expressions
+      # Handle "foo.bar" dot-access expressions.
+      |> Enum.flat_map(&String.split(&1, "."))
+      |> Enum.reverse()
       |> parse_function_application(nil)
 
     {[parsed], context}
