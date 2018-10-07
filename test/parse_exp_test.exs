@@ -7,19 +7,24 @@ defmodule ExpressionParserTest do
   end
 
   describe "expression parsing" do
+    test "parse symbol" do
+      text = "x"
+      tryexp(text, ["x"])
+    end
+
     test "parse symbol sequence" do
       text = "x y z"
-      tryexp(text, appl: [f: "x", x: {:appl, [f: "y", x: "z"]}])
+      tryexp(text, appl: [f: {:appl, [f: "x", x: "y"]}, x: "z"])
     end
 
     test "parse bunch symbol sequence" do
       text = "(x y z)"
-      tryexp(text, bunch: [appl: [f: "x", x: {:appl, [f: "y", x: "z"]}]])
+      tryexp(text, bunch: [appl: [f: {:appl, [f: "x", x: "y"]}, x: "z"]])
     end
 
     test "parse set symbol sequence" do
       text = "{x y z}"
-      tryexp(text, set: [appl: [f: "x", x: {:appl, [f: "y", x: "z"]}]])
+      tryexp(text, set: [appl: [f: {:appl, [f: "x", x: "y"]}, x: "z"]])
     end
 
     test "parse bunched set symbol sequence" do
@@ -77,7 +82,7 @@ defmodule ExpressionParserTest do
             appl: [operator: :from, x: "y", y: "Y"],
             appl: [operator: :from, x: "z", y: "Z"]
           ],
-          appl: [operator: :times, x: "x", y: {:appl, [operator: :exp, x: "y", y: "z"]}]
+          appl: [operator: :exp, x: {:appl, [operator: :times, x: "x", y: "y"]}, y: "z"]
         ]
       ]
 
@@ -141,7 +146,7 @@ defmodule ExpressionParserTest do
     test "cardinality testing" do
       text = "#x > 3"
       text2 = "# x > 3"
-      expected = [appl: [f: :card, x: {:appl, [operator: :gt, x: "x", y: 3]}]]
+      expected = [appl: [operator: :gt, x: {:appl, [f: :card, x: "x"]}, y: 3]]
 
       tryexp(text, expected)
       tryexp(text2, expected)
@@ -166,7 +171,64 @@ defmodule ExpressionParserTest do
       expected = [
         appl: [
           f: ".foo",
-          x: {:bunch, [appl: [operator: :minus, x: "x", y: 1]]},
+          x: {:bunch, [appl: [operator: :minus, x: "x", y: 1]]}
+        ]
+      ]
+
+      tryexp(text, expected)
+    end
+
+    test "object access with string splitting" do
+      text = "car.foo"
+
+      expected = [
+        appl: [
+          f: ".foo",
+          x: "car"
+        ]
+      ]
+
+      tryexp(text, expected)
+    end
+
+    test "object access chaining" do
+      text = "foo.bar.baz"
+
+      expected = [
+        appl: [
+          f: ".baz",
+          x: {:appl, [f: ".bar", x: "foo"]}
+        ]
+      ]
+
+      tryexp(text, expected)
+    end
+
+    test "object access chaining with an operator" do
+      text = "f foo.bar.baz > 1"
+
+      chain = {:appl, [f: ".baz", x: {:appl, [f: ".bar", x: "foo"]}]}
+      left_side = {:appl, [f: "f", x: chain]}
+      right_side = 1
+
+      expected = [
+        appl: [
+          operator: :gt,
+          x: left_side,
+          y: right_side
+        ]
+      ]
+
+      tryexp(text, expected)
+    end
+
+    test "function application with float" do
+      text = "f 1.0"
+
+      expected = [
+        appl: [
+          f: "f",
+          x: 1.0
         ]
       ]
 

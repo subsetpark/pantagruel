@@ -17,7 +17,7 @@ defmodule Pantagruel.MixProject do
       name: "Pantagruel",
       source_url: "https://github.com/subsetpark/pantagruel",
       docs: [
-        extras: ["README.md", "priv/a_full_specification.md"]
+        extras: ["README.md", "priv/a_full_specification.md", "priv/reference.md"]
       ]
     ]
   end

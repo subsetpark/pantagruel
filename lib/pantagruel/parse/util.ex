@@ -18,6 +18,7 @@ defmodule Pantagruel.Parse.Util do
 
   def comma_join(c), do: join(c, string(","))
   def newline_join(c), do: join(c, string("\n"))
+  def space_join(c), do: join(c, string(" "))
 
   @doc """
   Convert a list of strings to string combinators. Also accepts {string,

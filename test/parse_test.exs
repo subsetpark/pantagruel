@@ -70,7 +70,7 @@ defmodule PantagruelTest do
             expr: [
               refinement: [
                 pattern: "x",
-                expr: {:appl, [operator: :and, x: "y", y: {:appl, [operator: :gt, x: "y", y: 1]}]}
+                expr: {:appl, [operator: :gt, x: {:appl, [operator: :and, x: "y", y: "y"]}, y: 1]}
               ]
             ]
           ]
@@ -226,10 +226,36 @@ defmodule PantagruelTest do
               lambda_args: ["x"],
               lambda_doms: ["_A"],
               predicate: [
-                appl: [operator: :times, x: "x", y: {:appl, [operator: :gt, x: "y", y: 10]}]
+                appl: [operator: :gt, x: {:appl, [operator: :times, x: "x", y: "y"]}, y: 10]
               ],
               yield_type: :function,
               lambda_codomain: {:list, ["_A"]}
+            ]
+          ]
+        ]
+      )
+    end
+
+    test "heading with lambda" do
+      text = "f|x:|z:Nat|∷z|∷Bool"
+
+      tryparse(text,
+        section: [
+          head: [
+            decl: [
+              decl_ident: "f",
+              lambda_args: ["x"],
+              lambda_doms: [
+                {:lambda,
+                 [
+                   lambda_args: ["z"],
+                   lambda_doms: ["Nat"],
+                   yield_type: :function,
+                   lambda_codomain: "z"
+                 ]}
+              ],
+              yield_type: :function,
+              lambda_codomain: "Bool"
             ]
           ]
         ]
