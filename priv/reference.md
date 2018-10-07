@@ -259,7 +259,8 @@ application is strictly left-associative (there is no order of operations)
 and parsed as the successive application of procedures of one argument. In
 other words, procedures are implicitly curried: `f x y` is parsed as
 `(f(x))(y)`. If `f` is a function of two arguments, then `f x` is a
-partial application of `x` to `f`.
+partial application of `f` to `x`, resulting in a function expecting
+one argument `y`.
 
 #### Special forms
 
