@@ -400,16 +400,16 @@ defmodule Pantagruel.Parse do
 
   defp split_object(v), do: [v]
 
-  defp assoc([x | rest]), do: assoc(rest, x)
-  defp assoc([], appl), do: appl
+  defp assoc([x | rest]), do: assoc(x, rest)
+  defp assoc(appl, []), do: appl
   # Handle infix binary operators.
-  defp assoc([x, y | rest], appl) when x in @binary_operators,
-    do: assoc(rest, apply_f(x, appl, y))
+  defp assoc(appl, [x, y | rest]) when x in @binary_operators,
+    do: apply_f(x, appl, y) |> assoc(rest)
 
   # Handle postfix dot-access operator.
-  defp assoc([{:dot, x} | rest], appl), do: assoc(rest, apply_f(x, appl))
+  defp assoc(appl, [{:dot, x} | rest]), do: apply_f(x, appl) |> assoc(rest)
   # Handle normal prefix function application.
-  defp assoc([x | rest], appl), do: assoc(rest, apply_f(appl, x))
+  defp assoc(appl, [x | rest]), do: apply_f(appl, x) |> assoc(rest)
   # Create function application structures.
   defp apply_f(f, x), do: {:appl, [f: f, x: x]}
   defp apply_f(operator, x, y), do: {:appl, operator: operator, x: x, y: y}
