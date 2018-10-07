@@ -7,6 +7,11 @@ defmodule ExpressionParserTest do
   end
 
   describe "expression parsing" do
+    test "parse symbol" do
+      text = "x"
+      tryexp(text, ["x"])
+    end
+
     test "parse symbol sequence" do
       text = "x y z"
       tryexp(text, appl: [f: {:appl, [f: "x", x: "y"]}, x: "z"])

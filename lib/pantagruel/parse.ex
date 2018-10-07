@@ -24,6 +24,8 @@ defmodule Pantagruel.Parse do
   is optional.
   """
   @type t :: [section]
+  @type combinator_resp ::
+          {:ok, t(), binary(), map(), {pos_integer(), pos_integer()}, pos_integer()}
 
   # Logical operators.
   log_and = string("∧") |> replace(:and)
@@ -86,6 +88,10 @@ defmodule Pantagruel.Parse do
     |> utf8_string([?0..?9], min: 1)
     |> reduce({Enum, :join, [""]})
     |> traverse(:parse_float)
+
+  defp parse_float(_rest, [arg], context, _line, _offset) do
+    {[String.to_float(arg)], context}
+  end
 
   # Any sequence of lower cased characters, suitable for variable names
   # or atom literals.
@@ -270,6 +276,10 @@ defmodule Pantagruel.Parse do
     |> traverse(:join_comment)
     |> tag(:comment)
 
+  defp join_comment(_rest, [string, char], context, _line, _offset) do
+    {[String.trim(<<char>> <> string)], context}
+  end
+
   newline = string("\n")
   # A series of one or more function declarations or domain aliases
   # followed by 0 or more expressions which should evaluate to true if
@@ -324,19 +334,6 @@ defmodule Pantagruel.Parse do
     |> concat(parsec(:expression) |> unwrap_and_tag(:quant_expression))
     |> tag(:quantifier)
 
-  # COMBINATORS
-
-  # A single space-delimited element of a expression.
-  space = string(" ")
-  expression_component = choice([nested_expression, quantifier, comprehension, symbol])
-  # Some single recursive expression, consisting of a single expression
-  # component, or a function application tree of expression components.
-  defparsec(
-    :expression,
-    join(expression_component, optional(space))
-    |> traverse(:parse_function_application)
-  )
-
   # A function form, treated as a value or domain.
   defcombinatorp(
     :lambda,
@@ -357,6 +354,19 @@ defmodule Pantagruel.Parse do
     |> choice
   )
 
+  # PARSE COMBINATORS
+
+  # A single space-delimited element of a expression.
+  space = string(" ")
+  expression_component = choice([nested_expression, quantifier, comprehension, symbol])
+  # Some single recursive expression, consisting of a single expression
+  # component, or a function application tree of expression components.
+  defparsec(
+    :expression,
+    join(expression_component, optional(space))
+    |> traverse(:parse_function_application)
+  )
+
   # Parse a list of expressions, building up a function application tree
   # from the left.
   defp parse_function_application(_rest, expressions, context, _line, _offset) do
@@ -364,15 +374,16 @@ defmodule Pantagruel.Parse do
       expressions
       |> Enum.flat_map(&split_object/1)
       |> Enum.reverse()
-      |> assoc(nil)
+      |> assoc()
 
     {[parsed], context}
   end
 
   # Handle "foo.bar" dot-access expressions.
   defp split_object(v) when is_binary(v) do
-    dot = &("." <> &1)
     [head | tail] = String.split(v, ".", trim: true)
+
+    dot = &{:dot, "." <> &1}
 
     head =
       case String.starts_with?(v, ".") do
@@ -382,27 +393,22 @@ defmodule Pantagruel.Parse do
 
     # Dot access binds more tightly; parse first and return as an
     # expression.
-    [head | Enum.map(tail, dot)] |> assoc(nil) |> List.wrap()
+    [head | Enum.map(tail, dot)] |> assoc() |> List.wrap()
   end
 
   defp split_object(v), do: [v]
 
+  defp assoc([x | rest]), do: assoc(rest, x)
   defp assoc([], appl), do: appl
-  defp assoc([x | rest], nil), do: assoc(rest, x)
+  # Handle infix binary operators.
+  defp assoc([x, y | rest], appl) when x in @binary_operators,
+    do: assoc(rest, apply_f(x, appl, y))
 
-  defp assoc([x | rest], appl) when x in @binary_operators,
-    do: handle_operator(rest, appl, x)
-
-  defp assoc([x | rest], appl) do
-    case is_binary(x) and String.starts_with?(x, ".") do
-      true -> assoc(rest, apply_f(x, appl))
-      false -> assoc(rest, apply_f(appl, x))
-    end
-  end
-
-  defp handle_operator([y | rest], appl, operator),
-    do: assoc(rest, apply_f(operator, appl, y))
-
+  # Handle postfix dot-access operator.
+  defp assoc([{:dot, x} | rest], appl), do: assoc(rest, apply_f(x, appl))
+  # Handle normal prefix function application.
+  defp assoc([x | rest], appl), do: assoc(rest, apply_f(appl, x))
+  # Create function application structures.
   defp apply_f(f, x), do: {:appl, [f: f, x: x]}
   defp apply_f(operator, x, y), do: {:appl, operator: operator, x: x, y: y}
 
@@ -410,20 +416,11 @@ defmodule Pantagruel.Parse do
   # A series of one or more specification sections separated by :where,
   # where each subsequent section defines any variables introduced
   # in the previous section.
-  @spec program(String.t()) ::
-          {:ok, t(), binary(), map(), {pos_integer(), pos_integer()}, pos_integer()}
+  @spec program(String.t()) :: combinator_resp
   defparsec(
     :program,
     section
     |> join(where)
     |> optional
   )
-
-  defp parse_float(_rest, [arg], context, _line, _offset) do
-    {[String.to_float(arg)], context}
-  end
-
-  defp join_comment(_rest, [string, char], context, _line, _offset) do
-    {[String.trim(<<char>> <> string)], context}
-  end
 end
