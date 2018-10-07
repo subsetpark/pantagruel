@@ -27,6 +27,8 @@ defmodule Pantagruel.Parse do
   @type combinator_resp ::
           {:ok, t(), binary(), map(), {pos_integer(), pos_integer()}, pos_integer()}
 
+  newline = string("\n")
+  space = string(" ")
   # Logical operators.
   log_and = string("∧") |> replace(:and)
   log_or = string("∨") |> replace(:or)
@@ -280,7 +282,6 @@ defmodule Pantagruel.Parse do
     {[String.trim(<<char>> <> string)], context}
   end
 
-  newline = string("\n")
   # A series of one or more function declarations or domain aliases
   # followed by 0 or more expressions which should evaluate to true if
   # the specification holds.
@@ -334,6 +335,8 @@ defmodule Pantagruel.Parse do
     |> concat(parsec(:expression) |> unwrap_and_tag(:quant_expression))
     |> tag(:quantifier)
 
+  # PRIVATE COMBINATORS
+
   # A function form, treated as a value or domain.
   defcombinatorp(
     :lambda,
@@ -357,7 +360,6 @@ defmodule Pantagruel.Parse do
   # PARSE COMBINATORS
 
   # A single space-delimited element of a expression.
-  space = string(" ")
   expression_component = choice([nested_expression, quantifier, comprehension, symbol])
   # Some single recursive expression, consisting of a single expression
   # component, or a function application tree of expression components.
