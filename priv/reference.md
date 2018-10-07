@@ -129,37 +129,60 @@ for `Nat`.
 
 ### Section Bodies
 
-Section **bodies** consist of one or more **statements**. Each statement is a single line expressing either a **refinement** of a procedure or a **proposition** about a procedure.
+Section **bodies** consist of one or more **statements**. Each statement
+is a single line expressing either a **refinement** of a procedure or
+a **proposition** about a procedure.
 
-The most basic **expression** in any statement is **application**, represented by separating two values with a space, like this: `f x`.
+The most basic **expression** in any statement is **application**,
+represented by separating two values with a space, like this: `f x`.
 
 #### Refinements
 
-A refinement is any expression, followed by the refinement operator `<-`, followed by another expression. Here's an example:
+A refinement is any expression, followed by the refinement operator
+`<-`, followed by another expression. Here's an example:
 
 `f x <- x + 2`
 
-Which says that `f x` or "`f` of `x`" is *refined by* the more concrete expression `x + 2`. A more complex example might be
+Which says that `f x` or "`f` of `x`" is *refined by* the more concrete
+expression `x + 2`. A more complex example might be
 
 `f x . x > 5 <- g (x * 2)`
 
-Which says that `f` of `x` is refined by `g (x * 2)` *when `x` is greater than five*. The expression between the `.` and the `<-` is a **guard**, and performs a very similar function to predicate in a procedure declaration.
+Which says that `f` of `x` is refined by `g (x * 2)` *when `x` is
+greater than five*. The expression between the `.` and the `<-` is
+a **guard**, and performs a very similar function to predicate in a
+procedure declaration.
 
 #### Propositions
 
-A proposition is just any other expression that should evaluate to true for an implementation to be correct. Since there are no hard semantics imposed on expression evaluation, there are no syntactic constraints on propositions; any valid expression can be a proposition. `f x` by itself on a line is a synctactically valid body statement, though it might be hard to gain much insight from it as a reader.
+A proposition is just any other expression that should evaluate to true
+for an implementation to be correct. Since there are no hard semantics
+imposed on expression evaluation, there are no syntactic constraints on
+propositions; any valid expression can be a proposition. `f x` by itself
+on a line is a synctactically valid body statement, though it might be
+hard to gain much insight from it as a reader.
 
 #### Statement Logic
 
-Ordinarily, every statement in a body must be true. Thus they can be considered as a single expression by reading them with an implicit `and` between them, referring to the logical operator *∧*. At the beginning of any statement, there may be written an `and` to make this explicit, or an `or` to indicate disjunction *∨* rather than conjunction.
+Ordinarily, every statement in a body must be true. Thus they can be
+considered as a single expression by reading them with an implicit `and`
+between them, referring to the logical operator *∧*. At the beginning
+of any statement, there may be written an `and` to make this explicit,
+or an `or` to indicate disjunction *∨* rather than conjunction.
 
 ### Expressions
 
-The most common syntactic element is the expression; this is anything that should evaluate to some value. Expressions are found in the predicate of a procedure or constructor declaration, the guard and right-hand side of a refinement, and by themselves as propositions. And expressions are recursive, so a single expression is very often a compound of multiple expressions.
+The most common syntactic element is the expression; this is anything
+that should evaluate to some value. Expressions are found in the predicate
+of a procedure or constructor declaration, the guard and right-hand side
+of a refinement, and by themselves as propositions. And expressions are
+recursive, so a single expression is very often a compound of multiple
+expressions.
 
 #### Values
 
-The most basic expressions are bare values, ie, any expression which evaluates to itself.
+The most basic expressions are bare values, ie, any expression which
+evaluates to itself.
 
 ##### Integers
 
@@ -167,35 +190,45 @@ Integer values are represented as normal numbers: `1`, `1000`.
 
 ##### Floating point values
 
-Floating point values are written with at least one laeding digit and a decimal point: `2.47`, `10.0`.
+Floating point values are written with at least one laeding digit and
+a decimal point: `2.47`, `10.0`.
 
 ##### Literals
 
-Literal text values are represented with a backtick: `` `ok``, `` `error``. If the text has a space in it, it should be surrounded by backtickets: `` `arbitrarily long text value` ``.
+Literal text values are represented with a backtick: `` `ok``, ``
+`error``. If the text has a space in it, it should be surrounded by
+backtickets: `` `arbitrarily long text value` ``.
 
 ##### Operators
 
-There is a closed set of symbols that are recognized as **operators**, that are applied infix instaed of prefix, eg: `1 + 1`. `x : Y`.
+There is a closed set of symbols that are recognized as **operators**,
+that are applied infix instaed of prefix, eg: `1 + 1`. `x : Y`.
 
 ##### Symbols
 
-Symbols are identifiers to which values are bound, as in function declarations. They can contain any alphanumeric character that is not an operator.
+Symbols are identifiers to which values are bound, as in function
+declarations. They can contain any alphanumeric character that is not
+an operator.
 
 ##### Lambdas
 
-Lambdas, or anonymous functions, can be constructed with the same syntax used in procedure declaration. For instance:
+Lambdas, or anonymous functions, can be constructed with the same syntax
+used in procedure declaration. For instance:
 
-```
-map|f, x: |z:_A|::_B, _A| :: _B
-```
+``` map|f, x: |z:_A|::_B, _A| :: _B ```
 
-This declaration introduces the procedure `map`, which takes two arguments, `f` and `x`. `f` is itself a lambda that goes from `_A` to `_B`, and `x` is a `_A`. `map` returns a `_B`.
+This declaration introduces the procedure `map`, which takes two
+arguments, `f` and `x`. `f` is itself a lambda that goes from `_A` to
+`_B`, and `x` is a `_A`. `map` returns a `_B`.
 
-This also illustrates the use of *generic domains*, which are introduced with underscores.
+This also illustrates the use of *generic domains*, which are introduced
+with underscores.
 
 #### Containers
 
-There are four **containers** in Pantagruel. Containers are represented by surrounding a comma separated list of expressions by a pair of delimiters which reflects the type of container being represented.
+There are four **containers** in Pantagruel. Containers are represented by
+surrounding a comma separated list of expressions by a pair of delimiters
+which reflects the type of container being represented.
 
 - set: `{}`
 - list: `[]`
@@ -206,15 +239,30 @@ TODO: Detail containers
 
 #### Applications
 
-There are two ways to represent **procedure application** in Pantagruel. Placing any expression after any other expression separated by a single space is parsed as an application of the first to the second. So `f x` is parsed as applying `f` to `x`; similarly, `[1, 2, 3] 0` is parsed as applying `[1, 2, 3]` to `0`; which, if a list is understood as a function from the natural numbers including 0 to its contents, is a fairly straightforward way to do list indexing. The second case of application is in the case of operators, where `x + y` is parsed as applying `+` to `x` and `y`.
+There are three ways to represent **procedure application**
+in Pantagruel. Placing any expression after any other expression
+separated by a single space is parsed as an application of the first
+to the second. So `f x` is parsed as applying `f` to `x`; similarly,
+`[1, 2, 3] 0` is parsed as applying `[1, 2, 3]` to `0`; which, if a
+list is understood as a function from the natural numbers including 0 to
+its contents, is a fairly straightforward way to do list indexing.
 
-Except for operators, all procedure application is strictly right-associative (there is no order of operations) and parsed as the successive application of procedures of one argument. In other words, procedures are implicitly curried; `f x y` is parsed as the application
-TODO: I think we need to be left-associative!
+The second case of application is in the case of operators, where `x +
+y` is parsed as applying `+` to `x` and `y`.
 
-- procedure
-- operator
+The third case is the **dot-application** form: words like `foo.bar.baz`
+will be parsed as `baz(bar(foo))`, as in method/attribute access syntax
+in an object-oriented programming language.
+
+In the normal, prefix procedure application form, all procedure
+application is strictly left-associative (there is no order of operations)
+and parsed as the successive application of procedures of one argument. In
+other words, procedures are implicitly curried: `f x y` is parsed as
+`(f(x))(y)`. If `f` is a function of two arguments, then `f x` is a
+partial application of `x` to `f`.
 
 #### Special forms
 
 - comprehension
 - quantifier
+- reduction
