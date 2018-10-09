@@ -71,5 +71,17 @@ defmodule Pantagruel.FormatTest do
       assert "f «» ⇒ F\nf 1 ↔ 0" == Format.format_program(parsed)
       assert "F ⇒ F\nf «» ⇒ F" == Format.format_scopes(scopes)
     end
+
+    test "unary operator" do
+      {parsed, scopes} =
+        """
+        f||
+        f ~f
+        """
+        |> eval
+
+      assert "" == Format.format_program(parsed)
+      assert "" == Format.format_program(scopes)
+    end
   end
 end

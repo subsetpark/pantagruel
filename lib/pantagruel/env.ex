@@ -36,6 +36,7 @@ defmodule Pantagruel.Env do
     "String" => %Variable{name: "𝕊", domain: "𝕊"},
     :equals => %Variable{name: "=", domain: "ℝ"},
     :notequals => %Variable{name: "≠", domain: "ℝ"},
+    :not => %Variable{name: "¬", domain: "𝔹"},
     :gt => %Variable{name: ">", domain: "ℝ"},
     :lt => %Variable{name: "<", domain: "ℝ"},
     :gte => %Variable{name: "≥", domain: "ℝ"},

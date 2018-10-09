@@ -124,7 +124,7 @@ defmodule Pantagruel.Scan do
   defp consolidate_whitespace(<<c::utf8, contents::binary>>, rest),
     do: consolidate_whitespace(contents, <<c::utf8, rest::binary>>)
 
-  @operators [?→, ?∃, ?∀, ?∧, ?∨, ?∀, ?∈, ?¬, ?!, ?`, ?←, ?⸳, ?⇒, ?∷, ?↔]
+  @operators [?→, ?∃, ?∀, ?∧, ?∨, ?∀, ?∈, ?!, ?`, ?←, ?⸳, ?⇒, ?∷, ?↔]
   defguard is_operator(c)
            when c in ?(..?- or c in ?:..?= or c in ?[..?^ or c in ?{..?~ or c in @operators
 

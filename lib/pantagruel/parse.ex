@@ -48,7 +48,7 @@ defmodule Pantagruel.Parse do
           {":", :in},
           # Denotes membership in a concrete set.
           {"∈", :from},
-          {"¬", :not},
+          {"~", :not},
           {"↔", :iff},
           {"→", :then},
           {"+", :plus},
@@ -58,7 +58,7 @@ defmodule Pantagruel.Parse do
           {"^", :exp},
           {"#", :card},
           {"\\", :insert},
-          {"⊕", :xor},
+          {"⊕", :xor}
         ])
     ])
 
@@ -82,6 +82,11 @@ defmodule Pantagruel.Parse do
     :exp,
     :insert,
     :xor
+  ]
+
+  @unary_operators [
+    :not,
+    :card
   ]
 
   refinement = string("←") |> replace(:refined)
