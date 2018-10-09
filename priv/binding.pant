@@ -1,10 +1,10 @@
 eval |p: Program| :: Bool
-"Section" => Program
+[Section] => Program
 ; A section head must have at least one statement; a section body can be empty.
 section |head, body: Head, Body . #head > 0 | => Section
-"Comment, Declaration, Alias" => Head
-"Comment, Expression" => Body
-"String" => Comment, Declaration, Alias, Expression
+[Comment, Declaration, Alias] => Head
+[Comment, Expression] => Body
+[String] => Comment, Declaration, Alias, Expression
 
 eval p <- all sect from p . (is_bound? sect)
 
@@ -28,6 +28,6 @@ is_bound sym <- sym from (env p) (p sect) or sym from init_scope
 
 ;;
 
-env |p: Program| :: "Scope"
+env |p: Program| :: [Scope]
 init_scope|| :: Scope
 {String} => Scope

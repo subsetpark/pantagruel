@@ -28,8 +28,7 @@ defmodule Pantagruel.Scan do
   """
   def comment_continuation, do: <<0xE0B0::utf8>>
 
-  @delimiters [?\n, ?\s, ?(, ?), ?[, ?], ?{, ?}, ?"]
-  # Unbreak syntax "
+  @delimiters [?\n, ?\s, ?(, ?), ?[, ?], ?{, ?}]
   defguard are_delimiters(l, r) when l in @delimiters and r in @delimiters
 
   defp replace_chars(<<>>, acc, _), do: String.reverse(acc)

@@ -33,8 +33,8 @@ defmodule ExpressionParserTest do
     end
 
     test "parse string followed by integer" do
-      text = ~s("D" 10)
-      tryexp(text, [{:appl, [f: {:string, ["D"]}, x: 10]}])
+      text = ~s({D} 10)
+      tryexp(text, [{:appl, [f: {:set, ["D"]}, x: 10]}])
     end
 
     test "comprehension parsing" do
@@ -106,11 +106,6 @@ defmodule ExpressionParserTest do
     test "empty set" do
       text = "{}"
       tryexp(text, set: [])
-    end
-
-    test "empty string" do
-      text = "\"\""
-      tryexp(text, string: [])
     end
 
     test "literal" do

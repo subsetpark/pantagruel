@@ -48,8 +48,7 @@ defmodule Pantagruel.Parse.Util do
       for {l, r, name} <- [
             {"(", ")", :bunch},
             {"[", "]", :list},
-            {"{", "}", :set},
-            {"\"", "\"", :string}
+            {"{", "}", :set}
           ],
           do:
             ignore(string(l))
