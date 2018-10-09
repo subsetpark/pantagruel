@@ -47,7 +47,7 @@ defmodule Pantagruel.Env do
     :exp => %Variable{name: "^", domain: "ℝ"},
     :in => %Variable{name: ":", domain: "⊤"},
     :from => %Variable{name: "∈", domain: "⊤"},
-    :iff => %Variable{name: "⇔", domain: "𝔹"},
+    :iff => %Variable{name: "↔", domain: "𝔹"},
     :then => %Variable{name: "→", domain: "𝔹"},
     :and => %Variable{name: "∧", domain: "𝔹"},
     :or => %Variable{name: "∨", domain: "𝔹"},
@@ -60,7 +60,7 @@ defmodule Pantagruel.Env do
   Introduce a new variable into this scope.
   """
   @spec bind(scope, any(), any()) :: scope
-  def bind(scope, {:bunch, elements}, value) do
+  def bind(scope, {:par, elements}, value) do
     Enum.reduce(elements, scope, &bind(&2, &1, value))
   end
 

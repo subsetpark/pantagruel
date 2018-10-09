@@ -190,7 +190,7 @@ Integer values are represented as normal numbers: `1`, `1000`.
 
 ##### Floating point values
 
-Floating point values are written with at least one laeding digit and
+Floating point values are written with at least one leading digit and
 a decimal point: `2.47`, `10.0`.
 
 ##### Literals
@@ -226,16 +226,12 @@ with underscores.
 
 #### Containers
 
-There are four **containers** in Pantagruel. Containers are represented by
+There are two **containers** in Pantagruel. Containers are represented by
 surrounding a comma separated list of expressions by a pair of delimiters
 which reflects the type of container being represented.
 
 - set: `{}`
 - list: `[]`
-- string: `""`
-- bunch: `()`
-
-TODO: Detail containers
 
 #### Applications
 

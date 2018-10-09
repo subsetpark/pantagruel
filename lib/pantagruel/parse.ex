@@ -38,7 +38,7 @@ defmodule Pantagruel.Parse do
       log_and,
       log_or
       | strings([
-          {"==", :equals},
+          {"=", :equals},
           {"!=", :notequals},
           {">=", :gte},
           {"<=", :lte},
@@ -49,14 +49,16 @@ defmodule Pantagruel.Parse do
           # Denotes membership in a concrete set.
           {"∈", :from},
           {"¬", :not},
-          {"=", :iff},
+          {"↔", :iff},
           {"→", :then},
           {"+", :plus},
           {"-", :minus},
           {"*", :times},
           {"/", :divides},
           {"^", :exp},
-          {"#", :card}
+          {"#", :card},
+          {"\\", :insert},
+          {"⊕", :xor},
         ])
     ])
 
@@ -77,7 +79,9 @@ defmodule Pantagruel.Parse do
     :minus,
     :times,
     :divides,
-    :exp
+    :exp,
+    :insert,
+    :xor
   ]
 
   refinement = string("←") |> replace(:refined)

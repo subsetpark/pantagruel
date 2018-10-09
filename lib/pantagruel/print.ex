@@ -85,9 +85,8 @@ defmodule Pantagruel.Format do
   def format_exp({c, exps}, s) when is_container(c) do
     {l, r} =
       case c do
-        :bunch -> {"(", ")"}
+        :par -> {"(", ")"}
         :list -> {"[", "]"}
-        :string -> {"\"", "\""}
         :set -> {"{", "}"}
       end
 
