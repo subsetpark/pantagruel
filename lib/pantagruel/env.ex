@@ -36,6 +36,7 @@ defmodule Pantagruel.Env do
     "String" => %Variable{name: "𝕊", domain: "𝕊"},
     :equals => %Variable{name: "=", domain: "ℝ"},
     :notequals => %Variable{name: "≠", domain: "ℝ"},
+    :not => %Variable{name: "¬", domain: "𝔹"},
     :gt => %Variable{name: ">", domain: "ℝ"},
     :lt => %Variable{name: "<", domain: "ℝ"},
     :gte => %Variable{name: "≥", domain: "ℝ"},
@@ -47,7 +48,7 @@ defmodule Pantagruel.Env do
     :exp => %Variable{name: "^", domain: "ℝ"},
     :in => %Variable{name: ":", domain: "⊤"},
     :from => %Variable{name: "∈", domain: "⊤"},
-    :iff => %Variable{name: "⇔", domain: "𝔹"},
+    :iff => %Variable{name: "↔", domain: "𝔹"},
     :then => %Variable{name: "→", domain: "𝔹"},
     :and => %Variable{name: "∧", domain: "𝔹"},
     :or => %Variable{name: "∨", domain: "𝔹"},
@@ -60,7 +61,7 @@ defmodule Pantagruel.Env do
   Introduce a new variable into this scope.
   """
   @spec bind(scope, any(), any()) :: scope
-  def bind(scope, {:bunch, elements}, value) do
+  def bind(scope, {:par, elements}, value) do
     Enum.reduce(elements, scope, &bind(&2, &1, value))
   end
 
@@ -171,6 +172,9 @@ defmodule Pantagruel.Env do
 
   def is_bound?({:appl, operator: _, x: x, y: y}, scopes),
     do: is_bound?(x, scopes) && is_bound?(y, scopes)
+
+  def is_bound?({:appl, operator: _, x: x}, scopes),
+    do: is_bound?(x, scopes)
 
   def is_bound?(variable, [scope | parent] = scopes) do
     f = &(has_key?(scope, &1) or is_bound?(&1, parent))

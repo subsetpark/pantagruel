@@ -38,7 +38,7 @@ defmodule Pantagruel.Parse do
       log_and,
       log_or
       | strings([
-          {"==", :equals},
+          {"=", :equals},
           {"!=", :notequals},
           {">=", :gte},
           {"<=", :lte},
@@ -48,15 +48,17 @@ defmodule Pantagruel.Parse do
           {":", :in},
           # Denotes membership in a concrete set.
           {"∈", :from},
-          {"¬", :not},
-          {"=", :iff},
+          {"~", :not},
+          {"↔", :iff},
           {"→", :then},
           {"+", :plus},
           {"-", :minus},
           {"*", :times},
           {"/", :divides},
           {"^", :exp},
-          {"#", :card}
+          {"#", :card},
+          {"\\", :insert},
+          {"⊕", :xor}
         ])
     ])
 
@@ -77,7 +79,14 @@ defmodule Pantagruel.Parse do
     :minus,
     :times,
     :divides,
-    :exp
+    :exp,
+    :insert,
+    :xor
+  ]
+
+  @unary_operators [
+    :not,
+    :card
   ]
 
   refinement = string("←") |> replace(:refined)
@@ -376,7 +385,7 @@ defmodule Pantagruel.Parse do
       expressions
       |> Enum.flat_map(&split_object/1)
       |> Enum.reverse()
-      |> assoc()
+      |> Enum.reduce(&assoc/2)
 
     {[parsed], context}
   end
@@ -395,23 +404,24 @@ defmodule Pantagruel.Parse do
 
     # Dot access binds more tightly; parse first and return as an
     # expression.
-    [head | Enum.map(tail, dot)] |> assoc() |> List.wrap()
+    [head | Enum.map(tail, dot)] |> Enum.reduce(&assoc/2) |> List.wrap()
   end
 
   defp split_object(v), do: [v]
 
-  defp assoc([x | rest]), do: assoc(x, rest)
-  defp assoc(appl, []), do: appl
   # Handle infix binary operators.
-  defp assoc(appl, [x, y | rest]) when x in @binary_operators,
-    do: apply_f(x, appl, y) |> assoc(rest)
-
+  defp assoc(x, [appl, binary_operator: op]), do: apply_f(op, appl, x)
+  defp assoc(x, appl) when x in @binary_operators, do: [appl, binary_operator: x]
+  # Handle prefix unary operators.
+  defp assoc(x, appl) when appl in @unary_operators, do: apply_f(appl, x, nil)
   # Handle postfix dot-access operator.
-  defp assoc(appl, [{:dot, x} | rest]), do: apply_f(x, appl) |> assoc(rest)
+  defp assoc({:dot, x}, appl), do: apply_f(x, appl)
   # Handle normal prefix function application.
-  defp assoc(appl, [x | rest]), do: apply_f(appl, x) |> assoc(rest)
+  defp assoc(x, appl), do: apply_f(appl, x)
+
   # Create function application structures.
   defp apply_f(f, x), do: {:appl, [f: f, x: x]}
+  defp apply_f(operator, x, nil), do: {:appl, operator: operator, x: x}
   defp apply_f(operator, x, y), do: {:appl, operator: operator, x: x, y: y}
 
   where = string("\n;;\n") |> replace(:where)

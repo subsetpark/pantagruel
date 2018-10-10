@@ -64,12 +64,24 @@ defmodule Pantagruel.FormatTest do
       {parsed, scopes} =
         """
         f|| => F
-        f 1 = 0
+        f 1 <-> 0
         """
         |> eval
 
-      assert "f «» ⇒ F\nf 1 ⇔ 0" == Format.format_program(parsed)
+      assert "f «» ⇒ F\nf 1 ↔ 0" == Format.format_program(parsed)
       assert "F ⇒ F\nf «» ⇒ F" == Format.format_scopes(scopes)
+    end
+
+    test "unary operator" do
+      {parsed, scopes} =
+        """
+        f||
+        ~f
+        """
+        |> eval
+
+      assert "f «»\n¬f" == Format.format_program(parsed)
+      assert "f «»" == Format.format_scopes(scopes)
     end
   end
 end

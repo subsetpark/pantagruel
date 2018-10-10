@@ -79,24 +79,11 @@ defmodule Pantagruel.Eval do
 
   # Include symbols in a set of values to check for binding.
   @spec include_for_binding_check(MapSet.t(), any) :: MapSet.t()
-  defp include_for_binding_check(unbounds, {e, contents}) when is_container(e) do
-    include_for_binding_check(unbounds, contents)
-  end
-
-  defp include_for_binding_check(unbounds, {:appl, [operator: _, x: x, y: y]}) do
-    unbounds
-    |> include_for_binding_check(x)
-    |> include_for_binding_check(y)
-  end
-
-  defp include_for_binding_check(unbounds, {:appl, [f: f, x: x]}) do
-    unbounds
-    |> include_for_binding_check(f)
-    |> include_for_binding_check(x)
-  end
+  defp include_for_binding_check(unbounds, {e, contents}) when is_container(e),
+    do: include_for_binding_check(unbounds, contents)
 
   defp include_for_binding_check(unbounds, variables),
-    do: MapSet.union(unbounds, MapSet.new(variables))
+    do: MapSet.union(unbounds, variables |> MapSet.new())
 
   # Evaluate the statement types ("declarations") found in section
   # headers. Header statements come in three forms:
@@ -122,7 +109,7 @@ defmodule Pantagruel.Eval do
         declaration[:lambda_codomain] || 0
         | List.flatten(declaration[:predicate] || [])
       ]
-      |> Stream.concat(declaration[:lambda_doms] || [])
+      |> Enum.concat(declaration[:lambda_doms] || [])
 
     header_unbounds = include_for_binding_check(header_unbounds, symbols)
 

@@ -85,9 +85,8 @@ defmodule Pantagruel.Format do
   def format_exp({c, exps}, s) when is_container(c) do
     {l, r} =
       case c do
-        :bunch -> {"(", ")"}
+        :par -> {"(", ")"}
         :list -> {"[", "]"}
-        :string -> {"\"", "\""}
         :set -> {"{", "}"}
       end
 
@@ -142,6 +141,10 @@ defmodule Pantagruel.Format do
 
   def format_exp({:appl, operator: op, x: x, y: y}, s) do
     "#{format_exp(x, s)} #{format_exp(op, s)} #{format_exp(y, s)}"
+  end
+
+  def format_exp({:appl, operator: op, x: x}, s) do
+    "#{format_exp(op, s)}#{format_exp(x, s)}"
   end
 
   def format_exp({:appl, f: f, x: x}, s) do

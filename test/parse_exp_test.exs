@@ -6,7 +6,7 @@ defmodule ExpressionParserTest do
     assert r == exp
   end
 
-  describe "expression parsing" do
+  describe "applications" do
     test "parse symbol" do
       text = "x"
       tryexp(text, ["x"])
@@ -17,9 +17,9 @@ defmodule ExpressionParserTest do
       tryexp(text, appl: [f: {:appl, [f: "x", x: "y"]}, x: "z"])
     end
 
-    test "parse bunch symbol sequence" do
+    test "parse par symbol sequence" do
       text = "(x y z)"
-      tryexp(text, bunch: [appl: [f: {:appl, [f: "x", x: "y"]}, x: "z"]])
+      tryexp(text, par: [appl: [f: {:appl, [f: "x", x: "y"]}, x: "z"]])
     end
 
     test "parse set symbol sequence" do
@@ -27,16 +27,51 @@ defmodule ExpressionParserTest do
       tryexp(text, set: [appl: [f: {:appl, [f: "x", x: "y"]}, x: "z"]])
     end
 
-    test "parse bunched set symbol sequence" do
+    test "parse bracketed set symbol sequence" do
       text = "(x,{y z})"
-      tryexp(text, bunch: ["x", set: [{:appl, [f: "y", x: "z"]}]])
+      tryexp(text, par: ["x", set: [{:appl, [f: "y", x: "z"]}]])
     end
 
     test "parse string followed by integer" do
-      text = ~s("D" 10)
-      tryexp(text, [{:appl, [f: {:string, ["D"]}, x: 10]}])
+      text = ~s({D} 10)
+      tryexp(text, [{:appl, [f: {:set, ["D"]}, x: 10]}])
     end
 
+    test "function application with float" do
+      text = "f 1.0"
+
+      expected = [
+        appl: [
+          f: "f",
+          x: 1.0
+        ]
+      ]
+
+      tryexp(text, expected)
+    end
+
+    test "insert operator" do
+      text = "+\\[1,2,3]=6"
+
+      expected = [
+        appl: [
+          operator: :equals,
+          x:
+            {:appl,
+             [
+               operator: :insert,
+               x: :plus,
+               y: {:list, [1, 2, 3]}
+             ]},
+          y: 6
+        ]
+      ]
+
+      tryexp(text, expected)
+    end
+  end
+
+  describe "comprehensions" do
     test "comprehension parsing" do
       text = "{x∈X⸳x * 2}"
 
@@ -102,15 +137,12 @@ defmodule ExpressionParserTest do
         ]
       )
     end
+  end
 
+  describe "values" do
     test "empty set" do
       text = "{}"
       tryexp(text, set: [])
-    end
-
-    test "empty string" do
-      text = "\"\""
-      tryexp(text, string: [])
     end
 
     test "literal" do
@@ -143,10 +175,16 @@ defmodule ExpressionParserTest do
       tryexp(text, [{:appl, [operator: :from, x: "x", y: "X"]}])
     end
 
+    test "unary operator" do
+      text = "#x"
+      expected = [appl: [operator: :card, x: "x"]]
+      tryexp(text, expected)
+    end
+
     test "cardinality testing" do
       text = "#x > 3"
       text2 = "# x > 3"
-      expected = [appl: [operator: :gt, x: {:appl, [f: :card, x: "x"]}, y: 3]]
+      expected = [appl: [operator: :gt, x: {:appl, [operator: :card, x: "x"]}, y: 3]]
 
       tryexp(text, expected)
       tryexp(text2, expected)
@@ -158,33 +196,29 @@ defmodule ExpressionParserTest do
       expected = [
         lambda: [
           lambda_args: ["x"],
-          lambda_doms: [bunch: ["Y", "Z"]]
+          lambda_doms: [par: ["Y", "Z"]]
         ]
       ]
 
       tryexp(text, expected)
     end
 
-    test "object access is treated as special case of function application" do
-      text = "(x - 1).foo"
-
-      expected = [
-        appl: [
-          f: ".foo",
-          x: {:bunch, [appl: [operator: :minus, x: "x", y: 1]]}
-        ]
-      ]
+    test "insert" do
+      text = "\\"
+      expected = [:insert]
 
       tryexp(text, expected)
     end
+  end
 
+  describe "objects" do
     test "object access with string splitting" do
-      text = "car.foo"
+      text = "obj.foo"
 
       expected = [
         appl: [
           f: ".foo",
-          x: "car"
+          x: "obj"
         ]
       ]
 
@@ -222,13 +256,13 @@ defmodule ExpressionParserTest do
       tryexp(text, expected)
     end
 
-    test "function application with float" do
-      text = "f 1.0"
+    test "object access is treated as special case of function application" do
+      text = "(x - 1).foo"
 
       expected = [
         appl: [
-          f: "f",
-          x: 1.0
+          f: ".foo",
+          x: {:par, [appl: [operator: :minus, x: "x", y: 1]]}
         ]
       ]
 

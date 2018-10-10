@@ -1,5 +1,5 @@
 defmodule Pantagruel.Guards do
-  defguard is_container(c) when c in [:bunch, :list, :string, :set]
+  defguard is_container(c) when c in [:par, :list, :set]
 end
 
 defmodule Pantagruel do
