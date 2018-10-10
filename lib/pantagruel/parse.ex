@@ -368,13 +368,13 @@ defmodule Pantagruel.Parse do
 
   # PARSE COMBINATORS
 
-  # A single space-delimited element of a expression.
-  expression_component = choice([nested_expression, quantifier, comprehension, symbol])
   # Some single recursive expression, consisting of a single expression
   # component, or a function application tree of expression components.
   defparsec(
     :expression,
-    join(expression_component, optional(space))
+    [nested_expression, quantifier, comprehension, symbol]
+    |> choice()
+    |> join(space |> optional)
     |> traverse(:parse_function_application)
   )
 
