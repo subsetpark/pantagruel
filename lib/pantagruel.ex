@@ -7,7 +7,7 @@ defmodule Pantagruel do
   import Pantagruel.Format
 
   alias Pantagruel.{Scan, Parse, Eval}
-  alias Pantagruel.Env.{UnboundVariablesError, SymbolExtractionError}
+  alias Pantagruel.Env.UnboundVariablesError
 
   @moduledoc """
   An interpreter for the Pantagruel language.
@@ -52,7 +52,6 @@ defmodule Pantagruel do
               |> puts
             rescue
               e in UnboundVariablesError -> handle_unbound_variables(e, parsed)
-              e in SymbolExtractionError -> handle_bad_bindings(e, parsed)
             end
 
           {:ok, parsed, rest, _, {row, col}, _} ->
@@ -77,14 +76,28 @@ defmodule Pantagruel do
   defp handle_unbound_variables(e, parsed) do
     puts("Eval error.\n\nUnbound variables:")
     Enum.each(e.unbound, &puts("- #{format_exp(&1, e.scopes)}"))
+
+    e.unbound
+    |> Enum.filter(&({:quantifier, _} = &1))
+    |> case do
+      [] ->
+        :ok
+
+      quantifiers ->
+        quantifiers
+        |> Enum.each(&handle_bad_bindings/1)
+    end
+
     format_program(parsed) |> puts
   end
 
-  defp handle_bad_bindings(e, parsed) do
-    expr =
-      {:quantifier, quant_operator: "…", quant_bindings: e.bindings, quant_expression: e.expr}
+  defp handle_bad_bindings(
+         {:quantifier, quant_operator: _, quant_bindings: bindings, quant_expression: expr}
+       ) do
+    expr = {:quantifier, quant_operator: "…", quant_bindings: bindings, quant_expression: expr}
 
-    puts(~s(Syntax error.\n\nExpected binding form. Found: "#{format_exp(expr, [])}"))
-    format_program(parsed) |> puts()
+    puts(
+      "Expected binding form. Found: \"#{format_exp(expr, [])}\"\nDid you forget to wrap your symbols in ()?"
+    )
   end
 end

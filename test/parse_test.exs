@@ -284,6 +284,31 @@ defmodule PantagruelTest do
         ]
       )
     end
+
+    test "comprehension aliasing" do
+      text = "{n:Nat,n<=30⸳n}⇒Day"
+
+      tryparse(text,
+        section: [
+          head: [
+            alias: [
+              alias_expr:
+                {:comprehension,
+                 [
+                   set: [
+                     [
+                       appl: [operator: :in, x: "n", y: "Nat"],
+                       appl: [operator: :lte, x: "n", y: 30]
+                     ],
+                     "n"
+                   ]
+                 ]},
+              alias_name: ["Day"]
+            ]
+          ]
+        ]
+      )
+    end
   end
 
   describe "program structure" do

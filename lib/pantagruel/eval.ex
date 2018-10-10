@@ -95,7 +95,7 @@ defmodule Pantagruel.Eval do
          {[scope | scopes], header_unbounds, unbounds}
        ) do
     scope = Enum.reduce(alias_names, scope, &Domain.bind(&2, &1, alias_exp))
-    header_unbounds = include_for_binding_check(header_unbounds, alias_exp)
+    header_unbounds = include_for_binding_check(header_unbounds, [alias_exp])
     {[scope | scopes], header_unbounds, unbounds}
   end
 

@@ -126,6 +126,10 @@ defmodule ExpressionParserTest do
       )
     end
 
+    test "comprehension with in and constraint testing" do
+
+    end
+
     test "exists quantifier parsing" do
       text = "∃x:X⸳x>1"
 

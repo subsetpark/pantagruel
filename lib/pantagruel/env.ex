@@ -19,10 +19,6 @@ defmodule Pantagruel.Env do
     defexception message: "Unbound variables remain", unbound: MapSet.new(), scopes: []
   end
 
-  defmodule SymbolExtractionError do
-    defexception message: "Expected binding expression form", expr: nil, bindings: nil, scopes: []
-  end
-
   defmodule UndefinedAtomError do
     defexception message: "Received atom without string representation", atom: nil
   end
@@ -198,47 +194,44 @@ defmodule Pantagruel.Env do
   # Process some temporary bindings and check for boundness, without
   # those bindings being valid outside of this context.
   defp check_with_bindings(expr, bindings, scopes) do
-    case extract_bindings(bindings) do
-      {:ok, bindings} ->
-        # Bind the extracted symbols.
-        inner_scope = Enum.reduce(bindings, %{}, &bind(&2, &1))
-        scopes = [inner_scope | scopes]
+    {binding_pairs, variable_references} = extract_bindings(bindings)
+    # Bind the extracted symbols.
+    inner_scope =
+      binding_pairs
+      |> Enum.reduce(%{}, &bind(&2, &1))
 
-        for({_, domain} <- bindings, do: domain)
-        # Check the extract domains, as well as the expression itself.
-        |> Enum.all?(&is_bound?(&1, scopes)) && is_bound?(expr, scopes)
+    scopes = [inner_scope | scopes]
 
-      {:error, :malformed_bindings} ->
-        raise SymbolExtractionError, expr: expr, bindings: bindings, scopes: scopes
-    end
+    # Check the extract domains, as well as the expression itself.
+    for({_, d} <- binding_pairs, do: d)
+    |> Enum.concat(variable_references)
+    |> Enum.all?(&is_bound?(&1, scopes)) && is_bound?(expr, scopes)
   end
 
   # Extract {symbol, domain} tuples from a list of binding expressions.
   defp extract_bindings(bindings) do
-    try do
-      bindings =
-        for b <- bindings do
-          {extract_binding_symbol(b), extract_binding_domain(b)}
-        end
-
-      {:ok, bindings}
-    rescue
-      # Raise if we've encountered an AST that we can't parse as a
-      # binding expression.
-      FunctionClauseError -> {:error, :malformed_bindings}
-    end
+    bindings
+    |> Enum.reduce({[], []}, &extract_binding_symbols/2)
   end
 
   # Given a binding pattern, return the symbol being bound.
-  defp extract_binding_symbol({:appl, [operator: op, x: x, y: _]}) when op in [:from, :in], do: x
-
-  # Given a binding pattern, return the domain being bound from.
-  defp extract_binding_domain({:appl, [operator: op, x: _, y: dom]}) do
-    cond do
-      op in [:from, :in] -> dom
-      true -> extract_binding_domain(dom)
-    end
+  defp extract_binding_symbols(
+         {:appl, [operator: op, x: x, y: y]},
+         {binding_pairs, symbol_references}
+       )
+       when op in [:from, :in] do
+    {unbunch(x, y) ++ binding_pairs, symbol_references}
   end
+
+  defp extract_binding_symbols(sym, {pairs, symbol_references}) do
+    {pairs, [sym | symbol_references]}
+  end
+
+  defp unbunch({:par, elements}, domain) do
+    for e <- elements, do: {e, domain}
+  end
+
+  defp unbunch(x, y), do: [{x, y}]
 
   defp has_key?(scope, variable),
     do: Map.has_key?(@starting_environment, variable) or Map.has_key?(scope, variable)
