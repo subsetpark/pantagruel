@@ -383,7 +383,7 @@ defmodule Pantagruel.Parse do
   defp parse_function_application(_rest, expressions, context, _line, _offset) do
     parsed =
       expressions
-      |> Enum.flat_map(&split_object/1)
+      |> Enum.flat_map(&parse_dot_chain/1)
       |> Enum.reverse()
       |> Enum.reduce(&assoc/2)
 
@@ -391,7 +391,7 @@ defmodule Pantagruel.Parse do
   end
 
   # Handle "foo.bar" dot-access expressions.
-  defp split_object(v) when is_binary(v) do
+  defp parse_dot_chain(v) when is_binary(v) do
     [head | tail] = String.split(v, ".", trim: true)
 
     dot = &{:dot, "." <> &1}
@@ -407,7 +407,7 @@ defmodule Pantagruel.Parse do
     [head | Enum.map(tail, dot)] |> Enum.reduce(&assoc/2) |> List.wrap()
   end
 
-  defp split_object(v), do: [v]
+  defp parse_dot_chain(v), do: [v]
 
   # Handle infix binary operators.
   defp assoc(x, [appl, binary_operator: op]), do: apply_f(op, appl, x)
