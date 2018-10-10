@@ -45,7 +45,7 @@ defmodule Pantagruel.MixProject do
   end
 
   defp escript_config do
-    [main_module: Pantagruel]
+    [main_module: Pantagruel, name: :pant]
   end
 
   defp package do

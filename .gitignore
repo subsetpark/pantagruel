@@ -23,6 +23,6 @@ erl_crash.dump
 pantagruel-*.tar
 
 # Ignore escript
-/pantagruel
+/pant
 
 .elixir_ls
