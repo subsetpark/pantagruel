@@ -76,12 +76,12 @@ defmodule Pantagruel.FormatTest do
       {parsed, scopes} =
         """
         f||
-        f ~f
+        ~f
         """
         |> eval
 
-      assert "" == Format.format_program(parsed)
-      assert "" == Format.format_program(scopes)
+      assert "f «»\n¬f" == Format.format_program(parsed)
+      assert "f «»" == Format.format_scopes(scopes)
     end
   end
 end

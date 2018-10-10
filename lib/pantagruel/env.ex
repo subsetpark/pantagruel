@@ -173,6 +173,9 @@ defmodule Pantagruel.Env do
   def is_bound?({:appl, operator: _, x: x, y: y}, scopes),
     do: is_bound?(x, scopes) && is_bound?(y, scopes)
 
+  def is_bound?({:appl, operator: _, x: x}, scopes),
+    do: is_bound?(x, scopes)
+
   def is_bound?(variable, [scope | parent] = scopes) do
     f = &(has_key?(scope, &1) or is_bound?(&1, parent))
 

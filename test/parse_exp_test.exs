@@ -175,10 +175,16 @@ defmodule ExpressionParserTest do
       tryexp(text, [{:appl, [operator: :from, x: "x", y: "X"]}])
     end
 
+    test "unary operator" do
+      text = "#x"
+      expected = [appl: [operator: :card, x: "x"]]
+      tryexp(text, expected)
+    end
+
     test "cardinality testing" do
       text = "#x > 3"
       text2 = "# x > 3"
-      expected = [appl: [operator: :gt, x: {:appl, [f: :card, x: "x"]}, y: 3]]
+      expected = [appl: [operator: :gt, x: {:appl, [operator: :card, x: "x"]}, y: 3]]
 
       tryexp(text, expected)
       tryexp(text2, expected)
@@ -207,12 +213,12 @@ defmodule ExpressionParserTest do
 
   describe "objects" do
     test "object access with string splitting" do
-      text = "car.foo"
+      text = "obj.foo"
 
       expected = [
         appl: [
           f: ".foo",
-          x: "car"
+          x: "obj"
         ]
       ]
 

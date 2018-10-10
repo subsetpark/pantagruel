@@ -143,6 +143,10 @@ defmodule Pantagruel.Format do
     "#{format_exp(x, s)} #{format_exp(op, s)} #{format_exp(y, s)}"
   end
 
+  def format_exp({:appl, operator: op, x: x}, s) do
+    "#{format_exp(op, s)}#{format_exp(x, s)}"
+  end
+
   def format_exp({:appl, f: f, x: x}, s) do
     "#{format_exp(f, s)} #{format_exp(x, s)}"
   end
