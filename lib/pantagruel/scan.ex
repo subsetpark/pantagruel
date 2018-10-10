@@ -26,13 +26,12 @@ defmodule Pantagruel.Scan.Macros do
              out,
              false
            )
-           when are_delimiters(l, r),
-           do:
-             replace_chars(
-               <<r::utf8, contents::binary>>,
-               <<unquote(replace)::utf8, l::utf8, out::binary>>,
-               false
-             )
+           when are_delimiters(l, r) do
+        contents = <<r::utf8, contents::binary>>
+        acc = <<unquote(replace)::utf8, l::utf8, out::binary>>
+
+        replace_chars(contents, acc, false)
+      end
     end
   end
 end
