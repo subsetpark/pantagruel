@@ -4,7 +4,7 @@ defmodule Pantagruel.MixProject do
   def project do
     [
       app: :pantagruel,
-      version: "0.0.4",
+      version: "0.0.5",
       elixir: "~> 1.7",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
