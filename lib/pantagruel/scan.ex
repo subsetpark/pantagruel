@@ -70,18 +70,15 @@ defmodule Pantagruel.Scan do
 
   defp replace_chars(<<>>, acc, _), do: String.reverse(acc)
 
-  ## Special-case ';;' from triggering comments.
-  defreplace(";;", ";;")
-
   # Comment continuation.
-  defp replace_chars(<<"\n;"::utf8, c::utf8, contents::binary>>, out, true) when c != ?; do
+  defp replace_chars(<<"\n\""::utf8, c::utf8, contents::binary>>, out, true) when c != ?" do
     out = <<c::utf8>> <> comment_continuation() <> <<out::binary>>
     replace_chars(contents, out, true)
   end
 
   # Start a new comment; insert a newline and turn on comment mode.
-  defp replace_chars(<<";"::utf8, contents::binary>>, out, false),
-    do: replace_chars(contents, <<";\n"::utf8, out::binary>>, true)
+  defp replace_chars(<<"\""::utf8, contents::binary>>, out, false),
+    do: replace_chars(contents, <<"\"\n"::utf8, out::binary>>, true)
 
   defreplace("...\n", ?\s)
   defreplace("<->", "↔")
@@ -129,8 +126,8 @@ defmodule Pantagruel.Scan do
 
   defp eliminate_spaces(<<>>, acc, _), do: String.reverse(acc)
   # Toggle comment mode and don't mess with spaces.
-  defp eliminate_spaces(<<?;::utf8, contents::binary>>, out, false),
-    do: eliminate_spaces(contents, <<?;::utf8, out::binary>>, true)
+  defp eliminate_spaces(<<?"::utf8, contents::binary>>, out, false),
+    do: eliminate_spaces(contents, <<?"::utf8, out::binary>>, true)
 
   # Exit comment mode.
   defp eliminate_spaces(<<?\n::utf8, contents::binary>>, out, true),

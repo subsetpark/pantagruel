@@ -13,7 +13,7 @@ defmodule Pantagruel.Parse do
   @type section :: [head: [head_stmt], body: [body_stmt]]
   @typedoc """
   A Pantagruel AST consists of a list of *section* nodes, each of which
-  represent one section of the program delimited by the `;;` separator.
+  represent one section of the program delimited by the `;` separator.
 
   A section has two components: the head and the body. The head
   contains declarations, either function declarations or domain alias
@@ -277,10 +277,10 @@ defmodule Pantagruel.Parse do
     )
     |> tag(:alias)
 
-  # Any line started with a `;`. Is not parsed, but included in the AST
+  # Any line started with a `"`. Is not parsed, but included in the AST
   # for later reprinting.
   comment =
-    string(";")
+    string("\"")
     |> ignore()
     |> utf8_char([{:not, ?;}])
     |> utf8_string([{:not, ?\n}], min: 1)
@@ -424,7 +424,11 @@ defmodule Pantagruel.Parse do
   defp apply_f(operator, x, nil), do: {:appl, operator: operator, x: x}
   defp apply_f(operator, x, y), do: {:appl, operator: operator, x: x, y: y}
 
-  where = string("\n;;\n") |> replace(:where)
+  where =
+    string(";")
+    |> replace(:where)
+    |> concat(newline |> repeat |> ignore)
+
   # A series of one or more specification sections separated by :where,
   # where each subsequent section defines any variables introduced
   # in the previous section.
@@ -432,6 +436,7 @@ defmodule Pantagruel.Parse do
   defparsec(
     :program,
     section
+    |> concat(newline |> repeat |> ignore)
     |> join(where)
     |> optional
   )
