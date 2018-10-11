@@ -62,33 +62,6 @@ defmodule Pantagruel.Parse do
         ])
     ])
 
-  @binary_operators [
-    :and,
-    :or,
-    :equals,
-    :notequals,
-    :gte,
-    :lte,
-    :gt,
-    :lt,
-    :in,
-    :iff,
-    :then,
-    :from,
-    :plus,
-    :minus,
-    :times,
-    :divides,
-    :exp,
-    :insert,
-    :xor
-  ]
-
-  @unary_operators [
-    :not,
-    :card
-  ]
-
   refinement = string("←") |> replace(:refined)
   # Number values
   float =
@@ -375,73 +348,8 @@ defmodule Pantagruel.Parse do
     [nested_expression, quantifier, comprehension, symbol]
     |> choice()
     |> join(space |> optional)
-    |> traverse(:parse_function_application)
+    |> traverse({Pantagruel.Parse.Expressions, :parse_function_application, []})
   )
-
-  # Parse a list of expressions, building up a function application tree
-  # from the left.
-  defp parse_function_application(_rest, expressions, context, _line, _offset) do
-    parsed =
-      expressions
-      |> assoc_dots([])
-      |> Enum.reverse()
-      |> Enum.flat_map(&parse_dot_chain/1)
-      |> Enum.reduce(&assoc/2)
-
-    {[parsed], context}
-  end
-
-  # As a first pass, bind any dot expressions to the expression
-  # immediately preceding.
-  defp assoc_dots([], acc), do: Enum.reverse(acc)
-
-  defp assoc_dots([e | rest], acc) when is_binary(e) do
-    case String.starts_with?(e, ".") do
-      true -> assoc_dots(rest, acc, e)
-      false -> assoc_dots(rest, [e | acc])
-    end
-  end
-
-  defp assoc_dots([e | rest], acc), do: assoc_dots(rest, [e | acc])
-
-  defp assoc_dots([e | rest], acc, dot) do
-    acc = [apply_f(dot, e) | acc]
-    assoc_dots(rest, acc)
-  end
-
-  # Handle "foo.bar" dot-access expressions.
-  defp parse_dot_chain(v) when is_binary(v) do
-    [head | tail] = String.split(v, ".", trim: true)
-
-    dot = &{:dot, "." <> &1}
-
-    head =
-      case String.starts_with?(v, ".") do
-        true -> dot.(head)
-        false -> head
-      end
-
-    # Dot access binds more tightly; parse first and return as an
-    # expression.
-    [head | Enum.map(tail, dot)] |> Enum.reduce(&assoc/2) |> List.wrap()
-  end
-
-  defp parse_dot_chain(v), do: [v]
-
-  # Handle infix binary operators.
-  defp assoc(x, [appl, binary_operator: op]), do: apply_f(op, appl, x)
-  defp assoc(x, appl) when x in @binary_operators, do: [appl, binary_operator: x]
-  # Handle prefix unary operators.
-  defp assoc(x, appl) when appl in @unary_operators, do: apply_f(appl, x, nil)
-  # Handle postfix dot-access operator.
-  defp assoc({:dot, x}, appl), do: apply_f(x, appl)
-  # Handle normal prefix function application.
-  defp assoc(x, appl), do: apply_f(appl, x)
-
-  # Create function application structures.
-  defp apply_f(f, x), do: {:appl, [f: f, x: x]}
-  defp apply_f(operator, x, nil), do: {:appl, operator: operator, x: x}
-  defp apply_f(operator, x, y), do: {:appl, operator: operator, x: x, y: y}
 
   where =
     string(";")

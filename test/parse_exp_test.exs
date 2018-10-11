@@ -293,7 +293,7 @@ defmodule ExpressionParserTest do
         appl: [
           operator: :from,
           x: "x",
-          y: {:appl, [f: ".f", x: {:appl, f: "foo", x: "bar"}]}
+          y: {:appl, [f: ".f", x: {:par, [{:appl, f: "foo", x: "bar"}]}]}
         ]
       ]
 
