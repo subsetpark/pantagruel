@@ -285,5 +285,19 @@ defmodule ExpressionParserTest do
 
       tryexp(text, expected)
     end
+
+    test "dot access on a complex value" do
+      text = "x∈(foo bar).f"
+
+      expected = [
+        appl: [
+          operator: :from,
+          x: "x",
+          y: {:appl, [f: ".f", x: {:appl, f: "foo", x: "bar"}]}
+        ]
+      ]
+
+      tryexp(text, expected)
+    end
   end
 end
