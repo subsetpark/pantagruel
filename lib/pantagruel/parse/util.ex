@@ -46,10 +46,9 @@ defmodule Pantagruel.Parse.Util do
   def nested(c) do
     choice(
       for {l, r, name} <- [
-            {"(", ")", :bunch},
+            {"(", ")", :par},
             {"[", "]", :list},
-            {"{", "}", :set},
-            {"\"", "\"", :string}
+            {"{", "}", :set}
           ],
           do:
             ignore(string(l))

@@ -4,7 +4,7 @@ Here's a specification, in Pantagruel, of Pantagruel's binding rules.
 ```pantagruel
 eval |p: Program| :: Bool
 "Section" => Program
-; A section head must have at least one statement; a section body can be empty.
+" A section head must have at least one statement; a section body can be empty.
 section |head, body: Head, Body . #head > 0 | => Section
 "Comment, Declaration, Alias" => Head
 "Comment, Expression" => Body
@@ -12,25 +12,25 @@ section |head, body: Head, Body . #head > 0 | => Section
 
 eval p <- all sect from p . (is_bound? sect)
 
-;;
+;
 
 is_bound? |sect: Section| :: Bool
 
-; All variables referred to in a section head must be defined by the
-; end of that section head. All the variables in a section body, however,
-; must be defined by the end of the *next* section body.
+" All variables referred to in a section head must be defined by the
+" end of that section head. All the variables in a section body, however,
+" must be defined by the end of the *next* section body.
 is_bound? sect <-                                           ...
     (all h from sect.head . all sym from h . is_bound? sym) ...
     and                                                     ...
     (all b from (p (p sect) - 1).body . all sym from b . is_bound? sym)
 
-;;
+;
 
 is_bound |sym: String| :: Bool
 
 is_bound sym <- sym from (env p) (p sect) or sym from init_scope
 
-;;
+;
 
 env |p: Program| :: "Scope"
 init_scope|| :: Scope
@@ -41,7 +41,7 @@ init_scope|| :: Scope
 
 Let's consider some of the features.
 
-In the head of the section before the first `;;`, we see one function declaration, one constructor declaration, four domain aliases, and one comment. The comment is not interpreted by `pantagruel` and has no semantics in the language.
+In the head of the section before the first `;`, we see one function declaration, one constructor declaration, four domain aliases, and one comment. The comment is not interpreted by `pantagruel` and has no semantics in the language.
 
 The function declaration `eval |p: Program| :: Bool` introduces a function, `eval`, which takes a `Program` `p`[^1], and returns a `Bool`.
 
@@ -81,7 +81,7 @@ This is a universal quantification, which will be easier to see when we see Pant
 
 [^3]: In this case, `p` is a `Program`, and since a `Program` is a String of `Section`s, it follows that each `sect` is a `Section`.
 
-We begin a new section with `;;`, and the second section's head defines `is_bound?` for some `Section` `sect`. It's important that we've introduced this argument `sect`; even though we were able to say something about `all sect from p` earlier, that doesn't introduce `sect` into the scope of the program as a whole.
+We begin a new section with `;`, and the second section's head defines `is_bound?` for some `Section` `sect`. It's important that we've introduced this argument `sect`; even though we were able to say something about `all sect from p` earlier, that doesn't introduce `sect` into the scope of the program as a whole.
 
 The body of the second section consists of a relatively long refinement of `is_bound? sect`. Because it extends onto more than one line, we continue the line with `...` until we're done with the expression. The refinement of `is_bound?` consists of evaluating both halves of a logical expression and testing whether both are true. The first half is a nested quantification, where the expression after the first `.` is a second quantification that makes use of the element introduced in the first. In other words, "for each `h` in `sect.head`, for each `sym` in `h`, `is_bound? sym` should be true". The second half is constructed similarly, but instead of `sect.head` the set we're drawing from is `(p (p sect) - 1).body`. Let's break that down.
 

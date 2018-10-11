@@ -1,6 +1,6 @@
 defmodule EvalTest do
   use ExUnit.Case
-  alias Pantagruel.Env.{UnboundVariablesError, SymbolExtractionError}
+  alias Pantagruel.Env.UnboundVariablesError
   alias Pantagruel.Eval.{Variable, Lambda, Domain}
 
   defp scan_and_parse(text) do
@@ -79,7 +79,7 @@ defmodule EvalTest do
     end
 
     test "eval two sections" do
-      parsed = "f|x:Nat|\n;;\ng|| :: Nat" |> scan_and_parse
+      parsed = "f|x:Nat|\n;\ng|| :: Nat" |> scan_and_parse
 
       assert [
                %{
@@ -115,7 +115,7 @@ defmodule EvalTest do
         """
         f|x:Nat|
         f x <- g x
-        ;;
+        ;
         g|y:Nat|::Bool
         """
         |> scan_and_parse
@@ -137,9 +137,9 @@ defmodule EvalTest do
         """
         f|x:Nat|
         f x = g x
-        ;;
+        ;
         b|| => Bool
-        ;;
+        ;
         g|y:Nat| :: Bool
         """
         |> scan_and_parse
@@ -167,7 +167,7 @@ defmodule EvalTest do
         """
         f|x:Nat|
         f x : |z:D|::D
-        ;;
+        ;
         d|| => D
         """
         |> scan_and_parse
@@ -260,11 +260,34 @@ defmodule EvalTest do
         |> scan_and_parse
 
       e =
-        assert_raise SymbolExtractionError, fn ->
+        assert_raise UnboundVariablesError, fn ->
           Pantagruel.Eval.eval(parsed)
         end
 
-      assert e.bindings == ["j", {:appl, [operator: :in, x: "k", y: "X"]}]
+      assert e.unbound ==
+               [
+                 quantifier: [
+                   quant_operator: :forall,
+                   quant_bindings: ["j", {:appl, [operator: :in, x: "k", y: "X"]}],
+                   quant_expression: {:appl, [operator: :gt, x: "j", y: "k"]}
+                 ]
+               ]
+               |> MapSet.new()
+    end
+
+    test "binding with bunching evals as two bindings" do
+      parsed =
+        """
+        1 => X
+        all (j, k) : X . j > k
+        """
+        |> scan_and_parse
+
+      assert [
+               %{
+                 "X" => %Pantagruel.Eval.Domain{name: "X", ref: 1}
+               }
+             ] == Pantagruel.Eval.eval(parsed)
     end
 
     test "exists binds" do
@@ -289,13 +312,33 @@ defmodule EvalTest do
              ] == Pantagruel.Eval.eval(parsed)
     end
 
+    test "binding rules regression" do
+      parsed =
+        """
+        f||
+        f <- (all z from 1.f . f)
+        """
+        |> scan_and_parse
+
+      assert [
+               %{
+                 "f" => %Pantagruel.Eval.Lambda{
+                   codomain: nil,
+                   domain: [],
+                   name: "f",
+                   type: nil
+                 }
+               }
+             ] == Pantagruel.Eval.eval(parsed)
+    end
+
     test "look in earlier scope for variable" do
       parsed =
         """
         f||
-        ;;
+        ;
         x||
-        ;;
+        ;
         y||
         y x = f
         """
@@ -432,6 +475,7 @@ defmodule EvalTest do
                }
              ] == Pantagruel.Eval.eval(parsed)
     end
+
     test "object access on expression" do
       parsed =
         """
@@ -450,6 +494,29 @@ defmodule EvalTest do
                  },
                  "x" => %Pantagruel.Eval.Variable{domain: "ℕ", name: "x"},
                  "y" => %Pantagruel.Eval.Variable{domain: "ℕ", name: "y"}
+               }
+             ] == Pantagruel.Eval.eval(parsed)
+    end
+
+    test "comprehension aliasing" do
+      parsed = "{n : Nat, n <= 30 . n} => Day" |> scan_and_parse
+
+      assert [
+               %{
+                 "Day" => %Pantagruel.Eval.Domain{
+                   name: "Day",
+                   ref:
+                     {:comprehension,
+                      [
+                        set: [
+                          [
+                            appl: [operator: :in, x: "n", y: "Nat"],
+                            appl: [operator: :lte, x: "n", y: 30]
+                          ],
+                          "n"
+                        ]
+                      ]}
+                 }
                }
              ] == Pantagruel.Eval.eval(parsed)
     end
@@ -483,7 +550,7 @@ defmodule EvalTest do
 
         all (x,y) from xs'⸳x <= y = ind xs' x < ind xs' y
 
-        ;;
+        ;
 
         ind|xs, x : [X], X| :: Nat0
         """

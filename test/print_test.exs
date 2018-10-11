@@ -23,7 +23,7 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "f «»" == Format.format_program(parsed)
+      assert "f «»  " == Format.format_program(parsed)
       assert "f «»" == Format.format_scopes(scopes)
     end
 
@@ -34,7 +34,7 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "f «x:ℕ» ∷ ℝ" == Format.format_program(parsed)
+      assert "f «x:ℕ» ∷ ℝ  " == Format.format_program(parsed)
       assert "f «ℕ» ∷ ℝ\nx : ℕ" == Format.format_scopes(scopes)
     end
 
@@ -45,7 +45,7 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "f «» ⇒ F" == Format.format_program(parsed)
+      assert "f «» ⇒ F  " == Format.format_program(parsed)
       assert "F ⇒ F\nf «» ⇒ F" == Format.format_scopes(scopes)
     end
 
@@ -56,20 +56,32 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "{`ok} ⇒ Status" == Format.format_program(parsed)
-      assert "{`ok} ⇒ Status" == Format.format_scopes(scopes)
+      assert "{*ok*} ⇒ Status  " == Format.format_program(parsed)
+      assert "{*ok*} ⇒ Status" == Format.format_scopes(scopes)
     end
 
     test "section" do
       {parsed, scopes} =
         """
         f|| => F
-        f 1 = 0
+        f 1 <-> 0
         """
         |> eval
 
-      assert "f «» ⇒ F\nf 1 ⇔ 0" == Format.format_program(parsed)
+      assert "f «» ⇒ F  \nf 1 ↔ 0  " == Format.format_program(parsed)
       assert "F ⇒ F\nf «» ⇒ F" == Format.format_scopes(scopes)
+    end
+
+    test "unary operator" do
+      {parsed, scopes} =
+        """
+        f||
+        ~f
+        """
+        |> eval
+
+      assert "f «»  \n¬f  " == Format.format_program(parsed)
+      assert "f «»" == Format.format_scopes(scopes)
     end
   end
 end

@@ -190,7 +190,7 @@ Integer values are represented as normal numbers: `1`, `1000`.
 
 ##### Floating point values
 
-Floating point values are written with at least one laeding digit and
+Floating point values are written with at least one leading digit and
 a decimal point: `2.47`, `10.0`.
 
 ##### Literals
@@ -226,16 +226,12 @@ with underscores.
 
 #### Containers
 
-There are four **containers** in Pantagruel. Containers are represented by
+There are two **containers** in Pantagruel. Containers are represented by
 surrounding a comma separated list of expressions by a pair of delimiters
 which reflects the type of container being represented.
 
 - set: `{}`
 - list: `[]`
-- string: `""`
-- bunch: `()`
-
-TODO: Detail containers
 
 #### Applications
 
@@ -259,7 +255,8 @@ application is strictly left-associative (there is no order of operations)
 and parsed as the successive application of procedures of one argument. In
 other words, procedures are implicitly curried: `f x y` is parsed as
 `(f(x))(y)`. If `f` is a function of two arguments, then `f x` is a
-partial application of `x` to `f`.
+partial application of `f` to `x`, resulting in a function expecting
+one argument `y`.
 
 #### Special forms
 

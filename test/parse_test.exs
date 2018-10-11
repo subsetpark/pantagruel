@@ -284,11 +284,36 @@ defmodule PantagruelTest do
         ]
       )
     end
+
+    test "comprehension aliasing" do
+      text = "{n:Nat,n<=30⸳n}⇒Day"
+
+      tryparse(text,
+        section: [
+          head: [
+            alias: [
+              alias_expr:
+                {:comprehension,
+                 [
+                   set: [
+                     [
+                       appl: [operator: :in, x: "n", y: "Nat"],
+                       appl: [operator: :lte, x: "n", y: 30]
+                     ],
+                     "n"
+                   ]
+                 ]},
+              alias_name: ["Day"]
+            ]
+          ]
+        ]
+      )
+    end
   end
 
   describe "program structure" do
     test "two sections" do
-      text = "f|x:Y|\n;;\ny||⇒Y"
+      text = "f|x:Y|\n;\ny||⇒Y"
 
       tryparse(text,
         section: [
@@ -315,7 +340,7 @@ defmodule PantagruelTest do
 
   describe "comments handling" do
     test "can parse a comment" do
-      text = "f||\nf>1\n; Here is a comment.\nf<2"
+      text = "f||\nf>1\n\" Here is a comment.\nf<2"
 
       tryparse(text,
         section: [

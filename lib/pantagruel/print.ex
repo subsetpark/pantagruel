@@ -29,26 +29,8 @@ defmodule Pantagruel.Format do
   Generate a string representation of a parsed program section.
   """
   def format_section({:section, section}) do
-    format_line = fn
-      {:decl, declaration} ->
-        format_lambda(declaration, decl: declaration)
-
-      {:alias, [alias_expr: ref, alias_name: names]} ->
-        alias_names =
-          Enum.map(names, &format_exp/1)
-          |> Enum.join(", ")
-
-        "#{format_exp(ref)} ⇒ #{alias_names}"
-
-      {:comment, comment} ->
-        format_comment(comment)
-
-      {:expr, expression} ->
-        format_exp(expression)
-    end
-
     Stream.concat(section[:head], section[:body] || [])
-    |> Stream.map(format_line)
+    |> Stream.map(&format_line/1)
     |> Enum.join("\n")
   end
 
@@ -85,9 +67,8 @@ defmodule Pantagruel.Format do
   def format_exp({c, exps}, s) when is_container(c) do
     {l, r} =
       case c do
-        :bunch -> {"(", ")"}
+        :par -> {"(", ")"}
         :list -> {"[", "]"}
-        :string -> {"\"", "\""}
         :set -> {"{", "}"}
       end
 
@@ -118,15 +99,8 @@ defmodule Pantagruel.Format do
 
   def format_exp({:lambda, l}, s), do: format_lambda(l, scope: s)
   def format_exp(%Lambda{} = l, s), do: format_lambda(l, scope: s)
-
   def format_exp({:intro_op, op}, s), do: format_exp(op, s)
-
-  def format_exp({:literal, literal}, _) do
-    cond do
-      String.contains?(literal, " ") -> "`#{literal}`"
-      true -> "`" <> literal
-    end
-  end
+  def format_exp({:literal, literal}, _), do: "*#{literal}*"
 
   def format_exp({:refinement, refinement}, s) do
     right_str = format_exp(refinement[:expr], s)
@@ -144,6 +118,10 @@ defmodule Pantagruel.Format do
     "#{format_exp(x, s)} #{format_exp(op, s)} #{format_exp(y, s)}"
   end
 
+  def format_exp({:appl, operator: op, x: x}, s) do
+    "#{format_exp(op, s)}#{format_exp(x, s)}"
+  end
+
   def format_exp({:appl, f: f, x: x}, s) do
     "#{format_exp(f, s)} #{format_exp(x, s)}"
   end
@@ -152,6 +130,30 @@ defmodule Pantagruel.Format do
     exp
     |> Enum.map(&format_exp(&1, s))
     |> Enum.join(" ")
+  end
+
+  defp format_line(line) do
+    formatted =
+      case line do
+        {:decl, declaration} ->
+          format_lambda(declaration, decl: declaration)
+
+        {:alias, [alias_expr: ref, alias_name: names]} ->
+          alias_names =
+            Enum.map(names, &format_exp/1)
+            |> Enum.join(", ")
+
+          "#{format_exp(ref)} ⇒ #{alias_names}"
+
+        {:comment, comment} ->
+          format_comment(comment)
+
+        {:expr, expression} ->
+          format_exp(expression)
+      end
+
+    # For now, assume we want markdown compatibility.
+    formatted <> "  "
   end
 
   # Print the contents of the environment after program evaluation.

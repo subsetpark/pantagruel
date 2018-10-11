@@ -5,12 +5,12 @@ defmodule ScanLest do
     test "scan comments" do
       text = """
       line
-      line2 ; comment
+      line2 " comment
       line3
       """
 
       scanned = Pantagruel.Scan.scan(text)
-      assert "line\nline2\n; comment\nline3" == scanned
+      assert "line\nline2\n\" comment\nline3" == scanned
     end
 
     test "scan spaces" do
@@ -47,13 +47,13 @@ defmodule ScanLest do
       text = """
       foo
 
-      ;;
+      ;
 
       where
       """
 
       scanned = Pantagruel.Scan.scan(text)
-      assert "foo\n;;\nwhere" == scanned
+      assert "foo\n;\nwhere" == scanned
     end
 
     test "two replaced characters in a row" do
@@ -64,12 +64,12 @@ defmodule ScanLest do
 
     test "or at the beginning?" do
       text = """
-      [x from X, y from Z, z from Y . x * y ^ z]; Now includes semicolons; much better.
+      [x from X, y from Z, z from Y . x * y ^ z]" Now includes "quotes" semicolons; much better.
       or [x from String . x + `ok]
       """
 
       scanned = Pantagruel.Scan.scan(text)
-      assert "[x∈X,y∈Z,z∈Y⸳x*y^z]\n; Now includes semicolons; much better.\n∨[x∈String⸳x+`ok]" == scanned
+      assert "[x∈X,y∈Z,z∈Y⸳x*y^z]\n\" Now includes \"quotes\" semicolons; much better.\n∨[x∈String⸳x+`ok]" == scanned
     end
   end
 end
