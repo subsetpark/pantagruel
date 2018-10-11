@@ -151,13 +151,16 @@ defmodule Pantagruel.Env do
   end
 
   # Boundness checking for :forall and :exists quantifiers.
-  def is_bound?({:quantifier, quantifier}, scope) do
+  def is_bound?(
+        {:quantifier, [quant_operator: _, quant_bindings: bindings, quant_expression: expr]},
+        scope
+      ) do
     # Introduce any internal bindings for the purpose of boundness
     # checking of the whole expression.
-    check_with_bindings(quantifier[:quant_expression], quantifier[:quant_bindings], scope)
+    check_with_bindings(expr, bindings, scope)
   end
 
-  def is_bound?({:comprehension, [{_, [bindings, expr]}]}, scope),
+  def is_bound?({:comprehension, [{_, [comp_bindings: bindings, comp_expression: expr]}]}, scope),
     # Introduce any internal bindings for the purpose of boundness
     # checking of the whole expression.
     do: check_with_bindings(expr, bindings, scope)
@@ -216,15 +219,14 @@ defmodule Pantagruel.Env do
 
   # Given a binding pattern, return the symbol being bound.
   defp extract_binding_symbols(
-         {:appl, [operator: op, x: x, y: y]},
+         {:binding, [bind_symbol: x, bind_op: _, bind_domain: domain]},
          {binding_pairs, symbol_references}
-       )
-       when op in [:from, :in] do
-    {unbunch(x, y) ++ binding_pairs, symbol_references}
+       ) do
+    {unbunch(x, domain) ++ binding_pairs, symbol_references}
   end
 
-  defp extract_binding_symbols(sym, {pairs, symbol_references}) do
-    {pairs, [sym | symbol_references]}
+  defp extract_binding_symbols({:guard, exprs}, {pairs, symbol_references}) do
+    {pairs, [exprs | symbol_references]}
   end
 
   defp unbunch({:par, elements}, domain) do

@@ -2,13 +2,11 @@
 
 Here's a specification, in Pantagruel, of Pantagruel's binding rules.
 ```pantagruel
-eval |p: Program| :: Bool
-"Section" => Program
 " A section head must have at least one statement; a section body can be empty.
 section |head, body: Head, Body . #head > 0 | => Section
-"Comment, Declaration, Alias" => Head
-"Comment, Expression" => Body
-"String" => Comment, Declaration, Alias, Expression
+[Comment, Declaration, Alias] => Head
+[Comment, Expression] => Body
+[String] => Comment, Declaration, Alias, Expression
 
 eval p <- all sect from p . (is_bound? sect)
 
@@ -32,7 +30,7 @@ is_bound sym <- sym from (env p) (p sect) or sym from init_scope
 
 ;
 
-env |p: Program| :: "Scope"
+env |p: Program| :: [Scope]
 init_scope|| :: Scope
 {String} => Scope
 ```
@@ -106,16 +104,15 @@ The `pantagruel` interpreter will evaluate a Pantagruel program, checking that s
 When the above program is put into a text file called *binding.pant*, and we run `pantagruel binding.pant`, this is what's output:
 
 -----
-
 eval «p:Program» ∷ 𝔹 \
-"Section" ⇒ Program
+[Section] ⇒ Program
 
 > A section head must have at least one statement; a section body can be empty.
 
-section «head, body:Head, Body ⸳ # head > 0» ⇒ Section \
-"Comment, Declaration, Alias" ⇒ Head \
-"Comment, Expression" ⇒ Body \
-"𝕊" ⇒ Comment, Declaration, Alias, Expression \
+section «head, body:Head, Body ⸳ #head > 0» ⇒ Section \
+[Comment, Declaration, Alias] ⇒ Head \
+[Comment, Expression] ⇒ Body \
+[𝕊] ⇒ Comment, Declaration, Alias, Expression \
 eval p ← ∀ sect ∈ p ⸳ (is-bound? sect)
 
 ***
@@ -126,7 +123,7 @@ is-bound? «sect:Section» ∷ 𝔹
 > end of that section head. All the variables in a section body, however,
 > must be defined by the end of the *next* section body.
 
-is-bound? sect ← (∀ h ∈ sect.head ⸳ ∀ sym ∈ h ⸳ is-bound? sym) ∧ (∀ b ∈ .body (p (p sect) − 1) ⸳ ∀ sym ∈ b ⸳ is-bound? sym)
+is-bound? sect ← (∀ h ∈ .head sect ⸳ ∀ sym ∈ h ⸳ is-bound? sym) ∧ (∀ b ∈ .body (p (p sect) − 1) ⸳ ∀ sym ∈ b ⸳ is-bound? sym)
 
 ***
 
@@ -135,6 +132,6 @@ is-bound sym ← sym ∈ (env p) (p sect) ∨ sym ∈ init-scope
 
 ***
 
-env «p:Program» ∷ "Scope" \
+env «p:Program» ∷ [Scope] \
 init-scope «» ∷ Scope \
 {𝕊} ⇒ Scope

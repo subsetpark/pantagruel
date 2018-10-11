@@ -296,11 +296,12 @@ defmodule PantagruelTest do
                 {:comprehension,
                  [
                    set: [
-                     [
-                       appl: [operator: :in, x: "n", y: "Nat"],
-                       appl: [operator: :lte, x: "n", y: 30]
-                     ],
-                     "n"
+                     {:comp_bindings,
+                      [
+                        binding: [bind_symbol: "n", bind_op: :in, bind_domain: "Nat"],
+                        guard: {:appl, [operator: :lte, x: "n", y: 30]}
+                      ]},
+                     {:comp_expression, "n"}
                    ]
                  ]},
               alias_name: ["Day"]

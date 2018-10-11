@@ -33,10 +33,17 @@ defmodule Pantagruel.Parse do
   log_and = string("∧") |> replace(:and)
   log_or = string("∨") |> replace(:or)
   # A closed set of non-alphabetic binary or unary functions.
+  # Denotes belonging to a domain.
+  binding_in = string(":") |> replace(:in)
+  # Denotes membership in a concrete set.
+  binding_from = string("∈") |> replace(:from)
+
   operator =
     choice([
       log_and,
-      log_or
+      log_or,
+      binding_in,
+      binding_from
       | strings([
           {"=", :equals},
           {"!=", :notequals},
@@ -44,10 +51,6 @@ defmodule Pantagruel.Parse do
           {"<=", :lte},
           {">", :gt},
           {"<", :lt},
-          # Denotes belonging to a domain.
-          {":", :in},
-          # Denotes membership in a concrete set.
-          {"∈", :from},
           {"~", :not},
           {"↔", :iff},
           {"→", :then},
@@ -285,6 +288,28 @@ defmodule Pantagruel.Parse do
     )
     |> tag(:section)
 
+  pared_identifiers = identifier |> comma_join() |> nested
+  # An expression of the form
+  #  X OP D
+  # Where X is either a symbol or a comma-separated group of symbols,
+  # OP is either the set or domain membership operator, and D is some
+  # expression representing a domain.
+  binding =
+    [pared_identifiers, identifier]
+    |> choice
+    |> unwrap_and_tag(:bind_symbol)
+    |> concat(choice([binding_in, binding_from]) |> unwrap_and_tag(:bind_op))
+    |> concat(parsec(:expression) |> unwrap_and_tag(:bind_domain))
+  # An element in the first half of a quantifier or comprehension,
+  # either a binding form or an arbitrary expression acting as a guard on
+  # the bindings.
+  binding_or_guard =
+    [
+      binding |> tag(:binding),
+      parsec(:expression) |> unwrap_and_tag(:guard)
+    ]
+    |> choice
+
   # A expression of the form
   # {B1, B2, BN ⸳ E}
   # Where {} can stand for any of the group delimiters, B is a series
@@ -292,17 +317,16 @@ defmodule Pantagruel.Parse do
   # introduced variables and E is a expression formed from the bound
   # variable. Represents the map and filter operations across any container.
   comprehension =
-    parsec(:expression)
+    binding_or_guard
     |> comma_join()
-    |> wrap
+    |> tag(:comp_bindings)
     |> ignore(such_that)
-    |> concat(parsec(:expression))
+    |> concat(parsec(:expression) |> unwrap_and_tag(:comp_expression))
     |> nested
     |> tag(:comprehension)
 
   exists = string("∃") |> replace(:exists)
   forall = string("∀") |> replace(:forall)
-
   # An expression of the form
   # Q B1, B2, B3 ⸳ E
   # Where Q is either the universal quantifier ∀ or the existential
@@ -312,7 +336,11 @@ defmodule Pantagruel.Parse do
   quantifier =
     choice([exists, forall])
     |> unwrap_and_tag(:quant_operator)
-    |> concat(parsec(:expression) |> comma_join() |> tag(:quant_bindings))
+    |> concat(
+      binding_or_guard
+      |> comma_join
+      |> tag(:quant_bindings)
+    )
     |> ignore(such_that)
     |> concat(parsec(:expression) |> unwrap_and_tag(:quant_expression))
     |> tag(:quantifier)
