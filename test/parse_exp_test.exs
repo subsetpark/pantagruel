@@ -76,8 +76,14 @@ defmodule ExpressionParserTest do
       text = "{x∈X⸳x * 2}"
 
       comprehension_elements = [
-        [appl: [operator: :from, x: "x", y: "X"]],
-        appl: [operator: :times, x: "x", y: 2]
+        comp_bindings: [
+          binding: [
+            bind_symbol: "x",
+            bind_op: :from,
+            bind_domain: "X"
+          ]
+        ],
+        comp_expression: {:appl, [operator: :times, x: "x", y: 2]}
       ]
 
       tryexp(text,
@@ -89,17 +95,22 @@ defmodule ExpressionParserTest do
       text = "{x∈X,y∈Y⸳x * y}"
 
       comprehension_elements = [
-        [
-          appl: [operator: :from, x: "x", y: "X"],
-          appl: [operator: :from, x: "y", y: "Y"]
+        comp_bindings: [
+          binding: [
+            bind_symbol: "x",
+            bind_op: :from,
+            bind_domain: "X"
+          ],
+          binding: [
+            bind_symbol: "y",
+            bind_op: :from,
+            bind_domain: "Y"
+          ]
         ],
-        appl: [operator: :times, x: "x", y: "y"]
-      ]
-
-      [
-        [appl: [operator: :from, x: "x", y: "X"]],
-        [appl: [operator: :from, x: "y", y: "Y"]],
-        [appl: [operator: :times, x: "x", y: "y"]]
+        comp_expression: {
+          :appl,
+          [operator: :times, x: "x", y: "y"]
+        }
       ]
 
       tryexp(text,
@@ -111,22 +122,61 @@ defmodule ExpressionParserTest do
       text = "{x∈X,y∈Y,z∈Z⸳x * y ^ z}"
 
       comprehension_elements = [
-        set: [
-          [
-            appl: [operator: :from, x: "x", y: "X"],
-            appl: [operator: :from, x: "y", y: "Y"],
-            appl: [operator: :from, x: "z", y: "Z"]
+        comp_bindings: [
+          binding: [
+            bind_symbol: "x",
+            bind_op: :from,
+            bind_domain: "X"
           ],
-          appl: [operator: :exp, x: {:appl, [operator: :times, x: "x", y: "y"]}, y: "z"]
-        ]
+          binding: [
+            bind_symbol: "y",
+            bind_op: :from,
+            bind_domain: "Y"
+          ],
+          binding: [
+            bind_symbol: "z",
+            bind_op: :from,
+            bind_domain: "Z"
+          ]
+        ],
+        comp_expression: {
+          :appl,
+          [operator: :exp, x: {:appl, [operator: :times, x: "x", y: "y"]}, y: "z"]
+        }
       ]
 
       tryexp(text,
-        comprehension: comprehension_elements
+        comprehension: [set: comprehension_elements]
       )
     end
 
     test "comprehension with in and constraint testing" do
+      text = "{x∈X,x>1⸳x * y}"
+
+      comprehension_elements = [
+        comp_bindings: [
+          binding: [
+            bind_symbol: "x",
+            bind_op: :from,
+            bind_domain: "X"
+          ],
+          guard:
+            {:appl,
+             [
+               operator: :gt,
+               x: "x",
+               y: 1
+             ]}
+        ],
+        comp_expression: {
+          :appl,
+          [operator: :times, x: "x", y: "y"]
+        }
+      ]
+
+      tryexp(text,
+        comprehension: [set: comprehension_elements]
+      )
     end
 
     test "exists quantifier parsing" do
@@ -135,8 +185,22 @@ defmodule ExpressionParserTest do
       tryexp(text,
         quantifier: [
           quant_operator: :exists,
-          quant_bindings: [{:appl, [operator: :in, x: "x", y: "X"]}],
+          quant_bindings: [binding: [bind_symbol: "x", bind_op: :in, bind_domain: "X"]],
           quant_expression: {:appl, [operator: :gt, x: "x", y: 1]}
+        ]
+      )
+    end
+
+    test "exists quantifier parsing with bunch" do
+      text = "∃(x,y):X⸳x"
+
+      tryexp(text,
+        quantifier: [
+          quant_operator: :exists,
+          quant_bindings: [
+            binding: [bind_symbol: {:par, ["x", "y"]}, bind_op: :in, bind_domain: "X"]
+          ],
+          quant_expression: "x"
         ]
       )
     end
@@ -307,13 +371,49 @@ defmodule ExpressionParserTest do
         quantifier: [
           quant_operator: :forall,
           quant_bindings: [
-            appl: [
-              operator: :from,
-              x: "b",
-              y: {:appl, [f: ".body", x: {:par, ["p"]}]}
+            binding: [
+              bind_symbol: "b",
+              bind_op: :from,
+              bind_domain: {:appl, [f: ".body", x: {:par, ["p"]}]}
             ]
           ],
           quant_expression: "f"
+        ]
+      ]
+
+      tryexp(text, expected)
+    end
+
+    test "quantifier regression" do
+      text = "∀u:User⸳(∃ent∈(entities c)⸳c)→c"
+
+      expected = [
+        quantifier: [
+          quant_operator: :forall,
+          quant_bindings: [
+            binding: [bind_symbol: "u", bind_op: :in, bind_domain: "User"]
+          ],
+          quant_expression:
+            {:appl,
+             [
+               operator: :then,
+               x:
+                 {:par,
+                  [
+                    quantifier: [
+                      quant_operator: :exists,
+                      quant_bindings: [
+                        binding: [
+                          bind_symbol: "ent",
+                          bind_op: :from,
+                          bind_domain: {:par, [appl: [f: "entities", x: "c"]]}
+                        ]
+                      ],
+                      quant_expression: "c"
+                    ]
+                  ]},
+               y: "c"
+             ]}
         ]
       ]
 

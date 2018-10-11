@@ -264,15 +264,27 @@ defmodule EvalTest do
           Pantagruel.Eval.eval(parsed)
         end
 
-      assert e.unbound ==
-               [
-                 quantifier: [
-                   quant_operator: :forall,
-                   quant_bindings: ["j", {:appl, [operator: :in, x: "k", y: "X"]}],
-                   quant_expression: {:appl, [operator: :gt, x: "j", y: "k"]}
-                 ]
+      assert [
+               quantifier: [
+                 quant_operator: :forall,
+                 quant_bindings: [
+                   guard: "j",
+                   binding: [
+                     bind_symbol: "k",
+                     bind_op: :in,
+                     bind_domain: "X"
+                   ]
+                 ],
+                 quant_expression:
+                   {:appl,
+                    [
+                      operator: :gt,
+                      x: "j",
+                      y: "k"
+                    ]}
                ]
-               |> MapSet.new()
+             ]
+             |> MapSet.new() == e.unbound
     end
 
     test "binding with bunching evals as two bindings" do
@@ -509,11 +521,22 @@ defmodule EvalTest do
                      {:comprehension,
                       [
                         set: [
-                          [
-                            appl: [operator: :in, x: "n", y: "Nat"],
-                            appl: [operator: :lte, x: "n", y: 30]
-                          ],
-                          "n"
+                          {:comp_bindings,
+                           [
+                             binding: [
+                               bind_symbol: "n",
+                               bind_op: :in,
+                               bind_domain: "Nat"
+                             ],
+                             guard:
+                               {:appl,
+                                [
+                                  operator: :lte,
+                                  x: "n",
+                                  y: 30
+                                ]}
+                           ]},
+                          {:comp_expression, "n"}
                         ]
                       ]}
                  }
