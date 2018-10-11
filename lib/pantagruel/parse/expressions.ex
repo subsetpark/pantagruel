@@ -58,13 +58,7 @@ defmodule Pantagruel.Parse.Expressions do
   # immediately preceding.
   defp assoc_dots([], acc), do: Enum.reverse(acc)
 
-  defp assoc_dots([e | rest], acc) when is_binary(e) do
-    case String.starts_with?(e, ".") do
-      true -> assoc_dots(rest, acc, e)
-      false -> assoc_dots(rest, [e | acc])
-    end
-  end
-
+  defp assoc_dots([<<"."::utf8, _>> = e | rest], acc), do: assoc_dots(rest, acc, e)
   defp assoc_dots([e | rest], acc), do: assoc_dots(rest, [e | acc])
 
   defp assoc_dots([e | rest], acc, dot) do
@@ -72,7 +66,8 @@ defmodule Pantagruel.Parse.Expressions do
     assoc_dots(rest, acc)
   end
 
-  # Handle "foo.bar" dot-access expressions.
+  # Handle a single string representing chained dot-access, like
+  # "foo.bar.baz".
   defp parse_dot_chain(v) when is_binary(v) do
     [head | tail] = String.split(v, ".", trim: true)
 
