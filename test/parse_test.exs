@@ -313,7 +313,7 @@ defmodule PantagruelTest do
 
   describe "program structure" do
     test "two sections" do
-      text = "f|x:Y|\n;;\ny||⇒Y"
+      text = "f|x:Y|\n;\ny||⇒Y"
 
       tryparse(text,
         section: [
@@ -340,7 +340,7 @@ defmodule PantagruelTest do
 
   describe "comments handling" do
     test "can parse a comment" do
-      text = "f||\nf>1\n; Here is a comment.\nf<2"
+      text = "f||\nf>1\n\" Here is a comment.\nf<2"
 
       tryparse(text,
         section: [

@@ -13,7 +13,7 @@ defmodule Pantagruel.Parse do
   @type section :: [head: [head_stmt], body: [body_stmt]]
   @typedoc """
   A Pantagruel AST consists of a list of *section* nodes, each of which
-  represent one section of the program delimited by the `;;` separator.
+  represent one section of the program delimited by the `;` separator.
 
   A section has two components: the head and the body. The head
   contains declarations, either function declarations or domain alias
@@ -61,33 +61,6 @@ defmodule Pantagruel.Parse do
           {"⊕", :xor}
         ])
     ])
-
-  @binary_operators [
-    :and,
-    :or,
-    :equals,
-    :notequals,
-    :gte,
-    :lte,
-    :gt,
-    :lt,
-    :in,
-    :iff,
-    :then,
-    :from,
-    :plus,
-    :minus,
-    :times,
-    :divides,
-    :exp,
-    :insert,
-    :xor
-  ]
-
-  @unary_operators [
-    :not,
-    :card
-  ]
 
   refinement = string("←") |> replace(:refined)
   # Number values
@@ -277,10 +250,10 @@ defmodule Pantagruel.Parse do
     )
     |> tag(:alias)
 
-  # Any line started with a `;`. Is not parsed, but included in the AST
+  # Any line started with a `"`. Is not parsed, but included in the AST
   # for later reprinting.
   comment =
-    string(";")
+    string("\"")
     |> ignore()
     |> utf8_char([{:not, ?;}])
     |> utf8_string([{:not, ?\n}], min: 1)
@@ -375,56 +348,14 @@ defmodule Pantagruel.Parse do
     [nested_expression, quantifier, comprehension, symbol]
     |> choice()
     |> join(space |> optional)
-    |> traverse(:parse_function_application)
+    |> traverse({Pantagruel.Parse.Expressions, :parse_function_application, []})
   )
 
-  # Parse a list of expressions, building up a function application tree
-  # from the left.
-  defp parse_function_application(_rest, expressions, context, _line, _offset) do
-    parsed =
-      expressions
-      |> Enum.flat_map(&parse_dot_chain/1)
-      |> Enum.reverse()
-      |> Enum.reduce(&assoc/2)
+  where =
+    string(";")
+    |> replace(:where)
+    |> concat(newline |> repeat |> ignore)
 
-    {[parsed], context}
-  end
-
-  # Handle "foo.bar" dot-access expressions.
-  defp parse_dot_chain(v) when is_binary(v) do
-    [head | tail] = String.split(v, ".", trim: true)
-
-    dot = &{:dot, "." <> &1}
-
-    head =
-      case String.starts_with?(v, ".") do
-        true -> dot.(head)
-        false -> head
-      end
-
-    # Dot access binds more tightly; parse first and return as an
-    # expression.
-    [head | Enum.map(tail, dot)] |> Enum.reduce(&assoc/2) |> List.wrap()
-  end
-
-  defp parse_dot_chain(v), do: [v]
-
-  # Handle infix binary operators.
-  defp assoc(x, [appl, binary_operator: op]), do: apply_f(op, appl, x)
-  defp assoc(x, appl) when x in @binary_operators, do: [appl, binary_operator: x]
-  # Handle prefix unary operators.
-  defp assoc(x, appl) when appl in @unary_operators, do: apply_f(appl, x, nil)
-  # Handle postfix dot-access operator.
-  defp assoc({:dot, x}, appl), do: apply_f(x, appl)
-  # Handle normal prefix function application.
-  defp assoc(x, appl), do: apply_f(appl, x)
-
-  # Create function application structures.
-  defp apply_f(f, x), do: {:appl, [f: f, x: x]}
-  defp apply_f(operator, x, nil), do: {:appl, operator: operator, x: x}
-  defp apply_f(operator, x, y), do: {:appl, operator: operator, x: x, y: y}
-
-  where = string("\n;;\n") |> replace(:where)
   # A series of one or more specification sections separated by :where,
   # where each subsequent section defines any variables introduced
   # in the previous section.
@@ -432,6 +363,7 @@ defmodule Pantagruel.Parse do
   defparsec(
     :program,
     section
+    |> concat(newline |> repeat |> ignore)
     |> join(where)
     |> optional
   )

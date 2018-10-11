@@ -79,7 +79,7 @@ defmodule EvalTest do
     end
 
     test "eval two sections" do
-      parsed = "f|x:Nat|\n;;\ng|| :: Nat" |> scan_and_parse
+      parsed = "f|x:Nat|\n;\ng|| :: Nat" |> scan_and_parse
 
       assert [
                %{
@@ -115,7 +115,7 @@ defmodule EvalTest do
         """
         f|x:Nat|
         f x <- g x
-        ;;
+        ;
         g|y:Nat|::Bool
         """
         |> scan_and_parse
@@ -137,9 +137,9 @@ defmodule EvalTest do
         """
         f|x:Nat|
         f x = g x
-        ;;
+        ;
         b|| => Bool
-        ;;
+        ;
         g|y:Nat| :: Bool
         """
         |> scan_and_parse
@@ -167,7 +167,7 @@ defmodule EvalTest do
         """
         f|x:Nat|
         f x : |z:D|::D
-        ;;
+        ;
         d|| => D
         """
         |> scan_and_parse
@@ -285,7 +285,7 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "X" => %Pantagruel.Eval.Domain{name: "X", ref: 1},
+                 "X" => %Pantagruel.Eval.Domain{name: "X", ref: 1}
                }
              ] == Pantagruel.Eval.eval(parsed)
     end
@@ -312,13 +312,33 @@ defmodule EvalTest do
              ] == Pantagruel.Eval.eval(parsed)
     end
 
+    test "binding rules regression" do
+      parsed =
+        """
+        f||
+        f <- (all z from 1.f . f)
+        """
+        |> scan_and_parse
+
+      assert [
+               %{
+                 "f" => %Pantagruel.Eval.Lambda{
+                   codomain: nil,
+                   domain: [],
+                   name: "f",
+                   type: nil
+                 }
+               }
+             ] == Pantagruel.Eval.eval(parsed)
+    end
+
     test "look in earlier scope for variable" do
       parsed =
         """
         f||
-        ;;
+        ;
         x||
-        ;;
+        ;
         y||
         y x = f
         """
@@ -530,7 +550,7 @@ defmodule EvalTest do
 
         all (x,y) from xs'⸳x <= y = ind xs' x < ind xs' y
 
-        ;;
+        ;
 
         ind|xs, x : [X], X| :: Nat0
         """
