@@ -127,7 +127,6 @@ defmodule ExpressionParserTest do
     end
 
     test "comprehension with in and constraint testing" do
-
     end
 
     test "exists quantifier parsing" do
@@ -267,6 +266,20 @@ defmodule ExpressionParserTest do
         appl: [
           f: ".foo",
           x: {:par, [appl: [operator: :minus, x: "x", y: 1]]}
+        ]
+      ]
+
+      tryexp(text, expected)
+    end
+
+    test "dot access on a value" do
+      text = "x∈1.f"
+
+      expected = [
+        appl: [
+          operator: :from,
+          x: "x",
+          y: {:appl, [f: ".f", x: 1]}
         ]
       ]
 

@@ -312,6 +312,26 @@ defmodule EvalTest do
              ] == Pantagruel.Eval.eval(parsed)
     end
 
+    test "binding rules regression" do
+      parsed =
+        """
+        f||
+        f <- (all z from 1.f . f)
+        """
+        |> scan_and_parse
+
+      assert [
+               %{
+                 "f" => %Pantagruel.Eval.Lambda{
+                   codomain: nil,
+                   domain: [],
+                   name: "f",
+                   type: nil
+                 }
+               }
+             ] == Pantagruel.Eval.eval(parsed)
+    end
+
     test "look in earlier scope for variable" do
       parsed =
         """

@@ -383,11 +383,30 @@ defmodule Pantagruel.Parse do
   defp parse_function_application(_rest, expressions, context, _line, _offset) do
     parsed =
       expressions
-      |> Enum.flat_map(&parse_dot_chain/1)
+      |> assoc_dots([])
       |> Enum.reverse()
+      |> Enum.flat_map(&parse_dot_chain/1)
       |> Enum.reduce(&assoc/2)
 
     {[parsed], context}
+  end
+
+  # As a first pass, bind any dot expressions to the expression
+  # immediately preceding.
+  defp assoc_dots([], acc), do: Enum.reverse(acc)
+
+  defp assoc_dots([e | rest], acc) when is_binary(e) do
+    case String.starts_with?(e, ".") do
+      true -> assoc_dots(rest, acc, e)
+      false -> assoc_dots(rest, [e | acc])
+    end
+  end
+
+  defp assoc_dots([e | rest], acc), do: assoc_dots(rest, [e | acc])
+
+  defp assoc_dots([e | rest], acc, dot) do
+    acc = [apply_f(dot, e) | acc]
+    assoc_dots(rest, acc)
   end
 
   # Handle "foo.bar" dot-access expressions.
