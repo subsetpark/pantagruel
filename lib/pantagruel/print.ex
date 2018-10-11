@@ -90,13 +90,21 @@ defmodule Pantagruel.Format do
     |> Enum.join(" ")
   end
 
-  def format_exp({:comprehension, [{container, [binding, expr]}]}, s) do
-    binding_str = exp_join(binding, s)
+  def format_exp(
+        {:comprehension, [{container, [comp_bindings: bindings, comp_expression: expr]}]},
+        s
+      ) do
+    binding_str = exp_join(bindings, s)
     expr_str = format_exp(expr)
     inner_str = "#{binding_str} ⸳ #{expr_str}"
     format_exp({container, [inner_str]}, s)
   end
 
+  def format_exp({:binding, bind_symbol: symbol, bind_op: op, bind_domain: domain}, s) do
+    "#{format_exp(symbol, s)} #{format_exp(op, s)} #{format_exp(domain, s)}"
+  end
+
+  def format_exp({:guard, expr}, s), do: format_exp(expr, s)
   def format_exp({:lambda, l}, s), do: format_lambda(l, scope: s)
   def format_exp(%Lambda{} = l, s), do: format_lambda(l, scope: s)
   def format_exp({:intro_op, op}, s), do: format_exp(op, s)
