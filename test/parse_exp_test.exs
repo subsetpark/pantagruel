@@ -299,5 +299,25 @@ defmodule ExpressionParserTest do
 
       tryexp(text, expected)
     end
+
+    test "dot access 2" do
+      text = "∀b∈(p).body⸳f"
+
+      expected = [
+        quantifier: [
+          quant_operator: :forall,
+          quant_bindings: [
+            appl: [
+              operator: :from,
+              x: "b",
+              y: {:appl, [f: ".body", x: {:par, ["p"]}]}
+            ]
+          ],
+          quant_expression: "f"
+        ]
+      ]
+
+      tryexp(text, expected)
+    end
   end
 end

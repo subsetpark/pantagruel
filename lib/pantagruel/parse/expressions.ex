@@ -58,7 +58,7 @@ defmodule Pantagruel.Parse.Expressions do
   # immediately preceding.
   defp assoc_dots([], acc), do: Enum.reverse(acc)
 
-  defp assoc_dots([<<"."::utf8, _>> = e | rest], acc), do: assoc_dots(rest, acc, e)
+  defp assoc_dots([<<"."::utf8, _::binary>> = e | rest], acc), do: assoc_dots(rest, acc, e)
   defp assoc_dots([e | rest], acc), do: assoc_dots(rest, [e | acc])
 
   defp assoc_dots([e | rest], acc, dot) do
