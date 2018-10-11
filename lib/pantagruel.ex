@@ -78,7 +78,7 @@ defmodule Pantagruel do
     Enum.each(e.unbound, &puts("- #{format_exp(&1, e.scopes)}"))
 
     e.unbound
-    |> Enum.filter(&({:quantifier, _} = &1))
+    |> Enum.filter(&match?({:quantifier, _}, &1))
     |> case do
       [] ->
         :ok
