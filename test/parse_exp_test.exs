@@ -283,8 +283,8 @@ defmodule ExpressionParserTest do
       text = "obj.foo"
 
       expected = [
-        appl: [
-          f: ".foo",
+        dot: [
+          f: "foo",
           x: "obj"
         ]
       ]
@@ -296,9 +296,9 @@ defmodule ExpressionParserTest do
       text = "foo.bar.baz"
 
       expected = [
-        appl: [
-          f: ".baz",
-          x: {:appl, [f: ".bar", x: "foo"]}
+        dot: [
+          f: "baz",
+          x: {:dot, [f: "bar", x: "foo"]}
         ]
       ]
 
@@ -308,7 +308,7 @@ defmodule ExpressionParserTest do
     test "object access chaining with an operator" do
       text = "f foo.bar.baz > 1"
 
-      chain = {:appl, [f: ".baz", x: {:appl, [f: ".bar", x: "foo"]}]}
+      chain = {:dot, [f: "baz", x: {:dot, [f: "bar", x: "foo"]}]}
       left_side = {:appl, [f: "f", x: chain]}
       right_side = 1
 
@@ -327,8 +327,8 @@ defmodule ExpressionParserTest do
       text = "(x - 1).foo"
 
       expected = [
-        appl: [
-          f: ".foo",
+        dot: [
+          f: "foo",
           x: {:par, [appl: [operator: :minus, x: "x", y: 1]]}
         ]
       ]
@@ -343,7 +343,7 @@ defmodule ExpressionParserTest do
         appl: [
           operator: :from,
           x: "x",
-          y: {:appl, [f: ".f", x: 1]}
+          y: {:dot, [f: "f", x: 1]}
         ]
       ]
 
@@ -357,7 +357,7 @@ defmodule ExpressionParserTest do
         appl: [
           operator: :from,
           x: "x",
-          y: {:appl, [f: ".f", x: {:par, [{:appl, f: "foo", x: "bar"}]}]}
+          y: {:dot, [f: "f", x: {:par, [{:appl, f: "foo", x: "bar"}]}]}
         ]
       ]
 
@@ -374,7 +374,7 @@ defmodule ExpressionParserTest do
             binding: [
               bind_symbol: "b",
               bind_op: :from,
-              bind_domain: {:appl, [f: ".body", x: {:par, ["p"]}]}
+              bind_domain: {:dot, [f: "body", x: {:par, ["p"]}]}
             ]
           ],
           quant_expression: "f"

@@ -167,7 +167,8 @@ defmodule Pantagruel.Env do
 
   def is_bound?({:intro_op, _}, _), do: true
 
-  def is_bound?({:appl, f: f, x: x}, scopes), do: is_bound?(f, scopes) && is_bound?(x, scopes)
+  def is_bound?({appl, f: f, x: x}, scopes) when appl in [:appl, :dot],
+    do: is_bound?(f, scopes) && is_bound?(x, scopes)
 
   def is_bound?({:appl, operator: _, x: x, y: y}, scopes),
     do: is_bound?(x, scopes) && is_bound?(y, scopes)
@@ -175,23 +176,9 @@ defmodule Pantagruel.Env do
   def is_bound?({:appl, operator: _, x: x}, scopes),
     do: is_bound?(x, scopes)
 
-  def is_bound?(variable, [scope | parent] = scopes) do
-    f = &(has_key?(scope, &1) or is_bound?(&1, parent))
-
-    cond do
-      # Allow arbitrary suffixes or prefixes of "'" to denote
-      # successor/remainder variables.
-      is_binary(variable) ->
-        case variable
-             |> String.trim("'")
-             |> String.split(".", trim: true) do
-          [variable] -> f.(variable)
-          variables -> Enum.all?(variables, &is_bound?(&1, scopes))
-        end
-
-      true ->
-        f.(variable)
-    end
+  def is_bound?(variable, [scope | parent]) do
+    variable = String.trim(variable, "'")
+    has_key?(scope, variable) or is_bound?(variable, parent)
   end
 
   # Process some temporary bindings and check for boundness, without

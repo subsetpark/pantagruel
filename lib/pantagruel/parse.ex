@@ -87,7 +87,6 @@ defmodule Pantagruel.Parse do
     ?A..?Z,
     ?0..?9,
     ??,
-    ?.,
     ?',
     ?_,
     ?¿..?ƿ,
@@ -113,17 +112,6 @@ defmodule Pantagruel.Parse do
     |> unwrap_and_tag(:literal)
 
   # The individual component elements of an expression.
-  symbol =
-    choice([
-      float,
-      integer(min: 1),
-      literal,
-      parsec(:lambda),
-      operator,
-      identifier,
-      parsec(:domain)
-    ])
-
   # A sequence of one or more symbols.
   nested_expression =
     parsec(:expression)
@@ -300,6 +288,7 @@ defmodule Pantagruel.Parse do
     |> unwrap_and_tag(:bind_symbol)
     |> concat(choice([binding_in, binding_from]) |> unwrap_and_tag(:bind_op))
     |> concat(parsec(:expression) |> unwrap_and_tag(:bind_domain))
+
   # An element in the first half of a quantifier or comprehension,
   # either a binding form or an arbitrary expression acting as a guard on
   # the bindings.
@@ -369,11 +358,29 @@ defmodule Pantagruel.Parse do
 
   # PARSE COMBINATORS
 
+  symbol =
+    choice([
+      integer(min: 1),
+      literal,
+      parsec(:lambda),
+      operator,
+      identifier,
+      parsec(:domain)
+    ])
+
+  # An expression formed by joining subexpressions with dots, as in
+  # `foo.bar.baz`, parsed as object/method-style access.
+  dot_expression =
+    [nested_expression, quantifier, comprehension, symbol]
+    |> choice()
+    |> join(string("."), 1)
+    |> traverse({Pantagruel.Parse.Expressions, :parse_dot_expression, []})
+
   # Some single recursive expression, consisting of a single expression
   # component, or a function application tree of expression components.
   defparsec(
     :expression,
-    [nested_expression, quantifier, comprehension, symbol]
+    [float, dot_expression, nested_expression, quantifier, comprehension, symbol]
     |> choice()
     |> join(space |> optional)
     |> traverse({Pantagruel.Parse.Expressions, :parse_function_application, []})
