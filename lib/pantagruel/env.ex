@@ -176,8 +176,12 @@ defmodule Pantagruel.Env do
   def is_bound?({:appl, operator: _, x: x}, scopes),
     do: is_bound?(x, scopes)
 
-  def is_bound?(variable, [scope | parent]) do
+  def is_bound?(variable, [scope | parent]) when is_binary(variable) do
     variable = String.trim(variable, "'")
+    has_key?(scope, variable) or is_bound?(variable, parent)
+  end
+
+  def is_bound?(variable, [scope | parent]) when is_atom(variable) do
     has_key?(scope, variable) or is_bound?(variable, parent)
   end
 

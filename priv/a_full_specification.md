@@ -43,7 +43,7 @@ In the head of the section before the first `;`, we see one function declaration
 
 The function declaration `eval |p: Program| :: Bool` introduces a function, `eval`, which takes a `Program` `p`[^1], and returns a `Bool`.
 
-[^1]: `x : Y`, pronounced "in", indicates that *the domain of* `x` is `Y`. That is, `x` is some value and `Y` is the set of values that `x` might take. In this way domains are analogous to types but more powerful; they can also include restrictions on the values within the type, such as `x != 0` or `x mod 2 == 0`. `:`/`in` is distinct from `from`, which indicates membership in some concrete set.
+[^1]: `x : Y`, pronounced "in", indicates that *the domain of* `x` is `Y`. That is, `x` is some value and `Y` is the set of values that `x` might take. In this way domains are analogous to types but more powerful; they can also include restrictions on the values within the type, such as `x != 0` or `x mod 2 = 0`. `:`/`in` is distinct from `from`, which indicates membership in some concrete set.
 
 The constructor declaration `section |head, body: Head, Body . #head > 0 | => Section` introduces a function `section` which takes a `Head` and `Body` and produces a `Section`. There's also a single precondition to the constructor which says that the size of `head` has to be greater than 0, ie, there needs to be at least one element in it.
 
