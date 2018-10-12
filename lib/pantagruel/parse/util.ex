@@ -8,11 +8,22 @@ defmodule Pantagruel.Parse.Util do
   Given a combinator C and a joiner J, match on
   CJCJ ... C
   """
-  def join(c, joiner) do
+  def join(c, joiner, times \\ 0)
+
+  def join(c, joiner, 0) do
     c
     |> repeat(
       ignore(joiner)
       |> concat(c)
+    )
+  end
+
+  def join(c, joiner, times) do
+    c
+    |> times(
+      ignore(joiner)
+      |> concat(c),
+      min: times
     )
   end
 

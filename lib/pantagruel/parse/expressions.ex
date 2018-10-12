@@ -46,53 +46,34 @@ defmodule Pantagruel.Parse.Expressions do
   def parse_function_application(_rest, expressions, context, _line, _offset) do
     parsed =
       expressions
-      |> assoc_dots([])
       |> Enum.reverse()
-      |> Enum.flat_map(&parse_dot_chain/1)
       |> Enum.reduce(&assoc/2)
 
     {[parsed], context}
   end
 
-  # As a first pass, bind any dot expressions to the expression
-  # immediately preceding.
-  defp assoc_dots([], acc), do: Enum.reverse(acc)
+  @spec parse_dot_expression(
+          binary(),
+          Parse.t(),
+          map,
+          pos_integer,
+          pos_integer
+        ) :: Parse.t()
+  def parse_dot_expression(_rest, expressions, context, _line, _offset) do
+    expressions =
+      expressions
+      |> Enum.reverse()
+      |> Enum.reduce(&dot/2)
 
-  defp assoc_dots([<<"."::utf8, _::binary>> = e | rest], acc), do: assoc_dots(rest, acc, e)
-  defp assoc_dots([e | rest], acc), do: assoc_dots(rest, [e | acc])
-
-  defp assoc_dots([e | rest], acc, dot) do
-    acc = [apply_f(dot, e) | acc]
-    assoc_dots(rest, acc)
+    {[expressions], context}
   end
 
-  # Handle a single string representing chained dot-access, like
-  # "foo.bar.baz".
-  defp parse_dot_chain(v) when is_binary(v) do
-    [head | tail] = String.split(v, ".", trim: true)
-
-    dot = &{:dot, "." <> &1}
-
-    head =
-      case String.starts_with?(v, ".") do
-        true -> dot.(head)
-        false -> head
-      end
-
-    # Dot access binds more tightly; parse first and return as an
-    # expression.
-    [head | Enum.map(tail, dot)] |> Enum.reduce(&assoc/2) |> List.wrap()
-  end
-
-  defp parse_dot_chain(v), do: [v]
-
+  defp dot(f, x), do: {:dot, f: f, x: x}
   # Handle infix binary operators.
   defp assoc(x, [appl, binary_operator: op]), do: apply_f(op, appl, x)
   defp assoc(x, appl) when x in @binary_operators, do: [appl, binary_operator: x]
   # Handle prefix unary operators.
   defp assoc(x, appl) when appl in @unary_operators, do: apply_f(appl, x, nil)
-  # Handle postfix dot-access operator.
-  defp assoc({:dot, x}, appl), do: apply_f(x, appl)
   # Handle normal prefix function application.
   defp assoc(x, appl), do: apply_f(appl, x)
 
