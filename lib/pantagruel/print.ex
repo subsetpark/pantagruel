@@ -134,6 +134,10 @@ defmodule Pantagruel.Format do
     "#{format_exp(f, s)} #{format_exp(x, s)}"
   end
 
+  def format_exp({:dot, f: f, x: x}, s) do
+    "#{format_exp(x, s)}.#{format_exp(f, s)}"
+  end
+
   def format_exp(exp, s) do
     exp
     |> Enum.map(&format_exp(&1, s))
