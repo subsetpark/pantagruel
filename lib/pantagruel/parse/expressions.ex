@@ -33,8 +33,8 @@ defmodule Pantagruel.Parse.Expressions do
   ]
 
   @doc """
-  Given an AST representing a single expression (potentially consisting
-  of multiple words), build a function application tree.
+  Given a list of expressions representing function application, construct
+  an AST.
   """
   @spec parse_function_application(
           binary(),
@@ -43,15 +43,13 @@ defmodule Pantagruel.Parse.Expressions do
           pos_integer,
           pos_integer
         ) :: Parse.t()
-  def parse_function_application(_rest, expressions, context, _line, _offset) do
-    parsed =
-      expressions
-      |> Enum.reverse()
-      |> Enum.reduce(&assoc/2)
+  def parse_function_application(_rest, expressions, context, _line, _offset),
+    do: {expressions |> reduce(&assoc/2), context}
 
-    {[parsed], context}
-  end
-
+  @doc """
+  Given a list of expressions representing an object/method-style function
+  application, construct an AST.
+  """
   @spec parse_dot_expression(
           binary(),
           Parse.t(),
@@ -59,16 +57,16 @@ defmodule Pantagruel.Parse.Expressions do
           pos_integer,
           pos_integer
         ) :: Parse.t()
-  def parse_dot_expression(_rest, expressions, context, _line, _offset) do
-    expressions =
-      expressions
-      |> Enum.reverse()
-      |> Enum.reduce(&dot/2)
+  def parse_dot_expression(_, expressions, context, _, _),
+    do: {expressions |> reduce(&dot/2), context}
 
-    {[expressions], context}
+  defp reduce(expressions, fun) do
+    expressions
+    |> Enum.reverse()
+    |> Enum.reduce(fun)
+    |> List.wrap()
   end
 
-  defp dot(f, x), do: {:dot, f: f, x: x}
   # Handle infix binary operators.
   defp assoc(x, [appl, binary_operator: op]), do: apply_f(op, appl, x)
   defp assoc(x, appl) when x in @binary_operators, do: [appl, binary_operator: x]
@@ -81,4 +79,6 @@ defmodule Pantagruel.Parse.Expressions do
   defp apply_f(f, x), do: {:appl, [f: f, x: x]}
   defp apply_f(operator, x, nil), do: {:appl, operator: operator, x: x}
   defp apply_f(operator, x, y), do: {:appl, operator: operator, x: x, y: y}
+
+  defp dot(f, x), do: {:dot, f: f, x: x}
 end
