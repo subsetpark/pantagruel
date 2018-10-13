@@ -248,6 +248,16 @@ defmodule ExpressionParserTest do
       tryexp(text, expected)
     end
 
+    test "unary operator with dot expression" do
+      text = "#x.f"
+
+      expected = [
+        unary_exp: [op: :card, operand: {:dot, [f: "f", x: "x"]}]
+      ]
+
+      tryexp(text, expected)
+    end
+
     test "cardinality testing" do
       text = "#x > 3"
       text2 = "# x > 3"
