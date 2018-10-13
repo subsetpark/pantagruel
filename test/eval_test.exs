@@ -265,8 +265,8 @@ defmodule EvalTest do
         end
 
       assert [
-               quantifier: [
-                 quant_operator: :forall,
+               quantification: [
+                 quantifier: :forall,
                  quant_bindings: [
                    guard: "j",
                    binding: [

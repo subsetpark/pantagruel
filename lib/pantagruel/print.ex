@@ -78,7 +78,7 @@ defmodule Pantagruel.Format do
   end
 
   def format_exp(
-        {:quantifier, quant_operator: op, quant_bindings: binding, quant_expression: expr},
+        {:quantification, quantifier: op, quant_bindings: binding, quant_expression: expr},
         s
       ) do
     [

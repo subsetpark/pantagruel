@@ -70,6 +70,10 @@ defmodule Pantagruel.Parse do
         ])
     ])
 
+  quantifier =
+    strings([{"∃", :exists}, {"∀", :forall}])
+    |> choice()
+
   refinement = string("←") |> replace(:refined)
   # Number values
   float =
@@ -294,7 +298,7 @@ defmodule Pantagruel.Parse do
     |> concat(choice([binding_in, binding_from]) |> unwrap_and_tag(:bind_op))
     |> concat(parsec(:expression) |> unwrap_and_tag(:bind_domain))
 
-  # An element in the first half of a quantifier or comprehension,
+  # An element in the first half of a quantification or comprehension,
   # either a binding form or an arbitrary expression acting as a guard on
   # the bindings.
   binding_or_guard =
@@ -319,17 +323,15 @@ defmodule Pantagruel.Parse do
     |> nested
     |> tag(:comprehension)
 
-  exists = string("∃") |> replace(:exists)
-  forall = string("∀") |> replace(:forall)
   # An expression of the form
   # Q B1, B2, B3 ⸳ E
   # Where Q is either the universal quantifier ∀ or the existential
   # quantifier ∃, B is a series of bindings/predicates as above, and
   # E is an expression that holds for all members of the sets/domains in
   # the bindings, as in ∀, or at least one, as in ∃.
-  quantifier =
-    choice([exists, forall])
-    |> unwrap_and_tag(:quant_operator)
+  quantification =
+    quantifier
+    |> unwrap_and_tag(:quantifier)
     |> concat(
       binding_or_guard
       |> comma_join
@@ -337,7 +339,7 @@ defmodule Pantagruel.Parse do
     )
     |> ignore(such_that)
     |> concat(parsec(:expression) |> unwrap_and_tag(:quant_expression))
-    |> tag(:quantifier)
+    |> tag(:quantification)
 
   # PRIVATE COMBINATORS
 
@@ -376,10 +378,11 @@ defmodule Pantagruel.Parse do
   # An expression formed by joining subexpressions with dots, as in
   # `foo.bar.baz`, parsed as object/method-style access.
   dot_expression =
-    [nested_expression, quantifier, comprehension, symbol]
+    [nested_expression, quantification, comprehension, symbol]
     |> choice()
     |> join(string("."), 1)
     |> traverse({Pantagruel.Parse.Expressions, :parse_dot_expression, []})
+
   # An expression of a prefix operator with a single operand.
   unary_expression =
     unary_operator
@@ -405,7 +408,7 @@ defmodule Pantagruel.Parse do
       unary_expression,
       dot_expression,
       nested_expression,
-      quantifier,
+      quantification,
       comprehension,
       symbol
     ]

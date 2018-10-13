@@ -150,9 +150,9 @@ defmodule Pantagruel.Env do
     |> Enum.all?(&is_bound?(&1, scope))
   end
 
-  # Boundness checking for :forall and :exists quantifiers.
+  # Boundness checking for :forall and :exists quantifications.
   def is_bound?(
-        {:quantifier, [quant_operator: _, quant_bindings: bindings, quant_expression: expr]},
+        {:quantification, [quantifier: _, quant_bindings: bindings, quant_expression: expr]},
         scope
       ) do
     # Introduce any internal bindings for the purpose of boundness
