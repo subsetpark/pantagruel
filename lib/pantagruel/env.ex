@@ -173,7 +173,7 @@ defmodule Pantagruel.Env do
   def is_bound?({:appl, operator: _, x: x, y: y}, scopes),
     do: is_bound?(x, scopes) && is_bound?(y, scopes)
 
-  def is_bound?({:appl, operator: _, x: x}, scopes),
+  def is_bound?({:unary_exp, op: _, operand: x}, scopes),
     do: is_bound?(x, scopes)
 
   def is_bound?(variable, [scope | parent]) when is_binary(variable) do
