@@ -38,6 +38,13 @@ defmodule Pantagruel.Parse do
   # Denotes membership in a concrete set.
   binding_from = string("∈") |> replace(:from)
 
+  unary_operator =
+    strings([
+      {"~", :not},
+      {"#", :card}
+    ])
+    |> choice
+
   operator =
     choice([
       log_and,
@@ -51,7 +58,6 @@ defmodule Pantagruel.Parse do
           {"<=", :lte},
           {">", :gt},
           {"<", :lt},
-          {"~", :not},
           {"↔", :iff},
           {"→", :then},
           {"+", :plus},
@@ -59,7 +65,6 @@ defmodule Pantagruel.Parse do
           {"*", :times},
           {"/", :divides},
           {"^", :exp},
-          {"#", :card},
           {"\\", :insert},
           {"⊕", :xor}
         ])
@@ -375,12 +380,35 @@ defmodule Pantagruel.Parse do
     |> choice()
     |> join(string("."), 1)
     |> traverse({Pantagruel.Parse.Expressions, :parse_dot_expression, []})
+  # An expression of a prefix operator with a single operand.
+  unary_expression =
+    unary_operator
+    |> unwrap_and_tag(:op)
+    |> concat(
+      space
+      |> optional()
+      |> ignore
+    )
+    |> concat(
+      [float, dot_expression, nested_expression, comprehension, symbol]
+      |> choice()
+      |> unwrap_and_tag(:operand)
+    )
+    |> tag(:unary_exp)
 
   # Some single recursive expression, consisting of a single expression
   # component, or a function application tree of expression components.
   defparsec(
     :expression,
-    [float, dot_expression, nested_expression, quantifier, comprehension, symbol]
+    [
+      float,
+      unary_expression,
+      dot_expression,
+      nested_expression,
+      quantifier,
+      comprehension,
+      symbol
+    ]
     |> choice()
     |> join(space |> optional)
     |> traverse({Pantagruel.Parse.Expressions, :parse_function_application, []})

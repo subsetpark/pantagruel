@@ -244,14 +244,14 @@ defmodule ExpressionParserTest do
 
     test "unary operator" do
       text = "#x"
-      expected = [appl: [operator: :card, x: "x"]]
+      expected = [unary_exp: [op: :card, operand: "x"]]
       tryexp(text, expected)
     end
 
     test "cardinality testing" do
       text = "#x > 3"
       text2 = "# x > 3"
-      expected = [appl: [operator: :gt, x: {:appl, [operator: :card, x: "x"]}, y: 3]]
+      expected = [appl: [operator: :gt, x: {:unary_exp, [op: :card, operand: "x"]}, y: 3]]
 
       tryexp(text, expected)
       tryexp(text2, expected)
