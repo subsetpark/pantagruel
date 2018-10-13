@@ -5,6 +5,11 @@ defmodule Pantagruel.Parse.Expressions do
   This module encodes the function application binding rules in
   Pantagruel.
   """
+  @doc """
+  Parse a string into a float.
+  """
+  def parse_float(_, [arg], context, _, _), do: {[String.to_float(arg)], context}
+
   @binary_operators [
     :and,
     :or,

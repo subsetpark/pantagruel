@@ -29,46 +29,52 @@ defmodule Pantagruel.Parse do
 
   newline = string("\n")
   space = string(" ")
-  # Logical operators.
-  log_and = string("∧") |> replace(:and)
-  log_or = string("∨") |> replace(:or)
-  # A closed set of non-alphabetic binary or unary functions.
-  # Denotes belonging to a domain.
-  binding_in = string(":") |> replace(:in)
-  # Denotes membership in a concrete set.
-  binding_from = string("∈") |> replace(:from)
 
+  logical_operators =
+    strings([
+      {"∧", :and},
+      {"∨", :or}
+    ])
+
+  binding_operators =
+    strings([
+      # Denotes belonging to a domain.
+      {":", :in},
+      # Denotes membership in a concrete set.
+      {"∈", :from}
+    ])
+
+  binary_operators =
+    strings([
+      {"=", :equals},
+      {"!=", :notequals},
+      {">=", :gte},
+      {"<=", :lte},
+      {">", :gt},
+      {"<", :lt},
+      {"↔", :iff},
+      {"→", :then},
+      {"+", :plus},
+      {"-", :minus},
+      {"*", :times},
+      {"/", :divides},
+      {"^", :exp},
+      {"\\", :insert},
+      {"⊕", :xor}
+    ])
+
+  # A closed set of binary infix operators.
+  operator =
+    (binding_operators ++ logical_operators ++ binary_operators)
+    |> choice
+
+  # A closed set of unary prefix operators.
   unary_operator =
     strings([
       {"~", :not},
       {"#", :card}
     ])
     |> choice
-
-  operator =
-    choice([
-      log_and,
-      log_or,
-      binding_in,
-      binding_from
-      | strings([
-          {"=", :equals},
-          {"!=", :notequals},
-          {">=", :gte},
-          {"<=", :lte},
-          {">", :gt},
-          {"<", :lt},
-          {"↔", :iff},
-          {"→", :then},
-          {"+", :plus},
-          {"-", :minus},
-          {"*", :times},
-          {"/", :divides},
-          {"^", :exp},
-          {"\\", :insert},
-          {"⊕", :xor}
-        ])
-    ])
 
   quantifier =
     strings([{"∃", :exists}, {"∀", :forall}])
@@ -83,11 +89,7 @@ defmodule Pantagruel.Parse do
     |> string(".")
     |> utf8_string([?0..?9], min: 1)
     |> reduce({Enum, :join, [""]})
-    |> traverse(:parse_float)
-
-  defp parse_float(_rest, [arg], context, _line, _offset) do
-    {[String.to_float(arg)], context}
-  end
+    |> traverse({Pantagruel.Parse.Expressions, :parse_float, []})
 
   # Any sequence of lower cased characters, suitable for variable names
   # or atom literals.
@@ -155,7 +157,7 @@ defmodule Pantagruel.Parse do
   # Where L is a logical operator like ∧ or ∨, El and E is either
   # a guarded refinement or a single expression.
   statement =
-    unwrap_and_tag(choice([log_and, log_or]), :intro_op)
+    unwrap_and_tag(logical_operators |> choice, :intro_op)
     |> optional
     |> choice([guarded_refinement, parsec(:expression)])
     |> tag(:expr)
@@ -295,7 +297,7 @@ defmodule Pantagruel.Parse do
     [pared_identifiers, identifier]
     |> choice
     |> unwrap_and_tag(:bind_symbol)
-    |> concat(choice([binding_in, binding_from]) |> unwrap_and_tag(:bind_op))
+    |> concat(binding_operators |> choice |> unwrap_and_tag(:bind_op))
     |> concat(parsec(:expression) |> unwrap_and_tag(:bind_domain))
 
   # An element in the first half of a quantification or comprehension,
