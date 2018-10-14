@@ -1,0 +1,13 @@
+user|| => User
+doc |owner: User| => Document
+" A specification for a small document management system.
+check_out |u, d: User, Document|
+" A user may check out a document if they have permission to access it
+" and it's not currently checked out.
+(d.owner = nobody and (has_perm? u d) and check_out u d) -> d'.owner = u
+(d.owner != nobody or ~(has_perm? u d)) -> d'.owner = d.owner
+
+;
+
+nobody || :: User
+has_perm? |u, d: User, Document| :: Bool

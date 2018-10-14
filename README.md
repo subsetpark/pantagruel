@@ -46,14 +46,13 @@ What would be especially nice is if we had a notation that was more
 mathematical but also easily written by hand, and intuitive to the
 programmer, so we could use it as a lingua franca for whiteboarding,
 ideation in notebooks, and the like. There's a possibility for something
-with a much lower barrier to entry (for this admittedly more modest goal)
-than something like Z. Part of what makes this possible is that we can
-jettison a formal *semantics* entirely. Because this is a specification
-language, and because it is not going to result in a provably correct
-program, it doesn't need to *mean* anything. At the end of the day the
-only semantics will be in the mind of the human reader. So we can try
-to provide them with a language that they can use to be as descriptive
-as is necessary, but only for their own purposes.
+with a much lower barrier to entry (for this admittedly more modest
+goal) than something like Z. Part of what makes this possible is that we
+can jettison a formal *semantics* entirely. It doesn't need to *mean*
+anything. At the end of the day the only semantics will be in the mind
+of the human reader. So we can try to provide them with a language that
+they can use to be as descriptive as is necessary, but only for their
+own purposes.
 
 Of course, any language with an undefined semantics will not be *actually*
 unambiguous in any objective way. But we might be able to at least avoid
@@ -63,7 +62,7 @@ In other words, it might be nice if we had a system that enforced
 certain constraints about exhaustiveness and form while still allowing
 the author to be as lazy and hand-wavy as they want if they decide it's
 not important to be more specific. There might be a value in forcing
-ambiguity into sentences like 'There is a function *F* (and I won't
+ambiguity into sentences like 'There is a function *f* (and I won't
 say anything else about it)' rather than 'When the program is finished,
 all mailboxes should be empty'.
 
@@ -77,64 +76,95 @@ even if there are no constraints placed on what is said.
 
 ## A sample program
 
-Here's a trivial but complete Pantagruel program.
+Here's a trivial but complete Pantagruel program, translated from an example from *The Way of Z*.
 
 ```pantagruel
-fib |x : Nat| :: Nat
-; A specification for the fibonacci function.
-fib x <- fib x - 1 + fib x - 2
-fib 1 <- 1
-fib 2 <- 1
+user|| => User
+doc |owner: User| => Document
+
+" A specification for a small document management system.
+
+check_out |u, d: User, Document|
+
+" A user may check out a document if they have permission to access it
+" and it's not currently checked out.
+
+(d.owner = nobody and (has_perm? u d) and check_out u d) -> d'.owner = u
+(d.owner != nobody or ~(has_perm? u d)) -> d'.owner = d.owner
+
+;
+
+nobody || :: User
+has_perm? |u, d: User, Document| :: Bool
 ```
 
-pretty printed, that's:
+Paragraph 1: The introduction of our two domains, *User*s and *Document*s.
+
+P. 2: A comment introducing the program.
+
+P. 3: The introduction of a procedure, *check-out*, which takes *u*,
+a *User*, and *d*, a *Document*.
+
+P. 4: A comment describing our specification in natural language.
+
+P. 5: Two propositions describing the expected state after the
+*check-out* procedure. The first says that if the owner of *d* is
+*nobody* and *has-perm? u d* is true and *check-out u d* is evaluated,
+then the successor to *d* (that is, *d* at some next point in time) will
+have an owner of *u*. The second line says if either of the two first
+conditions is otherwise, the successor to *d* will have the same owner
+as *d* does. In this line we have left out the bit about *check-out u
+d* because in our universe, that proposition is true whether or not we
+run *check-out*.
+
+`;`: Pronounced "where", acts as a section separator.
+
+P. 6: "Introduces" the two procedures referred to in the previous section,
+*nobody* and *has-perm?*. *nobody* is a procedure which yields a *User*,
+in this case understood to represent a document with no owner. *has-perm?*
+is a procedure which will return a Boolean value indicating whether a user
+has permission to check out a document or not; in this specification
+we've left it at that. In a different document or if we were also
+interested in the specifics of who can check out a document and when,
+we could continue the specification with statements about *has-perm?*.
+
+Pretty printed, that's:
 
 ----------------
+----------------
 
-fib : |x:ℕ| ∷ ℕ
+user «» ⇒ User \
+doc «owner:User» ⇒ Document
 
-A specification for the fibonacci function.
+> A specification for a small document management system.
 
-fib x ← fib x − 1 + fib x − 2  \
-fib 1 ← 1  \
-fib 2 ← 1
+check-out «u, d:User, Document»
+
+> A user may check out a document if they have permission to access it
+> and it's not currently checked out.
+
+(d.owner = nobody ∧ (has-perm? u d) ∧ check-out u d) → d'.owner = u \
+(d.owner ≠ nobody ∨ ¬(has-perm? u d)) → d'.owner = d.owner
+
+***
+
+nobody «» ∷ User \
+has-perm? «u, d:User, Document» ∷ 𝔹
 
 ---------------
+---------------
 
-Line 1: A function declaration, introducing the `fib` function, which
-takes some `x` in the domain of the natural numbers and returns some
-natural number.  \
-Line 2: A comment describing the program.  \
-Line 3: `fib x`, that is, `fib` of any `x`, is *refined* by `fib` of
-`x - 1` plus `fib` of `x - 2`.  \
-Lines 4,5: `fib` of 1 is 1 and `fib` of 2 is 1.
-
-There are a few components to this, none of which should be particularly
-novel: line 1 introduces a function and describes the arguments it takes,
-giving each one a name in the process, in terms of their domains. It
-also describes the codomain of the function.[^1] Line 2 is an English
-comment. Any text between a `;` and a newline is a comment; there are no
-block comments, but multiple lines starting with `;` will be treated as a
-single paragraph. Lines 3-5 offer *refinements* for `fib`; that is, some
-*stronger* restatement of a function call `fib x`. In this trivial case,
-the three statements together completely describe the fibonacci function;
-in a more complex example, there may be multiple levels of refinement
-as an idea is fleshed out, which might end up in stubs or lacunae rather
-than executable code. For instance, we might assert that `f x <- g x 1`
-and later provide a sketch of the behavior of `g` - for instance, saying
-that it accepts two integers and returns one - without actually saying
-what it *does*. A final thing that we can do being that this is not an
-executable computer program is order the patterns in lines 3-5 according
-to how we might think of them, with the general case first, rather than
-how they would need to be in an ML-style pattern match, whence this is
-obviously stolen, where the base case always needs to go first.
-
-[^1]: Pantagruel uses the words "domain" and "codomain" as oppose to
-"type" because the natural numbers (here defined as the integers greater
-than 0) are not a type; they're a set. In Pantagruel the expression `x :
-X` says that `x` is *in the domain* `X`, but X can be a set of specific
-values, a generic data type, or anything in between.
-
+The document is structured the way it is so that we are able to express
+what we take to be the gist of our program in as terse a manner as
+possible. In this case we want to lay out unambiguously the relationship
+between ownership, check-out permissions and the effects of checking
+out a document. The `pantagruel` program is not terribly concerned with
+the specifics of what we say and trusts us to communicate what we need
+to. However, it wants to keep us honest, and thus we are constrained
+to define all of our terms to at least some degree. For instance, if we
+had included the expression `d.owner = nobody` in the first section but
+not declared the `nobody` procedure in the second, barebones as it is,
+`pantagruel` would raise an error upon evaluating the program.
 
 ## Who would be interested in this?
 
