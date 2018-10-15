@@ -1,7 +1,7 @@
 x || => Real
 y ||=>Real
 x > rand andr [D] 10 x
-and x == 1
+and x = 1
 exists (m, n, z) from x . y[x][m,n,z]
 []
 y = |x : |z:D| :: D | :: D
@@ -24,5 +24,5 @@ x != 0
 or [x from String . x + `ok]
 all (j,k):X . j > k
 ;
-x|y:Real . y == 1|
+x|y:Real . y = 1|
 z x . x > 1 <- 0

@@ -78,7 +78,7 @@ defmodule Pantagruel do
     Enum.each(e.unbound, &puts("- #{format_exp(&1, e.scopes)}"))
 
     e.unbound
-    |> Enum.filter(&match?({:quantifier, _}, &1))
+    |> Enum.filter(&match?({:quantification, _}, &1))
     |> case do
       [] ->
         :ok
@@ -92,9 +92,9 @@ defmodule Pantagruel do
   end
 
   defp handle_bad_bindings(
-         {:quantifier, quant_operator: _, quant_bindings: bindings, quant_expression: expr}
+         {:quantification, quantifier: _, quant_bindings: bindings, quant_expression: expr}
        ) do
-    expr = {:quantifier, quant_operator: "…", quant_bindings: bindings, quant_expression: expr}
+    expr = {:quantification, quantifier: "…", quant_bindings: bindings, quant_expression: expr}
 
     puts(
       "Expected binding form. Found: \"#{format_exp(expr, [])}\"\nDid you forget to wrap your symbols in ()?"

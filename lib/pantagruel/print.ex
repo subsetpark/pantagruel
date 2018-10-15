@@ -78,7 +78,7 @@ defmodule Pantagruel.Format do
   end
 
   def format_exp(
-        {:quantifier, quant_operator: op, quant_bindings: binding, quant_expression: expr},
+        {:quantification, quantifier: op, quant_bindings: binding, quant_expression: expr},
         s
       ) do
     [
@@ -126,12 +126,16 @@ defmodule Pantagruel.Format do
     "#{format_exp(x, s)} #{format_exp(op, s)} #{format_exp(y, s)}"
   end
 
-  def format_exp({:appl, operator: op, x: x}, s) do
+  def format_exp({:unary_exp, op: op, operand: x}, s) do
     "#{format_exp(op, s)}#{format_exp(x, s)}"
   end
 
   def format_exp({:appl, f: f, x: x}, s) do
     "#{format_exp(f, s)} #{format_exp(x, s)}"
+  end
+
+  def format_exp({:dot, f: f, x: x}, s) do
+    "#{format_exp(x, s)}.#{format_exp(f, s)}"
   end
 
   def format_exp(exp, s) do

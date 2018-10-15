@@ -145,7 +145,7 @@ defmodule Pantagruel.Eval do
   # Existence quantifiers don't just introduce variables for the scope of
   # their predicates; the introduce variables into global scope.
   defp bind_expression_variables(
-         {:quantifier, quant_operator: :exists, quant_bindings: bindings, quant_expression: expr},
+         {:quantification, quantifier: :exists, quant_bindings: bindings, quant_expression: expr},
          state
        ) do
     bound =

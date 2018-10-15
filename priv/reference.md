@@ -15,7 +15,7 @@ trivial example, while `1 + 1` is a valid expression in Pantagruel and
 represents the application of the `+` operator with 1 on the left side
 and 1 on the right side, Pantagruel cannot *evaluate* that expression to
 arrive at `2`. By extension, Pantagruel has no capacity to validate that
-`1 + 1 == 2` is a true expression or to demonstrate that `1 + 1 == 3`
+`1 + 1 = 2` is a true expression or to demonstrate that `1 + 1 = 3`
 is a false one. This obviously reduces Pantagruel's capacity for program
 correctness verification and validation to effectively nil; however,
 hopefully its semantic neutrality means that it is more available to the
@@ -120,7 +120,7 @@ Here's an example section head:
 
 ```
 Nat => Score
-halve|score: Score . score mod 2 == 0| :: Score
+halve|score: Score . score mod 2 = 0| :: Score
 ```
 
 It introduces a procedure, `halve`, which operates on all even

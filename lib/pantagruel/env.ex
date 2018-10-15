@@ -150,9 +150,9 @@ defmodule Pantagruel.Env do
     |> Enum.all?(&is_bound?(&1, scope))
   end
 
-  # Boundness checking for :forall and :exists quantifiers.
+  # Boundness checking for :forall and :exists quantifications.
   def is_bound?(
-        {:quantifier, [quant_operator: _, quant_bindings: bindings, quant_expression: expr]},
+        {:quantification, [quantifier: _, quant_bindings: bindings, quant_expression: expr]},
         scope
       ) do
     # Introduce any internal bindings for the purpose of boundness
@@ -167,31 +167,22 @@ defmodule Pantagruel.Env do
 
   def is_bound?({:intro_op, _}, _), do: true
 
-  def is_bound?({:appl, f: f, x: x}, scopes), do: is_bound?(f, scopes) && is_bound?(x, scopes)
+  def is_bound?({appl, f: f, x: x}, scopes) when appl in [:appl, :dot],
+    do: is_bound?(f, scopes) && is_bound?(x, scopes)
 
   def is_bound?({:appl, operator: _, x: x, y: y}, scopes),
     do: is_bound?(x, scopes) && is_bound?(y, scopes)
 
-  def is_bound?({:appl, operator: _, x: x}, scopes),
+  def is_bound?({:unary_exp, op: _, operand: x}, scopes),
     do: is_bound?(x, scopes)
 
-  def is_bound?(variable, [scope | parent] = scopes) do
-    f = &(has_key?(scope, &1) or is_bound?(&1, parent))
+  def is_bound?(variable, [scope | parent]) when is_binary(variable) do
+    variable = String.trim(variable, "'")
+    has_key?(scope, variable) or is_bound?(variable, parent)
+  end
 
-    cond do
-      # Allow arbitrary suffixes or prefixes of "'" to denote
-      # successor/remainder variables.
-      is_binary(variable) ->
-        case variable
-             |> String.trim("'")
-             |> String.split(".", trim: true) do
-          [variable] -> f.(variable)
-          variables -> Enum.all?(variables, &is_bound?(&1, scopes))
-        end
-
-      true ->
-        f.(variable)
-    end
+  def is_bound?(variable, [scope | parent]) when is_atom(variable) do
+    has_key?(scope, variable) or is_bound?(variable, parent)
   end
 
   # Process some temporary bindings and check for boundness, without

@@ -26,3 +26,4 @@ pantagruel-*.tar
 /pant
 
 .elixir_ls
+/tags

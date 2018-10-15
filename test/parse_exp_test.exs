@@ -179,24 +179,24 @@ defmodule ExpressionParserTest do
       )
     end
 
-    test "exists quantifier parsing" do
+    test "exists quantification parsing" do
       text = "∃x:X⸳x>1"
 
       tryexp(text,
-        quantifier: [
-          quant_operator: :exists,
+        quantification: [
+          quantifier: :exists,
           quant_bindings: [binding: [bind_symbol: "x", bind_op: :in, bind_domain: "X"]],
           quant_expression: {:appl, [operator: :gt, x: "x", y: 1]}
         ]
       )
     end
 
-    test "exists quantifier parsing with bunch" do
+    test "exists quantification parsing with bunch" do
       text = "∃(x,y):X⸳x"
 
       tryexp(text,
-        quantifier: [
-          quant_operator: :exists,
+        quantification: [
+          quantifier: :exists,
           quant_bindings: [
             binding: [bind_symbol: {:par, ["x", "y"]}, bind_op: :in, bind_domain: "X"]
           ],
@@ -244,14 +244,24 @@ defmodule ExpressionParserTest do
 
     test "unary operator" do
       text = "#x"
-      expected = [appl: [operator: :card, x: "x"]]
+      expected = [unary_exp: [op: :card, operand: "x"]]
+      tryexp(text, expected)
+    end
+
+    test "unary operator with dot expression" do
+      text = "#x.f"
+
+      expected = [
+        unary_exp: [op: :card, operand: {:dot, [f: "f", x: "x"]}]
+      ]
+
       tryexp(text, expected)
     end
 
     test "cardinality testing" do
       text = "#x > 3"
       text2 = "# x > 3"
-      expected = [appl: [operator: :gt, x: {:appl, [operator: :card, x: "x"]}, y: 3]]
+      expected = [appl: [operator: :gt, x: {:unary_exp, [op: :card, operand: "x"]}, y: 3]]
 
       tryexp(text, expected)
       tryexp(text2, expected)
@@ -283,8 +293,8 @@ defmodule ExpressionParserTest do
       text = "obj.foo"
 
       expected = [
-        appl: [
-          f: ".foo",
+        dot: [
+          f: "foo",
           x: "obj"
         ]
       ]
@@ -296,9 +306,9 @@ defmodule ExpressionParserTest do
       text = "foo.bar.baz"
 
       expected = [
-        appl: [
-          f: ".baz",
-          x: {:appl, [f: ".bar", x: "foo"]}
+        dot: [
+          f: "baz",
+          x: {:dot, [f: "bar", x: "foo"]}
         ]
       ]
 
@@ -308,7 +318,7 @@ defmodule ExpressionParserTest do
     test "object access chaining with an operator" do
       text = "f foo.bar.baz > 1"
 
-      chain = {:appl, [f: ".baz", x: {:appl, [f: ".bar", x: "foo"]}]}
+      chain = {:dot, [f: "baz", x: {:dot, [f: "bar", x: "foo"]}]}
       left_side = {:appl, [f: "f", x: chain]}
       right_side = 1
 
@@ -327,8 +337,8 @@ defmodule ExpressionParserTest do
       text = "(x - 1).foo"
 
       expected = [
-        appl: [
-          f: ".foo",
+        dot: [
+          f: "foo",
           x: {:par, [appl: [operator: :minus, x: "x", y: 1]]}
         ]
       ]
@@ -343,7 +353,7 @@ defmodule ExpressionParserTest do
         appl: [
           operator: :from,
           x: "x",
-          y: {:appl, [f: ".f", x: 1]}
+          y: {:dot, [f: "f", x: 1]}
         ]
       ]
 
@@ -357,7 +367,7 @@ defmodule ExpressionParserTest do
         appl: [
           operator: :from,
           x: "x",
-          y: {:appl, [f: ".f", x: {:par, [{:appl, f: "foo", x: "bar"}]}]}
+          y: {:dot, [f: "f", x: {:par, [{:appl, f: "foo", x: "bar"}]}]}
         ]
       ]
 
@@ -368,13 +378,13 @@ defmodule ExpressionParserTest do
       text = "∀b∈(p).body⸳f"
 
       expected = [
-        quantifier: [
-          quant_operator: :forall,
+        quantification: [
+          quantifier: :forall,
           quant_bindings: [
             binding: [
               bind_symbol: "b",
               bind_op: :from,
-              bind_domain: {:appl, [f: ".body", x: {:par, ["p"]}]}
+              bind_domain: {:dot, [f: "body", x: {:par, ["p"]}]}
             ]
           ],
           quant_expression: "f"
@@ -384,12 +394,12 @@ defmodule ExpressionParserTest do
       tryexp(text, expected)
     end
 
-    test "quantifier regression" do
+    test "quantification regression" do
       text = "∀u:User⸳(∃ent∈(entities c)⸳c)→c"
 
       expected = [
-        quantifier: [
-          quant_operator: :forall,
+        quantification: [
+          quantifier: :forall,
           quant_bindings: [
             binding: [bind_symbol: "u", bind_op: :in, bind_domain: "User"]
           ],
@@ -400,13 +410,47 @@ defmodule ExpressionParserTest do
                x:
                  {:par,
                   [
-                    quantifier: [
-                      quant_operator: :exists,
+                    quantification: [
+                      quantifier: :exists,
                       quant_bindings: [
                         binding: [
                           bind_symbol: "ent",
                           bind_op: :from,
                           bind_domain: {:par, [appl: [f: "entities", x: "c"]]}
+                        ]
+                      ],
+                      quant_expression: "c"
+                    ]
+                  ]},
+               y: "c"
+             ]}
+        ]
+      ]
+
+      tryexp(text, expected)
+    end
+
+    test "quantification regression without parens" do
+      text = "∀u:User⸳(∃ent∈entities c⸳c)→c"
+
+      expected = [
+        quantification: [
+          quantifier: :forall,
+          quant_bindings: [binding: [bind_symbol: "u", bind_op: :in, bind_domain: "User"]],
+          quant_expression:
+            {:appl,
+             [
+               operator: :then,
+               x:
+                 {:par,
+                  [
+                    quantification: [
+                      quantifier: :exists,
+                      quant_bindings: [
+                        binding: [
+                          bind_symbol: "ent",
+                          bind_op: :from,
+                          bind_domain: {:appl, [f: "entities", x: "c"]}
                         ]
                       ],
                       quant_expression: "c"

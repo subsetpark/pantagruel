@@ -29,41 +29,56 @@ defmodule Pantagruel.Parse do
 
   newline = string("\n")
   space = string(" ")
-  # Logical operators.
-  log_and = string("∧") |> replace(:and)
-  log_or = string("∨") |> replace(:or)
-  # A closed set of non-alphabetic binary or unary functions.
-  # Denotes belonging to a domain.
-  binding_in = string(":") |> replace(:in)
-  # Denotes membership in a concrete set.
-  binding_from = string("∈") |> replace(:from)
 
-  operator =
-    choice([
-      log_and,
-      log_or,
-      binding_in,
-      binding_from
-      | strings([
-          {"=", :equals},
-          {"!=", :notequals},
-          {">=", :gte},
-          {"<=", :lte},
-          {">", :gt},
-          {"<", :lt},
-          {"~", :not},
-          {"↔", :iff},
-          {"→", :then},
-          {"+", :plus},
-          {"-", :minus},
-          {"*", :times},
-          {"/", :divides},
-          {"^", :exp},
-          {"#", :card},
-          {"\\", :insert},
-          {"⊕", :xor}
-        ])
+  logical_operators =
+    strings([
+      {"∧", :and},
+      {"∨", :or}
     ])
+
+  binding_operators =
+    strings([
+      # Denotes belonging to a domain.
+      {":", :in},
+      # Denotes membership in a concrete set.
+      {"∈", :from}
+    ])
+
+  binary_operators =
+    strings([
+      {"=", :equals},
+      {"!=", :notequals},
+      {">=", :gte},
+      {"<=", :lte},
+      {">", :gt},
+      {"<", :lt},
+      {"↔", :iff},
+      {"→", :then},
+      {"+", :plus},
+      {"-", :minus},
+      {"*", :times},
+      {"/", :divides},
+      {"^", :exp},
+      {"\\", :insert},
+      {"⊕", :xor}
+    ])
+
+  # A closed set of binary infix operators.
+  operator =
+    (binding_operators ++ logical_operators ++ binary_operators)
+    |> choice
+
+  # A closed set of unary prefix operators.
+  unary_operator =
+    strings([
+      {"~", :not},
+      {"#", :card}
+    ])
+    |> choice
+
+  quantifier =
+    strings([{"∃", :exists}, {"∀", :forall}])
+    |> choice()
 
   refinement = string("←") |> replace(:refined)
   # Number values
@@ -74,11 +89,7 @@ defmodule Pantagruel.Parse do
     |> string(".")
     |> utf8_string([?0..?9], min: 1)
     |> reduce({Enum, :join, [""]})
-    |> traverse(:parse_float)
-
-  defp parse_float(_rest, [arg], context, _line, _offset) do
-    {[String.to_float(arg)], context}
-  end
+    |> traverse({Pantagruel.Parse.Expressions, :parse_float, []})
 
   # Any sequence of lower cased characters, suitable for variable names
   # or atom literals.
@@ -87,7 +98,6 @@ defmodule Pantagruel.Parse do
     ?A..?Z,
     ?0..?9,
     ??,
-    ?.,
     ?',
     ?_,
     ?¿..?ƿ,
@@ -113,17 +123,6 @@ defmodule Pantagruel.Parse do
     |> unwrap_and_tag(:literal)
 
   # The individual component elements of an expression.
-  symbol =
-    choice([
-      float,
-      integer(min: 1),
-      literal,
-      parsec(:lambda),
-      operator,
-      identifier,
-      parsec(:domain)
-    ])
-
   # A sequence of one or more symbols.
   nested_expression =
     parsec(:expression)
@@ -158,7 +157,7 @@ defmodule Pantagruel.Parse do
   # Where L is a logical operator like ∧ or ∨, El and E is either
   # a guarded refinement or a single expression.
   statement =
-    unwrap_and_tag(choice([log_and, log_or]), :intro_op)
+    unwrap_and_tag(logical_operators |> choice, :intro_op)
     |> optional
     |> choice([guarded_refinement, parsec(:expression)])
     |> tag(:expr)
@@ -298,9 +297,10 @@ defmodule Pantagruel.Parse do
     [pared_identifiers, identifier]
     |> choice
     |> unwrap_and_tag(:bind_symbol)
-    |> concat(choice([binding_in, binding_from]) |> unwrap_and_tag(:bind_op))
+    |> concat(binding_operators |> choice |> unwrap_and_tag(:bind_op))
     |> concat(parsec(:expression) |> unwrap_and_tag(:bind_domain))
-  # An element in the first half of a quantifier or comprehension,
+
+  # An element in the first half of a quantification or comprehension,
   # either a binding form or an arbitrary expression acting as a guard on
   # the bindings.
   binding_or_guard =
@@ -325,17 +325,15 @@ defmodule Pantagruel.Parse do
     |> nested
     |> tag(:comprehension)
 
-  exists = string("∃") |> replace(:exists)
-  forall = string("∀") |> replace(:forall)
   # An expression of the form
   # Q B1, B2, B3 ⸳ E
   # Where Q is either the universal quantifier ∀ or the existential
   # quantifier ∃, B is a series of bindings/predicates as above, and
   # E is an expression that holds for all members of the sets/domains in
   # the bindings, as in ∀, or at least one, as in ∃.
-  quantifier =
-    choice([exists, forall])
-    |> unwrap_and_tag(:quant_operator)
+  quantification =
+    quantifier
+    |> unwrap_and_tag(:quantifier)
     |> concat(
       binding_or_guard
       |> comma_join
@@ -343,7 +341,7 @@ defmodule Pantagruel.Parse do
     )
     |> ignore(such_that)
     |> concat(parsec(:expression) |> unwrap_and_tag(:quant_expression))
-    |> tag(:quantifier)
+    |> tag(:quantification)
 
   # PRIVATE COMBINATORS
 
@@ -369,11 +367,53 @@ defmodule Pantagruel.Parse do
 
   # PARSE COMBINATORS
 
+  symbol =
+    choice([
+      integer(min: 1),
+      literal,
+      parsec(:lambda),
+      operator,
+      identifier,
+      parsec(:domain)
+    ])
+
+  # An expression formed by joining subexpressions with dots, as in
+  # `foo.bar.baz`, parsed as object/method-style access.
+  dot_expression =
+    [nested_expression, quantification, comprehension, symbol]
+    |> choice()
+    |> join(string("."), 1)
+    |> traverse({Pantagruel.Parse.Expressions, :parse_dot_expression, []})
+
+  # An expression of a prefix operator with a single operand.
+  unary_expression =
+    unary_operator
+    |> unwrap_and_tag(:op)
+    |> concat(
+      space
+      |> optional()
+      |> ignore
+    )
+    |> concat(
+      [float, dot_expression, nested_expression, comprehension, symbol]
+      |> choice()
+      |> unwrap_and_tag(:operand)
+    )
+    |> tag(:unary_exp)
+
   # Some single recursive expression, consisting of a single expression
   # component, or a function application tree of expression components.
   defparsec(
     :expression,
-    [nested_expression, quantifier, comprehension, symbol]
+    [
+      float,
+      unary_expression,
+      dot_expression,
+      nested_expression,
+      quantification,
+      comprehension,
+      symbol
+    ]
     |> choice()
     |> join(space |> optional)
     |> traverse({Pantagruel.Parse.Expressions, :parse_function_application, []})
