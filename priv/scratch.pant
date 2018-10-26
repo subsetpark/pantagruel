@@ -4,7 +4,7 @@ x > rand andr [D] 10 x
 and x = 1
 exists (m, n, z) from x . y[x][m,n,z]
 []
-y = fn(x : fn(z:D) :: D ) :: D
+y = fn (x : fn(z:D) :: D ) :: D
 ;
 z() => Z
 d() => D

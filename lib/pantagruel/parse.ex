@@ -206,10 +206,7 @@ defmodule Pantagruel.Parse do
   # A function from (0 or more) = N arguments in <= N domains,
   # with an optional codomain.
   fun =
-    string("λ")
-    |> ignore
-    |> optional
-    |> string("(")
+    string("(")
     |> ignore
     |> concat(
       lambda_args
@@ -356,7 +353,10 @@ defmodule Pantagruel.Parse do
   # A function form, treated as a value or domain.
   defcombinatorp(
     :lambda,
-    fun |> tag(:lambda)
+    string("λ")
+    |> ignore
+    |> concat(fun)
+    |> tag(:lambda)
   )
 
   # The domain of a variable. Can be a type (including a function)

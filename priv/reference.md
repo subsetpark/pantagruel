@@ -202,7 +202,7 @@ backtickets: `` `arbitrarily long text value` ``.
 ##### Operators
 
 There is a closed set of symbols that are recognized as **operators**,
-that are applied infix instaed of prefix, eg: `1 + 1`. `x : Y`.
+that are applied infix instead of prefix, eg: `1 + 1`. `x : Y`.
 
 ##### Symbols
 
@@ -213,11 +213,13 @@ an operator.
 ##### Lambdas
 
 Lambdas, or anonymous functions, can be constructed with the same syntax
-used in procedure declaration. For instance:
+used in procedure declaration. The only difference is that instead
+of the name of the procedure, lambdas have `fn` before the opening
+parenthesis. For instance:
 
-TODO: add fn
-
-``` map(f, x: (z:_A)::_B, _A) :: _B ```
+```
+map(f, x: fn(z:_A)::_B, _A) :: _B
+```
 
 This declaration introduces the procedure `map`, which takes two
 arguments, `f` and `x`. `f` is itself a lambda that goes from `_A` to

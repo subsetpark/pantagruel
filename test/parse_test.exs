@@ -237,7 +237,7 @@ defmodule PantagruelTest do
     end
 
     test "heading with lambda" do
-      text = "f(x:(z:Nat)∷z)∷Bool"
+      text = "f(x:λ(z:Nat)∷z)∷Bool"
 
       tryparse(text,
         section: [
@@ -256,6 +256,23 @@ defmodule PantagruelTest do
               ],
               yield_type: :function,
               lambda_codomain: "Bool"
+            ]
+          ]
+        ]
+      )
+    end
+
+    test "heading with par" do
+      text = "f(x:X⸳x∈(Y,Z))"
+
+      tryparse(text,
+        section: [
+          head: [
+            decl: [
+              decl_ident: "f",
+              lambda_args: ["x"],
+              lambda_doms: ["X"],
+              predicate: [appl: [operator: :from, x: "x", y: {:par, ["Y", "Z"]}]]
             ]
           ]
         ]
