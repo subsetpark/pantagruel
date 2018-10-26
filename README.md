@@ -79,12 +79,12 @@ even if there are no constraints placed on what is said.
 Here's a trivial but complete Pantagruel program, translated from an example from *The Way of Z*.
 
 ```pantagruel
-user|| => User
-doc |owner: User| => Document
+user() => User
+doc (owner: User) => Document
 
 " A specification for a small document management system.
 
-check_out |u, d: User, Document|
+check_out (u, d: User, Document)
 
 " A user may check out a document if they have permission to access it
 " and it's not currently checked out.
@@ -94,8 +94,8 @@ check_out |u, d: User, Document|
 
 ;
 
-nobody || :: User
-has_perm? |u, d: User, Document| :: Bool
+nobody () :: User
+has_perm? (u, d: User, Document) :: Bool
 ```
 
 Paragraph 1: The introduction of our two domains, *User*s and *Document*s.

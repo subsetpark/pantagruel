@@ -3,16 +3,16 @@
 Here's a specification, in Pantagruel, of Pantagruel's binding rules.
 ```pantagruel
 " A section head must have at least one statement; a section body can be empty.
-section |head, body: Head, Body . #head > 0 | => Section
-[Comment, Declaration, Alias] => Head
-[Comment, Expression] => Body
-[String] => Comment, Declaration, Alias, Expression
+section (head, body: Head, Body . #head > 0 ) => Section
+Head <= [Comment, Declaration, Alias]
+Body <= [Comment, Expression]
+Comment, Declaration, Alias, Expression <= [String]
 
 eval p <- all sect from p . (is_bound? sect)
 
 ;
 
-is_bound? |sect: Section| :: Bool
+is_bound? (sect: Section) :: Bool
 
 " All variables referred to in a section head must be defined by the
 " end of that section head. All the variables in a section body, however,
@@ -24,15 +24,15 @@ is_bound? sect <-                                           ...
 
 ;
 
-is_bound |sym: String| :: Bool
+is_bound (sym: String) :: Bool
 
 is_bound sym <- sym from (env p) (p sect) or sym from init_scope
 
 ;
 
-env |p: Program| :: [Scope]
-init_scope|| :: Scope
-{String} => Scope
+env (p: Program) :: [Scope]
+init_scope() :: Scope
+Scope <= {String}
 ```
 
 ## Exploration
@@ -41,17 +41,17 @@ Let's consider some of the features.
 
 In the head of the section before the first `;`, we see one function declaration, one constructor declaration, four domain aliases, and one comment. The comment is not interpreted by `pantagruel` and has no semantics in the language.
 
-The function declaration `eval |p: Program| :: Bool` introduces a function, `eval`, which takes a `Program` `p`[^1], and returns a `Bool`.
+The function declaration `eval (p: Program) :: Bool` introduces a function, `eval`, which takes a `Program` `p`[^1], and returns a `Bool`.
 
 [^1]: `x : Y`, pronounced "in", indicates that *the domain of* `x` is `Y`. That is, `x` is some value and `Y` is the set of values that `x` might take. In this way domains are analogous to types but more powerful; they can also include restrictions on the values within the type, such as `x != 0` or `x mod 2 = 0`. `:`/`in` is distinct from `from`, which indicates membership in some concrete set.
 
-The constructor declaration `section |head, body: Head, Body . #head > 0 | => Section` introduces a function `section` which takes a `Head` and `Body` and produces a `Section`. There's also a single precondition to the constructor which says that the size of `head` has to be greater than 0, ie, there needs to be at least one element in it.
+The constructor declaration `section (head, body: Head, Body . #head > 0 ) => Section` introduces a function `section` which takes a `Head` and `Body` and produces a `Section`. There's also a single precondition to the constructor which says that the size of `head` has to be greater than 0, ie, there needs to be at least one element in it.
 
 Notice at this point that we've referred to several variable domains before defining to them: `Program`, `Head`, `Body`. That's fine, as long as they are defined by the time we get to the end of this section head.
 
-The domain aliases all have the form of `"Foo" => Bar`, `"Foo, Bar" => Baz`, or `"Foo" => Bar, Baz`.
+The domain aliases all have the form of `Bar <= [Foo]`, `Baz <= [Foo, Bar]`, or `Bar, Baz <= [Foo]`.
 
-In each case they introduce a new domain or domains on the right side, and define this domain as shorthand for some more complex domain on the left side. For convenience's sake, we can introduce multiple domains at once if they all refer to the same thing. So `"String" => Comment, Declaration, Alias, Expression` introduces `Comment`, `Declaration`, etc. and aliases them all to `"String"`.
+In each case they introduce a new domain or domains on the right side, and define this domain as shorthand for some more complex domain on the left side. For convenience's sake, we can introduce multiple domains at once if they all refer to the same thing. So `Comment, Declaration, Alias, Expression <= [String]` introduces `Comment`, `Declaration`, etc. and aliases them all to `"String"`.
 
 At first glance the presence of the double-quotes is a bit confusing. It means that the domain in question is a *String*. There can be a String of anything, not just characters (though when talking
  about a String of characters we can use the symbol 𝕊).
@@ -69,9 +69,9 @@ Pantagruel borrows its concept of *containers*, or values that hold values, from
 
 In this case "packaging" might be roughly understood for our purposes as the ability to recurse or contain hierarchies. So for instance, a list can contain other lists, whereas a string cannot contain other strings. By that logic we see that `"Comment"` is an ordered non-recursive collection of `Comments`, and `Comment` is an ordered, non-recursive collection of `String`s - in other words, a list of tokens.
 
-Finally, a domain container with multiple elements `A`, `B` can be understood as a container whose elements are either `A` or `B`. So `"Comment, Expression" => Body` says that `Body` is a `String` whose elements are all either `Comment`s or `Expression`s.
+Finally, a domain container with multiple elements `A`, `B` can be understood as a container whose elements are either `A` or `B`. So `Body <= [Comment, Expression]` says that `Body` is a `String` whose elements are all either `Comment`s or `Expression`s.
 
-By the end of the first section head, everything referred to has been formally introduced; either as the name in a function declaration, the arguments in a function declaration, or the right side of a `=>` expression. The two exceptions are `Bool` and `String` (or 𝕊); these domains are predefined in Pantagruel.
+By the end of the first section head, everything referred to has been formally introduced; either as the name in a function declaration, the arguments in a function declaration, or the left side of a `<=` expression. The two exceptions are `Bool` and `String` (or 𝕊); these domains are predefined in Pantagruel.
 
 The body of the first section has a single statement, which is a *refinement*. It says that `eval p` is refined by `all sect from p . (is_bound? sect)`.
 

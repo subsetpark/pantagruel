@@ -91,7 +91,7 @@ defmodule Pantagruel.Eval do
   defp eval_header_statement({:comment, _}, state), do: state
   # 2. Domain aliases, which bind symbols as aliases to concrete domains;
   defp eval_header_statement(
-         {:alias, [alias_expr: alias_exp, alias_name: alias_names]},
+         {:alias, [alias_name: alias_names, alias_expr: alias_exp]},
          {[scope | scopes], header_unbounds, unbounds}
        ) do
     scope = Enum.reduce(alias_names, scope, &Domain.bind(&2, &1, alias_exp))

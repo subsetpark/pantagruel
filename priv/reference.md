@@ -60,7 +60,7 @@ There are three expression forms possible in a section head:
 
 Here is an example procedure declaration:
 
-`fib|n : Nat| :: Nat`
+`fib(n : Nat) :: Nat`
 
 It introduces a procedure called `fib`, which takes one argument, `n`
 in the domain `Nat`. The `::` indicates that this procedure **yields**
@@ -73,7 +73,7 @@ user-defined domain. They are written identically to normal procedures,
 except instead of the **yields** symbol, they are written with the
 **produces** symbol `=>`:
 
-`user|name, age : String, Nat| => User`
+`user(name, age : String, Nat) => User`
 
 This introduces both the domain `User`, as well as the constructor
 `user`. `user` takes two arguments, the first of which is a `String` and
@@ -85,7 +85,7 @@ Procedures can be declared with or without arguments, return domains,
 and predicates. Here's a declaration of a procedure with no arguments
 and an undefined return:
 
-`f||`
+`f()`
 
 Arguments, as above, are specified by a comma separated list of argument
 names, followed by a colon, followed by a comma separated list of
@@ -95,10 +95,10 @@ Finally, procedures can be declared with a comma separated list
 of **predicates** representing some constraint on the procedure
 domain. Here's a procedure declaration with a predicate:
 
-`f|x:Nat . x > 5|`
+`f(x:Nat . x > 5)`
 
 The expression after the `.` indicates that `f` is defined for any
-natural number `x` greater than 5.  `f|x:Nat . x > 5, x < 10|`
+natural number `x` greater than 5.  `f(x:Nat . x > 5, x < 10)`
 
 This declares a procedure `f` that's defined for any natural number `x`
 greater than 5 and less than 10.
@@ -107,11 +107,11 @@ greater than 5 and less than 10.
 
 The final type of expression available in a section head is a **domain
 alias**. This is a simple statement of equivalence between a new domain
-and some existing one. It also uses the **produces** symbol `=>`.
+and some existing one. It uses the **reversed produces** symbol `<=`.
 
 Here's an example domain alias:
 
-``{`ok, `error} => Status``
+``Status <= {`ok, `error}``
 
 Introduces a domain `Status` which is equivalent to the set of values
 `ok` and `error`.
@@ -119,8 +119,8 @@ Introduces a domain `Status` which is equivalent to the set of values
 Here's an example section head:
 
 ```
-Nat => Score
-halve|score: Score . score mod 2 = 0| :: Score
+Score <= Nat
+halve(score: Score . score mod 2 = 0) :: Score
 ```
 
 It introduces a procedure, `halve`, which operates on all even
@@ -215,7 +215,9 @@ an operator.
 Lambdas, or anonymous functions, can be constructed with the same syntax
 used in procedure declaration. For instance:
 
-``` map|f, x: |z:_A|::_B, _A| :: _B ```
+TODO: add fn
+
+``` map(f, x: (z:_A)::_B, _A) :: _B ```
 
 This declaration introduces the procedure `map`, which takes two
 arguments, `f` and `x`. `f` is itself a lambda that goes from `_A` to

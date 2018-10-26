@@ -50,7 +50,9 @@ defmodule Pantagruel.Env do
     :or => %Variable{name: "∨", domain: "𝔹"},
     :exists => %Variable{name: "∃", domain: "⊤"},
     :forall => %Variable{name: "∀", domain: "⊤"},
-    :card => %Variable{name: "#", domain: "⊤"}
+    :card => %Variable{name: "#", domain: "⊤"},
+    :union => %Variable{name: "∪", domain: "U"},
+    :intersection => %Variable{name: "∩", domain: "U"},
   }
 
   @doc """

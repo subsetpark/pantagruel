@@ -268,7 +268,7 @@ defmodule ExpressionParserTest do
     end
 
     test "lambda with comma-joined domain" do
-      text = "|x:(Y,Z)|"
+      text = "λ(x:(Y,Z))"
 
       expected = [
         lambda: [

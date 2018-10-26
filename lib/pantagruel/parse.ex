@@ -44,24 +44,29 @@ defmodule Pantagruel.Parse do
       {"∈", :from}
     ])
 
-  binary_operators =
-    strings([
-      {"=", :equals},
-      {"!=", :notequals},
-      {">=", :gte},
-      {"<=", :lte},
-      {">", :gt},
-      {"<", :lt},
-      {"↔", :iff},
-      {"→", :then},
-      {"+", :plus},
-      {"-", :minus},
-      {"*", :times},
-      {"/", :divides},
-      {"^", :exp},
-      {"\\", :insert},
-      {"⊕", :xor}
-    ])
+  lte = string("<=") |> replace(:lte)
+
+  binary_operators = [
+    lte
+    | strings([
+        {"=", :equals},
+        {"!=", :notequals},
+        {">=", :gte},
+        {">", :gt},
+        {"<", :lt},
+        {"↔", :iff},
+        {"→", :then},
+        {"+", :plus},
+        {"-", :minus},
+        {"*", :times},
+        {"/", :divides},
+        {"^", :exp},
+        {"\\", :insert},
+        {"⊕", :xor},
+        {"&", :intersection},
+        {"|", :union}
+      ])
+  ]
 
   # A closed set of binary infix operators.
   operator =
@@ -201,7 +206,10 @@ defmodule Pantagruel.Parse do
   # A function from (0 or more) = N arguments in <= N domains,
   # with an optional codomain.
   fun =
-    string("|")
+    string("λ")
+    |> ignore
+    |> optional
+    |> string("(")
     |> ignore
     |> concat(
       lambda_args
@@ -218,7 +226,7 @@ defmodule Pantagruel.Parse do
       |> optional
     )
     |> concat(
-      string("|")
+      string(")")
       |> ignore
     )
     |> concat(
@@ -235,20 +243,20 @@ defmodule Pantagruel.Parse do
     |> tag(:decl)
 
   # A header statement of the form
-  # D => A
+  # A <= D
   # Where D is some concrete domain and A is new binding that refers to
   # that domain.
   domain_aliasing =
-    parsec(:expression)
-    |> unwrap_and_tag(:alias_expr)
+    parsec(:domain)
+    |> comma_join
+    |> tag(:alias_name)
     |> concat(
-      constructor
+      lte
       |> ignore
     )
     |> concat(
-      parsec(:domain)
-      |> comma_join
-      |> tag(:alias_name)
+      parsec(:expression)
+      |> unwrap_and_tag(:alias_expr)
     )
     |> tag(:alias)
 
@@ -356,11 +364,11 @@ defmodule Pantagruel.Parse do
   defcombinatorp(
     :domain,
     [
+      parsec(:lambda),
       parsec(:domain)
       |> comma_join()
       |> nested,
-      identifier,
-      parsec(:lambda)
+      identifier
     ]
     |> choice
   )

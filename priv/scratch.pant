@@ -1,21 +1,21 @@
-x || => Real
-y ||=>Real
+x () => Real
+y ()=>Real
 x > rand andr [D] 10 x
 and x = 1
 exists (m, n, z) from x . y[x][m,n,z]
 []
-y = |x : |z:D| :: D | :: D
+y = fn(x : fn(z:D) :: D ) :: D
 ;
-z|| => Z
-d|| => D
-z|| => Nat
-{`ok, `stop} => Status
-rand|| :: Nat
-andr|x,y : Nat, Real . x > y| :: Bool
+z() => Z
+d() => D
+z() => Nat
+Status <= {`ok, `stop}
+rand() :: Nat
+andr(x,y : Nat, Real . x > y) :: Bool
 z d <- y " Here is a comment on `z d`.
 ;
-y|| => Y
-x|| => X
+y() => Y
+x() => X
 exists x from y, y from z . x > 0
 x != 0
 " This is two comments together.
@@ -24,5 +24,5 @@ x != 0
 or [x from String . x + `ok]
 all (j,k):X . j > k
 ;
-x|y:Real . y = 1|
+x(y:Real . y = 1)
 z x . x > 1 <- 0
