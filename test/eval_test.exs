@@ -14,7 +14,7 @@ defmodule EvalTest do
 
   describe "program evaluation" do
     test "eval happy path" do
-      parsed = "f|x:Nat . x > 1| :: Real" |> scan_and_parse
+      parsed = "f(x:Nat . x > 1) :: Real" |> scan_and_parse
 
       assert [
                %{
@@ -25,7 +25,7 @@ defmodule EvalTest do
     end
 
     test "eval unbound" do
-      parsed = "f|x:X| :: Real" |> scan_and_parse
+      parsed = "f(x:X) :: Real" |> scan_and_parse
 
       exc =
         assert_raise UnboundVariablesError, fn ->
@@ -38,9 +38,9 @@ defmodule EvalTest do
     test "eval late binding" do
       parsed =
         """
-        f|x, y:X, Y| :: Real
-        make_y|| => Y
-        make_x|| => X
+        f(x, y:X, Y) :: Real
+        make_y() => Y
+        make_x() => X
         """
         |> scan_and_parse
 
@@ -68,7 +68,7 @@ defmodule EvalTest do
     end
 
     test "eval whole section" do
-      parsed = "f|x:Nat|\nf x > 0" |> scan_and_parse
+      parsed = "f(x:Nat)\nf x > 0" |> scan_and_parse
 
       assert [
                %{
@@ -79,7 +79,7 @@ defmodule EvalTest do
     end
 
     test "eval two sections" do
-      parsed = "f|x:Nat|\n;\ng|| :: Nat" |> scan_and_parse
+      parsed = "f(x:Nat)\n;\ng() :: Nat" |> scan_and_parse
 
       assert [
                %{
@@ -103,7 +103,7 @@ defmodule EvalTest do
     end
 
     test "unbound variable in body" do
-      parsed = "f|x:Nat|\nf x = g x" |> scan_and_parse
+      parsed = "f(x:Nat)\nf x = g x" |> scan_and_parse
 
       assert_raise UnboundVariablesError, fn ->
         Pantagruel.Eval.eval(parsed)
@@ -113,10 +113,10 @@ defmodule EvalTest do
     test "bind variables in the next section" do
       parsed =
         """
-        f|x:Nat|
+        f(x:Nat)
         f x <- g x
         ;
-        g|y:Nat|::Bool
+        g(y:Nat)::Bool
         """
         |> scan_and_parse
 
@@ -135,12 +135,12 @@ defmodule EvalTest do
     test "variable is bound too late" do
       parsed =
         """
-        f|x:Nat|
+        f(x:Nat)
         f x = g x
         ;
-        b|| => Bool
+        b() => Bool
         ;
-        g|y:Nat| :: Bool
+        g(y:Nat) :: Bool
         """
         |> scan_and_parse
 
@@ -152,8 +152,8 @@ defmodule EvalTest do
     test "lambda binding failure" do
       parsed =
         """
-        f|x:Nat|
-        f x : |z:D|::D
+        f(x:Nat)
+        f x : fn (z:D)::D
         """
         |> scan_and_parse
 
@@ -165,10 +165,10 @@ defmodule EvalTest do
     test "lambda binding" do
       parsed =
         """
-        f|x:Nat|
-        f x : |z:D|::D
+        f(x:Nat)
+        f x : fn(z:D)::D
         ;
-        d|| => D
+        d() => D
         """
         |> scan_and_parse
 
@@ -187,8 +187,8 @@ defmodule EvalTest do
     test "lambdas introduce temporary bindings" do
       parsed =
         """
-        f|x:Nat|
-        f x : |z:Nat . z > 100|
+        f(x:Nat)
+        f x : (z:Nat . z > 100)
         """
         |> scan_and_parse
 
@@ -205,8 +205,8 @@ defmodule EvalTest do
     test "alls introduce temporary bindings" do
       parsed =
         """
-        f|x:Nat|
-        con||=> X
+        f(x:Nat)
+        con()=> X
         all y : X . y < 10
         """
         |> scan_and_parse
@@ -224,8 +224,8 @@ defmodule EvalTest do
     test "temporary bindings are temporary" do
       parsed =
         """
-        f|x:Nat|
-        con||=> X
+        f(x:Nat)
+        con()=> X
         all y : X . y < 10
         y > 1
         """
@@ -242,7 +242,7 @@ defmodule EvalTest do
     test "too many domains" do
       parsed =
         """
-        f|x:Nat,Real|
+        f(x:Nat,Real)
         """
         |> scan_and_parse
 
@@ -254,7 +254,7 @@ defmodule EvalTest do
     test "binding without bunching evals as two malformed bindings" do
       parsed =
         """
-        w||
+        w()
         all j, k : X . j > k
         """
         |> scan_and_parse
@@ -290,7 +290,7 @@ defmodule EvalTest do
     test "binding with bunching evals as two bindings" do
       parsed =
         """
-        1 => X
+        X <= 1
         all (j, k) : X . j > k
         """
         |> scan_and_parse
@@ -305,7 +305,7 @@ defmodule EvalTest do
     test "exists binds" do
       parsed =
         """
-        f|x:Nat|
+        f(x:Nat)
         exists y : Nat . f y > 10
         """
         |> scan_and_parse
@@ -327,7 +327,7 @@ defmodule EvalTest do
     test "binding rules regression" do
       parsed =
         """
-        f||
+        f()
         f <- (all z from 1.f . f)
         """
         |> scan_and_parse
@@ -347,11 +347,11 @@ defmodule EvalTest do
     test "look in earlier scope for variable" do
       parsed =
         """
-        f||
+        f()
         ;
-        x||
+        x()
         ;
-        y||
+        y()
         y x = f
         """
         |> scan_and_parse
@@ -387,7 +387,7 @@ defmodule EvalTest do
     test "comprehensions do not bind their variables to external scope" do
       parsed =
         """
-        f|x:Nat|
+        f(x:Nat)
         [y from Nat . f x > y]
         """
         |> scan_and_parse
@@ -408,7 +408,7 @@ defmodule EvalTest do
     test "generics are bound into scope" do
       parsed =
         """
-        f|x:_A|
+        f(x:_A)
         [y from _A . f x > y]
         """
         |> scan_and_parse
@@ -430,7 +430,7 @@ defmodule EvalTest do
     test "aliasing" do
       parsed =
         """
-        {`ok} => Status
+        Status <= {`ok}
         """
         |> scan_and_parse
 
@@ -447,7 +447,7 @@ defmodule EvalTest do
     test "multiple aliasing" do
       parsed =
         """
-        {`ok} => Status, State
+        Status, State <= {`ok}
         """
         |> scan_and_parse
 
@@ -468,7 +468,7 @@ defmodule EvalTest do
     test "object access" do
       parsed =
         """
-        f|x, y:Nat|
+        f(x, y:Nat)
         f.x
         f.y
         """
@@ -491,7 +491,7 @@ defmodule EvalTest do
     test "object access on expression" do
       parsed =
         """
-        f|x, y:Nat|
+        f(x, y:Nat)
         (f 1).x
         """
         |> scan_and_parse
@@ -511,7 +511,7 @@ defmodule EvalTest do
     end
 
     test "comprehension aliasing" do
-      parsed = "{n : Nat, n <= 30 . n} => Day" |> scan_and_parse
+      parsed = "Day <= {n : Nat, n <= 30 . n}" |> scan_and_parse
 
       assert [
                %{
@@ -547,7 +547,7 @@ defmodule EvalTest do
     test "nested quantifiers" do
       parsed =
         """
-        f||
+        f()
         (all x from Nat . all y from x . y > 0)
         """
         |> scan_and_parse
@@ -568,14 +568,14 @@ defmodule EvalTest do
       # Note: this program is incorrect!
       parsed =
         """
-        sort|xs : [X]| :: [X]
-        x|| => X
+        sort(xs : [X]) :: [X]
+        x() => X
 
         all (x,y) from xs'⸳x <= y = ind xs' x < ind xs' y
 
         ;
 
-        ind|xs, x : [X], X| :: Nat0
+        ind(xs, x : [X], X) :: Nat0
         """
         |> scan_and_parse
 

@@ -8,7 +8,7 @@ defmodule PantagruelTest do
 
   describe "expression parsing" do
     test "parse two expressions" do
-      text = "f||\nx != y\ny > 1"
+      text = "f()\nx != y\ny > 1"
 
       tryparse(text,
         section: [
@@ -26,7 +26,7 @@ defmodule PantagruelTest do
     end
 
     test "parse two expressions with connecting operator" do
-      text = "f||\nx != y\n∨y > 1"
+      text = "f()\nx != y\n∨y > 1"
 
       tryparse(text,
         section: [
@@ -44,7 +44,7 @@ defmodule PantagruelTest do
     end
 
     test "parse expression with domain" do
-      text = "f|x:Y⸳a:Y|"
+      text = "f(x:Y⸳a:Y)"
 
       tryparse(text,
         section: [
@@ -61,7 +61,7 @@ defmodule PantagruelTest do
     end
 
     test "parse expression with relation in it" do
-      text = "f||\nx←y ∧ y > 1"
+      text = "f()\nx←y ∧ y > 1"
 
       tryparse(text,
         section: [
@@ -79,7 +79,7 @@ defmodule PantagruelTest do
     end
 
     test "parse expression with multiple elements in the pattern" do
-      text = "f||\nf x←y"
+      text = "f()\nf x←y"
 
       tryparse(text,
         section: [
@@ -101,7 +101,7 @@ defmodule PantagruelTest do
     end
 
     test "parse guarded refinment" do
-      text = "f||\nf x⸳x<0←y\nf x←1"
+      text = "f()\nf x⸳x<0←y\nf x←1"
 
       tryparse(text,
         section: [
@@ -123,7 +123,7 @@ defmodule PantagruelTest do
 
   describe "declaration parsing" do
     test "empty heading parsing" do
-      text = "f||⇒D"
+      text = "f()⇒D"
 
       tryparse(text,
         section: [
@@ -139,7 +139,7 @@ defmodule PantagruelTest do
     end
 
     test "dual heading parsing" do
-      text = "f||⇒D\ng||⇒E"
+      text = "f()⇒D\ng()⇒E"
 
       tryparse(text,
         section: [
@@ -160,7 +160,7 @@ defmodule PantagruelTest do
     end
 
     test "basic heading parsing" do
-      text = "f|a,b:B,C|∷D"
+      text = "f(a,b:B,C)∷D"
 
       tryparse(text,
         section: [
@@ -178,7 +178,7 @@ defmodule PantagruelTest do
     end
 
     test "heading with multiple clauses" do
-      text = "f|x:Y⸳x != 1,x > 0|"
+      text = "f(x:Y⸳x != 1,x > 0)"
 
       tryparse(text,
         section: [
@@ -198,7 +198,7 @@ defmodule PantagruelTest do
     end
 
     test "heading with sequenced domain" do
-      text = "f|x:X|∷[X]"
+      text = "f(x:X)∷[X]"
 
       tryparse(text,
         section: [
@@ -216,7 +216,7 @@ defmodule PantagruelTest do
     end
 
     test "heading with generic domain" do
-      text = "f|x:_A⸳x*y>10|∷[_A]"
+      text = "f(x:_A⸳x*y>10)∷[_A]"
 
       tryparse(text,
         section: [
@@ -237,7 +237,7 @@ defmodule PantagruelTest do
     end
 
     test "heading with lambda" do
-      text = "f|x:|z:Nat|∷z|∷Bool"
+      text = "f(x:λ(z:Nat)∷z)∷Bool"
 
       tryparse(text,
         section: [
@@ -262,23 +262,47 @@ defmodule PantagruelTest do
       )
     end
 
-    test "domain aliasing" do
-      text = "{`ok}⇒Status"
+    test "heading with par" do
+      text = "f(x:X⸳x∈(Y,Z))"
 
       tryparse(text,
-        section: [head: [alias: [alias_expr: {:set, [literal: "ok"]}, alias_name: ["Status"]]]]
+        section: [
+          head: [
+            decl: [
+              decl_ident: "f",
+              lambda_args: ["x"],
+              lambda_doms: ["X"],
+              predicate: [appl: [operator: :from, x: "x", y: {:par, ["Y", "Z"]}]]
+            ]
+          ]
+        ]
       )
     end
 
-    test "multiple domain aliasing" do
-      text = "{`ok}⇒Status,State"
+    test "domain aliasing" do
+      text = "Status<={`ok}"
 
       tryparse(text,
         section: [
           head: [
             alias: [
-              alias_expr: {:set, [literal: "ok"]},
-              alias_name: ["Status", "State"]
+              alias_name: ["Status"],
+              alias_expr: {:set, [literal: "ok"]}
+            ]
+          ]
+        ]
+      )
+    end
+
+    test "multiple domain aliasing" do
+      text = "Status,State<={`ok}"
+
+      tryparse(text,
+        section: [
+          head: [
+            alias: [
+              alias_name: ["Status", "State"],
+              alias_expr: {:set, [literal: "ok"]}
             ]
           ]
         ]
@@ -286,12 +310,13 @@ defmodule PantagruelTest do
     end
 
     test "comprehension aliasing" do
-      text = "{n:Nat,n<=30⸳n}⇒Day"
+      text = "Day<={n:Nat,n<=30⸳n}"
 
       tryparse(text,
         section: [
           head: [
             alias: [
+              alias_name: ["Day"],
               alias_expr:
                 {:comprehension,
                  [
@@ -303,8 +328,7 @@ defmodule PantagruelTest do
                       ]},
                      {:comp_expression, "n"}
                    ]
-                 ]},
-              alias_name: ["Day"]
+                 ]}
             ]
           ]
         ]
@@ -314,7 +338,7 @@ defmodule PantagruelTest do
 
   describe "program structure" do
     test "two sections" do
-      text = "f|x:Y|\n;\ny||⇒Y"
+      text = "f(x:Y)\n;\ny()⇒Y"
 
       tryparse(text,
         section: [
@@ -341,7 +365,7 @@ defmodule PantagruelTest do
 
   describe "comments handling" do
     test "can parse a comment" do
-      text = "f||\nf>1\n\" Here is a comment.\nf<2"
+      text = "f()\nf>1\n\" Here is a comment.\nf<2"
 
       tryparse(text,
         section: [

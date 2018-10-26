@@ -150,7 +150,7 @@ defmodule Pantagruel.Format do
         {:decl, declaration} ->
           format_lambda(declaration, decl: declaration)
 
-        {:alias, [alias_expr: ref, alias_name: names]} ->
+        {:alias, [alias_name: names, alias_expr: ref]} ->
           alias_names =
             Enum.map(names, &format_exp/1)
             |> Enum.join(", ")
@@ -194,8 +194,8 @@ defmodule Pantagruel.Format do
 
     name_str =
       case name do
-        nil -> ""
-        name -> "#{format_exp(name)} "
+        nil -> "λ"
+        name -> "#{format_exp(name)}"
       end
 
     args_str =
@@ -221,7 +221,7 @@ defmodule Pantagruel.Format do
 
     [
       name_str,
-      "«#{args_str}#{dom_str}#{predicate_str}»",
+      "(#{args_str}#{dom_str}#{predicate_str})",
       yields_str,
       format_exp(codomain, scope)
     ]
