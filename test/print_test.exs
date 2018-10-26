@@ -46,7 +46,7 @@ defmodule Pantagruel.FormatTest do
         |> eval
 
       assert "f() ⇒ F  " == Format.format_program(parsed)
-      assert "F ⇒ F\nf() ⇒ F" == Format.format_scopes(scopes)
+      assert "F ⇐ F\nf() ⇒ F" == Format.format_scopes(scopes)
     end
 
     test "aliasing" do
@@ -56,8 +56,8 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "{*ok*} ⇒ Status  " == Format.format_program(parsed)
-      assert "{*ok*} ⇒ Status" == Format.format_scopes(scopes)
+      assert "Status ⇐ {*ok*}  " == Format.format_program(parsed)
+      assert "Status ⇐ {*ok*}" == Format.format_scopes(scopes)
     end
 
     test "section" do
@@ -69,7 +69,7 @@ defmodule Pantagruel.FormatTest do
         |> eval
 
       assert "f() ⇒ F  \nf 1 ↔ 0  " == Format.format_program(parsed)
-      assert "F ⇒ F\nf() ⇒ F" == Format.format_scopes(scopes)
+      assert "F ⇐ F\nf() ⇒ F" == Format.format_scopes(scopes)
     end
 
     test "unary operator" do

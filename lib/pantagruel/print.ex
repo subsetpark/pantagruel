@@ -43,7 +43,7 @@ defmodule Pantagruel.Format do
   def format_exp(value, scope \\ [])
 
   def format_exp(%Domain{name: name, ref: ref}, scope) do
-    "#{format_exp(ref, scope)} ⇒ #{format_exp(name, scope)}"
+    "#{format_exp(name, scope)} ⇐ #{format_exp(ref, scope)}"
   end
 
   def format_exp(%Variable{name: name, domain: domain}, scope) do
@@ -155,7 +155,7 @@ defmodule Pantagruel.Format do
             Enum.map(names, &format_exp/1)
             |> Enum.join(", ")
 
-          "#{format_exp(ref)} ⇒ #{alias_names}"
+          "#{alias_names} ⇐ #{format_exp(ref)}"
 
         {:comment, comment} ->
           format_comment(comment)
