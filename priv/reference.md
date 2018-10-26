@@ -118,7 +118,7 @@ Introduces a domain `Status` which is equivalent to the set of values
 
 Here's an example section head:
 
-```
+```pantagruel
 Score <= Nat
 halve(score: Score . score mod 2 = 0) :: Score
 ```
@@ -217,7 +217,7 @@ used in procedure declaration. The only difference is that instead
 of the name of the procedure, lambdas have `fn` before the opening
 parenthesis. For instance:
 
-```
+```pantagruel
 map(f, x: fn(z:_A)::_B, _A) :: _B
 ```
 
@@ -264,6 +264,40 @@ one argument `y`.
 
 #### Special forms
 
-- comprehension
-- quantifier
-- reduction
+There are two recognized special expression forms in Pantagruel beyond
+normal function application. These forms are additional bits of syntax
+for expression more complex operations.
+
+##### Comprehensions
+
+**set** or **list comprehensions** may be formed by following one or more
+**bindings** or **guards** with some **expression**, separated by a dot,
+like this:
+
+```pantagruel
+[x from X . x ^ 2]
+```
+
+The above expression is read to refer to a list made up every element
+in x, squared.
+
+A binding expression is an expression applying either the `in` or `from`
+operators to some domain or expression, eg., `x from X`, `n in Nat`.
+
+##### Quantifications
+
+**universal** and **existential** quantification is structured very
+similarly to comprehension forms. They differ in that quantification isn't
+contained within a list or set, and must be preceded by a **quantifier**:
+either `all` or `exists`, corresponding to the two types.
+
+```pantagruel
+all x in Nat, y in Nat, x > y . (x - y) > 0
+```
+
+This example says that for any x and y in the natural numbers where x
+is greater than y, x minus y is greater than 0. It could also be written in a slightly more compressed form:
+
+```pantagruel
+all (x, y) in Nat, x > y . (x - y) > 0
+```

@@ -2,13 +2,22 @@ defmodule Pantagruel.Parse.Expressions do
   alias Pantagruel.Parse
 
   @moduledoc """
-  This module encodes the function application binding rules in
-  Pantagruel.
+  This module contains all advanced parsing operations that have to be
+  called by the parser.
   """
   @doc """
   Parse a string into a float.
   """
   def parse_float(_, [arg], context, _, _), do: {[String.to_float(arg)], context}
+
+  def parse_integer(_, [arg], context, _, _) do
+    {int, ""} =
+      arg
+      |> String.replace("_", "")
+      |> Integer.parse()
+
+    {[int], context}
+  end
 
   @binary_operators [
     :and,
