@@ -94,6 +94,7 @@ defmodule Pantagruel.Scan do
   defreplacedelim("exists", "∃")
   defreplacedelim("all", "∀")
   defreplacedelim("xor", "⊕")
+  defreplacedelim("fn", "λ")
   defreplacedelim(".", "⸳")
 
   # Turn off comment at a newline.
@@ -120,7 +121,7 @@ defmodule Pantagruel.Scan do
   defp consolidate_whitespace(<<c::utf8, contents::binary>>, rest),
     do: consolidate_whitespace(contents, <<c::utf8, rest::binary>>)
 
-  @operators [?→, ?∃, ?∀, ?∧, ?∨, ?∀, ?∈, ?!, ?`, ?←, ?⸳, ?⇒, ?∷, ?↔]
+  @operators [?→, ?∃, ?∀, ?∧, ?∨, ?∀, ?∈, ?!, ?`, ?←, ?⸳, ?⇒, ?∷, ?↔, ?λ]
   defguard is_operator(c)
            when c in ?(..?- or c in ?:..?= or c in ?[..?^ or c in ?{..?~ or c in @operators
 

@@ -19,69 +19,69 @@ defmodule Pantagruel.FormatTest do
     test "minimal function" do
       {parsed, scopes} =
         """
-        f||
+        f()
         """
         |> eval
 
-      assert "f «»  " == Format.format_program(parsed)
-      assert "f «»" == Format.format_scopes(scopes)
+      assert "f()  " == Format.format_program(parsed)
+      assert "f()" == Format.format_scopes(scopes)
     end
 
     test "function" do
       {parsed, scopes} =
         """
-        f|x: Nat| :: Real
+        f(x: Nat) :: Real
         """
         |> eval
 
-      assert "f «x:ℕ» ∷ ℝ  " == Format.format_program(parsed)
-      assert "f «ℕ» ∷ ℝ\nx : ℕ" == Format.format_scopes(scopes)
+      assert "f(x:ℕ) ∷ ℝ  " == Format.format_program(parsed)
+      assert "f(ℕ) ∷ ℝ\nx : ℕ" == Format.format_scopes(scopes)
     end
 
     test "constructor" do
       {parsed, scopes} =
         """
-        f|| => F
+        f() => F
         """
         |> eval
 
-      assert "f «» ⇒ F  " == Format.format_program(parsed)
-      assert "F ⇒ F\nf «» ⇒ F" == Format.format_scopes(scopes)
+      assert "f() ⇒ F  " == Format.format_program(parsed)
+      assert "F ⇐ F\nf() ⇒ F" == Format.format_scopes(scopes)
     end
 
     test "aliasing" do
       {parsed, scopes} =
         """
-        {`ok} => Status
+        Status <= {`ok}
         """
         |> eval
 
-      assert "{*ok*} ⇒ Status  " == Format.format_program(parsed)
-      assert "{*ok*} ⇒ Status" == Format.format_scopes(scopes)
+      assert "Status ⇐ {*ok*}  " == Format.format_program(parsed)
+      assert "Status ⇐ {*ok*}" == Format.format_scopes(scopes)
     end
 
     test "section" do
       {parsed, scopes} =
         """
-        f|| => F
+        f() => F
         f 1 <-> 0
         """
         |> eval
 
-      assert "f «» ⇒ F  \nf 1 ↔ 0  " == Format.format_program(parsed)
-      assert "F ⇒ F\nf «» ⇒ F" == Format.format_scopes(scopes)
+      assert "f() ⇒ F  \nf 1 ↔ 0  " == Format.format_program(parsed)
+      assert "F ⇐ F\nf() ⇒ F" == Format.format_scopes(scopes)
     end
 
     test "unary operator" do
       {parsed, scopes} =
         """
-        f||
+        f()
         ~f
         """
         |> eval
 
-      assert "f «»  \n¬f  " == Format.format_program(parsed)
-      assert "f «»" == Format.format_scopes(scopes)
+      assert "f()  \n¬f  " == Format.format_program(parsed)
+      assert "f()" == Format.format_scopes(scopes)
     end
   end
 end

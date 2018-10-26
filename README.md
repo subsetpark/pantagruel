@@ -79,23 +79,23 @@ even if there are no constraints placed on what is said.
 Here's a trivial but complete Pantagruel program, translated from an example from *The Way of Z*.
 
 ```pantagruel
-user|| => User
-doc |owner: User| => Document
+user() => User
+doc (owner: User) => Document
 
 " A specification for a small document management system.
 
-check_out |u, d: User, Document|
+check_out (u, d: User, Document)
 
 " A user may check out a document if they have permission to access it
 " and it's not currently checked out.
 
-(d.owner = nobody and (has_perm? u d) and check_out u d) -> d'.owner = u
+(d.owner = nobody and (has_perm? u d) and (check_out u d)) -> d'.owner = u
 (d.owner != nobody or ~(has_perm? u d)) -> d'.owner = d.owner
 
 ;
 
-nobody || :: User
-has_perm? |u, d: User, Document| :: Bool
+nobody () :: User
+has_perm? (u, d: User, Document) :: Bool
 ```
 
 Paragraph 1: The introduction of our two domains, *User*s and *Document*s.
@@ -133,23 +133,23 @@ Pretty printed, that's:
 ----------------
 ----------------
 
-user «» ⇒ User \
-doc «owner:User» ⇒ Document
+user() ⇒ User \
+doc(owner:User) ⇒ Document
 
 > A specification for a small document management system.
 
-check-out «u, d:User, Document»
+check-out(u, d:User, Document)
 
 > A user may check out a document if they have permission to access it
 > and it's not currently checked out.
 
-(d.owner = nobody ∧ (has-perm? u d) ∧ check-out u d) → d'.owner = u \
+(d.owner = nobody ∧ (has-perm? u d) ∧ (check-out u d)) → d'.owner = u \
 (d.owner ≠ nobody ∨ ¬(has-perm? u d)) → d'.owner = d.owner
 
 ***
 
-nobody «» ∷ User \
-has-perm? «u, d:User, Document» ∷ 𝔹
+nobody() ∷ User \
+has-perm?(u, d:User, Document) ∷ 𝔹
 
 ---------------
 ---------------
@@ -158,7 +158,7 @@ The document is structured the way it is so that we are able to express
 what we take to be the gist of our program in as terse a manner as
 possible. In this case we want to lay out unambiguously the relationship
 between ownership, check-out permissions and the effects of checking
-out a document. The `pantagruel` program is not terribly concerned with
+out a document. The `pant` interpreter is not terribly concerned with
 the specifics of what we say and trusts us to communicate what we need
 to. However, it wants to keep us honest, and thus we are constrained
 to define all of our terms to at least some degree. For instance, if we
@@ -181,23 +181,6 @@ the better.
 To that end, the language itself needs lots of battle testing; lots
 of thinking or whiteboarding done in it, to see what is still awkward
 to express, what constructs are unnecessary or redundant. At the same
-time I will continue to work on `pantagruel` the computer program, to
+time I will continue to work on `pant` the computer program, to
 build something that is capable of providing some amount of value given
 a Pantagruel text file.
-
-# Installation
-
-If [available in Hex](https://hex.pm/docs/publish), the package can
-be installed by adding `pantagruel` to your list of dependencies in
-`mix.exs`:
-
-```elixir
-def deps do
-  [
-    {:pantagruel, "~> 0.1.0"}
-  ]
-end
-```
-
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc) and published on [HexDocs](https://hexdocs.pm). Once published, the docs can be found at [https://hexdocs.pm/pantagruel](https://hexdocs.pm/pantagruel).
-
