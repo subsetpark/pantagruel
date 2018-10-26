@@ -133,12 +133,12 @@ Pretty printed, that's:
 ----------------
 ----------------
 
-user «» ⇒ User \
-doc «owner:User» ⇒ Document
+user() ⇒ User \
+doc(owner:User) ⇒ Document
 
 > A specification for a small document management system.
 
-check-out «u, d:User, Document»
+check-out(u, d:User, Document)
 
 > A user may check out a document if they have permission to access it
 > and it's not currently checked out.
@@ -148,8 +148,8 @@ check-out «u, d:User, Document»
 
 ***
 
-nobody «» ∷ User \
-has-perm? «u, d:User, Document» ∷ 𝔹
+nobody() ∷ User \
+has-perm?(u, d:User, Document) ∷ 𝔹
 
 ---------------
 ---------------
