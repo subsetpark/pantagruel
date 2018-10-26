@@ -54,7 +54,7 @@ The function declaration `eval (p: Program) :: Bool` introduces a
 function, `eval`, which takes a `Program` `p`[^1], and returns a `Bool`.
 
 [^1]: `p : Program`, pronounced by itself as "p in Program", indicates
-that `Program` is *the domain of* `p. That is, `Program` is the set of
+that `Program` is *the domain of* `p`. That is, `Program` is the set of
 all possible programs and `p` is any element of that set. In this way
 domains are analogous to types but more powerful; they can also include
 restrictions on the values within the type, such as `x != 0` or `x mod 2
