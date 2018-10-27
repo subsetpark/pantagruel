@@ -40,7 +40,7 @@ defmodule Pantagruel.Format do
   defguard is_symbol(s) when is_binary(s) or is_number(s) or is_atom(s)
 
   @doc """
-  Print an individual expression.
+  Format an individual expression.
   """
   @spec format_exp(any, [%{}]) :: t
   def format_exp(value, scope \\ [])
@@ -65,7 +65,7 @@ defmodule Pantagruel.Format do
   def format_exp({:dot, f: f, x: x}, s), do: join_exp([x, f], s, ".")
   def format_exp(exp, s), do: join_exp(exp, s, " ")
 
-  # Print the contents of the environment after program evaluation.
+  # Format the contents of the environment after program evaluation.
   defp format_scope(scope) do
     sort = fn
       %Domain{}, %Lambda{} -> true
