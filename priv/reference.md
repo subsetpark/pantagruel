@@ -436,3 +436,10 @@ Existential quantifiers introduce symbols into program scope.
 exists x : Y, x > z . f x
        *
 ```
+
+### Suggested Readings
+
+As mentioned, the evaluation semantics of Pantagruel are entirely
+implicit. Nevertheless, in order to design a language that would be
+useful and efficient when it comes to specifying programs, it's useful
+to choose operators with a mind to how they would be used.

@@ -12,8 +12,10 @@ defmodule Pantagruel do
   representation of it.
   """
 
+  @default_path "./pant"
+
   @help """
-  USAGE: pantagruel [-s] FILENAME
+  USAGE: pantagruel [-s]  [-p PATH ...] FILENAME
   """
 
   @doc """
@@ -22,7 +24,10 @@ defmodule Pantagruel do
   """
   def main(args) do
     args
-    |> OptionParser.parse(aliases: [s: :scopes], strict: [scopes: :boolean])
+    |> OptionParser.parse(
+      aliases: [s: :scopes, p: :path],
+      strict: [scopes: :boolean, path: :keep]
+    )
     |> handle
   end
 
@@ -37,8 +42,16 @@ defmodule Pantagruel do
   defp handle({_, _, _}), do: IO.puts(@help)
 
   defp handle_parse({:ok, parsed, "", %{}, _, _}, flags) do
-    Eval.eval(parsed)
-    |> handle_eval(parsed, flags)
+    [@default_path | Keyword.get_values(flags, :path)]
+    |> Pantagruel.Load.load()
+    |> case do
+      {:ok, asts} ->
+        Eval.eval(parsed, asts)
+        |> handle_eval(parsed, flags)
+
+      {:error, _} = error ->
+        handle_eval(error, parsed, nil)
+    end
   end
 
   defp handle_parse({:ok, [], _, _, {_, _}, _}, _), do: puts("No Pantagruel source found.")
@@ -67,12 +80,13 @@ defmodule Pantagruel do
   defp handle_eval({:ok, _}, parsed, _), do: format_program(parsed) |> puts
 
   defp handle_eval({:error, {tag, e}}, parsed, _) do
+    IO.puts "Eval error."
     handle_error(tag, e)
     puts_in_error_handling(parsed)
   end
 
   defp handle_error(:unbound_variables, e) do
-    puts("Eval error.\n\nUnbound variables:")
+    puts("Unbound variables:")
     Enum.each(e.unbound, &puts("- #{format_exp(&1, e.scopes)}"))
 
     e.unbound
@@ -81,9 +95,17 @@ defmodule Pantagruel do
   end
 
   defp handle_error(:domain_mismatch, e) do
-    puts("Eval error.\n\nCould not match arguments with domains:")
+    puts("Could not match arguments with domains:")
     IO.inspect(e.args, label: "Arguments")
     IO.inspect(e.doms, label: "Domains")
+  end
+
+  defp handle_error(:missing_import, e) do
+    puts("Imported module could not be found: #{e.mod_name}")
+  end
+
+  defp handle_error(:module_shadow, e) do
+    puts("Attempted to redfine defined module: #{e.mod_name}")
   end
 
   defp puts_in_error_handling(parsed), do: IO.puts("\n#{format_program(parsed)}")

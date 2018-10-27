@@ -30,6 +30,8 @@ defmodule Pantagruel.Format do
   @doc """
   Generate a string representation of a parsed program section.
   """
+  def format_section({:import, mod_name: mod_name}), do: ": #{mod_name}"
+  def format_section({:module, mod_name: mod_name}), do: "# #{mod_name}"
   def format_section({:section, section}) do
     Stream.concat(section[:head], section[:body] || [])
     # For now, assume we want markdown compatibility.
