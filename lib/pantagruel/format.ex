@@ -114,7 +114,7 @@ defmodule Pantagruel.Format do
       |> Enum.map(&String.trim/1)
       |> Enum.join("\n> ")
 
-    "\n> " <> comment_str <> "\n"
+    "\n> #{comment_str}\n"
   end
 
   defp format_alias(alias_name: names, alias_expr: ref) do
@@ -132,10 +132,8 @@ defmodule Pantagruel.Format do
   defp format_symbol(s, scopes) do
     name = Env.lookup_binding_name(s)
 
-    cond do
-      Env.is_bound?(s, scopes) -> name
-      true -> "*#{name}*"
-    end
+    Env.is_bound?(s, scopes)
+    |> if(do: name, else: "*#{name}*")
   end
 
   defp format_container(c, exps, s) do
