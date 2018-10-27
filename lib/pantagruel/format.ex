@@ -31,7 +31,8 @@ defmodule Pantagruel.Format do
   """
   def format_section({:section, section}) do
     Stream.concat(section[:head], section[:body] || [])
-    |> Stream.map(&format_line/1)
+    # For now, assume we want markdown compatibility.
+    |> Stream.map(&(format_line(&1) <> "  "))
     |> Enum.join("\n")
   end
 
@@ -66,16 +67,11 @@ defmodule Pantagruel.Format do
   end
 
   def format_exp({c, exps}, s) when is_container(c) do
-    {l, r} =
-      case c do
-        :par -> {"(", ")"}
-        :list -> {"[", "]"}
-        :set -> {"{", "}"}
-      end
-
+    {l, r} = delimiters(c)
     inner_str = exp_join(exps, s)
 
-    "#{l}#{inner_str}#{r}"
+    [l, inner_str, r]
+    |> Enum.join()
   end
 
   def format_exp(
@@ -115,10 +111,8 @@ defmodule Pantagruel.Format do
     right_str = format_exp(refinement[:expr], s)
 
     guard_str =
-      case refinement[:guard] do
-        nil -> ""
-        guard -> " ⸳ #{format_exp(guard, s)}"
-      end
+      refinement[:guard]
+      |> format_guard(s)
 
     "#{format_exp(refinement[:pattern], s)}#{guard_str} ← #{right_str}"
   end
@@ -145,28 +139,20 @@ defmodule Pantagruel.Format do
     |> Enum.join(" ")
   end
 
-  defp format_line(line) do
-    formatted =
-      case line do
-        {:decl, declaration} ->
-          format_lambda(declaration, decl: declaration)
+  defp delimiters(:par), do: {"(", ")"}
+  defp delimiters(:list), do: {"[", "]"}
+  defp delimiters(:set), do: {"{", "}"}
 
-        {:alias, [alias_name: names, alias_expr: ref]} ->
-          alias_names =
-            Enum.map(names, &format_exp/1)
-            |> Enum.join(", ")
+  defp format_line({:decl, declaration}), do: format_lambda(declaration, decl: declaration)
+  defp format_line({:comment, comment}), do: format_comment(comment)
+  defp format_line({:expr, expression}), do: format_exp(expression)
 
-          "#{alias_names} ⇐ #{format_exp(ref)}"
+  defp format_line({:alias, [alias_name: names, alias_expr: ref]}) do
+    alias_names =
+      Enum.map(names, &format_exp/1)
+      |> Enum.join(", ")
 
-        {:comment, comment} ->
-          format_comment(comment)
-
-        {:expr, expression} ->
-          format_exp(expression)
-      end
-
-    # For now, assume we want markdown compatibility.
-    formatted <> "  "
+    "#{alias_names} ⇐ #{format_exp(ref)}"
   end
 
   # Print the contents of the environment after program evaluation.
@@ -193,45 +179,33 @@ defmodule Pantagruel.Format do
        ) do
     scope = opts[:scope] || []
 
-    name_str =
-      case name do
-        nil -> "λ"
-        name -> "#{format_exp(name)}"
-      end
+    prefix = lambda_prefix(name, scope)
+    args = lambda_args(opts[:decl][:lambda_args], scope)
+    dom = exp_join(domain, scope)
+    pred = lambda_predicate(opts[:decl][:predicate], scope)
+    yields = lambda_yields(type)
+    codom = format_exp(codomain, scope)
 
-    args_str =
-      case opts[:decl][:lambda_args] do
-        nil -> ""
-        args -> exp_join(args, scope) <> ":"
-      end
-
-    dom_str = exp_join(domain, scope)
-
-    predicate_str =
-      case opts[:decl][:predicate] do
-        nil -> ""
-        expr -> " ⸳ #{exp_join(expr, scope)}"
-      end
-
-    yields_str =
-      case type do
-        nil -> ""
-        :function -> " ∷ "
-        :constructor -> " ⇒ "
-      end
-
-    [
-      name_str,
-      "(#{args_str}#{dom_str}#{predicate_str})",
-      yields_str,
-      format_exp(codomain, scope)
-    ]
+    [prefix, "(", args, dom, pred, ")", yields, codom]
     |> Enum.join()
   end
 
   defp format_lambda(l, opts) do
     Lambda.from_declaration(l) |> format_lambda(opts)
   end
+
+  defp lambda_prefix(nil, _), do: "λ"
+  defp lambda_prefix(name, s), do: name |> format_exp(s)
+
+  defp lambda_args(nil, _), do: ""
+  defp lambda_args(args, s), do: exp_join(args, s) <> ":"
+
+  defp lambda_predicate(nil, _), do: ""
+  defp lambda_predicate(expr, s), do: " ⸳ #{exp_join(expr, s)}"
+
+  defp lambda_yields(nil), do: ""
+  defp lambda_yields(:function), do: " ∷ "
+  defp lambda_yields(:constructor), do: " ⇒ "
 
   defp format_comment([comment]) do
     comment_str =
@@ -242,6 +216,9 @@ defmodule Pantagruel.Format do
 
     "\n> " <> comment_str <> "\n"
   end
+
+  defp format_guard("", _), do: nil
+  defp format_guard(guard, s), do: " ⸳ #{format_exp(guard, s)}"
 
   defp exp_join(exprs, s) do
     exprs
