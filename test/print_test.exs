@@ -4,8 +4,9 @@ defmodule Pantagruel.FormatTest do
 
   defp eval(text) do
     with scanned <- Pantagruel.Scan.scan(text),
-         {:ok, parsed, "", %{}, _, _} <- Pantagruel.Parse.program(scanned) do
-      {parsed, Pantagruel.Eval.eval(parsed)}
+         {:ok, parsed, "", %{}, _, _} <- Pantagruel.Parse.program(scanned),
+         {:ok, scope} <- Pantagruel.Eval.eval(parsed) do
+      {parsed, scope}
     end
   end
 

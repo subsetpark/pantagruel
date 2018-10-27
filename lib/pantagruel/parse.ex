@@ -87,6 +87,17 @@ defmodule Pantagruel.Parse do
 
   refinement = string("←") |> replace(:refined)
   # Number values
+  integer_with_underscores =
+    string("-")
+    |> optional
+    |> utf8_string([?0..?9], min: 1)
+    |> concat(
+      utf8_string([?0..?9, ?_], min: 1)
+      |> optional
+    )
+    |> reduce({Enum, :join, [""]})
+    |> traverse({Pantagruel.Parse.Expressions, :parse_integer, []})
+
   float =
     string("-")
     |> optional
@@ -377,7 +388,7 @@ defmodule Pantagruel.Parse do
 
   symbol =
     choice([
-      integer(min: 1),
+      integer_with_underscores,
       literal,
       parsec(:lambda),
       operator,

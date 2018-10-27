@@ -3,7 +3,7 @@
 Pantagruel is a notation designed for *specifying the behavior of a
 computer program*. It consists of a closed set of notational forms,
 drawn, where available, from mathematics and logic, designed to allow
-the writer to express the behavior of some computer program in terms
+the author to express the behavior of some computer program in terms
 of **refinements**, where some introduced program is expressed in more
 specific and therefore stronger terms, and **propositions**, which are
 statements that must be true under some specific implementation of the
@@ -118,7 +118,7 @@ Introduces a domain `Status` which is equivalent to the set of values
 
 Here's an example section head:
 
-```
+```pantagruel
 Score <= Nat
 halve(score: Score . score mod 2 = 0) :: Score
 ```
@@ -217,7 +217,7 @@ used in procedure declaration. The only difference is that instead
 of the name of the procedure, lambdas have `fn` before the opening
 parenthesis. For instance:
 
-```
+```pantagruel
 map(f, x: fn(z:_A)::_B, _A) :: _B
 ```
 
@@ -264,6 +264,175 @@ one argument `y`.
 
 #### Special forms
 
-- comprehension
-- quantifier
-- reduction
+There are two recognized special expression forms in Pantagruel beyond
+normal function application. These forms are additional bits of syntax
+for expression more complex operations.
+
+##### Comprehensions
+
+**set** or **list comprehensions** may be formed by following one or more
+**bindings** or **guards** with some **expression**, separated by a dot,
+like this:
+
+```pantagruel
+[x from X . x ^ 2]
+```
+
+The above expression is read to refer to a list made up every element
+in x, squared.
+
+A binding expression is an expression applying either the `in` or `from`
+operators to some domain or expression, eg., `x from X`, `n in Nat`.
+
+##### Quantifications
+
+**universal** and **existential** quantification is structured very
+similarly to comprehension forms. They differ in that quantification isn't
+contained within a list or set, and must be preceded by a **quantifier**:
+either `all` or `exists`, corresponding to the two types.
+
+```pantagruel
+all x in Nat, y in Nat, x > y . (x - y) > 0
+```
+
+This example says that for any x and y in the natural numbers where x
+is greater than y, x minus y is greater than 0. It could also be written
+in a slightly more compressed form:
+
+```pantagruel
+all (x, y) in Nat, x > y . (x - y) > 0
+```
+
+## Semantics
+
+The semantics of Pantagruel are largely implicit: designed to be
+understood by a human reader rather than a computer. Therefore expressions
+don't *evaluate* to anything. This lends a great deal of flexibility when
+writing Pantagruel. For instance, simple function application syntax can
+be understood to refer to things like indexing into a list, or its reverse
+operation of providing the index of a list element, according to context.
+
+At the same time, Pantagruel is parseable by computer, and there are other
+ways that evaluation of a specification text can assist in modelling. One
+in particular is the question of how to ensure a certain level of *rigor*
+in a specification: we might venture that a regular syntax guarantees
+a certain rigor of form, hopefully resulting in more regular and richer
+texts; another aspect of rigor it would be beneficial to promote would
+be a guarantee that every symbol used is formally defined.
+
+To this end the Pantagruel interpreter, `pant`, evaluates whether all
+symbols in a program have been properly **bound** into scope. The
+semantics of binding are at present the only formal semantics that
+Pantagruel has. Symbols found in certain positions of certain forms are
+bound into the evaluation environment; usage of symbols that are not
+properly bound produces an evaluation error. In this way the interpreter
+ensures that every symbol has been defined.
+
+Therefore the semantics consist of two halves: that which is formal
+and part of the interpreter behavior, and that which is presented as a
+"suggested reading", with the intention that conventions of interpretation
+should be the same among all users of the notation.
+
+### Binding
+
+The Pantagruel interpreter evaluates a program for the purpose of
+enforcing Pantagruel's **binding** rules. To sum them up, they are:
+
+1. Any symbol referred to in a section head must be bound by the end of
+that head.
+2. Any symbol referred to in a section body must be bound by the end of
+the *next* body.
+
+This structure is crucial in establishing the Pantagruel style of
+specification, where new terms are introduced so as to provide refinement
+for known terms, eg:
+
+```pantagruel
+pred(n:Nat)
+
+pred n <- is_even? n and (n > 5)
+
+;
+
+is_even?(n:Nat) :: Bool
+
+is_even? 0
+~(is_even? 1)
+is_even? n <- is_even? (n - 2)
+```
+
+That specification describes the behavior of a predicate as checking
+`is_even?` and `> 5`. It then goes on in the next section to fill in
+what `is_even?` involves. This allows it to be defined in context; if
+a symbol had to be defined before it was used, as is often the case in
+programming languages, the narrative thread of increasing detail would
+be lost and specifications would be all preamble.
+
+#### Binding Forms
+
+Symbols are bound into the program environment in one of two ways: either
+they're built-in to the language, or they're introduced with one of a
+few specific forms. A form position might bind a symbol into the program
+environment, into a temporary scope for evaluating a single expression,
+or not at all.
+
+##### Procedure declarations
+
+When a procedure is declared, the name of the procedure is introduced
+into program scope, as are the names of the variables the procedure takes.
+
+```
+f(x:Y . x > z) :: a
+* *
+```
+
+When a constructor procedure is declared, the resulting domain is also
+bound into program scope.
+
+```
+d(x:Y . x > z) => D
+* *               *
+```
+
+##### Domain aliases
+
+When a domain alias is introduced, the name of the alias is bound into
+program scope.
+
+```
+D <= X
+*
+```
+
+In the case of these section head statements, all other symbol positions
+must be bound by the end of the subsection.
+
+##### Comprehensions
+
+Set/list comprehensions introduce symbols that are bound within the
+context of those expressions. However, they are not bound in the scope
+of the rest of the program.
+
+```
+[n : N, n > m . f n]
+ +
+```
+
+##### Quantifications
+
+Expressions within quantifications have similar binding behavior to
+comprehensions. However, there is a distinction between the universal
+and existential quantifiers: while universal quantifiers have the exact
+same behavior as comprehensions:
+
+```
+all x : Y, x > z . f x
+    +
+```
+
+Existential quantifiers introduce symbols into program scope.
+
+```
+exists x : Y, x > z . f x
+       *
+```

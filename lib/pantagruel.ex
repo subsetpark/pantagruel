@@ -1,13 +1,8 @@
-defmodule Pantagruel.Guards do
-  defguard is_container(c) when c in [:par, :list, :set]
-end
-
 defmodule Pantagruel do
   import IO, only: [puts: 1]
   import Pantagruel.Format
 
   alias Pantagruel.{Scan, Parse, Eval}
-  alias Pantagruel.Env.UnboundVariablesError
 
   @moduledoc """
   An interpreter for the Pantagruel language.
@@ -16,15 +11,6 @@ defmodule Pantagruel do
   file, report any unbound variables, and then print a formatted
   representation of it.
   """
-  @doc """
-  Generate an AST representation of the given Pantagruel file.
-  """
-  def read!(filename) do
-    filename
-    |> File.read!()
-    |> Scan.scan()
-    |> Parse.program()
-  end
 
   @help """
   USAGE: pantagruel [-s] FILENAME
@@ -35,69 +21,93 @@ defmodule Pantagruel do
   evaluated scope, and then pretty-print the program.
   """
   def main(args) do
-    case OptionParser.parse(args, aliases: [s: :scopes], strict: [scopes: :boolean]) do
-      {_, [], _} ->
-        IO.puts(@help)
-
-      {flags, [filename], _} ->
-        case read!(filename) do
-          {:ok, parsed, "", %{}, _, _} ->
-            try do
-              scope = Eval.eval(parsed)
-
-              case flags do
-                [scopes: true] -> format_scopes(scope)
-                _ -> format_program(parsed)
-              end
-              |> puts
-            rescue
-              e in UnboundVariablesError -> handle_unbound_variables(e, parsed)
-            end
-
-          {:ok, parsed, rest, _, {row, col}, _} ->
-            case parsed do
-              [] ->
-                puts("No Pantagruel source found.")
-
-              _ ->
-                parsed =
-                  Enum.reverse(parsed)
-                  |> hd()
-                  |> format_section()
-
-                rest = String.trim(rest)
-
-                puts("#{row}:#{col}: Parse error.\n\nParsed:\n#{parsed}\n\nRemaining:\n#{rest}")
-            end
-        end
-    end
+    args
+    |> OptionParser.parse(aliases: [s: :scopes], strict: [scopes: :boolean])
+    |> handle
   end
 
-  defp handle_unbound_variables(e, parsed) do
+  defp handle({flags, [filename], _}) do
+    filename
+    |> File.read!()
+    |> Scan.scan()
+    |> Parse.program()
+    |> handle_parse(flags)
+  end
+
+  defp handle({_, _, _}), do: IO.puts(@help)
+
+  defp handle_parse({:ok, parsed, "", %{}, _, _}, flags) do
+    Eval.eval(parsed)
+    |> handle_eval(parsed, flags)
+  end
+
+  defp handle_parse({:ok, [], _, _, {_, _}, _}, _), do: puts("No Pantagruel source found.")
+
+  defp handle_parse({:ok, parsed, rest, _, {row, col}, _}, _) do
+    parsed =
+      Enum.reverse(parsed)
+      |> hd()
+      |> format_section()
+
+    rest = String.trim(rest)
+
+    """
+    #{row}:#{col}: Parse error.
+
+    Parsed:
+    #{parsed}
+
+    Remaining:
+    #{rest}
+    """
+    |> puts
+  end
+
+  defp handle_eval({:ok, scope}, _, scopes: true), do: format_scopes(scope) |> puts
+  defp handle_eval({:ok, _}, parsed, _), do: format_program(parsed) |> puts
+
+  defp handle_eval({:error, {tag, e}}, parsed, _) do
+    handle_error(tag, e)
+    puts_in_error_handling(parsed)
+  end
+
+  defp handle_error(:unbound_variables, e) do
     puts("Eval error.\n\nUnbound variables:")
     Enum.each(e.unbound, &puts("- #{format_exp(&1, e.scopes)}"))
 
     e.unbound
     |> Enum.filter(&match?({:quantification, _}, &1))
-    |> case do
-      [] ->
-        :ok
-
-      quantifiers ->
-        quantifiers
-        |> Enum.each(&handle_bad_bindings/1)
-    end
-
-    format_program(parsed) |> puts
+    |> handle_bad_bindings
   end
 
-  defp handle_bad_bindings(
-         {:quantification, quantifier: _, quant_bindings: bindings, quant_expression: expr}
-       ) do
-    expr = {:quantification, quantifier: "…", quant_bindings: bindings, quant_expression: expr}
+  defp handle_error(:domain_mismatch, e) do
+    puts("Eval error.\n\nCould not match arguments with domains:")
+    IO.inspect(e.args, label: "Arguments")
+    IO.inspect(e.doms, label: "Domains")
+  end
 
-    puts(
-      "Expected binding form. Found: \"#{format_exp(expr, [])}\"\nDid you forget to wrap your symbols in ()?"
-    )
+  defp puts_in_error_handling(parsed), do: IO.puts("\n#{format_program(parsed)}")
+
+  defp handle_bad_bindings([]), do: :ok
+
+  defp handle_bad_bindings(quantifiers) do
+    quantifiers
+    |> Enum.each(fn {
+                      :quantification,
+                      quantifier: _, quant_bindings: bindings, quant_expression: exp
+                    } ->
+      exp_str =
+        {:quantification, quantifier: "…", quant_bindings: bindings, quant_expression: exp}
+        |> format_exp([])
+
+      """
+      Expected binding form. Found:
+
+      #{exp_str}
+
+      Did you forget to wrap your symbols in ()?
+      """
+      |> puts
+    end)
   end
 end

@@ -222,6 +222,16 @@ defmodule ExpressionParserTest do
       tryexp(text, literal: "foo 0 Bar")
     end
 
+    test "integer" do
+      text = "100"
+      tryexp(text, [100])
+    end
+
+    test "integer with underscores" do
+      text = "100_000"
+      tryexp(text, [100000])
+    end
+
     test "float" do
       text = "1.5"
       tryexp(text, [1.5])
