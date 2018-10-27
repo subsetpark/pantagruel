@@ -41,40 +41,46 @@ defmodule Pantagruel.Eval do
   Evaluate a Pantagruel AST for variable binding, returning the resulting
   environment of all bound symbols.
   """
-  @spec eval(Pantagruel.Parse.t()) :: Env.t()
   def eval(program) do
-    eval_section = fn {:section, section}, state ->
-      # Evaluate a single section:
-      # 1. evaluate the head
-      {scopes, header_unbounds, unbounds} =
-        Enum.reduce(section[:head], new_state(state), &eval_header_statement/2)
+    try do
+      eval_section = fn {:section, section}, state ->
+        # Evaluate a single section:
+        # 1. evaluate the head
+        {scopes, header_unbounds, unbounds} =
+          Enum.reduce(section[:head], new_state(state), &eval_header_statement/2)
 
-      # 2. check for any unbound symbols in the head
-      :ok = Env.check_unbound(scopes, header_unbounds)
+        # 2. check for any unbound symbols in the head
+        :ok = Env.check_unbound(scopes, header_unbounds)
 
-      # 3. evaluate the body
-      {scopes, [unbounds | rest]} =
-        Enum.reduce(section[:body] || [], {scopes, unbounds}, &eval_body_statement/2)
+        # 3. evaluate the body
+        {scopes, [unbounds | rest]} =
+          Enum.reduce(section[:body] || [], {scopes, unbounds}, &eval_body_statement/2)
 
-      # 4. check for any unbound symbols from the *previous* section body (ie,
-      #    which should have been defined in this section)
-      :ok = Env.check_unbound(scopes, unbounds)
+        # 4. check for any unbound symbols from the *previous* section body (ie,
+        #    which should have been defined in this section)
+        :ok = Env.check_unbound(scopes, unbounds)
 
-      {scopes, MapSet.new(), rest}
+        {scopes, MapSet.new(), rest}
+      end
+
+      # Force a check for unbound values. All symbols must be bound by the
+      # end of the program; thus the final section cannot introduce any
+      # unbound symbols.
+      final_check = fn {scopes, _, [unbound]} ->
+        :ok = Env.check_unbound(scopes, unbound)
+        scopes
+      end
+
+      scopes =
+        program
+        |> Enum.reduce({[], MapSet.new(), [MapSet.new()]}, eval_section)
+        |> final_check.()
+        |> Enum.reverse()
+
+      {:ok, scopes}
+    rescue
+      e in Env.UnboundVariablesError -> {:error, {:unbound_variables, e}}
     end
-
-    # Force a check for unbound values. All symbols must be bound by the
-    # end of the program; thus the final section cannot introduce any
-    # unbound symbols.
-    final_check = fn {scopes, _, [unbound]} ->
-      :ok = Env.check_unbound(scopes, unbound)
-      scopes
-    end
-
-    program
-    |> Enum.reduce({[], MapSet.new(), [MapSet.new()]}, eval_section)
-    |> final_check.()
-    |> Enum.reverse()
   end
 
   # Include symbols in a set of values to check for binding.

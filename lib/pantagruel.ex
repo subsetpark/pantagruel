@@ -7,7 +7,6 @@ defmodule Pantagruel do
   import Pantagruel.Format
 
   alias Pantagruel.{Scan, Parse, Eval}
-  alias Pantagruel.Env.UnboundVariablesError
 
   @moduledoc """
   An interpreter for the Pantagruel language.
@@ -42,16 +41,16 @@ defmodule Pantagruel do
       {flags, [filename], _} ->
         case read!(filename) do
           {:ok, parsed, "", %{}, _, _} ->
-            try do
-              scope = Eval.eval(parsed)
+            case Eval.eval(parsed) do
+              {:ok, scope} ->
+                case flags do
+                  [scopes: true] -> format_scopes(scope)
+                  _ -> format_program(parsed)
+                end
+                |> puts
 
-              case flags do
-                [scopes: true] -> format_scopes(scope)
-                _ -> format_program(parsed)
-              end
-              |> puts
-            rescue
-              e in UnboundVariablesError -> handle_unbound_variables(e, parsed)
+              {:error, {:unbound_variables, e}} ->
+                handle_unbound_variables(e, parsed)
             end
 
           {:ok, parsed, rest, _, {row, col}, _} ->
@@ -87,6 +86,8 @@ defmodule Pantagruel do
         quantifiers
         |> Enum.each(&handle_bad_bindings/1)
     end
+
+    IO.puts ""
 
     format_program(parsed) |> puts
   end
