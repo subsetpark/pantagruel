@@ -1,6 +1,6 @@
 defmodule EvalTest do
   use ExUnit.Case
-  alias Pantagruel.Eval.{Variable, Lambda, Domain}
+  alias Pantagruel.Values.{Variable, Lambda, Domain}
 
   defp scan_and_parse(text) do
     {:ok, parsed, "", %{}, _, _} =
@@ -12,7 +12,7 @@ defmodule EvalTest do
   end
 
   defp eval(parsed) do
-    {:ok, scope} = Pantagruel.Eval.eval(parsed)
+    {:ok, scope} = eval(parsed)
     scope
   end
 
@@ -31,7 +31,7 @@ defmodule EvalTest do
     test "eval unbound" do
       parsed = "f(x:X) :: Real" |> scan_and_parse
 
-      {:error, {:unbound_variables, e}} = Pantagruel.Eval.eval(parsed)
+      {:error, {:unbound_variables, e}} = eval(parsed)
 
       assert e.unbound == MapSet.new(["X"])
     end
@@ -106,7 +106,7 @@ defmodule EvalTest do
     test "unbound variable in body" do
       parsed = "f(x:Nat)\nf x = g x" |> scan_and_parse
 
-      {:error, {:unbound_variables, _}} = Pantagruel.Eval.eval(parsed)
+      {:error, {:unbound_variables, _}} = eval(parsed)
     end
 
     test "bind variables in the next section" do
@@ -143,7 +143,7 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      {:error, {:unbound_variables, _}} = Pantagruel.Eval.eval(parsed)
+      {:error, {:unbound_variables, _}} = eval(parsed)
     end
 
     test "lambda binding failure" do
@@ -154,7 +154,7 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      {:error, {:unbound_variables, _}} = Pantagruel.Eval.eval(parsed)
+      {:error, {:unbound_variables, _}} = eval(parsed)
     end
 
     test "lambda binding" do
@@ -226,7 +226,7 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      {:error, {:unbound_variables, e}} = Pantagruel.Eval.eval(parsed)
+      {:error, {:unbound_variables, e}} = eval(parsed)
 
       assert e.unbound == MapSet.new(appl: [operator: :gt, x: "y", y: 1])
     end
@@ -239,7 +239,7 @@ defmodule EvalTest do
         |> scan_and_parse
 
       assert_raise RuntimeError, fn ->
-        Pantagruel.Eval.eval(parsed)
+        eval(parsed)
       end
     end
 
@@ -251,7 +251,7 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      {:error, {:unbound_variables, e}} = Pantagruel.Eval.eval(parsed)
+      {:error, {:unbound_variables, e}} = eval(parsed)
 
       assert [
                quantification: [
@@ -286,7 +286,7 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "X" => %Pantagruel.Eval.Domain{name: "X", ref: 1}
+                 "X" => %Domain{name: "X", ref: 1}
                }
              ] == eval(parsed)
     end
@@ -323,7 +323,7 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Pantagruel.Eval.Lambda{
+                 "f" => %Lambda{
                    codomain: nil,
                    domain: [],
                    name: "f",
@@ -347,7 +347,7 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Pantagruel.Eval.Lambda{
+                 "f" => %Lambda{
                    name: "f",
                    domain: [],
                    codomain: nil,
@@ -355,7 +355,7 @@ defmodule EvalTest do
                  }
                },
                %{
-                 "x" => %Pantagruel.Eval.Lambda{
+                 "x" => %Lambda{
                    name: "x",
                    domain: [],
                    codomain: nil,
@@ -363,7 +363,7 @@ defmodule EvalTest do
                  }
                },
                %{
-                 "y" => %Pantagruel.Eval.Lambda{
+                 "y" => %Lambda{
                    name: "y",
                    domain: [],
                    codomain: nil,
@@ -383,13 +383,13 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Pantagruel.Eval.Lambda{
+                 "f" => %Lambda{
                    codomain: nil,
                    domain: ["Nat"],
                    name: "f",
                    type: nil
                  },
-                 "x" => %Pantagruel.Eval.Variable{domain: "Nat", name: "x"}
+                 "x" => %Variable{domain: "Nat", name: "x"}
                }
              ] == eval(parsed)
     end
@@ -404,14 +404,14 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Pantagruel.Eval.Lambda{
+                 "f" => %Lambda{
                    codomain: nil,
                    domain: ["_A"],
                    name: "f",
                    type: nil
                  },
-                 "_A" => %Pantagruel.Eval.Domain{name: "_A", ref: "_A"},
-                 "x" => %Pantagruel.Eval.Variable{domain: "_A", name: "x"}
+                 "_A" => %Domain{name: "_A", ref: "_A"},
+                 "x" => %Variable{domain: "_A", name: "x"}
                }
              ] == eval(parsed)
     end
@@ -425,7 +425,7 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "Status" => %Pantagruel.Eval.Domain{
+                 "Status" => %Domain{
                    ref: {:set, [literal: "ok"]},
                    name: "Status"
                  }
@@ -442,11 +442,11 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "Status" => %Pantagruel.Eval.Domain{
+                 "Status" => %Domain{
                    ref: {:set, [literal: "ok"]},
                    name: "Status"
                  },
-                 "State" => %Pantagruel.Eval.Domain{
+                 "State" => %Domain{
                    ref: {:set, [literal: "ok"]},
                    name: "State"
                  }
@@ -465,14 +465,14 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Pantagruel.Eval.Lambda{
+                 "f" => %Lambda{
                    codomain: nil,
                    domain: ["Nat"],
                    name: "f",
                    type: nil
                  },
-                 "x" => %Pantagruel.Eval.Variable{domain: "Nat", name: "x"},
-                 "y" => %Pantagruel.Eval.Variable{domain: "Nat", name: "y"}
+                 "x" => %Variable{domain: "Nat", name: "x"},
+                 "y" => %Variable{domain: "Nat", name: "y"}
                }
              ] == eval(parsed)
     end
@@ -487,14 +487,14 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Pantagruel.Eval.Lambda{
+                 "f" => %Lambda{
                    codomain: nil,
                    domain: ["Nat"],
                    name: "f",
                    type: nil
                  },
-                 "x" => %Pantagruel.Eval.Variable{domain: "Nat", name: "x"},
-                 "y" => %Pantagruel.Eval.Variable{domain: "Nat", name: "y"}
+                 "x" => %Variable{domain: "Nat", name: "x"},
+                 "y" => %Variable{domain: "Nat", name: "y"}
                }
              ] == eval(parsed)
     end
@@ -504,7 +504,7 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "Day" => %Pantagruel.Eval.Domain{
+                 "Day" => %Domain{
                    name: "Day",
                    ref:
                      {:comprehension,
@@ -543,7 +543,7 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Pantagruel.Eval.Lambda{
+                 "f" => %Lambda{
                    codomain: nil,
                    domain: [],
                    name: "f",
