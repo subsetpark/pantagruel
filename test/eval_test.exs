@@ -239,9 +239,10 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      assert_raise RuntimeError, fn ->
-        Eval.eval(parsed)
-      end
+      {:error, {:domain_mismatch, e}} = Eval.eval(parsed)
+
+      assert e.args == ["x"]
+      assert e.doms == ["Nat", "Real"]
     end
 
     test "binding without bunching evals as two malformed bindings" do

@@ -20,6 +20,12 @@ defmodule Mix.Tasks.Pantagruel.Eval do
         IO.puts(e.message)
         IO.inspect(e.unbound)
         exit("Invalid program.")
+
+      {:error, {:domain_mismatch, e}} ->
+        IO.puts(e.message)
+        IO.inspect(e.args, label: :arguments)
+        IO.inspect(e.doms, label: :domains)
+        exit("Invalid program.")
     end
   end
 end

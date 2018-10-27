@@ -23,6 +23,10 @@ defmodule Pantagruel.Env do
     defexception message: "Received atom without string representation", atom: nil
   end
 
+  defmodule DomainMismatchError do
+    defexception message: "Domains cannot be matched with identifiers", args: [], doms: []
+  end
+
   @starting_environment %{
     "Bool" => %Variable{name: "𝔹", domain: "𝔹"},
     "Real" => %Variable{name: "ℝ", domain: "ℝ"},
@@ -98,7 +102,7 @@ defmodule Pantagruel.Env do
     padded_doms =
       case {length(doms), length(args)} do
         {longer, l} when longer > l ->
-          raise RuntimeError, "Too many function domains"
+          raise DomainMismatchError, args: args, doms: doms
 
         {_, l} ->
           pad_list(doms, [], l)

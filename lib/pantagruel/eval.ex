@@ -80,6 +80,7 @@ defmodule Pantagruel.Eval do
       {:ok, scopes}
     rescue
       e in Env.UnboundVariablesError -> {:error, {:unbound_variables, e}}
+      e in Env.DomainMismatchError -> {:error, {:domain_mismatch, e}}
     end
   end
 
