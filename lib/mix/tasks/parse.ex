@@ -1,50 +1,17 @@
-defmodule Mix.Tasks.Pantagruel.Eval do
-  use Mix.Task
-
-  def run([filename]) do
-    parsed =
-      try do
-        filename
-        |> Pantagruel.read!()
-      rescue
-        e in Pantagruel.Eval.State.UnboundVariablesError ->
-          IO.puts(e.message)
-          IO.inspect(e.unbound)
-          exit("Invalid program.")
-      end
-
-    case parsed do
-      %{} = r ->
-        IO.puts("Resulting environment:")
-        IO.inspect(r)
-    end
-  end
-end
-
-defmodule Mix.Tasks.Pantagruel.Scan do
-  use Mix.Task
-
-  def run([filename]) do
-    scanned =
-      filename
-      |> File.read!()
-      |> Pantagruel.Scan.scan()
-
-    IO.inspect(scanned)
-  end
-end
-
 defmodule Mix.Tasks.Pantagruel.Parse do
   use Mix.Task
 
-  def run([filename]) do
-    {:ok, scanned, rest, %{}, _, _} =
-      filename
-      |> File.read!()
-      |> Pantagruel.Scan.scan()
-      |> Pantagruel.Parse.program()
+  def parse(filename) do
+    Mix.Tasks.Pantagruel.Scan.scan(filename)
+    |> Pantagruel.Parse.program()
+  end
 
-    IO.inspect(scanned)
-    IO.inspect rest
+  def run([filename]) do
+    {:ok, parsed, rest, %{}, _, _} =
+      filename
+      |> parse()
+
+    IO.inspect(parsed, label: :ast)
+    IO.inspect(rest, label: :rest)
   end
 end

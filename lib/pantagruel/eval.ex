@@ -8,7 +8,7 @@ defmodule Pantagruel.Eval do
   properly bound.
   """
   import Pantagruel.Guards
-  alias Pantagruel.Eval.{Lambda, Domain}
+  alias Pantagruel.Values.Domain
   alias Pantagruel.Env
 
   @typedoc """
@@ -100,14 +100,19 @@ defmodule Pantagruel.Eval do
          {:alias, [alias_name: alias_names, alias_expr: alias_exp]},
          {[scope | scopes], header_unbounds, unbounds}
        ) do
-    scope = Enum.reduce(alias_names, scope, &Domain.bind(&2, &1, alias_exp))
+    scope =
+      alias_names
+      |> Enum.reduce(scope, fn name, scope ->
+        Env.bind(scope, name, %Domain{name: name, ref: alias_exp})
+      end)
+
     header_unbounds = include_for_binding_check(header_unbounds, [alias_exp])
     {[scope | scopes], header_unbounds, unbounds}
   end
 
   # 3. Function declarations, which bind new functions into scope.
   defp eval_header_statement({:decl, declaration}, {[scope | scopes], header_unbounds, unbounds}) do
-    scope = Lambda.bind(scope, declaration)
+    scope = Env.bind_lambda(scope, declaration)
     # Check for binding: domain, predicate, and codomain.
     symbols =
       [

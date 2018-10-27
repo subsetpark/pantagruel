@@ -1,5 +1,4 @@
 defmodule Pantagruel.Parse.Expressions do
-  alias Pantagruel.Parse
 
   @moduledoc """
   This module contains all advanced parsing operations that have to be
@@ -40,6 +39,7 @@ defmodule Pantagruel.Parse.Expressions do
     :insert,
     :xor
   ]
+  @type parsed :: [term]
 
   @doc """
   Given a list of expressions representing function application, construct
@@ -47,11 +47,11 @@ defmodule Pantagruel.Parse.Expressions do
   """
   @spec parse_function_application(
           binary(),
-          Parse.t(),
+          parsed,
           map,
           pos_integer,
           pos_integer
-        ) :: Parse.t()
+        ) :: parsed
   def parse_function_application(_rest, expressions, context, _line, _offset),
     do: {expressions |> reduce(&assoc/2), context}
 
@@ -61,11 +61,11 @@ defmodule Pantagruel.Parse.Expressions do
   """
   @spec parse_dot_expression(
           binary(),
-          Parse.t(),
+          parsed,
           map,
           pos_integer,
           pos_integer
-        ) :: Parse.t()
+        ) :: parsed
   def parse_dot_expression(_, expressions, context, _, _),
     do: {expressions |> reduce(&dot/2), context}
 

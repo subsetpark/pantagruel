@@ -22,8 +22,8 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "x" => %Variable{name: "x", domain: "ℕ"},
-                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: "ℝ", type: :function}
+                 "x" => %Variable{name: "x", domain: "Nat"},
+                 "f" => %Lambda{name: "f", domain: ["Nat"], codomain: "Real", type: :function}
                }
              ] == eval(parsed)
     end
@@ -47,7 +47,7 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Lambda{name: "f", domain: ["X", "Y"], codomain: "ℝ", type: :function},
+                 "f" => %Lambda{name: "f", domain: ["X", "Y"], codomain: "Real", type: :function},
                  "x" => %Variable{name: "x", domain: "X"},
                  "y" => %Variable{name: "y", domain: "Y"},
                  "X" => %Domain{name: "X", ref: "X"},
@@ -73,8 +73,8 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "x" => %Variable{name: "x", domain: "ℕ"},
-                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: nil}
+                 "x" => %Variable{name: "x", domain: "Nat"},
+                 "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: nil}
                }
              ] == eval(parsed)
     end
@@ -84,10 +84,10 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "x" => %Variable{name: "x", domain: "ℕ"},
+                 "x" => %Variable{name: "x", domain: "Nat"},
                  "f" => %Lambda{
                    name: "f",
-                   domain: ["ℕ"],
+                   domain: ["Nat"],
                    codomain: nil,
                    type: nil
                  }
@@ -96,7 +96,7 @@ defmodule EvalTest do
                  "g" => %Lambda{
                    name: "g",
                    domain: [],
-                   codomain: "ℕ",
+                   codomain: "Nat",
                    type: :function
                  }
                }
@@ -121,12 +121,12 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: nil},
-                 "x" => %Variable{name: "x", domain: "ℕ"}
+                 "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: nil},
+                 "x" => %Variable{name: "x", domain: "Nat"}
                },
                %{
-                 "g" => %Lambda{name: "g", domain: ["ℕ"], codomain: "𝔹", type: :function},
-                 "y" => %Variable{name: "y", domain: "ℕ"}
+                 "g" => %Lambda{name: "g", domain: ["Nat"], codomain: "Bool", type: :function},
+                 "y" => %Variable{name: "y", domain: "Nat"}
                }
              ] == eval(parsed)
     end
@@ -169,8 +169,8 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: nil},
-                 "x" => %Variable{name: "x", domain: "ℕ"}
+                 "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: nil},
+                 "x" => %Variable{name: "x", domain: "Nat"}
                },
                %{
                  "d" => %Lambda{name: "d", domain: [], codomain: "D", type: :constructor},
@@ -189,8 +189,8 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: nil},
-                 "x" => %Variable{name: "x", domain: "ℕ"}
+                 "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: nil},
+                 "x" => %Variable{name: "x", domain: "Nat"}
                  # Notice `z` is not here. It was introduced so that
                  # `z > 100` checked, but it's not in the resulting scope.
                }
@@ -208,10 +208,10 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: nil},
+                 "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: nil},
                  "con" => %Lambda{name: "con", domain: [], codomain: "X", type: :constructor},
                  "X" => %Domain{name: "X", ref: "X"},
-                 "x" => %Variable{name: "x", domain: "ℕ"}
+                 "x" => %Variable{name: "x", domain: "Nat"}
                }
              ] == eval(parsed)
     end
@@ -303,12 +303,12 @@ defmodule EvalTest do
                %{
                  "f" => %Lambda{
                    name: "f",
-                   domain: ["ℕ"],
+                   domain: ["Nat"],
                    codomain: nil,
                    type: nil
                  },
-                 "x" => %Variable{name: "x", domain: "ℕ"},
-                 "y" => %Variable{name: "y", domain: "ℕ"}
+                 "x" => %Variable{name: "x", domain: "Nat"},
+                 "y" => %Variable{name: "y", domain: "Nat"}
                }
              ] == eval(parsed)
     end
@@ -385,11 +385,11 @@ defmodule EvalTest do
                %{
                  "f" => %Pantagruel.Eval.Lambda{
                    codomain: nil,
-                   domain: ["ℕ"],
+                   domain: ["Nat"],
                    name: "f",
                    type: nil
                  },
-                 "x" => %Pantagruel.Eval.Variable{domain: "ℕ", name: "x"}
+                 "x" => %Pantagruel.Eval.Variable{domain: "Nat", name: "x"}
                }
              ] == eval(parsed)
     end
@@ -467,12 +467,12 @@ defmodule EvalTest do
                %{
                  "f" => %Pantagruel.Eval.Lambda{
                    codomain: nil,
-                   domain: ["ℕ"],
+                   domain: ["Nat"],
                    name: "f",
                    type: nil
                  },
-                 "x" => %Pantagruel.Eval.Variable{domain: "ℕ", name: "x"},
-                 "y" => %Pantagruel.Eval.Variable{domain: "ℕ", name: "y"}
+                 "x" => %Pantagruel.Eval.Variable{domain: "Nat", name: "x"},
+                 "y" => %Pantagruel.Eval.Variable{domain: "Nat", name: "y"}
                }
              ] == eval(parsed)
     end
@@ -489,12 +489,12 @@ defmodule EvalTest do
                %{
                  "f" => %Pantagruel.Eval.Lambda{
                    codomain: nil,
-                   domain: ["ℕ"],
+                   domain: ["Nat"],
                    name: "f",
                    type: nil
                  },
-                 "x" => %Pantagruel.Eval.Variable{domain: "ℕ", name: "x"},
-                 "y" => %Pantagruel.Eval.Variable{domain: "ℕ", name: "y"}
+                 "x" => %Pantagruel.Eval.Variable{domain: "Nat", name: "x"},
+                 "y" => %Pantagruel.Eval.Variable{domain: "Nat", name: "y"}
                }
              ] == eval(parsed)
     end
@@ -584,7 +584,7 @@ defmodule EvalTest do
                  "x" => %Variable{name: "x", domain: "X"},
                  "ind" => %Lambda{
                    domain: [{:list, ["X"]}, "X"],
-                   codomain: "ℕ0",
+                   codomain: "Nat0",
                    name: "ind",
                    type: :function
                  },

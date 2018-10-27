@@ -4,14 +4,15 @@ defmodule Pantagruel.Format do
   representation of it.
   """
   import Pantagruel.Guards
-  alias Pantagruel.Eval.{Domain, Variable, Lambda}
+  alias Pantagruel.Values.{Domain, Variable, Lambda}
   alias Pantagruel.Env
 
+  @type ast :: [term]
   @type t :: String.t()
   @doc """
   Generate a string representation of an evaluated program.
   """
-  @spec format_program(Pantagruel.Parse.t()) :: t
+  @spec format_program(ast) :: t
   def format_program(parsed), do: format_with(parsed, &format_section/1)
 
   @spec format_scopes(Env.t()) :: t

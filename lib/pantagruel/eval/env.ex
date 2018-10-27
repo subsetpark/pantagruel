@@ -4,7 +4,7 @@ defmodule Pantagruel.Env do
   """
 
   import Pantagruel.Guards
-  alias Pantagruel.Eval.Variable
+  alias Pantagruel.Values.{Variable, Domain, Lambda}
 
   @type scope :: map()
   @typedoc """
@@ -52,7 +52,7 @@ defmodule Pantagruel.Env do
     :forall => %Variable{name: "∀", domain: "⊤"},
     :card => %Variable{name: "#", domain: "⊤"},
     :union => %Variable{name: "∪", domain: "U"},
-    :intersection => %Variable{name: "∩", domain: "U"},
+    :intersection => %Variable{name: "∩", domain: "U"}
   }
 
   @doc """
@@ -72,7 +72,7 @@ defmodule Pantagruel.Env do
         domain ->
           %Variable{
             name: name,
-            domain: lookup_binding_name(domain)
+            domain: domain
           }
       end
 
@@ -80,6 +80,48 @@ defmodule Pantagruel.Env do
   end
 
   def bind(scope, {name, value}), do: bind(scope, name, value)
+
+  def bind_lambda(scope, decl) do
+    args = decl[:lambda_args] || []
+    doms = decl[:lambda_doms] || []
+    # Introduce any generic domains into the scope.
+    scope =
+      doms
+      |> Enum.flat_map(&Domain.flatten_domain/1)
+      |> Enum.filter(&Domain.is_generic?/1)
+      |> Enum.reduce(scope, fn domain, scope ->
+        bind(scope, domain, %Domain{name: domain, ref: domain})
+      end)
+
+    # If there are more arguments than domains, we will use the last
+    # domain specified for all the extra arguments.
+    padded_doms =
+      case {length(doms), length(args)} do
+        {longer, l} when longer > l ->
+          raise RuntimeError, "Too many function domains"
+
+        {_, l} ->
+          pad_list(doms, [], l)
+      end
+
+    # If this is a type constructor, bind the codomain of the function.
+    scope =
+      case decl[:yield_type] || [] do
+        :constructor ->
+          codomain = decl[:lambda_codomain]
+          bind(scope, codomain, %Domain{name: codomain, ref: codomain})
+
+        _ ->
+          scope
+      end
+
+    Enum.zip(args, padded_doms)
+    |> Enum.reduce(scope, fn {var, dom}, env ->
+      env
+      |> bind(var, dom)
+    end)
+    |> bind(decl[:decl_ident], Lambda.from_declaration(decl, doms))
+  end
 
   @doc """
   If a value has been defined in the starting environment, find the name
@@ -141,7 +183,7 @@ defmodule Pantagruel.Env do
   def is_bound?({:lambda, lambda}, scope) do
     # Lambdas introduce function arguments. Therefore they are bound in
     # (and only in) the recursive boundness check.
-    scope = [Pantagruel.Eval.Lambda.bind(%{}, lambda) | scope]
+    scope = [bind_lambda(%{}, lambda) | scope]
 
     [
       lambda[:lambda_doms] || [],
@@ -230,4 +272,8 @@ defmodule Pantagruel.Env do
 
   defp has_key?(scope, variable),
     do: Map.has_key?(@starting_environment, variable) or Map.has_key?(scope, variable)
+
+  defp pad_list(_, acc, l) when length(acc) == l, do: Enum.reverse(acc)
+  defp pad_list([last], acc, l), do: pad_list([last], [last | acc], l)
+  defp pad_list([item | rest], acc, l), do: pad_list(rest, [item | acc], l)
 end

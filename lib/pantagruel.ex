@@ -1,7 +1,3 @@
-defmodule Pantagruel.Guards do
-  defguard is_container(c) when c in [:par, :list, :set]
-end
-
 defmodule Pantagruel do
   import IO, only: [puts: 1]
   import Pantagruel.Format
@@ -15,6 +11,11 @@ defmodule Pantagruel do
   file, report any unbound variables, and then print a formatted
   representation of it.
   """
+
+  @help """
+  USAGE: pantagruel [-s] FILENAME
+  """
+
   @doc """
   Generate an AST representation of the given Pantagruel file.
   """
@@ -24,10 +25,6 @@ defmodule Pantagruel do
     |> Scan.scan()
     |> Parse.program()
   end
-
-  @help """
-  USAGE: pantagruel [-s] FILENAME
-  """
 
   @doc """
   Given a filename, evaluate it as a Pantagruel program, print out the
@@ -87,7 +84,7 @@ defmodule Pantagruel do
         |> Enum.each(&handle_bad_bindings/1)
     end
 
-    IO.puts ""
+    IO.puts("")
 
     format_program(parsed) |> puts
   end
