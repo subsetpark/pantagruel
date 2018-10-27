@@ -68,18 +68,7 @@ defmodule Pantagruel.Env do
   end
 
   def bind(scope, name, value) do
-    to_put =
-      case value do
-        %{} ->
-          value
-
-        domain ->
-          %Variable{
-            name: name,
-            domain: domain
-          }
-      end
-
+    to_put = make_variable(name, value)
     Map.put(scope, name, to_put)
   end
 
@@ -109,15 +98,7 @@ defmodule Pantagruel.Env do
       end
 
     # If this is a type constructor, bind the codomain of the function.
-    scope =
-      case decl[:yield_type] || [] do
-        :constructor ->
-          codomain = decl[:lambda_codomain]
-          bind(scope, codomain, %Domain{name: codomain, ref: codomain})
-
-        _ ->
-          scope
-      end
+    scope = decl[:yield_type] |> bind_codomain(scope, decl[:lambda_codomain])
 
     Enum.zip(args, padded_doms)
     |> Enum.reduce(scope, fn {var, dom}, env ->
@@ -232,6 +213,15 @@ defmodule Pantagruel.Env do
   def is_bound?(variable, [scope | parent]) when is_atom(variable) do
     has_key?(scope, variable) or is_bound?(variable, parent)
   end
+
+  defp make_variable(_, %{} = v), do: v
+  defp make_variable(name, domain), do: %Variable{name: name, domain: domain}
+
+  defp bind_codomain(:constructor, scope, codomain) do
+    bind(scope, codomain, %Domain{name: codomain, ref: codomain})
+  end
+
+  defp bind_codomain(_, scope, _), do: scope
 
   # Process some temporary bindings and check for boundness, without
   # those bindings being valid outside of this context.
