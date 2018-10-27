@@ -1,7 +1,7 @@
 defmodule EvalTest do
   use ExUnit.Case
-  alias Pantagruel.Env.UnboundVariablesError
-  alias Pantagruel.Eval.{Variable, Lambda, Domain}
+  alias Pantagruel.Values.{Variable, Lambda, Domain}
+  alias Pantagruel.Eval
 
   defp scan_and_parse(text) do
     {:ok, parsed, "", %{}, _, _} =
@@ -12,27 +12,29 @@ defmodule EvalTest do
     parsed
   end
 
+  defp eval(parsed) do
+    {:ok, scope} = Eval.eval(parsed)
+    scope
+  end
+
   describe "program evaluation" do
     test "eval happy path" do
       parsed = "f(x:Nat . x > 1) :: Real" |> scan_and_parse
 
       assert [
                %{
-                 "x" => %Variable{name: "x", domain: "ℕ"},
-                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: "ℝ", type: :function}
+                 "x" => %Variable{name: "x", domain: "Nat"},
+                 "f" => %Lambda{name: "f", domain: ["Nat"], codomain: "Real", type: :function}
                }
-             ] == Pantagruel.Eval.eval(parsed)
+             ] == eval(parsed)
     end
 
     test "eval unbound" do
       parsed = "f(x:X) :: Real" |> scan_and_parse
 
-      exc =
-        assert_raise UnboundVariablesError, fn ->
-          Pantagruel.Eval.eval(parsed)
-        end
+      {:error, {:unbound_variables, e}} = Eval.eval(parsed)
 
-      assert exc.unbound == MapSet.new(["X"])
+      assert e.unbound == MapSet.new(["X"])
     end
 
     test "eval late binding" do
@@ -46,7 +48,7 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Lambda{name: "f", domain: ["X", "Y"], codomain: "ℝ", type: :function},
+                 "f" => %Lambda{name: "f", domain: ["X", "Y"], codomain: "Real", type: :function},
                  "x" => %Variable{name: "x", domain: "X"},
                  "y" => %Variable{name: "y", domain: "Y"},
                  "X" => %Domain{name: "X", ref: "X"},
@@ -64,7 +66,7 @@ defmodule EvalTest do
                    type: :constructor
                  }
                }
-             ] == Pantagruel.Eval.eval(parsed)
+             ] == eval(parsed)
     end
 
     test "eval whole section" do
@@ -72,10 +74,10 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "x" => %Variable{name: "x", domain: "ℕ"},
-                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: nil}
+                 "x" => %Variable{name: "x", domain: "Nat"},
+                 "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: nil}
                }
-             ] == Pantagruel.Eval.eval(parsed)
+             ] == eval(parsed)
     end
 
     test "eval two sections" do
@@ -83,10 +85,10 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "x" => %Variable{name: "x", domain: "ℕ"},
+                 "x" => %Variable{name: "x", domain: "Nat"},
                  "f" => %Lambda{
                    name: "f",
-                   domain: ["ℕ"],
+                   domain: ["Nat"],
                    codomain: nil,
                    type: nil
                  }
@@ -95,19 +97,17 @@ defmodule EvalTest do
                  "g" => %Lambda{
                    name: "g",
                    domain: [],
-                   codomain: "ℕ",
+                   codomain: "Nat",
                    type: :function
                  }
                }
-             ] == Pantagruel.Eval.eval(parsed)
+             ] == eval(parsed)
     end
 
     test "unbound variable in body" do
       parsed = "f(x:Nat)\nf x = g x" |> scan_and_parse
 
-      assert_raise UnboundVariablesError, fn ->
-        Pantagruel.Eval.eval(parsed)
-      end
+      {:error, {:unbound_variables, _}} = Eval.eval(parsed)
     end
 
     test "bind variables in the next section" do
@@ -122,14 +122,14 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: nil},
-                 "x" => %Variable{name: "x", domain: "ℕ"}
+                 "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: nil},
+                 "x" => %Variable{name: "x", domain: "Nat"}
                },
                %{
-                 "g" => %Lambda{name: "g", domain: ["ℕ"], codomain: "𝔹", type: :function},
-                 "y" => %Variable{name: "y", domain: "ℕ"}
+                 "g" => %Lambda{name: "g", domain: ["Nat"], codomain: "Bool", type: :function},
+                 "y" => %Variable{name: "y", domain: "Nat"}
                }
-             ] == Pantagruel.Eval.eval(parsed)
+             ] == eval(parsed)
     end
 
     test "variable is bound too late" do
@@ -144,9 +144,7 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      assert_raise UnboundVariablesError, fn ->
-        Pantagruel.Eval.eval(parsed)
-      end
+      {:error, {:unbound_variables, _}} = Eval.eval(parsed)
     end
 
     test "lambda binding failure" do
@@ -157,9 +155,7 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      assert_raise UnboundVariablesError, fn ->
-        Pantagruel.Eval.eval(parsed)
-      end
+      {:error, {:unbound_variables, _}} = Eval.eval(parsed)
     end
 
     test "lambda binding" do
@@ -174,14 +170,14 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: nil},
-                 "x" => %Variable{name: "x", domain: "ℕ"}
+                 "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: nil},
+                 "x" => %Variable{name: "x", domain: "Nat"}
                },
                %{
                  "d" => %Lambda{name: "d", domain: [], codomain: "D", type: :constructor},
                  "D" => %Domain{name: "D", ref: "D"}
                }
-             ] == Pantagruel.Eval.eval(parsed)
+             ] == eval(parsed)
     end
 
     test "lambdas introduce temporary bindings" do
@@ -194,12 +190,12 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: nil},
-                 "x" => %Variable{name: "x", domain: "ℕ"}
+                 "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: nil},
+                 "x" => %Variable{name: "x", domain: "Nat"}
                  # Notice `z` is not here. It was introduced so that
                  # `z > 100` checked, but it's not in the resulting scope.
                }
-             ] == Pantagruel.Eval.eval(parsed)
+             ] == eval(parsed)
     end
 
     test "alls introduce temporary bindings" do
@@ -213,12 +209,12 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Lambda{name: "f", domain: ["ℕ"], codomain: nil, type: nil},
+                 "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: nil},
                  "con" => %Lambda{name: "con", domain: [], codomain: "X", type: :constructor},
                  "X" => %Domain{name: "X", ref: "X"},
-                 "x" => %Variable{name: "x", domain: "ℕ"}
+                 "x" => %Variable{name: "x", domain: "Nat"}
                }
-             ] == Pantagruel.Eval.eval(parsed)
+             ] == eval(parsed)
     end
 
     test "temporary bindings are temporary" do
@@ -231,12 +227,9 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      exc =
-        assert_raise UnboundVariablesError, fn ->
-          Pantagruel.Eval.eval(parsed)
-        end
+      {:error, {:unbound_variables, e}} = Eval.eval(parsed)
 
-      assert exc.unbound == MapSet.new(appl: [operator: :gt, x: "y", y: 1])
+      assert e.unbound == MapSet.new(appl: [operator: :gt, x: "y", y: 1])
     end
 
     test "too many domains" do
@@ -246,9 +239,10 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      assert_raise RuntimeError, fn ->
-        Pantagruel.Eval.eval(parsed)
-      end
+      {:error, {:domain_mismatch, e}} = Eval.eval(parsed)
+
+      assert e.args == ["x"]
+      assert e.doms == ["Nat", "Real"]
     end
 
     test "binding without bunching evals as two malformed bindings" do
@@ -259,10 +253,7 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      e =
-        assert_raise UnboundVariablesError, fn ->
-          Pantagruel.Eval.eval(parsed)
-        end
+      {:error, {:unbound_variables, e}} = Eval.eval(parsed)
 
       assert [
                quantification: [
@@ -297,9 +288,9 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "X" => %Pantagruel.Eval.Domain{name: "X", ref: 1}
+                 "X" => %Domain{name: "X", ref: 1}
                }
-             ] == Pantagruel.Eval.eval(parsed)
+             ] == eval(parsed)
     end
 
     test "exists binds" do
@@ -314,14 +305,14 @@ defmodule EvalTest do
                %{
                  "f" => %Lambda{
                    name: "f",
-                   domain: ["ℕ"],
+                   domain: ["Nat"],
                    codomain: nil,
                    type: nil
                  },
-                 "x" => %Variable{name: "x", domain: "ℕ"},
-                 "y" => %Variable{name: "y", domain: "ℕ"}
+                 "x" => %Variable{name: "x", domain: "Nat"},
+                 "y" => %Variable{name: "y", domain: "Nat"}
                }
-             ] == Pantagruel.Eval.eval(parsed)
+             ] == eval(parsed)
     end
 
     test "binding rules regression" do
@@ -334,14 +325,14 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Pantagruel.Eval.Lambda{
+                 "f" => %Lambda{
                    codomain: nil,
                    domain: [],
                    name: "f",
                    type: nil
                  }
                }
-             ] == Pantagruel.Eval.eval(parsed)
+             ] == eval(parsed)
     end
 
     test "look in earlier scope for variable" do
@@ -358,7 +349,7 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Pantagruel.Eval.Lambda{
+                 "f" => %Lambda{
                    name: "f",
                    domain: [],
                    codomain: nil,
@@ -366,7 +357,7 @@ defmodule EvalTest do
                  }
                },
                %{
-                 "x" => %Pantagruel.Eval.Lambda{
+                 "x" => %Lambda{
                    name: "x",
                    domain: [],
                    codomain: nil,
@@ -374,14 +365,14 @@ defmodule EvalTest do
                  }
                },
                %{
-                 "y" => %Pantagruel.Eval.Lambda{
+                 "y" => %Lambda{
                    name: "y",
                    domain: [],
                    codomain: nil,
                    type: nil
                  }
                }
-             ] == Pantagruel.Eval.eval(parsed)
+             ] == eval(parsed)
     end
 
     test "comprehensions do not bind their variables to external scope" do
@@ -394,15 +385,15 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Pantagruel.Eval.Lambda{
+                 "f" => %Lambda{
                    codomain: nil,
-                   domain: ["ℕ"],
+                   domain: ["Nat"],
                    name: "f",
                    type: nil
                  },
-                 "x" => %Pantagruel.Eval.Variable{domain: "ℕ", name: "x"}
+                 "x" => %Variable{domain: "Nat", name: "x"}
                }
-             ] == Pantagruel.Eval.eval(parsed)
+             ] == eval(parsed)
     end
 
     test "generics are bound into scope" do
@@ -415,16 +406,16 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Pantagruel.Eval.Lambda{
+                 "f" => %Lambda{
                    codomain: nil,
                    domain: ["_A"],
                    name: "f",
                    type: nil
                  },
-                 "_A" => %Pantagruel.Eval.Domain{name: "_A", ref: "_A"},
-                 "x" => %Pantagruel.Eval.Variable{domain: "_A", name: "x"}
+                 "_A" => %Domain{name: "_A", ref: "_A"},
+                 "x" => %Variable{domain: "_A", name: "x"}
                }
-             ] == Pantagruel.Eval.eval(parsed)
+             ] == eval(parsed)
     end
 
     test "aliasing" do
@@ -436,12 +427,12 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "Status" => %Pantagruel.Eval.Domain{
+                 "Status" => %Domain{
                    ref: {:set, [literal: "ok"]},
                    name: "Status"
                  }
                }
-             ] == Pantagruel.Eval.eval(parsed)
+             ] == eval(parsed)
     end
 
     test "multiple aliasing" do
@@ -453,16 +444,16 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "Status" => %Pantagruel.Eval.Domain{
+                 "Status" => %Domain{
                    ref: {:set, [literal: "ok"]},
                    name: "Status"
                  },
-                 "State" => %Pantagruel.Eval.Domain{
+                 "State" => %Domain{
                    ref: {:set, [literal: "ok"]},
                    name: "State"
                  }
                }
-             ] == Pantagruel.Eval.eval(parsed)
+             ] == eval(parsed)
     end
 
     test "object access" do
@@ -476,16 +467,16 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Pantagruel.Eval.Lambda{
+                 "f" => %Lambda{
                    codomain: nil,
-                   domain: ["ℕ"],
+                   domain: ["Nat"],
                    name: "f",
                    type: nil
                  },
-                 "x" => %Pantagruel.Eval.Variable{domain: "ℕ", name: "x"},
-                 "y" => %Pantagruel.Eval.Variable{domain: "ℕ", name: "y"}
+                 "x" => %Variable{domain: "Nat", name: "x"},
+                 "y" => %Variable{domain: "Nat", name: "y"}
                }
-             ] == Pantagruel.Eval.eval(parsed)
+             ] == eval(parsed)
     end
 
     test "object access on expression" do
@@ -498,16 +489,16 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Pantagruel.Eval.Lambda{
+                 "f" => %Lambda{
                    codomain: nil,
-                   domain: ["ℕ"],
+                   domain: ["Nat"],
                    name: "f",
                    type: nil
                  },
-                 "x" => %Pantagruel.Eval.Variable{domain: "ℕ", name: "x"},
-                 "y" => %Pantagruel.Eval.Variable{domain: "ℕ", name: "y"}
+                 "x" => %Variable{domain: "Nat", name: "x"},
+                 "y" => %Variable{domain: "Nat", name: "y"}
                }
-             ] == Pantagruel.Eval.eval(parsed)
+             ] == eval(parsed)
     end
 
     test "comprehension aliasing" do
@@ -515,7 +506,7 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "Day" => %Pantagruel.Eval.Domain{
+                 "Day" => %Domain{
                    name: "Day",
                    ref:
                      {:comprehension,
@@ -541,7 +532,7 @@ defmodule EvalTest do
                       ]}
                  }
                }
-             ] == Pantagruel.Eval.eval(parsed)
+             ] == eval(parsed)
     end
 
     test "nested quantifiers" do
@@ -554,14 +545,14 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Pantagruel.Eval.Lambda{
+                 "f" => %Lambda{
                    codomain: nil,
                    domain: [],
                    name: "f",
                    type: nil
                  }
                }
-             ] == Pantagruel.Eval.eval(parsed)
+             ] == eval(parsed)
     end
 
     test "sort" do
@@ -595,13 +586,13 @@ defmodule EvalTest do
                  "x" => %Variable{name: "x", domain: "X"},
                  "ind" => %Lambda{
                    domain: [{:list, ["X"]}, "X"],
-                   codomain: "ℕ0",
+                   codomain: "Nat0",
                    name: "ind",
                    type: :function
                  },
                  "xs" => %Variable{domain: {:list, ["X"]}, name: "xs"}
                }
-             ] == Pantagruel.Eval.eval(parsed)
+             ] == eval(parsed)
     end
   end
 end
