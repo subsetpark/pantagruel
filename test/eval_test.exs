@@ -1,6 +1,7 @@
 defmodule EvalTest do
   use ExUnit.Case
   alias Pantagruel.Values.{Variable, Lambda, Domain}
+  alias Pantagruel.Eval
 
   defp scan_and_parse(text) do
     {:ok, parsed, "", %{}, _, _} =
@@ -12,7 +13,7 @@ defmodule EvalTest do
   end
 
   defp eval(parsed) do
-    {:ok, scope} = eval(parsed)
+    {:ok, scope} = Eval.eval(parsed)
     scope
   end
 
@@ -31,7 +32,7 @@ defmodule EvalTest do
     test "eval unbound" do
       parsed = "f(x:X) :: Real" |> scan_and_parse
 
-      {:error, {:unbound_variables, e}} = eval(parsed)
+      {:error, {:unbound_variables, e}} = Eval.eval(parsed)
 
       assert e.unbound == MapSet.new(["X"])
     end
@@ -106,7 +107,7 @@ defmodule EvalTest do
     test "unbound variable in body" do
       parsed = "f(x:Nat)\nf x = g x" |> scan_and_parse
 
-      {:error, {:unbound_variables, _}} = eval(parsed)
+      {:error, {:unbound_variables, _}} = Eval.eval(parsed)
     end
 
     test "bind variables in the next section" do
@@ -143,7 +144,7 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      {:error, {:unbound_variables, _}} = eval(parsed)
+      {:error, {:unbound_variables, _}} = Eval.eval(parsed)
     end
 
     test "lambda binding failure" do
@@ -154,7 +155,7 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      {:error, {:unbound_variables, _}} = eval(parsed)
+      {:error, {:unbound_variables, _}} = Eval.eval(parsed)
     end
 
     test "lambda binding" do
@@ -226,7 +227,7 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      {:error, {:unbound_variables, e}} = eval(parsed)
+      {:error, {:unbound_variables, e}} = Eval.eval(parsed)
 
       assert e.unbound == MapSet.new(appl: [operator: :gt, x: "y", y: 1])
     end
@@ -239,7 +240,7 @@ defmodule EvalTest do
         |> scan_and_parse
 
       assert_raise RuntimeError, fn ->
-        eval(parsed)
+        Eval.eval(parsed)
       end
     end
 
@@ -251,7 +252,7 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      {:error, {:unbound_variables, e}} = eval(parsed)
+      {:error, {:unbound_variables, e}} = Eval.eval(parsed)
 
       assert [
                quantification: [
