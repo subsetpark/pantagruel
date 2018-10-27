@@ -147,12 +147,11 @@ defmodule Pantagruel.Format do
   end
 
   defp format_quantification([quantifier: op, quant_bindings: binding, quant_expression: expr], s) do
-    [
-      format_exp(op, s),
-      join_exp(binding, s, ","),
-      "⸳",
-      format_exp(expr, s)
-    ]
+    q = format_exp(op, s)
+    bind = join_exp(binding, s, ",")
+    exp = format_exp(expr, s)
+
+    [q, bind, "⸳", exp]
     |> Enum.join(" ")
   end
 
@@ -160,6 +159,7 @@ defmodule Pantagruel.Format do
     binding_str = join_exp(bindings, s, ",")
     expr_str = format_exp(expr)
     inner_str = "#{binding_str} ⸳ #{expr_str}"
+
     format_exp({container, [inner_str]}, s)
   end
 
