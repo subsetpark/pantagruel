@@ -19,12 +19,12 @@ defmodule Pantagruel.Format do
   @spec format_scopes(Env.t()) :: t
   def format_scopes(scopes), do: format_with(scopes, &format_scope/1)
 
-  defp format_with(data, f) do
-    bar = "***"
+  @bar "***"
 
+  defp format_with(data, f) do
     data
     |> Enum.map(f)
-    |> Enum.join("\n\n#{bar}\n\n")
+    |> Enum.join("\n\n#{@bar}\n\n")
   end
 
   @doc """
