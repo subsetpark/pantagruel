@@ -1,5 +1,3 @@
-import NUMBERS
-
 x () => Real
 y ()=>Real
 x > rand andr [D] 10 x
