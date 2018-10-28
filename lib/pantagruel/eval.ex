@@ -228,12 +228,7 @@ defmodule Pantagruel.Eval do
   # Extend the environment for a new section.
   @spec new_state(t, :atom | nil) :: t
   defp new_state({scopes, header_unbounds, unbounds}, mod_name) do
-    scope =
-      case mod_name do
-        nil -> %{}
-        _ -> %{__module__: %Module{name: mod_name}}
-      end
-
+    scope = if(is_nil(mod_name), do: %{}, else: %{__module__: %Module{name: mod_name}})
     {[scope | scopes], header_unbounds, unbounds ++ [MapSet.new()]}
   end
 end
