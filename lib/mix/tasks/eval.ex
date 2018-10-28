@@ -7,7 +7,7 @@ defmodule Mix.Tasks.Pantagruel.Eval do
       filename
       |> Mix.Tasks.Pantagruel.Parse.parse()
 
-    Eval.eval(parsed)
+    Eval.eval(parsed, [])
   end
 
   def run([filename]) do

@@ -42,6 +42,8 @@ defmodule Pantagruel do
   defp handle({_, _, _}), do: IO.puts(@help)
 
   defp handle_parse({:ok, parsed, "", %{}, _, _}, flags) do
+    # Paths to additional .pant file hierarchies can be passed in with
+    # the :path flag. The default path will also always be checked.
     [@default_path | Keyword.get_values(flags, :path)]
     |> Pantagruel.Load.load()
     |> case do

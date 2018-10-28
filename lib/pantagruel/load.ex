@@ -1,10 +1,19 @@
 defmodule Pantagruel.Load do
+  @moduledoc """
+  Provides the functionality for loading Pantagruel files, making them
+  available for import.
+  """
   alias Pantagruel.{Scan, Parse}
 
   defmodule ModuleShadowError do
     defexception message: "Attempted to redefine an existing module", mod_name: nil
   end
 
+  @doc """
+  Given a list of file paths, recurse through them, parsing all Pantagruel
+  files which declare a module (with the `module` keyword) and return
+  a map where every module AST is available for import by name.
+  """
   def load(paths) do
     try do
       {:ok,
@@ -22,6 +31,7 @@ defmodule Pantagruel.Load do
     |> Enum.reduce(asts, &load_ast/2)
   end
 
+  # Load and parse a file by name.
   defp load_ast(path, asts) do
     path
     |> File.read!()
@@ -32,6 +42,7 @@ defmodule Pantagruel.Load do
 
   defp include({:ok, [{:module, mod_name: mod_name} | rest], "", %{}, _, _}, asts) do
     case asts do
+      # No two modules can declare the same module name.
       %{^mod_name => _} ->
         raise ModuleShadowError, mod_name: mod_name
 

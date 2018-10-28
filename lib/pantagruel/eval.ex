@@ -1,3 +1,7 @@
+defmodule Pantagruel.Eval.Module do
+  defstruct name: ""
+end
+
 defmodule Pantagruel.Eval do
   @moduledoc """
   Evaluation of a Pantagruel program.
@@ -10,6 +14,7 @@ defmodule Pantagruel.Eval do
   import Pantagruel.Guards
   alias Pantagruel.Values.Domain
   alias Pantagruel.Env
+  alias Pantagruel.Eval.Module
 
   defmodule MissingImportError do
     defexception message: "Requested module not found", mod_name: nil
@@ -45,15 +50,23 @@ defmodule Pantagruel.Eval do
   Evaluate a Pantagruel AST for variable binding, returning the resulting
   environment of all bound symbols.
   """
-  def eval(program, asts \\ []) do
+  def eval(program, available_asts, opts \\ []) do
+    # Set the current module name. Either from an argument to the function
+    # or, if no name was specified, from a module name in the AST.
+    mod_name =
+      case {opts[:mod_name], program} do
+        {nil, [{:module, mod_name: name} | _]} -> name
+        {name, _} -> name
+      end
+
     try do
-      {program, scopes} = handle_imports(program, asts, [])
+      {program, scopes} = handle_imports(program, available_asts, [])
 
       eval_section = fn {:section, section}, state ->
         # Evaluate a single section:
         # 1. evaluate the head
         {state, header_unbounds, unbounds} =
-          Enum.reduce(section[:head], new_state(state), &eval_header_statement/2)
+          Enum.reduce(section[:head], new_state(state, mod_name), &eval_header_statement/2)
 
         # 2. check for any unbound symbols in the head
         :ok = Env.check_unbound(state, header_unbounds)
@@ -95,12 +108,12 @@ defmodule Pantagruel.Eval do
   # scopes along.
   defp handle_imports([{:module, _} | rest], asts, scopes), do: handle_imports(rest, asts, scopes)
 
-  defp handle_imports([{:import, mod_name: mod_name} | rest], asts, scopes) do
-    case asts do
+  defp handle_imports([{:import, mod_name: mod_name} | rest], available_asts, scopes) do
+    case available_asts do
       %{^mod_name => ast} ->
-        {:ok, evaled} = eval(ast)
+        {:ok, evaled} = eval(ast, available_asts, mod_name: mod_name)
 
-        handle_imports(rest, asts, evaled ++ scopes)
+        handle_imports(rest, available_asts, evaled ++ scopes)
 
       %{} ->
         raise MissingImportError, mod_name: mod_name
@@ -197,8 +210,14 @@ defmodule Pantagruel.Eval do
   # In this respect they're unique among expression types.
   defp bind_expression_variables(_, state), do: state
   # Extend the environment for a new section.
-  @spec new_state(t) :: t
-  defp new_state({scopes, header_unbounds, unbounds}) do
-    {[%{} | scopes], header_unbounds, unbounds ++ [MapSet.new()]}
+  @spec new_state(t, :atom | nil) :: t
+  defp new_state({scopes, header_unbounds, unbounds}, mod_name) do
+    scope =
+      case mod_name do
+        nil -> %{}
+        _ -> %{__module__: %Module{name: mod_name}}
+      end
+
+    {[scope | scopes], header_unbounds, unbounds ++ [MapSet.new()]}
   end
 end

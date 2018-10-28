@@ -5,7 +5,7 @@ defmodule Pantagruel.FormatTest do
   defp eval(text) do
     with scanned <- Pantagruel.Scan.scan(text),
          {:ok, parsed, "", %{}, _, _} <- Pantagruel.Parse.program(scanned),
-         {:ok, scope} <- Pantagruel.Eval.eval(parsed) do
+         {:ok, scope} <- Pantagruel.Eval.eval(parsed, []) do
       {parsed, scope}
     end
   end
@@ -26,6 +26,18 @@ defmodule Pantagruel.FormatTest do
 
       assert "f()  " == Format.format_program(parsed)
       assert "f()" == Format.format_scopes(scopes)
+    end
+
+    test "minimal function with module name" do
+      {parsed, scopes} =
+        """
+        module TEST
+        f()
+        """
+        |> eval
+
+      assert "# TEST\n\n***\n\nf()  " == Format.format_program(parsed)
+      assert "# TEST\nf()" == Format.format_scopes(scopes)
     end
 
     test "function" do
