@@ -87,6 +87,10 @@ defmodule Pantagruel.Format do
 
     scope
     |> Map.values()
+    |> Enum.filter(fn
+      %Domain{name: name, ref: ref} -> ref != name
+      _ -> true
+    end)
     |> Enum.sort(sort)
     |> Enum.map(&format_exp/1)
     |> Enum.join("\n")
