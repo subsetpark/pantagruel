@@ -60,7 +60,8 @@ defmodule Pantagruel.Eval do
       end
 
     try do
-      {program, scopes} = handle_imports(program, available_asts, [])
+      # Populate the scope with any modules imported with the `import` statement.
+      {program, scopes} = handle_imports(program, available_asts, [], MapSet.new())
 
       eval_section = fn {:section, section}, state ->
         # Evaluate a single section:
@@ -106,21 +107,36 @@ defmodule Pantagruel.Eval do
 
   # Recursively evaluate any imported modules and bring the resulting
   # scopes along.
-  defp handle_imports([{:module, _} | rest], asts, scopes), do: handle_imports(rest, asts, scopes)
+  defp handle_imports([{:module, _} | rest], asts, scopes, seen_mod_names),
+    do: handle_imports(rest, asts, scopes, seen_mod_names)
 
-  defp handle_imports([{:import, mod_name: mod_name} | rest], available_asts, scopes) do
-    case available_asts do
-      %{^mod_name => ast} ->
+  defp handle_imports(
+         [{:import, mod_name: mod_name} | rest],
+         available_asts,
+         scopes,
+         seen_mod_names
+       ) do
+    case {MapSet.member?(seen_mod_names, mod_name), available_asts} do
+      {true, _} ->
+        # Skip any module that's already been imported.
+        handle_imports(rest, available_asts, scopes, seen_mod_names)
+
+      {_, %{^mod_name => ast}} ->
         {:ok, evaled} = eval(ast, available_asts, mod_name: mod_name)
 
-        handle_imports(rest, available_asts, evaled ++ scopes)
+        handle_imports(
+          rest,
+          available_asts,
+          evaled ++ scopes,
+          MapSet.put(seen_mod_names, mod_name)
+        )
 
-      %{} ->
+      {_, %{}} ->
         raise MissingImportError, mod_name: mod_name
     end
   end
 
-  defp handle_imports(rest, _, scopes), do: {rest, scopes}
+  defp handle_imports(rest, _, scopes, _), do: {rest, scopes}
 
   # Include symbols in a set of values to check for binding.
   @spec include_for_binding_check(MapSet.t(), any) :: MapSet.t()

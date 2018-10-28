@@ -417,5 +417,14 @@ defmodule PantagruelTest do
         {:section, [head: [decl: [decl_ident: "f"]]]}
       ])
     end
+    test "two import lines" do
+      text = "import MOD\nimport MOD2\nf()"
+
+      tryparse(text, [
+        {:import, [mod_name: "MOD"]},
+        {:import, [mod_name: "MOD2"]},
+        {:section, [head: [decl: [decl_ident: "f"]]]}
+      ])
+    end
   end
 end

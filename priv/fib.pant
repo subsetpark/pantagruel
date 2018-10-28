@@ -1,4 +1,5 @@
-module NUMBERS
+import NUMBERS
+import NUMBERS
 
 fib (x : Nat) :: Nat
 " A specification for the fibonacci function.

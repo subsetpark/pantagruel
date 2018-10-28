@@ -476,7 +476,7 @@ defmodule Pantagruel.Parse do
     |> optional
     |> concat(
       imp
-      |> optional
+      |> repeat
     )
     |> concat(
       section
