@@ -359,33 +359,6 @@ defmodule Pantagruel.Parse do
     |> concat(parsec(:expression) |> unwrap_and_tag(:quant_expression))
     |> tag(:quantification)
 
-  # PRIVATE COMBINATORS
-
-  # A function form, treated as a value or domain.
-  defcombinatorp(
-    :lambda,
-    string("λ")
-    |> ignore
-    |> concat(fun)
-    |> tag(:lambda)
-  )
-
-  # The domain of a variable. Can be a type (including a function)
-  # or a set of concrete values.
-  defcombinatorp(
-    :domain,
-    [
-      parsec(:lambda),
-      parsec(:domain)
-      |> comma_join()
-      |> nested,
-      identifier
-    ]
-    |> choice
-  )
-
-  # PARSE COMBINATORS
-
   symbol =
     choice([
       integer_with_underscores,
@@ -420,6 +393,56 @@ defmodule Pantagruel.Parse do
     )
     |> tag(:unary_exp)
 
+  module =
+    string("module")
+    |> concat(string(" ") |> times(min: 1))
+    |> ignore
+    |> concat(
+      identifier
+      |> unwrap_and_tag(:mod_name)
+    )
+    |> tag(:module)
+    |> concat(newline |> times(min: 1) |> ignore)
+
+  imp =
+    string("import")
+    |> concat(string(" ") |> times(min: 1))
+    |> ignore
+    |> concat(
+      identifier
+      |> unwrap_and_tag(:mod_name)
+      |> comma_join
+    )
+    |> traverse({Pantagruel.Parse.Expressions, :parse_import, []})
+    |> concat(newline |> times(min: 1) |> ignore)
+
+  # PRIVATE COMBINATORS
+
+  # A function form, treated as a value or domain.
+  defcombinatorp(
+    :lambda,
+    string("λ")
+    |> ignore
+    |> concat(fun)
+    |> tag(:lambda)
+  )
+
+  # The domain of a variable. Can be a type (including a function)
+  # or a set of concrete values.
+  defcombinatorp(
+    :domain,
+    [
+      parsec(:lambda),
+      parsec(:domain)
+      |> comma_join()
+      |> nested,
+      identifier
+    ]
+    |> choice
+  )
+
+  # PARSE COMBINATORS
+
   # Some single recursive expression, consisting of a single expression
   # component, or a function application tree of expression components.
   defparsec(
@@ -449,9 +472,17 @@ defmodule Pantagruel.Parse do
   @spec program(String.t()) :: combinator_resp
   defparsec(
     :program,
-    section
-    |> concat(newline |> repeat |> ignore)
-    |> join(where)
+    module
     |> optional
+    |> concat(
+      imp
+      |> repeat
+    )
+    |> concat(
+      section
+      |> concat(newline |> repeat |> ignore)
+      |> join(where)
+      |> optional
+    )
   )
 end

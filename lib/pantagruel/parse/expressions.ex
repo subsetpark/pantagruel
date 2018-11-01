@@ -69,6 +69,14 @@ defmodule Pantagruel.Parse.Expressions do
   def parse_dot_expression(_, expressions, context, _, _),
     do: {expressions |> reduce(&dot/2), context}
 
+  def parse_import(_, import_line, context, _, _) do
+    imports = import_line
+    |> Keyword.get_values(:mod_name)
+    |> Enum.map(&{:import, mod_name: &1})
+
+    {imports, context}
+  end
+
   defp reduce(expressions, fun) do
     expressions
     |> Enum.reverse()

@@ -5,7 +5,7 @@ defmodule Pantagruel.FormatTest do
   defp eval(text) do
     with scanned <- Pantagruel.Scan.scan(text),
          {:ok, parsed, "", %{}, _, _} <- Pantagruel.Parse.program(scanned),
-         {:ok, scope} <- Pantagruel.Eval.eval(parsed) do
+         {:ok, scope} <- Pantagruel.Eval.eval(parsed, []) do
       {parsed, scope}
     end
   end
@@ -28,6 +28,18 @@ defmodule Pantagruel.FormatTest do
       assert "f()" == Format.format_scopes(scopes)
     end
 
+    test "minimal function with module name" do
+      {parsed, scopes} =
+        """
+        module TEST
+        f()
+        """
+        |> eval
+
+      assert "# TEST\n\n***\n\nf()  " == Format.format_program(parsed)
+      assert "# TEST\nf()" == Format.format_scopes(scopes)
+    end
+
     test "function" do
       {parsed, scopes} =
         """
@@ -47,7 +59,7 @@ defmodule Pantagruel.FormatTest do
         |> eval
 
       assert "f() ⇒ F  " == Format.format_program(parsed)
-      assert "F ⇐ F\nf() ⇒ F" == Format.format_scopes(scopes)
+      assert "f() ⇒ F" == Format.format_scopes(scopes)
     end
 
     test "aliasing" do
@@ -70,7 +82,7 @@ defmodule Pantagruel.FormatTest do
         |> eval
 
       assert "f() ⇒ F  \nf 1 ↔ 0  " == Format.format_program(parsed)
-      assert "F ⇐ F\nf() ⇒ F" == Format.format_scopes(scopes)
+      assert "f() ⇒ F" == Format.format_scopes(scopes)
     end
 
     test "unary operator" do

@@ -37,12 +37,60 @@ in the interpreter if there is a use for it.
 
 ## Pantagruel Syntax
 
-A Pantagruel **program** consists of a series of **sections**. Each
-section consists of a **head** and an optional **body**.
+A Pantagruel **program** consists of a series of **chapters**. Each
+chapter consists of a **head** and an optional **body**.
+
+At the top of the program are two optional sections: the **module**
+statement and some number of **import** statements.
+
+### Module statements
+
+The first line of a Pantagruel program is, optionally, a module statement. It looks like this:
+
+```pantagruel
+module NUMBERS
+```
+
+This will make the proceeding program available for import under the module name `NUMBERS`.
+
+The module statement is optional; omitting it will not affect the
+semantics of the program, and by the same token the semantics of the
+program being opened with the Pantagruel interpreter will not be affected
+by the presence of a module statement. It is a syntax error to include
+more than one module statement or to include a module statement anywhere
+other than the beginning of a program.
+
+### Import statements
+
+Any program that is declared as a module and is in the import path of
+the interpreter may be imported. Import statements have one of two forms:
+
+```pantagruel
+import NUMBERS
+import USERS
+```
+
+or
+
+```pantagruel
+import NUMBERS, USERS
+```
+
+These two forms have the equivalent effect of importing both of the
+named modules.
+
+Importing a module brings all of its declared symbols into the execution
+environment of the current program. This allows symbols to be reused
+without having to define them over and over.
+
+Import statements must all be located after the module statement, if
+it's present, and before the beginning of the program chapters. There
+may be any number of imports and they can import any non-zero number of
+modules per statement.
 
 ### Section Heads
 
-A Pantagruel section head introduces one or more symbols, of two
+A Pantagruel chapter head introduces one or more symbols, of two
 primary kinds: **procedures** and **domains**. A procedure might be
 a computer program, or a function. For instance, `+` is a procedure,
 and most Pantagruel programs will introduce at least one procedure,
@@ -54,7 +102,7 @@ do the reals (ℝ). But so could the values ``{`ok, `error}`` or some
 business logic-specific concept like `User` or `Post`. In this way
 domains are like types, though more flexible.
 
-There are three expression forms possible in a section head:
+There are three expression forms possible in a chapter head:
 
 #### Procedure declaration
 
@@ -105,7 +153,7 @@ greater than 5 and less than 10.
 
 #### Domain Aliasing
 
-The final type of expression available in a section head is a **domain
+The final type of expression available in a chapter head is a **domain
 alias**. This is a simple statement of equivalence between a new domain
 and some existing one. It uses the **reversed produces** symbol `<=`.
 
@@ -116,7 +164,7 @@ Here's an example domain alias:
 Introduces a domain `Status` which is equivalent to the set of values
 `ok` and `error`.
 
-Here's an example section head:
+Here's an example chapter head:
 
 ```pantagruel
 Score <= Nat
@@ -338,9 +386,9 @@ should be the same among all users of the notation.
 The Pantagruel interpreter evaluates a program for the purpose of
 enforcing Pantagruel's **binding** rules. To sum them up, they are:
 
-1. Any symbol referred to in a section head must be bound by the end of
+1. Any symbol referred to in a chapter head must be bound by the end of
 that head.
-2. Any symbol referred to in a section body must be bound by the end of
+2. Any symbol referred to in a chapter body must be bound by the end of
 the *next* body.
 
 This structure is crucial in establishing the Pantagruel style of
@@ -362,7 +410,7 @@ is_even? n <- is_even? (n - 2)
 ```
 
 That specification describes the behavior of a predicate as checking
-`is_even?` and `> 5`. It then goes on in the next section to fill in
+`is_even?` and `> 5`. It then goes on in the next chapter to fill in
 what `is_even?` involves. This allows it to be defined in context; if
 a symbol had to be defined before it was used, as is often the case in
 programming languages, the narrative thread of increasing detail would
@@ -404,8 +452,8 @@ D <= X
 *
 ```
 
-In the case of these section head statements, all other symbol positions
-must be bound by the end of the subsection.
+In the case of these chapter head statements, all other symbol positions
+must be bound by the end of the subchapter.
 
 ##### Comprehensions
 
@@ -436,3 +484,10 @@ Existential quantifiers introduce symbols into program scope.
 exists x : Y, x > z . f x
        *
 ```
+
+### Suggested Readings
+
+As mentioned, the evaluation semantics of Pantagruel are entirely
+implicit. Nevertheless, in order to design a language that would be
+useful and efficient when it comes to specifying programs, it's useful
+to choose operators with a mind to how they would be used.

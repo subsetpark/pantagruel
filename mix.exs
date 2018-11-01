@@ -45,7 +45,7 @@ defmodule Pantagruel.MixProject do
   end
 
   defp escript_config do
-    [main_module: Pantagruel, name: :pant]
+    [main_module: Pantagruel, name: escript_name()]
   end
 
   defp package do
@@ -54,5 +54,12 @@ defmodule Pantagruel.MixProject do
       licenses: ["BSD3"],
       links: %{"GitHub" => "https://github.com/subsetpark/pantagruel"}
     ]
+  end
+
+  defp escript_name do
+    case Mix.env() do
+      :dev -> :pant_dev
+      _ -> :pant
+    end
   end
 end

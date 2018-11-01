@@ -1,3 +1,7 @@
+defmodule Pantagruel.Eval.Module do
+  defstruct name: ""
+end
+
 defmodule Pantagruel.Eval do
   @moduledoc """
   Evaluation of a Pantagruel program.
@@ -10,6 +14,11 @@ defmodule Pantagruel.Eval do
   import Pantagruel.Guards
   alias Pantagruel.Values.Domain
   alias Pantagruel.Env
+  alias Pantagruel.Eval.Module
+
+  defmodule MissingImportError do
+    defexception message: "Requested module not found", mod_name: nil
+  end
 
   @typedoc """
   A Pantagruel AST is a sequence of *sections*, each of which consists
@@ -41,26 +50,37 @@ defmodule Pantagruel.Eval do
   Evaluate a Pantagruel AST for variable binding, returning the resulting
   environment of all bound symbols.
   """
-  def eval(program) do
+  def eval(program, available_asts, opts \\ []) do
+    # Set the current module name. Either from an argument to the function
+    # or, if no name was specified, from a module name in the AST.
+    mod_name =
+      case {opts[:mod_name], program} do
+        {nil, [{:module, mod_name: name} | _]} -> name
+        {name, _} -> name
+      end
+
     try do
+      # Populate the scope with any modules imported with the `import` statement.
+      {program, scopes} = handle_imports(program, available_asts, [], MapSet.new())
+
       eval_section = fn {:section, section}, state ->
         # Evaluate a single section:
         # 1. evaluate the head
-        {scopes, header_unbounds, unbounds} =
-          Enum.reduce(section[:head], new_state(state), &eval_header_statement/2)
+        {state, header_unbounds, unbounds} =
+          Enum.reduce(section[:head], new_state(state, mod_name), &eval_header_statement/2)
 
         # 2. check for any unbound symbols in the head
-        :ok = Env.check_unbound(scopes, header_unbounds)
+        :ok = Env.check_unbound(state, header_unbounds)
 
         # 3. evaluate the body
-        {scopes, [unbounds | rest]} =
-          Enum.reduce(section[:body] || [], {scopes, unbounds}, &eval_body_statement/2)
+        {state, [unbounds | rest]} =
+          Enum.reduce(section[:body] || [], {state, unbounds}, &eval_body_statement/2)
 
         # 4. check for any unbound symbols from the *previous* section body (ie,
         #    which should have been defined in this section)
-        :ok = Env.check_unbound(scopes, unbounds)
+        :ok = Env.check_unbound(state, unbounds)
 
-        {scopes, MapSet.new(), rest}
+        {state, MapSet.new(), rest}
       end
 
       # Force a check for unbound values. All symbols must be bound by the
@@ -73,7 +93,7 @@ defmodule Pantagruel.Eval do
 
       scopes =
         program
-        |> Enum.reduce({[], MapSet.new(), [MapSet.new()]}, eval_section)
+        |> Enum.reduce({scopes, MapSet.new(), [MapSet.new()]}, eval_section)
         |> final_check.()
         |> Enum.reverse()
 
@@ -81,8 +101,42 @@ defmodule Pantagruel.Eval do
     rescue
       e in Env.UnboundVariablesError -> {:error, {:unbound_variables, e}}
       e in Env.DomainMismatchError -> {:error, {:domain_mismatch, e}}
+      e in MissingImportError -> {:error, {:missing_import, e}}
     end
   end
+
+  # Recursively evaluate any imported modules and bring the resulting
+  # scopes along.
+  defp handle_imports([{:module, _} | rest], asts, scopes, seen_mod_names),
+    do: handle_imports(rest, asts, scopes, seen_mod_names)
+
+  defp handle_imports(
+         [{:import, mod_name: mod_name} | rest],
+         available_asts,
+         scopes,
+         seen_mod_names
+       ) do
+    case {MapSet.member?(seen_mod_names, mod_name), available_asts} do
+      {true, _} ->
+        # Skip any module that's already been imported.
+        handle_imports(rest, available_asts, scopes, seen_mod_names)
+
+      {_, %{^mod_name => ast}} ->
+        {:ok, evaled} = eval(ast, available_asts, mod_name: mod_name)
+
+        handle_imports(
+          rest,
+          available_asts,
+          evaled ++ scopes,
+          MapSet.put(seen_mod_names, mod_name)
+        )
+
+      {_, %{}} ->
+        raise MissingImportError, mod_name: mod_name
+    end
+  end
+
+  defp handle_imports(rest, _, scopes, _), do: {rest, scopes}
 
   # Include symbols in a set of values to check for binding.
   @spec include_for_binding_check(MapSet.t(), any) :: MapSet.t()
@@ -172,8 +226,9 @@ defmodule Pantagruel.Eval do
   # In this respect they're unique among expression types.
   defp bind_expression_variables(_, state), do: state
   # Extend the environment for a new section.
-  @spec new_state(t) :: t
-  defp new_state({scopes, header_unbounds, unbounds}) do
-    {[%{} | scopes], header_unbounds, unbounds ++ [MapSet.new()]}
+  @spec new_state(t, :atom | nil) :: t
+  defp new_state({scopes, header_unbounds, unbounds}, mod_name) do
+    scope = if(is_nil(mod_name), do: %{}, else: %{__module__: %Module{name: mod_name}})
+    {[scope | scopes], header_unbounds, unbounds ++ [MapSet.new()]}
   end
 end

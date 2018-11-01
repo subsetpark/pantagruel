@@ -6,6 +6,7 @@ defmodule Pantagruel.Format do
   import Pantagruel.Guards
   alias Pantagruel.Values.{Domain, Variable, Lambda}
   alias Pantagruel.Env
+  alias Pantagruel.Eval.Module
 
   @type ast :: [term]
   @type t :: String.t()
@@ -30,6 +31,9 @@ defmodule Pantagruel.Format do
   @doc """
   Generate a string representation of a parsed program section.
   """
+  def format_section({:import, mod_name: mod_name}), do: ": #{mod_name}"
+  def format_section({:module, mod_name: mod_name}), do: "# #{mod_name}"
+
   def format_section({:section, section}) do
     Stream.concat(section[:head], section[:body] || [])
     # For now, assume we want markdown compatibility.
@@ -44,6 +48,7 @@ defmodule Pantagruel.Format do
   """
   @spec format_exp(any, [%{}]) :: t
   def format_exp(value, scope \\ [])
+  def format_exp(%Module{name: n}, _), do: "# #{n}"
   def format_exp(%Domain{name: n, ref: ref}, s), do: join_exp([n, "⇐", ref], s, " ")
   def format_exp(%Variable{name: n, domain: dom}, s), do: join_exp([n, ":", dom], s, " ")
   def format_exp(s, []) when is_binary(s), do: format_binary(s)
@@ -68,6 +73,7 @@ defmodule Pantagruel.Format do
   # Format the contents of the environment after program evaluation.
   defp format_scope(scope) do
     sort = fn
+      %Module{}, _ -> true
       %Domain{}, %Lambda{} -> true
       %Domain{}, %Variable{} -> true
       %Lambda{}, %Variable{} -> true
@@ -81,6 +87,10 @@ defmodule Pantagruel.Format do
 
     scope
     |> Map.values()
+    |> Enum.filter(fn
+      %Domain{name: name, ref: ref} -> ref != name
+      _ -> true
+    end)
     |> Enum.sort(sort)
     |> Enum.map(&format_exp/1)
     |> Enum.join("\n")

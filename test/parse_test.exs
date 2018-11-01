@@ -379,4 +379,52 @@ defmodule PantagruelTest do
       )
     end
   end
+
+  describe "module handling" do
+    test "module declaration" do
+      text = "module MOD\nf()"
+
+      tryparse(text, [
+        {:module, [mod_name: "MOD"]},
+        {:section, [head: [decl: [decl_ident: "f"]]]}
+      ])
+    end
+
+    test "module import" do
+      text = "import MOD\nf()"
+
+      tryparse(text, [
+        {:import, [mod_name: "MOD"]},
+        {:section, [head: [decl: [decl_ident: "f"]]]}
+      ])
+    end
+
+    test "module declaration and import" do
+      text = "module MOD\nimport MOD2\nf()"
+
+      tryparse(text, [
+        {:module, [mod_name: "MOD"]},
+        {:import, [mod_name: "MOD2"]},
+        {:section, [head: [decl: [decl_ident: "f"]]]}
+      ])
+    end
+    test "multiple module import" do
+      text = "import MOD,MOD2\nf()"
+
+      tryparse(text, [
+        {:import, [mod_name: "MOD"]},
+        {:import, [mod_name: "MOD2"]},
+        {:section, [head: [decl: [decl_ident: "f"]]]}
+      ])
+    end
+    test "two import lines" do
+      text = "import MOD\nimport MOD2\nf()"
+
+      tryparse(text, [
+        {:import, [mod_name: "MOD"]},
+        {:import, [mod_name: "MOD2"]},
+        {:section, [head: [decl: [decl_ident: "f"]]]}
+      ])
+    end
+  end
 end
