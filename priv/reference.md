@@ -51,7 +51,7 @@ The first line of a Pantagruel program is, optionally, a module statement. It lo
 module NUMBERS
 ```
 
-This will make the proceeding program available for import under the module name `NUMBERS`.
+This will make the subsequent program available for import under the module name `NUMBERS`.
 
 The module statement is optional; omitting it will not affect the
 semantics of the program, and by the same token the semantics of the
