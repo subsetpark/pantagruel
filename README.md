@@ -2,6 +2,29 @@
 
 ## What is this?
 
+First and foremost, Pantagruel is tool for *thought* and
+*communication*. It's not a programming language, and it's not a program
+for verifying other programs. It's a language designed to help you express
+your ideas about what programs should do. It is designed to help you do
+so in a way that is terser and clearer than natural language; that's the
+*communication* part. The *thought* part comes from the bet that being
+helped, and sometimes constrained, to communicate in an unambiguous and
+slightly more rigorous way than you might otherwise will assist you in
+thinking things through.
+
+Pantagruel is a *program specification language*. A notation with
+a defined syntax whose sentences will describe the workings of some
+piece of logic, to be articulated for the benefit of the people who
+will implement it, as well as the people who design it and the people
+who will ensure it's implemented correctly.
+
+Pantagruel is also implemented in the `pant` interpreter, which is a
+program that understands Pantagruel text documents. `pant` is capable
+of ensuring that documents follow certain rules, beyond those of syntax,
+which are designed to promote rigor and clarity of thought.
+
+## Background
+
 I had the idea for this language after reading into some of the offerings
 currently available in the world of [Formal Methods][FM]: things like
 [Z], [TLA+], and somewhat more obscurely, the language developed in [A
