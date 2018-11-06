@@ -27,3 +27,5 @@ pantagruel-*.tar
 
 .elixir_ls
 /tags
+
+lexer.erl

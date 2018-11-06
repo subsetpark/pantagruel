@@ -2,15 +2,16 @@ Definitions.
 
 INT           = [\d_]+
 SYMBOL        = [^\s\[\]\(\){},\n]+
-LITERAL       = (`[^\n]*`|`{SYMBOL})
+LITERAL       = (`[^\n]*`|`[^\s\n]+)
 FLOAT         = [-+]?[0-9]*\.?[0-9]+
 WHITESPACE    = [\t\s]
 
 Rules.
 
 {INT}         : {token, {int, TokenLine, to_integer(TokenChars)}}.
-{LITERAL}     : {token, {literal, TokenLine, string:strip(TokenChars, both, $`)}}.
+{LITERAL}     : {token, {literal, TokenLine, literal(TokenChars)}}.
 {FLOAT}       : {token, {float, TokenLine, TokenChars}}.
+".*\n         : {token, {comment, TokenLine, comment(TokenChars)}}.
 
 ,             : {token, {',', TokenLine}}.
 \]            : {token, {']', TokenLine}}.
@@ -20,7 +21,7 @@ Rules.
 \{            : {token, {'{', TokenLine}}.
 \}            : {token, {'}', TokenLine}}.
 \n            : {token, {newline, TokenLine}}.
-\.\.\.\n         : skip_token.
+\.\.\.\n      : skip_token.
 
 {SYMBOL}      : {token, keyword(TokenChars, TokenLine)}.
 
@@ -32,6 +33,15 @@ to_integer(Chars) ->
     String = string:replace(Chars, "_", ""),
     {Int, ""} = string:to_integer(String),
     Int.
+
+literal([$`|Chars]) -> literal(Chars, []);
+literal(Chars) -> literal(Chars, []).
+
+literal("`", Acc) -> string:reverse(Acc);
+literal([], Acc) -> string:reverse(Acc);
+literal([C|Chars], Acc) -> literal(Chars, [C|Acc]).
+
+comment(Chars) -> string:trim(Chars, both, "\n\"\s").
 
 keyword("and", TokenLine) -> {'and', TokenLine};
 keyword("or", TokenLine) -> {'or', TokenLine};
