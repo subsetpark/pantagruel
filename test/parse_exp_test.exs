@@ -229,7 +229,7 @@ defmodule ExpressionParserTest do
 
     test "integer with underscores" do
       text = "100_000"
-      tryexp(text, [100000])
+      tryexp(text, [100_000])
     end
 
     test "float" do
@@ -293,6 +293,20 @@ defmodule ExpressionParserTest do
     test "insert" do
       text = "\\"
       expected = [:insert]
+
+      tryexp(text, expected)
+    end
+
+    test "precedence" do
+      text = "f x > g y"
+
+      expected = [
+        appl: [
+          operator: :gt,
+          x: {:appl, [f: "f", x: "x"]},
+          y: {:appl, [f: "g", x: "y"]}
+        ]
+      ]
 
       tryexp(text, expected)
     end
