@@ -1,25 +1,25 @@
 Definitions.
 
-INT           = [\d_]+
-SYMBOL        = [^\s\[\]\(\){},\n]+
-LITERAL       = (`[^\n]*`|`[^\s\n]+)
+INT           = [0-9_]+
 FLOAT         = [-+]?[0-9]*\.?[0-9]+
+LITERAL       = (`[^\n]*`|`[^\s\n]+)
+SYMBOL        = [^\s\[\]\(\){},\n]+
 WHITESPACE    = [\t\s]
 
 Rules.
 
-{INT}         : {token, {int, TokenLine, to_integer(TokenChars)}}.
+{INT}         : {token, {int, TokenLine, integer(TokenChars)}}.
 {LITERAL}     : {token, {literal, TokenLine, literal(TokenChars)}}.
-{FLOAT}       : {token, {float, TokenLine, TokenChars}}.
+{FLOAT}       : {token, {float, TokenLine, to_float(TokenChars)}}.
 ".*\n         : {token, {comment, TokenLine, comment(TokenChars)}}.
 
-,             : {token, {',', TokenLine}}.
-\]            : {token, {']', TokenLine}}.
-\[            : {token, {'[', TokenLine}}.
-\(            : {token, {'(', TokenLine}}.
-\)            : {token, {')', TokenLine}}.
-\{            : {token, {'{', TokenLine}}.
-\}            : {token, {'}', TokenLine}}.
+,             : {token, {comma, TokenLine}}.
+\[            : {token, {leftbracket, TokenLine}}.
+\]            : {token, {rightbracket, TokenLine}}.
+\(            : {token, {leftparens, TokenLine}}.
+\)            : {token, {rightparens, TokenLine}}.
+\{            : {token, {leftbrace, TokenLine}}.
+\}            : {token, {rightbrace, TokenLine}}.
 \n            : {token, {newline, TokenLine}}.
 \.\.\.\n      : skip_token.
 
@@ -29,10 +29,14 @@ Rules.
 
 Erlang code.
 
-to_integer(Chars) ->
+integer(Chars) ->
     String = string:replace(Chars, "_", ""),
-    {Int, ""} = string:to_integer(String),
+    {Int, []} = string:to_integer(String),
     Int.
+
+to_float(Chars) ->
+    {Float, []} = string:to_float(Chars),
+    Float.
 
 literal([$`|Chars]) -> literal(Chars, []);
 literal(Chars) -> literal(Chars, []).
