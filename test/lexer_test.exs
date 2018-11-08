@@ -42,26 +42,58 @@ defmodule LexerTest do
     end
   end
 
+  describe "operators" do
+    test "operators" do
+      {:ok, tokens, 1} = :lexer.string('#')
+      assert [{:operator, 1, '#'}] == tokens
+    end
+
+    test "prefix operators" do
+      {:ok, tokens, 1} = :lexer.string('#x')
+      assert [{:operator, 1, '#'}, {:symbol, 1, 'x'}] == tokens
+    end
+
+    test "infix operators" do
+      {:ok, tokens, 1} = :lexer.string('x>y')
+      assert [{:symbol, 1, 'x'}, {:operator, 1, '>'}, {:symbol, 1, 'y'}] == tokens
+    end
+
+    test "infix implies" do
+      {:ok, tokens, 1} = :lexer.string('x->y')
+      assert [{:symbol, 1, 'x'}, {:operator, 1, '->'}, {:symbol, 1, 'y'}] == tokens
+    end
+
+    test "infix dot" do
+      {:ok, tokens, 1} = :lexer.string('x.y')
+      assert [{:symbol, 1, 'x'}, {:operator, 1, '.'}, {:symbol, 1, 'y'}] == tokens
+    end
+  end
+
   describe "symbols" do
     test "symbols" do
       {:ok, tokens, 1} = :lexer.string('x')
       assert [{:symbol, 1, 'x'}] == tokens
     end
 
+    test "unicode symbols" do
+      {:ok, tokens, 1} = :lexer.string('δδδ')
+      assert [{:symbol, 1, 'δδδ'}] == tokens
+    end
+
     test "list" do
       {:ok, tokens, 1} = :lexer.string('[x]')
-      assert [{:leftbracket, 1}, {:symbol, 1, 'x'}, {:rightbracket, 1}] == tokens
+      assert [{:operator, 1, '['}, {:symbol, 1, 'x'}, {:operator, 1, ']'}] == tokens
     end
 
     test "list with commas" do
       {:ok, tokens, 1} = :lexer.string('[x, y]')
 
       assert [
-               {:leftbracket, 1},
+               {:operator, 1, '['},
                {:symbol, 1, 'x'},
-               {:comma, 1},
+               {:operator, 1, ','},
                {:symbol, 1, 'y'},
-               {:rightbracket, 1}
+               {:operator, 1, ']'}
              ] == tokens
     end
   end

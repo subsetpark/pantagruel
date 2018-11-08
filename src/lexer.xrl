@@ -3,7 +3,8 @@ Definitions.
 INT           = [0-9_]+
 FLOAT         = [-+]?[0-9]*\.?[0-9]+
 LITERAL       = (`[^\n]*`|`[^\s\n]+)
-SYMBOL        = [^\s\[\]\(\){},\n]+
+OPERATOR      = <>\-=~/\*\+#\.\[\]\(\){},%^:;|&
+SYMBOL        = [^\s\n&&{OPERATOR}]+
 WHITESPACE    = [\t\s]
 
 Rules.
@@ -13,16 +14,10 @@ Rules.
 {FLOAT}       : {token, {float, TokenLine, to_float(TokenChars)}}.
 ".*\n         : {token, {comment, TokenLine, comment(TokenChars)}}.
 
-,             : {token, {comma, TokenLine}}.
-\[            : {token, {leftbracket, TokenLine}}.
-\]            : {token, {rightbracket, TokenLine}}.
-\(            : {token, {leftparens, TokenLine}}.
-\)            : {token, {rightparens, TokenLine}}.
-\{            : {token, {leftbrace, TokenLine}}.
-\}            : {token, {rightbrace, TokenLine}}.
-\n            : {token, {newline, TokenLine}}.
 \.\.\.\n      : skip_token.
+\n            : {token, {newline, TokenLine}}.
 
+[{OPERATOR}]+ : {token, {operator, TokenLine, TokenChars}}.
 {SYMBOL}      : {token, keyword(TokenChars, TokenLine)}.
 
 {WHITESPACE}+ : skip_token.
@@ -55,11 +50,4 @@ keyword("exists", TokenLine) -> {exists, TokenLine};
 keyword("all", TokenLine) -> {all, TokenLine};
 keyword("xor", TokenLine) -> {'xor', TokenLine};
 keyword("fn", TokenLine) -> {fn, TokenLine};
-keyword(".", TokenLine) -> {dot, TokenLine};
-keyword(";", TokenLine) -> {where, TokenLine};
-keyword("<->", TokenLine) -> {iff, TokenLine};
-keyword("->", TokenLine) -> {implies, TokenLine};
-keyword("=>", TokenLine) -> {produces, TokenLine};
-keyword("<-", TokenLine) -> {is_refined, TokenLine};
-keyword("::", TokenLine) -> {yields, TokenLine};
 keyword(Chars, TokenLine) -> {symbol, TokenLine, Chars}.
