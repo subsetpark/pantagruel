@@ -80,6 +80,11 @@ defmodule LexerTest do
       assert [{:symbol, 1, 'δδδ'}] == tokens
     end
 
+    test "symbols beginning with numbers" do
+      {:ok, tokens, 1} = :lexer.string('1o')
+      assert [{:symbol, 1, '1o'}] == tokens
+    end
+
     test "list" do
       {:ok, tokens, 1} = :lexer.string('[x]')
       assert [{:operator, 1, '['}, {:symbol, 1, 'x'}, {:operator, 1, ']'}] == tokens
