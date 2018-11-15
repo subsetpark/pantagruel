@@ -3,24 +3,29 @@ Definitions.
 INT           = [0-9_]+
 FLOAT         = [-+]?[0-9]*\.?[0-9]+
 LITERAL       = (`[^\n]*`|`[^\s\n]+)
-OPERATOR      = <>\-=~/\*\+#\.\[\]\(\){},%^:;|&
-SYMBOL        = [^\s\n&&{OPERATOR}]+
+OPERATOR      = <>\-=~/\*\+#\.%^:;|&
+OPERATOR_CHOICE = (>=|==|!=|->|<->|<-|<=|=>|=|-|>|<|\+|\*|~|#|%|\^|;|::|:|&|\|)
+DELIMITER     = \[\]\(\){},\.
+SYMBOL        = [^\s\n&&{OPERATOR}&&{DELIMITER}:]+
 WHITESPACE    = [\t\s]
+YIELD_TYPE    = (=>|::)
 
 Rules.
 
-{INT}         : {token, {int, TokenLine, integer(TokenChars)}}.
-{LITERAL}     : {token, {literal, TokenLine, literal(TokenChars)}}.
-{FLOAT}       : {token, {float, TokenLine, to_float(TokenChars)}}.
-".*\n         : {token, {comment, TokenLine, comment(TokenChars)}}.
+{INT}             : {token, {int, TokenLine, integer(TokenChars)}}.
+{LITERAL}         : {token, {literal, TokenLine, literal(TokenChars)}}.
+{FLOAT}           : {token, {float, TokenLine, to_float(TokenChars)}}.
+".*\n             : {token, {comment, TokenLine, comment(TokenChars)}}.
 
-\.\.\.\n      : skip_token.
-\n            : {token, {newline, TokenLine}}.
+\.\.\.\n          : skip_token.
+\n                : {token, {newline, TokenLine}}.
 
-[{OPERATOR}]+ : {token, {operator, TokenLine, TokenChars}}.
-{SYMBOL}      : {token, keyword(TokenChars, TokenLine)}.
+YIELD_TYPE        : {token, {yield_type, TokenLine, TokenChars}}.
+[{DELIMITER}]     : {token, {list_to_atom(TokenChars), TokenLine, TokenChars}}.
+{OPERATOR_CHOICE} : {token, operator(TokenChars, TokenLine)}.
+{SYMBOL}          : {token, keyword(TokenChars, TokenLine)}.
 
-{WHITESPACE}+ : skip_token.
+{WHITESPACE}+     : skip_token.
 
 Erlang code.
 
@@ -48,6 +53,32 @@ keyword("from", TokenLine) -> {from, TokenLine};
 keyword("in", TokenLine) -> {in, TokenLine};
 keyword("exists", TokenLine) -> {exists, TokenLine};
 keyword("all", TokenLine) -> {all, TokenLine};
-keyword("xor", TokenLine) -> {'xor', TokenLine};
+keyword("xor", TokenLine) -> {binary_operator, TokenLine, 'xor'};
 keyword("fn", TokenLine) -> {fn, TokenLine};
 keyword(Chars, TokenLine) -> {symbol, TokenLine, Chars}.
+
+operator("::", TokenLine) -> {yield_type, TokenLine, "::"};
+operator("=>", TokenLine) -> {yield_type, TokenLine, "=>"};
+operator(":", TokenLine) -> {':', TokenLine};
+operator(TokenChars, TokenLine) when
+    TokenChars == "+";
+    TokenChars == "*";
+    TokenChars == "-";
+    TokenChars == "%";
+    TokenChars == "=";
+    TokenChars == "<=";
+    TokenChars == "!=";
+    TokenChars == ">";
+    TokenChars == "<";
+    TokenChars == ">=";
+    TokenChars == "->";
+    TokenChars == "<->";
+    TokenChars == "^";
+    TokenChars == "&";
+    TokenChars == "|" ->
+        {binary_operator, TokenLine, TokenChars};
+operator(TokenChars, TokenLine) when
+    TokenChars == "~";
+    TokenChars == "#" ->
+        {unary_operator, TokenLine, TokenChars};
+operator(TokenChars, TokenLine) -> {operator, TokenLine, TokenChars}.

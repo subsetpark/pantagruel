@@ -45,27 +45,27 @@ defmodule LexerTest do
   describe "operators" do
     test "operators" do
       {:ok, tokens, 1} = :lexer.string('#')
-      assert [{:operator, 1, '#'}] == tokens
+      assert [{:unary_operator, 1, '#'}] == tokens
     end
 
     test "prefix operators" do
       {:ok, tokens, 1} = :lexer.string('#x')
-      assert [{:operator, 1, '#'}, {:symbol, 1, 'x'}] == tokens
+      assert [{:unary_operator, 1, '#'}, {:symbol, 1, 'x'}] == tokens
     end
 
     test "infix operators" do
       {:ok, tokens, 1} = :lexer.string('x>y')
-      assert [{:symbol, 1, 'x'}, {:operator, 1, '>'}, {:symbol, 1, 'y'}] == tokens
+      assert [{:symbol, 1, 'x'}, {:binary_operator, 1, '>'}, {:symbol, 1, 'y'}] == tokens
     end
 
     test "infix implies" do
       {:ok, tokens, 1} = :lexer.string('x->y')
-      assert [{:symbol, 1, 'x'}, {:operator, 1, '->'}, {:symbol, 1, 'y'}] == tokens
+      assert [{:symbol, 1, 'x'}, {:binary_operator, 1, '->'}, {:symbol, 1, 'y'}] == tokens
     end
 
     test "infix dot" do
       {:ok, tokens, 1} = :lexer.string('x.y')
-      assert [{:symbol, 1, 'x'}, {:operator, 1, '.'}, {:symbol, 1, 'y'}] == tokens
+      assert [{:symbol, 1, 'x'}, {:'.', 1, '.'}, {:symbol, 1, 'y'}] == tokens
     end
   end
 
@@ -87,18 +87,18 @@ defmodule LexerTest do
 
     test "list" do
       {:ok, tokens, 1} = :lexer.string('[x]')
-      assert [{:operator, 1, '['}, {:symbol, 1, 'x'}, {:operator, 1, ']'}] == tokens
+      assert [{:'[', 1, '['}, {:symbol, 1, 'x'}, {:']', 1, ']'}] == tokens
     end
 
     test "list with commas" do
       {:ok, tokens, 1} = :lexer.string('[x, y]')
 
       assert [
-               {:operator, 1, '['},
+               {:'[', 1, '['},
                {:symbol, 1, 'x'},
-               {:operator, 1, ','},
+               {:',', 1, ','},
                {:symbol, 1, 'y'},
-               {:operator, 1, ']'}
+               {:']', 1, ']'}
              ] == tokens
     end
   end
@@ -112,6 +112,18 @@ defmodule LexerTest do
     test "comment after token" do
       {:ok, tokens, 2} = :lexer.string('10 "ok\n')
       assert [{:int, 1, 10}, {:comment, 1, 'ok'}] == tokens
+    end
+  end
+
+  describe "declarations" do
+    test "basic declaration" do
+      {:ok, tokens, 1} = :lexer.string('f()')
+
+      assert [
+               {:symbol, 1, 'f'},
+               {:'(', 1, '('},
+               {:')', 1, ')'}
+             ] == tokens
     end
   end
 end
