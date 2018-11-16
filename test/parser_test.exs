@@ -229,6 +229,17 @@ defmodule ParserTest do
         body: []
       )
     end
+
+    test "blank line" do
+      'f()\n\ng()'
+      |> tryp(
+        head: [
+          declaration: [decl_ident: 'f'],
+          declaration: [decl_ident: 'g']
+        ],
+        body: []
+      )
+    end
   end
 
   describe "comments" do
