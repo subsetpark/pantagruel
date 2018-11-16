@@ -15,7 +15,7 @@ Rules.
 {INT}             : {token, {int, TokenLine, integer(TokenChars)}}.
 {LITERAL}         : {token, {literal, TokenLine, literal(TokenChars)}}.
 {FLOAT}           : {token, {float, TokenLine, to_float(TokenChars)}}.
-\".*(\n|$)          : {token, {comment, TokenLine, comment(TokenChars)}}.
+\".*\n?           : comment(TokenChars, TokenLine).
 
 \.\.\.\n          : skip_token.
 \n                : {token, {newline, TokenLine}}.
@@ -45,7 +45,8 @@ literal("`", Acc) -> string:reverse(Acc);
 literal([], Acc) -> string:reverse(Acc);
 literal([C|Chars], Acc) -> literal(Chars, [C|Acc]).
 
-comment(Chars) -> string:trim(Chars, both, "\n\"\s").
+comment(Chars, TokenLine) ->
+    {token, {comment, TokenLine, string:trim(Chars, both, "\n\"\s")}, "\n"}.
 
 keyword("and", TokenLine) -> {'and', TokenLine};
 keyword("or", TokenLine) -> {'or', TokenLine};

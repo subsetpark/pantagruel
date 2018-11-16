@@ -136,7 +136,7 @@ defmodule ParserTest do
              decl_ident: 'f',
              decl_args: [args: ['x'], doms: ['X']],
              decl_guards: [
-               appl: [f: {:appl, [op: '+', x: 'x', y: 1]}, x: 'x']
+               appl: [f: [appl: [op: '+', x: 'x', y: 1]], x: 'x']
              ]
            ]}
         ],
@@ -218,12 +218,28 @@ defmodule ParserTest do
         body: []
       )
     end
+
+    test "comment and declaration" do
+      '"  ok\nf()'
+      |> tryp(
+        head: [
+          comment: 'ok',
+          declaration: [decl_ident: 'f']
+        ],
+        body: []
+      )
+    end
   end
 
   describe "comments" do
     test "comment line" do
+      '"  ok\n'
+      |> tryp(head: [comment: 'ok'], body: [])
+    end
+
+    test "comment with no newline" do
       '"  ok'
-      |> tryp([])
+      |> tryp(head: [comment: 'ok'], body: [])
     end
   end
 

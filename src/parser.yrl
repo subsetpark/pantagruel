@@ -13,8 +13,10 @@ function_application
 value
 program
 section
+sections
 head
 head_line
+head_rest
 body
 declaration
 decl_body
@@ -46,10 +48,14 @@ section -> head body : [{head, '$1'}, {body, '$2'}].
 body -> '$empty' : [].
 
 head -> head_line : ['$1'].
-head -> head_line newline head : ['$1' | '$3'].
+head -> head_line newline head_rest : ['$1' | '$3'].
+
+head_rest -> head_line : ['$1'].
+head_rest -> head_line newline head_rest : ['$1' | '$3'].
+head_rest -> newline newline head_rest : ['$1' | '$3'].
 
 head_line -> declaration : '$1'.
-head_line -> comment : '$1'.
+head_line -> comment : unwrap('$1').
 
 declaration ->
     a_symbol '(' decl_body ')' decl_yield  : {declaration,
@@ -105,4 +111,5 @@ a_symbol -> symbol : unwrap('$1').
 
 Erlang code.
 
+unwrap({comment, _, Symbol}) -> {comment, Symbol};
 unwrap({_, _, Symbol}) -> Symbol.
