@@ -30,6 +30,9 @@ yield_type.
 
 Rootsymbol program.
 
+Left 100 binary_operator.
+Right 200 function_application.
+
 program -> section : '$1'.
 program -> section program : '$1'.
 

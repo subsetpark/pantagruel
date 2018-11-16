@@ -196,10 +196,29 @@ defmodule ParserTest do
         body: []
       )
     end
+
+    test "declaration with function precedence" do
+      'f(x: Nat . f x y)'
+      |> tryp(
+        head: [
+          declaration: [
+            decl_ident: 'f',
+            decl_args: [args: ['x'], doms: ['Nat']],
+            decl_guards: [
+              appl: [
+                f: 'f',
+                x: {:appl, [f: 'x', x: 'y']}
+              ]
+            ]
+          ]
+        ],
+        body: []
+      )
+    end
   end
 
   defp tryp(string, expected) do
-    {:ok, tokens, _} = :lexer.string(string) |> IO.inspect()
+    {:ok, tokens, _} = :lexer.string(string)
     {:ok, parsed} = :parser.parse(tokens)
     assert expected == parsed
   end
