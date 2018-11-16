@@ -3,6 +3,10 @@ a_symbol
 symbols
 expression
 expressions
+maybe_expressions
+list
+set
+bunch
 bin_operation
 un_operation
 function_application
@@ -10,6 +14,7 @@ value
 program
 section
 head
+head_line
 body
 declaration
 decl_body
@@ -40,8 +45,11 @@ section -> head body : [{head, '$1'}, {body, '$2'}].
 
 body -> '$empty' : [].
 
-head -> declaration : ['$1'].
-head -> declaration newline head : ['$1' | '$3'].
+head -> head_line : ['$1'].
+head -> head_line newline head : ['$1' | '$3'].
+
+head_line -> declaration : '$1'.
+head_line -> comment : '$1'.
 
 declaration ->
     a_symbol '(' decl_body ')' decl_yield  : {declaration,
@@ -54,7 +62,6 @@ decl_body -> decl_args '.' decl_guard : [{decl_args, '$1'}, {decl_guards, '$3'}]
 
 decl_args -> symbols ':' symbols : [{args, '$1'}, {doms, '$3'}].
 
-decl_guard -> '$empty' : [].
 decl_guard -> expressions : '$1'.
 
 decl_yield -> '$empty' : [].
@@ -69,7 +76,9 @@ value -> a_symbol : '$1'.
 value -> int : unwrap('$1').
 value -> float : unwrap('$1').
 value -> literal : unwrap('$1').
-value -> '(' expression ')' : '$2'.
+value -> list : '$1'.
+value -> set : '$1'.
+value -> bunch : '$1'.
 
 bin_operation ->
     expression binary_operator expression : {appl, [{op, unwrap('$2')}, {x, '$1'}, {y, '$3'}]}.
@@ -79,8 +88,15 @@ un_operation ->
 
 function_application -> value expression : {appl, [{f, '$1'}, {x, '$2'}]}.
 
+bunch -> '(' maybe_expressions ')' : '$2'.
+list -> '[' maybe_expressions ']' : {list, '$2'}.
+set -> '{' maybe_expressions '}' : {set, '$2'}.
+
 expressions -> expression : ['$1'].
 expressions -> expression ',' expressions : ['$1' | '$3'].
+
+maybe_expressions -> '$empty' : [].
+maybe_expressions -> expressions : '$1'.
 
 symbols -> a_symbol : ['$1'].
 symbols -> a_symbol ',' symbols : ['$1' | '$3'].

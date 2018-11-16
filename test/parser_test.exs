@@ -163,6 +163,50 @@ defmodule ParserTest do
     end
   end
 
+  describe "containers" do
+    test "empty list" do
+      'f(x:X . [])'
+      |> tryp(
+        head: [
+          declaration: [
+            decl_ident: 'f',
+            decl_args: [args: ['x'], doms: ['X']],
+            decl_guards: [list: []]
+          ]
+        ],
+        body: []
+      )
+    end
+
+    test "list" do
+      'f(x:X . [x])'
+      |> tryp(
+        head: [
+          declaration: [
+            decl_ident: 'f',
+            decl_args: [args: ['x'], doms: ['X']],
+            decl_guards: [list: ['x']]
+          ]
+        ],
+        body: []
+      )
+    end
+
+    test "list with multiple items" do
+      'f(x:X . [x, x 1])'
+      |> tryp(
+        head: [
+          declaration: [
+            decl_ident: 'f',
+            decl_args: [args: ['x'], doms: ['X']],
+            decl_guards: [list: ['x', appl: [f: 'x', x: 1]]]
+          ]
+        ],
+        body: []
+      )
+    end
+  end
+
   describe "head" do
     test "two declarations" do
       'f()\ng()'
@@ -173,6 +217,13 @@ defmodule ParserTest do
         ],
         body: []
       )
+    end
+  end
+
+  describe "comments" do
+    test "comment line" do
+      '"  ok'
+      |> tryp([])
     end
   end
 
@@ -218,7 +269,7 @@ defmodule ParserTest do
   end
 
   defp tryp(string, expected) do
-    {:ok, tokens, _} = :lexer.string(string)
+    {:ok, tokens, _} = :lexer.string(string) |> IO.inspect()
     {:ok, parsed} = :parser.parse(tokens)
     assert expected == parsed
   end

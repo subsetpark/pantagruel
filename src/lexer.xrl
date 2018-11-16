@@ -6,7 +6,7 @@ LITERAL       = (`[^\n]*`|`[^\s\n]+)
 OPERATOR      = <>\-=~/\*\+#\.%^:;|&
 OPERATOR_CHOICE = (>=|==|!=|->|<->|<-|<=|=>|=|-|>|<|\+|\*|~|#|%|\^|;|::|:|&|\|)
 DELIMITER     = \[\]\(\){},\.
-SYMBOL        = [^\s\n&&{OPERATOR}&&{DELIMITER}:]+
+SYMBOL        = [^\s\n&&{OPERATOR}&&{DELIMITER}:\"]+
 WHITESPACE    = [\t\s]
 YIELD_TYPE    = (=>|::)
 
@@ -15,7 +15,7 @@ Rules.
 {INT}             : {token, {int, TokenLine, integer(TokenChars)}}.
 {LITERAL}         : {token, {literal, TokenLine, literal(TokenChars)}}.
 {FLOAT}           : {token, {float, TokenLine, to_float(TokenChars)}}.
-".*\n             : {token, {comment, TokenLine, comment(TokenChars)}}.
+\".*(\n|$)          : {token, {comment, TokenLine, comment(TokenChars)}}.
 
 \.\.\.\n          : skip_token.
 \n                : {token, {newline, TokenLine}}.
