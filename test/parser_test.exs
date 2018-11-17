@@ -4,10 +4,7 @@ defmodule ParserTest do
   describe "declaration" do
     test "basic declaration" do
       'f()'
-      |> tryp(
-        head: [{:declaration, decl_ident: 'f'}],
-        body: []
-      )
+      |> tryp(head: [{:declaration, decl_ident: 'f'}])
     end
 
     test "declaration with argument" do
@@ -22,8 +19,7 @@ defmodule ParserTest do
                doms: ['X']
              ]
            ]}
-        ],
-        body: []
+        ]
       )
     end
 
@@ -39,8 +35,7 @@ defmodule ParserTest do
                doms: ['X', 'Y']
              ]
            ]}
-        ],
-        body: []
+        ]
       )
     end
 
@@ -54,8 +49,7 @@ defmodule ParserTest do
              decl_yield: '::',
              decl_domain: 'F'
            ]}
-        ],
-        body: []
+        ]
       )
     end
 
@@ -71,8 +65,7 @@ defmodule ParserTest do
              decl_yield: '=>',
              decl_domain: 'F'
            ]}
-        ],
-        body: []
+        ]
       )
     end
 
@@ -88,8 +81,7 @@ defmodule ParserTest do
              decl_yield: '=>',
              decl_domain: 'F'
            ]}
-        ],
-        body: []
+        ]
       )
     end
 
@@ -105,8 +97,7 @@ defmodule ParserTest do
                appl: [op: '~', x: 'x']
              ]
            ]}
-        ],
-        body: []
+        ]
       )
     end
 
@@ -122,8 +113,7 @@ defmodule ParserTest do
                appl: [f: 'f', x: 'x']
              ]
            ]}
-        ],
-        body: []
+        ]
       )
     end
 
@@ -139,8 +129,7 @@ defmodule ParserTest do
                appl: [f: [appl: [op: '+', x: 'x', y: 1]], x: 'x']
              ]
            ]}
-        ],
-        body: []
+        ]
       )
     end
 
@@ -157,9 +146,20 @@ defmodule ParserTest do
                appl: [op: '<', x: 'x', y: 3]
              ]
            ]}
-        ],
-        body: []
+        ]
       )
+    end
+  end
+
+  describe "alias" do
+    test "domain alias" do
+      'S <= String'
+      |> tryp(head: [alias: [alias_name: ['S'], alias_expr: 'String']])
+    end
+
+    test "multiple domain alias" do
+      'S, T <= String'
+      |> tryp(head: [alias: [alias_name: ['S', 'T'], alias_expr: 'String']])
     end
   end
 
@@ -173,8 +173,7 @@ defmodule ParserTest do
             decl_args: [args: ['x'], doms: ['X']],
             decl_guards: [list: []]
           ]
-        ],
-        body: []
+        ]
       )
     end
 
@@ -187,8 +186,7 @@ defmodule ParserTest do
             decl_args: [args: ['x'], doms: ['X']],
             decl_guards: [list: ['x']]
           ]
-        ],
-        body: []
+        ]
       )
     end
 
@@ -201,8 +199,7 @@ defmodule ParserTest do
             decl_args: [args: ['x'], doms: ['X']],
             decl_guards: [list: ['x', appl: [f: 'x', x: 1]]]
           ]
-        ],
-        body: []
+        ]
       )
     end
   end
@@ -214,8 +211,7 @@ defmodule ParserTest do
         head: [
           declaration: [decl_ident: 'f'],
           declaration: [decl_ident: 'g']
-        ],
-        body: []
+        ]
       )
     end
 
@@ -225,8 +221,7 @@ defmodule ParserTest do
         head: [
           comment: 'ok',
           declaration: [decl_ident: 'f']
-        ],
-        body: []
+        ]
       )
     end
 
@@ -236,21 +231,15 @@ defmodule ParserTest do
         head: [
           declaration: [decl_ident: 'f'],
           declaration: [decl_ident: 'g']
-        ],
-        body: []
+        ]
       )
     end
   end
 
   describe "comments" do
-    test "comment line" do
-      '"  ok\n'
-      |> tryp(head: [comment: 'ok'], body: [])
-    end
-
     test "comment with no newline" do
       '"  ok'
-      |> tryp(head: [comment: 'ok'], body: [])
+      |> tryp(head: [comment: 'ok'])
     end
   end
 
@@ -270,8 +259,7 @@ defmodule ParserTest do
               ]
             ]
           ]
-        ],
-        body: []
+        ]
       )
     end
 
@@ -282,20 +270,63 @@ defmodule ParserTest do
           declaration: [
             decl_ident: 'f',
             decl_args: [args: ['x'], doms: ['Nat']],
+            decl_guards: [appl: [f: {:appl, [f: 'f', x: 'x']}, x: 'y']]
+          ]
+        ]
+      )
+    end
+
+    test "declaration with function application on unary" do
+      'f(x: Nat . f ~ y)'
+      |> tryp(
+        head: [
+          declaration: [
+            decl_ident: 'f',
+            decl_args: [args: ['x'], doms: ['Nat']],
+            decl_guards: [appl: [f: 'f', x: {:appl, [op: '~', x: 'y']}]]
+          ]
+        ]
+      )
+    end
+
+    test "declaration with unary associativity" do
+      'f(x:X . ~ # z x)'
+      |> tryp(
+        head: [
+          declaration: [
+            decl_ident: 'f',
+            decl_args: [args: ['x'], doms: ['X']],
             decl_guards: [
               appl: [
-                f: 'f',
-                x: {:appl, [f: 'x', x: 'y']}
+                f:
+                  {:appl,
+                   [
+                     op: '~',
+                     x:
+                       {:appl,
+                        [
+                          op: '#',
+                          x: 'z'
+                        ]}
+                   ]},
+                x: 'x'
               ]
             ]
           ]
-        ],
-        body: []
+        ]
       )
     end
   end
 
+  describe "section" do
+    test "simple section" do
+      'f()\nf'
+      |> tryp([])
+    end
+  end
+
   defp tryp(string, expected) do
+    string = string ++ '\n'
     {:ok, tokens, _} = :lexer.string(string) |> IO.inspect()
     {:ok, parsed} = :parser.parse(tokens)
     assert expected == parsed

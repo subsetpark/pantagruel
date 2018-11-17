@@ -10,52 +10,57 @@ bunch
 bin_operation
 un_operation
 function_application
-value
+term
 program
 section
-sections
 head
 head_line
-head_rest
-body
 declaration
 decl_body
 decl_args
 decl_guard
-decl_yield.
+decl_yield
+alias
+body
+body_line.
 
 Terminals
-'{' '}' '[' ']' '(' ')' '.' ':' ','
-operator
+'{' '}' '[' ']' '(' ')' '.' ':' ';' ','
 int literal float
 comment
 newline
 symbol
 binary_operator
 unary_operator
-yield_type.
+yield_type
+reverse_yield.
 
 Rootsymbol program.
 
 Left 100 binary_operator.
-Right 200 function_application.
+Left 300 unary_operator.
+
+%
+% RULES
+%
 
 program -> section : '$1'.
-program -> section program : '$1'.
 
+section -> head : [{head, '$1'}].
 section -> head body : [{head, '$1'}, {body, '$2'}].
 
-body -> '$empty' : [].
+%
+% head
+%
 
 head -> head_line : ['$1'].
-head -> head_line newline head_rest : ['$1' | '$3'].
+head -> head_line head : ['$1' | '$2'].
 
-head_rest -> head_line : ['$1'].
-head_rest -> head_line newline head_rest : ['$1' | '$3'].
-head_rest -> newline newline head_rest : ['$1' | '$3'].
+head_line -> declaration newline : '$1'.
+head_line -> alias newline : '$1'.
+head_line -> comment newline : unwrap('$1').
 
-head_line -> declaration : '$1'.
-head_line -> comment : unwrap('$1').
+% i. declarations
 
 declaration ->
     a_symbol '(' decl_body ')' decl_yield  : {declaration,
@@ -73,26 +78,56 @@ decl_guard -> expressions : '$1'.
 decl_yield -> '$empty' : [].
 decl_yield -> yield_type a_symbol : [{decl_yield, unwrap('$1')}, {decl_domain, '$2'}].
 
-expression -> value : '$1'.
-expression -> bin_operation : '$1'.
-expression -> un_operation : '$1'.
-expression -> function_application : '$1'.
+% ii. aliases
 
-value -> a_symbol : '$1'.
-value -> int : unwrap('$1').
-value -> float : unwrap('$1').
-value -> literal : unwrap('$1').
-value -> list : '$1'.
-value -> set : '$1'.
-value -> bunch : '$1'.
+alias -> symbols reverse_yield expression : {alias, [{alias_name, '$1'}, {alias_expr, '$3'}]}.
+
+%
+% body
+%
+
+body -> body_line : ['$1'].
+body -> body_line body : ['$1' | '$2'].
+
+body_line -> expression newline : '$1'.
+
+% EXPRESSION PRECEDENCE
+% This is a strange area. Here are the precedence levels of Pantagruel:
+%
+% Expression < Binary Operation < Function Application < Unary Operation.
+%
+% This is represented in the parse by a series of rules which evaluate
+% either to themselves or the next most tightly binding level.
+% Source: http://journal.stuffwithstuff.com/2008/12/28/fixing-ambiguities-in-yacc/
+
+expression -> bin_operation : '$1'.
 
 bin_operation ->
-    expression binary_operator expression : {appl, [{op, unwrap('$2')}, {x, '$1'}, {y, '$3'}]}.
+    function_application : '$1'.
+bin_operation ->
+    function_application binary_operator function_application : {appl, [{op, unwrap('$2')}, {x, '$1'}, {y, '$3'}]}.
+
+function_application ->
+    un_operation : '$1'.
+function_application ->
+    function_application un_operation : {appl, [{f, '$1'}, {x, '$2'}]}.
 
 un_operation ->
-    unary_operator expression : {appl, [{op, unwrap('$1')}, {x, '$2'}]}.
+    term : '$1'.
+un_operation ->
+    unary_operator un_operation : {appl, [{op, unwrap('$1')}, {x, '$2'}]}.
 
-function_application -> value expression : {appl, [{f, '$1'}, {x, '$2'}]}.
+term -> a_symbol : '$1'.
+term -> int : unwrap('$1').
+term -> float : unwrap('$1').
+term -> literal : unwrap('$1').
+term -> list : '$1'.
+term -> set : '$1'.
+term -> bunch : '$1'.
+
+%
+% END EXPRESSION PRECEDENCE
+%
 
 bunch -> '(' maybe_expressions ')' : '$2'.
 list -> '[' maybe_expressions ']' : {list, '$2'}.

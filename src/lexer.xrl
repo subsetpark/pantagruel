@@ -18,7 +18,7 @@ Rules.
 \".*\n?           : comment(TokenChars, TokenLine).
 
 \.\.\.\n          : skip_token.
-\n                : {token, {newline, TokenLine}}.
+\n[\s\n]*         : {token, {newline, TokenLine}}.
 
 YIELD_TYPE        : {token, {yield_type, TokenLine, TokenChars}}.
 [{DELIMITER}]     : {token, {list_to_atom(TokenChars), TokenLine, TokenChars}}.
@@ -54,10 +54,10 @@ comment(Chars, TokenLine) ->
 
 keyword("and", TokenLine) -> {'and', TokenLine};
 keyword("or", TokenLine) -> {'or', TokenLine};
-keyword("from", TokenLine) -> {from, TokenLine};
-keyword("in", TokenLine) -> {in, TokenLine};
-keyword("exists", TokenLine) -> {exists, TokenLine};
-keyword("all", TokenLine) -> {all, TokenLine};
+keyword("from", TokenLine) -> {binary_operator, TokenLine, from};
+keyword("in", TokenLine) -> {binary_operator, TokenLine, in};
+keyword("exists", TokenLine) -> {quantifier, TokenLine, exists};
+keyword("all", TokenLine) -> {quantifier, TokenLine, all};
 keyword("xor", TokenLine) -> {binary_operator, TokenLine, 'xor'};
 keyword("fn", TokenLine) -> {fn, TokenLine};
 keyword(Chars, TokenLine) -> {symbol, TokenLine, Chars}.
@@ -65,13 +65,13 @@ keyword(Chars, TokenLine) -> {symbol, TokenLine, Chars}.
 operator("::", TokenLine) -> {yield_type, TokenLine, "::"};
 operator("=>", TokenLine) -> {yield_type, TokenLine, "=>"};
 operator(":", TokenLine) -> {':', TokenLine};
+operator("<=", TokenLine) -> {reverse_yield, TokenLine};
 operator(TokenChars, TokenLine) when
     TokenChars == "+";
     TokenChars == "*";
     TokenChars == "-";
     TokenChars == "%";
     TokenChars == "=";
-    TokenChars == "<=";
     TokenChars == "!=";
     TokenChars == ">";
     TokenChars == "<";

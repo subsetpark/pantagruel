@@ -105,12 +105,12 @@ defmodule LexerTest do
 
   describe "comments" do
     test "comments" do
-      {:ok, tokens, 2} = :lexer.string('"ok')
+      {:ok, tokens, 1} = :lexer.string('"ok')
       assert [{:comment, 1, 'ok'}] == tokens
     end
 
     test "comment after token" do
-      {:ok, tokens, 2} = :lexer.string('10 "ok')
+      {:ok, tokens, 1} = :lexer.string('10 "ok')
       assert [{:int, 1, 10}, {:comment, 1, 'ok'}] == tokens
     end
   end
