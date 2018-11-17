@@ -64,6 +64,7 @@ keyword(Chars, TokenLine) -> {symbol, TokenLine, Chars}.
 
 operator("::", TokenLine) -> {yield_type, TokenLine, "::"};
 operator("=>", TokenLine) -> {yield_type, TokenLine, "=>"};
+operator("<-", TokenLine) -> {refined, TokenLine};
 operator(":", TokenLine) -> {':', TokenLine};
 operator("<=", TokenLine) -> {reverse_yield, TokenLine};
 operator(TokenChars, TokenLine) when

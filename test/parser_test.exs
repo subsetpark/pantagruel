@@ -320,8 +320,43 @@ defmodule ParserTest do
 
   describe "section" do
     test "simple section" do
-      'f()\nf'
-      |> tryp([])
+      'f()\n1'
+      |> tryp(
+        head: [declaration: [decl_ident: 'f']],
+        body: [expr: 1]
+      )
+    end
+
+    test "section refinement" do
+      'f()\n1 <- 2'
+      |> tryp(
+        head: [declaration: [decl_ident: 'f']],
+        body: [refinement: [pattern: 1, expr: 2]]
+      )
+    end
+
+    test "section binary op" do
+      'f()\n1 + 2'
+      |> tryp(
+        head: [declaration: [decl_ident: 'f']],
+        body: [expr: {:appl, [op: '+', x: 1, y: 2]}]
+      )
+    end
+
+    test "section function application" do
+      'f()\nf x'
+      |> tryp(
+        head: [declaration: [decl_ident: 'f']],
+        body: [expr: {:appl, [op: '+', x: 1, y: 2]}]
+      )
+    end
+
+    test "section with two lines" do
+      'f()\n1\n2'
+      |> tryp(
+        head: [declaration: [decl_ident: 'f']],
+        body: [expr: 1, expr: 2]
+      )
     end
   end
 

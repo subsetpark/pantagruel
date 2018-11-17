@@ -33,9 +33,11 @@ symbol
 binary_operator
 unary_operator
 yield_type
-reverse_yield.
+reverse_yield
+refined.
 
 Rootsymbol program.
+Endsymbol '$end'.
 
 Left 100 binary_operator.
 Left 300 unary_operator.
@@ -62,25 +64,26 @@ head_line -> comment newline : unwrap('$1').
 
 % i. declarations
 
-declaration ->
-    a_symbol '(' decl_body ')' decl_yield  : {declaration,
-        [{decl_ident, '$1'}|'$3' ++ '$5']
-    }.
+declaration -> a_symbol '(' decl_body ')' decl_yield  :
+    {declaration, [{decl_ident, '$1'}|'$3' ++ '$5']}.
 
 decl_body -> '$empty' : [].
 decl_body -> decl_args : [{decl_args, '$1'}].
-decl_body -> decl_args '.' decl_guard : [{decl_args, '$1'}, {decl_guards, '$3'}].
+decl_body -> decl_args '.' decl_guard :
+    [{decl_args, '$1'}, {decl_guards, '$3'}].
 
 decl_args -> symbols ':' symbols : [{args, '$1'}, {doms, '$3'}].
 
 decl_guard -> expressions : '$1'.
 
 decl_yield -> '$empty' : [].
-decl_yield -> yield_type a_symbol : [{decl_yield, unwrap('$1')}, {decl_domain, '$2'}].
+decl_yield -> yield_type a_symbol :
+    [{decl_yield, unwrap('$1')}, {decl_domain, '$2'}].
 
 % ii. aliases
 
-alias -> symbols reverse_yield expression : {alias, [{alias_name, '$1'}, {alias_expr, '$3'}]}.
+alias -> symbols reverse_yield expression :
+    {alias, [{alias_name, '$1'}, {alias_expr, '$3'}]}.
 
 %
 % body
@@ -89,7 +92,10 @@ alias -> symbols reverse_yield expression : {alias, [{alias_name, '$1'}, {alias_
 body -> body_line : ['$1'].
 body -> body_line body : ['$1' | '$2'].
 
-body_line -> expression newline : '$1'.
+body_line -> expression newline : {expr, '$1'}.
+body_line -> expression refined expression newline :
+    {refinement, [{pattern, '$1'}, {expr, '$3'}]}.
+body_line -> expression '.' expressions refined expression newline : {refinement, '$1'}.
 
 % EXPRESSION PRECEDENCE
 % This is a strange area. Here are the precedence levels of Pantagruel:
@@ -102,20 +108,18 @@ body_line -> expression newline : '$1'.
 
 expression -> bin_operation : '$1'.
 
+bin_operation -> function_application : '$1'.
 bin_operation ->
-    function_application : '$1'.
-bin_operation ->
-    function_application binary_operator function_application : {appl, [{op, unwrap('$2')}, {x, '$1'}, {y, '$3'}]}.
+    bin_operation binary_operator bin_operation :
+        {appl, [{op, unwrap('$2')}, {x, '$1'}, {y, '$3'}]}.
 
-function_application ->
-    un_operation : '$1'.
-function_application ->
-    function_application un_operation : {appl, [{f, '$1'}, {x, '$2'}]}.
+function_application -> un_operation : '$1'.
+function_application -> function_application un_operation :
+    {appl, [{f, '$1'}, {x, '$2'}]}.
 
-un_operation ->
-    term : '$1'.
-un_operation ->
-    unary_operator un_operation : {appl, [{op, unwrap('$1')}, {x, '$2'}]}.
+un_operation -> term : '$1'.
+un_operation -> unary_operator un_operation :
+    {appl, [{op, unwrap('$1')}, {x, '$2'}]}.
 
 term -> a_symbol : '$1'.
 term -> int : unwrap('$1').
