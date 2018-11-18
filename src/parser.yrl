@@ -38,7 +38,11 @@ decl_yield
 alias
 
 body
-body_line.
+body_line
+
+quantification
+.
+
 
 Terminals
 '{' '}' '[' ']' '(' ')' '.' ':' ';' ',' from
@@ -51,6 +55,7 @@ newline
 symbol
 binary_operator
 unary_operator
+quantifier
 yield_type
 reverse_yield
 refined.
@@ -159,6 +164,7 @@ term -> literal : unwrap('$1').
 term -> list : '$1'.
 term -> set : '$1'.
 term -> bunch : '$1'.
+term -> quantification : '$1'.
 
 %
 % END EXPRESSION PRECEDENCE
@@ -174,7 +180,7 @@ expressions -> expression ',' expressions : ['$1' | '$3'].
 maybe_expressions -> '$empty' : [].
 maybe_expressions -> expressions : '$1'.
 maybe_expressions -> binding_or_guards '.' expression :
-    {comprehension, [{comp_bindings, '$1'}, {comp_expression, '$3'}]}.
+    {comprehension, [{bindings, '$1'}, {expr, '$3'}]}.
 
 binding_or_guards -> binding_or_guard : ['$1'].
 binding_or_guards -> binding_or_guard ',' binding_or_guards : ['$1' | '$3'].
@@ -183,7 +189,7 @@ binding_or_guard -> binding : {binding, '$1'}.
 binding_or_guard -> expression : {guard, '$1'}.
 
 binding -> term bind_operator expression :
-    [{bind_symbol, '$1'}, {bind_op, '$2'}, {bind_domain, '$3'}].
+    [{bind_symbol, '$1'}, {bind_op, unwrap('$2')}, {bind_domain, '$3'}].
 
 symbols -> a_symbol : ['$1'].
 symbols -> a_symbol ',' symbols : ['$1' | '$3'].
@@ -196,7 +202,11 @@ bind_operator -> from : '$1'.
 a_binary_operator -> binary_operator : '$1'.
 a_binary_operator -> bind_operator : '$1'.
 
+quantification -> quantifier binding_or_guards '.' expression :
+    {quantification, [{quantifier, unwrap('$1')}, {bindings, '$2'}, {expr, '$4'}]}.
+
 Erlang code.
 
 unwrap({comment, _, Symbol}) -> {comment, Symbol};
-unwrap({_, _, Symbol}) -> Symbol.
+unwrap({_, _, Symbol}) -> Symbol;
+unwrap({Symbol, _}) -> Symbol.

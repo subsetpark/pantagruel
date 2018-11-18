@@ -506,14 +506,14 @@ defmodule ParserTest do
                 {:set,
                  {:comprehension,
                   [
-                    comp_bindings: [
+                    bindings: [
                       binding: [
                         bind_symbol: 'x',
-                        bind_op: {:":", 3},
+                        bind_op: :":",
                         bind_domain: 'X'
                       ]
                     ],
-                    comp_expression: 'x'
+                    expr: 'x'
                   ]}}
             ]
           ]
@@ -532,15 +532,15 @@ defmodule ParserTest do
                 {:set,
                  {:comprehension,
                   [
-                    comp_bindings: [
+                    bindings: [
                       binding: [
                         bind_symbol: 'x',
-                        bind_op: {:":", 3},
+                        bind_op: :":",
                         bind_domain: 'X'
                       ],
                       guard: {:appl, [op: '>', x: 'x', y: 1]}
                     ],
-                    comp_expression: 'x'
+                    expr: 'x'
                   ]}}
             ]
           ]
@@ -559,15 +559,81 @@ defmodule ParserTest do
                 {:list,
                  {:comprehension,
                   [
-                    comp_bindings: [
+                    bindings: [
                       binding: [
                         bind_symbol: 'x',
-                        bind_op: {:from, 3},
+                        bind_op: :from,
                         bind_domain: 'X'
                       ]
                     ],
-                    comp_expression: 'x'
+                    expr: 'x'
                   ]}}
+            ]
+          ]
+        ]
+      )
+    end
+  end
+
+  describe "quantification" do
+    test "existential quantification" do
+      'f()\n---\nexists x : X . x > 1'
+      |> tryp(
+        sections: [
+          [
+            head: [declaration: [decl_ident: 'f']],
+            body: [
+              expr:
+                {:quantification,
+                 [
+                   quantifier: :exists,
+                   bindings: [
+                     binding: [
+                       bind_symbol: 'x',
+                       bind_op: :":",
+                       bind_domain: 'X'
+                     ]
+                   ],
+                   expr: {:appl, [op: '>', x: 'x', y: 1]}
+                 ]}
+            ]
+          ]
+        ]
+      )
+    end
+
+    test "nested quantification" do
+      'f()\n---\nexists x : X . all y from X . x > y'
+      |> tryp(
+        sections: [
+          [
+            head: [declaration: [decl_ident: 'f']],
+            body: [
+              expr:
+                {:quantification,
+                 [
+                   quantifier: :exists,
+                   bindings: [
+                     binding: [
+                       bind_symbol: 'x',
+                       bind_op: :":",
+                       bind_domain: 'X'
+                     ]
+                   ],
+                   expr:
+                     {:quantification,
+                      [
+                        quantifier: :all,
+                        bindings: [
+                          binding: [
+                            bind_symbol: 'y',
+                            bind_op: :from,
+                            bind_domain: 'X'
+                          ]
+                        ],
+                        expr: {:appl, [op: '>', x: 'x', y: 'y']}
+                      ]}
+                 ]}
             ]
           ]
         ]
