@@ -20,6 +20,8 @@ Rules.
 \.\.\.\n          : skip_token.
 \n[\s\n]*         : {token, {newline, TokenLine}}.
 
+--(-)+\n          : {token, {sep, TokenLine}}.
+
 YIELD_TYPE        : {token, {yield_type, TokenLine, TokenChars}}.
 [{DELIMITER}]     : {token, {list_to_atom(TokenChars), TokenLine, TokenChars}}.
 {OPERATOR_CHOICE} : {token, operator(TokenChars, TokenLine)}.

@@ -32,6 +32,7 @@ Terminals
 int literal float
 module
 import
+sep
 comment
 newline
 symbol
@@ -68,7 +69,7 @@ sections -> section : ['$1'].
 sections -> section sections : ['$1' | '$2'].
 
 section -> head : [{head, '$1'}].
-section -> head body : [{head, '$1'}, {body, '$2'}].
+section -> head sep body : [{head, '$1'}, {body, '$3'}].
 
 %
 % head

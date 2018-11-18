@@ -404,7 +404,7 @@ defmodule ParserTest do
 
   describe "section" do
     test "simple section" do
-      'f()\n1'
+      'f()\n---\n1'
       |> tryp(
         sections: [
           [
@@ -416,7 +416,7 @@ defmodule ParserTest do
     end
 
     test "section refinement" do
-      'f()\n1 <- 2'
+      'f()\n---\n1 <- 2'
       |> tryp(
         sections: [
           [
@@ -428,7 +428,7 @@ defmodule ParserTest do
     end
 
     test "section binary op" do
-      'f()\n1 + 2'
+      'f()\n---\n1 + 2'
       |> tryp(
         sections: [
           [
@@ -440,7 +440,7 @@ defmodule ParserTest do
     end
 
     test "section function application" do
-      'f()\nf x'
+      'f()\n---\nf x'
       |> tryp(
         sections: [
           [
@@ -452,7 +452,7 @@ defmodule ParserTest do
     end
 
     test "section list" do
-      'f()\n[f x]'
+      'f()\n---\n[f x]'
       |> tryp(
         sections: [
           [
@@ -464,7 +464,7 @@ defmodule ParserTest do
     end
 
     test "section with two lines" do
-      'f()\n1\n2'
+      'f()\n---\n1\n2'
       |> tryp(
         sections: [
           [
@@ -496,7 +496,7 @@ defmodule ParserTest do
 
   defp tryp(string, expected) do
     string = string ++ '\n'
-    {:ok, tokens, _} = :lexer.string(string) |> IO.inspect()
+    {:ok, tokens, _} = :lexer.string(string)
     {:ok, parsed} = :parser.parse(tokens)
     assert expected == parsed
   end
