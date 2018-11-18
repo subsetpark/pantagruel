@@ -494,6 +494,87 @@ defmodule ParserTest do
     end
   end
 
+  describe "comprehensions" do
+    test "set comprehension" do
+      'f()\n---\n{x : X . x}'
+      |> tryp(
+        sections: [
+          [
+            head: [declaration: [decl_ident: 'f']],
+            body: [
+              expr:
+                {:set,
+                 {:comprehension,
+                  [
+                    comp_bindings: [
+                      binding: [
+                        bind_symbol: 'x',
+                        bind_op: {:":", 3},
+                        bind_domain: 'X'
+                      ]
+                    ],
+                    comp_expression: 'x'
+                  ]}}
+            ]
+          ]
+        ]
+      )
+    end
+
+    test "comprehension with guard" do
+      'f()\n---\n{x : X, x > 1 . x}'
+      |> tryp(
+        sections: [
+          [
+            head: [declaration: [decl_ident: 'f']],
+            body: [
+              expr:
+                {:set,
+                 {:comprehension,
+                  [
+                    comp_bindings: [
+                      binding: [
+                        bind_symbol: 'x',
+                        bind_op: {:":", 3},
+                        bind_domain: 'X'
+                      ],
+                      guard: {:appl, [op: '>', x: 'x', y: 1]}
+                    ],
+                    comp_expression: 'x'
+                  ]}}
+            ]
+          ]
+        ]
+      )
+    end
+
+    test "comprehension with from" do
+      'f()\n---\n[x from X . x]'
+      |> tryp(
+        sections: [
+          [
+            head: [declaration: [decl_ident: 'f']],
+            body: [
+              expr:
+                {:list,
+                 {:comprehension,
+                  [
+                    comp_bindings: [
+                      binding: [
+                        bind_symbol: 'x',
+                        bind_op: {:from, 3},
+                        bind_domain: 'X'
+                      ]
+                    ],
+                    comp_expression: 'x'
+                  ]}}
+            ]
+          ]
+        ]
+      )
+    end
+  end
+
   defp tryp(string, expected) do
     string = string ++ '\n'
     {:ok, tokens, _} = :lexer.string(string)

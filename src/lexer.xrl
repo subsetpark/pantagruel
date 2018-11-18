@@ -56,14 +56,13 @@ comment(Chars, TokenLine) ->
 
 keyword("and", TokenLine) -> {'and', TokenLine};
 keyword("or", TokenLine) -> {'or', TokenLine};
-keyword("from", TokenLine) -> {binary_operator, TokenLine, from};
-keyword("in", TokenLine) -> {binary_operator, TokenLine, in};
 keyword("exists", TokenLine) -> {quantifier, TokenLine, exists};
 keyword("all", TokenLine) -> {quantifier, TokenLine, all};
 keyword("xor", TokenLine) -> {binary_operator, TokenLine, 'xor'};
 keyword("fn", TokenLine) -> {fn, TokenLine};
 keyword("import", TokenLine) -> {import, TokenLine};
 keyword("module", TokenLine) -> {module, TokenLine};
+keyword("from", TokenLine) -> {from, TokenLine};
 keyword(Chars, TokenLine) -> {symbol, TokenLine, Chars}.
 
 operator("::", TokenLine) -> {yield_type, TokenLine, "::"};

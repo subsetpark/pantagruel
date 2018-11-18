@@ -1,22 +1,34 @@
 Nonterminals
+
 a_symbol
 symbols
 expression
 expressions
 maybe_expressions
+
+bind_operator
+a_binary_operator
+
+term
 list
 set
 bunch
+
+binding_or_guard
+binding_or_guards
+binding
+
 bin_operation
 un_operation
 function_application
-term
+
 program
 module_line
 imports
 import_line
 section
 sections
+
 head
 head_line
 declaration
@@ -24,11 +36,12 @@ decl_body
 decl_args
 decl_yield
 alias
+
 body
 body_line.
 
 Terminals
-'{' '}' '[' ']' '(' ')' '.' ':' ';' ','
+'{' '}' '[' ']' '(' ')' '.' ':' ';' ',' from
 int literal float
 module
 import
@@ -45,7 +58,7 @@ refined.
 Rootsymbol program.
 Endsymbol '$end'.
 
-Left 100 binary_operator.
+Left 100 a_binary_operator.
 Left 300 unary_operator.
 
 %
@@ -128,7 +141,7 @@ expression -> bin_operation : '$1'.
 
 bin_operation -> function_application : '$1'.
 bin_operation ->
-    bin_operation binary_operator bin_operation :
+    bin_operation a_binary_operator bin_operation :
         {appl, [{op, unwrap('$2')}, {x, '$1'}, {y, '$3'}]}.
 
 function_application -> un_operation : '$1'.
@@ -160,11 +173,28 @@ expressions -> expression ',' expressions : ['$1' | '$3'].
 
 maybe_expressions -> '$empty' : [].
 maybe_expressions -> expressions : '$1'.
+maybe_expressions -> binding_or_guards '.' expression :
+    {comprehension, [{comp_bindings, '$1'}, {comp_expression, '$3'}]}.
+
+binding_or_guards -> binding_or_guard : ['$1'].
+binding_or_guards -> binding_or_guard ',' binding_or_guards : ['$1' | '$3'].
+
+binding_or_guard -> binding : {binding, '$1'}.
+binding_or_guard -> expression : {guard, '$1'}.
+
+binding -> term bind_operator expression :
+    [{bind_symbol, '$1'}, {bind_op, '$2'}, {bind_domain, '$3'}].
 
 symbols -> a_symbol : ['$1'].
 symbols -> a_symbol ',' symbols : ['$1' | '$3'].
 
 a_symbol -> symbol : unwrap('$1').
+
+bind_operator -> ':' : '$1'.
+bind_operator -> from : '$1'.
+
+a_binary_operator -> binary_operator : '$1'.
+a_binary_operator -> bind_operator : '$1'.
 
 Erlang code.
 
