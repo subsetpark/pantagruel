@@ -4,21 +4,25 @@ defmodule ParserTest do
   describe "declaration" do
     test "basic declaration" do
       'f()'
-      |> tryp(head: [{:declaration, decl_ident: 'f'}])
+      |> tryp(sections: [[head: [{:declaration, decl_ident: 'f'}]]])
     end
 
     test "declaration with argument" do
       'f(x : X)'
       |> tryp(
-        head: [
-          {:declaration,
-           [
-             decl_ident: 'f',
-             decl_args: [
-               args: ['x'],
-               doms: ['X']
-             ]
-           ]}
+        sections: [
+          [
+            head: [
+              {:declaration,
+               [
+                 decl_ident: 'f',
+                 decl_args: [
+                   args: ['x'],
+                   doms: ['X']
+                 ]
+               ]}
+            ]
+          ]
         ]
       )
     end
@@ -26,15 +30,19 @@ defmodule ParserTest do
     test "declaration with two argument" do
       'f(x, y : X, Y)'
       |> tryp(
-        head: [
-          {:declaration,
-           [
-             decl_ident: 'f',
-             decl_args: [
-               args: ['x', 'y'],
-               doms: ['X', 'Y']
-             ]
-           ]}
+        sections: [
+          [
+            head: [
+              {:declaration,
+               [
+                 decl_ident: 'f',
+                 decl_args: [
+                   args: ['x', 'y'],
+                   doms: ['X', 'Y']
+                 ]
+               ]}
+            ]
+          ]
         ]
       )
     end
@@ -42,13 +50,17 @@ defmodule ParserTest do
     test "declaration with yield" do
       'f() :: F'
       |> tryp(
-        head: [
-          {:declaration,
-           [
-             decl_ident: 'f',
-             decl_yield: '::',
-             decl_domain: 'F'
-           ]}
+        sections: [
+          [
+            head: [
+              {:declaration,
+               [
+                 decl_ident: 'f',
+                 decl_yield: '::',
+                 decl_domain: 'F'
+               ]}
+            ]
+          ]
         ]
       )
     end
@@ -56,15 +68,19 @@ defmodule ParserTest do
     test "declaration with value" do
       'f(x, y : X, Y . x) => F'
       |> tryp(
-        head: [
-          {:declaration,
-           [
-             decl_ident: 'f',
-             decl_args: [args: ['x', 'y'], doms: ['X', 'Y']],
-             decl_guards: ['x'],
-             decl_yield: '=>',
-             decl_domain: 'F'
-           ]}
+        sections: [
+          [
+            head: [
+              {:declaration,
+               [
+                 decl_ident: 'f',
+                 decl_args: [args: ['x', 'y'], doms: ['X', 'Y']],
+                 decl_guards: ['x'],
+                 decl_yield: '=>',
+                 decl_domain: 'F'
+               ]}
+            ]
+          ]
         ]
       )
     end
@@ -72,15 +88,19 @@ defmodule ParserTest do
     test "full declaration" do
       'f(x, y : X, Y . x > y) => F'
       |> tryp(
-        head: [
-          {:declaration,
-           [
-             decl_ident: 'f',
-             decl_args: [args: ['x', 'y'], doms: ['X', 'Y']],
-             decl_guards: [appl: [op: '>', x: 'x', y: 'y']],
-             decl_yield: '=>',
-             decl_domain: 'F'
-           ]}
+        sections: [
+          [
+            head: [
+              {:declaration,
+               [
+                 decl_ident: 'f',
+                 decl_args: [args: ['x', 'y'], doms: ['X', 'Y']],
+                 decl_guards: [appl: [op: '>', x: 'x', y: 'y']],
+                 decl_yield: '=>',
+                 decl_domain: 'F'
+               ]}
+            ]
+          ]
         ]
       )
     end
@@ -88,15 +108,19 @@ defmodule ParserTest do
     test "declaration with unary guard" do
       'f(x:X . ~x)'
       |> tryp(
-        head: [
-          {:declaration,
-           [
-             decl_ident: 'f',
-             decl_args: [args: ['x'], doms: ['X']],
-             decl_guards: [
-               appl: [op: '~', x: 'x']
-             ]
-           ]}
+        sections: [
+          [
+            head: [
+              {:declaration,
+               [
+                 decl_ident: 'f',
+                 decl_args: [args: ['x'], doms: ['X']],
+                 decl_guards: [
+                   appl: [op: '~', x: 'x']
+                 ]
+               ]}
+            ]
+          ]
         ]
       )
     end
@@ -104,15 +128,19 @@ defmodule ParserTest do
     test "declaration with function application" do
       'f(x:X . f x)'
       |> tryp(
-        head: [
-          {:declaration,
-           [
-             decl_ident: 'f',
-             decl_args: [args: ['x'], doms: ['X']],
-             decl_guards: [
-               appl: [f: 'f', x: 'x']
-             ]
-           ]}
+        sections: [
+          [
+            head: [
+              {:declaration,
+               [
+                 decl_ident: 'f',
+                 decl_args: [args: ['x'], doms: ['X']],
+                 decl_guards: [
+                   appl: [f: 'f', x: 'x']
+                 ]
+               ]}
+            ]
+          ]
         ]
       )
     end
@@ -120,15 +148,19 @@ defmodule ParserTest do
     test "declaration with expression application" do
       'f(x:X . (x + 1) x)'
       |> tryp(
-        head: [
-          {:declaration,
-           [
-             decl_ident: 'f',
-             decl_args: [args: ['x'], doms: ['X']],
-             decl_guards: [
-               appl: [f: [appl: [op: '+', x: 'x', y: 1]], x: 'x']
-             ]
-           ]}
+        sections: [
+          [
+            head: [
+              {:declaration,
+               [
+                 decl_ident: 'f',
+                 decl_args: [args: ['x'], doms: ['X']],
+                 decl_guards: [
+                   appl: [f: [appl: [op: '+', x: 'x', y: 1]], x: 'x']
+                 ]
+               ]}
+            ]
+          ]
         ]
       )
     end
@@ -136,16 +168,20 @@ defmodule ParserTest do
     test "declaration with two guards" do
       'f(x:X . x > 1, x < 3)'
       |> tryp(
-        head: [
-          {:declaration,
-           [
-             decl_ident: 'f',
-             decl_args: [args: ['x'], doms: ['X']],
-             decl_guards: [
-               appl: [op: '>', x: 'x', y: 1],
-               appl: [op: '<', x: 'x', y: 3]
-             ]
-           ]}
+        sections: [
+          [
+            head: [
+              {:declaration,
+               [
+                 decl_ident: 'f',
+                 decl_args: [args: ['x'], doms: ['X']],
+                 decl_guards: [
+                   appl: [op: '>', x: 'x', y: 1],
+                   appl: [op: '<', x: 'x', y: 3]
+                 ]
+               ]}
+            ]
+          ]
         ]
       )
     end
@@ -154,12 +190,20 @@ defmodule ParserTest do
   describe "alias" do
     test "domain alias" do
       'S <= String'
-      |> tryp(head: [alias: [alias_name: ['S'], alias_expr: 'String']])
+      |> tryp(
+        sections: [
+          [head: [alias: [alias_name: ['S'], alias_expr: 'String']]]
+        ]
+      )
     end
 
     test "multiple domain alias" do
       'S, T <= String'
-      |> tryp(head: [alias: [alias_name: ['S', 'T'], alias_expr: 'String']])
+      |> tryp(
+        sections: [
+          [head: [alias: [alias_name: ['S', 'T'], alias_expr: 'String']]]
+        ]
+      )
     end
   end
 
@@ -167,11 +211,15 @@ defmodule ParserTest do
     test "empty list" do
       'f(x:X . [])'
       |> tryp(
-        head: [
-          declaration: [
-            decl_ident: 'f',
-            decl_args: [args: ['x'], doms: ['X']],
-            decl_guards: [list: []]
+        sections: [
+          [
+            head: [
+              declaration: [
+                decl_ident: 'f',
+                decl_args: [args: ['x'], doms: ['X']],
+                decl_guards: [list: []]
+              ]
+            ]
           ]
         ]
       )
@@ -180,11 +228,15 @@ defmodule ParserTest do
     test "list" do
       'f(x:X . [x])'
       |> tryp(
-        head: [
-          declaration: [
-            decl_ident: 'f',
-            decl_args: [args: ['x'], doms: ['X']],
-            decl_guards: [list: ['x']]
+        sections: [
+          [
+            head: [
+              declaration: [
+                decl_ident: 'f',
+                decl_args: [args: ['x'], doms: ['X']],
+                decl_guards: [list: ['x']]
+              ]
+            ]
           ]
         ]
       )
@@ -193,11 +245,15 @@ defmodule ParserTest do
     test "list with multiple items" do
       'f(x:X . [x, x 1])'
       |> tryp(
-        head: [
-          declaration: [
-            decl_ident: 'f',
-            decl_args: [args: ['x'], doms: ['X']],
-            decl_guards: [list: ['x', appl: [f: 'x', x: 1]]]
+        sections: [
+          [
+            head: [
+              declaration: [
+                decl_ident: 'f',
+                decl_args: [args: ['x'], doms: ['X']],
+                decl_guards: [list: ['x', appl: [f: 'x', x: 1]]]
+              ]
+            ]
           ]
         ]
       )
@@ -208,9 +264,13 @@ defmodule ParserTest do
     test "two declarations" do
       'f()\ng()'
       |> tryp(
-        head: [
-          declaration: [decl_ident: 'f'],
-          declaration: [decl_ident: 'g']
+        sections: [
+          [
+            head: [
+              declaration: [decl_ident: 'f'],
+              declaration: [decl_ident: 'g']
+            ]
+          ]
         ]
       )
     end
@@ -218,9 +278,13 @@ defmodule ParserTest do
     test "comment and declaration" do
       '"  ok\nf()'
       |> tryp(
-        head: [
-          comment: 'ok',
-          declaration: [decl_ident: 'f']
+        sections: [
+          [
+            head: [
+              comment: 'ok',
+              declaration: [decl_ident: 'f']
+            ]
+          ]
         ]
       )
     end
@@ -228,9 +292,13 @@ defmodule ParserTest do
     test "blank line" do
       'f()\n\ng()'
       |> tryp(
-        head: [
-          declaration: [decl_ident: 'f'],
-          declaration: [decl_ident: 'g']
+        sections: [
+          [
+            head: [
+              declaration: [decl_ident: 'f'],
+              declaration: [decl_ident: 'g']
+            ]
+          ]
         ]
       )
     end
@@ -239,7 +307,7 @@ defmodule ParserTest do
   describe "comments" do
     test "comment with no newline" do
       '"  ok'
-      |> tryp(head: [comment: 'ok'])
+      |> tryp(sections: [[head: [comment: 'ok']]])
     end
   end
 
@@ -247,15 +315,19 @@ defmodule ParserTest do
     test "declaration with precedence" do
       'f(x: Nat . f x > g y)'
       |> tryp(
-        head: [
-          declaration: [
-            decl_ident: 'f',
-            decl_args: [args: ['x'], doms: ['Nat']],
-            decl_guards: [
-              appl: [
-                op: '>',
-                x: {:appl, [f: 'f', x: 'x']},
-                y: {:appl, [f: 'g', x: 'y']}
+        sections: [
+          [
+            head: [
+              declaration: [
+                decl_ident: 'f',
+                decl_args: [args: ['x'], doms: ['Nat']],
+                decl_guards: [
+                  appl: [
+                    op: '>',
+                    x: {:appl, [f: 'f', x: 'x']},
+                    y: {:appl, [f: 'g', x: 'y']}
+                  ]
+                ]
               ]
             ]
           ]
@@ -266,11 +338,15 @@ defmodule ParserTest do
     test "declaration with function precedence" do
       'f(x: Nat . f x y)'
       |> tryp(
-        head: [
-          declaration: [
-            decl_ident: 'f',
-            decl_args: [args: ['x'], doms: ['Nat']],
-            decl_guards: [appl: [f: {:appl, [f: 'f', x: 'x']}, x: 'y']]
+        sections: [
+          [
+            head: [
+              declaration: [
+                decl_ident: 'f',
+                decl_args: [args: ['x'], doms: ['Nat']],
+                decl_guards: [appl: [f: {:appl, [f: 'f', x: 'x']}, x: 'y']]
+              ]
+            ]
           ]
         ]
       )
@@ -279,11 +355,15 @@ defmodule ParserTest do
     test "declaration with function application on unary" do
       'f(x: Nat . f ~ y)'
       |> tryp(
-        head: [
-          declaration: [
-            decl_ident: 'f',
-            decl_args: [args: ['x'], doms: ['Nat']],
-            decl_guards: [appl: [f: 'f', x: {:appl, [op: '~', x: 'y']}]]
+        sections: [
+          [
+            head: [
+              declaration: [
+                decl_ident: 'f',
+                decl_args: [args: ['x'], doms: ['Nat']],
+                decl_guards: [appl: [f: 'f', x: {:appl, [op: '~', x: 'y']}]]
+              ]
+            ]
           ]
         ]
       )
@@ -292,24 +372,28 @@ defmodule ParserTest do
     test "declaration with unary associativity" do
       'f(x:X . ~ # z x)'
       |> tryp(
-        head: [
-          declaration: [
-            decl_ident: 'f',
-            decl_args: [args: ['x'], doms: ['X']],
-            decl_guards: [
-              appl: [
-                f:
-                  {:appl,
-                   [
-                     op: '~',
-                     x:
-                       {:appl,
-                        [
-                          op: '#',
-                          x: 'z'
-                        ]}
-                   ]},
-                x: 'x'
+        sections: [
+          [
+            head: [
+              declaration: [
+                decl_ident: 'f',
+                decl_args: [args: ['x'], doms: ['X']],
+                decl_guards: [
+                  appl: [
+                    f:
+                      {:appl,
+                       [
+                         op: '~',
+                         x:
+                           {:appl,
+                            [
+                              op: '#',
+                              x: 'z'
+                            ]}
+                       ]},
+                    x: 'x'
+                  ]
+                ]
               ]
             ]
           ]
@@ -322,40 +406,90 @@ defmodule ParserTest do
     test "simple section" do
       'f()\n1'
       |> tryp(
-        head: [declaration: [decl_ident: 'f']],
-        body: [expr: 1]
+        sections: [
+          [
+            head: [declaration: [decl_ident: 'f']],
+            body: [expr: 1]
+          ]
+        ]
       )
     end
 
     test "section refinement" do
       'f()\n1 <- 2'
       |> tryp(
-        head: [declaration: [decl_ident: 'f']],
-        body: [refinement: [pattern: 1, expr: 2]]
+        sections: [
+          [
+            head: [declaration: [decl_ident: 'f']],
+            body: [refinement: [pattern: 1, expr: 2]]
+          ]
+        ]
       )
     end
 
     test "section binary op" do
       'f()\n1 + 2'
       |> tryp(
-        head: [declaration: [decl_ident: 'f']],
-        body: [expr: {:appl, [op: '+', x: 1, y: 2]}]
+        sections: [
+          [
+            head: [declaration: [decl_ident: 'f']],
+            body: [expr: {:appl, [op: '+', x: 1, y: 2]}]
+          ]
+        ]
       )
     end
 
     test "section function application" do
       'f()\nf x'
       |> tryp(
-        head: [declaration: [decl_ident: 'f']],
-        body: [expr: {:appl, [op: '+', x: 1, y: 2]}]
+        sections: [
+          [
+            head: [declaration: [decl_ident: 'f']],
+            body: [expr: {:appl, [f: 'f', x: 'x']}]
+          ]
+        ]
+      )
+    end
+
+    test "section list" do
+      'f()\n[f x]'
+      |> tryp(
+        sections: [
+          [
+            head: [declaration: [decl_ident: 'f']],
+            body: [expr: {:list, [appl: [f: 'f', x: 'x']]}]
+          ]
+        ]
       )
     end
 
     test "section with two lines" do
       'f()\n1\n2'
       |> tryp(
-        head: [declaration: [decl_ident: 'f']],
-        body: [expr: 1, expr: 2]
+        sections: [
+          [
+            head: [declaration: [decl_ident: 'f']],
+            body: [expr: 1, expr: 2]
+          ]
+        ]
+      )
+    end
+  end
+
+  describe "import" do
+    test "import line" do
+      'import F\nf()'
+      |> tryp(
+        imports: [import: ['F']],
+        sections: [[head: [declaration: [decl_ident: 'f']]]]
+      )
+    end
+
+    test "multiple imports" do
+      'import F, X\nf()'
+      |> tryp(
+        imports: [import: ['F', 'X']],
+        sections: [[head: [declaration: [decl_ident: 'f']]]]
       )
     end
   end

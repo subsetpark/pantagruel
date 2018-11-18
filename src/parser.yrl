@@ -12,13 +12,16 @@ un_operation
 function_application
 term
 program
+module_line
+imports
+import_line
 section
+sections
 head
 head_line
 declaration
 decl_body
 decl_args
-decl_guard
 decl_yield
 alias
 body
@@ -27,6 +30,8 @@ body_line.
 Terminals
 '{' '}' '[' ']' '(' ')' '.' ':' ';' ','
 int literal float
+module
+import
 comment
 newline
 symbol
@@ -46,7 +51,21 @@ Left 300 unary_operator.
 % RULES
 %
 
-program -> section : '$1'.
+program -> module_line imports sections :
+    [{module, '$1'}, {imports, '$2'}, {sections, '$3'}].
+program -> imports sections : [{imports, '$1'}, {sections, '$2'}].
+program -> module sections : [{module, '$1'}, {sections, '$2'}].
+program -> sections : [{sections, '$1'}].
+
+module_line -> module a_symbol newline : '$2'.
+
+imports -> import_line : ['$1'].
+imports -> import_line imports : ['$1' | '$2'].
+
+import_line -> import symbols newline : {import, '$2'}.
+
+sections -> section : ['$1'].
+sections -> section sections : ['$1' | '$2'].
 
 section -> head : [{head, '$1'}].
 section -> head body : [{head, '$1'}, {body, '$2'}].
@@ -69,12 +88,10 @@ declaration -> a_symbol '(' decl_body ')' decl_yield  :
 
 decl_body -> '$empty' : [].
 decl_body -> decl_args : [{decl_args, '$1'}].
-decl_body -> decl_args '.' decl_guard :
+decl_body -> decl_args '.' expressions :
     [{decl_args, '$1'}, {decl_guards, '$3'}].
 
 decl_args -> symbols ':' symbols : [{args, '$1'}, {doms, '$3'}].
-
-decl_guard -> expressions : '$1'.
 
 decl_yield -> '$empty' : [].
 decl_yield -> yield_type a_symbol :
