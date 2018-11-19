@@ -83,7 +83,7 @@ imports -> import_line imports : ['$1' | '$2'].
 
 import_line -> import symbols newline : {import, '$2'}.
 
-sections -> section : ['$1'].
+sections -> section : [{section, '$1'}].
 sections -> section sections : ['$1' | '$2'].
 
 section -> head : [{head, '$1'}].

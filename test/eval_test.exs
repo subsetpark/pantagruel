@@ -3,13 +3,18 @@ defmodule EvalTest do
   alias Pantagruel.Values.{Variable, Lambda, Domain}
   alias Pantagruel.Eval
 
-  defp scan_and_parse(text) do
-    {:ok, parsed, "", %{}, _, _} =
-      text
-      |> Pantagruel.Scan.scan()
-      |> Pantagruel.Parse.program()
+  defp scan_and_parse(text) when is_binary(text) do
+    text
+    |> Kernel.<>("\n")
+    |> String.to_char_list()
+    |> scan_and_parse
+  end
 
-    parsed
+  defp scan_and_parse(text) do
+    with {:ok, tokens, _} <- :lexer.string(text),
+         {:ok, parsed} <- Pantagruel.Parse.program(tokens) do
+      parsed
+    end
   end
 
   defp eval(parsed) do

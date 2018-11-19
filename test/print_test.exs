@@ -2,9 +2,16 @@ defmodule Pantagruel.FormatTest do
   use ExUnit.Case
   alias Pantagruel.Format
 
+  defp eval(text) when is_binary(text) do
+    text
+    |> Kernel.<>("\n")
+    |> String.to_char_list()
+    |> eval
+  end
+
   defp eval(text) do
-    with scanned <- Pantagruel.Scan.scan(text),
-         {:ok, parsed, "", %{}, _, _} <- Pantagruel.Parse.program(scanned),
+    with {:ok, tokens, _} <- :lexer.string(text),
+         {:ok, parsed} <- Pantagruel.Parse.program(tokens),
          {:ok, scope} <- Pantagruel.Eval.eval(parsed, []) do
       {parsed, scope}
     end

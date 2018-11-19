@@ -29,3 +29,4 @@ pantagruel-*.tar
 /tags
 
 lexer.erl
+parser.erl
