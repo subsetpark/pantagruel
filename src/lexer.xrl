@@ -1,14 +1,14 @@
 Definitions.
 
-INT           = [0-9_]+
-FLOAT         = [-+]?[0-9]*\.?[0-9]+
-LITERAL       = (`[^\n]*`|`[^\s\n]+)
-OPERATOR      = <>\-=~/\*\+#\.%^:|&
+INT             = [0-9_]+
+FLOAT           = [-+]?[0-9]*\.?[0-9]+
+LITERAL         = (`[^\n]*`|`[^\s\n]+)
+OPERATOR        = <>\-=~/\*\+#\.%^:|&
 OPERATOR_CHOICE = (>=|==|!=|->|<->|<-|<=|=>|=|-|>|<|\+|\*|~|#|%|\^|;|::|:|&|\|)
-DELIMITER     = \[\]\(\){},\.
-SYMBOL        = [^\s\n&&{OPERATOR}&&{DELIMITER}:\"]+
-WHITESPACE    = [\t\s]
-YIELD_TYPE    = (=>|::)
+DELIMITER       = \[\]\(\){},\.
+SYMBOL          = [^\s\n&&{OPERATOR}&&{DELIMITER}:\"]+
+SP              = \t\s
+YIELD_TYPE      = (=>|::)
 
 Rules.
 
@@ -21,14 +21,14 @@ Rules.
 \n[\s\n]*         : {token, {newline, TokenLine}}.
 
 --(-)+\n          : {token, {sep, TokenLine}}.
-;\n+              : {token, {where, TokenLine}}.
+[{SP}]*;[{SP}\n]* : {token, {where, TokenLine}}.
 
 YIELD_TYPE        : {token, {yield_type, TokenLine, TokenChars}}.
 [{DELIMITER}]     : {token, {list_to_atom(TokenChars), TokenLine, TokenChars}}.
 {OPERATOR_CHOICE} : {token, operator(TokenChars, TokenLine)}.
 {SYMBOL}          : {token, keyword(TokenChars, TokenLine)}.
 
-{WHITESPACE}+     : skip_token.
+[{SP}]+           : skip_token.
 
 Erlang code.
 
