@@ -82,7 +82,7 @@ defmodule Pantagruel do
   defp handle_eval({:ok, _}, parsed, _), do: format_program(parsed) |> puts
 
   defp handle_eval({:error, {tag, e}}, parsed, _) do
-    IO.puts "Eval error."
+    IO.puts("Eval error.")
     handle_error(tag, e)
     puts_in_error_handling(parsed)
   end
@@ -118,10 +118,10 @@ defmodule Pantagruel do
     quantifiers
     |> Enum.each(fn {
                       :quantification,
-                      quantifier: _, quant_bindings: bindings, quant_expression: exp
+                      quantifier: _, bindings: bindings, expr: exp
                     } ->
       exp_str =
-        {:quantification, quantifier: "…", quant_bindings: bindings, quant_expression: exp}
+        {:quantification, quantifier: "…", bindings: bindings, expr: exp}
         |> format_exp([])
 
       """

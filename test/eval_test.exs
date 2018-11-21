@@ -6,7 +6,7 @@ defmodule EvalTest do
   defp scan_and_parse(text) when is_binary(text) do
     text
     |> Kernel.<>("\n")
-    |> String.to_char_list()
+    |> String.to_charlist()
     |> scan_and_parse
   end
 
@@ -289,7 +289,7 @@ defmodule EvalTest do
       assert [
                quantification: [
                  quantifier: :forall,
-                 quant_bindings: [
+                 bindings: [
                    guard: "j",
                    binding: [
                      bind_symbol: "k",
@@ -297,7 +297,7 @@ defmodule EvalTest do
                      bind_domain: "X"
                    ]
                  ],
-                 quant_expression:
+                 expr:
                    {:appl,
                     [
                       operator: :gt,

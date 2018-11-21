@@ -144,6 +144,9 @@ defmodule Pantagruel.Eval do
   defp include_for_binding_check(unbounds, {e, contents}) when is_container(e),
     do: include_for_binding_check(unbounds, contents)
 
+  defp include_for_binding_check(unbounds, variables) when is_tuple(variables),
+    do: MapSet.union(unbounds, [variables] |> MapSet.new())
+
   defp include_for_binding_check(unbounds, variables),
     do: MapSet.union(unbounds, variables |> MapSet.new())
 
@@ -186,38 +189,45 @@ defmodule Pantagruel.Eval do
   # Evaluate a line of a section body. Body statements can be either
   # comments, which are ignored, or expression statements.
   defp eval_body_statement({:comment, _}, state), do: state
-  defp eval_body_statement({:expr, line}, state), do: eval_expression(line, state)
+  defp eval_body_statement({:expr, line}, state), do: eval_expression(:expr, line, state)
 
-  defp eval_expression(expression, {
+  defp eval_body_statement({:refinement, [pattern: pattern, expr: expr]}, state) do
+    eval_expression(:refinement, [pattern, expr], state)
+  end
+
+  defp eval_expression(expr_type, elements, {
          [scope | scopes],
          [unbounds, next_unbounds | rest]
        }) do
-    elements =
-      case expression do
-        [refinement: refinement] ->
-          [refinement[:pattern], refinement[:guard], refinement[:expr]] |> Enum.filter(& &1)
-
-        e ->
-          e
-      end
-
     # Include any introduced symbols into scope.
-    scope = Enum.reduce(elements, scope, &bind_expression_variables/2)
+    scope = bind_expression(expr_type, elements, scope)
     # Include all symbols into the binding check for the *next* section.
     next_unbounds = include_for_binding_check(next_unbounds, elements)
 
     {[scope | scopes], [unbounds, next_unbounds | rest]}
   end
 
+  defp bind_expression(:refinement, [pattern, expression], scope) do
+    elements = [pattern, expression]
+    # Include any introduced symbols into scope.
+    Enum.reduce(elements, scope, &bind_expression_variables/2)
+  end
+
+  defp bind_expression(:expr, {:quantification, _} = q, scope) do
+    bind_expression_variables(q, scope)
+  end
+
+  defp bind_expression(:expr, _, scope), do: scope
+
   # Existence quantifiers don't just introduce variables for the scope of
   # their predicates; the introduce variables into global scope.
   defp bind_expression_variables(
-         {:quantification, quantifier: :exists, quant_bindings: bindings, quant_expression: expr},
-         state
+         {:quantification, quantifier: :exists, bindings: bindings, expr: expr},
+         scope
        ) do
     bound =
       bindings
-      |> Enum.reduce(state, fn {:binding, [bind_symbol: x, bind_op: _, bind_domain: domain]}, s ->
+      |> Enum.reduce(scope, fn {:binding, [bind_symbol: x, bind_op: _, bind_domain: domain]}, s ->
         Env.bind(s, x, domain)
       end)
 

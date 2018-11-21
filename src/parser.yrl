@@ -211,5 +211,6 @@ quantification -> quantifier binding_or_guards '.' expression :
 Erlang code.
 
 unwrap({comment, _, Symbol}) -> {comment, Symbol};
+unwrap({symbol, _, Symbol}) -> {symbol, Symbol};
 unwrap({_, _, Symbol}) -> Symbol;
 unwrap({Symbol, _}) -> Symbol.

@@ -181,7 +181,7 @@ defmodule Pantagruel.Env do
 
   # Boundness checking for :forall and :exists quantifications.
   def is_bound?(
-        {:quantification, [quantifier: _, quant_bindings: bindings, quant_expression: expr]},
+        {:quantification, [quantifier: _, bindings: bindings, expr: expr]},
         scope
       ) do
     # Introduce any internal bindings for the purpose of boundness
@@ -196,21 +196,22 @@ defmodule Pantagruel.Env do
 
   def is_bound?({:intro_op, _}, _), do: true
 
-  def is_bound?({appl, f: f, x: x}, scopes) when appl in [:appl, :dot],
+  def is_bound?({_, f: f, x: x}, scopes),
     do: is_bound?(f, scopes) && is_bound?(x, scopes)
 
-  def is_bound?({:appl, operator: _, x: x, y: y}, scopes),
+  def is_bound?({:appl, op: _, x: x, y: y}, scopes),
     do: is_bound?(x, scopes) && is_bound?(y, scopes)
 
   def is_bound?({:unary_exp, op: _, operand: x}, scopes),
     do: is_bound?(x, scopes)
 
-  def is_bound?(variable, [scope | parent]) when is_binary(variable) do
-    variable = String.trim(variable, "'")
-    has_key?(scope, variable) or is_bound?(variable, parent)
+  def is_bound?({:symbol, variable}, scopes) do
+    variable
+    |> :string.trim(:both, '\'')
+    |> is_bound?(scopes)
   end
 
-  def is_bound?(variable, [scope | parent]) when is_atom(variable) do
+  def is_bound?(variable, [scope | parent]) do
     has_key?(scope, variable) or is_bound?(variable, parent)
   end
 
