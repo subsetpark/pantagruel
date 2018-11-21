@@ -3,7 +3,7 @@ Definitions.
 INT           = [0-9_]+
 FLOAT         = [-+]?[0-9]*\.?[0-9]+
 LITERAL       = (`[^\n]*`|`[^\s\n]+)
-OPERATOR      = <>\-=~/\*\+#\.%^:;|&
+OPERATOR      = <>\-=~/\*\+#\.%^:|&
 OPERATOR_CHOICE = (>=|==|!=|->|<->|<-|<=|=>|=|-|>|<|\+|\*|~|#|%|\^|;|::|:|&|\|)
 DELIMITER     = \[\]\(\){},\.
 SYMBOL        = [^\s\n&&{OPERATOR}&&{DELIMITER}:\"]+
@@ -21,6 +21,7 @@ Rules.
 \n[\s\n]*         : {token, {newline, TokenLine}}.
 
 --(-)+\n          : {token, {sep, TokenLine}}.
+;\n+              : {token, {where, TokenLine}}.
 
 YIELD_TYPE        : {token, {yield_type, TokenLine, TokenChars}}.
 [{DELIMITER}]     : {token, {list_to_atom(TokenChars), TokenLine, TokenChars}}.

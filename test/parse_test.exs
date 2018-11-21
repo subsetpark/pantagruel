@@ -17,19 +17,19 @@ defmodule Pantagruel.Test.LegacyParser do
           section: [
             head: [
               decl: [
-                decl_ident: "f"
+                decl_ident: 'f'
               ]
             ],
             body: [
-              expr: [appl: [operator: :notequals, x: "x", y: "y"]],
-              expr: [appl: [operator: :gt, x: "y", y: 1]]
+              expr: {:appl, [op: '!=', x: 'x', y: 'y']},
+              expr: {:appl, [op: '>', x: 'y', y: 1]}
             ]
           ]
         ]
       )
     end
 
-    test "parse two expressions with connecting operator" do
+    test "parse two expressions with connecting op" do
       text = 'f()\n---\nx != y\n or y > 1'
 
       tryparse(text,
@@ -37,12 +37,12 @@ defmodule Pantagruel.Test.LegacyParser do
           section: [
             head: [
               decl: [
-                decl_ident: "f"
+                decl_ident: 'f'
               ]
             ],
             body: [
-              expr: [appl: [operator: :notequals, x: "x", y: "y"]],
-              expr: [intro_op: :or, appl: [operator: :gt, x: "y", y: 1]]
+              expr: {:appl, [op: '!=', x: 'x', y: 'y']},
+              expr: [intro_op: :or, appl: [op: '>', x: 'y', y: 1]]
             ]
           ]
         ]
@@ -57,10 +57,12 @@ defmodule Pantagruel.Test.LegacyParser do
           section: [
             head: [
               decl: [
-                decl_ident: "f",
-                lambda_args: ["x"],
-                lambda_doms: ["Y"],
-                predicate: [{:appl, [operator: :in, x: "a", y: "Y"]}]
+                decl_ident: 'f',
+                decl_args: [
+                  args: ['x'],
+                  doms: ['Y']
+                ],
+                decl_guards: [{:appl, [op: :":", x: 'a', y: 'Y']}]
               ]
             ]
           ]
@@ -74,13 +76,12 @@ defmodule Pantagruel.Test.LegacyParser do
       tryparse(text,
         sections: [
           section: [
-            head: [decl: [decl_ident: "f"]],
+            head: [decl: [decl_ident: 'f']],
             body: [
               expr: [
                 refinement: [
-                  pattern: "x",
-                  expr:
-                    {:appl, [operator: :gt, x: {:appl, [operator: :and, x: "y", y: "y"]}, y: 1]}
+                  pattern: 'x',
+                  expr: {:appl, [op: '>', x: {:appl, [op: :and, x: 'y', y: 'y']}, y: 1]}
                 ]
               ]
             ]
@@ -97,15 +98,13 @@ defmodule Pantagruel.Test.LegacyParser do
           section: [
             head: [
               decl: [
-                decl_ident: "f"
+                decl_ident: 'f'
               ]
             ],
             body: [
-              expr: [
-                refinement: [
-                  pattern: {:appl, [f: "f", x: "x"]},
-                  expr: "y"
-                ]
+              refinement: [
+                pattern: {:appl, [f: 'f', x: 'x']},
+                expr: 'y'
               ]
             ]
           ]
@@ -113,22 +112,20 @@ defmodule Pantagruel.Test.LegacyParser do
       )
     end
 
-    test "parse guarded refinment" do
+    test "parse guarded refinement" do
       text = 'f()\n---\nf x . x< 0 <- y\nf x<-1'
 
       tryparse(text,
         sections: [
           section: [
-            head: [decl: [decl_ident: "f"]],
+            head: [decl: [decl_ident: 'f']],
             body: [
-              expr: [
-                refinement: [
-                  pattern: {:appl, [f: "f", x: "x"]},
-                  guard: {:appl, [operator: :lt, x: "x", y: 0]},
-                  expr: "y"
-                ]
+              refinement: [
+                pattern: {:appl, [f: 'f', x: 'x']},
+                guard: [{:appl, [op: '<', x: 'x', y: 0]}],
+                expr: 'y'
               ],
-              expr: [refinement: [pattern: {:appl, [f: "f", x: "x"]}, expr: 1]]
+              refinement: [pattern: {:appl, [f: 'f', x: 'x']}, expr: 1]
             ]
           ]
         ]
@@ -145,9 +142,9 @@ defmodule Pantagruel.Test.LegacyParser do
           section: [
             head: [
               decl: [
-                decl_ident: "f",
-                yield_type: :constructor,
-                lambda_codomain: "D"
+                decl_ident: 'f',
+                yield_type: '=>',
+                lambda_codomain: 'D'
               ]
             ]
           ]
@@ -163,14 +160,14 @@ defmodule Pantagruel.Test.LegacyParser do
           section: [
             head: [
               decl: [
-                decl_ident: "f",
-                yield_type: :constructor,
-                lambda_codomain: "D"
+                decl_ident: 'f',
+                yield_type: '=>',
+                lambda_codomain: 'D'
               ],
               decl: [
-                decl_ident: "g",
-                yield_type: :constructor,
-                lambda_codomain: "E"
+                decl_ident: 'g',
+                yield_type: '=>',
+                lambda_codomain: 'E'
               ]
             ]
           ]
@@ -186,11 +183,13 @@ defmodule Pantagruel.Test.LegacyParser do
           section: [
             head: [
               decl: [
-                decl_ident: "f",
-                lambda_args: ["a", "b"],
-                lambda_doms: ["B", "C"],
-                yield_type: :function,
-                lambda_codomain: "D"
+                decl_ident: 'f',
+                decl_args: [
+                  args: ['a', 'b'],
+                  doms: ['B', 'C']
+                ],
+                yield_type: '::',
+                lambda_codomain: 'D'
               ]
             ]
           ]
@@ -206,12 +205,14 @@ defmodule Pantagruel.Test.LegacyParser do
           section: [
             head: [
               decl: [
-                decl_ident: "f",
-                lambda_args: ["x"],
-                lambda_doms: ["Y"],
-                predicate: [
-                  {:appl, [operator: :notequals, x: "x", y: 1]},
-                  {:appl, [operator: :gt, x: "x", y: 0]}
+                decl_ident: 'f',
+                decl_args: [
+                  args: ['x'],
+                  doms: ['Y']
+                ],
+                decl_guards: [
+                  {:appl, [op: '!=', x: 'x', y: 1]},
+                  {:appl, [op: '>', x: 'x', y: 0]}
                 ]
               ]
             ]
@@ -228,11 +229,13 @@ defmodule Pantagruel.Test.LegacyParser do
           section: [
             head: [
               decl: [
-                decl_ident: "f",
-                lambda_args: ["x"],
-                lambda_doms: ["X"],
-                yield_type: :function,
-                lambda_codomain: {:list, ["X"]}
+                decl_ident: 'f',
+                decl_args: [
+                  args: ['x'],
+                  doms: ['X']
+                ],
+                yield_type: '::',
+                lambda_codomain: {:list, ['X']}
               ]
             ]
           ]
@@ -248,13 +251,15 @@ defmodule Pantagruel.Test.LegacyParser do
           section: [
             head: [
               decl: [
-                decl_ident: "f",
-                lambda_args: ["x"],
-                lambda_doms: ["_A"],
-                predicate: [
-                  appl: [operator: :gt, x: {:appl, [operator: :times, x: "x", y: "y"]}, y: 10]
+                decl_ident: 'f',
+                decl_args: [
+                  args: ['x'],
+                  doms: ["_A"]
                 ],
-                yield_type: :function,
+                decl_guards: [
+                  appl: [op: '>', x: {:appl, [op: :times, x: 'x', y: 'y']}, y: 10]
+                ],
+                yield_type: '::',
                 lambda_codomain: {:list, ["_A"]}
               ]
             ]
@@ -271,19 +276,20 @@ defmodule Pantagruel.Test.LegacyParser do
           section: [
             head: [
               decl: [
-                decl_ident: "f",
-                lambda_args: ["x"],
-                lambda_doms: [
-                  {:lambda,
-                   [
-                     lambda_args: ["z"],
-                     lambda_doms: ["Nat"],
-                     yield_type: :function,
-                     lambda_codomain: "z"
-                   ]}
-                ],
-                yield_type: :function,
-                lambda_codomain: "Bool"
+                decl_ident: 'f',
+                decl_args: [
+                  args: ['x'],
+                  doms: [
+                    lambda: [
+                      args: ["z"],
+                      doms: ["Nat"],
+                      yield_type: '::',
+                      lambda_codomain: "z"
+                    ]
+                  ],
+                  yield_type: '::',
+                  lambda_codomain: "Bool"
+                ]
               ]
             ]
           ]
@@ -299,10 +305,14 @@ defmodule Pantagruel.Test.LegacyParser do
           section: [
             head: [
               decl: [
-                decl_ident: "f",
-                lambda_args: ["x"],
-                lambda_doms: ["X"],
-                predicate: [appl: [operator: :from, x: "x", y: {:par, ["Y", "Z"]}]]
+                decl_ident: 'f',
+                decl_args: [
+                  args: ['x'],
+                  doms: ['X']
+                ],
+                decl_guards: [
+                  appl: [op: :from, x: 'x', y: {:par, ['Y', 'Z']}]
+                ]
               ]
             ]
           ]
@@ -359,10 +369,10 @@ defmodule Pantagruel.Test.LegacyParser do
                      set: [
                        {:comp_bindings,
                         [
-                          binding: [bind_symbol: "n", bind_op: :in, bind_domain: "Nat"],
-                          guard: {:appl, [operator: :lte, x: "n", y: 30]}
+                          binding: [bind_symbol: 'n', bind_op: :":", bind_domain: "Nat"],
+                          guard: {:appl, [op: :lte, x: 'n', y: 30]}
                         ]},
-                       {:comp_expression, "n"}
+                       {:comp_expression, 'n'}
                      ]
                    ]}
               ]
@@ -382,18 +392,20 @@ defmodule Pantagruel.Test.LegacyParser do
           section: [
             head: [
               decl: [
-                decl_ident: "f",
-                lambda_args: ["x"],
-                lambda_doms: ["Y"]
+                decl_ident: 'f',
+                decl_args: [
+                  args: ['x'],
+                  doms: ['Y']
+                ]
               ]
             ]
           ],
           section: [
             head: [
               decl: [
-                decl_ident: "y",
-                yield_type: :constructor,
-                lambda_codomain: "Y"
+                decl_ident: 'y',
+                yield_type: '=>',
+                lambda_codomain: 'Y'
               ]
             ]
           ]
@@ -409,11 +421,11 @@ defmodule Pantagruel.Test.LegacyParser do
       tryparse(text,
         sections: [
           section: [
-            head: [decl: [decl_ident: "f"]],
+            head: [decl: [decl_ident: 'f']],
             body: [
-              expr: [appl: [operator: :gt, x: "f", y: 1]],
+              expr: [appl: [op: '>', x: 'f', y: 1]],
               comment: ["Here is a comment."],
-              expr: [appl: [operator: :lt, x: "f", y: 2]]
+              expr: [appl: [op: '<', x: 'f', y: 2]]
             ]
           ]
         ]
@@ -426,27 +438,27 @@ defmodule Pantagruel.Test.LegacyParser do
       text = 'module MOD\nf()'
 
       tryparse(text, [
-        {:module, [mod_name: "MOD"]},
-        sections: [section: [head: [decl: [decl_ident: "f"]]]]
+        {:module, 'MOD'},
+        sections: [section: [head: [decl: [decl_ident: 'f']]]]
       ])
     end
 
     test "module import" do
       text = 'import MOD\nf()'
 
-      tryparse(text, [
-        {:import, [mod_name: "MOD"]},
-        sections: [section: [head: [decl: [decl_ident: "f"]]]]
-      ])
+      tryparse(text,
+        imports: [import: ['MOD']],
+        sections: [section: [head: [decl: [decl_ident: 'f']]]]
+      )
     end
 
     test "module declaration and import" do
       text = 'module MOD\nimport MOD2\nf()'
 
       tryparse(text,
-        module: [mod_name: "MOD"],
-        import: [mod_name: "MOD2"],
-        sections: [section: [head: [decl: [decl_ident: "f"]]]]
+        module: 'MOD',
+        imports: [import: ['MOD2']],
+        sections: [section: [head: [decl: [decl_ident: 'f']]]]
       )
     end
 
@@ -454,9 +466,8 @@ defmodule Pantagruel.Test.LegacyParser do
       text = 'import MOD,MOD2\nf()'
 
       tryparse(text,
-        import: [mod_name: "MOD"],
-        import: [mod_name: "MOD2"],
-        sections: [section: [head: [decl: [decl_ident: "f"]]]]
+        imports: [import: ['MOD', 'MOD2']],
+        sections: [section: [head: [decl: [decl_ident: 'f']]]]
       )
     end
 
@@ -464,9 +475,8 @@ defmodule Pantagruel.Test.LegacyParser do
       text = 'import MOD\nimport MOD2\nf()'
 
       tryparse(text,
-        import: [mod_name: "MOD"],
-        import: [mod_name: "MOD2"],
-        sections: [section: [head: [decl: [decl_ident: "f"]]]]
+        imports: [import: ['MOD'], import: ['MOD2']],
+        sections: [section: [head: [decl: [decl_ident: 'f']]]]
       )
     end
   end

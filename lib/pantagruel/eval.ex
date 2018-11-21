@@ -62,6 +62,7 @@ defmodule Pantagruel.Eval do
     try do
       # Populate the scope with any modules imported with the `import` statement.
       {program, scopes} = handle_imports(program, available_asts, [], MapSet.new())
+      sections = Keyword.get(program, :sections)
 
       eval_section = fn {:section, section}, state ->
         # Evaluate a single section:
@@ -92,7 +93,7 @@ defmodule Pantagruel.Eval do
       end
 
       scopes =
-        program
+        sections
         |> Enum.reduce({scopes, MapSet.new(), [MapSet.new()]}, eval_section)
         |> final_check.()
         |> Enum.reverse()

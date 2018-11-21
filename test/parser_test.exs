@@ -1,19 +1,19 @@
 defmodule ParserTest do
   use ExUnit.Case
 
-  describe "declaration" do
-    test "basic declaration" do
+  describe "decl" do
+    test "basic decl" do
       'f()'
-      |> tryp(sections: [[head: [{:declaration, decl_ident: 'f'}]]])
+      |> tryp(sections: [section: [head: [{:decl, decl_ident: 'f'}]]])
     end
 
-    test "declaration with argument" do
+    test "decl with argument" do
       'f(x : X)'
       |> tryp(
         sections: [
-          [
+          section: [
             head: [
-              {:declaration,
+              {:decl,
                [
                  decl_ident: 'f',
                  decl_args: [
@@ -27,13 +27,13 @@ defmodule ParserTest do
       )
     end
 
-    test "declaration with two argument" do
+    test "decl with two argument" do
       'f(x, y : X, Y)'
       |> tryp(
         sections: [
-          [
+          section: [
             head: [
-              {:declaration,
+              {:decl,
                [
                  decl_ident: 'f',
                  decl_args: [
@@ -47,17 +47,17 @@ defmodule ParserTest do
       )
     end
 
-    test "declaration with yield" do
+    test "decl with yield" do
       'f() :: F'
       |> tryp(
         sections: [
-          [
+          section: [
             head: [
-              {:declaration,
+              {:decl,
                [
                  decl_ident: 'f',
-                 decl_yield: '::',
-                 decl_domain: 'F'
+                 yield_type: '::',
+                 lambda_codomain: 'F'
                ]}
             ]
           ]
@@ -65,19 +65,19 @@ defmodule ParserTest do
       )
     end
 
-    test "declaration with value" do
+    test "decl with value" do
       'f(x, y : X, Y . x) => F'
       |> tryp(
         sections: [
-          [
+          section: [
             head: [
-              {:declaration,
+              {:decl,
                [
                  decl_ident: 'f',
                  decl_args: [args: ['x', 'y'], doms: ['X', 'Y']],
                  decl_guards: ['x'],
-                 decl_yield: '=>',
-                 decl_domain: 'F'
+                 yield_type: '=>',
+                 lambda_codomain: 'F'
                ]}
             ]
           ]
@@ -85,19 +85,19 @@ defmodule ParserTest do
       )
     end
 
-    test "full declaration" do
+    test "full decl" do
       'f(x, y : X, Y . x > y) => F'
       |> tryp(
         sections: [
-          [
+          section: [
             head: [
-              {:declaration,
+              {:decl,
                [
                  decl_ident: 'f',
                  decl_args: [args: ['x', 'y'], doms: ['X', 'Y']],
                  decl_guards: [appl: [op: '>', x: 'x', y: 'y']],
-                 decl_yield: '=>',
-                 decl_domain: 'F'
+                 yield_type: '=>',
+                 lambda_codomain: 'F'
                ]}
             ]
           ]
@@ -105,13 +105,13 @@ defmodule ParserTest do
       )
     end
 
-    test "declaration with unary guard" do
+    test "decl with unary guard" do
       'f(x:X . ~x)'
       |> tryp(
         sections: [
-          [
+          section: [
             head: [
-              {:declaration,
+              {:decl,
                [
                  decl_ident: 'f',
                  decl_args: [args: ['x'], doms: ['X']],
@@ -125,13 +125,13 @@ defmodule ParserTest do
       )
     end
 
-    test "declaration with function application" do
+    test "decl with function application" do
       'f(x:X . f x)'
       |> tryp(
         sections: [
-          [
+          section: [
             head: [
-              {:declaration,
+              {:decl,
                [
                  decl_ident: 'f',
                  decl_args: [args: ['x'], doms: ['X']],
@@ -145,33 +145,35 @@ defmodule ParserTest do
       )
     end
 
-    test "declaration with expression application" do
+    test "decl with expression application" do
       'f(x:X . (x + 1) x)'
       |> tryp(
         sections: [
-          [
+          section: [
             head: [
-              {:declaration,
-               [
-                 decl_ident: 'f',
-                 decl_args: [args: ['x'], doms: ['X']],
-                 decl_guards: [
-                   appl: [f: [appl: [op: '+', x: 'x', y: 1]], x: 'x']
-                 ]
-               ]}
+              decl: [
+                decl_ident: 'f',
+                decl_args: [args: ['x'], doms: ['X']],
+                decl_guards: [
+                  appl: [
+                    f: {:par, [appl: [op: '+', x: 'x', y: 1]]},
+                    x: 'x'
+                  ]
+                ]
+              ]
             ]
           ]
         ]
       )
     end
 
-    test "declaration with two guards" do
+    test "decl with two guards" do
       'f(x:X . x > 1, x < 3)'
       |> tryp(
         sections: [
-          [
+          section: [
             head: [
-              {:declaration,
+              {:decl,
                [
                  decl_ident: 'f',
                  decl_args: [args: ['x'], doms: ['X']],
@@ -192,7 +194,7 @@ defmodule ParserTest do
       'S <= String'
       |> tryp(
         sections: [
-          [head: [alias: [alias_name: ['S'], alias_expr: 'String']]]
+          section: [head: [alias: [alias_name: ['S'], alias_expr: 'String']]]
         ]
       )
     end
@@ -201,7 +203,11 @@ defmodule ParserTest do
       'S, T <= String'
       |> tryp(
         sections: [
-          [head: [alias: [alias_name: ['S', 'T'], alias_expr: 'String']]]
+          section: [
+            head: [
+              alias: [alias_name: ['S', 'T'], alias_expr: 'String']
+            ]
+          ]
         ]
       )
     end
@@ -212,9 +218,9 @@ defmodule ParserTest do
       'f(x:X . [])'
       |> tryp(
         sections: [
-          [
+          section: [
             head: [
-              declaration: [
+              decl: [
                 decl_ident: 'f',
                 decl_args: [args: ['x'], doms: ['X']],
                 decl_guards: [list: []]
@@ -229,9 +235,9 @@ defmodule ParserTest do
       'f(x:X . [x])'
       |> tryp(
         sections: [
-          [
+          section: [
             head: [
-              declaration: [
+              decl: [
                 decl_ident: 'f',
                 decl_args: [args: ['x'], doms: ['X']],
                 decl_guards: [list: ['x']]
@@ -246,9 +252,9 @@ defmodule ParserTest do
       'f(x:X . [x, x 1])'
       |> tryp(
         sections: [
-          [
+          section: [
             head: [
-              declaration: [
+              decl: [
                 decl_ident: 'f',
                 decl_args: [args: ['x'], doms: ['X']],
                 decl_guards: [list: ['x', appl: [f: 'x', x: 1]]]
@@ -265,24 +271,24 @@ defmodule ParserTest do
       'f()\ng()'
       |> tryp(
         sections: [
-          [
+          section: [
             head: [
-              declaration: [decl_ident: 'f'],
-              declaration: [decl_ident: 'g']
+              decl: [decl_ident: 'f'],
+              decl: [decl_ident: 'g']
             ]
           ]
         ]
       )
     end
 
-    test "comment and declaration" do
+    test "comment and decl" do
       '"  ok\nf()'
       |> tryp(
         sections: [
-          [
+          section: [
             head: [
               comment: 'ok',
-              declaration: [decl_ident: 'f']
+              decl: [decl_ident: 'f']
             ]
           ]
         ]
@@ -293,10 +299,10 @@ defmodule ParserTest do
       'f()\n\ng()'
       |> tryp(
         sections: [
-          [
+          section: [
             head: [
-              declaration: [decl_ident: 'f'],
-              declaration: [decl_ident: 'g']
+              decl: [decl_ident: 'f'],
+              decl: [decl_ident: 'g']
             ]
           ]
         ]
@@ -307,18 +313,18 @@ defmodule ParserTest do
   describe "comments" do
     test "comment with no newline" do
       '"  ok'
-      |> tryp(sections: [[head: [comment: 'ok']]])
+      |> tryp(sections: [section: [head: [comment: 'ok']]])
     end
   end
 
   describe "precendence" do
-    test "declaration with precedence" do
+    test "decl with precedence" do
       'f(x: Nat . f x > g y)'
       |> tryp(
         sections: [
-          [
+          section: [
             head: [
-              declaration: [
+              decl: [
                 decl_ident: 'f',
                 decl_args: [args: ['x'], doms: ['Nat']],
                 decl_guards: [
@@ -335,13 +341,13 @@ defmodule ParserTest do
       )
     end
 
-    test "declaration with function precedence" do
+    test "decl with function precedence" do
       'f(x: Nat . f x y)'
       |> tryp(
         sections: [
-          [
+          section: [
             head: [
-              declaration: [
+              decl: [
                 decl_ident: 'f',
                 decl_args: [args: ['x'], doms: ['Nat']],
                 decl_guards: [appl: [f: {:appl, [f: 'f', x: 'x']}, x: 'y']]
@@ -352,13 +358,13 @@ defmodule ParserTest do
       )
     end
 
-    test "declaration with function application on unary" do
+    test "decl with function application on unary" do
       'f(x: Nat . f ~ y)'
       |> tryp(
         sections: [
-          [
+          section: [
             head: [
-              declaration: [
+              decl: [
                 decl_ident: 'f',
                 decl_args: [args: ['x'], doms: ['Nat']],
                 decl_guards: [appl: [f: 'f', x: {:appl, [op: '~', x: 'y']}]]
@@ -369,13 +375,13 @@ defmodule ParserTest do
       )
     end
 
-    test "declaration with unary associativity" do
+    test "decl with unary associativity" do
       'f(x:X . ~ # z x)'
       |> tryp(
         sections: [
-          [
+          section: [
             head: [
-              declaration: [
+              decl: [
                 decl_ident: 'f',
                 decl_args: [args: ['x'], doms: ['X']],
                 decl_guards: [
@@ -407,10 +413,20 @@ defmodule ParserTest do
       'f()\n---\n1'
       |> tryp(
         sections: [
-          [
-            head: [declaration: [decl_ident: 'f']],
+          section: [
+            head: [decl: [decl_ident: 'f']],
             body: [expr: 1]
           ]
+        ]
+      )
+    end
+
+    test "two sections" do
+      'f()\n;\ng()'
+      |> tryp(
+        sections: [
+          section: [head: [decl: [decl_ident: 'f']]],
+          section: [head: [decl: [decl_ident: 'g']]]
         ]
       )
     end
@@ -419,8 +435,8 @@ defmodule ParserTest do
       'f()\n---\n1 <- 2'
       |> tryp(
         sections: [
-          [
-            head: [declaration: [decl_ident: 'f']],
+          section: [
+            head: [decl: [decl_ident: 'f']],
             body: [refinement: [pattern: 1, expr: 2]]
           ]
         ]
@@ -431,8 +447,8 @@ defmodule ParserTest do
       'f()\n---\n1 + 2'
       |> tryp(
         sections: [
-          [
-            head: [declaration: [decl_ident: 'f']],
+          section: [
+            head: [decl: [decl_ident: 'f']],
             body: [expr: {:appl, [op: '+', x: 1, y: 2]}]
           ]
         ]
@@ -443,8 +459,8 @@ defmodule ParserTest do
       'f()\n---\nf x'
       |> tryp(
         sections: [
-          [
-            head: [declaration: [decl_ident: 'f']],
+          section: [
+            head: [decl: [decl_ident: 'f']],
             body: [expr: {:appl, [f: 'f', x: 'x']}]
           ]
         ]
@@ -455,8 +471,8 @@ defmodule ParserTest do
       'f()\n---\n[f x]'
       |> tryp(
         sections: [
-          [
-            head: [declaration: [decl_ident: 'f']],
+          section: [
+            head: [decl: [decl_ident: 'f']],
             body: [expr: {:list, [appl: [f: 'f', x: 'x']]}]
           ]
         ]
@@ -467,8 +483,8 @@ defmodule ParserTest do
       'f()\n---\n1\n2'
       |> tryp(
         sections: [
-          [
-            head: [declaration: [decl_ident: 'f']],
+          section: [
+            head: [decl: [decl_ident: 'f']],
             body: [expr: 1, expr: 2]
           ]
         ]
@@ -481,7 +497,7 @@ defmodule ParserTest do
       'import F\nf()'
       |> tryp(
         imports: [import: ['F']],
-        sections: [[head: [declaration: [decl_ident: 'f']]]]
+        sections: [section: [head: [decl: [decl_ident: 'f']]]]
       )
     end
 
@@ -489,7 +505,7 @@ defmodule ParserTest do
       'import F, X\nf()'
       |> tryp(
         imports: [import: ['F', 'X']],
-        sections: [[head: [declaration: [decl_ident: 'f']]]]
+        sections: [section: [head: [decl: [decl_ident: 'f']]]]
       )
     end
   end
@@ -499,8 +515,8 @@ defmodule ParserTest do
       'f()\n---\n{x : X . x}'
       |> tryp(
         sections: [
-          [
-            head: [declaration: [decl_ident: 'f']],
+          section: [
+            head: [decl: [decl_ident: 'f']],
             body: [
               expr:
                 {:set,
@@ -525,8 +541,8 @@ defmodule ParserTest do
       'f()\n---\n{x : X, x > 1 . x}'
       |> tryp(
         sections: [
-          [
-            head: [declaration: [decl_ident: 'f']],
+          section: [
+            head: [decl: [decl_ident: 'f']],
             body: [
               expr:
                 {:set,
@@ -552,8 +568,8 @@ defmodule ParserTest do
       'f()\n---\n[x from X . x]'
       |> tryp(
         sections: [
-          [
-            head: [declaration: [decl_ident: 'f']],
+          section: [
+            head: [decl: [decl_ident: 'f']],
             body: [
               expr:
                 {:list,
@@ -580,8 +596,8 @@ defmodule ParserTest do
       'f()\n---\nexists x : X . x > 1'
       |> tryp(
         sections: [
-          [
-            head: [declaration: [decl_ident: 'f']],
+          section: [
+            head: [decl: [decl_ident: 'f']],
             body: [
               expr:
                 {:quantification,
@@ -606,8 +622,8 @@ defmodule ParserTest do
       'f()\n---\nexists x : X . all y from X . x > y'
       |> tryp(
         sections: [
-          [
-            head: [declaration: [decl_ident: 'f']],
+          section: [
+            head: [decl: [decl_ident: 'f']],
             body: [
               expr:
                 {:quantification,

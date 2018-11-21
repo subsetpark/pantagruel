@@ -31,7 +31,7 @@ sections
 
 head
 head_line
-declaration
+lambda
 decl_body
 decl_args
 decl_yield
@@ -46,7 +46,7 @@ quantification
 
 Terminals
 '{' '}' '[' ']' '(' ')' '.' ':' ';' ',' from
-int literal float
+int literal float fn
 module
 import
 sep
@@ -58,7 +58,8 @@ unary_operator
 quantifier
 yield_type
 reverse_yield
-refined.
+refined
+where.
 
 Rootsymbol program.
 Endsymbol '$end'.
@@ -84,7 +85,7 @@ imports -> import_line imports : ['$1' | '$2'].
 import_line -> import symbols newline : {import, '$2'}.
 
 sections -> section : [{section, '$1'}].
-sections -> section sections : ['$1' | '$2'].
+sections -> section where sections : [{section, '$1'} | '$3'].
 
 section -> head : [{head, '$1'}].
 section -> head sep body : [{head, '$1'}, {body, '$3'}].
@@ -96,14 +97,14 @@ section -> head sep body : [{head, '$1'}, {body, '$3'}].
 head -> head_line : ['$1'].
 head -> head_line head : ['$1' | '$2'].
 
-head_line -> declaration newline : '$1'.
+head_line -> lambda newline : '$1'.
 head_line -> alias newline : '$1'.
 head_line -> comment newline : unwrap('$1').
 
 % i. declarations
 
-declaration -> a_symbol '(' decl_body ')' decl_yield  :
-    {declaration, [{decl_ident, '$1'}|'$3' ++ '$5']}.
+lambda -> a_symbol '(' decl_body ')' decl_yield  :
+    {decl, [{decl_ident, '$1'}|'$3' ++ '$5']}.
 
 decl_body -> '$empty' : [].
 decl_body -> decl_args : [{decl_args, '$1'}].
@@ -114,7 +115,7 @@ decl_args -> symbols ':' symbols : [{args, '$1'}, {doms, '$3'}].
 
 decl_yield -> '$empty' : [].
 decl_yield -> yield_type a_symbol :
-    [{decl_yield, unwrap('$1')}, {decl_domain, '$2'}].
+    [{yield_type, unwrap('$1')}, {lambda_codomain, '$2'}].
 
 % ii. aliases
 
@@ -131,7 +132,8 @@ body -> body_line body : ['$1' | '$2'].
 body_line -> expression newline : {expr, '$1'}.
 body_line -> expression refined expression newline :
     {refinement, [{pattern, '$1'}, {expr, '$3'}]}.
-body_line -> expression '.' expressions refined expression newline : {refinement, '$1'}.
+body_line -> expression '.' expressions refined expression newline :
+    {refinement, [{pattern, '$1'}, {guard, '$3'}, {expr, '$5'}]}.
 
 % EXPRESSION PRECEDENCE
 % This is a strange area. Here are the precedence levels of Pantagruel:
@@ -165,12 +167,13 @@ term -> list : '$1'.
 term -> set : '$1'.
 term -> bunch : '$1'.
 term -> quantification : '$1'.
+term -> fn lambda : {lambda, '$1'}.
 
 %
 % END EXPRESSION PRECEDENCE
 %
 
-bunch -> '(' maybe_expressions ')' : '$2'.
+bunch -> '(' maybe_expressions ')' : {par, '$2'}.
 list -> '[' maybe_expressions ']' : {list, '$2'}.
 set -> '{' maybe_expressions '}' : {set, '$2'}.
 

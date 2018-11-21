@@ -11,8 +11,8 @@ defmodule EvalTest do
   end
 
   defp scan_and_parse(text) do
-    with {:ok, tokens, _} <- :lexer.string(text),
-         {:ok, parsed} <- Pantagruel.Parse.program(tokens) do
+    with {:ok, tokens, _} <- :lexer.string(text ++ '\n') do
+      {:ok, parsed} = Pantagruel.Parse.program(tokens)
       parsed
     end
   end
@@ -75,7 +75,13 @@ defmodule EvalTest do
     end
 
     test "eval whole section" do
-      parsed = "f(x:Nat)\nf x > 0" |> scan_and_parse
+      parsed =
+        """
+        f(x:Nat)
+        ---
+        f x > 0
+        """
+        |> scan_and_parse
 
       assert [
                %{
@@ -86,7 +92,13 @@ defmodule EvalTest do
     end
 
     test "eval two sections" do
-      parsed = "f(x:Nat)\n;\ng() :: Nat" |> scan_and_parse
+      parsed =
+        """
+        f(x:Nat)
+        ;
+        g() :: Nat
+        """
+        |> scan_and_parse
 
       assert [
                %{
@@ -110,7 +122,13 @@ defmodule EvalTest do
     end
 
     test "unbound variable in body" do
-      parsed = "f(x:Nat)\nf x = g x" |> scan_and_parse
+      parsed =
+        """
+        f(x:Nat)
+        ---
+        f x = g x
+        """
+        |> scan_and_parse
 
       {:error, {:unbound_variables, _}} = Eval.eval(parsed, [])
     end
@@ -119,6 +137,7 @@ defmodule EvalTest do
       parsed =
         """
         f(x:Nat)
+        ---
         f x <- g x
         ;
         g(y:Nat)::Bool
@@ -141,6 +160,7 @@ defmodule EvalTest do
       parsed =
         """
         f(x:Nat)
+        ---
         f x = g x
         ;
         b() => Bool
@@ -156,6 +176,7 @@ defmodule EvalTest do
       parsed =
         """
         f(x:Nat)
+        ---
         f x : fn (z:D)::D
         """
         |> scan_and_parse
@@ -167,6 +188,7 @@ defmodule EvalTest do
       parsed =
         """
         f(x:Nat)
+        ---
         f x : fn(z:D)::D
         ;
         d() => D
@@ -189,6 +211,7 @@ defmodule EvalTest do
       parsed =
         """
         f(x:Nat)
+        ---
         f x : (z:Nat . z > 100)
         """
         |> scan_and_parse
@@ -208,6 +231,7 @@ defmodule EvalTest do
         """
         f(x:Nat)
         con()=> X
+        ---
         all y : X . y < 10
         """
         |> scan_and_parse
@@ -227,6 +251,7 @@ defmodule EvalTest do
         """
         f(x:Nat)
         con()=> X
+        ---
         all y : X . y < 10
         y > 1
         """
@@ -254,6 +279,7 @@ defmodule EvalTest do
       parsed =
         """
         w()
+        ---
         all j, k : X . j > k
         """
         |> scan_and_parse
@@ -287,6 +313,7 @@ defmodule EvalTest do
       parsed =
         """
         X <= 1
+        ---
         all (j, k) : X . j > k
         """
         |> scan_and_parse
@@ -302,6 +329,7 @@ defmodule EvalTest do
       parsed =
         """
         f(x:Nat)
+        ---
         exists y : Nat . f y > 10
         """
         |> scan_and_parse
@@ -324,6 +352,7 @@ defmodule EvalTest do
       parsed =
         """
         f()
+        ---
         f <- (all z from 1.f . f)
         """
         |> scan_and_parse
@@ -348,6 +377,7 @@ defmodule EvalTest do
         x()
         ;
         y()
+        ---
         y x = f
         """
         |> scan_and_parse
@@ -384,6 +414,7 @@ defmodule EvalTest do
       parsed =
         """
         f(x:Nat)
+        ---
         [y from Nat . f x > y]
         """
         |> scan_and_parse
@@ -405,6 +436,7 @@ defmodule EvalTest do
       parsed =
         """
         f(x:_A)
+        ---
         [y from _A . f x > y]
         """
         |> scan_and_parse
@@ -465,6 +497,7 @@ defmodule EvalTest do
       parsed =
         """
         f(x, y:Nat)
+        ---
         f.x
         f.y
         """
@@ -488,6 +521,7 @@ defmodule EvalTest do
       parsed =
         """
         f(x, y:Nat)
+        ---
         (f 1).x
         """
         |> scan_and_parse
@@ -544,6 +578,7 @@ defmodule EvalTest do
       parsed =
         """
         f()
+        ---
         (all x from Nat . all y from x . y > 0)
         """
         |> scan_and_parse
@@ -566,7 +601,7 @@ defmodule EvalTest do
         """
         sort(xs : [X]) :: [X]
         x() => X
-
+        ---
         all (x,y) from xs'⸳x <= y = ind xs' x < ind xs' y
 
         ;
