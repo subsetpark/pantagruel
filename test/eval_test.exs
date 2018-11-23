@@ -5,7 +5,6 @@ defmodule EvalTest do
 
   defp scan_and_parse(text) when is_binary(text) do
     text
-    |> Kernel.<>("\n")
     |> String.to_charlist()
     |> scan_and_parse
   end
@@ -28,8 +27,16 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "x" => %Variable{name: "x", domain: "Nat"},
-                 "f" => %Lambda{name: "f", domain: ["Nat"], codomain: "Real", type: :function}
+                 {:symbol, 'f'} => %Pantagruel.Values.Lambda{
+                   codomain: {:symbol, 'Real'},
+                   domain: [symbol: 'Nat'],
+                   name: {:symbol, 'f'},
+                   type: '::'
+                 },
+                 {:symbol, 'x'} => %Pantagruel.Values.Variable{
+                   domain: {:symbol, 'Nat'},
+                   name: {:symbol, 'x'}
+                 }
                }
              ] == eval(parsed)
     end
@@ -53,7 +60,12 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Lambda{name: "f", domain: [{:symbol, 'X'}, "Y"], codomain: "Real", type: :function},
+                 "f" => %Lambda{
+                   name: "f",
+                   domain: [{:symbol, 'X'}, "Y"],
+                   codomain: "Real",
+                   type: '::'
+                 },
                  "x" => %Variable{name: "x", domain: {:symbol, 'X'}},
                  "y" => %Variable{name: "y", domain: "Y"},
                  {:symbol, 'X'} => %Domain{name: {:symbol, 'X'}, ref: {:symbol, 'X'}},
@@ -62,13 +74,13 @@ defmodule EvalTest do
                    name: "make_x",
                    domain: [],
                    codomain: {:symbol, 'X'},
-                   type: :constructor
+                   type: '=>'
                  },
                  "make_y" => %Lambda{
                    name: "make_y",
                    domain: [],
                    codomain: "Y",
-                   type: :constructor
+                   type: '=>'
                  }
                }
              ] == eval(parsed)
@@ -102,20 +114,23 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "x" => %Variable{name: "x", domain: "Nat"},
-                 "f" => %Lambda{
-                   name: "f",
-                   domain: ["Nat"],
+                 {:symbol, 'f'} => %Pantagruel.Values.Lambda{
                    codomain: nil,
+                   domain: [symbol: 'Nat'],
+                   name: {:symbol, 'f'},
                    type: nil
+                 },
+                 {:symbol, 'x'} => %Pantagruel.Values.Variable{
+                   domain: {:symbol, 'Nat'},
+                   name: {:symbol, 'x'}
                  }
                },
                %{
-                 "g" => %Lambda{
-                   name: "g",
+                 {:symbol, 'g'} => %Pantagruel.Values.Lambda{
+                   codomain: {:symbol, 'Nat'},
                    domain: [],
-                   codomain: "Nat",
-                   type: :function
+                   name: {:symbol, 'g'},
+                   type: '::'
                  }
                }
              ] == eval(parsed)
@@ -150,7 +165,7 @@ defmodule EvalTest do
                  "x" => %Variable{name: "x", domain: "Nat"}
                },
                %{
-                 "g" => %Lambda{name: "g", domain: ["Nat"], codomain: "Bool", type: :function},
+                 "g" => %Lambda{name: "g", domain: ["Nat"], codomain: "Bool", type: '::'},
                  "y" => %Variable{name: "y", domain: "Nat"}
                }
              ] == eval(parsed)
@@ -201,7 +216,7 @@ defmodule EvalTest do
                  "x" => %Variable{name: "x", domain: "Nat"}
                },
                %{
-                 "d" => %Lambda{name: "d", domain: [], codomain: "D", type: :constructor},
+                 "d" => %Lambda{name: "d", domain: [], codomain: "D", type: '=>'},
                  "D" => %Domain{name: "D", ref: "D"}
                }
              ] == eval(parsed)
@@ -239,7 +254,7 @@ defmodule EvalTest do
       assert [
                %{
                  "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: nil},
-                 "con" => %Lambda{name: "con", domain: [], codomain: {:symbol, 'X'}, type: :constructor},
+                 "con" => %Lambda{name: "con", domain: [], codomain: {:symbol, 'X'}, type: '=>'},
                  {:symbol, 'X'} => %Domain{name: {:symbol, 'X'}, ref: {:symbol, 'X'}},
                  "x" => %Variable{name: "x", domain: "Nat"}
                }
@@ -259,7 +274,7 @@ defmodule EvalTest do
 
       {:error, {:unbound_variables, e}} = Eval.eval(parsed, [])
 
-      assert e.unbound == MapSet.new(appl: [operator: :gt, x: "y", y: 1])
+      assert e.unbound == MapSet.new(appl: [op: '>', x: "y", y: 1])
     end
 
     test "too many domains" do
@@ -300,7 +315,7 @@ defmodule EvalTest do
                  expr:
                    {:appl,
                     [
-                      operator: :gt,
+                      op: '>',
                       x: {:symbol, 'j'},
                       y: {:symbol, 'k'}
                     ]}
@@ -464,9 +479,9 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "Status" => %Domain{
-                   ref: {:set, [literal: "ok"]},
-                   name: "Status"
+                 {:symbol, 'Status'} => %Domain{
+                   ref: {:set, [literal: 'ok']},
+                   name: {:symbol, 'Status'}
                  }
                }
              ] == eval(parsed)
@@ -481,13 +496,13 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "Status" => %Domain{
-                   ref: {:set, [literal: "ok"]},
-                   name: "Status"
+                 {:symbol, 'Status'} => %Domain{
+                   ref: {:set, [literal: 'ok']},
+                   name: {:symbol, 'Status'}
                  },
-                 "State" => %Domain{
-                   ref: {:set, [literal: "ok"]},
-                   name: "State"
+                 {:symbol, 'State'} => %Domain{
+                   ref: {:set, [literal: 'ok']},
+                   name: {:symbol, 'State'}
                  }
                }
              ] == eval(parsed)
@@ -561,7 +576,7 @@ defmodule EvalTest do
                              guard:
                                {:appl,
                                 [
-                                  operator: :lte,
+                                  op: :lte,
                                   x: "n",
                                   y: 30
                                 ]}
@@ -602,7 +617,7 @@ defmodule EvalTest do
         sort(xs : [X]) :: [X]
         x() => X
         ---
-        all (x,y) from xs' \\ x <= y = ind xs' x < ind xs' y
+        all (x,y) from xs' \\ x =< y <-> ind xs' x < ind xs' y
 
         ;
 
@@ -617,9 +632,9 @@ defmodule EvalTest do
                    domain: [list: [{:symbol, 'X'}]],
                    codomain: {:list, [{:symbol, 'X'}]},
                    name: "sort",
-                   type: :function
+                   type: '::'
                  },
-                 "x" => %Lambda{codomain: {:symbol, 'X'}, domain: [], name: "x", type: :constructor},
+                 "x" => %Lambda{codomain: {:symbol, 'X'}, domain: [], name: "x", type: '=>'},
                  "xs" => %Variable{domain: {:list, [{:symbol, 'X'}]}, name: "xs"}
                },
                %{
@@ -628,7 +643,7 @@ defmodule EvalTest do
                    domain: [{:list, [{:symbol, 'X'}]}, {:symbol, 'X'}],
                    codomain: "Nat0",
                    name: "ind",
-                   type: :function
+                   type: '::'
                  },
                  "xs" => %Variable{domain: {:list, [{:symbol, 'X'}]}, name: "xs"}
                }

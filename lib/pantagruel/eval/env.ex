@@ -28,35 +28,35 @@ defmodule Pantagruel.Env do
   end
 
   @starting_environment %{
-    "Bool" => %Variable{name: "𝔹", domain: "𝔹"},
-    "Real" => %Variable{name: "ℝ", domain: "ℝ"},
-    "Int" => %Variable{name: "ℤ", domain: "ℤ"},
-    "Nat" => %Variable{name: "ℕ", domain: "ℕ"},
-    "Nat0" => %Variable{name: "ℕ0", domain: "ℕ0"},
-    "String" => %Variable{name: "𝕊", domain: "𝕊"},
-    :equals => %Variable{name: "=", domain: "ℝ"},
-    :notequals => %Variable{name: "≠", domain: "ℝ"},
-    :not => %Variable{name: "¬", domain: "𝔹"},
-    :gt => %Variable{name: ">", domain: "ℝ"},
-    :lt => %Variable{name: "<", domain: "ℝ"},
-    :gte => %Variable{name: "≥", domain: "ℝ"},
-    :lte => %Variable{name: "≤", domain: "ℝ"},
-    :plus => %Variable{name: "+", domain: "ℝ"},
-    :minus => %Variable{name: "−", domain: "ℝ"},
-    :times => %Variable{name: "×", domain: "ℝ"},
-    :divides => %Variable{name: "÷", domain: "ℝ"},
-    :exp => %Variable{name: "^", domain: "ℝ"},
-    :in => %Variable{name: ":", domain: "⊤"},
-    :from => %Variable{name: "∈", domain: "⊤"},
-    :iff => %Variable{name: "↔", domain: "𝔹"},
-    :then => %Variable{name: "→", domain: "𝔹"},
-    :and => %Variable{name: "∧", domain: "𝔹"},
-    :or => %Variable{name: "∨", domain: "𝔹"},
-    :exists => %Variable{name: "∃", domain: "⊤"},
-    :forall => %Variable{name: "∀", domain: "⊤"},
-    :card => %Variable{name: "#", domain: "⊤"},
-    :union => %Variable{name: "∪", domain: "U"},
-    :intersection => %Variable{name: "∩", domain: "U"}
+    'Bool' => %Variable{name: "𝔹", domain: "𝔹"},
+    'Real' => %Variable{name: "ℝ", domain: "ℝ"},
+    'Int' => %Variable{name: "ℤ", domain: "ℤ"},
+    'Nat' => %Variable{name: "ℕ", domain: "ℕ"},
+    'Nat0' => %Variable{name: "ℕ0", domain: "ℕ0"},
+    'String' => %Variable{name: "𝕊", domain: "𝕊"},
+    '=' => %Variable{name: "=", domain: "ℝ"},
+    '!=' => %Variable{name: "≠", domain: "ℝ"},
+    '~' => %Variable{name: "¬", domain: "𝔹"},
+    '>' => %Variable{name: ">", domain: "ℝ"},
+    '<' => %Variable{name: "<", domain: "ℝ"},
+    '>=' => %Variable{name: "≥", domain: "ℝ"},
+    '=<' => %Variable{name: "≤", domain: "ℝ"},
+    '+' => %Variable{name: "+", domain: "ℝ"},
+    '-' => %Variable{name: "−", domain: "ℝ"},
+    '*' => %Variable{name: "×", domain: "ℝ"},
+    '%' => %Variable{name: "÷", domain: "ℝ"},
+    '^' => %Variable{name: "^", domain: "ℝ"},
+    ':' => %Variable{name: ":", domain: "⊤"},
+    'from' => %Variable{name: "∈", domain: "⊤"},
+    '<->' => %Variable{name: "↔", domain: "𝔹"},
+    '->' => %Variable{name: "→", domain: "𝔹"},
+    'and' => %Variable{name: "∧", domain: "𝔹"},
+    'or' => %Variable{name: "∨", domain: "𝔹"},
+    'exists' => %Variable{name: "∃", domain: "⊤"},
+    'all' => %Variable{name: "∀", domain: "⊤"},
+    '#' => %Variable{name: "#", domain: "⊤"},
+    '&' => %Variable{name: "∪", domain: "U"},
+    '|' => %Variable{name: "∩", domain: "U"}
   }
 
   @doc """
@@ -75,8 +75,9 @@ defmodule Pantagruel.Env do
   def bind(scope, {name, value}), do: bind(scope, name, value)
 
   def bind_lambda(scope, decl) do
-    args = decl[:lambda_args] || []
-    doms = decl[:lambda_doms] || []
+    lambda_args = decl[:lambda_args]
+    args = lambda_args[:args] || []
+    doms = lambda_args[:doms] || []
     # Introduce any generic domains into the scope.
     scope =
       doms
@@ -218,7 +219,7 @@ defmodule Pantagruel.Env do
   defp make_variable(_, %{} = v), do: v
   defp make_variable(name, domain), do: %Variable{name: name, domain: domain}
 
-  defp bind_codomain(:constructor, scope, codomain) do
+  defp bind_codomain('=>', scope, codomain) do
     bind(scope, codomain, %Domain{name: codomain, ref: codomain})
   end
 
