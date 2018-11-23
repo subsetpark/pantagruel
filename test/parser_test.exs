@@ -214,7 +214,7 @@ defmodule ParserTest do
           section: [
             head: [
               alias: [
-                alias_name: [{:symbol, 'S'}, {:symbol, 'T'}],
+                alias_name: [symbol: 'S', symbol: 'T'],
                 alias_expr: {:symbol, 'String'}
               ]
             ]
@@ -229,7 +229,7 @@ defmodule ParserTest do
         sections: [
           section: [
             head: [
-              alias: [alias_name: [symbol: 'Status'], alias_expr: {:set, ['ok']}]
+              alias: [alias_name: [symbol: 'Status'], alias_expr: {:set, [literal: 'ok']}]
             ]
           ]
         ]
