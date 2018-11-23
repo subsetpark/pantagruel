@@ -2,6 +2,8 @@ Nonterminals
 
 a_symbol
 symbols
+bare_symbol
+bare_symbols
 expression
 expressions
 maybe_expressions
@@ -21,6 +23,7 @@ binding
 bin_operation
 un_operation
 function_application
+object_access
 
 program
 module_line
@@ -45,7 +48,7 @@ quantification
 
 
 Terminals
-'{' '}' '[' ']' '(' ')' '.' ':' ';' ',' from
+'{' '}' '[' ']' '(' ')' '.' ':' ',' '\\' from
 int literal float fn
 module
 import
@@ -77,12 +80,12 @@ program -> imports sections : [{imports, '$1'}, {sections, '$2'}].
 program -> module sections : [{module, '$1'}, {sections, '$2'}].
 program -> sections : [{sections, '$1'}].
 
-module_line -> module a_symbol newline : '$2'.
+module_line -> module bare_symbol newline : '$2'.
 
 imports -> import_line : ['$1'].
 imports -> import_line imports : ['$1' | '$2'].
 
-import_line -> import symbols newline : {import, '$2'}.
+import_line -> import bare_symbols newline : {import, '$2'}.
 
 sections -> section : [{section, '$1'}].
 sections -> section where sections : [{section, '$1'} | '$3'].
@@ -108,7 +111,7 @@ lambda -> a_symbol '(' decl_body ')' decl_yield  :
 
 decl_body -> '$empty' : [].
 decl_body -> decl_args : [{decl_args, '$1'}].
-decl_body -> decl_args '.' expressions :
+decl_body -> decl_args '\\' expressions :
     [{decl_args, '$1'}, {decl_guards, '$3'}].
 
 decl_args -> symbols ':' symbols : [{args, '$1'}, {doms, '$3'}].
@@ -132,7 +135,7 @@ body -> body_line body : ['$1' | '$2'].
 body_line -> expression newline : {expr, '$1'}.
 body_line -> expression refined expression newline :
     {refinement, [{pattern, '$1'}, {expr, '$3'}]}.
-body_line -> expression '.' expressions refined expression newline :
+body_line -> expression '\\' expressions refined expression newline :
     {refinement, [{pattern, '$1'}, {guard, '$3'}, {expr, '$5'}]}.
 
 % EXPRESSION PRECEDENCE
@@ -155,9 +158,12 @@ function_application -> un_operation : '$1'.
 function_application -> function_application un_operation :
     {appl, [{f, '$1'}, {x, '$2'}]}.
 
-un_operation -> term : '$1'.
+un_operation -> object_access: '$1'.
 un_operation -> unary_operator un_operation :
     {appl, [{op, unwrap('$1')}, {x, '$2'}]}.
+
+object_access -> term : '$1'.
+object_access -> object_access '.' term : {dot, [{f, '$3'}, {x, '$1'}]}.
 
 term -> a_symbol : '$1'.
 term -> int : unwrap('$1').
@@ -182,7 +188,7 @@ expressions -> expression ',' expressions : ['$1' | '$3'].
 
 maybe_expressions -> '$empty' : [].
 maybe_expressions -> expressions : '$1'.
-maybe_expressions -> binding_or_guards '.' expression :
+maybe_expressions -> binding_or_guards '\\' expression :
     {comprehension, [{bindings, '$1'}, {expr, '$3'}]}.
 
 binding_or_guards -> binding_or_guard : ['$1'].
@@ -197,7 +203,12 @@ binding -> term bind_operator expression :
 symbols -> a_symbol : ['$1'].
 symbols -> a_symbol ',' symbols : ['$1' | '$3'].
 
+bare_symbols -> bare_symbol : ['$1'].
+bare_symbols -> bare_symbol ',' bare_symbols : ['$1' | '$3'].
+
 a_symbol -> symbol : unwrap('$1').
+
+bare_symbol -> symbol : bare('$1').
 
 bind_operator -> ':' : '$1'.
 bind_operator -> from : '$1'.
@@ -205,7 +216,7 @@ bind_operator -> from : '$1'.
 a_binary_operator -> binary_operator : '$1'.
 a_binary_operator -> bind_operator : '$1'.
 
-quantification -> quantifier binding_or_guards '.' expression :
+quantification -> quantifier binding_or_guards '\\' expression :
     {quantification, [{quantifier, unwrap('$1')}, {bindings, '$2'}, {expr, '$4'}]}.
 
 Erlang code.
@@ -214,3 +225,5 @@ unwrap({comment, _, Symbol}) -> {comment, Symbol};
 unwrap({symbol, _, Symbol}) -> {symbol, Symbol};
 unwrap({_, _, Symbol}) -> Symbol;
 unwrap({Symbol, _}) -> Symbol.
+
+bare({symbol, _, Symbol}) -> Symbol.

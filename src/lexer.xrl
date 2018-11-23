@@ -5,7 +5,7 @@ FLOAT           = [-+]?[0-9]*\.?[0-9]+
 LITERAL         = (`[^\n]*`|`[^\s\n]+)
 OPERATOR        = <>\-=~/\*\+#\.%^:|&
 OPERATOR_CHOICE = (>=|==|!=|->|<->|<-|<=|=>|=|-|>|<|\+|\*|~|#|%|\^|;|::|:|&|\|)
-DELIMITER       = \[\]\(\){},\.
+DELIMITER       = \[\]\(\){},\.\\
 SYMBOL          = [^\s\n&&{OPERATOR}&&{DELIMITER}:\"]+
 SP              = \t\s
 YIELD_TYPE      = (=>|::)
