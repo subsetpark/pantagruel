@@ -32,16 +32,14 @@ defmodule Pantagruel.Format do
   Generate a string representation of a parsed program section.
   """
   def format_section({:import, mod_name: mod_name}), do: ": #{mod_name}"
-  def format_section({:module, mod_name: mod_name}), do: "# #{mod_name}"
+  def format_section({:module, mod_name}), do: "# #{mod_name}"
 
-  def format_section({:section, section}) do
-    Stream.concat(section[:head], section[:body] || [])
-    # For now, assume we want markdown compatibility.
-    |> Stream.map(&(format_line(&1) <> "  "))
-    |> Enum.join("\n")
+  def format_section({:chapters, chapters}) do
+    chapters
+    |> Enum.map(&format_chapter/1)
   end
 
-  defguard is_symbol(s) when is_binary(s) or is_number(s) or is_atom(s)
+  defguard is_term(s) when is_number(s) or is_atom(s) or is_binary(s)
 
   @doc """
   Format an individual expression.
@@ -51,9 +49,9 @@ defmodule Pantagruel.Format do
   def format_exp(%Module{name: n}, _), do: "# #{n}"
   def format_exp(%Domain{name: n, ref: ref}, s), do: join_exp([n, "⇐", ref], s, " ")
   def format_exp(%Variable{name: n, domain: dom}, s), do: join_exp([n, ":", dom], s, " ")
-  def format_exp(s, []) when is_binary(s), do: format_binary(s)
-  def format_exp(s, []) when is_symbol(s), do: Env.lookup_binding_name(s)
-  def format_exp(s, scopes) when is_symbol(s), do: format_symbol(s, scopes)
+  def format_exp({:symbol, _} = s, []), do: format_symbol(s)
+  def format_exp(s, []) when is_term(s), do: Env.lookup_binding_name(s)
+  def format_exp(s, scopes) when is_term(s), do: format_symbol(s, scopes)
   def format_exp({c, exps}, s) when is_container(c), do: format_container(c, exps, s)
   def format_exp({:quantification, q}, s), do: format_quantification(q, s)
   def format_exp({:comprehension, [{container, c}]}, s), do: format_comprehension(container, c, s)
@@ -70,6 +68,13 @@ defmodule Pantagruel.Format do
   def format_exp({:dot, f: f, x: x}, s), do: join_exp([x, f], s, ".")
   def format_exp(exp, s), do: join_exp(exp, s, " ")
 
+  defp format_chapter({:chapter, chapter}) do
+    Stream.concat(chapter[:head], chapter[:body] || [])
+    # For now, assume we want markdown compatibility.
+    |> Stream.map(&(format_line(&1) <> "  "))
+    |> Enum.join("\n")
+  end
+
   # Format the contents of the environment after program evaluation.
   defp format_scope(scope) do
     sort = fn
@@ -77,8 +82,8 @@ defmodule Pantagruel.Format do
       %Domain{}, %Lambda{} -> true
       %Domain{}, %Variable{} -> true
       %Lambda{}, %Variable{} -> true
-      %Lambda{type: :constructor}, %Lambda{type: :function} -> true
-      %Lambda{type: :function}, %Lambda{type: :constructor} -> false
+      %Lambda{type: '=>'}, %Lambda{type: '::'} -> true
+      %Lambda{type: '::'}, %Lambda{type: '=>'} -> false
       %Lambda{type: t}, %Lambda{type: nil} when not is_nil(t) -> true
       %Domain{ref: a}, %Domain{ref: b} -> a <= b
       %{__struct__: t, name: a}, %{__struct__: t, name: b} -> a <= b
@@ -102,7 +107,10 @@ defmodule Pantagruel.Format do
     |> Enum.join(sep)
   end
 
-  defp format_binary(s), do: Env.lookup_binding_name(s) |> String.replace("_", "-")
+  defp format_symbol(s) do
+    Env.lookup_binding_name(s)
+    |> String.replace("_", "-")
+  end
 
   defp format_line({:decl, declaration}), do: format_lambda(declaration, decl: declaration)
   defp format_line({:comment, comment}), do: format_comment(comment)
@@ -179,9 +187,9 @@ defmodule Pantagruel.Format do
     scope = opts[:scope] || []
 
     prefix = lambda_prefix(name, scope)
-    args = lambda_args(opts[:decl][:lambda_args], scope)
+    args = lambda_args(opts[:decl][:lambda_args][:args], scope)
     dom = join_exp(domain, scope, ",")
-    pred = lambda_predicate(opts[:decl][:predicate], scope)
+    pred = lambda_guard(opts[:decl][:lambda_guard], scope)
     yields = lambda_yields(type)
     codom = format_exp(codomain, scope)
 
@@ -199,12 +207,12 @@ defmodule Pantagruel.Format do
   defp lambda_args(nil, _), do: ""
   defp lambda_args(args, s), do: join_exp(args, s, ",") <> ":"
 
-  defp lambda_predicate(nil, _), do: ""
-  defp lambda_predicate(expr, s), do: " ⸳ " <> join_exp(expr, s, ",")
+  defp lambda_guard(nil, _), do: ""
+  defp lambda_guard(expr, s), do: " ⸳ " <> join_exp(expr, s, ",")
 
   defp lambda_yields(nil), do: ""
-  defp lambda_yields(:function), do: " ∷ "
-  defp lambda_yields(:constructor), do: " ⇒ "
+  defp lambda_yields('::'), do: " ∷ "
+  defp lambda_yields('=>'), do: " ⇒ "
 
   defp delimiters(:par), do: {"(", ")"}
   defp delimiters(:list), do: {"[", "]"}

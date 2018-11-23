@@ -21,28 +21,28 @@ defmodule Pantagruel.Eval do
   end
 
   @typedoc """
-  A Pantagruel AST is a sequence of *sections*, each of which consists
+  A Pantagruel AST is a sequence of *chapters*, each of which consists
   of a header and optional body.
 
-  The state of a running Pantagruel program as of any section consists
+  The state of a running Pantagruel program as of any chapter consists
   of three elements:
 
-  - The execution environment, a list of scopes, one for each section. The
-  head of the environment corresponds to the current section. At any
-  given section, any symbol introduced in that section will be bound
+  - The execution environment, a list of scopes, one for each chapter. The
+  head of the environment corresponds to the current chapter. At any
+  given chapter, any symbol introduced in that chapter will be bound
   into the scope at the head of the environment.
 
   - The header symbols to check for boundness. Any symbol used in a
-  section header that is not in a declaration position is included here
+  chapter header that is not in a declaration position is included here
   to be checked for boundness. Every symbol used in a header must be
   bound *by the end of that header*.
 
   - The body symbols to check for boundness. Any symbol used in a
-  section body that is not in a declaration position is included here
+  chapter body that is not in a declaration position is included here
   to be checked for boundness. Every symbol used in a body must be
   bound *by the end of the _following_ body*. Unlike with headers,
   symbols *may* be referred to before they are defined, but they must
-  be defined in the following section at the latest.
+  be defined in the following chapter at the latest.
   """
   @type t :: {Env.t(), MapSet.t(), [MapSet.t()]}
 
@@ -62,30 +62,30 @@ defmodule Pantagruel.Eval do
     try do
       # Populate the scope with any modules imported with the `import` statement.
       {program, scopes} = handle_imports(program, available_asts, [], MapSet.new())
-      sections = Keyword.get(program, :sections)
+      chapters = Keyword.get(program, :chapters) || []
 
-      eval_section = fn {:section, section}, state ->
-        # Evaluate a single section:
+      eval_chapter = fn {:chapter, chapter}, state ->
+        # Evaluate a single chapter:
         # 1. evaluate the head
         {state, header_unbounds, unbounds} =
-          Enum.reduce(section[:head], new_state(state, mod_name), &eval_header_statement/2)
+          Enum.reduce(chapter[:head], new_state(state, mod_name), &eval_header_statement/2)
 
         # 2. check for any unbound symbols in the head
         :ok = Env.check_unbound(state, header_unbounds)
 
         # 3. evaluate the body
         {state, [unbounds | rest]} =
-          Enum.reduce(section[:body] || [], {state, unbounds}, &eval_body_statement/2)
+          Enum.reduce(chapter[:body] || [], {state, unbounds}, &eval_body_statement/2)
 
-        # 4. check for any unbound symbols from the *previous* section body (ie,
-        #    which should have been defined in this section)
+        # 4. check for any unbound symbols from the *previous* chapter body (ie,
+        #    which should have been defined in this chapter)
         :ok = Env.check_unbound(state, unbounds)
 
         {state, MapSet.new(), rest}
       end
 
       # Force a check for unbound values. All symbols must be bound by the
-      # end of the program; thus the final section cannot introduce any
+      # end of the program; thus the final chapter cannot introduce any
       # unbound symbols.
       final_check = fn {scopes, _, [unbound]} ->
         :ok = Env.check_unbound(scopes, unbound)
@@ -93,8 +93,8 @@ defmodule Pantagruel.Eval do
       end
 
       scopes =
-        sections
-        |> Enum.reduce({scopes, MapSet.new(), [MapSet.new()]}, eval_section)
+        chapters
+        |> Enum.reduce({scopes, MapSet.new(), [MapSet.new()]}, eval_chapter)
         |> final_check.()
         |> Enum.reverse()
 
@@ -150,7 +150,7 @@ defmodule Pantagruel.Eval do
   defp include_for_binding_check(unbounds, variables),
     do: MapSet.union(unbounds, variables |> MapSet.new())
 
-  # Evaluate the statement types ("declarations") found in section
+  # Evaluate the statement types ("declarations") found in chapter
   # headers. Header statements come in three forms:
   # 1. Comments, which are ignored;
   defp eval_header_statement({:comment, _}, state), do: state
@@ -177,16 +177,16 @@ defmodule Pantagruel.Eval do
       [
         # Replace a nil codomain with a dummy value that will always pass.
         declaration[:lambda_codomain] || 0
-        | List.flatten(declaration[:predicate] || [])
+        | List.flatten(declaration[:lambda_guards] || [])
       ]
-      |> Enum.concat(declaration[:lambda_doms] || [])
+      |> Enum.concat(declaration[:lambda_args][:doms] || [])
 
     header_unbounds = include_for_binding_check(header_unbounds, symbols)
 
     {[scope | scopes], header_unbounds, unbounds}
   end
 
-  # Evaluate a line of a section body. Body statements can be either
+  # Evaluate a line of a chapter body. Body statements can be either
   # comments, which are ignored, or expression statements.
   defp eval_body_statement({:comment, _}, state), do: state
   defp eval_body_statement({:expr, line}, state), do: eval_expression(:expr, line, state)
@@ -201,7 +201,7 @@ defmodule Pantagruel.Eval do
        }) do
     # Include any introduced symbols into scope.
     scope = bind_expression(expr_type, elements, scope)
-    # Include all symbols into the binding check for the *next* section.
+    # Include all symbols into the binding check for the *next* chapter.
     next_unbounds = include_for_binding_check(next_unbounds, elements)
 
     {[scope | scopes], [unbounds, next_unbounds | rest]}
@@ -236,7 +236,7 @@ defmodule Pantagruel.Eval do
 
   # In this respect they're unique among expression types.
   defp bind_expression_variables(_, state), do: state
-  # Extend the environment for a new section.
+  # Extend the environment for a new chapter.
   @spec new_state(t, :atom | nil) :: t
   defp new_state({scopes, header_unbounds, unbounds}, mod_name) do
     scope = if(is_nil(mod_name), do: %{}, else: %{__module__: %Module{name: mod_name}})

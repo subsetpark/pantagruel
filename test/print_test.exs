@@ -5,7 +5,7 @@ defmodule Pantagruel.FormatTest do
   defp eval(text) when is_binary(text) do
     text
     |> Kernel.<>("\n")
-    |> String.to_char_list()
+    |> String.to_charlist()
     |> eval
   end
 
@@ -84,6 +84,7 @@ defmodule Pantagruel.FormatTest do
       {parsed, scopes} =
         """
         f() => F
+        ---
         f 1 <-> 0
         """
         |> eval
@@ -96,6 +97,7 @@ defmodule Pantagruel.FormatTest do
       {parsed, scopes} =
         """
         f()
+        ---
         ~f
         """
         |> eval

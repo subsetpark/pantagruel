@@ -28,12 +28,12 @@ defmodule Pantagruel.Env do
   end
 
   @starting_environment %{
-    'Bool' => %Variable{name: "𝔹", domain: "𝔹"},
-    'Real' => %Variable{name: "ℝ", domain: "ℝ"},
-    'Int' => %Variable{name: "ℤ", domain: "ℤ"},
-    'Nat' => %Variable{name: "ℕ", domain: "ℕ"},
-    'Nat0' => %Variable{name: "ℕ0", domain: "ℕ0"},
-    'String' => %Variable{name: "𝕊", domain: "𝕊"},
+    {:symbol, 'Bool'} => %Variable{name: "𝔹", domain: "𝔹"},
+    {:symbol, 'Real'} => %Variable{name: "ℝ", domain: "ℝ"},
+    {:symbol, 'Int'} => %Variable{name: "ℤ", domain: "ℤ"},
+    {:symbol, 'Nat'} => %Variable{name: "ℕ", domain: "ℕ"},
+    {:symbol, 'Nat0'} => %Variable{name: "ℕ0", domain: "ℕ0"},
+    {:symbol, 'String'} => %Variable{name: "𝕊", domain: "𝕊"},
     '=' => %Variable{name: "=", domain: "ℝ"},
     '!=' => %Variable{name: "≠", domain: "ℝ"},
     '~' => %Variable{name: "¬", domain: "𝔹"},
@@ -117,12 +117,12 @@ defmodule Pantagruel.Env do
     Enum.map(symbol, &lookup_binding_name/1)
   end
 
-  def lookup_binding_name(symbol) when is_binary(symbol) or is_atom(symbol) do
+  def lookup_binding_name({:symbol, s} = symbol) do
     case @starting_environment do
       # Look up symbol name if predefined.
       %{^symbol => variable} -> variable.name
-      _ when is_binary(symbol) or is_nil(symbol) -> symbol
-      _ when is_atom(symbol) -> raise UndefinedAtomError, atom: symbol
+      _ when is_binary(s) -> s
+      _ -> to_string(s)
     end
   end
 
@@ -172,9 +172,9 @@ defmodule Pantagruel.Env do
     scope = [bind_lambda(%{}, lambda) | scope]
 
     [
-      lambda[:lambda_doms] || [],
+      lambda[:lambda_args][:doms] || [],
       lambda[:lambda_codomain] || [],
-      lambda[:predicate] || []
+      lambda[:lambda_guards] || []
     ]
     |> List.flatten()
     |> Enum.all?(&is_bound?(&1, scope))
@@ -190,7 +190,7 @@ defmodule Pantagruel.Env do
     check_with_bindings(expr, bindings, scope)
   end
 
-  def is_bound?({:comprehension, [{_, [comp_bindings: bindings, comp_expression: expr]}]}, scope),
+  def is_bound?({:comprehension, [bindings: bindings, expr: expr]}, scope),
     # Introduce any internal bindings for the purpose of boundness
     # checking of the whole expression.
     do: check_with_bindings(expr, bindings, scope)
@@ -206,14 +206,13 @@ defmodule Pantagruel.Env do
   def is_bound?({:unary_exp, op: _, operand: x}, scopes),
     do: is_bound?(x, scopes)
 
-  def is_bound?({:symbol, variable}, scopes) do
-    variable
-    |> :string.trim(:both, '\'')
-    |> is_bound?(scopes)
-  end
+  def is_bound?({:symbol, variable}, [scope | parent]) do
+    variable =
+      variable
+      |> :string.trim(:both, '\'')
 
-  def is_bound?(variable, [scope | parent]) do
-    has_key?(scope, variable) or is_bound?(variable, parent)
+    to_check = {:symbol, variable}
+    has_key?(scope, to_check) or is_bound?(to_check, parent)
   end
 
   defp make_variable(_, %{} = v), do: v

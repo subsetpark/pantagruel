@@ -41,7 +41,8 @@ defmodule Pantagruel do
 
   defp handle({_, _, _}), do: IO.puts(@help)
 
-  defp handle_parse({:ok, parsed, "", %{}, _, _}, flags) do
+  defp handle_parse({:ok, []}, _), do: puts("No Pantagruel source found.")
+  defp handle_parse({:ok, parsed}, flags) do
     # Paths to additional .pant file hierarchies can be passed in with
     # the :path flag. The default path will also always be checked.
     [@default_path | Keyword.get_values(flags, :path)]
@@ -54,28 +55,6 @@ defmodule Pantagruel do
       {:error, _} = error ->
         handle_eval(error, parsed, nil)
     end
-  end
-
-  defp handle_parse({:ok, [], _, _, {_, _}, _}, _), do: puts("No Pantagruel source found.")
-
-  defp handle_parse({:ok, parsed, rest, _, {row, col}, _}, _) do
-    parsed =
-      Enum.reverse(parsed)
-      |> hd()
-      |> format_section()
-
-    rest = String.trim(rest)
-
-    """
-    #{row}:#{col}: Parse error.
-
-    Parsed:
-    #{parsed}
-
-    Remaining:
-    #{rest}
-    """
-    |> puts
   end
 
   defp handle_eval({:ok, scope}, _, scopes: true), do: format_scopes(scope) |> puts

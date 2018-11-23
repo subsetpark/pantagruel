@@ -13,8 +13,8 @@ defmodule Pantagruel.Test.LegacyParser do
       text = 'f()\n---\nx != y\ny > 1'
 
       tryparse(text,
-        sections: [
-          section: [
+        chapters: [
+          chapter: [
             head: [
               decl: [
                 decl_ident: {:symbol, 'f'}
@@ -33,8 +33,8 @@ defmodule Pantagruel.Test.LegacyParser do
       text = 'f()\n---\nx != y\n or y > 1'
 
       tryparse(text,
-        sections: [
-          section: [
+        chapters: [
+          chapter: [
             head: [
               decl: [
                 decl_ident: {:symbol, 'f'}
@@ -53,8 +53,8 @@ defmodule Pantagruel.Test.LegacyParser do
       text = 'f(x:Y \\ a:Y)'
 
       tryparse(text,
-        sections: [
-          section: [
+        chapters: [
+          chapter: [
             head: [
               decl: [
                 decl_ident: {:symbol, 'f'},
@@ -74,14 +74,16 @@ defmodule Pantagruel.Test.LegacyParser do
       text = 'f()\n---\nx <- y and y > 1'
 
       tryparse(text,
-        sections: [
-          section: [
+        chapters: [
+          chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
             body: [
               expr: [
                 refinement: [
                   pattern: {:symbol, 'x'},
-                  expr: {:appl, [op: '>', x: {:appl, [op: :and, x: {:symbol, 'y'}, y: {:symbol, 'y'}]}, y: 1]}
+                  expr:
+                    {:appl,
+                     [op: '>', x: {:appl, [op: :and, x: {:symbol, 'y'}, y: {:symbol, 'y'}]}, y: 1]}
                 ]
               ]
             ]
@@ -94,8 +96,8 @@ defmodule Pantagruel.Test.LegacyParser do
       text = 'f()\n---\nf x <- y'
 
       tryparse(text,
-        sections: [
-          section: [
+        chapters: [
+          chapter: [
             head: [
               decl: [
                 decl_ident: {:symbol, 'f'}
@@ -116,8 +118,8 @@ defmodule Pantagruel.Test.LegacyParser do
       text = 'f()\n---\nf x \\ x< 0 <- y\nf x<-1'
 
       tryparse(text,
-        sections: [
-          section: [
+        chapters: [
+          chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
             body: [
               refinement: [
@@ -138,8 +140,8 @@ defmodule Pantagruel.Test.LegacyParser do
       text = 'f() => D'
 
       tryparse(text,
-        sections: [
-          section: [
+        chapters: [
+          chapter: [
             head: [
               decl: [
                 decl_ident: {:symbol, 'f'},
@@ -156,8 +158,8 @@ defmodule Pantagruel.Test.LegacyParser do
       text = 'f()=>D\ng()=>E'
 
       tryparse(text,
-        sections: [
-          section: [
+        chapters: [
+          chapter: [
             head: [
               decl: [
                 decl_ident: {:symbol, 'f'},
@@ -179,8 +181,8 @@ defmodule Pantagruel.Test.LegacyParser do
       text = 'f(a,b:B,C) :: D'
 
       tryparse(text,
-        sections: [
-          section: [
+        chapters: [
+          chapter: [
             head: [
               decl: [
                 decl_ident: {:symbol, 'f'},
@@ -198,11 +200,11 @@ defmodule Pantagruel.Test.LegacyParser do
     end
 
     test "heading with multiple clauses" do
-      text = 'f(x:Y.x != 1,x > 0)'
+      text = 'f(x:Y \\ x != 1,x > 0)'
 
       tryparse(text,
-        sections: [
-          section: [
+        chapters: [
+          chapter: [
             head: [
               decl: [
                 decl_ident: {:symbol, 'f'},
@@ -225,17 +227,17 @@ defmodule Pantagruel.Test.LegacyParser do
       text = 'f(x:X) :: [X]'
 
       tryparse(text,
-        sections: [
-          section: [
+        chapters: [
+          chapter: [
             head: [
               decl: [
                 decl_ident: {:symbol, 'f'},
                 lambda_args: [
                   args: [{:symbol, 'x'}],
-                  doms: ['X']
+                  doms: [symbol: 'X']
                 ],
                 yield_type: '::',
-                lambda_codomain: {:list, ['X']}
+                lambda_codomain: {:list, [symbol: 'X']}
               ]
             ]
           ]
@@ -244,23 +246,24 @@ defmodule Pantagruel.Test.LegacyParser do
     end
 
     test "heading with generic domain" do
-      text = 'f(x:_A.x*y>10) :: [_A]'
+      text = 'f(x:_A \\ x*y>10) :: [_A]'
 
       tryparse(text,
-        sections: [
-          section: [
+        chapters: [
+          chapter: [
             head: [
               decl: [
                 decl_ident: {:symbol, 'f'},
-                lambda_args: [
-                  args: [{:symbol, 'x'}],
-                  doms: ["_A"]
-                ],
+                lambda_args: [args: [symbol: 'x'], doms: [symbol: '_A']],
                 lambda_guards: [
-                  appl: [op: '>', x: {:appl, [op: :times, x: {:symbol, 'x'}, y: {:symbol, 'y'}]}, y: 10]
+                  appl: [
+                    op: '>',
+                    x: {:appl, [op: '*', x: {:symbol, 'x'}, y: {:symbol, 'y'}]},
+                    y: 10
+                  ]
                 ],
                 yield_type: '::',
-                lambda_codomain: {:list, ["_A"]}
+                lambda_codomain: {:list, [symbol: '_A']}
               ]
             ]
           ]
@@ -272,24 +275,23 @@ defmodule Pantagruel.Test.LegacyParser do
       text = 'f(x:fn(z:Nat) :: z) :: Bool'
 
       tryparse(text,
-        sections: [
-          section: [
+        chapters: [
+          chapter: [
             head: [
               decl: [
                 decl_ident: {:symbol, 'f'},
                 lambda_args: [
-                  args: [{:symbol, 'x'}],
+                  args: [symbol: 'x'],
                   doms: [
                     lambda: [
-                      args: ["z"],
-                      doms: ["Nat"],
+                      lambda_args: [args: [symbol: 'z'], doms: [symbol: 'Nat']],
                       yield_type: '::',
-                      lambda_codomain: "z"
+                      lambda_codomain: {:symbol, 'z'}
                     ]
-                  ],
-                  yield_type: '::',
-                  lambda_codomain: "Bool"
-                ]
+                  ]
+                ],
+                yield_type: '::',
+                lambda_codomain: {:symbol, 'Bool'}
               ]
             ]
           ]
@@ -298,20 +300,20 @@ defmodule Pantagruel.Test.LegacyParser do
     end
 
     test "heading with par" do
-      text = 'f(x:X.x from (Y,Z))'
+      text = 'f(x:X \\ x from (Y,Z))'
 
       tryparse(text,
-        sections: [
-          section: [
+        chapters: [
+          chapter: [
             head: [
               decl: [
                 decl_ident: {:symbol, 'f'},
                 lambda_args: [
                   args: [{:symbol, 'x'}],
-                  doms: ['X']
+                  doms: [symbol: 'X']
                 ],
                 lambda_guards: [
-                  appl: [op: :from, x: {:symbol, 'x'}, y: {:par, [{:symbol, 'Y'}, 'Z']}]
+                  appl: [op: :from, x: {:symbol, 'x'}, y: {:par, [symbol: 'Y', symbol: 'Z']}]
                 ]
               ]
             ]
@@ -324,8 +326,8 @@ defmodule Pantagruel.Test.LegacyParser do
       text = 'Status<={`ok}'
 
       tryparse(text,
-        sections: [
-          section: [
+        chapters: [
+          chapter: [
             head: [
               alias: [
                 alias_name: [{:symbol, 'Status'}],
@@ -341,8 +343,8 @@ defmodule Pantagruel.Test.LegacyParser do
       text = 'Status,State<={`ok}'
 
       tryparse(text,
-        sections: [
-          section: [
+        chapters: [
+          chapter: [
             head: [
               alias: [
                 alias_name: [{:symbol, 'Status'}, {:symbol, 'State'}],
@@ -355,11 +357,11 @@ defmodule Pantagruel.Test.LegacyParser do
     end
 
     test "comprehension aliasing" do
-      text = 'Day<={n:Nat,n<=30.n}'
+      text = 'Day<={n:Nat,n<=30 \\ n}'
 
       tryparse(text,
-        sections: [
-          section: [
+        chapters: [
+          chapter: [
             head: [
               alias: [
                 alias_name: ["Day"],
@@ -384,12 +386,12 @@ defmodule Pantagruel.Test.LegacyParser do
   end
 
   describe "program structure" do
-    test "two sections" do
+    test "two chapters" do
       text = 'f(x:Y)\n;\ny()=>Y'
 
       tryparse(text,
-        sections: [
-          section: [
+        chapters: [
+          chapter: [
             head: [
               decl: [
                 decl_ident: {:symbol, 'f'},
@@ -400,7 +402,7 @@ defmodule Pantagruel.Test.LegacyParser do
               ]
             ]
           ],
-          section: [
+          chapter: [
             head: [
               decl: [
                 decl_ident: {:symbol, 'y'},
@@ -419,8 +421,8 @@ defmodule Pantagruel.Test.LegacyParser do
       text = 'f()\n---\nf>1\n\" Here is a comment.\nf<2'
 
       tryparse(text,
-        sections: [
-          section: [
+        chapters: [
+          chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
             body: [
               expr: [appl: [op: '>', x: {:symbol, 'f'}, y: 1]],
@@ -439,7 +441,7 @@ defmodule Pantagruel.Test.LegacyParser do
 
       tryparse(text, [
         {:module, 'MOD'},
-        sections: [section: [head: [decl: [decl_ident: {:symbol, 'f'}]]]]
+        chapters: [chapter: [head: [decl: [decl_ident: {:symbol, 'f'}]]]]
       ])
     end
 
@@ -448,7 +450,7 @@ defmodule Pantagruel.Test.LegacyParser do
 
       tryparse(text,
         imports: [import: ['MOD']],
-        sections: [section: [head: [decl: [decl_ident: {:symbol, 'f'}]]]]
+        chapters: [chapter: [head: [decl: [decl_ident: {:symbol, 'f'}]]]]
       )
     end
 
@@ -458,7 +460,7 @@ defmodule Pantagruel.Test.LegacyParser do
       tryparse(text,
         module: 'MOD',
         imports: [import: ['MOD2']],
-        sections: [section: [head: [decl: [decl_ident: {:symbol, 'f'}]]]]
+        chapters: [chapter: [head: [decl: [decl_ident: {:symbol, 'f'}]]]]
       )
     end
 
@@ -467,7 +469,7 @@ defmodule Pantagruel.Test.LegacyParser do
 
       tryparse(text,
         imports: [import: ['MOD', 'MOD2']],
-        sections: [section: [head: [decl: [decl_ident: {:symbol, 'f'}]]]]
+        chapters: [chapter: [head: [decl: [decl_ident: {:symbol, 'f'}]]]]
       )
     end
 
@@ -476,7 +478,7 @@ defmodule Pantagruel.Test.LegacyParser do
 
       tryparse(text,
         imports: [import: ['MOD'], import: ['MOD2']],
-        sections: [section: [head: [decl: [decl_ident: {:symbol, 'f'}]]]]
+        chapters: [chapter: [head: [decl: [decl_ident: {:symbol, 'f'}]]]]
       )
     end
   end

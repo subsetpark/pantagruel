@@ -29,8 +29,8 @@ program
 module_line
 imports
 import_line
-section
-sections
+chapter
+chapters
 
 head
 head_line
@@ -75,11 +75,13 @@ Left 300 unary_operator.
 % RULES
 %
 
-program -> module_line imports sections :
-    [{module, '$1'}, {imports, '$2'}, {sections, '$3'}].
-program -> imports sections : [{imports, '$1'}, {sections, '$2'}].
-program -> module sections : [{module, '$1'}, {sections, '$2'}].
-program -> sections : [{sections, '$1'}].
+program -> module_line imports chapters :
+    [{module, '$1'}, {imports, '$2'}, {chapters, '$3'}].
+program -> imports chapters : [{imports, '$1'}, {chapters, '$2'}].
+program -> module_line chapters : [{module, '$1'}, {chapters, '$2'}].
+program -> chapters : [{chapters, '$1'}].
+program -> '$empty' : [].
+program -> newline : [].
 
 module_line -> module bare_symbol newline : '$2'.
 
@@ -88,11 +90,11 @@ imports -> import_line imports : ['$1' | '$2'].
 
 import_line -> import bare_symbols newline : {import, '$2'}.
 
-sections -> section : [{section, '$1'}].
-sections -> section where sections : [{section, '$1'} | '$3'].
+chapters -> chapter : [{chapter, '$1'}].
+chapters -> chapter where chapters : [{chapter, '$1'} | '$3'].
 
-section -> head : [{head, '$1'}].
-section -> head sep body : [{head, '$1'}, {body, '$3'}].
+chapter -> head : [{head, '$1'}].
+chapter -> head sep body : [{head, '$1'}, {body, '$3'}].
 
 %
 % head
@@ -114,10 +116,10 @@ lambda_body -> lambda_args : [{lambda_args, '$1'}].
 lambda_body -> lambda_args '\\' expressions :
     [{lambda_args, '$1'}, {lambda_guards, '$3'}].
 
-lambda_args -> symbols ':' symbols : [{args, '$1'}, {doms, '$3'}].
+lambda_args -> symbols ':' expressions : [{args, '$1'}, {doms, '$3'}].
 
 lambda_yield -> '$empty' : [].
-lambda_yield -> yield_type a_symbol :
+lambda_yield -> yield_type term :
     [{yield_type, unwrap('$1')}, {lambda_codomain, '$2'}].
 
 % ii. aliases
@@ -191,7 +193,7 @@ expressions -> expression ',' expressions : ['$1' | '$3'].
 maybe_expressions -> '$empty' : [].
 maybe_expressions -> expressions : '$1'.
 maybe_expressions -> binding_or_guards '\\' expression :
-    {comprehension, [{bindings, '$1'}, {expr, '$3'}]}.
+    [{comprehension, [{bindings, '$1'}, {expr, '$3'}]}].
 
 binding_or_guards -> binding_or_guard : ['$1'].
 binding_or_guards -> binding_or_guard ',' binding_or_guards : ['$1' | '$3'].
