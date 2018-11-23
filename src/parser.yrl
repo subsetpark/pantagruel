@@ -34,10 +34,11 @@ sections
 
 head
 head_line
+declaration
 lambda
-decl_body
-decl_args
-decl_yield
+lambda_body
+lambda_args
+lambda_yield
 alias
 
 body
@@ -100,24 +101,23 @@ section -> head sep body : [{head, '$1'}, {body, '$3'}].
 head -> head_line : ['$1'].
 head -> head_line head : ['$1' | '$2'].
 
-head_line -> lambda newline : '$1'.
+head_line -> declaration newline : '$1'.
 head_line -> alias newline : '$1'.
 head_line -> comment newline : unwrap('$1').
 
 % i. declarations
 
-lambda -> a_symbol '(' decl_body ')' decl_yield  :
-    {decl, [{decl_ident, '$1'}|'$3' ++ '$5']}.
+declaration -> a_symbol lambda : {decl, [{decl_ident, '$1'}|'$2']}.
 
-decl_body -> '$empty' : [].
-decl_body -> decl_args : [{decl_args, '$1'}].
-decl_body -> decl_args '\\' expressions :
-    [{decl_args, '$1'}, {decl_guards, '$3'}].
+lambda_body -> '$empty' : [].
+lambda_body -> lambda_args : [{lambda_args, '$1'}].
+lambda_body -> lambda_args '\\' expressions :
+    [{lambda_args, '$1'}, {lambda_guards, '$3'}].
 
-decl_args -> symbols ':' symbols : [{args, '$1'}, {doms, '$3'}].
+lambda_args -> symbols ':' symbols : [{args, '$1'}, {doms, '$3'}].
 
-decl_yield -> '$empty' : [].
-decl_yield -> yield_type a_symbol :
+lambda_yield -> '$empty' : [].
+lambda_yield -> yield_type a_symbol :
     [{yield_type, unwrap('$1')}, {lambda_codomain, '$2'}].
 
 % ii. aliases
@@ -173,7 +173,9 @@ term -> list : '$1'.
 term -> set : '$1'.
 term -> bunch : '$1'.
 term -> quantification : '$1'.
-term -> fn lambda : {lambda, '$1'}.
+term -> fn lambda : {lambda, '$2'}.
+
+lambda -> '(' lambda_body ')' lambda_yield  : '$2' ++ '$4'.
 
 %
 % END EXPRESSION PRECEDENCE
@@ -223,6 +225,7 @@ Erlang code.
 
 unwrap({comment, _, Symbol}) -> {comment, Symbol};
 unwrap({symbol, _, Symbol}) -> {symbol, Symbol};
+unwrap({literal, _, Symbol}) -> {literal, Symbol};
 unwrap({_, _, Symbol}) -> Symbol;
 unwrap({Symbol, _}) -> Symbol.
 

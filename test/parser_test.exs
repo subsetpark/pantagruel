@@ -16,7 +16,7 @@ defmodule ParserTest do
               {:decl,
                [
                  decl_ident: {:symbol, 'f'},
-                 decl_args: [
+                 lambda_args: [
                    args: [{:symbol, 'x'}],
                    doms: [{:symbol, 'X'}]
                  ]
@@ -36,7 +36,7 @@ defmodule ParserTest do
               {:decl,
                [
                  decl_ident: {:symbol, 'f'},
-                 decl_args: [
+                 lambda_args: [
                    args: [{:symbol, 'x'}, {:symbol, 'y'}],
                    doms: [{:symbol, 'X'}, {:symbol, 'Y'}]
                  ]
@@ -74,11 +74,11 @@ defmodule ParserTest do
               {:decl,
                [
                  decl_ident: {:symbol, 'f'},
-                 decl_args: [
+                 lambda_args: [
                    args: [{:symbol, 'x'}, {:symbol, 'y'}],
                    doms: [{:symbol, 'X'}, {:symbol, 'Y'}]
                  ],
-                 decl_guards: [{:symbol, 'x'}],
+                 lambda_guards: [{:symbol, 'x'}],
                  yield_type: '=>',
                  lambda_codomain: {:symbol, 'F'}
                ]}
@@ -97,11 +97,11 @@ defmodule ParserTest do
               {:decl,
                [
                  decl_ident: {:symbol, 'f'},
-                 decl_args: [
+                 lambda_args: [
                    args: [{:symbol, 'x'}, {:symbol, 'y'}],
                    doms: [{:symbol, 'X'}, {:symbol, 'Y'}]
                  ],
-                 decl_guards: [appl: [op: '>', x: {:symbol, 'x'}, y: {:symbol, 'y'}]],
+                 lambda_guards: [appl: [op: '>', x: {:symbol, 'x'}, y: {:symbol, 'y'}]],
                  yield_type: '=>',
                  lambda_codomain: {:symbol, 'F'}
                ]}
@@ -120,8 +120,8 @@ defmodule ParserTest do
               {:decl,
                [
                  decl_ident: {:symbol, 'f'},
-                 decl_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'X'}]],
-                 decl_guards: [
+                 lambda_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'X'}]],
+                 lambda_guards: [
                    appl: [op: '~', x: {:symbol, 'x'}]
                  ]
                ]}
@@ -140,8 +140,8 @@ defmodule ParserTest do
               {:decl,
                [
                  decl_ident: {:symbol, 'f'},
-                 decl_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'X'}]],
-                 decl_guards: [
+                 lambda_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'X'}]],
+                 lambda_guards: [
                    appl: [f: {:symbol, 'f'}, x: {:symbol, 'x'}]
                  ]
                ]}
@@ -159,8 +159,8 @@ defmodule ParserTest do
             head: [
               decl: [
                 decl_ident: {:symbol, 'f'},
-                decl_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'X'}]],
-                decl_guards: [
+                lambda_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'X'}]],
+                lambda_guards: [
                   appl: [
                     f: {:par, [appl: [op: '+', x: {:symbol, 'x'}, y: 1]]},
                     x: {:symbol, 'x'}
@@ -182,8 +182,8 @@ defmodule ParserTest do
               {:decl,
                [
                  decl_ident: {:symbol, 'f'},
-                 decl_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'X'}]],
-                 decl_guards: [
+                 lambda_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'X'}]],
+                 lambda_guards: [
                    appl: [op: '>', x: {:symbol, 'x'}, y: 1],
                    appl: [op: '<', x: {:symbol, 'x'}, y: 3]
                  ]
@@ -222,6 +222,35 @@ defmodule ParserTest do
         ]
       )
     end
+
+    test "alias of exp" do
+      'Status <= {`ok}'
+      |> tryp(
+        sections: [
+          section: [
+            head: [
+              alias: [alias_name: [symbol: 'Status'], alias_expr: {:set, ['ok']}]
+            ]
+          ]
+        ]
+      )
+    end
+
+    test 'expr aliasing' do
+      'Day <= x =< 30'
+      |> tryp(
+        sections: [
+          section: [
+            head: [
+              alias: [
+                alias_name: [symbol: 'Day'],
+                alias_expr: {:appl, [op: '=<', x: {:symbol, 'x'}, y: 30]}
+              ]
+            ]
+          ]
+        ]
+      )
+    end
   end
 
   describe "containers" do
@@ -233,8 +262,8 @@ defmodule ParserTest do
             head: [
               decl: [
                 decl_ident: {:symbol, 'f'},
-                decl_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'X'}]],
-                decl_guards: [list: []]
+                lambda_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'X'}]],
+                lambda_guards: [list: []]
               ]
             ]
           ]
@@ -250,8 +279,8 @@ defmodule ParserTest do
             head: [
               decl: [
                 decl_ident: {:symbol, 'f'},
-                decl_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'X'}]],
-                decl_guards: [list: [{:symbol, 'x'}]]
+                lambda_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'X'}]],
+                lambda_guards: [list: [{:symbol, 'x'}]]
               ]
             ]
           ]
@@ -267,8 +296,8 @@ defmodule ParserTest do
             head: [
               decl: [
                 decl_ident: {:symbol, 'f'},
-                decl_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'X'}]],
-                decl_guards: [list: [{:symbol, 'x'}, appl: [f: {:symbol, 'x'}, x: 1]]]
+                lambda_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'X'}]],
+                lambda_guards: [list: [{:symbol, 'x'}, appl: [f: {:symbol, 'x'}, x: 1]]]
               ]
             ]
           ]
@@ -337,8 +366,8 @@ defmodule ParserTest do
             head: [
               decl: [
                 decl_ident: {:symbol, 'f'},
-                decl_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'Nat'}]],
-                decl_guards: [
+                lambda_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'Nat'}]],
+                lambda_guards: [
                   appl: [
                     op: '>',
                     x: {:appl, [f: {:symbol, 'f'}, x: {:symbol, 'x'}]},
@@ -360,8 +389,8 @@ defmodule ParserTest do
             head: [
               decl: [
                 decl_ident: {:symbol, 'f'},
-                decl_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'Nat'}]],
-                decl_guards: [
+                lambda_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'Nat'}]],
+                lambda_guards: [
                   appl: [f: {:appl, [f: {:symbol, 'f'}, x: {:symbol, 'x'}]}, x: {:symbol, 'y'}]
                 ]
               ]
@@ -379,8 +408,8 @@ defmodule ParserTest do
             head: [
               decl: [
                 decl_ident: {:symbol, 'f'},
-                decl_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'Nat'}]],
-                decl_guards: [appl: [f: {:symbol, 'f'}, x: {:appl, [op: '~', x: {:symbol, 'y'}]}]]
+                lambda_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'Nat'}]],
+                lambda_guards: [appl: [f: {:symbol, 'f'}, x: {:appl, [op: '~', x: {:symbol, 'y'}]}]]
               ]
             ]
           ]
@@ -396,8 +425,8 @@ defmodule ParserTest do
             head: [
               decl: [
                 decl_ident: {:symbol, 'f'},
-                decl_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'X'}]],
-                decl_guards: [
+                lambda_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'X'}]],
+                lambda_guards: [
                   appl: [
                     f:
                       {:appl,
@@ -682,6 +711,31 @@ defmodule ParserTest do
           section: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
             body: [expr: {:dot, [f: {:symbol, 'y'}, x: {:symbol, 'f'}]}]
+          ]
+        ]
+      )
+    end
+  end
+
+  describe "lambdas" do
+    test "lambda parsing" do
+      '''
+      f()
+      ---
+      fn ()::D
+      '''
+      |> tryp(
+        sections: [
+          section: [
+            head: [decl: [decl_ident: {:symbol, 'f'}]],
+            body: [
+              expr:
+                {:lambda,
+                 [
+                   yield_type: '::',
+                   lambda_codomain: {:symbol, 'D'}
+                 ]}
+            ]
           ]
         ]
       )

@@ -2,9 +2,10 @@ Definitions.
 
 INT             = [0-9_]+
 FLOAT           = [-+]?[0-9]*\.?[0-9]+
-LITERAL         = (`[^\n]*`|`[^\s\n]+)
+LITERAL         = (`[^\n]*`|`[^\s\n{DELIMITER}]+)
 OPERATOR        = <>\-=~/\*\+#\.%^:|&
-OPERATOR_CHOICE = (>=|==|!=|->|<->|<-|<=|=>|=|-|>|<|\+|\*|~|#|%|\^|;|::|:|&|\|)
+OPERATOR_CHOICE = (>=|==|!=|->|<->|<-|<=|=<|=>|=|-|>|<|\+|\*|~|#|%|\^|;|::|:|&|\|)
+
 DELIMITER       = \[\]\(\){},\.\\
 SYMBOL          = [^\s\n&&{OPERATOR}&&{DELIMITER}:\"]+
 SP              = \t\s
@@ -81,6 +82,7 @@ operator(TokenChars, TokenLine) when
     TokenChars == ">";
     TokenChars == "<";
     TokenChars == ">=";
+    TokenChars == "=<";
     TokenChars == "->";
     TokenChars == "<->";
     TokenChars == "^";
