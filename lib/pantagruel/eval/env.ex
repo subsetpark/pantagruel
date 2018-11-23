@@ -34,29 +34,29 @@ defmodule Pantagruel.Env do
     {:symbol, 'Nat'} => %Variable{name: "ℕ", domain: "ℕ"},
     {:symbol, 'Nat0'} => %Variable{name: "ℕ0", domain: "ℕ0"},
     {:symbol, 'String'} => %Variable{name: "𝕊", domain: "𝕊"},
-    '=' => %Variable{name: "=", domain: "ℝ"},
-    '!=' => %Variable{name: "≠", domain: "ℝ"},
-    '~' => %Variable{name: "¬", domain: "𝔹"},
-    '>' => %Variable{name: ">", domain: "ℝ"},
-    '<' => %Variable{name: "<", domain: "ℝ"},
-    '>=' => %Variable{name: "≥", domain: "ℝ"},
-    '=<' => %Variable{name: "≤", domain: "ℝ"},
-    '+' => %Variable{name: "+", domain: "ℝ"},
-    '-' => %Variable{name: "−", domain: "ℝ"},
-    '*' => %Variable{name: "×", domain: "ℝ"},
-    '%' => %Variable{name: "÷", domain: "ℝ"},
-    '^' => %Variable{name: "^", domain: "ℝ"},
-    ':' => %Variable{name: ":", domain: "⊤"},
-    'from' => %Variable{name: "∈", domain: "⊤"},
-    '<->' => %Variable{name: "↔", domain: "𝔹"},
-    '->' => %Variable{name: "→", domain: "𝔹"},
-    'and' => %Variable{name: "∧", domain: "𝔹"},
-    'or' => %Variable{name: "∨", domain: "𝔹"},
-    'exists' => %Variable{name: "∃", domain: "⊤"},
-    'all' => %Variable{name: "∀", domain: "⊤"},
-    '#' => %Variable{name: "#", domain: "⊤"},
-    '&' => %Variable{name: "∪", domain: "U"},
-    '|' => %Variable{name: "∩", domain: "U"}
+    := => %Variable{name: "=", domain: "ℝ"},
+    :!= => %Variable{name: "≠", domain: "ℝ"},
+    :"~" => %Variable{name: "¬", domain: "𝔹"},
+    :> => %Variable{name: ">", domain: "ℝ"},
+    :< => %Variable{name: "<", domain: "ℝ"},
+    :>= => %Variable{name: "≥", domain: "ℝ"},
+    :"=<" => %Variable{name: "≤", domain: "ℝ"},
+    :+ => %Variable{name: "+", domain: "ℝ"},
+    :- => %Variable{name: "−", domain: "ℝ"},
+    :* => %Variable{name: "×", domain: "ℝ"},
+    :% => %Variable{name: "÷", domain: "ℝ"},
+    :^ => %Variable{name: "^", domain: "ℝ"},
+    :":" => %Variable{name: ":", domain: "⊤"},
+    :from => %Variable{name: "∈", domain: "⊤"},
+    :"<->" => %Variable{name: "↔", domain: "𝔹"},
+    :-> => %Variable{name: "→", domain: "𝔹"},
+    :and => %Variable{name: "∧", domain: "𝔹"},
+    :or => %Variable{name: "∨", domain: "𝔹"},
+    :exists => %Variable{name: "∃", domain: "⊤"},
+    :all => %Variable{name: "∀", domain: "⊤"},
+    :"#" => %Variable{name: "#", domain: "⊤"},
+    :& => %Variable{name: "∪", domain: "U"},
+    :| => %Variable{name: "∩", domain: "U"}
   }
 
   @doc """
@@ -115,6 +115,14 @@ defmodule Pantagruel.Env do
   """
   def lookup_binding_name(symbol) when is_list(symbol) do
     Enum.map(symbol, &lookup_binding_name/1)
+  end
+
+  def lookup_binding_name(symbol) when is_atom(symbol) do
+    case @starting_environment do
+      # Look up symbol name if predefined.
+      %{^symbol => variable} -> variable.name
+      _ -> to_string(symbol)
+    end
   end
 
   def lookup_binding_name({:symbol, s} = symbol) do
@@ -203,7 +211,7 @@ defmodule Pantagruel.Env do
   def is_bound?({:appl, op: _, x: x, y: y}, scopes),
     do: is_bound?(x, scopes) && is_bound?(y, scopes)
 
-  def is_bound?({:unary_exp, op: _, operand: x}, scopes),
+  def is_bound?({:appl, op: _, x: x}, scopes),
     do: is_bound?(x, scopes)
 
   def is_bound?({:symbol, variable}, [scope | parent]) do

@@ -106,7 +106,7 @@ defmodule ParserTest do
                    args: [{:symbol, 'x'}, {:symbol, 'y'}],
                    doms: [{:symbol, 'X'}, {:symbol, 'Y'}]
                  ],
-                 lambda_guards: [appl: [op: '>', x: {:symbol, 'x'}, y: {:symbol, 'y'}]],
+                 lambda_guards: [appl: [op: :>, x: {:symbol, 'x'}, y: {:symbol, 'y'}]],
                  yield_type: '=>',
                  lambda_codomain: {:symbol, 'F'}
                ]}
@@ -127,7 +127,7 @@ defmodule ParserTest do
                  decl_ident: {:symbol, 'f'},
                  lambda_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'X'}]],
                  lambda_guards: [
-                   appl: [op: '~', x: {:symbol, 'x'}]
+                   appl: [op: :"~", x: {:symbol, 'x'}]
                  ]
                ]}
             ]
@@ -167,7 +167,7 @@ defmodule ParserTest do
                 lambda_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'X'}]],
                 lambda_guards: [
                   appl: [
-                    f: {:par, [appl: [op: '+', x: {:symbol, 'x'}, y: 1]]},
+                    f: {:par, [appl: [op: :+, x: {:symbol, 'x'}, y: 1]]},
                     x: {:symbol, 'x'}
                   ]
                 ]
@@ -189,8 +189,8 @@ defmodule ParserTest do
                  decl_ident: {:symbol, 'f'},
                  lambda_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'X'}]],
                  lambda_guards: [
-                   appl: [op: '>', x: {:symbol, 'x'}, y: 1],
-                   appl: [op: '<', x: {:symbol, 'x'}, y: 3]
+                   appl: [op: :>, x: {:symbol, 'x'}, y: 1],
+                   appl: [op: :<, x: {:symbol, 'x'}, y: 3]
                  ]
                ]}
             ]
@@ -249,7 +249,7 @@ defmodule ParserTest do
             head: [
               alias: [
                 alias_name: [symbol: 'Day'],
-                alias_expr: {:appl, [op: '=<', x: {:symbol, 'x'}, y: 30]}
+                alias_expr: {:appl, [op: :"=<", x: {:symbol, 'x'}, y: 30]}
               ]
             ]
           ]
@@ -374,7 +374,7 @@ defmodule ParserTest do
                 lambda_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'Nat'}]],
                 lambda_guards: [
                   appl: [
-                    op: '>',
+                    op: :>,
                     x: {:appl, [f: {:symbol, 'f'}, x: {:symbol, 'x'}]},
                     y: {:appl, [f: {:symbol, 'g'}, x: {:symbol, 'y'}]}
                   ]
@@ -415,7 +415,7 @@ defmodule ParserTest do
                 decl_ident: {:symbol, 'f'},
                 lambda_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'Nat'}]],
                 lambda_guards: [
-                  appl: [f: {:symbol, 'f'}, x: {:appl, [op: '~', x: {:symbol, 'y'}]}]
+                  appl: [f: {:symbol, 'f'}, x: {:appl, [op: :"~", x: {:symbol, 'y'}]}]
                 ]
               ]
             ]
@@ -438,11 +438,11 @@ defmodule ParserTest do
                     f:
                       {:appl,
                        [
-                         op: '~',
+                         op: :"~",
                          x:
                            {:appl,
                             [
-                              op: '#',
+                              op: :"#",
                               x: {:symbol, 'z'}
                             ]}
                        ]},
@@ -498,7 +498,7 @@ defmodule ParserTest do
         chapters: [
           chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
-            body: [expr: {:appl, [op: '+', x: 1, y: 2]}]
+            body: [expr: {:appl, [op: :+, x: 1, y: 2]}]
           ]
         ]
       )
@@ -604,7 +604,7 @@ defmodule ParserTest do
                          bind_op: :":",
                          bind_domain: {:symbol, 'X'}
                        ],
-                       guard: {:appl, [op: '>', x: {:symbol, 'x'}, y: 1]}
+                       guard: {:appl, [op: :>, x: {:symbol, 'x'}, y: 1]}
                      ],
                      expr: {:symbol, 'x'}
                    ]
@@ -662,7 +662,7 @@ defmodule ParserTest do
                        bind_domain: {:symbol, 'X'}
                      ]
                    ],
-                   expr: {:appl, [op: '>', x: {:symbol, 'x'}, y: 1]}
+                   expr: {:appl, [op: :>, x: {:symbol, 'x'}, y: 1]}
                  ]}
             ]
           ]
@@ -699,7 +699,7 @@ defmodule ParserTest do
                             bind_domain: {:symbol, 'X'}
                           ]
                         ],
-                        expr: {:appl, [op: '>', x: {:symbol, 'x'}, y: {:symbol, 'y'}]}
+                        expr: {:appl, [op: :>, x: {:symbol, 'x'}, y: {:symbol, 'y'}]}
                       ]}
                  ]}
             ]

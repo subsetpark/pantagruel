@@ -55,7 +55,7 @@ defmodule Pantagruel.Eval do
     # or, if no name was specified, from a module name in the AST.
     mod_name =
       case {opts[:mod_name], program} do
-        {nil, [{:module, mod_name: name} | _]} -> name
+        {nil, [{:module, name} | _]} -> name
         {name, _} -> name
       end
 
@@ -112,7 +112,7 @@ defmodule Pantagruel.Eval do
     do: handle_imports(rest, asts, scopes, seen_mod_names)
 
   defp handle_imports(
-         [{:import, mod_name: mod_name} | rest],
+         [{:import, mod_name} | rest],
          available_asts,
          scopes,
          seen_mod_names

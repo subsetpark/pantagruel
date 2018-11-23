@@ -40,7 +40,7 @@ defmodule Pantagruel.Load do
     |> include(asts)
   end
 
-  defp include({:ok, [{:module, mod_name: mod_name} | rest], "", %{}, _, _}, asts) do
+  defp include({:ok, [{:module, mod_name} | rest]}, asts) do
     case asts do
       # No two modules can declare the same module name.
       %{^mod_name => _} ->

@@ -227,6 +227,8 @@ Erlang code.
 
 unwrap({comment, _, Symbol}) -> {comment, Symbol};
 unwrap({symbol, _, Symbol}) -> {symbol, Symbol};
+unwrap({unary_operator, _, Symbol}) -> list_to_atom(Symbol);
+unwrap({binary_operator, _, Symbol}) -> list_to_atom(Symbol);
 unwrap({literal, _, Symbol}) -> {literal, Symbol};
 unwrap({_, _, Symbol}) -> Symbol;
 unwrap({Symbol, _}) -> Symbol.

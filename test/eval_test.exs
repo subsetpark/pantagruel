@@ -186,7 +186,7 @@ defmodule EvalTest do
                  unbound:
                    [
                      appl: [
-                       op: '=',
+                       op: :=,
                        x: {:appl, [f: {:symbol, 'f'}, x: {:symbol, 'x'}]},
                        y: {:appl, [f: {:symbol, 'g'}, x: {:symbol, 'x'}]}
                      ]
@@ -375,7 +375,7 @@ defmodule EvalTest do
 
       {:error, {:unbound_variables, e}} = Eval.eval(parsed, [])
 
-      assert e.unbound == MapSet.new(appl: [op: '>', x: {:symbol, 'y'}, y: 1])
+      assert e.unbound == MapSet.new(appl: [op: :>, x: {:symbol, 'y'}, y: 1])
     end
 
     test "too many domains" do
@@ -416,7 +416,7 @@ defmodule EvalTest do
                  expr:
                    {:appl,
                     [
-                      op: '>',
+                      op: :>,
                       x: {:symbol, 'j'},
                       y: {:symbol, 'k'}
                     ]}
@@ -700,7 +700,7 @@ defmodule EvalTest do
                               bind_op: :":",
                               bind_domain: {:symbol, 'Nat'}
                             ],
-                            guard: {:appl, [op: '=<', x: {:symbol, 'n'}, y: 30]}
+                            guard: {:appl, [op: :"=<", x: {:symbol, 'n'}, y: 30]}
                           ],
                           expr: {:symbol, 'n'}
                         ]

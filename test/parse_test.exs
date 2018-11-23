@@ -21,8 +21,8 @@ defmodule Pantagruel.Test.LegacyParser do
               ]
             ],
             body: [
-              expr: {:appl, [op: '!=', x: {:symbol, 'x'}, y: {:symbol, 'y'}]},
-              expr: {:appl, [op: '>', x: {:symbol, 'y'}, y: 1]}
+              expr: {:appl, [op: :!=, x: {:symbol, 'x'}, y: {:symbol, 'y'}]},
+              expr: {:appl, [op: :>, x: {:symbol, 'y'}, y: 1]}
             ]
           ]
         ]
@@ -41,8 +41,8 @@ defmodule Pantagruel.Test.LegacyParser do
               ]
             ],
             body: [
-              expr: {:appl, [op: '!=', x: {:symbol, 'x'}, y: {:symbol, 'y'}]},
-              expr: [intro_op: :or, appl: [op: '>', x: {:symbol, 'y'}, y: 1]]
+              expr: {:appl, [op: :!=, x: {:symbol, 'x'}, y: {:symbol, 'y'}]},
+              expr: [intro_op: :or, appl: [op: :>, x: {:symbol, 'y'}, y: 1]]
             ]
           ]
         ]
@@ -83,7 +83,7 @@ defmodule Pantagruel.Test.LegacyParser do
                   pattern: {:symbol, 'x'},
                   expr:
                     {:appl,
-                     [op: '>', x: {:appl, [op: :and, x: {:symbol, 'y'}, y: {:symbol, 'y'}]}, y: 1]}
+                     [op: :>, x: {:appl, [op: :and, x: {:symbol, 'y'}, y: {:symbol, 'y'}]}, y: 1]}
                 ]
               ]
             ]
@@ -124,7 +124,7 @@ defmodule Pantagruel.Test.LegacyParser do
             body: [
               refinement: [
                 pattern: {:appl, [f: {:symbol, 'f'}, x: {:symbol, 'x'}]},
-                guard: [{:appl, [op: '<', x: {:symbol, 'x'}, y: 0]}],
+                guard: [{:appl, [op: :<, x: {:symbol, 'x'}, y: 0]}],
                 expr: {:symbol, 'y'}
               ],
               refinement: [pattern: {:appl, [f: {:symbol, 'f'}, x: {:symbol, 'x'}]}, expr: 1]
@@ -213,8 +213,8 @@ defmodule Pantagruel.Test.LegacyParser do
                   doms: [{:symbol, 'Y'}]
                 ],
                 lambda_guards: [
-                  {:appl, [op: '!=', x: {:symbol, 'x'}, y: 1]},
-                  {:appl, [op: '>', x: {:symbol, 'x'}, y: 0]}
+                  {:appl, [op: :!=, x: {:symbol, 'x'}, y: 1]},
+                  {:appl, [op: :>, x: {:symbol, 'x'}, y: 0]}
                 ]
               ]
             ]
@@ -257,8 +257,8 @@ defmodule Pantagruel.Test.LegacyParser do
                 lambda_args: [args: [symbol: 'x'], doms: [symbol: '_A']],
                 lambda_guards: [
                   appl: [
-                    op: '>',
-                    x: {:appl, [op: '*', x: {:symbol, 'x'}, y: {:symbol, 'y'}]},
+                    op: :>,
+                    x: {:appl, [op: :*, x: {:symbol, 'x'}, y: {:symbol, 'y'}]},
                     y: 10
                   ]
                 ],
@@ -425,9 +425,9 @@ defmodule Pantagruel.Test.LegacyParser do
           chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
             body: [
-              expr: [appl: [op: '>', x: {:symbol, 'f'}, y: 1]],
+              expr: [appl: [op: :>, x: {:symbol, 'f'}, y: 1]],
               comment: ["Here is a comment."],
-              expr: [appl: [op: '<', x: {:symbol, 'f'}, y: 2]]
+              expr: [appl: [op: :<, x: {:symbol, 'f'}, y: 2]]
             ]
           ]
         ]
