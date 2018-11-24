@@ -37,7 +37,6 @@ defmodule Pantagruel do
     |> IO.read(:all)
     |> String.to_charlist()
     |> :lexer.string()
-    |> IO.inspect
     |> handle_lex()
     |> handle_parse(flags)
   end
@@ -45,6 +44,11 @@ defmodule Pantagruel do
   defp handle({_, _, _}), do: IO.puts(@help)
 
   defp handle_lex({:ok, tokens, _linecount}), do: :parser.parse(tokens)
+
+  defp handle_parse({:error, {line, :parser, tokens}}, _) do
+    puts "Line #{line}: syntax error."
+    puts(Enum.join(tokens, " "))
+  end
 
   defp handle_parse({:ok, []}, _), do: puts("No Pantagruel source found.")
 

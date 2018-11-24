@@ -255,7 +255,7 @@ defmodule EvalTest do
         """
         f(x:Nat)
         ---
-        f x : fn (z:D)::D
+        f x from fn (z:D)::D
         """
         |> scan_and_parse
 
@@ -267,7 +267,7 @@ defmodule EvalTest do
         """
         f(x:Nat)
         ---
-        f x : fn(z:D)::D
+        f x from fn(z:D)::D
         ;
         d() => D
         """
@@ -306,7 +306,7 @@ defmodule EvalTest do
         """
         f(x:Nat)
         ---
-        f x : fn(z:Nat \\ z > 100)
+        f x from fn(z:Nat \\ z > 100)
         """
         |> scan_and_parse
 
@@ -409,7 +409,6 @@ defmodule EvalTest do
                    guard: {:symbol, 'j'},
                    binding: [
                      bind_symbol: {:symbol, 'k'},
-                     bind_op: :":",
                      bind_domain: {:symbol, 'X'}
                    ]
                  ],
@@ -475,7 +474,7 @@ defmodule EvalTest do
         """
         f()
         ---
-        f <- (all z from 1.f \\ f)
+        f <- (all z : 1.f \\ f)
         """
         |> scan_and_parse
 
@@ -537,7 +536,7 @@ defmodule EvalTest do
         """
         f(x:Nat)
         ---
-        [y from Nat \\ f x > y]
+        [y : Nat \\ f x > y]
         """
         |> scan_and_parse
 
@@ -562,7 +561,7 @@ defmodule EvalTest do
         """
         f(x:_A)
         ---
-        [y from _A \\ f x > y]
+        [y : _A \\ f x > y]
         """
         |> scan_and_parse
 
@@ -697,7 +696,6 @@ defmodule EvalTest do
                           bindings: [
                             binding: [
                               bind_symbol: {:symbol, 'n'},
-                              bind_op: :":",
                               bind_domain: {:symbol, 'Nat'}
                             ],
                             guard: {:appl, [op: :"=<", x: {:symbol, 'n'}, y: 30]}
@@ -715,7 +713,7 @@ defmodule EvalTest do
         """
         f()
         ---
-        (all x from Nat \\ all y from x \\ y > 0)
+        (all x : Nat \\ all y : x \\ y > 0)
         """
         |> scan_and_parse
 
@@ -738,7 +736,7 @@ defmodule EvalTest do
         sort(xs : [X]) :: [X]
         x() => X
         ---
-        all (x,y) from xs' \\ x =< y <-> ind xs' x < ind xs' y
+        all (x,y) : xs' \\ x =< y <-> ind xs' x < ind xs' y
 
         ;
 

@@ -62,7 +62,6 @@ defmodule Pantagruel.Format do
   def format_exp(%Lambda{} = l, s), do: format_lambda(l, scope: s)
   def format_exp({:intro_op, op}, s), do: format_exp(op, s)
   def format_exp({:literal, literal}, _), do: "*#{literal}*"
-  def format_exp({:refinement, refinement}, s), do: format_refinement(refinement, s)
   def format_exp({:appl, op: op, x: x, y: y}, s), do: join_exp([x, op, y], s, " ")
   def format_exp({:appl, op: op, x: x}, s), do: join_exp([op, x], s)
   def format_exp({:appl, f: f, x: x}, s), do: join_exp([f, x], s, " ")
@@ -118,17 +117,20 @@ defmodule Pantagruel.Format do
   defp format_line({:expr, expression}), do: format_exp(expression)
   defp format_line({:alias, alias}), do: format_alias(alias)
 
-  defp format_refinement(refinement, s) do
-    pat = refinement[:pattern] |> format_exp(s)
-    guard = refinement[:guard] |> format_guard(s)
-    exp = refinement[:expr] |> format_exp(s)
+  defp format_line({:refinement, refinement}), do: format_refinement(refinement)
+
+  defp format_refinement(refinement) do
+    pat = refinement[:pattern] |> format_exp()
+    guard = refinement[:guard] |> format_guard()
+    exp = refinement[:expr] |> format_exp()
 
     "#{pat}#{guard} ← #{exp}"
   end
 
-  defp format_comment([comment]) do
+  defp format_comment(comment) do
     comment_str =
       comment
+      |> to_string()
       |> String.split(Pantagruel.Scan.comment_continuation())
       |> Enum.map(&String.trim/1)
       |> Enum.join("\n> ")
@@ -142,11 +144,11 @@ defmodule Pantagruel.Format do
     "#{alias_names} ⇐ #{format_exp(ref)}"
   end
 
-  defp format_binding([bind_symbol: sym, bind_op: op, bind_domain: d], s),
-    do: join_exp([sym, op, d], s, " ")
+  defp format_binding([bind_symbol: sym, bind_domain: d], s),
+    do: join_exp([sym, ":", d], s, " ")
 
-  defp format_guard("", _), do: nil
-  defp format_guard(guard, s), do: " ⸳ #{format_exp(guard, s)}"
+  defp format_guard(nil), do: ""
+  defp format_guard(guard), do: " ⸳ #{format_exp(guard)}"
 
   defp format_symbol(s, scopes) do
     name = Env.lookup_binding_name(s)

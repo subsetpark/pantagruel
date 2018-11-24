@@ -8,9 +8,6 @@ expression
 expressions
 maybe_expressions
 
-bind_operator
-a_binary_operator
-
 term
 list
 set
@@ -49,7 +46,7 @@ quantification
 
 
 Terminals
-'{' '}' '[' ']' '(' ')' '.' ':' ',' '\\' from
+'{' '}' '[' ']' '(' ')' '.' ':' ',' '\\'
 int literal float fn
 module
 import
@@ -68,7 +65,7 @@ where.
 Rootsymbol program.
 Endsymbol '$end'.
 
-Left 100 a_binary_operator.
+Left 100 binary_operator.
 Left 300 unary_operator.
 
 %
@@ -154,7 +151,7 @@ expression -> bin_operation : '$1'.
 
 bin_operation -> function_application : '$1'.
 bin_operation ->
-    bin_operation a_binary_operator bin_operation :
+    bin_operation binary_operator bin_operation :
         {appl, [{op, unwrap('$2')}, {x, '$1'}, {y, '$3'}]}.
 
 function_application -> un_operation : '$1'.
@@ -202,8 +199,8 @@ binding_or_guards -> binding_or_guard ',' binding_or_guards : ['$1' | '$3'].
 binding_or_guard -> binding : {binding, '$1'}.
 binding_or_guard -> expression : {guard, '$1'}.
 
-binding -> term bind_operator expression :
-    [{bind_symbol, '$1'}, {bind_op, unwrap('$2')}, {bind_domain, '$3'}].
+binding -> term ':' expression :
+    [{bind_symbol, '$1'}, {bind_domain, '$3'}].
 
 symbols -> a_symbol : ['$1'].
 symbols -> a_symbol ',' symbols : ['$1' | '$3'].
@@ -214,12 +211,6 @@ bare_symbols -> bare_symbol ',' bare_symbols : ['$1' | '$3'].
 a_symbol -> symbol : unwrap('$1').
 
 bare_symbol -> symbol : bare('$1').
-
-bind_operator -> ':' : '$1'.
-bind_operator -> from : '$1'.
-
-a_binary_operator -> binary_operator : '$1'.
-a_binary_operator -> bind_operator : '$1'.
 
 quantification -> quantifier binding_or_guards '\\' expression :
     {quantification, [{quantifier, unwrap('$1')}, {bindings, '$2'}, {expr, '$4'}]}.

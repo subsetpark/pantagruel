@@ -369,7 +369,7 @@ defmodule Pantagruel.Test.LegacyParser do
                      set: [
                        {:comp_bindings,
                         [
-                          binding: [bind_symbol: 'n', bind_op: :":", bind_domain: "Nat"],
+                          binding: [bind_symbol: 'n', bind_domain: "Nat"],
                           guard: {:appl, [op: :lte, x: 'n', y: 30]}
                         ]},
                        {:comp_expression, 'n'}

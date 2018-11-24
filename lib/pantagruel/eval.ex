@@ -227,7 +227,7 @@ defmodule Pantagruel.Eval do
        ) do
     bound =
       bindings
-      |> Enum.reduce(scope, fn {:binding, [bind_symbol: x, bind_op: _, bind_domain: domain]}, s ->
+      |> Enum.reduce(scope, fn {:binding, [bind_symbol: x, bind_domain: domain]}, s ->
         Env.bind(s, x, domain)
       end)
 

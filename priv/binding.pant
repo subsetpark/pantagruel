@@ -10,7 +10,7 @@ Body <= [Comment, Expression]
 Comment, Declaration, Alias, Expression <= [String]
 ---
 
-eval p <- all sect from p \ is_bound? sect
+eval p <- all sect : p \ is_bound? sect
 
 ;
 
@@ -22,9 +22,9 @@ is_bound? (sect: Section) :: Bool
 " must be defined by the end of the *next* section body.
 
 is_bound? sect <-                                           ...
-    (all h from sect.head \ all sym from h \ is_bound? sym) ...
+    (all h : sect.head \ all sym : h \ is_bound? sym) ...
     and                                                     ...
-    (all b from (p ((p sect) - 1)).body \ all sym from b \ is_bound? sym)
+    (all b : (p ((p sect) - 1)).body \ all sym : b \ is_bound? sym)
 
 ;
 

@@ -30,6 +30,32 @@ defmodule ParserTest do
       )
     end
 
+    test "binding regression 2" do
+      '''
+      f()
+      ---
+      (x from f)
+      '''
+      |> tryp(
+        chapters: [
+          chapter: [
+            head: [decl: [decl_ident: {:symbol, 'f'}]],
+            body: [
+              expr:
+                {:par,
+                 [
+                   appl: [
+                     op: :from,
+                     x: {:symbol, 'x'},
+                     y: {:symbol, 'f'}
+                   ]
+                 ]}
+            ]
+          ]
+        ]
+      )
+    end
+
     test "decl with argument" do
       'f(x : X)'
       |> tryp(
@@ -592,7 +618,6 @@ defmodule ParserTest do
                      bindings: [
                        binding: [
                          bind_symbol: {:symbol, 'x'},
-                         bind_op: :":",
                          bind_domain: {:symbol, 'X'}
                        ]
                      ],
@@ -619,7 +644,6 @@ defmodule ParserTest do
                      bindings: [
                        binding: [
                          bind_symbol: {:symbol, 'x'},
-                         bind_op: :":",
                          bind_domain: {:symbol, 'X'}
                        ],
                        guard: {:appl, [op: :>, x: {:symbol, 'x'}, y: 1]}
@@ -634,7 +658,7 @@ defmodule ParserTest do
     end
 
     test "comprehension with from" do
-      'f()\n---\n[x from X \\ x]'
+      'f()\n---\n[x : X \\ x]'
       |> tryp(
         chapters: [
           chapter: [
@@ -647,7 +671,6 @@ defmodule ParserTest do
                      bindings: [
                        binding: [
                          bind_symbol: {:symbol, 'x'},
-                         bind_op: :from,
                          bind_domain: {:symbol, 'X'}
                        ]
                      ],
@@ -676,7 +699,6 @@ defmodule ParserTest do
                    bindings: [
                      binding: [
                        bind_symbol: {:symbol, 'x'},
-                       bind_op: :":",
                        bind_domain: {:symbol, 'X'}
                      ]
                    ],
@@ -689,7 +711,7 @@ defmodule ParserTest do
     end
 
     test "nested quantification" do
-      'f()\n---\nexists x : X \\ all y from X \\ x > y'
+      'f()\n---\nexists x : X \\ all y : X \\ x > y'
       |> tryp(
         chapters: [
           chapter: [
@@ -702,7 +724,6 @@ defmodule ParserTest do
                    bindings: [
                      binding: [
                        bind_symbol: {:symbol, 'x'},
-                       bind_op: :":",
                        bind_domain: {:symbol, 'X'}
                      ]
                    ],
@@ -713,8 +734,7 @@ defmodule ParserTest do
                         bindings: [
                           binding: [
                             bind_symbol: {:symbol, 'y'},
-                            bind_op: :from,
-                            bind_domain: {:symbol, 'X'}
+                               bind_domain: {:symbol, 'X'}
                           ]
                         ],
                         expr: {:appl, [op: :>, x: {:symbol, 'x'}, y: {:symbol, 'y'}]}

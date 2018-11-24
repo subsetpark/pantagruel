@@ -58,21 +58,20 @@ comment(Chars, TokenLine) ->
 
 keyword(Keyword, TokenLine) when
     Keyword == "and";
-    Keyword == "or" ->
-        {binary_operator, TokenLine, Keyword};
+    Keyword == "xor";
+    Keyword == "or"          -> {binary_operator, TokenLine, Keyword};
 keyword("exists", TokenLine) -> {quantifier, TokenLine, exists};
-keyword("all", TokenLine) -> {quantifier, TokenLine, all};
-keyword("xor", TokenLine) -> {binary_operator, TokenLine, 'xor'};
-keyword("fn", TokenLine) -> {fn, TokenLine};
+keyword("all", TokenLine)    -> {quantifier, TokenLine, all};
+keyword("fn", TokenLine)     -> {fn, TokenLine};
 keyword("import", TokenLine) -> {import, TokenLine};
 keyword("module", TokenLine) -> {module, TokenLine};
-keyword("from", TokenLine) -> {from, TokenLine};
-keyword(Chars, TokenLine) -> {symbol, TokenLine, Chars}.
+keyword("from", TokenLine)   -> {binary_operator, TokenLine, "from"};
+keyword(Chars, TokenLine)    -> {symbol, TokenLine, Chars}.
 
 operator("::", TokenLine) -> {yield_type, TokenLine, "::"};
 operator("=>", TokenLine) -> {yield_type, TokenLine, "=>"};
 operator("<-", TokenLine) -> {refined, TokenLine};
-operator(":", TokenLine) -> {':', TokenLine};
+operator(":", TokenLine)  -> {':', TokenLine};
 operator("<=", TokenLine) -> {reverse_yield, TokenLine};
 operator(TokenChars, TokenLine) when
     TokenChars == "+";
@@ -89,10 +88,8 @@ operator(TokenChars, TokenLine) when
     TokenChars == "<->";
     TokenChars == "^";
     TokenChars == "&";
-    TokenChars == "|" ->
-        {binary_operator, TokenLine, TokenChars};
+    TokenChars == ":?";
+    TokenChars == "|"     -> {binary_operator, TokenLine, TokenChars};
 operator(TokenChars, TokenLine) when
     TokenChars == "~";
-    TokenChars == "#" ->
-        {unary_operator, TokenLine, TokenChars};
-operator(TokenChars, TokenLine) -> {operator, TokenLine, TokenChars}.
+    TokenChars == "#"     -> {unary_operator, TokenLine, TokenChars}.

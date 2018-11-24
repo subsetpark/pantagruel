@@ -19,10 +19,6 @@ defmodule Pantagruel.Env do
     defexception message: "Unbound variables remain", unbound: MapSet.new(), scopes: []
   end
 
-  defmodule UndefinedAtomError do
-    defexception message: "Received atom without string representation", atom: nil
-  end
-
   defmodule DomainMismatchError do
     defexception message: "Domains cannot be matched with identifiers", args: [], doms: []
   end
@@ -46,7 +42,6 @@ defmodule Pantagruel.Env do
     :* => %Variable{name: "×", domain: "ℝ"},
     :% => %Variable{name: "÷", domain: "ℝ"},
     :^ => %Variable{name: "^", domain: "ℝ"},
-    :":" => %Variable{name: ":", domain: "⊤"},
     :from => %Variable{name: "∈", domain: "⊤"},
     :"<->" => %Variable{name: "↔", domain: "𝔹"},
     :-> => %Variable{name: "→", domain: "𝔹"},
@@ -257,7 +252,7 @@ defmodule Pantagruel.Env do
 
   # Given a binding pattern, return the symbol being bound.
   defp extract_binding_symbols(
-         {:binding, [bind_symbol: x, bind_op: _, bind_domain: domain]},
+         {:binding, [bind_symbol: x, bind_domain: domain]},
          {binding_pairs, symbol_references}
        ) do
     {unbunch(x, domain) ++ binding_pairs, symbol_references}
