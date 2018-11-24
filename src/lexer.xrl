@@ -3,13 +3,13 @@ Definitions.
 INT             = [0-9_]+
 DELIMITER       = \[\]\(\){},\.\\
 OPERATOR        = <>\-=~/\*\+#\.%^:|&
+SP              = \t\s
 
-LITERAL         = (`[^\n]*`|`[^\s\n{DELIMITER}]+)
+LITERAL         = `([^{SP}\n,{DELIMITER}]+)
 
 OPERATOR_CHOICE = (>=|==|!=|->|<->|<-|<=|=<|=>|=|-|>|<|\+|\*|~|#|%|\^|;|::|:|&|\|)
 
 SYMBOL          = [^\s\n&&{OPERATOR}&&{DELIMITER}:\"]+
-SP              = \t\s
 YIELD_TYPE      = (=>|::)
 FLOAT           = [-+]?[0-9]*\.?[0-9]+
 

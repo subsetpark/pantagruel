@@ -624,6 +624,27 @@ defmodule EvalTest do
              ] == eval(parsed)
     end
 
+    test "alias to set" do
+      parsed =
+        """
+        Status <= {`ok, `stop}
+        """
+        |> scan_and_parse
+
+      assert [
+               chapters: [
+                 chapter: [
+                   head: [
+                     alias: [
+                       alias_name: [symbol: 'Status'],
+                       alias_expr: {:set, [literal: 'ok', literal: 'stop']}
+                     ]
+                   ]
+                 ]
+               ]
+             ] == parsed
+    end
+
     test "object access" do
       parsed =
         """
