@@ -180,10 +180,10 @@ defmodule Pantagruel.Env do
   def is_bound?({_, f: f, x: x}, scopes),
     do: is_bound?(f, scopes) && is_bound?(x, scopes)
 
-  def is_bound?({:appl, op: _, x: x, y: y}, scopes),
+  def is_bound?({_, op: _, x: x, y: y}, scopes),
     do: is_bound?(x, scopes) && is_bound?(y, scopes)
 
-  def is_bound?({:appl, op: _, x: x}, scopes),
+  def is_bound?({_, op: _, x: x}, scopes),
     do: is_bound?(x, scopes)
 
   def is_bound?({:symbol, variable}, [scope | parent]) do

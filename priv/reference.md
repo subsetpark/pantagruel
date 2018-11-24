@@ -143,10 +143,10 @@ Finally, procedures can be declared with a comma separated list
 of **predicates** representing some constraint on the procedure
 domain. Here's a procedure declaration with a predicate:
 
-`f(x:Nat . x > 5)`
+`f(x:Nat \ x > 5)`
 
 The expression after the `.` indicates that `f` is defined for any
-natural number `x` greater than 5.  `f(x:Nat . x > 5, x < 10)`
+natural number `x` greater than 5.  `f(x:Nat \ x > 5, x < 10)`
 
 This declares a procedure `f` that's defined for any natural number `x`
 greater than 5 and less than 10.
@@ -168,7 +168,7 @@ Here's an example chapter head:
 
 ```pantagruel
 Score <= Nat
-halve(score: Score . score mod 2 = 0) :: Score
+halve(score: Score \ score mod 2 = 0) :: Score
 ```
 
 It introduces a procedure, `halve`, which operates on all even
@@ -194,7 +194,7 @@ A refinement is any expression, followed by the refinement operator
 Which says that `f x` or "`f` of `x`" is *refined by* the more concrete
 expression `x + 2`. A more complex example might be
 
-`f x . x > 5 <- g (x * 2)`
+`f x \ x > 5 <- g (x * 2)`
 
 Which says that `f` of `x` is refined by `g (x * 2)` *when `x` is
 greater than five*. The expression between the `.` and the `<-` is
@@ -323,14 +323,14 @@ for expression more complex operations.
 like this:
 
 ```pantagruel
-[x from X . x ^ 2]
+[x : X \ x ^ 2]
 ```
 
 The above expression is read to refer to a list made up every element
 in x, squared.
 
-A binding expression is an expression applying either the `in` or `from`
-operators to some domain or expression, eg., `x from X`, `n in Nat`.
+A binding expression is an expression applying the `in` operator to some
+domain or expression, eg., `x : X`, `n : Nat`.
 
 ##### Quantifications
 
@@ -340,7 +340,7 @@ contained within a list or set, and must be preceded by a **quantifier**:
 either `all` or `exists`, corresponding to the two types.
 
 ```pantagruel
-all x in Nat, y in Nat, x > y . (x - y) > 0
+all x in Nat, y in Nat, x > y \ (x - y) > 0
 ```
 
 This example says that for any x and y in the natural numbers where x
@@ -348,7 +348,7 @@ is greater than y, x minus y is greater than 0. It could also be written
 in a slightly more compressed form:
 
 ```pantagruel
-all (x, y) in Nat, x > y . (x - y) > 0
+all (x, y) in Nat, x > y \ (x - y) > 0
 ```
 
 ## Semantics
@@ -397,13 +397,13 @@ for known terms, eg:
 
 ```pantagruel
 pred(n:Nat)
-
+---
 pred n <- is_even? n and (n > 5)
 
 ;
 
 is_even?(n:Nat) :: Bool
-
+---
 is_even? 0
 ~(is_even? 1)
 is_even? n <- is_even? (n - 2)
@@ -430,7 +430,7 @@ When a procedure is declared, the name of the procedure is introduced
 into program scope, as are the names of the variables the procedure takes.
 
 ```
-f(x:Y . x > z) :: a
+f(x:Y \ x > z) :: a
 * *
 ```
 
@@ -438,7 +438,7 @@ When a constructor procedure is declared, the resulting domain is also
 bound into program scope.
 
 ```
-d(x:Y . x > z) => D
+d(x:Y \ x > z) => D
 * *               *
 ```
 
@@ -462,7 +462,7 @@ context of those expressions. However, they are not bound in the scope
 of the rest of the program.
 
 ```
-[n : N, n > m . f n]
+[n : N, n > m \ f n]
  +
 ```
 
@@ -474,14 +474,14 @@ and existential quantifiers: while universal quantifiers have the exact
 same behavior as comprehensions:
 
 ```
-all x : Y, x > z . f x
+all x : Y, x > z \ f x
     +
 ```
 
 Existential quantifiers introduce symbols into program scope.
 
 ```
-exists x : Y, x > z . f x
+exists x : Y, x > z \ f x
        *
 ```
 

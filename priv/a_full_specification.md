@@ -7,31 +7,31 @@ Program <= [Section]
 
 " A section head must have at least one statement; a section body can be empty.
 
-section (head, body: Head, Body . #head > 0 ) => Section
+section (head, body: Head, Body \ #head > 0 ) => Section
 
 Head <= [Comment, Declaration, Alias]
 Body <= [Comment, Expression]
 Comment, Declaration, Alias, Expression <= [String]
-
-eval p <- all sect from p . is_bound? sect
+---
+eval p <- all sect from p \ is_bound? sect
 
 ;
 
 is_bound? (sect: Section) :: Bool
-
+---
 " All variables referred to in a section head must be defined by the
 " end of that section head. All the variables in a section body, however,
 " must be defined by the end of the *next* section body.
 
 is_bound? sect <-                                           ...
-    (all h from sect.head . all sym from h . is_bound? sym) ...
+    (all h from sect.head \ all sym from h \ is_bound? sym) ...
     and                                                     ...
-    (all b from (p ((p sect) - 1)).body . all sym from b . is_bound? sym)
+    (all b from (p ((p sect) - 1)).body \ all sym from b \ is_bound? sym)
 
 ;
 
 is_bound (sym: String) :: Bool
-
+---
 is_bound sym <- (sym from env p (p sect)) or (sym from init_scope)
 
 ;
@@ -61,7 +61,7 @@ restrictions on the values within the type, such as `x != 0` or `x mod 2
 = 0`. `:`/`in` is distinct from `∈`/`from`, which indicates membership
 in some concrete value as opposed the set of all possible values.
 
-The constructor declaration `section (head, body: Head, Body . #head >
+The constructor declaration `section (head, body: Head, Body \ #head >
 0 ) => Section` introduces a function `section` which takes a `Head` and
 `Body` and produces a `Section`. There's also a single precondition to
 the constructor, introduced by `.`, which says that the size of `head` has
