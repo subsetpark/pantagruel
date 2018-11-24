@@ -56,8 +56,10 @@ comment(Chars, TokenLine) ->
     end,
     {token, {comment, TokenLine, string:trim(Chars, both, "\n\"\s")}, Pushback}.
 
-keyword("and", TokenLine) -> {'and', TokenLine};
-keyword("or", TokenLine) -> {'or', TokenLine};
+keyword(Keyword, TokenLine) when
+    Keyword == "and";
+    Keyword == "or" ->
+        {binary_operator, TokenLine, Keyword};
 keyword("exists", TokenLine) -> {quantifier, TokenLine, exists};
 keyword("all", TokenLine) -> {quantifier, TokenLine, all};
 keyword("xor", TokenLine) -> {binary_operator, TokenLine, 'xor'};

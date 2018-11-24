@@ -78,13 +78,11 @@ defmodule Pantagruel.Test.LegacyParser do
           chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
             body: [
-              expr: [
-                refinement: [
-                  pattern: {:symbol, 'x'},
-                  expr:
-                    {:appl,
-                     [op: :>, x: {:appl, [op: :and, x: {:symbol, 'y'}, y: {:symbol, 'y'}]}, y: 1]}
-                ]
+              refinement: [
+                pattern: {:symbol, 'x'},
+                expr:
+                  {:appl,
+                   [op: :>, x: {:appl, [op: :and, x: {:symbol, 'y'}, y: {:symbol, 'y'}]}, y: 1]}
               ]
             ]
           ]
@@ -418,16 +416,22 @@ defmodule Pantagruel.Test.LegacyParser do
 
   describe "comments handling" do
     test "can parse a comment" do
-      text = 'f()\n---\nf>1\n\" Here is a comment.\nf<2'
+      text = '''
+      f()
+      ---
+      f>1
+      " Here is a comment.
+      f<2
+      '''
 
       tryparse(text,
         chapters: [
           chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
             body: [
-              expr: [appl: [op: :>, x: {:symbol, 'f'}, y: 1]],
-              comment: ["Here is a comment."],
-              expr: [appl: [op: :<, x: {:symbol, 'f'}, y: 2]]
+              expr: {:appl, [op: :>, x: {:symbol, 'f'}, y: 1]},
+              comment: 'Here is a comment.',
+              expr: {:appl, [op: :<, x: {:symbol, 'f'}, y: 2]}
             ]
           ]
         ]

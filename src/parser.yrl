@@ -139,6 +139,7 @@ body_line -> expression refined expression newline :
     {refinement, [{pattern, '$1'}, {expr, '$3'}]}.
 body_line -> expression '\\' expressions refined expression newline :
     {refinement, [{pattern, '$1'}, {guard, '$3'}, {expr, '$5'}]}.
+body_line -> comment newline : unwrap('$1').
 
 % EXPRESSION PRECEDENCE
 % This is a strange area. Here are the precedence levels of Pantagruel:

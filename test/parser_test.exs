@@ -795,6 +795,24 @@ defmodule ParserTest do
     end
   end
 
+  describe "logical operators" do
+    test "and" do
+      '''
+      f()
+      ---
+      x and y
+      '''
+      |> tryp(
+        chapters: [
+          chapter: [
+            head: [decl: [decl_ident: {:symbol, 'f'}]],
+            body: [expr: {:appl, [op: :and, x: {:symbol, 'x'}, y: {:symbol, 'y'}]}]
+          ]
+        ]
+      )
+    end
+  end
+
   describe "module line" do
     test "module" do
       '''
