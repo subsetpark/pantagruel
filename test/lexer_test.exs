@@ -65,7 +65,7 @@ defmodule LexerTest do
 
     test "infix dot" do
       {:ok, tokens, 1} = :lexer.string('x.y')
-      assert [{:symbol, 1, 'x'}, {:'.', 1, '.'}, {:symbol, 1, 'y'}] == tokens
+      assert [{:symbol, 1, 'x'}, {:'.', 1}, {:symbol, 1, 'y'}] == tokens
     end
   end
 
@@ -87,18 +87,18 @@ defmodule LexerTest do
 
     test "list" do
       {:ok, tokens, 1} = :lexer.string('[x]')
-      assert [{:'[', 1, '['}, {:symbol, 1, 'x'}, {:']', 1, ']'}] == tokens
+      assert [{:'[', 1}, {:symbol, 1, 'x'}, {:']', 1}] == tokens
     end
 
     test "list with commas" do
       {:ok, tokens, 1} = :lexer.string('[x, y]')
 
       assert [
-               {:'[', 1, '['},
+               {:'[', 1},
                {:symbol, 1, 'x'},
-               {:',', 1, ','},
+               {:',', 1},
                {:symbol, 1, 'y'},
-               {:']', 1, ']'}
+               {:']', 1}
              ] == tokens
     end
   end
@@ -121,8 +121,8 @@ defmodule LexerTest do
 
       assert [
                {:symbol, 1, 'f'},
-               {:'(', 1, '('},
-               {:')', 1, ')'}
+               {:'(', 1},
+               {:')', 1}
              ] == tokens
     end
   end

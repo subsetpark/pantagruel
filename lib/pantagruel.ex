@@ -33,9 +33,11 @@ defmodule Pantagruel do
 
   defp handle({flags, [filename], _}) do
     filename
-    |> File.open!([:utf8, :charlist])
+    |> File.open!([:utf8])
     |> IO.read(:all)
+    |> String.to_charlist()
     |> :lexer.string()
+    |> IO.inspect
     |> handle_lex()
     |> handle_parse(flags)
   end

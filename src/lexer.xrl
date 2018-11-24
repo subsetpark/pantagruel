@@ -25,7 +25,7 @@ Rules.
 [{SP}]*;[{SP}\n]* : {token, {where, TokenLine}}.
 
 YIELD_TYPE        : {token, {yield_type, TokenLine, TokenChars}}.
-[{DELIMITER}]     : {token, {list_to_atom(TokenChars), TokenLine, TokenChars}}.
+[{DELIMITER}]     : {token, {list_to_atom(TokenChars), TokenLine}}.
 {OPERATOR_CHOICE} : {token, operator(TokenChars, TokenLine)}.
 {SYMBOL}          : {token, keyword(TokenChars, TokenLine)}.
 
