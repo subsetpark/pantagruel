@@ -11,7 +11,6 @@ defmodule Pantagruel.Eval do
   quantifiers, domain aliases), and checking that all symbols have been
   properly bound.
   """
-  import Pantagruel.Guards
   alias Pantagruel.Values.Domain
   alias Pantagruel.Env
   alias Pantagruel.Eval.Module
@@ -139,17 +138,15 @@ defmodule Pantagruel.Eval do
 
   # Include symbols in a set of values to check for binding.
   @spec include_for_binding_check(MapSet.t(), any) :: MapSet.t()
-  defp include_for_binding_check(unbounds, {e, contents}) when is_container(e),
-    do: include_for_binding_check(unbounds, contents)
+  defp include_for_binding_check(variables, unbounds) when is_list(variables) do
+    MapSet.union(unbounds, variables |> MapSet.new())
+  end
 
-  defp include_for_binding_check(unbounds, variables) when is_tuple(variables),
+  defp include_for_binding_check(variables, unbounds),
     do: MapSet.union(unbounds, [variables] |> MapSet.new())
 
-  defp include_for_binding_check(unbounds, variables),
-    do: MapSet.union(unbounds, variables |> MapSet.new())
-
-  # Evaluate the statement types ("declarations") found in chapter
-  # headers. Header statements come in three forms:
+  # Evaluate the statement types found in chapter headers. Header statements
+  # come in three forms:
   # 1. Comments, which are ignored;
   defp eval_header_statement({:comment, _}, state), do: state
   # 2. Domain aliases, which bind symbols as aliases to concrete domains;
@@ -163,7 +160,10 @@ defmodule Pantagruel.Eval do
         Env.bind(scope, name, %Domain{name: name, ref: alias_exp})
       end)
 
-    header_unbounds = include_for_binding_check(header_unbounds, [alias_exp])
+    header_unbounds =
+      [alias_exp]
+      |> include_for_binding_check(header_unbounds)
+
     {[scope | scopes], header_unbounds, unbounds}
   end
 
@@ -171,64 +171,43 @@ defmodule Pantagruel.Eval do
   defp eval_header_statement({:decl, declaration}, {[scope | scopes], header_unbounds, unbounds}) do
     scope = Env.bind_lambda(scope, declaration)
     # Check for binding: domain, predicate, and codomain.
-    symbols =
+    header_unbounds =
       [
-        # Replace a nil codomain with a dummy value that will always pass.
-        declaration[:lambda_codomain] || 0
-        | List.flatten(declaration[:lambda_guards] || [])
+        declaration[:lambda_args][:doms],
+        declaration[:lambda_codomain],
+        declaration[:lambda_guards]
       ]
-      |> Enum.concat(declaration[:lambda_args][:doms] || [])
-
-    header_unbounds = include_for_binding_check(header_unbounds, symbols)
+      |> List.flatten()
+      |> include_for_binding_check(header_unbounds)
 
     {[scope | scopes], header_unbounds, unbounds}
   end
 
   # Evaluate a line of a chapter body. Body statements can be either
   # comments, which are ignored, or expression statements.
+  # 1. Comments, which are ignored;
+  defp eval_body_statement({:comment, _}, state), do: state
+
+  # 2. Expressions;
+  defp eval_body_statement([{:expr, line}], state), do: eval_expression(line, state)
+  # 3. Refinements, which are guarded patterns with refining expressions.
+  defp eval_body_statement([refinement: refinement], state),
+    do: eval_expression(Keyword.values(refinement), state)
+
   defp eval_body_statement([{:intro_op, _} | clause], state),
     do: eval_body_statement(clause, state)
 
-  defp eval_body_statement({:comment, _}, state), do: state
-  defp eval_body_statement([{:expr, line}], state), do: eval_expression(:expr, line, state)
-
-  defp eval_body_statement([refinement: [pattern: pattern, expr: expr]], state) do
-    eval_expression(:refinement, [pattern, expr], state)
-  end
-
-  defp eval_body_statement([refinement: [pattern: pattern, guard: guard, expr: expr]], state) do
-    eval_expression(:refinement, [pattern, guard, expr], state)
-  end
-
-  defp eval_expression(expr_type, elements, {
+  defp eval_expression(elements, {
          [scope | scopes],
          [unbounds, next_unbounds | rest]
        }) do
     # Include any introduced symbols into scope.
-    scope = bind_expression(expr_type, elements, scope)
+    scope = bind_expression_variables(elements, scope)
     # Include all symbols into the binding check for the *next* chapter.
-    next_unbounds = include_for_binding_check(next_unbounds, elements)
+    next_unbounds = include_for_binding_check(elements, next_unbounds)
 
     {[scope | scopes], [unbounds, next_unbounds | rest]}
   end
-
-  defp bind_expression(:refinement, [pattern, expression], scope) do
-    elements = [pattern, expression]
-    # Include any introduced symbols into scope.
-    Enum.reduce(elements, scope, &bind_expression_variables/2)
-  end
-
-  defp bind_expression(:refinement, [pattern, guard, expression], scope) do
-    elements = [pattern, guard, expression]
-    # Include any introduced symbols into scope.
-    Enum.reduce(elements, scope, &bind_expression_variables/2)
-  end
-
-  defp bind_expression(:expr, {:quantification, _} = q, scope) do
-    bind_expression_variables(q, scope)
-  end
-
-  defp bind_expression(:expr, _, scope), do: scope
 
   # Existence quantifiers don't just introduce variables for the scope of
   # their predicates; the introduce variables into global scope.
@@ -238,15 +217,16 @@ defmodule Pantagruel.Eval do
        ) do
     bound =
       bindings
-      |> Enum.reduce(scope, fn {:binding, [bind_symbol: x, bind_domain: domain]}, s ->
-        Env.bind(s, x, domain)
-      end)
+      |> Enum.reduce(scope, &bind_binding/2)
 
     bind_expression_variables(expr, bound)
   end
 
   # In this respect they're unique among expression types.
   defp bind_expression_variables(_, state), do: state
+
+  def bind_binding({:binding, [bind_symbol: x, bind_domain: d]}, s), do: Env.bind(s, x, d)
+
   # Extend the environment for a new chapter.
   @spec new_state(t, :atom | nil) :: t
   defp new_state({scopes, header_unbounds, unbounds}, mod_name) do

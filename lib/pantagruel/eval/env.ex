@@ -112,24 +112,8 @@ defmodule Pantagruel.Env do
     Enum.map(symbol, &lookup_binding_name/1)
   end
 
-  def lookup_binding_name(symbol) when is_atom(symbol) do
-    case @starting_environment do
-      # Look up symbol name if predefined.
-      %{^symbol => variable} -> variable.name
-      _ -> to_string(symbol)
-    end
-  end
-
-  def lookup_binding_name({:symbol, s} = symbol) do
-    case @starting_environment do
-      # Look up symbol name if predefined.
-      %{^symbol => variable} -> variable.name
-      _ when is_binary(s) -> s
-      _ -> to_string(s)
-    end
-  end
-
-  def lookup_binding_name(expr), do: expr
+  def lookup_binding_name({:symbol, s} = symbol), do: do_lookup(symbol, s)
+  def lookup_binding_name(symbol), do: do_lookup(symbol, symbol)
 
   @doc """
   Check a list of values for binding in the given scope, and raise if
@@ -153,21 +137,14 @@ defmodule Pantagruel.Env do
   """
   def is_bound?(v, _) when is_integer(v), do: true
   def is_bound?(v, _) when is_float(v), do: true
+  def is_bound?(nil, _), do: true
   def is_bound?({:literal, _}, _), do: true
   def is_bound?(_, []), do: false
 
   def is_bound?({container, []}, _) when is_container(container),
     do: true
 
-  def is_bound?({c, contents}, scope) when is_container(c) do
-    Enum.all?(contents, fn
-      container_item when is_list(container_item) ->
-        Enum.all?(container_item, &is_bound?(&1, scope))
-
-      container_item ->
-        is_bound?(container_item, scope)
-    end)
-  end
+  def is_bound?({c, contents}, scope) when is_container(c), do: is_bound?(contents, scope)
 
   def is_bound?({:lambda, lambda}, scope) do
     # Lambdas introduce function arguments. Therefore they are bound in
@@ -210,15 +187,24 @@ defmodule Pantagruel.Env do
     do: is_bound?(x, scopes)
 
   def is_bound?({:symbol, variable}, [scope | parent]) do
-    variable =
-      variable
-      |> :string.trim(:both, '\'')
+    symbol =
+      {:symbol,
+       variable
+       |> :string.trim(:both, '\'')}
 
-    to_check = {:symbol, variable}
-    has_key?(scope, to_check) or is_bound?(to_check, parent)
+    has_key?(scope, symbol) or is_bound?(symbol, parent)
   end
 
   def is_bound?(es, scopes) when is_list(es), do: Enum.all?(es, &is_bound?(&1, scopes))
+
+  defp do_lookup(symbol, other) do
+    case @starting_environment do
+      # Look up symbol name if predefined.
+      %{^symbol => variable} -> variable.name
+      _ when is_binary(other) -> other
+      _ -> to_string(other)
+    end
+  end
 
   defp make_variable(_, %{} = v), do: v
   defp make_variable(name, domain), do: %Variable{name: name, domain: domain}
@@ -232,7 +218,10 @@ defmodule Pantagruel.Env do
   # Process some temporary bindings and check for boundness, without
   # those bindings being valid outside of this context.
   defp check_with_bindings(expr, bindings, scopes) do
-    {binding_pairs, variable_references} = extract_bindings(bindings)
+    {binding_pairs, variable_references} =
+      bindings
+      |> Enum.reduce({[], []}, &extract_binding_symbols/2)
+
     # Bind the extracted symbols.
     inner_scope =
       binding_pairs
@@ -244,12 +233,6 @@ defmodule Pantagruel.Env do
     for({_, d} <- binding_pairs, do: d)
     |> Enum.concat(variable_references)
     |> Enum.all?(&is_bound?(&1, scopes)) && is_bound?(expr, scopes)
-  end
-
-  # Extract {symbol, domain} tuples from a list of binding expressions.
-  defp extract_bindings(bindings) do
-    bindings
-    |> Enum.reduce({[], []}, &extract_binding_symbols/2)
   end
 
   # Given a binding pattern, return the symbol being bound.
@@ -264,9 +247,7 @@ defmodule Pantagruel.Env do
     {pairs, [exprs | symbol_references]}
   end
 
-  defp unbunch({:par, elements}, domain) do
-    for e <- elements, do: {e, domain}
-  end
+  defp unbunch({:par, elements}, domain), do: for(e <- elements, do: {e, domain})
 
   defp unbunch(x, y), do: [{x, y}]
 

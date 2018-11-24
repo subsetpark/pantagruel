@@ -327,6 +327,27 @@ defmodule EvalTest do
              ] == eval(parsed)
     end
 
+    test "refinement with 0" do
+      parsed =
+        """
+        f()
+        ---
+        f <- 0
+        """
+        |> scan_and_parse
+
+      assert [
+               %{
+                 {:symbol, 'f'} => %Pantagruel.Values.Lambda{
+                   codomain: nil,
+                   domain: [],
+                   name: {:symbol, 'f'},
+                   type: nil
+                 }
+               }
+             ] == eval(parsed)
+    end
+
     test "alls introduce temporary bindings" do
       parsed =
         """
