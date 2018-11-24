@@ -2,7 +2,7 @@ defmodule Pantagruel do
   import IO, only: [puts: 1]
   import Pantagruel.Format
 
-  alias Pantagruel.{Eval}
+  alias Pantagruel.{Eval, Parse}
 
   @moduledoc """
   An interpreter for the Pantagruel language.
@@ -37,17 +37,16 @@ defmodule Pantagruel do
     |> IO.read(:all)
     |> String.to_charlist()
     |> :lexer.string()
-    |> handle_lex()
+    |> Parse.handle_lex()
     |> handle_parse(flags)
   end
 
   defp handle({_, _, _}), do: IO.puts(@help)
 
-  defp handle_lex({:ok, tokens, _linecount}), do: :parser.parse(tokens)
 
-  defp handle_parse({:error, {line, :parser, tokens}}, _) do
-    puts "Line #{line}: syntax error."
-    puts(Enum.join(tokens, " "))
+  defp handle_parse({:error, {line, module, message}}, _) do
+    IO.puts("Line #{line}: syntax error.")
+    message |> module.format_error() |> IO.puts()
   end
 
   defp handle_parse({:ok, []}, _), do: puts("No Pantagruel source found.")

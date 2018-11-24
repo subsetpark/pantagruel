@@ -10,8 +10,9 @@ defmodule Pantagruel.FormatTest do
   end
 
   defp eval(text) do
-    with {:ok, tokens, _} <- :lexer.string(text),
-         {:ok, parsed} <- Pantagruel.Parse.program(tokens),
+    with {:ok, parsed} <-
+           :lexer.string(text)
+           |> Pantagruel.Parse.handle_lex(),
          {:ok, scope} <- Pantagruel.Eval.eval(parsed, []) do
       {parsed, scope}
     end
@@ -103,6 +104,19 @@ defmodule Pantagruel.FormatTest do
         |> eval
 
       assert "f()  \n¬f  " == Format.format_program(parsed)
+      assert "f()" == Format.format_scopes(scopes)
+    end
+
+    test "intro operator" do
+      {parsed, scopes} =
+        """
+        f()
+        ---
+        and ~f
+        """
+        |> eval
+
+      assert "f()  \n∧ ¬f  " == Format.format_program(parsed)
       assert "f()" == Format.format_scopes(scopes)
     end
   end

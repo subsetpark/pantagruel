@@ -31,14 +31,19 @@ defmodule Pantagruel.Format do
   @doc """
   Generate a string representation of a parsed program section.
   """
-  def format_section({:import, mod_name}), do: ": #{mod_name}"
+  def format_section({:imports, imports}) do
+    imports
+    |> Enum.map(&format_import/1)
+    |> Enum.join("\n")
+  end
+
   def format_section({:module, mod_name}), do: "# #{mod_name}"
 
   def format_section({:chapters, chapters}) do
-    chapters
-    |> Enum.map(&format_chapter/1)
+    format_with(chapters, &format_chapter/1)
   end
 
+  def format_import({:import, mod_name}), do: ": #{mod_name}"
   defguard is_term(s) when is_number(s) or is_atom(s) or is_binary(s)
 
   @doc """
@@ -113,11 +118,15 @@ defmodule Pantagruel.Format do
   end
 
   defp format_line({:decl, declaration}), do: format_lambda(declaration, decl: declaration)
-  defp format_line({:comment, comment}), do: format_comment(comment)
-  defp format_line({:expr, expression}), do: format_exp(expression)
   defp format_line({:alias, alias}), do: format_alias(alias)
+  defp format_line({:comment, comment}), do: format_comment(comment)
+  defp format_line(expr: expression), do: format_exp(expression)
 
-  defp format_line({:refinement, refinement}), do: format_refinement(refinement)
+  defp format_line(refinement: refinement), do: format_refinement(refinement)
+
+  defp format_line([{:intro_op, op} | rest]) do
+    "#{format_exp(op)} #{format_line(rest)}"
+  end
 
   defp format_refinement(refinement) do
     pat = refinement[:pattern] |> format_exp()
@@ -131,7 +140,7 @@ defmodule Pantagruel.Format do
     comment_str =
       comment
       |> to_string()
-      |> String.split(Pantagruel.Scan.comment_continuation())
+      |> String.split(<<0xF8FF::utf8>>)
       |> Enum.map(&String.trim/1)
       |> Enum.join("\n> ")
 

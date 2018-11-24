@@ -7,6 +7,7 @@ bare_symbols
 expression
 expressions
 maybe_expressions
+a_comment
 
 term
 list
@@ -82,8 +83,8 @@ program -> newline : [].
 
 module_line -> module bare_symbol newline : '$2'.
 
-imports -> import_line : ['$1'].
-imports -> import_line imports : ['$1' | '$2'].
+imports -> import_line : parse_imports('$1').
+imports -> imports import_line: '$1' ++ parse_imports('$2').
 
 import_line -> import bare_symbols newline : {import, '$2'}.
 
@@ -92,6 +93,9 @@ chapters -> chapter where chapters : [{chapter, '$1'} | '$3'].
 
 chapter -> head : [{head, '$1'}].
 chapter -> head sep body : [{head, '$1'}, {body, '$3'}].
+
+a_comment -> comment : unwrap('$1').
+a_comment -> a_comment newline comment : merge_comments('$1', '$3').
 
 %
 % head
@@ -102,7 +106,7 @@ head -> head_line head : ['$1' | '$2'].
 
 head_line -> declaration newline : '$1'.
 head_line -> alias newline : '$1'.
-head_line -> comment newline : unwrap('$1').
+head_line -> a_comment newline : '$1'.
 
 % i. declarations
 
@@ -131,12 +135,13 @@ alias -> symbols reverse_yield expression :
 body -> body_line : ['$1'].
 body -> body_line body : ['$1' | '$2'].
 
-body_line -> expression newline : {expr, '$1'}.
+body_line -> expression newline : [{expr, '$1'}].
 body_line -> expression refined expression newline :
-    {refinement, [{pattern, '$1'}, {expr, '$3'}]}.
+    [{refinement, [{pattern, '$1'}, {expr, '$3'}]}].
 body_line -> expression '\\' expressions refined expression newline :
-    {refinement, [{pattern, '$1'}, {guard, '$3'}, {expr, '$5'}]}.
-body_line -> comment newline : unwrap('$1').
+    [{refinement, [{pattern, '$1'}, {guard, '$3'}, {expr, '$5'}]}].
+body_line -> a_comment newline : '$1'.
+body_line -> binary_operator body_line : [{intro_op, unwrap('$1')} | '$2'].
 
 % EXPRESSION PRECEDENCE
 % This is a strange area. Here are the precedence levels of Pantagruel:
@@ -226,3 +231,12 @@ unwrap({_, _, Symbol}) -> Symbol;
 unwrap({Symbol, _}) -> Symbol.
 
 bare({symbol, _, Symbol}) -> Symbol.
+
+merge_comments({comment, Comment}, {comment, _, Comment2}) ->
+    {comment, Comment ++ [16#f8ff] ++ Comment2}.
+
+parse_imports({import, [Import|Rest]}) ->
+    parse_imports(Rest, [{import, Import}]).
+parse_imports([Import|Rest], Acc) ->
+    parse_imports(Rest, [{import, Import}|Acc]);
+parse_imports([], Acc) -> lists:reverse(Acc).

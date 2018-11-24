@@ -10,10 +10,11 @@ defmodule EvalTest do
   end
 
   defp scan_and_parse(text) do
-    with {:ok, tokens, _} <- :lexer.string(text ++ '\n') do
-      {:ok, parsed} = Pantagruel.Parse.program(tokens)
-      parsed
-    end
+    {:ok, parsed} =
+      :lexer.string(text ++ '\n')
+      |> Pantagruel.Parse.handle_lex()
+
+    parsed
   end
 
   defp eval(parsed) do

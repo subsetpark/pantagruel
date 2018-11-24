@@ -1,3 +1,4 @@
+module CHECKOUT
 user() => User
 doc (owner: User) => Document
 

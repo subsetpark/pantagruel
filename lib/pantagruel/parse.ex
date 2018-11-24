@@ -1,5 +1,4 @@
 defmodule Pantagruel.Parse do
-  def program(tokens) do
-    :parser.parse(tokens)
-  end
+  def handle_lex({:ok, tokens, _linecount}), do: :parser.parse(tokens)
+
 end

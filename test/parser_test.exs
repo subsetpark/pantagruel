@@ -24,7 +24,7 @@ defmodule ParserTest do
         chapters: [
           chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
-            body: [expr: {:symbol, 'x'}]
+            body: [[expr: {:symbol, 'x'}]]
           ]
         ]
       )
@@ -41,15 +41,17 @@ defmodule ParserTest do
           chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
             body: [
-              expr:
-                {:par,
-                 [
-                   appl: [
-                     op: :from,
-                     x: {:symbol, 'x'},
-                     y: {:symbol, 'f'}
-                   ]
-                 ]}
+              [
+                expr:
+                  {:par,
+                   [
+                     appl: [
+                       op: :from,
+                       x: {:symbol, 'x'},
+                       y: {:symbol, 'f'}
+                     ]
+                   ]}
+              ]
             ]
           ]
         ]
@@ -404,6 +406,31 @@ defmodule ParserTest do
       '"  ok'
       |> tryp(chapters: [chapter: [head: [comment: 'ok']]])
     end
+
+    test "two comments" do
+      '''
+      " ok
+      " go
+      '''
+      |> tryp(chapters: [chapter: [head: [comment: 'ok' ++ [63743] ++ 'go']]])
+    end
+
+    test "comment in body" do
+      '''
+      f()
+      ---
+      " A
+      " B
+      '''
+      |> tryp(
+        chapters: [
+          chapter: [
+            head: [decl: [decl_ident: {:symbol, 'f'}]],
+            body: [comment: 'A' ++ [63743] ++ 'B']
+          ]
+        ]
+      )
+    end
   end
 
   describe "precendence" do
@@ -508,7 +535,7 @@ defmodule ParserTest do
         chapters: [
           chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
-            body: [expr: 1]
+            body: [[expr: 1]]
           ]
         ]
       )
@@ -530,7 +557,7 @@ defmodule ParserTest do
         chapters: [
           chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
-            body: [refinement: [pattern: 1, expr: 2]]
+            body: [[refinement: [pattern: 1, expr: 2]]]
           ]
         ]
       )
@@ -542,7 +569,7 @@ defmodule ParserTest do
         chapters: [
           chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
-            body: [expr: {:appl, [op: :+, x: 1, y: 2]}]
+            body: [[expr: {:appl, [op: :+, x: 1, y: 2]}]]
           ]
         ]
       )
@@ -554,7 +581,16 @@ defmodule ParserTest do
         chapters: [
           chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
-            body: [expr: {:appl, [f: {:symbol, 'f'}, x: {:symbol, 'x'}]}]
+            body: [
+              [
+                expr:
+                  {:appl,
+                   [
+                     f: {:symbol, 'f'},
+                     x: {:symbol, 'x'}
+                   ]}
+              ]
+            ]
           ]
         ]
       )
@@ -566,7 +602,7 @@ defmodule ParserTest do
         chapters: [
           chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
-            body: [expr: {:list, [appl: [f: {:symbol, 'f'}, x: {:symbol, 'x'}]]}]
+            body: [[expr: {:list, [appl: [f: {:symbol, 'f'}, x: {:symbol, 'x'}]]}]]
           ]
         ]
       )
@@ -578,7 +614,7 @@ defmodule ParserTest do
         chapters: [
           chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
-            body: [expr: 1, expr: 2]
+            body: [[expr: 1], [expr: 2]]
           ]
         ]
       )
@@ -589,7 +625,7 @@ defmodule ParserTest do
     test "import line" do
       'import F\nf()'
       |> tryp(
-        imports: [import: ['F']],
+        imports: [import: 'F'],
         chapters: [chapter: [head: [decl: [decl_ident: {:symbol, 'f'}]]]]
       )
     end
@@ -597,7 +633,7 @@ defmodule ParserTest do
     test "multiple imports" do
       'import F, X\nf()'
       |> tryp(
-        imports: [import: ['F', 'X']],
+        imports: [import: 'F', import: 'X'],
         chapters: [chapter: [head: [decl: [decl_ident: {:symbol, 'f'}]]]]
       )
     end
@@ -611,19 +647,21 @@ defmodule ParserTest do
           chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
             body: [
-              expr:
-                {:set,
-                 [
-                   comprehension: [
-                     bindings: [
-                       binding: [
-                         bind_symbol: {:symbol, 'x'},
-                         bind_domain: {:symbol, 'X'}
-                       ]
-                     ],
-                     expr: {:symbol, 'x'}
-                   ]
-                 ]}
+              [
+                expr:
+                  {:set,
+                   [
+                     comprehension: [
+                       bindings: [
+                         binding: [
+                           bind_symbol: {:symbol, 'x'},
+                           bind_domain: {:symbol, 'X'}
+                         ]
+                       ],
+                       expr: {:symbol, 'x'}
+                     ]
+                   ]}
+              ]
             ]
           ]
         ]
@@ -637,20 +675,22 @@ defmodule ParserTest do
           chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
             body: [
-              expr:
-                {:set,
-                 [
-                   comprehension: [
-                     bindings: [
-                       binding: [
-                         bind_symbol: {:symbol, 'x'},
-                         bind_domain: {:symbol, 'X'}
+              [
+                expr:
+                  {:set,
+                   [
+                     comprehension: [
+                       bindings: [
+                         binding: [
+                           bind_symbol: {:symbol, 'x'},
+                           bind_domain: {:symbol, 'X'}
+                         ],
+                         guard: {:appl, [op: :>, x: {:symbol, 'x'}, y: 1]}
                        ],
-                       guard: {:appl, [op: :>, x: {:symbol, 'x'}, y: 1]}
-                     ],
-                     expr: {:symbol, 'x'}
-                   ]
-                 ]}
+                       expr: {:symbol, 'x'}
+                     ]
+                   ]}
+              ]
             ]
           ]
         ]
@@ -664,19 +704,21 @@ defmodule ParserTest do
           chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
             body: [
-              expr:
-                {:list,
-                 [
-                   comprehension: [
-                     bindings: [
-                       binding: [
-                         bind_symbol: {:symbol, 'x'},
-                         bind_domain: {:symbol, 'X'}
-                       ]
-                     ],
-                     expr: {:symbol, 'x'}
-                   ]
-                 ]}
+              [
+                expr:
+                  {:list,
+                   [
+                     comprehension: [
+                       bindings: [
+                         binding: [
+                           bind_symbol: {:symbol, 'x'},
+                           bind_domain: {:symbol, 'X'}
+                         ]
+                       ],
+                       expr: {:symbol, 'x'}
+                     ]
+                   ]}
+              ]
             ]
           ]
         ]
@@ -692,18 +734,20 @@ defmodule ParserTest do
           chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
             body: [
-              expr:
-                {:quantification,
-                 [
-                   quantifier: :exists,
-                   bindings: [
-                     binding: [
-                       bind_symbol: {:symbol, 'x'},
-                       bind_domain: {:symbol, 'X'}
-                     ]
-                   ],
-                   expr: {:appl, [op: :>, x: {:symbol, 'x'}, y: 1]}
-                 ]}
+              [
+                expr:
+                  {:quantification,
+                   [
+                     quantifier: :exists,
+                     bindings: [
+                       binding: [
+                         bind_symbol: {:symbol, 'x'},
+                         bind_domain: {:symbol, 'X'}
+                       ]
+                     ],
+                     expr: {:appl, [op: :>, x: {:symbol, 'x'}, y: 1]}
+                   ]}
+              ]
             ]
           ]
         ]
@@ -717,29 +761,31 @@ defmodule ParserTest do
           chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
             body: [
-              expr:
-                {:quantification,
-                 [
-                   quantifier: :exists,
-                   bindings: [
-                     binding: [
-                       bind_symbol: {:symbol, 'x'},
-                       bind_domain: {:symbol, 'X'}
-                     ]
-                   ],
-                   expr:
-                     {:quantification,
-                      [
-                        quantifier: :all,
-                        bindings: [
-                          binding: [
-                            bind_symbol: {:symbol, 'y'},
-                               bind_domain: {:symbol, 'X'}
-                          ]
-                        ],
-                        expr: {:appl, [op: :>, x: {:symbol, 'x'}, y: {:symbol, 'y'}]}
-                      ]}
-                 ]}
+              [
+                expr:
+                  {:quantification,
+                   [
+                     quantifier: :exists,
+                     bindings: [
+                       binding: [
+                         bind_symbol: {:symbol, 'x'},
+                         bind_domain: {:symbol, 'X'}
+                       ]
+                     ],
+                     expr:
+                       {:quantification,
+                        [
+                          quantifier: :all,
+                          bindings: [
+                            binding: [
+                              bind_symbol: {:symbol, 'y'},
+                              bind_domain: {:symbol, 'X'}
+                            ]
+                          ],
+                          expr: {:appl, [op: :>, x: {:symbol, 'x'}, y: {:symbol, 'y'}]}
+                        ]}
+                   ]}
+              ]
             ]
           ]
         ]
@@ -758,7 +804,7 @@ defmodule ParserTest do
         chapters: [
           chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
-            body: [expr: {:dot, [f: {:symbol, 'y'}, x: {:symbol, 'f'}]}]
+            body: [[expr: {:dot, [f: {:symbol, 'y'}, x: {:symbol, 'f'}]}]]
           ]
         ]
       )
@@ -777,12 +823,14 @@ defmodule ParserTest do
           chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
             body: [
-              expr:
-                {:lambda,
-                 [
-                   yield_type: '::',
-                   lambda_codomain: {:symbol, 'D'}
-                 ]}
+              [
+                expr:
+                  {:lambda,
+                   [
+                     yield_type: '::',
+                     lambda_codomain: {:symbol, 'D'}
+                   ]}
+              ]
             ]
           ]
         ]
@@ -826,7 +874,7 @@ defmodule ParserTest do
         chapters: [
           chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
-            body: [expr: {:appl, [op: :and, x: {:symbol, 'x'}, y: {:symbol, 'y'}]}]
+            body: [[expr: {:appl, [op: :and, x: {:symbol, 'x'}, y: {:symbol, 'y'}]}]]
           ]
         ]
       )

@@ -2,10 +2,11 @@ defmodule Pantagruel.Test.LegacyParser do
   use ExUnit.Case
 
   defp tryparse(text, r) do
-    with {:ok, tokens, _} <- :lexer.string(text ++ '\n'),
-         {:ok, program} <- Pantagruel.Parse.program(tokens) do
-      assert r == program
-    end
+    {:ok, program} =
+      :lexer.string(text ++ '\n')
+      |> Pantagruel.Parse.handle_lex()
+
+    assert r == program
   end
 
   describe "expression parsing" do
@@ -21,8 +22,8 @@ defmodule Pantagruel.Test.LegacyParser do
               ]
             ],
             body: [
-              expr: {:appl, [op: :!=, x: {:symbol, 'x'}, y: {:symbol, 'y'}]},
-              expr: {:appl, [op: :>, x: {:symbol, 'y'}, y: 1]}
+              [expr: {:appl, [op: :!=, x: {:symbol, 'x'}, y: {:symbol, 'y'}]}],
+              [expr: {:appl, [op: :>, x: {:symbol, 'y'}, y: 1]}]
             ]
           ]
         ]
@@ -30,19 +31,23 @@ defmodule Pantagruel.Test.LegacyParser do
     end
 
     test "parse two expressions with connecting op" do
-      text = 'f()\n---\nx != y\n or y > 1'
+      text = '''
+      f()
+      ---
+      x != y
+      or y > 1
+      '''
 
       tryparse(text,
         chapters: [
           chapter: [
-            head: [
-              decl: [
-                decl_ident: {:symbol, 'f'}
-              ]
-            ],
+            head: [decl: [decl_ident: {:symbol, 'f'}]],
             body: [
-              expr: {:appl, [op: :!=, x: {:symbol, 'x'}, y: {:symbol, 'y'}]},
-              expr: [intro_op: :or, appl: [op: :>, x: {:symbol, 'y'}, y: 1]]
+              [expr: {:appl, [op: :!=, x: {:symbol, 'x'}, y: {:symbol, 'y'}]}],
+              [
+                intro_op: :or,
+                expr: {:appl, [op: :>, x: {:symbol, 'y'}, y: 1]}
+              ]
             ]
           ]
         ]
@@ -50,7 +55,7 @@ defmodule Pantagruel.Test.LegacyParser do
     end
 
     test "parse expression with domain" do
-      text = 'f(x:Y \\ a:Y)'
+      text = 'f(x:Y \\ a from Y)'
 
       tryparse(text,
         chapters: [
@@ -62,7 +67,7 @@ defmodule Pantagruel.Test.LegacyParser do
                   args: [{:symbol, 'x'}],
                   doms: [{:symbol, 'Y'}]
                 ],
-                lambda_guards: [{:appl, [op: :":", x: {:symbol, 'a'}, y: {:symbol, 'Y'}]}]
+                lambda_guards: [{:appl, [op: :from, x: {:symbol, 'a'}, y: {:symbol, 'Y'}]}]
               ]
             ]
           ]
@@ -78,11 +83,13 @@ defmodule Pantagruel.Test.LegacyParser do
           chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
             body: [
-              refinement: [
-                pattern: {:symbol, 'x'},
-                expr:
-                  {:appl,
-                   [op: :>, x: {:appl, [op: :and, x: {:symbol, 'y'}, y: {:symbol, 'y'}]}, y: 1]}
+              [
+                refinement: [
+                  pattern: {:symbol, 'x'},
+                  expr:
+                    {:appl,
+                     [op: :>, x: {:appl, [op: :and, x: {:symbol, 'y'}, y: {:symbol, 'y'}]}, y: 1]}
+                ]
               ]
             ]
           ]
@@ -102,9 +109,11 @@ defmodule Pantagruel.Test.LegacyParser do
               ]
             ],
             body: [
-              refinement: [
-                pattern: {:appl, [f: {:symbol, 'f'}, x: {:symbol, 'x'}]},
-                expr: {:symbol, 'y'}
+              [
+                refinement: [
+                  pattern: {:appl, [f: {:symbol, 'f'}, x: {:symbol, 'x'}]},
+                  expr: {:symbol, 'y'}
+                ]
               ]
             ]
           ]
@@ -120,12 +129,14 @@ defmodule Pantagruel.Test.LegacyParser do
           chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
             body: [
-              refinement: [
-                pattern: {:appl, [f: {:symbol, 'f'}, x: {:symbol, 'x'}]},
-                guard: [{:appl, [op: :<, x: {:symbol, 'x'}, y: 0]}],
-                expr: {:symbol, 'y'}
+              [
+                refinement: [
+                  pattern: {:appl, [f: {:symbol, 'f'}, x: {:symbol, 'x'}]},
+                  guard: [{:appl, [op: :<, x: {:symbol, 'x'}, y: 0]}],
+                  expr: {:symbol, 'y'}
+                ]
               ],
-              refinement: [pattern: {:appl, [f: {:symbol, 'f'}, x: {:symbol, 'x'}]}, expr: 1]
+              [refinement: [pattern: {:appl, [f: {:symbol, 'f'}, x: {:symbol, 'x'}]}, expr: 1]]
             ]
           ]
         ]
@@ -355,24 +366,32 @@ defmodule Pantagruel.Test.LegacyParser do
     end
 
     test "comprehension aliasing" do
-      text = 'Day<={n:Nat,n<=30 \\ n}'
+      text = 'Day<={n:Nat,n=<30 \\ n}'
 
       tryparse(text,
         chapters: [
           chapter: [
             head: [
               alias: [
-                alias_name: ["Day"],
+                alias_name: [{:symbol, 'Day'}],
                 alias_expr:
-                  {:comprehension,
+                  {:set,
                    [
-                     set: [
-                       {:comp_bindings,
-                        [
-                          binding: [bind_symbol: 'n', bind_domain: "Nat"],
-                          guard: {:appl, [op: :lte, x: 'n', y: 30]}
-                        ]},
-                       {:comp_expression, 'n'}
+                     comprehension: [
+                       bindings: [
+                         binding: [
+                           bind_symbol: {:symbol, 'n'},
+                           bind_domain: {:symbol, 'Nat'}
+                         ],
+                         guard:
+                           {:appl,
+                            [
+                              op: :"=<",
+                              x: {:symbol, 'n'},
+                              y: 30
+                            ]}
+                       ],
+                       expr: {:symbol, 'n'}
                      ]
                    ]}
               ]
@@ -429,9 +448,9 @@ defmodule Pantagruel.Test.LegacyParser do
           chapter: [
             head: [decl: [decl_ident: {:symbol, 'f'}]],
             body: [
-              expr: {:appl, [op: :>, x: {:symbol, 'f'}, y: 1]},
-              comment: 'Here is a comment.',
-              expr: {:appl, [op: :<, x: {:symbol, 'f'}, y: 2]}
+              [expr: {:appl, [op: :>, x: {:symbol, 'f'}, y: 1]}],
+              {:comment, 'Here is a comment.'},
+              [expr: {:appl, [op: :<, x: {:symbol, 'f'}, y: 2]}]
             ]
           ]
         ]
@@ -453,7 +472,7 @@ defmodule Pantagruel.Test.LegacyParser do
       text = 'import MOD\nf()'
 
       tryparse(text,
-        imports: [import: ['MOD']],
+        imports: [import: 'MOD'],
         chapters: [chapter: [head: [decl: [decl_ident: {:symbol, 'f'}]]]]
       )
     end
@@ -463,7 +482,7 @@ defmodule Pantagruel.Test.LegacyParser do
 
       tryparse(text,
         module: 'MOD',
-        imports: [import: ['MOD2']],
+        imports: [import: 'MOD2'],
         chapters: [chapter: [head: [decl: [decl_ident: {:symbol, 'f'}]]]]
       )
     end
@@ -472,7 +491,7 @@ defmodule Pantagruel.Test.LegacyParser do
       text = 'import MOD,MOD2\nf()'
 
       tryparse(text,
-        imports: [import: ['MOD', 'MOD2']],
+        imports: [import: 'MOD', import: 'MOD2'],
         chapters: [chapter: [head: [decl: [decl_ident: {:symbol, 'f'}]]]]
       )
     end
@@ -481,7 +500,7 @@ defmodule Pantagruel.Test.LegacyParser do
       text = 'import MOD\nimport MOD2\nf()'
 
       tryparse(text,
-        imports: [import: ['MOD'], import: ['MOD2']],
+        imports: [import: 'MOD', import: 'MOD2'],
         chapters: [chapter: [head: [decl: [decl_ident: {:symbol, 'f'}]]]]
       )
     end

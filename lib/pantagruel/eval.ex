@@ -61,8 +61,8 @@ defmodule Pantagruel.Eval do
 
     try do
       # Populate the scope with any modules imported with the `import` statement.
-      {program, scopes} = handle_imports(program, available_asts, [], MapSet.new())
-      chapters = Keyword.get(program, :chapters) || []
+      scopes = handle_imports(program[:imports], available_asts, [], MapSet.new())
+      chapters = program[:chapters] || []
 
       eval_chapter = fn {:chapter, chapter}, state ->
         # Evaluate a single chapter:
@@ -108,9 +108,6 @@ defmodule Pantagruel.Eval do
 
   # Recursively evaluate any imported modules and bring the resulting
   # scopes along.
-  defp handle_imports([{:module, _} | rest], asts, scopes, seen_mod_names),
-    do: handle_imports(rest, asts, scopes, seen_mod_names)
-
   defp handle_imports(
          [{:import, mod_name} | rest],
          available_asts,
@@ -137,7 +134,8 @@ defmodule Pantagruel.Eval do
     end
   end
 
-  defp handle_imports(rest, _, scopes, _), do: {rest, scopes}
+  defp handle_imports([], _, scopes, _), do: scopes
+  defp handle_imports(nil, _, scopes, _), do: scopes
 
   # Include symbols in a set of values to check for binding.
   @spec include_for_binding_check(MapSet.t(), any) :: MapSet.t()
@@ -188,10 +186,13 @@ defmodule Pantagruel.Eval do
 
   # Evaluate a line of a chapter body. Body statements can be either
   # comments, which are ignored, or expression statements.
-  defp eval_body_statement({:comment, _}, state), do: state
-  defp eval_body_statement({:expr, line}, state), do: eval_expression(:expr, line, state)
+  defp eval_body_statement([{:intro_op, _} | clause], state),
+    do: eval_body_statement(clause, state)
 
-  defp eval_body_statement({:refinement, [pattern: pattern, expr: expr]}, state) do
+  defp eval_body_statement({:comment, _}, state), do: state
+  defp eval_body_statement([{:expr, line}], state), do: eval_expression(:expr, line, state)
+
+  defp eval_body_statement([{:refinement, [pattern: pattern, expr: expr]}], state) do
     eval_expression(:refinement, [pattern, expr], state)
   end
 
