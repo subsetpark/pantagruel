@@ -1,4 +1,7 @@
 defmodule Pantagruel.Scan do
+  @moduledoc """
+  String processing to prepare for tokenizing.
+  """
   def scan(binary) do
     binary
     |> String.trim()
@@ -11,7 +14,7 @@ defmodule Pantagruel.Scan do
     scan(<<>>, [?\n, last | acc])
   end
 
-  defp scan(<<?"::utf8, rest::binary>>, [_|_] = acc) do
+  defp scan(<<?"::utf8, rest::binary>>, [_ | _] = acc) do
     scan(rest, [?", ?\n | acc])
   end
 

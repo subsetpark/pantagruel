@@ -6,7 +6,9 @@ and x = 1
 exists (m, n, z) : x \ y[x][m,n,z]
 []
 y = fn (x : fn(z:D) :: D ) :: D
+
 ;
+
 z() => Z
 d() => D
 z() => Nat
@@ -15,7 +17,9 @@ rand() :: Nat
 andr(x,y : Nat, Real \ x > y) :: Bool
 ---
 z d <- y " Here is a comment on `z d`.
+
 ;
+
 y() => Y
 x() => X
 ---
@@ -26,7 +30,9 @@ x != 0
 [x : X, y : Z, z : Y \ x * y ^ z]" Now includes semicolons; much better.
 or [x : String \ x + `ok]
 all (j,k):X \ j > k
+
 ;
+
 x(y:Real \ y = 1)
 ---
 z x \ x > 1 <- 0

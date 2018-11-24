@@ -1,5 +1,12 @@
 Nonterminals
 
+program
+module_line
+imports
+import_line
+chapter
+chapters
+
 a_symbol
 symbols
 bare_symbol
@@ -7,6 +14,7 @@ bare_symbols
 expression
 expressions
 maybe_expressions
+
 a_comment
 
 term
@@ -18,20 +26,11 @@ binding_or_guard
 binding_or_guards
 binding
 
-bin_operation
-un_operation
-function_application
-object_access
-
-program
-module_line
-imports
-import_line
-chapter
-chapters
-
 head
 head_line
+body
+body_line
+
 declaration
 lambda
 lambda_body
@@ -39,9 +38,10 @@ lambda_args
 lambda_yield
 alias
 
-body
-body_line
-
+bin_operation
+un_operation
+function_application
+object_access
 quantification
 .
 
@@ -61,7 +61,8 @@ quantifier
 yield_type
 reverse_yield
 refined
-where.
+where
+.
 
 Rootsymbol program.
 Endsymbol '$end'.
@@ -146,7 +147,7 @@ body_line -> binary_operator body_line : [{intro_op, unwrap('$1')} | '$2'].
 % EXPRESSION PRECEDENCE
 % This is a strange area. Here are the precedence levels of Pantagruel:
 %
-% Expression < Binary Operation < Function Application < Unary Operation.
+% Expression < Binary Operation < Function Application < Unary Operation < Object Access.
 %
 % This is represented in the parse by a series of rules which evaluate
 % either to themselves or the next most tightly binding level.
@@ -180,8 +181,6 @@ term -> bunch : '$1'.
 term -> quantification : '$1'.
 term -> fn lambda : {lambda, '$2'}.
 
-lambda -> '(' lambda_body ')' lambda_yield  : '$2' ++ '$4'.
-
 %
 % END EXPRESSION PRECEDENCE
 %
@@ -204,8 +203,7 @@ binding_or_guards -> binding_or_guard ',' binding_or_guards : ['$1' | '$3'].
 binding_or_guard -> binding : {binding, '$1'}.
 binding_or_guard -> expression : {guard, '$1'}.
 
-binding -> term ':' expression :
-    [{bind_symbol, '$1'}, {bind_domain, '$3'}].
+binding -> term ':' expression : [{bind_symbol, '$1'}, {bind_domain, '$3'}].
 
 symbols -> a_symbol : ['$1'].
 symbols -> a_symbol ',' symbols : ['$1' | '$3'].
@@ -219,6 +217,8 @@ bare_symbol -> symbol : bare('$1').
 
 quantification -> quantifier binding_or_guards '\\' expression :
     {quantification, [{quantifier, unwrap('$1')}, {bindings, '$2'}, {expr, '$4'}]}.
+
+lambda -> '(' lambda_body ')' lambda_yield  : '$2' ++ '$4'.
 
 Erlang code.
 
