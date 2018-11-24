@@ -21,7 +21,7 @@ defmodule Pantagruel.Values.Domain do
   def flatten_domain({e, items}) when is_container(e), do: items
 
   def flatten_domain({:lambda, decl}) do
-    (decl[:lambda_args][:doms] || [])
+    decl[:lambda_args][:doms]
     |> flatten_domain()
   end
 
