@@ -41,9 +41,8 @@ defmodule Pantagruel.Load do
   # Load and parse a file by name.
   defp load_ast(path, asts) do
     path
-    |> File.open!([:utf8])
-    |> IO.read(:all)
-    |> String.to_charlist()
+    |> File.read!()
+    |> Pantagruel.Scan.scan()
     |> :lexer.string()
     |> Parse.handle_lex()
     |> include(asts)

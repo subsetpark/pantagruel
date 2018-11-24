@@ -5,13 +5,13 @@ defmodule EvalTest do
 
   defp scan_and_parse(text) when is_binary(text) do
     text
-    |> String.to_charlist()
+    |> Pantagruel.Scan.scan()
     |> scan_and_parse
   end
 
   defp scan_and_parse(text) do
     {:ok, parsed} =
-      :lexer.string(text ++ '\n')
+      :lexer.string(text)
       |> Pantagruel.Parse.handle_lex()
 
     parsed

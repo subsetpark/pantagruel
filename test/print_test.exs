@@ -4,8 +4,7 @@ defmodule Pantagruel.FormatTest do
 
   defp eval(text) when is_binary(text) do
     text
-    |> Kernel.<>("\n")
-    |> String.to_charlist()
+    |> Pantagruel.Scan.scan()
     |> eval
   end
 

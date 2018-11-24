@@ -33,16 +33,14 @@ defmodule Pantagruel do
 
   defp handle({flags, [filename], _}) do
     filename
-    |> File.open!([:utf8])
-    |> IO.read(:all)
-    |> String.to_charlist()
+    |> File.read!()
+    |> Pantagruel.Scan.scan()
     |> :lexer.string()
     |> Parse.handle_lex()
     |> handle_parse(flags)
   end
 
   defp handle({_, _, _}), do: IO.puts(@help)
-
 
   defp handle_parse({:error, {line, module, message}}, _) do
     IO.puts("Line #{line}: syntax error.")

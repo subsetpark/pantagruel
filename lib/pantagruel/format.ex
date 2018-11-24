@@ -60,7 +60,7 @@ defmodule Pantagruel.Format do
   def format_exp(s, scopes) when is_term(s), do: format_symbol(s, scopes)
   def format_exp({c, exps}, s) when is_container(c), do: format_container(c, exps, s)
   def format_exp({:quantification, q}, s), do: format_quantification(q, s)
-  def format_exp({:comprehension, [{container, c}]}, s), do: format_comprehension(container, c, s)
+  def format_exp({:comprehension, c}, s), do: format_comprehension(c, s)
   def format_exp({:binding, binding}, s), do: format_binding(binding, s)
   def format_exp({:guard, expr}, s), do: format_exp(expr, s)
   def format_exp({:lambda, l}, s), do: format_lambda(l, scope: s)
@@ -183,12 +183,10 @@ defmodule Pantagruel.Format do
     |> Enum.join(" ")
   end
 
-  defp format_comprehension(container, [comp_bindings: bindings, comp_expression: expr], s) do
+  defp format_comprehension([bindings: bindings, expr: expr], s) do
     binding_str = join_exp(bindings, s, ",")
     expr_str = format_exp(expr)
-    inner_str = "#{binding_str} ⸳ #{expr_str}"
-
-    format_exp({container, [inner_str]}, s)
+    "#{binding_str} ⸳ #{expr_str}"
   end
 
   @spec format_lambda(any, keyword) :: t
