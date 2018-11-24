@@ -218,6 +218,8 @@ defmodule Pantagruel.Env do
     has_key?(scope, to_check) or is_bound?(to_check, parent)
   end
 
+  def is_bound?(es, scopes) when is_list(es), do: Enum.all?(es, &is_bound?(&1, scopes))
+
   defp make_variable(_, %{} = v), do: v
   defp make_variable(name, domain), do: %Variable{name: name, domain: domain}
 

@@ -192,8 +192,12 @@ defmodule Pantagruel.Eval do
   defp eval_body_statement({:comment, _}, state), do: state
   defp eval_body_statement([{:expr, line}], state), do: eval_expression(:expr, line, state)
 
-  defp eval_body_statement([{:refinement, [pattern: pattern, expr: expr]}], state) do
+  defp eval_body_statement([refinement: [pattern: pattern, expr: expr]], state) do
     eval_expression(:refinement, [pattern, expr], state)
+  end
+
+  defp eval_body_statement([refinement: [pattern: pattern, guard: guard, expr: expr]], state) do
+    eval_expression(:refinement, [pattern, guard, expr], state)
   end
 
   defp eval_expression(expr_type, elements, {
@@ -210,6 +214,12 @@ defmodule Pantagruel.Eval do
 
   defp bind_expression(:refinement, [pattern, expression], scope) do
     elements = [pattern, expression]
+    # Include any introduced symbols into scope.
+    Enum.reduce(elements, scope, &bind_expression_variables/2)
+  end
+
+  defp bind_expression(:refinement, [pattern, guard, expression], scope) do
+    elements = [pattern, guard, expression]
     # Include any introduced symbols into scope.
     Enum.reduce(elements, scope, &bind_expression_variables/2)
   end
