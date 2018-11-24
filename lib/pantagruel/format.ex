@@ -51,6 +51,7 @@ defmodule Pantagruel.Format do
   def format_exp(%Variable{name: n, domain: dom}, s), do: join_exp([n, ":", dom], s, " ")
   def format_exp({:symbol, _} = s, []), do: format_symbol(s)
   def format_exp(s, []) when is_term(s), do: Env.lookup_binding_name(s)
+  def format_exp({:symbol, _} = s, scopes), do: format_symbol(s, scopes)
   def format_exp(s, scopes) when is_term(s), do: format_symbol(s, scopes)
   def format_exp({c, exps}, s) when is_container(c), do: format_container(c, exps, s)
   def format_exp({:quantification, q}, s), do: format_quantification(q, s)

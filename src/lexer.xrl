@@ -21,7 +21,7 @@ Rules.
 \.\.\.\n          : skip_token.
 \n[\s\n]*         : {token, {newline, TokenLine}}.
 
---(-)+\n          : {token, {sep, TokenLine}}.
+--(-)+\n+         : {token, {sep, TokenLine}}.
 [{SP}]*;[{SP}\n]* : {token, {where, TokenLine}}.
 
 YIELD_TYPE        : {token, {yield_type, TokenLine, TokenChars}}.

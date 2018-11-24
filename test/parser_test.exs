@@ -12,6 +12,24 @@ defmodule ParserTest do
       |> tryp(chapters: [chapter: [head: [{:decl, decl_ident: {:symbol, 'f'}}]]])
     end
 
+    test "binding regression" do
+      '''
+      f()
+      ---
+
+      x
+
+      '''
+      |> tryp(
+        chapters: [
+          chapter: [
+            head: [decl: [decl_ident: {:symbol, 'f'}]],
+            body: [expr: {:symbol, 'x'}]
+          ]
+        ]
+      )
+    end
+
     test "decl with argument" do
       'f(x : X)'
       |> tryp(

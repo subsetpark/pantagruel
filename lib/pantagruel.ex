@@ -2,7 +2,7 @@ defmodule Pantagruel do
   import IO, only: [puts: 1]
   import Pantagruel.Format
 
-  alias Pantagruel.{Scan, Parse, Eval}
+  alias Pantagruel.{Eval}
 
   @moduledoc """
   An interpreter for the Pantagruel language.
@@ -33,15 +33,19 @@ defmodule Pantagruel do
 
   defp handle({flags, [filename], _}) do
     filename
-    |> File.read!()
-    |> Scan.scan()
-    |> Parse.program()
+    |> File.open!([:utf8, :charlist])
+    |> IO.read(:all)
+    |> :lexer.string()
+    |> handle_lex()
     |> handle_parse(flags)
   end
 
   defp handle({_, _, _}), do: IO.puts(@help)
 
+  defp handle_lex({:ok, tokens, _linecount}), do: :parser.parse(tokens)
+
   defp handle_parse({:ok, []}, _), do: puts("No Pantagruel source found.")
+
   defp handle_parse({:ok, parsed}, flags) do
     # Paths to additional .pant file hierarchies can be passed in with
     # the :path flag. The default path will also always be checked.
