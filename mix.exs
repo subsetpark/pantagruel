@@ -9,7 +9,6 @@ defmodule Pantagruel.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       escript: escript_config(),
-      dialyzer: [plt_add_apps: [:mix]],
       description: description(),
       package: package(),
 
@@ -18,7 +17,8 @@ defmodule Pantagruel.MixProject do
       source_url: "https://github.com/subsetpark/pantagruel",
       docs: [
         extras: ["README.md", "priv/a_full_specification.md", "priv/reference.md"]
-      ]
+      ],
+      dialyzer: [flags: ["-Wunmatched_returns", :error_handling, :underspecs]]
     ]
   end
 
@@ -39,6 +39,7 @@ defmodule Pantagruel.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:dialyxir, "~> 1.0.0-rc.4", only: [:dev], runtime: false},
       {:ex_doc, ">= 0.0.0", only: :dev}
     ]
   end

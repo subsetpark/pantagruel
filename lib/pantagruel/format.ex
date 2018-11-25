@@ -9,6 +9,7 @@ defmodule Pantagruel.Format do
   alias Pantagruel.Eval.Module
 
   @type ast :: [term]
+  @type section :: {:chapters, any} | {:imports, any} | {:module, any}
   @type t :: String.t()
 
   @doc """
@@ -31,6 +32,7 @@ defmodule Pantagruel.Format do
   @doc """
   Generate a string representation of a parsed program section.
   """
+  @spec format_section(section) :: t
   def format_section({:imports, imports}) do
     imports
     |> Enum.map(&format_import/1)
@@ -189,7 +191,7 @@ defmodule Pantagruel.Format do
     "#{binding_str} ⸳ #{expr_str}"
   end
 
-  @spec format_lambda(any, keyword) :: t
+  @spec format_lambda(nil | Keyword.t | map, keyword) :: t
   defp format_lambda(
          %Lambda{name: name, domain: domain, codomain: codomain, type: type},
          opts

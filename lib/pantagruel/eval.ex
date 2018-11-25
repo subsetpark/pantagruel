@@ -1,7 +1,3 @@
-defmodule Pantagruel.Eval.Module do
-  defstruct name: ""
-end
-
 defmodule Pantagruel.Eval do
   @moduledoc """
   Evaluation of a Pantagruel program.
@@ -44,11 +40,13 @@ defmodule Pantagruel.Eval do
   be defined in the following chapter at the latest.
   """
   @type t :: {Env.t(), MapSet.t(), [MapSet.t()]}
+  @type error :: {:domain_mismatch, any} | {:missing_import, any} | {:unbound_variables, any}
 
   @doc """
   Evaluate a Pantagruel AST for variable binding, returning the resulting
   environment of all bound symbols.
   """
+  @spec eval(any, any, Keyword.t()) :: {:ok, [Env.t()]} | {:error, error}
   def eval(program, available_asts, opts \\ []) do
     # Set the current module name. Either from an argument to the function
     # or, if no name was specified, from a module name in the AST.
@@ -137,7 +135,7 @@ defmodule Pantagruel.Eval do
   defp handle_imports(nil, _, scopes, _), do: scopes
 
   # Include symbols in a set of values to check for binding.
-  @spec include_for_binding_check(MapSet.t(), any) :: MapSet.t()
+  @spec include_for_binding_check(any, MapSet.t()) :: MapSet.t()
   defp include_for_binding_check(variables, unbounds) when is_list(variables) do
     MapSet.union(unbounds, variables |> MapSet.new())
   end
@@ -225,7 +223,7 @@ defmodule Pantagruel.Eval do
   # In this respect they're unique among expression types.
   defp bind_expression_variables(_, state), do: state
 
-  def bind_binding({:binding, [bind_symbol: x, bind_domain: d]}, s), do: Env.bind(s, x, d)
+  defp bind_binding({:binding, [bind_symbol: x, bind_domain: d]}, s), do: Env.bind(s, x, d)
 
   # Extend the environment for a new chapter.
   @spec new_state(t, :atom | nil) :: t

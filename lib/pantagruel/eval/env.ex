@@ -69,6 +69,7 @@ defmodule Pantagruel.Env do
 
   def bind(scope, {name, value}), do: bind(scope, name, value)
 
+  @spec bind_lambda(scope, Keyword.t()) :: scope
   def bind_lambda(scope, decl) do
     lambda_args = decl[:lambda_args]
     args = lambda_args[:args] || []
@@ -108,6 +109,7 @@ defmodule Pantagruel.Env do
   If a value has been defined in the starting environment, find the name
   it was bound under.
   """
+  @spec lookup_binding_name(any) :: String.t()
   def lookup_binding_name(symbol) when is_list(symbol) do
     Enum.map(symbol, &lookup_binding_name/1)
   end
@@ -135,6 +137,7 @@ defmodule Pantagruel.Env do
   any of the previous scopes, the starting environment. Given any complex
   value, recurse into its component symbols and check them for binding.
   """
+  @spec is_bound?(any, t) :: boolean
   def is_bound?(v, _) when is_integer(v), do: true
   def is_bound?(v, _) when is_float(v), do: true
   def is_bound?(nil, _), do: true
