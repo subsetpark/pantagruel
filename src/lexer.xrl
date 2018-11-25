@@ -67,7 +67,7 @@ keyword("all", TokenLine)    -> {quantifier, TokenLine, all};
 keyword("fn", TokenLine)     -> {fn, TokenLine};
 keyword("import", TokenLine) -> {import, TokenLine};
 keyword("module", TokenLine) -> {module, TokenLine};
-keyword("from", TokenLine)   -> {binary_operator, TokenLine, "from"};
+keyword("in", TokenLine)   -> {binary_operator, TokenLine, "in"};
 keyword(Chars, TokenLine)    -> {symbol, TokenLine, Chars}.
 
 operator("::", TokenLine) -> {yield_type, TokenLine, "::"};

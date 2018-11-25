@@ -34,7 +34,7 @@ defmodule ParserTest do
       """
       f()
       ---
-      (x from f)
+      (x in f)
       """
       |> tryp(
         chapters: [
@@ -46,7 +46,7 @@ defmodule ParserTest do
                   {:par,
                    [
                      appl: [
-                       op: :from,
+                       op: :in,
                        x: {:symbol, 'x'},
                        y: {:symbol, 'f'}
                      ]
@@ -731,7 +731,7 @@ defmodule ParserTest do
       )
     end
 
-    test "comprehension with from" do
+    test "comprehension with in" do
       "f()\n---\n[x : X \\ x]"
       |> tryp(
         chapters: [

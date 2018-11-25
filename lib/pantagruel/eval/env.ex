@@ -42,7 +42,7 @@ defmodule Pantagruel.Env do
     :* => %Variable{name: "×", domain: "ℝ"},
     :% => %Variable{name: "÷", domain: "ℝ"},
     :^ => %Variable{name: "^", domain: "ℝ"},
-    :from => %Variable{name: "∈", domain: "⊤"},
+    :in => %Variable{name: "∈", domain: "⊤"},
     :"<->" => %Variable{name: "↔", domain: "𝔹"},
     :-> => %Variable{name: "→", domain: "𝔹"},
     :and => %Variable{name: "∧", domain: "𝔹"},

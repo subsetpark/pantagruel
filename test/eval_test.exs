@@ -256,7 +256,7 @@ defmodule EvalTest do
         """
         f(x:Nat)
         ---
-        f x from fn (z:D)::D
+        f x in fn (z:D)::D
         """
         |> scan_and_parse
 
@@ -268,7 +268,7 @@ defmodule EvalTest do
         """
         f(x:Nat)
         ---
-        f x from fn(z:D)::D
+        f x in fn(z:D)::D
         ;
         d() => D
         """
@@ -307,7 +307,7 @@ defmodule EvalTest do
         """
         f(x:Nat)
         ---
-        f x from fn(z:Nat \\ z > 100)
+        f x in fn(z:Nat \\ z > 100)
         """
         |> scan_and_parse
 

@@ -56,7 +56,7 @@ defmodule Pantagruel.Test.LegacyParser do
     end
 
     test "parse expression with domain" do
-      text = "f(x:Y \\ a from Y)"
+      text = "f(x:Y \\ a in Y)"
 
       tryparse(text,
         chapters: [
@@ -68,7 +68,7 @@ defmodule Pantagruel.Test.LegacyParser do
                   args: [{:symbol, 'x'}],
                   doms: [{:symbol, 'Y'}]
                 ],
-                lambda_guards: [{:appl, [op: :from, x: {:symbol, 'a'}, y: {:symbol, 'Y'}]}]
+                lambda_guards: [{:appl, [op: :in, x: {:symbol, 'a'}, y: {:symbol, 'Y'}]}]
               ]
             ]
           ]
@@ -310,7 +310,7 @@ defmodule Pantagruel.Test.LegacyParser do
     end
 
     test "heading with par" do
-      text = "f(x:X \\ x from (Y,Z))"
+      text = "f(x:X \\ x in (Y,Z))"
 
       tryparse(text,
         chapters: [
@@ -323,7 +323,7 @@ defmodule Pantagruel.Test.LegacyParser do
                   doms: [symbol: 'X']
                 ],
                 lambda_guards: [
-                  appl: [op: :from, x: {:symbol, 'x'}, y: {:par, [symbol: 'Y', symbol: 'Z']}]
+                  appl: [op: :in, x: {:symbol, 'x'}, y: {:par, [symbol: 'Y', symbol: 'Z']}]
                 ]
               ]
             ]
