@@ -282,6 +282,8 @@ Literal text values are represented with a backtick: `` `ok``, ``
 There is a closed set of symbols that are recognized as **operators**,
 that are applied infix instead of prefix, eg: `1 + 1`. `x in Y`.
 
+There are also two **unary** operators, `#` and `~`.
+
 ##### Symbols
 
 Symbols are identifiers to which values are bound, as in function
@@ -303,7 +305,7 @@ This declaration introduces the procedure `map`, which takes two
 arguments, `f` and `x`. `f` is itself a lambda that goes from `_A` to
 `_B`, and `x` is a `_A`. `map` returns a `_B`.
 
-This also illustrates the use of *generic domains*, which are introduced
+This also illustrates the use of **generic domains**, which are introduced
 with underscores.
 
 #### Containers
@@ -348,9 +350,9 @@ for expression more complex operations.
 
 ##### Comprehensions
 
-**set** or **list comprehensions** may be formed by following one or more
-**bindings** or **guards** with some **expression**, separated by a dot,
-like this:
+**set** or **list comprehensions** may be formed by following one or
+more comma-separated **bindings** or **guards** with some **expression**,
+separated by a dot, like this:
 
 ```pantagruel
 [x : X \ x ^ 2]
@@ -359,8 +361,10 @@ like this:
 The above expression is read to refer to a list made up every element
 in x, squared.
 
-A binding expression is an expression applying the `in` operator to some
-domain or expression, eg., `x : X`, `n : Nat`.
+A binding expression is an expression applying the `:` operator to some
+domain or expression, eg., `x : X`, `n : Nat`. Any other normal form
+of expression functions as a guard, restricting the values bound out of
+the domains with arbitrary predicates.
 
 ##### Quantifications
 
@@ -370,7 +374,7 @@ contained within a list or set, and must be preceded by a **quantifier**:
 either `all` or `exists`, corresponding to the two types.
 
 ```pantagruel
-all x in Nat, y in Nat, x > y \ (x - y) > 0
+all x : Nat, y : Nat, x > y \ (x - y) > 0
 ```
 
 This example says that for any x and y in the natural numbers where x
@@ -378,7 +382,7 @@ is greater than y, x minus y is greater than 0. It could also be written
 in a slightly more compressed form:
 
 ```pantagruel
-all (x, y) in Nat, x > y \ (x - y) > 0
+all (x, y) : Nat, x > y \ (x - y) > 0
 ```
 
 ## Semantics
@@ -508,7 +512,7 @@ all x : Y, x > z \ f x
     +
 ```
 
-Existential quantifiers introduce symbols into program scope.
+Existential quantifiers introduce symbols into *program* scope.
 
 ```
 exists x : Y, x > z \ f x
