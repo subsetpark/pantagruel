@@ -108,7 +108,7 @@ doc (owner: User) => Document
 " A specification for a small document management system.
 
 check_out (u, d: User, Document)
-
+---
 " A user may check out a document if they have permission to access it
 " and it's not currently checked out.
 
