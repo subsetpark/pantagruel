@@ -1,59 +1,75 @@
-defmodule PantagruelTest do
+defmodule Pantagruel.Test.LegacyParser do
   use ExUnit.Case
 
   defp tryparse(text, r) do
-    {:ok, program, "", %{}, _, _} = Pantagruel.Parse.program(text)
+    {:ok, program} =
+      Pantagruel.Scan.scan(text)
+      |> :lexer.string()
+      |> Pantagruel.Parse.handle_lex()
+
     assert r == program
   end
 
   describe "expression parsing" do
     test "parse two expressions" do
-      text = "f()\nx != y\ny > 1"
+      text = "f()\n---\nx != y\ny > 1"
 
       tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f"
+        chapters: [
+          chapter: [
+            head: [
+              decl: [
+                decl_ident: {:symbol, 'f'}
+              ]
+            ],
+            body: [
+              [expr: {:appl, [op: :!=, x: {:symbol, 'x'}, y: {:symbol, 'y'}]}],
+              [expr: {:appl, [op: :>, x: {:symbol, 'y'}, y: 1]}]
             ]
-          ],
-          body: [
-            expr: [appl: [operator: :notequals, x: "x", y: "y"]],
-            expr: [appl: [operator: :gt, x: "y", y: 1]]
           ]
         ]
       )
     end
 
-    test "parse two expressions with connecting operator" do
-      text = "f()\nx != y\n∨y > 1"
+    test "parse two expressions with connecting op" do
+      text = """
+      f()
+      ---
+      x != y
+      or y > 1
+      """
 
       tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f"
+        chapters: [
+          chapter: [
+            head: [decl: [decl_ident: {:symbol, 'f'}]],
+            body: [
+              [expr: {:appl, [op: :!=, x: {:symbol, 'x'}, y: {:symbol, 'y'}]}],
+              [
+                intro_op: :or,
+                expr: {:appl, [op: :>, x: {:symbol, 'y'}, y: 1]}
+              ]
             ]
-          ],
-          body: [
-            expr: [appl: [operator: :notequals, x: "x", y: "y"]],
-            expr: [intro_op: :or, appl: [operator: :gt, x: "y", y: 1]]
           ]
         ]
       )
     end
 
     test "parse expression with domain" do
-      text = "f(x:Y⸳a:Y)"
+      text = "f(x:Y \\ a in Y)"
 
       tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f",
-              lambda_args: ["x"],
-              lambda_doms: ["Y"],
-              predicate: [{:appl, [operator: :in, x: "a", y: "Y"]}]
+        chapters: [
+          chapter: [
+            head: [
+              decl: [
+                decl_ident: {:symbol, 'f'},
+                lambda_args: [
+                  args: [{:symbol, 'x'}],
+                  doms: [{:symbol, 'Y'}]
+                ],
+                lambda_guards: [{:appl, [op: :in, x: {:symbol, 'a'}, y: {:symbol, 'Y'}]}]
+              ]
             ]
           ]
         ]
@@ -61,16 +77,20 @@ defmodule PantagruelTest do
     end
 
     test "parse expression with relation in it" do
-      text = "f()\nx←y ∧ y > 1"
+      text = "f()\n---\nx <- y and y > 1"
 
       tryparse(text,
-        section: [
-          head: [decl: [decl_ident: "f"]],
-          body: [
-            expr: [
-              refinement: [
-                pattern: "x",
-                expr: {:appl, [operator: :gt, x: {:appl, [operator: :and, x: "y", y: "y"]}, y: 1]}
+        chapters: [
+          chapter: [
+            head: [decl: [decl_ident: {:symbol, 'f'}]],
+            body: [
+              [
+                refinement: [
+                  pattern: {:symbol, 'x'},
+                  expr:
+                    {:appl,
+                     [op: :>, x: {:appl, [op: :and, x: {:symbol, 'y'}, y: {:symbol, 'y'}]}, y: 1]}
+                ]
               ]
             ]
           ]
@@ -79,20 +99,22 @@ defmodule PantagruelTest do
     end
 
     test "parse expression with multiple elements in the pattern" do
-      text = "f()\nf x←y"
+      text = "f()\n---\nf x <- y"
 
       tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f"
-            ]
-          ],
-          body: [
-            expr: [
-              refinement: [
-                pattern: {:appl, [f: "f", x: "x"]},
-                expr: "y"
+        chapters: [
+          chapter: [
+            head: [
+              decl: [
+                decl_ident: {:symbol, 'f'}
+              ]
+            ],
+            body: [
+              [
+                refinement: [
+                  pattern: {:appl, [f: {:symbol, 'f'}, x: {:symbol, 'x'}]},
+                  expr: {:symbol, 'y'}
+                ]
               ]
             ]
           ]
@@ -100,21 +122,23 @@ defmodule PantagruelTest do
       )
     end
 
-    test "parse guarded refinment" do
-      text = "f()\nf x⸳x<0←y\nf x←1"
+    test "parse guarded refinement" do
+      text = "f()\n---\nf x \\ x< 0 <- y\nf x<-1"
 
       tryparse(text,
-        section: [
-          head: [decl: [decl_ident: "f"]],
-          body: [
-            expr: [
-              refinement: [
-                pattern: {:appl, [f: "f", x: "x"]},
-                guard: {:appl, [operator: :lt, x: "x", y: 0]},
-                expr: "y"
-              ]
-            ],
-            expr: [refinement: [pattern: {:appl, [f: "f", x: "x"]}, expr: 1]]
+        chapters: [
+          chapter: [
+            head: [decl: [decl_ident: {:symbol, 'f'}]],
+            body: [
+              [
+                refinement: [
+                  pattern: {:appl, [f: {:symbol, 'f'}, x: {:symbol, 'x'}]},
+                  guard: [{:appl, [op: :<, x: {:symbol, 'x'}, y: 0]}],
+                  expr: {:symbol, 'y'}
+                ]
+              ],
+              [refinement: [pattern: {:appl, [f: {:symbol, 'f'}, x: {:symbol, 'x'}]}, expr: 1]]
+            ]
           ]
         ]
       )
@@ -123,15 +147,17 @@ defmodule PantagruelTest do
 
   describe "declaration parsing" do
     test "empty heading parsing" do
-      text = "f()⇒D"
+      text = "f() => D"
 
       tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f",
-              yield_type: :constructor,
-              lambda_codomain: "D"
+        chapters: [
+          chapter: [
+            head: [
+              decl: [
+                decl_ident: {:symbol, 'f'},
+                yield_type: '=>',
+                lambda_codomain: {:symbol, 'D'}
+              ]
             ]
           ]
         ]
@@ -139,20 +165,22 @@ defmodule PantagruelTest do
     end
 
     test "dual heading parsing" do
-      text = "f()⇒D\ng()⇒E"
+      text = "f()=>D\ng()=>E"
 
       tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f",
-              yield_type: :constructor,
-              lambda_codomain: "D"
-            ],
-            decl: [
-              decl_ident: "g",
-              yield_type: :constructor,
-              lambda_codomain: "E"
+        chapters: [
+          chapter: [
+            head: [
+              decl: [
+                decl_ident: {:symbol, 'f'},
+                yield_type: '=>',
+                lambda_codomain: {:symbol, 'D'}
+              ],
+              decl: [
+                decl_ident: {:symbol, 'g'},
+                yield_type: '=>',
+                lambda_codomain: {:symbol, 'E'}
+              ]
             ]
           ]
         ]
@@ -160,17 +188,21 @@ defmodule PantagruelTest do
     end
 
     test "basic heading parsing" do
-      text = "f(a,b:B,C)∷D"
+      text = "f(a,b:B,C) :: D"
 
       tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f",
-              lambda_args: ["a", "b"],
-              lambda_doms: ["B", "C"],
-              yield_type: :function,
-              lambda_codomain: "D"
+        chapters: [
+          chapter: [
+            head: [
+              decl: [
+                decl_ident: {:symbol, 'f'},
+                lambda_args: [
+                  args: [{:symbol, 'a'}, {:symbol, 'b'}],
+                  doms: [{:symbol, 'B'}, {:symbol, 'C'}]
+                ],
+                yield_type: '::',
+                lambda_codomain: {:symbol, 'D'}
+              ]
             ]
           ]
         ]
@@ -178,18 +210,22 @@ defmodule PantagruelTest do
     end
 
     test "heading with multiple clauses" do
-      text = "f(x:Y⸳x != 1,x > 0)"
+      text = "f(x:Y \\ x != 1,x > 0)"
 
       tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f",
-              lambda_args: ["x"],
-              lambda_doms: ["Y"],
-              predicate: [
-                {:appl, [operator: :notequals, x: "x", y: 1]},
-                {:appl, [operator: :gt, x: "x", y: 0]}
+        chapters: [
+          chapter: [
+            head: [
+              decl: [
+                decl_ident: {:symbol, 'f'},
+                lambda_args: [
+                  args: [{:symbol, 'x'}],
+                  doms: [{:symbol, 'Y'}]
+                ],
+                lambda_guards: [
+                  {:appl, [op: :!=, x: {:symbol, 'x'}, y: 1]},
+                  {:appl, [op: :>, x: {:symbol, 'x'}, y: 0]}
+                ]
               ]
             ]
           ]
@@ -198,17 +234,21 @@ defmodule PantagruelTest do
     end
 
     test "heading with sequenced domain" do
-      text = "f(x:X)∷[X]"
+      text = "f(x:X) :: [X]"
 
       tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f",
-              lambda_args: ["x"],
-              lambda_doms: ["X"],
-              yield_type: :function,
-              lambda_codomain: {:list, ["X"]}
+        chapters: [
+          chapter: [
+            head: [
+              decl: [
+                decl_ident: {:symbol, 'f'},
+                lambda_args: [
+                  args: [{:symbol, 'x'}],
+                  doms: [symbol: 'X']
+                ],
+                yield_type: '::',
+                lambda_codomain: {:list, [symbol: 'X']}
+              ]
             ]
           ]
         ]
@@ -216,20 +256,25 @@ defmodule PantagruelTest do
     end
 
     test "heading with generic domain" do
-      text = "f(x:_A⸳x*y>10)∷[_A]"
+      text = "f(x:_A \\ x*y>10) :: [_A]"
 
       tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f",
-              lambda_args: ["x"],
-              lambda_doms: ["_A"],
-              predicate: [
-                appl: [operator: :gt, x: {:appl, [operator: :times, x: "x", y: "y"]}, y: 10]
-              ],
-              yield_type: :function,
-              lambda_codomain: {:list, ["_A"]}
+        chapters: [
+          chapter: [
+            head: [
+              decl: [
+                decl_ident: {:symbol, 'f'},
+                lambda_args: [args: [symbol: 'x'], doms: [symbol: '_A']],
+                lambda_guards: [
+                  appl: [
+                    op: :>,
+                    x: {:appl, [op: :*, x: {:symbol, 'x'}, y: {:symbol, 'y'}]},
+                    y: 10
+                  ]
+                ],
+                yield_type: '::',
+                lambda_codomain: {:list, [symbol: '_A']}
+              ]
             ]
           ]
         ]
@@ -237,25 +282,27 @@ defmodule PantagruelTest do
     end
 
     test "heading with lambda" do
-      text = "f(x:λ(z:Nat)∷z)∷Bool"
+      text = "f(x:fn(z:Nat) :: z) :: Bool"
 
       tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f",
-              lambda_args: ["x"],
-              lambda_doms: [
-                {:lambda,
-                 [
-                   lambda_args: ["z"],
-                   lambda_doms: ["Nat"],
-                   yield_type: :function,
-                   lambda_codomain: "z"
-                 ]}
-              ],
-              yield_type: :function,
-              lambda_codomain: "Bool"
+        chapters: [
+          chapter: [
+            head: [
+              decl: [
+                decl_ident: {:symbol, 'f'},
+                lambda_args: [
+                  args: [symbol: 'x'],
+                  doms: [
+                    lambda: [
+                      lambda_args: [args: [symbol: 'z'], doms: [symbol: 'Nat']],
+                      yield_type: '::',
+                      lambda_codomain: {:symbol, 'z'}
+                    ]
+                  ]
+                ],
+                yield_type: '::',
+                lambda_codomain: {:symbol, 'Bool'}
+              ]
             ]
           ]
         ]
@@ -263,16 +310,22 @@ defmodule PantagruelTest do
     end
 
     test "heading with par" do
-      text = "f(x:X⸳x∈(Y,Z))"
+      text = "f(x:X \\ x in (Y,Z))"
 
       tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f",
-              lambda_args: ["x"],
-              lambda_doms: ["X"],
-              predicate: [appl: [operator: :from, x: "x", y: {:par, ["Y", "Z"]}]]
+        chapters: [
+          chapter: [
+            head: [
+              decl: [
+                decl_ident: {:symbol, 'f'},
+                lambda_args: [
+                  args: [{:symbol, 'x'}],
+                  doms: [symbol: 'X']
+                ],
+                lambda_guards: [
+                  appl: [op: :in, x: {:symbol, 'x'}, y: {:par, [symbol: 'Y', symbol: 'Z']}]
+                ]
+              ]
             ]
           ]
         ]
@@ -283,11 +336,13 @@ defmodule PantagruelTest do
       text = "Status<={`ok}"
 
       tryparse(text,
-        section: [
-          head: [
-            alias: [
-              alias_name: ["Status"],
-              alias_expr: {:set, [literal: "ok"]}
+        chapters: [
+          chapter: [
+            head: [
+              alias: [
+                alias_name: [{:symbol, 'Status'}],
+                alias_expr: {:set, [literal: 'ok']}
+              ]
             ]
           ]
         ]
@@ -298,11 +353,13 @@ defmodule PantagruelTest do
       text = "Status,State<={`ok}"
 
       tryparse(text,
-        section: [
-          head: [
-            alias: [
-              alias_name: ["Status", "State"],
-              alias_expr: {:set, [literal: "ok"]}
+        chapters: [
+          chapter: [
+            head: [
+              alias: [
+                alias_name: [{:symbol, 'Status'}, {:symbol, 'State'}],
+                alias_expr: {:set, [literal: 'ok']}
+              ]
             ]
           ]
         ]
@@ -310,25 +367,35 @@ defmodule PantagruelTest do
     end
 
     test "comprehension aliasing" do
-      text = "Day<={n:Nat,n<=30⸳n}"
+      text = "Day<={n:Nat,n=<30 \\ n}"
 
       tryparse(text,
-        section: [
-          head: [
-            alias: [
-              alias_name: ["Day"],
-              alias_expr:
-                {:comprehension,
-                 [
-                   set: [
-                     {:comp_bindings,
-                      [
-                        binding: [bind_symbol: "n", bind_op: :in, bind_domain: "Nat"],
-                        guard: {:appl, [operator: :lte, x: "n", y: 30]}
-                      ]},
-                     {:comp_expression, "n"}
-                   ]
-                 ]}
+        chapters: [
+          chapter: [
+            head: [
+              alias: [
+                alias_name: [{:symbol, 'Day'}],
+                alias_expr:
+                  {:set,
+                   [
+                     comprehension: [
+                       bindings: [
+                         binding: [
+                           bind_symbol: {:symbol, 'n'},
+                           bind_domain: {:symbol, 'Nat'}
+                         ],
+                         guard:
+                           {:appl,
+                            [
+                              op: :"=<",
+                              x: {:symbol, 'n'},
+                              y: 30
+                            ]}
+                       ],
+                       expr: {:symbol, 'n'}
+                     ]
+                   ]}
+              ]
             ]
           ]
         ]
@@ -337,25 +404,29 @@ defmodule PantagruelTest do
   end
 
   describe "program structure" do
-    test "two sections" do
-      text = "f(x:Y)\n;\ny()⇒Y"
+    test "two chapters" do
+      text = "f(x:Y)\n;\ny()=>Y"
 
       tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f",
-              lambda_args: ["x"],
-              lambda_doms: ["Y"]
+        chapters: [
+          chapter: [
+            head: [
+              decl: [
+                decl_ident: {:symbol, 'f'},
+                lambda_args: [
+                  args: [{:symbol, 'x'}],
+                  doms: [{:symbol, 'Y'}]
+                ]
+              ]
             ]
-          ]
-        ],
-        section: [
-          head: [
-            decl: [
-              decl_ident: "y",
-              yield_type: :constructor,
-              lambda_codomain: "Y"
+          ],
+          chapter: [
+            head: [
+              decl: [
+                decl_ident: {:symbol, 'y'},
+                yield_type: '=>',
+                lambda_codomain: {:symbol, 'Y'}
+              ]
             ]
           ]
         ]
@@ -365,15 +436,23 @@ defmodule PantagruelTest do
 
   describe "comments handling" do
     test "can parse a comment" do
-      text = "f()\nf>1\n\" Here is a comment.\nf<2"
+      text = """
+      f()
+      ---
+      f>1
+      " Here is a comment.
+      f<2
+      """
 
       tryparse(text,
-        section: [
-          head: [decl: [decl_ident: "f"]],
-          body: [
-            expr: [appl: [operator: :gt, x: "f", y: 1]],
-            comment: ["Here is a comment."],
-            expr: [appl: [operator: :lt, x: "f", y: 2]]
+        chapters: [
+          chapter: [
+            head: [decl: [decl_ident: {:symbol, 'f'}]],
+            body: [
+              [expr: {:appl, [op: :>, x: {:symbol, 'f'}, y: 1]}],
+              {:comment, 'Here is a comment.'},
+              [expr: {:appl, [op: :<, x: {:symbol, 'f'}, y: 2]}]
+            ]
           ]
         ]
       )
@@ -385,46 +464,46 @@ defmodule PantagruelTest do
       text = "module MOD\nf()"
 
       tryparse(text, [
-        {:module, [mod_name: "MOD"]},
-        {:section, [head: [decl: [decl_ident: "f"]]]}
+        {:module, 'MOD'},
+        chapters: [chapter: [head: [decl: [decl_ident: {:symbol, 'f'}]]]]
       ])
     end
 
     test "module import" do
       text = "import MOD\nf()"
 
-      tryparse(text, [
-        {:import, [mod_name: "MOD"]},
-        {:section, [head: [decl: [decl_ident: "f"]]]}
-      ])
+      tryparse(text,
+        imports: [import: 'MOD'],
+        chapters: [chapter: [head: [decl: [decl_ident: {:symbol, 'f'}]]]]
+      )
     end
 
     test "module declaration and import" do
       text = "module MOD\nimport MOD2\nf()"
 
-      tryparse(text, [
-        {:module, [mod_name: "MOD"]},
-        {:import, [mod_name: "MOD2"]},
-        {:section, [head: [decl: [decl_ident: "f"]]]}
-      ])
+      tryparse(text,
+        module: 'MOD',
+        imports: [import: 'MOD2'],
+        chapters: [chapter: [head: [decl: [decl_ident: {:symbol, 'f'}]]]]
+      )
     end
+
     test "multiple module import" do
       text = "import MOD,MOD2\nf()"
 
-      tryparse(text, [
-        {:import, [mod_name: "MOD"]},
-        {:import, [mod_name: "MOD2"]},
-        {:section, [head: [decl: [decl_ident: "f"]]]}
-      ])
+      tryparse(text,
+        imports: [import: 'MOD', import: 'MOD2'],
+        chapters: [chapter: [head: [decl: [decl_ident: {:symbol, 'f'}]]]]
+      )
     end
+
     test "two import lines" do
       text = "import MOD\nimport MOD2\nf()"
 
-      tryparse(text, [
-        {:import, [mod_name: "MOD"]},
-        {:import, [mod_name: "MOD2"]},
-        {:section, [head: [decl: [decl_ident: "f"]]]}
-      ])
+      tryparse(text,
+        imports: [import: 'MOD', import: 'MOD2'],
+        chapters: [chapter: [head: [decl: [decl_ident: {:symbol, 'f'}]]]]
+      )
     end
   end
 end

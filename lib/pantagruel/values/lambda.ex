@@ -21,7 +21,7 @@ defmodule Pantagruel.Values.Lambda do
   def from_declaration(decl, doms \\ nil) do
     %__MODULE__{
       name: decl[:decl_ident],
-      domain: doms || decl[:lambda_doms] || [],
+      domain: doms || decl[:lambda_args][:doms] || [],
       codomain: decl[:lambda_codomain],
       type: decl[:yield_type]
     }

@@ -1,28 +1,38 @@
 x () => Real
 y ()=>Real
+---
 x > rand andr [D] 10 x
 and x = 1
-exists (m, n, z) from x . y[x][m,n,z]
+exists (m, n, z) : x \ y[x][m,n,z]
 []
 y = fn (x : fn(z:D) :: D ) :: D
+
 ;
+
 z() => Z
 d() => D
 z() => Nat
 Status <= {`ok, `stop}
 rand() :: Nat
-andr(x,y : Nat, Real . x > y) :: Bool
+andr(x,y : Nat, Real \ x > y) :: Bool
+---
 z d <- y " Here is a comment on `z d`.
+
 ;
+
 y() => Y
 x() => X
-exists x from y, y from z . x > 0
+---
+exists x : y, y : z \ x > 0
 x != 0
 " This is two comments together.
 " They should be one paragraph.
-[x from X, y from Z, z from Y . x * y ^ z]" Now includes semicolons; much better.
-or [x from String . x + `ok]
-all (j,k):X . j > k
+[x : X, y : Z, z : Y \ x * y ^ z]" Now includes semicolons; much better.
+or [x : String \ x + `ok]
+all (j,k):X \ j > k
+
 ;
-x(y:Real . y = 1)
-z x . x > 1 <- 0
+
+x(y:Real \ y = 1)
+---
+z x \ x > 1 <- 0

@@ -29,11 +29,11 @@ computer, and a *semantics*, which is largely not parsed by the Pantagruel
 interpreter. Thus the semantics of Pantagruel, while not undefined, are
 mostly a set of *suggested readings*, a system of of interpretations
 that it would be useful to share among the humans that read and write
-Pantagruel programs.[^1]
+Pantagruel programs.
 
-[^1] As Pantagruel evolves, there is the constant threat that any
-semantics which is currently only a suggested reading will get implemented
-in the interpreter if there is a use for it.
+> As Pantagruel evolves, there is the constant threat that any
+> semantics which is currently only a suggested reading will get implemented
+> in the interpreter if there is a use for it.
 
 ## Pantagruel Syntax
 
@@ -88,15 +88,16 @@ it's present, and before the beginning of the program chapters. There
 may be any number of imports and they can import any non-zero number of
 modules per statement.
 
-### Section Heads
+### Chapter Heads
 
-A Pantagruel chapter head introduces one or more symbols, of two
-primary kinds: **procedures** and **domains**. A procedure might be
-a computer program, or a function. For instance, `+` is a procedure,
-and most Pantagruel programs will introduce at least one procedure,
-which is the program or business logic they are specifying.
+A Pantagruel chapter head introduces one or more symbols, of two primary
+kinds: **procedures** and **domains**. A procedure might be a computer
+program, or a function. For instance, `+` is a procedure, as would be
+a more abstract behavior like `save_file` or `render_scene`.  and most
+Pantagruel programs will introduce at least one procedure, which is the
+program or business logic they are specifying.
 
-A domain is some set of values, which variables will be taken from. For
+A domain is some set of values which variables will be taken from. For
 instance, the natural numbers (abbreviated ℕ) make up a domain, as
 do the reals (ℝ). But so could the values ``{`ok, `error}`` or some
 business logic-specific concept like `User` or `Post`. In this way
@@ -108,7 +109,9 @@ There are three expression forms possible in a chapter head:
 
 Here is an example procedure declaration:
 
-`fib(n : Nat) :: Nat`
+```pantagruel
+fib(n : Nat) :: Nat
+```
 
 It introduces a procedure called `fib`, which takes one argument, `n`
 in the domain `Nat`. The `::` indicates that this procedure **yields**
@@ -121,7 +124,9 @@ user-defined domain. They are written identically to normal procedures,
 except instead of the **yields** symbol, they are written with the
 **produces** symbol `=>`:
 
-`user(name, age : String, Nat) => User`
+```pantagruel
+user(name, age : String, Nat) => User
+```
 
 This introduces both the domain `User`, as well as the constructor
 `user`. `user` takes two arguments, the first of which is a `String` and
@@ -133,33 +138,46 @@ Procedures can be declared with or without arguments, return domains,
 and predicates. Here's a declaration of a procedure with no arguments
 and an undefined return:
 
-`f()`
+```pantagruel
+f()
+```
 
 Arguments, as above, are specified by a comma separated list of argument
 names, followed by a colon, followed by a comma separated list of
 argument domains.
 
-Finally, procedures can be declared with a comma separated list
-of **predicates** representing some constraint on the procedure
-domain. Here's a procedure declaration with a predicate:
+Finally, procedures can be declared with a comma separated list of
+**predicates** representing some constraint on the procedure domain,
+marked off with a backslash. Here's a procedure declaration with a
+predicate:
 
-`f(x:Nat . x > 5)`
+```pantagruel
+f(x:Nat \ x > 5)
+```
 
-The expression after the `.` indicates that `f` is defined for any
-natural number `x` greater than 5.  `f(x:Nat . x > 5, x < 10)`
+The expression after the `\` indicates that `f` is defined for any
+natural number `x` greater than 5.
+
+```pantagruel
+f(x:Nat \ x > 5, x < 10)
+```
 
 This declares a procedure `f` that's defined for any natural number `x`
 greater than 5 and less than 10.
 
 #### Domain Aliasing
 
-The final type of expression available in a chapter head is a **domain
+The final type of statement available in a chapter head is a **domain
 alias**. This is a simple statement of equivalence between a new domain
-and some existing one. It uses the **reversed produces** symbol `<=`.
+and some existing one. It uses the **reversed produces** symbol `<=`,
+which could be also seen as a double-stroke version of the **refined**
+symbol (as seen below).
 
 Here's an example domain alias:
 
-``Status <= {`ok, `error}``
+```pantagruel
+Status <= {`ok, `error}
+```
 
 Introduces a domain `Status` which is equivalent to the set of values
 `ok` and `error`.
@@ -168,16 +186,25 @@ Here's an example chapter head:
 
 ```pantagruel
 Score <= Nat
-halve(score: Score . score mod 2 = 0) :: Score
+halve(score: Score \ score mod 2 = 0) :: Score
 ```
 
 It introduces a procedure, `halve`, which operates on all even
 `Score`s. It also clarifies that `Score` in this case is just an alias
 for `Nat`.
 
-### Section Bodies
+### Chapter Bodies
 
-Section **bodies** consist of one or more **statements**. Each statement
+Chapter **bodies** are separated from chapter heads with a horizontal
+line, consisting of three or more hyphens:
+
+```pantagruel
+f()
+---
+f x = 1
+```
+
+Chapter bodies consist of one or more **statements**. Each statement
 is a single line expressing either a **refinement** of a procedure or
 a **proposition** about a procedure.
 
@@ -186,19 +213,23 @@ represented by separating two values with a space, like this: `f x`.
 
 #### Refinements
 
-A refinement is any expression, followed by the refinement operator
+A refinement is any expression, followed by the **refined** symbol
 `<-`, followed by another expression. Here's an example:
 
-`f x <- x + 2`
+```pantagruel
+f x <- x + 2
+```
 
 Which says that `f x` or "`f` of `x`" is *refined by* the more concrete
 expression `x + 2`. A more complex example might be
 
-`f x . x > 5 <- g (x * 2)`
+```pantagruel
+f x \ x > 5 <- g (x * 2)
+```
 
 Which says that `f` of `x` is refined by `g (x * 2)` *when `x` is
-greater than five*. The expression between the `.` and the `<-` is
-a **guard**, and performs a very similar function to predicate in a
+greater than five*. The expression between the `\` and the `<-` is
+a **guard**, and performs a very similar function to predicates in a
 procedure declaration.
 
 #### Propositions
@@ -244,13 +275,14 @@ a decimal point: `2.47`, `10.0`.
 ##### Literals
 
 Literal text values are represented with a backtick: `` `ok``, ``
-`error``. If the text has a space in it, it should be surrounded by
-backtickets: `` `arbitrarily long text value` ``.
+`error``.
 
 ##### Operators
 
 There is a closed set of symbols that are recognized as **operators**,
-that are applied infix instead of prefix, eg: `1 + 1`. `x : Y`.
+that are applied infix instead of prefix, eg: `1 + 1`. `x in Y`.
+
+There are also two **unary** operators, `#` and `~`.
 
 ##### Symbols
 
@@ -273,7 +305,7 @@ This declaration introduces the procedure `map`, which takes two
 arguments, `f` and `x`. `f` is itself a lambda that goes from `_A` to
 `_B`, and `x` is a `_A`. `map` returns a `_B`.
 
-This also illustrates the use of *generic domains*, which are introduced
+This also illustrates the use of **generic domains**, which are introduced
 with underscores.
 
 #### Containers
@@ -318,19 +350,21 @@ for expression more complex operations.
 
 ##### Comprehensions
 
-**set** or **list comprehensions** may be formed by following one or more
-**bindings** or **guards** with some **expression**, separated by a dot,
-like this:
+**set** or **list comprehensions** may be formed by following one or
+more comma-separated **bindings** or **guards** with some **expression**,
+separated by a dot, like this:
 
 ```pantagruel
-[x from X . x ^ 2]
+[x : X \ x ^ 2]
 ```
 
 The above expression is read to refer to a list made up every element
 in x, squared.
 
-A binding expression is an expression applying either the `in` or `from`
-operators to some domain or expression, eg., `x from X`, `n in Nat`.
+A binding expression is an expression applying the `:` operator to some
+domain or expression, eg., `x : X`, `n : Nat`. Any other normal form
+of expression functions as a guard, restricting the values bound out of
+the domains with arbitrary predicates.
 
 ##### Quantifications
 
@@ -340,7 +374,7 @@ contained within a list or set, and must be preceded by a **quantifier**:
 either `all` or `exists`, corresponding to the two types.
 
 ```pantagruel
-all x in Nat, y in Nat, x > y . (x - y) > 0
+all x : Nat, y : Nat, x > y \ (x - y) > 0
 ```
 
 This example says that for any x and y in the natural numbers where x
@@ -348,7 +382,7 @@ is greater than y, x minus y is greater than 0. It could also be written
 in a slightly more compressed form:
 
 ```pantagruel
-all (x, y) in Nat, x > y . (x - y) > 0
+all (x, y) : Nat, x > y \ (x - y) > 0
 ```
 
 ## Semantics
@@ -397,13 +431,13 @@ for known terms, eg:
 
 ```pantagruel
 pred(n:Nat)
-
+---
 pred n <- is_even? n and (n > 5)
 
 ;
 
 is_even?(n:Nat) :: Bool
-
+---
 is_even? 0
 ~(is_even? 1)
 is_even? n <- is_even? (n - 2)
@@ -430,7 +464,7 @@ When a procedure is declared, the name of the procedure is introduced
 into program scope, as are the names of the variables the procedure takes.
 
 ```
-f(x:Y . x > z) :: a
+f(x:Y \ x > z) :: a
 * *
 ```
 
@@ -438,7 +472,7 @@ When a constructor procedure is declared, the resulting domain is also
 bound into program scope.
 
 ```
-d(x:Y . x > z) => D
+d(x:Y \ x > z) => D
 * *               *
 ```
 
@@ -462,7 +496,7 @@ context of those expressions. However, they are not bound in the scope
 of the rest of the program.
 
 ```
-[n : N, n > m . f n]
+[n : N, n > m \ f n]
  +
 ```
 
@@ -474,14 +508,14 @@ and existential quantifiers: while universal quantifiers have the exact
 same behavior as comprehensions:
 
 ```
-all x : Y, x > z . f x
+all x : Y, x > z \ f x
     +
 ```
 
-Existential quantifiers introduce symbols into program scope.
+Existential quantifiers introduce symbols into *program* scope.
 
 ```
-exists x : Y, x > z . f x
+exists x : Y, x > z \ f x
        *
 ```
 

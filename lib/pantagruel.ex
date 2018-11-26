@@ -2,7 +2,7 @@ defmodule Pantagruel do
   import IO, only: [puts: 1]
   import Pantagruel.Format
 
-  alias Pantagruel.{Scan, Parse, Eval}
+  alias Pantagruel.{Eval, Parse}
 
   @moduledoc """
   An interpreter for the Pantagruel language.
@@ -34,14 +34,22 @@ defmodule Pantagruel do
   defp handle({flags, [filename], _}) do
     filename
     |> File.read!()
-    |> Scan.scan()
-    |> Parse.program()
+    |> Pantagruel.Scan.scan()
+    |> :lexer.string()
+    |> Parse.handle_lex()
     |> handle_parse(flags)
   end
 
   defp handle({_, _, _}), do: IO.puts(@help)
 
-  defp handle_parse({:ok, parsed, "", %{}, _, _}, flags) do
+  defp handle_parse({:error, {line, module, message}}, _) do
+    IO.puts("Line #{line}: syntax error.")
+    message |> module.format_error() |> IO.puts()
+  end
+
+  defp handle_parse({:ok, []}, _), do: puts("No Pantagruel source found.")
+
+  defp handle_parse({:ok, parsed}, flags) do
     # Paths to additional .pant file hierarchies can be passed in with
     # the :path flag. The default path will also always be checked.
     [@default_path | Keyword.get_values(flags, :path)]
@@ -56,33 +64,11 @@ defmodule Pantagruel do
     end
   end
 
-  defp handle_parse({:ok, [], _, _, {_, _}, _}, _), do: puts("No Pantagruel source found.")
-
-  defp handle_parse({:ok, parsed, rest, _, {row, col}, _}, _) do
-    parsed =
-      Enum.reverse(parsed)
-      |> hd()
-      |> format_section()
-
-    rest = String.trim(rest)
-
-    """
-    #{row}:#{col}: Parse error.
-
-    Parsed:
-    #{parsed}
-
-    Remaining:
-    #{rest}
-    """
-    |> puts
-  end
-
   defp handle_eval({:ok, scope}, _, scopes: true), do: format_scopes(scope) |> puts
   defp handle_eval({:ok, _}, parsed, _), do: format_program(parsed) |> puts
 
   defp handle_eval({:error, {tag, e}}, parsed, _) do
-    IO.puts "Eval error."
+    IO.puts("Eval error.")
     handle_error(tag, e)
     puts_in_error_handling(parsed)
   end
@@ -118,10 +104,10 @@ defmodule Pantagruel do
     quantifiers
     |> Enum.each(fn {
                       :quantification,
-                      quantifier: _, quant_bindings: bindings, quant_expression: exp
+                      quantifier: _, bindings: bindings, expr: exp
                     } ->
       exp_str =
-        {:quantification, quantifier: "…", quant_bindings: bindings, quant_expression: exp}
+        {:quantification, quantifier: "…", bindings: bindings, expr: exp}
         |> format_exp([])
 
       """

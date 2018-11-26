@@ -3,10 +3,14 @@ defmodule Pantagruel.Load do
   Provides the functionality for loading Pantagruel files, making them
   available for import.
   """
-  alias Pantagruel.{Scan, Parse}
+  alias Pantagruel.Parse
 
   defmodule ModuleShadowError do
     defexception message: "Attempted to redefine an existing module", mod_name: nil
+  end
+
+  defmodule ModuleLoadError do
+    defexception message: "Module could not be loaded.", error: nil
   end
 
   @doc """
@@ -22,6 +26,9 @@ defmodule Pantagruel.Load do
     rescue
       e in ModuleShadowError ->
         {:error, {:module_shadow, e}}
+
+      e in ModuleLoadError ->
+        {:error, {:module_load, e}}
     end
   end
 
@@ -35,19 +42,23 @@ defmodule Pantagruel.Load do
   defp load_ast(path, asts) do
     path
     |> File.read!()
-    |> Scan.scan()
-    |> Parse.program()
+    |> Pantagruel.Scan.scan()
+    |> :lexer.string()
+    |> Parse.handle_lex()
     |> include(asts)
   end
 
-  defp include({:ok, [{:module, mod_name: mod_name} | rest], "", %{}, _, _}, asts) do
+  defp include({:ok, [{:module, mod_name} | ast]}, asts) do
     case asts do
       # No two modules can declare the same module name.
       %{^mod_name => _} ->
         raise ModuleShadowError, mod_name: mod_name
 
       %{} ->
-        Map.put(asts, mod_name, rest)
+        Map.put(asts, mod_name, ast)
     end
   end
+
+  defp include({:ok, _}, asts), do: asts
+  defp include(error, _), do: raise(ModuleLoadError, error: error)
 end

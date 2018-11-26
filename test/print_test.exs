@@ -2,9 +2,16 @@ defmodule Pantagruel.FormatTest do
   use ExUnit.Case
   alias Pantagruel.Format
 
+  defp eval(text) when is_binary(text) do
+    text
+    |> Pantagruel.Scan.scan()
+    |> eval
+  end
+
   defp eval(text) do
-    with scanned <- Pantagruel.Scan.scan(text),
-         {:ok, parsed, "", %{}, _, _} <- Pantagruel.Parse.program(scanned),
+    with {:ok, parsed} <-
+           :lexer.string(text)
+           |> Pantagruel.Parse.handle_lex(),
          {:ok, scope} <- Pantagruel.Eval.eval(parsed, []) do
       {parsed, scope}
     end
@@ -77,6 +84,7 @@ defmodule Pantagruel.FormatTest do
       {parsed, scopes} =
         """
         f() => F
+        ---
         f 1 <-> 0
         """
         |> eval
@@ -89,11 +97,25 @@ defmodule Pantagruel.FormatTest do
       {parsed, scopes} =
         """
         f()
+        ---
         ~f
         """
         |> eval
 
       assert "f()  \n¬f  " == Format.format_program(parsed)
+      assert "f()" == Format.format_scopes(scopes)
+    end
+
+    test "intro operator" do
+      {parsed, scopes} =
+        """
+        f()
+        ---
+        and ~f
+        """
+        |> eval
+
+      assert "f()  \n∧ ¬f  " == Format.format_program(parsed)
       assert "f()" == Format.format_scopes(scopes)
     end
   end
