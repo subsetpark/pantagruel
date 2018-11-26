@@ -16,7 +16,8 @@ defmodule Pantagruel.MixProject do
       name: "Pantagruel",
       source_url: "https://github.com/subsetpark/pantagruel",
       docs: [
-        extras: ["README.md", "priv/a_full_specification.md", "priv/reference.md"]
+        extras: ["README.md", "priv/a_full_specification.md", "priv/reference.md"],
+        markdown_processor_options: [footnotes: true]
       ],
       dialyzer: [flags: ["-Wunmatched_returns", :error_handling, :underspecs]]
     ]

@@ -29,11 +29,11 @@ computer, and a *semantics*, which is largely not parsed by the Pantagruel
 interpreter. Thus the semantics of Pantagruel, while not undefined, are
 mostly a set of *suggested readings*, a system of of interpretations
 that it would be useful to share among the humans that read and write
-Pantagruel programs.[^1]
+Pantagruel programs.
 
-[^1] As Pantagruel evolves, there is the constant threat that any
-semantics which is currently only a suggested reading will get implemented
-in the interpreter if there is a use for it.
+> As Pantagruel evolves, there is the constant threat that any
+> semantics which is currently only a suggested reading will get implemented
+> in the interpreter if there is a use for it.
 
 ## Pantagruel Syntax
 
