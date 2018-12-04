@@ -64,6 +64,7 @@ defmodule Pantagruel.Format do
   def format_exp({:quantification, q}, s), do: format_quantification(q, s)
   def format_exp({:comprehension, c}, s), do: format_comprehension(c, s)
   def format_exp({:binding, binding}, s), do: format_binding(binding, s)
+  def format_exp({:refinement, refinement}, s), do: format_refinement(refinement, s)
   def format_exp({:guard, expr}, s), do: format_exp(expr, s)
   def format_exp({:lambda, l}, s), do: format_lambda(l, scope: s)
   def format_exp(%Lambda{} = l, s), do: format_lambda(l, scope: s)
@@ -123,17 +124,16 @@ defmodule Pantagruel.Format do
   defp format_line({:alias, alias}), do: format_alias(alias)
   defp format_line({:comment, comment}), do: format_comment(comment)
   defp format_line(expr: expression), do: format_exp(expression)
-
-  defp format_line(refinement: refinement), do: format_refinement(refinement)
+  defp format_line(refinement: refinement), do: format_refinement(refinement, [])
 
   defp format_line([{:intro_op, op} | rest]) do
     "#{format_exp(op)} #{format_line(rest)}"
   end
 
-  defp format_refinement(refinement) do
-    pat = refinement[:pattern] |> format_exp()
-    guard = refinement[:guard] |> format_guard()
-    exp = refinement[:expr] |> format_exp()
+  defp format_refinement(refinement, s) do
+    pat = refinement[:pattern] |> format_exp(s)
+    guard = refinement[:guard] |> format_guard(s)
+    exp = refinement[:expr] |> format_exp(s)
 
     "#{pat}#{guard} ← #{exp}"
   end
@@ -156,10 +156,10 @@ defmodule Pantagruel.Format do
   end
 
   defp format_binding([bind_symbol: sym, bind_domain: d], s),
-    do: join_exp([sym, ":", d], s, " ")
+    do: join_exp([sym, {:symbol, ":"}, d], s, " ")
 
-  defp format_guard(nil), do: ""
-  defp format_guard(guard), do: " ⸳ #{format_exp(guard)}"
+  defp format_guard(nil, _), do: ""
+  defp format_guard(guard, s), do: " ⸳ #{format_exp(guard, s)}"
 
   defp format_symbol(s, scopes) do
     name = Env.lookup_binding_name(s)
@@ -177,7 +177,7 @@ defmodule Pantagruel.Format do
   end
 
   defp format_quantification([quantifier: op, bindings: binding, expr: expr], s) do
-    q = format_exp(op, s)
+    q = format_exp(op)
     bind = join_exp(binding, s, ",")
     exp = format_exp(expr, s)
 

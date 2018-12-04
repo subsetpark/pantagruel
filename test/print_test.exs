@@ -118,5 +118,30 @@ defmodule Pantagruel.FormatTest do
       assert "f()  \n∧ ¬f  " == Format.format_program(parsed)
       assert "f()" == Format.format_scopes(scopes)
     end
+
+    test "refinement" do
+      {parsed, scopes} =
+        """
+        f()
+        ---
+        f \\ exists n : Nat \\ n > 1 <- n
+        """
+        |> eval
+
+      assert "f()  \nf ⸳ ∃ n : ℕ ⸳ n > 1 ← n  " == Format.format_program(parsed)
+      assert "f()" == Format.format_scopes(scopes)
+    end
+
+    test "refinement error" do
+      {:error, {:unbound_variables, e}} =
+        """
+        f()
+        ---
+        f \\ exists n : Nat \\ n > 1 <- k
+        """
+        |> eval
+
+      assert "f ⸳ ∃ *n* : ℕ ⸳ *n* > 1 ← *k*" == Format.format_exp(e.unbound, e.scopes)
+    end
   end
 end

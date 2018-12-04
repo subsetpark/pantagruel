@@ -30,6 +30,7 @@ defmodule Pantagruel.Env do
     {:symbol, 'Nat'} => %Variable{name: "ℕ", domain: "ℕ"},
     {:symbol, 'Nat0'} => %Variable{name: "ℕ0", domain: "ℕ0"},
     {:symbol, 'String'} => %Variable{name: "𝕊", domain: "𝕊"},
+    {:symbol, ":"} => %Variable{name: ":", domain: "⊤"},
     := => %Variable{name: "=", domain: "ℝ"},
     :!= => %Variable{name: "≠", domain: "ℝ"},
     :"~" => %Variable{name: "¬", domain: "𝔹"},
@@ -157,6 +158,7 @@ defmodule Pantagruel.Env do
   @spec is_bound?(any, t) :: boolean
   def is_bound?(v, _) when is_integer(v), do: true
   def is_bound?(v, _) when is_float(v), do: true
+  def is_bound?(v, _) when is_atom(v), do: true
   def is_bound?(nil, _), do: true
   def is_bound?({:literal, _}, _), do: true
   def is_bound?(_, []), do: false
