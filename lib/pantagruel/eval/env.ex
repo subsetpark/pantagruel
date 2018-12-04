@@ -30,6 +30,7 @@ defmodule Pantagruel.Env do
     {:symbol, 'Nat'} => %Variable{name: "ℕ", domain: "ℕ"},
     {:symbol, 'Nat0'} => %Variable{name: "ℕ0", domain: "ℕ0"},
     {:symbol, 'String'} => %Variable{name: "𝕊", domain: "𝕊"},
+    {:symbol, 'Nil'} => %Variable{name: "∅", domain: "⊤"},
     {:symbol, ":"} => %Variable{name: ":", domain: "⊤"},
     := => %Variable{name: "=", domain: "ℝ"},
     :!= => %Variable{name: "≠", domain: "ℝ"},
