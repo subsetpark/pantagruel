@@ -126,7 +126,7 @@ lambda_yield -> yield_type term :
 
 % ii. aliases
 
-alias -> symbols reverse_yield expression :
+alias -> symbols reverse_yield expressions :
     {alias, [{alias_name, '$1'}, {alias_expr, '$3'}]}.
 
 %
