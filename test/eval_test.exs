@@ -457,7 +457,7 @@ defmodule EvalTest do
 
       assert [
                %{
-                 {:symbol, 'X'} => %Domain{name: {:symbol, 'X'}, ref: 1}
+                 {:symbol, 'X'} => %Domain{name: {:symbol, 'X'}, ref: [1]}
                }
              ] == eval(parsed)
     end
@@ -617,7 +617,7 @@ defmodule EvalTest do
       assert [
                %{
                  {:symbol, 'Status'} => %Domain{
-                   ref: {:set, [literal: 'ok']},
+                   ref: [{:set, [literal: 'ok']}],
                    name: {:symbol, 'Status'}
                  }
                }
@@ -634,11 +634,11 @@ defmodule EvalTest do
       assert [
                %{
                  {:symbol, 'Status'} => %Domain{
-                   ref: {:set, [literal: 'ok']},
+                   ref: [{:set, [literal: 'ok']}],
                    name: {:symbol, 'Status'}
                  },
                  {:symbol, 'State'} => %Domain{
-                   ref: {:set, [literal: 'ok']},
+                   ref: [{:set, [literal: 'ok']}],
                    name: {:symbol, 'State'}
                  }
                }
@@ -658,7 +658,7 @@ defmodule EvalTest do
                    head: [
                      alias: [
                        alias_name: [symbol: 'Status'],
-                       alias_expr: {:set, [literal: 'ok', literal: 'stop']}
+                       alias_expr: [{:set, [literal: 'ok', literal: 'stop']}]
                      ]
                    ]
                  ]
@@ -733,7 +733,7 @@ defmodule EvalTest do
                  {:symbol, 'Day'} => %Domain{
                    name: {:symbol, 'Day'},
                    ref:
-                     {:set,
+                     [{:set,
                       [
                         comprehension: [
                           bindings: [
@@ -745,7 +745,7 @@ defmodule EvalTest do
                           ],
                           expr: {:symbol, 'n'}
                         ]
-                      ]}
+                      ]}]
                  }
                }
              ] == eval(parsed)
@@ -763,6 +763,27 @@ defmodule EvalTest do
       assert [
                %{
                  {:symbol, 'f'} => %Lambda{
+                   codomain: nil,
+                   domain: [],
+                   name: {:symbol, 'f'},
+                   type: nil
+                 }
+               }
+             ] == eval(parsed)
+    end
+
+    test "refinements are evaluated in context of guard" do
+      parsed =
+        """
+        f()
+        ---
+        f \\ exists n : Nat \\ n > 1 <- n
+        """
+        |> scan_and_parse
+
+      assert [
+               %{
+                 {:symbol, 'f'} => %Pantagruel.Values.Lambda{
                    codomain: nil,
                    domain: [],
                    name: {:symbol, 'f'},

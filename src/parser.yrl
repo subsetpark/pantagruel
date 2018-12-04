@@ -69,6 +69,7 @@ Endsymbol '$end'.
 
 Left 100 binary_operator.
 Left 300 unary_operator.
+Left 50 '\\'.
 
 %
 % RULES

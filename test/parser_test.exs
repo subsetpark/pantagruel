@@ -270,7 +270,7 @@ defmodule ParserTest do
       |> tryp(
         chapters: [
           chapter: [
-            head: [alias: [alias_name: [{:symbol, 'S'}], alias_expr: {:symbol, 'String'}]]
+            head: [alias: [alias_name: [{:symbol, 'S'}], alias_expr: [{:symbol, 'String'}]]]
           ]
         ]
       )
@@ -284,7 +284,7 @@ defmodule ParserTest do
             head: [
               alias: [
                 alias_name: [symbol: 'S', symbol: 'T'],
-                alias_expr: {:symbol, 'String'}
+                alias_expr: [{:symbol, 'String'}]
               ]
             ]
           ]
@@ -298,7 +298,7 @@ defmodule ParserTest do
         chapters: [
           chapter: [
             head: [
-              alias: [alias_name: [symbol: 'Status'], alias_expr: {:set, [literal: 'ok']}]
+              alias: [alias_name: [symbol: 'Status'], alias_expr: [{:set, [literal: 'ok']}]]
             ]
           ]
         ]
@@ -313,7 +313,7 @@ defmodule ParserTest do
             head: [
               alias: [
                 alias_name: [symbol: 'Day'],
-                alias_expr: {:appl, [op: :"=<", x: {:symbol, 'x'}, y: 30]}
+                alias_expr: [{:appl, [op: :"=<", x: {:symbol, 'x'}, y: 30]}]
               ]
             ]
           ]

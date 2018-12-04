@@ -103,8 +103,6 @@ defmodule Pantagruel.Eval do
     end
   end
 
-  # Recursively evaluate any imported modules and bring the resulting
-  # scopes along.
   defp handle_imports(
          [{:import, mod_name} | rest],
          available_asts,
@@ -187,43 +185,34 @@ defmodule Pantagruel.Eval do
   defp eval_body_statement({:comment, _}, state), do: state
 
   # 2. Expressions;
-  defp eval_body_statement([{:expr, line}], state), do: eval_expression(line, state)
-  # 3. Refinements, which are guarded patterns with refining expressions.
-  defp eval_body_statement([refinement: refinement], state),
-    do: eval_expression(Keyword.values(refinement), state)
-
-  defp eval_body_statement([{:intro_op, _} | clause], state),
-    do: eval_body_statement(clause, state)
-
-  defp eval_expression(elements, {
+  defp eval_body_statement([expr: expr], {
          [scope | scopes],
          [unbounds, next_unbounds | rest]
        }) do
     # Include any introduced symbols into scope.
-    scope = bind_expression_variables(elements, scope)
+    scope = Env.bind_expression_variables(expr, scope)
     # Include all symbols into the binding check for the *next* chapter.
-    next_unbounds = include_for_binding_check(elements, next_unbounds)
+    next_unbounds = include_for_binding_check(expr, next_unbounds)
 
     {[scope | scopes], [unbounds, next_unbounds | rest]}
   end
 
-  # Existence quantifiers don't just introduce variables for the scope of
-  # their predicates; the introduce variables into global scope.
-  defp bind_expression_variables(
-         {:quantification, quantifier: :exists, bindings: bindings, expr: expr},
-         scope
-       ) do
-    bound =
-      bindings
-      |> Enum.reduce(scope, &bind_binding/2)
+  # 3. Refinements, which are guarded patterns with refining expressions.
+  defp eval_body_statement([refinement: refinement], {
+         [scope | scopes],
+         [unbounds, next_unbounds | rest]
+       }) do
+    element = refinement[:expr] || []
+    # Include any introduced symbols into scope.
+    scope = Env.bind_expression_variables(element, scope)
+    # Include all symbols into the binding check for the *next* chapter.
+    next_unbounds = include_for_binding_check({:refinement, refinement}, next_unbounds)
 
-    bind_expression_variables(expr, bound)
+    {[scope | scopes], [unbounds, next_unbounds | rest]}
   end
 
-  # In this respect they're unique among expression types.
-  defp bind_expression_variables(_, state), do: state
-
-  defp bind_binding({:binding, [bind_symbol: x, bind_domain: d]}, s), do: Env.bind(s, x, d)
+  defp eval_body_statement([{:intro_op, _} | clause], state),
+    do: eval_body_statement(clause, state)
 
   # Extend the environment for a new chapter.
   @spec new_state(t, :atom | nil) :: t

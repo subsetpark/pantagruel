@@ -105,6 +105,23 @@ defmodule Pantagruel.Env do
     |> bind(decl[:decl_ident], Lambda.from_declaration(decl, doms))
   end
 
+  # Existence quantifiers don't just introduce variables for the scope of
+  # their predicates; the introduce variables into global scope.
+  def bind_expression_variables(
+        {:quantification, quantifier: :exists, bindings: bindings, expr: expr},
+        scope
+      ) do
+    bound =
+      bindings
+      |> Enum.reduce(scope, &bind_binding/2)
+
+    bind_expression_variables(expr, bound)
+  end
+
+  # In this respect they're unique among expression types.
+  def bind_expression_variables(_, state), do: state
+  # Recursively evaluate any imported modules and bring the resulting
+  # scopes along.
   @doc """
   If a value has been defined in the starting environment, find the name
   it was bound under.
@@ -148,6 +165,19 @@ defmodule Pantagruel.Env do
     do: true
 
   def is_bound?({c, contents}, scope) when is_container(c), do: is_bound?(contents, scope)
+
+  def is_bound?({:refinement, refinement}, scope) do
+    new_scope = Enum.reduce(refinement[:guard] || [], %{}, &bind_expression_variables/2)
+    scope = [new_scope | scope]
+
+    [
+      refinement[:pattern],
+      refinement[:guard],
+      refinement[:expr]
+    ]
+    |> List.flatten()
+    |> Enum.all?(&is_bound?(&1, scope))
+  end
 
   def is_bound?({:lambda, lambda}, scope) do
     # Lambdas introduce function arguments. Therefore they are bound in
@@ -249,6 +279,8 @@ defmodule Pantagruel.Env do
   defp extract_binding_symbols({:guard, exprs}, {pairs, symbol_references}) do
     {pairs, [exprs | symbol_references]}
   end
+
+  defp bind_binding({:binding, [bind_symbol: x, bind_domain: d]}, s), do: bind(s, x, d)
 
   defp unbunch({:par, elements}, domain), do: for(e <- elements, do: {e, domain})
 

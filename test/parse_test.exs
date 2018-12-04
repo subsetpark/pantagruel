@@ -341,7 +341,7 @@ defmodule Pantagruel.Test.LegacyParser do
             head: [
               alias: [
                 alias_name: [{:symbol, 'Status'}],
-                alias_expr: {:set, [literal: 'ok']}
+                alias_expr: [{:set, [literal: 'ok']}]
               ]
             ]
           ]
@@ -358,7 +358,7 @@ defmodule Pantagruel.Test.LegacyParser do
             head: [
               alias: [
                 alias_name: [{:symbol, 'Status'}, {:symbol, 'State'}],
-                alias_expr: {:set, [literal: 'ok']}
+                alias_expr: [{:set, [literal: 'ok']}]
               ]
             ]
           ]
@@ -376,7 +376,7 @@ defmodule Pantagruel.Test.LegacyParser do
               alias: [
                 alias_name: [{:symbol, 'Day'}],
                 alias_expr:
-                  {:set,
+                  [{:set,
                    [
                      comprehension: [
                        bindings: [
@@ -394,7 +394,7 @@ defmodule Pantagruel.Test.LegacyParser do
                        ],
                        expr: {:symbol, 'n'}
                      ]
-                   ]}
+                   ]}]
               ]
             ]
           ]
