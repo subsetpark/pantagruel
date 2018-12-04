@@ -52,8 +52,8 @@ defmodule Pantagruel.Env do
     :exists => %Variable{name: "∃", domain: "⊤"},
     :all => %Variable{name: "∀", domain: "⊤"},
     :"#" => %Variable{name: "#", domain: "⊤"},
-    :& => %Variable{name: "∪", domain: "U"},
-    :| => %Variable{name: "∩", domain: "U"}
+    :& => %Variable{name: "∩", domain: "U"},
+    :| => %Variable{name: "∪", domain: "U"}
   }
 
   @doc """
