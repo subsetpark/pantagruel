@@ -43,7 +43,7 @@ defmodule Pantagruel.Load do
     path
     |> File.read!()
     |> Pantagruel.Scan.scan()
-    |> :lexer.string()
+    |> :pant_lexer.string()
     |> Parse.handle_lex()
     |> include(asts)
   end

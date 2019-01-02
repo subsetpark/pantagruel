@@ -10,7 +10,7 @@ defmodule Pantagruel.FormatTest do
 
   defp eval(text) do
     with {:ok, parsed} <-
-           :lexer.string(text)
+           :pant_lexer.string(text)
            |> Pantagruel.Parse.handle_lex(),
          {:ok, scope} <- Pantagruel.Eval.eval(parsed, []) do
       {parsed, scope}

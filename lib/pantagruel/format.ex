@@ -21,6 +21,9 @@ defmodule Pantagruel.Format do
   @spec format_scopes(Env.t()) :: t
   def format_scopes(scopes), do: format_with(scopes, &format_scope/1)
 
+  @spec format_lifted(ast) :: t
+  def format_lifted(tree), do: format_with(tree, &format_exp/1)
+
   @bar "***"
 
   defp format_with(data, f) do
@@ -40,10 +43,7 @@ defmodule Pantagruel.Format do
   end
 
   def format_section({:module, mod_name}), do: "# #{mod_name}"
-
-  def format_section({:chapters, chapters}) do
-    format_with(chapters, &format_chapter/1)
-  end
+  def format_section({:chapters, chapters}), do: format_with(chapters, &format_chapter/1)
 
   def format_import({:import, mod_name}), do: ": #{mod_name}"
   defguard is_term(s) when is_number(s) or is_atom(s) or is_binary(s)
@@ -60,6 +60,15 @@ defmodule Pantagruel.Format do
   def format_exp(s, []) when is_term(s), do: Env.lookup_binding_name(s)
   def format_exp({:symbol, _} = s, scopes), do: format_symbol(s, scopes)
   def format_exp(s, scopes) when is_term(s), do: format_symbol(s, scopes)
+
+  def format_exp({op, l, r}, s) when is_relation(op) do
+    "#{format_exp(l, s)} #{format_relation(op)} #{format_exp(r, s)}"
+  end
+
+  def format_exp({:not, exp}, s) do
+    "#{format_exp(:not)} #{format_exp(exp, s)}"
+  end
+
   def format_exp({c, exps}, s) when is_container(c), do: format_container(c, exps, s)
   def format_exp({:quantification, q}, s), do: format_quantification(q, s)
   def format_exp({:comprehension, c}, s), do: format_comprehension(c, s)
@@ -124,18 +133,16 @@ defmodule Pantagruel.Format do
   defp format_line({:alias, alias}), do: format_alias(alias)
   defp format_line({:comment, comment}), do: format_comment(comment)
   defp format_line(expr: expression), do: format_exp(expression)
-  defp format_line(refinement: refinement), do: format_refinement(refinement, [])
+  defp format_line(refinement: refinement), do: format_refinement(refinement)
 
   defp format_line([{:intro_op, op} | rest]) do
     "#{format_exp(op)} #{format_line(rest)}"
   end
 
-  defp format_refinement(refinement, s) do
-    pat = refinement[:pattern] |> format_exp(s)
-    guard = refinement[:guard] |> format_guard(s)
-    exp = refinement[:expr] |> format_exp(s)
+  defp format_alias(alias_name: names, alias_expr: ref) do
+    alias_names = join_exp(names, [], ",")
 
-    "#{pat}#{guard} ← #{exp}"
+    "#{alias_names} ⇐ #{format_exp(ref)}"
   end
 
   defp format_comment(comment) do
@@ -149,10 +156,12 @@ defmodule Pantagruel.Format do
     "\n> #{comment_str}\n"
   end
 
-  defp format_alias(alias_name: names, alias_expr: ref) do
-    alias_names = join_exp(names, [], ",")
+  defp format_refinement(refinement, s \\ []) do
+    pat = refinement[:pattern] |> format_exp(s)
+    guard = refinement[:guard] |> format_guard(s)
+    exp = refinement[:expr] |> format_exp(s)
 
-    "#{alias_names} ⇐ #{format_exp(ref)}"
+    "#{pat}#{guard} ← #{exp}"
   end
 
   defp format_binding([bind_symbol: sym, bind_domain: d], s),
@@ -191,7 +200,7 @@ defmodule Pantagruel.Format do
     "#{binding_str} ⸳ #{expr_str}"
   end
 
-  @spec format_lambda(nil | Keyword.t | map, keyword) :: t
+  @spec format_lambda(nil | Keyword.t() | map, keyword) :: t
   defp format_lambda(
          %Lambda{name: name, domain: domain, codomain: codomain, type: type},
          opts
@@ -212,6 +221,12 @@ defmodule Pantagruel.Format do
   defp format_lambda(l, opts) do
     Lambda.from_declaration(l) |> format_lambda(opts)
   end
+
+  defp format_relation(:conj), do: format_exp(:and)
+  defp format_relation(:disj), do: format_exp(:or)
+  defp format_relation(:xor), do: format_exp(:xor)
+  defp format_relation(:impl), do: format_exp(:->)
+  defp format_relation(:iff), do: format_exp(:"<->")
 
   defp lambda_prefix(nil, _), do: "λ"
   defp lambda_prefix(name, s), do: name |> format_exp(s)

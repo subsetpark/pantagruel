@@ -4,7 +4,7 @@ defmodule Pantagruel.Test.LegacyParser do
   defp tryparse(text, r) do
     {:ok, program} =
       Pantagruel.Scan.scan(text)
-      |> :lexer.string()
+      |> :pant_lexer.string()
       |> Pantagruel.Parse.handle_lex()
 
     assert r == program

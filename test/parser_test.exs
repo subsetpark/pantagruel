@@ -934,9 +934,9 @@ defmodule ParserTest do
 
     {:ok, tokens, _} =
       Pantagruel.Scan.scan(string)
-      |> :lexer.string()
+      |> :pant_lexer.string()
 
-    {:ok, parsed} = :parser.parse(tokens)
+    {:ok, parsed} = :pant_parser.parse(tokens)
     assert expected == parsed
   end
 end

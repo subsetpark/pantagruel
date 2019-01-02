@@ -28,7 +28,7 @@ defmodule TermMacros do
   end
 end
 
-defmodule TermElimination do
+defmodule BoolAlg do
   import TermMacros
 
   import Kernel,

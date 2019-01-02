@@ -2,7 +2,7 @@ defmodule Pantagruel do
   import IO, only: [puts: 1]
   import Pantagruel.Format
 
-  alias Pantagruel.{Eval, Parse}
+  alias Pantagruel.{Eval, Parse, Bool}
 
   @moduledoc """
   An interpreter for the Pantagruel language.
@@ -25,17 +25,17 @@ defmodule Pantagruel do
   def main(args) do
     args
     |> OptionParser.parse(
-      aliases: [s: :scopes, p: :path],
-      strict: [scopes: :boolean, path: :keep]
+      aliases: [s: :scopes, p: :path, r: :shell],
+      strict: [scopes: :boolean, path: :keep, shell: :boolean]
     )
     |> handle
   end
 
   defp handle({flags, [filename], _}) do
-    filename
+    tree = filename
     |> File.read!()
     |> Pantagruel.Scan.scan()
-    |> :lexer.string()
+    |> :pant_lexer.string()
     |> Parse.handle_lex()
     |> handle_parse(flags)
   end
@@ -49,6 +49,11 @@ defmodule Pantagruel do
 
   defp handle_parse({:ok, []}, _), do: puts("No Pantagruel source found.")
 
+  defp handle_parse({:ok, parsed}, [shell: true]) do
+    Bool.Lift.lift(parsed)
+    |> format_lifted()
+    |> puts
+  end
   defp handle_parse({:ok, parsed}, flags) do
     # Paths to additional .pant file hierarchies can be passed in with
     # the :path flag. The default path will also always be checked.
