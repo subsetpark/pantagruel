@@ -110,7 +110,7 @@ defmodule Pantagruel.Env do
   # Existence quantifiers don't just introduce variables for the scope of
   # their predicates; the introduce variables into global scope.
   def bind_expression_variables(
-        {:quantification, quantifier: :exists, bindings: bindings, expr: expr},
+        {:quantification, [:exists, bindings, expr]},
         scope
       ) do
     bound =
@@ -169,16 +169,11 @@ defmodule Pantagruel.Env do
 
   def is_bound?({c, contents}, scope) when is_container(c), do: is_bound?(contents, scope)
 
-  def is_bound?({:refinement, refinement}, scope) do
-    new_scope = Enum.reduce(refinement[:guard] || [], %{}, &bind_expression_variables/2)
+  def is_bound?({:refinement, [_, guards, _] = r}, scope) do
+    new_scope = Enum.reduce(guards, %{}, &bind_expression_variables/2)
     scope = [new_scope | scope]
 
-    [
-      refinement[:pattern],
-      refinement[:guard],
-      refinement[:expr]
-    ]
-    |> List.flatten()
+    List.flatten(r)
     |> Enum.all?(&is_bound?(&1, scope))
   end
 
@@ -198,7 +193,7 @@ defmodule Pantagruel.Env do
 
   # Boundness checking for :forall and :exists quantifications.
   def is_bound?(
-        {:quantification, [quantifier: _, bindings: bindings, expr: expr]},
+        {:quantification, [_, bindings, expr]},
         scope
       ) do
     # Introduce any internal bindings for the purpose of boundness
@@ -206,20 +201,18 @@ defmodule Pantagruel.Env do
     check_with_bindings(expr, bindings, scope)
   end
 
-  def is_bound?({:comprehension, [bindings: bindings, expr: expr]}, scope),
+  def is_bound?({:comprehension, [bindings, expr]}, scope),
     # Introduce any internal bindings for the purpose of boundness
     # checking of the whole expression.
     do: check_with_bindings(expr, bindings, scope)
 
-  def is_bound?({:intro_op, _}, _), do: true
-
-  def is_bound?({_, f: f, x: x}, scopes),
+  def is_bound?({:f_appl, [f, x]}, scopes),
     do: is_bound?(f, scopes) && is_bound?(x, scopes)
 
-  def is_bound?({_, op: _, x: x, y: y}, scopes),
+  def is_bound?({:bin_appl, [_, x, y]}, scopes),
     do: is_bound?(x, scopes) && is_bound?(y, scopes)
 
-  def is_bound?({_, op: _, x: x}, scopes),
+  def is_bound?({:un_appl, [_, x]}, scopes),
     do: is_bound?(x, scopes)
 
   def is_bound?({:symbol, variable}, [scope | parent]) do
@@ -273,7 +266,7 @@ defmodule Pantagruel.Env do
 
   # Given a binding pattern, return the symbol being bound.
   defp extract_binding_symbols(
-         {:binding, [bind_symbol: x, bind_domain: domain]},
+         {:binding, [x, domain]},
          {binding_pairs, symbol_references}
        ) do
     {unbunch(x, domain) ++ binding_pairs, symbol_references}
@@ -283,9 +276,9 @@ defmodule Pantagruel.Env do
     {pairs, [exprs | symbol_references]}
   end
 
-  defp bind_binding({:binding, [bind_symbol: x, bind_domain: d]}, s), do: bind(s, x, d)
+  defp bind_binding({:binding, [x, d]}, s), do: bind(s, x, d)
 
-  defp unbunch({:par, elements}, domain), do: for(e <- elements, do: {e, domain})
+  defp unbunch({:cont, [:par, elements]}, domain), do: for(e <- elements, do: {e, domain})
 
   defp unbunch(x, y), do: [{x, y}]
 
