@@ -16,7 +16,13 @@ defmodule Pantagruel.Format do
   Generate a string representation of an evaluated program.
   """
   @spec format_program(ast) :: t
-  def format_program(parsed), do: format_with(parsed, &format_section/1)
+  def format_program({:program, [module, imports, chapters]}) do
+    """
+    #{format_module(module)}
+    #{format_imports(imports)}
+    #{format_chapters(chapters)}
+    """
+  end
 
   @spec format_scopes(Env.t()) :: t
   def format_scopes(scopes), do: format_with(scopes, &format_scope/1)
@@ -35,15 +41,17 @@ defmodule Pantagruel.Format do
   @doc """
   Generate a string representation of a parsed program section.
   """
-  @spec format_section(section) :: t
-  def format_section({:imports, imports}) do
+
+  def format_module(nil), do: ""
+  def format_module(mod_name), do: "# #{mod_name}"
+
+  def format_imports(imports) do
     imports
     |> Enum.map(&format_import/1)
     |> Enum.join("\n")
   end
 
-  def format_section({:module, mod_name}), do: "# #{mod_name}"
-  def format_section({:chapters, chapters}), do: format_with(chapters, &format_chapter/1)
+  def format_chapters(chapters), do: format_with(chapters, &format_chapter/1)
 
   def format_import({:import, mod_name}), do: ": #{mod_name}"
   defguard is_term(s) when is_number(s) or is_atom(s) or is_binary(s)
@@ -69,24 +77,38 @@ defmodule Pantagruel.Format do
     "#{format_exp(:not)} #{format_exp(exp, s)}"
   end
 
-  def format_exp({c, exps}, s) when is_container(c), do: format_container(c, exps, s)
-  def format_exp({:quantification, q}, s), do: format_quantification(q, s)
-  def format_exp({:comprehension, c}, s), do: format_comprehension(c, s)
-  def format_exp({:binding, binding}, s), do: format_binding(binding, s)
-  def format_exp({:refinement, refinement}, s), do: format_refinement(refinement, s)
+  def format_exp({:cont, [c, exps]}, s), do: format_container(c, exps, s)
+
+  def format_exp({:quantification, [op, bindings, exp]}, s) do
+    q = format_exp(op)
+    bind = join_exp(bindings, s, ",")
+    exp = format_exp(exp, s)
+
+    [q, bind, "⸳", exp]
+    |> Enum.join(" ")
+  end
+
+  def format_exp({:comprehension, [bindings, exp]}, s) do
+    binding_str = join_exp(bindings, s, ",")
+    exp_str = format_exp(exp)
+    "#{binding_str} ⸳ #{exp_str}"
+  end
+
+  def format_exp({:binding, [sym, domain]}, s),
+    do: join_exp([sym, {:symbol, ":"}, domain], s, " ")
+
   def format_exp({:guard, expr}, s), do: format_exp(expr, s)
   def format_exp({:lambda, l}, s), do: format_lambda(l, scope: s)
   def format_exp(%Lambda{} = l, s), do: format_lambda(l, scope: s)
-  def format_exp({:intro_op, op}, s), do: format_exp(op, s)
   def format_exp({:literal, literal}, _), do: "*#{literal}*"
-  def format_exp({:appl, op: op, x: x, y: y}, s), do: join_exp([x, op, y], s, " ")
-  def format_exp({:appl, op: op, x: x}, s), do: join_exp([op, x], s)
-  def format_exp({:appl, f: f, x: x}, s), do: join_exp([f, x], s, " ")
-  def format_exp({:dot, f: f, x: x}, s), do: join_exp([x, f], s, ".")
+  def format_exp({:bin_appl, [op, x, y]}, s), do: join_exp([x, op, y], s, " ")
+  def format_exp({:un_appl, [op, x]}, s), do: join_exp([op, x], s)
+  def format_exp({:f_appl, [f, x]}, s), do: join_exp([f, x], s, " ")
+  def format_exp({:dot, [f, x]}, s), do: join_exp([x, f], s, ".")
   def format_exp(exp, s), do: join_exp(exp, s, " ")
 
-  defp format_chapter({:chapter, chapter}) do
-    Stream.concat(chapter[:head], chapter[:body] || [])
+  defp format_chapter({:chapter, [head, body]}) do
+    Stream.concat(head, body)
     # For now, assume we want markdown compatibility.
     |> Stream.map(&(format_line(&1) <> "  "))
     |> Enum.join("\n")
@@ -130,19 +152,24 @@ defmodule Pantagruel.Format do
   end
 
   defp format_line({:decl, declaration}), do: format_lambda(declaration, decl: declaration)
-  defp format_line({:alias, alias}), do: format_alias(alias)
-  defp format_line({:comment, comment}), do: format_comment(comment)
-  defp format_line(expr: expression), do: format_exp(expression)
-  defp format_line(refinement: refinement), do: format_refinement(refinement)
 
-  defp format_line([{:intro_op, op} | rest]) do
-    "#{format_exp(op)} #{format_line(rest)}"
-  end
-
-  defp format_alias(alias_name: names, alias_expr: ref) do
+  defp format_line({:alias, [names, ref]}) do
     alias_names = join_exp(names, [], ",")
 
     "#{alias_names} ⇐ #{format_exp(ref)}"
+  end
+
+  defp format_line({:comment, comment}), do: format_comment(comment)
+
+  defp format_line({:expr, [intro_op, expression]}),
+    do: "#{format_exp(intro_op)} #{format_exp(expression)}"
+
+  defp format_line({:refinement, [pattern, guard, exp]}, s \\ %{}) do
+    pat = pattern |> format_exp(s)
+    guard = guard |> format_guard(s)
+    exp = exp |> format_exp(s)
+
+    "#{pat}#{guard} ← #{exp}"
   end
 
   defp format_comment(comment) do
@@ -155,17 +182,6 @@ defmodule Pantagruel.Format do
 
     "\n> #{comment_str}\n"
   end
-
-  defp format_refinement(refinement, s \\ []) do
-    pat = refinement[:pattern] |> format_exp(s)
-    guard = refinement[:guard] |> format_guard(s)
-    exp = refinement[:expr] |> format_exp(s)
-
-    "#{pat}#{guard} ← #{exp}"
-  end
-
-  defp format_binding([bind_symbol: sym, bind_domain: d], s),
-    do: join_exp([sym, {:symbol, ":"}, d], s, " ")
 
   defp format_guard(nil, _), do: ""
   defp format_guard(guard, s), do: " ⸳ #{format_exp(guard, s)}"
@@ -183,21 +199,6 @@ defmodule Pantagruel.Format do
 
     [l, inner_str, r]
     |> Enum.join()
-  end
-
-  defp format_quantification([quantifier: op, bindings: binding, expr: expr], s) do
-    q = format_exp(op)
-    bind = join_exp(binding, s, ",")
-    exp = format_exp(expr, s)
-
-    [q, bind, "⸳", exp]
-    |> Enum.join(" ")
-  end
-
-  defp format_comprehension([bindings: bindings, expr: expr], s) do
-    binding_str = join_exp(bindings, s, ",")
-    expr_str = format_exp(expr)
-    "#{binding_str} ⸳ #{expr_str}"
   end
 
   @spec format_lambda(nil | Keyword.t() | map, keyword) :: t
