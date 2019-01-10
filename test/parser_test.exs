@@ -42,24 +42,26 @@ defmodule ParserTest do
       (x in f)
       """
       |> tryp(
-        chapters: [
-          chapter: [
-            head: [decl: [decl_ident: {:symbol, 'f'}]],
-            body: [
-              [
-                expr:
-                  {:par,
-                   [
-                     appl: [
-                       op: :in,
-                       x: {:symbol, 'x'},
-                       y: {:symbol, 'f'}
-                     ]
-                   ]}
-              ]
-            ]
-          ]
-        ]
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [decl: [{:symbol, 'f'}, [], nil, nil]],
+               [
+                 expr: [
+                   nil,
+                   {:cont,
+                    [
+                      :par,
+                      [bin_appl: [:in, {:symbol, 'x'}, {:symbol, 'f'}]]
+                    ]}
+                 ]
+               ]
+             ]
+           ]
+         ]}
       )
     end
 
@@ -88,22 +90,29 @@ defmodule ParserTest do
     end
 
     test "decl with two argument" do
-      "f x : X, y : Y)"
+      "f x : X, y : Y"
       |> tryp(
-        chapters: [
-          chapter: [
-            head: [
-              {:decl,
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
                [
-                 decl_ident: {:symbol, 'f'},
-                 lambda_args: [
-                   args: [{:symbol, 'x'}, {:symbol, 'y'}],
-                   doms: [{:symbol, 'X'}, {:symbol, 'Y'}]
+                 decl: [
+                   {:symbol, 'f'},
+                   [
+                     binding: [symbol: 'x', symbol: 'X'],
+                     binding: [symbol: 'y', symbol: 'Y']
+                   ],
+                   nil,
+                   nil
                  ]
-               ]}
-            ]
-          ]
-        ]
+               ],
+               []
+             ]
+           ]
+         ]}
       )
     end
 
@@ -210,63 +219,87 @@ defmodule ParserTest do
     test "decl with function application" do
       "f x:X, f x"
       |> tryp(
-        chapters: [
-          chapter: [
-            head: [
-              {:decl,
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
                [
-                 decl_ident: {:symbol, 'f'},
-                 lambda_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'X'}]],
-                 lambda_guards: [
-                   appl: [f: {:symbol, 'f'}, x: {:symbol, 'x'}]
+                 decl: [
+                   {:symbol, 'f'},
+                   [
+                     binding: [symbol: 'x', symbol: 'X'],
+                     guard: {:f_appl, [symbol: 'f', symbol: 'x']}
+                   ],
+                   nil,
+                   nil
                  ]
-               ]}
-            ]
-          ]
-        ]
+               ],
+               []
+             ]
+           ]
+         ]}
       )
     end
 
     test "decl with expression application" do
       "f x:X, (x + 1) x"
       |> tryp(
-        chapters: [
-          chapter: [
-            head: [
-              decl: [
-                decl_ident: {:symbol, 'f'},
-                lambda_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'X'}]],
-                lambda_guards: [
-                  appl: [
-                    f: {:par, [appl: [op: :+, x: {:symbol, 'x'}, y: 1]]},
-                    x: {:symbol, 'x'}
-                  ]
-                ]
-              ]
-            ]
-          ]
-        ]
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [
+                 decl: [
+                   {:symbol, 'f'},
+                   [
+                     binding: [symbol: 'x', symbol: 'X'],
+                     guard:
+                       {:f_appl,
+                        [
+                          cont: [:par, [bin_appl: [:+, {:symbol, 'x'}, 1]]],
+                          symbol: 'x'
+                        ]}
+                   ],
+                   nil,
+                   nil
+                 ]
+               ],
+               []
+             ]
+           ]
+         ]}
       )
     end
 
     test "decl with two guards" do
       "f x:X, x > 1, x < 3"
       |> tryp(
-        chapters: [
-          chapter: [
-            head: [
-              {:decl,
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
                [
-                 decl_ident: {:symbol, 'f'},
-                 lambda_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'X'}]],
-                 lambda_guards: [
-                   appl: [op: :>, x: {:symbol, 'x'}, y: 1],
-                   appl: [op: :<, x: {:symbol, 'x'}, y: 3]
+                 decl: [
+                   {:symbol, 'f'},
+                   [
+                     binding: [symbol: 'x', symbol: 'X'],
+                     guard: {:bin_appl, [:>, {:symbol, 'x'}, 1]},
+                     guard: {:bin_appl, [:<, {:symbol, 'x'}, 3]}
+                   ],
+                   nil,
+                   nil
                  ]
-               ]}
-            ]
-          ]
-        ]
+               ],
+               []
+             ]
+           ]
+         ]}
       )
     end
   end
@@ -327,13 +360,22 @@ defmodule ParserTest do
     test "alias of exp" do
       "Status <= {`ok}"
       |> tryp(
-        chapters: [
-          chapter: [
-            head: [
-              alias: [alias_name: [symbol: 'Status'], alias_expr: [{:set, [literal: 'ok']}]]
-            ]
-          ]
-        ]
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [
+                 alias: [
+                   [symbol: 'Status'],
+                   {:cont, [:set, [literal: 'ok']]}
+                 ]
+               ],
+               []
+             ]
+           ]
+         ]}
       )
     end
 
@@ -391,17 +433,27 @@ defmodule ParserTest do
     test "list" do
       "f x:X, [x]"
       |> tryp(
-        chapters: [
-          chapter: [
-            head: [
-              decl: [
-                decl_ident: {:symbol, 'f'},
-                lambda_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'X'}]],
-                lambda_guards: [list: [{:symbol, 'x'}]]
-              ]
-            ]
-          ]
-        ]
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [
+                 decl: [
+                   {:symbol, 'f'},
+                   [
+                     binding: [symbol: 'x', symbol: 'X'],
+                     guard: {:cont, [:list, [symbol: 'x']]}
+                   ],
+                   nil,
+                   nil
+                 ]
+               ],
+               []
+             ]
+           ]
+         ]}
       )
     end
 
@@ -457,14 +509,17 @@ defmodule ParserTest do
     test "comment and decl" do
       "\"  ok\nf"
       |> tryp(
-        chapters: [
-          chapter: [
-            head: [
-              comment: 'ok',
-              decl: [decl_ident: {:symbol, 'f'}]
-            ]
-          ]
-        ]
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [comment: 'ok', decl: [{:symbol, 'f'}, [], nil, nil]],
+               []
+             ]
+           ]
+         ]}
       )
     end
 
@@ -492,7 +547,7 @@ defmodule ParserTest do
   describe "comments" do
     test "comment with no newline" do
       "\"  ok"
-      |> tryp(chapters: [chapter: [head: [comment: 'ok']]])
+      |> tryp({:program, [nil, [], [chapter: [[comment: 'ok'], []]]]})
     end
 
     test "two comments" do
@@ -538,15 +593,8 @@ defmodule ParserTest do
            [],
            [
              chapter: [
-               [
-                 decl: [
-                   {:symbol, 'andr'},
-                   [guard: {:cont, [:par, []]}],
-                   nil,
-                   nil
-                 ]
-               ],
-               [[expr: {:symbol, 'z'}], {:comment, 'Here'}]
+               [decl: [{:symbol, 'andr'}, [], nil, nil]],
+               [{:expr, [nil, {:symbol, 'z'}]}, {:comment, 'Here'}]
              ]
            ]
          ]}
@@ -558,23 +606,33 @@ defmodule ParserTest do
     test "decl with precedence" do
       "f x: Nat, f x > g y"
       |> tryp(
-        chapters: [
-          chapter: [
-            head: [
-              decl: [
-                decl_ident: {:symbol, 'f'},
-                lambda_args: [args: [{:symbol, 'x'}], doms: [{:symbol, 'Nat'}]],
-                lambda_guards: [
-                  appl: [
-                    op: :>,
-                    x: {:appl, [f: {:symbol, 'f'}, x: {:symbol, 'x'}]},
-                    y: {:appl, [f: {:symbol, 'g'}, x: {:symbol, 'y'}]}
-                  ]
-                ]
-              ]
-            ]
-          ]
-        ]
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [
+                 decl: [
+                   {:symbol, 'f'},
+                   [
+                     binding: [symbol: 'x', symbol: 'Nat'],
+                     guard:
+                       {:bin_appl,
+                        [
+                          :>,
+                          {:f_appl, [symbol: 'f', symbol: 'x']},
+                          {:f_appl, [symbol: 'g', symbol: 'y']}
+                        ]}
+                   ],
+                   nil,
+                   nil
+                 ]
+               ],
+               []
+             ]
+           ]
+         ]}
       )
     end
 
@@ -674,34 +732,49 @@ defmodule ParserTest do
     test "simple chapter" do
       "f\n---\n1"
       |> tryp(
-        chapters: [
-          chapter: [
-            head: [decl: [decl_ident: {:symbol, 'f'}]],
-            body: [[expr: 1]]
-          ]
-        ]
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [decl: [{:symbol, 'f'}, [], nil, nil]],
+               [expr: [nil, 1]]
+             ]
+           ]
+         ]}
       )
     end
 
     test "two chapters" do
       "f\n;\ng"
       |> tryp(
-        chapters: [
-          chapter: [head: [decl: [decl_ident: {:symbol, 'f'}]]],
-          chapter: [head: [decl: [decl_ident: {:symbol, 'g'}]]]
-        ]
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [[decl: [{:symbol, 'f'}, [], nil, nil]], []],
+             chapter: [[decl: [{:symbol, 'g'}, [], nil, nil]], []]
+           ]
+         ]}
       )
     end
 
     test "chapter refinement" do
       "f\n---\n1 <- 2"
       |> tryp(
-        chapters: [
-          chapter: [
-            head: [decl: [decl_ident: {:symbol, 'f'}]],
-            body: [[refinement: [pattern: 1, expr: 2]]]
-          ]
-        ]
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [decl: [{:symbol, 'f'}, [], nil, nil]],
+               [refinement: [1, nil, 2]]
+             ]
+           ]
+         ]}
       )
     end
 
@@ -715,7 +788,7 @@ defmodule ParserTest do
            [
              chapter: [
                [decl: [{:symbol, 'f'}, [], nil, nil]],
-               [[expr: {:bin_appl, [:+, 1, 2]}]]
+               [{:expr, [nil, {:bin_appl, [:+, 1, 2]}]}]
              ]
            ]
          ]}
@@ -742,12 +815,22 @@ defmodule ParserTest do
     test "chapter list" do
       "f\n---\n[f x]"
       |> tryp(
-        chapters: [
-          chapter: [
-            head: [decl: [decl_ident: {:symbol, 'f'}]],
-            body: [[expr: {:list, [appl: [f: {:symbol, 'f'}, x: {:symbol, 'x'}]]}]]
-          ]
-        ]
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [decl: [{:symbol, 'f'}, [], nil, nil]],
+               [
+                 expr: [
+                   nil,
+                   {:cont, [:list, [f_appl: [symbol: 'f', symbol: 'x']]]}
+                 ]
+               ]
+             ]
+           ]
+         ]}
       )
     end
 
@@ -837,22 +920,22 @@ defmodule ParserTest do
              chapter: [
                [decl: [{:symbol, 'f'}, [], nil, nil]],
                [
-                 [
-                   expr:
-                     {:cont,
-                      [
-                        :set,
+                 {:expr,
+                  [
+                    nil,
+                    {:cont,
+                     [
+                       :set,
+                       {:comprehension,
                         [
-                          comprehension: [
-                            [
-                              binding: [symbol: 'x', symbol: 'X'],
-                              guard: {:bin_appl, [:>, {:symbol, 'x'}, 1]}
-                            ],
-                            {:symbol, 'x'}
-                          ]
-                        ]
-                      ]}
-                 ]
+                          [
+                            binding: [symbol: 'x', symbol: 'X'],
+                            guard: {:bin_appl, [:>, {:symbol, 'x'}, 1]}
+                          ],
+                          {:symbol, 'x'}
+                        ]}
+                     ]}
+                  ]}
                ]
              ]
            ]
@@ -960,12 +1043,17 @@ defmodule ParserTest do
       f.y
       """
       |> tryp(
-        chapters: [
-          chapter: [
-            head: [decl: [decl_ident: {:symbol, 'f'}]],
-            body: [[expr: {:dot, [f: {:symbol, 'y'}, x: {:symbol, 'f'}]}]]
-          ]
-        ]
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [decl: [{:symbol, 'f'}, [], nil, nil]],
+               [expr: [nil, {:dot, [symbol: 'y', symbol: 'f']}]]
+             ]
+           ]
+         ]}
       )
     end
   end
@@ -996,24 +1084,27 @@ defmodule ParserTest do
   describe "sort" do
     test "sort" do
       """
-      sort xs : [X]  :: [X]
+      sort xs : [X] :: [X]
       """
       |> tryp(
-        chapters: [
-          chapter: [
-            head: [
-              decl: [
-                decl_ident: {:symbol, 'sort'},
-                lambda_args: [
-                  args: [symbol: 'xs'],
-                  doms: [list: [symbol: 'X']]
-                ],
-                yield_type: '::',
-                lambda_codomain: {:list, [symbol: 'X']}
-              ]
-            ]
-          ]
-        ]
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [
+                 decl: [
+                   {:symbol, 'sort'},
+                   [binding: [symbol: 'xs', cont: [:list, [symbol: 'X']]]],
+                   '::',
+                   {:cont, [:list, [symbol: 'X']]}
+                 ]
+               ],
+               []
+             ]
+           ]
+         ]}
       )
     end
   end
@@ -1026,12 +1117,22 @@ defmodule ParserTest do
       x and y
       """
       |> tryp(
-        chapters: [
-          chapter: [
-            head: [decl: [decl_ident: {:symbol, 'f'}]],
-            body: [[expr: {:appl, [op: :and, x: {:symbol, 'x'}, y: {:symbol, 'y'}]}]]
-          ]
-        ]
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [decl: [{:symbol, 'f'}, [], nil, nil]],
+               [
+                 expr: [
+                   nil,
+                   {:bin_appl, [:and, {:symbol, 'x'}, {:symbol, 'y'}]}
+                 ]
+               ]
+             ]
+           ]
+         ]}
       )
     end
   end
