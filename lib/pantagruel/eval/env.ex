@@ -183,7 +183,7 @@ defmodule Pantagruel.Env do
     # checking of the whole expression.
     do: check_with_bindings(expr, bindings, scope)
 
-  def is_bound?({:f_appl, [f, x]}, scopes),
+  def is_bound?({appl, [f, x]}, scopes) when appl in [:dot, :f_appl],
     do: is_bound?(f, scopes) && is_bound?(x, scopes)
 
   def is_bound?({:bin_appl, [_, x, y]}, scopes),

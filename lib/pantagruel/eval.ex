@@ -81,11 +81,11 @@ defmodule Pantagruel.Eval do
 
   defp eval_chapter({:chapter, [head, body]}, state, mod_name) do
     {state, header_unbounds, unbounds} =
-      Enum.reduce(head, new_state(state, mod_name), &eval_header_statement/2)
+      new_state(state, mod_name)
+      |> eval_head(head)
 
     with :ok <- Env.check_unbound(state, header_unbounds),
-         {state, [unbounds | rest]} <-
-           Enum.reduce(body, {state, unbounds}, &eval_body_statement/2),
+         {state, [unbounds | rest]} <- eval_body(body, state, unbounds),
          :ok <- Env.check_unbound(state, unbounds) do
       {state, MapSet.new(), rest}
     end
@@ -118,6 +118,11 @@ defmodule Pantagruel.Eval do
   end
 
   defp handle_imports([], _, scopes, _), do: {:ok, scopes}
+
+  defp eval_head(state, head), do: Enum.reduce(head, state, &eval_header_statement/2)
+
+  defp eval_body(body, state, unbounds),
+    do: Enum.reduce(body, {state, unbounds}, &eval_body_statement/2)
 
   # Include symbols in a set of values to check for binding.
   @spec include_for_binding_check(any, MapSet.t()) :: MapSet.t()

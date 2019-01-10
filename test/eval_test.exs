@@ -619,7 +619,7 @@ defmodule EvalTest do
     test "object access" do
       parsed =
         """
-        f x, y:Nat
+        f (x, y):Nat
         ---
         f.x
         f.y
@@ -630,7 +630,7 @@ defmodule EvalTest do
                %{
                  {:symbol, 'f'} => %Lambda{
                    codomain: nil,
-                   domain: [symbol: 'Nat'],
+                   domain: [symbol: 'Nat', symbol: 'Nat'],
                    name: {:symbol, 'f'},
                    type: nil
                  },
@@ -649,7 +649,7 @@ defmodule EvalTest do
     test "object access on expression" do
       parsed =
         """
-        f x, y:Nat
+        f (x, y):Nat
         ---
         (f 1).x
         """
@@ -659,7 +659,7 @@ defmodule EvalTest do
                %{
                  {:symbol, 'f'} => %Lambda{
                    codomain: nil,
-                   domain: [symbol: 'Nat'],
+                   domain: [symbol: 'Nat', symbol: 'Nat'],
                    name: {:symbol, 'f'},
                    type: nil
                  },
