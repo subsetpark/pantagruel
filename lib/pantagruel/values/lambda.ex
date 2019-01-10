@@ -18,12 +18,19 @@ defmodule Pantagruel.Values.Lambda do
   @doc """
   Given a function declaration, build a Lambda struct.
   """
-  def from_declaration(decl, doms \\ nil) do
+  def from_declaration([symbol, bindings, yield_type, codomain], doms \\ nil) do
+    {binding_pairs, _} =
+      bindings
+      |> Enum.reverse()
+      |> Enum.reduce({[], []}, &Pantagruel.Env.extract_binding_symbols/2)
+
+    doms = Enum.map(binding_pairs, &elem(&1, 1))
+
     %__MODULE__{
-      name: decl[:decl_ident],
-      domain: doms || decl[:lambda_args][:doms] || [],
-      codomain: decl[:lambda_codomain],
-      type: decl[:yield_type]
+      name: symbol,
+      domain: doms,
+      codomain: codomain,
+      type: yield_type
     }
   end
 end

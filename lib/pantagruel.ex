@@ -87,12 +87,6 @@ defmodule Pantagruel do
     |> handle_bad_bindings
   end
 
-  defp handle_error(:domain_mismatch, e) do
-    puts("Could not match arguments with domains:")
-    IO.inspect(e.args, label: "Arguments")
-    IO.inspect(e.doms, label: "Domains")
-  end
-
   defp handle_error(:missing_import, e) do
     puts("Imported module could not be found: #{e.mod_name}")
   end

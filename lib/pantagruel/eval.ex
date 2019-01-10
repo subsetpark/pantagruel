@@ -40,7 +40,7 @@ defmodule Pantagruel.Eval do
   be defined in the following chapter at the latest.
   """
   @type t :: {Env.t(), MapSet.t(), [MapSet.t()]}
-  @type error :: {:domain_mismatch, any} | {:missing_import, any} | {:unbound_variables, any}
+  @type error :: {:missing_import, any} | {:unbound_variables, any}
 
   @doc """
   Evaluate a Pantagruel AST for variable binding, returning the resulting
@@ -56,49 +56,38 @@ defmodule Pantagruel.Eval do
         {name, _} -> name
       end
 
-    try do
-      # Populate the scope with any modules imported with the `import` statement.
-      scopes = handle_imports(imports, available_asts, [], MapSet.new())
-      chapters = chapters
+    with {:ok, scopes} <- handle_imports(imports, available_asts, [], MapSet.new()),
+         {scopes, _, [unbound]} <-
+           Enum.reduce(
+             chapters,
+             {scopes, MapSet.new(), [MapSet.new()]},
+             &eval_chapter(&1, &2, mod_name)
+           ),
+         # Force a check for unbound values. All symbols must be bound by the
+         # end of the program; thus the final chapter cannot introduce any
+         # unbound symbols.
+         :ok <- Env.check_unbound(scopes, unbound) do
+      {:ok, Enum.reverse(scopes)}
+    end
+  end
 
-      eval_chapter = fn {:chapter, [head, body]}, state ->
-        # Evaluate a single chapter:
-        # 1. evaluate the head
-        {state, header_unbounds, unbounds} =
-          Enum.reduce(head, new_state(state, mod_name), &eval_header_statement/2)
+  # Evaluate a single chapter:
+  # 1. evaluate the head
+  # 2. check for any unbound symbols in the head
+  # 3. evaluate the body
+  # 4. check for any unbound symbols from the *previous* chapter body (ie,
+  # which should have been defined in this chapter)
+  defp eval_chapter(_, {:error, _} = e, _), do: e
 
-        # 2. check for any unbound symbols in the head
-        :ok = Env.check_unbound(state, header_unbounds)
+  defp eval_chapter({:chapter, [head, body]}, state, mod_name) do
+    {state, header_unbounds, unbounds} =
+      Enum.reduce(head, new_state(state, mod_name), &eval_header_statement/2)
 
-        # 3. evaluate the body
-        {state, [unbounds | rest]} = Enum.reduce(body, {state, unbounds}, &eval_body_statement/2)
-
-        # 4. check for any unbound symbols from the *previous* chapter body (ie,
-        #    which should have been defined in this chapter)
-        :ok = Env.check_unbound(state, unbounds)
-
-        {state, MapSet.new(), rest}
-      end
-
-      # Force a check for unbound values. All symbols must be bound by the
-      # end of the program; thus the final chapter cannot introduce any
-      # unbound symbols.
-      final_check = fn {scopes, _, [unbound]} ->
-        :ok = Env.check_unbound(scopes, unbound)
-        scopes
-      end
-
-      scopes =
-        chapters
-        |> Enum.reduce({scopes, MapSet.new(), [MapSet.new()]}, eval_chapter)
-        |> final_check.()
-        |> Enum.reverse()
-
-      {:ok, scopes}
-    rescue
-      e in Env.UnboundVariablesError -> {:error, {:unbound_variables, e}}
-      e in Env.DomainMismatchError -> {:error, {:domain_mismatch, e}}
-      e in MissingImportError -> {:error, {:missing_import, e}}
+    with :ok <- Env.check_unbound(state, header_unbounds),
+         {state, [unbounds | rest]} <-
+           Enum.reduce(body, {state, unbounds}, &eval_body_statement/2),
+         :ok <- Env.check_unbound(state, unbounds) do
+      {state, MapSet.new(), rest}
     end
   end
 
@@ -124,12 +113,11 @@ defmodule Pantagruel.Eval do
         )
 
       {_, %{}} ->
-        raise MissingImportError, mod_name: mod_name
+        {:error, {:missing_import, mod_name}}
     end
   end
 
-  defp handle_imports([], _, scopes, _), do: scopes
-  defp handle_imports(nil, _, scopes, _), do: scopes
+  defp handle_imports([], _, scopes, _), do: {:ok, scopes}
 
   # Include symbols in a set of values to check for binding.
   @spec include_for_binding_check(any, MapSet.t()) :: MapSet.t()
@@ -169,8 +157,14 @@ defmodule Pantagruel.Eval do
        ) do
     scope = Env.bind_lambda(scope, decl)
     # Check for binding: domain, predicate, and codomain.
+    {binding_pairs, variable_references} =
+      bindings
+      |> Enum.reduce({[], []}, &Env.extract_binding_symbols/2)
+
+    doms = Enum.map(binding_pairs, &elem(&1, 1))
+
     header_unbounds =
-      [bindings, codomain]
+      [doms, variable_references, codomain]
       |> List.flatten()
       |> include_for_binding_check(header_unbounds)
 

@@ -43,7 +43,7 @@ defmodule EvalTest do
     end
 
     test "eval unbound" do
-      parsed = "f(x:X) :: Real" |> scan_and_parse
+      parsed = "f x:X  :: Real" |> scan_and_parse
 
       {:error, {:unbound_variables, e}} = Eval.eval(parsed, [])
 
@@ -53,7 +53,7 @@ defmodule EvalTest do
     test "eval late binding" do
       parsed =
         """
-        f(x, y:X, Y) :: Real
+        f x:X, y:Y :: Real
         make_y => Y
         make_x => X
         """
@@ -168,32 +168,28 @@ defmodule EvalTest do
 
       assert {:error,
               {:unbound_variables,
-               %Pantagruel.Env.UnboundVariablesError{
-                 message: "Unbound variables remain",
-                 scopes: [
-                   %{
-                     {:symbol, 'f'} => %Lambda{
-                       codomain: nil,
-                       domain: [symbol: 'Nat'],
-                       name: {:symbol, 'f'},
-                       type: nil
-                     },
-                     {:symbol, 'x'} => %Variable{
-                       domain: {:symbol, 'Nat'},
-                       name: {:symbol, 'x'}
-                     }
+               [
+                 bin_appl: [
+                   :=,
+                   {:f_appl, [symbol: 'f', symbol: 'x']},
+                   {:f_appl, [symbol: 'g', symbol: 'x']}
+                 ]
+               ]
+               |> MapSet.new(),
+               [
+                 %{
+                   {:symbol, 'f'} => %Pantagruel.Values.Lambda{
+                     codomain: nil,
+                     domain: [symbol: 'Nat'],
+                     name: {:symbol, 'f'},
+                     type: nil
+                   },
+                   {:symbol, 'x'} => %Pantagruel.Values.Variable{
+                     domain: {:symbol, 'Nat'},
+                     name: {:symbol, 'x'}
                    }
-                 ],
-                 unbound:
-                   [
-                     appl: [
-                       op: :=,
-                       x: {:appl, [f: {:symbol, 'f'}, x: {:symbol, 'x'}]},
-                       y: {:appl, [f: {:symbol, 'g'}, x: {:symbol, 'x'}]}
-                     ]
-                   ]
-                   |> MapSet.new()
-               }}} == Eval.eval(parsed, [])
+                 }
+               ]}} == Eval.eval(parsed, [])
     end
 
     test "bind variables in the next section" do
@@ -203,7 +199,7 @@ defmodule EvalTest do
         ---
         f x <- g x
         ;
-        g(y:Nat)::Bool
+        g y:Nat ::Bool
         """
         |> scan_and_parse
 
@@ -244,11 +240,11 @@ defmodule EvalTest do
         ;
         b => Bool
         ;
-        g(y:Nat) :: Bool
+        g y:Nat  :: Bool
         """
         |> scan_and_parse
 
-      {:error, {:unbound_variables, _}} = Eval.eval(parsed, [])
+      {:error, {:unbound_variables, _, _}} = Eval.eval(parsed, [])
     end
 
     test "lambda binding failure" do
@@ -256,11 +252,11 @@ defmodule EvalTest do
         """
         f x:Nat
         ---
-        f x in fn (z:D)::D
+        f x in fn z:D::D
         """
         |> scan_and_parse
 
-      {:error, {:unbound_variables, _}} = Eval.eval(parsed, [])
+      {:error, {:unbound_variables, _, _}} = Eval.eval(parsed, [])
     end
 
     test "lambda binding" do
@@ -395,22 +391,9 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      {:error, {:unbound_variables, e}} = Eval.eval(parsed, [])
+      {:error, {:unbound_variables, unbounds, _}} = Eval.eval(parsed, [])
 
-      assert e.unbound == MapSet.new(appl: [op: :>, x: {:symbol, 'y'}, y: 1])
-    end
-
-    test "too many domains" do
-      parsed =
-        """
-        f(x:Nat,Real)
-        """
-        |> scan_and_parse
-
-      {:error, {:domain_mismatch, e}} = Eval.eval(parsed, [])
-
-      assert e.args == [symbol: 'x']
-      assert e.doms == [symbol: 'Nat', symbol: 'Real']
+      assert MapSet.new(bin_appl: [:>, {:symbol, 'y'}, 1]) == unbounds
     end
 
     test "binding without bunching evals as two malformed bindings" do
@@ -422,28 +405,16 @@ defmodule EvalTest do
         """
         |> scan_and_parse
 
-      {:error, {:unbound_variables, e}} = Eval.eval(parsed, [])
+      {:error, {:unbound_variables, unbounds, _}} = Eval.eval(parsed, [])
 
       assert [
                quantification: [
-                 quantifier: :all,
-                 bindings: [
-                   guard: {:symbol, 'j'},
-                   binding: [
-                     bind_symbol: {:symbol, 'k'},
-                     bind_domain: {:symbol, 'X'}
-                   ]
-                 ],
-                 expr:
-                   {:appl,
-                    [
-                      op: :>,
-                      x: {:symbol, 'j'},
-                      y: {:symbol, 'k'}
-                    ]}
+                 :all,
+                 [guard: {:symbol, 'j'}, binding: [symbol: 'k', symbol: 'X']],
+                 {:bin_appl, [:>, {:symbol, 'j'}, {:symbol, 'k'}]}
                ]
              ]
-             |> MapSet.new() == e.unbound
+             |> MapSet.new() == unbounds
     end
 
     test "binding with bunching evals as two bindings" do
@@ -457,7 +428,7 @@ defmodule EvalTest do
 
       assert [
                %{
-                 {:symbol, 'X'} => %Domain{name: {:symbol, 'X'}, ref: [1]}
+                 {:symbol, 'X'} => %Domain{name: {:symbol, 'X'}, ref: 1}
                }
              ] == eval(parsed)
     end
@@ -732,8 +703,8 @@ defmodule EvalTest do
                %{
                  {:symbol, 'Day'} => %Domain{
                    name: {:symbol, 'Day'},
-                   ref:
-                     [{:set,
+                   ref: [
+                     {:set,
                       [
                         comprehension: [
                           bindings: [
@@ -745,7 +716,8 @@ defmodule EvalTest do
                           ],
                           expr: {:symbol, 'n'}
                         ]
-                      ]}]
+                      ]}
+                   ]
                  }
                }
              ] == eval(parsed)
