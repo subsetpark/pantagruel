@@ -13,7 +13,7 @@ bare_symbol
 bare_symbols
 expression
 expressions
-maybe_expressions
+container_contents
 
 a_comment
 
@@ -76,25 +76,24 @@ Left 50 '\\'.
 %
 
 program -> module_line imports chapters :
-    [{module, '$1'}, {imports, '$2'}, {chapters, '$3'}].
-program -> imports chapters : [{imports, '$1'}, {chapters, '$2'}].
-program -> module_line chapters : [{module, '$1'}, {chapters, '$2'}].
-program -> chapters : [{chapters, '$1'}].
+    {program, ['$1', '$2', '$3']}.
 program -> '$empty' : [].
 program -> newline : [].
 
+module_line -> '$empty' : nil.
 module_line -> module bare_symbol newline : '$2'.
 
-imports -> import_line : parse_imports('$1').
-imports -> imports import_line: '$1' ++ parse_imports('$2').
+imports -> '$empty' : [].
+imports -> import_line : '$1'.
+imports -> imports import_line: '$1' ++ '$2'.
 
-import_line -> import bare_symbols newline : {import, '$2'}.
+import_line -> import bare_symbols newline : '$2'.
 
-chapters -> chapter : [{chapter, '$1'}].
-chapters -> chapter where chapters : [{chapter, '$1'} | '$3'].
+chapters -> chapter : ['$1'].
+chapters -> chapter where chapters : ['$1' | '$3'].
 
-chapter -> head : [{head, '$1'}].
-chapter -> head sep body : [{head, '$1'}, {body, '$3'}].
+chapter -> head : {chapter, ['$1', []]}.
+chapter -> head sep body : {chapter, ['$1', '$3']}.
 
 a_comment -> comment : unwrap('$1').
 a_comment -> a_comment newline comment : merge_comments('$1', '$3').
@@ -116,8 +115,7 @@ declaration -> a_symbol lambda : {decl, ['$1'|'$2']}.
 
 % ii. aliases
 
-alias -> symbols reverse_yield expressions :
-    {alias, [{alias_name, '$1'}, {alias_expr, '$3'}]}.
+alias -> symbols reverse_yield expression : {alias, ['$1', '$3']}.
 
 %
 % body
@@ -126,13 +124,13 @@ alias -> symbols reverse_yield expressions :
 body -> body_line : ['$1'].
 body -> body_line body : ['$1' | '$2'].
 
-body_line -> expression newline : [{expr, '$1'}].
 body_line -> expression refined expression newline :
-    [{refinement, [{pattern, '$1'}, {expr, '$3'}]}].
-body_line -> expression '\\' expressions refined expression newline :
-    [{refinement, [{pattern, '$1'}, {guard, '$3'}, {expr, '$5'}]}].
+    {refinement, ['$1', nil, '$3']}.
+body_line -> expression '\\' expression refined expression newline :
+    {refinement, ['$1', '$3', '$5']}.
 body_line -> a_comment newline : '$1'.
-body_line -> binary_operator body_line : [{intro_op, unwrap('$1')} | '$2'].
+body_line -> binary_operator expression newline : {expr, [unwrap('$1'), '$2']}.
+body_line -> expression newline : {expr, [nil, '$1']}.
 
 % EXPRESSION PRECEDENCE
 % This is a strange area. Here are the precedence levels of Pantagruel:
@@ -148,18 +146,18 @@ expression -> bin_operation : '$1'.
 bin_operation -> function_application : '$1'.
 bin_operation ->
     bin_operation binary_operator bin_operation :
-        {appl, [{op, unwrap('$2')}, {x, '$1'}, {y, '$3'}]}.
+        {bin_appl, [unwrap('$2'), '$1', '$3']}.
 
 function_application -> un_operation : '$1'.
 function_application -> function_application un_operation :
-    {appl, [{f, '$1'}, {x, '$2'}]}.
+    {f_appl, ['$1', '$2']}.
 
 un_operation -> object_access: '$1'.
 un_operation -> unary_operator un_operation :
-    {appl, [{op, unwrap('$1')}, {x, '$2'}]}.
+    {un_appl, [unwrap('$1'), '$2']}.
 
 object_access -> term : '$1'.
-object_access -> object_access '.' term : {dot, [{f, '$3'}, {x, '$1'}]}.
+object_access -> object_access '.' term : {dot, ['$3', '$1']}.
 
 term -> a_symbol : '$1'.
 term -> int : unwrap('$1').
@@ -171,33 +169,19 @@ term -> bunch : '$1'.
 term -> quantification : '$1'.
 term -> fn lambda : {lambda, '$2'}.
 
-maybe_term -> '$empty' : nil.
-maybe_term -> term : '$1'.
-
-maybe_yield_type -> '$empty' : nil.
-maybe_yield_type -> yield_type : '$1'.
-
-maybe_binding_or_guards -> '$empty' : nil.
-maybe_binding_or_guards -> binding_or_guards : '$1'.
-
 %
 % END EXPRESSION PRECEDENCE
 %
 
-bunch -> '(' maybe_expressions ')' : {par, '$2'}.
-list -> '[' maybe_expressions ']' : {list, '$2'}.
-set -> '{' maybe_expressions '}' : {set, '$2'}.
-
 expressions -> expression : ['$1'].
 expressions -> expression ',' expressions : ['$1' | '$3'].
 
-maybe_expressions -> '$empty' : [].
-maybe_expressions -> expressions : '$1'.
-maybe_expressions -> binding_or_guards '\\' expression :
-    [{comprehension, ['$1', '$3']}].
+bunch -> '(' container_contents ')' : {cont, [par, '$2']}.
+list -> '[' container_contents ']' : {cont, [list, '$2']}.
+set -> '{' container_contents '}' : {cont, [set, '$2']}.
 
 quantification -> quantifier binding_or_guards '\\' expression :
-    {quantification, [{quantifier, unwrap('$1')}, {bindings, '$2'}, {expr, '$4'}]}.
+    {quantification, [unwrap('$1'), '$2', '$4']}.
 
 lambda -> maybe_binding_or_guards maybe_yield_type maybe_term : ['$1', '$2', '$3'].
 
@@ -217,6 +201,20 @@ a_symbol -> symbol : unwrap('$1').
 
 bare_symbol -> symbol : bare('$1').
 
+maybe_term -> '$empty' : nil.
+maybe_term -> term : '$1'.
+
+maybe_yield_type -> '$empty' : nil.
+maybe_yield_type -> yield_type : unwrap('$1').
+
+maybe_binding_or_guards -> '$empty' : [].
+maybe_binding_or_guards -> binding_or_guards : '$1'.
+
+container_contents -> '$empty' : [].
+container_contents -> expressions : '$1'.
+container_contents -> binding_or_guards '\\' expression :
+    {comprehension, ['$1', '$3']}.
+
 Erlang code.
 
 unwrap({comment, _, Symbol}) -> {comment, Symbol};
@@ -231,9 +229,3 @@ bare({symbol, _, Symbol}) -> Symbol.
 
 merge_comments({comment, Comment}, {comment, _, Comment2}) ->
     {comment, Comment ++ [16#f8ff] ++ Comment2}.
-
-parse_imports({import, [Import|Rest]}) ->
-    parse_imports(Rest, [{import, Import}]).
-parse_imports([Import|Rest], Acc) ->
-    parse_imports(Rest, [{import, Import}|Acc]);
-parse_imports([], Acc) -> lists:reverse(Acc).
