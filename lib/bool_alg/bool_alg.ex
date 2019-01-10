@@ -1,3 +1,5 @@
+import TypeClass
+
 defmodule TermMacros do
   defmacro deftrue(operation, result) do
     quote do
@@ -37,11 +39,13 @@ defmodule BoolAlg do
       ||: 2
     ]
 
-  def x && y, do: {:conj, x, y}
-  def x || y, do: {:disj, x, y}
-  def x ~> y, do: {:impl, x, y}
-  def x <~> y, do: {:iff, x, y}
-  def x <|> y, do: {:xor, x, y}
+  defstruct op: nil, x: nil, y: nil
+
+  def x && y, do: %__MODULE__{op: :conj, x: x, y: y}
+  def x || y, do: %__MODULE__{op: :disj, x: x, y: y}
+  def x ~> y, do: %__MODULE__{op: :impl, x: x, y: y}
+  def x <~> y, do: %__MODULE__{op: :iff, x: x, y: y}
+  def x <|> y, do: %__MODULE__{op: :xor, x: x, y: y}
 
   deftrue(:conj, q)
   deftrue(:disj, true)
@@ -63,4 +67,24 @@ defmodule BoolAlg do
   defp replace(p, p, token), do: token
   defp replace({op, l, r}, p, token), do: {op, replace(l, p, token), replace(r, p, token)}
   defp replace(q, p, _), do: q
+end
+
+defimpl TypeClass.Property.Generator, for: BoolAlg do
+  alias TypeClass.Property.Generator
+
+  def generate(_) do
+    %BoolAlg{op: Enum.random([:conj, :disj, :iff, :xor, :impl]), x: _node(), y: _node()}
+  end
+
+  defp _node do
+    Enum.random([
+      fn -> [Enum.random(?A..?Z)] |> :erlang.list_to_atom() end,
+      fn -> Generator.generate(%BoolAlg{}) end
+    ]).()
+  end
+end
+
+definst Witchcraft.Functor, for: BoolAlg do
+  def map(%{op: op, x: x, y: y}, fun), do: %BoolAlg{op: op, x: fun.(x), y: fun.(y)}
+  def map(%{op: :not, x: x}, fun), do: %BoolAlg{op: :not, x: fun.(x)}
 end

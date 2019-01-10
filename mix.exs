@@ -41,7 +41,9 @@ defmodule Pantagruel.MixProject do
   defp deps do
     [
       {:dialyxir, "~> 1.0.0-rc.4", only: [:dev], runtime: false},
-      {:ex_doc, ">= 0.0.0", only: :dev}
+      {:ex_doc, ">= 0.0.0", only: :dev},
+      {:witchcraft, ">= 1.0.1"},
+      {:type_class, "~> 1.1"}
     ]
   end
 

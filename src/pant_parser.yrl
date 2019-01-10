@@ -24,7 +24,6 @@ bunch
 
 binding_or_guard
 binding_or_guards
-binding
 
 head
 head_line
@@ -33,9 +32,6 @@ body_line
 
 declaration
 lambda
-lambda_body
-lambda_args
-lambda_yield
 alias
 
 bin_operation
@@ -43,6 +39,10 @@ un_operation
 function_application
 object_access
 quantification
+
+maybe_term
+maybe_yield_type
+maybe_binding_or_guards
 .
 
 
@@ -112,18 +112,7 @@ head_line -> a_comment newline : '$1'.
 
 % i. declarations
 
-declaration -> a_symbol lambda : {decl, [{decl_ident, '$1'}|'$2']}.
-
-lambda_body -> '$empty' : [].
-lambda_body -> lambda_args : [{lambda_args, '$1'}].
-lambda_body -> lambda_args '\\' expressions :
-    [{lambda_args, '$1'}, {lambda_guards, '$3'}].
-
-lambda_args -> symbols ':' expressions : [{args, '$1'}, {doms, '$3'}].
-
-lambda_yield -> '$empty' : [].
-lambda_yield -> yield_type term :
-    [{yield_type, unwrap('$1')}, {lambda_codomain, '$2'}].
+declaration -> a_symbol lambda : {decl, ['$1'|'$2']}.
 
 % ii. aliases
 
@@ -182,6 +171,15 @@ term -> bunch : '$1'.
 term -> quantification : '$1'.
 term -> fn lambda : {lambda, '$2'}.
 
+maybe_term -> '$empty' : nil.
+maybe_term -> term : '$1'.
+
+maybe_yield_type -> '$empty' : nil.
+maybe_yield_type -> yield_type : '$1'.
+
+maybe_binding_or_guards -> '$empty' : nil.
+maybe_binding_or_guards -> binding_or_guards : '$1'.
+
 %
 % END EXPRESSION PRECEDENCE
 %
@@ -196,15 +194,18 @@ expressions -> expression ',' expressions : ['$1' | '$3'].
 maybe_expressions -> '$empty' : [].
 maybe_expressions -> expressions : '$1'.
 maybe_expressions -> binding_or_guards '\\' expression :
-    [{comprehension, [{bindings, '$1'}, {expr, '$3'}]}].
+    [{comprehension, ['$1', '$3']}].
+
+quantification -> quantifier binding_or_guards '\\' expression :
+    {quantification, [{quantifier, unwrap('$1')}, {bindings, '$2'}, {expr, '$4'}]}.
+
+lambda -> maybe_binding_or_guards maybe_yield_type maybe_term : ['$1', '$2', '$3'].
 
 binding_or_guards -> binding_or_guard : ['$1'].
 binding_or_guards -> binding_or_guard ',' binding_or_guards : ['$1' | '$3'].
 
-binding_or_guard -> binding : {binding, '$1'}.
+binding_or_guard -> term ':' expression : {binding, ['$1', '$3']}.
 binding_or_guard -> expression : {guard, '$1'}.
-
-binding -> term ':' expression : [{bind_symbol, '$1'}, {bind_domain, '$3'}].
 
 symbols -> a_symbol : ['$1'].
 symbols -> a_symbol ',' symbols : ['$1' | '$3'].
@@ -215,11 +216,6 @@ bare_symbols -> bare_symbol ',' bare_symbols : ['$1' | '$3'].
 a_symbol -> symbol : unwrap('$1').
 
 bare_symbol -> symbol : bare('$1').
-
-quantification -> quantifier binding_or_guards '\\' expression :
-    {quantification, [{quantifier, unwrap('$1')}, {bindings, '$2'}, {expr, '$4'}]}.
-
-lambda -> '(' lambda_body ')' lambda_yield  : '$2' ++ '$4'.
 
 Erlang code.
 
