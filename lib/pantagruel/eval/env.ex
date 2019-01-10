@@ -3,7 +3,6 @@ defmodule Pantagruel.Env do
   The evaluation environment for a Pantagruel program.
   """
 
-  import Pantagruel.Guards
   alias Pantagruel.Values.{Variable, Domain, Lambda}
 
   @type scope :: map()

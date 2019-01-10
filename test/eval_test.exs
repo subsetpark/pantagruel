@@ -45,9 +45,9 @@ defmodule EvalTest do
     test "eval unbound" do
       parsed = "f x:X  :: Real" |> scan_and_parse
 
-      {:error, {:unbound_variables, e}} = Eval.eval(parsed, [])
+      {:error, {:unbound_variables, unbounds, _}} = Eval.eval(parsed, [])
 
-      assert e.unbound == MapSet.new([{:symbol, 'X'}])
+      assert MapSet.new([{:symbol, 'X'}]) == unbounds
     end
 
     test "eval late binding" do
@@ -552,7 +552,7 @@ defmodule EvalTest do
     test "generics are bound into scope" do
       parsed =
         """
-        f(x:_A)
+        f x:_A
         ---
         [y : _A \\ f x > y]
         """
@@ -587,9 +587,9 @@ defmodule EvalTest do
 
       assert [
                %{
-                 {:symbol, 'Status'} => %Domain{
-                   ref: [{:set, [literal: 'ok']}],
-                   name: {:symbol, 'Status'}
+                 {:symbol, 'Status'} => %Pantagruel.Values.Domain{
+                   name: {:symbol, 'Status'},
+                   ref: {:cont, [:set, [literal: 'ok']]}
                  }
                }
              ] == eval(parsed)
@@ -604,43 +604,22 @@ defmodule EvalTest do
 
       assert [
                %{
-                 {:symbol, 'Status'} => %Domain{
-                   ref: [{:set, [literal: 'ok']}],
-                   name: {:symbol, 'Status'}
+                 {:symbol, 'State'} => %Pantagruel.Values.Domain{
+                   name: {:symbol, 'State'},
+                   ref: {:cont, [:set, [literal: 'ok']]}
                  },
-                 {:symbol, 'State'} => %Domain{
-                   ref: [{:set, [literal: 'ok']}],
-                   name: {:symbol, 'State'}
+                 {:symbol, 'Status'} => %Pantagruel.Values.Domain{
+                   name: {:symbol, 'Status'},
+                   ref: {:cont, [:set, [literal: 'ok']]}
                  }
                }
              ] == eval(parsed)
     end
 
-    test "alias to set" do
-      parsed =
-        """
-        Status <= {`ok, `stop}
-        """
-        |> scan_and_parse
-
-      assert [
-               chapters: [
-                 chapter: [
-                   head: [
-                     alias: [
-                       alias_name: [symbol: 'Status'],
-                       alias_expr: [{:set, [literal: 'ok', literal: 'stop']}]
-                     ]
-                   ]
-                 ]
-               ]
-             ] == parsed
-    end
-
     test "object access" do
       parsed =
         """
-        f(x, y:Nat)
+        f x, y:Nat
         ---
         f.x
         f.y
@@ -670,7 +649,7 @@ defmodule EvalTest do
     test "object access on expression" do
       parsed =
         """
-        f(x, y:Nat)
+        f x, y:Nat
         ---
         (f 1).x
         """
@@ -701,23 +680,21 @@ defmodule EvalTest do
 
       assert [
                %{
-                 {:symbol, 'Day'} => %Domain{
+                 {:symbol, 'Day'} => %Pantagruel.Values.Domain{
                    name: {:symbol, 'Day'},
-                   ref: [
-                     {:set,
+                   ref:
+                     {:cont,
                       [
-                        comprehension: [
-                          bindings: [
-                            binding: [
-                              bind_symbol: {:symbol, 'n'},
-                              bind_domain: {:symbol, 'Nat'}
-                            ],
-                            guard: {:appl, [op: :"=<", x: {:symbol, 'n'}, y: 30]}
-                          ],
-                          expr: {:symbol, 'n'}
-                        ]
+                        :set,
+                        {:comprehension,
+                         [
+                           [
+                             binding: [symbol: 'n', symbol: 'Nat'],
+                             guard: {:bin_appl, [:"=<", {:symbol, 'n'}, 30]}
+                           ],
+                           {:symbol, 'n'}
+                         ]}
                       ]}
-                   ]
                  }
                }
              ] == eval(parsed)
@@ -769,54 +746,54 @@ defmodule EvalTest do
       # Note: this program is incorrect!
       parsed =
         """
-        sort(xs : [X]) :: [X]
+        sort xs : [X]  :: [X]
         x => X
         ---
         all (x,y) : xs' \\ x =< y <-> ind xs' x < ind xs' y
 
         ;
 
-        ind(xs, x : [X], X) :: Nat0
+        ind xs : [X], x : X :: Nat0
         """
         |> scan_and_parse
 
       assert [
                %{
-                 {:symbol, 'X'} => %Domain{
+                 {:symbol, 'X'} => %Pantagruel.Values.Domain{
                    name: {:symbol, 'X'},
                    ref: {:symbol, 'X'}
                  },
-                 {:symbol, 'sort'} => %Lambda{
-                   codomain: {:list, [symbol: 'X']},
-                   domain: [list: [symbol: 'X']],
-                   name: {:symbol, 'sort'},
-                   type: '::'
-                 },
-                 {:symbol, 'x'} => %Lambda{
+                 {:symbol, 'x'} => %Pantagruel.Values.Lambda{
                    codomain: {:symbol, 'X'},
                    domain: [],
                    name: {:symbol, 'x'},
                    type: '=>'
                  },
-                 {:symbol, 'xs'} => %Variable{
-                   domain: {:list, [symbol: 'X']},
-                   name: {:symbol, 'xs'}
+                 {:symbol, 'sort'} => %Pantagruel.Values.Lambda{
+                   name: {:symbol, 'sort'},
+                   type: '::',
+                   codomain: {:cont, [:list, [symbol: 'X']]},
+                   domain: [cont: [:list, [symbol: 'X']]]
+                 },
+                 {:symbol, 'xs'} => %Pantagruel.Values.Variable{
+                   name: {:symbol, 'xs'},
+                   domain: {:cont, [:list, [symbol: 'X']]}
                  }
                },
                %{
-                 {:symbol, 'ind'} => %Lambda{
-                   codomain: {:symbol, 'Nat0'},
-                   domain: [list: [symbol: 'X'], symbol: 'X'],
-                   name: {:symbol, 'ind'},
-                   type: '::'
-                 },
-                 {:symbol, 'x'} => %Variable{
+                 {:symbol, 'x'} => %Pantagruel.Values.Variable{
                    domain: {:symbol, 'X'},
                    name: {:symbol, 'x'}
                  },
-                 {:symbol, 'xs'} => %Variable{
-                   domain: {:list, [symbol: 'X']},
-                   name: {:symbol, 'xs'}
+                 {:symbol, 'ind'} => %Pantagruel.Values.Lambda{
+                   codomain: {:symbol, 'Nat0'},
+                   name: {:symbol, 'ind'},
+                   type: '::',
+                   domain: [cont: [:list, [symbol: 'X']], symbol: 'X']
+                 },
+                 {:symbol, 'xs'} => %Pantagruel.Values.Variable{
+                   name: {:symbol, 'xs'},
+                   domain: {:cont, [:list, [symbol: 'X']]}
                  }
                }
              ] == eval(parsed)
