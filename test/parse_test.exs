@@ -405,7 +405,7 @@ defmodule Pantagruel.Test.LegacyParser do
          [
            nil,
            [],
-           [chapter: [[alias: [[symbol: 'Status'], [cont: [:set, [literal: 'ok']]]]], []]]
+           [chapter: [[alias: [[symbol: 'Status'], {:cont, [:set, [literal: 'ok']]}]], []]]
          ]}
       )
     end
@@ -424,7 +424,7 @@ defmodule Pantagruel.Test.LegacyParser do
                [
                  alias: [
                    [symbol: 'Status', symbol: 'State'],
-                   [cont: [:set, [literal: 'ok']]]
+                   {:cont, [:set, [literal: 'ok']]}
                  ]
                ],
                []
@@ -448,19 +448,18 @@ defmodule Pantagruel.Test.LegacyParser do
                [
                  alias: [
                    [symbol: 'Day'],
-                   [
-                     cont: [
-                       :set,
-                       {:comprehension,
-                        [
-                          [
-                            binding: [symbol: 'n', symbol: 'Nat'],
-                            guard: {:bin_appl, [:"=<", {:symbol, 'n'}, 30]}
-                          ],
-                          {:symbol, 'n'}
-                        ]}
-                     ]
-                   ]
+                   {:cont,
+                    [
+                      :set,
+                      {:comprehension,
+                       [
+                         [
+                           binding: [symbol: 'n', symbol: 'Nat'],
+                           guard: {:bin_appl, [:"=<", {:symbol, 'n'}, 30]}
+                         ],
+                         {:symbol, 'n'}
+                       ]}
+                    ]}
                  ]
                ],
                []
