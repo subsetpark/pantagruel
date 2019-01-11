@@ -4,7 +4,7 @@ defmodule ParserTest do
   describe "decl" do
     test "empty" do
       ""
-      |> tryp([])
+      |> tryp({:program, [nil, [], []]})
     end
 
     test "basic decl" do

@@ -58,12 +58,14 @@ defmodule LifterTest do
                 [],
                 [
                   chapter: [
-                    %BoolAlg{op: :conj, x: true, y: {:decl, [{:symbol, 'f'}, [], nil, nil]}},
-                    %BoolAlg{
-                      op: :conj,
-                      x: %BoolAlg{op: :conj, x: true, y: 1},
-                      y: {:literal, 'ok'}
-                    }
+                    [%BoolAlg{op: :conj, x: true, y: {:decl, [{:symbol, 'f'}, [], nil, nil]}}],
+                    [
+                      %BoolAlg{
+                        op: :conj,
+                        x: %BoolAlg{op: :conj, x: true, y: 1},
+                        y: {:literal, 'ok'}
+                      }
+                    ]
                   ]
                 ]
               ]} == tree
@@ -88,8 +90,8 @@ defmodule LifterTest do
                 [],
                 [
                   chapter: [
-                    {:decl, [{:symbol, 'f'}, [], nil, nil]},
-                    %BoolAlg{op: :conj, y: {:literal, 'ok'}, x: true}
+                    [{:decl, [{:symbol, 'f'}, [], nil, nil]}],
+                    [%BoolAlg{op: :conj, x: true, y: {:literal, 'ok'}}]
                   ]
                 ]
               ]} == tree
@@ -109,11 +111,9 @@ defmodule LifterTest do
         |> BoolAlg.assert(1)
         |> Pantagruel.Format.format_program()
 
-      assert """
-             f()\s\s
-             true conj *ok*\s\s
-             """ == out
+      assert "f\s\s\n....\s\s\ntrue conj *ok*\s\s" == out
     end
+
     test "print other half of line" do
       out =
         """
@@ -128,10 +128,7 @@ defmodule LifterTest do
         |> BoolAlg.assert({:literal, 'ok'})
         |> Pantagruel.Format.format_program()
 
-      assert """
-             f()\s\s
-             true conj 1\s\s
-             """ == out
+      assert "f\s\s\n....\s\s\ntrue conj 1\s\s" == out
     end
   end
 

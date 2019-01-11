@@ -18,7 +18,9 @@ defmodule Pantagruel.Values.Lambda do
   @doc """
   Given a function declaration, build a Lambda struct.
   """
-  def from_declaration([symbol, bindings, yield_type, codomain], doms \\ nil) do
+  def from_declaration(decl, doms \\ nil)
+
+  def from_declaration([symbol, bindings, yield_type, codomain], doms) do
     {binding_pairs, _} =
       bindings
       |> Enum.reverse()
@@ -33,4 +35,6 @@ defmodule Pantagruel.Values.Lambda do
       type: yield_type
     }
   end
+
+  def from_declaration(decl, doms), do: from_declaration([nil | decl], doms)
 end

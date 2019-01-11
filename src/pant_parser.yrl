@@ -77,8 +77,8 @@ Left 50 '\\'.
 
 program -> module_line imports chapters :
     {program, ['$1', '$2', '$3']}.
-program -> '$empty' : [].
-program -> newline : [].
+program -> '$empty' : {program, [nil, [], []]}.
+program -> newline : {program, [nil, [], []]}.
 
 module_line -> '$empty' : nil.
 module_line -> module bare_symbol newline : '$2'.

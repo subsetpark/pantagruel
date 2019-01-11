@@ -43,8 +43,8 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "# TEST\n\n***\n\nf()  " == Format.format_program(parsed)
-      assert "# TEST\nf()" == Format.format_scopes(scopes)
+      assert "# TEST\n\nf  " == Format.format_program(parsed)
+      assert "# TEST\nf" == Format.format_scopes(scopes)
     end
 
     test "function" do
@@ -54,8 +54,8 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "f(x:ℕ) ∷ ℝ  " == Format.format_program(parsed)
-      assert "f(ℕ) ∷ ℝ\nx : ℕ" == Format.format_scopes(scopes)
+      assert "f x:ℕ ∷ ℝ  " == Format.format_program(parsed)
+      assert "f ℕ ∷ ℝ\nx : ℕ" == Format.format_scopes(scopes)
     end
 
     test "constructor" do
@@ -89,7 +89,7 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "f ⇒ F  \nf 1 ↔ 0  " == Format.format_program(parsed)
+      assert "f ⇒ F  \n....  \nf 1 ↔ 0  " == Format.format_program(parsed)
       assert "f ⇒ F" == Format.format_scopes(scopes)
     end
 
@@ -102,7 +102,7 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "f  \n¬f  " == Format.format_program(parsed)
+      assert "f  \n....  \n¬f  " == Format.format_program(parsed)
       assert "f" == Format.format_scopes(scopes)
     end
 
@@ -115,7 +115,7 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "f  \n∧ ¬f  " == Format.format_program(parsed)
+      assert "f  \n....  \n∧ ¬f  " == Format.format_program(parsed)
       assert "f" == Format.format_scopes(scopes)
     end
 
@@ -128,7 +128,7 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "f  \nf ⸳ ∃ n : ℕ ⸳ n > 1 ← n  " == Format.format_program(parsed)
+      assert "f  \n....  \nf ⸳ ∃ n:ℕ ⸳ n > 1 ← n  " == Format.format_program(parsed)
       assert "f" == Format.format_scopes(scopes)
     end
 
@@ -141,7 +141,8 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "f ⸳ ∃ *n* : ℕ ⸳ *n* > 1 ← *k*" == Format.format_exp(unbounds, scopes)
+      assert ["f ⸳ ∃ *n*:ℕ ⸳ *n* > 1 ← *k*"] ==
+               Enum.map(unbounds, &Format.format_error(&1, scopes))
     end
   end
 end
