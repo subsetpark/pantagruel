@@ -164,6 +164,10 @@ defmodule Pantagruel.Format do
   defp format_line({:expr, [intro_op, expression]}),
     do: "#{format_exp(intro_op)} #{format_exp(expression)}"
 
+  defp format_line(%BoolAlg{op: op, x: x, y: y}) do
+    "#{format_exp(x)} #{format_exp(op)} #{format_exp(y)}"
+  end
+
   defp format_line({:refinement, [pattern, guard, exp]}, s \\ %{}) do
     pat = pattern |> format_exp(s)
     guard = guard |> format_guard(s)
