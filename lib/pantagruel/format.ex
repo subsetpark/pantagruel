@@ -105,6 +105,7 @@ defmodule Pantagruel.Format do
   def format_exp({:un_appl, [op, x]}, s), do: join_exp([op, x], s)
   def format_exp({:f_appl, [f, x]}, s), do: join_exp([f, x], s, " ")
   def format_exp({:dot, [f, x]}, s), do: join_exp([x, f], s, ".")
+  def format_exp({:refinement, _} = r, s), do: format_line(r, s)
   def format_exp(exp, s), do: join_exp(exp, s, " ")
 
   defp format_chapter({:chapter, [head, body]}) do
@@ -168,7 +169,7 @@ defmodule Pantagruel.Format do
     "#{format_exp(x)} #{format_exp(op)} #{format_exp(y)}"
   end
 
-  defp format_line({:refinement, [pattern, guard, exp]}, s \\ %{}) do
+  defp format_line({:refinement, [pattern, guard, exp]}, s \\ [%{}]) do
     pat = pattern |> format_exp(s)
     guard = guard |> format_guard(s)
     exp = exp |> format_exp(s)
