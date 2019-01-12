@@ -142,7 +142,7 @@ defmodule Pantagruel.Test.LegacyParser do
     end
 
     test "parse guarded refinement" do
-      text = "f\n---\nf x \\ x< 0 <- y\nf x<-1"
+      text = "f\n---\nf x, x< 0 <- y\nf x<-1"
 
       tryparse(
         text,

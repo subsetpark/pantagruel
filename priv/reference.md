@@ -93,7 +93,7 @@ modules per statement.
 A Pantagruel chapter head introduces one or more symbols, of two primary
 kinds: **procedures** and **domains**. A procedure might be a computer
 program, or a function. For instance, `+` is a procedure, as would be
-a more abstract behavior like `save_file` or `render_scene`.  and most
+a more abstract behavior like `save_file` or `render_scene`. Most
 Pantagruel programs will introduce at least one procedure, which is the
 program or business logic they are specifying.
 
@@ -110,7 +110,7 @@ There are three expression forms possible in a chapter head:
 Here is an example procedure declaration:
 
 ```pantagruel
-fib(n : Nat) :: Nat
+fib n:Nat :: Nat
 ```
 
 It introduces a procedure called `fib`, which takes one argument, `n`
@@ -125,7 +125,7 @@ except instead of the **yields** symbol, they are written with the
 **produces** symbol `=>`:
 
 ```pantagruel
-user(name, age : String, Nat) => User
+user name:String, age:Nat => User
 ```
 
 This introduces both the domain `User`, as well as the constructor
@@ -139,31 +139,29 @@ and predicates. Here's a declaration of a procedure with no arguments
 and an undefined return:
 
 ```pantagruel
-f()
+f
 ```
 
-Arguments, as above, are specified by a comma separated list of argument
-names, followed by a colon, followed by a comma separated list of
-argument domains.
+Arguments, as above, are specified by a comma-separated list of argument/domain pairs, separated by a colon. The comma-separated list may also contain other arbitrary **predicates**, representing some constraint on the procedure domain.
 
-Finally, procedures can be declared with a comma separated list of
-**predicates** representing some constraint on the procedure domain,
-marked off with a backslash. Here's a procedure declaration with a
-predicate:
+Here's a procedure declaration with a predicate:
 
 ```pantagruel
-f(x:Nat \ x > 5)
+f x:Nat, x > 5
 ```
 
-The expression after the `\` indicates that `f` is defined for any
+The second element in the list indicates that `f` is defined for any
 natural number `x` greater than 5.
 
 ```pantagruel
-f(x:Nat \ x > 5, x < 10)
+f x:Nat, x > 5, x < 10
 ```
 
 This declares a procedure `f` that's defined for any natural number `x`
 greater than 5 and less than 10.
+
+This list of either colon-separated **binding pairs** or **predicates**
+is a **binding list** and will show up elsewhere in the language.
 
 #### Domain Aliasing
 
@@ -199,7 +197,7 @@ Chapter **bodies** are separated from chapter heads with a horizontal
 line, consisting of three or more hyphens:
 
 ```pantagruel
-f()
+f
 ---
 f x = 1
 ```
@@ -224,11 +222,11 @@ Which says that `f x` or "`f` of `x`" is *refined by* the more concrete
 expression `x + 2`. A more complex example might be
 
 ```pantagruel
-f x \ x > 5 <- g (x * 2)
+f x, x > 5 <- g (x * 2)
 ```
 
 Which says that `f` of `x` is refined by `g (x * 2)` *when `x` is
-greater than five*. The expression between the `\` and the `<-` is
+greater than five*. The expression between the `,` and the `<-` is
 a **guard**, and performs a very similar function to predicates in a
 procedure declaration.
 
@@ -298,7 +296,7 @@ of the name of the procedure, lambdas have `fn` before the opening
 parenthesis. For instance:
 
 ```pantagruel
-map(f, x: fn(z:_A)::_B, _A) :: _B
+map f:fn z:_A :: _B, x:_A :: _B
 ```
 
 This declaration introduces the procedure `map`, which takes two
@@ -352,7 +350,7 @@ for expression more complex operations.
 
 **set** or **list comprehensions** may be formed by following one or
 more comma-separated **bindings** or **guards** with some **expression**,
-separated by a dot, like this:
+separated by a backslash, like this:
 
 ```pantagruel
 [x : X \ x ^ 2]
@@ -430,13 +428,13 @@ specification, where new terms are introduced so as to provide refinement
 for known terms, eg:
 
 ```pantagruel
-pred(n:Nat)
+pred n:Nat
 ---
 pred n <- is_even? n and (n > 5)
 
 ;
 
-is_even?(n:Nat) :: Bool
+is_even? n:Nat  :: Bool
 ---
 is_even? 0
 ~(is_even? 1)
@@ -464,7 +462,7 @@ When a procedure is declared, the name of the procedure is introduced
 into program scope, as are the names of the variables the procedure takes.
 
 ```
-f(x:Y \ x > z) :: a
+f x:Y, x > z  :: a
 * *
 ```
 
@@ -472,8 +470,8 @@ When a constructor procedure is declared, the resulting domain is also
 bound into program scope.
 
 ```
-d(x:Y \ x > z) => D
-* *               *
+d x:Y, x > z  => D
+* *              *
 ```
 
 ##### Domain aliases

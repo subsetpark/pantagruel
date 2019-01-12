@@ -303,7 +303,7 @@ defmodule EvalTest do
         """
         f x:Nat
         ---
-        f x in fn(z:Nat \\ z > 100)
+        f x in fn z:Nat, z > 100
         """
         |> scan_and_parse
 
@@ -726,7 +726,7 @@ defmodule EvalTest do
         """
         f
         ---
-        f \\ exists n : Nat \\ n > 1 <- n
+        f, exists n : Nat \\ n > 1 <- n
         """
         |> scan_and_parse
 

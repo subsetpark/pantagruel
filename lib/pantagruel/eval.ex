@@ -196,9 +196,7 @@ defmodule Pantagruel.Eval do
 
   # Extend the environment for a new chapter.
   @spec new_state(t, atom() | nil) :: t
-  defp new_state(scopes) do
-    {scopes, MapSet.new(), [MapSet.new()]}
-  end
+  defp new_state(scopes), do: {scopes, MapSet.new(), [MapSet.new()]}
 
   defp new_state({scopes, header_unbounds, unbounds}, mod_name) do
     scope = if(is_nil(mod_name), do: %{}, else: %{__module__: %Module{name: mod_name}})

@@ -126,7 +126,7 @@ body -> body_line body : ['$1' | '$2'].
 
 body_line -> expression refined expression newline :
     {refinement, ['$1', nil, '$3']}.
-body_line -> expression '\\' expression refined expression newline :
+body_line -> expression ',' expression refined expression newline :
     {refinement, ['$1', '$3', '$5']}.
 body_line -> a_comment newline : '$1'.
 body_line -> binary_operator expression newline : {expr, [unwrap('$1'), '$2']}.
