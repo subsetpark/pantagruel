@@ -13,17 +13,28 @@ defmodule Pantagruel.Values.Lambda do
   their codomain into scope; functions must have their codomains defined
   elsewhere.
   """
+  alias Pantagruel.Env
   defstruct name: "", domain: [], codomain: nil, type: nil
 
   @doc """
   Given a function declaration, build a Lambda struct.
   """
-  def from_declaration(decl, doms \\ nil) do
+  def from_declaration(decl, doms \\ nil)
+
+  def from_declaration([symbol, bindings, yield_type, codomain], doms) do
+    doms =
+      case doms do
+        nil -> Env.args_and_domains(bindings) |> elem(1)
+        _ -> doms
+      end
+
     %__MODULE__{
-      name: decl[:decl_ident],
-      domain: doms || decl[:lambda_doms] || [],
-      codomain: decl[:lambda_codomain],
-      type: decl[:yield_type]
+      name: symbol,
+      domain: doms,
+      codomain: codomain,
+      type: yield_type
     }
   end
+
+  def from_declaration(decl, doms), do: from_declaration([nil | decl], doms)
 end

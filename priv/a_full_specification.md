@@ -2,36 +2,36 @@
 
 Here's a specification, in Pantagruel, of Pantagruel's binding rules.
 ```pantagruel
-eval (p: Program) :: Bool
+eval p: Program :: Bool
 Program <= [Section]
 
 " A section head must have at least one statement; a section body can be empty.
 
-section (head, body: Head, Body . #head > 0 ) => Section
+section head:Head, body:Body, #head > 0 => Section
 
 Head <= [Comment, Declaration, Alias]
 Body <= [Comment, Expression]
 Comment, Declaration, Alias, Expression <= [String]
-
-eval p <- all sect from p . is_bound? sect
+---
+eval p <- all sect from p \ is_bound? sect
 
 ;
 
 is_bound? (sect: Section) :: Bool
-
+---
 " All variables referred to in a section head must be defined by the
 " end of that section head. All the variables in a section body, however,
 " must be defined by the end of the *next* section body.
 
 is_bound? sect <-                                           ...
-    (all h from sect.head . all sym from h . is_bound? sym) ...
+    (all h from sect.head \ all sym from h \ is_bound? sym) ...
     and                                                     ...
-    (all b from (p ((p sect) - 1)).body . all sym from b . is_bound? sym)
+    (all b from (p ((p sect) - 1)).body \ all sym from b \ is_bound? sym)
 
 ;
 
 is_bound (sym: String) :: Bool
-
+---
 is_bound sym <- (sym from env p (p sect)) or (sym from init_scope)
 
 ;
@@ -48,7 +48,7 @@ Let's consider some of the features.
 In the head of the first section (the text before the first `;`, which
 acts as a section separator), we see one function declaration, one
 constructor declaration, four domain aliases, and one comment. The comment
-is not interpreted by `pantagruel` and has no semantics in the language.
+is not interpreted by `pant` and has no semantics in the language.
 
 The function declaration `eval (p: Program) :: Bool` introduces a
 function, `eval`, which takes a `Program` `p`[^1], and returns a `Bool`.
@@ -58,13 +58,12 @@ that `Program` is *the domain of* `p`. That is, `Program` is the set of
 all possible programs and `p` is any element of that set. In this way
 domains are analogous to types but more powerful; they can also include
 restrictions on the values within the type, such as `x != 0` or `x mod 2
-= 0`. `:`/`in` is distinct from `∈`/`from`, which indicates membership
-in some concrete value as opposed the set of all possible values.
+= 0`.
 
-The constructor declaration `section (head, body: Head, Body . #head >
+The constructor declaration `section (head, body: Head, Body \ #head >
 0 ) => Section` introduces a function `section` which takes a `Head` and
 `Body` and produces a `Section`. There's also a single precondition to
-the constructor, introduced by `.`, which says that the size of `head` has
+the constructor, introduced by `\`, which says that the size of `head` has
 to be greater than 0, ie, there needs to be at least one element in it.
 
 Notice at this point that we've referred to several variable domains
@@ -125,7 +124,7 @@ of `is_bound? sect`. Because it extends onto more than one line, we
 continue the line with `...` until we're done with the expression. The
 refinement of `is_bound?` consists of evaluating both halves of a
 logical expression and testing whether both are true. The first half
-is a nested quantification, where the expression after the first `.`
+is a nested quantification, where the expression after the first `\`
 is a second quantification that makes use of the element introduced in
 the first. In other words, "for each `h` in `sect.head`, for each `sym`
 in `h`, `is_bound? sym` should be true". The second half is constructed
@@ -179,7 +178,7 @@ say anything more detailed. We intentionally remain a bit vague about
 `env`.
 
 The fact that the syntax and binding rules of Pantagruel are enforced by
-the `pantagruel` program, but that the semantics are generally ad-hoc and
+the `pant` program, but that the semantics are generally ad-hoc and
 to be understood by convention rather than axiom, allows us to exercise
 a *gradual specification* where we can be precise about the things we want
 to be precise about, and vague (but explicitly so) about the things we

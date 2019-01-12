@@ -3,11 +3,16 @@ defmodule EvalTest do
   alias Pantagruel.Values.{Variable, Lambda, Domain}
   alias Pantagruel.Eval
 
+  defp scan_and_parse(text) when is_binary(text) do
+    text
+    |> Pantagruel.Scan.scan()
+    |> scan_and_parse
+  end
+
   defp scan_and_parse(text) do
-    {:ok, parsed, "", %{}, _, _} =
-      text
-      |> Pantagruel.Scan.scan()
-      |> Pantagruel.Parse.program()
+    {:ok, parsed} =
+      :pant_lexer.string(text)
+      |> Pantagruel.Parse.handle_lex()
 
     parsed
   end
@@ -19,115 +24,209 @@ defmodule EvalTest do
 
   describe "program evaluation" do
     test "eval happy path" do
-      parsed = "f(x:Nat . x > 1) :: Real" |> scan_and_parse
+      parsed = "f x:Nat, x > 1  :: Real" |> scan_and_parse
 
       assert [
                %{
-                 "x" => %Variable{name: "x", domain: "Nat"},
-                 "f" => %Lambda{name: "f", domain: ["Nat"], codomain: "Real", type: :function}
+                 {:symbol, 'f'} => %Lambda{
+                   codomain: {:symbol, 'Real'},
+                   domain: [symbol: 'Nat'],
+                   name: {:symbol, 'f'},
+                   type: '::'
+                 },
+                 {:symbol, 'x'} => %Variable{
+                   domain: {:symbol, 'Nat'},
+                   name: {:symbol, 'x'}
+                 }
                }
              ] == eval(parsed)
     end
 
     test "eval unbound" do
-      parsed = "f(x:X) :: Real" |> scan_and_parse
+      parsed = "f x:X  :: Real" |> scan_and_parse
 
-      {:error, {:unbound_variables, e}} = Eval.eval(parsed, [])
+      {:error, {:unbound_variables, unbounds, _}} = Eval.eval(parsed, [])
 
-      assert e.unbound == MapSet.new(["X"])
+      assert MapSet.new([{:symbol, 'X'}]) == unbounds
     end
 
     test "eval late binding" do
       parsed =
         """
-        f(x, y:X, Y) :: Real
-        make_y() => Y
-        make_x() => X
+        f x:X, y:Y :: Real
+        make_y => Y
+        make_x => X
         """
         |> scan_and_parse
 
       assert [
                %{
-                 "f" => %Lambda{name: "f", domain: ["X", "Y"], codomain: "Real", type: :function},
-                 "x" => %Variable{name: "x", domain: "X"},
-                 "y" => %Variable{name: "y", domain: "Y"},
-                 "X" => %Domain{name: "X", ref: "X"},
-                 "Y" => %Domain{name: "Y", ref: "Y"},
-                 "make_x" => %Lambda{
-                   name: "make_x",
-                   domain: [],
-                   codomain: "X",
-                   type: :constructor
+                 {:symbol, 'X'} => %Domain{
+                   name: {:symbol, 'X'},
+                   ref: {:symbol, 'X'}
                  },
-                 "make_y" => %Lambda{
-                   name: "make_y",
+                 {:symbol, 'Y'} => %Domain{
+                   name: {:symbol, 'Y'},
+                   ref: {:symbol, 'Y'}
+                 },
+                 {:symbol, 'f'} => %Lambda{
+                   codomain: {:symbol, 'Real'},
+                   domain: [symbol: 'X', symbol: 'Y'],
+                   name: {:symbol, 'f'},
+                   type: '::'
+                 },
+                 {:symbol, 'make_x'} => %Lambda{
+                   codomain: {:symbol, 'X'},
                    domain: [],
-                   codomain: "Y",
-                   type: :constructor
+                   name: {:symbol, 'make_x'},
+                   type: '=>'
+                 },
+                 {:symbol, 'make_y'} => %Lambda{
+                   codomain: {:symbol, 'Y'},
+                   domain: [],
+                   name: {:symbol, 'make_y'},
+                   type: '=>'
+                 },
+                 {:symbol, 'x'} => %Variable{
+                   domain: {:symbol, 'X'},
+                   name: {:symbol, 'x'}
+                 },
+                 {:symbol, 'y'} => %Variable{
+                   domain: {:symbol, 'Y'},
+                   name: {:symbol, 'y'}
                  }
                }
              ] == eval(parsed)
     end
 
     test "eval whole section" do
-      parsed = "f(x:Nat)\nf x > 0" |> scan_and_parse
+      parsed =
+        """
+        f x:Nat
+        ---
+        f x > 0
+        """
+        |> scan_and_parse
 
       assert [
                %{
-                 "x" => %Variable{name: "x", domain: "Nat"},
-                 "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: nil}
+                 {:symbol, 'f'} => %Lambda{
+                   codomain: nil,
+                   domain: [symbol: 'Nat'],
+                   name: {:symbol, 'f'},
+                   type: nil
+                 },
+                 {:symbol, 'x'} => %Variable{
+                   domain: {:symbol, 'Nat'},
+                   name: {:symbol, 'x'}
+                 }
                }
              ] == eval(parsed)
     end
 
     test "eval two sections" do
-      parsed = "f(x:Nat)\n;\ng() :: Nat" |> scan_and_parse
+      parsed =
+        """
+        f x:Nat
+        ;
+        g :: Nat
+        """
+        |> scan_and_parse
 
       assert [
                %{
-                 "x" => %Variable{name: "x", domain: "Nat"},
-                 "f" => %Lambda{
-                   name: "f",
-                   domain: ["Nat"],
+                 {:symbol, 'f'} => %Lambda{
                    codomain: nil,
+                   domain: [symbol: 'Nat'],
+                   name: {:symbol, 'f'},
                    type: nil
+                 },
+                 {:symbol, 'x'} => %Variable{
+                   domain: {:symbol, 'Nat'},
+                   name: {:symbol, 'x'}
                  }
                },
                %{
-                 "g" => %Lambda{
-                   name: "g",
+                 {:symbol, 'g'} => %Lambda{
+                   codomain: {:symbol, 'Nat'},
                    domain: [],
-                   codomain: "Nat",
-                   type: :function
+                   name: {:symbol, 'g'},
+                   type: '::'
                  }
                }
              ] == eval(parsed)
     end
 
     test "unbound variable in body" do
-      parsed = "f(x:Nat)\nf x = g x" |> scan_and_parse
+      parsed =
+        """
+        f x:Nat
+        ---
+        f x = g x
+        """
+        |> scan_and_parse
 
-      {:error, {:unbound_variables, _}} = Eval.eval(parsed, [])
+      assert {:error,
+              {:unbound_variables,
+               [
+                 bin_appl: [
+                   :=,
+                   {:f_appl, [symbol: 'f', symbol: 'x']},
+                   {:f_appl, [symbol: 'g', symbol: 'x']}
+                 ]
+               ]
+               |> MapSet.new(),
+               [
+                 %{
+                   {:symbol, 'f'} => %Pantagruel.Values.Lambda{
+                     codomain: nil,
+                     domain: [symbol: 'Nat'],
+                     name: {:symbol, 'f'},
+                     type: nil
+                   },
+                   {:symbol, 'x'} => %Pantagruel.Values.Variable{
+                     domain: {:symbol, 'Nat'},
+                     name: {:symbol, 'x'}
+                   }
+                 }
+               ]}} == Eval.eval(parsed, [])
     end
 
     test "bind variables in the next section" do
       parsed =
         """
-        f(x:Nat)
+        f x:Nat
+        ---
         f x <- g x
         ;
-        g(y:Nat)::Bool
+        g y:Nat ::Bool
         """
         |> scan_and_parse
 
       assert [
                %{
-                 "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: nil},
-                 "x" => %Variable{name: "x", domain: "Nat"}
+                 {:symbol, 'f'} => %Lambda{
+                   codomain: nil,
+                   domain: [symbol: 'Nat'],
+                   name: {:symbol, 'f'},
+                   type: nil
+                 },
+                 {:symbol, 'x'} => %Variable{
+                   domain: {:symbol, 'Nat'},
+                   name: {:symbol, 'x'}
+                 }
                },
                %{
-                 "g" => %Lambda{name: "g", domain: ["Nat"], codomain: "Bool", type: :function},
-                 "y" => %Variable{name: "y", domain: "Nat"}
+                 {:symbol, 'g'} => %Lambda{
+                   codomain: {:symbol, 'Bool'},
+                   domain: [symbol: 'Nat'],
+                   name: {:symbol, 'g'},
+                   type: '::'
+                 },
+                 {:symbol, 'y'} => %Variable{
+                   domain: {:symbol, 'Nat'},
+                   name: {:symbol, 'y'}
+                 }
                }
              ] == eval(parsed)
     end
@@ -135,47 +234,66 @@ defmodule EvalTest do
     test "variable is bound too late" do
       parsed =
         """
-        f(x:Nat)
+        f x:Nat
+        ---
         f x = g x
         ;
-        b() => Bool
+        b => Bool
         ;
-        g(y:Nat) :: Bool
+        g y:Nat  :: Bool
         """
         |> scan_and_parse
 
-      {:error, {:unbound_variables, _}} = Eval.eval(parsed, [])
+      {:error, {:unbound_variables, _, _}} = Eval.eval(parsed, [])
     end
 
     test "lambda binding failure" do
       parsed =
         """
-        f(x:Nat)
-        f x : fn (z:D)::D
+        f x:Nat
+        ---
+        f x in fn z:D::D
         """
         |> scan_and_parse
 
-      {:error, {:unbound_variables, _}} = Eval.eval(parsed, [])
+      {:error, {:unbound_variables, _, _}} = Eval.eval(parsed, [])
     end
 
     test "lambda binding" do
       parsed =
         """
-        f(x:Nat)
-        f x : fn(z:D)::D
+        f x:Nat
+        ---
+        f x in fn z:D ::D
         ;
-        d() => D
+        d => D
         """
         |> scan_and_parse
 
       assert [
                %{
-                 "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: nil},
-                 "x" => %Variable{name: "x", domain: "Nat"}
+                 {:symbol, 'f'} => %Lambda{
+                   codomain: nil,
+                   domain: [symbol: 'Nat'],
+                   name: {:symbol, 'f'},
+                   type: nil
+                 },
+                 {:symbol, 'x'} => %Variable{
+                   domain: {:symbol, 'Nat'},
+                   name: {:symbol, 'x'}
+                 }
                },
                %{
-                 "d" => %Lambda{name: "d", domain: [], codomain: "D", type: :constructor},
-                 "D" => %Domain{name: "D", ref: "D"}
+                 {:symbol, 'D'} => %Domain{
+                   name: {:symbol, 'D'},
+                   ref: {:symbol, 'D'}
+                 },
+                 {:symbol, 'd'} => %Lambda{
+                   codomain: {:symbol, 'D'},
+                   domain: [],
+                   name: {:symbol, 'd'},
+                   type: '=>'
+                 }
                }
              ] == eval(parsed)
     end
@@ -183,17 +301,45 @@ defmodule EvalTest do
     test "lambdas introduce temporary bindings" do
       parsed =
         """
-        f(x:Nat)
-        f x : (z:Nat . z > 100)
+        f x:Nat
+        ---
+        f x in fn z:Nat, z > 100
         """
         |> scan_and_parse
 
       assert [
                %{
-                 "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: nil},
-                 "x" => %Variable{name: "x", domain: "Nat"}
-                 # Notice `z` is not here. It was introduced so that
-                 # `z > 100` checked, but it's not in the resulting scope.
+                 {:symbol, 'f'} => %Lambda{
+                   codomain: nil,
+                   domain: [symbol: 'Nat'],
+                   name: {:symbol, 'f'},
+                   type: nil
+                 },
+                 {:symbol, 'x'} => %Variable{
+                   domain: {:symbol, 'Nat'},
+                   name: {:symbol, 'x'}
+                 }
+               }
+             ] == eval(parsed)
+    end
+
+    test "refinement with 0" do
+      parsed =
+        """
+        f
+        ---
+        f <- 0
+        """
+        |> scan_and_parse
+
+      assert [
+               %{
+                 {:symbol, 'f'} => %Pantagruel.Values.Lambda{
+                   codomain: nil,
+                   domain: [],
+                   name: {:symbol, 'f'},
+                   type: nil
+                 }
                }
              ] == eval(parsed)
     end
@@ -201,18 +347,35 @@ defmodule EvalTest do
     test "alls introduce temporary bindings" do
       parsed =
         """
-        f(x:Nat)
-        con()=> X
-        all y : X . y < 10
+        f x:Nat
+        con=> X
+        ---
+        all y : X \\ y < 10
         """
         |> scan_and_parse
 
       assert [
                %{
-                 "f" => %Lambda{name: "f", domain: ["Nat"], codomain: nil, type: nil},
-                 "con" => %Lambda{name: "con", domain: [], codomain: "X", type: :constructor},
-                 "X" => %Domain{name: "X", ref: "X"},
-                 "x" => %Variable{name: "x", domain: "Nat"}
+                 {:symbol, 'X'} => %Domain{
+                   name: {:symbol, 'X'},
+                   ref: {:symbol, 'X'}
+                 },
+                 {:symbol, 'con'} => %Lambda{
+                   codomain: {:symbol, 'X'},
+                   domain: [],
+                   name: {:symbol, 'con'},
+                   type: '=>'
+                 },
+                 {:symbol, 'f'} => %Lambda{
+                   codomain: nil,
+                   domain: [symbol: 'Nat'],
+                   name: {:symbol, 'f'},
+                   type: nil
+                 },
+                 {:symbol, 'x'} => %Variable{
+                   domain: {:symbol, 'Nat'},
+                   name: {:symbol, 'x'}
+                 }
                }
              ] == eval(parsed)
     end
@@ -220,75 +383,52 @@ defmodule EvalTest do
     test "temporary bindings are temporary" do
       parsed =
         """
-        f(x:Nat)
-        con()=> X
-        all y : X . y < 10
+        f x:Nat
+        con=> X
+        ---
+        all y : X \\ y < 10
         y > 1
         """
         |> scan_and_parse
 
-      {:error, {:unbound_variables, e}} = Eval.eval(parsed, [])
+      {:error, {:unbound_variables, unbounds, _}} = Eval.eval(parsed, [])
 
-      assert e.unbound == MapSet.new(appl: [operator: :gt, x: "y", y: 1])
-    end
-
-    test "too many domains" do
-      parsed =
-        """
-        f(x:Nat,Real)
-        """
-        |> scan_and_parse
-
-      {:error, {:domain_mismatch, e}} = Eval.eval(parsed, [])
-
-      assert e.args == ["x"]
-      assert e.doms == ["Nat", "Real"]
+      assert MapSet.new(bin_appl: [:>, {:symbol, 'y'}, 1]) == unbounds
     end
 
     test "binding without bunching evals as two malformed bindings" do
       parsed =
         """
-        w()
-        all j, k : X . j > k
+        w
+        ---
+        all j, k : X \\ j > k
         """
         |> scan_and_parse
 
-      {:error, {:unbound_variables, e}} = Eval.eval(parsed, [])
+      {:error, {:unbound_variables, unbounds, _}} = Eval.eval(parsed, [])
 
       assert [
                quantification: [
-                 quantifier: :forall,
-                 quant_bindings: [
-                   guard: "j",
-                   binding: [
-                     bind_symbol: "k",
-                     bind_op: :in,
-                     bind_domain: "X"
-                   ]
-                 ],
-                 quant_expression:
-                   {:appl,
-                    [
-                      operator: :gt,
-                      x: "j",
-                      y: "k"
-                    ]}
+                 :all,
+                 [guard: {:symbol, 'j'}, binding: [symbol: 'k', symbol: 'X']],
+                 {:bin_appl, [:>, {:symbol, 'j'}, {:symbol, 'k'}]}
                ]
              ]
-             |> MapSet.new() == e.unbound
+             |> MapSet.new() == unbounds
     end
 
     test "binding with bunching evals as two bindings" do
       parsed =
         """
         X <= 1
-        all (j, k) : X . j > k
+        ---
+        all (j, k) : X \\ j > k
         """
         |> scan_and_parse
 
       assert [
                %{
-                 "X" => %Domain{name: "X", ref: 1}
+                 {:symbol, 'X'} => %Domain{name: {:symbol, 'X'}, ref: 1}
                }
              ] == eval(parsed)
     end
@@ -296,21 +436,28 @@ defmodule EvalTest do
     test "exists binds" do
       parsed =
         """
-        f(x:Nat)
-        exists y : Nat . f y > 10
+        f x:Nat
+        ---
+        exists y : Nat \\ f y > 10
         """
         |> scan_and_parse
 
       assert [
                %{
-                 "f" => %Lambda{
-                   name: "f",
-                   domain: ["Nat"],
+                 {:symbol, 'f'} => %Lambda{
                    codomain: nil,
+                   domain: [symbol: 'Nat'],
+                   name: {:symbol, 'f'},
                    type: nil
                  },
-                 "x" => %Variable{name: "x", domain: "Nat"},
-                 "y" => %Variable{name: "y", domain: "Nat"}
+                 {:symbol, 'x'} => %Variable{
+                   domain: {:symbol, 'Nat'},
+                   name: {:symbol, 'x'}
+                 },
+                 {:symbol, 'y'} => %Variable{
+                   domain: {:symbol, 'Nat'},
+                   name: {:symbol, 'y'}
+                 }
                }
              ] == eval(parsed)
     end
@@ -318,17 +465,18 @@ defmodule EvalTest do
     test "binding rules regression" do
       parsed =
         """
-        f()
-        f <- (all z from 1.f . f)
+        f
+        ---
+        f <- (all z : 1.f \\ f)
         """
         |> scan_and_parse
 
       assert [
                %{
-                 "f" => %Lambda{
+                 {:symbol, 'f'} => %Lambda{
                    codomain: nil,
                    domain: [],
-                   name: "f",
+                   name: {:symbol, 'f'},
                    type: nil
                  }
                }
@@ -338,37 +486,38 @@ defmodule EvalTest do
     test "look in earlier scope for variable" do
       parsed =
         """
-        f()
+        f
         ;
-        x()
+        x
         ;
-        y()
+        y
+        ---
         y x = f
         """
         |> scan_and_parse
 
       assert [
                %{
-                 "f" => %Lambda{
-                   name: "f",
-                   domain: [],
+                 {:symbol, 'f'} => %Lambda{
                    codomain: nil,
+                   domain: [],
+                   name: {:symbol, 'f'},
                    type: nil
                  }
                },
                %{
-                 "x" => %Lambda{
-                   name: "x",
-                   domain: [],
+                 {:symbol, 'x'} => %Lambda{
                    codomain: nil,
+                   domain: [],
+                   name: {:symbol, 'x'},
                    type: nil
                  }
                },
                %{
-                 "y" => %Lambda{
-                   name: "y",
-                   domain: [],
+                 {:symbol, 'y'} => %Lambda{
                    codomain: nil,
+                   domain: [],
+                   name: {:symbol, 'y'},
                    type: nil
                  }
                }
@@ -378,20 +527,24 @@ defmodule EvalTest do
     test "comprehensions do not bind their variables to external scope" do
       parsed =
         """
-        f(x:Nat)
-        [y from Nat . f x > y]
+        f x:Nat
+        ---
+        [y : Nat \\ f x > y]
         """
         |> scan_and_parse
 
       assert [
                %{
-                 "f" => %Lambda{
+                 {:symbol, 'f'} => %Lambda{
                    codomain: nil,
-                   domain: ["Nat"],
-                   name: "f",
+                   domain: [symbol: 'Nat'],
+                   name: {:symbol, 'f'},
                    type: nil
                  },
-                 "x" => %Variable{domain: "Nat", name: "x"}
+                 {:symbol, 'x'} => %Variable{
+                   domain: {:symbol, 'Nat'},
+                   name: {:symbol, 'x'}
+                 }
                }
              ] == eval(parsed)
     end
@@ -399,21 +552,28 @@ defmodule EvalTest do
     test "generics are bound into scope" do
       parsed =
         """
-        f(x:_A)
-        [y from _A . f x > y]
+        f x:_A
+        ---
+        [y : _A \\ f x > y]
         """
         |> scan_and_parse
 
       assert [
                %{
-                 "f" => %Lambda{
+                 {:symbol, '_A'} => %Domain{
+                   name: {:symbol, '_A'},
+                   ref: {:symbol, '_A'}
+                 },
+                 {:symbol, 'f'} => %Lambda{
                    codomain: nil,
-                   domain: ["_A"],
-                   name: "f",
+                   domain: [symbol: '_A'],
+                   name: {:symbol, 'f'},
                    type: nil
                  },
-                 "_A" => %Domain{name: "_A", ref: "_A"},
-                 "x" => %Variable{domain: "_A", name: "x"}
+                 {:symbol, 'x'} => %Variable{
+                   domain: {:symbol, '_A'},
+                   name: {:symbol, 'x'}
+                 }
                }
              ] == eval(parsed)
     end
@@ -427,9 +587,9 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "Status" => %Domain{
-                   ref: {:set, [literal: "ok"]},
-                   name: "Status"
+                 {:symbol, 'Status'} => %Pantagruel.Values.Domain{
+                   name: {:symbol, 'Status'},
+                   ref: {:cont, [:set, [literal: 'ok']]}
                  }
                }
              ] == eval(parsed)
@@ -444,13 +604,13 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "Status" => %Domain{
-                   ref: {:set, [literal: "ok"]},
-                   name: "Status"
+                 {:symbol, 'State'} => %Pantagruel.Values.Domain{
+                   name: {:symbol, 'State'},
+                   ref: {:cont, [:set, [literal: 'ok']]}
                  },
-                 "State" => %Domain{
-                   ref: {:set, [literal: "ok"]},
-                   name: "State"
+                 {:symbol, 'Status'} => %Pantagruel.Values.Domain{
+                   name: {:symbol, 'Status'},
+                   ref: {:cont, [:set, [literal: 'ok']]}
                  }
                }
              ] == eval(parsed)
@@ -459,7 +619,8 @@ defmodule EvalTest do
     test "object access" do
       parsed =
         """
-        f(x, y:Nat)
+        f (x, y):Nat
+        ---
         f.x
         f.y
         """
@@ -467,14 +628,20 @@ defmodule EvalTest do
 
       assert [
                %{
-                 "f" => %Lambda{
+                 {:symbol, 'f'} => %Lambda{
                    codomain: nil,
-                   domain: ["Nat"],
-                   name: "f",
+                   domain: [symbol: 'Nat', symbol: 'Nat'],
+                   name: {:symbol, 'f'},
                    type: nil
                  },
-                 "x" => %Variable{domain: "Nat", name: "x"},
-                 "y" => %Variable{domain: "Nat", name: "y"}
+                 {:symbol, 'x'} => %Variable{
+                   domain: {:symbol, 'Nat'},
+                   name: {:symbol, 'x'}
+                 },
+                 {:symbol, 'y'} => %Variable{
+                   domain: {:symbol, 'Nat'},
+                   name: {:symbol, 'y'}
+                 }
                }
              ] == eval(parsed)
     end
@@ -482,53 +649,51 @@ defmodule EvalTest do
     test "object access on expression" do
       parsed =
         """
-        f(x, y:Nat)
+        f (x, y):Nat
+        ---
         (f 1).x
         """
         |> scan_and_parse
 
       assert [
                %{
-                 "f" => %Lambda{
+                 {:symbol, 'f'} => %Lambda{
                    codomain: nil,
-                   domain: ["Nat"],
-                   name: "f",
+                   domain: [symbol: 'Nat', symbol: 'Nat'],
+                   name: {:symbol, 'f'},
                    type: nil
                  },
-                 "x" => %Variable{domain: "Nat", name: "x"},
-                 "y" => %Variable{domain: "Nat", name: "y"}
+                 {:symbol, 'x'} => %Variable{
+                   domain: {:symbol, 'Nat'},
+                   name: {:symbol, 'x'}
+                 },
+                 {:symbol, 'y'} => %Variable{
+                   domain: {:symbol, 'Nat'},
+                   name: {:symbol, 'y'}
+                 }
                }
              ] == eval(parsed)
     end
 
     test "comprehension aliasing" do
-      parsed = "Day <= {n : Nat, n <= 30 . n}" |> scan_and_parse
+      parsed = "Day <= {n : Nat, n =< 30 \\ n}" |> scan_and_parse
 
       assert [
                %{
-                 "Day" => %Domain{
-                   name: "Day",
+                 {:symbol, 'Day'} => %Pantagruel.Values.Domain{
+                   name: {:symbol, 'Day'},
                    ref:
-                     {:comprehension,
+                     {:cont,
                       [
-                        set: [
-                          {:comp_bindings,
+                        :set,
+                        {:comprehension,
+                         [
                            [
-                             binding: [
-                               bind_symbol: "n",
-                               bind_op: :in,
-                               bind_domain: "Nat"
-                             ],
-                             guard:
-                               {:appl,
-                                [
-                                  operator: :lte,
-                                  x: "n",
-                                  y: 30
-                                ]}
-                           ]},
-                          {:comp_expression, "n"}
-                        ]
+                             binding: [symbol: 'n', symbol: 'Nat'],
+                             guard: {:bin_appl, [:"=<", {:symbol, 'n'}, 30]}
+                           ],
+                           {:symbol, 'n'}
+                         ]}
                       ]}
                  }
                }
@@ -538,17 +703,39 @@ defmodule EvalTest do
     test "nested quantifiers" do
       parsed =
         """
-        f()
-        (all x from Nat . all y from x . y > 0)
+        f
+        ---
+        (all x : Nat \\ all y : x \\ y > 0)
         """
         |> scan_and_parse
 
       assert [
                %{
-                 "f" => %Lambda{
+                 {:symbol, 'f'} => %Lambda{
                    codomain: nil,
                    domain: [],
-                   name: "f",
+                   name: {:symbol, 'f'},
+                   type: nil
+                 }
+               }
+             ] == eval(parsed)
+    end
+
+    test "refinements are evaluated in context of guard" do
+      parsed =
+        """
+        f
+        ---
+        f, exists n : Nat \\ n > 1 <- n
+        """
+        |> scan_and_parse
+
+      assert [
+               %{
+                 {:symbol, 'f'} => %Pantagruel.Values.Lambda{
+                   codomain: nil,
+                   domain: [],
+                   name: {:symbol, 'f'},
                    type: nil
                  }
                }
@@ -559,38 +746,55 @@ defmodule EvalTest do
       # Note: this program is incorrect!
       parsed =
         """
-        sort(xs : [X]) :: [X]
-        x() => X
-
-        all (x,y) from xs'⸳x <= y = ind xs' x < ind xs' y
+        sort xs : [X]  :: [X]
+        x => X
+        ---
+        all (x,y) : xs' \\ x =< y <-> ind xs' x < ind xs' y
 
         ;
 
-        ind(xs, x : [X], X) :: Nat0
+        ind xs : [X], x : X :: Nat0
         """
         |> scan_and_parse
 
       assert [
                %{
-                 "X" => %Domain{name: "X", ref: "X"},
-                 "sort" => %Lambda{
-                   domain: [list: ["X"]],
-                   codomain: {:list, ["X"]},
-                   name: "sort",
-                   type: :function
+                 {:symbol, 'X'} => %Pantagruel.Values.Domain{
+                   name: {:symbol, 'X'},
+                   ref: {:symbol, 'X'}
                  },
-                 "x" => %Lambda{codomain: "X", domain: [], name: "x", type: :constructor},
-                 "xs" => %Variable{domain: {:list, ["X"]}, name: "xs"}
+                 {:symbol, 'x'} => %Pantagruel.Values.Lambda{
+                   codomain: {:symbol, 'X'},
+                   domain: [],
+                   name: {:symbol, 'x'},
+                   type: '=>'
+                 },
+                 {:symbol, 'sort'} => %Pantagruel.Values.Lambda{
+                   name: {:symbol, 'sort'},
+                   type: '::',
+                   codomain: {:cont, [:list, [symbol: 'X']]},
+                   domain: [cont: [:list, [symbol: 'X']]]
+                 },
+                 {:symbol, 'xs'} => %Pantagruel.Values.Variable{
+                   name: {:symbol, 'xs'},
+                   domain: {:cont, [:list, [symbol: 'X']]}
+                 }
                },
                %{
-                 "x" => %Variable{name: "x", domain: "X"},
-                 "ind" => %Lambda{
-                   domain: [{:list, ["X"]}, "X"],
-                   codomain: "Nat0",
-                   name: "ind",
-                   type: :function
+                 {:symbol, 'x'} => %Pantagruel.Values.Variable{
+                   domain: {:symbol, 'X'},
+                   name: {:symbol, 'x'}
                  },
-                 "xs" => %Variable{domain: {:list, ["X"]}, name: "xs"}
+                 {:symbol, 'ind'} => %Pantagruel.Values.Lambda{
+                   codomain: {:symbol, 'Nat0'},
+                   name: {:symbol, 'ind'},
+                   type: '::',
+                   domain: [cont: [:list, [symbol: 'X']], symbol: 'X']
+                 },
+                 {:symbol, 'xs'} => %Pantagruel.Values.Variable{
+                   name: {:symbol, 'xs'},
+                   domain: {:cont, [:list, [symbol: 'X']]}
+                 }
                }
              ] == eval(parsed)
     end

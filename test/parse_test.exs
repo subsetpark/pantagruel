@@ -1,430 +1,607 @@
-defmodule PantagruelTest do
+defmodule Pantagruel.Test.LegacyParser do
   use ExUnit.Case
 
   defp tryparse(text, r) do
-    {:ok, program, "", %{}, _, _} = Pantagruel.Parse.program(text)
+    {:ok, program} =
+      Pantagruel.Scan.scan(text)
+      |> :pant_lexer.string()
+      |> Pantagruel.Parse.handle_lex()
+
     assert r == program
   end
 
   describe "expression parsing" do
     test "parse two expressions" do
-      text = "f()\nx != y\ny > 1"
+      text = "f\n---\nx != y\ny > 1"
 
-      tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f"
-            ]
-          ],
-          body: [
-            expr: [appl: [operator: :notequals, x: "x", y: "y"]],
-            expr: [appl: [operator: :gt, x: "y", y: 1]]
-          ]
-        ]
+      tryparse(
+        text,
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [decl: [{:symbol, 'f'}, [], nil, nil]],
+               [
+                 expr: [nil, {:bin_appl, [:!=, {:symbol, 'x'}, {:symbol, 'y'}]}],
+                 expr: [nil, {:bin_appl, [:>, {:symbol, 'y'}, 1]}]
+               ]
+             ]
+           ]
+         ]}
       )
     end
 
-    test "parse two expressions with connecting operator" do
-      text = "f()\nx != y\n∨y > 1"
+    test "parse two expressions with connecting op" do
+      text = """
+      f
+      ---
+      x != y
+      or y > 1
+      """
 
-      tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f"
-            ]
-          ],
-          body: [
-            expr: [appl: [operator: :notequals, x: "x", y: "y"]],
-            expr: [intro_op: :or, appl: [operator: :gt, x: "y", y: 1]]
-          ]
-        ]
+      tryparse(
+        text,
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [decl: [{:symbol, 'f'}, [], nil, nil]],
+               [
+                 expr: [nil, {:bin_appl, [:!=, {:symbol, 'x'}, {:symbol, 'y'}]}],
+                 expr: [:or, {:bin_appl, [:>, {:symbol, 'y'}, 1]}]
+               ]
+             ]
+           ]
+         ]}
       )
     end
 
     test "parse expression with domain" do
-      text = "f(x:Y⸳a:Y)"
+      text = "f x:Y, a in Y"
 
-      tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f",
-              lambda_args: ["x"],
-              lambda_doms: ["Y"],
-              predicate: [{:appl, [operator: :in, x: "a", y: "Y"]}]
-            ]
-          ]
-        ]
+      tryparse(
+        text,
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [
+                 decl: [
+                   {:symbol, 'f'},
+                   [
+                     binding: [symbol: 'x', symbol: 'Y'],
+                     guard: {:bin_appl, [:in, {:symbol, 'a'}, {:symbol, 'Y'}]}
+                   ],
+                   nil,
+                   nil
+                 ]
+               ],
+               []
+             ]
+           ]
+         ]}
       )
     end
 
     test "parse expression with relation in it" do
-      text = "f()\nx←y ∧ y > 1"
+      text = "f\n---\nx <- y and y > 1"
 
-      tryparse(text,
-        section: [
-          head: [decl: [decl_ident: "f"]],
-          body: [
-            expr: [
-              refinement: [
-                pattern: "x",
-                expr: {:appl, [operator: :gt, x: {:appl, [operator: :and, x: "y", y: "y"]}, y: 1]}
-              ]
-            ]
-          ]
-        ]
+      tryparse(
+        text,
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [decl: [{:symbol, 'f'}, [], nil, nil]],
+               [
+                 {:refinement,
+                  [
+                    {:symbol, 'x'},
+                    nil,
+                    {:bin_appl, [:>, {:bin_appl, [:and, {:symbol, 'y'}, {:symbol, 'y'}]}, 1]}
+                  ]}
+               ]
+             ]
+           ]
+         ]}
       )
     end
 
     test "parse expression with multiple elements in the pattern" do
-      text = "f()\nf x←y"
+      text = "f\n---\nf x <- y"
 
-      tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f"
-            ]
-          ],
-          body: [
-            expr: [
-              refinement: [
-                pattern: {:appl, [f: "f", x: "x"]},
-                expr: "y"
-              ]
-            ]
-          ]
-        ]
+      tryparse(
+        text,
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [decl: [{:symbol, 'f'}, [], nil, nil]],
+               [
+                 {:refinement,
+                  [
+                    {:f_appl, [symbol: 'f', symbol: 'x']},
+                    nil,
+                    {:symbol, 'y'}
+                  ]}
+               ]
+             ]
+           ]
+         ]}
       )
     end
 
-    test "parse guarded refinment" do
-      text = "f()\nf x⸳x<0←y\nf x←1"
+    test "parse guarded refinement" do
+      text = "f\n---\nf x, x< 0 <- y\nf x<-1"
 
-      tryparse(text,
-        section: [
-          head: [decl: [decl_ident: "f"]],
-          body: [
-            expr: [
-              refinement: [
-                pattern: {:appl, [f: "f", x: "x"]},
-                guard: {:appl, [operator: :lt, x: "x", y: 0]},
-                expr: "y"
-              ]
-            ],
-            expr: [refinement: [pattern: {:appl, [f: "f", x: "x"]}, expr: 1]]
-          ]
-        ]
+      tryparse(
+        text,
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [decl: [{:symbol, 'f'}, [], nil, nil]],
+               [
+                 {:refinement,
+                  [
+                    f_appl: [symbol: 'f', symbol: 'x'],
+                    bin_appl: [:<, {:symbol, 'x'}, 0],
+                    symbol: 'y'
+                  ]},
+                 {:refinement,
+                  [
+                    {:f_appl, [symbol: 'f', symbol: 'x']},
+                    nil,
+                    1
+                  ]}
+               ]
+             ]
+           ]
+         ]}
       )
     end
   end
 
   describe "declaration parsing" do
     test "empty heading parsing" do
-      text = "f()⇒D"
+      text = "f => D"
 
-      tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f",
-              yield_type: :constructor,
-              lambda_codomain: "D"
-            ]
-          ]
-        ]
+      tryparse(
+        text,
+        {:program, [nil, [], [chapter: [[decl: [{:symbol, 'f'}, [], '=>', {:symbol, 'D'}]], []]]]}
       )
     end
 
     test "dual heading parsing" do
-      text = "f()⇒D\ng()⇒E"
+      text = "f=>D\ng=>E"
 
-      tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f",
-              yield_type: :constructor,
-              lambda_codomain: "D"
-            ],
-            decl: [
-              decl_ident: "g",
-              yield_type: :constructor,
-              lambda_codomain: "E"
-            ]
-          ]
-        ]
+      tryparse(
+        text,
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [
+                 decl: [{:symbol, 'f'}, [], '=>', {:symbol, 'D'}],
+                 decl: [{:symbol, 'g'}, [], '=>', {:symbol, 'E'}]
+               ],
+               []
+             ]
+           ]
+         ]}
       )
     end
 
     test "basic heading parsing" do
-      text = "f(a,b:B,C)∷D"
+      text = "f a:B, b:C :: D"
 
-      tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f",
-              lambda_args: ["a", "b"],
-              lambda_doms: ["B", "C"],
-              yield_type: :function,
-              lambda_codomain: "D"
-            ]
-          ]
-        ]
+      tryparse(
+        text,
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [
+                 decl: [
+                   {:symbol, 'f'},
+                   [
+                     binding: [symbol: 'a', symbol: 'B'],
+                     binding: [symbol: 'b', symbol: 'C']
+                   ],
+                   '::',
+                   {:symbol, 'D'}
+                 ]
+               ],
+               []
+             ]
+           ]
+         ]}
       )
     end
 
     test "heading with multiple clauses" do
-      text = "f(x:Y⸳x != 1,x > 0)"
+      text = "f x:Y, x != 1,x > 0"
 
-      tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f",
-              lambda_args: ["x"],
-              lambda_doms: ["Y"],
-              predicate: [
-                {:appl, [operator: :notequals, x: "x", y: 1]},
-                {:appl, [operator: :gt, x: "x", y: 0]}
-              ]
-            ]
-          ]
-        ]
+      tryparse(
+        text,
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [
+                 decl: [
+                   {:symbol, 'f'},
+                   [
+                     binding: [symbol: 'x', symbol: 'Y'],
+                     guard: {:bin_appl, [:!=, {:symbol, 'x'}, 1]},
+                     guard: {:bin_appl, [:>, {:symbol, 'x'}, 0]}
+                   ],
+                   nil,
+                   nil
+                 ]
+               ],
+               []
+             ]
+           ]
+         ]}
       )
     end
 
     test "heading with sequenced domain" do
-      text = "f(x:X)∷[X]"
+      text = "f x:X :: [X]"
 
-      tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f",
-              lambda_args: ["x"],
-              lambda_doms: ["X"],
-              yield_type: :function,
-              lambda_codomain: {:list, ["X"]}
-            ]
-          ]
-        ]
+      tryparse(
+        text,
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [
+                 decl: [
+                   {:symbol, 'f'},
+                   [binding: [symbol: 'x', symbol: 'X']],
+                   '::',
+                   {:cont, [:list, [symbol: 'X']]}
+                 ]
+               ],
+               []
+             ]
+           ]
+         ]}
       )
     end
 
     test "heading with generic domain" do
-      text = "f(x:_A⸳x*y>10)∷[_A]"
+      text = "f x:_A, x*y>10 :: [_A]"
 
-      tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f",
-              lambda_args: ["x"],
-              lambda_doms: ["_A"],
-              predicate: [
-                appl: [operator: :gt, x: {:appl, [operator: :times, x: "x", y: "y"]}, y: 10]
-              ],
-              yield_type: :function,
-              lambda_codomain: {:list, ["_A"]}
-            ]
-          ]
-        ]
+      tryparse(
+        text,
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [
+                 decl: [
+                   {:symbol, 'f'},
+                   [
+                     binding: [symbol: 'x', symbol: '_A'],
+                     guard:
+                       {:bin_appl,
+                        [
+                          :>,
+                          {:bin_appl, [:*, {:symbol, 'x'}, {:symbol, 'y'}]},
+                          10
+                        ]}
+                   ],
+                   '::',
+                   {:cont, [:list, [symbol: '_A']]}
+                 ]
+               ],
+               []
+             ]
+           ]
+         ]}
       )
     end
 
     test "heading with lambda" do
-      text = "f(x:λ(z:Nat)∷z)∷Bool"
+      text = "f x:fn z:Nat :: z  :: Bool"
 
-      tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f",
-              lambda_args: ["x"],
-              lambda_doms: [
-                {:lambda,
-                 [
-                   lambda_args: ["z"],
-                   lambda_doms: ["Nat"],
-                   yield_type: :function,
-                   lambda_codomain: "z"
-                 ]}
-              ],
-              yield_type: :function,
-              lambda_codomain: "Bool"
-            ]
-          ]
-        ]
+      tryparse(
+        text,
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [
+                 decl: [
+                   {:symbol, 'f'},
+                   [
+                     binding: [
+                       symbol: 'x',
+                       lambda: [
+                         [binding: [symbol: 'z', symbol: 'Nat']],
+                         '::',
+                         {:symbol, 'z'}
+                       ]
+                     ]
+                   ],
+                   '::',
+                   {:symbol, 'Bool'}
+                 ]
+               ],
+               []
+             ]
+           ]
+         ]}
       )
     end
 
     test "heading with par" do
-      text = "f(x:X⸳x∈(Y,Z))"
+      text = "f x:X, x in (Y,Z)"
 
-      tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f",
-              lambda_args: ["x"],
-              lambda_doms: ["X"],
-              predicate: [appl: [operator: :from, x: "x", y: {:par, ["Y", "Z"]}]]
-            ]
-          ]
-        ]
+      tryparse(
+        text,
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [
+                 decl: [
+                   {:symbol, 'f'},
+                   [
+                     binding: [symbol: 'x', symbol: 'X'],
+                     guard:
+                       {:bin_appl,
+                        [
+                          :in,
+                          {:symbol, 'x'},
+                          {:cont, [:par, [symbol: 'Y', symbol: 'Z']]}
+                        ]}
+                   ],
+                   nil,
+                   nil
+                 ]
+               ],
+               []
+             ]
+           ]
+         ]}
       )
     end
 
     test "domain aliasing" do
       text = "Status<={`ok}"
 
-      tryparse(text,
-        section: [
-          head: [
-            alias: [
-              alias_name: ["Status"],
-              alias_expr: {:set, [literal: "ok"]}
-            ]
-          ]
-        ]
+      tryparse(
+        text,
+        {:program,
+         [
+           nil,
+           [],
+           [chapter: [[alias: [[symbol: 'Status'], {:cont, [:set, [literal: 'ok']]}]], []]]
+         ]}
       )
     end
 
     test "multiple domain aliasing" do
       text = "Status,State<={`ok}"
 
-      tryparse(text,
-        section: [
-          head: [
-            alias: [
-              alias_name: ["Status", "State"],
-              alias_expr: {:set, [literal: "ok"]}
-            ]
-          ]
-        ]
+      tryparse(
+        text,
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [
+                 alias: [
+                   [symbol: 'Status', symbol: 'State'],
+                   {:cont, [:set, [literal: 'ok']]}
+                 ]
+               ],
+               []
+             ]
+           ]
+         ]}
       )
     end
 
     test "comprehension aliasing" do
-      text = "Day<={n:Nat,n<=30⸳n}"
+      text = "Day<={n:Nat,n=<30 \\ n}"
 
-      tryparse(text,
-        section: [
-          head: [
-            alias: [
-              alias_name: ["Day"],
-              alias_expr:
-                {:comprehension,
-                 [
-                   set: [
-                     {:comp_bindings,
-                      [
-                        binding: [bind_symbol: "n", bind_op: :in, bind_domain: "Nat"],
-                        guard: {:appl, [operator: :lte, x: "n", y: 30]}
-                      ]},
-                     {:comp_expression, "n"}
-                   ]
-                 ]}
-            ]
-          ]
-        ]
+      tryparse(
+        text,
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [
+                 alias: [
+                   [symbol: 'Day'],
+                   {:cont,
+                    [
+                      :set,
+                      {:comprehension,
+                       [
+                         [
+                           binding: [symbol: 'n', symbol: 'Nat'],
+                           guard: {:bin_appl, [:"=<", {:symbol, 'n'}, 30]}
+                         ],
+                         {:symbol, 'n'}
+                       ]}
+                    ]}
+                 ]
+               ],
+               []
+             ]
+           ]
+         ]}
       )
     end
   end
 
   describe "program structure" do
-    test "two sections" do
-      text = "f(x:Y)\n;\ny()⇒Y"
+    test "two chapters" do
+      text = "f x:Y \n;\ny=>Y"
 
-      tryparse(text,
-        section: [
-          head: [
-            decl: [
-              decl_ident: "f",
-              lambda_args: ["x"],
-              lambda_doms: ["Y"]
-            ]
-          ]
-        ],
-        section: [
-          head: [
-            decl: [
-              decl_ident: "y",
-              yield_type: :constructor,
-              lambda_codomain: "Y"
-            ]
-          ]
-        ]
+      tryparse(
+        text,
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [
+                 decl: [
+                   {:symbol, 'f'},
+                   [binding: [symbol: 'x', symbol: 'Y']],
+                   nil,
+                   nil
+                 ]
+               ],
+               []
+             ],
+             chapter: [
+               [decl: [{:symbol, 'y'}, [], '=>', {:symbol, 'Y'}]],
+               []
+             ]
+           ]
+         ]}
       )
     end
   end
 
   describe "comments handling" do
     test "can parse a comment" do
-      text = "f()\nf>1\n\" Here is a comment.\nf<2"
+      text = """
+      f
+      ---
+      f>1
+      " Here is a comment.
+      f<2
+      """
 
-      tryparse(text,
-        section: [
-          head: [decl: [decl_ident: "f"]],
-          body: [
-            expr: [appl: [operator: :gt, x: "f", y: 1]],
-            comment: ["Here is a comment."],
-            expr: [appl: [operator: :lt, x: "f", y: 2]]
-          ]
-        ]
+      tryparse(
+        text,
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [decl: [{:symbol, 'f'}, [], nil, nil]],
+               [
+                 expr: [nil, {:bin_appl, [:>, {:symbol, 'f'}, 1]}],
+                 comment: 'Here is a comment.',
+                 expr: [nil, {:bin_appl, [:<, {:symbol, 'f'}, 2]}]
+               ]
+             ]
+           ]
+         ]}
       )
     end
   end
 
   describe "module handling" do
     test "module declaration" do
-      text = "module MOD\nf()"
+      text = "module MOD\nf"
 
-      tryparse(text, [
-        {:module, [mod_name: "MOD"]},
-        {:section, [head: [decl: [decl_ident: "f"]]]}
-      ])
+      tryparse(
+        text,
+        {:program,
+         [
+           'MOD',
+           [],
+           [chapter: [[decl: [{:symbol, 'f'}, [], nil, nil]], []]]
+         ]}
+      )
     end
 
     test "module import" do
-      text = "import MOD\nf()"
+      text = "import MOD\nf"
 
-      tryparse(text, [
-        {:import, [mod_name: "MOD"]},
-        {:section, [head: [decl: [decl_ident: "f"]]]}
-      ])
+      tryparse(
+        text,
+        {:program,
+         [
+           nil,
+           ['MOD'],
+           [chapter: [[decl: [{:symbol, 'f'}, [], nil, nil]], []]]
+         ]}
+      )
     end
 
     test "module declaration and import" do
-      text = "module MOD\nimport MOD2\nf()"
+      text = "module MOD\nimport MOD2\nf"
 
-      tryparse(text, [
-        {:module, [mod_name: "MOD"]},
-        {:import, [mod_name: "MOD2"]},
-        {:section, [head: [decl: [decl_ident: "f"]]]}
-      ])
+      tryparse(
+        text,
+        {:program,
+         [
+           'MOD',
+           ['MOD2'],
+           [chapter: [[decl: [{:symbol, 'f'}, [], nil, nil]], []]]
+         ]}
+      )
     end
+
     test "multiple module import" do
-      text = "import MOD,MOD2\nf()"
+      text = "import MOD,MOD2\nf"
 
-      tryparse(text, [
-        {:import, [mod_name: "MOD"]},
-        {:import, [mod_name: "MOD2"]},
-        {:section, [head: [decl: [decl_ident: "f"]]]}
-      ])
+      tryparse(
+        text,
+        {:program,
+         [
+           nil,
+           ['MOD', 'MOD2'],
+           [chapter: [[decl: [{:symbol, 'f'}, [], nil, nil]], []]]
+         ]}
+      )
     end
-    test "two import lines" do
-      text = "import MOD\nimport MOD2\nf()"
 
-      tryparse(text, [
-        {:import, [mod_name: "MOD"]},
-        {:import, [mod_name: "MOD2"]},
-        {:section, [head: [decl: [decl_ident: "f"]]]}
-      ])
+    test "two import lines" do
+      text = "import MOD\nimport MOD2\nf"
+
+      tryparse(
+        text,
+        {:program,
+         [
+           nil,
+           ['MOD', 'MOD2'],
+           [chapter: [[decl: [{:symbol, 'f'}, [], nil, nil]], []]]
+         ]}
+      )
     end
   end
 end

@@ -1,7 +1,3 @@
-defmodule Pantagruel.Eval.Module do
-  defstruct name: ""
-end
-
 defmodule Pantagruel.Eval do
   @moduledoc """
   Evaluation of a Pantagruel program.
@@ -11,7 +7,6 @@ defmodule Pantagruel.Eval do
   quantifiers, domain aliases), and checking that all symbols have been
   properly bound.
   """
-  import Pantagruel.Guards
   alias Pantagruel.Values.Domain
   alias Pantagruel.Env
   alias Pantagruel.Eval.Module
@@ -21,97 +16,82 @@ defmodule Pantagruel.Eval do
   end
 
   @typedoc """
-  A Pantagruel AST is a sequence of *sections*, each of which consists
+  A Pantagruel AST is a sequence of *chapters*, each of which consists
   of a header and optional body.
 
-  The state of a running Pantagruel program as of any section consists
+  The state of a running Pantagruel program as of any chapter consists
   of three elements:
 
-  - The execution environment, a list of scopes, one for each section. The
-  head of the environment corresponds to the current section. At any
-  given section, any symbol introduced in that section will be bound
+  - The execution environment, a list of scopes, one for each chapter. The
+  head of the environment corresponds to the current chapter. At any
+  given chapter, any symbol introduced in that chapter will be bound
   into the scope at the head of the environment.
 
   - The header symbols to check for boundness. Any symbol used in a
-  section header that is not in a declaration position is included here
+  chapter header that is not in a declaration position is included here
   to be checked for boundness. Every symbol used in a header must be
   bound *by the end of that header*.
 
   - The body symbols to check for boundness. Any symbol used in a
-  section body that is not in a declaration position is included here
+  chapter body that is not in a declaration position is included here
   to be checked for boundness. Every symbol used in a body must be
   bound *by the end of the _following_ body*. Unlike with headers,
   symbols *may* be referred to before they are defined, but they must
-  be defined in the following section at the latest.
+  be defined in the following chapter at the latest.
   """
   @type t :: {Env.t(), MapSet.t(), [MapSet.t()]}
+  @type error :: {:missing_import, any} | {:unbound_variables, any}
 
   @doc """
   Evaluate a Pantagruel AST for variable binding, returning the resulting
   environment of all bound symbols.
   """
-  def eval(program, available_asts, opts \\ []) do
+  @spec eval(any, any, Keyword.t()) :: {:ok, [Env.t()]} | {:error, error}
+  def eval({:program, [module_name, imports, chapters]}, available_asts, opts \\ []) do
     # Set the current module name. Either from an argument to the function
     # or, if no name was specified, from a module name in the AST.
     mod_name =
-      case {opts[:mod_name], program} do
-        {nil, [{:module, mod_name: name} | _]} -> name
+      case {opts[:mod_name], module_name} do
+        {nil, name} -> name
         {name, _} -> name
       end
 
-    try do
-      # Populate the scope with any modules imported with the `import` statement.
-      {program, scopes} = handle_imports(program, available_asts, [], MapSet.new())
-
-      eval_section = fn {:section, section}, state ->
-        # Evaluate a single section:
-        # 1. evaluate the head
-        {state, header_unbounds, unbounds} =
-          Enum.reduce(section[:head], new_state(state, mod_name), &eval_header_statement/2)
-
-        # 2. check for any unbound symbols in the head
-        :ok = Env.check_unbound(state, header_unbounds)
-
-        # 3. evaluate the body
-        {state, [unbounds | rest]} =
-          Enum.reduce(section[:body] || [], {state, unbounds}, &eval_body_statement/2)
-
-        # 4. check for any unbound symbols from the *previous* section body (ie,
-        #    which should have been defined in this section)
-        :ok = Env.check_unbound(state, unbounds)
-
-        {state, MapSet.new(), rest}
-      end
-
-      # Force a check for unbound values. All symbols must be bound by the
-      # end of the program; thus the final section cannot introduce any
-      # unbound symbols.
-      final_check = fn {scopes, _, [unbound]} ->
-        :ok = Env.check_unbound(scopes, unbound)
-        scopes
-      end
-
-      scopes =
-        program
-        |> Enum.reduce({scopes, MapSet.new(), [MapSet.new()]}, eval_section)
-        |> final_check.()
-        |> Enum.reverse()
-
-      {:ok, scopes}
-    rescue
-      e in Env.UnboundVariablesError -> {:error, {:unbound_variables, e}}
-      e in Env.DomainMismatchError -> {:error, {:domain_mismatch, e}}
-      e in MissingImportError -> {:error, {:missing_import, e}}
+    with {:ok, scopes} <- handle_imports(imports, available_asts),
+         {scopes, _, [unbound]} <-
+           Enum.reduce(chapters, new_state(scopes), &eval_chapter(&1, &2, mod_name)),
+         # Force a check for unbound values. All symbols must be bound by
+         # the end of the program; thus the final chapter cannot introduce
+         # any unbound symbols.
+         :ok <- Env.check_unbound(scopes, unbound) do
+      {:ok, Enum.reverse(scopes)}
     end
   end
 
-  # Recursively evaluate any imported modules and bring the resulting
-  # scopes along.
-  defp handle_imports([{:module, _} | rest], asts, scopes, seen_mod_names),
-    do: handle_imports(rest, asts, scopes, seen_mod_names)
+  # Evaluate a single chapter:
+  # 1. evaluate the head
+  # 2. check for any unbound symbols in the head
+  # 3. evaluate the body
+  # 4. check for any unbound symbols from the *previous* chapter body (ie,
+  # which should have been defined in this chapter)
+  defp eval_chapter(_, {:error, _} = e, _), do: e
+
+  defp eval_chapter({:chapter, [head, body]}, state, mod_name) do
+    {state, header_unbounds, unbounds} =
+      new_state(state, mod_name)
+      |> eval_head(head)
+
+    with :ok <- Env.check_unbound(state, header_unbounds),
+         {state, [unbounds | rest]} <- eval_body(body, state, unbounds),
+         :ok <- Env.check_unbound(state, unbounds) do
+      {state, MapSet.new(), rest}
+    end
+  end
+
+  defp handle_imports(imports, available_asts),
+    do: handle_imports(imports, available_asts, [], MapSet.new())
 
   defp handle_imports(
-         [{:import, mod_name: mod_name} | rest],
+         [mod_name | rest],
          available_asts,
          scopes,
          seen_mod_names
@@ -132,101 +112,92 @@ defmodule Pantagruel.Eval do
         )
 
       {_, %{}} ->
-        raise MissingImportError, mod_name: mod_name
+        {:error, {:missing_import, mod_name}}
     end
   end
 
-  defp handle_imports(rest, _, scopes, _), do: {rest, scopes}
+  defp handle_imports([], _, scopes, _), do: {:ok, scopes}
+
+  defp eval_head(state, head), do: Enum.reduce(head, state, &eval_header_statement/2)
+
+  defp eval_body(body, state, unbounds),
+    do: Enum.reduce(body, {state, unbounds}, &eval_body_statement/2)
 
   # Include symbols in a set of values to check for binding.
-  @spec include_for_binding_check(MapSet.t(), any) :: MapSet.t()
-  defp include_for_binding_check(unbounds, {e, contents}) when is_container(e),
-    do: include_for_binding_check(unbounds, contents)
-
-  defp include_for_binding_check(unbounds, variables),
+  @spec include_for_binding_check(any, MapSet.t()) :: MapSet.t()
+  defp include_for_binding_check(variables, unbounds) when is_list(variables),
     do: MapSet.union(unbounds, variables |> MapSet.new())
 
-  # Evaluate the statement types ("declarations") found in section
-  # headers. Header statements come in three forms:
+  defp include_for_binding_check(variables, unbounds),
+    do: MapSet.union(unbounds, [variables] |> MapSet.new())
+
+  # Evaluate the statement types found in chapter headers. Header statements
+  # come in three forms:
   # 1. Comments, which are ignored;
   defp eval_header_statement({:comment, _}, state), do: state
   # 2. Domain aliases, which bind symbols as aliases to concrete domains;
   defp eval_header_statement(
-         {:alias, [alias_name: alias_names, alias_expr: alias_exp]},
+         {:alias, [alias_names, alias_exp]},
          {[scope | scopes], header_unbounds, unbounds}
        ) do
-    scope =
-      alias_names
-      |> Enum.reduce(scope, fn name, scope ->
-        Env.bind(scope, name, %Domain{name: name, ref: alias_exp})
-      end)
-
-    header_unbounds = include_for_binding_check(header_unbounds, [alias_exp])
+    scope = Enum.reduce(alias_names, scope, &Env.bind(&2, &1, %Domain{name: &1, ref: alias_exp}))
+    header_unbounds = include_for_binding_check([alias_exp], header_unbounds)
     {[scope | scopes], header_unbounds, unbounds}
   end
 
   # 3. Function declarations, which bind new functions into scope.
-  defp eval_header_statement({:decl, declaration}, {[scope | scopes], header_unbounds, unbounds}) do
-    scope = Env.bind_lambda(scope, declaration)
-    # Check for binding: domain, predicate, and codomain.
-    symbols =
-      [
-        # Replace a nil codomain with a dummy value that will always pass.
-        declaration[:lambda_codomain] || 0
-        | List.flatten(declaration[:predicate] || [])
-      ]
-      |> Enum.concat(declaration[:lambda_doms] || [])
+  defp eval_header_statement(
+         {:decl, [_, bindings, _, codomain] = decl},
+         {[scope | scopes], header_unbounds, unbounds}
+       ) do
+    {binding_pairs, variable_references} = Env.extract_binding_symbols(bindings)
+    scopes = [Env.bind_lambda(scope, decl) | scopes]
+    {_, doms} = Enum.unzip(binding_pairs)
 
-    header_unbounds = include_for_binding_check(header_unbounds, symbols)
+    header_unbounds =
+      [doms, variable_references, codomain]
+      |> List.flatten()
+      # Check for binding: domain, predicate, and codomain.
+      |> include_for_binding_check(header_unbounds)
 
-    {[scope | scopes], header_unbounds, unbounds}
+    {scopes, header_unbounds, unbounds}
   end
 
-  # Evaluate a line of a section body. Body statements can be either
+  # Evaluate a line of a chapter body. Body statements can be either
   # comments, which are ignored, or expression statements.
+  # 1. Comments, which are ignored;
   defp eval_body_statement({:comment, _}, state), do: state
-  defp eval_body_statement({:expr, line}, state), do: eval_expression(line, state)
 
-  defp eval_expression(expression, {
+  # 2. Expressions;
+  defp eval_body_statement({:expr, [_, expr]}, {
          [scope | scopes],
          [unbounds, next_unbounds | rest]
        }) do
-    elements =
-      case expression do
-        [refinement: refinement] ->
-          [refinement[:pattern], refinement[:guard], refinement[:expr]] |> Enum.filter(& &1)
-
-        e ->
-          e
-      end
-
     # Include any introduced symbols into scope.
-    scope = Enum.reduce(elements, scope, &bind_expression_variables/2)
-    # Include all symbols into the binding check for the *next* section.
-    next_unbounds = include_for_binding_check(next_unbounds, elements)
+    scope = Env.bind_expression_variables(scope, expr)
+    # Include all symbols into the binding check for the *next* chapter.
+    next_unbounds = include_for_binding_check(expr, next_unbounds)
 
     {[scope | scopes], [unbounds, next_unbounds | rest]}
   end
 
-  # Existence quantifiers don't just introduce variables for the scope of
-  # their predicates; the introduce variables into global scope.
-  defp bind_expression_variables(
-         {:quantification, quantifier: :exists, quant_bindings: bindings, quant_expression: expr},
-         state
-       ) do
-    bound =
-      bindings
-      |> Enum.reduce(state, fn {:binding, [bind_symbol: x, bind_op: _, bind_domain: domain]}, s ->
-        Env.bind(s, x, domain)
-      end)
+  # 3. Refinements, which are guarded patterns with refining expressions.
+  defp eval_body_statement({:refinement, [_, _, expr]} = r, {
+         [scope | scopes],
+         [unbounds, next_unbounds | rest]
+       }) do
+    # Include any introduced symbols into scope.
+    scope = Env.bind_expression_variables(scope, expr)
+    # Include all symbols into the binding check for the *next* chapter.
+    next_unbounds = include_for_binding_check(r, next_unbounds)
 
-    bind_expression_variables(expr, bound)
+    {[scope | scopes], [unbounds, next_unbounds | rest]}
   end
 
-  # In this respect they're unique among expression types.
-  defp bind_expression_variables(_, state), do: state
-  # Extend the environment for a new section.
-  @spec new_state(t, :atom | nil) :: t
+  # Extend the environment for a new chapter.
+  @spec new_state(t, atom() | nil) :: t
+  defp new_state(scopes), do: {scopes, MapSet.new(), [MapSet.new()]}
+
   defp new_state({scopes, header_unbounds, unbounds}, mod_name) do
     scope = if(is_nil(mod_name), do: %{}, else: %{__module__: %Module{name: mod_name}})
     {[scope | scopes], header_unbounds, unbounds ++ [MapSet.new()]}

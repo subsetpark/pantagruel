@@ -2,7 +2,7 @@ defmodule Pantagruel do
   import IO, only: [puts: 1]
   import Pantagruel.Format
 
-  alias Pantagruel.{Scan, Parse, Eval}
+  alias Pantagruel.{Eval, Parse, Bool}
 
   @moduledoc """
   An interpreter for the Pantagruel language.
@@ -25,8 +25,8 @@ defmodule Pantagruel do
   def main(args) do
     args
     |> OptionParser.parse(
-      aliases: [s: :scopes, p: :path],
-      strict: [scopes: :boolean, path: :keep]
+      aliases: [s: :scopes, p: :path, r: :shell],
+      strict: [scopes: :boolean, path: :keep, shell: :boolean]
     )
     |> handle
   end
@@ -34,14 +34,28 @@ defmodule Pantagruel do
   defp handle({flags, [filename], _}) do
     filename
     |> File.read!()
-    |> Scan.scan()
-    |> Parse.program()
+    |> Pantagruel.Scan.scan()
+    |> :pant_lexer.string()
+    |> Parse.handle_lex()
     |> handle_parse(flags)
   end
 
   defp handle({_, _, _}), do: IO.puts(@help)
 
-  defp handle_parse({:ok, parsed, "", %{}, _, _}, flags) do
+  defp handle_parse({:error, {line, module, message}}, _) do
+    IO.puts("Line #{line}: syntax error.")
+    message |> module.format_error() |> IO.puts()
+  end
+
+  defp handle_parse({:ok, []}, _), do: puts("No Pantagruel source found.")
+
+  defp handle_parse({:ok, parsed}, shell: true) do
+    Bool.Convert.convert(parsed)
+    |> format_lifted()
+    |> puts
+  end
+
+  defp handle_parse({:ok, parsed}, flags) do
     # Paths to additional .pant file hierarchies can be passed in with
     # the :path flag. The default path will also always be checked.
     [@default_path | Keyword.get_values(flags, :path)]
@@ -56,57 +70,29 @@ defmodule Pantagruel do
     end
   end
 
-  defp handle_parse({:ok, [], _, _, {_, _}, _}, _), do: puts("No Pantagruel source found.")
-
-  defp handle_parse({:ok, parsed, rest, _, {row, col}, _}, _) do
-    parsed =
-      Enum.reverse(parsed)
-      |> hd()
-      |> format_section()
-
-    rest = String.trim(rest)
-
-    """
-    #{row}:#{col}: Parse error.
-
-    Parsed:
-    #{parsed}
-
-    Remaining:
-    #{rest}
-    """
-    |> puts
-  end
-
   defp handle_eval({:ok, scope}, _, scopes: true), do: format_scopes(scope) |> puts
   defp handle_eval({:ok, _}, parsed, _), do: format_program(parsed) |> puts
 
-  defp handle_eval({:error, {tag, e}}, parsed, _) do
-    IO.puts "Eval error."
-    handle_error(tag, e)
+  defp handle_eval({:error, e}, parsed, _) do
+    IO.puts("Eval error.")
+    handle_error(e)
     puts_in_error_handling(parsed)
   end
 
-  defp handle_error(:unbound_variables, e) do
+  defp handle_error({:unbound_variables, unbounds, scopes}) do
     puts("Unbound variables:")
-    Enum.each(e.unbound, &puts("- #{format_exp(&1, e.scopes)}"))
+    Enum.each(unbounds, &puts("- #{format_error(&1, scopes)}"))
 
-    e.unbound
+    unbounds
     |> Enum.filter(&match?({:quantification, _}, &1))
     |> handle_bad_bindings
   end
 
-  defp handle_error(:domain_mismatch, e) do
-    puts("Could not match arguments with domains:")
-    IO.inspect(e.args, label: "Arguments")
-    IO.inspect(e.doms, label: "Domains")
-  end
-
-  defp handle_error(:missing_import, e) do
+  defp handle_error({:missing_import, e}) do
     puts("Imported module could not be found: #{e.mod_name}")
   end
 
-  defp handle_error(:module_shadow, e) do
+  defp handle_error({:module_shadow, e}) do
     puts("Attempted to redfine defined module: #{e.mod_name}")
   end
 
@@ -116,13 +102,8 @@ defmodule Pantagruel do
 
   defp handle_bad_bindings(quantifiers) do
     quantifiers
-    |> Enum.each(fn {
-                      :quantification,
-                      quantifier: _, quant_bindings: bindings, quant_expression: exp
-                    } ->
-      exp_str =
-        {:quantification, quantifier: "…", quant_bindings: bindings, quant_expression: exp}
-        |> format_exp([])
+    |> Enum.each(fn {:quantification, [_, bindings, exp]} ->
+      exp_str = {:quantification, ["…", bindings, exp]} |> format_error([])
 
       """
       Expected binding form. Found:
