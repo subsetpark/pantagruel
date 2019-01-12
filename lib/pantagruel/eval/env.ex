@@ -54,60 +54,43 @@ defmodule Pantagruel.Env do
   @doc """
   Introduce a new variable into this scope.
   """
-  @spec bind(scope, any(), any()) :: scope
-  def bind(scope, {:par, elements}, value) do
-    Enum.reduce(elements, scope, &bind(&2, &1, value))
-  end
-
-  def bind(scope, name, value) do
-    to_put = make_variable(name, value)
-    Map.put(scope, name, to_put)
-  end
-
   def bind(scope, {name, value}), do: bind(scope, name, value)
 
+  @spec bind(scope, any(), any()) :: scope
+  def bind(scope, {:par, elements}, value), do: Enum.reduce(elements, scope, &bind(&2, &1, value))
+
+  def bind(scope, name, value), do: Map.put(scope, name, name |> make_variable(value))
+
   @spec bind_lambda(scope, Keyword.t()) :: scope
-  def bind_lambda(scope, [symbol, bindings, yield_type, codomain]) do
-    {binding_pairs, _} =
-      bindings
-      |> Enum.reduce({[], []}, &extract_binding_symbols/2)
+  def bind_lambda(scope \\ %{}, [symbol, bindings, yield_type, codomain]) do
+    lambda_value = Lambda.from_declaration([symbol, bindings, yield_type, codomain])
+    {binding_pairs, _} = extract_binding_symbols(bindings)
 
     # Introduce any generic domains into the scope.
     scope =
       binding_pairs
-      |> Enum.map(&elem(&1, 1))
-      |> Enum.flat_map(&Domain.flatten_domain/1)
-      |> Enum.filter(&Domain.is_generic?/1)
-      |> Enum.reduce(scope, fn domain, scope ->
-        bind(scope, domain, %Domain{name: domain, ref: domain})
-      end)
-
-    # If this is a type constructor, bind the codomain of the function.
-    scope = bind_codomain(yield_type, scope, codomain)
+      |> Stream.map(&elem(&1, 1))
+      |> Stream.flat_map(&Domain.flatten_domain/1)
+      |> Stream.filter(&Domain.is_generic?/1)
+      |> Enum.reduce(scope, &bind(&2, &1, %Domain{name: &1, ref: &1}))
+      # If this is a type constructor, bind the codomain of the function.
+      |> bind_codomain(yield_type, codomain)
 
     binding_pairs
-    |> Enum.reduce(scope, fn {var, dom}, env ->
-      env
-      |> bind(var, dom)
-    end)
-    |> bind(symbol, Lambda.from_declaration([symbol, bindings, yield_type, codomain]))
+    |> Enum.reduce(scope, fn {var, dom}, env -> bind(env, var, dom) end)
+    |> bind(symbol, lambda_value)
   end
 
   # Existence quantifiers don't just introduce variables for the scope of
   # their predicates; the introduce variables into global scope.
-  def bind_expression_variables(
-        {:quantification, [:exists, bindings, expr]},
-        scope
-      ) do
-    bound =
-      bindings
-      |> Enum.reduce(scope, &bind_binding/2)
-
-    bind_expression_variables(expr, bound)
+  def bind_expression_variables(scope, {:quantification, [:exists, bindings, expr]}) do
+    bindings
+    |> Enum.reduce(scope, &bind_binding/2)
+    |> bind_expression_variables(expr)
   end
 
   # In this respect they're unique among expression types.
-  def bind_expression_variables(_, state), do: state
+  def bind_expression_variables(state, _), do: state
   # Recursively evaluate any imported modules and bring the resulting
   # scopes along.
   @doc """
@@ -115,9 +98,8 @@ defmodule Pantagruel.Env do
   it was bound under.
   """
   @spec lookup_binding_name(any) :: String.t()
-  def lookup_binding_name(symbol) when is_list(symbol) do
-    Enum.map(symbol, &lookup_binding_name/1)
-  end
+  def lookup_binding_name(symbol) when is_list(symbol),
+    do: Enum.map(symbol, &lookup_binding_name/1)
 
   def lookup_binding_name({:symbol, s} = symbol), do: do_lookup(symbol, s)
   def lookup_binding_name(symbol), do: do_lookup(symbol, symbol)
@@ -151,7 +133,7 @@ defmodule Pantagruel.Env do
   def is_bound?({:cont, [_, contents]}, scope), do: is_bound?(contents, scope)
 
   def is_bound?({:refinement, [_, guard, _] = r}, scope) do
-    new_scope = bind_expression_variables(guard, %{})
+    new_scope = bind_expression_variables(%{}, guard)
     scope = [new_scope | scope]
 
     List.flatten(r)
@@ -161,7 +143,7 @@ defmodule Pantagruel.Env do
   def is_bound?({:lambda, lambda}, scope) do
     # Lambdas introduce function arguments. Therefore they are bound in
     # (and only in) the recursive boundness check.
-    scope = [bind_lambda(%{}, [nil | lambda]) | scope]
+    scope = [bind_lambda([nil | lambda]) | scope]
 
     lambda
     |> List.flatten()
@@ -199,10 +181,8 @@ defmodule Pantagruel.Env do
     do: is_bound?(expr, scopes)
 
   def is_bound?({:symbol, variable}, [scope | parent]) do
-    symbol =
-      {:symbol,
-       variable
-       |> :string.trim(:both, '\'')}
+    trimmed = :string.trim(variable, :both, '\'')
+    symbol = {:symbol, trimmed}
 
     has_key?(scope, symbol) or is_bound?(symbol, parent)
   end
@@ -221,41 +201,50 @@ defmodule Pantagruel.Env do
   defp make_variable(_, %{} = v), do: v
   defp make_variable(name, domain), do: %Variable{name: name, domain: domain}
 
-  defp bind_codomain('=>', scope, codomain) do
-    bind(scope, codomain, %Domain{name: codomain, ref: codomain})
-  end
+  defp bind_codomain(scope, '=>', codomain),
+    do: bind(scope, codomain, %Domain{name: codomain, ref: codomain})
 
-  defp bind_codomain(_, scope, _), do: scope
+  defp bind_codomain(scope, _, _), do: scope
 
   # Process some temporary bindings and check for boundness, without
   # those bindings being valid outside of this context.
   defp check_with_bindings(expr, bindings, scopes) do
-    {binding_pairs, variable_references} =
-      bindings
-      |> Enum.reduce({[], []}, &extract_binding_symbols/2)
+    {binding_pairs, variable_references} = extract_binding_symbols(bindings)
 
     # Bind the extracted symbols.
-    inner_scope =
-      binding_pairs
-      |> Enum.reduce(%{}, &bind(&2, &1))
-
+    inner_scope = Enum.reduce(binding_pairs, %{}, &bind(&2, &1))
     scopes = [inner_scope | scopes]
 
     # Check the extract domains, as well as the expression itself.
-    for({_, d} <- binding_pairs, do: d)
-    |> Enum.concat(variable_references)
+    binding_pairs
+    |> Stream.map(&elem(&1, 1))
+    |> Stream.concat(variable_references)
     |> Enum.all?(&is_bound?(&1, scopes)) && is_bound?(expr, scopes)
   end
 
+  def args_and_domains(bindings) do
+    {binding_pairs, _} =
+      bindings
+      |> Enum.reverse()
+      |> extract_binding_symbols()
+
+    Enum.unzip(binding_pairs)
+  end
+
   # Given a binding pattern, return the symbol being bound.
-  def extract_binding_symbols(
-        {:binding, [x, domain]},
-        {binding_pairs, symbol_references}
-      ) do
+  def extract_binding_symbols(bindings) do
+    bindings
+    |> Enum.reduce({[], []}, &extract_binding_symbols/2)
+  end
+
+  defp extract_binding_symbols(
+         {:binding, [x, domain]},
+         {binding_pairs, symbol_references}
+       ) do
     {unbunch(x, domain) ++ binding_pairs, symbol_references}
   end
 
-  def extract_binding_symbols({:guard, exprs}, {pairs, symbol_references}) do
+  defp extract_binding_symbols({:guard, exprs}, {pairs, symbol_references}) do
     {pairs, [exprs | symbol_references]}
   end
 

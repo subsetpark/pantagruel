@@ -13,6 +13,7 @@ defmodule Pantagruel.Values.Lambda do
   their codomain into scope; functions must have their codomains defined
   elsewhere.
   """
+  alias Pantagruel.Env
   defstruct name: "", domain: [], codomain: nil, type: nil
 
   @doc """
@@ -21,12 +22,11 @@ defmodule Pantagruel.Values.Lambda do
   def from_declaration(decl, doms \\ nil)
 
   def from_declaration([symbol, bindings, yield_type, codomain], doms) do
-    {binding_pairs, _} =
-      bindings
-      |> Enum.reverse()
-      |> Enum.reduce({[], []}, &Pantagruel.Env.extract_binding_symbols/2)
-
-    doms = Enum.map(binding_pairs, &elem(&1, 1))
+    doms =
+      case doms do
+        nil -> Env.args_and_domains(bindings) |> elem(1)
+        _ -> doms
+      end
 
     %__MODULE__{
       name: symbol,

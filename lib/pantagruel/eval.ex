@@ -56,16 +56,12 @@ defmodule Pantagruel.Eval do
         {name, _} -> name
       end
 
-    with {:ok, scopes} <- handle_imports(imports, available_asts, [], MapSet.new()),
+    with {:ok, scopes} <- handle_imports(imports, available_asts),
          {scopes, _, [unbound]} <-
-           Enum.reduce(
-             chapters,
-             {scopes, MapSet.new(), [MapSet.new()]},
-             &eval_chapter(&1, &2, mod_name)
-           ),
-         # Force a check for unbound values. All symbols must be bound by the
-         # end of the program; thus the final chapter cannot introduce any
-         # unbound symbols.
+           Enum.reduce(chapters, new_state(scopes), &eval_chapter(&1, &2, mod_name)),
+         # Force a check for unbound values. All symbols must be bound by
+         # the end of the program; thus the final chapter cannot introduce
+         # any unbound symbols.
          :ok <- Env.check_unbound(scopes, unbound) do
       {:ok, Enum.reverse(scopes)}
     end
@@ -90,6 +86,9 @@ defmodule Pantagruel.Eval do
       {state, MapSet.new(), rest}
     end
   end
+
+  defp handle_imports(imports, available_asts),
+    do: handle_imports(imports, available_asts, [], MapSet.new())
 
   defp handle_imports(
          [mod_name | rest],
@@ -126,9 +125,8 @@ defmodule Pantagruel.Eval do
 
   # Include symbols in a set of values to check for binding.
   @spec include_for_binding_check(any, MapSet.t()) :: MapSet.t()
-  defp include_for_binding_check(variables, unbounds) when is_list(variables) do
-    MapSet.union(unbounds, variables |> MapSet.new())
-  end
+  defp include_for_binding_check(variables, unbounds) when is_list(variables),
+    do: MapSet.union(unbounds, variables |> MapSet.new())
 
   defp include_for_binding_check(variables, unbounds),
     do: MapSet.union(unbounds, [variables] |> MapSet.new())
@@ -142,16 +140,8 @@ defmodule Pantagruel.Eval do
          {:alias, [alias_names, alias_exp]},
          {[scope | scopes], header_unbounds, unbounds}
        ) do
-    scope =
-      alias_names
-      |> Enum.reduce(scope, fn name, scope ->
-        Env.bind(scope, name, %Domain{name: name, ref: alias_exp})
-      end)
-
-    header_unbounds =
-      [alias_exp]
-      |> include_for_binding_check(header_unbounds)
-
+    scope = Enum.reduce(alias_names, scope, &Env.bind(&2, &1, %Domain{name: &1, ref: alias_exp}))
+    header_unbounds = include_for_binding_check([alias_exp], header_unbounds)
     {[scope | scopes], header_unbounds, unbounds}
   end
 
@@ -160,20 +150,17 @@ defmodule Pantagruel.Eval do
          {:decl, [_, bindings, _, codomain] = decl},
          {[scope | scopes], header_unbounds, unbounds}
        ) do
-    scope = Env.bind_lambda(scope, decl)
-    # Check for binding: domain, predicate, and codomain.
-    {binding_pairs, variable_references} =
-      bindings
-      |> Enum.reduce({[], []}, &Env.extract_binding_symbols/2)
-
-    doms = Enum.map(binding_pairs, &elem(&1, 1))
+    {binding_pairs, variable_references} = Env.extract_binding_symbols(bindings)
+    scopes = [Env.bind_lambda(scope, decl) | scopes]
+    {_, doms} = Enum.unzip(binding_pairs)
 
     header_unbounds =
       [doms, variable_references, codomain]
       |> List.flatten()
+      # Check for binding: domain, predicate, and codomain.
       |> include_for_binding_check(header_unbounds)
 
-    {[scope | scopes], header_unbounds, unbounds}
+    {scopes, header_unbounds, unbounds}
   end
 
   # Evaluate a line of a chapter body. Body statements can be either
@@ -187,7 +174,7 @@ defmodule Pantagruel.Eval do
          [unbounds, next_unbounds | rest]
        }) do
     # Include any introduced symbols into scope.
-    scope = Env.bind_expression_variables(expr, scope)
+    scope = Env.bind_expression_variables(scope, expr)
     # Include all symbols into the binding check for the *next* chapter.
     next_unbounds = include_for_binding_check(expr, next_unbounds)
 
@@ -200,7 +187,7 @@ defmodule Pantagruel.Eval do
          [unbounds, next_unbounds | rest]
        }) do
     # Include any introduced symbols into scope.
-    scope = Env.bind_expression_variables(expr, scope)
+    scope = Env.bind_expression_variables(scope, expr)
     # Include all symbols into the binding check for the *next* chapter.
     next_unbounds = include_for_binding_check(r, next_unbounds)
 
@@ -208,7 +195,11 @@ defmodule Pantagruel.Eval do
   end
 
   # Extend the environment for a new chapter.
-  @spec new_state(t, :atom | nil) :: t
+  @spec new_state(t, atom() | nil) :: t
+  defp new_state(scopes) do
+    {scopes, MapSet.new(), [MapSet.new()]}
+  end
+
   defp new_state({scopes, header_unbounds, unbounds}, mod_name) do
     scope = if(is_nil(mod_name), do: %{}, else: %{__module__: %Module{name: mod_name}})
     {[scope | scopes], header_unbounds, unbounds ++ [MapSet.new()]}

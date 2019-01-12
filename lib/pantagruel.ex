@@ -32,13 +32,12 @@ defmodule Pantagruel do
   end
 
   defp handle({flags, [filename], _}) do
-    tree =
-      filename
-      |> File.read!()
-      |> Pantagruel.Scan.scan()
-      |> :pant_lexer.string()
-      |> Parse.handle_lex()
-      |> handle_parse(flags)
+    filename
+    |> File.read!()
+    |> Pantagruel.Scan.scan()
+    |> :pant_lexer.string()
+    |> Parse.handle_lex()
+    |> handle_parse(flags)
   end
 
   defp handle({_, _, _}), do: IO.puts(@help)

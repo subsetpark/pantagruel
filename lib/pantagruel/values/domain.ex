@@ -1,4 +1,6 @@
 defmodule Pantagruel.Values.Domain do
+  alias Pantagruel.Env
+
   @moduledoc """
   A domain in an evaluated Pantagruel program, with a name and whatever
   domain it is an alias for (or itself, otherwise).
@@ -20,12 +22,9 @@ defmodule Pantagruel.Values.Domain do
   def flatten_domain({:cont, [_, items]}), do: items
 
   def flatten_domain({:lambda, [bindings, _, _]}) do
-    {binding_pairs, _} =
-      bindings
-      |> Enum.reduce({[], []}, &Pantagruel.Env.extract_binding_symbols/2)
+    {_, doms} = Env.args_and_domains(bindings)
 
-    binding_pairs
-    |> Enum.map(&elem(&1, 1))
+    doms
     |> flatten_domain()
   end
 
