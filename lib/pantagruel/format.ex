@@ -22,7 +22,7 @@ defmodule Pantagruel.Format do
       format_imports(imports),
       format_chapters(chapters)
     ]
-    |> Enum.reject(& &1 == "")
+    |> Stream.reject(&(&1 == ""))
     |> Enum.join("\n\n")
   end
 
@@ -36,7 +36,7 @@ defmodule Pantagruel.Format do
 
   defp format_with(data, f) do
     data
-    |> Enum.map(f)
+    |> Stream.map(f)
     |> Enum.join("\n\n#{@bar}\n\n")
   end
 
@@ -49,7 +49,7 @@ defmodule Pantagruel.Format do
 
   def format_imports(imports) do
     imports
-    |> Enum.map(&format_import/1)
+    |> Stream.map(&format_import/1)
     |> Enum.join("\n")
   end
 
@@ -86,8 +86,7 @@ defmodule Pantagruel.Format do
     bind = join_exp(bindings, s, ", ")
     exp = format_exp(exp, s)
 
-    [q, bind, "⸳", exp]
-    |> Enum.join(" ")
+    Enum.join([q, bind, "⸳", exp], " ")
   end
 
   def format_exp({:comprehension, [bindings, exp]}, s) do
@@ -112,8 +111,8 @@ defmodule Pantagruel.Format do
 
   defp format_chapter({:chapter, [head, body]}) do
     [head, body]
-    |> Enum.reject(& &1 == [])
-    |> Enum.intersperse([:sep])
+    |> Stream.reject(&(&1 == []))
+    |> Stream.intersperse([:sep])
     |> Stream.concat()
     # For now, assume we want markdown compatibility.
     |> Stream.map(&(format_line(&1) <> "  "))
@@ -122,7 +121,13 @@ defmodule Pantagruel.Format do
 
   # Format the contents of the environment after program evaluation.
   defp format_scope(scope) do
-    sort = fn
+    scope
+    |> Map.values()
+    |> Stream.filter(fn
+      %Domain{name: name, ref: ref} -> ref != name
+      _ -> true
+    end)
+    |> Enum.sort(fn
       %Module{}, _ -> true
       %Domain{}, %Lambda{} -> true
       %Domain{}, %Variable{} -> true
@@ -133,22 +138,14 @@ defmodule Pantagruel.Format do
       %Domain{ref: a}, %Domain{ref: b} -> a <= b
       %{__struct__: t, name: a}, %{__struct__: t, name: b} -> a <= b
       _, _ -> false
-    end
-
-    scope
-    |> Map.values()
-    |> Enum.filter(fn
-      %Domain{name: name, ref: ref} -> ref != name
-      _ -> true
     end)
-    |> Enum.sort(sort)
     |> Enum.map(&format_exp/1)
     |> Enum.join("\n")
   end
 
   defp join_exp(exps, s, sep \\ "") do
     exps
-    |> Enum.map(&format_exp(&1, s))
+    |> Stream.map(&format_exp(&1, s))
     |> Enum.join(sep)
   end
 
@@ -181,9 +178,9 @@ defmodule Pantagruel.Format do
   end
 
   defp format_line({:refinement, [pattern, guard, exp]}, scope \\ []) do
-    pat = pattern |> format_exp(scope)
-    guard = guard |> format_guard(scope)
-    exp = exp |> format_exp(scope)
+    pat = format_exp(pattern, scope)
+    guard = format_guard(guard, scope)
+    exp = format_exp(exp, scope)
 
     "#{pat}#{guard} ← #{exp}"
   end
@@ -215,8 +212,7 @@ defmodule Pantagruel.Format do
     {l, r} = delimiters(c)
     inner_str = join_exp(exps, s, ",")
 
-    [l, inner_str, r]
-    |> Enum.join()
+    Enum.join([l, inner_str, r])
   end
 
   @spec format_lambda(nil | Keyword.t() | map, keyword) :: t
@@ -237,7 +233,7 @@ defmodule Pantagruel.Format do
     codom = format_exp(codomain, scope)
 
     [prefix, body, yields, codom]
-    |> Enum.reject(& &1 == "")
+    |> Enum.reject(&(&1 == ""))
     |> Enum.join(" ")
   end
 

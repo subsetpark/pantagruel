@@ -50,7 +50,7 @@ defmodule Pantagruel do
   defp handle_parse({:ok, []}, _), do: puts("No Pantagruel source found.")
 
   defp handle_parse({:ok, parsed}, shell: true) do
-    Bool.Lift.lift_term(parsed)
+    Bool.Convert.convert(parsed)
     |> format_lifted()
     |> puts
   end

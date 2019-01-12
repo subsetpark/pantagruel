@@ -1,5 +1,5 @@
 defmodule LifterTest do
-  alias Pantagruel.Bool.{Lift, Slurp}
+  alias Pantagruel.Bool.{Convert, Slurp}
   use ExUnit.Case
 
   describe "lift" do
@@ -10,16 +10,16 @@ defmodule LifterTest do
         """
         |> tryp()
 
-      assert tree == Lift.lift_term(tree)
+      assert tree == Convert.convert(tree)
     end
 
-    test "Lift expr" do
+    test "Convert expr" do
       tree =
         """
         f x and y
         """
         |> tryp()
-        |> Lift.lift_term()
+        |> Convert.convert()
 
       assert {:program,
               [
@@ -80,7 +80,7 @@ defmodule LifterTest do
         and `ok
         """
         |> tryp()
-        |> Lift.lift_term()
+        |> Convert.convert()
         |> Slurp.slurp()
         |> BoolAlg.assert(1)
 
@@ -106,7 +106,7 @@ defmodule LifterTest do
         and `ok
         """
         |> tryp()
-        |> Lift.lift_term()
+        |> Convert.convert()
         |> Slurp.slurp()
         |> BoolAlg.assert(1)
         |> Pantagruel.Format.format_program()
@@ -123,7 +123,7 @@ defmodule LifterTest do
         and `ok
         """
         |> tryp()
-        |> Lift.lift_term()
+        |> Convert.convert()
         |> Slurp.slurp()
         |> BoolAlg.assert({:literal, 'ok'})
         |> Pantagruel.Format.format_program()
