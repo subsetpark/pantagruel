@@ -3,7 +3,7 @@ defmodule Pantagruel.Format do
   Takes an evaluated Pantagruel program and generates a formatted text
   representation of it.
   """
-  import Pantagruel.Guards
+  import BoolAlg, only: [is_relation: 1]
   alias Pantagruel.Values.{Domain, Variable, Lambda}
   alias Pantagruel.Env
   alias Pantagruel.Eval.Module

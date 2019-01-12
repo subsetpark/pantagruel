@@ -13,6 +13,7 @@ defmodule BoolAlg do
     ]
 
   defstruct op: nil, x: nil, y: nil
+  defguard is_relation(r) when r in [:conj, :disj, :impl, :iff, :xor]
 
   @doc """
   Conjunction.
