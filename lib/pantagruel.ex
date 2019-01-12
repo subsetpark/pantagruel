@@ -102,13 +102,8 @@ defmodule Pantagruel do
 
   defp handle_bad_bindings(quantifiers) do
     quantifiers
-    |> Enum.each(fn {
-                      :quantification,
-                      quantifier: _, bindings: bindings, expr: exp
-                    } ->
-      exp_str =
-        {:quantification, quantifier: "…", bindings: bindings, expr: exp}
-        |> format_error([])
+    |> Enum.each(fn {:quantification, [_, bindings, exp]} ->
+      exp_str = {:quantification, ["…", bindings, exp]} |> format_error([])
 
       """
       Expected binding form. Found:

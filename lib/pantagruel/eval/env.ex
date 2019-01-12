@@ -249,6 +249,7 @@ defmodule Pantagruel.Env do
   end
 
   defp bind_binding({:binding, [x, d]}, s), do: bind(s, x, d)
+  defp bind_binding(_, s), do: s
 
   defp unbunch({:cont, [:par, elements]}, domain), do: for(e <- elements, do: {e, domain})
 
