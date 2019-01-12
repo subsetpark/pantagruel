@@ -35,4 +35,4 @@ all (j,k):X \ j > k
 
 x y:Real, y = 1 :: `ok
 ---
-z x \ x > 1 <- 0
+z x, x > 1 <- 0

@@ -2,12 +2,12 @@
 
 Here's a specification, in Pantagruel, of Pantagruel's binding rules.
 ```pantagruel
-eval (p: Program) :: Bool
+eval p: Program :: Bool
 Program <= [Section]
 
 " A section head must have at least one statement; a section body can be empty.
 
-section (head, body: Head, Body \ #head > 0 ) => Section
+section head:Head, body:Body, #head > 0 => Section
 
 Head <= [Comment, Declaration, Alias]
 Body <= [Comment, Expression]
