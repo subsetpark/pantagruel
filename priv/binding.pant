@@ -1,9 +1,9 @@
-eval (p: Program) :: Bool
+eval p: Program :: Bool
 Program <= [Section]
 
 " A section head must have at least one statement; a section body can be empty.
 
-section (head, body: Head, Body \ #head > 0 ) => Section
+section head: Head, body: Body, #head > 0 => Section
 
 Head <= [Comment, Declaration, Alias]
 Body <= [Comment, Expression]
@@ -14,7 +14,7 @@ eval p <- all sect : p \ is_bound? sect
 
 ;
 
-is_bound? (sect: Section) :: Bool
+is_bound? sect: Section :: Bool
 ---
 
 " All variables referred to in a section head must be defined by the
@@ -28,12 +28,12 @@ is_bound? sect <-                                           ...
 
 ;
 
-is_bound (sym: String) :: Bool
+is_bound sym: String :: Bool
 ---
-is_bound sym <- (sym from env p (p sect)) or (sym from init_scope)
+is_bound sym <- (sym in env p (p sect)) or (sym in init_scope)
 
 ;
 
-env (p: Program) :: [Scope]
-init_scope() :: Scope
+env p: Program :: [Scope]
+init_scope :: Scope
 Scope <= {String}

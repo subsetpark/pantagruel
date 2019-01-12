@@ -1,9 +1,10 @@
 defmodule Pantagruel.Values.Domain do
+  alias Pantagruel.Env
+
   @moduledoc """
   A domain in an evaluated Pantagruel program, with a name and whatever
   domain it is an alias for (or itself, otherwise).
   """
-  import Pantagruel.Guards
   defstruct(name: "", ref: "")
 
   @doc """
@@ -18,10 +19,12 @@ defmodule Pantagruel.Values.Domain do
   Flatten nested or composite domains to retrieve the basic domains they
   are composed of.
   """
-  def flatten_domain({e, items}) when is_container(e), do: items
+  def flatten_domain({:cont, [_, items]}), do: items
 
-  def flatten_domain({:lambda, decl}) do
-    decl[:lambda_args][:doms]
+  def flatten_domain({:lambda, [bindings, _, _]}) do
+    {_, doms} = Env.args_and_domains(bindings)
+
+    doms
     |> flatten_domain()
   end
 

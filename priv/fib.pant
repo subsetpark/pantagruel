@@ -1,4 +1,4 @@
-fib (x : Nat) :: Nat
+fib x : Nat :: Nat
 " A specification for the fibonacci function.
 ---
 fib x <- fib x - 1 + fib x - 2
