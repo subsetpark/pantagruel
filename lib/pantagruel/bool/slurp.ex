@@ -2,6 +2,27 @@ defmodule Pantagruel.Bool.Slurp do
   @moduledoc """
   Logic to combine the lines of a Pantagruel program into a single Boolean
   expression.
+
+  refinement:
+  x, P <- y
+  x, Q <- z
+  x, R <- a
+
+  assume: P
+  ~Q and ~R and x <- y
+
+  assume: Q
+  ~P and ~R and x <- z
+
+  slurp: x, P <- y
+  (P xor Q) and (P xor R) and (P <-> (x <- y))
+  x <- (
+    P \ y,
+    Q \ z,
+    R \ a
+  )
+  x <- P \ y
+  x <- y
   """
   import Kernel, except: [&&: 2, ||: 2]
   import BoolAlg

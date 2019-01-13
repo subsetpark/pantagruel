@@ -40,6 +40,10 @@ function_application
 object_access
 quantification
 
+refinement
+guarded_refinements
+guarded_refinement
+
 maybe_term
 maybe_yield_type
 maybe_binding_or_guards
@@ -124,10 +128,7 @@ alias -> symbols reverse_yield expression : {alias, ['$1', '$3']}.
 body -> body_line : ['$1'].
 body -> body_line body : ['$1' | '$2'].
 
-body_line -> expression refined expression newline :
-    {refinement, ['$1', nil, '$3']}.
-body_line -> expression ',' expression refined expression newline :
-    {refinement, ['$1', '$3', '$5']}.
+body_line -> expression refined refinement newline : {refinement, ['$1', '$3']}.
 body_line -> a_comment newline : '$1'.
 body_line -> binary_operator expression newline : {expr, [unwrap('$1'), '$2']}.
 body_line -> expression newline : {expr, [nil, '$1']}.
@@ -215,6 +216,17 @@ container_contents -> expressions : '$1'.
 container_contents -> binding_or_guards '\\' expression :
     {comprehension, ['$1', '$3']}.
 
+refinement -> expression : [{refinement_exp, [nil, '$1']}].
+refinement -> guarded_refinement : ['$1'].
+refinement -> '(' guarded_refinements ')' : filter_skip_lines('$2').
+
+guarded_refinements -> guarded_refinement : ['$1'].
+guarded_refinements -> guarded_refinement guarded_refinements : ['$1' | '$2'].
+
+guarded_refinement -> newline : skip_line.
+guarded_refinement -> expression '\\' expression : {refinement_exp, ['$1', '$3']}.
+guarded_refinement -> expression '\\' expression ',' : {refinement_exp, ['$1', '$3']}.
+
 Erlang code.
 
 unwrap({comment, _, Symbol}) -> {comment, Symbol};
@@ -229,3 +241,8 @@ bare({symbol, _, Symbol}) -> Symbol.
 
 merge_comments({comment, Comment}, {comment, _, Comment2}) ->
     {comment, Comment ++ [16#f8ff] ++ Comment2}.
+
+filter_skip_lines(Symbols) -> lists:filter(fun empty_filter/1, Symbols).
+
+empty_filter(skip_line) -> false;
+empty_filter(_) -> true.
