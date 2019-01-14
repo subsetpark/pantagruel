@@ -24,49 +24,56 @@ defmodule Pantagruel.Bool.Slurp do
   x <- P \ y
   x <- y
   """
+  alias Pantagruel.Parse.Node
   import Kernel, except: [&&: 2, ||: 2]
   import BoolAlg
+  use Witchcraft
 
   @doc """
   Combine the lines of each chapter section in a program into single
   tree-expressions.
   """
-  def slurp({:program, [module, imports, chapters]}) do
-    chapters = Enum.map(chapters, &slurp/1) |> BoolAlg.reduce_all()
-    {:program, [module, imports, chapters]}
+  def slurp(%Node{type: :program, values: [module, imports, chapters]} = n) do
+    chapters = lift(chapters, &slurp/1) |> BoolAlg.reduce_all()
+    %{n | values: [module, imports, chapters]}
   end
 
   # Ingest successive lines into a single boolean expression. Expressions
   # beginning with `:or` are combined with a disjunction; other lines are
   # combined with a conjunction.
-  def slurp({:chapter, chapter}), do: {:chapter, Enum.map(chapter, &slurp/1)}
-  def slurp(section), do: [Enum.reduce(section, true, &slurp/2)]
-  def slurp({:expr, [:or, term]}, expression), do: expression || term
-  def slurp({:expr, [_, term]}, expression), do: expression && term
+  def slurp(%Node{type: :chapter} = n), do: lift(n, &slurp/1)
+  def slurp(section), do: right_fold(section, true, &slurp/2)
+  def slurp(%Node{type: :expr, values: [:or, term]}, expression), do: expression || term
+  def slurp(%Node{type: :expr, values: [_, term]}, expression), do: expression && term
 
-  def slurp({:refinement, [pattern, case_exps]}, expression) do
+  def slurp(%Node{type: :refinement, values: [pattern, case_exps]}, expression) do
     {case_disjunction, refinement_disjunction} =
-      Enum.reduce(case_exps, {false, false}, &slurp_case_exps(&1, &2, pattern))
+      right_fold(case_exps, {false, false}, &slurp_case_exps(&1, &2, pattern))
 
     expression && (case_disjunction && refinement_disjunction)
   end
 
   def slurp(term, expression), do: expression && term
 
-  defp slurp_case_exps({:case_exp, [nil, exp]}, acc, pattern),
-    do: slurp_case_exps({:case_exp, [true, exp]}, acc, pattern)
+  defp slurp_case_exps(%Node{type: :case_exp, values: [nil, exp]}, acc, pattern),
+    do: slurp_case_exps(%Node{type: :case_exp, values: [true, exp]}, acc, pattern)
 
-  defp slurp_case_exps({:case_exp, [the_case, exp]}, {case_disj, exp_disj}, pattern) do
+  defp slurp_case_exps(
+         %Node{type: :case_exp, values: [the_case, exp]},
+         {case_disj, exp_disj},
+         pattern
+       ) do
     case_disj = case_disj || the_case
     case_refinement = the_case && bare_refinement(pattern, exp)
     {case_disj, exp_disj || case_refinement}
   end
 
   defp bare_refinement(pattern, exp),
-    do:
-      {:refinement,
-       [
-         pattern,
-         [{:case_exp, [true, exp]}]
-       ]}
+    do: %Node{
+      type: :refinement,
+      values: [
+        pattern,
+        [%Node{type: :case_exp, values: [true, exp]}]
+      ]
+    }
 end

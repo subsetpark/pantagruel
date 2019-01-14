@@ -5,6 +5,7 @@ defmodule Pantagruel.Bool.Convert do
   nodes.
   """
   import BoolAlg
+  alias Pantagruel.Parse.Node
   use Witchcraft
 
   @doc """
@@ -17,17 +18,13 @@ defmodule Pantagruel.Bool.Convert do
   def convert(value) when is_atom(value), do: value
   def convert({:symbol, _} = s), do: s
 
-  def convert({tag, _} = t) when tag in [:un_appl, :bin_appl] do
-    t
+  def convert(%Node{type: tag} = n) when tag in [:un_appl, :bin_appl] do
+    n
     |> transform()
     |> lift(&convert/1)
   end
 
-  def convert({tag, arguments}) when is_list(arguments) do
-    {tag, lift(arguments, &convert/1)}
-  end
-
-  def convert({tag, argument}), do: {tag, convert(argument)}
+  def convert(%Node{} = n), do: lift(n, &convert/1)
   # Mappings between specific Pantagruel forms and their BoolAlg
   # equivalents.
   defp transform({_, [:or, x, y]}), do: disj(x, y)

@@ -80,9 +80,9 @@ Left 50 '\\'.
 %
 
 program -> module_line imports chapters :
-    {program, ['$1', '$2', '$3']}.
-program -> '$empty' : {program, [nil, [], []]}.
-program -> newline : {program, [nil, [], []]}.
+    ast_node({program, ['$1', '$2', '$3']}).
+program -> '$empty' : ast_node({program, [nil, [], []]}).
+program -> newline : ast_node({program, [nil, [], []]}).
 
 module_line -> '$empty' : nil.
 module_line -> module bare_symbol newline : '$2'.
@@ -96,8 +96,8 @@ import_line -> import bare_symbols newline : '$2'.
 chapters -> chapter : ['$1'].
 chapters -> chapter where chapters : ['$1' | '$3'].
 
-chapter -> head : {chapter, ['$1', []]}.
-chapter -> head sep body : {chapter, ['$1', '$3']}.
+chapter -> head : ast_node({chapter, ['$1', []]}).
+chapter -> head sep body : ast_node({chapter, ['$1', '$3']}).
 
 a_comment -> comment : unwrap('$1').
 a_comment -> a_comment newline comment : merge_comments('$1', '$3').
@@ -115,11 +115,11 @@ head_line -> a_comment newline : '$1'.
 
 % i. declarations
 
-declaration -> a_symbol lambda : {decl, ['$1'|'$2']}.
+declaration -> a_symbol lambda : ast_node({decl, ['$1'|'$2']}).
 
 % ii. aliases
 
-alias -> symbols reverse_yield expression : {alias, ['$1', '$3']}.
+alias -> symbols reverse_yield expression : ast_node({alias, ['$1', '$3']}).
 
 %
 % body
@@ -128,10 +128,10 @@ alias -> symbols reverse_yield expression : {alias, ['$1', '$3']}.
 body -> body_line : ['$1'].
 body -> body_line body : ['$1' | '$2'].
 
-body_line -> expression refined refinement newline : {refinement, ['$1', '$3']}.
+body_line -> expression refined refinement newline : ast_node({refinement, ['$1', '$3']}).
 body_line -> a_comment newline : '$1'.
-body_line -> binary_operator expression newline : {expr, [unwrap('$1'), '$2']}.
-body_line -> expression newline : {expr, [nil, '$1']}.
+body_line -> binary_operator expression newline : ast_node({expr, [unwrap('$1'), '$2']}).
+body_line -> expression newline : ast_node({expr, [nil, '$1']}).
 
 % EXPRESSION PRECEDENCE
 % This is a strange area. Here are the precedence levels of Pantagruel:
@@ -147,18 +147,18 @@ expression -> bin_operation : '$1'.
 bin_operation -> function_application : '$1'.
 bin_operation ->
     bin_operation binary_operator bin_operation :
-        {bin_appl, [unwrap('$2'), '$1', '$3']}.
+        ast_node({bin_appl, [unwrap('$2'), '$1', '$3']}).
 
 function_application -> un_operation : '$1'.
 function_application -> function_application un_operation :
-    {f_appl, ['$1', '$2']}.
+    ast_node({f_appl, ['$1', '$2']}).
 
 un_operation -> object_access: '$1'.
 un_operation -> unary_operator un_operation :
-    {un_appl, [unwrap('$1'), '$2']}.
+    ast_node({un_appl, [unwrap('$1'), '$2']}).
 
 object_access -> term : '$1'.
-object_access -> object_access '.' term : {dot, ['$3', '$1']}.
+object_access -> object_access '.' term : ast_node({dot, ['$3', '$1']}).
 
 term -> a_symbol : '$1'.
 term -> int : unwrap('$1').
@@ -177,20 +177,20 @@ term -> fn lambda : {lambda, '$2'}.
 expressions -> expression : ['$1'].
 expressions -> expression ',' expressions : ['$1' | '$3'].
 
-bunch -> '(' container_contents ')' : {cont, [par, '$2']}.
-list -> '[' container_contents ']' : {cont, [list, '$2']}.
-set -> '{' container_contents '}' : {cont, [set, '$2']}.
+bunch -> '(' container_contents ')' : ast_node({cont, [par, '$2']}).
+list -> '[' container_contents ']' : ast_node({cont, [list, '$2']}).
+set -> '{' container_contents '}' : ast_node({cont, [set, '$2']}).
 
 quantification -> quantifier binding_or_guards '\\' expression :
-    {quantification, [unwrap('$1'), '$2', '$4']}.
+    ast_node({quantification, [unwrap('$1'), '$2', '$4']}).
 
 lambda -> maybe_binding_or_guards maybe_yield_type maybe_term : ['$1', '$2', '$3'].
 
 binding_or_guards -> binding_or_guard : ['$1'].
 binding_or_guards -> binding_or_guard ',' binding_or_guards : ['$1' | '$3'].
 
-binding_or_guard -> term ':' expression : {binding, ['$1', '$3']}.
-binding_or_guard -> expression : {guard, '$1'}.
+binding_or_guard -> term ':' expression : ast_node({binding, ['$1', '$3']}).
+binding_or_guard -> expression : ast_node({guard, '$1'}).
 
 symbols -> a_symbol : ['$1'].
 symbols -> a_symbol ',' symbols : ['$1' | '$3'].
@@ -214,9 +214,9 @@ maybe_binding_or_guards -> binding_or_guards : '$1'.
 container_contents -> '$empty' : [].
 container_contents -> expressions : '$1'.
 container_contents -> binding_or_guards '\\' expression :
-    {comprehension, ['$1', '$3']}.
+    ast_node({comprehension, ['$1', '$3']}).
 
-refinement -> expression : [{case_exp, [nil, '$1']}].
+refinement -> expression : ast_node([{case_exp, [nil, '$1']}]).
 refinement -> guarded_refinement : ['$1'].
 refinement -> '(' guarded_refinements ')' : filter_skip_lines('$2').
 
@@ -224,8 +224,8 @@ guarded_refinements -> guarded_refinement : ['$1'].
 guarded_refinements -> guarded_refinement guarded_refinements : ['$1' | '$2'].
 
 guarded_refinement -> newline : skip_line.
-guarded_refinement -> expression '\\' expression : {case_exp, ['$1', '$3']}.
-guarded_refinement -> expression '\\' expression ',' : {case_exp, ['$1', '$3']}.
+guarded_refinement -> expression '\\' expression : ast_node({case_exp, ['$1', '$3']}).
+guarded_refinement -> expression '\\' expression ',' : ast_node({case_exp, ['$1', '$3']}).
 
 Erlang code.
 
@@ -246,3 +246,5 @@ filter_skip_lines(Symbols) -> lists:filter(fun empty_filter/1, Symbols).
 
 empty_filter(skip_line) -> false;
 empty_filter(_) -> true.
+
+ast_node({Tag, Values}) -> #{'__struct__' => 'Elixir.Pantagruel.Parse.Node', type => Tag, values => Values}.
