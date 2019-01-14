@@ -105,8 +105,10 @@ defmodule Pantagruel.Format do
   def format_exp({:bin_appl, [op, x, y]}, s), do: join_exp([x, op, y], s, " ")
   def format_exp({:un_appl, [op, x]}, s), do: join_exp([op, x], s)
   def format_exp({:f_appl, [f, x]}, s), do: join_exp([f, x], s, " ")
+  def format_exp({:refinement, [pat, case_exprs]}, s), do: format_refinement(pat, case_exprs, s)
   def format_exp({:dot, [f, x]}, s), do: join_exp([x, f], s, ".")
   def format_exp({:refinement_exp, _} = r, s), do: format_case_expr(r, s)
+  def format_exp(%BoolAlg{} = b, s), do: format_bool_alg(b, s)
   def format_exp(exp, s), do: join_exp(exp, s, " ")
 
   defp format_chapter({:chapter, [head, body]}) do
@@ -170,20 +172,12 @@ defmodule Pantagruel.Format do
   defp format_line({:expr, [intro_op, expression]}),
     do: "#{format_exp(intro_op)} #{format_exp(expression)}"
 
-  defp format_line(%BoolAlg{op: op, x: x, y: y}) do
-    "#{format_exp(x)} #{format_exp(op)} #{format_exp(y)}"
-  end
+  defp format_line(term, scope \\ [])
 
-  defp format_line({:refinement, [pat, case_exprs]}, scope \\ []) do
-    case_exprs =
-      case_exprs
-      |> Enum.map(&("- " <> format_case_expr(&1, scope)))
-      |> Enum.join("\n")
+  defp format_line({:refinement, [pat, case_exprs]}, scope),
+    do: format_refinement(pat, case_exprs, scope)
 
-    pat = format_exp(pat, scope)
-
-    "#{pat} ← \n#{case_exprs}"
-  end
+  defp format_line(%BoolAlg{} = b, scope), do: format_bool_alg(b, scope)
 
   defp format_case_expr({:refinement_exp, [guard, exp]}, scope) do
     guard = format_guard(guard, scope)
@@ -202,7 +196,19 @@ defmodule Pantagruel.Format do
     "\n> #{comment_str}\n"
   end
 
+  defp format_refinement(pat, case_exprs, scope) do
+    case_exprs =
+      case_exprs
+      |> Enum.map(&("- " <> format_case_expr(&1, scope)))
+      |> Enum.join("\n")
+
+    pat = format_exp(pat, scope)
+
+    "#{pat} ← \n#{case_exprs}"
+  end
+
   defp format_guard(nil, _), do: ""
+  defp format_guard(true, _), do: ""
   defp format_guard(guard, scope), do: "#{format_exp(guard, scope)} ⸳ "
 
   defp format_symbol(s, scopes) do
@@ -245,6 +251,10 @@ defmodule Pantagruel.Format do
 
   defp format_lambda(l, opts) do
     Lambda.from_declaration(l) |> format_lambda(opts)
+  end
+
+  defp format_bool_alg(%BoolAlg{op: op, x: x, y: y}, s) do
+    "(#{format_exp(x, s)} #{format_exp(op, s)} #{format_exp(y, s)})"
   end
 
   defp format_relation(:conj), do: format_exp(:and)
