@@ -106,7 +106,7 @@ defmodule Pantagruel.Format do
   def format_exp({:un_appl, [op, x]}, s), do: join_exp([op, x], s)
   def format_exp({:f_appl, [f, x]}, s), do: join_exp([f, x], s, " ")
   def format_exp({:dot, [f, x]}, s), do: join_exp([x, f], s, ".")
-  def format_exp({:refinement, _} = r, _s), do: format_line(r)
+  def format_exp({:refinement_exp, _} = r, s), do: format_case_expr(r, s)
   def format_exp(exp, s), do: join_exp(exp, s, " ")
 
   defp format_chapter({:chapter, [head, body]}) do
@@ -154,9 +154,6 @@ defmodule Pantagruel.Format do
     |> String.replace("_", "-")
   end
 
-  def format_error({:refinement, _} = r, scope), do: format_line(r, scope)
-  def format_error(e, scope), do: format_exp(e, scope)
-
   defp format_line(:sep), do: "...."
   defp format_line({:decl, declaration}), do: format_lambda(declaration, decl: declaration)
 
@@ -177,12 +174,21 @@ defmodule Pantagruel.Format do
     "#{format_exp(x)} #{format_exp(op)} #{format_exp(y)}"
   end
 
-  defp format_line({:refinement, [pattern, guard, exp]}, scope \\ []) do
-    pat = format_exp(pattern, scope)
+  defp format_line({:refinement, [pat, case_exprs]}, scope \\ []) do
+    case_exprs =
+      case_exprs
+      |> Enum.map(&("\t" <> format_case_expr(&1, scope)))
+      |> Enum.join("\n")
+
+    pat = format_exp(pat, scope)
+
+    "#{pat} ← (\n#{case_exprs}\n)"
+  end
+
+  defp format_case_expr({:refinement_exp, [guard, exp]}, scope) do
     guard = format_guard(guard, scope)
     exp = format_exp(exp, scope)
-
-    "#{pat}#{guard} ← #{exp}"
+    "#{guard}#{exp}"
   end
 
   defp format_comment(comment) do
@@ -197,7 +203,7 @@ defmodule Pantagruel.Format do
   end
 
   defp format_guard(nil, _), do: ""
-  defp format_guard(guard, scope), do: " ⸳ #{format_exp(guard, scope)}"
+  defp format_guard(guard, scope), do: "#{format_exp(guard, scope)} ⸳ "
 
   defp format_symbol(s, scopes) do
     name = Env.lookup_binding_name(s)

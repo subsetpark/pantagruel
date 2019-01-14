@@ -182,14 +182,13 @@ defmodule Pantagruel.Eval do
   end
 
   # 3. Refinements, which are guarded patterns with refining expressions.
-  defp eval_body_statement({:refinement, [_, _, expr]} = r, {
+  defp eval_body_statement({:refinement, [patt, case_exprs]}, {
          [scope | scopes],
          [unbounds, next_unbounds | rest]
        }) do
-    # Include any introduced symbols into scope.
-    scope = Env.bind_expression_variables(scope, expr)
     # Include all symbols into the binding check for the *next* chapter.
-    next_unbounds = include_for_binding_check(r, next_unbounds)
+    next_unbounds = include_for_binding_check(patt, next_unbounds)
+    next_unbounds = Enum.reduce(case_exprs, next_unbounds, &include_for_binding_check/2)
 
     {[scope | scopes], [unbounds, next_unbounds | rest]}
   end

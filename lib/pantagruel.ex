@@ -81,7 +81,7 @@ defmodule Pantagruel do
 
   defp handle_error({:unbound_variables, unbounds, scopes}) do
     puts("Unbound variables:")
-    Enum.each(unbounds, &puts("- #{format_error(&1, scopes)}"))
+    Enum.each(unbounds, &puts("- #{format_exp(&1, scopes)}"))
 
     unbounds
     |> Enum.filter(&match?({:quantification, _}, &1))
@@ -103,7 +103,7 @@ defmodule Pantagruel do
   defp handle_bad_bindings(quantifiers) do
     quantifiers
     |> Enum.each(fn {:quantification, [_, bindings, exp]} ->
-      exp_str = {:quantification, ["…", bindings, exp]} |> format_error([])
+      exp_str = {:quantification, ["…", bindings, exp]} |> format_exp([])
 
       """
       Expected binding form. Found:

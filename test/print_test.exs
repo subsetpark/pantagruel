@@ -128,7 +128,7 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "f  \n....  \nf ⸳ ∃ n:ℕ ⸳ n > 1 ← n  " == Format.format_program(parsed)
+      assert "f  \n....  \nf ← (\n\t∃ n:ℕ ⸳ n > 1 ⸳ n\n)  " == Format.format_program(parsed)
       assert "f" == Format.format_scopes(scopes)
     end
 
@@ -141,8 +141,7 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert ["f ⸳ ∃ *n*:ℕ ⸳ *n* > 1 ← *k*"] ==
-               Enum.map(unbounds, &Format.format_error(&1, scopes))
+      assert ["∃ *n*:ℕ ⸳ *n* > 1 ⸳ *k*"] == Enum.map(unbounds, &Format.format_exp(&1, scopes))
     end
   end
 end
