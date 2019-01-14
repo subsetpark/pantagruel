@@ -177,12 +177,12 @@ defmodule Pantagruel.Format do
   defp format_line({:refinement, [pat, case_exprs]}, scope \\ []) do
     case_exprs =
       case_exprs
-      |> Enum.map(&("\t" <> format_case_expr(&1, scope)))
+      |> Enum.map(&("- " <> format_case_expr(&1, scope)))
       |> Enum.join("\n")
 
     pat = format_exp(pat, scope)
 
-    "#{pat} ← (\n#{case_exprs}\n)"
+    "#{pat} ← \n#{case_exprs}"
   end
 
   defp format_case_expr({:refinement_exp, [guard, exp]}, scope) do
