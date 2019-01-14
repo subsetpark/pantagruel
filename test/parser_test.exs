@@ -771,7 +771,7 @@ defmodule ParserTest do
            [
              chapter: [
                [decl: [{:symbol, 'f'}, [], nil, nil]],
-               [refinement: [1, [refinement_exp: [nil, 2]]]]
+               [refinement: [1, [case_exp: [nil, 2]]]]
              ]
            ]
          ]}
@@ -1173,7 +1173,7 @@ defmodule ParserTest do
                [
                  refinement: [
                    {:symbol, 'x'},
-                   [{:refinement_exp, [nil, {:symbol, 'y'}]}]
+                   [{:case_exp, [nil, {:symbol, 'y'}]}]
                  ]
                ]
              ]
@@ -1199,7 +1199,7 @@ defmodule ParserTest do
                [
                  refinement: [
                    {:symbol, 'x'},
-                   [refinement_exp: [0, {:symbol, 'y'}]]
+                   [case_exp: [0, {:symbol, 'y'}]]
                  ]
                ]
              ]
@@ -1236,8 +1236,8 @@ defmodule ParserTest do
                  refinement: [
                    {:symbol, 'x'},
                    [
-                     refinement_exp: [0, {:symbol, 'y'}],
-                     refinement_exp: [1, {:symbol, 'z'}]
+                     case_exp: [0, {:symbol, 'y'}],
+                     case_exp: [1, {:symbol, 'z'}]
                    ]
                  ]
                ]

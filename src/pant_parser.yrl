@@ -216,7 +216,7 @@ container_contents -> expressions : '$1'.
 container_contents -> binding_or_guards '\\' expression :
     {comprehension, ['$1', '$3']}.
 
-refinement -> expression : [{refinement_exp, [nil, '$1']}].
+refinement -> expression : [{case_exp, [nil, '$1']}].
 refinement -> guarded_refinement : ['$1'].
 refinement -> '(' guarded_refinements ')' : filter_skip_lines('$2').
 
@@ -224,8 +224,8 @@ guarded_refinements -> guarded_refinement : ['$1'].
 guarded_refinements -> guarded_refinement guarded_refinements : ['$1' | '$2'].
 
 guarded_refinement -> newline : skip_line.
-guarded_refinement -> expression '\\' expression : {refinement_exp, ['$1', '$3']}.
-guarded_refinement -> expression '\\' expression ',' : {refinement_exp, ['$1', '$3']}.
+guarded_refinement -> expression '\\' expression : {case_exp, ['$1', '$3']}.
+guarded_refinement -> expression '\\' expression ',' : {case_exp, ['$1', '$3']}.
 
 Erlang code.
 

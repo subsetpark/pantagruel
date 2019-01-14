@@ -132,7 +132,7 @@ defmodule Pantagruel.Env do
   def is_bound?({:cont, [_, []]}, _), do: true
   def is_bound?({:cont, [_, contents]}, scope), do: is_bound?(contents, scope)
 
-  def is_bound?({:refinement_exp, [guard, _] = r}, scope) do
+  def is_bound?({:case_exp, [guard, _] = r}, scope) do
     new_scope = bind_expression_variables(%{}, guard)
     scope = [new_scope | scope]
 

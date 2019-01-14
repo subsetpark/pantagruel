@@ -105,7 +105,7 @@ defmodule Pantagruel.Test.LegacyParser do
                  refinement: [
                    {:symbol, 'x'},
                    [
-                     refinement_exp: [
+                     case_exp: [
                        nil,
                        {:bin_appl, [:>, {:bin_appl, [:and, {:symbol, 'y'}, {:symbol, 'y'}]}, 1]}
                      ]
@@ -133,7 +133,7 @@ defmodule Pantagruel.Test.LegacyParser do
                [
                  refinement: [
                    {:f_appl, [symbol: 'f', symbol: 'x']},
-                   [refinement_exp: [nil, {:symbol, 'y'}]]
+                   [case_exp: [nil, {:symbol, 'y'}]]
                  ]
                ]
              ]
@@ -158,8 +158,8 @@ defmodule Pantagruel.Test.LegacyParser do
                  refinement: [
                    {:f_appl, [symbol: 'f', symbol: 'x']},
                    [
-                     refinement_exp: [bin_appl: [:<, {:symbol, 'x'}, 0], symbol: 'y'],
-                     refinement_exp: [{:literal, 'true'}, 1]
+                     case_exp: [bin_appl: [:<, {:symbol, 'x'}, 0], symbol: 'y'],
+                     case_exp: [{:literal, 'true'}, 1]
                    ]
                  ]
                ]

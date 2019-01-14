@@ -277,16 +277,14 @@ defmodule LifterTest do
                                [
                                  {:symbol, 'f'},
                                  [
-                                   refinement_exp: [true, {:symbol, 'y'}]
+                                   case_exp: [true, {:symbol, 'y'}]
                                  ]
                                ]}
                           },
                           y: %BoolAlg{
                             op: :conj,
                             x: {:symbol, 'z'},
-                            y:
-                              {:refinement,
-                               [{:symbol, 'f'}, [refinement_exp: [true, {:symbol, 'g'}]]]}
+                            y: {:refinement, [{:symbol, 'f'}, [case_exp: [true, {:symbol, 'g'}]]]}
                           }
                         }
                       }
@@ -308,7 +306,7 @@ defmodule LifterTest do
         |> Slurp.slurp()
         |> Pantagruel.Format.format_program()
 
-      assert "f  \n....  \nx disj z conj x conj f ← \n- y disj z conj f ← \n- g  " == out
+      assert "f  \n....  \n((x ∨ z) ∧ ((x ∧ f ← \n- y) ∨ (z ∧ f ← \n- g)))  " == out
     end
   end
 

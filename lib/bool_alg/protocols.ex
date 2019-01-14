@@ -4,15 +4,11 @@ defimpl TypeClass.Property.Generator, for: BoolAlg do
   @moduledoc """
   Property generation for BoolAlg structs.
   """
-  alias TypeClass.Property.Generator
-
   def generate(_) do
     op = Enum.random([:conj, :disj, :iff, :xor, :impl, :not])
-    %BoolAlg{op: op, x: rand_node(), y: rand_node()}
+    %BoolAlg{op: op, x: rand_prop(), y: rand_prop()}
   end
 
-  defp rand_node, do: Enum.random([&rand_alg/0, &rand_prop/0]).()
-  defp rand_alg, do: Generator.generate(%BoolAlg{})
   defp rand_prop, do: [Enum.random(?A..?Z)] |> :erlang.list_to_atom()
 end
 

@@ -53,10 +53,10 @@ defmodule Pantagruel.Bool.Slurp do
 
   def slurp(term, expression), do: expression && term
 
-  defp slurp_case_exps({:refinement_exp, [nil, exp]}, acc, pattern),
-    do: slurp_case_exps({:refinement_exp, [true, exp]}, acc, pattern)
+  defp slurp_case_exps({:case_exp, [nil, exp]}, acc, pattern),
+    do: slurp_case_exps({:case_exp, [true, exp]}, acc, pattern)
 
-  defp slurp_case_exps({:refinement_exp, [the_case, exp]}, {case_disj, exp_disj}, pattern) do
+  defp slurp_case_exps({:case_exp, [the_case, exp]}, {case_disj, exp_disj}, pattern) do
     case_disj = case_disj || the_case
     case_refinement = the_case && bare_refinement(pattern, exp)
     {case_disj, exp_disj || case_refinement}
@@ -67,6 +67,6 @@ defmodule Pantagruel.Bool.Slurp do
       {:refinement,
        [
          pattern,
-         [{:refinement_exp, [true, exp]}]
+         [{:case_exp, [true, exp]}]
        ]}
 end
