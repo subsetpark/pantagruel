@@ -187,6 +187,13 @@ defmodule Pantagruel.Format do
     "\n> #{comment_str}\n"
   end
 
+  defp format_refinement(pat, [case_expr], scope) do
+    case_expr = format_case_expr(case_expr, scope)
+    pat = format_exp(pat, scope)
+
+    "#{pat} ← #{case_expr}"
+  end
+
   defp format_refinement(pat, case_exprs, scope) do
     case_exprs =
       case_exprs

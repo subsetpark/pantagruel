@@ -242,7 +242,7 @@ defmodule LifterTest do
         |> BoolAlg.assert({:symbol, 'x'})
         |> Pantagruel.Format.format_program()
 
-      assert "f  \n....  \nf ← \n- y  " == out
+      assert "f  \n....  \nf ← y  " == out
     end
 
     test "slurp multi-clause refinement" do
@@ -306,7 +306,7 @@ defmodule LifterTest do
         |> Slurp.slurp()
         |> Pantagruel.Format.format_program()
 
-      assert "f  \n....  \n((x ∨ z) ∧ ((x ∧ f ← \n- y) ∨ (z ∧ f ← \n- g)))  " == out
+      assert "f  \n....  \n((x ∨ z) ∧ ((x ∧ f ← y) ∨ (z ∧ f ← g)))  " == out
     end
   end
 
