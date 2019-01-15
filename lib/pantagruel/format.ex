@@ -89,7 +89,6 @@ defmodule Pantagruel.Format do
   def format_exp(%Module{name: n}, _), do: "# #{n}"
   def format_exp(%Domain{name: n, ref: ref}, s), do: join_exp([n, "⇐", ref], s, " ")
   def format_exp(%Variable{name: n, domain: dom}, s), do: join_exp([n, ":", dom], s, " ")
-  def format_exp(sym(_) = s, []), do: format_symbol(s)
   def format_exp(s, []) when is_term(s), do: Env.lookup_binding_name(s)
   def format_exp(sym(_) = s, scopes), do: format_symbol(s, scopes)
   def format_exp(s, scopes) when is_term(s), do: format_symbol(s, scopes)
@@ -169,11 +168,6 @@ defmodule Pantagruel.Format do
     |> Enum.join(sep)
   end
 
-  defp format_symbol(s) do
-    Env.lookup_binding_name(s)
-    |> String.replace("_", "-")
-  end
-
   defp format_case_expr({:case_exp, [guard, exp]}, scope) do
     guard = format_guard(guard, scope)
     exp = format_exp(exp, scope)
@@ -213,11 +207,12 @@ defmodule Pantagruel.Format do
   defp format_guard(true, _), do: ""
   defp format_guard(guard, scope), do: "#{format_exp(guard, scope)} ⸳ "
 
+  defp format_symbol(s, []), do: Env.lookup_binding_name(s) |> String.replace("_", "-")
+
   defp format_symbol(s, scopes) do
     name = Env.lookup_binding_name(s)
 
-    Env.is_bound?(s, scopes)
-    |> if(do: name, else: "*#{name}*")
+    if(Env.is_bound?(s, scopes), do: name, else: "*#{name}*")
   end
 
   defp format_container(c, exps, s) when not is_list(exps), do: format_container(c, [exps], s)
