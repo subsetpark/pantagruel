@@ -126,10 +126,11 @@ defmodule Pantagruel.Format do
 
   def format_exp(exp, s), do: join_exp(exp, s, " ")
 
-  defp format_chapter({:chapter, [head, body]}) do
-    [head, body]
-    |> Enum.reject(&(&1 == []))
-    |> Enum.intersperse(:sep)
+  defp format_chapter({:chapter, [hd, []]}), do: do_format_chapter(hd)
+  defp format_chapter({:chapter, [hd, body]}), do: do_format_chapter(hd ++ [:sep] ++ body)
+
+  defp do_format_chapter(exps) do
+    exps
     # For now, assume we want markdown compatibility.
     |> Enum.map(&(format_exp(&1) <> "  "))
     |> Enum.join("\n")
