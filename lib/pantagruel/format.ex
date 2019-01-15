@@ -7,6 +7,10 @@ defmodule Pantagruel.Format do
   alias Pantagruel.Env
   alias Pantagruel.Eval.Module
 
+  import Pantagruel.Macros
+
+  use Witchcraft
+
   @type ast :: [term]
   @type section :: {:chapters, any} | {:imports, any} | {:module, any}
   @type t :: String.t()
@@ -35,7 +39,7 @@ defmodule Pantagruel.Format do
 
   defp format_with(data, f) do
     data
-    |> Enum.map(f)
+    |> lift(f)
     |> Enum.join("\n\n#{@bar}\n\n")
   end
 
@@ -48,7 +52,7 @@ defmodule Pantagruel.Format do
 
   def format_imports(imports) do
     imports
-    |> Enum.map(&format_import/1)
+    |> lift(&format_import/1)
     |> Enum.join("\n")
   end
 
@@ -74,9 +78,9 @@ defmodule Pantagruel.Format do
   end
 
   def format_exp({:comment, comment}, _s), do: format_comment(comment)
-  def format_exp({:expr, [nil, expression]}, s), do: format_exp(expression, s)
+  def format_exp(exp(nil, expression), s), do: format_exp(expression, s)
 
-  def format_exp({:expr, [intro_op, expression]}, s),
+  def format_exp(exp(intro_op, expression), s),
     do: "#{format_exp(intro_op, s)} #{format_exp(expression, s)}"
 
   def format_exp({:refinement, [pat, case_exprs]}, scope),
@@ -85,9 +89,9 @@ defmodule Pantagruel.Format do
   def format_exp(%Module{name: n}, _), do: "# #{n}"
   def format_exp(%Domain{name: n, ref: ref}, s), do: join_exp([n, "⇐", ref], s, " ")
   def format_exp(%Variable{name: n, domain: dom}, s), do: join_exp([n, ":", dom], s, " ")
-  def format_exp({:symbol, _} = s, []), do: format_symbol(s)
+  def format_exp(sym(_) = s, []), do: format_symbol(s)
   def format_exp(s, []) when is_term(s), do: Env.lookup_binding_name(s)
-  def format_exp({:symbol, _} = s, scopes), do: format_symbol(s, scopes)
+  def format_exp(sym(_) = s, scopes), do: format_symbol(s, scopes)
   def format_exp(s, scopes) when is_term(s), do: format_symbol(s, scopes)
 
   def format_exp({:not, exp}, s) do
@@ -111,7 +115,7 @@ defmodule Pantagruel.Format do
   end
 
   def format_exp({:binding, [sym, domain]}, s),
-    do: join_exp([sym, {:symbol, ":"}, domain], s, "")
+    do: join_exp([sym, sym(":"), domain], s, "")
 
   def format_exp({:guard, expr}, s), do: format_exp(expr, s)
   def format_exp({:lambda, l}, s), do: format_lambda(l, scope: s)
@@ -123,7 +127,6 @@ defmodule Pantagruel.Format do
   def format_exp({:dot, [f, x]}, s), do: join_exp([x, f], s, ".")
   def format_exp({:case_exp, _} = r, s), do: format_case_expr(r, s)
   def format_exp(%BoolAlg{} = b, s), do: format_bool_alg(b, s)
-
   def format_exp(exp, s), do: join_exp(exp, s, " ")
 
   defp format_chapter({:chapter, [hd, []]}), do: do_format_chapter(hd)
@@ -132,7 +135,7 @@ defmodule Pantagruel.Format do
   defp do_format_chapter(exps) do
     exps
     # For now, assume we want markdown compatibility.
-    |> Enum.map(&(format_exp(&1) <> "  "))
+    |> lift(&(format_exp(&1) <> "  "))
     |> Enum.join("\n")
   end
 
@@ -156,13 +159,13 @@ defmodule Pantagruel.Format do
       %{__struct__: t, name: a}, %{__struct__: t, name: b} -> a <= b
       _, _ -> false
     end)
-    |> Enum.map(&format_exp/1)
+    |> lift(&format_exp/1)
     |> Enum.join("\n")
   end
 
   defp join_exp(exps, s, sep \\ "") do
     exps
-    |> Enum.map(&format_exp(&1, s))
+    |> lift(&format_exp(&1, s))
     |> Enum.join(sep)
   end
 
@@ -182,7 +185,7 @@ defmodule Pantagruel.Format do
       comment
       |> to_string()
       |> String.split(<<0xF8FF::utf8>>)
-      |> Enum.map(&String.trim/1)
+      |> lift(&String.trim/1)
       |> Enum.join("\n> ")
 
     "\n> #{comment_str}\n"
@@ -198,7 +201,7 @@ defmodule Pantagruel.Format do
   defp format_refinement(pat, case_exprs, scope) do
     case_exprs =
       case_exprs
-      |> Enum.map(&("- " <> format_case_expr(&1, scope)))
+      |> lift(&("- " <> format_case_expr(&1, scope)))
       |> Enum.join("\n")
 
     pat = format_exp(pat, scope)

@@ -5,6 +5,9 @@ defmodule Pantagruel.Env do
 
   alias Pantagruel.Values.{Variable, Domain, Lambda}
 
+  import Pantagruel.Macros
+
+
   @type scope :: map()
   @typedoc """
   An environment is a list of binding contexts, one scope for each section
@@ -19,14 +22,14 @@ defmodule Pantagruel.Env do
   end
 
   @starting_environment %{
-    {:symbol, 'Bool'} => %Variable{name: "𝔹", domain: "𝔹"},
-    {:symbol, 'Real'} => %Variable{name: "ℝ", domain: "ℝ"},
-    {:symbol, 'Int'} => %Variable{name: "ℤ", domain: "ℤ"},
-    {:symbol, 'Nat'} => %Variable{name: "ℕ", domain: "ℕ"},
-    {:symbol, 'Nat0'} => %Variable{name: "ℕ0", domain: "ℕ0"},
-    {:symbol, 'String'} => %Variable{name: "𝕊", domain: "𝕊"},
-    {:symbol, 'Nil'} => %Variable{name: "∅", domain: "⊤"},
-    {:symbol, ":"} => %Variable{name: ":", domain: "⊤"},
+    sym('Bool') => %Variable{name: "𝔹", domain: "𝔹"},
+    sym('Real') => %Variable{name: "ℝ", domain: "ℝ"},
+    sym('Int') => %Variable{name: "ℤ", domain: "ℤ"},
+    sym('Nat') => %Variable{name: "ℕ", domain: "ℕ"},
+    sym('Nat0') => %Variable{name: "ℕ0", domain: "ℕ0"},
+    sym('String') => %Variable{name: "𝕊", domain: "𝕊"},
+    sym('Nil') => %Variable{name: "∅", domain: "⊤"},
+    sym(":") => %Variable{name: ":", domain: "⊤"},
     := => %Variable{name: "=", domain: "ℝ"},
     :!= => %Variable{name: "≠", domain: "ℝ"},
     :"~" => %Variable{name: "¬", domain: "𝔹"},
@@ -98,10 +101,7 @@ defmodule Pantagruel.Env do
   it was bound under.
   """
   @spec lookup_binding_name(any) :: String.t()
-  def lookup_binding_name(symbol) when is_list(symbol),
-    do: Enum.map(symbol, &lookup_binding_name/1)
-
-  def lookup_binding_name({:symbol, s} = symbol), do: do_lookup(symbol, s)
+  def lookup_binding_name(sym(s) = symbol), do: do_lookup(symbol, s)
   def lookup_binding_name(symbol), do: do_lookup(symbol, symbol)
 
   @doc """
@@ -180,9 +180,9 @@ defmodule Pantagruel.Env do
   def is_bound?({:guard, expr}, scopes),
     do: is_bound?(expr, scopes)
 
-  def is_bound?({:symbol, variable}, [scope | parent]) do
+  def is_bound?(sym(variable), [scope | parent]) do
     trimmed = :string.trim(variable, :both, '\'')
-    symbol = {:symbol, trimmed}
+    symbol = sym(trimmed)
 
     has_key?(scope, symbol) or is_bound?(symbol, parent)
   end

@@ -1,7 +1,7 @@
 defmodule Pantagruel.Bool.Slurp do
   @moduledoc """
-  Logic to combine the lines of a Pantagruel program into a single Boolean
-  expression.
+  Logic to combine the lines of a Pantagruel program into a single
+  Boolean expression.
 
   refinement:
   x, P <- y
@@ -15,7 +15,10 @@ defmodule Pantagruel.Bool.Slurp do
   ~P and ~R and x <- z
 
   slurp: x, P <- y
-  (P or Q or R) and ((P and (x <- y)) or (Q and (x <- z)) or (R and (x <- a)))
+  (P or Q or R)
+    and
+  ((P and (x <- y)) or (Q and (x <- z)) or (R and (x <- a)))
+
   x <- (
     P \ y,
     Q \ z,
@@ -26,23 +29,26 @@ defmodule Pantagruel.Bool.Slurp do
   """
   import Kernel, except: [&&: 2, ||: 2]
   import BoolAlg
+  import Pantagruel.Macros
+
+  use Witchcraft
 
   @doc """
   Combine the lines of each chapter section in a program into single
   tree-expressions.
   """
   def slurp({:program, [module, imports, chapters]}) do
-    chapters = Enum.map(chapters, &slurp/1) |> BoolAlg.reduce_all()
+    chapters = lift(chapters, &slurp/1) |> BoolAlg.reduce_all()
     {:program, [module, imports, chapters]}
   end
 
   # Ingest successive lines into a single boolean expression. Expressions
   # beginning with `:or` are combined with a disjunction; other lines are
   # combined with a conjunction.
-  def slurp({:chapter, chapter}), do: {:chapter, Enum.map(chapter, &slurp/1)}
+  def slurp({:chapter, chapter}), do: {:chapter, lift(chapter, &slurp/1)}
   def slurp(section), do: [Enum.reduce(section, true, &slurp/2)]
-  def slurp({:expr, [:or, term]}, expression), do: expression || term
-  def slurp({:expr, [_, term]}, expression), do: expression && term
+  def slurp(exp(:or, term), expression), do: expression || term
+  def slurp(exp(_, term), expression), do: expression && term
 
   def slurp({:refinement, [pattern, case_exps]}, expression) do
     {case_disjunction, refinement_disjunction} =

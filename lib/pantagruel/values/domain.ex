@@ -1,5 +1,6 @@
 defmodule Pantagruel.Values.Domain do
   alias Pantagruel.Env
+  import Pantagruel.Macros
 
   @moduledoc """
   A domain in an evaluated Pantagruel program, with a name and whatever
@@ -12,8 +13,8 @@ defmodule Pantagruel.Values.Domain do
   underscore. This distinction allows generics to be referred to as a
   part of a function definition without being defined first.
   """
-  def is_generic?({:symbol, [?_ | _]}), do: true
-  def is_generic?({:symbol, _}), do: false
+  def is_generic?(sym([?_ | _])), do: true
+  def is_generic?(sym(_)), do: false
 
   @doc """
   Flatten nested or composite domains to retrieve the basic domains they

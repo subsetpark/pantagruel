@@ -11,6 +11,8 @@ defmodule Pantagruel.Eval do
   alias Pantagruel.Env
   alias Pantagruel.Eval.Module
 
+  import Pantagruel.Macros
+
   defmodule MissingImportError do
     defexception message: "Requested module not found", mod_name: nil
   end
@@ -169,7 +171,7 @@ defmodule Pantagruel.Eval do
   defp eval_body_statement({:comment, _}, state), do: state
 
   # 2. Expressions;
-  defp eval_body_statement({:expr, [_, expr]}, {
+  defp eval_body_statement(exp(_, expr), {
          [scope | scopes],
          [unbounds, next_unbounds | rest]
        }) do

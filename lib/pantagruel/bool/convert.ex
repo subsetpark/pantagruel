@@ -5,6 +5,8 @@ defmodule Pantagruel.Bool.Convert do
   nodes.
   """
   import BoolAlg
+  import Pantagruel.Macros
+
   use Witchcraft
 
   @doc """
@@ -15,7 +17,7 @@ defmodule Pantagruel.Bool.Convert do
   def convert(list) when is_list(list), do: lift(list, &convert/1)
   def convert(value) when is_integer(value), do: value
   def convert(value) when is_atom(value), do: value
-  def convert({:symbol, _} = s), do: s
+  def convert(sym(_) = s), do: s
 
   def convert({tag, _} = t) when tag in [:un_appl, :bin_appl] do
     t
