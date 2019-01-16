@@ -6,6 +6,7 @@ end
 defmodule Pantagruel do
   import IO, only: [puts: 1]
   import Pantagruel.Format
+  import Pantagruel.Macros
 
   alias Pantagruel.{Eval, Parse, Bool}
 
@@ -122,28 +123,47 @@ defmodule Pantagruel do
   end
 
   defp shell(tree, {assumed, refuted} = state) do
-    IO.puts("ASSUMED #{assumed}")
-    IO.puts("REFUTED #{refuted}")
+    IO.inspect(assumed, label: :ASSUMED)
+    IO.inspect(refuted, label: :REFUTED)
 
     tree
     |> format_program()
     |> puts
 
-    case gets() do
+    case IO.gets("> ") do
       "!" <> prop ->
-        tree
-        |> BoolAlg.assert(prop)
-        |> shell({[prop | assumed], refuted})
+        ast = get_ast(prop)
 
-      "-" <> prop ->
         tree
-        |> BoolAlg.refute(prop)
-        |> shell({assumed, [prop | refuted]})
+        |> BoolAlg.assert(ast)
+        |> shell({[ast | assumed], refuted})
+
+      "~" <> prop ->
+        ast = get_ast(prop)
+
+        tree
+        |> BoolAlg.refute(ast)
+        |> shell({assumed, [ast | refuted]})
 
       _ ->
         shell(tree, state)
     end
   end
 
-  defp gets, do: IO.gets("> ")
+  defp get_ast(prop) do
+    prop
+    |> make_minimal_program()
+    |> Pantagruel.Scan.scan()
+    |> :pant_lexer.string()
+    |> Parse.handle_lex()
+    |> extract_minimal_program()
+    |> IO.inspect()
+  end
+
+  defp make_minimal_program(exp), do: "f\n---\n#{exp}"
+
+  defp extract_minimal_program(ast) do
+    {:ok, {:program, [_, _, [chapter: [_, [exp(_, exp)]]]]}} = ast
+    exp
+  end
 end
