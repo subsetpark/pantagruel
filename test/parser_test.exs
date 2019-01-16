@@ -771,7 +771,7 @@ defmodule ParserTest do
            [
              chapter: [
                [decl: [{:symbol, 'f'}, [], nil, nil]],
-               [refinement: [1, nil, 2]]
+               [refinement: [1, [case_exp: [nil, 2]]]]
              ]
            ]
          ]}
@@ -1152,6 +1152,101 @@ defmodule ParserTest do
            [chapter: [[decl: [{:symbol, 'f'}, [], nil, nil]], []]]
          ]}
       )
+    end
+  end
+
+  describe "new refinements" do
+    test "base case" do
+      """
+      f
+      ---
+      x <- y
+      """
+      |> tryp(
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [decl: [{:symbol, 'f'}, [], nil, nil]],
+               [
+                 refinement: [
+                   {:symbol, 'x'},
+                   [{:case_exp, [nil, {:symbol, 'y'}]}]
+                 ]
+               ]
+             ]
+           ]
+         ]}
+      )
+    end
+
+    test "guard case" do
+      """
+      f
+      ---
+      x <- 0 \\ y
+      """
+      |> tryp(
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [decl: [{:symbol, 'f'}, [], nil, nil]],
+               [
+                 refinement: [
+                   {:symbol, 'x'},
+                   [case_exp: [0, {:symbol, 'y'}]]
+                 ]
+               ]
+             ]
+           ]
+         ]}
+      )
+    end
+
+    test "list case" do
+      text = """
+      f
+      ---
+      x <- (0 \\ y, 1 \\ z)
+      """
+
+      text_newlines = """
+      f
+      ---
+      x <- (
+        0 \\ y,
+        1 \\ z
+      )
+      """
+
+      expected =
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [decl: [{:symbol, 'f'}, [], nil, nil]],
+               [
+                 refinement: [
+                   {:symbol, 'x'},
+                   [
+                     case_exp: [0, {:symbol, 'y'}],
+                     case_exp: [1, {:symbol, 'z'}]
+                   ]
+                 ]
+               ]
+             ]
+           ]
+         ]}
+
+      tryp(text, expected)
+      tryp(text_newlines, expected)
     end
   end
 

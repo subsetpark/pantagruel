@@ -102,12 +102,15 @@ defmodule Pantagruel.Test.LegacyParser do
              chapter: [
                [decl: [{:symbol, 'f'}, [], nil, nil]],
                [
-                 {:refinement,
-                  [
-                    {:symbol, 'x'},
-                    nil,
-                    {:bin_appl, [:>, {:bin_appl, [:and, {:symbol, 'y'}, {:symbol, 'y'}]}, 1]}
-                  ]}
+                 refinement: [
+                   {:symbol, 'x'},
+                   [
+                     case_exp: [
+                       nil,
+                       {:bin_appl, [:>, {:bin_appl, [:and, {:symbol, 'y'}, {:symbol, 'y'}]}, 1]}
+                     ]
+                   ]
+                 ]
                ]
              ]
            ]
@@ -128,12 +131,10 @@ defmodule Pantagruel.Test.LegacyParser do
              chapter: [
                [decl: [{:symbol, 'f'}, [], nil, nil]],
                [
-                 {:refinement,
-                  [
-                    {:f_appl, [symbol: 'f', symbol: 'x']},
-                    nil,
-                    {:symbol, 'y'}
-                  ]}
+                 refinement: [
+                   {:f_appl, [symbol: 'f', symbol: 'x']},
+                   [case_exp: [nil, {:symbol, 'y'}]]
+                 ]
                ]
              ]
            ]
@@ -142,7 +143,7 @@ defmodule Pantagruel.Test.LegacyParser do
     end
 
     test "parse guarded refinement" do
-      text = "f\n---\nf x, x< 0 <- y\nf x<-1"
+      text = "f\n---\nf x <- (x<0 \\ y, `true \\ 1)"
 
       tryparse(
         text,
@@ -154,18 +155,13 @@ defmodule Pantagruel.Test.LegacyParser do
              chapter: [
                [decl: [{:symbol, 'f'}, [], nil, nil]],
                [
-                 {:refinement,
-                  [
-                    f_appl: [symbol: 'f', symbol: 'x'],
-                    bin_appl: [:<, {:symbol, 'x'}, 0],
-                    symbol: 'y'
-                  ]},
-                 {:refinement,
-                  [
-                    {:f_appl, [symbol: 'f', symbol: 'x']},
-                    nil,
-                    1
-                  ]}
+                 refinement: [
+                   {:f_appl, [symbol: 'f', symbol: 'x']},
+                   [
+                     case_exp: [bin_appl: [:<, {:symbol, 'x'}, 0], symbol: 'y'],
+                     case_exp: [{:literal, 'true'}, 1]
+                   ]
+                 ]
                ]
              ]
            ]

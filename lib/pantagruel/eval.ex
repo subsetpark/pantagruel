@@ -11,6 +11,8 @@ defmodule Pantagruel.Eval do
   alias Pantagruel.Env
   alias Pantagruel.Eval.Module
 
+  import Pantagruel.Macros
+
   defmodule MissingImportError do
     defexception message: "Requested module not found", mod_name: nil
   end
@@ -169,7 +171,7 @@ defmodule Pantagruel.Eval do
   defp eval_body_statement({:comment, _}, state), do: state
 
   # 2. Expressions;
-  defp eval_body_statement({:expr, [_, expr]}, {
+  defp eval_body_statement(exp(_, expr), {
          [scope | scopes],
          [unbounds, next_unbounds | rest]
        }) do
@@ -182,14 +184,13 @@ defmodule Pantagruel.Eval do
   end
 
   # 3. Refinements, which are guarded patterns with refining expressions.
-  defp eval_body_statement({:refinement, [_, _, expr]} = r, {
+  defp eval_body_statement({:refinement, [patt, case_exprs]}, {
          [scope | scopes],
          [unbounds, next_unbounds | rest]
        }) do
-    # Include any introduced symbols into scope.
-    scope = Env.bind_expression_variables(scope, expr)
     # Include all symbols into the binding check for the *next* chapter.
-    next_unbounds = include_for_binding_check(r, next_unbounds)
+    next_unbounds = include_for_binding_check(patt, next_unbounds)
+    next_unbounds = Enum.reduce(case_exprs, next_unbounds, &include_for_binding_check/2)
 
     {[scope | scopes], [unbounds, next_unbounds | rest]}
   end

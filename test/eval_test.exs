@@ -726,7 +726,7 @@ defmodule EvalTest do
         """
         f
         ---
-        f, exists n : Nat \\ n > 1 <- n
+        f <- exists n : Nat \\ n > 1 \\ n
         """
         |> scan_and_parse
 

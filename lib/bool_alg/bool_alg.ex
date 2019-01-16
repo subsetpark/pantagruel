@@ -13,7 +13,6 @@ defmodule BoolAlg do
     ]
 
   defstruct op: nil, x: nil, y: nil
-  defguard is_relation(r) when r in [:conj, :disj, :impl, :iff, :xor]
 
   @doc """
   Conjunction.
@@ -53,12 +52,22 @@ defmodule BoolAlg do
   @doc """
   Term rewriting by replacement with `true` and reduction.
   """
-  def assert(t, p), do: replace(t, p, true) |> reduce()
+  def assert(t, p), do: replace(t, p, true) |> reduce_all()
 
   @doc """
   Term rewriting by replacement with `false` and reduction.
   """
-  def refute(t, p), do: replace(t, p, false) |> reduce()
+  def refute(t, p), do: replace(t, p, false) |> reduce_all()
+
+  @doc """
+  Reduce a term until it can be reduced no further.
+  """
+  def reduce_all(t) do
+    case reduce(t) do
+      ^t -> t
+      reduced -> reduce_all(reduced)
+    end
+  end
 
   # Term rewriting rules; given the presence of `true` or `false` in
   # a boolean operation, the term can be eliminated and the overall

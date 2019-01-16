@@ -124,11 +124,24 @@ defmodule Pantagruel.FormatTest do
         """
         f
         ---
-        f, exists n : Nat \\ n > 1 <- n
+        f <- exists n : Nat \\ n > 1 \\ n
         """
         |> eval
 
-      assert "f  \n....  \nf ⸳ ∃ n:ℕ ⸳ n > 1 ← n  " == Format.format_program(parsed)
+      assert "f  \n....  \nf ← ∃ n:ℕ ⸳ n > 1 ⸳ n  " == Format.format_program(parsed)
+      assert "f" == Format.format_scopes(scopes)
+    end
+
+    test "multi-clause refinement" do
+      {parsed, scopes} =
+        """
+        f
+        ---
+        f <- (0 \\ exists n : Nat \\ n > 1, 1 \\ 1)
+        """
+        |> eval
+
+      assert "f  \n....  \nf ← \n- 0 ⸳ ∃ n:ℕ ⸳ n > 1\n- 1 ⸳ 1  " == Format.format_program(parsed)
       assert "f" == Format.format_scopes(scopes)
     end
 
@@ -137,12 +150,11 @@ defmodule Pantagruel.FormatTest do
         """
         f
         ---
-        f, exists n : Nat \\ n > 1 <- k
+        f <- exists n : Nat \\ n > 1 \\ k
         """
         |> eval
 
-      assert ["f ⸳ ∃ *n*:ℕ ⸳ *n* > 1 ← *k*"] ==
-               Enum.map(unbounds, &Format.format_error(&1, scopes))
+      assert ["∃ *n*:ℕ ⸳ *n* > 1 ⸳ *k*"] == Enum.map(unbounds, &Format.format_exp(&1, scopes))
     end
   end
 end

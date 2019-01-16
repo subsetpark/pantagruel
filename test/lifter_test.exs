@@ -58,14 +58,8 @@ defmodule LifterTest do
                 [],
                 [
                   chapter: [
-                    [%BoolAlg{op: :conj, x: true, y: {:decl, [{:symbol, 'f'}, [], nil, nil]}}],
-                    [
-                      %BoolAlg{
-                        op: :conj,
-                        x: %BoolAlg{op: :conj, x: true, y: 1},
-                        y: {:literal, 'ok'}
-                      }
-                    ]
+                    [{:decl, [{:symbol, 'f'}, [], nil, nil]}],
+                    [%BoolAlg{op: :conj, y: {:literal, 'ok'}, x: 1}]
                   ]
                 ]
               ]} == tree
@@ -90,8 +84,8 @@ defmodule LifterTest do
                 [],
                 [
                   chapter: [
-                    [{:decl, [{:symbol, 'f'}, [], nil, nil]}],
-                    [%BoolAlg{op: :conj, x: true, y: {:literal, 'ok'}}]
+                    [decl: [{:symbol, 'f'}, [], nil, nil]],
+                    [{:literal, 'ok'}]
                   ]
                 ]
               ]} == tree
@@ -111,7 +105,7 @@ defmodule LifterTest do
         |> BoolAlg.assert(1)
         |> Pantagruel.Format.format_program()
 
-      assert "f\s\s\n....\s\s\ntrue conj *ok*\s\s" == out
+      assert "f\s\s\n....\s\s\n*ok*\s\s" == out
     end
 
     test "print other half of line" do
@@ -128,7 +122,191 @@ defmodule LifterTest do
         |> BoolAlg.assert({:literal, 'ok'})
         |> Pantagruel.Format.format_program()
 
-      assert "f\s\s\n....\s\s\ntrue conj 1\s\s" == out
+      assert "f\s\s\n....\s\s\n1\s\s" == out
+    end
+  end
+
+  describe "refinement handling" do
+    test "slurp refinement" do
+      out =
+        """
+        f
+        ---
+        f <- y
+        """
+        |> tryp()
+        |> Convert.convert()
+        |> Slurp.slurp()
+
+      assert {:program,
+              [
+                nil,
+                [],
+                [
+                  chapter: [
+                    [decl: [{:symbol, 'f'}, [], nil, nil]],
+                    [
+                      {:refinement,
+                       [
+                         {:symbol, 'f'},
+                         [case_exp: [true, {:symbol, 'y'}]]
+                       ]}
+                    ]
+                  ]
+                ]
+              ]} == out
+    end
+
+    test "slurp guarded refinement" do
+      out =
+        """
+        f
+        ---
+        f <- x \\ y
+        """
+        |> tryp()
+        |> Convert.convert()
+        |> Slurp.slurp()
+
+      assert {:program,
+              [
+                nil,
+                [],
+                [
+                  chapter: [
+                    [decl: [{:symbol, 'f'}, [], nil, nil]],
+                    [
+                      %BoolAlg{
+                        op: :conj,
+                        x: {:symbol, 'x'},
+                        y: %BoolAlg{
+                          op: :conj,
+                          x: {:symbol, 'x'},
+                          y:
+                            {:refinement,
+                             [
+                               {:symbol, 'f'},
+                               [
+                                 case_exp: [true, {:symbol, 'y'}]
+                               ]
+                             ]}
+                        }
+                      }
+                    ]
+                  ]
+                ]
+              ]} == out
+    end
+
+    test "assert guarded refinement" do
+      out =
+        """
+        f
+        ---
+        f <- x \\ y
+        """
+        |> tryp()
+        |> Convert.convert()
+        |> Slurp.slurp()
+        |> BoolAlg.assert({:symbol, 'x'})
+
+      assert {:program,
+              [
+                nil,
+                [],
+                [
+                  chapter: [
+                    [decl: [{:symbol, 'f'}, [], nil, nil]],
+                    [
+                      {:refinement,
+                       [
+                         {:symbol, 'f'},
+                         [case_exp: [true, {:symbol, 'y'}]]
+                       ]}
+                    ]
+                  ]
+                ]
+              ]} == out
+    end
+
+    test "print guarded refinement" do
+      out =
+        """
+        f
+        ---
+        f <- x \\ y
+        """
+        |> tryp()
+        |> Convert.convert()
+        |> Slurp.slurp()
+        |> BoolAlg.assert({:symbol, 'x'})
+        |> Pantagruel.Format.format_program()
+
+      assert "f  \n....  \nf ← y  " == out
+    end
+
+    test "slurp multi-clause refinement" do
+      out =
+        """
+        f
+        ---
+        f <- (x \\ y, z \\ g)
+        """
+        |> tryp()
+        |> Convert.convert()
+        |> Slurp.slurp()
+
+      assert {:program,
+              [
+                nil,
+                [],
+                [
+                  chapter: [
+                    [decl: [{:symbol, 'f'}, [], nil, nil]],
+                    [
+                      %BoolAlg{
+                        op: :conj,
+                        x: %BoolAlg{op: :disj, x: {:symbol, 'x'}, y: {:symbol, 'z'}},
+                        y: %BoolAlg{
+                          op: :disj,
+                          x: %BoolAlg{
+                            op: :conj,
+                            x: {:symbol, 'x'},
+                            y:
+                              {:refinement,
+                               [
+                                 {:symbol, 'f'},
+                                 [
+                                   case_exp: [true, {:symbol, 'y'}]
+                                 ]
+                               ]}
+                          },
+                          y: %BoolAlg{
+                            op: :conj,
+                            x: {:symbol, 'z'},
+                            y: {:refinement, [{:symbol, 'f'}, [case_exp: [true, {:symbol, 'g'}]]]}
+                          }
+                        }
+                      }
+                    ]
+                  ]
+                ]
+              ]} == out
+    end
+
+    test "print multi-clause refinement" do
+      out =
+        """
+        f
+        ---
+        f <- (x \\ y, z \\ g)
+        """
+        |> tryp()
+        |> Convert.convert()
+        |> Slurp.slurp()
+        |> Pantagruel.Format.format_program()
+
+      assert "f  \n....  \n((x ∨ z) ∧ ((x ∧ f ← y) ∨ (z ∧ f ← g)))  " == out
     end
   end
 
