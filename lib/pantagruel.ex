@@ -56,8 +56,8 @@ defmodule Pantagruel do
 
   defp handle_parse({:ok, parsed}, shell: true) do
     Bool.Convert.convert(parsed)
-    |> format_lifted()
-    |> puts
+    |> Bool.Slurp.slurp()
+    |> shell({[], []})
   end
 
   defp handle_parse({:ok, parsed}, flags) do
@@ -120,4 +120,30 @@ defmodule Pantagruel do
       |> puts
     end)
   end
+
+  defp shell(tree, {assumed, refuted} = state) do
+    IO.puts("ASSUMED #{assumed}")
+    IO.puts("REFUTED #{refuted}")
+
+    tree
+    |> format_program()
+    |> puts
+
+    case gets() do
+      "!" <> prop ->
+        tree
+        |> BoolAlg.assert(prop)
+        |> shell({[prop | assumed], refuted})
+
+      "-" <> prop ->
+        tree
+        |> BoolAlg.refute(prop)
+        |> shell({assumed, [prop | refuted]})
+
+      _ ->
+        shell(tree, state)
+    end
+  end
+
+  defp gets, do: IO.gets("> ")
 end

@@ -45,8 +45,12 @@ defmodule Pantagruel.Bool.Slurp do
   # Ingest successive lines into a single boolean expression. Expressions
   # beginning with `:or` are combined with a disjunction; other lines are
   # combined with a conjunction.
-  def slurp({:chapter, chapter}), do: {:chapter, lift(chapter, &slurp/1)}
-  def slurp(section), do: [Enum.reduce(section, true, &slurp/2)]
+  def slurp({:chapter, [hd, body]}) do
+    body = [Enum.reduce(body, true, &slurp/2)]
+    {:chapter, [hd, body]}
+  end
+
+  def slurp({:comment, _}, expression), do: expression
   def slurp(exp(:or, term), expression), do: expression || term
   def slurp(exp(_, term), expression), do: expression && term
 

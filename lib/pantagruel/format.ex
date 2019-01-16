@@ -32,9 +32,6 @@ defmodule Pantagruel.Format do
   @spec format_scopes(Env.t()) :: t
   def format_scopes(scopes), do: format_with(scopes, &format_scope/1)
 
-  @spec format_lifted(ast) :: t
-  def format_lifted(tree), do: format_with(tree, &format_exp/1)
-
   @bar "***"
 
   defp format_with(data, f) do
@@ -250,6 +247,9 @@ defmodule Pantagruel.Format do
     Lambda.from_declaration(l) |> format_lambda(opts)
   end
 
+  defp format_bool_alg(%BoolAlg{op: :not, x: x}, s) do
+    "#{format_exp(:"~")}#{format_exp(x, s)}"
+  end
   defp format_bool_alg(%BoolAlg{op: op, x: x, y: y}, s) do
     "(#{format_exp(x, s)} #{format_relation(op)} #{format_exp(y, s)})"
   end
