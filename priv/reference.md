@@ -222,11 +222,11 @@ Which says that `f x` or "`f` of `x`" is *refined by* the more concrete
 expression `x + 2`. A more complex example might be
 
 ```pantagruel
-f x, x > 5 <- g (x * 2)
+f x <- x > 5 \ g (x * 2)
 ```
 
 Which says that `f` of `x` is refined by `g (x * 2)` *when `x` is
-greater than five*. The expression between the `,` and the `<-` is
+greater than five*. The expression between the `<-` and the `\` is
 a **guard**, and performs a very similar function to predicates in a
 procedure declaration.
 
