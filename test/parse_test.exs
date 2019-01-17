@@ -143,7 +143,7 @@ defmodule Pantagruel.Test.LegacyParser do
     end
 
     test "parse guarded refinement" do
-      text = "f\n---\nf x <- (x<0 \\ y, `true \\ 1)"
+      text = "f\n---\nf x <- (x<0 .. y, `true .. 1)"
 
       tryparse(
         text,
@@ -431,7 +431,7 @@ defmodule Pantagruel.Test.LegacyParser do
     end
 
     test "comprehension aliasing" do
-      text = "Day<={n:Nat,n=<30 \\ n}"
+      text = "Day<={n:Nat,n=<30 .. n}"
 
       tryparse(
         text,

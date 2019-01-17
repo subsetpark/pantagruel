@@ -51,7 +51,7 @@ maybe_binding_or_guards
 
 
 Terminals
-'{' '}' '[' ']' '(' ')' '.' ':' ',' '\\'
+'{' '}' '[' ']' '(' ')' '.' ':' ',' '..'
 int literal float fn
 module
 import
@@ -73,7 +73,7 @@ Endsymbol '$end'.
 
 Left 100 binary_operator.
 Left 300 unary_operator.
-Left 50 '\\'.
+Left 50 '..'.
 
 %
 % RULES
@@ -181,7 +181,7 @@ bunch -> '(' container_contents ')' : {cont, [par, '$2']}.
 list -> '[' container_contents ']' : {cont, [list, '$2']}.
 set -> '{' container_contents '}' : {cont, [set, '$2']}.
 
-quantification -> quantifier binding_or_guards '\\' expression :
+quantification -> quantifier binding_or_guards '..' expression :
     {quantification, [unwrap('$1'), '$2', '$4']}.
 
 lambda -> maybe_binding_or_guards maybe_yield_type maybe_term : ['$1', '$2', '$3'].
@@ -213,7 +213,7 @@ maybe_binding_or_guards -> binding_or_guards : '$1'.
 
 container_contents -> '$empty' : [].
 container_contents -> expressions : '$1'.
-container_contents -> binding_or_guards '\\' expression :
+container_contents -> binding_or_guards '..' expression :
     {comprehension, ['$1', '$3']}.
 
 refinement -> expression : [{case_exp, [nil, '$1']}].
@@ -224,8 +224,8 @@ guarded_refinements -> guarded_refinement : ['$1'].
 guarded_refinements -> guarded_refinement guarded_refinements : ['$1' | '$2'].
 
 guarded_refinement -> newline : skip_line.
-guarded_refinement -> expression '\\' expression : {case_exp, ['$1', '$3']}.
-guarded_refinement -> expression '\\' expression ',' : {case_exp, ['$1', '$3']}.
+guarded_refinement -> expression '..' expression : {case_exp, ['$1', '$3']}.
+guarded_refinement -> expression '..' expression ',' : {case_exp, ['$1', '$3']}.
 
 Erlang code.
 

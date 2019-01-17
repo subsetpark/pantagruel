@@ -124,7 +124,7 @@ defmodule Pantagruel.FormatTest do
         """
         f
         ---
-        f <- exists n : Nat \\ n > 1 \\ n
+        f <- exists n : Nat .. n > 1 .. n
         """
         |> eval
 
@@ -137,7 +137,7 @@ defmodule Pantagruel.FormatTest do
         """
         f
         ---
-        f <- (0 \\ exists n : Nat \\ n > 1, 1 \\ 1)
+        f <- (0 .. exists n : Nat .. n > 1, 1 .. 1)
         """
         |> eval
 
@@ -150,7 +150,7 @@ defmodule Pantagruel.FormatTest do
         """
         f
         ---
-        f <- exists n : Nat \\ n > 1 \\ k
+        f <- exists n : Nat .. n > 1 .. k
         """
         |> eval
 

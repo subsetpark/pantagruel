@@ -880,7 +880,7 @@ defmodule ParserTest do
 
   describe "comprehensions" do
     test "set comprehension" do
-      "f\n---\n{x : X \\ x}"
+      "f\n---\n{x : X .. x}"
       |> tryp(
         {:program,
          [
@@ -910,7 +910,7 @@ defmodule ParserTest do
     end
 
     test "comprehension with guard" do
-      "f\n---\n{x : X, x > 1 \\ x}"
+      "f\n---\n{x : X, x > 1 .. x}"
       |> tryp(
         {:program,
          [
@@ -944,7 +944,7 @@ defmodule ParserTest do
     end
 
     test "comprehension with in" do
-      "f\n---\n[x : X \\ x]"
+      "f\n---\n[x : X .. x]"
       |> tryp(
         {:program,
          [
@@ -976,7 +976,7 @@ defmodule ParserTest do
 
   describe "quantification" do
     test "existential quantification" do
-      "f\n---\nexists x : X \\ x > 1"
+      "f\n---\nexists x : X .. x > 1"
       |> tryp(
         {:program,
          [
@@ -1003,7 +1003,7 @@ defmodule ParserTest do
     end
 
     test "nested quantification" do
-      "f\n---\nexists x : X \\ all y : X \\ x > y"
+      "f\n---\nexists x : X .. all y : X .. x > y"
       |> tryp(
         {:program,
          [
@@ -1186,7 +1186,7 @@ defmodule ParserTest do
       """
       f
       ---
-      x <- 0 \\ y
+      x <- 0 .. y
       """
       |> tryp(
         {:program,
@@ -1212,15 +1212,15 @@ defmodule ParserTest do
       text = """
       f
       ---
-      x <- (0 \\ y, 1 \\ z)
+      x <- (0..y, 1 .. z)
       """
 
       text_newlines = """
       f
       ---
       x <- (
-        0 \\ y,
-        1 \\ z
+        0 .. y,
+        1 .. z
       )
       """
 
