@@ -44,8 +44,8 @@ defmodule Pantagruel do
   defp handle({_, _, _}), do: IO.puts(@help)
 
   defp handle_parse({:error, {line, module, message}}, _) do
-    IO.puts("Line #{line}: syntax error.")
-    message |> module.format_error() |> IO.puts()
+    puts("Line #{line}: syntax error.")
+    message |> module.format_error() |> puts()
   end
 
   defp handle_parse({:ok, []}, _), do: puts("No Pantagruel source found.")
@@ -76,7 +76,7 @@ defmodule Pantagruel do
   defp handle_eval({:ok, _}, parsed, _), do: format_program(parsed) |> puts
 
   defp handle_eval({:error, e}, parsed, _) do
-    IO.puts("Eval error.")
+    puts("Eval error.")
     handle_error(e)
     puts_in_error_handling(parsed)
   end
@@ -98,7 +98,7 @@ defmodule Pantagruel do
     puts("Attempted to redfine defined module: #{e.mod_name}")
   end
 
-  defp puts_in_error_handling(parsed), do: IO.puts("\n#{format_program(parsed)}")
+  defp puts_in_error_handling(parsed), do: puts("\n#{format_program(parsed)}")
 
   defp handle_bad_bindings([]), do: :ok
 
