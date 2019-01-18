@@ -1,12 +1,7 @@
-defmodule Pantagruel.Macros do
-  defmacro sym(s), do: {:symbol, s}
-  defmacro exp(op, e), do: {:expr, [op, e]}
-end
-
 defmodule Pantagruel do
   import IO, only: [puts: 1]
   import Pantagruel.Format
-  import Pantagruel.Macros
+  use Witchcraft
 
   alias Pantagruel.{Eval, Parse, Bool}
 
@@ -58,7 +53,8 @@ defmodule Pantagruel do
   defp handle_parse({:ok, parsed}, shell: true) do
     Bool.Convert.convert(parsed)
     |> Bool.Slurp.slurp()
-    |> shell({[], []})
+    |> Pantagruel.Shell.new_state()
+    |> shell()
   end
 
   defp handle_parse({:ok, parsed}, flags) do
@@ -122,48 +118,18 @@ defmodule Pantagruel do
     end)
   end
 
-  defp shell(tree, {assumed, refuted} = state) do
-    IO.inspect(assumed, label: :ASSUMED)
-    IO.inspect(refuted, label: :REFUTED)
+  defp shell({tree, assumed, refuted} = state) do
+    lift(assumed, &format_exp/1) |> IO.inspect(label: :ASSUMED)
+    lift(refuted, &format_exp/1) |> IO.inspect(label: :REFUTED)
 
     tree
     |> format_program()
     |> puts
 
-    case IO.gets("> ") do
-      "!" <> prop ->
-        ast = get_ast(prop)
+    input = IO.gets("> ")
 
-        tree
-        |> BoolAlg.assert(ast)
-        |> shell({[ast | assumed], refuted})
-
-      "~" <> prop ->
-        ast = get_ast(prop)
-
-        tree
-        |> BoolAlg.refute(ast)
-        |> shell({assumed, [ast | refuted]})
-
-      _ ->
-        shell(tree, state)
-    end
-  end
-
-  defp get_ast(prop) do
-    prop
-    |> make_minimal_program()
-    |> Pantagruel.Scan.scan()
-    |> :pant_lexer.string()
-    |> Parse.handle_lex()
-    |> extract_minimal_program()
-    |> IO.inspect()
-  end
-
-  defp make_minimal_program(exp), do: "f\n---\n#{exp}"
-
-  defp extract_minimal_program(ast) do
-    {:ok, {:program, [_, _, [chapter: [_, [exp(_, exp)]]]]}} = ast
-    exp
+    state
+    |> Pantagruel.Shell.handle(input)
+    |> shell()
   end
 end
