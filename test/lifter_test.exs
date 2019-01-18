@@ -162,7 +162,7 @@ defmodule LifterTest do
         """
         f
         ---
-        f <- x \\ y
+        f <- x .. y
         """
         |> tryp()
         |> Convert.convert()
@@ -203,7 +203,7 @@ defmodule LifterTest do
         """
         f
         ---
-        f <- x \\ y
+        f <- x .. y
         """
         |> tryp()
         |> Convert.convert()
@@ -234,7 +234,7 @@ defmodule LifterTest do
         """
         f
         ---
-        f <- x \\ y
+        f <- x .. y
         """
         |> tryp()
         |> Convert.convert()
@@ -250,7 +250,7 @@ defmodule LifterTest do
         """
         f
         ---
-        f <- (x \\ y, z \\ g)
+        f <- (x .. y, z .. g)
         """
         |> tryp()
         |> Convert.convert()
@@ -299,7 +299,7 @@ defmodule LifterTest do
         """
         f
         ---
-        f <- (x \\ y, z \\ g)
+        f <- (x .. y, z .. g)
         """
         |> tryp()
         |> Convert.convert()

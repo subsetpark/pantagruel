@@ -20,9 +20,7 @@ defmodule Pantagruel.Load do
   """
   def load(paths) do
     try do
-      {:ok,
-       paths
-       |> Enum.reduce(%{}, &load_asts/2)}
+      {:ok, Enum.reduce(paths, %{}, &load_asts/2)}
     rescue
       e in ModuleShadowError ->
         {:error, {:module_shadow, e}}
@@ -33,7 +31,8 @@ defmodule Pantagruel.Load do
   end
 
   defp load_asts(path, asts) do
-    Path.join([path, "**", "*.pant"])
+    [path, "**", "*.pant"]
+    |> Path.join()
     |> Path.wildcard()
     |> Enum.reduce(asts, &load_ast/2)
   end
@@ -51,11 +50,8 @@ defmodule Pantagruel.Load do
   defp include({:ok, [{:module, mod_name} | ast]}, asts) do
     case asts do
       # No two modules can declare the same module name.
-      %{^mod_name => _} ->
-        raise ModuleShadowError, mod_name: mod_name
-
-      %{} ->
-        Map.put(asts, mod_name, ast)
+      %{^mod_name => _} -> raise ModuleShadowError, mod_name: mod_name
+      %{} -> Map.put(asts, mod_name, ast)
     end
   end
 

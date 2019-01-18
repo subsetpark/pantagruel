@@ -25,11 +25,9 @@ defmodule Pantagruel.Bool.Convert do
     |> lift(&convert/1)
   end
 
-  def convert({tag, arguments}) when is_list(arguments) do
-    {tag, lift(arguments, &convert/1)}
-  end
-
+  def convert({tag, arguments}) when is_list(arguments), do: {tag, lift(arguments, &convert/1)}
   def convert({tag, argument}), do: {tag, convert(argument)}
+
   # Mappings between specific Pantagruel forms and their BoolAlg
   # equivalents.
   defp transform({_, [:or, x, y]}), do: disj(x, y)

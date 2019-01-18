@@ -350,7 +350,7 @@ defmodule EvalTest do
         f x:Nat
         con=> X
         ---
-        all y : X \\ y < 10
+        all y : X .. y < 10
         """
         |> scan_and_parse
 
@@ -386,7 +386,7 @@ defmodule EvalTest do
         f x:Nat
         con=> X
         ---
-        all y : X \\ y < 10
+        all y : X .. y < 10
         y > 1
         """
         |> scan_and_parse
@@ -401,7 +401,7 @@ defmodule EvalTest do
         """
         w
         ---
-        all j, k : X \\ j > k
+        all j, k : X .. j > k
         """
         |> scan_and_parse
 
@@ -422,7 +422,7 @@ defmodule EvalTest do
         """
         X <= 1
         ---
-        all (j, k) : X \\ j > k
+        all (j, k) : X .. j > k
         """
         |> scan_and_parse
 
@@ -438,7 +438,7 @@ defmodule EvalTest do
         """
         f x:Nat
         ---
-        exists y : Nat \\ f y > 10
+        exists y : Nat .. f y > 10
         """
         |> scan_and_parse
 
@@ -467,7 +467,7 @@ defmodule EvalTest do
         """
         f
         ---
-        f <- (all z : 1.f \\ f)
+        f <- (all z : 1.f .. f)
         """
         |> scan_and_parse
 
@@ -529,7 +529,7 @@ defmodule EvalTest do
         """
         f x:Nat
         ---
-        [y : Nat \\ f x > y]
+        [y : Nat .. f x > y]
         """
         |> scan_and_parse
 
@@ -554,7 +554,7 @@ defmodule EvalTest do
         """
         f x:_A
         ---
-        [y : _A \\ f x > y]
+        [y : _A .. f x > y]
         """
         |> scan_and_parse
 
@@ -676,7 +676,7 @@ defmodule EvalTest do
     end
 
     test "comprehension aliasing" do
-      parsed = "Day <= {n : Nat, n =< 30 \\ n}" |> scan_and_parse
+      parsed = "Day <= {n : Nat, n =< 30 .. n}" |> scan_and_parse
 
       assert [
                %{
@@ -705,7 +705,7 @@ defmodule EvalTest do
         """
         f
         ---
-        (all x : Nat \\ all y : x \\ y > 0)
+        (all x : Nat .. all y : x .. y > 0)
         """
         |> scan_and_parse
 
@@ -726,7 +726,7 @@ defmodule EvalTest do
         """
         f
         ---
-        f <- exists n : Nat \\ n > 1 \\ n
+        f <- exists n : Nat .. n > 1 .. n
         """
         |> scan_and_parse
 
@@ -749,7 +749,7 @@ defmodule EvalTest do
         sort xs : [X]  :: [X]
         x => X
         ---
-        all (x,y) : xs' \\ x =< y <-> ind xs' x < ind xs' y
+        all (x,y) : xs' .. x =< y <-> ind xs' x < ind xs' y
 
         ;
 

@@ -7,7 +7,7 @@ SP              = \t\s
 
 LITERAL         = `([^{SP}\n,{DELIMITER}]+)
 
-OPERATOR_CHOICE = (>=|==|!=|->|<->|<-|<=|=<|=>|=|-|>|<|\+|\*|~|#|%|\^|;|::|:|&|\|)
+OPERATOR_CHOICE = (>=|==|!=|->|<->|<-|<=|=<|=>|=|-|>|<|\+|\*|~|#|%|\^|;|::|:|&|\.\.|\|)
 
 SYMBOL          = [^\s\n&&{OPERATOR}&&{DELIMITER}:\"]+
 YIELD_TYPE      = (=>|::)
@@ -74,6 +74,7 @@ operator("::", TokenLine) -> {yield_type, TokenLine, "::"};
 operator("=>", TokenLine) -> {yield_type, TokenLine, "=>"};
 operator("<-", TokenLine) -> {refined, TokenLine};
 operator(":", TokenLine)  -> {':', TokenLine};
+operator("..", TokenLine)  -> {'..', TokenLine};
 operator("<=", TokenLine) -> {reverse_yield, TokenLine};
 operator(TokenChars, TokenLine) when
     TokenChars == "+";

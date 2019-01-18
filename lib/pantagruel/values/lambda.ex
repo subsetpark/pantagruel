@@ -22,11 +22,7 @@ defmodule Pantagruel.Values.Lambda do
   def from_declaration(decl, doms \\ nil)
 
   def from_declaration([symbol, bindings, yield_type, codomain], doms) do
-    doms =
-      case doms do
-        nil -> Env.args_and_domains(bindings) |> elem(1)
-        _ -> doms
-      end
+    doms = doms || Env.args_and_domains(bindings) |> elem(1)
 
     %__MODULE__{
       name: symbol,

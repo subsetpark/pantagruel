@@ -7,37 +7,39 @@ Program <= [Section]
 
 " A section head must have at least one statement; a section body can be empty.
 
-section head:Head, body:Body, #head > 0 => Section
+section head: Head, body: Body, #head > 0 => Section
 
 Head <= [Comment, Declaration, Alias]
 Body <= [Comment, Expression]
 Comment, Declaration, Alias, Expression <= [String]
 ---
-eval p <- all sect from p \ is_bound? sect
+
+eval p <- all sect : p .. is_bound? sect
 
 ;
 
-is_bound? (sect: Section) :: Bool
+is_bound? sect: Section :: Bool
 ---
+
 " All variables referred to in a section head must be defined by the
 " end of that section head. All the variables in a section body, however,
 " must be defined by the end of the *next* section body.
 
 is_bound? sect <-                                           ...
-    (all h from sect.head \ all sym from h \ is_bound? sym) ...
+    (all h : sect.head .. all sym : h .. is_bound? sym)     ...
     and                                                     ...
-    (all b from (p ((p sect) - 1)).body \ all sym from b \ is_bound? sym)
+    (all b : (p ((p sect) - 1)).body .. all sym : b .. is_bound? sym)
 
 ;
 
-is_bound (sym: String) :: Bool
+is_bound sym: String :: Bool
 ---
-is_bound sym <- (sym from env p (p sect)) or (sym from init_scope)
+is_bound sym <- (sym in env p (p sect)) or (sym in init_scope)
 
 ;
 
-env (p: Program) :: [Scope]
-init_scope() :: Scope
+env p: Program :: [Scope]
+init_scope :: Scope
 Scope <= {String}
 ```
 
@@ -50,21 +52,20 @@ acts as a section separator), we see one function declaration, one
 constructor declaration, four domain aliases, and one comment. The comment
 is not interpreted by `pant` and has no semantics in the language.
 
-The function declaration `eval (p: Program) :: Bool` introduces a
+The function declaration `eval p: Program :: Bool` introduces a
 function, `eval`, which takes a `Program` `p`[^1], and returns a `Bool`.
 
-[^1]: `p : Program`, pronounced by itself as "p in Program", indicates
-that `Program` is *the domain of* `p`. That is, `Program` is the set of
-all possible programs and `p` is any element of that set. In this way
-domains are analogous to types but more powerful; they can also include
-restrictions on the values within the type, such as `x != 0` or `x mod 2
-= 0`.
+[^1]: `p : Program` indicates that `Program` is *the domain of* `p`. That
+is, `Program` is the set of all possible programs and `p` is any element
+of that set. In this way domains are analogous to types but more powerful;
+they can also include restrictions on the values within the type, such as
+`x != 0` or `x mod 2 = 0`.
 
-The constructor declaration `section (head, body: Head, Body \ #head >
-0 ) => Section` introduces a function `section` which takes a `Head` and
+The constructor declaration `section head: Head, body: Body, #head > 0
+) => Section` introduces a function `section` which takes a `Head` and
 `Body` and produces a `Section`. There's also a single precondition to
-the constructor, introduced by `\`, which says that the size of `head` has
-to be greater than 0, ie, there needs to be at least one element in it.
+the constructor, which says that the size of `head` has to be greater
+than 0, ie, there needs to be at least one element in it.
 
 Notice at this point that we've referred to several variable domains
 before defining to them: `Program`, `Head`, `Body`. That's fine, as long
@@ -100,7 +101,7 @@ expression. The two exceptions are `Bool` and `String`; these
 domains are predefined in Pantagruel.
 
 The body of the first section has a single statement, which is a
-*refinement*. It says that `eval p` is refined by `all sect from p
+*refinement*. It says that `eval p` is refined by `all sect in p
 . is_bound? sect`.
 
 The right side of that statement is a universal quantification, which will
@@ -116,7 +117,7 @@ but that's alright.
 We begin a new section with `;`, and the second section's head
 defines `is_bound?` for some `Section` `sect`. It's important that
 we've introduced this argument `sect`; even though we were able to say
-something about `all sect from p` earlier, that doesn't introduce `sect`
+something about `all sect in p` earlier, that doesn't introduce `sect`
 into the scope of the program as a whole.
 
 The body of the second section consists of a relatively long refinement
@@ -124,7 +125,7 @@ of `is_bound? sect`. Because it extends onto more than one line, we
 continue the line with `...` until we're done with the expression. The
 refinement of `is_bound?` consists of evaluating both halves of a
 logical expression and testing whether both are true. The first half
-is a nested quantification, where the expression after the first `\`
+is a nested quantification, where the expression after the first `..`
 is a second quantification that makes use of the element introduced in
 the first. In other words, "for each `h` in `sect.head`, for each `sym`
 in `h`, `is_bound? sym` should be true". The second half is constructed
@@ -158,7 +159,7 @@ Using this refinement structure we can write our specifications as a
 series of elaborations gradually increasing in detail.
 
 Finally we have to define what it means for a symbol to be
-bound. `is_bound sym <- (sym from env p (p sect)) or (sym from init_scope)`
+bound. `is_bound sym <- (sym in env p (p sect)) or (sym in init_scope)`
 expresses that `is_bound` for some String `sym` is refined by checking
 whether `sym` is an element of `env p` at `p sect` or if it's an element
 of `init_scope`.
@@ -195,35 +196,37 @@ and we run `pant binding.pant`, this is what's output:
 
 -----
 -----
-
-eval(p:Program) ∷ 𝔹  \
+eval p:Program ∷ 𝔹  \
 Program ⇐ [Section]
 
 > A section head must have at least one statement; a section body can be empty.
 
-section(head, body:Head, Body ⸳ #head > 0) ⇒ Section  \
-Head ⇐ [Comment, Declaration, Alias]  \
-Body ⇐ [Comment, Expression]  \
-Comment, Declaration, Alias, Expression ⇐ [𝕊]  \
-eval p ← ∀ sect ∈ p ⸳ is-bound? sect
+section head:Head, body:Body, #head > 0 ⇒ Section  \
+Head ⇐ [Comment,Declaration,Alias]  \
+Body ⇐ [Comment,Expression]  \
+Comment,Declaration,Alias,Expression ⇐ [𝕊]  \
+....  \
+eval p ← ∀ sect:p ⸳ is-bound? sect
 
 ***
 
-is-bound?(sect:Section) ∷ 𝔹
+is-bound? sect:Section ∷ 𝔹  \
+....
 
 > All variables referred to in a section head must be defined by the
 > end of that section head. All the variables in a section body, however,
 > must be defined by the end of the *next* section body.
 
-is-bound? sect ← (∀ h ∈ sect.head ⸳ ∀ sym ∈ h ⸳ is-bound? sym) ∧ (∀ b ∈ (p ((p sect) − 1)).body ⸳ ∀ sym ∈ b ⸳ is-bound? sym)
+is-bound? sect ← (∀ h:sect.head ⸳ ∀ sym:h ⸳ is-bound? sym) ∧ (∀ b:(p ((p sect) − 1)).body ⸳ ∀ sym:b ⸳ is-bound? sym)
 
 ***
 
-is-bound(sym:𝕊) ∷ 𝔹  \
+is-bound sym:𝕊 ∷ 𝔹  \
+....  \
 is-bound sym ← (sym ∈ env p (p sect)) ∨ (sym ∈ init-scope)
 
 ***
 
-env(p:Program) ∷ [Scope]  \
-init-scope() ∷ Scope  \
+env p:Program ∷ [Scope]  \
+init-scope ∷ Scope  \
 Scope ⇐ {𝕊}

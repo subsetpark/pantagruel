@@ -1,11 +1,7 @@
-defmodule Pantagruel.Macros do
-  defmacro sym(s), do: {:symbol, s}
-  defmacro exp(op, e), do: {:expr, [op, e]}
-end
-
 defmodule Pantagruel do
   import IO, only: [puts: 1]
   import Pantagruel.Format
+  use Witchcraft
 
   alias Pantagruel.{Eval, Parse, Bool}
 
@@ -48,8 +44,8 @@ defmodule Pantagruel do
   defp handle({_, _, _}), do: IO.puts(@help)
 
   defp handle_parse({:error, {line, module, message}}, _) do
-    IO.puts("Line #{line}: syntax error.")
-    message |> module.format_error() |> IO.puts()
+    puts("Line #{line}: syntax error.")
+    message |> module.format_error() |> puts()
   end
 
   defp handle_parse({:ok, []}, _), do: puts("No Pantagruel source found.")
@@ -57,7 +53,8 @@ defmodule Pantagruel do
   defp handle_parse({:ok, parsed}, shell: true) do
     Bool.Convert.convert(parsed)
     |> Bool.Slurp.slurp()
-    |> shell({[], []})
+    |> Pantagruel.Shell.new_state()
+    |> shell()
   end
 
   defp handle_parse({:ok, parsed}, flags) do
@@ -79,7 +76,7 @@ defmodule Pantagruel do
   defp handle_eval({:ok, _}, parsed, _), do: format_program(parsed) |> puts
 
   defp handle_eval({:error, e}, parsed, _) do
-    IO.puts("Eval error.")
+    puts("Eval error.")
     handle_error(e)
     puts_in_error_handling(parsed)
   end
@@ -101,7 +98,7 @@ defmodule Pantagruel do
     puts("Attempted to redfine defined module: #{e.mod_name}")
   end
 
-  defp puts_in_error_handling(parsed), do: IO.puts("\n#{format_program(parsed)}")
+  defp puts_in_error_handling(parsed), do: puts("\n#{format_program(parsed)}")
 
   defp handle_bad_bindings([]), do: :ok
 
@@ -121,29 +118,18 @@ defmodule Pantagruel do
     end)
   end
 
-  defp shell(tree, {assumed, refuted} = state) do
-    IO.puts("ASSUMED #{assumed}")
-    IO.puts("REFUTED #{refuted}")
+  defp shell({tree, assumed, refuted} = state) do
+    lift(assumed, &format_exp/1) |> IO.inspect(label: :ASSUMED)
+    lift(refuted, &format_exp/1) |> IO.inspect(label: :REFUTED)
 
     tree
     |> format_program()
     |> puts
 
-    case gets() do
-      "!" <> prop ->
-        tree
-        |> BoolAlg.assert(prop)
-        |> shell({[prop | assumed], refuted})
+    input = IO.gets("> ")
 
-      "-" <> prop ->
-        tree
-        |> BoolAlg.refute(prop)
-        |> shell({assumed, [prop | refuted]})
-
-      _ ->
-        shell(tree, state)
-    end
+    state
+    |> Pantagruel.Shell.handle(input)
+    |> shell()
   end
-
-  defp gets, do: IO.gets("> ")
 end

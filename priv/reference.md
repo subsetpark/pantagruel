@@ -184,7 +184,7 @@ Here's an example chapter head:
 
 ```pantagruel
 Score <= Nat
-halve(score: Score \ score mod 2 = 0) :: Score
+halve(score: Score .. score mod 2 = 0) :: Score
 ```
 
 It introduces a procedure, `halve`, which operates on all even
@@ -222,11 +222,11 @@ Which says that `f x` or "`f` of `x`" is *refined by* the more concrete
 expression `x + 2`. A more complex example might be
 
 ```pantagruel
-f x <- x > 5 \ g (x * 2)
+f x <- x > 5 .. g (x * 2)
 ```
 
 Which says that `f` of `x` is refined by `g (x * 2)` *when `x` is
-greater than five*. The expression between the `<-` and the `\` is
+greater than five*. The expression between the `<-` and the `..` is
 a **guard**, and performs a very similar function to predicates in a
 procedure declaration.
 
@@ -353,7 +353,7 @@ more comma-separated **bindings** or **guards** with some **expression**,
 separated by a backslash, like this:
 
 ```pantagruel
-[x : X \ x ^ 2]
+[x : X .. x ^ 2]
 ```
 
 The above expression is read to refer to a list made up every element
@@ -372,7 +372,7 @@ contained within a list or set, and must be preceded by a **quantifier**:
 either `all` or `exists`, corresponding to the two types.
 
 ```pantagruel
-all x : Nat, y : Nat, x > y \ (x - y) > 0
+all x : Nat, y : Nat, x > y .. (x - y) > 0
 ```
 
 This example says that for any x and y in the natural numbers where x
@@ -380,7 +380,7 @@ is greater than y, x minus y is greater than 0. It could also be written
 in a slightly more compressed form:
 
 ```pantagruel
-all (x, y) : Nat, x > y \ (x - y) > 0
+all (x, y) : Nat, x > y .. (x - y) > 0
 ```
 
 ## Semantics
@@ -494,7 +494,7 @@ context of those expressions. However, they are not bound in the scope
 of the rest of the program.
 
 ```
-[n : N, n > m \ f n]
+[n : N, n > m .. f n]
  +
 ```
 
@@ -506,14 +506,14 @@ and existential quantifiers: while universal quantifiers have the exact
 same behavior as comprehensions:
 
 ```
-all x : Y, x > z \ f x
+all x : Y, x > z .. f x
     +
 ```
 
 Existential quantifiers introduce symbols into *program* scope.
 
 ```
-exists x : Y, x > z \ f x
+exists x : Y, x > z .. f x
        *
 ```
 
