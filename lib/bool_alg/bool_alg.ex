@@ -6,12 +6,6 @@ defmodule BoolAlg do
   import BoolAlg.Macros
   use Witchcraft
 
-  import Kernel,
-    except: [
-      &&: 2,
-      ||: 2
-    ]
-
   defstruct op: nil, x: nil, y: nil
 
   @doc """
