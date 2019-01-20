@@ -179,3 +179,112 @@ the program in an explicit way.
 
 Using this spec we can try to write a Python script that will process
 an expenses CSV.
+
+```python
+import csv
+
+GROUP_MAP = {
+    "Pitching Staff": {"Nolan Ryan", "Orel Hershiser"},
+    "Communications": {"Jeremy Goodwin"}
+}
+
+with open("expenses.csv", "r") as f:
+    with open("expenses_processed.csv", "w") as out:
+        reader = csv.reader(f)
+        writer = csv.writer(out)
+
+        for row in reader:
+            requester, memo, amount = row
+
+            if requester in GROUP_MAP:
+                group_members = GROUP_MAP[requester]
+                per_person_amount = int(amount) // len(group_members)
+
+                for group_member in group_members:
+                    writer.writerow([group_member, memo, per_person_amount])
+            else:
+                writer.writerow(row)
+```
+
+For convenience's sake we have decided to implement the `group_table`
+as a hardcoded dictionary in our script. The rest of the code is pretty
+straightforward: it reads rows from a CSV, and if the requester is
+found in the group table, it writes out a new row for each member of
+the group. Otherwise it just writes the row to the output.
+
+This means that if we run it on a file that looks like this:
+
+```csv
+George Steinbrenner,Miscellaneous expenses,1000
+Pitching Staff,New baseballs,200
+Shoeless Joe Jackson,Pine tar,30
+```
+
+We'll end up with a new output file like this:
+
+```csv
+George Steinbrenner,Miscellaneous expenses,1000
+Nolan Ryan,New baseballs,100
+Orel Hershiser,New baseballs,100
+Shoeless Joe Jackson,Pine tar,30
+```
+
+There are some decisions in here that were not specified, of course;
+we write out the additional rows in arbitrary order, in the same
+overall order as the original row we're replacing. And we maintain
+the integer format with `//`, at the expense of not always summing
+up to the original amount. These are details that may or may not be
+important to the Sweathogs accounting department, but don't appear in the
+specification. However: because it *is* a specification, and not just
+a single work ticket, we can be confident that as long as they're not
+there, they're not defined, and if we're unclear or need to drill down,
+we can add them to the spec. Without an authoritative specification those
+details might be assumed on the part of the product owner or developer,
+or they might only be found in a previous ticket.
+
+Finally, we can use the invariants stated in the specification as a prompt
+for writing tests. Thinking in terms of invariants and propositions lends
+itself very well to property-based testing; in this case we might use
+the Python [hypothesis](https://hypothesis.works/) library to verify
+invariants stated in the specification, like that if a requester is
+found in the group table, there should be no row in the resulting text
+that contains it.
+
+## An apology for specifications
+
+Isn't this all a bit unnecessary? Pantagruel is at its heart just
+a convenient and consistent notation for putting down basic logical
+statements; it isn't the sort of heavy-duty formal method where you
+end up with something you can prove mechanically. And for programs that
+don't need that kind of industrial-strength approach (like the one above)
+what's the use of the extra step? Why go to the trouble of formalizing
+a program that's so simple? What ambiguities are there, really? Is there
+any other way you could have written a program like this?
+
+Not that I can think of, no---and that's exactly the problem. In our
+example I played the part of product and developer, and I thought of
+the program I'd like to write, then I thought of problem that that
+program would solve, then I wrote the description of the problem, then
+the program. So each step of the way I naturally understood exactly what
+the various parties had in mind. Not only that, but it seemed obvious;
+I couldn't really come up with too many natural ways for something to
+be misunderstood and executed differently.
+
+And for many projects involving one or two people, that will still be
+the case. But as soon as you get more than a few people who have to
+work and communicate together, or for that matter one or two people
+who have to remember what they had in mind six or 10 months ago, that
+self-evidentiality becomes a liability. It's exactly the sense that
+the stakeholders, product owners, and implementers perfectly understand
+what is needed in a given situation that leads to the possibility for
+misunderstandings, both subtle and gross.
+
+Being forced to concretely document our understanding of a software
+system gives us a chance at avoiding misunderstandings---both between
+colleagues and within one's own mind. But the English or any other natural
+language is ill-suited to the task; it's overly verbose and rife with
+opportunities for ambiguity. Using a more formal notation like Pantagruel
+to express things in terms of the basic systems of first-order logic and
+and simple mathematics allows us to do exactly the work we are already
+doing---articulating an unambiguous, rigorous understanding of invariants
+and system properties---with a tool much better suited to the task.
