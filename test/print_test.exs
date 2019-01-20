@@ -27,7 +27,7 @@ defmodule Pantagruel.FormatTest do
     test "minimal function" do
       {parsed, scopes} =
         """
-        f
+        f.
         """
         |> eval
 
@@ -38,8 +38,8 @@ defmodule Pantagruel.FormatTest do
     test "minimal function with module name" do
       {parsed, scopes} =
         """
-        module TEST
-        f
+        module TEST.
+        f.
         """
         |> eval
 
@@ -50,7 +50,7 @@ defmodule Pantagruel.FormatTest do
     test "function" do
       {parsed, scopes} =
         """
-        f x: Nat  :: Real
+        f x: Nat  :: Real.
         """
         |> eval
 
@@ -61,7 +61,7 @@ defmodule Pantagruel.FormatTest do
     test "constructor" do
       {parsed, scopes} =
         """
-        f => F
+        f => F.
         """
         |> eval
 
@@ -72,7 +72,7 @@ defmodule Pantagruel.FormatTest do
     test "aliasing" do
       {parsed, scopes} =
         """
-        Status <= {`ok}
+        Status <= {`ok}.
         """
         |> eval
 
@@ -83,74 +83,74 @@ defmodule Pantagruel.FormatTest do
     test "section" do
       {parsed, scopes} =
         """
-        f => F
+        f => F.
         ---
-        f 1 <-> 0
+        f 1 <-> 0.
         """
         |> eval
 
-      assert "f ⇒ F  \n....  \nf 1 ↔ 0  " == Format.format_program(parsed)
+      assert "f ⇒ F  \n....  \nf 1 ↔ 0.  " == Format.format_program(parsed)
       assert "f ⇒ F" == Format.format_scopes(scopes)
     end
 
     test "unary operator" do
       {parsed, scopes} =
         """
-        f
+        f.
         ---
-        ~f
+        ~f.
         """
         |> eval
 
-      assert "f  \n....  \n¬f  " == Format.format_program(parsed)
+      assert "f  \n....  \n¬f.  " == Format.format_program(parsed)
       assert "f" == Format.format_scopes(scopes)
     end
 
     test "intro operator" do
       {parsed, scopes} =
         """
-        f
+        f.
         ---
-        and ~f
+        and ~f.
         """
         |> eval
 
-      assert "f  \n....  \n∧ ¬f  " == Format.format_program(parsed)
+      assert "f  \n....  \n∧ ¬f.  " == Format.format_program(parsed)
       assert "f" == Format.format_scopes(scopes)
     end
 
     test "refinement" do
       {parsed, scopes} =
         """
-        f
+        f.
         ---
-        f <- exists n : Nat .. n > 1 .. n
+        f <- exists n : Nat .. n > 1 .. n.
         """
         |> eval
 
-      assert "f  \n....  \nf ← ∃ n:ℕ ⸳ n > 1 ⸳ n  " == Format.format_program(parsed)
+      assert "f  \n....  \nf ← ∃ n:ℕ ⸳ n > 1 ⸳ n.  " == Format.format_program(parsed)
       assert "f" == Format.format_scopes(scopes)
     end
 
     test "multi-clause refinement" do
       {parsed, scopes} =
         """
-        f
+        f.
         ---
-        f <- (0 .. exists n : Nat .. n > 1, 1 .. 1)
+        f <- (0 .. exists n : Nat .. n > 1, 1 .. 1).
         """
         |> eval
 
-      assert "f  \n....  \nf ← \n- 0 ⸳ ∃ n:ℕ ⸳ n > 1\n- 1 ⸳ 1  " == Format.format_program(parsed)
+      assert "f  \n....  \nf ← \n- 0 ⸳ ∃ n:ℕ ⸳ n > 1\n- 1 ⸳ 1.  " == Format.format_program(parsed)
       assert "f" == Format.format_scopes(scopes)
     end
 
     test "refinement error" do
       {:error, {:unbound_variables, unbounds, scopes}} =
         """
-        f
+        f.
         ---
-        f <- exists n : Nat .. n > 1 .. k
+        f <- exists n : Nat .. n > 1 .. k.
         """
         |> eval
 

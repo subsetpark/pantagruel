@@ -70,7 +70,6 @@ defmodule Pantagruel.Format do
   def format_exp({:cont, [c, exps]}, s), do: format_container(c, exps, s)
   def format_exp(%Domain{name: n, ref: ref}, s), do: join_exp([n, "⇐", ref], s, " ")
   def format_exp({:dot, [f, x]}, s), do: join_exp([x, f], s, ".")
-  def format_exp(exp(nil, expression), s), do: format_exp(expression, s)
   def format_exp({:f_appl, [f, x]}, s), do: join_exp([f, x], s, " ")
   def format_exp({:guard, expr}, s), do: format_exp(expr, s)
   def format_exp({:lambda, l}, s), do: format_lambda(l, scope: s)
@@ -93,6 +92,8 @@ defmodule Pantagruel.Format do
 
     "#{alias_names} ⇐ #{format_exp(ref, s)}"
   end
+
+  def format_exp(exp(nil, expression), s), do: format_exp(expression, s)
 
   def format_exp(exp(intro_op, expression), s),
     do: "#{format_exp(intro_op, s)} #{format_exp(expression, s)}"
@@ -124,9 +125,13 @@ defmodule Pantagruel.Format do
   defp do_format_chapter(exps) do
     exps
     # For now, assume we want markdown compatibility.
-    |> lift(&(format_exp(&1) <> "  "))
+    |> lift(&(format_exp(&1) <> line_ending(&1) <> "  "))
     |> Enum.join("\n")
   end
+
+  defp line_ending(exp(_, _)), do: "."
+  defp line_ending({:refinement, _}), do: "."
+  defp line_ending(_), do: ""
 
   # Format the contents of the environment after program evaluation.
   defp format_scope(scope) do

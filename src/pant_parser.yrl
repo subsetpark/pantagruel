@@ -57,7 +57,6 @@ module
 import
 sep
 comment
-newline
 symbol
 binary_operator
 unary_operator
@@ -66,6 +65,8 @@ yield_type
 reverse_yield
 refined
 where
+fullstop
+newline
 .
 
 Rootsymbol program.
@@ -82,16 +83,15 @@ Left 50 '..'.
 program -> module_line imports chapters :
     {program, ['$1', '$2', '$3']}.
 program -> '$empty' : {program, [nil, [], []]}.
-program -> newline : {program, [nil, [], []]}.
 
 module_line -> '$empty' : nil.
-module_line -> module bare_symbol newline : '$2'.
+module_line -> module bare_symbol fullstop : '$2'.
 
 imports -> '$empty' : [].
 imports -> import_line : '$1'.
 imports -> imports import_line: '$1' ++ '$2'.
 
-import_line -> import bare_symbols newline : '$2'.
+import_line -> import bare_symbols fullstop : '$2'.
 
 chapters -> chapter : ['$1'].
 chapters -> chapter where chapters : ['$1' | '$3'].
@@ -100,7 +100,7 @@ chapter -> head : {chapter, ['$1', []]}.
 chapter -> head sep body : {chapter, ['$1', '$3']}.
 
 a_comment -> comment : unwrap('$1').
-a_comment -> a_comment newline comment : merge_comments('$1', '$3').
+a_comment -> a_comment comment : merge_comments('$1', '$2').
 
 %
 % head
@@ -109,9 +109,9 @@ a_comment -> a_comment newline comment : merge_comments('$1', '$3').
 head -> head_line : ['$1'].
 head -> head_line head : ['$1' | '$2'].
 
-head_line -> declaration newline : '$1'.
-head_line -> alias newline : '$1'.
-head_line -> a_comment newline : '$1'.
+head_line -> declaration fullstop : '$1'.
+head_line -> alias fullstop : '$1'.
+head_line -> a_comment : '$1'.
 
 % i. declarations
 
@@ -128,10 +128,10 @@ alias -> symbols reverse_yield expression : {alias, ['$1', '$3']}.
 body -> body_line : ['$1'].
 body -> body_line body : ['$1' | '$2'].
 
-body_line -> expression refined refinement newline : {refinement, ['$1', '$3']}.
-body_line -> a_comment newline : '$1'.
-body_line -> binary_operator expression newline : {expr, [unwrap('$1'), '$2']}.
-body_line -> expression newline : {expr, [nil, '$1']}.
+body_line -> expression refined refinement fullstop: {refinement, ['$1', '$3']}.
+body_line -> a_comment : '$1'.
+body_line -> binary_operator expression fullstop: {expr, [unwrap('$1'), '$2']}.
+body_line -> expression fullstop: {expr, [nil, '$1']}.
 
 % EXPRESSION PRECEDENCE
 % This is a strange area. Here are the precedence levels of Pantagruel:
@@ -218,12 +218,11 @@ container_contents -> binding_or_guards '..' expression :
 
 refinement -> expression : [{case_exp, [nil, '$1']}].
 refinement -> guarded_refinement : ['$1'].
-refinement -> '(' guarded_refinements ')' : filter_skip_lines('$2').
+refinement -> '(' guarded_refinements ')' : '$2'.
 
 guarded_refinements -> guarded_refinement : ['$1'].
 guarded_refinements -> guarded_refinement guarded_refinements : ['$1' | '$2'].
 
-guarded_refinement -> newline : skip_line.
 guarded_refinement -> expression '..' expression : {case_exp, ['$1', '$3']}.
 guarded_refinement -> expression '..' expression ',' : {case_exp, ['$1', '$3']}.
 
@@ -241,8 +240,3 @@ bare({symbol, _, Symbol}) -> Symbol.
 
 merge_comments({comment, Comment}, {comment, _, Comment2}) ->
     {comment, Comment ++ [16#f8ff] ++ Comment2}.
-
-filter_skip_lines(Symbols) -> lists:filter(fun empty_filter/1, Symbols).
-
-empty_filter(skip_line) -> false;
-empty_filter(_) -> true.

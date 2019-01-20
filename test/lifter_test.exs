@@ -6,7 +6,7 @@ defmodule LifterTest do
     test "lift base case" do
       tree =
         """
-        f
+        f.
         """
         |> tryp()
 
@@ -16,7 +16,7 @@ defmodule LifterTest do
     test "Convert expr" do
       tree =
         """
-        f x and y
+        f x and y.
         """
         |> tryp()
         |> Convert.convert()
@@ -44,10 +44,10 @@ defmodule LifterTest do
     test "lift line" do
       tree =
         """
-        f
+        f.
         ---
-        1
-        and `ok
+        1.
+        and `ok.
         """
         |> tryp()
         |> Slurp.slurp()
@@ -68,10 +68,10 @@ defmodule LifterTest do
     test "assert line" do
       tree =
         """
-        f
+        f.
         ---
-        1
-        and `ok
+        1.
+        and `ok.
         """
         |> tryp()
         |> Convert.convert()
@@ -94,10 +94,10 @@ defmodule LifterTest do
     test "print line" do
       out =
         """
-        f
+        f.
         ---
-        1
-        and `ok
+        1.
+        and `ok.
         """
         |> tryp()
         |> Convert.convert()
@@ -111,10 +111,10 @@ defmodule LifterTest do
     test "print other half of line" do
       out =
         """
-        f
+        f.
         ---
-        1
-        and `ok
+        1.
+        and `ok.
         """
         |> tryp()
         |> Convert.convert()
@@ -130,9 +130,9 @@ defmodule LifterTest do
     test "slurp refinement" do
       out =
         """
-        f
+        f.
         ---
-        f <- y
+        f <- y.
         """
         |> tryp()
         |> Convert.convert()
@@ -160,9 +160,9 @@ defmodule LifterTest do
     test "slurp guarded refinement" do
       out =
         """
-        f
+        f.
         ---
-        f <- x .. y
+        f <- x .. y.
         """
         |> tryp()
         |> Convert.convert()
@@ -201,9 +201,9 @@ defmodule LifterTest do
     test "assert guarded refinement" do
       out =
         """
-        f
+        f.
         ---
-        f <- x .. y
+        f <- x .. y.
         """
         |> tryp()
         |> Convert.convert()
@@ -232,9 +232,9 @@ defmodule LifterTest do
     test "print guarded refinement" do
       out =
         """
-        f
+        f.
         ---
-        f <- x .. y
+        f <- x .. y.
         """
         |> tryp()
         |> Convert.convert()
@@ -242,15 +242,15 @@ defmodule LifterTest do
         |> BoolAlg.assert({:symbol, 'x'})
         |> Pantagruel.Format.format_program()
 
-      assert "f  \n....  \nf ← y  " == out
+      assert "f  \n....  \nf ← y.  " == out
     end
 
     test "slurp multi-clause refinement" do
       out =
         """
-        f
+        f.
         ---
-        f <- (x .. y, z .. g)
+        f <- (x .. y, z .. g).
         """
         |> tryp()
         |> Convert.convert()
@@ -297,9 +297,9 @@ defmodule LifterTest do
     test "print multi-clause refinement" do
       out =
         """
-        f
+        f.
         ---
-        f <- (x .. y, z .. g)
+        f <- (x .. y, z .. g).
         """
         |> tryp()
         |> Convert.convert()

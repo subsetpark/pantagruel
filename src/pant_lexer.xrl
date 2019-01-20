@@ -18,10 +18,9 @@ Rules.
 {INT}             : {token, {int, TokenLine, integer(TokenChars)}}.
 {LITERAL}         : {token, {literal, TokenLine, literal(TokenChars)}}.
 {FLOAT}           : {token, {float, TokenLine, to_float(TokenChars)}}.
-\".*\n?           : comment(TokenChars, TokenLine).
 
-\.\.\.\n          : skip_token.
-\n[\s\n]*         : {token, {newline, TokenLine}}.
+\.[{SP}]*\n       : {token, {fullstop, TokenLine}}.
+\".*\n?           : comment(TokenChars, TokenLine).
 
 --(-)+\n+         : {token, {sep, TokenLine}}.
 [{SP}]*;[{SP}\n]* : {token, {where, TokenLine}}.
@@ -31,7 +30,7 @@ YIELD_TYPE        : {token, {yield_type, TokenLine, TokenChars}}.
 {OPERATOR_CHOICE} : {token, operator(TokenChars, TokenLine)}.
 {SYMBOL}          : {token, keyword(TokenChars, TokenLine)}.
 
-[{SP}]+           : skip_token.
+[{SP}\n]+           : skip_token.
 
 Erlang code.
 
