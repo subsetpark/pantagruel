@@ -66,7 +66,6 @@ reverse_yield
 refined
 where
 fullstop
-newline
 .
 
 Rootsymbol program.
