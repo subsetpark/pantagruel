@@ -1315,6 +1315,42 @@ defmodule ParserTest do
     end
   end
 
+  describe "fullstop fib" do
+    test "fib regression" do
+      text = """
+      f.
+      ---
+      fib x <- (
+      f .. 1,
+      f .. 1
+      ).
+      """
+
+      expected =
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [decl: [{:symbol, 'f'}, [], nil, nil]],
+               [
+                 refinement: [
+                   {:f_appl, [symbol: 'fib', symbol: 'x']},
+                   [
+                     case_exp: [{:symbol, 'f'}, 1],
+                     case_exp: [{:symbol, 'f'}, 1]
+                   ]
+                 ]
+               ]
+             ]
+           ]
+         ]}
+
+      tryp(text, expected)
+    end
+  end
+
   defp tryp(string, expected) do
     string = string
 
