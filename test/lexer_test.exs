@@ -31,14 +31,6 @@ defmodule LexerTest do
       assert [{:literal, 1, 'ok'}] == tokens
     end
 
-    @tag :skip
-    # This is disabled because greedy regexes will count two normal
-    # literals as one enclosed literal
-    test 'literals with spaces' do
-      {:ok, tokens, 1} = :pant_lexer.string('`ok ok`')
-      assert [{:literal, 1, 'ok ok'}] == tokens
-    end
-
     test 'backtick literals' do
       {:ok, tokens, 1} = :pant_lexer.string('``ok')
       assert [{:literal, 1, '`ok'}] == tokens

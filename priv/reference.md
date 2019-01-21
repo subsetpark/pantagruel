@@ -48,7 +48,7 @@ statement and some number of **import** statements.
 The first line of a Pantagruel program is, optionally, a module statement. It looks like this:
 
 ```pantagruel
-module NUMBERS
+module NUMBERS.
 ```
 
 This will make the subsequent program available for import under the module name `NUMBERS`.
@@ -66,14 +66,14 @@ Any program that is declared as a module and is in the import path of
 the interpreter may be imported. Import statements have one of two forms:
 
 ```pantagruel
-import NUMBERS
-import USERS
+import NUMBERS.
+import USERS.
 ```
 
 or
 
 ```pantagruel
-import NUMBERS, USERS
+import NUMBERS, USERS.
 ```
 
 These two forms have the equivalent effect of importing both of the
@@ -110,7 +110,7 @@ There are three expression forms possible in a chapter head:
 Here is an example procedure declaration:
 
 ```pantagruel
-fib n:Nat :: Nat
+fib n:Nat :: Nat.
 ```
 
 It introduces a procedure called `fib`, which takes one argument, `n`
@@ -125,7 +125,7 @@ except instead of the **yields** symbol, they are written with the
 **produces** symbol `=>`:
 
 ```pantagruel
-user name:String, age:Nat => User
+user name:String, age:Nat => User.
 ```
 
 This introduces both the domain `User`, as well as the constructor
@@ -139,7 +139,7 @@ and predicates. Here's a declaration of a procedure with no arguments
 and an undefined return:
 
 ```pantagruel
-f
+f.
 ```
 
 Arguments, as above, are specified by a comma-separated list of argument/domain pairs, separated by a colon. The comma-separated list may also contain other arbitrary **predicates**, representing some constraint on the procedure domain.
@@ -147,14 +147,14 @@ Arguments, as above, are specified by a comma-separated list of argument/domain 
 Here's a procedure declaration with a predicate:
 
 ```pantagruel
-f x:Nat, x > 5
+f x:Nat, x > 5.
 ```
 
 The second element in the list indicates that `f` is defined for any
 natural number `x` greater than 5.
 
 ```pantagruel
-f x:Nat, x > 5, x < 10
+f x:Nat, x > 5, x < 10.
 ```
 
 This declares a procedure `f` that's defined for any natural number `x`
@@ -174,7 +174,7 @@ symbol (as seen below).
 Here's an example domain alias:
 
 ```pantagruel
-Status <= {`ok, `error}
+Status <= {`ok, `error}.
 ```
 
 Introduces a domain `Status` which is equivalent to the set of values
@@ -183,8 +183,8 @@ Introduces a domain `Status` which is equivalent to the set of values
 Here's an example chapter head:
 
 ```pantagruel
-Score <= Nat
-halve(score: Score .. score mod 2 = 0) :: Score
+Score <= Nat.
+halve(score: Score .. score mod 2 = 0) :: Score.
 ```
 
 It introduces a procedure, `halve`, which operates on all even
@@ -197,14 +197,14 @@ Chapter **bodies** are separated from chapter heads with a horizontal
 line, consisting of three or more hyphens:
 
 ```pantagruel
-f
+f.
 ---
-f x = 1
+f x = 1.
 ```
 
 Chapter bodies consist of one or more **statements**. Each statement
-is a single line expressing either a **refinement** of a procedure or
-a **proposition** about a procedure.
+expresses either a **refinement** of a procedure or a **proposition**
+about a procedure, and is terminated by a period.
 
 The most basic **expression** in any statement is **application**,
 represented by separating two values with a space, like this: `f x`.
@@ -215,14 +215,14 @@ A refinement is any expression, followed by the **refined** symbol
 `<-`, followed by another expression. Here's an example:
 
 ```pantagruel
-f x <- x + 2
+f x <- x + 2.
 ```
 
 Which says that `f x` or "`f` of `x`" is *refined by* the more concrete
 expression `x + 2`. A more complex example might be
 
 ```pantagruel
-f x <- x > 5 .. g (x * 2)
+f x <- x > 5 .. g (x * 2).
 ```
 
 Which says that `f` of `x` is refined by `g (x * 2)` *when `x` is
@@ -296,7 +296,7 @@ of the name of the procedure, lambdas have `fn` before the opening
 parenthesis. For instance:
 
 ```pantagruel
-map f:fn z:_A :: _B, x:_A :: _B
+map f:fn z:_A :: _B, x:_A :: _B.
 ```
 
 This declaration introduces the procedure `map`, which takes two
@@ -353,7 +353,7 @@ more comma-separated **bindings** or **guards** with some **expression**,
 separated by a backslash, like this:
 
 ```pantagruel
-[x : X .. x ^ 2]
+[x : X .. x ^ 2].
 ```
 
 The above expression is read to refer to a list made up every element
@@ -372,7 +372,7 @@ contained within a list or set, and must be preceded by a **quantifier**:
 either `all` or `exists`, corresponding to the two types.
 
 ```pantagruel
-all x : Nat, y : Nat, x > y .. (x - y) > 0
+all x : Nat, y : Nat, x > y .. (x - y) > 0.
 ```
 
 This example says that for any x and y in the natural numbers where x
@@ -380,7 +380,7 @@ is greater than y, x minus y is greater than 0. It could also be written
 in a slightly more compressed form:
 
 ```pantagruel
-all (x, y) : Nat, x > y .. (x - y) > 0
+all (x, y) : Nat, x > y .. (x - y) > 0.
 ```
 
 ## Semantics
@@ -428,17 +428,17 @@ specification, where new terms are introduced so as to provide refinement
 for known terms, eg:
 
 ```pantagruel
-pred n:Nat
+pred n:Nat.
 ---
-pred n <- is_even? n and (n > 5)
+pred n <- is_even? n and (n > 5).
 
 ;
 
-is_even? n:Nat  :: Bool
+is_even? n:Nat  :: Bool.
 ---
-is_even? 0
-~(is_even? 1)
-is_even? n <- is_even? (n - 2)
+is_even? 0.
+~(is_even? 1).
+is_even? n <- is_even? (n - 2).
 ```
 
 That specification describes the behavior of a predicate as checking
@@ -523,3 +523,144 @@ As mentioned, the evaluation semantics of Pantagruel are entirely
 implicit. Nevertheless, in order to design a language that would be
 useful and efficient when it comes to specifying programs, it's useful
 to choose operators with a mind to how they would be used.
+
+#### Operators
+
+These are the operators that the pantagruel interpreter recognizes.
+
+##### Equals
+
+`=` should be read as "is equal to". It expresses the concept of
+*equality*, that is, for `x = y` to be true, `x` and `y` should evaluate
+to the same value. Sets would have the same members, lists would have
+the same contents, and so on.
+
+##### Not-equals
+
+`!=` should be read as "is not equal to". It expresses the inverse of `=`.
+
+##### Not
+
+`~` should be read as "not". It's a unary operator, applied to any
+term. `~x` expresses the negation of the term `x`.
+
+##### Greater than
+
+`>` should be read as "is greater than". `x > y` expresses that `x`
+evaluates as a greater value than `y`. For comparable values this might
+have an obvious semantics, whereas context might need to be provided
+for user-defined domains or container types.
+
+##### Less than
+
+`<` should be read as "is less than".
+
+##### Greater than or equal to
+
+`>=` should be read as "greater than or equal to".
+
+##### Less than or equal to
+
+`=<` should be read as "less than or equal to".
+
+##### Plus
+
+`+` should be read as "plus". It expresses the concept of addition, where
+that might be interpreted varyingly for different domains. For instance,
+the various number types are straightforward to add together; for lists
+concatenation seems like a reasonable interpretation. For sets, `+`
+is sometimes used to express symmetric difference, though it can also
+be used to express simple union.
+
+##### Minus
+
+`-` should be read as "minus". It expresses the concept of subtraction,
+again, where that is sensibly defined. Subtraction is usefully seen
+as the inverse operation of addition, so for lists that would be the
+removal of a sublist. For sets it can be understood as the removal of
+a member or of the members of a second set.
+
+##### Times
+
+`*` should be read as "times". For sets, it might be useful to read `x *
+y` as taking the Cartesian product of `x` and `y`.
+
+##### Division
+
+`%` should be read as "divided by". It expresses the concept of
+division. Generally speaking the behavior of division in the context
+of a programming language must be defined in terms of, for instance,
+whether the behavior of the normal division operator applied to two
+integers should produce another integer or a float. When dealing with
+the domains of mathematics, where there is a useful distinction between
+the natural numbers, the integers, the rationals and the reals, it's a
+little more straightforward to understand the the codomain of division
+of two integers is the rational numbers.
+
+##### Exponentiation
+
+`^` is the power or exponent operator. `x ^ y` should be read as "`x`
+to the `y`th power".
+
+##### Membership
+
+`in` should be read as "in". It expresses set, list or domain membership;
+`x in y` expresses that `x` is in `y`.
+
+##### Conjunction
+
+`and` should be read as "and". It is the Boolean operator expressing the
+relation of conjunction. For `x and y` to be true, `x` must be true and
+`y` must be true.
+
+##### Disjunction
+
+`or` should be read as "or". It is the Boolean operator expressing the
+relation of disjunction. For `x or y` to be true, at least one of `x`
+and `y` must be true.
+
+##### Exclusive disjunction
+
+`xor` should be read as "exclusive or". It is the Boolean operator
+expressing the relation of exclusive disjunction. For `x xor y` to be
+true, exactly one of `x` and `y` must be true.
+
+##### Implication
+
+`->` should be read as "implies". `x -> y` can also be read as "if `x`,
+then `y`". For `x -> y` to be true, one of the following must obtain:
+`x` and `y` are both true; `y` is true; neither `x` nor `y` is true.
+
+##### Biconditional
+
+`<->` should be read as "if and only if". For `x <-> y` to be true,
+one of the following must obtain: `x` and `y` are both true; neither
+`x` nor `y` is true.
+
+##### Cardinality
+
+`#` should be read as "size of". `#` is a unary operator, expressing the
+size of a list or set. `#x` expresses the number of elements within `x`.
+
+##### Union
+
+`|` is the set union operator. `x | y` should be read as "the union of
+`x` and `y`".
+
+##### Intersection
+
+`&` is the set intersection operator. `x & y` should be read as "the
+intersection of `x` and `y`".
+
+#### Domains
+
+Several domains are recognized by the pantagruel interpreter by default:
+
+- `Bool`: the domain of true and false.
+- `Nat`: the domain of natural numbers.
+- `Nat0`: the domain of natural numbers, including 0.
+- `Int`: the domain of integers.
+- `Rat`: the domain of rational numbers.
+- `Real`: the domain of real numbers.
+- `String`: the domain of strings.
+- `Nil`: the empty set.
