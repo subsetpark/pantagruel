@@ -13,7 +13,7 @@ defmodule Pantagruel do
   representation of it.
   """
 
-  @default_path "./pant"
+  @default_path "./pantlib"
 
   @help """
   USAGE: pantagruel [-s]  [-p PATH ...] FILENAME

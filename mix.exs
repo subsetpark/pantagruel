@@ -4,7 +4,7 @@ defmodule Pantagruel.MixProject do
   def project do
     [
       app: :pantagruel,
-      version: "0.1.0",
+      version: "0.2.0",
       elixir: "~> 1.7",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -25,7 +25,7 @@ defmodule Pantagruel.MixProject do
 
   defp description do
     """
-    A program specification language with a defined syntax, but ad-hoc
+    A program specification language with a defined syntax, and ad-hoc
     semantics.
     """
   end
@@ -48,7 +48,7 @@ defmodule Pantagruel.MixProject do
   end
 
   defp escript_config do
-    [main_module: Pantagruel, name: escript_name()]
+    [main_module: Pantagruel, name: :pant]
   end
 
   defp package do
@@ -57,12 +57,5 @@ defmodule Pantagruel.MixProject do
       licenses: ["BSD3"],
       links: %{"GitHub" => "https://github.com/subsetpark/pantagruel"}
     ]
-  end
-
-  defp escript_name do
-    case Mix.env() do
-      :dev -> :pant_dev
-      _ -> :pant
-    end
   end
 end
