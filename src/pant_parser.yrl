@@ -46,8 +46,7 @@ guarded_refinement
 
 maybe_term
 maybe_yield_type
-maybe_binding_or_guards
-.
+maybe_binding_or_guards.
 
 
 Terminals
@@ -65,22 +64,39 @@ yield_type
 reverse_yield
 refined
 where
-fullstop
-.
+fullstop.
 
 Rootsymbol program.
 Endsymbol '$end'.
 
+Nonassoc 600 comment.
+Nonassoc 503 literal.
+Nonassoc 502 float.
+Nonassoc 501 int.
+Nonassoc 500 symbol.
+Nonassoc 499 fn.
+Nonassoc 400 '('.
+Nonassoc 400 ')'.
+Nonassoc 399 '{'.
+Nonassoc 399 '}'.
+Nonassoc 398 '['.
+Nonassoc 398 ']'.
+Left 350 '.'.
+Unary 300 unary_operator.
+Left 200 function_application.
 Left 100 binary_operator.
-Left 300 unary_operator.
+Nonassoc 75 ':'.
+Left 60 ','.
 Left 50 '..'.
+Nonassoc 20 yield_type.
+Left 15 quantifier.
+Nonassoc 14 import.
 
 %
 % RULES
 %
 
-program -> module_line imports chapters :
-    {program, ['$1', '$2', '$3']}.
+program -> module_line imports chapters : {program, ['$1', '$2', '$3']}.
 program -> '$empty' : {program, [nil, [], []]}.
 
 module_line -> '$empty' : nil.
@@ -144,9 +160,8 @@ body_line -> expression fullstop: {expr, [nil, '$1']}.
 expression -> bin_operation : '$1'.
 
 bin_operation -> function_application : '$1'.
-bin_operation ->
-    bin_operation binary_operator bin_operation :
-        {bin_appl, [unwrap('$2'), '$1', '$3']}.
+bin_operation -> bin_operation binary_operator bin_operation :
+    {bin_appl, [unwrap('$2'), '$1', '$3']}.
 
 function_application -> un_operation : '$1'.
 function_application -> function_application un_operation :
@@ -183,7 +198,8 @@ set -> '{' container_contents '}' : {cont, [set, '$2']}.
 quantification -> quantifier binding_or_guards '..' expression :
     {quantification, [unwrap('$1'), '$2', '$4']}.
 
-lambda -> maybe_binding_or_guards maybe_yield_type maybe_term : ['$1', '$2', '$3'].
+lambda -> maybe_binding_or_guards maybe_yield_type maybe_term :
+    ['$1', '$2', '$3'].
 
 binding_or_guards -> binding_or_guard : ['$1'].
 binding_or_guards -> binding_or_guard ',' binding_or_guards : ['$1' | '$3'].
