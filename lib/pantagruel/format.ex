@@ -109,7 +109,7 @@ defmodule Pantagruel.Format do
   end
 
   def format_exp({:comprehension, [bindings, exp]}, s) do
-    binding_str = join_exp(bindings, s, ",")
+    binding_str = join_exp(bindings, s, ", ")
     exp_str = format_exp(exp)
     "#{binding_str} ⸳ #{exp_str}"
   end
