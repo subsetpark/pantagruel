@@ -214,7 +214,7 @@ defmodule Pantagruel.Format do
 
   defp format_container(c, exps, s) do
     {l, r} = delimiters(c)
-    inner_str = join_exp(exps, s, ",")
+    inner_str = join_exp(exps, s, ", ")
 
     "#{l}#{inner_str}#{r}"
   end
