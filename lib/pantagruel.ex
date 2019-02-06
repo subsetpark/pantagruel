@@ -90,12 +90,12 @@ defmodule Pantagruel do
     |> handle_bad_bindings
   end
 
-  defp handle_error({:missing_import, e}) do
-    puts("Imported module could not be found: #{e.mod_name}")
+  defp handle_error({:missing_import, mod_name}) do
+    puts("Imported module could not be found: #{mod_name}")
   end
 
-  defp handle_error({:module_shadow, e}) do
-    puts("Attempted to redfine defined module: #{e.mod_name}")
+  defp handle_error({:module_shadow, mod_name}) do
+    puts("Attempted to redfine defined module: #{mod_name}")
   end
 
   defp puts_in_error_handling(parsed), do: puts("\n#{format_program(parsed)}")

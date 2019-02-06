@@ -54,7 +54,7 @@ defmodule Pantagruel.Format do
 
   def format_chapters(chapters), do: format_with(chapters, &format_chapter/1)
 
-  def format_import({:import, mod_name}), do: ": #{mod_name}"
+  def format_import(mod_name), do: ": #{mod_name}"
   defguard is_term(s) when is_number(s) or is_atom(s) or is_binary(s)
 
   @doc """
