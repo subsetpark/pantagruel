@@ -16,7 +16,7 @@ defmodule Pantagruel do
   @default_path "./pantlib"
 
   @help """
-  USAGE: pantagruel [-s]  [-p PATH ...] FILENAME
+  USAGE: pantagruel [-sc]  [-p PATH ...] FILENAME
   """
 
   @doc """
@@ -26,8 +26,8 @@ defmodule Pantagruel do
   def main(args) do
     args
     |> OptionParser.parse(
-      aliases: [s: :scopes, p: :path, r: :shell],
-      strict: [scopes: :boolean, path: :keep, shell: :boolean]
+      aliases: [s: :scopes, p: :path, r: :shell, c: :check],
+      strict: [scopes: :boolean, path: :keep, shell: :boolean, check: :boolean]
     )
     |> handle
   end
@@ -73,12 +73,13 @@ defmodule Pantagruel do
   end
 
   defp handle_eval({:ok, scope}, _, scopes: true), do: format_scopes(scope) |> puts
+  defp handle_eval({:ok, _}, _, check: true), do: puts "ok"
   defp handle_eval({:ok, _}, parsed, _), do: format_program(parsed) |> puts
 
-  defp handle_eval({:error, e}, parsed, _) do
+  defp handle_eval({:error, e}, parsed, opts) do
     puts("Eval error.")
     handle_error(e)
-    puts_in_error_handling(parsed)
+    puts_in_error_handling(parsed, opts)
   end
 
   defp handle_error({:unbound_variables, unbounds, scopes}) do
@@ -100,7 +101,8 @@ defmodule Pantagruel do
     puts("Attempted to redfine defined module: #{mod_name}")
   end
 
-  defp puts_in_error_handling(parsed), do: puts("\n#{format_program(parsed)}")
+  defp puts_in_error_handling(_, check: true), do: :ok
+  defp puts_in_error_handling(parsed, _), do: puts("\n#{format_program(parsed)}")
 
   defp handle_bad_bindings([]), do: :ok
 

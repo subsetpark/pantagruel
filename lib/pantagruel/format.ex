@@ -90,7 +90,7 @@ defmodule Pantagruel.Format do
   def format_exp({:alias, [names, ref]}, s) do
     alias_names = join_exp(names, [], ",")
 
-    "#{alias_names} ⇐ #{format_exp(ref, s)}"
+    "#{alias_names |> bold()} ⇐ #{format_exp(ref, s)}"
   end
 
   def format_exp(exp(nil, expression), s), do: format_exp(expression, s)
@@ -234,7 +234,14 @@ defmodule Pantagruel.Format do
 
     prefix = lambda_prefix(name, scope)
     yields = lambda_yields(type)
-    codom = format_exp(codomain, scope)
+
+    maybe_bold =
+      case type do
+        '=>' -> &bold/1
+        _ -> & &1
+      end
+
+    codom = format_exp(codomain, scope) |> maybe_bold.()
 
     [prefix, body, yields, codom]
     |> Enum.reject(&(&1 == ""))
@@ -255,7 +262,7 @@ defmodule Pantagruel.Format do
   defp format_relation(:iff), do: format_exp(:"<->")
 
   defp lambda_prefix(nil, _), do: "λ"
-  defp lambda_prefix(name, s), do: format_exp(name, s)
+  defp lambda_prefix(name, s), do: format_exp(name, s) |> bold()
 
   defp lambda_yields(nil), do: ""
   defp lambda_yields('::'), do: "∷"
@@ -264,4 +271,6 @@ defmodule Pantagruel.Format do
   defp delimiters(:par), do: {"(", ")"}
   defp delimiters(:list), do: {"[", "]"}
   defp delimiters(:set), do: {"{", "}"}
+
+  defp bold(exp), do: "**#{exp}**"
 end

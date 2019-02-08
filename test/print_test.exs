@@ -31,7 +31,7 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "f  " == Format.format_program(parsed)
+      assert "**f**  " == Format.format_program(parsed)
       assert "f" == Format.format_scopes(scopes)
     end
 
@@ -43,7 +43,7 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "# TEST\n\nf  " == Format.format_program(parsed)
+      assert "# TEST\n\n**f**  " == Format.format_program(parsed)
       assert "# TEST\nf" == Format.format_scopes(scopes)
     end
 
