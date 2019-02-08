@@ -30,6 +30,8 @@ defmodule Pantagruel.Env do
     sym('String') => %Variable{name: "𝕊", domain: "𝕊"},
     sym('Nil') => %Variable{name: "∅", domain: "⊤"},
     sym('Any') => %Variable{name: "⊤", domain: "⊤"},
+    sym('Set') => %Variable{name: "⊤", domain: "⊤"},
+    sym('Seq') => %Variable{name: "⊤", domain: "⊤"},
     sym(":") => %Variable{name: ":", domain: "⊤"},
     := => %Variable{name: "=", domain: "ℝ"},
     :!= => %Variable{name: "≠", domain: "ℝ"},

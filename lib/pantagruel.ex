@@ -94,6 +94,8 @@ defmodule Pantagruel do
     puts("Imported module could not be found: #{mod_name}")
   end
 
+  defp handle_error({:module_load, e}), do: handle_parse(e.error, %{})
+
   defp handle_error({:module_shadow, mod_name}) do
     puts("Attempted to redfine defined module: #{mod_name}")
   end

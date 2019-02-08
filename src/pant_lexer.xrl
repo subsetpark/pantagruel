@@ -62,6 +62,7 @@ keyword(Keyword, TokenLine) when
     Keyword == "xor";
     Keyword == "or"          -> {binary_operator, TokenLine, Keyword};
 keyword("exists", TokenLine) -> {quantifier, TokenLine, exists};
+keyword("let", TokenLine)    -> {quantifier, TokenLine, 'let'};
 keyword("all", TokenLine)    -> {quantifier, TokenLine, all};
 keyword("fn", TokenLine)     -> {fn, TokenLine};
 keyword("import", TokenLine) -> {import, TokenLine};

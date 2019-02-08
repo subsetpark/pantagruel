@@ -1002,6 +1002,33 @@ defmodule ParserTest do
       )
     end
 
+    test "let quantification" do
+      "f.\n---\nlet x:f .. x."
+      |> tryp(
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [decl: [{:symbol, 'f'}, [], nil, nil]],
+               [
+                 expr: [
+                   nil,
+                   {:quantification,
+                    [
+                      :let,
+                      [binding: [symbol: 'x', symbol: 'f']],
+                      {:symbol, 'x'}
+                    ]}
+                 ]
+               ]
+             ]
+           ]
+         ]}
+      )
+    end
+
     test "nested quantification" do
       "f.\n---\nexists x : X .. all y : X .. x > y."
       |> tryp(
