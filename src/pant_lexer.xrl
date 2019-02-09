@@ -19,7 +19,7 @@ Rules.
 {LITERAL}         : {token, {literal, TokenLine, literal(TokenChars)}}.
 {FLOAT}           : {token, {float, TokenLine, to_float(TokenChars)}}.
 
-\.[{SP}]*\n       : {token, {fullstop, TokenLine}}.
+\.[{SP}]*[\n|\"]  : fullstop(TokenChars, TokenLine).
 \".*\n?           : comment(TokenChars, TokenLine).
 
 --(-)+\n+         : {token, {sep, TokenLine}}.
@@ -96,3 +96,11 @@ operator(TokenChars, TokenLine) when
 operator(TokenChars, TokenLine) when
     TokenChars == "~";
     TokenChars == "#"     -> {unary_operator, TokenLine, TokenChars}.
+
+fullstop(Chars, TokenLine) ->
+    % Handle special case: the last character is the beginning of a comment.
+    Pushback = case lists:last(Chars) of
+        $\" -> "\"";
+        _ -> []
+    end,
+    {token, {fullstop, TokenLine}, Pushback}.
