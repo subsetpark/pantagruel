@@ -21,7 +21,7 @@ defmodule Pantagruel.Shell do
 
   def handle(state, _), do: state
 
-  defp get_ast(prop) do
+  def get_ast(prop) do
     prop
     |> make_minimal_program()
     |> Pantagruel.Scan.scan()
@@ -30,7 +30,7 @@ defmodule Pantagruel.Shell do
     |> extract_minimal_program()
   end
 
-  defp make_minimal_program(exp), do: "f\n---\n#{exp}"
+  defp make_minimal_program(exp), do: "f.\n---\n#{exp}"
 
   defp extract_minimal_program(ast) do
     {:ok, {:program, [_, _, [chapter: [_, [exp(_, exp)]]]]}} = ast

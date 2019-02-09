@@ -63,6 +63,25 @@ defmodule BoolAlg do
     end
   end
 
+  def replace_with(q, p, predicate, token) do
+
+    case predicate.(q, p) do
+      true -> token
+      false -> do_replace_with(q, p, token, predicate)
+    end
+  end
+
+  def do_replace_with({tag, values}, p, token, predicate),
+    do: {tag, lift(values, &replace_with(&1, p, predicate, token))}
+
+  def do_replace_with(q, p, token, predicate) when is_list(q),
+    do: lift(q, &replace_with(&1, p, predicate, token))
+
+  def do_replace_with(%BoolAlg{} = b, p, token, predicate),
+    do: lift(b, &replace_with(&1, p, predicate, token))
+
+  def do_replace_with(q, _, _, _), do: q
+
   # Term rewriting rules; given the presence of `true` or `false` in
   # a boolean operation, the term can be eliminated and the overall
   # operation simplified by reduction.
