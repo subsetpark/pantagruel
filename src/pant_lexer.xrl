@@ -50,12 +50,7 @@ literal("`", Acc) -> string:reverse(Acc);
 literal([], Acc) -> string:reverse(Acc);
 literal([C|Chars], Acc) -> literal(Chars, [C|Acc]).
 
-comment(Chars, TokenLine) ->
-    Pushback = case string:find(Chars, "\n", trailing) of
-        nomatch -> [];
-        _ -> "\n"
-    end,
-    {token, {comment, TokenLine, string:trim(Chars, both, "\n\"\s")}, Pushback}.
+comment(Chars, TokenLine) -> {token, {comment, TokenLine, string:trim(Chars, both, "\n\"\s")}}.
 
 keyword(Keyword, TokenLine) when
     Keyword == "and";

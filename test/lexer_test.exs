@@ -108,6 +108,16 @@ defmodule LexerTest do
       {:ok, tokens, 1} = :pant_lexer.string('10 "ok')
       assert [{:int, 1, 10}, {:comment, 1, 'ok'}] == tokens
     end
+
+    test "comment line management" do
+      string = '''
+      " ok
+      y
+      '''
+
+      {:ok, tokens, 3} = :pant_lexer.string(string)
+      assert [{:comment, 1, 'ok'}, {:symbol, 2, 'y'}] == tokens
+    end
   end
 
   describe "such that" do
