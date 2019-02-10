@@ -34,7 +34,7 @@ is_bound? sect <-
 
 is_bound sym: String :: Bool.
 ---
-is_bound sym <- (sym in env p (p sect)) or (sym in init_scope).
+is_bound sym <- (sym in p.env (p sect)) or (sym in init_scope).
 
 ;
 
@@ -157,9 +157,9 @@ Using this refinement structure we can write our specifications as a
 series of elaborations gradually increasing in detail.
 
 Finally we have to define what it means for a symbol to be
-bound. `is_bound sym <- (sym in env p (p sect)) or (sym in init_scope)`
+bound. `is_bound sym <- (sym in p.env (p sect)) or (sym in init_scope)`
 expresses that `is_bound` for some String `sym` is refined by checking
-whether `sym` is an element of `env p` at `p sect` or if it's an element
+whether `sym` is an element of `p.env` at `p sect` or if it's an element
 of `init_scope`.
 
 `env` and `init_scope` are new concepts and need to be defined. The
@@ -221,7 +221,7 @@ is-bound? sect ← (∀ h:sect.head ⸳ ∀ sym:h ⸳ is-bound? sym) ∧ (∀ b:
 
 **is-bound** sym:𝕊 ∷ 𝔹  \
 ....  \
-is-bound sym ← (sym ∈ env p (p sect)) ∨ (sym ∈ init-scope).
+is-bound sym ← (sym ∈ p.env (p sect)) ∨ (sym ∈ init-scope).
 
 ***
 

@@ -30,7 +30,7 @@ is_bound? sect <-
 
 is_bound sym: String :: Bool.
 ---
-is_bound sym <- (sym in env p (p sect)) or (sym in init_scope).
+is_bound sym <- (sym in p.env (p sect)) or (sym in init_scope).
 
 ;
 
