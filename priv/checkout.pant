@@ -10,7 +10,7 @@ check_out u:User, d:Document.
 " A user may check out a document if they have permission to access it
 " and it's not currently checked out.
 
-(d.owner = nobody and (has_perm? u d) and (check_out u d)) -> d'.owner = u.
+(d.owner = nobody and (has_perm? u d)) -> d'.owner = u.
 (d.owner != nobody or ~(has_perm? u d)) -> d'.owner = d.owner.
 
 ;

@@ -2,45 +2,45 @@
 
 Here's a specification, in Pantagruel, of Pantagruel's binding rules.
 ```pantagruel
-eval p: Program :: Bool
-Program <= [Section]
+eval p: Program :: Bool.
+Program <= [Section].
 
 " A section head must have at least one statement; a section body can be empty.
 
-section head: Head, body: Body, #head > 0 => Section
+section head: Head, body: Body, #head > 0 => Section.
 
-Head <= [Comment, Declaration, Alias]
-Body <= [Comment, Expression]
-Comment, Declaration, Alias, Expression <= [String]
+Head <= [Comment, Declaration, Alias].
+Body <= [Comment, Expression].
+Comment, Declaration, Alias, Expression <= [String].
 ---
 
-eval p <- all sect : p .. is_bound? sect
+eval p <- all sect : p .. is_bound? sect.
 
 ;
 
-is_bound? sect: Section :: Bool
+is_bound? sect: Section :: Bool.
 ---
 
 " All variables referred to in a section head must be defined by the
 " end of that section head. All the variables in a section body, however,
 " must be defined by the end of the *next* section body.
 
-is_bound? sect <-                                           ...
-    (all h : sect.head .. all sym : h .. is_bound? sym)     ...
-    and                                                     ...
-    (all b : (p ((p sect) - 1)).body .. all sym : b .. is_bound? sym)
+is_bound? sect <-
+    (all h : sect.head .. all sym : h .. is_bound? sym)
+    and
+    (all b : (p ((p sect) - 1)).body .. all sym : b .. is_bound? sym).
 
 ;
 
-is_bound sym: String :: Bool
+is_bound sym: String :: Bool.
 ---
-is_bound sym <- (sym in env p (p sect)) or (sym in init_scope)
+is_bound sym <- (sym in env p (p sect)) or (sym in init_scope).
 
 ;
 
-env p: Program :: [Scope]
-init_scope :: Scope
-Scope <= {String}
+env p: Program :: [Scope].
+init_scope :: Scope.
+Scope <= {String}.
 ```
 
 ## Exploration
@@ -195,38 +195,38 @@ When the above program is put into a text file called *binding.pant*,
 and we run `pant binding.pant`, this is what's output:
 
 -----
------
-eval p:Program ∷ 𝔹  \
-Program ⇐ [Section]
+
+**eval** p:Program ∷ 𝔹  \
+**Program** ⇐ [Section]
 
 > A section head must have at least one statement; a section body can be empty.
 
-section head:Head, body:Body, #head > 0 ⇒ Section  \
-Head ⇐ [Comment,Declaration,Alias]  \
-Body ⇐ [Comment,Expression]  \
-Comment,Declaration,Alias,Expression ⇐ [𝕊]  \
+**section** head:Head, body:Body, #head > 0 ⇒ **Section**  \
+**Head** ⇐ [Comment, Declaration, Alias]  \
+**Body** ⇐ [Comment, Expression]  \
+**Comment,Declaration,Alias,Expression** ⇐ [𝕊]  \
 ....  \
-eval p ← ∀ sect:p ⸳ is-bound? sect
+eval p ← ∀ sect:p ⸳ is-bound? sect.
 
 ***
 
-is-bound? sect:Section ∷ 𝔹  \
+**is-bound?** sect:Section ∷ 𝔹  \
 ....
 
 > All variables referred to in a section head must be defined by the
 > end of that section head. All the variables in a section body, however,
 > must be defined by the end of the *next* section body.
 
-is-bound? sect ← (∀ h:sect.head ⸳ ∀ sym:h ⸳ is-bound? sym) ∧ (∀ b:(p ((p sect) − 1)).body ⸳ ∀ sym:b ⸳ is-bound? sym)
+is-bound? sect ← (∀ h:sect.head ⸳ ∀ sym:h ⸳ is-bound? sym) ∧ (∀ b:(p ((p sect) − 1)).body ⸳ ∀ sym:b ⸳ is-bound? sym).
 
 ***
 
-is-bound sym:𝕊 ∷ 𝔹  \
+**is-bound** sym:𝕊 ∷ 𝔹  \
 ....  \
-is-bound sym ← (sym ∈ env p (p sect)) ∨ (sym ∈ init-scope)
+is-bound sym ← (sym ∈ env p (p sect)) ∨ (sym ∈ init-scope).
 
 ***
 
-env p:Program ∷ [Scope]  \
-init-scope ∷ Scope  \
-Scope ⇐ {𝕊}
+**env** p:Program ∷ [Scope]  \
+**init-scope** ∷ Scope  \
+**Scope** ⇐ {𝕊}

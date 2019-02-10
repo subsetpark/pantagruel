@@ -102,23 +102,25 @@ even if there are no constraints placed on what is said.
 Here's a trivial but complete Pantagruel program, translated from an example from *The Way of Z*.
 
 ```pantagruel
-user() => User
-doc (owner: User) => Document
+module CHECKOUT.
+user => User.
+doc owner: User => Document.
 
 " A specification for a small document management system.
 
-check_out (u, d: User, Document)
+check_out u:User, d:Document.
 ---
+
 " A user may check out a document if they have permission to access it
 " and it's not currently checked out.
 
-(d.owner = nobody and (has_perm? u d) and (check_out u d)) -> d'.owner = u
-(d.owner != nobody or ~(has_perm? u d)) -> d'.owner = d.owner
+(d.owner = nobody and (has_perm? u d)) -> d'.owner = u.
+(d.owner != nobody or ~(has_perm? u d)) -> d'.owner = d.owner.
 
 ;
 
-nobody () :: User
-has_perm? (u, d: User, Document) :: Bool
+nobody :: User.
+has_perm? u:User, d:Document :: Bool.
 ```
 
 Paragraph 1: The introduction of our two domains, *User*s and *Document*s.
@@ -136,9 +138,7 @@ P. 5: Two propositions describing the expected state after the
 then the successor to *d* (that is, *d* at some next point in time) will
 have an owner of *u*. The second line says if either of the two first
 conditions is otherwise, the successor to *d* will have the same owner
-as *d* does. In this line we have left out the bit about *check-out u
-d* because in our universe, that proposition is true whether or not we
-run *check-out*.
+as *d* does.
 
 `;`: Pronounced "where", acts as a section separator.
 
@@ -154,27 +154,28 @@ we could continue the specification with statements about *has-perm?*.
 Pretty printed, that's:
 
 ----------------
-----------------
 
-user() ⇒ User \
-doc(owner:User) ⇒ Document
+# CHECKOUT
+
+**user** ⇒ **User**  \
+**doc** owner:User ⇒ **Document**
 
 > A specification for a small document management system.
 
-check-out(u, d:User, Document)
+**check-out** u:User, d:Document  \
+....
 
 > A user may check out a document if they have permission to access it
 > and it's not currently checked out.
 
-(d.owner = nobody ∧ (has-perm? u d) ∧ (check-out u d)) → d'.owner = u \
-(d.owner ≠ nobody ∨ ¬(has-perm? u d)) → d'.owner = d.owner
+(d.owner = nobody ∧ (has-perm? u d)) → d'.owner = u.  \
+(d.owner ≠ nobody ∨ ¬(has-perm? u d)) → d'.owner = d.owner.
 
 ***
 
-nobody() ∷ User \
-has-perm?(u, d:User, Document) ∷ 𝔹
+**nobody** ∷ User  \
+**has-perm?** u:User, d:Document ∷ 𝔹
 
----------------
 ---------------
 
 The document is structured the way it is so that we are able to express
