@@ -10,6 +10,5 @@ defmodule Pantagruel.Scan do
 
   defp scan(<<>>, acc), do: Enum.reverse(acc)
   defp scan(<<last::utf8>>, acc), do: scan(<<>>, [?\n, last | acc])
-  defp scan(<<?"::utf8, rest::binary>>, [_ | _] = acc), do: scan(rest, [?", ?\n | acc])
   defp scan(<<c::utf8, rest::binary>>, acc), do: scan(rest, [c | acc])
 end

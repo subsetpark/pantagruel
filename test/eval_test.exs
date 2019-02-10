@@ -24,7 +24,7 @@ defmodule EvalTest do
 
   describe "program evaluation" do
     test "eval happy path" do
-      parsed = "f x:Nat, x > 1  :: Real" |> scan_and_parse
+      parsed = "f x:Nat, x > 1  :: Real." |> scan_and_parse
 
       assert [
                %{
@@ -43,7 +43,7 @@ defmodule EvalTest do
     end
 
     test "eval unbound" do
-      parsed = "f x:X  :: Real" |> scan_and_parse
+      parsed = "f x:X  :: Real." |> scan_and_parse
 
       {:error, {:unbound_variables, unbounds, _}} = Eval.eval(parsed, [])
 
@@ -53,9 +53,9 @@ defmodule EvalTest do
     test "eval late binding" do
       parsed =
         """
-        f x:X, y:Y :: Real
-        make_y => Y
-        make_x => X
+        f x:X, y:Y :: Real.
+        make_y => Y.
+        make_x => X.
         """
         |> scan_and_parse
 
@@ -102,9 +102,9 @@ defmodule EvalTest do
     test "eval whole section" do
       parsed =
         """
-        f x:Nat
+        f x:Nat.
         ---
-        f x > 0
+        f x > 0.
         """
         |> scan_and_parse
 
@@ -127,9 +127,9 @@ defmodule EvalTest do
     test "eval two sections" do
       parsed =
         """
-        f x:Nat
+        f x:Nat.
         ;
-        g :: Nat
+        g :: Nat.
         """
         |> scan_and_parse
 
@@ -160,9 +160,9 @@ defmodule EvalTest do
     test "unbound variable in body" do
       parsed =
         """
-        f x:Nat
+        f x:Nat.
         ---
-        f x = g x
+        f x = g x.
         """
         |> scan_and_parse
 
@@ -195,11 +195,11 @@ defmodule EvalTest do
     test "bind variables in the next section" do
       parsed =
         """
-        f x:Nat
+        f x:Nat.
         ---
-        f x <- g x
+        f x <- g x.
         ;
-        g y:Nat ::Bool
+        g y:Nat ::Bool.
         """
         |> scan_and_parse
 
@@ -234,13 +234,13 @@ defmodule EvalTest do
     test "variable is bound too late" do
       parsed =
         """
-        f x:Nat
+        f x:Nat.
         ---
-        f x = g x
+        f x = g x.
         ;
-        b => Bool
+        b => Bool.
         ;
-        g y:Nat  :: Bool
+        g y:Nat  :: Bool.
         """
         |> scan_and_parse
 
@@ -250,9 +250,9 @@ defmodule EvalTest do
     test "lambda binding failure" do
       parsed =
         """
-        f x:Nat
+        f x:Nat.
         ---
-        f x in fn z:D::D
+        f x in fn z:D::D.
         """
         |> scan_and_parse
 
@@ -262,11 +262,11 @@ defmodule EvalTest do
     test "lambda binding" do
       parsed =
         """
-        f x:Nat
+        f x:Nat.
         ---
-        f x in fn z:D ::D
+        f x in fn z:D ::D.
         ;
-        d => D
+        d => D.
         """
         |> scan_and_parse
 
@@ -301,9 +301,9 @@ defmodule EvalTest do
     test "lambdas introduce temporary bindings" do
       parsed =
         """
-        f x:Nat
+        f x:Nat.
         ---
-        f x in fn z:Nat, z > 100
+        f x in fn z:Nat, z > 100.
         """
         |> scan_and_parse
 
@@ -326,9 +326,9 @@ defmodule EvalTest do
     test "refinement with 0" do
       parsed =
         """
-        f
+        f.
         ---
-        f <- 0
+        f <- 0.
         """
         |> scan_and_parse
 
@@ -347,10 +347,10 @@ defmodule EvalTest do
     test "alls introduce temporary bindings" do
       parsed =
         """
-        f x:Nat
-        con=> X
+        f x:Nat.
+        con=> X.
         ---
-        all y : X .. y < 10
+        all y : X .. y < 10.
         """
         |> scan_and_parse
 
@@ -383,11 +383,11 @@ defmodule EvalTest do
     test "temporary bindings are temporary" do
       parsed =
         """
-        f x:Nat
-        con=> X
+        f x:Nat.
+        con=> X.
         ---
-        all y : X .. y < 10
-        y > 1
+        all y : X .. y < 10.
+        y > 1.
         """
         |> scan_and_parse
 
@@ -399,9 +399,9 @@ defmodule EvalTest do
     test "binding without bunching evals as two malformed bindings" do
       parsed =
         """
-        w
+        w.
         ---
-        all j, k : X .. j > k
+        all j, k : X .. j > k.
         """
         |> scan_and_parse
 
@@ -420,9 +420,9 @@ defmodule EvalTest do
     test "binding with bunching evals as two bindings" do
       parsed =
         """
-        X <= 1
+        X <= 1.
         ---
-        all (j, k) : X .. j > k
+        all (j, k) : X .. j > k.
         """
         |> scan_and_parse
 
@@ -436,9 +436,9 @@ defmodule EvalTest do
     test "exists binds" do
       parsed =
         """
-        f x:Nat
+        f x:Nat.
         ---
-        exists y : Nat .. f y > 10
+        exists y : Nat .. f y > 10.
         """
         |> scan_and_parse
 
@@ -465,9 +465,9 @@ defmodule EvalTest do
     test "binding rules regression" do
       parsed =
         """
-        f
+        f.
         ---
-        f <- (all z : 1.f .. f)
+        f <- (all z : 1.f .. f).
         """
         |> scan_and_parse
 
@@ -486,13 +486,13 @@ defmodule EvalTest do
     test "look in earlier scope for variable" do
       parsed =
         """
-        f
+        f.
         ;
-        x
+        x.
         ;
-        y
+        y.
         ---
-        y x = f
+        y x = f.
         """
         |> scan_and_parse
 
@@ -527,9 +527,9 @@ defmodule EvalTest do
     test "comprehensions do not bind their variables to external scope" do
       parsed =
         """
-        f x:Nat
+        f x:Nat.
         ---
-        [y : Nat .. f x > y]
+        [y : Nat .. f x > y].
         """
         |> scan_and_parse
 
@@ -552,9 +552,9 @@ defmodule EvalTest do
     test "generics are bound into scope" do
       parsed =
         """
-        f x:_A
+        f x:_A.
         ---
-        [y : _A .. f x > y]
+        [y : _A .. f x > y].
         """
         |> scan_and_parse
 
@@ -581,7 +581,7 @@ defmodule EvalTest do
     test "aliasing" do
       parsed =
         """
-        Status <= {`ok}
+        Status <= {`ok}.
         """
         |> scan_and_parse
 
@@ -598,7 +598,7 @@ defmodule EvalTest do
     test "multiple aliasing" do
       parsed =
         """
-        Status, State <= {`ok}
+        Status, State <= {`ok}.
         """
         |> scan_and_parse
 
@@ -619,10 +619,10 @@ defmodule EvalTest do
     test "object access" do
       parsed =
         """
-        f (x, y):Nat
+        f (x, y):Nat.
         ---
-        f.x
-        f.y
+        f.x.
+        f.y.
         """
         |> scan_and_parse
 
@@ -649,9 +649,9 @@ defmodule EvalTest do
     test "object access on expression" do
       parsed =
         """
-        f (x, y):Nat
+        f (x, y):Nat.
         ---
-        (f 1).x
+        (f 1).x.
         """
         |> scan_and_parse
 
@@ -676,7 +676,7 @@ defmodule EvalTest do
     end
 
     test "comprehension aliasing" do
-      parsed = "Day <= {n : Nat, n =< 30 .. n}" |> scan_and_parse
+      parsed = "Day <= {n : Nat, n =< 30 .. n}." |> scan_and_parse
 
       assert [
                %{
@@ -703,9 +703,9 @@ defmodule EvalTest do
     test "nested quantifiers" do
       parsed =
         """
-        f
+        f.
         ---
-        (all x : Nat .. all y : x .. y > 0)
+        (all x : Nat .. all y : x .. y > 0).
         """
         |> scan_and_parse
 
@@ -724,9 +724,9 @@ defmodule EvalTest do
     test "refinements are evaluated in context of guard" do
       parsed =
         """
-        f
+        f.
         ---
-        f <- exists n : Nat .. n > 1 .. n
+        f <- exists n : Nat .. n > 1 .. n.
         """
         |> scan_and_parse
 
@@ -746,14 +746,14 @@ defmodule EvalTest do
       # Note: this program is incorrect!
       parsed =
         """
-        sort xs : [X]  :: [X]
-        x => X
+        sort xs : [X]  :: [X].
+        x => X.
         ---
-        all (x,y) : xs' .. x =< y <-> ind xs' x < ind xs' y
+        all (x,y) : xs' .. x =< y <-> ind xs' x < ind xs' y.
 
         ;
 
-        ind xs : [X], x : X :: Nat0
+        ind xs : [X], x : X :: Nat0.
         """
         |> scan_and_parse
 

@@ -54,7 +54,7 @@ defmodule Pantagruel.Format do
 
   def format_chapters(chapters), do: format_with(chapters, &format_chapter/1)
 
-  def format_import({:import, mod_name}), do: ": #{mod_name}"
+  def format_import(mod_name), do: ": *#{mod_name}*  "
   defguard is_term(s) when is_number(s) or is_atom(s) or is_binary(s)
 
   @doc """
@@ -70,7 +70,6 @@ defmodule Pantagruel.Format do
   def format_exp({:cont, [c, exps]}, s), do: format_container(c, exps, s)
   def format_exp(%Domain{name: n, ref: ref}, s), do: join_exp([n, "⇐", ref], s, " ")
   def format_exp({:dot, [f, x]}, s), do: join_exp([x, f], s, ".")
-  def format_exp(exp(nil, expression), s), do: format_exp(expression, s)
   def format_exp({:f_appl, [f, x]}, s), do: join_exp([f, x], s, " ")
   def format_exp({:guard, expr}, s), do: format_exp(expr, s)
   def format_exp({:lambda, l}, s), do: format_lambda(l, scope: s)
@@ -91,8 +90,10 @@ defmodule Pantagruel.Format do
   def format_exp({:alias, [names, ref]}, s) do
     alias_names = join_exp(names, [], ",")
 
-    "#{alias_names} ⇐ #{format_exp(ref, s)}"
+    "#{alias_names |> bold()} ⇐ #{format_exp(ref, s)}"
   end
+
+  def format_exp(exp(nil, expression), s), do: format_exp(expression, s)
 
   def format_exp(exp(intro_op, expression), s),
     do: "#{format_exp(intro_op, s)} #{format_exp(expression, s)}"
@@ -108,7 +109,7 @@ defmodule Pantagruel.Format do
   end
 
   def format_exp({:comprehension, [bindings, exp]}, s) do
-    binding_str = join_exp(bindings, s, ",")
+    binding_str = join_exp(bindings, s, ", ")
     exp_str = format_exp(exp)
     "#{binding_str} ⸳ #{exp_str}"
   end
@@ -124,9 +125,13 @@ defmodule Pantagruel.Format do
   defp do_format_chapter(exps) do
     exps
     # For now, assume we want markdown compatibility.
-    |> lift(&(format_exp(&1) <> "  "))
+    |> lift(&(format_exp(&1) <> line_ending(&1) <> "  "))
     |> Enum.join("\n")
   end
+
+  defp line_ending(exp(_, _)), do: "."
+  defp line_ending({:refinement, _}), do: "."
+  defp line_ending(_), do: ""
 
   # Format the contents of the environment after program evaluation.
   defp format_scope(scope) do
@@ -209,7 +214,7 @@ defmodule Pantagruel.Format do
 
   defp format_container(c, exps, s) do
     {l, r} = delimiters(c)
-    inner_str = join_exp(exps, s, ",")
+    inner_str = join_exp(exps, s, ", ")
 
     "#{l}#{inner_str}#{r}"
   end
@@ -229,7 +234,14 @@ defmodule Pantagruel.Format do
 
     prefix = lambda_prefix(name, scope)
     yields = lambda_yields(type)
-    codom = format_exp(codomain, scope)
+
+    maybe_bold =
+      case type do
+        '=>' -> &bold/1
+        _ -> & &1
+      end
+
+    codom = format_exp(codomain, scope) |> maybe_bold.()
 
     [prefix, body, yields, codom]
     |> Enum.reject(&(&1 == ""))
@@ -250,7 +262,7 @@ defmodule Pantagruel.Format do
   defp format_relation(:iff), do: format_exp(:"<->")
 
   defp lambda_prefix(nil, _), do: "λ"
-  defp lambda_prefix(name, s), do: format_exp(name, s)
+  defp lambda_prefix(name, s), do: format_exp(name, s) |> bold()
 
   defp lambda_yields(nil), do: ""
   defp lambda_yields('::'), do: "∷"
@@ -259,4 +271,6 @@ defmodule Pantagruel.Format do
   defp delimiters(:par), do: {"(", ")"}
   defp delimiters(:list), do: {"[", "]"}
   defp delimiters(:set), do: {"{", "}"}
+
+  defp bold(exp), do: "**#{exp}**"
 end

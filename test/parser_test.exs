@@ -8,16 +8,16 @@ defmodule ParserTest do
     end
 
     test "basic decl" do
-      "f"
+      "f."
       |> tryp({:program, [nil, [], [chapter: [[decl: [{:symbol, 'f'}, [], nil, nil]], []]]]})
     end
 
     test "binding regression" do
       """
-      f
+      f.
       ---
 
-      x
+      x.
 
       """
       |> tryp(
@@ -37,9 +37,9 @@ defmodule ParserTest do
 
     test "binding regression 2" do
       """
-      f
+      f.
       ---
-      (x in f)
+      (x in f).
       """
       |> tryp(
         {:program,
@@ -66,7 +66,7 @@ defmodule ParserTest do
     end
 
     test "decl with argument" do
-      "f x : X"
+      "f x : X."
       |> tryp(
         {:program,
          [
@@ -90,7 +90,7 @@ defmodule ParserTest do
     end
 
     test "decl with two argument" do
-      "f x : X, y : Y"
+      "f x : X, y : Y."
       |> tryp(
         {:program,
          [
@@ -117,7 +117,7 @@ defmodule ParserTest do
     end
 
     test "decl with yield" do
-      "f :: F"
+      "f :: F."
       |> tryp(
         {:program,
          [
@@ -134,7 +134,7 @@ defmodule ParserTest do
     end
 
     test "decl with value" do
-      "f x : X, y : Y, x => F"
+      "f x : X, y : Y, x => F."
       |> tryp(
         {:program,
          [
@@ -162,7 +162,7 @@ defmodule ParserTest do
     end
 
     test "full decl" do
-      "f x : X, y : Y, x > y => F"
+      "f x : X, y : Y, x > y => F."
       |> tryp(
         {:program,
          [
@@ -190,7 +190,7 @@ defmodule ParserTest do
     end
 
     test "decl with unary guard" do
-      "f x:X, ~x"
+      "f x:X, ~x."
       |> tryp(
         {:program,
          [
@@ -217,7 +217,7 @@ defmodule ParserTest do
     end
 
     test "decl with function application" do
-      "f x:X, f x"
+      "f x:X, f x."
       |> tryp(
         {:program,
          [
@@ -244,7 +244,7 @@ defmodule ParserTest do
     end
 
     test "decl with expression application" do
-      "f x:X, (x + 1) x"
+      "f x:X, (x + 1) x."
       |> tryp(
         {:program,
          [
@@ -276,7 +276,7 @@ defmodule ParserTest do
     end
 
     test "decl with two guards" do
-      "f x:X, x > 1, x < 3"
+      "f x:X, x > 1, x < 3."
       |> tryp(
         {:program,
          [
@@ -307,9 +307,9 @@ defmodule ParserTest do
   describe "literals" do
     test "delimited literal" do
       """
-      f
+      f.
       ---
-      [`ok]
+      [`ok].
       """
       |> tryp(
         {:program,
@@ -329,7 +329,7 @@ defmodule ParserTest do
 
   describe "alias" do
     test "domain alias" do
-      "S <= String"
+      "S <= String."
       |> tryp(
         {:program,
          [
@@ -341,7 +341,7 @@ defmodule ParserTest do
     end
 
     test "multiple domain alias" do
-      "S, T <= String"
+      "S, T <= String."
       |> tryp(
         {:program,
          [
@@ -358,7 +358,7 @@ defmodule ParserTest do
     end
 
     test "alias of exp" do
-      "Status <= {`ok}"
+      "Status <= {`ok}."
       |> tryp(
         {:program,
          [
@@ -380,7 +380,7 @@ defmodule ParserTest do
     end
 
     test 'expr aliasing' do
-      "Day <= x =< 30"
+      "Day <= x =< 30."
       |> tryp(
         {:program,
          [
@@ -404,7 +404,7 @@ defmodule ParserTest do
 
   describe "containers" do
     test "empty list" do
-      "f x:X, []"
+      "f x:X, []."
       |> tryp(
         {:program,
          [
@@ -431,7 +431,7 @@ defmodule ParserTest do
     end
 
     test "list" do
-      "f x:X, [x]"
+      "f x:X, [x]."
       |> tryp(
         {:program,
          [
@@ -458,7 +458,7 @@ defmodule ParserTest do
     end
 
     test "list with multiple items" do
-      "f x:X, [x, x 1]"
+      "f x:X, [x, x 1]."
       |> tryp(
         {:program,
          [
@@ -487,7 +487,7 @@ defmodule ParserTest do
 
   describe "head" do
     test "two declarations" do
-      "f\ng"
+      "f.\ng."
       |> tryp(
         {:program,
          [
@@ -507,7 +507,7 @@ defmodule ParserTest do
     end
 
     test "comment and decl" do
-      "\"  ok\nf"
+      "\"  ok\nf."
       |> tryp(
         {:program,
          [
@@ -524,7 +524,7 @@ defmodule ParserTest do
     end
 
     test "blank line" do
-      "f\n\ng"
+      "f.\n\ng."
       |> tryp(
         {:program,
          [
@@ -560,7 +560,7 @@ defmodule ParserTest do
 
     test "comment in body" do
       """
-      f
+      f.
       ---
       " A
       " B
@@ -582,9 +582,9 @@ defmodule ParserTest do
 
     test "scratch regression" do
       """
-      andr
+      andr.
       ---
-      z " Here
+      z. " Here
       """
       |> tryp(
         {:program,
@@ -604,7 +604,7 @@ defmodule ParserTest do
 
   describe "precendence" do
     test "decl with precedence" do
-      "f x: Nat, f x > g y"
+      "f x: Nat, f x > g y."
       |> tryp(
         {:program,
          [
@@ -637,7 +637,7 @@ defmodule ParserTest do
     end
 
     test "decl with function precedence" do
-      "f x: Nat, f x y"
+      "f x: Nat, f x y."
       |> tryp(
         {:program,
          [
@@ -664,7 +664,7 @@ defmodule ParserTest do
     end
 
     test "decl with function application on unary" do
-      "f x: Nat, f ~ y"
+      "f x: Nat, f ~ y."
       |> tryp(
         {:program,
          [
@@ -696,7 +696,7 @@ defmodule ParserTest do
     end
 
     test "decl with unary associativity" do
-      "f x:X, ~ # z x"
+      "f x:X, ~ # z x."
       |> tryp(
         {:program,
          [
@@ -730,7 +730,7 @@ defmodule ParserTest do
 
   describe "chapter" do
     test "simple chapter" do
-      "f\n---\n1"
+      "f.\n---\n1."
       |> tryp(
         {:program,
          [
@@ -747,7 +747,7 @@ defmodule ParserTest do
     end
 
     test "two chapters" do
-      "f\n;\ng"
+      "f.\n;\ng."
       |> tryp(
         {:program,
          [
@@ -762,7 +762,7 @@ defmodule ParserTest do
     end
 
     test "chapter refinement" do
-      "f\n---\n1 <- 2"
+      "f.\n---\n1 <- 2."
       |> tryp(
         {:program,
          [
@@ -779,7 +779,7 @@ defmodule ParserTest do
     end
 
     test "chapter binary op" do
-      "f\n---\n1 + 2"
+      "f.\n---\n1 + 2."
       |> tryp(
         {:program,
          [
@@ -796,7 +796,7 @@ defmodule ParserTest do
     end
 
     test "chapter function application" do
-      "f\n---\nf x"
+      "f.\n---\nf x."
       |> tryp(
         {:program,
          [
@@ -813,7 +813,7 @@ defmodule ParserTest do
     end
 
     test "chapter list" do
-      "f\n---\n[f x]"
+      "f.\n---\n[f x]."
       |> tryp(
         {:program,
          [
@@ -835,7 +835,7 @@ defmodule ParserTest do
     end
 
     test "chapter with two lines" do
-      "f\n---\n1\n2"
+      "f.\n---\n1.\n2."
       |> tryp(
         {:program,
          [
@@ -854,7 +854,7 @@ defmodule ParserTest do
 
   describe "import" do
     test "import line" do
-      "import F\nf"
+      "import F.\nf."
       |> tryp(
         {:program,
          [
@@ -866,7 +866,7 @@ defmodule ParserTest do
     end
 
     test "multiple imports" do
-      "import F, X\nf"
+      "import F, X.\nf."
       |> tryp(
         {:program,
          [
@@ -880,7 +880,7 @@ defmodule ParserTest do
 
   describe "comprehensions" do
     test "set comprehension" do
-      "f\n---\n{x : X .. x}"
+      "f.\n---\n{x : X .. x}."
       |> tryp(
         {:program,
          [
@@ -910,7 +910,7 @@ defmodule ParserTest do
     end
 
     test "comprehension with guard" do
-      "f\n---\n{x : X, x > 1 .. x}"
+      "f.\n---\n{x : X, x > 1 .. x}."
       |> tryp(
         {:program,
          [
@@ -944,7 +944,7 @@ defmodule ParserTest do
     end
 
     test "comprehension with in" do
-      "f\n---\n[x : X .. x]"
+      "f.\n---\n[x : X .. x]."
       |> tryp(
         {:program,
          [
@@ -976,7 +976,7 @@ defmodule ParserTest do
 
   describe "quantification" do
     test "existential quantification" do
-      "f\n---\nexists x : X .. x > 1"
+      "f.\n---\nexists x : X .. x > 1."
       |> tryp(
         {:program,
          [
@@ -1002,8 +1002,35 @@ defmodule ParserTest do
       )
     end
 
+    test "let quantification" do
+      "f.\n---\nlet x:f .. x."
+      |> tryp(
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [decl: [{:symbol, 'f'}, [], nil, nil]],
+               [
+                 expr: [
+                   nil,
+                   {:quantification,
+                    [
+                      :let,
+                      [binding: [symbol: 'x', symbol: 'f']],
+                      {:symbol, 'x'}
+                    ]}
+                 ]
+               ]
+             ]
+           ]
+         ]}
+      )
+    end
+
     test "nested quantification" do
-      "f\n---\nexists x : X .. all y : X .. x > y"
+      "f.\n---\nexists x : X .. all y : X .. x > y."
       |> tryp(
         {:program,
          [
@@ -1038,9 +1065,9 @@ defmodule ParserTest do
   describe "objects" do
     test "object syntax" do
       """
-      f
+      f.
       ---
-      f.y
+      f.y.
       """
       |> tryp(
         {:program,
@@ -1061,9 +1088,9 @@ defmodule ParserTest do
   describe "lambdas" do
     test "lambda parsing" do
       """
-      f
+      f.
       ---
-      fn::D
+      fn::D.
       """
       |> tryp(
         {:program,
@@ -1084,7 +1111,7 @@ defmodule ParserTest do
   describe "sort" do
     test "sort" do
       """
-      sort xs : [X] :: [X]
+      sort xs : [X] :: [X].
       """
       |> tryp(
         {:program,
@@ -1112,9 +1139,9 @@ defmodule ParserTest do
   describe "logical operators" do
     test "and" do
       """
-      f
+      f.
       ---
-      x and y
+      x and y.
       """
       |> tryp(
         {:program,
@@ -1141,8 +1168,8 @@ defmodule ParserTest do
     test "module" do
       """
 
-      module TEST
-      f
+      module TEST.
+      f.
       """
       |> tryp(
         {:program,
@@ -1158,9 +1185,9 @@ defmodule ParserTest do
   describe "new refinements" do
     test "base case" do
       """
-      f
+      f.
       ---
-      x <- y
+      x <- y.
       """
       |> tryp(
         {:program,
@@ -1184,9 +1211,9 @@ defmodule ParserTest do
 
     test "guard case" do
       """
-      f
+      f.
       ---
-      x <- 0 .. y
+      x <- 0 .. y.
       """
       |> tryp(
         {:program,
@@ -1210,18 +1237,18 @@ defmodule ParserTest do
 
     test "list case" do
       text = """
-      f
+      f.
       ---
-      x <- (0..y, 1 .. z)
+      x <- (0..y, 1 .. z).
       """
 
       text_newlines = """
-      f
+      f.
       ---
       x <- (
         0 .. y,
         1 .. z
-      )
+      ).
       """
 
       expected =
@@ -1247,6 +1274,107 @@ defmodule ParserTest do
 
       tryp(text, expected)
       tryp(text_newlines, expected)
+    end
+  end
+
+  describe "multi lines" do
+    test "single expression over multiple lines" do
+      text = """
+      f.
+      ---
+      f x >
+        2.
+      """
+
+      expected =
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [decl: [{:symbol, 'f'}, [], nil, nil]],
+               [
+                 expr: [
+                   nil,
+                   {:bin_appl, [:>, {:f_appl, [symbol: 'f', symbol: 'x']}, 2]}
+                 ]
+               ]
+             ]
+           ]
+         ]}
+
+      tryp(text, expected)
+    end
+
+    test "quantification over multiple lines" do
+      text = """
+      f.
+      ---
+      all x:X ..
+        x > 1.
+      """
+
+      expected =
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [decl: [{:symbol, 'f'}, [], nil, nil]],
+               [
+                 expr: [
+                   nil,
+                   {:quantification,
+                    [
+                      :all,
+                      [binding: [symbol: 'x', symbol: 'X']],
+                      {:bin_appl, [:>, {:symbol, 'x'}, 1]}
+                    ]}
+                 ]
+               ]
+             ]
+           ]
+         ]}
+
+      tryp(text, expected)
+    end
+  end
+
+  describe "fullstop fib" do
+    test "fib regression" do
+      text = """
+      f.
+      ---
+      fib x <- (
+      f .. 1,
+      f .. 1
+      ).
+      """
+
+      expected =
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [decl: [{:symbol, 'f'}, [], nil, nil]],
+               [
+                 refinement: [
+                   {:f_appl, [symbol: 'fib', symbol: 'x']},
+                   [
+                     case_exp: [{:symbol, 'f'}, 1],
+                     case_exp: [{:symbol, 'f'}, 1]
+                   ]
+                 ]
+               ]
+             ]
+           ]
+         ]}
+
+      tryp(text, expected)
     end
   end
 

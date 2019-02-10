@@ -1,19 +1,19 @@
-module CHECKOUT
-user => User
-doc owner: User => Document
+module CHECKOUT.
+user => User.
+doc owner: User => Document.
 
 " A specification for a small document management system.
 
-check_out u:User, d:Document
+check_out u:User, d:Document.
 ---
 
 " A user may check out a document if they have permission to access it
 " and it's not currently checked out.
 
-(d.owner = nobody and (has_perm? u d) and (check_out u d)) -> d'.owner = u
-(d.owner != nobody or ~(has_perm? u d)) -> d'.owner = d.owner
+(d.owner = nobody and (has_perm? u d) and (check_out u d)) -> d'.owner = u.
+(d.owner != nobody or ~(has_perm? u d)) -> d'.owner = d.owner.
 
 ;
 
-nobody :: User
-has_perm? u:User, d:Document :: Bool
+nobody :: User.
+has_perm? u:User, d:Document :: Bool.

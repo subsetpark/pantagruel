@@ -18,10 +18,9 @@ Rules.
 {INT}             : {token, {int, TokenLine, integer(TokenChars)}}.
 {LITERAL}         : {token, {literal, TokenLine, literal(TokenChars)}}.
 {FLOAT}           : {token, {float, TokenLine, to_float(TokenChars)}}.
-\".*\n?           : comment(TokenChars, TokenLine).
 
-\.\.\.\n          : skip_token.
-\n[\s\n]*         : {token, {newline, TokenLine}}.
+\.[{SP}]*[\n|\"]  : fullstop(TokenChars, TokenLine).
+\".*\n?           : comment(TokenChars, TokenLine).
 
 --(-)+\n+         : {token, {sep, TokenLine}}.
 [{SP}]*;[{SP}\n]* : {token, {where, TokenLine}}.
@@ -31,7 +30,7 @@ YIELD_TYPE        : {token, {yield_type, TokenLine, TokenChars}}.
 {OPERATOR_CHOICE} : {token, operator(TokenChars, TokenLine)}.
 {SYMBOL}          : {token, keyword(TokenChars, TokenLine)}.
 
-[{SP}]+           : skip_token.
+[{SP}\n]+           : skip_token.
 
 Erlang code.
 
@@ -51,18 +50,14 @@ literal("`", Acc) -> string:reverse(Acc);
 literal([], Acc) -> string:reverse(Acc);
 literal([C|Chars], Acc) -> literal(Chars, [C|Acc]).
 
-comment(Chars, TokenLine) ->
-    Pushback = case string:find(Chars, "\n", trailing) of
-        nomatch -> [];
-        _ -> "\n"
-    end,
-    {token, {comment, TokenLine, string:trim(Chars, both, "\n\"\s")}, Pushback}.
+comment(Chars, TokenLine) -> {token, {comment, TokenLine, string:trim(Chars, both, "\n\"\s")}}.
 
 keyword(Keyword, TokenLine) when
     Keyword == "and";
     Keyword == "xor";
     Keyword == "or"          -> {binary_operator, TokenLine, Keyword};
 keyword("exists", TokenLine) -> {quantifier, TokenLine, exists};
+keyword("let", TokenLine)    -> {quantifier, TokenLine, 'let'};
 keyword("all", TokenLine)    -> {quantifier, TokenLine, all};
 keyword("fn", TokenLine)     -> {fn, TokenLine};
 keyword("import", TokenLine) -> {import, TokenLine};
@@ -96,3 +91,11 @@ operator(TokenChars, TokenLine) when
 operator(TokenChars, TokenLine) when
     TokenChars == "~";
     TokenChars == "#"     -> {unary_operator, TokenLine, TokenChars}.
+
+fullstop(Chars, TokenLine) ->
+    % Handle special case: the last character is the beginning of a comment.
+    Pushback = case lists:last(Chars) of
+        $\" -> "\"";
+        _ -> []
+    end,
+    {token, {fullstop, TokenLine}, Pushback}.

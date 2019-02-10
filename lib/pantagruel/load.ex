@@ -47,11 +47,11 @@ defmodule Pantagruel.Load do
     |> include(asts)
   end
 
-  defp include({:ok, [{:module, mod_name} | ast]}, asts) do
+  defp include({:ok, {:program, [mod_name, _, _]} = program}, asts) do
     case asts do
       # No two modules can declare the same module name.
       %{^mod_name => _} -> raise ModuleShadowError, mod_name: mod_name
-      %{} -> Map.put(asts, mod_name, ast)
+      %{} -> Map.put(asts, mod_name, program)
     end
   end
 
