@@ -51,7 +51,8 @@ The first line of a Pantagruel program is, optionally, a module statement. It lo
 module NUMBERS.
 ```
 
-This will make the subsequent program available for import under the module name `NUMBERS`.
+This will make the subsequent program available for import under the
+module name `NUMBERS`.
 
 The module statement is optional; omitting it will not affect the
 semantics of the program, and by the same token the semantics of the
@@ -142,7 +143,10 @@ and an undefined return:
 f.
 ```
 
-Arguments, as above, are specified by a comma-separated list of argument/domain pairs, separated by a colon. The comma-separated list may also contain other arbitrary **predicates**, representing some constraint on the procedure domain.
+Arguments, as above, are specified by a comma-separated list of
+argument/domain pairs, separated by a colon. The comma-separated list may
+also contain other arbitrary **predicates**, representing some constraint
+on the procedure domain.
 
 Here's a procedure declaration with a predicate:
 
@@ -160,8 +164,9 @@ f x:Nat, x > 5, x < 10.
 This declares a procedure `f` that's defined for any natural number `x`
 greater than 5 and less than 10.
 
-This list of either colon-separated **binding pairs** or **predicates**
-is a **binding list** and will show up elsewhere in the language.
+This list of colon-separated **binding pairs** with optional
+**predicates** is a **binding sequence** and will show up elsewhere in
+the language.
 
 #### Domain Aliasing
 
@@ -309,11 +314,11 @@ with underscores.
 #### Containers
 
 There are two **containers** in Pantagruel. Containers are represented by
-surrounding a comma separated list of expressions by a pair of delimiters
+surrounding a comma-separated list of expressions by a pair of delimiters
 which reflects the type of container being represented.
 
 - set: `{}`
-- list: `[]`
+- sequence: `[]`
 
 #### Applications
 
@@ -322,8 +327,8 @@ in Pantagruel. Placing any expression after any other expression
 separated by a single space is parsed as an application of the first
 to the second. So `f x` is parsed as applying `f` to `x`; similarly,
 `[1, 2, 3] 0` is parsed as applying `[1, 2, 3]` to `0`; which, if a
-list is understood as a function from the natural numbers including 0 to
-its contents, is a fairly straightforward way to do list indexing.
+sequence is understood as a function from the natural numbers including 0 to
+its contents, is a fairly straightforward way to do sequence indexing.
 
 The second case of application is in the case of operators, where `x +
 y` is parsed as applying `+` to `x` and `y`.
@@ -348,7 +353,7 @@ for expression more complex operations.
 
 ##### Comprehensions
 
-**set** or **list comprehensions** may be formed by following one or
+**set** or **sequence comprehensions** may be formed by following one or
 more comma-separated **bindings** or **guards** with some **expression**,
 separated by a backslash, like this:
 
@@ -356,7 +361,7 @@ separated by a backslash, like this:
 [x : X .. x ^ 2].
 ```
 
-The above expression is read to refer to a list made up every element
+The above expression is read to refer to a sequence made up every element
 in x, squared.
 
 A binding expression is an expression applying the `:` operator to some
@@ -367,9 +372,9 @@ the domains with arbitrary predicates.
 ##### Quantifications
 
 **universal** and **existential** quantification is structured very
-similarly to comprehension forms. They differ in that quantification isn't
-contained within a list or set, and must be preceded by a **quantifier**:
-either `all` or `exists`, corresponding to the two types.
+similarly to comprehension forms. They differ in that quantification
+isn't contained within a sequence or set, and must be preceded by a
+**quantifier**: either `all` or `exists`, corresponding to the two types.
 
 ```pantagruel
 all x : Nat, y : Nat, x > y .. (x - y) > 0.
@@ -388,9 +393,10 @@ all (x, y) : Nat, x > y .. (x - y) > 0.
 The semantics of Pantagruel are largely implicit: designed to be
 understood by a human reader rather than a computer. Therefore expressions
 don't *evaluate* to anything. This lends a great deal of flexibility when
-writing Pantagruel. For instance, simple function application syntax can
-be understood to refer to things like indexing into a list, or its reverse
-operation of providing the index of a list element, according to context.
+writing Pantagruel. For instance, simple function application syntax
+can be understood to refer to things like indexing into a sequence,
+or its reverse operation of providing the index of a sequence element,
+according to context.
 
 At the same time, Pantagruel is parseable by computer, and there are other
 ways that evaluation of a specification text can assist in modelling. One
@@ -489,7 +495,7 @@ must be bound by the end of the subchapter.
 
 ##### Comprehensions
 
-Set/list comprehensions introduce symbols that are bound within the
+Set/sequence comprehensions introduce symbols that are bound within the
 context of those expressions. However, they are not bound in the scope
 of the rest of the program.
 
@@ -532,7 +538,7 @@ These are the operators that the pantagruel interpreter recognizes.
 
 `=` should be read as "is equal to". It expresses the concept of
 *equality*, that is, for `x = y` to be true, `x` and `y` should evaluate
-to the same value. Sets would have the same members, lists would have
+to the same value. Sets would have the same members, sequences would have
 the same contents, and so on.
 
 ##### Not-equals
@@ -567,7 +573,7 @@ for user-defined domains or container types.
 
 `+` should be read as "plus". It expresses the concept of addition, where
 that might be interpreted varyingly for different domains. For instance,
-the various number types are straightforward to add together; for lists
+the various number types are straightforward to add together; for sequences
 concatenation seems like a reasonable interpretation. For sets, `+`
 is sometimes used to express symmetric difference, though it can also
 be used to express simple union.
@@ -576,8 +582,8 @@ be used to express simple union.
 
 `-` should be read as "minus". It expresses the concept of subtraction,
 again, where that is sensibly defined. Subtraction is usefully seen
-as the inverse operation of addition, so for lists that would be the
-removal of a sublist. For sets it can be understood as the removal of
+as the inverse operation of addition, so for sequences that would be the
+removal of a subsequence. For sets it can be understood as the removal of
 a member or of the members of a second set.
 
 ##### Times
@@ -604,7 +610,7 @@ to the `y`th power".
 
 ##### Membership
 
-`in` should be read as "in". It expresses set, list or domain membership;
+`in` should be read as "in". It expresses set, sequence or domain membership;
 `x in y` expresses that `x` is in `y`.
 
 ##### Conjunction
@@ -640,7 +646,7 @@ one of the following must obtain: `x` and `y` are both true; neither
 ##### Cardinality
 
 `#` should be read as "size of". `#` is a unary operator, expressing the
-size of a list or set. `#x` expresses the number of elements within `x`.
+size of a sequence or set. `#x` expresses the number of elements within `x`.
 
 ##### Union
 
@@ -663,4 +669,5 @@ Several domains are recognized by the pantagruel interpreter by default:
 - `Rat`: the domain of rational numbers.
 - `Real`: the domain of real numbers.
 - `String`: the domain of strings.
+- `Any`: the top/universal domain.
 - `Nil`: the empty set.

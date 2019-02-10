@@ -80,12 +80,12 @@ defmodule LexerTest do
       assert [{:symbol, 1, '1o'}] == tokens
     end
 
-    test "list" do
+    test "sequence" do
       {:ok, tokens, 1} = :pant_lexer.string('[x]')
       assert [{:"[", 1}, {:symbol, 1, 'x'}, {:"]", 1}] == tokens
     end
 
-    test "list with commas" do
+    test "sequence with commas" do
       {:ok, tokens, 1} = :pant_lexer.string('[x, y]')
 
       assert [

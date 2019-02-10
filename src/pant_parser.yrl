@@ -18,7 +18,7 @@ container_contents
 a_comment
 
 term
-list
+sequence
 set
 bunch
 
@@ -178,7 +178,7 @@ term -> a_symbol : '$1'.
 term -> int : unwrap('$1').
 term -> float : unwrap('$1').
 term -> literal : unwrap('$1').
-term -> list : '$1'.
+term -> sequence : '$1'.
 term -> set : '$1'.
 term -> bunch : '$1'.
 term -> quantification : '$1'.
@@ -192,7 +192,7 @@ expressions -> expression : ['$1'].
 expressions -> expression ',' expressions : ['$1' | '$3'].
 
 bunch -> '(' container_contents ')' : {cont, [par, '$2']}.
-list -> '[' container_contents ']' : {cont, [list, '$2']}.
+sequence -> '[' container_contents ']' : {cont, [sequence, '$2']}.
 set -> '{' container_contents '}' : {cont, [set, '$2']}.
 
 quantification -> quantifier binding_or_guards '..' expression :

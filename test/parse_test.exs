@@ -277,7 +277,7 @@ defmodule Pantagruel.Test.LegacyParser do
                    {:symbol, 'f'},
                    [binding: [symbol: 'x', symbol: 'X']],
                    '::',
-                   {:cont, [:list, [symbol: 'X']]}
+                   {:cont, [:sequence, [symbol: 'X']]}
                  ]
                ],
                []
@@ -312,7 +312,7 @@ defmodule Pantagruel.Test.LegacyParser do
                         ]}
                    ],
                    '::',
-                   {:cont, [:list, [symbol: '_A']]}
+                   {:cont, [:sequence, [symbol: '_A']]}
                  ]
                ],
                []

@@ -319,7 +319,7 @@ defmodule ParserTest do
            [
              chapter: [
                [decl: [{:symbol, 'f'}, [], nil, nil]],
-               [expr: [nil, {:cont, [:list, [literal: 'ok']]}]]
+               [expr: [nil, {:cont, [:sequence, [literal: 'ok']]}]]
              ]
            ]
          ]}
@@ -403,7 +403,7 @@ defmodule ParserTest do
   end
 
   describe "containers" do
-    test "empty list" do
+    test "empty sequence" do
       "f x:X, []."
       |> tryp(
         {:program,
@@ -417,7 +417,7 @@ defmodule ParserTest do
                    {:symbol, 'f'},
                    [
                      binding: [symbol: 'x', symbol: 'X'],
-                     guard: {:cont, [:list, []]}
+                     guard: {:cont, [:sequence, []]}
                    ],
                    nil,
                    nil
@@ -430,7 +430,7 @@ defmodule ParserTest do
       )
     end
 
-    test "list" do
+    test "sequence" do
       "f x:X, [x]."
       |> tryp(
         {:program,
@@ -444,7 +444,7 @@ defmodule ParserTest do
                    {:symbol, 'f'},
                    [
                      binding: [symbol: 'x', symbol: 'X'],
-                     guard: {:cont, [:list, [symbol: 'x']]}
+                     guard: {:cont, [:sequence, [symbol: 'x']]}
                    ],
                    nil,
                    nil
@@ -457,7 +457,7 @@ defmodule ParserTest do
       )
     end
 
-    test "list with multiple items" do
+    test "sequence with multiple items" do
       "f x:X, [x, x 1]."
       |> tryp(
         {:program,
@@ -471,7 +471,7 @@ defmodule ParserTest do
                    {:symbol, 'f'},
                    [
                      binding: [symbol: 'x', symbol: 'X'],
-                     guard: {:cont, [:list, [symbol: 'x', f_appl: [{:symbol, 'x'}, 1]]]}
+                     guard: {:cont, [:sequence, [symbol: 'x', f_appl: [{:symbol, 'x'}, 1]]]}
                    ],
                    nil,
                    nil
@@ -812,7 +812,7 @@ defmodule ParserTest do
       )
     end
 
-    test "chapter list" do
+    test "chapter sequence" do
       "f.\n---\n[f x]."
       |> tryp(
         {:program,
@@ -825,7 +825,7 @@ defmodule ParserTest do
                [
                  expr: [
                    nil,
-                   {:cont, [:list, [f_appl: [symbol: 'f', symbol: 'x']]]}
+                   {:cont, [:sequence, [f_appl: [symbol: 'f', symbol: 'x']]]}
                  ]
                ]
              ]
@@ -958,7 +958,7 @@ defmodule ParserTest do
                    nil,
                    {:cont,
                     [
-                      :list,
+                      :sequence,
                       {:comprehension,
                        [
                          [binding: [symbol: 'x', symbol: 'X']],
@@ -1123,9 +1123,9 @@ defmodule ParserTest do
                [
                  decl: [
                    {:symbol, 'sort'},
-                   [binding: [symbol: 'xs', cont: [:list, [symbol: 'X']]]],
+                   [binding: [symbol: 'xs', cont: [:sequence, [symbol: 'X']]]],
                    '::',
-                   {:cont, [:list, [symbol: 'X']]}
+                   {:cont, [:sequence, [symbol: 'X']]}
                  ]
                ],
                []
@@ -1235,7 +1235,7 @@ defmodule ParserTest do
       )
     end
 
-    test "list case" do
+    test "sequence case" do
       text = """
       f.
       ---

@@ -9,8 +9,8 @@ Program <= [Section].
 
 section head: Head, body: Body, #head > 0 => Section.
 
-Head <= [Comment, Declaration, Alias].
-Body <= [Comment, Expression].
+Head <= [Comment + Declaration + Alias].
+Body <= [Comment + Expression].
 Comment, Declaration, Alias, Expression <= [String].
 ---
 
@@ -81,18 +81,18 @@ right side. For convenience's sake, we can introduce multiple domains
 at once if they all refer to the same thing. So `Comment, Declaration,
 Alias, Expression <= [String]` introduces `Comment`, `Declaration`,
 etc. and aliases them all to `[String]`. In other words, each of those
-is simply a list of `String`s.
+is simply a sequence of `String`s.
 
 There are only two basic types of *containers* in Pantagruel: sets and
-lists. A domain such as `[X]` refers to *a list of `X`s*, whereas `{X}`
-refers to *a set of `X`s*. Lists and sets can also be used with actual
+sequences. A domain such as `[X]` refers to *a sequence of `X`s*, whereas `{X}`
+refers to *a set of `X`s*. Sequences and sets can also be used with actual
 values like variables and literals. The only semantic difference between
 the two is that sets have no ordering.
 
-Finally, a domain container with multiple elements `A`, `B` can be
-understood as a container whose elements are either `A` or `B`. So `Body
-<= [Comment, Expression]` says that `Body` is a list whose elements
-are all either `Comment`s or `Expression`s.
+Finally, the operation `+` on domains `A`, `B` can be understood as
+constructing sum type, a domain that's either `A` or `B`. So `Body <=
+[Comment + Expression]` says that `Body` is a sequence whose elements are
+all either `Comment`s or `Expression`s.
 
 By the end of the first section head, everything referred to has been
 formally introduced; either as the name in a function declaration,
@@ -111,7 +111,7 @@ should be true". `is_bound? sect` is a function application; `is_bound?`
 has not been defined yet, and won't be before the end of this section,
 but that's alright.
 
-[^3]: In this case, `p` is a `Program`, and since a `Program` is a list of
+[^3]: In this case, `p` is a `Program`, and since a `Program` is a sequence of
 `Section`s, it follows that each `sect` is a `Section`.
 
 We begin a new section with `;`, and the second section's head
@@ -121,28 +121,26 @@ something about `all sect in p` earlier, that doesn't introduce `sect`
 into the scope of the program as a whole.
 
 The body of the second section consists of a relatively long refinement
-of `is_bound? sect`. Because it extends onto more than one line, we
-continue the line with `...` until we're done with the expression. The
-refinement of `is_bound?` consists of evaluating both halves of a
-logical expression and testing whether both are true. The first half
-is a nested quantification, where the expression after the first `..`
-is a second quantification that makes use of the element introduced in
-the first. In other words, "for each `h` in `sect.head`, for each `sym`
-in `h`, `is_bound? sym` should be true". The second half is constructed
-similarly, but instead of `sect.head` the set we're drawing from is `(p
-((p sect) - 1)).body`. Let's break that down.
+of `is_bound? sect`. The refinement of `is_bound?` consists of evaluating
+both halves of a logical expression and testing whether both are true. The
+first half is a nested quantification, where the expression after the
+first `..` is a second quantification that makes use of the element
+introduced in the first. In other words, "for each `h` in `sect.head`,
+for each `sym` in `h`, `is_bound? sym` should be true". The second half is
+constructed similarly, but instead of `sect.head` the set we're drawing
+from is `(p ((p sect) - 1)).body`. Let's break that down.
 
 The first expression to be parsed is the innermost parenthetical, `(p
 sect)`. This is the application of `p` as a function to `sect`. Since
 `p` is a sequence and `sect` is an element of that sequence, we can
 understand `p sect` to refer to the index *i* of `sect` within the
 sequence `p`. That expression is inside a parenthetical `(p (i - 1))`,
-so we parsed that as applying `p` to `i - 1`. `p` is a list, and we can
-understand the application of a list to an integer to be indexing into
-that list. Therefore `(p ((p sect) - 1))` means "the section in `p`
+so we parsed that as applying `p` to `i - 1`. `p` is a sequence, and we can
+understand the application of a sequence to an integer to be indexing into
+that sequence. Therefore `(p ((p sect) - 1))` means "the section in `p`
 one before `sect`" (we can call it `p'`). Having evaluated everything
 within parentheses, we end up with `p'.body`. Dots allow object-style
-suffix function application/attribute reference, so that is parsed as
+postfix function application/attribute reference, so that is parsed as
 "the `body` of `p`".
 
 Since `Section` was introduced with a type constructor `=>`, we can use
@@ -202,8 +200,8 @@ and we run `pant binding.pant`, this is what's output:
 > A section head must have at least one statement; a section body can be empty.
 
 **section** head:Head, body:Body, #head > 0 ⇒ **Section**  \
-**Head** ⇐ [Comment, Declaration, Alias]  \
-**Body** ⇐ [Comment, Expression]  \
+**Head** ⇐ [Comment + Declaration + Alias]  \
+**Body** ⇐ [Comment + Expression]  \
 **Comment,Declaration,Alias,Expression** ⇐ [𝕊]  \
 ....  \
 eval p ← ∀ sect:p ⸳ is-bound? sect.

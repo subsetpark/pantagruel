@@ -5,8 +5,8 @@ Program <= [Section].
 
 section head: Head, body: Body, #head > 0 => Section.
 
-Head <= [Comment, Declaration, Alias].
-Body <= [Comment, Expression].
+Head <= [Comment + Declaration + Alias].
+Body <= [Comment + Expression].
 Comment, Declaration, Alias, Expression <= [String].
 ---
 

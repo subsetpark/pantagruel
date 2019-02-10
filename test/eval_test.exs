@@ -772,12 +772,12 @@ defmodule EvalTest do
                  {:symbol, 'sort'} => %Pantagruel.Values.Lambda{
                    name: {:symbol, 'sort'},
                    type: '::',
-                   codomain: {:cont, [:list, [symbol: 'X']]},
-                   domain: [cont: [:list, [symbol: 'X']]]
+                   codomain: {:cont, [:sequence, [symbol: 'X']]},
+                   domain: [cont: [:sequence, [symbol: 'X']]]
                  },
                  {:symbol, 'xs'} => %Pantagruel.Values.Variable{
                    name: {:symbol, 'xs'},
-                   domain: {:cont, [:list, [symbol: 'X']]}
+                   domain: {:cont, [:sequence, [symbol: 'X']]}
                  }
                },
                %{
@@ -789,11 +789,11 @@ defmodule EvalTest do
                    codomain: {:symbol, 'Nat0'},
                    name: {:symbol, 'ind'},
                    type: '::',
-                   domain: [cont: [:list, [symbol: 'X']], symbol: 'X']
+                   domain: [cont: [:sequence, [symbol: 'X']], symbol: 'X']
                  },
                  {:symbol, 'xs'} => %Pantagruel.Values.Variable{
                    name: {:symbol, 'xs'},
-                   domain: {:cont, [:list, [symbol: 'X']]}
+                   domain: {:cont, [:sequence, [symbol: 'X']]}
                  }
                }
              ] == eval(parsed)
