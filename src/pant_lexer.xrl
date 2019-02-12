@@ -2,12 +2,12 @@ Definitions.
 
 INT             = [0-9_]+
 DELIMITER       = \[\]\(\){},\.\\
-OPERATOR        = <>\-=~/\*\+#\.%^:|&
+OPERATOR        = <>\-=~/\*\+#\.%^:|&\/
 SP              = \t\s
 
 LITERAL         = `([^{SP}\n,{DELIMITER}]+)
 
-OPERATOR_CHOICE = (>=|==|!=|->|<->|<-|<=|=<|=>|=|-|>|<|\+|\*|~|#|%|\^|;|::|:|&|\.\.|\|)
+OPERATOR_CHOICE = (\/|>=|==|!=|->|<->|<-|<=|=<|=>|=|-|>|<|\+|\*|~|#|%|\^|;|::|:|&|\.\.|\|)
 
 SYMBOL          = [^\s\n&&{OPERATOR}&&{DELIMITER}:\"]+
 YIELD_TYPE      = (=>|::)
@@ -57,6 +57,7 @@ keyword(Keyword, TokenLine) when
     Keyword == "xor";
     Keyword == "or"          -> {binary_operator, TokenLine, Keyword};
 keyword("exists", TokenLine) -> {quantifier, TokenLine, exists};
+keyword("exists1", TokenLine) -> {quantifier, TokenLine, exists1};
 keyword("let", TokenLine)    -> {quantifier, TokenLine, 'let'};
 keyword("all", TokenLine)    -> {quantifier, TokenLine, all};
 keyword("fn", TokenLine)     -> {fn, TokenLine};
@@ -87,6 +88,7 @@ operator(TokenChars, TokenLine) when
     TokenChars == "^";
     TokenChars == "&";
     TokenChars == ":?";
+    TokenChars == "/";
     TokenChars == "|"     -> {binary_operator, TokenLine, TokenChars};
 operator(TokenChars, TokenLine) when
     TokenChars == "~";

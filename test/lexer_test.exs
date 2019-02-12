@@ -146,4 +146,21 @@ defmodule LexerTest do
              ] == tokens
     end
   end
+
+  describe "insert" do
+    test "insert operator" do
+      {:ok, tokens, 1} = :pant_lexer.string('x / y')
+
+      expected = [
+        {:symbol, 1, 'x'},
+        {:binary_operator, 1, '/'},
+        {:symbol, 1, 'y'}
+      ]
+
+      assert expected == tokens
+
+      {:ok, tokens, 1} = :pant_lexer.string('x/y')
+      assert expected == tokens
+    end
+  end
 end
