@@ -269,7 +269,7 @@ defmodule Pantagruel.Format do
   defp lambda_yields('=>'), do: "⇒"
 
   defp delimiters(:par), do: {"(", ")"}
-  defp delimiters(:list), do: {"[", "]"}
+  defp delimiters(:sequence), do: {"[", "]"}
   defp delimiters(:set), do: {"{", "}"}
 
   defp bold(exp), do: "**#{exp}**"
