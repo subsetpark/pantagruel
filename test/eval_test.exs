@@ -24,7 +24,7 @@ defmodule EvalTest do
 
   describe "program evaluation" do
     test "eval happy path" do
-      parsed = "f x:Nat, x > 1  :: Real." |> scan_and_parse
+      parsed = "f x:Nat, x > 1 :: Real." |> scan_and_parse
 
       assert [
                %{
