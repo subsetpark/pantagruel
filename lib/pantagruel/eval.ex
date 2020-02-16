@@ -84,8 +84,12 @@ defmodule Pantagruel.Eval do
     end
   end
 
-  defp handle_imports(imports, available_asts),
-    do: handle_imports(imports, available_asts, [], MapSet.new())
+  defp handle_imports(
+         imports,
+         available_asts,
+         scopes \\ [],
+         seen_mod_names \\ MapSet.new()
+       )
 
   defp handle_imports(
          [mod_name | rest],
