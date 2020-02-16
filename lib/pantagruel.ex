@@ -16,7 +16,7 @@ defmodule Pantagruel do
   @default_path "./pantlib"
 
   @help """
-  USAGE: pantagruel [-sc]  [-p PATH ...] FILENAME
+  USAGE: pantagruel [-scr]  [-p PATH ...] FILENAME
   """
 
   @doc """
@@ -33,8 +33,10 @@ defmodule Pantagruel do
   end
 
   defp handle({flags, [filename], _}) do
-    filename
-    |> File.read!()
+    case filename do
+      "-" -> IO.read(:stdio, :all)
+      name -> name |> File.read!()
+    end
     |> Pantagruel.Scan.scan()
     |> :pant_lexer.string()
     |> Parse.handle_lex()
@@ -73,7 +75,7 @@ defmodule Pantagruel do
   end
 
   defp handle_eval({:ok, scope}, _, scopes: true), do: format_scopes(scope) |> puts
-  defp handle_eval({:ok, _}, _, check: true), do: puts "ok"
+  defp handle_eval({:ok, _}, _, check: true), do: puts("ok")
   defp handle_eval({:ok, _}, parsed, _), do: format_program(parsed) |> puts
 
   defp handle_eval({:error, e}, parsed, opts) do

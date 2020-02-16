@@ -301,15 +301,15 @@ of the name of the procedure, lambdas have `fn` before the opening
 parenthesis. For instance:
 
 ```pantagruel
-map f:fn z:_A :: _B, x:_A :: _B.
+map f:fn z:'A :: 'B, x:'A :: 'B.
 ```
 
 This declaration introduces the procedure `map`, which takes two
-arguments, `f` and `x`. `f` is itself a lambda that goes from `_A` to
-`_B`, and `x` is a `_A`. `map` returns a `_B`.
+arguments, `f` and `x`. `f` is itself a lambda that goes from `'A` to
+`'B`, and `x` is a `'A`. `map` returns a `'B`.
 
 This also illustrates the use of **generic domains**, which are introduced
-with underscores.
+with apostrophes.
 
 #### Containers
 

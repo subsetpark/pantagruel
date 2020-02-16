@@ -288,7 +288,7 @@ defmodule Pantagruel.Test.LegacyParser do
     end
 
     test "heading with generic domain" do
-      text = "f x:_A, x*y>10 :: [_A]."
+      text = "f x:'A, x*y>10 :: ['A]."
 
       tryparse(
         text,
@@ -302,7 +302,7 @@ defmodule Pantagruel.Test.LegacyParser do
                  decl: [
                    {:symbol, 'f'},
                    [
-                     binding: [symbol: 'x', symbol: '_A'],
+                     binding: [symbol: 'x', symbol: '\'A'],
                      guard:
                        {:bin_appl,
                         [
@@ -312,7 +312,7 @@ defmodule Pantagruel.Test.LegacyParser do
                         ]}
                    ],
                    '::',
-                   {:cont, [:sequence, [symbol: '_A']]}
+                   {:cont, [:sequence, [symbol: '\'A']]}
                  ]
                ],
                []

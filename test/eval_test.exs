@@ -552,26 +552,26 @@ defmodule EvalTest do
     test "generics are bound into scope" do
       parsed =
         """
-        f x:_A.
+        f x:'A.
         ---
-        [y : _A .. f x > y].
+        [y : 'A .. f x > y].
         """
         |> scan_and_parse
 
       assert [
                %{
-                 {:symbol, '_A'} => %Domain{
-                   name: {:symbol, '_A'},
-                   ref: {:symbol, '_A'}
+                 {:symbol, '\'A'} => %Domain{
+                   name: {:symbol, '\'A'},
+                   ref: {:symbol, '\'A'}
                  },
                  {:symbol, 'f'} => %Lambda{
                    codomain: nil,
-                   domain: [symbol: '_A'],
+                   domain: [symbol: '\'A'],
                    name: {:symbol, 'f'},
                    type: nil
                  },
                  {:symbol, 'x'} => %Variable{
-                   domain: {:symbol, '_A'},
+                   domain: {:symbol, '\'A'},
                    name: {:symbol, 'x'}
                  }
                }

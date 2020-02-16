@@ -141,7 +141,9 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "**f**  \n....  \nf ← \n- 0 ⸳ ∃ n:ℕ ⸳ n > 1\n- 1 ⸳ 1.  " == Format.format_program(parsed)
+      assert "**f**  \n....  \nf ← \n- 0 ⸳ ∃ n:ℕ ⸳ n > 1\n- 1 ⸳ 1.  " ==
+               Format.format_program(parsed)
+
       assert "**f**" == Format.format_scopes(scopes)
     end
 

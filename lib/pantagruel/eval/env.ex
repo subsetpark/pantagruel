@@ -170,7 +170,9 @@ defmodule Pantagruel.Env do
     do: is_bound?(expr, env)
 
   def is_bound?(sym(variable), [scope | parent]) do
-    trimmed = :string.trim(variable, :both, '\'')
+    # Trim off trailing apostrophes, so "successor" or "primed" variables
+    # (like x' for x) are treated the same as their base names
+    trimmed = :string.trim(variable, :trailing, '\'')
     symbol = sym(trimmed)
 
     has_key?(scope, symbol) or is_bound?(symbol, parent)
