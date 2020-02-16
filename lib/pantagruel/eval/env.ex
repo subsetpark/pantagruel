@@ -4,17 +4,22 @@ defmodule Pantagruel.Env do
   """
 
   alias Pantagruel.Values.{Variable, Domain, Lambda}
+  alias Pantagruel.Eval.Module
 
   import Pantagruel.Macros
 
-  @type scope :: map()
+  defmodule Scope do
+    defstruct __module__: nil
+    @type t :: %__MODULE__{}
+  end
+
   @typedoc """
   An environment is a list of binding contexts, one scope for each section
   of the program. Symbols are bound into scope by being referred to in
   one of several declaration forms, at which point they are inserted
   into the scope for that section.
   """
-  @type t :: [scope]
+  @type t :: [Scope.t()]
 
   defmodule UnboundVariablesError do
     defexception message: "Unbound variables remain", unbound: MapSet.new(), env: []
@@ -59,15 +64,28 @@ defmodule Pantagruel.Env do
   }
 
   @doc """
+  Start a new execution environment.
+  """
+  @spec new() :: t()
+  def new, do: []
+
+  @doc """
+  Extend an exection environment with a new scope.
+  """
+  @spec extend(t(), atom()) :: t()
+  def extend(env, nil), do: [%Scope{} | env]
+  def extend(env, mod_name), do: [%Scope{__module__: %Module{name: mod_name}} | env]
+
+  @doc """
   Introduce a new variable into this scope.
   """
   def bind(scope, {name, value}), do: bind(scope, name, value)
 
-  @spec bind(scope, any(), any()) :: scope
+  @spec bind(Scope.t(), any(), any()) :: Scope.t()
   def bind(scope, {:par, elements}, value), do: Enum.reduce(elements, scope, &bind(&2, &1, value))
   def bind(scope, name, value), do: Map.put(scope, name, make_variable(name, value))
 
-  @spec bind_lambda(scope, Keyword.t()) :: scope
+  @spec bind_lambda(Scope.t(), Keyword.t()) :: Scope.t()
   def bind_lambda(scope \\ %{}, [symbol, bindings, yield_type, codomain]) do
     lambda_value = Lambda.from_declaration([symbol, bindings, yield_type, codomain])
     {binding_pairs, _} = extract_binding_symbols(bindings)

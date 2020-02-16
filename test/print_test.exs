@@ -21,7 +21,7 @@ defmodule Pantagruel.FormatTest do
     test "null case" do
       {parsed, scopes} = eval("")
       assert "" == Format.format_program(parsed)
-      assert "" == Format.format_scopes(scopes)
+      assert "" == Format.format_env(scopes)
     end
 
     test "minimal function" do
@@ -32,7 +32,7 @@ defmodule Pantagruel.FormatTest do
         |> eval
 
       assert "**f**  " == Format.format_program(parsed)
-      assert "**f**" == Format.format_scopes(scopes)
+      assert "**f**" == Format.format_env(scopes)
     end
 
     test "minimal function with module name" do
@@ -44,7 +44,7 @@ defmodule Pantagruel.FormatTest do
         |> eval
 
       assert "# TEST\n\n**f**  " == Format.format_program(parsed)
-      assert "# TEST\n**f**" == Format.format_scopes(scopes)
+      assert "# TEST\n**f**" == Format.format_env(scopes)
     end
 
     test "function" do
@@ -55,7 +55,7 @@ defmodule Pantagruel.FormatTest do
         |> eval
 
       assert "**f** x:ℕ ∷ ℝ  " == Format.format_program(parsed)
-      assert "**f** ℕ ∷ ℝ\nx : ℕ" == Format.format_scopes(scopes)
+      assert "**f** ℕ ∷ ℝ\nx : ℕ" == Format.format_env(scopes)
     end
 
     test "constructor" do
@@ -66,7 +66,7 @@ defmodule Pantagruel.FormatTest do
         |> eval
 
       assert "**f** ⇒ **F**  " == Format.format_program(parsed)
-      assert "**f** ⇒ **F**" == Format.format_scopes(scopes)
+      assert "**f** ⇒ **F**" == Format.format_env(scopes)
     end
 
     test "aliasing" do
@@ -77,7 +77,7 @@ defmodule Pantagruel.FormatTest do
         |> eval
 
       assert "**Status** ⇐ {*ok*}  " == Format.format_program(parsed)
-      assert "Status ⇐ {*ok*}" == Format.format_scopes(scopes)
+      assert "Status ⇐ {*ok*}" == Format.format_env(scopes)
     end
 
     test "section" do
@@ -90,7 +90,7 @@ defmodule Pantagruel.FormatTest do
         |> eval
 
       assert "**f** ⇒ **F**  \n....  \nf 1 ↔ 0.  " == Format.format_program(parsed)
-      assert "**f** ⇒ **F**" == Format.format_scopes(scopes)
+      assert "**f** ⇒ **F**" == Format.format_env(scopes)
     end
 
     test "unary operator" do
@@ -103,7 +103,7 @@ defmodule Pantagruel.FormatTest do
         |> eval
 
       assert "**f**  \n....  \n¬f.  " == Format.format_program(parsed)
-      assert "**f**" == Format.format_scopes(scopes)
+      assert "**f**" == Format.format_env(scopes)
     end
 
     test "intro operator" do
@@ -116,7 +116,7 @@ defmodule Pantagruel.FormatTest do
         |> eval
 
       assert "**f**  \n....  \n∧ ¬f.  " == Format.format_program(parsed)
-      assert "**f**" == Format.format_scopes(scopes)
+      assert "**f**" == Format.format_env(scopes)
     end
 
     test "refinement" do
@@ -129,7 +129,7 @@ defmodule Pantagruel.FormatTest do
         |> eval
 
       assert "**f**  \n....  \nf ← ∃ n:ℕ ⸳ n > 1 ⸳ n.  " == Format.format_program(parsed)
-      assert "**f**" == Format.format_scopes(scopes)
+      assert "**f**" == Format.format_env(scopes)
     end
 
     test "multi-clause refinement" do
@@ -144,7 +144,7 @@ defmodule Pantagruel.FormatTest do
       assert "**f**  \n....  \nf ← \n- 0 ⸳ ∃ n:ℕ ⸳ n > 1\n- 1 ⸳ 1.  " ==
                Format.format_program(parsed)
 
-      assert "**f**" == Format.format_scopes(scopes)
+      assert "**f**" == Format.format_env(scopes)
     end
 
     test "refinement error" do

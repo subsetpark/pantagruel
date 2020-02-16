@@ -28,8 +28,8 @@ defmodule Pantagruel.Format do
     |> Enum.join("\n\n")
   end
 
-  @spec format_scopes(Env.t()) :: t
-  def format_scopes(scopes), do: format_with(scopes, &format_scope/1)
+  @spec format_env(Env.t()) :: t
+  def format_env(env), do: format_with(env, &format_scope/1)
 
   @bar "***"
 
@@ -136,9 +136,11 @@ defmodule Pantagruel.Format do
   # Format the contents of the environment after program evaluation.
   defp format_scope(scope) do
     scope
+    |> Map.from_struct()
     |> Map.values()
     |> Enum.filter(fn
       %Domain{name: name, ref: ref} -> ref != name
+      nil -> false
       _ -> true
     end)
     |> Enum.sort(fn

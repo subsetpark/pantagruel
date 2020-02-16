@@ -9,7 +9,6 @@ defmodule Pantagruel.Eval do
   """
   alias Pantagruel.Values.Domain
   alias Pantagruel.Env
-  alias Pantagruel.Eval.Module
 
   import Pantagruel.Macros
 
@@ -37,9 +36,9 @@ defmodule Pantagruel.Eval do
   symbols *may* be referred to before they are defined, but they must
   be defined in the following chapter at the latest.
   """
-  defstruct scopes: [], header_unbounds: MapSet.new(), unbounds: [MapSet.new()]
-  @type t :: %__MODULE__{scopes: Env.t(), header_unbounds: MapSet.t(), unbounds: [MapSet.t()]}
-  @type error :: {:missing_import, any} | {:unbound_variables, MapSet.t(), t}
+  defstruct env: Env.new(), header_unbounds: MapSet.new(), unbounds: [MapSet.new()]
+  @type t :: %__MODULE__{env: Env.t(), header_unbounds: MapSet.t(), unbounds: [MapSet.t()]}
+  @type error :: {:missing_import, any} | {:unbound_variables, MapSet.t(), Env.t()}
 
   @doc """
   Evaluate a Pantagruel AST for variable binding, returning the resulting
@@ -51,14 +50,14 @@ defmodule Pantagruel.Eval do
     # or, if no name was specified, from a module name in the AST.
     mod_name = opts[:mod_name] || module_name
 
-    with {:ok, scopes} <- handle_imports(imports, available_asts),
-         %__MODULE__{scopes: scopes, unbounds: [unbound]} <-
-           Enum.reduce(chapters, new_state(scopes), &eval_chapter(&1, &2, mod_name)),
+    with {:ok, env} <- handle_imports(imports, available_asts),
+         %__MODULE__{env: env, unbounds: [unbound]} <-
+           Enum.reduce(chapters, new_state(env), &eval_chapter(&1, &2, mod_name)),
          # Force a check for unbound values. All symbols must be bound by
          # the end of the program; thus the final chapter cannot introduce
          # any unbound symbols.
-         :ok <- Env.check_unbound(scopes, unbound) do
-      {:ok, Enum.reverse(scopes)}
+         :ok <- Env.check_unbound(env, unbound) do
+      {:ok, Enum.reverse(env)}
     end
   end
 
@@ -71,15 +70,15 @@ defmodule Pantagruel.Eval do
   defp eval_chapter(_, {:error, _} = e, _), do: e
 
   defp eval_chapter({:chapter, [head, body]}, %__MODULE__{} = state, mod_name) do
-    %{scopes: scopes, header_unbounds: header_unbounds} =
+    %{env: env, header_unbounds: header_unbounds} =
       state =
       state
       |> new_state(mod_name)
       |> eval_head(head)
 
-    with :ok <- Env.check_unbound(scopes, header_unbounds),
-         %{scopes: scopes, unbounds: [unbounds | rest]} = state <- eval_body(state, body),
-         :ok <- Env.check_unbound(scopes, unbounds) do
+    with :ok <- Env.check_unbound(env, header_unbounds),
+         %{env: env, unbounds: [unbounds | rest]} = state <- eval_body(state, body),
+         :ok <- Env.check_unbound(env, unbounds) do
       %{state | unbounds: rest}
     end
   end
@@ -87,14 +86,14 @@ defmodule Pantagruel.Eval do
   defp handle_imports(
          imports,
          available_asts,
-         scopes \\ [],
+         env \\ [],
          seen_mod_names \\ MapSet.new()
        )
 
   defp handle_imports(
          [mod_name | rest],
          available_asts,
-         scopes,
+         env,
          seen_mod_names
        ) do
     with false <- MapSet.member?(seen_mod_names, mod_name),
@@ -104,19 +103,19 @@ defmodule Pantagruel.Eval do
       handle_imports(
         rest,
         available_asts,
-        evaled ++ scopes,
+        evaled ++ env,
         MapSet.put(seen_mod_names, mod_name)
       )
     else
       true ->
-        handle_imports(rest, available_asts, scopes, seen_mod_names)
+        handle_imports(rest, available_asts, env, seen_mod_names)
 
       %{} ->
         {:error, {:missing_import, mod_name}}
     end
   end
 
-  defp handle_imports([], _, scopes, _), do: {:ok, scopes}
+  defp handle_imports([], _, env, _), do: {:ok, env}
 
   defp eval_head(%__MODULE__{} = state, head),
     do: Enum.reduce(head, state, &eval_header_statement/2)
@@ -140,19 +139,25 @@ defmodule Pantagruel.Eval do
   defp eval_header_statement(
          {:alias, [alias_names, alias_exp]},
          %__MODULE__{
-           scopes: [scope | scopes],
+           env: [current_scope | env],
            header_unbounds: header_unbounds
          } = state
        ) do
-    scope = Enum.reduce(alias_names, scope, &Env.bind(&2, &1, %Domain{name: &1, ref: alias_exp}))
+    current_scope =
+      Enum.reduce(
+        alias_names,
+        current_scope,
+        &Env.bind(&2, &1, %Domain{name: &1, ref: alias_exp})
+      )
+
     header_unbounds = include_for_binding_check(header_unbounds, alias_exp)
-    %{state | scopes: [scope | scopes], header_unbounds: header_unbounds}
+    %{state | env: [current_scope | env], header_unbounds: header_unbounds}
   end
 
   # 3. Function declarations, which bind new functions into scope.
   defp eval_header_statement(
          {:decl, [_, bindings, _, codomain] = decl},
-         %__MODULE__{scopes: [scope | scopes], header_unbounds: header_unbounds} = state
+         %__MODULE__{env: [current_scope | env], header_unbounds: header_unbounds} = state
        ) do
     {binding_pairs, variable_references} = Env.extract_binding_symbols(bindings)
     {_, doms} = Enum.unzip(binding_pairs)
@@ -161,7 +166,7 @@ defmodule Pantagruel.Eval do
     header_unbounds =
       include_for_binding_check(header_unbounds, [doms, variable_references, codomain])
 
-    %{state | scopes: [Env.bind_lambda(scope, decl) | scopes], header_unbounds: header_unbounds}
+    %{state | env: [Env.bind_lambda(current_scope, decl) | env], header_unbounds: header_unbounds}
   end
 
   # Evaluate a line of a chapter body. Body statements can be either
@@ -173,7 +178,7 @@ defmodule Pantagruel.Eval do
   defp eval_body_statement(
          exp(_, expr),
          %__MODULE__{
-           scopes: [current_scope | scopes],
+           env: [current_scope | env],
            unbounds: [current_unbounds, next_unbounds | rest]
          } = state
        ) do
@@ -184,7 +189,7 @@ defmodule Pantagruel.Eval do
 
     %{
       state
-      | scopes: [current_scope | scopes],
+      | env: [current_scope | env],
         unbounds: [current_unbounds, next_unbounds | rest]
     }
   end
@@ -193,7 +198,7 @@ defmodule Pantagruel.Eval do
   defp eval_body_statement(
          {:refinement, [patt, case_exprs]},
          %__MODULE__{
-           scopes: [current_scope | scopes],
+           env: [current_scope | env],
            unbounds: [current_unbounds, next_unbounds | rest]
          } = state
        ) do
@@ -205,23 +210,20 @@ defmodule Pantagruel.Eval do
 
     %{
       state
-      | scopes: [current_scope | scopes],
+      | env: [current_scope | env],
         unbounds: [current_unbounds, next_unbounds | rest]
     }
   end
 
   # Extend the environment for a new chapter.
   @spec new_state([%{}]) :: t
-  defp new_state(scopes), do: %__MODULE__{scopes: scopes}
+  defp new_state(env), do: %__MODULE__{env: env}
 
   @spec new_state(t, atom() | nil) :: t
   defp new_state(
-         %__MODULE__{scopes: scopes, unbounds: unbounds} = state,
+         %__MODULE__{env: env, unbounds: unbounds} = state,
          mod_name
        ) do
-    %{state | scopes: [new_scope(mod_name) | scopes], unbounds: unbounds ++ [MapSet.new()]}
+    %{state | env: Env.extend(env, mod_name), unbounds: unbounds ++ [MapSet.new()]}
   end
-
-  defp new_scope(nil), do: %{}
-  defp new_scope(mod_name), do: %{__module__: %Module{name: mod_name}}
 end
