@@ -10,10 +10,10 @@ defmodule Pantagruel.Values.Domain do
 
   @doc """
   Generic domains can be introduced by prepending their name with an
-  underscore. This distinction allows generics to be referred to as a
+  apostrophe. This distinction allows generics to be referred to as a
   part of a function definition without being defined first.
   """
-  def is_generic?(sym([?_ | _])), do: true
+  def is_generic?(sym([?\' | _])), do: true
   def is_generic?(sym(_)), do: false
 
   @doc """

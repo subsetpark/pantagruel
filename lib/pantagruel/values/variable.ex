@@ -5,4 +5,3 @@ defmodule Pantagruel.Values.Variable do
   """
   defstruct name: "", domain: ""
 end
-
