@@ -204,7 +204,7 @@ and we run `pant binding.pant`, this is what's output:
 **Body** ⇐ [Comment + Expression]  \
 **Comment,Declaration,Alias,Expression** ⇐ [𝕊]  \
 ....  \
-eval p ← ∀ sect:p ⸳ is-bound? sect.
+eval p ← ∀ sect:p | is-bound? sect.
 
 ***
 
@@ -215,7 +215,7 @@ eval p ← ∀ sect:p ⸳ is-bound? sect.
 > end of that section head. All the variables in a section body, however,
 > must be defined by the end of the *next* section body.
 
-is-bound? sect ← (∀ h:sect.head ⸳ ∀ sym:h ⸳ is-bound? sym) ∧ (∀ b:(p ((p sect) − 1)).body ⸳ ∀ sym:b ⸳ is-bound? sym).
+is-bound? sect ← (∀ h:sect.head | ∀ sym:h | is-bound? sym) ∧ (∀ b:(p ((p sect) − 1)).body | ∀ sym:b | is-bound? sym).
 
 ***
 

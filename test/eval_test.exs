@@ -19,7 +19,13 @@ defmodule EvalTest do
 
   defp eval(parsed) do
     {:ok, scope} = Eval.eval(parsed, [])
+
     scope
+    |> Enum.map(&Map.from_struct/1)
+    |> Enum.map(fn
+      %{__module__: nil} = scope -> Map.drop(scope, [:__module__])
+      scope -> scope
+    end)
   end
 
   describe "program evaluation" do
@@ -178,6 +184,8 @@ defmodule EvalTest do
                |> MapSet.new(),
                [
                  %{
+                   :__module__ => nil,
+                   :__struct__ => Pantagruel.Env.Scope,
                    {:symbol, 'f'} => %Pantagruel.Values.Lambda{
                      codomain: nil,
                      domain: [symbol: 'Nat'],

@@ -99,8 +99,8 @@ defmodule Pantagruel do
 
   defp handle_error({:module_load, e}), do: handle_parse(e.error, %{})
 
-  defp handle_error({:module_shadow, mod_name}) do
-    puts("Attempted to redfine defined module: #{mod_name}")
+  defp handle_error({:module_shadow, %{mod_name: mod_name}}) do
+    puts("Attempted to redefine defined module: #{mod_name}")
   end
 
   defp puts_in_error_handling(_, check: true), do: :ok

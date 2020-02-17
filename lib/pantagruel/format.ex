@@ -14,6 +14,8 @@ defmodule Pantagruel.Format do
   @type ast :: [term]
   @type t :: String.t()
 
+  @interpunct "|"
+
   @doc """
   Generate a string representation of an evaluated program.
   """
@@ -105,13 +107,13 @@ defmodule Pantagruel.Format do
     q = format_exp(op)
     bind = join_exp(bindings, s, ", ")
     exp = format_exp(exp, s)
-    "#{q} #{bind} ⸳ #{exp}"
+    "#{q} #{bind} #{@interpunct} #{exp}"
   end
 
   def format_exp({:comprehension, [bindings, exp]}, s) do
     binding_str = join_exp(bindings, s, ", ")
     exp_str = format_exp(exp)
-    "#{binding_str} ⸳ #{exp_str}"
+    "#{binding_str} #{@interpunct} #{exp_str}"
   end
 
   def format_exp({:binding, [sym, domain]}, s),
@@ -202,7 +204,7 @@ defmodule Pantagruel.Format do
 
   defp format_guard(nil, _), do: ""
   defp format_guard(true, _), do: ""
-  defp format_guard(guard, scope), do: "#{format_exp(guard, scope)} ⸳ "
+  defp format_guard(guard, scope), do: "#{format_exp(guard, scope)} #{@interpunct} "
 
   defp format_symbol(s, []), do: Env.lookup_binding_name(s) |> String.replace("_", "-")
 
