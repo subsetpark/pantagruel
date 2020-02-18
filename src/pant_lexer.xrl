@@ -7,10 +7,10 @@ SP              = \t\s
 
 LITERAL         = `([^{SP}\n,{DELIMITER}]+)
 
-OPERATOR_CHOICE = (>=|==|!=|->|<->|<-|<=|=<|=>|=|-|>|<|\+|\*|~|#|%|\^|;|::|:|&|\.\.|\|)
+OPERATOR_CHOICE = (>=|==|!=|:\.|<->|<-|<=|=<|=>|=|-|>|<|\+|\*|~|#|%|\^|;|->|:|&|\.\.|\|)
 
 SYMBOL          = [^\s\n&&{OPERATOR}&&{DELIMITER}:\"]+
-YIELD_TYPE      = (=>|::)
+YIELD_TYPE      = (=>|->)
 FLOAT           = [-+]?[0-9]*\.?[0-9]+
 
 Rules.
@@ -65,12 +65,14 @@ keyword("module", TokenLine) -> {module, TokenLine};
 keyword("in", TokenLine)   -> {binary_operator, TokenLine, "in"};
 keyword(Chars, TokenLine)    -> {symbol, TokenLine, Chars}.
 
-operator("::", TokenLine) -> {yield_type, TokenLine, "::"};
+operator("->", TokenLine) -> {yield_type, TokenLine, "->"};
 operator("=>", TokenLine) -> {yield_type, TokenLine, "=>"};
+operator("<=", TokenLine) -> {reverse_yield, TokenLine};
+
 operator("<-", TokenLine) -> {refined, TokenLine};
 operator(":", TokenLine)  -> {':', TokenLine};
 operator("..", TokenLine)  -> {'..', TokenLine};
-operator("<=", TokenLine) -> {reverse_yield, TokenLine};
+
 operator(TokenChars, TokenLine) when
     TokenChars == "+";
     TokenChars == "*";
@@ -82,12 +84,13 @@ operator(TokenChars, TokenLine) when
     TokenChars == "<";
     TokenChars == ">=";
     TokenChars == "=<";
-    TokenChars == "->";
+    TokenChars == ":.";
     TokenChars == "<->";
     TokenChars == "^";
     TokenChars == "&";
     TokenChars == ":?";
     TokenChars == "|"     -> {binary_operator, TokenLine, TokenChars};
+
 operator(TokenChars, TokenLine) when
     TokenChars == "~";
     TokenChars == "#"     -> {unary_operator, TokenLine, TokenChars}.

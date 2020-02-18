@@ -33,7 +33,7 @@ defmodule Pantagruel.Bool.Convert do
   defp transform({_, [:or, x, y]}), do: disj(x, y)
   defp transform({_, [:and, x, y]}), do: conj(x, y)
   defp transform({_, [:"<->", x, y]}), do: iff(x, y)
-  defp transform({_, [:->, x, y]}), do: impl(x, y)
+  defp transform({_, [:":.", x, y]}), do: impl(x, y)
   defp transform({_, [:"~", x]}), do: neg(x)
   defp transform(t), do: t
 end

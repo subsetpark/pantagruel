@@ -119,8 +119,8 @@ check_out u:User, d:Document.
 
 ;
 
-nobody :: User.
-has_perm? u:User, d:Document :: Bool.
+nobody -> User.
+has_perm? u:User, d:Document -> Bool.
 ```
 
 Paragraph 1: The introduction of our two domains, *User*s and *Document*s.
@@ -163,7 +163,7 @@ Pretty printed, that's:
 > A specification for a small document management system.
 
 **check-out** u:User, d:Document  \
-....
+―――
 
 > A user may check out a document if they have permission to access it
 > and it's not currently checked out.

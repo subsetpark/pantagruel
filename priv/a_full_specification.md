@@ -2,7 +2,7 @@
 
 Here's a specification, in Pantagruel, of Pantagruel's binding rules.
 ```pantagruel
-eval p: Program :: Bool.
+eval p: Program -> Bool.
 Program <= [Section].
 
 " A section head must have at least one statement; a section body can be empty.
@@ -18,7 +18,7 @@ eval p <- all sect : p .. is_bound? sect.
 
 ;
 
-is_bound? sect: Section :: Bool.
+is_bound? sect: Section -> Bool.
 ---
 
 " All variables referred to in a section head must be defined by the
@@ -32,14 +32,14 @@ is_bound? sect <-
 
 ;
 
-is_bound sym: String :: Bool.
+is_bound sym: String -> Bool.
 ---
 is_bound sym <- (sym in p.env (p sect)) or (sym in init_scope).
 
 ;
 
-env p: Program :: [Scope].
-init_scope :: Scope.
+env p: Program -> [Scope].
+init_scope -> Scope.
 Scope <= {String}.
 ```
 
@@ -52,7 +52,7 @@ acts as a section separator), we see one function declaration, one
 constructor declaration, four domain aliases, and one comment. The comment
 is not interpreted by `pant` and has no semantics in the language.
 
-The function declaration `eval p: Program :: Bool` introduces a
+The function declaration `eval p: Program -> Bool` introduces a
 function, `eval`, which takes a `Program` `p`[^1], and returns a `Bool`.
 
 [^1]: `p : Program` indicates that `Program` is *the domain of* `p`. That
@@ -203,13 +203,13 @@ and we run `pant binding.pant`, this is what's output:
 **Head** ⇐ [Comment + Declaration + Alias]  \
 **Body** ⇐ [Comment + Expression]  \
 **Comment,Declaration,Alias,Expression** ⇐ [𝕊]  \
-....  \
+―――  \
 eval p ← ∀ sect:p | is-bound? sect.
 
 ***
 
 **is-bound?** sect:Section ∷ 𝔹  \
-....
+―――
 
 > All variables referred to in a section head must be defined by the
 > end of that section head. All the variables in a section body, however,
@@ -220,7 +220,7 @@ is-bound? sect ← (∀ h:sect.head | ∀ sym:h | is-bound? sym) ∧ (∀ b:(p (
 ***
 
 **is-bound** sym:𝕊 ∷ 𝔹  \
-....  \
+―――  \
 is-bound sym ← (sym ∈ p.env (p sect)) ∨ (sym ∈ init-scope).
 
 ***

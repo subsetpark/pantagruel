@@ -105,7 +105,7 @@ defmodule LifterTest do
         |> BoolAlg.assert(1)
         |> Pantagruel.Format.format_program()
 
-      assert "**f**\s\s\n....\s\s\n*ok*\s\s" == out
+      assert "**f**\s\s\n―――\s\s\n*ok*\s\s" == out
     end
 
     test "print other half of line" do
@@ -122,7 +122,7 @@ defmodule LifterTest do
         |> BoolAlg.assert({:literal, 'ok'})
         |> Pantagruel.Format.format_program()
 
-      assert "**f**\s\s\n....\s\s\n1\s\s" == out
+      assert "**f**\s\s\n―――\s\s\n1\s\s" == out
     end
   end
 
@@ -242,7 +242,7 @@ defmodule LifterTest do
         |> BoolAlg.assert({:symbol, 'x'})
         |> Pantagruel.Format.format_program()
 
-      assert "**f**  \n....  \nf ← y.  " == out
+      assert "**f**  \n―――  \nf ← y.  " == out
     end
 
     test "slurp multi-clause refinement" do
@@ -306,7 +306,7 @@ defmodule LifterTest do
         |> Slurp.slurp()
         |> Pantagruel.Format.format_program()
 
-      assert "**f**  \n....  \n((x ∨ z) ∧ ((x ∧ f ← y) ∨ (z ∧ f ← g)))  " == out
+      assert "**f**  \n―――  \n((x ∨ z) ∧ ((x ∧ f ← y) ∨ (z ∧ f ← g)))  " == out
     end
   end
 

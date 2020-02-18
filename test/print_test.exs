@@ -50,12 +50,12 @@ defmodule Pantagruel.FormatTest do
     test "function" do
       {parsed, scopes} =
         """
-        f x: Nat  :: Real.
+        f x: Nat  -> Real.
         """
         |> eval
 
-      assert "**f** x:ℕ ∷ ℝ  " == Format.format_program(parsed)
-      assert "**f** ℕ ∷ ℝ\nx : ℕ" == Format.format_env(scopes)
+      assert "**f** x:ℕ → ℝ  " == Format.format_program(parsed)
+      assert "**f** ℕ → ℝ\nx : ℕ" == Format.format_env(scopes)
     end
 
     test "constructor" do
@@ -89,7 +89,7 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "**f** ⇒ **F**  \n....  \nf 1 ↔ 0.  " == Format.format_program(parsed)
+      assert "**f** ⇒ **F**  \n―――  \nf 1 ↔ 0.  " == Format.format_program(parsed)
       assert "**f** ⇒ **F**" == Format.format_env(scopes)
     end
 
@@ -102,7 +102,7 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "**f**  \n....  \n¬f.  " == Format.format_program(parsed)
+      assert "**f**  \n―――  \n¬f.  " == Format.format_program(parsed)
       assert "**f**" == Format.format_env(scopes)
     end
 
@@ -115,7 +115,7 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "**f**  \n....  \n∧ ¬f.  " == Format.format_program(parsed)
+      assert "**f**  \n―――  \n∧ ¬f.  " == Format.format_program(parsed)
       assert "**f**" == Format.format_env(scopes)
     end
 
@@ -128,7 +128,7 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "**f**  \n....  \nf ← ∃ n:ℕ | n > 1 | n.  " == Format.format_program(parsed)
+      assert "**f**  \n―――  \nf ← ∃ n:ℕ · n > 1 · n.  " == Format.format_program(parsed)
       assert "**f**" == Format.format_env(scopes)
     end
 
@@ -141,7 +141,7 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert "**f**  \n....  \nf ← \n- 0 | ∃ n:ℕ | n > 1\n- 1 | 1.  " ==
+      assert "**f**  \n―――  \nf ← \n- 0 · ∃ n:ℕ · n > 1\n- 1 · 1.  " ==
                Format.format_program(parsed)
 
       assert "**f**" == Format.format_env(scopes)
@@ -156,7 +156,7 @@ defmodule Pantagruel.FormatTest do
         """
         |> eval
 
-      assert ["∃ *n*:ℕ | *n* > 1 | *k*"] == Enum.map(unbounds, &Format.format_exp(&1, scopes))
+      assert ["∃ *n*:ℕ · *n* > 1 · *k*"] == Enum.map(unbounds, &Format.format_exp(&1, scopes))
     end
   end
 end

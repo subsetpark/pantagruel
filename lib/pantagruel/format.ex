@@ -14,7 +14,10 @@ defmodule Pantagruel.Format do
   @type ast :: [term]
   @type t :: String.t()
 
-  @interpunct "|"
+  @interpunct "·"
+  @section_separator "***"
+  @chapter_separator "―――"
+  @return_type "→"
 
   @doc """
   Generate a string representation of an evaluated program.
@@ -33,12 +36,10 @@ defmodule Pantagruel.Format do
   @spec format_env(Env.t()) :: t
   def format_env(env), do: format_with(env, &format_scope/1)
 
-  @bar "***"
-
   defp format_with(data, f) do
     data
     |> lift(f)
-    |> Enum.join("\n\n#{@bar}\n\n")
+    |> Enum.join("\n\n#{@section_separator}\n\n")
   end
 
   @doc """
@@ -57,6 +58,7 @@ defmodule Pantagruel.Format do
   def format_chapters(chapters), do: format_with(chapters, &format_chapter/1)
 
   def format_import(mod_name), do: ": *#{mod_name}*  "
+
   defguard is_term(s) when is_number(s) or is_atom(s) or is_binary(s)
 
   @doc """
@@ -79,7 +81,7 @@ defmodule Pantagruel.Format do
   def format_exp({:literal, literal}, _), do: "*#{literal}*"
   def format_exp(%Module{name: n}, _), do: "# #{n}"
   def format_exp({:not, exp}, s), do: "#{format_exp(:not)} #{format_exp(exp, s)}"
-  def format_exp(:sep, _scope), do: "...."
+  def format_exp(:sep, _scope), do: "#{@chapter_separator}"
   def format_exp(sym(_) = s, scopes), do: format_symbol(s, scopes)
   def format_exp({:un_appl, [op, x]}, s), do: join_exp([op, x], s)
   def format_exp(%Variable{name: n, domain: dom}, s), do: join_exp([n, ":", dom], s, " ")
@@ -150,8 +152,8 @@ defmodule Pantagruel.Format do
       %Domain{}, %Lambda{} -> true
       %Domain{}, %Variable{} -> true
       %Lambda{}, %Variable{} -> true
-      %Lambda{type: '=>'}, %Lambda{type: '::'} -> true
-      %Lambda{type: '::'}, %Lambda{type: '=>'} -> false
+      %Lambda{type: '=>'}, %Lambda{type: '->'} -> true
+      %Lambda{type: '->'}, %Lambda{type: '=>'} -> false
       %Lambda{type: t}, %Lambda{type: nil} when not is_nil(t) -> true
       %Domain{ref: a}, %Domain{ref: b} -> a <= b
       %{__struct__: t, name: a}, %{__struct__: t, name: b} -> a <= b
@@ -262,14 +264,14 @@ defmodule Pantagruel.Format do
   defp format_relation(:conj), do: format_exp(:and)
   defp format_relation(:disj), do: format_exp(:or)
   defp format_relation(:xor), do: format_exp(:xor)
-  defp format_relation(:impl), do: format_exp(:->)
+  defp format_relation(:impl), do: format_exp(:":.")
   defp format_relation(:iff), do: format_exp(:"<->")
 
   defp lambda_prefix(nil, _), do: "λ"
   defp lambda_prefix(name, s), do: format_exp(name, s) |> bold()
 
   defp lambda_yields(nil), do: ""
-  defp lambda_yields('::'), do: "∷"
+  defp lambda_yields('->'), do: "#{@return_type}"
   defp lambda_yields('=>'), do: "⇒"
 
   defp delimiters(:par), do: {"(", ")"}

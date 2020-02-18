@@ -117,7 +117,7 @@ defmodule ParserTest do
     end
 
     test "decl with yield" do
-      "f :: F."
+      "f -> F."
       |> tryp(
         {:program,
          [
@@ -125,7 +125,7 @@ defmodule ParserTest do
            [],
            [
              chapter: [
-               [decl: [{:symbol, 'f'}, [], '::', {:symbol, 'F'}]],
+               [decl: [{:symbol, 'f'}, [], '->', {:symbol, 'F'}]],
                []
              ]
            ]
@@ -1090,7 +1090,7 @@ defmodule ParserTest do
       """
       f.
       ---
-      fn::D.
+      fn->D.
       """
       |> tryp(
         {:program,
@@ -1100,7 +1100,7 @@ defmodule ParserTest do
            [
              chapter: [
                [decl: [{:symbol, 'f'}, [], nil, nil]],
-               [{:expr, [nil, {:lambda, [[], '::', {:symbol, 'D'}]}]}]
+               [{:expr, [nil, {:lambda, [[], '->', {:symbol, 'D'}]}]}]
              ]
            ]
          ]}
@@ -1111,7 +1111,7 @@ defmodule ParserTest do
   describe "sort" do
     test "sort" do
       """
-      sort xs : [X] :: [X].
+      sort xs : [X] -> [X].
       """
       |> tryp(
         {:program,
@@ -1124,7 +1124,7 @@ defmodule ParserTest do
                  decl: [
                    {:symbol, 'sort'},
                    [binding: [symbol: 'xs', cont: [:sequence, [symbol: 'X']]]],
-                   '::',
+                   '->',
                    {:cont, [:sequence, [symbol: 'X']]}
                  ]
                ],

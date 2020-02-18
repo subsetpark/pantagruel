@@ -54,7 +54,7 @@ defmodule Pantagruel.Env do
     :and => %Variable{name: "∧", domain: "𝔹"},
     :or => %Variable{name: "∨", domain: "𝔹"},
     :xor => %Variable{name: "⊕", domain: "𝔹"},
-    :-> => %Variable{name: "→", domain: "𝔹"},
+    :-> => %Variable{name: "⊢", domain: "𝔹"},
     :"<->" => %Variable{name: "↔", domain: "𝔹"},
     :exists => %Variable{name: "∃", domain: "⊤"},
     :all => %Variable{name: "∀", domain: "⊤"},
