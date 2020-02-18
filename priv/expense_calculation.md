@@ -140,7 +140,7 @@ all r: report ..
 ;
 " Groups are tracked in a table which relates a group name to the names
 " of its members.
-group_table requester_name: String :: {String}.
+group_table requester_name: String -> {String}.
 ```
 
 This attempts to describe the exact effects of a procedure called

@@ -203,7 +203,7 @@ defmodule Pantagruel.Test.LegacyParser do
     end
 
     test "basic heading parsing" do
-      text = "f a:B, b:C :: D."
+      text = "f a:B, b:C -> D."
 
       tryparse(
         text,
@@ -220,7 +220,7 @@ defmodule Pantagruel.Test.LegacyParser do
                      binding: [symbol: 'a', symbol: 'B'],
                      binding: [symbol: 'b', symbol: 'C']
                    ],
-                   '::',
+                   '->',
                    {:symbol, 'D'}
                  ]
                ],
@@ -262,7 +262,7 @@ defmodule Pantagruel.Test.LegacyParser do
     end
 
     test "heading with sequenced domain" do
-      text = "f x:X :: [X]."
+      text = "f x:X -> [X]."
 
       tryparse(
         text,
@@ -276,7 +276,7 @@ defmodule Pantagruel.Test.LegacyParser do
                  decl: [
                    {:symbol, 'f'},
                    [binding: [symbol: 'x', symbol: 'X']],
-                   '::',
+                   '->',
                    {:cont, [:sequence, [symbol: 'X']]}
                  ]
                ],
@@ -288,7 +288,7 @@ defmodule Pantagruel.Test.LegacyParser do
     end
 
     test "heading with generic domain" do
-      text = "f x:'A, x*y>10 :: ['A]."
+      text = "f x:'A, x*y>10 -> ['A]."
 
       tryparse(
         text,
@@ -311,7 +311,7 @@ defmodule Pantagruel.Test.LegacyParser do
                           10
                         ]}
                    ],
-                   '::',
+                   '->',
                    {:cont, [:sequence, [symbol: '\'A']]}
                  ]
                ],
@@ -323,7 +323,7 @@ defmodule Pantagruel.Test.LegacyParser do
     end
 
     test "heading with lambda" do
-      text = "f x:fn z:Nat :: z  :: Bool."
+      text = "f x:fn z:Nat -> z  -> Bool."
 
       tryparse(
         text,
@@ -341,12 +341,12 @@ defmodule Pantagruel.Test.LegacyParser do
                        symbol: 'x',
                        lambda: [
                          [binding: [symbol: 'z', symbol: 'Nat']],
-                         '::',
+                         '->',
                          {:symbol, 'z'}
                        ]
                      ]
                    ],
-                   '::',
+                   '->',
                    {:symbol, 'Bool'}
                  ]
                ],

@@ -111,11 +111,11 @@ There are three expression forms possible in a chapter head:
 Here is an example procedure declaration:
 
 ```pantagruel
-fib n:Nat :: Nat.
+fib n:Nat -> Nat.
 ```
 
 It introduces a procedure called `fib`, which takes one argument, `n`
-in the domain `Nat`. The `::` indicates that this procedure **yields**
+in the domain `Nat`. The `->` indicates that this procedure **yields**
 a value in some domain, which in this case is also `Nat`.
 
 #### Constructor declaration
@@ -189,7 +189,7 @@ Here's an example chapter head:
 
 ```pantagruel
 Score <= Nat.
-halve(score: Score .. score mod 2 = 0) :: Score.
+halve(score: Score .. score mod 2 = 0) -> Score.
 ```
 
 It introduces a procedure, `halve`, which operates on all even
@@ -301,7 +301,7 @@ of the name of the procedure, lambdas have `fn` before the opening
 parenthesis. For instance:
 
 ```pantagruel
-map f:fn z:'A :: 'B, x:'A :: 'B.
+map f:fn z:'A -> 'B, x:'A -> 'B.
 ```
 
 This declaration introduces the procedure `map`, which takes two
@@ -440,7 +440,7 @@ pred n <- is_even? n and (n > 5).
 
 ;
 
-is_even? n:Nat  :: Bool.
+is_even? n:Nat -> Bool.
 ---
 is_even? 0.
 ~(is_even? 1).
@@ -468,7 +468,7 @@ When a procedure is declared, the name of the procedure is introduced
 into program scope, as are the names of the variables the procedure takes.
 
 ```
-f x:Y, x > z  :: a
+f x:Y, x > z -> a
 * *
 ```
 
@@ -633,8 +633,8 @@ true, exactly one of `x` and `y` must be true.
 
 ##### Implication
 
-`->` should be read as "implies". `x -> y` can also be read as "if `x`,
-then `y`". For `x -> y` to be true, one of the following must obtain:
+`:.` should be read as "implies". `x :. y` can also be read as "if `x`,
+then `y`". For `x :. y` to be true, one of the following must obtain:
 `x` and `y` are both true; `y` is true; neither `x` nor `y` is true.
 
 ##### Biconditional

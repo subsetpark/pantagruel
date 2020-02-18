@@ -5,7 +5,7 @@ x > rand andr [D] 10 x.
 and x = 1.
 exists (m, n, z) : x .. y[x][m,n,z].
 [].
-y = fn x : fn z:D :: D  :: D.
+y = fn x : fn z:D -> D  -> D.
 
 ;
 
@@ -13,8 +13,8 @@ z => Z.
 d => D.
 z => Nat.
 Status <= {`ok, `stop}.
-rand :: Nat.
-andr x:Nat, y : Real, x > y :: Bool.
+rand -> Nat.
+andr x:Nat, y : Real, x > y -> Bool.
 ---
 z d <- y. " Here is a comment on `z d`.
 
@@ -33,6 +33,6 @@ all (j,k):X .. j > k.
 
 ;
 
-x y:Real, y = 1 :: `ok.
+x y:Real, y = 1 -> `ok.
 ---
 z x <- x > 1 .. 0.

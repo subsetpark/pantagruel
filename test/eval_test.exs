@@ -19,12 +19,18 @@ defmodule EvalTest do
 
   defp eval(parsed) do
     {:ok, scope} = Eval.eval(parsed, [])
+
     scope
+    |> Enum.map(&Map.from_struct/1)
+    |> Enum.map(fn
+      %{__module__: nil} = scope -> Map.drop(scope, [:__module__])
+      scope -> scope
+    end)
   end
 
   describe "program evaluation" do
     test "eval happy path" do
-      parsed = "f x:Nat, x > 1 :: Real." |> scan_and_parse
+      parsed = "f x:Nat, x > 1 -> Real." |> scan_and_parse
 
       assert [
                %{
@@ -32,7 +38,7 @@ defmodule EvalTest do
                    codomain: {:symbol, 'Real'},
                    domain: [symbol: 'Nat'],
                    name: {:symbol, 'f'},
-                   type: '::'
+                   type: '->'
                  },
                  {:symbol, 'x'} => %Variable{
                    domain: {:symbol, 'Nat'},
@@ -43,7 +49,7 @@ defmodule EvalTest do
     end
 
     test "eval unbound" do
-      parsed = "f x:X  :: Real." |> scan_and_parse
+      parsed = "f x:X  -> Real." |> scan_and_parse
 
       {:error, {:unbound_variables, unbounds, _}} = Eval.eval(parsed, [])
 
@@ -53,7 +59,7 @@ defmodule EvalTest do
     test "eval late binding" do
       parsed =
         """
-        f x:X, y:Y :: Real.
+        f x:X, y:Y -> Real.
         make_y => Y.
         make_x => X.
         """
@@ -73,7 +79,7 @@ defmodule EvalTest do
                    codomain: {:symbol, 'Real'},
                    domain: [symbol: 'X', symbol: 'Y'],
                    name: {:symbol, 'f'},
-                   type: '::'
+                   type: '->'
                  },
                  {:symbol, 'make_x'} => %Lambda{
                    codomain: {:symbol, 'X'},
@@ -129,7 +135,7 @@ defmodule EvalTest do
         """
         f x:Nat.
         ;
-        g :: Nat.
+        g -> Nat.
         """
         |> scan_and_parse
 
@@ -151,7 +157,7 @@ defmodule EvalTest do
                    codomain: {:symbol, 'Nat'},
                    domain: [],
                    name: {:symbol, 'g'},
-                   type: '::'
+                   type: '->'
                  }
                }
              ] == eval(parsed)
@@ -178,6 +184,8 @@ defmodule EvalTest do
                |> MapSet.new(),
                [
                  %{
+                   :__module__ => nil,
+                   :__struct__ => Pantagruel.Env.Scope,
                    {:symbol, 'f'} => %Pantagruel.Values.Lambda{
                      codomain: nil,
                      domain: [symbol: 'Nat'],
@@ -199,7 +207,7 @@ defmodule EvalTest do
         ---
         f x <- g x.
         ;
-        g y:Nat ::Bool.
+        g y:Nat ->Bool.
         """
         |> scan_and_parse
 
@@ -221,7 +229,7 @@ defmodule EvalTest do
                    codomain: {:symbol, 'Bool'},
                    domain: [symbol: 'Nat'],
                    name: {:symbol, 'g'},
-                   type: '::'
+                   type: '->'
                  },
                  {:symbol, 'y'} => %Variable{
                    domain: {:symbol, 'Nat'},
@@ -240,7 +248,7 @@ defmodule EvalTest do
         ;
         b => Bool.
         ;
-        g y:Nat  :: Bool.
+        g y:Nat  -> Bool.
         """
         |> scan_and_parse
 
@@ -252,7 +260,7 @@ defmodule EvalTest do
         """
         f x:Nat.
         ---
-        f x in fn z:D::D.
+        f x in fn z:D->D.
         """
         |> scan_and_parse
 
@@ -264,7 +272,7 @@ defmodule EvalTest do
         """
         f x:Nat.
         ---
-        f x in fn z:D ::D.
+        f x in fn z:D ->D.
         ;
         d => D.
         """
@@ -746,14 +754,14 @@ defmodule EvalTest do
       # Note: this program is incorrect!
       parsed =
         """
-        sort xs : [X]  :: [X].
+        sort xs : [X]  -> [X].
         x => X.
         ---
         all (x,y) : xs' .. x =< y <-> ind xs' x < ind xs' y.
 
         ;
 
-        ind xs : [X], x : X :: Nat0.
+        ind xs : [X], x : X -> Nat0.
         """
         |> scan_and_parse
 
@@ -771,7 +779,7 @@ defmodule EvalTest do
                  },
                  {:symbol, 'sort'} => %Pantagruel.Values.Lambda{
                    name: {:symbol, 'sort'},
-                   type: '::',
+                   type: '->',
                    codomain: {:cont, [:sequence, [symbol: 'X']]},
                    domain: [cont: [:sequence, [symbol: 'X']]]
                  },
@@ -788,7 +796,7 @@ defmodule EvalTest do
                  {:symbol, 'ind'} => %Pantagruel.Values.Lambda{
                    codomain: {:symbol, 'Nat0'},
                    name: {:symbol, 'ind'},
-                   type: '::',
+                   type: '->',
                    domain: [cont: [:sequence, [symbol: 'X']], symbol: 'X']
                  },
                  {:symbol, 'xs'} => %Pantagruel.Values.Variable{
