@@ -440,7 +440,7 @@ pred n <- is_even? n and (n > 5).
 
 ;
 
-is_even? n:Nat  -> Bool.
+is_even? n:Nat -> Bool.
 ---
 is_even? 0.
 ~(is_even? 1).
@@ -468,7 +468,7 @@ When a procedure is declared, the name of the procedure is introduced
 into program scope, as are the names of the variables the procedure takes.
 
 ```
-f x:Y, x > z  -> a
+f x:Y, x > z -> a
 * *
 ```
 
