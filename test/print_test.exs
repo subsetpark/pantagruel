@@ -119,6 +119,18 @@ defmodule Pantagruel.FormatTest do
       assert "**f**" == Format.format_env(scopes)
     end
 
+    test "implication" do
+      {parsed, _} =
+        """
+        f.
+        ---
+        f :. f.
+        """
+        |> eval
+
+      assert "**f**  \n―――  \nf ⊢ f.  " == Format.format_program(parsed)
+    end
+
     test "refinement" do
       {parsed, scopes} =
         """
