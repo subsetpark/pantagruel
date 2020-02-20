@@ -14,7 +14,7 @@ defmodule Pantagruel.Values.Domain do
   part of a function definition without being defined first.
   """
   def is_generic?(sym([?\' | _])), do: true
-  def is_generic?(sym(_)), do: false
+  def is_generic?(_), do: false
 
   @doc """
   Flatten nested or composite domains to retrieve the basic domains they

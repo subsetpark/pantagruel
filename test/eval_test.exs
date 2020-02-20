@@ -586,6 +586,43 @@ defmodule EvalTest do
              ] == eval(parsed)
     end
 
+    test "compound domains are allowed in function declarations" do
+      parsed =
+        """
+        A.
+        B.
+        f x:(A + B).
+        """
+        |> scan_and_parse
+
+      assert [
+               %{
+                 {:symbol, 'f'} => %Pantagruel.Values.Lambda{
+                   codomain: nil,
+                   name: {:symbol, 'f'},
+                   type: nil,
+                   domain: [cont: [:par, [bin_appl: [:+, {:symbol, 'A'}, {:symbol, 'B'}]]]]
+                 },
+                 {:symbol, 'x'} => %Pantagruel.Values.Variable{
+                   name: {:symbol, 'x'},
+                   domain: {:cont, [:par, [bin_appl: [:+, {:symbol, 'A'}, {:symbol, 'B'}]]]}
+                 },
+                 {:symbol, 'A'} => %Pantagruel.Values.Lambda{
+                   codomain: nil,
+                   domain: [],
+                   name: {:symbol, 'A'},
+                   type: nil
+                 },
+                 {:symbol, 'B'} => %Pantagruel.Values.Lambda{
+                   codomain: nil,
+                   domain: [],
+                   name: {:symbol, 'B'},
+                   type: nil
+                 }
+               }
+             ] == eval(parsed)
+    end
+
     test "aliasing" do
       parsed =
         """
