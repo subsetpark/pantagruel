@@ -107,7 +107,12 @@ defmodule Pantagruel.Test.LegacyParser do
                    [
                      case_exp: [
                        nil,
-                       {:bin_appl, [:>, {:bin_appl, [:and, {:symbol, 'y'}, {:symbol, 'y'}]}, 1]}
+                       {:bin_appl,
+                        [
+                          :and,
+                          {:symbol, 'y'},
+                          {:bin_appl, [:>, {:symbol, 'y'}, 1]}
+                        ]}
                      ]
                    ]
                  ]

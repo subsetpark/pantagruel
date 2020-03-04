@@ -55,7 +55,7 @@ defmodule LexerTest do
 
     test "infix implies" do
       {:ok, tokens, 1} = :pant_lexer.string('x:.y')
-      assert [{:symbol, 1, 'x'}, {:binary_operator, 1, ':.'}, {:symbol, 1, 'y'}] == tokens
+      assert [{:symbol, 1, 'x'}, {:logical_operator, 1, ':.'}, {:symbol, 1, 'y'}] == tokens
     end
 
     test "infix dot" do

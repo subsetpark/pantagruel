@@ -103,7 +103,7 @@ defmodule LifterTest do
         |> Convert.convert()
         |> Slurp.slurp()
         |> BoolAlg.assert(1)
-        |> Pantagruel.Format.format_program()
+        |> Pantagruel.Format.Markdown.format_program()
 
       assert "**f**\s\s\n―――\s\s\n*ok*\s\s" == out
     end
@@ -120,7 +120,7 @@ defmodule LifterTest do
         |> Convert.convert()
         |> Slurp.slurp()
         |> BoolAlg.assert({:literal, 'ok'})
-        |> Pantagruel.Format.format_program()
+        |> Pantagruel.Format.Markdown.format_program()
 
       assert "**f**\s\s\n―――\s\s\n1\s\s" == out
     end
@@ -240,7 +240,7 @@ defmodule LifterTest do
         |> Convert.convert()
         |> Slurp.slurp()
         |> BoolAlg.assert({:symbol, 'x'})
-        |> Pantagruel.Format.format_program()
+        |> Pantagruel.Format.Markdown.format_program()
 
       assert "**f**  \n―――  \nf ← y.  " == out
     end
@@ -304,7 +304,7 @@ defmodule LifterTest do
         |> tryp()
         |> Convert.convert()
         |> Slurp.slurp()
-        |> Pantagruel.Format.format_program()
+        |> Pantagruel.Format.Markdown.format_program()
 
       assert "**f**  \n―――  \n((x ∨ z) ∧ ((x ∧ f ← y) ∨ (z ∧ f ← g)))  " == out
     end

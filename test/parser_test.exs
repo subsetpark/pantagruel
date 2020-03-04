@@ -65,6 +65,37 @@ defmodule ParserTest do
       )
     end
 
+    test "precedence regression" do
+      """
+      f.
+      ---
+      x :. b = c.
+      """
+      |> tryp(
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [decl: [{:symbol, 'f'}, [], nil, nil]],
+               [
+                 expr: [
+                   nil,
+                   {:bin_appl,
+                    [
+                      :":.",
+                      {:symbol, 'x'},
+                      {:bin_appl, [:=, {:symbol, 'b'}, {:symbol, 'c'}]}
+                    ]}
+                 ]
+               ]
+             ]
+           ]
+         ]}
+      )
+    end
+
     test "decl with argument" do
       "f x : X."
       |> tryp(

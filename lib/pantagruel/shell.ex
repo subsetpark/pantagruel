@@ -33,7 +33,7 @@ defmodule Pantagruel.Shell do
   defp make_minimal_program(exp), do: "f.\n---\n#{exp}"
 
   defp extract_minimal_program(ast) do
-    {:ok, {:program, [_, _, [chapter: [_, [exp(_, exp)]]]]}} = ast
-    exp
+    {:ok, {:program, [_, _, [chapter: [_, [exp(_, expression)]]]]}} = ast
+    expression
   end
 end

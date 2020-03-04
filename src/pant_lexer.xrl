@@ -55,7 +55,7 @@ comment(Chars, TokenLine) -> {token, {comment, TokenLine, string:trim(Chars, bot
 keyword(Keyword, TokenLine) when
     Keyword == "and";
     Keyword == "xor";
-    Keyword == "or"          -> {binary_operator, TokenLine, Keyword};
+    Keyword == "or"          -> {logical_operator, TokenLine, Keyword};
 keyword("exists", TokenLine) -> {quantifier, TokenLine, exists};
 keyword("let", TokenLine)    -> {quantifier, TokenLine, 'let'};
 keyword("all", TokenLine)    -> {quantifier, TokenLine, all};
@@ -74,6 +74,10 @@ operator(":", TokenLine)  -> {':', TokenLine};
 operator("..", TokenLine)  -> {'..', TokenLine};
 
 operator(TokenChars, TokenLine) when
+    TokenChars == ":.";
+    TokenChars == "<->"  -> {logical_operator, TokenLine, TokenChars};
+
+operator(TokenChars, TokenLine) when
     TokenChars == "+";
     TokenChars == "*";
     TokenChars == "-";
@@ -84,8 +88,6 @@ operator(TokenChars, TokenLine) when
     TokenChars == "<";
     TokenChars == ">=";
     TokenChars == "=<";
-    TokenChars == ":.";
-    TokenChars == "<->";
     TokenChars == "^";
     TokenChars == "&";
     TokenChars == ":?";
