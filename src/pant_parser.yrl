@@ -34,6 +34,7 @@ declaration
 lambda
 alias
 
+log_operation
 bin_operation
 un_operation
 function_application
@@ -57,6 +58,7 @@ import
 sep
 comment
 symbol
+logical_operator
 binary_operator
 unary_operator
 quantifier
@@ -85,6 +87,7 @@ Left 350 '.'.
 Unary 300 unary_operator.
 Left 200 function_application.
 Left 100 binary_operator.
+Left 50 logical_operator.
 Nonassoc 75 ':'.
 Left 60 ','.
 Left 50 '..'.
@@ -145,7 +148,7 @@ body -> body_line body : ['$1' | '$2'].
 
 body_line -> expression refined refinement fullstop: {refinement, ['$1', '$3']}.
 body_line -> a_comment : '$1'.
-body_line -> binary_operator expression fullstop: {expr, [unwrap('$1'), '$2']}.
+body_line -> logical_operator expression fullstop: {expr, [unwrap('$1'), '$2']}.
 body_line -> expression fullstop: {expr, [nil, '$1']}.
 
 % EXPRESSION PRECEDENCE
@@ -157,7 +160,11 @@ body_line -> expression fullstop: {expr, [nil, '$1']}.
 % either to themselves or the next most tightly binding level.
 % Source: http://journal.stuffwithstuff.com/2008/12/28/fixing-ambiguities-in-yacc/
 
-expression -> bin_operation : '$1'.
+expression -> log_operation : '$1'.
+
+log_operation -> bin_operation : '$1'.
+log_operation -> log_operation logical_operator log_operation :
+    {bin_appl, [unwrap('$2'), '$1', '$3']}.
 
 bin_operation -> function_application : '$1'.
 bin_operation -> bin_operation binary_operator bin_operation :
@@ -247,6 +254,7 @@ unwrap({comment, _, Symbol}) -> {comment, Symbol};
 unwrap({symbol, _, Symbol}) -> {symbol, Symbol};
 unwrap({unary_operator, _, Symbol}) -> list_to_atom(Symbol);
 unwrap({binary_operator, _, Symbol}) -> list_to_atom(Symbol);
+unwrap({logical_operator, _, Symbol}) -> list_to_atom(Symbol);
 unwrap({literal, _, Symbol}) -> {literal, Symbol};
 unwrap({_, _, Symbol}) -> Symbol;
 unwrap({Symbol, _}) -> Symbol.

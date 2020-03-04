@@ -71,14 +71,20 @@ defmodule BoolAlg do
   deftrue(:iff, q)
   deftrue(:xor, neg(q))
   deftrue(:impl, q, true)
+  deftrue(:not, false)
   deffalse(:conj, false)
   deffalse(:disj, q)
   deffalse(:iff, neg(q))
   deffalse(:xor, q)
   deffalse(:impl, true, neg(q))
+  deffalse(:not, true)
 
   defp reduce(%BoolAlg{} = b), do: lift(b, &reduce/1)
+
+  defp reduce({:cont, [:par, [val]]}), do: val
+
   defp reduce(t) when is_list(t), do: lift(t, &reduce/1)
+
   defp reduce({tag, values}) when is_list(values), do: {tag, lift(values, &reduce/1)}
   defp reduce(t), do: t
 

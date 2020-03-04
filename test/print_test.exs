@@ -1,6 +1,6 @@
-defmodule Pantagruel.FormatTest do
+defmodule Pantagruel.MarkdownTest do
   use ExUnit.Case
-  alias Pantagruel.Format
+  alias Pantagruel.Format.Markdown, as: Format
 
   defp eval(text) when is_binary(text) do
     text
