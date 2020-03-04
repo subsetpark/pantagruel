@@ -86,7 +86,7 @@ defmodule Pantagruel.Env do
   def bind(scope, name, value), do: Map.put(scope, name, make_variable(name, value))
 
   @spec bind_lambda(Scope.t(), Keyword.t()) :: Scope.t()
-  def bind_lambda(scope \\ %{}, [symbol, bindings, yield_type, codomain]) do
+  def bind_lambda(scope \\ %Scope{}, [symbol, bindings, yield_type, codomain]) do
     lambda_value = Lambda.from_declaration([symbol, bindings, yield_type, codomain])
     {binding_pairs, _} = extract_binding_symbols(bindings)
 
