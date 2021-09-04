@@ -173,6 +173,33 @@ defmodule Pantagruel.Test.LegacyParser do
          ]}
       )
     end
+
+    test "parse guarded refinement as exp in quant" do
+      text = "f.\n---\nall x:Int .. f x <- (x<0 .. y, `true .. 1)."
+
+      tryparse(
+        text,
+        {:program,
+         [
+           nil,
+           [],
+           [
+             chapter: [
+               [decl: [{:symbol, 'f'}, [], nil, nil]],
+               [
+                 refinement: [
+                   {:f_appl, [symbol: 'f', symbol: 'x']},
+                   [
+                     case_exp: [bin_appl: [:<, {:symbol, 'x'}, 0], symbol: 'y'],
+                     case_exp: [{:literal, 'true'}, 1]
+                   ]
+                 ]
+               ]
+             ]
+           ]
+         ]}
+      )
+    end
   end
 
   describe "declaration parsing" do
