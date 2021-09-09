@@ -39,7 +39,7 @@
                    :bindings $1
                    :yields $3}
 
-                (sym :reverse-yields container-name)
+                (container-name :reverse-yields expr)
                 ,|{:kind :decl-alias
                    :name $0
                    :alias $2})
@@ -50,6 +50,9 @@
 
      (body-line
        (expr :.) ,fst)
+
+     (syms (sym) ,tuple
+           (sym :comma syms) ,|(tuple $0 ;$2))
 
      (bindings-exprs () ,tuple
                      (binding-expr) ,tuple
@@ -73,13 +76,26 @@
      (quantification-word (:all) ,kind
                           (:some) ,kind)
 
-     (container-name (sym) ,identity
-                     (:lparen container-name :rparen) ,(wrap :parens)
-                     (:lsquare container-name :rsquare) ,(wrap :square)
-                     (:lbrace container-name :rbrace) ,(wrap :braces))
+     (container-name
+       (sym) ,identity
+       (container-names) ,identity)
+
+     (container-names-or-syms
+       (container-names) ,identity
+       (syms) ,identity)
+
+     (container-names
+       (:lparen container-names-or-syms :rparen) ,(wrap :parens)
+       (:lsquare container-names-or-syms :rsquare) ,(wrap :square)
+       (:lbrace container-names-or-syms :rbrace) ,(wrap :braces))
 
      (maybe-expr () ,nil
                  (expr) ,identity)
+
+     (exprs
+       (expr) ,tuple
+       (expr :comma exprs) ,|(tuple $0 ;$2))
+
      (expr
        (mapping-word maybe-expr mapping-form) ,|{:kind $0
                                                  :case $1
@@ -103,7 +119,8 @@
        (:unary-operator expr) ,|{:kind :unary-operation
                                  :left $1
                                  :operator ($0 :text)}
-       (quantification-word bindings-exprs :yields expr) ,|{:kind $0
+       (quantification-word bindings-exprs :yields expr) ,|{:kind :quantification
+                                                            :quantifier $0
                                                             :bindings $1
                                                             :expr $3}
 
@@ -111,9 +128,9 @@
                                      :f $0
                                      :x $1}
 
-       (:lparen expr :rparen) ,(wrap :parens)
-       (:lsquare expr :rsquare) ,(wrap :square)
-       (:lbrace expr :rbrace) ,(wrap :braces)
+       (:lparen exprs :rparen) ,(wrap :parens)
+       (:lsquare exprs :rsquare) ,(wrap :square)
+       (:lbrace exprs :rbrace) ,(wrap :braces)
 
        (sym) ,identity
        (num) ,identity)
@@ -130,21 +147,37 @@
 (def parser-tables (yacc/compile grammar))
 
 (defn- err-msg
-  [{:kind kind :span (from to) :text text} src]
-  (errorf
-    `Syntax Error:
+  [form src]
+  (default form {})
+  (let [from (if-let [from (get-in form [:span 0])]
+               (- from 10)
+               -20)
+        to (if-let [to (get-in form [:span 1])]
+             (+ to 10)
+             -1)
+        suffix (if (= to -1) "" "...")]
 
-     Token type %q
-     Text %q
+    (if (os/getenv "PANT_DEBUG") (print (dyn :yydebug)))
 
-     in
+    (errorf
+      `Syntax Error:
 
-     ...%q...
-    `
-    kind text (string/slice src (- from 5) (+ to 5))))
+      Token type %q
+      Text %q
+
+      in
+
+      …%s%s
+      `
+      (form :kind)
+      (form :text)
+      (string/slice src from to)
+      suffix)))
 
 (defn parse
   [tokens src]
+  (if (os/getenv "PANT_DEBUG") (setdyn :yydebug @""))
+
   (-> (yacc/parse parser-tables tokens)
       (match
         [:ok tree] tree

@@ -1,3 +1,5 @@
+(import /pantagruel/stdlib)
+
 (defn introduce-bindings
   [form env symbol-references]
   (match form
@@ -6,15 +8,20 @@
      :name name
      :alias expr}
     (do
-      (put env name {:kind :alias})
+      (match name
+        {:container _ :inner names} (each name names
+                                      (put env name {:kind :alias}))
+        (put env name {:kind :alias}))
       (introduce-bindings expr env symbol-references))
 
     {:kind :declaration
      :name name
      :bindings bindings}
-    (do
-      (put env name {:kind :procedure})
-      (introduce-bindings (form :yields) env symbol-references)
+    (let [yields (form :yields)]
+      (put env name {:kind (if (and (nil? yields) (empty? bindings))
+                             :set
+                             :procedure)})
+      (introduce-bindings yields env symbol-references)
       (each binding bindings
         (introduce-bindings binding env symbol-references)))
 
@@ -25,11 +32,48 @@
       (put env name {:kind :bound})
       (introduce-bindings expression env symbol-references))
 
-    {:container _ :inner expr} (introduce-bindings expr env symbol-references)
+    {:kind :case
+     :mapping mapping-form}
+    (do
+      (introduce-bindings (form :case) env symbol-references)
+      (each {:left left :right right} mapping-form
+        (introduce-bindings left env symbol-references)
+        (introduce-bindings right env symbol-references)))
+
+    {:kind :quantification
+     :bindings bindings
+     :expr expr}
+    (do
+      (each binding bindings
+        (introduce-bindings binding env symbol-references))
+      (introduce-bindings expr env symbol-references))
+
+    {:kind :binary-operation
+     :left left
+     :right right}
+    (do
+      (introduce-bindings left env symbol-references)
+      (introduce-bindings right env symbol-references))
+
+    {:kind :unary-operation
+     :left left}
+    (introduce-bindings left env symbol-references)
+
+    {:kind :application
+     :f f
+     :x x}
+    (do
+      (introduce-bindings f env symbol-references)
+      (introduce-bindings x env symbol-references))
+
+    {:container _ :inner exprs}
+    (each expr exprs
+      (introduce-bindings expr env symbol-references))
 
     (sym (string? sym)) (put symbol-references sym true)
+    (num (number? num)) :ok
 
-    (@ nil) :ok
+    (@ 'nil) :ok
 
     form
     (printf "Handling unknown binding form: %q" form)))
@@ -50,11 +94,11 @@
   [env references]
   (each reference (keys references)
     (unless (env reference)
-      (errorf "Unknown symbol: %q" reference))))
+      (errorf "Unknown symbol: %q" reference)))
+  [env references])
 
 (defn eval-chapter
   [{:head head :body body} env prev-references]
-
   (let [head-references @{}
         body-references @{}]
     (eval-head head env head-references)
@@ -66,7 +110,7 @@
 
 (defn eval
   [{:chapters chapters}]
-  (reduce (fn [[env references] chapter]
-            (eval-chapter chapter env references))
-          [@{} @{}]
-          chapters))
+  (resolve-references ;(reduce (fn [[env references] chapter]
+                                 (eval-chapter chapter env references))
+                               [stdlib/root-env @{}]
+                               chapters)))

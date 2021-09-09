@@ -84,9 +84,30 @@
                       :head [{:kind :decl-alias
                               :name "f"
                               :alias {:container :square
-                                      :inner "F"}}]
+                                      :inner ["F"]}}]
                       :body []}]}]))
 
+(deftest head-with-reverse-yields-container-comma
+  (is-parse
+    [{:kind :lparen}
+     {:kind :sym :text "f"}
+     {:kind :comma}
+     {:kind :sym :text "g"}
+     {:kind :rparen}
+     {:kind :reverse-yields}
+     {:kind :lsquare}
+     {:kind :sym :text "F"}
+     {:kind :comma}
+     {:kind :sym :text "G"}
+     {:kind :rsquare} {:kind :.}
+     {:kind :line}]
+    [:ok {:chapters [{:kind :chapter
+                      :head [{:kind :decl-alias
+                              :name {:container :parens
+                                     :inner ["f" "g"]}
+                              :alias {:container :square
+                                      :inner ["F" "G"]}}]
+                      :body []}]}]))
 (deftest multiple-chapters
   (is-parse
     [{:kind :sym :text "f"} {:kind :.}
@@ -105,6 +126,36 @@
                               :name "h"
                               :bindings []}]
                       :body []}]}]))
+
+(deftest qualification
+  (is-parse
+    [{:kind :sym :text "x"} {:kind :.}
+     {:kind :line}
+     {:kind :some :text "some"}
+     {:kind :sym :text "x"} {:kind :: :text ":"} {:kind :sym :text "Nat"}
+     {:kind :comma :text ","}
+     {:kind :sym :text "x"} {:kind :boolean-operator :text ">"} {:kind :num :text "1"}
+     {:kind :yields :text "=>"}
+     {:kind :sym :text "x"} {:kind :boolean-operator :text "<"} {:kind :num :text "10"}
+     {:kind :.}]
+    [:ok {:chapters [{:body [{:bindings
+                              [{:expr "Nat"
+                                :kind :binding
+                                :name "x"}
+                               {:kind :binary-operation
+                                :left "x"
+                                :operator ">"
+                                :right 1}]
+                              :expr {:kind :binary-operation
+                                     :left "x"
+                                     :operator "<"
+                                     :right 10}
+                              :kind :quantification
+                              :quantifier :some}]
+                      :head [{:bindings ()
+                              :kind :declaration
+                              :name "x"}]
+                      :kind :chapter}]}]))
 
 (deftest precedence
   (is-parse
@@ -130,70 +181,68 @@
 (deftest fib
   (is-parse
     [{:kind :sym :text "fib"}
-     {:kind :sym :text "x1"} {:kind :: :text ":"} {:kind :sym :text "Nat"}
-     {:kind :yields :text "=>"} {:kind :sym :text "Nat"} {:kind :. :text "."}
+     {:kind :sym :text "x"} {:kind :: :text ":"} {:kind :sym :text "Nat"}
+     {:kind :yields :text "=>"}
+     {:kind :sym :text "Nat"} {:kind :. :text "."}
      {:kind :line :text "---"}
-     {:kind :sym :text "fib"} {:kind :sym :text "x2"} {:kind :boolean-operator :text "="}
+     {:kind :sym :text "fib"} {:kind :sym :text "x"} {:kind :boolean-operator :text "="}
      {:kind :case :text "case"} {:kind :... :text "..."}
-     {:kind :sym :text "x3"} {:kind :boolean-operator :text ">"} {:kind :num :text "2"}
-     {:kind :yields :text "=>"}
+     {:kind :sym :text "x"} {:kind :boolean-operator :text ">"}
+     {:kind :num :text "2"} {:kind :yields :text "=>"}
      {:kind :sym :text "fib"}
-     {:kind :lparen}
-     {:kind :sym :text "x4"} {:kind :arithmetic-operator2 :text "-"} {:kind :num :text "1"}
-     {:kind :rparen}
+     {:kind :lparen :text "("}
+     {:kind :sym :text "x"} {:kind :arithmetic-operator2 :text "-"} {:kind :num :text "1"}
+     {:kind :rparen :text ")"}
      {:kind :arithmetic-operator2 :text "+"}
-     {:kind :sym :text "fib"}
-     {:kind :lparen}
-     {:kind :sym :text "x5"} {:kind :arithmetic-operator2 :text "-"} {:kind :num :text "2"}
-     {:kind :rparen}
-     {:kind :comma :text ","}
-     {:kind :sym :text "x6"} {:kind :boolean-operator :text "="} {:kind :num :text "1"}
-     {:kind :yields :text "=>"}
-     {:kind :num :text "1"} {:kind :comma :text ","}
-     {:kind :sym :text "x7"} {:kind :boolean-operator :text "="} {:kind :num :text "2"}
+     {:kind :sym :text "fib"} {:kind :lparen :text "("}
+     {:kind :sym :text "x"} {:kind :arithmetic-operator2 :text "-"} {:kind :num :text "2"}
+     {:kind :rparen :text ")"} {:kind :comma :text ","}
+     {:kind :sym :text "x"} {:kind :boolean-operator :text "="} {:kind :num :text "1"}
+     {:kind :yields :text "=>"} {:kind :num :text "1"} {:kind :comma :text ","}
+     {:kind :sym :text "x"} {:kind :boolean-operator :text "="} {:kind :num :text "2"}
      {:kind :yields :text "=>"} {:kind :num :text "1"} {:kind :. :text "."}]
     [:ok {:chapters [{:body
                       [{:kind :binary-operation
                         :operator "="
-                        :left {:f "fib" :kind :application :x "x2"}
+                        :left {:f "fib" :kind :application :x "x"}
                         :right {:kind :case
                                 :mapping [{:kind :map
                                            :left {:kind :binary-operation
                                                   :operator ">"
-                                                  :left "x3"
+                                                  :left "x"
                                                   :right 2}
                                            :right {:kind :binary-operation
                                                    :operator "+"
                                                    :left {:kind :application
                                                           :f "fib"
                                                           :x {:container :parens
-                                                              :inner {:kind :binary-operation
-                                                                      :operator "-"
-                                                                      :left "x4"
-                                                                      :right 1}}}
+                                                              :inner [{:kind :binary-operation
+                                                                       :operator "-"
+                                                                       :left "x"
+                                                                       :right 1}]}}
                                                    :right {:kind :application
                                                            :f "fib"
                                                            :x {:container :parens
-                                                               :inner {:kind :binary-operation
-                                                                       :operator "-"
-                                                                       :left "x5"
-                                                                       :right 2}}}}}
+                                                               :inner [{:kind :binary-operation
+                                                                        :operator "-"
+                                                                        :left "x"
+                                                                        :right 2}]}}}}
                                           {:kind :map
                                            :left {:kind :binary-operation
                                                   :operator "="
-                                                  :left "x6"
+                                                  :left "x"
                                                   :right 1}
                                            :right 1}
                                           {:kind :map
                                            :left {:kind :binary-operation
                                                   :operator "="
-                                                  :left "x7"
+                                                  :left "x"
                                                   :right 2}
                                            :right 1}]}}]
                       :head [{:bindings
                               [{:expr "Nat"
                                 :kind :binding
-                                :name "x1"}]
+                                :name "x"}]
                               :kind :declaration
                               :name "fib"
                               :yields "Nat"}]

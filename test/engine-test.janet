@@ -1,8 +1,13 @@
 (use testament)
 
 (import /pantagruel/engine)
+(import /pantagruel/stdlib)
 
 (defn is-eval
+  [res tree]
+  (is (== res (engine/eval tree))))
+
+(defn is-chapter
   [res tree &opt env references]
 
   (default env @{})
@@ -20,7 +25,7 @@
   (is (== res (engine/eval-body tree @{} @{}))))
 
 (deftest eval-single-declaration
-  (is-head [{"f" {:kind :procedure}} {}]
+  (is-head [{"f" {:kind :set}} {}]
            [{:kind :declaration
              :name "f"
              :bindings []}]))
@@ -56,24 +61,96 @@
            [{:kind :decl-alias
              :name "f"
              :alias {:container :square
-                     :inner "F"}}]))
+                     :inner ["F"]}}]))
 
 (deftest eval-body
   (is-body [{} {"g" true}] ["g"]))
 
-(deftest eval-chapter
-  (is-eval [@{"X" :inject
-              "f" {:kind :procedure}
-              "x" {:kind :bound}}
-            @{"y" true}]
+(deftest eval-qualification
+  (is-body [@{"x" {:kind :bound}}
+            @{"Nat" true "x" true}]
+           [{:bindings
+             [{:expr "Nat"
+               :kind :binding
+               :name "x"}
+              {:kind :binary-operation
+               :left "x"
+               :operator ">"
+               :right 1}]
+             :expr {:kind :binary-operation
+                    :left "x"
+                    :operator "<"
+                    :right 10}
+             :quantifier :some
+             :kind :quantification}]))
 
-           {:kind :chapter
-            :head [{:kind :declaration
-                    :name "f"
-                    :bindings [{:kind :binding
-                                :expr "X"
-                                :name "x"}]}]
-            :body ["y"]}
-           @{"X" :inject}))
+(deftest eval-chapter
+  (is-chapter [@{"X" :inject
+                 "f" {:kind :procedure}
+                 "x" {:kind :bound}}
+               @{"y" true}]
+
+              {:kind :chapter
+               :head [{:kind :declaration
+                       :name "f"
+                       :bindings [{:kind :binding
+                                   :expr "X"
+                                   :name "x"}]}]
+               :body ["y"]}
+              @{"X" :inject}))
+
+(deftest eval-fib
+  (is-eval [(merge stdlib/root-env
+                   @{"fib" {:kind :procedure}
+                     "x" {:kind :bound}})
+            @{"fib" true
+              "x" true}]
+
+           {:chapters [{:body
+                        [{:kind :binary-operation
+                          :operator "="
+                          :left {:f "fib" :kind :application :x "x"}
+                          :right {:kind :case
+                                  :mapping [{:kind :map
+                                             :left {:kind :binary-operation
+                                                    :operator ">"
+                                                    :left "x"
+                                                    :right 2}
+                                             :right {:kind :binary-operation
+                                                     :operator "+"
+                                                     :left {:kind :application
+                                                            :f "fib"
+                                                            :x {:container :parens
+                                                                :inner [{:kind :binary-operation
+                                                                         :operator "-"
+                                                                         :left "x"
+                                                                         :right 1}]}}
+                                                     :right {:kind :application
+                                                             :f "fib"
+                                                             :x {:container :parens
+                                                                 :inner [{:kind :binary-operation
+                                                                          :operator "-"
+                                                                          :left "x"
+                                                                          :right 2}]}}}}
+                                            {:kind :map
+                                             :left {:kind :binary-operation
+                                                    :operator "="
+                                                    :left "x"
+                                                    :right 1}
+                                             :right 1}
+                                            {:kind :map
+                                             :left {:kind :binary-operation
+                                                    :operator "="
+                                                    :left "x"
+                                                    :right 2}
+                                             :right 1}]}}]
+                        :head [{:bindings
+                                [{:expr "Nat"
+                                  :kind :binding
+                                  :name "x"}]
+                                :kind :declaration
+                                :name "fib"
+                                :yields "Nat"}]
+                        :kind :chapter}]}))
 
 (run-tests!)

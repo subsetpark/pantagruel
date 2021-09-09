@@ -17,6 +17,7 @@
 
 (def- lexer-grammar
   ~[[:comment (* "//" (thru "\n"))]
+    [:string (* `"` (thru `"`))]
     [:ws :s+]
     [:where ";"]
     [:line "---"]
@@ -37,22 +38,22 @@
     [:lbrace "{"]
     [:rbrace "}"]
     [:logical-operator (+ "<->" "->")]
-    [:boolean-operator (+ "=" ">" "<" "=<" ">=" "in")]
+    [:boolean-operator (+ "=" ">" "<" "=<" ">="
+                          # TODO: This is a total hack!
+                          (* "in" (not :w))
+                          (* "or" (not :w))
+                          (* "and" (not :w)))]
     [:arithmetic-operator1 (+ "*" "/")]
     [:arithmetic-operator2 (+ "+" "-")]
     [:unary-operator (+ "~" "#")]
     # TODO: Make proper float/int support.
     [:num (* (? "-") :d (any (+ :d "_")))]
     # TODO: Add unicode support
-    [:sym (* :a (any (+ :w "'" "_")))]])
+    [:sym (* :a (any (+ :w "'" "_" "?" "!")))]])
 
 (def- lexer (-> lexer-grammar (rules-to-peg) (peg/compile)))
 
 (defn lex
-  [text &keys {:filter-ws filter-ws}]
-
-  (default filter-ws true)
+  [text]
   (def tokens (peg/match lexer text))
-  (if filter-ws
-    (filter |(not= :ws ($ :kind)) tokens)
-    tokens))
+  (filter |(not (index-of ($ :kind) [:ws :comment])) tokens))
