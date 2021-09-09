@@ -11,6 +11,13 @@
 
 (def grammar
   ~(yacc
+
+     (%left :logical-operator)
+     (%left :boolean-operator)
+     (%left :arithmetic-operator2)
+     (%left :arithmetic-operator1)
+     (%left :funcapp)
+
      (program (chapters) ,|{:chapters $0})
 
      (chapters () ,tuple
@@ -20,26 +27,23 @@
                              :head $0
                              :body $1})
 
-     (head (:line) ,tuple
-           (head-line head) ,|(tuple $0 ;$1))
-     (head-line (sym bindings-exprs :.)
-                ,(fn [sym bindings-exprs _dot]
-                   {:kind :declaration
-                    :name sym
-                    :bindings bindings-exprs})
+     (head (:line) ,(fn [_] [])
+           (head-line :. head) ,|(tuple $0 ;$2))
+     (head-line (sym bindings-exprs)
+                ,|{:kind :declaration
+                   :name $0
+                   :bindings $1}
 
                 (sym bindings-exprs :yields container-name)
-                ,(fn [sym bindings-exprs _ cont-name]
-                   {:kind :declaration
-                    :name sym
-                    :bindings bindings-exprs
-                    :yields cont-name})
+                ,|{:kind :declaration
+                   :name $0
+                   :bindings $1
+                   :yields $3}
 
                 (sym :reverse-yields container-name)
-                ,(fn [sym _ cont-name]
-                   {:kind :decl-alias
-                    :name sym
-                    :alias cont-name}))
+                ,|{:kind :decl-alias
+                   :name $0
+                   :alias $2})
 
      (body () ,tuple
            (body-line) ,tuple
@@ -62,9 +66,9 @@
      (mapping-clauses () ,tuple
                       (mapping-clause) ,tuple
                       (mapping-clause :comma mapping-clauses) ,|(tuple $0 ;$2))
-     (mapping-clause (expr :.. expr) ,|{:kind :map
-                                        :left $0
-                                        :right $2})
+     (mapping-clause (expr :yields expr) ,|{:kind :map
+                                            :left $0
+                                            :right $2})
 
      (quantification-word (:all) ,kind
                           (:some) ,kind)
@@ -80,16 +84,32 @@
        (mapping-word maybe-expr mapping-form) ,|{:kind $0
                                                  :case $1
                                                  :mapping $2}
-       (expr :binary-operator expr) ,|{:kind :binary-operation
-                                       :left $0
-                                       :right $2
-                                       :operator ($1 :text)}
+       (expr :logical-operator expr) ,|{:kind :binary-operation
+                                        :left $0
+                                        :right $2
+                                        :operator ($1 :text)}
+       (expr :boolean-operator expr) ,|{:kind :binary-operation
+                                        :left $0
+                                        :right $2
+                                        :operator ($1 :text)}
+       (expr :arithmetic-operator1 expr) ,|{:kind :binary-operation
+                                            :left $0
+                                            :right $2
+                                            :operator ($1 :text)}
+       (expr :arithmetic-operator2 expr) ,|{:kind :binary-operation
+                                            :left $0
+                                            :right $2
+                                            :operator ($1 :text)}
        (:unary-operator expr) ,|{:kind :unary-operation
                                  :left $1
                                  :operator ($0 :text)}
-       (quantification-word bindings-exprs :.. expr) ,|{:kind $0
-                                                        :bindings $1
-                                                        :expr $3}
+       (quantification-word bindings-exprs :yields expr) ,|{:kind $0
+                                                            :bindings $1
+                                                            :expr $3}
+
+       (expr expr %prec :funcapp) ,|{:kind :application
+                      :f $0
+                      :x $1}
 
        (:lparen expr :rparen) ,(wrap :parens)
        (:lsquare expr :rsquare) ,(wrap :square)
@@ -98,12 +118,34 @@
        (sym) ,identity
        (num) ,identity)
 
-     (sym (:sym) ,|($0 :text))
-     (num (:num) ,|(int/s64 ($0 :text)))))
+     (binary-operator
+       (:logical-operator) ,identity
+       (:boolean-operator) ,identity
+       (:arithmetic-operator1) ,identity
+       (:arithmetic-operator2) ,identity)
 
-(setdyn :yydebug @"")
+     (sym (:sym) ,|($0 :text))
+     (num (:num) ,|(scan-number ($0 :text)))))
+
 (def parser-tables (yacc/compile grammar))
 
+(defn- err-msg
+  [{:kind kind :span (from to) :text text} src]
+  (errorf
+    `Syntax Error:
+
+     Token type %q
+     Text %q
+
+     in
+
+     ...%q...
+    `
+    kind text (string/slice src (- from 5) (+ to 5))))
+
 (defn parse
-  [tokens]
-  (yacc/parse parser-tables tokens))
+  [tokens src]
+  (-> (yacc/parse parser-tables tokens)
+      (match
+        [:ok tree] tree
+        [:syntax-error err] (errorf "Syntax error: %q" (err-msg err src)))))

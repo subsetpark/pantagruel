@@ -1,8 +1,6 @@
-fib x : Nat -> Nat.
-" A specification for the fibonacci function.
+fib x : Nat => Nat.
 ---
-fib x <- (
-    x > 2 .. fib x - 1 + fib x - 2,
-    x = 1 .. 1,
-    x = 2 .. 1
-).
+fib x = case ...
+    x > 2 => fib (x - 1) + fib (x - 2),
+    x = 1 => 1,
+    x = 2 => 1.

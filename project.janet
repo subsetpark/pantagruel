@@ -3,4 +3,8 @@
   :dependencies [{:repo "https://github.com/andrewchambers/janet-yacc.git" :tag "main"}])
 
 (declare-source
-  ["pantagruel.janet"])
+  :source ["pantagruel.janet" "pantagruel/"])
+
+(declare-executable
+  :entry "pantagruel.janet"
+  :name "pant")

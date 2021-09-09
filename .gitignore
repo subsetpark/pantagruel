@@ -30,3 +30,6 @@ pantagruel-*.tar
 
 pant_lexer.erl
 pant_parser.erl
+
+/build
+/jpm_tree
