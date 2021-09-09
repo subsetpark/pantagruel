@@ -11,7 +11,6 @@
 
 (def grammar
   ~(yacc
-
      (%left :logical-operator)
      (%left :boolean-operator)
      (%left :arithmetic-operator2)
@@ -48,6 +47,7 @@
      (body () ,tuple
            (body-line) ,tuple
            (body-line body) ,|(tuple $0 ;$1))
+
      (body-line
        (expr :.) ,fst)
 
@@ -108,8 +108,8 @@
                                                             :expr $3}
 
        (expr expr %prec :funcapp) ,|{:kind :application
-                      :f $0
-                      :x $1}
+                                     :f $0
+                                     :x $1}
 
        (:lparen expr :rparen) ,(wrap :parens)
        (:lsquare expr :rsquare) ,(wrap :square)

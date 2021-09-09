@@ -43,6 +43,50 @@
                               :bindings []}]
                       :body ["g"]}]}]))
 
+(deftest head-with-binding
+  (is-parse
+    [{:kind :sym :text "f"} {:kind :sym :text "x"} {:kind ::} {:kind :sym :text "X"} {:kind :.}
+     {:kind :line}]
+    [:ok {:chapters [{:kind :chapter
+                      :head [{:kind :declaration
+                              :name "f"
+                              :bindings [{:kind :binding
+                                          :expr "X"
+                                          :name "x"}]}]
+                      :body []}]}]))
+
+(deftest head-with-yields
+  (is-parse
+    [{:kind :sym :text "f"} {:kind :yields} {:kind :sym :text "F"} {:kind :.}
+     {:kind :line}]
+    [:ok {:chapters [{:kind :chapter
+                      :head [{:kind :declaration
+                              :name "f"
+                              :bindings []
+                              :yields "F"}]
+                      :body []}]}]))
+
+(deftest head-with-reverse-yields
+  (is-parse
+    [{:kind :sym :text "f"} {:kind :reverse-yields} {:kind :sym :text "F"} {:kind :.}
+     {:kind :line}]
+    [:ok {:chapters [{:kind :chapter
+                      :head [{:kind :decl-alias
+                              :name "f"
+                              :alias "F"}]
+                      :body []}]}]))
+
+(deftest head-with-reverse-yields-container
+  (is-parse
+    [{:kind :sym :text "f"} {:kind :reverse-yields} {:kind :lsquare} {:kind :sym :text "F"} {:kind :rsquare} {:kind :.}
+     {:kind :line}]
+    [:ok {:chapters [{:kind :chapter
+                      :head [{:kind :decl-alias
+                              :name "f"
+                              :alias {:container :square
+                                      :inner "F"}}]
+                      :body []}]}]))
+
 (deftest multiple-chapters
   (is-parse
     [{:kind :sym :text "f"} {:kind :.}
