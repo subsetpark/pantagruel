@@ -2,6 +2,8 @@
 
 (defn introduce-bindings
   [form env symbol-references]
+  (defn bind [name] (put env name {:kind :bound}))
+  (defn alias [name] (put env name {:kind :alias}))
   (match form
 
     {:kind :decl-alias
@@ -9,9 +11,8 @@
      :alias expr}
     (do
       (match name
-        {:container _ :inner names} (each name names
-                                      (put env name {:kind :alias}))
-        (put env name {:kind :alias}))
+        {:container _ :inner names} (each name names (alias name))
+        (alias name))
       (introduce-bindings expr env symbol-references))
 
     {:kind :declaration
@@ -29,7 +30,9 @@
      :name name
      :expr expression}
     (do
-      (put env name {:kind :bound})
+      (match name
+        {:container _ :inner names} (each name names (bind name))
+        (bind name))
       (introduce-bindings expression env symbol-references))
 
     {:kind :case
@@ -72,6 +75,7 @@
 
     (sym (string? sym)) (put symbol-references sym true)
     (num (number? num)) :ok
+    {:kind :string} :ok
 
     (@ 'nil) :ok
 

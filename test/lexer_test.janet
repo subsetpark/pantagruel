@@ -75,6 +75,18 @@
      {:kind :where :text ";"}
      {:kind :sym :text "h"} {:kind :. :text "."}]))
 
+(deftest quantifier
+  (is-lex "some (a,b):A => a + b"
+          [{:kind :some :text "some"}
+           {:kind :lparen :text "("}
+           {:kind :sym :text "a"} {:kind :comma :text ","}
+           {:kind :sym :text "b"}
+           {:kind :rparen :text ")"}
+           {:kind :: :text ":"}
+           {:kind :sym :text "A"}
+           {:kind :yields :text "=>"}
+           {:kind :sym :text "a"} {:kind :arithmetic-operator2 :text "+"} {:kind :sym :text "b"}]))
+
 (deftest mapping-form
   (is-lex
     `

@@ -38,12 +38,12 @@
     [:lbrace "{"]
     [:rbrace "}"]
     [:logical-operator (+ "<->" "->")]
-    [:boolean-operator (+ "=" ">" "<" "=<" ">="
+    [:boolean-operator (+ "=" ">" "<" "=<" ">=" "!="
                           # TODO: This is a total hack!
                           (* "in" (not :w))
                           (* "or" (not :w))
                           (* "and" (not :w)))]
-    [:arithmetic-operator1 (+ "*" "/")]
+    [:arithmetic-operator1 (+ "*" "/" "^")]
     [:arithmetic-operator2 (+ "+" "-")]
     [:unary-operator (+ "~" "#")]
     # TODO: Make proper float/int support.

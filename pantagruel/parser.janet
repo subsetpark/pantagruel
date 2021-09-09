@@ -59,9 +59,9 @@
                      (binding-expr :comma bindings-exprs) ,|(tuple $0 ;$2))
      (binding-expr (binding) ,identity
                    (expr) ,identity)
-     (binding (sym :: expr) ,|{:kind :binding
-                               :name $0
-                               :expr $2})
+     (binding (container-name :: expr) ,|{:kind :binding
+                                          :name $0
+                                          :expr $2})
 
      (mapping-word (:update) ,kind
                    (:case) ,kind)
@@ -93,6 +93,7 @@
                  (expr) ,identity)
 
      (exprs
+       () ,tuple
        (expr) ,tuple
        (expr :comma exprs) ,|(tuple $0 ;$2))
 
@@ -132,6 +133,7 @@
        (:lsquare exprs :rsquare) ,(wrap :square)
        (:lbrace exprs :rbrace) ,(wrap :braces)
 
+       (string) ,identity
        (sym) ,identity
        (num) ,identity)
 
@@ -141,6 +143,7 @@
        (:arithmetic-operator1) ,identity
        (:arithmetic-operator2) ,identity)
 
+     (string (:string) ,identity)
      (sym (:sym) ,|($0 :text))
      (num (:num) ,|(scan-number ($0 :text)))))
 
@@ -155,7 +158,7 @@
         to (if-let [to (get-in form [:span 1])]
              (+ to 10)
              -1)
-        suffix (if (= to -1) "" "...")]
+        suffix (if (= to -1) "" "…")]
 
     (if (os/getenv "PANT_DEBUG") (print (dyn :yydebug)))
 
@@ -171,7 +174,7 @@
       `
       (form :kind)
       (form :text)
-      (string/slice src from to)
+      (string/slice src (max 0 from) (min (length src) to))
       suffix)))
 
 (defn parse

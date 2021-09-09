@@ -157,6 +157,33 @@
                               :name "x"}]
                       :kind :chapter}]}]))
 
+(deftest quantification-with-container
+  (is-parse [{:kind :sym :text "A"} {:kind :.}
+             {:kind :line}
+             {:kind :some :text "some"}
+             {:kind :lparen :text "("}
+             {:kind :sym :text "a"} {:kind :comma :text ","}
+             {:kind :sym :text "b"}
+             {:kind :rparen :text ")"}
+             {:kind :: :text ":"}
+             {:kind :sym :text "A"}
+             {:kind :yields :text "=>"}
+             {:kind :sym :text "a"} {:kind :arithmetic-operator2 :text "+"} {:kind :sym :text "b"}
+             {:kind :.}]
+            [:ok {:chapters [{:body [{:bindings
+                                      [{:expr "A"
+                                        :kind :binding
+                                        :name {:container :parens
+                                               :inner ["a" "b"]}}]
+                                      :expr {:kind :binary-operation
+                                             :left "a"
+                                             :operator "+"
+                                             :right "b"}
+                                      :kind :quantification
+                                      :quantifier :some}]
+                              :head [{:bindings () :kind :declaration :name "A"}]
+                              :kind :chapter}]}]))
+
 (deftest precedence
   (is-parse
     [{:kind :sym :text "f"} {:kind :.}

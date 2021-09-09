@@ -67,8 +67,8 @@
   (is-body [{} {"g" true}] ["g"]))
 
 (deftest eval-qualification
-  (is-body [@{"x" {:kind :bound}}
-            @{"Nat" true "x" true}]
+  (is-body [{"x" {:kind :bound}}
+            {"Nat" true "x" true}]
            [{:bindings
              [{:expr "Nat"
                :kind :binding
@@ -83,6 +83,23 @@
                     :right 10}
              :quantifier :some
              :kind :quantification}]))
+
+(deftest eval-quantification-with-container
+  (is-body
+    [{"a" {:kind :bound}
+      "b" {:kind :bound}}
+     {"A" true "a" true "b" true}]
+    [{:bindings
+      [{:expr "A"
+        :kind :binding
+        :name {:container :parens
+               :inner ["a" "b"]}}]
+      :expr {:kind :binary-operation
+             :left "a"
+             :operator "+"
+             :right "b"}
+      :kind :quantification
+      :quantifier :some}]))
 
 (deftest eval-chapter
   (is-chapter [@{"X" :inject

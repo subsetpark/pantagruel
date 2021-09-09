@@ -2,39 +2,39 @@ x => Real.
 y =>Real.
 ---
 x > rand andr [D] 10 x.
-and x = 1.
-some (m, n, z) : x .. y[x][m,n,z].
+x = 1.
+some (m, n, z) : x => y[x][m,n,z].
 [].
 // y = fn x : fn z:D -> D  -> D.
 
 ;
 
-z => Z.
-d => D.
-z => Nat.
+D.
+d.
+Z.
 Status <= {"ok", "stop"}.
-rand -> Nat.
-andr x:Nat, y : Real, x > y -> Bool.
+rand => Nat.
+andr x:Nat, y : Real, x > y => Bool.
 ---
-z d <- y. // Here is a comment on `z d`.
+z d = y. // Here is a comment on `z d`.
 
 ;
 
-y => Y.
-x => X.
+Y.
+X.
 ---
-exists x : y, y : z .. x > 0.
+some x : y, y : z => x > 0.
 x != 0.
 
 // This is two comments together.
 // They should be one paragraph.
 
-[x : X, y : Z, z : Y .. x * y ^ z]." Now includes semicolons; much better.
-or [x : String .. x + "ok"].
-all (j,k):X .. j > k.
+[all x : X, y : Z, z : Y => x * y ^ z] // Now includes semicolons; much better.
+or [all x : String => x + "ok"].
+all (j,k):X => j > k.
 
 ;
 
-x y:Real, y = 1 -> `ok.
+x y:Real, y = 1 => String.
 ---
-z x <- x > 1 .. 0.
+z x = x > 1 -> 0.
