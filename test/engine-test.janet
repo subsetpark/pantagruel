@@ -14,18 +14,18 @@
   (default references @{})
 
   (is (== res
-          (engine/eval-chapter tree env references @{}))))
+          (engine/eval-chapter tree env references))))
 
 (defn is-head
   [res tree]
-  (is (== res (engine/eval-head tree @{} @{} @{}))))
+  (is (== res (engine/eval-head tree @{} @{}))))
 
 (defn is-body
   [res tree]
   (is (== res (engine/eval-body tree @{} @{}))))
 
 (deftest eval-single-declaration
-  (is-head [{"f" {:kind :set}} {}]
+  (is-head [{"f" {:kind :domain}} {}]
            [{:kind :declaration
              :name "f"
              :bindings []}]))
@@ -105,8 +105,7 @@
   (is-chapter [{"X" :inject
                 "f" {:kind :procedure}
                 "x" {:kind :bound}}
-               {"y" true}
-               {}]
+               {"y" true}]
 
               {:kind :chapter
                :head [{:kind :declaration
