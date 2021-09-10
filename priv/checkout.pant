@@ -12,8 +12,8 @@ check_out u:User, d:Document.
 // A user may check out a document if they have permission to access it and
 // it's not currently checked out.
 
-((owner d) = nobody and (has_perm? u d)) -> (owner d') = u.
-((owner d) != nobody or ~(has_perm? u d)) -> (owner d') = (owner d).
+owner d = nobody and (has_perm? u d) -> owner d' = u.
+owner d != nobody or ~(has_perm? u d) -> owner d' = owner d.
 
 ;
 
