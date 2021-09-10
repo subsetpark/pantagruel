@@ -19,6 +19,7 @@
   ~[[:comment (* "//" (thru "\n"))]
     [:string (* `"` (thru `"`))]
     [:ws :s+]
+    [:directive (+ "module" "import")]
     [:where ";"]
     [:line "---"]
     [:... "..."]

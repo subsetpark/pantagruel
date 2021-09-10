@@ -28,21 +28,26 @@
 
      (head (:line) ,(fn [_] [])
            (head-line :. head) ,|(tuple $0 ;$2))
-     (head-line (sym bindings-exprs)
-                ,|{:kind :declaration
-                   :name $0
-                   :bindings $1}
+     (head-line 
+       (:directive sym) ,|{:kind :directive
+                           :statement ($0 :text)
+                           :args $1}
 
-                (sym bindings-exprs :yields container-name)
-                ,|{:kind :declaration
-                   :name $0
-                   :bindings $1
-                   :yields $3}
+       (sym bindings-exprs)
+       ,|{:kind :declaration
+          :name $0
+          :bindings $1}
 
-                (container-name :reverse-yields expr)
-                ,|{:kind :decl-alias
-                   :name $0
-                   :alias $2})
+       (sym bindings-exprs :yields container-name)
+       ,|{:kind :declaration
+          :name $0
+          :bindings $1
+          :yields $3}
+
+       (container-name :reverse-yields expr)
+       ,|{:kind :decl-alias
+          :name $0
+          :alias $2})
 
      (body () ,tuple
            (body-line) ,tuple
@@ -149,6 +154,12 @@
 
 (def parser-tables (yacc/compile grammar))
 
+(defn- in-bounds 
+  [n mx]
+  (if (< n 0) 
+    (max n (- mx))
+    (min n mx)))
+
 (defn- err-msg
   [form src]
   (default form {})
@@ -174,7 +185,7 @@
       `
       (form :kind)
       (form :text)
-      (string/slice src (max 0 from) (min (length src) to))
+      (string/slice src (in-bounds from (length src)) (in-bounds to (length src)))
       suffix)))
 
 (defn parse

@@ -1,9 +1,16 @@
 (import /pantagruel/stdlib)
 
+(defn handle-directive
+  [{:directive directive :args args} metadata]
+  (case directive
+    :module (put metadata :module-name args)))
+
 (defn introduce-bindings
   [form env symbol-references]
+
   (defn bind [name] (put env name {:kind :bound}))
   (defn alias [name] (put env name {:kind :alias}))
+
   (match form
 
     {:kind :decl-alias
@@ -79,13 +86,14 @@
 
     (@ 'nil) :ok
 
-    form
     (printf "Handling unknown binding form: %q" form)))
 
 (defn eval-head
-  [head env symbol-references]
+  [head env symbol-references metadata]
   (each declaration head
-    (introduce-bindings declaration env symbol-references))
+    (match declaration
+      {:kind :directive} (handle-directive declaration metadata)
+      (introduce-bindings declaration env symbol-references)))
   [env symbol-references])
 
 (defn eval-body
@@ -94,27 +102,44 @@
     (introduce-bindings statement env symbol-references))
   [env symbol-references])
 
+(defn- normalize
+  [reference]
+  (string/trim reference "'"))
+
 (defn- resolve-references
-  [env references]
+  [env references &opt suffix]
+  (default suffix "")
+
   (each reference (keys references)
-    (unless (env reference)
-      (errorf "Unknown symbol: %q" reference)))
+    (when (env (normalize reference))
+      (put references reference nil)))
+
+  (if (not (empty? references))
+    (errorf `
+            Unglossed symbols%s:
+
+            %s
+            `
+            suffix
+            (string/join (keys references) ", ")))
+
   [env references])
 
 (defn eval-chapter
-  [{:head head :body body} env prev-references]
+  [{:head head :body body} env prev-references metadata]
   (let [head-references @{}
         body-references @{}]
-    (eval-head head env head-references)
-    (resolve-references env head-references)
+
+    (eval-head head env head-references metadata)
+    (resolve-references env head-references " in chapter head")
 
     (eval-body body env body-references)
     (resolve-references env prev-references)
-    [env body-references]))
+    [env body-references metadata]))
 
 (defn eval
   [{:chapters chapters}]
-  (resolve-references ;(reduce (fn [[env references] chapter]
-                                 (eval-chapter chapter env references))
-                               [stdlib/root-env @{}]
-                               chapters)))
+  (resolve-references ;(reduce
+                         (fn [acc chapter] (eval-chapter chapter ;acc))
+                         [stdlib/root-env @{} @{}]
+                         chapters)))

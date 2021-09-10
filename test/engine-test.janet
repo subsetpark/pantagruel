@@ -14,11 +14,11 @@
   (default references @{})
 
   (is (== res
-          (engine/eval-chapter tree env references))))
+          (engine/eval-chapter tree env references @{}))))
 
 (defn is-head
   [res tree]
-  (is (== res (engine/eval-head tree @{} @{}))))
+  (is (== res (engine/eval-head tree @{} @{} @{}))))
 
 (defn is-body
   [res tree]
@@ -102,10 +102,11 @@
       :quantifier :some}]))
 
 (deftest eval-chapter
-  (is-chapter [@{"X" :inject
-                 "f" {:kind :procedure}
-                 "x" {:kind :bound}}
-               @{"y" true}]
+  (is-chapter [{"X" :inject
+                "f" {:kind :procedure}
+                "x" {:kind :bound}}
+               {"y" true}
+               {}]
 
               {:kind :chapter
                :head [{:kind :declaration
@@ -118,10 +119,9 @@
 
 (deftest eval-fib
   (is-eval [(merge stdlib/root-env
-                   @{"fib" {:kind :procedure}
-                     "x" {:kind :bound}})
-            @{"fib" true
-              "x" true}]
+                   {"fib" {:kind :procedure}
+                    "x" {:kind :bound}})
+            {}]
 
            {:chapters [{:body
                         [{:kind :binary-operation

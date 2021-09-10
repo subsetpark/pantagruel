@@ -1,5 +1,5 @@
 x => Real.
-y =>Real.
+y => Real.
 ---
 x > rand andr [D] 10 x.
 x = 1.
@@ -23,6 +23,7 @@ z d = y. // Here is a comment on `z d`.
 Y.
 X.
 ---
+
 some x : y, y : z => x > 0.
 x != 0.
 
