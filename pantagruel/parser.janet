@@ -174,7 +174,8 @@
         to (if-let [to (get-in form [:span 1])]
              (+ to 10)
              -1)
-        suffix (if (= to -1) "" "…")]
+        prefix (if (or (= from (- (length src))) (= from 0)) "" "…")
+        suffix (if (or (= to (length src)) (= to -1)) "" "…")]
 
     (if (os/getenv "PANT_DEBUG") (print (dyn :yydebug)))
 
@@ -186,10 +187,11 @@
 
       in
 
-      …%s%s
+      %s%s%s
       `
       (form :kind)
       (form :text)
+      prefix
       (string/slice src (in-bounds from (length src)) (in-bounds to (length src)))
       suffix)))
 
