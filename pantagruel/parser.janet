@@ -17,7 +17,16 @@
      (%left :arithmetic-operator1)
      (%left :funcapp)
 
-     (program (chapters) ,|{:chapters $0})
+     (program (directives chapters) ,|{:directives $0
+                                       :chapters $1})
+
+     (directives () ,tuple
+                 (directive directives) ,|(tuple $0 ;$1))
+
+     (directive
+       (:directive sym :.) ,(fn [directive sym _] {:kind :directive
+                                                   :statement (directive :text)
+                                                   :args sym}))
 
      (chapters () ,tuple
                (chapter) ,tuple
@@ -28,11 +37,7 @@
 
      (head (:line) ,(fn [_] [])
            (head-line :. head) ,|(tuple $0 ;$2))
-     (head-line 
-       (:directive sym) ,|{:kind :directive
-                           :statement ($0 :text)
-                           :args $1}
-
+     (head-line
        (sym bindings-exprs)
        ,|{:kind :declaration
           :name $0
@@ -154,9 +159,9 @@
 
 (def parser-tables (yacc/compile grammar))
 
-(defn- in-bounds 
+(defn- in-bounds
   [n mx]
-  (if (< n 0) 
+  (if (< n 0)
     (max n (- mx))
     (min n mx)))
 

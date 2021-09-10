@@ -1,10 +1,5 @@
 (import /pantagruel/stdlib)
 
-(defn handle-directive
-  [{:directive directive :args args} metadata]
-  (case directive
-    :module (put metadata :module-name args)))
-
 (defn introduce-bindings
   [form env symbol-references]
 
@@ -27,7 +22,7 @@
      :bindings bindings}
     (let [yields (form :yields)]
       (put env name {:kind (if (and (nil? yields) (empty? bindings))
-                             :set
+                             :domain
                              :procedure)})
       (introduce-bindings yields env symbol-references)
       (each binding bindings
@@ -89,11 +84,9 @@
     (printf "Handling unknown binding form: %q" form)))
 
 (defn eval-head
-  [head env symbol-references metadata]
+  [head env symbol-references]
   (each declaration head
-    (match declaration
-      {:kind :directive} (handle-directive declaration metadata)
-      (introduce-bindings declaration env symbol-references)))
+    (introduce-bindings declaration env symbol-references))
   [env symbol-references])
 
 (defn eval-body
@@ -126,20 +119,20 @@
   [env references])
 
 (defn eval-chapter
-  [{:head head :body body} env prev-references metadata]
+  [{:head head :body body} env prev-references]
   (let [head-references @{}
         body-references @{}]
 
-    (eval-head head env head-references metadata)
+    (eval-head head env head-references)
     (resolve-references env head-references " in chapter head")
 
     (eval-body body env body-references)
     (resolve-references env prev-references)
-    [env body-references metadata]))
+    [env body-references]))
 
 (defn eval
   [{:chapters chapters}]
-  (resolve-references ;(reduce
-                         (fn [acc chapter] (eval-chapter chapter ;acc))
-                         [stdlib/root-env @{} @{}]
-                         chapters)))
+  (resolve-references ;(reduce (fn [[env references] chapter]
+                                 (eval-chapter chapter env references))
+                               [stdlib/root-env @{}]
+                               chapters)))

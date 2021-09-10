@@ -43,9 +43,11 @@
                           # TODO: This is a total hack!
                           (* "in" (not :w))
                           (* "or" (not :w))
-                          (* "and" (not :w)))]
-    [:arithmetic-operator1 (+ "*" "/" "^")]
-    [:arithmetic-operator2 (+ "+" "-")]
+                          (* "and" (not :w))
+                          (* "xor" (not :w)))]
+    [:arithmetic-operator1 (+ "*" "/" "^"
+                              (* "mod" (not :w)))]
+    [:arithmetic-operator2 (+ "+" "-" "|" "&")]
     [:unary-operator (+ "~" "#")]
     # TODO: Make proper float/int support.
     [:num (* (? "-") :d (any (+ :d "_")))]
