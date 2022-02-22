@@ -7,4 +7,5 @@
     "Bool" {:kind :domain}
     "String" {:kind :domain}
     "Real" {:kind :domain}
-    "Nil" {:kind :domain}})
+    "Nil" {:kind :domain}
+    "Date" {:kind :domain}})

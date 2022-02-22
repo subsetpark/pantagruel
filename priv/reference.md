@@ -245,7 +245,7 @@ more comma-separated **bindings** or **guards** with some **expression**,
 separated by a backslash, like this:
 
 ```pantagruel
-[x : X .. x ^ 2].
+[all x : X => x ^ 2].
 ```
 
 The above expression is read to refer to a sequence made up every element

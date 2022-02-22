@@ -84,7 +84,8 @@
                                             :right $2})
 
      (quantification-word (:all) ,kind
-                          (:some) ,kind)
+                          (:some) ,kind
+                          (:some1) ,kind)
 
      (container-name
        (sym) ,identity

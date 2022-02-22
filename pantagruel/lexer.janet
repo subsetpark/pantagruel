@@ -31,6 +31,7 @@
     [:update "update"]
     [:case "case"]
     [:all "all"]
+    [:some1 "some1"]
     [:some "some"]
     [:lparen "("]
     [:rparen ")"]
