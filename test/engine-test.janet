@@ -117,7 +117,7 @@
               @{"X" :inject}))
 
 (deftest eval-fib
-  (is-eval [(merge stdlib/root-env
+  (is-eval [(merge stdlib/base-env
                    {"fib" {:kind :procedure}
                     "x" {:kind :bound}})
             {}]

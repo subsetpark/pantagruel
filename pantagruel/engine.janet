@@ -1,5 +1,22 @@
 (import /pantagruel/stdlib)
 
+(defn distribute-bindings-types
+  [bindings]
+
+  (defn distribute-binding-type
+    [binding]
+    (match binding
+      {:kind :binding
+       :name {:container :parens
+              :inner inner}
+       :expr expr}
+      (map (fn [_] expr) inner)
+
+      {:expr expr}
+      [expr]))
+
+  (mapcat distribute-binding-type bindings))
+
 (defn get-type
   [form]
   (match form
@@ -19,10 +36,12 @@
      :yields yields
      :bindings bindings}
     {:yields (get-type yields)
-     :args (map |{:thunk ($ :expr)} bindings)}
+     :args (map get-type (distribute-bindings-types bindings))}
 
     {:kind :declaration :name name}
-    {:concrete name}
+    (if (= (name 0) ((string/ascii-upper name) 0))
+      {:concrete name}
+      {:args [] :yields (stdlib/base-env "Void")})
 
     {:operator "+"
      :left left
@@ -40,10 +59,10 @@
     # References to expressions which will have to be looked up in
     # the environment when the whole document has been bound.
     {:kind :application}
-    {:thunk form}
+    @{:thunk form}
 
     (s (string? s))
-    {:thunk form}
+    @{:thunk form}
 
     # Recursive cases
     (wrapped (tuple? wrapped))
@@ -193,6 +212,6 @@
   (let [[env references]
         (resolve-references ;(reduce (fn [[env references] chapter]
                                        (eval-chapter chapter env references))
-                                     [stdlib/root-env @{}]
+                                     [stdlib/base-env @{}]
                                      chapters))]
     env))

@@ -16,6 +16,7 @@
      (%left :arithmetic-operator2)
      (%left :arithmetic-operator1)
      (%left :funcapp)
+     (%left :unary-operator)
 
      (program (directives chapters) ,|{:directives $0
                                        :chapters $1})
@@ -135,7 +136,6 @@
                                                             :quantifier $0
                                                             :bindings $1
                                                             :expr $3}
-
        (expr expr %prec :funcapp) ,|{:kind :application
                                      :f $0
                                      :x $1}

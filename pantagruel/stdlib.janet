@@ -1,11 +1,12 @@
-(def root-env
+(def base-env
   @{"Any" {:concrete "Any"}
     "Nat" {:concrete "Nat"}
     "Nat0" {:concrete "Nat0"}
     "Int" {:concrete "Int"}
     "Rat" {:concrete "Rat"}
+    "Real" {:concrete "Real"}
     "Bool" {:concrete "Bool"}
     "String" {:concrete "String"}
-    "Real" {:concrete "Real"}
     "Nil" {:concrete "Nil"}
-    "Date" {:concrete "Date"}})
+    "Date" {:concrete "Date"}
+    "Void" {:concrete "Void"}})

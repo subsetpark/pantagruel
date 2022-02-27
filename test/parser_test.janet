@@ -204,6 +204,47 @@
                                      :head [{:bindings ()
                                              :kind :declaration :name "f"}]
                                      :kind :chapter}]}]))
+
+(deftest multiple-application
+  (is-parse
+    [{:kind :sym :text "f"} {:kind :.}
+     {:kind :line}
+     {:kind :sym :text "x"} {:kind :sym :text "y"} {:kind :num :text "1"}
+     {:kind :.}]
+    [:ok {:chapters [{:body [{:f "x"
+                              :kind :application
+                              :x {:f "y" :kind :application :x 1}}]
+                      :head [{:bindings ()
+                              :kind :declaration
+                              :name "f"}]
+                      :kind :chapter}]
+          :directives []}]))
+
+(deftest unary-application
+  (is-parse
+    [{:kind :sym :text "f"}
+     {:kind :. :text "."}
+     {:kind :line :text "---"}
+     {:kind :unary-operator :text "#"}
+     {:kind :sym :text "x"}
+     {:kind :boolean-operator :text "="}
+     {:kind :unary-operator :text "#"}
+     {:kind :sym :text "s"}
+     {:kind :. :text "."}]
+    [:ok {:chapters [{:body [{:kind :binary-operation
+                              :left {:kind :unary-operation
+                                     :operator "#"
+                                     :left "x"}
+                              :operator "="
+                              :right {:kind :unary-operation
+                                      :left "s"
+                                      :operator "#"}}]
+                      :head [{:bindings ()
+                              :kind :declaration
+                              :name "f"}]
+                      :kind :chapter}]
+          :directives ()}]))
+
 (deftest directives
   (is-parse
     [{:kind :directive :text "module"} {:kind :sym :text "FIB"} {:kind :.}

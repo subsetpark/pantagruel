@@ -1,0 +1,4 @@
+concat (s, r): String => String.
+---
+#(concat s r) = #s + #r.
+
