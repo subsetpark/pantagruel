@@ -22,6 +22,8 @@
 (deftype Nat Nat0)
 (deftype Bool Nat0)
 
+(def numeric-types [Nat Nat0 Int Rat Real])
+
 (deftype String Any)
 (deftype Date Any)
 (deftype Void Any)
@@ -29,3 +31,9 @@
 (defvalue "true" Bool)
 (defvalue "false" Bool)
 (defvalue "null" Any)
+
+(def arithmetic-operators ["-" "+" "*" "/"])
+
+(def comparison-operators ["=" "<" ">" "<=" ">="])
+
+(def boolean-operators ["and" "or"])

@@ -49,7 +49,7 @@
     {:kind :declaration :name name}
     (if (= (name 0) ((string/ascii-upper name) 0))
       @{:concrete name}
-      {:args [] :yields (stdlib/base-env "Void")})
+      {:args [] :yields stdlib/Void})
 
     {:operator "+"
      :left left
