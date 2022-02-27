@@ -1,6 +1,6 @@
 (import /pantagruel/stdlib)
 
-(defn distribute-bindings-types
+(defn- distribute-bindings-types
   [bindings]
 
   (defn distribute-binding-type
@@ -25,7 +25,7 @@
 
   (mapcat distribute-binding-type bindings))
 
-(defn get-type
+(defn- get-type
   [form]
   (match form
     {:container :square
@@ -67,10 +67,10 @@
     # References to expressions which will have to be looked up in
     # the environment when the whole document has been bound.
     {:kind :application}
-    @{:thunk form}
+    {:thunk form}
 
     (s (string? s))
-    @{:thunk form}
+    {:thunk form}
 
     # Recursive cases
     (wrapped (tuple? wrapped))
