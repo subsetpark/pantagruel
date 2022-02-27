@@ -18,11 +18,11 @@
     {:kind :declaration
      :yields yields
      :bindings bindings}
-    {:yields yields
-     :args (map |($ :expr) bindings)}
+    {     :yields (get-type yields)
+     :args (map | {:thunk ($ :expr)} bindings)}
 
     {:kind :declaration :name name}
-    name
+    {:concrete name}
 
     {:operator "+"
      :left left

@@ -13,11 +13,11 @@ Body <= [Comment + Expression].
 (Comment, Declaration, Alias, Expression) <= [String].
 ---
 
-eval p = all sect : p => is_bound? sect.
+eval p = all sect : p => is_all_bound? sect.
 
 ;
 
-is_bound? sect: Section => Bool.
+is_all_bound? sect: Section => Bool.
 ---
 
 // All variables referred to in a section head must be defined by
@@ -25,7 +25,7 @@ is_bound? sect: Section => Bool.
 // body, however, must be defined by the end of the *next* section
 // body.
 
-is_bound? sect =
+is_all_bound? sect =
     (all h : (head sect) => all sym : h => is_bound? sym)
     and
     (all b : (body (p ((p sect) - 1))) => all sym : b => is_bound? sym).
