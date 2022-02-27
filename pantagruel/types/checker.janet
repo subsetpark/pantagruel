@@ -1,27 +1,56 @@
 (import /pantagruel/stdlib :prefix "")
 (import /pantagruel/types/resolution)
 
-(defn check-match
+(defn- is-in-hierarchy?
+  [needle haystack]
+  (cond
+    (= needle haystack) true
+
+    (match (table/getproto haystack)
+      nil false
+      needle true
+      proto (is-in-hierarchy? needle proto))))
+
+(defn- raise-type-error
   [left right]
-  (match {:left left :right right}
-    {:left {:sum t} :right {:sum t2}}
-    (check-match t t2)
+  (errorf "Type match failure: %q %q\n   in\n%q\n   in\n%q"
+          left
+          right
+          (dyn :current-expression)
+          (dyn :current-line)))
 
-    {:left {:sum t} :right t2}
+(defn- try-type-eq
+  [left right]
+  (unless (= left right)
+    (raise-type-error left right)))
+
+(defn- try-type-lte
+  [left right]
+  (match [left right]
+    [{:list-of t} {:list-of t2}]
+    (try-type-lte t t2)
+
+    [{:set-of t} {:set-of t2}]
+    (try-type-lte t t2)
+
+    [{:sum t} {:sum t2}]
+    (try-type-eq t t2)
+
+    [{:sum t} t2]
     (each child t
-      (check-match child t2))
+      (try-type-lte child t2))
 
-    {:left t :right {:sum t2}}
-    (each child t2
-      (check-match child t))
+    [t {:sum t2}]
+    (do
+      (var found-match false)
+      (each child t2
+        (let [[res _] (protect (try-type-lte child t))]
+          (set found-match (or found-match res))))
+      (unless found-match (raise-type-error left right)))
 
-    {:left t :right t2}
-    (unless (= t t2)
-      (errorf "Type match failure: %q %q\n   in\n%q\n   in\n%q"
-              left
-              right
-              (dyn :current-expression)
-              (dyn :current-line)))))
+    [t t2]
+    (unless (is-in-hierarchy? t2 t)
+      (raise-type-error t t2))))
 
 (defn check-arg-types
   [f-type args]
@@ -31,7 +60,7 @@
               (length f-args)
               (length args)
               (dyn :current-expression)))
-    (map |(check-match $0 $1) f-args args)))
+    (map |(try-type-lte $0 $1) f-args args)))
 
 (defn check-is-truthy
   [t]
@@ -67,7 +96,7 @@
     ({:operator compop
       :left left
       :right right} (index-of compop ["=" "<" ">" "<=" ">="]))
-    (check-match
+    (try-type-lte
       (resolution/resolve-type (check-expr left env) env)
       (resolution/resolve-type (check-expr right env) env))
 
@@ -78,7 +107,7 @@
           t2 (resolution/resolve-type (check-expr right env) env)]
       (check-arith t1)
       (check-arith t2)
-      (check-match t1 t2))
+      (try-type-lte t1 t2))
 
     ({:operator logop
       :left left
@@ -89,7 +118,7 @@
     ({:operator inop
       :left left
       :right right} (index-of inop ["in"]))
-    (check-match
+    (try-type-lte
       (resolution/resolve-type left env)
       (resolution/inner-type (resolution/resolve-type right env)))
 

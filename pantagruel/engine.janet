@@ -12,8 +12,16 @@
        :expr expr}
       (map (fn [_] expr) inner)
 
-      {:expr expr}
-      [expr]))
+      {:kind :binding
+       :expr expr}
+      [expr]
+
+      # Bindings lists can have arbitrary expressions as guards; those don't
+      # assign any types to any variables.
+      {}
+      []
+
+      (errorf "Attempted to distribute binding type; got binding %q" binding)))
 
   (mapcat distribute-binding-type bindings))
 
@@ -40,7 +48,7 @@
 
     {:kind :declaration :name name}
     (if (= (name 0) ((string/ascii-upper name) 0))
-      {:concrete name}
+      @{:concrete name}
       {:args [] :yields (stdlib/base-env "Void")})
 
     {:operator "+"

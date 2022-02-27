@@ -39,14 +39,14 @@
 
 (defn- application-type
   [f x env]
-  (match {:f f :x x}
-    {:f {:yields yields}}
+  (match [f x]
+    [{:yields yields} _]
     yields
     # When a list is applied to an element, the result is the index of that element.
-    ({:f {:list-of t1} :x t2} (= t1 t2))
-    (base-env "Nat0")
+    ([{:list-of t1} [ t2]] (= t1 t2))
+    Nat0
     # When a list is applied to an index, the result is the inner type of the list.
-    {:f {:list-of t1} :x {:concrete "Nat0"}}
+    [{:list-of t1} [Nat0]]
     t1
 
     (errorf "Couldn't determine type of application %q of %q in %q" f x (dyn :current-expression))))
