@@ -3,6 +3,7 @@
 (import /pantagruel/lexer)
 (import /pantagruel/parser)
 (import /pantagruel/engine)
+(import /pantagruel/type-checker)
 
 (def version "0.4.0")
 
@@ -30,5 +31,6 @@
                 (@ 'nil) (file/read stdin :all)
                 [file] (slurp file))
           lexed (lexer/lex src)
-          tree (parser/parse lexed src)]
-      (engine/eval tree))))
+          tree (parser/parse lexed src)
+          env (engine/eval tree)]
+      (type-checker/type-check tree env))))

@@ -1,10 +1,66 @@
 (import /pantagruel/stdlib)
 
+(defn get-type
+  [form]
+  (match form
+    {:container :square
+     :inner inner}
+    {:list-of (get-type inner)}
+
+    {:container :braces
+     :inner inner}
+    {:set-of (get-type inner)}
+
+    {:container :parens
+     :inner inner}
+    (get-type inner)
+
+    {:kind :declaration
+     :yields yields
+     :bindings bindings}
+    {:yields yields
+     :args (map |($ :expr) bindings)}
+
+    {:kind :declaration :name name}
+    name
+
+    {:operator "+"
+     :left left
+     :right right}
+    {:sum (flatten [(let [left-type (get-type left)]
+                      (if (left-type :sum)
+                        (left-type :sum)
+                        left-type))
+                    (let [right-type (get-type right)]
+                      (if (right-type :sum)
+                        (right-type :sum)
+                        right-type))])}
+
+    # Thunks
+    # References to expressions which will have to be looked up in
+    # the environment when the whole document has been bound.
+    {:kind :application}
+    {:thunk form}
+
+    (s (string? s))
+    {:thunk form}
+
+    # Recursive cases
+    (wrapped (tuple? wrapped))
+    (if (> (length wrapped) 1)
+      # TODO: Handle [Foo, Bar] types. If those exist.
+      (errorf "Encountered unknown type: %q" wrapped)
+      (get-type (wrapped 0)))
+
+    (errorf "Encountered unknown type: %q" form)))
+
 (defn introduce-bindings
   [form env symbol-references]
 
-  (defn bind [name] (put env name {:kind :bound}))
-  (defn alias [name] (put env name {:kind :alias}))
+  (defn bind [name expr] (put env name {:kind :bound
+                                        :type (get-type expr)}))
+  (defn alias [name expr] (put env name {:kind :alias
+                                         :type (get-type expr)}))
 
   (match form
 
@@ -13,29 +69,31 @@
      :alias expr}
     (do
       (match name
-        {:container _ :inner names} (each name names (alias name))
-        (alias name))
+        {:container _ :inner names} (each name names (alias name expr))
+        (alias name expr))
       (introduce-bindings expr env symbol-references))
 
     {:kind :declaration
      :name name
      :bindings bindings}
     (let [yields (form :yields)]
-      (put env name {:kind (if (and (nil? yields) (empty? bindings))
-                             :domain
-                             :procedure)})
+      (let [kind (if (and (nil? yields) (empty? bindings))
+                   :domain
+                   :procedure)
+            type (get-type form)]
+        (put env name {:kind kind :type type}))
       (introduce-bindings yields env symbol-references)
       (each binding bindings
         (introduce-bindings binding env symbol-references)))
 
     {:kind :binding
      :name name
-     :expr expression}
+     :expr expr}
     (do
       (match name
-        {:container _ :inner names} (each name names (bind name))
-        (bind name))
-      (introduce-bindings expression env symbol-references))
+        {:container _ :inner names} (each name names (bind name expr))
+        (bind name expr))
+      (introduce-bindings expr env symbol-references))
 
     {:kind :case
      :mapping mapping-form}
@@ -132,7 +190,9 @@
 
 (defn eval
   [{:chapters chapters}]
-  (resolve-references ;(reduce (fn [[env references] chapter]
-                                 (eval-chapter chapter env references))
-                               [stdlib/root-env @{}]
-                               chapters)))
+  (let [[env references]
+        (resolve-references ;(reduce (fn [[env references] chapter]
+                                       (eval-chapter chapter env references))
+                                     [stdlib/root-env @{}]
+                                     chapters))]
+    env))
