@@ -111,6 +111,9 @@
                        (errorf "Encountered parens with more than one element: %q" inner))
                      (resolve-type (inner 0) env))
 
+                   {:kind :string}
+                   (root-env "String")
+
                    (s (string? s))
                    (env expr)
 
@@ -138,8 +141,11 @@
 
     {:left t :right t2}
     (unless (= left right)
-
-      (errorf "Type match failure: %q %q\nin\n%q" left right (dyn :current-expression)))))
+      (errorf "Type match failure: %q %q\nin\n%q\nin\n%q"
+              left
+              right
+              (dyn :current-expression)
+              (dyn :current-line)))))
 
 (defn check-arg-types
   [f-type & args]
@@ -225,6 +231,9 @@
     :ok
 
     (n (number? n))
+    :ok
+
+    {:kind :string}
     :ok
 
     (errorf "Don't know how to type-check expression: %q\nin\n%q\nwith\n%q" expr (dyn :current-line) env))
