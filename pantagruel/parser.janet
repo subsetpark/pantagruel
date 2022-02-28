@@ -11,8 +11,8 @@
 
 (def grammar
   ~(yacc
-     (%left :logical-operator)
      (%left :boolean-operator)
+     (%left :logical-operator)
      (%left :arithmetic-operator2)
      (%left :arithmetic-operator1)
      (%left :funcapp)

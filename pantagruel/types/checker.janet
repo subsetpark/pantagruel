@@ -27,6 +27,9 @@
     [{:set-of t} {:set-of t2}]
     (try-type-lte t t2)
 
+    [{:list-of t} {:set-of t2}]
+    (try-type-lte t t2)
+
     [{:sum t} {:sum t2}]
     (try-type-eq t t2)
 
@@ -44,7 +47,9 @@
 
     [t t2]
     (unless (resolution/is-in-hierarchy? t2 t)
-      (throw :lte t t2))))
+      (throw :lte t t2))
+
+    (throw :lte left right)))
 
 (defn check-arg-types
   [f-type args]
@@ -53,16 +58,6 @@
       (throw :arg-length f-type args))
     (map |(try-type-lte $0 $1) f-args args)))
 
-(defn check-is-truthy
-  [t]
-  (match t
-    stdlib/Bool true
-
-    {:list-of _} true
-
-    {:set-of _} true
-
-    (errorf "Type check failure: %q is not truthy\n   in\n%q" t (dyn :current-expression))))
 
 (defn check-arith
   [left right]
@@ -74,7 +69,6 @@
   [expr env]
   (setdyn :current-expression expr)
   (match expr
-
     {:container :parens
      :inner inner}
     (do
@@ -100,15 +94,14 @@
       :left left
       :right right} (index-of arithop stdlib/arithmetic-operators))
     (let [t1 (resolution/resolve-type (check-expr left env) env)
-          t2 (resolution/resolve-type (check-expr right env) env)]
-      (check-arith t1 t2)
-      (try-type-lte t1 t2))
+          t2 (resolution/resolve-type (check-expr right env) env)])
 
     ({:operator boolop
       :left left
       :right right} (index-of boolop stdlib/boolean-operators))
-    (do (check-is-truthy (resolution/resolve-type (check-expr left env) env))
-      (check-is-truthy (resolution/resolve-type (check-expr right env) env)))
+    (do
+      (resolution/resolve-type (check-expr left env) env)
+      (resolution/resolve-type (check-expr right env) env))
 
     ({:operator inop
       :left left
@@ -121,8 +114,10 @@
      :f f
      :x x}
     (check-arg-types (resolution/resolve-type f env)
-                     (map |(resolution/resolve-type $ env)
-                          (map |(check-expr $ env) (resolution/collapse-application-args x))))
+                     (->> x
+                          (resolution/collapse-application-args)
+                          (map |(check-expr $ env))
+                          (map |(resolution/resolve-type $ env))))
 
     {:kind :quantification
      :expr expr}

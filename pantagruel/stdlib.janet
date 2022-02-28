@@ -36,4 +36,4 @@
 
 (def comparison-operators ["=" "<" ">" "<=" ">="])
 
-(def boolean-operators ["and" "or"])
+(def boolean-operators ["and" "or" "->" "<->"])

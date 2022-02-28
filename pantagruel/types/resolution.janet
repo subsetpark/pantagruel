@@ -16,6 +16,7 @@
 (defn is-in-hierarchy?
   [needle haystack]
   (cond
+    (not (table? haystack)) false
     (= needle haystack) true
 
     (match (table/getproto haystack)
@@ -145,6 +146,17 @@
 
     Real))
 
+(defn- arith-type
+  [t t2]
+  (match [t t2]
+    [{:list-of t} {:set-of t}] {:set-of t}
+    [{:set-of t} {:list-of t}] {:set-of t}
+    [{:list-of t} {:list-of t}] {:list-of t}
+    [{:set-of t} {:set-of t}] {:set-of t}
+
+    # TODO: Do the rest.
+    (errorf "Couldn't get arithmetic type of %q, %q" t t2)))
+
 (defn resolve-type
   ```
   Get the type of some AST expression when it is fully evaluated (ie, reduced).
@@ -178,9 +190,10 @@
       Nat0
 
       ({:operator arithop
-        :left t} (index-of arithop arithmetic-operators))
+        :left left
+        :right right} (index-of arithop arithmetic-operators))
       # TODO: Determine possible types of subtraction, etc, between different types
-      (resolve-type t env)
+      (arith-type (resolve-type left env) (resolve-type right env))
 
       {:kind :case
        :mapping mapping}
