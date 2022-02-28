@@ -4,6 +4,7 @@
 
 (defn- print-types
   [str & args]
+
   (defn- render-type
     [t]
 
@@ -19,7 +20,7 @@
       {:args args :yields yields} (string/format "(%s => %s)" (join args) (render-type yields))
       t (string/format "%q" t)))
 
-  (printf str ;(map render-type args)))
+  (printf (string "Type error: " str) ;(map render-type args)))
 
 (defn- handle-resolution-error
   [err]
@@ -54,17 +55,18 @@
 (defn type-check
   [tree env]
   (let [body-exprs (mapcat |($0 :body) (tree :chapters))]
+    (var type-error false)
     (each body-expr body-exprs
       (try
         (let [expr-t (resolution/resolve-type body-expr env)]
           (when (nil? expr-t)
             (errorf "Type was nil")))
         ([err]
-          (print "Type error.")
           (if (table? err)
             (handle-resolution-error err)
             (error err))
-          (printf "In expression:\n%q" body-expr)
-          (os/exit 1)))))
+          (printf "In expression:\n%q\n" body-expr)
+          (set type-error true))))
+    (if type-error (os/exit 1)))
 
   true)
