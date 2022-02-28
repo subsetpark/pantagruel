@@ -10,7 +10,7 @@
   [name parent]
   (let [sym (symbol "pant-" name)]
     ~(upscope
-       (def ,sym (table/setproto @{:value ,(string name)} ,parent))
+       (def ,sym @{:value ,(string name) :type ,parent})
        (put base-env ,(string name) ,sym))))
 
 (def Any @{:concrete "Any"})

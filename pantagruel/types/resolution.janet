@@ -9,9 +9,48 @@
   This doesn't include errors or gaps in type resolution logic, which will be
   raised immediately.
   ```
-  [type &opt vars]
+  [t &opt vars]
   (default vars @{})
-  (error (table/setproto (merge vars @{:type type}) ResolutionError)))
+  (error (table/setproto (merge vars @{:type t}) ResolutionError)))
+
+
+(defn- gcd-type
+  [left right]
+
+  (defn find-gcd-
+    [t t2 n]
+    (or (and (= t t2) [n t])
+        (let [left (and (table? t2)
+                        (find-gcd- t (table/getproto t2) (inc n)))
+              right (and (table? t)
+                         (find-gcd- (table/getproto t) t2 (inc n)))]
+          (extreme (fn [x y]
+                     (cond
+                       (and x (not y)) true
+                       (and y (not x)) false
+                       (and x y) (<= (x 0) (y 0))))
+                   [left right]))))
+
+  (defn find-gcd
+    [t t2]
+    (if-let [[_n gcd] (find-gcd- t t2 0)]
+      (if (and gcd (not= gcd Any))
+        gcd)))
+
+  (let [gcd (match [left right]
+              # TODO: This handles identical sum types; handle the other cases.
+              [{:sum ts} {:sum ts}] {:sum ts}
+              [{:sum _} {:sum _}] nil
+              [{:sum ts} t2] (any? (map |(find-gcd $ t2) ts))
+              [t {:sum t2s}] (any? (map |(find-gcd t $) t2s))
+              [{:list-of t} {:set-of t2}] {:set-of (find-gcd t t2)}
+              [{:set-of t} {:list-of t2}] {:set-of (find-gcd t t2)}
+              [{:list-of t} {:list-of t2}] {:list-of (find-gcd t t2)}
+              [{:set-of t} {:set-of t2}] {:set-of (find-gcd t t2)}
+              [t t2] (find-gcd t t2))]
+    (if gcd
+      gcd
+      (throw :gcd {:left left :right right}))))
 
 (defn is-in-hierarchy?
   [needle haystack]
@@ -69,8 +108,8 @@
     {:thunk thunk}
     (handle-thunk (env thunk) env)
 
-    {:type type}
-    (handle-thunk type env)
+    {:type t}
+    (handle-thunk t env)
 
     {:concrete _}
     partial-t
@@ -100,8 +139,12 @@
   ```
   [f x]
   (match [f x]
-    [{:yields yields} _]
-    yields
+    [{:args f-args :yields yields} arg-ts]
+    (do
+      (unless (= (length f-args) (length arg-ts))
+        (throw :arg-length {:f-args f-args :args arg-ts}))
+      (if (every? (map |(gcd-type $0 $1) f-args arg-ts))
+        yields))
 
     ([{:list-of t1} ts] (= 1 (length ts)) (= t1 (ts 0)))
     Nat0
@@ -146,17 +189,6 @@
 
     Real))
 
-(defn- arith-type
-  [t t2]
-  (match [t t2]
-    [{:list-of t} {:set-of t}] {:set-of t}
-    [{:set-of t} {:list-of t}] {:set-of t}
-    [{:list-of t} {:list-of t}] {:list-of t}
-    [{:set-of t} {:set-of t}] {:set-of t}
-
-    # TODO: Do the rest.
-    (errorf "Couldn't get arithmetic type of %q, %q" t t2)))
-
 (defn resolve-type
   ```
   Get the type of some AST expression when it is fully evaluated (ie, reduced).
@@ -177,27 +209,43 @@
        :expr expr}
       (resolve-type expr env)
 
-      ({:operator boolop} (index-of boolop boolean-operators))
-      Bool
+      ({:operator boolop
+        :left left
+        :right right} (index-of boolop boolean-operators))
+      (if (and (resolve-type left env)
+               (resolve-type right env))
+        Bool)
 
-      ({:operator compop} (index-of compop comparison-operators))
-      Bool
+      ({:operator compop
+        :left left
+        :right right} (index-of compop comparison-operators))
+      (let [t (resolve-type left env)
+            t2 (resolve-type right env)]
+        (if (gcd-type t t2)
+          Bool))
 
-      {:operator "in"}
-      Bool
+      {:operator "in"
+       :left left
+       :right right}
+      (let [element-t (resolve-type left env)
+            inner-t (inner-type (resolve-type right env))]
+        (if (gcd-type element-t inner-t)
+          Bool))
 
-      {:operator "#"}
-      Nat0
+      {:operator "#"
+       :left left}
+      (if (inner-type (resolve-type left env))
+        Nat0)
 
       ({:operator arithop
         :left left
         :right right} (index-of arithop arithmetic-operators))
       # TODO: Determine possible types of subtraction, etc, between different types
-      (arith-type (resolve-type left env) (resolve-type right env))
+      (gcd-type (resolve-type left env) (resolve-type right env))
 
       {:kind :case
        :mapping mapping}
-      {:sum (map |(resolve-type ($ :right) env) mapping)}
+      (reduce2 gcd-type (map |(resolve-type ($ :right) env) mapping))
 
       {:container :parens
        :inner inner}
