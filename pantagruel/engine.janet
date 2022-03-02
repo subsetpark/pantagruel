@@ -25,43 +25,63 @@
 
   (mapcat distribute-binding-type bindings))
 
-(defn- get-type
+(defn- type-of-form
+  ```
+  All forms that syntactically establish some type.
+  ```
   [form]
+
+  (defn err [] (errorf "Encountered unrecognized type syntax:\n%q" form))
+
   (match form
     {:container :square
      :inner inner}
-    {:list-of (get-type inner)}
+    {:list-of (type-of-form inner)}
 
     {:container :braces
      :inner inner}
-    {:set-of (get-type inner)}
+    {:set-of (type-of-form inner)}
 
     {:container :parens
      :inner inner}
-    (get-type inner)
+    (type-of-form inner)
 
     {:kind :declaration
      :yields yields
      :bindings bindings}
-    {:yields (get-type yields)
-     :args (map get-type (distribute-bindings-types bindings))}
+    {:yields (type-of-form yields)
+     :args (map type-of-form (distribute-bindings-types bindings))}
 
-    {:kind :declaration :name name}
+    ({:kind :declaration
+      :name name
+      :bindings bindings} (= 0 (length bindings)))
     (if (= (name 0) ((string/ascii-upper name) 0))
-      @{:concrete name}
+      {:concrete name}
       {:args [] :yields stdlib/Void})
+
+    {:kind :declaration
+     :name name
+     :bindings bindings}
+    {:args (map type-of-form (distribute-bindings-types bindings))
+     :yields stdlib/Void}
 
     {:operator "+"
      :left left
      :right right}
-    {:sum (flatten [(let [left-type (get-type left)]
+    {:sum (flatten [(let [left-type (type-of-form left)]
                       (if (left-type :sum)
                         (left-type :sum)
                         left-type))
-                    (let [right-type (get-type right)]
+                    (let [right-type (type-of-form right)]
                       (if (right-type :sum)
                         (right-type :sum)
                         right-type))])}
+
+    {:operator "*"
+     :left left
+     :right right}
+    # TODO: Do we need any more type math in the case of other algebraic types?
+    {:product [left right]}
 
     # Thunks
     # References to expressions which will have to be looked up in
@@ -76,18 +96,18 @@
     (wrapped (tuple? wrapped))
     (if (> (length wrapped) 1)
       # TODO: Handle [Foo, Bar] types. If those exist.
-      (errorf "Encountered unknown type: %q" wrapped)
-      (get-type (wrapped 0)))
+      (err)
+      (type-of-form (wrapped 0)))
 
-    (errorf "Encountered unknown type: %q" form)))
+    (err)))
 
 (defn introduce-bindings
   [form env symbol-references]
 
   (defn bind [name expr] (put env name {:kind :bound
-                                        :type (get-type expr)}))
-  (defn alias [name expr] (put env name {:kind :alias
-                                         :type (get-type expr)}))
+                                        :type (type-of-form expr)}))
+  (defn alias [name expr] (put env name {:kind :domain
+                                         :type (type-of-form expr)}))
 
   (match form
 
@@ -107,8 +127,8 @@
       (let [kind (if (and (nil? yields) (empty? bindings))
                    :domain
                    :procedure)
-            type (get-type form)]
-        (put env name {:kind kind :type type}))
+            t (type-of-form form)]
+        (put env name {:kind kind :type t}))
       (introduce-bindings yields env symbol-references)
       (each binding bindings
         (introduce-bindings binding env symbol-references)))

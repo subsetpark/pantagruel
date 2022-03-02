@@ -3,7 +3,8 @@
 (defmacro- deftype
   [name parent]
   ~(upscope
-     (def ,name (table/setproto @{:concrete ,(string name)} ,parent))
+     (def ,name (table/setproto @{:kind :domain
+                                  :concrete ,(string name)} ,parent))
      (put base-env ,(string name) ,name)))
 
 (defmacro- defvalue
@@ -13,7 +14,11 @@
        (def ,sym @{:value ,(string name) :type ,parent})
        (put base-env ,(string name) ,sym))))
 
-(def Any @{:concrete "Any"})
+(def Any @{:kind :domain
+           :concrete "Any"})
+(put base-env "Any" Any)
+
+(deftype Domain Any)
 
 (deftype Real Any)
 (deftype Rat Real)
@@ -34,6 +39,6 @@
 
 (def arithmetic-operators ["-" "+" "*" "/"])
 
-(def comparison-operators ["=" "<" ">" "<=" ">="])
+(def comparison-operators ["=" "!=" "<" ">" "<=" ">="])
 
-(def boolean-operators ["and" "or" "->" "<->"])
+(def boolean-operators ["~" "and" "or" "->" "<->"])

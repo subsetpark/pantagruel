@@ -33,20 +33,25 @@
 
   (defn find-gcd
     [t t2]
-    (if-let [[_n gcd] (find-gcd- t t2 0)]
-      (if (and gcd (not= gcd Any))
-        gcd)))
+    (cond
+      (= t Any) Any
+      (= t2 Any) Any
+      (if-let [[_n gcd] (find-gcd- t t2 0)]
+        (if (and gcd (not= gcd Any))
+          gcd))))
 
   (let [gcd (match [left right]
-              # TODO: This handles identical sum types; handle the other cases.
               [{:sum ts} {:sum ts}] {:sum ts}
-              [{:sum _} {:sum _}] nil
+              # TODO: This handles identical sum types; handle the other cases.
+              [{:sum _} {:sum _}] (errorf "Couldn't unify non-identical sum types: %q %q" left right)
               [{:sum ts} t2] (any? (map |(find-gcd $ t2) ts))
               [t {:sum t2s}] (any? (map |(find-gcd t $) t2s))
+
               [{:list-of t} {:set-of t2}] {:set-of (find-gcd t t2)}
               [{:set-of t} {:list-of t2}] {:set-of (find-gcd t t2)}
               [{:list-of t} {:list-of t2}] {:list-of (find-gcd t t2)}
               [{:set-of t} {:set-of t2}] {:set-of (find-gcd t t2)}
+
               [t t2] (find-gcd t t2))]
     (if gcd
       gcd
@@ -79,53 +84,104 @@
 
     [x]))
 
-(defn- handle-thunk
+(defn is-domain-reference?
+  [thunk]
+  # We need to determine that we've encountered a bare symbol, in the text,
+  # that is the name of a domain (including complex ones or aliases.)
+  # In other words, we need to differentiate between references to domains and
+  # references to bound variables that are in domains.
+  (case (thunk :kind)
+    # If we encounter a symbol-reference to a concrete type, or a type alias,
+    # then the type of that reference is Domain (not the value it's
+    # referencing).
+    :domain true
+
+    false))
+
+(defn- fully-resolve-type
   ```
   Fully resolve the type of any expression that couldn't be resolved at
   evaluation time, because it might have referred to a symbol that was bound
   later on in the document.
   ```
-  [partial-t env]
-  (match partial-t
-    {:list-of inner}
-    {:list-of (handle-thunk inner env)}
+  [entry env]
+  (match entry
+    #
+    # Environment lookup cases.
+    #
 
-    {:set-of inner}
-    {:set-of (handle-thunk inner env)}
+    # Handle symbols referred to literally in the document. This includes
+    # differentiating between *references* to domains (which have the type of
+    # Domain) and *instances* of domains, whose type *is* that domain.
+    {:symbol-reference s}
+    # Trim the string; variables like "foo'" derive their type from the
+    # variables they are iterations on.
+    (let [base-name (string/trim s "'")
+          looked-up (env base-name)]
+      (if (is-domain-reference? looked-up)
+        Domain
+        (fully-resolve-type looked-up env)))
+
+    # An explicit :thunk is like a bare string - a reference to some other
+    # piece of program text - but was interned during the evaluation stage.
+    {:thunk thunk}
+    (fully-resolve-type (env thunk) env)
+
+    #
+    # The three types of values that can be found in the environment: domains,
+    # procedures, and bound variables.
+    #
+
+    {:kind :domain
+     :type t}
+    (fully-resolve-type t env)
 
     # Special-case procedures with no arguments: treat them as singletons.
     # TODO: Is this right at all?
-    ({:args args
-      :yields yields}
+    ({:kind :procedure
+      :type {:args args
+             :yields yields}}
       (= 0 (length args)) (not= yields Void))
-    (handle-thunk yields env)
+    (fully-resolve-type yields env)
 
-    {:args args
-     :yields yields}
-    {:args (map |(handle-thunk $ env) args)
-     :yields (handle-thunk yields env)}
+    # Main procedure case.
+    {:kind :procedure
+     :type {:args args
+            :yields yields}}
+    {:args (map |(fully-resolve-type $ env) args)
+     :yields (fully-resolve-type yields env)}
 
-    {:thunk thunk}
-    (handle-thunk (env thunk) env)
+    {:kind :bound
+     :type t}
+    (fully-resolve-type t env)
 
-    {:type t}
-    (handle-thunk t env)
+    #
+    # Type components: recursive cases.
+    #
+
+    {:list-of inner}
+    {:list-of (fully-resolve-type inner env)}
+
+    {:set-of inner}
+    {:set-of (fully-resolve-type inner env)}
+
+    {:sum ts}
+    {:sum (map |(fully-resolve-type $ env) ts)}
+
+    {:product ts}
+    {:product (map |(fully-resolve-type $ env) ts)}
+
+    #
+    # Base case: we've fully resolved any environment references.
+    #
 
     {:concrete _}
-    partial-t
+    entry
 
-    {:sum _}
-    partial-t
-
-    (s (string? s))
-    (let [base-name (string/trim s "'")]
-      # Variables like "foo'" derive their type from the variables they are
-      # iterations on.
-      (handle-thunk (env base-name) env))
-
-    (errorf "Couldn't handle thunk:\n%q\nin\n%q"
-            partial-t
+    (errorf "Couldn't fully resolve type:\n%q\nin\n%q"
+            entry
             (dyn :current-expression))))
+
 
 (defn- application-type
   ```
@@ -194,7 +250,6 @@
   Get the type of some AST expression when it is fully evaluated (ie, reduced).
   ```
   [expr env]
-
   (defn resolve-type-inner
     [expr]
     (match expr
@@ -210,10 +265,10 @@
       (resolve-type expr env)
 
       ({:operator boolop
-        :left left
-        :right right} (index-of boolop boolean-operators))
-      (if (and (resolve-type left env)
-               (resolve-type right env))
+        :left left} (index-of boolop boolean-operators))
+      (let [right (expr :right)]
+        (resolve-type left env)
+        (if right (resolve-type right env))
         Bool)
 
       ({:operator compop
@@ -247,22 +302,30 @@
        :mapping mapping}
       (reduce2 gcd-type (map |(resolve-type ($ :right) env) mapping))
 
-      {:container :parens
+      {:kind :string}
+      String
+
+      {:container container
        :inner inner}
       (do
         (when (> (length inner) 1)
           # TODO: Handle this case. Is it possible?
           (errorf "Encountered parens with more than one element: %q" inner))
-        (resolve-type (inner 0) env))
+        (let [inner-t (resolve-type (inner 0) env)]
+          (case container
+            :parens inner-t
+            :square {:list-of inner-t}
+            :braces {:set-of inner-t})))
 
-      {:kind :string}
-      String
+      {:container :braces
+       :inner inner}
+      {:set-of (resolve-type inner env)}
 
       (n (number? n))
       (number-type n)
 
       (s (string? s))
-      s
+      {:symbol-reference s}
 
       (errorf "Couldn't determine type of expression\n%q\nin\n%q"
               expr
@@ -270,4 +333,4 @@
 
   (-> expr
       (resolve-type-inner)
-      (handle-thunk env)))
+      (fully-resolve-type env)))

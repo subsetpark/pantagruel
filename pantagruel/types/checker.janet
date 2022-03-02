@@ -17,6 +17,8 @@
       {:concrete t-name} t-name
       {:set-of t} (string/format "{%s}" (render-type t))
       {:list-of t} (string/format "[%s]" (render-type t))
+      {:sum ts} (-> (map render-type ts) (string/join " + "))
+      {:product ts} (-> (map render-type ts) (string/join " * "))
       {:args args :yields yields} (string/format "(%s => %s)" (join args) (render-type yields))
       t (string/format "%q" t)))
 
@@ -48,7 +50,7 @@
                  (err :f-args))
 
     :gcd
-    (print-types "Couldn't unify types:\n%q, %q" (err :left) (err :right))
+    (print-types "Couldn't unify types:\n%s, %s" (err :left) (err :right))
 
     (print-types "Unknown type resolution error: %s" err)))
 
