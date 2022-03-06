@@ -63,22 +63,7 @@
 
   (defn err [] (errorf "Encountered unrecognized type syntax:\n%q" form))
 
-  (defn compute-sum-type
-    ```
-    Handle sum type syntax, either:
-    - Foo + Bar
-    - {value1, value2}
-    ```
-    [left-t right-t]
-    # If either side is itself a sum type, unpack it; in other words, 
-    # (X + Y) + Z = {X, Y, Z}.
-    (let [t1 (or (left-t :sum) [left-t])
-          t2 (or (right-t :sum) [right-t])]
-      # If both sides are equivalent, we don't need a sum. In other words,  
-      # X + X = X.
-      (if (and (= t1 t2) (= 1 (length t1)))
-        (t1 0)
-        {:sum (distinct [;t1 ;t2])})))
+  
 
   (match form
     {:container :square
@@ -91,7 +76,7 @@
     # String} as a synonym for Int + String?
     ({:container :braces
       :inner inner} (tuple? inner) (> (length inner) 1))
-    (reduce2 compute-sum-type (map type-of-form inner))
+    (reduce2 resolution/sum-type (map type-of-form inner))
 
     {:container :braces
      :inner inner}
@@ -123,7 +108,7 @@
     {:operator "+"
      :left left
      :right right}
-    (compute-sum-type (type-of-form right) (type-of-form right))
+    (resolution/sum-type (type-of-form right) (type-of-form right))
 
     {:operator "*"
      :left left

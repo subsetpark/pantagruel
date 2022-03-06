@@ -41,6 +41,17 @@
           gcd))))
 
   (let [gcd (match [left right]
+              # Handle any 1-tuples we've received, eg, from type summing.
+              ([wrapped-left _]
+                (tuple? wrapped-left)
+                (= 1 (length wrapped-left)))
+              (gcd-type (wrapped-left 0) right)
+
+              ([_ wrapped-right]
+                (tuple? wrapped-right)
+                (= 1 (length wrapped-right)))
+              (gcd-type left (wrapped-right 0))
+
               [{:sum ts} {:sum ts}] {:sum ts}
               # TODO: This handles identical sum types; handle the other cases.
               [{:sum _} {:sum _}] (errorf "Couldn't unify non-identical sum types: %q %q" left right)
@@ -258,6 +269,27 @@
     (int? n) Int
 
     Real))
+
+(defn sum-type
+  ```
+    Handle sum type syntax, either:
+    - Foo + Bar
+    - {value1, value2}
+    ```
+  [left-t right-t]
+  # If either side is itself a sum type, unpack it; in other words,
+  # (X + Y) + Z = {X, Y, Z}.
+  (let [t1 (or (left-t :sum) [left-t])
+        t2 (or (right-t :sum) [right-t])
+        gcd (protect (gcd-type t1 t2))]
+    (cond
+      # If the two types are unifiable, return the common denominator.
+      (gcd 0) (gcd 1)
+      # If both sides are equivalent, we don't need a sum. In other words,
+      # X + X = X.
+      (and (= t1 t2) (= 1 (length t1))) (t1 0)
+
+      {:sum (distinct [;t1 ;t2])})))
 
 (defn resolve-type
   ```
