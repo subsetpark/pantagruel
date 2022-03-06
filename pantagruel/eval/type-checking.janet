@@ -1,6 +1,10 @@
-(import /pantagruel/stdlib)
-(import /pantagruel/types/resolution)
+## Type checking.
+##
+## Responsible for using the type resolution logic to check the types of a
+## document and report errors if found.
 
+(import /pantagruel/stdlib)
+(import /pantagruel/types)
 
 (defn- print-types
   [str & args]
@@ -60,7 +64,7 @@
     (var type-error false)
     (each body-expr body-exprs
       (try
-        (let [expr-t (resolution/resolve-type body-expr env)]
+        (let [expr-t (types/resolve-type body-expr env)]
           (when (nil? expr-t)
             (errorf "Type was nil")))
         ([err]

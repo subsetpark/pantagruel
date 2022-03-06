@@ -1,6 +1,6 @@
 (use testament)
 
-(import /pantagruel/engine)
+(import /pantagruel/eval/engine)
 (import /pantagruel/stdlib)
 
 (defn is-eval

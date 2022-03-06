@@ -1,3 +1,15 @@
+## Type logic.
+##
+## All logic concerned with type algebra and resolution: determining the type
+## of all valid typed expressions, and the entire algebra available for
+## manipulating types.
+##
+## The main entry point is `resolve-type`, which will take an AST element and
+## return its type in the context of a fully-populated environment. However,
+## the evaluation engine, responsible for the population of that environment,
+## also calls into this logic for types that are fully resolvable without an
+## environment.
+
 (import /pantagruel/stdlib :prefix "")
 
 (def ResolutionError @{})
@@ -13,11 +25,43 @@
   (default vars @{})
   (error (table/setproto (merge vars @{:type t}) ResolutionError)))
 
+(defn- is-in-hierarchy?
+  ```
+  Determine if type `haystack` is a descendent of type `needle`.
+  ```
+  [needle haystack]
+  (cond
+    (not (table? haystack)) false
+    (= needle haystack) true
+
+    (match (table/getproto haystack)
+      'nil false
+      'needle true
+      proto (is-in-hierarchy? needle proto))))
 
 (defn- gcd-type
+  ```
+  Type unification logic.
+
+  For any two types, find the "greatest common denominator", that is, the
+  narrowest type, if any, that is common to the hierarchy of both.
+
+  This explicity excludes Any, which is present in the hierarchy of all types,
+  unless one of the two types *is* itself Any. That is: Any is the greatest
+  common denominator of itself and any other type, but it's not the greatest
+  common denominator of two non-Any types.
+
+  User-defined types always behave as though they are directly descended from
+  Any. Built-in types have a more elaborate hierarchy, allowing for meaningful
+  interactions between, for instance, different members of the numeric tower.
+  ```
   [left right]
 
   (defn find-gcd-
+    ```
+    Basic type unification. Recursively seek the "shallowest" type present in
+    the hierarchies of both `t` and `t2`, where `n` is the depth of the search.
+    ```
     [t t2 n]
     (or (and (= t t2) [n t])
         (let [left (and (table? t2)
@@ -32,6 +76,9 @@
                    [left right]))))
 
   (defn find-gcd
+    ```
+    Type unification logic wrapping `find-gcd-` with special handling of `Any`.
+    ```
     [t t2]
     (cond
       (= t Any) Any
@@ -68,18 +115,7 @@
       gcd
       (throw :gcd {:left left :right right}))))
 
-(defn is-in-hierarchy?
-  [needle haystack]
-  (cond
-    (not (table? haystack)) false
-    (= needle haystack) true
-
-    (match (table/getproto haystack)
-      'nil false
-      'needle true
-      proto (is-in-hierarchy? needle proto))))
-
-(defn collapse-application-args
+(defn- collapse-application-args
   ```
   Procedure application is represented in the syntax tree as a series of
   single-argument applications. Given some application node, recurse through
@@ -95,7 +131,7 @@
 
     [x]))
 
-(defn is-domain-reference?
+(defn- is-domain-reference?
   [thunk]
   # We need to determine that we've encountered a bare symbol, in the text,
   # that is the name of a domain (including complex ones or aliases.)
@@ -197,7 +233,6 @@
             entry
             (dyn :current-expression))))
 
-
 (defn- application-type
   ```
   Resolve the type of a function application expression. Possible inferences are:
@@ -239,7 +274,7 @@
     (throw :application {:f f :x x})))
 
 
-(defn inner-type
+(defn- inner-type
   ```
   Resolve the type of a membership operation, ie, get the type of a container's
   elements.

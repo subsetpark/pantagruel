@@ -9,7 +9,7 @@
 ## Evaluation Error.
 
 (import /pantagruel/stdlib)
-(import /pantagruel/types/resolution)
+(import /pantagruel/types)
 
 (def EvaluationError @{})
 
@@ -76,7 +76,7 @@
     # String} as a synonym for Int + String?
     ({:container :braces
       :inner inner} (tuple? inner) (> (length inner) 1))
-    (reduce2 resolution/sum-type (map type-of-form inner))
+    (reduce2 types/sum-type (map type-of-form inner))
 
     {:container :braces
      :inner inner}
@@ -108,7 +108,7 @@
     {:operator "+"
      :left left
      :right right}
-    (resolution/sum-type (type-of-form right) (type-of-form right))
+    (types/sum-type (type-of-form right) (type-of-form right))
 
     {:operator "*"
      :left left
@@ -120,7 +120,7 @@
     stdlib/String
 
     (n (number? n))
-    (resolution/number-type n)
+    (types/number-type n)
 
     # Thunks
     # References to expressions which will have to be looked up in

@@ -2,8 +2,8 @@
 
 (import /pantagruel/lexer)
 (import /pantagruel/parser)
-(import /pantagruel/engine)
-(import /pantagruel/types/checker)
+(import /pantagruel/eval/engine)
+(import /pantagruel/eval/type-checking)
 
 (def version "0.4.0")
 
@@ -33,4 +33,4 @@
           lexed (lexer/lex src)
           tree (parser/parse lexed src)
           env (engine/eval tree)]
-      (checker/type-check tree env))))
+      (type-checking/type-check tree env))))
