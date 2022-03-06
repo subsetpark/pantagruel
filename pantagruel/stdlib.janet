@@ -26,8 +26,7 @@
 (deftype Nat0 Int)
 (deftype Nat Nat0)
 (deftype Bool Nat0)
-
-(def numeric-types [Nat Nat0 Int Rat Real])
+(deftype Char Nat0)
 
 (deftype String Any)
 (deftype Date Any)
@@ -36,6 +35,8 @@
 (defvalue "true" Bool)
 (defvalue "false" Bool)
 (defvalue "null" Any)
+
+(def numeric-types [Nat Nat0 Int Rat Real])
 
 (def arithmetic-operators ["-" "+" "*" "/"])
 

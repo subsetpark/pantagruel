@@ -22,6 +22,8 @@
 (def --- {:kind :line})
 (def => {:kind :yields})
 (def <= {:kind :reverse-yields})
+(def = {:kind :boolean-operator :text "="})
+(def + {:kind :arithmetic-operator2 :text "+"})
 (def lp {:kind :lparen})
 (def rp {:kind :rparen})
 (def card {:kind :unary-operator :text "#"})
@@ -180,7 +182,7 @@
              bind
              (sym "A")
              =>
-             (sym "a") {:kind :arithmetic-operator2 :text "+"} (sym "b")
+             (sym "a") + (sym "b")
              .]
             [:ok {:directives [] :chapters [{:body [{:bindings
                                                      [{:expr "A"
@@ -200,8 +202,8 @@
   (is-parse
     [;head-placeholder
      (sym "x") {:kind :arithmetic-operator2 :text "-"} (num 1)
-     {:kind :boolean-operator :text "="}
-     (sym "y") {:kind :arithmetic-operator2 :text "+"} (num 2) .]
+     =
+     (sym "y") + (num 2) .]
     [:ok {:directives [] :chapters [{:body [{:kind :binary-operation
                                              :left {:kind :binary-operation :left "x"
                                                     :operator "-"
@@ -232,7 +234,7 @@
   (is-parse
     [;head-placeholder
      card (sym "x")
-     {:kind :boolean-operator :text "="}
+     =
      card (sym "s") .]
     [:ok {:chapters [{:body [{:kind :binary-operation
                               :left {:kind :unary-operation
@@ -265,14 +267,27 @@
 
   (is-parse
     [;head-placeholder
-     card
-     (sym "x") {:kind :boolean-operator :text "-"} (num 1) .]
+     card lp (sym "concat") (sym "s") (sym "r") rp
+     =
+     card (sym "s") + card (sym "r") .]
     [:ok {:chapters [{:body [{:kind :binary-operation
+                              :operator "="
                               :left {:kind :unary-operation
                                      :operator "#"
-                                     :left "x"}
-                              :operator "-"
-                              :right 1}]
+                                     :left {:container :parens
+                                            :inner [{:f "concat"
+                                                     :kind :application
+                                                     :x {:f "s"
+                                                         :kind :application
+                                                         :x "r"}}]}}
+                              :right {:kind :binary-operation
+                                      :operator "+"
+                                      :left {:kind :unary-operation
+                                             :left "s"
+                                             :operator "#"}
+                                      :right {:kind :unary-operation
+                                              :left "r"
+                                              :operator "#"}}}]
                       :head [{:bindings ()
                               :kind :declaration
                               :name "f"}]
@@ -294,17 +309,17 @@
   (is-parse
     [(sym "fib") (sym "x") bind (sym "Nat") => (sym "Nat") .
      ---
-     (sym "fib") (sym "x") {:kind :boolean-operator :text "="}
+     (sym "fib") (sym "x") =
      {:kind :case :text "case"} {:kind :... :text "..."}
      (sym "x") {:kind :boolean-operator :text ">"} (num 2) =>
      (sym "fib")
      lp (sym "x") {:kind :arithmetic-operator2 :text "-"} (num 1) rp
-     {:kind :arithmetic-operator2 :text "+"} (sym "fib")
+     + (sym "fib")
      lp (sym "x") {:kind :arithmetic-operator2 :text "-"} (num 2) rp
      {:kind :comma :text ","}
-     (sym "x") {:kind :boolean-operator :text "="} (num 1)
+     (sym "x") = (num 1)
      => (num 1) {:kind :comma :text ","}
-     (sym "x") {:kind :boolean-operator :text "="} (num 2)
+     (sym "x") = (num 2)
      => (num 1) .]
     [:ok {:directives [] :chapters [{:body
                                      [{:kind :binary-operation

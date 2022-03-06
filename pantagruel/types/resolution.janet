@@ -155,6 +155,10 @@
      :type t}
     (fully-resolve-type t env)
 
+    {:value _
+     :type t}
+    (fully-resolve-type t env)
+
     #
     # Type components: recursive cases.
     #
@@ -229,6 +233,9 @@
 
     {:list-of inner-t}
     inner-t
+
+    (@ String)
+    Char
 
     (throw :container {:t t})))
 
