@@ -1,22 +1,22 @@
-# Pantagruel: A Program Specification Language With Unambiguous Syntax and Non-existent Semantics
+# Pantagruel: An Extremely Lightweight Formal Specification Language
 
-First and foremost, Pantagruel is tool for *thought* and *communication*. It's
-not a programming language, and it's not a program for verifying other
-programs. It's a language designed to help you express your ideas about what
-programs (or systems, or algorithms, or bylaws...) should do. It is designed to
-help you do so in a way that is terser and clearer than natural language;
-that's the *communication* part. The *thought* part comes from the bet that
-being helped, and sometimes constrained, to communicate in an unambiguous and
-slightly more rigorous way than you might otherwise will assist you in thinking
-things through.
+Pantagruel is tool for *thought* and *communication*. It's not a programming
+language, and it's not a program for verifying other programs. It's a language
+designed to help you express your ideas about what programs (or systems, or
+algorithms, or bylaws...) should do. It is designed to help you do so in a way
+that is terser and clearer than natural language; that's the *communication*
+part. The *thought* part comes from the bet that being helped, and sometimes
+constrained, to communicate in an unambiguous and slightly more rigorous way
+than you might otherwise will assist you in thinking things through.
 
-Pantagruel is a *program specification language*. A notation with a defined
-syntax whose sentences will describe the workings of some piece of logic, to be
-articulated for the benefit of the people who will implement it, as well as the
-people who design it and the people who will ensure it's implemented correctly.
+The first part of Pantagruel is a *program specification language*: a notation
+with a defined syntax whose sentences will describe the workings of some
+program, to be articulated for the benefit of the people who will implement it,
+as well as the people who design it and the people who will ensure it's
+implemented correctly.
 
-Pantagruel is also implemented in the `pant` interpreter, which is a program
-that understands Pantagruel text documents. `pant` is capable of ensuring that
+The second part is the `pant` document checker, which is a program that
+understands Pantagruel text documents. `pant` is capable of ensuring that
 documents follow certain rules, beyond those of syntax, which are designed to
 promote rigor and clarity of thought.
 
@@ -32,7 +32,7 @@ module CHECKOUT.
 // par. 2
 User.
 Document.
-owner d : Document => User.
+owner d: Document => User.
 
 // par. 3
 // A specification for a small document management system.
@@ -46,8 +46,8 @@ check_out u:User, d:Document.
 // it's not currently checked out.
 
 // par. 6
-((owner d) = nobody and (has_perm? u d)) -> (owner d') = u.
-((owner d) != nobody or ~(has_perm? u d)) -> (owner d') = (owner d).
+owner d = nobody and has_perm? u d -> owner d' = u.
+owner d != nobody or ~(has_perm? u d) -> owner d' = owner d.
 
 ;
 
@@ -87,6 +87,118 @@ a user has permission to check out a document or not; in this specification
 we've left it at that. In a different document or if we were also interested in
 the specifics of who can check out a document and when, we could continue the
 specification with statements about *has-perm?*.
+
+## Installing Pantagruel
+
+The Pantagruel checker is written in [Janet][]. To build from source, make sure
+that Janet and `jpm` are installed, and then run:
+
+```
+⊕ jpm --local deps
+... Dependencies are installed ...
+⊕ jpm --local build
+... The `pant` binary is compiled and put into `./build`
+```
+
+You can then copy the resulting binary into your path. 
+
+## Using the Pantagruel document checker
+
+The above document is available at `priv/checkout.pant`. We can check the
+document like this:
+
+```
+⊕ pant ./priv/checkout.pant 
+⊕
+```
+
+The document checker runs on the document and, seeing no errors, exits with
+status code 0.
+
+### Checking bindings
+
+The first feature that `pant` exposes is the ability to check that all terms
+used in a document have been *bound*, or *defined*, appropriately. 
+
+This is a feature common to nearly every programming language; if a variable
+isn't bound, then referring to it should be an error that will crash the
+program. However, because Pantagruel documents aren't programs, the binding
+rules are slightly more lenient.
+
+In Pantagruel documents, *we may refer to terms we haven't defined yet*.
+However, *we must define them by the end of the **next** document section.*
+
+We can see an example of this in the `CHECKOUT` module. In 6, we refer to
+`nobody`, even though that word hasn't been defined yet. It's in the *next*
+section, in 7, that we actually define it. 
+
+This allows us to write documents in an *explanatory* manner, progressively
+introducing and defining terms. This is more useful to humans than a mode where
+every term is necessarily defined before it's used, without any useful context.
+
+`pant` will check that we have defined all our terms. To see this in action, we
+can remove 7 entirely and re-run the document checker.
+
+```
+⊕ pant priv/checkout.pant 
+Unglossed symbols:
+
+nobody, has_perm?
+```
+
+The document checker has identified the symbols that we failed to define in
+time and exits with a non-zero status code.
+
+### Checking types
+
+The second sort of check performed by the document checker is *type checking*.
+
+Just as with binding checks, this is a feature present in many programming
+languages. Statically-typed languages can analyze their programs without
+running them and assert that they are *well-typed*: for instance, that a
+function is only ever called with arguments that match its declared argument
+types, or that operators are only ever called on operands with compatible types. 
+
+While Pantagruel's type checking works similarly, it's important to remember
+that Pantagruel documents aren't programs, and the purpose of type-checking
+them is to encourage rigorous thinking-through---not to avoid illegal program
+states that might cause a crash. 
+
+Thus, Pantagruel attempts to alert the user to any obvious violations of the
+stated domains of their functions and variables, while still allowing for a
+wide degree of expression. 
+
+To see the type checker in action, we can make another change to the example
+document. Let's change the first expression in 6 to have a somewhat
+nonsensical expression in it, changing our first usage of `nobody` to the
+number `0`.
+
+```
+owner d = 0 and has_perm? u d -> owner d' = u.
+```
+
+Then run the document checker:
+
+```
+~/code-src/pantagruel [types!] ⊕ pant priv/checkout.pant
+Type error: Couldn't unify types:
+User, Nat0
+In expression:
+...
+```
+
+The document checker identifies a type error: the procedure `owner` is
+supposed to yield a result in the domain `User`; however, it encountered a
+value in the domain `Nat0`---the natural numbers, including
+0---instead.[^inexpr]
+
+[^inexpr]: It's worth acknowledging that, currently, the expression being
+  evaluated is represented as the raw representation of its AST. This will be
+  improved to make it easier to locate type errors in our documents!
+
+Pantagruel's type system, while quite simple by programming language standards,
+has some details worth understanding; see the language reference for the full
+details.
 
 ## Background
 

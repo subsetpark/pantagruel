@@ -63,8 +63,6 @@
 
   (defn err [] (errorf "Encountered unrecognized type syntax:\n%q" form))
 
-  
-
   (match form
     {:container :square
      :inner inner}
@@ -256,7 +254,7 @@
   [env references])
 
 (defn eval-chapter
-  [{:head head :body body} env prev-references]
+  [[env prev-references] {:head head :body body}]
   (let [head-references @{}
         body-references @{}]
 
@@ -273,21 +271,22 @@
           (case (err :locale)
             :body ""
             :chapter " in chapter head")
-          (string/join (keys (err :symbols)) ", ")))
+          (string/join (keys (err :symbols)) ", "))
+  (os/exit 1))
+
+(defmacro eval-or-throw
+  [body]
+  ~(try
+     ,body
+     ([err]
+       (if (table? err)
+         (handle-evaluation-error err)
+         (error err)))))
 
 (defn eval
   [{:chapters chapters}]
 
-  (defn eval-chapter-or-throw
-    [[env references] chapter]
-    (try
-      (eval-chapter chapter env references)
-      ([err]
-        (if (table? err)
-          (handle-evaluation-error err)
-          (error err)))))
-
   (let [acc [stdlib/base-env @{}]
-        document-result (reduce eval-chapter-or-throw acc chapters)
-        [env references] (resolve-references ;document-result :body)]
+        document-result (eval-or-throw (reduce eval-chapter acc chapters))
+        [env references] (eval-or-throw (resolve-references ;document-result :body))]
     env))
