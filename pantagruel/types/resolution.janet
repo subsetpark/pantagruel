@@ -218,6 +218,13 @@
     [{:list-of t1} ts]
     (throw :list-application-bad-arg {:f t1 :x (ts 0)})
 
+    # For now, Strings are special-cased here.
+    ([(@ String) [t1]] (index-of t1 [Char String]))
+    Nat0
+
+    ([(@ String) ts] (= 1 (length ts)) (is-in-hierarchy? Int (ts 0)))
+    Char
+
     (throw :application {:f f :x x})))
 
 

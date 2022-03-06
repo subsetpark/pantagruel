@@ -24,9 +24,9 @@
 (deftype Rat Real)
 (deftype Int Rat)
 (deftype Nat0 Int)
-(deftype Nat Nat0)
 (deftype Bool Nat0)
-(deftype Char Nat0)
+(deftype Nat Nat0)
+(deftype Char Nat)
 
 (deftype String Any)
 (deftype Date Any)
