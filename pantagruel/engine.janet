@@ -1,6 +1,35 @@
+## Evaluation of a Pantagruel document.
+##
+## Recursively evaluate the AST of an entire document, resulting in a binding
+## context mapping all symbols in the documents to the available type
+## information.
+##
+## If any symbol has been introduced but not successfully bound into the
+## environment according to the binding rules of the language, will throw an
+## Evaluation Error.
+
 (import /pantagruel/stdlib)
 
+(def EvaluationError @{})
+
+(defn- throw
+  ```
+  Handle violations of the symbol binding rules.
+
+  This doesn't include errors or gaps in evaluation logic, which will be
+  raised immediately.
+  ```
+  [symbols locale &opt vars]
+  (default vars @{})
+  (error (table/setproto (merge vars @{:symbols symbols
+                                       :locale locale})
+                         EvaluationError)))
+
+
 (defn- distribute-bindings-types
+  ```
+  Handle binding form (x, y, z):T, shorthand for x:T, y:T, z:T.
+  ```
   [bindings]
 
   (defn distribute-binding-type
@@ -205,21 +234,14 @@
   (string/trim reference "'"))
 
 (defn- resolve-references
-  [env references &opt suffix]
-  (default suffix "")
+  [env references locale]
 
   (each reference (keys references)
     (when (env (normalize reference))
       (put references reference nil)))
 
   (if (not (empty? references))
-    (errorf `
-            Unglossed symbols%s:
-
-            %s
-            `
-            suffix
-            (string/join (keys references) ", ")))
+    (throw references locale))
 
   [env references])
 
@@ -229,17 +251,33 @@
         body-references @{}]
 
     (eval-head head env head-references)
-    (resolve-references env head-references " in chapter head")
+    (resolve-references env head-references :chapter)
 
     (eval-body body env body-references)
-    (resolve-references env prev-references)
+    (resolve-references env prev-references :body)
     [env body-references]))
+
+(defn handle-evaluation-error
+  [err]
+  (printf "Unglossed symbols%s:\n\n%s"
+          (case (err :locale)
+            :body ""
+            :chapter " in chapter head")
+          (string/join (keys (err :symbols)) ", ")))
 
 (defn eval
   [{:chapters chapters}]
-  (let [[env references]
-        (resolve-references ;(reduce (fn [[env references] chapter]
-                                       (eval-chapter chapter env references))
-                                     [stdlib/base-env @{}]
-                                     chapters))]
+
+  (defn eval-chapter-or-throw
+    [[env references] chapter]
+    (try
+      (eval-chapter chapter env references)
+      ([err]
+        (if (table? err)
+          (handle-evaluation-error err)
+          (error err)))))
+
+  (let [acc [stdlib/base-env @{}]
+        document-result (reduce eval-chapter-or-throw acc chapters)
+        [env references] (resolve-references ;document-result :body)]
     env))

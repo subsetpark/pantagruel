@@ -27,7 +27,8 @@
 (deftest eval-single-declaration
   (is-head [@{"f" {:kind :domain
                    :type {:args ()
-                          :yields @{:concrete "Void"}}}}
+                          :yields @{:kind :domain
+                                    :concrete "Void"}}}}
             @{}]
            [{:kind :declaration
              :name "f"
@@ -35,8 +36,9 @@
 
 (deftest eval-declaration-with-binding
   (is-head [@{"f" {:kind :procedure
-                   :type {:args ()
-                          :yields @{:concrete "Void"}}}
+                   :type {:args @[{:thunk "X"}]
+                          :yields @{:kind :domain
+                                    :concrete "Void"}}}
               "x" {:kind :bound
                    :type {:thunk "X"}}}
             @{"X" true}]
@@ -57,7 +59,7 @@
              :yields "F"}]))
 
 (deftest eval-alias-declaration
-  (is-head [@{"f" {:kind :alias
+  (is-head [@{"f" {:kind :domain
                    :type {:thunk "F"}}}
             @{"F" true}]
            [{:kind :decl-alias
@@ -65,7 +67,7 @@
              :alias "F"}]))
 
 (deftest eval-alias-declaration-container
-  (is-head [@{"f" {:kind :alias
+  (is-head [@{"f" {:kind :domain
                    :type {:list-of {:thunk "F"}}}}
             @{"F" true}]
            [{:kind :decl-alias
@@ -118,8 +120,9 @@
 (deftest eval-chapter
   (is-chapter [@{"X" :inject
                  "f" {:kind :procedure
-                      :type {:args ()
-                             :yields @{:concrete "Void"}}}
+                      :type {:args @[{:thunk "X"}]
+                             :yields @{:concrete "Void"
+                                       :kind :domain}}}
                  "x" {:kind :bound
                       :type {:thunk "X"}}}
                @{"y" true}]

@@ -4,7 +4,7 @@
 
 (defn- throw
   ```
-  Handle type errors encountered while trying to perform type resolution.
+  Handle type errors encountered during type resolution.
 
   This doesn't include errors or gaps in type resolution logic, which will be
   raised immediately.
