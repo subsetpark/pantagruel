@@ -1,3 +1,5 @@
+## PEG-based grammar and lexer.
+
 (defn- wrap-rule
   [[kw peg]]
   [kw ~(cmt (* ($) (constant ,kw) (<- ,peg) ($)) ,|{:kind $1 :text $2 :span [$0 $3]})])
@@ -58,6 +60,9 @@
 (def- lexer (-> lexer-grammar (rules-to-peg) (peg/compile)))
 
 (defn lex
+  ```
+  Generate an array of tokens from document text.
+  ```
   [text]
   (def tokens (peg/match lexer text))
   (filter |(not (index-of ($ :kind) [:ws :comment])) tokens))

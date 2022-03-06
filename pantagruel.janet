@@ -5,7 +5,7 @@
 (import /pantagruel/eval/engine)
 (import /pantagruel/eval/type-checking)
 
-(def version "0.4.0")
+(def version "0.5.0")
 
 (def params
   [```
@@ -22,6 +22,13 @@
    :default {:kind :accumulate}])
 
 (defn main
+  ```
+  Main application logic.
+
+  Load a file or read a document from stdin.
+
+  Evaluate it and check; if all checks pass, return 0.
+  ```
   [& _args]
   (let [args (argparse ;params)]
     (when (args "version")

@@ -59,6 +59,11 @@
     (print-types "Unknown type resolution error: %s" err)))
 
 (defn type-check
+  ```
+  Attempt full type resolution, sequentially, of each body expression in a
+  document. Output error messages for each type error found and, if any were
+  found, exit with a non-zero status code.
+  ```
   [tree env]
   (let [body-exprs (mapcat |($0 :body) (tree :chapters))]
     (var type-error false)
@@ -73,6 +78,4 @@
             (error err))
           (printf "In expression:\n%q\n" body-expr)
           (set type-error true))))
-    (if type-error (os/exit 1)))
-
-  true)
+    (if type-error (os/exit 1))))

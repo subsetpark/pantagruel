@@ -1,3 +1,5 @@
+## Parser generator grammar.
+
 (import yacc)
 
 (defn fst [& args] (first args))
@@ -197,6 +199,9 @@
       suffix)))
 
 (defn parse
+  ```
+  Generate an AST from a sequence of tokens.
+  ```
   [tokens src]
   (if (os/getenv "PANT_DEBUG") (setdyn :yydebug @""))
 
