@@ -9,6 +9,7 @@
 ## Evaluation Error.
 
 (import /pantagruel/stdlib)
+(import /pantagruel/types/resolution)
 
 (def EvaluationError @{})
 
@@ -68,13 +69,10 @@
     - Foo + Bar
     - {value1, value2}
     ```
-    [left right]
-    # Given a left and right form, recurse into each side.
-    (let [left-t (type-of-form left)
-          right-t (type-of-form right)
-          # If either side is itself a sum type, unpack it; in other words, 
-          # (X + Y) + Z = {X, Y, Z}.
-          t1 (or (left-t :sum) [left-t])
+    [left-t right-t]
+    # If either side is itself a sum type, unpack it; in other words, 
+    # (X + Y) + Z = {X, Y, Z}.
+    (let [t1 (or (left-t :sum) [left-t])
           t2 (or (right-t :sum) [right-t])]
       # If both sides are equivalent, we don't need a sum. In other words,  
       # X + X = X.
@@ -93,7 +91,7 @@
     # String} as a synonym for Int + String?
     ({:container :braces
       :inner inner} (tuple? inner) (> (length inner) 1))
-    (reduce2 compute-sum-type inner)
+    (reduce2 compute-sum-type (map type-of-form inner))
 
     {:container :braces
      :inner inner}
@@ -125,7 +123,7 @@
     {:operator "+"
      :left left
      :right right}
-    (compute-sum-type left right)
+    (compute-sum-type (type-of-form right) (type-of-form right))
 
     {:operator "*"
      :left left
@@ -135,6 +133,9 @@
 
     {:kind :string}
     stdlib/String
+
+    (n (number? n))
+    (resolution/number-type n)
 
     # Thunks
     # References to expressions which will have to be looked up in

@@ -1,0 +1,4 @@
+Trit <= {0, 1, 2}.
+add (x, y): Trit => Trit.
+---
+add 1 2 = 0.

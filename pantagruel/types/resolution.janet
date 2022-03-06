@@ -246,7 +246,7 @@
 
     (throw :container {:t t})))
 
-(defn- number-type
+(defn number-type
   ```
   Given a number, resolve the narrowest element of the number tower it is a
   member of.
