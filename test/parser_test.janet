@@ -243,6 +243,27 @@
                               :kind :declaration
                               :name "f"}]
                       :kind :chapter}]
+          :directives ()}])
+
+  (is-parse
+    [{:kind :sym :text "f"}
+     {:kind :. :text "."}
+     {:kind :line :text "---"}
+     {:kind :unary-operator :text "#"}
+     {:kind :sym :text "x"}
+     {:kind :boolean-operator :text "-"}
+     {:kind :num :text "1"}
+     {:kind :. :text "."}]
+    [:ok {:chapters [{:body [{:kind :binary-operation
+                              :left {:kind :unary-operation
+                                     :operator "#"
+                                     :left "x"}
+                              :operator "-"
+                              :right 1}]
+                      :head [{:bindings ()
+                              :kind :declaration
+                              :name "f"}]
+                      :kind :chapter}]
           :directives ()}]))
 
 (deftest directives
