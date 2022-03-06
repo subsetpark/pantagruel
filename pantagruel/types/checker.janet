@@ -41,7 +41,7 @@
                  (err :f))
 
     :container
-    (print-types "Attempted to check for membership in non-container type:\n%s"
+    (print-types "Attempted to check for membership or cardinality in non-container type:\n%s"
                  (err :t))
 
     :arg-length

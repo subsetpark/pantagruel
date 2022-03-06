@@ -17,26 +17,36 @@
 
   (is (== ast parsed)))
 
+(def . {:kind :.})
+(def bind {:kind ::})
+(def --- {:kind :line})
+(def => {:kind :yields})
+(def <= {:kind :reverse-yields})
+(def lp {:kind :lparen})
+(def rp {:kind :rparen})
+(def card {:kind :unary-operator :text "#"})
+(def head-placeholder [{:kind :sym :text "f"} . ---])
+(defn sym [text] {:kind :sym :text text})
+(defn num [text] {:kind :num :text (string text)})
+
 (deftest empty-program
   (is-parse
     []
     [:ok {:directives [] :chapters []}]))
 
-(deftest base-chapter
+(deftest base-head
   (is-parse
-    [{:kind :sym :text "f"} {:kind :.}
-     {:kind :line}]
+    head-placeholder
     [:ok {:directives [] :chapters [{:kind :chapter
                                      :head [{:kind :declaration
                                              :name "f"
                                              :bindings []}]
                                      :body []}]}]))
 
-(deftest base-head
+(deftest base-chapter
   (is-parse
-    [{:kind :sym :text "f"} {:kind :.}
-     {:kind :line}
-     {:kind :sym :text "g"} {:kind :.}]
+    [;head-placeholder
+     (sym "g") .]
     [:ok {:directives [] :chapters [{:kind :chapter
                                      :head [{:kind :declaration
                                              :name "f"
@@ -45,8 +55,8 @@
 
 (deftest head-with-binding
   (is-parse
-    [{:kind :sym :text "f"} {:kind :sym :text "x"} {:kind ::} {:kind :sym :text "X"} {:kind :.}
-     {:kind :line}]
+    [(sym "f") (sym "x") bind (sym "X") .
+     ---]
     [:ok {:directives [] :chapters [{:kind :chapter
                                      :head [{:kind :declaration
                                              :name "f"
@@ -57,8 +67,8 @@
 
 (deftest head-with-yields
   (is-parse
-    [{:kind :sym :text "f"} {:kind :yields} {:kind :sym :text "F"} {:kind :.}
-     {:kind :line}]
+    [(sym "f") => (sym "F") .
+     ---]
     [:ok {:directives [] :chapters [{:kind :chapter
                                      :head [{:kind :declaration
                                              :name "f"
@@ -68,8 +78,8 @@
 
 (deftest head-with-reverse-yields
   (is-parse
-    [{:kind :sym :text "f"} {:kind :reverse-yields} {:kind :sym :text "F"} {:kind :.}
-     {:kind :line}]
+    [(sym "f") <= (sym "F") .
+     ---]
     [:ok {:directives [] :chapters [{:kind :chapter
                                      :head [{:kind :decl-alias
                                              :name "f"
@@ -78,8 +88,8 @@
 
 (deftest head-with-reverse-yields-container
   (is-parse
-    [{:kind :sym :text "f"} {:kind :reverse-yields} {:kind :lsquare} {:kind :sym :text "F"} {:kind :rsquare} {:kind :.}
-     {:kind :line}]
+    [(sym "f") <= {:kind :lsquare} (sym "F") {:kind :rsquare} .
+     ---]
     [:ok {:directives [] :chapters [{:kind :chapter
                                      :head [{:kind :decl-alias
                                              :name "f"
@@ -89,18 +99,18 @@
 
 (deftest head-with-reverse-yields-container-comma
   (is-parse
-    [{:kind :lparen}
-     {:kind :sym :text "f"}
+    [lp
+     (sym "f")
      {:kind :comma}
-     {:kind :sym :text "g"}
-     {:kind :rparen}
-     {:kind :reverse-yields}
+     (sym "g")
+     rp
+     <=
      {:kind :lsquare}
-     {:kind :sym :text "F"}
+     (sym "F")
      {:kind :comma}
-     {:kind :sym :text "G"}
-     {:kind :rsquare} {:kind :.}
-     {:kind :line}]
+     (sym "G")
+     {:kind :rsquare} .
+     ---]
     [:ok {:directives [] :chapters [{:kind :chapter
                                      :head [{:kind :decl-alias
                                              :name {:container :parens
@@ -110,12 +120,13 @@
                                      :body []}]}]))
 (deftest multiple-chapters
   (is-parse
-    [{:kind :sym :text "f"} {:kind :.}
-     {:kind :line}
-     {:kind :sym :text "g"} {:kind :.}
+    [;head-placeholder
+     (sym "g")
+     .
      {:kind :where}
-     {:kind :sym :text "h"} {:kind :.}
-     {:kind :line}]
+     (sym "h")
+     .
+     ---]
     [:ok {:directives [] :chapters [{:kind :chapter
                                      :head [{:kind :declaration
                                              :name "f"
@@ -129,15 +140,16 @@
 
 (deftest qualification
   (is-parse
-    [{:kind :sym :text "x"} {:kind :.}
-     {:kind :line}
-     {:kind :some :text "some"}
-     {:kind :sym :text "x"} {:kind :: :text ":"} {:kind :sym :text "Nat"}
-     {:kind :comma :text ","}
-     {:kind :sym :text "x"} {:kind :boolean-operator :text ">"} {:kind :num :text "1"}
-     {:kind :yields :text "=>"}
-     {:kind :sym :text "x"} {:kind :boolean-operator :text "<"} {:kind :num :text "10"}
-     {:kind :.}]
+    [(sym "x")
+     .
+     ---
+     {:kind :some}
+     (sym "x") bind (sym "Nat")
+     {:kind :comma}
+     (sym "x") {:kind :boolean-operator :text ">"} (num 1)
+     =>
+     (sym "x") {:kind :boolean-operator :text "<"} (num 10)
+     .]
     [:ok {:directives [] :chapters [{:body [{:bindings
                                              [{:expr "Nat"
                                                :kind :binding
@@ -158,18 +170,18 @@
                                      :kind :chapter}]}]))
 
 (deftest quantification-with-container
-  (is-parse [{:kind :sym :text "A"} {:kind :.}
-             {:kind :line}
+  (is-parse [(sym "A") .
+             ---
              {:kind :some :text "some"}
-             {:kind :lparen :text "("}
-             {:kind :sym :text "a"} {:kind :comma :text ","}
-             {:kind :sym :text "b"}
-             {:kind :rparen :text ")"}
-             {:kind :: :text ":"}
-             {:kind :sym :text "A"}
-             {:kind :yields :text "=>"}
-             {:kind :sym :text "a"} {:kind :arithmetic-operator2 :text "+"} {:kind :sym :text "b"}
-             {:kind :.}]
+             lp
+             {:kind :sym :text "a"} {:kind :comma}
+             (sym "b")
+             rp
+             bind
+             (sym "A")
+             =>
+             (sym "a") {:kind :arithmetic-operator2 :text "+"} (sym "b")
+             .]
             [:ok {:directives [] :chapters [{:body [{:bindings
                                                      [{:expr "A"
                                                        :kind :binding
@@ -186,12 +198,10 @@
 
 (deftest precedence
   (is-parse
-    [{:kind :sym :text "f"} {:kind :.}
-     {:kind :line}
-     {:kind :sym :text "x"} {:kind :arithmetic-operator2 :text "-"} {:kind :num :text "1"}
+    [;head-placeholder
+     (sym "x") {:kind :arithmetic-operator2 :text "-"} (num 1)
      {:kind :boolean-operator :text "="}
-     {:kind :sym :text "y"} {:kind :arithmetic-operator2 :text "+"} {:kind :num :text "2"}
-     {:kind :.}]
+     (sym "y") {:kind :arithmetic-operator2 :text "+"} (num 2) .]
     [:ok {:directives [] :chapters [{:body [{:kind :binary-operation
                                              :left {:kind :binary-operation :left "x"
                                                     :operator "-"
@@ -207,10 +217,8 @@
 
 (deftest multiple-application
   (is-parse
-    [{:kind :sym :text "f"} {:kind :.}
-     {:kind :line}
-     {:kind :sym :text "x"} {:kind :sym :text "y"} {:kind :num :text "1"}
-     {:kind :.}]
+    [;head-placeholder
+     (sym "x") (sym "y") (num 1) .]
     [:ok {:chapters [{:body [{:f "x"
                               :kind :application
                               :x {:f "y" :kind :application :x 1}}]
@@ -222,15 +230,10 @@
 
 (deftest unary-application
   (is-parse
-    [{:kind :sym :text "f"}
-     {:kind :. :text "."}
-     {:kind :line :text "---"}
-     {:kind :unary-operator :text "#"}
-     {:kind :sym :text "x"}
+    [;head-placeholder
+     card (sym "x")
      {:kind :boolean-operator :text "="}
-     {:kind :unary-operator :text "#"}
-     {:kind :sym :text "s"}
-     {:kind :. :text "."}]
+     card (sym "s") .]
     [:ok {:chapters [{:body [{:kind :binary-operation
                               :left {:kind :unary-operation
                                      :operator "#"
@@ -246,14 +249,24 @@
           :directives ()}])
 
   (is-parse
-    [{:kind :sym :text "f"}
-     {:kind :. :text "."}
-     {:kind :line :text "---"}
-     {:kind :unary-operator :text "#"}
-     {:kind :sym :text "x"}
-     {:kind :boolean-operator :text "-"}
-     {:kind :num :text "1"}
-     {:kind :. :text "."}]
+    [;head-placeholder
+     card (sym "x") {:kind :boolean-operator :text "-"} (num 1) .]
+    [:ok {:chapters [{:body [{:kind :binary-operation
+                              :left {:kind :unary-operation
+                                     :operator "#"
+                                     :left "x"}
+                              :operator "-"
+                              :right 1}]
+                      :head [{:bindings ()
+                              :kind :declaration
+                              :name "f"}]
+                      :kind :chapter}]
+          :directives ()}])
+
+  (is-parse
+    [;head-placeholder
+     card
+     (sym "x") {:kind :boolean-operator :text "-"} (num 1) .]
     [:ok {:chapters [{:body [{:kind :binary-operation
                               :left {:kind :unary-operation
                                      :operator "#"
@@ -268,9 +281,9 @@
 
 (deftest directives
   (is-parse
-    [{:kind :directive :text "module"} {:kind :sym :text "FIB"} {:kind :.}
-     {:kind :sym :text "f"} {:kind :.}
-     {:kind :line}]
+    [{:kind :directive :text "module"}
+     (sym "FIB") .
+     ;head-placeholder]
     [:ok {:chapters [{:body [] :head [{:bindings () :kind :declaration :name "f"}]
                       :kind :chapter}]
           :directives [{:args "FIB"
@@ -279,27 +292,20 @@
 
 (deftest fib
   (is-parse
-    [{:kind :sym :text "fib"}
-     {:kind :sym :text "x"} {:kind :: :text ":"} {:kind :sym :text "Nat"}
-     {:kind :yields :text "=>"}
-     {:kind :sym :text "Nat"} {:kind :. :text "."}
-     {:kind :line :text "---"}
-     {:kind :sym :text "fib"} {:kind :sym :text "x"} {:kind :boolean-operator :text "="}
+    [(sym "fib") (sym "x") bind (sym "Nat") => (sym "Nat") .
+     ---
+     (sym "fib") (sym "x") {:kind :boolean-operator :text "="}
      {:kind :case :text "case"} {:kind :... :text "..."}
-     {:kind :sym :text "x"} {:kind :boolean-operator :text ">"}
-     {:kind :num :text "2"} {:kind :yields :text "=>"}
-     {:kind :sym :text "fib"}
-     {:kind :lparen :text "("}
-     {:kind :sym :text "x"} {:kind :arithmetic-operator2 :text "-"} {:kind :num :text "1"}
-     {:kind :rparen :text ")"}
-     {:kind :arithmetic-operator2 :text "+"}
-     {:kind :sym :text "fib"} {:kind :lparen :text "("}
-     {:kind :sym :text "x"} {:kind :arithmetic-operator2 :text "-"} {:kind :num :text "2"}
-     {:kind :rparen :text ")"} {:kind :comma :text ","}
-     {:kind :sym :text "x"} {:kind :boolean-operator :text "="} {:kind :num :text "1"}
-     {:kind :yields :text "=>"} {:kind :num :text "1"} {:kind :comma :text ","}
-     {:kind :sym :text "x"} {:kind :boolean-operator :text "="} {:kind :num :text "2"}
-     {:kind :yields :text "=>"} {:kind :num :text "1"} {:kind :. :text "."}]
+     (sym "x") {:kind :boolean-operator :text ">"} (num 2) =>
+     (sym "fib")
+     lp (sym "x") {:kind :arithmetic-operator2 :text "-"} (num 1) rp
+     {:kind :arithmetic-operator2 :text "+"} (sym "fib")
+     lp (sym "x") {:kind :arithmetic-operator2 :text "-"} (num 2) rp
+     {:kind :comma :text ","}
+     (sym "x") {:kind :boolean-operator :text "="} (num 1)
+     => (num 1) {:kind :comma :text ","}
+     (sym "x") {:kind :boolean-operator :text "="} (num 2)
+     => (num 1) .]
     [:ok {:directives [] :chapters [{:body
                                      [{:kind :binary-operation
                                        :operator "="
