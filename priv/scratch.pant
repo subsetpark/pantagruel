@@ -30,7 +30,7 @@ x != 0.
 // This is two comments together.
 // They should be one paragraph.
 
-[all x : X, y : Z, z : Y => x * y ^ z] // Now includes semicolons; much better.
+[all x : X, y : Z, z : Y => x * y ^ z]
 or [all x : String => x + "ok"].
 all (j,k):X => j > k.
 

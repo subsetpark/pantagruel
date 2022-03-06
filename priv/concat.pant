@@ -4,3 +4,9 @@ concat (s, r): String => String.
 
 (concat s r) 0 = s 0.
 (concat s r) s = 0.
+
+;
+
+SampleValues <= {"ok", "error"}.
+---
+all x: SampleValues => concat "" x = x.

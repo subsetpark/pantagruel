@@ -62,10 +62,38 @@
 
   (defn err [] (errorf "Encountered unrecognized type syntax:\n%q" form))
 
+  (defn compute-sum-type
+    ```
+    Handle sum type syntax, either:
+    - Foo + Bar
+    - {value1, value2}
+    ```
+    [left right]
+    # Given a left and right form, recurse into each side.
+    (let [left-t (type-of-form left)
+          right-t (type-of-form right)
+          # If either side is itself a sum type, unpack it; in other words, 
+          # (X + Y) + Z = {X, Y, Z}.
+          t1 (or (left-t :sum) [left-t])
+          t2 (or (right-t :sum) [right-t])]
+      # If both sides are equivalent, we don't need a sum. In other words,  
+      # X + X = X.
+      (if (and (= t1 t2) (= 1 (length t1)))
+        (t1 0)
+        {:sum (distinct [;t1 ;t2])})))
+
   (match form
     {:container :square
      :inner inner}
     {:list-of (type-of-form inner)}
+
+    # Treat comma-separated values inside of braces as a sum of the types of
+    # the values.
+    # TODO: This just assumes these are values. Maybe we just accept {Int,
+    # String} as a synonym for Int + String?
+    ({:container :braces
+      :inner inner} (tuple? inner) (> (length inner) 1))
+    (reduce2 compute-sum-type inner)
 
     {:container :braces
      :inner inner}
@@ -97,20 +125,16 @@
     {:operator "+"
      :left left
      :right right}
-    {:sum (flatten [(let [left-type (type-of-form left)]
-                      (if (left-type :sum)
-                        (left-type :sum)
-                        left-type))
-                    (let [right-type (type-of-form right)]
-                      (if (right-type :sum)
-                        (right-type :sum)
-                        right-type))])}
+    (compute-sum-type left right)
 
     {:operator "*"
      :left left
      :right right}
     # TODO: Do we need any more type math in the case of other algebraic types?
     {:product [left right]}
+
+    {:kind :string}
+    stdlib/String
 
     # Thunks
     # References to expressions which will have to be looked up in
