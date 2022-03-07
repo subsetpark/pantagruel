@@ -197,7 +197,7 @@ value in the domain `Nat0`---the natural numbers, including
   improved to make it easier to locate type errors in our documents!
 
 Pantagruel's type system, while quite simple by programming language standards,
-has some details worth understanding; see the language reference for the full
+has some details worth understanding; see the [language reference](./priv/reference.md) for the full
 details.
 
 ## Background

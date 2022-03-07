@@ -1,0 +1,5 @@
+fib_primitive x : Nat => Nat.
+---
+fib_primitive x = case x ...
+    1 => 1,
+    2 => 1.

@@ -105,10 +105,17 @@
               [{:sum ts} t2] (any? (map |(find-gcd $ t2) ts))
               [t {:sum t2s}] (any? (map |(find-gcd t $) t2s))
 
-              [{:list-of t} {:set-of t2}] {:set-of (find-gcd t t2)}
-              [{:set-of t} {:list-of t2}] {:set-of (find-gcd t t2)}
-              [{:list-of t} {:list-of t2}] {:list-of (find-gcd t t2)}
-              [{:set-of t} {:set-of t2}] {:set-of (find-gcd t t2)}
+              [{:list-of t} {:set-of t2}]
+              (if-let [gcd (find-gcd t t2)] {:set-of gcd})
+
+              [{:set-of t} {:list-of t2}]
+              (if-let [gcd (find-gcd t t2)] {:set-of gcd})
+
+              [{:list-of t} {:list-of t2}]
+              (if-let [gcd (find-gcd t t2)] {:list-of gcd})
+
+              [{:set-of t} {:set-of t2}]
+              (if-let [gcd (find-gcd t t2)] {:set-of gcd})
 
               [t t2] (find-gcd t t2))]
     (if gcd
@@ -381,7 +388,16 @@
 
       {:kind :case
        :mapping mapping}
-      (reduce2 gcd-type (map |(resolve-type ($ :right) env) mapping))
+      (do
+        # If the `:case` is populated, then attempt to unify its type with the
+        # types of all branch patterns.
+        (when-let [test (expr :case)
+                   test-type (resolve-type test env)
+                   case-types (map |(resolve-type ($ :left) env) mapping)]
+          (reduce2 gcd-type [test-type ;case-types]))
+        # In all cases, attempt to unify the types of all branch expressions.
+        (let [all-exprs (map |(resolve-type ($ :right) env) mapping)]
+          (reduce2 gcd-type all-exprs)))
 
       {:kind :string}
       String
@@ -397,10 +413,6 @@
             :parens inner-t
             :square {:list-of inner-t}
             :braces {:set-of inner-t})))
-
-      {:container :braces
-       :inner inner}
-      {:set-of (resolve-type inner env)}
 
       (n (number? n))
       (number-type n)

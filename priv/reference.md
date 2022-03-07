@@ -1,28 +1,28 @@
 # Pantagruel Language Reference
 
-Roughly speaking, Pantagruel can be said to consist of a *syntax*,
-which is designed to be convenient to write by hand and to parse by a
-computer, and a *semantics*, which is largely not parsed by the Pantagruel
-interpreter. Thus the semantics of Pantagruel, while not undefined, are
-mostly a set of *suggested readings*, a system of of interpretations
-that it would be useful to share among the humans that read and write
-Pantagruel programs.
+A Pantagruel document consists of a series of definitions and assertions about
+*domains* and *procedures*. The Pantagruel language is parseable by the
+Pantagruel document checker, which will evaluate the document and check it for
+errors. 
 
-> As Pantagruel evolves, there is the constant threat that any
-> semantics which is currently only a suggested reading will get implemented
-> in the interpreter if there is a use for it.
+Evaluation of a Pantagruel document is not the same as evaluation of a computer
+program; there is no execution phase where variables are substituted by real
+values. Therefore, all analysis is static.
 
 ## Pantagruel Syntax
 
 A Pantagruel **program** consists of a series of **chapters**. Each chapter
 consists of a **head** and an optional **body**.
 
-At the top of the program are two optional sections: the **module** statement
-and some number of **import** statements.
+At the top of the program are optional **directives**. Currently, there are two
+recognized directives: 
+
+- `module`
+- `import`
 
 ### Module statements
 
-The first line of a Pantagruel program is, optionally, a module statement. It looks like this:
+The first line of a Pantagruel program is, optionally, a module directive. It looks like this:
 
 ```pantagruel
 module NUMBERS.
@@ -31,48 +31,29 @@ module NUMBERS.
 This will make the subsequent program available for import under the module
 name `NUMBERS`.
 
-The module statement is optional; omitting it will not affect the semantics of
-the program, and by the same token the semantics of the program being opened
-with the Pantagruel interpreter will not be affected by the presence of a
-module statement. It is a syntax error to include more than one module
-statement or to include a module statement anywhere other than the beginning of
-a program.
-
 ### Import statements
 
-Any program that is declared as a module and is in the import path of
-the interpreter may be imported. Import statements have one form:
+Import directives are used to introduce bindings defined by another module (see
+`module`, above) into the evaluation environment for the current document.
 
-```pantagruel
-import <module name>.
-```
+**Note:** imports have not yet been implemented and, while the `import` keyword
+is parseable, it currently has no effect.
 
-Importing a module brings all of its declared symbols into the execution
-environment of the current program. This allows symbols to be reused
-without having to define them over and over.
+### Chapter heads
 
-Import statements must all be located after the module statement, if
-it's present, and before the beginning of the program chapters. There
-may be any number of imports.
-
-### Chapter Heads
-
-A Pantagruel chapter head introduces one or more symbols, of two primary
-kinds: **procedures** and **domains**. A procedure might be a computer
-program, or a function. For instance, `+` is a procedure, as would be
-a more abstract behavior like `save_file` or `render_scene`. Most
-Pantagruel programs will introduce at least one procedure, which is the
-program or business logic they are specifying.
+A Pantagruel chapter head introduces one or more symbols, of two kinds:
+**procedures** and **domains**. A procedure might be a computer program, or a
+function. Most Pantagruel programs will introduce at least one procedure, which
+is the program, business logic, or operation they're specifying.
 
 A domain is some set of values which variables will be taken from. For
-instance, the natural numbers make up a domain, as
-do the reals. But so could the values `{"ok", "error"}` or some
-business logic-specific concept like `User` or `Post`. In this way
-domains are like types, though more flexible.
+instance, the natural numbers make up a domain, as do the real numbers. But so
+could the values `{"ok", "error"}` or some business logic-specific concept like
+`User` or `Post`. In this way domains are like types, though more flexible.
 
 There are two expression forms possible in a chapter head:
 
-#### Declaration
+#### Procedure declaration
 
 Here is an example procedure declaration:
 
@@ -84,7 +65,7 @@ It introduces a procedure called `fib`, which takes one argument, `n`
 in the domain `Nat`. The `=>` indicates that this procedure **yields**
 a value in some domain, which in this case is also `Nat`.
 
-#### Advanced procedure syntax
+##### Procedure declaration forms
 
 Procedures can be declared with or without arguments, return domains,
 and predicates. Here's a declaration of a procedure with no arguments
@@ -94,10 +75,10 @@ and an undefined return:
 f.
 ```
 
-Arguments, as above, are specified by a comma-separated list of
-argument/domain pairs, separated by a colon. The comma-separated list may
-also contain other arbitrary **predicates**, representing some constraint
-on the procedure domain.
+Procedure arguments are specified by a comma-separated list of argument
+**bindings**, separated by a colon. The comma-separated list may also contain
+other arbitrary **predicates**, representing some constraint on the procedure
+domain.
 
 Here's a procedure declaration with a predicate:
 
@@ -115,11 +96,12 @@ f x:Nat, x > 5, x < 10.
 This declares a procedure `f` that's defined for any natural number `x`
 greater than 5 and less than 10.
 
-This list of colon-separated **binding pairs** with optional
-**predicates** is a **binding sequence** and will show up elsewhere in
-the language.
+This list of colon-separated bindings with optional predicates is a **binding
+sequence** and will show up elsewhere in the language.
 
-#### Domain Aliasing
+Any procedure can also yield some domain, as above.
+
+#### Domain alias
 
 The other type of statement available in a chapter head is a **domain alias**.
 This is a simple statement of equivalence between a new domain and some
@@ -157,27 +139,13 @@ f x = 1.
 ```
 
 Chapter bodies consist of one or more **statements**. Each statement expresses
-**proposition** about a procedure or domain and is terminated by a period.
+some **proposition** about a procedure or domain and is terminated by a period.
 
-The most basic type of **expression** in any statement is **application**,
-represented by separating two values with a space, like this: `f x`.
-
-#### Propositions
-
-A proposition is just any other expression that should evaluate to true
-for an implementation to be correct. Since there are no hard semantics
-imposed on expression evaluation, there are no syntactic constraints on
-propositions; any valid expression can be a proposition. `f x` by itself
-on a line is a synctactically valid body statement, though it might be
-hard to gain much insight from it as a reader.
+A top-level statement can be made of any valid **expression**. The statement is
+not executed or semantically evaluated; ultimately it's intended to communicate
+something to a human reader.
 
 ### Expressions
-
-The most common syntactic element is the expression; this is anything that
-should evaluate to some value. Expressions are found in the predicate of a
-procedure or constructor declaration, and by themselves as propositions. And
-expressions are recursive, so a single expression is very often a compound of
-multiple expressions.
 
 #### Values
 
@@ -186,13 +154,22 @@ evaluates to itself.
 
 ##### Integers
 
-Integer values are represented as normal numbers: `1`, `1000`.
+Integer values are represented as normal numbers: `1`, `1000`. Pantagruel will
+attempt to type a literal number as narrowly as possible. The possible domains
+are:
+
+- Int
+- Nat0 (the natural numbers, including 0)
+- Nat (the natural numbers, excluding 0)
 
 ##### Real numbers
 
 Real numbers are written with a decimal point: `2.47`, `10.0`.
 
-##### Literals
+**note**: real/floating-point numbers haven't been fully implemented yet and
+might not work correctly.
+
+##### Strings
 
 Literal text values are represented with quotation marks: `"ok"`, `"error"`.
 
@@ -201,7 +178,47 @@ Literal text values are represented with quotation marks: `"ok"`, `"error"`.
 There is a closed set of symbols that are recognized as **operators**,
 that are applied infix instead of prefix, eg: `1 + 1`. `x in Y`.
 
-There are also two **unary** operators, `#` and `~`.
+###### Binary operators
+
+Binary operators take two arguments.
+
+- `+`
+- `-`
+- `*`
+- `/`
+- `^`
+- `mod`
+- `|`
+- `&`
+- `->`
+- `<->`
+- `=`
+- `>`
+- `<`
+- `=<`
+- `>=`
+- `!=`
+- `and`
+- `or`
+- `xor`
+- `in`
+
+###### Unary operators
+
+Unary operators take one argument.
+
+- `#`
+- `~`
+
+###### Sum and product types
+
+`+` and `*` can be applied to domains as well as values. 
+
+`+` produces a sum type; for instance, `String + Nat + Bool` denotes the domain
+consisting of all strings, natural numbers, and boolean values. 
+
+`*` produces a product type; for instance, `String * Nat` denotes the domain of
+all *pairs* of strings and natural numbers.
 
 ##### Symbols
 
@@ -209,65 +226,22 @@ Symbols are identifiers to which values are bound, as in function
 declarations. They can contain any alphanumeric character that is not
 an operator.
 
-#### Containers
+#### Procedure application
 
-There are three **containers** in Pantagruel. Containers are represented by
-surrounding a comma-separated list of expressions by a pair of delimiters
-which reflects the type of container being represented.
+Application of `f` to `x` is represented by the syntax `f x`.
 
-- set: `{}`
-- sequence: `[]`
-- parens: `()`
+Procedure application can be performed on any number of arguments, eg.: `f x y
+z`. 
 
-#### Applications
+#### Quantification
 
-There are two ways to represent **procedure application**
-in Pantagruel. Placing any expression after any other expression
-separated by a single space is parsed as an application of the first
-to the second. So `f x` is parsed as applying `f` to `x`; similarly,
-`[1, 2, 3] 0` is parsed as applying `[1, 2, 3]` to `0`; which, if a
-sequence is understood as a function from the natural numbers including 0 to
-its contents, is a fairly straightforward way to do sequence indexing.
-
-The second case of application is in the case of operators, where `x +
-y` is parsed as applying `+` to `x` and `y`.
-
-#### Special forms
-
-There are two recognized special expression forms in Pantagruel beyond
-normal function application. These forms are additional bits of syntax
-for expression more complex operations.
-
-##### Comprehensions
-
-**set** or **sequence comprehensions** may be formed by following one or
-more comma-separated **bindings** or **guards** with some **expression**,
-separated by a backslash, like this:
+`all` and `some` Represent the logical quantifications "for all..." and "there
+is some...", respectively. They have the form of a **quantifier**, followed by
+a comma-separated list of **binding** or **expression** forms, followed by a
+**yields** sign, followed by a statement about the bound variables.
 
 ```pantagruel
-[all x : X => x ^ 2].
-```
-
-The above expression is read to refer to a sequence made up every element
-in x, squared.
-
-A binding expression is an expression applying the `:` operator to some
-domain or expression, eg., `x : X`, `n : Nat`. Any other normal form
-of expression functions as a guard, restricting the values bound out of
-the domains with arbitrary predicates.
-
-##### Quantifications
-
-**universal** and **existential** Represent the logical quantifications "for
-all..." and "there is some...", respectively. They have the form of a
-**quantifier**, followed by a comma-separated list of **binding** or
-**expression** forms, followed by a **yields** sign, followed by a statement
-about the bound variables.
-
-The quantifiers are `all`, and `some`, respectively.
-
-```pantagruel
-all x : Nat, y : Nat, x > y => (x - y) > 0.
+all x: Nat, y: Nat, x > y => (x - y) > 0.
 ```
 
 This example says that for any x and y in the natural numbers where x is
@@ -275,41 +249,63 @@ greater than y, x minus y is greater than 0. It could also be written in a
 slightly more compressed form, binding multiple variables from the same domain:
 
 ```pantagruel
-all (x, y) : Nat, x > y => (x - y) > 0.
+all (x, y): Nat, x > y => (x - y) > 0.
 ```
 
-## Semantics
+#### Containers
 
-The semantics of Pantagruel are largely implicit: designed to be
-understood by a human reader rather than a computer. Therefore expressions
-don't *evaluate* to anything. This lends a great deal of flexibility when
-writing Pantagruel. For instance, simple function application syntax
-can be understood to refer to things like indexing into a sequence,
-or its reverse operation of providing the index of a sequence element,
-according to context.
+There are three **containers** in Pantagruel. Containers are represented by
+surrounding an expression or comma-separated list of expressions by a pair of
+delimiters which reflects the type of container being represented.
 
-At the same time, Pantagruel is parseable by computer, and there are other
-ways that evaluation of a specification text can assist in modelling. One
-in particular is the question of how to ensure a certain level of *rigor*
-in a specification: we might venture that a regular syntax guarantees
-a certain rigor of form, hopefully resulting in more regular and richer
-texts; another aspect of rigor it would be beneficial to promote would
-be a guarantee that every symbol used is formally defined.
+- parens: `()`
+- set: `{}`
+- sequence: `[]`
 
-To this end the Pantagruel interpreter, `pant`, evaluates whether all
-symbols in a program have been properly **bound** into scope. The
-semantics of binding are at present the only formal semantics that
-Pantagruel has. Symbols found in certain positions of certain forms are
-bound into the evaluation environment; usage of symbols that are not
-properly bound produces an evaluation error. In this way the interpreter
-ensures that every symbol has been defined.
+##### Parentheses
 
-Therefore the semantics consist of two halves: that which is formal
-and part of the interpreter behavior, and that which is presented as a
-"suggested reading", with the intention that conventions of interpretation
-should be the same among all users of the notation.
+Any expression can be wrapped in parentheses to bind more tightly. For
+instance, whereas `f x y z a` denotes the application of `f` to the four
+arguments `x`, `y`, `z`, and `a`, `f x (y z a)` denotes the application of `f`
+to two arguments: `x` and the result of the application of `y` to `z` and `a`.
 
-### Binding
+##### Sets and sequences
+
+Sets and sequences represent groups of values or domains. 
+
+The notation `{1, 2, 3}` represents the unordered set of the natural numbers 1,
+2, 3. The notation `[1, 2, 3]` represents the ordering of those same values in
+that order.
+
+Set and sequence notation, when applied to domains, denotes a "set of" or
+"sequence of" domain. For instance, `[String]` is the domain of sequences of
+strings.
+
+**set** or **sequence comprehensions** may be formed by wrapping a
+quantification in the appropriate container. For instance, 
+
+```pantagruel
+[all x : X => x ^ 2].
+```
+
+denotes a sequence made up every element in the domain X, squared.
+
+#### Cases
+
+A case expression consists of the symbol `case`, an optional expression, and a
+series of **mappings** of expressions to expressions. Each mapping is separated
+by a comma, and the left side is mapped to the right side with a `=>`. 
+
+For instance:
+
+```
+fib x = case ...
+    x > 2 => fib (x - 1) + fib (x - 2),
+    x = 1 => 1,
+    x = 2 => 1.
+```
+
+## Binding
 
 The Pantagruel interpreter evaluates a program for the purpose of
 enforcing Pantagruel's **binding** rules. To sum them up, they are:
@@ -326,7 +322,7 @@ for known terms, eg:
 ```pantagruel
 pred n:Nat.
 ---
-pred n = is_even? n and (n > 5).
+pred n = is_even? n and n > 5.
 
 ;
 
@@ -344,29 +340,25 @@ a symbol had to be defined before it was used, as is often the case in
 programming languages, the narrative thread of increasing detail would
 be lost and specifications would be all preamble.
 
-#### Binding Forms
+### Binding Forms
 
 Symbols are bound into the program environment in one of two ways: either
-they're built-in to the language, or they're introduced with one of a
-few specific forms. A form position might bind a symbol into the program
-environment, into a temporary scope for evaluating a single expression,
-or not at all.
+they're built into the language, or they're introduced with one of a
+few specific forms.
 
-##### Procedure declarations
+#### Procedure declarations
 
-When a procedure is declared, the name of the procedure is introduced
-into program scope, as are the names of the variables the procedure takes.
+When a procedure is declared, the name of the procedure is bound into the environment, as are the names of the variables the procedure takes.
 
 ```
 f x:Y, x > z => a
 * *
 ```
 
-##### Domain aliases
+#### Domain aliases
 
-When a domain alias is introduced, the name of the alias is bound into
-program scope.
-
+When a domain alias is introduced, the name of the alias is bound into the
+environment.
 ```
 D <= X
 *
@@ -375,160 +367,219 @@ D <= X
 In the case of these chapter head statements, all other symbol positions
 must be bound by the end of the subchapter.
 
-##### Quantifications
+#### Quantifications
 
 Expressions within quantifications have similar binding behavior as procedures.
 
 ```
-all x : Y, x > z => f x
+all x: Y, x > z => f x
     *
 ```
 
-### Suggested Readings
+## Types
 
-As mentioned, the evaluation semantics of Pantagruel are entirely
-implicit. Nevertheless, in order to design a language that would be
-useful and efficient when it comes to specifying programs, it's useful
-to choose operators with a mind to how they would be used.
+Every expression in a Pantagruel document has a type. The type of an expression
+is the domain to which the values it produces belong.
 
-#### Operators
+### Static forms
 
-These are the operators that the pantagruel interpreter recognizes.
+#### Sets and sequences
 
-##### Equals
+The type of any expression `[e]` is `sequence of (type of e)`, and the type of
+`{e}` is `set of (type of e)`.
 
-`=` should be read as "is equal to". It expresses the concept of
-*equality*, that is, for `x = y` to be true, `x` and `y` should evaluate
-to the same value. Sets would have the same members, sequences would have
-the same contents, and so on.
+The type of `{v1, v2, v3}` is the sum of the types of values `v1, v2, v3`.
 
-##### Not-equals
+Similarly, the type of `D1 + D2` is the sum of the domains `D1` and `D2`.
 
-`!=` should be read as "is not equal to". It expresses the inverse of `=`.
+#### Declarations
 
-##### Not
+The type of a procedure declaration is a procedure type, typed by all the
+arguments and the codomain of the function (the part to the right of the `=>`).
 
-`~` should be read as "not". It's a unary operator, applied to any
-term. `~x` expresses the negation of the term `x`.
+If a procedure has no `=>`, its codomain is `Void`.
 
-##### Greater than
+For bare declarations, with no arguments or `=>`: 
 
-`>` should be read as "is greater than". `x > y` expresses that `x`
-evaluates as a greater value than `y`. For comparable values this might
-have an obvious semantics, whereas context might need to be provided
-for user-defined domains or container types.
+If the symbol begins with a lower-case letter, it will be typed as a 0-argument
+`Void` function.
 
-##### Less than
+If it begins with an upper case letter, it will be typed as a domain.
 
-`<` should be read as "is less than".
+### Expressions
 
-##### Greater than or equal to
+#### Singletons
 
-`>=` should be read as "greater than or equal to".
+If a procedure is declared with some codomain and no arguments, then a
+reference to that procedure is typed as its codomain. This lets us denote
+singleton values as procedures. For instance:
 
-##### Less than or equal to
+```
+User.
+nobody => User.
+---
+nobody.
+```
 
-`=<` should be read as "less than or equal to".
+The type of `nobody` in this chapter body is `User`.
 
-##### Plus
+#### Application
 
-`+` should be read as "plus". It expresses the concept of addition, where
-that might be interpreted varyingly for different domains. For instance,
-the various number types are straightforward to add together; for sequences
-concatenation seems like a reasonable interpretation. For sets, `+`
-is sometimes used to express symmetric difference, though it can also
-be used to express simple union.
+##### Procedure application
 
-##### Minus
+The type of the application of a procedure to its arguments is the codomain of
+that procedure.
 
-`-` should be read as "minus". It expresses the concept of subtraction,
-again, where that is sensibly defined. Subtraction is usefully seen
-as the inverse operation of addition, so for sequences that would be the
-removal of a subsequence. For sets it can be understood as the removal of
-a member or of the members of a second set.
+##### Sequence application
 
-##### Times
+The application of a sequence to a value of the type contained by the sequence
+is typed as getting the index of that value. For instance:
 
-`*` should be read as "times". For sets, it might be useful to read `x *
-y` as taking the Cartesian product of `x` and `y`.
+```
+User.
+users => [User].
+admin => User.
+---
+users admin.
+```
 
-##### Division
+This is interpreted as getting the index of `admin` within `users` and so is
+typed as `Nat0`.
 
-`/` should be read as "divided by". It expresses the concept of
-division. Generally speaking the behavior of division in the context
-of a programming language must be defined in terms of, for instance,
-whether the behavior of the normal division operator applied to two
-integers should produce another integer or a float. When dealing with
-the domains of mathematics, where there is a useful distinction between
-the natural numbers, the integers, the rationals and the reals, it's a
-little more straightforward to understand the the codomain of division
-of two integers is the rational numbers.
+The application of a sequence to some integer is typed as indexing within that
+sequence. For instance:
 
-##### Exponentiation
+```
+User.
+users => [User].
+---
+users 0.
+```
 
-`^` is the power or exponent operator. `x ^ y` should be read as "`x`
-to the `y`th power".
+This is interpreted as getting the 0th element of `users`.
 
-##### Membership
+The above applies to strings as well, where the element domain can be either
+`String` or `Char`.
 
-`in` should be read as "in". It expresses set, sequence or domain membership;
-`x in y` expresses that `x` is in `y`.
+#### Booleans
 
-##### Conjunction
+The type of a boolean operation is `Bool`. Boolean arguments are checked for
+unification (see below).
 
-`and` should be read as "and". It is the Boolean operator expressing the
-relation of conjunction. For `x and y` to be true, `x` must be true and
-`y` must be true.
+#### Comparisons
 
-##### Disjunction
+The type of a comparison operation is `Bool`. Comparison arguments are checked
+for unification (see below).
 
-`or` should be read as "or". It is the Boolean operator expressing the
-relation of disjunction. For `x or y` to be true, at least one of `x`
-and `y` must be true.
+#### `in`
 
-##### Exclusive disjunction
+The type of the `in` operator is `Bool`. The righthand operand must be either a
+set or sequence (including strings), and the lefthand operator must be
+unifiable (see below) with the inner type of the right.
 
-`xor` should be read as "exclusive or". It is the Boolean operator
-expressing the relation of exclusive disjunction. For `x xor y` to be
-true, exactly one of `x` and `y` must be true.
+#### `#`
 
-##### Implication
+The type of the `#` unary operator is `Nat0`. The operand must be either a set
+or sequence.
 
-`->` should be read as "implies". `x -> y` can also be read as "if `x`,
-then `y`". For `x :. y` to be true, one of the following must obtain:
-`x` and `y` are both true; `y` is true; neither `x` nor `y` is true.
+#### Arithmetic
 
-##### Biconditional
+The type of an arithmetic binary operation is the unification of the two sides
+(see below).
 
-`<->` should be read as "if and only if". For `x <-> y` to be true,
-one of the following must obtain: `x` and `y` are both true; neither
-`x` nor `y` is true.
+#### Cases
 
-##### Cardinality
+The type of a case expression is the unification of the types of all its
+expressions all its branches (see below).
 
-`#` should be read as "size of". `#` is a unary operator, expressing the
-size of a sequence or set. `#x` expresses the number of elements within `x`.
+If there is expression between `case` and `...`, then the document checker will
+additionally check that that expression's type can be unified with the types of
+the patterns of all its branches.
 
-##### Union
+### Type Unification
 
-`|` is the set union operator. `x | y` should be read as "the union of
-`x` and `y`".
+Pantagruel has a type system that is somewhat more lenient than those found in
+ordinary programming languages. Simply put, the *unification* of any two types
+is the **nearest common ancestor** they share in their type hierarchies.
 
-##### Intersection
+For instance:
 
-`&` is the set intersection operator. `x & y` should be read as "the
-intersection of `x` and `y`".
+The unification of `Nat` and `Nat` is `Nat`.
 
-#### Domains
+The unification of `Nat` and `Nat0` is `Nat0`; `Nat0` contains all the values
+in `Nat0`. 
 
-Several domains are recognized by the pantagruel interpreter by default:
+The unification of `Bool` and `Char` is `Nat0`. See the full type hierarchy
+diagram below.
 
-- `Bool`: the domain of true and false.
-- `Nat`: the domain of natural numbers.
-- `Nat0`: the domain of natural numbers, including 0.
-- `Int`: the domain of integers.
-- `Rat`: the domain of rational numbers.
-- `Real`: the domain of real numbers.
-- `String`: the domain of strings.
-- `Any`: the top/universal domain.
-- `Nil`: the empty set.
+The domain `Any` contains all other types. Therefore:
+
+The unification of `Bool` and `Any` is `Any`.
+
+The unification of some user-declared domain `Foo` and `Any` is `Any`.
+
+However: non-Any types which only share `Any` as an ancestor type are *not*
+unifiable. Thus:
+
+There is no unification of `Real` and `String`.
+
+There is no unification of some user-declared domain `Foo` and `Nat`.
+
+It's important to note that these rules allow operations which would be
+disallowed in standard programming language type systems. For instance,
+
+```
+inc: Nat => Nat.
+---
+inc 0.
+```
+
+is a valid Pantagruel document. While 0 is not a member of the set of natural
+numbers, it is unifiable with them. On the other hand, 
+
+```
+inc: Nat => Nat.
+---
+inc "ok".
+```
+
+produces a type error: the only shared ancestor between `String` and `Nat` is
+`Any`. 
+
+These rules have been chosen to produce the greatest number of helpful type
+errors while making sure to err on the side of unintrusiveness. The purpose of
+the Pantagruel type system is not to prevent illegal runtime operations; thus,
+we don't want document authors to ever feel that they are "fighting the type
+system" in order to express themselves.
+
+### Type Hierarchy
+
+The following domains are included in the base environment.
+
+```
+     Any__________________
+     | \      \      \    \
+  Real  Domain String Date Void
+     | 
+   Rat
+     | 
+   Int
+     |
+  Nat0
+  /  | 
+Bool Nat 
+     |
+     Char
+```
+
+### Type Errors
+
+To type-check a document, the Pantagruel checker attempts to determine the type
+of each top-level statement in order. If any expression either:
+
+- Can't be fully resolved due to a type unification failure anywhere inside the
+  expression;
+- Fails one of the special-case type checks noted above (eg., checking that
+  the operand of `#` is a container type)
+
+Then the checker will emit a type error and the document will fail the check.

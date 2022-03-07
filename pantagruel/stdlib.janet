@@ -36,9 +36,7 @@
 (defvalue "false" Bool)
 (defvalue "null" Any)
 
-(def numeric-types [Nat Nat0 Int Rat Real])
-
-(def arithmetic-operators ["-" "+" "*" "/"])
+(def arithmetic-operators ["-" "+" "*" "/" "mod"])
 
 (def comparison-operators ["=" "!=" "<" ">" "<=" ">="])
 

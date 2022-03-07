@@ -1,0 +1,5 @@
+User.
+is_admin? u: User => Bool.
+admins => [User].
+---
+admins = [all u: User, is_admin? u => u].
