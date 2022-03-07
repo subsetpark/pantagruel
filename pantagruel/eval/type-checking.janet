@@ -22,9 +22,10 @@
       {:concrete t-name} t-name
       {:set-of t} (string/format "{%s}" (render-type t))
       {:list-of t} (string/format "[%s]" (render-type t))
+      {:tuple-of ts} (join ts)
       {:sum ts} (-> (map render-type ts) (string/join " + "))
       {:product ts} (-> (map render-type ts) (string/join " * "))
-      {:args args :yields yields} (string/format "(%s => %s)" (join args) (render-type yields))
+      {:args args :yields yields} (string/format "(%s => %s)" (render-type args) (render-type yields))
       t (string/format "%q" t)))
 
   (printf (string "Type error: " str) ;(map render-type args)))
@@ -73,10 +74,10 @@
         (let [expr-t (types/resolve-type body-expr env)]
           (when (nil? expr-t)
             (errorf "Type was nil")))
-        ([err]
+        ([err fib]
           (if (table? err)
             (handle-resolution-error err)
-            (error err))
+            (propagate err fib))
           (printf "\nIn expression:\n\n%s\n" (print-src/print-src body-expr src))
           (set type-error true))))
     (if type-error (os/exit 1))))

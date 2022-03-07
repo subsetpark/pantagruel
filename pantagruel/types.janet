@@ -56,7 +56,6 @@
   interactions between, for instance, different members of the numeric tower.
   ```
   [left right]
-
   (defn find-gcd-
     ```
     Basic type unification. Recursively seek the "shallowest" type present in
@@ -116,6 +115,16 @@
 
               [{:set-of t} {:set-of t2}]
               (if-let [gcd (find-gcd t t2)] {:set-of gcd})
+
+              [{:tuple-of ts} {:tuple-of ts2}]
+              (if (= (length ts) (length ts2))
+                (let [all-gcds (map find-gcd ts ts2)]
+                  (if (every? all-gcds)
+                    {:tuple-of all-gcds})))
+
+              ([{:args _ :yields _} {:args _ :yields _}] (deep= left right))
+              # TODO: This handles the same procedure; handle the other cases.
+              left
 
               [t t2] (find-gcd t t2))]
     (if gcd
@@ -193,7 +202,7 @@
     # Special-case procedures with no arguments: treat them as singletons.
     # TODO: Is this right at all?
     ({:kind :procedure
-      :type {:args args
+      :type {:args {:tuple-of args}
              :yields yields}}
       (= 0 (length args)) (not= yields Void))
     (fully-resolve-type yields env)
@@ -202,7 +211,12 @@
     {:kind :procedure
      :type {:args args
             :yields yields}}
-    {:args (map |(fully-resolve-type $ env) args)
+    {:args (fully-resolve-type args env)
+     :yields (fully-resolve-type yields env)}
+
+    {:args args
+     :yields yields}
+    {:args (fully-resolve-type args env)
      :yields (fully-resolve-type yields env)}
 
     {:kind :bound
@@ -222,6 +236,9 @@
 
     {:set-of inner}
     {:set-of (fully-resolve-type inner env)}
+
+    {:tuple-of inner}
+    {:tuple-of (tuple/slice (map |(fully-resolve-type $ env) inner))}
 
     {:sum ts}
     {:sum (map |(fully-resolve-type $ env) ts)}
@@ -252,7 +269,7 @@
   ```
   [f x]
   (match [f x]
-    [{:args f-args :yields yields} arg-ts]
+    [{:args {:tuple-of f-args} :yields yields} arg-ts]
     (do
       (unless (= (length f-args) (length arg-ts))
         (throw :arg-length {:f-args f-args :args arg-ts}))
@@ -386,7 +403,8 @@
       # TODO: Determine possible types of subtraction, etc, between different types
       (gcd-type (resolve-type left env) (resolve-type right env))
 
-      {:mapping {:seq mapping}}
+      {:kind :case
+       :mapping {:seq mapping}}
       (do
         # If the `:case` is populated, then attempt to unify its type with the
         # types of all branch patterns.
@@ -398,20 +416,37 @@
         (let [all-exprs (map |(resolve-type ($ :right) env) mapping)]
           (reduce2 gcd-type all-exprs)))
 
+      {:kind :update
+       :mapping {:seq mapping}
+       :case test}
+      (let [test-type (resolve-type test env)
+            case-types (map |(resolve-type ($ :left) env) mapping)
+            expr-types (map |(resolve-type ($ :right) env) mapping)]
+        (match test-type
+          # The update case is a procedure mapping args to yields. In updating,
+          # type the left sides against the arguments and the right sides
+          # against the yields. 
+          {:args args-type :yields yield-type}
+          (do
+            (reduce2 gcd-type [args-type ;case-types])
+            (reduce2 gcd-type [yield-type ;expr-types])
+            test-type)
+
+          # TODO: Handle updates on other data types
+          (errorf "Couldn't type update of type: %q" test-type)))
+
       {:kind :string}
       String
 
       {:container container
        :inner inner}
-      (do
-        (when (> (length inner) 1)
-          # TODO: Handle this case. Is it possible?
-          (errorf "Encountered parens with more than one element: %q" inner))
-        (let [inner-t (resolve-type (inner 0) env)]
+      (let [inner-ts (map |(resolve-type $ env) inner)]
+        (if (> (length inner-ts) 1)
+          {:tuple-of inner-ts}
           (case container
-            :parens inner-t
-            :square {:list-of inner-t}
-            :braces {:set-of inner-t})))
+            :parens (inner-ts 0)
+            :square {:list-of (inner-ts 0)}
+            :braces {:set-of (inner-ts 0)})))
 
       {:kind :num
        :text n}

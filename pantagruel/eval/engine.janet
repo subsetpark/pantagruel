@@ -66,14 +66,16 @@
   (defn unwrap
     [wrapped]
     (if (> (length wrapped) 1)
-      # TODO: Handle [Foo, Bar] types. If those exist.
-      (err)
+      (map type-of-form wrapped)
       (type-of-form (wrapped 0))))
 
   (match form
     {:container :square
      :inner inner}
-    {:list-of (type-of-form inner)}
+    (let [inner-t (type-of-form inner)]
+      (if (array? inner-t)
+        {:tuple-of inner-t}
+        {:list-of inner-t}))
 
     # Treat comma-separated values inside of braces as a sum of the types of
     # the values.
@@ -95,19 +97,19 @@
      :yields yields
      :bindings {:seq bindings}}
     {:yields (type-of-form yields)
-     :args (map type-of-form (distribute-bindings-types bindings))}
+     :args {:tuple-of (map type-of-form (distribute-bindings-types bindings))}}
 
     ({:kind :declaration
       :name {:text name}
       :bindings {:seq bindings}} (= 0 (length bindings)))
     (if (= (name 0) ((string/ascii-upper name) 0))
       {:concrete name}
-      {:args [] :yields stdlib/Void})
+      {:args {:tuple-of []} :yields stdlib/Void})
 
     {:kind :declaration
      :name {:text name}
      :bindings {:seq bindings}}
-    {:args (map type-of-form (distribute-bindings-types bindings))
+    {:args {:tuple-of (map type-of-form (distribute-bindings-types bindings))}
      :yields stdlib/Void}
 
     {:operator "+"
@@ -211,6 +213,14 @@
       (introduce-bindings expr env symbol-references))
 
     {:kind :case
+     :mapping {:seq mapping-form}}
+    (do
+      (introduce-bindings (form :case) env symbol-references)
+      (each {:left left :right right} mapping-form
+        (introduce-bindings left env symbol-references)
+        (introduce-bindings right env symbol-references)))
+
+    {:kind :update
      :mapping {:seq mapping-form}}
     (do
       (introduce-bindings (form :case) env symbol-references)
@@ -331,10 +341,10 @@
   [body]
   ~(try
      ,body
-     ([err]
+     ([err fib]
        (if (table? err)
          (handle-evaluation-error err)
-         (error err)))))
+         (propagate err fib)))))
 
 (defn eval
   [{:chapters chapters}]
