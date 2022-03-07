@@ -38,7 +38,7 @@
     (match binding
       {:kind :binding
        :name {:container :parens
-              :inner {:syms inner}}
+              :inner {:seq inner}}
        :expr expr}
       (map (fn [_] expr) inner)
 
@@ -93,20 +93,20 @@
 
     {:kind :declaration
      :yields yields
-     :bindings {:bindings-exprs bindings}}
+     :bindings {:seq bindings}}
     {:yields (type-of-form yields)
      :args (map type-of-form (distribute-bindings-types bindings))}
 
     ({:kind :declaration
       :name {:text name}
-      :bindings {:bindings-exprs bindings}} (= 0 (length bindings)))
+      :bindings {:seq bindings}} (= 0 (length bindings)))
     (if (= (name 0) ((string/ascii-upper name) 0))
       {:concrete name}
       {:args [] :yields stdlib/Void})
 
     {:kind :declaration
      :name {:text name}
-     :bindings {:bindings-exprs bindings}}
+     :bindings {:seq bindings}}
     {:args (map type-of-form (distribute-bindings-types bindings))
      :yields stdlib/Void}
 
@@ -138,7 +138,7 @@
     {:thunk form}
 
     # Recursive cases
-    ({:syms wrapped} (tuple? wrapped))
+    ({:seq wrapped} (tuple? wrapped))
     (unwrap wrapped)
 
     (wrapped (tuple? wrapped))
@@ -163,7 +163,6 @@
                      :type (type-of-form expr)}))
   (defn alias
     [name expr]
-    (printf "In alias, expr %q" expr)
     (introduce name {:kind :domain
                      :type (type-of-form expr)}))
 
@@ -173,13 +172,13 @@
      :alias expr}
     (do
       (match name
-        {:container _ :inner {:syms names}} (each name names (alias name expr))
+        {:container _ :inner {:seq names}} (each name names (alias name expr))
         (alias name expr))
       (introduce-bindings expr env symbol-references))
 
     {:kind :declaration
      :name name
-     :bindings {:bindings-exprs bindings}}
+     :bindings {:seq bindings}}
     (let [yields (form :yields)]
       (let [kind (if (and (nil? yields) (empty? bindings))
                    :domain
@@ -197,11 +196,14 @@
      :expr expr}
     (do
       (match name
-        {:container _ :inner {:syms names}} (each name names (bind name expr))
+        {:container _ :inner {:seq names}}
+        (each name names (bind name expr))
+
         (bind name expr))
       (introduce-bindings expr env symbol-references))
 
-    {:mapping {:mapping-clauses mapping-form}}
+    {:kind :case
+     :mapping {:seq mapping-form}}
     (do
       (introduce-bindings (form :case) env symbol-references)
       (each {:left left :right right} mapping-form
@@ -209,7 +211,7 @@
         (introduce-bindings right env symbol-references)))
 
     {:kind :quantification
-     :bindings {:bindings-exprs bindings}
+     :bindings {:seq bindings}
      :expr expr}
     (do
       (each binding bindings
@@ -234,7 +236,11 @@
       (introduce-bindings f env symbol-references)
       (introduce-bindings x env symbol-references))
 
-    {:container _ :inner exprs}
+    {:container _ :inner {:seq exprs}}
+    (each expr exprs
+      (introduce-bindings expr env symbol-references))
+
+    ({:container _ :inner exprs} (tuple? exprs))
     (each expr exprs
       (introduce-bindings expr env symbol-references))
 

@@ -386,7 +386,7 @@
       # TODO: Determine possible types of subtraction, etc, between different types
       (gcd-type (resolve-type left env) (resolve-type right env))
 
-      {:mapping {:mapping-clauses mapping}}
+      {:mapping {:seq mapping}}
       (do
         # If the `:case` is populated, then attempt to unify its type with the
         # types of all branch patterns.

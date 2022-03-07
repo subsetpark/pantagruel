@@ -1,3 +1,4 @@
-inc n: Nat => Nat.
+Status <= {"ok", "error"}.
+inc n: Nat => Status.
 ---
-inc 0.
+inc 0 = "ok".

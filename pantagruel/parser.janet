@@ -19,6 +19,18 @@
      :inner inner
      :span (span left right)}))
 
+(defn new-seq
+  [&opt expr]
+  {:kind :seq
+   :seq (if expr [expr] [])
+   :span (if expr (expr :span) nil)})
+
+(defn cons-seq
+  [expr rest]
+  {:kind :seq
+   :seq [expr ;(rest :seq)]
+   :span (span expr rest)})
+
 (def grammar
   ~(yacc
      (%left :logical-operator)
@@ -79,21 +91,12 @@
      (body-line
        (expr :.) ,|(struct ;(kvs $0) :span (span $0 $1)))
 
-     (syms (sym) ,|{:kind :syms
-                    :syms [$0]
-                    :span ($0 :span)}
-           (sym :comma syms) ,|{:kind :syms
-                                :syms [$0 ;($2 :syms)]
-                                :span (span $0 $2)})
+     (syms (sym) ,new-seq
+           (sym :comma syms) ,|(cons-seq $0 $2))
 
-     (bindings-exprs () ,|{:kind :bindings-exprs
-                           :bindings-exprs []}
-                     (binding-expr) ,|{:kind :bindings-exprs
-                                       :bindings-exprs [$0]
-                                       :span ($0 span)}
-                     (binding-expr :comma bindings-exprs) ,|{:kind :bindings-exprs
-                                                             :bindings-exprs [$0 ;($2 :bindings-exprs)]
-                                                             :span (span $0 $2)})
+     (bindings-exprs () ,new-seq
+                     (binding-expr) ,new-seq
+                     (binding-expr :comma bindings-exprs) ,|(cons-seq $0 $2))
      (binding-expr (binding) ,identity
                    (expr) ,identity)
      (binding (container-name :: expr) ,|{:kind :binding
@@ -103,12 +106,8 @@
      (mapping-word (:update) ,identity
                    (:case) ,identity)
      (mapping-form (:... mapping-clauses) ,|(struct ;(kvs $1) :span (span $0 $1)))
-     (mapping-clauses (mapping-clause) ,|{:kind :mapping-clauses
-                                          :mapping-clauses [$0]
-                                          :span ($0 :span)}
-                      (mapping-clause :comma mapping-clauses) ,|{:kind :mapping-clauses
-                                                                 :mapping-clauses [$0 ;($2 :mapping-clauses)]
-                                                                 :span (span $0 $2)})
+     (mapping-clauses (mapping-clause) ,new-seq
+                      (mapping-clause :comma mapping-clauses) ,|(cons-seq $0 $2))
      (mapping-clause (expr :yields expr) ,|{:kind :map
                                             :left $0
                                             :right $2
@@ -140,7 +139,7 @@
        (expr :comma exprs) ,|(tuple $0 ;$2))
 
      (expr
-       (mapping-word maybe-expr mapping-form) ,|{:kind $0
+       (mapping-word maybe-expr mapping-form) ,|{:kind ($0 :kind)
                                                  :case $1
                                                  :mapping $2
                                                  :span (span $0 $2)}
