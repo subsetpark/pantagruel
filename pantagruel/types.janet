@@ -178,7 +178,7 @@
 
     # An explicit :thunk is like a bare string - a reference to some other
     # piece of program text - but was interned during the evaluation stage.
-    {:thunk thunk}
+    {:thunk {:text thunk}}
     (fully-resolve-type (env thunk) env)
 
     #
@@ -386,8 +386,7 @@
       # TODO: Determine possible types of subtraction, etc, between different types
       (gcd-type (resolve-type left env) (resolve-type right env))
 
-      {:kind :case
-       :mapping mapping}
+      {:mapping {:mapping-clauses mapping}}
       (do
         # If the `:case` is populated, then attempt to unify its type with the
         # types of all branch patterns.
@@ -414,10 +413,12 @@
             :square {:list-of inner-t}
             :braces {:set-of inner-t})))
 
-      (n (number? n))
+      {:kind :num
+       :text n}
       (number-type n)
 
-      (s (string? s))
+      {:kind :sym
+       :text s}
       {:symbol-reference s}
 
       (errorf "Couldn't determine type of expression\n%q\nin\n%q"

@@ -38,7 +38,7 @@
     (match binding
       {:kind :binding
        :name {:container :parens
-              :inner inner}
+              :inner {:syms inner}}
        :expr expr}
       (map (fn [_] expr) inner)
 
@@ -63,6 +63,13 @@
 
   (defn err [] (errorf "Encountered unrecognized type syntax:\n%q" form))
 
+  (defn unwrap
+    [wrapped]
+    (if (> (length wrapped) 1)
+      # TODO: Handle [Foo, Bar] types. If those exist.
+      (err)
+      (type-of-form (wrapped 0))))
+
   (match form
     {:container :square
      :inner inner}
@@ -86,20 +93,20 @@
 
     {:kind :declaration
      :yields yields
-     :bindings bindings}
+     :bindings {:bindings-exprs bindings}}
     {:yields (type-of-form yields)
      :args (map type-of-form (distribute-bindings-types bindings))}
 
     ({:kind :declaration
-      :name name
-      :bindings bindings} (= 0 (length bindings)))
+      :name {:text name}
+      :bindings {:bindings-exprs bindings}} (= 0 (length bindings)))
     (if (= (name 0) ((string/ascii-upper name) 0))
       {:concrete name}
       {:args [] :yields stdlib/Void})
 
     {:kind :declaration
-     :name name
-     :bindings bindings}
+     :name {:text name}
+     :bindings {:bindings-exprs bindings}}
     {:args (map type-of-form (distribute-bindings-types bindings))
      :yields stdlib/Void}
 
@@ -117,7 +124,8 @@
     {:kind :string}
     stdlib/String
 
-    (n (number? n))
+    {:kind :num
+     :text n}
     (types/number-type n)
 
     # Thunks
@@ -126,47 +134,61 @@
     {:kind :application}
     {:thunk form}
 
-    (s (string? s))
+    {:kind :sym}
     {:thunk form}
 
     # Recursive cases
+    ({:syms wrapped} (tuple? wrapped))
+    (unwrap wrapped)
+
     (wrapped (tuple? wrapped))
-    (if (> (length wrapped) 1)
-      # TODO: Handle [Foo, Bar] types. If those exist.
-      (err)
-      (type-of-form (wrapped 0)))
+    (unwrap wrapped)
 
     (err)))
 
 (defn introduce-bindings
   [form env symbol-references]
 
-  (defn bind [name expr] (put env name {:kind :bound
-                                        :type (type-of-form expr)}))
-  (defn alias [name expr] (put env name {:kind :domain
-                                         :type (type-of-form expr)}))
+  (defn introduce
+    [sym t]
+    (match sym
+      {:kind :sym
+       :text text}
+      (put env text t)
+      (errorf "Don't know how to introduce symbol: %q" sym)))
+
+  (defn bind
+    [name expr]
+    (introduce name {:kind :bound
+                     :type (type-of-form expr)}))
+  (defn alias
+    [name expr]
+    (printf "In alias, expr %q" expr)
+    (introduce name {:kind :domain
+                     :type (type-of-form expr)}))
 
   (match form
-
     {:kind :decl-alias
      :name name
      :alias expr}
     (do
       (match name
-        {:container _ :inner names} (each name names (alias name expr))
+        {:container _ :inner {:syms names}} (each name names (alias name expr))
         (alias name expr))
       (introduce-bindings expr env symbol-references))
 
     {:kind :declaration
      :name name
-     :bindings bindings}
+     :bindings {:bindings-exprs bindings}}
     (let [yields (form :yields)]
       (let [kind (if (and (nil? yields) (empty? bindings))
                    :domain
                    :procedure)
             t (type-of-form form)]
-        (put env name {:kind kind :type t}))
+        (introduce name {:kind kind :type t}))
+
       (introduce-bindings yields env symbol-references)
+
       (each binding bindings
         (introduce-bindings binding env symbol-references)))
 
@@ -175,12 +197,11 @@
      :expr expr}
     (do
       (match name
-        {:container _ :inner names} (each name names (bind name expr))
+        {:container _ :inner {:syms names}} (each name names (bind name expr))
         (bind name expr))
       (introduce-bindings expr env symbol-references))
 
-    {:kind :case
-     :mapping mapping-form}
+    {:mapping {:mapping-clauses mapping-form}}
     (do
       (introduce-bindings (form :case) env symbol-references)
       (each {:left left :right right} mapping-form
@@ -188,7 +209,7 @@
         (introduce-bindings right env symbol-references)))
 
     {:kind :quantification
-     :bindings bindings
+     :bindings {:bindings-exprs bindings}
      :expr expr}
     (do
       (each binding bindings
@@ -217,8 +238,12 @@
     (each expr exprs
       (introduce-bindings expr env symbol-references))
 
-    (sym (string? sym)) (put symbol-references sym true)
-    (num (number? num)) :ok
+    {:kind :sym
+     :text sym}
+    (put symbol-references sym true)
+
+    {:kind :num} :ok
+
     {:kind :string} :ok
 
     (@ 'nil) :ok

@@ -40,4 +40,4 @@
           lexed (lexer/lex src)
           tree (parser/parse lexed src)
           env (engine/eval tree)]
-      (type-checking/type-check tree env))))
+      (type-checking/type-check tree env src))))

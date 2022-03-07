@@ -5,6 +5,7 @@
 
 (import /pantagruel/stdlib)
 (import /pantagruel/types)
+(import /pantagruel/print-src)
 
 (defn- print-types
   [str & args]
@@ -32,29 +33,29 @@
   [err]
   (case (err :type)
     :list-application-multiple-args
-    (print-types "Attempted to apply a list type to multiple arguments:\n%s"
+    (print-types "Attempted to apply a list type to multiple arguments:\n\n%s"
                  (err :xs))
 
     :list-application-bad-arg
-    (print-types "Attempted to apply a list of type:\n%s\nto an argument of type:\n%s"
+    (print-types "Attempted to apply a list of type:\n\n%s\n\nto an argument of type:\n\n%s"
                  (err :f)
                  (err :x))
 
     :application
-    (print-types "Attempted to apply non-procedure/list type:\n%s"
+    (print-types "Attempted to apply non-procedure/list type:\n\n%s"
                  (err :f))
 
     :container
-    (print-types "Attempted to check for membership or cardinality in non-container type:\n%s"
+    (print-types "Attempted to check for membership or cardinality in non-container type:\n\n%s"
                  (err :t))
 
     :arg-length
-    (print-types "Invalid arguments:\n%s\nto procedure expecting:\n%s"
+    (print-types "Invalid arguments:\n\n%s\n\nto procedure expecting:\n\n%s"
                  (err :args)
                  (err :f-args))
 
     :gcd
-    (print-types "Couldn't unify types:\n%s, %s" (err :left) (err :right))
+    (print-types "Couldn't unify types:\n\n%s, %s" (err :left) (err :right))
 
     (print-types "Unknown type resolution error: %s" err)))
 
@@ -64,7 +65,7 @@
   document. Output error messages for each type error found and, if any were
   found, exit with a non-zero status code.
   ```
-  [tree env]
+  [tree env src]
   (let [body-exprs (mapcat |($0 :body) (tree :chapters))]
     (var type-error false)
     (each body-expr body-exprs
@@ -76,6 +77,6 @@
           (if (table? err)
             (handle-resolution-error err)
             (error err))
-          (printf "In expression:\n%q\n" body-expr)
+          (printf "\nIn expression:\n\n%s\n" (print-src/print-src body-expr src))
           (set type-error true))))
     (if type-error (os/exit 1))))
