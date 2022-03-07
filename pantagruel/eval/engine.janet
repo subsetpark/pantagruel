@@ -147,6 +147,14 @@
     (err)))
 
 (defn introduce-bindings
+  ```
+  Handle any given AST form for environment bindings.
+
+  If it's a binding form, introduce it into the execution environment,
+  associated with the syntactically derived type information (or a thunk, if
+  type information is not available syntactically and needs resolution after
+  the environment has been fully populated).
+  ```
   [form env symbol-references]
 
   (defn introduce
@@ -257,12 +265,18 @@
     (printf "Handling unknown binding form: %q" form)))
 
 (defn eval-head
+  ```
+  Evaluate a chapter head for any environment bindings.
+  ```
   [head env symbol-references]
   (each declaration head
     (introduce-bindings declaration env symbol-references))
   [env symbol-references])
 
 (defn eval-body
+  ```
+  Evaluate a chapter body for any environment bindings.
+  ```
   [body env symbol-references]
   (each statement body
     (introduce-bindings statement env symbol-references))
@@ -273,6 +287,10 @@
   (string/trim reference "'"))
 
 (defn- resolve-references
+  ```
+  Given an environment and a set of symbol references, eliminate all references
+  that are bound with respect to that environment and throw if any remain.
+  ```
   [env references locale]
 
   (each reference (keys references)
@@ -285,6 +303,10 @@
   [env references])
 
 (defn eval-chapter
+  ```
+  Handle a single chapter, binding any introduced symbols into the environment
+  and resolving any references that are due.
+  ```
   [[env prev-references] {:head head :body body}]
   (let [head-references @{}
         body-references @{}]
@@ -318,6 +340,8 @@
   [{:chapters chapters}]
 
   (let [acc [stdlib/base-env @{}]
-        document-result (eval-or-throw (reduce eval-chapter acc chapters))
-        [env references] (eval-or-throw (resolve-references ;document-result :body))]
+        document-result (eval-or-throw
+                          (reduce eval-chapter acc chapters))
+        [env references] (eval-or-throw
+                           (resolve-references ;document-result :body))]
     env))
