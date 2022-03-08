@@ -366,8 +366,13 @@
                           (map |(resolve-type $ env) args)))
 
       {:kind :quantification
+       :bindings {:seq bindings}
        :expr expr}
-      (resolve-type expr env)
+      (do
+        (each binding-or-guard bindings
+          (unless (= (binding-or-guard :kind) :binding)
+            (resolve-type binding-or-guard env)))
+        (resolve-type expr env))
 
       ({:operator boolop
         :left left} (index-of boolop boolean-operators))
