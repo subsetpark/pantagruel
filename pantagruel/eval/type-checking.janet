@@ -24,7 +24,6 @@
       {:list-of t} (string/format "[%s]" (render-type t))
       {:tuple-of ts} (join ts)
       {:sum ts} (-> (map render-type ts) (string/join " + "))
-      {:product ts} (-> (map render-type ts) (string/join " * "))
       {:args args :yields yields} (string/format "(%s => %s)" (render-type args) (render-type yields))
       t (string/format "%q" t)))
 

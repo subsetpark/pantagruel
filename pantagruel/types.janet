@@ -243,9 +243,6 @@
     {:sum ts}
     {:sum (map |(fully-resolve-type $ env) ts)}
 
-    {:product ts}
-    {:product (map |(fully-resolve-type $ env) ts)}
-
     #
     # Base case: we've fully resolved any environment references.
     #

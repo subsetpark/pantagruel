@@ -125,10 +125,14 @@
        (container-names) ,identity
        (syms) ,identity)
 
+     (container-name-or-sym
+       (container-name) ,identity
+       (sym) ,identity)
+
      (container-names
        (:lparen container-names-or-syms :rparen) ,(wrap :parens)
-       (:lsquare container-names-or-syms :rsquare) ,(wrap :square)
-       (:lbrace container-names-or-syms :rbrace) ,(wrap :braces))
+       (:lsquare container-name-or-sym :rsquare) ,(wrap :square)
+       (:lbrace container-name-or-sym :rbrace) ,(wrap :braces))
 
      (maybe-expr () ,nil
                  (expr) ,identity)

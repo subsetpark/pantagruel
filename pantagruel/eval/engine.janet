@@ -72,15 +72,10 @@
   (match form
     {:container :square
      :inner inner}
-    (let [inner-t (type-of-form inner)]
-      (if (array? inner-t)
-        {:tuple-of inner-t}
-        {:list-of inner-t}))
+    (type-of-form inner)
 
     # Treat comma-separated values inside of braces as a sum of the types of
     # the values.
-    # TODO: This just assumes these are values. Maybe we just accept {Int,
-    # String} as a synonym for Int + String?
     ({:container :braces
       :inner inner} (tuple? inner) (> (length inner) 1))
     (reduce2 types/sum-type (map type-of-form inner))
@@ -91,7 +86,10 @@
 
     {:container :parens
      :inner inner}
-    (type-of-form inner)
+    (let [inner-t (type-of-form inner)]
+      (if (array? inner-t)
+        {:tuple-of inner-t}
+        inner-t))
 
     {:kind :declaration
      :yields yields
@@ -116,12 +114,6 @@
      :left left
      :right right}
     (types/sum-type (type-of-form right) (type-of-form right))
-
-    {:operator "*"
-     :left left
-     :right right}
-    # TODO: Do we need any more type math in the case of other algebraic types?
-    {:product [left right]}
 
     {:kind :string}
     stdlib/String
