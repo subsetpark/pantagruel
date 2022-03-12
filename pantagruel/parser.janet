@@ -270,8 +270,9 @@
        (literal) ,new-seq
        (literal :comma literals) ,cons-seq)
 
-     (literal (:sym) ,identity
-              (:string) ,identity)
+     (literal
+       (:num) ,identity
+       (:string) ,identity)
 
      (binary-operator
        (:logical-operator) ,identity
