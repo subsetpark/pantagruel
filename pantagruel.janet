@@ -76,7 +76,7 @@
 (defn handle-src
   [file src]
   (let [lexed (lexer/lex src)
-        tree (try (parser/parse lexed)
+        tree (try (parser/parse-tokens lexed)
                ([err fib] (if (table? err)
                             (handle-syntax-error file err src)
                             (propagate err fib))))

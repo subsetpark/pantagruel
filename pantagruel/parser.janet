@@ -33,6 +33,14 @@
    :seq [expr ;(rest :seq)]
    :span (span expr rest)})
 
+(defn binary-operation
+  [left op right]
+  {:kind :binary-operation
+   :left left
+   :right right
+   :operator (op :text)
+   :span (span left right)})
+
 (def grammar
   ~(yacc
 
@@ -194,45 +202,16 @@
                                                          :mapping $3
                                                          :span (span $0 $3)}
 
-       (expr :logical-operator expr) ,|{:kind :binary-operation
-                                        :left $0
-                                        :right $2
-                                        :operator ($1 :text)
-                                        :span (span $0 $2)}
-
-       (expr :boolean-operator expr) ,|{:kind :binary-operation
-                                        :left $0
-                                        :right $2
-                                        :operator ($1 :text)
-                                        :span (span $0 $2)}
-
+       (expr :logical-operator expr) ,binary-operation
+       (expr :boolean-operator expr) ,binary-operation
        # = and + are special cased because they are normal binary operators,
        # but also special syntax (= is used for domain aliasing, + is used for
        # sum typing). So here we detect them specifically and roll them into
        # the binary-operation node type.
-       (expr := expr) ,|{:kind :binary-operation
-                         :left $0
-                         :right $2
-                         :operator ($1 :text)
-                         :span (span $0 $2)}
-
-       (expr :+ expr) ,|{:kind :binary-operation
-                         :left $0
-                         :right $2
-                         :operator ($1 :text)
-                         :span (span $0 $2)}
-
-       (expr :arithmetic-operator1 expr) ,|{:kind :binary-operation
-                                            :left $0
-                                            :right $2
-                                            :operator ($1 :text)
-                                            :span (span $0 $2)}
-
-       (expr :arithmetic-operator2 expr) ,|{:kind :binary-operation
-                                            :left $0
-                                            :right $2
-                                            :operator ($1 :text)
-                                            :span (span $0 $2)}
+       (expr := expr) ,binary-operation
+       (expr :+ expr) ,binary-operation
+       (expr :arithmetic-operator1 expr) ,binary-operation
+       (expr :arithmetic-operator2 expr) ,binary-operation
 
        (:unary-operator expr) ,|{:kind :unary-operation
                                  :left $1
@@ -295,7 +274,7 @@
 
 (def parser-tables (yacc/compile grammar))
 
-(defn parse
+(defn parse-tokens
   ```
   Generate an AST from a sequence of tokens.
   ```

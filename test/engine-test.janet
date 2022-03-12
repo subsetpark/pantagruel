@@ -5,15 +5,15 @@
 (import /pantagruel/lexer)
 (import /pantagruel/parser)
 
-(defn parse
+(defn do-parse
   [src]
   (-> src
       (lexer/lex)
-      (parser/parse src)))
+      (parser/parse-tokens)))
 
 (defn is-eval
   [expected-env src]
-  (let [[success? res] (protect (engine/eval (parse src)))]
+  (let [[success? res] (protect (engine/eval (do-parse src)))]
     (is success? (string/format "eval failure:\n\n%s\n\nFails with:\n%s"
                                 (string src)
                                 (if (table? res) (string/format "%q" res) (string res))))
