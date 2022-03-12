@@ -1,4 +1,3 @@
-n => Real.
+n => [Real].
 ---
-// TODO: unary operators should bind more closely than function application.
-#n + 1.
+#n = 1.

@@ -79,7 +79,7 @@
           :yields $3
           :span (span $0 $3)}
 
-       (sym := expr)
+       (sym-or-tuple-of-syms := expr)
        ,|{:kind :decl-alias
           :name $0
           :alias $2
@@ -134,6 +134,10 @@
        (:lparen container-names-or-syms :rparen) ,(wrap :parens)
        (:lsquare container-name-or-sym :rsquare) ,(wrap :square)
        (:lbrace container-name-or-sym :rbrace) ,(wrap :braces))
+
+     (sym-or-tuple-of-syms
+       (:lparen syms :rparen) ,(wrap :parens)
+       (sym) ,identity)
 
      (maybe-expr () ,nil
                  (expr) ,identity)
@@ -204,7 +208,7 @@
 
      (string (:string) ,identity)
      (sym (:sym) ,identity)
-     (num (:num) ,|(struct ;(kvs $0) :text (scan-number ($0 :text))))))
+     (num (:num) ,identity)))
 
 (def parser-tables (yacc/compile grammar))
 

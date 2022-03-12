@@ -1,5 +1,5 @@
 Section.
-Program <= [Section].
+Program = [Section].
 
 eval p: Program => Bool.
 
@@ -8,9 +8,9 @@ eval p: Program => Bool.
 
 section head: Head, body: Body, #head > 0 => Section.
 
-Head <= [Comment + Declaration + Alias].
-Body <= [Comment + Expression].
-(Comment, Declaration, Alias, Expression) <= [String].
+Head = [Comment + Declaration + Alias].
+Body = [Comment + Expression].
+(Comment, Declaration, Alias, Expression) = [String].
 ---
 
 eval p = all sect : p => is_all_bound? sect.
@@ -40,5 +40,5 @@ is_bound? sym = (sym in (env p) (p sect)) or (sym in init_scope).
 
 env p: Program => [Scope].
 init_scope => Scope.
-Scope <= {String}.
+Scope = {String}.
 ---

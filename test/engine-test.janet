@@ -13,8 +13,12 @@
 
 (defn is-eval
   [expected-env src]
-  (let [env (engine/eval (parse src))]
-    (is (== expected-env (table/to-struct env)))))
+  (let [[success? res] (protect (engine/eval (parse src)))]
+    (is success? (string/format "eval failure:\n\n%s\n\nFails with:\n%q"
+                                (string src)
+                                res))
+    (if success?
+      (is (== expected-env (table/to-struct res))))))
 
 (deftest eval-single-declaration
   (is-eval
@@ -62,7 +66,7 @@
 (deftest eval-alias-declaration-container
   (is-eval
     {"F" {:kind :domain :type {:concrete "F"}}
-     "f" {:kind :domain :type {:thunk {:kind :sym :span [8 9] :text "F"}}}}
+     "f" {:kind :domain :type {:list-of {:thunk {:kind :sym :span [8 9] :text "F"}}}}}
     `
     F.
     f = [F].

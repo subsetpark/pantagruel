@@ -21,6 +21,15 @@
               :help "Show version and exit"}
    :default {:kind :accumulate}])
 
+(defn handle-evaluation-error
+  [err]
+  (printf "Unglossed symbols%s:\n\n%s"
+          (case (err :locale)
+            :body ""
+            :chapter " in chapter head")
+          (string/join (keys (err :symbols)) ", "))
+  (os/exit 1))
+
 (defn main
   ```
   Main application logic.
@@ -39,5 +48,8 @@
                 [file] (slurp file))
           lexed (lexer/lex src)
           tree (parser/parse lexed src)
-          env (engine/eval tree)]
+          env (try (engine/eval tree)
+                ([err fib] (if (table? err)
+                             (handle-evaluation-error err)
+                             (propagate err fib))))]
       (type-checking/type-check tree env src))))

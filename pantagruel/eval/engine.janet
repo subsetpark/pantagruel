@@ -72,7 +72,7 @@
   (match form
     {:container :square
      :inner inner}
-    (type-of-form inner)
+    {:list-of (type-of-form inner)}
 
     # Treat comma-separated values inside of braces as a sum of the types of
     # the values.
@@ -140,7 +140,7 @@
 
     (err)))
 
-(defn introduce-bindings
+(defn introduce-bindings-and-references
   ```
   Handle any given AST form for environment bindings.
 
@@ -176,7 +176,7 @@
       (match name
         {:container _ :inner {:seq names}} (each name names (alias name expr))
         (alias name expr))
-      (introduce-bindings expr env symbol-references))
+      (introduce-bindings-and-references expr env symbol-references))
 
     {:kind :declaration
      :name name
@@ -188,10 +188,10 @@
             t (type-of-form form)]
         (introduce name {:kind kind :type t}))
 
-      (introduce-bindings yields env symbol-references)
+      (introduce-bindings-and-references yields env symbol-references)
 
       (each binding bindings
-        (introduce-bindings binding env symbol-references)))
+        (introduce-bindings-and-references binding env symbol-references)))
 
     {:kind :binding
      :name name
@@ -202,57 +202,60 @@
         (each name names (bind name expr))
 
         (bind name expr))
-      (introduce-bindings expr env symbol-references))
+      (introduce-bindings-and-references expr env symbol-references))
 
     {:kind :case
      :mapping {:seq mapping-form}}
     (do
-      (introduce-bindings (form :case) env symbol-references)
+      (introduce-bindings-and-references (form :case) env symbol-references)
       (each {:left left :right right} mapping-form
-        (introduce-bindings left env symbol-references)
-        (introduce-bindings right env symbol-references)))
+        (introduce-bindings-and-references left env symbol-references)
+        (introduce-bindings-and-references right env symbol-references)))
 
     {:kind :update
      :mapping {:seq mapping-form}}
     (do
-      (introduce-bindings (form :case) env symbol-references)
+      (introduce-bindings-and-references (form :case) env symbol-references)
       (each {:left left :right right} mapping-form
-        (introduce-bindings left env symbol-references)
-        (introduce-bindings right env symbol-references)))
+        (introduce-bindings-and-references left env symbol-references)
+        (introduce-bindings-and-references right env symbol-references)))
 
     {:kind :quantification
      :bindings {:seq bindings}
      :expr expr}
     (do
       (each binding bindings
-        (introduce-bindings binding env symbol-references))
-      (introduce-bindings expr env symbol-references))
+        (introduce-bindings-and-references binding env symbol-references))
+      (introduce-bindings-and-references expr env symbol-references))
 
     {:kind :binary-operation
      :left left
      :right right}
     (do
-      (introduce-bindings left env symbol-references)
-      (introduce-bindings right env symbol-references))
+      (introduce-bindings-and-references left env symbol-references)
+      (introduce-bindings-and-references right env symbol-references))
 
     {:kind :unary-operation
      :left left}
-    (introduce-bindings left env symbol-references)
+    (introduce-bindings-and-references left env symbol-references)
 
     {:kind :application
      :f f
      :x x}
     (do
-      (introduce-bindings f env symbol-references)
-      (introduce-bindings x env symbol-references))
+      (introduce-bindings-and-references f env symbol-references)
+      (introduce-bindings-and-references x env symbol-references))
 
     {:container _ :inner {:seq exprs}}
     (each expr exprs
-      (introduce-bindings expr env symbol-references))
+      (introduce-bindings-and-references expr env symbol-references))
 
     ({:container _ :inner exprs} (tuple? exprs))
     (each expr exprs
-      (introduce-bindings expr env symbol-references))
+      (introduce-bindings-and-references expr env symbol-references))
+
+    {:container _ :inner expr}
+    (introduce-bindings-and-references expr env symbol-references)
 
     {:kind :sym
      :text sym}
@@ -264,7 +267,7 @@
 
     (@ 'nil) :ok
 
-    (printf "Handling unknown binding form: %q" form)))
+    (printf "Unknown form in engine: %q" form)))
 
 (defn eval-head
   ```
@@ -272,7 +275,7 @@
   ```
   [head env symbol-references]
   (each declaration head
-    (introduce-bindings declaration env symbol-references))
+    (introduce-bindings-and-references declaration env symbol-references))
   [env symbol-references])
 
 (defn eval-body
@@ -281,7 +284,7 @@
   ```
   [body env symbol-references]
   (each statement body
-    (introduce-bindings statement env symbol-references))
+    (introduce-bindings-and-references statement env symbol-references))
   [env symbol-references])
 
 (defn- normalize
@@ -320,30 +323,10 @@
     (resolve-references env prev-references :body)
     [env body-references]))
 
-(defn handle-evaluation-error
-  [err]
-  (printf "Unglossed symbols%s:\n\n%s"
-          (case (err :locale)
-            :body ""
-            :chapter " in chapter head")
-          (string/join (keys (err :symbols)) ", "))
-  (os/exit 1))
-
-(defmacro eval-or-throw
-  [body]
-  ~(try
-     ,body
-     ([err fib]
-       (if (table? err)
-         (handle-evaluation-error err)
-         (propagate err fib)))))
-
 (defn eval
   [{:chapters chapters}]
 
-  (let [acc [(table/setproto  @{} stdlib/base-env) @{}]
-        document-result (eval-or-throw
-                          (reduce eval-chapter acc chapters))
-        [env references] (eval-or-throw
-                           (resolve-references ;document-result :body))]
+  (let [acc [(table/setproto @{} stdlib/base-env) @{}]
+        document-result (reduce eval-chapter acc chapters)
+        [env references] (resolve-references ;document-result :body)]
     env))

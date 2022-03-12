@@ -31,7 +31,7 @@
 (def head-placeholder [{:kind :sym :text "f"} . ---])
 
 (defn sym [text] {:kind :sym :text text})
-(defn num [text] {:kind :num :text (string text)})
+(defn num [text] {:kind :num :text text})
 
 (deftest empty-program
   (is-parse
@@ -88,7 +88,7 @@
                                                {:kind :binary-operation
                                                 :left {:kind :sym :text "x"}
                                                 :operator "="
-                                                :right {:kind :num :text 1}}]}
+                                                :right (num 1)}]}
                               :kind :declaration
                               :name {:kind :sym :text "f"}}]
                       :kind :chapter}]
@@ -105,7 +105,7 @@
                                              :yields (sym "F")}]
                                      :body []}]}]))
 
-(deftest head-with-reverse-yields
+(deftest head-with-alias
   (is-parse
     [(sym "f") = (sym "F") .
      ---]
@@ -115,7 +115,19 @@
                                              :alias (sym "F")}]
                                      :body []}]}]))
 
-(deftest head-with-reverse-yields-container
+(deftest head-with-tuple-alias
+  (is-parse
+    [lp (sym "f") comma (sym "g") rp = (sym "F") .
+     ---]
+    [:ok {:directives [] :chapters [{:kind :chapter
+                                     :head [{:kind :decl-alias
+                                             :name {:container :parens
+                                                    :inner {:kind :seq
+                                                            :seq [{:kind :sym :text "f"}
+                                                                  {:kind :sym :text "g"}]}}
+                                             :alias (sym "F")}]
+                                     :body []}]}]))
+(deftest head-with-alias-container
   (is-parse
     [(sym "f") = {:kind :lsquare} (sym "F") {:kind :rsquare} .
      ---]
@@ -166,11 +178,11 @@
                                                     {:kind :binary-operation
                                                      :left (sym "x")
                                                      :operator ">"
-                                                     :right {:kind :num :text 1}}]}
+                                                     :right (num 1)}]}
                                              :expr {:kind :binary-operation
                                                     :left (sym "x")
                                                     :operator "<"
-                                                    :right {:kind :num :text 10}}
+                                                    :right (num 10)}
                                              :kind :quantification
                                              :quantifier {:kind :some}}]
                                      :head [{:bindings {:kind :seq :seq []}
@@ -219,12 +231,12 @@
     [:ok {:directives [] :chapters [{:body [{:kind :binary-operation
                                              :left {:kind :binary-operation :left (sym "x")
                                                     :operator "-"
-                                                    :right {:kind :num :text 1}}
+                                                    :right (num 1)}
                                              :operator "="
                                              :right {:kind :binary-operation
                                                      :left (sym "y")
                                                      :operator "+"
-                                                     :right {:kind :num :text 2}}}]
+                                                     :right (num 2)}}]
                                      :head [{:bindings {:kind :seq :seq []}
                                              :kind :declaration :name (sym "f")}]
                                      :kind :chapter}]}]))
@@ -237,7 +249,7 @@
                               :kind :application
                               :x {:f (sym "y")
                                   :kind :application
-                                  :x {:kind :num :text 1}}}]
+                                  :x (num 1)}}]
                       :head [{:bindings {:kind :seq :seq []}
                               :kind :declaration
                               :name (sym "f")}]
@@ -272,7 +284,7 @@
                                      :operator "#"
                                      :left (sym "x")}
                               :operator "-"
-                              :right {:kind :num :text 1}}]
+                              :right (num 1)}]
                       :head [{:bindings {:kind :seq :seq []}
                               :kind :declaration
                               :name (sym "f")}]
@@ -346,7 +358,7 @@
                                                  :left {:kind :binary-operation
                                                         :operator ">"
                                                         :left (sym "x")
-                                                        :right {:kind :num :text 2}}
+                                                        :right (num 2)}
                                                  :right {:kind :binary-operation
                                                          :operator "+"
                                                          :left {:kind :application
@@ -355,26 +367,26 @@
                                                                     :inner [{:kind :binary-operation
                                                                              :operator "-"
                                                                              :left (sym "x")
-                                                                             :right {:kind :num :text 1}}]}}
+                                                                             :right (num 1)}]}}
                                                          :right {:kind :application
                                                                  :f (sym "fib")
                                                                  :x {:container :parens
                                                                      :inner [{:kind :binary-operation
                                                                               :operator "-"
                                                                               :left (sym "x")
-                                                                              :right {:kind :num :text 2}}]}}}}
+                                                                              :right (num 2)}]}}}}
                                                 {:kind :map
                                                  :left {:kind :binary-operation
                                                         :operator "="
                                                         :left (sym "x")
-                                                        :right {:kind :num :text 1}}
-                                                 :right {:kind :num :text 1}}
+                                                        :right (num 1)}
+                                                 :right (num 1)}
                                                 {:kind :map
                                                  :left {:kind :binary-operation
                                                         :operator "="
                                                         :left (sym "x")
-                                                        :right {:kind :num :text 2}}
-                                                 :right {:kind :num :text 1}}]}}}]
+                                                        :right (num 2)}
+                                                 :right (num 1)}]}}}]
                       :head [{:bindings
                               {:kind :seq
                                :seq [{:expr (sym "Nat")
