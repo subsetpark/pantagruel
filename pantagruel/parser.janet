@@ -78,7 +78,7 @@
           :yields $3
           :span (span $0 $3)}
 
-       (container-name :reverse-yields expr)
+       (sym :reverse-yields expr)
        ,|{:kind :decl-alias
           :name $0
           :alias $2

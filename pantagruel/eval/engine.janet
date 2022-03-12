@@ -341,7 +341,7 @@
 (defn eval
   [{:chapters chapters}]
 
-  (let [acc [stdlib/base-env @{}]
+  (let [acc [(table/setproto  @{} stdlib/base-env) @{}]
         document-result (eval-or-throw
                           (reduce eval-chapter acc chapters))
         [env references] (eval-or-throw

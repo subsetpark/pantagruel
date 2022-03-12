@@ -41,8 +41,9 @@
     head-placeholder
     [:ok {:directives [] :chapters [{:kind :chapter
                                      :head [{:kind :declaration
-                                             :name "f"
-                                             :bindings []}]
+                                             :name {:kind :sym :text "f"}
+                                             :bindings {:kind :seq
+                                                        :seq []}}]
                                      :body []}]}]))
 
 (deftest base-chapter
@@ -51,9 +52,10 @@
      (sym "g") .]
     [:ok {:directives [] :chapters [{:kind :chapter
                                      :head [{:kind :declaration
-                                             :name "f"
-                                             :bindings []}]
-                                     :body ["g"]}]}]))
+                                             :name (sym "f")
+                                             :bindings {:kind :seq
+                                                        :seq []}}]
+                                     :body [(sym "g")]}]}]))
 
 (deftest head-with-binding
   (is-parse
@@ -61,10 +63,11 @@
      ---]
     [:ok {:directives [] :chapters [{:kind :chapter
                                      :head [{:kind :declaration
-                                             :name "f"
-                                             :bindings [{:kind :binding
-                                                         :expr "X"
-                                                         :name "x"}]}]
+                                             :name (sym "f")
+                                             :bindings {:kind :seq
+                                                        :seq [{:kind :binding
+                                                               :expr (sym "X")
+                                                               :name (sym "x")}]}}]
                                      :body []}]}]))
 
 (deftest head-with-yields
@@ -73,9 +76,9 @@
      ---]
     [:ok {:directives [] :chapters [{:kind :chapter
                                      :head [{:kind :declaration
-                                             :name "f"
-                                             :bindings []
-                                             :yields "F"}]
+                                             :name (sym "f")
+                                             :bindings {:kind :seq :seq []}
+                                             :yields (sym "F")}]
                                      :body []}]}]))
 
 (deftest head-with-reverse-yields
@@ -84,8 +87,8 @@
      ---]
     [:ok {:directives [] :chapters [{:kind :chapter
                                      :head [{:kind :decl-alias
-                                             :name "f"
-                                             :alias "F"}]
+                                             :name (sym "f")
+                                             :alias (sym "F")}]
                                      :body []}]}]))
 
 (deftest head-with-reverse-yields-container
@@ -94,32 +97,11 @@
      ---]
     [:ok {:directives [] :chapters [{:kind :chapter
                                      :head [{:kind :decl-alias
-                                             :name "f"
+                                             :name (sym "f")
                                              :alias {:container :square
-                                                     :inner ["F"]}}]
+                                                     :inner [(sym "F")]}}]
                                      :body []}]}]))
 
-(deftest head-with-reverse-yields-container-comma
-  (is-parse
-    [lp
-     (sym "f")
-     {:kind :comma}
-     (sym "g")
-     rp
-     <=
-     {:kind :lsquare}
-     (sym "F")
-     {:kind :comma}
-     (sym "G")
-     {:kind :rsquare} .
-     ---]
-    [:ok {:directives [] :chapters [{:kind :chapter
-                                     :head [{:kind :decl-alias
-                                             :name {:container :parens
-                                                    :inner ["f" "g"]}
-                                             :alias {:container :square
-                                                     :inner ["F" "G"]}}]
-                                     :body []}]}]))
 (deftest multiple-chapters
   (is-parse
     [;head-placeholder
@@ -131,13 +113,13 @@
      ---]
     [:ok {:directives [] :chapters [{:kind :chapter
                                      :head [{:kind :declaration
-                                             :name "f"
-                                             :bindings []}]
-                                     :body ["g"]}
+                                             :name (sym "f")
+                                             :bindings {:kind :seq :seq []}}]
+                                     :body [(sym "g")]}
                                     {:kind :chapter
                                      :head [{:kind :declaration
-                                             :name "h"
-                                             :bindings []}]
+                                             :name (sym "h")
+                                             :bindings {:kind :seq :seq []}}]
                                      :body []}]}]))
 
 (deftest qualification
@@ -153,22 +135,23 @@
      (sym "x") {:kind :boolean-operator :text "<"} (num 10)
      .]
     [:ok {:directives [] :chapters [{:body [{:bindings
-                                             [{:expr "Nat"
-                                               :kind :binding
-                                               :name "x"}
-                                              {:kind :binary-operation
-                                               :left "x"
-                                               :operator ">"
-                                               :right 1}]
+                                             {:kind :seq
+                                              :seq [{:expr (sym "Nat")
+                                                     :kind :binding
+                                                     :name (sym "x")}
+                                                    {:kind :binary-operation
+                                                     :left (sym "x")
+                                                     :operator ">"
+                                                     :right {:kind :num :text 1}}]}
                                              :expr {:kind :binary-operation
-                                                    :left "x"
+                                                    :left (sym "x")
                                                     :operator "<"
-                                                    :right 10}
+                                                    :right {:kind :num :text 10}}
                                              :kind :quantification
-                                             :quantifier :some}]
-                                     :head [{:bindings ()
+                                             :quantifier {:kind :some}}]
+                                     :head [{:bindings {:kind :seq :seq []}
                                              :kind :declaration
-                                             :name "x"}]
+                                             :name (sym "x")}]
                                      :kind :chapter}]}]))
 
 (deftest quantification-with-container
@@ -184,19 +167,24 @@
              =>
              (sym "a") + (sym "b")
              .]
-            [:ok {:directives [] :chapters [{:body [{:bindings
-                                                     [{:expr "A"
-                                                       :kind :binding
-                                                       :name {:container :parens
-                                                              :inner ["a" "b"]}}]
-                                                     :expr {:kind :binary-operation
-                                                            :left "a"
-                                                            :operator "+"
-                                                            :right "b"}
-                                                     :kind :quantification
-                                                     :quantifier :some}]
-                                             :head [{:bindings () :kind :declaration :name "A"}]
-                                             :kind :chapter}]}]))
+            [:ok {:directives []
+                  :chapters [{:body [{:bindings
+                                      {:kind :seq
+                                       :seq [{:expr (sym "A")
+                                              :kind :binding
+                                              :name {:container :parens
+                                                     :inner {:kind :seq
+                                                             :seq [(sym "a") (sym "b")]}}}]}
+                                      :expr {:kind :binary-operation
+                                             :left (sym "a")
+                                             :operator "+"
+                                             :right (sym "b")}
+                                      :kind :quantification
+                                      :quantifier {:kind :some :text "some"}}]
+                              :head [{:bindings {:kind :seq :seq []}
+                                      :kind :declaration
+                                      :name (sym "A")}]
+                              :kind :chapter}]}]))
 
 (deftest precedence
   (is-parse
@@ -205,28 +193,30 @@
      =
      (sym "y") + (num 2) .]
     [:ok {:directives [] :chapters [{:body [{:kind :binary-operation
-                                             :left {:kind :binary-operation :left "x"
+                                             :left {:kind :binary-operation :left (sym "x")
                                                     :operator "-"
-                                                    :right 1}
+                                                    :right {:kind :num :text 1}}
                                              :operator "="
                                              :right {:kind :binary-operation
-                                                     :left "y"
+                                                     :left (sym "y")
                                                      :operator "+"
-                                                     :right 2}}]
-                                     :head [{:bindings ()
-                                             :kind :declaration :name "f"}]
+                                                     :right {:kind :num :text 2}}}]
+                                     :head [{:bindings {:kind :seq :seq []}
+                                             :kind :declaration :name (sym "f")}]
                                      :kind :chapter}]}]))
 
 (deftest multiple-application
   (is-parse
     [;head-placeholder
      (sym "x") (sym "y") (num 1) .]
-    [:ok {:chapters [{:body [{:f "x"
+    [:ok {:chapters [{:body [{:f (sym "x")
                               :kind :application
-                              :x {:f "y" :kind :application :x 1}}]
-                      :head [{:bindings ()
+                              :x {:f (sym "y")
+                                  :kind :application
+                                  :x {:kind :num :text 1}}}]
+                      :head [{:bindings {:kind :seq :seq []}
                               :kind :declaration
-                              :name "f"}]
+                              :name (sym "f")}]
                       :kind :chapter}]
           :directives []}]))
 
@@ -239,14 +229,14 @@
     [:ok {:chapters [{:body [{:kind :binary-operation
                               :left {:kind :unary-operation
                                      :operator "#"
-                                     :left "x"}
+                                     :left (sym "x")}
                               :operator "="
                               :right {:kind :unary-operation
-                                      :left "s"
+                                      :left (sym "s")
                                       :operator "#"}}]
-                      :head [{:bindings ()
+                      :head [{:bindings {:kind :seq :seq []}
                               :kind :declaration
-                              :name "f"}]
+                              :name (sym "f")}]
                       :kind :chapter}]
           :directives ()}])
 
@@ -256,12 +246,12 @@
     [:ok {:chapters [{:body [{:kind :binary-operation
                               :left {:kind :unary-operation
                                      :operator "#"
-                                     :left "x"}
+                                     :left (sym "x")}
                               :operator "-"
-                              :right 1}]
-                      :head [{:bindings ()
+                              :right {:kind :num :text 1}}]
+                      :head [{:bindings {:kind :seq :seq []}
                               :kind :declaration
-                              :name "f"}]
+                              :name (sym "f")}]
                       :kind :chapter}]
           :directives ()}])
 
@@ -275,22 +265,22 @@
                               :left {:kind :unary-operation
                                      :operator "#"
                                      :left {:container :parens
-                                            :inner [{:f "concat"
+                                            :inner [{:f (sym "concat")
                                                      :kind :application
-                                                     :x {:f "s"
+                                                     :x {:f (sym "s")
                                                          :kind :application
-                                                         :x "r"}}]}}
+                                                         :x (sym "r")}}]}}
                               :right {:kind :binary-operation
                                       :operator "+"
                                       :left {:kind :unary-operation
-                                             :left "s"
+                                             :left (sym "s")
                                              :operator "#"}
                                       :right {:kind :unary-operation
-                                              :left "r"
+                                              :left (sym "r")
                                               :operator "#"}}}]
-                      :head [{:bindings ()
+                      :head [{:bindings {:kind :seq :seq []}
                               :kind :declaration
-                              :name "f"}]
+                              :name (sym "f")}]
                       :kind :chapter}]
           :directives ()}]))
 
@@ -299,9 +289,9 @@
     [{:kind :directive :text "module"}
      (sym "FIB") .
      ;head-placeholder]
-    [:ok {:chapters [{:body [] :head [{:bindings () :kind :declaration :name "f"}]
+    [:ok {:chapters [{:body [] :head [{:bindings {:kind :seq :seq []} :kind :declaration :name (sym "f")}]
                       :kind :chapter}]
-          :directives [{:args "FIB"
+          :directives [{:args (sym "FIB")
                         :kind :directive
                         :statement "module"}]}]))
 
@@ -321,51 +311,54 @@
      => (num 1) {:kind :comma :text ","}
      (sym "x") = (num 2)
      => (num 1) .]
-    [:ok {:directives [] :chapters [{:body
-                                     [{:kind :binary-operation
-                                       :operator "="
-                                       :left {:f "fib" :kind :application :x "x"}
-                                       :right {:kind :case
-                                               :mapping [{:kind :map
-                                                          :left {:kind :binary-operation
-                                                                 :operator ">"
-                                                                 :left "x"
-                                                                 :right 2}
-                                                          :right {:kind :binary-operation
-                                                                  :operator "+"
-                                                                  :left {:kind :application
-                                                                         :f "fib"
-                                                                         :x {:container :parens
-                                                                             :inner [{:kind :binary-operation
-                                                                                      :operator "-"
-                                                                                      :left "x"
-                                                                                      :right 1}]}}
-                                                                  :right {:kind :application
-                                                                          :f "fib"
-                                                                          :x {:container :parens
-                                                                              :inner [{:kind :binary-operation
-                                                                                       :operator "-"
-                                                                                       :left "x"
-                                                                                       :right 2}]}}}}
-                                                         {:kind :map
-                                                          :left {:kind :binary-operation
-                                                                 :operator "="
-                                                                 :left "x"
-                                                                 :right 1}
-                                                          :right 1}
-                                                         {:kind :map
-                                                          :left {:kind :binary-operation
-                                                                 :operator "="
-                                                                 :left "x"
-                                                                 :right 2}
-                                                          :right 1}]}}]
-                                     :head [{:bindings
-                                             [{:expr "Nat"
-                                               :kind :binding
-                                               :name "x"}]
-                                             :kind :declaration
-                                             :name "fib"
-                                             :yields "Nat"}]
-                                     :kind :chapter}]}]))
+    [:ok {:directives []
+          :chapters [{:body
+                      [{:kind :binary-operation
+                        :operator "="
+                        :left {:f (sym "fib") :kind :application :x (sym "x")}
+                        :right {:kind :case
+                                :mapping {:kind :seq
+                                          :seq [{:kind :map
+                                                 :left {:kind :binary-operation
+                                                        :operator ">"
+                                                        :left (sym "x")
+                                                        :right {:kind :num :text 2}}
+                                                 :right {:kind :binary-operation
+                                                         :operator "+"
+                                                         :left {:kind :application
+                                                                :f (sym "fib")
+                                                                :x {:container :parens
+                                                                    :inner [{:kind :binary-operation
+                                                                             :operator "-"
+                                                                             :left (sym "x")
+                                                                             :right {:kind :num :text 1}}]}}
+                                                         :right {:kind :application
+                                                                 :f (sym "fib")
+                                                                 :x {:container :parens
+                                                                     :inner [{:kind :binary-operation
+                                                                              :operator "-"
+                                                                              :left (sym "x")
+                                                                              :right {:kind :num :text 2}}]}}}}
+                                                {:kind :map
+                                                 :left {:kind :binary-operation
+                                                        :operator "="
+                                                        :left (sym "x")
+                                                        :right {:kind :num :text 1}}
+                                                 :right {:kind :num :text 1}}
+                                                {:kind :map
+                                                 :left {:kind :binary-operation
+                                                        :operator "="
+                                                        :left (sym "x")
+                                                        :right {:kind :num :text 2}}
+                                                 :right {:kind :num :text 1}}]}}}]
+                      :head [{:bindings
+                              {:kind :seq
+                               :seq [{:expr (sym "Nat")
+                                      :kind :binding
+                                      :name (sym "x")}]}
+                              :kind :declaration
+                              :name (sym "fib")
+                              :yields (sym "Nat")}]
+                      :kind :chapter}]}]))
 
 (run-tests!)

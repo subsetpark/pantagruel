@@ -2,191 +2,128 @@
 
 (import /pantagruel/eval/engine)
 (import /pantagruel/stdlib)
+(import /pantagruel/lexer)
+(import /pantagruel/parser)
+
+(defn parse
+  [src]
+  (-> src
+      (lexer/lex)
+      (parser/parse src)))
 
 (defn is-eval
-  [res tree]
-  (is (== res (engine/eval tree))))
-
-(defn is-chapter
-  [res tree &opt env references]
-
-  (default env @{})
-  (default references @{})
-
-  (is (== res
-          (engine/eval-chapter tree env references))))
-
-(defn is-head
-  [res tree]
-  (is (== res (engine/eval-head tree @{} @{}))))
-
-(defn is-body
-  [res tree]
-  (is (== res (engine/eval-body tree @{} @{}))))
+  [expected-env src]
+  (let [env (engine/eval (parse src))]
+    (is (== expected-env (table/to-struct env)))))
 
 (deftest eval-single-declaration
-  (is-head [@{"f" {:kind :domain
-                   :type {:args ()
-                          :yields @{:kind :domain
-                                    :concrete "Void"}}}}
-            @{}]
-           [{:kind :declaration
-             :name "f"
-             :bindings []}]))
+  (is-eval
+    {"f" {:kind :domain
+          :type {:args {:tuple-of ()} :yields @{:concrete "Void" :kind :domain}}}}
+    `f.
+     ---
+     `))
 
 (deftest eval-declaration-with-binding
-  (is-head [@{"f" {:kind :procedure
-                   :type {:args @[{:thunk "X"}]
-                          :yields @{:kind :domain
-                                    :concrete "Void"}}}
-              "x" {:kind :bound
-                   :type {:thunk "X"}}}
-            @{"X" true}]
-           [{:kind :declaration
-             :name "f"
-             :bindings [{:kind :binding
-                         :expr "X"
-                         :name "x"}]}]))
+  (is-eval
+    {"X" {:kind :domain :type {:concrete "X"}}
+     "f" {:kind :procedure
+          :type {:args {:tuple-of @[{:thunk {:kind :sym :span [7 8] :text "X"}}]}
+                 :yields @{:concrete "Void" :kind :domain}}}
+     "x" {:kind :bound :type {:thunk {:kind :sym :span [7 8] :text "X"}}}}
+    `
+    X.
+    f x:X.
+     ---
+     `))
 
 (deftest eval-declaration-with-yields
-  (is-head [@{"f" {:kind :procedure
-                   :type {:args @[]
-                          :yields {:thunk "F"}}}}
-            @{"F" true}]
-           [{:kind :declaration
-             :name "f"
-             :bindings []
-             :yields "F"}]))
+  (is-eval
+    {"F" {:kind :domain :type {:concrete "F"}}
+     "f" {:kind :procedure
+          :type {:args {:tuple-of @[]}
+                 :yields {:thunk {:kind :sym :span [8 9] :text "F"}}}}}
+    `
+    F.
+    f => F.
+     ---
+     `))
 
 (deftest eval-alias-declaration
-  (is-head [@{"f" {:kind :domain
-                   :type {:thunk "F"}}}
-            @{"F" true}]
-           [{:kind :decl-alias
-             :name "f"
-             :alias "F"}]))
+  (is-eval
+    {"F" {:kind :domain :type {:concrete "F"}}
+     "f" {:kind :domain :type {:thunk {:kind :sym :span [8 9] :text "F"}}}}
+    `
+    F.
+    f <= F.
+     ---
+     `))
 
 (deftest eval-alias-declaration-container
-  (is-head [@{"f" {:kind :domain
-                   :type {:list-of {:thunk "F"}}}}
-            @{"F" true}]
-           [{:kind :decl-alias
-             :name "f"
-             :alias {:container :square
-                     :inner ["F"]}}]))
+  (is-eval
+    {"F" {:kind :domain :type {:concrete "F"}}
+     "f" {:kind :domain :type {:thunk {:kind :sym :span [9 10] :text "F"}}}}
+    `
+    F.
+    f <= [F].
+     ---
+     `))
 
 (deftest eval-body
-  (is-body [{} {"g" true}] ["g"]))
+  (is-eval
+    {"g" {:kind :domain
+          :type {:args {:tuple-of ()} :yields @{:concrete "Void" :kind :domain}}}}
+    `g.
+     ---
+     g.
+     `))
 
 (deftest eval-qualification
-  (is-body [@{"x" {:kind :bound
-                   :type {:thunk "Nat"}}}
-            @{"Nat" true
-              "x" true}]
-           [{:bindings
-             [{:expr "Nat"
-               :kind :binding
-               :name "x"}
-              {:kind :binary-operation
-               :left "x"
-               :operator ">"
-               :right 1}]
-             :expr {:kind :binary-operation
-                    :left "x"
-                    :operator "<"
-                    :right 10}
-             :quantifier :some
-             :kind :quantification}]))
+  (is-eval
+    {"f" {:kind :domain
+          :type {:args {:tuple-of ()} :yields @{:concrete "Void" :kind :domain}}}
+     "x" {:kind :bound
+          :type {:thunk {:kind :sym :span [16 19] :text "Nat"}}}}
+
+    `f.
+     ---
+     some x:Nat, x > 1 => x < 10.
+     `))
 
 (deftest eval-quantification-with-container
-  (is-body
-    [@{"a" {:kind :bound
-            :type {:thunk "A"}}
-       "b" {:kind :bound
-            :type {:thunk "A"}}}
-     @{"A" true "a" true "b" true}]
-    [{:bindings
-      [{:expr "A"
-        :kind :binding
-        :name {:container :parens
-               :inner ["a" "b"]}}]
-      :expr {:kind :binary-operation
-             :left "a"
-             :operator "+"
-             :right "b"}
-      :kind :quantification
-      :quantifier :some}]))
+  (is-eval
+    {"A" {:kind :domain :type {:concrete "A"}}
+     "a" {:kind :bound :type {:thunk {:kind :sym :span [21 22] :text "A"}}}
+     "b" {:kind :bound :type {:thunk {:kind :sym :span [21 22] :text "A"}}}}
+    `A.
+     ---
+     some (a, b):A => a + b.
+     `))
 
 (deftest eval-chapter
-  (is-chapter [@{"X" :inject
-                 "f" {:kind :procedure
-                      :type {:args @[{:thunk "X"}]
-                             :yields @{:concrete "Void"
-                                       :kind :domain}}}
-                 "x" {:kind :bound
-                      :type {:thunk "X"}}}
-               @{"y" true}]
-              {:kind :chapter
-               :head [{:kind :declaration
-                       :name "f"
-                       :bindings [{:kind :binding
-                                   :expr "X"
-                                   :name "x"}]}]
-               :body ["y"]}
-              @{"X" :inject}))
+  (is-eval
+    {"X" {:kind :domain :type {:concrete "X"}}
+     "f" {:kind :procedure
+          :type {:args {:tuple-of @[{:thunk {:kind :sym :span [10 11] :text "X"}}]}
+                 :yields @{:concrete "Void" :kind :domain}}}
+     "x" {:kind :bound :type {:thunk {:kind :sym :span [10 11] :text "X"}}}
+     "y" {:kind :domain :type {:args {:tuple-of ()} :yields @{:concrete "Void" :kind :domain}}}}
+    `
+    X.
+    y.
+    f x:X.
+     ---
+     y.
+     `))
 
 (deftest eval-fib
-  (is-eval (merge stdlib/base-env
-                  {"fib" {:kind :procedure
-                          :type {:args [{:thunk "Nat"}]
-                                 :yields {:thunk "Nat"}}}
-                   "x" {:kind :bound
-                        :type {:thunk "Nat"}}})
-           {:chapters [{:body
-                        [{:kind :binary-operation
-                          :operator "="
-                          :left {:f "fib" :kind :application :x "x"}
-                          :right {:kind :case
-                                  :mapping [{:kind :map
-                                             :left {:kind :binary-operation
-                                                    :operator ">"
-                                                    :left "x"
-                                                    :right 2}
-                                             :right {:kind :binary-operation
-                                                     :operator "+"
-                                                     :left {:kind :application
-                                                            :f "fib"
-                                                            :x {:container :parens
-                                                                :inner [{:kind :binary-operation
-                                                                         :operator "-"
-                                                                         :left "x"
-                                                                         :right 1}]}}
-                                                     :right {:kind :application
-                                                             :f "fib"
-                                                             :x {:container :parens
-                                                                 :inner [{:kind :binary-operation
-                                                                          :operator "-"
-                                                                          :left "x"
-                                                                          :right 2}]}}}}
-                                            {:kind :map
-                                             :left {:kind :binary-operation
-                                                    :operator "="
-                                                    :left "x"
-                                                    :right 1}
-                                             :right 1}
-                                            {:kind :map
-                                             :left {:kind :binary-operation
-                                                    :operator "="
-                                                    :left "x"
-                                                    :right 2}
-                                             :right 1}]}}]
-                        :head [{:bindings
-                                [{:expr "Nat"
-                                  :kind :binding
-                                  :name "x"}]
-                                :kind :declaration
-                                :name "fib"
-                                :yields "Nat"}]
-                        :kind :chapter}]}))
+  (is-eval
+    {"fib" {:kind :procedure
+            :type {:args {:tuple-of @[{:thunk {:kind :sym :span [8 11] :text "Nat"}}]}
+                   :yields {:thunk {:kind :sym :span [15 18] :text "Nat"}}}}
+     "x" {:kind :bound
+          :type {:thunk {:kind :sym :span [8 11] :text "Nat"}}}}
+
+    (slurp "priv/fib.pant")))
 
 (run-tests!)
