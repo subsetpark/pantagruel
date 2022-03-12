@@ -80,13 +80,13 @@
            (head-line :. head) ,|(tuple $0 ;$2))
 
      (head-line
-       (sym bindings-exprs)
+       (sym domain-bindings-exprs)
        ,|{:kind :declaration
           :name $0
           :bindings $1
           :span (span $0 $1)}
 
-       (sym bindings-exprs :yields domain)
+       (sym domain-bindings-exprs :yields domain)
        ,|{:kind :declaration
           :name $0
           :bindings $1
@@ -134,7 +134,24 @@
 
      ### Special forms
 
-     #### Binding forms: x:X, y<-z
+     #### Binding forms: x:X, y<:z
+
+     ##### Binding forms that admit only domains.
+
+     (domain-bindings-exprs () ,new-seq
+                            (domain-binding-expr) ,new-seq
+                            (domain-binding-expr :comma domain-bindings-exprs) ,cons-seq)
+
+     (domain-binding-expr (domain-binding) ,identity
+                          (expr) ,identity)
+
+     (domain-binding
+       (sym-or-tuple-of-syms :: domain) ,|{:kind :binding
+                                           :binding-type ::
+                                           :name $0
+                                           :expr $2})
+
+     ##### Binding forms that admit domains or iteration over values.
 
      (bindings-exprs () ,new-seq
                      (binding-expr) ,new-seq
@@ -144,21 +161,11 @@
                    (expr) ,identity)
 
      (binding
-       (sym-or-tuple-of-syms :: domain) ,|{:kind :binding
-                                           :binding-type ::
-                                           :name $0
-                                           :expr $2}
+       (domain-binding) ,identity
        (sym-or-tuple-of-syms :from expr) ,|{:kind :binding
                                             :binding-type :from
                                             :name $0
                                             :expr $2})
-
-     (sym-or-tuple-of-syms
-       (:lparen syms :rparen) ,(wrap :parens)
-       (sym) ,identity)
-
-     (syms (sym) ,new-seq
-           (sym :comma syms) ,cons-seq)
 
      #### Mapping forms: case, update
 
@@ -273,6 +280,13 @@
        (:+) ,identity
        (:arithmetic-operator1) ,identity
        (:arithmetic-operator2) ,identity)
+
+     (sym-or-tuple-of-syms
+       (:lparen syms :rparen) ,(wrap :parens)
+       (sym) ,identity)
+
+     (syms (sym) ,new-seq
+           (sym :comma syms) ,cons-seq)
 
      (string (:string) ,identity)
      (sym (:sym) ,identity)
