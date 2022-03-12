@@ -105,12 +105,12 @@ Any procedure can also yield some domain, as above.
 
 The other type of statement available in a chapter head is a **domain alias**.
 This is a simple statement of equivalence between a new domain and some
-existing one. It uses the **reversed yields** symbol `<=`.
+existing one. It uses the **equals** symbol `=`.
 
 Here's an example domain alias:
 
 ```pantagruel
-Status <= {"ok", "error"}.
+Status = {"ok", "error"}.
 ```
 
 Introduces a domain `Status` which is equivalent to the set of values
@@ -119,7 +119,7 @@ Introduces a domain `Status` which is equivalent to the set of values
 Here's an example chapter head:
 
 ```pantagruel
-Score <= Nat.
+Score = Nat.
 halve score: Score, score mod 2 = 0 => Score.
 ```
 
@@ -360,7 +360,7 @@ f x:Y, x > z => a
 When a domain alias is introduced, the name of the alias is bound into the
 environment.
 ```
-D <= X
+D = X
 *
 ```
 

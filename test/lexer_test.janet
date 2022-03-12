@@ -94,7 +94,7 @@
       a => b,
       y => z.
     `
-    [{:kind :sym :text "fib"} {:kind :sym :text "x"} {:kind :boolean-operator :text "="}
+    [{:kind :sym :text "fib"} {:kind :sym :text "x"} {:kind := :text "="}
      {:kind :case :text "case"} {:kind :sym :text "x"} {:kind :... :text "..."}
      {:kind :sym :text "a"} {:kind :yields :text "=>"}
      {:kind :sym :text "b"} {:kind :comma :text ","}
@@ -116,7 +116,7 @@
      {:kind :yields :text "=>"}
      {:kind :sym :text "Nat"} {:kind :. :text "."}
      {:kind :line :text "---"}
-     {:kind :sym :text "fib"} {:kind :sym :text "x"} {:kind :boolean-operator :text "="}
+     {:kind :sym :text "fib"} {:kind :sym :text "x"} {:kind := :text "="}
      {:kind :case :text "case"} {:kind :... :text "..."}
      {:kind :sym :text "x"} {:kind :boolean-operator :text ">"}
      {:kind :num :text "2"} {:kind :yields :text "=>"}
@@ -128,9 +128,9 @@
      {:kind :sym :text "fib"} {:kind :lparen :text "("}
      {:kind :sym :text "x"} {:kind :arithmetic-operator2 :text "-"} {:kind :num :text "2"}
      {:kind :rparen :text ")"} {:kind :comma :text ","}
-     {:kind :sym :text "x"} {:kind :boolean-operator :text "="} {:kind :num :text "1"}
+     {:kind :sym :text "x"} {:kind := :text "="} {:kind :num :text "1"}
      {:kind :yields :text "=>"} {:kind :num :text "1"} {:kind :comma :text ","}
-     {:kind :sym :text "x"} {:kind :boolean-operator :text "="} {:kind :num :text "2"}
+     {:kind :sym :text "x"} {:kind := :text "="} {:kind :num :text "2"}
      {:kind :yields :text "=>"} {:kind :num :text "1"} {:kind :. :text "."}]))
 
 (deftest comment-test

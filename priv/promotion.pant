@@ -1,4 +1,4 @@
-Status <= {"ok", "error"}.
+Status = {"ok", "error"}.
 inc n: Nat => Status.
 ---
 inc 0 = "ok".

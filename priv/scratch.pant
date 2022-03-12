@@ -12,7 +12,7 @@ some (m, n, z) : x => y[x][m,n,z].
 D.
 d.
 Z.
-Status <= {"ok", "stop"}.
+Status = {"ok", "stop"}.
 rand => Nat.
 andr x:Nat, y : Real, x > y => Bool.
 ---

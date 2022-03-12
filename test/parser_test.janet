@@ -21,13 +21,15 @@
 (def bind {:kind ::})
 (def --- {:kind :line})
 (def => {:kind :yields})
-(def <= {:kind :reverse-yields})
-(def = {:kind :boolean-operator :text "="})
+(def = {:kind := :text "="})
 (def + {:kind :arithmetic-operator2 :text "+"})
 (def lp {:kind :lparen})
 (def rp {:kind :rparen})
 (def card {:kind :unary-operator :text "#"})
+(def comma {:kind :comma :text ","})
+
 (def head-placeholder [{:kind :sym :text "f"} . ---])
+
 (defn sym [text] {:kind :sym :text text})
 (defn num [text] {:kind :num :text (string text)})
 
@@ -70,6 +72,28 @@
                                                                :name (sym "x")}]}}]
                                      :body []}]}]))
 
+(deftest head-with-binding-expr-equals
+  (is-parse
+    [(sym "X") = (sym "Nat") .
+     (sym "f") (sym "x") bind (sym "X") comma (sym "x") = (num 1) .
+     ---]
+    [:ok {:chapters [{:body ()
+                      :head [{:alias {:kind :sym :text "Nat"}
+                              :kind :decl-alias
+                              :name {:kind :sym :text "X"}}
+                             {:bindings {:kind :seq
+                                         :seq [{:expr {:kind :sym :text "X"}
+                                                :kind :binding
+                                                :name {:kind :sym :text "x"}}
+                                               {:kind :binary-operation
+                                                :left {:kind :sym :text "x"}
+                                                :operator "="
+                                                :right {:kind :num :text 1}}]}
+                              :kind :declaration
+                              :name {:kind :sym :text "f"}}]
+                      :kind :chapter}]
+          :directives ()}]))
+
 (deftest head-with-yields
   (is-parse
     [(sym "f") => (sym "F") .
@@ -83,7 +107,7 @@
 
 (deftest head-with-reverse-yields
   (is-parse
-    [(sym "f") <= (sym "F") .
+    [(sym "f") = (sym "F") .
      ---]
     [:ok {:directives [] :chapters [{:kind :chapter
                                      :head [{:kind :decl-alias
@@ -93,7 +117,7 @@
 
 (deftest head-with-reverse-yields-container
   (is-parse
-    [(sym "f") <= {:kind :lsquare} (sym "F") {:kind :rsquare} .
+    [(sym "f") = {:kind :lsquare} (sym "F") {:kind :rsquare} .
      ---]
     [:ok {:directives [] :chapters [{:kind :chapter
                                      :head [{:kind :decl-alias
@@ -306,9 +330,9 @@
      lp (sym "x") {:kind :arithmetic-operator2 :text "-"} (num 1) rp
      + (sym "fib")
      lp (sym "x") {:kind :arithmetic-operator2 :text "-"} (num 2) rp
-     {:kind :comma :text ","}
+     comma
      (sym "x") = (num 1)
-     => (num 1) {:kind :comma :text ","}
+     => (num 1) comma
      (sym "x") = (num 2)
      => (num 1) .]
     [:ok {:directives []

@@ -28,7 +28,7 @@
     [:. "."]
     [:: ":"]
     [:yields "=>"]
-    [:reverse-yields "<="]
+    [:= "="]
     [:comma ","]
     [:update "update"]
     [:case "case"]
@@ -42,7 +42,7 @@
     [:lbrace "{"]
     [:rbrace "}"]
     [:logical-operator (+ "<->" "->")]
-    [:boolean-operator (+ "=" ">" "<" "=<" ">=" "!="
+    [:boolean-operator (+ ">" "<" "=<" ">=" "!="
                           # TODO: This is a total hack!
                           (* "in" (not :w))
                           (* "or" (not :w))

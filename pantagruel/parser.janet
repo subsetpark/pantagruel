@@ -35,6 +35,7 @@
   ~(yacc
      (%left :logical-operator)
      (%left :boolean-operator)
+     (%left :=)
      (%left :arithmetic-operator2)
      (%left :arithmetic-operator1)
      (%left :funcapp)
@@ -78,7 +79,7 @@
           :yields $3
           :span (span $0 $3)}
 
-       (sym :reverse-yields expr)
+       (sym := expr)
        ,|{:kind :decl-alias
           :name $0
           :alias $2
@@ -157,6 +158,11 @@
                                         :right $2
                                         :operator ($1 :text)
                                         :span (span $0 $2)}
+       (expr := expr) ,|{:kind :binary-operation
+                         :left $0
+                         :right $2
+                         :operator ($1 :text)
+                         :span (span $0 $2)}
        (expr :arithmetic-operator1 expr) ,|{:kind :binary-operation
                                             :left $0
                                             :right $2
@@ -192,6 +198,7 @@
      (binary-operator
        (:logical-operator) ,identity
        (:boolean-operator) ,identity
+       (:=) ,identity
        (:arithmetic-operator1) ,identity
        (:arithmetic-operator2) ,identity)
 
@@ -247,4 +254,6 @@
   (-> (yacc/parse parser-tables tokens)
       (match
         [:ok tree] tree
-        [:syntax-error err] (errorf "Syntax error: %q" (err-msg err src)))))
+        [:syntax-error err] (do
+                              (print "Syntax error: %q" (err-msg err src))
+                              (os/exit 1)))))

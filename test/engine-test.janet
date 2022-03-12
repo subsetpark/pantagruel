@@ -52,20 +52,20 @@
 (deftest eval-alias-declaration
   (is-eval
     {"F" {:kind :domain :type {:concrete "F"}}
-     "f" {:kind :domain :type {:thunk {:kind :sym :span [8 9] :text "F"}}}}
+     "f" {:kind :domain :type {:thunk {:kind :sym :span [7 8] :text "F"}}}}
     `
     F.
-    f <= F.
+    f = F.
      ---
      `))
 
 (deftest eval-alias-declaration-container
   (is-eval
     {"F" {:kind :domain :type {:concrete "F"}}
-     "f" {:kind :domain :type {:thunk {:kind :sym :span [9 10] :text "F"}}}}
+     "f" {:kind :domain :type {:thunk {:kind :sym :span [8 9] :text "F"}}}}
     `
     F.
-    f <= [F].
+    f = [F].
      ---
      `))
 
