@@ -2,6 +2,8 @@
 
 (import yacc)
 
+(def SyntaxError @{})
+
 (defn span
   [left right]
   (cond
@@ -33,6 +35,7 @@
 
 (def grammar
   ~(yacc
+
      (%left :logical-operator)
      (%left :boolean-operator)
      (%left :=)
@@ -64,6 +67,7 @@
      (chapters () ,tuple
                (chapter) ,tuple
                (chapter :where chapters) ,|(tuple $0 ;$2))
+
      (chapter (head body) ,|{:kind :chapter
                              :head $0
                              :body $1
@@ -160,9 +164,10 @@
 
      (mapping-word (:update) ,identity
                    (:case) ,identity)
-     (mapping-form (:... mapping-clauses) ,|(struct ;(kvs $1) :span (span $0 $1)))
+
      (mapping-clauses (mapping-clause) ,new-seq
                       (mapping-clause :comma mapping-clauses) ,cons-seq)
+
      (mapping-clause (expr :yields expr) ,|{:kind :map
                                             :left $0
                                             :right $2
@@ -177,10 +182,10 @@
      ### Expressions
 
      (expr
-       (mapping-word maybe-expr mapping-form) ,|{:kind ($0 :kind)
-                                                 :case $1
-                                                 :mapping $2
-                                                 :span (span $0 $2)}
+       (mapping-word maybe-expr :... mapping-clauses) ,|{:kind ($0 :kind)
+                                                         :case $1
+                                                         :mapping $3
+                                                         :span (span $0 $3)}
 
        (expr :logical-operator expr) ,|{:kind :binary-operation
                                         :left $0
@@ -275,52 +280,15 @@
 
 (def parser-tables (yacc/compile grammar))
 
-(defn- in-bounds
-  [n mx]
-  (if (< n 0)
-    (max n (- mx))
-    (min n mx)))
-
-(defn- err-msg
-  [form src]
-  (default form {})
-  (let [from (if-let [from (get-in form [:span 0])]
-               (- from 10)
-               -20)
-        to (if-let [to (get-in form [:span 1])]
-             (+ to 10)
-             -1)
-        prefix (if (or (= from (- (length src))) (= from 0)) "" "…")
-        suffix (if (or (= to (length src)) (= to -1)) "" "…")]
-
-    (if (os/getenv "PANT_DEBUG") (print (dyn :yydebug)))
-
-    (errorf
-      `Syntax Error:
-
-      Token type %q
-      Text %q
-
-      in
-
-      %s%s%s
-      `
-      (form :kind)
-      (form :text)
-      prefix
-      (string/slice src (in-bounds from (length src)) (in-bounds to (length src)))
-      suffix)))
-
 (defn parse
   ```
   Generate an AST from a sequence of tokens.
   ```
-  [tokens src]
+  [tokens]
   (if (os/getenv "PANT_DEBUG") (setdyn :yydebug @""))
 
-  (-> (yacc/parse parser-tables tokens)
+  (-> parser-tables
+      (yacc/parse tokens)
       (match
         [:ok tree] tree
-        [:syntax-error err] (do
-                              (print "Syntax error: %q" (err-msg err src))
-                              (os/exit 1)))))
+        [:syntax-error form] (error (table/setproto @{:form form} SyntaxError)))))

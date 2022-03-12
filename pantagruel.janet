@@ -21,6 +21,43 @@
               :help "Show version and exit"}
    :default {:kind :accumulate}])
 
+(defn handle-syntax-error
+  [file {:form form} src]
+
+  (defn- in-bounds
+    [n mx]
+    (if (< n 0)
+      (max n (- mx))
+      (min n mx)))
+
+  (default form {})
+  (let [from (if-let [from (get-in form [:span 0])]
+               (- from 10)
+               -20)
+        to (if-let [to (get-in form [:span 1])]
+             (+ to 10)
+             -1)
+        prefix (if (or (= from (- (length src))) (= from 0)) "" "…")
+        suffix (if (or (= to (length src)) (= to -1)) "" "…")]
+
+    (if (os/getenv "PANT_DEBUG") (print (dyn :yydebug)))
+
+    (errorf
+      `Syntax Error:
+
+      Token type %q
+      Text %q
+
+      in
+
+      %s%s%s
+      `
+      (form :kind)
+      (form :text)
+      prefix
+      (string/slice src (in-bounds from (length src)) (in-bounds to (length src)))
+      suffix)))
+
 (defn handle-evaluation-error
   [file err]
   (printf "In file: %s" file)
@@ -39,7 +76,10 @@
 (defn handle-src
   [file src]
   (let [lexed (lexer/lex src)
-        tree (parser/parse lexed src)
+        tree (try (parser/parse lexed)
+               ([err fib] (if (table? err)
+                            (handle-syntax-error file err src)
+                            (propagate err fib))))
         env (try (engine/eval tree)
               ([err fib] (if (table? err)
                            (handle-evaluation-error file err)
