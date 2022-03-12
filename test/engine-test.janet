@@ -14,9 +14,9 @@
 (defn is-eval
   [expected-env src]
   (let [[success? res] (protect (engine/eval (parse src)))]
-    (is success? (string/format "eval failure:\n\n%s\n\nFails with:\n%q"
+    (is success? (string/format "eval failure:\n\n%s\n\nFails with:\n%s"
                                 (string src)
-                                res))
+                                (if (table? res) (string/format "%q" res) (string res))))
     (if success?
       (is (== expected-env (table/to-struct res))))))
 

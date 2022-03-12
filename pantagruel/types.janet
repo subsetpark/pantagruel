@@ -131,6 +131,25 @@
       gcd
       (throw :gcd {:left left :right right}))))
 
+
+(defn- inner-type
+  ```
+  Resolve the type of a membership operation, ie, get the type of a container's
+  elements.
+  ```
+  [t]
+  (match t
+    {:set-of inner-t}
+    inner-t
+
+    {:list-of inner-t}
+    inner-t
+
+    (@ String)
+    Char
+
+    (throw :container {:t t})))
+
 (defn- collapse-application-args
   ```
   Procedure application is represented in the syntax tree as a series of
@@ -223,6 +242,10 @@
      :type t}
     (fully-resolve-type t env)
 
+    {:kind :member
+     :type t}
+    (inner-type (fully-resolve-type t env))
+
     {:value _
      :type t}
     (fully-resolve-type t env)
@@ -294,25 +317,6 @@
 
     (throw :application {:f f :x x})))
 
-
-(defn- inner-type
-  ```
-  Resolve the type of a membership operation, ie, get the type of a container's
-  elements.
-  ```
-  [t]
-  (match t
-    {:set-of inner-t}
-    inner-t
-
-    {:list-of inner-t}
-    inner-t
-
-    (@ String)
-    Char
-
-    (throw :container {:t t})))
-
 (defn number-type
   ```
   Given a number, resolve the narrowest element of the number tower it is a
@@ -367,6 +371,7 @@
        :expr expr}
       (do
         (each binding-or-guard bindings
+          # Type-check any guard expressions for side-effects.
           (unless (= (binding-or-guard :kind) :binding)
             (resolve-type binding-or-guard env)))
         (resolve-type expr env))
@@ -437,18 +442,15 @@
           # TODO: Handle updates on other data types
           (errorf "Couldn't type update of type: %q" test-type)))
 
-      {:kind :string}
-      String
-
-      {:container container
+      {:container :parens
        :inner inner}
       (let [inner-ts (map |(resolve-type $ env) inner)]
         (if (> (length inner-ts) 1)
           {:tuple-of inner-ts}
-          (case container
-            :parens (inner-ts 0)
-            :square {:list-of (inner-ts 0)}
-            :braces {:set-of (inner-ts 0)})))
+          (inner-ts 0)))
+
+      {:kind :string}
+      String
 
       {:kind :num
        :text n}

@@ -70,19 +70,21 @@
       (type-of-form (wrapped 0))))
 
   (match form
-    {:container :square
+    {:container :list-of
      :inner inner}
     {:list-of (type-of-form inner)}
 
-    # Treat comma-separated values inside of braces as a sum of the types of
-    # the values.
-    ({:container :braces
-      :inner inner} (tuple? inner) (> (length inner) 1))
-    (reduce2 types/sum-type (map type-of-form inner))
-
-    {:container :braces
+    {:container :set-of
      :inner inner}
     {:set-of (type-of-form inner)}
+
+    {:kind :domain-sum
+     :inner inner}
+    (reduce2 types/sum-type (map type-of-form inner))
+
+    {:kind :domain-set
+     :inner {:seq inner}}
+    (reduce2 types/sum-type (map type-of-form inner))
 
     {:container :parens
      :inner inner}
@@ -109,11 +111,6 @@
      :bindings {:seq bindings}}
     {:args {:tuple-of (map type-of-form (distribute-bindings-types bindings))}
      :yields stdlib/Void}
-
-    {:operator "+"
-     :left left
-     :right right}
-    (types/sum-type (type-of-form right) (type-of-form right))
 
     {:kind :string}
     stdlib/String
@@ -163,6 +160,13 @@
     [name expr]
     (introduce name {:kind :bound
                      :type (type-of-form expr)}))
+  (defn bind-member
+    ```
+    Bind a symbol to the inner type of `expr`.
+    ```
+    [name expr]
+    (introduce name {:kind :member
+                     :type (type-of-form expr)}))
   (defn alias
     [name expr]
     (introduce name {:kind :domain
@@ -194,14 +198,17 @@
         (introduce-bindings-and-references binding env symbol-references)))
 
     {:kind :binding
+     :binding-type binding-type
      :name name
      :expr expr}
-    (do
+    (let [f (case binding-type
+              :: bind
+              :from bind-member)]
       (match name
         {:container _ :inner {:seq names}}
-        (each name names (bind name expr))
+        (each name names (f name expr))
 
-        (bind name expr))
+        (f name expr))
       (introduce-bindings-and-references expr env symbol-references))
 
     {:kind :case
@@ -256,6 +263,16 @@
 
     {:container _ :inner expr}
     (introduce-bindings-and-references expr env symbol-references)
+
+    {:kind :domain-sum
+     :inner inner}
+    (each domain inner
+      (introduce-bindings-and-references domain env symbol-references))
+
+    # Domains built out of sets of literal values, hence, guaranteed not to
+    # contain symbol references or bindings
+    {:kind :domain-set}
+    :ok
 
     {:kind :sym
      :text sym}

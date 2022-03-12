@@ -40,8 +40,10 @@
       [:... "..."]
       [:. "."]
       [:: ":"]
+      [:from "<-"]
       [:yields "=>"]
       [:= "="]
+      [:+ "+"]
       [:comma ","]
       [:update "update"]
       [:case "case"]
@@ -63,7 +65,7 @@
                             (* "xor" (not :w)))]
       [:arithmetic-operator1 (+ "*" "/" "^"
                                 (* "mod" (not :w)))]
-      [:arithmetic-operator2 (+ "+" "-" "|" "&")]
+      [:arithmetic-operator2 (+ "-" "|" "&")]
       [:unary-operator (+ "~" "#")]
       [:num (cmt (<- (+
                        (* ,digits-peg "." ,digits-peg)

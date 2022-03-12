@@ -13,7 +13,7 @@ Body = [Comment + Expression].
 (Comment, Declaration, Alias, Expression) = [String].
 ---
 
-eval p = all sect : p => is_all_bound? sect.
+eval p = all sect <- p => is_all_bound? sect.
 
 ;
 
@@ -26,9 +26,9 @@ is_all_bound? sect: Section => Bool.
 // body.
 
 is_all_bound? sect =
-    (all h : (head sect) => all sym : h => is_bound? sym)
+    (all h <- (head sect) => all sym <- h => is_bound? sym)
     and
-    (all b : (body (p ((p sect) - 1))) => all sym : b => is_bound? sym).
+    (all b <- (body (p ((p sect) - 1))) => all sym <- b => is_bound? sym).
 
 ;
 

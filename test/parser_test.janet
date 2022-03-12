@@ -68,6 +68,7 @@
                                              :name (sym "f")
                                              :bindings {:kind :seq
                                                         :seq [{:kind :binding
+                                                               :binding-type ::
                                                                :expr (sym "X")
                                                                :name (sym "x")}]}}]
                                      :body []}]}]))
@@ -84,6 +85,7 @@
                              {:bindings {:kind :seq
                                          :seq [{:expr {:kind :sym :text "X"}
                                                 :kind :binding
+                                                :binding-type ::
                                                 :name {:kind :sym :text "x"}}
                                                {:kind :binary-operation
                                                 :left {:kind :sym :text "x"}
@@ -134,8 +136,8 @@
     [:ok {:directives [] :chapters [{:kind :chapter
                                      :head [{:kind :decl-alias
                                              :name (sym "f")
-                                             :alias {:container :square
-                                                     :inner [(sym "F")]}}]
+                                             :alias {:container :list-of
+                                                     :inner (sym "F")}}]
                                      :body []}]}]))
 
 (deftest multiple-chapters
@@ -174,6 +176,7 @@
                                              {:kind :seq
                                               :seq [{:expr (sym "Nat")
                                                      :kind :binding
+                                                     :binding-type ::
                                                      :name (sym "x")}
                                                     {:kind :binary-operation
                                                      :left (sym "x")
@@ -208,6 +211,7 @@
                                       {:kind :seq
                                        :seq [{:expr (sym "A")
                                               :kind :binding
+                                              :binding-type ::
                                               :name {:container :parens
                                                      :inner {:kind :seq
                                                              :seq [(sym "a") (sym "b")]}}}]}
@@ -391,6 +395,7 @@
                               {:kind :seq
                                :seq [{:expr (sym "Nat")
                                       :kind :binding
+                                      :binding-type ::
                                       :name (sym "x")}]}
                               :kind :declaration
                               :name (sym "fib")

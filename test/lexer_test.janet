@@ -86,7 +86,7 @@
            {:kind :: :text ":"}
            {:kind :sym :text "A"}
            {:kind :yields :text "=>"}
-           {:kind :sym :text "a"} {:kind :arithmetic-operator2 :text "+"} {:kind :sym :text "b"}]))
+           {:kind :sym :text "a"} {:kind :+ :text "+"} {:kind :sym :text "b"}]))
 
 (deftest mapping-form
   (is-lex
@@ -125,7 +125,7 @@
      {:kind :lparen :text "("}
      {:kind :sym :text "x"} {:kind :arithmetic-operator2 :text "-"} {:kind :num :text 1}
      {:kind :rparen :text ")"}
-     {:kind :arithmetic-operator2 :text "+"}
+     {:kind :+ :text "+"}
      {:kind :sym :text "fib"} {:kind :lparen :text "("}
      {:kind :sym :text "x"} {:kind :arithmetic-operator2 :text "-"} {:kind :num :text 2}
      {:kind :rparen :text ")"} {:kind :comma :text ","}
