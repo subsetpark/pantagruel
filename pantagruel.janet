@@ -22,13 +22,29 @@
    :default {:kind :accumulate}])
 
 (defn handle-evaluation-error
-  [err]
+  [file err]
+  (printf "In file: %s" file)
   (printf "Unglossed symbols%s:\n\n%s"
           (case (err :locale)
             :body ""
             :chapter " in chapter head")
           (string/join (keys (err :symbols)) ", "))
   (os/exit 1))
+
+(defn handle-version
+  []
+  (print (string "Pantagruel " version))
+  (os/exit))
+
+(defn handle-src
+  [file src]
+  (let [lexed (lexer/lex src)
+        tree (parser/parse lexed src)
+        env (try (engine/eval tree)
+              ([err fib] (if (table? err)
+                           (handle-evaluation-error file err)
+                           (propagate err fib))))]
+    (type-checking/type-check tree env src)))
 
 (defn main
   ```
@@ -40,16 +56,8 @@
   ```
   [& _args]
   (let [args (argparse ;params)]
-    (when (args "version")
-      (print (string "Pantagruel " version))
-      (os/exit))
-    (let [src (match (args :default)
-                (@ 'nil) (file/read stdin :all)
-                [file] (slurp file))
-          lexed (lexer/lex src)
-          tree (parser/parse lexed src)
-          env (try (engine/eval tree)
-                ([err fib] (if (table? err)
-                             (handle-evaluation-error err)
-                             (propagate err fib))))]
-      (type-checking/type-check tree env src))))
+    (when (args "version") (handle-version))
+    (let [[file src] (match (args :default)
+                       (@ 'nil) ["<stdin>" (file/read stdin :all)]
+                       [file] [file (slurp file)])]
+      (handle-src file src))))

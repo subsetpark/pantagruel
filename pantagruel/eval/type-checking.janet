@@ -70,9 +70,7 @@
     (var type-error false)
     (each body-expr body-exprs
       (try
-        (let [expr-t (types/resolve-type body-expr env)]
-          (when (nil? expr-t)
-            (errorf "Type was nil")))
+        (types/resolve-type body-expr env)
         ([err fib]
           (if (table? err)
             (handle-resolution-error err)
