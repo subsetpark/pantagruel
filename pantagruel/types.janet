@@ -486,6 +486,11 @@
           {:tuple-of inner-ts}
           (inner-ts 0)))
 
+      {:container :value-set
+       :inner inner}
+      (let [ts (map |(resolve-type $ env) inner)]
+        (reduce2 sum-type ts))
+
       {:kind :string}
       String
 
