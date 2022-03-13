@@ -269,14 +269,14 @@
     (each domain inner
       (introduce-bindings-and-references domain env symbol-references))
 
+    {:kind :sym
+     :text sym}
+    (put symbol-references sym true)
+
     # Domains built out of sets of literal values, hence, guaranteed not to
     # contain symbol references or bindings
     {:kind :domain-set}
     :ok
-
-    {:kind :sym
-     :text sym}
-    (put symbol-references sym true)
 
     {:kind :num} :ok
 
