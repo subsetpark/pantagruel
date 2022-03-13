@@ -20,12 +20,13 @@
     (match t
       (ts (indexed? ts)) (join ts)
       {:concrete t-name} t-name
-      {:set-of t} (string/format "{%s}" (render-type t))
+      # Special case the empty set.
+      {:container :set :inner ()} "{}"
+      {:container :set :inner t} (string/format "{%s}" (render-type t))
       {:list-of t} (string/format "[%s]" (render-type t))
       {:tuple-of ts} (join ts)
-      {:sum ts} (-> (map render-type ts) (string/join " + "))
+      {:kind :sum :inner ts} (-> (map render-type ts) (string/join " + "))
       {:args args :yields yields} (string/format "(%s => %s)" (render-type args) (render-type yields))
-      :empty "{}"
       t (string/format "%q" t)))
 
   (printf (string "Type error: " str) ;(map render-type args)))

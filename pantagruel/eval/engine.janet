@@ -76,15 +76,21 @@
 
     {:container :set-of
      :inner inner}
-    {:set-of (type-of-form inner)}
+    {:container :set
+     :inner (type-of-form inner)}
 
     {:kind :domain-sum
      :inner inner}
-    (reduce2 types/sum-type (map type-of-form inner))
+    (or
+      (reduce2 types/sum-type (map type-of-form inner))
+      {:container :set
+       :inner []})
 
     {:kind :domain-set
      :inner {:seq inner}}
-    (or (reduce2 types/sum-type (map type-of-form inner)) :empty)
+    (or (reduce2 types/sum-type (map type-of-form inner))
+        {:container :set
+         :inner []})
 
     {:container :parens
      :inner inner}

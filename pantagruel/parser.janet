@@ -233,6 +233,8 @@
 
        # Parens as value: tuple of values.
        (:lparen exprs :rparen) ,(wrap :parens)
+       # Square as value: comprehension.
+       (:lsquare expr :rsquare) ,(wrap :value-list)
        # Curly braces as value: set of values.
        (:lbrace exprs :rbrace) ,(wrap :value-set)
 

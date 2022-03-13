@@ -94,7 +94,10 @@
               ([_ rt] (tuple? rt) (one? (length rt)))
               (gcd-type left (rt 0))
 
-              [{:sum ts} {:sum ts2}]
+              [{:kind :sum
+                :inner ts}
+               {:kind :sum
+                :inner ts2}]
               (let [gcds @{}]
                 (each t ts
                   (each t2 ts2
@@ -103,9 +106,10 @@
                         (put gcds success-type true))
                       ([err] :ok))))
                 (when (not (empty? gcds))
-                  {:sum (keys gcds)}))
+                  {:kind :sum
+                   :inner (keys gcds)}))
 
-              [{:sum ts} t2]
+              [{:kind :sum :inner ts} t2]
               (do
                 (var gcd nil)
                 (each t ts
@@ -116,7 +120,7 @@
                     ([err] :ok)))
                 gcd)
 
-              [t {:sum t2s}]
+              [t {:kind :sum :inner t2s}]
               (do
                 (var gcd nil)
                 (each t2 t2s
@@ -127,17 +131,27 @@
                     ([err] :ok)))
                 gcd)
 
-              [{:list-of t} {:set-of t2}]
-              {:set-of (gcd-type t t2)}
+              [{:list-of t}
+               {:container :set
+                :inner t2}]
+              {:container :set
+               :inner (gcd-type t t2)}
 
-              [{:set-of t} {:list-of t2}]
-              {:set-of (gcd-type t t2)}
+              [{:container :set
+                :inner t}
+               {:list-of t2}]
+              {:container :set
+               :inner (gcd-type t t2)}
 
               [{:list-of t} {:list-of t2}]
               {:list-of (gcd-type t t2)}
 
-              [{:set-of t} {:set-of t2}]
-              {:set-of (gcd-type t t2)}
+              [{:container :set
+                :inner t}
+               {:container :set
+                :inner t2}]
+              {:container :set
+               :inner (gcd-type t t2)}
 
               [{:tuple-of ts} {:tuple-of ts2}]
               (when (= (length ts) (length ts2))
@@ -176,7 +190,8 @@
   ```
   [t]
   (match t
-    {:set-of inner-t}
+    {:container :set
+     :inner inner-t}
     inner-t
 
     {:list-of inner-t}
@@ -294,14 +309,20 @@
     {:list-of inner}
     {:list-of (fully-resolve-type inner env)}
 
-    {:set-of inner}
-    {:set-of (fully-resolve-type inner env)}
+    ({:container :set
+      :inner inner} (empty? inner))
+    entry
+
+    {:container :set
+     :inner inner}
+    {:container :set
+     :inner (fully-resolve-type inner env)}
 
     {:tuple-of inner}
     {:tuple-of (tuple/slice (map |(fully-resolve-type $ env) inner))}
 
-    {:sum ts}
-    {:sum (map |(fully-resolve-type $ env) ts)}
+    {:kind :sum :inner ts}
+    {:kind :sum :inner (map |(fully-resolve-type $ env) ts)}
 
     #
     # Base case: we've fully resolved any environment references.
@@ -309,12 +330,6 @@
 
     {:concrete _}
     entry
-
-    'nil
-    :empty
-
-    :empty
-    :empty
 
     (errorf "Couldn't fully resolve type:\n%q" entry)))
 
@@ -390,7 +405,8 @@
       # X + X = X.
       (and (= t1 t2) (one? (length t1))) (t1 0)
 
-      {:sum (distinct [;t1 ;t2])})))
+      {:kind :sum
+       :inner (distinct [;t1 ;t2])})))
 
 (defn resolve-type
   ```
@@ -493,7 +509,13 @@
       {:container :value-set
        :inner inner}
       (let [ts (map |(resolve-type $ env) inner)]
-        (reduce2 sum-type ts))
+        (or (reduce2 sum-type ts)
+            {:container :set
+             :inner []}))
+
+      {:container :value-list
+       :inner inner}
+      {:list-of (resolve-type inner env)}
 
       {:kind :string}
       String

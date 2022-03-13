@@ -281,8 +281,8 @@ Set and sequence notation, when applied to domains, denotes a "set of" or
 "sequence of" domain. For instance, `[String]` is the domain of sequences of
 strings.
 
-**set** or **sequence comprehensions** may be formed by wrapping a
-quantification in the appropriate container. For instance, 
+**sequence comprehensions** may be formed by wrapping a quantification in
+square brackets. For instance, 
 
 ```pantagruel
 [all x : X => x ^ 2].
@@ -304,6 +304,24 @@ fib x = case ...
     x = 1 => 1,
     x = 2 => 1.
 ```
+
+If there's an expression between `case` and `...`, it will be type-checked
+against the left-hand sides of the mapping clauses.
+
+#### Update
+
+An update expression consists of the symbol `update`, an expression, and
+mapping clauses.
+
+For instance:
+
+```
+fib' = update fib ...
+    5 => 100.
+```
+
+Represents a procedure which behaves exactly like `fib`, except when it is
+called on `5`.
 
 ## Binding
 
