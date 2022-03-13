@@ -101,7 +101,7 @@
 
     ({:kind :declaration
       :name {:text name}
-      :bindings {:seq bindings}} (= 0 (length bindings)))
+      :bindings {:seq bindings}} (empty? bindings))
     (if (= (name 0) ((string/ascii-upper name) 0))
       {:concrete name}
       {:args {:tuple-of []} :yields stdlib/Void})

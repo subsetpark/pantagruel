@@ -88,52 +88,86 @@
 
   (let [gcd (match [left right]
               # Handle any 1-tuples we've received, eg, from type summing.
-              ([wrapped-left _]
-                (tuple? wrapped-left)
-                (= 1 (length wrapped-left)))
-              (gcd-type (wrapped-left 0) right)
+              ([lt _] (tuple? lt) (one? (length lt)))
+              (gcd-type (lt 0) right)
 
-              ([_ wrapped-right]
-                (tuple? wrapped-right)
-                (= 1 (length wrapped-right)))
-              (gcd-type left (wrapped-right 0))
+              ([_ rt] (tuple? rt) (one? (length rt)))
+              (gcd-type left (rt 0))
 
-              [{:sum ts} {:sum ts}] {:sum ts}
-              # TODO: This handles identical sum types; handle the other cases.
-              [{:sum _} {:sum _}] (errorf "Couldn't unify non-identical sum types: %q %q" left right)
-              [{:sum ts} t2] (any? (map |(find-gcd $ t2) ts))
-              [t {:sum t2s}] (any? (map |(find-gcd t $) t2s))
+              [{:sum ts} {:sum ts2}]
+              (let [gcds @{}]
+                (each t ts
+                  (each t2 ts2
+                    (try
+                      (let [success-type (gcd-type t t2)]
+                        (put gcds success-type true))
+                      ([err] :ok))))
+                (when (not (empty? gcds))
+                  {:sum (keys gcds)}))
+
+              [{:sum ts} t2]
+              (do
+                (var gcd nil)
+                (each t ts
+                  (try
+                    (let [success-type (gcd-type t t2)]
+                      (set gcd success-type)
+                      (break))
+                    ([err] :ok)))
+                gcd)
+
+              [t {:sum t2s}]
+              (do
+                (var gcd nil)
+                (each t2 t2s
+                  (try
+                    (let [success-type (gcd-type t t2)]
+                      (set gcd success-type)
+                      (break))
+                    ([err] :ok)))
+                gcd)
 
               [{:list-of t} {:set-of t2}]
-              (if-let [gcd (find-gcd t t2)] {:set-of gcd})
+              {:set-of (gcd-type t t2)}
 
               [{:set-of t} {:list-of t2}]
-              (if-let [gcd (find-gcd t t2)] {:set-of gcd})
+              {:set-of (gcd-type t t2)}
 
               [{:list-of t} {:list-of t2}]
-              (if-let [gcd (find-gcd t t2)] {:list-of gcd})
+              {:list-of (gcd-type t t2)}
 
               [{:set-of t} {:set-of t2}]
-              (if-let [gcd (find-gcd t t2)] {:set-of gcd})
+              {:set-of (gcd-type t t2)}
 
               [{:tuple-of ts} {:tuple-of ts2}]
               (when (= (length ts) (length ts2))
-                (let [all-gcds (map find-gcd ts ts2)]
-                  (if (every? all-gcds)
-                    {:tuple-of all-gcds})))
+                {:tuple-of (map gcd-type ts ts2)})
 
               [{:args args-t :yields yields-t} {:args args-t2 :yields yields-t2}]
               (let [args-gcd (gcd-type args-t args-t2)
-                    yield-gcd (find-gcd yields-t yields-t2)]
-                (when yield-gcd
-                  {:args args-gcd :yields yield-gcd}))
+                    yield-gcd (gcd-type yields-t yields-t2)]
+                {:args args-gcd :yields yield-gcd})
 
               [t t2]
               (find-gcd t t2))]
     (if gcd
       gcd
-      (throw :gcd {:left left :right right}))))
+      (throw :inner-gcd {:left left :right right}))))
 
+(defn- gcd-outer
+  ```
+  Entrypoint for finding unification types. 
+
+  Unification logic is recursive, so maintain this point in order to return the
+  outer types that couldn't be unified.
+  ```
+  [left right]
+  (try
+    (gcd-type left right)
+    ([err fib]
+      (if (and (table? err) (= (err :type) :inner-gcd))
+        (throw :gcd {:left left :right right})
+        (propagate err fib)))))
 
 (defn- inner-type
   ```
@@ -226,7 +260,7 @@
     ({:kind :procedure
       :type {:args {:tuple-of args}
              :yields yields}}
-      (= 0 (length args)) (not= yields Void))
+      (empty? args) (not= yields Void))
     (fully-resolve-type yields env)
 
     # Main procedure case.
@@ -296,16 +330,16 @@
     (do
       (unless (= (length f-args) (length arg-ts))
         (throw :arg-length {:f-args f-args :args arg-ts}))
-      (if (every? (map |(gcd-type $0 $1) f-args arg-ts))
+      (if (every? (map |(gcd-outer $0 $1) f-args arg-ts))
         yields))
 
-    ([{:list-of t1} ts] (= 1 (length ts)) (= t1 (ts 0)))
+    ([{:list-of t1} ts] (one? (length ts)) (= t1 (ts 0)))
     Nat0
 
-    ([{:list-of t1} ts] (= 1 (length ts)) (is-in-hierarchy? Int (ts 0)))
+    ([{:list-of t1} ts] (one? (length ts)) (is-in-hierarchy? Int (ts 0)))
     t1
 
-    ([{:list-of t1} ts] (< 1 (length ts)))
+    ([{:list-of t1} ts] (> (length ts) 1))
     (throw :list-application-multiple-args {:xs ts})
 
     [{:list-of t1} ts]
@@ -315,7 +349,7 @@
     ([(@ String) [t1]] (index-of t1 [Char String]))
     Nat0
 
-    ([(@ String) ts] (= 1 (length ts)) (is-in-hierarchy? Int (ts 0)))
+    ([(@ String) ts] (one? (length ts)) (is-in-hierarchy? Int (ts 0)))
     Char
 
     (throw :application {:f f :x x})))
@@ -344,13 +378,13 @@
   # (X + Y) + Z = {X, Y, Z}.
   (let [t1 (or (left-t :sum) [left-t])
         t2 (or (right-t :sum) [right-t])
-        gcd (protect (gcd-type t1 t2))]
+        gcd (protect (gcd-outer t1 t2))]
     (cond
       # If the two types are unifiable, return the common denominator.
       (gcd 0) (gcd 1)
       # If both sides are equivalent, we don't need a sum. In other words,
       # X + X = X.
-      (and (= t1 t2) (= 1 (length t1))) (t1 0)
+      (and (= t1 t2) (one? (length t1))) (t1 0)
 
       {:sum (distinct [;t1 ;t2])})))
 
@@ -391,7 +425,7 @@
         :right right} (index-of compop comparison-operators))
       (let [t (resolve-type left env)
             t2 (resolve-type right env)]
-        (if (gcd-type t t2)
+        (if (gcd-outer t t2)
           Bool))
 
       {:operator "in"
@@ -399,7 +433,7 @@
        :right right}
       (let [element-t (resolve-type left env)
             inner-t (inner-type (resolve-type right env))]
-        (if (gcd-type element-t inner-t)
+        (if (gcd-outer element-t inner-t)
           Bool))
 
       {:operator "#"
@@ -411,7 +445,7 @@
         :left left
         :right right} (index-of arithop arithmetic-operators))
       # TODO: Determine possible types of subtraction, etc, between different types
-      (gcd-type (resolve-type left env) (resolve-type right env))
+      (gcd-outer (resolve-type left env) (resolve-type right env))
 
       {:kind :case
        :mapping {:seq mapping}}
@@ -421,10 +455,10 @@
         (when-let [test (expr :case)
                    test-type (resolve-type test env)
                    case-types (map |(resolve-type ($ :left) env) mapping)]
-          (reduce2 gcd-type [test-type ;case-types]))
+          (reduce2 gcd-outer [test-type ;case-types]))
         # In all cases, attempt to unify the types of all branch expressions.
         (let [all-exprs (map |(resolve-type ($ :right) env) mapping)]
-          (reduce2 gcd-type all-exprs)))
+          (reduce2 gcd-outer all-exprs)))
 
       {:kind :update
        :mapping {:seq mapping}
@@ -438,8 +472,8 @@
           # against the yields. 
           {:args args-type :yields yield-type}
           (do
-            (reduce2 gcd-type [args-type ;case-types])
-            (reduce2 gcd-type [yield-type ;expr-types])
+            (reduce2 gcd-outer [args-type ;case-types])
+            (reduce2 gcd-outer [yield-type ;expr-types])
             test-type)
 
           # TODO: Handle updates on other data types
