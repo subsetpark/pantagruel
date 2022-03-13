@@ -117,16 +117,19 @@
               (if-let [gcd (find-gcd t t2)] {:set-of gcd})
 
               [{:tuple-of ts} {:tuple-of ts2}]
-              (if (= (length ts) (length ts2))
+              (when (= (length ts) (length ts2))
                 (let [all-gcds (map find-gcd ts ts2)]
                   (if (every? all-gcds)
                     {:tuple-of all-gcds})))
 
-              ([{:args _ :yields _} {:args _ :yields _}] (deep= left right))
-              # TODO: This handles the same procedure; handle the other cases.
-              left
+              [{:args args-t :yields yields-t} {:args args-t2 :yields yields-t2}]
+              (let [args-gcd (gcd-type args-t args-t2)
+                    yield-gcd (find-gcd yields-t yields-t2)]
+                (when yield-gcd
+                  {:args args-gcd :yields yield-gcd}))
 
-              [t t2] (find-gcd t t2))]
+              [t t2]
+              (find-gcd t t2))]
     (if gcd
       gcd
       (throw :gcd {:left left :right right}))))
@@ -218,8 +221,8 @@
      :type t}
     (fully-resolve-type t env)
 
-    # Special-case procedures with no arguments: treat them as singletons.
-    # TODO: Is this right at all?
+    # Special-case procedures with no arguments: treat them as singletons (that
+    # is, to mention a procedure with no arguments is the same as applying it).
     ({:kind :procedure
       :type {:args {:tuple-of args}
              :yields yields}}

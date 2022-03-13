@@ -508,7 +508,7 @@ unifiable (see below) with the inner type of the right.
 The type of the `#` unary operator is `Nat0`. The operand must be either a set
 or sequence.
 
-#### Arithmetic
+#### Other Binary Operators
 
 The type of an arithmetic binary operation is the unification of the two sides
 (see below).
