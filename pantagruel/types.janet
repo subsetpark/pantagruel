@@ -310,9 +310,13 @@
     {:concrete _}
     entry
 
-    (errorf "Couldn't fully resolve type:\n%q\nin\n%q"
-            entry
-            (dyn :current-expression))))
+    'nil
+    :empty
+
+    :empty
+    :empty
+
+    (errorf "Couldn't fully resolve type:\n%q" entry)))
 
 (defn- application-type
   ```
@@ -482,9 +486,9 @@
       {:container :parens
        :inner inner}
       (let [inner-ts (map |(resolve-type $ env) inner)]
-        (if (> (length inner-ts) 1)
-          {:tuple-of inner-ts}
-          (inner-ts 0)))
+        (if (one? (length inner-ts))
+          (inner-ts 0)
+          {:tuple-of inner-ts}))
 
       {:container :value-set
        :inner inner}
@@ -502,9 +506,7 @@
        :text s}
       {:symbol-reference s}
 
-      (errorf "Couldn't determine type of expression\n%q\nin\n%q"
-              expr
-              (dyn :current-expression))))
+      (errorf "Couldn't determine type of expression\n%q" (dyn :current-expression))))
 
   (-> expr
       (resolve-type-inner)

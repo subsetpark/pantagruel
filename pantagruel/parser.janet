@@ -133,6 +133,7 @@
        (sym) ,identity)
 
      (domains
+       () ,new-seq
        (domain) ,new-seq
        (domain :comma domains) ,cons-seq)
 
@@ -249,6 +250,7 @@
        (expr :comma exprs) ,|(tuple $0 ;$2))
 
      (literals
+       (), new-seq
        (literal) ,new-seq
        (literal :comma literals) ,cons-seq)
 

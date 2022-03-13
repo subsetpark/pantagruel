@@ -65,9 +65,9 @@
 
   (defn unwrap
     [wrapped]
-    (if (> (length wrapped) 1)
-      (map type-of-form wrapped)
-      (type-of-form (wrapped 0))))
+    (if (one? (length wrapped))
+      (type-of-form (wrapped 0))
+      (map type-of-form wrapped)))
 
   (match form
     {:container :list-of
@@ -84,7 +84,7 @@
 
     {:kind :domain-set
      :inner {:seq inner}}
-    (reduce2 types/sum-type (map type-of-form inner))
+    (or (reduce2 types/sum-type (map type-of-form inner)) :empty)
 
     {:container :parens
      :inner inner}

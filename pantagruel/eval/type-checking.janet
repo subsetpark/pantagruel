@@ -25,6 +25,7 @@
       {:tuple-of ts} (join ts)
       {:sum ts} (-> (map render-type ts) (string/join " + "))
       {:args args :yields yields} (string/format "(%s => %s)" (render-type args) (render-type yields))
+      :empty "{}"
       t (string/format "%q" t)))
 
   (printf (string "Type error: " str) ;(map render-type args)))
