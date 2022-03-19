@@ -23,17 +23,17 @@
 (deftest eval-single-declaration
   (is-eval
     {"f" {:kind :domain
-          :type {:args {:tuple-of ()} :yields @{:concrete "Void" :kind :domain}}}}
+          :type {:args {:tuple-of ()} :yields stdlib/Void}}}
     `f.
      ---
      `))
 
 (deftest eval-declaration-with-binding
   (is-eval
-    {"X" {:kind :domain :type {:concrete "X"}}
+    {"X" {:kind :domain :type stdlib/Domain}
      "f" {:kind :procedure
           :type {:args {:tuple-of @[{:thunk {:kind :sym :span [7 8] :text "X"}}]}
-                 :yields @{:concrete "Void" :kind :domain}}}
+                 :yields stdlib/Void}}
      "x" {:kind :bound :type {:thunk {:kind :sym :span [7 8] :text "X"}}}}
     `
     X.
@@ -43,7 +43,7 @@
 
 (deftest eval-declaration-with-yields
   (is-eval
-    {"F" {:kind :domain :type {:concrete "F"}}
+    {"F" {:kind :domain :type stdlib/Domain}
      "f" {:kind :procedure
           :type {:args {:tuple-of @[]}
                  :yields {:thunk {:kind :sym :span [8 9] :text "F"}}}}}
@@ -55,7 +55,7 @@
 
 (deftest eval-alias-declaration
   (is-eval
-    {"F" {:kind :domain :type {:concrete "F"}}
+    {"F" {:kind :domain :type stdlib/Domain}
      "f" {:kind :domain :type {:thunk {:kind :sym :span [7 8] :text "F"}}}}
     `
     F.
@@ -65,7 +65,7 @@
 
 (deftest eval-alias-declaration-container
   (is-eval
-    {"F" {:kind :domain :type {:concrete "F"}}
+    {"F" {:kind :domain :type stdlib/Domain}
      "f" {:kind :domain :type {:list-of {:thunk {:kind :sym :span [8 9] :text "F"}}}}}
     `
     F.
@@ -76,7 +76,7 @@
 (deftest eval-body
   (is-eval
     {"g" {:kind :domain
-          :type {:args {:tuple-of ()} :yields @{:concrete "Void" :kind :domain}}}}
+          :type {:args {:tuple-of ()} :yields stdlib/Void}}}
     `g.
      ---
      g.
@@ -85,7 +85,7 @@
 (deftest eval-qualification
   (is-eval
     {"f" {:kind :domain
-          :type {:args {:tuple-of ()} :yields @{:concrete "Void" :kind :domain}}}
+          :type {:args {:tuple-of ()} :yields stdlib/Void}}
      "x" {:kind :bound
           :type {:thunk {:kind :sym :span [16 19] :text "Nat"}}}}
 
@@ -96,7 +96,7 @@
 
 (deftest eval-quantification-with-container
   (is-eval
-    {"A" {:kind :domain :type {:concrete "A"}}
+    {"A" {:kind :domain :type stdlib/Domain}
      "a" {:kind :bound :type {:thunk {:kind :sym :span [21 22] :text "A"}}}
      "b" {:kind :bound :type {:thunk {:kind :sym :span [21 22] :text "A"}}}}
     `A.
@@ -106,12 +106,12 @@
 
 (deftest eval-chapter
   (is-eval
-    {"X" {:kind :domain :type {:concrete "X"}}
+    {"X" {:kind :domain :type stdlib/Domain}
      "f" {:kind :procedure
           :type {:args {:tuple-of @[{:thunk {:kind :sym :span [10 11] :text "X"}}]}
-                 :yields @{:concrete "Void" :kind :domain}}}
+                 :yields stdlib/Void}}
      "x" {:kind :bound :type {:thunk {:kind :sym :span [10 11] :text "X"}}}
-     "y" {:kind :domain :type {:args {:tuple-of ()} :yields @{:concrete "Void" :kind :domain}}}}
+     "y" {:kind :domain :type {:args {:tuple-of ()} :yields stdlib/Void}}}
     `
     X.
     y.
