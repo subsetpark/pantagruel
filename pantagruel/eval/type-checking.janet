@@ -19,7 +19,7 @@
 
     (match t
       (ts (indexed? ts)) (join ts)
-      {:concrete t-name} t-name
+      {:name t-name} t-name
       # Special case the empty set.
       {:container :set :inner ()} "{}"
       {:container :set :inner t} (string/format "{%s}" (render-type t))

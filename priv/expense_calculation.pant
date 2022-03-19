@@ -4,7 +4,7 @@ remove_groups report: Report.
 // each of which has a requester, a memo, and and amount.
 
 Request.
-Report <= [Request].
+Report = [Request].
 req (requester, memo):String, amount: Nat => Request.
 ---
 all r: report =>

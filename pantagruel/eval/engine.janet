@@ -61,8 +61,6 @@
   ```
   [form]
 
-  (defn err [] (errorf "Encountered unrecognized type syntax:\n%q" form))
-
   (defn unwrap
     [wrapped]
     (if (one? (length wrapped))
@@ -88,9 +86,10 @@
 
     {:kind :domain-set
      :inner {:seq inner}}
-    (or (reduce2 types/sum-type (map type-of-form inner))
-        {:container :set
-         :inner []})
+    (or
+      (reduce2 types/sum-type (map type-of-form inner))
+      {:container :set
+       :inner []})
 
     {:container :parens
      :inner inner}
@@ -125,15 +124,6 @@
      :text n}
     (types/number-type n)
 
-    # Thunks
-    # References to expressions which will have to be looked up in
-    # the environment when the whole document has been bound.
-    {:kind :application}
-    {:thunk form}
-
-    {:kind :sym}
-    {:thunk form}
-
     # Recursive cases
     ({:seq wrapped} (tuple? wrapped))
     (unwrap wrapped)
@@ -141,7 +131,8 @@
     (wrapped (tuple? wrapped))
     (unwrap wrapped)
 
-    (err)))
+    # Fall-through case: if we can't tell the type now, defer it for later.
+    {:thunk form}))
 
 (defn introduce-bindings-and-references
   ```

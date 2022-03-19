@@ -232,106 +232,6 @@
 
     false))
 
-(defn- fully-resolve-type
-  ```
-  Fully resolve the type of any expression that couldn't be resolved at
-  evaluation time, because it might have referred to a symbol that was bound
-  later on in the document.
-  ```
-  [entry env]
-  (match entry
-    #
-    # Environment lookup cases.
-    #
-
-    # Handle symbols referred to literally in the document. This includes
-    # differentiating between *references* to domains (which have the type of
-    # Domain) and *instances* of domains, whose type *is* that domain.
-    {:symbol-reference s}
-    # Trim the string; variables like "foo'" derive their type from the
-    # variables they are iterations on.
-    (let [base-name (string/trim s "'")
-          looked-up (env base-name)]
-      (if (is-domain-reference? looked-up)
-        Domain
-        (fully-resolve-type looked-up env)))
-
-    # An explicit :thunk is like a bare string - a reference to some other
-    # piece of program text - but was interned during the evaluation stage.
-    {:thunk {:text thunk}}
-    (fully-resolve-type (env thunk) env)
-
-    #
-    # The three types of values that can be found in the environment: domains,
-    # procedures, and bound variables.
-    #
-
-    {:kind :domain
-     :type t}
-    (fully-resolve-type t env)
-
-    # Special-case procedures with no arguments: treat them as singletons (that
-    # is, to mention a procedure with no arguments is the same as applying it).
-    ({:kind :procedure
-      :type {:args {:tuple-of args}
-             :yields yields}}
-      (empty? args) (not= yields Void))
-    (fully-resolve-type yields env)
-
-    # Main procedure case.
-    {:kind :procedure
-     :type {:args args
-            :yields yields}}
-    {:args (fully-resolve-type args env)
-     :yields (fully-resolve-type yields env)}
-
-    {:args args
-     :yields yields}
-    {:args (fully-resolve-type args env)
-     :yields (fully-resolve-type yields env)}
-
-    {:kind :bound
-     :type t}
-    (fully-resolve-type t env)
-
-    {:kind :member
-     :type t}
-    (inner-type (fully-resolve-type t env))
-
-    {:value _
-     :type t}
-    (fully-resolve-type t env)
-
-    #
-    # Type components: recursive cases.
-    #
-
-    {:list-of inner}
-    {:list-of (fully-resolve-type inner env)}
-
-    ({:container :set
-      :inner inner} (empty? inner))
-    entry
-
-    {:container :set
-     :inner inner}
-    {:container :set
-     :inner (fully-resolve-type inner env)}
-
-    {:tuple-of inner}
-    {:tuple-of (tuple/slice (map |(fully-resolve-type $ env) inner))}
-
-    {:kind :sum :inner ts}
-    {:kind :sum :inner (map |(fully-resolve-type $ env) ts)}
-
-    #
-    # Base case: we've fully resolved any environment references.
-    #
-
-    {:concrete _}
-    entry
-
-    (errorf "Couldn't fully resolve type:\n%q" entry)))
 
 (defn- application-type
   ```
@@ -408,128 +308,198 @@
       {:kind :sum
        :inner (distinct [;t1 ;t2])})))
 
+(defn- look-up-base-string
+  [s env]
+  (let [base-name (string/trim s "'")]
+    (env base-name)))
+
+
 (defn resolve-type
   ```
   Get the type of some AST expression when it is fully evaluated (ie, reduced).
   ```
   [expr env]
-  (defn resolve-type-inner
-    [expr]
-    (match expr
-      {:kind :application
-       :f f
-       :x x}
-      (let [args (collapse-application-args x)]
-        (application-type (resolve-type f env)
-                          (map |(resolve-type $ env) args)))
 
-      {:kind :quantification
-       :bindings {:seq bindings}
-       :expr expr}
-      (do
-        (each binding-or-guard bindings
-          # Type-check any guard expressions for side-effects.
-          (unless (= (binding-or-guard :kind) :binding)
-            (resolve-type binding-or-guard env)))
-        (resolve-type expr env))
+  (match expr
 
-      ({:operator boolop
-        :left left} (index-of boolop boolean-operators))
-      (let [right (expr :right)]
-        (resolve-type left env)
-        (if right (resolve-type right env))
-        Bool)
+    # When we encounter a deferred reference to a symbol, fully resolve it (if
+    # it's a reference to a domain, it's been stored to be fully evaluated and
+    # then assigned as the type of a static value).
+    {:thunk {:kind :sym
+             :text s}}
+    (let [looked-up (tracev (look-up-base-string s env))]
+      (resolve-type looked-up env))
 
-      ({:operator compop
-        :left left
-        :right right} (index-of compop comparison-operators))
-      (let [t (resolve-type left env)
-            t2 (resolve-type right env)]
-        (if (gcd-outer t t2)
-          Bool))
+    # When we encounter a bare symbol, and it's a reference to a domain, it's a
+    # direct reference to that domain and therefore has the type of Domain (not
+    # of the domain its referencing).
+    {:kind :sym
+     :text s}
+    (let [looked-up (look-up-base-string s env)]
+      (if (is-domain-reference? looked-up)
+        Domain
+        (resolve-type looked-up env)))
 
-      {:operator "in"
-       :left left
-       :right right}
-      (let [element-t (resolve-type left env)
-            inner-t (inner-type (resolve-type right env))]
-        (if (gcd-outer element-t inner-t)
-          Bool))
+    # Any other deferred references should be unwrapped and continued to be evaluated.
+    {:thunk thunk}
+    (resolve-type thunk env)
 
-      {:operator "#"
-       :left left}
-      (if (inner-type (resolve-type left env))
-        Nat0)
+    {:kind :application
+     :f f
+     :x x}
+    (let [args (collapse-application-args x)]
+      (application-type (resolve-type f env)
+                        (map |(resolve-type $ env) args)))
 
-      ({:operator arithop
-        :left left
-        :right right} (index-of arithop arithmetic-operators))
-      # TODO: Determine possible types of subtraction, etc, between different types
-      (gcd-outer (resolve-type left env) (resolve-type right env))
+    {:kind :quantification
+     :bindings {:seq bindings}
+     :expr expr}
+    (do
+      (each binding-or-guard bindings
+        # Type-check any guard expressions for side-effects.
+        (unless (= (binding-or-guard :kind) :binding)
+          (resolve-type binding-or-guard env)))
+      (resolve-type expr env))
 
-      {:kind :case
-       :mapping {:seq mapping}}
-      (do
-        # If the `:case` is populated, then attempt to unify its type with the
-        # types of all branch patterns.
-        (when-let [test (expr :case)
-                   test-type (resolve-type test env)
-                   case-types (map |(resolve-type ($ :left) env) mapping)]
-          (reduce2 gcd-outer [test-type ;case-types]))
-        # In all cases, attempt to unify the types of all branch expressions.
-        (let [all-exprs (map |(resolve-type ($ :right) env) mapping)]
-          (reduce2 gcd-outer all-exprs)))
+    ({:operator boolop
+      :left left} (index-of boolop boolean-operators))
+    (let [right (expr :right)]
+      (resolve-type left env)
+      (if right (resolve-type right env))
+      Bool)
 
-      {:kind :update
-       :mapping {:seq mapping}
-       :case test}
-      (let [test-type (resolve-type test env)
-            case-types (map |(resolve-type ($ :left) env) mapping)
-            expr-types (map |(resolve-type ($ :right) env) mapping)]
-        (match test-type
-          # The update case is a procedure mapping args to yields. In updating,
-          # type the left sides against the arguments and the right sides
-          # against the yields. 
-          {:args args-type :yields yield-type}
-          (do
-            (reduce2 gcd-outer [args-type ;case-types])
-            (reduce2 gcd-outer [yield-type ;expr-types])
-            test-type)
+    ({:operator compop
+      :left left
+      :right right} (index-of compop comparison-operators))
+    (let [t (resolve-type left env)
+          t2 (resolve-type right env)]
+      (if (gcd-outer t t2)
+        Bool))
 
-          # TODO: Handle updates on other data types
-          (errorf "Couldn't type update of type: %q" test-type)))
+    {:operator "in"
+     :left left
+     :right right}
+    (let [element-t (resolve-type left env)
+          inner-t (inner-type (resolve-type right env))]
+      (if (gcd-outer element-t inner-t)
+        Bool))
 
-      {:container :parens
-       :inner inner}
-      (let [inner-ts (map |(resolve-type $ env) inner)]
-        (if (one? (length inner-ts))
-          (inner-ts 0)
-          {:tuple-of inner-ts}))
+    {:operator "#"
+     :left left}
+    (if (inner-type (resolve-type left env))
+      Nat0)
 
-      {:container :value-set
-       :inner inner}
-      (let [ts (map |(resolve-type $ env) inner)]
-        (or (reduce2 sum-type ts)
-            {:container :set
-             :inner []}))
+    ({:operator arithop
+      :left left
+      :right right} (index-of arithop arithmetic-operators))
+    (gcd-outer (resolve-type left env) (resolve-type right env))
 
-      {:container :value-list
-       :inner inner}
-      {:list-of (resolve-type inner env)}
+    {:kind :case
+     :mapping {:seq mapping}}
+    (do
+      # If the `:case` is populated, then attempt to unify its type with the
+      # types of all branch patterns.
+      (when-let [test (expr :case)
+                 test-type (resolve-type test env)
+                 case-types (map |(resolve-type ($ :left) env) mapping)]
+        (reduce2 gcd-outer [test-type ;case-types]))
+      # In all cases, attempt to unify the types of all branch expressions.
+      (let [all-exprs (map |(resolve-type ($ :right) env) mapping)]
+        (reduce2 gcd-outer all-exprs)))
 
-      {:kind :string}
-      String
+    {:kind :update
+     :mapping {:seq mapping}
+     :case test}
+    (let [test-type (resolve-type test env)
+          case-types (map |(resolve-type ($ :left) env) mapping)
+          expr-types (map |(resolve-type ($ :right) env) mapping)]
+      (match test-type
+        # The update case is a procedure mapping args to yields. In updating,
+        # type the left sides against the arguments and the right sides
+        # against the yields. 
+        {:args args-type :yields yield-type}
+        (do
+          (reduce2 gcd-outer [args-type ;case-types])
+          (reduce2 gcd-outer [yield-type ;expr-types])
+          test-type)
 
-      {:kind :num
-       :text n}
-      (number-type n)
+        # TODO: Handle updates on other data types
+        (errorf "Couldn't type update of type: %q" test-type)))
 
-      {:kind :sym
-       :text s}
-      {:symbol-reference s}
+    {:container :parens
+     :inner inner}
+    (let [inner-ts (map |(resolve-type $ env) inner)]
+      (if (one? (length inner-ts))
+        (inner-ts 0)
+        {:tuple-of inner-ts}))
 
-      (errorf "Couldn't determine type of expression\n%q" (dyn :current-expression))))
+    {:container :value-set
+     :inner inner}
+    (let [ts (map |(resolve-type $ env) inner)]
+      (or (reduce2 sum-type ts)
+          {:container :set
+           :inner []}))
 
-  (-> expr
-      (resolve-type-inner)
-      (fully-resolve-type env)))
+    {:container :value-list
+     :inner inner}
+    {:list-of (resolve-type inner env)}
+
+    {:kind :string}
+    String
+
+    {:kind :num
+     :text n}
+    (number-type n)
+
+    {:kind :member
+     :type t}
+    (inner-type (resolve-type t env))
+
+    # Special-case procedures with no arguments: treat them as singletons (that
+    # is, to mention a procedure with no arguments is the same as applying it).
+    ({:kind :procedure
+      :type {:args {:tuple-of args}
+             :yields yields}}
+      (empty? args) (not= yields Void))
+    (resolve-type yields env)
+
+    # Main procedure case.
+    {:kind :procedure
+     :type {:args args
+            :yields yields}}
+    {:args (resolve-type args env)
+     :yields (resolve-type yields env)}
+
+    {:list-of inner}
+    {:list-of (resolve-type inner env)}
+
+    ({:container :set
+      :inner inner} (empty? inner))
+    expr
+
+    {:container :set
+     :inner inner}
+    {:container :set
+     :inner (resolve-type inner env)}
+
+    {:tuple-of inner}
+    {:tuple-of (tuple/slice (map |(resolve-type $ env) inner))}
+
+    {:kind :sum :inner ts}
+    {:kind :sum :inner (map |(resolve-type $ env) ts)}
+
+    {:kind :bound
+     :type t}
+    (resolve-type t env)
+
+    {:kind :domain
+     :type t}
+    (resolve-type t env)
+
+    {:concrete _}
+    expr
+
+    {:value _
+     :type t}
+    (resolve-type t env)
+    (errorf "Couldn't determine type of expression\n%q" expr)))

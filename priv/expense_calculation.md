@@ -125,7 +125,7 @@ Here's a document that attempts to specify the behavior of our program:
 remove_groups report: Report.
 " An expense report consists of an ordered series of reimbursement requests,
 " each of which has a requester, a memo, and and amount.
-Report <= [Request].
+Report = [Request].
 req (requester, memo):String, amount: Nat => Request.
 ---
 all r: report ..

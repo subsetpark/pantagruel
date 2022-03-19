@@ -80,7 +80,7 @@
                ([err fib] (if (table? err)
                             (handle-syntax-error file err src)
                             (propagate err fib))))
-        env (try (engine/eval tree)
+        env (try (engine/eval (tracev tree))
               ([err fib] (if (table? err)
                            (handle-evaluation-error file err)
                            (propagate err fib))))]

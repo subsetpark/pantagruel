@@ -1,10 +1,16 @@
 (def base-env @{})
 
+(def Domain @{:kind :domain
+              :name "Domain"})
+(put base-env "Domain" Domain)
+
 (defmacro- deftype
   [name parent]
   ~(upscope
      (def ,name (table/setproto @{:kind :domain
-                                  :concrete ,(string name)} ,parent))
+                                  :name ,(string name)
+                                  :type {:concrete Domain}}
+                                ,parent))
      (put base-env ,(string name) ,name)))
 
 (defmacro- defvalue
@@ -15,10 +21,9 @@
        (put base-env ,(string name) ,sym))))
 
 (def Any @{:kind :domain
-           :concrete "Any"})
+           :name "Any"
+           :type {:concrete Domain}})
 (put base-env "Any" Any)
-
-(deftype Domain Any)
 
 (deftype Real Any)
 (deftype Rat Real)
