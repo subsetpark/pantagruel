@@ -183,6 +183,28 @@
         (throw :gcd {:left left :right right})
         (propagate err fib)))))
 
+(defn sum-type
+  ```
+    Handle sum type syntax, either:
+    - Foo + Bar
+    - {value1, value2}
+    ```
+  [left-t right-t]
+  # If either side is itself a sum type, unpack it; in other words,
+  # (X + Y) + Z = {X, Y, Z}.
+  (let [t1 (or (left-t :sum) [left-t])
+        t2 (or (right-t :sum) [right-t])
+        gcd (protect (gcd-outer t1 t2))]
+    (cond
+      # If the two types are unifiable, return the common denominator.
+      (gcd 0) (gcd 1)
+      # If both sides are equivalent, we don't need a sum. In other words,
+      # X + X = X.
+      (and (= t1 t2) (one? (length t1))) (t1 0)
+
+      {:kind :sum
+       :inner (distinct [;t1 ;t2])})))
+
 (defn- inner-type
   ```
   Resolve the type of a membership operation, ie, get the type of a container's
@@ -196,6 +218,9 @@
 
     {:list-of inner-t}
     inner-t
+
+    {:tuple-of inner-ts}
+    (reduce2 sum-type inner-ts)
 
     (@ String)
     Char
@@ -249,6 +274,9 @@
     [{:list-of t1} ts]
     (throw :list-application-bad-arg {:f t1 :x (ts 0)})
 
+    ([{:tuple-of tuple-ts} ts] (one? (length ts)) (is-in-hierarchy? Int (ts 0)))
+    (reduce2 sum-type tuple-ts)
+
     # For now, Strings are special-cased here.
     ([(@ String) [t1]] (index-of t1 [Char String]))
     Nat0
@@ -270,28 +298,6 @@
     (int? n) Int
 
     Real))
-
-(defn sum-type
-  ```
-    Handle sum type syntax, either:
-    - Foo + Bar
-    - {value1, value2}
-    ```
-  [left-t right-t]
-  # If either side is itself a sum type, unpack it; in other words,
-  # (X + Y) + Z = {X, Y, Z}.
-  (let [t1 (or (left-t :sum) [left-t])
-        t2 (or (right-t :sum) [right-t])
-        gcd (protect (gcd-outer t1 t2))]
-    (cond
-      # If the two types are unifiable, return the common denominator.
-      (gcd 0) (gcd 1)
-      # If both sides are equivalent, we don't need a sum. In other words,
-      # X + X = X.
-      (and (= t1 t2) (one? (length t1))) (t1 0)
-
-      {:kind :sum
-       :inner (distinct [;t1 ;t2])})))
 
 (defn- look-up-base-string
   [s env]

@@ -44,8 +44,9 @@
                  (err :x))
 
     :application
-    (print-types "Attempted to apply non-procedure/list type:\n\n%s"
-                 (err :f))
+    (print-types "Attempted to apply non-procedure/list type:\n\n%s\n\nto type:\n\n%s"
+                 (err :f)
+                 (err :x))
 
     :container
     (print-types "Attempted to check for membership or cardinality in non-container type:\n\n%s"
