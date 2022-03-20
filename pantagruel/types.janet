@@ -12,7 +12,7 @@
 
 (import /pantagruel/stdlib :prefix "")
 
-(def ResolutionError @{})
+(def- ResolutionError @{})
 
 (defn- throw
   ```
@@ -183,7 +183,7 @@
         (throw :gcd {:left left :right right})
         (propagate err fib)))))
 
-(defn sum-type
+(defn- sum-type
   ```
     Handle sum type syntax, either:
     - Foo + Bar
@@ -286,7 +286,7 @@
 
     (throw :application {:f f :x x})))
 
-(defn number-type
+(defn- number-type
   ```
   Given a number, resolve the narrowest element of the number tower it is a
   member of.
@@ -515,3 +515,110 @@
     expr
 
     (errorf "Couldn't determine type of expression\n%q" expr)))
+
+(defn- distribute-bindings-types
+  ```
+  Handle binding form (x, y, z):T, shorthand for x:T, y:T, z:T.
+  ```
+  [bindings]
+
+  (defn distribute-binding-type
+    [binding]
+    (match binding
+      {:kind :binding
+       :name {:container :parens
+              :inner {:seq inner}}
+       :expr expr}
+      (map (fn [_] expr) inner)
+
+      {:kind :binding
+       :expr expr}
+      [expr]
+
+      # Bindings lists can have arbitrary expressions as guards; those don't
+      # assign any types to any variables.
+      {}
+      []
+
+      (errorf "Attempted to distribute binding type; got binding %q" binding)))
+
+  (mapcat distribute-binding-type bindings))
+
+(defn type-of-form
+  ```
+  All forms that syntactically establish some type.
+  ```
+  [form]
+
+  (defn unwrap
+    [wrapped]
+    (if (one? (length wrapped))
+      (type-of-form (wrapped 0))
+      (map type-of-form wrapped)))
+
+  (match form
+    {:container :list-of
+     :inner inner}
+    {:list-of (type-of-form inner)}
+
+    {:container :set-of
+     :inner inner}
+    {:container :set
+     :inner (type-of-form inner)}
+
+    {:kind :domain-sum
+     :inner inner}
+    (or
+      (reduce2 sum-type (map type-of-form inner))
+      {:container :set
+       :inner []})
+
+    {:kind :domain-set
+     :inner {:seq inner}}
+    (or
+      (reduce2 sum-type (map type-of-form inner))
+      {:container :set
+       :inner []})
+
+    {:container :parens
+     :inner inner}
+    (let [inner-t (type-of-form inner)]
+      (if (array? inner-t)
+        {:tuple-of inner-t}
+        inner-t))
+
+    {:kind :declaration
+     :yields yields
+     :bindings {:seq bindings}}
+    {:yields (type-of-form yields)
+     :args {:tuple-of (map type-of-form (distribute-bindings-types bindings))}}
+
+    ({:kind :declaration
+      :name {:text name}
+      :bindings {:seq bindings}} (empty? bindings))
+    (if (= (name 0) ((string/ascii-upper name) 0))
+      Domain
+      {:args {:tuple-of []} :yields Void})
+
+    {:kind :declaration
+     :name {:text name}
+     :bindings {:seq bindings}}
+    {:args {:tuple-of (map type-of-form (distribute-bindings-types bindings))}
+     :yields Void}
+
+    {:kind :string}
+    String
+
+    {:kind :num
+     :text n}
+    (number-type n)
+
+    # Recursive cases
+    ({:seq wrapped} (tuple? wrapped))
+    (unwrap wrapped)
+
+    (wrapped (tuple? wrapped))
+    (unwrap wrapped)
+
+    # Fall-through case: if we can't tell the type now, defer it for later.
+    {:thunk form}))

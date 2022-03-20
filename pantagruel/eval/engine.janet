@@ -26,114 +26,6 @@
                                        :locale locale})
                          EvaluationError)))
 
-
-(defn- distribute-bindings-types
-  ```
-  Handle binding form (x, y, z):T, shorthand for x:T, y:T, z:T.
-  ```
-  [bindings]
-
-  (defn distribute-binding-type
-    [binding]
-    (match binding
-      {:kind :binding
-       :name {:container :parens
-              :inner {:seq inner}}
-       :expr expr}
-      (map (fn [_] expr) inner)
-
-      {:kind :binding
-       :expr expr}
-      [expr]
-
-      # Bindings lists can have arbitrary expressions as guards; those don't
-      # assign any types to any variables.
-      {}
-      []
-
-      (errorf "Attempted to distribute binding type; got binding %q" binding)))
-
-  (mapcat distribute-binding-type bindings))
-
-(defn- type-of-form
-  ```
-  All forms that syntactically establish some type.
-  ```
-  [form]
-
-  (defn unwrap
-    [wrapped]
-    (if (one? (length wrapped))
-      (type-of-form (wrapped 0))
-      (map type-of-form wrapped)))
-
-  (match form
-    {:container :list-of
-     :inner inner}
-    {:list-of (type-of-form inner)}
-
-    {:container :set-of
-     :inner inner}
-    {:container :set
-     :inner (type-of-form inner)}
-
-    {:kind :domain-sum
-     :inner inner}
-    (or
-      (reduce2 types/sum-type (map type-of-form inner))
-      {:container :set
-       :inner []})
-
-    {:kind :domain-set
-     :inner {:seq inner}}
-    (or
-      (reduce2 types/sum-type (map type-of-form inner))
-      {:container :set
-       :inner []})
-
-    {:container :parens
-     :inner inner}
-    (let [inner-t (type-of-form inner)]
-      (if (array? inner-t)
-        {:tuple-of inner-t}
-        inner-t))
-
-    {:kind :declaration
-     :yields yields
-     :bindings {:seq bindings}}
-    {:yields (type-of-form yields)
-     :args {:tuple-of (map type-of-form (distribute-bindings-types bindings))}}
-
-    ({:kind :declaration
-      :name {:text name}
-      :bindings {:seq bindings}} (empty? bindings))
-    (if (= (name 0) ((string/ascii-upper name) 0))
-      stdlib/Domain
-      {:args {:tuple-of []} :yields stdlib/Void})
-
-    {:kind :declaration
-     :name {:text name}
-     :bindings {:seq bindings}}
-    {:args {:tuple-of (map type-of-form (distribute-bindings-types bindings))}
-     :yields stdlib/Void}
-
-    {:kind :string}
-    stdlib/String
-
-    {:kind :num
-     :text n}
-    (types/number-type n)
-
-    # Recursive cases
-    ({:seq wrapped} (tuple? wrapped))
-    (unwrap wrapped)
-
-    (wrapped (tuple? wrapped))
-    (unwrap wrapped)
-
-    # Fall-through case: if we can't tell the type now, defer it for later.
-    {:thunk form}))
-
 (defn introduce-bindings-and-references
   ```
   Handle any given AST form for environment bindings.
@@ -156,18 +48,18 @@
   (defn bind
     [name expr]
     (introduce name {:kind :bound
-                     :type (type-of-form expr)}))
+                     :type (types/type-of-form expr)}))
   (defn bind-member
     ```
     Bind a symbol to the inner type of `expr`.
     ```
     [name expr]
     (introduce name {:kind :member
-                     :type (type-of-form expr)}))
+                     :type (types/type-of-form expr)}))
   (defn alias
     [name expr]
     (introduce name {:kind :domain
-                     :type (type-of-form expr)}))
+                     :type (types/type-of-form expr)}))
 
   (match form
     {:kind :decl-alias
@@ -186,7 +78,7 @@
       (let [kind (if (and (nil? yields) (empty? bindings))
                    :domain
                    :procedure)
-            t (type-of-form form)]
+            t (types/type-of-form form)]
         (introduce name {:kind kind :type t}))
 
       (introduce-bindings-and-references yields env symbol-references)
