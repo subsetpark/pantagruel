@@ -165,4 +165,68 @@
 
       env)))
 
+(deftest zk-regression-test
+  (let [env @{"Index" {:kind :domain :type {:list-of {:thunk {:kind :sym :text "Line"}}}}
+              "Line" {:kind :domain :type {:thunk {:kind :sym :text "String"}}}
+              "Note" {:kind :domain :type {:list-of {:thunk {:kind :sym :text "Line"}}}}
+              "Reference" {:kind :domain :type {:thunk {:kind :sym :text "Line"}}}
+              "backlinks" {:kind :procedure
+                           :type {:args {:tuple-of @[{:thunk {:kind :sym :text "Note"}}]}
+                                  :yields {:container :set :inner {:thunk {:kind :sym :text "Reference"}}}}}
+              "body" {:kind :procedure :type {:args {:tuple-of @[{:thunk {:kind :sym :text "Note"}}]}
+                                              :yields {:list-of {:thunk {:kind :sym :text "Line"}}}}}
+              "bracketed" {:kind :procedure :type {:args {:tuple-of @[{:thunk {:kind :sym :text "String"}}]}
+                                                   :yields {:thunk {:kind :sym :text "String"}}}}
+              "created_at" {:kind :procedure :type {:args {:tuple-of @[{:thunk {:kind :sym :text "Note"}}]}
+                                                    :yields {:thunk {:kind :sym :text "Date"}}}}
+              "escape" {:kind :procedure :type {:args {:tuple-of @[{:thunk {:kind :sym :text "String"}}]}
+                                                :yields {:thunk {:kind :sym :text "String"}}}}
+              "i" {:kind :bound :type {:thunk {:kind :sym :text "Index"}}}
+              "index" {:kind :procedure
+                       :type {:args {:tuple-of @[{:list-of {:thunk {:kind :sym :text "Note"}}}]}
+                              :yields @{:kind :concrete :name "Void"
+                                        :type @{:kind :meta-domain :name "Domain"}}}}
+              "line" {:kind :member :type {:thunk {:kind :sym :text "n"}}}
+              "m" {:kind :bound :type {:thunk {:kind :sym :text "Note"}}}
+              "n" {:kind :bound :type {:thunk {:kind :sym :text "Note"}}}
+              "name" {:kind :procedure :type {:args {:tuple-of @[{:thunk {:kind :sym :text "Note"}}]}
+                                              :yields {:thunk {:kind :sym :text "String"}}}}
+              "notes" {:kind :bound :type {:list-of {:thunk {:kind :sym :text "Note"}}}}
+              "r" {:kind :member :type {:thunk {:f {:kind :sym :text "references"}
+                                                :kind :application
+                                                :x {:kind :sym :text "n"}}}}
+              "ref" {:kind :procedure :type {:args {:tuple-of @[{:thunk {:kind :sym :text "String"}}]}
+                                             :yields {:thunk {:kind :sym :text "Reference"}}}}
+              "ref_note" {:kind :procedure :type {:args {:tuple-of @[{:thunk {:kind :sym :text "Note"}}]}
+                                                  :yields {:thunk {:kind :sym :text "Reference"}}}}
+              "references" {:kind :procedure :type {:args {:tuple-of @[{:thunk {:kind :sym :text "Note"}}]}
+                                                    :yields {:list-of {:thunk {:kind :sym :text "Reference"}}}}}
+              "s" {:kind :bound :type {:thunk {:kind :sym :text "String"}}}}]
+    (is-type
+      {:container :set
+       :inner stdlib/String}
+      {:container :value-set
+       :inner [{:bindings {:kind :seq
+                           :seq [{:binding-type ::
+                                  :expr {:kind :sym :text "Note"}
+                                  :kind :binding
+                                  :name {:kind :sym :text "m"}}
+                                 {:kind :binary-operation
+                                  :left {:container :parens
+                                         :inner [{:f {:kind :sym :text "bracketed"}
+                                                  :kind :application
+                                                  :x {:container :parens
+                                                      :inner [{:f {:kind :sym :text "name"}
+                                                               :kind :application
+                                                               :x {:kind :sym :text "n"}}]}}]}
+                                  :operator "in"
+                                  :right {:kind :sym :text "m"}}]}
+                :expr {:f {:kind :sym :text "ref_note"}
+                       :kind :application
+                       :x {:kind :sym :text "m"}}
+                :kind :quantification
+                :quantifier {:kind :all :text "all"}}]}
+
+      env)))
+
 (run-tests!)

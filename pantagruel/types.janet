@@ -436,10 +436,17 @@
 
     {:container :value-set
      :inner inner}
-    (let [ts (map |(resolve-type $ env) inner)]
-      (or (reduce2 sum-type ts)
-          {:container :set
-           :inner []}))
+    (match inner
+      # When a quantification is wrapped in curly braces, it functions as a set
+      # comprehension.
+      [{:kind :quantification}] {:container :set
+                                 :inner (resolve-type (inner 0) env)}
+      # When other values are wrapped in curly braces, the type is a sum type
+      # of the types of the values.
+      (let [ts (map |(resolve-type $ env) inner)]
+        (or (reduce2 sum-type ts)
+            {:container :set
+             :inner []})))
 
     {:container :value-list
      :inner inner}
