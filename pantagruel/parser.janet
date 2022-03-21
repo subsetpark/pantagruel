@@ -197,6 +197,12 @@
        (:some) ,identity
        (:some1) ,identity)
 
+     (quantification
+       (quantification-word bindings-exprs :yields expr) ,|{:kind :quantification
+                                                            :quantifier $0
+                                                            :bindings $1
+                                                            :expr $3
+                                                            :span (span $0 $3)})
      ### Expressions
 
      (expr
@@ -221,11 +227,8 @@
                                  :operator ($0 :text)
                                  :span (span $0 $1)}
 
-       (quantification-word bindings-exprs :yields expr) ,|{:kind :quantification
-                                                            :quantifier $0
-                                                            :bindings $1
-                                                            :expr $3
-                                                            :span (span $0 $3)}
+       (quantification) ,identity
+
        (expr expr %prec :funcapp) ,|{:kind :application
                                      :f $0
                                      :x $1
@@ -234,9 +237,10 @@
        # Parens as value: tuple of values.
        (:lparen exprs :rparen) ,(wrap :parens)
        # Square as value: comprehension.
-       (:lsquare expr :rsquare) ,(wrap :value-list)
+       (:lsquare quantification :rsquare) ,(wrap :list-comprehension)
        # Curly braces as value: set of values.
-       (:lbrace exprs :rbrace) ,(wrap :value-set)
+       (:lbrace literals :rbrace) ,(wrap :value-set)
+       (:lbrace quantification :rbrace) ,(wrap :set-comprehension)
 
        (string) ,identity
        (sym) ,identity
@@ -252,7 +256,7 @@
        (expr :comma exprs) ,|(tuple $0 ;$2))
 
      (literals
-       (), new-seq
+       () ,new-seq
        (literal) ,new-seq
        (literal :comma literals) ,cons-seq)
 
