@@ -1,4 +1,5 @@
 (use spork/argparse)
+
 (import spork/path)
 
 (import /pantagruel/lexer)
@@ -7,7 +8,7 @@
 (import /pantagruel/eval/type-checking)
 (import /pantagruel/print-src)
 
-(def version "0.5.0")
+(def version "0.5.2")
 
 (def params
   [```

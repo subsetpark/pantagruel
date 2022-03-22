@@ -304,7 +304,6 @@
   (let [base-name (string/trim s "'")]
     (env base-name)))
 
-
 (defn resolve-type
   ```
   Get the type of some AST expression when it is fully evaluated (ie, reduced).
@@ -341,7 +340,8 @@
         {:kind :concrete :name s :type Domain}
         (resolve-type looked-up env)))
 
-    # Any other deferred references should be unwrapped and continued to be evaluated.
+    # Any other deferred references should be unwrapped and continued to be
+    # evaluated.
     {:thunk thunk}
     (resolve-type thunk env)
 
