@@ -1,9 +1,11 @@
 (use spork/argparse)
+(import spork/path)
 
 (import /pantagruel/lexer)
 (import /pantagruel/parser)
 (import /pantagruel/eval/engine)
 (import /pantagruel/eval/type-checking)
+(import /pantagruel/print-src)
 
 (def version "0.5.0")
 
@@ -59,13 +61,13 @@
       suffix)))
 
 (defn handle-evaluation-error
-  [file err]
-  (printf "In file: %s" file)
-  (printf "Unglossed symbols%s:\n\n%s"
-          (case (err :locale)
-            :body ""
-            :chapter " in chapter head")
-          (string/join (keys (err :symbols)) ", "))
+  [file err src]
+  (each sym (keys (err :symbols))
+    (printf "%s:%i: unglossed symbol error: %s"
+            (path/basename file)
+            (print-src/line-no sym src)
+            (sym :text)))
+
   (os/exit 1))
 
 (defn handle-version
@@ -82,9 +84,9 @@
                             (propagate err fib))))
         env (try (engine/eval tree)
               ([err fib] (if (table? err)
-                           (handle-evaluation-error file err)
+                           (handle-evaluation-error file err src)
                            (propagate err fib))))]
-    (type-checking/type-check tree env src)))
+    (type-checking/type-check tree env file src)))
 
 (defn main
   ```

@@ -41,7 +41,8 @@
     [sym t]
     (match sym
       {:kind :sym
-       :text text}
+       :text text
+       :span span}
       (put env text t)
       (errorf "Don't know how to introduce symbol: %q" sym)))
 
@@ -160,7 +161,7 @@
 
     {:kind :sym
      :text sym}
-    (put symbol-references sym true)
+    (put symbol-references form true)
 
     # Domains built out of sets of literal values, hence, guaranteed not to
     # contain symbol references or bindings
@@ -194,7 +195,7 @@
   [env symbol-references])
 
 (defn- normalize
-  [reference]
+  [{:text reference}]
   (string/trim reference "'"))
 
 (defn- resolve-references

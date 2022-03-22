@@ -6,8 +6,9 @@
 (import /pantagruel/stdlib)
 (import /pantagruel/types)
 (import /pantagruel/print-src)
+(import spork/path)
 
-(defn print-types
+(defn- print-types
   [str & args]
 
   (defn- render-type
@@ -29,38 +30,38 @@
       {:args args :yields yields} (string/format "(%s => %s)" (render-type args) (render-type yields))
       t (string/format "%q" t)))
 
-  (printf (string "Type error: " str) ;(map render-type args)))
+  (printf (string "type error: " str) ;(map render-type args)))
 
 (defn- handle-resolution-error
   [err]
   (case (err :type)
     :list-application-multiple-args
-    (print-types "Attempted to apply a list type to multiple arguments:\n\n%s"
+    (print-types "attempted to apply a list type to multiple arguments:\n\n%s"
                  (err :xs))
 
     :list-application-bad-arg
-    (print-types "Attempted to apply a list of type:\n\n%s\n\nto an argument of type:\n\n%s"
+    (print-types "attempted to apply a list of type:\n\n%s\n\nto an argument of type:\n\n%s"
                  (err :f)
                  (err :x))
 
     :application
-    (print-types "Attempted to apply non-procedure/list type:\n\n%s\n\nto type:\n\n%s"
+    (print-types "attempted to apply non-procedure/list type:\n\n%s\n\nto type:\n\n%s"
                  (err :f)
                  (err :x))
 
     :container
-    (print-types "Attempted to check for membership or cardinality in non-container type:\n\n%s"
+    (print-types "attempted to check for membership or cardinality in non-container type:\n\n%s"
                  (err :t))
 
     :arg-length
-    (print-types "Invalid arguments:\n\n%s\n\nto procedure expecting:\n\n%s"
+    (print-types "invalid arguments:\n\n%s\n\nto procedure expecting:\n\n%s"
                  (err :args)
                  (err :f-args))
 
     :gcd
-    (print-types "Couldn't unify types:\n\n%s, %s" (err :left) (err :right))
+    (print-types "couldn't unify types:\n\n%s, %s" (err :left) (err :right))
 
-    (print-types "Unknown type resolution error: %s" err)))
+    (print-types "unknown type resolution error: %s" err)))
 
 (defn type-check
   ```
@@ -68,7 +69,7 @@
   document. Output error messages for each type error found and, if any were
   found, exit with a non-zero status code.
   ```
-  [tree env src]
+  [tree env file src]
   (let [body-exprs (mapcat |($0 :body) (tree :chapters))]
     (var type-error false)
     (each body-expr body-exprs
@@ -76,8 +77,10 @@
         (types/resolve-type body-expr env)
         ([err fib]
           (if (table? err)
-            (handle-resolution-error err)
+            (do
+              (prinf "%s:%i: " (path/basename file) (print-src/line-no body-expr src))
+              (handle-resolution-error err))
             (propagate err fib))
-          (printf "\nIn expression:\n\n%s\n" (print-src/print-src body-expr src))
+          (printf "\nin expression:\n\n%s\n" (print-src/print-src body-expr src))
           (set type-error true))))
     (if type-error (os/exit 1))))

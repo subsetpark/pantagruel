@@ -4,3 +4,14 @@
   ```
   [{:span span} src]
   (string/slice src ;span))
+
+(defn line-no
+  ```
+  Find the line number of an index into `src`.
+  ```
+  [{:span [n]} src]
+  (var line 1)
+  (for i 0 n
+    (case (src i)
+      (chr "\n") (+= line 1)))
+  line)
