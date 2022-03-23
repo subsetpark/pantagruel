@@ -25,7 +25,7 @@
    :default {:kind :accumulate}])
 
 (defn handle-syntax-error
-  [file {:form form} src]
+  [file form src]
 
   (defn- in-bounds
     [n mx]
@@ -33,7 +33,6 @@
       (max n (- mx))
       (min n mx)))
 
-  (default form {})
   (let [from (if-let [from (get-in form [:span 0])]
                (- from 10)
                -20)
@@ -63,6 +62,11 @@
 
   (os/exit 1))
 
+(defn default-form
+  [src]
+  {:span [(dec (length src)) (length src)]
+   :text ""})
+
 (defn handle-evaluation-error
   [file err src]
   (each sym (keys (err :symbols))
@@ -83,7 +87,8 @@
   (let [lexed (lexer/lex src)
         tree (try (parser/parse-tokens lexed)
                ([err fib] (if (table? err)
-                            (handle-syntax-error file err src)
+                            (let [form (or (err :form) (default-form src))]
+                              (handle-syntax-error file form src))
                             (propagate err fib))))
         env (try (engine/eval tree)
               ([err fib] (if (table? err)
