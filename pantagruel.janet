@@ -45,21 +45,23 @@
 
     (if (os/getenv "PANT_DEBUG") (print (dyn :yydebug)))
 
-    (errorf
-      `Syntax Error:
-
-      Token type %q
-      Text %q
+    (printf
+      ```
+      %s:%i: syntax error: `%s` (%q)
 
       in
 
       %s%s%s
-      `
-      (form :kind)
+      ```
+      file
+      (print-src/line-no form src)
       (form :text)
+      (form :kind)
       prefix
       (string/slice src (in-bounds from (length src)) (in-bounds to (length src)))
-      suffix)))
+      suffix))
+
+  (os/exit 1))
 
 (defn handle-evaluation-error
   [file err src]
