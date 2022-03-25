@@ -27,7 +27,7 @@
       {:list-of t} (string/format "[%s]" (render-type t))
       {:tuple-of ts} (join ts)
       {:kind :sum :inner ts} (-> (map render-type ts) (string/join " + "))
-      {:args args :yields yields} (string/format "(%s => %s)" (render-type args) (render-type yields))
+      {:args args :yields yields} (string/format "%s => %s" (render-type args) (render-type yields))
       t (string/format "%q" t)))
 
   (printf (string "type error. " str) ;(map render-type args)))
@@ -36,16 +36,16 @@
   [err]
   (case (err :type)
     :list-application-multiple-args
-    (print-types "attempted to apply a list type to multiple arguments: `%s`"
+    (print-types "attempted to apply to multiple arguments: `%s`"
                  (err :xs))
 
     :list-application-bad-arg
-    (print-types "attempted to apply a list of type:\n\n%s\n\nto an argument of type: `%s`"
+    (print-types "attempted to apply type: `%s` to an argument of type: `%s`"
                  (err :f)
                  (err :x))
 
     :application
-    (print-types "attempted to apply non-procedure/list type:\n\n%s\n\nto type: `%s`"
+    (print-types "attempted to apply type: `%s` to type: `%s`"
                  (err :f)
                  (err :x))
 
@@ -54,7 +54,7 @@
                  (err :t))
 
     :arg-length
-    (print-types "invalid arguments:\n\n%s\n\nto procedure expecting: `%s`"
+    (print-types "received invalid arguments: `%s` to procedure expecting: `%s`"
                  (err :args)
                  (err :f-args))
 
