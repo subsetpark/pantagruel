@@ -205,27 +205,27 @@
     (is-type
       {:container :set
        :inner stdlib/String}
-      {:container :value-set
-       :inner [{:bindings {:kind :seq
-                           :seq [{:binding-type ::
-                                  :expr {:kind :sym :text "Note"}
-                                  :kind :binding
-                                  :name {:kind :sym :text "m"}}
-                                 {:kind :binary-operation
-                                  :left {:container :parens
-                                         :inner [{:f {:kind :sym :text "bracketed"}
-                                                  :kind :application
-                                                  :x {:container :parens
-                                                      :inner [{:f {:kind :sym :text "name"}
-                                                               :kind :application
-                                                               :x {:kind :sym :text "n"}}]}}]}
-                                  :operator "in"
-                                  :right {:kind :sym :text "m"}}]}
-                :expr {:f {:kind :sym :text "ref_note"}
-                       :kind :application
-                       :x {:kind :sym :text "m"}}
-                :kind :quantification
-                :quantifier {:kind :all :text "all"}}]}
+      {:container :set-comprehension
+       :inner {:bindings {:kind :seq
+                          :seq [{:binding-type ::
+                                 :expr {:kind :sym :text "Note"}
+                                 :kind :binding
+                                 :name {:kind :sym :text "m"}}
+                                {:kind :binary-operation
+                                 :left {:container :parens
+                                        :inner [{:f {:kind :sym :text "bracketed"}
+                                                 :kind :application
+                                                 :x {:container :parens
+                                                     :inner [{:f {:kind :sym :text "name"}
+                                                              :kind :application
+                                                              :x {:kind :sym :text "n"}}]}}]}
+                                 :operator "in"
+                                 :right {:kind :sym :text "m"}}]}
+               :expr {:f {:kind :sym :text "ref_note"}
+                      :kind :application
+                      :x {:kind :sym :text "m"}}
+               :kind :quantification
+               :quantifier {:kind :all :text "all"}}}
 
       env)))
 
