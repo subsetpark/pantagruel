@@ -118,6 +118,10 @@
      ### Domains
 
      (domain
+       (:lparen domains :rparen :yields domain) ,|{:kind :procedure
+                                                   :type {:args {:tuple-of ($1 :seq)}
+                                                          :yields $4}
+                                                   :span (span $0 $4)}
        (:lparen domains :rparen) ,(wrap :parens)
        (:lsquare domain :rsquare) ,(wrap :list-of)
        (:lbrace domain :rbrace) ,(wrap :set-of)

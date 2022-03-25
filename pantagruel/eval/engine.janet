@@ -159,6 +159,14 @@
     (each domain inner
       (introduce-bindings-and-references domain env symbol-references))
 
+    {:kind :procedure
+     :type {:args {:tuple-of args}
+            :yields yields}}
+    (do
+      (each arg args
+        (introduce-bindings-and-references arg env symbol-references))
+      (introduce-bindings-and-references yields env symbol-references))
+
     {:kind :sym
      :text sym}
     (put symbol-references form true)
