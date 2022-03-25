@@ -54,7 +54,7 @@
       ```
       file
       (print-src/line-no form src)
-      (form :text)
+      (string (form :text))
       (form :kind)
       prefix
       (string/slice src (in-bounds from (length src)) (in-bounds to (length src)))

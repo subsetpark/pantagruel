@@ -238,8 +238,6 @@
        (:lparen exprs :rparen) ,(wrap :parens)
        # Square as value: comprehension.
        (:lsquare quantification :rsquare) ,(wrap :list-comprehension)
-       # Curly braces as value: set of values.
-       (:lbrace literals :rbrace) ,(wrap :value-set)
        (:lbrace quantification :rbrace) ,(wrap :set-comprehension)
 
        (string) ,identity

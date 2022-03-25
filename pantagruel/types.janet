@@ -377,6 +377,11 @@
       (if (gcd-outer t t2)
         Bool))
 
+    ({:operator arithop
+      :left left
+      :right right} (index-of arithop arithmetic-operators))
+    (gcd-outer (resolve-type left env) (resolve-type right env))
+
     {:operator "in"
      :left left
      :right right}
@@ -389,11 +394,6 @@
      :left left}
     (if (inner-type (resolve-type left env))
       Nat0)
-
-    ({:operator arithop
-      :left left
-      :right right} (index-of arithop arithmetic-operators))
-    (gcd-outer (resolve-type left env) (resolve-type right env))
 
     {:kind :case
      :mapping {:seq mapping}}
@@ -433,13 +433,6 @@
       (if (one? (length inner-ts))
         (inner-ts 0)
         {:tuple-of inner-ts}))
-
-    {:container :value-set
-     :inner inner}
-    (let [ts (map |(resolve-type $ env) inner)]
-      (or (reduce2 sum-type ts)
-          {:container :set
-           :inner []}))
 
     {:container :set-comprehension
      :inner inner}
