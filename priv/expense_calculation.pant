@@ -11,7 +11,7 @@ all r: report =>
     ((requester r) in group_table ->
         ~(r in report')
         and
-        all group_member:(group_table (r requester)) =>
+        all group_member<:(group_table (r requester)) =>
             (req group_member (memo r) ((r amount) / #(group_table (requester r)))) in report'
     )
     and (~((requester r) in group_table) -> r in report').
