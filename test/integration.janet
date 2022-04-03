@@ -4,6 +4,8 @@
 
 (import /pantagruel)
 
+(setdyn :exit-on-error false)
+
 (def tests (->> (os/dir "priv") (filter |(string/has-suffix? ".pant" $))))
 
 (deftest integration

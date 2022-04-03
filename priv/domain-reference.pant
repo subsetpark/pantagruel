@@ -1,4 +1,3 @@
 User.
 ---
 User = Int.
-[User] = [Int].

@@ -60,7 +60,7 @@
       (string/slice src (in-bounds from (length src)) (in-bounds to (length src)))
       suffix))
 
-  (os/exit 1))
+  (when (dyn :exit-on-error) (os/exit 1)))
 
 (defn default-form
   [src]
@@ -75,7 +75,7 @@
             (print-src/line-no sym src)
             (sym :text)))
 
-  (os/exit 1))
+  (when (dyn :exit-on-error) (os/exit 1)))
 
 (defn handle-version
   []
@@ -105,6 +105,7 @@
   Evaluate it and check; if all checks pass, return 0.
   ```
   [& _args]
+  (setdyn :exit-on-error true)
   (let [args (argparse ;params)]
     (when (args "version") (handle-version))
     (let [[file src] (match (args :default)
