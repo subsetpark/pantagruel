@@ -8,7 +8,7 @@
 (import /pantagruel/eval/type-checking)
 (import /pantagruel/print-src)
 
-(def version "0.5.2")
+(def version "0.6.0")
 
 (def params
   [```

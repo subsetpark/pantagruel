@@ -83,4 +83,5 @@
             (propagate err fib))
           (printf "\nin expression:\n\n%s\n" (print-src/print-src body-expr src))
           (set type-error true))))
+
     (when (and type-error (dyn :exit-on-error)) (os/exit 1))))
