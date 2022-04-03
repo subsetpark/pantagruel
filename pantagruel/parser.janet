@@ -4,6 +4,12 @@
 
 (def SyntaxError @{})
 
+(defn maybe-gensym
+  []
+  (if-not (dyn :normalize-syms)
+    (gensym)
+    :ref))
+
 (defn span
   [left right]
   (cond
@@ -202,6 +208,16 @@
                                                             :quantifier $0
                                                             :bindings $1
                                                             :expr $3
+                                                            # Quantification
+                                                            # can introduce
+                                                            # bindings into
+                                                            # temporary
+                                                            # body-level
+                                                            # scopes; generate
+                                                            # an identity to
+                                                            # look up the scope
+                                                            # later on.
+                                                            :ref (maybe-gensym)
                                                             :span (span $0 $3)})
      ### Expressions
 

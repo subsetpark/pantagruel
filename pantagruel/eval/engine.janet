@@ -121,6 +121,9 @@
      :bindings {:seq bindings}
      :expr expr}
     (do
+      # Close around the current, extended environment, linking it back to the
+      # AST form that it's associated with.
+      (put-in (table/getproto env) [:closures (form :ref)] env)
       (each binding bindings
         (introduce-bindings-and-references binding env symbol-references))
       (introduce-bindings-and-references expr env symbol-references))
@@ -176,23 +179,13 @@
 
     (printf "Unknown form in engine: %q" form)))
 
-(defn eval-head
+(defn- eval-subsection
   ```
-  Evaluate a chapter head for any environment bindings.
+  Evaluate a subsection for any environment bindings.
   ```
-  [head env symbol-references]
-  (each declaration head
-    (introduce-bindings-and-references declaration env symbol-references))
-  [env symbol-references])
-
-(defn eval-body
-  ```
-  Evaluate a chapter body for any environment bindings.
-  ```
-  [body env symbol-references]
-  (each statement body
-    (introduce-bindings-and-references statement env symbol-references))
-  [env symbol-references])
+  [subsection env symbol-references]
+  (each statement subsection
+    (introduce-bindings-and-references statement env symbol-references)))
 
 (defn- normalize
   [{:text reference}]
@@ -201,39 +194,65 @@
 (defn- resolve-references
   ```
   Given an environment and a set of symbol references, eliminate all references
-  that are bound with respect to that environment and throw if any remain.
+  that are bound with respect to that environment.
   ```
-  [env references locale]
+  [env references]
 
   (each reference (keys references)
     (when (env (normalize reference))
-      (put references reference nil)))
+      (put references reference nil))))
 
+(defn- check-references
+  ```
+  Throw if any references haven't been resolved.
+  ```
+  [env references locale]
   (if (not (empty? references))
-    (throw references locale))
+    (throw references locale)))
 
-  [env references])
-
-(defn eval-chapter
-  ```
-  Handle a single chapter, binding any introduced symbols into the environment
-  and resolving any references that are due.
-  ```
-  [[env prev-references] {:head head :body body}]
-  (let [head-references @{}
-        body-references @{}]
-
-    (eval-head head env head-references)
-    (resolve-references env head-references :chapter)
-
-    (eval-body body env body-references)
-    (resolve-references env prev-references :body)
-    [env body-references]))
 
 (defn eval
   [{:chapters chapters}]
 
-  (let [acc [(table/setproto @{} stdlib/base-env) @{}]
-        document-result (reduce eval-chapter acc chapters)
-        [env references] (resolve-references ;document-result :body)]
+  (def env (table/setproto @{:closures @{}} stdlib/base-env))
+
+  (defn eval-chapter
+    ```
+    Handle a single chapter, binding any introduced symbols into the
+    environment and resolving any references that are due.
+    ```
+    [prev-references {:head head :body body}]
+    (let [head-references @{}]
+      # Populate environment and references with bindings and references from
+      # chapter head.
+      (eval-subsection head env head-references)
+
+      # Clear outstanding references in previous chapter that were bound in head.
+      (resolve-references env prev-references)
+      # Check that references in previous chapter have all been cleared.
+      (check-references env prev-references :body)
+
+      # Clear outstanding references in head that were bound in head.
+      (resolve-references env head-references)
+      # Check that references in head have all been cleared.
+      (check-references env head-references :chapter)
+
+      # We've validated all references up until this point; begin capturing
+      # references for validation in the *next* chapter.
+      (let [body-references @{}
+            # Push a new scope on the stack for body-declared bindings.
+            body-env (table/setproto @{} env)]
+        # Populate body references, and new scope with body bindings.
+        (eval-subsection body body-env body-references)
+        # Clear outstanding references in this body using the bindings in the
+        # body (as well as existing env).
+        (resolve-references body-env body-references)
+        # Pass on any outstanding references; they will have to be resolved
+        # using document-level bindings.
+        body-references)))
+
+  (let [remaining-references (reduce eval-chapter @{} chapters)]
+    # Check for any body references that were made in the last chapter but
+    # never bound.
+    (check-references env remaining-references :body)
     env))

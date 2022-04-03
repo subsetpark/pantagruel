@@ -12,7 +12,6 @@ Head = [Comment + Declaration + Alias].
 Body = [Comment + Expression].
 (Comment, Declaration, Alias, Expression) = [String].
 ---
-
 eval p <-> all sect <: p => is_all_bound? sect.
 
 ;
@@ -26,19 +25,23 @@ is_all_bound? sect: Section => Bool.
 // body.
 
 is_all_bound? sect <->
-    (all h <: head sect => all sym <: h => is_bound? sym)
+    all h <: head_of sect => all sym <: h => is_bound? sym
     and
-    (all b <: (body (p (p sect - 1))) => all sym <: b => is_bound? sym).
+    all b <: body_of (p (p sect - 1)) => all sym <: b => is_bound? sym.
 
 ;
 
+head_of sect:Section => Head.
+body_of sect:Section => Body.
+
 is_bound? sym: String => Bool.
 ---
-is_bound? sym <-> (sym in (env p) (p sect)) or (sym in init_scope).
+
+is_bound? sym <-> (sym in (env p) (p sect)) or (sym in base_env).
 
 ;
 
 env p: Program => [Scope].
-init_scope => Scope.
+base_env => Scope.
 Scope = {String}.
 ---

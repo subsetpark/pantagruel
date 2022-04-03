@@ -12,8 +12,8 @@
   (each test tests
     (let [full-path (path/join "priv" test)
           src (slurp full-path)
-          [succ _] (protect (pantagruel/handle-src full-path src))]
+          [succ res] (protect (pantagruel/handle-src full-path src))]
 
-      (is succ))))
+      (is succ (string/format "[%s] Integration test failure: %q" test res)))))
 
 (run-tests!)

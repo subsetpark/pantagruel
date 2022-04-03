@@ -315,6 +315,10 @@
     {:kind :sym
      :text s}
     (let [looked-up (look-up-base-string s env)]
+      (unless looked-up
+        (pp env)
+        (pp (table/getproto env))
+        (throw :unknown-symbol {:sym s}))
       (case (looked-up :kind)
         # When we encounter a bare symbol, and it's a reference to a domain, it's a
         # direct reference to that domain and therefore has the type of Domain (not
@@ -354,13 +358,16 @@
 
     {:kind :quantification
      :bindings {:seq bindings}
-     :expr expr}
-    (do
+     :expr quant-expr}
+    # Look up the extended environment for just this quantification form (which
+    # contains any symbols bound by the quantification) inside the overall
+    # environment.
+    (let [closed-env (get-in env [:closures (expr :ref)])]
       (each binding-or-guard bindings
         # Type-check any guard expressions for side-effects.
         (unless (= (binding-or-guard :kind) :binding)
-          (resolve-type binding-or-guard env)))
-      (resolve-type expr env))
+          (resolve-type binding-or-guard closed-env)))
+      (resolve-type quant-expr closed-env))
 
     ({:operator boolop
       :left left} (index-of boolop boolean-operators))
@@ -486,8 +493,7 @@
 
     {:kind :sum
      :inner ts}
-    {:kind :sum
-     :inner (map |(resolve-type $ env) ts)}
+    (reduce2 sum-type (map |(resolve-type $ env) ts))
 
     {:kind :bound
      :type t}

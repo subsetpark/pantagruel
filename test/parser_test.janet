@@ -146,70 +146,74 @@
                                      :body []}]}]))
 
 (deftest qualification
-  (is-parse
-    [(sym "x")
-     .
-     ---
-     {:kind :some}
-     (sym "x") bind (sym "Nat")
-     {:kind :comma}
-     (sym "x") {:kind :boolean-operator :text ">"} (num 1)
-     =>
-     (sym "x") {:kind :boolean-operator :text "<"} (num 10)
-     .]
-    [:ok {:directives [] :chapters [{:body [{:bindings
-                                             {:kind :seq
-                                              :seq [{:expr (sym "Nat")
-                                                     :kind :binding
-                                                     :binding-type ::
-                                                     :name (sym "x")}
-                                                    {:kind :binary-operation
-                                                     :left (sym "x")
-                                                     :operator ">"
-                                                     :right (num 1)}]}
-                                             :expr {:kind :binary-operation
-                                                    :left (sym "x")
-                                                    :operator "<"
-                                                    :right (num 10)}
-                                             :kind :quantification
-                                             :quantifier {:kind :some}}]
-                                     :head [{:bindings {:kind :seq :seq []}
-                                             :kind :declaration
-                                             :name (sym "x")}]
-                                     :kind :chapter}]}]))
+  (with-dyns [:normalize-syms true]
+    (is-parse
+      [(sym "x")
+       .
+       ---
+       {:kind :some}
+       (sym "x") bind (sym "Nat")
+       {:kind :comma}
+       (sym "x") {:kind :boolean-operator :text ">"} (num 1)
+       =>
+       (sym "x") {:kind :boolean-operator :text "<"} (num 10)
+       .]
+      [:ok {:directives [] :chapters [{:body [{:bindings
+                                               {:kind :seq
+                                                :seq [{:expr (sym "Nat")
+                                                       :kind :binding
+                                                       :binding-type ::
+                                                       :name (sym "x")}
+                                                      {:kind :binary-operation
+                                                       :left (sym "x")
+                                                       :operator ">"
+                                                       :right (num 1)}]}
+                                               :expr {:kind :binary-operation
+                                                      :left (sym "x")
+                                                      :operator "<"
+                                                      :right (num 10)}
+                                               :kind :quantification
+                                               :ref :ref
+                                               :quantifier {:kind :some}}]
+                                       :head [{:bindings {:kind :seq :seq []}
+                                               :kind :declaration
+                                               :name (sym "x")}]
+                                       :kind :chapter}]}])))
 
 (deftest quantification-with-container
-  (is-parse [(sym "A") .
-             ---
-             {:kind :some :text "some"}
-             lp
-             {:kind :sym :text "a"} {:kind :comma}
-             (sym "b")
-             rp
-             bind
-             (sym "A")
-             =>
-             (sym "a") + (sym "b")
-             .]
-            [:ok {:directives []
-                  :chapters [{:body [{:bindings
-                                      {:kind :seq
-                                       :seq [{:expr (sym "A")
-                                              :kind :binding
-                                              :binding-type ::
-                                              :name {:container :parens
-                                                     :inner {:kind :seq
-                                                             :seq [(sym "a") (sym "b")]}}}]}
-                                      :expr {:kind :binary-operation
-                                             :left (sym "a")
-                                             :operator "+"
-                                             :right (sym "b")}
-                                      :kind :quantification
-                                      :quantifier {:kind :some :text "some"}}]
-                              :head [{:bindings {:kind :seq :seq []}
-                                      :kind :declaration
-                                      :name (sym "A")}]
-                              :kind :chapter}]}]))
+  (with-dyns [:normalize-syms true]
+    (is-parse [(sym "A") .
+               ---
+               {:kind :some :text "some"}
+               lp
+               {:kind :sym :text "a"} {:kind :comma}
+               (sym "b")
+               rp
+               bind
+               (sym "A")
+               =>
+               (sym "a") + (sym "b")
+               .]
+              [:ok {:directives []
+                    :chapters [{:body [{:bindings
+                                        {:kind :seq
+                                         :seq [{:expr (sym "A")
+                                                :kind :binding
+                                                :binding-type ::
+                                                :name {:container :parens
+                                                       :inner {:kind :seq
+                                                               :seq [(sym "a") (sym "b")]}}}]}
+                                        :expr {:kind :binary-operation
+                                               :left (sym "a")
+                                               :operator "+"
+                                               :right (sym "b")}
+                                        :kind :quantification
+                                        :ref :ref
+                                        :quantifier {:kind :some :text "some"}}]
+                                :head [{:bindings {:kind :seq :seq []}
+                                        :kind :declaration
+                                        :name (sym "A")}]
+                                :kind :chapter}]}])))
 
 (deftest precedence
   (is-parse
