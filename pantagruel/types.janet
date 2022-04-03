@@ -316,8 +316,6 @@
      :text s}
     (let [looked-up (look-up-base-string s env)]
       (unless looked-up
-        (pp env)
-        (pp (table/getproto env))
         (throw :unknown-symbol {:sym s}))
       (case (looked-up :kind)
         # When we encounter a bare symbol, and it's a reference to a domain, it's a
