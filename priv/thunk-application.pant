@@ -1,4 +1,4 @@
 f x: Any => {String}.
 ---
 [all s <: f x => s].
-[all chapter <: (f x), s <: chapter  => s].
+[all chapter <: (f x), ss <: chapter  => ss].

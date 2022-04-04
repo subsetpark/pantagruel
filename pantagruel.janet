@@ -69,11 +69,21 @@
 
 (defn handle-evaluation-error
   [file err src]
-  (each sym (keys (err :symbols))
-    (printf "%s:%i: unglossed symbol error: %s"
-            (path/basename file)
-            (print-src/line-no sym src)
-            (sym :text)))
+  (case (table/getproto err)
+    engine/EvaluationError
+    (each sym (keys (err :symbols))
+      (printf "%s:%i: unglossed symbol error: %s"
+              (path/basename file)
+              (print-src/line-no sym src)
+              (sym :text)))
+
+    engine/SingleBindingError
+    (do
+      (prinf "%s:%i: " (path/basename file) (print-src/line-no (err :sym) src))
+      (type-checking/print-types "can't bind %s to `%s`, already bound to `%s`"
+                                 (get-in err [:sym :text])
+                                 (get-in err [ :t :type])
+                                 (get-in err [ :already :type]))))
 
   (when (dyn :exit-on-error) (os/exit 1)))
 

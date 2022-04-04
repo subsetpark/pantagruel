@@ -25,9 +25,9 @@ is_all_bound? sect: Section => Bool.
 // body.
 
 is_all_bound? sect <->
-    all h <: head_of sect => all sym <: h => is_bound? sym
+    all h <: head_of sect => all head_sym <: h => is_bound? head_sym
     and
-    all b <: body_of (p (p sect - 1)) => all sym <: b => is_bound? sym.
+    all b <: body_of (p (p sect - 1)) => all body_sym <: b => is_bound? body_sym.
 
 ;
 

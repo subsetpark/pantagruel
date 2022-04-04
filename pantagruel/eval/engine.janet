@@ -12,6 +12,7 @@
 (import /pantagruel/types)
 
 (def EvaluationError @{})
+(def SingleBindingError @{})
 
 (defn- throw
   ```
@@ -25,6 +26,32 @@
   (error (table/setproto (merge vars @{:symbols symbols
                                        :locale locale})
                          EvaluationError)))
+
+(defn- throw-single-binding
+  ```
+
+  ```
+  [sym already t]
+  (error (table/setproto @{:sym sym :already already :t t} SingleBindingError)))
+
+(defn- normalize-thunk
+  [obj]
+  (match obj
+    @[:span _] []
+
+    {:kind :bound :type thunk}
+    (normalize-thunk thunk)
+
+    {:kind :procedure :type {:args {:tuple-of @[]} :yields yields}}
+    (normalize-thunk yields)
+
+    (o (dictionary? o))
+    (struct ;(mapcat normalize-thunk (pairs o)))
+
+    (i (indexed? i))
+    (map normalize-thunk i)
+
+    obj))
 
 (defn introduce-bindings-and-references
   ```
@@ -43,7 +70,13 @@
       {:kind :sym
        :text text
        :span span}
-      (put env text t)
+      (do
+        (when-let [already (env text)]
+          (if (not= (normalize-thunk already)
+                    (normalize-thunk t))
+            (throw-single-binding sym already t)))
+        (put env text t))
+
       (errorf "Don't know how to introduce symbol: %q" sym)))
 
   (defn bind

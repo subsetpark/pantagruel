@@ -8,7 +8,7 @@
 (import /pantagruel/types)
 (import /pantagruel/print-src)
 
-(defn- print-types
+(defn print-types
   [str & args]
 
   (defn- render-type
@@ -28,6 +28,8 @@
       {:tuple-of ts} (join ts)
       {:kind :sum :inner ts} (-> (map render-type ts) (string/join " + "))
       {:args args :yields yields} (string/format "%s => %s" (render-type args) (render-type yields))
+      {:thunk thunk} (render-type thunk)
+      {:kind :sym :text text} text
       t (string/format "%q" t)))
 
   (printf (string "type error. " str) ;(map render-type args)))
