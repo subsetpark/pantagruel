@@ -13,4 +13,3 @@
 
 (defn sym [text] {:kind :sym :text text})
 (defn num [text] {:kind :num :text text})
-

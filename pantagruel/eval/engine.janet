@@ -62,7 +62,7 @@
   type information is not available syntactically and needs resolution after
   the environment has been fully populated).
   ```
-  [form env symbol-references]
+  [form env symbol-references &opt include-prime]
 
   (defn introduce
     [sym t]
@@ -75,7 +75,8 @@
           (if (not= (normalize-thunk already)
                     (normalize-thunk t))
             (throw-single-binding sym already t)))
-        (put env text t))
+        (put env text t)
+        (if include-prime (put env (string text "'") t)))
 
       (errorf "Don't know how to introduce symbol: %q" sym)))
 
@@ -118,7 +119,7 @@
       (introduce-bindings-and-references yields env symbol-references)
 
       (each binding bindings
-        (introduce-bindings-and-references binding env symbol-references)))
+        (introduce-bindings-and-references binding env symbol-references (nil? yields))))
 
     {:kind :binding
      :binding-type binding-type
@@ -220,10 +221,6 @@
   (each statement subsection
     (introduce-bindings-and-references statement env symbol-references)))
 
-(defn- normalize
-  [{:text reference}]
-  (string/trim reference "'"))
-
 (defn- resolve-references
   ```
   Given an environment and a set of symbol references, eliminate all references
@@ -232,7 +229,7 @@
   [env references]
 
   (each reference (keys references)
-    (when (env (normalize reference))
+    (when (env (reference :text))
       (put references reference nil))))
 
 (defn- check-references

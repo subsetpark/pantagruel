@@ -39,7 +39,8 @@
      "f" {:kind :procedure
           :type {:args {:tuple-of @[{:thunk {:kind :sym :span [7 8] :text "X"}}]}
                  :yields stdlib/Void}}
-     "x" {:kind :bound :type {:thunk {:kind :sym :span [7 8] :text "X"}}}}
+     "x" {:kind :bound :type {:thunk {:kind :sym :span [7 8] :text "X"}}}
+     "x'" {:kind :bound :type {:thunk {:kind :sym :span [7 8] :text "X"}}}}
     `
     X.
     f x:X.
@@ -120,6 +121,7 @@
           :type {:args {:tuple-of @[{:thunk {:kind :sym :span [10 11] :text "X"}}]}
                  :yields stdlib/Void}}
      "x" {:kind :bound :type {:thunk {:kind :sym :span [10 11] :text "X"}}}
+     "x'" {:kind :bound :type {:thunk {:kind :sym :span [10 11] :text "X"}}}
      "y" {:kind :domain :type {:args {:tuple-of ()} :yields stdlib/Void}}}
     `
     X.
