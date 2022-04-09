@@ -101,6 +101,18 @@ sequence** and will show up elsewhere in the language.
 
 Any procedure can also yield some domain, as above.
 
+##### Procedures with side effects
+
+A procedure which has no `=>` doesn't yield any value. Thus, the type of the
+application of such a procedure is `Void`. However, such procedures are still
+quite useful as they might have some **side effects**, describing a change in
+the world. 
+
+When a procedure is declared that yields no values, we can refer to its
+arguments *before* and *after* the procedure. For instance, in the case of `f`
+above, we can refer to two symbols: `x` and `x'` (note the `'`), to describe
+`x` *before* the application of `f` and *after*.
+
 #### Domain alias
 
 The other type of statement available in a chapter head is a **domain alias**.
@@ -155,19 +167,12 @@ evaluates to itself.
 ##### Integers
 
 Integer values are represented as normal numbers: `1`, `1000`. Pantagruel will
-attempt to type a literal number as narrowly as possible. The possible domains
-are:
-
-- Int
-- Nat0 (the natural numbers, including 0)
-- Nat (the natural numbers, excluding 0)
+attempt to type a literal number as narrowly as possible. See 'Type Hierarchy'
+below for the full list of built-in number types.
 
 ##### Real numbers
 
 Real numbers are written with a decimal point: `2.47`, `10.0`.
-
-**note**: real/floating-point numbers haven't been fully implemented yet and
-might not work correctly.
 
 ##### Strings
 
