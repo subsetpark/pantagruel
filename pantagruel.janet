@@ -15,15 +15,9 @@
   [```
    A program specification notation.
 
-   # USAGE
-
-   pant FLAGS <file> | evaluate Pantagruel text <file>
-   pant FLAGS        | read Pantagruel from stdin
-
-   Flags:
-     --path, -p      | Specify the module path containing documents that can be
-                     | imported.
-                     | Default: ./pantagruel
+   Usage:
+   pant <file> | evaluate Pantagruel text <file>
+   pant        | read Pantagruel from stdin
    ```
    "version" {:kind :flag
               :short "v"
@@ -207,9 +201,10 @@
   [& _args]
 
   (setdyn :exit-on-error true)
+  (def args (argparse ;params))
+  (unless args (os/exit 1))
 
-  (let [args (argparse ;params)
-        config-file (args "config")
+  (let [config-file (args "config")
         config (if config-file
                  (-> config-file (slurp) (parse))
                  {})
