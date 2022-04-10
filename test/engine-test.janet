@@ -13,7 +13,9 @@
 
 (defn is-eval
   [closures expected-env src]
-  (let [[success? res] (protect (engine/eval (do-parse src)))]
+  (let [evaluator (engine/Evaluator "unit test" src)
+        tree (do-parse src)
+        [success? res] (protect (:eval evaluator tree))]
     (is success? (string/format "eval failure:\n\n%s\n\nFails with:\n%s"
                                 (string src)
                                 (if (table? res) (string/format "%q" res) (string res))))

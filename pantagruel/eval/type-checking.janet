@@ -72,6 +72,8 @@
   found, exit with a non-zero status code.
   ```
   [tree env file src]
+  (def start-line (print-src/line-starter file src))
+
   (let [body-exprs (mapcat |($0 :body) (tree :chapters))]
     (var type-error false)
     (each body-expr body-exprs
@@ -80,7 +82,7 @@
         ([err fib]
           (if (table? err)
             (do
-              (prinf "%s:%i: " (path/basename file) (print-src/line-no body-expr src))
+              (start-line body-expr)
               (handle-resolution-error err))
             (propagate err fib))
           (printf "\nin expression:\n\n%s\n" (print-src/print-src body-expr src))

@@ -1,0 +1,5 @@
+module IMPORTER.
+import CHECKOUT.
+
+additional_procedure d: Document.
+---

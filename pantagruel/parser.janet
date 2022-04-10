@@ -2,8 +2,6 @@
 
 (import yacc)
 
-(def SyntaxError @{})
-
 (defn maybe-gensym
   []
   (if-not (dyn :normalize-syms)
@@ -312,4 +310,6 @@
       (yacc/parse tokens)
       (match
         [:ok tree] tree
-        [:syntax-error form] (error (table/setproto @{:form form} SyntaxError)))))
+        [:syntax-error form] (error
+                               {:err :syntax
+                                :form form}))))
