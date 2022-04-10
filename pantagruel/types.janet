@@ -299,11 +299,6 @@
 
     Real))
 
-(defn- look-up-base-string
-  [s env]
-  (let [base-name (string/trim s "'")]
-    (env base-name)))
-
 (defn resolve-type
   ```
   Get the type of some AST expression when it is fully evaluated (ie, reduced).
@@ -314,7 +309,7 @@
 
     {:kind :sym
      :text s}
-    (let [looked-up (look-up-base-string s env)]
+    (let [looked-up (env s)]
       (unless looked-up
         (throw :unknown-symbol {:sym s}))
       (case (looked-up :kind)
@@ -333,7 +328,7 @@
     # resolution, skipping the `Domain` check above.
     {:thunk {:kind :sym
              :text s}}
-    (let [looked-up (look-up-base-string s env)]
+    (let [looked-up (env s)]
       (if (and (= :domain (looked-up :kind))
                (= :meta-domain (get-in looked-up [:type :kind])))
         # If the stored type is `Domain` (why doesn't `= Domain` work here?) then
