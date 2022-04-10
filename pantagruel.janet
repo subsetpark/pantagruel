@@ -22,6 +22,10 @@
    "version" {:kind :flag
               :short "v"
               :help "Show version and exit"}
+   "path" {:kind :option
+           :short "p"
+           :help "The module path"
+           :default "./pantagruel"}
    :default {:kind :accumulate}])
 
 (defn handle-syntax-error
@@ -82,8 +86,8 @@
       (prinf "%s:%i: " (path/basename file) (print-src/line-no (err :sym) src))
       (type-checking/print-types "can't bind %s to `%s`, already bound to `%s`"
                                  (get-in err [:sym :text])
-                                 (get-in err [ :t :type])
-                                 (get-in err [ :already :type]))))
+                                 (get-in err [:t :type])
+                                 (get-in err [:already :type]))))
 
   (when (dyn :exit-on-error) (os/exit 1)))
 
@@ -92,19 +96,42 @@
   (print (string "Pantagruel " version))
   (os/exit))
 
-(defn handle-src
+(defn lex-and-parse
   [file src]
   (let [lexed (lexer/lex src)
         tree (try (parser/parse-tokens lexed)
                ([err fib] (if (table? err)
                             (let [form (or (err :form) (default-form src))]
                               (handle-syntax-error file form src))
-                            (propagate err fib))))
+                            (propagate err fib))))]
+    tree))
+
+(defn handle-src
+  [file src]
+  (let [tree (lex-and-parse file src)
         env (try (engine/eval tree)
               ([err fib] (if (table? err)
                            (handle-evaluation-error file err src)
                            (propagate err fib))))]
     (type-checking/type-check tree env file src)))
+
+(defn populate-available-modules
+  [module-path]
+  (each file module-path
+    (let [file (path/join (args "path") file)
+          src (slurp file)
+          {:directives directives} (lex-and-parse file src)]
+      (var module-name nil)
+      (each directive directives
+        (when (= (directive :statement) "module")
+          (let [directive-name (get-in directive [:args :text])]
+            (when module-name
+              (prinf "%s:%i: " file (print-src/line-no directive src))
+              (printf "module name `%s` already declared; found module declaration `%s`"
+                      module-name
+                      directive-name))
+            (set module-name directive-name))))
+      (if module-name (put available-modules module-name file)))))
 
 (defn main
   ```
@@ -120,5 +147,9 @@
     (when (args "version") (handle-version))
     (let [[file src] (match (args :default)
                        (@ 'nil) ["<stdin>" (file/read stdin :all)]
-                       [file] [file (slurp file)])]
+                       [file] [file (slurp file)])
+          module-path (->> (os/dir (args "path"))
+                           (filter |(= (path/ext $) ".pant")))
+          available-modules (populate-available-modules module-path)]
+
       (handle-src file src))))
