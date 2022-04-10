@@ -9,6 +9,7 @@
 (import /pantagruel/print-src)
 
 (def version "0.8.0")
+(def default-path "pantagruel")
 
 (def params
   [```
@@ -29,8 +30,11 @@
               :help "Show version and exit"}
    "path" {:kind :option
            :short "p"
-           :help "The module path"
-           :default "./pantagruel"}
+           :help "The module path"}
+   "config" {:kind :option
+             :short "c"
+             :help "The config file to consult, in JDN format"
+             :default ".pantagruel.jdn"}
    :default {:kind :accumulate}])
 
 (defn handle-syntax-error
@@ -204,11 +208,16 @@
 
   (setdyn :exit-on-error true)
 
-  (let [args (argparse ;params)]
+  (let [args (argparse ;params)
+        config-file (args "config")
+        config (if config-file
+                 (-> config-file (slurp) (parse))
+                 {})
+        module-path (or (args "path") (config "path") default-path)]
     (when (args "version") (handle-version))
     (let [[file src] (match (args :default)
                        (@ 'nil) ["<stdin>" (file/read stdin :all)]
                        [file] [file (slurp file)])
-          available-modules (populate-available-modules (args "path"))]
+          available-modules (populate-available-modules module-path)]
 
       (handle-src file src available-modules))))
