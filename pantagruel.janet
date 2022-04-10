@@ -16,8 +16,8 @@
    A program specification notation.
 
    Usage:
-   pant <file> | evaluate Pantagruel text <file>
-   pant        | read Pantagruel from stdin
+   pant <file1 file2 ...> | evaluate Pantagruel document files
+   pant                   | read Pantagruel from stdin
    ```
    "version" {:kind :flag
               :short "v"
@@ -115,8 +115,7 @@
 
 (defn handle-version
   []
-  (print (string "Pantagruel " version))
-  (os/exit))
+  (print (string "Pantagruel " version)))
 
 (defn lex-and-parse
   [file src]
@@ -158,11 +157,13 @@
   Read the module path and parse all the Pantagruel files that are there. Build
   a map of module names (for any file that declares one) to file paths.
   ```
-  [path]
+  [args]
 
   (def available-modules @{})
 
-  (let [module-path (->> (os/dir path)
+  (let [config (or (-?> (args "config") (slurp) (parse)) {})
+        path (-> (or (args "path") (config "path") default-path))
+        module-path (->> (os/dir path)
                          (filter |(= (path/ext $) ".pant")))]
     (each file module-path
       (let [file (path/join path file)
@@ -194,25 +195,25 @@
   ```
   Main application logic.
 
-  Load a file or read a document from stdin.
+  Load file(s) or read a document from stdin.
 
   Evaluate it and check; if all checks pass, return 0.
   ```
   [& _args]
 
-  (setdyn :exit-on-error true)
   (def args (argparse ;params))
   (unless args (os/exit 1))
+  (cond
+    (args "version") (handle-version)
+    (let [available-modules (populate-available-modules args)]
 
-  (let [config-file (args "config")
-        config (if config-file
-                 (-> config-file (slurp) (parse))
-                 {})
-        module-path (or (args "path") (config "path") default-path)]
-    (when (args "version") (handle-version))
-    (let [[file src] (match (args :default)
-                       (@ 'nil) ["<stdin>" (file/read stdin :all)]
-                       [file] [file (slurp file)])
-          available-modules (populate-available-modules module-path)]
+      (setdyn :exit-on-error true)
 
-      (handle-src file src available-modules))))
+      (if-let [filenames (args :default)]
+        (each file filenames
+          (let [src (slurp file)]
+            (handle-src file src available-modules)))
+
+        (let [src (file/read stdin :all)]
+
+          (handle-src "<stdin>" src available-modules))))))

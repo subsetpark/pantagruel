@@ -24,4 +24,3 @@
     (prinf "%s:%i: "
            (path/basename file)
            (line-no sym src))))
-
