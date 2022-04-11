@@ -105,9 +105,9 @@
       :import
       (do
         (start-line (err :to-import))
-        (printf "import error: module `%s` not found. Available modules: %q"
+        (printf "import error: module `%s` not found. Available modules: %s"
                 (get-in err [:to-import :text])
-                (keys (err :available-modules))))
+                (-> (err :available-modules) (keys) (string/join ", "))))
 
       :import-cycle
       (do
