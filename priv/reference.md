@@ -36,9 +36,6 @@ name `NUMBERS`.
 Import directives are used to introduce bindings defined by another module (see
 `module`, above) into the evaluation environment for the current document.
 
-**Note:** imports have not yet been implemented and, while the `import` keyword
-is parseable, it currently has no effect.
-
 ### Chapter heads
 
 A Pantagruel chapter head introduces one or more symbols, of two kinds:
