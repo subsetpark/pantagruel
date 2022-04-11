@@ -111,7 +111,7 @@
 
       :import-cycle
       (do
-        (start-line ( err :to-import))
+        (start-line (err :to-import))
         (printf "import cycle error: encountered cycle: %s"
                 (string/join (err :currently-importing-modules) " -> ")))
 
@@ -165,13 +165,18 @@
   ```
   [args]
 
+  (defn pantagruel-files
+    [path]
+    (->> (os/dir path)
+         (filter |(= (path/ext $) ".pant"))))
+
   (def available-modules @{})
 
   (let [config (or (-?> (args "config") (slurp) (parse)) {})
         path (-> (or (args "path") (config "path") default-path))
-        module-path (->> (os/dir path)
-                         (filter |(= (path/ext $) ".pant")))]
-    (each file module-path
+        cur-path (pantagruel-files ".")
+        module-path (pantagruel-files path)]
+    (each file (array ;module-path ;cur-path)
       (let [file (path/join path file)
             src (slurp file)
             start-line (print-src/line-starter file src)
