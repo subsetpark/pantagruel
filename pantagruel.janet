@@ -8,7 +8,7 @@
 (import /pantagruel/eval/type-checking)
 (import /pantagruel/print-src)
 
-(def version "0.8.0")
+(def version "0.9.0")
 (def default-path "pantagruel")
 
 (def params
