@@ -84,7 +84,7 @@
             (when-let [already (env text)]
               (if (not= (normalize-thunk already)
                         (normalize-thunk t))
-                (:throw :single-binding {:sym sym :already already :t t})))
+                (:throw self :single-binding {:sym sym :already already :t t})))
             (put env text t)
             (if include-prime (put env (string text "'") t)))
 
