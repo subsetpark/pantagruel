@@ -151,6 +151,8 @@
           tree (lex-and-parse file src)]
       [tree (engine/Evaluator file src)]))
 
+  (array/clear engine/currently-importing-modules)
+
   (let [tree (lex-and-parse file src)
         evaluator (engine/Evaluator file src)
         env (try (:eval evaluator tree available-modules evaluator-callback)

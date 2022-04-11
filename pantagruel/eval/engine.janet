@@ -11,7 +11,7 @@
 (import /pantagruel/stdlib)
 (import /pantagruel/types)
 
-(def- currently-importing-modules @[])
+(def currently-importing-modules @[])
 
 (defn currently-importing?
   [module]
