@@ -109,6 +109,12 @@
                 (get-in err [:to-import :text])
                 (keys (err :available-modules))))
 
+      :import-cycle
+      (do
+        (start-line ( err :to-import))
+        (printf "import cycle error: encountered cycle: %s"
+                (string/join (err :currently-importing-modules) " -> ")))
+
       (errorf "Got unknown evaluation error: %q" err)))
 
   (when (dyn :exit-on-error) (os/exit 1)))

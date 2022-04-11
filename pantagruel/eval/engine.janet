@@ -11,6 +11,16 @@
 (import /pantagruel/stdlib)
 (import /pantagruel/types)
 
+(def- currently-importing-modules @[])
+
+(defn currently-importing?
+  [module]
+  (index-of module currently-importing-modules))
+
+(defn currently-importing
+  [module]
+  (array/push currently-importing-modules module))
+
 (defn- normalize-thunk
   [obj]
   (match obj
@@ -237,15 +247,26 @@
       (when (and available-modules evaluator-callback)
         (each directive directives
           (match directive
+            {:statement "module" :args sym}
+            (let [current-module (sym :text)]
+              (unless (currently-importing? current-module)
+                (currently-importing current-module)))
+
             {:statement "import" :args sym}
-            (if-let [path (available-modules (sym :text))]
-              (let [[tree evaluator] (evaluator-callback path)
-                    module-env (:eval evaluator tree available-modules evaluator-callback)]
-                (merge-into
-                  env
-                  # Convert the imported environment into a struct in order to
-                  # drop the prototype.
-                  (table/to-struct module-env)))
+            (if-let [to-import (sym :text)
+                     path (available-modules to-import)]
+              (let [err? (currently-importing? to-import)
+                    [tree evaluator] (evaluator-callback path)]
+                (currently-importing to-import)
+                (if err?
+                  (:throw self :import-cycle {:currently-importing-modules currently-importing-modules
+                                              :to-import sym}))
+                (merge-into env (->
+                                  evaluator
+                                  (:eval tree available-modules evaluator-callback)
+                                  # Convert the imported environment into a struct in order to
+                                  # drop the prototype.
+                                  (table/to-struct))))
               (:throw self :import {:available-modules available-modules
                                     :to-import sym})))))
 
