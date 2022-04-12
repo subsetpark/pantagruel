@@ -43,6 +43,6 @@
 
 (def arithmetic-operators ["-" "+" "*" "/" "mod"])
 
-(def comparison-operators ["=" "!=" "<" ">" "=<`" ">="])
+(def comparison-operators ["=" "!=" "<" ">" "=<" ">="])
 
 (def boolean-operators ["~" "and" "or" "->" "<->"])
