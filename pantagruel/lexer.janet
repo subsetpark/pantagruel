@@ -42,7 +42,6 @@
       [:yields "=>"]
       [:from "<:"]
       [:: ":"]
-      [:= "="]
       [:+ "+"]
       [:comma ","]
       [:update "update"]
@@ -57,12 +56,13 @@
       [:lbrace "{"]
       [:rbrace "}"]
       [:logical-operator (+ "<->" "->")]
-      [:boolean-operator (+ ">" "<" "=<" ">=" "!="
+      [:boolean-operator (+ "=<" ">=" ">" "<" "!="
                             # TODO: This is a total hack!
                             (* "in" (not :w))
                             (* "or" (not :w))
                             (* "and" (not :w))
                             (* "xor" (not :w)))]
+      [:= "="]
       [:arithmetic-operator1 (+ "*" "/" "^"
                                 (* "mod" (not :w)))]
       [:arithmetic-operator2 (+ "-" "|" "&")]

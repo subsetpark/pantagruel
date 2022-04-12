@@ -216,11 +216,11 @@
 
   (def args (argparse ;params))
   (unless args (os/exit 1))
+  (setdyn :exit-on-error true)
+
   (cond
     (args "version") (handle-version)
     (let [available-modules (populate-available-modules args)]
-
-      (setdyn :exit-on-error true)
 
       (if-let [filenames (args :default)]
         (each file filenames
