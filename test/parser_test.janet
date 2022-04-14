@@ -173,7 +173,7 @@
                                                       :operator "<"
                                                       :right (num 10)}
                                                :kind :quantification
-                                               :ref :ref
+                                               :scope @[nil]
                                                :quantifier {:kind :some}}]
                                        :head [{:bindings {:kind :seq :seq []}
                                                :kind :declaration
@@ -208,7 +208,7 @@
                                                :operator "+"
                                                :right (sym "b")}
                                         :kind :quantification
-                                        :ref :ref
+                                        :scope @[nil]
                                         :quantifier {:kind :some :text "some"}}]
                                 :head [{:bindings {:kind :seq :seq []}
                                         :kind :declaration

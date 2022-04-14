@@ -83,8 +83,7 @@
                                                                    :text "String"}}}}
               "b" {:kind :procedure :type {:args {:tuple-of @[]}
                                            :yields {:thunk {:kind :sym
-                                                            :text "Body"}}}}
-              :closures @{}}]
+                                                            :text "Body"}}}}}]
     (is-type
       {:list-of {:list-of @{:kind :concrete :name "String"
                             :type @{:kind :meta-domain :name "Domain"}}}}
@@ -148,9 +147,7 @@
                                                                     {:thunk {:kind :sym :text "Body"}}]}
                                                  :yields {:thunk {:kind :sym :text "Section"}}}}
               "sym" {:kind :bound :type {:thunk {:kind :sym :text "String"}}}}
-        quant-sym (gensym)
-        closures @{quant-sym (table/setproto @{"sect" {:kind :bound :type {:thunk {:kind :sym :text "Section"}}}} env)}]
-    (put env :closures closures)
+        closure (table/setproto @{"sect" {:kind :bound :type {:thunk {:kind :sym :text "Section"}}}} env)]
     # A compound alias to built-in types.
     (is-type
       stdlib/Domain
@@ -190,7 +187,7 @@
               :x {:kind :sym
                   :text "sect"}}
        :kind :quantification
-       :ref quant-sym
+       :scope @[closure]
        :quantifier {:kind :all
                     :text "all"}}
 
@@ -232,10 +229,8 @@
               "references" {:kind :procedure :type {:args {:tuple-of @[{:thunk {:kind :sym :text "Note"}}]}
                                                     :yields {:list-of {:thunk {:kind :sym :text "Reference"}}}}}
               "s" {:kind :bound :type {:thunk {:kind :sym :text "String"}}}}
-        quant-sym (gensym)
-        closures @{quant-sym (table/setproto @{"m" {:kind :bound
-                                                    :type {:thunk {:kind :sym :text "Note"}}}} env)}]
-    (put env :closures closures)
+        closure (table/setproto @{"m" {:kind :bound
+                                       :type {:thunk {:kind :sym :text "Note"}}}} env)]
     (is-type
       {:container :set
        :inner stdlib/String}
@@ -259,7 +254,7 @@
                       :kind :application
                       :x {:kind :sym :text "m"}}
                :kind :quantification
-               :ref quant-sym
+               :scope @[closure]
                :quantifier {:kind :all :text "all"}}}
 
       env)))

@@ -355,7 +355,7 @@
     # Look up the extended environment for just this quantification form (which
     # contains any symbols bound by the quantification) inside the overall
     # environment.
-    (let [closed-env (get-in env [:closures (expr :ref)])]
+    (let [closed-env (get-in expr [:scope 0])]
       (each binding-or-guard bindings
         # Type-check any guard expressions for side-effects.
         (unless (= (binding-or-guard :kind) :binding)

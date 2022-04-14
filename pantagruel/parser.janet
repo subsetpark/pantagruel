@@ -2,12 +2,6 @@
 
 (import yacc)
 
-(defn maybe-gensym
-  []
-  (if-not (dyn :normalize-syms)
-    (gensym)
-    :ref))
-
 (defn span
   [left right]
   (cond
@@ -212,10 +206,9 @@
                                                             # temporary
                                                             # body-level
                                                             # scopes; generate
-                                                            # an identity to
-                                                            # look up the scope
-                                                            # later on.
-                                                            :ref (maybe-gensym)
+                                                            # a slot to put the
+                                                            # scope into.
+                                                            :scope @[nil]
                                                             :span (span $0 $3)})
      ### Expressions
 

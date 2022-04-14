@@ -167,7 +167,7 @@
         (do
           # Close around the current, extended environment, linking it back to the
           # AST form that it's associated with.
-          (put-in (table/getproto env) [:closures (form :ref)] env)
+          (put-in form [:scope 0] env)
           (each binding bindings
             (:introduce-bindings-and-references self binding env symbol-references))
           (:introduce-bindings-and-references self expr env symbol-references))
@@ -242,7 +242,7 @@
       # Environment setup. Create a root environment and then merge in any
       # imported modules.
 
-      (def env (table/setproto @{:closures @{}} stdlib/base-env))
+      (def env (table/setproto @{} stdlib/base-env))
 
       (when (and available-modules evaluator-callback)
         (each directive directives
