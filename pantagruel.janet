@@ -160,6 +160,10 @@
                          (propagate err fib)))]
     (type-checking/type-check tree env file src)))
 
+(defn- maybe-read
+  [filename]
+  (when (os/stat filename) (slurp filename)))
+
 (defn populate-available-modules
   ```
   Read the module path and parse all the Pantagruel files that are there. Build
@@ -174,7 +178,7 @@
 
   (def available-modules @{})
 
-  (let [config (or (-?> (args "config") (slurp) (parse)) {})
+  (let [config (or (-?> (args "config") (maybe-read) (parse)) {})
         path (-> (or (args "path") (config "path") default-path))
         cur-path (pantagruel-files ".")
         module-path (pantagruel-files path)]
