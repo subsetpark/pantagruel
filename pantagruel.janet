@@ -173,8 +173,10 @@
 
   (defn pantagruel-files
     [path]
-    (->> (os/dir path)
-         (filter |(= (path/ext $) ".pant"))))
+    (if (os/stat path)
+      (->> (os/dir path)
+           (filter |(= (path/ext $) ".pant")))
+      @[]))
 
   (def available-modules @{})
 
