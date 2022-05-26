@@ -175,7 +175,8 @@
     [path]
     (if (os/stat path)
       (->> (os/dir path)
-           (filter |(= (path/ext $) ".pant")))
+           (filter |(= (path/ext $) ".pant"))
+           (map |(path/join path $)))
       @[]))
 
   (def available-modules @{})
@@ -185,8 +186,7 @@
         cur-path (pantagruel-files ".")
         module-path (pantagruel-files path)]
     (each file (array ;module-path ;cur-path)
-      (let [file (path/join path file)
-            src (slurp file)
+      (let [src (slurp file)
             start-line (print-src/line-starter file src)
             {:directives directives} (lex-and-parse file src)]
 
