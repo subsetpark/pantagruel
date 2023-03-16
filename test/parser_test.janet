@@ -155,7 +155,7 @@
        (sym "x") bind (sym "Nat")
        {:kind :comma}
        (sym "x") {:kind :boolean-operator :text ">"} (num 1)
-       =>
+       ...
        (sym "x") {:kind :boolean-operator :text "<"} (num 10)
        .]
       [:ok {:directives [] :chapters [{:body [{:bindings
@@ -191,7 +191,7 @@
                rp
                bind
                (sym "A")
-               =>
+               ...
                (sym "a") + (sym "b")
                .]
               [:ok {:directives []

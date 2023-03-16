@@ -243,7 +243,7 @@ a comma-separated list of **binding** or **expression** forms, followed by a
 **yields** sign, followed by a statement about the bound variables.
 
 ```pantagruel
-all x: Nat, y: Nat, x > y => (x - y) > 0.
+all x: Nat, y: Nat, x > y ... (x - y) > 0.
 ```
 
 This example says that for any x and y in the natural numbers where x is
@@ -251,7 +251,7 @@ greater than y, x minus y is greater than 0. It could also be written in a
 slightly more compressed form, binding multiple variables from the same domain:
 
 ```pantagruel
-all (x, y): Nat, x > y => (x - y) > 0.
+all (x, y): Nat, x > y ... (x - y) > 0.
 ```
 
 #### Containers
@@ -287,12 +287,12 @@ strings.
 square brackets. For instance, 
 
 ```pantagruel
-[all x : X => x ^ 2].
+[all x : X ... x ^ 2].
 ```
 
 denotes a sequence made up every element in the domain X, squared.
 
-#### Cases
+#### Case
 
 A case expression consists of the symbol `case`, an optional expression, and a
 series of **mappings** of expressions to expressions. Each mapping is separated
@@ -307,8 +307,17 @@ fib x = case ...
     x = 2 => 1.
 ```
 
-If there's an expression between `case` and `...`, it will be type-checked
-against the left-hand sides of the mapping clauses.
+If there's no expression between `case` and `...`, then the left-hand side of
+each mapping clause is typed as a statement that might be true or false. If
+there's an expression between `case` and `...`, it will be type-checked against
+the left-hand sides of the mapping clauses. For instance: 
+
+```
+fib x = case x ...
+    1 => 1,
+    2 => 1,
+    x => fib (x - 1) + fib (x - 2).
+```
 
 #### Update
 
@@ -393,7 +402,7 @@ must be bound by the end of the subchapter.
 Expressions within quantifications have similar binding behavior as procedures.
 
 ```
-all x: Y, x > z => f x
+all x: Y, x > z ... f x
     *
 ```
 
@@ -407,7 +416,7 @@ A symbol can be bound with `:` to give it the type of the domain on the right
 of the operator:
 
 ```
-all x: Nat => x.
+all x: Nat ... x.
 ```
 
 `x` is of the type `Nat`.
@@ -417,7 +426,7 @@ all x: Nat => x.
 A symbol bound with `<:` will have the *member type* of the expression on the right side of the operator:
 
 ```
-all x <: items y => x.
+all x <: items y ... x.
 ```
 
 If `items y` has a type of `{T}` or `[T]`, then `x` will have the type `T`.

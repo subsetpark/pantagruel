@@ -92,7 +92,7 @@
 
     `f.
      ---
-     some x:Nat, x > 1 => x < 10.
+     some x:Nat, x > 1 ... x < 10.
      `))
 
 (deftest eval-quantification-with-container
@@ -100,7 +100,7 @@
     {"A" {:kind :domain :type stdlib/Domain}}
     `A.
      ---
-     some (a, b):A => a + b.
+     some (a, b):A ... a + b.
      `))
 
 (deftest eval-chapter

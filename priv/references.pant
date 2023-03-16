@@ -3,5 +3,5 @@ Reference = Line.
 Note = [Line].
 references n: Note => [Reference].
 ---
-all line <: n => line in (references n).
+all line <: n ... line in (references n).
 

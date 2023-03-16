@@ -196,7 +196,7 @@
        (:some1) ,identity)
 
      (quantification
-       (quantification-word bindings-exprs :yields expr) ,|{:kind :quantification
+       (quantification-word bindings-exprs :... expr) ,|{:kind :quantification
                                                             :quantifier $0
                                                             :bindings $1
                                                             :expr $3

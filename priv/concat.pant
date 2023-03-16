@@ -9,4 +9,4 @@ concat (s, r): String => String.
 
 SampleValues = {"ok", "error"}.
 ---
-all x: SampleValues => concat "" x = x.
+all x: SampleValues ... concat "" x = x.

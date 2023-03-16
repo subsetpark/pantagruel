@@ -2,6 +2,7 @@
 (def bind {:kind ::})
 (def --- {:kind :line})
 (def => {:kind :yields})
+(def ... {:kind :...})
 (def = {:kind := :text "="})
 (def + {:kind :arithmetic-operator2 :text "+"})
 (def lp {:kind :lparen})

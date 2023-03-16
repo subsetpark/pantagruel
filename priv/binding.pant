@@ -12,11 +12,11 @@ Head = [Comment + Declaration + Alias].
 Body = [Comment + Expression].
 (Comment, Declaration, Alias, Expression) = [String].
 ---
-eval p <-> all sect <: p => is_all_bound? sect.
+eval p <-> all sect <: p ... all_bound? sect.
 
 ;
 
-is_all_bound? sect: Section => Bool.
+all_bound? sect: Section => Bool.
 ---
 
 // All variables referred to in a section head must be defined by
@@ -24,20 +24,20 @@ is_all_bound? sect: Section => Bool.
 // body, however, must be defined by the end of the *next* section
 // body.
 
-is_all_bound? sect <->
-    all h <: head_of sect => all head_sym <: h => is_bound? head_sym
+all_bound? sect <->
+    all h <: head_of sect ... all head_sym <: h ... bound? head_sym
     and
-    all b <: body_of (p (p sect - 1)) => all body_sym <: b => is_bound? body_sym.
+    all b <: body_of (p (p sect - 1)) ... all body_sym <: b ... bound? body_sym.
 
 ;
 
 head_of sect:Section => Head.
 body_of sect:Section => Body.
 
-is_bound? sym: String => Bool.
+bound? sym: String => Bool.
 ---
 
-is_bound? sym <-> (sym in (env p) (p sect)) or (sym in base_env).
+bound? sym <-> (sym in (env p) (p sect)) or (sym in base_env).
 
 ;
 
