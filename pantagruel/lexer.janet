@@ -41,7 +41,7 @@
       [:ws :s+]
       [:directive (+ ,(kwd "module") ,(kwd "import"))]
       [:where ";"]
-      [:line "---"]
+      [:line (at-least 3 "-")]
       [:... "..."]
       [:. "."]
       [:yields "=>"]
@@ -67,8 +67,7 @@
                             ,(kwd "and")
                             ,(kwd "xor"))]
       [:= "="]
-      [:arithmetic-operator1 (+ "*" "/" "^"
-                                ,(kwd "mod"))]
+      [:arithmetic-operator1 (+ "*" "/" "^" ,(kwd "mod"))]
       [:arithmetic-operator2 (+ "-" "|" "&")]
       [:unary-operator (+ "~" "#")]
       [:num (cmt (<- (+

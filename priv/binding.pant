@@ -17,7 +17,7 @@ eval p <-> all sect <: p ... all_bound? sect.
 ;
 
 all_bound? sect: Section => Bool.
----
+---------------------------------
 
 // All variables referred to in a section head must be defined by
 // the end of that section head. All the variables in a section
