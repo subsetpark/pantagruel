@@ -20,6 +20,7 @@
 
     (match t
       (ts (indexed? ts)) (join ts)
+      {:literal literal} literal
       {:name t-name} t-name
       # Special case the empty set.
       {:container :set :inner ()} "{}"

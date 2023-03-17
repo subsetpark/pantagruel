@@ -12,6 +12,16 @@
 
 (import /pantagruel/stdlib :prefix "")
 
+(def literals @{})
+
+(defn intern
+  [proto value]
+  (if-let [interned (literals value)]
+    interned
+    (let [literal (table/setproto @{:literal value} proto)]
+      (put literals value literal)
+      literal)))
+
 (def- ResolutionError @{})
 
 (defn- throw
@@ -162,6 +172,13 @@
                     yield-gcd (gcd-type yields-t yields-t2)]
                 {:args args-gcd :yields yield-gcd})
 
+              # When unifying two literal values, compare them directly; don't try to
+              # find a GCD.
+              [{:literal lit-left} {:literal lit-right}]
+              (if (= lit-left lit-right) 
+                lit-left
+                nil)
+
               [t t2]
               (find-gcd t t2))]
     (if gcd
@@ -193,17 +210,22 @@
   # If either side is itself a sum type, unpack it; in other words,
   # (X + Y) + Z = {X, Y, Z}.
   (let [t1 (or (left-t :sum) [left-t])
-        t2 (or (right-t :sum) [right-t])
-        gcd (protect (gcd-outer t1 t2))]
+        t2 (or (right-t :sum) [right-t])]
     (cond
-      # If the two types are unifiable, return the common denominator.
-      (gcd 0) (gcd 1)
-      # If both sides are equivalent, we don't need a sum. In other words,
-      # X + X = X.
-      (and (= t1 t2) (one? (length t1))) (t1 0)
+      (and (all |($ :literal) t1)
+           (all |($ :literal) t2))
+      {:kind :sum :inner (distinct [;t1 ;t2])}
 
-      {:kind :sum
-       :inner (distinct [;t1 ;t2])})))
+      (let [gcd (protect (gcd-outer t1 t2))]
+        (cond
+          # If the two types are unifiable, return the common denominator.
+          (gcd 0) (gcd 1)
+          # If both sides are equivalent, we don't need a sum. In other words,
+          # X + X = X.
+          (and (= t1 t2) (one? (length t1))) (t1 0)
+
+          {:kind :sum
+           :inner (distinct [;t1 ;t2])})))))
 
 (defn- inner-type
   ```
@@ -443,8 +465,8 @@
      :inner inner}
     {:list-of (resolve-type inner env)}
 
-    {:kind :string}
-    String
+    {:kind :string :text text}
+    (intern String text)
 
     {:kind :num
      :text n}
@@ -596,8 +618,8 @@
     {:args {:tuple-of (map type-of-form (distribute-bindings-types bindings))}
      :yields Void}
 
-    {:kind :string}
-    String
+    {:kind :string :text text}
+    (intern String text)
 
     {:kind :num
      :text n}
