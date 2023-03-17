@@ -139,7 +139,7 @@ for `Nat`.
 ### Chapter Bodies
 
 Chapter **bodies** are separated from chapter heads with a horizontal
-line, consisting of three hyphens:
+line, consisting of three or more hyphens (`---`):
 
 ```pantagruel
 f.
