@@ -30,8 +30,7 @@
 (def- lexer-grammar
   # Symbol grammar cribbed from Janet spec.
   (let [digits-peg '(some (+ (range "09" "AZ" "az") (set "_")))
-        sym '(range "09" "AZ" "az" "\x80\xFF")
-        sym-peg ~(some (+ ,sym (set "'!$%?@_")))]
+        sym-peg ~(some (+ (range "09" "AZ" "az" "\x80\xFF") (set "'!$%?@_")))]
 
     (defn kwd
       [word]
