@@ -30,11 +30,17 @@
 (def- lexer-grammar
   # Symbol grammar cribbed from Janet spec.
   (let [digits-peg '(some (+ (range "09" "AZ" "az") (set "_")))
-        sym-peg '(some (+ (range "09" "AZ" "az" "\x80\xFF") (set "'!$%?@_")))]
+        sym '(range "09" "AZ" "az" "\x80\xFF")
+        sym-peg ~(some (+ ,sym (set "'!$%?@_")))]
+
+    (defn kwd
+      [word]
+      ~(* ,word (not ,sym-peg)))
+
     ~[[:comment (* "//" (thru "\n"))]
       [:string (* `"` (thru `"`))]
       [:ws :s+]
-      [:directive (+ "module" "import")]
+      [:directive (+ ,(kwd "module") ,(kwd "import"))]
       [:where ";"]
       [:line "---"]
       [:... "..."]
@@ -44,11 +50,11 @@
       [:: ":"]
       [:+ "+"]
       [:comma ","]
-      [:update "update"]
-      [:case "case"]
-      [:all "all"]
-      [:some1 "some1"]
-      [:some "some"]
+      [:update ,(kwd "update")]
+      [:case ,(kwd "case")]
+      [:all ,(kwd "all")]
+      [:some1 ,(kwd "some1")]
+      [:some ,(kwd "some")]
       [:lparen "("]
       [:rparen ")"]
       [:lsquare "["]
@@ -57,14 +63,13 @@
       [:rbrace "}"]
       [:logical-operator (+ "<->" "->")]
       [:boolean-operator (+ "=<" ">=" ">" "<" "!="
-                            # TODO: This is a total hack!
-                            (* "in" (not :w))
-                            (* "or" (not :w))
-                            (* "and" (not :w))
-                            (* "xor" (not :w)))]
+                            ,(kwd "in")
+                            ,(kwd "or")
+                            ,(kwd "and")
+                            ,(kwd "xor"))]
       [:= "="]
       [:arithmetic-operator1 (+ "*" "/" "^"
-                                (* "mod" (not :w)))]
+                                ,(kwd "mod"))]
       [:arithmetic-operator2 (+ "-" "|" "&")]
       [:unary-operator (+ "~" "#")]
       [:num (cmt (<- (+
