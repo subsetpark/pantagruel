@@ -72,7 +72,12 @@
       # associated with the syntactically derived type information (or a thunk, if
       # type information is not available syntactically and needs resolution after
       # the environment has been fully populated).
-      [self form env symbol-references &opt include-prime]
+      [self form env symbol-references include-prime]
+
+      (defn recurse
+        [form &opt include-prime]
+        (default include-prime false)
+        (:introduce-bindings-and-references self form env symbol-references include-prime))
 
       (defn introduce
         [sym t]
@@ -86,35 +91,27 @@
                         (normalize-thunk t))
                 (:throw self :single-binding {:sym sym :already already :t t})))
             (put env text t)
+            # Optionally introduce a "successor" symbol, with a `'` appended,
+            # and the same type.
             (if include-prime (put env (string text "'") t)))
 
           (errorf "Don't know how to introduce symbol: %q" sym)))
 
-      (defn bind
-        [name expr]
-        (introduce name {:kind :bound
-                         :type (syntactic-types/type-of-form expr)}))
-      (defn bind-member
-        ```
-        Bind a symbol to the inner type of `expr`.
-        ```
-        [name expr]
-        (introduce name {:kind :member
-                         :type (syntactic-types/type-of-form expr)}))
-      (defn alias
-        [name expr]
-        (introduce name {:kind :domain
-                         :type (syntactic-types/type-of-form expr)}))
-
       (match form
         {:kind :decl-alias
          :name name
-         :alias expr}
-        (do
+         :alias t}
+        (let [f |(introduce $ {:kind :domain
+                               :type (syntactic-types/type-of-form t)})]
           (match name
-            {:container _ :inner {:seq names}} (each name names (alias name expr))
-            (alias name expr))
-          (:introduce-bindings-and-references self expr env symbol-references))
+            # Alias each symbol in a sequence of symbols to the type form `t`.
+            {:container _ :inner {:seq names}}
+            (each name names (f name))
+
+            # Alias a single symbol to the type form `t`.
+            (f name))
+
+          (recurse t))
 
         {:kind :declaration
          :name name
@@ -126,40 +123,48 @@
                 t (syntactic-types/type-of-form form)]
             (introduce name {:kind kind :type t}))
 
-          (:introduce-bindings-and-references self yields env symbol-references)
+          (recurse yields)
 
           (each binding bindings
-            (:introduce-bindings-and-references self binding env symbol-references (nil? yields))))
+            # If this procedure declaration doesn't yield any value, treat it
+            # as effectful and introduce a successor symbol for each argument
+            # binding.
+            (recurse binding (nil? yields))))
 
         {:kind :binding
          :binding-type binding-type
          :name name
          :expr expr}
-        (let [f (case binding-type
-                  :: bind
-                  :from bind-member)]
+        (let [kind (case binding-type
+                     :: :bound
+                     :from :member)
+              f |(introduce $ {:kind kind
+                               :type (syntactic-types/type-of-form expr)})]
           (match name
+            # Assign the type of `expr` to each symbol in a sequence of symbols.
             {:container _ :inner {:seq names}}
-            (each name names (f name expr))
+            (each name names (f name))
 
-            (f name expr))
-          (:introduce-bindings-and-references self expr env symbol-references))
+            # Assign the type of `expr` to a single symbol.
+            (f name))
+
+          (recurse expr))
 
         {:kind :case
          :mapping {:seq mapping-form}}
         (do
-          (:introduce-bindings-and-references self (form :case) env symbol-references)
+          (recurse (form :case))
           (each {:left left :right right} mapping-form
-            (:introduce-bindings-and-references self left env symbol-references)
-            (:introduce-bindings-and-references self right env symbol-references)))
+            (recurse left)
+            (recurse right)))
 
         {:kind :update
          :mapping {:seq mapping-form}}
         (do
-          (:introduce-bindings-and-references self (form :case) env symbol-references)
+          (recurse (form :case))
           (each {:left left :right right} mapping-form
-            (:introduce-bindings-and-references self left env symbol-references)
-            (:introduce-bindings-and-references self right env symbol-references)))
+            (recurse left)
+            (recurse right)))
 
         {:kind :quantification
          :bindings {:seq bindings}
@@ -169,42 +174,42 @@
           # AST form that it's associated with.
           (put-in form [:scope 0] env)
           (each binding bindings
-            (:introduce-bindings-and-references self binding env symbol-references))
-          (:introduce-bindings-and-references self expr env symbol-references))
+            (recurse binding))
+          (recurse expr))
 
         {:kind :binary-operation
          :left left
          :right right}
         (do
-          (:introduce-bindings-and-references self left env symbol-references)
-          (:introduce-bindings-and-references self right env symbol-references))
+          (recurse left)
+          (recurse right))
 
         {:kind :unary-operation
          :left left}
-        (:introduce-bindings-and-references self left env symbol-references)
+        (recurse left)
 
         {:kind :application
          :f f
          :x x}
         (do
-          (:introduce-bindings-and-references self f env symbol-references)
-          (:introduce-bindings-and-references self x env symbol-references))
+          (recurse f)
+          (recurse x))
 
         {:container _ :inner {:seq exprs}}
         (each expr exprs
-          (:introduce-bindings-and-references self expr env symbol-references))
+          (recurse expr))
 
         ({:container _ :inner exprs} (tuple? exprs))
         (each expr exprs
-          (:introduce-bindings-and-references self expr env symbol-references))
+          (recurse expr))
 
         {:container _ :inner expr}
-        (:introduce-bindings-and-references self expr env symbol-references)
+        (recurse expr)
 
         {:kind :domain-sum
          :inner inner}
         (each domain inner
-          (:introduce-bindings-and-references self domain env symbol-references))
+          (recurse domain))
 
         {:kind :sym
          :text sym}
@@ -228,7 +233,7 @@
       # Evaluate a subsection for any environment bindings.
       [self subsection env symbol-references]
       (each statement subsection
-        (:introduce-bindings-and-references self statement env symbol-references)))
+        (:introduce-bindings-and-references self statement env symbol-references false)))
 
     :eval
     (fn eval

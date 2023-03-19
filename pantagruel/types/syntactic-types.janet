@@ -1,4 +1,5 @@
-## Logic to derive type information from syntactic forms.
+## Logic to derive type information from purely syntactic forms.
+
 (import /pantagruel/types/utils)
 (import /pantagruel/types/literals)
 (import /pantagruel/stdlib :prefix "")

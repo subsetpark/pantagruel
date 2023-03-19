@@ -1,5 +1,3 @@
-## Type logic.
-##
 ## All logic concerned with type algebra and resolution: determining the type
 ## of all valid typed expressions, and the entire algebra available for
 ## manipulating types.
