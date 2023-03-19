@@ -319,6 +319,12 @@ fib x = case x ...
     x => fib (x - 1) + fib (x - 2).
 ```
 
+While this resembles the sort of pattern-matching found in some programming
+languages, it's simpler than that: the "pattern" side of a mapping clause here
+doesn't introduce a new symbol to the scope of the expression side. Thus, to
+communicate the equivalent of an "else" or "match any" clause in the example
+above, we reuse `x`.
+
 #### Update
 
 An update expression consists of the symbol `update`, an expression, and
