@@ -214,7 +214,8 @@
       (when-let [test (expr :case)
                  test-type (resolve-type test env)
                  case-types (map |(resolve-type ($ :left) env) mapping)]
-        (reduce2 gcd/gcd-type [test-type ;case-types]))
+        (each case-type case-types
+          (gcd/gcd-type test-type case-type)))
       # In all cases, attempt to unify the types of all branch expressions.
       (let [all-exprs (map |(resolve-type ($ :right) env) mapping)]
         (reduce2 gcd/gcd-type all-exprs)))

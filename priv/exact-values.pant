@@ -18,3 +18,13 @@ reportNn 3.
 2 + 1.
 2 > 1.
 2 and 1.
+
+;
+
+Section = {"head", "body"}.
+section => Section.
+---
+
+case section ...
+    "head" => true,
+    "body" => false.
