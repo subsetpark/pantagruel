@@ -184,15 +184,16 @@
     ({:operator compop
       :left left
       :right right} (index-of compop comparison-operators))
-    (let [t (resolve-type left env)
-          t2 (resolve-type right env)]
+    (let [t (literals/widen (resolve-type left env))
+          t2 (literals/widen (resolve-type right env))]
       (if (gcd/gcd-type t t2)
         Bool))
 
     ({:operator arithop
       :left left
       :right right} (index-of arithop arithmetic-operators))
-    (gcd/gcd-type (resolve-type left env) (resolve-type right env))
+    (gcd/gcd-type (literals/widen (resolve-type left env))
+                  (literals/widen (resolve-type right env)))
 
     {:operator "in"
      :left left
@@ -260,7 +261,7 @@
 
     {:kind :num
      :text n}
-    (utils/number-type n)
+    (literals/intern (utils/number-type n) n)
 
     {:kind :member
      :type t}
@@ -317,4 +318,3 @@
     expr
 
     (errorf "Couldn't determine type of expression\n%q" expr)))
-

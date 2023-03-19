@@ -22,15 +22,15 @@
   will be the ones we throw with.
   ```
   [left right &opt original-left original-right]
+  (default original-left left)
+  (default original-right right)
 
   (defn recurse
     [t t2]
     ```
     Recurse over two new arguments, preserving the initial arguments.
     ```
-    (if (or original-left original-right)
-      (gcd-type t t2 original-left original-right)
-      (gcd-type t t2 left right)))
+    (gcd-type t t2 original-left original-right))
 
   (defn find-gcd-
     ```
@@ -142,11 +142,10 @@
                  # don't try to find a GCD.
                  [{:literal lit-left} {:literal lit-right}]
                  (if (= lit-left lit-right)
-                   lit-left
+                   left
                    nil)
 
                  [t t2]
                  (find-gcd t t2))]
     gcd
     (errors/throw :gcd {:left original-left :right original-right})))
-

@@ -1,5 +1,20 @@
-Status = {"ok", "error"}.
-report s: Status => Bool.
+StatusS = {"ok", "error"}.
+reportSl sl: StatusS => Bool.
+reportSs ss: String => Bool.
 ---
 
-report "ok".
+reportSl "ok".
+reportSs "hello".
+
+;
+
+StatusN = {1, 2}.
+reportNl nl: StatusN => Bool.
+reportNn nn: Nat => Bool.
+---
+
+reportNl 2.
+reportNn 3.
+2 + 1.
+2 > 1.
+2 and 1.

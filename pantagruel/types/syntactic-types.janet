@@ -98,7 +98,7 @@
 
     {:kind :num
      :text n}
-    (utils/number-type n)
+    (literals/intern (utils/number-type n) n)
 
     # Recursive cases
     ({:seq wrapped} (tuple? wrapped))

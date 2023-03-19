@@ -11,3 +11,14 @@
       (put literals value literal)
       literal)))
 
+(defn widen
+  ```
+  Given a literal type, widen it to its prototype.
+  ```
+  [t]
+  (match t
+    {:literal _ }
+    (table/getproto t)
+
+    t))
+
