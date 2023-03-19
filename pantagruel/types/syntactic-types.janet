@@ -1,5 +1,6 @@
 ## Logic to derive type information from syntactic forms.
 (import /pantagruel/types/utils)
+(import /pantagruel/types/literals)
 (import /pantagruel/stdlib :prefix "")
 
 (defn- distribute-bindings-types
@@ -93,7 +94,7 @@
      :yields Void}
 
     {:kind :string :text text}
-    (utils/intern String text)
+    (literals/intern String text)
 
     {:kind :num
      :text n}

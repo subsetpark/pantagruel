@@ -12,6 +12,7 @@
 
 (import /pantagruel/types/gcd)
 (import /pantagruel/types/utils)
+(import /pantagruel/types/literals)
 (import /pantagruel/types/errors)
 (import /pantagruel/stdlib :prefix "")
 
@@ -255,7 +256,7 @@
     {:list-of (resolve-type inner env)}
 
     {:kind :string :text text}
-    (utils/intern String text)
+    (literals/intern String text)
 
     {:kind :num
      :text n}
