@@ -9,7 +9,7 @@
 ## Evaluation Error.
 
 (import /pantagruel/stdlib)
-(import /pantagruel/types)
+(import /pantagruel/types/syntactic-types)
 
 (def currently-importing-modules @[])
 
@@ -93,18 +93,18 @@
       (defn bind
         [name expr]
         (introduce name {:kind :bound
-                         :type (types/type-of-form expr)}))
+                         :type (syntactic-types/type-of-form expr)}))
       (defn bind-member
         ```
         Bind a symbol to the inner type of `expr`.
         ```
         [name expr]
         (introduce name {:kind :member
-                         :type (types/type-of-form expr)}))
+                         :type (syntactic-types/type-of-form expr)}))
       (defn alias
         [name expr]
         (introduce name {:kind :domain
-                         :type (types/type-of-form expr)}))
+                         :type (syntactic-types/type-of-form expr)}))
 
       (match form
         {:kind :decl-alias
@@ -123,7 +123,7 @@
           (let [kind (if (and (nil? yields) (empty? bindings))
                        :domain
                        :procedure)
-                t (types/type-of-form form)]
+                t (syntactic-types/type-of-form form)]
             (introduce name {:kind kind :type t}))
 
           (:introduce-bindings-and-references self yields env symbol-references)

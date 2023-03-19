@@ -5,7 +5,7 @@
 (import /pantagruel/lexer)
 (import /pantagruel/parser)
 (import /pantagruel/eval/engine)
-(import /pantagruel/eval/type-checking)
+(import /pantagruel/types/type-checking)
 (import /pantagruel/print-src)
 
 (def version "0.9.1")

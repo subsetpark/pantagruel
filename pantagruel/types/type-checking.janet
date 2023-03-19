@@ -5,7 +5,7 @@
 (import spork/path)
 
 (import /pantagruel/stdlib)
-(import /pantagruel/types)
+(import /pantagruel/types/types)
 (import /pantagruel/print-src)
 
 (defn print-types

@@ -1,8 +1,8 @@
 (use testament)
 
 (import /pantagruel/stdlib)
-(import /pantagruel/types)
-(import /pantagruel/eval/type-checking)
+(import /pantagruel/types/types)
+(import /pantagruel/types/type-checking)
 
 (import /test/util :prefix "")
 
