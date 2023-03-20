@@ -34,7 +34,7 @@
               "p" {:kind :procedure
                    :type {:args {:tuple-of @[]} :yields {:thunk {:kind :sym :text "P"}}}}}]
     (is-type
-      {:list-of stdlib/String}
+      {:list-of stdlib/String :name "p"}
       {:kind :sym :text "p"}
       env)
 
@@ -58,7 +58,7 @@
       env)
 
     (is-type
-      {:args {:tuple-of [stdlib/Nat]} :yields stdlib/Real}
+      {:args {:tuple-of [stdlib/Nat]} :yields stdlib/Real :name "f"}
       {:kind :sym :text "f"}
       env)
 
@@ -86,7 +86,8 @@
                                                             :text "Body"}}}}}]
     (is-type
       {:list-of {:list-of @{:kind :concrete :name "String"
-                            :type @{:kind :meta-domain :name "Domain"}}}}
+                            :type @{:kind :meta-domain :name "Domain"}}}
+       :name "b"}
 
       {:kind :sym :text "b"}
       env)))

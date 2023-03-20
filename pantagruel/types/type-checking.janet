@@ -21,7 +21,7 @@
     (match t
       (ts (indexed? ts)) (join ts)
       {:literal literal} (string literal)
-      {:name t-name} t-name
+      {:kind :concrete :name t-name} t-name
       # Special case the empty set.
       {:container :set :inner ()} "{}"
       {:container :set :inner t} (string/format "{%s}" (render-type t))
@@ -33,36 +33,49 @@
       {:kind :sym :text text} text
       t (string/format "%q" t)))
 
-  (printf (string "type error. " str) ;(map render-type args)))
+  (defn get-name
+    [expr]
+    (if (dictionary? expr) (expr :name) nil))
+
+  (defn render-with-name
+    [rendered name]
+    (if (and name (not= name rendered))
+      (string/format "`%s` (as %s)" rendered name)
+      (string "`" rendered "`")))
+
+  (let [rendered-args (map render-type args)
+        names (map get-name args)
+        rendered-with-names (map render-with-name rendered-args names)]
+    (printf (string "type error. " str) ;rendered-with-names)))
 
 (defn- handle-resolution-error
   [err]
   (case (err :type)
     :list-application-multiple-args
-    (print-types "attempted to apply to multiple arguments: `%s`"
+    (print-types "attempted to apply to multiple arguments: %s"
                  (err :xs))
 
     :list-application-bad-arg
-    (print-types "attempted to apply type: `%s` to an argument of type: `%s`"
+    (print-types "attempted to apply type: %s to an argument of type: %s"
                  (err :f)
                  (err :x))
 
     :application
-    (print-types "attempted to apply type: `%s` to type: `%s`"
+    (print-types "attempted to apply type: %s to type: %s"
                  (err :f)
                  (err :x))
 
     :container
-    (print-types "attempted to check for membership or cardinality in non-container type: `%s`"
+    (print-types "attempted to check for membership or cardinality in non-container type: %s"
                  (err :t))
 
     :arg-length
-    (print-types "received invalid arguments: `%s` to procedure expecting: `%s`"
+    (print-types "received invalid arguments: %s to procedure expecting: %s"
                  (err :args)
                  (err :f-args))
 
     :gcd
-    (print-types "couldn't unify types: `%s` and `%s`" (err :left) (err :right))
+    (print-types "couldn't unify types: %s and %s" (err :left) (err :right))
 
     (print-types "unknown type resolution error: `%s`" err)))
 

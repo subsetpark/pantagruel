@@ -1,47 +1,76 @@
-Section.
-Program = [Section].
+Thought.
+Specification.
 
-eval p: Program => Bool.
+// Pantagruel is a language for writing *system specifications*.
 
-// A section head must have at least one statement; a section body
-// can be empty.
-
-section head: Head, body: Body, #head > 0 => Section.
-
-Head = [Comment + Declaration + Alias].
-Body = [Comment + Expression].
-(Comment, Declaration, Alias, Expression) = [String].
----
-eval p <-> all sect <: p ... all_bound? sect.
-
-;
-
-all_bound? sect: Section => Bool.
----------------------------------
-
-// All variables referred to in a section head must be defined by
-// the end of that section head. All the variables in a section
-// body, however, must be defined by the end of the *next* section
-// body.
-
-all_bound? sect <->
-    all h <: head_of sect ... all head_sym <: h ... bound? head_sym
-    and
-    all b <: body_of (p (p sect - 1)) ... all body_sym <: b ... bound? body_sym.
-
-;
-
-head_of sect:Section => Head.
-body_of sect:Section => Body.
-
-bound? sym: String => Bool.
+pantagruel thoughts: [Thought] => Specification.
 ---
 
-bound? sym <-> (sym in (env p) (p sect)) or (sym in base_env).
+
 
 ;
 
-env p: Program => [Scope].
-base_env => Scope.
-Scope = {String}.
+// It's a computer language, but not as you might think of it.
+
+// The effects of evaluating a specification are *null*---Pantagruel has no execution semantics.
+
+eval spec: Specification.
+check spec: Specification => Bool.
+---
+
+// However, Pantagruel specifications can be checked to ensure that certain conditions have been met.
+
+// For instance, that you've defined all your terms by the end of your document.
+(check spec) -> (
+	all s <: invoked_symbols doc,
+	    location: Location,
+	    location = first_appearance s doc ...
+		case section_of location doc ...
+			"head" => bound_as_of? s (chapter_of location),
+			"body" => bound_as_of? s (chapter_after location)
+).
+
+;
+
+(Head, Body) = [String].
+Chapter = (Head, Body).
+Document = [Chapter].
+
+Section = {"head", "body"}.
+Location = (Chapter, Section).
+
+// This allows a structured form of description where terms can be explained in gradually greater detail.
+
+section_of location: Location, doc: Document => Section.
+
+//
+
+invoked_symbols doc: Document => {String}.
+first_appearance symbol: String, doc: Document => Location.
+
+//
+
+bound_as_of? symbol: String, chapter: Chapter => Bool.
+
+chapter_of location: Location => Chapter.
+chapter_after location: Location => Chapter.
+---
+
+invoked_symbols doc =
+	[all c <: doc, head_s <: c 0 ... head_s] +
+	[all c <: doc, body_s <: c 1 ... body_s].
+
+;
+
+Statement.
+
+// Specifications can also be type-checked to ensure that your logic is consistent.
+type_checks? expr: Statement => Bool.
+---
+
+(check spec) -> (all statement <: (statements doc) ... type_checks? statement).
+
+;
+
+statements doc: Document => [Statement].
 ---

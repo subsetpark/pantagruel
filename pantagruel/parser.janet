@@ -197,19 +197,19 @@
 
      (quantification
        (quantification-word bindings-exprs :... expr) ,|{:kind :quantification
-                                                            :quantifier $0
-                                                            :bindings $1
-                                                            :expr $3
-                                                            # Quantification
-                                                            # can introduce
-                                                            # bindings into
-                                                            # temporary
-                                                            # body-level
-                                                            # scopes; generate
-                                                            # a slot to put the
-                                                            # scope into.
-                                                            :scope @[nil]
-                                                            :span (span $0 $3)})
+                                                         :quantifier $0
+                                                         :bindings $1
+                                                         :expr $3
+                                                         # Quantification
+                                                         # can introduce
+                                                         # bindings into
+                                                         # temporary
+                                                         # body-level
+                                                         # scopes; generate
+                                                         # a slot to put the
+                                                         # scope into.
+                                                         :scope @[nil]
+                                                         :span (span $0 $3)})
      ### Expressions
 
      (expr

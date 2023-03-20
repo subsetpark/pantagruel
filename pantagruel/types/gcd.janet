@@ -38,17 +38,18 @@
     the hierarchies of both `t` and `t2`, where `n` is the depth of the search.
     ```
     [t t2 n]
-    (or (and (= t t2) [n t])
-        (let [t-proto (and (table? t2)
-                           (find-gcd- t (table/getproto t2) (inc n)))
-              t2-proto (and (table? t)
-                            (find-gcd- (table/getproto t) t2 (inc n)))]
-          (extreme (fn [x y]
-                     (cond
-                       (and x (not y)) true
-                       (and y (not x)) false
-                       (and x y) (<= (x 0) (y 0))))
-                   [t-proto t2-proto]))))
+    (if (= t t2)
+      [n t]
+      (let [t-proto (and (table? t2)
+                         (find-gcd- t (table/getproto t2) (inc n)))
+            t2-proto (and (table? t)
+                          (find-gcd- (table/getproto t) t2 (inc n)))]
+        (extreme (fn [x y]
+                   (cond
+                     (and x (not y)) true
+                     (and y (not x)) false
+                     (and x y) (<= (x 0) (y 0))))
+                 [t-proto t2-proto]))))
 
   (defn find-gcd
     ```

@@ -10,6 +10,7 @@
 
 (import /pantagruel/stdlib)
 (import /pantagruel/types/syntactic-types)
+(import /pantagruel/types/utils)
 
 (def currently-importing-modules @[])
 
@@ -101,8 +102,9 @@
         {:kind :decl-alias
          :name name
          :alias t}
-        (let [f |(introduce $ {:kind :domain
-                               :type (syntactic-types/type-of-form t)})]
+        (let [type (utils/include-name (syntactic-types/type-of-form t) name)
+              f |(introduce $ {:kind :domain :type type})]
+
           (match name
             # Alias each symbol in a sequence of symbols to the type form `t`.
             {:container _ :inner {:seq names}}
@@ -120,8 +122,8 @@
           (let [kind (if (and (nil? yields) (empty? bindings))
                        :domain
                        :procedure)
-                t (syntactic-types/type-of-form form)]
-            (introduce name {:kind kind :type t}))
+                type (utils/include-name (syntactic-types/type-of-form form) name)]
+            (introduce name {:kind kind :type type}))
 
           (recurse yields)
 
@@ -135,11 +137,12 @@
          :binding-type binding-type
          :name name
          :expr expr}
-        (let [kind (case binding-type
+        (let [type (utils/include-name (syntactic-types/type-of-form expr) name)
+              kind (case binding-type
                      :: :bound
                      :from :member)
               f |(introduce $ {:kind kind
-                               :type (syntactic-types/type-of-form expr)})]
+                               :type type})]
           (match name
             # Assign the type of `expr` to each symbol in a sequence of symbols.
             {:container _ :inner {:seq names}}
@@ -322,7 +325,4 @@
   able to bubble up evaluation errors from imported documents correctly.
   ```
   [file src]
-  (table/setproto
-    @{:file file
-      :src src}
-    Evaluator-))
+  (table/setproto @{:file file :src src} Evaluator-))

@@ -25,7 +25,7 @@
 (deftest eval-single-declaration
   (is-eval
     {"f" {:kind :domain
-          :type {:args {:tuple-of ()} :yields stdlib/Void}}}
+          :type {:name "f" :args {:tuple-of ()} :yields stdlib/Void}}}
     `f.
      ---
      `))
@@ -34,10 +34,11 @@
   (is-eval
     {"X" {:kind :domain :type stdlib/Domain}
      "f" {:kind :procedure
-          :type {:args {:tuple-of @[{:thunk {:kind :sym :span [7 8] :text "X"}}]}
+          :type {:name "f"
+                 :args {:tuple-of @[{:thunk {:kind :sym :span [7 8] :text "X"}}]}
                  :yields stdlib/Void}}
-     "x" {:kind :bound :type {:thunk {:kind :sym :span [7 8] :text "X"}}}
-     "x'" {:kind :bound :type {:thunk {:kind :sym :span [7 8] :text "X"}}}}
+     "x" {:kind :bound :type {:name "x" :thunk {:kind :sym :span [7 8] :text "X"}}}
+     "x'" {:kind :bound :type {:name "x" :thunk {:kind :sym :span [7 8] :text "X"}}}}
     `
     X.
     f x:X.
@@ -49,6 +50,7 @@
     {"F" {:kind :domain :type stdlib/Domain}
      "f" {:kind :procedure
           :type {:args {:tuple-of @[]}
+                 :name "f"
                  :yields {:thunk {:kind :sym :span [8 9] :text "F"}}}}}
     `
     F.
@@ -59,7 +61,7 @@
 (deftest eval-alias-declaration
   (is-eval
     {"F" {:kind :domain :type stdlib/Domain}
-     "f" {:kind :domain :type {:thunk {:kind :sym :span [7 8] :text "F"}}}}
+     "f" {:kind :domain :type {:name "f" :thunk {:kind :sym :span [7 8] :text "F"}}}}
     `
     F.
     f = F.
@@ -69,7 +71,7 @@
 (deftest eval-alias-declaration-container
   (is-eval
     {"F" {:kind :domain :type stdlib/Domain}
-     "f" {:kind :domain :type {:list-of {:thunk {:kind :sym :span [8 9] :text "F"}}}}}
+     "f" {:kind :domain :type {:name "f" :list-of {:thunk {:kind :sym :span [8 9] :text "F"}}}}}
     `
     F.
     f = [F].
@@ -79,7 +81,7 @@
 (deftest eval-body
   (is-eval
     {"g" {:kind :domain
-          :type {:args {:tuple-of ()} :yields stdlib/Void}}}
+          :type {:name "g" :args {:tuple-of ()} :yields stdlib/Void}}}
     `g.
      ---
      g.
@@ -88,7 +90,7 @@
 (deftest eval-qualification
   (is-eval
     {"f" {:kind :domain
-          :type {:args {:tuple-of ()} :yields stdlib/Void}}}
+          :type {:name "f" :args {:tuple-of ()} :yields stdlib/Void}}}
 
     `f.
      ---
@@ -107,11 +109,12 @@
   (is-eval
     {"X" {:kind :domain :type stdlib/Domain}
      "f" {:kind :procedure
-          :type {:args {:tuple-of @[{:thunk {:kind :sym :span [10 11] :text "X"}}]}
+          :type {:name "f"
+                 :args {:tuple-of @[{:thunk {:kind :sym :span [10 11] :text "X"}}]}
                  :yields stdlib/Void}}
-     "x" {:kind :bound :type {:thunk {:kind :sym :span [10 11] :text "X"}}}
-     "x'" {:kind :bound :type {:thunk {:kind :sym :span [10 11] :text "X"}}}
-     "y" {:kind :domain :type {:args {:tuple-of ()} :yields stdlib/Void}}}
+     "x" {:kind :bound :type {:name "x" :thunk {:kind :sym :span [10 11] :text "X"}}}
+     "x'" {:kind :bound :type {:name "x" :thunk {:kind :sym :span [10 11] :text "X"}}}
+     "y" {:kind :domain :type {:name "y" :args {:tuple-of ()} :yields stdlib/Void}}}
     `
     X.
     y.
@@ -123,10 +126,12 @@
 (deftest eval-fib
   (is-eval
     {"fib" {:kind :procedure
-            :type {:args {:tuple-of @[{:thunk {:kind :sym :span [8 11] :text "Nat"}}]}
+            :type {:name "fib"
+                   :args {:tuple-of @[{:thunk {:kind :sym :span [8 11] :text "Nat"}}]}
                    :yields {:thunk {:kind :sym :span [15 18] :text "Nat"}}}}
      "x" {:kind :bound
-          :type {:thunk {:kind :sym :span [8 11] :text "Nat"}}}}
+          :type {:name "x"
+                 :thunk {:kind :sym :span [8 11] :text "Nat"}}}}
 
     (slurp "priv/fib.pant")))
 
