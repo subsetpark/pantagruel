@@ -35,8 +35,7 @@
   ```
   [t]
   (match t
-    {:container :set
-     :inner inner-t}
+    {:set-of inner-t}
     inner-t
 
     {:list-of inner-t}
@@ -238,7 +237,7 @@
           test-type)
 
         # Update a container.
-        {:container :set :inner t}
+        {:set-of t}
         (do
           (reduce2 gcd/gcd-type [t ;case-types ;expr-types])
           test-type)
@@ -254,8 +253,7 @@
 
     {:container :set-comprehension
      :inner inner}
-    {:container :set
-     :inner (resolve-type inner env)}
+    {:set-of (resolve-type inner env)}
 
     {:container :list-comprehension
      :inner inner}
@@ -286,14 +284,11 @@
     {:list-of inner}
     {:list-of (resolve-type inner env)}
 
-    ({:container :set
-      :inner inner} (empty? inner))
+    ({:set-of inner} (empty? inner))
     expr
 
-    {:container :set
-     :inner inner}
-    {:container :set
-     :inner (resolve-type inner env)}
+    {:set-of inner}
+    {:set-of (resolve-type inner env)}
 
     {:tuple-of inner}
     {:tuple-of (tuple/slice (map |(resolve-type $ env) inner))}

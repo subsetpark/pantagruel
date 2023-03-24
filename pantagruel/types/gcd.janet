@@ -107,27 +107,17 @@
                        ([err] :ok)))
                    gcd)
 
-                 [{:list-of t}
-                  {:container :set
-                   :inner t2}]
-                 {:container :set
-                  :inner (recurse t t2)}
+                 [{:list-of t} {:set-of t2}]
+                 {:set-of (recurse t t2)}
 
-                 [{:container :set
-                   :inner t}
-                  {:list-of t2}]
-                 {:container :set
-                  :inner (recurse t t2)}
+                 [{:set-of t} {:list-of t2}]
+                 {:set-of (recurse t t2)}
 
                  [{:list-of t} {:list-of t2}]
                  {:list-of (recurse t t2)}
 
-                 [{:container :set
-                   :inner t}
-                  {:container :set
-                   :inner t2}]
-                 {:container :set
-                  :inner (recurse t t2)}
+                 [{:set-of t} {:set-of t2}]
+                 {:set-of (recurse t t2)}
 
                  [{:tuple-of ts} {:tuple-of ts2}]
                  (when (= (length ts) (length ts2))

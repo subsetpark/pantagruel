@@ -14,8 +14,7 @@
     [binding]
     (match binding
       {:kind :binding
-       :name {:container :parens
-              :inner {:seq inner}}
+       :name {:container :parens :inner {:seq inner}}
        :expr expr}
       (map (fn [_] expr) inner)
 
@@ -51,22 +50,19 @@
 
     {:container :set-of
      :inner inner}
-    {:container :set
-     :inner (type-of-form inner)}
+    {:set-of (type-of-form inner)}
 
     {:kind :domain-sum
      :inner inner}
     (or
       (reduce2 utils/sum-type (map type-of-form inner))
-      {:container :set
-       :inner []})
+      {:set-of []})
 
     {:kind :domain-set
      :inner {:seq inner}}
     (or
       (reduce2 utils/sum-type (map type-of-form inner))
-      {:container :set
-       :inner []})
+      {:set-of []})
 
     {:container :parens
      :inner inner}

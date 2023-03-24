@@ -110,7 +110,7 @@
                                                  :kind :sum}
                                                 {:thunk {:kind :sym :text "Alias"}}] :kind :sum}}}
               "Program" {:kind :domain :type {:list-of {:thunk {:kind :sym :text "Section"}}}}
-              "Scope" {:kind :domain :type {:container :set :inner {:thunk {:kind :sym :text "String"}}}}
+              "Scope" {:kind :domain :type {:set-of {:thunk {:kind :sym :text "String"}}}}
               "Section" {:kind :domain :type @{:kind :meta-domain :name "Domain"}}
               "b" {:kind :member
                    :type {:thunk {:f {:kind :sym :text "body"}
@@ -180,7 +180,7 @@
               "Reference" {:kind :domain :type {:thunk {:kind :sym :text "Line"}}}
               "backlinks" {:kind :procedure
                            :type {:args {:tuple-of @[{:thunk {:kind :sym :text "Note"}}]}
-                                  :yields {:container :set :inner {:thunk {:kind :sym :text "Reference"}}}}}
+                                  :yields {:set-of {:thunk {:kind :sym :text "Reference"}}}}}
               "body" {:kind :procedure :type {:args {:tuple-of @[{:thunk {:kind :sym :text "Note"}}]}
                                               :yields {:list-of {:thunk {:kind :sym :text "Line"}}}}}
               "bracketed" {:kind :procedure :type {:args {:tuple-of @[{:thunk {:kind :sym :text "String"}}]}
@@ -212,8 +212,7 @@
         closure (table/setproto @{"m" {:kind :bound
                                        :type {:thunk {:kind :sym :text "Note"}}}} env)]
     (is-type
-      {:container :set
-       :inner stdlib/String}
+      {:set-of stdlib/String}
       {:container :set-comprehension
        :inner {:bindings {:kind :seq
                           :seq [{:binding-type ::
