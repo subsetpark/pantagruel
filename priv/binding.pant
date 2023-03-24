@@ -25,9 +25,9 @@ all_bound? sect: Section => Bool.
 // body.
 
 all_bound? sect <->
-    all sym: String, sym in head_of sect ... bound? sym
-    and
-    all sym: String, sym in body_of (p (p sect - 1)) ... bound? sym.
+	all sym: String, sym in head_of sect ... bound? sym
+	and
+	all sym: String, sym in body_of (p (p sect - 1)) ... bound? sym.
 
 ;
 
