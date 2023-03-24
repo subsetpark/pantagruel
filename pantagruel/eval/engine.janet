@@ -122,7 +122,7 @@
           (let [kind (if (and (nil? yields) (empty? bindings))
                        :domain
                        :procedure)
-                type (utils/include-name (syntactic-types/type-of-form form) name)]
+                type (syntactic-types/type-of-form form)]
             (introduce name {:kind kind :type type}))
 
           (recurse yields)
@@ -137,7 +137,7 @@
          :binding-type binding-type
          :name name
          :expr expr}
-        (let [type (utils/include-name (syntactic-types/type-of-form expr) name)
+        (let [type (syntactic-types/type-of-form expr)
               kind (case binding-type
                      :: :bound
                      :from :member)

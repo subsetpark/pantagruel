@@ -303,5 +303,6 @@
 
             (errorf "Couldn't determine type of expression\n%q" expr))]
 
+(tracev t)
+    (tracev expr)
     (utils/include-name t expr)))
-

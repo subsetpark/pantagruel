@@ -27,4 +27,4 @@ section => Section.
 
 case section ...
     "head" => true,
-    "body" => false.
+    3 => false.

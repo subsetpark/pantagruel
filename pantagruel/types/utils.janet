@@ -43,10 +43,10 @@
 
 (defn include-name
   [t expr]
-  (if (t :name)
+  (if (t :named)
     t
     (if-let [name (expr :text)]
       (if (table? t)
-        (put t :name name)
-        (struct ;(kvs t) :name name))
+        (put t :named name)
+        (struct ;(kvs t) :named name))
       t)))

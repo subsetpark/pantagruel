@@ -35,12 +35,12 @@
 
   (defn get-name
     [expr]
-    (if (dictionary? expr) (expr :name) nil))
+    (if (dictionary? expr) (expr :named) nil))
 
   (defn render-with-name
     [rendered name]
     (if (and name (not= name rendered))
-      (string/format "`%s` (as %s)" rendered name)
+      (string/format "`%s` (as %s)" (string rendered) (string name))
       (string "`" rendered "`")))
 
   (let [rendered-args (map render-type args)
