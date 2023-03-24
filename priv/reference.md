@@ -414,10 +414,6 @@ all x: Y, x > z ... f x
 
 #### Binding Operators
 
-There are two operators for binding symbols into the environment:
-
-##### Binding in a Domain
-
 A symbol can be bound with `:` to give it the type of the domain on the right
 of the operator:
 
@@ -426,16 +422,6 @@ all x: Nat ... x.
 ```
 
 `x` is of the type `Nat`.
-
-##### Binding a Member of an Expression
-
-A symbol bound with `<:` will have the *member type* of the expression on the right side of the operator:
-
-```
-all x <: items y ... x.
-```
-
-If `items y` has a type of `{T}` or `[T]`, then `x` will have the type `T`.
 
 ## Types
 

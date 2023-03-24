@@ -135,10 +135,7 @@
          :binding-type binding-type
          :name name
          :expr expr}
-        (let [kind (case binding-type
-                     :: :bound
-                     :from :member)
-              f |(introduce $ {:kind kind
+        (let [f |(introduce $ {:kind :bound
                                :type (syntactic-types/type-of-form expr)})]
           (match name
             # Assign the type of `expr` to each symbol in a sequence of symbols.

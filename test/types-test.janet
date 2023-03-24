@@ -171,26 +171,6 @@
        :kind :application
        :x {:kind :sym
            :text "p"}}
-      env)
-
-    (is-type
-      stdlib/Bool
-      {:bindings {:kind :seq
-                  :seq [{:binding-type :from
-                         :expr {:kind :sym
-                                :text "p"}
-                         :kind :binding
-                         :name {:kind :sym
-                                :text "sect"}}]}
-       :expr {:f {:kind :sym
-                  :text "is_all_bound?"} :kind :application
-              :x {:kind :sym
-                  :text "sect"}}
-       :kind :quantification
-       :scope @[closure]
-       :quantifier {:kind :all
-                    :text "all"}}
-
       env)))
 
 (deftest zk-regression-test

@@ -262,10 +262,6 @@
      :text n}
     (literals/intern (utils/number-type n) n)
 
-    {:kind :member
-     :type t}
-    (member-type (resolve-type t env))
-
     # Special-case procedures with no arguments: treat them as singletons (that
     # is, to mention a procedure with no arguments is the same as applying it).
     ({:kind :procedure

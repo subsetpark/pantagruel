@@ -10,9 +10,9 @@ section head: Head, body: Body, #head > 0 => Section.
 
 Head = [Comment + Declaration + Alias].
 Body = [Comment + Expression].
-(Comment, Declaration, Alias, Expression) = [String].
+(Comment, Declaration, Alias, Expression) = String.
 ---
-eval p <-> all sect <: p ... all_bound? sect.
+eval p <-> all sect : Section, sect in p ... all_bound? sect.
 
 ;
 
@@ -25,14 +25,14 @@ all_bound? sect: Section => Bool.
 // body.
 
 all_bound? sect <->
-    all h <: head_of sect ... all head_sym <: h ... bound? head_sym
+    all sym: String, sym in head_of sect ... bound? sym
     and
-    all b <: body_of (p (p sect - 1)) ... all body_sym <: b ... bound? body_sym.
+    all sym: String, sym in body_of (p (p sect - 1)) ... bound? sym.
 
 ;
 
-head_of sect:Section => Head.
-body_of sect:Section => Body.
+head_of sect: Section => Head.
+body_of sect: Section => Body.
 
 bound? sym: String => Bool.
 ---

@@ -137,7 +137,7 @@
 
      ### Special forms
 
-     #### Binding forms: x:X, y<:z
+     #### Binding form: x:X
 
      ##### Binding forms that admit only domains.
 
@@ -155,23 +155,14 @@
                                                          :name $0
                                                          :expr $2})
 
-     ##### Binding forms that admit domains or iteration over values.
-
      (bindings-exprs
        () ,new-seq
        (binding-expr) ,new-seq
        (binding-expr :comma bindings-exprs) ,cons-seq)
 
      (binding-expr
-       (binding) ,identity
-       (expr) ,identity)
-
-     (binding
        (domain-binding) ,identity
-       (sym-or-tuple-of-syms :from expr) ,|{:kind :binding
-                                            :binding-type :from
-                                            :name $0
-                                            :expr $2})
+       (expr) ,identity)
 
      #### Mapping forms: case, update
 
@@ -197,19 +188,19 @@
 
      (quantification
        (quantification-word bindings-exprs :... expr) ,|{:kind :quantification
-                                                            :quantifier $0
-                                                            :bindings $1
-                                                            :expr $3
-                                                            # Quantification
-                                                            # can introduce
-                                                            # bindings into
-                                                            # temporary
-                                                            # body-level
-                                                            # scopes; generate
-                                                            # a slot to put the
-                                                            # scope into.
-                                                            :scope @[nil]
-                                                            :span (span $0 $3)})
+                                                         :quantifier $0
+                                                         :bindings $1
+                                                         :expr $3
+                                                         # Quantification
+                                                         # can introduce
+                                                         # bindings into
+                                                         # temporary
+                                                         # body-level
+                                                         # scopes; generate
+                                                         # a slot to put the
+                                                         # scope into.
+                                                         :scope @[nil]
+                                                         :span (span $0 $3)})
      ### Expressions
 
      (expr
