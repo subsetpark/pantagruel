@@ -226,16 +226,22 @@
     (let [test-type (resolve-type test env)
           case-types (map |(resolve-type ($ :left) env) mapping)
           expr-types (map |(resolve-type ($ :right) env) mapping)]
+      # The update case is a procedure mapping args to yields. In updating,
+      # type the left sides against the arguments and the right sides against
+      # the yields. 
       (match test-type
-        # The update case is a procedure mapping args to yields. In updating,
-        # type the left sides against the arguments and the right sides
-        # against the yields. 
+        # Update a procedure.
         {:args args-type :yields yield-type}
         (do
           (reduce2 gcd/gcd-type [args-type ;case-types])
           (reduce2 gcd/gcd-type [yield-type ;expr-types])
           test-type)
 
+        # Update a container.
+        {:container :set :inner t}
+        (do
+          (reduce2 gcd/gcd-type [t ;case-types ;expr-types])
+          test-type)
         # TODO: Handle updates on other data types
         (errorf "Couldn't type update of type: %q" test-type)))
 
