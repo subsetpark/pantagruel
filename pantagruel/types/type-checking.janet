@@ -23,8 +23,8 @@
       {:literal literal} (string literal)
       {:name t-name} t-name
       # Special case the empty set.
-      {:container :set :inner ()} "{}"
-      {:container :set :inner t} (string/format "{%s}" (render-type t))
+      {:set-of ()} "{}"
+      {:set-of t} (string/format "{%s}" (render-type t))
       {:list-of t} (string/format "[%s]" (render-type t))
       {:tuple-of ts} (join ts)
       {:kind :sum :inner ts} (-> (map render-type ts) (string/join " + "))
