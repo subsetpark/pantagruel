@@ -1,12 +1,12 @@
 Section.
 Program = [Section].
 
-eval p: Program => Bool.
+eval p : Program => Bool.
 
 // A section head must have at least one statement; a section body
 // can be empty.
 
-section head: Head, body: Body, #head > 0 => Section.
+section head : Head, body : Body, #head > 0 => Section.
 
 Head = [Comment + Declaration + Alias].
 Body = [Comment + Expression].
@@ -16,7 +16,7 @@ eval p <-> all sect : Section, sect in p ... all_bound? sect.
 
 ;
 
-all_bound? sect: Section => Bool.
+all_bound? sect : Section => Bool.
 ---
 
 // All variables referred to in a section head must be defined by
@@ -25,23 +25,23 @@ all_bound? sect: Section => Bool.
 // body.
 
 all_bound? sect <->
-	all sym: String, sym in head_of sect ... bound? sym
+	all sym : String, sym in head_of sect ... bound? sym
 	and
-	all sym: String, sym in body_of (p (p sect - 1)) ... bound? sym.
+	all sym : String, sym in body_of (p (p sect - 1)) ... bound? sym.
 
 ;
 
-head_of sect: Section => Head.
-body_of sect: Section => Body.
+head_of sect : Section => Head.
+body_of sect : Section => Body.
 
-bound? sym: String => Bool.
+bound? sym : String => Bool.
 ---
 
 bound? sym <-> (sym in (env p) (p sect)) or (sym in base_env).
 
 ;
 
-env p: Program => [Scope].
+env p : Program => [Scope].
 base_env => Scope.
 Scope = {String}.
 ---
