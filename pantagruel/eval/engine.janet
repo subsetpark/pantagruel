@@ -217,16 +217,6 @@
         {:kind :domain-set}
         :ok
 
-        # A literal representing a procedure as a domain. Check the bindings
-        # and yields for boundedness, but don't introduce the left sides of the
-        # bindings.
-        {:kind :procedure :procedure proc}
-        (let [{:bindings {:seq bindings}} proc
-              yields (proc :yields)]
-          (recurse yields)
-          (each {:expr expr} bindings
-            (recurse expr)))
-
         {:kind :num} :ok
 
         {:kind :string} :ok
