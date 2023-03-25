@@ -80,7 +80,9 @@
         (:introduce-bindings-and-references self form env symbol-references include-prime))
 
       (defn introduce
-        [sym t]
+        [sym t &opt force-prime]
+        (default force-prime false)
+
         (match sym
           {:kind :sym
            :text text
@@ -93,7 +95,7 @@
             (put env text t)
             # Optionally introduce a "successor" symbol, with a `'` appended,
             # and the same type.
-            (if include-prime (put env (string text "'") t)))
+            (if (or include-prime force-prime) (put env (string text "'") t)))
 
           (errorf "Don't know how to introduce symbol: %q" sym)))
 
@@ -116,12 +118,16 @@
         {:kind :declaration
          :name name
          :bindings {:seq bindings}}
-        (let [yields (form :yields)]
-          (let [kind (if (and (nil? yields) (empty? bindings))
-                       :domain
-                       :procedure)
-                t (syntactic-types/type-of-form form)]
-            (introduce name {:kind kind :type t}))
+        (let [yields (form :yields)
+              value? (form :value)
+              kind (if (and (nil? yields) (empty? bindings))
+                     :domain
+                     :procedure)
+              t (syntactic-types/type-of-form form)]
+          (introduce name {:kind kind :type t})
+          # If `name` was declared with the `val` keyword, introduce a
+          # successor symbol.
+          (when value? (introduce name {:kind kind :type t} true))
 
           (recurse yields)
 

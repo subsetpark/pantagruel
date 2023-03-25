@@ -89,6 +89,14 @@
        (head-line :. head) ,|(tuple $0 ;$2))
 
      (head-line
+       (:val declaration) ,(fn [_ decl] (struct ;(kvs decl) :value true))
+       (sym-or-tuple-of-syms := domain) ,|{:kind :decl-alias
+                                           :name $0
+                                           :alias $2
+                                           :span (span $0 $2)}
+       (declaration) ,identity)
+
+     (declaration
        (sym domain-bindings-exprs) ,|{:kind :declaration
                                       :name $0
                                       :bindings $1
@@ -97,12 +105,7 @@
                                                      :name $0
                                                      :bindings $1
                                                      :yields $3
-                                                     :span (span $0 $3)}
-       (sym-or-tuple-of-syms := domain) ,|{:kind :decl-alias
-                                           :name $0
-                                           :alias $2
-                                           :span (span $0 $2)})
-
+                                                     :span (span $0 $3)})
      ### Body
      # The text below the line in a chapter.
 

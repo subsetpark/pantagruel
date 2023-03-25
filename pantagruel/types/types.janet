@@ -225,14 +225,25 @@
     (let [test-type (resolve-type test env)
           case-types (map |(resolve-type ($ :left) env) mapping)
           expr-types (map |(resolve-type ($ :right) env) mapping)]
+
+      (defn maybe-wrap-args
+        ```
+        The type of procedure arguments is always a tuple. In the case that the
+        left side of the mapping expression when updating a procedure is *not*
+        a tuple, assume it's meant as the single argument to a unary procedure
+        and wrap it in a tuple before type-checking.
+        ```
+        [t]
+        (if-not (t :tuple-of) {:tuple-of [t]} t))
+
       # The update case is a procedure mapping args to yields. In updating,
       # type the left sides against the arguments and the right sides against
       # the yields. 
       (match test-type
         # Update a procedure.
         {:args args-type :yields yield-type}
-        (do
-          (reduce2 gcd/gcd-type [args-type ;case-types])
+        (let [wrapped-cases (map maybe-wrap-args case-types)]
+          (reduce2 gcd/gcd-type [args-type ;wrapped-cases])
           (reduce2 gcd/gcd-type [yield-type ;expr-types])
           test-type)
 

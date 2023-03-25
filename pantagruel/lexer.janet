@@ -53,6 +53,7 @@
       [:all ,(kwd "all")]
       [:some1 ,(kwd "some1")]
       [:some ,(kwd "some")]
+      [:val ,(kwd "val")]
       [:lparen "("]
       [:rparen ")"]
       [:lsquare "["]
