@@ -39,7 +39,7 @@
 
 (defvalue "true" Bool)
 (defvalue "false" Bool)
-(defvalue "null" Any)
+(defvalue "nil" Any)
 
 (def arithmetic-operators ["-" "+" "*" "/" "mod"])
 

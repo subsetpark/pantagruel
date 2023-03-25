@@ -3,7 +3,7 @@ delete m: map, key: Any => map.
 ---
 
 delete m key = update m ...
-    key => null.
+    key => nil.
 
 ;
 
