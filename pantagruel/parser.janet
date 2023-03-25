@@ -93,11 +93,11 @@
                                       :name $0
                                       :bindings $1
                                       :span (span $0 $1)}
-       (sym domain-bindings-exprs :yields domain) ,|{:kind :declaration
-                                                     :name $0
-                                                     :bindings $1
-                                                     :yields $3
-                                                     :span (span $0 $3)}
+       (sym procedure) ,|{:kind :declaration
+                          :name $0
+                          :bindings ($1 :bindings)
+                          :yields ($1 :yields)
+                          :span (span $0 $1)}
        (sym-or-tuple-of-syms := domain) ,|{:kind :decl-alias
                                            :name $0
                                            :alias $2
@@ -122,6 +122,7 @@
        (:lbrace literals :rbrace) ,|{:kind :domain-set
                                      :span (span $0 $2)
                                      :inner $1}
+       (:lparen procedure :rparen) ,(fn [_ proc _] {:kind :procedure :procedure proc})
        (domain :+ domain) ,|(let [inner (if ($0 :inner)
                                           [;($0 :inner) $2]
                                           [$0 $2])]
@@ -135,11 +136,13 @@
        (domain) ,new-seq
        (domain :comma domains) ,cons-seq)
 
+     (procedure
+       (domain-bindings-exprs :yields domain) ,|{:bindings $0
+                                                 :yields $2
+                                                 :span (span $0 $2)})
      ### Special forms
 
      #### Binding form: x:X
-
-     ##### Binding forms that admit only domains.
 
      (domain-bindings-exprs
        () ,new-seq
