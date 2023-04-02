@@ -1,0 +1,8 @@
+Player.
+Card.
+
+val scores p: Player => Nat0.
+play p: Player, c: Card, table: {Card}.
+---
+
+scores' = update scores ... p => (scores p) +1.
