@@ -125,8 +125,13 @@
        (:lbrace literals :rbrace) ,|{:kind :domain-set
                                      :span (span $0 $2)
                                      :inner $1}
-       (domain :+ domain) ,|(let [inner (if ($0 :inner)
-                                          [;($0 :inner) $2]
+       (domain :+ domain) ,|(let [inner (match $0
+                                          ({:inner inner} (indexed? inner))
+                                          [;inner $2]
+
+                                          ({:inner {:seq inner}} (indexed? inner))
+                                          [;inner $2]
+
                                           [$0 $2])]
                               {:kind :domain-sum
                                :span (span $0 $2)
