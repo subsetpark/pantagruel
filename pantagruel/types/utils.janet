@@ -14,6 +14,12 @@
 
     Real))
 
+(defn sum-inner
+  [t]
+  (case (t :kind)
+    :sum (t :inner)
+    [t]))
+
 (defn sum-type
   ```
     Handle sum type syntax, either:
@@ -23,8 +29,8 @@
   [left-t right-t]
   # If either side is itself a sum type, unpack it; in other words,
   # (X + Y) + Z = {X, Y, Z}.
-  (let [t1 (or (left-t :sum) [left-t])
-        t2 (or (right-t :sum) [right-t])]
+  (let [t1 (sum-inner left-t)
+        t2 (sum-inner right-t)]
     (cond
       (and (all |($ :literal) t1)
            (all |($ :literal) t2))
