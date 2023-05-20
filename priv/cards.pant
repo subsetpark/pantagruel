@@ -1,1 +1,17 @@
-/home/zax/code-src/cards-pant/pantagruel/cards.pant
+module CARDS.
+
+Player.
+Card.
+
+Suit = {"diamonds", "hearts", "clubs", "spades"}.
+Rank = {"jack", "queen", "king"} + Nat.
+
+deal => Void.
+
+rank c: Card => Rank.
+suit c: Card => Suit.
+
+sum cs: {Card} => Nat0.
+
+hand p: Player => {Card}.
+---
