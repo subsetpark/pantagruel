@@ -14,4 +14,14 @@ suit c: Card => Suit.
 sum cs: {Card} => Nat0.
 
 hand p: Player => {Card}.
+
+value c: Card => Nat.
 ---
+
+// The capturing values of the cards are simply the numeric values up to 7, and
+// then 8, 9, 10 for the courts.
+value c = case (rank c) ...
+	"jack" => 8,
+	"queen" => 9,
+	"king" => 10,
+	rank c => rank c.

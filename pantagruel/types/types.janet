@@ -216,7 +216,11 @@
         (each case-type case-types
           (gcd/gcd-type test-type case-type)))
       # In all cases, attempt to unify the types of all branch expressions.
-      (let [all-exprs (map |(resolve-type ($ :right) env) mapping)]
+      (let [resolve |(resolve-type ($ :right) env)
+            # When unifying branches, widen any literals to their containing
+            # sets.
+            resolve-and-widen (comp literals/widen resolve)
+            all-exprs (map resolve-and-widen mapping)]
         (reduce2 gcd/gcd-type all-exprs)))
 
     {:kind :update

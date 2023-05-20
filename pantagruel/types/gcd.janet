@@ -131,8 +131,10 @@
                  # When unifying two literal values, compare them directly;
                  # don't try to find a GCD.
                  [{:literal lit-left} {:literal lit-right}]
-                 (if (= lit-left lit-right)
+                 (cond
+                   (= lit-left lit-right)
                    left
+
                    nil)
 
                  [t t2]
