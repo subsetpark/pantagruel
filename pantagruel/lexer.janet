@@ -49,6 +49,7 @@
       [:+ "+"]
       [:comma ","]
       [:update ,(kwd "update")]
+      [:extend ,(kwd "extend")]
       [:case ,(kwd "case")]
       [:all ,(kwd "all")]
       [:some1 ,(kwd "some1")]

@@ -1,0 +1,6 @@
+@[@{:left @{:kind :concrete :name "String"
+            :type @{:kind :meta-domain :name "Domain"}}
+    :right @{:kind :concrete :name "Nat"
+             :type @{:kind :meta-domain :name "Domain"}}
+    :type :gcd-case-branches}]
+

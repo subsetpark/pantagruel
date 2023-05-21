@@ -214,14 +214,15 @@
                  test-type (resolve-type test env)
                  case-types (map |(resolve-type ($ :left) env) mapping)]
         (each case-type case-types
-          (gcd/gcd-type test-type case-type)))
+          (gcd/gcd-type test-type case-type :error :gcd-case-test)))
       # In all cases, attempt to unify the types of all branch expressions.
       (let [resolve |(resolve-type ($ :right) env)
             # When unifying branches, widen any literals to their containing
             # sets.
             resolve-and-widen (comp literals/widen resolve)
-            all-exprs (map resolve-and-widen mapping)]
-        (reduce2 gcd/gcd-type all-exprs)))
+            all-exprs (map resolve-and-widen mapping)
+            f |(gcd/gcd-type $0 $1 :error :gcd-case-branches)]
+        (reduce2 f all-exprs)))
 
     {:kind :update
      :mapping {:seq mapping}
@@ -245,19 +246,43 @@
       # the yields. 
       (match test-type
         # Update a procedure.
-        {:args args-type :yields yield-type}
+        {:args args-type
+         :yields yield-type}
         (let [wrapped-cases (map maybe-wrap-args case-types)]
-          (reduce2 gcd/gcd-type [args-type ;wrapped-cases])
-          (reduce2 gcd/gcd-type [yield-type ;expr-types])
+          (each args-case wrapped-cases
+            (gcd/gcd-type args-type args-case :error :gcd-update-procedure-args))
+          (each yields-case expr-types
+            (gcd/gcd-type yield-type yields-case :error :gcd-update-procedure-yields))
+
           test-type)
 
         # Update a container.
         {:set-of t}
-        (do
-          (reduce2 gcd/gcd-type [t ;case-types ;expr-types])
-          test-type)
+        {:set-of (reduce2 gcd/gcd-type [t ;case-types])}
+
+        {:list-of t}
+        {:list-of (reduce2 gcd/gcd-type [t ;case-types])}
+
         # TODO: Handle updates on other data types
         (errorf "Couldn't type update of type: %q" test-type)))
+
+    {:kind :extend
+     :expr test
+     :exprs {:seq exprs}}
+    (let [test-type (resolve-type test env)
+          exprs-types (map |(resolve-type $ env) exprs)]
+
+      (match test-type
+        # extend a container.
+        {:set-of t}
+        (let [f |(gcd/gcd-type $0 $1 :error :gcd-set-extension)]
+          {:set-of (reduce2 f [t ;exprs-types])})
+
+        {:list-of t}
+        (let [f |(gcd/gcd-type $0 $1 :error :list-set-extension)]
+          {:list-of (reduce2 f [t ;exprs-types])})
+
+        (errorf "Couldn't type extension of type: %q" test-type)))
 
     {:container :parens
      :inner inner}

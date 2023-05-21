@@ -1,5 +1,6 @@
 map key: Any => Any.
 delete m: map, key: Any => map.
+val xs => {Nat}.
 ---
 
 delete m key = update m ...
@@ -12,3 +13,5 @@ complex_procedure (x, y): Nat => Nat.
 
 update complex_procedure ...
   (2, 10) => 10.
+
+extend xs ... 1, 2.

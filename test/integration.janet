@@ -11,10 +11,20 @@
 (deftest integration
   (each test tests
     (let [full-path (path/join "priv" test)
+          error-path (string full-path ".error")
           src (slurp full-path)
           available-modules (pantagruel/populate-available-modules {"path" "priv"})
-          [succ res] (protect (pantagruel/handle-src full-path src available-modules))]
+          eval-errors (try
+                        (pantagruel/handle-src full-path src available-modules)
+                        ([err fib]
+                          (is (nil? err)
+                              (string/format "[%s] Integration test execution failure: %q" test err))))]
 
-      (is succ (string/format "[%s] Integration test failure: %q" test res)))))
+      (if (os/stat error-path)
+        (let [type-errors (map (fn [[_ err]] err) eval-errors)
+              error-message (parse (slurp error-path))]
+          (assert-equivalent error-message type-errors))
+
+        (is (empty? eval-errors) (string/format "[%s] Integration test errors: %q" test eval-errors))))))
 
 (run-tests!)

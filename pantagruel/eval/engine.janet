@@ -169,6 +169,14 @@
             (recurse left)
             (recurse right)))
 
+        {:kind :extend
+         :expr expr
+         :exprs {:seq exprs}}
+        (do
+          (recurse expr)
+          (each expr exprs
+            (recurse expr)))
+
         {:kind :quantification
          :bindings {:seq bindings}
          :expr expr}

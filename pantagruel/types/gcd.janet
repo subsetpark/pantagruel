@@ -21,16 +21,23 @@
   If we reach the bottom of our recursion and have to throw a type error, they
   will be the ones we throw with.
   ```
-  [left right &opt original-left original-right]
+  [left right
+   &keys {:error error-code
+          :original-left original-left
+          :original-right original-right}]
   (default original-left left)
   (default original-right right)
+  (default error-code :gcd)
 
   (defn recurse
     [t t2]
     ```
     Recurse over two new arguments, preserving the initial arguments.
     ```
-    (gcd-type t t2 original-left original-right))
+    (gcd-type
+      t t2
+      :original-left original-left
+      :original-right original-right))
 
   (defn find-gcd-
     ```
@@ -140,4 +147,4 @@
                  [t t2]
                  (find-gcd t t2))]
     gcd
-    (errors/throw :gcd {:left original-left :right original-right})))
+    (errors/throw error-code {:left original-left :right original-right})))

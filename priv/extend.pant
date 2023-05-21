@@ -1,0 +1,4 @@
+val xs => {Nat}.
+---
+extend xs ... 1,2.
+extend xs ... "ok".

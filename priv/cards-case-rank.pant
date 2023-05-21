@@ -1,0 +1,8 @@
+Card.
+Rank = {"ok"}.
+rank c: Card => Rank.
+value c: Card => Nat.
+---
+case (rank c) ...
+	"no" => 8,
+	1 => 9.

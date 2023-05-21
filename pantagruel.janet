@@ -80,6 +80,33 @@
   (when (dyn :exit-on-error)
     (os/exit 1)))
 
+(defn- print-types
+  [str & args]
+
+  (defn- render-type
+    [t]
+
+    (defn- join
+      [ts]
+      (string/format "(%s)" (-> (map render-type ts) (string/join ", "))))
+
+    (match t
+      (ts (indexed? ts)) (join ts)
+      {:literal literal} (string literal)
+      {:name t-name} t-name
+      # Special case the empty set.
+      {:set-of ()} "{}"
+      {:set-of t} (string/format "{%s}" (render-type t))
+      {:list-of t} (string/format "[%s]" (render-type t))
+      {:tuple-of ts} (join ts)
+      {:kind :sum :inner ts} (-> (map render-type ts) (string/join " + "))
+      {:args args :yields yields} (string/format "%s => %s" (render-type args) (render-type yields))
+      {:thunk thunk} (render-type thunk)
+      {:kind :sym :text text} text
+      t (string/format "%q" t)))
+
+  (printf (string "type error. " str) ;(map render-type args)))
+
 (defn handle-evaluation-error
   [err]
   (let [{:evaluator {:src src :file file}} err]
@@ -96,7 +123,7 @@
       :single-binding
       (do
         (start-line (err :sym))
-        (type-checking/print-types
+        (print-types
           "can't bind %s to `%s`, already bound to `%s`"
           (get-in err [:sym :text])
           (get-in err [:t :type])
@@ -134,6 +161,52 @@
                  (propagate err fib)))]
     tree))
 
+(defn- handle-resolution-error
+  [err]
+  (case (err :type)
+    :list-application-multiple-args
+    (print-types "attempted to apply to multiple arguments: `%s`"
+                 (err :xs))
+
+    :list-application-bad-arg
+    (print-types "attempted to apply type: `%s` to an argument of type: `%s`"
+                 (err :f)
+                 (err :x))
+
+    :application
+    (print-types "attempted to apply type: `%s` to type: `%s`"
+                 (err :f)
+                 (err :x))
+
+    :container
+    (print-types "attempted to check for membership or cardinality in non-container type: `%s`"
+                 (err :t))
+
+    :arg-length
+    (print-types "received invalid arguments: `%s` to procedure expecting: `%s`"
+                 (err :args)
+                 (err :f-args))
+
+    :gcd-case-test
+    (print-types "couldn't unify test expression of `case` `%s` with branch `%s`" (err :left) (err :right))
+
+    :gcd-case-branches
+    (print-types "couldn't unify branch expressions of `case` `%s` and `%s`" (err :left) (err :right))
+
+    :gcd-update-procedure-args
+    (print-types "couldn't unify procedure argument type of `update` `%s` with left side of mapping `%s`" (err :left) (err :right))
+
+    :gcd-update-procedure-yields
+    (print-types "couldn't unify procedure yields type of `update` `%s` with right side of mapping `%s`" (err :left) (err :right))
+
+    :gcd-set-extension
+    (print-types "couldn't unify set of `%s` with element type `%s`" (err :left) (err :right))
+
+    :gcd
+    (print-types "couldn't unify types: `%s` and `%s`" (err :left) (err :right))
+
+    (print-types "unknown type resolution error: `%s`" err)))
+
 (defn handle-src
   ```
   Given some input file, fully evaluate it as a Pantagruel document.
@@ -153,12 +226,24 @@
 
   (array/clear engine/currently-importing-modules)
 
-  (let [tree (lex-and-parse file src)
+  (let [start-line (print-src/line-starter file src)
+        tree (lex-and-parse file src)
         evaluator (engine/Evaluator file src)
         env (try (:eval evaluator tree available-modules evaluator-callback)
               ([err fib] (when (table? err) (handle-evaluation-error err))
-                         (propagate err fib)))]
-    (type-checking/type-check tree env file src)))
+                         (propagate err fib)))
+        type-errors (type-checking/get-type-errors tree env file src)]
+
+    (each [body-expr type-error] type-errors
+      (start-line body-expr)
+      (handle-resolution-error type-error)
+      (printf "\nin expression:\n\n%s\n" (print-src/print-src body-expr src)))
+
+    (when (and (not (empty? type-errors))
+               (dyn :exit-on-error))
+      (os/exit 1))
+
+    type-errors))
 
 (defn- maybe-read
   [filename]

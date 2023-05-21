@@ -187,6 +187,12 @@
                                             :right $2
                                             :span (span $0 $2)})
 
+     #### Extension forms
+
+     (expr-clauses
+       (expr) ,new-seq
+       (expr :comma expr-clauses) ,cons-seq)
+
      #### Quantification: some, all, some1
 
      (quantification-word
@@ -216,6 +222,11 @@
                                                          :case $1
                                                          :mapping $3
                                                          :span (span $0 $3)}
+
+       (:extend expr :... expr-clauses) ,|{:kind :extend
+                                           :expr $1
+                                           :exprs $3
+                                           :span (span $0 $3)}
 
        (expr :logical-operator expr) ,binary-operation
        (expr :boolean-operator expr) ,binary-operation
