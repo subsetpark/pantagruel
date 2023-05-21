@@ -1,0 +1,2 @@
+@[@{:extra {:f {:args {:tuple-of (@{:kind :concrete :name "Nat" :type @{:kind :meta-domain :name "Domain"}})} :decl-name "f" :yields @{:kind :concrete :name "Void" :type @{:kind :meta-domain :name "Domain"}}}} :left @{:kind :concrete :name "Nat" :type @{:kind :meta-domain :name "Domain"}} :right @{:literal "\"ok\""} :type :gcd-app}]
+

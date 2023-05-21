@@ -22,8 +22,13 @@
 
       (if (os/stat error-path)
         (let [type-errors (map (fn [[_ err]] err) eval-errors)
-              error-message (parse (slurp error-path))]
-          (assert-equivalent error-message type-errors))
+              error-message (parse (slurp error-path))
+              assert-message (string/format
+                               "[%s]\nExpected type errors: %q\nFound type errors: %q\n"
+                               test
+                               error-message
+                               type-errors)]
+          (assert-equivalent error-message type-errors assert-message))
 
         (is (empty? eval-errors) (string/format "[%s] Integration test errors: %q" test eval-errors))))))
 

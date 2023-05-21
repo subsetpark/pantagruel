@@ -63,7 +63,7 @@
     (if (os/getenv "PANT_DEBUG") (print (dyn :yydebug)))
 
     (start-line form)
-    (printf
+    (eprintf
       ```
       syntax error: `%s` (%q)
 
@@ -90,6 +90,10 @@
       [ts]
       (string/format "(%s)" (-> (map render-type ts) (string/join ", "))))
 
+    (defn- render-procedure
+      [args yields]
+      (string/format "%s => %s" (render-type args) (render-type yields)))
+
     (match t
       (ts (indexed? ts)) (join ts)
       {:literal literal} (string literal)
@@ -100,12 +104,16 @@
       {:list-of t} (string/format "[%s]" (render-type t))
       {:tuple-of ts} (join ts)
       {:kind :sum :inner ts} (-> (map render-type ts) (string/join " + "))
-      {:args args :yields yields} (string/format "%s => %s" (render-type args) (render-type yields))
+      {:decl-name name :args args :yields yields} (string/format
+                                                    "%s %s"
+                                                    name
+                                                    (render-procedure args yields))
+      {:args args :yields yields} (render-procedure args yields)
       {:thunk thunk} (render-type thunk)
       {:kind :sym :text text} text
       t (string/format "%q" t)))
 
-  (printf (string "type error. " str) ;(map render-type args)))
+  (eprintf (string "type error. " str) ;(map render-type args)))
 
 (defn handle-evaluation-error
   [err]
@@ -117,8 +125,8 @@
       :evaluation
       (each sym (keys (err :symbols))
         (start-line sym)
-        (printf "unglossed symbol error: %s"
-                (sym :text)))
+        (eprintf "unglossed symbol error: %s"
+                 (sym :text)))
 
       :single-binding
       (do
@@ -132,15 +140,15 @@
       :import
       (do
         (start-line (err :to-import))
-        (printf "import error: module `%s` not found. Available modules: %s"
-                (get-in err [:to-import :text])
-                (-> (err :available-modules) (keys) (string/join ", "))))
+        (eprintf "import error: module `%s` not found. Available modules: %s"
+                 (get-in err [:to-import :text])
+                 (-> (err :available-modules) (keys) (string/join ", "))))
 
       :import-cycle
       (do
         (start-line (err :to-import))
-        (printf "import cycle error: encountered cycle: %s"
-                (string/join (err :currently-importing-modules) " -> ")))
+        (eprintf "import cycle error: encountered cycle: %s"
+                 (string/join (err :currently-importing-modules) " -> ")))
 
       (errorf "Got unknown evaluation error: %q" err)))
 
@@ -169,43 +177,64 @@
                  (err :xs))
 
     :list-application-bad-arg
-    (print-types "attempted to apply type: `%s` to an argument of type: `%s`"
+    (print-types "attempted to apply type: %s to an argument of type: %s"
                  (err :f)
                  (err :x))
 
     :application
-    (print-types "attempted to apply type: `%s` to type: `%s`"
+    (print-types "attempted to apply type: %s to type: %s"
                  (err :f)
                  (err :x))
 
     :container
-    (print-types "attempted to check for membership or cardinality in non-container type: `%s`"
+    (print-types "attempted to check for membership or cardinality in non-container type: %s"
                  (err :t))
 
     :arg-length
-    (print-types "received invalid arguments: `%s` to procedure expecting: `%s`"
+    (print-types "received invalid arguments: %s to procedure expecting: %s"
                  (err :args)
                  (err :f-args))
 
+    :gcd-app
+    (print-types "couldn't bind value of type %s to argument of type %s in procedure: %s" (err :right) (err :left) (get-in err [:extra :f]))
+
+    :gcd-comp
+    (print-types "couldn't unify types for comparison: %s and %s" (err :left) (err :right))
+
+    :gcd-arith
+    (print-types "couldn't unify types for arithmetic: %s and %s" (err :left) (err :right))
+
+    :gcd-in
+    (print-types "couldn't unify set element type %s when checking membership of %s" (err :left) (err :right))
+
     :gcd-case-test
-    (print-types "couldn't unify test expression of `case` `%s` with branch `%s`" (err :left) (err :right))
+    (print-types "couldn't unify test expression of `case` %s with branch %s" (err :left) (err :right))
 
     :gcd-case-branches
-    (print-types "couldn't unify branch expressions of `case` `%s` and `%s`" (err :left) (err :right))
+    (print-types "couldn't unify branch expressions of `case` %s and %s" (err :left) (err :right))
 
     :gcd-update-procedure-args
-    (print-types "couldn't unify procedure argument type of `update` `%s` with left side of mapping `%s`" (err :left) (err :right))
+    (print-types "couldn't unify procedure argument type of `update` %s with left side of mapping %s" (err :left) (err :right))
 
     :gcd-update-procedure-yields
-    (print-types "couldn't unify procedure yields type of `update` `%s` with right side of mapping `%s`" (err :left) (err :right))
+    (print-types "couldn't unify procedure yields type of `update` %s with right side of mapping %s" (err :left) (err :right))
+
+    :gcd-set-update
+    (print-types "couldn't unify set of %s when updating with element type %s" (err :left) (err :right))
+
+    :gcd-list-update
+    (print-types "couldn't unify list of %s when updating with element type %s" (err :left) (err :right))
 
     :gcd-set-extension
-    (print-types "couldn't unify set of `%s` with element type `%s`" (err :left) (err :right))
+    (print-types "couldn't unify set of %s when extending with element type %s" (err :left) (err :right))
+
+    :gcd-list-extension
+    (print-types "couldn't unify list of %s when extending with element type %s" (err :left) (err :right))
 
     :gcd
-    (print-types "couldn't unify types: `%s` and `%s`" (err :left) (err :right))
+    (print-types "couldn't unify types: %s and %s" (err :left) (err :right))
 
-    (print-types "unknown type resolution error: `%s`" err)))
+    (print-types "unknown type resolution error: %s" err)))
 
 (defn handle-src
   ```
@@ -237,7 +266,7 @@
     (each [body-expr type-error] type-errors
       (start-line body-expr)
       (handle-resolution-error type-error)
-      (printf "\nin expression:\n\n%s\n" (print-src/print-src body-expr src)))
+      (eprintf "\nin expression:\n\n%s\n" (print-src/print-src body-expr src)))
 
     (when (and (not (empty? type-errors))
                (dyn :exit-on-error))
@@ -282,9 +311,9 @@
             (do
               (when module-name
                 (start-line directive)
-                (printf "module name `%s` already declared; found module declaration `%s`"
-                        module-name
-                        directive-name)
+                (eprintf "module name `%s` already declared; found module declaration `%s`"
+                         module-name
+                         directive-name)
                 (when (dyn :exit-on-error) (os/exit 1))
                 (error :available-modules-error))
 

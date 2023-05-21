@@ -81,7 +81,11 @@
     (do
       (unless (= (length f-args) (length arg-ts))
         (errors/throw :arg-length {:f-args f-args :args arg-ts}))
-      (if (every? (map |(gcd/gcd-type $0 $1) f-args arg-ts))
+      (if (every? (map |(gcd/gcd-type $0 $1
+                                      :error :gcd-app
+                                      :extra {:f f})
+                       f-args
+                       arg-ts))
         yields))
 
     ([{:list-of t1} ts] (one? (length ts)) (= t1 (ts 0)))
@@ -183,21 +187,23 @@
       :right right} (index-of compop comparison-operators))
     (let [t (literals/widen (resolve-type left env))
           t2 (literals/widen (resolve-type right env))]
-      (if (gcd/gcd-type t t2)
+      (if (gcd/gcd-type t t2 :error :gcd-comp)
         Bool))
 
     ({:operator arithop
       :left left
       :right right} (index-of arithop arithmetic-operators))
     (gcd/gcd-type (literals/widen (resolve-type left env))
-                  (literals/widen (resolve-type right env)))
+                  (literals/widen (resolve-type right env))
+                  :error :gcd-arith)
 
     {:operator "in"
      :left left
      :right right}
     (let [element-t (resolve-type left env)
           inner-t (member-type (resolve-type right env))]
-      (if (gcd/gcd-type element-t inner-t)
+      (if (gcd/gcd-type inner-t element-t
+                        :error :gcd-in)
         Bool))
 
     {:operator "#"
@@ -250,18 +256,24 @@
          :yields yield-type}
         (let [wrapped-cases (map maybe-wrap-args case-types)]
           (each args-case wrapped-cases
-            (gcd/gcd-type args-type args-case :error :gcd-update-procedure-args))
+            (gcd/gcd-type args-type args-case
+                          :error :gcd-update-procedure-args))
           (each yields-case expr-types
-            (gcd/gcd-type yield-type yields-case :error :gcd-update-procedure-yields))
+            (gcd/gcd-type yield-type yields-case
+                          :error :gcd-update-procedure-yields))
 
           test-type)
 
         # Update a container.
         {:set-of t}
-        {:set-of (reduce2 gcd/gcd-type [t ;case-types])}
+        (let [f |(gcd/gcd-type $0 $1
+                               :error :gcd-set-update)]
+          {:set-of (reduce2 f [t ;case-types])})
 
         {:list-of t}
-        {:list-of (reduce2 gcd/gcd-type [t ;case-types])}
+        (let [f |(gcd/gcd-type $0 $1
+                               :error :gcd-list-update)]
+          {:list-of (reduce2 f [t ;case-types])})
 
         # TODO: Handle updates on other data types
         (errorf "Couldn't type update of type: %q" test-type)))
@@ -275,11 +287,13 @@
       (match test-type
         # extend a container.
         {:set-of t}
-        (let [f |(gcd/gcd-type $0 $1 :error :gcd-set-extension)]
+        (let [f |(gcd/gcd-type $0 $1
+                               :error :gcd-set-extension)]
           {:set-of (reduce2 f [t ;exprs-types])})
 
         {:list-of t}
-        (let [f |(gcd/gcd-type $0 $1 :error :list-set-extension)]
+        (let [f |(gcd/gcd-type $0 $1
+                               :error :gcd-list-extension)]
           {:list-of (reduce2 f [t ;exprs-types])})
 
         (errorf "Couldn't type extension of type: %q" test-type)))
@@ -318,7 +332,9 @@
     {:kind :procedure
      :type {:args args
             :yields yields}}
-    {:args (resolve-type args env)
+
+    {:decl-name (get-in expr [:type :decl-name])
+     :args (resolve-type args env)
      :yields (resolve-type yields env)}
 
     {:list-of inner}

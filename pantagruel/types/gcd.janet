@@ -24,10 +24,12 @@
   [left right
    &keys {:error error-code
           :original-left original-left
-          :original-right original-right}]
+          :original-right original-right
+          :extra extra}]
   (default original-left left)
   (default original-right right)
   (default error-code :gcd)
+  (default extra {})
 
   (defn recurse
     [t t2]
@@ -37,7 +39,8 @@
     (gcd-type
       t t2
       :original-left original-left
-      :original-right original-right))
+      :original-right original-right
+      :extra extra))
 
   (defn find-gcd-
     ```
@@ -147,4 +150,6 @@
                  [t t2]
                  (find-gcd t t2))]
     gcd
-    (errors/throw error-code {:left original-left :right original-right})))
+    (errors/throw error-code {:left original-left
+                              :right original-right
+                              :extra extra})))

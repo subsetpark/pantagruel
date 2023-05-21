@@ -72,9 +72,11 @@
         inner-t))
 
     {:kind :declaration
+     :name {:text name}
      :yields yields
      :bindings {:seq bindings}}
-    {:yields (type-of-form yields)
+    {:decl-name name
+     :yields (type-of-form yields)
      :args {:tuple-of (map type-of-form (distribute-bindings-types bindings))}}
 
     ({:kind :declaration
@@ -82,12 +84,15 @@
       :bindings {:seq bindings}} (empty? bindings))
     (if (= (name 0) ((string/ascii-upper name) 0))
       Domain
-      {:args {:tuple-of []} :yields Void})
+      {:decl-name name
+       :args {:tuple-of []}
+       :yields Void})
 
     {:kind :declaration
      :name {:text name}
      :bindings {:seq bindings}}
-    {:args {:tuple-of (map type-of-form (distribute-bindings-types bindings))}
+    {:decl-name name
+     :args {:tuple-of (map type-of-form (distribute-bindings-types bindings))}
      :yields Void}
 
     {:kind :string :text text}
@@ -106,3 +111,4 @@
 
     # Fall-through case: if we can't tell the type now, defer it for later.
     {:thunk form}))
+

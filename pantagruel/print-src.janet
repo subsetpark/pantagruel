@@ -21,6 +21,6 @@
 (defn line-starter
   [file src]
   (fn [sym]
-    (prinf "%s:%i: "
+    (eprinf "%s:%i: "
            (path/basename file)
            (line-no sym src))))

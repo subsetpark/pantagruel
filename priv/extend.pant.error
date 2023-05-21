@@ -2,4 +2,5 @@
             :name "Nat"
             :type @{:kind :meta-domain :name "Domain"}}
     :right @{:literal "\"ok\""}
-    :type :gcd-set-extension}]
+    :type :gcd-set-extension
+    :extra {}}]
