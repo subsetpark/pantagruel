@@ -15,16 +15,23 @@
   ```
   [tree env file src]
 
-  (let [type-errors @[]
-        body-exprs (mapcat |($0 :body) (tree :chapters))]
-    (var type-error false)
-    (each body-expr body-exprs
+  (let [type-errors @[]]
+
+    (defn check-expr
+      [e]
       (try
-        (types/resolve-type body-expr env)
+        (types/resolve-type e env)
         ([err fib]
           (if (table? err)
-            (array/push type-errors [body-expr err])
+            (array/push type-errors [e err])
             (propagate err fib)))))
 
-    type-errors))
+    (var type-error false)
+    (each {:head head :body body} (tree :chapters)
+      (each head-expr head
+        (when (head-expr :bindings)
+          (check-expr head-expr)))
+      (each body-expr body
+        (check-expr body-expr)))
 
+    type-errors))

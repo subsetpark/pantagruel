@@ -80,9 +80,8 @@
     [{:args {:tuple-of f-args} :yields yields} arg-ts]
     (do
       (unless (= (length f-args) (length arg-ts))
-        (errors/throw :arg-length {:f-args f-args :args arg-ts}))
-      (if (every? (map |(gcd/gcd-type $0 $1
-                                      :error :gcd-app
+        (errors/throw :arg-length {:f f :args arg-ts}))
+      (if (every? (map |(gcd/gcd-type $0 $1 :gcd-app
                                       :extra {:f f})
                        f-args
                        arg-ts))
@@ -187,7 +186,7 @@
       :right right} (index-of compop comparison-operators))
     (let [t (literals/widen (resolve-type left env))
           t2 (literals/widen (resolve-type right env))]
-      (if (gcd/gcd-type t t2 :error :gcd-comp)
+      (if (gcd/gcd-type t t2 :gcd-comp)
         Bool))
 
     ({:operator arithop
@@ -195,15 +194,14 @@
       :right right} (index-of arithop arithmetic-operators))
     (gcd/gcd-type (literals/widen (resolve-type left env))
                   (literals/widen (resolve-type right env))
-                  :error :gcd-arith)
+                  :gcd-arith)
 
     {:operator "in"
      :left left
      :right right}
     (let [element-t (resolve-type left env)
           inner-t (member-type (resolve-type right env))]
-      (if (gcd/gcd-type inner-t element-t
-                        :error :gcd-in)
+      (if (gcd/gcd-type inner-t element-t :gcd-in)
         Bool))
 
     {:operator "#"
@@ -220,14 +218,14 @@
                  test-type (resolve-type test env)
                  case-types (map |(resolve-type ($ :left) env) mapping)]
         (each case-type case-types
-          (gcd/gcd-type test-type case-type :error :gcd-case-test)))
+          (gcd/gcd-type test-type case-type :gcd-case-test)))
       # In all cases, attempt to unify the types of all branch expressions.
       (let [resolve |(resolve-type ($ :right) env)
             # When unifying branches, widen any literals to their containing
             # sets.
             resolve-and-widen (comp literals/widen resolve)
             all-exprs (map resolve-and-widen mapping)
-            f |(gcd/gcd-type $0 $1 :error :gcd-case-branches)]
+            f |(gcd/gcd-type $0 $1 :gcd-case-branches)]
         (reduce2 f all-exprs)))
 
     {:kind :update
@@ -256,23 +254,19 @@
          :yields yield-type}
         (let [wrapped-cases (map maybe-wrap-args case-types)]
           (each args-case wrapped-cases
-            (gcd/gcd-type args-type args-case
-                          :error :gcd-update-procedure-args))
+            (gcd/gcd-type args-type args-case :gcd-update-procedure-args))
           (each yields-case expr-types
-            (gcd/gcd-type yield-type yields-case
-                          :error :gcd-update-procedure-yields))
+            (gcd/gcd-type yield-type yields-case :gcd-update-procedure-yields))
 
           test-type)
 
         # Update a container.
         {:set-of t}
-        (let [f |(gcd/gcd-type $0 $1
-                               :error :gcd-set-update)]
+        (let [f |(gcd/gcd-type $0 $1 :gcd-set-update)]
           {:set-of (reduce2 f [t ;case-types])})
 
         {:list-of t}
-        (let [f |(gcd/gcd-type $0 $1
-                               :error :gcd-list-update)]
+        (let [f |(gcd/gcd-type $0 $1 :gcd-list-update)]
           {:list-of (reduce2 f [t ;case-types])})
 
         # TODO: Handle updates on other data types
@@ -287,13 +281,11 @@
       (match test-type
         # extend a container.
         {:set-of t}
-        (let [f |(gcd/gcd-type $0 $1
-                               :error :gcd-set-extension)]
+        (let [f |(gcd/gcd-type $0 $1 :gcd-set-extension)]
           {:set-of (reduce2 f [t ;exprs-types])})
 
         {:list-of t}
-        (let [f |(gcd/gcd-type $0 $1
-                               :error :gcd-list-extension)]
+        (let [f |(gcd/gcd-type $0 $1 :gcd-list-extension)]
           {:list-of (reduce2 f [t ;exprs-types])})
 
         (errorf "Couldn't type extension of type: %q" test-type)))
@@ -364,6 +356,13 @@
     {:value _
      :type t}
     (resolve-type t env)
+
+    # Head cases
+    {:bindings {:seq bindings}
+     :kind :declaration}
+    (each binding bindings
+      (if-not (= (binding :kind) :binding)
+        (resolve-type binding env)))
 
     # The base case: a type defined in the base environment.
     {:kind :concrete}

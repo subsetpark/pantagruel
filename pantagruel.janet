@@ -191,9 +191,9 @@
                  (err :t))
 
     :arg-length
-    (print-types "received invalid arguments: %s to procedure expecting: %s"
+    (print-types "received invalid arguments: %s to procedure %s"
                  (err :args)
-                 (err :f-args))
+                 (err :f))
 
     :gcd-app
     (print-types "couldn't bind value of type %s to argument of type %s in procedure: %s" (err :right) (err :left) (get-in err [:extra :f]))

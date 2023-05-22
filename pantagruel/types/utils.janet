@@ -36,7 +36,7 @@
            (all |($ :literal) t2))
       {:kind :sum :inner (distinct [;t1 ;t2])}
 
-      (let [gcd (protect (gcd/gcd-type t1 t2))]
+      (let [gcd (protect (gcd/gcd-type t1 t2 :gcd-sum))]
         (cond
           # If the two types are unifiable, return the common denominator.
           (gcd 0) (gcd 1)

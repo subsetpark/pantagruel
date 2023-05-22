@@ -21,14 +21,11 @@
   If we reach the bottom of our recursion and have to throw a type error, they
   will be the ones we throw with.
   ```
-  [left right
-   &keys {:error error-code
-          :original-left original-left
-          :original-right original-right
-          :extra extra}]
+  [left right error-code &keys {:original-left original-left
+                                :original-right original-right
+                                :extra extra}]
   (default original-left left)
   (default original-right right)
-  (default error-code :gcd)
   (default extra {})
 
   (defn recurse
@@ -40,6 +37,7 @@
       t t2
       :original-left original-left
       :original-right original-right
+      :error error-code
       :extra extra))
 
   (defn find-gcd-
