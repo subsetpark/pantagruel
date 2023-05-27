@@ -55,6 +55,7 @@
       [:some1 ,(kwd "some1")]
       [:some ,(kwd "some")]
       [:val ,(kwd "val")]
+      [:do ,(kwd "do")]
       [:lparen "("]
       [:rparen ")"]
       [:lsquare "["]

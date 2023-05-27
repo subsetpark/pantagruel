@@ -1,0 +1,6 @@
+f n: Nat0.
+b => Bool.
+---
+case b ...
+	true => f,
+	false => do f 1, f 2.

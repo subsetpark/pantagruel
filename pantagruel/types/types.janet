@@ -290,6 +290,14 @@
 
         (errorf "Couldn't type extension of type: %q" test-type)))
 
+    {:kind :do
+     :exprs {:seq exprs}}
+    (do
+      (var t nil)
+      (each expr exprs
+        (set t (resolve-type expr env)))
+      t)
+
     {:container :parens
      :inner inner}
     (let [inner-ts (map |(resolve-type $ env) inner)]

@@ -228,6 +228,10 @@
                                            :exprs $3
                                            :span (span $0 $3)}
 
+       (:do expr-clauses) ,|{:kind :do
+                             :exprs $1
+                             :span (span $0 $1)}
+
        (expr :logical-operator expr) ,binary-operation
        (expr :boolean-operator expr) ,binary-operation
        # = and + are special cased because they are normal binary operators,

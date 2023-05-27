@@ -177,6 +177,12 @@
           (each expr exprs
             (recurse expr)))
 
+        {:kind :do
+         :exprs {:seq exprs}}
+        (do
+          (each expr exprs
+            (recurse expr)))
+
         {:kind :quantification
          :bindings {:seq bindings}
          :expr expr}
