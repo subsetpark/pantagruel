@@ -14,7 +14,7 @@ Body = [Comment + Expression].
 ---
 eval p <-> all sect : Section, sect in p ... all_bound? sect.
 
-;
+where
 
 all_bound? sect : Section => Bool.
 ---
@@ -29,7 +29,7 @@ all_bound? sect <->
 	and
 	all sym : String, sym in body_of (p (p sect - 1)) ... bound? sym.
 
-;
+where
 
 head_of sect : Section => Head.
 body_of sect : Section => Body.
@@ -39,7 +39,7 @@ bound? sym : String => Bool.
 
 bound? sym <-> (sym in (env p) (p sect)) or (sym in base_env).
 
-;
+where
 
 env p : Program => [Scope].
 base_env => Scope.

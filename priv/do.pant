@@ -2,5 +2,5 @@ f n: Nat0.
 b => Bool.
 ---
 case b ...
-	true => f,
-	false => do f 1, f 2.
+	true => f 3,
+	false => do f 1; f 2.

@@ -66,14 +66,14 @@
     ---
     g.
 
-    ;
+    where
 
     h.
     `
     [{:kind :sym :text "f"} {:kind :. :text "."}
      {:kind :line :text "---"}
      {:kind :sym :text "g"} {:kind :. :text "."}
-     {:kind :where :text ";"}
+     {:kind :where :text "where"}
      {:kind :sym :text "h"} {:kind :. :text "."}]))
 
 (deftest quantifier

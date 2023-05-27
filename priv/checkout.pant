@@ -15,7 +15,7 @@ check_out u:User, d:Document.
 owner d = nobody and has_perm? u d -> owner d' = u.
 owner d != nobody or ~(has_perm? u d) -> owner d' = owner d.
 
-;
+where
 
 nobody => User.
 has_perm? u:User, d:Document => Bool.

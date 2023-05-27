@@ -216,7 +216,10 @@
       # types of all branch patterns.
       (when-let [test (expr :case)
                  test-type (resolve-type test env)
-                 case-types (map |(resolve-type ($ :left) env) mapping)]
+                 left-sides (map |($ :left) mapping)
+                 # Special-case "_" in case as match-any.
+                 filter-anys (filter |(not= ($ :text ) "_") left-sides)
+                 case-types (map |(resolve-type $ env) filter-anys)]
         (each case-type case-types
           (gcd/gcd-type test-type case-type :gcd-case-test)))
       # In all cases, attempt to unify the types of all branch expressions.

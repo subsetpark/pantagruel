@@ -6,7 +6,7 @@ val xs => {Nat}.
 delete m key = update m ...
     key => nil.
 
-;
+where
 
 complex_procedure (x, y): Nat => Nat.
 ---

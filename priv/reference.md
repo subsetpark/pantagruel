@@ -215,6 +215,11 @@ A top-level statement can be made of any valid **expression**. The statement is
 not executed or semantically evaluated; ultimately it's intended to communicate
 something to a human reader.
 
+### Multiple Chapters
+
+Multiple chapters are separated by the symbol `where`. The chapter separator
+begins a new chapter head.
+
 ### Expressions
 
 #### Values
@@ -377,14 +382,15 @@ the left-hand sides of the mapping clauses. For instance:
 fib x = case x ...
     1 => 1,
     2 => 1,
-    x => fib (x - 1) + fib (x - 2).
+    _ => fib (x - 1) + fib (x - 2).
 ```
 
 While this resembles the sort of pattern-matching found in some programming
 languages, it's simpler than that: the "pattern" side of a mapping clause here
-doesn't introduce a new symbol to the scope of the expression side. Thus, to
-communicate the equivalent of an "else" or "match any" clause in the example
-above, we reuse `x`.
+doesn't introduce a new symbol to the scope of the expression side. However,
+within `case` syntax, we *can* use the special symbol `_`, as in the above
+example, to denote an "else" branch that always evaluates to true if none of
+the earlier branches match.
 
 #### Update
 
@@ -401,40 +407,64 @@ fib' = update fib ...
 Represents a procedure which behaves exactly like `fib`, except when it is
 called on `5`.
 
+#### Do
+
+A `do` expression consists of the symbol `do` followed by an arbitrary sequence
+of expressions separated by semicolons. 
+
+For instance:
+
+```
+do 
+  alert "ok";
+  true.
+```
+
+The expressions in the sequence need have no typing relationship to each other
+and the type of the whole expression is simply the type of the last expression
+in the sequence.
+
+This can be useful when describing a sequence of events or effectful procedures
+that need to happen, without (for instance) constructing a boolean expression
+by joining that sequence with `and`s.
+
 ## Binding
 
 The Pantagruel interpreter evaluates a program for the purpose of
 enforcing Pantagruel's **binding** rules. To sum them up, they are:
 
-1. Any symbol referred to in a chapter head must be bound by the end of
-that head.
-2. Any symbol referred to in a chapter body must be bound by the end of
-the *next* body.
+1. Any symbol referred to in a chapter head must be bound by the end of that
+   head.
+2. Any symbol referred to in a chapter body must be bound by the end of the
+   body of the *next* chapter.
 
 This structure is crucial in establishing the Pantagruel style of
-specification, where new terms are introduced so as to provide refinement
-for known terms, eg:
+specification, where new terms are introduced so as to provide refinement for
+known terms, eg:
 
 ```pantagruel
 pred n:Nat.
 ---
 pred n = is_even? n and n > 5.
 
-;
+where
 
 is_even? n:Nat => Bool.
 ---
 is_even? 0.
 ~(is_even? 1).
-is_even? n = is_even? (n - 2).
+is_even? n <-> is_even? (n - 2).
 ```
 
-That specification describes the behavior of a predicate as checking
-`is_even?` and `> 5`. It then goes on in the next chapter to fill in
-what `is_even?` involves. This allows it to be defined in context; if
-a symbol had to be defined before it was used, as is often the case in
-programming languages, the narrative thread of increasing detail would
-be lost and specifications would be all preamble.
+This example consists of two chapters, the first introducing a procedure `pred`
+and establishing some facts about it; the second glosses the terminology
+referred to in the facts.
+
+It describes the behavior of a predicate as checking `is_even?` and `> 5`. It
+then goes on in the next chapter to fill in what `is_even?` involves. This
+allows it to be defined in context; if a symbol had to be defined before it was
+used, as is often the case in programming languages, the narrative thread of
+increasing detail would be lost and specifications would be all preamble.
 
 ### Binding Forms
 

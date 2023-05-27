@@ -158,7 +158,9 @@
         (do
           (recurse (form :case))
           (each {:left left :right right} mapping-form
-            (recurse left)
+            # Special-case: treat the symbol '_' as a match-any.
+            (unless (= (left :text) "_")
+              (recurse left))
             (recurse right)))
 
         {:kind :update

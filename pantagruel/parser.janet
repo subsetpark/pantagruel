@@ -193,6 +193,10 @@
        (expr) ,new-seq
        (expr :comma expr-clauses) ,cons-seq)
 
+     (stmt-clauses
+       (expr) ,new-seq
+       (expr :semicolon stmt-clauses) ,cons-seq)
+
      #### Quantification: some, all, some1
 
      (quantification-word
@@ -228,7 +232,7 @@
                                            :exprs $3
                                            :span (span $0 $3)}
 
-       (:do expr-clauses) ,|{:kind :do
+       (:do stmt-clauses) ,|{:kind :do
                              :exprs $1
                              :span (span $0 $1)}
 
