@@ -136,6 +136,67 @@ It introduces a procedure, `halve`, which operates on all even
 `Score`s. It also clarifies that `Score` in this case is just an alias
 for `Nat`.
 
+#### Values
+
+We can use the keyword `val` in chapter heads to provide a subtle but useful
+variation on procedures. 
+
+As demonstrated above, the main way to introduce functional concepts into a
+Pantagruel document is via procedures. Procedures might be most obviously
+understood as mathematical or programming *functions*. However, they're also a
+simple way to introduce individual, concrete values into a document. 
+
+##### Procedures as Values
+
+A procedure of no arguments, with some `=>` domain, will be typed as its domain
+(not as a procedure) whenever referred to. For instance:
+
+```
+user_name => String.
+---
+user_name = "admin".
+```
+
+Conceptually, this can be understood as declaring a function of no arguments
+which, when called, returns some value of the given type.
+
+However, procedures are also very effective at representing data that *maps*
+from one domain to another. In the conceptual framework of Pantagruel, there's
+no useful distinction between a function and a map.
+
+```
+scores p: Player => Nat0.
+---
+scores p >= 0.
+```
+
+##### `val`
+
+The `val` keyword, used in a chapter head declaration, is a subtle but useful
+addition when representing values with procedures.
+
+The first is simply as a reading comprehension aid. Updating the example above:
+
+```
+val scores p: Player => Nat0.
+---
+scores p >= 0.
+```
+
+Makes it slightly more obvious that `scores` should be understood as a piece of
+data with its own identity, and not just a mapping function.
+
+However, the other effect of `val` is to introduce a *successor* symbol (as in
+_Procedures with side effects_, above), which allows us to describe how these
+pieces of data can change over time. Thus, we can extend the example:
+
+```
+val scores p: Player => Nat0.
+score_goal p: Player.
+---
+score_goal p -> scores' = update scores ... p => (scores p) + 1.
+```
+
 ### Chapter Bodies
 
 Chapter **bodies** are separated from chapter heads with a horizontal
