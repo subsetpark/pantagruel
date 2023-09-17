@@ -110,6 +110,17 @@ specification with statements about *has-perm?*.
 
 ## Installing Pantagruel
 
+### From AUR
+
+On any system that uses the [AUR](https://aur.archlinux.org/) (Arch Linux,
+Manjaro, et al), Pantagruel can be installed using `pacman` or an equivalent:
+
+```
+⊕  yay -S pantagruel
+```
+
+### From source
+
 The Pantagruel checker is written in [Janet][]. To build from source, make sure
 that Janet and `jpm` are installed, and then run:
 
