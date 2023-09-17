@@ -131,6 +131,8 @@ that Janet and `jpm` are installed, and then run:
 ... The `pant` binary is compiled and put into `./build`
 ```
 
+[Janet]: https://janet-lang.org/
+
 You can then copy the resulting binary into your path. 
 
 ## Using the Pantagruel document checker
