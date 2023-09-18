@@ -1,18 +1,19 @@
 # Pantagruel Language Reference
 
-A Pantagruel document consists of a series of definitions and assertions about
+A Pantagruel document consists of a series of definitions and statements about
 *domains* and *procedures*. The Pantagruel language is parseable by the
-Pantagruel document checker, which will evaluate the document and check it for
+Pantagruel document checker, which will parse the document and check it for
 errors. 
-
-Evaluation of a Pantagruel document is not the same as evaluation of a computer
-program; there is no execution phase where variables are substituted by real
-values. Therefore, all analysis is static.
 
 ## Pantagruel Syntax
 
-A Pantagruel **program** consists of a series of **chapters**. Each chapter
+A Pantagruel **document** consists of a series of **chapters**. Each chapter
 consists of a **head** and an optional **body**.
+
+At the top of a document, in a chapter head, and in a chapter body, are written
+a series of **statements**. Every statement is finished with a period: `.`.
+Because every statement is finished with a period, statements can cover
+multiple lines of text.
 
 At the top of the program are optional **directives**. Currently, there are two
 recognized directives: 
@@ -20,7 +21,7 @@ recognized directives:
 - `module`
 - `import`
 
-### Module statements
+### Module Statements
 
 The first line of a Pantagruel program is, optionally, a module directive. It looks like this:
 
@@ -31,51 +32,94 @@ module NUMBERS.
 This will make the subsequent program available for import under the module
 name `NUMBERS`.
 
-### Import statements
+### Import Statements
 
 Import directives are used to introduce bindings defined by another module (see
 `module`, above) into the evaluation environment for the current document.
 
-### Chapter heads
+### Chapter Heads
 
-A Pantagruel chapter head introduces one or more symbols, of two kinds:
-**procedures** and **domains**. A procedure might be a computer program, or a
-function. Most Pantagruel programs will introduce at least one procedure, which
-is the program, business logic, or operation they're specifying.
+A Pantagruel chapter head introduces one or more terms, of two kinds:
+**domains** and **procedures**. 
 
-A domain is some set of values which variables will be taken from. For
-instance, the natural numbers make up a domain, as do the real numbers. But so
-could the values `{"ok", "error"}` or some business logic-specific concept like
-`User` or `Post`. In this way domains are like types, though more flexible.
+Domains are *sets* or *types* of things. Some domains are built in, as: the
+natural numbers, the booleans (true and false), et cetera. Most documents will
+introduce some additional domains that they're concerned with describing:
+`User`, `File`, `Card`.
+
+Procedures are everything that isn't a domain: procedures are individual
+processes, behaviours, actions, functions, programs, etc., that act on domains.
+
+Some procedures *produce* or *go to* some domain: addition, for instance, can
+be seen as a procedure that goes from two natural numbers to some other natural
+number.
+
+Some procedures don't produce any additional values, but instead are understood
+to have *side effects*: they are understood to effect some change in the state
+of the world.
 
 There are two expression forms possible in a chapter head:
 
+#### Domain alias
+
+The simplest type of statement available in a chapter head is a **domain alias**.
+This is a simple statement of equivalence between a new domain and some
+existing one. It uses the **equals** symbol `=`.
+
+Here's an example domain alias:
+
+```pantagruel
+Status = {"ok", "error"}.
+```
+
+which introduces a domain `Status` which is equivalent to the set of values
+`ok` and `error`.
+
 #### Procedure declaration
+
+Procedure declarations are more complex, as they tend to represent the "meat"
+of a Pantagruel document: domains by themselves are static things, and we
+introduce one or more procedure as individual instances of change in our world.
 
 Here is an example procedure declaration:
 
 ```pantagruel
-fib n:Nat => Nat.
+fib n: Nat => Nat.
 ```
 
-It introduces a procedure called `fib`, which takes one argument, `n`
-in the domain `Nat`. The `=>` indicates that this procedure **yields**
-a value in some domain, which in this case is also `Nat`.
+It introduces a procedure called `fib`, which takes one argument, `n` in the
+domain `Nat`. The `=>` indicates that this procedure *yields*, *produces*, or
+*goes to* a value in some domain (known in mathematics as the procedure's
+*codomain*), which in this case is also `Nat`.
+
+It is a simple description of the name and type of a mathematical function that
+produces Fibonacci numbers.
 
 ##### Procedure declaration forms
 
-Procedures can be declared with or without arguments, return domains,
-and predicates. Here's a declaration of a procedure with no arguments
-and an undefined return:
+Procedures can be declared with or without:
+
+- arguments, 
+- codomains,
+- and predicates. 
+
+The simplest syntactically valid form to introduce a procedure is to simply
+write the name of the procedure on a single line in a chapter head:
 
 ```pantagruel
 f.
 ```
 
+This establishes that there is some procedure named `f`, which takes no
+arguments and yields nothing. 
+
 Procedure arguments are specified by a comma-separated list of argument
-**bindings**, separated by a colon. The comma-separated list may also contain
-other arbitrary **predicates**, representing some constraint on the procedure
-domain.
+**bindings**. On the left side of the binding is the name of the argument, and
+the right side is the domain of the argument. In the example of `fib`, there
+was a single argument, named `n`, in the domain `Nat`.
+
+The comma-separated list may also contain other arbitrary **predicates**,
+representing some constraint on the procedure domain.
 
 Here's a procedure declaration with a predicate:
 
@@ -110,21 +154,6 @@ arguments *before* and *after* the procedure. For instance, in the case of `f`
 above, we can refer to two symbols: `x` and `x'` (note the `'`), to describe
 `x` *before* the application of `f` and *after*.
 
-#### Domain alias
-
-The other type of statement available in a chapter head is a **domain alias**.
-This is a simple statement of equivalence between a new domain and some
-existing one. It uses the **equals** symbol `=`.
-
-Here's an example domain alias:
-
-```pantagruel
-Status = {"ok", "error"}.
-```
-
-Introduces a domain `Status` which is equivalent to the set of values
-`ok` and `error`.
-
 Here's an example chapter head:
 
 ```pantagruel
@@ -139,7 +168,7 @@ for `Nat`.
 #### Values
 
 We can use the keyword `val` in chapter heads to provide a subtle but useful
-variation on procedures. 
+variation on pencapsulationsrocedures. 
 
 As demonstrated above, the main way to introduce functional concepts into a
 Pantagruel document is via procedures. Procedures might be most obviously
