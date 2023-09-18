@@ -124,14 +124,14 @@ representing some constraint on the procedure domain.
 Here's a procedure declaration with a predicate:
 
 ```pantagruel
-f x:Nat, x > 5.
+f x: Nat, x > 5.
 ```
 
 The second element in the list indicates that `f` is defined for any
 natural number `x` greater than 5.
 
 ```pantagruel
-f x:Nat, x > 5, x < 10.
+f x: Nat, x > 5, x < 10.
 ```
 
 This declares a procedure `f` that's defined for any natural number `x`
@@ -144,80 +144,53 @@ Any procedure can also yield some domain, as above.
 
 ##### Procedures with side effects
 
-A procedure which has no `=>` doesn't yield any value. Thus, the type of the
-application of such a procedure is `Void`. However, such procedures are still
-quite useful as they might have some **side effects**, describing a change in
-the world. 
+A procedure that has no codomain is understood to cause some change in the
+world. Therefore, it makes sense to talk about the state of things *before* and
+*after* the procedure takes place. 
 
-When a procedure is declared that yields no values, we can refer to its
-arguments *before* and *after* the procedure. For instance, in the case of `f`
-above, we can refer to two symbols: `x` and `x'` (note the `'`), to describe
-`x` *before* the application of `f` and *after*.
+When a procedure is declared that yields no values, each argument name is
+introduced in two ways: as written, and appended with a `'` (for instance, `x`
+and `x'`). We can use the value with a `'` to refer to the state of the
+argument after the procedure has taken place.
 
-Here's an example chapter head:
+We can see an example:
 
 ```pantagruel
+check_out u:User, d:Document.
+---
+owner d = nobody and has_perm? u d -> owner d' = u.
 Score = Nat.
-halve score: Score, score mod 2 = 0 => Score.
 ```
 
-It introduces a procedure, `halve`, which operates on all even
-`Score`s. It also clarifies that `Score` in this case is just an alias
-for `Nat`.
+It introduces a procedure, `check_out`, which takes some `User` and some
+`Document`. To check out a document is to update who its owner currently is;
+thus, we can refer to `d`---the document being checked out---as well as
+`d'`---the same document, after the `check_out` procedure takes place.
 
 #### Values
 
 We can use the keyword `val` in chapter heads to provide a subtle but useful
-variation on pencapsulationsrocedures. 
+variation on procedures. 
 
-As demonstrated above, the main way to introduce functional concepts into a
-Pantagruel document is via procedures. Procedures might be most obviously
-understood as mathematical or programming *functions*. However, they're also a
-simple way to introduce individual, concrete values into a document. 
+Most of the time, individual things in Pantagruel don't have names; because we
+want to describe things that are always true, we will usually use
+quantification (see below) to talk about some generic instance of a domain.
 
-##### Procedures as Values
+At times, however, it's useful to introduce individual objects that can be
+referred to in the same way we refer to procedures. For instance, describing a
+card game, we might want to refer to the cards currently on the table, and
+describe how they change over time. Using the keyword `val` gives a name to a
+particular thing, and lets us describe how it changes over time.
 
-A procedure of no arguments, with some `=>` domain, will be typed as its domain
-(not as a procedure) whenever referred to. For instance:
+To illustrate the example of cards on the table, for instance:
 
 ```
-user_name => String.
+val table => {Card}.
 ---
-user_name = "admin".
 ```
 
-Conceptually, this can be understood as declaring a function of no arguments
-which, when called, returns some value of the given type.
-
-However, procedures are also very effective at representing data that *maps*
-from one domain to another. In the conceptual framework of Pantagruel, there's
-no useful distinction between a function and a map.
-
-```
-scores p: Player => Nat0.
----
-scores p >= 0.
-```
-
-##### `val`
-
-The `val` keyword, used in a chapter head declaration, is a subtle but useful
-addition when representing values with procedures.
-
-The first is simply as a reading comprehension aid. Updating the example above:
-
-```
-val scores p: Player => Nat0.
----
-scores p >= 0.
-```
-
-Makes it slightly more obvious that `scores` should be understood as a piece of
-data with its own identity, and not just a mapping function.
-
-However, the other effect of `val` is to introduce a *successor* symbol (as in
-_Procedures with side effects_, above), which allows us to describe how these
-pieces of data can change over time. Thus, we can extend the example:
+We can also understand values as *tables* associating arguments with some
+value. For instance:
 
 ```
 val scores p: Player => Nat0.
@@ -225,6 +198,10 @@ score_goal p: Player.
 ---
 score_goal p -> scores' = update scores ... p => (scores p) + 1.
 ```
+
+In this example, `scores` is a mapping from `Player`s to `Nat0`s, and so
+`(scores p)` is the score for a particular player at a particular point in
+time.
 
 ### Chapter Bodies
 
