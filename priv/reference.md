@@ -159,7 +159,6 @@ We can see an example:
 check_out u:User, d:Document.
 ---
 owner d = nobody and has_perm? u d -> owner d' = u.
-Score = Nat.
 ```
 
 It introduces a procedure, `check_out`, which takes some `User` and some
@@ -217,9 +216,7 @@ f x = 1.
 Chapter bodies consist of one or more **statements**. Each statement expresses
 some **proposition** about a procedure or domain and is terminated by a period.
 
-A top-level statement can be made of any valid **expression**. The statement is
-not executed or semantically evaluated; ultimately it's intended to communicate
-something to a human reader.
+A top-level statement can be made of any valid **expression**. 
 
 ### Multiple Chapters
 
@@ -228,22 +225,63 @@ begins a new chapter head.
 
 ### Expressions
 
+The stuff that Pantagruel statements are made up of is not natural language.
+While one can---and should---use comments (any line beginning with `//`) to
+give a natural-language gloss on the statements being put down, the statements
+themselves are written in a formal, logical notation. 
+
+Like a programming language, this syntax can be completely and unambiguously
+parsed by a computer program. Like mathematical notation, it's designed to be
+compressed and expressive, easily written by hand, easily edited and updated.
+
+#### Variables
+
+Most of the terms in a Pantagruel document will be those introduced by the
+author. These are *variables*---their meaning is contextual. They are analogous
+to mathematical variables, which allow us to express universal truths: `x + x =
+x * 2`, for instance, regardless of the value given for `x`.
+
+To give a trival example, we can return to our Fibonacci function:
+
+```pantagruel
+fib n: Nat => Nat.
+---
+fib n = fib (n - 1) + fib (n - 2).
+```
+
+Having introduced `fib` and `n` as terms above the line, we can use them in
+expressions below the line.
+
+We can author Pantagruel documents that are about things entirely other than
+mathematics, too. Returning to a previous example: 
+
+```pantagruel
+User.
+Document.
+check_out u:User, d:Document.
+---
+owner d = nobody and has_perm? u d -> owner d' = u.
+```
+
+We see that all the terms in use are purely symbolic; what's useful is the
+logical and symbolic relations between them.
+
 #### Values
 
-The most basic expressions are bare values, ie, any expression which
-evaluates to itself.
+That said: we need not establish every domain entirely symbolically. We can use
+*literal* syntax---that is, things we recognize as values rather than symbolic
+names that stand for something else---for data that it would be useful to
+manipulate.
 
 ##### Integers
 
-Integer values are represented as normal numbers: `1`, `1000`. Pantagruel will
-attempt to type a literal number as narrowly as possible. See 'Type Hierarchy'
-below for the full list of built-in number types.
+Integer values are represented as normal numbers: `1`, `1000`. 
 
 ##### Real numbers
 
 Real numbers are written with a decimal point: `2.47`, `10.0`.
 
-##### Strings
+##### Text
 
 Literal text values are represented with quotation marks: `"ok"`, `"error"`.
 
