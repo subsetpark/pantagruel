@@ -15,7 +15,7 @@ For a Pantagruel document to be *correct* means:
 Ideally, the constraints of syntax and sense mean that common sources of
 ambiguity in natural human language will be harder to fall into.
 
-Pantagruel should be well-suited for desrcibing sets of rules, behaviours,
+Pantagruel should be well-suited for describing sets of rules, behaviours,
 systems, or processes. This includes things like:
 
 - Card games;
