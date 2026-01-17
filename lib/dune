@@ -1,0 +1,8 @@
+(library
+ (name pantagruel)
+ (libraries sedlex menhirLib)
+ (preprocess (pps sedlex.ppx ppx_deriving.show ppx_deriving.eq)))
+
+(menhir
+ (modules parser)
+ (flags --explain))
