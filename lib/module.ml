@@ -59,32 +59,35 @@ let parse_module_header path =
   | Lexer.Lexer_error (_, msg) -> Error msg
   | Sys_error msg -> Error msg
 
+(** Parse a full document from a channel *)
+let parse_channel filename channel =
+  try
+    let lexer = Lexer.create_from_channel filename channel in
+    let supplier = Lexer.menhir_token lexer in
+    try
+      let doc = MenhirLib.Convert.Simplified.traditional2revised
+        Parser.document supplier in
+      Ok doc
+    with
+    | Parser.Error ->
+        let loc = Lexer.current_loc lexer in
+        Error (ParseError (filename,
+          Printf.sprintf "%s:%d:%d: error: Parse error"
+            loc.Ast.file loc.Ast.line loc.Ast.col))
+  with
+  | Lexer.Lexer_error (loc, msg) ->
+      Error (ParseError (filename,
+        Printf.sprintf "%s:%d:%d: error: %s"
+          loc.Ast.file loc.Ast.line loc.Ast.col msg))
+
 (** Parse a full document from a file *)
 let parse_file path =
   try
     let channel = open_in path in
-    let lexer = Lexer.create_from_channel path channel in
-    let supplier = Lexer.menhir_token lexer in
-    let result =
-      try
-        let doc = MenhirLib.Convert.Simplified.traditional2revised
-          Parser.document supplier in
-        close_in channel;
-        Ok doc
-      with
-      | Parser.Error ->
-          close_in channel;
-          let loc = Lexer.current_loc lexer in
-          Error (ParseError (path,
-            Printf.sprintf "Parse error at %s:%d:%d"
-              loc.Ast.file loc.Ast.line loc.Ast.col))
-    in
+    let result = parse_channel path channel in
+    close_in channel;
     result
   with
-  | Lexer.Lexer_error (loc, msg) ->
-      Error (ParseError (path,
-        Printf.sprintf "Lexer error at %s:%d:%d: %s"
-          loc.Ast.file loc.Ast.line loc.Ast.col msg))
   | Sys_error msg ->
       Error (ParseError (path, msg))
 

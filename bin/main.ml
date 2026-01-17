@@ -2,9 +2,11 @@
 
 let version = "0.1.0"
 
-let usage = "pantagruel [options] <file.pant>
+let usage = "pantagruel [options] [file.pant]
 
 Pantagruel: A specification language checker
+
+If no file is given, reads from stdin.
 
 Options:"
 
@@ -35,39 +37,46 @@ let format_module_error = function
   | Pantagruel.Module.ParseError (_, msg) ->
       msg  (* Already formatted by Error module *)
 
+let check_doc doc =
+  if !print_ast then begin
+    print_endline (Pantagruel.Ast.show_document doc);
+    true
+  end
+  else begin
+    (* Set up module registry *)
+    let registry = Pantagruel.Module.scan_module_path !module_path in
+
+    (* Check the document *)
+    match Pantagruel.Module.check_with_imports registry doc with
+    | Ok () ->
+        print_endline "OK";
+        true
+    | Error e ->
+        prerr_endline (format_module_error e);
+        false
+  end
+
 let check_file path =
-  (* Parse the file *)
   match Pantagruel.Module.parse_file path with
   | Error e ->
       prerr_endline (format_module_error e);
       false
-  | Ok doc ->
-      if !print_ast then begin
-        print_endline (Pantagruel.Ast.show_document doc);
-        true
-      end
-      else begin
-        (* Set up module registry *)
-        let registry = Pantagruel.Module.scan_module_path !module_path in
+  | Ok doc -> check_doc doc
 
-        (* Check the document *)
-        match Pantagruel.Module.check_with_imports registry doc with
-        | Ok () ->
-            print_endline "OK";
-            true
-        | Error e ->
-            prerr_endline (format_module_error e);
-            false
-      end
+let check_stdin () =
+  match Pantagruel.Module.parse_channel "<stdin>" stdin with
+  | Error e ->
+      prerr_endline (format_module_error e);
+      false
+  | Ok doc -> check_doc doc
 
 let () =
   Arg.parse specs add_file usage;
 
   match !files with
   | [] ->
-      prerr_endline "Error: no input file";
-      prerr_endline usage;
-      exit 1
+      let ok = check_stdin () in
+      exit (if ok then 0 else 1)
   | _ ->
       let all_ok = List.for_all check_file (List.rev !files) in
       exit (if all_ok then 0 else 1)

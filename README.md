@@ -28,6 +28,9 @@ dune install
 # Check a specification file
 pantagruel myspec.pant
 
+# Read from stdin
+echo 'module TEST. Foo. ---' | pantagruel
+
 # Print the AST (for debugging)
 pantagruel --ast myspec.pant
 
