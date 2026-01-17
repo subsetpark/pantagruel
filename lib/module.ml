@@ -153,7 +153,7 @@ let rec load_module registry name =
               match Collect.collect_all ast with
               | Ok env -> Ok env
               | Error e ->
-                  Error (ParseError (entry.path, Collect.show_collect_error e))
+                  Error (ParseError (entry.path, Error.format_collect_error e))
             in
 
             (* Merge with imports *)
@@ -182,7 +182,7 @@ let check_with_imports registry (doc : Ast.document) =
     match Collect.collect_all doc with
     | Ok env -> Ok env
     | Error e ->
-        Error (ParseError ("<main>", Collect.show_collect_error e))
+        Error (ParseError ("<main>", Error.format_collect_error e))
   in
 
   (* Merge environments *)
@@ -192,4 +192,4 @@ let check_with_imports registry (doc : Ast.document) =
   match Check.check_document full_env doc with
   | Ok () -> Ok ()
   | Error e ->
-      Error (ParseError ("<main>", Check.show_type_error e))
+      Error (ParseError ("<main>", Error.format_type_error e))

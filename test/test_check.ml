@@ -33,14 +33,14 @@ let test_minimal () =
 let test_bool_literal () =
   check_ok "module TEST.\n\nFoo.\n---\ntrue.\nfalse.\n"
 
-let test_simple_forall () =
-  check_ok "module TEST.\n\nUser.\n---\nforall u: User. true.\n"
+let test_simple_all () =
+  check_ok "module TEST.\n\nUser.\n---\nall u: User | true.\n"
 
 let test_procedure_application () =
-  check_ok "module TEST.\n\nUser.\nf u: User => Bool.\n---\nforall u: User. f u.\n"
+  check_ok "module TEST.\n\nUser.\nf u: User => Bool.\n---\nall u: User | f u.\n"
 
 let test_equality () =
-  check_ok "module TEST.\n\nUser.\n---\nforall u: User. u = u.\n"
+  check_ok "module TEST.\n\nUser.\n---\nall u: User | u = u.\n"
 
 let test_numeric_literal () =
   check_ok "module TEST.\n\nFoo.\n---\n1 = 1.\n0 = 0.\n"
@@ -49,13 +49,13 @@ let test_numeric_comparison () =
   check_ok "module TEST.\n\nFoo.\n---\n1 < 2.\n"
 
 let test_membership () =
-  check_ok "module TEST.\n\nUser.\n---\nforall u: User. u in User.\n"
+  check_ok "module TEST.\n\nUser.\n---\nall u: User | u in User.\n"
 
 let test_cardinality () =
   check_ok "module TEST.\n\nUser.\n---\n#User >= 0.\n"
 
 let test_nullary_procedure () =
-  check_ok "module TEST.\n\nUser.\nnobody => User.\n---\nforall u: User. u = nobody.\n"
+  check_ok "module TEST.\n\nUser.\nnobody => User.\n---\nall u: User | u = nobody.\n"
 
 let test_void_procedure_primed () =
   check_ok {|module TEST.
@@ -92,7 +92,7 @@ p.1 >= 0.
 
 (* Invalid documents *)
 let test_unbound_variable () =
-  check_fails "module TEST.\n\nFoo.\n---\nforall u: User. u = u.\n"  (* User not declared *)
+  check_fails "module TEST.\n\nFoo.\n---\nall u: User | u = u.\n"  (* User not declared *)
 
 let test_type_mismatch () =
   check_fails {|module TEST.
@@ -100,7 +100,7 @@ let test_type_mismatch () =
 User.
 n => Nat.
 ---
-forall u: User. u = n.
+all u: User | u = n.
 |}
 
 let test_arity_mismatch () =
@@ -109,7 +109,7 @@ let test_arity_mismatch () =
 User.
 f u: User, v: User => Bool.
 ---
-forall u: User. f u.
+all u: User | f u.
 |}
 
 let test_not_a_function () =
@@ -117,7 +117,7 @@ let test_not_a_function () =
 
 User.
 ---
-forall u: User. u u.
+all u: User | u u.
 |}
 
 let test_prime_outside_void () =
@@ -126,7 +126,7 @@ let test_prime_outside_void () =
 User.
 f u: User => User.
 ---
-forall u: User. f' u = u.
+all u: User | f' u = u.
 |}
 
 let test_prime_on_variable () =
@@ -135,7 +135,7 @@ let test_prime_on_variable () =
 User.
 do-thing u: User.
 ---
-forall u: User. u' = u.
+all u: User | u' = u.
 |}
 
 let test_multiple_void_procs () =
@@ -155,7 +155,7 @@ let () =
     "valid", [
       test_case "minimal" `Quick test_minimal;
       test_case "bool literal" `Quick test_bool_literal;
-      test_case "simple forall" `Quick test_simple_forall;
+      test_case "simple all" `Quick test_simple_all;
       test_case "procedure application" `Quick test_procedure_application;
       test_case "equality" `Quick test_equality;
       test_case "numeric literal" `Quick test_numeric_literal;

@@ -35,6 +35,17 @@ pantagruel --ast myspec.pant
 pantagruel --module-path ./specs myspec.pant
 ```
 
+## Samples
+
+The `samples/` directory contains reference specifications demonstrating all language features:
+
+- `01-basics.pant` - Fundamental syntax: domains, procedures, quantifiers
+- `02-library.pant` - Library system with void procedures and state transitions
+- `03-types.pant` - All type features: products, sums, lists, aliases
+- `04-operators.pant` - All operators: logical, comparison, arithmetic
+- `05-state.pant` - State transitions with primed expressions and frame conditions
+- `06-advanced.pant` - Function overrides and unicode operators
+
 ## Language Overview
 
 A Pantagruel document consists of a module declaration, optional imports, and one or more chapters. Each chapter has a **head** (declarations) and a **body** (propositions), separated by `---`.
@@ -55,7 +66,7 @@ available b: Book => Bool.
 borrow u: User, b: Book.
 ---
 > Propositions about the library
-forall b: Book. available b -> b in Book.
+all b: Book | available b -> b in Book.
 ```
 
 ### Declarations
@@ -96,14 +107,14 @@ true.
 false.
 
 // Quantifiers
-forall u: User. u in User.
-exists d: Document. owner d = nobody.
+all u: User | u in User.
+some d: Document | owner d = nobody.
 
 // Comparisons
-forall x: Nat, y: Nat. x + y >= x.
+all x: Nat, y: Nat | x + y >= x.
 
 // Membership and cardinality
-forall u: User. u in User.
+all u: User | u in User.
 #User >= 0.
 ```
 
@@ -165,7 +176,7 @@ import WAREHOUSE.
 Item.
 stock i: Item => Nat0.
 ---
-forall i: Item. stock i >= 0.
+all i: Item | stock i >= 0.
 ```
 
 Use `--module-path` to specify where to find imported `.pant` files.
@@ -185,7 +196,7 @@ deposit a: Account, amount: Nat.
 balance' a = balance a + amount.
 
 // Other accounts unchanged
-forall other: Account. other != a -> balance' other = balance other.
+all other: Account | other != a -> balance' other = balance other.
 ```
 
 ### Data Structures
@@ -198,8 +209,8 @@ origin => Point.
 distance p: Point, q: Point => Real.
 ---
 origin = (0.0, 0.0).
-forall p: Point. distance p p = 0.0.
-forall p: Point, q: Point. distance p q = distance q p.
+all p: Point | distance p p = 0.0.
+all p: Point, q: Point | distance p q = distance q p.
 ```
 
 ## License

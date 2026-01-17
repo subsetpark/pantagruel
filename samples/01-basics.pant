@@ -1,0 +1,34 @@
+module BASICS.
+
+> Basic Pantagruel syntax demonstration
+> This file shows fundamental language constructs.
+
+> Domain declarations define the basic types in your system
+User.
+Document.
+
+> Procedure declarations define operations
+> Syntax: name params => ReturnType.
+owner d: Document => User.
+
+> Nullary procedures (no parameters)
+nobody => User.
+
+> Multiple parameters separated by commas
+transfer d: Document, from: User, to: User => Bool.
+
+---
+> Propositions go after the separator (---)
+> They must evaluate to Bool
+
+> Simple boolean literals
+true.
+
+> Universal quantification
+all d: Document | owner d in User.
+
+> Procedure application
+all d: Document, u: User | transfer d u u = true.
+
+> Equality and comparison
+all u: User | u = u.

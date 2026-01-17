@@ -1,0 +1,48 @@
+module ADVANCED.
+
+> Advanced features: overrides, qualified names, unicode
+
+Key.
+Value.
+mapping k: Key => Value.
+default-value => Value.
+
+---
+> Function override syntax: f[k |-> v]
+> Creates a function like f but with f(k) = v
+
+> Override with single mapping
+all k: Key, v: Value | mapping[k |-> v] k = v.
+
+> Override preserves other values
+all k1: Key, k2: Key, v: Value |
+    k1 != k2 -> mapping[k1 |-> v] k2 = mapping k2.
+
+> Override doesn't affect other keys
+all k1: Key, k2: Key, v: Value |
+    k1 != k2 -> mapping[k1 |-> v] k2 = mapping k2.
+
+where
+
+> Unicode operators are supported as alternatives:
+> ∧ (and), ∨ (or), ¬ (not), → (implication)
+> ∀ (all), ∃ (some)
+> ∈ (in), ⊆ (subset)
+> ≠ (!=), ≤ (<=), ≥ (>=)
+> × (product type), ⇒ (procedure return)
+
+Item.
+available i: Item => Bool.
+
+---
+> These are equivalent:
+all i: Item | available i or not available i.
+∀ i: Item | available i ∨ ¬ available i.
+
+> Implication
+all i: Item | false -> available i.
+∀ i: Item | false → available i.
+
+> Membership
+all i: Item | i in Item.
+∀ i: Item | i ∈ Item.

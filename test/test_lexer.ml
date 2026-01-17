@@ -88,7 +88,7 @@ let test_logical () =
   check (list token_testable) "logical"
     [Parser.AND; Parser.OR; Parser.NOT; Parser.FORALL; Parser.EXISTS;
      Parser.IN; Parser.SUBSET; Parser.EOF]
-    (lex_all "and or not forall exists in subset")
+    (lex_all "and or not all some in subset")
 
 let test_punctuation () =
   check (list token_testable) "punctuation"

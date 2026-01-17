@@ -81,8 +81,8 @@ let keyword_or_lower_ident = function
   | "and" -> Parser.AND
   | "or" -> Parser.OR
   | "not" -> Parser.NOT
-  | "forall" -> Parser.FORALL
-  | "exists" -> Parser.EXISTS
+  | "all" -> Parser.FORALL
+  | "some" -> Parser.EXISTS
   | "in" -> Parser.IN
   | "subset" -> Parser.SUBSET
   | s -> Parser.LOWER_IDENT s

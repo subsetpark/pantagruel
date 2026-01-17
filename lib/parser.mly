@@ -137,12 +137,8 @@ expr:
   | e=implication { e }
 
 quantified:
-  | FORALL pg=quant_params_guards DOT e=expr
-    { let (params, guards) = pg in EForall (params, guards, e) }
   | FORALL pg=quant_params_guards PIPE e=expr
     { let (params, guards) = pg in EForall (params, guards, e) }
-  | EXISTS pg=quant_params_guards DOT e=expr
-    { let (params, guards) = pg in EExists (params, guards, e) }
   | EXISTS pg=quant_params_guards PIPE e=expr
     { let (params, guards) = pg in EExists (params, guards, e) }
 

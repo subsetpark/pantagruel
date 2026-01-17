@@ -23,14 +23,23 @@ let specs = [
 
 let add_file f = files := f :: !files
 
+(** Format module errors for human-readable output *)
+let format_module_error = function
+  | Pantagruel.Module.ModuleNotFound name ->
+      Printf.sprintf "error: Module '%s' not found" name
+  | Pantagruel.Module.CyclicImport modules ->
+      Printf.sprintf "error: Cyclic import: %s" (String.concat " -> " modules)
+  | Pantagruel.Module.ImportCollision (name, mod1, mod2) ->
+      Printf.sprintf "error: Import collision for '%s' between %s and %s"
+        name mod1 mod2
+  | Pantagruel.Module.ParseError (_, msg) ->
+      msg  (* Already formatted by Error module *)
+
 let check_file path =
   (* Parse the file *)
   match Pantagruel.Module.parse_file path with
-  | Error (Pantagruel.Module.ParseError (_, msg)) ->
-      prerr_endline msg;
-      false
   | Error e ->
-      prerr_endline (Pantagruel.Module.show_module_error e);
+      prerr_endline (format_module_error e);
       false
   | Ok doc ->
       if !print_ast then begin
@@ -46,11 +55,8 @@ let check_file path =
         | Ok () ->
             print_endline "OK";
             true
-        | Error (Pantagruel.Module.ParseError (_, msg)) ->
-            prerr_endline msg;
-            false
         | Error e ->
-            prerr_endline (Pantagruel.Module.show_module_error e);
+            prerr_endline (format_module_error e);
             false
       end
 

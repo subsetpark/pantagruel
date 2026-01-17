@@ -45,12 +45,12 @@ let test_proposition () =
   let chapter = List.hd doc.Ast.chapters in
   check int "propositions" 1 (List.length chapter.Ast.body)
 
-let test_forall () =
-  let doc = parse "module TEST.\n\nUser.\n---\nforall u: User. true.\n" in
+let test_all () =
+  let doc = parse "module TEST.\n\nUser.\n---\nall u: User | true.\n" in
   let chapter = List.hd doc.Ast.chapters in
   match (List.hd chapter.Ast.body).Ast.value with
   | Ast.EForall _ -> ()
-  | _ -> fail "Expected forall"
+  | _ -> fail "Expected all"
 
 let test_application () =
   let doc = parse "module TEST.\n\nUser.\nf x: User => User.\n---\nf u = u.\n" in
@@ -89,7 +89,7 @@ let () =
     "import", [test_case "import" `Quick test_import];
     "where", [test_case "where clause" `Quick test_where_clause];
     "proposition", [test_case "proposition" `Quick test_proposition];
-    "forall", [test_case "forall" `Quick test_forall];
+    "all", [test_case "all" `Quick test_all];
     "application", [test_case "application" `Quick test_application];
     "type_alias", [test_case "type alias" `Quick test_type_alias];
     "list_type", [test_case "list type" `Quick test_list_type];

@@ -1,0 +1,65 @@
+module STATE.
+
+> Demonstration of void procedures and state transitions
+> Void procedures model operations that change state
+> Primed expressions (f') refer to values after the operation
+
+User.
+Account.
+balance a: Account => Int.
+owner a: Account => User.
+
+> Void procedure: no return type means it modifies state
+deposit a: Account, amount: Nat.
+
+---
+> In a chapter with a void procedure, you can use primed expressions
+> The parameters of the void procedure are in scope
+
+> Balance increases by the deposit amount
+balance' a = balance a + amount.
+
+> Owner doesn't change
+owner' a = owner a.
+
+> Other accounts are unchanged (frame condition)
+all other: Account | other != a -> balance' other = balance other.
+all other: Account | other != a -> owner' other = owner other.
+
+> Pre-condition: can always deposit
+all a: Account, amt: Nat | true.
+
+where
+
+> A second chapter for withdrawals
+withdraw a: Account, amount: Nat.
+
+---
+> Balance decreases by withdrawal amount
+balance' a = balance a - amount.
+
+> Implicit constraint: balance must support the withdrawal
+balance a >= amount.
+
+> Frame condition
+all other: Account | other != a -> balance' other = balance other.
+
+where
+
+> A third chapter for transfers between accounts
+transfer from: Account, to: Account, amount: Nat.
+
+---
+> Source balance decreases
+balance' from = balance from - amount.
+
+> Destination balance increases
+balance' to = balance to + amount.
+
+> Pre-conditions
+from != to.
+balance from >= amount.
+
+> Frame: other accounts unchanged
+all other: Account | other != from and other != to ->
+    balance' other = balance other.

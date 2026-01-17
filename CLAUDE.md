@@ -64,7 +64,7 @@ Pantagruel is a specification language checker written in OCaml. It processes `.
 - Type aliases: `Point = Nat * Nat.`
 - Procedures: `owner d: Document => User.` (with return type) or `check-out u: User.` (void)
 - Void procedures enable primed expressions (`owner' d`) for state transitions
-- Quantifiers: `forall u: User. ...` and `exists x: T. ...`
+- Quantifiers: `all u: User | ...` and `some x: T | ...`
 - Tuple projection: `point.1`, `point.2`
 - List cardinality: `#users`
 - Membership: `x in Domain`

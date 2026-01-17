@@ -1,0 +1,34 @@
+module LIBRARY.
+
+> A library management system specification
+> Demonstrates domains, procedures, and state transitions
+
+> Domains
+User.
+Book.
+Loan.
+
+> Procedures with return types
+available b: Book => Bool.
+borrower b: Book => User.
+loans u: User => [Loan].
+book-of l: Loan => Book.
+loan-holder l: Loan => User.
+
+> Void procedure for state transitions
+borrow u: User, b: Book.
+
+---
+> Available books have no borrower constraint
+> Unavailable books have a borrower
+all b: Book | not available b -> borrower b in User.
+
+> Each loan references a valid book and user
+all l: Loan | book-of l in Book.
+all l: Loan | loan-holder l in User.
+
+> After borrowing, the book is no longer available
+available' b = false.
+
+> After borrowing, the borrower is recorded
+borrower' b = u.

@@ -1,0 +1,57 @@
+module OPERATORS.
+
+> Demonstration of all operators and expressions
+
+Item.
+items => [Item].
+count => Nat0.
+price i: Item => Real.
+in-stock i: Item => Bool.
+discount => Real.
+
+---
+> Logical operators: and, or, not, -> (implication)
+all i: Item | in-stock i or not in-stock i.
+all i: Item | in-stock i and true -> in-stock i.
+all i: Item | false -> in-stock i.
+
+> Comparison operators: =, !=, <, >, <=, >=
+all i: Item | price i = price i.
+all i: Item | price i >= 0.0.
+count >= 0.
+discount < 1.0.
+discount > 0.0.
+discount <= 0.5.
+discount != 0.0.
+
+> Arithmetic operators: +, -, *, /
+all i: Item | price i - discount * price i >= 0.0.
+count + 1 > count.
+all x: Nat, y: Nat | x * y >= 0.
+
+> Membership: in
+all i: Item | i in Item.
+all i: Item | i in items -> in-stock i.
+
+> Subset (for lists)
+all xs: [Item], ys: [Item] | xs subset ys -> #xs <= #ys.
+
+> Cardinality: #
+#items >= 0.
+#Item >= 0.
+all xs: [Item] | #xs >= 0.
+
+> Unary minus
+all x: Int | -x + x = 0.
+all x: Real | -(-x) = x.
+
+> Negation
+all i: Item | not not in-stock i = in-stock i.
+
+> Quantifiers: all, some
+all i: Item | true.
+some i: Item | in-stock i.
+
+> Quantifier with guard expressions
+all i: Item, in-stock i | price i > 0.0.
+some i: Item, price i < 10.0 | in-stock i.
