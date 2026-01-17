@@ -1,0 +1,288 @@
+module PANTAGRUEL.
+
+> A specification of the Pantagruel specification language itself.
+> This document models the core concepts and type checking rules.
+
+> Core syntactic domains
+Document.
+Chapter.
+Declaration.
+Expr.
+Type.
+Name.
+
+> A proposition is just an expression (that must be Bool)
+Proposition = Expr.
+
+> A document has a module name and chapters
+module-name d: Document => Name.
+chapters d: Document => [Chapter].
+imports d: Document => [Name].
+
+> Each chapter has declarations (head) and propositions (body)
+head c: Chapter => [Declaration].
+body c: Chapter => [Proposition].
+
+> Declaration predicates
+is-domain? d: Declaration => Bool.
+is-alias? d: Declaration => Bool.
+is-proc? d: Declaration => Bool.
+
+> Declaration accessors
+decl-name d: Declaration => Name.
+alias-type d: Declaration => Type.
+proc-params d: Declaration => [Name].
+proc-param-types d: Declaration => [Type].
+proc-return-type d: Declaration => Type.
+proc-is-void? d: Declaration => Bool.
+
+---
+> Every document has at least one chapter
+all d: Document | #chapters d >= 1.
+
+> Declarations are exactly one kind
+all d: Declaration |
+    is-domain? d and not is-alias? d and not is-proc? d or
+    is-alias? d and not is-domain? d and not is-proc? d or
+    is-proc? d and not is-domain? d and not is-alias? d.
+
+> Procedure parameter count matches type count
+all d: Declaration, is-proc? d |
+    #proc-params d = #proc-param-types d.
+
+where
+
+> Type predicates
+is-domain-type? t: Type => Bool.
+is-product? t: Type => Bool.
+is-sum? t: Type => Bool.
+is-list? t: Type => Bool.
+is-builtin? t: Type => Bool.
+
+> Type accessors
+type-name t: Type => Name.
+product-components t: Type => [Type].
+sum-components t: Type => [Type].
+list-element t: Type => Type.
+
+---
+> Types are exactly one kind
+all t: Type |
+    is-domain-type? t or is-product? t or is-sum? t or
+    is-list? t or is-builtin? t.
+
+> Product types have at least 2 components
+all t: Type, is-product? t | #product-components t >= 2.
+
+> Sum types have at least 2 components
+all t: Type, is-sum? t | #sum-components t >= 2.
+
+where
+
+> Type checking environment
+Env.
+Entry.
+
+> Environment operations
+has? name: Name, env: Env => Bool.
+lookup-type name: Name, env: Env => Type.
+bind name: Name, ty: Type, env: Env => Env.
+empty-env => Env.
+
+---
+> Looking up a bound name succeeds
+all name: Name, ty: Type, env: Env |
+    has? name (bind name ty env).
+
+> Looking up a bound name returns its type
+all name: Name, ty: Type, env: Env |
+    lookup-type name (bind name ty env) = ty.
+
+> Empty environment has no bindings
+all name: Name | not has? name empty-env.
+
+> Binding shadows previous bindings
+all name: Name, t1: Type, t2: Type, env: Env |
+    lookup-type name (bind name t2 (bind name t1 env)) = t2.
+
+where
+
+> Built-in type representations
+Ty.
+
+ty-bool => Ty.
+ty-nat => Ty.
+ty-nat0 => Ty.
+ty-int => Ty.
+ty-real => Ty.
+ty-string => Ty.
+ty-nothing => Ty.
+
+> Type constructors
+ty-domain name: Name => Ty.
+ty-product ts: [Ty] => Ty.
+ty-sum ts: [Ty] => Ty.
+ty-list t: Ty => Ty.
+
+> Subtyping for numeric types
+subtype? t1: Ty, t2: Ty => Bool.
+
+---
+> Reflexivity: every type is a subtype of itself
+all t: Ty | subtype? t t.
+
+> Numeric hierarchy: Nat < Nat0 < Int < Real
+subtype? ty-nat ty-nat0.
+subtype? ty-nat0 ty-int.
+subtype? ty-int ty-real.
+
+> Transitivity of subtyping
+all t1: Ty, t2: Ty, t3: Ty |
+    subtype? t1 t2 and subtype? t2 t3 -> subtype? t1 t3.
+
+> Derived: Nat is subtype of Int and Real
+subtype? ty-nat ty-int.
+subtype? ty-nat ty-real.
+subtype? ty-nat0 ty-real.
+
+where
+
+> Expression typing
+infer e: Expr, env: Env => Ty.
+well-typed? e: Expr, env: Env => Bool.
+
+> Expression predicates
+is-var? e: Expr => Bool.
+is-lit-bool? e: Expr => Bool.
+is-lit-nat? e: Expr => Bool.
+is-lit-real? e: Expr => Bool.
+is-lit-string? e: Expr => Bool.
+is-app? e: Expr => Bool.
+is-tuple? e: Expr => Bool.
+is-proj? e: Expr => Bool.
+is-forall? e: Expr => Bool.
+is-exists? e: Expr => Bool.
+is-binop? e: Expr => Bool.
+is-unop? e: Expr => Bool.
+
+> Expression accessors
+var-name e: Expr => Name.
+app-func e: Expr => Expr.
+app-args e: Expr => [Expr].
+tuple-elems e: Expr => [Expr].
+proj-expr e: Expr => Expr.
+proj-index e: Expr => Nat.
+quant-body e: Expr => Expr.
+
+---
+> Boolean literals have type Bool
+all e: Expr, env: Env, is-lit-bool? e | infer e env = ty-bool.
+
+> Natural number literals have type Nat
+all e: Expr, env: Env, is-lit-nat? e | infer e env = ty-nat.
+
+> Real number literals have type Real
+all e: Expr, env: Env, is-lit-real? e | infer e env = ty-real.
+
+> String literals have type String
+all e: Expr, env: Env, is-lit-string? e | infer e env = ty-string.
+
+> Quantified expressions have type Bool when body is Bool
+all e: Expr, env: Env, is-forall? e |
+    infer (quant-body e) env = ty-bool -> infer e env = ty-bool.
+
+all e: Expr, env: Env, is-exists? e |
+    infer (quant-body e) env = ty-bool -> infer e env = ty-bool.
+
+where
+
+> Binary operators
+BinOp.
+
+op-add => BinOp.
+op-sub => BinOp.
+op-mul => BinOp.
+op-div => BinOp.
+op-eq => BinOp.
+op-neq => BinOp.
+op-lt => BinOp.
+op-le => BinOp.
+op-gt => BinOp.
+op-ge => BinOp.
+op-and => BinOp.
+op-or => BinOp.
+op-impl => BinOp.
+op-in => BinOp.
+op-subset => BinOp.
+
+> Unary operators
+UnOp.
+
+op-not => UnOp.
+op-neg => UnOp.
+op-card => UnOp.
+
+> Operator typing
+binop-type op: BinOp, t1: Ty, t2: Ty => Ty.
+unop-type op: UnOp, t: Ty => Ty.
+
+is-numeric? t: Ty => Bool.
+
+---
+> Numeric type predicate
+is-numeric? ty-nat.
+is-numeric? ty-nat0.
+is-numeric? ty-int.
+is-numeric? ty-real.
+
+> Logical operators: Bool * Bool -> Bool
+binop-type op-and ty-bool ty-bool = ty-bool.
+binop-type op-or ty-bool ty-bool = ty-bool.
+binop-type op-impl ty-bool ty-bool = ty-bool.
+
+> Negation: Bool -> Bool
+unop-type op-not ty-bool = ty-bool.
+
+> Comparison operators return Bool
+all t: Ty | binop-type op-eq t t = ty-bool.
+all t: Ty | binop-type op-neq t t = ty-bool.
+
+> Numeric comparisons
+all t1: Ty, t2: Ty, is-numeric? t1, is-numeric? t2 |
+    binop-type op-lt t1 t2 = ty-bool.
+
+all t1: Ty, t2: Ty, is-numeric? t1, is-numeric? t2 |
+    binop-type op-le t1 t2 = ty-bool.
+
+all t1: Ty, t2: Ty, is-numeric? t1, is-numeric? t2 |
+    binop-type op-gt t1 t2 = ty-bool.
+
+all t1: Ty, t2: Ty, is-numeric? t1, is-numeric? t2 |
+    binop-type op-ge t1 t2 = ty-bool.
+
+> Cardinality: any -> Nat0
+all t: Ty | unop-type op-card t = ty-nat0.
+
+> Numeric negation
+all t: Ty, is-numeric? t | unop-type op-neg t = ty-int.
+
+where
+
+> Document validity
+valid? d: Document => Bool.
+chapter-valid? c: Chapter, env: Env => Bool.
+prop-valid? p: Proposition, env: Env => Bool.
+
+---
+> A document is valid if all chapters are valid
+all d: Document, c: Chapter, env: Env |
+    valid? d and c in chapters d -> chapter-valid? c env.
+
+> A chapter is valid if all propositions are valid
+all c: Chapter, p: Proposition, env: Env |
+    chapter-valid? c env and p in body c -> prop-valid? p env.
+
+> A proposition is valid if it has type Bool
+all p: Proposition, env: Env |
+    prop-valid? p env -> infer p env = ty-bool.
+
