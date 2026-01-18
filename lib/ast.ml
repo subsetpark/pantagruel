@@ -10,15 +10,16 @@ type loc = {
 
 let dummy_loc = { file = "<unknown>"; line = 0; col = 0 }
 
-(** Wrap a value with its location *)
+(** Wrap a value with its location and optional doc comment *)
 type 'a located = {
   loc: loc;
   value: 'a;
+  doc: string list;  (** Doc comment lines (without leading >) *)
 }
 [@@deriving show, eq]
 
-let located loc value = { loc; value }
-let at loc value = { loc; value }
+let located ?(doc=[]) loc value = { loc; value; doc }
+let at ?(doc=[]) loc value = { loc; value; doc }
 
 (** Identifier types *)
 type upper_ident = string  (* Domain names: User, Document *)
@@ -71,10 +72,11 @@ type param = {
 }
 [@@deriving show, eq]
 
-(** Guards: either parameter bindings or boolean expressions *)
+(** Guards: parameter bindings, membership bindings, or boolean expressions *)
 type guard =
-  | GParam of param     (** x: T *)
-  | GExpr of expr       (** boolean condition *)
+  | GParam of param           (** x: T *)
+  | GIn of lower_ident * expr (** x in xs - binds x to element type of xs *)
+  | GExpr of expr             (** boolean condition *)
 [@@deriving show, eq]
 
 (** Expressions *)

@@ -15,6 +15,7 @@ type entry = {
   kind: entry_kind;
   loc: Ast.loc;
   module_origin: string option;  (** None = local, Some m = imported from m *)
+  decl_chapter: int;  (** Chapter where declared; -1 for imports/builtins *)
 }
 [@@deriving show]
 
@@ -47,23 +48,23 @@ let empty module_name = {
 }
 
 (** Add a domain to the type namespace *)
-let add_domain name loc env =
-  let entry = { kind = KDomain; loc; module_origin = None } in
+let add_domain name loc ~chapter env =
+  let entry = { kind = KDomain; loc; module_origin = None; decl_chapter = chapter } in
   { env with types = StringMap.add name entry env.types }
 
 (** Add a type alias to the type namespace *)
-let add_alias name ty loc env =
-  let entry = { kind = KAlias ty; loc; module_origin = None } in
+let add_alias name ty loc ~chapter env =
+  let entry = { kind = KAlias ty; loc; module_origin = None; decl_chapter = chapter } in
   { env with types = StringMap.add name entry env.types }
 
 (** Add a procedure to the term namespace *)
-let add_proc name ty loc env =
-  let entry = { kind = KProc ty; loc; module_origin = None } in
+let add_proc name ty loc ~chapter env =
+  let entry = { kind = KProc ty; loc; module_origin = None; decl_chapter = chapter } in
   { env with terms = StringMap.add name entry env.terms }
 
 (** Add a variable to the term namespace (also tracks as local var) *)
 let add_var name ty env =
-  let entry = { kind = KVar ty; loc = Ast.dummy_loc; module_origin = None } in
+  let entry = { kind = KVar ty; loc = Ast.dummy_loc; module_origin = None; decl_chapter = -1 } in
   { env with
     terms = StringMap.add name entry env.terms;
     local_vars = name :: env.local_vars }
@@ -113,7 +114,8 @@ let exports env =
 (** Merge another environment's exports into this one *)
 let merge_imports env other origin_module =
   let add_with_origin map (name, entry) =
-    let entry' = { entry with module_origin = Some origin_module } in
+    (* Imported entries are always visible (decl_chapter = -1) *)
+    let entry' = { entry with module_origin = Some origin_module; decl_chapter = -1 } in
     StringMap.add name entry' map
   in
   let types' = List.fold_left add_with_origin env.types (StringMap.bindings other.types) in
@@ -124,3 +126,19 @@ let merge_imports env other origin_module =
     |> List.fold_left add_with_origin env.terms
   in
   { env with types = types'; terms = terms' }
+
+(** Filter environment for visibility in a chapter head.
+    Declaration in chapter N is visible in heads of chapters M >= N *)
+let visible_in_head chapter_idx env =
+  let filter_map m =
+    StringMap.filter (fun _ entry -> entry.decl_chapter <= chapter_idx) m
+  in
+  { env with types = filter_map env.types; terms = filter_map env.terms }
+
+(** Filter environment for visibility in a chapter body.
+    Declaration in chapter N is visible in bodies of chapters M >= N-1 *)
+let visible_in_body chapter_idx env =
+  let filter_map m =
+    StringMap.filter (fun _ entry -> entry.decl_chapter <= chapter_idx + 1) m
+  in
+  { env with types = filter_map env.types; terms = filter_map env.terms }

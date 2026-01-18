@@ -21,6 +21,7 @@ type type_error =
   | OverrideRequiresArity1 of string * int * loc
   | ProjectionOutOfBounds of int * int * loc
   | PropositionNotBool of ty * loc
+  | ShadowingTypeMismatch of string * ty * ty * loc  (* name, existing_ty, new_ty *)
 [@@deriving show]
 
 (** Type checking context *)
@@ -218,11 +219,21 @@ and check_unop ctx op e =
        | TyList _ -> Ok TyNat0
        | _ -> Error (NotAList (ty, ctx.loc)))
 
+(** Check that binding doesn't shadow with a different type *)
+and check_no_type_shadow ctx name new_ty =
+  match Env.lookup_term name ctx.env with
+  | Some { kind = Env.KVar existing_ty; _ } ->
+      if compatible existing_ty new_ty then Ok ()
+      else Error (ShadowingTypeMismatch (name, existing_ty, new_ty, ctx.loc))
+  | _ -> Ok ()  (* Not shadowing a variable, OK *)
+
 and check_quantifier ctx params guards body =
   (* Resolve parameter types and extend environment *)
   let resolve_param p =
     match Collect.resolve_type ctx.env p.param_type ctx.loc with
-    | Ok ty -> Ok (p.param_name, ty)
+    | Ok ty ->
+        let* () = check_no_type_shadow ctx p.param_name ty in
+        Ok (p.param_name, ty)
     | Error (Collect.UndefinedType (name, loc)) ->
         Error (UnboundType (name, loc))
     | Error _ -> Error (UnboundType ("unknown", ctx.loc))
@@ -233,23 +244,35 @@ and check_quantifier ctx params guards body =
   let env' = Env.with_vars param_bindings ctx.env in
   let ctx' = { ctx with env = env' } in
 
-  (* Check guards are boolean *)
-  let* _ =
-    Util.map_result (fun g ->
+  (* Process guards: check types and collect additional bindings from GIn *)
+  let* (guard_bindings, _) =
+    Util.fold_result (fun (bindings, current_ctx) g ->
       match g with
       | GParam p ->
-          (* Additional parameter binding - already handled above *)
-          let* _ = resolve_param p in
-          Ok ()
+          (* Additional parameter binding *)
+          let* (name, ty) = resolve_param p in
+          Ok ((name, ty) :: bindings, { current_ctx with env = Env.add_var name ty current_ctx.env })
+      | GIn (name, list_expr) ->
+          (* x in xs - infer type of xs, extract element type *)
+          let* list_ty = infer_type current_ctx list_expr in
+          (match list_ty with
+           | TyList elem_ty ->
+               let* () = check_no_type_shadow current_ctx name elem_ty in
+               Ok ((name, elem_ty) :: bindings, { current_ctx with env = Env.add_var name elem_ty current_ctx.env })
+           | _ -> Error (NotAList (list_ty, ctx.loc)))
       | GExpr e ->
-          let* ty = infer_type ctx' e in
-          if equal_ty ty TyBool then Ok ()
+          let* ty = infer_type current_ctx e in
+          if equal_ty ty TyBool then Ok (bindings, current_ctx)
           else Error (ExpectedBool (ty, ctx.loc)))
-      guards
+      ([], ctx') guards
   in
 
+  (* Extend environment with all guard bindings *)
+  let env'' = Env.with_vars guard_bindings ctx'.env in
+  let ctx'' = { ctx with env = env'' } in
+
   (* Check body is boolean *)
-  let* body_ty = infer_type ctx' body in
+  let* body_ty = infer_type ctx'' body in
   if equal_ty body_ty TyBool then Ok TyBool
   else Error (ExpectedBool (body_ty, ctx.loc))
 
@@ -281,6 +304,44 @@ let check_proposition ctx (prop : expr located) =
   if equal_ty ty TyBool then Ok ()
   else Error (PropositionNotBool (ty, prop.loc))
 
+(** Check guards on a procedure declaration *)
+let check_proc_guards ctx (decl : declaration located) =
+  match decl.value with
+  | DeclProc { params; guards; _ } ->
+      (* Resolve parameter types and add them to environment *)
+      let resolve_param p =
+        match Collect.resolve_type ctx.env p.param_type decl.loc with
+        | Ok ty -> Ok (p.param_name, ty)
+        | Error (Collect.UndefinedType (name, loc)) ->
+            Error (UnboundType (name, loc))
+        | Error _ -> Error (UnboundType ("unknown", decl.loc))
+      in
+      let* param_bindings = Util.map_result resolve_param params in
+      let env' = Env.with_vars param_bindings ctx.env in
+      let ctx' = { ctx with env = env' } in
+
+      (* Check each guard *)
+      Util.map_result (fun g ->
+        match g with
+        | GParam p ->
+            (* Additional parameter binding - just validate the type resolves *)
+            let* _ = resolve_param p in
+            Ok ()
+        | GIn (_name, list_expr) ->
+            (* x in xs - infer type of xs, validate it's a list *)
+            let ctx'' = with_loc ctx' decl.loc in
+            let* list_ty = infer_type ctx'' list_expr in
+            (match list_ty with
+             | TyList _ -> Ok ()  (* Valid - _name would be bound to element type *)
+             | _ -> Error (NotAList (list_ty, decl.loc)))
+        | GExpr e ->
+            let ctx'' = with_loc ctx' decl.loc in
+            let* ty = infer_type ctx'' e in
+            if equal_ty ty TyBool then Ok ()
+            else Error (ExpectedBool (ty, decl.loc)))
+        guards
+  | _ -> Ok []  (* Not a procedure, nothing to check *)
+
 (** Find the Void procedure in a chapter head, if any *)
 let find_void_proc (head : declaration located list) =
   List.find_map (fun decl ->
@@ -289,26 +350,53 @@ let find_void_proc (head : declaration located list) =
     | _ -> None)
     head
 
+(** Collect all procedure parameters from a chapter head *)
+let collect_all_params (head : declaration located list) =
+  List.concat_map (fun decl ->
+    match decl.value with
+    | DeclProc { params; _ } -> params
+    | _ -> [])
+    head
+
 (** Check a chapter body *)
-let check_chapter_body env (chapter : chapter) =
-  (* Determine if chapter has a Void procedure *)
-  let env' = match find_void_proc chapter.head with
-    | Some (name, params) ->
-        (* Add void proc context and its parameters to environment *)
-        let env_with_void = Env.with_void_proc name env in
-        (* Resolve parameter types and add them to environment *)
-        List.fold_left (fun env p ->
-          match Collect.resolve_type env p.param_type dummy_loc with
-          | Ok ty -> Env.add_var p.param_name ty env
-          | Error _ -> env  (* Ignore resolution errors here, caught elsewhere *)
-        ) env_with_void params
-    | None -> env
+let check_chapter_body ~chapter_idx env (chapter : chapter) =
+  (* Filter environment for visibility in this chapter's body *)
+  let env_visible = Env.visible_in_body chapter_idx env in
+
+  (* Set void proc context if chapter has one *)
+  let env_with_void = match find_void_proc chapter.head with
+    | Some (name, _) -> Env.with_void_proc name env_visible
+    | None -> env_visible
   in
+
+  (* Add ALL procedure parameters from this chapter's head to environment *)
+  let all_params = collect_all_params chapter.head in
+  let env' = List.fold_left (fun env p ->
+    match Collect.resolve_type env p.param_type dummy_loc with
+    | Ok ty -> Env.add_var p.param_name ty env
+    | Error _ -> env  (* Ignore resolution errors here, caught elsewhere *)
+  ) env_with_void all_params in
+
   let ctx = { env = env'; loc = dummy_loc } in
 
   Util.map_result (check_proposition ctx) chapter.body
 
+(** Check guards on all procedure declarations in a chapter head *)
+let check_chapter_guards ~chapter_idx env (chapter : chapter) =
+  (* Filter environment for visibility in this chapter's head *)
+  let env_visible = Env.visible_in_head chapter_idx env in
+  let ctx = { env = env_visible; loc = dummy_loc } in
+  Util.map_result (check_proc_guards ctx) chapter.head
+
 (** Check entire document (Pass 2) *)
 let check_document env (doc : document) : (unit, type_error) result =
-  let* _ = Util.map_result (check_chapter_body env) doc.chapters in
-  Ok ()
+  let rec check_chapters chapter_idx = function
+    | [] -> Ok ()
+    | chapter :: rest ->
+        (* Check guards in chapter head *)
+        let* _ = check_chapter_guards ~chapter_idx env chapter in
+        (* Check propositions in chapter body *)
+        let* _ = check_chapter_body ~chapter_idx env chapter in
+        check_chapters (chapter_idx + 1) rest
+  in
+  check_chapters 0 doc.chapters

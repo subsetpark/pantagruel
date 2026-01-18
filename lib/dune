@@ -1,6 +1,6 @@
 (library
  (name pantagruel)
- (libraries sedlex menhirLib)
+ (libraries sedlex menhirLib yojson)
  (preprocess (pps sedlex.ppx ppx_deriving.show ppx_deriving.eq)))
 
 (menhir

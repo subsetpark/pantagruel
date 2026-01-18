@@ -7,17 +7,36 @@ type t = {
   buf: Sedlexing.lexbuf;
   mutable filename: string;
   mutable at_bol: bool;  (** At beginning of line (for doc comments) *)
+  mutable pending_docs: string list;  (** Accumulated doc comment lines *)
 }
 
 let create_from_channel filename channel =
   let buf = Sedlexing.Utf8.from_channel channel in
   Sedlexing.set_filename buf filename;
-  { buf; filename; at_bol = true }
+  Doc_comments.clear ();  (* Clear doc map for new file *)
+  { buf; filename; at_bol = true; pending_docs = [] }
 
 let create_from_string filename str =
   let buf = Sedlexing.Utf8.from_string str in
   Sedlexing.set_filename buf filename;
-  { buf; filename; at_bol = true }
+  Doc_comments.clear ();  (* Clear doc map for new file *)
+  { buf; filename; at_bol = true; pending_docs = [] }
+
+(** Take and clear pending doc comments *)
+let take_docs lexer =
+  let docs = List.rev lexer.pending_docs in
+  lexer.pending_docs <- [];
+  docs
+
+(** Global ref to current lexer for parser access *)
+let current_lexer : t option ref = ref None
+
+let set_current lexer = current_lexer := Some lexer
+
+let get_pending_docs () =
+  match !current_lexer with
+  | None -> []
+  | Some lexer -> take_docs lexer
 
 (** Get current position as Ast.loc *)
 let current_loc lexer =
@@ -95,13 +114,23 @@ let rec skip_line_comment buf =
   | any -> skip_line_comment buf
   | _ -> assert false
 
-(** Skip doc comment (> at start of line) - we preserve nothing for now *)
-let rec skip_doc_comment buf =
-  match%sedlex buf with
-  | newline -> ()
-  | eof -> ()
-  | any -> skip_doc_comment buf
-  | _ -> assert false
+(** Read doc comment content (> at start of line) *)
+let read_doc_comment buf =
+  let content = Buffer.create 64 in
+  let rec loop () =
+    match%sedlex buf with
+    | newline -> Buffer.contents content
+    | eof -> Buffer.contents content
+    | any ->
+        Buffer.add_string content (Sedlexing.Utf8.lexeme buf);
+        loop ()
+    | _ -> assert false
+  in
+  (* Skip leading space if present *)
+  (match%sedlex buf with
+   | ' ' -> ()
+   | _ -> Sedlexing.rollback buf);
+  loop ()
 
 (** Parse string literal (after opening quote) *)
 let rec read_string buf acc =
@@ -173,7 +202,8 @@ let rec token_impl lexer =
   | '>' ->
       (* '>' at beginning of line is a doc comment *)
       if lexer.at_bol then begin
-        skip_doc_comment buf;
+        let content = read_doc_comment buf in
+        lexer.pending_docs <- content :: lexer.pending_docs;
         lexer.at_bol <- true;
         token_impl lexer
       end else
@@ -231,6 +261,14 @@ let rec token_impl lexer =
 let token lexer =
   try
     let tok = token_impl lexer in
+    (* If there are pending docs, associate them with this token's position *)
+    if lexer.pending_docs <> [] then begin
+      let (pos, _) = Sedlexing.lexing_positions lexer.buf in
+      Doc_comments.add pos.Lexing.pos_lnum
+        (pos.Lexing.pos_cnum - pos.Lexing.pos_bol)
+        (List.rev lexer.pending_docs);
+      lexer.pending_docs <- []
+    end;
     (* After returning a token, we're no longer at beginning of line *)
     lexer.at_bol <- false;
     tok

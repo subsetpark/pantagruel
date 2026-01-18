@@ -10,6 +10,13 @@
   let located startpos endpos value = {
     loc = make_loc startpos endpos;
     value;
+    doc = [];
+  }
+
+  let located_with_doc doc startpos endpos value = {
+    loc = make_loc startpos endpos;
+    value;
+    doc;
   }
 
   (* Split a list of guards into params and expression guards *)
@@ -67,44 +74,43 @@ import_decl:
     { located $startpos $endpos name }
 
 chapter:
-  | head=list(declaration) SEPARATOR body=list(proposition)
+  | head=nonempty_list(declaration) SEPARATOR body=list(proposition)
     { { head; body } }
 
-(* Declarations *)
+(* Declarations - doc comments are looked up by start position *)
 declaration:
   | name=UPPER_IDENT DOT
-    { located $startpos $endpos (DeclDomain name) }
+    { let doc = Doc_comments.get_at_pos $startpos in
+      located_with_doc doc $startpos $endpos (DeclDomain name) }
   | name=UPPER_IDENT EQ t=type_expr DOT
-    { located $startpos $endpos (DeclAlias (name, t)) }
-  | name=LOWER_IDENT ps=params_opt gs=guards_opt ret=return_type_opt DOT
-    { located $startpos $endpos (DeclProc {
+    { let doc = Doc_comments.get_at_pos $startpos in
+      located_with_doc doc $startpos $endpos (DeclAlias (name, t)) }
+  | name=LOWER_IDENT pg=proc_params_guards ret=return_type_opt DOT
+    { let doc = Doc_comments.get_at_pos $startpos in
+      let (params, guards) = pg in
+      located_with_doc doc $startpos $endpos (DeclProc {
         name;
-        params = ps;
-        guards = gs;
+        params;
+        guards;
         return_type = ret;
       }) }
 
-params_opt:
-  | (* empty *) { [] }
-  | p=param ps=list(preceded(COMMA, param_only)) { p :: ps }
+(* Parameters and guards for procedures - parsed together then split *)
+proc_params_guards:
+  | (* empty *) { ([], []) }
+  | p=param rest=list(preceded(COMMA, proc_param_or_guard))
+    { split_params_guards (GParam p :: rest) }
 
-param_only:
-  | p=param { p }
+proc_param_or_guard:
+  | p=param { GParam p }
+  | e=proc_guard_expr { GExpr e }
+
+(* Guard expressions for procedures: use disjunction level *)
+proc_guard_expr:
+  | e=disjunction { e }
 
 param:
   | name=LOWER_IDENT COLON t=type_expr { { param_name = name; param_type = t } }
-
-guards_opt:
-  | (* empty *) { [] }
-  | COMMA g=guard_expr gs=list(preceded(COMMA, guard_item)) { GExpr g :: gs }
-
-guard_item:
-  | p=param { GParam p }
-  | e=guard_expr { GExpr e }
-
-(* Guard expressions: restricted to avoid parsing ambiguity with params *)
-guard_expr:
-  | e=disjunction { e }
 
 return_type_opt:
   | (* empty *) { None }
@@ -127,9 +133,11 @@ type_term:
   | LBRACKET t=type_expr RBRACKET { TList t }
   | LPAREN t=type_expr RPAREN { t }
 
-(* Propositions in chapter body *)
+(* Propositions in chapter body - doc comments are looked up by start position *)
 proposition:
-  | e=expr DOT { located $startpos $endpos e }
+  | e=expr DOT
+    { let doc = Doc_comments.get_at_pos $startpos in
+      located_with_doc doc $startpos $endpos e }
 
 (* Expressions *)
 expr:
@@ -144,11 +152,16 @@ quantified:
 
 (* Parameters and guards in quantifiers *)
 quant_params_guards:
-  | p=param rest=list(preceded(COMMA, quant_guard_or_param))
-    { split_params_guards (GParam p :: rest) }
+  | first=quant_first_binding rest=list(preceded(COMMA, quant_guard_or_param))
+    { split_params_guards (first :: rest) }
+
+quant_first_binding:
+  | p=param { GParam p }
+  | name=LOWER_IDENT IN e=term { GIn (name, e) }
 
 quant_guard_or_param:
   | p=param { GParam p }
+  | name=LOWER_IDENT IN e=term { GIn (name, e) }  (* x in xs - binds x to element type *)
   | e=conjunction { GExpr e }  (* Use conjunction to avoid ambiguity with | *)
 
 implication:

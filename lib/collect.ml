@@ -55,7 +55,7 @@ let rec resolve_type env (te : type_expr) loc : (ty, collect_error) result =
       Ok (TySum tys)
 
 (** Collect declarations from one chapter head *)
-let collect_chapter_head env (decls : declaration located list) =
+let collect_chapter_head ~chapter env (decls : declaration located list) =
   let void_procs = ref [] in
 
   let process_decl env (decl : declaration located) =
@@ -68,7 +68,7 @@ let collect_chapter_head env (decls : declaration located list) =
           | Some existing ->
               Error (DuplicateDomain (name, decl.loc, existing.loc))
           | None ->
-              Ok (Env.add_domain name decl.loc env)
+              Ok (Env.add_domain name decl.loc ~chapter env)
         end
 
     | DeclAlias (name, type_expr) ->
@@ -79,7 +79,7 @@ let collect_chapter_head env (decls : declaration located list) =
           if mentions_type name ty then
             Error (RecursiveAlias (name, decl.loc))
           else
-            Ok (Env.add_alias name ty decl.loc env)
+            Ok (Env.add_alias name ty decl.loc ~chapter env)
         end
 
     | DeclProc { name; params; guards = _; return_type } ->
@@ -100,7 +100,7 @@ let collect_chapter_head env (decls : declaration located list) =
          | Some existing ->
              Error (DuplicateProc (name, decl.loc, existing.loc))
          | None ->
-             Ok (Env.add_proc name proc_ty decl.loc env))
+             Ok (Env.add_proc name proc_ty decl.loc ~chapter env))
   in
 
   let* final_env = Util.fold_result process_decl env decls in
@@ -115,7 +115,10 @@ let collect_all (doc : document) : (Env.t, collect_error) result =
   let env = Env.empty doc.module_name in
 
   (* Process all chapters, collecting declarations from heads *)
-  Util.fold_result
-    (fun env chapter -> collect_chapter_head env chapter.head)
-    env
-    doc.chapters
+  let rec process_chapters env chapter_idx = function
+    | [] -> Ok env
+    | chapter :: rest ->
+        let* env' = collect_chapter_head ~chapter:chapter_idx env chapter.head in
+        process_chapters env' (chapter_idx + 1) rest
+  in
+  process_chapters env 0 doc.chapters

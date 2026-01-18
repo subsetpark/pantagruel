@@ -50,6 +50,9 @@ let format_type_error err =
   | PropositionNotBool (ty, loc) ->
       fmt loc (Printf.sprintf "Proposition must be Bool, got %s"
         (Types.format_ty ty))
+  | ShadowingTypeMismatch (name, old_ty, new_ty, loc) ->
+      fmt loc (Printf.sprintf "Variable '%s' shadows binding with different type: expected %s, got %s"
+        name (Types.format_ty old_ty) (Types.format_ty new_ty))
 
 (** Format a collection error with location prefix *)
 let format_collect_error err =

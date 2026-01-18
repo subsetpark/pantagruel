@@ -63,6 +63,7 @@ let parse_module_header path =
 let parse_channel filename channel =
   try
     let lexer = Lexer.create_from_channel filename channel in
+    Lexer.set_current lexer;  (* Set current lexer for doc comment access *)
     let supplier = Lexer.menhir_token lexer in
     try
       let doc = MenhirLib.Convert.Simplified.traditional2revised
@@ -168,7 +169,7 @@ let rec load_module registry name =
             Ok final_env
       end
 
-(** Check a document with its imports *)
+(** Check a document with its imports, returning the resolved environment *)
 let check_with_imports registry (doc : Ast.document) =
   (* Load all imports *)
   let* import_env =
@@ -193,6 +194,6 @@ let check_with_imports registry (doc : Ast.document) =
 
   (* Type check *)
   match Check.check_document full_env doc with
-  | Ok () -> Ok ()
+  | Ok () -> Ok full_env
   | Error e ->
       Error (ParseError ("<main>", Error.format_type_error e))
