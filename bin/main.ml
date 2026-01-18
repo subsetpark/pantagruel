@@ -2,7 +2,7 @@
 
 let version = "0.1.0"
 
-let usage = "pantagruel [options] [file.pant]
+let usage = "pant [options] [file.pant]
 
 Pantagruel: A specification language checker
 
@@ -25,7 +25,7 @@ let specs = [
    "    Output JSON and exit");
   ("--normalize", Arg.Set do_normalize,
    " Output N-normal form and exit");
-  ("--version", Arg.Unit (fun () -> print_endline ("pantagruel " ^ version); exit 0),
+  ("--version", Arg.Unit (fun () -> print_endline ("pant " ^ version); exit 0),
    "  Print version and exit");
 ]
 
