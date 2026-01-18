@@ -122,6 +122,22 @@ let test_comments () =
     [Parser.UPPER_IDENT "Foo"; Parser.DOT; Parser.EOF]
     (lex_all "Foo. // this is a comment\n")
 
+let test_doc_comments () =
+  (* Doc comments starting with > at beginning of line are captured, not returned as tokens *)
+  check (list token_testable) "doc comment followed by decl"
+    [Parser.UPPER_IDENT "Foo"; Parser.DOT; Parser.EOF]
+    (lex_all "> This is a doc comment\nFoo.")
+
+let test_projection_token () =
+  check (list token_testable) "projection"
+    [Parser.LOWER_IDENT "p"; Parser.PROJ 1; Parser.PROJ 2; Parser.EOF]
+    (lex_all "p.1.2")
+
+let test_dcolon () =
+  check (list token_testable) "double colon"
+    [Parser.UPPER_IDENT "Module"; Parser.DCOLON; Parser.LOWER_IDENT "name"; Parser.EOF]
+    (lex_all "Module::name")
+
 let () =
   run "Lexer" [
     "keywords", [test_case "keywords" `Quick test_keywords];
@@ -133,4 +149,7 @@ let () =
     "string", [test_case "string" `Quick test_string];
     "unicode", [test_case "unicode operators" `Quick test_unicode_operators];
     "comments", [test_case "comments" `Quick test_comments];
+    "doc_comments", [test_case "doc comments" `Quick test_doc_comments];
+    "projection", [test_case "projection" `Quick test_projection_token];
+    "dcolon", [test_case "double colon" `Quick test_dcolon];
   ]

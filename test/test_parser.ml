@@ -80,6 +80,40 @@ let test_sum_type () =
   | Ast.DeclAlias ("Result", Ast.TSum _) -> ()
   | _ -> fail "Expected sum type"
 
+let test_procedure_guard () =
+  let doc = parse "module TEST.\n\nAccount.\nbalance a: Account => Nat.\nwithdraw a: Account, amount: Nat, balance a >= amount.\n---\n" in
+  let chapter = List.hd doc.Ast.chapters in
+  match (List.nth chapter.Ast.head 2).Ast.value with
+  | Ast.DeclProc { guards = [Ast.GExpr _]; _ } -> ()
+  | _ -> fail "Expected procedure with guard"
+
+let test_membership_binding () =
+  let doc = parse "module TEST.\n\nItem.\nitems => [Item].\n---\nall i in items | true.\n" in
+  let chapter = List.hd doc.Ast.chapters in
+  match (List.hd chapter.Ast.body).Ast.value with
+  | Ast.EForall ([], [Ast.GIn ("i", _)], _) -> ()
+  | _ -> fail "Expected membership binding"
+
+let test_existential () =
+  let doc = parse "module TEST.\n\nUser.\n---\nsome u: User | true.\n" in
+  let chapter = List.hd doc.Ast.chapters in
+  match (List.hd chapter.Ast.body).Ast.value with
+  | Ast.EExists _ -> ()
+  | _ -> fail "Expected existential"
+
+let test_doc_comment () =
+  let doc = parse "module TEST.\n\n> This is a doc comment\nFoo.\n---\n" in
+  let chapter = List.hd doc.Ast.chapters in
+  let decl = List.hd chapter.Ast.head in
+  check (list string) "doc comment" ["This is a doc comment"] decl.Ast.doc
+
+let test_multiple_guards () =
+  let doc = parse "module TEST.\n\nAccount.\nbalance a: Account => Nat.\nwithdraw a: Account, amount: Nat, amount > 0, balance a >= amount.\n---\n" in
+  let chapter = List.hd doc.Ast.chapters in
+  match (List.nth chapter.Ast.head 2).Ast.value with
+  | Ast.DeclProc { guards = [Ast.GExpr _; Ast.GExpr _]; _ } -> ()
+  | _ -> fail "Expected procedure with two guards"
+
 let () =
   run "Parser" [
     "minimal", [test_case "minimal document" `Quick test_minimal];
@@ -94,4 +128,9 @@ let () =
     "type_alias", [test_case "type alias" `Quick test_type_alias];
     "list_type", [test_case "list type" `Quick test_list_type];
     "sum_type", [test_case "sum type" `Quick test_sum_type];
+    "guard", [test_case "procedure guard" `Quick test_procedure_guard];
+    "membership", [test_case "membership binding" `Quick test_membership_binding];
+    "existential", [test_case "existential" `Quick test_existential];
+    "doc_comment", [test_case "doc comment" `Quick test_doc_comment];
+    "multi_guard", [test_case "multiple guards" `Quick test_multiple_guards];
   ]
