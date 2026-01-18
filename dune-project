@@ -4,9 +4,12 @@
 
 (generate_opam_files true)
 
+(license BSD-3-Clause)
+
 (package
  (name pantagruel)
  (synopsis "A specification language checker")
+ (license BSD-3-Clause)
  (depends
   (ocaml (>= 4.14))
   menhir

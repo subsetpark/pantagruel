@@ -221,4 +221,4 @@ all p: Point, q: Point | distance p q = distance q p.
 
 ## License
 
-MIT
+BSD-3
