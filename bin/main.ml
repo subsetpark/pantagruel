@@ -11,6 +11,8 @@ If no file is given, reads from stdin.
 Options:"
 
 let print_ast = ref false
+let print_json = ref false
+let do_normalize = ref false
 let module_path = ref "."
 let files = ref []
 
@@ -18,7 +20,11 @@ let specs = [
   ("--module-path", Arg.Set_string module_path,
    "DIR  Directory to search for imported modules (default: .)");
   ("--ast", Arg.Set print_ast,
-   "     Print AST and exit");
+   "     Print AST (OCaml format) and exit");
+  ("--json", Arg.Set print_json,
+   "    Output JSON and exit");
+  ("--normalize", Arg.Set do_normalize,
+   " Output N-normal form and exit");
   ("--version", Arg.Unit (fun () -> print_endline ("pantagruel " ^ version); exit 0),
    "  Print version and exit");
 ]
@@ -48,8 +54,15 @@ let check_doc doc =
 
     (* Check the document *)
     match Pantagruel.Module.check_with_imports registry doc with
-    | Ok () ->
-        print_endline "OK";
+    | Ok env ->
+        if !do_normalize then begin
+          let normalized = Pantagruel.Normalize.normalize doc in
+          Pantagruel.Pretty.output normalized
+        end
+        else if !print_json then
+          Pantagruel.Json_output.output_json env doc
+        else
+          print_endline "OK";
         true
     | Error e ->
         prerr_endline (format_module_error e);
