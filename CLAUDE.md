@@ -18,7 +18,8 @@ dune exec test/test_check.exe
 
 # Run the CLI tool
 dune exec pantagruel -- <file.pant>
-dune exec pantagruel -- --ast <file.pant>  # Print AST
+dune exec pantagruel -- --json <file.pant>  # Output JSON with resolved types
+dune exec pantagruel -- --ast <file.pant>   # Print AST (OCaml format)
 ```
 
 ## Architecture

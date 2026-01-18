@@ -31,7 +31,10 @@ pantagruel myspec.pant
 # Read from stdin
 echo 'module TEST. Foo. ---' | pantagruel
 
-# Print the AST (for debugging)
+# Output JSON (includes resolved types and full AST)
+pantagruel --json myspec.pant
+
+# Print the AST (OCaml format, for debugging)
 pantagruel --ast myspec.pant
 
 # Specify module search path for imports

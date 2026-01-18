@@ -195,11 +195,13 @@ deposit a: Account, amount: Nat.
 
 ### Procedure with Guards
 
-Guards constrain when a procedure applies:
+Guards constrain when a procedure applies. Guards must be boolean expressions and are type-checked with the procedure's parameters in scope:
 
 ```
 withdraw a: Account, amount: Nat, balance a >= amount.
 ```
+
+Guards can reference the procedure's parameters (`a`, `amount` in this example) to express preconditions.
 
 ## Expressions
 
@@ -283,10 +285,16 @@ some x: T | P           // Existential: there exists x of type T where P holds
 // Multiple bindings
 all x: T, y: U | P
 
-// With guards
+// With guards (boolean conditions)
 all x: T, x > 0 | P     // For all x > 0, P holds
 some x: T, f x | P      // There exists x where f x is true and P holds
+
+// Membership bindings: x in xs where xs: [T] binds x: T
+all i in items | price i > 0.     // For all i in the list items
+some i in items | price i < 100.  // There exists i in items
 ```
+
+The `x in xs` binding form infers the type of `x` from the element type of the list `xs`. If `xs: [T]`, then `x: T`.
 
 ### Primed Expressions (State Transitions)
 
@@ -374,6 +382,183 @@ Use `--module-path DIR` to specify where to find `.pant` files for imports.
 
 All declarations in an imported module are available via qualified names.
 
+## Forward Declaration Rules
+
+Pantagruel supports forward declaration with specific visibility rules based on chapter structure.
+
+### Chapter Numbering
+
+Chapters are numbered starting from 0. A document with 3 chapters has chapters 0, 1, and 2.
+
+### Visibility Rules
+
+Symbols declared in chapter N have different visibility rules:
+
+| Symbol Type | Visible in Heads | Visible in Bodies |
+|-------------|------------------|-------------------|
+| **Domains/Aliases** | M where M ≥ N | M where M ≥ N - 1 |
+| **Procedure names** | M where M ≥ N | M where M ≥ N - 1 |
+| **Procedure parameters** | M where M ≥ N | M where M ≥ N |
+
+This means:
+- A declaration in chapter 2 is visible in heads of chapters 2, 3, 4, ...
+- A declaration in chapter 2 is visible in bodies of chapters 1, 2, 3, 4, ...
+- Bodies can "look ahead" one chapter for procedure names
+- But procedure parameters are only visible in the same chapter's body
+
+For a procedure `foo x: T, y: U => R` declared in chapter N:
+- `foo` is visible starting from chapter N-1 body (one chapter look-ahead)
+- `x` and `y` are only visible in chapter N body (same chapter, no look-ahead)
+
+### Example
+
+```
+module EXAMPLE.
+
+// Chapter 0
+User.
+---
+all u: User | u in User.        // OK: User declared in chapter 0
+
+where
+
+// Chapter 1
+owner d: Document => User.      // OK: User visible in head (chapter 0 ≤ 1)
+Document.                       // OK: forward declaration
+---
+all d: Document | owner d in User.  // OK: Document visible (declared in chapter 1, body is chapter 1)
+```
+
+### Correctness
+
+A program is **correct** if:
+1. Every symbol reference is visible according to the rules above
+2. All type constraints are satisfied
+3. Each chapter head contains at least one declaration
+4. Each chapter has at most one void procedure
+
+## Normal Form
+
+A document can be transformed into **normal form**, where declarations are organized by dependency levels and propositions are placed at their earliest valid position.
+
+### Definition
+
+A document is in normal form when:
+1. Declarations are organized by **topological level** (based on type dependencies)
+2. Each level becomes a chapter
+3. Propositions are placed in the **earliest** chapter where all their dependencies are visible
+4. Void procedures and their tied propositions stay together
+5. At most one void procedure per chapter
+
+### Dependency Levels
+
+Declarations are assigned levels based on their type dependencies:
+
+| Level | Description |
+|-------|-------------|
+| 0 | Declarations with no type dependencies (domains) |
+| 1 | Declarations that only depend on level 0 types |
+| 2 | Declarations that depend on level 1 types |
+| ... | And so on |
+
+### Proposition Placement
+
+Propositions are placed at the **earliest** valid chapter:
+
+| Proposition type | Placement rule |
+|------------------|----------------|
+| **Void-tied** | Same chapter as the void procedure |
+| **Independent** | Earliest chapter where all dependencies are visible |
+
+A proposition is **void-tied** if it:
+- Uses primed expressions (e.g., `balance' a`), OR
+- References the void procedure's parameters
+
+### Void Procedure Handling
+
+If multiple void procedures end up at the same dependency level, they are spread across consecutive chapters (since at most one void procedure per chapter is allowed).
+
+### Normalization Algorithm
+
+1. **Collect declarations** and compute their type dependencies
+2. **Compute topological levels** for all declarations
+3. **Create chapters** - one per level (plus extra for void proc conflicts)
+4. **Place declarations** at their computed level
+5. **Place void-tied propositions** with their void procedures
+6. **Place independent propositions** at earliest valid chapter
+
+### Example
+
+**Original (3 chapters with void procedures):**
+```
+module STATE.
+
+User.
+Account.
+balance a: Account => Int.
+owner a: Account => User.
+deposit a: Account, amount: Nat.
+---
+balance' a = balance a + amount.
+all a: Account, amt: Nat | true.
+
+where
+
+withdraw a: Account, amount: Nat.
+---
+balance' a = balance a - amount.
+
+where
+
+transfer from: Account, to: Account, amount: Nat.
+---
+balance' from = balance from - amount.
+```
+
+**Normal form (4 chapters):**
+```
+module STATE.
+
+// Level 0: root domains
+Account.
+User.
+---
+all a: Account, amt: Nat | true.   // Only depends on Account, Nat
+
+where
+
+// Level 1: depends on Account, User
+balance a: Account => Int.
+owner a: Account => User.
+deposit a: Account, amount: Nat.   // Void proc #1
+---
+balance' a = balance a + amount.   // Tied to deposit
+
+where
+
+// Void proc #2 (separate chapter)
+withdraw a: Account, amount: Nat.
+---
+balance' a = balance a - amount.
+
+where
+
+// Void proc #3 (separate chapter)
+transfer from: Account, to: Account, amount: Nat.
+---
+balance' from = balance from - amount.
+```
+
+The independent proposition `all a: Account, amt: Nat | true` moved to chapter 0 because it only depends on level 0 types. Void procedures were spread across separate chapters.
+
+### CLI Usage
+
+```bash
+pantagruel --normalize file.pant
+```
+
+Outputs the N-normal form of the document.
+
 ## Complete Grammar
 
 ```
@@ -381,7 +566,7 @@ document    ::= 'module' UPPER '.' import* chapter ('where' chapter)*
 
 import      ::= 'import' UPPER '.'
 
-chapter     ::= declaration* '---' proposition*
+chapter     ::= declaration+ '---' proposition*    // Head must be non-empty
 
 declaration ::= UPPER '.'                              // Domain
               | UPPER '=' type '.'                     // Type alias
@@ -425,6 +610,7 @@ atom        ::= LOWER                                  // Variable
               | atom '.N'                             // Projection
 
 bindings    ::= binding (',' (binding | guard))*
-binding     ::= LOWER ':' type
+binding     ::= LOWER ':' type              // Type annotation
+              | LOWER 'in' expr             // Membership binding (expr must be a list)
 guard       ::= expr  // Must be boolean
 ```
