@@ -161,7 +161,7 @@ and check_binop ctx op e1 e2 =
   let* t1 = infer_type ctx e1 in
   let* t2 = infer_type ctx e2 in
   match op with
-  | OpAnd | OpOr | OpImpl ->
+  | OpAnd | OpOr | OpImpl | OpIff ->
       if equal_ty t1 TyBool && equal_ty t2 TyBool then Ok TyBool
       else if not (equal_ty t1 TyBool) then Error (ExpectedBool (t1, ctx.loc))
       else Error (ExpectedBool (t2, ctx.loc))

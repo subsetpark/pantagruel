@@ -60,6 +60,7 @@ String escape sequences: `\\`, `\"`, `\n`, `\t`, `\r`
 |-------|---------|---------|
 | `=>` | `⇒` | Procedure return type |
 | `->` | `→` | Implication |
+| `<->` | `↔` | Biconditional (iff) |
 | `and` | `∧` | Conjunction |
 | `or` | `∨` | Disjunction |
 | `not` | `¬` or `~` | Negation |
@@ -266,6 +267,7 @@ p and q             // Conjunction
 p or q              // Disjunction
 not p               // Negation
 p -> q              // Implication
+p <-> q             // Biconditional (if and only if)
 ```
 
 ### Membership and Sets
@@ -350,16 +352,17 @@ Each proposition ends with `.`
 
 From lowest to highest:
 
-1. `->` (implication, right associative)
-2. `or` (disjunction)
-3. `and` (conjunction)
-4. `not` (negation)
-5. `= != < > <= >= in subset` (comparison/membership)
-6. `+ -` (addition/subtraction)
-7. `* /` (multiplication/division)
-8. `#` (cardinality)
-9. `-` (unary minus)
-10. Application, projection
+1. `<->` (biconditional, non-associative)
+2. `->` (implication, right associative)
+3. `or` (disjunction)
+4. `and` (conjunction)
+5. `not` (negation)
+6. `= != < > <= >= in subset` (comparison/membership)
+7. `+ -` (addition/subtraction)
+8. `* /` (multiplication/division)
+9. `#` (cardinality)
+10. `-` (unary minus)
+11. Application, projection
 
 ## Module System
 
@@ -584,6 +587,7 @@ proposition ::= expr '.'
 
 expr        ::= 'all' bindings '|' expr               // Universal
               | 'some' bindings '|' expr              // Existential
+              | expr '<->' expr                        // Biconditional
               | expr '->' expr                         // Implication
               | expr 'or' expr                         // Disjunction
               | expr 'and' expr                        // Conjunction

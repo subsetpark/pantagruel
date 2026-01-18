@@ -35,6 +35,7 @@ let binop_to_string = function
   | OpAnd -> "and"
   | OpOr -> "or"
   | OpImpl -> "impl"
+  | OpIff -> "iff"
   | OpEq -> "eq"
   | OpNeq -> "neq"
   | OpLt -> "lt"

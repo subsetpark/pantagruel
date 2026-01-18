@@ -17,6 +17,7 @@ let token_to_string = function
   | Parser.STRING s -> "STRING(" ^ s ^ ")"
   | Parser.DARROW -> "DARROW"
   | Parser.ARROW -> "ARROW"
+  | Parser.IFF -> "IFF"
   | Parser.EQ -> "EQ"
   | Parser.NEQ -> "NEQ"
   | Parser.LT -> "LT"

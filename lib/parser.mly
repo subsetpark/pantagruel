@@ -35,7 +35,7 @@
 %token <int> NAT
 %token <float> REAL
 %token <string> STRING
-%token DARROW ARROW
+%token DARROW ARROW IFF
 %token EQ NEQ LT GT LE GE
 %token PLUS MINUS TIMES DIVIDE CARD
 %token PRIME MAPSTO
@@ -47,6 +47,7 @@
 %token EOF
 
 (* Precedence - lowest to highest *)
+%nonassoc IFF               (* biconditional - lowest, non-associative *)
 %right ARROW                (* implication *)
 %left OR                    (* disjunction *)
 %left AND                   (* conjunction *)
@@ -142,6 +143,10 @@ proposition:
 (* Expressions *)
 expr:
   | e=quantified { e }
+  | e=biconditional { e }
+
+biconditional:
+  | e1=implication IFF e2=implication { EBinop (OpIff, e1, e2) }
   | e=implication { e }
 
 quantified:
@@ -165,7 +170,7 @@ quant_guard_or_param:
   | e=conjunction { GExpr e }  (* Use conjunction to avoid ambiguity with | *)
 
 implication:
-  | e1=disjunction ARROW e2=expr { EBinop (OpImpl, e1, e2) }
+  | e1=disjunction ARROW e2=implication { EBinop (OpImpl, e1, e2) }
   | e=disjunction { e }
 
 disjunction:

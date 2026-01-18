@@ -25,6 +25,7 @@ let pp_binop = function
   | OpAnd -> "and"
   | OpOr -> "or"
   | OpImpl -> "->"
+  | OpIff -> "<->"
   | OpEq -> "="
   | OpNeq -> "!="
   | OpLt -> "<"
@@ -50,6 +51,11 @@ let rec pp_expr = function
       "all " ^ pp_quant_params_guards params guards ^ " | " ^ pp_expr body
   | EExists (params, guards, body) ->
       "some " ^ pp_quant_params_guards params guards ^ " | " ^ pp_expr body
+  | e -> pp_biconditional e
+
+and pp_biconditional = function
+  | EBinop (OpIff, e1, e2) ->
+      pp_implication e1 ^ " <-> " ^ pp_implication e2
   | e -> pp_implication e
 
 and pp_quant_params_guards params guards =

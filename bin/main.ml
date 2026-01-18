@@ -12,6 +12,7 @@ Options:"
 
 let print_ast = ref false
 let print_json = ref false
+let print_markdown = ref false
 let do_normalize = ref false
 let module_path = ref "."
 let files = ref []
@@ -23,6 +24,8 @@ let specs = [
    "     Print AST (OCaml format) and exit");
   ("--json", Arg.Set print_json,
    "    Output JSON and exit");
+  ("--markdown", Arg.Set print_markdown,
+   " Output Pandoc Markdown with LaTeX math and exit");
   ("--normalize", Arg.Set do_normalize,
    " Output N-normal form and exit");
   ("--version", Arg.Unit (fun () -> print_endline ("pant " ^ version); exit 0),
@@ -61,6 +64,8 @@ let check_doc doc =
         end
         else if !print_json then
           Pantagruel.Json_output.output_json env doc
+        else if !print_markdown then
+          Pantagruel.Markdown_output.output doc
         else
           print_endline "OK";
         true

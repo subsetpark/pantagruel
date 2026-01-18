@@ -89,6 +89,7 @@ let subset_u = [%sedlex.regexp? 0x2286]    (* ⊆ *)
 let times_u = [%sedlex.regexp? 0x00D7]     (* × *)
 let prime_u = [%sedlex.regexp? 0x2032]     (* ′ *)
 let mapsto_u = [%sedlex.regexp? 0x21A6]    (* ↦ *)
+let iff_u = [%sedlex.regexp? 0x2194]       (* ↔ *)
 
 (** Map identifier strings to keywords *)
 let keyword_or_lower_ident = function
@@ -172,6 +173,8 @@ let rec token_impl lexer =
   (* Multi-char operators - check before single chars *)
   | "=>" -> Parser.DARROW
   | darrow_u -> Parser.DARROW
+  | "<->" -> Parser.IFF
+  | iff_u -> Parser.IFF
   | "->" -> Parser.ARROW
   | arrow_u -> Parser.ARROW
   | "!=" -> Parser.NEQ

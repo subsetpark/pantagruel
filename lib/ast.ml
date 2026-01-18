@@ -44,6 +44,7 @@ type binop =
   | OpAnd    (** and *)
   | OpOr     (** or *)
   | OpImpl   (** -> implication *)
+  | OpIff    (** <-> biconditional *)
   | OpEq     (** = *)
   | OpNeq    (** != *)
   | OpLt     (** < *)
