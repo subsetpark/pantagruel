@@ -13,6 +13,7 @@ Options:"
 let print_ast = ref false
 let print_json = ref false
 let print_markdown = ref false
+let do_format = ref false
 let do_normalize = ref false
 let module_path = ref "."
 let files = ref []
@@ -26,6 +27,8 @@ let specs = [
    "    Output JSON and exit");
   ("--markdown", Arg.Set print_markdown,
    " Output Pandoc Markdown with LaTeX math and exit");
+  ("--format", Arg.Set do_format,
+   "   Format document with standard style and exit");
   ("--normalize", Arg.Set do_normalize,
    " Output N-normal form and exit");
   ("--version", Arg.Unit (fun () -> print_endline ("pant " ^ version); exit 0),
@@ -51,6 +54,10 @@ let check_doc doc =
     print_endline (Pantagruel.Ast.show_document doc);
     true
   end
+  else if !do_format then begin
+    Pantagruel.Pretty.output_formatted doc;
+    true
+  end
   else begin
     (* Set up module registry *)
     let registry = Pantagruel.Module.scan_module_path !module_path in
@@ -65,9 +72,7 @@ let check_doc doc =
         else if !print_json then
           Pantagruel.Json_output.output_json env doc
         else if !print_markdown then
-          Pantagruel.Markdown_output.output doc
-        else
-          print_endline "OK";
+          Pantagruel.Markdown_output.output doc;
         true
     | Error e ->
         prerr_endline (format_module_error e);

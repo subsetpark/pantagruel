@@ -64,9 +64,9 @@ let latex_binop = function
 
 let rec latex_expr = function
   | EForall (params, guards, body) ->
-      "\\forall " ^ latex_quant_params_guards params guards ^ " \\mid " ^ latex_expr body
+      "\\forall " ^ latex_quant_params_guards params guards ^ ".\\ " ^ latex_expr body
   | EExists (params, guards, body) ->
-      "\\exists " ^ latex_quant_params_guards params guards ^ " \\mid " ^ latex_expr body
+      "\\exists " ^ latex_quant_params_guards params guards ^ ".\\ " ^ latex_expr body
   | e -> latex_biconditional e
 
 and latex_biconditional = function
@@ -182,9 +182,11 @@ let latex_decl_signature = function
 
 (* --- Markdown document rendering --- *)
 
-let md_chapter ?(skip_first_doc=false) chapter_num chapter =
+let md_chapter ?(skip_first_doc=false) ~total_chapters chapter_num chapter =
   let buf = Buffer.create 1024 in
-  Buffer.add_string buf (Printf.sprintf "## Chapter %d\n\n" chapter_num);
+  (* Only show chapter headers for multi-chapter documents *)
+  if total_chapters > 1 then
+    Buffer.add_string buf (Printf.sprintf "## Chapter %d\n\n" chapter_num);
 
   (* Get line number of first declaration to identify it *)
   let first_line = match chapter.head with
@@ -208,16 +210,15 @@ let md_chapter ?(skip_first_doc=false) chapter_num chapter =
     skip_first_doc && Some d.loc.line = first_line
   in
 
-  (* Domains *)
+  (* Domains - compact comma-separated list *)
   if domains <> [] then begin
     Buffer.add_string buf "### Domains\n\n";
-    List.iter (fun d ->
+    let domain_strs = List.map (fun d ->
       let name = match d.value with DeclDomain n -> n | _ -> "" in
-      if d.doc <> [] && not (should_skip_doc d) then
-        Buffer.add_string buf (String.concat " " d.doc ^ "\n\n");
-      Buffer.add_string buf (Printf.sprintf "- $%s$\n" (latex_ident name))
-    ) domains;
-    Buffer.add_string buf "\n"
+      Printf.sprintf "$%s$" (latex_ident name)
+    ) domains in
+    Buffer.add_string buf (String.concat ", " domain_strs);
+    Buffer.add_string buf "\n\n"
   end;
 
   (* Type aliases *)
@@ -225,7 +226,7 @@ let md_chapter ?(skip_first_doc=false) chapter_num chapter =
     Buffer.add_string buf "### Types\n\n";
     List.iter (fun a ->
       if a.doc <> [] && not (should_skip_doc a) then
-        Buffer.add_string buf (String.concat " " a.doc ^ "\n\n");
+        Buffer.add_string buf (Printf.sprintf "*%s*\n\n" (String.concat " " a.doc));
       Buffer.add_string buf (Printf.sprintf "$$%s$$\n\n" (latex_decl_signature a.value))
     ) aliases
   end;
@@ -234,12 +235,9 @@ let md_chapter ?(skip_first_doc=false) chapter_num chapter =
   if procs <> [] then begin
     Buffer.add_string buf "### Procedures\n\n";
     List.iter (fun p ->
-      Buffer.add_string buf (Printf.sprintf "**$%s$**" (latex_decl_signature p.value));
-      if p.doc <> [] && not (should_skip_doc p) then begin
-        Buffer.add_string buf "\n: ";
-        Buffer.add_string buf (String.concat " " p.doc)
-      end;
-      Buffer.add_string buf "\n\n"
+      if p.doc <> [] && not (should_skip_doc p) then
+        Buffer.add_string buf (Printf.sprintf "*%s*\n\n" (String.concat " " p.doc));
+      Buffer.add_string buf (Printf.sprintf "$$%s$$\n\n" (latex_decl_signature p.value))
     ) procs
   end;
 
@@ -247,12 +245,11 @@ let md_chapter ?(skip_first_doc=false) chapter_num chapter =
   if chapter.body <> [] then begin
     Buffer.add_string buf "### Propositions\n\n";
     List.iter (fun prop ->
-      if prop.doc <> [] then begin
-        Buffer.add_string buf "> ";
-        Buffer.add_string buf (String.concat "\n> " prop.doc);
-        Buffer.add_string buf "\n\n"
-      end;
-      Buffer.add_string buf (Printf.sprintf "$$%s$$\n\n" (latex_expr prop.value))
+      if prop.doc <> [] then
+        Buffer.add_string buf (Printf.sprintf "*%s*\n\n" (String.concat " " prop.doc));
+      Buffer.add_string buf "\\begin{dmath*}\n";
+      Buffer.add_string buf (latex_expr prop.value);
+      Buffer.add_string buf "\n\\end{dmath*}\n\n"
     ) chapter.body
   end;
 
@@ -260,6 +257,24 @@ let md_chapter ?(skip_first_doc=false) chapter_num chapter =
 
 let md_document doc =
   let buf = Buffer.create 4096 in
+
+  (* YAML frontmatter for pandoc *)
+  Buffer.add_string buf "---\n";
+  Buffer.add_string buf (Printf.sprintf "title: \"Module %s\"\n" doc.module_name);
+  Buffer.add_string buf "classoption:\n";
+  Buffer.add_string buf "  - fleqn\n";
+  Buffer.add_string buf "  - 11pt\n";
+  Buffer.add_string buf "geometry:\n";
+  Buffer.add_string buf "  - margin=1in\n";
+  Buffer.add_string buf "header-includes:\n";
+  Buffer.add_string buf "  - \\usepackage{breqn}\n";
+  Buffer.add_string buf "  - \\setlength{\\mathindent}{2em}\n";
+  Buffer.add_string buf "  - \\setlength{\\parskip}{0.5em}\n";
+  Buffer.add_string buf "  - \\setlength{\\parindent}{0pt}\n";
+  Buffer.add_string buf "colorlinks: true\n";
+  Buffer.add_string buf "linkcolor: blue\n";
+  Buffer.add_string buf "urlcolor: blue\n";
+  Buffer.add_string buf "---\n\n";
 
   (* Title *)
   Buffer.add_string buf (Printf.sprintf "# Module %s\n\n" doc.module_name);
@@ -281,10 +296,11 @@ let md_document doc =
   end;
 
   (* Chapters *)
+  let total_chapters = List.length doc.chapters in
   List.iteri (fun i ch ->
     (* Skip first doc for first chapter if we showed it as module doc *)
     let skip_first_doc = (i = 0) && has_module_doc in
-    Buffer.add_string buf (md_chapter ~skip_first_doc (i + 1) ch)
+    Buffer.add_string buf (md_chapter ~skip_first_doc ~total_chapters (i + 1) ch)
   ) doc.chapters;
 
   Buffer.contents buf

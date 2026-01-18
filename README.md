@@ -219,6 +219,46 @@ all p: Point | distance p p = 0.0.
 all p: Point, q: Point | distance p q = distance q p.
 ```
 
+## Editor Integration
+
+Pantagruel can be used with any editor that supports LSP through [efm-langserver](https://github.com/mattn/efm-langserver).
+
+### efm-langserver Configuration
+
+Add to your efm-langserver config (typically `~/.config/efm-langserver/config.yaml`):
+
+```yaml
+version: 2
+tools:
+  pantagruel-lint: &pantagruel-lint
+    lint-command: 'pant ${INPUT}'
+    lint-stdin: false
+    lint-formats:
+      - '%f:%l:%c: error: %m'
+
+languages:
+  pantagruel:
+    - <<: *pantagruel-lint
+```
+
+### Neovim (with nvim-lspconfig)
+
+```lua
+require('lspconfig').efm.setup({
+  filetypes = { 'pantagruel' },
+  init_options = { documentFormatting = true },
+})
+
+-- Associate .pant files with pantagruel filetype
+vim.filetype.add({
+  extension = { pant = 'pantagruel' }
+})
+```
+
+### VS Code
+
+Install the [efm-langserver extension](https://marketplace.visualstudio.com/items?itemName=ponsuke.vscode-efm-langserver) and configure similarly.
+
 ## License
 
 BSD-3

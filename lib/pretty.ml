@@ -195,3 +195,84 @@ let pp_document doc =
 (** Output document to stdout *)
 let output doc =
   print_string (pp_document doc)
+
+(* --- Formatting with wrapping and consistent style --- *)
+
+(** Wrap text to max width, preserving words *)
+let wrap_text width text =
+  let words = String.split_on_char ' ' text in
+  let rec go line_len acc = function
+    | [] -> List.rev acc
+    | word :: rest ->
+        let wlen = String.length word in
+        if line_len + 1 + wlen > width && line_len > 0 then
+          (* Start new line *)
+          go wlen (word :: "\n" :: acc) rest
+        else if line_len = 0 then
+          go wlen (word :: acc) rest
+        else
+          go (line_len + 1 + wlen) (word :: " " :: acc) rest
+  in
+  String.concat "" (go 0 [] words)
+
+(** Format doc comments with wrapping *)
+let pp_docs_wrapped width docs =
+  let wrapped = List.map (wrap_text (width - 2)) docs in  (* -2 for "> " prefix *)
+  let lines = List.concat_map (String.split_on_char '\n') wrapped in
+  String.concat "\n" (List.map (fun line -> "> " ^ line) lines)
+
+(** Format a chapter with consistent style *)
+let format_chapter ?(width=80) buf chapter =
+  (* Track whether previous declaration had a doc comment for spacing *)
+  let prev_had_doc = ref false in
+  List.iter (fun decl ->
+    let has_doc = decl.doc <> [] in
+    (* Add blank line before new doc group (but not at very start) *)
+    if has_doc && !prev_had_doc then
+      Buffer.add_char buf '\n';
+    if has_doc then begin
+      Buffer.add_string buf (pp_docs_wrapped width decl.doc);
+      Buffer.add_char buf '\n'
+    end;
+    Buffer.add_string buf (pp_declaration decl.value);
+    Buffer.add_char buf '\n';
+    prev_had_doc := has_doc
+  ) chapter.head;
+
+  (* Separator *)
+  Buffer.add_string buf "---\n";
+
+  (* Propositions *)
+  List.iter (fun prop ->
+    if prop.doc <> [] then begin
+      Buffer.add_string buf (pp_docs_wrapped width prop.doc);
+      Buffer.add_char buf '\n'
+    end;
+    Buffer.add_string buf (pp_expr prop.value);
+    Buffer.add_string buf ".\n"
+  ) chapter.body
+
+(** Format a document with consistent style *)
+let format_document ?(width=80) doc =
+  let buf = Buffer.create 4096 in
+
+  (* Module header *)
+  Buffer.add_string buf ("module " ^ doc.module_name ^ ".\n");
+
+  (* Imports *)
+  List.iter (fun imp ->
+    Buffer.add_string buf ("import " ^ imp.value ^ ".\n")
+  ) doc.imports;
+  if doc.imports <> [] then Buffer.add_char buf '\n';
+
+  (* Chapters *)
+  List.iteri (fun i chapter ->
+    if i > 0 then Buffer.add_string buf "\nwhere\n\n";
+    format_chapter ~width buf chapter
+  ) doc.chapters;
+
+  Buffer.contents buf
+
+(** Output formatted document to stdout *)
+let output_formatted ?(width=80) doc =
+  print_string (format_document ~width doc)

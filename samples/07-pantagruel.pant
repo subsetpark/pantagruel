@@ -24,31 +24,31 @@ head c: Chapter => [Declaration].
 body c: Chapter => [Proposition].
 
 > Declaration predicates
-is-domain? d: Declaration => Bool.
-is-alias? d: Declaration => Bool.
-is-proc? d: Declaration => Bool.
+is-domain? decl: Declaration => Bool.
+is-alias? decl: Declaration => Bool.
+is-proc? decl: Declaration => Bool.
 
 > Declaration accessors
-decl-name d: Declaration => Name.
-alias-type d: Declaration => Type.
-proc-params d: Declaration => [Name].
-proc-param-types d: Declaration => [Type].
-proc-return-type d: Declaration => Type.
-proc-is-void? d: Declaration => Bool.
+decl-name decl: Declaration => Name.
+alias-type decl: Declaration => Type.
+proc-params decl: Declaration => [Name].
+proc-param-types decl: Declaration => [Type].
+proc-return-type decl: Declaration => Type.
+proc-is-void? decl: Declaration => Bool.
 
 ---
 > Every document has at least one chapter
-all d: Document | #chapters d >= 1.
+all doc: Document | #chapters doc >= 1.
 
 > Declarations are exactly one kind
-all d: Declaration |
-    is-domain? d and not is-alias? d and not is-proc? d or
-    is-alias? d and not is-domain? d and not is-proc? d or
-    is-proc? d and not is-domain? d and not is-alias? d.
+all decl: Declaration |
+    is-domain? decl and not is-alias? decl and not is-proc? decl or
+    is-alias? decl and not is-domain? decl and not is-proc? decl or
+    is-proc? decl and not is-domain? decl and not is-alias? decl.
 
 > Procedure parameter count matches type count
-all d: Declaration, is-proc? d |
-    #proc-params d = #proc-param-types d.
+all decl: Declaration, is-proc? decl |
+    #proc-params decl = #proc-param-types decl.
 
 where
 
