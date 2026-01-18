@@ -54,11 +54,13 @@ let rec resolve_type env (te : type_expr) loc : (ty, collect_error) result =
       let* tys = Util.map_result (fun t -> resolve_type env t loc) ts in
       Ok (TySum tys)
 
-(** Collect declarations from one chapter head *)
+(** Collect declarations from one chapter head.
+    Uses three-pass approach so declarations can reference each other regardless of order. *)
 let collect_chapter_head ~chapter env (decls : declaration located list) =
   let void_procs = ref [] in
 
-  let process_decl env (decl : declaration located) =
+  (* Pass 1: Register all type names (domains and alias names as placeholders) *)
+  let register_type_name env (decl : declaration located) =
     match decl.value with
     | DeclDomain name ->
         if is_builtin_type name then
@@ -70,18 +72,49 @@ let collect_chapter_head ~chapter env (decls : declaration located list) =
           | None ->
               Ok (Env.add_domain name decl.loc ~chapter env)
         end
-
-    | DeclAlias (name, type_expr) ->
+    | DeclAlias (name, _) ->
         if is_builtin_type name then
           Error (BuiltinRedefined (name, decl.loc))
         else begin
-          let* ty = resolve_type env type_expr decl.loc in
-          if mentions_type name ty then
-            Error (RecursiveAlias (name, decl.loc))
-          else
-            Ok (Env.add_alias name ty decl.loc ~chapter env)
+          match Env.lookup_type name env with
+          | Some existing ->
+              Error (DuplicateDomain (name, decl.loc, existing.loc))
+          | None ->
+              (* Add as domain placeholder - will be replaced in pass 2 *)
+              Ok (Env.add_domain name decl.loc ~chapter env)
         end
+    | DeclProc _ -> Ok env  (* Procedures handled in pass 3 *)
+  in
 
+  (* Pass 2: Resolve alias types iteratively (handles mutual references) *)
+  let resolve_aliases env decls =
+    (* Keep resolving until no more changes *)
+    let rec iterate env =
+      let changed = ref false in
+      let* env' = Util.fold_result (fun env (decl : declaration located) ->
+        match decl.value with
+        | DeclAlias (name, type_expr) ->
+            let* ty = resolve_type env type_expr decl.loc in
+            if mentions_type name ty then
+              Error (RecursiveAlias (name, decl.loc))
+            else begin
+              (* Check if this changes anything *)
+              (match Env.lookup_type name env with
+               | Some { kind = Env.KAlias existing_ty; _ } ->
+                   if existing_ty <> ty then changed := true
+               | _ -> changed := true);
+              Ok (Env.add_alias name ty decl.loc ~chapter env)
+            end
+        | _ -> Ok env
+      ) env decls in
+      if !changed then iterate env' else Ok env'
+    in
+    iterate env
+  in
+
+  (* Pass 3: Add procedures (all types now fully resolved) *)
+  let add_proc env (decl : declaration located) =
+    match decl.value with
     | DeclProc { name; params; guards = _; return_type } ->
         let* param_types =
           Util.map_result (fun p -> resolve_type env p.param_type decl.loc) params
@@ -101,9 +134,13 @@ let collect_chapter_head ~chapter env (decls : declaration located list) =
              Error (DuplicateProc (name, decl.loc, existing.loc))
          | None ->
              Ok (Env.add_proc name proc_ty decl.loc ~chapter env))
+    | _ -> Ok env  (* Domains and aliases already done *)
   in
 
-  let* final_env = Util.fold_result process_decl env decls in
+  (* Execute all three passes *)
+  let* env1 = Util.fold_result register_type_name env decls in
+  let* env2 = resolve_aliases env1 decls in
+  let* final_env = Util.fold_result add_proc env2 decls in
 
   (* Validate: at most one Void procedure per chapter *)
   match !void_procs with
