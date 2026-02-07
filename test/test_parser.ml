@@ -10,7 +10,7 @@ let parse str =
 
 let test_minimal () =
   let doc = parse "module EXAMPLE.\n\nFoo.\n---\n" in
-  check string "module name" "EXAMPLE" doc.Ast.module_name;
+  check (option string) "module name" (Some "EXAMPLE") doc.Ast.module_name;
   check int "chapters" 1 (List.length doc.Ast.chapters);
   check int "imports" 0 (List.length doc.Ast.imports)
 
@@ -114,9 +114,16 @@ let test_multiple_guards () =
   | Ast.DeclProc { guards = [Ast.GExpr _; Ast.GExpr _]; _ } -> ()
   | _ -> fail "Expected procedure with two guards"
 
+let test_no_module () =
+  let doc = parse "Foo.\n---\ntrue.\n" in
+  check (option string) "no module" None doc.Ast.module_name;
+  check int "chapters" 1 (List.length doc.Ast.chapters);
+  check int "imports" 0 (List.length doc.Ast.imports)
+
 let () =
   run "Parser" [
     "minimal", [test_case "minimal document" `Quick test_minimal];
+    "no_module", [test_case "no module header" `Quick test_no_module];
     "domain", [test_case "domain declaration" `Quick test_domain_decl];
     "procedure", [test_case "procedure declaration" `Quick test_procedure_decl];
     "void", [test_case "void procedure" `Quick test_void_procedure];

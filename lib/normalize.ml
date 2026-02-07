@@ -42,6 +42,7 @@ type void_unit = {
 (** Extract type names from a type expression *)
 let rec types_in_type_expr = function
   | TName name -> StringSet.singleton name
+  | TQName _ -> StringSet.empty  (* Qualified refs are imports, not local deps *)
   | TList t -> types_in_type_expr t
   | TProduct ts | TSum ts ->
       List.fold_left (fun acc t -> StringSet.union acc (types_in_type_expr t))

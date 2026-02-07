@@ -68,7 +68,10 @@ document:
     imports=list(import_decl)
     chapters=separated_nonempty_list(WHERE, chapter)
     EOF
-    { { module_name = name; imports; chapters } }
+    { { module_name = Some name; imports; chapters } }
+  | chapters=separated_nonempty_list(WHERE, chapter)
+    EOF
+    { { module_name = None; imports = []; chapters } }
 
 import_decl:
   | IMPORT name=UPPER_IDENT DOT
@@ -131,6 +134,7 @@ type_product:
 
 type_term:
   | name=UPPER_IDENT { TName name }
+  | m=UPPER_IDENT DCOLON name=UPPER_IDENT { TQName (m, name) }
   | LBRACKET t=type_expr RBRACKET { TList t }
   | LPAREN t=type_expr RPAREN { t }
 

@@ -18,11 +18,13 @@ let proc_names_of_env env =
 let pp_type_expr fmt te =
   let rec go fmt = function
     | TName name -> fprintf fmt "`%s`" name
+    | TQName (m, name) -> fprintf fmt "`%s`::`%s`" m name
     | TList t -> fprintf fmt "[%a]" go t
     | TProduct ts -> pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt " × ") go_atom fmt ts
     | TSum ts -> pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt " + ") go_product fmt ts
   and go_atom fmt = function
     | TName name -> fprintf fmt "`%s`" name
+    | TQName (m, name) -> fprintf fmt "`%s`::`%s`" m name
     | TList t -> fprintf fmt "[%a]" go t
     | t -> fprintf fmt "(%a)" go t
   and go_product fmt = function
@@ -257,7 +259,9 @@ let pp_chapter procs ?(skip_first_doc=false) ~total_chapters chapter_num fmt cha
   end
 
 let pp_document procs fmt doc =
-  fprintf fmt "# Module %s@\n@\n" doc.module_name;
+  (match doc.module_name with
+   | Some name -> fprintf fmt "# Module %s@\n@\n" name
+   | None -> ());
 
   let has_module_doc = match doc.chapters with
     | { head = first :: _; _ } :: _ when first.doc <> [] ->

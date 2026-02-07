@@ -29,6 +29,12 @@ type t = {
   (** Term namespace: procedures and variables *)
   terms: entry StringMap.t;
 
+  (** Import index: name → [(module, entry)] for types *)
+  imported_types: (string * entry) list StringMap.t;
+
+  (** Import index: name → [(module, entry)] for terms *)
+  imported_terms: (string * entry) list StringMap.t;
+
   (** Current module name *)
   current_module: string;
 
@@ -42,6 +48,8 @@ type t = {
 let empty module_name = {
   types = StringMap.empty;
   terms = StringMap.empty;
+  imported_types = StringMap.empty;
+  imported_terms = StringMap.empty;
   current_module = module_name;
   void_proc = None;
   local_vars = [];
@@ -107,24 +115,72 @@ let exports env =
   in
   (type_names, term_names)
 
-(** Merge another environment's exports into this one *)
-let merge_imports env other origin_module =
-  let add_with_origin map (name, entry) =
-    (* Imported entries are always visible (decl_chapter = -1) *)
-    let entry' = { entry with module_origin = Some origin_module; decl_chapter = -1 } in
-    StringMap.add name entry' map
+(** Add another environment's exports to the import index, then rebuild flat maps
+    with only unambiguous imports *)
+let add_import env other origin_module =
+  let add_to_index index other_map =
+    StringMap.fold (fun name entry index ->
+      match entry.kind with
+      | KVar _ -> index
+      | _ ->
+        let existing = match StringMap.find_opt name index with
+          | Some lst -> lst | None -> [] in
+        (* Avoid adding duplicates from the same module *)
+        if List.exists (fun (m, _) -> m = origin_module) existing then index
+        else StringMap.add name ((origin_module, entry) :: existing) index
+    ) other_map index
   in
-  let types' = List.fold_left add_with_origin env.types (StringMap.bindings other.types) in
-  let terms' =
-    other.terms
-    |> StringMap.bindings
-    |> List.filter (fun (_, e) -> match e.kind with KVar _ -> false | _ -> true)
-    |> List.fold_left add_with_origin env.terms
+  let imported_types = add_to_index env.imported_types other.types in
+  let imported_terms = add_to_index env.imported_terms other.terms in
+  let flat_of_index index =
+    StringMap.fold (fun name entries acc ->
+      match entries with
+      | [(origin, entry)] ->
+          StringMap.add name { entry with module_origin = Some origin; decl_chapter = -1 } acc
+      | _ -> acc
+    ) index StringMap.empty
   in
-  { env with types = types'; terms = terms' }
+  { env with imported_types; imported_terms;
+    types = flat_of_index imported_types;
+    terms = flat_of_index imported_terms }
+
+(** Lookup a type by module and name in the import index *)
+let lookup_qualified_type mod_name name env =
+  match StringMap.find_opt name env.imported_types with
+  | Some entries ->
+      (match List.find_opt (fun (m, _) -> m = mod_name) entries with
+       | Some (_, entry) -> Some entry
+       | None -> None)
+  | None -> None
+
+(** Lookup a term by module and name in the import index *)
+let lookup_qualified_term mod_name name env =
+  match StringMap.find_opt name env.imported_terms with
+  | Some entries ->
+      (match List.find_opt (fun (m, _) -> m = mod_name) entries with
+       | Some (_, entry) -> Some entry
+       | None -> None)
+  | None -> None
+
+(** Check if a type name is ambiguous across imports.
+    Returns Some [module_names] if ambiguous, None otherwise *)
+let ambiguous_type_modules name env =
+  match StringMap.find_opt name env.imported_types with
+  | Some entries when List.length entries > 1 ->
+      Some (List.map fst entries)
+  | _ -> None
+
+(** Check if a term name is ambiguous across imports.
+    Returns Some [module_names] if ambiguous, None otherwise *)
+let ambiguous_term_modules name env =
+  match StringMap.find_opt name env.imported_terms with
+  | Some entries when List.length entries > 1 ->
+      Some (List.map fst entries)
+  | _ -> None
 
 (** Filter environment for visibility in a chapter head.
-    Declaration in chapter N is visible in heads of chapters M >= N *)
+    Declaration in chapter N is visible in heads of chapters M >= N.
+    Imports (decl_chapter = -1) are always visible. *)
 let visible_in_head chapter_idx env =
   let filter_map m =
     StringMap.filter (fun _ entry -> entry.decl_chapter <= chapter_idx) m
@@ -132,7 +188,8 @@ let visible_in_head chapter_idx env =
   { env with types = filter_map env.types; terms = filter_map env.terms }
 
 (** Filter environment for visibility in a chapter body.
-    Declaration in chapter N is visible in bodies of chapters M >= N-1 *)
+    Declaration in chapter N is visible in bodies of chapters M >= N-1.
+    Imports (decl_chapter = -1) are always visible. *)
 let visible_in_body chapter_idx env =
   let filter_map m =
     StringMap.filter (fun _ entry -> entry.decl_chapter <= chapter_idx + 1) m

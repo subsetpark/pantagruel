@@ -10,7 +10,7 @@ let parse str =
 
 let render str =
   let doc = parse str in
-  match Collect.collect_all doc with
+  match Collect.collect_all ~base_env:(Env.empty (Option.value ~default:"" doc.module_name)) doc with
   | Error e -> fail (Collect.show_collect_error e)
   | Ok env ->
       match Check.check_document env doc with

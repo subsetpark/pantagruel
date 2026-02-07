@@ -22,6 +22,8 @@ type type_error =
   | ProjectionOutOfBounds of int * int * loc
   | PropositionNotBool of ty * loc
   | ShadowingTypeMismatch of string * ty * ty * loc  (* name, existing_ty, new_ty *)
+  | AmbiguousName of string * string list * loc
+  | UnboundQualified of string * string * loc
 [@@deriving show]
 
 (** Type checking context *)
@@ -51,7 +53,10 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
        | Some { kind = (Env.KDomain | Env.KAlias _); _ } ->
            (* This shouldn't happen - domains/aliases are in type namespace *)
            Error (UnboundVariable (name, ctx.loc))
-       | None -> Error (UnboundVariable (name, ctx.loc)))
+       | None ->
+           match Env.ambiguous_term_modules name ctx.env with
+           | Some modules -> Error (AmbiguousName (name, modules, ctx.loc))
+           | None -> Error (UnboundVariable (name, ctx.loc)))
 
   | EDomain name ->
       (* Domain in expression position has type [Domain] *)
@@ -61,11 +66,23 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
        | Some { kind = (Env.KProc _ | Env.KVar _); _ } ->
            (* This shouldn't happen - procs/vars are in term namespace *)
            Error (UnboundType (name, ctx.loc))
-       | None -> Error (UnboundType (name, ctx.loc)))
+       | None ->
+           match Env.ambiguous_type_modules name ctx.env with
+           | Some modules -> Error (AmbiguousName (name, modules, ctx.loc))
+           | None -> Error (UnboundType (name, ctx.loc)))
 
-  | EQualified (_, _) ->
-      (* TODO: implement qualified name lookup *)
-      Error (UnboundVariable ("qualified names not yet implemented", ctx.loc))
+  | EQualified (mod_name, name) ->
+      (* Try term namespace first *)
+      (match Env.lookup_qualified_term mod_name name ctx.env with
+       | Some { kind = Env.KProc (TyFunc ([], Some ret)); _ } -> Ok ret
+       | Some { kind = Env.KProc ty; _ } -> Ok ty
+       | Some { kind = Env.KVar ty; _ } -> Ok ty
+       | _ ->
+         (* Try type namespace (domain as set) *)
+         match Env.lookup_qualified_type mod_name name ctx.env with
+         | Some { kind = Env.KDomain; _ } -> Ok (TyList (TyDomain name))
+         | Some { kind = Env.KAlias ty; _ } -> Ok (TyList ty)
+         | _ -> Error (UnboundQualified (mod_name, name, ctx.loc)))
 
   | EPrimed name ->
       (* Validate: must be procedure, must be in void context *)

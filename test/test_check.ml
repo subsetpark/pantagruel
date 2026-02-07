@@ -10,7 +10,7 @@ let parse str =
 
 let check_ok str =
   let doc = parse str in
-  match Collect.collect_all doc with
+  match Collect.collect_all ~base_env:(Env.empty (Option.value ~default:"" doc.module_name)) doc with
   | Error e -> fail (Collect.show_collect_error e)
   | Ok env ->
       match Check.check_document env doc with
@@ -19,12 +19,65 @@ let check_ok str =
 
 let check_fails str =
   let doc = parse str in
-  match Collect.collect_all doc with
+  match Collect.collect_all ~base_env:(Env.empty (Option.value ~default:"" doc.module_name)) doc with
   | Error _ -> ()  (* Collection error is also a failure *)
   | Ok env ->
       match Check.check_document env doc with
       | Ok () -> fail "Expected type error"
       | Error _ -> ()
+
+(** Check that a document type-checks given a pre-built base_env *)
+let check_ok_with_env base_env str =
+  let doc = parse str in
+  match Collect.collect_all ~base_env doc with
+  | Error e -> fail (Collect.show_collect_error e)
+  | Ok env ->
+      match Check.check_document env doc with
+      | Ok () -> ()
+      | Error e -> fail (Check.show_type_error e)
+
+(** Check that a document fails to type-check given a pre-built base_env *)
+let check_fails_with_env base_env str =
+  let doc = parse str in
+  match Collect.collect_all ~base_env doc with
+  | Error _ -> ()
+  | Ok env ->
+      match Check.check_document env doc with
+      | Ok () -> fail "Expected error"
+      | Error _ -> ()
+
+(** Check that a document fails with a specific error type *)
+let check_error_with_env base_env str pred =
+  let doc = parse str in
+  match Collect.collect_all ~base_env doc with
+  | Error _ -> ()  (* Collection error also OK *)
+  | Ok env ->
+      match Check.check_document env doc with
+      | Ok () -> fail "Expected error"
+      | Error e ->
+          if not (pred e) then
+            fail (Printf.sprintf "Wrong error type: %s" (Check.show_type_error e))
+
+(** Build a simulated import environment.
+    Constructs an env as if modules had been imported via add_import. *)
+let make_import_env imports =
+  let base = Env.empty "" in
+  List.fold_left (fun env (mod_name, types, terms) ->
+    let mod_env =
+      let e = Env.empty mod_name in
+      let e = List.fold_left (fun e (name, kind) ->
+        let entry = { Env.kind; loc = Ast.dummy_loc;
+                      module_origin = None; decl_chapter = 0 } in
+        { e with Env.types = Env.StringMap.add name entry e.Env.types }
+      ) e types in
+      List.fold_left (fun e (name, kind) ->
+        let entry = { Env.kind; loc = Ast.dummy_loc;
+                      module_origin = None; decl_chapter = 0 } in
+        { e with Env.terms = Env.StringMap.add name entry e.Env.terms }
+      ) e terms
+    in
+    Env.add_import env mod_env mod_name
+  ) base imports
 
 (* Valid documents *)
 let test_minimal () =
@@ -282,6 +335,261 @@ items => [Nat].
 all i in items | i > 0.
 |}
 
+(* --- Env unit tests for add_import --- *)
+
+let test_env_single_import () =
+  (* One import providing "Widget" domain → appears in flat maps *)
+  let env = make_import_env [
+    ("LIB", [("Widget", Env.KDomain)], [("make-widget", Env.KProc (Types.TyFunc ([], Some (Types.TyDomain "Widget"))))])
+  ] in
+  check bool "type in flat map" true
+    (Option.is_some (Env.lookup_type "Widget" env));
+  check bool "term in flat map" true
+    (Option.is_some (Env.lookup_term "make-widget" env));
+  check bool "not ambiguous type" true
+    (Option.is_none (Env.ambiguous_type_modules "Widget" env));
+  check bool "not ambiguous term" true
+    (Option.is_none (Env.ambiguous_term_modules "make-widget" env))
+
+let test_env_ambiguous_import () =
+  (* Two imports both providing "Item" → NOT in flat maps, IS ambiguous *)
+  let env = make_import_env [
+    ("MOD_A", [("Item", Env.KDomain)], [("process", Env.KProc (Types.TyFunc ([], Some Types.TyBool)))]);
+    ("MOD_B", [("Item", Env.KDomain)], [("process", Env.KProc (Types.TyFunc ([], Some Types.TyNat)))]);
+  ] in
+  check bool "ambiguous type not in flat map" true
+    (Option.is_none (Env.lookup_type "Item" env));
+  check bool "ambiguous term not in flat map" true
+    (Option.is_none (Env.lookup_term "process" env));
+  check bool "ambiguous type detected" true
+    (Option.is_some (Env.ambiguous_type_modules "Item" env));
+  check bool "ambiguous term detected" true
+    (Option.is_some (Env.ambiguous_term_modules "process" env))
+
+let test_env_qualified_lookup () =
+  (* Qualified lookup finds the right module even when ambiguous *)
+  let env = make_import_env [
+    ("MOD_A", [("Item", Env.KDomain)], []);
+    ("MOD_B", [("Item", Env.KDomain)], []);
+  ] in
+  check bool "qualified type MOD_A" true
+    (Option.is_some (Env.lookup_qualified_type "MOD_A" "Item" env));
+  check bool "qualified type MOD_B" true
+    (Option.is_some (Env.lookup_qualified_type "MOD_B" "Item" env));
+  check bool "qualified type wrong module" true
+    (Option.is_none (Env.lookup_qualified_type "MOD_C" "Item" env));
+  check bool "qualified type wrong name" true
+    (Option.is_none (Env.lookup_qualified_type "MOD_A" "Other" env))
+
+let test_env_disjoint_imports () =
+  (* Two imports with no overlap → both unambiguous *)
+  let env = make_import_env [
+    ("MOD_A", [("Foo", Env.KDomain)], []);
+    ("MOD_B", [("Bar", Env.KDomain)], []);
+  ] in
+  check bool "Foo unambiguous" true
+    (Option.is_some (Env.lookup_type "Foo" env));
+  check bool "Bar unambiguous" true
+    (Option.is_some (Env.lookup_type "Bar" env));
+  check bool "Foo not ambiguous" true
+    (Option.is_none (Env.ambiguous_type_modules "Foo" env));
+  check bool "Bar not ambiguous" true
+    (Option.is_none (Env.ambiguous_type_modules "Bar" env))
+
+(* --- Integration tests: imports with collect + check --- *)
+
+let test_unambiguous_import_type () =
+  (* Imported domain usable as type in declarations *)
+  let env = make_import_env [
+    ("LIB", [("Widget", Env.KDomain)], [])
+  ] in
+  check_ok_with_env env {|
+f w: Widget => Bool.
+---
+all w: Widget | f w.
+|}
+
+let test_unambiguous_import_term () =
+  (* Imported procedure usable in expressions *)
+  let env = make_import_env [
+    ("LIB",
+     [("Widget", Env.KDomain)],
+     [("make-widget", Env.KProc (Types.TyFunc ([], Some (Types.TyDomain "Widget"))))])
+  ] in
+  check_ok_with_env env {|
+Widget.
+---
+make-widget in Widget.
+|}
+
+let test_ambiguous_import_type_fails () =
+  (* Ambiguous type used unqualified → error *)
+  let env = make_import_env [
+    ("MOD_A", [("Item", Env.KDomain)], []);
+    ("MOD_B", [("Item", Env.KDomain)], []);
+  ] in
+  check_fails_with_env env {|
+f i: Item => Bool.
+---
+|}
+
+let test_ambiguous_import_term_fails () =
+  (* Ambiguous term used unqualified → AmbiguousName error *)
+  let env = make_import_env [
+    ("MOD_A", [("Foo", Env.KDomain)], [("process", Env.KProc (Types.TyFunc ([], Some Types.TyBool)))]);
+    ("MOD_B", [("Foo", Env.KDomain)], [("process", Env.KProc (Types.TyFunc ([], Some Types.TyBool)))]);
+  ] in
+  check_error_with_env env {|
+Foo.
+---
+process.
+|}
+    (function Check.AmbiguousName ("process", _, _) -> true | _ -> false)
+
+let test_qualified_type_resolves_ambiguity () =
+  (* TQName resolves ambiguous type *)
+  let env = make_import_env [
+    ("MOD_A", [("Item", Env.KDomain)], []);
+    ("MOD_B", [("Item", Env.KDomain)], []);
+  ] in
+  check_ok_with_env env {|
+f i: MOD_A::Item => Bool.
+---
+|}
+
+let test_qualified_term_resolves_ambiguity () =
+  (* EQualified resolves ambiguous term *)
+  let env = make_import_env [
+    ("MOD_A", [], [("count", Env.KProc (Types.TyFunc ([], Some Types.TyNat)))]);
+    ("MOD_B", [], [("count", Env.KProc (Types.TyFunc ([], Some Types.TyNat)))]);
+  ] in
+  check_ok_with_env env {|
+Foo.
+---
+MOD_A::count >= 0.
+|}
+
+let test_qualified_domain_in_expr () =
+  (* EQualified for a domain in expression position → [Domain] *)
+  let env = make_import_env [
+    ("MOD_A", [("Item", Env.KDomain)], []);
+    ("MOD_B", [("Item", Env.KDomain)], []);
+  ] in
+  check_ok_with_env env {|
+Foo.
+---
+#MOD_A::Item >= 0.
+|}
+
+let test_unbound_qualified_type () =
+  (* Wrong module name in TQName → error *)
+  let env = make_import_env [
+    ("LIB", [("Widget", Env.KDomain)], [])
+  ] in
+  check_fails_with_env env {|
+f w: WRONG::Widget => Bool.
+---
+|}
+
+let test_unbound_qualified_term () =
+  (* Wrong module name in EQualified → UnboundQualified error *)
+  let env = make_import_env [
+    ("LIB", [], [("count", Env.KProc (Types.TyFunc ([], Some Types.TyNat)))])
+  ] in
+  check_error_with_env env {|
+Foo.
+---
+WRONG::count >= 0.
+|}
+    (function Check.UnboundQualified ("WRONG", "count", _) -> true | _ -> false)
+
+let test_local_domain_shadows_import () =
+  (* Local domain declaration shadows an imported one *)
+  let env = make_import_env [
+    ("LIB", [("Item", Env.KDomain)], [])
+  ] in
+  check_ok_with_env env {|
+Item.
+---
+all i: Item | i in Item.
+|}
+
+let test_local_proc_shadows_import () =
+  (* Local proc shadows an imported one *)
+  let env = make_import_env [
+    ("LIB",
+     [("Widget", Env.KDomain)],
+     [("count", Env.KProc (Types.TyFunc ([], Some Types.TyNat)))])
+  ] in
+  check_ok_with_env env {|
+Widget.
+count => Bool.
+---
+count.
+|}
+
+let test_local_alias_shadows_import () =
+  (* Local alias shadows an imported domain *)
+  let env = make_import_env [
+    ("LIB", [("Coord", Env.KDomain)], [])
+  ] in
+  check_ok_with_env env {|
+Coord = Nat * Nat.
+origin => Coord.
+---
+origin = (0, 0).
+|}
+
+let test_local_duplicate_type_still_errors () =
+  (* Two local declarations with same name still error *)
+  check_fails {|
+Foo.
+Foo.
+---
+|}
+
+let test_local_duplicate_proc_still_errors () =
+  (* Two local procs with same name still error *)
+  check_fails {|
+Foo.
+do-thing f: Foo => Bool.
+do-thing f: Foo => Nat.
+---
+|}
+
+let test_qualified_type_in_alias () =
+  (* TQName used in a type alias definition *)
+  let env = make_import_env [
+    ("GEO", [("Coord", Env.KAlias (Types.TyProduct [Types.TyReal; Types.TyReal]))], [])
+  ] in
+  check_ok_with_env env {|
+Point = GEO::Coord.
+p => Point.
+---
+p.1 >= 0.0.
+|}
+
+let test_qualified_type_in_proc_param () =
+  (* TQName in procedure parameter type *)
+  let env = make_import_env [
+    ("LIB", [("Widget", Env.KDomain)], [])
+  ] in
+  check_ok_with_env env {|
+process w: LIB::Widget => Bool.
+---
+|}
+
+let test_qualified_type_in_return () =
+  (* TQName in procedure return type *)
+  let env = make_import_env [
+    ("LIB", [("Widget", Env.KDomain)], [])
+  ] in
+  check_ok_with_env env {|
+make-widget => LIB::Widget.
+---
+make-widget in LIB::Widget.
+|}
+
 let () =
   run "Check" [
     "valid", [
@@ -322,5 +630,30 @@ let () =
       test_case "quantifier var escapes" `Quick test_quantifier_var_not_visible_outside;
       test_case "shadowing different type" `Quick test_shadowing_different_type;
       test_case "shadowing in membership" `Quick test_shadowing_in_membership;
+      test_case "local duplicate type" `Quick test_local_duplicate_type_still_errors;
+      test_case "local duplicate proc" `Quick test_local_duplicate_proc_still_errors;
+    ];
+    "env import", [
+      test_case "single import" `Quick test_env_single_import;
+      test_case "ambiguous import" `Quick test_env_ambiguous_import;
+      test_case "qualified lookup" `Quick test_env_qualified_lookup;
+      test_case "disjoint imports" `Quick test_env_disjoint_imports;
+    ];
+    "import resolution", [
+      test_case "unambiguous type" `Quick test_unambiguous_import_type;
+      test_case "unambiguous term" `Quick test_unambiguous_import_term;
+      test_case "ambiguous type fails" `Quick test_ambiguous_import_type_fails;
+      test_case "ambiguous term fails" `Quick test_ambiguous_import_term_fails;
+      test_case "qualified type resolves" `Quick test_qualified_type_resolves_ambiguity;
+      test_case "qualified term resolves" `Quick test_qualified_term_resolves_ambiguity;
+      test_case "qualified domain in expr" `Quick test_qualified_domain_in_expr;
+      test_case "unbound qualified type" `Quick test_unbound_qualified_type;
+      test_case "unbound qualified term" `Quick test_unbound_qualified_term;
+      test_case "local domain shadows" `Quick test_local_domain_shadows_import;
+      test_case "local proc shadows" `Quick test_local_proc_shadows_import;
+      test_case "local alias shadows" `Quick test_local_alias_shadows_import;
+      test_case "qualified in alias" `Quick test_qualified_type_in_alias;
+      test_case "qualified in param" `Quick test_qualified_type_in_proc_param;
+      test_case "qualified in return" `Quick test_qualified_type_in_return;
     ];
   ]

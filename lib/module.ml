@@ -146,25 +146,22 @@ let rec load_module registry name =
                 List.fold_left (fun env_result imp ->
                   let* env = env_result in
                   let* imp_env = load_module registry imp.Ast.value in
-                  Ok (Env.merge_imports env imp_env imp.Ast.value))
+                  Ok (Env.add_import env imp_env imp.Ast.value))
                   (Ok (Env.empty name))
                   ast.Ast.imports
               in
 
-              (* Collect declarations *)
-              let* env =
-                match Collect.collect_all ast with
+              (* Collect declarations on top of import env *)
+              let* full_env =
+                match Collect.collect_all ~base_env:import_env ast with
                 | Ok env -> Ok env
                 | Error e ->
                     Error (ParseError (entry.path, Error.format_collect_error e))
               in
 
-              (* Merge with imports *)
-              let final_env = Env.merge_imports import_env env name in
-
               (* Cache result *)
-              entry.env <- Some final_env;
-              Ok final_env
+              entry.env <- Some full_env;
+              Ok full_env
             in
 
             (* Always pop loading stack, even on error *)
@@ -174,26 +171,24 @@ let rec load_module registry name =
 
 (** Check a document with its imports, returning the resolved environment *)
 let check_with_imports registry (doc : Ast.document) =
+  let mod_name = Option.value ~default:"" doc.module_name in
   (* Load all imports *)
   let* import_env =
     List.fold_left (fun env_result imp ->
       let* env = env_result in
       let* imp_env = load_module registry imp.Ast.value in
-      Ok (Env.merge_imports env imp_env imp.Ast.value))
-      (Ok (Env.empty doc.module_name))
+      Ok (Env.add_import env imp_env imp.Ast.value))
+      (Ok (Env.empty mod_name))
       doc.imports
   in
 
-  (* Collect declarations from this document *)
-  let* local_env =
-    match Collect.collect_all doc with
+  (* Collect declarations on top of import env *)
+  let* full_env =
+    match Collect.collect_all ~base_env:import_env doc with
     | Ok env -> Ok env
     | Error e ->
         Error (ParseError ("<main>", Error.format_collect_error e))
   in
-
-  (* Merge environments *)
-  let full_env = Env.merge_imports import_env local_env doc.module_name in
 
   (* Type check *)
   match Check.check_document full_env doc with

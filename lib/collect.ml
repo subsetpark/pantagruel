@@ -37,6 +37,11 @@ let rec resolve_type env (te : type_expr) loc : (ty, collect_error) result =
            | Some { kind = Env.KDomain; _ } -> Ok (TyDomain name)
            | Some { kind = Env.KAlias ty; _ } -> Ok ty
            | _ -> Error (UndefinedType (name, loc)))
+  | TQName (mod_name, type_name) ->
+      (match Env.lookup_qualified_type mod_name type_name env with
+       | Some { kind = Env.KDomain; _ } -> Ok (TyDomain type_name)
+       | Some { kind = Env.KAlias ty; _ } -> Ok ty
+       | _ -> Error (UndefinedType (mod_name ^ "::" ^ type_name, loc)))
   | TList t ->
       let* inner = resolve_type env t loc in
       Ok (TyList inner)
@@ -60,9 +65,9 @@ let collect_chapter_head ~chapter env (decls : declaration located list) =
           Error (BuiltinRedefined (name, decl.loc))
         else begin
           match Env.lookup_type name env with
-          | Some existing ->
+          | Some existing when existing.module_origin = None ->
               Error (DuplicateDomain (name, decl.loc, existing.loc))
-          | None ->
+          | _ ->
               Ok (Env.add_domain name decl.loc ~chapter env)
         end
     | DeclAlias (name, _) ->
@@ -70,9 +75,9 @@ let collect_chapter_head ~chapter env (decls : declaration located list) =
           Error (BuiltinRedefined (name, decl.loc))
         else begin
           match Env.lookup_type name env with
-          | Some existing ->
+          | Some existing when existing.module_origin = None ->
               Error (DuplicateDomain (name, decl.loc, existing.loc))
-          | None ->
+          | _ ->
               (* Add as domain placeholder - will be replaced in pass 2 *)
               Ok (Env.add_domain name decl.loc ~chapter env)
         end
@@ -123,9 +128,9 @@ let collect_chapter_head ~chapter env (decls : declaration located list) =
         in
         let proc_ty = TyFunc (param_types, ret_ty) in
         (match Env.lookup_term name env with
-         | Some existing ->
+         | Some existing when existing.module_origin = None ->
              Error (DuplicateProc (name, decl.loc, existing.loc))
-         | None ->
+         | _ ->
              Ok (Env.add_proc name proc_ty decl.loc ~chapter env))
     | _ -> Ok env  (* Domains and aliases already done *)
   in
@@ -141,8 +146,10 @@ let collect_chapter_head ~chapter env (decls : declaration located list) =
   | (p1, _) :: (p2, loc) :: _ -> Error (MultipleVoidProcs (p1, p2, loc))
 
 (** Collect all declarations from document (Pass 1) *)
-let collect_all (doc : document) : (Env.t, collect_error) result =
-  let env = Env.empty doc.module_name in
+let collect_all ~base_env (doc : document) : (Env.t, collect_error) result =
+  let mod_name = Option.value ~default:"" doc.module_name in
+  let env = { base_env with Env.current_module = mod_name;
+              void_proc = None; local_vars = [] } in
 
   (* Process all chapters, collecting declarations from heads *)
   let rec process_chapters env chapter_idx = function

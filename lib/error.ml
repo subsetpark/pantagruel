@@ -53,6 +53,11 @@ let format_type_error err =
   | ShadowingTypeMismatch (name, old_ty, new_ty, loc) ->
       fmt loc (Printf.sprintf "Variable '%s' shadows binding with different type: expected %s, got %s"
         name (Types.format_ty old_ty) (Types.format_ty new_ty))
+  | AmbiguousName (name, modules, loc) ->
+      fmt loc (Printf.sprintf "Ambiguous name '%s': defined in %s (use Module::%s)"
+        name (String.concat ", " modules) name)
+  | UnboundQualified (mod_name, name, loc) ->
+      fmt loc (Printf.sprintf "Undefined '%s::%s'" mod_name name)
 
 (** Format a collection error with location prefix *)
 let format_collect_error err =

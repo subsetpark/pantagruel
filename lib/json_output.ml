@@ -26,6 +26,11 @@ let rec ty_to_json = function
 (** Convert syntactic type expression to JSON *)
 let rec type_expr_to_json = function
   | TName name -> `String name
+  | TQName (m, name) ->
+      `Assoc [("qualified", `Assoc [
+        ("module", `String m);
+        ("name", `String name);
+      ])]
   | TList t -> `Assoc [("list", type_expr_to_json t)]
   | TProduct ts -> `Assoc [("product", `List (List.map type_expr_to_json ts))]
   | TSum ts -> `Assoc [("sum", `List (List.map type_expr_to_json ts))]
@@ -219,7 +224,7 @@ let procedures_to_json env =
 (** Convert entire document to JSON *)
 let document_to_json env doc =
   `Assoc [
-    ("module", `String doc.module_name);
+    ("module", match doc.module_name with Some n -> `String n | None -> `Null);
     ("imports", `List (List.map (fun i -> `String i.value) doc.imports));
     ("types", types_to_json env);
     ("procedures", procedures_to_json env);

@@ -33,6 +33,7 @@ type qualified_name = upper_ident * string  (* MODULE.name *)
 (** Type expressions (syntactic) *)
 type type_expr =
   | TName of upper_ident             (** User, Bool, Nat *)
+  | TQName of upper_ident * upper_ident  (** Module::Type *)
   | TList of type_expr               (** [T] *)
   | TProduct of type_expr list       (** A * B * C *)
   | TSum of type_expr list           (** A + B *)
@@ -120,7 +121,7 @@ type chapter = {
 
 (** A complete document *)
 type document = {
-  module_name: upper_ident;
+  module_name: upper_ident option;  (** None = standalone (no module system) *)
   imports: upper_ident located list;
   chapters: chapter list;
 }
