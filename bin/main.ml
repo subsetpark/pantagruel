@@ -26,7 +26,7 @@ let specs = [
   ("--json", Arg.Set print_json,
    "    Output JSON and exit");
   ("--markdown", Arg.Set print_markdown,
-   " Output Pandoc Markdown with LaTeX math and exit");
+   " Output rich Markdown with Unicode symbols and exit");
   ("--format", Arg.Set do_format,
    "   Format document with standard style and exit");
   ("--normalize", Arg.Set do_normalize,

@@ -59,21 +59,41 @@ let parse_module_header path =
   | Sys_error msg -> Error msg
 
 (** Parse a full document from a channel *)
+
+module I = Parser.MenhirInterpreter
+
 let parse_channel filename channel =
   try
     let lexer = Lexer.create_from_channel filename channel in
     Lexer.set_current lexer;  (* Set current lexer for doc comment access *)
     let supplier = Lexer.menhir_token lexer in
-    try
-      let doc = MenhirLib.Convert.Simplified.traditional2revised
-        Parser.document supplier in
-      Ok doc
-    with
-    | Parser.Error ->
+    let initial_pos = Lexer.lexing_position lexer in
+    let checkpoint = Parser.Incremental.document initial_pos in
+    I.loop_handle_undo
+      (fun doc -> Ok doc)
+      (fun inputneeded_cp _error_cp ->
         let loc = Lexer.current_loc lexer in
+        let unexpected = match lexer.last_token with
+          | Some tok -> Lexer.string_of_token tok
+          | None -> "start of input"
+        in
+        let expected =
+          let pos = Lexer.lexing_position lexer in
+          List.filter_map (fun tok ->
+            if I.acceptable inputneeded_cp tok pos
+            then Some (Lexer.describe_token tok)
+            else None
+          ) Lexer.all_tokens
+          |> List.sort_uniq String.compare
+        in
+        let expected_str = match expected with
+          | [] -> ""
+          | _ -> ", expected " ^ String.concat ", " expected
+        in
         Error (ParseError (filename,
-          Printf.sprintf "%s:%d:%d: error: Parse error"
-            loc.Ast.file loc.Ast.line loc.Ast.col))
+          Printf.sprintf "%s:%d:%d: error: Parse error: unexpected %s%s"
+            loc.Ast.file loc.Ast.line loc.Ast.col unexpected expected_str)))
+      supplier checkpoint
   with
   | Lexer.Lexer_error (loc, msg) ->
       Error (ParseError (filename,

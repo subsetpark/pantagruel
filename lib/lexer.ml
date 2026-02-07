@@ -8,19 +8,20 @@ type t = {
   mutable filename: string;
   mutable at_bol: bool;  (** At beginning of line (for doc comments) *)
   mutable pending_docs: string list;  (** Accumulated doc comment lines *)
+  mutable last_token: Parser.token option;  (** Last token returned *)
 }
 
 let create_from_channel filename channel =
   let buf = Sedlexing.Utf8.from_channel channel in
   Sedlexing.set_filename buf filename;
   Doc_comments.clear ();  (* Clear doc map for new file *)
-  { buf; filename; at_bol = true; pending_docs = [] }
+  { buf; filename; at_bol = true; pending_docs = []; last_token = None }
 
 let create_from_string filename str =
   let buf = Sedlexing.Utf8.from_string str in
   Sedlexing.set_filename buf filename;
   Doc_comments.clear ();  (* Clear doc map for new file *)
-  { buf; filename; at_bol = true; pending_docs = [] }
+  { buf; filename; at_bol = true; pending_docs = []; last_token = None }
 
 (** Take and clear pending doc comments *)
 let take_docs lexer =
@@ -274,6 +275,7 @@ let token lexer =
     end;
     (* After returning a token, we're no longer at beginning of line *)
     lexer.at_bol <- false;
+    lexer.last_token <- Some tok;
     tok
   with Failure msg ->
     raise (Lexer_error (current_loc lexer, msg))
@@ -283,3 +285,80 @@ let menhir_token lexer () =
   let tok = token lexer in
   let (startp, endp) = Sedlexing.lexing_positions lexer.buf in
   (tok, startp, endp)
+
+(** Display a token with its actual value (for "unexpected X" messages) *)
+let string_of_token = function
+  | Parser.LOWER_IDENT s -> Printf.sprintf "'%s'" s
+  | Parser.UPPER_IDENT s -> Printf.sprintf "'%s'" s
+  | Parser.NAT n -> Printf.sprintf "'%d'" n
+  | Parser.REAL r -> Printf.sprintf "'%g'" r
+  | Parser.STRING s -> Printf.sprintf "\"%s\"" s
+  | Parser.PROJ n -> Printf.sprintf "'.%d'" n
+  | Parser.EOF -> "end of input"
+  | Parser.MODULE -> "'module'"
+  | Parser.IMPORT -> "'import'"
+  | Parser.WHERE -> "'where'"
+  | Parser.TRUE -> "'true'"
+  | Parser.FALSE -> "'false'"
+  | Parser.AND -> "'and'"
+  | Parser.OR -> "'or'"
+  | Parser.NOT -> "'not'"
+  | Parser.FORALL -> "'all'"
+  | Parser.EXISTS -> "'some'"
+  | Parser.IN -> "'in'"
+  | Parser.SUBSET -> "'subset'"
+  | Parser.DARROW -> "'=>'"
+  | Parser.ARROW -> "'->'"
+  | Parser.IFF -> "'<->'"
+  | Parser.EQ -> "'='"
+  | Parser.NEQ -> "'!='"
+  | Parser.LT -> "'<'"
+  | Parser.GT -> "'>'"
+  | Parser.LE -> "'<='"
+  | Parser.GE -> "'>='"
+  | Parser.PLUS -> "'+'"
+  | Parser.MINUS -> "'-'"
+  | Parser.TIMES -> "'*'"
+  | Parser.DIVIDE -> "'/'"
+  | Parser.CARD -> "'#'"
+  | Parser.PRIME -> "'''"
+  | Parser.MAPSTO -> "'|->'"
+  | Parser.DOT -> "'.'"
+  | Parser.COMMA -> "','"
+  | Parser.COLON -> "':'"
+  | Parser.DCOLON -> "'::'"
+  | Parser.PIPE -> "'|'"
+  | Parser.SEPARATOR -> "'---'"
+  | Parser.LPAREN -> "'('"
+  | Parser.RPAREN -> "')'"
+  | Parser.LBRACKET -> "'['"
+  | Parser.RBRACKET -> "']'"
+
+(** Describe a token category (for "expected X" messages) *)
+let describe_token = function
+  | Parser.LOWER_IDENT _ -> "identifier"
+  | Parser.UPPER_IDENT _ -> "type name"
+  | Parser.NAT _ -> "number"
+  | Parser.REAL _ -> "number"
+  | Parser.STRING _ -> "string literal"
+  | Parser.PROJ _ -> "projection"
+  | tok -> string_of_token tok
+
+(** All token constructors (with dummy values for parameterized tokens) *)
+let all_tokens = [
+  Parser.MODULE; Parser.IMPORT; Parser.WHERE;
+  Parser.TRUE; Parser.FALSE;
+  Parser.UPPER_IDENT ""; Parser.LOWER_IDENT "";
+  Parser.NAT 0; Parser.REAL 0.0; Parser.STRING "";
+  Parser.DARROW; Parser.ARROW; Parser.IFF;
+  Parser.EQ; Parser.NEQ; Parser.LT; Parser.GT; Parser.LE; Parser.GE;
+  Parser.PLUS; Parser.MINUS; Parser.TIMES; Parser.DIVIDE; Parser.CARD;
+  Parser.PRIME; Parser.MAPSTO;
+  Parser.PROJ 0;
+  Parser.AND; Parser.OR; Parser.NOT;
+  Parser.FORALL; Parser.EXISTS; Parser.IN; Parser.SUBSET;
+  Parser.DOT; Parser.COMMA; Parser.COLON; Parser.DCOLON; Parser.PIPE;
+  Parser.SEPARATOR;
+  Parser.LPAREN; Parser.RPAREN; Parser.LBRACKET; Parser.RBRACKET;
+  Parser.EOF;
+]

@@ -5,4 +5,4 @@
 
 (menhir
  (modules parser)
- (flags --explain))
+ (flags --explain --table))
