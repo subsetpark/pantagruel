@@ -63,7 +63,7 @@ String escape sequences: `\\`, `\"`, `\n`, `\t`, `\r`
 | `<->` | `↔` | Biconditional (iff) |
 | `and` | `∧` | Conjunction |
 | `or` | `∨` | Disjunction |
-| `not` | `¬` or `~` | Negation |
+| `not` | `¬`, `~` | Negation |
 | `all` | `∀` | Universal quantifier |
 | `some` | `∃` | Existential quantifier |
 | `in` | `∈` | Membership |
@@ -393,9 +393,10 @@ check-out u: User, d: Document.
 deposit a: Account, amount: Nat.
 ```
 
-**Syntax**: `name [params] [=> ReturnType].`
+**Syntax**: `name [params] [guards] [=> ReturnType].`
 
 - Parameters: `name: Type` separated by commas
+- Guards: boolean expressions, separated by commas after the parameters
 - Return type: Optional, preceded by `=>`
 - Void procedures have no return type and enable primed expressions
 
@@ -441,7 +442,7 @@ p.2                 // Second projection
 ```
 owner d             // Single argument
 distance p q        // Multiple arguments (juxtaposition)
-f x y z             // Curried application
+f x y z             // Multiple arguments
 ```
 
 ### Arithmetic
@@ -532,7 +533,7 @@ all k: Key, v: Value | mapping[k |-> v] k = v.
 
 ### Qualified Names
 
-Reference entities from imported modules:
+Reference entities from imported modules (not yet implemented in the checker):
 
 ```
 Module::name
@@ -582,13 +583,9 @@ import TYPES.
 // Can now use UTIL::name and TYPES::Type
 ```
 
-### Module Path
-
-Use `--module-path DIR` to specify where to find `.pant` files for imports.
-
 ### Visibility
 
-All declarations in an imported module are available via qualified names.
+Imported declarations are merged into the importing module's namespace and can be referenced directly by name.
 
 ## Forward Declaration Rules
 
@@ -758,14 +755,6 @@ balance' from = balance from - amount.
 ```
 
 The independent proposition `all a: Account, amt: Nat | true` moved to chapter 0 because it only depends on level 0 types. Void procedures were spread across separate chapters.
-
-### CLI Usage
-
-```bash
-pantagruel --normalize file.pant
-```
-
-Outputs the N-normal form of the document.
 
 ## Complete Grammar
 
