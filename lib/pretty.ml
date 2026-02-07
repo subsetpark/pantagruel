@@ -72,7 +72,7 @@ and pp_param p =
 
 and pp_implication = function
   | EBinop (OpImpl, e1, e2) ->
-      pp_disjunction e1 ^ " -> " ^ pp_expr e2
+      pp_disjunction e1 ^ " -> " ^ pp_implication e2
   | e -> pp_disjunction e
 
 and pp_disjunction = function

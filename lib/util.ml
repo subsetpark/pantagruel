@@ -1,17 +1,24 @@
 (** Utility functions *)
 
 (** Sequence results: turn a list of results into a result of list *)
-let rec sequence_results = function
-  | [] -> Ok []
-  | Ok x :: rest ->
-      (match sequence_results rest with
-       | Ok xs -> Ok (x :: xs)
-       | Error e -> Error e)
-  | Error e :: _ -> Error e
+let sequence_results xs =
+  let rec go acc = function
+    | [] -> Ok (List.rev acc)
+    | Ok x :: rest -> go (x :: acc) rest
+    | Error e :: _ -> Error e
+  in
+  go [] xs
 
-(** Map with result *)
+(** Map with result, short-circuiting on first error *)
 let map_result f xs =
-  sequence_results (List.map f xs)
+  let rec go acc = function
+    | [] -> Ok (List.rev acc)
+    | x :: rest ->
+        match f x with
+        | Ok y -> go (y :: acc) rest
+        | Error e -> Error e
+  in
+  go [] xs
 
 (** Fold with result *)
 let fold_result f init xs =

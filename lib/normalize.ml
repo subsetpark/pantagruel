@@ -163,7 +163,7 @@ let prop_uses_params params prop =
   not (StringSet.is_empty (StringSet.inter params terms))
 
 (** Built-in type names that don't need declarations *)
-let builtin_types = StringSet.of_list ["Bool"; "Nat"; "Nat0"; "Int"; "Real"; "String"; "Nothing"]
+let builtin_types = StringSet.of_list Types.builtin_type_names
 
 (** Compute topological levels for declarations.
     Level 0 = no dependencies (roots), Level 1 = depends only on level 0, etc. *)
@@ -239,10 +239,6 @@ let normalize (doc : document) : document =
     let max_level = compute_levels all_decls in
     let num_chapters = max_level + 1 in
 
-    (* Build level lookup table *)
-    let decl_levels = Hashtbl.create 32 in
-    List.iter (fun d -> Hashtbl.add decl_levels d.name d.level) all_decls;
-
     (* Step 3: Identify void units *)
     let void_decls = List.filter (fun d -> d.is_void) all_decls in
     let non_void_decls = List.filter (fun d -> not d.is_void) all_decls in
@@ -311,6 +307,10 @@ let normalize (doc : document) : document =
       let level = vu.void_proc.level in
       decl_assignments.(level) <- vu.void_proc :: decl_assignments.(level)
     ) void_units;
+
+    (* Build level lookup table (after void proc reassignment so levels are final) *)
+    let decl_levels = Hashtbl.create 32 in
+    List.iter (fun d -> Hashtbl.replace decl_levels d.name d.level) all_decls;
 
     (* Step 7: Assign propositions to chapters *)
     let body_assignments = Array.make num_chapters [] in

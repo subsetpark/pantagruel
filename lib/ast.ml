@@ -19,7 +19,6 @@ type 'a located = {
 [@@deriving show, eq]
 
 let located ?(doc=[]) loc value = { loc; value; doc }
-let at ?(doc=[]) loc value = { loc; value; doc }
 
 (** Identifier types *)
 type upper_ident = string  (* Domain names: User, Document *)

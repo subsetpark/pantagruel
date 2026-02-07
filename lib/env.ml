@@ -97,10 +97,6 @@ let lookup_term name env =
 let with_vars vars env =
   List.fold_left (fun env (name, ty) -> add_var name ty env) env vars
 
-(** Reset local vars (for entering new scope) *)
-let reset_local_vars env =
-  { env with local_vars = [] }
-
 (** Get all exported names (for module system) *)
 let exports env =
   let type_names = StringMap.bindings env.types |> List.map fst in

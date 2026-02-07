@@ -1,201 +1,214 @@
-(** Markdown + LaTeX output for Pantagruel documents *)
+(** Rich Markdown output for Pantagruel documents *)
 
 open Ast
+open Format
 
-(* --- LaTeX helpers --- *)
+module StringSet = Set.Make(String)
 
-(** Escape LaTeX special characters in text mode *)
-let latex_escape s =
-  let buf = Buffer.create (String.length s) in
-  String.iter (function
-    | '\\' -> Buffer.add_string buf "\\textbackslash{}"
-    | '{' -> Buffer.add_string buf "\\{"
-    | '}' -> Buffer.add_string buf "\\}"
-    | '$' -> Buffer.add_string buf "\\$"
-    | '%' -> Buffer.add_string buf "\\%"
-    | '&' -> Buffer.add_string buf "\\&"
-    | '#' -> Buffer.add_string buf "\\#"
-    | '_' -> Buffer.add_string buf "\\_"
-    | '^' -> Buffer.add_string buf "\\^{}"
-    | '~' -> Buffer.add_string buf "\\~{}"
-    | c -> Buffer.add_char buf c
-  ) s;
-  Buffer.contents buf
+(** Extract procedure names from environment *)
+let proc_names_of_env env =
+  Env.StringMap.fold (fun name entry acc ->
+    match entry.Env.kind with
+    | Env.KProc _ -> StringSet.add name acc
+    | _ -> acc
+  ) env.Env.terms StringSet.empty
 
-(** Render identifier in roman text (for procedure/domain names) *)
-let latex_ident name =
-  "\\text{" ^ latex_escape name ^ "}"
+(* --- Rich markdown expression rendering with unicode operators --- *)
 
-(* --- LaTeX type expression rendering --- *)
+let pp_type_expr fmt te =
+  let rec go fmt = function
+    | TName name -> fprintf fmt "`%s`" name
+    | TList t -> fprintf fmt "[%a]" go t
+    | TProduct ts -> pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt " × ") go_atom fmt ts
+    | TSum ts -> pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt " + ") go_product fmt ts
+  and go_atom fmt = function
+    | TName name -> fprintf fmt "`%s`" name
+    | TList t -> fprintf fmt "[%a]" go t
+    | t -> fprintf fmt "(%a)" go t
+  and go_product fmt = function
+    | TProduct ts -> pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt " × ") go_atom fmt ts
+    | t -> go_atom fmt t
+  in
+  go fmt te
 
-let rec latex_type_expr = function
-  | TName name -> latex_ident name
-  | TList t -> "[" ^ latex_type_expr t ^ "]"
-  | TProduct ts ->
-      String.concat " \\times " (List.map latex_type_expr_atom ts)
-  | TSum ts ->
-      String.concat " + " (List.map latex_type_expr_atom ts)
+let pp_binop fmt = function
+  | OpAnd -> pp_print_string fmt "∧"
+  | OpOr -> pp_print_string fmt "∨"
+  | OpImpl -> pp_print_string fmt "→"
+  | OpIff -> pp_print_string fmt "↔"
+  | OpEq -> pp_print_char fmt '='
+  | OpNeq -> pp_print_string fmt "≠"
+  | OpLt -> pp_print_char fmt '<'
+  | OpGt -> pp_print_char fmt '>'
+  | OpLe -> pp_print_string fmt "≤"
+  | OpGe -> pp_print_string fmt "≥"
+  | OpIn -> pp_print_string fmt "∈"
+  | OpSubset -> pp_print_string fmt "⊆"
+  | OpAdd -> pp_print_char fmt '+'
+  | OpSub -> pp_print_char fmt '-'
+  | OpMul -> pp_print_string fmt "·"
+  | OpDiv -> pp_print_char fmt '/'
 
-and latex_type_expr_atom = function
-  | TName _ | TList _ as t -> latex_type_expr t
-  | t -> "(" ^ latex_type_expr t ^ ")"
+let pp_name procs fmt name =
+  if StringSet.mem name procs then fprintf fmt "**%s**" name
+  else fprintf fmt "*%s*" name
 
-(* --- LaTeX operator rendering --- *)
+let pp_param fmt p =
+  fprintf fmt "*%s*: %a" p.param_name pp_type_expr p.param_type
 
-let latex_binop = function
-  | OpAnd -> " \\land "
-  | OpOr -> " \\lor "
-  | OpImpl -> " \\rightarrow "
-  | OpIff -> " \\leftrightarrow "
-  | OpEq -> " = "
-  | OpNeq -> " \\neq "
-  | OpLt -> " < "
-  | OpGt -> " > "
-  | OpLe -> " \\leq "
-  | OpGe -> " \\geq "
-  | OpIn -> " \\in "
-  | OpSubset -> " \\subseteq "
-  | OpAdd -> " + "
-  | OpSub -> " - "
-  | OpMul -> " \\cdot "
-  | OpDiv -> " / "
+let pp_params_sep fmt () = fprintf fmt ", "
 
-(* --- LaTeX expression rendering with proper precedence --- *)
-
-let rec latex_expr = function
+let rec pp_expr procs fmt = function
   | EForall (params, guards, body) ->
-      "\\forall " ^ latex_quant_params_guards params guards ^ ".\\ " ^ latex_expr body
+      fprintf fmt "∀ %a | %a"
+        (pp_quant_bindings procs) (params, guards)
+        (pp_expr procs) body
   | EExists (params, guards, body) ->
-      "\\exists " ^ latex_quant_params_guards params guards ^ ".\\ " ^ latex_expr body
-  | e -> latex_biconditional e
+      fprintf fmt "∃ %a | %a"
+        (pp_quant_bindings procs) (params, guards)
+        (pp_expr procs) body
+  | e -> pp_biconditional procs fmt e
 
-and latex_biconditional = function
+and pp_quant_bindings procs fmt (params, guards) =
+  let items = List.map (fun p -> `Param p) params
+    @ List.filter_map (function
+      | GParam p -> Some (`Param p)
+      | GIn (name, e) -> Some (`In (name, e))
+      | GExpr e -> Some (`Guard e)
+    ) guards in
+  pp_print_list ~pp_sep:pp_params_sep (fun fmt -> function
+    | `Param p -> pp_param fmt p
+    | `In (name, e) -> fprintf fmt "*%s* ∈ %a" name (pp_term procs) e
+    | `Guard e -> pp_conjunction procs fmt e
+  ) fmt items
+
+and pp_biconditional procs fmt = function
   | EBinop (OpIff, e1, e2) ->
-      latex_implication e1 ^ latex_binop OpIff ^ latex_implication e2
-  | e -> latex_implication e
+      fprintf fmt "%a ↔ %a" (pp_implication procs) e1 (pp_implication procs) e2
+  | e -> pp_implication procs fmt e
 
-and latex_quant_params_guards params guards =
-  let param_strs = List.map latex_param params in
-  let guard_strs = List.filter_map (function
-    | GParam p -> Some (latex_param p)
-    | GIn (name, e) -> Some (name ^ " \\in " ^ latex_term e)
-    | GExpr e -> Some (latex_conjunction e)
-  ) guards in
-  String.concat ",\\, " (param_strs @ guard_strs)
-
-and latex_param p =
-  p.param_name ^ " : " ^ latex_type_expr p.param_type
-
-and latex_implication = function
+and pp_implication procs fmt = function
   | EBinop (OpImpl, e1, e2) ->
-      latex_disjunction e1 ^ latex_binop OpImpl ^ latex_expr e2
-  | e -> latex_disjunction e
+      fprintf fmt "%a → %a" (pp_disjunction procs) e1 (pp_implication procs) e2
+  | e -> pp_disjunction procs fmt e
 
-and latex_disjunction = function
+and pp_disjunction procs fmt = function
   | EBinop (OpOr, e1, e2) ->
-      latex_disjunction e1 ^ latex_binop OpOr ^ latex_conjunction e2
-  | e -> latex_conjunction e
+      fprintf fmt "%a ∨ %a" (pp_disjunction procs) e1 (pp_conjunction procs) e2
+  | e -> pp_conjunction procs fmt e
 
-and latex_conjunction = function
+and pp_conjunction procs fmt = function
   | EBinop (OpAnd, e1, e2) ->
-      latex_conjunction e1 ^ latex_binop OpAnd ^ latex_negation e2
-  | e -> latex_negation e
+      fprintf fmt "%a ∧ %a" (pp_conjunction procs) e1 (pp_negation procs) e2
+  | e -> pp_negation procs fmt e
 
-and latex_negation = function
-  | EUnop (OpNot, e) -> "\\neg " ^ latex_negation e
-  | e -> latex_comparison e
+and pp_negation procs fmt = function
+  | EUnop (OpNot, e) -> fprintf fmt "¬%a" (pp_negation procs) e
+  | e -> pp_comparison procs fmt e
 
-and latex_comparison = function
+and pp_comparison procs fmt = function
   | EBinop ((OpEq | OpNeq | OpLt | OpGt | OpLe | OpGe | OpIn | OpSubset) as op, e1, e2) ->
-      latex_term e1 ^ latex_binop op ^ latex_term e2
-  | e -> latex_term e
+      fprintf fmt "%a %a %a" (pp_term procs) e1 pp_binop op (pp_term procs) e2
+  | e -> pp_term procs fmt e
 
-and latex_term = function
+and pp_term procs fmt = function
   | EBinop ((OpAdd | OpSub) as op, e1, e2) ->
-      latex_term e1 ^ latex_binop op ^ latex_factor e2
-  | e -> latex_factor e
+      fprintf fmt "%a %a %a" (pp_term procs) e1 pp_binop op (pp_factor procs) e2
+  | e -> pp_factor procs fmt e
 
-and latex_factor = function
+and pp_factor procs fmt = function
   | EBinop ((OpMul | OpDiv) as op, e1, e2) ->
-      latex_factor e1 ^ latex_binop op ^ latex_unary e2
-  | e -> latex_unary e
+      fprintf fmt "%a %a %a" (pp_factor procs) e1 pp_binop op (pp_unary procs) e2
+  | e -> pp_unary procs fmt e
 
-and latex_unary = function
-  | EUnop (OpCard, e) -> "|" ^ latex_unary e ^ "|"
-  | EUnop (OpNeg, e) -> "-" ^ latex_unary e
-  | e -> latex_primary e
+and pp_unary procs fmt = function
+  | EUnop (OpCard, e) -> fprintf fmt "#%a" (pp_unary procs) e
+  | EUnop (OpNeg, e) -> fprintf fmt "-%a" (pp_unary procs) e
+  | e -> pp_primary procs fmt e
 
-and latex_primary = function
-  | EApp (EVar name, args) when args <> [] ->
-      (* Function application: render function name in roman *)
-      latex_ident name ^ "\\ " ^ String.concat "\\ " (List.map latex_atom args)
+and pp_primary procs fmt = function
   | EApp (f, args) when args <> [] ->
-      latex_atom f ^ "\\ " ^ String.concat "\\ " (List.map latex_atom args)
-  | e -> latex_atom e
+      fprintf fmt "%a %a" (pp_atom procs) f
+        (pp_print_list ~pp_sep:pp_print_space (pp_atom procs)) args
+  | e -> pp_atom procs fmt e
 
-and latex_atom = function
-  | EVar name -> name  (* variables stay italic *)
-  | EDomain name -> latex_ident name
-  | EQualified (m, name) -> latex_ident (m ^ "::" ^ name)
-  | ELitNat n -> string_of_int n
+and pp_atom procs fmt = function
+  | EVar name -> pp_name procs fmt name
+  | EDomain name -> fprintf fmt "`%s`" name
+  | EQualified (m, name) -> fprintf fmt "`%s`::%a" m (pp_name procs) name
+  | ELitNat n -> pp_print_int fmt n
   | ELitReal r ->
       let s = string_of_float r in
-      if String.ends_with ~suffix:"." s then s ^ "0" else s
-  | ELitString s -> "\\text{\"" ^ latex_escape s ^ "\"}"
-  | ELitBool true -> latex_ident "true"
-  | ELitBool false -> latex_ident "false"
-  | EPrimed name -> latex_ident name ^ "'"
+      let s = if String.ends_with ~suffix:"." s then s ^ "0" else s in
+      pp_print_string fmt s
+  | ELitString s -> fprintf fmt "\"%s\"" (String.escaped s)
+  | ELitBool b -> pp_print_bool fmt b
+  | EPrimed name -> fprintf fmt "%a′" (pp_name procs) name
   | EOverride (name, pairs) ->
-      latex_ident name ^ "[" ^ String.concat ",\\, " (List.map (fun (k, v) ->
-        latex_expr k ^ " \\mapsto " ^ latex_expr v
-      ) pairs) ^ "]"
+      fprintf fmt "%a[%a]" (pp_name procs) name
+        (pp_print_list ~pp_sep:pp_params_sep (fun fmt (k, v) ->
+          fprintf fmt "%a ↦ %a" (pp_expr procs) k (pp_expr procs) v
+        )) pairs
   | ETuple es ->
-      "(" ^ String.concat ",\\, " (List.map latex_expr es) ^ ")"
+      fprintf fmt "(%a)" (pp_print_list ~pp_sep:pp_params_sep (pp_expr procs)) es
   | EProj (e, n) ->
-      latex_atom e ^ "." ^ string_of_int n
-  | EApp (f, []) -> latex_atom f
-  | e -> "(" ^ latex_expr e ^ ")"
+      fprintf fmt "%a.%d" (pp_atom procs) e n
+  | EApp (f, []) -> pp_atom procs fmt f
+  | e -> fprintf fmt "(%a)" (pp_expr procs) e
 
-(* --- LaTeX declaration signature rendering --- *)
+let pp_guard procs fmt = function
+  | GParam p -> pp_param fmt p
+  | GIn (name, e) -> fprintf fmt "*%s* ∈ %a" name (pp_term procs) e
+  | GExpr e -> pp_conjunction procs fmt e
 
-let latex_guard = function
-  | GParam p -> latex_param p
-  | GIn (name, e) -> name ^ " \\in " ^ latex_term e
-  | GExpr e -> latex_conjunction e
-
-let latex_decl_signature = function
-  | DeclDomain name -> latex_ident name
-  | DeclAlias (name, te) -> latex_ident name ^ " = " ^ latex_type_expr te
+let pp_declaration procs fmt = function
+  | DeclDomain name -> fprintf fmt "`%s`." name
+  | DeclAlias (name, te) -> fprintf fmt "**%s** = %a." name pp_type_expr te
   | DeclProc { name; params; guards; return_type } ->
-      let parts = [latex_ident name] in
-      let parts = if params <> [] then
-        parts @ ["\\ " ^ String.concat ",\\, " (List.map latex_param params)]
-      else parts in
-      let parts = if guards <> [] then
-        parts @ [",\\, " ^ String.concat ",\\, " (List.map latex_guard guards)]
-      else parts in
-      let parts = match return_type with
-        | None -> parts
-        | Some te -> parts @ [" \\Rightarrow " ^ latex_type_expr te]
-      in
-      String.concat "" parts
+      fprintf fmt "**%s**" name;
+      if params <> [] then
+        fprintf fmt " %a" (pp_print_list ~pp_sep:pp_params_sep pp_param) params;
+      if guards <> [] then
+        fprintf fmt ", %a" (pp_print_list ~pp_sep:pp_params_sep (pp_guard procs)) guards;
+      (match return_type with
+       | None -> ()
+       | Some te -> fprintf fmt " ⇒ %a" pp_type_expr te);
+      pp_print_char fmt '.'
+
+(* --- String-returning wrappers --- *)
+
+(** Format to string with a wide margin so the formatter never wraps *)
+let to_string pp x =
+  let buf = Buffer.create 256 in
+  let fmt = formatter_of_buffer buf in
+  pp_set_margin fmt 10000;
+  pp fmt x;
+  pp_print_flush fmt ();
+  Buffer.contents buf
+
+let md_expr procs e = to_string (pp_expr procs) e
+let md_declaration procs d = to_string (pp_declaration procs) d
 
 (* --- Markdown document rendering --- *)
 
-let md_chapter ?(skip_first_doc=false) ~total_chapters chapter_num chapter =
-  let buf = Buffer.create 1024 in
-  (* Only show chapter headers for multi-chapter documents *)
-  if total_chapters > 1 then
-    Buffer.add_string buf (Printf.sprintf "## Chapter %d\n\n" chapter_num);
+let pp_doc_comment fmt doc =
+  fprintf fmt "> %s" (String.concat " " doc)
 
-  (* Get line number of first declaration to identify it *)
+let pp_decl_with_doc procs ~should_skip_doc fmt d =
+  if d.doc <> [] && not (should_skip_doc d) then
+    fprintf fmt "%a@\n@\n" pp_doc_comment d.doc;
+  fprintf fmt "%a@\n@\n" (pp_declaration procs) d.value
+
+let pp_chapter procs ?(skip_first_doc=false) ~total_chapters chapter_num fmt chapter =
+  if total_chapters > 1 then
+    fprintf fmt "## Chapter %d@\n@\n" chapter_num;
+
   let first_line = match chapter.head with
     | d :: _ -> Some d.loc.line
     | [] -> None
   in
 
-  (* Separate declarations by kind *)
-  let domains, aliases, procs = List.fold_left (fun (ds, as_, ps) decl ->
+  let domains, aliases, procs_decls = List.fold_left (fun (ds, as_, ps) decl ->
     match decl.value with
     | DeclDomain _ -> (decl :: ds, as_, ps)
     | DeclAlias _ -> (ds, decl :: as_, ps)
@@ -203,108 +216,74 @@ let md_chapter ?(skip_first_doc=false) ~total_chapters chapter_num chapter =
   ) ([], [], []) chapter.head in
   let domains = List.rev domains in
   let aliases = List.rev aliases in
-  let procs = List.rev procs in
+  let procs_decls = List.rev procs_decls in
 
-  (* Should we skip doc for this declaration? Check by line number *)
   let should_skip_doc d =
     skip_first_doc && Some d.loc.line = first_line
   in
 
-  (* Domains - compact comma-separated list *)
   if domains <> [] then begin
-    Buffer.add_string buf "### Domains\n\n";
-    let domain_strs = List.map (fun d ->
-      let name = match d.value with DeclDomain n -> n | _ -> "" in
-      Printf.sprintf "$%s$" (latex_ident name)
-    ) domains in
-    Buffer.add_string buf (String.concat ", " domain_strs);
-    Buffer.add_string buf "\n\n"
+    fprintf fmt "### Domains@\n@\n";
+    let any_docs = List.exists (fun d -> d.doc <> [] && not (should_skip_doc d)) domains in
+    if any_docs then
+      List.iter (pp_decl_with_doc procs ~should_skip_doc fmt) domains
+    else begin
+      pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ")
+        (fun fmt d -> match d.value with
+          | DeclDomain n -> fprintf fmt "`%s`" n
+          | _ -> ())
+        fmt domains;
+      fprintf fmt "@\n@\n"
+    end
   end;
 
-  (* Type aliases *)
   if aliases <> [] then begin
-    Buffer.add_string buf "### Types\n\n";
-    List.iter (fun a ->
-      if a.doc <> [] && not (should_skip_doc a) then
-        Buffer.add_string buf (Printf.sprintf "*%s*\n\n" (String.concat " " a.doc));
-      Buffer.add_string buf (Printf.sprintf "$$%s$$\n\n" (latex_decl_signature a.value))
-    ) aliases
+    fprintf fmt "### Types@\n@\n";
+    List.iter (pp_decl_with_doc procs ~should_skip_doc fmt) aliases
   end;
 
-  (* Procedures *)
-  if procs <> [] then begin
-    Buffer.add_string buf "### Procedures\n\n";
-    List.iter (fun p ->
-      if p.doc <> [] && not (should_skip_doc p) then
-        Buffer.add_string buf (Printf.sprintf "*%s*\n\n" (String.concat " " p.doc));
-      Buffer.add_string buf (Printf.sprintf "$$%s$$\n\n" (latex_decl_signature p.value))
-    ) procs
+  if procs_decls <> [] then begin
+    fprintf fmt "### Procedures@\n@\n";
+    List.iter (pp_decl_with_doc procs ~should_skip_doc fmt) procs_decls
   end;
 
-  (* Propositions *)
   if chapter.body <> [] then begin
-    Buffer.add_string buf "### Propositions\n\n";
+    fprintf fmt "### Propositions@\n@\n";
     List.iter (fun prop ->
       if prop.doc <> [] then
-        Buffer.add_string buf (Printf.sprintf "*%s*\n\n" (String.concat " " prop.doc));
-      Buffer.add_string buf "\\begin{dmath*}\n";
-      Buffer.add_string buf (latex_expr prop.value);
-      Buffer.add_string buf "\n\\end{dmath*}\n\n"
+        fprintf fmt "%a@\n@\n" pp_doc_comment prop.doc;
+      fprintf fmt "%a.@\n@\n" (pp_expr procs) prop.value
     ) chapter.body
-  end;
+  end
 
-  Buffer.contents buf
+let pp_document procs fmt doc =
+  fprintf fmt "# Module %s@\n@\n" doc.module_name;
 
-let md_document doc =
-  let buf = Buffer.create 4096 in
-
-  (* YAML frontmatter for pandoc *)
-  Buffer.add_string buf "---\n";
-  Buffer.add_string buf (Printf.sprintf "title: \"Module %s\"\n" doc.module_name);
-  Buffer.add_string buf "classoption:\n";
-  Buffer.add_string buf "  - fleqn\n";
-  Buffer.add_string buf "  - 11pt\n";
-  Buffer.add_string buf "geometry:\n";
-  Buffer.add_string buf "  - margin=1in\n";
-  Buffer.add_string buf "header-includes:\n";
-  Buffer.add_string buf "  - \\usepackage{breqn}\n";
-  Buffer.add_string buf "  - \\setlength{\\mathindent}{2em}\n";
-  Buffer.add_string buf "  - \\setlength{\\parskip}{0.5em}\n";
-  Buffer.add_string buf "  - \\setlength{\\parindent}{0pt}\n";
-  Buffer.add_string buf "colorlinks: true\n";
-  Buffer.add_string buf "linkcolor: blue\n";
-  Buffer.add_string buf "urlcolor: blue\n";
-  Buffer.add_string buf "---\n\n";
-
-  (* Title *)
-  Buffer.add_string buf (Printf.sprintf "# Module %s\n\n" doc.module_name);
-
-  (* Module-level doc comments from first declaration if any *)
   let has_module_doc = match doc.chapters with
     | { head = first :: _; _ } :: _ when first.doc <> [] ->
-        Buffer.add_string buf (String.concat "\n" first.doc);
-        Buffer.add_string buf "\n\n";
+        fprintf fmt "%s@\n@\n" (String.concat "\n" first.doc);
         true
     | _ -> false
   in
 
-  (* Imports *)
   if doc.imports <> [] then begin
-    Buffer.add_string buf "**Imports:** ";
-    Buffer.add_string buf (String.concat ", " (List.map (fun i -> i.value) doc.imports));
-    Buffer.add_string buf "\n\n"
+    fprintf fmt "**Imports:** %a@\n@\n"
+      (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ")
+        (fun fmt i -> pp_print_string fmt i.value))
+      doc.imports
   end;
 
-  (* Chapters *)
   let total_chapters = List.length doc.chapters in
   List.iteri (fun i ch ->
-    (* Skip first doc for first chapter if we showed it as module doc *)
     let skip_first_doc = (i = 0) && has_module_doc in
-    Buffer.add_string buf (md_chapter ~skip_first_doc ~total_chapters (i + 1) ch)
-  ) doc.chapters;
+    pp_chapter procs ~skip_first_doc ~total_chapters (i + 1) fmt ch
+  ) doc.chapters
 
-  Buffer.contents buf
+let md_document procs doc = to_string (pp_document procs) doc
 
 (** Output Markdown to stdout *)
-let output doc =
-  print_string (md_document doc)
+let output env doc =
+  let procs = proc_names_of_env env in
+  pp_set_margin std_formatter 10000;
+  pp_document procs std_formatter doc;
+  pp_print_flush std_formatter ()

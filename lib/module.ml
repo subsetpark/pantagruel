@@ -5,7 +5,6 @@ module StringMap = Map.Make(String)
 type module_error =
   | ModuleNotFound of string
   | CyclicImport of string list
-  | ImportCollision of string * string * string  (** name, mod1, mod2 *)
   | ParseError of string * string  (** file, message *)
 [@@deriving show]
 
@@ -92,7 +91,7 @@ let parse_file path =
   | Sys_error msg ->
       Error (ParseError (path, msg))
 
-let ( let* ) = Result.bind
+open Util
 
 (** Scan a directory for .pant files and build registry *)
 let scan_module_path dir =
@@ -142,31 +141,35 @@ let rec load_module registry name =
             (* Track loading for cycle detection *)
             registry.loading <- name :: registry.loading;
 
-            (* Process imports first *)
-            let* import_env =
-              List.fold_left (fun env_result imp ->
-                let* env = env_result in
-                let* imp_env = load_module registry imp.Ast.value in
-                Ok (Env.merge_imports env imp_env imp.Ast.value))
-                (Ok (Env.empty name))
-                ast.Ast.imports
+            let result =
+              let* import_env =
+                List.fold_left (fun env_result imp ->
+                  let* env = env_result in
+                  let* imp_env = load_module registry imp.Ast.value in
+                  Ok (Env.merge_imports env imp_env imp.Ast.value))
+                  (Ok (Env.empty name))
+                  ast.Ast.imports
+              in
+
+              (* Collect declarations *)
+              let* env =
+                match Collect.collect_all ast with
+                | Ok env -> Ok env
+                | Error e ->
+                    Error (ParseError (entry.path, Error.format_collect_error e))
+              in
+
+              (* Merge with imports *)
+              let final_env = Env.merge_imports import_env env name in
+
+              (* Cache result *)
+              entry.env <- Some final_env;
+              Ok final_env
             in
 
-            (* Collect declarations *)
-            let* env =
-              match Collect.collect_all ast with
-              | Ok env -> Ok env
-              | Error e ->
-                  Error (ParseError (entry.path, Error.format_collect_error e))
-            in
-
-            (* Merge with imports *)
-            let final_env = Env.merge_imports import_env env name in
-
-            (* Cache and return *)
-            entry.env <- Some final_env;
+            (* Always pop loading stack, even on error *)
             registry.loading <- List.tl registry.loading;
-            Ok final_env
+            result
       end
 
 (** Check a document with its imports, returning the resolved environment *)

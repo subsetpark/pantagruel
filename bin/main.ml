@@ -43,9 +43,6 @@ let format_module_error = function
       Printf.sprintf "error: Module '%s' not found" name
   | Pantagruel.Module.CyclicImport modules ->
       Printf.sprintf "error: Cyclic import: %s" (String.concat " -> " modules)
-  | Pantagruel.Module.ImportCollision (name, mod1, mod2) ->
-      Printf.sprintf "error: Import collision for '%s' between %s and %s"
-        name mod1 mod2
   | Pantagruel.Module.ParseError (_, msg) ->
       msg  (* Already formatted by Error module *)
 
@@ -72,7 +69,7 @@ let check_doc doc =
         else if !print_json then
           Pantagruel.Json_output.output_json env doc
         else if !print_markdown then
-          Pantagruel.Markdown_output.output doc;
+          Pantagruel.Markdown_output.output env doc;
         true
     | Error e ->
         prerr_endline (format_module_error e);
