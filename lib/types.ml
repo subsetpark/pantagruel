@@ -16,6 +16,21 @@ type ty =
   | TyFunc of ty list * ty option (** params, return; None = Void *)
 [@@deriving show, eq]
 
+(** Centralized builtin type registry *)
+let builtins = [
+  ("Bool",    TyBool);
+  ("Nat",     TyNat);
+  ("Nat0",    TyNat0);
+  ("Int",     TyInt);
+  ("Real",    TyReal);
+  ("String",  TyString);
+  ("Nothing", TyNothing);
+]
+
+let builtin_of_name name = List.assoc_opt name builtins
+
+let builtin_type_names = List.map fst builtins
+
 (** Pretty-print a type (human-readable) *)
 let rec format_ty = function
   | TyBool -> "Bool"
@@ -34,30 +49,40 @@ let rec format_ty = function
       let ret_str = match ret with None -> "Void" | Some t -> format_ty t in
       "(" ^ params_str ^ ") -> " ^ ret_str
 
-(** Numeric hierarchy level: Nat < Nat0 < Int < Real *)
-let numeric_level = function
-  | TyNat -> Some 1
-  | TyNat0 -> Some 2
-  | TyInt -> Some 3
-  | TyReal -> Some 4
-  | _ -> None
+(** Immediate numeric supertype: Nat → Nat0 → Int → Real *)
+let numeric_super = function
+  | TyNat  -> Some TyNat0
+  | TyNat0 -> Some TyInt
+  | TyInt  -> Some TyReal
+  | _      -> None
 
-let is_numeric ty = numeric_level ty <> None
+let is_numeric ty = numeric_super ty <> None || equal_ty ty TyReal
+
+(** Is t1 a subtype of t2? (t1 fits where t2 is expected)
+    - TyNothing is the bottom type (subtype of everything)
+    - Numeric chain: Nat < Nat0 < Int < Real
+    - Covariant through List, Product, Sum *)
+let rec is_subtype t1 t2 =
+  equal_ty t1 t2
+  || equal_ty t1 TyNothing
+  || (match numeric_super t1 with
+      | Some up -> is_subtype up t2
+      | None -> false)
+  || (match t1, t2 with
+      | TyList a, TyList b -> is_subtype a b
+      | TyProduct as_, TyProduct bs ->
+          List.length as_ = List.length bs
+          && List.for_all2 is_subtype as_ bs
+      | TySum as_, TySum bs ->
+          List.length as_ = List.length bs
+          && List.for_all2 is_subtype as_ bs
+      | _ -> false)
 
 (** Least upper bound of two numeric types *)
 let lub_numeric t1 t2 =
-  match numeric_level t1, numeric_level t2 with
-  | Some l1, Some l2 ->
-      (* Return the type with higher level *)
-      if l1 >= l2 then Some t1 else Some t2
-  | _ -> None
-
-(** Check if t1 is a subtype of t2 (for numeric hierarchy only) *)
-let is_subtype t1 t2 =
-  if equal_ty t1 t2 then true
-  else match numeric_level t1, numeric_level t2 with
-    | Some l1, Some l2 -> l1 <= l2
-    | _ -> false
+  if is_subtype t1 t2 then Some t2
+  else if is_subtype t2 t1 then Some t1
+  else None
 
 (** Unification error *)
 type unify_error =
@@ -69,27 +94,29 @@ type unify_error =
   | NotNumeric of ty
 [@@deriving show]
 
-(** Unify two types, considering numeric subtyping *)
-let rec unify t1 t2 : (ty, unify_error) result =
+(** Compute the join (least upper bound) of two types.
+    Used for inferring result types (e.g. arithmetic operand LUB). *)
+let rec join t1 t2 : (ty, unify_error) result =
   if equal_ty t1 t2 then Ok t1
   else match lub_numeric t1 t2 with
     | Some lub -> Ok lub
     | None ->
         match t1, t2 with
         | TyList a, TyList b ->
-            (match unify a b with
-             | Ok unified -> Ok (TyList unified)
+            (match join a b with
+             | Ok joined -> Ok (TyList joined)
              | Error e -> Error e)
         | TyProduct as_, TyProduct bs when List.length as_ = List.length bs ->
-            (match List.map2 (fun a b -> unify a b) as_ bs |> Util.sequence_results with
-             | Ok unified -> Ok (TyProduct unified)
+            (match List.map2 (fun a b -> join a b) as_ bs |> Util.sequence_results with
+             | Ok joined -> Ok (TyProduct joined)
              | Error e -> Error e)
         | TySum as_, TySum bs when List.length as_ = List.length bs ->
-            (match List.map2 (fun a b -> unify a b) as_ bs |> Util.sequence_results with
-             | Ok unified -> Ok (TySum unified)
+            (match List.map2 (fun a b -> join a b) as_ bs |> Util.sequence_results with
+             | Ok joined -> Ok (TySum joined)
              | Error e -> Error e)
         | _ -> Error (TypeMismatch (t1, t2))
 
-(** Check if two types are compatible (can be unified) *)
+(** Check if two types are compatible (have a common supertype).
+    Used for symmetric checks like = and != operands. *)
 let compatible t1 t2 =
-  Result.is_ok (unify t1 t2)
+  Result.is_ok (join t1 t2)

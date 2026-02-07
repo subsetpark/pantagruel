@@ -104,50 +104,255 @@ String escape sequences: `\\`, `\"`, `\n`, `\t`, `\r`
 > Doc comment (must start at beginning of line)
 ```
 
-## Types
+## Type System
 
-### Built-in Types
+### Type Universe
+
+Every expression in Pantagruel is assigned a type from the following universe.
+
+**Primitive types.** Seven built-in types are predefined. Their names are reserved and cannot be redeclared.
 
 | Type | Description |
 |------|-------------|
 | `Bool` | Boolean values (`true`, `false`) |
 | `Nat` | Positive integers (1, 2, 3, ...) |
 | `Nat0` | Non-negative integers (0, 1, 2, ...) |
-| `Int` | All integers (..., -1, 0, 1, ...) |
+| `Int` | All integers (..., −1, 0, 1, ...) |
 | `Real` | Real numbers |
 | `String` | Text strings |
-| `Nothing` | Empty/null type |
+| `Nothing` | The empty type (uninhabited — no values) |
 
-**Numeric hierarchy**: `Nat < Nat0 < Int < Real`
+**Domain types.** Each domain declaration `D.` introduces a distinct type `D`. Domain types are pairwise unrelated, and unrelated to all built-in types.
 
-A `Nat` can be used where `Nat0`, `Int`, or `Real` is expected.
+**Type aliases.** A declaration `A = T.` defines `A` as a synonym for `T`. Aliases are fully expanded during checking; `A` and `T` are interchangeable everywhere.
 
-### Product Types (Tuples)
+**Compound types.** Three constructors build composite types:
 
-```
-Point = Nat * Nat.
-Triple = Nat * Nat * Nat.
-```
+| Constructor | Syntax | Example |
+|-------------|--------|---------|
+| List | `[T]` | `[User]`, `[[Nat]]` |
+| Product | `T * U`, `T * U * V`, ... | `Nat * Nat`, `Point * Color` |
+| Sum | `T + U`, `T + U + V`, ... | `Value + Nothing` |
 
-Constructed with parentheses: `(1, 2)`, `(x, y, z)`
+Product and sum types must have at least two components. They are **positional**: `Nat * Bool` and `Bool * Nat` are distinct types.
 
-Accessed with projection: `p.1`, `p.2` (1-indexed)
+Products are constructed with parentheses — `(1, 2)` — and accessed with projection — `p.1`, `p.2` (1-indexed).
 
-### Sum Types (Unions)
+**Function types.** Procedure declarations give rise to function types *(T₁, ..., Tₙ) → R* (returning) or *(T₁, ..., Tₙ) → Void* (void). Function types are internal to the checker and cannot appear in user-written type expressions.
 
-```
-Result = Value + Error.
-Maybe = Something + Nothing.
-```
+### Subtyping
 
-A value of sum type belongs to one of the component types.
+The **subtype** relation *S* ≤ *T*, read "*S* fits where *T* is expected," is a partial order on types. It is defined by the following rules, closed under reflexivity and transitivity.
 
-### List Types
+**Reflexivity.** Every type is a subtype of itself: *T* ≤ *T*.
 
-```
-Users = [User].
-Matrix = [[Nat]].
-```
+**Bottom.** `Nothing` is a subtype of every type: `Nothing` ≤ *T* for all *T*. Since `Nothing` is uninhabited, this is vacuously safe — there is no `Nothing` value that could violate the expectations of *T*.
+
+**Numeric chain.** The numeric types form a chain of strict inclusions:
+
+    Nat  <  Nat0  <  Int  <  Real
+
+Each `Nat` value is also a `Nat0` value, each `Nat0` value is also an `Int` value, and each `Int` value is also a `Real` value. Transitivity gives `Nat` ≤ `Int`, `Nat` ≤ `Real`, and `Nat0` ≤ `Real`.
+
+**Covariance.** Subtyping lifts through compound types, position by position:
+
+- `[S]` ≤ `[T]`  when  *S* ≤ *T*
+- `S₁ * ··· * Sₙ` ≤ `T₁ * ··· * Tₙ`  when  *Sᵢ* ≤ *Tᵢ* for each *i* (same *n* on both sides)
+- `S₁ + ··· + Sₙ` ≤ `T₁ + ··· + Tₙ`  when  *Sᵢ* ≤ *Tᵢ* for each *i* (same *n* on both sides)
+
+**No other subtyping holds.** In particular:
+
+- `Bool`, `String`, and each domain type are pairwise incomparable.
+- Numeric and non-numeric types are incomparable (e.g. `Nat` ≰ `Bool`).
+- Function types do not participate in subtyping.
+
+#### Subtyping examples
+
+| Statement | Holds? | Reason |
+|-----------|--------|--------|
+| `Nat` ≤ `Int` | Yes | Numeric chain (transitive) |
+| `[Nat]` ≤ `[Real]` | Yes | `Nat` ≤ `Real`, covariance |
+| `Nat * Bool` ≤ `Int * Bool` | Yes | `Nat` ≤ `Int` and `Bool` ≤ `Bool` |
+| `Int` ≤ `Nat` | No | `Int` is above `Nat` in the chain |
+| `Bool` ≤ `Nat` | No | Incomparable |
+| `Nothing` ≤ `[User]` | Yes | Bottom type |
+| `User` ≤ `String` | No | Incomparable domain types |
+
+### Least Upper Bound (Join)
+
+The **join** of two types, written *S* ⊔ *T*, is the smallest type that both *S* and *T* are subtypes of. When the join exists, the two types are **compatible**. When no join exists, the types are **incompatible** — they cannot be meaningfully combined.
+
+**Equal types.** *T* ⊔ *T* = *T*.
+
+**Subtype pairs.** When *S* ≤ *T*, then *S* ⊔ *T* = *T*. This covers the numeric chain (`Nat` ⊔ `Int` = `Int`, `Nat0` ⊔ `Real` = `Real`) and the bottom type (`Nothing` ⊔ *T* = *T*).
+
+**Compound types.** The join is computed position by position:
+
+- `[S]` ⊔ `[T]` = `[`*S* ⊔ *T*`]`
+- (*S₁* `*` ··· `*` *Sₙ*) ⊔ (*T₁* `*` ··· `*` *Tₙ*) = (*S₁* ⊔ *T₁*) `*` ··· `*` (*Sₙ* ⊔ *Tₙ*)
+- (*S₁* `+` ··· `+` *Sₙ*) ⊔ (*T₁* `+` ··· `+` *Tₙ*) = (*S₁* ⊔ *T₁*) `+` ··· `+` (*Sₙ* ⊔ *Tₙ*)
+
+Both sides must have the same number of components, and each component pair must itself have a join.
+
+**Undefined.** Examples of incompatible types (no join): `Bool` and `Nat`; `User` and `String`; `[Bool]` and `[User]`.
+
+### Typing Rules
+
+The rules below assign a type to each expression, or produce a type error when no rule applies. They rely on the three relations defined above:
+
+| Relation | Notation | Meaning | Symmetry |
+|----------|----------|---------|----------|
+| Subtype | *S* ≤ *T* | *S* fits where *T* is expected | Directional |
+| Join | *S* ⊔ *T* | Smallest common supertype | Symmetric |
+| Compatibility | *S* ~ *T* | *S* ⊔ *T* exists | Symmetric |
+
+Summary of which relation governs each context:
+
+| Relation | Where used |
+|----------|------------|
+| *S* ≤ *T* (subtype) | Argument passing, `in`, `subset`, overrides, variable shadowing |
+| *S* ⊔ *T* (join) | Arithmetic result types |
+| *S* ~ *T* (compatible) | `=` and `!=` operands |
+
+#### Literals
+
+| Expression | Type | Note |
+|------------|------|------|
+| `true`, `false` | `Bool` | |
+| `0` | `Nat0` | Zero is non-negative, not positive |
+| *n* (integer, *n* > 0) | `Nat` | |
+| *r* (real literal) | `Real` | |
+| *s* (string literal) | `String` | |
+
+#### Names
+
+**Variable.** If *x* is bound to type *T* in the current scope, then *x* : *T*.
+
+**Nullary procedure.** If *f* is declared with no parameters and return type *R*, then *f* : *R*. Nullary procedures are applied automatically on reference.
+
+**Non-nullary procedure.** If *f* has parameters, referencing *f* yields its function type. It must be applied to arguments to produce a value.
+
+**Domain in expression position.** A domain name `D` used as an expression has type `[D]` — the list of all values of that domain. A type alias `A = T` in expression position has type `[T]`.
+
+#### Tuples and Projection
+
+**Construction.** `(`*e₁*`,` ... `,` *eₙ*`)` has type *T₁* `*` ··· `*` *Tₙ* where each *eᵢ* : *Tᵢ*.
+
+**Projection.** *e*`.`*k* has type *Tₖ* where *e* : *T₁* `*` ··· `*` *Tₙ* and 1 ≤ *k* ≤ *n*.
+
+#### Procedure Application
+
+*f e₁ ··· eₙ* where *f* : (*T₁*, ..., *Tₙ*) → *R*:
+
+1. The argument count must equal the parameter count.
+2. Each argument type must be a **subtype** of its parameter: if *eᵢ* : *Sᵢ*, then *Sᵢ* ≤ *Tᵢ*.
+3. The return type must not be Void — void procedures cannot appear in expression position.
+4. Result type: *R*.
+
+#### List Application
+
+*xs e* where *xs* : `[T]` (exactly one argument):
+
+- **Indexing.** If *e* : *S* with *S* ≤ `Nat`, result type is *T*. Lists are 1-indexed, so the index type is `Nat` (positive integers only — `Nat0` is not accepted).
+- **Search.** If *T* is not numeric and *e* : *S* with *S* ≤ *T*, result type is `Nat + Nothing` — the 1-based position of the element if found, or `Nothing` if absent.
+- When *T* is numeric, only indexing is available. Search is disallowed because the argument would be ambiguous between an index and an element to search for.
+
+#### Arithmetic
+
+*e₁* `op` *e₂* where `op` is `+`, `-`, `*`, or `/`:
+
+1. Both operands must be numeric.
+2. Result type: *T₁* ⊔ *T₂*. For example, `Nat + Int` yields `Int`; `Nat * Real` yields `Real`.
+
+#### Comparison
+
+*e₁* `op` *e₂* where `op` is `<`, `>`, `<=`, or `>=`:
+
+1. Both operands must be numeric (but need not be related to each other).
+2. Result type: `Bool`.
+
+#### Equality and Inequality
+
+*e₁* `=` *e₂* and *e₁* `!=` *e₂*:
+
+1. The operand types must be **compatible**: *T₁* ⊔ *T₂* must exist.
+2. Result type: `Bool`.
+
+This is a symmetric check. `Nat = Int` is valid (both numeric, join is `Int`), but `Bool = Nat` is a type error (no join exists).
+
+#### Logical Operators
+
+*e₁* `op` *e₂* where `op` is `and`, `or`, `->`, or `<->`: both operands must be `Bool`; result is `Bool`.
+
+`not` *e*: operand must be `Bool`; result is `Bool`.
+
+#### Membership
+
+*e₁* `in` *e₂*:
+
+1. *e₂* must have type `[T]`.
+2. *e₁* must have type *S* with *S* ≤ *T* (**directional** — a `Nat` may be tested for membership in `[Int]`, but an `Int` may not be tested for membership in `[Nat]`).
+3. Result type: `Bool`.
+
+#### Subset
+
+*e₁* `subset` *e₂*:
+
+1. *e₁* : `[S]` and *e₂* : `[T]`.
+2. *S* ≤ *T* (directional).
+3. Result type: `Bool`.
+
+#### Cardinality
+
+`#`*e*: *e* must have type `[T]`; result type is `Nat0` (since the empty list has cardinality zero).
+
+#### Unary Minus
+
+`-`*e*:
+
+1. *e* must be numeric.
+2. If *e* : *T* with *T* ≤ `Int`, result type is `Int` — negating a natural or non-negative integer may produce a negative number.
+3. If *e* : `Real`, result type is `Real`.
+
+#### Quantifiers
+
+`all` *bindings* `|` *body* (and `some` *bindings* `|` *body*):
+
+1. Each typed binding *x* `:` *T* introduces *x* with type *T*.
+2. Each membership binding *x* `in` *e*, where *e* : `[T]`, introduces *x* with type *T*.
+3. Guard expressions (bare boolean conditions in the binding list) must have type `Bool`.
+4. Bindings and guards are processed left to right; each may reference names introduced earlier in the list.
+5. The body must have type `Bool`.
+6. Result type: `Bool`.
+
+#### Primed Expressions
+
+*f*`'` (a primed name):
+
+1. Must occur in a chapter whose head declares a void procedure (a *void context*).
+2. *f* must name a procedure, not a variable.
+3. Result type: same as the type of *f*.
+
+Primed expressions denote the post-state value of a procedure in a state transition.
+
+#### Function Overrides
+
+*f*`[`*k₁* `|->` *v₁*`,` ... `,` *kₙ* `|->` *vₙ*`]`:
+
+1. *f* must be a procedure of arity 1 with a return type: *f* : (*T*) → *R*.
+2. Each key must be a **subtype** of the parameter type: *kᵢ* : *Sᵢ* with *Sᵢ* ≤ *T*.
+3. Each value must be a **subtype** of the return type: *vᵢ* : *Uᵢ* with *Uᵢ* ≤ *R*.
+4. Result type: (*T*) → *R*.
+
+### Additional Constraints
+
+**Propositions.** Every top-level expression in a chapter body must have type `Bool`.
+
+**Variable shadowing.** When a binding introduces *x* : *S* and *x* is already in scope with type *T*, the new type must be a subtype of the existing type: *S* ≤ *T*. This permits rebinding at the same or a narrower type, but forbids rebinding at a wider or unrelated type.
+
+**Void procedure uniqueness.** Each chapter may declare at most one void procedure.
+
+**Procedure guards.** Guard expressions on procedure declarations are type-checked with the procedure's parameters in scope and must have type `Bool`.
 
 ## Declarations
 

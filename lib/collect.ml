@@ -3,7 +3,7 @@
 open Ast
 open Types
 
-let ( let* ) = Result.bind
+open Util
 
 type collect_error =
   | DuplicateDomain of string * loc * loc
@@ -14,10 +14,7 @@ type collect_error =
   | BuiltinRedefined of string * loc
 [@@deriving show]
 
-(** Built-in type names that cannot be redefined *)
-let builtin_types = ["Bool"; "Nat"; "Nat0"; "Int"; "Real"; "String"; "Nothing"]
-
-let is_builtin_type name = List.mem name builtin_types
+let is_builtin_type name = List.mem name Types.builtin_type_names
 
 (** Check if a type mentions a given name (for recursion detection) *)
 let rec mentions_type name = function
@@ -32,26 +29,22 @@ let rec mentions_type name = function
 (** Convert AST type_expr to ty, expanding aliases *)
 let rec resolve_type env (te : type_expr) loc : (ty, collect_error) result =
   match te with
-  | TName "Bool" -> Ok TyBool
-  | TName "Nat" -> Ok TyNat
-  | TName "Nat0" -> Ok TyNat0
-  | TName "Int" -> Ok TyInt
-  | TName "Real" -> Ok TyReal
-  | TName "String" -> Ok TyString
-  | TName "Nothing" -> Ok TyNothing
   | TName name ->
-      (match Env.lookup_type name env with
-       | Some { kind = Env.KDomain; _ } -> Ok (TyDomain name)
-       | Some { kind = Env.KAlias ty; _ } -> Ok ty
-       | _ -> Error (UndefinedType (name, loc)))
+      (match Types.builtin_of_name name with
+       | Some ty -> Ok ty
+       | None ->
+           match Env.lookup_type name env with
+           | Some { kind = Env.KDomain; _ } -> Ok (TyDomain name)
+           | Some { kind = Env.KAlias ty; _ } -> Ok ty
+           | _ -> Error (UndefinedType (name, loc)))
   | TList t ->
       let* inner = resolve_type env t loc in
       Ok (TyList inner)
   | TProduct ts ->
-      let* tys = Util.map_result (fun t -> resolve_type env t loc) ts in
+      let* tys = map_result (fun t -> resolve_type env t loc) ts in
       Ok (TyProduct tys)
   | TSum ts ->
-      let* tys = Util.map_result (fun t -> resolve_type env t loc) ts in
+      let* tys = map_result (fun t -> resolve_type env t loc) ts in
       Ok (TySum tys)
 
 (** Collect declarations from one chapter head.
@@ -91,7 +84,7 @@ let collect_chapter_head ~chapter env (decls : declaration located list) =
     (* Keep resolving until no more changes *)
     let rec iterate env =
       let changed = ref false in
-      let* env' = Util.fold_result (fun env (decl : declaration located) ->
+      let* env' = fold_result (fun env (decl : declaration located) ->
         match decl.value with
         | DeclAlias (name, type_expr) ->
             let* ty = resolve_type env type_expr decl.loc in
@@ -117,7 +110,7 @@ let collect_chapter_head ~chapter env (decls : declaration located list) =
     match decl.value with
     | DeclProc { name; params; guards = _; return_type } ->
         let* param_types =
-          Util.map_result (fun p -> resolve_type env p.param_type decl.loc) params
+          map_result (fun p -> resolve_type env p.param_type decl.loc) params
         in
         let* ret_ty =
           match return_type with
@@ -138,9 +131,9 @@ let collect_chapter_head ~chapter env (decls : declaration located list) =
   in
 
   (* Execute all three passes *)
-  let* env1 = Util.fold_result register_type_name env decls in
+  let* env1 = fold_result register_type_name env decls in
   let* env2 = resolve_aliases env1 decls in
-  let* final_env = Util.fold_result add_proc env2 decls in
+  let* final_env = fold_result add_proc env2 decls in
 
   (* Validate: at most one Void procedure per chapter *)
   match !void_procs with

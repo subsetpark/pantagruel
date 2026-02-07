@@ -3,7 +3,7 @@
 open Ast
 open Types
 
-let ( let* ) = Result.bind
+open Util
 
 type type_error =
   | UnboundVariable of string * loc
@@ -84,10 +84,10 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
 
   | EApp (func, args) ->
       let* func_ty = infer_type ctx func in
-      check_application ctx func_ty args
+      check_application ctx func func_ty args
 
   | ETuple exprs ->
-      let* tys = Util.map_result (infer_type ctx) exprs in
+      let* tys = map_result (infer_type ctx) exprs in
       Ok (TyProduct tys)
 
   | EProj (e, idx) ->
@@ -114,7 +114,7 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
   | EOverride (name, pairs) ->
       check_override ctx name pairs
 
-and check_application ctx func_ty args =
+and check_application ctx func_expr func_ty args =
   match func_ty with
   | TyFunc (param_tys, ret_ty) ->
       if List.length args <> List.length param_tys then
@@ -123,13 +123,16 @@ and check_application ctx func_ty args =
         (* Check Void procedures cannot be applied *)
         match ret_ty with
         | None ->
-            (* Find the function name for error message *)
-            Error (VoidProcInExpression ("void procedure", ctx.loc))
+            let name = match func_expr with
+              | EVar n | EPrimed n -> n
+              | _ -> format_ty func_ty
+            in
+            Error (VoidProcInExpression (name, ctx.loc))
         | Some ret ->
             let* _ =
-              Util.map_result (fun (arg, expected) ->
+              map_result (fun (arg, expected) ->
                 let* arg_ty = infer_type ctx arg in
-                if compatible arg_ty expected then Ok ()
+                if is_subtype arg_ty expected then Ok ()
                 else Error (TypeMismatch (expected, arg_ty, ctx.loc)))
                 (List.combine args param_tys)
             in
@@ -144,13 +147,12 @@ and check_application ctx func_ty args =
            if is_subtype arg_ty TyNat then
              (* Indexing: xs i : T *)
              Ok elem_ty
-           else if compatible arg_ty elem_ty && not (is_numeric elem_ty) then
+           else if is_subtype arg_ty elem_ty && not (is_numeric elem_ty) then
              (* Search: xs x : Nat + Nothing *)
              Ok (TySum [TyNat; TyNothing])
            else if is_numeric elem_ty then
-             (* Numeric list: only indexing allowed *)
-             if is_subtype arg_ty TyNat then Ok elem_ty
-             else Error (TypeMismatch (TyNat, arg_ty, ctx.loc))
+             (* Numeric list: only indexing allowed, and arg wasn't Nat *)
+             Error (TypeMismatch (TyNat, arg_ty, ctx.loc))
            else
              Error (TypeMismatch (elem_ty, arg_ty, ctx.loc))
        | _ -> Error (ArityMismatch (1, List.length args, ctx.loc)))
@@ -167,7 +169,7 @@ and check_binop ctx op e1 e2 =
       else Error (ExpectedBool (t2, ctx.loc))
 
   | OpEq | OpNeq ->
-      (match unify t1 t2 with
+      (match join t1 t2 with
        | Ok _ -> Ok TyBool
        | Error (Types.TypeMismatch (a, b)) ->
            Error (TypeMismatch (a, b, ctx.loc))
@@ -179,20 +181,19 @@ and check_binop ctx op e1 e2 =
       else Error (NotNumeric (t2, ctx.loc))
 
   | OpIn ->
-      (* x in s: x : T, s : [T] *)
+      (* x in s: x : T, s : [T] — x must be a subtype of T *)
       (match t2 with
        | TyList elem_ty ->
-           if compatible t1 elem_ty then Ok TyBool
+           if is_subtype t1 elem_ty then Ok TyBool
            else Error (TypeMismatch (elem_ty, t1, ctx.loc))
        | _ -> Error (NotAList (t2, ctx.loc)))
 
   | OpSubset ->
-      (* s1 subset s2: both [T] *)
+      (* s1 subset s2: both [T], element types must be compatible *)
       (match t1, t2 with
        | TyList a, TyList b ->
-           (match unify a b with
-            | Ok _ -> Ok TyBool
-            | Error _ -> Error (TypeMismatch (t1, t2, ctx.loc)))
+           if is_subtype a b then Ok TyBool
+           else Error (TypeMismatch (t1, t2, ctx.loc))
        | TyList _, _ -> Error (NotAList (t2, ctx.loc))
        | _, _ -> Error (NotAList (t1, ctx.loc)))
 
@@ -223,7 +224,7 @@ and check_unop ctx op e =
 and check_no_type_shadow ctx name new_ty =
   match Env.lookup_term name ctx.env with
   | Some { kind = Env.KVar existing_ty; _ } ->
-      if compatible existing_ty new_ty then Ok ()
+      if is_subtype new_ty existing_ty then Ok ()
       else Error (ShadowingTypeMismatch (name, existing_ty, new_ty, ctx.loc))
   | _ -> Ok ()  (* Not shadowing a variable, OK *)
 
@@ -238,7 +239,7 @@ and check_quantifier ctx params guards body =
         Error (UnboundType (name, loc))
     | Error _ -> Error (UnboundType ("unknown", ctx.loc))
   in
-  let* param_bindings = Util.map_result resolve_param params in
+  let* param_bindings = map_result resolve_param params in
 
   (* Extend environment with quantifier-bound variables *)
   let env' = Env.with_vars param_bindings ctx.env in
@@ -246,7 +247,7 @@ and check_quantifier ctx params guards body =
 
   (* Process guards: check types and collect additional bindings from GIn *)
   let* (guard_bindings, _) =
-    Util.fold_result (fun (bindings, current_ctx) g ->
+    fold_result (fun (bindings, current_ctx) g ->
       match g with
       | GParam p ->
           (* Additional parameter binding *)
@@ -281,14 +282,14 @@ and check_override ctx name pairs =
   | Some { kind = Env.KProc (TyFunc ([param_ty], Some ret_ty)); _ } ->
       (* Override only for arity-1 procedures *)
       let* _ =
-        Util.map_result (fun (k, v) ->
+        map_result (fun (k, v) ->
           let* k_ty = infer_type ctx k in
           let* v_ty = infer_type ctx v in
           let* _ =
-            if compatible k_ty param_ty then Ok ()
+            if is_subtype k_ty param_ty then Ok ()
             else Error (TypeMismatch (param_ty, k_ty, ctx.loc))
           in
-          if compatible v_ty ret_ty then Ok ()
+          if is_subtype v_ty ret_ty then Ok ()
           else Error (TypeMismatch (ret_ty, v_ty, ctx.loc)))
           pairs
       in
@@ -309,38 +310,40 @@ let check_proc_guards ctx (decl : declaration located) =
   match decl.value with
   | DeclProc { params; guards; _ } ->
       (* Resolve parameter types and add them to environment *)
-      let resolve_param p =
-        match Collect.resolve_type ctx.env p.param_type decl.loc with
+      let resolve_param env p =
+        match Collect.resolve_type env p.param_type decl.loc with
         | Ok ty -> Ok (p.param_name, ty)
         | Error (Collect.UndefinedType (name, loc)) ->
             Error (UnboundType (name, loc))
         | Error _ -> Error (UnboundType ("unknown", decl.loc))
       in
-      let* param_bindings = Util.map_result resolve_param params in
+      let* param_bindings = map_result (resolve_param ctx.env) params in
       let env' = Env.with_vars param_bindings ctx.env in
       let ctx' = { ctx with env = env' } in
 
-      (* Check each guard *)
-      Util.map_result (fun g ->
-        match g with
-        | GParam p ->
-            (* Additional parameter binding - just validate the type resolves *)
-            let* _ = resolve_param p in
-            Ok ()
-        | GIn (_name, list_expr) ->
-            (* x in xs - infer type of xs, validate it's a list *)
-            let ctx'' = with_loc ctx' decl.loc in
-            let* list_ty = infer_type ctx'' list_expr in
-            (match list_ty with
-             | TyList _ -> Ok ()  (* Valid - _name would be bound to element type *)
-             | _ -> Error (NotAList (list_ty, decl.loc)))
-        | GExpr e ->
-            let ctx'' = with_loc ctx' decl.loc in
-            let* ty = infer_type ctx'' e in
-            if equal_ty ty TyBool then Ok ()
-            else Error (ExpectedBool (ty, decl.loc)))
-        guards
-  | _ -> Ok []  (* Not a procedure, nothing to check *)
+      (* Check each guard, accumulating bindings from GParam/GIn *)
+      let* _ =
+        fold_result (fun current_ctx g ->
+          match g with
+          | GParam p ->
+              let* (name, ty) = resolve_param current_ctx.env p in
+              Ok { current_ctx with env = Env.add_var name ty current_ctx.env }
+          | GIn (name, list_expr) ->
+              let ctx'' = with_loc current_ctx decl.loc in
+              let* list_ty = infer_type ctx'' list_expr in
+              (match list_ty with
+               | TyList elem_ty ->
+                   Ok { current_ctx with env = Env.add_var name elem_ty current_ctx.env }
+               | _ -> Error (NotAList (list_ty, decl.loc)))
+          | GExpr e ->
+              let ctx'' = with_loc current_ctx decl.loc in
+              let* ty = infer_type ctx'' e in
+              if equal_ty ty TyBool then Ok current_ctx
+              else Error (ExpectedBool (ty, decl.loc)))
+          ctx' guards
+      in
+      Ok ()
+  | _ -> Ok ()  (* Not a procedure, nothing to check *)
 
 (** Find the Void procedure in a chapter head, if any *)
 let find_void_proc (head : declaration located list) =
@@ -379,14 +382,14 @@ let check_chapter_body ~chapter_idx env (chapter : chapter) =
 
   let ctx = { env = env'; loc = dummy_loc } in
 
-  Util.map_result (check_proposition ctx) chapter.body
+  map_result (check_proposition ctx) chapter.body
 
 (** Check guards on all procedure declarations in a chapter head *)
 let check_chapter_guards ~chapter_idx env (chapter : chapter) =
   (* Filter environment for visibility in this chapter's head *)
   let env_visible = Env.visible_in_head chapter_idx env in
   let ctx = { env = env_visible; loc = dummy_loc } in
-  Util.map_result (check_proc_guards ctx) chapter.head
+  map_result (check_proc_guards ctx) chapter.head
 
 (** Check entire document (Pass 2) *)
 let check_document env (doc : document) : (unit, type_error) result =
