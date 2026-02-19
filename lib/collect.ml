@@ -181,7 +181,7 @@ let collect_chapter_head ~chapter ~doc_contexts env
     | (p1, _) :: (p2, loc) :: _ -> Error (MultipleActions (p1, p2, loc))
   in
 
-  (* Validate: action must be the last declaration in chapter head *)
+  (* Validate: action must appear last in chapter head *)
   let* () =
     let rec check_last = function
       | [] -> Ok ()

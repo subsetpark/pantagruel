@@ -132,7 +132,7 @@ all u: User | u in User.
 
 ### Actions and Primed Expressions
 
-Actions model state transitions. Within a chapter that declares an action, you can use **primed expressions** to refer to the post-state of rules:
+Actions model state transitions. Within a chapter that has an action, you can use **primed expressions** to refer to the post-state of rules:
 
 ```
 User.
@@ -146,7 +146,7 @@ owner' d = u.
 
 ### Contexts
 
-Contexts declare write-permission boundaries for actions. Context names are declared at the module level, and rules declare which contexts they belong to with a `{Ctx}` prefix. Actions declare which context they operate within using `Ctx ~>`.
+Contexts define write-permission boundaries for actions. Context names are declared at the module level, and rules declare which contexts they belong to with a `{Ctx}` prefix. Actions specify which context they operate within using `Ctx ~>`.
 
 ```
 module BANKING.

@@ -610,7 +610,7 @@ Account.
   with _ -> ()
 
 let test_action_not_last_in_chapter () =
-  (* Action must be the last declaration in chapter head *)
+  (* Action must appear last in chapter head *)
   check_fails {|module TEST.
 
 User.

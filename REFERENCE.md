@@ -59,7 +59,7 @@ String escape sequences: `\\`, `\"`, `\n`, `\t`, `\r`
 | Operator | Meaning |
 |----------|---------|
 | `=>` | Rule return type |
-| `~>` | Action declaration |
+| `~>` | Action |
 | `->` | Implication |
 | `<->` | Biconditional (iff) |
 | `and` | Conjunction |
@@ -329,7 +329,7 @@ This is a symmetric check. `Nat = Int` is valid (both numeric, join is `Int`), b
 
 *f*`'` (a primed name):
 
-1. Must occur in a chapter whose head declares an action (an *action context*).
+1. Must occur in a chapter whose head contains an action (an *action context*).
 2. *f* must name a rule, not a variable.
 3. Result type: same as the type of *f*.
 
@@ -350,7 +350,7 @@ Primed expressions denote the post-state value of a rule in a state transition.
 
 **Variable shadowing.** When a binding introduces *x* : *S* and *x* is already in scope with type *T*, the new type must be a subtype of the existing type: *S* ≤ *T*. This permits rebinding at the same or a narrower type, but forbids rebinding at a wider or unrelated type.
 
-**Action uniqueness.** Each chapter may declare at most one action.
+**Action uniqueness.** Each chapter may have at most one action.
 
 **Rule guards.** Guard expressions on rule declarations are type-checked with the rule's parameters in scope and must have type `Bool`.
 
@@ -395,9 +395,9 @@ origin => Point.
 - Guards: boolean expressions, separated by commas after the parameters
 - Return type: required, preceded by `=>`
 
-### Action Declaration
+### Actions
 
-Declares an action (state transition) with `~>`. Actions have no return type and enable primed expressions for rules in the chapter body. Action labels are free-form text (spaces, capitals, keywords all allowed), separated from parameters by `|`:
+An action (state transition) is introduced with `~>`. Actions have no return type and enable primed expressions for rules in the chapter body. Action labels are free-form text (spaces, capitals, keywords all allowed), separated from parameters by `|`:
 
 ```
 // Action (no context)
@@ -412,8 +412,8 @@ Accounts ~> Withdraw | a: Account, amount: Nat.
 **Syntax**: `[Context] ~> label [| params [, guards]].`
 
 - Action labels are purely human-readable annotations — they are not in the term namespace
-- Actions must be the **last** declaration in a chapter head
-- Each chapter may declare at most one action
+- Actions must appear **last** in a chapter head
+- Each chapter may have at most one action
 
 ### Rule and Action Guards
 
@@ -434,7 +434,7 @@ module BANKING.
 context Accounts.
 ```
 
-Context names are uppercase identifiers. They define write-permission boundaries: rules declare which contexts they belong to, and actions declare which context they operate within.
+Context names are uppercase identifiers. They define write-permission boundaries: rules declare which contexts they belong to, and actions specify which context they operate within.
 
 ### Context Footprint
 
@@ -451,7 +451,7 @@ Context footprint is closed within module scope — you can only add a rule to a
 
 ### Context Annotation (Actions)
 
-Actions declare which context they operate within using a `Ctx ~>` prefix:
+Actions specify which context they operate within using a `Ctx ~>` prefix:
 
 ```
 Accounts ~> Withdraw | a: Account, amount: Nat.

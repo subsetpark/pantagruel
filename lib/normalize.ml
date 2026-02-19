@@ -395,7 +395,7 @@ let normalize (doc : document) : document =
       Array.to_list
         (Array.mapi
            (fun level _ ->
-             (* Sort declarations: non-action first (by name for stability), then action last *)
+             (* Sort: declarations first (by name for stability), then action last *)
              let decls = decl_assignments.(level) in
              let non_action = List.filter (fun d -> not d.is_void) decls in
              let action = List.filter (fun d -> d.is_void) decls in

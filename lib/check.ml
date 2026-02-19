@@ -315,7 +315,7 @@ let check_proposition ctx (prop : expr located) =
   if equal_ty ty TyBool then Ok ()
   else Error (PropositionNotBool (ty, prop.loc))
 
-(** Check guards on a rule or action declaration *)
+(** Check guards on a rule declaration or action *)
 let check_rule_guards ctx (decl : declaration located) =
   let check_guards params guards =
     (* Resolve parameter types and add them to environment *)

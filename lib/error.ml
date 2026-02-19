@@ -89,7 +89,7 @@ let format_collect_error err =
         (Printf.sprintf "Multiple actions in chapter: '%s' and '%s'" p1 p2)
   | ActionNotLast (name, loc) ->
       fmt loc
-        (Printf.sprintf "Action '%s' must be the last declaration in chapter head"
+        (Printf.sprintf "Action '%s' must appear last in chapter head"
            name)
   | BuiltinRedefined (name, loc) ->
       fmt loc (Printf.sprintf "Cannot redefine builtin type '%s'" name)
