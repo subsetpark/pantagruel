@@ -41,11 +41,11 @@ type t = {
   (** Context declarations: context name → member function names *)
   contexts: string list StringMap.t;
 
-  (** Void procedure in current chapter (for prime checking) *)
-  void_proc: string option;
+  (** Action in current chapter (for prime checking) *)
+  action: string option;
 
-  (** Active context for current void proc (for primed-in-context enforcement) *)
-  proc_context: string option;
+  (** Active context for current action (for primed-in-context enforcement) *)
+  action_context: string option;
 
   (** Variables bound in current scope (for prime rejection) *)
   local_vars: string list;
@@ -58,8 +58,8 @@ let empty module_name = {
   imported_terms = StringMap.empty;
   current_module = module_name;
   contexts = StringMap.empty;
-  void_proc = None;
-  proc_context = None;
+  action = None;
+  action_context = None;
   local_vars = [];
 }
 
@@ -85,13 +85,13 @@ let add_var name ty env =
     terms = StringMap.add name entry env.terms;
     local_vars = name :: env.local_vars }
 
-(** Set the Void procedure context for a chapter *)
-let with_void_proc name env =
-  { env with void_proc = Some name }
+(** Set the action for a chapter *)
+let with_action name env =
+  { env with action = Some name }
 
-(** Clear the Void procedure context *)
-let clear_void_proc env =
-  { env with void_proc = None }
+(** Clear the action *)
+let clear_action env =
+  { env with action = None }
 
 (** Add a context declaration (initially empty members) *)
 let add_context name members env =
@@ -108,17 +108,17 @@ let add_proc_to_context ctx_name proc_name env =
 let lookup_context name env =
   StringMap.find_opt name env.contexts
 
-(** Set the active proc context *)
-let with_proc_context ctx env =
-  { env with proc_context = ctx }
+(** Set the active action context *)
+let with_action_context ctx env =
+  { env with action_context = ctx }
 
 (** Check if a name is a locally-bound variable *)
 let is_local_var name env =
   List.mem name env.local_vars
 
-(** Check if we're in a Void procedure context *)
-let in_void_context env =
-  Option.is_some env.void_proc
+(** Check if we're in an action context *)
+let in_action_context env =
+  Option.is_some env.action
 
 (** Lookup a type by name *)
 let lookup_type name env =

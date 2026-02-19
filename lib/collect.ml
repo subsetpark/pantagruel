@@ -9,7 +9,8 @@ type collect_error =
   | DuplicateProc of string * loc * loc
   | UndefinedType of string * loc
   | RecursiveAlias of string * loc
-  | MultipleVoidProcs of string * string * loc
+  | MultipleActions of string * string * loc
+  | ActionNotLast of string * loc
   | BuiltinRedefined of string * loc
   | DuplicateContext of string * loc
   | UndefinedContext of string * loc
@@ -57,7 +58,7 @@ let rec resolve_type env (te : type_expr) loc : (ty, collect_error) result =
     declarations can reference each other regardless of order. *)
 let collect_chapter_head ~chapter ~doc_contexts env
     (decls : declaration located list) =
-  let void_procs = ref [] in
+  let actions = ref [] in
 
   (* Pass 1: Register all type names (domains and alias names as placeholders) *)
   let register_type_name env (decl : declaration located) =
@@ -80,7 +81,7 @@ let collect_chapter_head ~chapter ~doc_contexts env
               (* Add as domain placeholder - will be replaced in pass 2 *)
               Ok (Env.add_domain name decl.loc ~chapter env)
         end
-    | DeclProc _ -> Ok env (* Handled in later passes *)
+    | DeclProc _ | DeclAction _ -> Ok env (* Handled in later passes *)
   in
 
   (* Pass 2: Resolve alias types iteratively (handles mutual references) *)
@@ -112,22 +113,14 @@ let collect_chapter_head ~chapter ~doc_contexts env
     iterate env
   in
 
-  (* Pass 3: Add procedures and register context footprints *)
+  (* Pass 3: Add procedures/actions and register context footprints *)
   let add_proc env (decl : declaration located) =
     match decl.value with
-    | DeclProc { name; params; guards = _; return_type; contexts; _ } ->
+    | DeclProc { name; params; guards = _; return_type; contexts } ->
         let* param_types =
           map_result (fun p -> resolve_type env p.param_type decl.loc) params
         in
-        let* ret_ty =
-          match return_type with
-          | None ->
-              void_procs := (name, decl.loc) :: !void_procs;
-              Ok None
-          | Some t ->
-              let* ty = resolve_type env t decl.loc in
-              Ok (Some ty)
-        in
+        let* ret_ty = resolve_type env return_type decl.loc in
         (* Validate context footprint: each named context must exist in doc.contexts *)
         let* () =
           map_result
@@ -141,7 +134,7 @@ let collect_chapter_head ~chapter ~doc_contexts env
             contexts
           |> Result.map (fun _ -> ())
         in
-        let proc_ty = TyFunc (param_types, ret_ty) in
+        let proc_ty = TyFunc (param_types, Some ret_ty) in
         let* env =
           match Env.lookup_term name env with
           | Some existing when existing.module_origin = None ->
@@ -155,13 +148,26 @@ let collect_chapter_head ~chapter ~doc_contexts env
             env contexts
         in
         Ok env
+    | DeclAction { name; params; guards = _; _ } ->
+        let* param_types =
+          map_result (fun p -> resolve_type env p.param_type decl.loc) params
+        in
+        actions := (name, decl.loc) :: !actions;
+        let proc_ty = TyFunc (param_types, None) in
+        let* env =
+          match Env.lookup_term name env with
+          | Some existing when existing.module_origin = None ->
+              Error (DuplicateProc (name, decl.loc, existing.loc))
+          | _ -> Ok (Env.add_proc name proc_ty decl.loc ~chapter env)
+        in
+        Ok env
     | _ -> Ok env (* Domains and aliases already done *)
   in
 
-  (* Pass 4: Validate context annotations on void procedures *)
-  let validate_proc_context env (decl : declaration located) =
+  (* Pass 4: Validate context annotations on actions *)
+  let validate_action_context env (decl : declaration located) =
     match decl.value with
-    | DeclProc { context = Some ctx_name; return_type = None; _ } -> (
+    | DeclAction { context = Some ctx_name; _ } -> (
         (* Check context exists (local or imported) *)
         match Env.lookup_context ctx_name env with
         | None -> Error (UndefinedContext (ctx_name, decl.loc))
@@ -173,12 +179,28 @@ let collect_chapter_head ~chapter ~doc_contexts env
   let* env1 = fold_result register_type_name env decls in
   let* env2 = resolve_aliases env1 decls in
   let* env3 = fold_result add_proc env2 decls in
-  let* final_env = fold_result validate_proc_context env3 decls in
+  let* final_env = fold_result validate_action_context env3 decls in
 
-  (* Validate: at most one Void procedure per chapter *)
-  match !void_procs with
-  | [] | [ _ ] -> Ok final_env
-  | (p1, _) :: (p2, loc) :: _ -> Error (MultipleVoidProcs (p1, p2, loc))
+  (* Validate: at most one action per chapter *)
+  let* () =
+    match !actions with
+    | [] | [ _ ] -> Ok ()
+    | (p1, _) :: (p2, loc) :: _ -> Error (MultipleActions (p1, p2, loc))
+  in
+
+  (* Validate: action must be the last declaration in chapter head *)
+  let* () =
+    let rec check_last = function
+      | [] -> Ok ()
+      | [ _ ] -> Ok ()
+      | { value = DeclAction { name; _ }; loc; _ } :: _ :: _ ->
+          Error (ActionNotLast (name, loc))
+      | _ :: rest -> check_last rest
+    in
+    check_last decls
+  in
+
+  Ok final_env
 
 (** Collect all declarations from document (Pass 1) *)
 let collect_all ~base_env (doc : document) : (Env.t, collect_error) result =
@@ -187,7 +209,7 @@ let collect_all ~base_env (doc : document) : (Env.t, collect_error) result =
     {
       base_env with
       Env.current_module = mod_name;
-      void_proc = None;
+      action = None;
       local_vars = [];
     }
   in

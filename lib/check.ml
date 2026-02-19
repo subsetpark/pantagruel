@@ -15,8 +15,8 @@ type type_error =
   | NotNumeric of ty * loc
   | ExpectedBool of ty * loc
   | PrimedNonProcedure of string * loc
-  | PrimeOutsideVoidContext of string * loc
-  | VoidProcInExpression of string * loc
+  | PrimeOutsideActionContext of string * loc
+  | ActionInExpression of string * loc
   | OverrideRequiresArity1 of string * int * loc
   | ProjectionOutOfBounds of int * int * loc
   | PropositionNotBool of ty * loc
@@ -84,16 +84,16 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
           | _ -> Error (UnboundQualified (mod_name, name, ctx.loc))))
   | EPrimed name -> (
       if
-        (* Validate: must be procedure, must be in void context *)
-        not (Env.in_void_context ctx.env)
-      then Error (PrimeOutsideVoidContext (name, ctx.loc))
+        (* Validate: must be procedure, must be in action context *)
+        not (Env.in_action_context ctx.env)
+      then Error (PrimeOutsideActionContext (name, ctx.loc))
       else if Env.is_local_var name ctx.env then
         Error (PrimedNonProcedure (name, ctx.loc))
       else
         match Env.lookup_term name ctx.env with
         | Some { kind = Env.KProc ty; _ } -> (
-            (* If proc has a context, check membership *)
-            match ctx.env.proc_context with
+            (* If action has a context, check membership *)
+            match ctx.env.action_context with
             | Some ctx_name -> (
                 match Env.lookup_context ctx_name ctx.env with
                 | Some members when List.mem name members -> Ok ty
@@ -132,7 +132,7 @@ and check_application ctx func_expr func_ty args =
       if List.length args <> List.length param_tys then
         Error (ArityMismatch (List.length param_tys, List.length args, ctx.loc))
       else begin
-        (* Check Void procedures cannot be applied *)
+        (* Check actions cannot be applied *)
         match ret_ty with
         | None ->
             let name =
@@ -140,7 +140,7 @@ and check_application ctx func_expr func_ty args =
               | EVar n | EPrimed n -> n
               | _ -> format_ty func_ty
             in
-            Error (VoidProcInExpression (name, ctx.loc))
+            Error (ActionInExpression (name, ctx.loc))
         | Some ret ->
             let* _ =
               map_result
@@ -321,67 +321,72 @@ let check_proposition ctx (prop : expr located) =
   if equal_ty ty TyBool then Ok ()
   else Error (PropositionNotBool (ty, prop.loc))
 
-(** Check guards on a procedure declaration *)
+(** Check guards on a procedure or action declaration *)
 let check_proc_guards ctx (decl : declaration located) =
+  let check_guards params guards =
+    (* Resolve parameter types and add them to environment *)
+    let resolve_param env p =
+      match Collect.resolve_type env p.param_type decl.loc with
+      | Ok ty -> Ok (p.param_name, ty)
+      | Error (Collect.UndefinedType (name, loc)) ->
+          Error (UnboundType (name, loc))
+      | Error _ -> Error (UnboundType ("unknown", decl.loc))
+    in
+    let* param_bindings = map_result (resolve_param ctx.env) params in
+    let env' = Env.with_vars param_bindings ctx.env in
+    let ctx' = { ctx with env = env' } in
+
+    (* Check each guard, accumulating bindings from GParam/GIn *)
+    let* _ =
+      fold_result
+        (fun current_ctx g ->
+          match g with
+          | GParam p ->
+              let* name, ty = resolve_param current_ctx.env p in
+              Ok
+                { current_ctx with env = Env.add_var name ty current_ctx.env }
+          | GIn (name, list_expr) -> (
+              let ctx'' = with_loc current_ctx decl.loc in
+              let* list_ty = infer_type ctx'' list_expr in
+              match list_ty with
+              | TyList elem_ty ->
+                  Ok
+                    {
+                      current_ctx with
+                      env = Env.add_var name elem_ty current_ctx.env;
+                    }
+              | _ -> Error (NotAList (list_ty, decl.loc)))
+          | GExpr e ->
+              let ctx'' = with_loc current_ctx decl.loc in
+              let* ty = infer_type ctx'' e in
+              if equal_ty ty TyBool then Ok current_ctx
+              else Error (ExpectedBool (ty, decl.loc)))
+        ctx' guards
+    in
+    Ok ()
+  in
   match decl.value with
-  | DeclProc { params; guards; _ } ->
-      (* Resolve parameter types and add them to environment *)
-      let resolve_param env p =
-        match Collect.resolve_type env p.param_type decl.loc with
-        | Ok ty -> Ok (p.param_name, ty)
-        | Error (Collect.UndefinedType (name, loc)) ->
-            Error (UnboundType (name, loc))
-        | Error _ -> Error (UnboundType ("unknown", decl.loc))
-      in
-      let* param_bindings = map_result (resolve_param ctx.env) params in
-      let env' = Env.with_vars param_bindings ctx.env in
-      let ctx' = { ctx with env = env' } in
+  | DeclProc { params; guards; _ } -> check_guards params guards
+  | DeclAction { params; guards; _ } -> check_guards params guards
+  | _ -> Ok () (* Not a procedure/action, nothing to check *)
 
-      (* Check each guard, accumulating bindings from GParam/GIn *)
-      let* _ =
-        fold_result
-          (fun current_ctx g ->
-            match g with
-            | GParam p ->
-                let* name, ty = resolve_param current_ctx.env p in
-                Ok
-                  { current_ctx with env = Env.add_var name ty current_ctx.env }
-            | GIn (name, list_expr) -> (
-                let ctx'' = with_loc current_ctx decl.loc in
-                let* list_ty = infer_type ctx'' list_expr in
-                match list_ty with
-                | TyList elem_ty ->
-                    Ok
-                      {
-                        current_ctx with
-                        env = Env.add_var name elem_ty current_ctx.env;
-                      }
-                | _ -> Error (NotAList (list_ty, decl.loc)))
-            | GExpr e ->
-                let ctx'' = with_loc current_ctx decl.loc in
-                let* ty = infer_type ctx'' e in
-                if equal_ty ty TyBool then Ok current_ctx
-                else Error (ExpectedBool (ty, decl.loc)))
-          ctx' guards
-      in
-      Ok ()
-  | _ -> Ok () (* Not a procedure, nothing to check *)
-
-(** Find the Void procedure in a chapter head, if any *)
-let find_void_proc (head : declaration located list) =
+(** Find the action in a chapter head, if any *)
+let find_action (head : declaration located list) =
   List.find_map
     (fun decl ->
       match decl.value with
-      | DeclProc { name; params; return_type = None; context; _ } ->
+      | DeclAction { name; params; context; _ } ->
           Some (name, params, context)
       | _ -> None)
     head
 
-(** Collect all procedure parameters from a chapter head *)
+(** Collect all procedure/action parameters from a chapter head *)
 let collect_all_params (head : declaration located list) =
   List.concat_map
     (fun decl ->
-      match decl.value with DeclProc { params; _ } -> params | _ -> [])
+      match decl.value with
+      | DeclProc { params; _ } | DeclAction { params; _ } -> params
+      | _ -> [])
     head
 
 (** Check a chapter body *)
@@ -389,15 +394,15 @@ let check_chapter_body ~chapter_idx env (chapter : chapter) =
   (* Filter environment for visibility in this chapter's body *)
   let env_visible = Env.visible_in_body chapter_idx env in
 
-  (* Set void proc context if chapter has one *)
-  let env_with_void =
-    match find_void_proc chapter.head with
+  (* Set action context if chapter has one *)
+  let env_with_action =
+    match find_action chapter.head with
     | Some (name, _, context) ->
-        Env.with_void_proc name env_visible |> Env.with_proc_context context
+        Env.with_action name env_visible |> Env.with_action_context context
     | None -> env_visible
   in
 
-  (* Add ALL procedure parameters from this chapter's head to environment *)
+  (* Add ALL procedure/action parameters from this chapter's head to environment *)
   let all_params = collect_all_params chapter.head in
   let env' =
     List.fold_left
@@ -405,7 +410,7 @@ let check_chapter_body ~chapter_idx env (chapter : chapter) =
         match Collect.resolve_type env p.param_type dummy_loc with
         | Ok ty -> Env.add_var p.param_name ty env
         | Error _ -> env (* Ignore resolution errors here, caught elsewhere *))
-      env_with_void all_params
+      env_with_action all_params
   in
 
   let ctx = { env = env'; loc = dummy_loc } in

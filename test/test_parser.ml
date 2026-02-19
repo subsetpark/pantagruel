@@ -24,12 +24,12 @@ let test_procedure_decl () =
   let chapter = List.hd doc.Ast.chapters in
   check int "declarations" 2 (List.length chapter.Ast.head)
 
-let test_void_procedure () =
-  let doc = parse "module TEST.\n\nUser.\ncheck-out u: User.\n---\n" in
+let test_action () =
+  let doc = parse "module TEST.\n\nUser.\n~> check-out u: User.\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
   match (List.nth chapter.Ast.head 1).Ast.value with
-  | Ast.DeclProc { return_type = None; _ } -> ()
-  | _ -> fail "Expected Void procedure"
+  | Ast.DeclAction { name = "check-out"; context = None; _ } -> ()
+  | _ -> fail "Expected action"
 
 let test_import () =
   let doc = parse "module TEST.\n\nimport FOO.\n\nBar.\n---\n" in
@@ -70,7 +70,7 @@ let test_list_type () =
   let doc = parse "module TEST.\n\nUser.\nusers => [User].\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
   match (List.nth chapter.Ast.head 1).Ast.value with
-  | Ast.DeclProc { return_type = Some (Ast.TList (Ast.TName "User")); _ } -> ()
+  | Ast.DeclProc { return_type = Ast.TList (Ast.TName "User"); _ } -> ()
   | _ -> fail "Expected list type"
 
 let test_sum_type () =
@@ -81,11 +81,11 @@ let test_sum_type () =
   | _ -> fail "Expected sum type"
 
 let test_procedure_guard () =
-  let doc = parse "module TEST.\n\nAccount.\nbalance a: Account => Nat.\nwithdraw a: Account, amount: Nat, balance a >= amount.\n---\n" in
+  let doc = parse "module TEST.\n\nAccount.\nbalance a: Account => Nat.\n~> withdraw a: Account, amount: Nat, balance a >= amount.\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
   match (List.nth chapter.Ast.head 2).Ast.value with
-  | Ast.DeclProc { guards = [Ast.GExpr _]; _ } -> ()
-  | _ -> fail "Expected procedure with guard"
+  | Ast.DeclAction { guards = [Ast.GExpr _]; _ } -> ()
+  | _ -> fail "Expected action with guard"
 
 let test_membership_binding () =
   let doc = parse "module TEST.\n\nItem.\nitems => [Item].\n---\nall i in items | true.\n" in
@@ -108,11 +108,11 @@ let test_doc_comment () =
   check (list string) "doc comment" ["This is a doc comment"] decl.Ast.doc
 
 let test_multiple_guards () =
-  let doc = parse "module TEST.\n\nAccount.\nbalance a: Account => Nat.\nwithdraw a: Account, amount: Nat, amount > 0, balance a >= amount.\n---\n" in
+  let doc = parse "module TEST.\n\nAccount.\nbalance a: Account => Nat.\n~> withdraw a: Account, amount: Nat, amount > 0, balance a >= amount.\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
   match (List.nth chapter.Ast.head 2).Ast.value with
-  | Ast.DeclProc { guards = [Ast.GExpr _; Ast.GExpr _]; _ } -> ()
-  | _ -> fail "Expected procedure with two guards"
+  | Ast.DeclAction { guards = [Ast.GExpr _; Ast.GExpr _]; _ } -> ()
+  | _ -> fail "Expected action with two guards"
 
 let test_no_module () =
   let doc = parse "Foo.\n---\ntrue.\n" in
@@ -126,14 +126,14 @@ let test_context_declaration () =
   check string "context name" "Banking" (List.hd doc.Ast.contexts).Ast.value
 
 let test_proc_with_context () =
-  let doc = parse "module TEST.\ncontext Banking.\n\nAccount.\n{Banking} balance a: Account => Nat.\nwithdraw a: Account in Banking.\n---\n" in
+  let doc = parse "module TEST.\ncontext Banking.\n\nAccount.\n{Banking} balance a: Account => Nat.\nBanking ~> withdraw a: Account.\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
   (match (List.nth chapter.Ast.head 1).Ast.value with
   | Ast.DeclProc { name = "balance"; contexts = ["Banking"]; _ } -> ()
   | _ -> fail "Expected proc with context footprint");
   (match (List.nth chapter.Ast.head 2).Ast.value with
-  | Ast.DeclProc { name = "withdraw"; context = Some "Banking"; _ } -> ()
-  | _ -> fail "Expected proc with context annotation")
+  | Ast.DeclAction { name = "withdraw"; context = Some "Banking"; _ } -> ()
+  | _ -> fail "Expected action with context")
 
 let () =
   run "Parser" [
@@ -141,7 +141,7 @@ let () =
     "no_module", [test_case "no module header" `Quick test_no_module];
     "domain", [test_case "domain declaration" `Quick test_domain_decl];
     "procedure", [test_case "procedure declaration" `Quick test_procedure_decl];
-    "void", [test_case "void procedure" `Quick test_void_procedure];
+    "action", [test_case "action" `Quick test_action];
     "import", [test_case "import" `Quick test_import];
     "where", [test_case "where clause" `Quick test_where_clause];
     "proposition", [test_case "proposition" `Quick test_proposition];

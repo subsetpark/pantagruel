@@ -165,6 +165,7 @@ let rec token_impl lexer =
   | "<=" -> Parser.LE
   | ">=" -> Parser.GE
   | "|->" -> Parser.MAPSTO
+  | "~>" -> Parser.SQUIG_ARROW
   | '~' -> Parser.NOT
   | '\'' -> Parser.PRIME
   (* Single-char operators *)
@@ -268,6 +269,7 @@ let string_of_token = function
   | Parser.EXISTS -> "'some'"
   | Parser.IN -> "'in'"
   | Parser.SUBSET -> "'subset'"
+  | Parser.SQUIG_ARROW -> "'~>'"
   | Parser.DARROW -> "'=>'"
   | Parser.ARROW -> "'->'"
   | Parser.IFF -> "'<->'"
@@ -321,6 +323,7 @@ let all_tokens =
     Parser.NAT 0;
     Parser.REAL 0.0;
     Parser.STRING "";
+    Parser.SQUIG_ARROW;
     Parser.DARROW;
     Parser.ARROW;
     Parser.IFF;

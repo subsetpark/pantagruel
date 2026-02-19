@@ -35,7 +35,7 @@
 %token <int> NAT
 %token <float> REAL
 %token <string> STRING
-%token DARROW ARROW IFF
+%token SQUIG_ARROW DARROW ARROW IFF
 %token EQ NEQ LT GT LE GE
 %token PLUS MINUS TIMES DIVIDE CARD
 %token PRIME MAPSTO
@@ -103,9 +103,8 @@ declaration:
         name;
         params;
         guards;
-        return_type = Some ret;
+        return_type = ret;
         contexts = ctxs;
-        context = None;
       }) }
   | name=LOWER_IDENT pg=proc_params_guards DARROW ret=type_expr DOT
     { let doc = Doc_comments.get_at_pos $startpos in
@@ -114,25 +113,27 @@ declaration:
         name;
         params;
         guards;
-        return_type = Some ret;
+        return_type = ret;
         contexts = [];
-        context = None;
       }) }
-  | name=LOWER_IDENT pg=proc_params_guards ctx=context_opt DOT
+  | ctx=UPPER_IDENT SQUIG_ARROW name=LOWER_IDENT pg=proc_params_guards DOT
     { let doc = Doc_comments.get_at_pos $startpos in
       let (params, guards) = pg in
-      located_with_doc doc $startpos $endpos (DeclProc {
+      located_with_doc doc $startpos $endpos (DeclAction {
         name;
         params;
         guards;
-        return_type = None;
-        contexts = [];
-        context = ctx;
+        context = Some ctx;
       }) }
-
-context_opt:
-  | (* empty *) { None }
-  | IN name=UPPER_IDENT { Some name }
+  | SQUIG_ARROW name=LOWER_IDENT pg=proc_params_guards DOT
+    { let doc = Doc_comments.get_at_pos $startpos in
+      let (params, guards) = pg in
+      located_with_doc doc $startpos $endpos (DeclAction {
+        name;
+        params;
+        guards;
+        context = None;
+      }) }
 
 (* Parameters and guards for procedures - parsed together then split *)
 proc_params_guards:

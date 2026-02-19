@@ -179,7 +179,7 @@ let pp_guard procs fmt = function
 let pp_declaration procs fmt = function
   | DeclDomain name -> fprintf fmt "`%s`." name
   | DeclAlias (name, te) -> fprintf fmt "**%s** = %a." name pp_type_expr te
-  | DeclProc { name; params; guards; return_type; contexts; context } ->
+  | DeclProc { name; params; guards; return_type; contexts } ->
       if contexts <> [] then
         fprintf fmt "{%a} "
           (pp_print_list ~pp_sep:pp_params_sep (fun fmt c ->
@@ -192,10 +192,18 @@ let pp_declaration procs fmt = function
         fprintf fmt ", %a"
           (pp_print_list ~pp_sep:pp_params_sep (pp_guard procs))
           guards;
-      (match return_type with
-      | None -> ()
-      | Some te -> fprintf fmt " ⇒ %a" pp_type_expr te);
-      (match context with None -> () | Some ctx -> fprintf fmt " ∈ `%s`" ctx);
+      fprintf fmt " ⇒ %a." pp_type_expr return_type
+  | DeclAction { name; params; guards; context } ->
+      (match context with
+      | Some ctx -> fprintf fmt "`%s` ↝ " ctx
+      | None -> fprintf fmt "↝ ");
+      fprintf fmt "**%s**" name;
+      if params <> [] then
+        fprintf fmt " %a" (pp_print_list ~pp_sep:pp_params_sep pp_param) params;
+      if guards <> [] then
+        fprintf fmt ", %a"
+          (pp_print_list ~pp_sep:pp_params_sep (pp_guard procs))
+          guards;
       pp_print_char fmt '.'
 
 (* --- String-returning wrappers --- *)
@@ -229,18 +237,20 @@ let pp_chapter procs ?(skip_first_doc = false) ~total_chapters chapter_num fmt
     match chapter.head with d :: _ -> Some d.loc.line | [] -> None
   in
 
-  let domains, aliases, procs_decls =
+  let domains, aliases, procs_decls, action_decls =
     List.fold_left
-      (fun (ds, as_, ps) decl ->
+      (fun (ds, as_, ps, acts) decl ->
         match decl.value with
-        | DeclDomain _ -> (decl :: ds, as_, ps)
-        | DeclAlias _ -> (ds, decl :: as_, ps)
-        | DeclProc _ -> (ds, as_, decl :: ps))
-      ([], [], []) chapter.head
+        | DeclDomain _ -> (decl :: ds, as_, ps, acts)
+        | DeclAlias _ -> (ds, decl :: as_, ps, acts)
+        | DeclProc _ -> (ds, as_, decl :: ps, acts)
+        | DeclAction _ -> (ds, as_, ps, decl :: acts))
+      ([], [], [], []) chapter.head
   in
   let domains = List.rev domains in
   let aliases = List.rev aliases in
   let procs_decls = List.rev procs_decls in
+  let action_decls = List.rev action_decls in
 
   let should_skip_doc d = skip_first_doc && Some d.loc.line = first_line in
 
@@ -269,6 +279,11 @@ let pp_chapter procs ?(skip_first_doc = false) ~total_chapters chapter_num fmt
   if procs_decls <> [] then begin
     fprintf fmt "### Procedures@\n@\n";
     List.iter (pp_decl_with_doc procs ~should_skip_doc fmt) procs_decls
+  end;
+
+  if action_decls <> [] then begin
+    fprintf fmt "### Actions@\n@\n";
+    List.iter (pp_decl_with_doc procs ~should_skip_doc fmt) action_decls
   end;
 
   if chapter.body <> [] then begin

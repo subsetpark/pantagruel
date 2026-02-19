@@ -36,12 +36,12 @@ let format_type_error err =
       fmt loc (Printf.sprintf "Expected Bool, got %s" (Types.format_ty ty))
   | PrimedNonProcedure (name, loc) ->
       fmt loc (Printf.sprintf "Cannot prime '%s': not a procedure" name)
-  | PrimeOutsideVoidContext (name, loc) ->
+  | PrimeOutsideActionContext (name, loc) ->
       fmt loc
-        (Printf.sprintf "Primed '%s' only valid in void procedure context" name)
-  | VoidProcInExpression (name, loc) ->
+        (Printf.sprintf "Primed '%s' only valid in action context" name)
+  | ActionInExpression (name, loc) ->
       fmt loc
-        (Printf.sprintf "Void procedure '%s' cannot be used in expression" name)
+        (Printf.sprintf "Action '%s' cannot be used in expression" name)
   | OverrideRequiresArity1 (name, arity, loc) ->
       fmt loc
         (Printf.sprintf "Override requires arity-1 procedure, '%s' has arity %d"
@@ -87,10 +87,13 @@ let format_collect_error err =
       fmt loc (Printf.sprintf "Undefined type '%s'" name)
   | RecursiveAlias (name, loc) ->
       fmt loc (Printf.sprintf "Recursive type alias '%s'" name)
-  | MultipleVoidProcs (p1, p2, loc) ->
+  | MultipleActions (p1, p2, loc) ->
       fmt loc
-        (Printf.sprintf "Multiple void procedures in chapter: '%s' and '%s'" p1
-           p2)
+        (Printf.sprintf "Multiple actions in chapter: '%s' and '%s'" p1 p2)
+  | ActionNotLast (name, loc) ->
+      fmt loc
+        (Printf.sprintf "Action '%s' must be the last declaration in chapter head"
+           name)
   | BuiltinRedefined (name, loc) ->
       fmt loc (Printf.sprintf "Cannot redefine builtin type '%s'" name)
   | DuplicateContext (name, loc) ->

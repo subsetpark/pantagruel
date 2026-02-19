@@ -55,7 +55,7 @@ let test_primed_proc () =
 User.
 Document.
 owner d: Document => User.
-check-out u: User, d: Document.
+~> check-out u: User, d: Document.
 ---
 owner' d = u.
 |} in
@@ -161,13 +161,13 @@ let test_decl_proc_with_return () =
       check string "proc decl" "**name** *u*: `User` ⇒ `String`." md
   | _ -> fail "expected two declarations"
 
-let test_decl_void_proc () =
-  let _, doc = render "module T.\nUser.\nDocument.\ncheck-out u: User, d: Document.\n---\n" in
+let test_decl_action () =
+  let _, doc = render "module T.\nUser.\nDocument.\n~> check-out u: User, d: Document.\n---\n" in
   let procs = Markdown_output.StringSet.singleton "check-out" in
   match doc.Ast.chapters with
   | [{ head = [_; _; decl]; _ }] ->
       let md = Markdown_output.md_declaration procs decl.value in
-      check string "void proc decl" "**check-out** *u*: `User`, *d*: `Document`." md
+      check string "action decl" "↝ **check-out** *u*: `User`, *d*: `Document`." md
   | _ -> fail "expected three declarations"
 
 (* --- Document structure --- *)
@@ -274,7 +274,7 @@ let () =
     "declarations", [
       test_case "domain" `Quick test_decl_domain;
       test_case "proc with return" `Quick test_decl_proc_with_return;
-      test_case "void proc" `Quick test_decl_void_proc;
+      test_case "action" `Quick test_decl_action;
     ];
     "document", [
       test_case "domains backtick" `Quick test_doc_domains_backtick;

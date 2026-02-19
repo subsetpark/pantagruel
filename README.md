@@ -46,7 +46,7 @@ pantagruel --module-path ./specs myspec.pant
 The `samples/` directory contains reference specifications demonstrating all language features:
 
 - `01-basics.pant` - Fundamental syntax: domains, procedures, quantifiers
-- `02-library.pant` - Library system with void procedures and state transitions
+- `02-library.pant` - Library system with actions and state transitions
 - `03-types.pant` - All type features: products, sums, lists, aliases
 - `04-operators.pant` - All operators: logical, comparison, arithmetic
 - `05-state.pant` - State transitions with primed expressions and frame conditions
@@ -71,7 +71,7 @@ Loan.
 
 > Procedures
 available b: Book => Bool.
-borrow u: User, b: Book.
+~> borrow u: User, b: Book.
 ---
 > Propositions about the library
 all b: Book | available b -> b in Book.
@@ -100,9 +100,12 @@ distance p: Point, q: Point => Real.
 
 // Nullary (no parameters)
 nobody => User.
+```
 
-// Void (no return type) - for state transitions
-check-out u: User, d: Document.
+**Actions** define state transitions (no return type):
+```
+// Action (with ~>) - for state transitions
+~> check-out u: User, d: Document.
 ```
 
 ### Propositions
@@ -126,15 +129,15 @@ all u: User | u in User.
 #User >= 0.
 ```
 
-### Void Procedures and Primed Expressions
+### Actions and Primed Expressions
 
-Void procedures model state transitions. Within a chapter that declares a void procedure, you can use **primed expressions** to refer to the post-state:
+Actions model state transitions. Within a chapter that declares an action, you can use **primed expressions** to refer to the post-state:
 
 ```
 User.
 Document.
 owner d: Document => User.
-check-out u: User, d: Document.
+~> check-out u: User, d: Document.
 ---
 // owner' refers to owner after check-out
 owner' d = u.
@@ -142,7 +145,7 @@ owner' d = u.
 
 ### Contexts
 
-Contexts declare write-permission boundaries for void procedures. Context names are declared at the module level, and procedures declare which contexts they belong to with a `{Ctx}` prefix. Void procedures declare which context they operate within using `in Ctx`.
+Contexts declare write-permission boundaries for actions. Context names are declared at the module level, and procedures declare which contexts they belong to with a `{Ctx}` prefix. Actions declare which context they operate within using `Ctx ~>`.
 
 ```
 module BANKING.
@@ -151,7 +154,7 @@ context Accounts.
 Account.
 {Accounts} balance a: Account => Nat.
 
-withdraw a: Account, amount: Nat in Accounts.
+Accounts ~> withdraw a: Account, amount: Nat.
 ---
 balance' a = balance a - amount.
 ```
@@ -212,7 +215,7 @@ module ACCOUNTS.
 
 Account.
 balance a: Account => Int.
-deposit a: Account, amount: Nat.
+~> deposit a: Account, amount: Nat.
 ---
 // Balance increases after deposit
 balance' a = balance a + amount.

@@ -45,7 +45,7 @@ Pantagruel is a specification language checker written in OCaml. It processes `.
 4. **Type Checking** (`lib/check.ml`): Pass 2 - Expression validation
    - Infers types for all expressions
    - Validates propositions are boolean
-   - Handles void procedure contexts (primed expressions like `f'`)
+   - Handles action contexts (primed expressions like `f'`)
 
 ### Key Type Representations
 
@@ -63,13 +63,14 @@ Pantagruel is a specification language checker written in OCaml. It processes `.
 
 - Domains: `User.` declares a domain type
 - Type aliases: `Point = Nat * Nat.`
-- Procedures: `owner d: Document => User.` (with return type) or `check-out u: User.` (void)
-- Void procedures enable primed expressions (`owner' d`) for state transitions
+- Procedures: `owner d: Document => User.` (with return type via `=>`)
+- Actions: `~> check-out u: User.` (state transitions via `~>`, no return type)
+- Actions enable primed expressions (`owner' d`) for state transitions
 - Quantifiers: `all u: User | ...` and `some x: T | ...`
 - Tuple projection: `point.1`, `point.2`
 - List cardinality: `#users`
 - Membership: `x in Domain`
-- Contexts: `context Accounts.` at module level, `{Accounts} balance ...` for footprint, `proc ... in Accounts.` for void procs
+- Contexts: `context Accounts.` at module level, `{Accounts} balance ...` for footprint, `Accounts ~> withdraw ...` for actions
 
 ## Dependencies
 

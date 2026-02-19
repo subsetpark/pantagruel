@@ -168,7 +168,7 @@ let pp_guard fmt = function
 let pp_declaration fmt = function
   | DeclDomain name -> fprintf fmt "%s." name
   | DeclAlias (name, te) -> fprintf fmt "%s = %a." name pp_type_expr te
-  | DeclProc { name; params; guards; return_type; contexts; context } ->
+  | DeclProc { name; params; guards; return_type; contexts } ->
       if contexts <> [] then
         fprintf fmt "{%a} "
           (pp_print_list ~pp_sep:pp_sep_comma pp_print_string)
@@ -178,10 +178,16 @@ let pp_declaration fmt = function
         fprintf fmt " %a" (pp_print_list ~pp_sep:pp_sep_comma pp_param) params;
       if guards <> [] then
         fprintf fmt ", %a" (pp_print_list ~pp_sep:pp_sep_comma pp_guard) guards;
-      (match return_type with
-      | None -> ()
-      | Some te -> fprintf fmt " => %a" pp_type_expr te);
-      (match context with None -> () | Some ctx -> fprintf fmt " in %s" ctx);
+      fprintf fmt " => %a." pp_type_expr return_type
+  | DeclAction { name; params; guards; context } ->
+      (match context with
+      | Some ctx -> fprintf fmt "%s ~> " ctx
+      | None -> fprintf fmt "~> ");
+      pp_print_string fmt name;
+      if params <> [] then
+        fprintf fmt " %a" (pp_print_list ~pp_sep:pp_sep_comma pp_param) params;
+      if guards <> [] then
+        fprintf fmt ", %a" (pp_print_list ~pp_sep:pp_sep_comma pp_guard) guards;
       pp_print_char fmt '.'
 
 (* --- String-returning wrappers --- *)

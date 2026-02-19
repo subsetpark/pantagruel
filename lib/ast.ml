@@ -100,10 +100,15 @@ type declaration =
       name : lower_ident;
       params : param list;
       guards : guard list;
-      return_type : type_expr option;  (** None = Void procedure *)
+      return_type : type_expr;
       contexts : upper_ident list;
           (** Context footprint: "{Accounts} balance ..." *)
-      context : upper_ident option;  (** Context annotation: "in Banking" *)
+    }
+  | DeclAction of {
+      name : lower_ident;
+      params : param list;
+      guards : guard list;
+      context : upper_ident option;  (** Ctx in "Ctx ~> action" *)
     }
 [@@deriving show, eq]
 

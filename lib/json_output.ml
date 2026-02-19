@@ -191,7 +191,7 @@ let decl_to_json env (decl_loc : declaration located) =
             ("type", type_expr_to_json te);
           ]
         @ match resolved with Some t -> [ ("resolved", t) ] | None -> [])
-  | DeclProc { name; params; guards; return_type; contexts; context } ->
+  | DeclProc { name; params; guards; return_type; contexts } ->
       (* Look up resolved type from environment *)
       let resolved =
         match Env.lookup_term name env with
@@ -205,14 +205,26 @@ let decl_to_json env (decl_loc : declaration located) =
             ("name", `String name);
             ("params", `List (List.map param_to_json params));
             ("guards", `List (List.map guard_to_json guards));
-            ( "return",
-              match return_type with
-              | None -> `Null
-              | Some t -> type_expr_to_json t );
+            ("return", type_expr_to_json return_type);
           ]
         @ (if contexts <> [] then
              [ ("contexts", `List (List.map (fun c -> `String c) contexts)) ]
            else [])
+        @ match resolved with Some t -> [ ("resolved", t) ] | None -> [])
+  | DeclAction { name; params; guards; context } ->
+      let resolved =
+        match Env.lookup_term name env with
+        | Some { kind = Env.KProc ty; _ } -> Some (ty_to_json ty)
+        | _ -> None
+      in
+      `Assoc
+        (doc_json
+        @ [
+            ("kind", `String "action");
+            ("name", `String name);
+            ("params", `List (List.map param_to_json params));
+            ("guards", `List (List.map guard_to_json guards));
+          ]
         @ (match context with
           | Some c -> [ ("context", `String c) ]
           | None -> [])

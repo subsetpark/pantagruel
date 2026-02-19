@@ -14,7 +14,7 @@
     Algorithm: 1. Build dependency graph of declarations (based on type
     references) 2. Topologically sort declarations into levels 3. Each level
     becomes a chapter 4. Propositions are placed in the earliest body where all
-    dependencies are visible 5. Void procedures and their tied propositions stay
+    dependencies are visible 5. Actions and their tied propositions stay
     together *)
 
 open Ast
@@ -23,19 +23,19 @@ module StringSet = Set.Make (String)
 type decl_info = {
   name : string;
   is_type : bool;  (** true for domains/aliases, false for procedures *)
-  is_void : bool;  (** true for void procedures *)
+  is_void : bool;  (** true for actions *)
   decl : declaration located;
   dependencies : StringSet.t;  (** Type names this declaration depends on *)
   mutable level : int;  (** Topological level, computed later *)
 }
 (** Information about a declaration *)
 
-type void_unit = {
-  void_proc : decl_info;
+type action_unit = {
+  action_decl : decl_info;
   tied_props : expr located list;
-      (** Props using primed exprs or void proc params *)
+      (** Props using primed exprs or action params *)
 }
-(** A void unit: a void procedure + its associated propositions *)
+(** An action unit: an action + its associated propositions *)
 
 (** Extract type names from a type expression *)
 let rec types_in_type_expr = function
@@ -97,30 +97,33 @@ let symbols_in_expr expr =
 let symbols_in_decl_deps (decl : declaration) =
   let types = ref StringSet.empty in
   let terms = ref StringSet.empty in
+  let collect_params_guards params guards =
+    List.iter
+      (fun p ->
+        types := StringSet.union !types (types_in_type_expr p.param_type))
+      params;
+    List.iter
+      (function
+        | GParam p ->
+            types := StringSet.union !types (types_in_type_expr p.param_type)
+        | GIn (_, e) ->
+            let t, m = symbols_in_expr e in
+            types := StringSet.union !types t;
+            terms := StringSet.union !terms m
+        | GExpr e ->
+            let t, m = symbols_in_expr e in
+            types := StringSet.union !types t;
+            terms := StringSet.union !terms m)
+      guards
+  in
   (match decl with
   | DeclDomain _ -> () (* No dependencies *)
   | DeclAlias (_, te) -> types := types_in_type_expr te
   | DeclProc { params; guards; return_type; _ } ->
-      List.iter
-        (fun p ->
-          types := StringSet.union !types (types_in_type_expr p.param_type))
-        params;
-      List.iter
-        (function
-          | GParam p ->
-              types := StringSet.union !types (types_in_type_expr p.param_type)
-          | GIn (_, e) ->
-              let t, m = symbols_in_expr e in
-              types := StringSet.union !types t;
-              terms := StringSet.union !terms m
-          | GExpr e ->
-              let t, m = symbols_in_expr e in
-              types := StringSet.union !types t;
-              terms := StringSet.union !terms m)
-        guards;
-      Option.iter
-        (fun te -> types := StringSet.union !types (types_in_type_expr te))
-        return_type);
+      collect_params_guards params guards;
+      types := StringSet.union !types (types_in_type_expr return_type)
+  | DeclAction { params; guards; _ } ->
+      collect_params_guards params guards);
   (!types, !terms)
 
 (** Get the name defined by a declaration *)
@@ -128,15 +131,16 @@ let decl_name = function
   | DeclDomain name -> name
   | DeclAlias (name, _) -> name
   | DeclProc { name; _ } -> name
+  | DeclAction { name; _ } -> name
 
 (** Is this a type-namespace declaration? *)
 let is_type_decl = function
   | DeclDomain _ | DeclAlias _ -> true
-  | DeclProc _ -> false
+  | DeclProc _ | DeclAction _ -> false
 
-(** Is this a void procedure? *)
-let is_void_proc = function
-  | DeclProc { return_type = None; _ } -> true
+(** Is this an action? *)
+let is_action = function
+  | DeclAction _ -> true
   | DeclDomain _ | DeclAlias _ | DeclProc _ -> false
 
 (** Check if an expression uses any primed names *)
@@ -164,13 +168,13 @@ let rec uses_primed = function
 let body_uses_primed (props : expr located list) =
   List.exists (fun p -> uses_primed p.value) props
 
-(** Get void procedure parameters from a chapter *)
-let void_proc_params (chapter : chapter) : StringSet.t =
+(** Get action parameters from a chapter *)
+let action_params (chapter : chapter) : StringSet.t =
   let params =
     List.find_map
       (fun decl ->
         match decl.value with
-        | DeclProc { return_type = None; params; _ } ->
+        | DeclAction { params; _ } ->
             Some (List.map (fun p -> p.param_name) params)
         | _ -> None)
       chapter.head
@@ -265,7 +269,7 @@ let normalize (doc : document) : document =
               {
                 name = decl_name decl_loc.value;
                 is_type = is_type_decl decl_loc.value;
-                is_void = is_void_proc decl_loc.value;
+                is_void = is_action decl_loc.value;
                 decl = decl_loc;
                 dependencies = deps;
                 level = 0;
@@ -278,36 +282,36 @@ let normalize (doc : document) : document =
     let max_level = compute_levels all_decls in
     let num_chapters = max_level + 1 in
 
-    (* Step 3: Identify void units *)
-    let void_decls = List.filter (fun d -> d.is_void) all_decls in
-    let non_void_decls = List.filter (fun d -> not d.is_void) all_decls in
+    (* Step 3: Identify action units *)
+    let action_decls = List.filter (fun d -> d.is_void) all_decls in
+    let non_action_decls = List.filter (fun d -> not d.is_void) all_decls in
 
-    (* For void procedures, find their tied propositions *)
-    let void_units =
+    (* For actions, find their tied propositions *)
+    let action_units =
       List.map
-        (fun vd ->
-          (* Find the original chapter this void proc came from *)
+        (fun ad ->
+          (* Find the original chapter this action came from *)
           let orig_chapter =
             List.find
               (fun ch ->
-                List.exists (fun d -> decl_name d.value = vd.name) ch.head)
+                List.exists (fun d -> decl_name d.value = ad.name) ch.head)
               doc.chapters
           in
-          let params = void_proc_params orig_chapter in
+          let params = action_params orig_chapter in
           let tied =
             List.filter
               (fun p -> uses_primed p.value || prop_uses_params params p.value)
               orig_chapter.body
           in
-          { void_proc = vd; tied_props = tied })
-        void_decls
+          { action_decl = ad; tied_props = tied })
+        action_decls
     in
 
-    (* Independent props: not tied to any void proc *)
+    (* Independent props: not tied to any action *)
     let independent_props =
       List.concat_map
         (fun chapter ->
-          let params = void_proc_params chapter in
+          let params = action_params chapter in
           List.filter
             (fun p ->
               (not (uses_primed p.value))
@@ -320,30 +324,30 @@ let normalize (doc : document) : document =
     let decl_assignments = Array.make num_chapters [] in
     List.iter
       (fun d -> decl_assignments.(d.level) <- d :: decl_assignments.(d.level))
-      non_void_decls;
+      non_action_decls;
 
-    (* Step 6: Place void units - they go at their level, but we need to handle
-       conflicts (multiple void procs at same level need separate chapters) *)
+    (* Step 6: Place action units - they go at their level, but we need to handle
+       conflicts (multiple actions at same level need separate chapters) *)
 
-    (* Sort void units by level, then spread out conflicts *)
-    let sorted_void_units =
+    (* Sort action units by level, then spread out conflicts *)
+    let sorted_action_units =
       List.sort
-        (fun a b -> compare a.void_proc.level b.void_proc.level)
-        void_units
+        (fun a b -> compare a.action_decl.level b.action_decl.level)
+        action_units
     in
 
-    (* Assign void units to chapters, creating new chapters if needed *)
-    let void_chapter_assignments = Hashtbl.create 16 in
+    (* Assign action units to chapters, creating new chapters if needed *)
+    let action_chapter_assignments = Hashtbl.create 16 in
     let next_available = ref 0 in
     List.iter
-      (fun vu ->
-        let min_level = vu.void_proc.level in
+      (fun au ->
+        let min_level = au.action_decl.level in
         let target = max min_level !next_available in
-        Hashtbl.add void_chapter_assignments vu.void_proc.name target;
-        vu.void_proc.level <- target;
+        Hashtbl.add action_chapter_assignments au.action_decl.name target;
+        au.action_decl.level <- target;
         (* Update the level *)
         next_available := target + 1)
-      sorted_void_units;
+      sorted_action_units;
 
     (* Recompute num_chapters if we added any *)
     let num_chapters = max num_chapters !next_available in
@@ -357,26 +361,26 @@ let normalize (doc : document) : document =
       else decl_assignments
     in
 
-    (* Add void procs to their assigned chapters *)
+    (* Add actions to their assigned chapters *)
     List.iter
-      (fun vu ->
-        let level = vu.void_proc.level in
-        decl_assignments.(level) <- vu.void_proc :: decl_assignments.(level))
-      void_units;
+      (fun au ->
+        let level = au.action_decl.level in
+        decl_assignments.(level) <- au.action_decl :: decl_assignments.(level))
+      action_units;
 
-    (* Build level lookup table (after void proc reassignment so levels are final) *)
+    (* Build level lookup table (after action reassignment so levels are final) *)
     let decl_levels = Hashtbl.create 32 in
     List.iter (fun d -> Hashtbl.replace decl_levels d.name d.level) all_decls;
 
     (* Step 7: Assign propositions to chapters *)
     let body_assignments = Array.make num_chapters [] in
 
-    (* Void-tied props go with their void proc *)
+    (* Action-tied props go with their action *)
     List.iter
-      (fun vu ->
-        let level = vu.void_proc.level in
-        body_assignments.(level) <- vu.tied_props @ body_assignments.(level))
-      void_units;
+      (fun au ->
+        let level = au.action_decl.level in
+        body_assignments.(level) <- au.tied_props @ body_assignments.(level))
+      action_units;
 
     (* Independent props go to earliest valid chapter *)
     List.iter
@@ -391,13 +395,13 @@ let normalize (doc : document) : document =
       Array.to_list
         (Array.mapi
            (fun level _ ->
-             (* Sort declarations: non-void first (by name for stability), then void *)
+             (* Sort declarations: non-action first (by name for stability), then action last *)
              let decls = decl_assignments.(level) in
-             let non_void = List.filter (fun d -> not d.is_void) decls in
-             let void = List.filter (fun d -> d.is_void) decls in
+             let non_action = List.filter (fun d -> not d.is_void) decls in
+             let action = List.filter (fun d -> d.is_void) decls in
              let sorted_decls =
-               List.sort (fun a b -> String.compare a.name b.name) non_void
-               @ void
+               List.sort (fun a b -> String.compare a.name b.name) non_action
+               @ action
              in
              let head = List.map (fun d -> d.decl) sorted_decls in
              let body = List.rev body_assignments.(level) in

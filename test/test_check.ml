@@ -110,14 +110,14 @@ let test_cardinality () =
 let test_nullary_procedure () =
   check_ok "module TEST.\n\nUser.\nnobody => User.\n---\nall u: User | u = nobody.\n"
 
-let test_void_procedure_primed () =
+let test_action_primed () =
   check_ok {|module TEST.
 
 User.
 Document.
 owner d: Document => User.
 nobody => User.
-check-out u: User, d: Document.
+~> check-out u: User, d: Document.
 ---
 owner' d = u.
 |}
@@ -148,7 +148,7 @@ let test_procedure_guard () =
 
 Account.
 balance a: Account => Nat.
-withdraw a: Account, amount: Nat, balance a >= amount.
+~> withdraw a: Account, amount: Nat, balance a >= amount.
 ---
 balance' a = balance a - amount.
 |}
@@ -233,7 +233,7 @@ User.
 all u: User | u u.
 |}
 
-let test_prime_outside_void () =
+let test_prime_outside_action () =
   check_fails {|module TEST.
 
 User.
@@ -246,17 +246,17 @@ let test_prime_on_variable () =
   check_fails {|module TEST.
 
 User.
-do-thing u: User.
+~> do-thing u: User.
 ---
 all u: User | u' = u.
 |}
 
-let test_multiple_void_procs () =
+let test_multiple_actions () =
   check_fails {|module TEST.
 
 User.
-action1 u: User.
-action2 u: User.
+~> action1 u: User.
+~> action2 u: User.
 ---
 |}
 
@@ -269,7 +269,7 @@ let test_guard_not_boolean () =
 
 Account.
 balance a: Account => Nat.
-withdraw a: Account, amount: Nat, balance a.
+~> withdraw a: Account, amount: Nat, balance a.
 ---
 |}
 
@@ -295,12 +295,12 @@ price myvar > 0.
 |}
 
 let test_guard_uses_params () =
-  (* Guard can reference procedure parameters *)
+  (* Guard can reference action parameters *)
   check_ok {|module TEST.
 
 Account.
 balance a: Account => Nat.
-withdraw a: Account, amount: Nat, amount > 0.
+~> withdraw a: Account, amount: Nat, amount > 0.
 ---
 |}
 
@@ -572,7 +572,7 @@ all a: Account | balance a >= 0.
 
 where
 
-withdraw a: Account in Banking.
+Banking ~> withdraw a: Account.
 ---
 balance' a = balance a - 1.
 owner' a = a.
@@ -591,44 +591,40 @@ all a: Account | balance a >= 0.
 
 where
 
-withdraw a: Account in Banking.
+Banking ~> withdraw a: Account.
 ---
 owner' a = a.
 |}
 
-let test_footprint_on_void_proc () =
-  (* {Ctx} on a void proc is a parse error *)
+let test_footprint_on_action () =
+  (* {Ctx} before ~> is a parse error *)
   try
     let _ = parse {|module TEST.
 context Banking.
 
 Account.
-{Banking} do-thing a: Account.
+{Banking} ~> do-thing a: Account.
 ---
 |} in
     fail "Expected parse error"
   with _ -> ()
 
-let test_context_on_non_void () =
-  (* "in Ctx" on a non-void proc is a parse error *)
-  try
-    let _ = parse {|module TEST.
-context Banking.
+let test_action_not_last_in_chapter () =
+  (* Action must be the last declaration in chapter head *)
+  check_fails {|module TEST.
 
-Account.
-{Banking} balance a: Account => Nat.
-get-balance a: Account => Nat in Banking.
+User.
+~> do-thing u: User.
+helper u: User => Bool.
 ---
-|} in
-    fail "Expected parse error"
-  with _ -> ()
+|}
 
 let test_undefined_context () =
   (* Referencing a non-existent context *)
   check_fails {|module TEST.
 
 Account.
-withdraw a: Account in NoSuchContext.
+NoSuchContext ~> withdraw a: Account.
 ---
 |}
 
@@ -639,7 +635,7 @@ let test_no_context_priming_unrestricted () =
 Account.
 balance a: Account => Nat.
 owner a: Account => Account.
-withdraw a: Account.
+~> withdraw a: Account.
 ---
 balance' a = balance a - 1.
 owner' a = a.
@@ -691,7 +687,7 @@ let () =
       test_case "membership" `Quick test_membership;
       test_case "cardinality" `Quick test_cardinality;
       test_case "nullary procedure" `Quick test_nullary_procedure;
-      test_case "void procedure primed" `Quick test_void_procedure_primed;
+      test_case "action primed" `Quick test_action_primed;
       test_case "type alias" `Quick test_type_alias;
       test_case "tuple" `Quick test_tuple;
       test_case "projection" `Quick test_projection;
@@ -709,9 +705,9 @@ let () =
       test_case "type mismatch" `Quick test_type_mismatch;
       test_case "arity mismatch" `Quick test_arity_mismatch;
       test_case "not a function" `Quick test_not_a_function;
-      test_case "prime outside void" `Quick test_prime_outside_void;
+      test_case "prime outside action" `Quick test_prime_outside_action;
       test_case "prime on variable" `Quick test_prime_on_variable;
-      test_case "multiple void procs" `Quick test_multiple_void_procs;
+      test_case "multiple actions" `Quick test_multiple_actions;
       test_case "recursive alias" `Quick test_recursive_alias;
       test_case "guard not boolean" `Quick test_guard_not_boolean;
       test_case "membership not list" `Quick test_membership_binding_not_list;
@@ -747,8 +743,8 @@ let () =
     "context", [
       test_case "priming in context" `Quick test_context_priming_succeeds;
       test_case "extracontextual fails" `Quick test_context_extracontextual_fails;
-      test_case "footprint on void proc" `Quick test_footprint_on_void_proc;
-      test_case "context on non-void" `Quick test_context_on_non_void;
+      test_case "footprint on action" `Quick test_footprint_on_action;
+      test_case "action not last" `Quick test_action_not_last_in_chapter;
       test_case "undefined context" `Quick test_undefined_context;
       test_case "no context unrestricted" `Quick test_no_context_priming_unrestricted;
     ];

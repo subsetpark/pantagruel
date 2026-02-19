@@ -59,6 +59,7 @@ String escape sequences: `\\`, `\"`, `\n`, `\t`, `\r`
 | Operator | Meaning |
 |----------|---------|
 | `=>` | Procedure return type |
+| `~>` | Action declaration |
 | `->` | Implication |
 | `<->` | Biconditional (iff) |
 | `and` | Conjunction |
@@ -138,7 +139,7 @@ Product and sum types must have at least two components. They are **positional**
 
 Products are constructed with parentheses — `(1, 2)` — and accessed with projection — `p.1`, `p.2` (1-indexed).
 
-**Function types.** Procedure declarations give rise to function types *(T₁, ..., Tₙ) → R* (returning) or *(T₁, ..., Tₙ) → Void* (void). Function types are internal to the checker and cannot appear in user-written type expressions.
+**Function types.** Procedure and action declarations give rise to function types *(T₁, ..., Tₙ) → R* (returning procedures) or *(T₁, ..., Tₙ) → Void* (actions). Function types are internal to the checker and cannot appear in user-written type expressions.
 
 ### Subtyping
 
@@ -246,7 +247,7 @@ Summary of which relation governs each context:
 
 1. The argument count must equal the parameter count.
 2. Each argument type must be a **subtype** of its parameter: if *eᵢ* : *Sᵢ*, then *Sᵢ* ≤ *Tᵢ*.
-3. The return type must not be Void — void procedures cannot appear in expression position.
+3. The return type must not be Void — actions cannot appear in expression position.
 4. Result type: *R*.
 
 #### List Application
@@ -329,7 +330,7 @@ This is a symmetric check. `Nat = Int` is valid (both numeric, join is `Int`), b
 
 *f*`'` (a primed name):
 
-1. Must occur in a chapter whose head declares a void procedure (a *void context*).
+1. Must occur in a chapter whose head declares an action (an *action context*).
 2. *f* must name a procedure, not a variable.
 3. Result type: same as the type of *f*.
 
@@ -350,7 +351,7 @@ Primed expressions denote the post-state value of a procedure in a state transit
 
 **Variable shadowing.** When a binding introduces *x* : *S* and *x* is already in scope with type *T*, the new type must be a subtype of the existing type: *S* ≤ *T*. This permits rebinding at the same or a narrower type, but forbids rebinding at a wider or unrelated type.
 
-**Void procedure uniqueness.** Each chapter may declare at most one void procedure.
+**Action uniqueness.** Each chapter may declare at most one action.
 
 **Procedure guards.** Guard expressions on procedure declarations are type-checked with the procedure's parameters in scope and must have type `Bool`.
 
@@ -377,7 +378,7 @@ Users = [User].
 
 ### Procedure Declaration
 
-Declares a procedure with typed parameters and optional return type:
+Declares a procedure with typed parameters and a return type:
 
 ```
 // With return type
@@ -387,25 +388,38 @@ distance p: Point, q: Point => Real.
 // Nullary (no parameters)
 nobody => User.
 origin => Point.
-
-// Void (no return type) - for state transitions
-check-out u: User, d: Document.
-deposit a: Account, amount: Nat.
 ```
 
-**Syntax**: `name [params] [guards] [=> ReturnType].`
+**Syntax**: `name [params] [guards] => ReturnType.`
 
 - Parameters: `name: Type` separated by commas
 - Guards: boolean expressions, separated by commas after the parameters
-- Return type: Optional, preceded by `=>`
-- Void procedures have no return type and enable primed expressions
+- Return type: required, preceded by `=>`
 
-### Procedure with Guards
+### Action Declaration
 
-Guards constrain when a procedure applies. Guards must be boolean expressions and are type-checked with the procedure's parameters in scope:
+Declares an action (state transition) with `~>`. Actions have no return type and enable primed expressions in the chapter body:
 
 ```
-withdraw a: Account, amount: Nat, balance a >= amount.
+// Action (no context)
+~> check-out u: User, d: Document.
+~> deposit a: Account, amount: Nat.
+
+// Action with context
+Accounts ~> withdraw a: Account, amount: Nat.
+```
+
+**Syntax**: `[Context] ~> name [params] [guards].`
+
+- Actions must be the **last** declaration in a chapter head
+- Each chapter may declare at most one action
+
+### Procedure and Action Guards
+
+Guards constrain when a procedure or action applies. Guards must be boolean expressions and are type-checked with the procedure's parameters in scope:
+
+```
+~> withdraw a: Account, amount: Nat, balance a >= amount.
 ```
 
 Guards can reference the procedure's parameters (`a`, `amount` in this example) to express preconditions.
@@ -419,11 +433,11 @@ module BANKING.
 context Accounts.
 ```
 
-Context names are uppercase identifiers. They define write-permission boundaries: procedures declare which contexts they belong to, and void procedures declare which context they operate within.
+Context names are uppercase identifiers. They define write-permission boundaries: procedures declare which contexts they belong to, and actions declare which context they operate within.
 
 ### Context Footprint
 
-Non-void procedures declare context membership with a `{Ctx, ...}` prefix:
+Procedures declare context membership with a `{Ctx, ...}` prefix:
 
 ```
 {Accounts} balance a: Account => Nat.
@@ -434,17 +448,17 @@ A procedure may belong to multiple contexts: `{Accounts, Audit} balance a: Accou
 
 Context footprint is closed within module scope — you can only add a procedure to a context declared in the same module.
 
-### Context Annotation (Void Procedures)
+### Context Annotation (Actions)
 
-Void procedures declare which context they operate within using `in Ctx`:
+Actions declare which context they operate within using a `Ctx ~>` prefix:
 
 ```
-withdraw a: Account, amount: Nat in Accounts.
+Accounts ~> withdraw a: Account, amount: Nat.
 ```
 
-This means `withdraw` may modify (prime) any procedure that belongs to `Accounts`. Context references work across module boundaries — a void procedure can reference an imported context.
+This means `withdraw` may modify (prime) any procedure that belongs to `Accounts`. Context references work across module boundaries — an action can reference an imported context.
 
-Only void procedures may have `in Ctx`. Non-void procedures cannot operate within a context (this is enforced at the syntax level).
+Only actions may have a context prefix. Procedures (with `=>`) cannot operate within a context.
 
 ## Expressions
 
@@ -542,12 +556,12 @@ The `x in xs` binding form infers the type of `x` from the element type of the l
 
 ### Primed Expressions (State Transitions)
 
-In chapters with a void procedure, primed expressions refer to post-state values:
+In chapters with an action, primed expressions refer to post-state values:
 
 ```
 User.
 balance a: User => Int.
-deposit a: User, amount: Nat.
+~> deposit a: User, amount: Nat.
 ---
 balance' a = balance a + amount.    // balance after deposit
 ```
@@ -676,7 +690,7 @@ A program is **correct** if:
 1. Every symbol reference is visible according to the rules above
 2. All type constraints are satisfied
 3. Each chapter head contains at least one declaration
-4. Each chapter has at most one void procedure
+4. Each chapter has at most one action
 
 ## Normal Form
 
@@ -688,8 +702,8 @@ A document is in normal form when:
 1. Declarations are organized by **topological level** (based on type dependencies)
 2. Each level becomes a chapter
 3. Propositions are placed in the **earliest** chapter where all their dependencies are visible
-4. Void procedures and their tied propositions stay together
-5. At most one void procedure per chapter
+4. Actions and their tied propositions stay together
+5. At most one action per chapter
 
 ### Dependency Levels
 
@@ -708,29 +722,29 @@ Propositions are placed at the **earliest** valid chapter:
 
 | Proposition type | Placement rule |
 |------------------|----------------|
-| **Void-tied** | Same chapter as the void procedure |
+| **Action-tied** | Same chapter as the action |
 | **Independent** | Earliest chapter where all dependencies are visible |
 
-A proposition is **void-tied** if it:
+A proposition is **action-tied** if it:
 - Uses primed expressions (e.g., `balance' a`), OR
-- References the void procedure's parameters
+- References the action's parameters
 
-### Void Procedure Handling
+### Action Handling
 
-If multiple void procedures end up at the same dependency level, they are spread across consecutive chapters (since at most one void procedure per chapter is allowed).
+If multiple actions end up at the same dependency level, they are spread across consecutive chapters (since at most one action per chapter is allowed).
 
 ### Normalization Algorithm
 
 1. **Collect declarations** and compute their type dependencies
 2. **Compute topological levels** for all declarations
-3. **Create chapters** - one per level (plus extra for void proc conflicts)
+3. **Create chapters** - one per level (plus extra for action conflicts)
 4. **Place declarations** at their computed level
-5. **Place void-tied propositions** with their void procedures
+5. **Place action-tied propositions** with their actions
 6. **Place independent propositions** at earliest valid chapter
 
 ### Example
 
-**Original (3 chapters with void procedures):**
+**Original (3 chapters with actions):**
 ```
 module STATE.
 
@@ -738,20 +752,20 @@ User.
 Account.
 balance a: Account => Int.
 owner a: Account => User.
-deposit a: Account, amount: Nat.
+~> deposit a: Account, amount: Nat.
 ---
 balance' a = balance a + amount.
 all a: Account, amt: Nat | true.
 
 where
 
-withdraw a: Account, amount: Nat.
+~> withdraw a: Account, amount: Nat.
 ---
 balance' a = balance a - amount.
 
 where
 
-transfer from: Account, to: Account, amount: Nat.
+~> transfer from: Account, to: Account, amount: Nat.
 ---
 balance' from = balance from - amount.
 ```
@@ -771,26 +785,26 @@ where
 // Level 1: depends on Account, User
 balance a: Account => Int.
 owner a: Account => User.
-deposit a: Account, amount: Nat.   // Void proc #1
+~> deposit a: Account, amount: Nat.   // Action #1
 ---
 balance' a = balance a + amount.   // Tied to deposit
 
 where
 
-// Void proc #2 (separate chapter)
-withdraw a: Account, amount: Nat.
+// Action #2 (separate chapter)
+~> withdraw a: Account, amount: Nat.
 ---
 balance' a = balance a - amount.
 
 where
 
-// Void proc #3 (separate chapter)
-transfer from: Account, to: Account, amount: Nat.
+// Action #3 (separate chapter)
+~> transfer from: Account, to: Account, amount: Nat.
 ---
 balance' from = balance from - amount.
 ```
 
-The independent proposition `all a: Account, amt: Nat | true` moved to chapter 0 because it only depends on level 0 types. Void procedures were spread across separate chapters.
+The independent proposition `all a: Account, amt: Nat | true` moved to chapter 0 because it only depends on level 0 types. Actions were spread across separate chapters.
 
 ## Complete Grammar
 
@@ -807,7 +821,8 @@ declaration ::= UPPER '.'                                              // Domain
               | UPPER '=' type '.'                                     // Type alias
               | '{' UPPER (',' UPPER)* '}' LOWER param* guard* '=>' type '.'  // Proc with context footprint
               | LOWER param* guard* '=>' type '.'                      // Proc with return type
-              | LOWER param* guard* ['in' UPPER] '.'                   // Void proc (optional context)
+              | UPPER '~>' LOWER param* guard* '.'                     // Action with context
+              | '~>' LOWER param* guard* '.'                           // Action without context
 
 param       ::= LOWER ':' type
 

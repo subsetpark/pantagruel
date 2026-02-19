@@ -51,6 +51,7 @@ let token_to_string = function
   | Parser.RBRACKET -> "RBRACKET"
   | Parser.LBRACE -> "LBRACE"
   | Parser.RBRACE -> "RBRACE"
+  | Parser.SQUIG_ARROW -> "SQUIG_ARROW"
   | Parser.CONTEXT -> "CONTEXT"
   | Parser.EOF -> "EOF"
 
@@ -127,6 +128,14 @@ let test_dcolon () =
     [Parser.UPPER_IDENT "Module"; Parser.DCOLON; Parser.LOWER_IDENT "name"; Parser.EOF]
     (lex_all "Module::name")
 
+let test_squig_arrow () =
+  check (list token_testable) "squig arrow"
+    [Parser.SQUIG_ARROW; Parser.LOWER_IDENT "withdraw"; Parser.EOF]
+    (lex_all "~> withdraw");
+  check (list token_testable) "squig arrow with context"
+    [Parser.UPPER_IDENT "Banking"; Parser.SQUIG_ARROW; Parser.LOWER_IDENT "withdraw"; Parser.EOF]
+    (lex_all "Banking ~> withdraw")
+
 let () =
   run "Lexer" [
     "keywords", [test_case "keywords" `Quick test_keywords];
@@ -140,4 +149,5 @@ let () =
     "doc_comments", [test_case "doc comments" `Quick test_doc_comments];
     "projection", [test_case "projection" `Quick test_projection_token];
     "dcolon", [test_case "double colon" `Quick test_dcolon];
+    "squig_arrow", [test_case "squig arrow" `Quick test_squig_arrow];
   ]
