@@ -85,8 +85,4 @@ let format_collect_error err =
       fmt loc (Printf.sprintf "Duplicate context '%s'" name)
   | UndefinedContext (name, loc) ->
       fmt loc (Printf.sprintf "Undefined context '%s'" name)
-  | ContextOnNonVoid (name, loc) ->
-      fmt loc (Printf.sprintf "Context annotation on non-void procedure '%s'" name)
-  | ContextMemberNotFunction (ctx, member, loc) ->
-      fmt loc (Printf.sprintf "Context '%s' member '%s' is not a function" ctx member)
 

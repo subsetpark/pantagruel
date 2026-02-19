@@ -14,8 +14,6 @@ type collect_error =
   | BuiltinRedefined of string * loc
   | DuplicateContext of string * loc
   | UndefinedContext of string * loc
-  | ContextOnNonVoid of string * loc
-  | ContextMemberNotFunction of string * string * loc
 [@@deriving show]
 
 let is_builtin_type name = List.mem name Types.builtin_type_names
@@ -57,8 +55,8 @@ let rec resolve_type env (te : type_expr) loc : (ty, collect_error) result =
       Ok (TySum tys)
 
 (** Collect declarations from one chapter head.
-    Uses three-pass approach so declarations can reference each other regardless of order. *)
-let collect_chapter_head ~chapter env (decls : declaration located list) =
+    Uses multi-pass approach so declarations can reference each other regardless of order. *)
+let collect_chapter_head ~chapter ~doc_contexts env (decls : declaration located list) =
   let void_procs = ref [] in
 
   (* Pass 1: Register all type names (domains and alias names as placeholders) *)
@@ -85,7 +83,7 @@ let collect_chapter_head ~chapter env (decls : declaration located list) =
               (* Add as domain placeholder - will be replaced in pass 2 *)
               Ok (Env.add_domain name decl.loc ~chapter env)
         end
-    | DeclProc _ | DeclContext _ -> Ok env  (* Handled in later passes *)
+    | DeclProc _ -> Ok env  (* Handled in later passes *)
   in
 
   (* Pass 2: Resolve alias types iteratively (handles mutual references) *)
@@ -114,10 +112,10 @@ let collect_chapter_head ~chapter env (decls : declaration located list) =
     iterate env
   in
 
-  (* Pass 3: Add procedures (all types now fully resolved) *)
+  (* Pass 3: Add procedures and register context footprints *)
   let add_proc env (decl : declaration located) =
     match decl.value with
-    | DeclProc { name; params; guards = _; return_type; _ } ->
+    | DeclProc { name; params; guards = _; return_type; contexts; _ } ->
         let* param_types =
           map_result (fun p -> resolve_type env p.param_type decl.loc) params
         in
@@ -130,53 +128,47 @@ let collect_chapter_head ~chapter env (decls : declaration located list) =
               let* ty = resolve_type env t decl.loc in
               Ok (Some ty)
         in
+        (* Validate context footprint: each named context must exist in doc.contexts *)
+        let* () =
+          map_result (fun ctx_name ->
+            if List.exists (fun (c : upper_ident located) -> c.value = ctx_name) doc_contexts then
+              Ok ()
+            else
+              Error (UndefinedContext (ctx_name, decl.loc))
+          ) contexts |> Result.map (fun _ -> ())
+        in
         let proc_ty = TyFunc (param_types, ret_ty) in
-        (match Env.lookup_term name env with
-         | Some existing when existing.module_origin = None ->
-             Error (DuplicateProc (name, decl.loc, existing.loc))
-         | _ ->
-             Ok (Env.add_proc name proc_ty decl.loc ~chapter env))
-    | _ -> Ok env  (* Domains, aliases, and contexts already done *)
+        let* env =
+          match Env.lookup_term name env with
+          | Some existing when existing.module_origin = None ->
+              Error (DuplicateProc (name, decl.loc, existing.loc))
+          | _ ->
+              Ok (Env.add_proc name proc_ty decl.loc ~chapter env)
+        in
+        (* Add proc to each context's member list *)
+        let env = List.fold_left (fun env ctx_name ->
+          Env.add_proc_to_context ctx_name name env
+        ) env contexts in
+        Ok env
+    | _ -> Ok env  (* Domains and aliases already done *)
   in
 
-  (* Pass 4: Register context declarations (after procedures, so members can be validated) *)
-  let add_context env (decl : declaration located) =
-    match decl.value with
-    | DeclContext (name, members) ->
-        (* Check for duplicate context *)
-        (match Env.lookup_context name env with
-         | Some _ -> Error (DuplicateContext (name, decl.loc))
-         | None ->
-             (* Validate all members are functions (procs with return types) *)
-             let* _ = map_result (fun member ->
-               match Env.lookup_term member env with
-               | Some { kind = Env.KProc (TyFunc (_, Some _)); _ } -> Ok ()
-               | _ -> Error (ContextMemberNotFunction (name, member, decl.loc))
-             ) members in
-             Ok (Env.add_context name members env))
-    | _ -> Ok env
-  in
-
-  (* Pass 5: Validate context annotations on procedures *)
+  (* Pass 4: Validate context annotations on void procedures *)
   let validate_proc_context env (decl : declaration located) =
     match decl.value with
-    | DeclProc { name; context = Some ctx_name; return_type; _ } ->
-        (* Context annotation only valid on void procedures *)
-        (match return_type with
-         | Some _ -> Error (ContextOnNonVoid (name, decl.loc))
-         | None ->
-             match Env.lookup_context ctx_name env with
-             | None -> Error (UndefinedContext (ctx_name, decl.loc))
-             | Some _ -> Ok env)
+    | DeclProc { context = Some ctx_name; return_type = None; _ } ->
+        (* Check context exists (local or imported) *)
+        (match Env.lookup_context ctx_name env with
+         | None -> Error (UndefinedContext (ctx_name, decl.loc))
+         | Some _ -> Ok env)
     | _ -> Ok env
   in
 
-  (* Execute all five passes *)
+  (* Execute all passes *)
   let* env1 = fold_result register_type_name env decls in
   let* env2 = resolve_aliases env1 decls in
   let* env3 = fold_result add_proc env2 decls in
-  let* env4 = fold_result add_context env3 decls in
-  let* final_env = fold_result validate_proc_context env4 decls in
+  let* final_env = fold_result validate_proc_context env3 decls in
 
   (* Validate: at most one Void procedure per chapter *)
   match !void_procs with
@@ -189,11 +181,20 @@ let collect_all ~base_env (doc : document) : (Env.t, collect_error) result =
   let env = { base_env with Env.current_module = mod_name;
               void_proc = None; local_vars = [] } in
 
+  (* Register context names from module-level declarations *)
+  let* env =
+    fold_result (fun env (ctx : upper_ident located) ->
+      match Env.lookup_context ctx.value env with
+      | Some _ -> Error (DuplicateContext (ctx.value, ctx.loc))
+      | None -> Ok (Env.add_context ctx.value [] env)
+    ) env doc.contexts
+  in
+
   (* Process all chapters, collecting declarations from heads *)
   let rec process_chapters env chapter_idx = function
     | [] -> Ok env
     | chapter :: rest ->
-        let* env' = collect_chapter_head ~chapter:chapter_idx env chapter.head in
+        let* env' = collect_chapter_head ~chapter:chapter_idx ~doc_contexts:doc.contexts env chapter.head in
         process_chapters env' (chapter_idx + 1) rest
   in
   process_chapters env 0 doc.chapters

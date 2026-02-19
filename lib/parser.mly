@@ -67,15 +67,20 @@
 document:
   | MODULE name=UPPER_IDENT DOT
     imports=list(import_decl)
+    contexts=list(context_decl)
     chapters=separated_nonempty_list(WHERE, chapter)
     EOF
-    { { module_name = Some name; imports; chapters } }
+    { { module_name = Some name; imports; contexts; chapters } }
   | chapters=separated_nonempty_list(WHERE, chapter)
     EOF
-    { { module_name = None; imports = []; chapters } }
+    { { module_name = None; imports = []; contexts = []; chapters } }
 
 import_decl:
   | IMPORT name=UPPER_IDENT DOT
+    { located $startpos $endpos name }
+
+context_decl:
+  | CONTEXT name=UPPER_IDENT DOT
     { located $startpos $endpos name }
 
 chapter:
@@ -90,20 +95,40 @@ declaration:
   | name=UPPER_IDENT EQ t=type_expr DOT
     { let doc = Doc_comments.get_at_pos $startpos in
       located_with_doc doc $startpos $endpos (DeclAlias (name, t)) }
-  | name=LOWER_IDENT pg=proc_params_guards ret=return_type_opt ctx=context_opt DOT
+  | LBRACE ctxs=separated_nonempty_list(COMMA, UPPER_IDENT) RBRACE
+    name=LOWER_IDENT pg=proc_params_guards DARROW ret=type_expr DOT
     { let doc = Doc_comments.get_at_pos $startpos in
       let (params, guards) = pg in
       located_with_doc doc $startpos $endpos (DeclProc {
         name;
         params;
         guards;
-        return_type = ret;
+        return_type = Some ret;
+        contexts = ctxs;
+        context = None;
+      }) }
+  | name=LOWER_IDENT pg=proc_params_guards DARROW ret=type_expr DOT
+    { let doc = Doc_comments.get_at_pos $startpos in
+      let (params, guards) = pg in
+      located_with_doc doc $startpos $endpos (DeclProc {
+        name;
+        params;
+        guards;
+        return_type = Some ret;
+        contexts = [];
+        context = None;
+      }) }
+  | name=LOWER_IDENT pg=proc_params_guards ctx=context_opt DOT
+    { let doc = Doc_comments.get_at_pos $startpos in
+      let (params, guards) = pg in
+      located_with_doc doc $startpos $endpos (DeclProc {
+        name;
+        params;
+        guards;
+        return_type = None;
+        contexts = [];
         context = ctx;
       }) }
-  | CONTEXT name=UPPER_IDENT EQ LBRACE
-      members=separated_nonempty_list(COMMA, LOWER_IDENT) RBRACE DOT
-    { let doc = Doc_comments.get_at_pos $startpos in
-      located_with_doc doc $startpos $endpos (DeclContext (name, members)) }
 
 context_opt:
   | (* empty *) { None }
@@ -125,10 +150,6 @@ proc_guard_expr:
 
 param:
   | name=LOWER_IDENT COLON t=type_expr { { param_name = name; param_type = t } }
-
-return_type_opt:
-  | (* empty *) { None }
-  | DARROW t=type_expr { Some t }
 
 (* Type expressions *)
 type_expr:

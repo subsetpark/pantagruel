@@ -121,18 +121,19 @@ let test_no_module () =
   check int "imports" 0 (List.length doc.Ast.imports)
 
 let test_context_declaration () =
-  let doc = parse "module TEST.\n\nAccount.\nbalance a: Account => Nat.\nowner a: Account => Account.\ncontext Banking = { balance, owner }.\n---\n" in
-  let chapter = List.hd doc.Ast.chapters in
-  match (List.nth chapter.Ast.head 3).Ast.value with
-  | Ast.DeclContext ("Banking", ["balance"; "owner"]) -> ()
-  | _ -> fail "Expected context declaration"
+  let doc = parse "module TEST.\ncontext Banking.\n\nAccount.\n---\n" in
+  check int "contexts" 1 (List.length doc.Ast.contexts);
+  check string "context name" "Banking" (List.hd doc.Ast.contexts).Ast.value
 
 let test_proc_with_context () =
-  let doc = parse "module TEST.\n\nAccount.\nbalance a: Account => Nat.\ncontext Banking = { balance }.\nwithdraw a: Account in Banking.\n---\n" in
+  let doc = parse "module TEST.\ncontext Banking.\n\nAccount.\n{Banking} balance a: Account => Nat.\nwithdraw a: Account in Banking.\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.nth chapter.Ast.head 3).Ast.value with
+  (match (List.nth chapter.Ast.head 1).Ast.value with
+  | Ast.DeclProc { name = "balance"; contexts = ["Banking"]; _ } -> ()
+  | _ -> fail "Expected proc with context footprint");
+  (match (List.nth chapter.Ast.head 2).Ast.value with
   | Ast.DeclProc { name = "withdraw"; context = Some "Banking"; _ } -> ()
-  | _ -> fail "Expected proc with context annotation"
+  | _ -> fail "Expected proc with context annotation")
 
 let () =
   run "Parser" [

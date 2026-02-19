@@ -93,9 +93,16 @@ let with_void_proc name env =
 let clear_void_proc env =
   { env with void_proc = None }
 
-(** Add a context declaration *)
+(** Add a context declaration (initially empty members) *)
 let add_context name members env =
   { env with contexts = StringMap.add name members env.contexts }
+
+(** Add a procedure to a context's member list *)
+let add_proc_to_context ctx_name proc_name env =
+  match StringMap.find_opt ctx_name env.contexts with
+  | Some members ->
+      { env with contexts = StringMap.add ctx_name (members @ [proc_name]) env.contexts }
+  | None -> env
 
 (** Lookup a context by name *)
 let lookup_context name env =
@@ -160,9 +167,16 @@ let add_import env other origin_module =
       | _ -> acc
     ) index StringMap.empty
   in
+  (* Merge contexts from imported module *)
+  let merged_contexts =
+    StringMap.fold (fun name members acc ->
+      StringMap.add name members acc
+    ) other.contexts env.contexts
+  in
   { env with imported_types; imported_terms;
     types = flat_of_index imported_types;
-    terms = flat_of_index imported_terms }
+    terms = flat_of_index imported_terms;
+    contexts = merged_contexts }
 
 (** Lookup a type by module and name in the import index *)
 let lookup_qualified_type mod_name name env =

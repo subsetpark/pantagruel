@@ -86,9 +86,6 @@ let symbols_in_decl_deps (decl : declaration) =
   let terms = ref StringSet.empty in
   (match decl with
    | DeclDomain _ -> ()  (* No dependencies *)
-   | DeclContext (_, members) ->
-       (* Context depends on its member functions *)
-       List.iter (fun m -> terms := StringSet.add m !terms) members
    | DeclAlias (_, te) ->
        types := types_in_type_expr te
    | DeclProc { params; guards; return_type; _ } ->
@@ -116,17 +113,16 @@ let decl_name = function
   | DeclDomain name -> name
   | DeclAlias (name, _) -> name
   | DeclProc { name; _ } -> name
-  | DeclContext (name, _) -> name
 
 (** Is this a type-namespace declaration? *)
 let is_type_decl = function
   | DeclDomain _ | DeclAlias _ -> true
-  | DeclProc _ | DeclContext _ -> false
+  | DeclProc _ -> false
 
 (** Is this a void procedure? *)
 let is_void_proc = function
   | DeclProc { return_type = None; _ } -> true
-  | DeclDomain _ | DeclAlias _ | DeclProc _ | DeclContext _ -> false
+  | DeclDomain _ | DeclAlias _ | DeclProc _ -> false
 
 (** Check if an expression uses any primed names *)
 let rec uses_primed = function

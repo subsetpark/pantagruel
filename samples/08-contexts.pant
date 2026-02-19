@@ -1,15 +1,14 @@
 > A banking example demonstrating context declarations.
 > Contexts define which functions a void procedure may modify.
 module Banking.
+context Accounts.
 
 Account.
 User.
 
-balance a: Account => Nat.
-owner a: Account => User.
+{Accounts} balance a: Account => Nat.
+{Accounts} owner a: Account => User.
 nobody => User.
-
-context Accounts = { balance, owner }.
 
 ---
 

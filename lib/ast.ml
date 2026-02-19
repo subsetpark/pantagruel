@@ -109,9 +109,9 @@ type declaration =
       params: param list;
       guards: guard list;
       return_type: type_expr option;  (** None = Void procedure *)
+      contexts: upper_ident list;     (** Context footprint: "{Accounts} balance ..." *)
       context: upper_ident option;    (** Context annotation: "in Banking" *)
     }
-  | DeclContext of upper_ident * lower_ident list  (** context Banking = { balance, owner }. *)
 [@@deriving show, eq]
 
 (** A chapter has a head (declarations) and body (propositions) *)
@@ -125,6 +125,7 @@ type chapter = {
 type document = {
   module_name: upper_ident option;  (** None = standalone (no module system) *)
   imports: upper_ident located list;
+  contexts: upper_ident located list;  (** Module-level context declarations *)
   chapters: chapter list;
 }
 [@@deriving show, eq]

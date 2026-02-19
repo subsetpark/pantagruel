@@ -562,11 +562,16 @@ do-thing f: Foo => Nat.
 let test_context_priming_succeeds () =
   (* Priming a function that is in the active context succeeds *)
   check_ok {|module TEST.
+context Banking.
 
 Account.
-balance a: Account => Nat.
-owner a: Account => Account.
-context Banking = { balance, owner }.
+{Banking} balance a: Account => Nat.
+{Banking} owner a: Account => Account.
+---
+all a: Account | balance a >= 0.
+
+where
+
 withdraw a: Account in Banking.
 ---
 balance' a = balance a - 1.
@@ -576,36 +581,47 @@ owner' a = a.
 let test_context_extracontextual_fails () =
   (* Priming a function outside the context is rejected *)
   check_fails {|module TEST.
+context Banking.
 
 Account.
-balance a: Account => Nat.
+{Banking} balance a: Account => Nat.
 owner a: Account => Account.
-context Banking = { balance }.
+---
+all a: Account | balance a >= 0.
+
+where
+
 withdraw a: Account in Banking.
 ---
 owner' a = a.
 |}
 
-let test_context_member_not_function () =
-  (* Context member must be a function (not void, not domain) *)
-  check_fails {|module TEST.
+let test_footprint_on_void_proc () =
+  (* {Ctx} on a void proc is a parse error *)
+  try
+    let _ = parse {|module TEST.
+context Banking.
 
 Account.
-do-thing a: Account.
-context Banking = { do-thing }.
+{Banking} do-thing a: Account.
 ---
-|}
+|} in
+    fail "Expected parse error"
+  with _ -> ()
 
 let test_context_on_non_void () =
-  (* Context annotation only valid on void procs *)
-  check_fails {|module TEST.
+  (* "in Ctx" on a non-void proc is a parse error *)
+  try
+    let _ = parse {|module TEST.
+context Banking.
 
 Account.
-balance a: Account => Nat.
-context Banking = { balance }.
+{Banking} balance a: Account => Nat.
 get-balance a: Account => Nat in Banking.
 ---
-|}
+|} in
+    fail "Expected parse error"
+  with _ -> ()
 
 let test_undefined_context () =
   (* Referencing a non-existent context *)
@@ -731,7 +747,7 @@ let () =
     "context", [
       test_case "priming in context" `Quick test_context_priming_succeeds;
       test_case "extracontextual fails" `Quick test_context_extracontextual_fails;
-      test_case "member not function" `Quick test_context_member_not_function;
+      test_case "footprint on void proc" `Quick test_footprint_on_void_proc;
       test_case "context on non-void" `Quick test_context_on_non_void;
       test_case "undefined context" `Quick test_undefined_context;
       test_case "no context unrestricted" `Quick test_no_context_priming_unrestricted;

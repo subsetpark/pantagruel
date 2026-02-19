@@ -166,7 +166,10 @@ let pp_guard procs fmt = function
 let pp_declaration procs fmt = function
   | DeclDomain name -> fprintf fmt "`%s`." name
   | DeclAlias (name, te) -> fprintf fmt "**%s** = %a." name pp_type_expr te
-  | DeclProc { name; params; guards; return_type; context } ->
+  | DeclProc { name; params; guards; return_type; contexts; context } ->
+      if contexts <> [] then
+        fprintf fmt "{%a} "
+          (pp_print_list ~pp_sep:pp_params_sep (fun fmt c -> fprintf fmt "`%s`" c)) contexts;
       fprintf fmt "**%s**" name;
       if params <> [] then
         fprintf fmt " %a" (pp_print_list ~pp_sep:pp_params_sep pp_param) params;
@@ -179,10 +182,6 @@ let pp_declaration procs fmt = function
        | None -> ()
        | Some ctx -> fprintf fmt " ∈ `%s`" ctx);
       pp_print_char fmt '.'
-  | DeclContext (name, members) ->
-      fprintf fmt "**context** `%s` = { %a }."
-        name
-        (pp_print_list ~pp_sep:pp_params_sep (fun fmt m -> fprintf fmt "**%s**" m)) members
 
 (* --- String-returning wrappers --- *)
 
@@ -217,17 +216,15 @@ let pp_chapter procs ?(skip_first_doc=false) ~total_chapters chapter_num fmt cha
     | [] -> None
   in
 
-  let domains, aliases, procs_decls, ctx_decls = List.fold_left (fun (ds, as_, ps, cs) decl ->
+  let domains, aliases, procs_decls = List.fold_left (fun (ds, as_, ps) decl ->
     match decl.value with
-    | DeclDomain _ -> (decl :: ds, as_, ps, cs)
-    | DeclAlias _ -> (ds, decl :: as_, ps, cs)
-    | DeclProc _ -> (ds, as_, decl :: ps, cs)
-    | DeclContext _ -> (ds, as_, ps, decl :: cs)
-  ) ([], [], [], []) chapter.head in
+    | DeclDomain _ -> (decl :: ds, as_, ps)
+    | DeclAlias _ -> (ds, decl :: as_, ps)
+    | DeclProc _ -> (ds, as_, decl :: ps)
+  ) ([], [], []) chapter.head in
   let domains = List.rev domains in
   let aliases = List.rev aliases in
   let procs_decls = List.rev procs_decls in
-  let ctx_decls = List.rev ctx_decls in
 
   let should_skip_doc d =
     skip_first_doc && Some d.loc.line = first_line
@@ -251,11 +248,6 @@ let pp_chapter procs ?(skip_first_doc=false) ~total_chapters chapter_num fmt cha
   if aliases <> [] then begin
     fprintf fmt "### Types@\n@\n";
     List.iter (pp_decl_with_doc procs ~should_skip_doc fmt) aliases
-  end;
-
-  if ctx_decls <> [] then begin
-    fprintf fmt "### Contexts@\n@\n";
-    List.iter (pp_decl_with_doc procs ~should_skip_doc fmt) ctx_decls
   end;
 
   if procs_decls <> [] then begin
@@ -289,6 +281,13 @@ let pp_document procs fmt doc =
       (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ")
         (fun fmt i -> pp_print_string fmt i.value))
       doc.imports
+  end;
+
+  if doc.contexts <> [] then begin
+    fprintf fmt "**Contexts:** %a@\n@\n"
+      (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ")
+        (fun fmt c -> fprintf fmt "`%s`" c.value))
+      doc.contexts
   end;
 
   let total_chapters = List.length doc.chapters in

@@ -154,7 +154,9 @@ let pp_guard fmt = function
 let pp_declaration fmt = function
   | DeclDomain name -> fprintf fmt "%s." name
   | DeclAlias (name, te) -> fprintf fmt "%s = %a." name pp_type_expr te
-  | DeclProc { name; params; guards; return_type; context } ->
+  | DeclProc { name; params; guards; return_type; contexts; context } ->
+      if contexts <> [] then
+        fprintf fmt "{%a} " (pp_print_list ~pp_sep:pp_sep_comma pp_print_string) contexts;
       pp_print_string fmt name;
       if params <> [] then
         fprintf fmt " %a" (pp_print_list ~pp_sep:pp_sep_comma pp_param) params;
@@ -167,10 +169,6 @@ let pp_declaration fmt = function
        | None -> ()
        | Some ctx -> fprintf fmt " in %s" ctx);
       pp_print_char fmt '.'
-  | DeclContext (name, members) ->
-      fprintf fmt "context %s = { %a }."
-        name
-        (pp_print_list ~pp_sep:pp_sep_comma pp_print_string) members
 
 (* --- String-returning wrappers --- *)
 
@@ -213,6 +211,7 @@ let pp_document fmt doc =
    | Some name -> fprintf fmt "module %s.@\n" name
    | None -> ());
   List.iter (fun i -> fprintf fmt "import %s.@\n" i.value) doc.imports;
+  List.iter (fun c -> fprintf fmt "context %s.@\n" c.value) doc.contexts;
   List.iteri (fun i chapter ->
     if i > 0 then fprintf fmt "@\nwhere@\n@\n";
     pp_chapter fmt chapter
@@ -275,7 +274,10 @@ let format_document ?(width=80) fmt doc =
   List.iter (fun imp ->
     fprintf fmt "import %s.@\n" imp.value
   ) doc.imports;
-  if doc.imports <> [] then fprintf fmt "@\n";
+  List.iter (fun ctx ->
+    fprintf fmt "context %s.@\n" ctx.value
+  ) doc.contexts;
+  if doc.imports <> [] || doc.contexts <> [] then fprintf fmt "@\n";
   List.iteri (fun i chapter ->
     if i > 0 then fprintf fmt "@\nwhere@\n@\n";
     format_chapter ~width fmt chapter
