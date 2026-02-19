@@ -11,13 +11,17 @@
     loc = make_loc startpos endpos;
     value;
     doc = [];
+    doc_adjacent = true;
   }
 
-  let located_with_doc doc startpos endpos value = {
-    loc = make_loc startpos endpos;
-    value;
-    doc;
-  }
+  let located_with_doc startpos endpos value =
+    let (doc, doc_adjacent) = Doc_comments.get_at_pos startpos in
+    {
+      loc = make_loc startpos endpos;
+      value;
+      doc;
+      doc_adjacent;
+    }
 
   (* Split a list of guards into params and expression guards *)
   let split_params_guards (guards : guard list) : param list * guard list =
@@ -47,18 +51,6 @@
 %token LBRACE RBRACE CONTEXT
 %token <string> ACTION_LABEL
 %token EOF
-
-(* Precedence - lowest to highest *)
-%nonassoc IFF               (* biconditional - lowest, non-associative *)
-%right ARROW                (* implication *)
-%left OR                    (* disjunction *)
-%left AND                   (* conjunction *)
-%nonassoc NOT               (* negation *)
-%nonassoc EQ NEQ LT GT LE GE IN SUBSET  (* comparison/membership *)
-%left PLUS MINUS            (* addition *)
-%left TIMES DIVIDE          (* multiplication *)
-%nonassoc CARD              (* cardinality *)
-%nonassoc UMINUS            (* unary minus *)
 
 %start <Ast.document> document
 
@@ -91,16 +83,13 @@ chapter:
 (* Declarations - doc comments are looked up by start position *)
 declaration:
   | name=UPPER_IDENT DOT
-    { let doc = Doc_comments.get_at_pos $startpos in
-      located_with_doc doc $startpos $endpos (DeclDomain name) }
+    { located_with_doc $startpos $endpos (DeclDomain name) }
   | name=UPPER_IDENT EQ t=type_expr DOT
-    { let doc = Doc_comments.get_at_pos $startpos in
-      located_with_doc doc $startpos $endpos (DeclAlias (name, t)) }
+    { located_with_doc $startpos $endpos (DeclAlias (name, t)) }
   | LBRACE ctxs=separated_nonempty_list(COMMA, UPPER_IDENT) RBRACE
     name=LOWER_IDENT pg=rule_params_guards DARROW ret=type_expr DOT
-    { let doc = Doc_comments.get_at_pos $startpos in
-      let (params, guards) = pg in
-      located_with_doc doc $startpos $endpos (DeclRule {
+    { let (params, guards) = pg in
+      located_with_doc $startpos $endpos (DeclRule {
         name;
         params;
         guards;
@@ -108,9 +97,8 @@ declaration:
         contexts = ctxs;
       }) }
   | name=LOWER_IDENT pg=rule_params_guards DARROW ret=type_expr DOT
-    { let doc = Doc_comments.get_at_pos $startpos in
-      let (params, guards) = pg in
-      located_with_doc doc $startpos $endpos (DeclRule {
+    { let (params, guards) = pg in
+      located_with_doc $startpos $endpos (DeclRule {
         name;
         params;
         guards;
@@ -118,34 +106,30 @@ declaration:
         contexts = [];
       }) }
   | ctx=UPPER_IDENT SQUIG_ARROW label=ACTION_LABEL PIPE pg=action_params_guards DOT
-    { let doc = Doc_comments.get_at_pos $startpos in
-      let (params, guards) = pg in
-      located_with_doc doc $startpos $endpos (DeclAction {
+    { let (params, guards) = pg in
+      located_with_doc $startpos $endpos (DeclAction {
         label;
         params;
         guards;
         context = Some ctx;
       }) }
   | ctx=UPPER_IDENT SQUIG_ARROW label=ACTION_LABEL DOT
-    { let doc = Doc_comments.get_at_pos $startpos in
-      located_with_doc doc $startpos $endpos (DeclAction {
+    { located_with_doc $startpos $endpos (DeclAction {
         label;
         params = [];
         guards = [];
         context = Some ctx;
       }) }
   | SQUIG_ARROW label=ACTION_LABEL PIPE pg=action_params_guards DOT
-    { let doc = Doc_comments.get_at_pos $startpos in
-      let (params, guards) = pg in
-      located_with_doc doc $startpos $endpos (DeclAction {
+    { let (params, guards) = pg in
+      located_with_doc $startpos $endpos (DeclAction {
         label;
         params;
         guards;
         context = None;
       }) }
   | SQUIG_ARROW label=ACTION_LABEL DOT
-    { let doc = Doc_comments.get_at_pos $startpos in
-      located_with_doc doc $startpos $endpos (DeclAction {
+    { located_with_doc $startpos $endpos (DeclAction {
         label;
         params = [];
         guards = [];
@@ -195,8 +179,7 @@ type_term:
 (* Propositions in chapter body - doc comments are looked up by start position *)
 proposition:
   | e=expr DOT
-    { let doc = Doc_comments.get_at_pos $startpos in
-      located_with_doc doc $startpos $endpos e }
+    { located_with_doc $startpos $endpos e }
 
 (* Expressions *)
 expr:
@@ -227,8 +210,14 @@ quant_guard_or_param:
   | name=LOWER_IDENT IN e=term { GIn (name, e) }  (* x in xs - binds x to element type *)
   | e=conjunction { GExpr e }  (* Use conjunction to avoid ambiguity with | *)
 
+(* The RHS of -> allows quantifiers (P -> all x: T | Q) and
+   nested implications (right-associative), but not <->. *)
+impl_rhs:
+  | e=quantified { e }
+  | e=implication { e }
+
 implication:
-  | e1=disjunction ARROW e2=implication { EBinop (OpImpl, e1, e2) }
+  | e1=disjunction ARROW e2=impl_rhs { EBinop (OpImpl, e1, e2) }
   | e=disjunction { e }
 
 disjunction:
@@ -269,7 +258,7 @@ factor:
 
 unary:
   | CARD e=unary { EUnop (OpCard, e) }
-  | MINUS e=unary %prec UMINUS { EUnop (OpNeg, e) }
+  | MINUS e=unary { EUnop (OpNeg, e) }
   | e=primary { e }
 
 (* Application by juxtaposition *)
