@@ -26,15 +26,15 @@ body c: Chapter => [Proposition].
 > Declaration predicates
 is-domain? decl: Declaration => Bool.
 is-alias? decl: Declaration => Bool.
-is-proc? decl: Declaration => Bool.
+is-rule? decl: Declaration => Bool.
 is-action? decl: Declaration => Bool.
 
 > Declaration accessors
 decl-name decl: Declaration => Name.
 alias-type decl: Declaration => Type.
-proc-params decl: Declaration => [Name].
-proc-param-types decl: Declaration => [Type].
-proc-return-type decl: Declaration => Type.
+rule-params decl: Declaration => [Name].
+rule-param-types decl: Declaration => [Type].
+rule-return-type decl: Declaration => Type.
 action-params decl: Declaration => [Name].
 action-param-types decl: Declaration => [Type].
 
@@ -44,14 +44,14 @@ all doc: Document | #chapters doc >= 1.
 
 > Declarations are exactly one kind
 all decl: Declaration |
-    is-domain? decl and not is-alias? decl and not is-proc? decl and not is-action? decl or
-    is-alias? decl and not is-domain? decl and not is-proc? decl and not is-action? decl or
-    is-proc? decl and not is-domain? decl and not is-alias? decl and not is-action? decl or
-    is-action? decl and not is-domain? decl and not is-alias? decl and not is-proc? decl.
+    is-domain? decl and not is-alias? decl and not is-rule? decl and not is-action? decl or
+    is-alias? decl and not is-domain? decl and not is-rule? decl and not is-action? decl or
+    is-rule? decl and not is-domain? decl and not is-alias? decl and not is-action? decl or
+    is-action? decl and not is-domain? decl and not is-alias? decl and not is-rule? decl.
 
-> Procedure parameter count matches type count
-all decl: Declaration, is-proc? decl |
-    #proc-params decl = #proc-param-types decl.
+> Rule parameter count matches type count
+all decl: Declaration, is-rule? decl |
+    #rule-params decl = #rule-param-types decl.
 
 where
 

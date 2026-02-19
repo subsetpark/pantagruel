@@ -168,7 +168,7 @@ let pp_guard fmt = function
 let pp_declaration fmt = function
   | DeclDomain name -> fprintf fmt "%s." name
   | DeclAlias (name, te) -> fprintf fmt "%s = %a." name pp_type_expr te
-  | DeclProc { name; params; guards; return_type; contexts } ->
+  | DeclRule { name; params; guards; return_type; contexts } ->
       if contexts <> [] then
         fprintf fmt "{%a} "
           (pp_print_list ~pp_sep:pp_sep_comma pp_print_string)

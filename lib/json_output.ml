@@ -191,17 +191,17 @@ let decl_to_json env (decl_loc : declaration located) =
             ("type", type_expr_to_json te);
           ]
         @ match resolved with Some t -> [ ("resolved", t) ] | None -> [])
-  | DeclProc { name; params; guards; return_type; contexts } ->
+  | DeclRule { name; params; guards; return_type; contexts } ->
       (* Look up resolved type from environment *)
       let resolved =
         match Env.lookup_term name env with
-        | Some { kind = Env.KProc ty; _ } -> Some (ty_to_json ty)
+        | Some { kind = Env.KRule ty; _ } -> Some (ty_to_json ty)
         | _ -> None
       in
       `Assoc
         (doc_json
         @ [
-            ("kind", `String "proc");
+            ("kind", `String "rule");
             ("name", `String name);
             ("params", `List (List.map param_to_json params));
             ("guards", `List (List.map guard_to_json guards));
@@ -214,7 +214,7 @@ let decl_to_json env (decl_loc : declaration located) =
   | DeclAction { name; params; guards; context } ->
       let resolved =
         match Env.lookup_term name env with
-        | Some { kind = Env.KProc ty; _ } -> Some (ty_to_json ty)
+        | Some { kind = Env.KRule ty; _ } -> Some (ty_to_json ty)
         | _ -> None
       in
       `Assoc
@@ -269,14 +269,14 @@ let types_to_json env =
   in
   `Assoc items
 
-(** Extract procedure definitions from environment *)
-let procedures_to_json env =
+(** Extract rule definitions from environment *)
+let rules_to_json env =
   let bindings = Env.StringMap.bindings env.Env.terms in
   let items =
     List.filter_map
       (fun (name, entry) ->
         match entry.Env.kind with
-        | Env.KProc ty -> (
+        | Env.KRule ty -> (
             match ty with
             | Types.TyFunc (params, ret) ->
                 Some
@@ -304,7 +304,7 @@ let document_to_json env doc =
       ("imports", `List (List.map (fun i -> `String i.value) doc.imports));
       ("contexts", `List (List.map (fun c -> `String c.value) doc.contexts));
       ("types", types_to_json env);
-      ("procedures", procedures_to_json env);
+      ("rules", rules_to_json env);
       ("chapters", `List (List.map (chapter_to_json env) doc.chapters));
     ]
 

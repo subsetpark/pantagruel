@@ -6,7 +6,7 @@ open Util
 
 type collect_error =
   | DuplicateDomain of string * loc * loc
-  | DuplicateProc of string * loc * loc
+  | DuplicateRule of string * loc * loc
   | UndefinedType of string * loc
   | RecursiveAlias of string * loc
   | MultipleActions of string * string * loc
@@ -81,7 +81,7 @@ let collect_chapter_head ~chapter ~doc_contexts env
               (* Add as domain placeholder - will be replaced in pass 2 *)
               Ok (Env.add_domain name decl.loc ~chapter env)
         end
-    | DeclProc _ | DeclAction _ -> Ok env (* Handled in later passes *)
+    | DeclRule _ | DeclAction _ -> Ok env (* Handled in later passes *)
   in
 
   (* Pass 2: Resolve alias types iteratively (handles mutual references) *)
@@ -113,10 +113,10 @@ let collect_chapter_head ~chapter ~doc_contexts env
     iterate env
   in
 
-  (* Pass 3: Add procedures/actions and register context footprints *)
-  let add_proc env (decl : declaration located) =
+  (* Pass 3: Add rules/actions and register context footprints *)
+  let add_rule env (decl : declaration located) =
     match decl.value with
-    | DeclProc { name; params; guards = _; return_type; contexts } ->
+    | DeclRule { name; params; guards = _; return_type; contexts } ->
         let* param_types =
           map_result (fun p -> resolve_type env p.param_type decl.loc) params
         in
@@ -138,13 +138,13 @@ let collect_chapter_head ~chapter ~doc_contexts env
         let* env =
           match Env.lookup_term name env with
           | Some existing when existing.module_origin = None ->
-              Error (DuplicateProc (name, decl.loc, existing.loc))
-          | _ -> Ok (Env.add_proc name proc_ty decl.loc ~chapter env)
+              Error (DuplicateRule (name, decl.loc, existing.loc))
+          | _ -> Ok (Env.add_rule name proc_ty decl.loc ~chapter env)
         in
-        (* Add proc to each context's member list *)
+        (* Add rule to each context's member list *)
         let env =
           List.fold_left
-            (fun env ctx_name -> Env.add_proc_to_context ctx_name name env)
+            (fun env ctx_name -> Env.add_rule_to_context ctx_name name env)
             env contexts
         in
         Ok env
@@ -157,8 +157,8 @@ let collect_chapter_head ~chapter ~doc_contexts env
         let* env =
           match Env.lookup_term name env with
           | Some existing when existing.module_origin = None ->
-              Error (DuplicateProc (name, decl.loc, existing.loc))
-          | _ -> Ok (Env.add_proc name proc_ty decl.loc ~chapter env)
+              Error (DuplicateRule (name, decl.loc, existing.loc))
+          | _ -> Ok (Env.add_rule name proc_ty decl.loc ~chapter env)
         in
         Ok env
     | _ -> Ok env (* Domains and aliases already done *)
@@ -178,7 +178,7 @@ let collect_chapter_head ~chapter ~doc_contexts env
   (* Execute all passes *)
   let* env1 = fold_result register_type_name env decls in
   let* env2 = resolve_aliases env1 decls in
-  let* env3 = fold_result add_proc env2 decls in
+  let* env3 = fold_result add_rule env2 decls in
   let* final_env = fold_result validate_action_context env3 decls in
 
   (* Validate: at most one action per chapter *)

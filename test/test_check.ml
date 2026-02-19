@@ -89,7 +89,7 @@ let test_bool_literal () =
 let test_simple_all () =
   check_ok "module TEST.\n\nUser.\n---\nall u: User | true.\n"
 
-let test_procedure_application () =
+let test_rule_application () =
   check_ok "module TEST.\n\nUser.\nf u: User => Bool.\n---\nall u: User | f u.\n"
 
 let test_equality () =
@@ -107,7 +107,7 @@ let test_membership () =
 let test_cardinality () =
   check_ok "module TEST.\n\nUser.\n---\n#User >= 0.\n"
 
-let test_nullary_procedure () =
+let test_nullary_rule () =
   check_ok "module TEST.\n\nUser.\nnobody => User.\n---\nall u: User | u = nobody.\n"
 
 let test_action_primed () =
@@ -143,7 +143,7 @@ p => Point.
 p.1 >= 0.
 |}
 
-let test_procedure_guard () =
+let test_rule_guard () =
   check_ok {|module TEST.
 
 Account.
@@ -164,8 +164,8 @@ all i in items | price i > 0.
 some i in items | price i < 100.
 |}
 
-let test_proc_params_visible_in_body () =
-  (* Procedure parameters should be visible in chapter body *)
+let test_rule_params_visible_in_body () =
+  (* Rule parameters should be visible in chapter body *)
   check_ok {|module TEST.
 
 Item.
@@ -340,7 +340,7 @@ all i in items | i > 0.
 let test_env_single_import () =
   (* One import providing "Widget" domain → appears in flat maps *)
   let env = make_import_env [
-    ("LIB", [("Widget", Env.KDomain)], [("make-widget", Env.KProc (Types.TyFunc ([], Some (Types.TyDomain "Widget"))))])
+    ("LIB", [("Widget", Env.KDomain)], [("make-widget", Env.KRule (Types.TyFunc ([], Some (Types.TyDomain "Widget"))))])
   ] in
   check bool "type in flat map" true
     (Option.is_some (Env.lookup_type "Widget" env));
@@ -354,8 +354,8 @@ let test_env_single_import () =
 let test_env_ambiguous_import () =
   (* Two imports both providing "Item" → NOT in flat maps, IS ambiguous *)
   let env = make_import_env [
-    ("MOD_A", [("Item", Env.KDomain)], [("process", Env.KProc (Types.TyFunc ([], Some Types.TyBool)))]);
-    ("MOD_B", [("Item", Env.KDomain)], [("process", Env.KProc (Types.TyFunc ([], Some Types.TyNat)))]);
+    ("MOD_A", [("Item", Env.KDomain)], [("process", Env.KRule (Types.TyFunc ([], Some Types.TyBool)))]);
+    ("MOD_B", [("Item", Env.KDomain)], [("process", Env.KRule (Types.TyFunc ([], Some Types.TyNat)))]);
   ] in
   check bool "ambiguous type not in flat map" true
     (Option.is_none (Env.lookup_type "Item" env));
@@ -410,11 +410,11 @@ all w: Widget | f w.
 |}
 
 let test_unambiguous_import_term () =
-  (* Imported procedure usable in expressions *)
+  (* Imported rule usable in expressions *)
   let env = make_import_env [
     ("LIB",
      [("Widget", Env.KDomain)],
-     [("make-widget", Env.KProc (Types.TyFunc ([], Some (Types.TyDomain "Widget"))))])
+     [("make-widget", Env.KRule (Types.TyFunc ([], Some (Types.TyDomain "Widget"))))])
   ] in
   check_ok_with_env env {|
 Widget.
@@ -436,8 +436,8 @@ f i: Item => Bool.
 let test_ambiguous_import_term_fails () =
   (* Ambiguous term used unqualified → AmbiguousName error *)
   let env = make_import_env [
-    ("MOD_A", [("Foo", Env.KDomain)], [("process", Env.KProc (Types.TyFunc ([], Some Types.TyBool)))]);
-    ("MOD_B", [("Foo", Env.KDomain)], [("process", Env.KProc (Types.TyFunc ([], Some Types.TyBool)))]);
+    ("MOD_A", [("Foo", Env.KDomain)], [("process", Env.KRule (Types.TyFunc ([], Some Types.TyBool)))]);
+    ("MOD_B", [("Foo", Env.KDomain)], [("process", Env.KRule (Types.TyFunc ([], Some Types.TyBool)))]);
   ] in
   check_error_with_env env {|
 Foo.
@@ -460,8 +460,8 @@ f i: MOD_A::Item => Bool.
 let test_qualified_term_resolves_ambiguity () =
   (* EQualified resolves ambiguous term *)
   let env = make_import_env [
-    ("MOD_A", [], [("count", Env.KProc (Types.TyFunc ([], Some Types.TyNat)))]);
-    ("MOD_B", [], [("count", Env.KProc (Types.TyFunc ([], Some Types.TyNat)))]);
+    ("MOD_A", [], [("count", Env.KRule (Types.TyFunc ([], Some Types.TyNat)))]);
+    ("MOD_B", [], [("count", Env.KRule (Types.TyFunc ([], Some Types.TyNat)))]);
   ] in
   check_ok_with_env env {|
 Foo.
@@ -494,7 +494,7 @@ f w: WRONG::Widget => Bool.
 let test_unbound_qualified_term () =
   (* Wrong module name in EQualified → UnboundQualified error *)
   let env = make_import_env [
-    ("LIB", [], [("count", Env.KProc (Types.TyFunc ([], Some Types.TyNat)))])
+    ("LIB", [], [("count", Env.KRule (Types.TyFunc ([], Some Types.TyNat)))])
   ] in
   check_error_with_env env {|
 Foo.
@@ -514,12 +514,12 @@ Item.
 all i: Item | i in Item.
 |}
 
-let test_local_proc_shadows_import () =
-  (* Local proc shadows an imported one *)
+let test_local_rule_shadows_import () =
+  (* Local rule shadows an imported one *)
   let env = make_import_env [
     ("LIB",
      [("Widget", Env.KDomain)],
-     [("count", Env.KProc (Types.TyFunc ([], Some Types.TyNat)))])
+     [("count", Env.KRule (Types.TyFunc ([], Some Types.TyNat)))])
   ] in
   check_ok_with_env env {|
 Widget.
@@ -549,7 +549,7 @@ Foo.
 |}
 
 let test_local_duplicate_proc_still_errors () =
-  (* Two local procs with same name still error *)
+  (* Two local rules with same name still error *)
   check_fails {|
 Foo.
 do-thing f: Foo => Bool.
@@ -654,7 +654,7 @@ p.1 >= 0.0.
 |}
 
 let test_qualified_type_in_proc_param () =
-  (* TQName in procedure parameter type *)
+  (* TQName in rule parameter type *)
   let env = make_import_env [
     ("LIB", [("Widget", Env.KDomain)], [])
   ] in
@@ -664,7 +664,7 @@ process w: LIB::Widget => Bool.
 |}
 
 let test_qualified_type_in_return () =
-  (* TQName in procedure return type *)
+  (* TQName in rule return type *)
   let env = make_import_env [
     ("LIB", [("Widget", Env.KDomain)], [])
   ] in
@@ -680,20 +680,20 @@ let () =
       test_case "minimal" `Quick test_minimal;
       test_case "bool literal" `Quick test_bool_literal;
       test_case "simple all" `Quick test_simple_all;
-      test_case "procedure application" `Quick test_procedure_application;
+      test_case "rule application" `Quick test_rule_application;
       test_case "equality" `Quick test_equality;
       test_case "numeric literal" `Quick test_numeric_literal;
       test_case "numeric comparison" `Quick test_numeric_comparison;
       test_case "membership" `Quick test_membership;
       test_case "cardinality" `Quick test_cardinality;
-      test_case "nullary procedure" `Quick test_nullary_procedure;
+      test_case "nullary rule" `Quick test_nullary_rule;
       test_case "action primed" `Quick test_action_primed;
       test_case "type alias" `Quick test_type_alias;
       test_case "tuple" `Quick test_tuple;
       test_case "projection" `Quick test_projection;
-      test_case "procedure guard" `Quick test_procedure_guard;
+      test_case "rule guard" `Quick test_rule_guard;
       test_case "membership binding" `Quick test_membership_binding;
-      test_case "proc params visible" `Quick test_proc_params_visible_in_body;
+      test_case "rule params visible" `Quick test_rule_params_visible_in_body;
       test_case "quantifier scoping" `Quick test_quantifier_scoping;
       test_case "existential" `Quick test_existential;
       test_case "nested quantifiers" `Quick test_nested_quantifiers;
@@ -715,7 +715,7 @@ let () =
       test_case "shadowing different type" `Quick test_shadowing_different_type;
       test_case "shadowing in membership" `Quick test_shadowing_in_membership;
       test_case "local duplicate type" `Quick test_local_duplicate_type_still_errors;
-      test_case "local duplicate proc" `Quick test_local_duplicate_proc_still_errors;
+      test_case "local duplicate rule" `Quick test_local_duplicate_proc_still_errors;
     ];
     "env import", [
       test_case "single import" `Quick test_env_single_import;
@@ -734,7 +734,7 @@ let () =
       test_case "unbound qualified type" `Quick test_unbound_qualified_type;
       test_case "unbound qualified term" `Quick test_unbound_qualified_term;
       test_case "local domain shadows" `Quick test_local_domain_shadows_import;
-      test_case "local proc shadows" `Quick test_local_proc_shadows_import;
+      test_case "local rule shadows" `Quick test_local_rule_shadows_import;
       test_case "local alias shadows" `Quick test_local_alias_shadows_import;
       test_case "qualified in alias" `Quick test_qualified_type_in_alias;
       test_case "qualified in param" `Quick test_qualified_type_in_proc_param;

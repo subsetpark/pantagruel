@@ -4,12 +4,12 @@ open Ast
 open Format
 module StringSet = Set.Make (String)
 
-(** Extract procedure names from environment *)
-let proc_names_of_env env =
+(** Extract rule names from environment *)
+let rule_names_of_env env =
   Env.StringMap.fold
     (fun name entry acc ->
       match entry.Env.kind with
-      | Env.KProc _ -> StringSet.add name acc
+      | Env.KRule _ -> StringSet.add name acc
       | _ -> acc)
     env.Env.terms StringSet.empty
 
@@ -179,7 +179,7 @@ let pp_guard procs fmt = function
 let pp_declaration procs fmt = function
   | DeclDomain name -> fprintf fmt "`%s`." name
   | DeclAlias (name, te) -> fprintf fmt "**%s** = %a." name pp_type_expr te
-  | DeclProc { name; params; guards; return_type; contexts } ->
+  | DeclRule { name; params; guards; return_type; contexts } ->
       if contexts <> [] then
         fprintf fmt "{%a} "
           (pp_print_list ~pp_sep:pp_params_sep (fun fmt c ->
@@ -237,19 +237,19 @@ let pp_chapter procs ?(skip_first_doc = false) ~total_chapters chapter_num fmt
     match chapter.head with d :: _ -> Some d.loc.line | [] -> None
   in
 
-  let domains, aliases, procs_decls, action_decls =
+  let domains, aliases, rule_decls, action_decls =
     List.fold_left
-      (fun (ds, as_, ps, acts) decl ->
+      (fun (ds, as_, rs, acts) decl ->
         match decl.value with
-        | DeclDomain _ -> (decl :: ds, as_, ps, acts)
-        | DeclAlias _ -> (ds, decl :: as_, ps, acts)
-        | DeclProc _ -> (ds, as_, decl :: ps, acts)
-        | DeclAction _ -> (ds, as_, ps, decl :: acts))
+        | DeclDomain _ -> (decl :: ds, as_, rs, acts)
+        | DeclAlias _ -> (ds, decl :: as_, rs, acts)
+        | DeclRule _ -> (ds, as_, decl :: rs, acts)
+        | DeclAction _ -> (ds, as_, rs, decl :: acts))
       ([], [], [], []) chapter.head
   in
   let domains = List.rev domains in
   let aliases = List.rev aliases in
-  let procs_decls = List.rev procs_decls in
+  let rule_decls = List.rev rule_decls in
   let action_decls = List.rev action_decls in
 
   let should_skip_doc d = skip_first_doc && Some d.loc.line = first_line in
@@ -276,9 +276,9 @@ let pp_chapter procs ?(skip_first_doc = false) ~total_chapters chapter_num fmt
     List.iter (pp_decl_with_doc procs ~should_skip_doc fmt) aliases
   end;
 
-  if procs_decls <> [] then begin
-    fprintf fmt "### Procedures@\n@\n";
-    List.iter (pp_decl_with_doc procs ~should_skip_doc fmt) procs_decls
+  if rule_decls <> [] then begin
+    fprintf fmt "### Rules@\n@\n";
+    List.iter (pp_decl_with_doc procs ~should_skip_doc fmt) rule_decls
   end;
 
   if action_decls <> [] then begin
@@ -335,7 +335,7 @@ let md_document procs doc = to_string (pp_document procs) doc
 
 (** Output Markdown to stdout *)
 let output env doc =
-  let procs = proc_names_of_env env in
+  let procs = rule_names_of_env env in
   pp_set_margin std_formatter 10000;
   pp_document procs std_formatter doc;
   pp_print_flush std_formatter ()

@@ -14,7 +14,7 @@ type type_error =
   | NotAProduct of ty * loc
   | NotNumeric of ty * loc
   | ExpectedBool of ty * loc
-  | PrimedNonProcedure of string * loc
+  | PrimedNonRule of string * loc
   | PrimeOutsideActionContext of string * loc
   | ActionInExpression of string * loc
   | OverrideRequiresArity1 of string * int * loc
@@ -47,10 +47,10 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
   | EVar name -> (
       match Env.lookup_term name ctx.env with
       | Some { kind = Env.KVar ty; _ } -> Ok ty
-      | Some { kind = Env.KProc (TyFunc ([], Some ret)); _ } ->
-          (* Nullary procedure: auto-apply *)
+      | Some { kind = Env.KRule (TyFunc ([], Some ret)); _ } ->
+          (* Nullary rule: auto-apply *)
           Ok ret
-      | Some { kind = Env.KProc ty; _ } -> Ok ty
+      | Some { kind = Env.KRule ty; _ } -> Ok ty
       | Some { kind = Env.KDomain | Env.KAlias _; _ } ->
           (* This shouldn't happen - domains/aliases are in type namespace *)
           Error (UnboundVariable (name, ctx.loc))
@@ -63,8 +63,8 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
       match Env.lookup_type name ctx.env with
       | Some { kind = Env.KDomain; _ } -> Ok (TyList (TyDomain name))
       | Some { kind = Env.KAlias ty; _ } -> Ok (TyList ty)
-      | Some { kind = Env.KProc _ | Env.KVar _; _ } ->
-          (* This shouldn't happen - procs/vars are in term namespace *)
+      | Some { kind = Env.KRule _ | Env.KVar _; _ } ->
+          (* This shouldn't happen - rules/vars are in term namespace *)
           Error (UnboundType (name, ctx.loc))
       | None -> (
           match Env.ambiguous_type_modules name ctx.env with
@@ -73,8 +73,8 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
   | EQualified (mod_name, name) -> (
       (* Try term namespace first *)
       match Env.lookup_qualified_term mod_name name ctx.env with
-      | Some { kind = Env.KProc (TyFunc ([], Some ret)); _ } -> Ok ret
-      | Some { kind = Env.KProc ty; _ } -> Ok ty
+      | Some { kind = Env.KRule (TyFunc ([], Some ret)); _ } -> Ok ret
+      | Some { kind = Env.KRule ty; _ } -> Ok ty
       | Some { kind = Env.KVar ty; _ } -> Ok ty
       | _ -> (
           (* Try type namespace (domain as set) *)
@@ -84,14 +84,14 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
           | _ -> Error (UnboundQualified (mod_name, name, ctx.loc))))
   | EPrimed name -> (
       if
-        (* Validate: must be procedure, must be in action context *)
+        (* Validate: must be rule, must be in action context *)
         not (Env.in_action_context ctx.env)
       then Error (PrimeOutsideActionContext (name, ctx.loc))
       else if Env.is_local_var name ctx.env then
-        Error (PrimedNonProcedure (name, ctx.loc))
+        Error (PrimedNonRule (name, ctx.loc))
       else
         match Env.lookup_term name ctx.env with
-        | Some { kind = Env.KProc ty; _ } -> (
+        | Some { kind = Env.KRule ty; _ } -> (
             (* If action has a context, check membership *)
             match ctx.env.action_context with
             | Some ctx_name -> (
@@ -102,7 +102,7 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
                 | None -> Ok ty (* Shouldn't happen: validated in collect *))
             | None -> Ok ty)
         | Some { kind = Env.KVar _; _ } ->
-            Error (PrimedNonProcedure (name, ctx.loc))
+            Error (PrimedNonRule (name, ctx.loc))
         | Some { kind = Env.KDomain | Env.KAlias _; _ } ->
             Error (UnboundVariable (name, ctx.loc))
         | None -> Error (UnboundVariable (name, ctx.loc)))
@@ -294,8 +294,8 @@ and check_quantifier ctx params guards body =
 
 and check_override ctx name pairs =
   match Env.lookup_term name ctx.env with
-  | Some { kind = Env.KProc (TyFunc ([ param_ty ], Some ret_ty)); _ } ->
-      (* Override only for arity-1 procedures *)
+  | Some { kind = Env.KRule (TyFunc ([ param_ty ], Some ret_ty)); _ } ->
+      (* Override only for arity-1 rules *)
       let* _ =
         map_result
           (fun (k, v) ->
@@ -310,7 +310,7 @@ and check_override ctx name pairs =
           pairs
       in
       Ok (TyFunc ([ param_ty ], Some ret_ty))
-  | Some { kind = Env.KProc (TyFunc (params, _)); _ } ->
+  | Some { kind = Env.KRule (TyFunc (params, _)); _ } ->
       Error (OverrideRequiresArity1 (name, List.length params, ctx.loc))
   | _ -> Error (UnboundVariable (name, ctx.loc))
 
@@ -321,8 +321,8 @@ let check_proposition ctx (prop : expr located) =
   if equal_ty ty TyBool then Ok ()
   else Error (PropositionNotBool (ty, prop.loc))
 
-(** Check guards on a procedure or action declaration *)
-let check_proc_guards ctx (decl : declaration located) =
+(** Check guards on a rule or action declaration *)
+let check_rule_guards ctx (decl : declaration located) =
   let check_guards params guards =
     (* Resolve parameter types and add them to environment *)
     let resolve_param env p =
@@ -366,9 +366,9 @@ let check_proc_guards ctx (decl : declaration located) =
     Ok ()
   in
   match decl.value with
-  | DeclProc { params; guards; _ } -> check_guards params guards
+  | DeclRule { params; guards; _ } -> check_guards params guards
   | DeclAction { params; guards; _ } -> check_guards params guards
-  | _ -> Ok () (* Not a procedure/action, nothing to check *)
+  | _ -> Ok () (* Not a rule/action, nothing to check *)
 
 (** Find the action in a chapter head, if any *)
 let find_action (head : declaration located list) =
@@ -380,12 +380,12 @@ let find_action (head : declaration located list) =
       | _ -> None)
     head
 
-(** Collect all procedure/action parameters from a chapter head *)
+(** Collect all rule/action parameters from a chapter head *)
 let collect_all_params (head : declaration located list) =
   List.concat_map
     (fun decl ->
       match decl.value with
-      | DeclProc { params; _ } | DeclAction { params; _ } -> params
+      | DeclRule { params; _ } | DeclAction { params; _ } -> params
       | _ -> [])
     head
 
@@ -402,7 +402,7 @@ let check_chapter_body ~chapter_idx env (chapter : chapter) =
     | None -> env_visible
   in
 
-  (* Add ALL procedure/action parameters from this chapter's head to environment *)
+  (* Add ALL rule/action parameters from this chapter's head to environment *)
   let all_params = collect_all_params chapter.head in
   let env' =
     List.fold_left
@@ -417,12 +417,12 @@ let check_chapter_body ~chapter_idx env (chapter : chapter) =
 
   map_result (check_proposition ctx) chapter.body
 
-(** Check guards on all procedure declarations in a chapter head *)
+(** Check guards on all rule declarations in a chapter head *)
 let check_chapter_guards ~chapter_idx env (chapter : chapter) =
   (* Filter environment for visibility in this chapter's head *)
   let env_visible = Env.visible_in_head chapter_idx env in
   let ctx = { env = env_visible; loc = dummy_loc } in
-  map_result (check_proc_guards ctx) chapter.head
+  map_result (check_rule_guards ctx) chapter.head
 
 (** Check entire document (Pass 2) *)
 let check_document env (doc : document) : (unit, type_error) result =

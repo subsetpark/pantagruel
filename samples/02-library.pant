@@ -8,7 +8,7 @@ User.
 Book.
 Loan.
 
-> Procedures with return types
+> Rules with return types
 available b: Book => Bool.
 borrower b: Book => User.
 loans u: User => [Loan].

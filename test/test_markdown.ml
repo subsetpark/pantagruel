@@ -16,7 +16,7 @@ let render str =
       match Check.check_document env doc with
       | Error e -> fail (Check.show_type_error e)
       | Ok () ->
-          let procs = Markdown_output.proc_names_of_env env in
+          let procs = Markdown_output.rule_names_of_env env in
           (procs, doc)
 
 let render_expr str =
@@ -43,14 +43,14 @@ let test_var_italic () =
 
 let test_proc_bold () =
   let md = render_expr "module T.\nUser.\nactive u: User => Bool.\n---\nactive u.\n" in
-  (* 'u' is a proc param, so it's a variable; 'active' is a proc *)
-  check string "proc bold" "**active** *u*" md
+  (* 'u' is a rule param, so it's a variable; 'active' is a rule *)
+  check string "rule bold" "**active** *u*" md
 
-let test_nullary_proc_bold () =
+let test_nullary_rule_bold () =
   let md = render_expr "module T.\nUser.\nnobody => User.\n---\nall u: User | u = nobody.\n" in
   check string "nullary bold" "∀ *u*: `User` | *u* = **nobody**" md
 
-let test_primed_proc () =
+let test_primed_rule () =
   let md = render_expr {|module T.
 User.
 Document.
@@ -59,7 +59,7 @@ owner d: Document => User.
 ---
 owner' d = u.
 |} in
-  check string "primed proc bold" "**owner**′ *d* = *u*" md
+  check string "primed rule bold" "**owner**′ *d* = *u*" md
 
 let test_override () =
   let md = render_expr {|module T.
@@ -69,7 +69,7 @@ mapping k: Key => Value.
 ---
 all k: Key, v: Value | mapping[k |-> v] k = v.
 |} in
-  check string "override bold" "∀ *k*: `Key`, *v*: `Value` | **mapping**[*k* ↦ *v*] *k* = *v*" md
+  check string "override" "∀ *k*: `Key`, *v*: `Value` | **mapping**[*k* ↦ *v*] *k* = *v*" md
 
 (* --- Operators --- *)
 
@@ -152,13 +152,13 @@ let test_decl_domain () =
   let md = render_decl "module T.\nUser.\n---\n" in
   check string "domain decl" "`User`." md
 
-let test_decl_proc_with_return () =
+let test_decl_rule_with_return () =
   let _, doc = render "module T.\nUser.\nname u: User => String.\n---\n" in
   let procs = Markdown_output.StringSet.singleton "name" in
   match doc.Ast.chapters with
   | [{ head = [_; decl]; _ }] ->
       let md = Markdown_output.md_declaration procs decl.value in
-      check string "proc decl" "**name** *u*: `User` ⇒ `String`." md
+      check string "rule decl" "**name** *u*: `User` ⇒ `String`." md
   | _ -> fail "expected two declarations"
 
 let test_decl_action () =
@@ -195,7 +195,7 @@ User.
 active u: User => Bool.
 ---
 |} in
-  check bool "proc blockquote" true (has_substring md "> Check if active")
+  check bool "rule blockquote" true (has_substring md "> Check if active")
 
 let test_domain_doc_comments () =
   let md = render_doc {|module T.
@@ -237,7 +237,7 @@ all u: User | true.
 |} in
   check bool "domains heading" true (has_substring md "### Domains");
   check bool "types heading" true (has_substring md "### Types");
-  check bool "procedures heading" true (has_substring md "### Procedures");
+  check bool "rules heading" true (has_substring md "### Rules");
   check bool "propositions heading" true (has_substring md "### Propositions")
 
 let test_builtin_types_backtick () =
@@ -249,10 +249,10 @@ let test_builtin_types_backtick () =
 let () =
   run "Markdown" [
     "expressions", [
-      test_case "var italic, proc bold" `Quick test_var_italic;
-      test_case "proc bold" `Quick test_proc_bold;
-      test_case "nullary proc bold" `Quick test_nullary_proc_bold;
-      test_case "primed proc" `Quick test_primed_proc;
+      test_case "var italic, rule bold" `Quick test_var_italic;
+      test_case "rule bold" `Quick test_proc_bold;
+      test_case "nullary rule bold" `Quick test_nullary_rule_bold;
+      test_case "primed rule" `Quick test_primed_rule;
       test_case "override" `Quick test_override;
     ];
     "operators", [
@@ -273,7 +273,7 @@ let () =
     ];
     "declarations", [
       test_case "domain" `Quick test_decl_domain;
-      test_case "proc with return" `Quick test_decl_proc_with_return;
+      test_case "rule with return" `Quick test_decl_rule_with_return;
       test_case "action" `Quick test_decl_action;
     ];
     "document", [

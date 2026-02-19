@@ -19,7 +19,7 @@ let test_domain_decl () =
   let chapter = List.hd doc.Ast.chapters in
   check int "declarations" 2 (List.length chapter.Ast.head)
 
-let test_procedure_decl () =
+let test_rule_decl () =
   let doc = parse "module TEST.\n\nUser.\nowner d: User => User.\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
   check int "declarations" 2 (List.length chapter.Ast.head)
@@ -70,7 +70,7 @@ let test_list_type () =
   let doc = parse "module TEST.\n\nUser.\nusers => [User].\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
   match (List.nth chapter.Ast.head 1).Ast.value with
-  | Ast.DeclProc { return_type = Ast.TList (Ast.TName "User"); _ } -> ()
+  | Ast.DeclRule { return_type = Ast.TList (Ast.TName "User"); _ } -> ()
   | _ -> fail "Expected list type"
 
 let test_sum_type () =
@@ -80,7 +80,7 @@ let test_sum_type () =
   | Ast.DeclAlias ("Result", Ast.TSum _) -> ()
   | _ -> fail "Expected sum type"
 
-let test_procedure_guard () =
+let test_rule_guard () =
   let doc = parse "module TEST.\n\nAccount.\nbalance a: Account => Nat.\n~> withdraw a: Account, amount: Nat, balance a >= amount.\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
   match (List.nth chapter.Ast.head 2).Ast.value with
@@ -125,12 +125,12 @@ let test_context_declaration () =
   check int "contexts" 1 (List.length doc.Ast.contexts);
   check string "context name" "Banking" (List.hd doc.Ast.contexts).Ast.value
 
-let test_proc_with_context () =
+let test_rule_with_context () =
   let doc = parse "module TEST.\ncontext Banking.\n\nAccount.\n{Banking} balance a: Account => Nat.\nBanking ~> withdraw a: Account.\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
   (match (List.nth chapter.Ast.head 1).Ast.value with
-  | Ast.DeclProc { name = "balance"; contexts = ["Banking"]; _ } -> ()
-  | _ -> fail "Expected proc with context footprint");
+  | Ast.DeclRule { name = "balance"; contexts = ["Banking"]; _ } -> ()
+  | _ -> fail "Expected rule with context footprint");
   (match (List.nth chapter.Ast.head 2).Ast.value with
   | Ast.DeclAction { name = "withdraw"; context = Some "Banking"; _ } -> ()
   | _ -> fail "Expected action with context")
@@ -140,7 +140,7 @@ let () =
     "minimal", [test_case "minimal document" `Quick test_minimal];
     "no_module", [test_case "no module header" `Quick test_no_module];
     "domain", [test_case "domain declaration" `Quick test_domain_decl];
-    "procedure", [test_case "procedure declaration" `Quick test_procedure_decl];
+    "rule", [test_case "rule declaration" `Quick test_rule_decl];
     "action", [test_case "action" `Quick test_action];
     "import", [test_case "import" `Quick test_import];
     "where", [test_case "where clause" `Quick test_where_clause];
@@ -150,11 +150,11 @@ let () =
     "type_alias", [test_case "type alias" `Quick test_type_alias];
     "list_type", [test_case "list type" `Quick test_list_type];
     "sum_type", [test_case "sum type" `Quick test_sum_type];
-    "guard", [test_case "procedure guard" `Quick test_procedure_guard];
+    "guard", [test_case "rule guard" `Quick test_rule_guard];
     "membership", [test_case "membership binding" `Quick test_membership_binding];
     "existential", [test_case "existential" `Quick test_existential];
     "doc_comment", [test_case "doc comment" `Quick test_doc_comment];
     "multi_guard", [test_case "multiple guards" `Quick test_multiple_guards];
     "context", [test_case "context declaration" `Quick test_context_declaration];
-    "proc_context", [test_case "proc with context" `Quick test_proc_with_context];
+    "rule_context", [test_case "rule with context" `Quick test_rule_with_context];
   ]

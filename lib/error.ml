@@ -34,8 +34,8 @@ let format_type_error err =
         (Printf.sprintf "Expected numeric type, got %s" (Types.format_ty ty))
   | ExpectedBool (ty, loc) ->
       fmt loc (Printf.sprintf "Expected Bool, got %s" (Types.format_ty ty))
-  | PrimedNonProcedure (name, loc) ->
-      fmt loc (Printf.sprintf "Cannot prime '%s': not a procedure" name)
+  | PrimedNonRule (name, loc) ->
+      fmt loc (Printf.sprintf "Cannot prime '%s': not a rule" name)
   | PrimeOutsideActionContext (name, loc) ->
       fmt loc
         (Printf.sprintf "Primed '%s' only valid in action context" name)
@@ -44,7 +44,7 @@ let format_type_error err =
         (Printf.sprintf "Action '%s' cannot be used in expression" name)
   | OverrideRequiresArity1 (name, arity, loc) ->
       fmt loc
-        (Printf.sprintf "Override requires arity-1 procedure, '%s' has arity %d"
+        (Printf.sprintf "Override requires arity-1 rule, '%s' has arity %d"
            name arity)
   | ProjectionOutOfBounds (idx, len, loc) ->
       fmt loc
@@ -79,9 +79,9 @@ let format_collect_error err =
       fmt loc
         (Printf.sprintf "Duplicate domain '%s' (first defined at %s)" name
            (format_loc first_loc))
-  | DuplicateProc (name, loc, first_loc) ->
+  | DuplicateRule (name, loc, first_loc) ->
       fmt loc
-        (Printf.sprintf "Duplicate procedure '%s' (first defined at %s)" name
+        (Printf.sprintf "Duplicate rule '%s' (first defined at %s)" name
            (format_loc first_loc))
   | UndefinedType (name, loc) ->
       fmt loc (Printf.sprintf "Undefined type '%s'" name)

@@ -2,7 +2,7 @@
 
 A specification language checker for formal system descriptions.
 
-Pantagruel lets you write precise specifications of systems using domains, procedures, and logical propositions. The checker validates that your specifications are well-typed and internally consistent.
+Pantagruel lets you write precise specifications of systems using domains, rules, and logical propositions. The checker validates that your specifications are well-typed and internally consistent.
 
 ## Installation
 
@@ -45,7 +45,7 @@ pantagruel --module-path ./specs myspec.pant
 
 The `samples/` directory contains reference specifications demonstrating all language features:
 
-- `01-basics.pant` - Fundamental syntax: domains, procedures, quantifiers
+- `01-basics.pant` - Fundamental syntax: domains, rules, quantifiers
 - `02-library.pant` - Library system with actions and state transitions
 - `03-types.pant` - All type features: products, sums, lists, aliases
 - `04-operators.pant` - All operators: logical, comparison, arithmetic
@@ -69,7 +69,7 @@ import USERS.
 Book.
 Loan.
 
-> Procedures
+> Rules
 available b: Book => Bool.
 ~> borrow u: User, b: Book.
 ---
@@ -92,7 +92,7 @@ Result = Value + Error.      // Sum type
 UserList = [User].           // List type
 ```
 
-**Procedures** define operations with typed parameters:
+**Rules** define operations with typed parameters:
 ```
 // With return type
 owner d: Document => User.
@@ -131,7 +131,7 @@ all u: User | u in User.
 
 ### Actions and Primed Expressions
 
-Actions model state transitions. Within a chapter that declares an action, you can use **primed expressions** to refer to the post-state:
+Actions model state transitions. Within a chapter that declares an action, you can use **primed expressions** to refer to the post-state of rules:
 
 ```
 User.
@@ -145,7 +145,7 @@ owner' d = u.
 
 ### Contexts
 
-Contexts declare write-permission boundaries for actions. Context names are declared at the module level, and procedures declare which contexts they belong to with a `{Ctx}` prefix. Actions declare which context they operate within using `Ctx ~>`.
+Contexts declare write-permission boundaries for actions. Context names are declared at the module level, and rules declare which contexts they belong to with a `{Ctx}` prefix. Actions declare which context they operate within using `Ctx ~>`.
 
 ```
 module BANKING.

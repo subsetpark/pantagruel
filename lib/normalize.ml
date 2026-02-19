@@ -22,7 +22,7 @@ module StringSet = Set.Make (String)
 
 type decl_info = {
   name : string;
-  is_type : bool;  (** true for domains/aliases, false for procedures *)
+  is_type : bool;  (** true for domains/aliases, false for rules *)
   is_void : bool;  (** true for actions *)
   decl : declaration located;
   dependencies : StringSet.t;  (** Type names this declaration depends on *)
@@ -119,7 +119,7 @@ let symbols_in_decl_deps (decl : declaration) =
   (match decl with
   | DeclDomain _ -> () (* No dependencies *)
   | DeclAlias (_, te) -> types := types_in_type_expr te
-  | DeclProc { params; guards; return_type; _ } ->
+  | DeclRule { params; guards; return_type; _ } ->
       collect_params_guards params guards;
       types := StringSet.union !types (types_in_type_expr return_type)
   | DeclAction { params; guards; _ } ->
@@ -130,18 +130,18 @@ let symbols_in_decl_deps (decl : declaration) =
 let decl_name = function
   | DeclDomain name -> name
   | DeclAlias (name, _) -> name
-  | DeclProc { name; _ } -> name
+  | DeclRule { name; _ } -> name
   | DeclAction { name; _ } -> name
 
 (** Is this a type-namespace declaration? *)
 let is_type_decl = function
   | DeclDomain _ | DeclAlias _ -> true
-  | DeclProc _ | DeclAction _ -> false
+  | DeclRule _ | DeclAction _ -> false
 
 (** Is this an action? *)
 let is_action = function
   | DeclAction _ -> true
-  | DeclDomain _ | DeclAlias _ | DeclProc _ -> false
+  | DeclDomain _ | DeclAlias _ | DeclRule _ -> false
 
 (** Check if an expression uses any primed names *)
 let rec uses_primed = function

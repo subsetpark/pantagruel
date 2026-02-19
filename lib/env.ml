@@ -6,7 +6,7 @@ open Types
 type entry_kind =
   | KDomain                 (** Domain definition *)
   | KAlias of ty            (** Type alias, already expanded *)
-  | KProc of ty             (** Procedure with its type *)
+  | KRule of ty             (** Rule with its type *)
   | KVar of ty              (** Variable (param, quantifier-bound) *)
 [@@deriving show]
 
@@ -26,7 +26,7 @@ type t = {
   (** Type namespace: domains and aliases *)
   types: entry StringMap.t;
 
-  (** Term namespace: procedures and variables *)
+  (** Term namespace: rules and variables *)
   terms: entry StringMap.t;
 
   (** Import index: name → [(module, entry)] for types *)
@@ -73,9 +73,9 @@ let add_alias name ty loc ~chapter env =
   let entry = { kind = KAlias ty; loc; module_origin = None; decl_chapter = chapter } in
   { env with types = StringMap.add name entry env.types }
 
-(** Add a procedure to the term namespace *)
-let add_proc name ty loc ~chapter env =
-  let entry = { kind = KProc ty; loc; module_origin = None; decl_chapter = chapter } in
+(** Add a rule to the term namespace *)
+let add_rule name ty loc ~chapter env =
+  let entry = { kind = KRule ty; loc; module_origin = None; decl_chapter = chapter } in
   { env with terms = StringMap.add name entry env.terms }
 
 (** Add a variable to the term namespace (also tracks as local var) *)
@@ -97,11 +97,11 @@ let clear_action env =
 let add_context name members env =
   { env with contexts = StringMap.add name members env.contexts }
 
-(** Add a procedure to a context's member list *)
-let add_proc_to_context ctx_name proc_name env =
+(** Add a rule to a context's member list *)
+let add_rule_to_context ctx_name rule_name env =
   match StringMap.find_opt ctx_name env.contexts with
   | Some members ->
-      { env with contexts = StringMap.add ctx_name (members @ [proc_name]) env.contexts }
+      { env with contexts = StringMap.add ctx_name (members @ [rule_name]) env.contexts }
   | None -> env
 
 (** Lookup a context by name *)

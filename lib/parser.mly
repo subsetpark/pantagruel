@@ -96,27 +96,27 @@ declaration:
     { let doc = Doc_comments.get_at_pos $startpos in
       located_with_doc doc $startpos $endpos (DeclAlias (name, t)) }
   | LBRACE ctxs=separated_nonempty_list(COMMA, UPPER_IDENT) RBRACE
-    name=LOWER_IDENT pg=proc_params_guards DARROW ret=type_expr DOT
+    name=LOWER_IDENT pg=rule_params_guards DARROW ret=type_expr DOT
     { let doc = Doc_comments.get_at_pos $startpos in
       let (params, guards) = pg in
-      located_with_doc doc $startpos $endpos (DeclProc {
+      located_with_doc doc $startpos $endpos (DeclRule {
         name;
         params;
         guards;
         return_type = ret;
         contexts = ctxs;
       }) }
-  | name=LOWER_IDENT pg=proc_params_guards DARROW ret=type_expr DOT
+  | name=LOWER_IDENT pg=rule_params_guards DARROW ret=type_expr DOT
     { let doc = Doc_comments.get_at_pos $startpos in
       let (params, guards) = pg in
-      located_with_doc doc $startpos $endpos (DeclProc {
+      located_with_doc doc $startpos $endpos (DeclRule {
         name;
         params;
         guards;
         return_type = ret;
         contexts = [];
       }) }
-  | ctx=UPPER_IDENT SQUIG_ARROW name=LOWER_IDENT pg=proc_params_guards DOT
+  | ctx=UPPER_IDENT SQUIG_ARROW name=LOWER_IDENT pg=rule_params_guards DOT
     { let doc = Doc_comments.get_at_pos $startpos in
       let (params, guards) = pg in
       located_with_doc doc $startpos $endpos (DeclAction {
@@ -125,7 +125,7 @@ declaration:
         guards;
         context = Some ctx;
       }) }
-  | SQUIG_ARROW name=LOWER_IDENT pg=proc_params_guards DOT
+  | SQUIG_ARROW name=LOWER_IDENT pg=rule_params_guards DOT
     { let doc = Doc_comments.get_at_pos $startpos in
       let (params, guards) = pg in
       located_with_doc doc $startpos $endpos (DeclAction {
@@ -135,18 +135,18 @@ declaration:
         context = None;
       }) }
 
-(* Parameters and guards for procedures - parsed together then split *)
-proc_params_guards:
+(* Parameters and guards for rules - parsed together then split *)
+rule_params_guards:
   | (* empty *) { ([], []) }
-  | p=param rest=list(preceded(COMMA, proc_param_or_guard))
+  | p=param rest=list(preceded(COMMA, rule_param_or_guard))
     { split_params_guards (GParam p :: rest) }
 
-proc_param_or_guard:
+rule_param_or_guard:
   | p=param { GParam p }
-  | e=proc_guard_expr { GExpr e }
+  | e=rule_guard_expr { GExpr e }
 
-(* Guard expressions for procedures: use disjunction level *)
-proc_guard_expr:
+(* Guard expressions for rules: use disjunction level *)
+rule_guard_expr:
   | e=disjunction { e }
 
 param:

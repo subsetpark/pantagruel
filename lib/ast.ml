@@ -19,7 +19,7 @@ type upper_ident = string (* Domain names: User, Document *)
 [@@deriving show, eq]
 (** Identifier types *)
 
-type lower_ident = string (* Procedures/variables: owner, has-perm? *)
+type lower_ident = string (* Rules/variables: owner, has-perm? *)
 [@@deriving show, eq]
 
 type qualified_name = upper_ident * string (* MODULE.name *)
@@ -96,7 +96,7 @@ and expr =
 type declaration =
   | DeclDomain of upper_ident  (** User. *)
   | DeclAlias of upper_ident * type_expr  (** Point = Nat * Nat. *)
-  | DeclProc of {
+  | DeclRule of {
       name : lower_ident;
       params : param list;
       guards : guard list;

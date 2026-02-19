@@ -7,11 +7,11 @@ module BASICS.
 User.
 Document.
 
-> Procedure declarations define operations
+> Rule declarations define operations
 > Syntax: name params => ReturnType.
 owner d: Document => User.
 
-> Nullary procedures (no parameters)
+> Nullary rules (no parameters)
 nobody => User.
 
 > Multiple parameters separated by commas
@@ -27,7 +27,7 @@ true.
 > Universal quantification
 all d: Document | owner d in User.
 
-> Procedure application
+> Rule application
 all d: Document, u: User | transfer d u u = true.
 
 > Equality and comparison

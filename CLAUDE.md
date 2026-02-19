@@ -38,7 +38,7 @@ Pantagruel is a specification language checker written in OCaml. It processes `.
    - Qualified names use `::` syntax (e.g., `Module::name`) to avoid DOT conflicts
 
 3. **Collection** (`lib/collect.ml`): Pass 1 - Declaration gathering
-   - Collects domain declarations, type aliases, and procedure signatures
+   - Collects domain declarations, type aliases, and rule signatures
    - Resolves type expressions to internal types
    - Detects duplicate declarations and recursive aliases
 
@@ -51,7 +51,7 @@ Pantagruel is a specification language checker written in OCaml. It processes `.
 
 - `Ast.type_expr`: Syntactic types from parser (TName, TList, TProduct, TSum)
 - `Types.ty`: Internal type representation with numeric hierarchy (Nat < Nat0 < Int < Real)
-- `Env.t`: Type environment mapping names to entries (domains, aliases, procedures, variables)
+- `Env.t`: Type environment mapping names to entries (domains, aliases, rules, variables)
 
 ### Module System (`lib/module.ml`)
 
@@ -63,7 +63,7 @@ Pantagruel is a specification language checker written in OCaml. It processes `.
 
 - Domains: `User.` declares a domain type
 - Type aliases: `Point = Nat * Nat.`
-- Procedures: `owner d: Document => User.` (with return type via `=>`)
+- Rules: `owner d: Document => User.` (with return type via `=>`)
 - Actions: `~> check-out u: User.` (state transitions via `~>`, no return type)
 - Actions enable primed expressions (`owner' d`) for state transitions
 - Quantifiers: `all u: User | ...` and `some x: T | ...`

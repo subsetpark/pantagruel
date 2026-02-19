@@ -25,7 +25,7 @@ Colors = [Color].
 Points = [Point].
 Matrix = [[Nat]].
 
-> Procedures returning various types
+> Rules returning various types
 origin => Point.
 red => Color.
 distance p: Point, q: Point => Real.

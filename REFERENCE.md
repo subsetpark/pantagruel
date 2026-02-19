@@ -58,7 +58,7 @@ String escape sequences: `\\`, `\"`, `\n`, `\t`, `\r`
 
 | Operator | Meaning |
 |----------|---------|
-| `=>` | Procedure return type |
+| `=>` | Rule return type |
 | `~>` | Action declaration |
 | `->` | Implication |
 | `<->` | Biconditional (iff) |
@@ -139,7 +139,7 @@ Product and sum types must have at least two components. They are **positional**
 
 Products are constructed with parentheses — `(1, 2)` — and accessed with projection — `p.1`, `p.2` (1-indexed).
 
-**Function types.** Procedure and action declarations give rise to function types *(T₁, ..., Tₙ) → R* (returning procedures) or *(T₁, ..., Tₙ) → Void* (actions). Function types are internal to the checker and cannot appear in user-written type expressions.
+**Function types.** Rule and action declarations give rise to function types *(T₁, ..., Tₙ) → R* (returning rules) or *(T₁, ..., Tₙ) → Void* (actions). Function types are internal to the checker and cannot appear in user-written type expressions.
 
 ### Subtyping
 
@@ -229,9 +229,9 @@ Summary of which relation governs each context:
 
 **Variable.** If *x* is bound to type *T* in the current scope, then *x* : *T*.
 
-**Nullary procedure.** If *f* is declared with no parameters and return type *R*, then *f* : *R*. Nullary procedures are applied automatically on reference.
+**Nullary rule.** If *f* is declared with no parameters and return type *R*, then *f* : *R*. Nullary rules are applied automatically on reference.
 
-**Non-nullary procedure.** If *f* has parameters, referencing *f* yields its function type. It must be applied to arguments to produce a value.
+**Non-nullary rule.** If *f* has parameters, referencing *f* yields its function type. It must be applied to arguments to produce a value.
 
 **Domain in expression position.** A domain name `D` used as an expression has type `[D]` — the list of all values of that domain. A type alias `A = T` in expression position has type `[T]`.
 
@@ -241,7 +241,7 @@ Summary of which relation governs each context:
 
 **Projection.** *e*`.`*k* has type *Tₖ* where *e* : *T₁* `*` ··· `*` *Tₙ* and 1 ≤ *k* ≤ *n*.
 
-#### Procedure Application
+#### Rule Application
 
 *f e₁ ··· eₙ* where *f* : (*T₁*, ..., *Tₙ*) → *R*:
 
@@ -331,16 +331,16 @@ This is a symmetric check. `Nat = Int` is valid (both numeric, join is `Int`), b
 *f*`'` (a primed name):
 
 1. Must occur in a chapter whose head declares an action (an *action context*).
-2. *f* must name a procedure, not a variable.
+2. *f* must name a rule, not a variable.
 3. Result type: same as the type of *f*.
 
-Primed expressions denote the post-state value of a procedure in a state transition.
+Primed expressions denote the post-state value of a rule in a state transition.
 
 #### Function Overrides
 
 *f*`[`*k₁* `|->` *v₁*`,` ... `,` *kₙ* `|->` *vₙ*`]`:
 
-1. *f* must be a procedure of arity 1 with a return type: *f* : (*T*) → *R*.
+1. *f* must be a rule of arity 1 with a return type: *f* : (*T*) → *R*.
 2. Each key must be a **subtype** of the parameter type: *kᵢ* : *Sᵢ* with *Sᵢ* ≤ *T*.
 3. Each value must be a **subtype** of the return type: *vᵢ* : *Uᵢ* with *Uᵢ* ≤ *R*.
 4. Result type: (*T*) → *R*.
@@ -353,7 +353,7 @@ Primed expressions denote the post-state value of a procedure in a state transit
 
 **Action uniqueness.** Each chapter may declare at most one action.
 
-**Procedure guards.** Guard expressions on procedure declarations are type-checked with the procedure's parameters in scope and must have type `Bool`.
+**Rule guards.** Guard expressions on rule declarations are type-checked with the rule's parameters in scope and must have type `Bool`.
 
 ## Declarations
 
@@ -376,9 +376,9 @@ Result = Value + Nothing.
 Users = [User].
 ```
 
-### Procedure Declaration
+### Rule Declaration
 
-Declares a procedure with typed parameters and a return type:
+Declares a rule with typed parameters and a return type:
 
 ```
 // With return type
@@ -398,7 +398,7 @@ origin => Point.
 
 ### Action Declaration
 
-Declares an action (state transition) with `~>`. Actions have no return type and enable primed expressions in the chapter body:
+Declares an action (state transition) with `~>`. Actions have no return type and enable primed expressions for rules in the chapter body:
 
 ```
 // Action (no context)
@@ -414,15 +414,15 @@ Accounts ~> withdraw a: Account, amount: Nat.
 - Actions must be the **last** declaration in a chapter head
 - Each chapter may declare at most one action
 
-### Procedure and Action Guards
+### Rule and Action Guards
 
-Guards constrain when a procedure or action applies. Guards must be boolean expressions and are type-checked with the procedure's parameters in scope:
+Guards constrain when a rule or action applies. Guards must be boolean expressions and are type-checked with the rule's parameters in scope:
 
 ```
 ~> withdraw a: Account, amount: Nat, balance a >= amount.
 ```
 
-Guards can reference the procedure's parameters (`a`, `amount` in this example) to express preconditions.
+Guards can reference the rule's parameters (`a`, `amount` in this example) to express preconditions.
 
 ### Context Declaration
 
@@ -433,20 +433,20 @@ module BANKING.
 context Accounts.
 ```
 
-Context names are uppercase identifiers. They define write-permission boundaries: procedures declare which contexts they belong to, and actions declare which context they operate within.
+Context names are uppercase identifiers. They define write-permission boundaries: rules declare which contexts they belong to, and actions declare which context they operate within.
 
 ### Context Footprint
 
-Procedures declare context membership with a `{Ctx, ...}` prefix:
+Rules declare context membership with a `{Ctx, ...}` prefix:
 
 ```
 {Accounts} balance a: Account => Nat.
 {Accounts} owner a: Account => User.
 ```
 
-A procedure may belong to multiple contexts: `{Accounts, Audit} balance a: Account => Nat.`
+A rule may belong to multiple contexts: `{Accounts, Audit} balance a: Account => Nat.`
 
-Context footprint is closed within module scope — you can only add a procedure to a context declared in the same module.
+Context footprint is closed within module scope — you can only add a rule to a context declared in the same module.
 
 ### Context Annotation (Actions)
 
@@ -456,9 +456,9 @@ Actions declare which context they operate within using a `Ctx ~>` prefix:
 Accounts ~> withdraw a: Account, amount: Nat.
 ```
 
-This means `withdraw` may modify (prime) any procedure that belongs to `Accounts`. Context references work across module boundaries — an action can reference an imported context.
+This means `withdraw` may modify (prime) any rule that belongs to `Accounts`. Context references work across module boundaries — an action can reference an imported context.
 
-Only actions may have a context prefix. Procedures (with `=>`) cannot operate within a context.
+Only actions may have a context prefix. Rules (with `=>`) cannot operate within a context.
 
 ## Expressions
 
@@ -487,7 +487,7 @@ p.1                 // First projection
 p.2                 // Second projection
 ```
 
-### Procedure Application
+### Rule Application
 
 ```
 owner d             // Single argument
@@ -566,7 +566,7 @@ balance a: User => Int.
 balance' a = balance a + amount.    // balance after deposit
 ```
 
-Only procedures can be primed, not variables.
+Only rules can be primed, not variables.
 
 ### Function Overrides
 
@@ -652,16 +652,16 @@ Symbols declared in chapter N have different visibility rules:
 | Symbol Type | Visible in Heads | Visible in Bodies |
 |-------------|------------------|-------------------|
 | **Domains/Aliases** | M where M ≥ N | M where M ≥ N - 1 |
-| **Procedure names** | M where M ≥ N | M where M ≥ N - 1 |
-| **Procedure parameters** | M where M ≥ N | M where M ≥ N |
+| **Rule names** | M where M ≥ N | M where M ≥ N - 1 |
+| **Rule parameters** | M where M ≥ N | M where M ≥ N |
 
 This means:
 - A declaration in chapter 2 is visible in heads of chapters 2, 3, 4, ...
 - A declaration in chapter 2 is visible in bodies of chapters 1, 2, 3, 4, ...
-- Bodies can "look ahead" one chapter for procedure names
-- But procedure parameters are only visible in the same chapter's body
+- Bodies can "look ahead" one chapter for rule names
+- But rule parameters are only visible in the same chapter's body
 
-For a procedure `foo x: T, y: U => R` declared in chapter N:
+For a rule `foo x: T, y: U => R` declared in chapter N:
 - `foo` is visible starting from chapter N-1 body (one chapter look-ahead)
 - `x` and `y` are only visible in chapter N body (same chapter, no look-ahead)
 
