@@ -282,12 +282,12 @@ let pp_chapter procs ?(skip_first_doc = false) ~total_chapters chapter_num fmt
   end;
 
   if action_decls <> [] then begin
-    fprintf fmt "### Actions@\n@\n";
+    fprintf fmt "### Action@\n@\n";
     List.iter (pp_decl_with_doc procs ~should_skip_doc fmt) action_decls
   end;
 
   if chapter.body <> [] then begin
-    fprintf fmt "### Propositions@\n@\n";
+    fprintf fmt "---@\n@\n";
     List.iter
       (fun prop ->
         if prop.doc <> [] then fprintf fmt "%a@\n@\n" pp_doc_comment prop.doc;
