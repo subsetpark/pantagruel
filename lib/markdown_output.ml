@@ -67,10 +67,10 @@ let pp_params_sep fmt () = fprintf fmt ", "
 
 let rec pp_expr procs fmt = function
   | EForall (params, guards, body) ->
-      fprintf fmt "∀ %a | %a" (pp_quant_bindings procs) (params, guards)
+      fprintf fmt "∀ %a · %a" (pp_quant_bindings procs) (params, guards)
         (pp_expr procs) body
   | EExists (params, guards, body) ->
-      fprintf fmt "∃ %a | %a" (pp_quant_bindings procs) (params, guards)
+      fprintf fmt "∃ %a · %a" (pp_quant_bindings procs) (params, guards)
         (pp_expr procs) body
   | e -> pp_biconditional procs fmt e
 
