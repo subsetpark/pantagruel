@@ -105,7 +105,7 @@ let test_doc_comment () =
   let doc = parse "module TEST.\n\n> This is a doc comment\nFoo.\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
   let decl = List.hd chapter.Ast.head in
-  check (list string) "doc comment" ["This is a doc comment"] decl.Ast.doc
+  check (list (list string)) "doc comment" [["This is a doc comment"]] decl.Ast.doc
 
 let test_multiple_guards () =
   let doc = parse "module TEST.\n\nAccount.\nbalance a: Account => Nat.\n~> Withdraw | a: Account, amount: Nat, amount > 0, balance a >= amount.\n---\n" in

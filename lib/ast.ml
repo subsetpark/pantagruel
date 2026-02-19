@@ -8,12 +8,14 @@ let dummy_loc = { file = "<unknown>"; line = 0; col = 0 }
 type 'a located = {
   loc : loc;
   value : 'a;
-  doc : string list;  (** Doc comment lines (without leading >) *)
+  doc : string list list;  (** Doc comment paragraphs (groups separated by blank lines) *)
+  doc_adjacent : bool;  (** Last doc group is on the line directly above this node *)
 }
 [@@deriving show, eq]
 (** Wrap a value with its location and optional doc comment *)
 
-let located ?(doc = []) loc value = { loc; value; doc }
+let located ?(doc = []) ?(doc_adjacent = true) loc value =
+  { loc; value; doc; doc_adjacent }
 
 type upper_ident = string (* Domain names: User, Document *)
 [@@deriving show, eq]

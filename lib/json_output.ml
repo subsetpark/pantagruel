@@ -168,7 +168,14 @@ and guard_to_json = function
 (** Convert doc comments to JSON *)
 let doc_to_json docs =
   if docs = [] then []
-  else [ ("doc", `List (List.map (fun s -> `String s) docs)) ]
+  else
+    [
+      ( "doc",
+        `List
+          (List.map
+             (fun group -> `List (List.map (fun s -> `String s) group))
+             docs) );
+    ]
 
 (** Convert declaration to JSON, enriched with type info from environment *)
 let decl_to_json env (decl_loc : declaration located) =

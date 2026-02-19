@@ -205,8 +205,13 @@ let str_expr = to_string pp_expr
 let str_declaration = to_string pp_declaration
 let str_type_expr = to_string pp_type_expr
 
-(** Print doc comments *)
-let pp_docs fmt docs = List.iter (fun d -> fprintf fmt "> %s@\n" d) docs
+(** Print doc comment groups *)
+let pp_docs fmt groups =
+  List.iteri
+    (fun i group ->
+      if i > 0 then fprintf fmt "@\n";
+      List.iter (fun d -> fprintf fmt "> %s@\n" d) group)
+    groups
 
 (** Print a declaration with its doc comments *)
 let pp_declaration_with_docs fmt d =
@@ -259,12 +264,16 @@ let wrap_text width text =
   in
   String.concat "" (go 0 [] words)
 
-(** Format doc comments with wrapping *)
-let pp_docs_wrapped width fmt docs =
-  let wrapped = List.map (wrap_text (width - 2)) docs in
-  (* -2 for "> " prefix *)
-  let lines = List.concat_map (String.split_on_char '\n') wrapped in
-  List.iter (fun line -> fprintf fmt "> %s@\n" line) lines
+(** Format doc comment groups with wrapping *)
+let pp_docs_wrapped width fmt groups =
+  List.iteri
+    (fun i group ->
+      if i > 0 then fprintf fmt "@\n";
+      let wrapped = List.map (wrap_text (width - 2)) group in
+      (* -2 for "> " prefix *)
+      let lines = List.concat_map (String.split_on_char '\n') wrapped in
+      List.iter (fun line -> fprintf fmt "> %s@\n" line) lines)
+    groups
 
 (** Format a chapter with consistent style *)
 let format_chapter ?(width = 80) fmt chapter =

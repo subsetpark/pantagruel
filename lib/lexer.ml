@@ -6,7 +6,8 @@ type t = {
   buf : Sedlexing.lexbuf;
   mutable filename : string;
   mutable at_bol : bool;  (** At beginning of line (for doc comments) *)
-  mutable pending_docs : string list;  (** Accumulated doc comment lines *)
+  mutable pending_docs : string list list;  (** Doc comment groups (each reversed, list reversed) *)
+  mutable doc_break : bool;  (** Blank line seen since last doc comment line *)
   mutable last_token : Parser.token option;  (** Last token returned *)
   mutable in_action_label : bool;  (** After ~>, read free-form label *)
 }
@@ -17,20 +18,21 @@ let create_from_channel filename channel =
   Sedlexing.set_filename buf filename;
   Doc_comments.clear ();
   (* Clear doc map for new file *)
-  { buf; filename; at_bol = true; pending_docs = []; last_token = None; in_action_label = false }
+  { buf; filename; at_bol = true; pending_docs = []; doc_break = false; last_token = None; in_action_label = false }
 
 let create_from_string filename str =
   let buf = Sedlexing.Utf8.from_string str in
   Sedlexing.set_filename buf filename;
   Doc_comments.clear ();
   (* Clear doc map for new file *)
-  { buf; filename; at_bol = true; pending_docs = []; last_token = None; in_action_label = false }
+  { buf; filename; at_bol = true; pending_docs = []; doc_break = false; last_token = None; in_action_label = false }
 
 (** Take and clear pending doc comments *)
 let take_docs lexer =
-  let docs = List.rev lexer.pending_docs in
+  let groups = List.rev_map List.rev lexer.pending_docs in
   lexer.pending_docs <- [];
-  docs
+  lexer.doc_break <- false;
+  groups
 
 (** Global ref to current lexer for parser access *)
 let current_lexer : t option ref = ref None
@@ -178,6 +180,8 @@ let rec token_impl lexer =
   (* Whitespace and newlines *)
   | Plus whitespace -> token_impl lexer
   | newline ->
+      if lexer.at_bol && lexer.pending_docs <> [] then
+        lexer.doc_break <- true;
       lexer.at_bol <- true;
       token_impl lexer
   (* Comments *)
@@ -207,7 +211,14 @@ let rec token_impl lexer =
       (* '>' at beginning of line is a doc comment *)
       if lexer.at_bol then begin
         let content = read_doc_comment buf in
-        lexer.pending_docs <- content :: lexer.pending_docs;
+        if lexer.doc_break || lexer.pending_docs = [] then
+          lexer.pending_docs <- [content] :: lexer.pending_docs
+        else begin
+          match lexer.pending_docs with
+          | group :: rest -> lexer.pending_docs <- (content :: group) :: rest
+          | [] -> lexer.pending_docs <- [[content]]
+        end;
+        lexer.doc_break <- false;
         lexer.at_bol <- true;
         token_impl lexer
       end
@@ -263,10 +274,11 @@ let token lexer =
     (* If there are pending docs, associate them with this token's position *)
     if lexer.pending_docs <> [] then begin
       let pos, _ = Sedlexing.lexing_positions lexer.buf in
+      let adjacent = not lexer.doc_break in
+      let groups = take_docs lexer in
       Doc_comments.add pos.Lexing.pos_lnum
         (pos.Lexing.pos_cnum - pos.Lexing.pos_bol)
-        (List.rev lexer.pending_docs);
-      lexer.pending_docs <- []
+        groups adjacent
     end;
     (* After returning a token, we're no longer at beginning of line *)
     lexer.at_bol <- false;

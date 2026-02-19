@@ -1,3 +1,4 @@
 (executable
  (name main)
- (public_name html))
+ (public_name html)
+ (libraries pantagruel unix))
