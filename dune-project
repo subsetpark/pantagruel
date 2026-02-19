@@ -15,4 +15,5 @@
   menhir
   sedlex
   ppx_deriving
+  yojson
   (alcotest :with-test)))

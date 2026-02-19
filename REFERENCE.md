@@ -38,8 +38,8 @@ where
 ### Keywords
 
 ```
-module  import  where  true  false
-and     or      not    all   some
+module  import  where  context  true  false
+and     or      not    all      some
 in      subset
 ```
 
@@ -56,31 +56,32 @@ String escape sequences: `\\`, `\"`, `\n`, `\t`, `\r`
 
 ### Operators
 
-| ASCII | Unicode | Meaning |
-|-------|---------|---------|
-| `=>` | `⇒` | Procedure return type |
-| `->` | `→` | Implication |
-| `<->` | `↔` | Biconditional (iff) |
-| `and` | `∧` | Conjunction |
-| `or` | `∨` | Disjunction |
-| `not` | `¬`, `~` | Negation |
-| `all` | `∀` | Universal quantifier |
-| `some` | `∃` | Existential quantifier |
-| `in` | `∈` | Membership |
-| `subset` | `⊆` | Subset |
-| `=` | | Equality |
-| `!=` | `≠` | Inequality |
-| `<` | | Less than |
-| `>` | | Greater than |
-| `<=` | `≤` | Less or equal |
-| `>=` | `≥` | Greater or equal |
-| `+` | | Addition / Sum type |
-| `-` | | Subtraction / Negation |
-| `*` | `×` | Multiplication / Product type |
-| `/` | | Division |
-| `#` | | Cardinality |
-| `'` | `′` | Prime (post-state) |
-| `\|->` | `↦` | Maps-to (in overrides) |
+| Operator | Meaning |
+|----------|---------|
+| `=>` | Rule return type |
+| `~>` | Action |
+| `->` | Implication |
+| `<->` | Biconditional (iff) |
+| `and` | Conjunction |
+| `or` | Disjunction |
+| `not`, `~` | Negation |
+| `all` | Universal quantifier |
+| `some` | Existential quantifier |
+| `in` | Membership |
+| `subset` | Subset |
+| `=` | Equality |
+| `!=` | Inequality |
+| `<` | Less than |
+| `>` | Greater than |
+| `<=` | Less or equal |
+| `>=` | Greater or equal |
+| `+` | Addition / Sum type |
+| `-` | Subtraction / Negation |
+| `*` | Multiplication / Product type |
+| `/` | Division |
+| `#` | Cardinality |
+| `'` | Prime (post-state) |
+| `\|->` | Maps-to (in overrides) |
 
 ### Punctuation
 
@@ -138,7 +139,7 @@ Product and sum types must have at least two components. They are **positional**
 
 Products are constructed with parentheses — `(1, 2)` — and accessed with projection — `p.1`, `p.2` (1-indexed).
 
-**Function types.** Procedure declarations give rise to function types *(T₁, ..., Tₙ) → R* (returning) or *(T₁, ..., Tₙ) → Void* (void). Function types are internal to the checker and cannot appear in user-written type expressions.
+**Function types.** Rule declarations give rise to function types *(T₁, ..., Tₙ) → R*. Actions are not in the term namespace and have no function type. Function types are internal to the checker and cannot appear in user-written type expressions.
 
 ### Subtyping
 
@@ -228,9 +229,9 @@ Summary of which relation governs each context:
 
 **Variable.** If *x* is bound to type *T* in the current scope, then *x* : *T*.
 
-**Nullary procedure.** If *f* is declared with no parameters and return type *R*, then *f* : *R*. Nullary procedures are applied automatically on reference.
+**Nullary rule.** If *f* is declared with no parameters and return type *R*, then *f* : *R*. Nullary rules are applied automatically on reference.
 
-**Non-nullary procedure.** If *f* has parameters, referencing *f* yields its function type. It must be applied to arguments to produce a value.
+**Non-nullary rule.** If *f* has parameters, referencing *f* yields its function type. It must be applied to arguments to produce a value.
 
 **Domain in expression position.** A domain name `D` used as an expression has type `[D]` — the list of all values of that domain. A type alias `A = T` in expression position has type `[T]`.
 
@@ -240,14 +241,13 @@ Summary of which relation governs each context:
 
 **Projection.** *e*`.`*k* has type *Tₖ* where *e* : *T₁* `*` ··· `*` *Tₙ* and 1 ≤ *k* ≤ *n*.
 
-#### Procedure Application
+#### Rule Application
 
 *f e₁ ··· eₙ* where *f* : (*T₁*, ..., *Tₙ*) → *R*:
 
 1. The argument count must equal the parameter count.
 2. Each argument type must be a **subtype** of its parameter: if *eᵢ* : *Sᵢ*, then *Sᵢ* ≤ *Tᵢ*.
-3. The return type must not be Void — void procedures cannot appear in expression position.
-4. Result type: *R*.
+3. Result type: *R*.
 
 #### List Application
 
@@ -329,17 +329,17 @@ This is a symmetric check. `Nat = Int` is valid (both numeric, join is `Int`), b
 
 *f*`'` (a primed name):
 
-1. Must occur in a chapter whose head declares a void procedure (a *void context*).
-2. *f* must name a procedure, not a variable.
+1. Must occur in a chapter whose head contains an action (an *action context*).
+2. *f* must name a rule, not a variable.
 3. Result type: same as the type of *f*.
 
-Primed expressions denote the post-state value of a procedure in a state transition.
+Primed expressions denote the post-state value of a rule in a state transition.
 
 #### Function Overrides
 
 *f*`[`*k₁* `|->` *v₁*`,` ... `,` *kₙ* `|->` *vₙ*`]`:
 
-1. *f* must be a procedure of arity 1 with a return type: *f* : (*T*) → *R*.
+1. *f* must be a rule of arity 1 with a return type: *f* : (*T*) → *R*.
 2. Each key must be a **subtype** of the parameter type: *kᵢ* : *Sᵢ* with *Sᵢ* ≤ *T*.
 3. Each value must be a **subtype** of the return type: *vᵢ* : *Uᵢ* with *Uᵢ* ≤ *R*.
 4. Result type: (*T*) → *R*.
@@ -350,9 +350,9 @@ Primed expressions denote the post-state value of a procedure in a state transit
 
 **Variable shadowing.** When a binding introduces *x* : *S* and *x* is already in scope with type *T*, the new type must be a subtype of the existing type: *S* ≤ *T*. This permits rebinding at the same or a narrower type, but forbids rebinding at a wider or unrelated type.
 
-**Void procedure uniqueness.** Each chapter may declare at most one void procedure.
+**Action uniqueness.** Each chapter may have at most one action.
 
-**Procedure guards.** Guard expressions on procedure declarations are type-checked with the procedure's parameters in scope and must have type `Bool`.
+**Rule guards.** Guard expressions on rule declarations are type-checked with the rule's parameters in scope and must have type `Bool`.
 
 ## Declarations
 
@@ -375,9 +375,9 @@ Result = Value + Nothing.
 Users = [User].
 ```
 
-### Procedure Declaration
+### Rule Declaration
 
-Declares a procedure with typed parameters and optional return type:
+Declares a rule with typed parameters and a return type:
 
 ```
 // With return type
@@ -387,28 +387,79 @@ distance p: Point, q: Point => Real.
 // Nullary (no parameters)
 nobody => User.
 origin => Point.
-
-// Void (no return type) - for state transitions
-check-out u: User, d: Document.
-deposit a: Account, amount: Nat.
 ```
 
-**Syntax**: `name [params] [guards] [=> ReturnType].`
+**Syntax**: `name [params] [guards] => ReturnType.`
 
 - Parameters: `name: Type` separated by commas
 - Guards: boolean expressions, separated by commas after the parameters
-- Return type: Optional, preceded by `=>`
-- Void procedures have no return type and enable primed expressions
+- Return type: required, preceded by `=>`
 
-### Procedure with Guards
+### Actions
 
-Guards constrain when a procedure applies. Guards must be boolean expressions and are type-checked with the procedure's parameters in scope:
+An action (state transition) is introduced with `~>`. Actions have no return type and enable primed expressions for rules in the chapter body. Action labels are free-form text (spaces, capitals, keywords all allowed), separated from parameters by `|`:
 
 ```
-withdraw a: Account, amount: Nat, balance a >= amount.
+// Action (no context)
+~> Check out | u: User, d: Document.
+~> Deposit | a: Account, amount: Nat.
+~> Do something.
+
+// Action with context
+Accounts ~> Withdraw | a: Account, amount: Nat.
 ```
 
-Guards can reference the procedure's parameters (`a`, `amount` in this example) to express preconditions.
+**Syntax**: `[Context] ~> label [| params [, guards]].`
+
+- Action labels are purely human-readable annotations — they are not in the term namespace
+- Actions must appear **last** in a chapter head
+- Each chapter may have at most one action
+
+### Rule and Action Guards
+
+Guards constrain when a rule or action applies. Guards must be boolean expressions and are type-checked with the rule's parameters in scope:
+
+```
+~> Withdraw | a: Account, amount: Nat, balance a >= amount.
+```
+
+Guards can reference the rule's parameters (`a`, `amount` in this example) to express preconditions.
+
+### Context Declaration
+
+Declares a named context at the module level, after imports:
+
+```
+module BANKING.
+context Accounts.
+```
+
+Context names are uppercase identifiers. They define write-permission boundaries: rules declare which contexts they belong to, and actions specify which context they operate within.
+
+### Context Footprint
+
+Rules declare context membership with a `{Ctx, ...}` prefix:
+
+```
+{Accounts} balance a: Account => Nat.
+{Accounts} owner a: Account => User.
+```
+
+A rule may belong to multiple contexts: `{Accounts, Audit} balance a: Account => Nat.`
+
+Context footprint is closed within module scope — you can only add a rule to a context declared in the same module.
+
+### Context Annotation (Actions)
+
+Actions specify which context they operate within using a `Ctx ~>` prefix:
+
+```
+Accounts ~> Withdraw | a: Account, amount: Nat.
+```
+
+This means the `Withdraw` action may modify (prime) any rule that belongs to `Accounts`. Context references work across module boundaries — an action can reference an imported context.
+
+Only actions may have a context prefix. Rules (with `=>`) cannot operate within a context.
 
 ## Expressions
 
@@ -437,7 +488,7 @@ p.1                 // First projection
 p.2                 // Second projection
 ```
 
-### Procedure Application
+### Rule Application
 
 ```
 owner d             // Single argument
@@ -506,17 +557,17 @@ The `x in xs` binding form infers the type of `x` from the element type of the l
 
 ### Primed Expressions (State Transitions)
 
-In chapters with a void procedure, primed expressions refer to post-state values:
+In chapters with an action, primed expressions refer to post-state values:
 
 ```
 User.
 balance a: User => Int.
-deposit a: User, amount: Nat.
+~> Deposit | a: User, amount: Nat.
 ---
 balance' a = balance a + amount.    // balance after deposit
 ```
 
-Only procedures can be primed, not variables.
+Only rules can be primed, not variables.
 
 ### Function Overrides
 
@@ -602,16 +653,16 @@ Symbols declared in chapter N have different visibility rules:
 | Symbol Type | Visible in Heads | Visible in Bodies |
 |-------------|------------------|-------------------|
 | **Domains/Aliases** | M where M ≥ N | M where M ≥ N - 1 |
-| **Procedure names** | M where M ≥ N | M where M ≥ N - 1 |
-| **Procedure parameters** | M where M ≥ N | M where M ≥ N |
+| **Rule names** | M where M ≥ N | M where M ≥ N - 1 |
+| **Rule parameters** | M where M ≥ N | M where M ≥ N |
 
 This means:
 - A declaration in chapter 2 is visible in heads of chapters 2, 3, 4, ...
 - A declaration in chapter 2 is visible in bodies of chapters 1, 2, 3, 4, ...
-- Bodies can "look ahead" one chapter for procedure names
-- But procedure parameters are only visible in the same chapter's body
+- Bodies can "look ahead" one chapter for rule names
+- But rule parameters are only visible in the same chapter's body
 
-For a procedure `foo x: T, y: U => R` declared in chapter N:
+For a rule `foo x: T, y: U => R` declared in chapter N:
 - `foo` is visible starting from chapter N-1 body (one chapter look-ahead)
 - `x` and `y` are only visible in chapter N body (same chapter, no look-ahead)
 
@@ -640,7 +691,7 @@ A program is **correct** if:
 1. Every symbol reference is visible according to the rules above
 2. All type constraints are satisfied
 3. Each chapter head contains at least one declaration
-4. Each chapter has at most one void procedure
+4. Each chapter has at most one action
 
 ## Normal Form
 
@@ -652,8 +703,8 @@ A document is in normal form when:
 1. Declarations are organized by **topological level** (based on type dependencies)
 2. Each level becomes a chapter
 3. Propositions are placed in the **earliest** chapter where all their dependencies are visible
-4. Void procedures and their tied propositions stay together
-5. At most one void procedure per chapter
+4. Actions and their tied propositions stay together
+5. At most one action per chapter
 
 ### Dependency Levels
 
@@ -672,29 +723,29 @@ Propositions are placed at the **earliest** valid chapter:
 
 | Proposition type | Placement rule |
 |------------------|----------------|
-| **Void-tied** | Same chapter as the void procedure |
+| **Action-tied** | Same chapter as the action |
 | **Independent** | Earliest chapter where all dependencies are visible |
 
-A proposition is **void-tied** if it:
+A proposition is **action-tied** if it:
 - Uses primed expressions (e.g., `balance' a`), OR
-- References the void procedure's parameters
+- References the action's parameters
 
-### Void Procedure Handling
+### Action Handling
 
-If multiple void procedures end up at the same dependency level, they are spread across consecutive chapters (since at most one void procedure per chapter is allowed).
+If multiple actions end up at the same dependency level, they are spread across consecutive chapters (since at most one action per chapter is allowed).
 
 ### Normalization Algorithm
 
 1. **Collect declarations** and compute their type dependencies
 2. **Compute topological levels** for all declarations
-3. **Create chapters** - one per level (plus extra for void proc conflicts)
+3. **Create chapters** - one per level (plus extra for action conflicts)
 4. **Place declarations** at their computed level
-5. **Place void-tied propositions** with their void procedures
+5. **Place action-tied propositions** with their actions
 6. **Place independent propositions** at earliest valid chapter
 
 ### Example
 
-**Original (3 chapters with void procedures):**
+**Original (3 chapters with actions):**
 ```
 module STATE.
 
@@ -702,20 +753,20 @@ User.
 Account.
 balance a: Account => Int.
 owner a: Account => User.
-deposit a: Account, amount: Nat.
+~> Deposit | a: Account, amount: Nat.
 ---
 balance' a = balance a + amount.
 all a: Account, amt: Nat | true.
 
 where
 
-withdraw a: Account, amount: Nat.
+~> Withdraw | a: Account, amount: Nat.
 ---
 balance' a = balance a - amount.
 
 where
 
-transfer from: Account, to: Account, amount: Nat.
+~> Transfer | from: Account, to: Account, amount: Nat.
 ---
 balance' from = balance from - amount.
 ```
@@ -735,39 +786,46 @@ where
 // Level 1: depends on Account, User
 balance a: Account => Int.
 owner a: Account => User.
-deposit a: Account, amount: Nat.   // Void proc #1
+~> Deposit | a: Account, amount: Nat.   // Action #1
 ---
 balance' a = balance a + amount.   // Tied to deposit
 
 where
 
-// Void proc #2 (separate chapter)
-withdraw a: Account, amount: Nat.
+// Action #2 (separate chapter)
+~> Withdraw | a: Account, amount: Nat.
 ---
 balance' a = balance a - amount.
 
 where
 
-// Void proc #3 (separate chapter)
-transfer from: Account, to: Account, amount: Nat.
+// Action #3 (separate chapter)
+~> Transfer | from: Account, to: Account, amount: Nat.
 ---
 balance' from = balance from - amount.
 ```
 
-The independent proposition `all a: Account, amt: Nat | true` moved to chapter 0 because it only depends on level 0 types. Void procedures were spread across separate chapters.
+The independent proposition `all a: Account, amt: Nat | true` moved to chapter 0 because it only depends on level 0 types. Actions were spread across separate chapters.
 
 ## Complete Grammar
 
 ```
-document    ::= 'module' UPPER '.' import* chapter ('where' chapter)*
+document    ::= 'module' UPPER '.' import* context_decl* chapter ('where' chapter)*
 
 import      ::= 'import' UPPER '.'
 
+context_decl ::= 'context' UPPER '.'
+
 chapter     ::= declaration+ '---' proposition*    // Head must be non-empty
 
-declaration ::= UPPER '.'                              // Domain
-              | UPPER '=' type '.'                     // Type alias
-              | LOWER param* guard* ['=>' type] '.'   // Procedure
+declaration ::= UPPER '.'                                              // Domain
+              | UPPER '=' type '.'                                     // Type alias
+              | '{' UPPER (',' UPPER)* '}' LOWER param* guard* '=>' type '.'  // Rule with context footprint
+              | LOWER param* guard* '=>' type '.'                      // Rule with return type
+              | UPPER '~>' LABEL '|' param ((',' param) | (',' guard))* '.'  // Action with context + params
+              | UPPER '~>' LABEL '.'                                   // Action with context, no params
+              | '~>' LABEL '|' param ((',' param) | (',' guard))* '.'  // Action + params
+              | '~>' LABEL '.'                                         // Action, no params
 
 param       ::= LOWER ':' type
 

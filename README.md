@@ -2,7 +2,7 @@
 
 A specification language checker for formal system descriptions.
 
-Pantagruel lets you write precise specifications of systems using domains, procedures, and logical propositions. The checker validates that your specifications are well-typed and internally consistent.
+Pantagruel lets you write precise specifications of systems using domains, rules, and logical propositions. The checker validates that your specifications are well-typed and internally consistent.
 
 ## Installation
 
@@ -45,12 +45,14 @@ pantagruel --module-path ./specs myspec.pant
 
 The `samples/` directory contains reference specifications demonstrating all language features:
 
-- `01-basics.pant` - Fundamental syntax: domains, procedures, quantifiers
-- `02-library.pant` - Library system with void procedures and state transitions
+- `01-basics.pant` - Fundamental syntax: domains, rules, quantifiers
+- `02-library.pant` - Library system with actions and state transitions
 - `03-types.pant` - All type features: products, sums, lists, aliases
 - `04-operators.pant` - All operators: logical, comparison, arithmetic
 - `05-state.pant` - State transitions with primed expressions and frame conditions
-- `06-advanced.pant` - Function overrides and unicode operators
+- `06-advanced.pant` - Function overrides and qualified names
+- `07-pantagruel.pant` - Self-specification of the Pantagruel language
+- `08-contexts.pant` - Context declarations and write-permission boundaries
 
 ## Language Overview
 
@@ -67,9 +69,9 @@ import USERS.
 Book.
 Loan.
 
-> Procedures
+> Rules
 available b: Book => Bool.
-borrow u: User, b: Book.
+~> Borrow | u: User, b: Book.
 ---
 > Propositions about the library
 all b: Book | available b -> b in Book.
@@ -90,7 +92,7 @@ Result = Value + Error.      // Sum type
 UserList = [User].           // List type
 ```
 
-**Procedures** define operations with typed parameters:
+**Rules** define operations with typed parameters:
 ```
 // With return type
 owner d: Document => User.
@@ -98,9 +100,13 @@ distance p: Point, q: Point => Real.
 
 // Nullary (no parameters)
 nobody => User.
+```
 
-// Void (no return type) - for state transitions
-check-out u: User, d: Document.
+**Actions** define state transitions (no return type). Action labels are free-form text, separated from parameters by `|`:
+```
+// Action (with ~>) - for state transitions
+~> Check out | u: User, d: Document.
+~> Do something.
 ```
 
 ### Propositions
@@ -124,18 +130,34 @@ all u: User | u in User.
 #User >= 0.
 ```
 
-### Void Procedures and Primed Expressions
+### Actions and Primed Expressions
 
-Void procedures model state transitions. Within a chapter that declares a void procedure, you can use **primed expressions** to refer to the post-state:
+Actions model state transitions. Within a chapter that has an action, you can use **primed expressions** to refer to the post-state of rules:
 
 ```
 User.
 Document.
 owner d: Document => User.
-check-out u: User, d: Document.
+~> Check out | u: User, d: Document.
 ---
 // owner' refers to owner after check-out
 owner' d = u.
+```
+
+### Contexts
+
+Contexts define write-permission boundaries for actions. Context names are declared at the module level, and rules declare which contexts they belong to with a `{Ctx}` prefix. Actions specify which context they operate within using `Ctx ~>`.
+
+```
+module BANKING.
+context Accounts.
+
+Account.
+{Accounts} balance a: Account => Nat.
+
+Accounts ~> Withdraw | a: Account, amount: Nat.
+---
+balance' a = balance a - amount.
 ```
 
 ### Operators
@@ -147,8 +169,6 @@ owner' d = u.
 | Membership | `in`, `subset` |
 | Arithmetic | `+`, `-`, `*`, `/` |
 | Other | `#` (cardinality), `.N` (projection) |
-
-Unicode alternatives are supported: `∧` `∨` `¬` `→` `⇒` `∀` `∃` `∈` `⊆` `≠` `≤` `≥`
 
 ### Comments
 
@@ -196,7 +216,7 @@ module ACCOUNTS.
 
 Account.
 balance a: Account => Int.
-deposit a: Account, amount: Nat.
+~> Deposit | a: Account, amount: Nat.
 ---
 // Balance increases after deposit
 balance' a = balance a + amount.

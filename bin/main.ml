@@ -2,13 +2,11 @@
 
 let version = "0.1.0"
 
-let usage = "pant [options] [file.pant]
-
-Pantagruel: A specification language checker
-
-If no file is given, reads from stdin.
-
-Options:"
+let usage =
+  "pant [options] [file.pant]\n\n\
+   Pantagruel: A specification language checker\n\n\
+   If no file is given, reads from stdin.\n\n\
+   Options:"
 
 let print_ast = ref false
 let print_json = ref false
@@ -18,22 +16,27 @@ let do_normalize = ref false
 let module_path = ref "."
 let files = ref []
 
-let specs = [
-  ("--module-path", Arg.Set_string module_path,
-   "DIR  Directory to search for imported modules (default: .)");
-  ("--ast", Arg.Set print_ast,
-   "     Print AST (OCaml format) and exit");
-  ("--json", Arg.Set print_json,
-   "    Output JSON and exit");
-  ("--markdown", Arg.Set print_markdown,
-   " Output rich Markdown with Unicode symbols and exit");
-  ("--format", Arg.Set do_format,
-   "   Format document with standard style and exit");
-  ("--normalize", Arg.Set do_normalize,
-   " Output N-normal form and exit");
-  ("--version", Arg.Unit (fun () -> print_endline ("pant " ^ version); exit 0),
-   "  Print version and exit");
-]
+let specs =
+  [
+    ( "--module-path",
+      Arg.Set_string module_path,
+      "DIR  Directory to search for imported modules (default: .)" );
+    ("--ast", Arg.Set print_ast, "     Print AST (OCaml format) and exit");
+    ("--json", Arg.Set print_json, "    Output JSON and exit");
+    ( "--markdown",
+      Arg.Set print_markdown,
+      " Output rich Markdown with Unicode symbols and exit" );
+    ( "--format",
+      Arg.Set do_format,
+      "   Format document with standard style and exit" );
+    ("--normalize", Arg.Set do_normalize, " Output N-normal form and exit");
+    ( "--version",
+      Arg.Unit
+        (fun () ->
+          print_endline ("pant " ^ version);
+          exit 0),
+      "  Print version and exit" );
+  ]
 
 let add_file f = files := f :: !files
 
@@ -44,7 +47,7 @@ let format_module_error = function
   | Pantagruel.Module.CyclicImport modules ->
       Printf.sprintf "error: Cyclic import: %s" (String.concat " -> " modules)
   | Pantagruel.Module.ParseError (_, msg) ->
-      msg  (* Already formatted by Error module *)
+      msg (* Already formatted by Error module *)
 
 let check_doc doc =
   if !print_ast then begin
@@ -66,10 +69,8 @@ let check_doc doc =
           let normalized = Pantagruel.Normalize.normalize doc in
           Pantagruel.Pretty.output normalized
         end
-        else if !print_json then
-          Pantagruel.Json_output.output_json env doc
-        else if !print_markdown then
-          Pantagruel.Markdown_output.output env doc;
+        else if !print_json then Pantagruel.Json_output.output_json env doc
+        else if !print_markdown then Pantagruel.Markdown_output.output env doc;
         true
     | Error e ->
         prerr_endline (format_module_error e);

@@ -8,15 +8,15 @@ User.
 Book.
 Loan.
 
-> Procedures with return types
+> Rules with return types
 available b: Book => Bool.
 borrower b: Book => User.
 loans u: User => [Loan].
 book-of l: Loan => Book.
 loan-holder l: Loan => User.
 
-> Void procedure for state transitions
-borrow u: User, b: Book.
+> Action for state transitions
+~> Borrow | u: User, b: Book.
 
 ---
 > Available books have no borrower constraint

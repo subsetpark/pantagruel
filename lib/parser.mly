@@ -11,13 +11,17 @@
     loc = make_loc startpos endpos;
     value;
     doc = [];
+    doc_adjacent = true;
   }
 
-  let located_with_doc doc startpos endpos value = {
-    loc = make_loc startpos endpos;
-    value;
-    doc;
-  }
+  let located_with_doc startpos endpos value =
+    let (doc, doc_adjacent) = Doc_comments.get_at_pos startpos in
+    {
+      loc = make_loc startpos endpos;
+      value;
+      doc;
+      doc_adjacent;
+    }
 
   (* Split a list of guards into params and expression guards *)
   let split_params_guards (guards : guard list) : param list * guard list =
@@ -35,7 +39,7 @@
 %token <int> NAT
 %token <float> REAL
 %token <string> STRING
-%token DARROW ARROW IFF
+%token SQUIG_ARROW DARROW ARROW IFF
 %token EQ NEQ LT GT LE GE
 %token PLUS MINUS TIMES DIVIDE CARD
 %token PRIME MAPSTO
@@ -44,19 +48,9 @@
 %token FORALL EXISTS IN SUBSET
 %token DOT COMMA COLON DCOLON PIPE SEPARATOR
 %token LPAREN RPAREN LBRACKET RBRACKET
+%token LBRACE RBRACE CONTEXT
+%token <string> ACTION_LABEL
 %token EOF
-
-(* Precedence - lowest to highest *)
-%nonassoc IFF               (* biconditional - lowest, non-associative *)
-%right ARROW                (* implication *)
-%left OR                    (* disjunction *)
-%left AND                   (* conjunction *)
-%nonassoc NOT               (* negation *)
-%nonassoc EQ NEQ LT GT LE GE IN SUBSET  (* comparison/membership *)
-%left PLUS MINUS            (* addition *)
-%left TIMES DIVIDE          (* multiplication *)
-%nonassoc CARD              (* cardinality *)
-%nonassoc UMINUS            (* unary minus *)
 
 %start <Ast.document> document
 
@@ -66,15 +60,20 @@
 document:
   | MODULE name=UPPER_IDENT DOT
     imports=list(import_decl)
+    contexts=list(context_decl)
     chapters=separated_nonempty_list(WHERE, chapter)
     EOF
-    { { module_name = Some name; imports; chapters } }
+    { { module_name = Some name; imports; contexts; chapters } }
   | chapters=separated_nonempty_list(WHERE, chapter)
     EOF
-    { { module_name = None; imports = []; chapters } }
+    { { module_name = None; imports = []; contexts = []; chapters } }
 
 import_decl:
   | IMPORT name=UPPER_IDENT DOT
+    { located $startpos $endpos name }
+
+context_decl:
+  | CONTEXT name=UPPER_IDENT DOT
     { located $startpos $endpos name }
 
 chapter:
@@ -84,41 +83,80 @@ chapter:
 (* Declarations - doc comments are looked up by start position *)
 declaration:
   | name=UPPER_IDENT DOT
-    { let doc = Doc_comments.get_at_pos $startpos in
-      located_with_doc doc $startpos $endpos (DeclDomain name) }
+    { located_with_doc $startpos $endpos (DeclDomain name) }
   | name=UPPER_IDENT EQ t=type_expr DOT
-    { let doc = Doc_comments.get_at_pos $startpos in
-      located_with_doc doc $startpos $endpos (DeclAlias (name, t)) }
-  | name=LOWER_IDENT pg=proc_params_guards ret=return_type_opt DOT
-    { let doc = Doc_comments.get_at_pos $startpos in
-      let (params, guards) = pg in
-      located_with_doc doc $startpos $endpos (DeclProc {
+    { located_with_doc $startpos $endpos (DeclAlias (name, t)) }
+  | LBRACE ctxs=separated_nonempty_list(COMMA, UPPER_IDENT) RBRACE
+    name=LOWER_IDENT pg=rule_params_guards DARROW ret=type_expr DOT
+    { let (params, guards) = pg in
+      located_with_doc $startpos $endpos (DeclRule {
         name;
         params;
         guards;
         return_type = ret;
+        contexts = ctxs;
+      }) }
+  | name=LOWER_IDENT pg=rule_params_guards DARROW ret=type_expr DOT
+    { let (params, guards) = pg in
+      located_with_doc $startpos $endpos (DeclRule {
+        name;
+        params;
+        guards;
+        return_type = ret;
+        contexts = [];
+      }) }
+  | ctx=UPPER_IDENT SQUIG_ARROW label=ACTION_LABEL PIPE pg=action_params_guards DOT
+    { let (params, guards) = pg in
+      located_with_doc $startpos $endpos (DeclAction {
+        label;
+        params;
+        guards;
+        context = Some ctx;
+      }) }
+  | ctx=UPPER_IDENT SQUIG_ARROW label=ACTION_LABEL DOT
+    { located_with_doc $startpos $endpos (DeclAction {
+        label;
+        params = [];
+        guards = [];
+        context = Some ctx;
+      }) }
+  | SQUIG_ARROW label=ACTION_LABEL PIPE pg=action_params_guards DOT
+    { let (params, guards) = pg in
+      located_with_doc $startpos $endpos (DeclAction {
+        label;
+        params;
+        guards;
+        context = None;
+      }) }
+  | SQUIG_ARROW label=ACTION_LABEL DOT
+    { located_with_doc $startpos $endpos (DeclAction {
+        label;
+        params = [];
+        guards = [];
+        context = None;
       }) }
 
-(* Parameters and guards for procedures - parsed together then split *)
-proc_params_guards:
-  | (* empty *) { ([], []) }
-  | p=param rest=list(preceded(COMMA, proc_param_or_guard))
+(* Parameters and guards for actions (after |, must start with param) *)
+action_params_guards:
+  | p=param rest=list(preceded(COMMA, rule_param_or_guard))
     { split_params_guards (GParam p :: rest) }
 
-proc_param_or_guard:
-  | p=param { GParam p }
-  | e=proc_guard_expr { GExpr e }
+(* Parameters and guards for rules - parsed together then split *)
+rule_params_guards:
+  | (* empty *) { ([], []) }
+  | p=param rest=list(preceded(COMMA, rule_param_or_guard))
+    { split_params_guards (GParam p :: rest) }
 
-(* Guard expressions for procedures: use disjunction level *)
-proc_guard_expr:
+rule_param_or_guard:
+  | p=param { GParam p }
+  | e=rule_guard_expr { GExpr e }
+
+(* Guard expressions for rules: use disjunction level *)
+rule_guard_expr:
   | e=disjunction { e }
 
 param:
   | name=LOWER_IDENT COLON t=type_expr { { param_name = name; param_type = t } }
-
-return_type_opt:
-  | (* empty *) { None }
-  | DARROW t=type_expr { Some t }
 
 (* Type expressions *)
 type_expr:
@@ -141,8 +179,7 @@ type_term:
 (* Propositions in chapter body - doc comments are looked up by start position *)
 proposition:
   | e=expr DOT
-    { let doc = Doc_comments.get_at_pos $startpos in
-      located_with_doc doc $startpos $endpos e }
+    { located_with_doc $startpos $endpos e }
 
 (* Expressions *)
 expr:
@@ -173,8 +210,14 @@ quant_guard_or_param:
   | name=LOWER_IDENT IN e=term { GIn (name, e) }  (* x in xs - binds x to element type *)
   | e=conjunction { GExpr e }  (* Use conjunction to avoid ambiguity with | *)
 
+(* The RHS of -> allows quantifiers (P -> all x: T | Q) and
+   nested implications (right-associative), but not <->. *)
+impl_rhs:
+  | e=quantified { e }
+  | e=implication { e }
+
 implication:
-  | e1=disjunction ARROW e2=implication { EBinop (OpImpl, e1, e2) }
+  | e1=disjunction ARROW e2=impl_rhs { EBinop (OpImpl, e1, e2) }
   | e=disjunction { e }
 
 disjunction:
@@ -215,7 +258,7 @@ factor:
 
 unary:
   | CARD e=unary { EUnop (OpCard, e) }
-  | MINUS e=unary %prec UMINUS { EUnop (OpNeg, e) }
+  | MINUS e=unary { EUnop (OpNeg, e) }
   | e=primary { e }
 
 (* Application by juxtaposition *)

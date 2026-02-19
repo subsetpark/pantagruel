@@ -28,7 +28,7 @@ Pantagruel is a specification language checker written in OCaml. It processes `.
 
 ### Processing Pipeline
 
-1. **Lexing** (`lib/lexer.ml`): Sedlex-based Unicode-aware lexer
+1. **Lexing** (`lib/lexer.ml`): Sedlex-based lexer
    - Tracks beginning-of-line state for doc comment handling (`>` at line start)
    - Produces `PROJ` tokens for `.N` (tuple projection) to avoid grammar conflicts with DOT
 
@@ -38,20 +38,20 @@ Pantagruel is a specification language checker written in OCaml. It processes `.
    - Qualified names use `::` syntax (e.g., `Module::name`) to avoid DOT conflicts
 
 3. **Collection** (`lib/collect.ml`): Pass 1 - Declaration gathering
-   - Collects domain declarations, type aliases, and procedure signatures
+   - Collects domain declarations, type aliases, and rule signatures
    - Resolves type expressions to internal types
    - Detects duplicate declarations and recursive aliases
 
 4. **Type Checking** (`lib/check.ml`): Pass 2 - Expression validation
    - Infers types for all expressions
    - Validates propositions are boolean
-   - Handles void procedure contexts (primed expressions like `f'`)
+   - Handles action contexts (primed expressions like `f'`)
 
 ### Key Type Representations
 
 - `Ast.type_expr`: Syntactic types from parser (TName, TList, TProduct, TSum)
 - `Types.ty`: Internal type representation with numeric hierarchy (Nat < Nat0 < Int < Real)
-- `Env.t`: Type environment mapping names to entries (domains, aliases, procedures, variables)
+- `Env.t`: Type environment mapping names to entries (domains, aliases, rules, variables)
 
 ### Module System (`lib/module.ml`)
 
@@ -63,12 +63,15 @@ Pantagruel is a specification language checker written in OCaml. It processes `.
 
 - Domains: `User.` declares a domain type
 - Type aliases: `Point = Nat * Nat.`
-- Procedures: `owner d: Document => User.` (with return type) or `check-out u: User.` (void)
-- Void procedures enable primed expressions (`owner' d`) for state transitions
+- Rules: `owner d: Document => User.` (with return type via `=>`)
+- Actions: `~> Check out | u: User.` (state transitions via `~>`, free-form label, `|` before params)
+- Actions enable primed expressions (`owner' d`) for state transitions
+- Action labels are not in the term namespace — they're purely human-readable annotations
 - Quantifiers: `all u: User | ...` and `some x: T | ...`
 - Tuple projection: `point.1`, `point.2`
 - List cardinality: `#users`
 - Membership: `x in Domain`
+- Contexts: `context Accounts.` at module level, `{Accounts} balance ...` for footprint, `Accounts ~> Withdraw | ...` for actions
 
 ## Dependencies
 

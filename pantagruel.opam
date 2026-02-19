@@ -8,6 +8,7 @@ depends: [
   "menhir"
   "sedlex"
   "ppx_deriving"
+  "yojson"
   "alcotest" {with-test}
   "odoc" {with-doc}
 ]

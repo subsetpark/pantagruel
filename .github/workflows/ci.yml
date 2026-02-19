@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.4"
+
+      - name: Install dependencies
+        run: |
+          opam install . --deps-only --with-test
+          opam install ocamlformat.0.28.1
+
+      - name: Build
+        run: opam exec -- dune build
+
+      - name: Test
+        run: opam exec -- dune test
+
+      - name: Check formatting
+        run: opam exec -- dune build @fmt
+
+      - name: Check samples
+        run: |
+          for f in samples/*.pant; do
+            opam exec -- dune exec pant -- "$f"
+          done

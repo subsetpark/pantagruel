@@ -2,16 +2,16 @@
 
 open Ast
 open Format
+module StringSet = Set.Make (String)
 
-module StringSet = Set.Make(String)
-
-(** Extract procedure names from environment *)
-let proc_names_of_env env =
-  Env.StringMap.fold (fun name entry acc ->
-    match entry.Env.kind with
-    | Env.KProc _ -> StringSet.add name acc
-    | _ -> acc
-  ) env.Env.terms StringSet.empty
+(** Extract rule names from environment *)
+let rule_names_of_env env =
+  Env.StringMap.fold
+    (fun name entry acc ->
+      match entry.Env.kind with
+      | Env.KRule _ -> StringSet.add name acc
+      | _ -> acc)
+    env.Env.terms StringSet.empty
 
 (* --- Rich markdown expression rendering with unicode operators --- *)
 
@@ -20,15 +20,20 @@ let pp_type_expr fmt te =
     | TName name -> fprintf fmt "`%s`" name
     | TQName (m, name) -> fprintf fmt "`%s`::`%s`" m name
     | TList t -> fprintf fmt "[%a]" go t
-    | TProduct ts -> pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt " × ") go_atom fmt ts
-    | TSum ts -> pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt " + ") go_product fmt ts
+    | TProduct ts ->
+        pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt " × ") go_atom fmt ts
+    | TSum ts ->
+        pp_print_list
+          ~pp_sep:(fun fmt () -> fprintf fmt " + ")
+          go_product fmt ts
   and go_atom fmt = function
     | TName name -> fprintf fmt "`%s`" name
     | TQName (m, name) -> fprintf fmt "`%s`::`%s`" m name
     | TList t -> fprintf fmt "[%a]" go t
     | t -> fprintf fmt "(%a)" go t
   and go_product fmt = function
-    | TProduct ts -> pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt " × ") go_atom fmt ts
+    | TProduct ts ->
+        pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt " × ") go_atom fmt ts
     | t -> go_atom fmt t
   in
   go fmt te
@@ -62,27 +67,29 @@ let pp_params_sep fmt () = fprintf fmt ", "
 
 let rec pp_expr procs fmt = function
   | EForall (params, guards, body) ->
-      fprintf fmt "∀ %a | %a"
-        (pp_quant_bindings procs) (params, guards)
+      fprintf fmt "∀ %a · %a" (pp_quant_bindings procs) (params, guards)
         (pp_expr procs) body
   | EExists (params, guards, body) ->
-      fprintf fmt "∃ %a | %a"
-        (pp_quant_bindings procs) (params, guards)
+      fprintf fmt "∃ %a · %a" (pp_quant_bindings procs) (params, guards)
         (pp_expr procs) body
   | e -> pp_biconditional procs fmt e
 
 and pp_quant_bindings procs fmt (params, guards) =
-  let items = List.map (fun p -> `Param p) params
-    @ List.filter_map (function
-      | GParam p -> Some (`Param p)
-      | GIn (name, e) -> Some (`In (name, e))
-      | GExpr e -> Some (`Guard e)
-    ) guards in
-  pp_print_list ~pp_sep:pp_params_sep (fun fmt -> function
-    | `Param p -> pp_param fmt p
-    | `In (name, e) -> fprintf fmt "*%s* ∈ %a" name (pp_term procs) e
-    | `Guard e -> pp_conjunction procs fmt e
-  ) fmt items
+  let items =
+    List.map (fun p -> `Param p) params
+    @ List.filter_map
+        (function
+          | GParam p -> Some (`Param p)
+          | GIn (name, e) -> Some (`In (name, e))
+          | GExpr e -> Some (`Guard e))
+        guards
+  in
+  pp_print_list ~pp_sep:pp_params_sep
+    (fun fmt -> function
+      | `Param p -> pp_param fmt p
+      | `In (name, e) -> fprintf fmt "*%s* ∈ %a" name (pp_term procs) e
+      | `Guard e -> pp_conjunction procs fmt e)
+    fmt items
 
 and pp_biconditional procs fmt = function
   | EBinop (OpIff, e1, e2) ->
@@ -109,18 +116,22 @@ and pp_negation procs fmt = function
   | e -> pp_comparison procs fmt e
 
 and pp_comparison procs fmt = function
-  | EBinop ((OpEq | OpNeq | OpLt | OpGt | OpLe | OpGe | OpIn | OpSubset) as op, e1, e2) ->
+  | EBinop
+      ( ((OpEq | OpNeq | OpLt | OpGt | OpLe | OpGe | OpIn | OpSubset) as op),
+        e1,
+        e2 ) ->
       fprintf fmt "%a %a %a" (pp_term procs) e1 pp_binop op (pp_term procs) e2
   | e -> pp_term procs fmt e
 
 and pp_term procs fmt = function
-  | EBinop ((OpAdd | OpSub) as op, e1, e2) ->
+  | EBinop (((OpAdd | OpSub) as op), e1, e2) ->
       fprintf fmt "%a %a %a" (pp_term procs) e1 pp_binop op (pp_factor procs) e2
   | e -> pp_factor procs fmt e
 
 and pp_factor procs fmt = function
-  | EBinop ((OpMul | OpDiv) as op, e1, e2) ->
-      fprintf fmt "%a %a %a" (pp_factor procs) e1 pp_binop op (pp_unary procs) e2
+  | EBinop (((OpMul | OpDiv) as op), e1, e2) ->
+      fprintf fmt "%a %a %a" (pp_factor procs) e1 pp_binop op (pp_unary procs)
+        e2
   | e -> pp_unary procs fmt e
 
 and pp_unary procs fmt = function
@@ -131,7 +142,8 @@ and pp_unary procs fmt = function
 and pp_primary procs fmt = function
   | EApp (f, args) when args <> [] ->
       fprintf fmt "%a %a" (pp_atom procs) f
-        (pp_print_list ~pp_sep:pp_print_space (pp_atom procs)) args
+        (pp_print_list ~pp_sep:pp_print_space (pp_atom procs))
+        args
   | e -> pp_atom procs fmt e
 
 and pp_atom procs fmt = function
@@ -149,12 +161,13 @@ and pp_atom procs fmt = function
   | EOverride (name, pairs) ->
       fprintf fmt "%a[%a]" (pp_name procs) name
         (pp_print_list ~pp_sep:pp_params_sep (fun fmt (k, v) ->
-          fprintf fmt "%a ↦ %a" (pp_expr procs) k (pp_expr procs) v
-        )) pairs
+             fprintf fmt "%a ↦ %a" (pp_expr procs) k (pp_expr procs) v))
+        pairs
   | ETuple es ->
-      fprintf fmt "(%a)" (pp_print_list ~pp_sep:pp_params_sep (pp_expr procs)) es
-  | EProj (e, n) ->
-      fprintf fmt "%a.%d" (pp_atom procs) e n
+      fprintf fmt "(%a)"
+        (pp_print_list ~pp_sep:pp_params_sep (pp_expr procs))
+        es
+  | EProj (e, n) -> fprintf fmt "%a.%d" (pp_atom procs) e n
   | EApp (f, []) -> pp_atom procs fmt f
   | e -> fprintf fmt "(%a)" (pp_expr procs) e
 
@@ -165,16 +178,32 @@ let pp_guard procs fmt = function
 
 let pp_declaration procs fmt = function
   | DeclDomain name -> fprintf fmt "`%s`." name
-  | DeclAlias (name, te) -> fprintf fmt "**%s** = %a." name pp_type_expr te
-  | DeclProc { name; params; guards; return_type } ->
+  | DeclAlias (name, te) -> fprintf fmt "`%s` = %a." name pp_type_expr te
+  | DeclRule { name; params; guards; return_type; contexts } ->
+      if contexts <> [] then
+        fprintf fmt "{%a} "
+          (pp_print_list ~pp_sep:pp_params_sep (fun fmt c ->
+               fprintf fmt "**`%s`**" c))
+          contexts;
       fprintf fmt "**%s**" name;
       if params <> [] then
         fprintf fmt " %a" (pp_print_list ~pp_sep:pp_params_sep pp_param) params;
       if guards <> [] then
-        fprintf fmt ", %a" (pp_print_list ~pp_sep:pp_params_sep (pp_guard procs)) guards;
-      (match return_type with
-       | None -> ()
-       | Some te -> fprintf fmt " ⇒ %a" pp_type_expr te);
+        fprintf fmt ", %a"
+          (pp_print_list ~pp_sep:pp_params_sep (pp_guard procs))
+          guards;
+      fprintf fmt " ⇒ %a." pp_type_expr return_type
+  | DeclAction { label; params; guards; context } ->
+      (match context with
+      | Some ctx -> fprintf fmt "**`%s`** ↝ " ctx
+      | None -> fprintf fmt "↝ ");
+      fprintf fmt "%s" label;
+      if params <> [] then
+        fprintf fmt " %a" (pp_print_list ~pp_sep:pp_params_sep pp_param) params;
+      if guards <> [] then
+        fprintf fmt ", %a"
+          (pp_print_list ~pp_sep:pp_params_sep (pp_guard procs))
+          guards;
       pp_print_char fmt '.'
 
 (* --- String-returning wrappers --- *)
@@ -193,101 +222,175 @@ let md_declaration procs d = to_string (pp_declaration procs) d
 
 (* --- Markdown document rendering --- *)
 
-let pp_doc_comment fmt doc =
-  fprintf fmt "> %s" (String.concat " " doc)
+let rec drop n lst =
+  if n <= 0 then lst
+  else match lst with [] -> [] | _ :: rest -> drop (n - 1) rest
 
-let pp_decl_with_doc procs ~should_skip_doc fmt d =
-  if d.doc <> [] && not (should_skip_doc d) then
-    fprintf fmt "%a@\n@\n" pp_doc_comment d.doc;
+let pp_doc_comment fmt doc =
+  let pp_paragraph fmt para = fprintf fmt "> %s" (String.concat " " para) in
+  pp_print_list
+    ~pp_sep:(fun fmt () -> fprintf fmt "@\n>@\n")
+    pp_paragraph fmt doc
+
+let pp_decl_with_doc procs ~skip_doc_groups fmt d =
+  let doc = drop skip_doc_groups d.doc in
+  if doc <> [] then fprintf fmt "%a@\n@\n" pp_doc_comment doc;
   fprintf fmt "%a@\n@\n" (pp_declaration procs) d.value
 
-let pp_chapter procs ?(skip_first_doc=false) ~total_chapters chapter_num fmt chapter =
-  if total_chapters > 1 then
-    fprintf fmt "## Chapter %d@\n@\n" chapter_num;
+let pp_chapter procs ?(skip_first_doc_groups = 0) ~total_chapters chapter_num
+    fmt chapter =
+  if total_chapters > 1 then fprintf fmt "## Chapter %d@\n@\n" chapter_num;
 
-  let first_line = match chapter.head with
-    | d :: _ -> Some d.loc.line
+  let first_line =
+    match chapter.head with d :: _ -> Some d.loc.line | [] -> None
+  in
+
+  let domains, rule_decls, action_decls =
+    List.fold_left
+      (fun (ds, rs, acts) decl ->
+        match decl.value with
+        | DeclDomain _ | DeclAlias _ -> (decl :: ds, rs, acts)
+        | DeclRule _ -> (ds, decl :: rs, acts)
+        | DeclAction _ -> (ds, rs, decl :: acts))
+      ([], [], []) chapter.head
+  in
+  let domains = List.rev domains in
+  let rule_decls = List.rev rule_decls in
+  let action_decls = List.rev action_decls in
+
+  let skip_for d =
+    if skip_first_doc_groups > 0 && Some d.loc.line = first_line then
+      skip_first_doc_groups
+    else 0
+  in
+
+  let section_header_doc decls =
+    match decls with
+    | first :: _ ->
+        let doc = drop (skip_for first) first.doc in
+        if doc <> [] && not first.doc_adjacent then Some doc else None
     | [] -> None
   in
 
-  let domains, aliases, procs_decls = List.fold_left (fun (ds, as_, ps) decl ->
-    match decl.value with
-    | DeclDomain _ -> (decl :: ds, as_, ps)
-    | DeclAlias _ -> (ds, decl :: as_, ps)
-    | DeclProc _ -> (ds, as_, decl :: ps)
-  ) ([], [], []) chapter.head in
-  let domains = List.rev domains in
-  let aliases = List.rev aliases in
-  let procs_decls = List.rev procs_decls in
-
-  let should_skip_doc d =
-    skip_first_doc && Some d.loc.line = first_line
+  let pp_domain_name fmt d =
+    match d.value with
+    | DeclDomain n | DeclAlias (n, _) -> fprintf fmt "`%s`" n
+    | _ -> ()
   in
 
   if domains <> [] then begin
     fprintf fmt "### Domains@\n@\n";
-    let any_docs = List.exists (fun d -> d.doc <> [] && not (should_skip_doc d)) domains in
-    if any_docs then
-      List.iter (pp_decl_with_doc procs ~should_skip_doc fmt) domains
-    else begin
-      pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ")
-        (fun fmt d -> match d.value with
-          | DeclDomain n -> fprintf fmt "`%s`" n
-          | _ -> ())
-        fmt domains;
-      fprintf fmt "@\n@\n"
-    end
+    match section_header_doc domains with
+    | Some doc ->
+        fprintf fmt "%a@\n@\n" pp_doc_comment doc;
+        pp_print_list
+          ~pp_sep:(fun fmt () -> fprintf fmt ", ")
+          pp_domain_name fmt domains;
+        fprintf fmt "@\n@\n"
+    | None ->
+        let any_docs =
+          List.exists (fun d -> drop (skip_for d) d.doc <> []) domains
+        in
+        if any_docs then
+          List.iter
+            (fun d ->
+              pp_decl_with_doc procs ~skip_doc_groups:(skip_for d) fmt d)
+            domains
+        else begin
+          pp_print_list
+            ~pp_sep:(fun fmt () -> fprintf fmt ", ")
+            pp_domain_name fmt domains;
+          fprintf fmt "@\n@\n"
+        end
   end;
 
-  if aliases <> [] then begin
-    fprintf fmt "### Types@\n@\n";
-    List.iter (pp_decl_with_doc procs ~should_skip_doc fmt) aliases
+  if rule_decls <> [] then begin
+    fprintf fmt "### Rules@\n@\n";
+    List.iter
+      (fun d -> pp_decl_with_doc procs ~skip_doc_groups:(skip_for d) fmt d)
+      rule_decls
   end;
 
-  if procs_decls <> [] then begin
-    fprintf fmt "### Procedures@\n@\n";
-    List.iter (pp_decl_with_doc procs ~should_skip_doc fmt) procs_decls
+  if action_decls <> [] then begin
+    fprintf fmt "### Action@\n@\n";
+    List.iter
+      (fun d -> pp_decl_with_doc procs ~skip_doc_groups:(skip_for d) fmt d)
+      action_decls
   end;
 
   if chapter.body <> [] then begin
-    fprintf fmt "### Propositions@\n@\n";
-    List.iter (fun prop ->
-      if prop.doc <> [] then
-        fprintf fmt "%a@\n@\n" pp_doc_comment prop.doc;
-      fprintf fmt "%a.@\n@\n" (pp_expr procs) prop.value
-    ) chapter.body
+    fprintf fmt "---@\n@\n";
+    List.iter
+      (fun prop ->
+        if prop.doc <> [] then fprintf fmt "%a@\n@\n" pp_doc_comment prop.doc;
+        fprintf fmt "%a.@\n@\n" (pp_expr procs) prop.value)
+      chapter.body
   end
 
 let pp_document procs fmt doc =
-  (match doc.module_name with
-   | Some name -> fprintf fmt "# Module %s@\n@\n" name
-   | None -> ());
-
-  let has_module_doc = match doc.chapters with
+  let skip_first_doc_groups =
+    match doc.chapters with
     | { head = first :: _; _ } :: _ when first.doc <> [] ->
-        fprintf fmt "%s@\n@\n" (String.concat "\n" first.doc);
-        true
-    | _ -> false
+        if not first.doc_adjacent then begin
+          (* All doc groups float above the declaration — module-level doc *)
+          List.iter
+            (fun para -> fprintf fmt "%s@\n@\n" (String.concat "\n" para))
+            first.doc;
+          List.length first.doc
+        end
+        else
+          let n = List.length first.doc in
+          if n > 1 then begin
+            (* Multiple groups: earlier groups are module doc, last is item doc *)
+            List.iteri
+              (fun i para ->
+                if i < n - 1 then
+                  fprintf fmt "%s@\n@\n" (String.concat "\n" para))
+              first.doc;
+            n - 1
+          end
+          else 0
+    | _ -> 0
   in
 
   if doc.imports <> [] then begin
     fprintf fmt "**Imports:** %a@\n@\n"
-      (pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ")
-        (fun fmt i -> pp_print_string fmt i.value))
+      (pp_print_list
+         ~pp_sep:(fun fmt () -> fprintf fmt ", ")
+         (fun fmt i -> pp_print_string fmt i.value))
       doc.imports
   end;
 
+  if doc.contexts <> [] then begin
+    let any_docs = List.exists (fun c -> c.doc <> []) doc.contexts in
+    fprintf fmt "### Contexts@\n@\n";
+    if any_docs then
+      List.iter
+        (fun c ->
+          if c.doc <> [] then fprintf fmt "%a@\n@\n" pp_doc_comment c.doc;
+          fprintf fmt "**`%s`**@\n@\n" c.value)
+        doc.contexts
+    else begin
+      fprintf fmt "%a@\n@\n"
+        (pp_print_list
+           ~pp_sep:(fun fmt () -> fprintf fmt ", ")
+           (fun fmt c -> fprintf fmt "**`%s`**" c.value))
+        doc.contexts
+    end
+  end;
+
   let total_chapters = List.length doc.chapters in
-  List.iteri (fun i ch ->
-    let skip_first_doc = (i = 0) && has_module_doc in
-    pp_chapter procs ~skip_first_doc ~total_chapters (i + 1) fmt ch
-  ) doc.chapters
+  List.iteri
+    (fun i ch ->
+      let skip_first_doc_groups = if i = 0 then skip_first_doc_groups else 0 in
+      pp_chapter procs ~skip_first_doc_groups ~total_chapters (i + 1) fmt ch)
+    doc.chapters
 
 let md_document procs doc = to_string (pp_document procs) doc
 
 (** Output Markdown to stdout *)
 let output env doc =
-  let procs = proc_names_of_env env in
+  let procs = rule_names_of_env env in
   pp_set_margin std_formatter 10000;
   pp_document procs std_formatter doc;
   pp_print_flush std_formatter ()

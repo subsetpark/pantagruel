@@ -1,0 +1,33 @@
+> A banking example demonstrating context declarations.
+> Contexts define which functions an action may modify.
+module Banking.
+context Accounts.
+
+Account.
+User.
+
+{Accounts} balance a: Account => Nat.
+{Accounts} owner a: Account => User.
+nobody => User.
+
+---
+
+> Every account has a positive balance.
+all a: Account | balance a >= 0.
+
+where
+
+> Withdrawal reduces the balance of the target account.
+Accounts ~> Withdraw | a: Account, amount: Nat, balance a >= amount.
+---
+balance' a = balance a - amount.
+
+where
+
+> Transfer moves funds between accounts.
+Accounts ~> Transfer | from: Account, to: Account, amount: Nat, balance from >= amount.
+---
+balance' from = balance from - amount.
+balance' to = balance to + amount.
+owner' from = owner from.
+owner' to = owner to.
