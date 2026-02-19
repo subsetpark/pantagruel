@@ -39,7 +39,7 @@ let render_doc str =
 
 let test_var_italic () =
   let md = render_expr "module T.\nUser.\nf u: User => Bool.\n---\nall u: User | f u.\n" in
-  check string "var italic" "∀ *u*: `User` | **f** *u*" md
+  check string "var italic" "∀ *u*: `User` · **f** *u*" md
 
 let test_proc_bold () =
   let md = render_expr "module T.\nUser.\nactive u: User => Bool.\n---\nactive u.\n" in
@@ -48,7 +48,7 @@ let test_proc_bold () =
 
 let test_nullary_rule_bold () =
   let md = render_expr "module T.\nUser.\nnobody => User.\n---\nall u: User | u = nobody.\n" in
-  check string "nullary bold" "∀ *u*: `User` | *u* = **nobody**" md
+  check string "nullary bold" "∀ *u*: `User` · *u* = **nobody**" md
 
 let test_primed_rule () =
   let md = render_expr {|module T.
@@ -69,7 +69,7 @@ mapping k: Key => Value.
 ---
 all k: Key, v: Value | mapping[k |-> v] k = v.
 |} in
-  check string "override" "∀ *k*: `Key`, *v*: `Value` | **mapping**[*k* ↦ *v*] *k* = *v*" md
+  check string "override" "∀ *k*: `Key`, *v*: `Value` · **mapping**[*k* ↦ *v*] *k* = *v*" md
 
 (* --- Operators --- *)
 
@@ -97,15 +97,15 @@ let test_comparison_ops () =
 
 let test_membership () =
   let md = render_expr "module T.\nUser.\n---\nall u: User | u in User.\n" in
-  check string "in" "∀ *u*: `User` | *u* ∈ `User`" md
+  check string "in" "∀ *u*: `User` · *u* ∈ `User`" md
 
 let test_subset () =
   let md = render_expr "module T.\nItem.\n---\nall xs: [Item], ys: [Item] | xs subset ys.\n" in
-  check string "subset" "∀ *xs*: [`Item`], *ys*: [`Item`] | *xs* ⊆ *ys*" md
+  check string "subset" "∀ *xs*: [`Item`], *ys*: [`Item`] · *xs* ⊆ *ys*" md
 
 let test_multiply () =
   let md = render_expr "module T.\nFoo.\n---\nall x: Nat, y: Nat | x * y >= 0.\n" in
-  check string "mul dot" "∀ *x*: `Nat`, *y*: `Nat` | *x* · *y* ≥ 0" md
+  check string "mul dot" "∀ *x*: `Nat`, *y*: `Nat` · *x* · *y* ≥ 0" md
 
 let test_cardinality () =
   let md = render_expr "module T.\nUser.\n---\n#User >= 0.\n" in
@@ -113,9 +113,9 @@ let test_cardinality () =
 
 let test_quantifiers () =
   let md = render_expr "module T.\nUser.\n---\nall u: User | true.\n" in
-  check string "forall" "∀ *u*: `User` | true" md;
+  check string "forall" "∀ *u*: `User` · true" md;
   let md = render_expr "module T.\nUser.\nactive u: User => Bool.\n---\nsome u: User | active u.\n" in
-  check string "exists" "∃ *u*: `User` | **active** *u*" md
+  check string "exists" "∃ *u*: `User` · **active** *u*" md
 
 let test_membership_guard () =
   let md = render_expr {|module T.
@@ -125,17 +125,17 @@ items => [Item].
 ---
 all i in items | price i > 0.
 |} in
-  check string "membership guard" "∀ *i* ∈ **items** | **price** *i* > 0" md
+  check string "membership guard" "∀ *i* ∈ **items** · **price** *i* > 0" md
 
 (* --- Type expressions --- *)
 
 let test_type_backticks () =
   let md = render_decl "module T.\nPoint = Nat * Nat.\n---\n" in
-  check string "product type" "**Point** = `Nat` × `Nat`." md
+  check string "product type" "`Point` = `Nat` × `Nat`." md
 
 let test_type_list () =
   let md = render_decl "module T.\nNames = [String].\n---\n" in
-  check string "list type" "**Names** = [`String`]." md
+  check string "list type" "`Names` = [`String`]." md
 
 let test_type_sum () =
   let _, doc = render "module T.\nFoo.\nBar.\nEither = Foo + Bar.\n---\n" in
@@ -143,7 +143,7 @@ let test_type_sum () =
   | [{ head = [_; _; decl]; _ }] ->
       let procs = Markdown_output.StringSet.empty in
       let md = Markdown_output.md_declaration procs decl.value in
-      check string "sum type" "**Either** = `Foo` + `Bar`." md
+      check string "sum type" "`Either` = `Foo` + `Bar`." md
   | _ -> fail "expected three declarations"
 
 (* --- Declaration rendering --- *)
@@ -167,7 +167,7 @@ let test_decl_action () =
   match doc.Ast.chapters with
   | [{ head = [_; _; decl]; _ }] ->
       let md = Markdown_output.md_declaration procs decl.value in
-      check string "action decl" "↝ Check out | *u*: `User`, *d*: `Document`." md
+      check string "action decl" "↝ Check out *u*: `User`, *d*: `Document`." md
   | _ -> fail "expected three declarations"
 
 (* --- Document structure --- *)
@@ -236,9 +236,9 @@ name u: User => String.
 all u: User | true.
 |} in
   check bool "domains heading" true (has_substring md "### Domains");
-  check bool "types heading" true (has_substring md "### Types");
+  check bool "alias in domains" true (has_substring md "`Point`");
   check bool "rules heading" true (has_substring md "### Rules");
-  check bool "propositions heading" true (has_substring md "### Propositions")
+  check bool "propositions separator" true (has_substring md "---")
 
 let test_builtin_types_backtick () =
   let md = render_doc "module T.\nFoo.\nn => Nat.\ns => String.\nb => Bool.\n---\nn >= 0.\n" in
