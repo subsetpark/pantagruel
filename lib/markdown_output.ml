@@ -227,11 +227,10 @@ let rec drop n lst =
   else match lst with [] -> [] | _ :: rest -> drop (n - 1) rest
 
 let pp_doc_comment fmt doc =
-  let pp_paragraph fmt para =
-    fprintf fmt "> %s" (String.concat " " para)
-  in
-  pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@\n>@\n") pp_paragraph fmt
-    doc
+  let pp_paragraph fmt para = fprintf fmt "> %s" (String.concat " " para) in
+  pp_print_list
+    ~pp_sep:(fun fmt () -> fprintf fmt "@\n>@\n")
+    pp_paragraph fmt doc
 
 let pp_decl_with_doc procs ~skip_doc_groups fmt d =
   let doc = drop skip_doc_groups d.doc in
@@ -284,8 +283,9 @@ let pp_chapter procs ?(skip_first_doc_groups = 0) ~total_chapters chapter_num
     match section_header_doc domains with
     | Some doc ->
         fprintf fmt "%a@\n@\n" pp_doc_comment doc;
-        pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ") pp_domain_name
-          fmt domains;
+        pp_print_list
+          ~pp_sep:(fun fmt () -> fprintf fmt ", ")
+          pp_domain_name fmt domains;
         fprintf fmt "@\n@\n"
     | None ->
         let any_docs =
@@ -297,8 +297,9 @@ let pp_chapter procs ?(skip_first_doc_groups = 0) ~total_chapters chapter_num
               pp_decl_with_doc procs ~skip_doc_groups:(skip_for d) fmt d)
             domains
         else begin
-          pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ") pp_domain_name
-            fmt domains;
+          pp_print_list
+            ~pp_sep:(fun fmt () -> fprintf fmt ", ")
+            pp_domain_name fmt domains;
           fprintf fmt "@\n@\n"
         end
   end;
@@ -381,9 +382,7 @@ let pp_document procs fmt doc =
   let total_chapters = List.length doc.chapters in
   List.iteri
     (fun i ch ->
-      let skip_first_doc_groups =
-        if i = 0 then skip_first_doc_groups else 0
-      in
+      let skip_first_doc_groups = if i = 0 then skip_first_doc_groups else 0 in
       pp_chapter procs ~skip_first_doc_groups ~total_chapters (i + 1) fmt ch)
     doc.chapters
 

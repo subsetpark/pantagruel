@@ -37,12 +37,11 @@ let format_type_error err =
   | PrimedNonRule (name, loc) ->
       fmt loc (Printf.sprintf "Cannot prime '%s': not a rule" name)
   | PrimeOutsideActionContext (name, loc) ->
-      fmt loc
-        (Printf.sprintf "Primed '%s' only valid in action context" name)
+      fmt loc (Printf.sprintf "Primed '%s' only valid in action context" name)
   | OverrideRequiresArity1 (name, arity, loc) ->
       fmt loc
-        (Printf.sprintf "Override requires arity-1 rule, '%s' has arity %d"
-           name arity)
+        (Printf.sprintf "Override requires arity-1 rule, '%s' has arity %d" name
+           arity)
   | ProjectionOutOfBounds (idx, len, loc) ->
       fmt loc
         (Printf.sprintf "Projection .%d out of bounds for %d-tuple" idx len)
@@ -89,8 +88,7 @@ let format_collect_error err =
         (Printf.sprintf "Multiple actions in chapter: '%s' and '%s'" p1 p2)
   | ActionNotLast (name, loc) ->
       fmt loc
-        (Printf.sprintf "Action '%s' must appear last in chapter head"
-           name)
+        (Printf.sprintf "Action '%s' must appear last in chapter head" name)
   | BuiltinRedefined (name, loc) ->
       fmt loc (Printf.sprintf "Cannot redefine builtin type '%s'" name)
   | DuplicateContext (name, loc) ->

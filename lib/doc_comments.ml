@@ -6,8 +6,8 @@ let doc_map : (int * int, string list list * bool) Hashtbl.t = Hashtbl.create 16
 (** Clear the doc map (call before parsing a new file) *)
 let clear () = Hashtbl.clear doc_map
 
-(** Add docs at a position. [adjacent] is true when the last doc line is on
-    the line directly above the token (no blank line between them). *)
+(** Add docs at a position. [adjacent] is true when the last doc line is on the
+    line directly above the token (no blank line between them). *)
 let add line col docs adjacent =
   if docs <> [] then Hashtbl.add doc_map (line, col) (docs, adjacent)
 

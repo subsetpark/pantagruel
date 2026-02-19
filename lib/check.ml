@@ -100,8 +100,7 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
                     Error (PrimedExtracontextual (name, ctx_name, ctx.loc))
                 | None -> Ok ty (* Shouldn't happen: validated in collect *))
             | None -> Ok ty)
-        | Some { kind = Env.KVar _; _ } ->
-            Error (PrimedNonRule (name, ctx.loc))
+        | Some { kind = Env.KVar _; _ } -> Error (PrimedNonRule (name, ctx.loc))
         | Some { kind = Env.KDomain | Env.KAlias _; _ } ->
             Error (UnboundVariable (name, ctx.loc))
         | None -> Error (UnboundVariable (name, ctx.loc)))
@@ -337,8 +336,7 @@ let check_rule_guards ctx (decl : declaration located) =
           match g with
           | GParam p ->
               let* name, ty = resolve_param current_ctx.env p in
-              Ok
-                { current_ctx with env = Env.add_var name ty current_ctx.env }
+              Ok { current_ctx with env = Env.add_var name ty current_ctx.env }
           | GIn (name, list_expr) -> (
               let ctx'' = with_loc current_ctx decl.loc in
               let* list_ty = infer_type ctx'' list_expr in
@@ -369,8 +367,7 @@ let find_action (head : declaration located list) =
   List.find_map
     (fun decl ->
       match decl.value with
-      | DeclAction { label; params; context; _ } ->
-          Some (label, params, context)
+      | DeclAction { label; params; context; _ } -> Some (label, params, context)
       | _ -> None)
     head
 

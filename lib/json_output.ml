@@ -219,7 +219,9 @@ let decl_to_json env (decl_loc : declaration located) =
            else [])
         @ match resolved with Some t -> [ ("resolved", t) ] | None -> [])
   | DeclAction { label; params; guards; context } ->
-      let param_tys = List.map (fun p -> type_expr_to_json p.param_type) params in
+      let param_tys =
+        List.map (fun p -> type_expr_to_json p.param_type) params
+      in
       `Assoc
         (doc_json
         @ [
@@ -231,14 +233,14 @@ let decl_to_json env (decl_loc : declaration located) =
         @ (match context with
           | Some c -> [ ("context", `String c) ]
           | None -> [])
-        @ [ ("resolved",
-              `Assoc [
-                ("func",
-                  `Assoc [
-                    ("params", `List param_tys);
-                    ("return", `Null);
-                  ]);
-              ]) ])
+        @ [
+            ( "resolved",
+              `Assoc
+                [
+                  ( "func",
+                    `Assoc [ ("params", `List param_tys); ("return", `Null) ] );
+                ] );
+          ])
 
 (** Convert proposition to JSON with doc comments *)
 let prop_to_json (prop_loc : expr located) =

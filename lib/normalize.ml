@@ -122,8 +122,7 @@ let symbols_in_decl_deps (decl : declaration) =
   | DeclRule { params; guards; return_type; _ } ->
       collect_params_guards params guards;
       types := StringSet.union !types (types_in_type_expr return_type)
-  | DeclAction { params; guards; _ } ->
-      collect_params_guards params guards);
+  | DeclAction { params; guards; _ } -> collect_params_guards params guards);
   (!types, !terms)
 
 (** Get the name defined by a declaration *)

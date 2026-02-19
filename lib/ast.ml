@@ -8,8 +8,10 @@ let dummy_loc = { file = "<unknown>"; line = 0; col = 0 }
 type 'a located = {
   loc : loc;
   value : 'a;
-  doc : string list list;  (** Doc comment paragraphs (groups separated by blank lines) *)
-  doc_adjacent : bool;  (** Last doc group is on the line directly above this node *)
+  doc : string list list;
+      (** Doc comment paragraphs (groups separated by blank lines) *)
+  doc_adjacent : bool;
+      (** Last doc group is on the line directly above this node *)
 }
 [@@deriving show, eq]
 (** Wrap a value with its location and optional doc comment *)

@@ -6,7 +6,8 @@ type t = {
   buf : Sedlexing.lexbuf;
   mutable filename : string;
   mutable at_bol : bool;  (** At beginning of line (for doc comments) *)
-  mutable pending_docs : string list list;  (** Doc comment groups (each reversed, list reversed) *)
+  mutable pending_docs : string list list;
+      (** Doc comment groups (each reversed, list reversed) *)
   mutable doc_break : bool;  (** Blank line seen since last doc comment line *)
   mutable last_token : Parser.token option;  (** Last token returned *)
   mutable in_action_label : bool;  (** After ~>, read free-form label *)
@@ -18,14 +19,30 @@ let create_from_channel filename channel =
   Sedlexing.set_filename buf filename;
   Doc_comments.clear ();
   (* Clear doc map for new file *)
-  { buf; filename; at_bol = true; pending_docs = []; doc_break = false; last_token = None; in_action_label = false }
+  {
+    buf;
+    filename;
+    at_bol = true;
+    pending_docs = [];
+    doc_break = false;
+    last_token = None;
+    in_action_label = false;
+  }
 
 let create_from_string filename str =
   let buf = Sedlexing.Utf8.from_string str in
   Sedlexing.set_filename buf filename;
   Doc_comments.clear ();
   (* Clear doc map for new file *)
-  { buf; filename; at_bol = true; pending_docs = []; doc_break = false; last_token = None; in_action_label = false }
+  {
+    buf;
+    filename;
+    at_bol = true;
+    pending_docs = [];
+    doc_break = false;
+    last_token = None;
+    in_action_label = false;
+  }
 
 (** Take and clear pending doc comments *)
 let take_docs lexer =
@@ -144,8 +161,8 @@ let rec read_string buf acc =
   | eof -> failwith "Unterminated string literal"
   | _ -> assert false
 
-(** Read free-form action label text after ~>.
-    Stops at |, ., //, newline, or eof; rolls back the delimiter. *)
+(** Read free-form action label text after ~>. Stops at |, ., //, newline, or
+    eof; rolls back the delimiter. *)
 let read_action_label buf =
   let content = Buffer.create 64 in
   let rec loop () =
@@ -156,10 +173,8 @@ let read_action_label buf =
     | "//" ->
         Sedlexing.rollback buf;
         String.trim (Buffer.contents content)
-    | newline ->
-        String.trim (Buffer.contents content)
-    | eof ->
-        String.trim (Buffer.contents content)
+    | newline -> String.trim (Buffer.contents content)
+    | eof -> String.trim (Buffer.contents content)
     | any ->
         Buffer.add_string content (Sedlexing.Utf8.lexeme buf);
         loop ()
@@ -176,96 +191,95 @@ let rec token_impl lexer =
     Parser.ACTION_LABEL text
   end
   else
-  match%sedlex buf with
-  (* Whitespace and newlines *)
-  | Plus whitespace -> token_impl lexer
-  | newline ->
-      if lexer.at_bol && lexer.pending_docs <> [] then
-        lexer.doc_break <- true;
-      lexer.at_bol <- true;
-      token_impl lexer
-  (* Comments *)
-  | "//" ->
-      skip_line_comment buf;
-      lexer.at_bol <- true;
-      token_impl lexer
-  (* Section separator *)
-  | "---" -> Parser.SEPARATOR
-  (* Multi-char operators - check before single chars *)
-  | "=>" -> Parser.DARROW
-  | "<->" -> Parser.IFF
-  | "->" -> Parser.ARROW
-  | "!=" -> Parser.NEQ
-  | "<=" -> Parser.LE
-  | ">=" -> Parser.GE
-  | "|->" -> Parser.MAPSTO
-  | "~>" ->
-      lexer.in_action_label <- true;
-      Parser.SQUIG_ARROW
-  | '~' -> Parser.NOT
-  | '\'' -> Parser.PRIME
-  (* Single-char operators *)
-  | '=' -> Parser.EQ
-  | '<' -> Parser.LT
-  | '>' ->
-      (* '>' at beginning of line is a doc comment *)
-      if lexer.at_bol then begin
-        let content = read_doc_comment buf in
-        if lexer.doc_break || lexer.pending_docs = [] then
-          lexer.pending_docs <- [content] :: lexer.pending_docs
-        else begin
-          match lexer.pending_docs with
-          | group :: rest -> lexer.pending_docs <- (content :: group) :: rest
-          | [] -> lexer.pending_docs <- [[content]]
-        end;
-        lexer.doc_break <- false;
+    match%sedlex buf with
+    (* Whitespace and newlines *)
+    | Plus whitespace -> token_impl lexer
+    | newline ->
+        if lexer.at_bol && lexer.pending_docs <> [] then lexer.doc_break <- true;
         lexer.at_bol <- true;
         token_impl lexer
-      end
-      else Parser.GT
-  | '+' -> Parser.PLUS
-  | '-' -> Parser.MINUS
-  | '*' -> Parser.TIMES
-  | '/' -> Parser.DIVIDE
-  | '#' -> Parser.CARD
-  (* Punctuation *)
-  | "::" -> Parser.DCOLON
-  (* Projection: .N - must come before plain DOT *)
-  | '.', Plus digit ->
-      let s = Sedlexing.Utf8.lexeme buf in
-      let num_str = String.sub s 1 (String.length s - 1) in
-      Parser.PROJ (int_of_string num_str)
-  | '.' -> Parser.DOT
-  | ',' -> Parser.COMMA
-  | ':' -> Parser.COLON
-  | '|' -> Parser.PIPE
-  | '(' -> Parser.LPAREN
-  | ')' -> Parser.RPAREN
-  | '[' -> Parser.LBRACKET
-  | ']' -> Parser.RBRACKET
-  | '{' -> Parser.LBRACE
-  | '}' -> Parser.RBRACE
-  (* String literal *)
-  | '"' -> read_string buf (Buffer.create 64)
-  (* Numbers - real before nat to catch the decimal point *)
-  | real ->
-      let s = Sedlexing.Utf8.lexeme buf in
-      Parser.REAL (float_of_string s)
-  | nat ->
-      let s = Sedlexing.Utf8.lexeme buf in
-      Parser.NAT (int_of_string s)
-  (* Identifiers *)
-  | upper_ident ->
-      let s = Sedlexing.Utf8.lexeme buf in
-      Parser.UPPER_IDENT s
-  | lower_ident ->
-      let s = Sedlexing.Utf8.lexeme buf in
-      keyword_or_lower_ident s
-  | eof -> Parser.EOF
-  | any ->
-      let s = Sedlexing.Utf8.lexeme buf in
-      failwith (Printf.sprintf "Unexpected character: %s" s)
-  | _ -> assert false
+    (* Comments *)
+    | "//" ->
+        skip_line_comment buf;
+        lexer.at_bol <- true;
+        token_impl lexer
+    (* Section separator *)
+    | "---" -> Parser.SEPARATOR
+    (* Multi-char operators - check before single chars *)
+    | "=>" -> Parser.DARROW
+    | "<->" -> Parser.IFF
+    | "->" -> Parser.ARROW
+    | "!=" -> Parser.NEQ
+    | "<=" -> Parser.LE
+    | ">=" -> Parser.GE
+    | "|->" -> Parser.MAPSTO
+    | "~>" ->
+        lexer.in_action_label <- true;
+        Parser.SQUIG_ARROW
+    | '~' -> Parser.NOT
+    | '\'' -> Parser.PRIME
+    (* Single-char operators *)
+    | '=' -> Parser.EQ
+    | '<' -> Parser.LT
+    | '>' ->
+        (* '>' at beginning of line is a doc comment *)
+        if lexer.at_bol then begin
+          let content = read_doc_comment buf in
+          if lexer.doc_break || lexer.pending_docs = [] then
+            lexer.pending_docs <- [ content ] :: lexer.pending_docs
+          else begin
+            match lexer.pending_docs with
+            | group :: rest -> lexer.pending_docs <- (content :: group) :: rest
+            | [] -> lexer.pending_docs <- [ [ content ] ]
+          end;
+          lexer.doc_break <- false;
+          lexer.at_bol <- true;
+          token_impl lexer
+        end
+        else Parser.GT
+    | '+' -> Parser.PLUS
+    | '-' -> Parser.MINUS
+    | '*' -> Parser.TIMES
+    | '/' -> Parser.DIVIDE
+    | '#' -> Parser.CARD
+    (* Punctuation *)
+    | "::" -> Parser.DCOLON
+    (* Projection: .N - must come before plain DOT *)
+    | '.', Plus digit ->
+        let s = Sedlexing.Utf8.lexeme buf in
+        let num_str = String.sub s 1 (String.length s - 1) in
+        Parser.PROJ (int_of_string num_str)
+    | '.' -> Parser.DOT
+    | ',' -> Parser.COMMA
+    | ':' -> Parser.COLON
+    | '|' -> Parser.PIPE
+    | '(' -> Parser.LPAREN
+    | ')' -> Parser.RPAREN
+    | '[' -> Parser.LBRACKET
+    | ']' -> Parser.RBRACKET
+    | '{' -> Parser.LBRACE
+    | '}' -> Parser.RBRACE
+    (* String literal *)
+    | '"' -> read_string buf (Buffer.create 64)
+    (* Numbers - real before nat to catch the decimal point *)
+    | real ->
+        let s = Sedlexing.Utf8.lexeme buf in
+        Parser.REAL (float_of_string s)
+    | nat ->
+        let s = Sedlexing.Utf8.lexeme buf in
+        Parser.NAT (int_of_string s)
+    (* Identifiers *)
+    | upper_ident ->
+        let s = Sedlexing.Utf8.lexeme buf in
+        Parser.UPPER_IDENT s
+    | lower_ident ->
+        let s = Sedlexing.Utf8.lexeme buf in
+        keyword_or_lower_ident s
+    | eof -> Parser.EOF
+    | any ->
+        let s = Sedlexing.Utf8.lexeme buf in
+        failwith (Printf.sprintf "Unexpected character: %s" s)
+    | _ -> assert false
 
 (** Token function that takes a lexer record *)
 let token lexer =

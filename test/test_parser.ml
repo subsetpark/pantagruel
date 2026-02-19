@@ -53,7 +53,9 @@ let test_all () =
   | _ -> fail "Expected all"
 
 let test_application () =
-  let doc = parse "module TEST.\n\nUser.\nf x: User => User.\n---\nf u = u.\n" in
+  let doc =
+    parse "module TEST.\n\nUser.\nf x: User => User.\n---\nf u = u.\n"
+  in
   let chapter = List.hd doc.Ast.chapters in
   match (List.hd chapter.Ast.body).Ast.value with
   | Ast.EBinop (Ast.OpEq, Ast.EApp (_, _), _) -> ()
@@ -63,7 +65,9 @@ let test_type_alias () =
   let doc = parse "module TEST.\n\nPoint = Nat * Nat.\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
   match (List.hd chapter.Ast.head).Ast.value with
-  | Ast.DeclAlias ("Point", Ast.TProduct [Ast.TName "Nat"; Ast.TName "Nat"]) -> ()
+  | Ast.DeclAlias ("Point", Ast.TProduct [ Ast.TName "Nat"; Ast.TName "Nat" ])
+    ->
+      ()
   | _ -> fail "Expected type alias"
 
 let test_list_type () =
@@ -81,17 +85,27 @@ let test_sum_type () =
   | _ -> fail "Expected sum type"
 
 let test_rule_guard () =
-  let doc = parse "module TEST.\n\nAccount.\nbalance a: Account => Nat.\n~> Withdraw | a: Account, amount: Nat, balance a >= amount.\n---\n" in
+  let doc =
+    parse
+      "module TEST.\n\n\
+       Account.\n\
+       balance a: Account => Nat.\n\
+       ~> Withdraw | a: Account, amount: Nat, balance a >= amount.\n\
+       ---\n"
+  in
   let chapter = List.hd doc.Ast.chapters in
   match (List.nth chapter.Ast.head 2).Ast.value with
-  | Ast.DeclAction { guards = [Ast.GExpr _]; _ } -> ()
+  | Ast.DeclAction { guards = [ Ast.GExpr _ ]; _ } -> ()
   | _ -> fail "Expected action with guard"
 
 let test_membership_binding () =
-  let doc = parse "module TEST.\n\nItem.\nitems => [Item].\n---\nall i in items | true.\n" in
+  let doc =
+    parse
+      "module TEST.\n\nItem.\nitems => [Item].\n---\nall i in items | true.\n"
+  in
   let chapter = List.hd doc.Ast.chapters in
   match (List.hd chapter.Ast.body).Ast.value with
-  | Ast.EForall ([], [Ast.GIn ("i", _)], _) -> ()
+  | Ast.EForall ([], [ Ast.GIn ("i", _) ], _) -> ()
   | _ -> fail "Expected membership binding"
 
 let test_existential () =
@@ -105,13 +119,24 @@ let test_doc_comment () =
   let doc = parse "module TEST.\n\n> This is a doc comment\nFoo.\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
   let decl = List.hd chapter.Ast.head in
-  check (list (list string)) "doc comment" [["This is a doc comment"]] decl.Ast.doc
+  check
+    (list (list string))
+    "doc comment"
+    [ [ "This is a doc comment" ] ]
+    decl.Ast.doc
 
 let test_multiple_guards () =
-  let doc = parse "module TEST.\n\nAccount.\nbalance a: Account => Nat.\n~> Withdraw | a: Account, amount: Nat, amount > 0, balance a >= amount.\n---\n" in
+  let doc =
+    parse
+      "module TEST.\n\n\
+       Account.\n\
+       balance a: Account => Nat.\n\
+       ~> Withdraw | a: Account, amount: Nat, amount > 0, balance a >= amount.\n\
+       ---\n"
+  in
   let chapter = List.hd doc.Ast.chapters in
   match (List.nth chapter.Ast.head 2).Ast.value with
-  | Ast.DeclAction { guards = [Ast.GExpr _; Ast.GExpr _]; _ } -> ()
+  | Ast.DeclAction { guards = [ Ast.GExpr _; Ast.GExpr _ ]; _ } -> ()
   | _ -> fail "Expected action with two guards"
 
 let test_no_module () =
@@ -124,7 +149,9 @@ let test_action_no_params () =
   let doc = parse "module TEST.\n\nFoo.\n~> Do something.\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
   match (List.nth chapter.Ast.head 1).Ast.value with
-  | Ast.DeclAction { label = "Do something"; params = []; guards = []; context = None } -> ()
+  | Ast.DeclAction
+      { label = "Do something"; params = []; guards = []; context = None } ->
+      ()
   | _ -> fail "Expected no-param action"
 
 let test_context_declaration () =
@@ -133,36 +160,50 @@ let test_context_declaration () =
   check string "context name" "Banking" (List.hd doc.Ast.contexts).Ast.value
 
 let test_rule_with_context () =
-  let doc = parse "module TEST.\ncontext Banking.\n\nAccount.\n{Banking} balance a: Account => Nat.\nBanking ~> Withdraw | a: Account.\n---\n" in
+  let doc =
+    parse
+      "module TEST.\n\
+       context Banking.\n\n\
+       Account.\n\
+       {Banking} balance a: Account => Nat.\n\
+       Banking ~> Withdraw | a: Account.\n\
+       ---\n"
+  in
   let chapter = List.hd doc.Ast.chapters in
   (match (List.nth chapter.Ast.head 1).Ast.value with
-  | Ast.DeclRule { name = "balance"; contexts = ["Banking"]; _ } -> ()
+  | Ast.DeclRule { name = "balance"; contexts = [ "Banking" ]; _ } -> ()
   | _ -> fail "Expected rule with context footprint");
-  (match (List.nth chapter.Ast.head 2).Ast.value with
+  match (List.nth chapter.Ast.head 2).Ast.value with
   | Ast.DeclAction { label = "Withdraw"; context = Some "Banking"; _ } -> ()
-  | _ -> fail "Expected action with context")
+  | _ -> fail "Expected action with context"
 
 let () =
-  run "Parser" [
-    "minimal", [test_case "minimal document" `Quick test_minimal];
-    "no_module", [test_case "no module header" `Quick test_no_module];
-    "domain", [test_case "domain declaration" `Quick test_domain_decl];
-    "rule", [test_case "rule declaration" `Quick test_rule_decl];
-    "action", [test_case "action" `Quick test_action];
-    "action_no_params", [test_case "action no params" `Quick test_action_no_params];
-    "import", [test_case "import" `Quick test_import];
-    "where", [test_case "where clause" `Quick test_where_clause];
-    "proposition", [test_case "proposition" `Quick test_proposition];
-    "all", [test_case "all" `Quick test_all];
-    "application", [test_case "application" `Quick test_application];
-    "type_alias", [test_case "type alias" `Quick test_type_alias];
-    "list_type", [test_case "list type" `Quick test_list_type];
-    "sum_type", [test_case "sum type" `Quick test_sum_type];
-    "guard", [test_case "rule guard" `Quick test_rule_guard];
-    "membership", [test_case "membership binding" `Quick test_membership_binding];
-    "existential", [test_case "existential" `Quick test_existential];
-    "doc_comment", [test_case "doc comment" `Quick test_doc_comment];
-    "multi_guard", [test_case "multiple guards" `Quick test_multiple_guards];
-    "context", [test_case "context declaration" `Quick test_context_declaration];
-    "rule_context", [test_case "rule with context" `Quick test_rule_with_context];
-  ]
+  run "Parser"
+    [
+      ("minimal", [ test_case "minimal document" `Quick test_minimal ]);
+      ("no_module", [ test_case "no module header" `Quick test_no_module ]);
+      ("domain", [ test_case "domain declaration" `Quick test_domain_decl ]);
+      ("rule", [ test_case "rule declaration" `Quick test_rule_decl ]);
+      ("action", [ test_case "action" `Quick test_action ]);
+      ( "action_no_params",
+        [ test_case "action no params" `Quick test_action_no_params ] );
+      ("import", [ test_case "import" `Quick test_import ]);
+      ("where", [ test_case "where clause" `Quick test_where_clause ]);
+      ("proposition", [ test_case "proposition" `Quick test_proposition ]);
+      ("all", [ test_case "all" `Quick test_all ]);
+      ("application", [ test_case "application" `Quick test_application ]);
+      ("type_alias", [ test_case "type alias" `Quick test_type_alias ]);
+      ("list_type", [ test_case "list type" `Quick test_list_type ]);
+      ("sum_type", [ test_case "sum type" `Quick test_sum_type ]);
+      ("guard", [ test_case "rule guard" `Quick test_rule_guard ]);
+      ( "membership",
+        [ test_case "membership binding" `Quick test_membership_binding ] );
+      ("existential", [ test_case "existential" `Quick test_existential ]);
+      ("doc_comment", [ test_case "doc comment" `Quick test_doc_comment ]);
+      ( "multi_guard",
+        [ test_case "multiple guards" `Quick test_multiple_guards ] );
+      ( "context",
+        [ test_case "context declaration" `Quick test_context_declaration ] );
+      ( "rule_context",
+        [ test_case "rule with context" `Quick test_rule_with_context ] );
+    ]
