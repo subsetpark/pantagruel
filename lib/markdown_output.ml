@@ -183,7 +183,7 @@ let pp_declaration procs fmt = function
       if contexts <> [] then
         fprintf fmt "{%a} "
           (pp_print_list ~pp_sep:pp_params_sep (fun fmt c ->
-               fprintf fmt "`%s`" c))
+               fprintf fmt "**`%s`**" c))
           contexts;
       fprintf fmt "**%s**" name;
       if params <> [] then
@@ -195,11 +195,11 @@ let pp_declaration procs fmt = function
       fprintf fmt " ⇒ %a." pp_type_expr return_type
   | DeclAction { label; params; guards; context } ->
       (match context with
-      | Some ctx -> fprintf fmt "`%s` ↝ " ctx
+      | Some ctx -> fprintf fmt "**`%s`** ↝ " ctx
       | None -> fprintf fmt "↝ ");
       fprintf fmt "%s" label;
       if params <> [] then
-        fprintf fmt " | %a" (pp_print_list ~pp_sep:pp_params_sep pp_param) params;
+        fprintf fmt " %a" (pp_print_list ~pp_sep:pp_params_sep pp_param) params;
       if guards <> [] then
         fprintf fmt ", %a"
           (pp_print_list ~pp_sep:pp_params_sep (pp_guard procs))
@@ -255,10 +255,10 @@ let pp_chapter procs ?(skip_first_doc = false) ~total_chapters chapter_num fmt
   let should_skip_doc d = skip_first_doc && Some d.loc.line = first_line in
 
   if domains <> [] then begin
-    fprintf fmt "### Domains@\n@\n";
     let any_docs =
       List.exists (fun d -> d.doc <> [] && not (should_skip_doc d)) domains
     in
+    fprintf fmt "### Domains@\n@\n";
     if any_docs then
       List.iter (pp_decl_with_doc procs ~should_skip_doc fmt) domains
     else begin
@@ -317,11 +317,21 @@ let pp_document procs fmt doc =
   end;
 
   if doc.contexts <> [] then begin
-    fprintf fmt "**Contexts:** %a@\n@\n"
-      (pp_print_list
-         ~pp_sep:(fun fmt () -> fprintf fmt ", ")
-         (fun fmt c -> fprintf fmt "`%s`" c.value))
-      doc.contexts
+    let any_docs = List.exists (fun c -> c.doc <> []) doc.contexts in
+    fprintf fmt "### Contexts@\n@\n";
+    if any_docs then
+      List.iter
+        (fun c ->
+          if c.doc <> [] then fprintf fmt "%a@\n@\n" pp_doc_comment c.doc;
+          fprintf fmt "**`%s`**@\n@\n" c.value)
+        doc.contexts
+    else begin
+      fprintf fmt "%a@\n@\n"
+        (pp_print_list
+           ~pp_sep:(fun fmt () -> fprintf fmt ", ")
+           (fun fmt c -> fprintf fmt "**`%s`**" c.value))
+        doc.contexts
+    end
   end;
 
   let total_chapters = List.length doc.chapters in
