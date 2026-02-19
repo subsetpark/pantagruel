@@ -178,7 +178,7 @@ let pp_guard procs fmt = function
 
 let pp_declaration procs fmt = function
   | DeclDomain name -> fprintf fmt "`%s`." name
-  | DeclAlias (name, te) -> fprintf fmt "**%s** = %a." name pp_type_expr te
+  | DeclAlias (name, te) -> fprintf fmt "`%s` = %a." name pp_type_expr te
   | DeclRule { name; params; guards; return_type; contexts } ->
       if contexts <> [] then
         fprintf fmt "{%a} "
@@ -222,68 +222,99 @@ let md_declaration procs d = to_string (pp_declaration procs) d
 
 (* --- Markdown document rendering --- *)
 
-let pp_doc_comment fmt doc = fprintf fmt "> %s" (String.concat " " doc)
+let rec drop n lst =
+  if n <= 0 then lst
+  else match lst with [] -> [] | _ :: rest -> drop (n - 1) rest
 
-let pp_decl_with_doc procs ~should_skip_doc fmt d =
-  if d.doc <> [] && not (should_skip_doc d) then
-    fprintf fmt "%a@\n@\n" pp_doc_comment d.doc;
+let pp_doc_comment fmt doc =
+  let pp_paragraph fmt para =
+    fprintf fmt "> %s" (String.concat " " para)
+  in
+  pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt "@\n>@\n") pp_paragraph fmt
+    doc
+
+let pp_decl_with_doc procs ~skip_doc_groups fmt d =
+  let doc = drop skip_doc_groups d.doc in
+  if doc <> [] then fprintf fmt "%a@\n@\n" pp_doc_comment doc;
   fprintf fmt "%a@\n@\n" (pp_declaration procs) d.value
 
-let pp_chapter procs ?(skip_first_doc = false) ~total_chapters chapter_num fmt
-    chapter =
+let pp_chapter procs ?(skip_first_doc_groups = 0) ~total_chapters chapter_num
+    fmt chapter =
   if total_chapters > 1 then fprintf fmt "## Chapter %d@\n@\n" chapter_num;
 
   let first_line =
     match chapter.head with d :: _ -> Some d.loc.line | [] -> None
   in
 
-  let domains, aliases, rule_decls, action_decls =
+  let domains, rule_decls, action_decls =
     List.fold_left
-      (fun (ds, as_, rs, acts) decl ->
+      (fun (ds, rs, acts) decl ->
         match decl.value with
-        | DeclDomain _ -> (decl :: ds, as_, rs, acts)
-        | DeclAlias _ -> (ds, decl :: as_, rs, acts)
-        | DeclRule _ -> (ds, as_, decl :: rs, acts)
-        | DeclAction _ -> (ds, as_, rs, decl :: acts))
-      ([], [], [], []) chapter.head
+        | DeclDomain _ | DeclAlias _ -> (decl :: ds, rs, acts)
+        | DeclRule _ -> (ds, decl :: rs, acts)
+        | DeclAction _ -> (ds, rs, decl :: acts))
+      ([], [], []) chapter.head
   in
   let domains = List.rev domains in
-  let aliases = List.rev aliases in
   let rule_decls = List.rev rule_decls in
   let action_decls = List.rev action_decls in
 
-  let should_skip_doc d = skip_first_doc && Some d.loc.line = first_line in
+  let skip_for d =
+    if skip_first_doc_groups > 0 && Some d.loc.line = first_line then
+      skip_first_doc_groups
+    else 0
+  in
+
+  let section_header_doc decls =
+    match decls with
+    | first :: _ ->
+        let doc = drop (skip_for first) first.doc in
+        if doc <> [] && not first.doc_adjacent then Some doc else None
+    | [] -> None
+  in
+
+  let pp_domain_name fmt d =
+    match d.value with
+    | DeclDomain n | DeclAlias (n, _) -> fprintf fmt "`%s`" n
+    | _ -> ()
+  in
 
   if domains <> [] then begin
-    let any_docs =
-      List.exists (fun d -> d.doc <> [] && not (should_skip_doc d)) domains
-    in
     fprintf fmt "### Domains@\n@\n";
-    if any_docs then
-      List.iter (pp_decl_with_doc procs ~should_skip_doc fmt) domains
-    else begin
-      pp_print_list
-        ~pp_sep:(fun fmt () -> fprintf fmt ", ")
-        (fun fmt d ->
-          match d.value with DeclDomain n -> fprintf fmt "`%s`" n | _ -> ())
-        fmt domains;
-      fprintf fmt "@\n@\n"
-    end
-  end;
-
-  if aliases <> [] then begin
-    fprintf fmt "### Types@\n@\n";
-    List.iter (pp_decl_with_doc procs ~should_skip_doc fmt) aliases
+    match section_header_doc domains with
+    | Some doc ->
+        fprintf fmt "%a@\n@\n" pp_doc_comment doc;
+        pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ") pp_domain_name
+          fmt domains;
+        fprintf fmt "@\n@\n"
+    | None ->
+        let any_docs =
+          List.exists (fun d -> drop (skip_for d) d.doc <> []) domains
+        in
+        if any_docs then
+          List.iter
+            (fun d ->
+              pp_decl_with_doc procs ~skip_doc_groups:(skip_for d) fmt d)
+            domains
+        else begin
+          pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt ", ") pp_domain_name
+            fmt domains;
+          fprintf fmt "@\n@\n"
+        end
   end;
 
   if rule_decls <> [] then begin
     fprintf fmt "### Rules@\n@\n";
-    List.iter (pp_decl_with_doc procs ~should_skip_doc fmt) rule_decls
+    List.iter
+      (fun d -> pp_decl_with_doc procs ~skip_doc_groups:(skip_for d) fmt d)
+      rule_decls
   end;
 
   if action_decls <> [] then begin
     fprintf fmt "### Action@\n@\n";
-    List.iter (pp_decl_with_doc procs ~should_skip_doc fmt) action_decls
+    List.iter
+      (fun d -> pp_decl_with_doc procs ~skip_doc_groups:(skip_for d) fmt d)
+      action_decls
   end;
 
   if chapter.body <> [] then begin
@@ -296,16 +327,29 @@ let pp_chapter procs ?(skip_first_doc = false) ~total_chapters chapter_num fmt
   end
 
 let pp_document procs fmt doc =
-  (match doc.module_name with
-  | Some name -> fprintf fmt "# Module %s@\n@\n" name
-  | None -> ());
-
-  let has_module_doc =
+  let skip_first_doc_groups =
     match doc.chapters with
     | { head = first :: _; _ } :: _ when first.doc <> [] ->
-        fprintf fmt "%s@\n@\n" (String.concat "\n" first.doc);
-        true
-    | _ -> false
+        if not first.doc_adjacent then begin
+          (* All doc groups float above the declaration — module-level doc *)
+          List.iter
+            (fun para -> fprintf fmt "%s@\n@\n" (String.concat "\n" para))
+            first.doc;
+          List.length first.doc
+        end
+        else
+          let n = List.length first.doc in
+          if n > 1 then begin
+            (* Multiple groups: earlier groups are module doc, last is item doc *)
+            List.iteri
+              (fun i para ->
+                if i < n - 1 then
+                  fprintf fmt "%s@\n@\n" (String.concat "\n" para))
+              first.doc;
+            n - 1
+          end
+          else 0
+    | _ -> 0
   in
 
   if doc.imports <> [] then begin
@@ -337,8 +381,10 @@ let pp_document procs fmt doc =
   let total_chapters = List.length doc.chapters in
   List.iteri
     (fun i ch ->
-      let skip_first_doc = i = 0 && has_module_doc in
-      pp_chapter procs ~skip_first_doc ~total_chapters (i + 1) fmt ch)
+      let skip_first_doc_groups =
+        if i = 0 then skip_first_doc_groups else 0
+      in
+      pp_chapter procs ~skip_first_doc_groups ~total_chapters (i + 1) fmt ch)
     doc.chapters
 
 let md_document procs doc = to_string (pp_document procs) doc
