@@ -16,7 +16,6 @@ type type_error =
   | ExpectedBool of ty * loc
   | PrimedNonRule of string * loc
   | PrimeOutsideActionContext of string * loc
-  | ActionInExpression of string * loc
   | OverrideRequiresArity1 of string * int * loc
   | ProjectionOutOfBounds of int * int * loc
   | PropositionNotBool of ty * loc
@@ -126,21 +125,13 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
   | EExists (params, guards, body) -> check_quantifier ctx params guards body
   | EOverride (name, pairs) -> check_override ctx name pairs
 
-and check_application ctx func_expr func_ty args =
+and check_application ctx _func_expr func_ty args =
   match func_ty with
   | TyFunc (param_tys, ret_ty) ->
       if List.length args <> List.length param_tys then
         Error (ArityMismatch (List.length param_tys, List.length args, ctx.loc))
       else begin
-        (* Check actions cannot be applied *)
         match ret_ty with
-        | None ->
-            let name =
-              match func_expr with
-              | EVar n | EPrimed n -> n
-              | _ -> format_ty func_ty
-            in
-            Error (ActionInExpression (name, ctx.loc))
         | Some ret ->
             let* _ =
               map_result
@@ -151,6 +142,9 @@ and check_application ctx func_expr func_ty args =
                 (List.combine args param_tys)
             in
             Ok ret
+        | None ->
+            (* Actions are not in term namespace, so this is unreachable *)
+            assert false
       end
   | TyList elem_ty -> (
       (* List indexing or search *)
@@ -375,8 +369,8 @@ let find_action (head : declaration located list) =
   List.find_map
     (fun decl ->
       match decl.value with
-      | DeclAction { name; params; context; _ } ->
-          Some (name, params, context)
+      | DeclAction { label; params; context; _ } ->
+          Some (label, params, context)
       | _ -> None)
     head
 

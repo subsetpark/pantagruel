@@ -117,7 +117,7 @@ User.
 Document.
 owner d: Document => User.
 nobody => User.
-~> check-out u: User, d: Document.
+~> Check out | u: User, d: Document.
 ---
 owner' d = u.
 |}
@@ -148,7 +148,7 @@ let test_rule_guard () =
 
 Account.
 balance a: Account => Nat.
-~> withdraw a: Account, amount: Nat, balance a >= amount.
+~> Withdraw | a: Account, amount: Nat, balance a >= amount.
 ---
 balance' a = balance a - amount.
 |}
@@ -246,7 +246,7 @@ let test_prime_on_variable () =
   check_fails {|module TEST.
 
 User.
-~> do-thing u: User.
+~> Do thing | u: User.
 ---
 all u: User | u' = u.
 |}
@@ -255,8 +255,8 @@ let test_multiple_actions () =
   check_fails {|module TEST.
 
 User.
-~> action1 u: User.
-~> action2 u: User.
+~> Action 1 | u: User.
+~> Action 2 | u: User.
 ---
 |}
 
@@ -269,7 +269,7 @@ let test_guard_not_boolean () =
 
 Account.
 balance a: Account => Nat.
-~> withdraw a: Account, amount: Nat, balance a.
+~> Withdraw | a: Account, amount: Nat, balance a.
 ---
 |}
 
@@ -300,7 +300,7 @@ let test_guard_uses_params () =
 
 Account.
 balance a: Account => Nat.
-~> withdraw a: Account, amount: Nat, amount > 0.
+~> Withdraw | a: Account, amount: Nat, amount > 0.
 ---
 |}
 
@@ -572,7 +572,7 @@ all a: Account | balance a >= 0.
 
 where
 
-Banking ~> withdraw a: Account.
+Banking ~> Withdraw | a: Account.
 ---
 balance' a = balance a - 1.
 owner' a = a.
@@ -591,7 +591,7 @@ all a: Account | balance a >= 0.
 
 where
 
-Banking ~> withdraw a: Account.
+Banking ~> Withdraw | a: Account.
 ---
 owner' a = a.
 |}
@@ -603,7 +603,7 @@ let test_footprint_on_action () =
 context Banking.
 
 Account.
-{Banking} ~> do-thing a: Account.
+{Banking} ~> Do thing | a: Account.
 ---
 |} in
     fail "Expected parse error"
@@ -614,7 +614,7 @@ let test_action_not_last_in_chapter () =
   check_fails {|module TEST.
 
 User.
-~> do-thing u: User.
+~> Do thing | u: User.
 helper u: User => Bool.
 ---
 |}
@@ -624,7 +624,7 @@ let test_undefined_context () =
   check_fails {|module TEST.
 
 Account.
-NoSuchContext ~> withdraw a: Account.
+NoSuchContext ~> Withdraw | a: Account.
 ---
 |}
 
@@ -635,7 +635,7 @@ let test_no_context_priming_unrestricted () =
 Account.
 balance a: Account => Nat.
 owner a: Account => Account.
-~> withdraw a: Account.
+~> Withdraw | a: Account.
 ---
 balance' a = balance a - 1.
 owner' a = a.

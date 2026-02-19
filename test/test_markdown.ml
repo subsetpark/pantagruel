@@ -55,7 +55,7 @@ let test_primed_rule () =
 User.
 Document.
 owner d: Document => User.
-~> check-out u: User, d: Document.
+~> Check out | u: User, d: Document.
 ---
 owner' d = u.
 |} in
@@ -162,12 +162,12 @@ let test_decl_rule_with_return () =
   | _ -> fail "expected two declarations"
 
 let test_decl_action () =
-  let _, doc = render "module T.\nUser.\nDocument.\n~> check-out u: User, d: Document.\n---\n" in
-  let procs = Markdown_output.StringSet.singleton "check-out" in
+  let _, doc = render "module T.\nUser.\nDocument.\n~> Check out | u: User, d: Document.\n---\n" in
+  let procs = Markdown_output.StringSet.empty in
   match doc.Ast.chapters with
   | [{ head = [_; _; decl]; _ }] ->
       let md = Markdown_output.md_declaration procs decl.value in
-      check string "action decl" "↝ **check-out** *u*: `User`, *d*: `Document`." md
+      check string "action decl" "↝ Check out | *u*: `User`, *d*: `Document`." md
   | _ -> fail "expected three declarations"
 
 (* --- Document structure --- *)

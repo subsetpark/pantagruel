@@ -53,6 +53,7 @@ let token_to_string = function
   | Parser.RBRACE -> "RBRACE"
   | Parser.SQUIG_ARROW -> "SQUIG_ARROW"
   | Parser.CONTEXT -> "CONTEXT"
+  | Parser.ACTION_LABEL s -> "ACTION_LABEL(" ^ s ^ ")"
   | Parser.EOF -> "EOF"
 
 let token_testable = testable (fun fmt t -> Format.pp_print_string fmt (token_to_string t))
@@ -129,12 +130,17 @@ let test_dcolon () =
     (lex_all "Module::name")
 
 let test_squig_arrow () =
-  check (list token_testable) "squig arrow"
-    [Parser.SQUIG_ARROW; Parser.LOWER_IDENT "withdraw"; Parser.EOF]
-    (lex_all "~> withdraw");
+  check (list token_testable) "squig arrow with label"
+    [Parser.SQUIG_ARROW; Parser.ACTION_LABEL "Withdraw"; Parser.PIPE;
+     Parser.LOWER_IDENT "a"; Parser.COLON; Parser.UPPER_IDENT "Account"; Parser.DOT; Parser.EOF]
+    (lex_all "~> Withdraw | a: Account.");
   check (list token_testable) "squig arrow with context"
-    [Parser.UPPER_IDENT "Banking"; Parser.SQUIG_ARROW; Parser.LOWER_IDENT "withdraw"; Parser.EOF]
-    (lex_all "Banking ~> withdraw")
+    [Parser.UPPER_IDENT "Banking"; Parser.SQUIG_ARROW; Parser.ACTION_LABEL "Withdraw"; Parser.DOT; Parser.EOF]
+    (lex_all "Banking ~> Withdraw.");
+  check (list token_testable) "squig arrow label with spaces"
+    [Parser.SQUIG_ARROW; Parser.ACTION_LABEL "Check out a book"; Parser.PIPE;
+     Parser.LOWER_IDENT "u"; Parser.COLON; Parser.UPPER_IDENT "User"; Parser.DOT; Parser.EOF]
+    (lex_all "~> Check out a book | u: User.")
 
 let () =
   run "Lexer" [

@@ -18,14 +18,14 @@ all a: Account | balance a >= 0.
 where
 
 > Withdrawal reduces the balance of the target account.
-Accounts ~> withdraw a: Account, amount: Nat, balance a >= amount.
+Accounts ~> Withdraw | a: Account, amount: Nat, balance a >= amount.
 ---
 balance' a = balance a - amount.
 
 where
 
 > Transfer moves funds between accounts.
-Accounts ~> transfer from: Account, to: Account, amount: Nat, balance from >= amount.
+Accounts ~> Transfer | from: Account, to: Account, amount: Nat, balance from >= amount.
 ---
 balance' from = balance from - amount.
 balance' to = balance to + amount.

@@ -105,7 +105,7 @@ type declaration =
           (** Context footprint: "{Accounts} balance ..." *)
     }
   | DeclAction of {
-      name : lower_ident;
+      label : string;
       params : param list;
       guards : guard list;
       context : upper_ident option;  (** Ctx in "Ctx ~> action" *)

@@ -64,13 +64,14 @@ Pantagruel is a specification language checker written in OCaml. It processes `.
 - Domains: `User.` declares a domain type
 - Type aliases: `Point = Nat * Nat.`
 - Rules: `owner d: Document => User.` (with return type via `=>`)
-- Actions: `~> check-out u: User.` (state transitions via `~>`, no return type)
+- Actions: `~> Check out | u: User.` (state transitions via `~>`, free-form label, `|` before params)
 - Actions enable primed expressions (`owner' d`) for state transitions
+- Action labels are not in the term namespace — they're purely human-readable annotations
 - Quantifiers: `all u: User | ...` and `some x: T | ...`
 - Tuple projection: `point.1`, `point.2`
 - List cardinality: `#users`
 - Membership: `x in Domain`
-- Contexts: `context Accounts.` at module level, `{Accounts} balance ...` for footprint, `Accounts ~> withdraw ...` for actions
+- Contexts: `context Accounts.` at module level, `{Accounts} balance ...` for footprint, `Accounts ~> Withdraw | ...` for actions
 
 ## Dependencies
 

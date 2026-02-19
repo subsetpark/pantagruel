@@ -39,9 +39,6 @@ let format_type_error err =
   | PrimeOutsideActionContext (name, loc) ->
       fmt loc
         (Printf.sprintf "Primed '%s' only valid in action context" name)
-  | ActionInExpression (name, loc) ->
-      fmt loc
-        (Printf.sprintf "Action '%s' cannot be used in expression" name)
   | OverrideRequiresArity1 (name, arity, loc) ->
       fmt loc
         (Printf.sprintf "Override requires arity-1 rule, '%s' has arity %d"

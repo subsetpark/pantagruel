@@ -139,7 +139,7 @@ Product and sum types must have at least two components. They are **positional**
 
 Products are constructed with parentheses — `(1, 2)` — and accessed with projection — `p.1`, `p.2` (1-indexed).
 
-**Function types.** Rule and action declarations give rise to function types *(T₁, ..., Tₙ) → R* (returning rules) or *(T₁, ..., Tₙ) → Void* (actions). Function types are internal to the checker and cannot appear in user-written type expressions.
+**Function types.** Rule declarations give rise to function types *(T₁, ..., Tₙ) → R*. Actions are not in the term namespace and have no function type. Function types are internal to the checker and cannot appear in user-written type expressions.
 
 ### Subtyping
 
@@ -247,8 +247,7 @@ Summary of which relation governs each context:
 
 1. The argument count must equal the parameter count.
 2. Each argument type must be a **subtype** of its parameter: if *eᵢ* : *Sᵢ*, then *Sᵢ* ≤ *Tᵢ*.
-3. The return type must not be Void — actions cannot appear in expression position.
-4. Result type: *R*.
+3. Result type: *R*.
 
 #### List Application
 
@@ -398,19 +397,21 @@ origin => Point.
 
 ### Action Declaration
 
-Declares an action (state transition) with `~>`. Actions have no return type and enable primed expressions for rules in the chapter body:
+Declares an action (state transition) with `~>`. Actions have no return type and enable primed expressions for rules in the chapter body. Action labels are free-form text (spaces, capitals, keywords all allowed), separated from parameters by `|`:
 
 ```
 // Action (no context)
-~> check-out u: User, d: Document.
-~> deposit a: Account, amount: Nat.
+~> Check out | u: User, d: Document.
+~> Deposit | a: Account, amount: Nat.
+~> Do something.
 
 // Action with context
-Accounts ~> withdraw a: Account, amount: Nat.
+Accounts ~> Withdraw | a: Account, amount: Nat.
 ```
 
-**Syntax**: `[Context] ~> name [params] [guards].`
+**Syntax**: `[Context] ~> label [| params [, guards]].`
 
+- Action labels are purely human-readable annotations — they are not in the term namespace
 - Actions must be the **last** declaration in a chapter head
 - Each chapter may declare at most one action
 
@@ -419,7 +420,7 @@ Accounts ~> withdraw a: Account, amount: Nat.
 Guards constrain when a rule or action applies. Guards must be boolean expressions and are type-checked with the rule's parameters in scope:
 
 ```
-~> withdraw a: Account, amount: Nat, balance a >= amount.
+~> Withdraw | a: Account, amount: Nat, balance a >= amount.
 ```
 
 Guards can reference the rule's parameters (`a`, `amount` in this example) to express preconditions.
@@ -453,10 +454,10 @@ Context footprint is closed within module scope — you can only add a rule to a
 Actions declare which context they operate within using a `Ctx ~>` prefix:
 
 ```
-Accounts ~> withdraw a: Account, amount: Nat.
+Accounts ~> Withdraw | a: Account, amount: Nat.
 ```
 
-This means `withdraw` may modify (prime) any rule that belongs to `Accounts`. Context references work across module boundaries — an action can reference an imported context.
+This means the `Withdraw` action may modify (prime) any rule that belongs to `Accounts`. Context references work across module boundaries — an action can reference an imported context.
 
 Only actions may have a context prefix. Rules (with `=>`) cannot operate within a context.
 
@@ -561,7 +562,7 @@ In chapters with an action, primed expressions refer to post-state values:
 ```
 User.
 balance a: User => Int.
-~> deposit a: User, amount: Nat.
+~> Deposit | a: User, amount: Nat.
 ---
 balance' a = balance a + amount.    // balance after deposit
 ```
@@ -752,20 +753,20 @@ User.
 Account.
 balance a: Account => Int.
 owner a: Account => User.
-~> deposit a: Account, amount: Nat.
+~> Deposit | a: Account, amount: Nat.
 ---
 balance' a = balance a + amount.
 all a: Account, amt: Nat | true.
 
 where
 
-~> withdraw a: Account, amount: Nat.
+~> Withdraw | a: Account, amount: Nat.
 ---
 balance' a = balance a - amount.
 
 where
 
-~> transfer from: Account, to: Account, amount: Nat.
+~> Transfer | from: Account, to: Account, amount: Nat.
 ---
 balance' from = balance from - amount.
 ```
@@ -785,21 +786,21 @@ where
 // Level 1: depends on Account, User
 balance a: Account => Int.
 owner a: Account => User.
-~> deposit a: Account, amount: Nat.   // Action #1
+~> Deposit | a: Account, amount: Nat.   // Action #1
 ---
 balance' a = balance a + amount.   // Tied to deposit
 
 where
 
 // Action #2 (separate chapter)
-~> withdraw a: Account, amount: Nat.
+~> Withdraw | a: Account, amount: Nat.
 ---
 balance' a = balance a - amount.
 
 where
 
 // Action #3 (separate chapter)
-~> transfer from: Account, to: Account, amount: Nat.
+~> Transfer | from: Account, to: Account, amount: Nat.
 ---
 balance' from = balance from - amount.
 ```
@@ -819,10 +820,12 @@ chapter     ::= declaration+ '---' proposition*    // Head must be non-empty
 
 declaration ::= UPPER '.'                                              // Domain
               | UPPER '=' type '.'                                     // Type alias
-              | '{' UPPER (',' UPPER)* '}' LOWER param* guard* '=>' type '.'  // Proc with context footprint
-              | LOWER param* guard* '=>' type '.'                      // Proc with return type
-              | UPPER '~>' LOWER param* guard* '.'                     // Action with context
-              | '~>' LOWER param* guard* '.'                           // Action without context
+              | '{' UPPER (',' UPPER)* '}' LOWER param* guard* '=>' type '.'  // Rule with context footprint
+              | LOWER param* guard* '=>' type '.'                      // Rule with return type
+              | UPPER '~>' LABEL '|' param ((',' param) | (',' guard))* '.'  // Action with context + params
+              | UPPER '~>' LABEL '.'                                   // Action with context, no params
+              | '~>' LABEL '|' param ((',' param) | (',' guard))* '.'  // Action + params
+              | '~>' LABEL '.'                                         // Action, no params
 
 param       ::= LOWER ':' type
 

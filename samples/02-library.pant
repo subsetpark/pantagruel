@@ -16,7 +16,7 @@ book-of l: Loan => Book.
 loan-holder l: Loan => User.
 
 > Action for state transitions
-~> borrow u: User, b: Book.
+~> Borrow | u: User, b: Book.
 
 ---
 > Available books have no borrower constraint

@@ -8,6 +8,7 @@ type t = {
   mutable at_bol : bool;  (** At beginning of line (for doc comments) *)
   mutable pending_docs : string list;  (** Accumulated doc comment lines *)
   mutable last_token : Parser.token option;  (** Last token returned *)
+  mutable in_action_label : bool;  (** After ~>, read free-form label *)
 }
 (** Lexer state *)
 
@@ -16,14 +17,14 @@ let create_from_channel filename channel =
   Sedlexing.set_filename buf filename;
   Doc_comments.clear ();
   (* Clear doc map for new file *)
-  { buf; filename; at_bol = true; pending_docs = []; last_token = None }
+  { buf; filename; at_bol = true; pending_docs = []; last_token = None; in_action_label = false }
 
 let create_from_string filename str =
   let buf = Sedlexing.Utf8.from_string str in
   Sedlexing.set_filename buf filename;
   Doc_comments.clear ();
   (* Clear doc map for new file *)
-  { buf; filename; at_bol = true; pending_docs = []; last_token = None }
+  { buf; filename; at_bol = true; pending_docs = []; last_token = None; in_action_label = false }
 
 (** Take and clear pending doc comments *)
 let take_docs lexer =
@@ -141,9 +142,38 @@ let rec read_string buf acc =
   | eof -> failwith "Unterminated string literal"
   | _ -> assert false
 
+(** Read free-form action label text after ~>.
+    Stops at |, ., //, newline, or eof; rolls back the delimiter. *)
+let read_action_label buf =
+  let content = Buffer.create 64 in
+  let rec loop () =
+    match%sedlex buf with
+    | '|' | '.' ->
+        Sedlexing.rollback buf;
+        String.trim (Buffer.contents content)
+    | "//" ->
+        Sedlexing.rollback buf;
+        String.trim (Buffer.contents content)
+    | newline ->
+        String.trim (Buffer.contents content)
+    | eof ->
+        String.trim (Buffer.contents content)
+    | any ->
+        Buffer.add_string content (Sedlexing.Utf8.lexeme buf);
+        loop ()
+    | _ -> assert false
+  in
+  loop ()
+
 (** Main tokenizer - takes the lexer record *)
 let rec token_impl lexer =
   let buf = lexer.buf in
+  if lexer.in_action_label then begin
+    lexer.in_action_label <- false;
+    let text = read_action_label buf in
+    Parser.ACTION_LABEL text
+  end
+  else
   match%sedlex buf with
   (* Whitespace and newlines *)
   | Plus whitespace -> token_impl lexer
@@ -165,7 +195,9 @@ let rec token_impl lexer =
   | "<=" -> Parser.LE
   | ">=" -> Parser.GE
   | "|->" -> Parser.MAPSTO
-  | "~>" -> Parser.SQUIG_ARROW
+  | "~>" ->
+      lexer.in_action_label <- true;
+      Parser.SQUIG_ARROW
   | '~' -> Parser.NOT
   | '\'' -> Parser.PRIME
   (* Single-char operators *)
@@ -256,6 +288,7 @@ let string_of_token = function
   | Parser.REAL r -> Printf.sprintf "'%g'" r
   | Parser.STRING s -> Printf.sprintf "\"%s\"" s
   | Parser.PROJ n -> Printf.sprintf "'.%d'" n
+  | Parser.ACTION_LABEL s -> Printf.sprintf "action label '%s'" s
   | Parser.EOF -> "end of input"
   | Parser.MODULE -> "'module'"
   | Parser.IMPORT -> "'import'"
@@ -308,6 +341,7 @@ let describe_token = function
   | Parser.REAL _ -> "number"
   | Parser.STRING _ -> "string literal"
   | Parser.PROJ _ -> "projection"
+  | Parser.ACTION_LABEL _ -> "action label"
   | tok -> string_of_token tok
 
 (** All token constructors (with dummy values for parameterized tokens) *)
@@ -361,5 +395,6 @@ let all_tokens =
     Parser.LBRACE;
     Parser.RBRACE;
     Parser.CONTEXT;
+    Parser.ACTION_LABEL "";
     Parser.EOF;
   ]

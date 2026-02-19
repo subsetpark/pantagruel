@@ -25,10 +25,10 @@ let test_rule_decl () =
   check int "declarations" 2 (List.length chapter.Ast.head)
 
 let test_action () =
-  let doc = parse "module TEST.\n\nUser.\n~> check-out u: User.\n---\n" in
+  let doc = parse "module TEST.\n\nUser.\n~> Check out | u: User.\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
   match (List.nth chapter.Ast.head 1).Ast.value with
-  | Ast.DeclAction { name = "check-out"; context = None; _ } -> ()
+  | Ast.DeclAction { label = "Check out"; context = None; _ } -> ()
   | _ -> fail "Expected action"
 
 let test_import () =
@@ -81,7 +81,7 @@ let test_sum_type () =
   | _ -> fail "Expected sum type"
 
 let test_rule_guard () =
-  let doc = parse "module TEST.\n\nAccount.\nbalance a: Account => Nat.\n~> withdraw a: Account, amount: Nat, balance a >= amount.\n---\n" in
+  let doc = parse "module TEST.\n\nAccount.\nbalance a: Account => Nat.\n~> Withdraw | a: Account, amount: Nat, balance a >= amount.\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
   match (List.nth chapter.Ast.head 2).Ast.value with
   | Ast.DeclAction { guards = [Ast.GExpr _]; _ } -> ()
@@ -108,7 +108,7 @@ let test_doc_comment () =
   check (list string) "doc comment" ["This is a doc comment"] decl.Ast.doc
 
 let test_multiple_guards () =
-  let doc = parse "module TEST.\n\nAccount.\nbalance a: Account => Nat.\n~> withdraw a: Account, amount: Nat, amount > 0, balance a >= amount.\n---\n" in
+  let doc = parse "module TEST.\n\nAccount.\nbalance a: Account => Nat.\n~> Withdraw | a: Account, amount: Nat, amount > 0, balance a >= amount.\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
   match (List.nth chapter.Ast.head 2).Ast.value with
   | Ast.DeclAction { guards = [Ast.GExpr _; Ast.GExpr _]; _ } -> ()
@@ -120,19 +120,26 @@ let test_no_module () =
   check int "chapters" 1 (List.length doc.Ast.chapters);
   check int "imports" 0 (List.length doc.Ast.imports)
 
+let test_action_no_params () =
+  let doc = parse "module TEST.\n\nFoo.\n~> Do something.\n---\n" in
+  let chapter = List.hd doc.Ast.chapters in
+  match (List.nth chapter.Ast.head 1).Ast.value with
+  | Ast.DeclAction { label = "Do something"; params = []; guards = []; context = None } -> ()
+  | _ -> fail "Expected no-param action"
+
 let test_context_declaration () =
   let doc = parse "module TEST.\ncontext Banking.\n\nAccount.\n---\n" in
   check int "contexts" 1 (List.length doc.Ast.contexts);
   check string "context name" "Banking" (List.hd doc.Ast.contexts).Ast.value
 
 let test_rule_with_context () =
-  let doc = parse "module TEST.\ncontext Banking.\n\nAccount.\n{Banking} balance a: Account => Nat.\nBanking ~> withdraw a: Account.\n---\n" in
+  let doc = parse "module TEST.\ncontext Banking.\n\nAccount.\n{Banking} balance a: Account => Nat.\nBanking ~> Withdraw | a: Account.\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
   (match (List.nth chapter.Ast.head 1).Ast.value with
   | Ast.DeclRule { name = "balance"; contexts = ["Banking"]; _ } -> ()
   | _ -> fail "Expected rule with context footprint");
   (match (List.nth chapter.Ast.head 2).Ast.value with
-  | Ast.DeclAction { name = "withdraw"; context = Some "Banking"; _ } -> ()
+  | Ast.DeclAction { label = "Withdraw"; context = Some "Banking"; _ } -> ()
   | _ -> fail "Expected action with context")
 
 let () =
@@ -142,6 +149,7 @@ let () =
     "domain", [test_case "domain declaration" `Quick test_domain_decl];
     "rule", [test_case "rule declaration" `Quick test_rule_decl];
     "action", [test_case "action" `Quick test_action];
+    "action_no_params", [test_case "action no params" `Quick test_action_no_params];
     "import", [test_case "import" `Quick test_import];
     "where", [test_case "where clause" `Quick test_where_clause];
     "proposition", [test_case "proposition" `Quick test_proposition];

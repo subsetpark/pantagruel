@@ -71,7 +71,7 @@ Loan.
 
 > Rules
 available b: Book => Bool.
-~> borrow u: User, b: Book.
+~> Borrow | u: User, b: Book.
 ---
 > Propositions about the library
 all b: Book | available b -> b in Book.
@@ -102,10 +102,11 @@ distance p: Point, q: Point => Real.
 nobody => User.
 ```
 
-**Actions** define state transitions (no return type):
+**Actions** define state transitions (no return type). Action labels are free-form text, separated from parameters by `|`:
 ```
 // Action (with ~>) - for state transitions
-~> check-out u: User, d: Document.
+~> Check out | u: User, d: Document.
+~> Do something.
 ```
 
 ### Propositions
@@ -137,7 +138,7 @@ Actions model state transitions. Within a chapter that declares an action, you c
 User.
 Document.
 owner d: Document => User.
-~> check-out u: User, d: Document.
+~> Check out | u: User, d: Document.
 ---
 // owner' refers to owner after check-out
 owner' d = u.
@@ -154,7 +155,7 @@ context Accounts.
 Account.
 {Accounts} balance a: Account => Nat.
 
-Accounts ~> withdraw a: Account, amount: Nat.
+Accounts ~> Withdraw | a: Account, amount: Nat.
 ---
 balance' a = balance a - amount.
 ```
@@ -215,7 +216,7 @@ module ACCOUNTS.
 
 Account.
 balance a: Account => Int.
-~> deposit a: Account, amount: Nat.
+~> Deposit | a: Account, amount: Nat.
 ---
 // Balance increases after deposit
 balance' a = balance a + amount.

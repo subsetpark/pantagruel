@@ -45,6 +45,7 @@
 %token DOT COMMA COLON DCOLON PIPE SEPARATOR
 %token LPAREN RPAREN LBRACKET RBRACKET
 %token LBRACE RBRACE CONTEXT
+%token <string> ACTION_LABEL
 %token EOF
 
 (* Precedence - lowest to highest *)
@@ -116,24 +117,45 @@ declaration:
         return_type = ret;
         contexts = [];
       }) }
-  | ctx=UPPER_IDENT SQUIG_ARROW name=LOWER_IDENT pg=rule_params_guards DOT
+  | ctx=UPPER_IDENT SQUIG_ARROW label=ACTION_LABEL PIPE pg=action_params_guards DOT
     { let doc = Doc_comments.get_at_pos $startpos in
       let (params, guards) = pg in
       located_with_doc doc $startpos $endpos (DeclAction {
-        name;
+        label;
         params;
         guards;
         context = Some ctx;
       }) }
-  | SQUIG_ARROW name=LOWER_IDENT pg=rule_params_guards DOT
+  | ctx=UPPER_IDENT SQUIG_ARROW label=ACTION_LABEL DOT
+    { let doc = Doc_comments.get_at_pos $startpos in
+      located_with_doc doc $startpos $endpos (DeclAction {
+        label;
+        params = [];
+        guards = [];
+        context = Some ctx;
+      }) }
+  | SQUIG_ARROW label=ACTION_LABEL PIPE pg=action_params_guards DOT
     { let doc = Doc_comments.get_at_pos $startpos in
       let (params, guards) = pg in
       located_with_doc doc $startpos $endpos (DeclAction {
-        name;
+        label;
         params;
         guards;
         context = None;
       }) }
+  | SQUIG_ARROW label=ACTION_LABEL DOT
+    { let doc = Doc_comments.get_at_pos $startpos in
+      located_with_doc doc $startpos $endpos (DeclAction {
+        label;
+        params = [];
+        guards = [];
+        context = None;
+      }) }
+
+(* Parameters and guards for actions (after |, must start with param) *)
+action_params_guards:
+  | p=param rest=list(preceded(COMMA, rule_param_or_guard))
+    { split_params_guards (GParam p :: rest) }
 
 (* Parameters and guards for rules - parsed together then split *)
 rule_params_guards:

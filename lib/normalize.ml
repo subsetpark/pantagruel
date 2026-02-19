@@ -131,7 +131,7 @@ let decl_name = function
   | DeclDomain name -> name
   | DeclAlias (name, _) -> name
   | DeclRule { name; _ } -> name
-  | DeclAction { name; _ } -> name
+  | DeclAction { label; _ } -> label
 
 (** Is this a type-namespace declaration? *)
 let is_type_decl = function
@@ -290,11 +290,11 @@ let normalize (doc : document) : document =
     let action_units =
       List.map
         (fun ad ->
-          (* Find the original chapter this action came from *)
+          (* Find the original chapter this action came from (by location) *)
           let orig_chapter =
             List.find
               (fun ch ->
-                List.exists (fun d -> decl_name d.value = ad.name) ch.head)
+                List.exists (fun d -> d.Ast.loc = ad.decl.Ast.loc) ch.head)
               doc.chapters
           in
           let params = action_params orig_chapter in

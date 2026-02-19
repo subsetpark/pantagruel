@@ -148,18 +148,11 @@ let collect_chapter_head ~chapter ~doc_contexts env
             env contexts
         in
         Ok env
-    | DeclAction { name; params; guards = _; _ } ->
-        let* param_types =
+    | DeclAction { label; params; guards = _; _ } ->
+        let* _param_types =
           map_result (fun p -> resolve_type env p.param_type decl.loc) params
         in
-        actions := (name, decl.loc) :: !actions;
-        let proc_ty = TyFunc (param_types, None) in
-        let* env =
-          match Env.lookup_term name env with
-          | Some existing when existing.module_origin = None ->
-              Error (DuplicateRule (name, decl.loc, existing.loc))
-          | _ -> Ok (Env.add_rule name proc_ty decl.loc ~chapter env)
-        in
+        actions := (label, decl.loc) :: !actions;
         Ok env
     | _ -> Ok env (* Domains and aliases already done *)
   in
@@ -193,8 +186,8 @@ let collect_chapter_head ~chapter ~doc_contexts env
     let rec check_last = function
       | [] -> Ok ()
       | [ _ ] -> Ok ()
-      | { value = DeclAction { name; _ }; loc; _ } :: _ :: _ ->
-          Error (ActionNotLast (name, loc))
+      | { value = DeclAction { label; _ }; loc; _ } :: _ :: _ ->
+          Error (ActionNotLast (label, loc))
       | _ :: rest -> check_last rest
     in
     check_last decls
