@@ -154,7 +154,7 @@ let pp_guard fmt = function
 let pp_declaration fmt = function
   | DeclDomain name -> fprintf fmt "%s." name
   | DeclAlias (name, te) -> fprintf fmt "%s = %a." name pp_type_expr te
-  | DeclProc { name; params; guards; return_type } ->
+  | DeclProc { name; params; guards; return_type; context } ->
       pp_print_string fmt name;
       if params <> [] then
         fprintf fmt " %a" (pp_print_list ~pp_sep:pp_sep_comma pp_param) params;
@@ -163,7 +163,14 @@ let pp_declaration fmt = function
       (match return_type with
        | None -> ()
        | Some te -> fprintf fmt " => %a" pp_type_expr te);
+      (match context with
+       | None -> ()
+       | Some ctx -> fprintf fmt " in %s" ctx);
       pp_print_char fmt '.'
+  | DeclContext (name, members) ->
+      fprintf fmt "context %s = { %a }."
+        name
+        (pp_print_list ~pp_sep:pp_sep_comma pp_print_string) members
 
 (* --- String-returning wrappers --- *)
 

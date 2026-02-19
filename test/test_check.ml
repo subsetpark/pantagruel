@@ -557,6 +557,78 @@ do-thing f: Foo => Nat.
 ---
 |}
 
+(* --- Context tests --- *)
+
+let test_context_priming_succeeds () =
+  (* Priming a function that is in the active context succeeds *)
+  check_ok {|module TEST.
+
+Account.
+balance a: Account => Nat.
+owner a: Account => Account.
+context Banking = { balance, owner }.
+withdraw a: Account in Banking.
+---
+balance' a = balance a - 1.
+owner' a = a.
+|}
+
+let test_context_extracontextual_fails () =
+  (* Priming a function outside the context is rejected *)
+  check_fails {|module TEST.
+
+Account.
+balance a: Account => Nat.
+owner a: Account => Account.
+context Banking = { balance }.
+withdraw a: Account in Banking.
+---
+owner' a = a.
+|}
+
+let test_context_member_not_function () =
+  (* Context member must be a function (not void, not domain) *)
+  check_fails {|module TEST.
+
+Account.
+do-thing a: Account.
+context Banking = { do-thing }.
+---
+|}
+
+let test_context_on_non_void () =
+  (* Context annotation only valid on void procs *)
+  check_fails {|module TEST.
+
+Account.
+balance a: Account => Nat.
+context Banking = { balance }.
+get-balance a: Account => Nat in Banking.
+---
+|}
+
+let test_undefined_context () =
+  (* Referencing a non-existent context *)
+  check_fails {|module TEST.
+
+Account.
+withdraw a: Account in NoSuchContext.
+---
+|}
+
+let test_no_context_priming_unrestricted () =
+  (* Without a context, priming is unrestricted (existing behavior) *)
+  check_ok {|module TEST.
+
+Account.
+balance a: Account => Nat.
+owner a: Account => Account.
+withdraw a: Account.
+---
+balance' a = balance a - 1.
+owner' a = a.
+|}
+
 let test_qualified_type_in_alias () =
   (* TQName used in a type alias definition *)
   let env = make_import_env [
@@ -655,5 +727,13 @@ let () =
       test_case "qualified in alias" `Quick test_qualified_type_in_alias;
       test_case "qualified in param" `Quick test_qualified_type_in_proc_param;
       test_case "qualified in return" `Quick test_qualified_type_in_return;
+    ];
+    "context", [
+      test_case "priming in context" `Quick test_context_priming_succeeds;
+      test_case "extracontextual fails" `Quick test_context_extracontextual_fails;
+      test_case "member not function" `Quick test_context_member_not_function;
+      test_case "context on non-void" `Quick test_context_on_non_void;
+      test_case "undefined context" `Quick test_undefined_context;
+      test_case "no context unrestricted" `Quick test_no_context_priming_unrestricted;
     ];
   ]

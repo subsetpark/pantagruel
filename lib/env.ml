@@ -38,8 +38,14 @@ type t = {
   (** Current module name *)
   current_module: string;
 
+  (** Context declarations: context name → member function names *)
+  contexts: string list StringMap.t;
+
   (** Void procedure in current chapter (for prime checking) *)
   void_proc: string option;
+
+  (** Active context for current void proc (for primed-in-context enforcement) *)
+  proc_context: string option;
 
   (** Variables bound in current scope (for prime rejection) *)
   local_vars: string list;
@@ -51,7 +57,9 @@ let empty module_name = {
   imported_types = StringMap.empty;
   imported_terms = StringMap.empty;
   current_module = module_name;
+  contexts = StringMap.empty;
   void_proc = None;
+  proc_context = None;
   local_vars = [];
 }
 
@@ -84,6 +92,18 @@ let with_void_proc name env =
 (** Clear the Void procedure context *)
 let clear_void_proc env =
   { env with void_proc = None }
+
+(** Add a context declaration *)
+let add_context name members env =
+  { env with contexts = StringMap.add name members env.contexts }
+
+(** Lookup a context by name *)
+let lookup_context name env =
+  StringMap.find_opt name env.contexts
+
+(** Set the active proc context *)
+let with_proc_context ctx env =
+  { env with proc_context = ctx }
 
 (** Check if a name is a locally-bound variable *)
 let is_local_var name env =

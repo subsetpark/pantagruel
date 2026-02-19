@@ -106,6 +106,7 @@ let keyword_or_lower_ident = function
   | "some" -> Parser.EXISTS
   | "in" -> Parser.IN
   | "subset" -> Parser.SUBSET
+  | "context" -> Parser.CONTEXT
   | s -> Parser.LOWER_IDENT s
 
 (** Skip line comment *)
@@ -233,6 +234,8 @@ let rec token_impl lexer =
   | ')' -> Parser.RPAREN
   | '[' -> Parser.LBRACKET
   | ']' -> Parser.RBRACKET
+  | '{' -> Parser.LBRACE
+  | '}' -> Parser.RBRACE
 
   (* String literal *)
   | '"' -> read_string buf (Buffer.create 64)
@@ -333,6 +336,9 @@ let string_of_token = function
   | Parser.RPAREN -> "')'"
   | Parser.LBRACKET -> "'['"
   | Parser.RBRACKET -> "']'"
+  | Parser.LBRACE -> "'{'"
+  | Parser.RBRACE -> "'}'"
+  | Parser.CONTEXT -> "'context'"
 
 (** Describe a token category (for "expected X" messages) *)
 let describe_token = function
@@ -360,5 +366,6 @@ let all_tokens = [
   Parser.DOT; Parser.COMMA; Parser.COLON; Parser.DCOLON; Parser.PIPE;
   Parser.SEPARATOR;
   Parser.LPAREN; Parser.RPAREN; Parser.LBRACKET; Parser.RBRACKET;
+  Parser.LBRACE; Parser.RBRACE; Parser.CONTEXT;
   Parser.EOF;
 ]

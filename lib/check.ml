@@ -24,6 +24,7 @@ type type_error =
   | ShadowingTypeMismatch of string * ty * ty * loc  (* name, existing_ty, new_ty *)
   | AmbiguousName of string * string list * loc
   | UnboundQualified of string * string * loc
+  | PrimedExtracontextual of string * string * loc  (** function name, context name *)
 [@@deriving show]
 
 (** Type checking context *)
@@ -92,7 +93,15 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
         Error (PrimedNonProcedure (name, ctx.loc))
       else
         (match Env.lookup_term name ctx.env with
-         | Some { kind = Env.KProc ty; _ } -> Ok ty
+         | Some { kind = Env.KProc ty; _ } ->
+             (* If proc has a context, check membership *)
+             (match ctx.env.proc_context with
+              | Some ctx_name ->
+                  (match Env.lookup_context ctx_name ctx.env with
+                   | Some members when List.mem name members -> Ok ty
+                   | Some _ -> Error (PrimedExtracontextual (name, ctx_name, ctx.loc))
+                   | None -> Ok ty)  (* Shouldn't happen: validated in collect *)
+              | None -> Ok ty)
          | Some { kind = Env.KVar _; _ } ->
              Error (PrimedNonProcedure (name, ctx.loc))
          | Some { kind = (Env.KDomain | Env.KAlias _); _ } ->
@@ -366,7 +375,7 @@ let check_proc_guards ctx (decl : declaration located) =
 let find_void_proc (head : declaration located list) =
   List.find_map (fun decl ->
     match decl.value with
-    | DeclProc { name; params; return_type = None; _ } -> Some (name, params)
+    | DeclProc { name; params; return_type = None; context; _ } -> Some (name, params, context)
     | _ -> None)
     head
 
@@ -385,7 +394,9 @@ let check_chapter_body ~chapter_idx env (chapter : chapter) =
 
   (* Set void proc context if chapter has one *)
   let env_with_void = match find_void_proc chapter.head with
-    | Some (name, _) -> Env.with_void_proc name env_visible
+    | Some (name, _, context) ->
+        Env.with_void_proc name env_visible
+        |> Env.with_proc_context context
     | None -> env_visible
   in
 

@@ -156,7 +156,7 @@ let decl_to_json env (decl_loc : declaration located) =
       ] @ match resolved with
         | Some t -> [("resolved", t)]
         | None -> [])
-  | DeclProc { name; params; guards; return_type } ->
+  | DeclProc { name; params; guards; return_type; context } ->
       (* Look up resolved type from environment *)
       let resolved = match Env.lookup_term name env with
         | Some { kind = Env.KProc ty; _ } -> Some (ty_to_json ty)
@@ -168,9 +168,18 @@ let decl_to_json env (decl_loc : declaration located) =
         ("params", `List (List.map param_to_json params));
         ("guards", `List (List.map guard_to_json guards));
         ("return", match return_type with None -> `Null | Some t -> type_expr_to_json t);
-      ] @ match resolved with
+      ] @ (match context with
+        | Some c -> [("context", `String c)]
+        | None -> [])
+      @ match resolved with
         | Some t -> [("resolved", t)]
         | None -> [])
+  | DeclContext (name, members) ->
+      `Assoc (doc_json @ [
+        ("kind", `String "context");
+        ("name", `String name);
+        ("members", `List (List.map (fun m -> `String m) members));
+      ])
 
 (** Convert proposition to JSON with doc comments *)
 let prop_to_json (prop_loc : expr located) =

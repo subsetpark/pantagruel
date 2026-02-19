@@ -120,6 +120,20 @@ let test_no_module () =
   check int "chapters" 1 (List.length doc.Ast.chapters);
   check int "imports" 0 (List.length doc.Ast.imports)
 
+let test_context_declaration () =
+  let doc = parse "module TEST.\n\nAccount.\nbalance a: Account => Nat.\nowner a: Account => Account.\ncontext Banking = { balance, owner }.\n---\n" in
+  let chapter = List.hd doc.Ast.chapters in
+  match (List.nth chapter.Ast.head 3).Ast.value with
+  | Ast.DeclContext ("Banking", ["balance"; "owner"]) -> ()
+  | _ -> fail "Expected context declaration"
+
+let test_proc_with_context () =
+  let doc = parse "module TEST.\n\nAccount.\nbalance a: Account => Nat.\ncontext Banking = { balance }.\nwithdraw a: Account in Banking.\n---\n" in
+  let chapter = List.hd doc.Ast.chapters in
+  match (List.nth chapter.Ast.head 3).Ast.value with
+  | Ast.DeclProc { name = "withdraw"; context = Some "Banking"; _ } -> ()
+  | _ -> fail "Expected proc with context annotation"
+
 let () =
   run "Parser" [
     "minimal", [test_case "minimal document" `Quick test_minimal];
@@ -140,4 +154,6 @@ let () =
     "existential", [test_case "existential" `Quick test_existential];
     "doc_comment", [test_case "doc comment" `Quick test_doc_comment];
     "multi_guard", [test_case "multiple guards" `Quick test_multiple_guards];
+    "context", [test_case "context declaration" `Quick test_context_declaration];
+    "proc_context", [test_case "proc with context" `Quick test_proc_with_context];
   ]

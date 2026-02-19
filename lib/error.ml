@@ -58,6 +58,8 @@ let format_type_error err =
         name (String.concat ", " modules) name)
   | UnboundQualified (mod_name, name, loc) ->
       fmt loc (Printf.sprintf "Undefined '%s::%s'" mod_name name)
+  | PrimedExtracontextual (name, ctx_name, loc) ->
+      fmt loc (Printf.sprintf "'%s' is not a member of context '%s'" name ctx_name)
 
 (** Format a collection error with location prefix *)
 let format_collect_error err =
@@ -79,4 +81,12 @@ let format_collect_error err =
         "Multiple void procedures in chapter: '%s' and '%s'" p1 p2)
   | BuiltinRedefined (name, loc) ->
       fmt loc (Printf.sprintf "Cannot redefine builtin type '%s'" name)
+  | DuplicateContext (name, loc) ->
+      fmt loc (Printf.sprintf "Duplicate context '%s'" name)
+  | UndefinedContext (name, loc) ->
+      fmt loc (Printf.sprintf "Undefined context '%s'" name)
+  | ContextOnNonVoid (name, loc) ->
+      fmt loc (Printf.sprintf "Context annotation on non-void procedure '%s'" name)
+  | ContextMemberNotFunction (ctx, member, loc) ->
+      fmt loc (Printf.sprintf "Context '%s' member '%s' is not a function" ctx member)
 

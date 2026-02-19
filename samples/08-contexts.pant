@@ -1,0 +1,34 @@
+> A banking example demonstrating context declarations.
+> Contexts define which functions a void procedure may modify.
+module Banking.
+
+Account.
+User.
+
+balance a: Account => Nat.
+owner a: Account => User.
+nobody => User.
+
+context Accounts = { balance, owner }.
+
+---
+
+> Every account has a positive balance.
+all a: Account | balance a >= 0.
+
+where
+
+> Withdrawal reduces the balance of the target account.
+withdraw a: Account, amount: Nat, balance a >= amount in Accounts.
+---
+balance' a = balance a - amount.
+
+where
+
+> Transfer moves funds between accounts.
+transfer from: Account, to: Account, amount: Nat, balance from >= amount in Accounts.
+---
+balance' from = balance from - amount.
+balance' to = balance to + amount.
+owner' from = owner from.
+owner' to = owner to.

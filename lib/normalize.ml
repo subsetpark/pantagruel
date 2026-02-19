@@ -86,6 +86,9 @@ let symbols_in_decl_deps (decl : declaration) =
   let terms = ref StringSet.empty in
   (match decl with
    | DeclDomain _ -> ()  (* No dependencies *)
+   | DeclContext (_, members) ->
+       (* Context depends on its member functions *)
+       List.iter (fun m -> terms := StringSet.add m !terms) members
    | DeclAlias (_, te) ->
        types := types_in_type_expr te
    | DeclProc { params; guards; return_type; _ } ->
@@ -113,16 +116,17 @@ let decl_name = function
   | DeclDomain name -> name
   | DeclAlias (name, _) -> name
   | DeclProc { name; _ } -> name
+  | DeclContext (name, _) -> name
 
 (** Is this a type-namespace declaration? *)
 let is_type_decl = function
   | DeclDomain _ | DeclAlias _ -> true
-  | DeclProc _ -> false
+  | DeclProc _ | DeclContext _ -> false
 
 (** Is this a void procedure? *)
 let is_void_proc = function
   | DeclProc { return_type = None; _ } -> true
-  | _ -> false
+  | DeclDomain _ | DeclAlias _ | DeclProc _ | DeclContext _ -> false
 
 (** Check if an expression uses any primed names *)
 let rec uses_primed = function
@@ -222,9 +226,10 @@ let normalize (doc : document) : document =
     let all_decls =
       List.concat_map (fun chapter ->
         List.map (fun decl_loc ->
-          let (type_deps, _term_deps) = symbols_in_decl_deps decl_loc.value in
-          (* Filter out builtins *)
-          let deps = StringSet.filter (fun n -> not (StringSet.mem n builtin_types)) type_deps in
+          let (type_deps, term_deps) = symbols_in_decl_deps decl_loc.value in
+          (* Filter out builtins; include term deps for contexts *)
+          let deps = StringSet.union type_deps term_deps in
+          let deps = StringSet.filter (fun n -> not (StringSet.mem n builtin_types)) deps in
           {
             name = decl_name decl_loc.value;
             is_type = is_type_decl decl_loc.value;

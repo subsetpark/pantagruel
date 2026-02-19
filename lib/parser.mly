@@ -44,6 +44,7 @@
 %token FORALL EXISTS IN SUBSET
 %token DOT COMMA COLON DCOLON PIPE SEPARATOR
 %token LPAREN RPAREN LBRACKET RBRACKET
+%token LBRACE RBRACE CONTEXT
 %token EOF
 
 (* Precedence - lowest to highest *)
@@ -89,7 +90,7 @@ declaration:
   | name=UPPER_IDENT EQ t=type_expr DOT
     { let doc = Doc_comments.get_at_pos $startpos in
       located_with_doc doc $startpos $endpos (DeclAlias (name, t)) }
-  | name=LOWER_IDENT pg=proc_params_guards ret=return_type_opt DOT
+  | name=LOWER_IDENT pg=proc_params_guards ret=return_type_opt ctx=context_opt DOT
     { let doc = Doc_comments.get_at_pos $startpos in
       let (params, guards) = pg in
       located_with_doc doc $startpos $endpos (DeclProc {
@@ -97,7 +98,16 @@ declaration:
         params;
         guards;
         return_type = ret;
+        context = ctx;
       }) }
+  | CONTEXT name=UPPER_IDENT EQ LBRACE
+      members=separated_nonempty_list(COMMA, LOWER_IDENT) RBRACE DOT
+    { let doc = Doc_comments.get_at_pos $startpos in
+      located_with_doc doc $startpos $endpos (DeclContext (name, members)) }
+
+context_opt:
+  | (* empty *) { None }
+  | IN name=UPPER_IDENT { Some name }
 
 (* Parameters and guards for procedures - parsed together then split *)
 proc_params_guards:

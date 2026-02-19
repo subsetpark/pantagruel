@@ -109,7 +109,9 @@ type declaration =
       params: param list;
       guards: guard list;
       return_type: type_expr option;  (** None = Void procedure *)
+      context: upper_ident option;    (** Context annotation: "in Banking" *)
     }
+  | DeclContext of upper_ident * lower_ident list  (** context Banking = { balance, owner }. *)
 [@@deriving show, eq]
 
 (** A chapter has a head (declarations) and body (propositions) *)

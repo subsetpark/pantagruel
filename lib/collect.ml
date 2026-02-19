@@ -12,6 +12,10 @@ type collect_error =
   | RecursiveAlias of string * loc
   | MultipleVoidProcs of string * string * loc
   | BuiltinRedefined of string * loc
+  | DuplicateContext of string * loc
+  | UndefinedContext of string * loc
+  | ContextOnNonVoid of string * loc
+  | ContextMemberNotFunction of string * string * loc
 [@@deriving show]
 
 let is_builtin_type name = List.mem name Types.builtin_type_names
@@ -81,7 +85,7 @@ let collect_chapter_head ~chapter env (decls : declaration located list) =
               (* Add as domain placeholder - will be replaced in pass 2 *)
               Ok (Env.add_domain name decl.loc ~chapter env)
         end
-    | DeclProc _ -> Ok env  (* Procedures handled in pass 3 *)
+    | DeclProc _ | DeclContext _ -> Ok env  (* Handled in later passes *)
   in
 
   (* Pass 2: Resolve alias types iteratively (handles mutual references) *)
@@ -113,7 +117,7 @@ let collect_chapter_head ~chapter env (decls : declaration located list) =
   (* Pass 3: Add procedures (all types now fully resolved) *)
   let add_proc env (decl : declaration located) =
     match decl.value with
-    | DeclProc { name; params; guards = _; return_type } ->
+    | DeclProc { name; params; guards = _; return_type; _ } ->
         let* param_types =
           map_result (fun p -> resolve_type env p.param_type decl.loc) params
         in
@@ -132,13 +136,47 @@ let collect_chapter_head ~chapter env (decls : declaration located list) =
              Error (DuplicateProc (name, decl.loc, existing.loc))
          | _ ->
              Ok (Env.add_proc name proc_ty decl.loc ~chapter env))
-    | _ -> Ok env  (* Domains and aliases already done *)
+    | _ -> Ok env  (* Domains, aliases, and contexts already done *)
   in
 
-  (* Execute all three passes *)
+  (* Pass 4: Register context declarations (after procedures, so members can be validated) *)
+  let add_context env (decl : declaration located) =
+    match decl.value with
+    | DeclContext (name, members) ->
+        (* Check for duplicate context *)
+        (match Env.lookup_context name env with
+         | Some _ -> Error (DuplicateContext (name, decl.loc))
+         | None ->
+             (* Validate all members are functions (procs with return types) *)
+             let* _ = map_result (fun member ->
+               match Env.lookup_term member env with
+               | Some { kind = Env.KProc (TyFunc (_, Some _)); _ } -> Ok ()
+               | _ -> Error (ContextMemberNotFunction (name, member, decl.loc))
+             ) members in
+             Ok (Env.add_context name members env))
+    | _ -> Ok env
+  in
+
+  (* Pass 5: Validate context annotations on procedures *)
+  let validate_proc_context env (decl : declaration located) =
+    match decl.value with
+    | DeclProc { name; context = Some ctx_name; return_type; _ } ->
+        (* Context annotation only valid on void procedures *)
+        (match return_type with
+         | Some _ -> Error (ContextOnNonVoid (name, decl.loc))
+         | None ->
+             match Env.lookup_context ctx_name env with
+             | None -> Error (UndefinedContext (ctx_name, decl.loc))
+             | Some _ -> Ok env)
+    | _ -> Ok env
+  in
+
+  (* Execute all five passes *)
   let* env1 = fold_result register_type_name env decls in
   let* env2 = resolve_aliases env1 decls in
-  let* final_env = fold_result add_proc env2 decls in
+  let* env3 = fold_result add_proc env2 decls in
+  let* env4 = fold_result add_context env3 decls in
+  let* final_env = fold_result validate_proc_context env4 decls in
 
   (* Validate: at most one Void procedure per chapter *)
   match !void_procs with

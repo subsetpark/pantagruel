@@ -49,6 +49,9 @@ let token_to_string = function
   | Parser.RPAREN -> "RPAREN"
   | Parser.LBRACKET -> "LBRACKET"
   | Parser.RBRACKET -> "RBRACKET"
+  | Parser.LBRACE -> "LBRACE"
+  | Parser.RBRACE -> "RBRACE"
+  | Parser.CONTEXT -> "CONTEXT"
   | Parser.EOF -> "EOF"
 
 let token_testable = testable (fun fmt t -> Format.pp_print_string fmt (token_to_string t))
