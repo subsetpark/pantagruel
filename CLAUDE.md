@@ -28,7 +28,7 @@ Pantagruel is a specification language checker written in OCaml. It processes `.
 
 ### Processing Pipeline
 
-1. **Lexing** (`lib/lexer.ml`): Sedlex-based Unicode-aware lexer
+1. **Lexing** (`lib/lexer.ml`): Sedlex-based lexer
    - Tracks beginning-of-line state for doc comment handling (`>` at line start)
    - Produces `PROJ` tokens for `.N` (tuple projection) to avoid grammar conflicts with DOT
 
@@ -69,6 +69,7 @@ Pantagruel is a specification language checker written in OCaml. It processes `.
 - Tuple projection: `point.1`, `point.2`
 - List cardinality: `#users`
 - Membership: `x in Domain`
+- Contexts: `context Accounts.` at module level, `{Accounts} balance ...` for footprint, `proc ... in Accounts.` for void procs
 
 ## Dependencies
 

@@ -77,24 +77,6 @@ let real = [%sedlex.regexp? Plus digit, '.', Plus digit]
 let whitespace = [%sedlex.regexp? ' ' | '\t' | '\r']
 let newline = [%sedlex.regexp? '\n']
 
-(* Unicode patterns for operators *)
-let darrow_u = [%sedlex.regexp? 0x21D2] (* ⇒ *)
-let arrow_u = [%sedlex.regexp? 0x2192] (* → *)
-let and_u = [%sedlex.regexp? 0x2227] (* ∧ *)
-let or_u = [%sedlex.regexp? 0x2228] (* ∨ *)
-let not_u = [%sedlex.regexp? 0x00AC] (* ¬ *)
-let forall_u = [%sedlex.regexp? 0x2200] (* ∀ *)
-let exists_u = [%sedlex.regexp? 0x2203] (* ∃ *)
-let neq_u = [%sedlex.regexp? 0x2260] (* ≠ *)
-let le_u = [%sedlex.regexp? 0x2264] (* ≤ *)
-let ge_u = [%sedlex.regexp? 0x2265] (* ≥ *)
-let in_u = [%sedlex.regexp? 0x2208] (* ∈ *)
-let subset_u = [%sedlex.regexp? 0x2286] (* ⊆ *)
-let times_u = [%sedlex.regexp? 0x00D7] (* × *)
-let prime_u = [%sedlex.regexp? 0x2032] (* ′ *)
-let mapsto_u = [%sedlex.regexp? 0x21A6] (* ↦ *)
-let iff_u = [%sedlex.regexp? 0x2194] (* ↔ *)
-
 (** Map identifier strings to keywords *)
 let keyword_or_lower_ident = function
   | "module" -> Parser.MODULE
@@ -177,30 +159,13 @@ let rec token_impl lexer =
   | "---" -> Parser.SEPARATOR
   (* Multi-char operators - check before single chars *)
   | "=>" -> Parser.DARROW
-  | darrow_u -> Parser.DARROW
   | "<->" -> Parser.IFF
-  | iff_u -> Parser.IFF
   | "->" -> Parser.ARROW
-  | arrow_u -> Parser.ARROW
   | "!=" -> Parser.NEQ
-  | neq_u -> Parser.NEQ
   | "<=" -> Parser.LE
-  | le_u -> Parser.LE
   | ">=" -> Parser.GE
-  | ge_u -> Parser.GE
   | "|->" -> Parser.MAPSTO
-  | mapsto_u -> Parser.MAPSTO
-  (* Unicode logical operators *)
-  | and_u -> Parser.AND
-  | or_u -> Parser.OR
-  | not_u -> Parser.NOT
   | '~' -> Parser.NOT
-  | forall_u -> Parser.FORALL
-  | exists_u -> Parser.EXISTS
-  | in_u -> Parser.IN
-  | subset_u -> Parser.SUBSET
-  | times_u -> Parser.TIMES
-  | prime_u -> Parser.PRIME
   | '\'' -> Parser.PRIME
   (* Single-char operators *)
   | '=' -> Parser.EQ

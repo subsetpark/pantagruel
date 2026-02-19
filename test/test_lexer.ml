@@ -106,21 +106,6 @@ let test_string () =
     [Parser.STRING "hello world"; Parser.EOF]
     (lex_all "\"hello world\"")
 
-let test_unicode_operators () =
-  (* Test Unicode equivalents *)
-  check (list token_testable) "unicode darrow"
-    [Parser.DARROW; Parser.EOF]
-    (lex_all "\xE2\x87\x92");  (* U+21D2 *)
-  check (list token_testable) "unicode arrow"
-    [Parser.ARROW; Parser.EOF]
-    (lex_all "\xE2\x86\x92");  (* U+2192 *)
-  check (list token_testable) "unicode and"
-    [Parser.AND; Parser.EOF]
-    (lex_all "\xE2\x88\xA7");  (* U+2227 *)
-  check (list token_testable) "unicode forall"
-    [Parser.FORALL; Parser.EOF]
-    (lex_all "\xE2\x88\x80")   (* U+2200 *)
-
 let test_comments () =
   check (list token_testable) "line comment"
     [Parser.UPPER_IDENT "Foo"; Parser.DOT; Parser.EOF]
@@ -151,7 +136,6 @@ let () =
     "logical", [test_case "logical" `Quick test_logical];
     "punctuation", [test_case "punctuation" `Quick test_punctuation];
     "string", [test_case "string" `Quick test_string];
-    "unicode", [test_case "unicode operators" `Quick test_unicode_operators];
     "comments", [test_case "comments" `Quick test_comments];
     "doc_comments", [test_case "doc comments" `Quick test_doc_comments];
     "projection", [test_case "projection" `Quick test_projection_token];

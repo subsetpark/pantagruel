@@ -1,6 +1,6 @@
 module ADVANCED.
 
-> Advanced features: overrides, qualified names, unicode
+> Advanced features: overrides, qualified names
 
 Key.
 Value.
@@ -24,25 +24,14 @@ all k1: Key, k2: Key, v: Value |
 
 where
 
-> Unicode operators are supported as alternatives:
-> ∧ (and), ∨ (or), ¬ (not), → (implication)
-> ∀ (all), ∃ (some)
-> ∈ (in), ⊆ (subset)
-> ≠ (!=), ≤ (<=), ≥ (>=)
-> × (product type), ⇒ (procedure return)
-
 Item.
 available i: Item => Bool.
 
 ---
-> These are equivalent:
 all i: Item | available i or not available i.
-∀ i: Item | available i ∨ ¬ available i.
 
 > Implication
 all i: Item | false -> available i.
-∀ i: Item | false → available i.
 
 > Membership
 all i: Item | i in Item.
-∀ i: Item | i ∈ Item.

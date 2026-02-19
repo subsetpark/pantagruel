@@ -38,8 +38,8 @@ where
 ### Keywords
 
 ```
-module  import  where  true  false
-and     or      not    all   some
+module  import  where  context  true  false
+and     or      not    all      some
 in      subset
 ```
 
@@ -56,31 +56,31 @@ String escape sequences: `\\`, `\"`, `\n`, `\t`, `\r`
 
 ### Operators
 
-| ASCII | Unicode | Meaning |
-|-------|---------|---------|
-| `=>` | `⇒` | Procedure return type |
-| `->` | `→` | Implication |
-| `<->` | `↔` | Biconditional (iff) |
-| `and` | `∧` | Conjunction |
-| `or` | `∨` | Disjunction |
-| `not` | `¬`, `~` | Negation |
-| `all` | `∀` | Universal quantifier |
-| `some` | `∃` | Existential quantifier |
-| `in` | `∈` | Membership |
-| `subset` | `⊆` | Subset |
-| `=` | | Equality |
-| `!=` | `≠` | Inequality |
-| `<` | | Less than |
-| `>` | | Greater than |
-| `<=` | `≤` | Less or equal |
-| `>=` | `≥` | Greater or equal |
-| `+` | | Addition / Sum type |
-| `-` | | Subtraction / Negation |
-| `*` | `×` | Multiplication / Product type |
-| `/` | | Division |
-| `#` | | Cardinality |
-| `'` | `′` | Prime (post-state) |
-| `\|->` | `↦` | Maps-to (in overrides) |
+| Operator | Meaning |
+|----------|---------|
+| `=>` | Procedure return type |
+| `->` | Implication |
+| `<->` | Biconditional (iff) |
+| `and` | Conjunction |
+| `or` | Disjunction |
+| `not`, `~` | Negation |
+| `all` | Universal quantifier |
+| `some` | Existential quantifier |
+| `in` | Membership |
+| `subset` | Subset |
+| `=` | Equality |
+| `!=` | Inequality |
+| `<` | Less than |
+| `>` | Greater than |
+| `<=` | Less or equal |
+| `>=` | Greater or equal |
+| `+` | Addition / Sum type |
+| `-` | Subtraction / Negation |
+| `*` | Multiplication / Product type |
+| `/` | Division |
+| `#` | Cardinality |
+| `'` | Prime (post-state) |
+| `\|->` | Maps-to (in overrides) |
 
 ### Punctuation
 
@@ -409,6 +409,42 @@ withdraw a: Account, amount: Nat, balance a >= amount.
 ```
 
 Guards can reference the procedure's parameters (`a`, `amount` in this example) to express preconditions.
+
+### Context Declaration
+
+Declares a named context at the module level, after imports:
+
+```
+module BANKING.
+context Accounts.
+```
+
+Context names are uppercase identifiers. They define write-permission boundaries: procedures declare which contexts they belong to, and void procedures declare which context they operate within.
+
+### Context Footprint
+
+Non-void procedures declare context membership with a `{Ctx, ...}` prefix:
+
+```
+{Accounts} balance a: Account => Nat.
+{Accounts} owner a: Account => User.
+```
+
+A procedure may belong to multiple contexts: `{Accounts, Audit} balance a: Account => Nat.`
+
+Context footprint is closed within module scope — you can only add a procedure to a context declared in the same module.
+
+### Context Annotation (Void Procedures)
+
+Void procedures declare which context they operate within using `in Ctx`:
+
+```
+withdraw a: Account, amount: Nat in Accounts.
+```
+
+This means `withdraw` may modify (prime) any procedure that belongs to `Accounts`. Context references work across module boundaries — a void procedure can reference an imported context.
+
+Only void procedures may have `in Ctx`. Non-void procedures cannot operate within a context (this is enforced at the syntax level).
 
 ## Expressions
 
@@ -759,15 +795,19 @@ The independent proposition `all a: Account, amt: Nat | true` moved to chapter 0
 ## Complete Grammar
 
 ```
-document    ::= 'module' UPPER '.' import* chapter ('where' chapter)*
+document    ::= 'module' UPPER '.' import* context_decl* chapter ('where' chapter)*
 
 import      ::= 'import' UPPER '.'
 
+context_decl ::= 'context' UPPER '.'
+
 chapter     ::= declaration+ '---' proposition*    // Head must be non-empty
 
-declaration ::= UPPER '.'                              // Domain
-              | UPPER '=' type '.'                     // Type alias
-              | LOWER param* guard* ['=>' type] '.'   // Procedure
+declaration ::= UPPER '.'                                              // Domain
+              | UPPER '=' type '.'                                     // Type alias
+              | '{' UPPER (',' UPPER)* '}' LOWER param* guard* '=>' type '.'  // Proc with context footprint
+              | LOWER param* guard* '=>' type '.'                      // Proc with return type
+              | LOWER param* guard* ['in' UPPER] '.'                   // Void proc (optional context)
 
 param       ::= LOWER ':' type
 

@@ -50,7 +50,9 @@ The `samples/` directory contains reference specifications demonstrating all lan
 - `03-types.pant` - All type features: products, sums, lists, aliases
 - `04-operators.pant` - All operators: logical, comparison, arithmetic
 - `05-state.pant` - State transitions with primed expressions and frame conditions
-- `06-advanced.pant` - Function overrides and unicode operators
+- `06-advanced.pant` - Function overrides and qualified names
+- `07-pantagruel.pant` - Self-specification of the Pantagruel language
+- `08-contexts.pant` - Context declarations and write-permission boundaries
 
 ## Language Overview
 
@@ -138,6 +140,22 @@ check-out u: User, d: Document.
 owner' d = u.
 ```
 
+### Contexts
+
+Contexts declare write-permission boundaries for void procedures. Context names are declared at the module level, and procedures declare which contexts they belong to with a `{Ctx}` prefix. Void procedures declare which context they operate within using `in Ctx`.
+
+```
+module BANKING.
+context Accounts.
+
+Account.
+{Accounts} balance a: Account => Nat.
+
+withdraw a: Account, amount: Nat in Accounts.
+---
+balance' a = balance a - amount.
+```
+
 ### Operators
 
 | Category | Operators |
@@ -147,8 +165,6 @@ owner' d = u.
 | Membership | `in`, `subset` |
 | Arithmetic | `+`, `-`, `*`, `/` |
 | Other | `#` (cardinality), `.N` (projection) |
-
-Unicode alternatives are supported: `∧` `∨` `¬` `→` `⇒` `∀` `∃` `∈` `⊆` `≠` `≤` `≥`
 
 ### Comments
 
