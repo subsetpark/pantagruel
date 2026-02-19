@@ -7,9 +7,7 @@ let doc_map : (int * int, string list) Hashtbl.t = Hashtbl.create 16
 let clear () = Hashtbl.clear doc_map
 
 (** Add docs at a position *)
-let add line col docs =
-  if docs <> [] then
-    Hashtbl.add doc_map (line, col) docs
+let add line col docs = if docs <> [] then Hashtbl.add doc_map (line, col) docs
 
 (** Look up docs at a position *)
 let get line col =

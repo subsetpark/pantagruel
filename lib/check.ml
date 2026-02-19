@@ -2,7 +2,6 @@
 
 open Ast
 open Types
-
 open Util
 
 type type_error =
@@ -21,17 +20,19 @@ type type_error =
   | OverrideRequiresArity1 of string * int * loc
   | ProjectionOutOfBounds of int * int * loc
   | PropositionNotBool of ty * loc
-  | ShadowingTypeMismatch of string * ty * ty * loc  (* name, existing_ty, new_ty *)
+  | ShadowingTypeMismatch of
+      string * ty * ty * loc (* name, existing_ty, new_ty *)
   | AmbiguousName of string * string list * loc
   | UnboundQualified of string * string * loc
-  | PrimedExtracontextual of string * string * loc  (** function name, context name *)
+  | PrimedExtracontextual of string * string * loc
+      (** function name, context name *)
 [@@deriving show]
 
-(** Type checking context *)
 type context = {
-  env: Env.t;
-  loc: loc;  (** Current location for error reporting *)
+  env : Env.t;
+  loc : loc;  (** Current location for error reporting *)
 }
+(** Type checking context *)
 
 let with_loc ctx loc = { ctx with loc }
 
@@ -43,102 +44,87 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
   | ELitNat _ -> Ok TyNat
   | ELitReal _ -> Ok TyReal
   | ELitString _ -> Ok TyString
-
-  | EVar name ->
-      (match Env.lookup_term name ctx.env with
-       | Some { kind = Env.KVar ty; _ } -> Ok ty
-       | Some { kind = Env.KProc (TyFunc ([], Some ret)); _ } ->
-           (* Nullary procedure: auto-apply *)
-           Ok ret
-       | Some { kind = Env.KProc ty; _ } -> Ok ty
-       | Some { kind = (Env.KDomain | Env.KAlias _); _ } ->
-           (* This shouldn't happen - domains/aliases are in type namespace *)
-           Error (UnboundVariable (name, ctx.loc))
-       | None ->
-           match Env.ambiguous_term_modules name ctx.env with
-           | Some modules -> Error (AmbiguousName (name, modules, ctx.loc))
-           | None -> Error (UnboundVariable (name, ctx.loc)))
-
-  | EDomain name ->
+  | EVar name -> (
+      match Env.lookup_term name ctx.env with
+      | Some { kind = Env.KVar ty; _ } -> Ok ty
+      | Some { kind = Env.KProc (TyFunc ([], Some ret)); _ } ->
+          (* Nullary procedure: auto-apply *)
+          Ok ret
+      | Some { kind = Env.KProc ty; _ } -> Ok ty
+      | Some { kind = Env.KDomain | Env.KAlias _; _ } ->
+          (* This shouldn't happen - domains/aliases are in type namespace *)
+          Error (UnboundVariable (name, ctx.loc))
+      | None -> (
+          match Env.ambiguous_term_modules name ctx.env with
+          | Some modules -> Error (AmbiguousName (name, modules, ctx.loc))
+          | None -> Error (UnboundVariable (name, ctx.loc))))
+  | EDomain name -> (
       (* Domain in expression position has type [Domain] *)
-      (match Env.lookup_type name ctx.env with
-       | Some { kind = Env.KDomain; _ } -> Ok (TyList (TyDomain name))
-       | Some { kind = Env.KAlias ty; _ } -> Ok (TyList ty)
-       | Some { kind = (Env.KProc _ | Env.KVar _); _ } ->
-           (* This shouldn't happen - procs/vars are in term namespace *)
-           Error (UnboundType (name, ctx.loc))
-       | None ->
-           match Env.ambiguous_type_modules name ctx.env with
-           | Some modules -> Error (AmbiguousName (name, modules, ctx.loc))
-           | None -> Error (UnboundType (name, ctx.loc)))
-
-  | EQualified (mod_name, name) ->
+      match Env.lookup_type name ctx.env with
+      | Some { kind = Env.KDomain; _ } -> Ok (TyList (TyDomain name))
+      | Some { kind = Env.KAlias ty; _ } -> Ok (TyList ty)
+      | Some { kind = Env.KProc _ | Env.KVar _; _ } ->
+          (* This shouldn't happen - procs/vars are in term namespace *)
+          Error (UnboundType (name, ctx.loc))
+      | None -> (
+          match Env.ambiguous_type_modules name ctx.env with
+          | Some modules -> Error (AmbiguousName (name, modules, ctx.loc))
+          | None -> Error (UnboundType (name, ctx.loc))))
+  | EQualified (mod_name, name) -> (
       (* Try term namespace first *)
-      (match Env.lookup_qualified_term mod_name name ctx.env with
-       | Some { kind = Env.KProc (TyFunc ([], Some ret)); _ } -> Ok ret
-       | Some { kind = Env.KProc ty; _ } -> Ok ty
-       | Some { kind = Env.KVar ty; _ } -> Ok ty
-       | _ ->
-         (* Try type namespace (domain as set) *)
-         match Env.lookup_qualified_type mod_name name ctx.env with
-         | Some { kind = Env.KDomain; _ } -> Ok (TyList (TyDomain name))
-         | Some { kind = Env.KAlias ty; _ } -> Ok (TyList ty)
-         | _ -> Error (UnboundQualified (mod_name, name, ctx.loc)))
-
-  | EPrimed name ->
-      (* Validate: must be procedure, must be in void context *)
-      if not (Env.in_void_context ctx.env) then
-        Error (PrimeOutsideVoidContext (name, ctx.loc))
+      match Env.lookup_qualified_term mod_name name ctx.env with
+      | Some { kind = Env.KProc (TyFunc ([], Some ret)); _ } -> Ok ret
+      | Some { kind = Env.KProc ty; _ } -> Ok ty
+      | Some { kind = Env.KVar ty; _ } -> Ok ty
+      | _ -> (
+          (* Try type namespace (domain as set) *)
+          match Env.lookup_qualified_type mod_name name ctx.env with
+          | Some { kind = Env.KDomain; _ } -> Ok (TyList (TyDomain name))
+          | Some { kind = Env.KAlias ty; _ } -> Ok (TyList ty)
+          | _ -> Error (UnboundQualified (mod_name, name, ctx.loc))))
+  | EPrimed name -> (
+      if
+        (* Validate: must be procedure, must be in void context *)
+        not (Env.in_void_context ctx.env)
+      then Error (PrimeOutsideVoidContext (name, ctx.loc))
       else if Env.is_local_var name ctx.env then
         Error (PrimedNonProcedure (name, ctx.loc))
       else
-        (match Env.lookup_term name ctx.env with
-         | Some { kind = Env.KProc ty; _ } ->
-             (* If proc has a context, check membership *)
-             (match ctx.env.proc_context with
-              | Some ctx_name ->
-                  (match Env.lookup_context ctx_name ctx.env with
-                   | Some members when List.mem name members -> Ok ty
-                   | Some _ -> Error (PrimedExtracontextual (name, ctx_name, ctx.loc))
-                   | None -> Ok ty)  (* Shouldn't happen: validated in collect *)
-              | None -> Ok ty)
-         | Some { kind = Env.KVar _; _ } ->
-             Error (PrimedNonProcedure (name, ctx.loc))
-         | Some { kind = (Env.KDomain | Env.KAlias _); _ } ->
-             Error (UnboundVariable (name, ctx.loc))
-         | None -> Error (UnboundVariable (name, ctx.loc)))
-
+        match Env.lookup_term name ctx.env with
+        | Some { kind = Env.KProc ty; _ } -> (
+            (* If proc has a context, check membership *)
+            match ctx.env.proc_context with
+            | Some ctx_name -> (
+                match Env.lookup_context ctx_name ctx.env with
+                | Some members when List.mem name members -> Ok ty
+                | Some _ ->
+                    Error (PrimedExtracontextual (name, ctx_name, ctx.loc))
+                | None -> Ok ty (* Shouldn't happen: validated in collect *))
+            | None -> Ok ty)
+        | Some { kind = Env.KVar _; _ } ->
+            Error (PrimedNonProcedure (name, ctx.loc))
+        | Some { kind = Env.KDomain | Env.KAlias _; _ } ->
+            Error (UnboundVariable (name, ctx.loc))
+        | None -> Error (UnboundVariable (name, ctx.loc)))
   | EApp (func, args) ->
       let* func_ty = infer_type ctx func in
       check_application ctx func func_ty args
-
   | ETuple exprs ->
       let* tys = map_result (infer_type ctx) exprs in
       Ok (TyProduct tys)
-
-  | EProj (e, idx) ->
+  | EProj (e, idx) -> (
       let* ty = infer_type ctx e in
-      (match ty with
-       | TyProduct tys when idx >= 1 && idx <= List.length tys ->
-           Ok (List.nth tys (idx - 1))
-       | TyProduct tys ->
-           Error (ProjectionOutOfBounds (idx, List.length tys, ctx.loc))
-       | _ -> Error (NotAProduct (ty, ctx.loc)))
-
-  | EBinop (op, e1, e2) ->
-      check_binop ctx op e1 e2
-
-  | EUnop (op, e) ->
-      check_unop ctx op e
-
-  | EForall (params, guards, body) ->
-      check_quantifier ctx params guards body
-
-  | EExists (params, guards, body) ->
-      check_quantifier ctx params guards body
-
-  | EOverride (name, pairs) ->
-      check_override ctx name pairs
+      match ty with
+      | TyProduct tys when idx >= 1 && idx <= List.length tys ->
+          Ok (List.nth tys (idx - 1))
+      | TyProduct tys ->
+          Error (ProjectionOutOfBounds (idx, List.length tys, ctx.loc))
+      | _ -> Error (NotAProduct (ty, ctx.loc)))
+  | EBinop (op, e1, e2) -> check_binop ctx op e1 e2
+  | EUnop (op, e) -> check_unop ctx op e
+  | EForall (params, guards, body) -> check_quantifier ctx params guards body
+  | EExists (params, guards, body) -> check_quantifier ctx params guards body
+  | EOverride (name, pairs) -> check_override ctx name pairs
 
 and check_application ctx func_expr func_ty args =
   match func_ty with
@@ -149,40 +135,39 @@ and check_application ctx func_expr func_ty args =
         (* Check Void procedures cannot be applied *)
         match ret_ty with
         | None ->
-            let name = match func_expr with
+            let name =
+              match func_expr with
               | EVar n | EPrimed n -> n
               | _ -> format_ty func_ty
             in
             Error (VoidProcInExpression (name, ctx.loc))
         | Some ret ->
             let* _ =
-              map_result (fun (arg, expected) ->
-                let* arg_ty = infer_type ctx arg in
-                if is_subtype arg_ty expected then Ok ()
-                else Error (TypeMismatch (expected, arg_ty, ctx.loc)))
+              map_result
+                (fun (arg, expected) ->
+                  let* arg_ty = infer_type ctx arg in
+                  if is_subtype arg_ty expected then Ok ()
+                  else Error (TypeMismatch (expected, arg_ty, ctx.loc)))
                 (List.combine args param_tys)
             in
             Ok ret
       end
-
-  | TyList elem_ty ->
+  | TyList elem_ty -> (
       (* List indexing or search *)
-      (match args with
-       | [arg] ->
-           let* arg_ty = infer_type ctx arg in
-           if is_subtype arg_ty TyNat then
-             (* Indexing: xs i : T *)
-             Ok elem_ty
-           else if is_subtype arg_ty elem_ty && not (is_numeric elem_ty) then
-             (* Search: xs x : Nat + Nothing *)
-             Ok (TySum [TyNat; TyNothing])
-           else if is_numeric elem_ty then
-             (* Numeric list: only indexing allowed, and arg wasn't Nat *)
-             Error (TypeMismatch (TyNat, arg_ty, ctx.loc))
-           else
-             Error (TypeMismatch (elem_ty, arg_ty, ctx.loc))
-       | _ -> Error (ArityMismatch (1, List.length args, ctx.loc)))
-
+      match args with
+      | [ arg ] ->
+          let* arg_ty = infer_type ctx arg in
+          if is_subtype arg_ty TyNat then
+            (* Indexing: xs i : T *)
+            Ok elem_ty
+          else if is_subtype arg_ty elem_ty && not (is_numeric elem_ty) then
+            (* Search: xs x : Nat + Nothing *)
+            Ok (TySum [ TyNat; TyNothing ])
+          else if is_numeric elem_ty then
+            (* Numeric list: only indexing allowed, and arg wasn't Nat *)
+            Error (TypeMismatch (TyNat, arg_ty, ctx.loc))
+          else Error (TypeMismatch (elem_ty, arg_ty, ctx.loc))
+      | _ -> Error (ArityMismatch (1, List.length args, ctx.loc)))
   | _ -> Error (NotAFunction (func_ty, ctx.loc))
 
 and check_binop ctx op e1 e2 =
@@ -193,42 +178,37 @@ and check_binop ctx op e1 e2 =
       if equal_ty t1 TyBool && equal_ty t2 TyBool then Ok TyBool
       else if not (equal_ty t1 TyBool) then Error (ExpectedBool (t1, ctx.loc))
       else Error (ExpectedBool (t2, ctx.loc))
-
-  | OpEq | OpNeq ->
-      (match join t1 t2 with
-       | Ok _ -> Ok TyBool
-       | Error (Types.TypeMismatch (a, b)) ->
-           Error (TypeMismatch (a, b, ctx.loc))
-       | Error _ -> Error (TypeMismatch (t1, t2, ctx.loc)))
-
+  | OpEq | OpNeq -> (
+      match join t1 t2 with
+      | Ok _ -> Ok TyBool
+      | Error (Types.TypeMismatch (a, b)) ->
+          Error (TypeMismatch (a, b, ctx.loc))
+      | Error _ -> Error (TypeMismatch (t1, t2, ctx.loc)))
   | OpLt | OpGt | OpLe | OpGe ->
       if is_numeric t1 && is_numeric t2 then Ok TyBool
       else if not (is_numeric t1) then Error (NotNumeric (t1, ctx.loc))
       else Error (NotNumeric (t2, ctx.loc))
-
-  | OpIn ->
+  | OpIn -> (
       (* x in s: x : T, s : [T] — x must be a subtype of T *)
-      (match t2 with
-       | TyList elem_ty ->
-           if is_subtype t1 elem_ty then Ok TyBool
-           else Error (TypeMismatch (elem_ty, t1, ctx.loc))
-       | _ -> Error (NotAList (t2, ctx.loc)))
-
-  | OpSubset ->
+      match t2 with
+      | TyList elem_ty ->
+          if is_subtype t1 elem_ty then Ok TyBool
+          else Error (TypeMismatch (elem_ty, t1, ctx.loc))
+      | _ -> Error (NotAList (t2, ctx.loc)))
+  | OpSubset -> (
       (* s1 subset s2: both [T], element types must be compatible *)
-      (match t1, t2 with
-       | TyList a, TyList b ->
-           if is_subtype a b then Ok TyBool
-           else Error (TypeMismatch (t1, t2, ctx.loc))
-       | TyList _, _ -> Error (NotAList (t2, ctx.loc))
-       | _, _ -> Error (NotAList (t1, ctx.loc)))
-
-  | OpAdd | OpSub | OpMul | OpDiv ->
-      (match lub_numeric t1 t2 with
-       | Some lub -> Ok lub
-       | None ->
-           if not (is_numeric t1) then Error (NotNumeric (t1, ctx.loc))
-           else Error (NotNumeric (t2, ctx.loc)))
+      match (t1, t2) with
+      | TyList a, TyList b ->
+          if is_subtype a b then Ok TyBool
+          else Error (TypeMismatch (t1, t2, ctx.loc))
+      | TyList _, _ -> Error (NotAList (t2, ctx.loc))
+      | _, _ -> Error (NotAList (t1, ctx.loc)))
+  | OpAdd | OpSub | OpMul | OpDiv -> (
+      match lub_numeric t1 t2 with
+      | Some lub -> Ok lub
+      | None ->
+          if not (is_numeric t1) then Error (NotNumeric (t1, ctx.loc))
+          else Error (NotNumeric (t2, ctx.loc)))
 
 and check_unop ctx op e =
   let* ty = infer_type ctx e in
@@ -241,10 +221,10 @@ and check_unop ctx op e =
         (* Negation promotes to at least Int *)
         Ok (if is_subtype ty TyInt then TyInt else ty)
       else Error (NotNumeric (ty, ctx.loc))
-  | OpCard ->
-      (match ty with
-       | TyList _ -> Ok TyNat0
-       | _ -> Error (NotAList (ty, ctx.loc)))
+  | OpCard -> (
+      match ty with
+      | TyList _ -> Ok TyNat0
+      | _ -> Error (NotAList (ty, ctx.loc)))
 
 (** Check that binding doesn't shadow with a different type *)
 and check_no_type_shadow ctx name new_ty =
@@ -252,7 +232,7 @@ and check_no_type_shadow ctx name new_ty =
   | Some { kind = Env.KVar existing_ty; _ } ->
       if is_subtype new_ty existing_ty then Ok ()
       else Error (ShadowingTypeMismatch (name, existing_ty, new_ty, ctx.loc))
-  | _ -> Ok ()  (* Not shadowing a variable, OK *)
+  | _ -> Ok () (* Not shadowing a variable, OK *)
 
 and check_quantifier ctx params guards body =
   (* Resolve parameter types and extend environment *)
@@ -272,25 +252,34 @@ and check_quantifier ctx params guards body =
   let ctx' = { ctx with env = env' } in
 
   (* Process guards: check types and collect additional bindings from GIn *)
-  let* (guard_bindings, _) =
-    fold_result (fun (bindings, current_ctx) g ->
-      match g with
-      | GParam p ->
-          (* Additional parameter binding *)
-          let* (name, ty) = resolve_param p in
-          Ok ((name, ty) :: bindings, { current_ctx with env = Env.add_var name ty current_ctx.env })
-      | GIn (name, list_expr) ->
-          (* x in xs - infer type of xs, extract element type *)
-          let* list_ty = infer_type current_ctx list_expr in
-          (match list_ty with
-           | TyList elem_ty ->
-               let* () = check_no_type_shadow current_ctx name elem_ty in
-               Ok ((name, elem_ty) :: bindings, { current_ctx with env = Env.add_var name elem_ty current_ctx.env })
-           | _ -> Error (NotAList (list_ty, ctx.loc)))
-      | GExpr e ->
-          let* ty = infer_type current_ctx e in
-          if equal_ty ty TyBool then Ok (bindings, current_ctx)
-          else Error (ExpectedBool (ty, ctx.loc)))
+  let* guard_bindings, _ =
+    fold_result
+      (fun (bindings, current_ctx) g ->
+        match g with
+        | GParam p ->
+            (* Additional parameter binding *)
+            let* name, ty = resolve_param p in
+            Ok
+              ( (name, ty) :: bindings,
+                { current_ctx with env = Env.add_var name ty current_ctx.env }
+              )
+        | GIn (name, list_expr) -> (
+            (* x in xs - infer type of xs, extract element type *)
+            let* list_ty = infer_type current_ctx list_expr in
+            match list_ty with
+            | TyList elem_ty ->
+                let* () = check_no_type_shadow current_ctx name elem_ty in
+                Ok
+                  ( (name, elem_ty) :: bindings,
+                    {
+                      current_ctx with
+                      env = Env.add_var name elem_ty current_ctx.env;
+                    } )
+            | _ -> Error (NotAList (list_ty, ctx.loc)))
+        | GExpr e ->
+            let* ty = infer_type current_ctx e in
+            if equal_ty ty TyBool then Ok (bindings, current_ctx)
+            else Error (ExpectedBool (ty, ctx.loc)))
       ([], ctx') guards
   in
 
@@ -305,21 +294,22 @@ and check_quantifier ctx params guards body =
 
 and check_override ctx name pairs =
   match Env.lookup_term name ctx.env with
-  | Some { kind = Env.KProc (TyFunc ([param_ty], Some ret_ty)); _ } ->
+  | Some { kind = Env.KProc (TyFunc ([ param_ty ], Some ret_ty)); _ } ->
       (* Override only for arity-1 procedures *)
       let* _ =
-        map_result (fun (k, v) ->
-          let* k_ty = infer_type ctx k in
-          let* v_ty = infer_type ctx v in
-          let* _ =
-            if is_subtype k_ty param_ty then Ok ()
-            else Error (TypeMismatch (param_ty, k_ty, ctx.loc))
-          in
-          if is_subtype v_ty ret_ty then Ok ()
-          else Error (TypeMismatch (ret_ty, v_ty, ctx.loc)))
+        map_result
+          (fun (k, v) ->
+            let* k_ty = infer_type ctx k in
+            let* v_ty = infer_type ctx v in
+            let* _ =
+              if is_subtype k_ty param_ty then Ok ()
+              else Error (TypeMismatch (param_ty, k_ty, ctx.loc))
+            in
+            if is_subtype v_ty ret_ty then Ok ()
+            else Error (TypeMismatch (ret_ty, v_ty, ctx.loc)))
           pairs
       in
-      Ok (TyFunc ([param_ty], Some ret_ty))
+      Ok (TyFunc ([ param_ty ], Some ret_ty))
   | Some { kind = Env.KProc (TyFunc (params, _)); _ } ->
       Error (OverrideRequiresArity1 (name, List.length params, ctx.loc))
   | _ -> Error (UnboundVariable (name, ctx.loc))
@@ -349,42 +339,49 @@ let check_proc_guards ctx (decl : declaration located) =
 
       (* Check each guard, accumulating bindings from GParam/GIn *)
       let* _ =
-        fold_result (fun current_ctx g ->
-          match g with
-          | GParam p ->
-              let* (name, ty) = resolve_param current_ctx.env p in
-              Ok { current_ctx with env = Env.add_var name ty current_ctx.env }
-          | GIn (name, list_expr) ->
-              let ctx'' = with_loc current_ctx decl.loc in
-              let* list_ty = infer_type ctx'' list_expr in
-              (match list_ty with
-               | TyList elem_ty ->
-                   Ok { current_ctx with env = Env.add_var name elem_ty current_ctx.env }
-               | _ -> Error (NotAList (list_ty, decl.loc)))
-          | GExpr e ->
-              let ctx'' = with_loc current_ctx decl.loc in
-              let* ty = infer_type ctx'' e in
-              if equal_ty ty TyBool then Ok current_ctx
-              else Error (ExpectedBool (ty, decl.loc)))
+        fold_result
+          (fun current_ctx g ->
+            match g with
+            | GParam p ->
+                let* name, ty = resolve_param current_ctx.env p in
+                Ok
+                  { current_ctx with env = Env.add_var name ty current_ctx.env }
+            | GIn (name, list_expr) -> (
+                let ctx'' = with_loc current_ctx decl.loc in
+                let* list_ty = infer_type ctx'' list_expr in
+                match list_ty with
+                | TyList elem_ty ->
+                    Ok
+                      {
+                        current_ctx with
+                        env = Env.add_var name elem_ty current_ctx.env;
+                      }
+                | _ -> Error (NotAList (list_ty, decl.loc)))
+            | GExpr e ->
+                let ctx'' = with_loc current_ctx decl.loc in
+                let* ty = infer_type ctx'' e in
+                if equal_ty ty TyBool then Ok current_ctx
+                else Error (ExpectedBool (ty, decl.loc)))
           ctx' guards
       in
       Ok ()
-  | _ -> Ok ()  (* Not a procedure, nothing to check *)
+  | _ -> Ok () (* Not a procedure, nothing to check *)
 
 (** Find the Void procedure in a chapter head, if any *)
 let find_void_proc (head : declaration located list) =
-  List.find_map (fun decl ->
-    match decl.value with
-    | DeclProc { name; params; return_type = None; context; _ } -> Some (name, params, context)
-    | _ -> None)
+  List.find_map
+    (fun decl ->
+      match decl.value with
+      | DeclProc { name; params; return_type = None; context; _ } ->
+          Some (name, params, context)
+      | _ -> None)
     head
 
 (** Collect all procedure parameters from a chapter head *)
 let collect_all_params (head : declaration located list) =
-  List.concat_map (fun decl ->
-    match decl.value with
-    | DeclProc { params; _ } -> params
-    | _ -> [])
+  List.concat_map
+    (fun decl ->
+      match decl.value with DeclProc { params; _ } -> params | _ -> [])
     head
 
 (** Check a chapter body *)
@@ -393,20 +390,23 @@ let check_chapter_body ~chapter_idx env (chapter : chapter) =
   let env_visible = Env.visible_in_body chapter_idx env in
 
   (* Set void proc context if chapter has one *)
-  let env_with_void = match find_void_proc chapter.head with
+  let env_with_void =
+    match find_void_proc chapter.head with
     | Some (name, _, context) ->
-        Env.with_void_proc name env_visible
-        |> Env.with_proc_context context
+        Env.with_void_proc name env_visible |> Env.with_proc_context context
     | None -> env_visible
   in
 
   (* Add ALL procedure parameters from this chapter's head to environment *)
   let all_params = collect_all_params chapter.head in
-  let env' = List.fold_left (fun env p ->
-    match Collect.resolve_type env p.param_type dummy_loc with
-    | Ok ty -> Env.add_var p.param_name ty env
-    | Error _ -> env  (* Ignore resolution errors here, caught elsewhere *)
-  ) env_with_void all_params in
+  let env' =
+    List.fold_left
+      (fun env p ->
+        match Collect.resolve_type env p.param_type dummy_loc with
+        | Ok ty -> Env.add_var p.param_name ty env
+        | Error _ -> env (* Ignore resolution errors here, caught elsewhere *))
+      env_with_void all_params
+  in
 
   let ctx = { env = env'; loc = dummy_loc } in
 
