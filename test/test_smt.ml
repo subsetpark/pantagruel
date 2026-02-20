@@ -54,53 +54,43 @@ let test_primed () =
 let test_binop_and () =
   let env = Env.empty "" in
   check string "and" "(and x y)"
-    (Smt.translate_expr config env
-       (Ast.EBinop (OpAnd, EVar "x", EVar "y")))
+    (Smt.translate_expr config env (Ast.EBinop (OpAnd, EVar "x", EVar "y")))
 
 let test_binop_or () =
   let env = Env.empty "" in
   check string "or" "(or x y)"
-    (Smt.translate_expr config env
-       (Ast.EBinop (OpOr, EVar "x", EVar "y")))
+    (Smt.translate_expr config env (Ast.EBinop (OpOr, EVar "x", EVar "y")))
 
 let test_binop_impl () =
   let env = Env.empty "" in
   check string "impl" "(=> x y)"
-    (Smt.translate_expr config env
-       (Ast.EBinop (OpImpl, EVar "x", EVar "y")))
+    (Smt.translate_expr config env (Ast.EBinop (OpImpl, EVar "x", EVar "y")))
 
 let test_binop_eq () =
   let env = Env.empty "" in
   check string "eq" "(= x y)"
-    (Smt.translate_expr config env
-       (Ast.EBinop (OpEq, EVar "x", EVar "y")))
+    (Smt.translate_expr config env (Ast.EBinop (OpEq, EVar "x", EVar "y")))
 
 let test_binop_neq () =
   let env = Env.empty "" in
   check string "neq" "(not (= x y))"
-    (Smt.translate_expr config env
-       (Ast.EBinop (OpNeq, EVar "x", EVar "y")))
+    (Smt.translate_expr config env (Ast.EBinop (OpNeq, EVar "x", EVar "y")))
 
 let test_binop_lt () =
   let env = Env.empty "" in
   check string "lt" "(< x y)"
-    (Smt.translate_expr config env
-       (Ast.EBinop (OpLt, EVar "x", EVar "y")))
+    (Smt.translate_expr config env (Ast.EBinop (OpLt, EVar "x", EVar "y")))
 
 let test_binop_arith () =
   let env = Env.empty "" in
   check string "add" "(+ x y)"
-    (Smt.translate_expr config env
-       (Ast.EBinop (OpAdd, EVar "x", EVar "y")));
+    (Smt.translate_expr config env (Ast.EBinop (OpAdd, EVar "x", EVar "y")));
   check string "sub" "(- x y)"
-    (Smt.translate_expr config env
-       (Ast.EBinop (OpSub, EVar "x", EVar "y")));
+    (Smt.translate_expr config env (Ast.EBinop (OpSub, EVar "x", EVar "y")));
   check string "mul" "(* x y)"
-    (Smt.translate_expr config env
-       (Ast.EBinop (OpMul, EVar "x", EVar "y")));
+    (Smt.translate_expr config env (Ast.EBinop (OpMul, EVar "x", EVar "y")));
   check string "div" "(div x y)"
-    (Smt.translate_expr config env
-       (Ast.EBinop (OpDiv, EVar "x", EVar "y")))
+    (Smt.translate_expr config env (Ast.EBinop (OpDiv, EVar "x", EVar "y")))
 
 let test_unop_not () =
   let env = Env.empty "" in
@@ -121,8 +111,7 @@ let test_app () =
 let test_primed_app () =
   let env = Env.empty "" in
   check string "primed app" "(f_prime x)"
-    (Smt.translate_expr config env
-       (Ast.EApp (EPrimed "f", [ EVar "x" ])))
+    (Smt.translate_expr config env (Ast.EApp (EPrimed "f", [ EVar "x" ])))
 
 let test_domain_in () =
   let env = Env.empty "" in
@@ -150,7 +139,8 @@ let test_sort_real () =
   check string "Real sort" "Real" (Smt.sort_of_ty Types.TyReal)
 
 let test_sort_domain () =
-  check string "Domain sort" "Account" (Smt.sort_of_ty (Types.TyDomain "Account"))
+  check string "Domain sort" "Account"
+    (Smt.sort_of_ty (Types.TyDomain "Account"))
 
 (* --- Integration tests --- *)
 
@@ -167,12 +157,9 @@ let contains s sub =
     check 0
 
 let test_preamble_domains_simple () =
-  let env =
-    Env.empty "" |> Env.add_domain "Account" Ast.dummy_loc ~chapter:0
-  in
+  let env = Env.empty "" |> Env.add_domain "Account" Ast.dummy_loc ~chapter:0 in
   let preamble = Smt.declare_domain_sorts config env in
-  check bool "has sort decl" true
-    (contains preamble "(declare-sort Account 0)");
+  check bool "has sort decl" true (contains preamble "(declare-sort Account 0)");
   check bool "has Account_0" true (contains preamble "Account_0");
   check bool "has distinct" true (contains preamble "(distinct")
 
@@ -222,8 +209,7 @@ let test_classify_chapters () =
   | Smt.Invariant props -> check int "invariant props" 1 (List.length props)
   | Smt.Action _ -> fail "Expected invariant chapter");
   match List.nth chapters 1 with
-  | Smt.Action { label; _ } ->
-      check string "action label" "Withdraw" label
+  | Smt.Action { label; _ } -> check string "action label" "Withdraw" label
   | Smt.Invariant _ -> fail "Expected action chapter"
 
 let test_generate_queries () =
@@ -243,15 +229,10 @@ let test_generate_queries () =
   let queries = Smt.generate_queries config env doc in
   (* Should have: 1 contradiction + 1 invariant + 1 precondition = 3 queries *)
   check int "query count" 3 (List.length queries);
-  let kinds =
-    List.map (fun (q : Smt.query) -> q.kind) queries
-  in
-  check bool "has contradiction" true
-    (List.mem Smt.Contradiction kinds);
-  check bool "has invariant" true
-    (List.mem Smt.InvariantPreservation kinds);
-  check bool "has precondition" true
-    (List.mem Smt.PreconditionSat kinds)
+  let kinds = List.map (fun (q : Smt.query) -> q.kind) queries in
+  check bool "has contradiction" true (List.mem Smt.Contradiction kinds);
+  check bool "has invariant" true (List.mem Smt.InvariantPreservation kinds);
+  check bool "has precondition" true (List.mem Smt.PreconditionSat kinds)
 
 let test_contradiction_query_content () =
   let env, doc =
@@ -269,15 +250,17 @@ let test_contradiction_query_content () =
   in
   let queries = Smt.generate_queries config env doc in
   let contra =
-    List.find
-      (fun (q : Smt.query) -> q.kind = Smt.Contradiction)
-      queries
+    List.find (fun (q : Smt.query) -> q.kind = Smt.Contradiction) queries
   in
   check bool "has check-sat" true (contains contra.smt2 "(check-sat)");
   check bool "has balance decl" true
     (contains contra.smt2 "(declare-fun balance ");
-  check bool "has postcondition" true
-    (contains contra.smt2 "balance_prime")
+  check bool "has postcondition" true (contains contra.smt2 "balance_prime");
+  check bool "has produce-unsat-cores" true
+    (contains contra.smt2 "(set-option :produce-unsat-cores true)");
+  check bool "has get-unsat-core" true (contains contra.smt2 "(get-unsat-core)");
+  check bool "has named postcond" true (contains contra.smt2 ":named postcond_");
+  check bool "assertion_names non-empty" true (contra.assertion_names <> [])
 
 let test_frame_conditions () =
   let env =
@@ -287,7 +270,8 @@ let test_frame_conditions () =
          (Types.TyFunc ([ Types.TyDomain "Account" ], Some Types.TyNat))
          Ast.dummy_loc ~chapter:0
     |> Env.add_rule "owner"
-         (Types.TyFunc ([ Types.TyDomain "Account" ], Some (Types.TyDomain "User")))
+         (Types.TyFunc
+            ([ Types.TyDomain "Account" ], Some (Types.TyDomain "User")))
          Ast.dummy_loc ~chapter:0
     |> Env.add_context "Accounts" [ "balance" ]
   in
@@ -296,8 +280,7 @@ let test_frame_conditions () =
   check bool "owner is framed" true
     (contains frame "owner_prime" && contains frame "owner");
   (* balance IS in context: left free, not framed *)
-  check bool "balance not framed" false
-    (contains frame "balance_prime")
+  check bool "balance not framed" false (contains frame "balance_prime")
 
 let test_prime_expr () =
   let open Ast in
@@ -316,7 +299,8 @@ let test_prime_expr () =
   in
   let e2' = Smt.prime_expr e2 in
   match e2' with
-  | EForall (_, _, EBinop (OpGe, EApp (EPrimed "balance", [ EVar "a" ]), ELitNat 0))
+  | EForall
+      (_, _, EBinop (OpGe, EApp (EPrimed "balance", [ EVar "a" ]), ELitNat 0))
     ->
       ()
   | _ ->
@@ -325,9 +309,7 @@ let test_prime_expr () =
            (Ast.show_expr e2'))
 
 let test_card_domain () =
-  let env =
-    Env.empty "" |> Env.add_domain "Account" Ast.dummy_loc ~chapter:0
-  in
+  let env = Env.empty "" |> Env.add_domain "Account" Ast.dummy_loc ~chapter:0 in
   check string "#Domain = bound" "3"
     (Smt.translate_expr config env (Ast.EUnop (OpCard, EDomain "Account")))
 
@@ -359,8 +341,7 @@ let test_subset () =
          Ast.dummy_loc ~chapter:0
   in
   let result =
-    Smt.translate_expr config env
-      (Ast.EBinop (OpSubset, EVar "xs", EVar "ys"))
+    Smt.translate_expr config env (Ast.EBinop (OpSubset, EVar "xs", EVar "ys"))
   in
   (* Should expand over domain elements *)
   check bool "has select xs" true (contains result "(select xs");
@@ -377,8 +358,7 @@ let test_in_list () =
     |> Env.add_var "a" (Types.TyDomain "Account")
   in
   let result =
-    Smt.translate_expr config env
-      (Ast.EBinop (OpIn, EVar "a", EVar "active"))
+    Smt.translate_expr config env (Ast.EBinop (OpIn, EVar "a", EVar "active"))
   in
   check string "in list" "(select active a)" result
 
@@ -390,7 +370,8 @@ let test_sanitize_ident () =
 let test_domain_standalone () =
   let env = Env.empty "" in
   check_raises "EDomain standalone raises"
-    (Failure "SMT translation: EDomain 'Account' appeared in standalone position")
+    (Failure
+       "SMT translation: EDomain 'Account' appeared in standalone position")
     (fun () -> ignore (Smt.translate_expr config env (Ast.EDomain "Account")))
 
 let test_card_non_domain_list () =
@@ -422,6 +403,299 @@ let test_subset_domain_rhs () =
   in
   check bool "has select xs" true (contains result "(select xs");
   check bool "has Item_0" true (contains result "Item_0")
+
+(* --- Value terms tests --- *)
+
+let test_build_value_terms () =
+  let env =
+    Env.empty ""
+    |> Env.add_domain "Account" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "balance"
+         (Types.TyFunc ([ Types.TyDomain "Account" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+  in
+  let params = [ Ast.{ param_name = "a"; param_type = TName "Account" } ] in
+  let terms = Smt.build_value_terms config env params in
+  check bool "has param a" true (List.mem "a" terms);
+  check bool "has (balance a)" true (List.mem "(balance a)" terms);
+  check bool "has (balance_prime a)" true (List.mem "(balance_prime a)" terms)
+
+let test_build_value_terms_nullary () =
+  let env =
+    Env.empty ""
+    |> Env.add_rule "count"
+         (Types.TyFunc ([], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+  in
+  let terms = Smt.build_value_terms config env [] in
+  check bool "has count" true (List.mem "count" terms);
+  check bool "has count_prime" true (List.mem "count_prime" terms)
+
+let test_contradiction_query_has_get_value () =
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       context Ctx.\n\
+       Account.\n\
+       {Ctx} balance a: Account => Nat.\n\
+       ---\n\
+       all a: Account | balance a >= 0.\n\
+       where\n\
+       Ctx ~> Withdraw | a: Account, amount: Nat, balance a >= amount.\n\
+       ---\n\
+       balance' a = balance a - amount.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  let contra =
+    List.find (fun (q : Smt.query) -> q.kind = Smt.Contradiction) queries
+  in
+  check bool "has get-value" true (contains contra.smt2 "(get-value (")
+
+let test_invariant_query_has_get_value () =
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       context Ctx.\n\
+       Account.\n\
+       {Ctx} balance a: Account => Nat.\n\
+       ---\n\
+       all a: Account | balance a >= 0.\n\
+       where\n\
+       Ctx ~> Withdraw | a: Account, amount: Nat, balance a >= amount.\n\
+       ---\n\
+       balance' a = balance a - amount.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  let inv =
+    List.find
+      (fun (q : Smt.query) -> q.kind = Smt.InvariantPreservation)
+      queries
+  in
+  check bool "has get-value" true (contains inv.smt2 "(get-value (")
+
+let test_precondition_query_no_get_value () =
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       context Ctx.\n\
+       Account.\n\
+       {Ctx} balance a: Account => Nat.\n\
+       ---\n\
+       all a: Account | balance a >= 0.\n\
+       where\n\
+       Ctx ~> Withdraw | a: Account, amount: Nat, balance a >= amount.\n\
+       ---\n\
+       balance' a = balance a - amount.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  let precon =
+    List.find (fun (q : Smt.query) -> q.kind = Smt.PreconditionSat) queries
+  in
+  check bool "no get-value" false (contains precon.smt2 "(get-value (")
+
+(* --- Solver parsing tests --- *)
+
+let test_parse_get_value_simple () =
+  let input = "((a Account_0)\n (amount 5))" in
+  let pairs = Solver.parse_get_value input in
+  check int "pair count" 2 (List.length pairs);
+  check (pair string string) "first" ("a", "Account_0") (List.nth pairs 0);
+  check (pair string string) "second" ("amount", "5") (List.nth pairs 1)
+
+let test_parse_get_value_applied () =
+  let input = "((a Account_0)\n ((balance a) 10)\n ((balance_prime a) 5))" in
+  let pairs = Solver.parse_get_value input in
+  check int "pair count" 3 (List.length pairs);
+  check (pair string string) "param" ("a", "Account_0") (List.nth pairs 0);
+  check (pair string string) "balance" ("(balance a)", "10") (List.nth pairs 1);
+  check (pair string string) "balance'" ("(balance_prime a)", "5")
+    (List.nth pairs 2)
+
+let test_parse_get_value_empty () =
+  let pairs = Solver.parse_get_value "" in
+  check int "empty" 0 (List.length pairs)
+
+let test_translate_display_name () =
+  check string "plain" "a" (Solver.translate_display_name "a");
+  check string "prime" "balance'"
+    (Solver.translate_display_name "balance_prime");
+  check string "applied" "balance a"
+    (Solver.translate_display_name "(balance a)");
+  check string "applied prime" "balance' a"
+    (Solver.translate_display_name "(balance_prime a)")
+
+let test_format_counterexample () =
+  let values =
+    [ ("a", "Account_0"); ("(balance a)", "10"); ("(balance_prime a)", "5") ]
+  in
+  let result = Solver.format_counterexample values in
+  check bool "has Before:" true (contains result "Before:");
+  check bool "has Action:" true (contains result "Action:");
+  check bool "has After:" true (contains result "After:");
+  check bool "has a = Account_0" true (contains result "a = Account_0");
+  check bool "has balance a = 10" true (contains result "balance a = 10");
+  check bool "has balance' a = 5" true (contains result "balance' a = 5")
+
+let test_format_counterexample_empty () =
+  check string "empty" "" (Solver.format_counterexample [])
+
+let test_translate_value () =
+  check string "z3 internal" "Account_0"
+    (Solver.translate_value "Account!val!0");
+  check string "our constant" "Account_0" (Solver.translate_value "Account_0");
+  check string "integer" "5" (Solver.translate_value "5");
+  check string "no trailing digits" "foo_bar" (Solver.translate_value "foo_bar");
+  check string "negative sexp" "-1" (Solver.translate_value "(- 1)");
+  check string "negative large" "-42" (Solver.translate_value "(- 42)")
+
+let test_format_counterexample_filters_unchanged () =
+  (* balance a = 10 and balance_prime a = 10 should both be filtered *)
+  let values =
+    [
+      ("a", "Account_0");
+      ("(balance a)", "10");
+      ("(balance_prime a)", "10");
+      ("(owner a)", "User_0");
+      ("(owner_prime a)", "User_1");
+    ]
+  in
+  let result = Solver.format_counterexample values in
+  check bool "has a = Account" true (contains result "a = Account");
+  check bool "no balance a (unchanged)" false (contains result "balance a");
+  check bool "has owner a" true (contains result "owner a = User");
+  check bool "has owner' a" true (contains result "owner' a = User")
+
+let test_invariant_query_has_text () =
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       context Ctx.\n\
+       Account.\n\
+       {Ctx} balance a: Account => Nat.\n\
+       ---\n\
+       all a: Account | balance a >= 0.\n\
+       where\n\
+       Ctx ~> Withdraw | a: Account, amount: Nat, balance a >= amount.\n\
+       ---\n\
+       balance' a = balance a - amount.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  let inv =
+    List.find
+      (fun (q : Smt.query) -> q.kind = Smt.InvariantPreservation)
+      queries
+  in
+  check bool "invariant_text is non-empty" true (inv.invariant_text <> "");
+  check bool "invariant_text has balance" true
+    (contains inv.invariant_text "balance")
+
+(* --- Unsat core tests --- *)
+
+let test_parse_unsat_core_simple () =
+  let core = Solver.parse_unsat_core "(postcond_0 postcond_1)" in
+  check int "core count" 2 (List.length core);
+  check string "first" "postcond_0" (List.nth core 0);
+  check string "second" "postcond_1" (List.nth core 1)
+
+let test_parse_unsat_core_empty () =
+  check (list string) "empty string" [] (Solver.parse_unsat_core "");
+  check (list string) "empty parens" [] (Solver.parse_unsat_core "()")
+
+let test_parse_unsat_core_single () =
+  let core = Solver.parse_unsat_core "(inv_0)" in
+  check int "single" 1 (List.length core);
+  check string "name" "inv_0" (List.hd core)
+
+let test_format_unsat_core () =
+  let names =
+    [
+      ("postcond_0", "balance' a = balance a + 1");
+      ("postcond_1", "balance' a = balance a - 1");
+      ("frame_2", "owner' = owner (frame)");
+    ]
+  in
+  let result = Solver.format_unsat_core [ "postcond_0"; "postcond_1" ] names in
+  check bool "has Conflicting" true (contains result "Conflicting constraints:");
+  check bool "has first postcond" true
+    (contains result "balance' a = balance a + 1");
+  check bool "has second postcond" true
+    (contains result "balance' a = balance a - 1");
+  check bool "no frame" false (contains result "frame")
+
+let test_format_unsat_core_empty () =
+  check string "no core" "" (Solver.format_unsat_core [] []);
+  check string "no matches" ""
+    (Solver.format_unsat_core [ "unknown_0" ] [ ("postcond_0", "x") ])
+
+let test_contradiction_query_named_assertions () =
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       context Ctx.\n\
+       Account.\n\
+       {Ctx} balance a: Account => Nat.\n\
+       ---\n\
+       where\n\
+       Ctx ~> BadAction | a: Account.\n\
+       ---\n\
+       balance' a = balance a + 1.\n\
+       balance' a = balance a - 1.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  let contra =
+    List.find (fun (q : Smt.query) -> q.kind = Smt.Contradiction) queries
+  in
+  (* Should have named postconditions *)
+  let postcond_names =
+    List.filter
+      (fun (name, _) ->
+        String.length name >= 8 && String.sub name 0 8 = "postcond")
+      contra.assertion_names
+  in
+  check bool "has postcond names" true (List.length postcond_names >= 2);
+  (* No frame conditions here since balance is the only function and it's in context *)
+  check bool "has produce-unsat-cores" true
+    (contains contra.smt2 "(set-option :produce-unsat-cores true)");
+  check bool "has get-unsat-core" true (contains contra.smt2 "(get-unsat-core)")
+
+let test_precondition_query_named_assertions () =
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       context Ctx.\n\
+       Account.\n\
+       {Ctx} balance a: Account => Nat.\n\
+       ---\n\
+       all a: Account | balance a >= 0.\n\
+       where\n\
+       Ctx ~> ImpossibleAction | a: Account, balance a < 0.\n\
+       ---\n\
+       balance' a = 0.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  let precon =
+    List.find (fun (q : Smt.query) -> q.kind = Smt.PreconditionSat) queries
+  in
+  check bool "has produce-unsat-cores" true
+    (contains precon.smt2 "(set-option :produce-unsat-cores true)");
+  check bool "has get-unsat-core" true (contains precon.smt2 "(get-unsat-core)");
+  (* Should have named invariants and preconditions *)
+  let inv_names =
+    List.filter
+      (fun (name, _) -> String.length name >= 3 && String.sub name 0 3 = "inv")
+      precon.assertion_names
+  in
+  let precond_names =
+    List.filter
+      (fun (name, _) ->
+        String.length name >= 7 && String.sub name 0 7 = "precond")
+      precon.assertion_names
+  in
+  check bool "has inv names" true (List.length inv_names >= 1);
+  check bool "has precond names" true (List.length precond_names >= 1);
+  (* Invariant text should mention "Invariant:" prefix *)
+  let inv_text = snd (List.hd inv_names) in
+  check bool "inv has prefix" true (contains inv_text "Invariant:")
 
 (* --- Test suites --- *)
 
@@ -469,10 +743,52 @@ let integration_tests =
     test_case "nullary rule" `Quick test_nullary_rule;
     test_case "classify chapters" `Quick test_classify_chapters;
     test_case "generate queries" `Quick test_generate_queries;
-    test_case "contradiction query content" `Quick test_contradiction_query_content;
+    test_case "contradiction query content" `Quick
+      test_contradiction_query_content;
     test_case "frame conditions" `Quick test_frame_conditions;
     test_case "prime expr" `Quick test_prime_expr;
     test_case "sanitize ident" `Quick test_sanitize_ident;
+  ]
+
+let value_terms_tests =
+  [
+    test_case "build value terms" `Quick test_build_value_terms;
+    test_case "build value terms nullary" `Quick test_build_value_terms_nullary;
+    test_case "contradiction query has get-value" `Quick
+      test_contradiction_query_has_get_value;
+    test_case "invariant query has get-value" `Quick
+      test_invariant_query_has_get_value;
+    test_case "invariant query has invariant text" `Quick
+      test_invariant_query_has_text;
+    test_case "precondition query no get-value" `Quick
+      test_precondition_query_no_get_value;
+  ]
+
+let solver_parsing_tests =
+  [
+    test_case "parse get-value simple" `Quick test_parse_get_value_simple;
+    test_case "parse get-value applied" `Quick test_parse_get_value_applied;
+    test_case "parse get-value empty" `Quick test_parse_get_value_empty;
+    test_case "translate display name" `Quick test_translate_display_name;
+    test_case "format counterexample" `Quick test_format_counterexample;
+    test_case "format counterexample empty" `Quick
+      test_format_counterexample_empty;
+    test_case "translate domain value" `Quick test_translate_value;
+    test_case "format counterexample filters unchanged" `Quick
+      test_format_counterexample_filters_unchanged;
+  ]
+
+let unsat_core_tests =
+  [
+    test_case "parse unsat core simple" `Quick test_parse_unsat_core_simple;
+    test_case "parse unsat core empty" `Quick test_parse_unsat_core_empty;
+    test_case "parse unsat core single" `Quick test_parse_unsat_core_single;
+    test_case "format unsat core" `Quick test_format_unsat_core;
+    test_case "format unsat core empty" `Quick test_format_unsat_core_empty;
+    test_case "contradiction named assertions" `Quick
+      test_contradiction_query_named_assertions;
+    test_case "precondition named assertions" `Quick
+      test_precondition_query_named_assertions;
   ]
 
 let () =
@@ -481,4 +797,7 @@ let () =
       ("expressions", expression_tests);
       ("sorts", sort_tests);
       ("integration", integration_tests);
+      ("value_terms", value_terms_tests);
+      ("solver_parsing", solver_parsing_tests);
+      ("unsat_core", unsat_core_tests);
     ]

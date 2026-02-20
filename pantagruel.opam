@@ -9,6 +9,8 @@ depends: [
   "sedlex"
   "ppx_deriving"
   "yojson"
+  "sexplib0"
+  "parsexp"
   "alcotest" {with-test}
   "odoc" {with-doc}
 ]

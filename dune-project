@@ -16,4 +16,6 @@
   sedlex
   ppx_deriving
   yojson
+  sexplib0
+  parsexp
   (alcotest :with-test)))

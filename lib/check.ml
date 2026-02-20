@@ -227,60 +227,68 @@ and check_no_type_shadow ctx name new_ty =
       else Error (ShadowingTypeMismatch (name, existing_ty, new_ty, ctx.loc))
   | _ -> Ok () (* Not shadowing a variable, OK *)
 
-and check_quantifier ctx params guards body =
-  (* Resolve parameter types and extend environment *)
-  let resolve_param p =
-    match Collect.resolve_type ctx.env p.param_type ctx.loc with
-    | Ok ty ->
-        let* () = check_no_type_shadow ctx p.param_name ty in
-        Ok (p.param_name, ty)
-    | Error (Collect.UndefinedType (name, loc)) ->
-        Error (UnboundType (name, loc))
-    | Error _ -> Error (UnboundType ("unknown", ctx.loc))
-  in
-  let* param_bindings = map_result resolve_param params in
+(** Resolve a parameter's type expression to an internal type *)
+and resolve_param_type env loc p =
+  match Collect.resolve_type env p.param_type loc with
+  | Ok ty -> Ok (p.param_name, ty)
+  | Error (Collect.UndefinedType (name, loc)) -> Error (UnboundType (name, loc))
+  | Error _ -> Error (UnboundType ("unknown", loc))
 
-  (* Extend environment with quantifier-bound variables *)
+(** Process guards, extending context and collecting additional bindings. When
+    [check_shadow] is true, validates that new bindings don't shadow existing
+    variables with incompatible types. *)
+and process_guards ~check_shadow ~loc ctx guards =
+  fold_result
+    (fun (bindings, current_ctx) g ->
+      match g with
+      | GParam p ->
+          let* name, ty = resolve_param_type current_ctx.env loc p in
+          let* () =
+            if check_shadow then check_no_type_shadow current_ctx name ty
+            else Ok ()
+          in
+          Ok
+            ( (name, ty) :: bindings,
+              { current_ctx with env = Env.add_var name ty current_ctx.env } )
+      | GIn (name, list_expr) -> (
+          let* list_ty = infer_type (with_loc current_ctx loc) list_expr in
+          match list_ty with
+          | TyList elem_ty ->
+              let* () =
+                if check_shadow then
+                  check_no_type_shadow current_ctx name elem_ty
+                else Ok ()
+              in
+              Ok
+                ( (name, elem_ty) :: bindings,
+                  {
+                    current_ctx with
+                    env = Env.add_var name elem_ty current_ctx.env;
+                  } )
+          | _ -> Error (NotAList (list_ty, loc)))
+      | GExpr e ->
+          let* ty = infer_type (with_loc current_ctx loc) e in
+          if equal_ty ty TyBool then Ok (bindings, current_ctx)
+          else Error (ExpectedBool (ty, loc)))
+    ([], ctx) guards
+
+and check_quantifier ctx params guards body =
+  (* Resolve parameter types with shadow checking *)
+  let* param_bindings =
+    map_result
+      (fun p ->
+        let* name, ty = resolve_param_type ctx.env ctx.loc p in
+        let* () = check_no_type_shadow ctx name ty in
+        Ok (name, ty))
+      params
+  in
   let env' = Env.with_vars param_bindings ctx.env in
   let ctx' = { ctx with env = env' } in
-
-  (* Process guards: check types and collect additional bindings from GIn *)
   let* guard_bindings, _ =
-    fold_result
-      (fun (bindings, current_ctx) g ->
-        match g with
-        | GParam p ->
-            (* Additional parameter binding *)
-            let* name, ty = resolve_param p in
-            Ok
-              ( (name, ty) :: bindings,
-                { current_ctx with env = Env.add_var name ty current_ctx.env }
-              )
-        | GIn (name, list_expr) -> (
-            (* x in xs - infer type of xs, extract element type *)
-            let* list_ty = infer_type current_ctx list_expr in
-            match list_ty with
-            | TyList elem_ty ->
-                let* () = check_no_type_shadow current_ctx name elem_ty in
-                Ok
-                  ( (name, elem_ty) :: bindings,
-                    {
-                      current_ctx with
-                      env = Env.add_var name elem_ty current_ctx.env;
-                    } )
-            | _ -> Error (NotAList (list_ty, ctx.loc)))
-        | GExpr e ->
-            let* ty = infer_type current_ctx e in
-            if equal_ty ty TyBool then Ok (bindings, current_ctx)
-            else Error (ExpectedBool (ty, ctx.loc)))
-      ([], ctx') guards
+    process_guards ~check_shadow:true ~loc:ctx.loc ctx' guards
   in
-
-  (* Extend environment with all guard bindings *)
   let env'' = Env.with_vars guard_bindings ctx'.env in
   let ctx'' = { ctx with env = env'' } in
-
-  (* Check body is boolean *)
   let* body_ty = infer_type ctx'' body in
   if equal_ty body_ty TyBool then Ok TyBool
   else Error (ExpectedBool (body_ty, ctx.loc))
@@ -317,44 +325,12 @@ let check_proposition ctx (prop : expr located) =
 (** Check guards on a rule declaration or action *)
 let check_rule_guards ctx (decl : declaration located) =
   let check_guards params guards =
-    (* Resolve parameter types and add them to environment *)
-    let resolve_param env p =
-      match Collect.resolve_type env p.param_type decl.loc with
-      | Ok ty -> Ok (p.param_name, ty)
-      | Error (Collect.UndefinedType (name, loc)) ->
-          Error (UnboundType (name, loc))
-      | Error _ -> Error (UnboundType ("unknown", decl.loc))
+    let* param_bindings =
+      map_result (resolve_param_type ctx.env decl.loc) params
     in
-    let* param_bindings = map_result (resolve_param ctx.env) params in
     let env' = Env.with_vars param_bindings ctx.env in
     let ctx' = { ctx with env = env' } in
-
-    (* Check each guard, accumulating bindings from GParam/GIn *)
-    let* _ =
-      fold_result
-        (fun current_ctx g ->
-          match g with
-          | GParam p ->
-              let* name, ty = resolve_param current_ctx.env p in
-              Ok { current_ctx with env = Env.add_var name ty current_ctx.env }
-          | GIn (name, list_expr) -> (
-              let ctx'' = with_loc current_ctx decl.loc in
-              let* list_ty = infer_type ctx'' list_expr in
-              match list_ty with
-              | TyList elem_ty ->
-                  Ok
-                    {
-                      current_ctx with
-                      env = Env.add_var name elem_ty current_ctx.env;
-                    }
-              | _ -> Error (NotAList (list_ty, decl.loc)))
-          | GExpr e ->
-              let ctx'' = with_loc current_ctx decl.loc in
-              let* ty = infer_type ctx'' e in
-              if equal_ty ty TyBool then Ok current_ctx
-              else Error (ExpectedBool (ty, decl.loc)))
-        ctx' guards
-    in
+    let* _ = process_guards ~check_shadow:false ~loc:decl.loc ctx' guards in
     Ok ()
   in
   match decl.value with

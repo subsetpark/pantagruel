@@ -3,16 +3,20 @@
 open Ast
 open Types
 
-(** Configuration for bounded checking *)
 type config = { bound : int }
+(** Configuration for bounded checking *)
 
-(** A generated SMT query with metadata *)
 type query = {
   name : string;
   description : string;
   smt2 : string;
   kind : query_kind;
+  value_terms : string list;
+  invariant_text : string;
+  assertion_names : (string * string) list;
+      (** Maps SMT assertion name to human-readable text *)
 }
+(** A generated SMT query with metadata *)
 
 and query_kind =
   | Contradiction  (** SAT = ok, UNSAT = contradiction found *)
@@ -42,8 +46,7 @@ let rec sort_of_ty = function
 and product_sort_name ts =
   "Pair_" ^ String.concat "_" (List.map sort_base_name ts)
 
-and sum_sort_name ts =
-  "Sum_" ^ String.concat "_" (List.map sort_base_name ts)
+and sum_sort_name ts = "Sum_" ^ String.concat "_" (List.map sort_base_name ts)
 
 and sort_base_name = function
   | TyBool -> "Bool"
@@ -63,13 +66,8 @@ let domain_elements name bound =
 
 (** Sanitize an identifier for SMT-LIB2 (replace hyphens, question marks) *)
 let sanitize_ident name =
-  name
-  |> String.to_seq
-  |> Seq.map (fun c ->
-         match c with
-         | '-' -> '_'
-         | '?' -> 'p'
-         | _ -> c)
+  name |> String.to_seq
+  |> Seq.map (fun c -> match c with '-' -> '_' | '?' -> 'p' | _ -> c)
   |> String.of_seq
 
 (** Generate sort declarations for user-defined domains *)
@@ -80,8 +78,7 @@ let declare_domain_sorts config env =
       match entry.Env.kind with
       | Env.KDomain ->
           let elems = domain_elements name config.bound in
-          Buffer.add_string buf
-            (Printf.sprintf "(declare-sort %s 0)\n" name);
+          Buffer.add_string buf (Printf.sprintf "(declare-sort %s 0)\n" name);
           List.iter
             (fun elem ->
               Buffer.add_string buf
@@ -90,12 +87,18 @@ let declare_domain_sorts config env =
           if List.length elems > 1 then
             Buffer.add_string buf
               (Printf.sprintf "(assert (distinct %s))\n"
-                 (String.concat " " elems))
+                 (String.concat " " elems));
+          (* Closure axiom: every element of the sort is one of our constants *)
+          let disj = List.map (fun e -> Printf.sprintf "(= _x_ %s)" e) elems in
+          Buffer.add_string buf
+            (Printf.sprintf "(assert (forall ((_x_ %s)) (or %s)))\n" name
+               (String.concat " " disj))
       | _ -> ())
     env.Env.types;
   Buffer.contents buf
 
-(** Collect all product/sum types used in the environment for datatype declarations *)
+(** Collect all product/sum types used in the environment for datatype
+    declarations *)
 let collect_composite_types env =
   let products = Hashtbl.create 8 in
   let sums = Hashtbl.create 8 in
@@ -120,9 +123,7 @@ let collect_composite_types env =
     env.Env.terms;
   Env.StringMap.iter
     (fun _ entry ->
-      match entry.Env.kind with
-      | Env.KAlias ty -> visit ty
-      | _ -> ())
+      match entry.Env.kind with Env.KAlias ty -> visit ty | _ -> ())
     env.Env.types;
   (products, sums)
 
@@ -134,8 +135,7 @@ let declare_composite_types env =
     (fun name ts ->
       let fields =
         List.mapi
-          (fun i t ->
-            Printf.sprintf "(fst_%d %s)" (i + 1) (sort_of_ty t))
+          (fun i t -> Printf.sprintf "(fst_%d %s)" (i + 1) (sort_of_ty t))
           ts
       in
       Buffer.add_string buf
@@ -174,8 +174,7 @@ let declare_functions env =
           match decompose_func_ty ty with
           | Some ([], ret) ->
               Buffer.add_string buf
-                (Printf.sprintf "(declare-const %s %s)\n" sname
-                   (sort_of_ty ret));
+                (Printf.sprintf "(declare-const %s %s)\n" sname (sort_of_ty ret));
               Buffer.add_string buf
                 (Printf.sprintf "(declare-const %s_prime %s)\n" sname
                    (sort_of_ty ret))
@@ -194,43 +193,36 @@ let declare_functions env =
     env.Env.terms;
   Buffer.contents buf
 
-(** Generate type constraints (e.g., Nat >= 1, Nat0 >= 0) for functions.
-    When [constrain_primed] is false, primed functions are unconstrained. *)
-let declare_type_constraints ?(constrain_primed = true) _config env =
-  let buf = Buffer.create 256 in
-  let add_nat_constraint sname params_sorts param_names ret_ty is_prime =
+(** Collect type constraint expressions (e.g., Nat >= 1, Nat0 >= 0) for
+    functions. Returns a list of (human_text, smt_expr) pairs. When
+    [constrain_primed] is false, primed functions are unconstrained. *)
+let collect_type_constraint_exprs ?(constrain_primed = true) _config env =
+  let constraints = ref [] in
+  let add_nat_constraint name sname params_sorts param_names ret_ty is_prime =
     let fname = if is_prime then sname ^ "_prime" else sname in
-    match ret_ty with
-    | TyNat ->
-        if params_sorts = [] then
-          Buffer.add_string buf
-            (Printf.sprintf "(assert (>= %s 1))\n" fname)
-        else begin
-          (* For all domain elements, assert >= 1 *)
-          Buffer.add_string buf
-            (Printf.sprintf "(assert (forall (%s) (>= (%s %s) 1)))\n"
-               (String.concat " "
-                  (List.map2
-                     (fun n s -> Printf.sprintf "(%s %s)" n s)
-                     param_names params_sorts))
-               fname
-               (String.concat " " param_names))
-        end
-    | TyNat0 ->
-        if params_sorts = [] then
-          Buffer.add_string buf
-            (Printf.sprintf "(assert (>= %s 0))\n" fname)
-        else begin
-          Buffer.add_string buf
-            (Printf.sprintf "(assert (forall (%s) (>= (%s %s) 0)))\n"
-               (String.concat " "
-                  (List.map2
-                     (fun n s -> Printf.sprintf "(%s %s)" n s)
-                     param_names params_sorts))
-               fname
-               (String.concat " " param_names))
-        end
-    | _ -> ()
+    let display_name = if is_prime then name ^ "'" else name in
+    let type_name, bound =
+      match ret_ty with
+      | TyNat -> ("Nat", 1)
+      | TyNat0 -> ("Nat0", 0)
+      | _ -> ("", -1)
+    in
+    if bound >= 0 then begin
+      let smt_expr =
+        if params_sorts = [] then Printf.sprintf "(>= %s %d)" fname bound
+        else
+          Printf.sprintf "(forall (%s) (>= (%s %s) %d))"
+            (String.concat " "
+               (List.map2
+                  (fun n s -> Printf.sprintf "(%s %s)" n s)
+                  param_names params_sorts))
+            fname
+            (String.concat " " param_names)
+            bound
+      in
+      let human = Printf.sprintf "%s : %s" display_name type_name in
+      constraints := (human, smt_expr) :: !constraints
+    end
   in
   Env.StringMap.iter
     (fun name entry ->
@@ -243,19 +235,33 @@ let declare_type_constraints ?(constrain_primed = true) _config env =
               let param_names =
                 List.mapi (fun i _ -> Printf.sprintf "x_%d" i) params
               in
-              add_nat_constraint sname params_sorts param_names ret false;
+              add_nat_constraint name sname params_sorts param_names ret false;
               if constrain_primed then
-                add_nat_constraint sname params_sorts param_names ret true
+                add_nat_constraint name sname params_sorts param_names ret true
           | None -> ())
       | _ -> ())
     env.Env.terms;
+  List.rev !constraints
+
+(** Generate type constraints as plain assertions (for queries that don't need
+    naming) *)
+let declare_type_constraints ?(constrain_primed = true) config env =
+  let buf = Buffer.create 256 in
+  let exprs = collect_type_constraint_exprs ~constrain_primed config env in
+  List.iter
+    (fun (_human, smt_expr) ->
+      Buffer.add_string buf (Printf.sprintf "(assert %s)\n" smt_expr))
+    exprs;
   Buffer.contents buf
 
 (** Generate the full preamble: sorts, functions, domain elements, constraints.
     When [constrain_primed] is false, primed functions are left unconstrained
     (used for invariant preservation queries where we want to check if the
-    transition can violate type/invariant bounds). *)
-let generate_preamble ?(constrain_primed = true) config env =
+    transition can violate type/invariant bounds). When
+    [include_type_constraints] is false, type constraints are omitted (used when
+    the caller will add them as named assertions instead). *)
+let generate_preamble ?(constrain_primed = true)
+    ?(include_type_constraints = true) config env =
   let buf = Buffer.create 1024 in
   Buffer.add_string buf "; --- Domain sorts and elements ---\n";
   Buffer.add_string buf (declare_domain_sorts config env);
@@ -263,8 +269,11 @@ let generate_preamble ?(constrain_primed = true) config env =
   Buffer.add_string buf (declare_composite_types env);
   Buffer.add_string buf "\n; --- Function declarations ---\n";
   Buffer.add_string buf (declare_functions env);
-  Buffer.add_string buf "\n; --- Type constraints ---\n";
-  Buffer.add_string buf (declare_type_constraints ~constrain_primed config env);
+  if include_type_constraints then begin
+    Buffer.add_string buf "\n; --- Type constraints ---\n";
+    Buffer.add_string buf
+      (declare_type_constraints ~constrain_primed config env)
+  end;
   Buffer.contents buf
 
 (** Translate an expression to SMT-LIB2 term string *)
@@ -342,7 +351,7 @@ and translate_binop config env op e1 e2 =
   (* OpIn and OpSubset handle EDomain specially — don't eagerly translate *)
   | OpIn -> translate_in config env e1 e2
   | OpSubset -> translate_subset config env e1 e2
-  | _ ->
+  | _ -> (
       let t1 = translate_expr config env e1 in
       let t2 = translate_expr config env e2 in
       match op with
@@ -360,7 +369,7 @@ and translate_binop config env op e1 e2 =
       | OpSub -> Printf.sprintf "(- %s %s)" t1 t2
       | OpMul -> Printf.sprintf "(* %s %s)" t1 t2
       | OpDiv -> Printf.sprintf "(div %s %s)" t1 t2
-      | OpIn | OpSubset -> assert false (* handled above *)
+      | OpIn | OpSubset -> assert false (* handled above *))
 
 and translate_in config env elem set =
   match set with
@@ -390,13 +399,11 @@ and translate_subset config env e1 e2 =
           (fun d ->
             Printf.sprintf "(=> (select %s %s) (or %s))" s1 d
               (String.concat " "
-                 (List.map
-                    (fun e -> Printf.sprintf "(= %s %s)" d e)
-                    elems)))
+                 (List.map (fun e -> Printf.sprintf "(= %s %s)" d e) elems)))
           elems
       in
       Printf.sprintf "(and %s)" (String.concat " " conjuncts)
-  | _ ->
+  | _ -> (
       let s2 = translate_expr config env e2 in
       (* xs subset ys: infer element type for quantifier binding *)
       match Check.infer_type { Check.env; loc = dummy_loc } e1 with
@@ -417,8 +424,8 @@ and translate_subset config env e1 e2 =
             sort s1 s2
       | _ ->
           Printf.sprintf
-            "(forall ((x_sub Int)) (=> (select %s x_sub) (select %s x_sub)))"
-            s1 s2
+            "(forall ((x_sub Int)) (=> (select %s x_sub) (select %s x_sub)))" s1
+            s2)
 
 and translate_unop config env op e =
   match op with
@@ -440,8 +447,7 @@ and translate_card config env e =
           let elems = domain_elements name config.bound in
           let terms =
             List.map
-              (fun d ->
-                Printf.sprintf "(ite (select %s %s) 1 0)" set_str d)
+              (fun d -> Printf.sprintf "(ite (select %s %s) 1 0)" set_str d)
               elems
           in
           Printf.sprintf "(+ %s)" (String.concat " " terms)
@@ -493,9 +499,7 @@ and translate_quantifier config env quant params guards body =
               | Ok (TyList elem_ty) -> sort_of_ty elem_ty
               | _ -> "Int"
             in
-            let guard_str =
-              translate_in config env (EVar name) list_expr
-            in
+            let guard_str = translate_in config env (EVar name) list_expr in
             ( Printf.sprintf "(%s %s)" (sanitize_ident name) elem_sort :: binds,
               guard_str :: conds )
         | GExpr e -> (binds, translate_expr config env e :: conds))
@@ -550,18 +554,10 @@ let classify_chapter (chapter : chapter) =
   in
   match action with
   | Some (label, params, guards, context) ->
-      Action
-        {
-          label;
-          params;
-          guards;
-          context;
-          propositions = chapter.body;
-        }
+      Action { label; params; guards; context; propositions = chapter.body }
   | None -> Invariant chapter.body
 
-let classify_chapters (doc : document) =
-  List.map classify_chapter doc.chapters
+let classify_chapters (doc : document) = List.map classify_chapter doc.chapters
 
 (** Collect all invariants from the document *)
 let collect_invariants chapters =
@@ -569,7 +565,6 @@ let collect_invariants chapters =
     (fun c -> match c with Invariant props -> props | Action _ -> [])
     chapters
 
-(** Collect all actions from the document *)
 type action_info = {
   a_label : string;
   a_params : param list;
@@ -577,6 +572,7 @@ type action_info = {
   a_context : string option;
   a_propositions : expr located list;
 }
+(** Collect all actions from the document *)
 
 let collect_actions chapters =
   List.filter_map
@@ -601,16 +597,18 @@ let conjoin_propositions config env props =
   | [ p ] -> translate_expr config env p.value
   | _ ->
       let parts =
-        List.map (fun (p : expr located) -> translate_expr config env p.value) props
+        List.map
+          (fun (p : expr located) -> translate_expr config env p.value)
+          props
       in
       Printf.sprintf "(and %s)" (String.concat " " parts)
 
-(** Substitute primed names in an expression (for invariant checking in next state).
-    Tracks locally-bound names (from quantifiers) to avoid priming them. *)
+(** Substitute primed names in an expression (for invariant checking in next
+    state). Tracks locally-bound names (from quantifiers) to avoid priming them.
+*)
 let rec prime_expr ?(bound = []) (e : expr) : expr =
   match e with
-  | EVar name ->
-      if List.mem name bound then e else EPrimed name
+  | EVar name -> if List.mem name bound then e else EPrimed name
   | EApp (func, args) ->
       EApp (prime_expr ~bound func, List.map (prime_expr ~bound) args)
   | EBinop (op, e1, e2) ->
@@ -632,8 +630,8 @@ let rec prime_expr ?(bound = []) (e : expr) : expr =
           List.map
             (fun (k, v) -> (prime_expr ~bound k, prime_expr ~bound v))
             pairs )
-  | EPrimed _ | ELitBool _ | ELitNat _ | ELitReal _ | ELitString _
-  | EDomain _ | EQualified _ ->
+  | EPrimed _ | ELitBool _ | ELitNat _ | ELitReal _ | ELitString _ | EDomain _
+  | EQualified _ ->
       e
 
 and prime_guards ~bound gs =
@@ -646,28 +644,25 @@ and prime_guards ~bound gs =
       | GExpr e -> (bound, acc @ [ GExpr (prime_expr ~bound e) ]))
     (bound, []) gs
 
-(** Generate frame conditions: for every rule NOT in the action's context,
-    assert f_prime = f. Contextual functions are left free — constrained
-    only by the action's postconditions. *)
-let generate_frame_conditions _config env context =
+(** Generate frame condition expressions: for every rule NOT in the action's
+    context, produce the SMT expression asserting f_prime = f. Returns a list of
+    (function_name, smt_expr) pairs. *)
+let collect_frame_exprs _config env context =
   match context with
-  | None -> "" (* No context = no frame conditions *)
+  | None -> []
   | Some ctx_name -> (
       match Env.lookup_context ctx_name env with
-      | None -> ""
+      | None -> []
       | Some context_members ->
-          let buf = Buffer.create 256 in
-          Buffer.add_string buf "; --- Frame conditions ---\n";
-          Env.StringMap.iter
-            (fun name entry ->
+          Env.StringMap.fold
+            (fun name entry acc ->
               match entry.Env.kind with
               | Env.KRule ty when not (List.mem name context_members) -> (
                   let sname = sanitize_ident name in
                   match decompose_func_ty ty with
                   | Some ([], _ret) ->
-                      Buffer.add_string buf
-                        (Printf.sprintf "(assert (= %s_prime %s))\n" sname
-                           sname)
+                      (name, Printf.sprintf "(= %s_prime %s)" sname sname)
+                      :: acc
                   | Some (params, _ret) ->
                       let param_sorts = List.map sort_of_ty params in
                       let param_names =
@@ -681,24 +676,35 @@ let generate_frame_conditions _config env context =
                           param_names param_sorts
                       in
                       let args = String.concat " " param_names in
-                      Buffer.add_string buf
-                        (Printf.sprintf
-                           "(assert (forall (%s) (= (%s_prime %s) (%s \
-                            %s))))\n"
-                           (String.concat " " bindings)
-                           sname args sname args)
-                  | None -> ())
-              | _ -> ())
-            env.Env.terms;
-          Buffer.contents buf)
+                      ( name,
+                        Printf.sprintf "(forall (%s) (= (%s_prime %s) (%s %s)))"
+                          (String.concat " " bindings)
+                          sname args sname args )
+                      :: acc
+                  | None -> acc)
+              | _ -> acc)
+            env.Env.terms []
+          |> List.rev)
+
+(** Generate frame conditions as plain assertions (for invariant queries) *)
+let generate_frame_conditions config env context =
+  let exprs = collect_frame_exprs config env context in
+  match exprs with
+  | [] -> ""
+  | _ ->
+      let buf = Buffer.create 256 in
+      Buffer.add_string buf "; --- Frame conditions ---\n";
+      List.iter
+        (fun (_name, smt_expr) ->
+          Buffer.add_string buf (Printf.sprintf "(assert %s)\n" smt_expr))
+        exprs;
+      Buffer.contents buf
 
 (** Extract preconditions from action guards (non-binding boolean conditions) *)
 let extract_preconditions config env (guards : guard list) =
   List.filter_map
     (fun g ->
-      match g with
-      | GExpr e -> Some (translate_expr config env e)
-      | _ -> None)
+      match g with GExpr e -> Some (translate_expr config env e) | _ -> None)
     guards
 
 (** Generate parameter declarations for an action *)
@@ -713,7 +719,8 @@ let declare_action_params env (params : param list) =
       in
       Buffer.add_string buf
         (Printf.sprintf "(declare-const %s %s)\n"
-           (sanitize_ident p.param_name) sort))
+           (sanitize_ident p.param_name)
+           sort))
     params;
   Buffer.contents buf
 
@@ -735,9 +742,124 @@ let declare_param_constraints env (params : param list) =
     params;
   Buffer.contents buf
 
-(** Query 1: Contradiction detection for an action.
-    Asserts all postconditions and checks satisfiability.
-    UNSAT = contradiction found. *)
+(** Build SMT term strings to request values for in counterexamples. Includes
+    action parameters, function applications to action params, and function
+    applications to domain elements (for invariant queries where violations may
+    occur on elements other than action params). *)
+let build_value_terms config env (params : param list) =
+  let param_terms =
+    List.map (fun (p : param) -> sanitize_ident p.param_name) params
+  in
+  let param_set =
+    List.filter_map
+      (fun (p : param) ->
+        match Collect.resolve_type env p.param_type dummy_loc with
+        | Ok ty -> Some (sanitize_ident p.param_name, ty)
+        | Error _ -> None)
+      params
+  in
+  let func_terms =
+    Env.StringMap.fold
+      (fun name entry acc ->
+        match entry.Env.kind with
+        | Env.KRule ty -> (
+            let sname = sanitize_ident name in
+            match decompose_func_ty ty with
+            | Some ([], _ret) ->
+                (* Nullary rule: include current and primed *)
+                sname :: (sname ^ "_prime") :: acc
+            | Some ([ param_ty ], _ret) ->
+                (* Unary rule: apply to each matching param *)
+                let from_params =
+                  List.filter_map
+                    (fun (sp, resolved_ty) ->
+                      if resolved_ty = param_ty then
+                        Some
+                          [
+                            Printf.sprintf "(%s %s)" sname sp;
+                            Printf.sprintf "(%s_prime %s)" sname sp;
+                          ]
+                      else None)
+                    param_set
+                in
+                (* Also apply to domain elements for full coverage *)
+                let from_elems =
+                  match param_ty with
+                  | TyDomain dname ->
+                      let elems = domain_elements dname config.bound in
+                      (* Exclude elements that duplicate action param applications *)
+                      let param_names =
+                        List.filter_map
+                          (fun (sp, resolved_ty) ->
+                            if resolved_ty = param_ty then Some sp else None)
+                          param_set
+                      in
+                      List.concat_map
+                        (fun elem ->
+                          if List.mem elem param_names then []
+                          else
+                            [
+                              Printf.sprintf "(%s %s)" sname elem;
+                              Printf.sprintf "(%s_prime %s)" sname elem;
+                            ])
+                        elems
+                  | _ -> []
+                in
+                List.concat from_params @ from_elems @ acc
+            | _ -> acc)
+        | _ -> acc)
+      env.Env.terms []
+  in
+  param_terms @ func_terms
+
+(** Append (get-value ...) command to buffer if value_terms is non-empty *)
+let append_get_value buf value_terms =
+  match value_terms with
+  | [] -> ()
+  | terms ->
+      Buffer.add_string buf
+        (Printf.sprintf "(get-value (%s))\n" (String.concat " " terms))
+
+type named_assertions = {
+  buf : Buffer.t;
+  mutable counter : int;
+  mutable names : (string * string) list;
+}
+(** Named assertion accumulator for unsat-core diagnostics *)
+
+let create_named_assertions buf = { buf; counter = 0; names = [] }
+
+let add_named_assert na prefix human_text smt_expr =
+  let aname = Printf.sprintf "%s_%d" prefix na.counter in
+  na.counter <- na.counter + 1;
+  na.names <- (aname, human_text) :: na.names;
+  Buffer.add_string na.buf
+    (Printf.sprintf "(assert (! %s :named %s))\n" smt_expr aname)
+
+let get_assertion_names na = List.rev na.names
+
+(** Add named type constraints for functions and action parameters *)
+let add_type_constraints na config env (params : param list) =
+  let type_exprs = collect_type_constraint_exprs config env in
+  List.iter
+    (fun (human, smt_expr) -> add_named_assert na "type" human smt_expr)
+    type_exprs;
+  List.iter
+    (fun (p : param) ->
+      match Collect.resolve_type env p.param_type dummy_loc with
+      | Ok TyNat ->
+          add_named_assert na "type"
+            (Printf.sprintf "%s : Nat" p.param_name)
+            (Printf.sprintf "(>= %s 1)" (sanitize_ident p.param_name))
+      | Ok TyNat0 ->
+          add_named_assert na "type"
+            (Printf.sprintf "%s : Nat0" p.param_name)
+            (Printf.sprintf "(>= %s 0)" (sanitize_ident p.param_name))
+      | _ -> ())
+    params
+
+(** Query 1: Contradiction detection for an action. Asserts all postconditions
+    and checks satisfiability. UNSAT = contradiction found. *)
 let declare_domain_membership config buf (params : param list) env =
   List.iter
     (fun (p : param) ->
@@ -755,47 +877,77 @@ let declare_domain_membership config buf (params : param list) env =
 
 let generate_contradiction_query config env action =
   let buf = Buffer.create 1024 in
-  Buffer.add_string buf (Printf.sprintf "; Contradiction check: %s\n" action.a_label);
-  Buffer.add_string buf (generate_preamble config env);
+  let na = create_named_assertions buf in
+  Buffer.add_string buf
+    (Printf.sprintf "; Contradiction check: %s\n" action.a_label);
+  Buffer.add_string buf "(set-option :produce-unsat-cores true)\n";
+  Buffer.add_string buf
+    (generate_preamble ~include_type_constraints:false config env);
   Buffer.add_string buf "\n; --- Action parameters ---\n";
   Buffer.add_string buf (declare_action_params env action.a_params);
-  Buffer.add_string buf (declare_param_constraints env action.a_params);
   declare_domain_membership config buf action.a_params env;
-  (* Assert preconditions from guards *)
-  let preconditions = extract_preconditions config env action.a_guards in
+  Buffer.add_string buf "\n; --- Type constraints ---\n";
+  add_type_constraints na config env action.a_params;
+  (* Named preconditions from guards *)
+  let precond_exprs =
+    List.filter_map
+      (fun g -> match g with GExpr e -> Some e | _ -> None)
+      action.a_guards
+  in
   List.iter
-    (fun pc -> Buffer.add_string buf (Printf.sprintf "(assert %s)\n" pc))
-    preconditions;
-  (* Assert frame conditions *)
-  Buffer.add_string buf (generate_frame_conditions config env action.a_context);
-  (* Assert all postconditions *)
+    (fun e ->
+      add_named_assert na "precond" (Pretty.str_expr e)
+        (translate_expr config env e))
+    precond_exprs;
+  (* Named frame conditions *)
+  let frame_exprs = collect_frame_exprs config env action.a_context in
+  List.iter
+    (fun (fname, smt_expr) ->
+      add_named_assert na "frame"
+        (Printf.sprintf "%s' = %s (frame)" fname fname)
+        smt_expr)
+    frame_exprs;
+  (* Named postconditions *)
   Buffer.add_string buf "\n; --- Postconditions ---\n";
-  let conj = conjoin_propositions config env action.a_propositions in
-  Buffer.add_string buf (Printf.sprintf "(assert %s)\n" conj);
+  List.iter
+    (fun (p : expr located) ->
+      add_named_assert na "postcond" (Pretty.str_expr p.value)
+        (translate_expr config env p.value))
+    action.a_propositions;
+  let value_terms = build_value_terms config env action.a_params in
   Buffer.add_string buf "(check-sat)\n";
+  Buffer.add_string buf "(get-unsat-core)\n";
+  append_get_value buf value_terms;
   {
     name = Printf.sprintf "contradiction:%s" action.a_label;
     description =
       Printf.sprintf "Action '%s' postconditions are satisfiable" action.a_label;
     smt2 = Buffer.contents buf;
     kind = Contradiction;
+    value_terms;
+    invariant_text = "";
+    assertion_names = get_assertion_names na;
   }
 
-(** Query 2: Invariant preservation for an (invariant, action) pair.
-    Asserts invariant in current state, action transition, and negated invariant
-    in next state. SAT = violation found. *)
-let generate_invariant_query config env invariant_props action =
+(** Query 2: Invariant preservation for a single (invariant, action) pair.
+    Asserts all invariants in current state (to constrain pre-state), action
+    transition, and negates only the single target invariant in the next state.
+    SAT = violation found. *)
+let generate_invariant_query config env ~all_invariants ~index
+    (inv : expr located) action =
   let buf = Buffer.create 1024 in
+  let inv_text = Pretty.str_expr inv.value in
   Buffer.add_string buf
-    (Printf.sprintf "; Invariant preservation: %s\n" action.a_label);
+    (Printf.sprintf "; Invariant preservation: %s / %s\n" action.a_label
+       inv_text);
   Buffer.add_string buf (generate_preamble ~constrain_primed:false config env);
   Buffer.add_string buf "\n; --- Action parameters ---\n";
   Buffer.add_string buf (declare_action_params env action.a_params);
   Buffer.add_string buf (declare_param_constraints env action.a_params);
   declare_domain_membership config buf action.a_params env;
-  (* Assert invariant holds in current state *)
-  Buffer.add_string buf "\n; --- Invariant (current state) ---\n";
-  let inv_current = conjoin_propositions config env invariant_props in
+  (* Assert all invariants hold in current state *)
+  Buffer.add_string buf "\n; --- Invariants (current state) ---\n";
+  let inv_current = conjoin_propositions config env all_invariants in
   Buffer.add_string buf (Printf.sprintf "(assert %s)\n" inv_current);
   (* Assert preconditions *)
   let preconditions = extract_preconditions config env action.a_guards in
@@ -808,56 +960,74 @@ let generate_invariant_query config env invariant_props action =
   Buffer.add_string buf (Printf.sprintf "(assert %s)\n" transition);
   (* Assert frame conditions *)
   Buffer.add_string buf (generate_frame_conditions config env action.a_context);
-  (* Assert invariant violated in next state *)
+  (* Assert single invariant violated in next state *)
   Buffer.add_string buf "\n; --- Invariant violated in next state ---\n";
-  let primed_invariants =
-    List.map
-      (fun (p : expr located) ->
-        { p with value = prime_expr p.value })
-      invariant_props
-  in
-  let inv_primed = conjoin_propositions config env primed_invariants in
+  let primed_inv = { inv with value = prime_expr inv.value } in
+  let inv_primed = translate_expr config env primed_inv.value in
   Buffer.add_string buf (Printf.sprintf "(assert (not %s))\n" inv_primed);
+  let value_terms = build_value_terms config env action.a_params in
   Buffer.add_string buf "(check-sat)\n";
+  append_get_value buf value_terms;
   {
-    name = Printf.sprintf "invariant:%s" action.a_label;
+    name = Printf.sprintf "invariant:%s:%d" action.a_label index;
     description =
       Printf.sprintf "Invariant preserved by action '%s'" action.a_label;
     smt2 = Buffer.contents buf;
     kind = InvariantPreservation;
+    value_terms;
+    invariant_text = inv_text;
+    assertion_names = [];
   }
 
-(** Query 3: Precondition satisfiability for an action.
-    Asserts invariants + preconditions and checks satisfiability.
-    UNSAT = dead operation. *)
+(** Query 3: Precondition satisfiability for an action. Asserts invariants +
+    preconditions and checks satisfiability. UNSAT = dead operation. *)
 let generate_precondition_query config env invariant_props action =
   let buf = Buffer.create 1024 in
+  let na = create_named_assertions buf in
   Buffer.add_string buf
     (Printf.sprintf "; Precondition satisfiability: %s\n" action.a_label);
-  Buffer.add_string buf (generate_preamble config env);
+  Buffer.add_string buf "(set-option :produce-unsat-cores true)\n";
+  Buffer.add_string buf
+    (generate_preamble ~include_type_constraints:false config env);
   Buffer.add_string buf "\n; --- Action parameters ---\n";
   Buffer.add_string buf (declare_action_params env action.a_params);
-  Buffer.add_string buf (declare_param_constraints env action.a_params);
   declare_domain_membership config buf action.a_params env;
-  (* Assert invariants *)
+  Buffer.add_string buf "\n; --- Type constraints ---\n";
+  add_type_constraints na config env action.a_params;
+  (* Named invariants *)
   if invariant_props <> [] then begin
     Buffer.add_string buf "\n; --- Invariants ---\n";
-    let inv = conjoin_propositions config env invariant_props in
-    Buffer.add_string buf (Printf.sprintf "(assert %s)\n" inv)
+    List.iter
+      (fun (inv : expr located) ->
+        add_named_assert na "inv"
+          (Printf.sprintf "Invariant: %s" (Pretty.str_expr inv.value))
+          (translate_expr config env inv.value))
+      invariant_props
   end;
-  (* Assert preconditions *)
+  (* Named preconditions *)
   Buffer.add_string buf "\n; --- Preconditions ---\n";
-  let preconditions = extract_preconditions config env action.a_guards in
+  let precond_exprs =
+    List.filter_map
+      (fun g -> match g with GExpr e -> Some e | _ -> None)
+      action.a_guards
+  in
   List.iter
-    (fun pc -> Buffer.add_string buf (Printf.sprintf "(assert %s)\n" pc))
-    preconditions;
+    (fun e ->
+      add_named_assert na "precond"
+        (Printf.sprintf "Precondition: %s" (Pretty.str_expr e))
+        (translate_expr config env e))
+    precond_exprs;
   Buffer.add_string buf "(check-sat)\n";
+  Buffer.add_string buf "(get-unsat-core)\n";
   {
     name = Printf.sprintf "precondition:%s" action.a_label;
     description =
       Printf.sprintf "Action '%s' preconditions are satisfiable" action.a_label;
     smt2 = Buffer.contents buf;
     kind = PreconditionSat;
+    value_terms = [];
+    invariant_text = "";
+    assertion_names = get_assertion_names na;
   }
 
 (** Collect all function names referenced in an expression *)
@@ -867,8 +1037,7 @@ let rec collect_function_refs (e : expr) =
   | EApp (func, args) ->
       collect_function_refs func @ List.concat_map collect_function_refs args
   | EPrimed name -> [ name ]
-  | EBinop (_, e1, e2) ->
-      collect_function_refs e1 @ collect_function_refs e2
+  | EBinop (_, e1, e2) -> collect_function_refs e1 @ collect_function_refs e2
   | EUnop (_, e) -> collect_function_refs e
   | EForall (_, gs, body) | EExists (_, gs, body) ->
       List.concat_map collect_guard_refs gs @ collect_function_refs body
@@ -888,9 +1057,9 @@ and collect_guard_refs = function
   | GIn (_, e) -> collect_function_refs e
   | GExpr e -> collect_function_refs e
 
-(** Check if invariant propositions touch any contextual functions.
-    If they only reference extracontextual functions, the frame conditions
-    guarantee preservation and we can skip the check. *)
+(** Check if invariant propositions touch any contextual functions. If they only
+    reference extracontextual functions, the frame conditions guarantee
+    preservation and we can skip the check. *)
 let invariant_touches_context env context invariant_props =
   match context with
   | None -> true (* No context = check everything *)
@@ -914,24 +1083,27 @@ let generate_queries config env (doc : document) =
   (* Contradiction queries *)
   List.iter
     (fun action ->
-      queries :=
-        generate_contradiction_query config env action :: !queries)
+      queries := generate_contradiction_query config env action :: !queries)
     actions;
-  (* Invariant preservation queries — skip if invariant only touches
-     extracontextual functions (trivially preserved by frame conditions) *)
+  (* Invariant preservation queries — one per (invariant, action) pair.
+     Skip if invariant only touches extracontextual functions (trivially
+     preserved by frame conditions). *)
   if invariants <> [] then
     List.iter
       (fun action ->
-        if invariant_touches_context env action.a_context invariants then
-          queries :=
-            generate_invariant_query config env invariants action
-            :: !queries)
+        List.iteri
+          (fun index inv ->
+            if invariant_touches_context env action.a_context [ inv ] then
+              queries :=
+                generate_invariant_query config env ~all_invariants:invariants
+                  ~index inv action
+                :: !queries)
+          invariants)
       actions;
   (* Precondition satisfiability queries *)
   List.iter
     (fun action ->
       queries :=
-        generate_precondition_query config env invariants action
-        :: !queries)
+        generate_precondition_query config env invariants action :: !queries)
     actions;
   List.rev !queries

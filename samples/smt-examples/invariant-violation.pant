@@ -1,14 +1,18 @@
+> An action with a missing precondition.
+> The Withdraw action allows withdrawing any amount, even if it
+> exceeds the account balance — violating the non-negative invariant.
 module InvariantViolation.
-context Ctx.
+context Accounts.
 
 Account.
-{Ctx} balance a: Account => Nat0.
+{Accounts} balance a: Account => Nat0.
 
 ---
 all a: Account | balance a >= 0.
 
 where
 
-Ctx ~> UnsafeWithdraw | a: Account, amount: Nat0.
+Accounts ~> Withdraw | a: Account, amount: Nat.
 ---
 balance' a = balance a - amount.
+all b: Account | b != a -> balance' b = balance b.

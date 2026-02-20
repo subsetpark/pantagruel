@@ -35,13 +35,12 @@ let specs =
     ("--normalize", Arg.Set do_normalize, " Output N-normal form and exit");
     ( "--check",
       Arg.Set do_check,
-      "   Run SMT verification (contradiction, invariant, precondition checks)" );
+      "   Run SMT verification (contradiction, invariant, precondition checks)"
+    );
     ( "--bound",
       Arg.Set_int check_bound,
       "N    Domain element bound for SMT checking (default: 3)" );
-    ( "--solver",
-      Arg.Set_string solver_cmd,
-      "CMD  Solver command (default: z3)" );
+    ("--solver", Arg.Set_string solver_cmd, "CMD  Solver command (default: z3)");
     ( "--version",
       Arg.Unit
         (fun () ->
@@ -61,8 +60,8 @@ let format_module_error = function
   | Pantagruel.Module.ParseError (_, msg) ->
       msg (* Already formatted by Error module *)
 
-(** Run SMT verification on a type-checked document.
-    Returns exit code: 0 = pass, 1 = violations found, 2 = solver not found *)
+(** Run SMT verification on a type-checked document. Returns exit code: 0 =
+    pass, 1 = violations found, 2 = solver not found *)
 let run_smt_check env doc =
   if not (Pantagruel.Solver.solver_available ~solver:!solver_cmd ()) then begin
     Printf.eprintf "error: Solver '%s' not found in PATH\n" !solver_cmd;
@@ -76,9 +75,7 @@ let run_smt_check env doc =
       0
     end
     else begin
-      let results =
-        Pantagruel.Solver.verify_all ~solver:!solver_cmd queries
-      in
+      let results = Pantagruel.Solver.verify_all ~solver:!solver_cmd queries in
       let all_passed = ref true in
       List.iter
         (fun (r : Pantagruel.Solver.verification_result) ->
