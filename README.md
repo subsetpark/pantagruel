@@ -10,7 +10,7 @@ Requires OCaml 4.14+ and opam.
 
 ```bash
 # Install dependencies
-opam install menhir sedlex ppx_deriving alcotest
+opam install menhir sedlex ppx_deriving yojson sexplib0 parsexp alcotest
 
 # Build
 dune build
@@ -25,25 +25,31 @@ dune install
 ## Usage
 
 ```bash
-# Check a specification file
-pantagruel myspec.pant
+# Type-check a specification file
+pant myspec.pant
 
 # Read from stdin
-echo 'module TEST. Foo. ---' | pantagruel
+echo 'module TEST. Foo. ---' | pant
 
-# Output JSON (includes resolved types and full AST)
-pantagruel --json myspec.pant
+# Run bounded model checking (requires z3 or cvc5)
+pant --check myspec.pant
+pant --check --bound 5 myspec.pant        # Set domain element bound (default: 3)
+pant --check --solver cvc5 myspec.pant     # Use alternative solver
 
-# Print the AST (OCaml format, for debugging)
-pantagruel --ast myspec.pant
+# Output formats
+pant --json myspec.pant                    # JSON with resolved types and full AST
+pant --markdown myspec.pant                # Rich Markdown with Unicode symbols
+pant --format myspec.pant                  # Reformat with standard style
+pant --normalize myspec.pant               # Output N-normal form
+pant --ast myspec.pant                     # Print AST (OCaml format, for debugging)
 
 # Specify module search path for imports
-pantagruel --module-path ./specs myspec.pant
+pant --module-path ./specs myspec.pant
 ```
 
 ## Samples
 
-The `samples/` directory contains reference specifications demonstrating all language features:
+The `samples/` directory contains reference specifications:
 
 - `01-basics.pant` - Fundamental syntax: domains, rules, quantifiers
 - `02-library.pant` - Library system with actions and state transitions
@@ -53,6 +59,13 @@ The `samples/` directory contains reference specifications demonstrating all lan
 - `06-advanced.pant` - Function overrides and qualified names
 - `07-pantagruel.pant` - Self-specification of the Pantagruel language
 - `08-contexts.pant` - Context declarations and write-permission boundaries
+
+The `samples/smt-examples/` directory demonstrates bounded model checking:
+
+- `contradiction.pant` - Conflicting postconditions detected by `--check`
+- `invariant-violation.pant` - Missing precondition allows invariant violation
+- `dead-operation.pant` - Unreachable action due to unsatisfiable precondition
+- `underspecified.pant` - Well-specified banking example with contexts and frame conditions
 
 ## Language Overview
 
@@ -238,6 +251,57 @@ origin = (0.0, 0.0).
 all p: Point | distance p p = 0.0.
 all p: Point, q: Point | distance p q = distance q p.
 ```
+
+## Bounded Model Checking
+
+The `--check` flag translates your specification into SMT-LIB2 and verifies it using an SMT solver (z3 by default). This performs three checks for each action:
+
+1. **Contradiction detection** - Are the action's postconditions satisfiable? If not, no state transition can satisfy all constraints simultaneously.
+
+2. **Invariant preservation** - Do invariants (propositions in non-action chapters) still hold after the action fires? Reports a counterexample when a violation is found.
+
+3. **Precondition satisfiability** - Can the action's preconditions ever be met, given the invariants? Flags unreachable "dead" operations.
+
+Checking is bounded: domain types are modeled with a finite number of elements (default 3, configurable with `--bound`). This means checks are sound within the bound but not complete for all possible domain sizes.
+
+### Example: detecting an invariant violation
+
+```
+module BANKING.
+context Accounts.
+
+Account.
+{Accounts} balance a: Account => Nat0.
+---
+all a: Account | balance a >= 0.
+
+where
+
+Accounts ~> Withdraw | a: Account, amount: Nat.
+---
+balance' a = balance a - amount.
+all b: Account | b != a -> balance' b = balance b.
+```
+
+```bash
+$ pant --check banking.pant
+OK: Action 'Withdraw' postconditions are satisfiable
+FAIL: Invariant 'all a: Account | balance a >= 0' may be violated by action 'Withdraw'
+  Action:
+    a = Account_0
+    amount = 2
+  Before:
+    balance Account_0 = 1
+  After:
+    balance' Account_0 = -1
+OK: Action 'Withdraw' preconditions are satisfiable
+```
+
+The counterexample shows that withdrawing 2 from a balance of 1 violates the non-negative invariant. The fix is to add a precondition: `balance a >= amount`.
+
+### Contexts and frame conditions
+
+When an action declares a context (`Accounts ~> Withdraw`), the checker automatically generates **frame conditions**: functions not in the context are asserted unchanged. This means invariants that only reference extracontextual functions are trivially preserved and skipped, reducing verification work.
 
 ## Editor Integration
 
