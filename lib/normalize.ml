@@ -1,21 +1,20 @@
-(** Normal form transformation for Pantagruel documents.
+(** Top-down normal form transformation for Pantagruel documents.
 
-    A document is in normal form when declarations are organized by their
-    dependency levels, and propositions are placed in the earliest valid chapter
-    based on their dependencies.
-
-    The number of chapters is determined by the topological depth of the
-    declaration dependency graph.
+    A document is normalized top-down with respect to a chosen root term.
+    Chapter 1 contains the root term and its minimal supporting declarations.
+    Each subsequent chapter glosses terms referenced in the previous chapter's
+    body but not yet declared. This is the "progressive disclosure" pattern —
+    the reader sees the high-level story first.
 
     Visibility rules:
     - Declaration in chapter N is visible in heads of chapter M where M >= N
     - Declaration in chapter N is visible in bodies of chapter M where M >= N-1
 
-    Algorithm: 1. Build dependency graph of declarations (based on type
-    references) 2. Topologically sort declarations into levels 3. Each level
-    becomes a chapter 4. Propositions are placed in the earliest body where all
-    dependencies are visible 5. Actions and their tied propositions stay
-    together *)
+    Algorithm: 1. Flatten all declarations and propositions 2. BFS from root
+    term: level 0 = root + transitive declaration deps; each subsequent level
+    glosses new symbols from the previous level's propositions 3. Unreachable
+    declarations go to a final appendix chapter 4. Actions spread one per
+    chapter 5. Propositions placed in earliest valid body *)
 
 open Ast
 module StringSet = Set.Make (String)
@@ -190,42 +189,28 @@ let prop_uses_params params prop =
 (** Built-in type names that don't need declarations *)
 let builtin_types = StringSet.of_list Types.builtin_type_names
 
-(** Compute topological levels for declarations. Level 0 = no dependencies
-    (roots), Level 1 = depends only on level 0, etc. *)
-let compute_levels (decls : decl_info list) : int =
-  let by_name = Hashtbl.create 32 in
-  List.iter (fun d -> Hashtbl.add by_name d.name d) decls;
-
-  (* Initialize all levels to 0 *)
-  List.iter (fun d -> d.level <- 0) decls;
-
-  (* Iteratively compute levels until fixed point *)
-  let changed = ref true in
-  while !changed do
-    changed := false;
-    List.iter
-      (fun d ->
-        (* Level = 1 + max level of dependencies *)
-        let max_dep_level =
-          StringSet.fold
-            (fun dep_name acc ->
-              match Hashtbl.find_opt by_name dep_name with
-              | Some dep -> max acc dep.level
-              | None -> acc (* Built-in or unknown, level 0 *))
-            d.dependencies 0
-        in
-        let new_level =
-          if StringSet.is_empty d.dependencies then 0 else max_dep_level + 1
-        in
-        if new_level > d.level then begin
-          d.level <- new_level;
-          changed := true
-        end)
-      decls
+(** Compute transitive closure of declaration-level dependencies. Given a set of
+    seed names and a lookup table of all declarations, return the full set of
+    names reachable by following dependencies. *)
+let transitive_decl_deps (by_name : (string, decl_info) Hashtbl.t)
+    (seeds : StringSet.t) : StringSet.t =
+  let result = ref seeds in
+  let worklist = Queue.create () in
+  StringSet.iter (fun n -> Queue.push n worklist) seeds;
+  while not (Queue.is_empty worklist) do
+    let name = Queue.pop worklist in
+    match Hashtbl.find_opt by_name name with
+    | Some d ->
+        StringSet.iter
+          (fun dep ->
+            if not (StringSet.mem dep !result) then begin
+              result := StringSet.add dep !result;
+              Queue.push dep worklist
+            end)
+          d.dependencies
+    | None -> ()
   done;
-
-  (* Return max level *)
-  List.fold_left (fun acc d -> max acc d.level) 0 decls
+  !result
 
 (** Find the earliest chapter where a proposition can be placed. Based on its
     dependencies - needs all deps visible in that body. *)
@@ -249,8 +234,11 @@ let earliest_chapter_for_prop decl_levels prop =
      So if max dep is at level L, earliest body is L-1 (or 0) *)
   max 0 (max_level - 1)
 
-(** Normalize a document to normal form based on dependency levels *)
-let normalize (doc : document) : document =
+(** Normalize a document top-down with respect to a root term. Chapter 1
+    contains the root term and its minimal supporting declarations. Each
+    subsequent chapter glosses terms referenced in the previous chapter's body
+    but not yet declared. *)
+let normalize (doc : document) (root_term : string) : document =
   if doc.chapters = [] then doc
   else begin
     (* Step 1: Collect all declarations with their dependencies *)
@@ -260,7 +248,6 @@ let normalize (doc : document) : document =
           List.map
             (fun decl_loc ->
               let type_deps, term_deps = symbols_in_decl_deps decl_loc.value in
-              (* Filter out builtins; include term deps for contexts *)
               let deps = StringSet.union type_deps term_deps in
               let deps =
                 StringSet.filter
@@ -273,25 +260,119 @@ let normalize (doc : document) : document =
                 is_void = is_action decl_loc.value;
                 decl = decl_loc;
                 dependencies = deps;
-                level = 0;
+                level = -1 (* unassigned *);
               })
             chapter.head)
         doc.chapters
     in
+    let by_name = Hashtbl.create 32 in
+    List.iter (fun d -> Hashtbl.replace by_name d.name d) all_decls;
 
-    (* Step 2: Compute topological levels *)
-    let max_level = compute_levels all_decls in
-    let num_chapters = max_level + 1 in
+    (* Step 2: BFS from root term *)
+    (* Level 0: root term + transitive declaration-level deps *)
+    let level_0 =
+      transitive_decl_deps by_name (StringSet.singleton root_term)
+    in
+    StringSet.iter
+      (fun name ->
+        match Hashtbl.find_opt by_name name with
+        | Some d -> d.level <- 0
+        | None -> ())
+      level_0;
+    let assigned = ref level_0 in
 
-    (* Step 3: Identify action units *)
+    (* Collect all propositions for scanning *)
+    let all_props = List.concat_map (fun ch -> ch.body) doc.chapters in
+    let scanned = Hashtbl.create 64 in
+
+    (* BFS: for each level N, find props referencing level-N symbols,
+       collect new symbols from those props, assign them to level N+1 *)
+    let current_level = ref 0 in
+    let continue_bfs = ref true in
+    while !continue_bfs do
+      (* Symbols at exactly the current level *)
+      let level_symbols =
+        StringSet.filter
+          (fun name ->
+            match Hashtbl.find_opt by_name name with
+            | Some d -> d.level = !current_level
+            | None -> false)
+          !assigned
+      in
+
+      (* Find unscanned props that reference at least one current-level symbol *)
+      let matching_props =
+        List.filter
+          (fun (p : expr located) ->
+            if Hashtbl.mem scanned p.loc then false
+            else
+              let types, terms = symbols_in_expr p.value in
+              let all_syms = StringSet.union types terms in
+              not (StringSet.is_empty (StringSet.inter all_syms level_symbols)))
+          all_props
+      in
+
+      (* Mark as scanned *)
+      List.iter
+        (fun (p : expr located) -> Hashtbl.replace scanned p.loc ())
+        matching_props;
+
+      (* Collect new symbols from these propositions *)
+      let new_symbols = ref StringSet.empty in
+      List.iter
+        (fun (p : expr located) ->
+          let types, terms = symbols_in_expr p.value in
+          let all_syms = StringSet.union types terms in
+          let filtered =
+            StringSet.filter
+              (fun n ->
+                (not (StringSet.mem n builtin_types))
+                && not (StringSet.mem n !assigned))
+              all_syms
+          in
+          new_symbols := StringSet.union !new_symbols filtered)
+        matching_props;
+
+      if StringSet.is_empty !new_symbols then continue_bfs := false
+      else begin
+        (* Include transitive declaration-level deps for head well-formedness *)
+        let expanded = transitive_decl_deps by_name !new_symbols in
+        let truly_new = StringSet.diff expanded !assigned in
+        if StringSet.is_empty truly_new then continue_bfs := false
+        else begin
+          let next_level = !current_level + 1 in
+          StringSet.iter
+            (fun name ->
+              match Hashtbl.find_opt by_name name with
+              | Some d -> d.level <- next_level
+              | None -> ())
+            truly_new;
+          assigned := StringSet.union !assigned truly_new;
+          current_level := next_level
+        end
+      end
+    done;
+
+    let max_level = !current_level in
+
+    (* Step 3: Unreachable declarations go to appendix *)
+    let unreachable =
+      List.filter (fun d -> not (StringSet.mem d.name !assigned)) all_decls
+    in
+    let has_appendix = unreachable <> [] in
+    let appendix_level = max_level + 1 in
+    List.iter (fun d -> d.level <- appendix_level) unreachable;
+    let num_chapters =
+      if has_appendix then appendix_level + 1 else max_level + 1
+    in
+
+    (* Step 4: Identify action units *)
     let action_decls = List.filter (fun d -> d.is_void) all_decls in
     let non_action_decls = List.filter (fun d -> not d.is_void) all_decls in
 
-    (* For actions, find their tied propositions *)
     let action_units =
       List.map
         (fun ad ->
-          (* Find the original chapter this action came from (by location) *)
           let orig_chapter =
             List.find
               (fun ch ->
@@ -321,23 +402,19 @@ let normalize (doc : document) : document =
         doc.chapters
     in
 
-    (* Step 5: Assign declarations to chapters by level *)
+    (* Step 5: Assign non-action declarations to chapters by level *)
     let decl_assignments = Array.make num_chapters [] in
     List.iter
       (fun d -> decl_assignments.(d.level) <- d :: decl_assignments.(d.level))
       non_action_decls;
 
-    (* Step 6: Place action units - they go at their level, but we need to handle
-       conflicts (multiple actions at same level need separate chapters) *)
-
-    (* Sort action units by level, then spread out conflicts *)
+    (* Step 6: Place action units - spread conflicts across adjacent chapters *)
     let sorted_action_units =
       List.sort
         (fun a b -> compare a.action_decl.level b.action_decl.level)
         action_units
     in
 
-    (* Assign action units to chapters, creating new chapters if needed *)
     let action_chapter_assignments = Hashtbl.create 16 in
     let next_available = ref 0 in
     List.iter
@@ -346,14 +423,11 @@ let normalize (doc : document) : document =
         let target = max min_level !next_available in
         Hashtbl.add action_chapter_assignments au.action_decl.name target;
         au.action_decl.level <- target;
-        (* Update the level *)
         next_available := target + 1)
       sorted_action_units;
 
-    (* Recompute num_chapters if we added any *)
     let num_chapters = max num_chapters !next_available in
 
-    (* Resize arrays if needed *)
     let decl_assignments =
       if num_chapters > Array.length decl_assignments then
         Array.init num_chapters (fun i ->
@@ -362,7 +436,6 @@ let normalize (doc : document) : document =
       else decl_assignments
     in
 
-    (* Add actions to their assigned chapters *)
     List.iter
       (fun au ->
         let level = au.action_decl.level in
@@ -391,12 +464,16 @@ let normalize (doc : document) : document =
         body_assignments.(target) <- prop :: body_assignments.(target))
       independent_props;
 
+    (* Collect trailing docs from all original chapters *)
+    let all_trailing_docs =
+      List.concat_map (fun ch -> ch.trailing_docs) doc.chapters
+    in
+
     (* Step 8: Build the normalized document *)
     let new_chapters =
       Array.to_list
         (Array.mapi
            (fun level _ ->
-             (* Sort: declarations first (by name for stability), then action last *)
              let decls = decl_assignments.(level) in
              let non_action = List.filter (fun d -> not d.is_void) decls in
              let action = List.filter (fun d -> d.is_void) decls in
@@ -406,12 +483,19 @@ let normalize (doc : document) : document =
              in
              let head = List.map (fun d -> d.decl) sorted_decls in
              let body = List.rev body_assignments.(level) in
-             { head; body })
+             { head; body; trailing_docs = [] })
            decl_assignments)
     in
 
-    (* Filter out empty chapters (shouldn't happen but just in case) *)
     let non_empty = List.filter (fun ch -> ch.head <> []) new_chapters in
-
+    (* Attach trailing docs to the last chapter *)
+    let non_empty =
+      if all_trailing_docs <> [] then
+        match List.rev non_empty with
+        | [] -> non_empty
+        | last :: rest ->
+            List.rev ({ last with trailing_docs = all_trailing_docs } :: rest)
+      else non_empty
+    in
     { doc with chapters = non_empty }
   end

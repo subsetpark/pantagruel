@@ -12,7 +12,7 @@ let print_ast = ref false
 let print_json = ref false
 let print_markdown = ref false
 let do_format = ref false
-let do_normalize = ref false
+let do_normalize = ref ""
 let do_check = ref false
 let check_bound = ref 3
 let solver_cmd = ref "z3"
@@ -34,7 +34,9 @@ let specs =
     ( "--format",
       Arg.Set do_format,
       "   Format document with standard style and exit" );
-    ("--normalize", Arg.Set do_normalize, " Output N-normal form and exit");
+    ( "--normalize",
+      Arg.Set_string do_normalize,
+      "TERM Output top-down normal form with respect to TERM and exit" );
     ( "--check",
       Arg.Set do_check,
       "   Run SMT verification (contradiction, invariant, precondition checks)"
@@ -117,13 +119,33 @@ let check_doc doc =
     (* Check the document *)
     match Pantagruel.Module.check_with_imports registry doc with
     | Ok env ->
+        List.iter
+          (fun w -> prerr_endline (Pantagruel.Error.format_type_warning w))
+          (Pantagruel.Check.get_warnings ());
         if !do_check then run_smt_check env doc
-        else begin
-          if !do_normalize then begin
-            let normalized = Pantagruel.Normalize.normalize doc in
-            Pantagruel.Pretty.output normalized
+        else if !do_normalize <> "" then begin
+          let root = !do_normalize in
+          let all_names =
+            List.concat_map
+              (fun (ch : Pantagruel.Ast.chapter) ->
+                List.map
+                  (fun d ->
+                    Pantagruel.Normalize.decl_name d.Pantagruel.Ast.value)
+                  ch.head)
+              doc.chapters
+          in
+          if not (List.mem root all_names) then begin
+            Printf.eprintf "error: Term '%s' not found in document\n" root;
+            1
           end
-          else if !print_json then Pantagruel.Json_output.output_json env doc
+          else begin
+            let normalized = Pantagruel.Normalize.normalize doc root in
+            Pantagruel.Pretty.output_formatted normalized;
+            0
+          end
+        end
+        else begin
+          if !print_json then Pantagruel.Json_output.output_json env doc
           else if !print_markdown then Pantagruel.Markdown_output.output env doc;
           0
         end
