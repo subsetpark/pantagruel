@@ -40,7 +40,7 @@ pant --check --solver cvc5 myspec.pant     # Use alternative solver
 pant --json myspec.pant                    # JSON with resolved types and full AST
 pant --markdown myspec.pant                # Rich Markdown with Unicode symbols
 pant --format myspec.pant                  # Reformat with standard style
-pant --normalize myspec.pant               # Output N-normal form
+pant --normalize "root term" myspec.pant    # Top-down normal form from root term
 pant --ast myspec.pant                     # Print AST (OCaml format, for debugging)
 
 # Specify module search path for imports
@@ -177,7 +177,7 @@ balance' a = balance a - amount.
 
 | Category | Operators |
 |----------|-----------|
-| Logical | `and`, `or`, `not`, `->` (implication) |
+| Logical | `and`, `or`, `~` (negation), `->` (implication) |
 | Comparison | `=`, `!=`, `<`, `>`, `<=`, `>=` |
 | Membership | `in`, `subset` |
 | Arithmetic | `+`, `-`, `*`, `/` |

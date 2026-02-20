@@ -20,6 +20,7 @@ dune exec test/test_check.exe
 dune exec pant -- <file.pant>
 dune exec pant -- --json <file.pant>    # Output JSON with resolved types
 dune exec pant -- --ast <file.pant>     # Print AST (OCaml format)
+dune exec pant -- --normalize "Borrow" <file.pant>  # Top-down normal form from root term
 
 # SMT verification (bounded model checking)
 dune exec pant -- --check <file.pant>           # Run all checks with z3

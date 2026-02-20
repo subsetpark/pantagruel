@@ -231,7 +231,7 @@ x + y    x - y    x * y    x / y    -x
 x = y    x != y   x < y    x > y    x <= y    x >= y
 
 // Logic
-p and q    p or q    not p    p -> q    p <-> q
+p and q    p or q    ~p    p -> q    p <-> q
 
 // Sets
 x in Domain    xs subset ys    #xs
@@ -302,7 +302,7 @@ Member.
 ~> Check out | m: Member, b: Book, available? b.
 ---
 borrower' b = m.
-not available?' b.
+~available?' b.
 #(some x: Book | borrower x = m) < 3.
 all other: Book | other != b -> borrower' other = borrower other.
 all other: Book | other != b -> available?' other = available? other.

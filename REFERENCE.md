@@ -39,7 +39,7 @@ where
 
 ```
 module  import  where  context  initially
-true    false   and    or       not
+true    false   and    or
 all     some    in     subset
 ```
 
@@ -64,7 +64,7 @@ String escape sequences: `\\`, `\"`, `\n`, `\t`, `\r`
 | `<->` | Biconditional (iff) |
 | `and` | Conjunction |
 | `or` | Disjunction |
-| `not`, `~` | Negation |
+| `~` | Negation |
 | `all` | Universal quantifier |
 | `some` | Existential quantifier |
 | `in` | Membership |
@@ -284,7 +284,7 @@ This is a symmetric check. `Nat = Int` is valid (both numeric, join is `Int`), b
 
 *e₁* `op` *e₂* where `op` is `and`, `or`, `->`, or `<->`: both operands must be `Bool`; result is `Bool`.
 
-`not` *e*: operand must be `Bool`; result is `Bool`.
+`~`*e*: operand must be `Bool`; result is `Bool`.
 
 #### Membership
 
@@ -348,7 +348,7 @@ Primed expressions denote the post-state value of a rule in a state transition.
 
 **Propositions.** Every top-level expression in a chapter body must have type `Bool`.
 
-**Variable shadowing.** When a binding introduces *x* : *S* and *x* is already in scope with type *T*, the new type must be a subtype of the existing type: *S* ≤ *T*. This permits rebinding at the same or a narrower type, but forbids rebinding at a wider or unrelated type.
+**Variable shadowing.** When a binding introduces *x* : *S* and *x* is already in scope with type *T*, the new type must be a subtype of the existing type: *S* ≤ *T*. This permits rebinding at the same or a narrower type. Rebinding at a wider or unrelated type produces a **warning** (not a hard error), since different chapters may legitimately reuse variable names at different types.
 
 **Action uniqueness.** Each chapter may have at most one action.
 
@@ -522,7 +522,7 @@ x >= y              // Greater or equal
 ```
 p and q             // Conjunction
 p or q              // Disjunction
-not p               // Negation
+~p                  // Negation
 p -> q              // Implication
 p <-> q             // Biconditional (if and only if)
 ```
@@ -632,7 +632,7 @@ From lowest to highest:
 2. `->` (implication, right associative)
 3. `or` (disjunction)
 4. `and` (conjunction)
-5. `not` (negation)
+5. `~` (negation)
 6. `= != < > <= >= in subset` (comparison/membership)
 7. `+ -` (addition/subtraction)
 8. `* /` (multiplication/division)
@@ -714,117 +714,66 @@ A program is **correct** if:
 
 ## Normal Form
 
-A document can be transformed into **normal form**, where declarations are organized by dependency levels and propositions are placed at their earliest valid position.
+The `--normalize "root term"` flag transforms a document into **top-down normal form** with respect to a chosen root term. The result follows the progressive disclosure pattern: the reader sees the high-level story first, with supporting details glossed in subsequent chapters.
 
 ### Definition
 
-A document is in normal form when:
-1. Declarations are organized by **topological level** (based on type dependencies)
-2. Each level becomes a chapter
-3. Propositions are placed in the **earliest** chapter where all their dependencies are visible
+A document is in top-down normal form when:
+1. **Chapter 0** contains the root term and the transitive closure of its declaration-level dependencies
+2. Each subsequent chapter glosses symbols referenced in the previous chapter's body but not yet declared
+3. Unreachable declarations (not reachable from the root term) appear in a final appendix chapter
 4. Actions and their tied propositions stay together
 5. At most one action per chapter
+6. Independent propositions are placed at the earliest chapter where all dependencies are visible
 
-### Dependency Levels
+### Level Assignment (BFS)
 
-Declarations are assigned levels based on their type dependencies:
+Starting from the root term, levels are assigned by breadth-first search:
 
-| Level | Description |
-|-------|-------------|
-| 0 | Declarations with no type dependencies (domains) |
-| 1 | Declarations that only depend on level 0 types |
-| 2 | Declarations that depend on level 1 types |
-| ... | And so on |
+| Level | Contents |
+|-------|----------|
+| 0 | Root term + transitive closure of its declaration-level dependencies (types in signature, terms in guards) |
+| 1 | Symbols referenced in level-0 propositions but not yet assigned, plus their transitive declaration deps |
+| 2 | Symbols referenced in level-1 propositions but not yet assigned, plus their transitive declaration deps |
+| ... | Continues until no new symbols are discovered |
+| *N*+1 | Appendix: declarations not reachable from the root term |
+
+**Transitive declaration dependencies** ensure head well-formedness. If the root term's signature references type `Card` and `Card = Nat * CardStatus`, then `CardStatus` is also included at level 0.
 
 ### Proposition Placement
 
-Propositions are placed at the **earliest** valid chapter:
-
 | Proposition type | Placement rule |
 |------------------|----------------|
-| **Action-tied** | Same chapter as the action |
+| **Action-tied** | Same chapter as its action |
 | **Independent** | Earliest chapter where all dependencies are visible |
 
-A proposition is **action-tied** if it:
-- Uses primed expressions (e.g., `balance' a`), OR
-- References the action's parameters
+A proposition is **action-tied** if it uses primed expressions (e.g., `balance' a`) or references the action's parameters.
 
 ### Action Handling
 
-If multiple actions end up at the same dependency level, they are spread across consecutive chapters (since at most one action per chapter is allowed).
+If multiple actions end up at the same level, they are spread across consecutive chapters (since at most one action per chapter is allowed).
 
 ### Normalization Algorithm
 
-1. **Collect declarations** and compute their type dependencies
-2. **Compute topological levels** for all declarations
-3. **Create chapters** - one per level (plus extra for action conflicts)
-4. **Place declarations** at their computed level
-5. **Place action-tied propositions** with their actions
-6. **Place independent propositions** at earliest valid chapter
+1. **Flatten** all declarations and propositions from all chapters
+2. **Compute transitive declaration deps** for the root term → level 0
+3. **BFS loop**: for each level *N*, find unscanned propositions referencing level-*N* symbols; collect new symbols from those propositions + their transitive deps → level *N*+1; stop when no new symbols appear
+4. **Assign unreachable** declarations to an appendix chapter
+5. **Spread actions** across consecutive chapters where needed
+6. **Place propositions**: tied props with their action, independent props at earliest valid chapter
+7. **Build chapters**: within each level, non-actions sorted alphabetically, action last; filter empty chapters
 
 ### Example
 
-**Original (3 chapters with actions):**
-```
-module STATE.
+Given `samples/02-library.pant`, normalizing with `--normalize "Borrow"` produces:
 
-User.
-Account.
-balance a: Account => Int.
-owner a: Account => User.
-~> Deposit | a: Account, amount: Nat.
----
-balance' a = balance a + amount.
-all a: Account, amt: Nat | true.
+**Chapter 0**: The `Borrow` action and the domains it directly references (`Book`, `User`).
 
-where
+**Chapter 1**: Rules referenced in the Borrow chapter's body (`available`, `borrower`, etc.) and their supporting declarations.
 
-~> Withdraw | a: Account, amount: Nat.
----
-balance' a = balance a - amount.
+**Chapter 2+**: Further supporting terms, glossed progressively until all dependencies are resolved.
 
-where
-
-~> Transfer | from: Account, to: Account, amount: Nat.
----
-balance' from = balance from - amount.
-```
-
-**Normal form (4 chapters):**
-```
-module STATE.
-
-// Level 0: root domains
-Account.
-User.
----
-all a: Account, amt: Nat | true.   // Only depends on Account, Nat
-
-where
-
-// Level 1: depends on Account, User
-balance a: Account => Int.
-owner a: Account => User.
-~> Deposit | a: Account, amount: Nat.   // Action #1
----
-balance' a = balance a + amount.   // Tied to deposit
-
-where
-
-// Action #2 (separate chapter)
-~> Withdraw | a: Account, amount: Nat.
----
-balance' a = balance a - amount.
-
-where
-
-// Action #3 (separate chapter)
-~> Transfer | from: Account, to: Account, amount: Nat.
----
-balance' from = balance from - amount.
-```
-
-The independent proposition `all a: Account, amt: Nat | true` moved to chapter 0 because it only depends on level 0 types. Actions were spread across separate chapters.
+Any declarations not reachable from `Borrow` appear in a final appendix chapter.
 
 ## Complete Grammar
 
@@ -863,7 +812,7 @@ expr        ::= 'all' bindings '|' expr               // Universal
               | expr '->' expr                         // Implication
               | expr 'or' expr                         // Disjunction
               | expr 'and' expr                        // Conjunction
-              | 'not' expr                             // Negation
+              | '~' expr                               // Negation
               | expr cmp expr                          // Comparison
               | expr '+' expr | expr '-' expr          // Additive
               | expr '*' expr | expr '/' expr          // Multiplicative
