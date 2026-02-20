@@ -16,6 +16,7 @@ let do_normalize = ref false
 let do_check = ref false
 let check_bound = ref 3
 let solver_cmd = ref "z3"
+let solver_timeout = ref 30.0
 let module_path = ref "."
 let files = ref []
 
@@ -41,6 +42,9 @@ let specs =
       Arg.Set_int check_bound,
       "N    Domain element bound for SMT checking (default: 3)" );
     ("--solver", Arg.Set_string solver_cmd, "CMD  Solver command (default: z3)");
+    ( "--timeout",
+      Arg.Set_float solver_timeout,
+      "SEC  Solver timeout in seconds (default: 30)" );
     ( "--version",
       Arg.Unit
         (fun () ->
@@ -75,7 +79,10 @@ let run_smt_check env doc =
       0
     end
     else begin
-      let results = Pantagruel.Solver.verify_all ~solver:!solver_cmd queries in
+      let results =
+        Pantagruel.Solver.verify_all ~solver:!solver_cmd
+          ~timeout:!solver_timeout queries
+      in
       let all_passed = ref true in
       List.iter
         (fun (r : Pantagruel.Solver.verification_result) ->
