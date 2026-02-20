@@ -324,10 +324,104 @@ let test_prime_expr () =
         (Printf.sprintf "Quantifier-bound var should not be primed: %s"
            (Ast.show_expr e2'))
 
+let test_card_domain () =
+  let env =
+    Env.empty "" |> Env.add_domain "Account" Ast.dummy_loc ~chapter:0
+  in
+  check string "#Domain = bound" "3"
+    (Smt.translate_expr config env (Ast.EUnop (OpCard, EDomain "Account")))
+
+let test_card_list () =
+  let env =
+    Env.empty ""
+    |> Env.add_domain "Account" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "active"
+         (Types.TyFunc ([], Some (Types.TyList (Types.TyDomain "Account"))))
+         Ast.dummy_loc ~chapter:0
+  in
+  let result =
+    Smt.translate_expr config env (Ast.EUnop (OpCard, EVar "active"))
+  in
+  (* Should expand to sum of ite over domain elements *)
+  check bool "has ite" true (contains result "(ite (select active");
+  check bool "has Account_0" true (contains result "Account_0");
+  check bool "has Account_2" true (contains result "Account_2")
+
+let test_subset () =
+  let env =
+    Env.empty ""
+    |> Env.add_domain "Item" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "xs"
+         (Types.TyFunc ([], Some (Types.TyList (Types.TyDomain "Item"))))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "ys"
+         (Types.TyFunc ([], Some (Types.TyList (Types.TyDomain "Item"))))
+         Ast.dummy_loc ~chapter:0
+  in
+  let result =
+    Smt.translate_expr config env
+      (Ast.EBinop (OpSubset, EVar "xs", EVar "ys"))
+  in
+  (* Should expand over domain elements *)
+  check bool "has select xs" true (contains result "(select xs");
+  check bool "has select ys" true (contains result "(select ys");
+  check bool "has Item_0" true (contains result "Item_0")
+
+let test_in_list () =
+  let env =
+    Env.empty ""
+    |> Env.add_domain "Account" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "active"
+         (Types.TyFunc ([], Some (Types.TyList (Types.TyDomain "Account"))))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_var "a" (Types.TyDomain "Account")
+  in
+  let result =
+    Smt.translate_expr config env
+      (Ast.EBinop (OpIn, EVar "a", EVar "active"))
+  in
+  check string "in list" "(select active a)" result
+
 let test_sanitize_ident () =
   check string "hyphen" "has_perm" (Smt.sanitize_ident "has-perm");
   check string "question" "is_validp" (Smt.sanitize_ident "is-valid?");
   check string "plain" "foo" (Smt.sanitize_ident "foo")
+
+let test_domain_standalone () =
+  let env = Env.empty "" in
+  check_raises "EDomain standalone raises"
+    (Failure "SMT translation: EDomain 'Account' appeared in standalone position")
+    (fun () -> ignore (Smt.translate_expr config env (Ast.EDomain "Account")))
+
+let test_card_non_domain_list () =
+  let env =
+    Env.empty ""
+    |> Env.add_rule "nums"
+         (Types.TyFunc ([], Some (Types.TyList Types.TyInt)))
+         Ast.dummy_loc ~chapter:0
+  in
+  let result =
+    Smt.translate_expr config env (Ast.EUnop (OpCard, EVar "nums"))
+  in
+  (* Non-domain list card should emit warning and 0 fallback *)
+  check bool "has WARNING" true (contains result "WARNING");
+  check bool "has 0 fallback" true (contains result "0")
+
+let test_subset_domain_rhs () =
+  (* Ensure OpSubset with EDomain on RHS doesn't trigger standalone failwith *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "Item" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "xs"
+         (Types.TyFunc ([], Some (Types.TyList (Types.TyDomain "Item"))))
+         Ast.dummy_loc ~chapter:0
+  in
+  let result =
+    Smt.translate_expr config env
+      (Ast.EBinop (OpSubset, EVar "xs", EDomain "Item"))
+  in
+  check bool "has select xs" true (contains result "(select xs");
+  check bool "has Item_0" true (contains result "Item_0")
 
 (* --- Test suites --- *)
 
@@ -350,7 +444,14 @@ let expression_tests =
     test_case "application" `Quick test_app;
     test_case "primed application" `Quick test_primed_app;
     test_case "domain membership" `Quick test_domain_in;
+    test_case "list membership" `Quick test_in_list;
     test_case "projection" `Quick test_proj;
+    test_case "cardinality domain" `Quick test_card_domain;
+    test_case "cardinality list" `Quick test_card_list;
+    test_case "subset" `Quick test_subset;
+    test_case "domain standalone raises" `Quick test_domain_standalone;
+    test_case "cardinality non-domain list" `Quick test_card_non_domain_list;
+    test_case "subset with domain RHS" `Quick test_subset_domain_rhs;
   ]
 
 let sort_tests =

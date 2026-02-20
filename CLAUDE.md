@@ -17,9 +17,14 @@ dune exec test/test_parser.exe
 dune exec test/test_check.exe
 
 # Run the CLI tool
-dune exec pantagruel -- <file.pant>
-dune exec pantagruel -- --json <file.pant>  # Output JSON with resolved types
-dune exec pantagruel -- --ast <file.pant>   # Print AST (OCaml format)
+dune exec pant -- <file.pant>
+dune exec pant -- --json <file.pant>    # Output JSON with resolved types
+dune exec pant -- --ast <file.pant>     # Print AST (OCaml format)
+
+# SMT verification (bounded model checking)
+dune exec pant -- --check <file.pant>           # Run all checks with z3
+dune exec pant -- --check --bound 5 <file.pant> # Set domain element bound (default: 3)
+dune exec pant -- --check --solver cvc5 <file.pant>  # Use alternative solver
 ```
 
 ## Architecture

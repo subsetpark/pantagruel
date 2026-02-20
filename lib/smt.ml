@@ -28,7 +28,9 @@ let rec sort_of_ty = function
   | TyString -> "String"
   | TyNothing -> "Int" (* bottom type, never instantiated *)
   | TyDomain name -> name
-  | TyList inner -> Printf.sprintf "(Array Int %s)" (sort_of_ty inner)
+  | TyList inner ->
+      (* Model lists/sets as membership predicates: Array elem_sort Bool *)
+      Printf.sprintf "(Array %s Bool)" (sort_of_ty inner)
   | TyProduct ts ->
       let name = product_sort_name ts in
       name
@@ -275,8 +277,12 @@ let rec translate_expr config env (e : expr) =
   | ELitString s -> Printf.sprintf "\"%s\"" (String.escaped s)
   | EVar name -> sanitize_ident name
   | EDomain name ->
-      (* Domain as a set: shouldn't appear standalone in SMT, handled in context *)
-      Printf.sprintf "<<domain:%s>>" name
+      (* Domain as a set value shouldn't appear standalone — OpIn, OpSubset,
+         and OpCard all handle EDomain specially. If we reach here, it's an
+         internal error in the translation. *)
+      failwith
+        (Printf.sprintf
+           "SMT translation: EDomain '%s' appeared in standalone position" name)
   | EQualified (_mod, name) -> sanitize_ident name
   | EPrimed name -> sanitize_ident name ^ "_prime"
   | EApp (func, args) -> translate_app config env func args
@@ -332,43 +338,87 @@ and translate_app config env func args =
       Printf.sprintf "(%s %s)" func_str (String.concat " " args_str)
 
 and translate_binop config env op e1 e2 =
-  let t1 = translate_expr config env e1 in
-  let t2 = translate_expr config env e2 in
   match op with
-  | OpAnd -> Printf.sprintf "(and %s %s)" t1 t2
-  | OpOr -> Printf.sprintf "(or %s %s)" t1 t2
-  | OpImpl -> Printf.sprintf "(=> %s %s)" t1 t2
-  | OpIff -> Printf.sprintf "(= %s %s)" t1 t2
-  | OpEq -> Printf.sprintf "(= %s %s)" t1 t2
-  | OpNeq -> Printf.sprintf "(not (= %s %s))" t1 t2
-  | OpLt -> Printf.sprintf "(< %s %s)" t1 t2
-  | OpGt -> Printf.sprintf "(> %s %s)" t1 t2
-  | OpLe -> Printf.sprintf "(<= %s %s)" t1 t2
-  | OpGe -> Printf.sprintf "(>= %s %s)" t1 t2
-  | OpAdd -> Printf.sprintf "(+ %s %s)" t1 t2
-  | OpSub -> Printf.sprintf "(- %s %s)" t1 t2
-  | OpMul -> Printf.sprintf "(* %s %s)" t1 t2
-  | OpDiv -> Printf.sprintf "(div %s %s)" t1 t2
+  (* OpIn and OpSubset handle EDomain specially — don't eagerly translate *)
   | OpIn -> translate_in config env e1 e2
-  | OpSubset ->
-      (* forall x . (a x) => (b x) — simplified for now *)
-      Printf.sprintf "(forall ((x_sub Int)) (=> %s %s))" t1 t2
+  | OpSubset -> translate_subset config env e1 e2
+  | _ ->
+      let t1 = translate_expr config env e1 in
+      let t2 = translate_expr config env e2 in
+      match op with
+      | OpAnd -> Printf.sprintf "(and %s %s)" t1 t2
+      | OpOr -> Printf.sprintf "(or %s %s)" t1 t2
+      | OpImpl -> Printf.sprintf "(=> %s %s)" t1 t2
+      | OpIff -> Printf.sprintf "(= %s %s)" t1 t2
+      | OpEq -> Printf.sprintf "(= %s %s)" t1 t2
+      | OpNeq -> Printf.sprintf "(not (= %s %s))" t1 t2
+      | OpLt -> Printf.sprintf "(< %s %s)" t1 t2
+      | OpGt -> Printf.sprintf "(> %s %s)" t1 t2
+      | OpLe -> Printf.sprintf "(<= %s %s)" t1 t2
+      | OpGe -> Printf.sprintf "(>= %s %s)" t1 t2
+      | OpAdd -> Printf.sprintf "(+ %s %s)" t1 t2
+      | OpSub -> Printf.sprintf "(- %s %s)" t1 t2
+      | OpMul -> Printf.sprintf "(* %s %s)" t1 t2
+      | OpDiv -> Printf.sprintf "(div %s %s)" t1 t2
+      | OpIn | OpSubset -> assert false (* handled above *)
 
-and translate_in config _env elem set =
+and translate_in config env elem set =
   match set with
   | EDomain name ->
       (* x in Domain → disjunction over domain elements *)
       let elems = domain_elements name config.bound in
-      let elem_str = translate_expr config _env elem in
+      let elem_str = translate_expr config env elem in
       let disj =
         List.map (fun e -> Printf.sprintf "(= %s %s)" elem_str e) elems
       in
       Printf.sprintf "(or %s)" (String.concat " " disj)
   | _ ->
-      (* x in xs where xs is a list expression *)
-      let elem_str = translate_expr config _env elem in
-      let set_str = translate_expr config _env set in
+      (* x in xs where xs : (Array T Bool) → (select xs x) *)
+      let elem_str = translate_expr config env elem in
+      let set_str = translate_expr config env set in
       Printf.sprintf "(select %s %s)" set_str elem_str
+
+and translate_subset config env e1 e2 =
+  let s1 = translate_expr config env e1 in
+  (* xs subset Domain → every member of xs is in the domain (tautological
+     for well-typed programs, but expand over finite elements for soundness) *)
+  match e2 with
+  | EDomain name ->
+      let elems = domain_elements name config.bound in
+      let conjuncts =
+        List.map
+          (fun d ->
+            Printf.sprintf "(=> (select %s %s) (or %s))" s1 d
+              (String.concat " "
+                 (List.map
+                    (fun e -> Printf.sprintf "(= %s %s)" d e)
+                    elems)))
+          elems
+      in
+      Printf.sprintf "(and %s)" (String.concat " " conjuncts)
+  | _ ->
+      let s2 = translate_expr config env e2 in
+      (* xs subset ys: infer element type for quantifier binding *)
+      match Check.infer_type { Check.env; loc = dummy_loc } e1 with
+      | Ok (TyList (TyDomain name)) ->
+          (* For domain lists, expand over finite domain elements *)
+          let elems = domain_elements name config.bound in
+          let conjuncts =
+            List.map
+              (fun d ->
+                Printf.sprintf "(=> (select %s %s) (select %s %s))" s1 d s2 d)
+              elems
+          in
+          Printf.sprintf "(and %s)" (String.concat " " conjuncts)
+      | Ok (TyList elem_ty) ->
+          let sort = sort_of_ty elem_ty in
+          Printf.sprintf
+            "(forall ((x_sub %s)) (=> (select %s x_sub) (select %s x_sub)))"
+            sort s1 s2
+      | _ ->
+          Printf.sprintf
+            "(forall ((x_sub Int)) (=> (select %s x_sub) (select %s x_sub)))"
+            s1 s2
 
 and translate_unop config env op e =
   match op with
@@ -381,10 +431,32 @@ and translate_card config env e =
   | EDomain _ ->
       (* #Domain = bound (all elements exist) *)
       string_of_int config.bound
-  | _ ->
-      (* For list/set expressions, cardinality is not directly expressible
-         without knowing the domain. Use an uninterpreted function as fallback. *)
-      Printf.sprintf "(card %s)" (translate_expr config env e)
+  | _ -> (
+      (* #xs where xs : (Array T Bool) — count members over finite domain *)
+      let set_str = translate_expr config env e in
+      match Check.infer_type { Check.env; loc = dummy_loc } e with
+      | Ok (TyList (TyDomain name)) ->
+          (* Sum over domain elements: (+ (ite (select xs d0) 1 0) ...) *)
+          let elems = domain_elements name config.bound in
+          let terms =
+            List.map
+              (fun d ->
+                Printf.sprintf "(ite (select %s %s) 1 0)" set_str d)
+              elems
+          in
+          Printf.sprintf "(+ %s)" (String.concat " " terms)
+      | Ok (TyList elem_ty) ->
+          (* Non-domain list: try to resolve element type to a domain.
+             If the element type is truly unbounded (e.g., Int), cardinality
+             can't be computed in bounded model checking — emit 0 with a comment. *)
+          let sort = sort_of_ty elem_ty in
+          Printf.sprintf
+            "; WARNING: cardinality of non-domain list (%s) is approximate\n\
+             0 ; unbounded element type %s"
+            set_str sort
+      | _ ->
+          (* Can't determine element type at all *)
+          Printf.sprintf "; WARNING: unknown cardinality\n0")
 
 and translate_quantifier config env quant params guards body =
   (* Collect bindings and guard conditions *)
