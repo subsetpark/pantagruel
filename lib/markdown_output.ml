@@ -66,6 +66,7 @@ let pp_param fmt p =
 let pp_params_sep fmt () = fprintf fmt ", "
 
 let rec pp_expr procs fmt = function
+  | EInitially e -> fprintf fmt "initially %a" (pp_expr procs) e
   | EForall (params, guards, body) ->
       fprintf fmt "∀ %a · %a" (pp_quant_bindings procs) (params, guards)
         (pp_expr procs) body

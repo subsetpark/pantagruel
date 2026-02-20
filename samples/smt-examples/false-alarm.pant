@@ -1,0 +1,27 @@
+> False alarm: a true-but-not-inductive invariant.
+>
+> y is always >= 0 in reachable states (x starts at 0 and
+> only grows, so y accumulates non-negative sums). But the
+> inductive step fails because the invariant doesn't capture
+> the correlation that x >= 0 — the solver finds an
+> unreachable state where x is negative and y + x < 0.
+>
+> Strengthening the invariant to "y >= 0 and x >= 0" would
+> make it inductive. k-step BMC from the initial state would
+> confirm no real violation exists.
+module FalseAlarm.
+context State.
+
+{State} x => Int.
+{State} y => Int.
+---
+y >= 0.
+initially x = 0.
+initially y = 0.
+
+where
+
+State ~> Step.
+---
+x' = x + 1.
+y' = y + x.

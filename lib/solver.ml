@@ -509,6 +509,50 @@ let interpret_result query result =
           Printf.sprintf "FAIL: Potential deadlock — no action is enabled%s"
             (format_counterexample values);
       }
+  (* Init consistency: SAT = ok, UNSAT = impossible initial state *)
+  | Smt.InitConsistency, Sat _ ->
+      {
+        query;
+        result;
+        passed = true;
+        message = Printf.sprintf "OK: %s" query.description;
+      }
+  | Smt.InitConsistency, Unsat core ->
+      let core_text = format_unsat_core core query.assertion_names in
+      let detail =
+        if core_text = "" then
+          "\n  No state can satisfy all initial-state constraints."
+        else core_text
+      in
+      {
+        query;
+        result;
+        passed = false;
+        message = "FAIL: Initial state is impossible" ^ detail;
+      }
+  (* Init invariant: SAT = violation (bad), UNSAT = holds (good) *)
+  | Smt.InitInvariant, Unsat _ ->
+      {
+        query;
+        result;
+        passed = true;
+        message = Printf.sprintf "OK: %s" query.description;
+      }
+  | Smt.InitInvariant, Sat values ->
+      let inv_desc =
+        if query.invariant_text <> "" then
+          Printf.sprintf " '%s'" query.invariant_text
+        else ""
+      in
+      {
+        query;
+        result;
+        passed = false;
+        message =
+          Printf.sprintf "FAIL: Invariant%s not satisfied in initial state%s"
+            inv_desc
+            (format_counterexample values);
+      }
   (* Unknown / error cases *)
   | _, Unknown reason ->
       {

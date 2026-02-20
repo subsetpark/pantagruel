@@ -146,6 +146,17 @@ nobody => User.
 owner' d = u.
 |}
 
+let test_primed_nullary_rule () =
+  check_ok
+    {|module TEST.
+context State.
+
+{State} x => Int.
+~> Step.
+---
+x' = x + 1.
+|}
+
 let test_type_alias () = check_ok "module TEST.\n\nPoint = Nat * Nat.\n---\n"
 
 let test_tuple () =
@@ -795,6 +806,7 @@ let () =
           test_case "cardinality" `Quick test_cardinality;
           test_case "nullary rule" `Quick test_nullary_rule;
           test_case "action primed" `Quick test_action_primed;
+          test_case "primed nullary rule" `Quick test_primed_nullary_rule;
           test_case "type alias" `Quick test_type_alias;
           test_case "tuple" `Quick test_tuple;
           test_case "projection" `Quick test_projection;

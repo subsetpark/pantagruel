@@ -156,6 +156,7 @@ let rec expr_to_json = function
                 ("body", expr_to_json body);
               ] );
         ]
+  | EInitially e -> `Assoc [ ("initially", expr_to_json e) ]
 
 (** Convert guard to JSON *)
 and guard_to_json = function

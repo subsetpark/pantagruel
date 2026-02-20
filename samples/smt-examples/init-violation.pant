@@ -1,0 +1,19 @@
+> Initial state violates the invariant.
+> All accounts start with zero balance, but the invariant
+> requires a positive balance.
+module InitViolation.
+context Accounts.
+
+Account.
+{Accounts} balance a: Account => Nat0.
+
+---
+all a: Account | balance a >= 1.
+initially all a: Account | balance a = 0.
+
+where
+
+Accounts ~> Deposit | a: Account, amount: Nat.
+---
+balance' a = balance a + amount.
+all b: Account | b != a -> balance' b = balance b.

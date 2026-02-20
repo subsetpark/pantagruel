@@ -73,6 +73,7 @@ let symbols_in_expr expr =
         go e1;
         go e2
     | EUnop (_, e) -> go e
+    | EInitially e -> go e
     | EForall (params, guards, body) | EExists (params, guards, body) ->
         List.iter
           (fun p ->
@@ -147,6 +148,7 @@ let rec uses_primed = function
   | EPrimed _ -> true
   | EVar _ | EDomain _ | EQualified _ -> false
   | ELitNat _ | ELitReal _ | ELitString _ | ELitBool _ -> false
+  | EInitially e -> uses_primed e
   | EApp (f, args) -> uses_primed f || List.exists uses_primed args
   | EOverride (_, pairs) ->
       List.exists (fun (k, v) -> uses_primed k || uses_primed v) pairs

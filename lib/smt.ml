@@ -27,6 +27,10 @@ and query_kind =
   | PreconditionSat  (** SAT = ok, UNSAT = dead operation *)
   | DeadlockFreedom
       (** SAT = deadlock found (counterexample), UNSAT = deadlock-free *)
+  | InitConsistency
+      (** SAT = ok (initial state possible), UNSAT = impossible initial state *)
+  | InitInvariant
+      (** SAT = violation (invariant not satisfied initially), UNSAT = ok *)
 
 (** SMT sort name for a Pantagruel type *)
 let rec sort_of_ty = function
@@ -359,6 +363,7 @@ let rec translate_expr config env (e : expr) =
       translate_quantifier config env "forall" params guards body
   | EExists (params, guards, body) ->
       translate_quantifier config env "exists" params guards body
+  | EInitially e -> translate_expr config env e
   | EOverride (name, pairs) -> translate_override config env name pairs
 
 and translate_app config env func args =
@@ -660,10 +665,32 @@ let classify_chapter (chapter : chapter) =
 
 let classify_chapters (doc : document) = List.map classify_chapter doc.chapters
 
-(** Collect all invariants from the document *)
+(** Collect all invariants from the document (non-initially propositions) *)
 let collect_invariants chapters =
   List.concat_map
-    (fun c -> match c with Invariant props -> props | Action _ -> [])
+    (fun c ->
+      match c with
+      | Invariant props ->
+          List.filter
+            (fun (p : expr located) ->
+              match p.value with EInitially _ -> false | _ -> true)
+            props
+      | Action _ -> [])
+    chapters
+
+(** Collect all initial-state propositions, stripping the EInitially wrapper *)
+let collect_initial_props chapters =
+  List.concat_map
+    (fun c ->
+      match c with
+      | Invariant props ->
+          List.filter_map
+            (fun (p : expr located) ->
+              match p.value with
+              | EInitially e -> Some { p with value = e }
+              | _ -> None)
+            props
+      | Action _ -> [])
     chapters
 
 type action_info = {
@@ -731,6 +758,7 @@ let rec prime_expr ?(bound = []) (e : expr) : expr =
           List.map
             (fun (k, v) -> (prime_expr ~bound k, prime_expr ~bound v))
             pairs )
+  | EInitially e -> EInitially (prime_expr ~bound e)
   | EPrimed _ | ELitBool _ | ELitNat _ | ELitReal _ | ELitString _ | EDomain _
   | EQualified _ ->
       e
@@ -1154,6 +1182,7 @@ let rec collect_function_refs (e : expr) =
       :: List.concat_map
            (fun (k, v) -> collect_function_refs k @ collect_function_refs v)
            pairs
+  | EInitially e -> collect_function_refs e
   | ELitBool _ | ELitNat _ | ELitReal _ | ELitString _ | EDomain _
   | EQualified _ ->
       []
@@ -1339,16 +1368,102 @@ let generate_deadlock_query config env invariant_props actions =
     assertion_names = [];
   }
 
+(** Query: Init consistency — checks that all init props + type constraints are
+    jointly satisfiable. UNSAT = impossible initial state. *)
+let generate_init_consistency_query config env init_props =
+  let buf = Buffer.create 1024 in
+  let na = create_named_assertions buf in
+  Buffer.add_string buf "; Initial state consistency check\n";
+  Buffer.add_string buf "(set-option :produce-unsat-cores true)\n";
+  Buffer.add_string buf
+    (generate_preamble ~constrain_primed:false ~include_type_constraints:false
+       config env);
+  Buffer.add_string buf "\n; --- Type constraints ---\n";
+  let type_exprs =
+    collect_type_constraint_exprs ~constrain_primed:false config env
+  in
+  List.iter
+    (fun (human, smt_expr) -> add_named_assert na "type" human smt_expr)
+    type_exprs;
+  Buffer.add_string buf "\n; --- Initial state propositions ---\n";
+  List.iter
+    (fun (prop : expr located) ->
+      add_named_assert na "init"
+        (Printf.sprintf "Initially: %s" (Pretty.str_expr prop.value))
+        (translate_expr config env prop.value))
+    init_props;
+  let value_terms = build_invariant_value_terms config env in
+  Buffer.add_string buf "(check-sat)\n";
+  Buffer.add_string buf "(get-unsat-core)\n";
+  append_get_value buf value_terms;
+  {
+    name = "init-consistency";
+    description = "Initial state is satisfiable";
+    smt2 = Buffer.contents buf;
+    kind = InitConsistency;
+    value_terms;
+    invariant_text = "";
+    assertion_names = get_assertion_names na;
+  }
+
+(** Query: Init satisfies invariant — for each invariant, checks init_props ∧
+    ¬invariant. SAT = violation, UNSAT = ok. *)
+let generate_init_invariant_query config env init_props ~index
+    (inv : expr located) =
+  let buf = Buffer.create 1024 in
+  let inv_text = Pretty.str_expr inv.value in
+  Buffer.add_string buf
+    (Printf.sprintf "; Initial state satisfies invariant: %s\n" inv_text);
+  Buffer.add_string buf (generate_preamble ~constrain_primed:false config env);
+  Buffer.add_string buf
+    (declare_type_constraints ~constrain_primed:false config env);
+  (* Assert init props *)
+  Buffer.add_string buf "\n; --- Initial state propositions ---\n";
+  List.iter
+    (fun (prop : expr located) ->
+      let smt = translate_expr config env prop.value in
+      Buffer.add_string buf (Printf.sprintf "(assert %s)\n" smt))
+    init_props;
+  (* Negate the invariant *)
+  Buffer.add_string buf "\n; --- Invariant negated ---\n";
+  let inv_smt = translate_expr config env inv.value in
+  Buffer.add_string buf (Printf.sprintf "(assert (not %s))\n" inv_smt);
+  let value_terms = build_invariant_value_terms config env in
+  Buffer.add_string buf "(check-sat)\n";
+  append_get_value buf value_terms;
+  {
+    name = Printf.sprintf "init-invariant:%d" index;
+    description =
+      Printf.sprintf "Invariant '%s' holds in initial state" inv_text;
+    smt2 = Buffer.contents buf;
+    kind = InitInvariant;
+    value_terms;
+    invariant_text = inv_text;
+    assertion_names = [];
+  }
+
 (** Generate all verification queries for a document *)
 let generate_queries config env (doc : document) =
   let chapters = classify_chapters doc in
   let invariants = collect_invariants chapters in
+  let init_props = collect_initial_props chapters in
   let actions = collect_actions chapters in
   let queries = ref [] in
   (* Invariant consistency query *)
   if invariants <> [] then
     queries :=
       generate_invariant_consistency_query config env invariants :: !queries;
+  (* Init consistency query *)
+  if init_props <> [] then
+    queries := generate_init_consistency_query config env init_props :: !queries;
+  (* Init satisfies invariants queries *)
+  if init_props <> [] && invariants <> [] then
+    List.iteri
+      (fun index inv ->
+        queries :=
+          generate_init_invariant_query config env init_props ~index inv
+          :: !queries)
+      invariants;
   (* Contradiction queries *)
   List.iter
     (fun action ->

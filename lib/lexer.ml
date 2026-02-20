@@ -112,6 +112,7 @@ let keyword_or_lower_ident = function
   | "in" -> Parser.IN
   | "subset" -> Parser.SUBSET
   | "context" -> Parser.CONTEXT
+  | "initially" -> Parser.INITIALLY
   | s -> Parser.LOWER_IDENT s
 
 (** Skip line comment *)
@@ -358,6 +359,7 @@ let string_of_token = function
   | Parser.LBRACE -> "'{'"
   | Parser.RBRACE -> "'}'"
   | Parser.CONTEXT -> "'context'"
+  | Parser.INITIALLY -> "'initially'"
 
 (** Describe a token category (for "expected X" messages) *)
 let describe_token = function
@@ -421,6 +423,7 @@ let all_tokens =
     Parser.LBRACE;
     Parser.RBRACE;
     Parser.CONTEXT;
+    Parser.INITIALLY;
     Parser.ACTION_LABEL "";
     Parser.EOF;
   ]

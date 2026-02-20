@@ -91,15 +91,19 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
       else
         match Env.lookup_term name ctx.env with
         | Some { kind = Env.KRule ty; _ } -> (
+            let result_ty =
+              match ty with TyFunc ([], Some ret) -> ret | _ -> ty
+            in
             (* If action has a context, check membership *)
             match ctx.env.action_context with
             | Some ctx_name -> (
                 match Env.lookup_context ctx_name ctx.env with
-                | Some members when List.mem name members -> Ok ty
+                | Some members when List.mem name members -> Ok result_ty
                 | Some _ ->
                     Error (PrimedExtracontextual (name, ctx_name, ctx.loc))
-                | None -> Ok ty (* Shouldn't happen: validated in collect *))
-            | None -> Ok ty)
+                | None ->
+                    Ok result_ty (* Shouldn't happen: validated in collect *))
+            | None -> Ok result_ty)
         | Some { kind = Env.KVar _; _ } -> Error (PrimedNonRule (name, ctx.loc))
         | Some { kind = Env.KDomain | Env.KAlias _; _ } ->
             Error (UnboundVariable (name, ctx.loc))
@@ -122,6 +126,7 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
   | EUnop (op, e) -> check_unop ctx op e
   | EForall (params, guards, body) -> check_quantifier ctx params guards body
   | EExists (params, guards, body) -> check_quantifier ctx params guards body
+  | EInitially e -> infer_type ctx e
   | EOverride (name, pairs) -> check_override ctx name pairs
 
 and check_application ctx _func_expr func_ty args =

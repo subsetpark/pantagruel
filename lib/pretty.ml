@@ -54,6 +54,7 @@ let pp_binop fmt = function
 
 (** Print an expression with proper precedence handling *)
 let rec pp_expr fmt = function
+  | EInitially e -> fprintf fmt "initially %a" pp_expr e
   | EForall (params, guards, body) ->
       fprintf fmt "all %a | %a" pp_quant_params_guards (params, guards) pp_expr
         body

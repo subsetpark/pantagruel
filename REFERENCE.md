@@ -38,9 +38,9 @@ where
 ### Keywords
 
 ```
-module  import  where  context  true  false
-and     or      not    all      some
-in      subset
+module  import  where  context  initially
+true    false   and    or       not
+all     some    in     subset
 ```
 
 ### Literals
@@ -605,6 +605,25 @@ balance a >= 0.
 
 Each proposition ends with `.`
 
+### Initial-State Propositions
+
+A proposition prefixed with `initially` declares a constraint on the initial state:
+
+```
+---
+all a: Account | balance a >= 0.
+initially all a: Account | balance a = 0.
+```
+
+Initial-state propositions are **not** invariants — actions do not need to preserve them. They serve as the base case of an inductive argument: the `initially` propositions define what the initial state looks like, and the checker verifies that this initial state satisfies all invariants.
+
+When `--check` is used with a document containing `initially` propositions, two additional checks are performed:
+
+1. **Init consistency**: The initial-state propositions together with type constraints are satisfiable (i.e., a valid initial state exists).
+2. **Init satisfies invariants**: For each invariant, the initial state satisfies it (i.e., the base case holds).
+
+Initial-state propositions are collected across all chapters, just like invariants.
+
 ## Operator Precedence
 
 From lowest to highest:
@@ -836,6 +855,7 @@ type        ::= type '+' type                          // Sum
               | '(' type ')'                           // Grouped
 
 proposition ::= expr '.'
+              | 'initially' expr '.'                       // Initial-state constraint
 
 expr        ::= 'all' bindings '|' expr               // Universal
               | 'some' bindings '|' expr              // Existential

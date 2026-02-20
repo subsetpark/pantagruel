@@ -53,6 +53,7 @@ let token_to_string = function
   | Parser.RBRACE -> "RBRACE"
   | Parser.SQUIG_ARROW -> "SQUIG_ARROW"
   | Parser.CONTEXT -> "CONTEXT"
+  | Parser.INITIALLY -> "INITIALLY"
   | Parser.ACTION_LABEL s -> "ACTION_LABEL(" ^ s ^ ")"
   | Parser.EOF -> "EOF"
 

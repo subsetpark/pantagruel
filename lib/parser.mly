@@ -48,7 +48,7 @@
 %token FORALL EXISTS IN SUBSET
 %token DOT COMMA COLON DCOLON PIPE SEPARATOR
 %token LPAREN RPAREN LBRACKET RBRACKET
-%token LBRACE RBRACE CONTEXT
+%token LBRACE RBRACE CONTEXT INITIALLY
 %token <string> ACTION_LABEL
 %token EOF
 
@@ -180,6 +180,8 @@ type_term:
 proposition:
   | e=expr DOT
     { located_with_doc $startpos $endpos e }
+  | INITIALLY e=expr DOT
+    { located_with_doc $startpos $endpos (EInitially e) }
 
 (* Expressions *)
 expr:

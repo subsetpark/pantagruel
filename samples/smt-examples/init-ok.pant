@@ -1,0 +1,18 @@
+> Initial state satisfies the invariant.
+> All accounts start with zero balance, which is >= 0.
+module InitOk.
+context Accounts.
+
+Account.
+{Accounts} balance a: Account => Nat0.
+
+---
+all a: Account | balance a >= 0.
+initially all a: Account | balance a = 0.
+
+where
+
+Accounts ~> Deposit | a: Account, amount: Nat.
+---
+balance' a = balance a + amount.
+all b: Account | b != a -> balance' b = balance b.
