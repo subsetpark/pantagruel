@@ -305,7 +305,8 @@ let rec translate_expr config env (e : expr) =
           (fun sub_e ->
             match Check.infer_type { Check.env; loc = dummy_loc } sub_e with
             | Ok ty -> sort_base_name ty
-            | Error _ -> "Int")
+            | Error _ ->
+                failwith "SMT translation: cannot infer tuple component type")
           exprs
       in
       let ctor = "mk_Pair_" ^ String.concat "_" component_sorts in
@@ -467,6 +468,17 @@ and translate_card config env e =
           Printf.sprintf "; WARNING: unknown cardinality\n0")
 
 and translate_quantifier config env quant params guards body =
+  (* Enrich env with formal parameter bindings so that type inference
+     on guard expressions (e.g., GIn list exprs) can resolve them. *)
+  let param_bindings =
+    List.filter_map
+      (fun (p : param) ->
+        match Collect.resolve_type env p.param_type dummy_loc with
+        | Ok ty -> Some (p.param_name, ty)
+        | Error _ -> None)
+      params
+  in
+  let env = Env.with_vars param_bindings env in
   (* Collect bindings and guard conditions *)
   let bindings =
     List.map
@@ -474,38 +486,69 @@ and translate_quantifier config env quant params guards body =
         let sort =
           match resolve_param_sort env p.param_type with
           | Some s -> s
-          | None -> "Int"
+          | None ->
+              failwith
+                (Printf.sprintf
+                   "SMT translation: cannot resolve sort for parameter '%s'"
+                   p.param_name)
         in
         Printf.sprintf "(%s %s)" (sanitize_ident p.param_name) sort)
       params
   in
-  let guard_bindings, guard_conditions =
+  let guard_bindings, guard_conditions, _env =
     List.fold_left
-      (fun (binds, conds) g ->
+      (fun (binds, conds, env) g ->
         match g with
         | GParam p ->
             let sort =
               match resolve_param_sort env p.param_type with
               | Some s -> s
-              | None -> "Int"
+              | None ->
+                  failwith
+                    (Printf.sprintf
+                       "SMT translation: cannot resolve sort for guard \
+                        parameter '%s'"
+                       p.param_name)
+            in
+            let env =
+              match Collect.resolve_type env p.param_type dummy_loc with
+              | Ok ty -> Env.with_vars [ (p.param_name, ty) ] env
+              | Error _ -> env
             in
             ( Printf.sprintf "(%s %s)" (sanitize_ident p.param_name) sort
               :: binds,
-              conds )
+              conds,
+              env )
         | GIn (name, list_expr) ->
             (* Bind name as element type; resolve from list expression type *)
-            let elem_sort =
+            let elem_ty_opt =
               match
                 Check.infer_type { Check.env; loc = dummy_loc } list_expr
               with
-              | Ok (TyList elem_ty) -> sort_of_ty elem_ty
-              | _ -> "Int"
+              | Ok (TyList elem_ty) -> Some elem_ty
+              | _ -> None
+            in
+            let elem_sort =
+              match elem_ty_opt with
+              | Some elem_ty -> sort_of_ty elem_ty
+              | None ->
+                  failwith
+                    (Printf.sprintf
+                       "SMT translation: cannot infer element type for '%s' in \
+                        membership guard"
+                       name)
+            in
+            let env =
+              match elem_ty_opt with
+              | Some elem_ty -> Env.with_vars [ (name, elem_ty) ] env
+              | None -> env
             in
             let guard_str = translate_in config env (EVar name) list_expr in
             ( Printf.sprintf "(%s %s)" (sanitize_ident name) elem_sort :: binds,
-              guard_str :: conds )
-        | GExpr e -> (binds, translate_expr config env e :: conds))
-      ([], []) guards
+              guard_str :: conds,
+              env )
+        | GExpr e -> (binds, translate_expr config env e :: conds, env))
+      ([], [], env) guards
   in
   let all_bindings = bindings @ List.rev guard_bindings in
   let body_str = translate_expr config env body in
@@ -717,7 +760,12 @@ let declare_action_params env (params : param list) =
       let sort =
         match resolve_param_sort env p.param_type with
         | Some s -> s
-        | None -> "Int"
+        | None ->
+            failwith
+              (Printf.sprintf
+                 "SMT translation: cannot resolve sort for action parameter \
+                  '%s'"
+                 p.param_name)
       in
       Buffer.add_string buf
         (Printf.sprintf "(declare-const %s %s)\n"
