@@ -25,6 +25,8 @@ and query_kind =
   | InvariantPreservation
       (** SAT = violation (counterexample), UNSAT = preserved *)
   | PreconditionSat  (** SAT = ok, UNSAT = dead operation *)
+  | DeadlockFreedom
+      (** SAT = deadlock found (counterexample), UNSAT = deadlock-free *)
 
 (** SMT sort name for a Pantagruel type *)
 let rec sort_of_ty = function
@@ -1240,6 +1242,103 @@ let generate_invariant_consistency_query config env invariant_props =
     assertion_names = get_assertion_names na;
   }
 
+(** Extract the GExpr preconditions from an action's guards as raw exprs *)
+let extract_precondition_exprs (guards : guard list) =
+  List.filter_map (fun g -> match g with GExpr e -> Some e | _ -> None) guards
+
+(** Check if an action has no boolean preconditions (always enabled) *)
+let action_always_enabled action =
+  extract_precondition_exprs action.a_guards = []
+
+(** Query 5: Deadlock freedom — checks that every invariant-satisfying state
+    enables at least one action. SAT = deadlock found. *)
+let generate_deadlock_query config env invariant_props actions =
+  let buf = Buffer.create 1024 in
+  Buffer.add_string buf "; Deadlock freedom check\n";
+  Buffer.add_string buf (generate_preamble ~constrain_primed:false config env);
+  Buffer.add_string buf
+    (declare_type_constraints ~constrain_primed:false config env);
+  (* Assert invariants hold *)
+  if invariant_props <> [] then begin
+    Buffer.add_string buf "\n; --- Invariants (current state) ---\n";
+    let inv_conj = conjoin_propositions config env invariant_props in
+    Buffer.add_string buf (Printf.sprintf "(assert %s)\n" inv_conj)
+  end;
+  (* Assert every action is disabled: for each action, no parameter assignment
+     satisfies all preconditions *)
+  Buffer.add_string buf "\n; --- All actions disabled ---\n";
+  List.iter
+    (fun action ->
+      let precond_exprs = extract_precondition_exprs action.a_guards in
+      (* Build: forall params | type-constraints => not (preconditions) *)
+      let param_bindings =
+        List.map
+          (fun (p : param) ->
+            let sort =
+              match resolve_param_sort env p.param_type with
+              | Some s -> s
+              | None ->
+                  failwith
+                    (Printf.sprintf
+                       "SMT translation: cannot resolve sort for parameter '%s'"
+                       p.param_name)
+            in
+            Printf.sprintf "(%s %s)" (sanitize_ident p.param_name) sort)
+          action.a_params
+      in
+      let type_guards =
+        List.filter_map
+          (fun (p : param) ->
+            match Collect.resolve_type env p.param_type dummy_loc with
+            | Ok TyNat ->
+                Some (Printf.sprintf "(>= %s 1)" (sanitize_ident p.param_name))
+            | Ok TyNat0 ->
+                Some (Printf.sprintf "(>= %s 0)" (sanitize_ident p.param_name))
+            | _ -> None)
+          action.a_params
+      in
+      let precond_strs = List.map (translate_expr config env) precond_exprs in
+      let all_preconds =
+        match precond_strs with
+        | [ s ] -> s
+        | ss -> Printf.sprintf "(and %s)" (String.concat " " ss)
+      in
+      let negated_body = Printf.sprintf "(not %s)" all_preconds in
+      let body =
+        match type_guards with
+        | [] -> negated_body
+        | _ ->
+            Printf.sprintf "(=> (and %s) %s)"
+              (String.concat " " type_guards)
+              negated_body
+      in
+      match param_bindings with
+      | [] ->
+          (* Nullary action: just assert precondition is false *)
+          Buffer.add_string buf
+            (Printf.sprintf "; Action '%s' disabled\n(assert %s)\n"
+               action.a_label negated_body)
+      | _ ->
+          Buffer.add_string buf
+            (Printf.sprintf
+               "; Action '%s' disabled\n(assert (forall (%s) %s))\n"
+               action.a_label
+               (String.concat " " param_bindings)
+               body))
+    actions;
+  let value_terms = build_invariant_value_terms config env in
+  Buffer.add_string buf "(check-sat)\n";
+  append_get_value buf value_terms;
+  {
+    name = "deadlock-freedom";
+    description = "No deadlock: some action is always enabled";
+    smt2 = Buffer.contents buf;
+    kind = DeadlockFreedom;
+    value_terms;
+    invariant_text = "";
+    assertion_names = [];
+  }
+
 (** Generate all verification queries for a document *)
 let generate_queries config env (doc : document) =
   let chapters = classify_chapters doc in
@@ -1276,4 +1375,11 @@ let generate_queries config env (doc : document) =
       queries :=
         generate_precondition_query config env invariants action :: !queries)
     actions;
+  (* Deadlock freedom query — skip if any action has no preconditions
+     (always enabled, so deadlock is impossible) *)
+  let has_guarded_actions =
+    actions <> [] && not (List.exists action_always_enabled actions)
+  in
+  if has_guarded_actions then
+    queries := generate_deadlock_query config env invariants actions :: !queries;
   List.rev !queries

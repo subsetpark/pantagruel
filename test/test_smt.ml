@@ -227,14 +227,15 @@ let test_generate_queries () =
        balance' a = balance a - amount.\n"
   in
   let queries = Smt.generate_queries config env doc in
-  (* Should have: 1 invariant consistency + 1 contradiction + 1 invariant + 1 precondition = 4 queries *)
-  check int "query count" 4 (List.length queries);
+  (* Should have: 1 invariant consistency + 1 contradiction + 1 invariant + 1 precondition + 1 deadlock = 5 queries *)
+  check int "query count" 5 (List.length queries);
   let kinds = List.map (fun (q : Smt.query) -> q.kind) queries in
   check bool "has invariant consistency" true
     (List.mem Smt.InvariantConsistency kinds);
   check bool "has contradiction" true (List.mem Smt.Contradiction kinds);
   check bool "has invariant" true (List.mem Smt.InvariantPreservation kinds);
-  check bool "has precondition" true (List.mem Smt.PreconditionSat kinds)
+  check bool "has precondition" true (List.mem Smt.PreconditionSat kinds);
+  check bool "has deadlock freedom" true (List.mem Smt.DeadlockFreedom kinds)
 
 let test_contradiction_query_content () =
   let env, doc =

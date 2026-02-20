@@ -1,0 +1,20 @@
+module Deadlock.
+
+> A spec where the invariant constrains the state such that
+> no action's precondition can ever be satisfied.
+
+context Ctx.
+Account.
+{Ctx} balance a: Account => Nat0.
+
+---
+
+> All balances must be zero.
+all a: Account | balance a = 0.
+
+where
+
+> Withdraw requires a positive balance — impossible given the invariant.
+Ctx ~> Withdraw | a: Account, balance a > 0.
+---
+balance' a = balance a - 1.
