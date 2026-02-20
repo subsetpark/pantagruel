@@ -23,7 +23,7 @@ let parse_and_collect str =
 
 (* --- Expression translation tests --- *)
 
-let config = Smt.{ bound = 3 }
+let config = Smt.{ bound = 3; steps = 5 }
 
 let test_lit_bool () =
   let env = Env.empty "" in
@@ -700,6 +700,106 @@ let test_precondition_query_named_assertions () =
   let inv_text = snd (List.hd inv_names) in
   check bool "inv has prefix" true (contains inv_text "Invariant:")
 
+(* --- BMC tests --- *)
+
+let test_replace_word () =
+  check string "simple" "f_s0" (Smt.replace_word ~from:"f" ~to_:"f_s0" "f");
+  check string "in parens" "(f_s0 x)"
+    (Smt.replace_word ~from:"f" ~to_:"f_s0" "(f x)");
+  check string "no partial" "foo" (Smt.replace_word ~from:"f" ~to_:"f_s0" "foo");
+  check string "multiple" "(and f_s0 f_s0)"
+    (Smt.replace_word ~from:"f" ~to_:"f_s0" "(and f f)");
+  check string "prime first" "(f_prime x)"
+    (Smt.replace_word ~from:"f" ~to_:"f_s0" "(f_prime x)")
+
+let test_rename_smt_for_step () =
+  let env =
+    Env.empty ""
+    |> Env.add_rule "balance"
+         (Types.TyFunc ([ Types.TyDomain "Account" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+  in
+  let smt = "(>= (balance a) 0)" in
+  let renamed = Smt.rename_smt_for_step env smt 2 in
+  check bool "has balance_s2" true (contains renamed "balance_s2");
+  check bool "no bare balance" false (contains renamed "(balance a)");
+  (* Test primed renaming *)
+  let smt2 = "(= (balance_prime a) (- (balance a) 1))" in
+  let renamed2 = Smt.rename_smt_for_step env smt2 1 in
+  check bool "has balance_s2 (prime)" true (contains renamed2 "balance_s2");
+  check bool "has balance_s1 (base)" true (contains renamed2 "balance_s1")
+
+let test_generate_bmc_queries () =
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       context Ctx.\n\
+       Account.\n\
+       {Ctx} balance a: Account => Nat.\n\
+       ---\n\
+       all a: Account | balance a >= 0.\n\
+       initially all a: Account | balance a = 0.\n\
+       where\n\
+       Ctx ~> Withdraw | a: Account, amount: Nat, balance a >= amount.\n\
+       ---\n\
+       balance' a = balance a - amount.\n\
+       all b: Account | b != a -> balance' b = balance b.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  let bmc_queries =
+    List.filter (fun (q : Smt.query) -> q.kind = Smt.BMCInvariant) queries
+  in
+  check bool "has BMC queries" true (List.length bmc_queries >= 1);
+  let bmc = List.hd bmc_queries in
+  check bool "has check-sat" true (contains bmc.smt2 "(check-sat)");
+  check bool "has step 0" true (contains bmc.smt2 "balance_s0");
+  check bool "has step 1" true (contains bmc.smt2 "balance_s1");
+  check bool "has initial state" true (contains bmc.smt2 "Initial state");
+  check bool "has transition" true (contains bmc.smt2 "Transition step");
+  check bool "has violated" true (contains bmc.smt2 "Invariant violated")
+
+let test_no_bmc_without_init () =
+  (* Spec without init props should produce no BMC queries *)
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       context Ctx.\n\
+       Account.\n\
+       {Ctx} balance a: Account => Nat.\n\
+       ---\n\
+       all a: Account | balance a >= 0.\n\
+       where\n\
+       Ctx ~> Withdraw | a: Account, amount: Nat, balance a >= amount.\n\
+       ---\n\
+       balance' a = balance a - amount.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  let bmc_queries =
+    List.filter (fun (q : Smt.query) -> q.kind = Smt.BMCInvariant) queries
+  in
+  check int "no BMC queries without init" 0 (List.length bmc_queries)
+
+let test_format_bmc_counterexample () =
+  let values =
+    [ ("balance_s0", "0"); ("balance_s1", "5"); ("balance_s2", "3") ]
+  in
+  let result = Solver.format_bmc_counterexample values in
+  check bool "has Step 0" true (contains result "Step 0");
+  check bool "has Step 1" true (contains result "Step 1");
+  check bool "has Step 2" true (contains result "Step 2");
+  check bool "has balance = 0" true (contains result "balance = 0");
+  check bool "has balance = 5" true (contains result "balance = 5")
+
+let test_format_bmc_counterexample_applied () =
+  let values =
+    [ ("(balance_s0 Account_0)", "10"); ("(balance_s1 Account_0)", "5") ]
+  in
+  let result = Solver.format_bmc_counterexample values in
+  check bool "has Step 0" true (contains result "Step 0");
+  check bool "has Step 1" true (contains result "Step 1");
+  check bool "has balance Account_0 = 10" true
+    (contains result "balance Account_0 = 10")
+
 (* --- Test suites --- *)
 
 let expression_tests =
@@ -794,6 +894,17 @@ let unsat_core_tests =
       test_precondition_query_named_assertions;
   ]
 
+let bmc_tests =
+  [
+    test_case "replace_word" `Quick test_replace_word;
+    test_case "rename_smt_for_step" `Quick test_rename_smt_for_step;
+    test_case "generate BMC queries" `Quick test_generate_bmc_queries;
+    test_case "no BMC without init" `Quick test_no_bmc_without_init;
+    test_case "format BMC counterexample" `Quick test_format_bmc_counterexample;
+    test_case "format BMC counterexample applied" `Quick
+      test_format_bmc_counterexample_applied;
+  ]
+
 let () =
   run "SMT"
     [
@@ -803,4 +914,5 @@ let () =
       ("value_terms", value_terms_tests);
       ("solver_parsing", solver_parsing_tests);
       ("unsat_core", unsat_core_tests);
+      ("bmc", bmc_tests);
     ]

@@ -17,6 +17,7 @@ let do_check = ref false
 let check_bound = ref 3
 let solver_cmd = ref "z3"
 let solver_timeout = ref 30.0
+let check_steps = ref 5
 let module_path = ref "."
 let files = ref []
 
@@ -42,6 +43,10 @@ let specs =
       Arg.Set_int check_bound,
       "N    Domain element bound for SMT checking (default: 3)" );
     ("--solver", Arg.Set_string solver_cmd, "CMD  Solver command (default: z3)");
+    ( "--steps",
+      Arg.Set_int check_steps,
+      "N    Number of BMC steps from initial state (default: 5, 0 to disable)"
+    );
     ( "--timeout",
       Arg.Set_float solver_timeout,
       "SEC  Solver timeout in seconds (default: 30)" );
@@ -72,7 +77,9 @@ let run_smt_check env doc =
     2
   end
   else begin
-    let config = Pantagruel.Smt.{ bound = !check_bound } in
+    let config =
+      Pantagruel.Smt.{ bound = !check_bound; steps = !check_steps }
+    in
     let queries = Pantagruel.Smt.generate_queries config env doc in
     if queries = [] then begin
       print_endline "No verification queries generated.";

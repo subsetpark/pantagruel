@@ -262,6 +262,86 @@ let format_counterexample values =
         sections := ("  Before:" :: List.rev before) :: !sections;
       "\n" ^ String.concat "\n" (List.concat !sections)
 
+(** Format parsed value pairs into a BMC counterexample grouped by step. Parses
+    _sN suffix from value term names to determine step index. *)
+let format_bmc_counterexample values =
+  match values with
+  | [] -> ""
+  | _ ->
+      (* Parse step index from a term name: "balance_s2" → Some 2,
+         "(balance_s2 Account_0)" → Some 2 *)
+      let parse_step term =
+        (* Get the function name part *)
+        let fname =
+          if String.length term >= 2 && term.[0] = '(' then
+            let inner = String.sub term 1 (String.length term - 2) in
+            match String.index_opt inner ' ' with
+            | Some i -> String.sub inner 0 i
+            | None -> inner
+          else term
+        in
+        (* Look for _sN suffix *)
+        match String.rindex_opt fname '_' with
+        | Some i when i + 1 < String.length fname && fname.[i + 1] = 's' -> (
+            let num_str =
+              String.sub fname (i + 2) (String.length fname - i - 2)
+            in
+            try Some (int_of_string num_str) with Failure _ -> None)
+        | _ -> None
+      in
+      (* Make display name: strip _sN from function name *)
+      let display_name term =
+        let strip_step s =
+          match String.rindex_opt s '_' with
+          | Some i when i + 1 < String.length s && s.[i + 1] = 's' -> (
+              let num_str = String.sub s (i + 2) (String.length s - i - 2) in
+              try
+                ignore (int_of_string num_str);
+                String.sub s 0 i
+              with Failure _ -> s)
+          | _ -> s
+        in
+        if String.length term >= 2 && term.[0] = '(' then
+          let inner = String.sub term 1 (String.length term - 2) in
+          match String.index_opt inner ' ' with
+          | Some i ->
+              let fname = String.sub inner 0 i in
+              let rest = String.sub inner i (String.length inner - i) in
+              strip_step fname ^ rest
+          | None -> strip_step inner
+        else strip_step term
+      in
+      (* Group by step *)
+      let step_map = Hashtbl.create 16 in
+      List.iter
+        (fun (term, value) ->
+          match parse_step term with
+          | Some step ->
+              let existing =
+                match Hashtbl.find_opt step_map step with
+                | Some l -> l
+                | None -> []
+              in
+              Hashtbl.replace step_map step
+                ((display_name term, translate_value value) :: existing)
+          | None -> ())
+        values;
+      (* Sort steps and format *)
+      let steps =
+        Hashtbl.fold (fun k v acc -> (k, v) :: acc) step_map []
+        |> List.sort (fun (a, _) (b, _) -> compare a b)
+      in
+      let buf = Buffer.create 256 in
+      List.iter
+        (fun (step, entries) ->
+          Buffer.add_string buf (Printf.sprintf "\n  Step %d:\n" step);
+          List.iter
+            (fun (name, value) ->
+              Buffer.add_string buf (Printf.sprintf "    %s = %s\n" name value))
+            (List.rev entries))
+        steps;
+      Buffer.contents buf
+
 (** Read all data from a file descriptor with a total deadline. Returns [None]
     on timeout, [Some output] on completion. *)
 let read_with_timeout fd timeout =
@@ -553,6 +633,30 @@ let interpret_result query result =
             inv_desc
             (format_counterexample values);
       }
+  (* BMC invariant: SAT = reachable violation (bad), UNSAT = safe (good) *)
+  | Smt.BMCInvariant, Unsat _ ->
+      {
+        query;
+        result;
+        passed = true;
+        message = Printf.sprintf "OK: %s" query.description;
+      }
+  | Smt.BMCInvariant, Sat values ->
+      let inv_desc =
+        if query.invariant_text <> "" then
+          Printf.sprintf " '%s'" query.invariant_text
+        else ""
+      in
+      {
+        query;
+        result;
+        passed = false;
+        message =
+          Printf.sprintf
+            "FAIL: Invariant%s violated in reachable state from initial state%s"
+            inv_desc
+            (format_bmc_counterexample values);
+      }
   (* Unknown / error cases *)
   | _, Unknown reason ->
       {
@@ -571,10 +675,115 @@ let interpret_result query result =
         message = Printf.sprintf "ERROR: %s: %s" query.description err;
       }
 
+(** Extract "holds for N steps from initial state" from a BMC description *)
+let extract_holds_clause desc =
+  let key = "holds for " in
+  let key_len = String.length key in
+  let desc_len = String.length desc in
+  let rec find i =
+    if i > desc_len - key_len then desc
+    else if String.sub desc i key_len = key then String.sub desc i (desc_len - i)
+    else find (i + 1)
+  in
+  find 0
+
+(** Parse invariant index from preservation query name
+    "invariant:<action>:<index>" *)
+let parse_preservation_info name =
+  if String.length name > 10 && String.sub name 0 10 = "invariant:" then
+    let rest = String.sub name 10 (String.length name - 10) in
+    match String.rindex_opt rest ':' with
+    | Some i -> (
+        let action = String.sub rest 0 i in
+        let idx_str = String.sub rest (i + 1) (String.length rest - i - 1) in
+        try Some (action, int_of_string idx_str) with Failure _ -> None)
+    | None -> None
+  else None
+
+(** Parse invariant index from BMC query name "bmc-invariant:<index>" *)
+let parse_bmc_index name =
+  if String.length name > 14 && String.sub name 0 14 = "bmc-invariant:" then
+    try Some (int_of_string (String.sub name 14 (String.length name - 14)))
+    with Failure _ -> None
+  else None
+
+(** Correlate BMC results with invariant preservation results. When a
+    preservation check fails but BMC passes, it's a false alarm (WARN). When
+    both fail, BMC provides the concrete reachable trace. Standalone BMC results
+    are removed from the output. *)
+let correlate_results results =
+  (* Build map of BMC results by invariant index *)
+  let bmc_map = Hashtbl.create 8 in
+  List.iter
+    (fun (r : verification_result) ->
+      match parse_bmc_index r.query.Smt.name with
+      | Some idx -> Hashtbl.replace bmc_map idx r
+      | None -> ())
+    results;
+  if Hashtbl.length bmc_map = 0 then results
+  else
+    List.filter_map
+      (fun (r : verification_result) ->
+        match parse_bmc_index r.query.Smt.name with
+        | Some _ -> None (* Remove standalone BMC results *)
+        | None -> (
+            match parse_preservation_info r.query.Smt.name with
+            | Some (action_label, idx) when not r.passed -> (
+                match Hashtbl.find_opt bmc_map idx with
+                | Some bmc_r -> (
+                    let inv_desc =
+                      if r.query.invariant_text <> "" then
+                        Printf.sprintf " '%s'" r.query.invariant_text
+                      else ""
+                    in
+                    let values = match r.result with Sat v -> v | _ -> [] in
+                    match bmc_r.result with
+                    | Unsat _ ->
+                        (* False alarm: inductive step fails, BMC safe *)
+                        let holds =
+                          extract_holds_clause bmc_r.query.description
+                        in
+                        let cx = format_counterexample values in
+                        let cx_str =
+                          if cx = "" then ""
+                          else "\n  Counterexample (possibly unreachable):" ^ cx
+                        in
+                        Some
+                          {
+                            r with
+                            passed = true;
+                            message =
+                              Printf.sprintf
+                                "WARN: Invariant%s not preserved by action \
+                                 '%s' (but %s)%s"
+                                inv_desc action_label holds cx_str;
+                          }
+                    | Sat bmc_values ->
+                        (* Confirmed bug: both inductive and BMC fail *)
+                        let cx = format_counterexample values in
+                        Some
+                          {
+                            r with
+                            message =
+                              Printf.sprintf
+                                "FAIL: Invariant%s violated by action '%s' \
+                                 (reachable from initial state)%s\n\
+                                \  Reachable trace:%s"
+                                inv_desc action_label cx
+                                (format_bmc_counterexample bmc_values);
+                          }
+                    | _ -> Some r)
+                | None -> Some r)
+            | _ -> Some r))
+      results
+
 (** Run all queries and return results *)
 let verify_all ?(solver = default_solver) ?(timeout = default_timeout) queries =
-  List.map
-    (fun query ->
-      let result = run_solver ~solver ~timeout query.Smt.smt2 in
-      interpret_result query result)
-    queries
+  let results =
+    List.map
+      (fun query ->
+        let result = run_solver ~solver ~timeout query.Smt.smt2 in
+        interpret_result query result)
+      queries
+  in
+  correlate_results results

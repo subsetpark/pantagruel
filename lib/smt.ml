@@ -3,8 +3,8 @@
 open Ast
 open Types
 
-type config = { bound : int }
-(** Configuration for bounded checking *)
+type config = { bound : int; steps : int }
+(** Configuration for bounded checking. [steps] controls k-step BMC depth. *)
 
 type query = {
   name : string;
@@ -31,6 +31,9 @@ and query_kind =
       (** SAT = ok (initial state possible), UNSAT = impossible initial state *)
   | InitInvariant
       (** SAT = violation (invariant not satisfied initially), UNSAT = ok *)
+  | BMCInvariant
+      (** SAT = reachable violation (concrete attack trace), UNSAT = safe up to
+          k steps *)
 
 (** SMT sort name for a Pantagruel type *)
 let rec sort_of_ty = function
@@ -1442,6 +1445,270 @@ let generate_init_invariant_query config env init_props ~index
     assertion_names = [];
   }
 
+(** Word-boundary-aware string substitution. Replaces occurrences of [from] in
+    [s] with [to_], but only when [from] appears at a word boundary. Word
+    boundary characters: '(', ')', ' ', '\n', '\t', and string edges. *)
+let replace_word ~from ~to_ s =
+  let from_len = String.length from in
+  let s_len = String.length s in
+  if from_len = 0 || s_len = 0 then s
+  else
+    let is_boundary i =
+      i < 0 || i >= s_len
+      || match s.[i] with '(' | ')' | ' ' | '\n' | '\t' -> true | _ -> false
+    in
+    let buf = Buffer.create (s_len + 64) in
+    let i = ref 0 in
+    while !i <= s_len - from_len do
+      if
+        String.sub s !i from_len = from
+        && is_boundary (!i - 1)
+        && is_boundary (!i + from_len)
+      then begin
+        Buffer.add_string buf to_;
+        i := !i + from_len
+      end
+      else begin
+        Buffer.add_char buf s.[!i];
+        incr i
+      end
+    done;
+    (* Copy remaining characters *)
+    while !i < s_len do
+      Buffer.add_char buf s.[!i];
+      incr i
+    done;
+    Buffer.contents buf
+
+(** Collect all rule names from env that should be renamed for BMC steps *)
+let collect_rule_names env =
+  Env.StringMap.fold
+    (fun name entry acc ->
+      match entry.Env.kind with
+      | Env.KRule ty -> (
+          let sname = sanitize_ident name in
+          match decompose_func_ty ty with Some _ -> sname :: acc | None -> acc)
+      | _ -> acc)
+    env.Env.terms []
+
+(** Rename all rule names in an SMT string for step [step]. Replaces
+    [name_prime] → [name_s{step+1}] and [name] → [name_s{step}]. Sort
+    substitutions by key length descending to avoid partial matches. *)
+let rename_smt_for_step env smt step =
+  let rule_names = collect_rule_names env in
+  (* Build substitution pairs: longer keys first *)
+  let subs =
+    List.concat_map
+      (fun name ->
+        [
+          (name ^ "_prime", Printf.sprintf "%s_s%d" name (step + 1));
+          (name, Printf.sprintf "%s_s%d" name step);
+        ])
+      rule_names
+  in
+  let subs =
+    List.sort
+      (fun (a, _) (b, _) -> compare (String.length b) (String.length a))
+      subs
+  in
+  List.fold_left (fun s (from, to_) -> replace_word ~from ~to_ s) smt subs
+
+(** Declare k+1 copies of each rule function for BMC steps *)
+let declare_step_functions config env steps =
+  let buf = Buffer.create 512 in
+  Buffer.add_string buf "; --- Step-indexed function declarations ---\n";
+  Env.StringMap.iter
+    (fun name entry ->
+      match entry.Env.kind with
+      | Env.KRule ty -> (
+          let sname = sanitize_ident name in
+          match decompose_func_ty ty with
+          | Some ([], ret) ->
+              for i = 0 to steps do
+                Buffer.add_string buf
+                  (Printf.sprintf "(declare-const %s_s%d %s)\n" sname i
+                     (sort_of_ty ret))
+              done
+          | Some (params, ret) ->
+              let param_sorts =
+                String.concat " " (List.map sort_of_ty params)
+              in
+              for i = 0 to steps do
+                Buffer.add_string buf
+                  (Printf.sprintf "(declare-fun %s_s%d (%s) %s)\n" sname i
+                     param_sorts (sort_of_ty ret))
+              done
+          | None -> ())
+      | _ -> ())
+    env.Env.terms;
+  (* Type constraints for each step *)
+  Buffer.add_string buf "\n; --- Type constraints for all steps ---\n";
+  let base_exprs =
+    collect_type_constraint_exprs ~constrain_primed:false config env
+  in
+  for i = 0 to steps do
+    List.iter
+      (fun (_human, smt_expr) ->
+        let renamed = rename_smt_for_step env smt_expr i in
+        Buffer.add_string buf (Printf.sprintf "(assert %s)\n" renamed))
+      base_exprs
+  done;
+  Buffer.contents buf
+
+(** Build SMT value terms for all BMC steps *)
+let build_bmc_value_terms config env steps =
+  let base_terms = build_invariant_value_terms config env in
+  List.concat_map
+    (fun i -> List.map (fun term -> rename_smt_for_step env term i) base_terms)
+    (List.init (steps + 1) Fun.id)
+
+(** Build the transition assertion for step i→i+1 as a disjunction over all
+    actions. Each action's params are existentially quantified. *)
+let build_step_transition config env actions step =
+  let action_clauses =
+    List.map
+      (fun action ->
+        (* Build existentially quantified clause for this action *)
+        let param_bindings =
+          List.map
+            (fun (p : param) ->
+              let sort =
+                match resolve_param_sort env p.param_type with
+                | Some s -> s
+                | None ->
+                    failwith
+                      (Printf.sprintf
+                         "SMT translation: cannot resolve sort for parameter \
+                          '%s'"
+                         p.param_name)
+              in
+              Printf.sprintf "(%s %s)" (sanitize_ident p.param_name) sort)
+            action.a_params
+        in
+        (* Domain membership for action params *)
+        let domain_conds =
+          List.filter_map
+            (fun (p : param) ->
+              match Collect.resolve_type env p.param_type dummy_loc with
+              | Ok (TyDomain name) ->
+                  let elems = domain_elements name config.bound in
+                  let sname = sanitize_ident p.param_name in
+                  let disj =
+                    List.map (fun e -> Printf.sprintf "(= %s %s)" sname e) elems
+                  in
+                  Some (Printf.sprintf "(or %s)" (String.concat " " disj))
+              | _ -> None)
+            action.a_params
+        in
+        (* Type constraints for action params *)
+        let type_conds =
+          List.filter_map
+            (fun (p : param) ->
+              match Collect.resolve_type env p.param_type dummy_loc with
+              | Ok TyNat ->
+                  Some
+                    (Printf.sprintf "(>= %s 1)" (sanitize_ident p.param_name))
+              | Ok TyNat0 ->
+                  Some
+                    (Printf.sprintf "(>= %s 0)" (sanitize_ident p.param_name))
+              | _ -> None)
+            action.a_params
+        in
+        (* Preconditions (from guards) — translated in base names *)
+        let precond_parts = extract_preconditions config env action.a_guards in
+        (* Postconditions — translated with base name/prime *)
+        let postcond_parts =
+          List.map
+            (fun (p : expr located) -> translate_expr config env p.value)
+            action.a_propositions
+        in
+        (* Frame conditions *)
+        let frame_parts =
+          List.map snd (collect_frame_exprs config env action.a_context)
+        in
+        (* Rename: base name → _s{step}, prime → _s{step+1} *)
+        let rename s = rename_smt_for_step env s step in
+        let all_parts =
+          domain_conds @ type_conds
+          @ List.map rename precond_parts
+          @ List.map rename postcond_parts
+          @ List.map rename frame_parts
+        in
+        let all_parts_renamed = all_parts in
+        let conj =
+          match all_parts_renamed with
+          | [] -> "true"
+          | [ p ] -> p
+          | ps -> Printf.sprintf "(and %s)" (String.concat " " ps)
+        in
+        match param_bindings with
+        | [] -> conj
+        | _ ->
+            Printf.sprintf "(exists (%s) %s)"
+              (String.concat " " param_bindings)
+              conj)
+      actions
+  in
+  match action_clauses with
+  | [] -> "true"
+  | [ c ] -> c
+  | cs -> Printf.sprintf "(or %s)" (String.concat " " cs)
+
+(** Generate a BMC query for a single invariant *)
+let generate_bmc_query config env init_props actions ~inv_index
+    (inv : expr located) ~steps =
+  let buf = Buffer.create 2048 in
+  let inv_text = Pretty.str_expr inv.value in
+  Buffer.add_string buf
+    (Printf.sprintf "; BMC check (%d steps): %s\n" steps inv_text);
+  (* Domain sorts and composite types — same preamble but no function decls *)
+  Buffer.add_string buf "; --- Domain sorts and elements ---\n";
+  Buffer.add_string buf (declare_domain_sorts config env);
+  Buffer.add_string buf "\n; --- Composite types ---\n";
+  Buffer.add_string buf (declare_composite_types env);
+  Buffer.add_string buf "\n";
+  (* Declare step-indexed functions instead of regular ones *)
+  Buffer.add_string buf (declare_step_functions config env steps);
+  (* Assert init props constrain step 0 *)
+  Buffer.add_string buf "\n; --- Initial state (step 0) ---\n";
+  List.iter
+    (fun (prop : expr located) ->
+      let smt = translate_expr config env prop.value in
+      let renamed = rename_smt_for_step env smt 0 in
+      Buffer.add_string buf (Printf.sprintf "(assert %s)\n" renamed))
+    init_props;
+  (* Assert transitions for each step i→i+1 *)
+  for i = 0 to steps - 1 do
+    Buffer.add_string buf
+      (Printf.sprintf "\n; --- Transition step %d -> %d ---\n" i (i + 1));
+    let transition = build_step_transition config env actions i in
+    Buffer.add_string buf (Printf.sprintf "(assert %s)\n" transition)
+  done;
+  (* Assert invariant violated at some step *)
+  Buffer.add_string buf "\n; --- Invariant violated at some step ---\n";
+  let inv_smt = translate_expr config env inv.value in
+  let negated_steps =
+    List.init (steps + 1) (fun i ->
+        let renamed = rename_smt_for_step env inv_smt i in
+        Printf.sprintf "(not %s)" renamed)
+  in
+  Buffer.add_string buf
+    (Printf.sprintf "(assert (or %s))\n" (String.concat " " negated_steps));
+  let value_terms = build_bmc_value_terms config env steps in
+  Buffer.add_string buf "(check-sat)\n";
+  append_get_value buf value_terms;
+  {
+    name = Printf.sprintf "bmc-invariant:%d" inv_index;
+    description =
+      Printf.sprintf "Invariant '%s' holds for %d steps from initial state"
+        inv_text steps;
+    smt2 = Buffer.contents buf;
+    kind = BMCInvariant;
+    value_terms;
+    invariant_text = inv_text;
+    assertion_names = [];
+  }
+
 (** Generate all verification queries for a document *)
 let generate_queries config env (doc : document) =
   let chapters = classify_chapters doc in
@@ -1497,4 +1764,14 @@ let generate_queries config env (doc : document) =
   in
   if has_guarded_actions then
     queries := generate_deadlock_query config env invariants actions :: !queries;
+  (* BMC queries — when init props, actions, and invariants all exist *)
+  if init_props <> [] && actions <> [] && invariants <> [] && config.steps > 0
+  then
+    List.iteri
+      (fun inv_index inv ->
+        queries :=
+          generate_bmc_query config env init_props actions ~inv_index inv
+            ~steps:config.steps
+          :: !queries)
+      invariants;
   List.rev !queries
