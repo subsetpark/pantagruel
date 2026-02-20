@@ -88,6 +88,52 @@ Ask: Which rules does each action need to modify? Are there natural groupings of
 
 Only introduce contexts if the spec has multiple actions that modify different subsets of state. For simple specs, contexts may be unnecessary — don't force them.
 
+## Progressive Disclosure (Top-Down Structure)
+
+An idiomatic Pantagruel document proceeds **top-down**, introducing the most important concepts first and progressively glossing supporting terms in later chapters. This is the single most important structural principle.
+
+### The pattern
+
+1. **Chapter 1** introduces the primary action or concept — the main thing this spec is *about*. Its head contains only the minimum declarations needed to express that concept (the key domains, the action, its parameters).
+
+2. **Chapter 1's body** states propositions about those concepts. These propositions will naturally reference rules, predicates, and types that have *not yet been declared*. That's fine — they will be glossed in the next chapter.
+
+3. **Chapter 2** glosses the terms introduced in Chapter 1's body: it declares those rules, predicates, and supporting domains, and states propositions about *them*. Its body may in turn reference further undefined terms.
+
+4. **Continue recursively**: each subsequent chapter glosses terms used but not yet defined in the previous chapter.
+
+5. **The final chapter** may contain only bare domain declarations about which nothing interesting needs to be said — the leaves of the conceptual tree.
+
+### Why this matters
+
+- A reader encountering the spec for the first time sees the **high-level story** immediately, without wading through low-level machinery.
+- Each chapter answers the question: "What did the previous chapter take for granted?"
+- The structure mirrors how you'd explain the system to someone: start with what matters most, fill in details on demand.
+
+### Applying this during co-authoring
+
+When working through the phases, don't dump all domains into Chapter 1. Instead:
+
+- **Ask first**: "What is the most important operation or concept in this system?" That becomes the focus of Chapter 1.
+- **Declare minimally**: Chapter 1's head should contain only the domains and rules that the primary action directly mentions.
+- **Let the body pull in terms**: As you write pre/post-conditions, note which rules and types are referenced but not yet declared. These become the head of the next chapter.
+- **Organize chapters by dependency**, not by category. Don't group "all domains, then all rules, then all actions." Instead, each chapter is a self-contained layer that the previous layer depends on.
+
+### Example structure
+
+For a job-submission system, the chapter flow might be:
+
+```
+Chapter 1: Submit job (action) — declares Job, User, Card, Vendor
+  body: pre/post-conditions referencing `valid-card?`, `job-cost`, `vendor-of`
+
+Chapter 2: Glosses valid-card?, job-cost, vendor-of — declares Currency, CardStatus
+  body: propositions about card validity, cost calculation
+
+Chapter 3: Glosses CardStatus, Currency — bare domain declarations
+  body: (possibly empty or simple constraints)
+```
+
 ## Key Rules
 
 1. **Never invent domain details.** If the user hasn't told you whether balances can be negative, ask — don't assume `balance a >= 0`.
@@ -95,6 +141,7 @@ Only introduce contexts if the spec has multiple actions that modify different s
 3. **Prefer small specs that grow.** Start with domains and one or two rules. Add complexity only as the user provides it.
 4. **One action per chapter.** Each `where` block introduces a new chapter. Actions must be the last declaration in a chapter head.
 5. **Show your work.** After each phase, show the current state of the `.pant` file. Let the user correct course early.
+6. **Top-down chapter ordering.** Structure chapters by progressive disclosure: primary concepts first, supporting glosses in subsequent chapters. Don't front-load all declarations into Chapter 1.
 
 ## Verification Loop
 
@@ -218,59 +265,65 @@ initially all a: Account | balance a = 0.
 
 ## Example: Guided Conversation
 
-Here's how a session might go:
+Here's how a session might go, applying progressive disclosure:
 
 **User**: I want to spec a library system.
 
-**Agent**: What are the entities? Books, members, something else?
+**Agent**: What is the most important operation in this system — the central thing it does?
 
-**User**: Books and members.
+**User**: Checking out books.
 
-**Agent**: Got it. Here's what we have so far:
+**Agent**: Great — checking out a book will be the focus of Chapter 1. What entities does a checkout directly involve?
+
+**User**: A member checks out a book.
+
+**Agent**: Here's Chapter 1 with just the checkout action and the entities it directly involves:
 
 ```
 module LIBRARY.
 
 Book.
 Member.
+~> Check out | m: Member, b: Book.
 ---
 ```
 
-What information is associated with each entity? For instance, does a book have an author, a status (checked out or available), a borrower?
+Now, what must be true *before* a checkout can happen, and what changes *after*?
 
-**User**: Each book is either available or checked out by a member.
+**User**: The book must be available. After checkout, the book is no longer available and it's recorded that the member has it. A member can have at most 3 books.
 
-**Agent**: So a book's borrower is either a member or nobody — I'll model that as `Member + Nothing`. Does that sound right?
+**Agent**: I'll reference `available?` and `borrower` in the body — we'll define those in the next chapter. Does this look right?
 
-**User**: Yes.
+```
+module LIBRARY.
+
+Book.
+Member.
+~> Check out | m: Member, b: Book, available? b.
+---
+borrower' b = m.
+not available?' b.
+#(some x: Book | borrower x = m) < 3.
+all other: Book | other != b -> borrower' other = borrower other.
+all other: Book | other != b -> available?' other = available? other.
+```
+
+Chapter 1 uses `available?` and `borrower` without declaring them. Chapter 2 will gloss those terms. What do they mean exactly?
+
+**User**: `available?` is whether a book can be checked out. `borrower` is who has it — could be nobody if it's available.
 
 **Agent**:
 
 ```
-module LIBRARY.
+where
 
-Book.
-Member.
+> Glossary for checkout terms.
+available? b: Book => Bool.
 borrower b: Book => Member + Nothing.
 ---
+all b: Book | available? b <-> borrower b = nothing.
 ```
 
-What must always be true? For instance, can the same member borrow unlimited books?
+Are there any other concepts used here that need further definition, or is this the leaf level?
 
-**User**: A member can borrow at most 3 books.
-
-**Agent**:
-
-```
-module LIBRARY.
-
-Book.
-Member.
-borrower b: Book => Member + Nothing.
----
-all m: Member | #(some b: Book | borrower b = m) <= 3.
-```
-
-What operations exist? Can members check out and return books?
-
-*...and so on, through actions, initial state, and verification.*
+*...and so on, with each chapter glossing terms from the previous one.*
