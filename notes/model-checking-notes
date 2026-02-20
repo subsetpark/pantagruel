@@ -1,0 +1,241 @@
+# Model Checking for Pantagruel
+
+## 1. What can be checked
+
+### 1a. Contradiction in transition specifications
+
+Are the postconditions of a void procedure jointly satisfiable?
+
+    balance' a = balance a + amount.
+    balance' a = balance a - amount.
+
+is a contradiction (unless amount = 0). Requires an SMT solver applied to
+the chapter body; no new syntax needed.
+
+### 1b. Invariant preservation
+
+Given:
+- Global invariants I(s): propositions in non-void chapters (no primed
+  expressions)
+- A transition T(s, s', params): a void procedure chapter body
+
+Check: I(s) ∧ T(s, s', params) → I(s') for all s, s', params.
+
+Equivalently, find a counterexample: a state s satisfying I, and an action,
+such that s' violates I.
+
+### 1c. Precondition satisfiability
+
+Is each operation's precondition satisfiable? If invariants imply
+`all a: Account | balance a = 0`, then no withdrawal is ever possible.
+The checker flags this as a dead operation.
+
+
+## 2. The framing problem
+
+A void procedure chapter is a set of constraints relating current state to
+next state. Any function not mentioned is *unconstrained* — the spec is
+silent about it, meaning any value is consistent.
+
+This matters for invariant preservation: if the checker is free to assign
+arbitrary values to unconstrained functions, it will find spurious
+counterexamples for any invariant touching those functions.
+
+Two bad options without further structure:
+- Implicit frame (unmentioned = unchanged): hides underspecification.
+  A reader can't tell "unchanged by design" from "unchanged by oversight."
+- Require explicit frame conditions for everything: verbose, mechanical,
+  doesn't scale as scope grows.
+
+Invariant preservation is only well-posed once the framing question is
+settled. Without it, a passing check means "invariant preserved assuming
+all unmentioned things are stable" — a weaker guarantee than it appears.
+
+
+## 3. Contexts: scoped write permissions
+
+A context is a declared, named set of functions — a write-permission
+boundary for void procedures.
+
+### 3a. Syntax (sketch)
+
+    context Banking = { balance, owner }.
+
+    withdraw a: Account, amount: Nat in Banking.
+    ---
+    balance' a = balance a - amount.
+    balance a >= amount.
+    all other: Account | other != a -> balance' other = balance other.
+
+### 3b. Semantics
+
+A context declaration partitions all named functions into three categories
+relative to a void procedure chapter:
+
+- **In context, primed**: explicitly specified by the chapter body.
+  The author has stated what the function becomes.
+
+- **In context, not primed**: genuinely unconstrained. The model checker
+  is right to explore arbitrary values. This is real underspecification —
+  the author declared write permission but didn't use it.
+
+- **Outside context**: implicitly framed (unchanged). The context
+  declaration itself constitutes the frame condition for everything
+  not named in it.
+
+### 3c. The access rule
+
+The constraint is asymmetric:
+
+- **Reading** an extracontextual function (unprimed): permitted.
+  A Banking procedure can consult `loans u` in a precondition.
+
+- **Priming** an extracontextual function: static error.
+  Writing `loans'` in a Banking chapter is rejected by the checker.
+
+Priming is the only mechanism for asserting post-state in Pantagruel,
+so this rule completely captures "saying something meaningful about a
+function's next-state value."
+
+### 3d. The empty context
+
+An empty context permits no priming at all. The chapter body can contain
+preconditions (unprimed propositions) but cannot specify any post-state.
+This is degenerate but consistent — it declares a procedure that
+genuinely changes nothing.
+
+### 3e. Relationship to invariant checking
+
+Contexts make invariant preservation tractable by decomposition:
+
+- Invariants over extracontextual functions: trivially preserved.
+  The context is a static guarantee that those functions are untouched.
+
+- Invariants over contextual functions: require the actual SMT check,
+  but the scope is bounded and well-declared.
+
+- Cross-cutting invariants: preserved partly by isolation (extracontextual
+  parts are frozen), partly by checking (contextual parts are verified).
+
+### 3f. No mandatory full coverage
+
+Within a context, it is not required to specify or frame every function.
+If there are no invariants that can be violated by an unconstrained
+in-context function, the model checker will find no counterexample, and
+the underspecification is harmlessly accepted. The checker is the
+enforcement mechanism, not the syntax.
+
+
+## 4. Implementation approach
+
+### 4a. SMT-based verification
+
+Translate propositions to SMTLIB2 (Z3/CVC5):
+- Domains become finite uninterpreted sorts (bounded, Alloy-style)
+- Functions become uninterpreted functions over those sorts
+- Quantifiers become bounded quantification over finite sorts
+- Arithmetic maps directly
+
+### 4b. Pipeline position
+
+Model checking is a third pass after type checking, operating on the
+typed AST. It does not need to redo name resolution or type inference.
+
+### 4c. Bounded model checking
+
+Instantiate domains with small finite sets (e.g., 3 accounts, 2 users).
+This gives falsification (counterexamples) rather than proofs, which is
+the most useful output for specification work.
+
+### 4d. Properties not currently expressible
+
+- Temporal properties (always, eventually, until): need LTL/CTL operators
+- Liveness (progress, starvation-freedom): needs fairness + temporal logic
+- Reachability from initial state: needs an `init` predicate
+- These are possible future extensions, not prerequisites for the above
+
+
+## 5. Prior art
+
+### 5a. Separation logic / footprints
+
+O'Hearn, Reynolds, Yang. "Local Reasoning about Programs that Alter Data
+Structures." CSL 2001.
+
+Introduced the *frame rule*: if a program P transforms heap h to h', and
+the footprint of P (the portion of the heap it actually reads or writes) is
+disjoint from some extra heap r, then P transforms h∪r to h'∪r unchanged.
+The *footprint* of a program is the minimal heap region needed to make the
+frame rule applicable — the smallest set of memory cells the program could
+possibly care about.
+
+The direct ancestor of contexts-as-write-boundaries. A Pantagruel context
+is essentially a declared footprint for a family of void procedures: the
+set of functions that the procedure is permitted to touch.
+
+### 5b. TLA+ and UNCHANGED
+
+Lamport. Specifying Systems: The TLA+ Language and Tools for Hardware and
+Software Engineers. Addison-Wesley, 2002.
+
+TLA+ specifies state machines using actions — boolean predicates over
+current and next state variables (written v'). Framing is explicit: if a
+variable is not mentioned in an action, you must write UNCHANGED v to
+assert stability. The Pantagruel context mechanism inverts this: declaring
+the context implicitly frames everything outside it, so UNCHANGED is the
+default for extracontextual functions and need not be stated.
+
+The book is also a good reference for the state-machine specification model
+that Pantagruel closely resembles (domains as state variables, void
+procedures as actions, propositions as invariants).
+
+### 5c. Alloy and bounded model checking
+
+Jackson. Software Abstractions: Logic, Language, and Analysis. MIT Press,
+2006.
+
+Alloy uses relational logic over finite, bounded domains. Domains are
+declared as signatures (sig) with a small, user-specified bound on their
+size. The analyzer (built on Kodkod/SAT) checks whether any assignment of
+values within those bounds violates a property. This gives counterexample-
+finding rather than proof: a failing assertion yields a concrete instance,
+a passing one means "no counterexample within these bounds."
+
+The implementation approach in section 4 is essentially Alloy's: treat
+Pantagruel domains as bounded uninterpreted sorts, translate quantifiers
+to finite instantiations, and use SMT to search for violations.
+
+### 5d. Modifies clauses: JML and Dafny
+
+Leavens et al. JML Reference Manual.
+Leino. "Dafny: An Automatic Program Verifier for Functional Correctness."
+LPAR 2010.
+
+Both JML (Java Modeling Language) and Dafny require methods to declare
+what they are allowed to modify. In JML this is the `assignable` clause;
+in Dafny it is `modifies`. Writing to heap locations not listed is a
+verification error.
+
+This is the most direct analogue to the context access rule (section 3c):
+priming an extracontextual function is the Pantagruel equivalent of writing
+to a location not in the modifies clause. The key difference is that JML/
+Dafny modifies clauses are per-method, while Pantagruel contexts are shared
+across a family of related procedures.
+
+### 5e. Object capabilities
+
+Miller, Yee, Shapiro. "Capability Myths Demolished." DARPA OASIS PI
+Meeting, 2003.
+
+In capability-based security, a capability is an unforgeable token granting
+the right to perform a specific operation on a specific resource. You cannot
+affect a resource you do not hold a capability for, regardless of what you
+know about it. Knowing an object exists is not sufficient — you must hold
+the capability.
+
+The analogy to contexts: a context declaration is a capability granting
+write access to a named set of functions. A void procedure can observe
+(read) any function, but can only commit to changing (prime) functions
+for which it holds write capability via its context. The capability cannot
+be forged — there is no way to affect an extracontextual function without
+the static error being raised.
