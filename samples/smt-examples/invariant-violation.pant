@@ -1,0 +1,14 @@
+module InvariantViolation.
+context Ctx.
+
+Account.
+{Ctx} balance a: Account => Nat0.
+
+---
+all a: Account | balance a >= 0.
+
+where
+
+Ctx ~> UnsafeWithdraw | a: Account, amount: Nat0.
+---
+balance' a = balance a - amount.

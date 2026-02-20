@@ -21,8 +21,6 @@ where
 Accounts ~> Withdraw | a: Account, amount: Nat, balance a >= amount.
 ---
 balance' a = balance a - amount.
-all b: Account | b != a -> balance' b = balance b.
-all b: Account | owner' b = owner b.
 
 where
 
@@ -31,5 +29,5 @@ Accounts ~> Transfer | from: Account, to: Account, amount: Nat, balance from >= 
 ---
 balance' from = balance from - amount.
 balance' to = balance to + amount.
-all b: Account | b != from and b != to -> balance' b = balance b.
-all b: Account | owner' b = owner b.
+owner' from = owner from.
+owner' to = owner to.

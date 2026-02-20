@@ -1,0 +1,14 @@
+module DeadOperation.
+context Ctx.
+
+Account.
+{Ctx} balance a: Account => Nat.
+
+---
+all a: Account | balance a >= 0.
+
+where
+
+Ctx ~> ImpossibleAction | a: Account, balance a < 0.
+---
+balance' a = 0.

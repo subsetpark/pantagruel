@@ -1,5 +1,5 @@
 (tests
- (names test_lexer test_parser test_check test_markdown)
+ (names test_lexer test_parser test_check test_markdown test_smt)
  (libraries pantagruel alcotest)
  (preprocess
   (pps sedlex.ppx)))

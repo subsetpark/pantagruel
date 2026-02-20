@@ -1,0 +1,14 @@
+module Contradiction.
+context Ctx.
+
+Account.
+{Ctx} balance a: Account => Nat.
+
+---
+
+where
+
+Ctx ~> BadAction | a: Account.
+---
+balance' a = balance a + 1.
+balance' a = balance a - 1.
