@@ -129,35 +129,73 @@ let collect_composite_types env =
     env.Env.types;
   (products, sums)
 
+(** Topologically sort composite type entries so that dependencies are declared
+    first. Each entry is (name, component_types). A type depends on another
+    composite type if any of its components is that type. *)
+let topo_sort_composites (entries : (string * ty list) list) =
+  let names = Hashtbl.create 8 in
+  List.iter (fun (n, _) -> Hashtbl.replace names n true) entries;
+  (* Compute which composite names each entry depends on *)
+  let rec collect_deps acc = function
+    | TyProduct ts ->
+        let n = product_sort_name ts in
+        let acc = if Hashtbl.mem names n then n :: acc else acc in
+        List.fold_left collect_deps acc ts
+    | TySum ts ->
+        let n = sum_sort_name ts in
+        let acc = if Hashtbl.mem names n then n :: acc else acc in
+        List.fold_left collect_deps acc ts
+    | TyList inner -> collect_deps acc inner
+    | _ -> acc
+  in
+  let visited = Hashtbl.create 8 in
+  let result = ref [] in
+  let rec visit name =
+    if not (Hashtbl.mem visited name) then begin
+      Hashtbl.replace visited name true;
+      (match List.assoc_opt name entries with
+      | Some ts ->
+          let deps = List.fold_left collect_deps [] ts in
+          List.iter visit deps
+      | None -> ());
+      result := (name, List.assoc name entries) :: !result
+    end
+  in
+  List.iter (fun (name, _) -> visit name) entries;
+  List.rev !result
+
 (** Generate datatype declarations for product and sum types *)
 let declare_composite_types env =
   let products, sums = collect_composite_types env in
   let buf = Buffer.create 256 in
-  Hashtbl.iter
-    (fun name ts ->
-      let fields =
-        List.mapi
-          (fun i t -> Printf.sprintf "(fst_%d %s)" (i + 1) (sort_of_ty t))
-          ts
-      in
-      Buffer.add_string buf
-        (Printf.sprintf "(declare-datatype %s ((%s %s)))\n" name
-           (Printf.sprintf "mk_%s" name)
-           (String.concat " " fields)))
-    products;
-  Hashtbl.iter
-    (fun name ts ->
-      let constructors =
-        List.mapi
-          (fun i t ->
-            Printf.sprintf "(mk_%s_%d (val_%s_%d %s))" name i name i
-              (sort_of_ty t))
-          ts
-      in
-      Buffer.add_string buf
-        (Printf.sprintf "(declare-datatype %s (%s))\n" name
-           (String.concat " " constructors)))
-    sums;
+  let product_list = Hashtbl.fold (fun k v acc -> (k, v) :: acc) products [] in
+  let sum_list = Hashtbl.fold (fun k v acc -> (k, v) :: acc) sums [] in
+  let sorted = topo_sort_composites (product_list @ sum_list) in
+  List.iter
+    (fun (name, ts) ->
+      if Hashtbl.mem products name then begin
+        let fields =
+          List.mapi
+            (fun i t -> Printf.sprintf "(fst_%d %s)" (i + 1) (sort_of_ty t))
+            ts
+        in
+        Buffer.add_string buf
+          (Printf.sprintf "(declare-datatype %s ((%s %s)))\n" name
+             (Printf.sprintf "mk_%s" name)
+             (String.concat " " fields))
+      end
+      else
+        let constructors =
+          List.mapi
+            (fun i t ->
+              Printf.sprintf "(mk_%s_%d (val_%s_%d %s))" name i name i
+                (sort_of_ty t))
+            ts
+        in
+        Buffer.add_string buf
+          (Printf.sprintf "(declare-datatype %s (%s))\n" name
+             (String.concat " " constructors)))
+    sorted;
   Buffer.contents buf
 
 (** Extract the parameter types and return type from a rule type *)
@@ -479,7 +517,15 @@ and translate_quantifier config env quant params guards body =
       params
   in
   let env = Env.with_vars param_bindings env in
-  (* Collect bindings and guard conditions *)
+  (* Collect bindings, guard conditions, and type constraints for Nat/Nat0 *)
+  let nat_constraint_of_param env (p : param) =
+    match Collect.resolve_type env p.param_type dummy_loc with
+    | Ok TyNat ->
+        Some (Printf.sprintf "(>= %s 1)" (sanitize_ident p.param_name))
+    | Ok TyNat0 ->
+        Some (Printf.sprintf "(>= %s 0)" (sanitize_ident p.param_name))
+    | _ -> None
+  in
   let bindings =
     List.map
       (fun (p : param) ->
@@ -494,6 +540,9 @@ and translate_quantifier config env quant params guards body =
         in
         Printf.sprintf "(%s %s)" (sanitize_ident p.param_name) sort)
       params
+  in
+  let param_type_conditions =
+    List.filter_map (nat_constraint_of_param env) params
   in
   let guard_bindings, guard_conditions, env =
     List.fold_left
@@ -514,6 +563,11 @@ and translate_quantifier config env quant params guards body =
               match Collect.resolve_type env p.param_type dummy_loc with
               | Ok ty -> Env.with_vars [ (p.param_name, ty) ] env
               | Error _ -> env
+            in
+            let conds =
+              match nat_constraint_of_param env p with
+              | Some c -> c :: conds
+              | None -> conds
             in
             ( Printf.sprintf "(%s %s)" (sanitize_ident p.param_name) sort
               :: binds,
@@ -552,7 +606,7 @@ and translate_quantifier config env quant params guards body =
   in
   let all_bindings = bindings @ List.rev guard_bindings in
   let body_str = translate_expr config env body in
-  let conditions = List.rev guard_conditions in
+  let conditions = param_type_conditions @ List.rev guard_conditions in
   let binding_str = String.concat " " all_bindings in
   match (quant, conditions) with
   | "forall", _ :: _ ->
