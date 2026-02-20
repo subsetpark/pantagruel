@@ -28,7 +28,7 @@ Item.
 available i: Item => Bool.
 
 ---
-all i: Item | available i or not available i.
+all i: Item | available i or ~available i.
 
 > Implication
 all i: Item | false -> available i.

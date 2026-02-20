@@ -126,7 +126,7 @@ let test_logical () =
       Parser.SUBSET;
       Parser.EOF;
     ]
-    (lex_all "and or not all some in subset")
+    (lex_all "and or ~ all some in subset")
 
 let test_punctuation () =
   check (list token_testable) "punctuation"

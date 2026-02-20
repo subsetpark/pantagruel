@@ -106,7 +106,6 @@ let keyword_or_lower_ident = function
   | "false" -> Parser.FALSE
   | "and" -> Parser.AND
   | "or" -> Parser.OR
-  | "not" -> Parser.NOT
   | "all" -> Parser.FORALL
   | "some" -> Parser.EXISTS
   | "in" -> Parser.IN
@@ -324,7 +323,7 @@ let string_of_token = function
   | Parser.FALSE -> "'false'"
   | Parser.AND -> "'and'"
   | Parser.OR -> "'or'"
-  | Parser.NOT -> "'not'"
+  | Parser.NOT -> "'~'"
   | Parser.FORALL -> "'all'"
   | Parser.EXISTS -> "'some'"
   | Parser.IN -> "'in'"

@@ -10,8 +10,8 @@ in-stock i: Item => Bool.
 discount => Real.
 
 ---
-> Logical operators: and, or, not, -> (implication)
-all i: Item | in-stock i or not in-stock i.
+> Logical operators: and, or, ~, -> (implication)
+all i: Item | in-stock i or ~in-stock i.
 all i: Item | in-stock i and true -> in-stock i.
 all i: Item | false -> in-stock i.
 
@@ -46,7 +46,7 @@ all x: Int | -x + x = 0.
 all x: Real | -(-x) = x.
 
 > Negation
-all i: Item | not not in-stock i = in-stock i.
+all i: Item | ~~in-stock i = in-stock i.
 
 > Quantifiers: all, some
 all i: Item | true.

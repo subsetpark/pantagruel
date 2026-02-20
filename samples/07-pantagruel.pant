@@ -70,10 +70,10 @@ all doc: Document, c in chapters doc | #head c >= 1.
 
 > Each declaration is exactly one kind: domain, alias, rule, or action.
 all decl: Declaration |
-    is-domain? decl and not is-alias? decl and not is-rule? decl and not is-action? decl or
-    is-alias? decl and not is-domain? decl and not is-rule? decl and not is-action? decl or
-    is-rule? decl and not is-domain? decl and not is-alias? decl and not is-action? decl or
-    is-action? decl and not is-domain? decl and not is-alias? decl and not is-rule? decl.
+    is-domain? decl and ~is-alias? decl and ~is-rule? decl and ~is-action? decl or
+    is-alias? decl and ~is-domain? decl and ~is-rule? decl and ~is-action? decl or
+    is-rule? decl and ~is-domain? decl and ~is-alias? decl and ~is-action? decl or
+    is-action? decl and ~is-domain? decl and ~is-alias? decl and ~is-rule? decl.
 
 > Every rule has the same number of parameter names as parameter types.
 all decl: Declaration, is-rule? decl |
@@ -149,17 +149,17 @@ empty-env => Env.
 
 ---
 > The empty environment contains no type-namespace bindings.
-all name: Name | not has-type? name empty-env.
+all name: Name | ~has-type? name empty-env.
 
 > The empty environment contains no term-namespace bindings.
-all name: Name | not has-term? name empty-env.
+all name: Name | ~has-term? name empty-env.
 
 > An entry kind is exactly one of domain, alias, rule, or variable.
 all k: EntryKind |
-    is-domain-entry? k and not is-alias-entry? k and not is-rule-entry? k and not is-var-entry? k or
-    is-alias-entry? k and not is-domain-entry? k and not is-rule-entry? k and not is-var-entry? k or
-    is-rule-entry? k and not is-domain-entry? k and not is-alias-entry? k and not is-var-entry? k or
-    is-var-entry? k and not is-domain-entry? k and not is-alias-entry? k and not is-rule-entry? k.
+    is-domain-entry? k and ~is-alias-entry? k and ~is-rule-entry? k and ~is-var-entry? k or
+    is-alias-entry? k and ~is-domain-entry? k and ~is-rule-entry? k and ~is-var-entry? k or
+    is-rule-entry? k and ~is-domain-entry? k and ~is-alias-entry? k and ~is-var-entry? k or
+    is-var-entry? k and ~is-domain-entry? k and ~is-alias-entry? k and ~is-rule-entry? k.
 
 where
 

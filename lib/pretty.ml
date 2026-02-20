@@ -103,7 +103,7 @@ and pp_conjunction fmt = function
   | e -> pp_negation fmt e
 
 and pp_negation fmt = function
-  | EUnop (OpNot, e) -> fprintf fmt "not %a" pp_negation e
+  | EUnop (OpNot, e) -> fprintf fmt "~%a" pp_negation e
   | e -> pp_comparison fmt e
 
 and pp_comparison fmt = function
@@ -206,50 +206,7 @@ let str_expr = to_string pp_expr
 let str_declaration = to_string pp_declaration
 let str_type_expr = to_string pp_type_expr
 
-(** Print doc comment groups *)
-let pp_docs fmt groups =
-  List.iteri
-    (fun i group ->
-      if i > 0 then fprintf fmt "@\n";
-      List.iter (fun d -> fprintf fmt "> %s@\n" d) group)
-    groups
-
-(** Print a declaration with its doc comments *)
-let pp_declaration_with_docs fmt d =
-  if d.doc <> [] then pp_docs fmt d.doc;
-  fprintf fmt "%a@\n" pp_declaration d.value
-
-(** Print a proposition with its doc comments *)
-let pp_proposition_with_docs fmt p =
-  if p.doc <> [] then pp_docs fmt p.doc;
-  fprintf fmt "%a.@\n" pp_expr p.value
-
-(** Print a chapter *)
-let pp_chapter fmt chapter =
-  List.iter (pp_declaration_with_docs fmt) chapter.head;
-  fprintf fmt "---@\n";
-  List.iter (pp_proposition_with_docs fmt) chapter.body
-
-(** Print a document *)
-let pp_document fmt doc =
-  (match doc.module_name with
-  | Some name -> fprintf fmt "module %s.@\n" name
-  | None -> ());
-  List.iter (fun i -> fprintf fmt "import %s.@\n" i.value) doc.imports;
-  List.iter (fun c -> fprintf fmt "context %s.@\n" c.value) doc.contexts;
-  List.iteri
-    (fun i chapter ->
-      if i > 0 then fprintf fmt "@\nwhere@\n@\n";
-      pp_chapter fmt chapter)
-    doc.chapters
-
-(** Output document to stdout *)
-let output doc =
-  pp_set_margin std_formatter 10000;
-  pp_document std_formatter doc;
-  pp_print_flush std_formatter ()
-
-(* --- Formatting with wrapping and consistent style --- *)
+(* --- Layout-based document output --- *)
 
 (** Wrap text to max width, preserving words *)
 let wrap_text width text =
@@ -265,51 +222,87 @@ let wrap_text width text =
   in
   String.concat "" (go 0 [] words)
 
-(** Format doc comment groups with wrapping *)
-let pp_docs_wrapped width fmt groups =
+(** A layout item is an atomic unit of document output. After formatting, there
+    is exactly one blank line between each layout item. *)
+type layout_item =
+  | LDocs of string list  (** A contiguous block of doc comment lines *)
+  | LDecls of declaration located list  (** Contiguous declarations *)
+  | LProps of expr located list  (** Contiguous propositions *)
+  | LSeparator  (** --- *)
+  | LWhere  (** where *)
+
+(** Split a list of located nodes into layout items. Doc comments on nodes
+    become separate LDocs items; consecutive nodes without doc comments form
+    contiguous groups. *)
+let layout_split ~make_group items =
+  let result = ref [] in
+  let current = ref [] in
+  let flush () =
+    if !current <> [] then begin
+      result := make_group (List.rev !current) :: !result;
+      current := []
+    end
+  in
+  List.iter
+    (fun item ->
+      if item.doc <> [] then begin
+        flush ();
+        List.iter (fun group -> result := LDocs group :: !result) item.doc
+      end;
+      current := item :: !current)
+    items;
+  flush ();
+  List.rev !result
+
+let layout_of_chapter chapter =
+  layout_split ~make_group:(fun ds -> LDecls ds) chapter.head
+  @ [ LSeparator ]
+  @ layout_split ~make_group:(fun ps -> LProps ps) chapter.body
+  @ List.map (fun group -> LDocs group) chapter.trailing_docs
+
+let layout_of_document doc =
+  List.concat
+    (List.mapi
+       (fun i ch -> (if i > 0 then [ LWhere ] else []) @ layout_of_chapter ch)
+       doc.chapters)
+
+(** Render layout items with a blank line between each *)
+let render_layout ?(width = 80) fmt items =
   List.iteri
-    (fun i group ->
+    (fun i item ->
       if i > 0 then fprintf fmt "@\n";
-      let wrapped = List.map (wrap_text (width - 2)) group in
-      (* -2 for "> " prefix *)
-      let lines = List.concat_map (String.split_on_char '\n') wrapped in
-      List.iter (fun line -> fprintf fmt "> %s@\n" line) lines)
-    groups
+      match item with
+      | LDocs lines ->
+          let wrapped = List.map (wrap_text (width - 2)) lines in
+          let all_lines = List.concat_map (String.split_on_char '\n') wrapped in
+          List.iter (fun line -> fprintf fmt "> %s@\n" line) all_lines
+      | LDecls decls ->
+          List.iter (fun d -> fprintf fmt "%a@\n" pp_declaration d.value) decls
+      | LProps props ->
+          List.iter (fun p -> fprintf fmt "%a.@\n" pp_expr p.value) props
+      | LSeparator -> fprintf fmt "---@\n"
+      | LWhere -> fprintf fmt "where@\n")
+    items
 
-(** Format a chapter with consistent style *)
-let format_chapter ?(width = 80) fmt chapter =
-  let prev_had_doc = ref false in
-  List.iter
-    (fun decl ->
-      let has_doc = decl.doc <> [] in
-      if has_doc && !prev_had_doc then fprintf fmt "@\n";
-      if has_doc then pp_docs_wrapped width fmt decl.doc;
-      fprintf fmt "%a@\n" pp_declaration decl.value;
-      prev_had_doc := has_doc)
-    chapter.head;
-  fprintf fmt "---@\n";
-  List.iter
-    (fun prop ->
-      if prop.doc <> [] then pp_docs_wrapped width fmt prop.doc;
-      fprintf fmt "%a.@\n" pp_expr prop.value)
-    chapter.body
-
-(** Format a document with consistent style *)
-let format_document ?(width = 80) fmt doc =
+(** Output a document with consistent layout *)
+let output_document ?(width = 80) fmt doc =
   (match doc.module_name with
   | Some name -> fprintf fmt "module %s.@\n" name
   | None -> ());
   List.iter (fun imp -> fprintf fmt "import %s.@\n" imp.value) doc.imports;
   List.iter (fun ctx -> fprintf fmt "context %s.@\n" ctx.value) doc.contexts;
-  if doc.imports <> [] || doc.contexts <> [] then fprintf fmt "@\n";
-  List.iteri
-    (fun i chapter ->
-      if i > 0 then fprintf fmt "@\nwhere@\n@\n";
-      format_chapter ~width fmt chapter)
-    doc.chapters
+  let items = layout_of_document doc in
+  let has_preamble =
+    doc.module_name <> None || doc.imports <> [] || doc.contexts <> []
+  in
+  if has_preamble && items <> [] then fprintf fmt "@\n";
+  render_layout ~width fmt items
 
 (** Output formatted document to stdout *)
 let output_formatted ?(width = 80) doc =
   pp_set_margin std_formatter 10000;
-  format_document ~width std_formatter doc;
+  output_document ~width std_formatter doc;
   pp_print_flush std_formatter ()
+
+(** Output document to stdout (default width) *)
+let output doc = output_formatted ~width:10000 doc

@@ -112,7 +112,7 @@ let test_logical_ops () =
   check string "iff" "**f** ↔ **g**" md
 
 let test_negation () =
-  let md = render_expr "module T.\nFoo.\nf => Bool.\n---\nnot f.\n" in
+  let md = render_expr "module T.\nFoo.\nf => Bool.\n---\n~f.\n" in
   check string "not" "¬**f**" md
 
 let test_comparison_ops () =
