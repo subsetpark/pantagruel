@@ -478,7 +478,12 @@ let normalize (doc : document) (root_term : string) : document =
              let non_action = List.filter (fun d -> not d.is_void) decls in
              let action = List.filter (fun d -> d.is_void) decls in
              let sorted_decls =
-               List.sort (fun a b -> String.compare a.name b.name) non_action
+               List.sort
+                 (fun a b ->
+                   compare
+                     (a.decl.loc.line, a.decl.loc.col)
+                     (b.decl.loc.line, b.decl.loc.col))
+                 non_action
                @ action
              in
              let head = List.map (fun d -> d.decl) sorted_decls in
