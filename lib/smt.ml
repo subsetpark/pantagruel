@@ -495,7 +495,7 @@ and translate_quantifier config env quant params guards body =
         Printf.sprintf "(%s %s)" (sanitize_ident p.param_name) sort)
       params
   in
-  let guard_bindings, guard_conditions, _env =
+  let guard_bindings, guard_conditions, env =
     List.fold_left
       (fun (binds, conds, env) g ->
         match g with
