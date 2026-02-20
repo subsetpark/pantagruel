@@ -49,6 +49,7 @@ let format_type_error err =
       fmt loc
         (Printf.sprintf "Proposition must be Bool, got %s" (Types.format_ty ty))
   | ShadowingTypeMismatch (name, old_ty, new_ty, loc) ->
+      (* Shadowing is a warning; this branch is kept for completeness *)
       fmt loc
         (Printf.sprintf
            "Variable '%s' shadows binding with different type: expected %s, \
@@ -95,3 +96,16 @@ let format_collect_error err =
       fmt loc (Printf.sprintf "Duplicate context '%s'" name)
   | UndefinedContext (name, loc) ->
       fmt loc (Printf.sprintf "Undefined context '%s'" name)
+
+(** Format a type warning with location prefix *)
+let format_type_warning err =
+  let open Check in
+  let fmt loc msg = Printf.sprintf "%s: warning: %s" (format_loc loc) msg in
+  match err with
+  | ShadowingTypeMismatch (name, old_ty, new_ty, loc) ->
+      fmt loc
+        (Printf.sprintf
+           "Variable '%s' shadows binding with different type: expected %s, \
+            got %s"
+           name (Types.format_ty old_ty) (Types.format_ty new_ty))
+  | other -> format_type_error other

@@ -54,6 +54,20 @@ let check_fails_with_env base_env str =
       | Ok () -> fail "Expected error"
       | Error _ -> ())
 
+(** Check that a document type-checks but emits warnings *)
+let check_warns str =
+  let doc = parse str in
+  match
+    Collect.collect_all
+      ~base_env:(Env.empty (Option.value ~default:"" doc.module_name))
+      doc
+  with
+  | Error e -> fail (Collect.show_collect_error e)
+  | Ok env -> (
+      match Check.check_document env doc with
+      | Ok () -> if Check.get_warnings () = [] then fail "Expected warning"
+      | Error e -> fail (Check.show_type_error e))
+
 (** Check that a document fails with a specific error type *)
 let check_error_with_env base_env str pred =
   let doc = parse str in
@@ -365,8 +379,8 @@ all i: Item | price i > 0.
 |}
 
 let test_shadowing_different_type () =
-  (* Rebinding with different type is an error *)
-  check_fails
+  (* Rebinding with different type is a warning *)
+  check_warns
     {|module TEST.
 
 Item.
@@ -377,7 +391,7 @@ all i: Nat | i > 0.
 
 let test_shadowing_in_membership () =
   (* Membership binding also checked for shadowing *)
-  check_fails
+  check_warns
     {|module TEST.
 
 Item.

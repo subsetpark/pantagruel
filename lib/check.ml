@@ -27,6 +27,9 @@ type type_error =
       (** function name, context name *)
 [@@deriving show]
 
+let type_warnings : type_error list ref = ref []
+let get_warnings () = List.rev !type_warnings
+
 type context = {
   env : Env.t;
   loc : loc;  (** Current location for error reporting *)
@@ -224,13 +227,18 @@ and check_unop ctx op e =
       | TyList _ -> Ok TyNat0
       | _ -> Error (NotAList (ty, ctx.loc)))
 
-(** Check that binding doesn't shadow with a different type *)
+(** Check that binding doesn't shadow with a different type. Emits a warning
+    (rather than an error) when it does, since propositions from different
+    chapters may legitimately reuse variable names at different types. *)
 and check_no_type_shadow ctx name new_ty =
-  match Env.lookup_term name ctx.env with
+  (match Env.lookup_term name ctx.env with
   | Some { kind = Env.KVar existing_ty; _ } ->
-      if is_subtype new_ty existing_ty then Ok ()
-      else Error (ShadowingTypeMismatch (name, existing_ty, new_ty, ctx.loc))
-  | _ -> Ok () (* Not shadowing a variable, OK *)
+      if not (is_subtype new_ty existing_ty) then
+        type_warnings :=
+          ShadowingTypeMismatch (name, existing_ty, new_ty, ctx.loc)
+          :: !type_warnings
+  | _ -> ());
+  Ok ()
 
 (** Resolve a parameter's type expression to an internal type *)
 and resolve_param_type env loc p =
@@ -398,6 +406,7 @@ let check_chapter_guards ~chapter_idx env (chapter : chapter) =
 
 (** Check entire document (Pass 2) *)
 let check_document env (doc : document) : (unit, type_error) result =
+  type_warnings := [];
   let rec check_chapters chapter_idx = function
     | [] -> Ok ()
     | chapter :: rest ->

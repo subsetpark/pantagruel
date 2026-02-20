@@ -47,7 +47,12 @@ let () =
                 (String.concat " -> " modules)
           | Pantagruel.Module.ParseError (_, msg) -> msg);
         exit 1
-    | Ok env -> env
+    | Ok env ->
+        List.iter
+          (fun w ->
+            Printf.eprintf "%s\n" (Pantagruel.Error.format_type_warning w))
+          (Pantagruel.Check.get_warnings ());
+        env
   in
   (* Pipe markdown through pandoc *)
   let md_cmd =
