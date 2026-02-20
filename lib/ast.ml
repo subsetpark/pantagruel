@@ -117,7 +117,12 @@ type declaration =
     }
 [@@deriving show, eq]
 
-type chapter = { head : declaration located list; body : expr located list }
+type chapter = {
+  head : declaration located list;
+  body : expr located list;
+  trailing_docs : string list list;
+      (** Doc comments after the last body proposition (before where/EOF) *)
+}
 [@@deriving show, eq]
 (** A chapter has a head (declarations) and body (propositions) *)
 

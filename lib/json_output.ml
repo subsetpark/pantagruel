@@ -252,11 +252,25 @@ let prop_to_json (prop_loc : expr located) =
 
 (** Convert chapter to JSON *)
 let chapter_to_json env chapter =
-  `Assoc
+  let fields =
     [
       ("head", `List (List.map (decl_to_json env) chapter.head));
       ("body", `List (List.map prop_to_json chapter.body));
     ]
+  in
+  let fields =
+    if chapter.trailing_docs <> [] then
+      fields
+      @ [
+          ( "trailing_docs",
+            `List
+              (List.map
+                 (fun group -> `List (List.map (fun s -> `String s) group))
+                 chapter.trailing_docs) );
+        ]
+    else fields
+  in
+  `Assoc fields
 
 (** Extract type definitions from environment *)
 let types_to_json env =

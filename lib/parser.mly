@@ -31,6 +31,12 @@
       | g :: rest -> go params (g :: others) rest
     in
     go [] [] guards
+
+  (* Set trailing_docs on the last chapter in a list *)
+  let set_last_trailing chapters td =
+    match List.rev chapters with
+    | [] -> []
+    | last :: rest -> List.rev ({ last with trailing_docs = td } :: rest)
 %}
 
 (* Tokens from lexer *)
@@ -61,12 +67,20 @@ document:
   | MODULE name=UPPER_IDENT DOT
     imports=list(import_decl)
     contexts=list(context_decl)
-    chapters=separated_nonempty_list(WHERE, chapter)
-    EOF
-    { { module_name = Some name; imports; contexts; chapters } }
-  | chapters=separated_nonempty_list(WHERE, chapter)
-    EOF
-    { { module_name = None; imports = []; contexts = []; chapters } }
+    chapters=chapter_list EOF
+    { let (td, _) = Doc_comments.get_at_pos $startpos($7) in
+      let chapters = set_last_trailing chapters td in
+      { module_name = Some name; imports; contexts; chapters } }
+  | chapters=chapter_list EOF
+    { let (td, _) = Doc_comments.get_at_pos $startpos($2) in
+      let chapters = set_last_trailing chapters td in
+      { module_name = None; imports = []; contexts = []; chapters } }
+
+chapter_list:
+  | c=chapter { [c] }
+  | c=chapter WHERE rest=chapter_list
+    { let (td, _) = Doc_comments.get_at_pos $startpos($2) in
+      { c with trailing_docs = td } :: rest }
 
 import_decl:
   | IMPORT name=UPPER_IDENT DOT
@@ -78,7 +92,7 @@ context_decl:
 
 chapter:
   | head=nonempty_list(declaration) SEPARATOR body=list(proposition)
-    { { head; body } }
+    { { head; body; trailing_docs = [] } }
 
 (* Declarations - doc comments are looked up by start position *)
 declaration:
