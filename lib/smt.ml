@@ -20,6 +20,8 @@ type query = {
 
 and query_kind =
   | Contradiction  (** SAT = ok, UNSAT = contradiction found *)
+  | InvariantConsistency
+      (** SAT = ok (invariants jointly satisfiable), UNSAT = contradiction *)
   | InvariantPreservation
       (** SAT = violation (counterexample), UNSAT = preserved *)
   | PreconditionSat  (** SAT = ok, UNSAT = dead operation *)
@@ -1074,12 +1076,78 @@ let invariant_touches_context env context invariant_props =
           in
           List.exists (fun r -> List.mem r context_members) refs)
 
+(** Build SMT value terms for invariant consistency queries (no action params,
+    no primed functions). Includes nullary rules and unary rules applied to
+    domain elements. *)
+let build_invariant_value_terms config env =
+  Env.StringMap.fold
+    (fun name entry acc ->
+      match entry.Env.kind with
+      | Env.KRule ty -> (
+          let sname = sanitize_ident name in
+          match decompose_func_ty ty with
+          | Some ([], _ret) -> sname :: acc
+          | Some ([ param_ty ], _ret) -> (
+              match param_ty with
+              | TyDomain dname ->
+                  let elems = domain_elements dname config.bound in
+                  List.map
+                    (fun elem -> Printf.sprintf "(%s %s)" sname elem)
+                    elems
+                  @ acc
+              | _ -> acc)
+          | _ -> acc)
+      | _ -> acc)
+    env.Env.terms []
+
+(** Query 0: Invariant consistency — checks that all invariants are jointly
+    satisfiable. UNSAT = contradiction among invariants. *)
+let generate_invariant_consistency_query config env invariant_props =
+  let buf = Buffer.create 1024 in
+  let na = create_named_assertions buf in
+  Buffer.add_string buf "; Invariant consistency check\n";
+  Buffer.add_string buf "(set-option :produce-unsat-cores true)\n";
+  Buffer.add_string buf
+    (generate_preamble ~constrain_primed:false ~include_type_constraints:false
+       config env);
+  Buffer.add_string buf "\n; --- Type constraints ---\n";
+  let type_exprs =
+    collect_type_constraint_exprs ~constrain_primed:false config env
+  in
+  List.iter
+    (fun (human, smt_expr) -> add_named_assert na "type" human smt_expr)
+    type_exprs;
+  Buffer.add_string buf "\n; --- Invariants ---\n";
+  List.iter
+    (fun (inv : expr located) ->
+      add_named_assert na "inv"
+        (Printf.sprintf "Invariant: %s" (Pretty.str_expr inv.value))
+        (translate_expr config env inv.value))
+    invariant_props;
+  let value_terms = build_invariant_value_terms config env in
+  Buffer.add_string buf "(check-sat)\n";
+  Buffer.add_string buf "(get-unsat-core)\n";
+  append_get_value buf value_terms;
+  {
+    name = "invariant-consistency";
+    description = "Invariants are jointly satisfiable";
+    smt2 = Buffer.contents buf;
+    kind = InvariantConsistency;
+    value_terms;
+    invariant_text = "";
+    assertion_names = get_assertion_names na;
+  }
+
 (** Generate all verification queries for a document *)
 let generate_queries config env (doc : document) =
   let chapters = classify_chapters doc in
   let invariants = collect_invariants chapters in
   let actions = collect_actions chapters in
   let queries = ref [] in
+  (* Invariant consistency query *)
+  if invariants <> [] then
+    queries :=
+      generate_invariant_consistency_query config env invariants :: !queries;
   (* Contradiction queries *)
   List.iter
     (fun action ->

@@ -71,7 +71,7 @@ let run_smt_check env doc =
     let config = Pantagruel.Smt.{ bound = !check_bound } in
     let queries = Pantagruel.Smt.generate_queries config env doc in
     if queries = [] then begin
-      print_endline "No verification queries generated (no actions found).";
+      print_endline "No verification queries generated.";
       0
     end
     else begin

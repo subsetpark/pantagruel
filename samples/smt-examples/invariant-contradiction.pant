@@ -1,0 +1,14 @@
+module InvariantContradiction.
+
+> A spec whose invariants contradict each other.
+
+Account.
+balance a: Account => Nat0.
+
+---
+
+> No account can have a zero balance.
+all a: Account | balance a >= 1.
+
+> All accounts start empty.
+all a: Account | balance a = 0.

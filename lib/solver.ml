@@ -386,6 +386,27 @@ let extract_label query prefix_len =
 (** Interpret a solver result in the context of a query kind *)
 let interpret_result query result =
   match (query.Smt.kind, result) with
+  (* Invariant consistency: SAT = ok, UNSAT = contradiction *)
+  | Smt.InvariantConsistency, Sat _ ->
+      {
+        query;
+        result;
+        passed = true;
+        message = Printf.sprintf "OK: %s" query.description;
+      }
+  | Smt.InvariantConsistency, Unsat core ->
+      let core_text = format_unsat_core core query.assertion_names in
+      let detail =
+        if core_text = "" then
+          "\n  No state can satisfy all invariants simultaneously."
+        else core_text
+      in
+      {
+        query;
+        result;
+        passed = false;
+        message = "FAIL: Invariants are contradictory" ^ detail;
+      }
   (* Contradiction: SAT = ok, UNSAT = contradiction *)
   | Smt.Contradiction, Sat _ ->
       {
