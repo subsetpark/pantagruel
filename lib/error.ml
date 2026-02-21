@@ -66,6 +66,8 @@ let format_type_error err =
   | PrimedExtracontextual (name, ctx_name, loc) ->
       fmt loc
         (Printf.sprintf "'%s' is not a member of context '%s'" name ctx_name)
+  | BoolParam (name, decl_name, loc) ->
+      fmt loc (Printf.sprintf "Bool parameter '%s' in '%s'" name decl_name)
 
 (** Format a collection error with location prefix *)
 let format_collect_error err =
@@ -108,4 +110,11 @@ let format_type_warning err =
            "Variable '%s' shadows binding with different type: expected %s, \
             got %s"
            name (Types.format_ty old_ty) (Types.format_ty new_ty))
+  | BoolParam (name, decl_name, loc) ->
+      fmt loc
+        (Printf.sprintf
+           "Bool parameter '%s' in '%s': Bool parameters on declarations are \
+            likely a mistake — use a predicate, a two-element domain, or split \
+            into separate declarations"
+           name decl_name)
   | other -> format_type_error other

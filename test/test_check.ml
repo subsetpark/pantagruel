@@ -401,6 +401,33 @@ items => [Nat].
 all i in items | i > 0.
 |}
 
+let test_bool_param_rule () =
+  (* Bool parameter on rule triggers warning *)
+  check_warns {|module TEST.
+
+Item.
+foo i: Item, b: Bool => Nat.
+---
+|}
+
+let test_bool_param_action () =
+  (* Bool parameter on action triggers warning *)
+  check_warns {|module TEST.
+
+Item.
+~> Do thing | i: Item, b: Bool.
+---
+|}
+
+let test_bool_return_type_ok () =
+  (* Bool as return type is fine *)
+  check_ok {|module TEST.
+
+Item.
+active i: Item => Bool.
+---
+|}
+
 (* --- Env unit tests for add_import --- *)
 
 let test_env_single_import () =
@@ -833,6 +860,7 @@ let () =
           test_case "nested quantifiers" `Quick test_nested_quantifiers;
           test_case "guard uses params" `Quick test_guard_uses_params;
           test_case "shadowing same type" `Quick test_shadowing_same_type;
+          test_case "bool return type ok" `Quick test_bool_return_type_ok;
         ] );
       ( "invalid",
         [
@@ -857,6 +885,8 @@ let () =
             test_local_duplicate_type_still_errors;
           test_case "local duplicate rule" `Quick
             test_local_duplicate_proc_still_errors;
+          test_case "bool param rule" `Quick test_bool_param_rule;
+          test_case "bool param action" `Quick test_bool_param_action;
         ] );
       ( "env import",
         [

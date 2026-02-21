@@ -142,6 +142,10 @@ Chapter 3: Glosses CardStatus, Currency — bare domain declarations
 4. **One action per chapter.** Each `where` block introduces a new chapter. Actions must be the last declaration in a chapter head.
 5. **Show your work.** After each phase, show the current state of the `.pant` file. Let the user correct course early.
 6. **Top-down chapter ordering.** Structure chapters by progressive disclosure: primary concepts first, supporting glosses in subsequent chapters. Don't front-load all declarations into Chapter 1.
+7. **Action parameters are caller inputs only.** Every action parameter should be something the caller actually chooses. If a property is determined by the system — e.g., whether a job involves checkout, or what category an entity falls into — it should be a postcondition (`involvesCheckout' j`), not a parameter (`ic: Bool`). Making system-determined properties into parameters implies the caller can freely set them, which is semantically wrong.
+8. **Use contexts for implicit framing over explicit frame conditions.** Pantagruel has no true constants — every declared term is mutable state. Instead of writing explicit frame conditions like `accountCreation' = accountCreation` for values that shouldn't change, declare them outside the action's context. The type checker will prevent them from being primed, making them constant by construction. Prefer this structural approach over model-level frame conditions.
+9. **Naming conventions.** Use `kebab-case` for rules, parameters, and variables (`book-of`, `loan-holder`, `max-spend`). Use `PascalCase` for domains, contexts, and type aliases (`User`, `EffectKind`, `CardStatus`). Identifiers may end with `?` or `!` for predicates (`available?`, `active?`).
+10. **No Bool parameters on declarations.** Bool is not a valid parameter type for rules or actions (the type checker warns). A Bool parameter is always either a system-determined property masquerading as a caller input (use a predicate instead) or two declarations jammed into one (split them). Bool is fine as a return type (predicates) or nullary rule.
 
 ## Verification Loop
 

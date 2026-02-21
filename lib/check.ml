@@ -25,6 +25,7 @@ type type_error =
   | UnboundQualified of string * string * loc
   | PrimedExtracontextual of string * string * loc
       (** function name, context name *)
+  | BoolParam of string * string * loc  (** param name, declaration name *)
 [@@deriving show]
 
 let type_warnings : type_error list ref = ref []
@@ -337,10 +338,23 @@ let check_proposition ctx (prop : expr located) =
 
 (** Check guards on a rule declaration or action *)
 let check_rule_guards ctx (decl : declaration located) =
+  let decl_name =
+    match decl.value with
+    | DeclRule { name; _ } -> name
+    | DeclAction { label; _ } -> label
+    | _ -> ""
+  in
   let check_guards params guards =
     let* param_bindings =
       map_result (resolve_param_type ctx.env decl.loc) params
     in
+    (* Warn for Bool parameters *)
+    List.iter
+      (fun (name, ty) ->
+        if equal_ty ty TyBool then
+          type_warnings :=
+            BoolParam (name, decl_name, decl.loc) :: !type_warnings)
+      param_bindings;
     let env' = Env.with_vars param_bindings ctx.env in
     let ctx' = { ctx with env = env' } in
     let* _ = process_guards ~check_shadow:false ~loc:decl.loc ctx' guards in
