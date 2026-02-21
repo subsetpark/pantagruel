@@ -3,8 +3,42 @@
 open Ast
 open Types
 
-type config = { bound : int; steps : int }
-(** Configuration for bounded checking. [steps] controls k-step BMC depth. *)
+type config = { bound : int; steps : int; domain_bounds : int Env.StringMap.t }
+(** Configuration for bounded checking. [steps] controls k-step BMC depth.
+    [domain_bounds] maps domain names to per-domain minimum bounds (derived from
+    nullary constant counts). *)
+
+(** Compute per-domain minimum bounds by counting nullary constants. For each
+    domain, the bound is max(default_bound, number_of_nullary_constants). *)
+let compute_domain_bounds default_bound env =
+  let counts =
+    Env.StringMap.fold
+      (fun _name entry acc ->
+        match entry.Env.kind with
+        | Env.KRule ty -> (
+            match ty with
+            | (TyFunc ([], Some (TyDomain dname)) | TyDomain dname)
+              when Env.StringMap.find_opt dname env.Env.types
+                   |> Option.map (fun e -> e.Env.kind = Env.KDomain)
+                   |> Option.value ~default:false ->
+                let cur =
+                  Env.StringMap.find_opt dname acc |> Option.value ~default:0
+                in
+                Env.StringMap.add dname (cur + 1) acc
+            | _ -> acc)
+        | _ -> acc)
+      env.Env.terms Env.StringMap.empty
+  in
+  Env.StringMap.filter_map
+    (fun _dname count -> if count > default_bound then Some count else None)
+    counts
+
+(** Get the bound for a specific domain, using per-domain override if available.
+*)
+let bound_for config domain_name =
+  match Env.StringMap.find_opt domain_name config.domain_bounds with
+  | Some b -> b
+  | None -> config.bound
 
 type query = {
   name : string;
@@ -88,7 +122,7 @@ let declare_domain_sorts config env =
     (fun name entry ->
       match entry.Env.kind with
       | Env.KDomain ->
-          let elems = domain_elements name config.bound in
+          let elems = domain_elements name (bound_for config name) in
           Buffer.add_string buf (Printf.sprintf "(declare-sort %s 0)\n" name);
           List.iter
             (fun elem ->
@@ -426,7 +460,7 @@ and translate_in config env elem set =
   match set with
   | EDomain name ->
       (* x in Domain → disjunction over domain elements *)
-      let elems = domain_elements name config.bound in
+      let elems = domain_elements name (bound_for config name) in
       let elem_str = translate_expr config env elem in
       let disj =
         List.map (fun e -> Printf.sprintf "(= %s %s)" elem_str e) elems
@@ -444,7 +478,7 @@ and translate_subset config env e1 e2 =
      for well-typed programs, but expand over finite elements for soundness) *)
   match e2 with
   | EDomain name ->
-      let elems = domain_elements name config.bound in
+      let elems = domain_elements name (bound_for config name) in
       let conjuncts =
         List.map
           (fun d ->
@@ -460,7 +494,7 @@ and translate_subset config env e1 e2 =
       match Check.infer_type { Check.env; loc = dummy_loc } e1 with
       | Ok (TyList (TyDomain name)) ->
           (* For domain lists, expand over finite domain elements *)
-          let elems = domain_elements name config.bound in
+          let elems = domain_elements name (bound_for config name) in
           let conjuncts =
             List.map
               (fun d ->
@@ -486,16 +520,16 @@ and translate_unop config env op e =
 
 and translate_card config env e =
   match e with
-  | EDomain _ ->
+  | EDomain name ->
       (* #Domain = bound (all elements exist) *)
-      string_of_int config.bound
+      string_of_int (bound_for config name)
   | _ -> (
       (* #xs where xs : (Array T Bool) — count members over finite domain *)
       let set_str = translate_expr config env e in
       match Check.infer_type { Check.env; loc = dummy_loc } e with
       | Ok (TyList (TyDomain name)) ->
           (* Sum over domain elements: (+ (ite (select xs d0) 1 0) ...) *)
-          let elems = domain_elements name config.bound in
+          let elems = domain_elements name (bound_for config name) in
           let terms =
             List.map
               (fun d -> Printf.sprintf "(ite (select %s %s) 1 0)" set_str d)
@@ -923,7 +957,9 @@ let build_value_terms config env (params : param list) =
                 let from_elems =
                   match param_ty with
                   | TyDomain dname ->
-                      let elems = domain_elements dname config.bound in
+                      let elems =
+                        domain_elements dname (bound_for config dname)
+                      in
                       (* Exclude elements that duplicate action param applications *)
                       let param_names =
                         List.filter_map
@@ -1002,7 +1038,7 @@ let declare_domain_membership config buf (params : param list) env =
     (fun (p : param) ->
       match Collect.resolve_type env p.param_type dummy_loc with
       | Ok (TyDomain name) ->
-          let elems = domain_elements name config.bound in
+          let elems = domain_elements name (bound_for config name) in
           let sname = sanitize_ident p.param_name in
           let disj =
             List.map (fun e -> Printf.sprintf "(= %s %s)" sname e) elems
@@ -1226,7 +1262,7 @@ let build_invariant_value_terms config env =
           | Some ([ param_ty ], _ret) -> (
               match param_ty with
               | TyDomain dname ->
-                  let elems = domain_elements dname config.bound in
+                  let elems = domain_elements dname (bound_for config dname) in
                   List.map
                     (fun elem -> Printf.sprintf "(%s %s)" sname elem)
                     elems
@@ -1502,7 +1538,7 @@ let build_step_transition config env actions step =
             (fun (p : param) ->
               match Collect.resolve_type env p.param_type dummy_loc with
               | Ok (TyDomain name) ->
-                  let elems = domain_elements name config.bound in
+                  let elems = domain_elements name (bound_for config name) in
                   let sname = sanitize_ident p.param_name in
                   let disj =
                     List.map (fun e -> Printf.sprintf "(= %s %s)" sname e) elems

@@ -79,8 +79,10 @@ let run_smt_check env doc =
     2
   end
   else begin
+    let domain_bounds = Pantagruel.Smt.compute_domain_bounds !check_bound env in
     let config =
-      Pantagruel.Smt.{ bound = !check_bound; steps = !check_steps }
+      Pantagruel.Smt.
+        { bound = !check_bound; steps = !check_steps; domain_bounds }
     in
     let queries = Pantagruel.Smt.generate_queries config env doc in
     if queries = [] then begin

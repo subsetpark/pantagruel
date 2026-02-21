@@ -23,7 +23,7 @@ let parse_and_collect str =
 
 (* --- Expression translation tests --- *)
 
-let config = Smt.{ bound = 3; steps = 5 }
+let config = Smt.{ bound = 3; steps = 5; domain_bounds = Env.StringMap.empty }
 
 let test_lit_bool () =
   let env = Env.empty "" in
@@ -803,6 +803,44 @@ let test_format_bmc_counterexample_applied () =
   check bool "has balance Account_0 = 10" true
     (contains result "balance Account_0 = 10")
 
+(* --- Domain bounds tests --- *)
+
+let test_compute_domain_bounds () =
+  let env, _doc =
+    parse_and_collect
+      "module Test.\n\
+       Color.\n\
+       red => Color.\n\
+       green => Color.\n\
+       blue => Color.\n\
+       yellow => Color.\n\
+       purple => Color.\n\
+       Account.\n\
+       admin => Account.\n\
+       ---\n\
+       true.\n"
+  in
+  let bounds = Smt.compute_domain_bounds 3 env in
+  (* Color has 5 constants > default bound 3, so it should be in the map *)
+  check (option int) "Color bound" (Some 5)
+    (Env.StringMap.find_opt "Color" bounds);
+  (* Account has 1 constant <= 3, so it should NOT be in the map *)
+  check (option int) "Account bound (not bumped)" None
+    (Env.StringMap.find_opt "Account" bounds)
+
+let test_bound_for () =
+  let bounds = Env.StringMap.singleton "Color" 5 in
+  let config = Smt.{ bound = 3; steps = 5; domain_bounds = bounds } in
+  check int "Color uses override" 5 (Smt.bound_for config "Color");
+  check int "Account uses default" 3 (Smt.bound_for config "Account")
+
+let test_card_domain_with_bounds () =
+  let env = Env.empty "" |> Env.add_domain "Color" Ast.dummy_loc ~chapter:0 in
+  let bounds = Env.StringMap.singleton "Color" 5 in
+  let cfg = Smt.{ bound = 3; steps = 5; domain_bounds = bounds } in
+  check string "#Domain with per-domain bound" "5"
+    (Smt.translate_expr cfg env (Ast.EUnop (OpCard, EDomain "Color")))
+
 (* --- Test suites --- *)
 
 let expression_tests =
@@ -908,6 +946,14 @@ let bmc_tests =
       test_format_bmc_counterexample_applied;
   ]
 
+let domain_bounds_tests =
+  [
+    test_case "compute domain bounds" `Quick test_compute_domain_bounds;
+    test_case "bound_for helper" `Quick test_bound_for;
+    test_case "cardinality with per-domain bound" `Quick
+      test_card_domain_with_bounds;
+  ]
+
 let () =
   run "SMT"
     [
@@ -918,4 +964,5 @@ let () =
       ("solver_parsing", solver_parsing_tests);
       ("unsat_core", unsat_core_tests);
       ("bmc", bmc_tests);
+      ("domain_bounds", domain_bounds_tests);
     ]

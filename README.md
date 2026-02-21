@@ -262,7 +262,7 @@ The `--check` flag translates your specification into SMT-LIB2 and verifies it u
 
 3. **Precondition satisfiability** - Can the action's preconditions ever be met, given the invariants? Flags unreachable "dead" operations.
 
-Checking is bounded: domain types are modeled with a finite number of elements (default 3, configurable with `--bound`). This means checks are sound within the bound but not complete for all possible domain sizes.
+Checking is bounded: domain types are modeled with a finite number of elements (default 3, configurable with `--bound`). The bound is automatically raised per domain when the specification declares more nullary constants of that domain type than the configured bound (e.g., 5 named constants of type `Color` will use bound 5 for `Color` even if `--bound 3`). This means checks are sound within the bound but not complete for all possible domain sizes.
 
 ### Example: detecting an invariant violation
 
