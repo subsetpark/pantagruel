@@ -714,21 +714,34 @@ A program is **correct** if:
 
 ## Normal Form
 
-The `--normalize "root term"` flag transforms a document into **top-down normal form** with respect to a chosen root term. The result follows the progressive disclosure pattern: the reader sees the high-level story first, with supporting details glossed in subsequent chapters.
+The `--normalize "root term"` flag transforms a document into **top-down normal form** with respect to a chosen root term.
+
+### Principles
+
+Normal form is governed by two reinforcing principles:
+
+1. **Progressive disclosure.** The reader encounters the high-level story first. Each chapter body previews terms that the next chapter's head will define, so the reader always sees *why* a term matters before seeing *what* it is.
+
+2. **Minimality.** Each chapter contains no more than it has to. A proposition appears in a chapter only if it cannot appear earlier (its dependencies aren't yet visible) and should not appear later (that would give a later chapter more than it needs).
+
+These two principles converge on a unique placement for every proposition: the earliest chapter where all of its dependencies are visible. This is the chapter *before* the one declaring the proposition's latest dependency, since bodies can see one chapter ahead via forward declaration (see [Forward Declaration Rules](#forward-declaration-rules)).
 
 ### Definition
 
-A document is in top-down normal form when:
-1. **Chapter 0** contains the root term and the transitive closure of its declaration-level dependencies
-2. Each subsequent chapter glosses symbols referenced in the previous chapter's body but not yet declared
-3. Unreachable declarations (not reachable from the root term) appear in a final appendix chapter
-4. Actions and their tied propositions stay together
+A document is in top-down normal form with respect to a root term when:
+
+1. **Chapter 0 head** contains the root term and the transitive closure of its declaration-level dependencies
+2. **Chapter *N* body** contains the propositions whose latest dependency is declared in chapter *N*+1 (or *N*, if all dependencies are at level *N* or earlier)
+3. **Chapter *N*+1 head** declares the symbols referenced in chapter *N*'s body but not yet declared, plus their transitive declaration dependencies for well-formedness
+4. Actions and their tied propositions (postconditions, frame conditions) stay together in the same chapter
 5. At most one action per chapter
-6. Independent propositions are placed at the earliest chapter where all dependencies are visible
+6. Unreachable declarations (not reachable from the root term) appear in a final appendix chapter
+
+The body of each chapter thus serves a dual role: it makes statements about the current chapter's terms, and it motivates the next chapter's existence by referencing terms the reader hasn't seen yet.
 
 ### Level Assignment (BFS)
 
-Starting from the root term, levels are assigned by breadth-first search:
+Starting from the root term, declaration levels are assigned by breadth-first search:
 
 | Level | Contents |
 |-------|----------|
@@ -740,14 +753,20 @@ Starting from the root term, levels are assigned by breadth-first search:
 
 **Transitive declaration dependencies** ensure head well-formedness. If the root term's signature references type `Card` and `Card = Nat * CardStatus`, then `CardStatus` is also included at level 0.
 
+The BFS guarantees that any proposition discovered at level *N* references only terms at levels *N* and *N*+1. This is exactly the gap that forward declaration covers, ensuring every proposition has a valid placement.
+
 ### Proposition Placement
+
+For each proposition, let *L* be the maximum level among the terms it references.
 
 | Proposition type | Placement rule |
 |------------------|----------------|
 | **Action-tied** | Same chapter as its action |
-| **Independent** | Earliest chapter where all dependencies are visible |
+| **Independent** | Chapter max(0, *L* − 1) |
 
 A proposition is **action-tied** if it uses primed expressions (e.g., `balance' a`) or references the action's parameters.
+
+An independent proposition goes in the body of the chapter *before* the one declaring its latest dependency, exploiting forward declaration so the body previews terms glossed in the next head. When all dependencies are at level 0, the proposition goes in chapter 0.
 
 ### Action Handling
 
@@ -760,16 +779,16 @@ If multiple actions end up at the same level, they are spread across consecutive
 3. **BFS loop**: for each level *N*, find unscanned propositions referencing level-*N* symbols; collect new symbols from those propositions + their transitive deps → level *N*+1; stop when no new symbols appear
 4. **Assign unreachable** declarations to an appendix chapter
 5. **Spread actions** across consecutive chapters where needed
-6. **Place propositions**: tied props with their action, independent props at earliest valid chapter
-7. **Build chapters**: within each level, non-actions sorted alphabetically, action last; filter empty chapters
+6. **Place propositions**: tied props with their action, independent props at chapter max(0, *L* − 1) where *L* is the max level of referenced terms
+7. **Build chapters**: within each level, declarations sorted by source position, action last; filter empty chapters
 
 ### Example
 
 Given `samples/02-library.pant`, normalizing with `--normalize "Borrow"` produces:
 
-**Chapter 0**: The `Borrow` action and the domains it directly references (`Book`, `User`).
+**Chapter 0**: The `Borrow` action and the domains it directly references (`Book`, `User`). The body contains propositions about borrowing — which reference `available`, `borrower`, etc.
 
-**Chapter 1**: Rules referenced in the Borrow chapter's body (`available`, `borrower`, etc.) and their supporting declarations.
+**Chapter 1**: Declares `available`, `borrower`, and their supporting types (glossing the terms previewed in chapter 0's body). The body references further terms.
 
 **Chapter 2+**: Further supporting terms, glossed progressively until all dependencies are resolved.
 
