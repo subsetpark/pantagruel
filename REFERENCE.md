@@ -322,26 +322,22 @@ This is a symmetric check. `Nat = Int` is valid (both numeric, join is `Int`), b
 2. Each membership binding *x* `in` *e*, where *e* : `[T]`, introduces *x* with type *T*.
 3. Guard expressions (bare boolean conditions in the binding list) must have type `Bool`.
 4. Bindings and guards are processed left to right; each may reference names introduced earlier in the list.
-5. If the body has type `Bool`, the quantifier is a logical proposition with result type `Bool`.
-6. If the body has a non-`Bool` type *U*:
-   - `all` produces a **comprehension** (list) with result type `[U]`.
-   - `some` produces a **selection** with result type `U + Nothing`.
+5. The body must have type `Bool`. If the body is non-`Bool`, a type error is raised suggesting `each` for comprehensions.
 
-#### Comprehensions
+#### Comprehensions (`each`)
 
-When `all` or `some` has a non-`Bool` body, it acts as a comprehension rather than a logical quantifier. No new syntax is needed — the body type determines the semantics.
+`each` *bindings* `|` *body*:
 
-`all x: D | f x` where `f : D → U`:
+The `each` keyword produces a **comprehension** (list). Its body may have any type *U*; the result type is always `[U]`.
+
+`each x: D | f x` where `f : D → U`:
 - Type: `[U]` — the list of values `f x` for every `x` in `D`.
 - Usable anywhere a list is expected: as arguments, with `in` (membership), `#` (cardinality), `subset`, etc.
-- Example: `r in (all u: User | role u)` — is `r` one of the roles assigned to any user?
+- Example: `r in (each u: User | role u)` — is `r` one of the roles assigned to any user?
 
-`all x in xs, guard | f x` where `xs : [D]`, `f : D → U`:
+`each x in xs, guard | f x` where `xs : [D]`, `f : D → U`:
 - Type: `[U]` — the list of values `f x` for every `x` in `xs` satisfying the guard.
-- Example: `#(all c in chapters, is-empty? c | c) = 0` — no chapters are empty.
-
-`some x: D | f x` where `f : D → U`:
-- Type: `U + Nothing` — nondeterministic selection.
+- Example: `#(each c in chapters, is-empty? c | c) = 0` — no chapters are empty.
 
 Comprehensions cannot appear as standalone propositions (the body of a chapter must be `Bool`). They can appear as expressions anywhere a list is expected — as arguments, inside `in`, `#`, `subset`, etc. In SMT translation, they are expanded over finite domain elements.
 
@@ -605,21 +601,21 @@ some i in items | price i < 100.  // There exists i in items
 
 The `x in xs` binding form infers the type of `x` from the element type of the list `xs`. If `xs: [T]`, then `x: T`.
 
-### Comprehensions
+### Comprehensions (`each`)
 
-When the body of `all` or `some` is non-`Bool`, the quantifier acts as a comprehension:
+The `each` keyword produces a list from bindings and a body expression:
 
 ```
 // List comprehension: [Role]
-all u: User | role u
+each u: User | role u
 
 // Filtered comprehension: [User]
-all u in users, active u | u
+each u in users, active u | u
 
 // Used with membership, cardinality, subset
-r in (all u: User | role u).           // Is r a role of any user?
-#(all u in users, active u | u) > 0.   // At least one active user
-(all u: User | role u) subset Role.    // All assigned roles are valid
+r in (each u: User | role u).           // Is r a role of any user?
+#(each u in users, active u | u) > 0.   // At least one active user
+(each u: User | role u) subset Role.    // All assigned roles are valid
 ```
 
 ### Primed Expressions (State Transitions)
@@ -895,6 +891,7 @@ proposition ::= expr '.'
 
 expr        ::= 'all' bindings '|' expr               // Universal
               | 'some' bindings '|' expr              // Existential
+              | 'each' bindings '|' expr              // Comprehension
               | expr '<->' expr                        // Biconditional
               | expr '->' expr                         // Implication
               | expr 'or' expr                         // Disjunction

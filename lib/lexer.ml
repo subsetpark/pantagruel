@@ -108,6 +108,7 @@ let keyword_or_lower_ident = function
   | "or" -> Parser.OR
   | "all" -> Parser.FORALL
   | "some" -> Parser.EXISTS
+  | "each" -> Parser.EACH
   | "in" -> Parser.IN
   | "subset" -> Parser.SUBSET
   | "context" -> Parser.CONTEXT
@@ -327,6 +328,7 @@ let string_of_token = function
   | Parser.NOT -> "'~'"
   | Parser.FORALL -> "'all'"
   | Parser.EXISTS -> "'some'"
+  | Parser.EACH -> "'each'"
   | Parser.IN -> "'in'"
   | Parser.SUBSET -> "'subset'"
   | Parser.SQUIG_ARROW -> "'~>'"
@@ -409,6 +411,7 @@ let all_tokens =
     Parser.NOT;
     Parser.FORALL;
     Parser.EXISTS;
+    Parser.EACH;
     Parser.IN;
     Parser.SUBSET;
     Parser.DOT;

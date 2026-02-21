@@ -156,6 +156,17 @@ let rec expr_to_json = function
                 ("body", expr_to_json body);
               ] );
         ]
+  | EEach (params, guards, body) ->
+      `Assoc
+        [
+          ( "each",
+            `Assoc
+              [
+                ("params", `List (List.map param_to_json params));
+                ("guards", `List (List.map guard_to_json guards));
+                ("body", expr_to_json body);
+              ] );
+        ]
   | EInitially e -> `Assoc [ ("initially", expr_to_json e) ]
 
 (** Convert guard to JSON *)

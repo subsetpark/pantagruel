@@ -492,37 +492,6 @@ let replace_word ~from ~to_ s =
     done;
     Buffer.contents buf
 
-(** Check if a quantifier has a non-Bool body (i.e., is a comprehension).
-    Resolves parameter/guard bindings to infer the body type correctly. *)
-let is_comprehension_q env params guards body =
-  let param_bindings =
-    List.filter_map
-      (fun (p : param) ->
-        match Collect.resolve_type env p.param_type dummy_loc with
-        | Ok ty -> Some (p.param_name, ty)
-        | Error _ -> None)
-      params
-  in
-  let guard_bindings =
-    List.filter_map
-      (fun g ->
-        match g with
-        | GIn (name, list_expr) -> (
-            match Check.infer_type { Check.env; loc = dummy_loc } list_expr with
-            | Ok (TyList elem_ty) -> Some (name, elem_ty)
-            | _ -> None)
-        | GParam p -> (
-            match Collect.resolve_type env p.param_type dummy_loc with
-            | Ok ty -> Some (p.param_name, ty)
-            | Error _ -> None)
-        | GExpr _ -> None)
-      guards
-  in
-  let env' = Env.with_vars (param_bindings @ guard_bindings) env in
-  match Check.infer_type { Check.env = env'; loc = dummy_loc } body with
-  | Ok ty -> not (Types.equal_ty ty TyBool)
-  | Error _ -> false
-
 (** Resolve the iteration variable, domain name, and any implicit guard for a
     comprehension. Supports two forms:
     - Typed binding: [all x: D, guards | body] — params = [x:D], iterates over D
@@ -642,14 +611,11 @@ let rec translate_expr config env (e : expr) =
   | EBinop (op, e1, e2) -> translate_binop config env op e1 e2
   | EUnop (op, e) -> translate_unop config env op e
   | EForall (params, guards, body) ->
-      if is_comprehension_q env params guards body then
-        translate_forall_comprehension config env params guards body
-      else translate_quantifier config env "forall" params guards body
+      translate_quantifier config env "forall" params guards body
+  | EEach (params, guards, body) ->
+      translate_forall_comprehension config env params guards body
   | EExists (params, guards, body) ->
-      if is_comprehension_q env params guards body then
-        failwith
-          "SMT translation: non-Bool 'some' comprehension not supported in SMT"
-      else translate_quantifier config env "exists" params guards body
+      translate_quantifier config env "exists" params guards body
   | EInitially e -> translate_expr config env e
   | EOverride (name, pairs) -> translate_override config env name pairs
 
@@ -716,9 +682,9 @@ and translate_in config env elem set =
         List.map (fun e -> Printf.sprintf "(= %s %s)" elem_str e) elems
       in
       Printf.sprintf "(or %s)" (String.concat " " disj)
-  | EForall (params, guards, body) -> (
-      (* y in (all x: D | f x) → disjunction: (= y (f d0)) ∨ (= y (f d1)) ...
-         y in (all x: D, g x | f x) → (g d0 ∧ = y (f d0)) ∨ ... *)
+  | EEach (params, guards, body) -> (
+      (* y in (each x: D | f x) → disjunction: (= y (f d0)) ∨ (= y (f d1)) ...
+         y in (each x: D, g x | f x) → (g d0 ∧ = y (f d0)) ∨ ... *)
       let expanded =
         expand_comprehension translate_expr config env params guards body
       in
@@ -746,8 +712,8 @@ and translate_subset config env e1 e2 =
   (* xs subset Domain → every member of xs is in the domain (tautological
      for well-typed programs, but expand over finite elements for soundness) *)
   match e2 with
-  | EForall (params, guards, body) -> (
-      (* xs subset (all x: D | f x) → for every elem of xs, elem is in the
+  | EEach (params, guards, body) -> (
+      (* xs subset (each x: D | f x) → for every elem of xs, elem is in the
          comprehension. Expand: for each domain elem d of the LHS element type,
          (select xs d) => (exists comprehension elem matching d). *)
       let expanded =
@@ -826,8 +792,8 @@ and translate_card config env e =
   | EDomain name ->
       (* #Domain = bound (all elements exist) *)
       string_of_int (bound_for config name)
-  | EForall (params, guards, body) -> (
-      (* #(all x: D | f x) — count distinct values in the comprehension.
+  | EEach (params, guards, body) -> (
+      (* #(each x: D | f x) — count distinct values in the comprehension.
          Requires the range type to be a bounded domain. Expand over range
          domain elements, check if each is produced by any source element. *)
       let expanded =
@@ -1213,6 +1179,10 @@ let rec prime_expr ?(bound = []) (e : expr) : expr =
       let bound' = List.map (fun (p : param) -> p.param_name) ps @ bound in
       let bound'', gs' = prime_guards ~bound:bound' gs in
       EExists (ps, gs', prime_expr ~bound:bound'' body)
+  | EEach (ps, gs, body) ->
+      let bound' = List.map (fun (p : param) -> p.param_name) ps @ bound in
+      let bound'', gs' = prime_guards ~bound:bound' gs in
+      EEach (ps, gs', prime_expr ~bound:bound'' body)
   | EOverride (name, pairs) ->
       EOverride
         ( name,
@@ -1636,7 +1606,7 @@ let rec collect_function_refs (e : expr) =
   | EPrimed name -> [ name ]
   | EBinop (_, e1, e2) -> collect_function_refs e1 @ collect_function_refs e2
   | EUnop (_, e) -> collect_function_refs e
-  | EForall (_, gs, body) | EExists (_, gs, body) ->
+  | EForall (_, gs, body) | EExists (_, gs, body) | EEach (_, gs, body) ->
       List.concat_map collect_guard_refs gs @ collect_function_refs body
   | ETuple es -> List.concat_map collect_function_refs es
   | EProj (e, _) -> collect_function_refs e

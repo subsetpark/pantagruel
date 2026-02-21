@@ -956,8 +956,8 @@ let domain_bounds_tests =
 
 (* --- Comprehension tests --- *)
 
-let test_in_forall_comprehension () =
-  (* y in (all x: D | f x) → disjunction over domain elements *)
+let test_in_each_comprehension () =
+  (* y in (each x: D | f x) → disjunction over domain elements *)
   let env =
     Env.empty ""
     |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
@@ -971,7 +971,7 @@ let test_in_forall_comprehension () =
     Ast.EBinop
       ( OpIn,
         EVar "r",
-        EForall
+        EEach
           ( [ { param_name = "u"; param_type = TName "User" } ],
             [],
             EApp (EVar "role", [ EVar "u" ]) ) )
@@ -983,8 +983,8 @@ let test_in_forall_comprehension () =
     (contains result "(= r (role User_1))");
   check bool "has or" true (contains result "(or")
 
-let test_in_forall_comprehension_guarded () =
-  (* y in (all x: D, g x | f x) → includes guard in expansion *)
+let test_in_each_comprehension_guarded () =
+  (* y in (each x: D, g x | f x) → includes guard in expansion *)
   let env =
     Env.empty ""
     |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
@@ -1001,7 +1001,7 @@ let test_in_forall_comprehension_guarded () =
     Ast.EBinop
       ( OpIn,
         EVar "r",
-        EForall
+        EEach
           ( [ { param_name = "u"; param_type = TName "User" } ],
             [ GExpr (EApp (EVar "active", [ EVar "u" ])) ],
             EApp (EVar "role", [ EVar "u" ]) ) )
@@ -1014,7 +1014,7 @@ let test_in_forall_comprehension_guarded () =
   check bool "has and (guard + eq)" true (contains result "(and")
 
 let test_in_membership_comprehension () =
-  (* y in (all x in xs | f x) → includes membership guard *)
+  (* y in (each x in xs | f x) → includes membership guard *)
   let env =
     Env.empty ""
     |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
@@ -1031,7 +1031,7 @@ let test_in_membership_comprehension () =
     Ast.EBinop
       ( OpIn,
         EVar "r",
-        EForall
+        EEach
           ([], [ GIn ("u", EVar "admins") ], EApp (EVar "role", [ EVar "u" ]))
       )
   in
@@ -1041,8 +1041,8 @@ let test_in_membership_comprehension () =
     (contains result "(= r (role User_0))");
   check bool "has or" true (contains result "(or")
 
-let test_card_forall_comprehension () =
-  (* #(all x: D | f x) → count over range domain *)
+let test_card_each_comprehension () =
+  (* #(each x: D | f x) → count over range domain *)
   let env =
     Env.empty ""
     |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
@@ -1054,7 +1054,7 @@ let test_card_forall_comprehension () =
   let expr =
     Ast.EUnop
       ( OpCard,
-        EForall
+        EEach
           ( [ { param_name = "u"; param_type = TName "User" } ],
             [],
             EApp (EVar "role", [ EVar "u" ]) ) )
@@ -1064,8 +1064,8 @@ let test_card_forall_comprehension () =
   check bool "has Role_0" true (contains result "Role_0");
   check bool "has +" true (contains result "(+")
 
-let test_forall_comprehension_standalone () =
-  (* Non-Bool EForall in standalone position → store-chain array *)
+let test_each_comprehension_standalone () =
+  (* EEach in standalone position → store-chain array *)
   let env =
     Env.empty ""
     |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
@@ -1075,7 +1075,7 @@ let test_forall_comprehension_standalone () =
          Ast.dummy_loc ~chapter:0
   in
   let expr =
-    Ast.EForall
+    Ast.EEach
       ( [ { param_name = "u"; param_type = TName "User" } ],
         [],
         EApp (EVar "role", [ EVar "u" ]) )
@@ -1085,37 +1085,14 @@ let test_forall_comprehension_standalone () =
   check bool "has store" true (contains result "store");
   check bool "has Array Role Bool" true (contains result "(Array Role Bool)")
 
-let test_exists_comprehension_standalone_fails () =
-  (* Non-Bool EExists in standalone position → error *)
-  let env =
-    Env.empty ""
-    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
-    |> Env.add_domain "Role" Ast.dummy_loc ~chapter:0
-    |> Env.add_rule "role"
-         (Types.TyFunc ([ Types.TyDomain "User" ], Some (Types.TyDomain "Role")))
-         Ast.dummy_loc ~chapter:0
-  in
-  let expr =
-    Ast.EExists
-      ( [ { param_name = "u"; param_type = TName "User" } ],
-        [],
-        EApp (EVar "role", [ EVar "u" ]) )
-  in
-  check_raises "some comprehension standalone raises"
-    (Failure
-       "SMT translation: non-Bool 'some' comprehension not supported in SMT")
-    (fun () -> ignore (Smt.translate_expr config env expr))
-
 let comprehension_tests =
   [
-    test_case "in forall comprehension" `Quick test_in_forall_comprehension;
-    test_case "in forall guarded" `Quick test_in_forall_comprehension_guarded;
+    test_case "in each comprehension" `Quick test_in_each_comprehension;
+    test_case "in each guarded" `Quick test_in_each_comprehension_guarded;
     test_case "in membership comprehension" `Quick
       test_in_membership_comprehension;
-    test_case "card forall comprehension" `Quick test_card_forall_comprehension;
-    test_case "forall standalone" `Quick test_forall_comprehension_standalone;
-    test_case "exists standalone fails" `Quick
-      test_exists_comprehension_standalone_fails;
+    test_case "card each comprehension" `Quick test_card_each_comprehension;
+    test_case "each standalone" `Quick test_each_comprehension_standalone;
   ]
 
 (* --- Closure tests --- *)

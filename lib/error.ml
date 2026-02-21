@@ -68,6 +68,12 @@ let format_type_error err =
         (Printf.sprintf "'%s' is not a member of context '%s'" name ctx_name)
   | BoolParam (name, decl_name, loc) ->
       fmt loc (Printf.sprintf "Bool parameter '%s' in '%s'" name decl_name)
+  | ComprehensionNeedEach (ty, loc) ->
+      fmt loc
+        (Printf.sprintf
+           "Body of 'all'/'some' must be Bool, got %s; use 'each' for \
+            comprehensions"
+           (Types.format_ty ty))
 
 (** Format a collection error with location prefix *)
 let format_collect_error err =

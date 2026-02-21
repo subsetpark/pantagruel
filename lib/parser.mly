@@ -51,7 +51,7 @@
 %token PRIME MAPSTO
 %token <int> PROJ
 %token AND OR NOT
-%token FORALL EXISTS IN SUBSET
+%token FORALL EXISTS EACH IN SUBSET
 %token DOT COMMA COLON DCOLON PIPE SEPARATOR
 %token LPAREN RPAREN LBRACKET RBRACKET
 %token LBRACE RBRACE CONTEXT INITIALLY CLOSURE
@@ -219,6 +219,8 @@ quantified:
     { let (params, guards) = pg in EForall (params, guards, e) }
   | EXISTS pg=quant_params_guards PIPE e=expr
     { let (params, guards) = pg in EExists (params, guards, e) }
+  | EACH pg=quant_params_guards PIPE e=expr
+    { let (params, guards) = pg in EEach (params, guards, e) }
 
 (* Parameters and guards in quantifiers *)
 quant_params_guards:

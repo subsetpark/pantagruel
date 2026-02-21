@@ -26,6 +26,7 @@ type type_error =
   | PrimedExtracontextual of string * string * loc
       (** function name, context name *)
   | BoolParam of string * string * loc  (** param name, declaration name *)
+  | ComprehensionNeedEach of ty * loc
 [@@deriving show]
 
 let type_warnings : type_error list ref = ref []
@@ -138,12 +139,15 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
   | EUnop (op, e) -> check_unop ctx op e
   | EForall (params, guards, body) ->
       let* body_ty = check_quantifier ctx params guards body in
-      Ok (if equal_ty body_ty TyBool then TyBool else TyList body_ty)
+      if equal_ty body_ty TyBool then Ok TyBool
+      else Error (ComprehensionNeedEach (body_ty, ctx.loc))
   | EExists (params, guards, body) ->
       let* body_ty = check_quantifier ctx params guards body in
-      Ok
-        (if equal_ty body_ty TyBool then TyBool
-         else TySum [ body_ty; TyNothing ])
+      if equal_ty body_ty TyBool then Ok TyBool
+      else Error (ComprehensionNeedEach (body_ty, ctx.loc))
+  | EEach (params, guards, body) ->
+      let* body_ty = check_quantifier ctx params guards body in
+      Ok (TyList body_ty)
   | EInitially e -> infer_type ctx e
   | EOverride (name, pairs) -> check_override ctx name pairs
 

@@ -94,6 +94,7 @@ and expr =
   | EUnop of unop * expr  (** op e *)
   | EForall of param list * guard list * expr  (** forall x:T, g | e *)
   | EExists of param list * guard list * expr  (** exists x:T, g | e *)
+  | EEach of param list * guard list * expr  (** each x:T, g | e *)
   | EInitially of expr  (** initially e *)
 [@@deriving show, eq]
 

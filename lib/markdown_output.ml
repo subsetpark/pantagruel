@@ -73,6 +73,9 @@ let rec pp_expr procs fmt = function
   | EExists (params, guards, body) ->
       fprintf fmt "∃ %a · %a" (pp_quant_bindings procs) (params, guards)
         (pp_expr procs) body
+  | EEach (params, guards, body) ->
+      fprintf fmt "each %a · %a" (pp_quant_bindings procs) (params, guards)
+        (pp_expr procs) body
   | e -> pp_biconditional procs fmt e
 
 and pp_quant_bindings procs fmt (params, guards) =

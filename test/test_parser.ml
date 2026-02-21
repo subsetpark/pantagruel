@@ -191,6 +191,21 @@ let test_closure () =
   | Ast.DeclClosure { name = "ancestor"; target = "parent"; _ } -> ()
   | _ -> fail "Expected closure declaration"
 
+let test_each () =
+  let doc =
+    parse
+      "module TEST.\n\n\
+       User.\n\
+       Role.\n\
+       role u: User => Role.\n\
+       ---\n\
+       all r: Role | r in (each u: User | role u).\n"
+  in
+  let chapter = List.hd doc.Ast.chapters in
+  match (List.hd chapter.Ast.body).Ast.value with
+  | Ast.EForall (_, _, Ast.EBinop (Ast.OpIn, _, Ast.EEach _)) -> ()
+  | _ -> fail "Expected each comprehension inside all"
+
 let () =
   run "Parser"
     [
@@ -221,4 +236,5 @@ let () =
       ( "rule_context",
         [ test_case "rule with context" `Quick test_rule_with_context ] );
       ("closure", [ test_case "closure declaration" `Quick test_closure ]);
+      ("each", [ test_case "each comprehension" `Quick test_each ]);
     ]

@@ -26,7 +26,7 @@ all doc: Document, c in chapters doc | #head c >= 1.
 
 > Each chapter may contain at most one action.
 
-all c: Chapter | #(all d in head c, decl-kind d = dk-action | d) <= 1.
+all c: Chapter | #(each d in head c, decl-kind d = dk-action | d) <= 1.
 
 > Every context name in a rule's footprint must be declared at module level.
 
@@ -70,7 +70,7 @@ all e: Expr, env: Env, is-app? e | #app-args e = #func-params (infer (app-func e
 
 > Tuple construction yields a product of the element types.
 
-all e: Expr, env: Env, is-tuple? e | infer e env = ty-product (all elem in tuple-elems e | infer elem env).
+all e: Expr, env: Env, is-tuple? e | infer e env = ty-product (each elem in tuple-elems e | infer elem env).
 
 > Projection extracts the k-th component type from a product.
 
@@ -101,11 +101,9 @@ all e: Expr, env: Env, is-override? e | #func-params (term-type (override-name e
 all e: Expr, env: Env, is-forall? e, infer (quant-body e) env = ty-bool | infer e env = ty-bool.
 all e: Expr, env: Env, is-exists? e, infer (quant-body e) env = ty-bool | infer e env = ty-bool.
 
-> Quantifiers with non-Bool bodies are comprehensions:
-> `all` produces a list, `some` produces a selection.
+> `each` produces a comprehension (list) regardless of body type.
 
-all e: Expr, env: Env, is-forall? e, infer (quant-body e) env != ty-bool | infer e env = ty-list (infer (quant-body e) env).
-all e: Expr, env: Env, is-exists? e, infer (quant-body e) env != ty-bool | infer e env = ty-or (infer (quant-body e) env) ty-nothing.
+all e: Expr, env: Env, is-each? e | infer e env = ty-list (infer (quant-body e) env).
 
 > If a document is valid, then every chapter in it is valid.
 
@@ -210,6 +208,7 @@ is-lit-real? e: Expr => Bool.
 is-lit-string? e: Expr => Bool.
 is-forall? e: Expr => Bool.
 is-exists? e: Expr => Bool.
+is-each? e: Expr => Bool.
 domain-ref-name e: Expr => Name.
 quant-body e: Expr => Expr.
 

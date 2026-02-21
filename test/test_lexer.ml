@@ -37,6 +37,7 @@ let token_to_string = function
   | Parser.NOT -> "NOT"
   | Parser.FORALL -> "FORALL"
   | Parser.EXISTS -> "EXISTS"
+  | Parser.EACH -> "EACH"
   | Parser.IN -> "IN"
   | Parser.SUBSET -> "SUBSET"
   | Parser.DOT -> "DOT"

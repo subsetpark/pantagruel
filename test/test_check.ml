@@ -850,8 +850,8 @@ let check_error str pred =
 
 (* --- Comprehension tests --- *)
 
-let test_forall_comprehension () =
-  (* all x: D | f x where f: D → U types as [U] — used inside 'in' *)
+let test_each_comprehension () =
+  (* each x: D | f x where f: D → U types as [U] — used inside 'in' *)
   check_ok
     {|module TEST.
 
@@ -859,11 +859,11 @@ User.
 Role.
 role u: User => Role.
 ---
-all r: Role | r in (all u: User | role u).
+all r: Role | r in (each u: User | role u).
 |}
 
-let test_exists_comprehension () =
-  (* some x: D | f x where f: D → U — used in equality *)
+let test_exists_bool_body () =
+  (* some with Bool body still produces Bool *)
   check_ok
     {|module TEST.
 
@@ -886,8 +886,8 @@ active u: User => Bool.
 all u: User | active u.
 |}
 
-let test_forall_comprehension_with_guard () =
-  (* all x: D, guard | f x with guard types as [U] *)
+let test_each_comprehension_with_guard () =
+  (* each x: D, guard | f x with guard types as [U] *)
   check_ok
     {|module TEST.
 
@@ -896,11 +896,11 @@ Role.
 active u: User => Bool.
 role u: User => Role.
 ---
-all r: Role | r in (all u: User, active u | role u).
+all r: Role | r in (each u: User, active u | role u).
 |}
 
-let test_forall_comprehension_cardinality () =
-  (* #(all x: D | f x) types as Nat0 *)
+let test_each_comprehension_cardinality () =
+  (* #(each x: D | f x) types as Nat0 *)
   check_ok
     {|module TEST.
 
@@ -908,11 +908,11 @@ User.
 Role.
 role u: User => Role.
 ---
-#(all u: User | role u) >= 0.
+#(each u: User | role u) >= 0.
 |}
 
 let test_membership_comprehension () =
-  (* all x in xs | f x where xs: [D] types as [U] — the common form *)
+  (* each x in xs | f x where xs: [D] types as [U] — the common form *)
   check_ok
     {|module TEST.
 
@@ -921,11 +921,11 @@ Role.
 role u: User => Role.
 admins => [User].
 ---
-all r: Role | r in (all u in admins | role u).
+all r: Role | r in (each u in admins | role u).
 |}
 
 let test_membership_comprehension_card () =
-  (* #(all x in xs | x) — count filtered list *)
+  (* #(each x in xs | x) — count filtered list *)
   check_ok
     {|module TEST.
 
@@ -933,11 +933,11 @@ User.
 active u: User => Bool.
 users => [User].
 ---
-#(all u in users, active u | u) >= 0.
+#(each u in users, active u | u) >= 0.
 |}
 
 let test_standalone_comprehension_fails () =
-  (* Non-Bool body as standalone proposition → PropositionNotBool *)
+  (* Non-Bool body with 'all' → ComprehensionNeedEach *)
   check_error
     {|module TEST.
 
@@ -948,7 +948,22 @@ role u: User => Role.
 all u: User | role u.
 |}
     (function
-    | Check.PropositionNotBool _ -> true
+    | Check.ComprehensionNeedEach _ -> true
+    | _ -> false)
+
+let test_all_non_bool_body_error () =
+  (* Non-Bool body with 'some' → ComprehensionNeedEach *)
+  check_error
+    {|module TEST.
+
+User.
+Role.
+role u: User => Role.
+---
+some u: User | role u.
+|}
+    (function
+    | Check.ComprehensionNeedEach _ -> true
     | _ -> false)
 
 (* --- Closure tests --- *)
@@ -1101,20 +1116,20 @@ let () =
         ] );
       ( "comprehension",
         [
-          test_case "forall comprehension" `Quick test_forall_comprehension;
-          test_case "exists comprehension" `Quick test_exists_comprehension;
+          test_case "each comprehension" `Quick test_each_comprehension;
+          test_case "exists bool body" `Quick test_exists_bool_body;
           test_case "forall bool backward compat" `Quick
             test_forall_bool_backward_compat;
-          test_case "forall with guard" `Quick
-            test_forall_comprehension_with_guard;
-          test_case "forall cardinality" `Quick
-            test_forall_comprehension_cardinality;
+          test_case "each with guard" `Quick test_each_comprehension_with_guard;
+          test_case "each cardinality" `Quick
+            test_each_comprehension_cardinality;
           test_case "membership comprehension" `Quick
             test_membership_comprehension;
           test_case "membership comprehension card" `Quick
             test_membership_comprehension_card;
-          test_case "standalone fails" `Quick
+          test_case "all non-bool fails" `Quick
             test_standalone_comprehension_fails;
+          test_case "some non-bool fails" `Quick test_all_non_bool_body_error;
         ] );
       ( "closure",
         [
