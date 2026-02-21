@@ -54,6 +54,8 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
           (* Nullary rule: auto-apply *)
           Ok ret
       | Some { kind = Env.KRule ty; _ } -> Ok ty
+      | Some { kind = Env.KClosure (ty, _); _ } -> (
+          match ty with TyFunc ([], Some ret) -> Ok ret | _ -> Ok ty)
       | Some { kind = Env.KDomain | Env.KAlias _; _ } ->
           (* This shouldn't happen - domains/aliases are in type namespace *)
           Error (UnboundVariable (name, ctx.loc))
@@ -66,8 +68,8 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
       match Env.lookup_type name ctx.env with
       | Some { kind = Env.KDomain; _ } -> Ok (TyList (TyDomain name))
       | Some { kind = Env.KAlias ty; _ } -> Ok (TyList ty)
-      | Some { kind = Env.KRule _ | Env.KVar _; _ } ->
-          (* This shouldn't happen - rules/vars are in term namespace *)
+      | Some { kind = Env.KRule _ | Env.KVar _ | Env.KClosure _; _ } ->
+          (* This shouldn't happen - rules/vars/closures are in term namespace *)
           Error (UnboundType (name, ctx.loc))
       | None -> (
           match Env.ambiguous_type_modules name ctx.env with
@@ -108,6 +110,12 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
                 | None ->
                     Ok result_ty (* Shouldn't happen: validated in collect *))
             | None -> Ok result_ty)
+        | Some { kind = Env.KClosure (ty, _); _ } ->
+            (* Closures are derived — allow priming without context membership *)
+            let result_ty =
+              match ty with TyFunc ([], Some ret) -> ret | _ -> ty
+            in
+            Ok result_ty
         | Some { kind = Env.KVar _; _ } -> Error (PrimedNonRule (name, ctx.loc))
         | Some { kind = Env.KDomain | Env.KAlias _; _ } ->
             Error (UnboundVariable (name, ctx.loc))
@@ -367,6 +375,7 @@ let check_rule_guards ctx (decl : declaration located) =
   match decl.value with
   | DeclRule { params; guards; _ } -> check_guards params guards
   | DeclAction { params; guards; _ } -> check_guards params guards
+  | DeclClosure _ -> Ok () (* Closures have no guards *)
   | _ -> Ok () (* Not a rule/action, nothing to check *)
 
 (** Find the action in a chapter head, if any *)
@@ -384,6 +393,7 @@ let collect_all_params (head : declaration located list) =
     (fun decl ->
       match decl.value with
       | DeclRule { params; _ } | DeclAction { params; _ } -> params
+      | DeclClosure _ -> []
       | _ -> [])
     head
 

@@ -14,6 +14,7 @@ type collect_error =
   | BuiltinRedefined of string * loc
   | DuplicateContext of string * loc
   | UndefinedContext of string * loc
+  | ClosureTargetInvalid of string * string * loc
 [@@deriving show]
 
 let is_builtin_type name = List.mem name Types.builtin_type_names
@@ -81,7 +82,8 @@ let collect_chapter_head ~chapter ~doc_contexts env
               (* Add as domain placeholder - will be replaced in pass 2 *)
               Ok (Env.add_domain name decl.loc ~chapter env)
         end
-    | DeclRule _ | DeclAction _ -> Ok env (* Handled in later passes *)
+    | DeclRule _ | DeclAction _ | DeclClosure _ ->
+        Ok env (* Handled in later passes *)
   in
 
   (* Pass 2: Resolve alias types iteratively (handles mutual references) *)
@@ -154,6 +156,62 @@ let collect_chapter_head ~chapter ~doc_contexts env
         in
         actions := (label, decl.loc) :: !actions;
         Ok env
+    | DeclClosure { name; param; return_type; target } ->
+        (* Validate: no duplicate rule name *)
+        let* env =
+          match Env.lookup_term name env with
+          | Some existing when existing.module_origin = None ->
+              Error (DuplicateRule (name, decl.loc, existing.loc))
+          | _ -> Ok env
+        in
+        (* Resolve param type and return type *)
+        let* param_ty = resolve_type env param.param_type decl.loc in
+        let* ret_ty = resolve_type env return_type decl.loc in
+        (* Return type must be [T] where T matches param type *)
+        let* () =
+          match (ret_ty, param_ty) with
+          | TyList t, _ when t = param_ty -> Ok ()
+          | _ ->
+              Error
+                (ClosureTargetInvalid
+                   ( name,
+                     Printf.sprintf "return type must be [%s]"
+                       (Types.format_ty param_ty),
+                     decl.loc ))
+        in
+        (* Look up the target rule *)
+        let* () =
+          match Env.lookup_term target env with
+          | Some { kind = Env.KRule ty; _ } -> (
+              match ty with
+              (* T => T + Nothing (partial parent) *)
+              | TyFunc ([ t1 ], Some (TySum [ t2; TyNothing ]))
+                when t1 = param_ty && t2 = param_ty ->
+                  Ok ()
+              (* T => [T] (multi-child) *)
+              | TyFunc ([ t1 ], Some (TyList t2))
+                when t1 = param_ty && t2 = param_ty ->
+                  Ok ()
+              | _ ->
+                  Error
+                    (ClosureTargetInvalid
+                       ( name,
+                         Printf.sprintf
+                           "target '%s' must have shape %s => %s + Nothing or \
+                            %s => [%s]"
+                           target (Types.format_ty param_ty)
+                           (Types.format_ty param_ty) (Types.format_ty param_ty)
+                           (Types.format_ty param_ty),
+                         decl.loc )))
+          | _ ->
+              Error
+                (ClosureTargetInvalid
+                   ( name,
+                     Printf.sprintf "target '%s' not found" target,
+                     decl.loc ))
+        in
+        let closure_ty = TyFunc ([ param_ty ], Some (TyList param_ty)) in
+        Ok (Env.add_closure name closure_ty target decl.loc ~chapter env)
     | _ -> Ok env (* Domains and aliases already done *)
   in
 

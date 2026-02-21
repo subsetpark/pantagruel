@@ -38,7 +38,7 @@ where
 ### Keywords
 
 ```
-module  import  where  context  initially
+module  import  where  context  initially  closure
 true    false   and    or
 all     some    in     subset
 ```
@@ -414,6 +414,36 @@ origin => Point.
 - Parameters: `name: Type` separated by commas
 - Guards: boolean expressions, separated by commas after the parameters
 - Return type: required, preceded by `=>`
+
+### Closure Declaration
+
+Declares a rule as the non-reflexive transitive closure of another rule:
+
+```
+parent b: Block => Block + Nothing.
+ancestor b: Block => [Block] = closure parent.
+```
+
+**Syntax**: `name param => [T] = closure target.`
+
+- The closure always returns `[T]` — the set of all elements reachable from the parameter by one or more applications of the target rule.
+- The target rule must have one of these shapes:
+  - `T => T + Nothing` — a partial endorelation (single parent, may be absent)
+  - `T => [T]` — a multi-valued endorelation (multiple children)
+- The parameter type must match the domain type `T` of the target.
+- The closure is **non-reflexive**: `ancestor b` does not include `b` itself (unless `b` is reachable from itself through a cycle).
+- Closure rules are **derived** — they do not receive frame conditions in SMT verification. Their post-state (`ancestor'`) is automatically derived from the target's post-state (`parent'`).
+- Closure rules can be primed in action chapters without requiring context membership.
+
+**Example** — acyclicity invariant:
+
+```
+Block.
+parent b: Block => Block + Nothing.
+ancestor b: Block => [Block] = closure parent.
+---
+all b: Block | ~(b in ancestor b).
+```
 
 ### Actions
 
@@ -846,6 +876,7 @@ declaration ::= UPPER '.'                                              // Domain
               | UPPER '=' type '.'                                     // Type alias
               | '{' UPPER (',' UPPER)* '}' LOWER param* guard* '=>' type '.'  // Rule with context footprint
               | LOWER param* guard* '=>' type '.'                      // Rule with return type
+              | LOWER param '=>' type '=' 'closure' LOWER '.'        // Closure (transitive closure of target)
               | UPPER '~>' LABEL '|' param ((',' param) | (',' guard))* '.'  // Action with context + params
               | UPPER '~>' LABEL '.'                                   // Action with context, no params
               | '~>' LABEL '|' param ((',' param) | (',' guard))* '.'  // Action + params

@@ -54,7 +54,7 @@
 %token FORALL EXISTS IN SUBSET
 %token DOT COMMA COLON DCOLON PIPE SEPARATOR
 %token LPAREN RPAREN LBRACKET RBRACKET
-%token LBRACE RBRACE CONTEXT INITIALLY
+%token LBRACE RBRACE CONTEXT INITIALLY CLOSURE
 %token <string> ACTION_LABEL
 %token EOF
 
@@ -119,6 +119,15 @@ declaration:
         return_type = ret;
         contexts = [];
       }) }
+  | name=LOWER_IDENT pg=rule_params_guards DARROW ret=type_expr EQ CLOSURE target=LOWER_IDENT DOT
+    { let (params, _guards) = pg in
+      let p = match params with [p] -> p | _ -> assert false in
+      located_with_doc $startpos $endpos (DeclClosure {
+        name;
+        param = p;
+        return_type = ret;
+        target;
+      }) }
   | ctx=UPPER_IDENT SQUIG_ARROW label=ACTION_LABEL PIPE pg=action_params_guards DOT
     { let (params, guards) = pg in
       located_with_doc $startpos $endpos (DeclAction {
@@ -149,7 +158,6 @@ declaration:
         guards = [];
         context = None;
       }) }
-
 (* Parameters and guards for actions (after |, must start with param) *)
 action_params_guards:
   | p=param rest=list(preceded(COMMA, rule_param_or_guard))

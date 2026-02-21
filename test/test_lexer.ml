@@ -54,6 +54,7 @@ let token_to_string = function
   | Parser.SQUIG_ARROW -> "SQUIG_ARROW"
   | Parser.CONTEXT -> "CONTEXT"
   | Parser.INITIALLY -> "INITIALLY"
+  | Parser.CLOSURE -> "CLOSURE"
   | Parser.ACTION_LABEL s -> "ACTION_LABEL(" ^ s ^ ")"
   | Parser.EOF -> "EOF"
 

@@ -242,6 +242,22 @@ let decl_to_json env (decl_loc : declaration located) =
                     `Assoc [ ("params", `List param_tys); ("return", `Null) ] );
                 ] );
           ])
+  | DeclClosure { name; param; return_type; target } ->
+      let resolved =
+        match Env.lookup_term name env with
+        | Some { kind = Env.KClosure (ty, _); _ } -> Some (ty_to_json ty)
+        | _ -> None
+      in
+      `Assoc
+        (doc_json
+        @ [
+            ("kind", `String "closure");
+            ("name", `String name);
+            ("param", param_to_json param);
+            ("return", type_expr_to_json return_type);
+            ("target", `String target);
+          ]
+        @ match resolved with Some t -> [ ("resolved", t) ] | None -> [])
 
 (** Convert proposition to JSON with doc comments *)
 let prop_to_json (prop_loc : expr located) =
@@ -303,7 +319,7 @@ let rules_to_json env =
     List.filter_map
       (fun (name, entry) ->
         match entry.Env.kind with
-        | Env.KRule ty -> (
+        | Env.KRule ty | Env.KClosure (ty, _) -> (
             match ty with
             | Types.TyFunc (params, ret) ->
                 Some

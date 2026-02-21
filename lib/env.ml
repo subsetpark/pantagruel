@@ -8,6 +8,7 @@ type entry_kind =
   | KAlias of ty  (** Type alias, already expanded *)
   | KRule of ty  (** Rule with its type *)
   | KVar of ty  (** Variable (param, quantifier-bound) *)
+  | KClosure of ty * string  (** Closure rule: type * target rule name *)
 [@@deriving show]
 
 type entry = {
@@ -71,6 +72,18 @@ let add_alias name ty loc ~chapter env =
 let add_rule name ty loc ~chapter env =
   let entry =
     { kind = KRule ty; loc; module_origin = None; decl_chapter = chapter }
+  in
+  { env with terms = StringMap.add name entry env.terms }
+
+(** Add a closure rule to the term namespace *)
+let add_closure name ty target loc ~chapter env =
+  let entry =
+    {
+      kind = KClosure (ty, target);
+      loc;
+      module_origin = None;
+      decl_chapter = chapter;
+    }
   in
   { env with terms = StringMap.add name entry env.terms }
 
@@ -138,7 +151,9 @@ let exports env =
   let term_names =
     StringMap.bindings env.terms
     |> List.filter (fun (_, e) ->
-        match e.kind with KVar _ -> false | _ -> true)
+        match e.kind with
+        | KVar _ -> false
+        | KClosure _ | KDomain | KAlias _ | KRule _ -> true)
     |> List.map fst
   in
   (type_names, term_names)

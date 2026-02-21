@@ -59,6 +59,7 @@ The `samples/` directory contains reference specifications:
 - `06-advanced.pant` - Function overrides and qualified names
 - `07-pantagruel.pant` - Self-specification of the Pantagruel language
 - `08-contexts.pant` - Context declarations and write-permission boundaries
+- `09-closure.pant` - Transitive closure declarations and acyclicity invariants
 
 The `samples/smt-examples/` directory demonstrates bounded model checking:
 
@@ -113,6 +114,12 @@ distance p: Point, q: Point => Real.
 
 // Nullary (no parameters)
 nobody => User.
+```
+
+**Closures** derive transitive closure rules from endorelations:
+```
+parent b: Block => Block + Nothing.
+ancestor b: Block => [Block] = closure parent.
 ```
 
 **Actions** define state transitions (no return type). Action labels are free-form text, separated from parameters by `|`:

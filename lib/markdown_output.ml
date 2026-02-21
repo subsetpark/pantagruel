@@ -9,7 +9,7 @@ let rule_names_of_env env =
   Env.StringMap.fold
     (fun name entry acc ->
       match entry.Env.kind with
-      | Env.KRule _ -> StringSet.add name acc
+      | Env.KRule _ | Env.KClosure _ -> StringSet.add name acc
       | _ -> acc)
     env.Env.terms StringSet.empty
 
@@ -206,6 +206,9 @@ let pp_declaration procs fmt = function
           (pp_print_list ~pp_sep:pp_params_sep (pp_guard procs))
           guards;
       pp_print_char fmt '.'
+  | DeclClosure { name; param; return_type; target } ->
+      fprintf fmt "**%s** %a ⇒ %a = closure **%s**." name pp_param param
+        pp_type_expr return_type target
 
 (* --- String-returning wrappers --- *)
 
@@ -251,7 +254,7 @@ let pp_chapter procs ?(skip_first_doc_groups = 0) ~total_chapters chapter_num
       (fun (ds, rs, acts) decl ->
         match decl.value with
         | DeclDomain _ | DeclAlias _ -> (decl :: ds, rs, acts)
-        | DeclRule _ -> (ds, decl :: rs, acts)
+        | DeclRule _ | DeclClosure _ -> (ds, decl :: rs, acts)
         | DeclAction _ -> (ds, rs, decl :: acts))
       ([], [], []) chapter.head
   in

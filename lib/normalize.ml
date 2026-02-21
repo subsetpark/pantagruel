@@ -122,7 +122,11 @@ let symbols_in_decl_deps (decl : declaration) =
   | DeclRule { params; guards; return_type; _ } ->
       collect_params_guards params guards;
       types := StringSet.union !types (types_in_type_expr return_type)
-  | DeclAction { params; guards; _ } -> collect_params_guards params guards);
+  | DeclAction { params; guards; _ } -> collect_params_guards params guards
+  | DeclClosure { param; return_type; target; _ } ->
+      types := StringSet.union !types (types_in_type_expr param.param_type);
+      types := StringSet.union !types (types_in_type_expr return_type);
+      terms := StringSet.add target !terms);
   (!types, !terms)
 
 (** Get the name defined by a declaration *)
@@ -131,16 +135,17 @@ let decl_name = function
   | DeclAlias (name, _) -> name
   | DeclRule { name; _ } -> name
   | DeclAction { label; _ } -> label
+  | DeclClosure { name; _ } -> name
 
 (** Is this a type-namespace declaration? *)
 let is_type_decl = function
   | DeclDomain _ | DeclAlias _ -> true
-  | DeclRule _ | DeclAction _ -> false
+  | DeclRule _ | DeclAction _ | DeclClosure _ -> false
 
 (** Is this an action? *)
 let is_action = function
   | DeclAction _ -> true
-  | DeclDomain _ | DeclAlias _ | DeclRule _ -> false
+  | DeclDomain _ | DeclAlias _ | DeclRule _ | DeclClosure _ -> false
 
 (** Check if an expression uses any primed names *)
 let rec uses_primed = function

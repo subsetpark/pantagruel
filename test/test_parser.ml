@@ -177,6 +177,20 @@ let test_rule_with_context () =
   | Ast.DeclAction { label = "Withdraw"; context = Some "Banking"; _ } -> ()
   | _ -> fail "Expected action with context"
 
+let test_closure () =
+  let doc =
+    parse
+      "module TEST.\n\n\
+       Block.\n\
+       parent b: Block => Block + Nothing.\n\
+       ancestor b: Block => [Block] = closure parent.\n\
+       ---\n"
+  in
+  let chapter = List.hd doc.Ast.chapters in
+  match (List.nth chapter.Ast.head 2).Ast.value with
+  | Ast.DeclClosure { name = "ancestor"; target = "parent"; _ } -> ()
+  | _ -> fail "Expected closure declaration"
+
 let () =
   run "Parser"
     [
@@ -206,4 +220,5 @@ let () =
         [ test_case "context declaration" `Quick test_context_declaration ] );
       ( "rule_context",
         [ test_case "rule with context" `Quick test_rule_with_context ] );
+      ("closure", [ test_case "closure declaration" `Quick test_closure ]);
     ]

@@ -951,6 +951,54 @@ all u: User | role u.
     | Check.PropositionNotBool _ -> true
     | _ -> false)
 
+(* --- Closure tests --- *)
+
+let test_closure_valid () =
+  (* Closure of T => T + Nothing target, returns [T] *)
+  check_ok
+    {|module TEST.
+
+Block.
+parent b: Block => Block + Nothing.
+ancestor b: Block => [Block] = closure parent.
+---
+all b: Block | ~(b in ancestor b).
+|}
+
+let test_closure_list_target () =
+  (* Closure of T => [T] target *)
+  check_ok
+    {|module TEST.
+
+Node.
+children n: Node => [Node].
+descendants n: Node => [Node] = closure children.
+---
+all n: Node | ~(n in descendants n).
+|}
+
+let test_closure_invalid_target () =
+  (* Target with wrong shape: T => U (different types) *)
+  check_fails
+    {|module TEST.
+
+Node.
+Color.
+paint n: Node => Color.
+reachable n: Node => [Node] = closure paint.
+---
+|}
+
+let test_closure_missing_target () =
+  (* Target doesn't exist *)
+  check_fails
+    {|module TEST.
+
+Node.
+reachable n: Node => [Node] = closure nonexistent.
+---
+|}
+
 let () =
   run "Check"
     [
@@ -1067,5 +1115,12 @@ let () =
             test_membership_comprehension_card;
           test_case "standalone fails" `Quick
             test_standalone_comprehension_fails;
+        ] );
+      ( "closure",
+        [
+          test_case "closure valid" `Quick test_closure_valid;
+          test_case "closure list target" `Quick test_closure_list_target;
+          test_case "closure invalid target" `Quick test_closure_invalid_target;
+          test_case "closure missing target" `Quick test_closure_missing_target;
         ] );
     ]

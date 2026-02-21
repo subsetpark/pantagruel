@@ -1120,6 +1120,76 @@ let comprehension_tests =
       test_exists_comprehension_standalone_fails;
   ]
 
+(* --- Closure tests --- *)
+
+let test_closure_axiom_generation () =
+  (* Closure axioms should be grounded (no forall/exists) *)
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       Block.\n\
+       parent b: Block => Block + Nothing.\n\
+       ancestor b: Block => [Block] = closure parent.\n\
+       ---\n\
+       all b: Block | ~(b in ancestor b).\n"
+  in
+  let small_config =
+    Smt.{ bound = 2; steps = 0; domain_bounds = Env.StringMap.empty }
+  in
+  let queries = Smt.generate_queries small_config env doc in
+  let inv =
+    List.find (fun (q : Smt.query) -> q.kind = Smt.InvariantConsistency) queries
+  in
+  (* Should have grounded closure axioms for ancestor *)
+  check bool "has ancestor" true (contains inv.smt2 "(ancestor");
+  check bool "has ancestor_prime" true (contains inv.smt2 "(ancestor_prime");
+  (* Should be quantifier-free in closure section *)
+  check bool "no exists in axioms" false (contains inv.smt2 "(exists ((_cz_");
+  (* Should define ancestor for each pair *)
+  check bool "has Block_0 Block_0 pair" true
+    (contains inv.smt2 "(select (ancestor Block_0) Block_0)");
+  check bool "has Block_0 Block_1 pair" true
+    (contains inv.smt2 "(select (ancestor Block_0) Block_1)")
+
+let test_closure_no_frame_condition () =
+  (* Closure rules should NOT generate frame conditions *)
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       context Ctx.\n\
+       Node.\n\
+       {Ctx} children n: Node => [Node].\n\
+       descendants n: Node => [Node] = closure children.\n\
+       ---\n\
+       all n: Node | ~(n in descendants n).\n\
+       where\n\
+       Ctx ~> AddChild | p: Node, c: Node.\n\
+       ---\n\
+       c in children' p.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  let contra =
+    List.find (fun (q : Smt.query) -> q.kind = Smt.Contradiction) queries
+  in
+  (* Frame conditions should mention children but NOT descendants *)
+  let frame_names =
+    List.filter
+      (fun (name, _) ->
+        String.length name >= 5 && String.sub name 0 5 = "frame")
+      contra.assertion_names
+  in
+  let descendants_frame =
+    List.exists (fun (_, text) -> contains text "descendants") frame_names
+  in
+  check bool "no descendants frame condition" false descendants_frame
+
+let closure_tests =
+  [
+    test_case "closure axiom generation" `Quick test_closure_axiom_generation;
+    test_case "closure no frame condition" `Quick
+      test_closure_no_frame_condition;
+  ]
+
 let () =
   run "SMT"
     [
@@ -1132,4 +1202,5 @@ let () =
       ("bmc", bmc_tests);
       ("domain_bounds", domain_bounds_tests);
       ("comprehensions", comprehension_tests);
+      ("closure", closure_tests);
     ]

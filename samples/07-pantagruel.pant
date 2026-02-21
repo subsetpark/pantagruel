@@ -2,8 +2,6 @@ module PANTAGRUEL.
 
 > A specification of the Pantagruel specification language.
 
-> Core syntactic domains
-
 Document.
 
 > The type-checking environment has two namespaces:

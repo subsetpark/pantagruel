@@ -115,6 +115,12 @@ type declaration =
       guards : guard list;
       context : upper_ident option;  (** Ctx in "Ctx ~> action" *)
     }
+  | DeclClosure of {
+      name : lower_ident;
+      param : param;
+      return_type : type_expr;
+      target : lower_ident;
+    }
 [@@deriving show, eq]
 
 type chapter = {

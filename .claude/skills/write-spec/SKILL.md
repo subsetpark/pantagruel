@@ -210,6 +210,9 @@ Accounts ~> Withdraw | a: Account, amount: Nat.
 
 // Action with guard (precondition)
 ~> Withdraw | a: Account, amount: Nat, balance a >= amount.
+
+// Closure (transitive closure of a rule)
+ancestor b: Block => [Block] = closure parent.
 ```
 
 ### Types

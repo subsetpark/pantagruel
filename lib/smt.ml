@@ -163,7 +163,8 @@ let collect_composite_types env =
   Env.StringMap.iter
     (fun _ entry ->
       match entry.Env.kind with
-      | Env.KRule ty | Env.KVar ty | Env.KAlias ty -> visit ty
+      | Env.KRule ty | Env.KVar ty | Env.KAlias ty | Env.KClosure (ty, _) ->
+          visit ty
       | Env.KDomain -> ())
     env.Env.terms;
   Env.StringMap.iter
@@ -252,7 +253,7 @@ let declare_functions env =
   Env.StringMap.iter
     (fun name entry ->
       match entry.Env.kind with
-      | Env.KRule ty -> (
+      | Env.KRule ty | Env.KClosure (ty, _) -> (
           let sname = sanitize_ident name in
           match decompose_func_ty ty with
           | Some ([], ret) ->
@@ -272,6 +273,98 @@ let declare_functions env =
                 (Printf.sprintf "(declare-fun %s_prime (%s) %s)\n" sname
                    param_sorts (sort_of_ty ret))
           | None -> ())
+      | _ -> ())
+    env.Env.terms;
+  Buffer.contents buf
+
+(** Generate closure axioms for a single closure rule. Produces finite-unrolling
+    axioms up to [bound-1] steps. [is_prime] controls whether to use primed
+    function names. *)
+let generate_closure_axiom config env ~is_prime closure_name target_name
+    domain_name =
+  let bound = bound_for config domain_name in
+  let cname = sanitize_ident closure_name ^ if is_prime then "_prime" else "" in
+  let tname = sanitize_ident target_name ^ if is_prime then "_prime" else "" in
+  (* Determine target shape to generate the right step expression *)
+  let target_entry = Env.lookup_term target_name env in
+  let target_is_list =
+    match target_entry with
+    | Some { kind = Env.KRule (TyFunc (_, Some (TyList _))); _ } -> true
+    | _ -> false
+  in
+  let step_expr x y =
+    if target_is_list then Printf.sprintf "(select (%s %s) %s)" tname x y
+    else
+      let sum_sort = sum_sort_name [ TyDomain domain_name; TyNothing ] in
+      Printf.sprintf "(= (%s %s) (mk_%s_0 %s))" tname x sum_sort y
+  in
+  (* Fully grounded axioms: enumerate all (x, y) pairs and expand
+     intermediate chains over concrete domain elements.  This avoids
+     quantifier alternation (forall-exists) that causes solver timeouts. *)
+  let elems = domain_elements domain_name bound in
+  let max_depth = max 1 (bound - 1) in
+  let buf = Buffer.create 512 in
+  List.iter
+    (fun x ->
+      List.iter
+        (fun y ->
+          (* Build chain disjuncts for depths 1..max_depth *)
+          let chains = ref [] in
+          for depth = 1 to max_depth do
+            if depth = 1 then chains := step_expr x y :: !chains
+            else begin
+              (* Enumerate all tuples of (depth-1) intermediate nodes *)
+              let rec enum_intermediates k =
+                if k = 0 then [ [] ]
+                else
+                  List.concat_map
+                    (fun z ->
+                      List.map
+                        (fun rest -> z :: rest)
+                        (enum_intermediates (k - 1)))
+                    elems
+              in
+              let all_intermediates = enum_intermediates (depth - 1) in
+              List.iter
+                (fun intermediates ->
+                  let nodes = [ x ] @ intermediates @ [ y ] in
+                  let steps =
+                    List.init depth (fun i ->
+                        step_expr (List.nth nodes i) (List.nth nodes (i + 1)))
+                  in
+                  let chain =
+                    match steps with
+                    | [ s ] -> s
+                    | _ -> Printf.sprintf "(and %s)" (String.concat " " steps)
+                  in
+                  chains := chain :: !chains)
+                all_intermediates
+            end
+          done;
+          let all_chains = List.rev !chains in
+          let rhs =
+            match all_chains with
+            | [ single ] -> single
+            | _ -> Printf.sprintf "(or %s)" (String.concat " " all_chains)
+          in
+          Buffer.add_string buf
+            (Printf.sprintf "(assert (= (select (%s %s) %s) %s))\n" cname x y
+               rhs))
+        elems)
+    elems;
+  Buffer.contents buf
+
+(** Generate all closure axioms for the environment *)
+let generate_closure_axioms config env =
+  let buf = Buffer.create 256 in
+  Env.StringMap.iter
+    (fun name entry ->
+      match entry.Env.kind with
+      | Env.KClosure (TyFunc ([ TyDomain dname ], _), target) ->
+          Buffer.add_string buf
+            (generate_closure_axiom config env ~is_prime:false name target dname);
+          Buffer.add_string buf
+            (generate_closure_axiom config env ~is_prime:true name target dname)
       | _ -> ())
     env.Env.terms;
   Buffer.contents buf
@@ -352,6 +445,11 @@ let generate_preamble ?(constrain_primed = true)
   Buffer.add_string buf (declare_composite_types env);
   Buffer.add_string buf "\n; --- Function declarations ---\n";
   Buffer.add_string buf (declare_functions env);
+  let closure_axioms = generate_closure_axioms config env in
+  if closure_axioms <> "" then begin
+    Buffer.add_string buf "\n; --- Closure axioms ---\n";
+    Buffer.add_string buf closure_axioms
+  end;
   if include_type_constraints then begin
     Buffer.add_string buf "\n; --- Type constraints ---\n";
     Buffer.add_string buf
@@ -1197,7 +1295,7 @@ let build_value_terms config env (params : param list) =
     Env.StringMap.fold
       (fun name entry acc ->
         match entry.Env.kind with
-        | Env.KRule ty -> (
+        | Env.KRule ty | Env.KClosure (ty, _) -> (
             let sname = sanitize_ident name in
             match decompose_func_ty ty with
             | Some ([], _ret) ->
@@ -1519,7 +1617,7 @@ let build_invariant_value_terms config env =
   Env.StringMap.fold
     (fun name entry acc ->
       match entry.Env.kind with
-      | Env.KRule ty -> (
+      | Env.KRule ty | Env.KClosure (ty, _) -> (
           let sname = sanitize_ident name in
           match decompose_func_ty ty with
           | Some ([], _ret) -> sname :: acc
@@ -1661,7 +1759,7 @@ let collect_rule_names env =
   Env.StringMap.fold
     (fun name entry acc ->
       match entry.Env.kind with
-      | Env.KRule ty -> (
+      | Env.KRule ty | Env.KClosure (ty, _) -> (
           let sname = sanitize_ident name in
           match decompose_func_ty ty with Some _ -> sname :: acc | None -> acc)
       | _ -> acc)
@@ -1696,7 +1794,7 @@ let declare_step_functions config env steps =
   Env.StringMap.iter
     (fun name entry ->
       match entry.Env.kind with
-      | Env.KRule ty -> (
+      | Env.KRule ty | Env.KClosure (ty, _) -> (
           let sname = sanitize_ident name in
           match decompose_func_ty ty with
           | Some ([], ret) ->
@@ -1729,6 +1827,15 @@ let declare_step_functions config env steps =
         Buffer.add_string buf (Printf.sprintf "(assert %s)\n" renamed))
       base_exprs
   done;
+  (* Closure axioms for each step *)
+  let base_closure_axioms = generate_closure_axioms config env in
+  if base_closure_axioms <> "" then begin
+    Buffer.add_string buf "\n; --- Closure axioms for all steps ---\n";
+    for i = 0 to steps do
+      let renamed = rename_smt_for_step env base_closure_axioms i in
+      Buffer.add_string buf renamed
+    done
+  end;
   Buffer.contents buf
 
 (** Build SMT value terms for all BMC steps *)

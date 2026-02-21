@@ -77,6 +77,7 @@ Pantagruel is a specification language checker written in OCaml. It processes `.
 - Tuple projection: `point.1`, `point.2`
 - List cardinality: `#users`
 - Membership: `x in Domain`
+- Closures: `ancestor b: Block => [Block] = closure parent.` derives transitive closure of an endorelation
 - Contexts: `context Accounts.` at module level, `{Accounts} balance ...` for footprint, `Accounts ~> Withdraw | ...` for actions
 
 ## Dependencies

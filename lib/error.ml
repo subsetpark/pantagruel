@@ -98,6 +98,8 @@ let format_collect_error err =
       fmt loc (Printf.sprintf "Duplicate context '%s'" name)
   | UndefinedContext (name, loc) ->
       fmt loc (Printf.sprintf "Undefined context '%s'" name)
+  | ClosureTargetInvalid (name, reason, loc) ->
+      fmt loc (Printf.sprintf "Invalid closure '%s': %s" name reason)
 
 (** Format a type warning with location prefix *)
 let format_type_warning err =

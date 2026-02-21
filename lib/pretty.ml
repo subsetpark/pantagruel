@@ -190,6 +190,9 @@ let pp_declaration fmt = function
       if guards <> [] then
         fprintf fmt ", %a" (pp_print_list ~pp_sep:pp_sep_comma pp_guard) guards;
       pp_print_char fmt '.'
+  | DeclClosure { name; param; return_type; target } ->
+      fprintf fmt "%s %a => %a = closure %s." name pp_param param pp_type_expr
+        return_type target
 
 (* --- String-returning wrappers --- *)
 
