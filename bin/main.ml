@@ -1,6 +1,6 @@
 (** Pantagruel CLI *)
 
-let version = "0.1.0"
+let version = "0.20.0"
 
 let usage =
   "pant [options] [file.pant]\n\n\
@@ -114,6 +114,17 @@ let check_doc doc =
     Pantagruel.Pretty.output_formatted doc;
     0
   end
+  else if !print_markdown then begin
+    (* Markdown only needs collected declarations, not type checking *)
+    let registry = Pantagruel.Module.scan_module_path !module_path in
+    match Pantagruel.Module.collect_with_imports registry doc with
+    | Ok env ->
+        Pantagruel.Markdown_output.output env doc;
+        0
+    | Error e ->
+        prerr_endline (format_module_error e);
+        1
+  end
   else begin
     (* Set up module registry *)
     let registry = Pantagruel.Module.scan_module_path !module_path in
@@ -147,8 +158,7 @@ let check_doc doc =
           end
         end
         else begin
-          if !print_json then Pantagruel.Json_output.output_json env doc
-          else if !print_markdown then Pantagruel.Markdown_output.output env doc;
+          if !print_json then Pantagruel.Json_output.output_json env doc;
           0
         end
     | Error e ->

@@ -194,8 +194,9 @@ let rec load_module registry name =
             result
       end
 
-(** Check a document with its imports, returning the resolved environment *)
-let check_with_imports registry (doc : Ast.document) =
+(** Collect declarations from a document and its imports, without type checking
+*)
+let collect_with_imports registry (doc : Ast.document) =
   let mod_name = Option.value ~default:"" doc.module_name in
   (* Load all imports *)
   let* import_env =
@@ -209,12 +210,13 @@ let check_with_imports registry (doc : Ast.document) =
   in
 
   (* Collect declarations on top of import env *)
-  let* full_env =
-    match Collect.collect_all ~base_env:import_env doc with
-    | Ok env -> Ok env
-    | Error e -> Error (ParseError ("<main>", Error.format_collect_error e))
-  in
+  match Collect.collect_all ~base_env:import_env doc with
+  | Ok env -> Ok env
+  | Error e -> Error (ParseError ("<main>", Error.format_collect_error e))
 
+(** Check a document with its imports, returning the resolved environment *)
+let check_with_imports registry (doc : Ast.document) =
+  let* full_env = collect_with_imports registry doc in
   (* Type check *)
   match Check.check_document full_env doc with
   | Ok () -> Ok full_env
