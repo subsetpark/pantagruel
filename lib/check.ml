@@ -128,8 +128,14 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
       | _ -> Error (NotAProduct (ty, ctx.loc)))
   | EBinop (op, e1, e2) -> check_binop ctx op e1 e2
   | EUnop (op, e) -> check_unop ctx op e
-  | EForall (params, guards, body) -> check_quantifier ctx params guards body
-  | EExists (params, guards, body) -> check_quantifier ctx params guards body
+  | EForall (params, guards, body) ->
+      let* body_ty = check_quantifier ctx params guards body in
+      Ok (if equal_ty body_ty TyBool then TyBool else TyList body_ty)
+  | EExists (params, guards, body) ->
+      let* body_ty = check_quantifier ctx params guards body in
+      Ok
+        (if equal_ty body_ty TyBool then TyBool
+         else TySum [ body_ty; TyNothing ])
   | EInitially e -> infer_type ctx e
   | EOverride (name, pairs) -> check_override ctx name pairs
 
@@ -303,9 +309,7 @@ and check_quantifier ctx params guards body =
   in
   let env'' = Env.with_vars guard_bindings ctx'.env in
   let ctx'' = { ctx with env = env'' } in
-  let* body_ty = infer_type ctx'' body in
-  if equal_ty body_ty TyBool then Ok TyBool
-  else Error (ExpectedBool (body_ty, ctx.loc))
+  infer_type ctx'' body
 
 and check_override ctx name pairs =
   match Env.lookup_term name ctx.env with

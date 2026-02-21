@@ -322,8 +322,28 @@ This is a symmetric check. `Nat = Int` is valid (both numeric, join is `Int`), b
 2. Each membership binding *x* `in` *e*, where *e* : `[T]`, introduces *x* with type *T*.
 3. Guard expressions (bare boolean conditions in the binding list) must have type `Bool`.
 4. Bindings and guards are processed left to right; each may reference names introduced earlier in the list.
-5. The body must have type `Bool`.
-6. Result type: `Bool`.
+5. If the body has type `Bool`, the quantifier is a logical proposition with result type `Bool`.
+6. If the body has a non-`Bool` type *U*:
+   - `all` produces a **comprehension** (list) with result type `[U]`.
+   - `some` produces a **selection** with result type `U + Nothing`.
+
+#### Comprehensions
+
+When `all` or `some` has a non-`Bool` body, it acts as a comprehension rather than a logical quantifier. No new syntax is needed — the body type determines the semantics.
+
+`all x: D | f x` where `f : D → U`:
+- Type: `[U]` — the list of values `f x` for every `x` in `D`.
+- Usable with `in` (membership), `#` (cardinality), and `subset`.
+- Example: `r in (all u: User | role u)` — is `r` one of the roles assigned to any user?
+
+`all x in xs, guard | f x` where `xs : [D]`, `f : D → U`:
+- Type: `[U]` — the list of values `f x` for every `x` in `xs` satisfying the guard.
+- Example: `#(all c in chapters, is-empty? c | c) = 0` — no chapters are empty.
+
+`some x: D | f x` where `f : D → U`:
+- Type: `U + Nothing` — nondeterministic selection.
+
+Comprehensions cannot appear as standalone propositions (the body of a chapter must be `Bool`). They are expanded at the point of use — inside `in`, `#`, or `subset` — analogous to how domain names expand when used as set values.
 
 #### Primed Expressions
 
@@ -554,6 +574,23 @@ some i in items | price i < 100.  // There exists i in items
 ```
 
 The `x in xs` binding form infers the type of `x` from the element type of the list `xs`. If `xs: [T]`, then `x: T`.
+
+### Comprehensions
+
+When the body of `all` or `some` is non-`Bool`, the quantifier acts as a comprehension:
+
+```
+// List comprehension: [Role]
+all u: User | role u
+
+// Filtered comprehension: [User]
+all u in users, active u | u
+
+// Used with membership, cardinality, subset
+r in (all u: User | role u).           // Is r a role of any user?
+#(all u in users, active u | u) > 0.   // At least one active user
+(all u: User | role u) subset Role.    // All assigned roles are valid
+```
 
 ### Primed Expressions (State Transitions)
 

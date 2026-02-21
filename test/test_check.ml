@@ -831,6 +831,126 @@ make-widget => LIB::Widget.
 make-widget in LIB::Widget.
 |}
 
+(** Check that a document fails with a specific error type *)
+let check_error str pred =
+  let doc = parse str in
+  match
+    Collect.collect_all
+      ~base_env:(Env.empty (Option.value ~default:"" doc.module_name))
+      doc
+  with
+  | Error _ -> () (* Collection error also OK *)
+  | Ok env -> (
+      match Check.check_document env doc with
+      | Ok () -> fail "Expected error"
+      | Error e ->
+          if not (pred e) then
+            fail
+              (Printf.sprintf "Wrong error type: %s" (Check.show_type_error e)))
+
+(* --- Comprehension tests --- *)
+
+let test_forall_comprehension () =
+  (* all x: D | f x where f: D → U types as [U] — used inside 'in' *)
+  check_ok
+    {|module TEST.
+
+User.
+Role.
+role u: User => Role.
+---
+all r: Role | r in (all u: User | role u).
+|}
+
+let test_exists_comprehension () =
+  (* some x: D | f x where f: D → U — used in equality *)
+  check_ok
+    {|module TEST.
+
+User.
+Role.
+role u: User => Role.
+admin => Role.
+---
+some u: User | role u = admin.
+|}
+
+let test_forall_bool_backward_compat () =
+  (* all with Bool body still produces Bool *)
+  check_ok
+    {|module TEST.
+
+User.
+active u: User => Bool.
+---
+all u: User | active u.
+|}
+
+let test_forall_comprehension_with_guard () =
+  (* all x: D, guard | f x with guard types as [U] *)
+  check_ok
+    {|module TEST.
+
+User.
+Role.
+active u: User => Bool.
+role u: User => Role.
+---
+all r: Role | r in (all u: User, active u | role u).
+|}
+
+let test_forall_comprehension_cardinality () =
+  (* #(all x: D | f x) types as Nat0 *)
+  check_ok
+    {|module TEST.
+
+User.
+Role.
+role u: User => Role.
+---
+#(all u: User | role u) >= 0.
+|}
+
+let test_membership_comprehension () =
+  (* all x in xs | f x where xs: [D] types as [U] — the common form *)
+  check_ok
+    {|module TEST.
+
+User.
+Role.
+role u: User => Role.
+admins => [User].
+---
+all r: Role | r in (all u in admins | role u).
+|}
+
+let test_membership_comprehension_card () =
+  (* #(all x in xs | x) — count filtered list *)
+  check_ok
+    {|module TEST.
+
+User.
+active u: User => Bool.
+users => [User].
+---
+#(all u in users, active u | u) >= 0.
+|}
+
+let test_standalone_comprehension_fails () =
+  (* Non-Bool body as standalone proposition → PropositionNotBool *)
+  check_error
+    {|module TEST.
+
+User.
+Role.
+role u: User => Role.
+---
+all u: User | role u.
+|}
+    (function
+    | Check.PropositionNotBool _ -> true
+    | _ -> false)
+
 let () =
   run "Check"
     [
@@ -930,5 +1050,22 @@ let () =
           test_case "undefined context" `Quick test_undefined_context;
           test_case "no context unrestricted" `Quick
             test_no_context_priming_unrestricted;
+        ] );
+      ( "comprehension",
+        [
+          test_case "forall comprehension" `Quick test_forall_comprehension;
+          test_case "exists comprehension" `Quick test_exists_comprehension;
+          test_case "forall bool backward compat" `Quick
+            test_forall_bool_backward_compat;
+          test_case "forall with guard" `Quick
+            test_forall_comprehension_with_guard;
+          test_case "forall cardinality" `Quick
+            test_forall_comprehension_cardinality;
+          test_case "membership comprehension" `Quick
+            test_membership_comprehension;
+          test_case "membership comprehension card" `Quick
+            test_membership_comprehension_card;
+          test_case "standalone fails" `Quick
+            test_standalone_comprehension_fails;
         ] );
     ]

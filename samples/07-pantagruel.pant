@@ -3,171 +3,155 @@ module PANTAGRUEL.
 > A specification of the Pantagruel specification language.
 
 > Core syntactic domains
+
 Document.
-Chapter.
-Declaration.
-Expr.
-Type.
-Name.
-
-> A guard is a parameter binding, a membership binding, or a boolean expression.
-Guard.
-is-param-guard? g: Guard => Bool.
-is-in-guard? g: Guard => Bool.
-is-expr-guard? g: Guard => Bool.
-guard-expr g: Guard => Expr.
-
-> A proposition is an expression that must have type Bool.
-Proposition = Expr.
-
-> Every document has a module name, a list of imports, and one or more chapters.
-module-name d: Document => Name.
-chapters d: Document => [Chapter].
-imports d: Document => [Name].
-
-> A document may declare named contexts at module level.
-contexts d: Document => [Name].
-
-> Each chapter has a non-empty head of declarations and a body of propositions.
-head c: Chapter => [Declaration].
-body c: Chapter => [Proposition].
-
-> Every declaration is exactly one of four kinds.
-is-domain? decl: Declaration => Bool.
-is-alias? decl: Declaration => Bool.
-is-rule? decl: Declaration => Bool.
-is-action? decl: Declaration => Bool.
-
-> Every declaration has a name.
-decl-name decl: Declaration => Name.
-
-> An alias declaration has an associated type expression.
-alias-type decl: Declaration => Type.
-
-> A rule has typed parameters, optional guards, and a return type.
-rule-params decl: Declaration => [Name].
-rule-param-types decl: Declaration => [Type].
-rule-guards decl: Declaration => [Guard].
-rule-return-type decl: Declaration => Type.
-
-> A rule may declare membership in one or more contexts.
-rule-contexts decl: Declaration => [Name].
-
-> An action has a free-form label, optional parameters, optional guards,
-> and an optional context annotation.
-action-label decl: Declaration => Name.
-action-params decl: Declaration => [Name].
-action-param-types decl: Declaration => [Type].
-action-guards decl: Declaration => [Guard].
-action-context decl: Declaration => Name + Nothing.
-
----
-> Every document contains at least one chapter.
-all doc: Document | #chapters doc >= 1.
-
-> Every chapter head contains at least one declaration.
-all doc: Document, c in chapters doc | #head c >= 1.
-
-> Each declaration is exactly one kind: domain, alias, rule, or action.
-all decl: Declaration |
-    is-domain? decl and ~is-alias? decl and ~is-rule? decl and ~is-action? decl or
-    is-alias? decl and ~is-domain? decl and ~is-rule? decl and ~is-action? decl or
-    is-rule? decl and ~is-domain? decl and ~is-alias? decl and ~is-action? decl or
-    is-action? decl and ~is-domain? decl and ~is-alias? decl and ~is-rule? decl.
-
-> Every rule has the same number of parameter names as parameter types.
-all decl: Declaration, is-rule? decl |
-    #rule-params decl = #rule-param-types decl.
-
-> Each chapter may contain at most one action.
-all c: Chapter, d1 in head c, d2 in head c,
-    is-action? d1, is-action? d2 |
-    d1 = d2.
-
-> Every context name in a rule's footprint must be declared at module level.
-all doc: Document, decl: Declaration, is-rule? decl,
-    ctx in rule-contexts decl |
-    ctx in contexts doc.
-
-where
-
-> Syntactic type expressions are written by the user
-> and fall into exactly one of these categories.
-is-name? t: Type => Bool.
-is-qualified? t: Type => Bool.
-is-product? t: Type => Bool.
-is-sum? t: Type => Bool.
-is-list? t: Type => Bool.
-
-> Accessors for each type expression form.
-type-name t: Type => Name.
-qualified-module t: Type => Name.
-qualified-name t: Type => Name.
-product-components t: Type => [Type].
-sum-components t: Type => [Type].
-list-element t: Type => Type.
-
----
-> Every syntactic type expression is exactly one kind.
-all t: Type |
-    is-name? t or is-qualified? t or is-product? t or
-    is-sum? t or is-list? t.
-
-> Product types have at least two components.
-all t: Type, is-product? t | #product-components t >= 2.
-
-> Sum types have at least two components.
-all t: Type, is-sum? t | #sum-components t >= 2.
-
-where
 
 > The type-checking environment has two namespaces:
 > types (domains and aliases, keyed by uppercase names) and
 > terms (rules and variables, keyed by lowercase names).
+
 Env.
 
-> Entry kinds distinguish what a name refers to.
-EntryKind.
-is-domain-entry? k: EntryKind => Bool.
-is-alias-entry? k: EntryKind => Bool.
-is-rule-entry? k: EntryKind => Bool.
-is-var-entry? k: EntryKind => Bool.
+> A document is valid when every chapter is valid.
 
-> Each entry records a kind, a resolved type, and the chapter where it was declared.
-Entry.
-entry-kind e: Entry => EntryKind.
-entry-chapter e: Entry => Nat0.
-
-> Looking up a name in either namespace.
-has-type? name: Name, env: Env => Bool.
-has-term? name: Name, env: Env => Bool.
-lookup-type name: Name, env: Env => Entry.
-lookup-term name: Name, env: Env => Entry.
-
-> The empty environment has no bindings.
-empty-env => Env.
+valid? d: Document, env: Env => Bool.
 
 ---
-> The empty environment contains no type-namespace bindings.
-all name: Name | ~has-type? name empty-env.
 
-> The empty environment contains no term-namespace bindings.
-all name: Name | ~has-term? name empty-env.
+> Every document contains at least one chapter.
 
-> An entry kind is exactly one of domain, alias, rule, or variable.
-all k: EntryKind |
-    is-domain-entry? k and ~is-alias-entry? k and ~is-rule-entry? k and ~is-var-entry? k or
-    is-alias-entry? k and ~is-domain-entry? k and ~is-rule-entry? k and ~is-var-entry? k or
-    is-rule-entry? k and ~is-domain-entry? k and ~is-alias-entry? k and ~is-var-entry? k or
-    is-var-entry? k and ~is-domain-entry? k and ~is-alias-entry? k and ~is-rule-entry? k.
+all doc: Document | #chapters doc >= 1.
+
+> Every chapter head contains at least one declaration.
+
+all doc: Document, c in chapters doc | #head c >= 1.
+
+> Each chapter may contain at most one action.
+
+all c: Chapter | #(all d in head c, decl-kind d = dk-action | d) <= 1.
+
+> Every context name in a rule's footprint must be declared at module level.
+
+all doc: Document, decl: Declaration, decl-kind decl = dk-rule | rule-contexts decl subset contexts doc.
+
+> Boolean literals have type Bool.
+
+all e: Expr, env: Env, is-lit-bool? e | infer e env = ty-bool.
+
+> The natural literal zero has type Nat0; positive naturals have type Nat.
+
+all e: Expr, env: Env, is-lit-nat? e, nat-value e = 0 | infer e env = ty-nat0.
+all e: Expr, env: Env, is-lit-nat? e, nat-value e >= 1 | infer e env = ty-nat.
+
+> Real literals have type Real.
+
+all e: Expr, env: Env, is-lit-real? e | infer e env = ty-real.
+
+> String literals have type String.
+
+all e: Expr, env: Env, is-lit-string? e | infer e env = ty-string.
+
+> A domain name in expression position has type [D], the list of all its values.
+
+all e: Expr, env: Env, is-domain-ref? e | infer e env = ty-list (ty-domain (domain-ref-name e)).
+
+> Nullary rules are applied automatically on reference;
+> their type is the return type, not a function type.
+
+> Tuple construction yields a product type of the element types.
+
+> Projection extracts the k-th component (1-indexed) from a product type.
+
+> Quantifiers with Bool bodies are logical propositions.
+
+all e: Expr, env: Env, is-forall? e, infer (quant-body e) env = ty-bool | infer e env = ty-bool.
+all e: Expr, env: Env, is-exists? e, infer (quant-body e) env = ty-bool | infer e env = ty-bool.
+
+> Quantifiers with non-Bool bodies are comprehensions:
+> `all` produces a list, `some` produces a selection.
+
+all e: Expr, env: Env, is-forall? e, infer (quant-body e) env != ty-bool | infer e env = ty-list (infer (quant-body e) env).
+all e: Expr, env: Env, is-exists? e, infer (quant-body e) env != ty-bool | infer e env = ty-or (infer (quant-body e) env) ty-nothing.
+
+> If a document is valid, then every chapter in it is valid.
+
+all d: Document, env: Env | valid? d env -> (all c in chapters d | chapter-valid? c env).
+
+> If a chapter is valid, then every proposition in its body has type Bool.
+
+all c: Chapter, env: Env | chapter-valid? c env -> (all p in body c | infer p env = ty-bool).
+
+> If a chapter has no action, then no proposition in its body
+> may contain a primed expression.
+
+> Only rules may be primed, not local variables.
+
+> Every expression guard on a rule declaration must have type Bool.
+
+all decl: Declaration, env: Env, decl-kind decl = dk-rule, g in rule-guards decl, guard-kind g = gk-expr | infer (guard-expr g) env = ty-bool.
+
+> Every expression guard on an action declaration must have type Bool.
+
+all decl: Declaration, env: Env, decl-kind decl = dk-action, g in action-guards decl, guard-kind g = gk-expr | infer (guard-expr g) env = ty-bool.
 
 where
 
+Chapter.
+Declaration.
+Expr.
+Name.
+
+> A guard is a parameter binding, a membership binding, or a boolean expression.
+
+Guard.
+
+> Guards are classified by kind.
+
+GuardKind.
+gk-expr => GuardKind.
+gk-param => GuardKind.
+gk-in => GuardKind.
+guard-kind g: Guard => GuardKind.
+
+guard-expr g: Guard => Expr.
+
+> A proposition is an expression that must have type Bool.
+
+Proposition = Expr.
+chapters d: Document => [Chapter].
+
+> A document may declare named contexts at module level.
+
+contexts d: Document => [Name].
+
+> Each chapter has a non-empty head of declarations and a body of propositions.
+
+head c: Chapter => [Declaration].
+body c: Chapter => [Proposition].
+
+> Declarations are classified by kind.
+
+DeclKind.
+dk-domain => DeclKind.
+dk-alias => DeclKind.
+dk-rule => DeclKind.
+dk-action => DeclKind.
+decl-kind decl: Declaration => DeclKind.
+
+rule-guards decl: Declaration => [Guard].
+
+> A rule may declare membership in one or more contexts.
+
+rule-contexts decl: Declaration => [Name].
+action-guards decl: Declaration => [Guard].
+
 > Internal resolved types, produced by the type checker.
 > These are distinct from syntactic type expressions (Type).
+
 Ty.
 
 > Seven built-in primitive types are predefined.
+
 ty-bool => Ty.
 ty-nat => Ty.
 ty-nat0 => Ty.
@@ -177,159 +161,190 @@ ty-string => Ty.
 ty-nothing => Ty.
 
 > Compound type constructors.
+
 ty-domain name: Name => Ty.
-ty-product ts: [Ty] => Ty.
-ty-sum ts: [Ty] => Ty.
 ty-list t: Ty => Ty.
-
-> Function types arise from rule declarations.
-> The return type is Nothing when absent (actions have no return type).
-ty-func params: [Ty], ret: Ty => Ty.
-
-> The subtype relation is a partial order on types.
-subtype? t1: Ty, t2: Ty => Bool.
-
-> Two types are compatible when they have a least upper bound (join).
-compatible? t1: Ty, t2: Ty => Bool.
-
-> The join of two compatible types is their least upper bound.
-join t1: Ty, t2: Ty => Ty.
-
-> A type is numeric if it belongs to the numeric chain.
-is-numeric? t: Ty => Bool.
-
----
-> Every type is a subtype of itself (reflexivity).
-all t: Ty | subtype? t t.
-
-> Nothing is a subtype of every type (bottom).
-all t: Ty | subtype? ty-nothing t.
-
-> The numeric types form a strict chain: Nat < Nat0 < Int < Real.
-subtype? ty-nat ty-nat0.
-subtype? ty-nat0 ty-int.
-subtype? ty-int ty-real.
-
-> Subtyping is transitive.
-all t1: Ty, t2: Ty, t3: Ty |
-    subtype? t1 t2 and subtype? t2 t3 -> subtype? t1 t3.
-
-> By transitivity, Nat is a subtype of Int and Real.
-subtype? ty-nat ty-int.
-subtype? ty-nat ty-real.
-subtype? ty-nat0 ty-real.
-
-> Subtyping lifts covariantly through list types.
-all s: Ty, t: Ty |
-    subtype? s t -> subtype? (ty-list s) (ty-list t).
-
-> When two types are compatible, the join is an upper bound of both.
-all t1: Ty, t2: Ty, compatible? t1 t2 |
-    subtype? t1 (join t1 t2) and subtype? t2 (join t1 t2).
-
-> Equal types are always compatible, and their join is themselves.
-all t: Ty | compatible? t t and join t t = t.
-
-> When one type is a subtype of another, the join is the supertype.
-all s: Ty, t: Ty, subtype? s t |
-    compatible? s t and join s t = t.
-
-> Exactly the four numeric types satisfy the numeric predicate.
-is-numeric? ty-nat.
-is-numeric? ty-nat0.
-is-numeric? ty-int.
-is-numeric? ty-real.
-
-where
+ty-or t1: Ty, t2: Ty => Ty.
 
 > The type checker infers a resolved type for each expression.
-infer e: Expr, env: Env => Ty.
 
-> Expression form predicates.
-is-var? e: Expr => Bool.
+infer e: Expr, env: Env => Ty.
 is-domain-ref? e: Expr => Bool.
 is-lit-bool? e: Expr => Bool.
 is-lit-nat? e: Expr => Bool.
 is-lit-real? e: Expr => Bool.
 is-lit-string? e: Expr => Bool.
-is-app? e: Expr => Bool.
-is-tuple? e: Expr => Bool.
-is-proj? e: Expr => Bool.
-is-primed? e: Expr => Bool.
-is-override? e: Expr => Bool.
 is-forall? e: Expr => Bool.
 is-exists? e: Expr => Bool.
-is-binop? e: Expr => Bool.
-is-unop? e: Expr => Bool.
-
-> Expression accessors.
-var-name e: Expr => Name.
 domain-ref-name e: Expr => Name.
-app-func e: Expr => Expr.
-app-args e: Expr => [Expr].
-tuple-elems e: Expr => [Expr].
-proj-expr e: Expr => Expr.
-proj-index e: Expr => Nat.
-primed-name e: Expr => Name.
-override-name e: Expr => Name.
 quant-body e: Expr => Expr.
 
 > The value of a natural literal (zero is Nat0, positive is Nat).
+
 nat-value e: Expr => Nat0.
+chapter-valid? c: Chapter, env: Env => Bool.
 
 ---
-> Boolean literals have type Bool.
-all e: Expr, env: Env, is-lit-bool? e | infer e env = ty-bool.
 
-> The natural literal zero has type Nat0; positive naturals have type Nat.
-all e: Expr, env: Env, is-lit-nat? e, nat-value e = 0 |
-    infer e env = ty-nat0.
-all e: Expr, env: Env, is-lit-nat? e, nat-value e >= 1 |
-    infer e env = ty-nat.
+> Every rule has the same number of parameter names as parameter types.
 
-> Real literals have type Real.
-all e: Expr, env: Env, is-lit-real? e | infer e env = ty-real.
+all decl: Declaration, decl-kind decl = dk-rule | #rule-params decl = #rule-param-types decl.
 
-> String literals have type String.
-all e: Expr, env: Env, is-lit-string? e | infer e env = ty-string.
+> The empty environment contains no type-namespace bindings.
 
-> A domain name in expression position has type [D], the list of all its values.
-all e: Expr, env: Env, is-domain-ref? e |
-    infer e env = ty-list (ty-domain (domain-ref-name e)).
+all name: Name | ~has-type? name empty-env.
 
-> Nullary rules are applied automatically on reference;
-> their type is the return type, not a function type.
+> The empty environment contains no term-namespace bindings.
 
-> Tuple construction yields a product type of the element types.
+all name: Name | ~has-term? name empty-env.
 
-> Projection extracts the k-th component (1-indexed) from a product type.
+> Every type is a subtype of itself (reflexivity).
 
-> Both universal and existential quantifiers have type Bool
-> when their body has type Bool.
-all e: Expr, env: Env, is-forall? e |
-    infer (quant-body e) env = ty-bool -> infer e env = ty-bool.
+all t: Ty | subtype? t t.
 
-all e: Expr, env: Env, is-exists? e |
-    infer (quant-body e) env = ty-bool -> infer e env = ty-bool.
+> Nothing is a subtype of every type (bottom).
 
-> A primed expression (f') denotes the post-state value of a rule
-> and has the same type as the unprimed rule.
+all t: Ty | subtype? ty-nothing t.
 
-> A function override f[k |-> v] requires f to have arity 1
-> and preserves f's type.
+> The numeric types form a strict chain: Nat < Nat0 < Int < Real.
+
+subtype? ty-nat ty-nat0.
+subtype? ty-nat0 ty-int.
+subtype? ty-int ty-real.
+
+> Subtyping is transitive.
+
+all t1: Ty, t2: Ty, t3: Ty | subtype? t1 t2 and subtype? t2 t3 -> subtype? t1 t3.
+
+> By transitivity, Nat is a subtype of Int and Real.
+
+subtype? ty-nat ty-int.
+subtype? ty-nat ty-real.
+subtype? ty-nat0 ty-real.
+
+> Subtyping lifts covariantly through list types.
+
+all s: Ty, t: Ty | subtype? s t -> subtype? (ty-list s) (ty-list t).
+
+> When two types are compatible, the join is an upper bound of both.
+
+all t1: Ty, t2: Ty, compatible? t1 t2 | subtype? t1 (join t1 t2) and subtype? t2 (join t1 t2).
+
+> Equal types are always compatible, and their join is themselves.
+
+all t: Ty | compatible? t t and join t t = t.
+
+> When one type is a subtype of another, the join is the supertype.
+
+all s: Ty, t: Ty, subtype? s t | compatible? s t and join s t = t.
+
+> Exactly the four numeric types satisfy the numeric predicate.
+
+is-numeric? ty-nat.
+is-numeric? ty-nat0.
+is-numeric? ty-int.
+is-numeric? ty-real.
+
+> Logical operators require Bool operands and produce Bool.
+
+binop-type op-and ty-bool ty-bool = ty-bool.
+binop-type op-or ty-bool ty-bool = ty-bool.
+binop-type op-impl ty-bool ty-bool = ty-bool.
+binop-type op-iff ty-bool ty-bool = ty-bool.
+
+> Logical negation requires a Bool operand and produces Bool.
+
+unop-type op-not ty-bool = ty-bool.
+
+> Equality and inequality require compatible operands and produce Bool.
+
+all t1: Ty, t2: Ty, compatible? t1 t2 | binop-type op-eq t1 t2 = ty-bool.
+all t1: Ty, t2: Ty, compatible? t1 t2 | binop-type op-neq t1 t2 = ty-bool.
+
+> Numeric comparisons require numeric operands and produce Bool.
+
+all t1: Ty, t2: Ty, is-numeric? t1, is-numeric? t2 | binop-type op-lt t1 t2 = ty-bool.
+all t1: Ty, t2: Ty, is-numeric? t1, is-numeric? t2 | binop-type op-le t1 t2 = ty-bool.
+all t1: Ty, t2: Ty, is-numeric? t1, is-numeric? t2 | binop-type op-gt t1 t2 = ty-bool.
+all t1: Ty, t2: Ty, is-numeric? t1, is-numeric? t2 | binop-type op-ge t1 t2 = ty-bool.
+
+> Arithmetic operators require numeric operands;
+> the result type is the join (least upper bound) of the operand types.
+
+all t1: Ty, t2: Ty, is-numeric? t1, is-numeric? t2 | binop-type op-add t1 t2 = join t1 t2.
+all t1: Ty, t2: Ty, is-numeric? t1, is-numeric? t2 | binop-type op-sub t1 t2 = join t1 t2.
+all t1: Ty, t2: Ty, is-numeric? t1, is-numeric? t2 | binop-type op-mul t1 t2 = join t1 t2.
+all t1: Ty, t2: Ty, is-numeric? t1, is-numeric? t2 | binop-type op-div t1 t2 = join t1 t2.
+
+> Membership requires the left operand to be a subtype of the
+> right operand's element type, and produces Bool.
+
+all s: Ty, t: Ty, subtype? s t | binop-type op-in s (ty-list t) = ty-bool.
+
+> Subset requires both operands to be lists with the left element
+> type a subtype of the right, and produces Bool.
+
+all s: Ty, t: Ty, subtype? s t | binop-type op-subset (ty-list s) (ty-list t) = ty-bool.
+
+> Cardinality (#xs) requires a list and produces Nat0,
+> since the empty list has cardinality zero.
+
+all t: Ty | unop-type op-card (ty-list t) = ty-nat0.
+
+> Unary minus requires a numeric operand.
+> Negating a natural or non-negative integer may produce a negative number,
+> so the result is promoted to at least Int.
+
+all t: Ty, is-numeric? t, subtype? t ty-int | unop-type op-neg t = ty-int.
+unop-type op-neg ty-real = ty-real.
 
 where
 
+Type.
+
+> A rule has typed parameters, optional guards, and a return type.
+
+rule-params decl: Declaration => [Name].
+rule-param-types decl: Declaration => [Type].
+
+> Looking up a name in either namespace.
+
+has-type? name: Name, env: Env => Bool.
+has-term? name: Name, env: Env => Bool.
+
+> The empty environment has no bindings.
+
+empty-env => Env.
+
+> The subtype relation is a partial order on types.
+
+subtype? t1: Ty, t2: Ty => Bool.
+
+> Two types are compatible when they have a least upper bound (join).
+
+compatible? t1: Ty, t2: Ty => Bool.
+
+> The join of two compatible types is their least upper bound.
+
+join t1: Ty, t2: Ty => Ty.
+
+> A type is numeric if it belongs to the numeric chain.
+
+is-numeric? t: Ty => Bool.
+
 > Binary operators.
+
 BinOp.
 
 > Arithmetic: +, -, *, /
+
 op-add => BinOp.
 op-sub => BinOp.
 op-mul => BinOp.
 op-div => BinOp.
 
 > Equality and comparison: =, !=, <, >, <=, >=
+
 op-eq => BinOp.
 op-neq => BinOp.
 op-lt => BinOp.
@@ -338,116 +353,143 @@ op-gt => BinOp.
 op-ge => BinOp.
 
 > Logical: and, or, ->, <->
+
 op-and => BinOp.
 op-or => BinOp.
 op-impl => BinOp.
 op-iff => BinOp.
 
 > Set operations: in, subset
+
 op-in => BinOp.
 op-subset => BinOp.
 
 > Unary operators: not, unary minus, cardinality (#).
-UnOp.
 
+UnOp.
 op-not => UnOp.
 op-neg => UnOp.
 op-card => UnOp.
 
 > Operator typing rules assign a result type to each operator application.
+
 binop-type op: BinOp, t1: Ty, t2: Ty => Ty.
 unop-type op: UnOp, t: Ty => Ty.
 
 ---
-> Logical operators require Bool operands and produce Bool.
-binop-type op-and ty-bool ty-bool = ty-bool.
-binop-type op-or ty-bool ty-bool = ty-bool.
-binop-type op-impl ty-bool ty-bool = ty-bool.
-binop-type op-iff ty-bool ty-bool = ty-bool.
 
-> Logical negation requires a Bool operand and produces Bool.
-unop-type op-not ty-bool = ty-bool.
+> Product types have at least two components.
 
-> Equality and inequality require compatible operands and produce Bool.
-all t1: Ty, t2: Ty, compatible? t1 t2 |
-    binop-type op-eq t1 t2 = ty-bool.
-all t1: Ty, t2: Ty, compatible? t1 t2 |
-    binop-type op-neq t1 t2 = ty-bool.
+all t: Type, type-kind t = tk-product | #product-components t >= 2.
 
-> Numeric comparisons require numeric operands and produce Bool.
-all t1: Ty, t2: Ty, is-numeric? t1, is-numeric? t2 |
-    binop-type op-lt t1 t2 = ty-bool.
-all t1: Ty, t2: Ty, is-numeric? t1, is-numeric? t2 |
-    binop-type op-le t1 t2 = ty-bool.
-all t1: Ty, t2: Ty, is-numeric? t1, is-numeric? t2 |
-    binop-type op-gt t1 t2 = ty-bool.
-all t1: Ty, t2: Ty, is-numeric? t1, is-numeric? t2 |
-    binop-type op-ge t1 t2 = ty-bool.
+> Sum types have at least two components.
 
-> Arithmetic operators require numeric operands;
-> the result type is the join (least upper bound) of the operand types.
-all t1: Ty, t2: Ty, is-numeric? t1, is-numeric? t2 |
-    binop-type op-add t1 t2 = join t1 t2.
-all t1: Ty, t2: Ty, is-numeric? t1, is-numeric? t2 |
-    binop-type op-sub t1 t2 = join t1 t2.
-all t1: Ty, t2: Ty, is-numeric? t1, is-numeric? t2 |
-    binop-type op-mul t1 t2 = join t1 t2.
-all t1: Ty, t2: Ty, is-numeric? t1, is-numeric? t2 |
-    binop-type op-div t1 t2 = join t1 t2.
-
-> Membership requires the left operand to be a subtype of the
-> right operand's element type, and produces Bool.
-all s: Ty, t: Ty, subtype? s t |
-    binop-type op-in s (ty-list t) = ty-bool.
-
-> Subset requires both operands to be lists with the left element
-> type a subtype of the right, and produces Bool.
-all s: Ty, t: Ty, subtype? s t |
-    binop-type op-subset (ty-list s) (ty-list t) = ty-bool.
-
-> Cardinality (#xs) requires a list and produces Nat0,
-> since the empty list has cardinality zero.
-all t: Ty | unop-type op-card (ty-list t) = ty-nat0.
-
-> Unary minus requires a numeric operand.
-> Negating a natural or non-negative integer may produce a negative number,
-> so the result is promoted to at least Int.
-all t: Ty, is-numeric? t, subtype? t ty-int |
-    unop-type op-neg t = ty-int.
-unop-type op-neg ty-real = ty-real.
+all t: Type, type-kind t = tk-sum | #sum-components t >= 2.
 
 where
 
-> A document is valid when every chapter is valid.
-valid? d: Document, env: Env => Bool.
-chapter-valid? c: Chapter, env: Env => Bool.
+> Syntactic type expressions are classified by kind.
+
+TypeKind.
+tk-name => TypeKind.
+tk-qualified => TypeKind.
+tk-product => TypeKind.
+tk-sum => TypeKind.
+tk-list => TypeKind.
+type-kind t: Type => TypeKind.
+product-components t: Type => [Type].
+sum-components t: Type => [Type].
+
+---
+
+where
+
+> Every document has a module name, a list of imports, and one or more chapters.
+
+module-name d: Document => Name.
+imports d: Document => [Name].
+
+> Every declaration has a name.
+
+decl-name decl: Declaration => Name.
+
+> An alias declaration has an associated type expression.
+
+alias-type decl: Declaration => Type.
+rule-return-type decl: Declaration => Type.
+
+> An action has a free-form label, optional parameters, optional guards,
+> and an optional context annotation.
+
+action-label decl: Declaration => Name.
+action-params decl: Declaration => [Name].
+action-param-types decl: Declaration => [Type].
+action-context decl: Declaration => Name + Nothing.
+
+> Accessors for each type expression form.
+
+type-name t: Type => Name.
+qualified-module t: Type => Name.
+qualified-name t: Type => Name.
+list-element t: Type => Type.
+
+> Entry kinds distinguish what a name refers to.
+
+EntryKind.
+ek-domain => EntryKind.
+ek-alias => EntryKind.
+ek-rule => EntryKind.
+ek-var => EntryKind.
+
+> Each entry records a kind, a resolved type, and the chapter where it was
+> declared.
+
+Entry.
+entry-kind e: Entry => EntryKind.
+entry-chapter e: Entry => Nat0.
+lookup-type name: Name, env: Env => Entry.
+lookup-term name: Name, env: Env => Entry.
+ty-product ts: [Ty] => Ty.
+ty-sum ts: [Ty] => Ty.
+
+> Function types arise from rule declarations.
+> The return type is Nothing when absent (actions have no return type).
+
+ty-func params: [Ty], ret: Ty => Ty.
+
+> Expression form predicates.
+
+is-var? e: Expr => Bool.
+is-app? e: Expr => Bool.
+is-tuple? e: Expr => Bool.
+is-proj? e: Expr => Bool.
+is-primed? e: Expr => Bool.
+is-override? e: Expr => Bool.
+is-binop? e: Expr => Bool.
+is-unop? e: Expr => Bool.
+
+> Expression accessors.
+
+var-name e: Expr => Name.
+app-func e: Expr => Expr.
+app-args e: Expr => [Expr].
+tuple-elems e: Expr => [Expr].
+proj-expr e: Expr => Expr.
+proj-index e: Expr => Nat.
+primed-name e: Expr => Name.
+override-name e: Expr => Name.
 
 > Whether a chapter's head contains an action declaration.
+
 has-action? c: Chapter => Bool.
 
 ---
-> If a document is valid, then every chapter in it is valid.
-all d: Document, env: Env |
-    valid? d env -> all c in chapters d | chapter-valid? c env.
 
-> If a chapter is valid, then every proposition in its body has type Bool.
-all c: Chapter, env: Env |
-    chapter-valid? c env -> all p in body c | infer p env = ty-bool.
+> A primed expression (f') denotes the post-state value of a rule
+> and has the same type as the unprimed rule.
 
-> If a chapter has no action, then no proposition in its body
-> may contain a primed expression.
-
-> Only rules may be primed, not local variables.
-
-> Every expression guard on a rule declaration must have type Bool.
-all decl: Declaration, is-rule? decl, env: Env,
-    g in rule-guards decl, is-expr-guard? g |
-    infer (guard-expr g) env = ty-bool.
-
-> Every expression guard on an action declaration must have type Bool.
-all decl: Declaration, is-action? decl, env: Env,
-    g in action-guards decl, is-expr-guard? g |
-    infer (guard-expr g) env = ty-bool.
+> A function override f[k |-> v] requires f to have arity 1
+> and preserves f's type.
 
 > When a quantifier rebinds a variable already in scope,
 > the new type must be a subtype of the existing type.

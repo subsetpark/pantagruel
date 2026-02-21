@@ -954,6 +954,172 @@ let domain_bounds_tests =
       test_card_domain_with_bounds;
   ]
 
+(* --- Comprehension tests --- *)
+
+let test_in_forall_comprehension () =
+  (* y in (all x: D | f x) → disjunction over domain elements *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_domain "Role" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "role"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some (Types.TyDomain "Role")))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_var "r" (Types.TyDomain "Role")
+  in
+  let expr =
+    Ast.EBinop
+      ( OpIn,
+        EVar "r",
+        EForall
+          ( [ { param_name = "u"; param_type = TName "User" } ],
+            [],
+            EApp (EVar "role", [ EVar "u" ]) ) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "has (= r (role User_0))" true
+    (contains result "(= r (role User_0))");
+  check bool "has (= r (role User_1))" true
+    (contains result "(= r (role User_1))");
+  check bool "has or" true (contains result "(or")
+
+let test_in_forall_comprehension_guarded () =
+  (* y in (all x: D, g x | f x) → includes guard in expansion *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_domain "Role" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "role"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some (Types.TyDomain "Role")))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "active"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_var "r" (Types.TyDomain "Role")
+  in
+  let expr =
+    Ast.EBinop
+      ( OpIn,
+        EVar "r",
+        EForall
+          ( [ { param_name = "u"; param_type = TName "User" } ],
+            [ GExpr (EApp (EVar "active", [ EVar "u" ])) ],
+            EApp (EVar "role", [ EVar "u" ]) ) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "has guard (active User_0)" true
+    (contains result "(active User_0)");
+  check bool "has (= r (role User_0))" true
+    (contains result "(= r (role User_0))");
+  check bool "has and (guard + eq)" true (contains result "(and")
+
+let test_in_membership_comprehension () =
+  (* y in (all x in xs | f x) → includes membership guard *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_domain "Role" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "role"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some (Types.TyDomain "Role")))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "admins"
+         (Types.TyFunc ([], Some (Types.TyList (Types.TyDomain "User"))))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_var "r" (Types.TyDomain "Role")
+  in
+  let expr =
+    Ast.EBinop
+      ( OpIn,
+        EVar "r",
+        EForall
+          ([], [ GIn ("u", EVar "admins") ], EApp (EVar "role", [ EVar "u" ]))
+      )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "has select admins" true (contains result "(select admins");
+  check bool "has (= r (role User_0))" true
+    (contains result "(= r (role User_0))");
+  check bool "has or" true (contains result "(or")
+
+let test_card_forall_comprehension () =
+  (* #(all x: D | f x) → count over range domain *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_domain "Role" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "role"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some (Types.TyDomain "Role")))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EUnop
+      ( OpCard,
+        EForall
+          ( [ { param_name = "u"; param_type = TName "User" } ],
+            [],
+            EApp (EVar "role", [ EVar "u" ]) ) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "has ite" true (contains result "(ite");
+  check bool "has Role_0" true (contains result "Role_0");
+  check bool "has +" true (contains result "(+")
+
+let test_forall_comprehension_standalone_fails () =
+  (* Non-Bool EForall in standalone position → error *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_domain "Role" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "role"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some (Types.TyDomain "Role")))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EForall
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [],
+        EApp (EVar "role", [ EVar "u" ]) )
+  in
+  check_raises "comprehension standalone raises"
+    (Failure
+       "SMT translation: comprehension (all ... | non-Bool) in standalone \
+        position; use inside 'in', '#', or 'subset'") (fun () ->
+      ignore (Smt.translate_expr config env expr))
+
+let test_exists_comprehension_standalone_fails () =
+  (* Non-Bool EExists in standalone position → error *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_domain "Role" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "role"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some (Types.TyDomain "Role")))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EExists
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [],
+        EApp (EVar "role", [ EVar "u" ]) )
+  in
+  check_raises "some comprehension standalone raises"
+    (Failure
+       "SMT translation: non-Bool 'some' comprehension not supported in SMT")
+    (fun () -> ignore (Smt.translate_expr config env expr))
+
+let comprehension_tests =
+  [
+    test_case "in forall comprehension" `Quick test_in_forall_comprehension;
+    test_case "in forall guarded" `Quick test_in_forall_comprehension_guarded;
+    test_case "in membership comprehension" `Quick
+      test_in_membership_comprehension;
+    test_case "card forall comprehension" `Quick test_card_forall_comprehension;
+    test_case "forall standalone fails" `Quick
+      test_forall_comprehension_standalone_fails;
+    test_case "exists standalone fails" `Quick
+      test_exists_comprehension_standalone_fails;
+  ]
+
 let () =
   run "SMT"
     [
@@ -965,4 +1131,5 @@ let () =
       ("unsat_core", unsat_core_tests);
       ("bmc", bmc_tests);
       ("domain_bounds", domain_bounds_tests);
+      ("comprehensions", comprehension_tests);
     ]

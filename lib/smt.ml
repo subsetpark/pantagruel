@@ -359,6 +359,153 @@ let generate_preamble ?(constrain_primed = true)
   end;
   Buffer.contents buf
 
+(** Word-boundary-aware string substitution. Replaces occurrences of [from] in
+    [s] with [to_], but only when [from] appears at a word boundary. Word
+    boundary characters: '(', ')', ' ', '\n', '\t', and string edges. *)
+let replace_word ~from ~to_ s =
+  let from_len = String.length from in
+  let s_len = String.length s in
+  if from_len = 0 || s_len = 0 then s
+  else
+    let is_boundary i =
+      i < 0 || i >= s_len
+      || match s.[i] with '(' | ')' | ' ' | '\n' | '\t' -> true | _ -> false
+    in
+    let buf = Buffer.create (s_len + 64) in
+    let i = ref 0 in
+    while !i <= s_len - from_len do
+      if
+        String.sub s !i from_len = from
+        && is_boundary (!i - 1)
+        && is_boundary (!i + from_len)
+      then begin
+        Buffer.add_string buf to_;
+        i := !i + from_len
+      end
+      else begin
+        Buffer.add_char buf s.[!i];
+        incr i
+      end
+    done;
+    (* Copy remaining characters *)
+    while !i < s_len do
+      Buffer.add_char buf s.[!i];
+      incr i
+    done;
+    Buffer.contents buf
+
+(** Check if a quantifier has a non-Bool body (i.e., is a comprehension).
+    Resolves parameter/guard bindings to infer the body type correctly. *)
+let is_comprehension_q env params guards body =
+  let param_bindings =
+    List.filter_map
+      (fun (p : param) ->
+        match Collect.resolve_type env p.param_type dummy_loc with
+        | Ok ty -> Some (p.param_name, ty)
+        | Error _ -> None)
+      params
+  in
+  let guard_bindings =
+    List.filter_map
+      (fun g ->
+        match g with
+        | GIn (name, list_expr) -> (
+            match Check.infer_type { Check.env; loc = dummy_loc } list_expr with
+            | Ok (TyList elem_ty) -> Some (name, elem_ty)
+            | _ -> None)
+        | GParam p -> (
+            match Collect.resolve_type env p.param_type dummy_loc with
+            | Ok ty -> Some (p.param_name, ty)
+            | Error _ -> None)
+        | GExpr _ -> None)
+      guards
+  in
+  let env' = Env.with_vars (param_bindings @ guard_bindings) env in
+  match Check.infer_type { Check.env = env'; loc = dummy_loc } body with
+  | Ok ty -> not (Types.equal_ty ty TyBool)
+  | Error _ -> false
+
+(** Resolve the iteration variable, domain name, and any implicit guard for a
+    comprehension. Supports two forms:
+    - Typed binding: [all x: D, guards | body] — params = [x:D], iterates over D
+    - Membership binding: [all x in xs, guards | body] — params = [], guards
+      starts with GIn(x, xs), iterates over element domain of xs with implicit
+      (select xs elem) guard *)
+let resolve_comprehension_binding env params guards =
+  match params with
+  | [ (p : param) ] -> (
+      match Collect.resolve_type env p.param_type dummy_loc with
+      | Ok (TyDomain dname) ->
+          Ok (p.param_name, dname, None, [ (p.param_name, TyDomain dname) ])
+      | _ ->
+          Error "SMT translation: comprehension parameter must be a domain type"
+      )
+  | [] -> (
+      (* Look for a leading GIn guard *)
+      match guards with
+      | GIn (name, list_expr) :: _rest -> (
+          match Check.infer_type { Check.env; loc = dummy_loc } list_expr with
+          | Ok (TyList (TyDomain dname)) ->
+              Ok (name, dname, Some list_expr, [ (name, TyDomain dname) ])
+          | _ ->
+              Error
+                "SMT translation: membership comprehension requires a domain \
+                 list")
+      | _ ->
+          Error
+            "SMT translation: comprehension requires a typed or membership \
+             binding")
+  | _ ->
+      Error
+        "SMT translation: multi-parameter comprehensions not supported in SMT"
+
+(** Expand a comprehension over finite domain elements. Returns a list of
+    (guard_str option, value_str) pairs for each domain element substitution.
+    [translate] is the expression translator (passed to break mutual recursion).
+*)
+let expand_comprehension translate config env params guards body =
+  match resolve_comprehension_binding env params guards with
+  | Error msg -> failwith msg
+  | Ok (var_name, dname, membership_expr, bindings) ->
+      let env_inner = Env.with_vars bindings env in
+      let elems = domain_elements dname (bound_for config dname) in
+      let pname = sanitize_ident var_name in
+      (* Translate body and guards as templates, then substitute *)
+      let body_template = translate config env_inner body in
+      (* Collect explicit guard conditions (GExpr only; skip GIn/GParam) *)
+      let guard_templates =
+        List.filter_map
+          (fun g ->
+            match g with
+            | GExpr e -> Some (translate config env_inner e)
+            | _ -> None)
+          guards
+      in
+      (* For GIn bindings, add implicit membership guard *)
+      let membership_template =
+        match membership_expr with
+        | Some list_e ->
+            let list_str = translate config env list_e in
+            Some (Printf.sprintf "(select %s %s)" list_str pname)
+        | None -> None
+      in
+      List.map
+        (fun elem ->
+          let sub s = replace_word ~from:pname ~to_:elem s in
+          let value_str = sub body_template in
+          let all_guards =
+            (match membership_template with Some t -> [ sub t ] | None -> [])
+            @ List.map sub guard_templates
+          in
+          let guard_str =
+            match all_guards with
+            | [] -> None
+            | [ g ] -> Some g
+            | gs -> Some (Printf.sprintf "(and %s)" (String.concat " " gs))
+          in
+          (guard_str, value_str))
+        elems
+
 (** Translate an expression to SMT-LIB2 term string *)
 let rec translate_expr config env (e : expr) =
   match e with
@@ -397,9 +544,16 @@ let rec translate_expr config env (e : expr) =
   | EBinop (op, e1, e2) -> translate_binop config env op e1 e2
   | EUnop (op, e) -> translate_unop config env op e
   | EForall (params, guards, body) ->
-      translate_quantifier config env "forall" params guards body
+      if is_comprehension_q env params guards body then
+        failwith
+          "SMT translation: comprehension (all ... | non-Bool) in standalone \
+           position; use inside 'in', '#', or 'subset'"
+      else translate_quantifier config env "forall" params guards body
   | EExists (params, guards, body) ->
-      translate_quantifier config env "exists" params guards body
+      if is_comprehension_q env params guards body then
+        failwith
+          "SMT translation: non-Bool 'some' comprehension not supported in SMT"
+      else translate_quantifier config env "exists" params guards body
   | EInitially e -> translate_expr config env e
   | EOverride (name, pairs) -> translate_override config env name pairs
 
@@ -466,6 +620,25 @@ and translate_in config env elem set =
         List.map (fun e -> Printf.sprintf "(= %s %s)" elem_str e) elems
       in
       Printf.sprintf "(or %s)" (String.concat " " disj)
+  | EForall (params, guards, body) -> (
+      (* y in (all x: D | f x) → disjunction: (= y (f d0)) ∨ (= y (f d1)) ...
+         y in (all x: D, g x | f x) → (g d0 ∧ = y (f d0)) ∨ ... *)
+      let expanded =
+        expand_comprehension translate_expr config env params guards body
+      in
+      let elem_str = translate_expr config env elem in
+      let disj =
+        List.map
+          (fun (guard_opt, value_str) ->
+            let eq = Printf.sprintf "(= %s %s)" elem_str value_str in
+            match guard_opt with
+            | None -> eq
+            | Some g -> Printf.sprintf "(and %s %s)" g eq)
+          expanded
+      in
+      match disj with
+      | [ single ] -> single
+      | _ -> Printf.sprintf "(or %s)" (String.concat " " disj))
   | _ ->
       (* x in xs where xs : (Array T Bool) → (select xs x) *)
       let elem_str = translate_expr config env elem in
@@ -477,6 +650,40 @@ and translate_subset config env e1 e2 =
   (* xs subset Domain → every member of xs is in the domain (tautological
      for well-typed programs, but expand over finite elements for soundness) *)
   match e2 with
+  | EForall (params, guards, body) -> (
+      (* xs subset (all x: D | f x) → for every elem of xs, elem is in the
+         comprehension. Expand: for each domain elem d of the LHS element type,
+         (select xs d) => (exists comprehension elem matching d). *)
+      let expanded =
+        expand_comprehension translate_expr config env params guards body
+      in
+      (* Infer LHS element type to get its domain *)
+      match Check.infer_type { Check.env; loc = dummy_loc } e1 with
+      | Ok (TyList (TyDomain lhs_dname)) ->
+          let lhs_elems =
+            domain_elements lhs_dname (bound_for config lhs_dname)
+          in
+          let conjuncts =
+            List.map
+              (fun d ->
+                let in_comp =
+                  List.map
+                    (fun (guard_opt, value_str) ->
+                      let eq = Printf.sprintf "(= %s %s)" d value_str in
+                      match guard_opt with
+                      | None -> eq
+                      | Some g -> Printf.sprintf "(and %s %s)" g eq)
+                    expanded
+                in
+                Printf.sprintf "(=> (select %s %s) (or %s))" s1 d
+                  (String.concat " " in_comp))
+              lhs_elems
+          in
+          Printf.sprintf "(and %s)" (String.concat " " conjuncts)
+      | _ ->
+          failwith
+            "SMT translation: subset with comprehension RHS requires domain \
+             element type on LHS")
   | EDomain name ->
       let elems = domain_elements name (bound_for config name) in
       let conjuncts =
@@ -523,6 +730,63 @@ and translate_card config env e =
   | EDomain name ->
       (* #Domain = bound (all elements exist) *)
       string_of_int (bound_for config name)
+  | EForall (params, guards, body) -> (
+      (* #(all x: D | f x) — count distinct values in the comprehension.
+         Requires the range type to be a bounded domain. Expand over range
+         domain elements, check if each is produced by any source element. *)
+      let expanded =
+        expand_comprehension translate_expr config env params guards body
+      in
+      (* Infer the body type to determine the range domain *)
+      let param_bindings =
+        List.filter_map
+          (fun (p : param) ->
+            match Collect.resolve_type env p.param_type dummy_loc with
+            | Ok ty -> Some (p.param_name, ty)
+            | Error _ -> None)
+          params
+      in
+      let guard_bindings =
+        List.filter_map
+          (fun g ->
+            match g with
+            | GIn (name, list_expr) -> (
+                match
+                  Check.infer_type { Check.env; loc = dummy_loc } list_expr
+                with
+                | Ok (TyList elem_ty) -> Some (name, elem_ty)
+                | _ -> None)
+            | _ -> None)
+          guards
+      in
+      let env_inner = Env.with_vars (param_bindings @ guard_bindings) env in
+      match
+        Check.infer_type { Check.env = env_inner; loc = dummy_loc } body
+      with
+      | Ok (TyDomain range_dname) ->
+          let range_elems =
+            domain_elements range_dname (bound_for config range_dname)
+          in
+          let terms =
+            List.map
+              (fun u ->
+                let in_comp =
+                  List.map
+                    (fun (guard_opt, value_str) ->
+                      let eq = Printf.sprintf "(= %s %s)" u value_str in
+                      match guard_opt with
+                      | None -> eq
+                      | Some g -> Printf.sprintf "(and %s %s)" g eq)
+                    expanded
+                in
+                Printf.sprintf "(ite (or %s) 1 0)" (String.concat " " in_comp))
+              range_elems
+          in
+          Printf.sprintf "(+ %s)" (String.concat " " terms)
+      | _ ->
+          failwith
+            "SMT translation: cardinality of comprehension requires domain \
+             range type")
   | _ -> (
       (* #xs where xs : (Array T Bool) — count members over finite domain *)
       let set_str = translate_expr config env e in
@@ -1391,41 +1655,6 @@ let generate_init_invariant_query config env init_props ~index
     invariant_text = inv_text;
     assertion_names = [];
   }
-
-(** Word-boundary-aware string substitution. Replaces occurrences of [from] in
-    [s] with [to_], but only when [from] appears at a word boundary. Word
-    boundary characters: '(', ')', ' ', '\n', '\t', and string edges. *)
-let replace_word ~from ~to_ s =
-  let from_len = String.length from in
-  let s_len = String.length s in
-  if from_len = 0 || s_len = 0 then s
-  else
-    let is_boundary i =
-      i < 0 || i >= s_len
-      || match s.[i] with '(' | ')' | ' ' | '\n' | '\t' -> true | _ -> false
-    in
-    let buf = Buffer.create (s_len + 64) in
-    let i = ref 0 in
-    while !i <= s_len - from_len do
-      if
-        String.sub s !i from_len = from
-        && is_boundary (!i - 1)
-        && is_boundary (!i + from_len)
-      then begin
-        Buffer.add_string buf to_;
-        i := !i + from_len
-      end
-      else begin
-        Buffer.add_char buf s.[!i];
-        incr i
-      end
-    done;
-    (* Copy remaining characters *)
-    while !i < s_len do
-      Buffer.add_char buf s.[!i];
-      incr i
-    done;
-    Buffer.contents buf
 
 (** Collect all rule names from env that should be renamed for BMC steps *)
 let collect_rule_names env =
