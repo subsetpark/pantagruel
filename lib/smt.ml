@@ -25,8 +25,8 @@ and query_kind =
   | InvariantPreservation
       (** SAT = violation (counterexample), UNSAT = preserved *)
   | PreconditionSat  (** SAT = ok, UNSAT = dead operation *)
-  | DeadlockFreedom
-      (** SAT = deadlock found (counterexample), UNSAT = deadlock-free *)
+  | BMCDeadlock
+      (** SAT = reachable deadlock found, UNSAT = no deadlock within k steps *)
   | InitConsistency
       (** SAT = ok (initial state possible), UNSAT = impossible initial state *)
   | InitInvariant
@@ -1282,95 +1282,6 @@ let extract_precondition_exprs (guards : guard list) =
 let action_always_enabled action =
   extract_precondition_exprs action.a_guards = []
 
-(** Query 5: Deadlock freedom — checks that every invariant-satisfying state
-    enables at least one action. SAT = deadlock found. *)
-let generate_deadlock_query config env invariant_props actions =
-  let buf = Buffer.create 1024 in
-  Buffer.add_string buf "; Deadlock freedom check\n";
-  Buffer.add_string buf (generate_preamble ~constrain_primed:false config env);
-  Buffer.add_string buf
-    (declare_type_constraints ~constrain_primed:false config env);
-  (* Assert invariants hold *)
-  if invariant_props <> [] then begin
-    Buffer.add_string buf "\n; --- Invariants (current state) ---\n";
-    let inv_conj = conjoin_propositions config env invariant_props in
-    Buffer.add_string buf (Printf.sprintf "(assert %s)\n" inv_conj)
-  end;
-  (* Assert every action is disabled: for each action, no parameter assignment
-     satisfies all preconditions *)
-  Buffer.add_string buf "\n; --- All actions disabled ---\n";
-  List.iter
-    (fun action ->
-      let precond_exprs = extract_precondition_exprs action.a_guards in
-      (* Build: forall params | type-constraints => not (preconditions) *)
-      let param_bindings =
-        List.map
-          (fun (p : param) ->
-            let sort =
-              match resolve_param_sort env p.param_type with
-              | Some s -> s
-              | None ->
-                  failwith
-                    (Printf.sprintf
-                       "SMT translation: cannot resolve sort for parameter '%s'"
-                       p.param_name)
-            in
-            Printf.sprintf "(%s %s)" (sanitize_ident p.param_name) sort)
-          action.a_params
-      in
-      let type_guards =
-        List.filter_map
-          (fun (p : param) ->
-            match Collect.resolve_type env p.param_type dummy_loc with
-            | Ok TyNat ->
-                Some (Printf.sprintf "(>= %s 1)" (sanitize_ident p.param_name))
-            | Ok TyNat0 ->
-                Some (Printf.sprintf "(>= %s 0)" (sanitize_ident p.param_name))
-            | _ -> None)
-          action.a_params
-      in
-      let precond_strs = List.map (translate_expr config env) precond_exprs in
-      let all_preconds =
-        match precond_strs with
-        | [ s ] -> s
-        | ss -> Printf.sprintf "(and %s)" (String.concat " " ss)
-      in
-      let negated_body = Printf.sprintf "(not %s)" all_preconds in
-      let body =
-        match type_guards with
-        | [] -> negated_body
-        | _ ->
-            Printf.sprintf "(=> (and %s) %s)"
-              (String.concat " " type_guards)
-              negated_body
-      in
-      match param_bindings with
-      | [] ->
-          (* Nullary action: just assert precondition is false *)
-          Buffer.add_string buf
-            (Printf.sprintf "; Action '%s' disabled\n(assert %s)\n"
-               action.a_label negated_body)
-      | _ ->
-          Buffer.add_string buf
-            (Printf.sprintf
-               "; Action '%s' disabled\n(assert (forall (%s) %s))\n"
-               action.a_label
-               (String.concat " " param_bindings)
-               body))
-    actions;
-  let value_terms = build_invariant_value_terms config env in
-  Buffer.add_string buf "(check-sat)\n";
-  append_get_value buf value_terms;
-  {
-    name = "deadlock-freedom";
-    description = "No deadlock: some action is always enabled";
-    smt2 = Buffer.contents buf;
-    kind = DeadlockFreedom;
-    value_terms;
-    invariant_text = "";
-    assertion_names = [];
-  }
-
 (** Query: Init consistency — checks that all init props + type constraints are
     jointly satisfiable. UNSAT = impossible initial state. *)
 let generate_init_consistency_query config env init_props =
@@ -1709,6 +1620,131 @@ let generate_bmc_query config env init_props actions ~inv_index
     assertion_names = [];
   }
 
+(** Generate the "all actions disabled" assertion for a given step, using
+    step-indexed function names. Each action's preconditions are universally
+    quantified over parameters and negated. *)
+let generate_all_actions_disabled config env actions step =
+  let buf = Buffer.create 512 in
+  Buffer.add_string buf "\n; --- All actions disabled ---\n";
+  List.iter
+    (fun action ->
+      let precond_exprs = extract_precondition_exprs action.a_guards in
+      let param_bindings =
+        List.map
+          (fun (p : param) ->
+            let sort =
+              match resolve_param_sort env p.param_type with
+              | Some s -> s
+              | None ->
+                  failwith
+                    (Printf.sprintf
+                       "SMT translation: cannot resolve sort for parameter '%s'"
+                       p.param_name)
+            in
+            Printf.sprintf "(%s %s)" (sanitize_ident p.param_name) sort)
+          action.a_params
+      in
+      let type_guards =
+        List.filter_map
+          (fun (p : param) ->
+            match Collect.resolve_type env p.param_type dummy_loc with
+            | Ok TyNat ->
+                Some (Printf.sprintf "(>= %s 1)" (sanitize_ident p.param_name))
+            | Ok TyNat0 ->
+                Some (Printf.sprintf "(>= %s 0)" (sanitize_ident p.param_name))
+            | _ -> None)
+          action.a_params
+      in
+      let precond_strs =
+        List.map
+          (fun e -> rename_smt_for_step env (translate_expr config env e) step)
+          precond_exprs
+      in
+      let all_preconds =
+        match precond_strs with
+        | [ s ] -> s
+        | ss -> Printf.sprintf "(and %s)" (String.concat " " ss)
+      in
+      let negated_body = Printf.sprintf "(not %s)" all_preconds in
+      let body =
+        match type_guards with
+        | [] -> negated_body
+        | _ ->
+            Printf.sprintf "(=> (and %s) %s)"
+              (String.concat " " type_guards)
+              negated_body
+      in
+      match param_bindings with
+      | [] ->
+          Buffer.add_string buf
+            (Printf.sprintf "; Action '%s' disabled\n(assert %s)\n"
+               action.a_label negated_body)
+      | _ ->
+          Buffer.add_string buf
+            (Printf.sprintf
+               "; Action '%s' disabled\n(assert (forall (%s) %s))\n"
+               action.a_label
+               (String.concat " " param_bindings)
+               body))
+    actions;
+  Buffer.contents buf
+
+(** Query 5: BMC deadlock freedom — checks that no state reachable from the
+    initial state within k steps has all actions disabled. SAT = reachable
+    deadlock found, UNSAT = no deadlock within k steps. *)
+let generate_bmc_deadlock_query config env init_props invariant_props actions
+    ~steps =
+  let buf = Buffer.create 2048 in
+  Buffer.add_string buf
+    (Printf.sprintf "; BMC deadlock check (%d steps)\n" steps);
+  (* Domain sorts and composite types *)
+  Buffer.add_string buf "; --- Domain sorts and elements ---\n";
+  Buffer.add_string buf (declare_domain_sorts config env);
+  Buffer.add_string buf "\n; --- Composite types ---\n";
+  Buffer.add_string buf (declare_composite_types env);
+  Buffer.add_string buf "\n";
+  (* Declare step-indexed functions *)
+  Buffer.add_string buf (declare_step_functions config env steps);
+  (* Assert init props constrain step 0 *)
+  Buffer.add_string buf "\n; --- Initial state (step 0) ---\n";
+  List.iter
+    (fun (prop : expr located) ->
+      let smt = translate_expr config env prop.value in
+      let renamed = rename_smt_for_step env smt 0 in
+      Buffer.add_string buf (Printf.sprintf "(assert %s)\n" renamed))
+    init_props;
+  (* Assert transitions for each step i→i+1 *)
+  for i = 0 to steps - 1 do
+    Buffer.add_string buf
+      (Printf.sprintf "\n; --- Transition step %d -> %d ---\n" i (i + 1));
+    let transition = build_step_transition config env actions i in
+    Buffer.add_string buf (Printf.sprintf "(assert %s)\n" transition)
+  done;
+  (* Assert invariants hold at step k (deadlocked state must be valid) *)
+  if invariant_props <> [] then begin
+    Buffer.add_string buf
+      (Printf.sprintf "\n; --- Invariants at step %d ---\n" steps);
+    let inv_conj = conjoin_propositions config env invariant_props in
+    let renamed = rename_smt_for_step env inv_conj steps in
+    Buffer.add_string buf (Printf.sprintf "(assert %s)\n" renamed)
+  end;
+  (* Assert all actions disabled at step k *)
+  Buffer.add_string buf (generate_all_actions_disabled config env actions steps);
+  let value_terms = build_bmc_value_terms config env steps in
+  Buffer.add_string buf "(check-sat)\n";
+  append_get_value buf value_terms;
+  {
+    name = "bmc-deadlock";
+    description =
+      Printf.sprintf "No reachable deadlock within %d steps from initial state"
+        steps;
+    smt2 = Buffer.contents buf;
+    kind = BMCDeadlock;
+    value_terms;
+    invariant_text = "";
+    assertion_names = [];
+  }
+
 (** Generate all verification queries for a document *)
 let generate_queries config env (doc : document) =
   let chapters = classify_chapters doc in
@@ -1757,13 +1793,16 @@ let generate_queries config env (doc : document) =
       queries :=
         generate_precondition_query config env invariants action :: !queries)
     actions;
-  (* Deadlock freedom query — skip if any action has no preconditions
-     (always enabled, so deadlock is impossible) *)
+  (* BMC deadlock freedom query — skip if any action has no preconditions
+     (always enabled, so deadlock is impossible), or if no initial state *)
   let has_guarded_actions =
     actions <> [] && not (List.exists action_always_enabled actions)
   in
-  if has_guarded_actions then
-    queries := generate_deadlock_query config env invariants actions :: !queries;
+  if has_guarded_actions && init_props <> [] && config.steps > 0 then
+    queries :=
+      generate_bmc_deadlock_query config env init_props invariants actions
+        ~steps:config.steps
+      :: !queries;
   (* BMC queries — when init props, actions, and invariants all exist *)
   if init_props <> [] && actions <> [] && invariants <> [] && config.steps > 0
   then

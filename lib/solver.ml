@@ -572,22 +572,22 @@ let interpret_result query result =
           Printf.sprintf "WARNING: Action '%s' is unreachable%s"
             (extract_label query 13) detail;
       }
-  (* Deadlock freedom: SAT = deadlock (bad), UNSAT = ok *)
-  | Smt.DeadlockFreedom, Unsat _ ->
+  (* BMC deadlock: SAT = reachable deadlock (bad), UNSAT = ok *)
+  | Smt.BMCDeadlock, Unsat _ ->
       {
         query;
         result;
         passed = true;
         message = Printf.sprintf "OK: %s" query.description;
       }
-  | Smt.DeadlockFreedom, Sat values ->
+  | Smt.BMCDeadlock, Sat values ->
       {
         query;
         result;
         passed = false;
         message =
-          Printf.sprintf "FAIL: Potential deadlock — no action is enabled%s"
-            (format_counterexample values);
+          Printf.sprintf "FAIL: Reachable deadlock — no action is enabled%s"
+            (format_bmc_counterexample values);
       }
   (* Init consistency: SAT = ok, UNSAT = impossible initial state *)
   | Smt.InitConsistency, Sat _ ->
