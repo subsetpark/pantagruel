@@ -1064,8 +1064,8 @@ let test_card_forall_comprehension () =
   check bool "has Role_0" true (contains result "Role_0");
   check bool "has +" true (contains result "(+")
 
-let test_forall_comprehension_standalone_fails () =
-  (* Non-Bool EForall in standalone position → error *)
+let test_forall_comprehension_standalone () =
+  (* Non-Bool EForall in standalone position → store-chain array *)
   let env =
     Env.empty ""
     |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
@@ -1080,11 +1080,10 @@ let test_forall_comprehension_standalone_fails () =
         [],
         EApp (EVar "role", [ EVar "u" ]) )
   in
-  check_raises "comprehension standalone raises"
-    (Failure
-       "SMT translation: comprehension (all ... | non-Bool) in standalone \
-        position; use inside 'in', '#', or 'subset'") (fun () ->
-      ignore (Smt.translate_expr config env expr))
+  let result = Smt.translate_expr config env expr in
+  check bool "has as const" true (contains result "as const");
+  check bool "has store" true (contains result "store");
+  check bool "has Array Role Bool" true (contains result "(Array Role Bool)")
 
 let test_exists_comprehension_standalone_fails () =
   (* Non-Bool EExists in standalone position → error *)
@@ -1114,8 +1113,7 @@ let comprehension_tests =
     test_case "in membership comprehension" `Quick
       test_in_membership_comprehension;
     test_case "card forall comprehension" `Quick test_card_forall_comprehension;
-    test_case "forall standalone fails" `Quick
-      test_forall_comprehension_standalone_fails;
+    test_case "forall standalone" `Quick test_forall_comprehension_standalone;
     test_case "exists standalone fails" `Quick
       test_exists_comprehension_standalone_fails;
   ]

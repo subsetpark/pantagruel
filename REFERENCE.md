@@ -333,7 +333,7 @@ When `all` or `some` has a non-`Bool` body, it acts as a comprehension rather th
 
 `all x: D | f x` where `f : D → U`:
 - Type: `[U]` — the list of values `f x` for every `x` in `D`.
-- Usable with `in` (membership), `#` (cardinality), and `subset`.
+- Usable anywhere a list is expected: as arguments, with `in` (membership), `#` (cardinality), `subset`, etc.
 - Example: `r in (all u: User | role u)` — is `r` one of the roles assigned to any user?
 
 `all x in xs, guard | f x` where `xs : [D]`, `f : D → U`:
@@ -343,7 +343,7 @@ When `all` or `some` has a non-`Bool` body, it acts as a comprehension rather th
 `some x: D | f x` where `f : D → U`:
 - Type: `U + Nothing` — nondeterministic selection.
 
-Comprehensions cannot appear as standalone propositions (the body of a chapter must be `Bool`). They are expanded at the point of use — inside `in`, `#`, or `subset` — analogous to how domain names expand when used as set values.
+Comprehensions cannot appear as standalone propositions (the body of a chapter must be `Bool`). They can appear as expressions anywhere a list is expected — as arguments, inside `in`, `#`, `subset`, etc. In SMT translation, they are expanded over finite domain elements.
 
 #### Primed Expressions
 

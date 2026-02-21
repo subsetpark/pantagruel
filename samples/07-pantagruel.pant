@@ -56,9 +56,45 @@ all e: Expr, env: Env, is-domain-ref? e | infer e env = ty-list (ty-domain (doma
 > Nullary rules are applied automatically on reference;
 > their type is the return type, not a function type.
 
-> Tuple construction yields a product type of the element types.
+> A variable reference has the type bound in the environment.
 
-> Projection extracts the k-th component (1-indexed) from a product type.
+all e: Expr, env: Env, is-var? e | infer e env = term-type (var-name e) env.
+
+> Function application yields the function's return type.
+
+all e: Expr, env: Env, is-app? e | infer e env = func-return (infer (app-func e) env).
+
+> Application arity must match the function's parameter count.
+
+all e: Expr, env: Env, is-app? e | #app-args e = #func-params (infer (app-func e) env).
+
+> Tuple construction yields a product of the element types.
+
+all e: Expr, env: Env, is-tuple? e | infer e env = ty-product (all elem in tuple-elems e | infer elem env).
+
+> Projection extracts the k-th component type from a product.
+
+all e: Expr, env: Env, is-proj? e | infer e env = proj-type (infer (proj-expr e) env) (proj-index e).
+
+> A primed expression has the same type as the unprimed rule.
+
+all e: Expr, env: Env, is-primed? e | infer e env = term-type (primed-name e) env.
+
+> Only rules may be primed, not local variables.
+
+all e: Expr, env: Env, is-primed? e | is-rule? (primed-name e) env.
+
+> Priming is only allowed in chapters that contain an action.
+
+all c: Chapter, p in body c, contains-primed? p | has-action? c.
+
+> A function override preserves the overridden function's type.
+
+all e: Expr, env: Env, is-override? e | infer e env = term-type (override-name e) env.
+
+> The overridden function must have exactly one parameter.
+
+all e: Expr, env: Env, is-override? e | #func-params (term-type (override-name e) env) = 1.
 
 > Quantifiers with Bool bodies are logical propositions.
 
@@ -78,11 +114,6 @@ all d: Document, env: Env | valid? d env -> (all c in chapters d | chapter-valid
 > If a chapter is valid, then every proposition in its body has type Bool.
 
 all c: Chapter, env: Env | chapter-valid? c env -> (all p in body c | infer p env = ty-bool).
-
-> If a chapter has no action, then no proposition in its body
-> may contain a primed expression.
-
-> Only rules may be primed, not local variables.
 
 > Every expression guard on a rule declaration must have type Bool.
 
@@ -163,6 +194,11 @@ ty-nothing => Ty.
 ty-domain name: Name => Ty.
 ty-list t: Ty => Ty.
 ty-or t1: Ty, t2: Ty => Ty.
+ty-product ts: [Ty] => Ty.
+
+> Function types arise from rule declarations.
+
+ty-func params: [Ty], ret: Ty => Ty.
 
 > The type checker infers a resolved type for each expression.
 
@@ -181,6 +217,56 @@ quant-body e: Expr => Expr.
 
 nat-value e: Expr => Nat0.
 chapter-valid? c: Chapter, env: Env => Bool.
+
+> Expression form predicates.
+
+is-var? e: Expr => Bool.
+is-app? e: Expr => Bool.
+is-tuple? e: Expr => Bool.
+is-proj? e: Expr => Bool.
+is-primed? e: Expr => Bool.
+is-override? e: Expr => Bool.
+is-binop? e: Expr => Bool.
+is-unop? e: Expr => Bool.
+
+> Expression accessors.
+
+var-name e: Expr => Name.
+app-func e: Expr => Expr.
+app-args e: Expr => [Expr].
+tuple-elems e: Expr => [Expr].
+proj-expr e: Expr => Expr.
+proj-index e: Expr => Nat.
+primed-name e: Expr => Name.
+override-name e: Expr => Name.
+binop-left e: Expr => Expr.
+binop-right e: Expr => Expr.
+unop-arg e: Expr => Expr.
+
+> Whether a chapter's head contains an action declaration.
+
+has-action? c: Chapter => Bool.
+
+> The resolved type of a term binding in the environment.
+
+term-type name: Name, env: Env => Ty.
+
+> Whether a name is bound as a rule (not a variable) in the environment.
+
+is-rule? name: Name, env: Env => Bool.
+
+> Whether an expression contains any primed subexpression.
+
+contains-primed? e: Expr => Bool.
+
+> Accessors for function types.
+
+func-params t: Ty => [Ty].
+func-return t: Ty => Ty.
+
+> The k-th component type of a product type.
+
+proj-type t: Ty, k: Nat => Ty.
 
 ---
 
@@ -296,6 +382,14 @@ all t: Ty | unop-type op-card (ty-list t) = ty-nat0.
 all t: Ty, is-numeric? t, subtype? t ty-int | unop-type op-neg t = ty-int.
 unop-type op-neg ty-real = ty-real.
 
+> A binary operator expression dispatches to the operator typing rule.
+
+all e: Expr, env: Env, is-binop? e | infer e env = binop-type (binop-op e) (infer (binop-left e) env) (infer (binop-right e) env).
+
+> A unary operator expression dispatches to the operator typing rule.
+
+all e: Expr, env: Env, is-unop? e | infer e env = unop-type (unop-op e) (infer (unop-arg e) env).
+
 where
 
 Type.
@@ -374,6 +468,11 @@ op-card => UnOp.
 binop-type op: BinOp, t1: Ty, t2: Ty => Ty.
 unop-type op: UnOp, t: Ty => Ty.
 
+> The operator of a binary or unary operator expression.
+
+binop-op e: Expr => BinOp.
+unop-op e: Expr => UnOp.
+
 ---
 
 > Product types have at least two components.
@@ -399,95 +498,6 @@ product-components t: Type => [Type].
 sum-components t: Type => [Type].
 
 ---
-
-where
-
-> Every document has a module name, a list of imports, and one or more chapters.
-
-module-name d: Document => Name.
-imports d: Document => [Name].
-
-> Every declaration has a name.
-
-decl-name decl: Declaration => Name.
-
-> An alias declaration has an associated type expression.
-
-alias-type decl: Declaration => Type.
-rule-return-type decl: Declaration => Type.
-
-> An action has a free-form label, optional parameters, optional guards,
-> and an optional context annotation.
-
-action-label decl: Declaration => Name.
-action-params decl: Declaration => [Name].
-action-param-types decl: Declaration => [Type].
-action-context decl: Declaration => Name + Nothing.
-
-> Accessors for each type expression form.
-
-type-name t: Type => Name.
-qualified-module t: Type => Name.
-qualified-name t: Type => Name.
-list-element t: Type => Type.
-
-> Entry kinds distinguish what a name refers to.
-
-EntryKind.
-ek-domain => EntryKind.
-ek-alias => EntryKind.
-ek-rule => EntryKind.
-ek-var => EntryKind.
-
-> Each entry records a kind, a resolved type, and the chapter where it was
-> declared.
-
-Entry.
-entry-kind e: Entry => EntryKind.
-entry-chapter e: Entry => Nat0.
-lookup-type name: Name, env: Env => Entry.
-lookup-term name: Name, env: Env => Entry.
-ty-product ts: [Ty] => Ty.
-ty-sum ts: [Ty] => Ty.
-
-> Function types arise from rule declarations.
-> The return type is Nothing when absent (actions have no return type).
-
-ty-func params: [Ty], ret: Ty => Ty.
-
-> Expression form predicates.
-
-is-var? e: Expr => Bool.
-is-app? e: Expr => Bool.
-is-tuple? e: Expr => Bool.
-is-proj? e: Expr => Bool.
-is-primed? e: Expr => Bool.
-is-override? e: Expr => Bool.
-is-binop? e: Expr => Bool.
-is-unop? e: Expr => Bool.
-
-> Expression accessors.
-
-var-name e: Expr => Name.
-app-func e: Expr => Expr.
-app-args e: Expr => [Expr].
-tuple-elems e: Expr => [Expr].
-proj-expr e: Expr => Expr.
-proj-index e: Expr => Nat.
-primed-name e: Expr => Name.
-override-name e: Expr => Name.
-
-> Whether a chapter's head contains an action declaration.
-
-has-action? c: Chapter => Bool.
-
----
-
-> A primed expression (f') denotes the post-state value of a rule
-> and has the same type as the unprimed rule.
-
-> A function override f[k |-> v] requires f to have arity 1
-> and preserves f's type.
 
 > When a quantifier rebinds a variable already in scope,
 > the new type must be a subtype of the existing type.

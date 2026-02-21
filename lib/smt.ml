@@ -643,9 +643,7 @@ let rec translate_expr config env (e : expr) =
   | EUnop (op, e) -> translate_unop config env op e
   | EForall (params, guards, body) ->
       if is_comprehension_q env params guards body then
-        failwith
-          "SMT translation: comprehension (all ... | non-Bool) in standalone \
-           position; use inside 'in', '#', or 'subset'"
+        translate_forall_comprehension config env params guards body
       else translate_quantifier config env "forall" params guards body
   | EExists (params, guards, body) ->
       if is_comprehension_q env params guards body then
@@ -910,6 +908,70 @@ and translate_card config env e =
       | _ ->
           (* Can't determine element type at all *)
           Printf.sprintf "; WARNING: unknown cardinality\n0")
+
+and translate_forall_comprehension config env params guards body =
+  (* Standalone comprehension: (all x: D | f x) → array where exactly
+     the comprehension results are members. Build a store chain:
+     (let ((_cl_0 ((as const (Array <sort> Bool)) false)))
+     (let ((_cl_1 (store _cl_0 v0 true)))
+     (let ((_cl_2 (ite g1 (store _cl_1 v1 true) _cl_1)))
+       _cl_2))) *)
+  let expanded =
+    expand_comprehension translate_expr config env params guards body
+  in
+  (* Infer body type to determine element sort *)
+  let param_bindings =
+    List.filter_map
+      (fun (p : param) ->
+        match Collect.resolve_type env p.param_type dummy_loc with
+        | Ok ty -> Some (p.param_name, ty)
+        | Error _ -> None)
+      params
+  in
+  let guard_bindings =
+    List.filter_map
+      (fun g ->
+        match g with
+        | GIn (name, list_expr) -> (
+            match Check.infer_type { Check.env; loc = dummy_loc } list_expr with
+            | Ok (TyList elem_ty) -> Some (name, elem_ty)
+            | _ -> None)
+        | _ -> None)
+      guards
+  in
+  let env_inner = Env.with_vars (param_bindings @ guard_bindings) env in
+  let elem_sort =
+    match Check.infer_type { Check.env = env_inner; loc = dummy_loc } body with
+    | Ok ty -> sort_of_ty ty
+    | Error _ ->
+        failwith
+          "SMT translation: cannot infer element type for standalone \
+           comprehension"
+  in
+  let empty = Printf.sprintf "((as const (Array %s Bool)) false)" elem_sort in
+  let bindings =
+    List.mapi
+      (fun i (guard_opt, value_str) ->
+        let prev = Printf.sprintf "_cl_%d" i in
+        let next = Printf.sprintf "_cl_%d" (i + 1) in
+        let store_expr = Printf.sprintf "(store %s %s true)" prev value_str in
+        let bind_expr =
+          match guard_opt with
+          | None -> store_expr
+          | Some g -> Printf.sprintf "(ite %s %s %s)" g store_expr prev
+        in
+        (next, bind_expr))
+      expanded
+  in
+  let n = List.length bindings in
+  let final_var = if n = 0 then "_cl_0" else Printf.sprintf "_cl_%d" n in
+  let inner =
+    List.fold_right
+      (fun (name, expr) acc ->
+        Printf.sprintf "(let ((%s %s)) %s)" name expr acc)
+      bindings final_var
+  in
+  Printf.sprintf "(let ((_cl_0 %s)) %s)" empty inner
 
 and translate_quantifier config env quant params guards body =
   (* Enrich env with formal parameter bindings so that type inference
