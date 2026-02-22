@@ -148,6 +148,29 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
   | EEach (params, guards, body) ->
       let* body_ty = check_quantifier ctx params guards body in
       Ok (TyList body_ty)
+  | ECond arms ->
+      let* _ =
+        map_result
+          (fun (arm, _) ->
+            let* arm_ty = infer_type ctx arm in
+            if equal_ty arm_ty TyBool then Ok ()
+            else Error (ExpectedBool (arm_ty, ctx.loc)))
+          arms
+      in
+      let* result_ty =
+        match arms with
+        | [] -> assert false
+        | (_, first_cons) :: rest ->
+            let* first_ty = infer_type ctx first_cons in
+            fold_result
+              (fun acc (_, cons) ->
+                let* cons_ty = infer_type ctx cons in
+                match join acc cons_ty with
+                | Ok joined -> Ok joined
+                | Error _ -> Error (TypeMismatch (acc, cons_ty, ctx.loc)))
+              first_ty rest
+      in
+      Ok result_ty
   | EInitially e -> infer_type ctx e
   | EOverride (name, pairs) -> check_override ctx name pairs
 

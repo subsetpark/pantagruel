@@ -118,7 +118,7 @@ let collect_chapter_head ~chapter ~doc_contexts env
   (* Pass 3: Add rules/actions and register context footprints *)
   let add_rule env (decl : declaration located) =
     match decl.value with
-    | DeclRule { name; params; guards = _; return_type; contexts } ->
+    | DeclRule { name; params; guards; return_type; contexts } ->
         let* param_types =
           map_result (fun p -> resolve_type env p.param_type decl.loc) params
         in
@@ -143,6 +143,7 @@ let collect_chapter_head ~chapter ~doc_contexts env
               Error (DuplicateRule (name, decl.loc, existing.loc))
           | _ -> Ok (Env.add_rule name proc_ty decl.loc ~chapter env)
         in
+        let env = Env.add_rule_guards name params guards env in
         (* Add rule to each context's member list *)
         let env =
           List.fold_left
@@ -150,10 +151,11 @@ let collect_chapter_head ~chapter ~doc_contexts env
             env contexts
         in
         Ok env
-    | DeclAction { label; params; guards = _; _ } ->
+    | DeclAction { label; params; guards; _ } ->
         let* _param_types =
           map_result (fun p -> resolve_type env p.param_type decl.loc) params
         in
+        let env = Env.add_rule_guards label params guards env in
         actions := (label, decl.loc) :: !actions;
         Ok env
     | DeclClosure { name; param; return_type; target } ->

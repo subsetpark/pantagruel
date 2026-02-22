@@ -167,6 +167,20 @@ let rec expr_to_json = function
                 ("body", expr_to_json body);
               ] );
         ]
+  | ECond arms ->
+      `Assoc
+        [
+          ( "cond",
+            `List
+              (List.map
+                 (fun (arm, cons) ->
+                   `Assoc
+                     [
+                       ("arm", expr_to_json arm);
+                       ("consequence", expr_to_json cons);
+                     ])
+                 arms) );
+        ]
   | EInitially e -> `Assoc [ ("initially", expr_to_json e) ]
 
 (** Convert guard to JSON *)

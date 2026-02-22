@@ -163,6 +163,8 @@ Interpret results with the user:
 - **Deadlock**: An action's preconditions may be too strong, or the invariants too restrictive.
 - **Unsatisfiable initial state**: The `initially` propositions contradict each other or the type constraints.
 
+Declaration guards on rules (e.g., `score u: User, active u => Nat.`) are automatically injected as antecedents in SMT queries. This means the solver treats guarded functions as partial — it won't produce counterexamples that apply a function outside its declared domain. When writing guards, consider that they will constrain all verification queries involving that function.
+
 ## Syntax Cheatsheet
 
 ### Document structure
@@ -207,6 +209,9 @@ nobody => User.                         // nullary
 
 // Action with context
 Accounts ~> Withdraw | a: Account, amount: Nat.
+
+// Rule with guard (partial function — guard injected into SMT queries)
+score u: User, active u => Nat.
 
 // Action with guard (precondition)
 ~> Withdraw | a: Account, amount: Nat, balance a >= amount.

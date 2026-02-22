@@ -60,6 +60,7 @@ The `samples/` directory contains reference specifications:
 - `07-pantagruel.pant` - Self-specification of the Pantagruel language
 - `08-contexts.pant` - Context declarations and write-permission boundaries
 - `09-closure.pant` - Transitive closure declarations and acyclicity invariants
+- `10-cond.pant` - Multi-armed conditional expressions with exhaustiveness checking
 
 The `samples/smt-examples/` directory demonstrates bounded model checking:
 
@@ -180,6 +181,17 @@ Accounts ~> Withdraw | a: Account, amount: Nat.
 balance' a = balance a - amount.
 ```
 
+### Conditionals
+
+Multi-armed conditional expressions, where each arm is a boolean guard and each consequence has the same type:
+
+```
+// Classify priorities into tiers
+all p: Priority | tier p = cond score p >= 100 => 3, score p >= 50 => 2, score p >= 10 => 1, true => 0.
+```
+
+Arms are checked left to right. When `--check` is used, the checker verifies that the arms are **exhaustive** — their disjunction covers all cases.
+
 ### Operators
 
 | Category | Operators |
@@ -188,7 +200,7 @@ balance' a = balance a - amount.
 | Comparison | `=`, `!=`, `<`, `>`, `<=`, `>=` |
 | Membership | `in`, `subset` |
 | Arithmetic | `+`, `-`, `*`, `/` |
-| Other | `#` (cardinality), `.N` (projection) |
+| Other | `#` (cardinality), `.N` (projection), `cond` (conditional) |
 
 ### Comments
 
@@ -261,7 +273,9 @@ all p: Point, q: Point | distance p q = distance q p.
 
 ## Bounded Model Checking
 
-The `--check` flag translates your specification into SMT-LIB2 and verifies it using an SMT solver (z3 by default). This performs three checks for each action:
+The `--check` flag translates your specification into SMT-LIB2 and verifies it using an SMT solver (z3 by default). This performs checks at two levels.
+
+**Per-action checks.** For each action, three checks are performed:
 
 1. **Contradiction detection** - Are the action's postconditions satisfiable? If not, no state transition can satisfy all constraints simultaneously.
 
@@ -270,6 +284,10 @@ The `--check` flag translates your specification into SMT-LIB2 and verifies it u
 3. **Precondition satisfiability** - Can the action's preconditions ever be met, given the invariants? Flags unreachable "dead" operations.
 
 Checking is bounded: domain types are modeled with a finite number of elements (default 3, configurable with `--bound`). The bound is automatically raised per domain when the specification declares more nullary constants of that domain type than the configured bound (e.g., 5 named constants of type `Color` will use bound 5 for `Color` even if `--bound 3`). This means checks are sound within the bound but not complete for all possible domain sizes.
+
+**Cond exhaustiveness.** Every `cond` expression in the document is checked for exhaustiveness: the solver verifies that the disjunction of all arm conditions is always true (within the enclosing quantifier context). A non-exhaustive cond reports a counterexample showing variable assignments where no arm is true.
+
+**Guard-aware verification.** Declaration guards (e.g., `score u: User, active u => Nat.`) are automatically injected as antecedents in SMT queries. When a quantified proposition applies a guarded function, the guard is threaded into the quantifier's condition. This prevents false positives from the solver applying functions outside their declared domain.
 
 ### Example: detecting an invariant violation
 

@@ -54,7 +54,7 @@
 %token FORALL EXISTS EACH IN SUBSET
 %token DOT COMMA COLON DCOLON PIPE SEPARATOR
 %token LPAREN RPAREN LBRACKET RBRACKET
-%token LBRACE RBRACE CONTEXT INITIALLY CLOSURE
+%token LBRACE RBRACE CONTEXT INITIALLY CLOSURE COND
 %token <string> ACTION_LABEL
 %token EOF
 
@@ -210,6 +210,12 @@ expr:
   | e=quantified { e }
   | e=biconditional { e }
 
+cond_expr:
+  | COND cs=separated_nonempty_list(COMMA, cond_arm) { ECond cs }
+
+cond_arm:
+  | arm=biconditional DARROW consequence=biconditional { (arm, consequence) }
+
 biconditional:
   | e1=implication IFF e2=implication { EBinop (OpIff, e1, e2) }
   | e=implication { e }
@@ -304,6 +310,7 @@ projection:
   | n=PROJ { n }
 
 atom:
+  | e=cond_expr { e }
   | name=LOWER_IDENT { EVar name }
   | name=UPPER_IDENT { EDomain name }
   | m=UPPER_IDENT DCOLON name=LOWER_IDENT { EQualified (m, name) }

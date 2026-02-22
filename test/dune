@@ -1,5 +1,14 @@
 (tests
- (names test_lexer test_parser test_check test_markdown test_smt)
- (libraries pantagruel alcotest)
+ (names
+  test_lexer
+  test_parser
+  test_check
+  test_markdown
+  test_smt
+  test_types
+  test_pretty
+  test_json_output
+  test_normalize)
+ (libraries pantagruel alcotest qcheck-alcotest)
  (preprocess
   (pps sedlex.ppx)))

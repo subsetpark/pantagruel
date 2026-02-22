@@ -38,9 +38,9 @@ where
 ### Keywords
 
 ```
-module  import  where  context  initially  closure
+module  import  where  context  initially  closure  cond
 true    false   and    or
-all     some    in     subset
+all     some    each   in     subset
 ```
 
 ### Literals
@@ -341,6 +341,20 @@ The `each` keyword produces a **comprehension** (list). Its body may have any ty
 
 Comprehensions cannot appear as standalone propositions (the body of a chapter must be `Bool`). They can appear as expressions anywhere a list is expected — as arguments, inside `in`, `#`, `subset`, etc. In SMT translation, they are expanded over finite domain elements.
 
+#### Conditionals (`cond`)
+
+`cond` *arm₁* `=>` *e₁*`,` ... `,` *armₙ* `=>` *eₙ*:
+
+1. Each arm must have type `Bool`.
+2. All consequences must have compatible types: the result type is *T₁* ⊔ ··· ⊔ *Tₙ* (the iterated join of all consequence types).
+3. Result type: the join of all consequence types.
+
+A `cond` expression is a multi-armed conditional. Arms are checked left to right; the consequence of the first true arm is the result. If no arm is true, the expression is undefined — this is why `--check` verifies exhaustiveness.
+
+**Exhaustiveness checking.** When `--check` is used, the checker generates an SMT query for each `cond` expression verifying that the disjunction of all arm conditions is a tautology (within the enclosing quantifier context and given all invariants as background). A `cond` that ends with `true => ...` is trivially exhaustive. A non-exhaustive `cond` reports a counterexample showing variable assignments where no arm is true.
+
+**SMT translation.** A `cond` expression translates to nested `ite` (if-then-else) chains: `(ite arm₁ e₁ (ite arm₂ e₂ ... eₙ))`. The last consequence becomes the else branch.
+
 #### Primed Expressions
 
 *f*`'` (a primed name):
@@ -467,9 +481,18 @@ Guards constrain when a rule or action applies. Guards must be boolean expressio
 
 ```
 ~> Withdraw | a: Account, amount: Nat, balance a >= amount.
+score u: User, active u => Nat.
 ```
 
 Guards can reference the rule's parameters (`a`, `amount` in this example) to express preconditions.
+
+**SMT semantics.** Declaration guards define the domain of a function's parameters. When `--check` translates propositions to SMT, guards are automatically injected as antecedents wherever the guarded function is applied:
+
+- **In quantified propositions**: `all u: User | score u >= 0` with the guard `active u` on `score` becomes `all u: User | active u -> score u >= 0`. The guard's formal parameter `u` is substituted with the quantified variable.
+- **In non-quantified propositions**: A bare proposition like `score x >= 0` is wrapped as `active x -> score x >= 0`.
+- **Nested quantifiers**: Each quantifier level injects guards independently for the function applications in its own body. Inner quantifiers handle their own guard injection.
+
+This prevents the solver from producing false positives where a function is applied to inputs outside its declared domain.
 
 ### Context Declaration
 
@@ -617,6 +640,21 @@ r in (each u: User | role u).           // Is r a role of any user?
 #(each u in users, active u | u) > 0.   // At least one active user
 (each u: User | role u) subset Role.    // All assigned roles are valid
 ```
+
+### Conditionals
+
+```
+// Multi-armed conditional
+cond guard1 => value1, guard2 => value2, true => default
+
+// Inside a proposition
+all p: Priority | tier p = cond score p >= 100 => 3, score p >= 50 => 2, true => 0.
+
+// Arms can use any boolean expression
+cond active s => rank s >= 0, ~active s => rank s = 0.
+```
+
+Each arm is a boolean guard, each consequence must have the same type. The `cond` keyword begins the expression; arms are separated by `,` with `=>` between guard and consequence. Use `true => ...` as a catch-all default arm.
 
 ### Primed Expressions (State Transitions)
 
@@ -914,9 +952,12 @@ atom        ::= LOWER                                  // Variable
               | 'true' | 'false'                      // Booleans
               | LOWER "'"                             // Primed
               | LOWER '[' override (',' override)* ']' // Override
+              | 'cond' cond_arm (',' cond_arm)*        // Conditional
               | '(' expr ')'                          // Grouped
               | '(' expr ',' expr (',' expr)* ')'     // Tuple
               | atom '.N'                             // Projection
+
+cond_arm    ::= biconditional '=>' biconditional
 
 bindings    ::= binding (',' (binding | guard))*
 binding     ::= LOWER ':' type              // Type annotation

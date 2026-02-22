@@ -90,6 +90,12 @@ let symbols_in_expr expr =
             | GExpr e -> go e)
           guards;
         go body
+    | ECond arms ->
+        List.iter
+          (fun (arm, cons) ->
+            go arm;
+            go cons)
+          arms
   in
   go expr;
   (!types, !terms)
@@ -172,6 +178,8 @@ let rec uses_primed = function
           | GParam _ -> false)
         guards
       || uses_primed body
+  | ECond arms ->
+      List.exists (fun (arm, cons) -> uses_primed arm || uses_primed cons) arms
 
 (** Check if a chapter body uses primed expressions *)
 let body_uses_primed (props : expr located list) =

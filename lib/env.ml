@@ -32,6 +32,8 @@ type t = {
   current_module : string;  (** Current module name *)
   contexts : string list StringMap.t;
       (** Context declarations: context name -> member function names *)
+  rule_guards : (Ast.param list * Ast.guard list) StringMap.t;
+      (** Declaration guards keyed by rule name: formal params + guards *)
   action : string option;  (** Action in current chapter (for prime checking) *)
   action_context : string option;
       (** Active context for current action (for primed-in-context enforcement)
@@ -49,6 +51,7 @@ let empty module_name =
     imported_terms = StringMap.empty;
     current_module = module_name;
     contexts = StringMap.empty;
+    rule_guards = StringMap.empty;
     action = None;
     action_context = None;
     local_vars = [];
@@ -126,6 +129,18 @@ let add_rule_to_context ctx_name rule_name env =
 (** Lookup a context by name *)
 let lookup_context name env = StringMap.find_opt name env.contexts
 
+(** Lookup rule guards by name *)
+let lookup_rule_guards name env = StringMap.find_opt name env.rule_guards
+
+(** Store declaration guards for a rule *)
+let add_rule_guards name params guards env =
+  if guards = [] then env
+  else
+    {
+      env with
+      rule_guards = StringMap.add name (params, guards) env.rule_guards;
+    }
+
 (** Set the active action context *)
 let with_action_context ctx env = { env with action_context = ctx }
 
@@ -196,6 +211,12 @@ let add_import env other origin_module =
       (fun name members acc -> StringMap.add name members acc)
       other.contexts env.contexts
   in
+  (* Merge rule guards from imported module *)
+  let merged_rule_guards =
+    StringMap.fold
+      (fun name guards acc -> StringMap.add name guards acc)
+      other.rule_guards env.rule_guards
+  in
   {
     env with
     imported_types;
@@ -203,6 +224,7 @@ let add_import env other origin_module =
     types = flat_of_index imported_types;
     terms = flat_of_index imported_terms;
     contexts = merged_contexts;
+    rule_guards = merged_rule_guards;
   }
 
 (** Lookup a type by module and name in the import index *)

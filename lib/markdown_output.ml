@@ -76,6 +76,12 @@ let rec pp_expr procs fmt = function
   | EEach (params, guards, body) ->
       fprintf fmt "each %a · %a" (pp_quant_bindings procs) (params, guards)
         (pp_expr procs) body
+  | ECond arms ->
+      fprintf fmt "cond %a"
+        (pp_print_list ~pp_sep:pp_params_sep (fun fmt (arm, cons) ->
+             fprintf fmt "%a ⇒ %a" (pp_biconditional procs) arm
+               (pp_biconditional procs) cons))
+        arms
   | e -> pp_biconditional procs fmt e
 
 and pp_quant_bindings procs fmt (params, guards) =

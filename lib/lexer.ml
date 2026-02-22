@@ -114,6 +114,7 @@ let keyword_or_lower_ident = function
   | "context" -> Parser.CONTEXT
   | "initially" -> Parser.INITIALLY
   | "closure" -> Parser.CLOSURE
+  | "cond" -> Parser.COND
   | s -> Parser.LOWER_IDENT s
 
 (** Skip line comment *)
@@ -363,6 +364,7 @@ let string_of_token = function
   | Parser.CONTEXT -> "'context'"
   | Parser.INITIALLY -> "'initially'"
   | Parser.CLOSURE -> "'closure'"
+  | Parser.COND -> "'cond'"
 
 (** Describe a token category (for "expected X" messages) *)
 let describe_token = function
@@ -429,6 +431,7 @@ let all_tokens =
     Parser.CONTEXT;
     Parser.INITIALLY;
     Parser.CLOSURE;
+    Parser.COND;
     Parser.ACTION_LABEL "";
     Parser.EOF;
   ]

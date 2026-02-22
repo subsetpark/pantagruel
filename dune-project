@@ -18,4 +18,5 @@
   yojson
   sexplib0
   parsexp
-  (alcotest :with-test)))
+  (alcotest :with-test)
+  (qcheck-alcotest :with-test)))

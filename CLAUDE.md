@@ -46,6 +46,7 @@ Pantagruel is a specification language checker written in OCaml. It processes `.
 3. **Collection** (`lib/collect.ml`): Pass 1 - Declaration gathering
    - Collects domain declarations, type aliases, and rule signatures
    - Resolves type expressions to internal types
+   - Stores declaration guards in `Env.rule_guards` for SMT guard injection
    - Detects duplicate declarations and recursive aliases
 
 4. **Type Checking** (`lib/check.ml`): Pass 2 - Expression validation
@@ -57,7 +58,7 @@ Pantagruel is a specification language checker written in OCaml. It processes `.
 
 - `Ast.type_expr`: Syntactic types from parser (TName, TList, TProduct, TSum)
 - `Types.ty`: Internal type representation with numeric hierarchy (Nat < Nat0 < Int < Real)
-- `Env.t`: Type environment mapping names to entries (domains, aliases, rules, variables)
+- `Env.t`: Type environment mapping names to entries (domains, aliases, rules, variables). Also stores `rule_guards` — declaration guards keyed by rule name (formal params + guard expressions) for SMT guard injection.
 
 ### Module System (`lib/module.ml`)
 
@@ -80,6 +81,8 @@ Pantagruel is a specification language checker written in OCaml. It processes `.
 - Membership: `x in Domain`
 - Closures: `ancestor b: Block => [Block] = closure parent.` derives transitive closure of an endorelation
 - Contexts: `context Accounts.` at module level, `{Accounts} balance ...` for footprint, `Accounts ~> Withdraw | ...` for actions
+- Conditionals: `cond guard1 => val1, guard2 => val2, true => default` (multi-armed, arms must be Bool, consequences must have same type, checked for exhaustiveness during `--check`)
+- Declaration guards: `score u: User, active u => Nat.` — guards are stored in the environment and automatically injected as antecedents in SMT queries when the guarded function is applied
 
 ## Dependencies
 
