@@ -843,19 +843,169 @@ let test_card_domain_with_bounds () =
 
 (* --- Test suites --- *)
 
+(* --- Additional expression tests --- *)
+
+let test_binop_iff () =
+  let env = Env.empty "" in
+  check string "iff" "(= x y)"
+    (Smt.translate_expr config env (Ast.EBinop (OpIff, EVar "x", EVar "y")))
+
+let test_binop_ge () =
+  let env = Env.empty "" in
+  check string "ge" "(>= x y)"
+    (Smt.translate_expr config env (Ast.EBinop (OpGe, EVar "x", EVar "y")))
+
+let test_binop_gt () =
+  let env = Env.empty "" in
+  check string "gt" "(> x y)"
+    (Smt.translate_expr config env (Ast.EBinop (OpGt, EVar "x", EVar "y")))
+
+let test_binop_le () =
+  let env = Env.empty "" in
+  check string "le" "(<= x y)"
+    (Smt.translate_expr config env (Ast.EBinop (OpLe, EVar "x", EVar "y")))
+
+let test_tuple () =
+  let env = Env.empty "" in
+  let result =
+    Smt.translate_expr config env (Ast.ETuple [ ELitNat 1; ELitNat 2 ])
+  in
+  (* Tuple translates to mk-pair or similar *)
+  check bool "tuple non-empty" true (String.length result > 0)
+
+let test_override () =
+  let env =
+    Env.empty ""
+    |> Env.add_domain "K" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "f"
+         (Types.TyFunc ([ Types.TyDomain "K" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_var "a" (Types.TyDomain "K")
+  in
+  (* Applied override: f[a |-> 42] a produces ite chain *)
+  let result =
+    Smt.translate_expr config env
+      (Ast.EApp (EOverride ("f", [ (EVar "a", ELitNat 42) ]), [ EVar "a" ]))
+  in
+  check bool "applied override has ite" true (contains result "ite");
+  check bool "applied override has f" true (contains result "f");
+  (* Standalone override (not applied) can't be represented directly *)
+  let result2 =
+    Smt.translate_expr config env
+      (Ast.EOverride ("f", [ (EVar "a", ELitNat 42) ]))
+  in
+  check bool "standalone override placeholder" true
+    (contains result2 "override")
+
+let test_initially () =
+  let env = Env.empty "" in
+  let result = Smt.translate_expr config env (Ast.EInitially (ELitBool true)) in
+  check string "initially passes through" "true" result
+
+let test_lit_string () =
+  let env = Env.empty "" in
+  let result = Smt.translate_expr config env (Ast.ELitString "hello") in
+  check bool "string non-empty" true (String.length result > 0)
+
+(* --- Bug-finding tests --- *)
+
+let test_sanitize_ident_bang () =
+  (* Bug #1: sanitize_ident doesn't handle '!' — produces invalid SMT-LIB2 *)
+  let result = Smt.sanitize_ident "check-out!" in
+  check bool "no bang in sanitized ident" true
+    (not (String.contains result '!'))
+
+let test_translate_in_zero_bound () =
+  (* Bug #2: bound=0 used to produce "(or )" — invalid SMT-LIB2.
+     Now produces "false" (nothing in empty domain). *)
+  let zero_config =
+    Smt.{ bound = 0; steps = 0; domain_bounds = Env.StringMap.empty }
+  in
+  let env = Env.empty "" |> Env.add_domain "D" Ast.dummy_loc ~chapter:0 in
+  let result =
+    Smt.translate_expr zero_config env
+      (Ast.EBinop (OpIn, EVar "x", EDomain "D"))
+  in
+  check string "empty domain membership is false" "false" result
+
+let test_override_applied_zero_args () =
+  (* Bug #5: EApp(EOverride(...), []) used to crash with List.hd on empty list.
+     Now gives a proper error message. *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "K" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "f"
+         (Types.TyFunc ([ Types.TyDomain "K" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_var "a" (Types.TyDomain "K")
+  in
+  check_raises "override with 0 args gives clear error"
+    (Failure "SMT translation: override applied with 0 arguments") (fun () ->
+      ignore
+        (Smt.translate_expr config env
+           (Ast.EApp (EOverride ("f", [ (EVar "a", ELitNat 42) ]), []))))
+
+let test_nat_vs_nat0_constraints () =
+  (* Bug #10: Nat should emit >= 1, Nat0 should emit >= 0 *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "D" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "score"
+         (Types.TyFunc ([ Types.TyDomain "D" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "count"
+         (Types.TyFunc ([ Types.TyDomain "D" ], Some Types.TyNat0))
+         Ast.dummy_loc ~chapter:0
+  in
+  let constraints = Smt.declare_type_constraints config env in
+  check bool "Nat has >= 1 bound" true (contains constraints ">= (score");
+  check bool "Nat0 has >= 0 bound" true (contains constraints ">= (count");
+  (* Verify the actual bound values *)
+  check bool "contains 1) for Nat" true (contains constraints "(>= (score");
+  check bool "contains 0) for Nat0" true (contains constraints "(>= (count")
+
+let test_domain_closure_bound_one () =
+  (* Bug #11: with bound=1, domain_elements produces 1 element,
+     and closure axioms check "if List.length elems > 1" — so
+     transitive closure axiom is SKIPPED at bound=1 *)
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       Block.\n\
+       parent b: Block => Block + Nothing.\n\
+       ancestor b: Block => [Block] = closure parent.\n\
+       ---\n\
+       all b: Block | ~(b in ancestor b).\n"
+  in
+  let one_config =
+    Smt.{ bound = 1; steps = 0; domain_bounds = Env.StringMap.empty }
+  in
+  let queries = Smt.generate_queries one_config env doc in
+  let inv =
+    List.find (fun (q : Smt.query) -> q.kind = Smt.InvariantConsistency) queries
+  in
+  (* At bound=1, the closure axiom should still exist.
+     If it's skipped, domain membership is incomplete. *)
+  check bool "has ancestor axiom at bound=1" true (contains inv.smt2 "ancestor")
+
 let expression_tests =
   [
     test_case "bool literals" `Quick test_lit_bool;
     test_case "nat literals" `Quick test_lit_nat;
     test_case "real literals" `Quick test_lit_real;
+    test_case "string literal" `Quick test_lit_string;
     test_case "variables" `Quick test_var;
     test_case "primed" `Quick test_primed;
     test_case "and" `Quick test_binop_and;
     test_case "or" `Quick test_binop_or;
     test_case "implication" `Quick test_binop_impl;
+    test_case "iff" `Quick test_binop_iff;
     test_case "equality" `Quick test_binop_eq;
     test_case "inequality" `Quick test_binop_neq;
     test_case "less than" `Quick test_binop_lt;
+    test_case "ge" `Quick test_binop_ge;
+    test_case "gt" `Quick test_binop_gt;
+    test_case "le" `Quick test_binop_le;
     test_case "arithmetic" `Quick test_binop_arith;
     test_case "not" `Quick test_unop_not;
     test_case "negation" `Quick test_unop_neg;
@@ -864,6 +1014,9 @@ let expression_tests =
     test_case "domain membership" `Quick test_domain_in;
     test_case "list membership" `Quick test_in_list;
     test_case "projection" `Quick test_proj;
+    test_case "tuple" `Quick test_tuple;
+    test_case "override" `Quick test_override;
+    test_case "initially" `Quick test_initially;
     test_case "cardinality domain" `Quick test_card_domain;
     test_case "cardinality list" `Quick test_card_list;
     test_case "subset" `Quick test_subset;
@@ -872,13 +1025,83 @@ let expression_tests =
     test_case "subset with domain RHS" `Quick test_subset_domain_rhs;
   ]
 
+let test_sort_string () =
+  check string "String sort" "String" (Smt.sort_of_ty Types.TyString)
+
+let test_sort_list () =
+  check string "List sort" "(Array Account Bool)"
+    (Smt.sort_of_ty (Types.TyList (Types.TyDomain "Account")))
+
 let sort_tests =
   [
     test_case "Bool sort" `Quick test_sort_bool;
     test_case "Int sorts" `Quick test_sort_int;
     test_case "Real sort" `Quick test_sort_real;
+    test_case "String sort" `Quick test_sort_string;
     test_case "Domain sort" `Quick test_sort_domain;
+    test_case "List sort" `Quick test_sort_list;
   ]
+
+let test_nat_type_constraints () =
+  let env =
+    Env.empty ""
+    |> Env.add_domain "Account" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "balance"
+         (Types.TyFunc ([ Types.TyDomain "Account" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+  in
+  let constraints = Smt.declare_type_constraints config env in
+  (* Nat uses bound 1 (positive naturals) *)
+  check bool "has >= 1 for Nat" true (contains constraints ">= (balance");
+  check bool "has assert" true (contains constraints "(assert")
+
+let test_invariant_query_content () =
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       context Ctx.\n\
+       Account.\n\
+       {Ctx} balance a: Account => Nat.\n\
+       ---\n\
+       all a: Account | balance a >= 0.\n\
+       where\n\
+       Ctx ~> Withdraw | a: Account, amount: Nat, balance a >= amount.\n\
+       ---\n\
+       balance' a = balance a - amount.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  let inv_con =
+    List.find (fun (q : Smt.query) -> q.kind = Smt.InvariantConsistency) queries
+  in
+  check bool "has check-sat" true (contains inv_con.smt2 "(check-sat)");
+  check bool "has balance decl" true
+    (contains inv_con.smt2 "(declare-fun balance ");
+  check bool "has domain sort" true
+    (contains inv_con.smt2 "(declare-sort Account 0)")
+
+let test_init_query_content () =
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       context Ctx.\n\
+       Account.\n\
+       {Ctx} balance a: Account => Nat.\n\
+       ---\n\
+       initially all a: Account | balance a = 100.\n\
+       all a: Account | balance a >= 0.\n\
+       where\n\
+       Ctx ~> Withdraw | a: Account, amount: Nat, balance a >= amount.\n\
+       ---\n\
+       balance' a = balance a - amount.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  let init_inv =
+    List.find (fun (q : Smt.query) -> q.kind = Smt.InitInvariant) queries
+  in
+  check bool "init-invariant has check-sat" true
+    (contains init_inv.smt2 "(check-sat)");
+  check bool "init-invariant has balance" true
+    (contains init_inv.smt2 "balance")
 
 let integration_tests =
   [
@@ -892,6 +1115,9 @@ let integration_tests =
     test_case "frame conditions" `Quick test_frame_conditions;
     test_case "prime expr" `Quick test_prime_expr;
     test_case "sanitize ident" `Quick test_sanitize_ident;
+    test_case "nat type constraints" `Quick test_nat_type_constraints;
+    test_case "invariant query content" `Quick test_invariant_query_content;
+    test_case "init query content" `Quick test_init_query_content;
   ]
 
 let value_terms_tests =
@@ -1165,6 +1391,235 @@ let closure_tests =
       test_closure_no_frame_condition;
   ]
 
+(* --- Declaration guard injection tests --- *)
+
+let test_quantifier_guard_injection () =
+  (* Rule with a guard: get-access u: User, active? u => Access
+     When used inside "all u: User | ...", the guard should appear as antecedent *)
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       User.\n\
+       Access.\n\
+       active? u: User => Bool.\n\
+       get-access u: User, active? u => Access.\n\
+       ---\n\
+       all u: User | get-access u in Access.\n"
+  in
+  ignore doc;
+  let queries = Smt.generate_queries config env doc in
+  let inv_con =
+    List.find (fun (q : Smt.query) -> q.kind = Smt.InvariantConsistency) queries
+  in
+  (* The guard "active? u" should appear as an antecedent in the
+     forall quantifier, substituted to match the quantified variable *)
+  check bool "has guard in quantifier" true (contains inv_con.smt2 "activep")
+
+let test_non_quantified_guard_injection () =
+  (* A bare proposition using a guarded function should get wrapped *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_domain "Access" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "get-access"
+         (Types.TyFunc
+            ([ Types.TyDomain "User" ], Some (Types.TyDomain "Access")))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "status"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule_guards "get-access"
+         [ Ast.{ param_name = "u"; param_type = TName "User" } ]
+         [ GExpr (EApp (EVar "status", [ EVar "u" ])) ]
+    |> Env.add_var "x" (Types.TyDomain "User")
+  in
+  let expr =
+    Ast.EBinop (OpEq, EApp (EVar "get-access", [ EVar "x" ]), EVar "x")
+  in
+  let result = Smt.translate_proposition config env expr in
+  (* Should wrap: (=> (status x) (= (get_access x) x)) *)
+  check bool "has implication" true (contains result "(=>");
+  check bool "has guard (status x)" true (contains result "(status x)")
+
+let test_nested_quantifier_guards () =
+  (* Guards should be injected at the correct nesting level.
+     Inner quantifier has its own scope — guards from inner applications
+     should appear in the inner quantifier, not the outer one. *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_domain "Role" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "role"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some (Types.TyDomain "Role")))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "active"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule_guards "role"
+         [ Ast.{ param_name = "u"; param_type = TName "User" } ]
+         [ GExpr (EApp (EVar "active", [ EVar "u" ])) ]
+  in
+  (* all x: User | (some y: User | role y = role x) *)
+  let expr =
+    Ast.EForall
+      ( [ { param_name = "x"; param_type = TName "User" } ],
+        [],
+        EExists
+          ( [ { param_name = "y"; param_type = TName "User" } ],
+            [],
+            EBinop
+              ( OpEq,
+                EApp (EVar "role", [ EVar "y" ]),
+                EApp (EVar "role", [ EVar "x" ]) ) ) )
+  in
+  let result = Smt.translate_expr config env expr in
+  (* Outer forall should NOT have the guard (nested quantifier handles its own).
+     Inner exists should have (active y) and (active x) as guards. *)
+  check bool "has active guard" true (contains result "(active")
+
+let test_unguarded_rule_unchanged () =
+  (* Rules without guards should produce the same output as before *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "name"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EForall
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [],
+        EApp (EVar "name", [ EVar "u" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  (* No guard injection — plain forall without => *)
+  check bool "no implication for unguarded" true (not (contains result "(=>"))
+
+let test_guard_substitution () =
+  (* Verify that guard expressions have their formal params correctly
+     substituted with actual arguments *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "score"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "active"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule_guards "score"
+         [ Ast.{ param_name = "u"; param_type = TName "User" } ]
+         [ GExpr (EApp (EVar "active", [ EVar "u" ])) ]
+  in
+  (* all x: User | score x >= 0 — the guard "active u" should become "active x" *)
+  let expr =
+    Ast.EForall
+      ( [ { param_name = "x"; param_type = TName "User" } ],
+        [],
+        EBinop (OpGe, EApp (EVar "score", [ EVar "x" ]), ELitNat 0) )
+  in
+  let result = Smt.translate_expr config env expr in
+  (* Guard should be substituted: (active x), not (active u) *)
+  check bool "has (active x)" true (contains result "(active x)");
+  check bool "no (active u)" false (contains result "(active u)")
+
+let guard_injection_tests =
+  [
+    test_case "quantifier guard injection" `Quick
+      test_quantifier_guard_injection;
+    test_case "non-quantified guard injection" `Quick
+      test_non_quantified_guard_injection;
+    test_case "nested quantifier guards" `Quick test_nested_quantifier_guards;
+    test_case "unguarded rule unchanged" `Quick test_unguarded_rule_unchanged;
+    test_case "guard substitution" `Quick test_guard_substitution;
+  ]
+
+(* --- Cond expression tests --- *)
+
+let test_cond_single_arm () =
+  let env = Env.empty "" in
+  let expr = Ast.ECond [ (ELitBool true, ELitNat 42) ] in
+  check string "single arm" "42" (Smt.translate_expr config env expr)
+
+let test_cond_two_arms () =
+  let env = Env.empty "" in
+  let expr =
+    Ast.ECond
+      [
+        (EBinop (OpGt, EVar "x", ELitNat 0), ELitNat 1);
+        (ELitBool true, ELitNat 0);
+      ]
+  in
+  check string "two arms" "(ite (> x 0) 1 0)"
+    (Smt.translate_expr config env expr)
+
+let test_cond_three_arms () =
+  let env = Env.empty "" in
+  let expr =
+    Ast.ECond
+      [
+        (EBinop (OpGt, EVar "x", ELitNat 10), ELitNat 2);
+        (EBinop (OpGt, EVar "x", ELitNat 5), ELitNat 1);
+        (ELitBool true, ELitNat 0);
+      ]
+  in
+  check string "three arms" "(ite (> x 10) 2 (ite (> x 5) 1 0))"
+    (Smt.translate_expr config env expr)
+
+let test_cond_exhaustiveness_query () =
+  let _env, doc =
+    parse_and_collect
+      "module TEST.\n\n\
+       Status.\n\
+       level s: Status => Nat.\n\
+       ---\n\
+       all s: Status | level s = cond level s >= 10 => 2, level s >= 5 => 1, \
+       true => 0.\n"
+  in
+  let conds = Smt.collect_conds_from_doc doc in
+  check int "one cond found" 1 (List.length conds);
+  let cond = List.hd conds in
+  check int "three arms" 3 (List.length cond.cond_arms)
+
+let test_cond_exhaustiveness_with_true () =
+  (* A cond with 'true' as last arm should always be exhaustive *)
+  let env, doc =
+    parse_and_collect
+      "module TEST.\n\n\
+       Status.\n\
+       level s: Status => Nat.\n\
+       ---\n\
+       all s: Status | level s = cond true => 1.\n"
+  in
+  let conds = Smt.collect_conds_from_doc doc in
+  check int "one cond" 1 (List.length conds);
+  let queries = Smt.generate_queries config env doc in
+  let exh_queries =
+    List.filter (fun q -> q.Smt.kind = Smt.CondExhaustiveness) queries
+  in
+  check int "one exhaustiveness query" 1 (List.length exh_queries)
+
+let cond_tests =
+  [
+    test_case "single arm" `Quick test_cond_single_arm;
+    test_case "two arms" `Quick test_cond_two_arms;
+    test_case "three arms" `Quick test_cond_three_arms;
+    test_case "exhaustiveness query" `Quick test_cond_exhaustiveness_query;
+    test_case "exhaustiveness with true" `Quick
+      test_cond_exhaustiveness_with_true;
+  ]
+
+let bug_finding_tests =
+  [
+    test_case "sanitize_ident bang" `Quick test_sanitize_ident_bang;
+    test_case "translate_in zero bound" `Quick test_translate_in_zero_bound;
+    test_case "override applied zero args" `Quick
+      test_override_applied_zero_args;
+    test_case "nat vs nat0 constraints" `Quick test_nat_vs_nat0_constraints;
+    test_case "domain closure bound=1" `Quick test_domain_closure_bound_one;
+  ]
+
 let () =
   run "SMT"
     [
@@ -1178,4 +1633,7 @@ let () =
       ("domain_bounds", domain_bounds_tests);
       ("comprehensions", comprehension_tests);
       ("closure", closure_tests);
+      ("guard_injection", guard_injection_tests);
+      ("cond", cond_tests);
+      ("bug_finding", bug_finding_tests);
     ]

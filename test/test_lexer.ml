@@ -56,6 +56,7 @@ let token_to_string = function
   | Parser.CONTEXT -> "CONTEXT"
   | Parser.INITIALLY -> "INITIALLY"
   | Parser.CLOSURE -> "CLOSURE"
+  | Parser.COND -> "COND"
   | Parser.ACTION_LABEL s -> "ACTION_LABEL(" ^ s ^ ")"
   | Parser.EOF -> "EOF"
 
@@ -212,6 +213,117 @@ let test_squig_arrow () =
     ]
     (lex_all "~> Check out a book | u: User.")
 
+let test_iff_token () =
+  check (list token_testable) "iff" [ Parser.IFF; Parser.EOF ] (lex_all "<->")
+
+let test_mapsto_token () =
+  check (list token_testable) "mapsto"
+    [ Parser.MAPSTO; Parser.EOF ]
+    (lex_all "|->")
+
+let test_arithmetic_tokens () =
+  check (list token_testable) "arithmetic"
+    [ Parser.PLUS; Parser.MINUS; Parser.TIMES; Parser.DIVIDE; Parser.EOF ]
+    (lex_all "+ - * /")
+
+let test_card_token () =
+  check (list token_testable) "card"
+    [ Parser.CARD; Parser.UPPER_IDENT "User"; Parser.EOF ]
+    (lex_all "#User")
+
+let test_prime_token () =
+  check (list token_testable) "prime"
+    [ Parser.LOWER_IDENT "f"; Parser.PRIME; Parser.EOF ]
+    (lex_all "f'")
+
+let test_braces () =
+  check (list token_testable) "braces"
+    [ Parser.LBRACE; Parser.UPPER_IDENT "Ctx"; Parser.RBRACE; Parser.EOF ]
+    (lex_all "{Ctx}")
+
+let test_context_keyword () =
+  check (list token_testable) "context"
+    [ Parser.CONTEXT; Parser.UPPER_IDENT "Banking"; Parser.DOT; Parser.EOF ]
+    (lex_all "context Banking.")
+
+let test_initially_keyword () =
+  check (list token_testable) "initially"
+    [ Parser.INITIALLY; Parser.LOWER_IDENT "x"; Parser.EOF ]
+    (lex_all "initially x")
+
+let test_closure_keyword () =
+  check (list token_testable) "closure"
+    [ Parser.CLOSURE; Parser.LOWER_IDENT "parent"; Parser.EOF ]
+    (lex_all "closure parent")
+
+let test_each_keyword () =
+  check (list token_testable) "each"
+    [ Parser.EACH; Parser.LOWER_IDENT "u"; Parser.EOF ]
+    (lex_all "each u")
+
+let test_cond_keyword () =
+  check (list token_testable) "cond"
+    [ Parser.COND; Parser.TRUE; Parser.DARROW; Parser.NAT 1; Parser.EOF ]
+    (lex_all "cond true => 1")
+
+let test_string_escapes () =
+  check (list token_testable) "string escapes"
+    [ Parser.STRING "line1\nline2"; Parser.EOF ]
+    (lex_all {|"line1\nline2"|});
+  check (list token_testable) "tab escape"
+    [ Parser.STRING "a\tb"; Parser.EOF ]
+    (lex_all {|"a\tb"|});
+  check (list token_testable) "quote escape"
+    [ Parser.STRING {|say "hi"|}; Parser.EOF ]
+    (lex_all {|"say \"hi\""|});
+  check (list token_testable) "backslash escape"
+    [ Parser.STRING {|a\b|}; Parser.EOF ]
+    (lex_all {|"a\\b"|})
+
+let test_empty_input () =
+  check (list token_testable) "empty" [ Parser.EOF ] (lex_all "")
+
+let test_unterminated_string () =
+  try
+    ignore (lex_all {|"hello|});
+    fail "expected Lexer_error"
+  with Lexer.Lexer_error (_, msg) ->
+    check string "error message" "Unterminated string literal" msg
+
+(* --- Bug-finding tests --- *)
+
+let test_unknown_escape () =
+  (* Bug #3: Unknown escape sequences silently accepted.
+     "\q" silently becomes "q". Users think they wrote an escape. *)
+  let tokens = lex_all {|"\q"|} in
+  match tokens with
+  | [ Parser.STRING s; Parser.EOF ] ->
+      (* Document the behavior: unknown escape \q produces just 'q' *)
+      check string "unknown escape \\q becomes q" "q" s
+  | _ -> fail "Expected string token"
+
+let test_large_integer () =
+  (* Bug #4: int_of_string on huge numbers raises opaque Failure.
+     Should produce a Lexer_error with useful message, not crash. *)
+  try
+    ignore (lex_all "99999999999999999999");
+    (* If it doesn't raise, that's unexpected but not a crash *)
+    ()
+  with
+  | Lexer.Lexer_error (_, _msg) ->
+      (* Good: lexer caught it and gave a located error *)
+      ()
+  | Failure msg ->
+      (* Bug: raw Failure from int_of_string propagated *)
+      fail
+        (Printf.sprintf "Raw Failure propagated (should be Lexer_error): %s" msg)
+
+let test_leading_zeros () =
+  (* Verify that leading zeros work correctly *)
+  check (list token_testable) "leading zeros"
+    [ Parser.NAT 7; Parser.EOF ]
+    (lex_all "007")
+
 let () =
   run "Lexer"
     [
@@ -227,4 +339,28 @@ let () =
       ("projection", [ test_case "projection" `Quick test_projection_token ]);
       ("dcolon", [ test_case "double colon" `Quick test_dcolon ]);
       ("squig_arrow", [ test_case "squig arrow" `Quick test_squig_arrow ]);
+      ("iff", [ test_case "iff token" `Quick test_iff_token ]);
+      ("mapsto", [ test_case "mapsto token" `Quick test_mapsto_token ]);
+      ( "arithmetic",
+        [ test_case "arithmetic tokens" `Quick test_arithmetic_tokens ] );
+      ("card", [ test_case "card token" `Quick test_card_token ]);
+      ("prime", [ test_case "prime token" `Quick test_prime_token ]);
+      ("braces", [ test_case "brace tokens" `Quick test_braces ]);
+      ("context_kw", [ test_case "context keyword" `Quick test_context_keyword ]);
+      ( "initially_kw",
+        [ test_case "initially keyword" `Quick test_initially_keyword ] );
+      ("closure_kw", [ test_case "closure keyword" `Quick test_closure_keyword ]);
+      ("each_kw", [ test_case "each keyword" `Quick test_each_keyword ]);
+      ("cond_kw", [ test_case "cond keyword" `Quick test_cond_keyword ]);
+      ( "string_escapes",
+        [ test_case "string escapes" `Quick test_string_escapes ] );
+      ("empty_input", [ test_case "empty input" `Quick test_empty_input ]);
+      ( "unterminated",
+        [ test_case "unterminated string" `Quick test_unterminated_string ] );
+      ( "bug_finding",
+        [
+          test_case "unknown escape" `Quick test_unknown_escape;
+          test_case "large integer" `Quick test_large_integer;
+          test_case "leading zeros" `Quick test_leading_zeros;
+        ] );
     ]

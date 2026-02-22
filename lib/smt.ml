@@ -157,7 +157,8 @@ let domain_elements name bound =
 (** Sanitize an identifier for SMT-LIB2 (replace hyphens, question marks) *)
 let sanitize_ident name =
   name |> String.to_seq
-  |> Seq.map (fun c -> match c with '-' -> '_' | '?' -> 'p' | _ -> c)
+  |> Seq.map (fun c ->
+      match c with '-' -> '_' | '?' -> 'p' | '!' -> 'b' | _ -> c)
   |> String.of_seq
 
 (** Generate sort declarations for user-defined domains *)
@@ -801,7 +802,11 @@ and translate_app config env func args =
       let args_str = List.map (translate_expr config env) args in
       let applied_args = String.concat " " args_str in
       (* For arity-1 overrides, the single arg is the dispatch key *)
-      let arg_str = List.hd args_str in
+      let arg_str =
+        match args_str with
+        | [] -> failwith "SMT translation: override applied with 0 arguments"
+        | hd :: _ -> hd
+      in
       let rec build_chain = function
         | [] -> Printf.sprintf "(%s %s)" sname applied_args
         | (k, v) :: rest ->
@@ -848,14 +853,17 @@ and translate_binop config env op e1 e2 =
 
 and translate_in config env elem set =
   match set with
-  | EDomain name ->
+  | EDomain name -> (
       (* x in Domain → disjunction over domain elements *)
       let elems = domain_elements name (bound_for config name) in
       let elem_str = translate_expr config env elem in
       let disj =
         List.map (fun e -> Printf.sprintf "(= %s %s)" elem_str e) elems
       in
-      Printf.sprintf "(or %s)" (String.concat " " disj)
+      match disj with
+      | [] -> "false"
+      | [ single ] -> single
+      | _ -> Printf.sprintf "(or %s)" (String.concat " " disj))
   | EEach (params, guards, body) -> (
       (* y in (each x: D | f x) → disjunction: (= y (f d0)) ∨ (= y (f d1)) ...
          y in (each x: D, g x | f x) → (g d0 ∧ = y (f d0)) ∨ ... *)

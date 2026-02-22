@@ -1014,6 +1014,280 @@ reachable n: Node => [Node] = closure nonexistent.
 ---
 |}
 
+let test_cond_valid () =
+  check_ok
+    {|module TEST.
+
+Status.
+level s: Status => Nat.
+---
+all s: Status | level s = cond level s >= 10 => 2, level s >= 5 => 1, true => 0.
+|}
+
+let test_cond_non_bool_arm () =
+  check_fails
+    {|module TEST.
+
+Status.
+level s: Status => Nat.
+---
+cond level => 1, true => 0.
+|}
+
+let test_cond_mismatched_consequences () =
+  check_fails
+    {|module TEST.
+
+Status.
+level s: Status => Nat.
+active s: Status => Bool.
+---
+all s: Status | cond active s => level s, true => active s.
+|}
+
+let test_cond_numeric_promotion () =
+  (* Nat and Nat0 consequences should join to Nat0 *)
+  check_ok
+    {|module TEST.
+
+Status.
+level s: Status => Nat.
+---
+all s: Status | (cond level s >= 10 => level s, true => 0) = 0.
+|}
+
+(* --- Additional valid cases --- *)
+
+let test_arithmetic_ops () =
+  check_ok
+    {|module TEST.
+
+Foo.
+---
+1 + 2 = 3.
+10 - 3 = 7.
+4 * 5 = 20.
+10 / 2 = 5.
+|}
+
+let test_numeric_promotion () =
+  (* Nat + Nat0 should yield Nat0 *)
+  check_ok {|module TEST.
+
+Foo.
+x => Nat.
+y => Nat.
+---
+x + 0 >= 0.
+|}
+
+let test_override () =
+  check_ok
+    {|module TEST.
+
+Key.
+Value.
+mapping k: Key => Value.
+---
+all k: Key, v: Value | mapping[k |-> v] k = v.
+|}
+
+let test_string_literal () =
+  check_ok {|module TEST.
+
+Foo.
+---
+"hello" = "hello".
+|}
+
+let test_real_literal () = check_ok {|module TEST.
+
+Foo.
+---
+3.14 >= 0.0.
+|}
+
+let test_biconditional () =
+  check_ok {|module TEST.
+
+Foo.
+f => Bool.
+g => Bool.
+---
+f <-> g.
+|}
+
+let test_subset_op () =
+  check_ok
+    {|module TEST.
+
+Item.
+xs => [Item].
+ys => [Item].
+---
+xs subset ys.
+|}
+
+let test_initially_expr () =
+  check_ok {|module TEST.
+context C.
+
+{C} x => Nat.
+---
+initially x = 0.
+|}
+
+let test_list_indexing () =
+  check_ok
+    {|module TEST.
+
+Item.
+items => [Item].
+---
+all i: Nat | items i in Item.
+|}
+
+let test_declaration_guards_in_rules () =
+  check_ok
+    {|module TEST.
+
+User.
+active u: User => Bool.
+score u: User, active u => Nat.
+---
+all u: User | active u -> score u >= 0.
+|}
+
+(* --- Additional invalid cases with error type verification --- *)
+
+let test_not_a_product () =
+  check_error {|module TEST.
+
+Foo.
+x => Nat.
+---
+x.1 >= 0.
+|} (function
+    | Check.NotAProduct _ -> true
+    | _ -> false)
+
+let test_not_numeric () =
+  check_error {|module TEST.
+
+Foo.
+f => Bool.
+---
+f + 1 = 2.
+|} (function
+    | Check.NotNumeric _ -> true
+    | _ -> false)
+
+let test_override_requires_arity1 () =
+  check_error
+    {|module TEST.
+
+A.
+B.
+f a: A, b: B => A.
+---
+all a: A, b: B | f[a |-> b] a = a.
+|}
+    (function
+    | Check.OverrideRequiresArity1 _ -> true
+    | _ -> false)
+
+let test_projection_out_of_bounds () =
+  check_error {|module TEST.
+
+Point = Nat * Nat.
+p => Point.
+---
+p.5 >= 0.
+|}
+    (function
+    | Check.ProjectionOutOfBounds _ -> true
+    | _ -> false)
+
+let test_unbound_type () =
+  check_error {|module TEST.
+
+f x: Nonexistent => Bool.
+---
+|} (function
+    | Check.UnboundType _ -> true
+    | _ -> false)
+
+let test_builtin_redefined () = check_fails {|module TEST.
+
+Bool.
+---
+|}
+
+let test_not_a_list_membership () =
+  check_error {|module TEST.
+
+Foo.
+x => Foo.
+---
+x in x.
+|} (function
+    | Check.NotAList _ -> true
+    | _ -> false)
+
+let test_arithmetic_type_mismatch () =
+  check_error {|module TEST.
+
+Foo.
+f => Bool.
+---
+f + 1 = 2.
+|} (function
+    | Check.NotNumeric _ -> true
+    | _ -> false)
+
+(* --- Bug-finding tests --- *)
+
+let test_negation_cond_join () =
+  (* Bug #7: -1 has type Int (promoted from Nat via negation).
+     Verify cond with mixed Nat and negative Int consequences joins
+     correctly to Int, and can be used in arithmetic context. *)
+  check_ok
+    {|module TEST.
+
+Foo.
+x => Nat.
+---
+x + (cond true => 1, false => 0 - 1) >= 0.
+|}
+
+let test_chained_comparison_error () =
+  (* Bug #12: 1 < x < 10 is a parse error — the grammar doesn't
+     allow chaining comparisons. This is actually good behavior:
+     rather than silently parsing as (1 < x) < 10 (Bool < Int),
+     the parser rejects it outright. *)
+  try
+    let _ = parse {|module TEST.
+
+Foo.
+x => Nat.
+---
+1 < x < 10.
+|} in
+    fail "Expected parse error for chained comparison"
+  with _ -> ()
+
+let test_list_indexing_nat0 () =
+  (* Verify that list indexing with Nat0 works — Nat is a subtype of Nat0,
+     and indexing should accept Nat-typed indices. *)
+  check_ok
+    {|module TEST.
+
+Item.
+items => [Item].
+---
+all i: Nat | items i in Item.
+|}
+
 let () =
   run "Check"
     [
@@ -1044,6 +1318,16 @@ let () =
           test_case "guard uses params" `Quick test_guard_uses_params;
           test_case "shadowing same type" `Quick test_shadowing_same_type;
           test_case "bool return type ok" `Quick test_bool_return_type_ok;
+          test_case "arithmetic ops" `Quick test_arithmetic_ops;
+          test_case "numeric promotion" `Quick test_numeric_promotion;
+          test_case "override" `Quick test_override;
+          test_case "string literal" `Quick test_string_literal;
+          test_case "real literal" `Quick test_real_literal;
+          test_case "biconditional" `Quick test_biconditional;
+          test_case "subset" `Quick test_subset_op;
+          test_case "initially" `Quick test_initially_expr;
+          test_case "list indexing" `Quick test_list_indexing;
+          test_case "declaration guards" `Quick test_declaration_guards_in_rules;
         ] );
       ( "invalid",
         [
@@ -1070,6 +1354,16 @@ let () =
             test_local_duplicate_proc_still_errors;
           test_case "bool param rule" `Quick test_bool_param_rule;
           test_case "bool param action" `Quick test_bool_param_action;
+          test_case "NotAProduct" `Quick test_not_a_product;
+          test_case "NotNumeric" `Quick test_not_numeric;
+          test_case "OverrideRequiresArity1" `Quick
+            test_override_requires_arity1;
+          test_case "ProjectionOutOfBounds" `Quick test_projection_out_of_bounds;
+          test_case "UnboundType" `Quick test_unbound_type;
+          test_case "BuiltinRedefined" `Quick test_builtin_redefined;
+          test_case "NotAList membership" `Quick test_not_a_list_membership;
+          test_case "arithmetic type mismatch" `Quick
+            test_arithmetic_type_mismatch;
         ] );
       ( "env import",
         [
@@ -1137,5 +1431,20 @@ let () =
           test_case "closure list target" `Quick test_closure_list_target;
           test_case "closure invalid target" `Quick test_closure_invalid_target;
           test_case "closure missing target" `Quick test_closure_missing_target;
+        ] );
+      ( "cond",
+        [
+          test_case "cond valid" `Quick test_cond_valid;
+          test_case "cond non-bool arm" `Quick test_cond_non_bool_arm;
+          test_case "cond mismatched consequences" `Quick
+            test_cond_mismatched_consequences;
+          test_case "cond numeric promotion" `Quick test_cond_numeric_promotion;
+        ] );
+      ( "bug_finding",
+        [
+          test_case "negation cond join" `Quick test_negation_cond_join;
+          test_case "chained comparison error" `Quick
+            test_chained_comparison_error;
+          test_case "list indexing nat" `Quick test_list_indexing_nat0;
         ] );
     ]
