@@ -18,6 +18,7 @@ let check_bound = ref 3
 let solver_cmd = ref "z3"
 let solver_timeout = ref 30.0
 let check_steps = ref 5
+let dump_smt_dir = ref ""
 let module_path = ref "."
 let files = ref []
 
@@ -52,6 +53,9 @@ let specs =
     ( "--timeout",
       Arg.Set_float solver_timeout,
       "SEC  Solver timeout in seconds (default: 30)" );
+    ( "--dump-smt",
+      Arg.Set_string dump_smt_dir,
+      "DIR  Write generated SMT-LIB2 queries to DIR" );
     ( "--version",
       Arg.Unit
         (fun () ->
@@ -85,6 +89,21 @@ let run_smt_check env doc =
         { bound = !check_bound; steps = !check_steps; domain_bounds }
     in
     let queries = Pantagruel.Smt.generate_queries config env doc in
+    if !dump_smt_dir <> "" then begin
+      let dir = !dump_smt_dir in
+      (try Unix.mkdir dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
+      List.iter
+        (fun (q : Pantagruel.Smt.query) ->
+          let sanitized =
+            String.map (fun c -> if c = ':' then '-' else c) q.name
+          in
+          let path = Filename.concat dir (sanitized ^ ".smt2") in
+          let oc = open_out path in
+          output_string oc q.smt2;
+          close_out oc;
+          Printf.eprintf "wrote %s\n" path)
+        queries
+    end;
     if queries = [] then begin
       print_endline "No verification queries generated.";
       0

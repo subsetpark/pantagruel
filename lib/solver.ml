@@ -657,6 +657,90 @@ let interpret_result query result =
             inv_desc
             (format_bmc_counterexample values);
       }
+  (* Cond exhaustiveness: SAT = non-exhaustive (bad), UNSAT = ok *)
+  | Smt.CondExhaustiveness, Unsat _ ->
+      {
+        query;
+        result;
+        passed = true;
+        message = Printf.sprintf "OK: %s" query.description;
+      }
+  | Smt.CondExhaustiveness, Sat values ->
+      let cond_desc =
+        if query.invariant_text <> "" then
+          Printf.sprintf " '%s'" query.invariant_text
+        else ""
+      in
+      let cx =
+        match values with
+        | [] -> ""
+        | _ -> (
+            (* Group by element to find one witness.  For applied terms like
+               "(score Priority_2)", extract function name and element. *)
+            let parse_applied term =
+              if String.length term >= 2 && term.[0] = '(' then
+                let inner = String.sub term 1 (String.length term - 2) in
+                match String.index_opt inner ' ' with
+                | Some i ->
+                    let fname = String.sub inner 0 i in
+                    let arg =
+                      String.sub inner (i + 1) (String.length inner - i - 1)
+                    in
+                    Some (fname, arg)
+                | None -> None
+              else None
+            in
+            (* Group values by element: elem -> (fname * value) list *)
+            let by_elem = Hashtbl.create 16 in
+            List.iter
+              (fun (term, value) ->
+                match parse_applied term with
+                | Some (fname, elem) ->
+                    let prev =
+                      Option.value ~default:[] (Hashtbl.find_opt by_elem elem)
+                    in
+                    Hashtbl.replace by_elem elem ((fname, value) :: prev)
+                | None -> ())
+              values;
+            (* Pick the element with the highest function value — heuristic
+               to prefer the gap witness over covered elements. *)
+            let best_elem =
+              Hashtbl.fold
+                (fun _elem fvs best ->
+                  let max_val =
+                    List.fold_left
+                      (fun acc (_, v) ->
+                        match int_of_string_opt v with
+                        | Some n -> max acc n
+                        | None -> acc)
+                      min_int fvs
+                  in
+                  match best with
+                  | Some (_, prev_max) when prev_max >= max_val -> best
+                  | _ -> Some (fvs, max_val))
+                by_elem None
+            in
+            match best_elem with
+            | None -> ""
+            | Some (fvs, _) ->
+                let lines =
+                  List.rev_map
+                    (fun (fname, value) ->
+                      Printf.sprintf "    %s = %s"
+                        (translate_display_name fname)
+                        (translate_value value))
+                    fvs
+                in
+                "\n  Counterexample:\n" ^ String.concat "\n" lines)
+      in
+      {
+        query;
+        result;
+        passed = false;
+        message =
+          Printf.sprintf "FAIL: Cond expression%s may not be exhaustive%s"
+            cond_desc cx;
+      }
   (* Unknown / error cases *)
   | _, Unknown reason ->
       {

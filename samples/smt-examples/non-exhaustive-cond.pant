@@ -1,0 +1,10 @@
+> A cond expression with non-exhaustive arms.
+> The arms cover scores above 50 and below 10, but leave the range
+> 10 <= score < 50 uncovered. The checker reports a counterexample.
+module NonExhaustiveCond.
+
+Priority.
+score p: Priority => Nat.
+tier p: Priority => Nat.
+---
+all p: Priority | tier p = cond score p >= 50 => 2, score p < 10 => 0.

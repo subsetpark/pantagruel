@@ -8,6 +8,50 @@ type config = { bound : int; steps : int; domain_bounds : int Env.StringMap.t }
     [domain_bounds] maps domain names to per-domain minimum bounds (derived from
     nullary constant counts). *)
 
+(** Fresh uninterpreted constants for non-exhaustive cond else-branches. When a
+    cond's last arm guard is not [true], we emit a fresh constant of the
+    appropriate sort so the gap is genuinely unconstrained rather than silently
+    assigned the last arm's consequence. *)
+let cond_aux_counter = ref 0
+
+let cond_aux_decls : string list ref = ref []
+
+let reset_cond_aux () =
+  cond_aux_counter := 0;
+  cond_aux_decls := []
+
+let fresh_cond_default sort =
+  let n = !cond_aux_counter in
+  incr cond_aux_counter;
+  let name = Printf.sprintf "_cond_undef_%d" n in
+  cond_aux_decls :=
+    Printf.sprintf "(declare-const %s %s)" name sort :: !cond_aux_decls;
+  name
+
+let drain_cond_aux_decls () =
+  let decls = List.rev !cond_aux_decls in
+  cond_aux_decls := [];
+  if decls = [] then ""
+  else "\n; --- Cond default constants ---\n" ^ String.concat "\n" decls ^ "\n"
+
+(** Insert accumulated cond-default declarations into a finished SMT-LIB2
+    string, right before the first [(assert ...)]. Must be called after all
+    [translate_*] calls for this query are done. *)
+let insert_cond_aux_decls smt2 =
+  let decls = drain_cond_aux_decls () in
+  if decls = "" then smt2
+  else
+    let lines = String.split_on_char '\n' smt2 in
+    let rec split_at_assert acc = function
+      | [] -> (List.rev acc, [])
+      | line :: rest
+        when String.length line >= 7 && String.sub line 0 7 = "(assert" ->
+          (List.rev acc, line :: rest)
+      | line :: rest -> split_at_assert (line :: acc) rest
+    in
+    let before, after = split_at_assert [] lines in
+    String.concat "\n" before ^ decls ^ String.concat "\n" after
+
 (** Compute per-domain minimum bounds by counting nullary constants. For each
     domain, the bound is max(default_bound, number_of_nullary_constants). *)
 let compute_domain_bounds default_bound env =
@@ -68,6 +112,7 @@ and query_kind =
   | BMCInvariant
       (** SAT = reachable violation (concrete attack trace), UNSAT = safe up to
           k steps *)
+  | CondExhaustiveness  (** SAT = non-exhaustive (counterexample), UNSAT = ok *)
 
 (** SMT sort name for a Pantagruel type *)
 let rec sort_of_ty = function
@@ -573,6 +618,134 @@ let expand_comprehension translate config env params guards body =
           (guard_str, value_str))
         elems
 
+(** Capture-avoiding substitution: replace EVar names according to the mapping.
+    Stops at quantifier/comprehension boundaries to avoid capturing bound vars.
+*)
+let rec substitute_vars (subst : (string * expr) list) (e : expr) : expr =
+  match e with
+  | EVar name -> (
+      match List.assoc_opt name subst with Some e' -> e' | None -> e)
+  | EApp (func, args) ->
+      EApp (substitute_vars subst func, List.map (substitute_vars subst) args)
+  | EBinop (op, e1, e2) ->
+      EBinop (op, substitute_vars subst e1, substitute_vars subst e2)
+  | EUnop (op, e1) -> EUnop (op, substitute_vars subst e1)
+  | ETuple es -> ETuple (List.map (substitute_vars subst) es)
+  | EProj (e1, i) -> EProj (substitute_vars subst e1, i)
+  | EOverride (name, pairs) ->
+      let name_expr =
+        match List.assoc_opt name subst with Some (EVar n) -> n | _ -> name
+      in
+      EOverride
+        ( name_expr,
+          List.map
+            (fun (k, v) -> (substitute_vars subst k, substitute_vars subst v))
+            pairs )
+  | EForall (ps, gs, body) ->
+      let bound = List.map (fun (p : param) -> p.param_name) ps in
+      let subst' = List.filter (fun (n, _) -> not (List.mem n bound)) subst in
+      let subst'', gs' = substitute_guards subst' gs in
+      EForall (ps, gs', substitute_vars subst'' body)
+  | EExists (ps, gs, body) ->
+      let bound = List.map (fun (p : param) -> p.param_name) ps in
+      let subst' = List.filter (fun (n, _) -> not (List.mem n bound)) subst in
+      let subst'', gs' = substitute_guards subst' gs in
+      EExists (ps, gs', substitute_vars subst'' body)
+  | EEach (ps, gs, body) ->
+      let bound = List.map (fun (p : param) -> p.param_name) ps in
+      let subst' = List.filter (fun (n, _) -> not (List.mem n bound)) subst in
+      let subst'', gs' = substitute_guards subst' gs in
+      EEach (ps, gs', substitute_vars subst'' body)
+  | ECond arms ->
+      ECond
+        (List.map
+           (fun (arm, cons) ->
+             (substitute_vars subst arm, substitute_vars subst cons))
+           arms)
+  | EInitially e1 -> EInitially (substitute_vars subst e1)
+  | EPrimed _ | ELitBool _ | ELitNat _ | ELitReal _ | ELitString _ | EDomain _
+  | EQualified _ ->
+      e
+
+and substitute_guards subst gs =
+  List.fold_left
+    (fun (subst, acc) g ->
+      match g with
+      | GParam p ->
+          let subst' = List.filter (fun (n, _) -> n <> p.param_name) subst in
+          (subst', acc @ [ GParam p ])
+      | GIn (name, e) ->
+          let subst' = List.filter (fun (n, _) -> n <> name) subst in
+          (subst', acc @ [ GIn (name, substitute_vars subst e) ])
+      | GExpr e -> (subst, acc @ [ GExpr (substitute_vars subst e) ]))
+    (subst, []) gs
+
+(** Collect guard expressions from applications of guarded functions in an
+    expression. Stops at nested quantifiers (they handle their own guards).
+    Returns a list of AST guard expressions with actual args substituted. *)
+let collect_body_guards env (e : expr) : expr list =
+  let guards = ref [] in
+  let rec walk = function
+    | EApp (EVar name, args) ->
+        (match Env.lookup_rule_guards name env with
+        | Some (formal_params, rule_guards) ->
+            let subst =
+              List.combine
+                (List.map (fun (p : param) -> p.param_name) formal_params)
+                args
+            in
+            List.iter
+              (fun (g : guard) ->
+                match g with
+                | GExpr ge -> guards := substitute_vars subst ge :: !guards
+                | _ -> ())
+              rule_guards
+        | None -> ());
+        List.iter walk args
+    | EApp (func, args) ->
+        walk func;
+        List.iter walk args
+    | EVar name -> (
+        (* Nullary auto-applied rule with guards *)
+        match Env.lookup_term name env with
+        | Some { kind = Env.KRule (TyFunc ([], Some _)); _ } -> (
+            match Env.lookup_rule_guards name env with
+            | Some (_, rule_guards) ->
+                List.iter
+                  (fun (g : guard) ->
+                    match g with GExpr ge -> guards := ge :: !guards | _ -> ())
+                  rule_guards
+            | None -> ())
+        | _ -> ())
+    | EBinop (_, e1, e2) ->
+        walk e1;
+        walk e2
+    | EUnop (_, e1) -> walk e1
+    | ETuple es -> List.iter walk es
+    | EProj (e1, _) -> walk e1
+    | EOverride (_, pairs) ->
+        List.iter
+          (fun (k, v) ->
+            walk k;
+            walk v)
+          pairs
+    | EInitially e1 -> walk e1
+    | ECond arms ->
+        List.iter
+          (fun (arm, cons) ->
+            walk arm;
+            walk cons)
+          arms
+    (* Stop at nested quantifiers — they inject their own guards *)
+    | EForall _ | EExists _ | EEach _ -> ()
+    | EPrimed _ | ELitBool _ | ELitNat _ | ELitReal _ | ELitString _ | EDomain _
+    | EQualified _ ->
+        ()
+  in
+  walk e;
+  (* Deduplicate *)
+  List.sort_uniq compare (List.rev !guards)
+
 (** Translate an expression to SMT-LIB2 term string *)
 let rec translate_expr config env (e : expr) =
   match e with
@@ -616,6 +789,7 @@ let rec translate_expr config env (e : expr) =
       translate_forall_comprehension config env params guards body
   | EExists (params, guards, body) ->
       translate_quantifier config env "exists" params guards body
+  | ECond arms -> translate_cond config env arms
   | EInitially e -> translate_expr config env e
   | EOverride (name, pairs) -> translate_override config env name pairs
 
@@ -1039,8 +1213,13 @@ and translate_quantifier config env quant params guards body =
       ([], [], env) guards
   in
   let all_bindings = bindings @ List.rev guard_bindings in
+  (* Collect guards from guarded function applications in body *)
+  let app_guards = collect_body_guards env body in
+  let app_guard_strs = List.map (translate_expr config env) app_guards in
   let body_str = translate_expr config env body in
-  let conditions = param_type_conditions @ List.rev guard_conditions in
+  let conditions =
+    param_type_conditions @ List.rev guard_conditions @ app_guard_strs
+  in
   let binding_str = String.concat " " all_bindings in
   match (quant, conditions) with
   | "forall", _ :: _ ->
@@ -1053,6 +1232,30 @@ and translate_quantifier config env quant params guards body =
         body_str
   | _ -> Printf.sprintf "(%s (%s) %s)" quant binding_str body_str
 
+and translate_cond config env = function
+  | [] -> assert false
+  | [ (ELitBool true, cons) ] ->
+      (* Catch-all: last arm is unconditional *)
+      translate_expr config env cons
+  | [ (arm, cons) ] ->
+      (* Last arm has a real guard — don't drop it. Use a fresh uninterpreted
+         constant for the else-branch so the gap is unconstrained. *)
+      let sort =
+        match Check.infer_type { Check.env; loc = dummy_loc } cons with
+        | Ok ty -> sort_of_ty ty
+        | Error _ -> "Int"
+      in
+      let default = fresh_cond_default sort in
+      Printf.sprintf "(ite %s %s %s)"
+        (translate_expr config env arm)
+        (translate_expr config env cons)
+        default
+  | (arm, cons) :: rest ->
+      Printf.sprintf "(ite %s %s %s)"
+        (translate_expr config env arm)
+        (translate_expr config env cons)
+        (translate_cond config env rest)
+
 and translate_override _config _env name _pairs =
   (* Standalone override (not applied) — can't be directly represented in
      SMT-LIB2 without higher-order functions. Applied overrides are handled
@@ -1063,6 +1266,29 @@ and resolve_param_sort env te =
   match Collect.resolve_type env te dummy_loc with
   | Ok ty -> Some (sort_of_ty ty)
   | Error _ -> None
+
+(** Translate a proposition expression to SMT, injecting guards from guarded
+    function applications. For quantified expressions, delegates to
+    translate_expr (guards are injected inside translate_quantifier). For
+    non-quantified expressions, wraps with guard antecedent if needed. *)
+let translate_proposition config env (e : expr) =
+  match e with
+  | EForall _ | EExists _ | EEach _ ->
+      (* Quantifiers handle their own guard injection *)
+      translate_expr config env e
+  | _ -> (
+      let app_guards = collect_body_guards env e in
+      let smt_expr = translate_expr config env e in
+      match app_guards with
+      | [] -> smt_expr
+      | _ ->
+          let guard_strs = List.map (translate_expr config env) app_guards in
+          let guard_conj =
+            match guard_strs with
+            | [ g ] -> g
+            | gs -> Printf.sprintf "(and %s)" (String.concat " " gs)
+          in
+          Printf.sprintf "(=> %s %s)" guard_conj smt_expr)
 
 (** Classify chapters into invariant chapters and action chapters *)
 type chapter_class =
@@ -1149,11 +1375,11 @@ let collect_actions chapters =
 let conjoin_propositions config env props =
   match props with
   | [] -> "true"
-  | [ p ] -> translate_expr config env p.value
+  | [ p ] -> translate_proposition config env p.value
   | _ ->
       let parts =
         List.map
-          (fun (p : expr located) -> translate_expr config env p.value)
+          (fun (p : expr located) -> translate_proposition config env p.value)
           props
       in
       Printf.sprintf "(and %s)" (String.concat " " parts)
@@ -1183,6 +1409,11 @@ let rec prime_expr ?(bound = []) (e : expr) : expr =
       let bound' = List.map (fun (p : param) -> p.param_name) ps @ bound in
       let bound'', gs' = prime_guards ~bound:bound' gs in
       EEach (ps, gs', prime_expr ~bound:bound'' body)
+  | ECond arms ->
+      ECond
+        (List.map
+           (fun (arm, cons) -> (prime_expr ~bound arm, prime_expr ~bound cons))
+           arms)
   | EOverride (name, pairs) ->
       EOverride
         ( name,
@@ -1479,7 +1710,7 @@ let generate_contradiction_query config env action =
   List.iter
     (fun (p : expr located) ->
       add_named_assert na "postcond" (Pretty.str_expr p.value)
-        (translate_expr config env p.value))
+        (translate_proposition config env p.value))
     action.a_propositions;
   let value_terms = build_value_terms config env action.a_params in
   Buffer.add_string buf "(check-sat)\n";
@@ -1530,7 +1761,7 @@ let generate_invariant_query config env ~all_invariants ~index
   (* Assert single invariant violated in next state *)
   Buffer.add_string buf "\n; --- Invariant violated in next state ---\n";
   let primed_inv = { inv with value = prime_expr inv.value } in
-  let inv_primed = translate_expr config env primed_inv.value in
+  let inv_primed = translate_proposition config env primed_inv.value in
   Buffer.add_string buf (Printf.sprintf "(assert (not %s))\n" inv_primed);
   let value_terms = build_value_terms config env action.a_params in
   Buffer.add_string buf "(check-sat)\n";
@@ -1568,7 +1799,7 @@ let generate_precondition_query config env invariant_props action =
       (fun (inv : expr located) ->
         add_named_assert na "inv"
           (Printf.sprintf "Invariant: %s" (Pretty.str_expr inv.value))
-          (translate_expr config env inv.value))
+          (translate_proposition config env inv.value))
       invariant_props
   end;
   (* Named preconditions *)
@@ -1615,6 +1846,11 @@ let rec collect_function_refs (e : expr) =
       :: List.concat_map
            (fun (k, v) -> collect_function_refs k @ collect_function_refs v)
            pairs
+  | ECond arms ->
+      List.concat_map
+        (fun (arm, cons) ->
+          collect_function_refs arm @ collect_function_refs cons)
+        arms
   | EInitially e -> collect_function_refs e
   | ELitBool _ | ELitNat _ | ELitReal _ | ELitString _ | EDomain _
   | EQualified _ ->
@@ -1688,7 +1924,7 @@ let generate_invariant_consistency_query config env invariant_props =
     (fun (inv : expr located) ->
       add_named_assert na "inv"
         (Printf.sprintf "Invariant: %s" (Pretty.str_expr inv.value))
-        (translate_expr config env inv.value))
+        (translate_proposition config env inv.value))
     invariant_props;
   let value_terms = build_invariant_value_terms config env in
   Buffer.add_string buf "(check-sat)\n";
@@ -1734,7 +1970,7 @@ let generate_init_consistency_query config env init_props =
     (fun (prop : expr located) ->
       add_named_assert na "init"
         (Printf.sprintf "Initially: %s" (Pretty.str_expr prop.value))
-        (translate_expr config env prop.value))
+        (translate_proposition config env prop.value))
     init_props;
   let value_terms = build_invariant_value_terms config env in
   Buffer.add_string buf "(check-sat)\n";
@@ -1765,12 +2001,12 @@ let generate_init_invariant_query config env init_props ~index
   Buffer.add_string buf "\n; --- Initial state propositions ---\n";
   List.iter
     (fun (prop : expr located) ->
-      let smt = translate_expr config env prop.value in
+      let smt = translate_proposition config env prop.value in
       Buffer.add_string buf (Printf.sprintf "(assert %s)\n" smt))
     init_props;
   (* Negate the invariant *)
   Buffer.add_string buf "\n; --- Invariant negated ---\n";
-  let inv_smt = translate_expr config env inv.value in
+  let inv_smt = translate_proposition config env inv.value in
   Buffer.add_string buf (Printf.sprintf "(assert (not %s))\n" inv_smt);
   let value_terms = build_invariant_value_terms config env in
   Buffer.add_string buf "(check-sat)\n";
@@ -1934,7 +2170,7 @@ let build_step_transition config env actions step =
         (* Postconditions — translated with base name/prime *)
         let postcond_parts =
           List.map
-            (fun (p : expr located) -> translate_expr config env p.value)
+            (fun (p : expr located) -> translate_proposition config env p.value)
             action.a_propositions
         in
         (* Frame conditions *)
@@ -1988,7 +2224,7 @@ let generate_bmc_query config env init_props actions ~inv_index
   Buffer.add_string buf "\n; --- Initial state (step 0) ---\n";
   List.iter
     (fun (prop : expr located) ->
-      let smt = translate_expr config env prop.value in
+      let smt = translate_proposition config env prop.value in
       let renamed = rename_smt_for_step env smt 0 in
       Buffer.add_string buf (Printf.sprintf "(assert %s)\n" renamed))
     init_props;
@@ -2001,7 +2237,7 @@ let generate_bmc_query config env init_props actions ~inv_index
   done;
   (* Assert invariant violated at some step *)
   Buffer.add_string buf "\n; --- Invariant violated at some step ---\n";
-  let inv_smt = translate_expr config env inv.value in
+  let inv_smt = translate_proposition config env inv.value in
   let negated_steps =
     List.init (steps + 1) (fun i ->
         let renamed = rename_smt_for_step env inv_smt i in
@@ -2113,7 +2349,7 @@ let generate_bmc_deadlock_query config env init_props invariant_props actions
   Buffer.add_string buf "\n; --- Initial state (step 0) ---\n";
   List.iter
     (fun (prop : expr located) ->
-      let smt = translate_expr config env prop.value in
+      let smt = translate_proposition config env prop.value in
       let renamed = rename_smt_for_step env smt 0 in
       Buffer.add_string buf (Printf.sprintf "(assert %s)\n" renamed))
     init_props;
@@ -2149,6 +2385,157 @@ let generate_bmc_deadlock_query config env init_props invariant_props actions
     assertion_names = [];
   }
 
+type cond_info = {
+  cond_arms : (expr * expr) list;
+  cond_quantifiers : (param list * guard list) list;
+      (** Enclosing quantifier bindings, outermost first *)
+  cond_text : string;
+}
+(** Information about a cond expression found in the document *)
+
+(** Recursively walk an expression collecting ECond nodes along with their
+    enclosing quantifier context (params + guards). *)
+let collect_conds_in_expr (e : expr) : cond_info list =
+  let results = ref [] in
+  let rec walk quant_ctx = function
+    | ECond arms ->
+        results :=
+          {
+            cond_arms = arms;
+            cond_quantifiers = List.rev quant_ctx;
+            cond_text = Pretty.str_expr (ECond arms);
+          }
+          :: !results;
+        (* Also walk into arms and consequences for nested conds *)
+        List.iter
+          (fun (arm, cons) ->
+            walk quant_ctx arm;
+            walk quant_ctx cons)
+          arms
+    | EForall (ps, gs, body) | EExists (ps, gs, body) | EEach (ps, gs, body) ->
+        walk ((ps, gs) :: quant_ctx) body;
+        List.iter
+          (function
+            | GExpr e -> walk quant_ctx e
+            | GIn (_, e) -> walk quant_ctx e
+            | GParam _ -> ())
+          gs
+    | EBinop (_, e1, e2) ->
+        walk quant_ctx e1;
+        walk quant_ctx e2
+    | EUnop (_, e1) -> walk quant_ctx e1
+    | EApp (f, args) ->
+        walk quant_ctx f;
+        List.iter (walk quant_ctx) args
+    | ETuple es -> List.iter (walk quant_ctx) es
+    | EProj (e1, _) -> walk quant_ctx e1
+    | EOverride (_, pairs) ->
+        List.iter
+          (fun (k, v) ->
+            walk quant_ctx k;
+            walk quant_ctx v)
+          pairs
+    | EInitially e1 -> walk quant_ctx e1
+    | EVar _ | EDomain _ | EQualified _ | EPrimed _ | ELitBool _ | ELitNat _
+    | ELitReal _ | ELitString _ ->
+        ()
+  in
+  walk [] e;
+  List.rev !results
+
+(** Collect all cond expressions from a document *)
+let collect_conds_from_doc (doc : document) : cond_info list =
+  List.concat_map
+    (fun chapter ->
+      List.concat_map
+        (fun (prop : expr located) -> collect_conds_in_expr prop.value)
+        chapter.body)
+    doc.chapters
+
+(** Build value terms for a cond exhaustiveness query. Only includes functions
+    that appear in the cond guard expressions, applied to domain elements from
+    the enclosing quantifier bindings. *)
+let build_cond_value_terms config env cond =
+  let guard_exprs = List.map fst cond.cond_arms in
+  let refs =
+    List.concat_map collect_function_refs guard_exprs
+    |> List.sort_uniq String.compare
+  in
+  (* Collect domain names from the enclosing quantifier params *)
+  let quant_domains =
+    List.concat_map
+      (fun (params, _) ->
+        List.filter_map
+          (fun (p : param) ->
+            match Collect.resolve_type env p.param_type dummy_loc with
+            | Ok (TyDomain dname) -> Some dname
+            | _ -> None)
+          params)
+      cond.cond_quantifiers
+    |> List.sort_uniq String.compare
+  in
+  List.concat_map
+    (fun name ->
+      match Env.StringMap.find_opt name env.Env.terms with
+      | Some { kind = Env.KRule ty; _ }
+      | Some { kind = Env.KClosure (ty, _); _ } -> (
+          let sname = sanitize_ident name in
+          match decompose_func_ty ty with
+          | Some ([], _) -> [ sname ]
+          | Some ([ TyDomain dname ], _) when List.mem dname quant_domains ->
+              let elems = domain_elements dname (bound_for config dname) in
+              List.map (fun e -> Printf.sprintf "(%s %s)" sname e) elems
+          | _ -> [])
+      | _ -> [])
+    refs
+
+(** Generate exhaustiveness query for a single cond expression *)
+let generate_exhaustiveness_query config env ~all_invariants:_ ~index cond =
+  let buf = Buffer.create 1024 in
+  Buffer.add_string buf
+    (Printf.sprintf "; Cond exhaustiveness check: %s\n" cond.cond_text);
+  Buffer.add_string buf (generate_preamble ~constrain_primed:false config env);
+  Buffer.add_string buf
+    (declare_type_constraints ~constrain_primed:false config env);
+  (* Build the disjunction of all arms *)
+  let arm_exprs = List.map fst cond.cond_arms in
+  let disj =
+    match arm_exprs with
+    | [ single ] -> single
+    | first :: rest ->
+        List.fold_right (fun arm acc -> EBinop (OpOr, arm, acc)) rest first
+    | [] -> assert false
+  in
+  (* Wrap in surrounding quantifier bindings *)
+  let wrapped =
+    List.fold_right
+      (fun (ps, gs) body -> EForall (ps, gs, body))
+      cond.cond_quantifiers disj
+  in
+  (* Translate and negate *)
+  let smt_exhaustive = translate_proposition config env wrapped in
+  Buffer.add_string buf "\n; --- Exhaustiveness (negated) ---\n";
+  Buffer.add_string buf (Printf.sprintf "(assert (not %s))\n" smt_exhaustive);
+  let value_terms = build_cond_value_terms config env cond in
+  Buffer.add_string buf "(check-sat)\n";
+  append_get_value buf value_terms;
+  {
+    name = Printf.sprintf "cond-exhaustiveness:%d" index;
+    description = Printf.sprintf "Cond arms are exhaustive: %s" cond.cond_text;
+    smt2 = Buffer.contents buf;
+    kind = CondExhaustiveness;
+    value_terms;
+    invariant_text = cond.cond_text;
+    assertion_names = [];
+  }
+
+(** Wrap a query generator: reset cond-aux state, run the generator, and insert
+    any accumulated cond-default declarations into the output. *)
+let with_cond_aux f =
+  reset_cond_aux ();
+  let q = f () in
+  { q with smt2 = insert_cond_aux_decls q.smt2 }
+
 (** Generate all verification queries for a document *)
 let generate_queries config env (doc : document) =
   let chapters = classify_chapters doc in
@@ -2156,25 +2543,24 @@ let generate_queries config env (doc : document) =
   let init_props = collect_initial_props chapters in
   let actions = collect_actions chapters in
   let queries = ref [] in
+  let add f = queries := with_cond_aux f :: !queries in
   (* Invariant consistency query *)
   if invariants <> [] then
-    queries :=
-      generate_invariant_consistency_query config env invariants :: !queries;
+    add (fun () -> generate_invariant_consistency_query config env invariants);
   (* Init consistency query *)
   if init_props <> [] then
-    queries := generate_init_consistency_query config env init_props :: !queries;
+    add (fun () -> generate_init_consistency_query config env init_props);
   (* Init satisfies invariants queries *)
   if init_props <> [] && invariants <> [] then
     List.iteri
       (fun index inv ->
-        queries :=
-          generate_init_invariant_query config env init_props ~index inv
-          :: !queries)
+        add (fun () ->
+            generate_init_invariant_query config env init_props ~index inv))
       invariants;
   (* Contradiction queries *)
   List.iter
     (fun action ->
-      queries := generate_contradiction_query config env action :: !queries)
+      add (fun () -> generate_contradiction_query config env action))
     actions;
   (* Invariant preservation queries — one per (invariant, action) pair.
      Skip if invariant only touches extracontextual functions (trivially
@@ -2185,17 +2571,15 @@ let generate_queries config env (doc : document) =
         List.iteri
           (fun index inv ->
             if invariant_touches_context env action.a_context [ inv ] then
-              queries :=
-                generate_invariant_query config env ~all_invariants:invariants
-                  ~index inv action
-                :: !queries)
+              add (fun () ->
+                  generate_invariant_query config env ~all_invariants:invariants
+                    ~index inv action))
           invariants)
       actions;
   (* Precondition satisfiability queries *)
   List.iter
     (fun action ->
-      queries :=
-        generate_precondition_query config env invariants action :: !queries)
+      add (fun () -> generate_precondition_query config env invariants action))
     actions;
   (* BMC deadlock freedom query — skip if any action has no preconditions
      (always enabled, so deadlock is impossible), or if no initial state *)
@@ -2203,18 +2587,24 @@ let generate_queries config env (doc : document) =
     actions <> [] && not (List.exists action_always_enabled actions)
   in
   if has_guarded_actions && init_props <> [] && config.steps > 0 then
-    queries :=
-      generate_bmc_deadlock_query config env init_props invariants actions
-        ~steps:config.steps
-      :: !queries;
+    add (fun () ->
+        generate_bmc_deadlock_query config env init_props invariants actions
+          ~steps:config.steps);
   (* BMC queries — when init props, actions, and invariants all exist *)
   if init_props <> [] && actions <> [] && invariants <> [] && config.steps > 0
   then
     List.iteri
       (fun inv_index inv ->
-        queries :=
-          generate_bmc_query config env init_props actions ~inv_index inv
-            ~steps:config.steps
-          :: !queries)
+        add (fun () ->
+            generate_bmc_query config env init_props actions ~inv_index inv
+              ~steps:config.steps))
       invariants;
+  (* Cond exhaustiveness queries *)
+  let conds = collect_conds_from_doc doc in
+  List.iteri
+    (fun index cond ->
+      add (fun () ->
+          generate_exhaustiveness_query config env ~all_invariants:invariants
+            ~index cond))
+    conds;
   List.rev !queries
