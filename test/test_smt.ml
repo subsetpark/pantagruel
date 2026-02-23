@@ -23,7 +23,14 @@ let parse_and_collect str =
 
 (* --- Expression translation tests --- *)
 
-let config = Smt.{ bound = 3; steps = 5; domain_bounds = Env.StringMap.empty }
+let config =
+  Smt.
+    {
+      bound = 3;
+      steps = 5;
+      domain_bounds = Env.StringMap.empty;
+      inject_guards = true;
+    }
 
 let test_lit_bool () =
   let env = Env.empty "" in
@@ -830,14 +837,18 @@ let test_compute_domain_bounds () =
 
 let test_bound_for () =
   let bounds = Env.StringMap.singleton "Color" 5 in
-  let config = Smt.{ bound = 3; steps = 5; domain_bounds = bounds } in
+  let config =
+    Smt.{ bound = 3; steps = 5; domain_bounds = bounds; inject_guards = true }
+  in
   check int "Color uses override" 5 (Smt.bound_for config "Color");
   check int "Account uses default" 3 (Smt.bound_for config "Account")
 
 let test_card_domain_with_bounds () =
   let env = Env.empty "" |> Env.add_domain "Color" Ast.dummy_loc ~chapter:0 in
   let bounds = Env.StringMap.singleton "Color" 5 in
-  let cfg = Smt.{ bound = 3; steps = 5; domain_bounds = bounds } in
+  let cfg =
+    Smt.{ bound = 3; steps = 5; domain_bounds = bounds; inject_guards = true }
+  in
   check string "#Domain with per-domain bound" "5"
     (Smt.translate_expr cfg env (Ast.EUnop (OpCard, EDomain "Color")))
 
@@ -919,7 +930,13 @@ let test_translate_in_zero_bound () =
   (* Bug #2: bound=0 used to produce "(or )" — invalid SMT-LIB2.
      Now produces "false" (nothing in empty domain). *)
   let zero_config =
-    Smt.{ bound = 0; steps = 0; domain_bounds = Env.StringMap.empty }
+    Smt.
+      {
+        bound = 0;
+        steps = 0;
+        domain_bounds = Env.StringMap.empty;
+        inject_guards = true;
+      }
   in
   let env = Env.empty "" |> Env.add_domain "D" Ast.dummy_loc ~chapter:0 in
   let result =
@@ -978,7 +995,13 @@ let test_domain_closure_bound_one () =
        all b: Block | ~(b in ancestor b).\n"
   in
   let one_config =
-    Smt.{ bound = 1; steps = 0; domain_bounds = Env.StringMap.empty }
+    Smt.
+      {
+        bound = 1;
+        steps = 0;
+        domain_bounds = Env.StringMap.empty;
+        inject_guards = true;
+      }
   in
   let queries = Smt.generate_queries one_config env doc in
   let inv =
@@ -1335,7 +1358,13 @@ let test_closure_axiom_generation () =
        all b: Block | ~(b in ancestor b).\n"
   in
   let small_config =
-    Smt.{ bound = 2; steps = 0; domain_bounds = Env.StringMap.empty }
+    Smt.
+      {
+        bound = 2;
+        steps = 0;
+        domain_bounds = Env.StringMap.empty;
+        inject_guards = true;
+      }
   in
   let queries = Smt.generate_queries small_config env doc in
   let inv =
@@ -1524,6 +1553,134 @@ let test_guard_substitution () =
   check bool "has (active x)" true (contains result "(active x)");
   check bool "no (active u)" false (contains result "(active u)")
 
+let test_primed_guard_collection () =
+  (* collect_body_guards on EApp(EPrimed "value", [EVar "t"]) should return
+     the primed guard [active?' t] *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "Thing" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "value"
+         (Types.TyFunc ([ Types.TyDomain "Thing" ], Some Types.TyNat0))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "active?"
+         (Types.TyFunc ([ Types.TyDomain "Thing" ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule_guards "value"
+         [ Ast.{ param_name = "t"; param_type = TName "Thing" } ]
+         [ GExpr (EApp (EVar "active?", [ EVar "t" ])) ]
+  in
+  let expr = Ast.EApp (EPrimed "value", [ EVar "t" ]) in
+  let guards = Smt.collect_body_guards ~bound:[ "t" ] env expr in
+  check int "one guard" 1 (List.length guards);
+  (* The guard should be primed: EPrimed "active?" applied to EVar "t"
+     (t is not primed because it's not a rule name) *)
+  let guard = List.hd guards in
+  match guard with
+  | Ast.EApp (EPrimed "active?", [ EVar "t" ]) ->
+      check bool "primed guard for active?" true true
+  | _ ->
+      failf "Expected EApp(EPrimed \"active?\", [EVar \"t\"]) but got %s"
+        (Ast.show_expr guard)
+
+let test_inject_guards_false_skips () =
+  (* translate_proposition with inject_guards = false produces no
+     implication wrapper even for guarded applications *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "score"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "active"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule_guards "score"
+         [ Ast.{ param_name = "u"; param_type = TName "User" } ]
+         [ GExpr (EApp (EVar "active", [ EVar "u" ])) ]
+    |> Env.add_var "x" (Types.TyDomain "User")
+  in
+  let expr = Ast.EBinop (OpGe, EApp (EVar "score", [ EVar "x" ]), ELitNat 0) in
+  let no_guard_config = { config with Smt.inject_guards = false } in
+  let result = Smt.translate_proposition no_guard_config env expr in
+  (* Should NOT have an implication wrapper *)
+  check bool "no implication" true (not (contains result "(=>"));
+  (* But with inject_guards = true, it should *)
+  let result_with = Smt.translate_proposition config env expr in
+  check bool "has implication with guards" true (contains result_with "(=>")
+
+let test_guarded_decl_e2e () =
+  (* Full spec from bug report: guarded declarations should not cause
+     spurious invariant preservation failures *)
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       context Ctx.\n\
+       Thing.\n\
+       {Ctx} active? t: Thing => Bool.\n\
+       {Ctx} value t: Thing, active? t => Nat0.\n\
+       ---\n\
+       all t: Thing | value t >= 0.\n\
+       initially all t: Thing | ~active? t.\n\
+       where\n\
+       Ctx ~> Create | t: Thing, n: Nat0, ~active? t.\n\
+       ---\n\
+       active?' t.\n\
+       value' t = n.\n\
+       all t2: Thing, t2 != t | active?' t2 = active? t2.\n\
+       all t2: Thing, t2 != t | value' t2 = value t2.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  (* Should generate queries without error *)
+  check bool "has queries" true (List.length queries > 0);
+  (* Check that contradiction query exists *)
+  let has_contradiction =
+    List.exists (fun (q : Smt.query) -> q.kind = Smt.Contradiction) queries
+  in
+  check bool "has contradiction query" true has_contradiction;
+  (* Invariant preservation query postconditions should NOT have guards *)
+  let inv_queries =
+    List.filter
+      (fun (q : Smt.query) -> q.kind = Smt.InvariantPreservation)
+      queries
+  in
+  check bool "has invariant queries" true (List.length inv_queries > 0);
+  let inv_q = List.hd inv_queries in
+  (* The postcondition section should not have guard injection.
+     Check that the "Action postconditions" section doesn't contain
+     an implication from activep *)
+  let postcond_section =
+    let lines = String.split_on_char '\n' inv_q.smt2 in
+    let in_postcond = ref false in
+    let postcond_lines = ref [] in
+    List.iter
+      (fun line ->
+        if contains line "Action postconditions" then in_postcond := true
+        else if
+          contains line "Frame conditions" || contains line "Invariant violated"
+        then in_postcond := false;
+        if !in_postcond then postcond_lines := line :: !postcond_lines)
+      lines;
+    String.concat "\n" (List.rev !postcond_lines)
+  in
+  (* Postcondition assertions should not wrap with guard implication *)
+  check bool "postcond no guard implication" false
+    (contains postcond_section "(=> (activep");
+  (* The primed invariant (negated) should contain primed guard *)
+  let violated_section =
+    let lines = String.split_on_char '\n' inv_q.smt2 in
+    let in_violated = ref false in
+    let violated_lines = ref [] in
+    List.iter
+      (fun line ->
+        if contains line "Invariant violated" then in_violated := true;
+        if !in_violated then violated_lines := line :: !violated_lines)
+      lines;
+    String.concat "\n" (List.rev !violated_lines)
+  in
+  check bool "primed invariant has primed guard" true
+    (contains violated_section "activep_prime");
+  ignore doc
+
 let guard_injection_tests =
   [
     test_case "quantifier guard injection" `Quick
@@ -1533,6 +1690,9 @@ let guard_injection_tests =
     test_case "nested quantifier guards" `Quick test_nested_quantifier_guards;
     test_case "unguarded rule unchanged" `Quick test_unguarded_rule_unchanged;
     test_case "guard substitution" `Quick test_guard_substitution;
+    test_case "primed guard collection" `Quick test_primed_guard_collection;
+    test_case "inject_guards false skips" `Quick test_inject_guards_false_skips;
+    test_case "guarded decl e2e" `Quick test_guarded_decl_e2e;
   ]
 
 (* --- Cond expression tests --- *)

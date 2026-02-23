@@ -3,7 +3,12 @@
 open Ast
 open Types
 
-type config = { bound : int; steps : int; domain_bounds : int Env.StringMap.t }
+type config = {
+  bound : int;
+  steps : int;
+  domain_bounds : int Env.StringMap.t;
+  inject_guards : bool;
+}
 (** Configuration for bounded checking. [steps] controls k-step BMC depth.
     [domain_bounds] maps domain names to per-domain minimum bounds (derived from
     nullary constant counts). *)
@@ -681,10 +686,63 @@ and substitute_guards subst gs =
       | GExpr e -> (subst, acc @ [ GExpr (substitute_vars subst e) ]))
     (subst, []) gs
 
+(** Substitute primed names in an expression (for invariant checking in next
+    state). Tracks locally-bound names (from quantifiers) to avoid priming them.
+*)
+let rec prime_expr ?(bound = []) (e : expr) : expr =
+  match e with
+  | EVar name -> if List.mem name bound then e else EPrimed name
+  | EApp (func, args) ->
+      EApp (prime_expr ~bound func, List.map (prime_expr ~bound) args)
+  | EBinop (op, e1, e2) ->
+      EBinop (op, prime_expr ~bound e1, prime_expr ~bound e2)
+  | EUnop (op, e) -> EUnop (op, prime_expr ~bound e)
+  | ETuple es -> ETuple (List.map (prime_expr ~bound) es)
+  | EProj (e, i) -> EProj (prime_expr ~bound e, i)
+  | EForall (ps, gs, body) ->
+      let bound' = List.map (fun (p : param) -> p.param_name) ps @ bound in
+      let bound'', gs' = prime_guards ~bound:bound' gs in
+      EForall (ps, gs', prime_expr ~bound:bound'' body)
+  | EExists (ps, gs, body) ->
+      let bound' = List.map (fun (p : param) -> p.param_name) ps @ bound in
+      let bound'', gs' = prime_guards ~bound:bound' gs in
+      EExists (ps, gs', prime_expr ~bound:bound'' body)
+  | EEach (ps, gs, body) ->
+      let bound' = List.map (fun (p : param) -> p.param_name) ps @ bound in
+      let bound'', gs' = prime_guards ~bound:bound' gs in
+      EEach (ps, gs', prime_expr ~bound:bound'' body)
+  | ECond arms ->
+      ECond
+        (List.map
+           (fun (arm, cons) -> (prime_expr ~bound arm, prime_expr ~bound cons))
+           arms)
+  | EOverride (name, pairs) ->
+      EOverride
+        ( name,
+          List.map
+            (fun (k, v) -> (prime_expr ~bound k, prime_expr ~bound v))
+            pairs )
+  | EInitially e -> EInitially (prime_expr ~bound e)
+  | EPrimed _ | ELitBool _ | ELitNat _ | ELitReal _ | ELitString _ | EDomain _
+  | EQualified _ ->
+      e
+
+and prime_guards ~bound gs =
+  List.fold_left
+    (fun (bound, acc) g ->
+      match g with
+      | GParam p -> (p.param_name :: bound, acc @ [ GParam p ])
+      | GIn (name, e) ->
+          (name :: bound, acc @ [ GIn (name, prime_expr ~bound e) ])
+      | GExpr e -> (bound, acc @ [ GExpr (prime_expr ~bound e) ]))
+    (bound, []) gs
+
 (** Collect guard expressions from applications of guarded functions in an
     expression. Stops at nested quantifiers (they handle their own guards).
-    Returns a list of AST guard expressions with actual args substituted. *)
-let collect_body_guards env (e : expr) : expr list =
+    Returns a list of AST guard expressions with actual args substituted.
+    [~bound] tracks quantifier-bound variable names so that [prime_expr] inside
+    primed-application handling doesn't incorrectly prime them. *)
+let collect_body_guards ?(bound = []) env (e : expr) : expr list =
   let guards = ref [] in
   let rec walk = function
     | EApp (EVar name, args) ->
@@ -703,6 +761,25 @@ let collect_body_guards env (e : expr) : expr list =
               rule_guards
         | None -> ());
         List.iter walk args
+    | EApp (EPrimed name, args) ->
+        (* Primed application: collect guards in primed form *)
+        (match Env.lookup_rule_guards name env with
+        | Some (formal_params, rule_guards) ->
+            let subst =
+              List.combine
+                (List.map (fun (p : param) -> p.param_name) formal_params)
+                args
+            in
+            List.iter
+              (fun (g : guard) ->
+                match g with
+                | GExpr ge ->
+                    guards :=
+                      prime_expr ~bound (substitute_vars subst ge) :: !guards
+                | _ -> ())
+              rule_guards
+        | None -> ());
+        List.iter walk args
     | EApp (func, args) ->
         walk func;
         List.iter walk args
@@ -715,6 +792,20 @@ let collect_body_guards env (e : expr) : expr list =
                 List.iter
                   (fun (g : guard) ->
                     match g with GExpr ge -> guards := ge :: !guards | _ -> ())
+                  rule_guards
+            | None -> ())
+        | _ -> ())
+    | EPrimed name -> (
+        (* Nullary auto-applied primed rule with guards *)
+        match Env.lookup_term name env with
+        | Some { kind = Env.KRule (TyFunc ([], Some _)); _ } -> (
+            match Env.lookup_rule_guards name env with
+            | Some (_, rule_guards) ->
+                List.iter
+                  (fun (g : guard) ->
+                    match g with
+                    | GExpr ge -> guards := prime_expr ~bound ge :: !guards
+                    | _ -> ())
                   rule_guards
             | None -> ())
         | _ -> ())
@@ -739,7 +830,7 @@ let collect_body_guards env (e : expr) : expr list =
           arms
     (* Stop at nested quantifiers — they inject their own guards *)
     | EForall _ | EExists _ | EEach _ -> ()
-    | EPrimed _ | ELitBool _ | ELitNat _ | ELitReal _ | ELitString _ | EDomain _
+    | ELitBool _ | ELitNat _ | ELitReal _ | ELitString _ | EDomain _
     | EQualified _ ->
         ()
   in
@@ -1222,7 +1313,20 @@ and translate_quantifier config env quant params guards body =
   in
   let all_bindings = bindings @ List.rev guard_bindings in
   (* Collect guards from guarded function applications in body *)
-  let app_guards = collect_body_guards env body in
+  let bound_names =
+    List.map (fun (p : param) -> p.param_name) params
+    @ List.concat_map
+        (fun g ->
+          match g with
+          | GParam p -> [ p.param_name ]
+          | GIn (n, _) -> [ n ]
+          | GExpr _ -> [])
+        guards
+  in
+  let app_guards =
+    if config.inject_guards then collect_body_guards ~bound:bound_names env body
+    else []
+  in
   let app_guard_strs = List.map (translate_expr config env) app_guards in
   let body_str = translate_expr config env body in
   let conditions =
@@ -1285,18 +1389,20 @@ let translate_proposition config env (e : expr) =
       (* Quantifiers handle their own guard injection *)
       translate_expr config env e
   | _ -> (
-      let app_guards = collect_body_guards env e in
-      let smt_expr = translate_expr config env e in
-      match app_guards with
-      | [] -> smt_expr
-      | _ ->
-          let guard_strs = List.map (translate_expr config env) app_guards in
-          let guard_conj =
-            match guard_strs with
-            | [ g ] -> g
-            | gs -> Printf.sprintf "(and %s)" (String.concat " " gs)
-          in
-          Printf.sprintf "(=> %s %s)" guard_conj smt_expr)
+      if not config.inject_guards then translate_expr config env e
+      else
+        let app_guards = collect_body_guards env e in
+        let smt_expr = translate_expr config env e in
+        match app_guards with
+        | [] -> smt_expr
+        | _ ->
+            let guard_strs = List.map (translate_expr config env) app_guards in
+            let guard_conj =
+              match guard_strs with
+              | [ g ] -> g
+              | gs -> Printf.sprintf "(and %s)" (String.concat " " gs)
+            in
+            Printf.sprintf "(=> %s %s)" guard_conj smt_expr)
 
 (** Classify chapters into invariant chapters and action chapters *)
 type chapter_class =
@@ -1391,57 +1497,6 @@ let conjoin_propositions config env props =
           props
       in
       Printf.sprintf "(and %s)" (String.concat " " parts)
-
-(** Substitute primed names in an expression (for invariant checking in next
-    state). Tracks locally-bound names (from quantifiers) to avoid priming them.
-*)
-let rec prime_expr ?(bound = []) (e : expr) : expr =
-  match e with
-  | EVar name -> if List.mem name bound then e else EPrimed name
-  | EApp (func, args) ->
-      EApp (prime_expr ~bound func, List.map (prime_expr ~bound) args)
-  | EBinop (op, e1, e2) ->
-      EBinop (op, prime_expr ~bound e1, prime_expr ~bound e2)
-  | EUnop (op, e) -> EUnop (op, prime_expr ~bound e)
-  | ETuple es -> ETuple (List.map (prime_expr ~bound) es)
-  | EProj (e, i) -> EProj (prime_expr ~bound e, i)
-  | EForall (ps, gs, body) ->
-      let bound' = List.map (fun (p : param) -> p.param_name) ps @ bound in
-      let bound'', gs' = prime_guards ~bound:bound' gs in
-      EForall (ps, gs', prime_expr ~bound:bound'' body)
-  | EExists (ps, gs, body) ->
-      let bound' = List.map (fun (p : param) -> p.param_name) ps @ bound in
-      let bound'', gs' = prime_guards ~bound:bound' gs in
-      EExists (ps, gs', prime_expr ~bound:bound'' body)
-  | EEach (ps, gs, body) ->
-      let bound' = List.map (fun (p : param) -> p.param_name) ps @ bound in
-      let bound'', gs' = prime_guards ~bound:bound' gs in
-      EEach (ps, gs', prime_expr ~bound:bound'' body)
-  | ECond arms ->
-      ECond
-        (List.map
-           (fun (arm, cons) -> (prime_expr ~bound arm, prime_expr ~bound cons))
-           arms)
-  | EOverride (name, pairs) ->
-      EOverride
-        ( name,
-          List.map
-            (fun (k, v) -> (prime_expr ~bound k, prime_expr ~bound v))
-            pairs )
-  | EInitially e -> EInitially (prime_expr ~bound e)
-  | EPrimed _ | ELitBool _ | ELitNat _ | ELitReal _ | ELitString _ | EDomain _
-  | EQualified _ ->
-      e
-
-and prime_guards ~bound gs =
-  List.fold_left
-    (fun (bound, acc) g ->
-      match g with
-      | GParam p -> (p.param_name :: bound, acc @ [ GParam p ])
-      | GIn (name, e) ->
-          (name :: bound, acc @ [ GIn (name, prime_expr ~bound e) ])
-      | GExpr e -> (bound, acc @ [ GExpr (prime_expr ~bound e) ]))
-    (bound, []) gs
 
 (** Generate frame condition expressions: for every rule NOT in the action's
     context, produce the SMT expression asserting f_prime = f. Returns a list of
@@ -1713,12 +1768,13 @@ let generate_contradiction_query config env action =
         (Printf.sprintf "%s' = %s (frame)" fname fname)
         smt_expr)
     frame_exprs;
-  (* Named postconditions *)
+  (* Named postconditions — no guard injection in postconditions *)
+  let post_config = { config with inject_guards = false } in
   Buffer.add_string buf "\n; --- Postconditions ---\n";
   List.iter
     (fun (p : expr located) ->
       add_named_assert na "postcond" (Pretty.str_expr p.value)
-        (translate_proposition config env p.value))
+        (translate_proposition post_config env p.value))
     action.a_propositions;
   let value_terms = build_value_terms config env action.a_params in
   Buffer.add_string buf "(check-sat)\n";
@@ -1760,13 +1816,14 @@ let generate_invariant_query config env ~all_invariants ~index
   List.iter
     (fun pc -> Buffer.add_string buf (Printf.sprintf "(assert %s)\n" pc))
     preconditions;
-  (* Assert action postconditions (transition relation) *)
+  (* Assert action postconditions (transition relation) — no guard injection *)
+  let post_config = { config with inject_guards = false } in
   Buffer.add_string buf "\n; --- Action postconditions (transition) ---\n";
-  let transition = conjoin_propositions config env action.a_propositions in
+  let transition = conjoin_propositions post_config env action.a_propositions in
   Buffer.add_string buf (Printf.sprintf "(assert %s)\n" transition);
   (* Assert frame conditions *)
   Buffer.add_string buf (generate_frame_conditions config env action.a_context);
-  (* Assert single invariant violated in next state *)
+  (* Assert single invariant violated in next state — guards injected *)
   Buffer.add_string buf "\n; --- Invariant violated in next state ---\n";
   let primed_inv = { inv with value = prime_expr inv.value } in
   let inv_primed = translate_proposition config env primed_inv.value in
@@ -2175,10 +2232,12 @@ let build_step_transition config env actions step =
         in
         (* Preconditions (from guards) — translated in base names *)
         let precond_parts = extract_preconditions config env action.a_guards in
-        (* Postconditions — translated with base name/prime *)
+        (* Postconditions — no guard injection in postconditions *)
+        let post_config = { config with inject_guards = false } in
         let postcond_parts =
           List.map
-            (fun (p : expr located) -> translate_proposition config env p.value)
+            (fun (p : expr located) ->
+              translate_proposition post_config env p.value)
             action.a_propositions
         in
         (* Frame conditions *)
