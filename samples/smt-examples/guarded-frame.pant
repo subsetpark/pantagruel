@@ -1,0 +1,31 @@
+> Regression test for declaration guard injection in SMT translation.
+> Guards on declarations (e.g., "value t: Thing, active? t => Nat0")
+> must be:
+> 1. NOT injected into postconditions (which define the transition relation)
+> 2. Correctly primed in post-state invariant checks
+module GUARDED_FRAME.
+
+context Ctx.
+
+Thing.
+
+{Ctx} active? t: Thing => Bool.
+{Ctx} value t: Thing, active? t => Nat0.
+
+---
+
+all t: Thing | value t >= 0.
+
+initially all t: Thing | ~active? t.
+
+where
+
+Ctx ~> Create | t: Thing, n: Nat0, ~active? t.
+
+---
+
+active?' t.
+value' t = n.
+
+all t2: Thing, t2 != t | active?' t2 = active? t2.
+all t2: Thing, t2 != t | value' t2 = value t2.
