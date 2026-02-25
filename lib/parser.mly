@@ -240,7 +240,7 @@ quant_first_binding:
 quant_guard_or_param:
   | p=param { GParam p }
   | name=LOWER_IDENT IN e=term { GIn (name, e) }  (* x in xs - binds x to element type *)
-  | e=conjunction { GExpr e }  (* Use conjunction to avoid ambiguity with | *)
+  | e=disjunction { GExpr e }
 
 (* The RHS of -> allows quantifiers (P -> all x: T | Q) and
    nested implications (right-associative), but not <->. *)

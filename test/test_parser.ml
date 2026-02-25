@@ -139,6 +139,21 @@ let test_multiple_guards () =
   | Ast.DeclAction { guards = [ Ast.GExpr _; Ast.GExpr _ ]; _ } -> ()
   | _ -> fail "Expected action with two guards"
 
+let test_disjunction_guard () =
+  let doc =
+    parse
+      "module TEST.\n\n\
+       Node.\n\
+       kind n: Node => Nat.\n\
+       children n: Node => [Node].\n\
+       ---\n\
+       all n: Node, kind n = 1 or kind n = 2 | #children n = 0.\n"
+  in
+  let chapter = List.hd doc.Ast.chapters in
+  match (List.hd chapter.Ast.body).Ast.value with
+  | Ast.EForall (_, [ Ast.GExpr (Ast.EBinop (Ast.OpOr, _, _)) ], _) -> ()
+  | _ -> fail "Expected forall with disjunction guard"
+
 let test_no_module () =
   let doc = parse "Foo.\n---\ntrue.\n" in
   check (option string) "no module" None doc.Ast.module_name;
@@ -513,7 +528,10 @@ let () =
       ("existential", [ test_case "existential" `Quick test_existential ]);
       ("doc_comment", [ test_case "doc comment" `Quick test_doc_comment ]);
       ( "multi_guard",
-        [ test_case "multiple guards" `Quick test_multiple_guards ] );
+        [
+          test_case "multiple guards" `Quick test_multiple_guards;
+          test_case "disjunction guard" `Quick test_disjunction_guard;
+        ] );
       ( "context",
         [ test_case "context declaration" `Quick test_context_declaration ] );
       ( "rule_context",
