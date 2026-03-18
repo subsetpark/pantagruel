@@ -28,7 +28,7 @@ let test_action () =
   let doc = parse "module TEST.\n\nUser.\n~> Check out | u: User.\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
   match (List.nth chapter.Ast.head 1).Ast.value with
-  | Ast.DeclAction { label = "Check out"; context = None; _ } -> ()
+  | Ast.DeclAction { label = "Check out"; contexts = []; _ } -> ()
   | _ -> fail "Expected action"
 
 let test_import () =
@@ -165,7 +165,7 @@ let test_action_no_params () =
   let chapter = List.hd doc.Ast.chapters in
   match (List.nth chapter.Ast.head 1).Ast.value with
   | Ast.DeclAction
-      { label = "Do something"; params = []; guards = []; context = None } ->
+      { label = "Do something"; params = []; guards = []; contexts = [] } ->
       ()
   | _ -> fail "Expected no-param action"
 
@@ -189,7 +189,7 @@ let test_rule_with_context () =
   | Ast.DeclRule { name = "balance"; contexts = [ "Banking" ]; _ } -> ()
   | _ -> fail "Expected rule with context footprint");
   match (List.nth chapter.Ast.head 2).Ast.value with
-  | Ast.DeclAction { label = "Withdraw"; context = Some "Banking"; _ } -> ()
+  | Ast.DeclAction { label = "Withdraw"; contexts = [ "Banking" ]; _ } -> ()
   | _ -> fail "Expected action with context"
 
 let test_closure () =

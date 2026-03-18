@@ -203,10 +203,14 @@ let pp_declaration procs fmt = function
           (pp_print_list ~pp_sep:pp_params_sep (pp_guard procs))
           guards;
       fprintf fmt " ⇒ %a." pp_type_expr return_type
-  | DeclAction { label; params; guards; context } ->
-      (match context with
-      | Some ctx -> fprintf fmt "**`%s`** ↝ " ctx
-      | None -> fprintf fmt "↝ ");
+  | DeclAction { label; params; guards; contexts } ->
+      (match contexts with
+      | [] -> fprintf fmt "↝ "
+      | ctxs ->
+          fprintf fmt "%a ↝ "
+            (pp_print_list ~pp_sep:pp_params_sep (fun fmt c ->
+                 fprintf fmt "**`%s`**" c))
+            ctxs);
       fprintf fmt "%s" label;
       if params <> [] then
         fprintf fmt " %a" (pp_print_list ~pp_sep:pp_params_sep pp_param) params;

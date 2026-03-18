@@ -128,20 +128,20 @@ declaration:
         return_type = ret;
         target;
       }) }
-  | ctx=UPPER_IDENT SQUIG_ARROW label=ACTION_LABEL PIPE pg=action_params_guards DOT
+  | ctxs=separated_nonempty_list(COMMA, UPPER_IDENT) SQUIG_ARROW label=ACTION_LABEL PIPE pg=action_params_guards DOT
     { let (params, guards) = pg in
       located_with_doc $startpos $endpos (DeclAction {
         label;
         params;
         guards;
-        context = Some ctx;
+        contexts = ctxs;
       }) }
-  | ctx=UPPER_IDENT SQUIG_ARROW label=ACTION_LABEL DOT
+  | ctxs=separated_nonempty_list(COMMA, UPPER_IDENT) SQUIG_ARROW label=ACTION_LABEL DOT
     { located_with_doc $startpos $endpos (DeclAction {
         label;
         params = [];
         guards = [];
-        context = Some ctx;
+        contexts = ctxs;
       }) }
   | SQUIG_ARROW label=ACTION_LABEL PIPE pg=action_params_guards DOT
     { let (params, guards) = pg in
@@ -149,14 +149,14 @@ declaration:
         label;
         params;
         guards;
-        context = None;
+        contexts = [];
       }) }
   | SQUIG_ARROW label=ACTION_LABEL DOT
     { located_with_doc $startpos $endpos (DeclAction {
         label;
         params = [];
         guards = [];
-        context = None;
+        contexts = [];
       }) }
 (* Parameters and guards for actions (after |, must start with param) *)
 action_params_guards:

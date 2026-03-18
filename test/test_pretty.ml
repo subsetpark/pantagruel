@@ -182,14 +182,14 @@ let test_decl_action () =
             label = "Do thing";
             params = [ { param_name = "x"; param_type = TName "Nat" } ];
             guards = [];
-            context = None;
+            contexts = [];
           }))
 
 let test_decl_action_with_context () =
   check string "action with context" "Ctx ~> Do thing."
     (pp_decl
        (Ast.DeclAction
-          { label = "Do thing"; params = []; guards = []; context = Some "Ctx" }))
+          { label = "Do thing"; params = []; guards = []; contexts = [ "Ctx" ] }))
 
 let test_decl_closure () =
   check string "closure" "anc b: Block => [Block] = closure parent."

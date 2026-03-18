@@ -220,11 +220,17 @@ let collect_chapter_head ~chapter ~doc_contexts env
   (* Pass 4: Validate context annotations on actions *)
   let validate_action_context env (decl : declaration located) =
     match decl.value with
-    | DeclAction { context = Some ctx_name; _ } -> (
-        (* Check context exists (local or imported) *)
-        match Env.lookup_context ctx_name env with
-        | None -> Error (UndefinedContext (ctx_name, decl.loc))
-        | Some _ -> Ok env)
+    | DeclAction { contexts; _ } ->
+        let* () =
+          map_result
+            (fun ctx_name ->
+              match Env.lookup_context ctx_name env with
+              | None -> Error (UndefinedContext (ctx_name, decl.loc))
+              | Some _ -> Ok ())
+            contexts
+          |> Result.map (fun _ -> ())
+        in
+        Ok env
     | _ -> Ok env
   in
 

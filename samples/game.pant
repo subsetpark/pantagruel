@@ -1,0 +1,23 @@
+module GAME.
+
+Player.
+
+finished => Bool.
+winner => Player.
+score p: Player => Nat0.
+---
+
+// The player with the most points wins.
+finished ->
+    all q: Player, q != winner |
+        score winner > score q.
+
+initially ~finished.
+initially all p: Player | score p = 0.
+
+where
+
+~> End-Game.
+---
+
+~finished -> finished'.

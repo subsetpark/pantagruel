@@ -115,7 +115,7 @@ type declaration =
       label : string;
       params : param list;
       guards : guard list;
-      context : upper_ident option;  (** Ctx in "Ctx ~> action" *)
+      contexts : upper_ident list;  (** Contexts in "Ctx1, Ctx2 ~> action" *)
     }
   | DeclClosure of {
       name : lower_ident;

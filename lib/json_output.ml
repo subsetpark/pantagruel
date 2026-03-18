@@ -244,7 +244,7 @@ let decl_to_json env (decl_loc : declaration located) =
              [ ("contexts", `List (List.map (fun c -> `String c) contexts)) ]
            else [])
         @ match resolved with Some t -> [ ("resolved", t) ] | None -> [])
-  | DeclAction { label; params; guards; context } ->
+  | DeclAction { label; params; guards; contexts } ->
       let param_tys =
         List.map (fun p -> type_expr_to_json p.param_type) params
       in
@@ -256,9 +256,9 @@ let decl_to_json env (decl_loc : declaration located) =
             ("params", `List (List.map param_to_json params));
             ("guards", `List (List.map guard_to_json guards));
           ]
-        @ (match context with
-          | Some c -> [ ("context", `String c) ]
-          | None -> [])
+        @ (if contexts <> [] then
+             [ ("contexts", `List (List.map (fun c -> `String c) contexts)) ]
+           else [])
         @ [
             ( "resolved",
               `Assoc

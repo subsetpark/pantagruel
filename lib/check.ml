@@ -23,8 +23,8 @@ type type_error =
       string * ty * ty * loc (* name, existing_ty, new_ty *)
   | AmbiguousName of string * string list * loc
   | UnboundQualified of string * string * loc
-  | PrimedExtracontextual of string * string * loc
-      (** function name, context name *)
+  | PrimedExtracontextual of string * string list * loc
+      (** function name, context names *)
   | BoolParam of string * string * loc  (** param name, declaration name *)
   | ComprehensionNeedEach of ty * loc
 [@@deriving show]
@@ -101,16 +101,20 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
             let result_ty =
               match ty with TyFunc ([], Some ret) -> ret | _ -> ty
             in
-            (* If action has a context, check membership *)
-            match ctx.env.action_context with
-            | Some ctx_name -> (
-                match Env.lookup_context ctx_name ctx.env with
-                | Some members when List.mem name members -> Ok result_ty
-                | Some _ ->
-                    Error (PrimedExtracontextual (name, ctx_name, ctx.loc))
-                | None ->
-                    Ok result_ty (* Shouldn't happen: validated in collect *))
-            | None -> Ok result_ty)
+            (* If action has contexts, check membership in union *)
+            match ctx.env.action_contexts with
+            | [] -> Ok result_ty
+            | ctxs ->
+                let all_members =
+                  List.concat_map
+                    (fun ctx_name ->
+                      match Env.lookup_context ctx_name ctx.env with
+                      | Some members -> members
+                      | None -> [])
+                    ctxs
+                in
+                if List.mem name all_members then Ok result_ty
+                else Error (PrimedExtracontextual (name, ctxs, ctx.loc)))
         | Some { kind = Env.KClosure (ty, _); _ } ->
             (* Closures are derived — allow priming without context membership *)
             let result_ty =
@@ -410,7 +414,8 @@ let find_action (head : declaration located list) =
   List.find_map
     (fun decl ->
       match decl.value with
-      | DeclAction { label; params; context; _ } -> Some (label, params, context)
+      | DeclAction { label; params; contexts; _ } ->
+          Some (label, params, contexts)
       | _ -> None)
     head
 
@@ -432,8 +437,8 @@ let check_chapter_body ~chapter_idx env (chapter : chapter) =
   (* Set action context if chapter has one *)
   let env_with_action =
     match find_action chapter.head with
-    | Some (name, _, context) ->
-        Env.with_action name env_visible |> Env.with_action_context context
+    | Some (name, _, contexts) ->
+        Env.with_action name env_visible |> Env.with_action_contexts contexts
     | None -> env_visible
   in
 

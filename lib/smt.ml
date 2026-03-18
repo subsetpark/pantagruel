@@ -727,6 +727,15 @@ let rec prime_expr ?(bound = []) (e : expr) : expr =
   | EQualified _ ->
       e
 
+(** Reverse priming: convert EPrimed back to EVar for type inference. *)
+and unprime_expr (e : expr) : expr =
+  match e with
+  | EPrimed name -> EVar name
+  | EApp (func, args) -> EApp (unprime_expr func, List.map unprime_expr args)
+  | EBinop (op, e1, e2) -> EBinop (op, unprime_expr e1, unprime_expr e2)
+  | EUnop (op, e) -> EUnop (op, unprime_expr e)
+  | _ -> e
+
 and prime_guards ~bound gs =
   List.fold_left
     (fun (bound, acc) g ->
@@ -1086,11 +1095,14 @@ and translate_card config env e =
           (fun g ->
             match g with
             | GIn (name, list_expr) -> (
-                match
-                  Check.infer_type { Check.env; loc = dummy_loc } list_expr
-                with
-                | Ok (TyList elem_ty) -> Some (name, elem_ty)
-                | _ -> None)
+                let infer e =
+                  match Check.infer_type { Check.env; loc = dummy_loc } e with
+                  | Ok (TyList elem_ty) -> Some (name, elem_ty)
+                  | _ -> None
+                in
+                match infer list_expr with
+                | Some _ as r -> r
+                | None -> infer (unprime_expr list_expr))
             | _ -> None)
           guards
       in
@@ -1172,9 +1184,14 @@ and translate_forall_comprehension config env params guards body =
       (fun g ->
         match g with
         | GIn (name, list_expr) -> (
-            match Check.infer_type { Check.env; loc = dummy_loc } list_expr with
-            | Ok (TyList elem_ty) -> Some (name, elem_ty)
-            | _ -> None)
+            let infer e =
+              match Check.infer_type { Check.env; loc = dummy_loc } e with
+              | Ok (TyList elem_ty) -> Some (name, elem_ty)
+              | _ -> None
+            in
+            match infer list_expr with
+            | Some _ as r -> r
+            | None -> infer (unprime_expr list_expr))
         | _ -> None)
       guards
   in
@@ -1282,12 +1299,19 @@ and translate_quantifier config env quant params guards body =
               env )
         | GIn (name, list_expr) ->
             (* Bind name as element type; resolve from list expression type *)
-            let elem_ty_opt =
-              match
-                Check.infer_type { Check.env; loc = dummy_loc } list_expr
-              with
+            let infer_elem_ty e =
+              match Check.infer_type { Check.env; loc = dummy_loc } e with
               | Ok (TyList elem_ty) -> Some elem_ty
+              | Ok (TyDomain _ as ty) -> Some ty
               | _ -> None
+            in
+            (* When the expression has been primed (for invariant preservation
+               checks), the primed name won't be in the type environment.
+               Fall back to unpriming before inference. *)
+            let elem_ty_opt =
+              match infer_elem_ty list_expr with
+              | Some _ as r -> r
+              | None -> infer_elem_ty (unprime_expr list_expr)
             in
             let elem_sort =
               match elem_ty_opt with
@@ -1411,7 +1435,7 @@ type chapter_class =
       label : string;
       params : param list;
       guards : guard list;
-      context : string option;
+      contexts : string list;
       propositions : expr located list;
     }
 
@@ -1420,14 +1444,14 @@ let classify_chapter (chapter : chapter) =
     List.find_map
       (fun (decl : declaration located) ->
         match decl.value with
-        | DeclAction { label; params; guards; context } ->
-            Some (label, params, guards, context)
+        | DeclAction { label; params; guards; contexts } ->
+            Some (label, params, guards, contexts)
         | _ -> None)
       chapter.head
   in
   match action with
-  | Some (label, params, guards, context) ->
-      Action { label; params; guards; context; propositions = chapter.body }
+  | Some (label, params, guards, contexts) ->
+      Action { label; params; guards; contexts; propositions = chapter.body }
   | None -> Invariant chapter.body
 
 let classify_chapters (doc : document) = List.map classify_chapter doc.chapters
@@ -1464,7 +1488,7 @@ type action_info = {
   a_label : string;
   a_params : param list;
   a_guards : guard list;
-  a_context : string option;
+  a_contexts : string list;
   a_propositions : expr located list;
 }
 (** Collect all actions from the document *)
@@ -1473,13 +1497,13 @@ let collect_actions chapters =
   List.filter_map
     (fun c ->
       match c with
-      | Action { label; params; guards; context; propositions } ->
+      | Action { label; params; guards; contexts; propositions } ->
           Some
             {
               a_label = label;
               a_params = params;
               a_guards = guards;
-              a_context = context;
+              a_contexts = contexts;
               a_propositions = propositions;
             }
       | Invariant _ -> None)
@@ -1501,44 +1525,46 @@ let conjoin_propositions config env props =
 (** Generate frame condition expressions: for every rule NOT in the action's
     context, produce the SMT expression asserting f_prime = f. Returns a list of
     (function_name, smt_expr) pairs. *)
-let collect_frame_exprs _config env context =
-  match context with
-  | None -> []
-  | Some ctx_name -> (
-      match Env.lookup_context ctx_name env with
-      | None -> []
-      | Some context_members ->
-          Env.StringMap.fold
-            (fun name entry acc ->
-              match entry.Env.kind with
-              | Env.KRule ty when not (List.mem name context_members) -> (
-                  let sname = sanitize_ident name in
-                  match decompose_func_ty ty with
-                  | Some ([], _ret) ->
-                      (name, Printf.sprintf "(= %s_prime %s)" sname sname)
-                      :: acc
-                  | Some (params, _ret) ->
-                      let param_sorts = List.map sort_of_ty params in
-                      let param_names =
-                        List.mapi
-                          (fun i _ -> Printf.sprintf "frame_x_%d" i)
-                          params
-                      in
-                      let bindings =
-                        List.map2
-                          (fun n s -> Printf.sprintf "(%s %s)" n s)
-                          param_names param_sorts
-                      in
-                      let args = String.concat " " param_names in
-                      ( name,
-                        Printf.sprintf "(forall (%s) (= (%s_prime %s) (%s %s)))"
-                          (String.concat " " bindings)
-                          sname args sname args )
-                      :: acc
-                  | None -> acc)
-              | _ -> acc)
-            env.Env.terms []
-          |> List.rev)
+let collect_frame_exprs _config env contexts =
+  match contexts with
+  | [] -> []
+  | _ ->
+      let all_members =
+        List.concat_map
+          (fun ctx_name ->
+            match Env.lookup_context ctx_name env with
+            | Some members -> members
+            | None -> [])
+          contexts
+      in
+      Env.StringMap.fold
+        (fun name entry acc ->
+          match entry.Env.kind with
+          | Env.KRule ty when not (List.mem name all_members) -> (
+              let sname = sanitize_ident name in
+              match decompose_func_ty ty with
+              | Some ([], _ret) ->
+                  (name, Printf.sprintf "(= %s_prime %s)" sname sname) :: acc
+              | Some (params, _ret) ->
+                  let param_sorts = List.map sort_of_ty params in
+                  let param_names =
+                    List.mapi (fun i _ -> Printf.sprintf "frame_x_%d" i) params
+                  in
+                  let bindings =
+                    List.map2
+                      (fun n s -> Printf.sprintf "(%s %s)" n s)
+                      param_names param_sorts
+                  in
+                  let args = String.concat " " param_names in
+                  ( name,
+                    Printf.sprintf "(forall (%s) (= (%s_prime %s) (%s %s)))"
+                      (String.concat " " bindings)
+                      sname args sname args )
+                  :: acc
+              | None -> acc)
+          | _ -> acc)
+        env.Env.terms []
+      |> List.rev
 
 (** Generate frame conditions as plain assertions (for invariant queries) *)
 let generate_frame_conditions config env context =
@@ -1761,7 +1787,7 @@ let generate_contradiction_query config env action =
         (translate_expr config env e))
     precond_exprs;
   (* Named frame conditions *)
-  let frame_exprs = collect_frame_exprs config env action.a_context in
+  let frame_exprs = collect_frame_exprs config env action.a_contexts in
   List.iter
     (fun (fname, smt_expr) ->
       add_named_assert na "frame"
@@ -1822,7 +1848,7 @@ let generate_invariant_query config env ~all_invariants ~index
   let transition = conjoin_propositions post_config env action.a_propositions in
   Buffer.add_string buf (Printf.sprintf "(assert %s)\n" transition);
   (* Assert frame conditions *)
-  Buffer.add_string buf (generate_frame_conditions config env action.a_context);
+  Buffer.add_string buf (generate_frame_conditions config env action.a_contexts);
   (* Assert single invariant violated in next state — guards injected *)
   Buffer.add_string buf "\n; --- Invariant violated in next state ---\n";
   let primed_inv = { inv with value = prime_expr inv.value } in
@@ -1929,19 +1955,24 @@ and collect_guard_refs = function
 (** Check if invariant propositions touch any contextual functions. If they only
     reference extracontextual functions, the frame conditions guarantee
     preservation and we can skip the check. *)
-let invariant_touches_context env context invariant_props =
-  match context with
-  | None -> true (* No context = check everything *)
-  | Some ctx_name -> (
-      match Env.lookup_context ctx_name env with
-      | None -> true
-      | Some context_members ->
-          let refs =
-            List.concat_map
-              (fun (p : expr located) -> collect_function_refs p.value)
-              invariant_props
-          in
-          List.exists (fun r -> List.mem r context_members) refs)
+let invariant_touches_context env contexts invariant_props =
+  match contexts with
+  | [] -> true (* No context = check everything *)
+  | _ ->
+      let all_members =
+        List.concat_map
+          (fun ctx_name ->
+            match Env.lookup_context ctx_name env with
+            | Some members -> members
+            | None -> [])
+          contexts
+      in
+      let refs =
+        List.concat_map
+          (fun (p : expr located) -> collect_function_refs p.value)
+          invariant_props
+      in
+      List.exists (fun r -> List.mem r all_members) refs
 
 (** Build SMT value terms for invariant consistency queries (no action params,
     no primed functions). Includes nullary rules and unary rules applied to
@@ -2242,7 +2273,7 @@ let build_step_transition config env actions step =
         in
         (* Frame conditions *)
         let frame_parts =
-          List.map snd (collect_frame_exprs config env action.a_context)
+          List.map snd (collect_frame_exprs config env action.a_contexts)
         in
         (* Rename: base name → _s{step}, prime → _s{step+1} *)
         let rename s = rename_smt_for_step env s step in
@@ -2637,7 +2668,7 @@ let generate_queries config env (doc : document) =
       (fun action ->
         List.iteri
           (fun index inv ->
-            if invariant_touches_context env action.a_context [ inv ] then
+            if invariant_touches_context env action.a_contexts [ inv ] then
               add (fun () ->
                   generate_invariant_query config env ~all_invariants:invariants
                     ~index inv action))

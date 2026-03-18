@@ -188,10 +188,13 @@ let pp_declaration fmt = function
       if guards <> [] then
         fprintf fmt ", %a" (pp_print_list ~pp_sep:pp_sep_comma pp_guard) guards;
       fprintf fmt " => %a." pp_type_expr return_type
-  | DeclAction { label; params; guards; context } ->
-      (match context with
-      | Some ctx -> fprintf fmt "%s ~> " ctx
-      | None -> fprintf fmt "~> ");
+  | DeclAction { label; params; guards; contexts } ->
+      (match contexts with
+      | [] -> fprintf fmt "~> "
+      | ctxs ->
+          fprintf fmt "%a ~> "
+            (pp_print_list ~pp_sep:pp_sep_comma pp_print_string)
+            ctxs);
       pp_print_string fmt label;
       if params <> [] then
         fprintf fmt " | %a" (pp_print_list ~pp_sep:pp_sep_comma pp_param) params;

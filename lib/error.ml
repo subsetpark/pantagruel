@@ -63,9 +63,11 @@ let format_type_error err =
            name)
   | UnboundQualified (mod_name, name, loc) ->
       fmt loc (Printf.sprintf "Undefined '%s::%s'" mod_name name)
-  | PrimedExtracontextual (name, ctx_name, loc) ->
+  | PrimedExtracontextual (name, ctx_names, loc) ->
       fmt loc
-        (Printf.sprintf "'%s' is not a member of context '%s'" name ctx_name)
+        (Printf.sprintf "'%s' is not a member of context%s '%s'" name
+           (if List.length ctx_names > 1 then "s" else "")
+           (String.concat ", " ctx_names))
   | BoolParam (name, decl_name, loc) ->
       fmt loc (Printf.sprintf "Bool parameter '%s' in '%s'" name decl_name)
   | ComprehensionNeedEach (ty, loc) ->

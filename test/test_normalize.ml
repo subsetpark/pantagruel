@@ -27,7 +27,7 @@ let test_decl_name () =
   check string "action" "Do thing"
     (Normalize.decl_name
        (Ast.DeclAction
-          { label = "Do thing"; params = []; guards = []; context = None }));
+          { label = "Do thing"; params = []; guards = []; contexts = [] }));
   check string "closure" "anc"
     (Normalize.decl_name
        (Ast.DeclClosure
@@ -57,7 +57,7 @@ let test_is_type_decl () =
   check bool "action" false
     (Normalize.is_type_decl
        (Ast.DeclAction
-          { label = "Act"; params = []; guards = []; context = None }));
+          { label = "Act"; params = []; guards = []; contexts = [] }));
   check bool "closure" false
     (Normalize.is_type_decl
        (Ast.DeclClosure
@@ -72,7 +72,7 @@ let test_is_action () =
   check bool "action" true
     (Normalize.is_action
        (Ast.DeclAction
-          { label = "Act"; params = []; guards = []; context = None }));
+          { label = "Act"; params = []; guards = []; contexts = [] }));
   check bool "domain" false (Normalize.is_action (Ast.DeclDomain "Foo"));
   check bool "rule" false
     (Normalize.is_action

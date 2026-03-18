@@ -35,8 +35,8 @@ type t = {
   rule_guards : (Ast.param list * Ast.guard list) StringMap.t;
       (** Declaration guards keyed by rule name: formal params + guards *)
   action : string option;  (** Action in current chapter (for prime checking) *)
-  action_context : string option;
-      (** Active context for current action (for primed-in-context enforcement)
+  action_contexts : string list;
+      (** Active contexts for current action (for primed-in-context enforcement)
       *)
   local_vars : string list;
       (** Variables bound in current scope (for prime rejection) *)
@@ -53,7 +53,7 @@ let empty module_name =
     contexts = StringMap.empty;
     rule_guards = StringMap.empty;
     action = None;
-    action_context = None;
+    action_contexts = [];
     local_vars = [];
   }
 
@@ -141,8 +141,8 @@ let add_rule_guards name params guards env =
       rule_guards = StringMap.add name (params, guards) env.rule_guards;
     }
 
-(** Set the active action context *)
-let with_action_context ctx env = { env with action_context = ctx }
+(** Set the active action contexts *)
+let with_action_contexts ctxs env = { env with action_contexts = ctxs }
 
 (** Check if a name is a locally-bound variable *)
 let is_local_var name env = List.mem name env.local_vars

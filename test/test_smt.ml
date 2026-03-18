@@ -288,7 +288,7 @@ let test_frame_conditions () =
          Ast.dummy_loc ~chapter:0
     |> Env.add_context "Accounts" [ "balance" ]
   in
-  let frame = Smt.generate_frame_conditions config env (Some "Accounts") in
+  let frame = Smt.generate_frame_conditions config env [ "Accounts" ] in
   (* owner should be framed (not in Accounts context) *)
   check bool "owner is framed" true
     (contains frame "owner_prime" && contains frame "owner");
