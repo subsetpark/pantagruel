@@ -6,6 +6,15 @@ Pantagruel lets you write precise specifications of systems using domains, rules
 
 ## Installation
 
+### Homebrew
+
+```bash
+brew tap subsetpark/pantagruel https://github.com/subsetpark/pantagruel
+brew install pantagruel
+```
+
+### From source
+
 Requires OCaml 4.14+ and opam.
 
 ```bash
