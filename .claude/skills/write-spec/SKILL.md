@@ -53,7 +53,26 @@ Ask: What properties must the system maintain at all times? What would count as 
 
 Write propositions in the chapter body.
 
-### Phase 4: Actions — What operations exist?
+### Phase 4: Contexts — Who can change what?
+
+**Contexts are not optional cleanup — they are a primary design tool.** Introduce them as soon as you have actions.
+
+In Pantagruel, every declared rule is mutable state. Without contexts, every action chapter must include explicit frame conditions for every rule it *doesn't* change (e.g., `all b: Account | owner' b = owner b`). This is verbose, error-prone, and obscures the actual effects. Contexts solve this structurally: rules outside an action's context are automatically framed by the checker.
+
+Ask: Which rules does each action need to modify? Are there natural groupings of mutable state?
+
+- Declare contexts at module level (`context Accounts.`).
+- Annotate rules with context footprint (`{Accounts} balance a: Account => Int.`).
+- Annotate actions with their context (`Accounts ~> Withdraw | ...`).
+- **Multiple contexts**: Actions that modify state across boundaries use comma-separated contexts (`Accounts, Inventory ~> Purchase | ...`).
+- Rules not in any context are immutable — no action can prime them. Use this for truly constant relationships.
+- Rules in a context but outside the *action's* context are automatically framed — no explicit frame conditions needed.
+
+**Design heuristic**: Group rules into contexts by "what changes together." If `balance` and `owner` always change independently, put them in separate contexts. Then an action like `Accounts ~> Withdraw` automatically preserves `owner` without you writing it.
+
+**When to skip contexts**: Only when the spec has a single action or all actions modify all state. Even then, consider using them for documentation value.
+
+### Phase 5: Actions — What operations exist?
 
 Ask: What can happen in this system? What changes when it happens?
 
@@ -62,31 +81,23 @@ For each action, determine:
 2. **Parameters**: What inputs does it take?
 3. **Preconditions**: When is this operation allowed? (→ guards)
 4. **Effects**: What changes? How? (→ primed expressions in the body)
-5. **Frame**: What stays the same? (→ frame conditions)
+5. **Context**: Which context(s) does it operate in? (→ from Phase 4)
 
-Each action becomes a new chapter with `~> Label | params.` in the head and primed propositions in the body.
+Each action becomes a new chapter with `Ctx ~> Label | params.` in the head and primed propositions in the body.
+
+**Do not write explicit frame conditions for rules outside the action's context.** The checker handles this automatically. Only write frame conditions for rules *within* the context that the action doesn't modify (e.g., `all b: Account | b != a -> balance' b = balance b`).
 
 Challenge vagueness ruthlessly:
 - "Users can do stuff with accounts" → What *specifically* can they do? What changes? What must remain true?
 - "Transfer money" → What happens to the source balance? The destination? Can you transfer more than you have?
 
-### Phase 5: Initial State — What's true at the start?
+### Phase 6: Initial State — What's true at the start?
 
 Ask: What does the system look like before anything has happened?
 
 - Each answer becomes an `initially` proposition.
 - Initial-state propositions are **not** invariants — they only describe the starting state.
 - Common examples: empty collections, zero balances, default assignments.
-
-### Phase 6: Contexts — Who can change what?
-
-Ask: Which rules does each action need to modify? Are there natural groupings of mutable state?
-
-- Declare contexts at module level (`context Accounts.`).
-- Annotate rules with context footprint (`{Accounts} balance a: Account => Int.`).
-- Annotate actions with their context (`Accounts ~> Withdraw | ...`).
-
-Only introduce contexts if the spec has multiple actions that modify different subsets of state. For simple specs, contexts may be unnecessary — don't force them.
 
 ## Progressive Disclosure (Top-Down Structure)
 
@@ -143,7 +154,7 @@ Chapter 3: Glosses CardStatus, Currency — bare domain declarations
 5. **Show your work.** After each phase, show the current state of the `.pant` file. Let the user correct course early.
 6. **Top-down chapter ordering.** Structure chapters by progressive disclosure: primary concepts first, supporting glosses in subsequent chapters. Don't front-load all declarations into Chapter 1.
 7. **Action parameters are caller inputs only.** Every action parameter should be something the caller actually chooses. If a property is determined by the system — e.g., whether a job involves checkout, or what category an entity falls into — it should be a postcondition (`involvesCheckout' j`), not a parameter (`ic: Bool`). Making system-determined properties into parameters implies the caller can freely set them, which is semantically wrong.
-8. **Use contexts for implicit framing over explicit frame conditions.** Pantagruel has no true constants — every declared term is mutable state. Instead of writing explicit frame conditions like `accountCreation' = accountCreation` for values that shouldn't change, declare them outside the action's context. The type checker will prevent them from being primed, making them constant by construction. Prefer this structural approach over model-level frame conditions.
+8. **Always use contexts when the spec has actions.** Pantagruel has no true constants — every declared term is mutable state. Without contexts, you must write explicit frame conditions for every rule an action doesn't modify, which is verbose and error-prone. Instead, declare contexts, assign rules to them, and annotate each action with its context(s). Rules outside the action's context are automatically framed. Rules not in *any* context cannot be primed at all, making them constant by construction. For actions that span multiple concerns, use multiple contexts (`Accounts, Inventory ~> Purchase`). Only omit contexts for trivial specs with a single action that modifies all state.
 9. **Naming conventions.** Use `kebab-case` for rules, parameters, and variables (`book-of`, `loan-holder`, `max-spend`). Use `PascalCase` for domains, contexts, and type aliases (`User`, `EffectKind`, `CardStatus`). Identifiers may end with `?` or `!` for predicates (`available?`, `active?`).
 10. **No Bool parameters on declarations.** Bool is not a valid parameter type for rules or actions (the type checker warns). A Bool parameter is always either a system-determined property masquerading as a caller input (use a predicate instead) or two declarations jammed into one (split them). Bool is fine as a return type (predicates) or nullary rule.
 
@@ -210,6 +221,9 @@ nobody => User.                         // nullary
 // Action with context
 Accounts ~> Withdraw | a: Account, amount: Nat.
 
+// Action with multiple contexts
+Accounts, Inventory ~> Purchase | a: Account, i: Item.
+
 // Rule with guard (partial function — guard injected into SMT queries)
 score u: User, active u => Nat.
 
@@ -250,8 +264,15 @@ x in Domain    xs subset ys    #xs
 
 // Quantifiers
 all x: T | P.
-some x: T, x > 0 | P.
-all x in xs | P.
+some x: T, x > 0 | P.                 // guard on quantifier
+all x: T, p x or q x | P.             // disjunctive guard
+all x in xs | P.                       // iterate over list
+
+// List comprehension
+each u: User | score u.               // produces [Nat]
+
+// Conditional
+cond guard1 => val1, guard2 => val2, true => default.
 
 // Tuples
 (a, b)      // construction
@@ -304,14 +325,20 @@ Now, what must be true *before* a checkout can happen, and what changes *after*?
 
 **User**: The book must be available. After checkout, the book is no longer available and it's recorded that the member has it. A member can have at most 3 books.
 
-**Agent**: I'll reference `available?` and `borrower` in the body — we'll define those in the next chapter. Does this look right?
+**Agent**: Before we write the effects, let's think about contexts. Checking out a book changes who has it and whether it's available. Are there other operations in this system that change *different* state?
+
+**User**: There's also returning books, and an admin can add new books.
+
+**Agent**: So checkout and return both change borrower/availability, while adding books changes the catalog. That suggests two contexts: one for loans, one for inventory. Let me set up Chapter 1 with a Loans context — `available?` and `borrower` will be glossed in the next chapter:
 
 ```
 module LIBRARY.
+context Loans.
+context Catalog.
 
 Book.
 Member.
-~> Check out | m: Member, b: Book, available? b.
+Loans ~> Check out | m: Member, b: Book, available? b.
 ---
 borrower' b = m.
 ~available?' b.
@@ -319,6 +346,8 @@ borrower' b = m.
 all other: Book | other != b -> borrower' other = borrower other.
 all other: Book | other != b -> available?' other = available? other.
 ```
+
+Notice we only need frame conditions for `borrower` and `available?` for *other books* — those are within the Loans context. Any rules in the Catalog context (like the book collection itself) are automatically preserved.
 
 Chapter 1 uses `available?` and `borrower` without declaring them. Chapter 2 will gloss those terms. What do they mean exactly?
 
@@ -330,8 +359,8 @@ Chapter 1 uses `available?` and `borrower` without declaring them. Chapter 2 wil
 where
 
 > Glossary for checkout terms.
-available? b: Book => Bool.
-borrower b: Book => Member + Nothing.
+{Loans} available? b: Book => Bool.
+{Loans} borrower b: Book => Member + Nothing.
 ---
 all b: Book | available? b <-> borrower b = nothing.
 ```
