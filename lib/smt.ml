@@ -1595,6 +1595,20 @@ let extract_preconditions config env (guards : guard list) =
       match g with GExpr e -> Some (translate_expr config env e) | _ -> None)
     guards
 
+(** Extend the type environment with action parameter bindings so that
+    expressions referencing action params can be type-inferred during SMT
+    translation (e.g., membership guards like [x in f param]). *)
+let env_with_action_params env (params : param list) =
+  let bindings =
+    List.filter_map
+      (fun (p : param) ->
+        match Collect.resolve_type env p.param_type dummy_loc with
+        | Ok ty -> Some (p.param_name, ty)
+        | Error _ -> None)
+      params
+  in
+  Env.with_vars bindings env
+
 (** Generate parameter declarations for an action *)
 let declare_action_params env (params : param list) =
   let buf = Buffer.create 128 in
@@ -1771,6 +1785,7 @@ let declare_domain_membership config buf (params : param list) env =
     params
 
 let generate_contradiction_query config env action =
+  let env = env_with_action_params env action.a_params in
   let buf = Buffer.create 1024 in
   let na = create_named_assertions buf in
   Buffer.add_string buf
@@ -1831,6 +1846,7 @@ let generate_contradiction_query config env action =
     SAT = violation found. *)
 let generate_invariant_query config env ~all_invariants ~index
     (inv : expr located) action =
+  let env = env_with_action_params env action.a_params in
   let buf = Buffer.create 1024 in
   let inv_text = Pretty.str_expr inv.value in
   Buffer.add_string buf
@@ -1879,6 +1895,7 @@ let generate_invariant_query config env ~all_invariants ~index
 (** Query 3: Precondition satisfiability for an action. Asserts invariants +
     preconditions and checks satisfiability. UNSAT = dead operation. *)
 let generate_precondition_query config env invariant_props action =
+  let env = env_with_action_params env action.a_params in
   let buf = Buffer.create 1024 in
   let na = create_named_assertions buf in
   Buffer.add_string buf
@@ -2270,13 +2287,16 @@ let build_step_transition config env actions step =
             action.a_params
         in
         (* Preconditions (from guards) — translated in base names *)
-        let precond_parts = extract_preconditions config env action.a_guards in
+        let env_with_params = env_with_action_params env action.a_params in
+        let precond_parts =
+          extract_preconditions config env_with_params action.a_guards
+        in
         (* Postconditions — no guard injection in postconditions *)
         let post_config = { config with inject_guards = false } in
         let postcond_parts =
           List.map
             (fun (p : expr located) ->
-              translate_proposition post_config env p.value)
+              translate_proposition post_config env_with_params p.value)
             action.a_propositions
         in
         (* Frame conditions *)
