@@ -30,6 +30,7 @@ let config =
       steps = 5;
       domain_bounds = Env.StringMap.empty;
       inject_guards = true;
+      quant_bound = [];
     }
 
 let test_lit_bool () =
@@ -838,7 +839,14 @@ let test_compute_domain_bounds () =
 let test_bound_for () =
   let bounds = Env.StringMap.singleton "Color" 5 in
   let config =
-    Smt.{ bound = 3; steps = 5; domain_bounds = bounds; inject_guards = true }
+    Smt.
+      {
+        bound = 3;
+        steps = 5;
+        domain_bounds = bounds;
+        inject_guards = true;
+        quant_bound = [];
+      }
   in
   check int "Color uses override" 5 (Smt.bound_for config "Color");
   check int "Account uses default" 3 (Smt.bound_for config "Account")
@@ -847,7 +855,14 @@ let test_card_domain_with_bounds () =
   let env = Env.empty "" |> Env.add_domain "Color" Ast.dummy_loc ~chapter:0 in
   let bounds = Env.StringMap.singleton "Color" 5 in
   let cfg =
-    Smt.{ bound = 3; steps = 5; domain_bounds = bounds; inject_guards = true }
+    Smt.
+      {
+        bound = 3;
+        steps = 5;
+        domain_bounds = bounds;
+        inject_guards = true;
+        quant_bound = [];
+      }
   in
   check string "#Domain with per-domain bound" "5"
     (Smt.translate_expr cfg env (Ast.EUnop (OpCard, EDomain "Color")))
@@ -936,6 +951,7 @@ let test_translate_in_zero_bound () =
         steps = 0;
         domain_bounds = Env.StringMap.empty;
         inject_guards = true;
+        quant_bound = [];
       }
   in
   let env = Env.empty "" |> Env.add_domain "D" Ast.dummy_loc ~chapter:0 in
@@ -1001,6 +1017,7 @@ let test_domain_closure_bound_one () =
         steps = 0;
         domain_bounds = Env.StringMap.empty;
         inject_guards = true;
+        quant_bound = [];
       }
   in
   let queries = Smt.generate_queries one_config env doc in
@@ -1364,6 +1381,7 @@ let test_closure_axiom_generation () =
         steps = 0;
         domain_bounds = Env.StringMap.empty;
         inject_guards = true;
+        quant_bound = [];
       }
   in
   let queries = Smt.generate_queries small_config env doc in

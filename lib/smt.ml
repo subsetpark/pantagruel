@@ -8,6 +8,10 @@ type config = {
   steps : int;
   domain_bounds : int Env.StringMap.t;
   inject_guards : bool;
+  quant_bound : string list;
+      (** Accumulated quantifier-bound variable names from enclosing scopes.
+          Used by [collect_body_guards] so that guard injection does not
+          incorrectly prime variables bound by outer quantifiers. *)
 }
 (** Configuration for bounded checking. [steps] controls k-step BMC depth.
     [domain_bounds] maps domain names to per-domain minimum bounds (derived from
@@ -1337,7 +1341,7 @@ and translate_quantifier config env quant params guards body =
   in
   let all_bindings = bindings @ List.rev guard_bindings in
   (* Collect guards from guarded function applications in body *)
-  let bound_names =
+  let local_bound =
     List.map (fun (p : param) -> p.param_name) params
     @ List.concat_map
         (fun g ->
@@ -1347,12 +1351,16 @@ and translate_quantifier config env quant params guards body =
           | GExpr _ -> [])
         guards
   in
+  (* Combine with outer quantifier-bound names so that guard injection
+     in nested quantifiers does not incorrectly prime outer-bound vars. *)
+  let bound_names = local_bound @ config.quant_bound in
   let app_guards =
     if config.inject_guards then collect_body_guards ~bound:bound_names env body
     else []
   in
   let app_guard_strs = List.map (translate_expr config env) app_guards in
-  let body_str = translate_expr config env body in
+  let inner_config = { config with quant_bound = bound_names } in
+  let body_str = translate_expr inner_config env body in
   let conditions =
     param_type_conditions @ List.rev guard_conditions @ app_guard_strs
   in

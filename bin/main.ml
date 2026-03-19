@@ -91,6 +91,7 @@ let run_smt_check env doc =
           steps = !check_steps;
           domain_bounds;
           inject_guards = true;
+          quant_bound = [];
         }
     in
     let queries = Pantagruel.Smt.generate_queries config env doc in
