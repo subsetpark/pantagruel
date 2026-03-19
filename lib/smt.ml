@@ -15,7 +15,11 @@ type config = {
 }
 (** Configuration for bounded checking. [steps] controls k-step BMC depth.
     [domain_bounds] maps domain names to per-domain minimum bounds (derived from
-    nullary constant counts). *)
+    nullary constant counts). [quant_bound] is internal traversal state — use
+    [make_config] to construct. *)
+
+let make_config ~bound ~steps ~domain_bounds ~inject_guards =
+  { bound; steps; domain_bounds; inject_guards; quant_bound = [] }
 
 (** Fresh uninterpreted constants for non-exhaustive cond else-branches. When a
     cond's last arm guard is not [true], we emit a fresh constant of the
@@ -551,6 +555,16 @@ let replace_word ~from ~to_ s =
       incr i
     done;
     Buffer.contents buf
+
+(** Resolve a parameter list to [(name, ty)] bindings, discarding any params
+    whose types cannot be resolved. *)
+let resolve_param_bindings env (params : param list) =
+  List.filter_map
+    (fun (p : param) ->
+      match Collect.resolve_type env p.param_type dummy_loc with
+      | Ok ty -> Some (p.param_name, ty)
+      | Error _ -> None)
+    params
 
 (** Resolve the iteration variable, domain name, and any implicit guard for a
     comprehension. Supports two forms:
@@ -1091,14 +1105,7 @@ and translate_card config env e =
         expand_comprehension translate_expr config env params guards body
       in
       (* Infer the body type to determine the range domain *)
-      let param_bindings =
-        List.filter_map
-          (fun (p : param) ->
-            match Collect.resolve_type env p.param_type dummy_loc with
-            | Ok ty -> Some (p.param_name, ty)
-            | Error _ -> None)
-          params
-      in
+      let param_bindings = resolve_param_bindings env params in
       let guard_bindings =
         List.filter_map
           (fun g ->
@@ -1180,14 +1187,7 @@ and translate_forall_comprehension config env params guards body =
     expand_comprehension translate_expr config env params guards body
   in
   (* Infer body type to determine element sort *)
-  let param_bindings =
-    List.filter_map
-      (fun (p : param) ->
-        match Collect.resolve_type env p.param_type dummy_loc with
-        | Ok ty -> Some (p.param_name, ty)
-        | Error _ -> None)
-      params
-  in
+  let param_bindings = resolve_param_bindings env params in
   let guard_bindings =
     List.filter_map
       (fun g ->
@@ -1241,14 +1241,7 @@ and translate_forall_comprehension config env params guards body =
 and translate_quantifier config env quant params guards body =
   (* Enrich env with formal parameter bindings so that type inference
      on guard expressions (e.g., GIn list exprs) can resolve them. *)
-  let param_bindings =
-    List.filter_map
-      (fun (p : param) ->
-        match Collect.resolve_type env p.param_type dummy_loc with
-        | Ok ty -> Some (p.param_name, ty)
-        | Error _ -> None)
-      params
-  in
+  let param_bindings = resolve_param_bindings env params in
   let env = Env.with_vars param_bindings env in
   (* Collect bindings, guard conditions, and type constraints for Nat/Nat0 *)
   let nat_constraint_of_param env (p : param) =
@@ -1604,15 +1597,7 @@ let extract_preconditions config env (guards : guard list) =
     expressions referencing action params can be type-inferred during SMT
     translation (e.g., membership guards like [x in f param]). *)
 let env_with_action_params env (params : param list) =
-  let bindings =
-    List.filter_map
-      (fun (p : param) ->
-        match Collect.resolve_type env p.param_type dummy_loc with
-        | Ok ty -> Some (p.param_name, ty)
-        | Error _ -> None)
-      params
-  in
-  Env.with_vars bindings env
+  Env.with_vars (resolve_param_bindings env params) env
 
 (** Generate parameter declarations for an action *)
 let declare_action_params env (params : param list) =

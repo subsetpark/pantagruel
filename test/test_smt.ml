@@ -24,14 +24,8 @@ let parse_and_collect str =
 (* --- Expression translation tests --- *)
 
 let config =
-  Smt.
-    {
-      bound = 3;
-      steps = 5;
-      domain_bounds = Env.StringMap.empty;
-      inject_guards = true;
-      quant_bound = [];
-    }
+  Smt.make_config ~bound:3 ~steps:5 ~domain_bounds:Env.StringMap.empty
+    ~inject_guards:true
 
 let test_lit_bool () =
   let env = Env.empty "" in
@@ -839,14 +833,7 @@ let test_compute_domain_bounds () =
 let test_bound_for () =
   let bounds = Env.StringMap.singleton "Color" 5 in
   let config =
-    Smt.
-      {
-        bound = 3;
-        steps = 5;
-        domain_bounds = bounds;
-        inject_guards = true;
-        quant_bound = [];
-      }
+    Smt.make_config ~bound:3 ~steps:5 ~domain_bounds:bounds ~inject_guards:true
   in
   check int "Color uses override" 5 (Smt.bound_for config "Color");
   check int "Account uses default" 3 (Smt.bound_for config "Account")
@@ -855,14 +842,7 @@ let test_card_domain_with_bounds () =
   let env = Env.empty "" |> Env.add_domain "Color" Ast.dummy_loc ~chapter:0 in
   let bounds = Env.StringMap.singleton "Color" 5 in
   let cfg =
-    Smt.
-      {
-        bound = 3;
-        steps = 5;
-        domain_bounds = bounds;
-        inject_guards = true;
-        quant_bound = [];
-      }
+    Smt.make_config ~bound:3 ~steps:5 ~domain_bounds:bounds ~inject_guards:true
   in
   check string "#Domain with per-domain bound" "5"
     (Smt.translate_expr cfg env (Ast.EUnop (OpCard, EDomain "Color")))
@@ -945,14 +925,8 @@ let test_translate_in_zero_bound () =
   (* Bug #2: bound=0 used to produce "(or )" — invalid SMT-LIB2.
      Now produces "false" (nothing in empty domain). *)
   let zero_config =
-    Smt.
-      {
-        bound = 0;
-        steps = 0;
-        domain_bounds = Env.StringMap.empty;
-        inject_guards = true;
-        quant_bound = [];
-      }
+    Smt.make_config ~bound:0 ~steps:0 ~domain_bounds:Env.StringMap.empty
+      ~inject_guards:true
   in
   let env = Env.empty "" |> Env.add_domain "D" Ast.dummy_loc ~chapter:0 in
   let result =
@@ -1011,14 +985,8 @@ let test_domain_closure_bound_one () =
        all b: Block | ~(b in ancestor b).\n"
   in
   let one_config =
-    Smt.
-      {
-        bound = 1;
-        steps = 0;
-        domain_bounds = Env.StringMap.empty;
-        inject_guards = true;
-        quant_bound = [];
-      }
+    Smt.make_config ~bound:1 ~steps:0 ~domain_bounds:Env.StringMap.empty
+      ~inject_guards:true
   in
   let queries = Smt.generate_queries one_config env doc in
   let inv =
@@ -1375,14 +1343,8 @@ let test_closure_axiom_generation () =
        all b: Block | ~(b in ancestor b).\n"
   in
   let small_config =
-    Smt.
-      {
-        bound = 2;
-        steps = 0;
-        domain_bounds = Env.StringMap.empty;
-        inject_guards = true;
-        quant_bound = [];
-      }
+    Smt.make_config ~bound:2 ~steps:0 ~domain_bounds:Env.StringMap.empty
+      ~inject_guards:true
   in
   let queries = Smt.generate_queries small_config env doc in
   let inv =
