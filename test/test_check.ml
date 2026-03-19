@@ -155,7 +155,7 @@ User.
 Document.
 owner d: Document => User.
 nobody => User.
-~> Check out | u: User, d: Document.
+~> Check out @ u: User, d: Document.
 ---
 owner' d = u.
 |}
@@ -198,7 +198,7 @@ let test_rule_guard () =
 
 Account.
 balance a: Account => Nat.
-~> Withdraw | a: Account, amount: Nat, balance a >= amount.
+~> Withdraw @ a: Account, amount: Nat, balance a >= amount.
 ---
 balance' a = balance a - amount.
 |}
@@ -305,7 +305,7 @@ let test_prime_on_variable () =
     {|module TEST.
 
 User.
-~> Do thing | u: User.
+~> Do thing @ u: User.
 ---
 all u: User | u' = u.
 |}
@@ -315,8 +315,8 @@ let test_multiple_actions () =
     {|module TEST.
 
 User.
-~> Action 1 | u: User.
-~> Action 2 | u: User.
+~> Action 1 @ u: User.
+~> Action 2 @ u: User.
 ---
 |}
 
@@ -330,7 +330,7 @@ let test_guard_not_boolean () =
 
 Account.
 balance a: Account => Nat.
-~> Withdraw | a: Account, amount: Nat, balance a.
+~> Withdraw @ a: Account, amount: Nat, balance a.
 ---
 |}
 
@@ -363,7 +363,7 @@ let test_guard_uses_params () =
 
 Account.
 balance a: Account => Nat.
-~> Withdraw | a: Account, amount: Nat, amount > 0.
+~> Withdraw @ a: Account, amount: Nat, amount > 0.
 ---
 |}
 
@@ -415,7 +415,7 @@ let test_bool_param_action () =
   check_warns {|module TEST.
 
 Item.
-~> Do thing | i: Item, b: Bool.
+~> Do thing @ i: Item, b: Bool.
 ---
 |}
 
@@ -717,7 +717,7 @@ all a: Account | balance a >= 0.
 
 where
 
-Banking ~> Withdraw | a: Account.
+Banking ~> Withdraw @ a: Account.
 ---
 balance' a = balance a - 1.
 owner' a = a.
@@ -737,7 +737,7 @@ all a: Account | balance a >= 0.
 
 where
 
-Banking ~> Withdraw | a: Account.
+Banking ~> Withdraw @ a: Account.
 ---
 owner' a = a.
 |}
@@ -751,7 +751,7 @@ let test_footprint_on_action () =
 context Banking.
 
 Account.
-{Banking} ~> Do thing | a: Account.
+{Banking} ~> Do thing @ a: Account.
 ---
 |}
     in
@@ -764,7 +764,7 @@ let test_action_not_last_in_chapter () =
     {|module TEST.
 
 User.
-~> Do thing | u: User.
+~> Do thing @ u: User.
 helper u: User => Bool.
 ---
 |}
@@ -775,7 +775,7 @@ let test_undefined_context () =
     {|module TEST.
 
 Account.
-NoSuchContext ~> Withdraw | a: Account.
+NoSuchContext ~> Withdraw @ a: Account.
 ---
 |}
 
@@ -787,7 +787,7 @@ let test_no_context_priming_unrestricted () =
 Account.
 balance a: Account => Nat.
 owner a: Account => Account.
-~> Withdraw | a: Account.
+~> Withdraw @ a: Account.
 ---
 balance' a = balance a - 1.
 owner' a = a.

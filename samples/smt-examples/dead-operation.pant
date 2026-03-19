@@ -9,6 +9,6 @@ all a: Account | balance a >= 0.
 
 where
 
-Ctx ~> ImpossibleAction | a: Account, balance a < 0.
+Ctx ~> ImpossibleAction @ a: Account, balance a < 0.
 ---
 balance' a = 0.

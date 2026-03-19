@@ -63,8 +63,8 @@ Ask: Which rules does each action need to modify? Are there natural groupings of
 
 - Declare contexts at module level (`context Accounts.`).
 - Annotate rules with context footprint (`{Accounts} balance a: Account => Int.`).
-- Annotate actions with their context (`Accounts ~> Withdraw | ...`).
-- **Multiple contexts**: Actions that modify state across boundaries use comma-separated contexts (`Accounts, Inventory ~> Purchase | ...`).
+- Annotate actions with their context (`Accounts ~> Withdraw @ ...`).
+- **Multiple contexts**: Actions that modify state across boundaries use comma-separated contexts (`Accounts, Inventory ~> Purchase @ ...`).
 - Rules not in any context are immutable — no action can prime them. Use this for truly constant relationships.
 - Rules in a context but outside the *action's* context are automatically framed — no explicit frame conditions needed.
 
@@ -83,7 +83,7 @@ For each action, determine:
 4. **Effects**: What changes? How? (→ primed expressions in the body)
 5. **Context**: Which context(s) does it operate in? (→ from Phase 4)
 
-Each action becomes a new chapter with `Ctx ~> Label | params.` in the head and primed propositions in the body.
+Each action becomes a new chapter with `Ctx ~> Label @ params.` in the head and primed propositions in the body.
 
 **Do not write explicit frame conditions for rules outside the action's context.** The checker handles this automatically. Only write frame conditions for rules *within* the context that the action doesn't modify (e.g., `all b: Account | b != a -> balance' b = balance b`).
 
@@ -215,20 +215,20 @@ nobody => User.                         // nullary
 {Accounts} balance a: Account => Int.
 
 // Action
-~> Check out | u: User, d: Document.
+~> Check out @ u: User, d: Document.
 ~> Do something.                        // no params
 
 // Action with context
-Accounts ~> Withdraw | a: Account, amount: Nat.
+Accounts ~> Withdraw @ a: Account, amount: Nat.
 
 // Action with multiple contexts
-Accounts, Inventory ~> Purchase | a: Account, i: Item.
+Accounts, Inventory ~> Purchase @ a: Account, i: Item.
 
 // Rule with guard (partial function — guard injected into SMT queries)
 score u: User, active u => Nat.
 
 // Action with guard (precondition)
-~> Withdraw | a: Account, amount: Nat, balance a >= amount.
+~> Withdraw @ a: Account, amount: Nat, balance a >= amount.
 
 // Closure (transitive closure of a rule)
 ancestor b: Block => [Block] = closure parent.
@@ -317,7 +317,7 @@ module LIBRARY.
 
 Book.
 Member.
-~> Check out | m: Member, b: Book.
+~> Check out @ m: Member, b: Book.
 ---
 ```
 
@@ -338,7 +338,7 @@ context Catalog.
 
 Book.
 Member.
-Loans ~> Check out | m: Member, b: Book, available? b.
+Loans ~> Check out @ m: Member, b: Book, available? b.
 ---
 borrower' b = m.
 ~available?' b.

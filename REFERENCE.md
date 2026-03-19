@@ -457,19 +457,19 @@ all b: Block | ~(b in ancestor b).
 
 ### Actions
 
-An action (state transition) is introduced with `~>`. Actions have no return type and enable primed expressions for rules in the chapter body. Action labels are free-form text (spaces, capitals, keywords all allowed), separated from parameters by `|`:
+An action (state transition) is introduced with `~>`. Actions have no return type and enable primed expressions for rules in the chapter body. Action labels are free-form text (spaces, capitals, keywords all allowed), separated from parameters by `@`:
 
 ```
 // Action (no context)
-~> Check out | u: User, d: Document.
-~> Deposit | a: Account, amount: Nat.
+~> Check out @ u: User, d: Document.
+~> Deposit @ a: Account, amount: Nat.
 ~> Do something.
 
 // Action with context
-Accounts ~> Withdraw | a: Account, amount: Nat.
+Accounts ~> Withdraw @ a: Account, amount: Nat.
 ```
 
-**Syntax**: `[Context] ~> label [| params [, guards]].`
+**Syntax**: `[Context] ~> label [@ params [, guards]].`
 
 - Action labels are purely human-readable annotations — they are not in the term namespace
 - Actions must appear **last** in a chapter head
@@ -480,7 +480,7 @@ Accounts ~> Withdraw | a: Account, amount: Nat.
 Guards constrain when a rule or action applies. Guards must be boolean expressions and are type-checked with the rule's parameters in scope:
 
 ```
-~> Withdraw | a: Account, amount: Nat, balance a >= amount.
+~> Withdraw @ a: Account, amount: Nat, balance a >= amount.
 score u: User, active u => Nat.
 ```
 
@@ -523,7 +523,7 @@ Context footprint is closed within module scope — you can only add a rule to a
 Actions specify which context they operate within using a `Ctx ~>` prefix:
 
 ```
-Accounts ~> Withdraw | a: Account, amount: Nat.
+Accounts ~> Withdraw @ a: Account, amount: Nat.
 ```
 
 This means the `Withdraw` action may modify (prime) any rule that belongs to `Accounts`. Context references work across module boundaries — an action can reference an imported context.
@@ -663,7 +663,7 @@ In chapters with an action, primed expressions refer to post-state values:
 ```
 User.
 balance a: User => Int.
-~> Deposit | a: User, amount: Nat.
+~> Deposit @ a: User, amount: Nat.
 ---
 balance' a = balance a + amount.    // balance after deposit
 ```
@@ -911,9 +911,9 @@ declaration ::= UPPER '.'                                              // Domain
               | '{' UPPER (',' UPPER)* '}' LOWER param* guard* '=>' type '.'  // Rule with context footprint
               | LOWER param* guard* '=>' type '.'                      // Rule with return type
               | LOWER param '=>' type '=' 'closure' LOWER '.'        // Closure (transitive closure of target)
-              | UPPER '~>' LABEL '|' param ((',' param) | (',' guard))* '.'  // Action with context + params
+              | UPPER '~>' LABEL '@' param ((',' param) | (',' guard))* '.'  // Action with context + params
               | UPPER '~>' LABEL '.'                                   // Action with context, no params
-              | '~>' LABEL '|' param ((',' param) | (',' guard))* '.'  // Action + params
+              | '~>' LABEL '@' param ((',' param) | (',' guard))* '.'  // Action + params
               | '~>' LABEL '.'                                         // Action, no params
 
 param       ::= LOWER ':' type

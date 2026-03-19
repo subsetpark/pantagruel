@@ -57,6 +57,7 @@ let token_to_string = function
   | Parser.INITIALLY -> "INITIALLY"
   | Parser.CLOSURE -> "CLOSURE"
   | Parser.COND -> "COND"
+  | Parser.AT -> "AT"
   | Parser.ACTION_LABEL s -> "ACTION_LABEL(" ^ s ^ ")"
   | Parser.EOF -> "EOF"
 
@@ -183,14 +184,14 @@ let test_squig_arrow () =
     [
       Parser.SQUIG_ARROW;
       Parser.ACTION_LABEL "Withdraw";
-      Parser.PIPE;
+      Parser.AT;
       Parser.LOWER_IDENT "a";
       Parser.COLON;
       Parser.UPPER_IDENT "Account";
       Parser.DOT;
       Parser.EOF;
     ]
-    (lex_all "~> Withdraw | a: Account.");
+    (lex_all "~> Withdraw @ a: Account.");
   check (list token_testable) "squig arrow with context"
     [
       Parser.UPPER_IDENT "Banking";
@@ -204,14 +205,14 @@ let test_squig_arrow () =
     [
       Parser.SQUIG_ARROW;
       Parser.ACTION_LABEL "Check out a book";
-      Parser.PIPE;
+      Parser.AT;
       Parser.LOWER_IDENT "u";
       Parser.COLON;
       Parser.UPPER_IDENT "User";
       Parser.DOT;
       Parser.EOF;
     ]
-    (lex_all "~> Check out a book | u: User.")
+    (lex_all "~> Check out a book @ u: User.")
 
 let test_iff_token () =
   check (list token_testable) "iff" [ Parser.IFF; Parser.EOF ] (lex_all "<->")

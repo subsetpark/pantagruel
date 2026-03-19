@@ -70,7 +70,7 @@ let test_primed_rule () =
 User.
 Document.
 owner d: Document => User.
-~> Check out | u: User, d: Document.
+~> Check out @ u: User, d: Document.
 ---
 owner' d = u.
 |}
@@ -295,7 +295,7 @@ let test_decl_rule_with_return () =
 let test_decl_action () =
   let _, doc =
     render
-      "module T.\nUser.\nDocument.\n~> Check out | u: User, d: Document.\n---\n"
+      "module T.\nUser.\nDocument.\n~> Check out @ u: User, d: Document.\n---\n"
   in
   let procs = Markdown_output.StringSet.empty in
   match doc.Ast.chapters with
@@ -327,7 +327,7 @@ let test_decl_action_with_context () =
       {|module T.
 context Banking.
 User.
-Banking ~> Withdraw | u: User.
+Banking ~> Withdraw @ u: User.
 ---
 |}
   in
@@ -431,7 +431,7 @@ all u: User | name u = name u.
 
 where
 
-C ~> Rename | u: User.
+C ~> Rename @ u: User.
 ---
 name' u = name u.
 |}

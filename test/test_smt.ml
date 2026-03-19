@@ -206,7 +206,7 @@ let test_classify_chapters () =
        ---\n\
        all a: Account | balance a >= 0.\n\
        where\n\
-       Ctx ~> Withdraw | a: Account, amount: Nat, balance a >= amount.\n\
+       Ctx ~> Withdraw @ a: Account, amount: Nat, balance a >= amount.\n\
        ---\n\
        balance' a = balance a - amount.\n"
   in
@@ -231,7 +231,7 @@ let test_generate_queries () =
        initially all a: Account | balance a = 100.\n\
        all a: Account | balance a >= 0.\n\
        where\n\
-       Ctx ~> Withdraw | a: Account, amount: Nat, balance a >= amount.\n\
+       Ctx ~> Withdraw @ a: Account, amount: Nat, balance a >= amount.\n\
        ---\n\
        balance' a = balance a - amount.\n"
   in
@@ -258,7 +258,7 @@ let test_contradiction_query_content () =
        ---\n\
        all a: Account | balance a >= 0.\n\
        where\n\
-       Ctx ~> Withdraw | a: Account, amount: Nat, balance a >= amount.\n\
+       Ctx ~> Withdraw @ a: Account, amount: Nat, balance a >= amount.\n\
        ---\n\
        balance' a = balance a - amount.\n"
   in
@@ -455,7 +455,7 @@ let test_contradiction_query_has_get_value () =
        ---\n\
        all a: Account | balance a >= 0.\n\
        where\n\
-       Ctx ~> Withdraw | a: Account, amount: Nat, balance a >= amount.\n\
+       Ctx ~> Withdraw @ a: Account, amount: Nat, balance a >= amount.\n\
        ---\n\
        balance' a = balance a - amount.\n"
   in
@@ -475,7 +475,7 @@ let test_invariant_query_has_get_value () =
        ---\n\
        all a: Account | balance a >= 0.\n\
        where\n\
-       Ctx ~> Withdraw | a: Account, amount: Nat, balance a >= amount.\n\
+       Ctx ~> Withdraw @ a: Account, amount: Nat, balance a >= amount.\n\
        ---\n\
        balance' a = balance a - amount.\n"
   in
@@ -497,7 +497,7 @@ let test_precondition_query_no_get_value () =
        ---\n\
        all a: Account | balance a >= 0.\n\
        where\n\
-       Ctx ~> Withdraw | a: Account, amount: Nat, balance a >= amount.\n\
+       Ctx ~> Withdraw @ a: Account, amount: Nat, balance a >= amount.\n\
        ---\n\
        balance' a = balance a - amount.\n"
   in
@@ -589,7 +589,7 @@ let test_invariant_query_has_text () =
        ---\n\
        all a: Account | balance a >= 0.\n\
        where\n\
-       Ctx ~> Withdraw | a: Account, amount: Nat, balance a >= amount.\n\
+       Ctx ~> Withdraw @ a: Account, amount: Nat, balance a >= amount.\n\
        ---\n\
        balance' a = balance a - amount.\n"
   in
@@ -650,7 +650,7 @@ let test_contradiction_query_named_assertions () =
        {Ctx} balance a: Account => Nat.\n\
        ---\n\
        where\n\
-       Ctx ~> BadAction | a: Account.\n\
+       Ctx ~> BadAction @ a: Account.\n\
        ---\n\
        balance' a = balance a + 1.\n\
        balance' a = balance a - 1.\n"
@@ -682,7 +682,7 @@ let test_precondition_query_named_assertions () =
        ---\n\
        all a: Account | balance a >= 0.\n\
        where\n\
-       Ctx ~> ImpossibleAction | a: Account, balance a < 0.\n\
+       Ctx ~> ImpossibleAction @ a: Account, balance a < 0.\n\
        ---\n\
        balance' a = 0.\n"
   in
@@ -751,7 +751,7 @@ let test_generate_bmc_queries () =
        all a: Account | balance a >= 0.\n\
        initially all a: Account | balance a = 0.\n\
        where\n\
-       Ctx ~> Withdraw | a: Account, amount: Nat, balance a >= amount.\n\
+       Ctx ~> Withdraw @ a: Account, amount: Nat, balance a >= amount.\n\
        ---\n\
        balance' a = balance a - amount.\n\
        all b: Account | b != a -> balance' b = balance b.\n"
@@ -780,7 +780,7 @@ let test_no_bmc_without_init () =
        ---\n\
        all a: Account | balance a >= 0.\n\
        where\n\
-       Ctx ~> Withdraw | a: Account, amount: Nat, balance a >= amount.\n\
+       Ctx ~> Withdraw @ a: Account, amount: Nat, balance a >= amount.\n\
        ---\n\
        balance' a = balance a - amount.\n"
   in
@@ -1105,7 +1105,7 @@ let test_invariant_query_content () =
        ---\n\
        all a: Account | balance a >= 0.\n\
        where\n\
-       Ctx ~> Withdraw | a: Account, amount: Nat, balance a >= amount.\n\
+       Ctx ~> Withdraw @ a: Account, amount: Nat, balance a >= amount.\n\
        ---\n\
        balance' a = balance a - amount.\n"
   in
@@ -1130,7 +1130,7 @@ let test_init_query_content () =
        initially all a: Account | balance a = 100.\n\
        all a: Account | balance a >= 0.\n\
        where\n\
-       Ctx ~> Withdraw | a: Account, amount: Nat, balance a >= amount.\n\
+       Ctx ~> Withdraw @ a: Account, amount: Nat, balance a >= amount.\n\
        ---\n\
        balance' a = balance a - amount.\n"
   in
@@ -1411,7 +1411,7 @@ let test_closure_no_frame_condition () =
        ---\n\
        all n: Node | ~(n in descendants n).\n\
        where\n\
-       Ctx ~> AddChild | p: Node, c: Node.\n\
+       Ctx ~> AddChild @ p: Node, c: Node.\n\
        ---\n\
        c in children' p.\n"
   in
@@ -1640,7 +1640,7 @@ let test_guarded_decl_e2e () =
        all t: Thing | value t >= 0.\n\
        initially all t: Thing | ~active? t.\n\
        where\n\
-       Ctx ~> Create | t: Thing, n: Nat0, ~active? t.\n\
+       Ctx ~> Create @ t: Thing, n: Nat0, ~active? t.\n\
        ---\n\
        active?' t.\n\
        value' t = n.\n\

@@ -71,7 +71,7 @@ Pantagruel is a specification language checker written in OCaml. It processes `.
 - Domains: `User.` declares a domain type
 - Type aliases: `Point = Nat * Nat.`
 - Rules: `owner d: Document => User.` (with return type via `=>`)
-- Actions: `~> Check out | u: User.` (state transitions via `~>`, free-form label, `|` before params)
+- Actions: `~> Check out @ u: User.` (state transitions via `~>`, free-form label, `@` before params)
 - Actions enable primed expressions (`owner' d`) for state transitions
 - Action labels are not in the term namespace — they're purely human-readable annotations
 - Quantifiers: `all u: User | ...` and `some x: T | ...` (body must be Bool)
@@ -80,7 +80,7 @@ Pantagruel is a specification language checker written in OCaml. It processes `.
 - List cardinality: `#users`
 - Membership: `x in Domain`
 - Closures: `ancestor b: Block => [Block] = closure parent.` derives transitive closure of an endorelation
-- Contexts: `context Accounts.` at module level, `{Accounts} balance ...` for footprint, `Accounts ~> Withdraw | ...` for actions
+- Contexts: `context Accounts.` at module level, `{Accounts} balance ...` for footprint, `Accounts ~> Withdraw @ ...` for actions
 - Conditionals: `cond guard1 => val1, guard2 => val2, true => default` (multi-armed, arms must be Bool, consequences must have same type, checked for exhaustiveness during `--check`)
 - Declaration guards: `score u: User, active u => Nat.` — guards are stored in the environment and automatically injected as antecedents in SMT queries when the guarded function is applied
 

@@ -164,13 +164,13 @@ let rec read_string buf acc =
   | eof -> failwith "Unterminated string literal"
   | _ -> assert false
 
-(** Read free-form action label text after ~>. Stops at |, ., //, newline, or
+(** Read free-form action label text after ~>. Stops at @, ., //, newline, or
     eof; rolls back the delimiter. *)
 let read_action_label buf =
   let content = Buffer.create 64 in
   let rec loop () =
     match%sedlex buf with
-    | '|' | '.' ->
+    | '@' | '.' ->
         Sedlexing.rollback buf;
         String.trim (Buffer.contents content)
     | "//" ->
@@ -256,6 +256,7 @@ let rec token_impl lexer =
     | ',' -> Parser.COMMA
     | ':' -> Parser.COLON
     | '|' -> Parser.PIPE
+    | '@' -> Parser.AT
     | '(' -> Parser.LPAREN
     | ')' -> Parser.RPAREN
     | '[' -> Parser.LBRACKET
@@ -354,6 +355,7 @@ let string_of_token = function
   | Parser.COLON -> "':'"
   | Parser.DCOLON -> "'::'"
   | Parser.PIPE -> "'|'"
+  | Parser.AT -> "'@'"
   | Parser.SEPARATOR -> "'---'"
   | Parser.LPAREN -> "'('"
   | Parser.RPAREN -> "')'"
@@ -421,6 +423,7 @@ let all_tokens =
     Parser.COLON;
     Parser.DCOLON;
     Parser.PIPE;
+    Parser.AT;
     Parser.SEPARATOR;
     Parser.LPAREN;
     Parser.RPAREN;

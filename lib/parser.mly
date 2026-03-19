@@ -52,7 +52,7 @@
 %token <int> PROJ
 %token AND OR NOT
 %token FORALL EXISTS EACH IN SUBSET
-%token DOT COMMA COLON DCOLON PIPE SEPARATOR
+%token DOT COMMA COLON DCOLON PIPE AT SEPARATOR
 %token LPAREN RPAREN LBRACKET RBRACKET
 %token LBRACE RBRACE CONTEXT INITIALLY CLOSURE COND
 %token <string> ACTION_LABEL
@@ -128,7 +128,7 @@ declaration:
         return_type = ret;
         target;
       }) }
-  | ctxs=separated_nonempty_list(COMMA, UPPER_IDENT) SQUIG_ARROW label=ACTION_LABEL PIPE pg=action_params_guards DOT
+  | ctxs=separated_nonempty_list(COMMA, UPPER_IDENT) SQUIG_ARROW label=ACTION_LABEL AT pg=action_params_guards DOT
     { let (params, guards) = pg in
       located_with_doc $startpos $endpos (DeclAction {
         label;
@@ -143,7 +143,7 @@ declaration:
         guards = [];
         contexts = ctxs;
       }) }
-  | SQUIG_ARROW label=ACTION_LABEL PIPE pg=action_params_guards DOT
+  | SQUIG_ARROW label=ACTION_LABEL AT pg=action_params_guards DOT
     { let (params, guards) = pg in
       located_with_doc $startpos $endpos (DeclAction {
         label;
@@ -173,8 +173,10 @@ rule_param_or_guard:
   | p=param { GParam p }
   | e=rule_guard_expr { GExpr e }
 
-(* Guard expressions for rules: use disjunction level *)
+(* Guard expressions for rules and actions: allows quantifiers since
+   | is no longer ambiguous (actions use @ for parameter separator) *)
 rule_guard_expr:
+  | e=quantified { e }
   | e=disjunction { e }
 
 param:

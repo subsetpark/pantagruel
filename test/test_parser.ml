@@ -25,7 +25,7 @@ let test_rule_decl () =
   check int "declarations" 2 (List.length chapter.Ast.head)
 
 let test_action () =
-  let doc = parse "module TEST.\n\nUser.\n~> Check out | u: User.\n---\n" in
+  let doc = parse "module TEST.\n\nUser.\n~> Check out @ u: User.\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
   match (List.nth chapter.Ast.head 1).Ast.value with
   | Ast.DeclAction { label = "Check out"; contexts = []; _ } -> ()
@@ -90,7 +90,7 @@ let test_rule_guard () =
       "module TEST.\n\n\
        Account.\n\
        balance a: Account => Nat.\n\
-       ~> Withdraw | a: Account, amount: Nat, balance a >= amount.\n\
+       ~> Withdraw @ a: Account, amount: Nat, balance a >= amount.\n\
        ---\n"
   in
   let chapter = List.hd doc.Ast.chapters in
@@ -131,7 +131,7 @@ let test_multiple_guards () =
       "module TEST.\n\n\
        Account.\n\
        balance a: Account => Nat.\n\
-       ~> Withdraw | a: Account, amount: Nat, amount > 0, balance a >= amount.\n\
+       ~> Withdraw @ a: Account, amount: Nat, amount > 0, balance a >= amount.\n\
        ---\n"
   in
   let chapter = List.hd doc.Ast.chapters in
@@ -181,7 +181,7 @@ let test_rule_with_context () =
        context Banking.\n\n\
        Account.\n\
        {Banking} balance a: Account => Nat.\n\
-       Banking ~> Withdraw | a: Account.\n\
+       Banking ~> Withdraw @ a: Account.\n\
        ---\n"
   in
   let chapter = List.hd doc.Ast.chapters in
@@ -395,7 +395,7 @@ let test_primed_expr () =
       "module TEST.\n\n\
        User.\n\
        f u: User => User.\n\
-       ~> Act | u: User.\n\
+       ~> Act @ u: User.\n\
        ---\n\
        f' u = u.\n"
   in

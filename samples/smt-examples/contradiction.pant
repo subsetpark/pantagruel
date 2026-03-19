@@ -8,7 +8,7 @@ Account.
 
 where
 
-Ctx ~> BadAction | a: Account.
+Ctx ~> BadAction @ a: Account.
 ---
 balance' a = balance a + 1.
 balance' a = balance a - 1.

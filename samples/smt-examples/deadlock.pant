@@ -15,6 +15,6 @@ all a: Account | balance a = 0.
 where
 
 > Withdraw requires a positive balance — impossible given the invariant.
-Ctx ~> Withdraw | a: Account, balance a > 0.
+Ctx ~> Withdraw @ a: Account, balance a > 0.
 ---
 balance' a = balance a - 1.

@@ -197,7 +197,9 @@ let pp_declaration fmt = function
             ctxs);
       pp_print_string fmt label;
       if params <> [] then
-        fprintf fmt " | %a" (pp_print_list ~pp_sep:pp_sep_comma pp_param) params;
+        fprintf fmt " @@ %a"
+          (pp_print_list ~pp_sep:pp_sep_comma pp_param)
+          params;
       if guards <> [] then
         fprintf fmt ", %a" (pp_print_list ~pp_sep:pp_sep_comma pp_guard) guards;
       pp_print_char fmt '.'

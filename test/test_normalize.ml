@@ -298,11 +298,11 @@ let test_normalize_actions_spread () =
        {C} name u: User => String.\n\
        ---\n\n\
        where\n\n\
-       C ~> Rename | u: User.\n\
+       C ~> Rename @ u: User.\n\
        ---\n\
        name' u = name u.\n\n\
        where\n\n\
-       C ~> Delete | u: User.\n\
+       C ~> Delete @ u: User.\n\
        ---\n\
        name' u = name u.\n"
   in

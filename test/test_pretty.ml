@@ -175,7 +175,7 @@ let test_decl_rule_with_context () =
           }))
 
 let test_decl_action () =
-  check string "action" "~> Do thing | x: Nat."
+  check string "action" "~> Do thing @ x: Nat."
     (pp_decl
        (Ast.DeclAction
           {

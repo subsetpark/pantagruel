@@ -20,7 +20,7 @@ initially all t: Thing | ~active? t.
 
 where
 
-Ctx ~> Create | t: Thing, n: Nat0, ~active? t.
+Ctx ~> Create @ t: Thing, n: Nat0, ~active? t.
 
 ---
 

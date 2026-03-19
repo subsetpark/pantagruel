@@ -12,7 +12,7 @@ initially all a: Account | balance a = 0.
 
 where
 
-Accounts ~> Deposit | a: Account, amount: Nat.
+Accounts ~> Deposit @ a: Account, amount: Nat.
 ---
 balance' a = balance a + amount.
 all b: Account | b != a -> balance' b = balance b.

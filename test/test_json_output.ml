@@ -211,7 +211,7 @@ let test_decl_to_json_rule () =
 
 let test_decl_to_json_action () =
   let env, doc =
-    parse_and_collect "module T.\n\nUser.\n~> Do thing | u: User.\n---\n"
+    parse_and_collect "module T.\n\nUser.\n~> Do thing @ u: User.\n---\n"
   in
   let decl = List.nth (List.hd doc.chapters).head 1 in
   let j = Json_output.decl_to_json env decl in
