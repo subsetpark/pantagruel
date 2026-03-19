@@ -409,8 +409,11 @@ let generate_closure_axiom config env ~is_prime closure_name target_name
     elems;
   Buffer.contents buf
 
-(** Generate all closure axioms for the environment *)
-let generate_closure_axioms config env =
+(** Generate all closure axioms for the environment. When [~include_primed] is
+    false, only base (unprimed) axioms are emitted. This is used by BMC
+    step-indexing where primed names are handled via renaming and the last step
+    has no step+1 declarations. *)
+let generate_closure_axioms ?(include_primed = true) config env =
   let buf = Buffer.create 256 in
   Env.StringMap.iter
     (fun name entry ->
@@ -418,8 +421,10 @@ let generate_closure_axioms config env =
       | Env.KClosure (TyFunc ([ TyDomain dname ], _), target) ->
           Buffer.add_string buf
             (generate_closure_axiom config env ~is_prime:false name target dname);
-          Buffer.add_string buf
-            (generate_closure_axiom config env ~is_prime:true name target dname)
+          if include_primed then
+            Buffer.add_string buf
+              (generate_closure_axiom config env ~is_prime:true name target
+                 dname)
       | _ -> ())
     env.Env.terms;
   Buffer.contents buf
@@ -2216,8 +2221,11 @@ let declare_step_functions config env steps =
         Buffer.add_string buf (Printf.sprintf "(assert %s)\n" renamed))
       base_exprs
   done;
-  (* Closure axioms for each step *)
-  let base_closure_axioms = generate_closure_axioms config env in
+  (* Closure axioms for each step — unprimed only, since step-indexing
+     handles the next-state mapping via renaming *)
+  let base_closure_axioms =
+    generate_closure_axioms ~include_primed:false config env
+  in
   if base_closure_axioms <> "" then begin
     Buffer.add_string buf "\n; --- Closure axioms for all steps ---\n";
     for i = 0 to steps do
