@@ -2414,9 +2414,13 @@ let generate_all_actions_disabled config env actions step =
             | _ -> None)
           action.a_params
       in
+      let env_with_params = env_with_action_params env action.a_params in
       let precond_strs =
         List.map
-          (fun e -> rename_smt_for_step env (translate_expr config env e) step)
+          (fun e ->
+            rename_smt_for_step env
+              (translate_expr config env_with_params e)
+              step)
           precond_exprs
       in
       let all_preconds =
