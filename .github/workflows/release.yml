@@ -26,7 +26,7 @@ jobs:
         run: opam install . --deps-only
 
       - name: Build
-        run: opam exec -- dune build
+        run: opam exec -- dune build -p pantagruel
 
       - name: Package binary
         run: |
