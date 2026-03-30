@@ -41,7 +41,7 @@ Ask: What information is associated with each entity? What properties can change
 - Clarify return types precisely: is it one value or many? Can it be absent? (`User + Nothing` vs `User` vs `[User]`)
 - Ask about nullary rules (global state): "Is there anything true of the system as a whole, not tied to a specific entity?"
 
-Write rule declarations. Run `dune exec pant -- <file>` to check for type errors.
+Write rule declarations. Run `pant <file>` to check for type errors.
 
 ### Phase 3: Invariants — What must always be true?
 
@@ -163,9 +163,9 @@ Chapter 3: Glosses CardStatus, Currency — bare domain declarations
 After writing or updating the spec, run verification:
 
 ```bash
-dune exec pant -- <file.pant>              # Type check
-dune exec pant -- --check <file.pant>      # Bounded model checking (requires z3)
-dune exec pant -- --check --bound 5 <file> # Increase domain bound if needed
+pant <file.pant>              # Type check
+pant --check <file.pant>      # Bounded model checking (requires z3)
+pant --check --bound 5 <file> # Increase domain bound if needed
 ```
 
 Interpret results with the user:
