@@ -13,6 +13,8 @@ jobs:
             artifact: pant-linux-x86_64
           - os: macos-latest
             artifact: pant-macos-arm64
+          - os: macos-13
+            artifact: pant-macos-x86_64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
