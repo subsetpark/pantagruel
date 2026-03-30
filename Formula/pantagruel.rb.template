@@ -1,0 +1,30 @@
+class Pantagruel < Formula
+  desc "A specification language checker"
+  homepage "https://github.com/subsetpark/pantagruel"
+  license "BSD-3-Clause"
+  version "VERSION"
+
+  on_macos do
+    if Hardware::CPU.arm?
+      url "https://github.com/subsetpark/pantagruel/releases/download/vVERSION/pant-macos-arm64.tar.gz"
+      sha256 "SHA256_MACOS_ARM64"
+    else
+      url "https://github.com/subsetpark/pantagruel/releases/download/vVERSION/pant-macos-x86_64.tar.gz"
+      sha256 "SHA256_MACOS_X86_64"
+    end
+  end
+
+  on_linux do
+    url "https://github.com/subsetpark/pantagruel/releases/download/vVERSION/pant-linux-x86_64.tar.gz"
+    sha256 "SHA256_LINUX_X86_64"
+  end
+
+  def install
+    bin.install "pant"
+  end
+
+  test do
+    (testpath/"test.pant").write("module Test.\n\nFoo.\n")
+    system bin/"pant", testpath/"test.pant"
+  end
+end

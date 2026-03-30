@@ -55,3 +55,37 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: gh release create ${{ github.ref_name }} *.tar.gz --generate-notes
+
+  homebrew:
+    name: Update Homebrew Formula
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Compute SHA256 checksums
+        id: sha
+        run: |
+          echo "macos_arm64=$(shasum -a 256 pant-macos-arm64.tar.gz | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+          echo "macos_x86_64=$(shasum -a 256 pant-macos-x86_64.tar.gz | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+          echo "linux_x86_64=$(shasum -a 256 pant-linux-x86_64.tar.gz | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+
+      - name: Generate and commit formula
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -e "s/VERSION/$VERSION/g" \
+              -e "s/SHA256_MACOS_ARM64/${{ steps.sha.outputs.macos_arm64 }}/g" \
+              -e "s/SHA256_MACOS_X86_64/${{ steps.sha.outputs.macos_x86_64 }}/g" \
+              -e "s/SHA256_LINUX_X86_64/${{ steps.sha.outputs.linux_x86_64 }}/g" \
+              Formula/pantagruel.rb.template > Formula/pantagruel.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/pantagruel.rb
+          git commit -m "Formula: pantagruel ${GITHUB_REF_NAME}"
+          git push origin HEAD:master
