@@ -1,6 +1,6 @@
 (** Pantagruel CLI *)
 
-let version = "0.21.1"
+let version = "0.22.0"
 
 let usage =
   "pant [options] [file.pant]\n\n\
