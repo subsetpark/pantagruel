@@ -2,7 +2,7 @@ class Pantagruel < Formula
   desc "A specification language checker"
   homepage "https://github.com/subsetpark/pantagruel"
   license "BSD-3-Clause"
-  version "0.21.0"
+  version "0.21.1"
 
   on_macos do
     if Hardware::CPU.arm?
