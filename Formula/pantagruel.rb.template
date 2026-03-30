@@ -5,13 +5,8 @@ class Pantagruel < Formula
   version "VERSION"
 
   on_macos do
-    if Hardware::CPU.arm?
-      url "https://github.com/subsetpark/pantagruel/releases/download/vVERSION/pant-macos-arm64.tar.gz"
-      sha256 "SHA256_MACOS_ARM64"
-    else
-      url "https://github.com/subsetpark/pantagruel/releases/download/vVERSION/pant-macos-x86_64.tar.gz"
-      sha256 "SHA256_MACOS_X86_64"
-    end
+    url "https://github.com/subsetpark/pantagruel/releases/download/vVERSION/pant-macos-arm64.tar.gz"
+    sha256 "SHA256_MACOS_ARM64"
   end
 
   on_linux do
