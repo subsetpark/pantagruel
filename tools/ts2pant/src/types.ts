@@ -14,11 +14,17 @@ export interface PantAlias {
   type: string;
 }
 
+/** A named, typed parameter in a rule or action. */
+export interface PantParam {
+  name: string;
+  type: string;
+}
+
 /** A Pantagruel rule declaration (e.g. `owner d: Document => User.`). */
 export interface PantRule {
   kind: "rule";
   name: string;
-  params: Array<{ name: string; type: string }>;
+  params: PantParam[];
   returnType: string;
 }
 
@@ -26,7 +32,7 @@ export interface PantRule {
 export interface PantAction {
   kind: "action";
   label: string;
-  params: Array<{ name: string; type: string }>;
+  params: PantParam[];
 }
 
 /** A declaration in a Pantagruel document. */

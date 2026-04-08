@@ -1,54 +1,35 @@
 #!/usr/bin/env node
 
+import { Command } from "commander";
 import type { CliOptions, NumericType, PantDocument } from "./types.js";
 
-function parseArgs(argv: string[]): CliOptions {
-  const args = argv.slice(2);
-  let inputFile = "";
-  let functionName = "";
-  let check = false;
-  let noBody = false;
-  let numericType: NumericType = "Int";
+function parseArgs(): CliOptions {
+  const program = new Command();
+  program
+    .name("ts2pant")
+    .description("Translate TypeScript functions into checkable Pantagruel specifications")
+    .argument("<file>", "TypeScript source file")
+    .argument("<function>", "Function name to translate")
+    .option("--check", "Write .pant and run pant --check", false)
+    .option("--no-body", "Skip body translation (skeleton only)")
+    .option("--numeric-type <type>", "Default numeric type mapping", "Int")
+    .parse();
 
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    switch (arg) {
-      case "--check":
-        check = true;
-        break;
-      case "--no-body":
-        noBody = true;
-        break;
-      case "--numeric-type":
-        i++;
-        if (!args[i] || !["Int", "Real", "Nat0"].includes(args[i])) {
-          console.error("--numeric-type must be one of: Int, Real, Nat0");
-          process.exit(1);
-        }
-        numericType = args[i] as NumericType;
-        break;
-      default:
-        if (arg.startsWith("-")) {
-          console.error(`Unknown option: ${arg}`);
-          process.exit(1);
-        }
-        if (!inputFile) {
-          inputFile = arg;
-        } else if (!functionName) {
-          functionName = arg;
-        } else {
-          console.error(`Unexpected argument: ${arg}`);
-          process.exit(1);
-        }
-    }
+  const [inputFile, functionName] = program.args;
+  const opts = program.opts();
+
+  const numericType = opts.numericType as string;
+  if (!["Int", "Real", "Nat0"].includes(numericType)) {
+    program.error(`--numeric-type must be one of: Int, Real, Nat0 (got "${numericType}")`);
   }
 
-  if (!inputFile || !functionName) {
-    console.error("Usage: ts2pant <file.ts> <functionName> [--check] [--no-body] [--numeric-type Int|Real|Nat0]");
-    process.exit(1);
-  }
-
-  return { inputFile, functionName, check, noBody, numericType };
+  return {
+    inputFile,
+    functionName,
+    check: opts.check as boolean,
+    noBody: opts.body === false,
+    numericType: numericType as NumericType,
+  };
 }
 
 /** Stub: extract types and function from the TS source. */
@@ -83,8 +64,12 @@ function emit(doc: PantDocument): string {
         break;
       }
       case "action": {
-        const params = decl.params.map((p) => `${p.name}: ${p.type}`).join(", ");
-        lines.push(`~> ${decl.label} @ ${params}.`);
+        if (decl.params.length === 0) {
+          lines.push(`~> ${decl.label}.`);
+        } else {
+          const params = decl.params.map((p) => `${p.name}: ${p.type}`).join(", ");
+          lines.push(`~> ${decl.label} @ ${params}.`);
+        }
         break;
       }
     }
@@ -107,7 +92,7 @@ function emit(doc: PantDocument): string {
 }
 
 function main(): void {
-  const opts = parseArgs(process.argv);
+  const opts = parseArgs();
 
   // Pipeline: extract -> translate body -> emit
   let doc = extract(opts);

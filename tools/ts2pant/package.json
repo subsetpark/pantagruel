@@ -10,8 +10,8 @@
     "build": "tsc",
     "start": "node dist/index.js"
   },
-  "peerDependencies": {
-    "typescript": ">=5.0.0"
+  "dependencies": {
+    "commander": "^13.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
