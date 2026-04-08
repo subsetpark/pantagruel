@@ -156,7 +156,7 @@ function blockThrows(node: ts.Statement): boolean {
 /**
  * Translate a TypeScript expression to Pantagruel syntax (best-effort).
  */
-function translateExpr(
+export function translateExpr(
   expr: ts.Expression,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
@@ -216,7 +216,7 @@ function translateExpr(
   return expr.getText();
 }
 
-function translateOperator(kind: ts.SyntaxKind): string {
+export function translateOperator(kind: ts.SyntaxKind): string {
   switch (kind) {
     case ts.SyntaxKind.GreaterThanEqualsToken:
       return ">=";
