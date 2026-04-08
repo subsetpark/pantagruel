@@ -1339,13 +1339,16 @@ all i: Nat | items i in Item.
 |}
 
 let test_over_each_add_numeric () =
+  (* + over each widens Nat to Nat0 (empty sum = 0).
+     Verify by passing the aggregate to a Nat0-typed parameter. *)
   check_ok
     {|module TEST.
 
 Item.
 weight i: Item => Nat.
+check_nat0 n: Nat0 => Bool.
 ---
-(+ over each i: Item | weight i) >= 0.
+check_nat0 (+ over each i: Item | weight i).
 |}
 
 let test_over_each_add_bool_fails () =
@@ -1566,7 +1569,7 @@ let () =
       ( "over-each typecheck",
         [
           test_case
-            "+ over each with numeric body should return same numeric type"
+            "+ over each with Nat body should return Nat0"
             `Quick test_over_each_add_numeric;
           test_case "+ over each with Bool body should be type error" `Quick
             test_over_each_add_bool_fails;
