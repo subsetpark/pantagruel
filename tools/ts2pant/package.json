@@ -1,0 +1,20 @@
+{
+  "name": "ts2pant",
+  "version": "0.1.0",
+  "description": "Translate TypeScript functions into checkable Pantagruel specifications",
+  "main": "dist/index.js",
+  "bin": {
+    "ts2pant": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.7.0"
+  }
+}
