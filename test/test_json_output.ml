@@ -153,7 +153,7 @@ let test_expr_to_json_quantifiers () =
     (has_key "exists"
        (Json_output.expr_to_json (Ast.EExists (p, [], ELitBool true))));
   check bool "each" true
-    (has_key "each" (Json_output.expr_to_json (Ast.EEach (p, [], EVar "x"))));
+    (has_key "each" (Json_output.expr_to_json (Ast.EEach (p, [], None, EVar "x"))));
   check bool "cond" true
     (has_key "cond"
        (Json_output.expr_to_json (Ast.ECond [ (ELitBool true, ELitNat 1) ])));

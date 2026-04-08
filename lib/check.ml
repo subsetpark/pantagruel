@@ -149,7 +149,7 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
       let* body_ty = check_quantifier ctx params guards body in
       if equal_ty body_ty TyBool then Ok TyBool
       else Error (ComprehensionNeedEach (body_ty, ctx.loc))
-  | EEach (params, guards, body) ->
+  | EEach (params, guards, _, body) ->
       let* body_ty = check_quantifier ctx params guards body in
       Ok (TyList body_ty)
   | ECond arms ->

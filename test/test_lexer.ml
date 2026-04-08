@@ -57,6 +57,9 @@ let token_to_string = function
   | Parser.INITIALLY -> "INITIALLY"
   | Parser.CLOSURE -> "CLOSURE"
   | Parser.COND -> "COND"
+  | Parser.OVER -> "OVER"
+  | Parser.MIN -> "MIN"
+  | Parser.MAX -> "MAX"
   | Parser.AT -> "AT"
   | Parser.ACTION_LABEL s -> "ACTION_LABEL(" ^ s ^ ")"
   | Parser.EOF -> "EOF"
@@ -267,6 +270,17 @@ let test_cond_keyword () =
     [ Parser.COND; Parser.TRUE; Parser.DARROW; Parser.NAT 1; Parser.EOF ]
     (lex_all "cond true => 1")
 
+let test_over_each_tokens () =
+  check (list token_testable) "over, min, max"
+    [ Parser.PLUS; Parser.OVER; Parser.EACH; Parser.EOF ]
+    (lex_all "+ over each");
+  check (list token_testable) "min and max"
+    [ Parser.MIN; Parser.MAX; Parser.EOF ]
+    (lex_all "min max");
+  check (list token_testable) "times over each"
+    [ Parser.TIMES; Parser.OVER; Parser.EACH; Parser.EOF ]
+    (lex_all "* over each")
+
 let test_string_escapes () =
   check (list token_testable) "string escapes"
     [ Parser.STRING "line1\nline2"; Parser.EOF ]
@@ -353,6 +367,8 @@ let () =
       ("closure_kw", [ test_case "closure keyword" `Quick test_closure_keyword ]);
       ("each_kw", [ test_case "each keyword" `Quick test_each_keyword ]);
       ("cond_kw", [ test_case "cond keyword" `Quick test_cond_keyword ]);
+      ( "over_each",
+        [ test_case "over, min, max tokens" `Quick test_over_each_tokens ] );
       ( "string_escapes",
         [ test_case "string escapes" `Quick test_string_escapes ] );
       ("empty_input", [ test_case "empty input" `Quick test_empty_input ]);

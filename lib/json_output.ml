@@ -156,7 +156,7 @@ let rec expr_to_json = function
                 ("body", expr_to_json body);
               ] );
         ]
-  | EEach (params, guards, body) ->
+  | EEach (params, guards, _, body) ->
       `Assoc
         [
           ( "each",

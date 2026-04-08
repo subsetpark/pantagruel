@@ -680,11 +680,11 @@ let rec substitute_vars (subst : (string * expr) list) (e : expr) : expr =
       let subst' = List.filter (fun (n, _) -> not (List.mem n bound)) subst in
       let subst'', gs' = substitute_guards subst' gs in
       EExists (ps, gs', substitute_vars subst'' body)
-  | EEach (ps, gs, body) ->
+  | EEach (ps, gs, comb, body) ->
       let bound = List.map (fun (p : param) -> p.param_name) ps in
       let subst' = List.filter (fun (n, _) -> not (List.mem n bound)) subst in
       let subst'', gs' = substitute_guards subst' gs in
-      EEach (ps, gs', substitute_vars subst'' body)
+      EEach (ps, gs', comb, substitute_vars subst'' body)
   | ECond arms ->
       ECond
         (List.map
@@ -730,10 +730,10 @@ let rec prime_expr ?(bound = []) (e : expr) : expr =
       let bound' = List.map (fun (p : param) -> p.param_name) ps @ bound in
       let bound'', gs' = prime_guards ~bound:bound' gs in
       EExists (ps, gs', prime_expr ~bound:bound'' body)
-  | EEach (ps, gs, body) ->
+  | EEach (ps, gs, comb, body) ->
       let bound' = List.map (fun (p : param) -> p.param_name) ps @ bound in
       let bound'', gs' = prime_guards ~bound:bound' gs in
-      EEach (ps, gs', prime_expr ~bound:bound'' body)
+      EEach (ps, gs', comb, prime_expr ~bound:bound'' body)
   | ECond arms ->
       ECond
         (List.map
@@ -909,7 +909,7 @@ let rec translate_expr config env (e : expr) =
   | EUnop (op, e) -> translate_unop config env op e
   | EForall (params, guards, body) ->
       translate_quantifier config env "forall" params guards body
-  | EEach (params, guards, body) ->
+  | EEach (params, guards, _, body) ->
       translate_forall_comprehension config env params guards body
   | EExists (params, guards, body) ->
       translate_quantifier config env "exists" params guards body
@@ -987,7 +987,7 @@ and translate_in config env elem set =
       | [] -> "false"
       | [ single ] -> single
       | _ -> Printf.sprintf "(or %s)" (String.concat " " disj))
-  | EEach (params, guards, body) -> (
+  | EEach (params, guards, _, body) -> (
       (* y in (each x: D | f x) → disjunction: (= y (f d0)) ∨ (= y (f d1)) ...
          y in (each x: D, g x | f x) → (g d0 ∧ = y (f d0)) ∨ ... *)
       let expanded =
@@ -1017,7 +1017,7 @@ and translate_subset config env e1 e2 =
   (* xs subset Domain → every member of xs is in the domain (tautological
      for well-typed programs, but expand over finite elements for soundness) *)
   match e2 with
-  | EEach (params, guards, body) -> (
+  | EEach (params, guards, _, body) -> (
       (* xs subset (each x: D | f x) → for every elem of xs, elem is in the
          comprehension. Expand: for each domain elem d of the LHS element type,
          (select xs d) => (exists comprehension elem matching d). *)
@@ -1097,7 +1097,7 @@ and translate_card config env e =
   | EDomain name ->
       (* #Domain = bound (all elements exist) *)
       string_of_int (bound_for config name)
-  | EEach (params, guards, body) -> (
+  | EEach (params, guards, _, body) -> (
       (* #(each x: D | f x) — count distinct values in the comprehension.
          Requires the range type to be a bounded domain. Expand over range
          domain elements, check if each is produced by any source element. *)
@@ -1943,7 +1943,7 @@ let rec collect_function_refs (e : expr) =
   | EPrimed name -> [ name ]
   | EBinop (_, e1, e2) -> collect_function_refs e1 @ collect_function_refs e2
   | EUnop (_, e) -> collect_function_refs e
-  | EForall (_, gs, body) | EExists (_, gs, body) | EEach (_, gs, body) ->
+  | EForall (_, gs, body) | EExists (_, gs, body) | EEach (_, gs, _, body) ->
       List.concat_map collect_guard_refs gs @ collect_function_refs body
   | ETuple es -> List.concat_map collect_function_refs es
   | EProj (e, _) -> collect_function_refs e
@@ -2535,7 +2535,7 @@ let collect_conds_in_expr (e : expr) : cond_info list =
             walk quant_ctx arm;
             walk quant_ctx cons)
           arms
-    | EForall (ps, gs, body) | EExists (ps, gs, body) | EEach (ps, gs, body) ->
+    | EForall (ps, gs, body) | EExists (ps, gs, body) | EEach (ps, gs, _, body) ->
         walk ((ps, gs) :: quant_ctx) body;
         List.iter
           (function

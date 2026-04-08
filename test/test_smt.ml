@@ -1208,6 +1208,7 @@ let test_in_each_comprehension () =
         EEach
           ( [ { param_name = "u"; param_type = TName "User" } ],
             [],
+            None,
             EApp (EVar "role", [ EVar "u" ]) ) )
   in
   let result = Smt.translate_expr config env expr in
@@ -1238,6 +1239,7 @@ let test_in_each_comprehension_guarded () =
         EEach
           ( [ { param_name = "u"; param_type = TName "User" } ],
             [ GExpr (EApp (EVar "active", [ EVar "u" ])) ],
+            None,
             EApp (EVar "role", [ EVar "u" ]) ) )
   in
   let result = Smt.translate_expr config env expr in
@@ -1266,7 +1268,7 @@ let test_in_membership_comprehension () =
       ( OpIn,
         EVar "r",
         EEach
-          ([], [ GIn ("u", EVar "admins") ], EApp (EVar "role", [ EVar "u" ]))
+          ([], [ GIn ("u", EVar "admins") ], None, EApp (EVar "role", [ EVar "u" ]))
       )
   in
   let result = Smt.translate_expr config env expr in
@@ -1291,6 +1293,7 @@ let test_card_each_comprehension () =
         EEach
           ( [ { param_name = "u"; param_type = TName "User" } ],
             [],
+            None,
             EApp (EVar "role", [ EVar "u" ]) ) )
   in
   let result = Smt.translate_expr config env expr in
@@ -1312,6 +1315,7 @@ let test_each_comprehension_standalone () =
     Ast.EEach
       ( [ { param_name = "u"; param_type = TName "User" } ],
         [],
+        None,
         EApp (EVar "role", [ EVar "u" ]) )
   in
   let result = Smt.translate_expr config env expr in

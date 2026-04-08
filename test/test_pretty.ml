@@ -120,6 +120,7 @@ let test_each () =
        (Ast.EEach
           ( [ { param_name = "u"; param_type = TName "User" } ],
             [],
+            None,
             EApp (EVar "f", [ EVar "u" ]) )))
 
 let test_cond () =

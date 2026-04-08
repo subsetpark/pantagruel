@@ -61,7 +61,7 @@ let rec pp_expr fmt = function
   | EExists (params, guards, body) ->
       fprintf fmt "some %a | %a" pp_quant_params_guards (params, guards) pp_expr
         body
-  | EEach (params, guards, body) ->
+  | EEach (params, guards, _, body) ->
       fprintf fmt "each %a | %a" pp_quant_params_guards (params, guards) pp_expr
         body
   | ECond arms ->
