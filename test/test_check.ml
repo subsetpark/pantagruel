@@ -1568,9 +1568,8 @@ let () =
         ] );
       ( "over-each typecheck",
         [
-          test_case
-            "+ over each with Nat body should return Nat0"
-            `Quick test_over_each_add_numeric;
+          test_case "+ over each with Nat body should return Nat0" `Quick
+            test_over_each_add_numeric;
           test_case "+ over each with Bool body should be type error" `Quick
             test_over_each_add_bool_fails;
           test_case "and over each with Bool body should return Bool" `Quick
