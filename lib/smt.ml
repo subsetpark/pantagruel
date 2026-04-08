@@ -1295,10 +1295,22 @@ and translate_aggregate config env (comb : combiner) params guards body =
                 (merged, value_str))
               expanded elems
   in
+  (* Infer body type to choose correct SMT sort for identity values *)
+  let body_is_real =
+    match resolve_comprehension_binding env params guards with
+    | Ok (_, _, _, bindings) -> (
+        let env_inner = Env.with_vars bindings env in
+        match
+          Check.infer_type { Check.env = env_inner; loc = dummy_loc } body
+        with
+        | Ok TyReal -> true
+        | _ -> false)
+    | Error _ -> false
+  in
   let smt_op_and_identity =
     match comb with
-    | CombAdd -> Some ("+", "0")
-    | CombMul -> Some ("*", "1")
+    | CombAdd -> Some ("+", if body_is_real then "0.0" else "0")
+    | CombMul -> Some ("*", if body_is_real then "1.0" else "1")
     | CombAnd -> Some ("and", "true")
     | CombOr -> Some ("or", "false")
     | CombMin | CombMax -> None
@@ -1379,7 +1391,9 @@ and translate_aggregate config env (comb : combiner) params guards body =
                 Printf.sprintf "(let ((%s %s)) %s)" name expr body)
               inner (List.rev !bindings)
           in
-          Printf.sprintf "(let ((%s false) (%s 0)) %s)" seen_var acc_var lets)
+          let dummy_acc = if body_is_real then "0.0" else "0" in
+          Printf.sprintf "(let ((%s false) (%s %s)) %s)" seen_var acc_var
+            dummy_acc lets)
 
 and translate_quantifier config env quant params guards body =
   (* Enrich env with formal parameter bindings so that type inference
