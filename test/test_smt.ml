@@ -1268,8 +1268,10 @@ let test_in_membership_comprehension () =
       ( OpIn,
         EVar "r",
         EEach
-          ([], [ GIn ("u", EVar "admins") ], None, EApp (EVar "role", [ EVar "u" ]))
-      )
+          ( [],
+            [ GIn ("u", EVar "admins") ],
+            None,
+            EApp (EVar "role", [ EVar "u" ]) ) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "has select admins" true (contains result "(select admins");

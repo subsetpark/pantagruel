@@ -2535,7 +2535,8 @@ let collect_conds_in_expr (e : expr) : cond_info list =
             walk quant_ctx arm;
             walk quant_ctx cons)
           arms
-    | EForall (ps, gs, body) | EExists (ps, gs, body) | EEach (ps, gs, _, body) ->
+    | EForall (ps, gs, body) | EExists (ps, gs, body) | EEach (ps, gs, _, body)
+      ->
         walk ((ps, gs) :: quant_ctx) body;
         List.iter
           (function

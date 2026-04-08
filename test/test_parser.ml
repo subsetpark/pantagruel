@@ -584,8 +584,10 @@ let () =
       ( "over_each",
         [
           test_case "+ over each parses as CombAdd" `Quick test_over_each_add;
-          test_case "max over each with guard" `Quick test_over_each_max_with_guard;
-          test_case "bare each has None combiner" `Quick test_bare_each_none_combiner;
+          test_case "max over each with guard" `Quick
+            test_over_each_max_with_guard;
+          test_case "bare each has None combiner" `Quick
+            test_bare_each_none_combiner;
         ] );
       ( "cond",
         [

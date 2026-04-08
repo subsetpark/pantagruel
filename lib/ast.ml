@@ -66,13 +66,7 @@ type unop =
 [@@deriving show, eq]
 
 (** Aggregate combiners for over-each quantifiers *)
-type combiner =
-  | CombAdd
-  | CombMul
-  | CombAnd
-  | CombOr
-  | CombMin
-  | CombMax
+type combiner = CombAdd | CombMul | CombAnd | CombOr | CombMin | CombMax
 [@@deriving show, eq]
 
 type param = { param_name : lower_ident; param_type : type_expr }
@@ -104,7 +98,8 @@ and expr =
   | EUnop of unop * expr  (** op e *)
   | EForall of param list * guard list * expr  (** forall x:T, g | e *)
   | EExists of param list * guard list * expr  (** exists x:T, g | e *)
-  | EEach of param list * guard list * combiner option * expr  (** each x:T, g | e; optional combiner for over-each *)
+  | EEach of param list * guard list * combiner option * expr
+      (** each x:T, g | e; optional combiner for over-each *)
   | ECond of (expr * expr) list  (** cond arm => e, arm2 => e2 *)
   | EInitially of expr  (** initially e *)
 [@@deriving show, eq]
