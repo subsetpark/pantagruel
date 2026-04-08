@@ -1257,7 +1257,7 @@ and translate_aggregate config env (comb : combiner) params guards body =
     | CombMin | CombMax -> None
   in
   match smt_op_and_identity with
-  | Some (smt_op, identity) ->
+  | Some (smt_op, identity) -> (
       let values =
         List.map
           (fun (guard_opt, value_str) ->
@@ -1266,18 +1266,20 @@ and translate_aggregate config env (comb : combiner) params guards body =
             | Some g -> Printf.sprintf "(ite %s %s %s)" g value_str identity)
           expanded
       in
-      (match values with
+      match values with
       | [] -> identity
       | [ single ] -> single
       | _ -> Printf.sprintf "(%s %s)" smt_op (String.concat " " values))
-  | None ->
+  | None -> (
       (* min/max: no identity element, fold pairwise with ite for guards *)
       let fn = match comb with CombMin -> "pant_min" | _ -> "pant_max" in
-      (match expanded with
+      match expanded with
       | [] -> failwith "SMT: min/max over empty domain"
       | (g0, v0) :: rest ->
           let init =
-            match g0 with None -> v0 | Some g -> Printf.sprintf "(ite %s %s %s)" g v0 v0
+            match g0 with
+            | None -> v0
+            | Some g -> Printf.sprintf "(ite %s %s %s)" g v0 v0
           in
           List.fold_left
             (fun acc (guard_opt, value_str) ->
