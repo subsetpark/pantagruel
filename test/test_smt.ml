@@ -1411,6 +1411,33 @@ let test_aggregate_add_identity () =
   let result = Smt.translate_expr config env expr in
   check bool "has ite with identity 0" true (contains result "0)")
 
+let test_aggregate_decl_guard_injection () =
+  (* + over each u: User | score u where score has decl guard "active u"
+     should inject (active User_0), (active User_1) etc. as guards *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "score"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "active"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule_guards "score"
+         [ Ast.{ param_name = "u"; param_type = TName "User" } ]
+         [ GExpr (EApp (EVar "active", [ EVar "u" ])) ]
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [],
+        Some CombAdd,
+        EApp (EVar "score", [ EVar "u" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "has (active User_0)" true (contains result "(active User_0)");
+  check bool "has ite" true (contains result "(ite")
+
 let comprehension_tests =
   [
     test_case "in each comprehension" `Quick test_in_each_comprehension;
@@ -1423,6 +1450,8 @@ let comprehension_tests =
     test_case "aggregate and" `Quick test_aggregate_and;
     test_case "aggregate min guarded" `Quick test_aggregate_min_guarded;
     test_case "aggregate add identity" `Quick test_aggregate_add_identity;
+    test_case "aggregate decl guard injection" `Quick
+      test_aggregate_decl_guard_injection;
   ]
 
 (* --- Closure tests --- *)

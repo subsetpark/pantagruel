@@ -1248,6 +1248,52 @@ and translate_aggregate config env (comb : combiner) params guards body =
   let expanded =
     expand_comprehension translate_expr config env params guards body
   in
+  (* Inject declaration guards from guarded rule applications in the body *)
+  let expanded =
+    if not config.inject_guards then expanded
+    else
+      match resolve_comprehension_binding env params guards with
+      | Error _ -> expanded
+      | Ok (var_name, dname, _, bindings) ->
+          let env_inner = Env.with_vars bindings env in
+          let bound_names =
+            List.map (fun (p : param) -> p.param_name) params
+            @ List.concat_map
+                (fun g ->
+                  match g with
+                  | GParam p -> [ p.param_name ]
+                  | GIn (n, _) -> [ n ]
+                  | GExpr _ -> [])
+                guards
+          in
+          let app_guards =
+            collect_body_guards ~bound:bound_names env_inner body
+          in
+          if app_guards = [] then expanded
+          else
+            let pname = sanitize_ident var_name in
+            let guard_templates =
+              List.map (translate_expr config env_inner) app_guards
+            in
+            let elems = domain_elements dname (bound_for config dname) in
+            List.map2
+              (fun (guard_opt, value_str) elem ->
+                let sub s = replace_word ~from:pname ~to_:elem s in
+                let app_guard_strs = List.map sub guard_templates in
+                let all_guards =
+                  (match guard_opt with Some g -> [ g ] | None -> [])
+                  @ app_guard_strs
+                in
+                let merged =
+                  match all_guards with
+                  | [] -> None
+                  | [ g ] -> Some g
+                  | gs ->
+                      Some (Printf.sprintf "(and %s)" (String.concat " " gs))
+                in
+                (merged, value_str))
+              expanded elems
+  in
   let smt_op_and_identity =
     match comb with
     | CombAdd -> Some ("+", "0")

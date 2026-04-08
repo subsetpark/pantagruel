@@ -155,7 +155,11 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
   | EEach (params, guards, Some comb, body) -> (
       let* body_ty = check_quantifier ctx params guards body in
       match comb with
-      | CombAdd | CombMul | CombMin | CombMax ->
+      | CombAdd ->
+          if is_numeric body_ty then
+            Ok (match body_ty with TyNat -> TyNat0 | ty -> ty)
+          else Error (NotNumeric (body_ty, ctx.loc))
+      | CombMul | CombMin | CombMax ->
           if is_numeric body_ty then Ok body_ty
           else Error (NotNumeric (body_ty, ctx.loc))
       | CombAnd | CombOr ->
