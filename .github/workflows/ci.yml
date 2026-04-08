@@ -21,23 +21,12 @@ jobs:
         run: |
           opam install . --deps-only --with-test --with-doc
           opam install ocamlformat.0.28.1
-          opam install bisect_ppx
 
       - name: Build
         run: opam exec -- dune build
 
-      - name: Test with coverage
-        run: |
-          opam exec -- dune test --instrument-with bisect_ppx --force
-
-      - name: Coverage summary
-        run: opam exec -- bisect-ppx-report summary
-
-      - name: Upload coverage to Codecov
-        if: github.event_name == 'pull_request'
-        run: opam exec -- bisect-ppx-report send-to Codecov
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      - name: Test
+        run: opam exec -- dune test
 
       - name: Check formatting
         run: opam exec -- dune build @fmt
