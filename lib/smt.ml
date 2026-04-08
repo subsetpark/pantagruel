@@ -1245,8 +1245,18 @@ and translate_aggregate config env (comb : combiner) params guards body =
      Expands over finite domain elements and combines with the operator.
      For +, *, and, or: guarded elements use identity when guard is false.
      For min, max: pairwise fold using ite. *)
+  let local_bound =
+    List.map (fun (p : param) -> p.param_name) params
+    @ List.concat_map
+        (function
+          | GParam p -> [ p.param_name ] | GIn (n, _) -> [ n ] | GExpr _ -> [])
+        guards
+  in
+  let inner_config =
+    { config with quant_bound = local_bound @ config.quant_bound }
+  in
   let expanded =
-    expand_comprehension translate_expr config env params guards body
+    expand_comprehension translate_expr inner_config env params guards body
   in
   (* Inject declaration guards from guarded rule applications in the body *)
   let expanded =
@@ -1256,16 +1266,7 @@ and translate_aggregate config env (comb : combiner) params guards body =
       | Error _ -> expanded
       | Ok (var_name, dname, _, bindings) ->
           let env_inner = Env.with_vars bindings env in
-          let bound_names =
-            List.map (fun (p : param) -> p.param_name) params
-            @ List.concat_map
-                (fun g ->
-                  match g with
-                  | GParam p -> [ p.param_name ]
-                  | GIn (n, _) -> [ n ]
-                  | GExpr _ -> [])
-                guards
-          in
+          let bound_names = local_bound @ config.quant_bound in
           let app_guards =
             collect_body_guards ~bound:bound_names env_inner body
           in
@@ -1273,9 +1274,9 @@ and translate_aggregate config env (comb : combiner) params guards body =
           else
             let pname = sanitize_ident var_name in
             let guard_templates =
-              List.map (translate_expr config env_inner) app_guards
+              List.map (translate_expr inner_config env_inner) app_guards
             in
-            let elems = domain_elements dname (bound_for config dname) in
+            let elems = domain_elements dname (bound_for inner_config dname) in
             List.map2
               (fun (guard_opt, value_str) elem ->
                 let sub s = replace_word ~from:pname ~to_:elem s in
@@ -1317,27 +1318,68 @@ and translate_aggregate config env (comb : combiner) params guards body =
       | [ single ] -> single
       | _ -> Printf.sprintf "(%s %s)" smt_op (String.concat " " values))
   | None -> (
-      (* min/max: no identity element, fold pairwise with ite for guards *)
-      let fn = match comb with CombMin -> "pant_min" | _ -> "pant_max" in
+      (* min/max: no identity element, inline comparison with ite.
+         For guarded elements, only include when the guard holds;
+         use a seen/acc pair so the first accepted value seeds the fold. *)
+      let cmp_op = match comb with CombMin -> "<=" | _ -> ">=" in
+      let inline_minmax a b =
+        Printf.sprintf "(ite (%s %s %s) %s %s)" cmp_op a b a b
+      in
       match expanded with
       | [] -> failwith "SMT: min/max over empty domain"
-      | (g0, v0) :: rest ->
-          let init =
-            match g0 with
-            | None -> v0
-            | Some g -> Printf.sprintf "(ite %s %s %s)" g v0 v0
-          in
-          List.fold_left
-            (fun acc (guard_opt, value_str) ->
-              let v =
+      | _ ->
+          (* Each element is either unconditional or guarded. We fold using
+             a (seen_flag, accumulator) pair encoded in SMT: seen_flag is a
+             Bool that tracks whether any element has been accepted yet.
+             When seen is false, the new value replaces acc unconditionally. *)
+          let seen_var = "_agg_seen" in
+          let acc_var = "_agg_acc" in
+          let seen_ref = ref seen_var in
+          let acc_ref = ref acc_var in
+          let bindings = ref [] in
+          let cnt = ref 0 in
+          List.iter
+            (fun (guard_opt, value_str) ->
+              let i = !cnt in
+              incr cnt;
+              let prev_seen = !seen_ref in
+              let prev_acc = !acc_ref in
+              let new_seen = Printf.sprintf "_agg_s%d" i in
+              let new_acc = Printf.sprintf "_agg_a%d" i in
+              let merged =
                 match guard_opt with
-                | None -> Printf.sprintf "(%s %s %s)" fn acc value_str
+                | None ->
+                    (* Unconditional: always accepted *)
+                    let acc_expr =
+                      Printf.sprintf "(ite %s %s %s)" prev_seen
+                        (inline_minmax prev_acc value_str)
+                        value_str
+                    in
+                    (new_seen, "true", new_acc, acc_expr)
                 | Some g ->
-                    Printf.sprintf "(ite %s (%s %s %s) %s)" g fn acc value_str
-                      acc
+                    (* Guarded: only accepted when guard holds *)
+                    let seen_expr = Printf.sprintf "(or %s %s)" prev_seen g in
+                    let acc_expr =
+                      Printf.sprintf "(ite %s (ite %s %s %s) %s)" g prev_seen
+                        (inline_minmax prev_acc value_str)
+                        value_str prev_acc
+                    in
+                    (new_seen, seen_expr, new_acc, acc_expr)
               in
-              v)
-            init rest)
+              let ns, se, na, ae = merged in
+              bindings := (na, ae) :: (ns, se) :: !bindings;
+              seen_ref := ns;
+              acc_ref := na)
+            expanded;
+          (* Wrap in nested lets, seeded with seen=false and acc=0 (dummy) *)
+          let inner = !acc_ref in
+          let lets =
+            List.fold_left
+              (fun body (name, expr) ->
+                Printf.sprintf "(let ((%s %s)) %s)" name expr body)
+              inner (List.rev !bindings)
+          in
+          Printf.sprintf "(let ((%s false) (%s 0)) %s)" seen_var acc_var lets)
 
 and translate_quantifier config env quant params guards body =
   (* Enrich env with formal parameter bindings so that type inference

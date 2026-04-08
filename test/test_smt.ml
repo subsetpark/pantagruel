@@ -1386,30 +1386,31 @@ let test_aggregate_min_guarded () =
         EApp (EVar "score", [ EVar "u" ]) )
   in
   let result = Smt.translate_expr config env expr in
-  check bool "has pant_min" true (contains result "pant_min");
+  check bool "has <=" true (contains result "(<=");
   check bool "has ite" true (contains result "(ite")
 
-let test_aggregate_add_identity () =
-  (* + over empty should use identity 0 *)
+let test_aggregate_add_empty () =
+  (* + over empty domain (bound=0) should return identity "0" *)
+  let zero_config =
+    Smt.make_config ~bound:0 ~steps:5 ~domain_bounds:Env.StringMap.empty
+      ~inject_guards:true
+  in
   let env =
     Env.empty ""
     |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
     |> Env.add_rule "score"
          (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
          Ast.dummy_loc ~chapter:0
-    |> Env.add_rule "active"
-         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
-         Ast.dummy_loc ~chapter:0
   in
   let expr =
     Ast.EEach
       ( [ { param_name = "u"; param_type = TName "User" } ],
-        [ GExpr (EApp (EVar "active", [ EVar "u" ])) ],
+        [],
         Some CombAdd,
         EApp (EVar "score", [ EVar "u" ]) )
   in
-  let result = Smt.translate_expr config env expr in
-  check bool "has ite with identity 0" true (contains result "0)")
+  let result = Smt.translate_expr zero_config env expr in
+  check string "empty add = identity" "0" result
 
 let test_aggregate_decl_guard_injection () =
   (* + over each u: User | score u where score has decl guard "active u"
@@ -1449,7 +1450,7 @@ let comprehension_tests =
     test_case "aggregate add" `Quick test_aggregate_add;
     test_case "aggregate and" `Quick test_aggregate_and;
     test_case "aggregate min guarded" `Quick test_aggregate_min_guarded;
-    test_case "aggregate add identity" `Quick test_aggregate_add_identity;
+    test_case "aggregate add empty" `Quick test_aggregate_add_empty;
     test_case "aggregate decl guard injection" `Quick
       test_aggregate_decl_guard_injection;
   ]
