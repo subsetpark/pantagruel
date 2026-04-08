@@ -1325,6 +1325,92 @@ let test_each_comprehension_standalone () =
   check bool "has store" true (contains result "store");
   check bool "has Array Role Bool" true (contains result "(Array Role Bool)")
 
+let test_aggregate_add () =
+  (* + over each u: User | score u → (+ (score User_0) (score User_1) ...) *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "score"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [],
+        Some CombAdd,
+        EApp (EVar "score", [ EVar "u" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "has +" true (contains result "(+");
+  check bool "has (score User_0)" true (contains result "(score User_0)");
+  check bool "has (score User_1)" true (contains result "(score User_1)")
+
+let test_aggregate_and () =
+  (* and over each u: User | active u → (and (active User_0) ...) *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "active"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [],
+        Some CombAnd,
+        EApp (EVar "active", [ EVar "u" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "has and" true (contains result "(and");
+  check bool "has (active User_0)" true (contains result "(active User_0)")
+
+let test_aggregate_min_guarded () =
+  (* min over each u: User, active u | score u → pant_min with ite guards *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "score"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "active"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [ GExpr (EApp (EVar "active", [ EVar "u" ])) ],
+        Some CombMin,
+        EApp (EVar "score", [ EVar "u" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "has pant_min" true (contains result "pant_min");
+  check bool "has ite" true (contains result "(ite")
+
+let test_aggregate_add_identity () =
+  (* + over empty should use identity 0 *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "score"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "active"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [ GExpr (EApp (EVar "active", [ EVar "u" ])) ],
+        Some CombAdd,
+        EApp (EVar "score", [ EVar "u" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "has ite with identity 0" true (contains result "0)")
+
 let comprehension_tests =
   [
     test_case "in each comprehension" `Quick test_in_each_comprehension;
@@ -1333,6 +1419,10 @@ let comprehension_tests =
       test_in_membership_comprehension;
     test_case "card each comprehension" `Quick test_card_each_comprehension;
     test_case "each standalone" `Quick test_each_comprehension_standalone;
+    test_case "aggregate add" `Quick test_aggregate_add;
+    test_case "aggregate and" `Quick test_aggregate_and;
+    test_case "aggregate min guarded" `Quick test_aggregate_min_guarded;
+    test_case "aggregate add identity" `Quick test_aggregate_add_identity;
   ]
 
 (* --- Closure tests --- *)

@@ -149,9 +149,18 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
       let* body_ty = check_quantifier ctx params guards body in
       if equal_ty body_ty TyBool then Ok TyBool
       else Error (ComprehensionNeedEach (body_ty, ctx.loc))
-  | EEach (params, guards, _, body) ->
+  | EEach (params, guards, None, body) ->
       let* body_ty = check_quantifier ctx params guards body in
       Ok (TyList body_ty)
+  | EEach (params, guards, Some comb, body) ->
+      let* body_ty = check_quantifier ctx params guards body in
+      (match comb with
+      | CombAdd | CombMul | CombMin | CombMax ->
+          if is_numeric body_ty then Ok body_ty
+          else Error (NotNumeric (body_ty, ctx.loc))
+      | CombAnd | CombOr ->
+          if equal_ty body_ty TyBool then Ok TyBool
+          else Error (ExpectedBool (body_ty, ctx.loc)))
   | ECond arms ->
       let* _ =
         map_result

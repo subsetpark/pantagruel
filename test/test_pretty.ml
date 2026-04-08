@@ -254,6 +254,7 @@ let test_roundtrip_simple_exprs () =
       "module T.\nFoo.\nf => Bool.\ng => Bool.\n---\nf and g.\n";
       "module T.\nFoo.\nf => Bool.\ng => Bool.\n---\nf or g.\n";
       "module T.\nFoo.\nf => Bool.\ng => Bool.\n---\n~f.\n";
+      "module T.\nUser.\nf u: User => Nat.\n---\n+ over each u: User | f u.\n";
     ]
   in
   List.iter

@@ -909,8 +909,10 @@ let rec translate_expr config env (e : expr) =
   | EUnop (op, e) -> translate_unop config env op e
   | EForall (params, guards, body) ->
       translate_quantifier config env "forall" params guards body
-  | EEach (params, guards, _, body) ->
+  | EEach (params, guards, None, body) ->
       translate_forall_comprehension config env params guards body
+  | EEach (params, guards, Some comb, body) ->
+      translate_aggregate config env comb params guards body
   | EExists (params, guards, body) ->
       translate_quantifier config env "exists" params guards body
   | ECond arms -> translate_cond config env arms
@@ -987,7 +989,7 @@ and translate_in config env elem set =
       | [] -> "false"
       | [ single ] -> single
       | _ -> Printf.sprintf "(or %s)" (String.concat " " disj))
-  | EEach (params, guards, _, body) -> (
+  | EEach (params, guards, None, body) -> (
       (* y in (each x: D | f x) → disjunction: (= y (f d0)) ∨ (= y (f d1)) ...
          y in (each x: D, g x | f x) → (g d0 ∧ = y (f d0)) ∨ ... *)
       let expanded =
@@ -1017,7 +1019,7 @@ and translate_subset config env e1 e2 =
   (* xs subset Domain → every member of xs is in the domain (tautological
      for well-typed programs, but expand over finite elements for soundness) *)
   match e2 with
-  | EEach (params, guards, _, body) -> (
+  | EEach (params, guards, None, body) -> (
       (* xs subset (each x: D | f x) → for every elem of xs, elem is in the
          comprehension. Expand: for each domain elem d of the LHS element type,
          (select xs d) => (exists comprehension elem matching d). *)
@@ -1097,7 +1099,7 @@ and translate_card config env e =
   | EDomain name ->
       (* #Domain = bound (all elements exist) *)
       string_of_int (bound_for config name)
-  | EEach (params, guards, _, body) -> (
+  | EEach (params, guards, None, body) -> (
       (* #(each x: D | f x) — count distinct values in the comprehension.
          Requires the range type to be a bounded domain. Expand over range
          domain elements, check if each is produced by any source element. *)
@@ -1237,6 +1239,57 @@ and translate_forall_comprehension config env params guards body =
       bindings final_var
   in
   Printf.sprintf "(let ((_cl_0 %s)) %s)" empty inner
+
+and translate_aggregate config env (comb : combiner) params guards body =
+  (* Aggregate: COMB over each x: D, g | f x
+     Expands over finite domain elements and combines with the operator.
+     For +, *, and, or: guarded elements use identity when guard is false.
+     For min, max: pairwise fold using ite. *)
+  let expanded =
+    expand_comprehension translate_expr config env params guards body
+  in
+  let smt_op_and_identity =
+    match comb with
+    | CombAdd -> Some ("+", "0")
+    | CombMul -> Some ("*", "1")
+    | CombAnd -> Some ("and", "true")
+    | CombOr -> Some ("or", "false")
+    | CombMin | CombMax -> None
+  in
+  match smt_op_and_identity with
+  | Some (smt_op, identity) ->
+      let values =
+        List.map
+          (fun (guard_opt, value_str) ->
+            match guard_opt with
+            | None -> value_str
+            | Some g -> Printf.sprintf "(ite %s %s %s)" g value_str identity)
+          expanded
+      in
+      (match values with
+      | [] -> identity
+      | [ single ] -> single
+      | _ -> Printf.sprintf "(%s %s)" smt_op (String.concat " " values))
+  | None ->
+      (* min/max: no identity element, fold pairwise with ite for guards *)
+      let fn = match comb with CombMin -> "pant_min" | _ -> "pant_max" in
+      (match expanded with
+      | [] -> failwith "SMT: min/max over empty domain"
+      | (g0, v0) :: rest ->
+          let init =
+            match g0 with None -> v0 | Some g -> Printf.sprintf "(ite %s %s %s)" g v0 v0
+          in
+          List.fold_left
+            (fun acc (guard_opt, value_str) ->
+              let v =
+                match guard_opt with
+                | None -> Printf.sprintf "(%s %s %s)" fn acc value_str
+                | Some g ->
+                    Printf.sprintf "(ite %s (%s %s %s) %s)" g fn acc value_str
+                      acc
+              in
+              v)
+            init rest)
 
 and translate_quantifier config env quant params guards body =
   (* Enrich env with formal parameter bindings so that type inference
