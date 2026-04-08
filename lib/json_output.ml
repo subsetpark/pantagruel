@@ -156,7 +156,17 @@ let rec expr_to_json = function
                 ("body", expr_to_json body);
               ] );
         ]
-  | EEach (params, guards, _, body) ->
+  | EEach (params, guards, comb, body) ->
+      let combiner_json =
+        match comb with
+        | None -> `Null
+        | Some CombAdd -> `String "add"
+        | Some CombMul -> `String "mul"
+        | Some CombAnd -> `String "and"
+        | Some CombOr -> `String "or"
+        | Some CombMin -> `String "min"
+        | Some CombMax -> `String "max"
+      in
       `Assoc
         [
           ( "each",
@@ -164,6 +174,7 @@ let rec expr_to_json = function
               [
                 ("params", `List (List.map param_to_json params));
                 ("guards", `List (List.map guard_to_json guards));
+                ("combiner", combiner_json);
                 ("body", expr_to_json body);
               ] );
         ]

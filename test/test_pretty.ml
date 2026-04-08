@@ -123,6 +123,15 @@ let test_each () =
             None,
             EApp (EVar "f", [ EVar "u" ]) )))
 
+let test_each_with_combiner () =
+  check string "over each" "+ over each u: User | f u"
+    (pp
+       (Ast.EEach
+          ( [ { param_name = "u"; param_type = TName "User" } ],
+            [],
+            Some CombAdd,
+            EApp (EVar "f", [ EVar "u" ]) )))
+
 let test_cond () =
   check string "cond" "cond a => 1, b => 2"
     (pp (Ast.ECond [ (EVar "a", ELitNat 1); (EVar "b", ELitNat 2) ]))
@@ -440,6 +449,7 @@ let () =
           test_case "forall" `Quick test_forall;
           test_case "exists" `Quick test_exists;
           test_case "each" `Quick test_each;
+          test_case "over each" `Quick test_each_with_combiner;
           test_case "cond" `Quick test_cond;
           test_case "initially" `Quick test_initially;
         ] );

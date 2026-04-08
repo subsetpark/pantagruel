@@ -235,6 +235,62 @@ let test_over_each_max_with_guard () =
   | Ast.EEach (_, [ Ast.GExpr _ ], Some Ast.CombMax, _) -> ()
   | _ -> fail "Expected EEach with CombMax and guard"
 
+let test_over_each_mul () =
+  let doc =
+    parse
+      "module TEST.\n\n\
+       User.\n\
+       score u: User => Nat.\n\
+       ---\n\
+       * over each u: User | score u.\n"
+  in
+  let chapter = List.hd doc.Ast.chapters in
+  match (List.hd chapter.Ast.body).Ast.value with
+  | Ast.EEach (_, _, Some Ast.CombMul, _) -> ()
+  | _ -> fail "Expected EEach with CombMul"
+
+let test_over_each_and () =
+  let doc =
+    parse
+      "module TEST.\n\n\
+       User.\n\
+       active? u: User => Bool.\n\
+       ---\n\
+       and over each u: User | active? u.\n"
+  in
+  let chapter = List.hd doc.Ast.chapters in
+  match (List.hd chapter.Ast.body).Ast.value with
+  | Ast.EEach (_, _, Some Ast.CombAnd, _) -> ()
+  | _ -> fail "Expected EEach with CombAnd"
+
+let test_over_each_or () =
+  let doc =
+    parse
+      "module TEST.\n\n\
+       User.\n\
+       active? u: User => Bool.\n\
+       ---\n\
+       or over each u: User | active? u.\n"
+  in
+  let chapter = List.hd doc.Ast.chapters in
+  match (List.hd chapter.Ast.body).Ast.value with
+  | Ast.EEach (_, _, Some Ast.CombOr, _) -> ()
+  | _ -> fail "Expected EEach with CombOr"
+
+let test_over_each_min () =
+  let doc =
+    parse
+      "module TEST.\n\n\
+       User.\n\
+       score u: User => Nat.\n\
+       ---\n\
+       min over each u: User | score u.\n"
+  in
+  let chapter = List.hd doc.Ast.chapters in
+  match (List.hd chapter.Ast.body).Ast.value with
+  | Ast.EEach (_, _, Some Ast.CombMin, _) -> ()
+  | _ -> fail "Expected EEach with CombMin"
+
 let test_bare_each_none_combiner () =
   let doc =
     parse
@@ -584,6 +640,10 @@ let () =
       ( "over_each",
         [
           test_case "+ over each parses as CombAdd" `Quick test_over_each_add;
+          test_case "* over each parses as CombMul" `Quick test_over_each_mul;
+          test_case "and over each parses as CombAnd" `Quick test_over_each_and;
+          test_case "or over each parses as CombOr" `Quick test_over_each_or;
+          test_case "min over each parses as CombMin" `Quick test_over_each_min;
           test_case "max over each with guard" `Quick
             test_over_each_max_with_guard;
           test_case "bare each has None combiner" `Quick

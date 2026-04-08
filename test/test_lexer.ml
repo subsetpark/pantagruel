@@ -271,15 +271,24 @@ let test_cond_keyword () =
     (lex_all "cond true => 1")
 
 let test_over_each_tokens () =
-  check (list token_testable) "over, min, max"
+  check (list token_testable) "+ over each"
     [ Parser.PLUS; Parser.OVER; Parser.EACH; Parser.EOF ]
     (lex_all "+ over each");
-  check (list token_testable) "min and max"
-    [ Parser.MIN; Parser.MAX; Parser.EOF ]
-    (lex_all "min max");
-  check (list token_testable) "times over each"
+  check (list token_testable) "* over each"
     [ Parser.TIMES; Parser.OVER; Parser.EACH; Parser.EOF ]
-    (lex_all "* over each")
+    (lex_all "* over each");
+  check (list token_testable) "and over each"
+    [ Parser.AND; Parser.OVER; Parser.EACH; Parser.EOF ]
+    (lex_all "and over each");
+  check (list token_testable) "or over each"
+    [ Parser.OR; Parser.OVER; Parser.EACH; Parser.EOF ]
+    (lex_all "or over each");
+  check (list token_testable) "min over each"
+    [ Parser.MIN; Parser.OVER; Parser.EACH; Parser.EOF ]
+    (lex_all "min over each");
+  check (list token_testable) "max over each"
+    [ Parser.MAX; Parser.OVER; Parser.EACH; Parser.EOF ]
+    (lex_all "max over each")
 
 let test_string_escapes () =
   check (list token_testable) "string escapes"

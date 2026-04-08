@@ -73,9 +73,21 @@ let rec pp_expr procs fmt = function
   | EExists (params, guards, body) ->
       fprintf fmt "∃ %a · %a" (pp_quant_bindings procs) (params, guards)
         (pp_expr procs) body
-  | EEach (params, guards, _, body) ->
+  | EEach (params, guards, None, body) ->
       fprintf fmt "each %a · %a" (pp_quant_bindings procs) (params, guards)
         (pp_expr procs) body
+  | EEach (params, guards, Some comb, body) ->
+      let comb_str =
+        match comb with
+        | CombAdd -> "+"
+        | CombMul -> "×"
+        | CombAnd -> "∧"
+        | CombOr -> "∨"
+        | CombMin -> "min"
+        | CombMax -> "max"
+      in
+      fprintf fmt "%s over each %a · %a" comb_str (pp_quant_bindings procs)
+        (params, guards) (pp_expr procs) body
   | ECond arms ->
       fprintf fmt "cond %a"
         (pp_print_list ~pp_sep:pp_params_sep (fun fmt (arm, cons) ->

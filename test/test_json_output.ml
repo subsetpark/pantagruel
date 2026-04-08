@@ -155,6 +155,20 @@ let test_expr_to_json_quantifiers () =
   check bool "each" true
     (has_key "each"
        (Json_output.expr_to_json (Ast.EEach (p, [], None, EVar "x"))));
+  (match Json_output.expr_to_json (Ast.EEach (p, [], None, EVar "x")) with
+  | `Assoc [ ("each", `Assoc fields) ] -> (
+      match List.assoc "combiner" fields with
+      | `Null -> ()
+      | _ -> fail "Expected null combiner for bare each")
+  | _ -> fail "Expected each JSON object");
+  (match
+     Json_output.expr_to_json (Ast.EEach (p, [], Some CombMin, EVar "x"))
+   with
+  | `Assoc [ ("each", `Assoc fields) ] -> (
+      match List.assoc "combiner" fields with
+      | `String "min" -> ()
+      | _ -> fail "Expected combiner \"min\" for CombMin")
+  | _ -> fail "Expected each JSON object");
   check bool "cond" true
     (has_key "cond"
        (Json_output.expr_to_json (Ast.ECond [ (ELitBool true, ELitNat 1) ])));
