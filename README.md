@@ -31,6 +31,15 @@ dune test
 dune install
 ```
 
+## Development
+
+To set up pre-commit hooks (format check, build, and test on every commit):
+
+```bash
+brew install lefthook   # or see https://github.com/evilmartians/lefthook
+lefthook install
+```
+
 ## Usage
 
 ```bash

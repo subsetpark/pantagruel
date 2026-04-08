@@ -162,7 +162,7 @@ let test_compatible () =
 (* --- Property-based tests --- *)
 
 (* Generator for random ty values, depth-limited *)
-let gen_ty_at_depth =
+let[@warning "-44"] gen_ty_at_depth =
   let open QCheck.Gen in
   let base =
     oneof

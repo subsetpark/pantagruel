@@ -326,7 +326,7 @@ let test_roundtrip_type_exprs () =
 
 (* --- Property-based: random type expression round trips --- *)
 
-let gen_type_expr_at_depth =
+let[@warning "-44"] gen_type_expr_at_depth =
   let open QCheck.Gen in
   let names = [ "Nat"; "Bool"; "Int"; "String"; "Real"; "Nothing" ] in
   let base = oneof_list (List.map (fun n -> Ast.TName n) names) in

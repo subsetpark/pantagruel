@@ -1,0 +1,16 @@
+language: en
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  path_instructions:
+    - path: "lib/**"
+      instructions: "This is the core library for Pantagruel, a specification language checker written in OCaml. Focus on type safety, exhaustive pattern matching, and correctness."
+    - path: "test/**"
+      instructions: "Alcotest + QCheck tests. Check for good coverage of edge cases."
+    - path: "samples/**"
+      instructions: "Sample .pant specification files used for validation and documentation."
+chat:
+  auto_reply: true

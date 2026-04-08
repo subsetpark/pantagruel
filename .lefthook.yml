@@ -1,0 +1,12 @@
+pre-commit:
+  parallel: false
+  commands:
+    format-check:
+      run: opam exec -- dune build @fmt
+      fail_text: "Formatting check failed. Run 'dune fmt' to fix."
+    build:
+      run: opam exec -- dune build
+      fail_text: "Build failed. Fix compilation errors before committing."
+    test:
+      run: opam exec -- dune test
+      fail_text: "Tests failed. Fix failing tests before committing."
