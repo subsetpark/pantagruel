@@ -27,6 +27,10 @@ type type_error =
       (** function name, context names *)
   | BoolParam of string * string * loc  (** param name, declaration name *)
   | ComprehensionNeedEach of ty * loc
+  | AggregateRequiresNumeric of string * ty * loc
+      (** combiner symbol, actual body type *)
+  | AggregateRequiresBool of string * ty * loc
+      (** combiner symbol, actual body type *)
 [@@deriving show]
 
 let type_warnings : type_error list ref = ref []
@@ -158,13 +162,26 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
       | CombAdd ->
           if is_numeric body_ty then
             Ok (match body_ty with TyNat -> TyNat0 | ty -> ty)
-          else Error (NotNumeric (body_ty, ctx.loc))
-      | CombMul | CombMin | CombMax ->
+          else Error (AggregateRequiresNumeric ("+", body_ty, ctx.loc))
+      | CombMul ->
           if is_numeric body_ty then Ok body_ty
-          else Error (NotNumeric (body_ty, ctx.loc))
+          else Error (AggregateRequiresNumeric ("*", body_ty, ctx.loc))
+      | CombMin | CombMax ->
+          if is_numeric body_ty then Ok body_ty
+          else
+            Error
+              (AggregateRequiresNumeric
+                 ( (match comb with CombMin -> "min" | _ -> "max"),
+                   body_ty,
+                   ctx.loc ))
       | CombAnd | CombOr ->
           if equal_ty body_ty TyBool then Ok TyBool
-          else Error (ExpectedBool (body_ty, ctx.loc)))
+          else
+            Error
+              (AggregateRequiresBool
+                 ( (match comb with CombAnd -> "and" | _ -> "or"),
+                   body_ty,
+                   ctx.loc )))
   | ECond arms ->
       let* _ =
         map_result
