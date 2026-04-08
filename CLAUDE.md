@@ -75,7 +75,7 @@ Pantagruel is a specification language checker written in OCaml. It processes `.
 - Actions enable primed expressions (`owner' d`) for state transitions
 - Action labels are not in the term namespace — they're purely human-readable annotations
 - Quantifiers: `all u: User | ...` and `some x: T | ...` (body must be Bool)
-- Comprehensions: `each u: User | f u` produces `[U]` (dedicated list comprehension keyword)
+- Comprehensions: `each u: User | f u` produces `[U]`; with a combiner prefix (`+ over each u: User | f u`) produces a scalar aggregate (e.g., `Nat0`)
 - Tuple projection: `point.1`, `point.2`
 - List cardinality: `#users`
 - Membership: `x in Domain`

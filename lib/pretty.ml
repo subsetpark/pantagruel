@@ -52,6 +52,15 @@ let pp_binop fmt = function
   | OpMul -> pp_print_char fmt '*'
   | OpDiv -> pp_print_char fmt '/'
 
+(** Print a combiner keyword *)
+let pp_combiner fmt = function
+  | CombAdd -> pp_print_char fmt '+'
+  | CombMul -> pp_print_char fmt '*'
+  | CombAnd -> pp_print_string fmt "and"
+  | CombOr -> pp_print_string fmt "or"
+  | CombMin -> pp_print_string fmt "min"
+  | CombMax -> pp_print_string fmt "max"
+
 (** Print an expression with proper precedence handling *)
 let rec pp_expr fmt = function
   | EInitially e -> fprintf fmt "initially %a" pp_expr e
@@ -61,9 +70,12 @@ let rec pp_expr fmt = function
   | EExists (params, guards, body) ->
       fprintf fmt "some %a | %a" pp_quant_params_guards (params, guards) pp_expr
         body
-  | EEach (params, guards, body) ->
+  | EEach (params, guards, None, body) ->
       fprintf fmt "each %a | %a" pp_quant_params_guards (params, guards) pp_expr
         body
+  | EEach (params, guards, Some comb, body) ->
+      fprintf fmt "%a over each %a | %a" pp_combiner comb pp_quant_params_guards
+        (params, guards) pp_expr body
   | ECond arms ->
       fprintf fmt "cond %a"
         (pp_print_list ~pp_sep:pp_sep_comma (fun fmt (arm, cons) ->

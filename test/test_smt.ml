@@ -1208,6 +1208,7 @@ let test_in_each_comprehension () =
         EEach
           ( [ { param_name = "u"; param_type = TName "User" } ],
             [],
+            None,
             EApp (EVar "role", [ EVar "u" ]) ) )
   in
   let result = Smt.translate_expr config env expr in
@@ -1238,6 +1239,7 @@ let test_in_each_comprehension_guarded () =
         EEach
           ( [ { param_name = "u"; param_type = TName "User" } ],
             [ GExpr (EApp (EVar "active", [ EVar "u" ])) ],
+            None,
             EApp (EVar "role", [ EVar "u" ]) ) )
   in
   let result = Smt.translate_expr config env expr in
@@ -1266,8 +1268,10 @@ let test_in_membership_comprehension () =
       ( OpIn,
         EVar "r",
         EEach
-          ([], [ GIn ("u", EVar "admins") ], EApp (EVar "role", [ EVar "u" ]))
-      )
+          ( [],
+            [ GIn ("u", EVar "admins") ],
+            None,
+            EApp (EVar "role", [ EVar "u" ]) ) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "has select admins" true (contains result "(select admins");
@@ -1291,6 +1295,7 @@ let test_card_each_comprehension () =
         EEach
           ( [ { param_name = "u"; param_type = TName "User" } ],
             [],
+            None,
             EApp (EVar "role", [ EVar "u" ]) ) )
   in
   let result = Smt.translate_expr config env expr in
@@ -1312,12 +1317,193 @@ let test_each_comprehension_standalone () =
     Ast.EEach
       ( [ { param_name = "u"; param_type = TName "User" } ],
         [],
+        None,
         EApp (EVar "role", [ EVar "u" ]) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "has as const" true (contains result "as const");
   check bool "has store" true (contains result "store");
   check bool "has Array Role Bool" true (contains result "(Array Role Bool)")
+
+let test_aggregate_add () =
+  (* + over each u: User | score u → (+ (score User_0) (score User_1) ...) *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "score"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [],
+        Some CombAdd,
+        EApp (EVar "score", [ EVar "u" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "has +" true (contains result "(+");
+  check bool "has (score User_0)" true (contains result "(score User_0)");
+  check bool "has (score User_1)" true (contains result "(score User_1)")
+
+let test_aggregate_and () =
+  (* and over each u: User | active u → (and (active User_0) ...) *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "active"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [],
+        Some CombAnd,
+        EApp (EVar "active", [ EVar "u" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "has and" true (contains result "(and");
+  check bool "has (active User_0)" true (contains result "(active User_0)")
+
+let test_aggregate_min_guarded () =
+  (* min over each u: User, active u | score u → pant_min with ite guards *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "score"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "active"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [ GExpr (EApp (EVar "active", [ EVar "u" ])) ],
+        Some CombMin,
+        EApp (EVar "score", [ EVar "u" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "has <=" true (contains result "(<=");
+  check bool "has ite" true (contains result "(ite")
+
+let test_aggregate_add_empty () =
+  (* + over empty domain (bound=0) should return identity "0" *)
+  let zero_config =
+    Smt.make_config ~bound:0 ~steps:5 ~domain_bounds:Env.StringMap.empty
+      ~inject_guards:true
+  in
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "score"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [],
+        Some CombAdd,
+        EApp (EVar "score", [ EVar "u" ]) )
+  in
+  let result = Smt.translate_expr zero_config env expr in
+  check string "empty add = identity" "0" result
+
+let test_aggregate_decl_guard_injection () =
+  (* + over each u: User | score u where score has decl guard "active u"
+     should inject (active User_0), (active User_1) etc. as guards *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "score"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "active"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule_guards "score"
+         [ Ast.{ param_name = "u"; param_type = TName "User" } ]
+         [ GExpr (EApp (EVar "active", [ EVar "u" ])) ]
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [],
+        Some CombAdd,
+        EApp (EVar "score", [ EVar "u" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "has (active User_0)" true (contains result "(active User_0)");
+  check bool "has ite" true (contains result "(ite")
+
+let test_aggregate_add_real () =
+  (* + over each u: User, active u | real_score u — guarded Real body uses 0.0 *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "real_score"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyReal))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "active"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [ GExpr (EApp (EVar "active", [ EVar "u" ])) ],
+        Some CombAdd,
+        EApp (EVar "real_score", [ EVar "u" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "has 0.0 identity" true (contains result "0.0");
+  check bool "has +" true (contains result "(+")
+
+let test_aggregate_add_real_empty () =
+  (* + over empty Real domain should return "0.0" *)
+  let zero_config =
+    Smt.make_config ~bound:0 ~steps:5 ~domain_bounds:Env.StringMap.empty
+      ~inject_guards:true
+  in
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "real_score"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyReal))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [],
+        Some CombAdd,
+        EApp (EVar "real_score", [ EVar "u" ]) )
+  in
+  let result = Smt.translate_expr zero_config env expr in
+  check string "empty real add = 0.0" "0.0" result
+
+let test_aggregate_min_real () =
+  (* min over each u: User | real_score u should use 0.0 seed, not 0 *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "real_score"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyReal))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [],
+        Some CombMin,
+        EApp (EVar "real_score", [ EVar "u" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "has 0.0 seed" true (contains result "0.0");
+  check bool "has <=" true (contains result "(<=")
 
 let comprehension_tests =
   [
@@ -1327,6 +1513,15 @@ let comprehension_tests =
       test_in_membership_comprehension;
     test_case "card each comprehension" `Quick test_card_each_comprehension;
     test_case "each standalone" `Quick test_each_comprehension_standalone;
+    test_case "aggregate add" `Quick test_aggregate_add;
+    test_case "aggregate and" `Quick test_aggregate_and;
+    test_case "aggregate min guarded" `Quick test_aggregate_min_guarded;
+    test_case "aggregate add empty" `Quick test_aggregate_add_empty;
+    test_case "aggregate decl guard injection" `Quick
+      test_aggregate_decl_guard_injection;
+    test_case "aggregate add real" `Quick test_aggregate_add_real;
+    test_case "aggregate add real empty" `Quick test_aggregate_add_real_empty;
+    test_case "aggregate min real" `Quick test_aggregate_min_real;
   ]
 
 (* --- Closure tests --- *)

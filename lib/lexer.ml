@@ -115,6 +115,9 @@ let keyword_or_lower_ident = function
   | "initially" -> Parser.INITIALLY
   | "closure" -> Parser.CLOSURE
   | "cond" -> Parser.COND
+  | "over" -> Parser.OVER
+  | "min" -> Parser.MIN
+  | "max" -> Parser.MAX
   | s -> Parser.LOWER_IDENT s
 
 (** Skip line comment *)
@@ -367,6 +370,9 @@ let string_of_token = function
   | Parser.INITIALLY -> "'initially'"
   | Parser.CLOSURE -> "'closure'"
   | Parser.COND -> "'cond'"
+  | Parser.OVER -> "'over'"
+  | Parser.MIN -> "'min'"
+  | Parser.MAX -> "'max'"
 
 (** Describe a token category (for "expected X" messages) *)
 let describe_token = function
@@ -435,6 +441,9 @@ let all_tokens =
     Parser.INITIALLY;
     Parser.CLOSURE;
     Parser.COND;
+    Parser.OVER;
+    Parser.MIN;
+    Parser.MAX;
     Parser.ACTION_LABEL "";
     Parser.EOF;
   ]

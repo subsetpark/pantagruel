@@ -75,7 +75,7 @@ let symbols_in_expr expr =
     | EInitially e -> go e
     | EForall (params, guards, body)
     | EExists (params, guards, body)
-    | EEach (params, guards, body) ->
+    | EEach (params, guards, _, body) ->
         List.iter
           (fun p ->
             types := StringSet.union !types (types_in_type_expr p.param_type))
@@ -170,7 +170,7 @@ let rec uses_primed = function
   | EUnop (_, e) -> uses_primed e
   | EForall (_, guards, body)
   | EExists (_, guards, body)
-  | EEach (_, guards, body) ->
+  | EEach (_, guards, _, body) ->
       List.exists
         (function
           | GExpr e -> uses_primed e

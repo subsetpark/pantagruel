@@ -966,6 +966,56 @@ some u: User | role u.
     | Check.ComprehensionNeedEach _ -> true
     | _ -> false)
 
+let test_combiner_add_numeric () =
+  (* + over each x: D | f x where f: D → Nat types as Nat *)
+  check_ok
+    {|module TEST.
+
+User.
+score u: User => Nat.
+---
+(+ over each u: User | score u) >= 0.
+|}
+
+let test_combiner_and_bool () =
+  (* and over each x: D | f x where f: D → Bool types as Bool *)
+  check_ok
+    {|module TEST.
+
+User.
+active u: User => Bool.
+---
+and over each u: User | active u.
+|}
+
+let test_combiner_numeric_on_bool_fails () =
+  (* + over each with Bool body → NotNumeric *)
+  check_error
+    {|module TEST.
+
+User.
+active u: User => Bool.
+---
+(+ over each u: User | active u) >= 0.
+|}
+    (function
+    | Check.NotNumeric _ -> true
+    | _ -> false)
+
+let test_combiner_bool_on_numeric_fails () =
+  (* and over each with Nat body → ExpectedBool *)
+  check_error
+    {|module TEST.
+
+User.
+score u: User => Nat.
+---
+and over each u: User | score u.
+|}
+    (function
+    | Check.ExpectedBool _ -> true
+    | _ -> false)
+
 (* --- Closure tests --- *)
 
 let test_closure_valid () =
@@ -1424,6 +1474,12 @@ let () =
           test_case "all non-bool fails" `Quick
             test_standalone_comprehension_fails;
           test_case "some non-bool fails" `Quick test_all_non_bool_body_error;
+          test_case "combiner add numeric" `Quick test_combiner_add_numeric;
+          test_case "combiner and bool" `Quick test_combiner_and_bool;
+          test_case "combiner numeric on bool fails" `Quick
+            test_combiner_numeric_on_bool_fails;
+          test_case "combiner bool on numeric fails" `Quick
+            test_combiner_bool_on_numeric_fails;
         ] );
       ( "closure",
         [

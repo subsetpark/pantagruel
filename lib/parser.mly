@@ -55,6 +55,7 @@
 %token DOT COMMA COLON DCOLON PIPE AT SEPARATOR
 %token LPAREN RPAREN LBRACKET RBRACKET
 %token LBRACE RBRACE CONTEXT INITIALLY CLOSURE COND
+%token OVER MIN MAX
 %token <string> ACTION_LABEL
 %token EOF
 
@@ -228,7 +229,17 @@ quantified:
   | EXISTS pg=quant_params_guards PIPE e=expr
     { let (params, guards) = pg in EExists (params, guards, e) }
   | EACH pg=quant_params_guards PIPE e=expr
-    { let (params, guards) = pg in EEach (params, guards, e) }
+    { let (params, guards) = pg in EEach (params, guards, None, e) }
+  | c=combiner OVER EACH pg=quant_params_guards PIPE e=expr
+    { let (params, guards) = pg in EEach (params, guards, Some c, e) }
+
+combiner:
+  | PLUS  { CombAdd }
+  | TIMES { CombMul }
+  | AND   { CombAnd }
+  | OR    { CombOr }
+  | MIN   { CombMin }
+  | MAX   { CombMax }
 
 (* Parameters and guards in quantifiers *)
 quant_params_guards:

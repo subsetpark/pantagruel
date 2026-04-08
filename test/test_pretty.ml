@@ -120,6 +120,16 @@ let test_each () =
        (Ast.EEach
           ( [ { param_name = "u"; param_type = TName "User" } ],
             [],
+            None,
+            EApp (EVar "f", [ EVar "u" ]) )))
+
+let test_each_with_combiner () =
+  check string "over each" "+ over each u: User | f u"
+    (pp
+       (Ast.EEach
+          ( [ { param_name = "u"; param_type = TName "User" } ],
+            [],
+            Some CombAdd,
             EApp (EVar "f", [ EVar "u" ]) )))
 
 let test_cond () =
@@ -244,6 +254,7 @@ let test_roundtrip_simple_exprs () =
       "module T.\nFoo.\nf => Bool.\ng => Bool.\n---\nf and g.\n";
       "module T.\nFoo.\nf => Bool.\ng => Bool.\n---\nf or g.\n";
       "module T.\nFoo.\nf => Bool.\ng => Bool.\n---\n~f.\n";
+      "module T.\nUser.\nf u: User => Nat.\n---\n+ over each u: User | f u.\n";
     ]
   in
   List.iter
@@ -439,6 +450,7 @@ let () =
           test_case "forall" `Quick test_forall;
           test_case "exists" `Quick test_exists;
           test_case "each" `Quick test_each;
+          test_case "over each" `Quick test_each_with_combiner;
           test_case "cond" `Quick test_cond;
           test_case "initially" `Quick test_initially;
         ] );

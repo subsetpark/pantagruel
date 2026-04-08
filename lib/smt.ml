@@ -680,11 +680,11 @@ let rec substitute_vars (subst : (string * expr) list) (e : expr) : expr =
       let subst' = List.filter (fun (n, _) -> not (List.mem n bound)) subst in
       let subst'', gs' = substitute_guards subst' gs in
       EExists (ps, gs', substitute_vars subst'' body)
-  | EEach (ps, gs, body) ->
+  | EEach (ps, gs, comb, body) ->
       let bound = List.map (fun (p : param) -> p.param_name) ps in
       let subst' = List.filter (fun (n, _) -> not (List.mem n bound)) subst in
       let subst'', gs' = substitute_guards subst' gs in
-      EEach (ps, gs', substitute_vars subst'' body)
+      EEach (ps, gs', comb, substitute_vars subst'' body)
   | ECond arms ->
       ECond
         (List.map
@@ -730,10 +730,10 @@ let rec prime_expr ?(bound = []) (e : expr) : expr =
       let bound' = List.map (fun (p : param) -> p.param_name) ps @ bound in
       let bound'', gs' = prime_guards ~bound:bound' gs in
       EExists (ps, gs', prime_expr ~bound:bound'' body)
-  | EEach (ps, gs, body) ->
+  | EEach (ps, gs, comb, body) ->
       let bound' = List.map (fun (p : param) -> p.param_name) ps @ bound in
       let bound'', gs' = prime_guards ~bound:bound' gs in
-      EEach (ps, gs', prime_expr ~bound:bound'' body)
+      EEach (ps, gs', comb, prime_expr ~bound:bound'' body)
   | ECond arms ->
       ECond
         (List.map
@@ -909,8 +909,10 @@ let rec translate_expr config env (e : expr) =
   | EUnop (op, e) -> translate_unop config env op e
   | EForall (params, guards, body) ->
       translate_quantifier config env "forall" params guards body
-  | EEach (params, guards, body) ->
+  | EEach (params, guards, None, body) ->
       translate_forall_comprehension config env params guards body
+  | EEach (params, guards, Some comb, body) ->
+      translate_aggregate config env comb params guards body
   | EExists (params, guards, body) ->
       translate_quantifier config env "exists" params guards body
   | ECond arms -> translate_cond config env arms
@@ -987,7 +989,7 @@ and translate_in config env elem set =
       | [] -> "false"
       | [ single ] -> single
       | _ -> Printf.sprintf "(or %s)" (String.concat " " disj))
-  | EEach (params, guards, body) -> (
+  | EEach (params, guards, None, body) -> (
       (* y in (each x: D | f x) → disjunction: (= y (f d0)) ∨ (= y (f d1)) ...
          y in (each x: D, g x | f x) → (g d0 ∧ = y (f d0)) ∨ ... *)
       let expanded =
@@ -1017,7 +1019,7 @@ and translate_subset config env e1 e2 =
   (* xs subset Domain → every member of xs is in the domain (tautological
      for well-typed programs, but expand over finite elements for soundness) *)
   match e2 with
-  | EEach (params, guards, body) -> (
+  | EEach (params, guards, None, body) -> (
       (* xs subset (each x: D | f x) → for every elem of xs, elem is in the
          comprehension. Expand: for each domain elem d of the LHS element type,
          (select xs d) => (exists comprehension elem matching d). *)
@@ -1097,7 +1099,7 @@ and translate_card config env e =
   | EDomain name ->
       (* #Domain = bound (all elements exist) *)
       string_of_int (bound_for config name)
-  | EEach (params, guards, body) -> (
+  | EEach (params, guards, None, body) -> (
       (* #(each x: D | f x) — count distinct values in the comprehension.
          Requires the range type to be a bounded domain. Expand over range
          domain elements, check if each is produced by any source element. *)
@@ -1237,6 +1239,161 @@ and translate_forall_comprehension config env params guards body =
       bindings final_var
   in
   Printf.sprintf "(let ((_cl_0 %s)) %s)" empty inner
+
+and translate_aggregate config env (comb : combiner) params guards body =
+  (* Aggregate: COMB over each x: D, g | f x
+     Expands over finite domain elements and combines with the operator.
+     For +, *, and, or: guarded elements use identity when guard is false.
+     For min, max: pairwise fold using ite. *)
+  let local_bound =
+    List.map (fun (p : param) -> p.param_name) params
+    @ List.concat_map
+        (function
+          | GParam p -> [ p.param_name ] | GIn (n, _) -> [ n ] | GExpr _ -> [])
+        guards
+  in
+  let inner_config =
+    { config with quant_bound = local_bound @ config.quant_bound }
+  in
+  let expanded =
+    expand_comprehension translate_expr inner_config env params guards body
+  in
+  (* Inject declaration guards from guarded rule applications in the body *)
+  let expanded =
+    if not config.inject_guards then expanded
+    else
+      match resolve_comprehension_binding env params guards with
+      | Error _ -> expanded
+      | Ok (var_name, dname, _, bindings) ->
+          let env_inner = Env.with_vars bindings env in
+          let bound_names = local_bound @ config.quant_bound in
+          let app_guards =
+            collect_body_guards ~bound:bound_names env_inner body
+          in
+          if app_guards = [] then expanded
+          else
+            let pname = sanitize_ident var_name in
+            let guard_templates =
+              List.map (translate_expr inner_config env_inner) app_guards
+            in
+            let elems = domain_elements dname (bound_for inner_config dname) in
+            List.map2
+              (fun (guard_opt, value_str) elem ->
+                let sub s = replace_word ~from:pname ~to_:elem s in
+                let app_guard_strs = List.map sub guard_templates in
+                let all_guards =
+                  (match guard_opt with Some g -> [ g ] | None -> [])
+                  @ app_guard_strs
+                in
+                let merged =
+                  match all_guards with
+                  | [] -> None
+                  | [ g ] -> Some g
+                  | gs ->
+                      Some (Printf.sprintf "(and %s)" (String.concat " " gs))
+                in
+                (merged, value_str))
+              expanded elems
+  in
+  (* Infer body type to choose correct SMT sort for identity values *)
+  let body_is_real =
+    match resolve_comprehension_binding env params guards with
+    | Ok (_, _, _, bindings) -> (
+        let env_inner = Env.with_vars bindings env in
+        match
+          Check.infer_type { Check.env = env_inner; loc = dummy_loc } body
+        with
+        | Ok TyReal -> true
+        | _ -> false)
+    | Error _ -> false
+  in
+  let smt_op_and_identity =
+    match comb with
+    | CombAdd -> Some ("+", if body_is_real then "0.0" else "0")
+    | CombMul -> Some ("*", if body_is_real then "1.0" else "1")
+    | CombAnd -> Some ("and", "true")
+    | CombOr -> Some ("or", "false")
+    | CombMin | CombMax -> None
+  in
+  match smt_op_and_identity with
+  | Some (smt_op, identity) -> (
+      let values =
+        List.map
+          (fun (guard_opt, value_str) ->
+            match guard_opt with
+            | None -> value_str
+            | Some g -> Printf.sprintf "(ite %s %s %s)" g value_str identity)
+          expanded
+      in
+      match values with
+      | [] -> identity
+      | [ single ] -> single
+      | _ -> Printf.sprintf "(%s %s)" smt_op (String.concat " " values))
+  | None -> (
+      (* min/max: no identity element, inline comparison with ite.
+         For guarded elements, only include when the guard holds;
+         use a seen/acc pair so the first accepted value seeds the fold. *)
+      let cmp_op = match comb with CombMin -> "<=" | _ -> ">=" in
+      let inline_minmax a b =
+        Printf.sprintf "(ite (%s %s %s) %s %s)" cmp_op a b a b
+      in
+      match expanded with
+      | [] -> failwith "SMT: min/max over empty domain"
+      | _ ->
+          (* Each element is either unconditional or guarded. We fold using
+             a (seen_flag, accumulator) pair encoded in SMT: seen_flag is a
+             Bool that tracks whether any element has been accepted yet.
+             When seen is false, the new value replaces acc unconditionally. *)
+          let seen_var = "_agg_seen" in
+          let acc_var = "_agg_acc" in
+          let seen_ref = ref seen_var in
+          let acc_ref = ref acc_var in
+          let bindings = ref [] in
+          let cnt = ref 0 in
+          List.iter
+            (fun (guard_opt, value_str) ->
+              let i = !cnt in
+              incr cnt;
+              let prev_seen = !seen_ref in
+              let prev_acc = !acc_ref in
+              let new_seen = Printf.sprintf "_agg_s%d" i in
+              let new_acc = Printf.sprintf "_agg_a%d" i in
+              let merged =
+                match guard_opt with
+                | None ->
+                    (* Unconditional: always accepted *)
+                    let acc_expr =
+                      Printf.sprintf "(ite %s %s %s)" prev_seen
+                        (inline_minmax prev_acc value_str)
+                        value_str
+                    in
+                    (new_seen, "true", new_acc, acc_expr)
+                | Some g ->
+                    (* Guarded: only accepted when guard holds *)
+                    let seen_expr = Printf.sprintf "(or %s %s)" prev_seen g in
+                    let acc_expr =
+                      Printf.sprintf "(ite %s (ite %s %s %s) %s)" g prev_seen
+                        (inline_minmax prev_acc value_str)
+                        value_str prev_acc
+                    in
+                    (new_seen, seen_expr, new_acc, acc_expr)
+              in
+              let ns, se, na, ae = merged in
+              bindings := (na, ae) :: (ns, se) :: !bindings;
+              seen_ref := ns;
+              acc_ref := na)
+            expanded;
+          (* Wrap in nested lets, seeded with seen=false and acc=0 (dummy) *)
+          let inner = !acc_ref in
+          let lets =
+            List.fold_left
+              (fun body (name, expr) ->
+                Printf.sprintf "(let ((%s %s)) %s)" name expr body)
+              inner (List.rev !bindings)
+          in
+          let dummy_acc = if body_is_real then "0.0" else "0" in
+          Printf.sprintf "(let ((%s false) (%s %s)) %s)" seen_var acc_var
+            dummy_acc lets)
 
 and translate_quantifier config env quant params guards body =
   (* Enrich env with formal parameter bindings so that type inference
@@ -1943,7 +2100,7 @@ let rec collect_function_refs (e : expr) =
   | EPrimed name -> [ name ]
   | EBinop (_, e1, e2) -> collect_function_refs e1 @ collect_function_refs e2
   | EUnop (_, e) -> collect_function_refs e
-  | EForall (_, gs, body) | EExists (_, gs, body) | EEach (_, gs, body) ->
+  | EForall (_, gs, body) | EExists (_, gs, body) | EEach (_, gs, _, body) ->
       List.concat_map collect_guard_refs gs @ collect_function_refs body
   | ETuple es -> List.concat_map collect_function_refs es
   | EProj (e, _) -> collect_function_refs e
@@ -2535,7 +2692,8 @@ let collect_conds_in_expr (e : expr) : cond_info list =
             walk quant_ctx arm;
             walk quant_ctx cons)
           arms
-    | EForall (ps, gs, body) | EExists (ps, gs, body) | EEach (ps, gs, body) ->
+    | EForall (ps, gs, body) | EExists (ps, gs, body) | EEach (ps, gs, _, body)
+      ->
         walk ((ps, gs) :: quant_ctx) body;
         List.iter
           (function
