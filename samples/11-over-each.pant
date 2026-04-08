@@ -1,0 +1,71 @@
+module OverEach.
+
+> Over-each: aggregate quantifiers that combine values across a domain.
+> Six combiners are available: +, *, and, or, min, max.
+> Syntax: COMBINER over each VAR: DOMAIN [, GUARD]* | BODY.
+
+> ══════════════════════════════════════════
+> Arithmetic combiners
+> ══════════════════════════════════════════
+
+Student.
+score s: Student => Nat.
+weight s: Student => Nat.
+active? s: Student => Bool.
+
+total-score => Nat.
+product-of-weights => Nat.
+min-score => Nat.
+max-score => Nat.
+
+---
+
+> Sum: add up all scores.
+total-score = (+ over each s: Student | score s).
+
+> Product: multiply all weights.
+product-of-weights = (* over each s: Student | weight s).
+
+> Min and max: find extremes.
+min-score = (min over each s: Student | score s).
+max-score = (max over each s: Student | score s).
+
+where
+
+> ══════════════════════════════════════════
+> Boolean combiners
+> ══════════════════════════════════════════
+
+Item.
+valid? i: Item => Bool.
+available? i: Item => Bool.
+
+---
+
+> And: conjunction over a domain (true iff all items are valid).
+and over each i: Item | valid? i.
+
+> Or: disjunction over a domain (true iff some item is available).
+or over each i: Item | available? i.
+
+where
+
+> ══════════════════════════════════════════
+> Guards on over-each
+> ══════════════════════════════════════════
+> Guards filter which elements participate in the aggregate.
+
+Widget.
+cost w: Widget => Nat.
+enabled? w: Widget => Bool.
+
+---
+
+> Sum only active students' scores.
+(+ over each s: Student, active? s | score s) >= 0.
+
+> Max over active students.
+(max over each s: Student, active? s | score s) >= 0.
+
+> Sum of costs for enabled widgets.
+(+ over each w: Widget, enabled? w | cost w) >= 0.

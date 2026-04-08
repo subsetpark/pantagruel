@@ -1,0 +1,21 @@
+> Banking spec: total balance defined via + over each.
+> The invariant total >= 0 is verifiable because balance returns Nat0.
+module OverEachOk.
+context Accounts.
+
+Account.
+{Accounts} balance a: Account => Nat0.
+total-balance => Nat0.
+
+---
+total-balance = (+ over each a: Account | balance a).
+all a: Account | balance a >= 0.
+total-balance >= 0.
+initially all a: Account | balance a = 0.
+
+where
+
+Accounts ~> Deposit @ a: Account, amount: Nat.
+---
+balance' a = balance a + amount.
+all b: Account | b != a -> balance' b = balance b.
