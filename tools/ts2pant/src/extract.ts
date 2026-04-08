@@ -191,6 +191,12 @@ const BUILTIN_NAMES = new Set([
   "Date",
   "RegExp",
   "Error",
+  "Object",
+  "Function",
+  "Symbol",
+  "BigInt",
+  "WeakMap",
+  "WeakSet",
 ]);
 
 function collectNamedTypes(

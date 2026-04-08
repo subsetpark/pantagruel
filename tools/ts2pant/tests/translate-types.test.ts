@@ -132,12 +132,11 @@ describe("type alias -> alias declaration", () => {
       type Result = Value | null;
     `);
 
-    const alias = decls.find((d) => d.kind === "alias" && d.name === "Result");
-    expect(alias).toBeDefined();
-    expect(alias!.kind).toBe("alias");
-    if (alias!.kind === "alias") {
-      expect(alias!.type).toBe("Value + Nothing");
-    }
+    expect(decls).toContainEqual({
+      kind: "alias",
+      name: "Result",
+      type: "Value + Nothing",
+    });
   });
 
   it("maps simple alias to named type", () => {

@@ -52,6 +52,7 @@ export function mapTsType(
     if (typeArgs.length === 1) {
       return `[${mapTsType(typeArgs[0], checker, strategy)}]`;
     }
+    return checker.typeToString(type);
   }
 
   // Union
@@ -81,6 +82,7 @@ export function mapTsType(
 
 /** Derive a short parameter name from a type name (first letter, lowercased). */
 function paramName(typeName: string): string {
+  if (!typeName) return "x";
   return typeName[0].toLowerCase();
 }
 
