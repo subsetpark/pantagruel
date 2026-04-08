@@ -1016,6 +1016,118 @@ and over each u: User | score u.
     | Check.ExpectedBool _ -> true
     | _ -> false)
 
+let test_combiner_mul_numeric () =
+  (* * over each x: D | f x where f: D → Nat types as Nat *)
+  check_ok
+    {|module TEST.
+
+User.
+score u: User => Nat.
+---
+(* over each u: User | score u) >= 0.
+|}
+
+let test_combiner_min_numeric () =
+  (* min over each x: D | f x where f: D → Nat types as Nat *)
+  check_ok
+    {|module TEST.
+
+User.
+score u: User => Nat.
+---
+(min over each u: User | score u) >= 0.
+|}
+
+let test_combiner_max_numeric () =
+  (* max over each x: D | f x where f: D → Nat types as Nat *)
+  check_ok
+    {|module TEST.
+
+User.
+score u: User => Nat.
+---
+(max over each u: User | score u) >= 0.
+|}
+
+let test_combiner_max_real () =
+  (* max over each x: D | f x where f: D → Real types as Real *)
+  check_ok
+    {|module TEST.
+
+User.
+rating u: User => Real.
+---
+(max over each u: User | rating u) >= 0.
+|}
+
+let test_combiner_min_bool_fails () =
+  (* min over each with Bool body → NotNumeric *)
+  check_error
+    {|module TEST.
+
+User.
+active u: User => Bool.
+---
+(min over each u: User | active u) >= 0.
+|}
+    (function
+    | Check.NotNumeric _ -> true
+    | _ -> false)
+
+let test_combiner_max_bool_fails () =
+  (* max over each with Bool body → NotNumeric *)
+  check_error
+    {|module TEST.
+
+User.
+active u: User => Bool.
+---
+(max over each u: User | active u) >= 0.
+|}
+    (function
+    | Check.NotNumeric _ -> true
+    | _ -> false)
+
+let test_combiner_mul_bool_fails () =
+  (* * over each with Bool body → NotNumeric *)
+  check_error
+    {|module TEST.
+
+User.
+active u: User => Bool.
+---
+(* over each u: User | active u) >= 0.
+|}
+    (function
+    | Check.NotNumeric _ -> true
+    | _ -> false)
+
+let test_combiner_add_nat_result_is_nat () =
+  (* + over each u: User | score u where score => Nat → result type is Nat
+     (not Nat0 as it previously was); the result can be passed where Nat is expected.
+     Previously CombAdd returned TyNat0 for Nat bodies, which is NOT a subtype of Nat.
+     Now it returns TyNat, so passing to a Nat-requiring function succeeds. *)
+  check_ok
+    {|module TEST.
+
+User.
+score u: User => Nat.
+f x: Nat => Bool.
+---
+f (+ over each u: User | score u).
+|}
+
+let test_combiner_or_bool () =
+  (* or over each x: D | f x where f: D → Bool types as Bool *)
+  check_ok
+    {|module TEST.
+
+User.
+active u: User => Bool.
+---
+or over each u: User | active u.
+|}
+
 (* --- Closure tests --- *)
 
 let test_closure_valid () =
@@ -1480,6 +1592,16 @@ let () =
             test_combiner_numeric_on_bool_fails;
           test_case "combiner bool on numeric fails" `Quick
             test_combiner_bool_on_numeric_fails;
+          test_case "combiner mul numeric" `Quick test_combiner_mul_numeric;
+          test_case "combiner min numeric" `Quick test_combiner_min_numeric;
+          test_case "combiner max numeric" `Quick test_combiner_max_numeric;
+          test_case "combiner max real" `Quick test_combiner_max_real;
+          test_case "combiner min bool fails" `Quick test_combiner_min_bool_fails;
+          test_case "combiner max bool fails" `Quick test_combiner_max_bool_fails;
+          test_case "combiner mul bool fails" `Quick test_combiner_mul_bool_fails;
+          test_case "combiner add nat result is nat" `Quick
+            test_combiner_add_nat_result_is_nat;
+          test_case "combiner or bool" `Quick test_combiner_or_bool;
         ] );
       ( "closure",
         [

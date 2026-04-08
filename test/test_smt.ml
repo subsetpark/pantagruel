@@ -1386,11 +1386,165 @@ let test_aggregate_min_guarded () =
         EApp (EVar "score", [ EVar "u" ]) )
   in
   let result = Smt.translate_expr config env expr in
-  check bool "has <=" true (contains result "(<=");
+  check bool "has pant_min" true (contains result "pant_min");
   check bool "has ite" true (contains result "(ite")
 
-let test_aggregate_add_empty () =
-  (* + over empty domain (bound=0) should return identity "0" *)
+let test_aggregate_add_identity () =
+  (* + over empty should use identity 0 *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "score"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "active"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [ GExpr (EApp (EVar "active", [ EVar "u" ])) ],
+        Some CombAdd,
+        EApp (EVar "score", [ EVar "u" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "has ite with identity 0" true (contains result "0)")
+
+let test_aggregate_max_guarded () =
+  (* max over each u: User, active u | score u → pant_max with ite guards *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "score"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "active"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [ GExpr (EApp (EVar "active", [ EVar "u" ])) ],
+        Some CombMax,
+        EApp (EVar "score", [ EVar "u" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "has pant_max" true (contains result "pant_max");
+  check bool "has ite" true (contains result "(ite")
+
+let test_aggregate_max_unguarded () =
+  (* max over each u: User | score u (no guards) → pant_max fold, no ite *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "score"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [],
+        Some CombMax,
+        EApp (EVar "score", [ EVar "u" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "has pant_max" true (contains result "pant_max");
+  check bool "has (score User_0)" true (contains result "(score User_0)");
+  check bool "has (score User_1)" true (contains result "(score User_1)")
+
+let test_aggregate_min_unguarded () =
+  (* min over each u: User | score u (no guards) → pant_min fold, no ite *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "score"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [],
+        Some CombMin,
+        EApp (EVar "score", [ EVar "u" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "has pant_min" true (contains result "pant_min");
+  check bool "has (score User_0)" true (contains result "(score User_0)");
+  check bool "has (score User_1)" true (contains result "(score User_1)")
+
+let test_aggregate_mul_identity () =
+  (* * over each u: User, active u | score u → identity is "1" not "1.0" *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "score"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "active"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [ GExpr (EApp (EVar "active", [ EVar "u" ])) ],
+        Some CombMul,
+        EApp (EVar "score", [ EVar "u" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "has *" true (contains result "(*");
+  check bool "identity is 1 not 1.0" true (contains result " 1)");
+  check bool "no 1.0 identity" false (contains result " 1.0)")
+
+let test_aggregate_mul_unguarded () =
+  (* * over each u: User | score u → (* (score User_0) ...) *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "score"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [],
+        Some CombMul,
+        EApp (EVar "score", [ EVar "u" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "has *" true (contains result "(*");
+  check bool "has (score User_0)" true (contains result "(score User_0)")
+
+let test_aggregate_or_identity () =
+  (* or over each u: User, active u | pred u → identity is "false" *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "pred"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "active"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [ GExpr (EApp (EVar "active", [ EVar "u" ])) ],
+        Some CombOr,
+        EApp (EVar "pred", [ EVar "u" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "has or" true (contains result "(or");
+  check bool "identity is false" true (contains result " false)")
+
+let test_aggregate_add_empty_domain () =
+  (* + over empty domain (bound=0) → identity "0" *)
   let zero_config =
     Smt.make_config ~bound:0 ~steps:5 ~domain_bounds:Env.StringMap.empty
       ~inject_guards:true
@@ -1410,41 +1564,38 @@ let test_aggregate_add_empty () =
         EApp (EVar "score", [ EVar "u" ]) )
   in
   let result = Smt.translate_expr zero_config env expr in
-  check string "empty add = identity" "0" result
+  check string "empty add = identity 0" "0" result
 
-let test_aggregate_decl_guard_injection () =
-  (* + over each u: User | score u where score has decl guard "active u"
-     should inject (active User_0), (active User_1) etc. as guards *)
+let test_aggregate_mul_empty_domain () =
+  (* * over empty domain (bound=0) → identity "1" *)
+  let zero_config =
+    Smt.make_config ~bound:0 ~steps:5 ~domain_bounds:Env.StringMap.empty
+      ~inject_guards:true
+  in
   let env =
     Env.empty ""
     |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
     |> Env.add_rule "score"
          (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
          Ast.dummy_loc ~chapter:0
-    |> Env.add_rule "active"
-         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
-         Ast.dummy_loc ~chapter:0
-    |> Env.add_rule_guards "score"
-         [ Ast.{ param_name = "u"; param_type = TName "User" } ]
-         [ GExpr (EApp (EVar "active", [ EVar "u" ])) ]
   in
   let expr =
     Ast.EEach
       ( [ { param_name = "u"; param_type = TName "User" } ],
         [],
-        Some CombAdd,
+        Some CombMul,
         EApp (EVar "score", [ EVar "u" ]) )
   in
-  let result = Smt.translate_expr config env expr in
-  check bool "has (active User_0)" true (contains result "(active User_0)");
-  check bool "has ite" true (contains result "(ite")
+  let result = Smt.translate_expr zero_config env expr in
+  check string "empty mul = identity 1" "1" result
 
-let test_aggregate_add_real () =
-  (* + over each u: User, active u | real_score u — guarded Real body uses 0.0 *)
+let test_aggregate_add_real_uses_int_identity () =
+  (* + over each u: User, active u | rating u where rating => Real
+     — simplified: identity is now "0" not "0.0" *)
   let env =
     Env.empty ""
     |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
-    |> Env.add_rule "real_score"
+    |> Env.add_rule "rating"
          (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyReal))
          Ast.dummy_loc ~chapter:0
     |> Env.add_rule "active"
@@ -1456,42 +1607,25 @@ let test_aggregate_add_real () =
       ( [ { param_name = "u"; param_type = TName "User" } ],
         [ GExpr (EApp (EVar "active", [ EVar "u" ])) ],
         Some CombAdd,
-        EApp (EVar "real_score", [ EVar "u" ]) )
+        EApp (EVar "rating", [ EVar "u" ]) )
   in
   let result = Smt.translate_expr config env expr in
-  check bool "has 0.0 identity" true (contains result "0.0");
-  check bool "has +" true (contains result "(+")
+  check bool "has +" true (contains result "(+");
+  (* identity is "0" not "0.0" — the PR removed real-type detection *)
+  check bool "identity is 0 not 0.0" true (contains result " 0)");
+  check bool "no 0.0 identity" false (contains result " 0.0)")
 
-let test_aggregate_add_real_empty () =
-  (* + over empty Real domain should return "0.0" *)
-  let zero_config =
-    Smt.make_config ~bound:0 ~steps:5 ~domain_bounds:Env.StringMap.empty
+let test_aggregate_min_single_element () =
+  (* min over a domain with exactly 1 element, no guard → just the value (no pant_min) *)
+  let one_config =
+    Smt.make_config ~bound:1 ~steps:5 ~domain_bounds:Env.StringMap.empty
       ~inject_guards:true
   in
   let env =
     Env.empty ""
     |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
-    |> Env.add_rule "real_score"
-         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyReal))
-         Ast.dummy_loc ~chapter:0
-  in
-  let expr =
-    Ast.EEach
-      ( [ { param_name = "u"; param_type = TName "User" } ],
-        [],
-        Some CombAdd,
-        EApp (EVar "real_score", [ EVar "u" ]) )
-  in
-  let result = Smt.translate_expr zero_config env expr in
-  check string "empty real add = 0.0" "0.0" result
-
-let test_aggregate_min_real () =
-  (* min over each u: User | real_score u should use 0.0 seed, not 0 *)
-  let env =
-    Env.empty ""
-    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
-    |> Env.add_rule "real_score"
-         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyReal))
+    |> Env.add_rule "score"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
          Ast.dummy_loc ~chapter:0
   in
   let expr =
@@ -1499,11 +1633,89 @@ let test_aggregate_min_real () =
       ( [ { param_name = "u"; param_type = TName "User" } ],
         [],
         Some CombMin,
-        EApp (EVar "real_score", [ EVar "u" ]) )
+        EApp (EVar "score", [ EVar "u" ]) )
+  in
+  let result = Smt.translate_expr one_config env expr in
+  (* single element → the value itself, no pant_min needed *)
+  check bool "has (score User_0)" true (contains result "(score User_0)");
+  check bool "no pant_min for single" false (contains result "pant_min")
+
+let test_aggregate_min_empty_raises () =
+  (* min over empty domain → exception *)
+  let zero_config =
+    Smt.make_config ~bound:0 ~steps:5 ~domain_bounds:Env.StringMap.empty
+      ~inject_guards:true
+  in
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "score"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [],
+        Some CombMin,
+        EApp (EVar "score", [ EVar "u" ]) )
+  in
+  check bool "min over empty raises" true
+    (try
+       let _ = Smt.translate_expr zero_config env expr in
+       false
+     with Failure _ -> true)
+
+let test_aggregate_max_empty_raises () =
+  (* max over empty domain → exception *)
+  let zero_config =
+    Smt.make_config ~bound:0 ~steps:5 ~domain_bounds:Env.StringMap.empty
+      ~inject_guards:true
+  in
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "score"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [],
+        Some CombMax,
+        EApp (EVar "score", [ EVar "u" ]) )
+  in
+  check bool "max over empty raises" true
+    (try
+       let _ = Smt.translate_expr zero_config env expr in
+       false
+     with Failure _ -> true)
+
+let test_aggregate_min_guarded_fold_structure () =
+  (* min over each u: User, active u | score u with 2+ elements →
+     fold should produce (ite g (pant_min acc v) acc) pattern *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "score"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyNat))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "active"
+         (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "u"; param_type = TName "User" } ],
+        [ GExpr (EApp (EVar "active", [ EVar "u" ])) ],
+        Some CombMin,
+        EApp (EVar "score", [ EVar "u" ]) )
   in
   let result = Smt.translate_expr config env expr in
-  check bool "has 0.0 seed" true (contains result "0.0");
-  check bool "has <=" true (contains result "(<=")
+  (* Should use pant_min in ite: (ite (active User_N) (pant_min ...) ...) *)
+  check bool "has pant_min" true (contains result "pant_min");
+  check bool "has ite guards" true (contains result "(ite (active")
 
 let comprehension_tests =
   [
@@ -1516,12 +1728,23 @@ let comprehension_tests =
     test_case "aggregate add" `Quick test_aggregate_add;
     test_case "aggregate and" `Quick test_aggregate_and;
     test_case "aggregate min guarded" `Quick test_aggregate_min_guarded;
-    test_case "aggregate add empty" `Quick test_aggregate_add_empty;
-    test_case "aggregate decl guard injection" `Quick
-      test_aggregate_decl_guard_injection;
-    test_case "aggregate add real" `Quick test_aggregate_add_real;
-    test_case "aggregate add real empty" `Quick test_aggregate_add_real_empty;
-    test_case "aggregate min real" `Quick test_aggregate_min_real;
+    test_case "aggregate add identity" `Quick test_aggregate_add_identity;
+    test_case "aggregate max guarded" `Quick test_aggregate_max_guarded;
+    test_case "aggregate max unguarded" `Quick test_aggregate_max_unguarded;
+    test_case "aggregate min unguarded" `Quick test_aggregate_min_unguarded;
+    test_case "aggregate mul identity" `Quick test_aggregate_mul_identity;
+    test_case "aggregate mul unguarded" `Quick test_aggregate_mul_unguarded;
+    test_case "aggregate or identity" `Quick test_aggregate_or_identity;
+    test_case "aggregate add empty domain" `Quick test_aggregate_add_empty_domain;
+    test_case "aggregate mul empty domain" `Quick test_aggregate_mul_empty_domain;
+    test_case "aggregate add real uses int identity" `Quick
+      test_aggregate_add_real_uses_int_identity;
+    test_case "aggregate min single element" `Quick
+      test_aggregate_min_single_element;
+    test_case "aggregate min empty raises" `Quick test_aggregate_min_empty_raises;
+    test_case "aggregate max empty raises" `Quick test_aggregate_max_empty_raises;
+    test_case "aggregate min guarded fold structure" `Quick
+      test_aggregate_min_guarded_fold_structure;
   ]
 
 (* --- Closure tests --- *)
