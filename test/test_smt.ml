@@ -2096,8 +2096,8 @@ let test_aggregate_empty_domain () =
   (* Domain with bound=0 should return identity element *)
   let env = make_aggregate_env () in
   let zero_config =
-    Smt.make_config ~bound:0 ~steps:0
-      ~domain_bounds:Env.StringMap.empty ~inject_guards:true
+    Smt.make_config ~bound:0 ~steps:0 ~domain_bounds:Env.StringMap.empty
+      ~inject_guards:true
   in
   let expr =
     Ast.EEach
@@ -2112,8 +2112,8 @@ let test_aggregate_empty_domain () =
 let test_aggregate_empty_domain_mul () =
   let env = make_aggregate_env () in
   let zero_config =
-    Smt.make_config ~bound:0 ~steps:0
-      ~domain_bounds:Env.StringMap.empty ~inject_guards:true
+    Smt.make_config ~bound:0 ~steps:0 ~domain_bounds:Env.StringMap.empty
+      ~inject_guards:true
   in
   let expr =
     Ast.EEach
@@ -2128,8 +2128,8 @@ let test_aggregate_empty_domain_mul () =
 let test_aggregate_empty_domain_and () =
   let env = make_aggregate_env () in
   let zero_config =
-    Smt.make_config ~bound:0 ~steps:0
-      ~domain_bounds:Env.StringMap.empty ~inject_guards:true
+    Smt.make_config ~bound:0 ~steps:0 ~domain_bounds:Env.StringMap.empty
+      ~inject_guards:true
   in
   let expr =
     Ast.EEach
@@ -2144,8 +2144,8 @@ let test_aggregate_empty_domain_and () =
 let test_aggregate_empty_domain_or () =
   let env = make_aggregate_env () in
   let zero_config =
-    Smt.make_config ~bound:0 ~steps:0
-      ~domain_bounds:Env.StringMap.empty ~inject_guards:true
+    Smt.make_config ~bound:0 ~steps:0 ~domain_bounds:Env.StringMap.empty
+      ~inject_guards:true
   in
   let expr =
     Ast.EEach
@@ -2161,8 +2161,8 @@ let test_aggregate_empty_domain_min () =
   (* min/max have no identity element; empty domain should raise *)
   let env = make_aggregate_env () in
   let zero_config =
-    Smt.make_config ~bound:0 ~steps:0
-      ~domain_bounds:Env.StringMap.empty ~inject_guards:true
+    Smt.make_config ~bound:0 ~steps:0 ~domain_bounds:Env.StringMap.empty
+      ~inject_guards:true
   in
   let expr =
     Ast.EEach
@@ -2171,14 +2171,15 @@ let test_aggregate_empty_domain_min () =
         Some CombMin,
         EApp (EVar "price", [ EVar "i" ]) )
   in
-  check_raises "empty domain min raises" (Failure "SMT: min/max over empty domain")
-    (fun () -> ignore (Smt.translate_expr zero_config env expr))
+  check_raises "empty domain min raises"
+    (Failure "SMT: min/max over empty domain") (fun () ->
+      ignore (Smt.translate_expr zero_config env expr))
 
 let test_aggregate_empty_domain_max () =
   let env = make_aggregate_env () in
   let zero_config =
-    Smt.make_config ~bound:0 ~steps:0
-      ~domain_bounds:Env.StringMap.empty ~inject_guards:true
+    Smt.make_config ~bound:0 ~steps:0 ~domain_bounds:Env.StringMap.empty
+      ~inject_guards:true
   in
   let expr =
     Ast.EEach
@@ -2187,8 +2188,9 @@ let test_aggregate_empty_domain_max () =
         Some CombMax,
         EApp (EVar "price", [ EVar "i" ]) )
   in
-  check_raises "empty domain max raises" (Failure "SMT: min/max over empty domain")
-    (fun () -> ignore (Smt.translate_expr zero_config env expr))
+  check_raises "empty domain max raises"
+    (Failure "SMT: min/max over empty domain") (fun () ->
+      ignore (Smt.translate_expr zero_config env expr))
 
 let test_aggregate_integration () =
   (* Full integration test: parse, collect, type-check, then generate SMT *)
