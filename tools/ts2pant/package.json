@@ -12,9 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "commander": "^13.0.0"
-  },
-  "dependencies": {
+    "commander": "^13.0.0",
     "typescript": "^5.7.0"
   },
   "devDependencies": {
