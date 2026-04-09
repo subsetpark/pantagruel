@@ -172,7 +172,7 @@ function translateExpr(
 
   // Parenthesized
   if (ts.isParenthesizedExpression(expr)) {
-    return translateExpr(expr.expression, checker, strategy, paramNames);
+    return `(${translateExpr(expr.expression, checker, strategy, paramNames)})`;
   }
 
   // `this` keyword
@@ -225,6 +225,8 @@ function translateOperator(kind: ts.SyntaxKind): string {
       return "-";
     case ts.SyntaxKind.AsteriskToken:
       return "*";
+    case ts.SyntaxKind.SlashToken:
+      return "/";
     default:
       return "?";
   }
@@ -234,8 +236,14 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-function shortParamName(typeName: string): string {
-  return typeName[0].toLowerCase();
+function shortParamName(typeName: string, existingNames: Set<string>): string {
+  let name = typeName[0].toLowerCase();
+  let suffix = 1;
+  while (existingNames.has(name)) {
+    name = typeName[0].toLowerCase() + suffix;
+    suffix++;
+  }
+  return name;
 }
 
 /**
@@ -258,7 +266,8 @@ export function translateSignature(
   const paramNameMap = new Map<string, string>();
 
   if (className) {
-    const pName = shortParamName(className);
+    const existingParamNames = new Set(sig.getParameters().map((p) => p.name));
+    const pName = shortParamName(className, existingParamNames);
     params.push({ name: pName, type: className });
     paramNameMap.set("this", pName);
   }

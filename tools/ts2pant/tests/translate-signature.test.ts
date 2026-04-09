@@ -207,7 +207,7 @@ describe("guarded mutator -> action with guard", () => {
 
     expect(result.declaration.kind).toBe("action");
     if (result.declaration.kind === "action") {
-      expect(result.declaration.guard).toBe("balance a >= amount");
+      expect(result.declaration.guard).toBe("(balance a >= amount)");
     }
   });
 });
