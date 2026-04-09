@@ -1970,7 +1970,7 @@ let make_aggregate_env () =
        (Types.TyFunc ([ Types.TyDomain "Item" ], Some Types.TyBool))
        Ast.dummy_loc ~chapter:0
 
-let test_aggregate_add () =
+let test_aggregate_add_item () =
   let env = make_aggregate_env () in
   let expr =
     Ast.EEach
@@ -2012,7 +2012,7 @@ let test_aggregate_mul () =
   let result = Smt.translate_expr config env expr in
   check bool "uses *" true (contains result "(*")
 
-let test_aggregate_and () =
+let test_aggregate_and_item () =
   let env = make_aggregate_env () in
   let expr =
     Ast.EEach
@@ -2023,6 +2023,36 @@ let test_aggregate_and () =
   in
   let result = Smt.translate_expr config env expr in
   check bool "uses and" true (contains result "(and")
+
+let test_aggregate_and_guarded () =
+  let env = make_aggregate_env () in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "i"; param_type = TName "Item" } ],
+        [ GExpr (EApp (EVar "available?", [ EVar "i" ])) ],
+        Some CombAnd,
+        EApp (EVar "available?", [ EVar "i" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "uses and" true (contains result "(and");
+  check bool "uses ite" true (contains result "(ite");
+  (* Guarded-out elements contribute true (identity for and) *)
+  check bool "identity true" true (contains result " true)")
+
+let test_aggregate_or_guarded () =
+  let env = make_aggregate_env () in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "i"; param_type = TName "Item" } ],
+        [ GExpr (EApp (EVar "available?", [ EVar "i" ])) ],
+        Some CombOr,
+        EApp (EVar "available?", [ EVar "i" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "uses or" true (contains result "(or");
+  check bool "uses ite" true (contains result "(ite");
+  (* Guarded-out elements contribute false (identity for or) *)
+  check bool "identity false" true (contains result " false)")
 
 let test_aggregate_or () =
   let env = make_aggregate_env () in
@@ -2127,6 +2157,39 @@ let test_aggregate_empty_domain_or () =
   let result = Smt.translate_expr zero_config env expr in
   check string "empty domain returns false" "false" result
 
+let test_aggregate_empty_domain_min () =
+  (* min/max have no identity element; empty domain should raise *)
+  let env = make_aggregate_env () in
+  let zero_config =
+    Smt.make_config ~bound:0 ~steps:0
+      ~domain_bounds:Env.StringMap.empty ~inject_guards:true
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "i"; param_type = TName "Item" } ],
+        [],
+        Some CombMin,
+        EApp (EVar "price", [ EVar "i" ]) )
+  in
+  check_raises "empty domain min raises" (Failure "SMT: min/max over empty domain")
+    (fun () -> ignore (Smt.translate_expr zero_config env expr))
+
+let test_aggregate_empty_domain_max () =
+  let env = make_aggregate_env () in
+  let zero_config =
+    Smt.make_config ~bound:0 ~steps:0
+      ~domain_bounds:Env.StringMap.empty ~inject_guards:true
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "i"; param_type = TName "Item" } ],
+        [],
+        Some CombMax,
+        EApp (EVar "price", [ EVar "i" ]) )
+  in
+  check_raises "empty domain max raises" (Failure "SMT: min/max over empty domain")
+    (fun () -> ignore (Smt.translate_expr zero_config env expr))
+
 let test_aggregate_integration () =
   (* Full integration test: parse, collect, type-check, then generate SMT *)
   let env, doc =
@@ -2154,17 +2217,21 @@ let test_aggregate_integration () =
 
 let aggregate_tests =
   [
-    test_case "add combiner" `Quick test_aggregate_add;
+    test_case "add combiner" `Quick test_aggregate_add_item;
     test_case "add guarded" `Quick test_aggregate_add_guarded;
     test_case "mul combiner" `Quick test_aggregate_mul;
-    test_case "and combiner" `Quick test_aggregate_and;
+    test_case "and combiner" `Quick test_aggregate_and_item;
+    test_case "and guarded" `Quick test_aggregate_and_guarded;
     test_case "or combiner" `Quick test_aggregate_or;
+    test_case "or guarded" `Quick test_aggregate_or_guarded;
     test_case "min combiner" `Quick test_aggregate_min;
     test_case "max combiner" `Quick test_aggregate_max;
     test_case "empty domain add" `Quick test_aggregate_empty_domain;
     test_case "empty domain mul" `Quick test_aggregate_empty_domain_mul;
     test_case "empty domain and" `Quick test_aggregate_empty_domain_and;
     test_case "empty domain or" `Quick test_aggregate_empty_domain_or;
+    test_case "empty domain min" `Quick test_aggregate_empty_domain_min;
+    test_case "empty domain max" `Quick test_aggregate_empty_domain_max;
     test_case "integration" `Quick test_aggregate_integration;
   ]
 
