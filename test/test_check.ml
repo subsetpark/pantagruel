@@ -1352,7 +1352,7 @@ check_nat0 (+ over each i: Item | weight i).
 |}
 
 let test_over_each_add_bool_fails () =
-  check_fails
+  check_error
     {|module TEST.
 
 Item.
@@ -1360,6 +1360,32 @@ active? i: Item => Bool.
 ---
 (+ over each i: Item | active? i) >= 0.
 |}
+    (function
+    | Check.AggregateRequiresNumeric ("+", _, _) -> true
+    | _ -> false)
+
+let test_over_each_mul_nat () =
+  check_ok
+    {|module TEST.
+
+Item.
+weight i: Item => Nat.
+---
+(* over each i: Item | weight i) >= 0.
+|}
+
+let test_over_each_mul_bool_fails () =
+  check_error
+    {|module TEST.
+
+Item.
+active? i: Item => Bool.
+---
+(* over each i: Item | active? i) >= 0.
+|}
+    (function
+    | Check.AggregateRequiresNumeric ("*", _, _) -> true
+    | _ -> false)
 
 let test_over_each_and_bool () =
   check_ok
@@ -1372,7 +1398,7 @@ and over each i: Item | valid? i.
 |}
 
 let test_over_each_and_numeric_fails () =
-  check_fails
+  check_error
     {|module TEST.
 
 Item.
@@ -1380,6 +1406,32 @@ weight i: Item => Nat.
 ---
 and over each i: Item | weight i.
 |}
+    (function
+    | Check.AggregateRequiresBool ("and", _, _) -> true
+    | _ -> false)
+
+let test_over_each_or_bool () =
+  check_ok
+    {|module TEST.
+
+Item.
+valid? i: Item => Bool.
+---
+or over each i: Item | valid? i.
+|}
+
+let test_over_each_or_numeric_fails () =
+  check_error
+    {|module TEST.
+
+Item.
+weight i: Item => Nat.
+---
+or over each i: Item | weight i.
+|}
+    (function
+    | Check.AggregateRequiresBool ("or", _, _) -> true
+    | _ -> false)
 
 let test_over_each_min_nat () =
   check_ok
@@ -1390,6 +1442,42 @@ weight i: Item => Nat.
 ---
 (min over each i: Item | weight i) >= 0.
 |}
+
+let test_over_each_max_nat () =
+  check_ok
+    {|module TEST.
+
+Item.
+weight i: Item => Nat.
+---
+(max over each i: Item | weight i) >= 0.
+|}
+
+let test_over_each_max_bool_fails () =
+  check_error
+    {|module TEST.
+
+Item.
+active? i: Item => Bool.
+---
+(max over each i: Item | active? i) >= 0.
+|}
+    (function
+    | Check.AggregateRequiresNumeric ("max", _, _) -> true
+    | _ -> false)
+
+let test_over_each_min_bool_fails () =
+  check_error
+    {|module TEST.
+
+Item.
+active? i: Item => Bool.
+---
+(min over each i: Item | active? i) >= 0.
+|}
+    (function
+    | Check.AggregateRequiresNumeric ("min", _, _) -> true
+    | _ -> false)
 
 let test_over_each_bare_unchanged () =
   check_ok
@@ -1572,12 +1660,25 @@ let () =
             test_over_each_add_numeric;
           test_case "+ over each with Bool body should be type error" `Quick
             test_over_each_add_bool_fails;
+          test_case "* over each with Nat body" `Quick test_over_each_mul_nat;
+          test_case "* over each with Bool body should be type error" `Quick
+            test_over_each_mul_bool_fails;
           test_case "and over each with Bool body should return Bool" `Quick
             test_over_each_and_bool;
           test_case "and over each with numeric body should be type error"
             `Quick test_over_each_and_numeric_fails;
+          test_case "or over each with Bool body should return Bool" `Quick
+            test_over_each_or_bool;
+          test_case "or over each with numeric body should be type error" `Quick
+            test_over_each_or_numeric_fails;
           test_case "min over each with Nat body should return Nat" `Quick
             test_over_each_min_nat;
+          test_case "max over each with Nat body should return Nat" `Quick
+            test_over_each_max_nat;
+          test_case "max over each with Bool body should be type error" `Quick
+            test_over_each_max_bool_fails;
+          test_case "min over each with Bool body should be type error" `Quick
+            test_over_each_min_bool_fails;
           test_case "bare each behavior unchanged" `Quick
             test_over_each_bare_unchanged;
         ] );
