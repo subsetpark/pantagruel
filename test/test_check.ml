@@ -999,11 +999,11 @@ active u: User => Bool.
 (+ over each u: User | active u) >= 0.
 |}
     (function
-    | Check.NotNumeric _ -> true
+    | Check.AggregateRequiresNumeric _ -> true
     | _ -> false)
 
 let test_combiner_bool_on_numeric_fails () =
-  (* and over each with Nat body → ExpectedBool *)
+  (* and over each with Nat body → AggregateRequiresBool *)
   check_error
     {|module TEST.
 
@@ -1013,7 +1013,7 @@ score u: User => Nat.
 and over each u: User | score u.
 |}
     (function
-    | Check.ExpectedBool _ -> true
+    | Check.AggregateRequiresBool _ -> true
     | _ -> false)
 
 (* --- Closure tests --- *)
@@ -1338,6 +1338,157 @@ items => [Item].
 all i: Nat | items i in Item.
 |}
 
+let test_over_each_add_numeric () =
+  (* + over each widens Nat to Nat0 (empty sum = 0).
+     Verify by passing the aggregate to a Nat0-typed parameter. *)
+  check_ok
+    {|module TEST.
+
+Item.
+weight i: Item => Nat.
+check_nat0 n: Nat0 => Bool.
+---
+check_nat0 (+ over each i: Item | weight i).
+|}
+
+let test_over_each_add_bool_fails () =
+  check_error
+    {|module TEST.
+
+Item.
+active? i: Item => Bool.
+---
+(+ over each i: Item | active? i) >= 0.
+|}
+    (function
+    | Check.AggregateRequiresNumeric ("+", _, _) -> true
+    | _ -> false)
+
+let test_over_each_mul_nat () =
+  check_ok
+    {|module TEST.
+
+Item.
+weight i: Item => Nat.
+---
+(* over each i: Item | weight i) >= 0.
+|}
+
+let test_over_each_mul_bool_fails () =
+  check_error
+    {|module TEST.
+
+Item.
+active? i: Item => Bool.
+---
+(* over each i: Item | active? i) >= 0.
+|}
+    (function
+    | Check.AggregateRequiresNumeric ("*", _, _) -> true
+    | _ -> false)
+
+let test_over_each_and_bool () =
+  check_ok
+    {|module TEST.
+
+Item.
+valid? i: Item => Bool.
+---
+and over each i: Item | valid? i.
+|}
+
+let test_over_each_and_numeric_fails () =
+  check_error
+    {|module TEST.
+
+Item.
+weight i: Item => Nat.
+---
+and over each i: Item | weight i.
+|}
+    (function
+    | Check.AggregateRequiresBool ("and", _, _) -> true
+    | _ -> false)
+
+let test_over_each_or_bool () =
+  check_ok
+    {|module TEST.
+
+Item.
+valid? i: Item => Bool.
+---
+or over each i: Item | valid? i.
+|}
+
+let test_over_each_or_numeric_fails () =
+  check_error
+    {|module TEST.
+
+Item.
+weight i: Item => Nat.
+---
+or over each i: Item | weight i.
+|}
+    (function
+    | Check.AggregateRequiresBool ("or", _, _) -> true
+    | _ -> false)
+
+let test_over_each_min_nat () =
+  check_ok
+    {|module TEST.
+
+Item.
+weight i: Item => Nat.
+---
+(min over each i: Item | weight i) >= 0.
+|}
+
+let test_over_each_max_nat () =
+  check_ok
+    {|module TEST.
+
+Item.
+weight i: Item => Nat.
+---
+(max over each i: Item | weight i) >= 0.
+|}
+
+let test_over_each_max_bool_fails () =
+  check_error
+    {|module TEST.
+
+Item.
+active? i: Item => Bool.
+---
+(max over each i: Item | active? i) >= 0.
+|}
+    (function
+    | Check.AggregateRequiresNumeric ("max", _, _) -> true
+    | _ -> false)
+
+let test_over_each_min_bool_fails () =
+  check_error
+    {|module TEST.
+
+Item.
+active? i: Item => Bool.
+---
+(min over each i: Item | active? i) >= 0.
+|}
+    (function
+    | Check.AggregateRequiresNumeric ("min", _, _) -> true
+    | _ -> false)
+
+let test_over_each_bare_unchanged () =
+  check_ok
+    {|module TEST.
+
+Item.
+weight i: Item => Nat.
+---
+#(each i: Item | weight i) >= 0.
+|}
+
 let () =
   run "Check"
     [
@@ -1502,5 +1653,33 @@ let () =
           test_case "chained comparison error" `Quick
             test_chained_comparison_error;
           test_case "list indexing nat" `Quick test_list_indexing_nat0;
+        ] );
+      ( "over-each typecheck",
+        [
+          test_case "+ over each with Nat body should return Nat0" `Quick
+            test_over_each_add_numeric;
+          test_case "+ over each with Bool body should be type error" `Quick
+            test_over_each_add_bool_fails;
+          test_case "* over each with Nat body" `Quick test_over_each_mul_nat;
+          test_case "* over each with Bool body should be type error" `Quick
+            test_over_each_mul_bool_fails;
+          test_case "and over each with Bool body should return Bool" `Quick
+            test_over_each_and_bool;
+          test_case "and over each with numeric body should be type error"
+            `Quick test_over_each_and_numeric_fails;
+          test_case "or over each with Bool body should return Bool" `Quick
+            test_over_each_or_bool;
+          test_case "or over each with numeric body should be type error" `Quick
+            test_over_each_or_numeric_fails;
+          test_case "min over each with Nat body should return Nat" `Quick
+            test_over_each_min_nat;
+          test_case "max over each with Nat body should return Nat" `Quick
+            test_over_each_max_nat;
+          test_case "max over each with Bool body should be type error" `Quick
+            test_over_each_max_bool_fails;
+          test_case "min over each with Bool body should be type error" `Quick
+            test_over_each_min_bool_fails;
+          test_case "bare each behavior unchanged" `Quick
+            test_over_each_bare_unchanged;
         ] );
     ]

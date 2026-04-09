@@ -76,6 +76,14 @@ let format_type_error err =
            "Body of 'all'/'some' must be Bool, got %s; use 'each' for \
             comprehensions"
            (Types.format_ty ty))
+  | AggregateRequiresNumeric (sym, ty, loc) ->
+      fmt loc
+        (Printf.sprintf "Aggregate combiner %s requires numeric body, got %s"
+           sym (Types.format_ty ty))
+  | AggregateRequiresBool (sym, ty, loc) ->
+      fmt loc
+        (Printf.sprintf "Aggregate combiner %s requires Bool body, got %s" sym
+           (Types.format_ty ty))
 
 (** Format a collection error with location prefix *)
 let format_collect_error err =
