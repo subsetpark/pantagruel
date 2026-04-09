@@ -13,7 +13,7 @@ score s: Student => Nat.
 weight s: Student => Nat.
 active? s: Student => Bool.
 
-total-score => Nat.
+total-score => Nat0.
 product-of-weights => Nat.
 min-score => Nat.
 max-score => Nat.
