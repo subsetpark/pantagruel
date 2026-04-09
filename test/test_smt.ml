@@ -1955,6 +1955,288 @@ let bug_finding_tests =
     test_case "domain closure bound=1" `Quick test_domain_closure_bound_one;
   ]
 
+(* --- Aggregate (over-each) tests --- *)
+
+let make_aggregate_env () =
+  Env.empty ""
+  |> Env.add_domain "Item" Ast.dummy_loc ~chapter:0
+  |> Env.add_rule "price"
+       (Types.TyFunc ([ Types.TyDomain "Item" ], Some Types.TyNat))
+       Ast.dummy_loc ~chapter:0
+  |> Env.add_rule "weight"
+       (Types.TyFunc ([ Types.TyDomain "Item" ], Some Types.TyInt))
+       Ast.dummy_loc ~chapter:0
+  |> Env.add_rule "available?"
+       (Types.TyFunc ([ Types.TyDomain "Item" ], Some Types.TyBool))
+       Ast.dummy_loc ~chapter:0
+
+let test_aggregate_add_item () =
+  let env = make_aggregate_env () in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "i"; param_type = TName "Item" } ],
+        [],
+        Some CombAdd,
+        EApp (EVar "price", [ EVar "i" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "uses +" true (contains result "(+");
+  check bool "has price Item_0" true (contains result "(price Item_0)");
+  check bool "has price Item_1" true (contains result "(price Item_1)");
+  check bool "has price Item_2" true (contains result "(price Item_2)")
+
+let test_aggregate_add_guarded () =
+  let env = make_aggregate_env () in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "i"; param_type = TName "Item" } ],
+        [ GExpr (EApp (EVar "available?", [ EVar "i" ])) ],
+        Some CombAdd,
+        EApp (EVar "price", [ EVar "i" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "uses +" true (contains result "(+");
+  check bool "uses ite" true (contains result "(ite");
+  (* Guarded-out elements contribute 0 *)
+  check bool "identity 0" true (contains result " 0)")
+
+let test_aggregate_mul () =
+  let env = make_aggregate_env () in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "i"; param_type = TName "Item" } ],
+        [],
+        Some CombMul,
+        EApp (EVar "price", [ EVar "i" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "uses *" true (contains result "(*")
+
+let test_aggregate_and_item () =
+  let env = make_aggregate_env () in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "i"; param_type = TName "Item" } ],
+        [],
+        Some CombAnd,
+        EApp (EVar "available?", [ EVar "i" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "uses and" true (contains result "(and")
+
+let test_aggregate_and_guarded () =
+  let env = make_aggregate_env () in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "i"; param_type = TName "Item" } ],
+        [ GExpr (EApp (EVar "available?", [ EVar "i" ])) ],
+        Some CombAnd,
+        EApp (EVar "available?", [ EVar "i" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "uses and" true (contains result "(and");
+  check bool "uses ite" true (contains result "(ite");
+  (* Guarded-out elements contribute true (identity for and) *)
+  check bool "identity true" true (contains result " true)")
+
+let test_aggregate_or_guarded () =
+  let env = make_aggregate_env () in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "i"; param_type = TName "Item" } ],
+        [ GExpr (EApp (EVar "available?", [ EVar "i" ])) ],
+        Some CombOr,
+        EApp (EVar "available?", [ EVar "i" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "uses or" true (contains result "(or");
+  check bool "uses ite" true (contains result "(ite");
+  (* Guarded-out elements contribute false (identity for or) *)
+  check bool "identity false" true (contains result " false)")
+
+let test_aggregate_or () =
+  let env = make_aggregate_env () in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "i"; param_type = TName "Item" } ],
+        [],
+        Some CombOr,
+        EApp (EVar "available?", [ EVar "i" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "uses or" true (contains result "(or")
+
+let test_aggregate_min () =
+  let env = make_aggregate_env () in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "i"; param_type = TName "Item" } ],
+        [],
+        Some CombMin,
+        EApp (EVar "price", [ EVar "i" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "uses <" true (contains result "(<");
+  check bool "uses ite" true (contains result "(ite")
+
+let test_aggregate_max () =
+  let env = make_aggregate_env () in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "i"; param_type = TName "Item" } ],
+        [],
+        Some CombMax,
+        EApp (EVar "price", [ EVar "i" ]) )
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "uses >" true (contains result "(>");
+  check bool "uses ite" true (contains result "(ite")
+
+let test_aggregate_empty_domain () =
+  (* Domain with bound=0 should return identity element *)
+  let env = make_aggregate_env () in
+  let zero_config =
+    Smt.make_config ~bound:0 ~steps:0 ~domain_bounds:Env.StringMap.empty
+      ~inject_guards:true
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "i"; param_type = TName "Item" } ],
+        [],
+        Some CombAdd,
+        EApp (EVar "price", [ EVar "i" ]) )
+  in
+  let result = Smt.translate_expr zero_config env expr in
+  check string "empty domain returns 0" "0" result
+
+let test_aggregate_empty_domain_mul () =
+  let env = make_aggregate_env () in
+  let zero_config =
+    Smt.make_config ~bound:0 ~steps:0 ~domain_bounds:Env.StringMap.empty
+      ~inject_guards:true
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "i"; param_type = TName "Item" } ],
+        [],
+        Some CombMul,
+        EApp (EVar "price", [ EVar "i" ]) )
+  in
+  let result = Smt.translate_expr zero_config env expr in
+  check string "empty domain returns 1" "1" result
+
+let test_aggregate_empty_domain_and () =
+  let env = make_aggregate_env () in
+  let zero_config =
+    Smt.make_config ~bound:0 ~steps:0 ~domain_bounds:Env.StringMap.empty
+      ~inject_guards:true
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "i"; param_type = TName "Item" } ],
+        [],
+        Some CombAnd,
+        EApp (EVar "available?", [ EVar "i" ]) )
+  in
+  let result = Smt.translate_expr zero_config env expr in
+  check string "empty domain returns true" "true" result
+
+let test_aggregate_empty_domain_or () =
+  let env = make_aggregate_env () in
+  let zero_config =
+    Smt.make_config ~bound:0 ~steps:0 ~domain_bounds:Env.StringMap.empty
+      ~inject_guards:true
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "i"; param_type = TName "Item" } ],
+        [],
+        Some CombOr,
+        EApp (EVar "available?", [ EVar "i" ]) )
+  in
+  let result = Smt.translate_expr zero_config env expr in
+  check string "empty domain returns false" "false" result
+
+let test_aggregate_empty_domain_min () =
+  (* min/max have no identity element; empty domain should raise *)
+  let env = make_aggregate_env () in
+  let zero_config =
+    Smt.make_config ~bound:0 ~steps:0 ~domain_bounds:Env.StringMap.empty
+      ~inject_guards:true
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "i"; param_type = TName "Item" } ],
+        [],
+        Some CombMin,
+        EApp (EVar "price", [ EVar "i" ]) )
+  in
+  check_raises "empty domain min raises"
+    (Failure "SMT: min/max over empty domain") (fun () ->
+      ignore (Smt.translate_expr zero_config env expr))
+
+let test_aggregate_empty_domain_max () =
+  let env = make_aggregate_env () in
+  let zero_config =
+    Smt.make_config ~bound:0 ~steps:0 ~domain_bounds:Env.StringMap.empty
+      ~inject_guards:true
+  in
+  let expr =
+    Ast.EEach
+      ( [ { param_name = "i"; param_type = TName "Item" } ],
+        [],
+        Some CombMax,
+        EApp (EVar "price", [ EVar "i" ]) )
+  in
+  check_raises "empty domain max raises"
+    (Failure "SMT: min/max over empty domain") (fun () ->
+      ignore (Smt.translate_expr zero_config env expr))
+
+let test_aggregate_integration () =
+  (* Full integration test: parse, collect, type-check, then generate SMT *)
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       Item.\n\
+       price i: Item => Nat.\n\
+       available? i: Item => Bool.\n\
+       ---\n\
+       and over each i: Item | available? i.\n"
+  in
+  let small_config =
+    Smt.make_config ~bound:2 ~steps:0 ~domain_bounds:Env.StringMap.empty
+      ~inject_guards:true
+  in
+  let queries = Smt.generate_queries small_config env doc in
+  let inv =
+    List.find (fun (q : Smt.query) -> q.kind = Smt.InvariantConsistency) queries
+  in
+  check bool "has and combiner" true (contains inv.smt2 "(and");
+  check bool "has availablep Item_0" true
+    (contains inv.smt2 "(availablep Item_0)");
+  check bool "has availablep Item_1" true
+    (contains inv.smt2 "(availablep Item_1)")
+
+let aggregate_tests =
+  [
+    test_case "add combiner" `Quick test_aggregate_add_item;
+    test_case "add guarded" `Quick test_aggregate_add_guarded;
+    test_case "mul combiner" `Quick test_aggregate_mul;
+    test_case "and combiner" `Quick test_aggregate_and_item;
+    test_case "and guarded" `Quick test_aggregate_and_guarded;
+    test_case "or combiner" `Quick test_aggregate_or;
+    test_case "or guarded" `Quick test_aggregate_or_guarded;
+    test_case "min combiner" `Quick test_aggregate_min;
+    test_case "max combiner" `Quick test_aggregate_max;
+    test_case "empty domain add" `Quick test_aggregate_empty_domain;
+    test_case "empty domain mul" `Quick test_aggregate_empty_domain_mul;
+    test_case "empty domain and" `Quick test_aggregate_empty_domain_and;
+    test_case "empty domain or" `Quick test_aggregate_empty_domain_or;
+    test_case "empty domain min" `Quick test_aggregate_empty_domain_min;
+    test_case "empty domain max" `Quick test_aggregate_empty_domain_max;
+    test_case "integration" `Quick test_aggregate_integration;
+  ]
+
 let () =
   run "SMT"
     [
@@ -1971,4 +2253,5 @@ let () =
       ("guard_injection", guard_injection_tests);
       ("cond", cond_tests);
       ("bug_finding", bug_finding_tests);
+      ("aggregates", aggregate_tests);
     ]
