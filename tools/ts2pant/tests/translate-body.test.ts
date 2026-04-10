@@ -232,6 +232,20 @@ describe("mutating function: assignment -> primed proposition", () => {
     expect(props.some((p) => p.text === "balance' a = balance a - fee")).toBe(true);
     expect(props.some((p) => p.text === "owner' a = newOwner")).toBe(true);
   });
+
+  it("translates wrapped (parenthesized) assignment", () => {
+    const source = `
+      interface Account { balance: number; }
+      function deposit(a: Account, amount: number): void {
+        (a.balance = a.balance + amount);
+      }
+    `;
+    const props = translate(source, "deposit");
+
+    expect(props.some((p) => p.text === "balance' a = balance a + amount")).toBe(
+      true,
+    );
+  });
 });
 
 describe("frame conditions", () => {

@@ -164,6 +164,13 @@ function isGuardStatement(stmt: ts.Statement): boolean {
   return false;
 }
 
+function variableStatementHasNoSideEffects(stmt: ts.VariableStatement): boolean {
+  return stmt.declarationList.declarations.every(
+    (decl) =>
+      !decl.initializer || !expressionHasSideEffects(decl.initializer),
+  );
+}
+
 function blockThrows(node: ts.Statement): boolean {
   if (ts.isThrowStatement(node)) return true;
   if (ts.isBlock(node)) {
@@ -172,7 +179,9 @@ function blockThrows(node: ts.Statement): boolean {
     // Last statement must be a throw; all preceding must be side-effect-free
     // (variable declarations for building the error message, etc.)
     if (!ts.isThrowStatement(stmts[stmts.length - 1])) return false;
-    return stmts.slice(0, -1).every((s) => ts.isVariableStatement(s));
+    return stmts
+      .slice(0, -1)
+      .every((s) => ts.isVariableStatement(s) && variableStatementHasNoSideEffects(s));
   }
   return false;
 }
@@ -192,12 +201,29 @@ function blockHasNoSideEffects(node: ts.Statement): boolean {
   if (ts.isExpressionStatement(node)) {
     return !expressionHasSideEffects(node.expression);
   }
-  // Variable declarations, return statements, throw statements are fine
-  if (ts.isVariableStatement(node) || ts.isReturnStatement(node) || ts.isThrowStatement(node)) {
+  // Variable declarations are fine only if initializers have no side effects
+  if (ts.isVariableStatement(node)) {
+    return variableStatementHasNoSideEffects(node);
+  }
+  // Return statements, throw statements are fine
+  if (ts.isReturnStatement(node) || ts.isThrowStatement(node)) {
     return true;
   }
   // if/for/while/switch may contain mutations — treat as side-effectful
   return false;
+}
+
+/** Unwrap parentheses, type assertions, and non-null assertions to get the inner expression. */
+function unwrapExpression(expr: ts.Expression): ts.Expression {
+  while (
+    ts.isParenthesizedExpression(expr) ||
+    ts.isAsExpression(expr) ||
+    ts.isSatisfiesExpression(expr) ||
+    ts.isNonNullExpression(expr)
+  ) {
+    expr = expr.expression;
+  }
+  return expr;
 }
 
 function expressionHasSideEffects(expr: ts.Expression): boolean {
@@ -489,8 +515,8 @@ function collectAssignments(
     // Skip guard statements (if-throw patterns)
     if (isGuardStatement(stmt)) continue;
 
-    if (ts.isExpressionStatement(stmt) && ts.isBinaryExpression(stmt.expression)) {
-      const bin = stmt.expression;
+    if (ts.isExpressionStatement(stmt) && ts.isBinaryExpression(unwrapExpression(stmt.expression))) {
+      const bin = unwrapExpression(stmt.expression) as ts.BinaryExpression;
       if (
         bin.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
         ts.isPropertyAccessExpression(bin.left)
