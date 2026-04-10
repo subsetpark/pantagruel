@@ -1,5 +1,5 @@
 import { execSync } from "child_process";
-import { writeFileSync, unlinkSync, mkdtempSync, existsSync } from "fs";
+import { writeFileSync, unlinkSync, rmSync, mkdtempSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 import type { PantDocument } from "./types.js";
@@ -114,7 +114,7 @@ export function runCheck(pantSource: string, opts?: CheckOptions): CheckResult {
     throw err;
   } finally {
     try { unlinkSync(filePath); } catch { /* ignore */ }
-    try { unlinkSync(dir); } catch { /* ignore */ }
+    try { rmSync(dir, { recursive: true }); } catch { /* ignore */ }
   }
 }
 
