@@ -219,17 +219,31 @@ function unwrapExpression(expr: ts.Expression): ts.Expression {
 }
 
 function expressionHasSideEffects(expr: ts.Expression): boolean {
+  expr = unwrapExpression(expr);
+
   if (ts.isBinaryExpression(expr)) {
     // Any assignment operator
-    return expr.operatorToken.kind >= ts.SyntaxKind.EqualsToken &&
-           expr.operatorToken.kind <= ts.SyntaxKind.CaretEqualsToken;
+    return (
+      (expr.operatorToken.kind >= ts.SyntaxKind.EqualsToken &&
+        expr.operatorToken.kind <= ts.SyntaxKind.CaretEqualsToken) ||
+      expressionHasSideEffects(expr.left) ||
+      expressionHasSideEffects(expr.right)
+    );
   }
   if (ts.isCallExpression(expr)) return true;
+  if (ts.isNewExpression(expr) || ts.isAwaitExpression(expr)) return true;
   if (ts.isPrefixUnaryExpression(expr) || ts.isPostfixUnaryExpression(expr)) {
     const op = expr.operator;
-    return op === ts.SyntaxKind.PlusPlusToken || op === ts.SyntaxKind.MinusMinusToken;
+    return (
+      op === ts.SyntaxKind.PlusPlusToken ||
+      op === ts.SyntaxKind.MinusMinusToken ||
+      expressionHasSideEffects(expr.operand)
+    );
   }
-  return false;
+  return ts.forEachChild(
+    expr,
+    (child) => (ts.isExpression(child) ? expressionHasSideEffects(child) : false),
+  ) ?? false;
 }
 
 /**
@@ -242,6 +256,10 @@ export function translateBodyExpr(
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
 ): string {
+  if (ts.isExpression(expr)) {
+    expr = unwrapExpression(expr);
+  }
+
   // if/else statement -> cond
   if (ts.isIfStatement(expr)) {
     return translateIfStatement(expr, checker, strategy, paramNames);
@@ -297,11 +315,6 @@ export function translateBodyExpr(
     const right = translateBodyExpr(expr.right, checker, strategy, paramNames);
     if (isUnsupported(right)) return right;
     return `${left} ${op} ${right}`;
-  }
-
-  // Parenthesized
-  if (ts.isParenthesizedExpression(expr)) {
-    return translateBodyExpr(expr.expression, checker, strategy, paramNames);
   }
 
   // Fall through to base translateExpr for identifiers, literals, this, etc.
