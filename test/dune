@@ -18,11 +18,14 @@
   test_normalize
   test_solver
   test_error
-  test_e2e)
+  test_e2e
+  test_module)
  (modules :standard \ test_util)
  (libraries pantagruel test_util alcotest qcheck-alcotest)
  (deps
   (glob_files ../samples/*.pant)
-  (glob_files snapshots/json/*.json))
+  (glob_files snapshots/json/*.json)
+  (glob_files snapshots/pretty/*.pant)
+  (glob_files snapshots/markdown/*.md))
  (preprocess
   (pps sedlex.ppx)))

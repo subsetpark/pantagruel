@@ -1,0 +1,605 @@
+A specification of the Pantagruel specification language.
+
+## Chapter 1
+
+### Domains
+
+`Document`.
+
+> The type-checking environment has two namespaces: types (domains and aliases, keyed by uppercase names) and terms (rules and variables, keyed by lowercase names).
+
+`Env`.
+
+### Rules
+
+> A document is valid when every chapter is valid.
+
+**valid?** *d*: `Document`, *env*: `Env` ⇒ `Bool`.
+
+---
+
+> Every document contains at least one chapter.
+
+∀ *doc*: `Document` · #**chapters** *doc* ≥ 1.
+
+> Every chapter head contains at least one declaration.
+
+∀ *doc*: `Document`, *c* ∈ **chapters** *doc* · #**head** *c* ≥ 1.
+
+> Each chapter may contain at most one action.
+
+∀ *c*: `Chapter` · #(each *d* ∈ **head** *c*, **decl-kind** *d* = **dk-action** · *d*) ≤ 1.
+
+> Every context name in a rule's footprint must be declared at module level.
+
+∀ *doc*: `Document`, *decl*: `Declaration`, **decl-kind** *decl* = **dk-rule** · **rule-contexts** *decl* ⊆ **contexts** *doc*.
+
+> Boolean literals have type Bool.
+
+∀ *e*: `Expr`, *env*: `Env`, **is-lit-bool?** *e* · **infer** *e* *env* = **ty-bool**.
+
+> The natural literal zero has type Nat0; positive naturals have type Nat.
+
+∀ *e*: `Expr`, *env*: `Env`, **is-lit-nat?** *e*, **nat-value** *e* = 0 · **infer** *e* *env* = **ty-nat0**.
+
+∀ *e*: `Expr`, *env*: `Env`, **is-lit-nat?** *e*, **nat-value** *e* ≥ 1 · **infer** *e* *env* = **ty-nat**.
+
+> Real literals have type Real.
+
+∀ *e*: `Expr`, *env*: `Env`, **is-lit-real?** *e* · **infer** *e* *env* = **ty-real**.
+
+> String literals have type String.
+
+∀ *e*: `Expr`, *env*: `Env`, **is-lit-string?** *e* · **infer** *e* *env* = **ty-string**.
+
+> A domain name in expression position has type [D], the list of all its values.
+
+∀ *e*: `Expr`, *env*: `Env`, **is-domain-ref?** *e* · **infer** *e* *env* = **ty-list** (**ty-domain** (**domain-ref-name** *e*)).
+
+> Nullary rules are applied automatically on reference; their type is the return type, not a function type.
+>
+> A variable reference has the type bound in the environment.
+
+∀ *e*: `Expr`, *env*: `Env`, **is-var?** *e* · **infer** *e* *env* = **term-type** (**var-name** *e*) *env*.
+
+> Function application yields the function's return type.
+
+∀ *e*: `Expr`, *env*: `Env`, **is-app?** *e* · **infer** *e* *env* = **func-return** (**infer** (**app-func** *e*) *env*).
+
+> Application arity must match the function's parameter count.
+
+∀ *e*: `Expr`, *env*: `Env`, **is-app?** *e* · #**app-args** *e* = #**func-params** (**infer** (**app-func** *e*) *env*).
+
+> Tuple construction yields a product of the element types.
+
+∀ *e*: `Expr`, *env*: `Env`, **is-tuple?** *e* · **infer** *e* *env* = **ty-product** (each *elem* ∈ **tuple-elems** *e* · **infer** *elem* *env*).
+
+> Projection extracts the k-th component type from a product.
+
+∀ *e*: `Expr`, *env*: `Env`, **is-proj?** *e* · **infer** *e* *env* = **proj-type** (**infer** (**proj-expr** *e*) *env*) (**proj-index** *e*).
+
+> A primed expression has the same type as the unprimed rule.
+
+∀ *e*: `Expr`, *env*: `Env`, **is-primed?** *e* · **infer** *e* *env* = **term-type** (**primed-name** *e*) *env*.
+
+> Only rules may be primed, not local variables.
+
+∀ *e*: `Expr`, *env*: `Env`, **is-primed?** *e* · **is-rule?** (**primed-name** *e*) *env*.
+
+> Priming is only allowed in chapters that contain an action.
+
+∀ *c*: `Chapter`, *p* ∈ **body** *c*, **contains-primed?** *p* · **has-action?** *c*.
+
+> A function override preserves the overridden function's type.
+
+∀ *e*: `Expr`, *env*: `Env`, **is-override?** *e* · **infer** *e* *env* = **term-type** (**override-name** *e*) *env*.
+
+> The overridden function must have exactly one parameter.
+
+∀ *e*: `Expr`, *env*: `Env`, **is-override?** *e* · #**func-params** (**term-type** (**override-name** *e*) *env*) = 1.
+
+> Quantifiers with Bool bodies are logical propositions.
+
+∀ *e*: `Expr`, *env*: `Env`, **is-forall?** *e*, **infer** (**quant-body** *e*) *env* = **ty-bool** · **infer** *e* *env* = **ty-bool**.
+
+∀ *e*: `Expr`, *env*: `Env`, **is-exists?** *e*, **infer** (**quant-body** *e*) *env* = **ty-bool** · **infer** *e* *env* = **ty-bool**.
+
+> `each` produces a comprehension (list) regardless of body type.
+
+∀ *e*: `Expr`, *env*: `Env`, **is-each?** *e* · **infer** *e* *env* = **ty-list** (**infer** (**quant-body** *e*) *env*).
+
+> If a document is valid, then every chapter in it is valid.
+
+∀ *d*: `Document`, *env*: `Env` · **valid?** *d* *env* → (∀ *c* ∈ **chapters** *d* · **chapter-valid?** *c* *env*).
+
+> If a chapter is valid, then every proposition in its body has type Bool.
+
+∀ *c*: `Chapter`, *env*: `Env` · **chapter-valid?** *c* *env* → (∀ *p* ∈ **body** *c* · **infer** *p* *env* = **ty-bool**).
+
+> Every expression guard on a rule declaration must have type Bool.
+
+∀ *decl*: `Declaration`, *env*: `Env`, **decl-kind** *decl* = **dk-rule**, *g* ∈ **rule-guards** *decl*, **guard-kind** *g* = **gk-expr** · **infer** (**guard-expr** *g*) *env* = **ty-bool**.
+
+> Every expression guard on an action declaration must have type Bool.
+
+∀ *decl*: `Declaration`, *env*: `Env`, **decl-kind** *decl* = **dk-action**, *g* ∈ **action-guards** *decl*, **guard-kind** *g* = **gk-expr** · **infer** (**guard-expr** *g*) *env* = **ty-bool**.
+
+## Chapter 2
+
+### Domains
+
+`Chapter`.
+
+`Declaration`.
+
+`Expr`.
+
+`Name`.
+
+> A guard is a parameter binding, a membership binding, or a boolean expression.
+
+`Guard`.
+
+> Guards are classified by kind.
+
+`GuardKind`.
+
+> A proposition is an expression that must have type Bool.
+
+`Proposition` = `Expr`.
+
+> Declarations are classified by kind.
+
+`DeclKind`.
+
+> Internal resolved types, produced by the type checker. These are distinct from syntactic type expressions (Type).
+
+`Ty`.
+
+### Rules
+
+**gk-expr** ⇒ `GuardKind`.
+
+**gk-param** ⇒ `GuardKind`.
+
+**gk-in** ⇒ `GuardKind`.
+
+**guard-kind** *g*: `Guard` ⇒ `GuardKind`.
+
+**guard-expr** *g*: `Guard` ⇒ `Expr`.
+
+**chapters** *d*: `Document` ⇒ [`Chapter`].
+
+> A document may declare named contexts at module level.
+
+**contexts** *d*: `Document` ⇒ [`Name`].
+
+> Each chapter has a non-empty head of declarations and a body of propositions.
+
+**head** *c*: `Chapter` ⇒ [`Declaration`].
+
+**body** *c*: `Chapter` ⇒ [`Proposition`].
+
+**dk-domain** ⇒ `DeclKind`.
+
+**dk-alias** ⇒ `DeclKind`.
+
+**dk-rule** ⇒ `DeclKind`.
+
+**dk-action** ⇒ `DeclKind`.
+
+**decl-kind** *decl*: `Declaration` ⇒ `DeclKind`.
+
+**rule-guards** *decl*: `Declaration` ⇒ [`Guard`].
+
+> A rule may declare membership in one or more contexts.
+
+**rule-contexts** *decl*: `Declaration` ⇒ [`Name`].
+
+**action-guards** *decl*: `Declaration` ⇒ [`Guard`].
+
+> Seven built-in primitive types are predefined.
+
+**ty-bool** ⇒ `Ty`.
+
+**ty-nat** ⇒ `Ty`.
+
+**ty-nat0** ⇒ `Ty`.
+
+**ty-int** ⇒ `Ty`.
+
+**ty-real** ⇒ `Ty`.
+
+**ty-string** ⇒ `Ty`.
+
+**ty-nothing** ⇒ `Ty`.
+
+> Compound type constructors.
+
+**ty-domain** *name*: `Name` ⇒ `Ty`.
+
+**ty-list** *t*: `Ty` ⇒ `Ty`.
+
+**ty-or** *t1*: `Ty`, *t2*: `Ty` ⇒ `Ty`.
+
+**ty-product** *ts*: [`Ty`] ⇒ `Ty`.
+
+> Function types arise from rule declarations.
+
+**ty-func** *params*: [`Ty`], *ret*: `Ty` ⇒ `Ty`.
+
+> The type checker infers a resolved type for each expression.
+
+**infer** *e*: `Expr`, *env*: `Env` ⇒ `Ty`.
+
+**is-domain-ref?** *e*: `Expr` ⇒ `Bool`.
+
+**is-lit-bool?** *e*: `Expr` ⇒ `Bool`.
+
+**is-lit-nat?** *e*: `Expr` ⇒ `Bool`.
+
+**is-lit-real?** *e*: `Expr` ⇒ `Bool`.
+
+**is-lit-string?** *e*: `Expr` ⇒ `Bool`.
+
+**is-forall?** *e*: `Expr` ⇒ `Bool`.
+
+**is-exists?** *e*: `Expr` ⇒ `Bool`.
+
+**is-each?** *e*: `Expr` ⇒ `Bool`.
+
+**domain-ref-name** *e*: `Expr` ⇒ `Name`.
+
+**quant-body** *e*: `Expr` ⇒ `Expr`.
+
+> The value of a natural literal (zero is Nat0, positive is Nat).
+
+**nat-value** *e*: `Expr` ⇒ `Nat0`.
+
+**chapter-valid?** *c*: `Chapter`, *env*: `Env` ⇒ `Bool`.
+
+> Expression form predicates.
+
+**is-var?** *e*: `Expr` ⇒ `Bool`.
+
+**is-app?** *e*: `Expr` ⇒ `Bool`.
+
+**is-tuple?** *e*: `Expr` ⇒ `Bool`.
+
+**is-proj?** *e*: `Expr` ⇒ `Bool`.
+
+**is-primed?** *e*: `Expr` ⇒ `Bool`.
+
+**is-override?** *e*: `Expr` ⇒ `Bool`.
+
+**is-binop?** *e*: `Expr` ⇒ `Bool`.
+
+**is-unop?** *e*: `Expr` ⇒ `Bool`.
+
+> Expression accessors.
+
+**var-name** *e*: `Expr` ⇒ `Name`.
+
+**app-func** *e*: `Expr` ⇒ `Expr`.
+
+**app-args** *e*: `Expr` ⇒ [`Expr`].
+
+**tuple-elems** *e*: `Expr` ⇒ [`Expr`].
+
+**proj-expr** *e*: `Expr` ⇒ `Expr`.
+
+**proj-index** *e*: `Expr` ⇒ `Nat`.
+
+**primed-name** *e*: `Expr` ⇒ `Name`.
+
+**override-name** *e*: `Expr` ⇒ `Name`.
+
+**binop-left** *e*: `Expr` ⇒ `Expr`.
+
+**binop-right** *e*: `Expr` ⇒ `Expr`.
+
+**unop-arg** *e*: `Expr` ⇒ `Expr`.
+
+> Whether a chapter's head contains an action declaration.
+
+**has-action?** *c*: `Chapter` ⇒ `Bool`.
+
+> The resolved type of a term binding in the environment.
+
+**term-type** *name*: `Name`, *env*: `Env` ⇒ `Ty`.
+
+> Whether a name is bound as a rule (not a variable) in the environment.
+
+**is-rule?** *name*: `Name`, *env*: `Env` ⇒ `Bool`.
+
+> Whether an expression contains any primed subexpression.
+
+**contains-primed?** *e*: `Expr` ⇒ `Bool`.
+
+> Accessors for function types.
+
+**func-params** *t*: `Ty` ⇒ [`Ty`].
+
+**func-return** *t*: `Ty` ⇒ `Ty`.
+
+> The k-th component type of a product type.
+
+**proj-type** *t*: `Ty`, *k*: `Nat` ⇒ `Ty`.
+
+---
+
+> Every rule has the same number of parameter names as parameter types.
+
+∀ *decl*: `Declaration`, **decl-kind** *decl* = **dk-rule** · #**rule-params** *decl* = #**rule-param-types** *decl*.
+
+> The empty environment contains no type-namespace bindings.
+
+∀ *name*: `Name` · ¬**has-type?** *name* **empty-env**.
+
+> The empty environment contains no term-namespace bindings.
+
+∀ *name*: `Name` · ¬**has-term?** *name* **empty-env**.
+
+> Every type is a subtype of itself (reflexivity).
+
+∀ *t*: `Ty` · **subtype?** *t* *t*.
+
+> Nothing is a subtype of every type (bottom).
+
+∀ *t*: `Ty` · **subtype?** **ty-nothing** *t*.
+
+> The numeric types form a strict chain: Nat < Nat0 < Int < Real.
+
+**subtype?** **ty-nat** **ty-nat0**.
+
+**subtype?** **ty-nat0** **ty-int**.
+
+**subtype?** **ty-int** **ty-real**.
+
+> Subtyping is transitive.
+
+∀ *t1*: `Ty`, *t2*: `Ty`, *t3*: `Ty` · **subtype?** *t1* *t2* ∧ **subtype?** *t2* *t3* → **subtype?** *t1* *t3*.
+
+> By transitivity, Nat is a subtype of Int and Real.
+
+**subtype?** **ty-nat** **ty-int**.
+
+**subtype?** **ty-nat** **ty-real**.
+
+**subtype?** **ty-nat0** **ty-real**.
+
+> Subtyping lifts covariantly through list types.
+
+∀ *s*: `Ty`, *t*: `Ty` · **subtype?** *s* *t* → **subtype?** (**ty-list** *s*) (**ty-list** *t*).
+
+> When two types are compatible, the join is an upper bound of both.
+
+∀ *t1*: `Ty`, *t2*: `Ty`, **compatible?** *t1* *t2* · **subtype?** *t1* (**join** *t1* *t2*) ∧ **subtype?** *t2* (**join** *t1* *t2*).
+
+> Equal types are always compatible, and their join is themselves.
+
+∀ *t*: `Ty` · **compatible?** *t* *t* ∧ **join** *t* *t* = *t*.
+
+> When one type is a subtype of another, the join is the supertype.
+
+∀ *s*: `Ty`, *t*: `Ty`, **subtype?** *s* *t* · **compatible?** *s* *t* ∧ **join** *s* *t* = *t*.
+
+> Exactly the four numeric types satisfy the numeric predicate.
+
+**is-numeric?** **ty-nat**.
+
+**is-numeric?** **ty-nat0**.
+
+**is-numeric?** **ty-int**.
+
+**is-numeric?** **ty-real**.
+
+> Logical operators require Bool operands and produce Bool.
+
+**binop-type** **op-and** **ty-bool** **ty-bool** = **ty-bool**.
+
+**binop-type** **op-or** **ty-bool** **ty-bool** = **ty-bool**.
+
+**binop-type** **op-impl** **ty-bool** **ty-bool** = **ty-bool**.
+
+**binop-type** **op-iff** **ty-bool** **ty-bool** = **ty-bool**.
+
+> Logical negation requires a Bool operand and produces Bool.
+
+**unop-type** **op-not** **ty-bool** = **ty-bool**.
+
+> Equality and inequality require compatible operands and produce Bool.
+
+∀ *t1*: `Ty`, *t2*: `Ty`, **compatible?** *t1* *t2* · **binop-type** **op-eq** *t1* *t2* = **ty-bool**.
+
+∀ *t1*: `Ty`, *t2*: `Ty`, **compatible?** *t1* *t2* · **binop-type** **op-neq** *t1* *t2* = **ty-bool**.
+
+> Numeric comparisons require numeric operands and produce Bool.
+
+∀ *t1*: `Ty`, *t2*: `Ty`, **is-numeric?** *t1*, **is-numeric?** *t2* · **binop-type** **op-lt** *t1* *t2* = **ty-bool**.
+
+∀ *t1*: `Ty`, *t2*: `Ty`, **is-numeric?** *t1*, **is-numeric?** *t2* · **binop-type** **op-le** *t1* *t2* = **ty-bool**.
+
+∀ *t1*: `Ty`, *t2*: `Ty`, **is-numeric?** *t1*, **is-numeric?** *t2* · **binop-type** **op-gt** *t1* *t2* = **ty-bool**.
+
+∀ *t1*: `Ty`, *t2*: `Ty`, **is-numeric?** *t1*, **is-numeric?** *t2* · **binop-type** **op-ge** *t1* *t2* = **ty-bool**.
+
+> Arithmetic operators require numeric operands; the result type is the join (least upper bound) of the operand types.
+
+∀ *t1*: `Ty`, *t2*: `Ty`, **is-numeric?** *t1*, **is-numeric?** *t2* · **binop-type** **op-add** *t1* *t2* = **join** *t1* *t2*.
+
+∀ *t1*: `Ty`, *t2*: `Ty`, **is-numeric?** *t1*, **is-numeric?** *t2* · **binop-type** **op-sub** *t1* *t2* = **join** *t1* *t2*.
+
+∀ *t1*: `Ty`, *t2*: `Ty`, **is-numeric?** *t1*, **is-numeric?** *t2* · **binop-type** **op-mul** *t1* *t2* = **join** *t1* *t2*.
+
+∀ *t1*: `Ty`, *t2*: `Ty`, **is-numeric?** *t1*, **is-numeric?** *t2* · **binop-type** **op-div** *t1* *t2* = **join** *t1* *t2*.
+
+> Membership requires the left operand to be a subtype of the right operand's element type, and produces Bool.
+
+∀ *s*: `Ty`, *t*: `Ty`, **subtype?** *s* *t* · **binop-type** **op-in** *s* (**ty-list** *t*) = **ty-bool**.
+
+> Subset requires both operands to be lists with the left element type a subtype of the right, and produces Bool.
+
+∀ *s*: `Ty`, *t*: `Ty`, **subtype?** *s* *t* · **binop-type** **op-subset** (**ty-list** *s*) (**ty-list** *t*) = **ty-bool**.
+
+> Cardinality (#xs) requires a list and produces Nat0, since the empty list has cardinality zero.
+
+∀ *t*: `Ty` · **unop-type** **op-card** (**ty-list** *t*) = **ty-nat0**.
+
+> Unary minus requires a numeric operand. Negating a natural or non-negative integer may produce a negative number, so the result is promoted to at least Int.
+
+∀ *t*: `Ty`, **is-numeric?** *t*, **subtype?** *t* **ty-int** · **unop-type** **op-neg** *t* = **ty-int**.
+
+**unop-type** **op-neg** **ty-real** = **ty-real**.
+
+> A binary operator expression dispatches to the operator typing rule.
+
+∀ *e*: `Expr`, *env*: `Env`, **is-binop?** *e* · **infer** *e* *env* = **binop-type** (**binop-op** *e*) (**infer** (**binop-left** *e*) *env*) (**infer** (**binop-right** *e*) *env*).
+
+> A unary operator expression dispatches to the operator typing rule.
+
+∀ *e*: `Expr`, *env*: `Env`, **is-unop?** *e* · **infer** *e* *env* = **unop-type** (**unop-op** *e*) (**infer** (**unop-arg** *e*)
+*env*).
+
+## Chapter 3
+
+### Domains
+
+`Type`.
+
+> Binary operators.
+
+`BinOp`.
+
+> Unary operators: not, unary minus, cardinality (#).
+
+`UnOp`.
+
+### Rules
+
+> A rule has typed parameters, optional guards, and a return type.
+
+**rule-params** *decl*: `Declaration` ⇒ [`Name`].
+
+**rule-param-types** *decl*: `Declaration` ⇒ [`Type`].
+
+> Looking up a name in either namespace.
+
+**has-type?** *name*: `Name`, *env*: `Env` ⇒ `Bool`.
+
+**has-term?** *name*: `Name`, *env*: `Env` ⇒ `Bool`.
+
+> The empty environment has no bindings.
+
+**empty-env** ⇒ `Env`.
+
+> The subtype relation is a partial order on types.
+
+**subtype?** *t1*: `Ty`, *t2*: `Ty` ⇒ `Bool`.
+
+> Two types are compatible when they have a least upper bound (join).
+
+**compatible?** *t1*: `Ty`, *t2*: `Ty` ⇒ `Bool`.
+
+> The join of two compatible types is their least upper bound.
+
+**join** *t1*: `Ty`, *t2*: `Ty` ⇒ `Ty`.
+
+> A type is numeric if it belongs to the numeric chain.
+
+**is-numeric?** *t*: `Ty` ⇒ `Bool`.
+
+> Arithmetic: +, -, *, /
+
+**op-add** ⇒ `BinOp`.
+
+**op-sub** ⇒ `BinOp`.
+
+**op-mul** ⇒ `BinOp`.
+
+**op-div** ⇒ `BinOp`.
+
+> Equality and comparison: =, !=, <, >, <=, >=
+
+**op-eq** ⇒ `BinOp`.
+
+**op-neq** ⇒ `BinOp`.
+
+**op-lt** ⇒ `BinOp`.
+
+**op-le** ⇒ `BinOp`.
+
+**op-gt** ⇒ `BinOp`.
+
+**op-ge** ⇒ `BinOp`.
+
+> Logical: and, or, ->, <->
+
+**op-and** ⇒ `BinOp`.
+
+**op-or** ⇒ `BinOp`.
+
+**op-impl** ⇒ `BinOp`.
+
+**op-iff** ⇒ `BinOp`.
+
+> Set operations: in, subset
+
+**op-in** ⇒ `BinOp`.
+
+**op-subset** ⇒ `BinOp`.
+
+**op-not** ⇒ `UnOp`.
+
+**op-neg** ⇒ `UnOp`.
+
+**op-card** ⇒ `UnOp`.
+
+> Operator typing rules assign a result type to each operator application.
+
+**binop-type** *op*: `BinOp`, *t1*: `Ty`, *t2*: `Ty` ⇒ `Ty`.
+
+**unop-type** *op*: `UnOp`, *t*: `Ty` ⇒ `Ty`.
+
+> The operator of a binary or unary operator expression.
+
+**binop-op** *e*: `Expr` ⇒ `BinOp`.
+
+**unop-op** *e*: `Expr` ⇒ `UnOp`.
+
+---
+
+> Product types have at least two components.
+
+∀ *t*: `Type`, **type-kind** *t* = **tk-product** · #**product-components** *t* ≥ 2.
+
+> Sum types have at least two components.
+
+∀ *t*: `Type`, **type-kind** *t* = **tk-sum** · #**sum-components** *t* ≥ 2.
+
+## Chapter 4
+
+### Domains
+
+> Syntactic type expressions are classified by kind.
+
+`TypeKind`
+
+### Rules
+
+**tk-name** ⇒ `TypeKind`.
+
+**tk-qualified** ⇒ `TypeKind`.
+
+**tk-product** ⇒ `TypeKind`.
+
+**tk-sum** ⇒ `TypeKind`.
+
+**tk-list** ⇒ `TypeKind`.
+
+**type-kind** *t*: `Type` ⇒ `TypeKind`.
+
+**product-components** *t*: `Type` ⇒ [`Type`].
+
+**sum-components** *t*: `Type` ⇒ [`Type`].
+

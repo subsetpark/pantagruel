@@ -1,5 +1,5 @@
-(** Fuzz the full pipeline: lexer -> parser -> collect -> check.
-    Catches crashes deep in the pipeline from malformed but parseable inputs. *)
+(** Fuzz the full pipeline: lexer -> parser -> collect -> check. Catches crashes
+    deep in the pipeline from malformed but parseable inputs. *)
 
 open Pantagruel
 
@@ -17,7 +17,6 @@ let () =
         (match Collect.collect_all ~base_env:(Env.empty mod_name) doc with
         | Error _ -> ()
         | Ok env -> (
-            match Check.check_document env doc with
-            | Ok _ | Error _ -> ()));
+            match Check.check_document env doc with Ok _ | Error _ -> ()));
         ()
       with _ -> ())
