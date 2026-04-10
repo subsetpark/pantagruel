@@ -276,6 +276,25 @@ function followGuards(
   return guards;
 }
 
+const ASSIGNMENT_OPERATORS = new Set([
+  ts.SyntaxKind.EqualsToken,
+  ts.SyntaxKind.PlusEqualsToken,
+  ts.SyntaxKind.MinusEqualsToken,
+  ts.SyntaxKind.AsteriskEqualsToken,
+  ts.SyntaxKind.SlashEqualsToken,
+  ts.SyntaxKind.PercentEqualsToken,
+  ts.SyntaxKind.AsteriskAsteriskEqualsToken,
+  ts.SyntaxKind.LessThanLessThanEqualsToken,
+  ts.SyntaxKind.GreaterThanGreaterThanEqualsToken,
+  ts.SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken,
+  ts.SyntaxKind.AmpersandEqualsToken,
+  ts.SyntaxKind.BarEqualsToken,
+  ts.SyntaxKind.CaretEqualsToken,
+  ts.SyntaxKind.BarBarEqualsToken,
+  ts.SyntaxKind.AmpersandAmpersandEqualsToken,
+  ts.SyntaxKind.QuestionQuestionEqualsToken,
+]);
+
 /**
  * Check whether an expression is side-effect-free (identifiers, literals,
  * property access, operators — no calls, assignments, or increments).
@@ -305,8 +324,7 @@ function isPureExpression(expr: ts.Expression): boolean {
     return isPureExpression(expr.operand);
   }
   if (ts.isBinaryExpression(expr)) {
-    if (expr.operatorToken.kind >= ts.SyntaxKind.EqualsToken &&
-        expr.operatorToken.kind <= ts.SyntaxKind.CaretEqualsToken) return false;
+    if (ASSIGNMENT_OPERATORS.has(expr.operatorToken.kind)) return false;
     return isPureExpression(expr.left) && isPureExpression(expr.right);
   }
   // Calls, new, await, template expressions, etc. are not pure

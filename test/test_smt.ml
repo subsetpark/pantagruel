@@ -2309,7 +2309,10 @@ let test_entailment_action_query () =
   let q = List.hd entailment in
   check bool "has check-sat" true (contains q.smt2 "(check-sat)");
   check bool "has negated goal" true (contains q.smt2 "(assert (not");
-  check bool "has postcondition" true (contains q.smt2 "balance_prime")
+  check bool "has action postcondition" true
+    (contains q.smt2 "(= (balance_prime a)");
+  check bool "has invariant assumption" true
+    (contains q.smt2 "(>= (balance a) 0)")
 
 let test_entailment_uses_chapter_local_invariants () =
   (* Two invariant chapters, each with a check. The check in the second chapter
@@ -2344,6 +2347,23 @@ let test_entailment_uses_chapter_local_invariants () =
   check bool "q2 lacks f axiom" false (contains q2.smt2 "(= (f ");
   ()
 
+let test_entailment_multiple_goals () =
+  let env, doc =
+    parse_and_collect
+      "module T.\n\
+       f a: Int => Int.\n\
+       ---\n\
+       all a: Int | f a = a + 1.\n\
+       check\n\
+       all a: Int | f a > a.\n\
+       all a: Int | f a >= a.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  let entailment =
+    List.filter (fun (q : Smt.query) -> q.kind = Smt.Entailment) queries
+  in
+  check int "two entailment queries for two goals" 2 (List.length entailment)
+
 let test_no_entailment_without_checks () =
   let env, doc =
     parse_and_collect
@@ -2364,6 +2384,8 @@ let entailment_tests =
       test_no_entailment_without_checks;
     test_case "entailment uses chapter-local invariants" `Quick
       test_entailment_uses_chapter_local_invariants;
+    test_case "multiple goals in one check" `Quick
+      test_entailment_multiple_goals;
   ]
 
 let () =
