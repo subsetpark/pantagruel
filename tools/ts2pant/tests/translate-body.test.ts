@@ -510,6 +510,32 @@ describe("arrow function body rejection", () => {
     expect(props).toHaveLength(1);
     expect(props[0].text).toMatch(/UNSUPPORTED/);
   });
+
+  it("rejects destructuring parameter in filter callback", () => {
+    const source = `
+      interface User { name: string; active: boolean; }
+      function activeNames(users: User[]): string[] {
+        return users.filter(({ active }) => active).map((u) => u.name);
+      }
+    `;
+    const props = translate(source, "activeNames");
+
+    expect(props).toHaveLength(1);
+    expect(props[0].text).toMatch(/UNSUPPORTED/);
+  });
+
+  it("rejects multi-parameter callback in map", () => {
+    const source = `
+      interface Item { value: number; }
+      function indexed(items: Item[]): number[] {
+        return items.filter((x) => x.value > 0).map((x, i) => x.value + i);
+      }
+    `;
+    const props = translate(source, "indexed");
+
+    expect(props).toHaveLength(1);
+    expect(props[0].text).toMatch(/UNSUPPORTED/);
+  });
 });
 
 describe("frame condition suppression", () => {

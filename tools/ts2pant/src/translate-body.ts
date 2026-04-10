@@ -459,12 +459,13 @@ function extractArrowBody(
   strategy: NumericStrategy,
 ): string | null {
   if (!ts.isArrowFunction(expr)) return null;
+  if (expr.parameters.length !== 1 || !ts.isIdentifier(expr.parameters[0].name)) {
+    return `> UNSUPPORTED: filter/map callback must have exactly one identifier parameter`;
+  }
 
   // Map arrow param to the fresh binder
   const arrowParams = new Map(paramNames);
-  if (expr.parameters.length === 1) {
-    arrowParams.set(expr.parameters[0].name.getText(), binderName);
-  }
+  arrowParams.set(expr.parameters[0].name.text, binderName);
 
   if (ts.isBlock(expr.body)) {
     // Only allow a single return (after filtering guards), same rule as
