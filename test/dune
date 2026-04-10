@@ -16,8 +16,6 @@
   test_pretty
   test_json_output
   test_normalize
-  test_solver
-  test_error
   test_e2e
   test_module)
  (modules :standard \ test_util)

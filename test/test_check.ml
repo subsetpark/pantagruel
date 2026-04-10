@@ -576,7 +576,8 @@ process.
     | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
     | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
     | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
-    | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _ ->
+    | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ ->
         false)
 
 let test_qualified_type_resolves_ambiguity () =
@@ -656,7 +657,8 @@ WRONG::count >= 0.
     | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
     | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
     | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
-    | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _ ->
+    | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ ->
         false)
 
 let test_local_domain_shadows_import () =
@@ -967,7 +969,8 @@ all u: User | role u.
     | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
     | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
     | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
-    | PrimedExtracontextual _ | BoolParam _ ->
+    | PrimedExtracontextual _ | BoolParam _ | AggregateRequiresNumeric _
+    | AggregateRequiresBool _ ->
         false)
 
 let test_all_non_bool_body_error () =
@@ -988,7 +991,8 @@ some u: User | role u.
     | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
     | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
     | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
-    | PrimedExtracontextual _ | BoolParam _ ->
+    | PrimedExtracontextual _ | BoolParam _ | AggregateRequiresNumeric _
+    | AggregateRequiresBool _ ->
         false)
 
 let test_combiner_add_numeric () =
@@ -1028,10 +1032,10 @@ active u: User => Bool.
     | UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
     | NotAFunction _ | NotAList _ | NotAProduct _ | NotNumeric _
     | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
-    | OverrideRequiresArity1 _ | ProjectionOutOfBounds _
-    | PropositionNotBool _ | ShadowingTypeMismatch _ | AmbiguousName _
-    | UnboundQualified _ | PrimedExtracontextual _ | BoolParam _
-    | ComprehensionNeedEach _ | AggregateRequiresBool _ ->
+    | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
+    | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
+    | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _
+    | AggregateRequiresBool _ ->
         false)
 
 let test_combiner_bool_on_numeric_fails () =
@@ -1049,10 +1053,10 @@ and over each u: User | score u.
     | UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
     | NotAFunction _ | NotAList _ | NotAProduct _ | NotNumeric _
     | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
-    | OverrideRequiresArity1 _ | ProjectionOutOfBounds _
-    | PropositionNotBool _ | ShadowingTypeMismatch _ | AmbiguousName _
-    | UnboundQualified _ | PrimedExtracontextual _ | BoolParam _
-    | ComprehensionNeedEach _ | AggregateRequiresNumeric _ ->
+    | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
+    | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
+    | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ ->
         false)
 
 (* --- Closure tests --- *)
@@ -1263,7 +1267,8 @@ x.1 >= 0.
     | PrimedNonRule _ | PrimeOutsideActionContext _ | OverrideRequiresArity1 _
     | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
     | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
-    | BoolParam _ | ComprehensionNeedEach _ ->
+    | BoolParam _ | ComprehensionNeedEach _ | AggregateRequiresNumeric _
+    | AggregateRequiresBool _ ->
         false)
 
 let test_not_numeric () =
@@ -1280,7 +1285,8 @@ f + 1 = 2.
     | PrimedNonRule _ | PrimeOutsideActionContext _ | OverrideRequiresArity1 _
     | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
     | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
-    | BoolParam _ | ComprehensionNeedEach _ ->
+    | BoolParam _ | ComprehensionNeedEach _ | AggregateRequiresNumeric _
+    | AggregateRequiresBool _ ->
         false)
 
 let test_override_requires_arity1 () =
@@ -1300,7 +1306,8 @@ all a: A, b: B | f[a |-> b] a = a.
     | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
     | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
     | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
-    | BoolParam _ | ComprehensionNeedEach _ ->
+    | BoolParam _ | ComprehensionNeedEach _ | AggregateRequiresNumeric _
+    | AggregateRequiresBool _ ->
         false)
 
 let test_projection_out_of_bounds () =
@@ -1318,7 +1325,8 @@ p.5 >= 0.
     | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
     | OverrideRequiresArity1 _ | PropositionNotBool _ | ShadowingTypeMismatch _
     | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
-    | BoolParam _ | ComprehensionNeedEach _ ->
+    | BoolParam _ | ComprehensionNeedEach _ | AggregateRequiresNumeric _
+    | AggregateRequiresBool _ ->
         false)
 
 let test_unbound_type () =
@@ -1333,7 +1341,8 @@ f x: Nonexistent => Bool.
     | PrimedNonRule _ | PrimeOutsideActionContext _ | OverrideRequiresArity1 _
     | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
     | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
-    | BoolParam _ | ComprehensionNeedEach _ ->
+    | BoolParam _ | ComprehensionNeedEach _ | AggregateRequiresNumeric _
+    | AggregateRequiresBool _ ->
         false)
 
 let test_builtin_redefined () = check_fails {|module TEST.
@@ -1356,7 +1365,8 @@ x in x.
     | PrimedNonRule _ | PrimeOutsideActionContext _ | OverrideRequiresArity1 _
     | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
     | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
-    | BoolParam _ | ComprehensionNeedEach _ ->
+    | BoolParam _ | ComprehensionNeedEach _ | AggregateRequiresNumeric _
+    | AggregateRequiresBool _ ->
         false)
 
 let test_arithmetic_type_mismatch () =
@@ -1373,7 +1383,8 @@ f + 1 = 2.
     | PrimedNonRule _ | PrimeOutsideActionContext _ | OverrideRequiresArity1 _
     | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
     | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
-    | BoolParam _ | ComprehensionNeedEach _ ->
+    | BoolParam _ | ComprehensionNeedEach _ | AggregateRequiresNumeric _
+    | AggregateRequiresBool _ ->
         false)
 
 (* --- Bug-finding tests --- *)
@@ -1443,7 +1454,14 @@ active? i: Item => Bool.
 |}
     (function
     | Check.AggregateRequiresNumeric ("+", _, _) -> true
-    | _ -> false)
+    | UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
+    | NotAFunction _ | NotAList _ | NotAProduct _ | NotNumeric _
+    | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
+    | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
+    | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
+    | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ ->
+        false)
 
 let test_over_each_mul_nat () =
   check_ok
@@ -1466,7 +1484,14 @@ active? i: Item => Bool.
 |}
     (function
     | Check.AggregateRequiresNumeric ("*", _, _) -> true
-    | _ -> false)
+    | UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
+    | NotAFunction _ | NotAList _ | NotAProduct _ | NotNumeric _
+    | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
+    | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
+    | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
+    | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ ->
+        false)
 
 let test_over_each_and_bool () =
   check_ok
@@ -1489,7 +1514,14 @@ and over each i: Item | weight i.
 |}
     (function
     | Check.AggregateRequiresBool ("and", _, _) -> true
-    | _ -> false)
+    | UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
+    | NotAFunction _ | NotAList _ | NotAProduct _ | NotNumeric _
+    | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
+    | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
+    | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
+    | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ ->
+        false)
 
 let test_over_each_or_bool () =
   check_ok
@@ -1512,7 +1544,14 @@ or over each i: Item | weight i.
 |}
     (function
     | Check.AggregateRequiresBool ("or", _, _) -> true
-    | _ -> false)
+    | UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
+    | NotAFunction _ | NotAList _ | NotAProduct _ | NotNumeric _
+    | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
+    | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
+    | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
+    | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ ->
+        false)
 
 let test_over_each_min_nat () =
   check_ok
@@ -1545,7 +1584,14 @@ active? i: Item => Bool.
 |}
     (function
     | Check.AggregateRequiresNumeric ("max", _, _) -> true
-    | _ -> false)
+    | UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
+    | NotAFunction _ | NotAList _ | NotAProduct _ | NotNumeric _
+    | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
+    | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
+    | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
+    | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ ->
+        false)
 
 let test_over_each_min_bool_fails () =
   check_error
@@ -1558,7 +1604,14 @@ active? i: Item => Bool.
 |}
     (function
     | Check.AggregateRequiresNumeric ("min", _, _) -> true
-    | _ -> false)
+    | UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
+    | NotAFunction _ | NotAList _ | NotAProduct _ | NotNumeric _
+    | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
+    | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
+    | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
+    | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ ->
+        false)
 
 let test_over_each_bare_unchanged () =
   check_ok

@@ -2001,10 +2001,10 @@ let test_aggregate_add_item () =
   let env = make_aggregate_env () in
   let expr =
     Ast.EEach
-      ( [ { param_name = "i"; param_type = TName "Item" } ],
+      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
         [],
         Some CombAdd,
-        EApp (EVar "price", [ EVar "i" ]) )
+        EApp (EVar (Lower "price"), [ EVar (Lower "i") ]) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "uses +" true (contains result "(+");
@@ -2016,10 +2016,10 @@ let test_aggregate_add_guarded () =
   let env = make_aggregate_env () in
   let expr =
     Ast.EEach
-      ( [ { param_name = "i"; param_type = TName "Item" } ],
-        [ GExpr (EApp (EVar "available?", [ EVar "i" ])) ],
+      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
+        [ GExpr (EApp (EVar (Lower "available?"), [ EVar (Lower "i") ])) ],
         Some CombAdd,
-        EApp (EVar "price", [ EVar "i" ]) )
+        EApp (EVar (Lower "price"), [ EVar (Lower "i") ]) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "uses +" true (contains result "(+");
@@ -2031,10 +2031,10 @@ let test_aggregate_mul () =
   let env = make_aggregate_env () in
   let expr =
     Ast.EEach
-      ( [ { param_name = "i"; param_type = TName "Item" } ],
+      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
         [],
         Some CombMul,
-        EApp (EVar "price", [ EVar "i" ]) )
+        EApp (EVar (Lower "price"), [ EVar (Lower "i") ]) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "uses *" true (contains result "(*")
@@ -2043,10 +2043,10 @@ let test_aggregate_and_item () =
   let env = make_aggregate_env () in
   let expr =
     Ast.EEach
-      ( [ { param_name = "i"; param_type = TName "Item" } ],
+      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
         [],
         Some CombAnd,
-        EApp (EVar "available?", [ EVar "i" ]) )
+        EApp (EVar (Lower "available?"), [ EVar (Lower "i") ]) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "uses and" true (contains result "(and")
@@ -2055,10 +2055,10 @@ let test_aggregate_and_guarded () =
   let env = make_aggregate_env () in
   let expr =
     Ast.EEach
-      ( [ { param_name = "i"; param_type = TName "Item" } ],
-        [ GExpr (EApp (EVar "available?", [ EVar "i" ])) ],
+      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
+        [ GExpr (EApp (EVar (Lower "available?"), [ EVar (Lower "i") ])) ],
         Some CombAnd,
-        EApp (EVar "available?", [ EVar "i" ]) )
+        EApp (EVar (Lower "available?"), [ EVar (Lower "i") ]) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "uses and" true (contains result "(and");
@@ -2070,10 +2070,10 @@ let test_aggregate_or_guarded () =
   let env = make_aggregate_env () in
   let expr =
     Ast.EEach
-      ( [ { param_name = "i"; param_type = TName "Item" } ],
-        [ GExpr (EApp (EVar "available?", [ EVar "i" ])) ],
+      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
+        [ GExpr (EApp (EVar (Lower "available?"), [ EVar (Lower "i") ])) ],
         Some CombOr,
-        EApp (EVar "available?", [ EVar "i" ]) )
+        EApp (EVar (Lower "available?"), [ EVar (Lower "i") ]) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "uses or" true (contains result "(or");
@@ -2085,10 +2085,10 @@ let test_aggregate_or () =
   let env = make_aggregate_env () in
   let expr =
     Ast.EEach
-      ( [ { param_name = "i"; param_type = TName "Item" } ],
+      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
         [],
         Some CombOr,
-        EApp (EVar "available?", [ EVar "i" ]) )
+        EApp (EVar (Lower "available?"), [ EVar (Lower "i") ]) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "uses or" true (contains result "(or")
@@ -2097,10 +2097,10 @@ let test_aggregate_min () =
   let env = make_aggregate_env () in
   let expr =
     Ast.EEach
-      ( [ { param_name = "i"; param_type = TName "Item" } ],
+      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
         [],
         Some CombMin,
-        EApp (EVar "price", [ EVar "i" ]) )
+        EApp (EVar (Lower "price"), [ EVar (Lower "i") ]) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "uses <" true (contains result "(<");
@@ -2110,10 +2110,10 @@ let test_aggregate_max () =
   let env = make_aggregate_env () in
   let expr =
     Ast.EEach
-      ( [ { param_name = "i"; param_type = TName "Item" } ],
+      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
         [],
         Some CombMax,
-        EApp (EVar "price", [ EVar "i" ]) )
+        EApp (EVar (Lower "price"), [ EVar (Lower "i") ]) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "uses >" true (contains result "(>");
@@ -2128,10 +2128,10 @@ let test_aggregate_empty_domain () =
   in
   let expr =
     Ast.EEach
-      ( [ { param_name = "i"; param_type = TName "Item" } ],
+      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
         [],
         Some CombAdd,
-        EApp (EVar "price", [ EVar "i" ]) )
+        EApp (EVar (Lower "price"), [ EVar (Lower "i") ]) )
   in
   let result = Smt.translate_expr zero_config env expr in
   check string "empty domain returns 0" "0" result
@@ -2144,10 +2144,10 @@ let test_aggregate_empty_domain_mul () =
   in
   let expr =
     Ast.EEach
-      ( [ { param_name = "i"; param_type = TName "Item" } ],
+      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
         [],
         Some CombMul,
-        EApp (EVar "price", [ EVar "i" ]) )
+        EApp (EVar (Lower "price"), [ EVar (Lower "i") ]) )
   in
   let result = Smt.translate_expr zero_config env expr in
   check string "empty domain returns 1" "1" result
@@ -2160,10 +2160,10 @@ let test_aggregate_empty_domain_and () =
   in
   let expr =
     Ast.EEach
-      ( [ { param_name = "i"; param_type = TName "Item" } ],
+      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
         [],
         Some CombAnd,
-        EApp (EVar "available?", [ EVar "i" ]) )
+        EApp (EVar (Lower "available?"), [ EVar (Lower "i") ]) )
   in
   let result = Smt.translate_expr zero_config env expr in
   check string "empty domain returns true" "true" result
@@ -2176,10 +2176,10 @@ let test_aggregate_empty_domain_or () =
   in
   let expr =
     Ast.EEach
-      ( [ { param_name = "i"; param_type = TName "Item" } ],
+      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
         [],
         Some CombOr,
-        EApp (EVar "available?", [ EVar "i" ]) )
+        EApp (EVar (Lower "available?"), [ EVar (Lower "i") ]) )
   in
   let result = Smt.translate_expr zero_config env expr in
   check string "empty domain returns false" "false" result
@@ -2193,10 +2193,10 @@ let test_aggregate_empty_domain_min () =
   in
   let expr =
     Ast.EEach
-      ( [ { param_name = "i"; param_type = TName "Item" } ],
+      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
         [],
         Some CombMin,
-        EApp (EVar "price", [ EVar "i" ]) )
+        EApp (EVar (Lower "price"), [ EVar (Lower "i") ]) )
   in
   check_raises "empty domain min raises"
     (Failure "SMT: min/max over empty domain") (fun () ->
@@ -2210,10 +2210,10 @@ let test_aggregate_empty_domain_max () =
   in
   let expr =
     Ast.EEach
-      ( [ { param_name = "i"; param_type = TName "Item" } ],
+      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
         [],
         Some CombMax,
-        EApp (EVar "price", [ EVar "i" ]) )
+        EApp (EVar (Lower "price"), [ EVar (Lower "i") ]) )
   in
   check_raises "empty domain max raises"
     (Failure "SMT: min/max over empty domain") (fun () ->

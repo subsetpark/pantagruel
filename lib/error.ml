@@ -140,5 +140,6 @@ let format_type_warning err =
     | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
     | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
     | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
-    | ComprehensionNeedEach _ ) as other ->
+    | ComprehensionNeedEach _ | AggregateRequiresNumeric _
+    | AggregateRequiresBool _ ) as other ->
       format_type_error other

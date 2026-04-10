@@ -21,6 +21,8 @@ type type_error =
   | PrimedExtracontextual of string * string list * Ast.loc
   | BoolParam of string * string * Ast.loc
   | ComprehensionNeedEach of Types.ty * Ast.loc
+  | AggregateRequiresNumeric of string * Types.ty * Ast.loc
+  | AggregateRequiresBool of string * Types.ty * Ast.loc
 [@@deriving show]
 
 type context = { env : Env.t; loc : Ast.loc }

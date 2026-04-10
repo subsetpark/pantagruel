@@ -189,7 +189,10 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
           else
             Error
               (AggregateRequiresNumeric
-                 ( (match comb with CombMin -> "min" | _ -> "max"),
+                 ( (match comb with
+                   | CombMin -> "min"
+                   | CombMax -> "max"
+                   | CombAdd | CombMul | CombAnd | CombOr -> assert false),
                    body_ty,
                    ctx.loc ))
       | CombAnd | CombOr ->
@@ -197,7 +200,10 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
           else
             Error
               (AggregateRequiresBool
-                 ( (match comb with CombAnd -> "and" | _ -> "or"),
+                 ( (match comb with
+                   | CombAnd -> "and"
+                   | CombOr -> "or"
+                   | CombAdd | CombMul | CombMin | CombMax -> assert false),
                    body_ty,
                    ctx.loc )))
   | ECond arms ->
