@@ -161,44 +161,7 @@ let test_compatible () =
 
 (* --- Property-based tests --- *)
 
-(* Generator for random ty values, depth-limited *)
-let[@warning "-44"] gen_ty_at_depth =
-  let open QCheck.Gen in
-  let base =
-    oneof
-      [
-        return Types.TyBool;
-        return Types.TyNat;
-        return Types.TyNat0;
-        return Types.TyInt;
-        return Types.TyReal;
-        return Types.TyString;
-        return Types.TyNothing;
-        return (Types.TyDomain "X");
-        return (Types.TyDomain "Y");
-      ]
-  in
-  fix (fun self n ->
-      if n <= 0 then base
-      else
-        oneof_weighted
-          [
-            (5, base);
-            (1, map (fun t -> Types.TyList t) (self (n - 1)));
-            ( 1,
-              map2
-                (fun a b -> Types.TyProduct [ a; b ])
-                (self (n - 1))
-                (self (n - 1)) );
-            ( 1,
-              map2
-                (fun a b -> Types.TySum [ a; b ])
-                (self (n - 1))
-                (self (n - 1)) );
-          ])
-
-let gen_ty = gen_ty_at_depth 2
-let arb_ty = QCheck.make ~print:Types.format_ty gen_ty
+let arb_ty = Test_util.arb_ty
 
 let test_subtype_reflexivity =
   QCheck_alcotest.to_alcotest

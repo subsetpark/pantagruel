@@ -336,29 +336,7 @@ let test_roundtrip_type_exprs () =
 
 (* --- Property-based: random type expression round trips --- *)
 
-let[@warning "-44"] gen_type_expr_at_depth =
-  let open QCheck.Gen in
-  let names = [ "Nat"; "Bool"; "Int"; "String"; "Real"; "Nothing" ] in
-  let base = oneof_list (List.map (fun n -> Ast.TName n) names) in
-  fix (fun self n ->
-      if n <= 0 then base
-      else
-        oneof_weighted
-          [
-            (4, base);
-            (1, map (fun t -> Ast.TList t) (self (n - 1)));
-            ( 1,
-              map2
-                (fun a b -> Ast.TProduct [ a; b ])
-                (self (n - 1))
-                (self (n - 1)) );
-            ( 1,
-              map2 (fun a b -> Ast.TSum [ a; b ]) (self (n - 1)) (self (n - 1))
-            );
-          ])
-
-let gen_type_expr = gen_type_expr_at_depth 2
-let arb_type_expr = QCheck.make ~print:Pretty.str_type_expr gen_type_expr
+let arb_type_expr = Test_util.arb_type_expr
 
 let test_type_expr_roundtrip =
   QCheck_alcotest.to_alcotest

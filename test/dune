@@ -1,6 +1,6 @@
 (library
  (name test_util)
- (libraries pantagruel alcotest)
+ (libraries pantagruel alcotest qcheck-alcotest)
  (modules test_util)
  (preprocess
   (pps sedlex.ppx)))

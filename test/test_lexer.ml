@@ -348,6 +348,25 @@ let test_leading_zeros () =
     [ Parser.NAT 7; Parser.EOF ]
     (lex_all "007")
 
+(* --- Property-based tests --- *)
+
+let test_lexer_no_crash =
+  QCheck_alcotest.to_alcotest
+    (QCheck.Test.make ~name:"lexer never crashes on arbitrary input" ~count:2000
+       QCheck.string (fun input ->
+         (try
+            let lexer = Lexer.create_from_string "<fuzz>" input in
+            let rec drain () =
+              match[@warning "-4"] Lexer.token lexer with
+              | Parser.EOF -> ()
+              | _ -> drain ()
+            in
+            drain ()
+          with
+         | Lexer.Lexer_error _ -> ()
+         | Sedlexing.MalFormed -> () (* invalid UTF-8 — sedlex limitation *));
+         true))
+
 let () =
   run "Lexer"
     [
@@ -389,4 +408,5 @@ let () =
           test_case "large integer" `Quick test_large_integer;
           test_case "leading zeros" `Quick test_leading_zeros;
         ] );
+      ("property", [ test_lexer_no_crash ]);
     ]

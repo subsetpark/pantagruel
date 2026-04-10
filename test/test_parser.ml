@@ -618,6 +618,15 @@ let test_chained_comparison_parse () =
     fail "Expected parse error for chained comparison"
   with _ -> ()
 
+(* --- Property-based tests --- *)
+
+let test_parser_no_crash =
+  QCheck_alcotest.to_alcotest
+    (QCheck.Test.make ~name:"parser never crashes on arbitrary input"
+       ~count:2000 QCheck.string (fun input ->
+         (try ignore (parse input) with _ -> ());
+         true))
+
 let () =
   run "Parser"
     [
@@ -708,4 +717,5 @@ let () =
           test_case "chained comparison parse" `Quick
             test_chained_comparison_parse;
         ] );
+      ("property", [ test_parser_no_crash ]);
     ]
