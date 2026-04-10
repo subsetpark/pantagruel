@@ -6,7 +6,7 @@ ts2pant reads a TypeScript source file, extracts a function's type signature and
 
 ## Usage
 
-```
+```sh
 ts2pant <file> <function> [options]
 ```
 
@@ -44,7 +44,7 @@ function larger(a: number, b: number): number {
 }
 ```
 
-```
+```text
 module Larger.
 
 larger a: Int, b: Int => Int.
@@ -69,7 +69,7 @@ function deposit(account: Account, amount: number): void {
 }
 ```
 
-```
+```text
 module Deposit.
 
 Account.
@@ -109,11 +109,11 @@ function deposit(account: Account, amount: number): void {
 }
 ```
 
-```
+```text
 ~> Deposit @ account: Account, amount: Int, amount > 0, balance account >= 0.
 ```
 
-This works with any function declared as `asserts condition` -- Node's `assert`, `tiny-invariant`, custom assertion helpers, etc.
+This works with any function declared as `asserts condition` -- Node's `assert`, `tiny-invariant`, custom assertion helpers, etc. Guard extraction also follows direct, imported, and const-bound helper calls: if a helper function's body consists of leading guard statements (if-throw or assertion calls), those guards are propagated through the call graph with argument substitution.
 
 ### Type translation
 
@@ -137,7 +137,7 @@ JSDoc `@pant` annotations specify properties that should be verified as entailed
 function larger(a: number, b: number): number { ... }
 ```
 
-```
+```text
 ---
 
 all a: Int, b: Int | larger a b = cond a >= b => a, true => b.
@@ -149,7 +149,7 @@ all a: Int, b: Int | larger a b >= a and larger a b >= b.
 
 With `--check`, the SMT solver verifies that the body propositions *entail* the annotation -- not just that they're satisfiable together:
 
-```
+```console
 $ ts2pant max.ts larger --check
 OK: Invariants are jointly satisfiable
 OK: Cond arms are exhaustive: cond a >= b => a, true => b
@@ -158,7 +158,7 @@ OK: Entailed: all a: Int, b: Int | larger a b >= a and larger a b >= b
 
 If an annotation is not entailed, you get a counterexample:
 
-```
+```console
 FAIL: Not entailed: 'balance' account >= 0'
   Before:
     balance account = -1
@@ -171,7 +171,7 @@ FAIL: Not entailed: 'balance' account >= 0'
 ## Limitations
 
 - **Single function at a time.** Each invocation translates one function.
-- **No inter-procedural analysis** (yet). Called helper functions are opaque -- only inline if-throw patterns and `asserts`-typed calls are recognized as guards.
+- **Limited inter-procedural analysis.** Direct, imported, and const-bound helper calls are followed to extract leading guards. Method calls (`obj.validate(x)`) and dynamically dispatched calls are not followed.
 - **No local variables.** Functions with `let`/`const` bindings before the return are rejected as unsupported.
 - **No loops.** `for`/`while` are not translated.
 - **Array operations** are partially supported: `.filter().map()` chains, `.includes()`, `.length`. Other array methods are unsupported.

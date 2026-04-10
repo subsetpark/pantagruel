@@ -1935,10 +1935,10 @@ let generate_queries config env (doc : document) =
   List.iteri
     (fun index (check_expr, check_context) ->
       match check_context with
-      | CheckInvariant ->
+      | CheckInvariant chapter_props ->
           add (fun () ->
-              generate_invariant_entailment_query config env invariants ~index
-                check_expr)
+              generate_invariant_entailment_query config env chapter_props
+                ~index check_expr)
       | CheckAction action ->
           add (fun () ->
               generate_action_entailment_query config env

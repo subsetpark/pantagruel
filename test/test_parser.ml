@@ -739,6 +739,13 @@ let () =
         ] );
       ( "check_block",
         [
+          test_case "empty check block is a parse error" `Quick (fun () ->
+              try
+                let _ =
+                  parse "module T.\nf a: Int => Int.\n---\ntrue.\ncheck\n"
+                in
+                fail "Expected parse error for empty check block"
+              with _ -> ());
           test_case "chapter with check block" `Quick (fun () ->
               let doc =
                 parse

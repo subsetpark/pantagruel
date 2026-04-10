@@ -132,6 +132,8 @@ export function isAssertionCall(
   if (!decl || !ts.isFunctionLike(decl) || !decl.type) return null;
   if (!ts.isTypePredicateNode(decl.type)) return null;
   if (!decl.type.assertsModifier) return null;
+  // Reject `asserts value is Type` narrowing predicates — only bare `asserts condition`
+  if (decl.type.type) return null;
 
   // Find which parameter is being asserted
   const paramName = decl.type.parameterName;
@@ -180,21 +182,21 @@ function resolveCallTarget(
   call: ts.CallExpression,
   checker: ts.TypeChecker,
 ): { body: ts.Block; params: ts.NodeArray<ts.ParameterDeclaration> } | null {
+  // Bail on property-access/method calls — dynamic dispatch, `this` unsubstituted
+  if (!ts.isIdentifier(call.expression)) return null;
+
   // Try getResolvedSignature first (works for direct calls, imports)
   const sig = checker.getResolvedSignature(call);
   let decl = sig?.declaration;
 
   // For const-bound functions, resolve via symbol
   if (!decl || !ts.isFunctionLike(decl)) {
-    const expr = call.expression;
-    if (ts.isIdentifier(expr)) {
-      const symbol = checker.getSymbolAtLocation(expr);
-      const vDecl = symbol?.valueDeclaration;
-      if (vDecl && ts.isVariableDeclaration(vDecl) && vDecl.initializer) {
-        const init = vDecl.initializer;
-        if (ts.isFunctionExpression(init) || ts.isArrowFunction(init)) {
-          decl = init;
-        }
+    const symbol = checker.getSymbolAtLocation(call.expression);
+    const vDecl = symbol?.valueDeclaration;
+    if (vDecl && ts.isVariableDeclaration(vDecl) && vDecl.initializer) {
+      const init = vDecl.initializer;
+      if (ts.isFunctionExpression(init) || ts.isArrowFunction(init)) {
+        decl = init;
       }
     }
   }

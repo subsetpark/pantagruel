@@ -78,7 +78,8 @@ export function emitDocument(doc: PantDocument): string {
   lines.push("---");
   lines.push("");
 
-  if (doc.propositions.length === 0 && doc.checks.length === 0) {
+  if (doc.propositions.length === 0) {
+    // Keep chapter body non-empty (required when a check block is present).
     lines.push("true.");
   } else {
     for (const prop of doc.propositions) {

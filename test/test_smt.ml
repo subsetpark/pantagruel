@@ -2311,6 +2311,41 @@ let test_entailment_action_query () =
   check bool "has negated goal" true (contains q.smt2 "(assert (not");
   check bool "has postcondition" true (contains q.smt2 "balance_prime")
 
+let test_entailment_uses_chapter_local_invariants () =
+  (* Two invariant chapters, each with a check. The check in the second chapter
+     should only use its own chapter body as assumptions, not the first chapter's. *)
+  let env, doc =
+    parse_and_collect
+      "module T.\n\
+       f a: Int => Int.\n\
+       ---\n\
+       all a: Int | f a = a + 1.\n\
+       check\n\
+       all a: Int | f a > a.\n\
+       where\n\
+       g a: Int => Int.\n\
+       ---\n\
+       all a: Int | g a = a * 2.\n\
+       check\n\
+       all a: Int | g a >= a.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  let entailment =
+    List.filter (fun (q : Smt.query) -> q.kind = Smt.Entailment) queries
+  in
+  check int "entailment query count" 2 (List.length entailment);
+  (* First check should reference f but not g *)
+  let q1 = List.nth entailment 0 in
+  check bool "q1 mentions f" true (contains q1.smt2 "f ");
+  check bool "q1 does not mention g body" false
+    (contains q1.smt2 "(assert (forall ((a T_Int)) (= (g a) (* a 2)))");
+  (* Second check should reference g but not f *)
+  let q2 = List.nth entailment 1 in
+  check bool "q2 mentions g" true (contains q2.smt2 "g ");
+  check bool "q2 does not mention f body" false
+    (contains q2.smt2 "(assert (forall ((a T_Int)) (= (f a) (+ a 1)))");
+  ()
+
 let test_no_entailment_without_checks () =
   let env, doc =
     parse_and_collect
@@ -2329,6 +2364,8 @@ let entailment_tests =
     test_case "action entailment query" `Quick test_entailment_action_query;
     test_case "no entailment without checks" `Quick
       test_no_entailment_without_checks;
+    test_case "entailment uses chapter-local invariants" `Quick
+      test_entailment_uses_chapter_local_invariants;
   ]
 
 let () =

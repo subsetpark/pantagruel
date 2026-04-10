@@ -493,8 +493,16 @@ let normalize (doc : document) (root_term : string) : document =
     let independent_checks =
       List.concat_map
         (fun chapter ->
-          let params = action_params chapter in
-          if StringSet.is_empty params then chapter.checks else [])
+          let has_action =
+            List.exists
+              (fun d ->
+                match d.value with
+                | DeclAction _ -> true
+                | DeclDomain _ | DeclAlias _ | DeclRule _ | DeclClosure _ ->
+                    false)
+              chapter.head
+          in
+          if has_action then [] else chapter.checks)
         doc.chapters
     in
     List.iter

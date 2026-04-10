@@ -110,7 +110,9 @@ let collect_actions chapters =
     chapters
 
 (** Check context: either from an invariant or action chapter *)
-type check_context = CheckInvariant | CheckAction of action_info
+type check_context =
+  | CheckInvariant of expr located list
+  | CheckAction of action_info
 
 (** Collect all check (entailment goal) propositions, paired with their chapter
     context *)
@@ -118,8 +120,8 @@ let collect_checks chapters =
   List.concat_map
     (fun c ->
       match c with
-      | Invariant { checks; _ } ->
-          List.map (fun chk -> (chk, CheckInvariant)) checks
+      | Invariant { propositions; checks } ->
+          List.map (fun chk -> (chk, CheckInvariant propositions)) checks
       | Action { label; params; guards; contexts; propositions; checks } ->
           let action =
             {

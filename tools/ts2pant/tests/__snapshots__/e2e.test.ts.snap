@@ -41,6 +41,7 @@ larger a: Int, b: Int => Int.
 
 ---
 
+true.
 
 check
 

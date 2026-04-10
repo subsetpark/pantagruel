@@ -273,8 +273,11 @@ function isGuardStatement(
     ts.isExpressionStatement(stmt) &&
     ts.isCallExpression(stmt.expression)
   ) {
-    if (isAssertionCall(checker, stmt.expression) !== null) return true;
-    if (isFollowableGuardCall(stmt.expression, checker)) return true;
+    const call = stmt.expression;
+    if (call.arguments.some((arg) => expressionHasSideEffects(arg)))
+      return false;
+    if (isAssertionCall(checker, call) !== null) return true;
+    if (isFollowableGuardCall(call, checker)) return true;
   }
 
   if (!ts.isIfStatement(stmt)) {

@@ -1837,13 +1837,25 @@ check
 all a: Int | f a > a.
 |});
           test_case "check block without body fails" `Quick (fun () ->
-              check_fails
+              check_error
                 {|module T.
 f a: Int => Int.
 ---
 check
 all a: Int | f a > a.
-|});
+|}
+                (function
+                | Check.CheckWithoutBody _ -> true
+                | UnboundVariable _ | UnboundType _ | TypeMismatch _
+                | ArityMismatch _ | NotAFunction _ | NotAList _ | NotAProduct _
+                | NotNumeric _ | ExpectedBool _ | PrimedNonRule _
+                | PrimeOutsideActionContext _ | OverrideRequiresArity1 _
+                | ProjectionOutOfBounds _ | PropositionNotBool _
+                | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
+                | PrimedExtracontextual _ | BoolParam _
+                | ComprehensionNeedEach _ | AggregateRequiresNumeric _
+                | AggregateRequiresBool _ ->
+                    false));
           test_case "check block can reference action params" `Quick (fun () ->
               check_ok
                 {|module T.
