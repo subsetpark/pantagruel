@@ -56,7 +56,7 @@ export function classifyFunction(
   checker: ts.TypeChecker,
 ): Classification {
   const sig = checker.getSignatureFromDeclaration(node);
-  if (!sig) return "pure";
+  if (!sig) throw new Error("Cannot get signature for classification");
 
   const returnType = sig.getReturnType();
   if (returnType.flags & ts.TypeFlags.Void) return "mutating";
@@ -195,7 +195,7 @@ function translateExpr(
 
   // String literal
   if (ts.isStringLiteral(expr)) {
-    return `"${expr.text.replace(/"/g, '\\"')}"`;
+    return `"${expr.text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
   }
 
   // Fallback
