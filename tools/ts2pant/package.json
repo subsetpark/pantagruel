@@ -2,6 +2,7 @@
   "name": "ts2pant",
   "version": "0.1.0",
   "description": "Translate TypeScript functions into checkable Pantagruel specifications",
+  "type": "module",
   "main": "dist/index.js",
   "bin": {
     "ts2pant": "dist/index.js"
@@ -9,13 +10,16 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "lint": "biome check src",
+    "lint:fix": "biome check --write src"
   },
   "dependencies": {
     "commander": "^13.0.0",
     "typescript": "^5.7.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.11",
     "@types/node": "^20.0.0",
     "vitest": "^3.0.0"
   }

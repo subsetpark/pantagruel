@@ -1,4 +1,9 @@
 pre-commit:
   jobs:
-    - name: build-and-format
+    - name: ocaml
+      glob: "*.{ml,mli,mly}"
       run: opam exec -- dune build && opam exec -- dune build @fmt && opam exec -- dune test
+    - name: ts2pant
+      root: "tools/ts2pant/"
+      glob: "tools/ts2pant/**/*.ts"
+      run: npx biome check src && npx tsc --noEmit && npx vitest run

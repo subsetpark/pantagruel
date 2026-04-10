@@ -1,19 +1,27 @@
 #!/usr/bin/env node
 
+import process from "node:process";
 import { Command } from "commander";
-import type { CliOptions, NumericType, PantDocument } from "./types.js";
-import { createProgram, extractReferencedTypes } from "./extract.js";
-import { translateTypes, IntStrategy, RealStrategy, type NumericStrategy } from "./translate-types.js";
-import { translateSignature } from "./translate-signature.js";
-import { translateBody as translateFunctionBody } from "./translate-body.js";
 import { extractFunctionAnnotations } from "./annotations.js";
 import { emitDocument, runCheck } from "./emit.js";
+import { createProgram, extractReferencedTypes } from "./extract.js";
+import { translateBody as translateFunctionBody } from "./translate-body.js";
+import { translateSignature } from "./translate-signature.js";
+import {
+  IntStrategy,
+  type NumericStrategy,
+  RealStrategy,
+  translateTypes,
+} from "./translate-types.js";
+import type { CliOptions, NumericType, PantDocument } from "./types.js";
 
 function parseArgs(): CliOptions {
   const program = new Command();
   program
     .name("ts2pant")
-    .description("Translate TypeScript functions into checkable Pantagruel specifications")
+    .description(
+      "Translate TypeScript functions into checkable Pantagruel specifications",
+    )
     .argument("<file>", "TypeScript source file")
     .argument("<function>", "Function name to translate")
     .option("--check", "Write .pant and run pant --check", false)
@@ -21,29 +29,31 @@ function parseArgs(): CliOptions {
     .option("--numeric-type <type>", "Default numeric type mapping", "Int")
     .parse();
 
-  const [inputFile, functionName] = program.args;
+  const [inputFile, functionName] = program.args as [string, string];
   const opts = program.opts();
 
-  const numericType = opts.numericType as string;
+  const numericType = opts["numericType"] as string;
   if (!["Int", "Real", "Nat0"].includes(numericType)) {
-    program.error(`--numeric-type must be one of: Int, Real, Nat0 (got "${numericType}")`);
+    program.error(
+      `--numeric-type must be one of: Int, Real, Nat0 (got "${numericType}")`,
+    );
   }
 
   return {
     inputFile,
     functionName,
-    check: opts.check as boolean,
-    noBody: opts.body === false,
+    check: opts["check"] as boolean,
+    noBody: opts["body"] === false,
     numericType: numericType as NumericType,
   };
 }
 
 function getStrategy(numericType: NumericType): NumericStrategy {
   switch (numericType) {
-    case "Real": return RealStrategy;
-    case "Int":
-    case "Nat0":
-    default: return IntStrategy;
+    case "Real":
+      return RealStrategy;
+    default:
+      return IntStrategy;
   }
 }
 
@@ -54,24 +64,35 @@ export function extract(opts: CliOptions): PantDocument {
   const checker = program.getTypeChecker();
 
   // Extract referenced types and translate to declarations
-  const extracted = extractReferencedTypes(program, opts.inputFile, opts.functionName);
+  const extracted = extractReferencedTypes(
+    program,
+    opts.inputFile,
+    opts.functionName,
+  );
   const typeDecls = translateTypes(extracted, checker, strategy);
 
   // Translate function signature
   const { declaration: sigDecl } = translateSignature(
-    program, opts.inputFile, opts.functionName, strategy,
+    program,
+    opts.inputFile,
+    opts.functionName,
+    strategy,
   );
 
   const declarations = [...typeDecls, sigDecl];
 
   // Capitalize function name for module name
-  const moduleName = opts.functionName.charAt(0).toUpperCase() + opts.functionName.slice(1);
+  const moduleName =
+    opts.functionName.charAt(0).toUpperCase() + opts.functionName.slice(1);
 
   return { moduleName, declarations, propositions: [] };
 }
 
 /** Translate function body to propositions and append to doc. */
-export function addBodyPropositions(doc: PantDocument, opts: CliOptions): PantDocument {
+export function addBodyPropositions(
+  doc: PantDocument,
+  opts: CliOptions,
+): PantDocument {
   const strategy = getStrategy(opts.numericType);
   const program = createProgram(opts.inputFile);
 
@@ -87,9 +108,16 @@ export function addBodyPropositions(doc: PantDocument, opts: CliOptions): PantDo
 }
 
 /** Extract @pant annotations and append as propositions. */
-export function addAnnotations(doc: PantDocument, opts: CliOptions): PantDocument {
+export function addAnnotations(
+  doc: PantDocument,
+  opts: CliOptions,
+): PantDocument {
   const program = createProgram(opts.inputFile);
-  const annotations = extractFunctionAnnotations(program, opts.inputFile, opts.functionName);
+  const annotations = extractFunctionAnnotations(
+    program,
+    opts.inputFile,
+    opts.functionName,
+  );
 
   const annotationProps = annotations.map((text) => ({ text }));
   return { ...doc, propositions: [...doc.propositions, ...annotationProps] };

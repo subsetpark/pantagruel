@@ -54,7 +54,9 @@ export function createProgramFromSource(
   const host: ts.CompilerHost = {
     ...defaultHost,
     getSourceFile(name, languageVersion) {
-      if (name === fileName) return sourceFile;
+      if (name === fileName) {
+        return sourceFile;
+      }
       return defaultHost.getSourceFile(name, languageVersion);
     },
     fileExists(name) {
@@ -79,7 +81,9 @@ export function extractAllTypes(
 ): ExtractedTypes {
   const checker = program.getTypeChecker();
   const sourceFile = program.getSourceFile(fileName);
-  if (!sourceFile) throw new Error(`Source file not found: ${fileName}`);
+  if (!sourceFile) {
+    throw new Error(`Source file not found: ${fileName}`);
+  }
 
   const result: ExtractedTypes = { interfaces: [], aliases: [], enums: [] };
 
@@ -107,7 +111,9 @@ export function extractReferencedTypes(
 ): ExtractedTypes {
   const checker = program.getTypeChecker();
   const sourceFile = program.getSourceFile(fileName);
-  if (!sourceFile) throw new Error(`Source file not found: ${fileName}`);
+  if (!sourceFile) {
+    throw new Error(`Source file not found: ${fileName}`);
+  }
 
   let funcNode: ts.FunctionDeclaration | undefined;
   ts.forEachChild(sourceFile, (node) => {
@@ -115,11 +121,14 @@ export function extractReferencedTypes(
       funcNode = node;
     }
   });
-  if (!funcNode) throw new Error(`Function not found: ${functionName}`);
+  if (!funcNode) {
+    throw new Error(`Function not found: ${functionName}`);
+  }
 
   const signature = checker.getSignatureFromDeclaration(funcNode);
-  if (!signature)
+  if (!signature) {
     throw new Error(`Cannot get signature for: ${functionName}`);
+  }
 
   const visited = new Set<string>();
 
@@ -246,7 +255,9 @@ function collectNamedTypes(
   const symbol = type.aliasSymbol ?? type.symbol;
   if (symbol && !BUILTIN_NAMES.has(symbol.name)) {
     const name = symbol.name;
-    if (visited.has(name)) return;
+    if (visited.has(name)) {
+      return;
+    }
     visited.add(name);
 
     for (const prop of type.getProperties()) {

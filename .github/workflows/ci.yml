@@ -46,3 +46,32 @@ jobs:
           for f in samples/*.pant; do
             opam exec -- dune exec pant -- "$f"
           done
+
+  ts2pant:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/ts2pant
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tools/ts2pant/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx biome check src
+
+      - name: Format
+        run: npx biome format --check src
+
+      - name: Test
+        run: npx vitest run

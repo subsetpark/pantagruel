@@ -1,7 +1,14 @@
-import { execSync } from "child_process";
-import { writeFileSync, unlinkSync, rmSync, mkdtempSync, existsSync } from "fs";
-import { tmpdir } from "os";
-import { join, resolve } from "path";
+import { execSync } from "node:child_process";
+import {
+  existsSync,
+  mkdtempSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import process from "node:process";
 import type { PantDocument } from "./types.js";
 
 export interface CheckResult {
@@ -38,7 +45,9 @@ export function emitDocument(doc: PantDocument): string {
         lines.push(`${decl.name} = ${decl.type}.`);
         break;
       case "rule": {
-        const params = decl.params.map((p) => `${p.name}: ${p.type}`).join(", ");
+        const params = decl.params
+          .map((p) => `${p.name}: ${p.type}`)
+          .join(", ");
         const guard = decl.guard ? `, ${decl.guard}` : "";
         lines.push(`${decl.name} ${params}${guard} => ${decl.returnType}.`);
         break;
@@ -47,12 +56,16 @@ export function emitDocument(doc: PantDocument): string {
         if (decl.params.length === 0) {
           lines.push(`~> ${decl.label}.`);
         } else {
-          const params = decl.params.map((p) => `${p.name}: ${p.type}`).join(", ");
+          const params = decl.params
+            .map((p) => `${p.name}: ${p.type}`)
+            .join(", ");
           const guard = decl.guard ? `, ${decl.guard}` : "";
           lines.push(`~> ${decl.label} @ ${params}${guard}.`);
         }
         break;
       }
+      default:
+        break;
     }
   }
 
@@ -113,8 +126,16 @@ export function runCheck(pantSource: string, opts?: CheckOptions): CheckResult {
     }
     throw err;
   } finally {
-    try { unlinkSync(filePath); } catch { /* ignore */ }
-    try { rmSync(dir, { recursive: true }); } catch { /* ignore */ }
+    try {
+      unlinkSync(filePath);
+    } catch {
+      /* ignore */
+    }
+    try {
+      rmSync(dir, { recursive: true });
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -122,7 +143,9 @@ function parseCheckOutput(output: string): CheckItem[] {
   const items: CheckItem[] = [];
   for (const line of output.split("\n")) {
     const trimmed = line.trim();
-    if (!trimmed) continue;
+    if (!trimmed) {
+      continue;
+    }
     if (trimmed.startsWith("OK:")) {
       items.push({ passed: true, message: trimmed });
     } else if (trimmed.startsWith("FAIL:")) {
@@ -137,9 +160,13 @@ function parseCheckOutput(output: string): CheckItem[] {
 function findProjectRoot(): string {
   let dir = process.cwd();
   for (let i = 0; i < 10; i++) {
-    if (existsSync(join(dir, "dune-project"))) return dir;
+    if (existsSync(join(dir, "dune-project"))) {
+      return dir;
+    }
     const parent = resolve(dir, "..");
-    if (parent === dir) break;
+    if (parent === dir) {
+      break;
+    }
     dir = parent;
   }
   return process.cwd();
