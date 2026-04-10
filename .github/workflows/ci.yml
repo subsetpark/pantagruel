@@ -21,7 +21,6 @@ jobs:
         run: |
           opam install . --deps-only --with-test --with-doc
           opam install ocamlformat.0.28.1
-          opam install crowbar
 
       - name: Build
         run: opam exec -- dune build
