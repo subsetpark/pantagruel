@@ -2334,16 +2334,14 @@ let test_entailment_uses_chapter_local_invariants () =
     List.filter (fun (q : Smt.query) -> q.kind = Smt.Entailment) queries
   in
   check int "entailment query count" 2 (List.length entailment);
-  (* First check should reference f but not g *)
+  (* First check should have f's axiom body but not g's *)
   let q1 = List.nth entailment 0 in
-  check bool "q1 mentions f" true (contains q1.smt2 "f ");
-  check bool "q1 does not mention g body" false
-    (contains q1.smt2 "(assert (forall ((a T_Int)) (= (g a) (* a 2)))");
-  (* Second check should reference g but not f *)
+  check bool "q1 has f axiom" true (contains q1.smt2 "(= (f ");
+  check bool "q1 lacks g axiom" false (contains q1.smt2 "(= (g ");
+  (* Second check should have g's axiom body but not f's *)
   let q2 = List.nth entailment 1 in
-  check bool "q2 mentions g" true (contains q2.smt2 "g ");
-  check bool "q2 does not mention f body" false
-    (contains q2.smt2 "(assert (forall ((a T_Int)) (= (f a) (+ a 1)))");
+  check bool "q2 has g axiom" true (contains q2.smt2 "(= (g ");
+  check bool "q2 lacks f axiom" false (contains q2.smt2 "(= (f ");
   ()
 
 let test_no_entailment_without_checks () =

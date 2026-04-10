@@ -277,6 +277,43 @@ function followGuards(
 }
 
 /**
+ * Check whether an expression is side-effect-free (identifiers, literals,
+ * property access, operators — no calls, assignments, or increments).
+ */
+function isPureExpression(expr: ts.Expression): boolean {
+  if (ts.isIdentifier(expr) || ts.isNumericLiteral(expr) ||
+      ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr) ||
+      expr.kind === ts.SyntaxKind.TrueKeyword ||
+      expr.kind === ts.SyntaxKind.FalseKeyword ||
+      expr.kind === ts.SyntaxKind.NullKeyword ||
+      expr.kind === ts.SyntaxKind.ThisKeyword) {
+    return true;
+  }
+  if (ts.isParenthesizedExpression(expr) || ts.isAsExpression(expr) ||
+      ts.isNonNullExpression(expr)) {
+    return isPureExpression(expr.expression);
+  }
+  if (ts.isPropertyAccessExpression(expr)) {
+    return isPureExpression(expr.expression);
+  }
+  if (ts.isElementAccessExpression(expr)) {
+    return isPureExpression(expr.expression) && isPureExpression(expr.argumentExpression);
+  }
+  if (ts.isPrefixUnaryExpression(expr)) {
+    if (expr.operator === ts.SyntaxKind.PlusPlusToken ||
+        expr.operator === ts.SyntaxKind.MinusMinusToken) return false;
+    return isPureExpression(expr.operand);
+  }
+  if (ts.isBinaryExpression(expr)) {
+    if (expr.operatorToken.kind >= ts.SyntaxKind.EqualsToken &&
+        expr.operatorToken.kind <= ts.SyntaxKind.CaretEqualsToken) return false;
+    return isPureExpression(expr.left) && isPureExpression(expr.right);
+  }
+  // Calls, new, await, template expressions, etc. are not pure
+  return false;
+}
+
+/**
  * Scan leading statements of a function body for guard patterns.
  * Extracts guards from if-throw patterns, assertion calls, and
  * recursively follows direct calls to extract their guards.
@@ -296,6 +333,10 @@ function scanBodyForGuards(
       ts.isExpressionStatement(stmt) &&
       ts.isCallExpression(stmt.expression)
     ) {
+      // Skip extraction if arguments contain side effects (e.g. assert(loadAmount() > 0))
+      const argsArePure = stmt.expression.arguments.every(isPureExpression);
+      if (!argsArePure) break;
+
       // Try assertion call first
       const g = extractAssertionGuard(
         checker,
@@ -385,7 +426,8 @@ export function isFollowableGuardCall(
   }
 
   visited.add(target.body);
-  const result = target.body.statements.every((stmt) => {
+  const stmts = target.body.statements;
+  const result = stmts.every((stmt, i) => {
     if (
       ts.isExpressionStatement(stmt) &&
       ts.isCallExpression(stmt.expression)
@@ -394,6 +436,14 @@ export function isFollowableGuardCall(
         isAssertionCall(checker, stmt.expression) !== null ||
         isFollowableGuardCall(stmt.expression, checker, visited)
       );
+    }
+    // Accept a trailing empty return (e.g. `assertPositive(x); return;`)
+    if (
+      ts.isReturnStatement(stmt) &&
+      !stmt.expression &&
+      i === stmts.length - 1
+    ) {
+      return true;
     }
     if (!ts.isIfStatement(stmt)) {
       return false;
@@ -448,8 +498,7 @@ function blockThrows(node: ts.Statement): boolean {
   if (ts.isThrowStatement(node)) return true;
   if (ts.isBlock(node)) {
     const stmts = node.statements;
-    if (stmts.length === 0) return false;
-    return ts.isThrowStatement(stmts[stmts.length - 1]!);
+    return stmts.length === 1 && ts.isThrowStatement(stmts[0]!);
   }
   return false;
 }
