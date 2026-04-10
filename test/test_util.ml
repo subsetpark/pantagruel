@@ -12,7 +12,8 @@ let parse_and_collect str =
   let doc = parse str in
   match
     Collect.collect_all
-      ~base_env:(Env.empty (Option.value ~default:"" doc.module_name))
+      ~base_env:
+        (Env.empty (Option.fold ~none:"" ~some:Ast.upper_name doc.module_name))
       doc
   with
   | Error e -> failf "Collection error: %s" (Collect.show_collect_error e)
@@ -64,7 +65,7 @@ let arb_ty = QCheck.make ~print:Types.format_ty gen_ty
 let[@warning "-44"] gen_type_expr_at_depth =
   let open QCheck.Gen in
   let names = [ "Nat"; "Bool"; "Int"; "String"; "Real"; "Nothing" ] in
-  let base = oneof_list (List.map (fun n -> Ast.TName n) names) in
+  let base = oneof_list (List.map (fun n -> Ast.TName (Ast.Upper n)) names) in
   fix (fun self n ->
       if n <= 0 then base
       else

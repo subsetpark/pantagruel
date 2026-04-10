@@ -71,7 +71,7 @@ document:
     chapters=chapter_list EOF
     { let (td, _) = Doc_comments.get_at_pos $startpos($7) in
       let chapters = set_last_trailing chapters td in
-      { module_name = Some name; imports; contexts; chapters } }
+      { module_name = Some (Upper name); imports; contexts; chapters } }
   | chapters=chapter_list EOF
     { let (td, _) = Doc_comments.get_at_pos $startpos($2) in
       let chapters = set_last_trailing chapters td in
@@ -85,11 +85,11 @@ chapter_list:
 
 import_decl:
   | IMPORT name=UPPER_IDENT DOT
-    { located $startpos $endpos name }
+    { located $startpos $endpos (Upper name) }
 
 context_decl:
   | CONTEXT name=UPPER_IDENT DOT
-    { located $startpos $endpos name }
+    { located $startpos $endpos (Upper name) }
 
 chapter:
   | head=nonempty_list(declaration) SEPARATOR body=list(proposition)
@@ -98,23 +98,23 @@ chapter:
 (* Declarations - doc comments are looked up by start position *)
 declaration:
   | name=UPPER_IDENT DOT
-    { located_with_doc $startpos $endpos (DeclDomain name) }
+    { located_with_doc $startpos $endpos (DeclDomain (Upper name)) }
   | name=UPPER_IDENT EQ t=type_expr DOT
-    { located_with_doc $startpos $endpos (DeclAlias (name, t)) }
+    { located_with_doc $startpos $endpos (DeclAlias (Upper name, t)) }
   | LBRACE ctxs=separated_nonempty_list(COMMA, UPPER_IDENT) RBRACE
     name=LOWER_IDENT pg=rule_params_guards DARROW ret=type_expr DOT
     { let (params, guards) = pg in
       located_with_doc $startpos $endpos (DeclRule {
-        name;
+        name = Lower name;
         params;
         guards;
         return_type = ret;
-        contexts = ctxs;
+        contexts = List.map (fun c -> Upper c) ctxs;
       }) }
   | name=LOWER_IDENT pg=rule_params_guards DARROW ret=type_expr DOT
     { let (params, guards) = pg in
       located_with_doc $startpos $endpos (DeclRule {
-        name;
+        name = Lower name;
         params;
         guards;
         return_type = ret;
@@ -124,10 +124,10 @@ declaration:
     { let (params, _guards) = pg in
       let p = match params with [p] -> p | _ -> assert false in
       located_with_doc $startpos $endpos (DeclClosure {
-        name;
+        name = Lower name;
         param = p;
         return_type = ret;
-        target;
+        target = Lower target;
       }) }
   | ctxs=separated_nonempty_list(COMMA, UPPER_IDENT) SQUIG_ARROW label=ACTION_LABEL AT pg=action_params_guards DOT
     { let (params, guards) = pg in
@@ -135,14 +135,14 @@ declaration:
         label;
         params;
         guards;
-        contexts = ctxs;
+        contexts = List.map (fun c -> Upper c) ctxs;
       }) }
   | ctxs=separated_nonempty_list(COMMA, UPPER_IDENT) SQUIG_ARROW label=ACTION_LABEL DOT
     { located_with_doc $startpos $endpos (DeclAction {
         label;
         params = [];
         guards = [];
-        contexts = ctxs;
+        contexts = List.map (fun c -> Upper c) ctxs;
       }) }
   | SQUIG_ARROW label=ACTION_LABEL AT pg=action_params_guards DOT
     { let (params, guards) = pg in
@@ -181,7 +181,7 @@ rule_guard_expr:
   | e=disjunction { e }
 
 param:
-  | name=LOWER_IDENT COLON t=type_expr { { param_name = name; param_type = t } }
+  | name=LOWER_IDENT COLON t=type_expr { { param_name = Lower name; param_type = t } }
 
 (* Type expressions *)
 type_expr:
@@ -196,8 +196,8 @@ type_product:
     { match ts with [t] -> t | _ -> TProduct ts }
 
 type_term:
-  | name=UPPER_IDENT { TName name }
-  | m=UPPER_IDENT DCOLON name=UPPER_IDENT { TQName (m, name) }
+  | name=UPPER_IDENT { TName (Upper name) }
+  | m=UPPER_IDENT DCOLON name=UPPER_IDENT { TQName (Upper m, Upper name) }
   | LBRACKET t=type_expr RBRACKET { TList t }
   | LPAREN t=type_expr RPAREN { t }
 
@@ -248,11 +248,11 @@ quant_params_guards:
 
 quant_first_binding:
   | p=param { GParam p }
-  | name=LOWER_IDENT IN e=term { GIn (name, e) }
+  | name=LOWER_IDENT IN e=term { GIn (Lower name, e) }
 
 quant_guard_or_param:
   | p=param { GParam p }
-  | name=LOWER_IDENT IN e=term { GIn (name, e) }  (* x in xs - binds x to element type *)
+  | name=LOWER_IDENT IN e=term { GIn (Lower name, e) }  (* x in xs - binds x to element type *)
   | e=disjunction { GExpr e }
 
 (* The RHS of -> allows quantifiers (P -> all x: T | Q) and
@@ -324,18 +324,18 @@ projection:
 
 atom:
   | e=cond_expr { e }
-  | name=LOWER_IDENT { EVar name }
-  | name=UPPER_IDENT { EDomain name }
-  | m=UPPER_IDENT DCOLON name=LOWER_IDENT { EQualified (m, name) }
-  | m=UPPER_IDENT DCOLON name=UPPER_IDENT { EQualified (m, name) }
+  | name=LOWER_IDENT { EVar (Lower name) }
+  | name=UPPER_IDENT { EDomain (Upper name) }
+  | m=UPPER_IDENT DCOLON name=LOWER_IDENT { EQualified ((Upper m), name) }
+  | m=UPPER_IDENT DCOLON name=UPPER_IDENT { EQualified ((Upper m), name) }
   | n=NAT { ELitNat n }
   | r=REAL { ELitReal r }
   | s=STRING { ELitString s }
   | TRUE { ELitBool true }
   | FALSE { ELitBool false }
-  | name=LOWER_IDENT PRIME { EPrimed name }
+  | name=LOWER_IDENT PRIME { EPrimed (Lower name) }
   | name=LOWER_IDENT LBRACKET ovs=override_list RBRACKET
-    { EOverride (name, ovs) }
+    { EOverride (Lower name, ovs) }
   | LPAREN e=expr RPAREN { e }
   | LPAREN e1=expr COMMA e2=expr rest=list(preceded(COMMA, expr)) RPAREN
     { ETuple (e1 :: e2 :: rest) }

@@ -7,7 +7,8 @@ let parse = Test_util.parse
 
 let test_minimal () =
   let doc = parse "module EXAMPLE.\n\nFoo.\n---\n" in
-  check (option string) "module name" (Some "EXAMPLE") doc.Ast.module_name;
+  check (option string) "module name" (Some "EXAMPLE")
+    (Option.map Ast.upper_name doc.Ast.module_name);
   check int "chapters" 1 (List.length doc.Ast.chapters);
   check int "imports" 0 (List.length doc.Ast.imports)
 
@@ -32,7 +33,8 @@ let test_action () =
 let test_import () =
   let doc = parse "module TEST.\n\nimport FOO.\n\nBar.\n---\n" in
   check int "imports" 1 (List.length doc.Ast.imports);
-  check string "import name" "FOO" (List.hd doc.Ast.imports).Ast.value
+  check string "import name" "FOO"
+    (Ast.upper_name (List.hd doc.Ast.imports).Ast.value)
 
 let test_where_clause () =
   let doc = parse "module TEST.\n\nFoo.\n---\n\nwhere\n\nBar.\n---\n" in
@@ -66,8 +68,9 @@ let test_type_alias () =
   let doc = parse "module TEST.\n\nPoint = Nat * Nat.\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
   match[@warning "-4"] (List.hd chapter.Ast.head).Ast.value with
-  | Ast.DeclAlias ("Point", Ast.TProduct [ Ast.TName "Nat"; Ast.TName "Nat" ])
-    ->
+  | Ast.DeclAlias
+      ( Upper "Point",
+        Ast.TProduct [ Ast.TName (Upper "Nat"); Ast.TName (Upper "Nat") ] ) ->
       ()
   | _ -> fail "Expected type alias"
 
@@ -75,14 +78,14 @@ let test_list_type () =
   let doc = parse "module TEST.\n\nUser.\nusers => [User].\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
   match[@warning "-4"] (List.nth chapter.Ast.head 1).Ast.value with
-  | Ast.DeclRule { return_type = Ast.TList (Ast.TName "User"); _ } -> ()
+  | Ast.DeclRule { return_type = Ast.TList (Ast.TName (Upper "User")); _ } -> ()
   | _ -> fail "Expected list type"
 
 let test_sum_type () =
   let doc = parse "module TEST.\n\nResult = Nat + Nothing.\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
   match[@warning "-4"] (List.hd chapter.Ast.head).Ast.value with
-  | Ast.DeclAlias ("Result", Ast.TSum _) -> ()
+  | Ast.DeclAlias (Upper "Result", Ast.TSum _) -> ()
   | _ -> fail "Expected sum type"
 
 let test_rule_guard () =
@@ -106,7 +109,7 @@ let test_membership_binding () =
   in
   let chapter = List.hd doc.Ast.chapters in
   match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
-  | Ast.EForall ([], [ Ast.GIn ("i", _) ], _) -> ()
+  | Ast.EForall ([], [ Ast.GIn (Lower "i", _) ], _) -> ()
   | _ -> fail "Expected membership binding"
 
 let test_existential () =
@@ -160,7 +163,8 @@ let test_disjunction_guard () =
 
 let test_no_module () =
   let doc = parse "Foo.\n---\ntrue.\n" in
-  check (option string) "no module" None doc.Ast.module_name;
+  check (option string) "no module" None
+    (Option.map Ast.upper_name doc.Ast.module_name);
   check int "chapters" 1 (List.length doc.Ast.chapters);
   check int "imports" 0 (List.length doc.Ast.imports)
 
@@ -177,7 +181,8 @@ let test_action_no_params () =
 let test_context_declaration () =
   let doc = parse "module TEST.\ncontext Banking.\n\nAccount.\n---\n" in
   check int "contexts" 1 (List.length doc.Ast.contexts);
-  check string "context name" "Banking" (List.hd doc.Ast.contexts).Ast.value
+  check string "context name" "Banking"
+    (Ast.upper_name (List.hd doc.Ast.contexts).Ast.value)
 
 let test_rule_with_context () =
   let doc =
@@ -190,12 +195,15 @@ let test_rule_with_context () =
        ---\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  (match (List.nth chapter.Ast.head 1).Ast.value with
-  | Ast.DeclRule { name = "balance"; contexts = [ "Banking" ]; _ } -> ()
+  (match[@warning "-4"] (List.nth chapter.Ast.head 1).Ast.value with
+  | Ast.DeclRule { name = Lower "balance"; contexts = [ Upper "Banking" ]; _ }
+    ->
+      ()
   | DeclDomain _ | DeclAlias _ | DeclRule _ | DeclAction _ | DeclClosure _ ->
       fail "Expected rule with context footprint");
-  match (List.nth chapter.Ast.head 2).Ast.value with
-  | Ast.DeclAction { label = "Withdraw"; contexts = [ "Banking" ]; _ } -> ()
+  match[@warning "-4"] (List.nth chapter.Ast.head 2).Ast.value with
+  | Ast.DeclAction { label = "Withdraw"; contexts = [ Upper "Banking" ]; _ } ->
+      ()
   | DeclDomain _ | DeclAlias _ | DeclRule _ | DeclClosure _ | DeclAction _ ->
       fail "Expected action with context"
 
@@ -209,8 +217,9 @@ let test_closure () =
        ---\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.nth chapter.Ast.head 2).Ast.value with
-  | Ast.DeclClosure { name = "ancestor"; target = "parent"; _ } -> ()
+  match[@warning "-4"] (List.nth chapter.Ast.head 2).Ast.value with
+  | Ast.DeclClosure { name = Lower "ancestor"; target = Lower "parent"; _ } ->
+      ()
   | DeclDomain _ | DeclAlias _ | DeclRule _ | DeclAction _ | DeclClosure _ ->
       fail "Expected closure declaration"
 
@@ -481,7 +490,8 @@ let test_override () =
   in
   let chapter = List.hd doc.Ast.chapters in
   match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
-  | Ast.EForall (_, _, EBinop (OpEq, EApp (EOverride ("f", _), _), _)) -> ()
+  | Ast.EForall (_, _, EBinop (OpEq, EApp (EOverride (Lower "f", _), _), _)) ->
+      ()
   | _ -> fail "Expected override"
 
 let test_tuple () =
@@ -512,7 +522,7 @@ let test_primed_expr () =
   in
   let chapter = List.hd doc.Ast.chapters in
   match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
-  | Ast.EBinop (OpEq, EApp (EPrimed "f", _), _) -> ()
+  | Ast.EBinop (OpEq, EApp (EPrimed (Lower "f"), _), _) -> ()
   | _ -> fail "Expected primed expression"
 
 let test_lit_real () =
@@ -545,7 +555,7 @@ let test_qualified_name () =
   let doc = parse "module TEST.\n\nFoo.\n---\nModule::name = Module::name.\n" in
   let chapter = List.hd doc.Ast.chapters in
   match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
-  | Ast.EBinop (OpEq, EQualified ("Module", "name"), _) -> ()
+  | Ast.EBinop (OpEq, EQualified (Upper "Module", "name"), _) -> ()
   | _ -> fail "Expected qualified name"
 
 let test_precedence_or_and () =
@@ -562,7 +572,11 @@ let test_precedence_or_and () =
   in
   let chapter = List.hd doc.Ast.chapters in
   match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
-  | Ast.EBinop (OpOr, EVar "a", EBinop (OpAnd, EVar "b", EVar "c")) -> ()
+  | Ast.EBinop
+      ( OpOr,
+        EVar (Lower "a"),
+        EBinop (OpAnd, EVar (Lower "b"), EVar (Lower "c")) ) ->
+      ()
   | _ -> fail "Expected a or (b and c)"
 
 let test_precedence_add_mul () =
@@ -601,9 +615,15 @@ let test_implication_associativity () =
   in
   let chapter = List.hd doc.Ast.chapters in
   match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
-  | Ast.EBinop (OpImpl, EVar "a", EBinop (OpImpl, EVar "b", EVar "c")) ->
+  | Ast.EBinop
+      ( OpImpl,
+        EVar (Lower "a"),
+        EBinop (OpImpl, EVar (Lower "b"), EVar (Lower "c")) ) ->
       () (* Right-associative: a -> (b -> c) *)
-  | Ast.EBinop (OpImpl, EBinop (OpImpl, EVar "a", EVar "b"), EVar "c") ->
+  | Ast.EBinop
+      ( OpImpl,
+        EBinop (OpImpl, EVar (Lower "a"), EVar (Lower "b")),
+        EVar (Lower "c") ) ->
       fail "Implication is left-associative but should be right-associative"
   | other -> fail (Printf.sprintf "Unexpected parse: %s" (Ast.show_expr other))
 

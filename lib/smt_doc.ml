@@ -23,7 +23,7 @@ let classify_chapter (chapter : chapter) =
       (fun (decl : declaration located) ->
         match decl.value with
         | DeclAction { label; params; guards; contexts } ->
-            Some (label, params, guards, contexts)
+            Some (label, params, guards, List.map Ast.upper_name contexts)
         | DeclDomain _ | DeclAlias _ | DeclRule _ | DeclClosure _ -> None)
       chapter.head
   in
@@ -176,11 +176,11 @@ let declare_action_params env (params : param list) =
               (Printf.sprintf
                  "SMT translation: cannot resolve sort for action parameter \
                   '%s'"
-                 p.param_name)
+                 (Ast.lower_name p.param_name))
       in
       Buffer.add_string buf
         (Printf.sprintf "(declare-const %s %s)\n"
-           (sanitize_ident p.param_name)
+           (sanitize_ident (Ast.lower_name p.param_name))
            sort))
     params;
   Buffer.contents buf
@@ -194,11 +194,11 @@ let declare_param_constraints env (params : param list) =
       | Ok TyNat ->
           Buffer.add_string buf
             (Printf.sprintf "(assert (>= %s 1))\n"
-               (sanitize_ident p.param_name))
+               (sanitize_ident (Ast.lower_name p.param_name)))
       | Ok TyNat0 ->
           Buffer.add_string buf
             (Printf.sprintf "(assert (>= %s 0))\n"
-               (sanitize_ident p.param_name))
+               (sanitize_ident (Ast.lower_name p.param_name)))
       | Ok
           ( TyBool | TyInt | TyReal | TyString | TyNothing | TyDomain _
           | TyList _ | TyProduct _ | TySum _ | TyFunc _ )
@@ -221,17 +221,17 @@ let action_always_enabled action =
 (** Collect all function names referenced in an expression *)
 let rec collect_function_refs (e : expr) =
   match e with
-  | EVar name -> [ name ]
+  | EVar (Lower name) -> [ name ]
   | EApp (func, args) ->
       collect_function_refs func @ List.concat_map collect_function_refs args
-  | EPrimed name -> [ name ]
+  | EPrimed (Lower name) -> [ name ]
   | EBinop (_, e1, e2) -> collect_function_refs e1 @ collect_function_refs e2
   | EUnop (_, e) -> collect_function_refs e
   | EForall (_, gs, body) | EExists (_, gs, body) | EEach (_, gs, _, body) ->
       List.concat_map collect_guard_refs gs @ collect_function_refs body
   | ETuple es -> List.concat_map collect_function_refs es
   | EProj (e, _) -> collect_function_refs e
-  | EOverride (name, pairs) ->
+  | EOverride (Lower name, pairs) ->
       name
       :: List.concat_map
            (fun (k, v) -> collect_function_refs k @ collect_function_refs v)

@@ -17,7 +17,8 @@ type collect_error =
   | ClosureTargetInvalid of string * string * loc
 [@@deriving show]
 
-let is_builtin_type name = List.mem name Types.builtin_type_names
+let is_builtin_type name =
+  List.mem (Ast.upper_name name) Types.builtin_type_names
 
 (** Check if a type mentions a given name (for recursion detection) *)
 let rec mentions_type name = function
@@ -32,7 +33,7 @@ let rec mentions_type name = function
 (** Convert AST type_expr to ty, expanding aliases *)
 let rec resolve_type env (te : type_expr) loc : (ty, collect_error) result =
   match te with
-  | TName name -> (
+  | TName (Upper name) -> (
       match Types.builtin_of_name name with
       | Some ty -> Ok ty
       | None -> (
@@ -42,7 +43,7 @@ let rec resolve_type env (te : type_expr) loc : (ty, collect_error) result =
           | Some { kind = Env.KRule _ | Env.KVar _ | Env.KClosure _; _ } ->
               Error (UndefinedType (name, loc))
           | None -> Error (UndefinedType (name, loc))))
-  | TQName (mod_name, type_name) -> (
+  | TQName (Upper mod_name, Upper type_name) -> (
       match Env.lookup_qualified_type mod_name type_name env with
       | Some { kind = Env.KDomain; _ } -> Ok (TyDomain type_name)
       | Some { kind = Env.KAlias ty; _ } -> Ok ty
@@ -68,16 +69,18 @@ let collect_chapter_head ~chapter ~doc_contexts env
   (* Pass 1: Register all type names (domains and alias names as placeholders) *)
   let register_type_name env (decl : declaration located) =
     match decl.value with
-    | DeclDomain name ->
-        if is_builtin_type name then Error (BuiltinRedefined (name, decl.loc))
+    | DeclDomain (Upper name) ->
+        if is_builtin_type (Upper name) then
+          Error (BuiltinRedefined (name, decl.loc))
         else begin
           match Env.lookup_type name env with
           | Some existing when existing.module_origin = None ->
               Error (DuplicateDomain (name, decl.loc, existing.loc))
           | _ -> Ok (Env.add_domain name decl.loc ~chapter env)
         end
-    | DeclAlias (name, _) ->
-        if is_builtin_type name then Error (BuiltinRedefined (name, decl.loc))
+    | DeclAlias (Upper name, _) ->
+        if is_builtin_type (Upper name) then
+          Error (BuiltinRedefined (name, decl.loc))
         else begin
           match Env.lookup_type name env with
           | Some existing when existing.module_origin = None ->
@@ -99,7 +102,7 @@ let collect_chapter_head ~chapter ~doc_contexts env
         fold_result
           (fun env (decl : declaration located) ->
             match decl.value with
-            | DeclAlias (name, type_expr) ->
+            | DeclAlias (Upper name, type_expr) ->
                 let* ty = resolve_type env type_expr decl.loc in
                 if mentions_type name ty then
                   Error (RecursiveAlias (name, decl.loc))
@@ -130,22 +133,24 @@ let collect_chapter_head ~chapter ~doc_contexts env
   (* Pass 3: Add rules/actions and register context footprints *)
   let add_rule env (decl : declaration located) =
     match decl.value with
-    | DeclRule { name; params; guards; return_type; contexts } ->
+    | DeclRule { name = Lower name; params; guards; return_type; contexts } ->
         let* param_types =
           map_result (fun p -> resolve_type env p.param_type decl.loc) params
         in
         let* ret_ty = resolve_type env return_type decl.loc in
         (* Validate context footprint: each named context must exist in doc.contexts *)
+        let ctx_names = List.map Ast.upper_name contexts in
         let* () =
           map_result
             (fun ctx_name ->
               if
                 List.exists
-                  (fun (c : upper_ident located) -> c.value = ctx_name)
+                  (fun (c : upper_ident located) ->
+                    Ast.upper_name c.value = ctx_name)
                   doc_contexts
               then Ok ()
               else Error (UndefinedContext (ctx_name, decl.loc)))
-            contexts
+            ctx_names
           |> Result.map (fun _ -> ())
         in
         let proc_ty = TyFunc (param_types, Some ret_ty) in
@@ -160,7 +165,7 @@ let collect_chapter_head ~chapter ~doc_contexts env
         let env =
           List.fold_left
             (fun env ctx_name -> Env.add_rule_to_context ctx_name name env)
-            env contexts
+            env ctx_names
         in
         Ok env
     | DeclAction { label; params; guards; _ } ->
@@ -170,7 +175,8 @@ let collect_chapter_head ~chapter ~doc_contexts env
         let env = Env.add_rule_guards label params guards env in
         actions := (label, decl.loc) :: !actions;
         Ok env
-    | DeclClosure { name; param; return_type; target } ->
+    | DeclClosure
+        { name = Lower name; param; return_type; target = Lower target } ->
         (* Validate: no duplicate rule name *)
         let* env =
           match Env.lookup_term name env with
@@ -236,7 +242,8 @@ let collect_chapter_head ~chapter ~doc_contexts env
     | DeclAction { contexts; _ } ->
         let* () =
           map_result
-            (fun ctx_name ->
+            (fun ctx ->
+              let ctx_name = Ast.upper_name ctx in
               match Env.lookup_context ctx_name env with
               | None -> Error (UndefinedContext (ctx_name, decl.loc))
               | Some _ -> Ok ())
@@ -278,16 +285,17 @@ let collect_chapter_head ~chapter ~doc_contexts env
 
 (** Collect all declarations from document (Pass 1) *)
 let collect_all ~base_env (doc : document) : (Env.t, collect_error) result =
-  let mod_name = Option.value ~default:"" doc.module_name in
+  let mod_name = Option.fold ~none:"" ~some:Ast.upper_name doc.module_name in
   let env = Env.with_module_init mod_name base_env in
 
   (* Register context names from module-level declarations *)
   let* env =
     fold_result
       (fun env (ctx : upper_ident located) ->
-        match Env.lookup_context ctx.value env with
-        | Some _ -> Error (DuplicateContext (ctx.value, ctx.loc))
-        | None -> Ok (Env.add_context ctx.value [] env))
+        let ctx_name = Ast.upper_name ctx.value in
+        match Env.lookup_context ctx_name env with
+        | Some _ -> Error (DuplicateContext (ctx_name, ctx.loc))
+        | None -> Ok (Env.add_context ctx_name [] env))
       env doc.contexts
   in
 

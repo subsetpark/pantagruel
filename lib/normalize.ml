@@ -38,7 +38,7 @@ type action_unit = {
 
 (** Extract type names from a type expression *)
 let rec types_in_type_expr = function
-  | TName name -> StringSet.singleton name
+  | TName (Upper name) -> StringSet.singleton name
   | TQName _ -> StringSet.empty (* Qualified refs are imports, not local deps *)
   | TList t -> types_in_type_expr t
   | TProduct ts | TSum ts ->
@@ -51,15 +51,15 @@ let symbols_in_expr expr =
   let types = ref StringSet.empty in
   let terms = ref StringSet.empty in
   let rec go = function
-    | EVar name -> terms := StringSet.add name !terms
-    | EDomain name -> types := StringSet.add name !types
+    | EVar (Lower name) -> terms := StringSet.add name !terms
+    | EDomain (Upper name) -> types := StringSet.add name !types
     | EQualified _ -> () (* Skip qualified names for now *)
     | ELitNat _ | ELitReal _ | ELitString _ | ELitBool _ -> ()
     | EApp (f, args) ->
         go f;
         List.iter go args
-    | EPrimed name -> terms := StringSet.add name !terms
-    | EOverride (name, pairs) ->
+    | EPrimed (Lower name) -> terms := StringSet.add name !terms
+    | EOverride (Lower name, pairs) ->
         terms := StringSet.add name !terms;
         List.iter
           (fun (k, v) ->
@@ -134,16 +134,16 @@ let symbols_in_decl_deps (decl : declaration) =
   | DeclClosure { param; return_type; target; _ } ->
       types := StringSet.union !types (types_in_type_expr param.param_type);
       types := StringSet.union !types (types_in_type_expr return_type);
-      terms := StringSet.add target !terms);
+      terms := StringSet.add (Ast.lower_name target) !terms);
   (!types, !terms)
 
 (** Get the name defined by a declaration *)
 let decl_name = function
-  | DeclDomain name -> name
-  | DeclAlias (name, _) -> name
-  | DeclRule { name; _ } -> name
+  | DeclDomain (Upper name) -> name
+  | DeclAlias (Upper name, _) -> name
+  | DeclRule { name = Lower name; _ } -> name
   | DeclAction { label; _ } -> label
-  | DeclClosure { name; _ } -> name
+  | DeclClosure { name = Lower name; _ } -> name
 
 (** Is this a type-namespace declaration? *)
 let is_type_decl = function
@@ -192,7 +192,7 @@ let action_params (chapter : chapter) : StringSet.t =
       (fun decl ->
         match decl.value with
         | DeclAction { params; _ } ->
-            Some (List.map (fun p -> p.param_name) params)
+            Some (List.map (fun p -> Ast.lower_name p.param_name) params)
         | DeclDomain _ | DeclAlias _ | DeclRule _ | DeclClosure _ -> None)
       chapter.head
   in

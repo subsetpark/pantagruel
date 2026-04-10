@@ -29,87 +29,99 @@ let test_lit_real () =
 
 let test_var () =
   let env = Env.empty "" in
-  check string "x" "x" (Smt.translate_expr config env (Ast.EVar "x"));
+  check string "x" "x" (Smt.translate_expr config env (Ast.EVar (Lower "x")));
   check string "hyphenated" "has_permp"
-    (Smt.translate_expr config env (Ast.EVar "has-perm?"))
+    (Smt.translate_expr config env (Ast.EVar (Lower "has-perm?")))
 
 let test_primed () =
   let env = Env.empty "" in
-  check string "f'" "f_prime" (Smt.translate_expr config env (Ast.EPrimed "f"))
+  check string "f'" "f_prime"
+    (Smt.translate_expr config env (Ast.EPrimed (Lower "f")))
 
 let test_binop_and () =
   let env = Env.empty "" in
   check string "and" "(and x y)"
-    (Smt.translate_expr config env (Ast.EBinop (OpAnd, EVar "x", EVar "y")))
+    (Smt.translate_expr config env
+       (Ast.EBinop (OpAnd, EVar (Lower "x"), EVar (Lower "y"))))
 
 let test_binop_or () =
   let env = Env.empty "" in
   check string "or" "(or x y)"
-    (Smt.translate_expr config env (Ast.EBinop (OpOr, EVar "x", EVar "y")))
+    (Smt.translate_expr config env
+       (Ast.EBinop (OpOr, EVar (Lower "x"), EVar (Lower "y"))))
 
 let test_binop_impl () =
   let env = Env.empty "" in
   check string "impl" "(=> x y)"
-    (Smt.translate_expr config env (Ast.EBinop (OpImpl, EVar "x", EVar "y")))
+    (Smt.translate_expr config env
+       (Ast.EBinop (OpImpl, EVar (Lower "x"), EVar (Lower "y"))))
 
 let test_binop_eq () =
   let env = Env.empty "" in
   check string "eq" "(= x y)"
-    (Smt.translate_expr config env (Ast.EBinop (OpEq, EVar "x", EVar "y")))
+    (Smt.translate_expr config env
+       (Ast.EBinop (OpEq, EVar (Lower "x"), EVar (Lower "y"))))
 
 let test_binop_neq () =
   let env = Env.empty "" in
   check string "neq" "(not (= x y))"
-    (Smt.translate_expr config env (Ast.EBinop (OpNeq, EVar "x", EVar "y")))
+    (Smt.translate_expr config env
+       (Ast.EBinop (OpNeq, EVar (Lower "x"), EVar (Lower "y"))))
 
 let test_binop_lt () =
   let env = Env.empty "" in
   check string "lt" "(< x y)"
-    (Smt.translate_expr config env (Ast.EBinop (OpLt, EVar "x", EVar "y")))
+    (Smt.translate_expr config env
+       (Ast.EBinop (OpLt, EVar (Lower "x"), EVar (Lower "y"))))
 
 let test_binop_arith () =
   let env = Env.empty "" in
   check string "add" "(+ x y)"
-    (Smt.translate_expr config env (Ast.EBinop (OpAdd, EVar "x", EVar "y")));
+    (Smt.translate_expr config env
+       (Ast.EBinop (OpAdd, EVar (Lower "x"), EVar (Lower "y"))));
   check string "sub" "(- x y)"
-    (Smt.translate_expr config env (Ast.EBinop (OpSub, EVar "x", EVar "y")));
+    (Smt.translate_expr config env
+       (Ast.EBinop (OpSub, EVar (Lower "x"), EVar (Lower "y"))));
   check string "mul" "(* x y)"
-    (Smt.translate_expr config env (Ast.EBinop (OpMul, EVar "x", EVar "y")));
+    (Smt.translate_expr config env
+       (Ast.EBinop (OpMul, EVar (Lower "x"), EVar (Lower "y"))));
   check string "div" "(div x y)"
-    (Smt.translate_expr config env (Ast.EBinop (OpDiv, EVar "x", EVar "y")))
+    (Smt.translate_expr config env
+       (Ast.EBinop (OpDiv, EVar (Lower "x"), EVar (Lower "y"))))
 
 let test_unop_not () =
   let env = Env.empty "" in
   check string "not" "(not x)"
-    (Smt.translate_expr config env (Ast.EUnop (OpNot, EVar "x")))
+    (Smt.translate_expr config env (Ast.EUnop (OpNot, EVar (Lower "x"))))
 
 let test_unop_neg () =
   let env = Env.empty "" in
   check string "neg" "(- x)"
-    (Smt.translate_expr config env (Ast.EUnop (OpNeg, EVar "x")))
+    (Smt.translate_expr config env (Ast.EUnop (OpNeg, EVar (Lower "x"))))
 
 let test_app () =
   let env = Env.empty "" in
   check string "app" "(f x y)"
     (Smt.translate_expr config env
-       (Ast.EApp (EVar "f", [ EVar "x"; EVar "y" ])))
+       (Ast.EApp (EVar (Lower "f"), [ EVar (Lower "x"); EVar (Lower "y") ])))
 
 let test_primed_app () =
   let env = Env.empty "" in
   check string "primed app" "(f_prime x)"
-    (Smt.translate_expr config env (Ast.EApp (EPrimed "f", [ EVar "x" ])))
+    (Smt.translate_expr config env
+       (Ast.EApp (EPrimed (Lower "f"), [ EVar (Lower "x") ])))
 
 let test_domain_in () =
   let env = Env.empty "" in
   check string "in domain"
     "(or (= x Account_0) (= x Account_1) (= x Account_2))"
     (Smt.translate_expr config env
-       (Ast.EBinop (OpIn, EVar "x", EDomain "Account")))
+       (Ast.EBinop (OpIn, EVar (Lower "x"), EDomain (Upper "Account"))))
 
 let test_proj () =
   let env = Env.empty "" in
   check string "proj" "(fst_1 x)"
-    (Smt.translate_expr config env (Ast.EProj (EVar "x", 1)))
+    (Smt.translate_expr config env (Ast.EProj (EVar (Lower "x"), 1)))
 
 (* --- Sort encoding tests --- *)
 
@@ -277,23 +289,33 @@ let test_frame_conditions () =
 let test_prime_expr () =
   let open Ast in
   (* Free variables get primed *)
-  let e = EBinop (OpEq, EApp (EVar "f", [ EVar "x" ]), ELitNat 0) in
+  let e =
+    EBinop (OpEq, EApp (EVar (Lower "f"), [ EVar (Lower "x") ]), ELitNat 0)
+  in
   let e' = Smt.prime_expr e in
   (match[@warning "-4"] e' with
-  | EBinop (OpEq, EApp (EPrimed "f", [ EPrimed "x" ]), ELitNat 0) -> ()
+  | EBinop (OpEq, EApp (EPrimed (Lower "f"), [ EPrimed (Lower "x") ]), ELitNat 0)
+    ->
+      ()
   | _ -> fail (Printf.sprintf "Unexpected primed expr: %s" (Ast.show_expr e')));
   (* Quantifier-bound variables are NOT primed *)
   let e2 =
     EForall
-      ( [ { param_name = "a"; param_type = TName "Account" } ],
+      ( [ { param_name = Lower "a"; param_type = TName (Upper "Account") } ],
         [],
-        EBinop (OpGe, EApp (EVar "balance", [ EVar "a" ]), ELitNat 0) )
+        EBinop
+          (OpGe, EApp (EVar (Lower "balance"), [ EVar (Lower "a") ]), ELitNat 0)
+      )
   in
   let e2' = Smt.prime_expr e2 in
   match[@warning "-4"] e2' with
   | EForall
-      (_, _, EBinop (OpGe, EApp (EPrimed "balance", [ EVar "a" ]), ELitNat 0))
-    ->
+      ( _,
+        _,
+        EBinop
+          ( OpGe,
+            EApp (EPrimed (Lower "balance"), [ EVar (Lower "a") ]),
+            ELitNat 0 ) ) ->
       ()
   | _ ->
       fail
@@ -303,7 +325,8 @@ let test_prime_expr () =
 let test_card_domain () =
   let env = Env.empty "" |> Env.add_domain "Account" Ast.dummy_loc ~chapter:0 in
   check string "#Domain = bound" "3"
-    (Smt.translate_expr config env (Ast.EUnop (OpCard, EDomain "Account")))
+    (Smt.translate_expr config env
+       (Ast.EUnop (OpCard, EDomain (Upper "Account"))))
 
 let test_card_list () =
   let env =
@@ -314,7 +337,7 @@ let test_card_list () =
          Ast.dummy_loc ~chapter:0
   in
   let result =
-    Smt.translate_expr config env (Ast.EUnop (OpCard, EVar "active"))
+    Smt.translate_expr config env (Ast.EUnop (OpCard, EVar (Lower "active")))
   in
   (* Should expand to sum of ite over domain elements *)
   check bool "has ite" true (contains result "(ite (select active");
@@ -333,7 +356,8 @@ let test_subset () =
          Ast.dummy_loc ~chapter:0
   in
   let result =
-    Smt.translate_expr config env (Ast.EBinop (OpSubset, EVar "xs", EVar "ys"))
+    Smt.translate_expr config env
+      (Ast.EBinop (OpSubset, EVar (Lower "xs"), EVar (Lower "ys")))
   in
   (* Should expand over domain elements *)
   check bool "has select xs" true (contains result "(select xs");
@@ -350,7 +374,8 @@ let test_in_list () =
     |> Env.add_var "a" (Types.TyDomain "Account")
   in
   let result =
-    Smt.translate_expr config env (Ast.EBinop (OpIn, EVar "a", EVar "active"))
+    Smt.translate_expr config env
+      (Ast.EBinop (OpIn, EVar (Lower "a"), EVar (Lower "active")))
   in
   check string "in list" "(select active a)" result
 
@@ -364,7 +389,8 @@ let test_domain_standalone () =
   check_raises "EDomain standalone raises"
     (Failure
        "SMT translation: EDomain 'Account' appeared in standalone position")
-    (fun () -> ignore (Smt.translate_expr config env (Ast.EDomain "Account")))
+    (fun () ->
+      ignore (Smt.translate_expr config env (Ast.EDomain (Upper "Account"))))
 
 let test_card_non_domain_list () =
   let env =
@@ -374,7 +400,7 @@ let test_card_non_domain_list () =
          Ast.dummy_loc ~chapter:0
   in
   let result =
-    Smt.translate_expr config env (Ast.EUnop (OpCard, EVar "nums"))
+    Smt.translate_expr config env (Ast.EUnop (OpCard, EVar (Lower "nums")))
   in
   (* Non-domain list card should emit warning and 0 fallback *)
   check bool "has WARNING" true (contains result "WARNING");
@@ -391,7 +417,7 @@ let test_subset_domain_rhs () =
   in
   let result =
     Smt.translate_expr config env
-      (Ast.EBinop (OpSubset, EVar "xs", EDomain "Item"))
+      (Ast.EBinop (OpSubset, EVar (Lower "xs"), EDomain (Upper "Item")))
   in
   check bool "has select xs" true (contains result "(select xs");
   check bool "has Item_0" true (contains result "Item_0")
@@ -406,7 +432,9 @@ let test_build_value_terms () =
          (Types.TyFunc ([ Types.TyDomain "Account" ], Some Types.TyNat))
          Ast.dummy_loc ~chapter:0
   in
-  let params = [ Ast.{ param_name = "a"; param_type = TName "Account" } ] in
+  let params =
+    [ Ast.{ param_name = Lower "a"; param_type = TName (Upper "Account") } ]
+  in
   let terms = Smt.build_value_terms config env params in
   check bool "has param a" true (List.mem "a" terms);
   check bool "has (balance a)" true (List.mem "(balance a)" terms);
@@ -829,7 +857,7 @@ let test_card_domain_with_bounds () =
     Smt.make_config ~bound:3 ~steps:5 ~domain_bounds:bounds ~inject_guards:true
   in
   check string "#Domain with per-domain bound" "5"
-    (Smt.translate_expr cfg env (Ast.EUnop (OpCard, EDomain "Color")))
+    (Smt.translate_expr cfg env (Ast.EUnop (OpCard, EDomain (Upper "Color"))))
 
 (* --- Test suites --- *)
 
@@ -838,22 +866,26 @@ let test_card_domain_with_bounds () =
 let test_binop_iff () =
   let env = Env.empty "" in
   check string "iff" "(= x y)"
-    (Smt.translate_expr config env (Ast.EBinop (OpIff, EVar "x", EVar "y")))
+    (Smt.translate_expr config env
+       (Ast.EBinop (OpIff, EVar (Lower "x"), EVar (Lower "y"))))
 
 let test_binop_ge () =
   let env = Env.empty "" in
   check string "ge" "(>= x y)"
-    (Smt.translate_expr config env (Ast.EBinop (OpGe, EVar "x", EVar "y")))
+    (Smt.translate_expr config env
+       (Ast.EBinop (OpGe, EVar (Lower "x"), EVar (Lower "y"))))
 
 let test_binop_gt () =
   let env = Env.empty "" in
   check string "gt" "(> x y)"
-    (Smt.translate_expr config env (Ast.EBinop (OpGt, EVar "x", EVar "y")))
+    (Smt.translate_expr config env
+       (Ast.EBinop (OpGt, EVar (Lower "x"), EVar (Lower "y"))))
 
 let test_binop_le () =
   let env = Env.empty "" in
   check string "le" "(<= x y)"
-    (Smt.translate_expr config env (Ast.EBinop (OpLe, EVar "x", EVar "y")))
+    (Smt.translate_expr config env
+       (Ast.EBinop (OpLe, EVar (Lower "x"), EVar (Lower "y"))))
 
 let test_tuple () =
   let env = Env.empty "" in
@@ -875,14 +907,16 @@ let test_override () =
   (* Applied override: f[a |-> 42] a produces ite chain *)
   let result =
     Smt.translate_expr config env
-      (Ast.EApp (EOverride ("f", [ (EVar "a", ELitNat 42) ]), [ EVar "a" ]))
+      (Ast.EApp
+         ( EOverride (Lower "f", [ (EVar (Lower "a"), ELitNat 42) ]),
+           [ EVar (Lower "a") ] ))
   in
   check bool "applied override has ite" true (contains result "ite");
   check bool "applied override has f" true (contains result "f");
   (* Standalone override (not applied) can't be represented directly *)
   let result2 =
     Smt.translate_expr config env
-      (Ast.EOverride ("f", [ (EVar "a", ELitNat 42) ]))
+      (Ast.EOverride (Lower "f", [ (EVar (Lower "a"), ELitNat 42) ]))
   in
   check bool "standalone override placeholder" true
     (contains result2 "override")
@@ -915,7 +949,7 @@ let test_translate_in_zero_bound () =
   let env = Env.empty "" |> Env.add_domain "D" Ast.dummy_loc ~chapter:0 in
   let result =
     Smt.translate_expr zero_config env
-      (Ast.EBinop (OpIn, EVar "x", EDomain "D"))
+      (Ast.EBinop (OpIn, EVar (Lower "x"), EDomain (Upper "D")))
   in
   check string "empty domain membership is false" "false" result
 
@@ -934,7 +968,8 @@ let test_override_applied_zero_args () =
     (Failure "SMT translation: override applied with 0 arguments") (fun () ->
       ignore
         (Smt.translate_expr config env
-           (Ast.EApp (EOverride ("f", [ (EVar "a", ELitNat 42) ]), []))))
+           (Ast.EApp
+              (EOverride (Lower "f", [ (EVar (Lower "a"), ELitNat 42) ]), []))))
 
 let test_nat_vs_nat0_constraints () =
   (* Bug #10: Nat should emit >= 1, Nat0 should emit >= 0 *)
@@ -1188,12 +1223,12 @@ let test_in_each_comprehension () =
   let expr =
     Ast.EBinop
       ( OpIn,
-        EVar "r",
+        EVar (Lower "r"),
         EEach
-          ( [ { param_name = "u"; param_type = TName "User" } ],
+          ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
             [],
             None,
-            EApp (EVar "role", [ EVar "u" ]) ) )
+            EApp (EVar (Lower "role"), [ EVar (Lower "u") ]) ) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "has (= r (role User_0))" true
@@ -1219,12 +1254,12 @@ let test_in_each_comprehension_guarded () =
   let expr =
     Ast.EBinop
       ( OpIn,
-        EVar "r",
+        EVar (Lower "r"),
         EEach
-          ( [ { param_name = "u"; param_type = TName "User" } ],
-            [ GExpr (EApp (EVar "active", [ EVar "u" ])) ],
+          ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
+            [ GExpr (EApp (EVar (Lower "active"), [ EVar (Lower "u") ])) ],
             None,
-            EApp (EVar "role", [ EVar "u" ]) ) )
+            EApp (EVar (Lower "role"), [ EVar (Lower "u") ]) ) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "has guard (active User_0)" true
@@ -1250,12 +1285,12 @@ let test_in_membership_comprehension () =
   let expr =
     Ast.EBinop
       ( OpIn,
-        EVar "r",
+        EVar (Lower "r"),
         EEach
           ( [],
-            [ GIn ("u", EVar "admins") ],
+            [ GIn (Lower "u", EVar (Lower "admins")) ],
             None,
-            EApp (EVar "role", [ EVar "u" ]) ) )
+            EApp (EVar (Lower "role"), [ EVar (Lower "u") ]) ) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "has select admins" true (contains result "(select admins");
@@ -1277,10 +1312,10 @@ let test_card_each_comprehension () =
     Ast.EUnop
       ( OpCard,
         EEach
-          ( [ { param_name = "u"; param_type = TName "User" } ],
+          ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
             [],
             None,
-            EApp (EVar "role", [ EVar "u" ]) ) )
+            EApp (EVar (Lower "role"), [ EVar (Lower "u") ]) ) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "has ite" true (contains result "(ite");
@@ -1299,10 +1334,10 @@ let test_each_comprehension_standalone () =
   in
   let expr =
     Ast.EEach
-      ( [ { param_name = "u"; param_type = TName "User" } ],
+      ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
         [],
         None,
-        EApp (EVar "role", [ EVar "u" ]) )
+        EApp (EVar (Lower "role"), [ EVar (Lower "u") ]) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "has as const" true (contains result "as const");
@@ -1320,10 +1355,10 @@ let test_aggregate_add () =
   in
   let expr =
     Ast.EEach
-      ( [ { param_name = "u"; param_type = TName "User" } ],
+      ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
         [],
         Some CombAdd,
-        EApp (EVar "score", [ EVar "u" ]) )
+        EApp (EVar (Lower "score"), [ EVar (Lower "u") ]) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "has +" true (contains result "(+");
@@ -1341,10 +1376,10 @@ let test_aggregate_and () =
   in
   let expr =
     Ast.EEach
-      ( [ { param_name = "u"; param_type = TName "User" } ],
+      ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
         [],
         Some CombAnd,
-        EApp (EVar "active", [ EVar "u" ]) )
+        EApp (EVar (Lower "active"), [ EVar (Lower "u") ]) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "has and" true (contains result "(and");
@@ -1364,10 +1399,10 @@ let test_aggregate_min_guarded () =
   in
   let expr =
     Ast.EEach
-      ( [ { param_name = "u"; param_type = TName "User" } ],
-        [ GExpr (EApp (EVar "active", [ EVar "u" ])) ],
+      ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
+        [ GExpr (EApp (EVar (Lower "active"), [ EVar (Lower "u") ])) ],
         Some CombMin,
-        EApp (EVar "score", [ EVar "u" ]) )
+        EApp (EVar (Lower "score"), [ EVar (Lower "u") ]) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "has <=" true (contains result "(<=");
@@ -1388,10 +1423,10 @@ let test_aggregate_add_empty () =
   in
   let expr =
     Ast.EEach
-      ( [ { param_name = "u"; param_type = TName "User" } ],
+      ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
         [],
         Some CombAdd,
-        EApp (EVar "score", [ EVar "u" ]) )
+        EApp (EVar (Lower "score"), [ EVar (Lower "u") ]) )
   in
   let result = Smt.translate_expr zero_config env expr in
   check string "empty add = identity" "0" result
@@ -1409,15 +1444,15 @@ let test_aggregate_decl_guard_injection () =
          (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
          Ast.dummy_loc ~chapter:0
     |> Env.add_rule_guards "score"
-         [ Ast.{ param_name = "u"; param_type = TName "User" } ]
-         [ GExpr (EApp (EVar "active", [ EVar "u" ])) ]
+         [ Ast.{ param_name = Lower "u"; param_type = TName (Upper "User") } ]
+         [ GExpr (EApp (EVar (Lower "active"), [ EVar (Lower "u") ])) ]
   in
   let expr =
     Ast.EEach
-      ( [ { param_name = "u"; param_type = TName "User" } ],
+      ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
         [],
         Some CombAdd,
-        EApp (EVar "score", [ EVar "u" ]) )
+        EApp (EVar (Lower "score"), [ EVar (Lower "u") ]) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "has (active User_0)" true (contains result "(active User_0)");
@@ -1437,10 +1472,10 @@ let test_aggregate_add_real () =
   in
   let expr =
     Ast.EEach
-      ( [ { param_name = "u"; param_type = TName "User" } ],
-        [ GExpr (EApp (EVar "active", [ EVar "u" ])) ],
+      ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
+        [ GExpr (EApp (EVar (Lower "active"), [ EVar (Lower "u") ])) ],
         Some CombAdd,
-        EApp (EVar "real_score", [ EVar "u" ]) )
+        EApp (EVar (Lower "real_score"), [ EVar (Lower "u") ]) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "has 0.0 identity" true (contains result "0.0");
@@ -1461,10 +1496,10 @@ let test_aggregate_add_real_empty () =
   in
   let expr =
     Ast.EEach
-      ( [ { param_name = "u"; param_type = TName "User" } ],
+      ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
         [],
         Some CombAdd,
-        EApp (EVar "real_score", [ EVar "u" ]) )
+        EApp (EVar (Lower "real_score"), [ EVar (Lower "u") ]) )
   in
   let result = Smt.translate_expr zero_config env expr in
   check string "empty real add = 0.0" "0.0" result
@@ -1480,10 +1515,10 @@ let test_aggregate_min_real () =
   in
   let expr =
     Ast.EEach
-      ( [ { param_name = "u"; param_type = TName "User" } ],
+      ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
         [],
         Some CombMin,
-        EApp (EVar "real_score", [ EVar "u" ]) )
+        EApp (EVar (Lower "real_score"), [ EVar (Lower "u") ]) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "has 0.0 seed" true (contains result "0.0");
@@ -1617,12 +1652,15 @@ let test_non_quantified_guard_injection () =
          (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
          Ast.dummy_loc ~chapter:0
     |> Env.add_rule_guards "get-access"
-         [ Ast.{ param_name = "u"; param_type = TName "User" } ]
-         [ GExpr (EApp (EVar "status", [ EVar "u" ])) ]
+         [ Ast.{ param_name = Lower "u"; param_type = TName (Upper "User") } ]
+         [ GExpr (EApp (EVar (Lower "status"), [ EVar (Lower "u") ])) ]
     |> Env.add_var "x" (Types.TyDomain "User")
   in
   let expr =
-    Ast.EBinop (OpEq, EApp (EVar "get-access", [ EVar "x" ]), EVar "x")
+    Ast.EBinop
+      ( OpEq,
+        EApp (EVar (Lower "get-access"), [ EVar (Lower "x") ]),
+        EVar (Lower "x") )
   in
   let result = Smt.translate_proposition config env expr in
   (* Should wrap: (=> (status x) (= (get_access x) x)) *)
@@ -1644,21 +1682,21 @@ let test_nested_quantifier_guards () =
          (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
          Ast.dummy_loc ~chapter:0
     |> Env.add_rule_guards "role"
-         [ Ast.{ param_name = "u"; param_type = TName "User" } ]
-         [ GExpr (EApp (EVar "active", [ EVar "u" ])) ]
+         [ Ast.{ param_name = Lower "u"; param_type = TName (Upper "User") } ]
+         [ GExpr (EApp (EVar (Lower "active"), [ EVar (Lower "u") ])) ]
   in
   (* all x: User | (some y: User | role y = role x) *)
   let expr =
     Ast.EForall
-      ( [ { param_name = "x"; param_type = TName "User" } ],
+      ( [ { param_name = Lower "x"; param_type = TName (Upper "User") } ],
         [],
         EExists
-          ( [ { param_name = "y"; param_type = TName "User" } ],
+          ( [ { param_name = Lower "y"; param_type = TName (Upper "User") } ],
             [],
             EBinop
               ( OpEq,
-                EApp (EVar "role", [ EVar "y" ]),
-                EApp (EVar "role", [ EVar "x" ]) ) ) )
+                EApp (EVar (Lower "role"), [ EVar (Lower "y") ]),
+                EApp (EVar (Lower "role"), [ EVar (Lower "x") ]) ) ) )
   in
   let result = Smt.translate_expr config env expr in
   (* Outer forall should NOT have the guard (nested quantifier handles its own).
@@ -1676,9 +1714,9 @@ let test_unguarded_rule_unchanged () =
   in
   let expr =
     Ast.EForall
-      ( [ { param_name = "u"; param_type = TName "User" } ],
+      ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
         [],
-        EApp (EVar "name", [ EVar "u" ]) )
+        EApp (EVar (Lower "name"), [ EVar (Lower "u") ]) )
   in
   let result = Smt.translate_expr config env expr in
   (* No guard injection — plain forall without => *)
@@ -1697,15 +1735,17 @@ let test_guard_substitution () =
          (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
          Ast.dummy_loc ~chapter:0
     |> Env.add_rule_guards "score"
-         [ Ast.{ param_name = "u"; param_type = TName "User" } ]
-         [ GExpr (EApp (EVar "active", [ EVar "u" ])) ]
+         [ Ast.{ param_name = Lower "u"; param_type = TName (Upper "User") } ]
+         [ GExpr (EApp (EVar (Lower "active"), [ EVar (Lower "u") ])) ]
   in
   (* all x: User | score x >= 0 — the guard "active u" should become "active x" *)
   let expr =
     Ast.EForall
-      ( [ { param_name = "x"; param_type = TName "User" } ],
+      ( [ { param_name = Lower "x"; param_type = TName (Upper "User") } ],
         [],
-        EBinop (OpGe, EApp (EVar "score", [ EVar "x" ]), ELitNat 0) )
+        EBinop
+          (OpGe, EApp (EVar (Lower "score"), [ EVar (Lower "x") ]), ELitNat 0)
+      )
   in
   let result = Smt.translate_expr config env expr in
   (* Guard should be substituted: (active x), not (active u) *)
@@ -1713,7 +1753,7 @@ let test_guard_substitution () =
   check bool "no (active u)" false (contains result "(active u)")
 
 let test_primed_guard_collection () =
-  (* collect_body_guards on EApp(EPrimed "value", [EVar "t"]) should return
+  (* collect_body_guards on EApp(EPrimed (Lower "value"), [EVar (Lower "t")]) should return
      the primed guard [active?' t] *)
   let env =
     Env.empty ""
@@ -1725,17 +1765,17 @@ let test_primed_guard_collection () =
          (Types.TyFunc ([ Types.TyDomain "Thing" ], Some Types.TyBool))
          Ast.dummy_loc ~chapter:0
     |> Env.add_rule_guards "value"
-         [ Ast.{ param_name = "t"; param_type = TName "Thing" } ]
-         [ GExpr (EApp (EVar "active?", [ EVar "t" ])) ]
+         [ Ast.{ param_name = Lower "t"; param_type = TName (Upper "Thing") } ]
+         [ GExpr (EApp (EVar (Lower "active?"), [ EVar (Lower "t") ])) ]
   in
-  let expr = Ast.EApp (EPrimed "value", [ EVar "t" ]) in
+  let expr = Ast.EApp (EPrimed (Lower "value"), [ EVar (Lower "t") ]) in
   let guards = Smt.collect_body_guards ~bound:[ "t" ] env expr in
   check int "one guard" 1 (List.length guards);
-  (* The guard should be primed: EPrimed "active?" applied to EVar "t"
+  (* The guard should be primed: EPrimed (Lower "active?") applied to EVar (Lower "t")
      (t is not primed because it's not a rule name) *)
   let guard = List.hd guards in
   match[@warning "-4"] guard with
-  | Ast.EApp (EPrimed "active?", [ EVar "t" ]) ->
+  | Ast.EApp (EPrimed (Lower "active?"), [ EVar (Lower "t") ]) ->
       check bool "primed guard for active?" true true
   | _ ->
       failf "Expected EApp(EPrimed \"active?\", [EVar \"t\"]) but got %s"
@@ -1754,11 +1794,14 @@ let test_inject_guards_false_skips () =
          (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
          Ast.dummy_loc ~chapter:0
     |> Env.add_rule_guards "score"
-         [ Ast.{ param_name = "u"; param_type = TName "User" } ]
-         [ GExpr (EApp (EVar "active", [ EVar "u" ])) ]
+         [ Ast.{ param_name = Lower "u"; param_type = TName (Upper "User") } ]
+         [ GExpr (EApp (EVar (Lower "active"), [ EVar (Lower "u") ])) ]
     |> Env.add_var "x" (Types.TyDomain "User")
   in
-  let expr = Ast.EBinop (OpGe, EApp (EVar "score", [ EVar "x" ]), ELitNat 0) in
+  let expr =
+    Ast.EBinop
+      (OpGe, EApp (EVar (Lower "score"), [ EVar (Lower "x") ]), ELitNat 0)
+  in
   let no_guard_config = { config with Smt.inject_guards = false } in
   let result = Smt.translate_proposition no_guard_config env expr in
   (* Should NOT have an implication wrapper *)
@@ -1866,7 +1909,7 @@ let test_cond_two_arms () =
   let expr =
     Ast.ECond
       [
-        (EBinop (OpGt, EVar "x", ELitNat 0), ELitNat 1);
+        (EBinop (OpGt, EVar (Lower "x"), ELitNat 0), ELitNat 1);
         (ELitBool true, ELitNat 0);
       ]
   in
@@ -1878,8 +1921,8 @@ let test_cond_three_arms () =
   let expr =
     Ast.ECond
       [
-        (EBinop (OpGt, EVar "x", ELitNat 10), ELitNat 2);
-        (EBinop (OpGt, EVar "x", ELitNat 5), ELitNat 1);
+        (EBinop (OpGt, EVar (Lower "x"), ELitNat 10), ELitNat 2);
+        (EBinop (OpGt, EVar (Lower "x"), ELitNat 5), ELitNat 1);
         (ELitBool true, ELitNat 0);
       ]
   in

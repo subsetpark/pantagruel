@@ -9,11 +9,14 @@ let pp_te = Pretty.str_type_expr
 
 (* --- Expression pretty-printing tests --- *)
 
-let test_var () = check string "var" "x" (pp (Ast.EVar "x"))
-let test_domain () = check string "domain" "User" (pp (Ast.EDomain "User"))
+let test_var () = check string "var" "x" (pp (Ast.EVar (Lower "x")))
+
+let test_domain () =
+  check string "domain" "User" (pp (Ast.EDomain (Upper "User")))
 
 let test_qualified () =
-  check string "qualified" "Mod::name" (pp (Ast.EQualified ("Mod", "name")))
+  check string "qualified" "Mod::name"
+    (pp (Ast.EQualified (Upper "Mod", "name")))
 
 let test_lit_nat () = check string "nat" "42" (pp (Ast.ELitNat 42))
 let test_lit_real () = check string "real" "3.14" (pp (Ast.ELitReal 3.14))
@@ -26,137 +29,160 @@ let test_lit_bool () =
   check string "false" "false" (pp (Ast.ELitBool false))
 
 let test_app () =
-  check string "app" "f x y" (pp (Ast.EApp (EVar "f", [ EVar "x"; EVar "y" ])))
+  check string "app" "f x y"
+    (pp (Ast.EApp (EVar (Lower "f"), [ EVar (Lower "x"); EVar (Lower "y") ])))
 
-let test_primed () = check string "primed" "f'" (pp (Ast.EPrimed "f"))
+let test_primed () = check string "primed" "f'" (pp (Ast.EPrimed (Lower "f")))
 
 let test_override () =
   check string "override" "f[x |-> y]"
-    (pp (Ast.EOverride ("f", [ (EVar "x", EVar "y") ])))
+    (pp (Ast.EOverride (Lower "f", [ (EVar (Lower "x"), EVar (Lower "y")) ])))
 
 let test_tuple () =
   check string "tuple" "(1, 2, 3)"
     (pp (Ast.ETuple [ ELitNat 1; ELitNat 2; ELitNat 3 ]))
 
-let test_proj () = check string "proj" "x.1" (pp (Ast.EProj (EVar "x", 1)))
+let test_proj () =
+  check string "proj" "x.1" (pp (Ast.EProj (EVar (Lower "x"), 1)))
 
 let test_binop_and () =
-  check string "and" "a and b" (pp (Ast.EBinop (OpAnd, EVar "a", EVar "b")))
+  check string "and" "a and b"
+    (pp (Ast.EBinop (OpAnd, EVar (Lower "a"), EVar (Lower "b"))))
 
 let test_binop_or () =
-  check string "or" "a or b" (pp (Ast.EBinop (OpOr, EVar "a", EVar "b")))
+  check string "or" "a or b"
+    (pp (Ast.EBinop (OpOr, EVar (Lower "a"), EVar (Lower "b"))))
 
 let test_binop_impl () =
-  check string "impl" "a -> b" (pp (Ast.EBinop (OpImpl, EVar "a", EVar "b")))
+  check string "impl" "a -> b"
+    (pp (Ast.EBinop (OpImpl, EVar (Lower "a"), EVar (Lower "b"))))
 
 let test_binop_iff () =
-  check string "iff" "a <-> b" (pp (Ast.EBinop (OpIff, EVar "a", EVar "b")))
+  check string "iff" "a <-> b"
+    (pp (Ast.EBinop (OpIff, EVar (Lower "a"), EVar (Lower "b"))))
 
 let test_binop_eq () =
-  check string "eq" "a = b" (pp (Ast.EBinop (OpEq, EVar "a", EVar "b")))
+  check string "eq" "a = b"
+    (pp (Ast.EBinop (OpEq, EVar (Lower "a"), EVar (Lower "b"))))
 
 let test_binop_neq () =
-  check string "neq" "a != b" (pp (Ast.EBinop (OpNeq, EVar "a", EVar "b")))
+  check string "neq" "a != b"
+    (pp (Ast.EBinop (OpNeq, EVar (Lower "a"), EVar (Lower "b"))))
 
 let test_binop_lt () =
-  check string "lt" "a < b" (pp (Ast.EBinop (OpLt, EVar "a", EVar "b")))
+  check string "lt" "a < b"
+    (pp (Ast.EBinop (OpLt, EVar (Lower "a"), EVar (Lower "b"))))
 
 let test_binop_gt () =
-  check string "gt" "a > b" (pp (Ast.EBinop (OpGt, EVar "a", EVar "b")))
+  check string "gt" "a > b"
+    (pp (Ast.EBinop (OpGt, EVar (Lower "a"), EVar (Lower "b"))))
 
 let test_binop_le () =
-  check string "le" "a <= b" (pp (Ast.EBinop (OpLe, EVar "a", EVar "b")))
+  check string "le" "a <= b"
+    (pp (Ast.EBinop (OpLe, EVar (Lower "a"), EVar (Lower "b"))))
 
 let test_binop_ge () =
-  check string "ge" "a >= b" (pp (Ast.EBinop (OpGe, EVar "a", EVar "b")))
+  check string "ge" "a >= b"
+    (pp (Ast.EBinop (OpGe, EVar (Lower "a"), EVar (Lower "b"))))
 
 let test_binop_in () =
-  check string "in" "x in S" (pp (Ast.EBinop (OpIn, EVar "x", EVar "S")))
+  check string "in" "x in S"
+    (pp (Ast.EBinop (OpIn, EVar (Lower "x"), EVar (Lower "S"))))
 
 let test_binop_subset () =
   check string "subset" "a subset b"
-    (pp (Ast.EBinop (OpSubset, EVar "a", EVar "b")))
+    (pp (Ast.EBinop (OpSubset, EVar (Lower "a"), EVar (Lower "b"))))
 
 let test_binop_add () =
-  check string "add" "a + b" (pp (Ast.EBinop (OpAdd, EVar "a", EVar "b")))
+  check string "add" "a + b"
+    (pp (Ast.EBinop (OpAdd, EVar (Lower "a"), EVar (Lower "b"))))
 
 let test_binop_sub () =
-  check string "sub" "a - b" (pp (Ast.EBinop (OpSub, EVar "a", EVar "b")))
+  check string "sub" "a - b"
+    (pp (Ast.EBinop (OpSub, EVar (Lower "a"), EVar (Lower "b"))))
 
 let test_binop_mul () =
-  check string "mul" "a * b" (pp (Ast.EBinop (OpMul, EVar "a", EVar "b")))
+  check string "mul" "a * b"
+    (pp (Ast.EBinop (OpMul, EVar (Lower "a"), EVar (Lower "b"))))
 
 let test_binop_div () =
-  check string "div" "a / b" (pp (Ast.EBinop (OpDiv, EVar "a", EVar "b")))
+  check string "div" "a / b"
+    (pp (Ast.EBinop (OpDiv, EVar (Lower "a"), EVar (Lower "b"))))
 
 let test_unop_not () =
-  check string "not" "~a" (pp (Ast.EUnop (OpNot, EVar "a")))
+  check string "not" "~a" (pp (Ast.EUnop (OpNot, EVar (Lower "a"))))
 
 let test_unop_neg () =
-  check string "neg" "-a" (pp (Ast.EUnop (OpNeg, EVar "a")))
+  check string "neg" "-a" (pp (Ast.EUnop (OpNeg, EVar (Lower "a"))))
 
 let test_unop_card () =
-  check string "card" "#xs" (pp (Ast.EUnop (OpCard, EVar "xs")))
+  check string "card" "#xs" (pp (Ast.EUnop (OpCard, EVar (Lower "xs"))))
 
 let test_forall () =
   check string "forall" "all x: Nat | x > 0"
     (pp
        (Ast.EForall
-          ( [ { param_name = "x"; param_type = TName "Nat" } ],
+          ( [ { param_name = Lower "x"; param_type = TName (Upper "Nat") } ],
             [],
-            EBinop (OpGt, EVar "x", ELitNat 0) )))
+            EBinop (OpGt, EVar (Lower "x"), ELitNat 0) )))
 
 let test_exists () =
   check string "exists" "some x: Nat | x > 0"
     (pp
        (Ast.EExists
-          ( [ { param_name = "x"; param_type = TName "Nat" } ],
+          ( [ { param_name = Lower "x"; param_type = TName (Upper "Nat") } ],
             [],
-            EBinop (OpGt, EVar "x", ELitNat 0) )))
+            EBinop (OpGt, EVar (Lower "x"), ELitNat 0) )))
 
 let test_each () =
   check string "each" "each u: User | f u"
     (pp
        (Ast.EEach
-          ( [ { param_name = "u"; param_type = TName "User" } ],
+          ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
             [],
             None,
-            EApp (EVar "f", [ EVar "u" ]) )))
+            EApp (EVar (Lower "f"), [ EVar (Lower "u") ]) )))
 
 let test_each_with_combiner () =
   check string "over each" "+ over each u: User | f u"
     (pp
        (Ast.EEach
-          ( [ { param_name = "u"; param_type = TName "User" } ],
+          ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
             [],
             Some CombAdd,
-            EApp (EVar "f", [ EVar "u" ]) )))
+            EApp (EVar (Lower "f"), [ EVar (Lower "u") ]) )))
 
 let test_cond () =
   check string "cond" "cond a => 1, b => 2"
-    (pp (Ast.ECond [ (EVar "a", ELitNat 1); (EVar "b", ELitNat 2) ]))
+    (pp
+       (Ast.ECond
+          [ (EVar (Lower "a"), ELitNat 1); (EVar (Lower "b"), ELitNat 2) ]))
 
 let test_initially () =
-  check string "initially" "initially x" (pp (Ast.EInitially (EVar "x")))
+  check string "initially" "initially x"
+    (pp (Ast.EInitially (EVar (Lower "x"))))
 
 (* --- Declaration pretty-printing tests --- *)
 
 let test_decl_domain () =
-  check string "domain" "User." (pp_decl (Ast.DeclDomain "User"))
+  check string "domain" "User." (pp_decl (Ast.DeclDomain (Upper "User")))
 
 let test_decl_alias () =
   check string "alias" "Point = Nat * Nat."
-    (pp_decl (Ast.DeclAlias ("Point", TProduct [ TName "Nat"; TName "Nat" ])))
+    (pp_decl
+       (Ast.DeclAlias
+          (Upper "Point", TProduct [ TName (Upper "Nat"); TName (Upper "Nat") ])))
 
 let test_decl_rule () =
   check string "rule" "f x: Nat => Bool."
     (pp_decl
        (Ast.DeclRule
           {
-            name = "f";
-            params = [ { param_name = "x"; param_type = TName "Nat" } ];
+            name = Lower "f";
+            params =
+              [ { param_name = Lower "x"; param_type = TName (Upper "Nat") } ];
             guards = [];
-            return_type = TName "Bool";
+            return_type = TName (Upper "Bool");
             contexts = [];
           }))
 
@@ -165,10 +191,11 @@ let test_decl_rule_with_guards () =
     (pp_decl
        (Ast.DeclRule
           {
-            name = "f";
-            params = [ { param_name = "x"; param_type = TName "Nat" } ];
-            guards = [ GExpr (EBinop (OpGt, EVar "x", ELitNat 0)) ];
-            return_type = TName "Bool";
+            name = Lower "f";
+            params =
+              [ { param_name = Lower "x"; param_type = TName (Upper "Nat") } ];
+            guards = [ GExpr (EBinop (OpGt, EVar (Lower "x"), ELitNat 0)) ];
+            return_type = TName (Upper "Bool");
             contexts = [];
           }))
 
@@ -177,11 +204,12 @@ let test_decl_rule_with_context () =
     (pp_decl
        (Ast.DeclRule
           {
-            name = "f";
-            params = [ { param_name = "x"; param_type = TName "Nat" } ];
+            name = Lower "f";
+            params =
+              [ { param_name = Lower "x"; param_type = TName (Upper "Nat") } ];
             guards = [];
-            return_type = TName "Bool";
-            contexts = [ "Ctx" ];
+            return_type = TName (Upper "Bool");
+            contexts = [ Upper "Ctx" ];
           }))
 
 let test_decl_action () =
@@ -190,7 +218,8 @@ let test_decl_action () =
        (Ast.DeclAction
           {
             label = "Do thing";
-            params = [ { param_name = "x"; param_type = TName "Nat" } ];
+            params =
+              [ { param_name = Lower "x"; param_type = TName (Upper "Nat") } ];
             guards = [];
             contexts = [];
           }))
@@ -199,42 +228,55 @@ let test_decl_action_with_context () =
   check string "action with context" "Ctx ~> Do thing."
     (pp_decl
        (Ast.DeclAction
-          { label = "Do thing"; params = []; guards = []; contexts = [ "Ctx" ] }))
+          {
+            label = "Do thing";
+            params = [];
+            guards = [];
+            contexts = [ Upper "Ctx" ];
+          }))
 
 let test_decl_closure () =
   check string "closure" "anc b: Block => [Block] = closure parent."
     (pp_decl
        (Ast.DeclClosure
           {
-            name = "anc";
-            param = { param_name = "b"; param_type = TName "Block" };
-            return_type = TList (TName "Block");
-            target = "parent";
+            name = Lower "anc";
+            param =
+              { param_name = Lower "b"; param_type = TName (Upper "Block") };
+            return_type = TList (TName (Upper "Block"));
+            target = Lower "parent";
           }))
 
 (* --- Type expression tests --- *)
 
-let test_te_name () = check string "name" "Nat" (pp_te (Ast.TName "Nat"))
+let test_te_name () =
+  check string "name" "Nat" (pp_te (Ast.TName (Upper "Nat")))
 
 let test_te_qname () =
-  check string "qname" "Mod::Type" (pp_te (Ast.TQName ("Mod", "Type")))
+  check string "qname" "Mod::Type"
+    (pp_te (Ast.TQName (Upper "Mod", Upper "Type")))
 
 let test_te_list () =
-  check string "list" "[Nat]" (pp_te (Ast.TList (TName "Nat")))
+  check string "list" "[Nat]" (pp_te (Ast.TList (TName (Upper "Nat"))))
 
 let test_te_product () =
   check string "product" "Nat * Bool"
-    (pp_te (Ast.TProduct [ TName "Nat"; TName "Bool" ]))
+    (pp_te (Ast.TProduct [ TName (Upper "Nat"); TName (Upper "Bool") ]))
 
 let test_te_sum () =
   check string "sum" "Nat + Bool"
-    (pp_te (Ast.TSum [ TName "Nat"; TName "Bool" ]))
+    (pp_te (Ast.TSum [ TName (Upper "Nat"); TName (Upper "Bool") ]))
 
 let test_te_nested () =
   check string "nested list of product" "[Nat * Nat]"
-    (pp_te (Ast.TList (TProduct [ TName "Nat"; TName "Nat" ])));
+    (pp_te (Ast.TList (TProduct [ TName (Upper "Nat"); TName (Upper "Nat") ])));
   check string "sum of products" "Nat * Nat + Bool"
-    (pp_te (Ast.TSum [ TProduct [ TName "Nat"; TName "Nat" ]; TName "Bool" ]))
+    (pp_te
+       (Ast.TSum
+          [
+            TProduct [ TName (Upper "Nat"); TName (Upper "Nat") ];
+            TName (Upper "Bool");
+          ]))
 
 (* --- Property-based tests: parse-pretty-reparse round trip --- *)
 
@@ -309,12 +351,12 @@ let test_roundtrip_declarations () =
 let test_roundtrip_type_exprs () =
   let tes =
     [
-      Ast.TName "Nat";
-      Ast.TList (TName "Bool");
-      Ast.TProduct [ TName "Nat"; TName "Bool" ];
-      Ast.TSum [ TName "Nat"; TName "Nothing" ];
-      Ast.TQName ("Mod", "Type");
-      Ast.TList (TProduct [ TName "Nat"; TName "Nat" ]);
+      Ast.TName (Upper "Nat");
+      Ast.TList (TName (Upper "Bool"));
+      Ast.TProduct [ TName (Upper "Nat"); TName (Upper "Bool") ];
+      Ast.TSum [ TName (Upper "Nat"); TName (Upper "Nothing") ];
+      Ast.TQName (Upper "Mod", Upper "Type");
+      Ast.TList (TProduct [ TName (Upper "Nat"); TName (Upper "Nat") ]);
     ]
   in
   List.iter
@@ -358,7 +400,10 @@ let test_type_expr_roundtrip =
 let test_roundtrip_implication_chain () =
   (* Bug #8: a -> b -> c is right-associative. Does round-trip preserve this? *)
   let expr =
-    Ast.EBinop (OpImpl, EVar "a", EBinop (OpImpl, EVar "b", EVar "c"))
+    Ast.EBinop
+      ( OpImpl,
+        EVar (Lower "a"),
+        EBinop (OpImpl, EVar (Lower "b"), EVar (Lower "c")) )
   in
   let printed = Pretty.str_expr expr in
   (* Re-parse via a minimal document *)
@@ -376,7 +421,12 @@ let test_roundtrip_implication_chain () =
 
 let test_roundtrip_or_and_precedence () =
   (* a or b and c should round-trip correctly: a or (b and c) *)
-  let expr = Ast.EBinop (OpOr, EVar "a", EBinop (OpAnd, EVar "b", EVar "c")) in
+  let expr =
+    Ast.EBinop
+      ( OpOr,
+        EVar (Lower "a"),
+        EBinop (OpAnd, EVar (Lower "b"), EVar (Lower "c")) )
+  in
   let printed = Pretty.str_expr expr in
   let spec =
     Printf.sprintf

@@ -20,7 +20,8 @@ let resolve_comprehension_binding env params guards =
   | [ (p : param) ] -> (
       match Collect.resolve_type env p.param_type dummy_loc with
       | Ok (TyDomain dname) ->
-          Ok (p.param_name, dname, None, [ (p.param_name, TyDomain dname) ])
+          let pn = Ast.lower_name p.param_name in
+          Ok (pn, dname, None, [ (pn, TyDomain dname) ])
       | Ok
           ( TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString | TyNothing
           | TyList _ | TyProduct _ | TySum _ | TyFunc _ )
@@ -30,7 +31,7 @@ let resolve_comprehension_binding env params guards =
   | [] -> (
       (* Look for a leading GIn guard *)
       match guards with
-      | GIn (name, list_expr) :: _rest -> (
+      | GIn (Lower name, list_expr) :: _rest -> (
           match[@warning "-4"]
             Check.infer_type { Check.env; loc = dummy_loc } list_expr
           with
@@ -100,7 +101,7 @@ let expand_comprehension translate config env params guards body =
 *)
 let rec substitute_vars (subst : (string * expr) list) (e : expr) : expr =
   match e with
-  | EVar name -> (
+  | EVar (Lower name) -> (
       match List.assoc_opt name subst with Some e' -> e' | None -> e)
   | EApp (func, args) ->
       EApp (substitute_vars subst func, List.map (substitute_vars subst) args)
@@ -109,11 +110,11 @@ let rec substitute_vars (subst : (string * expr) list) (e : expr) : expr =
   | EUnop (op, e1) -> EUnop (op, substitute_vars subst e1)
   | ETuple es -> ETuple (List.map (substitute_vars subst) es)
   | EProj (e1, i) -> EProj (substitute_vars subst e1, i)
-  | EOverride (name, pairs) ->
+  | EOverride (Lower name, pairs) ->
       let name_expr =
         match[@warning "-4"] List.assoc_opt name subst with
         | Some (EVar n) -> n
-        | _ -> name
+        | _ -> Lower name
       in
       EOverride
         ( name_expr,
@@ -121,17 +122,23 @@ let rec substitute_vars (subst : (string * expr) list) (e : expr) : expr =
             (fun (k, v) -> (substitute_vars subst k, substitute_vars subst v))
             pairs )
   | EForall (ps, gs, body) ->
-      let bound = List.map (fun (p : param) -> p.param_name) ps in
+      let bound =
+        List.map (fun (p : param) -> Ast.lower_name p.param_name) ps
+      in
       let subst' = List.filter (fun (n, _) -> not (List.mem n bound)) subst in
       let subst'', gs' = substitute_guards subst' gs in
       EForall (ps, gs', substitute_vars subst'' body)
   | EExists (ps, gs, body) ->
-      let bound = List.map (fun (p : param) -> p.param_name) ps in
+      let bound =
+        List.map (fun (p : param) -> Ast.lower_name p.param_name) ps
+      in
       let subst' = List.filter (fun (n, _) -> not (List.mem n bound)) subst in
       let subst'', gs' = substitute_guards subst' gs in
       EExists (ps, gs', substitute_vars subst'' body)
   | EEach (ps, gs, comb, body) ->
-      let bound = List.map (fun (p : param) -> p.param_name) ps in
+      let bound =
+        List.map (fun (p : param) -> Ast.lower_name p.param_name) ps
+      in
       let subst' = List.filter (fun (n, _) -> not (List.mem n bound)) subst in
       let subst'', gs' = substitute_guards subst' gs in
       EEach (ps, gs', comb, substitute_vars subst'' body)
@@ -151,11 +158,13 @@ and substitute_guards subst gs =
     (fun (subst, acc) g ->
       match g with
       | GParam p ->
-          let subst' = List.filter (fun (n, _) -> n <> p.param_name) subst in
+          let subst' =
+            List.filter (fun (n, _) -> n <> Ast.lower_name p.param_name) subst
+          in
           (subst', acc @ [ GParam p ])
-      | GIn (name, e) ->
+      | GIn (Lower name, e) ->
           let subst' = List.filter (fun (n, _) -> n <> name) subst in
-          (subst', acc @ [ GIn (name, substitute_vars subst e) ])
+          (subst', acc @ [ GIn (Lower name, substitute_vars subst e) ])
       | GExpr e -> (subst, acc @ [ GExpr (substitute_vars subst e) ]))
     (subst, []) gs
 
@@ -164,7 +173,7 @@ and substitute_guards subst gs =
 *)
 let rec prime_expr ?(bound = []) (e : expr) : expr =
   match e with
-  | EVar name -> if List.mem name bound then e else EPrimed name
+  | EVar (Lower name) -> if List.mem name bound then e else EPrimed (Lower name)
   | EApp (func, args) ->
       EApp (prime_expr ~bound func, List.map (prime_expr ~bound) args)
   | EBinop (op, e1, e2) ->
@@ -173,15 +182,21 @@ let rec prime_expr ?(bound = []) (e : expr) : expr =
   | ETuple es -> ETuple (List.map (prime_expr ~bound) es)
   | EProj (e, i) -> EProj (prime_expr ~bound e, i)
   | EForall (ps, gs, body) ->
-      let bound' = List.map (fun (p : param) -> p.param_name) ps @ bound in
+      let bound' =
+        List.map (fun (p : param) -> Ast.lower_name p.param_name) ps @ bound
+      in
       let bound'', gs' = prime_guards ~bound:bound' gs in
       EForall (ps, gs', prime_expr ~bound:bound'' body)
   | EExists (ps, gs, body) ->
-      let bound' = List.map (fun (p : param) -> p.param_name) ps @ bound in
+      let bound' =
+        List.map (fun (p : param) -> Ast.lower_name p.param_name) ps @ bound
+      in
       let bound'', gs' = prime_guards ~bound:bound' gs in
       EExists (ps, gs', prime_expr ~bound:bound'' body)
   | EEach (ps, gs, comb, body) ->
-      let bound' = List.map (fun (p : param) -> p.param_name) ps @ bound in
+      let bound' =
+        List.map (fun (p : param) -> Ast.lower_name p.param_name) ps @ bound
+      in
       let bound'', gs' = prime_guards ~bound:bound' gs in
       EEach (ps, gs', comb, prime_expr ~bound:bound'' body)
   | ECond arms ->
@@ -216,9 +231,9 @@ and prime_guards ~bound gs =
   List.fold_left
     (fun (bound, acc) g ->
       match g with
-      | GParam p -> (p.param_name :: bound, acc @ [ GParam p ])
-      | GIn (name, e) ->
-          (name :: bound, acc @ [ GIn (name, prime_expr ~bound e) ])
+      | GParam p -> (Ast.lower_name p.param_name :: bound, acc @ [ GParam p ])
+      | GIn (Lower name, e) ->
+          (name :: bound, acc @ [ GIn (Lower name, prime_expr ~bound e) ])
       | GExpr e -> (bound, acc @ [ GExpr (prime_expr ~bound e) ]))
     (bound, []) gs
 
@@ -230,12 +245,14 @@ and prime_guards ~bound gs =
 let collect_body_guards ?(bound = []) env (e : expr) : expr list =
   let guards = ref [] in
   let rec walk = function
-    | EApp (EVar name, args) ->
+    | EApp (EVar (Lower name), args) ->
         (match Env.lookup_rule_guards name env with
         | Some (formal_params, rule_guards) ->
             let subst =
               List.combine
-                (List.map (fun (p : param) -> p.param_name) formal_params)
+                (List.map
+                   (fun (p : param) -> Ast.lower_name p.param_name)
+                   formal_params)
                 args
             in
             List.iter
@@ -246,13 +263,15 @@ let collect_body_guards ?(bound = []) env (e : expr) : expr list =
               rule_guards
         | None -> ());
         List.iter walk args
-    | EApp (EPrimed name, args) ->
+    | EApp (EPrimed (Lower name), args) ->
         (* Primed application: collect guards in primed form *)
         (match Env.lookup_rule_guards name env with
         | Some (formal_params, rule_guards) ->
             let subst =
               List.combine
-                (List.map (fun (p : param) -> p.param_name) formal_params)
+                (List.map
+                   (fun (p : param) -> Ast.lower_name p.param_name)
+                   formal_params)
                 args
             in
             List.iter
@@ -268,7 +287,7 @@ let collect_body_guards ?(bound = []) env (e : expr) : expr list =
     | EApp (func, args) ->
         walk func;
         List.iter walk args
-    | EVar name -> (
+    | EVar (Lower name) -> (
         match(* Nullary auto-applied rule with guards *)
              [@warning "-4"]
           Env.lookup_term name env
@@ -284,7 +303,7 @@ let collect_body_guards ?(bound = []) env (e : expr) : expr list =
                   rule_guards
             | None -> ())
         | _ -> ())
-    | EPrimed name -> (
+    | EPrimed (Lower name) -> (
         match(* Nullary auto-applied primed rule with guards *)
              [@warning "-4"]
           Env.lookup_term name env
@@ -337,16 +356,16 @@ let rec translate_expr config env (e : expr) =
   | ELitNat n -> string_of_int n
   | ELitReal f -> Printf.sprintf "%.17g" f
   | ELitString s -> Printf.sprintf "\"%s\"" (String.escaped s)
-  | EVar name -> sanitize_ident name
-  | EDomain name ->
+  | EVar (Lower name) -> sanitize_ident name
+  | EDomain (Upper name) ->
       (* Domain as a set value shouldn't appear standalone — OpIn, OpSubset,
          and OpCard all handle EDomain specially. If we reach here, it's an
          internal error in the translation. *)
       failwith
         (Printf.sprintf
            "SMT translation: EDomain '%s' appeared in standalone position" name)
-  | EQualified (_mod, name) -> sanitize_ident name
-  | EPrimed name -> sanitize_ident name ^ "_prime"
+  | EQualified (_, name) -> sanitize_ident name
+  | EPrimed (Lower name) -> sanitize_ident name ^ "_prime"
   | EApp (func, args) -> translate_app config env func args
   | ETuple exprs ->
       let ts = List.map (translate_expr config env) exprs in
@@ -376,11 +395,11 @@ let rec translate_expr config env (e : expr) =
       translate_quantifier config env "exists" params guards body
   | ECond arms -> translate_cond config env arms
   | EInitially e -> translate_expr config env e
-  | EOverride (name, pairs) -> translate_override config env name pairs
+  | EOverride (Lower name, pairs) -> translate_override config env name pairs
 
 and translate_app config env func args =
   match[@warning "-4"] func with
-  | EOverride (name, pairs) ->
+  | EOverride (Lower name, pairs) ->
       (* f[k |-> v] applied to args: inline ite chain *)
       let sname = sanitize_ident name in
       let args_str = List.map (translate_expr config env) args in
@@ -403,8 +422,8 @@ and translate_app config env func args =
   | _ ->
       let func_str =
         match[@warning "-4"] func with
-        | EVar name -> sanitize_ident name
-        | EPrimed name -> sanitize_ident name ^ "_prime"
+        | EVar (Lower name) -> sanitize_ident name
+        | EPrimed (Lower name) -> sanitize_ident name ^ "_prime"
         | _ -> translate_expr config env func
       in
       let args_str = List.map (translate_expr config env) args in
@@ -438,7 +457,7 @@ and translate_binop config env op e1 e2 =
 
 and translate_in config env elem set =
   match[@warning "-4"] set with
-  | EDomain name -> (
+  | EDomain (Upper name) -> (
       (* x in Domain → disjunction over domain elements *)
       let elems = domain_elements name (bound_for config name) in
       let elem_str = translate_expr config env elem in
@@ -515,7 +534,7 @@ and translate_subset config env e1 e2 =
           failwith
             "SMT translation: subset with comprehension RHS requires domain \
              element type on LHS")
-  | EDomain name ->
+  | EDomain (Upper name) ->
       let elems = domain_elements name (bound_for config name) in
       let conjuncts =
         List.map
@@ -560,7 +579,7 @@ and translate_unop config env op e =
 
 and translate_card config env e =
   match[@warning "-4"] e with
-  | EDomain name ->
+  | EDomain (Upper name) ->
       (* #Domain = bound (all elements exist) *)
       string_of_int (bound_for config name)
   | EEach (params, guards, None, body) -> (
@@ -576,7 +595,7 @@ and translate_card config env e =
         List.filter_map
           (fun g ->
             match g with
-            | GIn (name, list_expr) -> (
+            | GIn (Lower name, list_expr) -> (
                 let infer e =
                   match[@warning "-4"]
                     Check.infer_type { Check.env; loc = dummy_loc } e
@@ -662,7 +681,7 @@ and translate_forall_comprehension config env params guards body =
     List.filter_map
       (fun g ->
         match g with
-        | GIn (name, list_expr) -> (
+        | GIn (Lower name, list_expr) -> (
             let infer e =
               match[@warning "-4"]
                 Check.infer_type { Check.env; loc = dummy_loc } e
@@ -716,10 +735,12 @@ and translate_aggregate config env (comb : combiner) params guards body =
      For +, *, and, or: guarded elements use identity when guard is false.
      For min, max: pairwise fold using ite. *)
   let local_bound =
-    List.map (fun (p : param) -> p.param_name) params
+    List.map (fun (p : param) -> Ast.lower_name p.param_name) params
     @ List.concat_map
         (function
-          | GParam p -> [ p.param_name ] | GIn (n, _) -> [ n ] | GExpr _ -> [])
+          | GParam p -> [ Ast.lower_name p.param_name ]
+          | GIn (n, _) -> [ Ast.lower_name n ]
+          | GExpr _ -> [])
         guards
   in
   let inner_config =
@@ -883,9 +904,13 @@ and translate_quantifier config env quant params guards body =
   let nat_constraint_of_param env (p : param) =
     match Collect.resolve_type env p.param_type dummy_loc with
     | Ok TyNat ->
-        Some (Printf.sprintf "(>= %s 1)" (sanitize_ident p.param_name))
+        Some
+          (Printf.sprintf "(>= %s 1)"
+             (sanitize_ident (Ast.lower_name p.param_name)))
     | Ok TyNat0 ->
-        Some (Printf.sprintf "(>= %s 0)" (sanitize_ident p.param_name))
+        Some
+          (Printf.sprintf "(>= %s 0)"
+             (sanitize_ident (Ast.lower_name p.param_name)))
     | Ok
         ( TyBool | TyInt | TyReal | TyString | TyNothing | TyDomain _ | TyList _
         | TyProduct _ | TySum _ | TyFunc _ )
@@ -902,9 +927,11 @@ and translate_quantifier config env quant params guards body =
               failwith
                 (Printf.sprintf
                    "SMT translation: cannot resolve sort for parameter '%s'"
-                   p.param_name)
+                   (Ast.lower_name p.param_name))
         in
-        Printf.sprintf "(%s %s)" (sanitize_ident p.param_name) sort)
+        Printf.sprintf "(%s %s)"
+          (sanitize_ident (Ast.lower_name p.param_name))
+          sort)
       params
   in
   let param_type_conditions =
@@ -923,11 +950,11 @@ and translate_quantifier config env quant params guards body =
                     (Printf.sprintf
                        "SMT translation: cannot resolve sort for guard \
                         parameter '%s'"
-                       p.param_name)
+                       (Ast.lower_name p.param_name))
             in
             let env =
               match Collect.resolve_type env p.param_type dummy_loc with
-              | Ok ty -> Env.with_vars [ (p.param_name, ty) ] env
+              | Ok ty -> Env.with_vars [ (Ast.lower_name p.param_name, ty) ] env
               | Error _ -> env
             in
             let conds =
@@ -935,11 +962,13 @@ and translate_quantifier config env quant params guards body =
               | Some c -> c :: conds
               | None -> conds
             in
-            ( Printf.sprintf "(%s %s)" (sanitize_ident p.param_name) sort
+            ( Printf.sprintf "(%s %s)"
+                (sanitize_ident (Ast.lower_name p.param_name))
+                sort
               :: binds,
               conds,
               env )
-        | GIn (name, list_expr) ->
+        | GIn (Lower name, list_expr) ->
             (* Bind name as element type; resolve from list expression type *)
             let infer_elem_ty e =
               match[@warning "-4"]
@@ -972,7 +1001,9 @@ and translate_quantifier config env quant params guards body =
               | Some elem_ty -> Env.with_vars [ (name, elem_ty) ] env
               | None -> env
             in
-            let guard_str = translate_in config env (EVar name) list_expr in
+            let guard_str =
+              translate_in config env (EVar (Lower name)) list_expr
+            in
             ( Printf.sprintf "(%s %s)" (sanitize_ident name) elem_sort :: binds,
               guard_str :: conds,
               env )
@@ -982,12 +1013,12 @@ and translate_quantifier config env quant params guards body =
   let all_bindings = bindings @ List.rev guard_bindings in
   (* Collect guards from guarded function applications in body *)
   let local_bound =
-    List.map (fun (p : param) -> p.param_name) params
+    List.map (fun (p : param) -> Ast.lower_name p.param_name) params
     @ List.concat_map
         (fun g ->
           match g with
-          | GParam p -> [ p.param_name ]
-          | GIn (n, _) -> [ n ]
+          | GParam p -> [ Ast.lower_name p.param_name ]
+          | GIn (n, _) -> [ Ast.lower_name n ]
           | GExpr _ -> [])
         guards
   in
@@ -1096,13 +1127,15 @@ let extract_preconditions config env (guards : guard list) =
 
 let build_value_terms config env (params : param list) =
   let param_terms =
-    List.map (fun (p : param) -> sanitize_ident p.param_name) params
+    List.map
+      (fun (p : param) -> sanitize_ident (Ast.lower_name p.param_name))
+      params
   in
   let param_set =
     List.filter_map
       (fun (p : param) ->
         match Collect.resolve_type env p.param_type dummy_loc with
-        | Ok ty -> Some (sanitize_ident p.param_name, ty)
+        | Ok ty -> Some (sanitize_ident (Ast.lower_name p.param_name), ty)
         | Error _ -> None)
       params
   in
@@ -1201,12 +1234,14 @@ let add_type_constraints na config env (params : param list) =
       match Collect.resolve_type env p.param_type dummy_loc with
       | Ok TyNat ->
           add_named_assert na "type"
-            (Printf.sprintf "%s : Nat" p.param_name)
-            (Printf.sprintf "(>= %s 1)" (sanitize_ident p.param_name))
+            (Printf.sprintf "%s : Nat" (Ast.lower_name p.param_name))
+            (Printf.sprintf "(>= %s 1)"
+               (sanitize_ident (Ast.lower_name p.param_name)))
       | Ok TyNat0 ->
           add_named_assert na "type"
-            (Printf.sprintf "%s : Nat0" p.param_name)
-            (Printf.sprintf "(>= %s 0)" (sanitize_ident p.param_name))
+            (Printf.sprintf "%s : Nat0" (Ast.lower_name p.param_name))
+            (Printf.sprintf "(>= %s 0)"
+               (sanitize_ident (Ast.lower_name p.param_name)))
       | Ok
           ( TyBool | TyInt | TyReal | TyString | TyNothing | TyDomain _
           | TyList _ | TyProduct _ | TySum _ | TyFunc _ )
@@ -1222,7 +1257,7 @@ let declare_domain_membership config buf (params : param list) env =
       match Collect.resolve_type env p.param_type dummy_loc with
       | Ok (TyDomain name) ->
           let elems = domain_elements name (bound_for config name) in
-          let sname = sanitize_ident p.param_name in
+          let sname = sanitize_ident (Ast.lower_name p.param_name) in
           let disj =
             List.map (fun e -> Printf.sprintf "(= %s %s)" sname e) elems
           in
@@ -1645,9 +1680,11 @@ let build_step_transition config env actions step =
                       (Printf.sprintf
                          "SMT translation: cannot resolve sort for parameter \
                           '%s'"
-                         p.param_name)
+                         (Ast.lower_name p.param_name))
               in
-              Printf.sprintf "(%s %s)" (sanitize_ident p.param_name) sort)
+              Printf.sprintf "(%s %s)"
+                (sanitize_ident (Ast.lower_name p.param_name))
+                sort)
             action.a_params
         in
         (* Domain membership for action params *)
@@ -1657,7 +1694,7 @@ let build_step_transition config env actions step =
               match Collect.resolve_type env p.param_type dummy_loc with
               | Ok (TyDomain name) ->
                   let elems = domain_elements name (bound_for config name) in
-                  let sname = sanitize_ident p.param_name in
+                  let sname = sanitize_ident (Ast.lower_name p.param_name) in
                   let disj =
                     List.map (fun e -> Printf.sprintf "(= %s %s)" sname e) elems
                   in
@@ -1676,10 +1713,12 @@ let build_step_transition config env actions step =
               match Collect.resolve_type env p.param_type dummy_loc with
               | Ok TyNat ->
                   Some
-                    (Printf.sprintf "(>= %s 1)" (sanitize_ident p.param_name))
+                    (Printf.sprintf "(>= %s 1)"
+                       (sanitize_ident (Ast.lower_name p.param_name)))
               | Ok TyNat0 ->
                   Some
-                    (Printf.sprintf "(>= %s 0)" (sanitize_ident p.param_name))
+                    (Printf.sprintf "(>= %s 0)"
+                       (sanitize_ident (Ast.lower_name p.param_name)))
               | Ok
                   ( TyBool | TyInt | TyReal | TyString | TyNothing | TyDomain _
                   | TyList _ | TyProduct _ | TySum _ | TyFunc _ )
@@ -1806,9 +1845,11 @@ let generate_all_actions_disabled config env actions step =
                   failwith
                     (Printf.sprintf
                        "SMT translation: cannot resolve sort for parameter '%s'"
-                       p.param_name)
+                       (Ast.lower_name p.param_name))
             in
-            Printf.sprintf "(%s %s)" (sanitize_ident p.param_name) sort)
+            Printf.sprintf "(%s %s)"
+              (sanitize_ident (Ast.lower_name p.param_name))
+              sort)
           action.a_params
       in
       let type_guards =
@@ -1816,9 +1857,13 @@ let generate_all_actions_disabled config env actions step =
           (fun (p : param) ->
             match Collect.resolve_type env p.param_type dummy_loc with
             | Ok TyNat ->
-                Some (Printf.sprintf "(>= %s 1)" (sanitize_ident p.param_name))
+                Some
+                  (Printf.sprintf "(>= %s 1)"
+                     (sanitize_ident (Ast.lower_name p.param_name)))
             | Ok TyNat0 ->
-                Some (Printf.sprintf "(>= %s 0)" (sanitize_ident p.param_name))
+                Some
+                  (Printf.sprintf "(>= %s 0)"
+                     (sanitize_ident (Ast.lower_name p.param_name)))
             | Ok
                 ( TyBool | TyInt | TyReal | TyString | TyNothing | TyDomain _
                 | TyList _ | TyProduct _ | TySum _ | TyFunc _ )

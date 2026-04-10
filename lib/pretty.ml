@@ -8,8 +8,8 @@ let pp_sep_space fmt () = pp_print_char fmt ' '
 
 (** Print a type expression *)
 let rec pp_type_expr fmt = function
-  | TName name -> pp_print_string fmt name
-  | TQName (m, name) -> fprintf fmt "%s::%s" m name
+  | TName (Upper name) -> pp_print_string fmt name
+  | TQName (Upper m, Upper name) -> fprintf fmt "%s::%s" m name
   | TList t -> fprintf fmt "[%a]" pp_type_expr t
   | TProduct ts ->
       pp_print_list
@@ -21,8 +21,8 @@ let rec pp_type_expr fmt = function
         pp_type_expr_product fmt ts
 
 and pp_type_expr_atom fmt = function
-  | TName name -> pp_print_string fmt name
-  | TQName (m, name) -> fprintf fmt "%s::%s" m name
+  | TName (Upper name) -> pp_print_string fmt name
+  | TQName (Upper m, Upper name) -> fprintf fmt "%s::%s" m name
   | TList t -> fprintf fmt "[%a]" pp_type_expr t
   | (TProduct _ | TSum _) as t -> fprintf fmt "(%a)" pp_type_expr t
 
@@ -106,7 +106,7 @@ and pp_quant_params_guards fmt (params, guards) =
     @ List.filter_map
         (function
           | GParam p -> Some (`Param p)
-          | GIn (name, e) -> Some (`In (name, e))
+          | GIn (Lower name, e) -> Some (`In (name, e))
           | GExpr e -> Some (`Guard e))
         guards
   in
@@ -117,7 +117,8 @@ and pp_quant_params_guards fmt (params, guards) =
       | `Guard e -> pp_conjunction fmt e)
     fmt items
 
-and pp_param fmt p = fprintf fmt "%s: %a" p.param_name pp_type_expr p.param_type
+and pp_param fmt p =
+  fprintf fmt "%s: %a" (lower_name p.param_name) pp_type_expr p.param_type
 
 and pp_implication fmt = function
   | EBinop (OpImpl, e1, e2) ->
@@ -234,9 +235,9 @@ and pp_primary fmt = function
       pp_atom fmt e
 
 and pp_atom fmt = function
-  | EVar name -> pp_print_string fmt name
-  | EDomain name -> pp_print_string fmt name
-  | EQualified (m, name) -> fprintf fmt "%s::%s" m name
+  | EVar (Lower name) -> pp_print_string fmt name
+  | EDomain (Upper name) -> pp_print_string fmt name
+  | EQualified (Upper m, name) -> fprintf fmt "%s::%s" m name
   | ELitNat n -> pp_print_int fmt n
   | ELitReal r ->
       let s = string_of_float r in
@@ -244,8 +245,8 @@ and pp_atom fmt = function
       pp_print_string fmt s
   | ELitString s -> fprintf fmt "\"%s\"" (String.escaped s)
   | ELitBool b -> pp_print_bool fmt b
-  | EPrimed name -> fprintf fmt "%s'" name
-  | EOverride (name, pairs) ->
+  | EPrimed (Lower name) -> fprintf fmt "%s'" name
+  | EOverride (Lower name, pairs) ->
       fprintf fmt "%s[%a]" name
         (pp_print_list ~pp_sep:pp_sep_comma (fun fmt (k, v) ->
              fprintf fmt "%a |-> %a" pp_expr k pp_expr v))
@@ -261,17 +262,18 @@ and pp_atom fmt = function
 (** Print a guard *)
 let pp_guard fmt = function
   | GParam p -> pp_param fmt p
-  | GIn (name, e) -> fprintf fmt "%s in %a" name pp_term e
+  | GIn (Lower name, e) -> fprintf fmt "%s in %a" name pp_term e
   | GExpr e -> pp_conjunction fmt e
 
 (** Print a declaration *)
 let pp_declaration fmt = function
-  | DeclDomain name -> fprintf fmt "%s." name
-  | DeclAlias (name, te) -> fprintf fmt "%s = %a." name pp_type_expr te
-  | DeclRule { name; params; guards; return_type; contexts } ->
+  | DeclDomain (Upper name) -> fprintf fmt "%s." name
+  | DeclAlias (Upper name, te) -> fprintf fmt "%s = %a." name pp_type_expr te
+  | DeclRule { name = Lower name; params; guards; return_type; contexts } ->
       if contexts <> [] then
         fprintf fmt "{%a} "
-          (pp_print_list ~pp_sep:pp_sep_comma pp_print_string)
+          (pp_print_list ~pp_sep:pp_sep_comma (fun fmt c ->
+               pp_print_string fmt (upper_name c)))
           contexts;
       pp_print_string fmt name;
       if params <> [] then
@@ -284,7 +286,8 @@ let pp_declaration fmt = function
       | [] -> fprintf fmt "~> "
       | ctxs ->
           fprintf fmt "%a ~> "
-            (pp_print_list ~pp_sep:pp_sep_comma pp_print_string)
+            (pp_print_list ~pp_sep:pp_sep_comma (fun fmt c ->
+                 pp_print_string fmt (upper_name c)))
             ctxs);
       pp_print_string fmt label;
       if params <> [] then
@@ -294,7 +297,8 @@ let pp_declaration fmt = function
       if guards <> [] then
         fprintf fmt ", %a" (pp_print_list ~pp_sep:pp_sep_comma pp_guard) guards;
       pp_print_char fmt '.'
-  | DeclClosure { name; param; return_type; target } ->
+  | DeclClosure { name = Lower name; param; return_type; target = Lower target }
+    ->
       fprintf fmt "%s %a => %a = closure %s." name pp_param param pp_type_expr
         return_type target
 
@@ -394,10 +398,14 @@ let render_layout ?(width = 80) fmt items =
 (** Output a document with consistent layout *)
 let output_document ?(width = 80) fmt doc =
   (match doc.module_name with
-  | Some name -> fprintf fmt "module %s.@\n" name
+  | Some (Upper name) -> fprintf fmt "module %s.@\n" name
   | None -> ());
-  List.iter (fun imp -> fprintf fmt "import %s.@\n" imp.value) doc.imports;
-  List.iter (fun ctx -> fprintf fmt "context %s.@\n" ctx.value) doc.contexts;
+  List.iter
+    (fun imp -> fprintf fmt "import %s.@\n" (upper_name imp.value))
+    doc.imports;
+  List.iter
+    (fun ctx -> fprintf fmt "context %s.@\n" (upper_name ctx.value))
+    doc.contexts;
   let items = layout_of_document doc in
   let has_preamble =
     doc.module_name <> None || doc.imports <> [] || doc.contexts <> []

@@ -8,17 +8,18 @@ let parse = Test_util.parse
 (* --- decl_name tests --- *)
 
 let test_decl_name () =
-  check string "domain" "Foo" (Normalize.decl_name (Ast.DeclDomain "Foo"));
+  check string "domain" "Foo"
+    (Normalize.decl_name (Ast.DeclDomain (Upper "Foo")));
   check string "alias" "Point"
-    (Normalize.decl_name (Ast.DeclAlias ("Point", TName "Nat")));
+    (Normalize.decl_name (Ast.DeclAlias (Upper "Point", TName (Upper "Nat"))));
   check string "rule" "f"
     (Normalize.decl_name
        (Ast.DeclRule
           {
-            name = "f";
+            name = Lower "f";
             params = [];
             guards = [];
-            return_type = TName "Bool";
+            return_type = TName (Upper "Bool");
             contexts = [];
           }));
   check string "action" "Do thing"
@@ -29,26 +30,28 @@ let test_decl_name () =
     (Normalize.decl_name
        (Ast.DeclClosure
           {
-            name = "anc";
-            param = { param_name = "b"; param_type = TName "Block" };
-            return_type = TList (TName "Block");
-            target = "parent";
+            name = Lower "anc";
+            param =
+              { param_name = Lower "b"; param_type = TName (Upper "Block") };
+            return_type = TList (TName (Upper "Block"));
+            target = Lower "parent";
           }))
 
 (* --- is_type_decl / is_action tests --- *)
 
 let test_is_type_decl () =
-  check bool "domain" true (Normalize.is_type_decl (Ast.DeclDomain "Foo"));
+  check bool "domain" true
+    (Normalize.is_type_decl (Ast.DeclDomain (Upper "Foo")));
   check bool "alias" true
-    (Normalize.is_type_decl (Ast.DeclAlias ("P", TName "Nat")));
+    (Normalize.is_type_decl (Ast.DeclAlias (Upper "P", TName (Upper "Nat"))));
   check bool "rule" false
     (Normalize.is_type_decl
        (Ast.DeclRule
           {
-            name = "f";
+            name = Lower "f";
             params = [];
             guards = [];
-            return_type = TName "Bool";
+            return_type = TName (Upper "Bool");
             contexts = [];
           }));
   check bool "action" false
@@ -59,10 +62,10 @@ let test_is_type_decl () =
     (Normalize.is_type_decl
        (Ast.DeclClosure
           {
-            name = "a";
-            param = { param_name = "b"; param_type = TName "X" };
-            return_type = TList (TName "X");
-            target = "p";
+            name = Lower "a";
+            param = { param_name = Lower "b"; param_type = TName (Upper "X") };
+            return_type = TList (TName (Upper "X"));
+            target = Lower "p";
           }))
 
 let test_is_action () =
@@ -70,15 +73,15 @@ let test_is_action () =
     (Normalize.is_action
        (Ast.DeclAction
           { label = "Act"; params = []; guards = []; contexts = [] }));
-  check bool "domain" false (Normalize.is_action (Ast.DeclDomain "Foo"));
+  check bool "domain" false (Normalize.is_action (Ast.DeclDomain (Upper "Foo")));
   check bool "rule" false
     (Normalize.is_action
        (Ast.DeclRule
           {
-            name = "f";
+            name = Lower "f";
             params = [];
             guards = [];
-            return_type = TName "Bool";
+            return_type = TName (Upper "Bool");
             contexts = [];
           }))
 
@@ -86,16 +89,20 @@ let test_is_action () =
 
 let test_types_in_type_expr () =
   let open Normalize in
-  let s = types_in_type_expr (Ast.TName "Nat") in
+  let s = types_in_type_expr (Ast.TName (Upper "Nat")) in
   check bool "TName" true (Normalize.StringSet.mem "Nat" s);
-  let s = types_in_type_expr (Ast.TQName ("M", "T")) in
+  let s = types_in_type_expr (Ast.TQName (Upper "M", Upper "T")) in
   check bool "TQName empty" true (Normalize.StringSet.is_empty s);
-  let s = types_in_type_expr (Ast.TList (TName "Nat")) in
+  let s = types_in_type_expr (Ast.TList (TName (Upper "Nat"))) in
   check bool "TList" true (Normalize.StringSet.mem "Nat" s);
-  let s = types_in_type_expr (Ast.TProduct [ TName "A"; TName "B" ]) in
+  let s =
+    types_in_type_expr (Ast.TProduct [ TName (Upper "A"); TName (Upper "B") ])
+  in
   check bool "TProduct A" true (Normalize.StringSet.mem "A" s);
   check bool "TProduct B" true (Normalize.StringSet.mem "B" s);
-  let s = types_in_type_expr (Ast.TSum [ TName "X"; TName "Y" ]) in
+  let s =
+    types_in_type_expr (Ast.TSum [ TName (Upper "X"); TName (Upper "Y") ])
+  in
   check bool "TSum X" true (Normalize.StringSet.mem "X" s);
   check bool "TSum Y" true (Normalize.StringSet.mem "Y" s)
 
@@ -107,23 +114,25 @@ let test_symbols_in_expr_literals () =
   check bool "lit empty terms" true (Normalize.StringSet.is_empty terms)
 
 let test_symbols_in_expr_var () =
-  let _types, terms = Normalize.symbols_in_expr (Ast.EVar "x") in
+  let _types, terms = Normalize.symbols_in_expr (Ast.EVar (Lower "x")) in
   check bool "var x" true (Normalize.StringSet.mem "x" terms)
 
 let test_symbols_in_expr_domain () =
-  let types, _terms = Normalize.symbols_in_expr (Ast.EDomain "User") in
+  let types, _terms = Normalize.symbols_in_expr (Ast.EDomain (Upper "User")) in
   check bool "domain User" true (Normalize.StringSet.mem "User" types)
 
 let test_symbols_in_expr_app () =
   let _types, terms =
-    Normalize.symbols_in_expr (Ast.EApp (EVar "f", [ EVar "x" ]))
+    Normalize.symbols_in_expr
+      (Ast.EApp (EVar (Lower "f"), [ EVar (Lower "x") ]))
   in
   check bool "app f" true (Normalize.StringSet.mem "f" terms);
   check bool "app x" true (Normalize.StringSet.mem "x" terms)
 
 let test_symbols_in_expr_binop () =
   let _types, terms =
-    Normalize.symbols_in_expr (Ast.EBinop (OpEq, EVar "a", EVar "b"))
+    Normalize.symbols_in_expr
+      (Ast.EBinop (OpEq, EVar (Lower "a"), EVar (Lower "b")))
   in
   check bool "binop a" true (Normalize.StringSet.mem "a" terms);
   check bool "binop b" true (Normalize.StringSet.mem "b" terms)
@@ -132,9 +141,9 @@ let test_symbols_in_expr_quantifier () =
   let types, terms =
     Normalize.symbols_in_expr
       (Ast.EForall
-         ( [ { param_name = "u"; param_type = TName "User" } ],
+         ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
            [],
-           EApp (EVar "f", [ EVar "u" ]) ))
+           EApp (EVar (Lower "f"), [ EVar (Lower "u") ]) ))
   in
   check bool "quant type User" true (Normalize.StringSet.mem "User" types);
   check bool "quant term f" true (Normalize.StringSet.mem "f" terms)
@@ -142,7 +151,11 @@ let test_symbols_in_expr_quantifier () =
 let test_symbols_in_expr_cond () =
   let _types, terms =
     Normalize.symbols_in_expr
-      (Ast.ECond [ (EVar "g", EVar "v1"); (ELitBool true, EVar "v2") ])
+      (Ast.ECond
+         [
+           (EVar (Lower "g"), EVar (Lower "v1"));
+           (ELitBool true, EVar (Lower "v2"));
+         ])
   in
   check bool "cond g" true (Normalize.StringSet.mem "g" terms);
   check bool "cond v1" true (Normalize.StringSet.mem "v1" terms);
@@ -151,19 +164,23 @@ let test_symbols_in_expr_cond () =
 (* --- uses_primed tests --- *)
 
 let test_uses_primed () =
-  check bool "primed" true (Normalize.uses_primed (Ast.EPrimed "f"));
-  check bool "var" false (Normalize.uses_primed (Ast.EVar "f"));
+  check bool "primed" true (Normalize.uses_primed (Ast.EPrimed (Lower "f")));
+  check bool "var" false (Normalize.uses_primed (Ast.EVar (Lower "f")));
   check bool "lit" false (Normalize.uses_primed (Ast.ELitNat 1));
   check bool "app with primed" true
-    (Normalize.uses_primed (Ast.EApp (EPrimed "f", [ EVar "x" ])));
+    (Normalize.uses_primed
+       (Ast.EApp (EPrimed (Lower "f"), [ EVar (Lower "x") ])));
   check bool "binop with primed" true
-    (Normalize.uses_primed (Ast.EBinop (OpEq, EPrimed "f", EVar "x")));
+    (Normalize.uses_primed
+       (Ast.EBinop (OpEq, EPrimed (Lower "f"), EVar (Lower "x"))));
   check bool "binop without" false
-    (Normalize.uses_primed (Ast.EBinop (OpEq, EVar "a", EVar "b")));
+    (Normalize.uses_primed
+       (Ast.EBinop (OpEq, EVar (Lower "a"), EVar (Lower "b"))));
   check bool "override with primed" true
-    (Normalize.uses_primed (Ast.EOverride ("f", [ (EPrimed "k", EVar "v") ])));
+    (Normalize.uses_primed
+       (Ast.EOverride (Lower "f", [ (EPrimed (Lower "k"), EVar (Lower "v")) ])));
   check bool "cond with primed" true
-    (Normalize.uses_primed (Ast.ECond [ (ELitBool true, EPrimed "x") ]))
+    (Normalize.uses_primed (Ast.ECond [ (ELitBool true, EPrimed (Lower "x")) ]))
 
 (* --- transitive_decl_deps tests --- *)
 
@@ -179,7 +196,7 @@ let test_transitive_deps_chain () =
         Ast.
           {
             loc = dummy_loc;
-            value = DeclDomain "A";
+            value = DeclDomain (Upper "A");
             doc = [];
             doc_adjacent = true;
           };
@@ -195,7 +212,7 @@ let test_transitive_deps_chain () =
         Ast.
           {
             loc = dummy_loc;
-            value = DeclDomain "B";
+            value = DeclDomain (Upper "B");
             doc = [];
             doc_adjacent = true;
           };
@@ -211,7 +228,7 @@ let test_transitive_deps_chain () =
         Ast.
           {
             loc = dummy_loc;
-            value = DeclDomain "C";
+            value = DeclDomain (Upper "C");
             doc = [];
             doc_adjacent = true;
           };
@@ -236,7 +253,7 @@ let test_transitive_deps_no_deps () =
         Ast.
           {
             loc = dummy_loc;
-            value = DeclDomain "X";
+            value = DeclDomain (Upper "X");
             doc = [];
             doc_adjacent = true;
           };
@@ -369,7 +386,8 @@ let test_indirect_recursive_alias () =
   let doc = parse "module TEST.\n\nA = B.\nB = A.\n---\n" in
   let result =
     Collect.collect_all
-      ~base_env:(Env.empty (Option.value ~default:"" doc.module_name))
+      ~base_env:
+        (Env.empty (Option.fold ~none:"" ~some:Ast.upper_name doc.module_name))
       doc
   in
   (* Should be an error (recursive alias detected), not hang *)
@@ -382,7 +400,8 @@ let test_three_way_recursive_alias () =
   let doc = parse "module TEST.\n\nA = B.\nB = C.\nC = A.\n---\n" in
   let result =
     Collect.collect_all
-      ~base_env:(Env.empty (Option.value ~default:"" doc.module_name))
+      ~base_env:
+        (Env.empty (Option.fold ~none:"" ~some:Ast.upper_name doc.module_name))
       doc
   in
   match result with
@@ -403,8 +422,8 @@ let test_rule_guard_import_merge () =
          (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
          Ast.dummy_loc ~chapter:0
     |> Env.add_rule_guards "score"
-         [ Ast.{ param_name = "u"; param_type = TName "User" } ]
-         [ GExpr (EApp (EVar "local-guard", [ EVar "u" ])) ]
+         [ Ast.{ param_name = Lower "u"; param_type = TName (Upper "User") } ]
+         [ GExpr (EApp (EVar (Lower "local-guard"), [ EVar (Lower "u") ])) ]
   in
   let imported_env =
     Env.empty "IMPORTED"
@@ -416,8 +435,8 @@ let test_rule_guard_import_merge () =
          (Types.TyFunc ([ Types.TyDomain "User" ], Some Types.TyBool))
          Ast.dummy_loc ~chapter:0
     |> Env.add_rule_guards "score"
-         [ Ast.{ param_name = "u"; param_type = TName "User" } ]
-         [ GExpr (EApp (EVar "imported-guard", [ EVar "u" ])) ]
+         [ Ast.{ param_name = Lower "u"; param_type = TName (Upper "User") } ]
+         [ GExpr (EApp (EVar (Lower "imported-guard"), [ EVar (Lower "u") ])) ]
   in
   let merged = Env.add_import local_env imported_env "IMPORTED" in
   match Env.lookup_rule_guards "score" merged with
@@ -431,12 +450,13 @@ let test_rule_guard_import_merge () =
              (fun g ->
                match g with
                | Ast.GExpr e -> Pretty.str_expr e
-               | Ast.GIn (n, e) -> n ^ " in " ^ Pretty.str_expr e
-               | Ast.GParam p -> p.param_name)
+               | Ast.GIn (n, e) -> Ast.lower_name n ^ " in " ^ Pretty.str_expr e
+               | Ast.GParam p -> Ast.lower_name p.param_name)
              guards)
       in
       let param_names =
-        String.concat ", " (List.map (fun p -> p.Ast.param_name) params)
+        String.concat ", "
+          (List.map (fun p -> Ast.lower_name p.Ast.param_name) params)
       in
       (* Document the behavior: does the local guard survive? *)
       check bool "guard exists" true (List.length guards > 0);

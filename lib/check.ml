@@ -52,7 +52,7 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
   | ELitNat _ -> Ok TyNat
   | ELitReal _ -> Ok TyReal
   | ELitString _ -> Ok TyString
-  | EVar name -> (
+  | EVar (Lower name) -> (
       match[@warning "-4"] Env.lookup_term name ctx.env with
       | Some { kind = Env.KVar ty; _ } -> Ok ty
       | Some { kind = Env.KRule (TyFunc ([], Some ret)); _ } ->
@@ -70,7 +70,7 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
           match Env.ambiguous_term_modules name ctx.env with
           | Some modules -> Error (AmbiguousName (name, modules, ctx.loc))
           | None -> Error (UnboundVariable (name, ctx.loc))))
-  | EDomain name -> (
+  | EDomain (Upper name) -> (
       (* Domain in expression position has type [Domain] *)
       match Env.lookup_type name ctx.env with
       | Some { kind = Env.KDomain; _ } -> Ok (TyList (TyDomain name))
@@ -82,7 +82,7 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
           match Env.ambiguous_type_modules name ctx.env with
           | Some modules -> Error (AmbiguousName (name, modules, ctx.loc))
           | None -> Error (UnboundType (name, ctx.loc))))
-  | EQualified (mod_name, name) -> (
+  | EQualified (Upper mod_name, name) -> (
       match(* Try term namespace first *)
            [@warning "-4"]
         Env.lookup_qualified_term mod_name name ctx.env
@@ -98,7 +98,7 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
           | Some { kind = Env.KRule _ | Env.KVar _ | Env.KClosure _; _ } ->
               Error (UnboundQualified (mod_name, name, ctx.loc))
           | None -> Error (UnboundQualified (mod_name, name, ctx.loc))))
-  | EPrimed name -> (
+  | EPrimed (Lower name) -> (
       if
         (* Validate: must be rule, must be in action context *)
         not (Env.in_action_context ctx.env)
@@ -224,7 +224,7 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
       in
       Ok result_ty
   | EInitially e -> infer_type ctx e
-  | EOverride (name, pairs) -> check_override ctx name pairs
+  | EOverride (Lower name, pairs) -> check_override ctx name pairs
 
 and check_application ctx _func_expr func_ty args =
   match func_ty with
@@ -351,7 +351,7 @@ and check_no_type_shadow ctx name new_ty =
 (** Resolve a parameter's type expression to an internal type *)
 and resolve_param_type env loc p =
   match Collect.resolve_type env p.param_type loc with
-  | Ok ty -> Ok (p.param_name, ty)
+  | Ok ty -> Ok (Ast.lower_name p.param_name, ty)
   | Error (Collect.UndefinedType (name, loc)) -> Error (UnboundType (name, loc))
   | Error
       ( Collect.DuplicateDomain _ | Collect.DuplicateRule _
@@ -377,7 +377,7 @@ and process_guards ~check_shadow ~loc ctx guards =
           Ok
             ( (name, ty) :: bindings,
               { current_ctx with env = Env.add_var name ty current_ctx.env } )
-      | GIn (name, list_expr) -> (
+      | GIn (Lower name, list_expr) -> (
           let* list_ty = infer_type (with_loc current_ctx loc) list_expr in
           match list_ty with
           | TyList elem_ty ->
@@ -453,7 +453,7 @@ let check_proposition ctx (prop : expr located) =
 let check_rule_guards ctx (decl : declaration located) =
   let decl_name =
     match decl.value with
-    | DeclRule { name; _ } -> name
+    | DeclRule { name; _ } -> Ast.lower_name name
     | DeclAction { label; _ } -> label
     | DeclDomain _ | DeclAlias _ | DeclClosure _ -> ""
   in
@@ -485,7 +485,7 @@ let find_action (head : declaration located list) =
     (fun decl ->
       match decl.value with
       | DeclAction { label; params; contexts; _ } ->
-          Some (label, params, contexts)
+          Some (label, params, List.map Ast.upper_name contexts)
       | DeclDomain _ | DeclAlias _ | DeclRule _ | DeclClosure _ -> None)
     head
 
@@ -518,7 +518,7 @@ let check_chapter_body ~chapter_idx env (chapter : chapter) =
     List.fold_left
       (fun env p ->
         match Collect.resolve_type env p.param_type dummy_loc with
-        | Ok ty -> Env.add_var p.param_name ty env
+        | Ok ty -> Env.add_var (Ast.lower_name p.param_name) ty env
         | Error _ -> env (* Ignore resolution errors here, caught elsewhere *))
       env_with_action all_params
   in

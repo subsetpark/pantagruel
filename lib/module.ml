@@ -169,8 +169,9 @@ let rec load_module registry name =
                 List.fold_left
                   (fun env_result imp ->
                     let* env = env_result in
-                    let* imp_env = load_module registry imp.Ast.value in
-                    Ok (Env.add_import env imp_env imp.Ast.value))
+                    let imp_name = Ast.upper_name imp.Ast.value in
+                    let* imp_env = load_module registry imp_name in
+                    Ok (Env.add_import env imp_env imp_name))
                   (Ok (Env.empty name))
                   ast.Ast.imports
               in
@@ -197,14 +198,15 @@ let rec load_module registry name =
 (** Collect declarations from a document and its imports, without type checking
 *)
 let collect_with_imports registry (doc : Ast.document) =
-  let mod_name = Option.value ~default:"" doc.module_name in
+  let mod_name = Option.fold ~none:"" ~some:Ast.upper_name doc.module_name in
   (* Load all imports *)
   let* import_env =
     List.fold_left
       (fun env_result imp ->
         let* env = env_result in
-        let* imp_env = load_module registry imp.Ast.value in
-        Ok (Env.add_import env imp_env imp.Ast.value))
+        let imp_name = Ast.upper_name imp.Ast.value in
+        let* imp_env = load_module registry imp_name in
+        Ok (Env.add_import env imp_env imp_name))
       (Ok (Env.empty mod_name))
       doc.imports
   in

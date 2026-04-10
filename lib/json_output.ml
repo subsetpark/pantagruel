@@ -29,8 +29,8 @@ let rec ty_to_json = function
 
 (** Convert syntactic type expression to JSON *)
 let rec type_expr_to_json = function
-  | TName name -> `String name
-  | TQName (m, name) ->
+  | TName (Upper name) -> `String name
+  | TQName (Upper m, Upper name) ->
       `Assoc
         [
           ("qualified", `Assoc [ ("module", `String m); ("name", `String name) ]);
@@ -67,13 +67,16 @@ let unop_to_string = function
 (** Convert parameter to JSON *)
 let param_to_json p =
   `Assoc
-    [ ("name", `String p.param_name); ("type", type_expr_to_json p.param_type) ]
+    [
+      ("name", `String (Ast.lower_name p.param_name));
+      ("type", type_expr_to_json p.param_type);
+    ]
 
 (** Convert expression to JSON *)
 let rec expr_to_json = function
-  | EVar name -> `Assoc [ ("var", `String name) ]
-  | EDomain name -> `Assoc [ ("domain", `String name) ]
-  | EQualified (m, name) ->
+  | EVar (Lower name) -> `Assoc [ ("var", `String name) ]
+  | EDomain (Upper name) -> `Assoc [ ("domain", `String name) ]
+  | EQualified (Upper m, name) ->
       `Assoc
         [
           ("qualified", `Assoc [ ("module", `String m); ("name", `String name) ]);
@@ -92,8 +95,8 @@ let rec expr_to_json = function
                 ("args", `List (List.map expr_to_json args));
               ] );
         ]
-  | EPrimed name -> `Assoc [ ("primed", `String name) ]
-  | EOverride (name, mappings) ->
+  | EPrimed (Lower name) -> `Assoc [ ("primed", `String name) ]
+  | EOverride (Lower name, mappings) ->
       `Assoc
         [
           ( "override",
@@ -197,7 +200,7 @@ let rec expr_to_json = function
 (** Convert guard to JSON *)
 and guard_to_json = function
   | GParam p -> `Assoc [ ("param", param_to_json p) ]
-  | GIn (name, e) ->
+  | GIn (Lower name, e) ->
       `Assoc
         [ ("in", `Assoc [ ("name", `String name); ("list", expr_to_json e) ]) ]
   | GExpr e -> `Assoc [ ("expr", expr_to_json e) ]
@@ -218,9 +221,9 @@ let doc_to_json docs =
 let decl_to_json env (decl_loc : declaration located) =
   let doc_json = doc_to_json decl_loc.doc in
   match decl_loc.value with
-  | DeclDomain name ->
+  | DeclDomain (Upper name) ->
       `Assoc (doc_json @ [ ("kind", `String "domain"); ("name", `String name) ])
-  | DeclAlias (name, te) ->
+  | DeclAlias (Upper name, te) ->
       (* Look up resolved type from environment *)
       let resolved =
         match Env.lookup_type name env with
@@ -242,6 +245,7 @@ let decl_to_json env (decl_loc : declaration located) =
           ]
         @ match resolved with Some t -> [ ("resolved", t) ] | None -> [])
   | DeclRule { name; params; guards; return_type; contexts } ->
+      let name = Ast.lower_name name in
       (* Look up resolved type from environment *)
       let resolved =
         match Env.lookup_term name env with
@@ -264,7 +268,11 @@ let decl_to_json env (decl_loc : declaration located) =
             ("return", type_expr_to_json return_type);
           ]
         @ (if contexts <> [] then
-             [ ("contexts", `List (List.map (fun c -> `String c) contexts)) ]
+             [
+               ( "contexts",
+                 `List (List.map (fun c -> `String (Ast.upper_name c)) contexts)
+               );
+             ]
            else [])
         @ match resolved with Some t -> [ ("resolved", t) ] | None -> [])
   | DeclAction { label; params; guards; contexts } ->
@@ -280,7 +288,11 @@ let decl_to_json env (decl_loc : declaration located) =
             ("guards", `List (List.map guard_to_json guards));
           ]
         @ (if contexts <> [] then
-             [ ("contexts", `List (List.map (fun c -> `String c) contexts)) ]
+             [
+               ( "contexts",
+                 `List (List.map (fun c -> `String (Ast.upper_name c)) contexts)
+               );
+             ]
            else [])
         @ [
             ( "resolved",
@@ -291,6 +303,7 @@ let decl_to_json env (decl_loc : declaration located) =
                 ] );
           ])
   | DeclClosure { name; param; return_type; target } ->
+      let name = Ast.lower_name name in
       let resolved =
         match Env.lookup_term name env with
         | Some { kind = Env.KClosure (ty, _); _ } -> Some (ty_to_json ty)
@@ -306,7 +319,7 @@ let decl_to_json env (decl_loc : declaration located) =
             ("name", `String name);
             ("param", param_to_json param);
             ("return", type_expr_to_json return_type);
-            ("target", `String target);
+            ("target", `String (Ast.lower_name target));
           ]
         @ match resolved with Some t -> [ ("resolved", t) ] | None -> [])
 
@@ -396,9 +409,15 @@ let document_to_json env doc =
   `Assoc
     [
       ( "module",
-        match doc.module_name with Some n -> `String n | None -> `Null );
-      ("imports", `List (List.map (fun i -> `String i.value) doc.imports));
-      ("contexts", `List (List.map (fun c -> `String c.value) doc.contexts));
+        match doc.module_name with
+        | Some n -> `String (Ast.upper_name n)
+        | None -> `Null );
+      ( "imports",
+        `List (List.map (fun i -> `String (Ast.upper_name i.value)) doc.imports)
+      );
+      ( "contexts",
+        `List
+          (List.map (fun c -> `String (Ast.upper_name c.value)) doc.contexts) );
       ("types", types_to_json env);
       ("rules", rules_to_json env);
       ("chapters", `List (List.map (chapter_to_json env) doc.chapters));

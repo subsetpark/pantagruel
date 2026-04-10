@@ -47,17 +47,21 @@ let test_ty_to_json_compound () =
 
 let test_type_expr_to_json () =
   check string "TName" {|"Nat"|}
-    (json_to_string (Json_output.type_expr_to_json (Ast.TName "Nat")));
-  let j = Json_output.type_expr_to_json (Ast.TQName ("Mod", "Type")) in
+    (json_to_string (Json_output.type_expr_to_json (Ast.TName (Upper "Nat"))));
+  let j =
+    Json_output.type_expr_to_json (Ast.TQName (Upper "Mod", Upper "Type"))
+  in
   check bool "TQName" true (Yojson.Basic.Util.member "qualified" j <> `Null);
-  let j = Json_output.type_expr_to_json (Ast.TList (TName "Nat")) in
+  let j = Json_output.type_expr_to_json (Ast.TList (TName (Upper "Nat"))) in
   check bool "TList" true (Yojson.Basic.Util.member "list" j <> `Null);
   let j =
-    Json_output.type_expr_to_json (Ast.TProduct [ TName "Nat"; TName "Bool" ])
+    Json_output.type_expr_to_json
+      (Ast.TProduct [ TName (Upper "Nat"); TName (Upper "Bool") ])
   in
   check bool "TProduct" true (Yojson.Basic.Util.member "product" j <> `Null);
   let j =
-    Json_output.type_expr_to_json (Ast.TSum [ TName "Nat"; TName "Nothing" ])
+    Json_output.type_expr_to_json
+      (Ast.TSum [ TName (Upper "Nat"); TName (Upper "Nothing") ])
   in
   check bool "TSum" true (Yojson.Basic.Util.member "sum" j <> `Null)
 
@@ -92,11 +96,12 @@ let has_key key j = Yojson.Basic.Util.member key j <> `Null
 
 let test_expr_to_json_basic () =
   check bool "var" true
-    (has_key "var" (Json_output.expr_to_json (Ast.EVar "x")));
+    (has_key "var" (Json_output.expr_to_json (Ast.EVar (Lower "x"))));
   check bool "domain" true
-    (has_key "domain" (Json_output.expr_to_json (Ast.EDomain "User")));
+    (has_key "domain" (Json_output.expr_to_json (Ast.EDomain (Upper "User"))));
   check bool "qualified" true
-    (has_key "qualified" (Json_output.expr_to_json (Ast.EQualified ("M", "n"))));
+    (has_key "qualified"
+       (Json_output.expr_to_json (Ast.EQualified (Upper "M", "n"))));
   check bool "nat" true
     (has_key "nat" (Json_output.expr_to_json (Ast.ELitNat 42)));
   check bool "real" true
@@ -106,29 +111,35 @@ let test_expr_to_json_basic () =
   check bool "bool" true
     (has_key "bool" (Json_output.expr_to_json (Ast.ELitBool true)));
   check bool "primed" true
-    (has_key "primed" (Json_output.expr_to_json (Ast.EPrimed "f")))
+    (has_key "primed" (Json_output.expr_to_json (Ast.EPrimed (Lower "f"))))
 
 let test_expr_to_json_compound () =
   check bool "app" true
     (has_key "app"
-       (Json_output.expr_to_json (Ast.EApp (EVar "f", [ EVar "x" ]))));
+       (Json_output.expr_to_json
+          (Ast.EApp (EVar (Lower "f"), [ EVar (Lower "x") ]))));
   check bool "override" true
     (has_key "override"
        (Json_output.expr_to_json
-          (Ast.EOverride ("f", [ (EVar "a", EVar "b") ]))));
+          (Ast.EOverride (Lower "f", [ (EVar (Lower "a"), EVar (Lower "b")) ]))));
   check bool "tuple" true
     (has_key "tuple"
        (Json_output.expr_to_json (Ast.ETuple [ ELitNat 1; ELitNat 2 ])));
   check bool "proj" true
-    (has_key "proj" (Json_output.expr_to_json (Ast.EProj (EVar "x", 1))));
+    (has_key "proj"
+       (Json_output.expr_to_json (Ast.EProj (EVar (Lower "x"), 1))));
   check bool "binop" true
     (has_key "binop"
-       (Json_output.expr_to_json (Ast.EBinop (OpEq, EVar "a", EVar "b"))));
+       (Json_output.expr_to_json
+          (Ast.EBinop (OpEq, EVar (Lower "a"), EVar (Lower "b")))));
   check bool "unop" true
-    (has_key "unop" (Json_output.expr_to_json (Ast.EUnop (OpNot, EVar "a"))))
+    (has_key "unop"
+       (Json_output.expr_to_json (Ast.EUnop (OpNot, EVar (Lower "a")))))
 
 let test_expr_to_json_quantifiers () =
-  let p = [ Ast.{ param_name = "x"; param_type = TName "Nat" } ] in
+  let p =
+    [ Ast.{ param_name = Lower "x"; param_type = TName (Upper "Nat") } ]
+  in
   check bool "forall" true
     (has_key "forall"
        (Json_output.expr_to_json (Ast.EForall (p, [], ELitBool true))));
@@ -137,15 +148,18 @@ let test_expr_to_json_quantifiers () =
        (Json_output.expr_to_json (Ast.EExists (p, [], ELitBool true))));
   check bool "each" true
     (has_key "each"
-       (Json_output.expr_to_json (Ast.EEach (p, [], None, EVar "x"))));
-  (match Json_output.expr_to_json (Ast.EEach (p, [], None, EVar "x")) with
+       (Json_output.expr_to_json (Ast.EEach (p, [], None, EVar (Lower "x")))));
+  (match
+     Json_output.expr_to_json (Ast.EEach (p, [], None, EVar (Lower "x")))
+   with
   | `Assoc [ ("each", `Assoc fields) ] -> (
       match List.assoc "combiner" fields with
       | `Null -> ()
       | _ -> fail "Expected null combiner for bare each")
   | _ -> fail "Expected each JSON object");
   (match
-     Json_output.expr_to_json (Ast.EEach (p, [], Some CombMin, EVar "x"))
+     Json_output.expr_to_json
+       (Ast.EEach (p, [], Some CombMin, EVar (Lower "x")))
    with
   | `Assoc [ ("each", `Assoc fields) ] -> (
       match List.assoc "combiner" fields with
@@ -156,17 +170,18 @@ let test_expr_to_json_quantifiers () =
     (has_key "cond"
        (Json_output.expr_to_json (Ast.ECond [ (ELitBool true, ELitNat 1) ])));
   check bool "initially" true
-    (has_key "initially" (Json_output.expr_to_json (Ast.EInitially (EVar "x"))))
+    (has_key "initially"
+       (Json_output.expr_to_json (Ast.EInitially (EVar (Lower "x")))))
 
 (* --- guard_to_json tests --- *)
 
 let test_guard_to_json () =
   let j =
     Json_output.guard_to_json
-      (GParam { param_name = "x"; param_type = TName "Nat" })
+      (GParam { param_name = Lower "x"; param_type = TName (Upper "Nat") })
   in
   check bool "GParam" true (has_key "param" j);
-  let j = Json_output.guard_to_json (GIn ("x", EVar "xs")) in
+  let j = Json_output.guard_to_json (GIn (Lower "x", EVar (Lower "xs"))) in
   check bool "GIn" true (has_key "in" j);
   let j = Json_output.guard_to_json (GExpr (ELitBool true)) in
   check bool "GExpr" true (has_key "expr" j)

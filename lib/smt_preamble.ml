@@ -402,7 +402,7 @@ let resolve_param_bindings env (params : Ast.param list) =
   List.filter_map
     (fun (p : Ast.param) ->
       match Collect.resolve_type env p.param_type Ast.dummy_loc with
-      | Ok ty -> Some (p.param_name, ty)
+      | Ok ty -> Some (Ast.lower_name p.param_name, ty)
       | Error _ -> None)
     params
 

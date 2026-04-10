@@ -19,12 +19,18 @@ type 'a located = {
 let located ?(doc = []) ?(doc_adjacent = true) loc value =
   { loc; value; doc; doc_adjacent }
 
-type upper_ident = string (* Domain names: User, Document *)
-[@@deriving show, eq]
 (** Identifier types *)
+type upper_ident = Upper of string (* Domain names: User, Document *)
+[@@unboxed] [@@deriving show, eq]
 
-type lower_ident = string (* Rules/variables: owner, has-perm? *)
-[@@deriving show, eq]
+type lower_ident = Lower of string (* Rules/variables: owner, has-perm? *)
+[@@unboxed] [@@deriving show, eq]
+
+(** Extract the string from an upper identifier *)
+let upper_name (Upper s) = s
+
+(** Extract the string from a lower identifier *)
+let lower_name (Lower s) = s
 
 type qualified_name = upper_ident * string (* MODULE.name *)
 [@@deriving show, eq]

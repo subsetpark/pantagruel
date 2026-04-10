@@ -17,8 +17,8 @@ let rule_names_of_env env =
 
 let pp_type_expr fmt te =
   let rec go fmt = function
-    | TName name -> fprintf fmt "`%s`" name
-    | TQName (m, name) -> fprintf fmt "`%s`::`%s`" m name
+    | TName (Upper name) -> fprintf fmt "`%s`" name
+    | TQName (Upper m, Upper name) -> fprintf fmt "`%s`::`%s`" m name
     | TList t -> fprintf fmt "[%a]" go t
     | TProduct ts ->
         pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt " × ") go_atom fmt ts
@@ -27,8 +27,8 @@ let pp_type_expr fmt te =
           ~pp_sep:(fun fmt () -> fprintf fmt " + ")
           go_product fmt ts
   and go_atom fmt = function
-    | TName name -> fprintf fmt "`%s`" name
-    | TQName (m, name) -> fprintf fmt "`%s`::`%s`" m name
+    | TName (Upper name) -> fprintf fmt "`%s`" name
+    | TQName (Upper m, Upper name) -> fprintf fmt "`%s`::`%s`" m name
     | TList t -> fprintf fmt "[%a]" go t
     | (TProduct _ | TSum _) as t -> fprintf fmt "(%a)" go t
   and go_product fmt = function
@@ -61,7 +61,7 @@ let pp_name procs fmt name =
   else fprintf fmt "*%s*" name
 
 let pp_param fmt p =
-  fprintf fmt "*%s*: %a" p.param_name pp_type_expr p.param_type
+  fprintf fmt "*%s*: %a" (Ast.lower_name p.param_name) pp_type_expr p.param_type
 
 let pp_params_sep fmt () = fprintf fmt ", "
 
@@ -112,7 +112,7 @@ and pp_quant_bindings procs fmt (params, guards) =
   pp_print_list ~pp_sep:pp_params_sep
     (fun fmt -> function
       | `Param p -> pp_param fmt p
-      | `In (name, e) -> fprintf fmt "*%s* ∈ %a" name (pp_term procs) e
+      | `In (Lower name, e) -> fprintf fmt "*%s* ∈ %a" name (pp_term procs) e
       | `Guard e -> pp_conjunction procs fmt e)
     fmt items
 
@@ -246,9 +246,9 @@ and pp_primary procs fmt = function
       pp_atom procs fmt e
 
 and pp_atom procs fmt = function
-  | EVar name -> pp_name procs fmt name
-  | EDomain name -> fprintf fmt "`%s`" name
-  | EQualified (m, name) -> fprintf fmt "`%s`::%a" m (pp_name procs) name
+  | EVar (Lower name) -> pp_name procs fmt name
+  | EDomain (Upper name) -> fprintf fmt "`%s`" name
+  | EQualified (Upper m, name) -> fprintf fmt "`%s`::%a" m (pp_name procs) name
   | ELitNat n -> pp_print_int fmt n
   | ELitReal r ->
       let s = string_of_float r in
@@ -256,8 +256,8 @@ and pp_atom procs fmt = function
       pp_print_string fmt s
   | ELitString s -> fprintf fmt "\"%s\"" (String.escaped s)
   | ELitBool b -> pp_print_bool fmt b
-  | EPrimed name -> fprintf fmt "%a′" (pp_name procs) name
-  | EOverride (name, pairs) ->
+  | EPrimed (Lower name) -> fprintf fmt "%a′" (pp_name procs) name
+  | EOverride (Lower name, pairs) ->
       fprintf fmt "%a[%a]" (pp_name procs) name
         (pp_print_list ~pp_sep:pp_params_sep (fun fmt (k, v) ->
              fprintf fmt "%a ↦ %a" (pp_expr procs) k (pp_expr procs) v))
@@ -274,19 +274,19 @@ and pp_atom procs fmt = function
 
 let pp_guard procs fmt = function
   | GParam p -> pp_param fmt p
-  | GIn (name, e) -> fprintf fmt "*%s* ∈ %a" name (pp_term procs) e
+  | GIn (Lower name, e) -> fprintf fmt "*%s* ∈ %a" name (pp_term procs) e
   | GExpr e -> pp_conjunction procs fmt e
 
 let pp_declaration procs fmt = function
-  | DeclDomain name -> fprintf fmt "`%s`." name
-  | DeclAlias (name, te) -> fprintf fmt "`%s` = %a." name pp_type_expr te
+  | DeclDomain (Upper name) -> fprintf fmt "`%s`." name
+  | DeclAlias (Upper name, te) -> fprintf fmt "`%s` = %a." name pp_type_expr te
   | DeclRule { name; params; guards; return_type; contexts } ->
       if contexts <> [] then
         fprintf fmt "{%a} "
-          (pp_print_list ~pp_sep:pp_params_sep (fun fmt c ->
+          (pp_print_list ~pp_sep:pp_params_sep (fun fmt (Upper c) ->
                fprintf fmt "**`%s`**" c))
           contexts;
-      fprintf fmt "**%s**" name;
+      fprintf fmt "**%s**" (Ast.lower_name name);
       if params <> [] then
         fprintf fmt " %a" (pp_print_list ~pp_sep:pp_params_sep pp_param) params;
       if guards <> [] then
@@ -299,7 +299,7 @@ let pp_declaration procs fmt = function
       | [] -> fprintf fmt "↝ "
       | ctxs ->
           fprintf fmt "%a ↝ "
-            (pp_print_list ~pp_sep:pp_params_sep (fun fmt c ->
+            (pp_print_list ~pp_sep:pp_params_sep (fun fmt (Upper c) ->
                  fprintf fmt "**`%s`**" c))
             ctxs);
       fprintf fmt "%s" label;
@@ -311,8 +311,8 @@ let pp_declaration procs fmt = function
           guards;
       pp_print_char fmt '.'
   | DeclClosure { name; param; return_type; target } ->
-      fprintf fmt "**%s** %a ⇒ %a = closure **%s**." name pp_param param
-        pp_type_expr return_type target
+      fprintf fmt "**%s** %a ⇒ %a = closure **%s**." (Ast.lower_name name)
+        pp_param param pp_type_expr return_type (Ast.lower_name target)
 
 (* --- String-returning wrappers --- *)
 
@@ -382,7 +382,7 @@ let pp_chapter procs ?(skip_first_doc_groups = 0) ~total_chapters chapter_num
 
   let pp_domain_name fmt d =
     match d.value with
-    | DeclDomain n | DeclAlias (n, _) -> fprintf fmt "`%s`" n
+    | DeclDomain (Upper n) | DeclAlias (Upper n, _) -> fprintf fmt "`%s`" n
     | DeclRule _ | DeclAction _ | DeclClosure _ -> ()
   in
 
@@ -465,7 +465,7 @@ let pp_document procs fmt doc =
     fprintf fmt "**Imports:** %a@\n@\n"
       (pp_print_list
          ~pp_sep:(fun fmt () -> fprintf fmt ", ")
-         (fun fmt i -> pp_print_string fmt i.value))
+         (fun fmt i -> pp_print_string fmt (Ast.upper_name i.value)))
       doc.imports
   end;
 
@@ -476,13 +476,13 @@ let pp_document procs fmt doc =
       List.iter
         (fun c ->
           if c.doc <> [] then fprintf fmt "%a@\n@\n" pp_doc_comment c.doc;
-          fprintf fmt "**`%s`**@\n@\n" c.value)
+          fprintf fmt "**`%s`**@\n@\n" (Ast.upper_name c.value))
         doc.contexts
     else begin
       fprintf fmt "%a@\n@\n"
         (pp_print_list
            ~pp_sep:(fun fmt () -> fprintf fmt ", ")
-           (fun fmt c -> fprintf fmt "**`%s`**" c.value))
+           (fun fmt c -> fprintf fmt "**`%s`**" (Ast.upper_name c.value)))
         doc.contexts
     end
   end;

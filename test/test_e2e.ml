@@ -56,7 +56,9 @@ let test_sample_typecheck name () =
   with_sample_dir (fun dir ->
       let path = Filename.concat dir name in
       let doc = parse_file path in
-      let mod_name = Option.value ~default:"" doc.module_name in
+      let mod_name =
+        Option.fold ~none:"" ~some:Ast.upper_name doc.module_name
+      in
       match Collect.collect_all ~base_env:(Env.empty mod_name) doc with
       | Error e ->
           failf "Collection error in %s: %s" name (Collect.show_collect_error e)
@@ -71,7 +73,9 @@ let test_sample_json name () =
   with_sample_dir (fun dir ->
       let path = Filename.concat dir name in
       let doc = parse_file path in
-      let mod_name = Option.value ~default:"" doc.module_name in
+      let mod_name =
+        Option.fold ~none:"" ~some:Ast.upper_name doc.module_name
+      in
       match Collect.collect_all ~base_env:(Env.empty mod_name) doc with
       | Error _ -> ()
       | Ok env ->
@@ -84,7 +88,9 @@ let test_sample_markdown name () =
   with_sample_dir (fun dir ->
       let path = Filename.concat dir name in
       let doc = parse_file path in
-      let mod_name = Option.value ~default:"" doc.module_name in
+      let mod_name =
+        Option.fold ~none:"" ~some:Ast.upper_name doc.module_name
+      in
       match Collect.collect_all ~base_env:(Env.empty mod_name) doc with
       | Error _ -> ()
       | Ok env ->
@@ -118,7 +124,9 @@ let test_sample_smt name () =
   with_sample_dir (fun dir ->
       let path = Filename.concat dir name in
       let doc = parse_file path in
-      let mod_name = Option.value ~default:"" doc.module_name in
+      let mod_name =
+        Option.fold ~none:"" ~some:Ast.upper_name doc.module_name
+      in
       match Collect.collect_all ~base_env:(Env.empty mod_name) doc with
       | Error _ -> ()
       | Ok env ->
@@ -134,7 +142,9 @@ let test_snapshot_json name () =
   with_sample_dir (fun dir ->
       let path = Filename.concat dir name in
       let doc = parse_file path in
-      let mod_name = Option.value ~default:"" doc.module_name in
+      let mod_name =
+        Option.fold ~none:"" ~some:Ast.upper_name doc.module_name
+      in
       match Collect.collect_all ~base_env:(Env.empty mod_name) doc with
       | Error _ -> ()
       | Ok env -> (
@@ -184,7 +194,9 @@ let test_snapshot_markdown name () =
   with_sample_dir (fun dir ->
       let path = Filename.concat dir name in
       let doc = parse_file path in
-      let mod_name = Option.value ~default:"" doc.module_name in
+      let mod_name =
+        Option.fold ~none:"" ~some:Ast.upper_name doc.module_name
+      in
       match Collect.collect_all ~base_env:(Env.empty mod_name) doc with
       | Error _ -> ()
       | Ok env -> (
