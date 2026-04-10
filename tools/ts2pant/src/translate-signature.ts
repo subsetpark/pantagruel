@@ -195,7 +195,7 @@ function translateExpr(
 
   // String literal
   if (ts.isStringLiteral(expr)) {
-    return `"${expr.text}"`;
+    return `"${expr.text.replace(/"/g, '\\"')}"`;
   }
 
   // Fallback
