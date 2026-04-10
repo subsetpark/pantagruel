@@ -43,7 +43,7 @@ describe("pure function: return expression -> proposition", () => {
     const props = translate(source, "double");
 
     expect(props).toHaveLength(1);
-    expect(props[0].text).toBe("all n: number | double n = n * 2");
+    expect(props[0].text).toBe("all n: Int | double n = n * 2");
   });
 
   it("translates multi-param pure function", () => {
@@ -55,7 +55,7 @@ describe("pure function: return expression -> proposition", () => {
     const props = translate(source, "add");
 
     expect(props).toHaveLength(1);
-    expect(props[0].text).toBe("all a: number, b: number | add a b = a + b");
+    expect(props[0].text).toBe("all a: Int, b: Int | add a b = a + b");
   });
 });
 
@@ -98,7 +98,7 @@ describe("ternary -> cond", () => {
     const props = translate(source, "max");
 
     expect(props[0].text).toBe(
-      "all a: number, b: number | max a b = cond a >= b => a, true => b",
+      "all a: Int, b: Int | max a b = cond a >= b => a, true => b",
     );
   });
 
@@ -131,7 +131,7 @@ describe("if/else with returns -> cond", () => {
     const props = translate(source, "abs");
 
     expect(props[0].text).toBe(
-      "all n: number | abs n = cond n >= 0 => n, true => 0 - n",
+      "all n: Int | abs n = cond n >= 0 => n, true => 0 - n",
     );
   });
 });
@@ -146,7 +146,7 @@ describe("boolean operators", () => {
     const props = translate(source, "check");
 
     expect(props[0].text).toBe(
-      "all a: boolean, b: boolean | check a b = a and ~(b)",
+      "all a: Bool, b: Bool | check a b = a and ~(b)",
     );
   });
 
@@ -159,7 +159,7 @@ describe("boolean operators", () => {
     const props = translate(source, "eq");
 
     expect(props[0].text).toBe(
-      "all a: number, b: number | eq a b = a = b",
+      "all a: Int, b: Int | eq a b = a = b",
     );
   });
 });
@@ -173,7 +173,7 @@ describe("array operations", () => {
     `;
     const props = translate(source, "count");
 
-    expect(props[0].text).toBe("all items: string[] | count items = #items");
+    expect(props[0].text).toBe("all items: [String] | count items = #items");
   });
 
   it("translates .includes(x) to x in", () => {
@@ -185,7 +185,7 @@ describe("array operations", () => {
     const props = translate(source, "contains");
 
     expect(props[0].text).toBe(
-      "all items: string[], x: string | contains items x = x in items",
+      "all items: [String], x: String | contains items x = x in items",
     );
   });
 
@@ -199,7 +199,7 @@ describe("array operations", () => {
     const props = translate(source, "activeNames");
 
     expect(props[0].text).toBe(
-      "all users: User[] | activeNames users = each x: User, active x | name x",
+      "all users: [User] | activeNames users = each x: User, active x | name x",
     );
   });
 });

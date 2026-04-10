@@ -1,6 +1,6 @@
 import ts from "typescript";
 import type { PantProposition, PantDeclaration } from "./types.js";
-import type { NumericStrategy } from "./translate-types.js";
+import { mapTsType, type NumericStrategy } from "./translate-types.js";
 import { translateExpr, translateOperator, findFunction, classifyFunction } from "./translate-signature.js";
 
 export interface TranslateBodyOptions {
@@ -38,14 +38,11 @@ export function translateBody(opts: TranslateBodyOptions): PantProposition[] {
   const sig = checker.getSignatureFromDeclaration(node);
   if (sig) {
     for (const param of sig.getParameters()) {
-      const decl = param.valueDeclaration;
-      let typeName = "?";
-      if (decl && ts.isParameter(decl) && decl.type) {
-        typeName = decl.type.getText();
-      } else {
-        const t = checker.getTypeOfSymbol(param);
-        typeName = checker.typeToString(t);
-      }
+      const typeName = mapTsType(
+        checker.getTypeOfSymbol(param),
+        checker,
+        strategy,
+      );
       paramNames.set(param.name, param.name);
       paramList.push({ name: param.name, type: typeName });
     }
@@ -77,7 +74,13 @@ function translatePureBody(
   const bindings = params.map((p) => `${p.name}: ${p.type}`).join(", ");
   const body = translateBodyExpr(returnExpr, checker, strategy, paramNames);
 
-  return [{ text: `all ${bindings} | ${functionName} ${args} = ${body}` }];
+  if (body.startsWith("> UNSUPPORTED:")) {
+    return [{ text: body }];
+  }
+
+  const head = bindings ? `all ${bindings} | ` : "";
+  const call = args ? `${functionName} ${args}` : functionName;
+  return [{ text: `${head}${call} = ${body}` }];
 }
 
 /**
@@ -395,14 +398,10 @@ function collectAssignments(
       }
     }
 
-    // Recurse into if blocks (for conditional assignments)
+    // Conditional assignments — emit UNSUPPORTED comment rather than
+    // silently dropping the predicate.
     if (ts.isIfStatement(stmt)) {
-      if (stmt.thenStatement && ts.isBlock(stmt.thenStatement)) {
-        collectAssignments(stmt.thenStatement, checker, strategy, paramNames, propositions, modifiedRules);
-      }
-      if (stmt.elseStatement && ts.isBlock(stmt.elseStatement)) {
-        collectAssignments(stmt.elseStatement, checker, strategy, paramNames, propositions, modifiedRules);
-      }
+      propositions.push({ text: `> UNSUPPORTED: conditional assignment (if/else)` });
     }
   }
 }
@@ -421,11 +420,15 @@ function generateFrameConditions(
     if (decl.kind !== "rule") continue;
     if (modifiedRules.has(decl.name)) continue;
 
-    const paramBindings = decl.params.map((p) => `${p.name}: ${p.type}`).join(", ");
-    const paramArgs = decl.params.map((p) => p.name).join(" ");
-    frames.push({
-      text: `all ${paramBindings} | ${decl.name}' ${paramArgs} = ${decl.name} ${paramArgs}`,
-    });
+    if (decl.params.length === 0) {
+      frames.push({ text: `${decl.name}' = ${decl.name}` });
+    } else {
+      const paramBindings = decl.params.map((p) => `${p.name}: ${p.type}`).join(", ");
+      const paramArgs = decl.params.map((p) => p.name).join(" ");
+      frames.push({
+        text: `all ${paramBindings} | ${decl.name}' ${paramArgs} = ${decl.name} ${paramArgs}`,
+      });
+    }
   }
 
   return frames;
