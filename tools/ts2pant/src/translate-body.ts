@@ -1,7 +1,7 @@
 import ts from "typescript";
 import type { PantProposition, PantDeclaration } from "./types.js";
 import { mapTsType, type NumericStrategy } from "./translate-types.js";
-import { translateExpr, translateOperator, findFunction, classifyFunction } from "./translate-signature.js";
+import { translateExpr, translateOperator, findFunction, classifyFunction, shortParamName } from "./translate-signature.js";
 
 function isUnsupported(s: string): boolean {
   return s.startsWith("> UNSUPPORTED:");
@@ -44,23 +44,15 @@ export function translateBody(opts: TranslateBodyOptions): PantProposition[] {
   const paramNames = new Map<string, string>();
   const paramList: Array<{ name: string; type: string }> = [];
 
+  const sig = checker.getSignatureFromDeclaration(node);
+
   if (className) {
-    const baseName =
-      className.charAt(0).toLowerCase() + className.slice(1);
-    let pName = baseName;
-    const existing = new Set(
-      node.parameters
-        .map((p) => (ts.isIdentifier(p.name) ? p.name.text : null))
-        .filter((name): name is string => name !== null),
-    );
-    while (existing.has(pName)) {
-      pName = `${pName}_this`;
-    }
+    const existingParamNames = new Set(sig ? sig.getParameters().map((p) => p.name) : []);
+    const pName = shortParamName(className, existingParamNames);
     paramNames.set("this", pName);
     paramList.push({ name: pName, type: className });
   }
 
-  const sig = checker.getSignatureFromDeclaration(node);
   if (sig) {
     for (const param of sig.getParameters()) {
       const typeName = mapTsType(
@@ -427,7 +419,7 @@ function tryTranslateFilterMap(
   if (filterBody && mapBody) {
     if (isUnsupported(filterBody)) return filterBody;
     if (isUnsupported(mapBody)) return mapBody;
-    return `each ${varName}: ${elemTypeName}, ${filterBody} | ${mapBody}`;
+    return `(each ${varName}: ${elemTypeName}, ${filterBody} | ${mapBody})`;
   }
 
   return null;

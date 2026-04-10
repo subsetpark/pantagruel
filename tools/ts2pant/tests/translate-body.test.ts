@@ -222,7 +222,7 @@ describe("array operations", () => {
     const props = translate(source, "activeNames");
 
     expect(props[0].text).toBe(
-      "all users: [User] | activeNames users = each x: User, active x | name x",
+      "all users: [User] | activeNames users = (each x: User, active x | name x)",
     );
   });
 });
@@ -355,7 +355,7 @@ describe("class method body translation", () => {
     `;
     const props = translate(source, "getBalance");
 
-    expect(props[0].text).toBe("all account: Account | getBalance account = balance account");
+    expect(props[0].text).toBe("all a: Account | getBalance a = balance a");
   });
 
   it("translates mutating class method", () => {
@@ -369,7 +369,7 @@ describe("class method body translation", () => {
     `;
     const props = translate(source, "deposit");
 
-    expect(props.some((p) => p.text === "balance' account = balance account + amount")).toBe(
+    expect(props.some((p) => p.text === "balance' a = balance a + amount")).toBe(
       true,
     );
   });
