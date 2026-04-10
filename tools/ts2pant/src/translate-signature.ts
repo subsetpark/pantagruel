@@ -156,7 +156,7 @@ function blockThrows(node: ts.Statement): boolean {
 /**
  * Translate a TypeScript expression to Pantagruel syntax (best-effort).
  */
-function translateExpr(
+export function translateExpr(
   expr: ts.Expression,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
@@ -216,7 +216,7 @@ function translateExpr(
   return expr.getText();
 }
 
-function translateOperator(kind: ts.SyntaxKind): string {
+export function translateOperator(kind: ts.SyntaxKind): string {
   switch (kind) {
     case ts.SyntaxKind.GreaterThanEqualsToken:
       return ">=";
@@ -253,7 +253,7 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-function shortParamName(typeName: string, existingNames: Set<string>): string {
+export function shortParamName(typeName: string, existingNames: Set<string>): string {
   let name = typeName[0].toLowerCase();
   let suffix = 1;
   while (existingNames.has(name)) {
