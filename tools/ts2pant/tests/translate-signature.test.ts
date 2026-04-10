@@ -196,7 +196,7 @@ describe("guarded mutator -> action with guard", () => {
   it("ignores non-unconditional throw in else branch", () => {
     const source = `
       interface Account { balance: number; }
-      function withdraw(a: Account, amount: number): void {
+      function withdraw(a: Account, amount: number, retry: boolean): void {
         if (a.balance >= amount) {
           a.balance = a.balance - amount;
         } else {
