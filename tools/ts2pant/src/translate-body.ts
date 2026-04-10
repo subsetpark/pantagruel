@@ -18,6 +18,7 @@ import {
 import {
   classifyFunction,
   findFunction,
+  isAssertionCall,
   shortParamName,
   translateExpr,
   translateOperator,
@@ -189,10 +190,11 @@ function translatePureBody(
     return [];
   }
 
-  const returnExpr = extractReturnExpression(node.body);
+  const returnExpr = extractReturnExpression(node.body, checker);
   if (!returnExpr) {
-    const reason = describeRejectedBody(node.body);
+    const reason = describeRejectedBody(node.body, checker);
     return [UnsupportedProp(`${functionName} — ${reason}`)];
+
   }
 
   const body = translateBodyExpr(returnExpr, checker, strategy, paramNames);
@@ -218,9 +220,10 @@ function translatePureBody(
  */
 function extractReturnExpression(
   body: ts.Block,
+  checker: ts.TypeChecker,
 ): ts.Expression | ts.IfStatement | null {
-  // Skip guard statements (if-throw patterns) and find the meaningful return
-  const stmts = body.statements.filter((s) => !isGuardStatement(s));
+  // Skip guard statements (if-throw patterns and assertion calls)
+  const stmts = body.statements.filter((s) => !isGuardStatement(s, checker));
 
   if (stmts.length === 1) {
     const stmt = stmts[0]!;
@@ -242,8 +245,11 @@ function extractReturnExpression(
   return null;
 }
 
-function describeRejectedBody(body: ts.Block): string {
-  const stmts = body.statements.filter((s) => !isGuardStatement(s));
+function describeRejectedBody(
+  body: ts.Block,
+  checker: ts.TypeChecker,
+): string {
+  const stmts = body.statements.filter((s) => !isGuardStatement(s, checker));
   if (stmts.length === 0) {
     return "empty body";
   }
@@ -257,7 +263,19 @@ function describeRejectedBody(body: ts.Block): string {
   return "non-translatable control flow";
 }
 
-function isGuardStatement(stmt: ts.Statement): boolean {
+function isGuardStatement(
+  stmt: ts.Statement,
+  checker: ts.TypeChecker,
+): boolean {
+  // Assertion call: assert(cond), invariant(cond), etc.
+  if (
+    ts.isExpressionStatement(stmt) &&
+    ts.isCallExpression(stmt.expression) &&
+    isAssertionCall(checker, stmt.expression) !== null
+  ) {
+    return true;
+  }
+
   if (!ts.isIfStatement(stmt)) {
     return false;
   }
@@ -523,9 +541,9 @@ function translateIfStatement(
   if (cond.kind === "unsupported") {
     return cond;
   }
-  const thenExpr = extractReturnFromBranch(stmt.thenStatement);
+  const thenExpr = extractReturnFromBranch(stmt.thenStatement, checker);
   const elseExpr = stmt.elseStatement
-    ? extractReturnFromBranch(stmt.elseStatement)
+    ? extractReturnFromBranch(stmt.elseStatement, checker)
     : null;
 
   if (thenExpr && elseExpr) {
@@ -543,7 +561,10 @@ function translateIfStatement(
   return Unsupported("if statement without return in both branches");
 }
 
-function extractReturnFromBranch(stmt: ts.Statement): ts.Expression | null {
+function extractReturnFromBranch(
+  stmt: ts.Statement,
+  checker: ts.TypeChecker,
+): ts.Expression | null {
   if (ts.isReturnStatement(stmt) && stmt.expression) {
     return stmt.expression;
   }
@@ -552,7 +573,7 @@ function extractReturnFromBranch(stmt: ts.Statement): ts.Expression | null {
     // return (after filtering guards). Blocks with local declarations or
     // multiple non-guard statements are rejected so we don't leak
     // branch-scoped bindings into the generated proposition.
-    const nonGuard = stmt.statements.filter((s) => !isGuardStatement(s));
+    const nonGuard = stmt.statements.filter((s) => !isGuardStatement(s, checker));
     if (nonGuard.length === 1) {
       const s = nonGuard[0]!;
       if (ts.isReturnStatement(s) && s.expression) {
@@ -738,7 +759,7 @@ function extractArrowBody(
     // Only allow a single return (after filtering guards), same rule as
     // extractReturnExpression — blocks with locals or multiple statements
     // would introduce free variables in the generated comprehension.
-    const nonGuard = expr.body.statements.filter((s) => !isGuardStatement(s));
+    const nonGuard = expr.body.statements.filter((s) => !isGuardStatement(s, checker));
     if (nonGuard.length === 1) {
       const s = nonGuard[0]!;
       if (ts.isReturnStatement(s) && s.expression) {
@@ -805,8 +826,8 @@ function collectAssignments(
   const stmts = ts.isBlock(body) ? Array.from(body.statements) : [body];
 
   for (const stmt of stmts) {
-    // Skip guard statements (if-throw patterns)
-    if (isGuardStatement(stmt)) {
+    // Skip guard statements (if-throw patterns and assertion calls)
+    if (isGuardStatement(stmt, checker)) {
       continue;
     }
 

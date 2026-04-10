@@ -179,6 +179,30 @@ describe("full pipeline", () => {
   });
 });
 
+// --- Snapshot tests ---
+
+describe("emission snapshots", () => {
+  it("max.ts larger", () => {
+    const doc = buildDocument("max.ts", "larger");
+    expect(emitDocument(doc)).toMatchSnapshot();
+  });
+
+  it("max.ts larger (skeleton only)", () => {
+    const doc = buildDocument("max.ts", "larger", { noBody: true });
+    expect(emitDocument(doc)).toMatchSnapshot();
+  });
+
+  it("deposit.ts deposit", () => {
+    const doc = buildDocument("deposit.ts", "deposit");
+    expect(emitDocument(doc)).toMatchSnapshot();
+  });
+
+  it("assert-guard.ts deposit", () => {
+    const doc = buildDocument("assert-guard.ts", "deposit");
+    expect(emitDocument(doc)).toMatchSnapshot();
+  });
+});
+
 // --- SMT check tests (require z3) ---
 
 describe("pant --check", () => {

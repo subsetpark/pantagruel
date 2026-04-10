@@ -119,10 +119,62 @@ function hasPropertyAssignment(node: ts.Node): boolean {
 }
 
 /**
+ * Check if a call expression targets a function with an `asserts` return type.
+ * Returns the assertion's parameter index if so (the parameter being asserted).
+ */
+export function isAssertionCall(
+  checker: ts.TypeChecker,
+  call: ts.CallExpression,
+): number | null {
+  const sig = checker.getResolvedSignature(call);
+  if (!sig) return null;
+  const decl = sig.declaration;
+  if (!decl || !ts.isFunctionLike(decl) || !decl.type) return null;
+  if (!ts.isTypePredicateNode(decl.type)) return null;
+  if (!decl.type.assertsModifier) return null;
+
+  // Find which parameter is being asserted
+  const paramName = decl.type.parameterName;
+  if (!ts.isIdentifier(paramName)) return null;
+
+  const params = decl.parameters;
+  for (let i = 0; i < params.length; i++) {
+    const p = params[i]!;
+    if (ts.isIdentifier(p.name) && p.name.text === paramName.text) {
+      return i;
+    }
+  }
+  return null;
+}
+
+/**
+ * Extract the guard condition from an assertion call.
+ * For `assert(amount > 0)` where assert has `asserts value`, returns "amount > 0".
+ * For bare `asserts x` (truthiness), returns the argument expression.
+ */
+export function extractAssertionGuard(
+  checker: ts.TypeChecker,
+  call: ts.CallExpression,
+  strategy: NumericStrategy,
+  paramNames: Map<string, string>,
+): PantExpr | undefined {
+  const paramIndex = isAssertionCall(checker, call);
+  if (paramIndex === null) {
+    return undefined;
+  }
+  if (paramIndex >= call.arguments.length) {
+    return undefined;
+  }
+  const arg = call.arguments[paramIndex]!;
+  return translateExpr(arg, checker, strategy, paramNames);
+}
+
+/**
  * Detect guard patterns in a function body.
  * Patterns:
  *   if (cond) { body } else { throw ... }
  *   if (!cond) { throw ... } (early return guard)
+ *   assert(cond) — calls with `asserts` return type
  */
 export function detectGuard(
   node: ts.FunctionDeclaration | ts.MethodDeclaration,
@@ -134,15 +186,37 @@ export function detectGuard(
     return undefined;
   }
 
+  const guards: PantExpr[] = [];
+
   for (const stmt of node.body.statements) {
-    // Only extract guards from leading precondition checks
+    // Pattern: assertion call — assert(cond), invariant(cond), etc.
+    if (
+      ts.isExpressionStatement(stmt) &&
+      ts.isCallExpression(stmt.expression)
+    ) {
+      const g = extractAssertionGuard(
+        checker,
+        stmt.expression,
+        strategy,
+        paramNames,
+      );
+      if (g !== undefined) {
+        guards.push(g);
+        continue;
+      }
+      // Non-assertion call — stop scanning (side-effectful statement)
+      break;
+    }
+
+    // Only extract if-throw guards from leading precondition checks
     if (!ts.isIfStatement(stmt)) {
       break;
     }
 
     // Pattern 1: if (cond) { ... } else { throw }
     if (stmt.elseStatement && blockThrows(stmt.elseStatement)) {
-      return translateExpr(stmt.expression, checker, strategy, paramNames);
+      guards.push(translateExpr(stmt.expression, checker, strategy, paramNames));
+      continue;
     }
 
     // Pattern 2: if (!cond) { throw }  =>  guard is cond
@@ -156,25 +230,29 @@ export function detectGuard(
         ts.isPrefixUnaryExpression(stmt.expression) &&
         stmt.expression.operator === ts.SyntaxKind.ExclamationToken
       ) {
-        return translateExpr(
-          stmt.expression.operand,
-          checker,
-          strategy,
-          paramNames,
+        guards.push(
+          translateExpr(stmt.expression.operand, checker, strategy, paramNames),
         );
+        continue;
       }
       // Otherwise negate the whole expression
-      return Unop(
-        "~",
-        translateExpr(stmt.expression, checker, strategy, paramNames),
+      guards.push(
+        Unop(
+          "~",
+          translateExpr(stmt.expression, checker, strategy, paramNames),
+        ),
       );
+      continue;
     }
 
     // If it's an if-statement but doesn't match a guard pattern, stop scanning
     break;
   }
 
-  return undefined;
+  if (guards.length === 0) {
+    return undefined;
+  }
+  return guards.reduce((acc, g) => Binop("and", acc, g));
 }
 
 function blockThrows(node: ts.Statement): boolean {

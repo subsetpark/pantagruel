@@ -285,6 +285,80 @@ describe("guard detection stops at non-if statements", () => {
   });
 });
 
+describe("asserts function guard detection", () => {
+  it("extracts guard from assert() with asserts return type", () => {
+    const source = `
+      function assert(condition: unknown, msg?: string): asserts condition {
+        if (!condition) throw new Error(msg ?? "Assertion failed");
+      }
+      interface Account { balance: number; }
+      function deposit(account: Account, amount: number): void {
+        assert(amount > 0, "Amount must be positive");
+        account.balance = account.balance + amount;
+      }
+    `;
+    const result = translate(source, "deposit");
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind === "action") {
+      expect(result.declaration.guard).toBe("amount > 0");
+    }
+  });
+
+  it("extracts multiple assertion guards", () => {
+    const source = `
+      function assert(condition: unknown, msg?: string): asserts condition {
+        if (!condition) throw new Error(msg ?? "Assertion failed");
+      }
+      interface Account { balance: number; }
+      function deposit(account: Account, amount: number): void {
+        assert(amount > 0);
+        assert(account.balance >= 0);
+        account.balance = account.balance + amount;
+      }
+    `;
+    const result = translate(source, "deposit");
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind === "action") {
+      expect(result.declaration.guard).toBe("amount > 0, balance account >= 0");
+    }
+  });
+
+  it("combines assertion guards with if-throw guards", () => {
+    const source = `
+      function assert(condition: unknown): asserts condition {
+        if (!condition) throw new Error();
+      }
+      interface Account { balance: number; }
+      function deposit(account: Account, amount: number): void {
+        if (amount <= 0) { throw new Error("bad amount"); }
+        assert(account.balance >= 0);
+        account.balance = account.balance + amount;
+      }
+    `;
+    const result = translate(source, "deposit");
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind === "action") {
+      expect(result.declaration.guard).toBe("~(amount <= 0), balance account >= 0");
+    }
+  });
+
+  it("ignores non-assertion calls (stops scanning)", () => {
+    const source = `
+      function log(msg: string): void { console.log(msg); }
+      interface Account { balance: number; }
+      function deposit(account: Account, amount: number): void {
+        log("depositing");
+        account.balance = account.balance + amount;
+      }
+    `;
+    const result = translate(source, "deposit");
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind === "action") {
+      expect(result.declaration.guard).toBeUndefined();
+    }
+  });
+});
+
 describe("class method -> declaration with this param", () => {
   it("translates pure method with this as first param", () => {
     const source = `
