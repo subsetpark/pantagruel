@@ -1,0 +1,7 @@
+; Fuzzing targets — requires crowbar.
+; Not built by default. To build and run:
+;   opam install crowbar
+;   dune build fuzz/fuzz_lexer.exe
+;   mkdir -p corpus findings
+;   cp samples/*.pant corpus/
+;   afl-fuzz -i corpus -o findings -- ./_build/default/fuzz/fuzz_lexer.exe @@
