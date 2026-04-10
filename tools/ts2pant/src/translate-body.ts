@@ -317,7 +317,7 @@ export function translateBodyExpr(
     return translateExpr(expr, checker, strategy, paramNames);
   }
 
-  return `/* unsupported */`;
+  return `> UNSUPPORTED: non-expression statement`;
 }
 
 function translateIfStatement(

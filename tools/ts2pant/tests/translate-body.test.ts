@@ -57,6 +57,18 @@ describe("pure function: return expression -> proposition", () => {
     expect(props).toHaveLength(1);
     expect(props[0].text).toBe("all a: Int, b: Int | add a b = a + b");
   });
+
+  it("translates zero-argument pure function", () => {
+    const source = `
+      function getVersion(): number {
+        return 42;
+      }
+    `;
+    const props = translate(source, "getVersion");
+
+    expect(props).toHaveLength(1);
+    expect(props[0].text).toBe("getVersion = 42");
+  });
 });
 
 describe("property access -> rule application", () => {
@@ -160,6 +172,17 @@ describe("boolean operators", () => {
 
     expect(props[0].text).toBe(
       "all a: Int, b: Int | eq a b = a = b",
+    );
+
+    const source2 = `
+      function neq(a: number, b: number): boolean {
+        return a !== b;
+      }
+    `;
+    const props2 = translate(source2, "neq");
+
+    expect(props2[0].text).toBe(
+      "all a: Int, b: Int | neq a b = a ~= b",
     );
   });
 });
