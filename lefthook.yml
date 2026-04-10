@@ -1,4 +1,4 @@
 pre-commit:
   jobs:
     - name: build-and-format
-      run: opam exec -- dune build && opam exec -- dune build @fmt
+      run: opam exec -- dune build && opam exec -- dune build @fmt && opam exec -- dune test
