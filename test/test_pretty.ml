@@ -238,10 +238,7 @@ let test_te_nested () =
 
 (* --- Property-based tests: parse-pretty-reparse round trip --- *)
 
-let parse str =
-  let lexer = Lexer.create_from_string "<test>" str in
-  let supplier = Lexer.menhir_token lexer in
-  MenhirLib.Convert.Simplified.traditional2revised Parser.document supplier
+let parse = Test_util.parse
 
 let test_roundtrip_simple_exprs () =
   (* Parse, pretty-print, re-parse, compare ASTs *)

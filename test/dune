@@ -1,3 +1,10 @@
+(library
+ (name test_util)
+ (libraries pantagruel alcotest)
+ (modules test_util)
+ (preprocess
+  (pps sedlex.ppx)))
+
 (tests
  (names
   test_lexer
@@ -9,6 +16,7 @@
   test_pretty
   test_json_output
   test_normalize)
- (libraries pantagruel alcotest qcheck-alcotest)
+ (modules :standard \ test_util)
+ (libraries pantagruel test_util alcotest qcheck-alcotest)
  (preprocess
   (pps sedlex.ppx)))

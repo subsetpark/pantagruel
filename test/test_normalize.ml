@@ -3,10 +3,7 @@
 open Alcotest
 open Pantagruel
 
-let parse str =
-  let lexer = Lexer.create_from_string "<test>" str in
-  let supplier = Lexer.menhir_token lexer in
-  MenhirLib.Convert.Simplified.traditional2revised Parser.document supplier
+let parse = Test_util.parse
 
 (* --- decl_name tests --- *)
 
