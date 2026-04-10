@@ -1,0 +1,150 @@
+{
+  "module": "BASICS",
+  "imports": [],
+  "contexts": [],
+  "types": { "Document": { "kind": "domain" }, "User": { "kind": "domain" } },
+  "rules": {
+    "nobody": { "params": [], "return": "User" },
+    "owner": { "params": [ "Document" ], "return": "User" },
+    "transfer": {
+      "params": [ "Document", "User", "User" ],
+      "return": "Bool"
+    }
+  },
+  "chapters": [
+    {
+      "head": [
+        {
+          "doc": [
+            [
+              "Basic Pantagruel syntax demonstration",
+              "This file shows fundamental language constructs."
+            ],
+            [ "Domain declarations define the basic types in your system" ]
+          ],
+          "kind": "domain",
+          "name": "User"
+        },
+        { "kind": "domain", "name": "Document" },
+        {
+          "doc": [
+            [
+              "Rule declarations define operations",
+              "Syntax: name params => ReturnType."
+            ]
+          ],
+          "kind": "rule",
+          "name": "owner",
+          "params": [ { "name": "d", "type": "Document" } ],
+          "guards": [],
+          "return": "User",
+          "resolved": {
+            "func": { "params": [ "Document" ], "return": "User" }
+          }
+        },
+        {
+          "doc": [ [ "Nullary rules (no parameters)" ] ],
+          "kind": "rule",
+          "name": "nobody",
+          "params": [],
+          "guards": [],
+          "return": "User",
+          "resolved": { "func": { "params": [], "return": "User" } }
+        },
+        {
+          "doc": [ [ "Multiple parameters separated by commas" ] ],
+          "kind": "rule",
+          "name": "transfer",
+          "params": [
+            { "name": "d", "type": "Document" },
+            { "name": "from", "type": "User" },
+            { "name": "to", "type": "User" }
+          ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": {
+            "func": {
+              "params": [ "Document", "User", "User" ],
+              "return": "Bool"
+            }
+          }
+        }
+      ],
+      "body": [
+        {
+          "doc": [
+            [
+              "Propositions go after the separator (---)",
+              "They must evaluate to Bool"
+            ],
+            [ "Simple boolean literals" ]
+          ],
+          "expr": { "bool": true }
+        },
+        {
+          "doc": [ [ "Universal quantification" ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "d", "type": "Document" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "in",
+                  "left": {
+                    "app": {
+                      "func": { "var": "owner" },
+                      "args": [ { "var": "d" } ]
+                    }
+                  },
+                  "right": { "domain": "User" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Rule application" ] ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "d", "type": "Document" },
+                { "name": "u", "type": "User" }
+              ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "transfer" },
+                      "args": [
+                        { "var": "d" }, { "var": "u" }, { "var": "u" }
+                      ]
+                    }
+                  },
+                  "right": { "bool": true }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Equality and comparison" ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "u", "type": "User" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": { "var": "u" },
+                  "right": { "var": "u" }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

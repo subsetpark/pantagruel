@@ -1,0 +1,68 @@
+{
+  "module": null,
+  "imports": [],
+  "contexts": [],
+  "types": { "Block": { "kind": "domain" } },
+  "rules": {
+    "ancestor": { "params": [ "Block" ], "return": { "list": "Block" } },
+    "parent": {
+      "params": [ "Block" ],
+      "return": { "sum": [ "Block", "Nothing" ] }
+    }
+  },
+  "chapters": [
+    {
+      "head": [
+        { "kind": "domain", "name": "Block" },
+        {
+          "kind": "rule",
+          "name": "parent",
+          "params": [ { "name": "b", "type": "Block" } ],
+          "guards": [],
+          "return": { "sum": [ "Block", "Nothing" ] },
+          "resolved": {
+            "func": {
+              "params": [ "Block" ],
+              "return": { "sum": [ "Block", "Nothing" ] }
+            }
+          }
+        },
+        {
+          "kind": "closure",
+          "name": "ancestor",
+          "param": { "name": "b", "type": "Block" },
+          "return": { "list": "Block" },
+          "target": "parent",
+          "resolved": {
+            "func": { "params": [ "Block" ], "return": { "list": "Block" } }
+          }
+        }
+      ],
+      "body": [
+        {
+          "forall": {
+            "params": [ { "name": "b", "type": "Block" } ],
+            "guards": [],
+            "body": {
+              "unop": {
+                "op": "not",
+                "arg": {
+                  "binop": {
+                    "op": "in",
+                    "left": { "var": "b" },
+                    "right": {
+                      "app": {
+                        "func": { "var": "ancestor" },
+                        "args": [ { "var": "b" } ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

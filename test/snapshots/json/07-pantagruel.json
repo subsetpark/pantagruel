@@ -1,0 +1,4052 @@
+{
+  "module": "PANTAGRUEL",
+  "imports": [],
+  "contexts": [],
+  "types": {
+    "BinOp": { "kind": "domain" },
+    "Chapter": { "kind": "domain" },
+    "DeclKind": { "kind": "domain" },
+    "Declaration": { "kind": "domain" },
+    "Document": { "kind": "domain" },
+    "Env": { "kind": "domain" },
+    "Expr": { "kind": "domain" },
+    "Guard": { "kind": "domain" },
+    "GuardKind": { "kind": "domain" },
+    "Name": { "kind": "domain" },
+    "Proposition": { "kind": "alias", "type": "Expr" },
+    "Ty": { "kind": "domain" },
+    "Type": { "kind": "domain" },
+    "TypeKind": { "kind": "domain" },
+    "UnOp": { "kind": "domain" }
+  },
+  "rules": {
+    "action-guards": {
+      "params": [ "Declaration" ],
+      "return": { "list": "Guard" }
+    },
+    "app-args": { "params": [ "Expr" ], "return": { "list": "Expr" } },
+    "app-func": { "params": [ "Expr" ], "return": "Expr" },
+    "binop-left": { "params": [ "Expr" ], "return": "Expr" },
+    "binop-op": { "params": [ "Expr" ], "return": "BinOp" },
+    "binop-right": { "params": [ "Expr" ], "return": "Expr" },
+    "binop-type": { "params": [ "BinOp", "Ty", "Ty" ], "return": "Ty" },
+    "body": { "params": [ "Chapter" ], "return": { "list": "Expr" } },
+    "chapter-valid?": { "params": [ "Chapter", "Env" ], "return": "Bool" },
+    "chapters": { "params": [ "Document" ], "return": { "list": "Chapter" } },
+    "compatible?": { "params": [ "Ty", "Ty" ], "return": "Bool" },
+    "contains-primed?": { "params": [ "Expr" ], "return": "Bool" },
+    "contexts": { "params": [ "Document" ], "return": { "list": "Name" } },
+    "decl-kind": { "params": [ "Declaration" ], "return": "DeclKind" },
+    "dk-action": { "params": [], "return": "DeclKind" },
+    "dk-alias": { "params": [], "return": "DeclKind" },
+    "dk-domain": { "params": [], "return": "DeclKind" },
+    "dk-rule": { "params": [], "return": "DeclKind" },
+    "domain-ref-name": { "params": [ "Expr" ], "return": "Name" },
+    "empty-env": { "params": [], "return": "Env" },
+    "func-params": { "params": [ "Ty" ], "return": { "list": "Ty" } },
+    "func-return": { "params": [ "Ty" ], "return": "Ty" },
+    "gk-expr": { "params": [], "return": "GuardKind" },
+    "gk-in": { "params": [], "return": "GuardKind" },
+    "gk-param": { "params": [], "return": "GuardKind" },
+    "guard-expr": { "params": [ "Guard" ], "return": "Expr" },
+    "guard-kind": { "params": [ "Guard" ], "return": "GuardKind" },
+    "has-action?": { "params": [ "Chapter" ], "return": "Bool" },
+    "has-term?": { "params": [ "Name", "Env" ], "return": "Bool" },
+    "has-type?": { "params": [ "Name", "Env" ], "return": "Bool" },
+    "head": { "params": [ "Chapter" ], "return": { "list": "Declaration" } },
+    "infer": { "params": [ "Expr", "Env" ], "return": "Ty" },
+    "is-app?": { "params": [ "Expr" ], "return": "Bool" },
+    "is-binop?": { "params": [ "Expr" ], "return": "Bool" },
+    "is-domain-ref?": { "params": [ "Expr" ], "return": "Bool" },
+    "is-each?": { "params": [ "Expr" ], "return": "Bool" },
+    "is-exists?": { "params": [ "Expr" ], "return": "Bool" },
+    "is-forall?": { "params": [ "Expr" ], "return": "Bool" },
+    "is-lit-bool?": { "params": [ "Expr" ], "return": "Bool" },
+    "is-lit-nat?": { "params": [ "Expr" ], "return": "Bool" },
+    "is-lit-real?": { "params": [ "Expr" ], "return": "Bool" },
+    "is-lit-string?": { "params": [ "Expr" ], "return": "Bool" },
+    "is-numeric?": { "params": [ "Ty" ], "return": "Bool" },
+    "is-override?": { "params": [ "Expr" ], "return": "Bool" },
+    "is-primed?": { "params": [ "Expr" ], "return": "Bool" },
+    "is-proj?": { "params": [ "Expr" ], "return": "Bool" },
+    "is-rule?": { "params": [ "Name", "Env" ], "return": "Bool" },
+    "is-tuple?": { "params": [ "Expr" ], "return": "Bool" },
+    "is-unop?": { "params": [ "Expr" ], "return": "Bool" },
+    "is-var?": { "params": [ "Expr" ], "return": "Bool" },
+    "join": { "params": [ "Ty", "Ty" ], "return": "Ty" },
+    "nat-value": { "params": [ "Expr" ], "return": "Nat0" },
+    "op-add": { "params": [], "return": "BinOp" },
+    "op-and": { "params": [], "return": "BinOp" },
+    "op-card": { "params": [], "return": "UnOp" },
+    "op-div": { "params": [], "return": "BinOp" },
+    "op-eq": { "params": [], "return": "BinOp" },
+    "op-ge": { "params": [], "return": "BinOp" },
+    "op-gt": { "params": [], "return": "BinOp" },
+    "op-iff": { "params": [], "return": "BinOp" },
+    "op-impl": { "params": [], "return": "BinOp" },
+    "op-in": { "params": [], "return": "BinOp" },
+    "op-le": { "params": [], "return": "BinOp" },
+    "op-lt": { "params": [], "return": "BinOp" },
+    "op-mul": { "params": [], "return": "BinOp" },
+    "op-neg": { "params": [], "return": "UnOp" },
+    "op-neq": { "params": [], "return": "BinOp" },
+    "op-not": { "params": [], "return": "UnOp" },
+    "op-or": { "params": [], "return": "BinOp" },
+    "op-sub": { "params": [], "return": "BinOp" },
+    "op-subset": { "params": [], "return": "BinOp" },
+    "override-name": { "params": [ "Expr" ], "return": "Name" },
+    "primed-name": { "params": [ "Expr" ], "return": "Name" },
+    "product-components": {
+      "params": [ "Type" ],
+      "return": { "list": "Type" }
+    },
+    "proj-expr": { "params": [ "Expr" ], "return": "Expr" },
+    "proj-index": { "params": [ "Expr" ], "return": "Nat" },
+    "proj-type": { "params": [ "Ty", "Nat" ], "return": "Ty" },
+    "quant-body": { "params": [ "Expr" ], "return": "Expr" },
+    "rule-contexts": {
+      "params": [ "Declaration" ],
+      "return": { "list": "Name" }
+    },
+    "rule-guards": {
+      "params": [ "Declaration" ],
+      "return": { "list": "Guard" }
+    },
+    "rule-param-types": {
+      "params": [ "Declaration" ],
+      "return": { "list": "Type" }
+    },
+    "rule-params": {
+      "params": [ "Declaration" ],
+      "return": { "list": "Name" }
+    },
+    "subtype?": { "params": [ "Ty", "Ty" ], "return": "Bool" },
+    "sum-components": { "params": [ "Type" ], "return": { "list": "Type" } },
+    "term-type": { "params": [ "Name", "Env" ], "return": "Ty" },
+    "tk-list": { "params": [], "return": "TypeKind" },
+    "tk-name": { "params": [], "return": "TypeKind" },
+    "tk-product": { "params": [], "return": "TypeKind" },
+    "tk-qualified": { "params": [], "return": "TypeKind" },
+    "tk-sum": { "params": [], "return": "TypeKind" },
+    "tuple-elems": { "params": [ "Expr" ], "return": { "list": "Expr" } },
+    "ty-bool": { "params": [], "return": "Ty" },
+    "ty-domain": { "params": [ "Name" ], "return": "Ty" },
+    "ty-func": { "params": [ { "list": "Ty" }, "Ty" ], "return": "Ty" },
+    "ty-int": { "params": [], "return": "Ty" },
+    "ty-list": { "params": [ "Ty" ], "return": "Ty" },
+    "ty-nat": { "params": [], "return": "Ty" },
+    "ty-nat0": { "params": [], "return": "Ty" },
+    "ty-nothing": { "params": [], "return": "Ty" },
+    "ty-or": { "params": [ "Ty", "Ty" ], "return": "Ty" },
+    "ty-product": { "params": [ { "list": "Ty" } ], "return": "Ty" },
+    "ty-real": { "params": [], "return": "Ty" },
+    "ty-string": { "params": [], "return": "Ty" },
+    "type-kind": { "params": [ "Type" ], "return": "TypeKind" },
+    "unop-arg": { "params": [ "Expr" ], "return": "Expr" },
+    "unop-op": { "params": [ "Expr" ], "return": "UnOp" },
+    "unop-type": { "params": [ "UnOp", "Ty" ], "return": "Ty" },
+    "valid?": { "params": [ "Document", "Env" ], "return": "Bool" },
+    "var-name": { "params": [ "Expr" ], "return": "Name" }
+  },
+  "chapters": [
+    {
+      "head": [
+        {
+          "doc": [
+            [ "A specification of the Pantagruel specification language." ]
+          ],
+          "kind": "domain",
+          "name": "Document"
+        },
+        {
+          "doc": [
+            [
+              "The type-checking environment has two namespaces:",
+              "types (domains and aliases, keyed by uppercase names) and",
+              "terms (rules and variables, keyed by lowercase names)."
+            ]
+          ],
+          "kind": "domain",
+          "name": "Env"
+        },
+        {
+          "doc": [ [ "A document is valid when every chapter is valid." ] ],
+          "kind": "rule",
+          "name": "valid?",
+          "params": [
+            { "name": "d", "type": "Document" },
+            { "name": "env", "type": "Env" }
+          ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": {
+            "func": { "params": [ "Document", "Env" ], "return": "Bool" }
+          }
+        }
+      ],
+      "body": [
+        {
+          "doc": [ [ "Every document contains at least one chapter." ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "doc", "type": "Document" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "ge",
+                  "left": {
+                    "unop": {
+                      "op": "card",
+                      "arg": {
+                        "app": {
+                          "func": { "var": "chapters" },
+                          "args": [ { "var": "doc" } ]
+                        }
+                      }
+                    }
+                  },
+                  "right": { "nat": 1 }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [ "Every chapter head contains at least one declaration." ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "doc", "type": "Document" } ],
+              "guards": [
+                {
+                  "in": {
+                    "name": "c",
+                    "list": {
+                      "app": {
+                        "func": { "var": "chapters" },
+                        "args": [ { "var": "doc" } ]
+                      }
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "ge",
+                  "left": {
+                    "unop": {
+                      "op": "card",
+                      "arg": {
+                        "app": {
+                          "func": { "var": "head" },
+                          "args": [ { "var": "c" } ]
+                        }
+                      }
+                    }
+                  },
+                  "right": { "nat": 1 }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Each chapter may contain at most one action." ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "c", "type": "Chapter" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "le",
+                  "left": {
+                    "unop": {
+                      "op": "card",
+                      "arg": {
+                        "each": {
+                          "params": [],
+                          "guards": [
+                            {
+                              "in": {
+                                "name": "d",
+                                "list": {
+                                  "app": {
+                                    "func": { "var": "head" },
+                                    "args": [ { "var": "c" } ]
+                                  }
+                                }
+                              }
+                            },
+                            {
+                              "expr": {
+                                "binop": {
+                                  "op": "eq",
+                                  "left": {
+                                    "app": {
+                                      "func": { "var": "decl-kind" },
+                                      "args": [ { "var": "d" } ]
+                                    }
+                                  },
+                                  "right": { "var": "dk-action" }
+                                }
+                              }
+                            }
+                          ],
+                          "combiner": null,
+                          "body": { "var": "d" }
+                        }
+                      }
+                    }
+                  },
+                  "right": { "nat": 1 }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "Every context name in a rule's footprint must be declared at module level."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "doc", "type": "Document" },
+                { "name": "decl", "type": "Declaration" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "binop": {
+                      "op": "eq",
+                      "left": {
+                        "app": {
+                          "func": { "var": "decl-kind" },
+                          "args": [ { "var": "decl" } ]
+                        }
+                      },
+                      "right": { "var": "dk-rule" }
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "subset",
+                  "left": {
+                    "app": {
+                      "func": { "var": "rule-contexts" },
+                      "args": [ { "var": "decl" } ]
+                    }
+                  },
+                  "right": {
+                    "app": {
+                      "func": { "var": "contexts" },
+                      "args": [ { "var": "doc" } ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Boolean literals have type Bool." ] ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "e", "type": "Expr" },
+                { "name": "env", "type": "Env" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "is-lit-bool?" },
+                      "args": [ { "var": "e" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "infer" },
+                      "args": [ { "var": "e" }, { "var": "env" } ]
+                    }
+                  },
+                  "right": { "var": "ty-bool" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "The natural literal zero has type Nat0; positive naturals have type Nat."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "e", "type": "Expr" },
+                { "name": "env", "type": "Env" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "is-lit-nat?" },
+                      "args": [ { "var": "e" } ]
+                    }
+                  }
+                },
+                {
+                  "expr": {
+                    "binop": {
+                      "op": "eq",
+                      "left": {
+                        "app": {
+                          "func": { "var": "nat-value" },
+                          "args": [ { "var": "e" } ]
+                        }
+                      },
+                      "right": { "nat": 0 }
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "infer" },
+                      "args": [ { "var": "e" }, { "var": "env" } ]
+                    }
+                  },
+                  "right": { "var": "ty-nat0" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "forall": {
+            "params": [
+              { "name": "e", "type": "Expr" },
+              { "name": "env", "type": "Env" }
+            ],
+            "guards": [
+              {
+                "expr": {
+                  "app": {
+                    "func": { "var": "is-lit-nat?" },
+                    "args": [ { "var": "e" } ]
+                  }
+                }
+              },
+              {
+                "expr": {
+                  "binop": {
+                    "op": "ge",
+                    "left": {
+                      "app": {
+                        "func": { "var": "nat-value" },
+                        "args": [ { "var": "e" } ]
+                      }
+                    },
+                    "right": { "nat": 1 }
+                  }
+                }
+              }
+            ],
+            "body": {
+              "binop": {
+                "op": "eq",
+                "left": {
+                  "app": {
+                    "func": { "var": "infer" },
+                    "args": [ { "var": "e" }, { "var": "env" } ]
+                  }
+                },
+                "right": { "var": "ty-nat" }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Real literals have type Real." ] ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "e", "type": "Expr" },
+                { "name": "env", "type": "Env" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "is-lit-real?" },
+                      "args": [ { "var": "e" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "infer" },
+                      "args": [ { "var": "e" }, { "var": "env" } ]
+                    }
+                  },
+                  "right": { "var": "ty-real" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "String literals have type String." ] ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "e", "type": "Expr" },
+                { "name": "env", "type": "Env" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "is-lit-string?" },
+                      "args": [ { "var": "e" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "infer" },
+                      "args": [ { "var": "e" }, { "var": "env" } ]
+                    }
+                  },
+                  "right": { "var": "ty-string" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "A domain name in expression position has type [D], the list of all its values."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "e", "type": "Expr" },
+                { "name": "env", "type": "Env" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "is-domain-ref?" },
+                      "args": [ { "var": "e" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "infer" },
+                      "args": [ { "var": "e" }, { "var": "env" } ]
+                    }
+                  },
+                  "right": {
+                    "app": {
+                      "func": { "var": "ty-list" },
+                      "args": [
+                        {
+                          "app": {
+                            "func": { "var": "ty-domain" },
+                            "args": [
+                              {
+                                "app": {
+                                  "func": { "var": "domain-ref-name" },
+                                  "args": [ { "var": "e" } ]
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "Nullary rules are applied automatically on reference;",
+              "their type is the return type, not a function type."
+            ],
+            [ "A variable reference has the type bound in the environment." ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "e", "type": "Expr" },
+                { "name": "env", "type": "Env" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "is-var?" },
+                      "args": [ { "var": "e" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "infer" },
+                      "args": [ { "var": "e" }, { "var": "env" } ]
+                    }
+                  },
+                  "right": {
+                    "app": {
+                      "func": { "var": "term-type" },
+                      "args": [
+                        {
+                          "app": {
+                            "func": { "var": "var-name" },
+                            "args": [ { "var": "e" } ]
+                          }
+                        },
+                        { "var": "env" }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [ "Function application yields the function's return type." ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "e", "type": "Expr" },
+                { "name": "env", "type": "Env" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "is-app?" },
+                      "args": [ { "var": "e" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "infer" },
+                      "args": [ { "var": "e" }, { "var": "env" } ]
+                    }
+                  },
+                  "right": {
+                    "app": {
+                      "func": { "var": "func-return" },
+                      "args": [
+                        {
+                          "app": {
+                            "func": { "var": "infer" },
+                            "args": [
+                              {
+                                "app": {
+                                  "func": { "var": "app-func" },
+                                  "args": [ { "var": "e" } ]
+                                }
+                              },
+                              { "var": "env" }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "Application arity must match the function's parameter count."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "e", "type": "Expr" },
+                { "name": "env", "type": "Env" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "is-app?" },
+                      "args": [ { "var": "e" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "unop": {
+                      "op": "card",
+                      "arg": {
+                        "app": {
+                          "func": { "var": "app-args" },
+                          "args": [ { "var": "e" } ]
+                        }
+                      }
+                    }
+                  },
+                  "right": {
+                    "unop": {
+                      "op": "card",
+                      "arg": {
+                        "app": {
+                          "func": { "var": "func-params" },
+                          "args": [
+                            {
+                              "app": {
+                                "func": { "var": "infer" },
+                                "args": [
+                                  {
+                                    "app": {
+                                      "func": { "var": "app-func" },
+                                      "args": [ { "var": "e" } ]
+                                    }
+                                  },
+                                  { "var": "env" }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [ "Tuple construction yields a product of the element types." ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "e", "type": "Expr" },
+                { "name": "env", "type": "Env" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "is-tuple?" },
+                      "args": [ { "var": "e" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "infer" },
+                      "args": [ { "var": "e" }, { "var": "env" } ]
+                    }
+                  },
+                  "right": {
+                    "app": {
+                      "func": { "var": "ty-product" },
+                      "args": [
+                        {
+                          "each": {
+                            "params": [],
+                            "guards": [
+                              {
+                                "in": {
+                                  "name": "elem",
+                                  "list": {
+                                    "app": {
+                                      "func": { "var": "tuple-elems" },
+                                      "args": [ { "var": "e" } ]
+                                    }
+                                  }
+                                }
+                              }
+                            ],
+                            "combiner": null,
+                            "body": {
+                              "app": {
+                                "func": { "var": "infer" },
+                                "args": [
+                                  { "var": "elem" }, { "var": "env" }
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [ "Projection extracts the k-th component type from a product." ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "e", "type": "Expr" },
+                { "name": "env", "type": "Env" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "is-proj?" },
+                      "args": [ { "var": "e" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "infer" },
+                      "args": [ { "var": "e" }, { "var": "env" } ]
+                    }
+                  },
+                  "right": {
+                    "app": {
+                      "func": { "var": "proj-type" },
+                      "args": [
+                        {
+                          "app": {
+                            "func": { "var": "infer" },
+                            "args": [
+                              {
+                                "app": {
+                                  "func": { "var": "proj-expr" },
+                                  "args": [ { "var": "e" } ]
+                                }
+                              },
+                              { "var": "env" }
+                            ]
+                          }
+                        },
+                        {
+                          "app": {
+                            "func": { "var": "proj-index" },
+                            "args": [ { "var": "e" } ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [ "A primed expression has the same type as the unprimed rule." ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "e", "type": "Expr" },
+                { "name": "env", "type": "Env" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "is-primed?" },
+                      "args": [ { "var": "e" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "infer" },
+                      "args": [ { "var": "e" }, { "var": "env" } ]
+                    }
+                  },
+                  "right": {
+                    "app": {
+                      "func": { "var": "term-type" },
+                      "args": [
+                        {
+                          "app": {
+                            "func": { "var": "primed-name" },
+                            "args": [ { "var": "e" } ]
+                          }
+                        },
+                        { "var": "env" }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Only rules may be primed, not local variables." ] ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "e", "type": "Expr" },
+                { "name": "env", "type": "Env" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "is-primed?" },
+                      "args": [ { "var": "e" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "app": {
+                  "func": { "var": "is-rule?" },
+                  "args": [
+                    {
+                      "app": {
+                        "func": { "var": "primed-name" },
+                        "args": [ { "var": "e" } ]
+                      }
+                    },
+                    { "var": "env" }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [ "Priming is only allowed in chapters that contain an action." ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "c", "type": "Chapter" } ],
+              "guards": [
+                {
+                  "in": {
+                    "name": "p",
+                    "list": {
+                      "app": {
+                        "func": { "var": "body" },
+                        "args": [ { "var": "c" } ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "contains-primed?" },
+                      "args": [ { "var": "p" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "app": {
+                  "func": { "var": "has-action?" },
+                  "args": [ { "var": "c" } ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "A function override preserves the overridden function's type."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "e", "type": "Expr" },
+                { "name": "env", "type": "Env" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "is-override?" },
+                      "args": [ { "var": "e" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "infer" },
+                      "args": [ { "var": "e" }, { "var": "env" } ]
+                    }
+                  },
+                  "right": {
+                    "app": {
+                      "func": { "var": "term-type" },
+                      "args": [
+                        {
+                          "app": {
+                            "func": { "var": "override-name" },
+                            "args": [ { "var": "e" } ]
+                          }
+                        },
+                        { "var": "env" }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [ "The overridden function must have exactly one parameter." ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "e", "type": "Expr" },
+                { "name": "env", "type": "Env" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "is-override?" },
+                      "args": [ { "var": "e" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "unop": {
+                      "op": "card",
+                      "arg": {
+                        "app": {
+                          "func": { "var": "func-params" },
+                          "args": [
+                            {
+                              "app": {
+                                "func": { "var": "term-type" },
+                                "args": [
+                                  {
+                                    "app": {
+                                      "func": { "var": "override-name" },
+                                      "args": [ { "var": "e" } ]
+                                    }
+                                  },
+                                  { "var": "env" }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "right": { "nat": 1 }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [ "Quantifiers with Bool bodies are logical propositions." ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "e", "type": "Expr" },
+                { "name": "env", "type": "Env" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "is-forall?" },
+                      "args": [ { "var": "e" } ]
+                    }
+                  }
+                },
+                {
+                  "expr": {
+                    "binop": {
+                      "op": "eq",
+                      "left": {
+                        "app": {
+                          "func": { "var": "infer" },
+                          "args": [
+                            {
+                              "app": {
+                                "func": { "var": "quant-body" },
+                                "args": [ { "var": "e" } ]
+                              }
+                            },
+                            { "var": "env" }
+                          ]
+                        }
+                      },
+                      "right": { "var": "ty-bool" }
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "infer" },
+                      "args": [ { "var": "e" }, { "var": "env" } ]
+                    }
+                  },
+                  "right": { "var": "ty-bool" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "forall": {
+            "params": [
+              { "name": "e", "type": "Expr" },
+              { "name": "env", "type": "Env" }
+            ],
+            "guards": [
+              {
+                "expr": {
+                  "app": {
+                    "func": { "var": "is-exists?" },
+                    "args": [ { "var": "e" } ]
+                  }
+                }
+              },
+              {
+                "expr": {
+                  "binop": {
+                    "op": "eq",
+                    "left": {
+                      "app": {
+                        "func": { "var": "infer" },
+                        "args": [
+                          {
+                            "app": {
+                              "func": { "var": "quant-body" },
+                              "args": [ { "var": "e" } ]
+                            }
+                          },
+                          { "var": "env" }
+                        ]
+                      }
+                    },
+                    "right": { "var": "ty-bool" }
+                  }
+                }
+              }
+            ],
+            "body": {
+              "binop": {
+                "op": "eq",
+                "left": {
+                  "app": {
+                    "func": { "var": "infer" },
+                    "args": [ { "var": "e" }, { "var": "env" } ]
+                  }
+                },
+                "right": { "var": "ty-bool" }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "`each` produces a comprehension (list) regardless of body type."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "e", "type": "Expr" },
+                { "name": "env", "type": "Env" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "is-each?" },
+                      "args": [ { "var": "e" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "infer" },
+                      "args": [ { "var": "e" }, { "var": "env" } ]
+                    }
+                  },
+                  "right": {
+                    "app": {
+                      "func": { "var": "ty-list" },
+                      "args": [
+                        {
+                          "app": {
+                            "func": { "var": "infer" },
+                            "args": [
+                              {
+                                "app": {
+                                  "func": { "var": "quant-body" },
+                                  "args": [ { "var": "e" } ]
+                                }
+                              },
+                              { "var": "env" }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [ "If a document is valid, then every chapter in it is valid." ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "d", "type": "Document" },
+                { "name": "env", "type": "Env" }
+              ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "impl",
+                  "left": {
+                    "app": {
+                      "func": { "var": "valid?" },
+                      "args": [ { "var": "d" }, { "var": "env" } ]
+                    }
+                  },
+                  "right": {
+                    "forall": {
+                      "params": [],
+                      "guards": [
+                        {
+                          "in": {
+                            "name": "c",
+                            "list": {
+                              "app": {
+                                "func": { "var": "chapters" },
+                                "args": [ { "var": "d" } ]
+                              }
+                            }
+                          }
+                        }
+                      ],
+                      "body": {
+                        "app": {
+                          "func": { "var": "chapter-valid?" },
+                          "args": [ { "var": "c" }, { "var": "env" } ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "If a chapter is valid, then every proposition in its body has type Bool."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "c", "type": "Chapter" },
+                { "name": "env", "type": "Env" }
+              ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "impl",
+                  "left": {
+                    "app": {
+                      "func": { "var": "chapter-valid?" },
+                      "args": [ { "var": "c" }, { "var": "env" } ]
+                    }
+                  },
+                  "right": {
+                    "forall": {
+                      "params": [],
+                      "guards": [
+                        {
+                          "in": {
+                            "name": "p",
+                            "list": {
+                              "app": {
+                                "func": { "var": "body" },
+                                "args": [ { "var": "c" } ]
+                              }
+                            }
+                          }
+                        }
+                      ],
+                      "body": {
+                        "binop": {
+                          "op": "eq",
+                          "left": {
+                            "app": {
+                              "func": { "var": "infer" },
+                              "args": [ { "var": "p" }, { "var": "env" } ]
+                            }
+                          },
+                          "right": { "var": "ty-bool" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "Every expression guard on a rule declaration must have type Bool."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "decl", "type": "Declaration" },
+                { "name": "env", "type": "Env" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "binop": {
+                      "op": "eq",
+                      "left": {
+                        "app": {
+                          "func": { "var": "decl-kind" },
+                          "args": [ { "var": "decl" } ]
+                        }
+                      },
+                      "right": { "var": "dk-rule" }
+                    }
+                  }
+                },
+                {
+                  "in": {
+                    "name": "g",
+                    "list": {
+                      "app": {
+                        "func": { "var": "rule-guards" },
+                        "args": [ { "var": "decl" } ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "expr": {
+                    "binop": {
+                      "op": "eq",
+                      "left": {
+                        "app": {
+                          "func": { "var": "guard-kind" },
+                          "args": [ { "var": "g" } ]
+                        }
+                      },
+                      "right": { "var": "gk-expr" }
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "infer" },
+                      "args": [
+                        {
+                          "app": {
+                            "func": { "var": "guard-expr" },
+                            "args": [ { "var": "g" } ]
+                          }
+                        },
+                        { "var": "env" }
+                      ]
+                    }
+                  },
+                  "right": { "var": "ty-bool" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "Every expression guard on an action declaration must have type Bool."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "decl", "type": "Declaration" },
+                { "name": "env", "type": "Env" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "binop": {
+                      "op": "eq",
+                      "left": {
+                        "app": {
+                          "func": { "var": "decl-kind" },
+                          "args": [ { "var": "decl" } ]
+                        }
+                      },
+                      "right": { "var": "dk-action" }
+                    }
+                  }
+                },
+                {
+                  "in": {
+                    "name": "g",
+                    "list": {
+                      "app": {
+                        "func": { "var": "action-guards" },
+                        "args": [ { "var": "decl" } ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "expr": {
+                    "binop": {
+                      "op": "eq",
+                      "left": {
+                        "app": {
+                          "func": { "var": "guard-kind" },
+                          "args": [ { "var": "g" } ]
+                        }
+                      },
+                      "right": { "var": "gk-expr" }
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "infer" },
+                      "args": [
+                        {
+                          "app": {
+                            "func": { "var": "guard-expr" },
+                            "args": [ { "var": "g" } ]
+                          }
+                        },
+                        { "var": "env" }
+                      ]
+                    }
+                  },
+                  "right": { "var": "ty-bool" }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "head": [
+        { "kind": "domain", "name": "Chapter" },
+        { "kind": "domain", "name": "Declaration" },
+        { "kind": "domain", "name": "Expr" },
+        { "kind": "domain", "name": "Name" },
+        {
+          "doc": [
+            [
+              "A guard is a parameter binding, a membership binding, or a boolean expression."
+            ]
+          ],
+          "kind": "domain",
+          "name": "Guard"
+        },
+        {
+          "doc": [ [ "Guards are classified by kind." ] ],
+          "kind": "domain",
+          "name": "GuardKind"
+        },
+        {
+          "kind": "rule",
+          "name": "gk-expr",
+          "params": [],
+          "guards": [],
+          "return": "GuardKind",
+          "resolved": { "func": { "params": [], "return": "GuardKind" } }
+        },
+        {
+          "kind": "rule",
+          "name": "gk-param",
+          "params": [],
+          "guards": [],
+          "return": "GuardKind",
+          "resolved": { "func": { "params": [], "return": "GuardKind" } }
+        },
+        {
+          "kind": "rule",
+          "name": "gk-in",
+          "params": [],
+          "guards": [],
+          "return": "GuardKind",
+          "resolved": { "func": { "params": [], "return": "GuardKind" } }
+        },
+        {
+          "kind": "rule",
+          "name": "guard-kind",
+          "params": [ { "name": "g", "type": "Guard" } ],
+          "guards": [],
+          "return": "GuardKind",
+          "resolved": {
+            "func": { "params": [ "Guard" ], "return": "GuardKind" }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "guard-expr",
+          "params": [ { "name": "g", "type": "Guard" } ],
+          "guards": [],
+          "return": "Expr",
+          "resolved": { "func": { "params": [ "Guard" ], "return": "Expr" } }
+        },
+        {
+          "doc": [
+            [ "A proposition is an expression that must have type Bool." ]
+          ],
+          "kind": "alias",
+          "name": "Proposition",
+          "type": "Expr",
+          "resolved": "Expr"
+        },
+        {
+          "kind": "rule",
+          "name": "chapters",
+          "params": [ { "name": "d", "type": "Document" } ],
+          "guards": [],
+          "return": { "list": "Chapter" },
+          "resolved": {
+            "func": {
+              "params": [ "Document" ],
+              "return": { "list": "Chapter" }
+            }
+          }
+        },
+        {
+          "doc": [
+            [ "A document may declare named contexts at module level." ]
+          ],
+          "kind": "rule",
+          "name": "contexts",
+          "params": [ { "name": "d", "type": "Document" } ],
+          "guards": [],
+          "return": { "list": "Name" },
+          "resolved": {
+            "func": {
+              "params": [ "Document" ],
+              "return": { "list": "Name" }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "Each chapter has a non-empty head of declarations and a body of propositions."
+            ]
+          ],
+          "kind": "rule",
+          "name": "head",
+          "params": [ { "name": "c", "type": "Chapter" } ],
+          "guards": [],
+          "return": { "list": "Declaration" },
+          "resolved": {
+            "func": {
+              "params": [ "Chapter" ],
+              "return": { "list": "Declaration" }
+            }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "body",
+          "params": [ { "name": "c", "type": "Chapter" } ],
+          "guards": [],
+          "return": { "list": "Proposition" },
+          "resolved": {
+            "func": { "params": [ "Chapter" ], "return": { "list": "Expr" } }
+          }
+        },
+        {
+          "doc": [ [ "Declarations are classified by kind." ] ],
+          "kind": "domain",
+          "name": "DeclKind"
+        },
+        {
+          "kind": "rule",
+          "name": "dk-domain",
+          "params": [],
+          "guards": [],
+          "return": "DeclKind",
+          "resolved": { "func": { "params": [], "return": "DeclKind" } }
+        },
+        {
+          "kind": "rule",
+          "name": "dk-alias",
+          "params": [],
+          "guards": [],
+          "return": "DeclKind",
+          "resolved": { "func": { "params": [], "return": "DeclKind" } }
+        },
+        {
+          "kind": "rule",
+          "name": "dk-rule",
+          "params": [],
+          "guards": [],
+          "return": "DeclKind",
+          "resolved": { "func": { "params": [], "return": "DeclKind" } }
+        },
+        {
+          "kind": "rule",
+          "name": "dk-action",
+          "params": [],
+          "guards": [],
+          "return": "DeclKind",
+          "resolved": { "func": { "params": [], "return": "DeclKind" } }
+        },
+        {
+          "kind": "rule",
+          "name": "decl-kind",
+          "params": [ { "name": "decl", "type": "Declaration" } ],
+          "guards": [],
+          "return": "DeclKind",
+          "resolved": {
+            "func": { "params": [ "Declaration" ], "return": "DeclKind" }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "rule-guards",
+          "params": [ { "name": "decl", "type": "Declaration" } ],
+          "guards": [],
+          "return": { "list": "Guard" },
+          "resolved": {
+            "func": {
+              "params": [ "Declaration" ],
+              "return": { "list": "Guard" }
+            }
+          }
+        },
+        {
+          "doc": [
+            [ "A rule may declare membership in one or more contexts." ]
+          ],
+          "kind": "rule",
+          "name": "rule-contexts",
+          "params": [ { "name": "decl", "type": "Declaration" } ],
+          "guards": [],
+          "return": { "list": "Name" },
+          "resolved": {
+            "func": {
+              "params": [ "Declaration" ],
+              "return": { "list": "Name" }
+            }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "action-guards",
+          "params": [ { "name": "decl", "type": "Declaration" } ],
+          "guards": [],
+          "return": { "list": "Guard" },
+          "resolved": {
+            "func": {
+              "params": [ "Declaration" ],
+              "return": { "list": "Guard" }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "Internal resolved types, produced by the type checker.",
+              "These are distinct from syntactic type expressions (Type)."
+            ]
+          ],
+          "kind": "domain",
+          "name": "Ty"
+        },
+        {
+          "doc": [ [ "Seven built-in primitive types are predefined." ] ],
+          "kind": "rule",
+          "name": "ty-bool",
+          "params": [],
+          "guards": [],
+          "return": "Ty",
+          "resolved": { "func": { "params": [], "return": "Ty" } }
+        },
+        {
+          "kind": "rule",
+          "name": "ty-nat",
+          "params": [],
+          "guards": [],
+          "return": "Ty",
+          "resolved": { "func": { "params": [], "return": "Ty" } }
+        },
+        {
+          "kind": "rule",
+          "name": "ty-nat0",
+          "params": [],
+          "guards": [],
+          "return": "Ty",
+          "resolved": { "func": { "params": [], "return": "Ty" } }
+        },
+        {
+          "kind": "rule",
+          "name": "ty-int",
+          "params": [],
+          "guards": [],
+          "return": "Ty",
+          "resolved": { "func": { "params": [], "return": "Ty" } }
+        },
+        {
+          "kind": "rule",
+          "name": "ty-real",
+          "params": [],
+          "guards": [],
+          "return": "Ty",
+          "resolved": { "func": { "params": [], "return": "Ty" } }
+        },
+        {
+          "kind": "rule",
+          "name": "ty-string",
+          "params": [],
+          "guards": [],
+          "return": "Ty",
+          "resolved": { "func": { "params": [], "return": "Ty" } }
+        },
+        {
+          "kind": "rule",
+          "name": "ty-nothing",
+          "params": [],
+          "guards": [],
+          "return": "Ty",
+          "resolved": { "func": { "params": [], "return": "Ty" } }
+        },
+        {
+          "doc": [ [ "Compound type constructors." ] ],
+          "kind": "rule",
+          "name": "ty-domain",
+          "params": [ { "name": "name", "type": "Name" } ],
+          "guards": [],
+          "return": "Ty",
+          "resolved": { "func": { "params": [ "Name" ], "return": "Ty" } }
+        },
+        {
+          "kind": "rule",
+          "name": "ty-list",
+          "params": [ { "name": "t", "type": "Ty" } ],
+          "guards": [],
+          "return": "Ty",
+          "resolved": { "func": { "params": [ "Ty" ], "return": "Ty" } }
+        },
+        {
+          "kind": "rule",
+          "name": "ty-or",
+          "params": [
+            { "name": "t1", "type": "Ty" }, { "name": "t2", "type": "Ty" }
+          ],
+          "guards": [],
+          "return": "Ty",
+          "resolved": {
+            "func": { "params": [ "Ty", "Ty" ], "return": "Ty" }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "ty-product",
+          "params": [ { "name": "ts", "type": { "list": "Ty" } } ],
+          "guards": [],
+          "return": "Ty",
+          "resolved": {
+            "func": { "params": [ { "list": "Ty" } ], "return": "Ty" }
+          }
+        },
+        {
+          "doc": [ [ "Function types arise from rule declarations." ] ],
+          "kind": "rule",
+          "name": "ty-func",
+          "params": [
+            { "name": "params", "type": { "list": "Ty" } },
+            { "name": "ret", "type": "Ty" }
+          ],
+          "guards": [],
+          "return": "Ty",
+          "resolved": {
+            "func": { "params": [ { "list": "Ty" }, "Ty" ], "return": "Ty" }
+          }
+        },
+        {
+          "doc": [
+            [
+              "The type checker infers a resolved type for each expression."
+            ]
+          ],
+          "kind": "rule",
+          "name": "infer",
+          "params": [
+            { "name": "e", "type": "Expr" }, { "name": "env", "type": "Env" }
+          ],
+          "guards": [],
+          "return": "Ty",
+          "resolved": {
+            "func": { "params": [ "Expr", "Env" ], "return": "Ty" }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "is-domain-ref?",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Bool" } }
+        },
+        {
+          "kind": "rule",
+          "name": "is-lit-bool?",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Bool" } }
+        },
+        {
+          "kind": "rule",
+          "name": "is-lit-nat?",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Bool" } }
+        },
+        {
+          "kind": "rule",
+          "name": "is-lit-real?",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Bool" } }
+        },
+        {
+          "kind": "rule",
+          "name": "is-lit-string?",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Bool" } }
+        },
+        {
+          "kind": "rule",
+          "name": "is-forall?",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Bool" } }
+        },
+        {
+          "kind": "rule",
+          "name": "is-exists?",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Bool" } }
+        },
+        {
+          "kind": "rule",
+          "name": "is-each?",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Bool" } }
+        },
+        {
+          "kind": "rule",
+          "name": "domain-ref-name",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Name",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Name" } }
+        },
+        {
+          "kind": "rule",
+          "name": "quant-body",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Expr",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Expr" } }
+        },
+        {
+          "doc": [
+            [
+              "The value of a natural literal (zero is Nat0, positive is Nat)."
+            ]
+          ],
+          "kind": "rule",
+          "name": "nat-value",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Nat0",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Nat0" } }
+        },
+        {
+          "kind": "rule",
+          "name": "chapter-valid?",
+          "params": [
+            { "name": "c", "type": "Chapter" },
+            { "name": "env", "type": "Env" }
+          ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": {
+            "func": { "params": [ "Chapter", "Env" ], "return": "Bool" }
+          }
+        },
+        {
+          "doc": [ [ "Expression form predicates." ] ],
+          "kind": "rule",
+          "name": "is-var?",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Bool" } }
+        },
+        {
+          "kind": "rule",
+          "name": "is-app?",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Bool" } }
+        },
+        {
+          "kind": "rule",
+          "name": "is-tuple?",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Bool" } }
+        },
+        {
+          "kind": "rule",
+          "name": "is-proj?",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Bool" } }
+        },
+        {
+          "kind": "rule",
+          "name": "is-primed?",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Bool" } }
+        },
+        {
+          "kind": "rule",
+          "name": "is-override?",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Bool" } }
+        },
+        {
+          "kind": "rule",
+          "name": "is-binop?",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Bool" } }
+        },
+        {
+          "kind": "rule",
+          "name": "is-unop?",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Bool" } }
+        },
+        {
+          "doc": [ [ "Expression accessors." ] ],
+          "kind": "rule",
+          "name": "var-name",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Name",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Name" } }
+        },
+        {
+          "kind": "rule",
+          "name": "app-func",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Expr",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Expr" } }
+        },
+        {
+          "kind": "rule",
+          "name": "app-args",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": { "list": "Expr" },
+          "resolved": {
+            "func": { "params": [ "Expr" ], "return": { "list": "Expr" } }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "tuple-elems",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": { "list": "Expr" },
+          "resolved": {
+            "func": { "params": [ "Expr" ], "return": { "list": "Expr" } }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "proj-expr",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Expr",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Expr" } }
+        },
+        {
+          "kind": "rule",
+          "name": "proj-index",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Nat",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Nat" } }
+        },
+        {
+          "kind": "rule",
+          "name": "primed-name",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Name",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Name" } }
+        },
+        {
+          "kind": "rule",
+          "name": "override-name",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Name",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Name" } }
+        },
+        {
+          "kind": "rule",
+          "name": "binop-left",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Expr",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Expr" } }
+        },
+        {
+          "kind": "rule",
+          "name": "binop-right",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Expr",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Expr" } }
+        },
+        {
+          "kind": "rule",
+          "name": "unop-arg",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Expr",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Expr" } }
+        },
+        {
+          "doc": [
+            [ "Whether a chapter's head contains an action declaration." ]
+          ],
+          "kind": "rule",
+          "name": "has-action?",
+          "params": [ { "name": "c", "type": "Chapter" } ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": {
+            "func": { "params": [ "Chapter" ], "return": "Bool" }
+          }
+        },
+        {
+          "doc": [
+            [ "The resolved type of a term binding in the environment." ]
+          ],
+          "kind": "rule",
+          "name": "term-type",
+          "params": [
+            { "name": "name", "type": "Name" },
+            { "name": "env", "type": "Env" }
+          ],
+          "guards": [],
+          "return": "Ty",
+          "resolved": {
+            "func": { "params": [ "Name", "Env" ], "return": "Ty" }
+          }
+        },
+        {
+          "doc": [
+            [
+              "Whether a name is bound as a rule (not a variable) in the environment."
+            ]
+          ],
+          "kind": "rule",
+          "name": "is-rule?",
+          "params": [
+            { "name": "name", "type": "Name" },
+            { "name": "env", "type": "Env" }
+          ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": {
+            "func": { "params": [ "Name", "Env" ], "return": "Bool" }
+          }
+        },
+        {
+          "doc": [
+            [ "Whether an expression contains any primed subexpression." ]
+          ],
+          "kind": "rule",
+          "name": "contains-primed?",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "Bool" } }
+        },
+        {
+          "doc": [ [ "Accessors for function types." ] ],
+          "kind": "rule",
+          "name": "func-params",
+          "params": [ { "name": "t", "type": "Ty" } ],
+          "guards": [],
+          "return": { "list": "Ty" },
+          "resolved": {
+            "func": { "params": [ "Ty" ], "return": { "list": "Ty" } }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "func-return",
+          "params": [ { "name": "t", "type": "Ty" } ],
+          "guards": [],
+          "return": "Ty",
+          "resolved": { "func": { "params": [ "Ty" ], "return": "Ty" } }
+        },
+        {
+          "doc": [ [ "The k-th component type of a product type." ] ],
+          "kind": "rule",
+          "name": "proj-type",
+          "params": [
+            { "name": "t", "type": "Ty" }, { "name": "k", "type": "Nat" }
+          ],
+          "guards": [],
+          "return": "Ty",
+          "resolved": {
+            "func": { "params": [ "Ty", "Nat" ], "return": "Ty" }
+          }
+        }
+      ],
+      "body": [
+        {
+          "doc": [
+            [
+              "Every rule has the same number of parameter names as parameter types."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "decl", "type": "Declaration" } ],
+              "guards": [
+                {
+                  "expr": {
+                    "binop": {
+                      "op": "eq",
+                      "left": {
+                        "app": {
+                          "func": { "var": "decl-kind" },
+                          "args": [ { "var": "decl" } ]
+                        }
+                      },
+                      "right": { "var": "dk-rule" }
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "unop": {
+                      "op": "card",
+                      "arg": {
+                        "app": {
+                          "func": { "var": "rule-params" },
+                          "args": [ { "var": "decl" } ]
+                        }
+                      }
+                    }
+                  },
+                  "right": {
+                    "unop": {
+                      "op": "card",
+                      "arg": {
+                        "app": {
+                          "func": { "var": "rule-param-types" },
+                          "args": [ { "var": "decl" } ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [ "The empty environment contains no type-namespace bindings." ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "name", "type": "Name" } ],
+              "guards": [],
+              "body": {
+                "unop": {
+                  "op": "not",
+                  "arg": {
+                    "app": {
+                      "func": { "var": "has-type?" },
+                      "args": [ { "var": "name" }, { "var": "empty-env" } ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [ "The empty environment contains no term-namespace bindings." ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "name", "type": "Name" } ],
+              "guards": [],
+              "body": {
+                "unop": {
+                  "op": "not",
+                  "arg": {
+                    "app": {
+                      "func": { "var": "has-term?" },
+                      "args": [ { "var": "name" }, { "var": "empty-env" } ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Every type is a subtype of itself (reflexivity)." ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "t", "type": "Ty" } ],
+              "guards": [],
+              "body": {
+                "app": {
+                  "func": { "var": "subtype?" },
+                  "args": [ { "var": "t" }, { "var": "t" } ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Nothing is a subtype of every type (bottom)." ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "t", "type": "Ty" } ],
+              "guards": [],
+              "body": {
+                "app": {
+                  "func": { "var": "subtype?" },
+                  "args": [ { "var": "ty-nothing" }, { "var": "t" } ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "The numeric types form a strict chain: Nat < Nat0 < Int < Real."
+            ]
+          ],
+          "expr": {
+            "app": {
+              "func": { "var": "subtype?" },
+              "args": [ { "var": "ty-nat" }, { "var": "ty-nat0" } ]
+            }
+          }
+        },
+        {
+          "app": {
+            "func": { "var": "subtype?" },
+            "args": [ { "var": "ty-nat0" }, { "var": "ty-int" } ]
+          }
+        },
+        {
+          "app": {
+            "func": { "var": "subtype?" },
+            "args": [ { "var": "ty-int" }, { "var": "ty-real" } ]
+          }
+        },
+        {
+          "doc": [ [ "Subtyping is transitive." ] ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "t1", "type": "Ty" },
+                { "name": "t2", "type": "Ty" },
+                { "name": "t3", "type": "Ty" }
+              ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "impl",
+                  "left": {
+                    "binop": {
+                      "op": "and",
+                      "left": {
+                        "app": {
+                          "func": { "var": "subtype?" },
+                          "args": [ { "var": "t1" }, { "var": "t2" } ]
+                        }
+                      },
+                      "right": {
+                        "app": {
+                          "func": { "var": "subtype?" },
+                          "args": [ { "var": "t2" }, { "var": "t3" } ]
+                        }
+                      }
+                    }
+                  },
+                  "right": {
+                    "app": {
+                      "func": { "var": "subtype?" },
+                      "args": [ { "var": "t1" }, { "var": "t3" } ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "By transitivity, Nat is a subtype of Int and Real." ] ],
+          "expr": {
+            "app": {
+              "func": { "var": "subtype?" },
+              "args": [ { "var": "ty-nat" }, { "var": "ty-int" } ]
+            }
+          }
+        },
+        {
+          "app": {
+            "func": { "var": "subtype?" },
+            "args": [ { "var": "ty-nat" }, { "var": "ty-real" } ]
+          }
+        },
+        {
+          "app": {
+            "func": { "var": "subtype?" },
+            "args": [ { "var": "ty-nat0" }, { "var": "ty-real" } ]
+          }
+        },
+        {
+          "doc": [ [ "Subtyping lifts covariantly through list types." ] ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "s", "type": "Ty" }, { "name": "t", "type": "Ty" }
+              ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "impl",
+                  "left": {
+                    "app": {
+                      "func": { "var": "subtype?" },
+                      "args": [ { "var": "s" }, { "var": "t" } ]
+                    }
+                  },
+                  "right": {
+                    "app": {
+                      "func": { "var": "subtype?" },
+                      "args": [
+                        {
+                          "app": {
+                            "func": { "var": "ty-list" },
+                            "args": [ { "var": "s" } ]
+                          }
+                        },
+                        {
+                          "app": {
+                            "func": { "var": "ty-list" },
+                            "args": [ { "var": "t" } ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "When two types are compatible, the join is an upper bound of both."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "t1", "type": "Ty" },
+                { "name": "t2", "type": "Ty" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "compatible?" },
+                      "args": [ { "var": "t1" }, { "var": "t2" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "and",
+                  "left": {
+                    "app": {
+                      "func": { "var": "subtype?" },
+                      "args": [
+                        { "var": "t1" },
+                        {
+                          "app": {
+                            "func": { "var": "join" },
+                            "args": [ { "var": "t1" }, { "var": "t2" } ]
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "right": {
+                    "app": {
+                      "func": { "var": "subtype?" },
+                      "args": [
+                        { "var": "t2" },
+                        {
+                          "app": {
+                            "func": { "var": "join" },
+                            "args": [ { "var": "t1" }, { "var": "t2" } ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "Equal types are always compatible, and their join is themselves."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "t", "type": "Ty" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "and",
+                  "left": {
+                    "app": {
+                      "func": { "var": "compatible?" },
+                      "args": [ { "var": "t" }, { "var": "t" } ]
+                    }
+                  },
+                  "right": {
+                    "binop": {
+                      "op": "eq",
+                      "left": {
+                        "app": {
+                          "func": { "var": "join" },
+                          "args": [ { "var": "t" }, { "var": "t" } ]
+                        }
+                      },
+                      "right": { "var": "t" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "When one type is a subtype of another, the join is the supertype."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "s", "type": "Ty" }, { "name": "t", "type": "Ty" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "subtype?" },
+                      "args": [ { "var": "s" }, { "var": "t" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "and",
+                  "left": {
+                    "app": {
+                      "func": { "var": "compatible?" },
+                      "args": [ { "var": "s" }, { "var": "t" } ]
+                    }
+                  },
+                  "right": {
+                    "binop": {
+                      "op": "eq",
+                      "left": {
+                        "app": {
+                          "func": { "var": "join" },
+                          "args": [ { "var": "s" }, { "var": "t" } ]
+                        }
+                      },
+                      "right": { "var": "t" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "Exactly the four numeric types satisfy the numeric predicate."
+            ]
+          ],
+          "expr": {
+            "app": {
+              "func": { "var": "is-numeric?" },
+              "args": [ { "var": "ty-nat" } ]
+            }
+          }
+        },
+        {
+          "app": {
+            "func": { "var": "is-numeric?" },
+            "args": [ { "var": "ty-nat0" } ]
+          }
+        },
+        {
+          "app": {
+            "func": { "var": "is-numeric?" },
+            "args": [ { "var": "ty-int" } ]
+          }
+        },
+        {
+          "app": {
+            "func": { "var": "is-numeric?" },
+            "args": [ { "var": "ty-real" } ]
+          }
+        },
+        {
+          "doc": [
+            [ "Logical operators require Bool operands and produce Bool." ]
+          ],
+          "expr": {
+            "binop": {
+              "op": "eq",
+              "left": {
+                "app": {
+                  "func": { "var": "binop-type" },
+                  "args": [
+                    { "var": "op-and" },
+                    { "var": "ty-bool" },
+                    { "var": "ty-bool" }
+                  ]
+                }
+              },
+              "right": { "var": "ty-bool" }
+            }
+          }
+        },
+        {
+          "binop": {
+            "op": "eq",
+            "left": {
+              "app": {
+                "func": { "var": "binop-type" },
+                "args": [
+                  { "var": "op-or" },
+                  { "var": "ty-bool" },
+                  { "var": "ty-bool" }
+                ]
+              }
+            },
+            "right": { "var": "ty-bool" }
+          }
+        },
+        {
+          "binop": {
+            "op": "eq",
+            "left": {
+              "app": {
+                "func": { "var": "binop-type" },
+                "args": [
+                  { "var": "op-impl" },
+                  { "var": "ty-bool" },
+                  { "var": "ty-bool" }
+                ]
+              }
+            },
+            "right": { "var": "ty-bool" }
+          }
+        },
+        {
+          "binop": {
+            "op": "eq",
+            "left": {
+              "app": {
+                "func": { "var": "binop-type" },
+                "args": [
+                  { "var": "op-iff" },
+                  { "var": "ty-bool" },
+                  { "var": "ty-bool" }
+                ]
+              }
+            },
+            "right": { "var": "ty-bool" }
+          }
+        },
+        {
+          "doc": [
+            [ "Logical negation requires a Bool operand and produces Bool." ]
+          ],
+          "expr": {
+            "binop": {
+              "op": "eq",
+              "left": {
+                "app": {
+                  "func": { "var": "unop-type" },
+                  "args": [ { "var": "op-not" }, { "var": "ty-bool" } ]
+                }
+              },
+              "right": { "var": "ty-bool" }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "Equality and inequality require compatible operands and produce Bool."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "t1", "type": "Ty" },
+                { "name": "t2", "type": "Ty" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "compatible?" },
+                      "args": [ { "var": "t1" }, { "var": "t2" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "binop-type" },
+                      "args": [
+                        { "var": "op-eq" }, { "var": "t1" }, { "var": "t2" }
+                      ]
+                    }
+                  },
+                  "right": { "var": "ty-bool" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "forall": {
+            "params": [
+              { "name": "t1", "type": "Ty" }, { "name": "t2", "type": "Ty" }
+            ],
+            "guards": [
+              {
+                "expr": {
+                  "app": {
+                    "func": { "var": "compatible?" },
+                    "args": [ { "var": "t1" }, { "var": "t2" } ]
+                  }
+                }
+              }
+            ],
+            "body": {
+              "binop": {
+                "op": "eq",
+                "left": {
+                  "app": {
+                    "func": { "var": "binop-type" },
+                    "args": [
+                      { "var": "op-neq" }, { "var": "t1" }, { "var": "t2" }
+                    ]
+                  }
+                },
+                "right": { "var": "ty-bool" }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "Numeric comparisons require numeric operands and produce Bool."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "t1", "type": "Ty" },
+                { "name": "t2", "type": "Ty" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "is-numeric?" },
+                      "args": [ { "var": "t1" } ]
+                    }
+                  }
+                },
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "is-numeric?" },
+                      "args": [ { "var": "t2" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "binop-type" },
+                      "args": [
+                        { "var": "op-lt" }, { "var": "t1" }, { "var": "t2" }
+                      ]
+                    }
+                  },
+                  "right": { "var": "ty-bool" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "forall": {
+            "params": [
+              { "name": "t1", "type": "Ty" }, { "name": "t2", "type": "Ty" }
+            ],
+            "guards": [
+              {
+                "expr": {
+                  "app": {
+                    "func": { "var": "is-numeric?" },
+                    "args": [ { "var": "t1" } ]
+                  }
+                }
+              },
+              {
+                "expr": {
+                  "app": {
+                    "func": { "var": "is-numeric?" },
+                    "args": [ { "var": "t2" } ]
+                  }
+                }
+              }
+            ],
+            "body": {
+              "binop": {
+                "op": "eq",
+                "left": {
+                  "app": {
+                    "func": { "var": "binop-type" },
+                    "args": [
+                      { "var": "op-le" }, { "var": "t1" }, { "var": "t2" }
+                    ]
+                  }
+                },
+                "right": { "var": "ty-bool" }
+              }
+            }
+          }
+        },
+        {
+          "forall": {
+            "params": [
+              { "name": "t1", "type": "Ty" }, { "name": "t2", "type": "Ty" }
+            ],
+            "guards": [
+              {
+                "expr": {
+                  "app": {
+                    "func": { "var": "is-numeric?" },
+                    "args": [ { "var": "t1" } ]
+                  }
+                }
+              },
+              {
+                "expr": {
+                  "app": {
+                    "func": { "var": "is-numeric?" },
+                    "args": [ { "var": "t2" } ]
+                  }
+                }
+              }
+            ],
+            "body": {
+              "binop": {
+                "op": "eq",
+                "left": {
+                  "app": {
+                    "func": { "var": "binop-type" },
+                    "args": [
+                      { "var": "op-gt" }, { "var": "t1" }, { "var": "t2" }
+                    ]
+                  }
+                },
+                "right": { "var": "ty-bool" }
+              }
+            }
+          }
+        },
+        {
+          "forall": {
+            "params": [
+              { "name": "t1", "type": "Ty" }, { "name": "t2", "type": "Ty" }
+            ],
+            "guards": [
+              {
+                "expr": {
+                  "app": {
+                    "func": { "var": "is-numeric?" },
+                    "args": [ { "var": "t1" } ]
+                  }
+                }
+              },
+              {
+                "expr": {
+                  "app": {
+                    "func": { "var": "is-numeric?" },
+                    "args": [ { "var": "t2" } ]
+                  }
+                }
+              }
+            ],
+            "body": {
+              "binop": {
+                "op": "eq",
+                "left": {
+                  "app": {
+                    "func": { "var": "binop-type" },
+                    "args": [
+                      { "var": "op-ge" }, { "var": "t1" }, { "var": "t2" }
+                    ]
+                  }
+                },
+                "right": { "var": "ty-bool" }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "Arithmetic operators require numeric operands;",
+              "the result type is the join (least upper bound) of the operand types."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "t1", "type": "Ty" },
+                { "name": "t2", "type": "Ty" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "is-numeric?" },
+                      "args": [ { "var": "t1" } ]
+                    }
+                  }
+                },
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "is-numeric?" },
+                      "args": [ { "var": "t2" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "binop-type" },
+                      "args": [
+                        { "var": "op-add" }, { "var": "t1" }, { "var": "t2" }
+                      ]
+                    }
+                  },
+                  "right": {
+                    "app": {
+                      "func": { "var": "join" },
+                      "args": [ { "var": "t1" }, { "var": "t2" } ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "forall": {
+            "params": [
+              { "name": "t1", "type": "Ty" }, { "name": "t2", "type": "Ty" }
+            ],
+            "guards": [
+              {
+                "expr": {
+                  "app": {
+                    "func": { "var": "is-numeric?" },
+                    "args": [ { "var": "t1" } ]
+                  }
+                }
+              },
+              {
+                "expr": {
+                  "app": {
+                    "func": { "var": "is-numeric?" },
+                    "args": [ { "var": "t2" } ]
+                  }
+                }
+              }
+            ],
+            "body": {
+              "binop": {
+                "op": "eq",
+                "left": {
+                  "app": {
+                    "func": { "var": "binop-type" },
+                    "args": [
+                      { "var": "op-sub" }, { "var": "t1" }, { "var": "t2" }
+                    ]
+                  }
+                },
+                "right": {
+                  "app": {
+                    "func": { "var": "join" },
+                    "args": [ { "var": "t1" }, { "var": "t2" } ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "forall": {
+            "params": [
+              { "name": "t1", "type": "Ty" }, { "name": "t2", "type": "Ty" }
+            ],
+            "guards": [
+              {
+                "expr": {
+                  "app": {
+                    "func": { "var": "is-numeric?" },
+                    "args": [ { "var": "t1" } ]
+                  }
+                }
+              },
+              {
+                "expr": {
+                  "app": {
+                    "func": { "var": "is-numeric?" },
+                    "args": [ { "var": "t2" } ]
+                  }
+                }
+              }
+            ],
+            "body": {
+              "binop": {
+                "op": "eq",
+                "left": {
+                  "app": {
+                    "func": { "var": "binop-type" },
+                    "args": [
+                      { "var": "op-mul" }, { "var": "t1" }, { "var": "t2" }
+                    ]
+                  }
+                },
+                "right": {
+                  "app": {
+                    "func": { "var": "join" },
+                    "args": [ { "var": "t1" }, { "var": "t2" } ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "forall": {
+            "params": [
+              { "name": "t1", "type": "Ty" }, { "name": "t2", "type": "Ty" }
+            ],
+            "guards": [
+              {
+                "expr": {
+                  "app": {
+                    "func": { "var": "is-numeric?" },
+                    "args": [ { "var": "t1" } ]
+                  }
+                }
+              },
+              {
+                "expr": {
+                  "app": {
+                    "func": { "var": "is-numeric?" },
+                    "args": [ { "var": "t2" } ]
+                  }
+                }
+              }
+            ],
+            "body": {
+              "binop": {
+                "op": "eq",
+                "left": {
+                  "app": {
+                    "func": { "var": "binop-type" },
+                    "args": [
+                      { "var": "op-div" }, { "var": "t1" }, { "var": "t2" }
+                    ]
+                  }
+                },
+                "right": {
+                  "app": {
+                    "func": { "var": "join" },
+                    "args": [ { "var": "t1" }, { "var": "t2" } ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "Membership requires the left operand to be a subtype of the",
+              "right operand's element type, and produces Bool."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "s", "type": "Ty" }, { "name": "t", "type": "Ty" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "subtype?" },
+                      "args": [ { "var": "s" }, { "var": "t" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "binop-type" },
+                      "args": [
+                        { "var": "op-in" },
+                        { "var": "s" },
+                        {
+                          "app": {
+                            "func": { "var": "ty-list" },
+                            "args": [ { "var": "t" } ]
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "right": { "var": "ty-bool" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "Subset requires both operands to be lists with the left element",
+              "type a subtype of the right, and produces Bool."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "s", "type": "Ty" }, { "name": "t", "type": "Ty" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "subtype?" },
+                      "args": [ { "var": "s" }, { "var": "t" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "binop-type" },
+                      "args": [
+                        { "var": "op-subset" },
+                        {
+                          "app": {
+                            "func": { "var": "ty-list" },
+                            "args": [ { "var": "s" } ]
+                          }
+                        },
+                        {
+                          "app": {
+                            "func": { "var": "ty-list" },
+                            "args": [ { "var": "t" } ]
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "right": { "var": "ty-bool" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "Cardinality (#xs) requires a list and produces Nat0,",
+              "since the empty list has cardinality zero."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "t", "type": "Ty" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "unop-type" },
+                      "args": [
+                        { "var": "op-card" },
+                        {
+                          "app": {
+                            "func": { "var": "ty-list" },
+                            "args": [ { "var": "t" } ]
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "right": { "var": "ty-nat0" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "Unary minus requires a numeric operand.",
+              "Negating a natural or non-negative integer may produce a negative number,",
+              "so the result is promoted to at least Int."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "t", "type": "Ty" } ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "is-numeric?" },
+                      "args": [ { "var": "t" } ]
+                    }
+                  }
+                },
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "subtype?" },
+                      "args": [ { "var": "t" }, { "var": "ty-int" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "unop-type" },
+                      "args": [ { "var": "op-neg" }, { "var": "t" } ]
+                    }
+                  },
+                  "right": { "var": "ty-int" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "binop": {
+            "op": "eq",
+            "left": {
+              "app": {
+                "func": { "var": "unop-type" },
+                "args": [ { "var": "op-neg" }, { "var": "ty-real" } ]
+              }
+            },
+            "right": { "var": "ty-real" }
+          }
+        },
+        {
+          "doc": [
+            [
+              "A binary operator expression dispatches to the operator typing rule."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "e", "type": "Expr" },
+                { "name": "env", "type": "Env" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "is-binop?" },
+                      "args": [ { "var": "e" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "infer" },
+                      "args": [ { "var": "e" }, { "var": "env" } ]
+                    }
+                  },
+                  "right": {
+                    "app": {
+                      "func": { "var": "binop-type" },
+                      "args": [
+                        {
+                          "app": {
+                            "func": { "var": "binop-op" },
+                            "args": [ { "var": "e" } ]
+                          }
+                        },
+                        {
+                          "app": {
+                            "func": { "var": "infer" },
+                            "args": [
+                              {
+                                "app": {
+                                  "func": { "var": "binop-left" },
+                                  "args": [ { "var": "e" } ]
+                                }
+                              },
+                              { "var": "env" }
+                            ]
+                          }
+                        },
+                        {
+                          "app": {
+                            "func": { "var": "infer" },
+                            "args": [
+                              {
+                                "app": {
+                                  "func": { "var": "binop-right" },
+                                  "args": [ { "var": "e" } ]
+                                }
+                              },
+                              { "var": "env" }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "A unary operator expression dispatches to the operator typing rule."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "e", "type": "Expr" },
+                { "name": "env", "type": "Env" }
+              ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "is-unop?" },
+                      "args": [ { "var": "e" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "infer" },
+                      "args": [ { "var": "e" }, { "var": "env" } ]
+                    }
+                  },
+                  "right": {
+                    "app": {
+                      "func": { "var": "unop-type" },
+                      "args": [
+                        {
+                          "app": {
+                            "func": { "var": "unop-op" },
+                            "args": [ { "var": "e" } ]
+                          }
+                        },
+                        {
+                          "app": {
+                            "func": { "var": "infer" },
+                            "args": [
+                              {
+                                "app": {
+                                  "func": { "var": "unop-arg" },
+                                  "args": [ { "var": "e" } ]
+                                }
+                              },
+                              { "var": "env" }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "head": [
+        { "kind": "domain", "name": "Type" },
+        {
+          "doc": [
+            [
+              "A rule has typed parameters, optional guards, and a return type."
+            ]
+          ],
+          "kind": "rule",
+          "name": "rule-params",
+          "params": [ { "name": "decl", "type": "Declaration" } ],
+          "guards": [],
+          "return": { "list": "Name" },
+          "resolved": {
+            "func": {
+              "params": [ "Declaration" ],
+              "return": { "list": "Name" }
+            }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "rule-param-types",
+          "params": [ { "name": "decl", "type": "Declaration" } ],
+          "guards": [],
+          "return": { "list": "Type" },
+          "resolved": {
+            "func": {
+              "params": [ "Declaration" ],
+              "return": { "list": "Type" }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Looking up a name in either namespace." ] ],
+          "kind": "rule",
+          "name": "has-type?",
+          "params": [
+            { "name": "name", "type": "Name" },
+            { "name": "env", "type": "Env" }
+          ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": {
+            "func": { "params": [ "Name", "Env" ], "return": "Bool" }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "has-term?",
+          "params": [
+            { "name": "name", "type": "Name" },
+            { "name": "env", "type": "Env" }
+          ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": {
+            "func": { "params": [ "Name", "Env" ], "return": "Bool" }
+          }
+        },
+        {
+          "doc": [ [ "The empty environment has no bindings." ] ],
+          "kind": "rule",
+          "name": "empty-env",
+          "params": [],
+          "guards": [],
+          "return": "Env",
+          "resolved": { "func": { "params": [], "return": "Env" } }
+        },
+        {
+          "doc": [ [ "The subtype relation is a partial order on types." ] ],
+          "kind": "rule",
+          "name": "subtype?",
+          "params": [
+            { "name": "t1", "type": "Ty" }, { "name": "t2", "type": "Ty" }
+          ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": {
+            "func": { "params": [ "Ty", "Ty" ], "return": "Bool" }
+          }
+        },
+        {
+          "doc": [
+            [
+              "Two types are compatible when they have a least upper bound (join)."
+            ]
+          ],
+          "kind": "rule",
+          "name": "compatible?",
+          "params": [
+            { "name": "t1", "type": "Ty" }, { "name": "t2", "type": "Ty" }
+          ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": {
+            "func": { "params": [ "Ty", "Ty" ], "return": "Bool" }
+          }
+        },
+        {
+          "doc": [
+            [
+              "The join of two compatible types is their least upper bound."
+            ]
+          ],
+          "kind": "rule",
+          "name": "join",
+          "params": [
+            { "name": "t1", "type": "Ty" }, { "name": "t2", "type": "Ty" }
+          ],
+          "guards": [],
+          "return": "Ty",
+          "resolved": {
+            "func": { "params": [ "Ty", "Ty" ], "return": "Ty" }
+          }
+        },
+        {
+          "doc": [
+            [ "A type is numeric if it belongs to the numeric chain." ]
+          ],
+          "kind": "rule",
+          "name": "is-numeric?",
+          "params": [ { "name": "t", "type": "Ty" } ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": { "func": { "params": [ "Ty" ], "return": "Bool" } }
+        },
+        {
+          "doc": [ [ "Binary operators." ] ],
+          "kind": "domain",
+          "name": "BinOp"
+        },
+        {
+          "doc": [ [ "Arithmetic: +, -, *, /" ] ],
+          "kind": "rule",
+          "name": "op-add",
+          "params": [],
+          "guards": [],
+          "return": "BinOp",
+          "resolved": { "func": { "params": [], "return": "BinOp" } }
+        },
+        {
+          "kind": "rule",
+          "name": "op-sub",
+          "params": [],
+          "guards": [],
+          "return": "BinOp",
+          "resolved": { "func": { "params": [], "return": "BinOp" } }
+        },
+        {
+          "kind": "rule",
+          "name": "op-mul",
+          "params": [],
+          "guards": [],
+          "return": "BinOp",
+          "resolved": { "func": { "params": [], "return": "BinOp" } }
+        },
+        {
+          "kind": "rule",
+          "name": "op-div",
+          "params": [],
+          "guards": [],
+          "return": "BinOp",
+          "resolved": { "func": { "params": [], "return": "BinOp" } }
+        },
+        {
+          "doc": [ [ "Equality and comparison: =, !=, <, >, <=, >=" ] ],
+          "kind": "rule",
+          "name": "op-eq",
+          "params": [],
+          "guards": [],
+          "return": "BinOp",
+          "resolved": { "func": { "params": [], "return": "BinOp" } }
+        },
+        {
+          "kind": "rule",
+          "name": "op-neq",
+          "params": [],
+          "guards": [],
+          "return": "BinOp",
+          "resolved": { "func": { "params": [], "return": "BinOp" } }
+        },
+        {
+          "kind": "rule",
+          "name": "op-lt",
+          "params": [],
+          "guards": [],
+          "return": "BinOp",
+          "resolved": { "func": { "params": [], "return": "BinOp" } }
+        },
+        {
+          "kind": "rule",
+          "name": "op-le",
+          "params": [],
+          "guards": [],
+          "return": "BinOp",
+          "resolved": { "func": { "params": [], "return": "BinOp" } }
+        },
+        {
+          "kind": "rule",
+          "name": "op-gt",
+          "params": [],
+          "guards": [],
+          "return": "BinOp",
+          "resolved": { "func": { "params": [], "return": "BinOp" } }
+        },
+        {
+          "kind": "rule",
+          "name": "op-ge",
+          "params": [],
+          "guards": [],
+          "return": "BinOp",
+          "resolved": { "func": { "params": [], "return": "BinOp" } }
+        },
+        {
+          "doc": [ [ "Logical: and, or, ->, <->" ] ],
+          "kind": "rule",
+          "name": "op-and",
+          "params": [],
+          "guards": [],
+          "return": "BinOp",
+          "resolved": { "func": { "params": [], "return": "BinOp" } }
+        },
+        {
+          "kind": "rule",
+          "name": "op-or",
+          "params": [],
+          "guards": [],
+          "return": "BinOp",
+          "resolved": { "func": { "params": [], "return": "BinOp" } }
+        },
+        {
+          "kind": "rule",
+          "name": "op-impl",
+          "params": [],
+          "guards": [],
+          "return": "BinOp",
+          "resolved": { "func": { "params": [], "return": "BinOp" } }
+        },
+        {
+          "kind": "rule",
+          "name": "op-iff",
+          "params": [],
+          "guards": [],
+          "return": "BinOp",
+          "resolved": { "func": { "params": [], "return": "BinOp" } }
+        },
+        {
+          "doc": [ [ "Set operations: in, subset" ] ],
+          "kind": "rule",
+          "name": "op-in",
+          "params": [],
+          "guards": [],
+          "return": "BinOp",
+          "resolved": { "func": { "params": [], "return": "BinOp" } }
+        },
+        {
+          "kind": "rule",
+          "name": "op-subset",
+          "params": [],
+          "guards": [],
+          "return": "BinOp",
+          "resolved": { "func": { "params": [], "return": "BinOp" } }
+        },
+        {
+          "doc": [
+            [ "Unary operators: not, unary minus, cardinality (#)." ]
+          ],
+          "kind": "domain",
+          "name": "UnOp"
+        },
+        {
+          "kind": "rule",
+          "name": "op-not",
+          "params": [],
+          "guards": [],
+          "return": "UnOp",
+          "resolved": { "func": { "params": [], "return": "UnOp" } }
+        },
+        {
+          "kind": "rule",
+          "name": "op-neg",
+          "params": [],
+          "guards": [],
+          "return": "UnOp",
+          "resolved": { "func": { "params": [], "return": "UnOp" } }
+        },
+        {
+          "kind": "rule",
+          "name": "op-card",
+          "params": [],
+          "guards": [],
+          "return": "UnOp",
+          "resolved": { "func": { "params": [], "return": "UnOp" } }
+        },
+        {
+          "doc": [
+            [
+              "Operator typing rules assign a result type to each operator application."
+            ]
+          ],
+          "kind": "rule",
+          "name": "binop-type",
+          "params": [
+            { "name": "op", "type": "BinOp" },
+            { "name": "t1", "type": "Ty" },
+            { "name": "t2", "type": "Ty" }
+          ],
+          "guards": [],
+          "return": "Ty",
+          "resolved": {
+            "func": { "params": [ "BinOp", "Ty", "Ty" ], "return": "Ty" }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "unop-type",
+          "params": [
+            { "name": "op", "type": "UnOp" }, { "name": "t", "type": "Ty" }
+          ],
+          "guards": [],
+          "return": "Ty",
+          "resolved": {
+            "func": { "params": [ "UnOp", "Ty" ], "return": "Ty" }
+          }
+        },
+        {
+          "doc": [
+            [ "The operator of a binary or unary operator expression." ]
+          ],
+          "kind": "rule",
+          "name": "binop-op",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "BinOp",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "BinOp" } }
+        },
+        {
+          "kind": "rule",
+          "name": "unop-op",
+          "params": [ { "name": "e", "type": "Expr" } ],
+          "guards": [],
+          "return": "UnOp",
+          "resolved": { "func": { "params": [ "Expr" ], "return": "UnOp" } }
+        }
+      ],
+      "body": [
+        {
+          "doc": [ [ "Product types have at least two components." ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "t", "type": "Type" } ],
+              "guards": [
+                {
+                  "expr": {
+                    "binop": {
+                      "op": "eq",
+                      "left": {
+                        "app": {
+                          "func": { "var": "type-kind" },
+                          "args": [ { "var": "t" } ]
+                        }
+                      },
+                      "right": { "var": "tk-product" }
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "ge",
+                  "left": {
+                    "unop": {
+                      "op": "card",
+                      "arg": {
+                        "app": {
+                          "func": { "var": "product-components" },
+                          "args": [ { "var": "t" } ]
+                        }
+                      }
+                    }
+                  },
+                  "right": { "nat": 2 }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Sum types have at least two components." ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "t", "type": "Type" } ],
+              "guards": [
+                {
+                  "expr": {
+                    "binop": {
+                      "op": "eq",
+                      "left": {
+                        "app": {
+                          "func": { "var": "type-kind" },
+                          "args": [ { "var": "t" } ]
+                        }
+                      },
+                      "right": { "var": "tk-sum" }
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "ge",
+                  "left": {
+                    "unop": {
+                      "op": "card",
+                      "arg": {
+                        "app": {
+                          "func": { "var": "sum-components" },
+                          "args": [ { "var": "t" } ]
+                        }
+                      }
+                    }
+                  },
+                  "right": { "nat": 2 }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "head": [
+        {
+          "doc": [ [ "Syntactic type expressions are classified by kind." ] ],
+          "kind": "domain",
+          "name": "TypeKind"
+        },
+        {
+          "kind": "rule",
+          "name": "tk-name",
+          "params": [],
+          "guards": [],
+          "return": "TypeKind",
+          "resolved": { "func": { "params": [], "return": "TypeKind" } }
+        },
+        {
+          "kind": "rule",
+          "name": "tk-qualified",
+          "params": [],
+          "guards": [],
+          "return": "TypeKind",
+          "resolved": { "func": { "params": [], "return": "TypeKind" } }
+        },
+        {
+          "kind": "rule",
+          "name": "tk-product",
+          "params": [],
+          "guards": [],
+          "return": "TypeKind",
+          "resolved": { "func": { "params": [], "return": "TypeKind" } }
+        },
+        {
+          "kind": "rule",
+          "name": "tk-sum",
+          "params": [],
+          "guards": [],
+          "return": "TypeKind",
+          "resolved": { "func": { "params": [], "return": "TypeKind" } }
+        },
+        {
+          "kind": "rule",
+          "name": "tk-list",
+          "params": [],
+          "guards": [],
+          "return": "TypeKind",
+          "resolved": { "func": { "params": [], "return": "TypeKind" } }
+        },
+        {
+          "kind": "rule",
+          "name": "type-kind",
+          "params": [ { "name": "t", "type": "Type" } ],
+          "guards": [],
+          "return": "TypeKind",
+          "resolved": {
+            "func": { "params": [ "Type" ], "return": "TypeKind" }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "product-components",
+          "params": [ { "name": "t", "type": "Type" } ],
+          "guards": [],
+          "return": { "list": "Type" },
+          "resolved": {
+            "func": { "params": [ "Type" ], "return": { "list": "Type" } }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "sum-components",
+          "params": [ { "name": "t", "type": "Type" } ],
+          "guards": [],
+          "return": { "list": "Type" },
+          "resolved": {
+            "func": { "params": [ "Type" ], "return": { "list": "Type" } }
+          }
+        }
+      ],
+      "body": [],
+      "trailing_docs": [
+        [
+          "When a quantifier rebinds a variable already in scope,",
+          "the new type must be a subtype of the existing type."
+        ]
+      ]
+    }
+  ]
+}

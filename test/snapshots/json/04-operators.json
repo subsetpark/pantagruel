@@ -1,0 +1,559 @@
+{
+  "module": "OPERATORS",
+  "imports": [],
+  "contexts": [],
+  "types": { "Item": { "kind": "domain" } },
+  "rules": {
+    "count": { "params": [], "return": "Nat0" },
+    "discount": { "params": [], "return": "Real" },
+    "in-stock": { "params": [ "Item" ], "return": "Bool" },
+    "items": { "params": [], "return": { "list": "Item" } },
+    "price": { "params": [ "Item" ], "return": "Real" }
+  },
+  "chapters": [
+    {
+      "head": [
+        {
+          "doc": [ [ "Demonstration of all operators and expressions" ] ],
+          "kind": "domain",
+          "name": "Item"
+        },
+        {
+          "kind": "rule",
+          "name": "items",
+          "params": [],
+          "guards": [],
+          "return": { "list": "Item" },
+          "resolved": {
+            "func": { "params": [], "return": { "list": "Item" } }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "count",
+          "params": [],
+          "guards": [],
+          "return": "Nat0",
+          "resolved": { "func": { "params": [], "return": "Nat0" } }
+        },
+        {
+          "kind": "rule",
+          "name": "price",
+          "params": [ { "name": "i", "type": "Item" } ],
+          "guards": [],
+          "return": "Real",
+          "resolved": { "func": { "params": [ "Item" ], "return": "Real" } }
+        },
+        {
+          "kind": "rule",
+          "name": "in-stock",
+          "params": [ { "name": "i", "type": "Item" } ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": { "func": { "params": [ "Item" ], "return": "Bool" } }
+        },
+        {
+          "kind": "rule",
+          "name": "discount",
+          "params": [],
+          "guards": [],
+          "return": "Real",
+          "resolved": { "func": { "params": [], "return": "Real" } }
+        }
+      ],
+      "body": [
+        {
+          "doc": [ [ "Logical operators: and, or, ~, -> (implication)" ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "i", "type": "Item" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "or",
+                  "left": {
+                    "app": {
+                      "func": { "var": "in-stock" },
+                      "args": [ { "var": "i" } ]
+                    }
+                  },
+                  "right": {
+                    "unop": {
+                      "op": "not",
+                      "arg": {
+                        "app": {
+                          "func": { "var": "in-stock" },
+                          "args": [ { "var": "i" } ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "forall": {
+            "params": [ { "name": "i", "type": "Item" } ],
+            "guards": [],
+            "body": {
+              "binop": {
+                "op": "impl",
+                "left": {
+                  "binop": {
+                    "op": "and",
+                    "left": {
+                      "app": {
+                        "func": { "var": "in-stock" },
+                        "args": [ { "var": "i" } ]
+                      }
+                    },
+                    "right": { "bool": true }
+                  }
+                },
+                "right": {
+                  "app": {
+                    "func": { "var": "in-stock" },
+                    "args": [ { "var": "i" } ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "forall": {
+            "params": [ { "name": "i", "type": "Item" } ],
+            "guards": [],
+            "body": {
+              "binop": {
+                "op": "impl",
+                "left": { "bool": false },
+                "right": {
+                  "app": {
+                    "func": { "var": "in-stock" },
+                    "args": [ { "var": "i" } ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Comparison operators: =, !=, <, >, <=, >=" ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "i", "type": "Item" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "price" },
+                      "args": [ { "var": "i" } ]
+                    }
+                  },
+                  "right": {
+                    "app": {
+                      "func": { "var": "price" },
+                      "args": [ { "var": "i" } ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "forall": {
+            "params": [ { "name": "i", "type": "Item" } ],
+            "guards": [],
+            "body": {
+              "binop": {
+                "op": "ge",
+                "left": {
+                  "app": {
+                    "func": { "var": "price" },
+                    "args": [ { "var": "i" } ]
+                  }
+                },
+                "right": { "real": 0.0 }
+              }
+            }
+          }
+        },
+        {
+          "binop": {
+            "op": "ge",
+            "left": { "var": "count" },
+            "right": { "nat": 0 }
+          }
+        },
+        {
+          "binop": {
+            "op": "lt",
+            "left": { "var": "discount" },
+            "right": { "real": 1.0 }
+          }
+        },
+        {
+          "binop": {
+            "op": "gt",
+            "left": { "var": "discount" },
+            "right": { "real": 0.0 }
+          }
+        },
+        {
+          "binop": {
+            "op": "le",
+            "left": { "var": "discount" },
+            "right": { "real": 0.5 }
+          }
+        },
+        {
+          "binop": {
+            "op": "neq",
+            "left": { "var": "discount" },
+            "right": { "real": 0.0 }
+          }
+        },
+        {
+          "doc": [ [ "Arithmetic operators: +, -, *, /" ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "i", "type": "Item" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "ge",
+                  "left": {
+                    "binop": {
+                      "op": "sub",
+                      "left": {
+                        "app": {
+                          "func": { "var": "price" },
+                          "args": [ { "var": "i" } ]
+                        }
+                      },
+                      "right": {
+                        "binop": {
+                          "op": "mul",
+                          "left": { "var": "discount" },
+                          "right": {
+                            "app": {
+                              "func": { "var": "price" },
+                              "args": [ { "var": "i" } ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "right": { "real": 0.0 }
+                }
+              }
+            }
+          }
+        },
+        {
+          "binop": {
+            "op": "gt",
+            "left": {
+              "binop": {
+                "op": "add",
+                "left": { "var": "count" },
+                "right": { "nat": 1 }
+              }
+            },
+            "right": { "var": "count" }
+          }
+        },
+        {
+          "forall": {
+            "params": [
+              { "name": "x", "type": "Nat" }, { "name": "y", "type": "Nat" }
+            ],
+            "guards": [],
+            "body": {
+              "binop": {
+                "op": "ge",
+                "left": {
+                  "binop": {
+                    "op": "mul",
+                    "left": { "var": "x" },
+                    "right": { "var": "y" }
+                  }
+                },
+                "right": { "nat": 0 }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Membership: in" ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "i", "type": "Item" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "in",
+                  "left": { "var": "i" },
+                  "right": { "domain": "Item" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "forall": {
+            "params": [ { "name": "i", "type": "Item" } ],
+            "guards": [],
+            "body": {
+              "binop": {
+                "op": "impl",
+                "left": {
+                  "binop": {
+                    "op": "in",
+                    "left": { "var": "i" },
+                    "right": { "var": "items" }
+                  }
+                },
+                "right": {
+                  "app": {
+                    "func": { "var": "in-stock" },
+                    "args": [ { "var": "i" } ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Subset (for lists)" ] ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "xs", "type": { "list": "Item" } },
+                { "name": "ys", "type": { "list": "Item" } }
+              ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "impl",
+                  "left": {
+                    "binop": {
+                      "op": "subset",
+                      "left": { "var": "xs" },
+                      "right": { "var": "ys" }
+                    }
+                  },
+                  "right": {
+                    "binop": {
+                      "op": "le",
+                      "left": {
+                        "unop": { "op": "card", "arg": { "var": "xs" } }
+                      },
+                      "right": {
+                        "unop": { "op": "card", "arg": { "var": "ys" } }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Cardinality: #" ] ],
+          "expr": {
+            "binop": {
+              "op": "ge",
+              "left": { "unop": { "op": "card", "arg": { "var": "items" } } },
+              "right": { "nat": 0 }
+            }
+          }
+        },
+        {
+          "binop": {
+            "op": "ge",
+            "left": { "unop": { "op": "card", "arg": { "domain": "Item" } } },
+            "right": { "nat": 0 }
+          }
+        },
+        {
+          "forall": {
+            "params": [ { "name": "xs", "type": { "list": "Item" } } ],
+            "guards": [],
+            "body": {
+              "binop": {
+                "op": "ge",
+                "left": { "unop": { "op": "card", "arg": { "var": "xs" } } },
+                "right": { "nat": 0 }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Unary minus" ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "x", "type": "Int" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "binop": {
+                      "op": "add",
+                      "left": {
+                        "unop": { "op": "neg", "arg": { "var": "x" } }
+                      },
+                      "right": { "var": "x" }
+                    }
+                  },
+                  "right": { "nat": 0 }
+                }
+              }
+            }
+          }
+        },
+        {
+          "forall": {
+            "params": [ { "name": "x", "type": "Real" } ],
+            "guards": [],
+            "body": {
+              "binop": {
+                "op": "eq",
+                "left": {
+                  "unop": {
+                    "op": "neg",
+                    "arg": { "unop": { "op": "neg", "arg": { "var": "x" } } }
+                  }
+                },
+                "right": { "var": "x" }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Negation" ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "i", "type": "Item" } ],
+              "guards": [],
+              "body": {
+                "unop": {
+                  "op": "not",
+                  "arg": {
+                    "unop": {
+                      "op": "not",
+                      "arg": {
+                        "binop": {
+                          "op": "eq",
+                          "left": {
+                            "app": {
+                              "func": { "var": "in-stock" },
+                              "args": [ { "var": "i" } ]
+                            }
+                          },
+                          "right": {
+                            "app": {
+                              "func": { "var": "in-stock" },
+                              "args": [ { "var": "i" } ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Quantifiers: all, some" ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "i", "type": "Item" } ],
+              "guards": [],
+              "body": { "bool": true }
+            }
+          }
+        },
+        {
+          "exists": {
+            "params": [ { "name": "i", "type": "Item" } ],
+            "guards": [],
+            "body": {
+              "app": {
+                "func": { "var": "in-stock" },
+                "args": [ { "var": "i" } ]
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Quantifier with guard expressions" ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "i", "type": "Item" } ],
+              "guards": [
+                {
+                  "expr": {
+                    "app": {
+                      "func": { "var": "in-stock" },
+                      "args": [ { "var": "i" } ]
+                    }
+                  }
+                }
+              ],
+              "body": {
+                "binop": {
+                  "op": "gt",
+                  "left": {
+                    "app": {
+                      "func": { "var": "price" },
+                      "args": [ { "var": "i" } ]
+                    }
+                  },
+                  "right": { "real": 0.0 }
+                }
+              }
+            }
+          }
+        },
+        {
+          "exists": {
+            "params": [ { "name": "i", "type": "Item" } ],
+            "guards": [
+              {
+                "expr": {
+                  "binop": {
+                    "op": "lt",
+                    "left": {
+                      "app": {
+                        "func": { "var": "price" },
+                        "args": [ { "var": "i" } ]
+                      }
+                    },
+                    "right": { "real": 10.0 }
+                  }
+                }
+              }
+            ],
+            "body": {
+              "app": {
+                "func": { "var": "in-stock" },
+                "args": [ { "var": "i" } ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

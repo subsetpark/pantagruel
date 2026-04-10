@@ -1,0 +1,448 @@
+{
+  "module": "STATE",
+  "imports": [],
+  "contexts": [],
+  "types": { "Account": { "kind": "domain" }, "User": { "kind": "domain" } },
+  "rules": {
+    "balance": { "params": [ "Account" ], "return": "Int" },
+    "owner": { "params": [ "Account" ], "return": "User" }
+  },
+  "chapters": [
+    {
+      "head": [
+        {
+          "doc": [
+            [
+              "Demonstration of actions and state transitions",
+              "Actions model operations that change state",
+              "Primed expressions (f') refer to values after the operation"
+            ]
+          ],
+          "kind": "domain",
+          "name": "User"
+        },
+        { "kind": "domain", "name": "Account" },
+        {
+          "kind": "rule",
+          "name": "balance",
+          "params": [ { "name": "a", "type": "Account" } ],
+          "guards": [],
+          "return": "Int",
+          "resolved": {
+            "func": { "params": [ "Account" ], "return": "Int" }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "owner",
+          "params": [ { "name": "a", "type": "Account" } ],
+          "guards": [],
+          "return": "User",
+          "resolved": {
+            "func": { "params": [ "Account" ], "return": "User" }
+          }
+        },
+        {
+          "doc": [ [ "Action: no return type means it modifies state" ] ],
+          "kind": "action",
+          "label": "Deposit",
+          "params": [
+            { "name": "a", "type": "Account" },
+            { "name": "amount", "type": "Nat" }
+          ],
+          "guards": [],
+          "resolved": {
+            "func": { "params": [ "Account", "Nat" ], "return": null }
+          }
+        }
+      ],
+      "body": [
+        {
+          "doc": [
+            [
+              "In a chapter with an action, you can use primed expressions",
+              "The parameters of the action are in scope"
+            ],
+            [ "Balance increases by the deposit amount" ]
+          ],
+          "expr": {
+            "binop": {
+              "op": "eq",
+              "left": {
+                "app": {
+                  "func": { "primed": "balance" },
+                  "args": [ { "var": "a" } ]
+                }
+              },
+              "right": {
+                "binop": {
+                  "op": "add",
+                  "left": {
+                    "app": {
+                      "func": { "var": "balance" },
+                      "args": [ { "var": "a" } ]
+                    }
+                  },
+                  "right": { "var": "amount" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Owner doesn't change" ] ],
+          "expr": {
+            "binop": {
+              "op": "eq",
+              "left": {
+                "app": {
+                  "func": { "primed": "owner" },
+                  "args": [ { "var": "a" } ]
+                }
+              },
+              "right": {
+                "app": {
+                  "func": { "var": "owner" },
+                  "args": [ { "var": "a" } ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Other accounts are unchanged (frame condition)" ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "other", "type": "Account" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "impl",
+                  "left": {
+                    "binop": {
+                      "op": "neq",
+                      "left": { "var": "other" },
+                      "right": { "var": "a" }
+                    }
+                  },
+                  "right": {
+                    "binop": {
+                      "op": "eq",
+                      "left": {
+                        "app": {
+                          "func": { "primed": "balance" },
+                          "args": [ { "var": "other" } ]
+                        }
+                      },
+                      "right": {
+                        "app": {
+                          "func": { "var": "balance" },
+                          "args": [ { "var": "other" } ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "forall": {
+            "params": [ { "name": "other", "type": "Account" } ],
+            "guards": [],
+            "body": {
+              "binop": {
+                "op": "impl",
+                "left": {
+                  "binop": {
+                    "op": "neq",
+                    "left": { "var": "other" },
+                    "right": { "var": "a" }
+                  }
+                },
+                "right": {
+                  "binop": {
+                    "op": "eq",
+                    "left": {
+                      "app": {
+                        "func": { "primed": "owner" },
+                        "args": [ { "var": "other" } ]
+                      }
+                    },
+                    "right": {
+                      "app": {
+                        "func": { "var": "owner" },
+                        "args": [ { "var": "other" } ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Pre-condition: can always deposit" ] ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "a", "type": "Account" },
+                { "name": "amt", "type": "Nat" }
+              ],
+              "guards": [],
+              "body": { "bool": true }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "head": [
+        {
+          "doc": [ [ "A second chapter for withdrawals" ] ],
+          "kind": "action",
+          "label": "Withdraw",
+          "params": [
+            { "name": "a", "type": "Account" },
+            { "name": "amount", "type": "Nat" }
+          ],
+          "guards": [],
+          "resolved": {
+            "func": { "params": [ "Account", "Nat" ], "return": null }
+          }
+        }
+      ],
+      "body": [
+        {
+          "doc": [ [ "Balance decreases by withdrawal amount" ] ],
+          "expr": {
+            "binop": {
+              "op": "eq",
+              "left": {
+                "app": {
+                  "func": { "primed": "balance" },
+                  "args": [ { "var": "a" } ]
+                }
+              },
+              "right": {
+                "binop": {
+                  "op": "sub",
+                  "left": {
+                    "app": {
+                      "func": { "var": "balance" },
+                      "args": [ { "var": "a" } ]
+                    }
+                  },
+                  "right": { "var": "amount" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [ "Implicit constraint: balance must support the withdrawal" ]
+          ],
+          "expr": {
+            "binop": {
+              "op": "ge",
+              "left": {
+                "app": {
+                  "func": { "var": "balance" },
+                  "args": [ { "var": "a" } ]
+                }
+              },
+              "right": { "var": "amount" }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Frame condition" ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "other", "type": "Account" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "impl",
+                  "left": {
+                    "binop": {
+                      "op": "neq",
+                      "left": { "var": "other" },
+                      "right": { "var": "a" }
+                    }
+                  },
+                  "right": {
+                    "binop": {
+                      "op": "eq",
+                      "left": {
+                        "app": {
+                          "func": { "primed": "balance" },
+                          "args": [ { "var": "other" } ]
+                        }
+                      },
+                      "right": {
+                        "app": {
+                          "func": { "var": "balance" },
+                          "args": [ { "var": "other" } ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "head": [
+        {
+          "doc": [ [ "A third chapter for transfers between accounts" ] ],
+          "kind": "action",
+          "label": "Transfer",
+          "params": [
+            { "name": "from", "type": "Account" },
+            { "name": "to", "type": "Account" },
+            { "name": "amount", "type": "Nat" }
+          ],
+          "guards": [],
+          "resolved": {
+            "func": {
+              "params": [ "Account", "Account", "Nat" ],
+              "return": null
+            }
+          }
+        }
+      ],
+      "body": [
+        {
+          "doc": [ [ "Source balance decreases" ] ],
+          "expr": {
+            "binop": {
+              "op": "eq",
+              "left": {
+                "app": {
+                  "func": { "primed": "balance" },
+                  "args": [ { "var": "from" } ]
+                }
+              },
+              "right": {
+                "binop": {
+                  "op": "sub",
+                  "left": {
+                    "app": {
+                      "func": { "var": "balance" },
+                      "args": [ { "var": "from" } ]
+                    }
+                  },
+                  "right": { "var": "amount" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Destination balance increases" ] ],
+          "expr": {
+            "binop": {
+              "op": "eq",
+              "left": {
+                "app": {
+                  "func": { "primed": "balance" },
+                  "args": [ { "var": "to" } ]
+                }
+              },
+              "right": {
+                "binop": {
+                  "op": "add",
+                  "left": {
+                    "app": {
+                      "func": { "var": "balance" },
+                      "args": [ { "var": "to" } ]
+                    }
+                  },
+                  "right": { "var": "amount" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Pre-conditions" ] ],
+          "expr": {
+            "binop": {
+              "op": "neq",
+              "left": { "var": "from" },
+              "right": { "var": "to" }
+            }
+          }
+        },
+        {
+          "binop": {
+            "op": "ge",
+            "left": {
+              "app": {
+                "func": { "var": "balance" },
+                "args": [ { "var": "from" } ]
+              }
+            },
+            "right": { "var": "amount" }
+          }
+        },
+        {
+          "doc": [ [ "Frame: other accounts unchanged" ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "other", "type": "Account" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "impl",
+                  "left": {
+                    "binop": {
+                      "op": "and",
+                      "left": {
+                        "binop": {
+                          "op": "neq",
+                          "left": { "var": "other" },
+                          "right": { "var": "from" }
+                        }
+                      },
+                      "right": {
+                        "binop": {
+                          "op": "neq",
+                          "left": { "var": "other" },
+                          "right": { "var": "to" }
+                        }
+                      }
+                    }
+                  },
+                  "right": {
+                    "binop": {
+                      "op": "eq",
+                      "left": {
+                        "app": {
+                          "func": { "primed": "balance" },
+                          "args": [ { "var": "other" } ]
+                        }
+                      },
+                      "right": {
+                        "app": {
+                          "func": { "var": "balance" },
+                          "args": [ { "var": "other" } ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

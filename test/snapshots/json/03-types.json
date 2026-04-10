@@ -1,0 +1,330 @@
+{
+  "module": "TYPES",
+  "imports": [],
+  "contexts": [],
+  "types": {
+    "Color": { "kind": "domain" },
+    "ColoredPoint": {
+      "kind": "alias",
+      "type": { "product": [ { "product": [ "Nat", "Nat" ] }, "Color" ] }
+    },
+    "Colors": { "kind": "alias", "type": { "list": "Color" } },
+    "Matrix": { "kind": "alias", "type": { "list": { "list": "Nat" } } },
+    "MaybeColor": {
+      "kind": "alias",
+      "type": { "sum": [ "Color", "Nothing" ] }
+    },
+    "Point": { "kind": "alias", "type": { "product": [ "Nat", "Nat" ] } },
+    "Point3D": {
+      "kind": "alias",
+      "type": { "product": [ "Nat", "Nat", "Nat" ] }
+    },
+    "Points": {
+      "kind": "alias",
+      "type": { "list": { "product": [ "Nat", "Nat" ] } }
+    },
+    "Result": { "kind": "alias", "type": { "sum": [ "Nat", "Nothing" ] } },
+    "Shape": { "kind": "domain" }
+  },
+  "rules": {
+    "colors": { "params": [], "return": { "list": "Color" } },
+    "distance": {
+      "params": [
+        { "product": [ "Nat", "Nat" ] }, { "product": [ "Nat", "Nat" ] }
+      ],
+      "return": "Real"
+    },
+    "lookup": {
+      "params": [ "Nat" ],
+      "return": { "sum": [ "Color", "Nothing" ] }
+    },
+    "origin": { "params": [], "return": { "product": [ "Nat", "Nat" ] } },
+    "red": { "params": [], "return": "Color" }
+  },
+  "chapters": [
+    {
+      "head": [
+        {
+          "doc": [
+            [ "Demonstration of all type features" ],
+            [
+              "Built-in types: Bool, Nat, Nat0, Int, Real, String, Nothing",
+              "Nat = positive integers (1, 2, 3, ...)",
+              "Nat0 = non-negative integers (0, 1, 2, ...)",
+              "Numeric hierarchy: Nat < Nat0 < Int < Real"
+            ],
+            [ "Domain declarations" ]
+          ],
+          "kind": "domain",
+          "name": "Color"
+        },
+        { "kind": "domain", "name": "Shape" },
+        {
+          "doc": [ [ "Type aliases with product types (tuples)" ] ],
+          "kind": "alias",
+          "name": "Point",
+          "type": { "product": [ "Nat", "Nat" ] },
+          "resolved": { "product": [ "Nat", "Nat" ] }
+        },
+        {
+          "kind": "alias",
+          "name": "Point3D",
+          "type": { "product": [ "Nat", "Nat", "Nat" ] },
+          "resolved": { "product": [ "Nat", "Nat", "Nat" ] }
+        },
+        {
+          "kind": "alias",
+          "name": "ColoredPoint",
+          "type": { "product": [ "Point", "Color" ] },
+          "resolved": {
+            "product": [ { "product": [ "Nat", "Nat" ] }, "Color" ]
+          }
+        },
+        {
+          "doc": [ [ "Type aliases with sum types (unions)" ] ],
+          "kind": "alias",
+          "name": "Result",
+          "type": { "sum": [ "Nat", "Nothing" ] },
+          "resolved": { "sum": [ "Nat", "Nothing" ] }
+        },
+        {
+          "kind": "alias",
+          "name": "MaybeColor",
+          "type": { "sum": [ "Color", "Nothing" ] },
+          "resolved": { "sum": [ "Color", "Nothing" ] }
+        },
+        {
+          "doc": [ [ "Type aliases with list types" ] ],
+          "kind": "alias",
+          "name": "Colors",
+          "type": { "list": "Color" },
+          "resolved": { "list": "Color" }
+        },
+        {
+          "kind": "alias",
+          "name": "Points",
+          "type": { "list": "Point" },
+          "resolved": { "list": { "product": [ "Nat", "Nat" ] } }
+        },
+        {
+          "kind": "alias",
+          "name": "Matrix",
+          "type": { "list": { "list": "Nat" } },
+          "resolved": { "list": { "list": "Nat" } }
+        },
+        {
+          "doc": [ [ "Rules returning various types" ] ],
+          "kind": "rule",
+          "name": "origin",
+          "params": [],
+          "guards": [],
+          "return": "Point",
+          "resolved": {
+            "func": {
+              "params": [],
+              "return": { "product": [ "Nat", "Nat" ] }
+            }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "red",
+          "params": [],
+          "guards": [],
+          "return": "Color",
+          "resolved": { "func": { "params": [], "return": "Color" } }
+        },
+        {
+          "kind": "rule",
+          "name": "distance",
+          "params": [
+            { "name": "p", "type": "Point" },
+            { "name": "q", "type": "Point" }
+          ],
+          "guards": [],
+          "return": "Real",
+          "resolved": {
+            "func": {
+              "params": [
+                { "product": [ "Nat", "Nat" ] },
+                { "product": [ "Nat", "Nat" ] }
+              ],
+              "return": "Real"
+            }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "colors",
+          "params": [],
+          "guards": [],
+          "return": { "list": "Color" },
+          "resolved": {
+            "func": { "params": [], "return": { "list": "Color" } }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "lookup",
+          "params": [ { "name": "i", "type": "Nat" } ],
+          "guards": [],
+          "return": { "sum": [ "Color", "Nothing" ] },
+          "resolved": {
+            "func": {
+              "params": [ "Nat" ],
+              "return": { "sum": [ "Color", "Nothing" ] }
+            }
+          }
+        }
+      ],
+      "body": [
+        {
+          "doc": [ [ "Tuple construction with parentheses" ] ],
+          "expr": {
+            "binop": {
+              "op": "eq",
+              "left": { "var": "origin" },
+              "right": { "tuple": [ { "nat": 0 }, { "nat": 0 } ] }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Tuple projection with .N (1-indexed)" ] ],
+          "expr": {
+            "binop": {
+              "op": "eq",
+              "left": { "proj": { "expr": { "var": "origin" }, "index": 1 } },
+              "right": { "nat": 0 }
+            }
+          }
+        },
+        {
+          "binop": {
+            "op": "eq",
+            "left": { "proj": { "expr": { "var": "origin" }, "index": 2 } },
+            "right": { "nat": 0 }
+          }
+        },
+        {
+          "doc": [ [ "Nested tuple access" ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "cp", "type": "ColoredPoint" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "ge",
+                  "left": {
+                    "proj": {
+                      "expr": {
+                        "proj": { "expr": { "var": "cp" }, "index": 1 }
+                      },
+                      "index": 1
+                    }
+                  },
+                  "right": { "nat": 0 }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "List membership" ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "c", "type": "Color" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "in",
+                  "left": { "var": "c" },
+                  "right": { "domain": "Color" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "binop": {
+            "op": "in",
+            "left": { "var": "red" },
+            "right": { "var": "colors" }
+          }
+        },
+        {
+          "doc": [ [ "List cardinality" ] ],
+          "expr": {
+            "binop": {
+              "op": "ge",
+              "left": {
+                "unop": { "op": "card", "arg": { "var": "colors" } }
+              },
+              "right": { "nat": 0 }
+            }
+          }
+        },
+        {
+          "binop": {
+            "op": "ge",
+            "left": {
+              "unop": { "op": "card", "arg": { "domain": "Color" } }
+            },
+            "right": { "nat": 0 }
+          }
+        },
+        {
+          "doc": [ [ "Numeric operations respect the hierarchy" ] ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "n", "type": "Nat" },
+                { "name": "m", "type": "Nat0" }
+              ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "ge",
+                  "left": {
+                    "binop": {
+                      "op": "add",
+                      "left": { "var": "n" },
+                      "right": { "var": "m" }
+                    }
+                  },
+                  "right": { "nat": 0 }
+                }
+              }
+            }
+          }
+        },
+        {
+          "forall": {
+            "params": [
+              { "name": "x", "type": "Int" }, { "name": "y", "type": "Real" }
+            ],
+            "guards": [],
+            "body": {
+              "binop": {
+                "op": "eq",
+                "left": {
+                  "binop": {
+                    "op": "add",
+                    "left": { "var": "x" },
+                    "right": { "var": "y" }
+                  }
+                },
+                "right": {
+                  "binop": {
+                    "op": "add",
+                    "left": { "var": "y" },
+                    "right": { "var": "x" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -15,8 +15,14 @@
   test_types
   test_pretty
   test_json_output
-  test_normalize)
+  test_normalize
+  test_solver
+  test_error
+  test_e2e)
  (modules :standard \ test_util)
  (libraries pantagruel test_util alcotest qcheck-alcotest)
+ (deps
+  (glob_files ../samples/*.pant)
+  (glob_files snapshots/json/*.json))
  (preprocess
   (pps sedlex.ppx)))

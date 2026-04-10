@@ -1,0 +1,218 @@
+{
+  "module": "Cond",
+  "imports": [],
+  "contexts": [],
+  "types": {
+    "Priority": { "kind": "domain" },
+    "Status": { "kind": "domain" }
+  },
+  "rules": {
+    "active": { "params": [ "Status" ], "return": "Bool" },
+    "rank": { "params": [ "Status" ], "return": "Nat" },
+    "score": { "params": [ "Priority" ], "return": "Nat" },
+    "tier": { "params": [ "Priority" ], "return": "Nat" }
+  },
+  "chapters": [
+    {
+      "head": [
+        {
+          "doc": [
+            [
+              "Cond expressions: multi-armed conditionals where each arm is a Bool guard",
+              "and each consequence has the same type. Arms are checked for exhaustiveness",
+              "during --check."
+            ]
+          ],
+          "kind": "domain",
+          "name": "Priority"
+        },
+        {
+          "kind": "rule",
+          "name": "score",
+          "params": [ { "name": "p", "type": "Priority" } ],
+          "guards": [],
+          "return": "Nat",
+          "resolved": {
+            "func": { "params": [ "Priority" ], "return": "Nat" }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "tier",
+          "params": [ { "name": "p", "type": "Priority" } ],
+          "guards": [],
+          "return": "Nat",
+          "resolved": {
+            "func": { "params": [ "Priority" ], "return": "Nat" }
+          }
+        }
+      ],
+      "body": [
+        {
+          "doc": [ [ "Classify priorities into tiers using cond." ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "p", "type": "Priority" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "tier" },
+                      "args": [ { "var": "p" } ]
+                    }
+                  },
+                  "right": {
+                    "cond": [
+                      {
+                        "arm": {
+                          "binop": {
+                            "op": "ge",
+                            "left": {
+                              "app": {
+                                "func": { "var": "score" },
+                                "args": [ { "var": "p" } ]
+                              }
+                            },
+                            "right": { "nat": 100 }
+                          }
+                        },
+                        "consequence": { "nat": 3 }
+                      },
+                      {
+                        "arm": {
+                          "binop": {
+                            "op": "ge",
+                            "left": {
+                              "app": {
+                                "func": { "var": "score" },
+                                "args": [ { "var": "p" } ]
+                              }
+                            },
+                            "right": { "nat": 50 }
+                          }
+                        },
+                        "consequence": { "nat": 2 }
+                      },
+                      {
+                        "arm": {
+                          "binop": {
+                            "op": "ge",
+                            "left": {
+                              "app": {
+                                "func": { "var": "score" },
+                                "args": [ { "var": "p" } ]
+                              }
+                            },
+                            "right": { "nat": 10 }
+                          }
+                        },
+                        "consequence": { "nat": 1 }
+                      },
+                      {
+                        "arm": { "bool": true },
+                        "consequence": { "nat": 0 }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "head": [
+        {
+          "doc": [ [ "A cond used in a simple proposition." ] ],
+          "kind": "domain",
+          "name": "Status"
+        },
+        {
+          "kind": "rule",
+          "name": "active",
+          "params": [ { "name": "s", "type": "Status" } ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": {
+            "func": { "params": [ "Status" ], "return": "Bool" }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "rank",
+          "params": [ { "name": "s", "type": "Status" } ],
+          "guards": [],
+          "return": "Nat",
+          "resolved": { "func": { "params": [ "Status" ], "return": "Nat" } }
+        }
+      ],
+      "body": [
+        {
+          "doc": [
+            [
+              "Compute effective rank: active items use their rank, inactive get 0."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "s", "type": "Status" } ],
+              "guards": [],
+              "body": {
+                "cond": [
+                  {
+                    "arm": {
+                      "app": {
+                        "func": { "var": "active" },
+                        "args": [ { "var": "s" } ]
+                      }
+                    },
+                    "consequence": {
+                      "binop": {
+                        "op": "ge",
+                        "left": {
+                          "app": {
+                            "func": { "var": "rank" },
+                            "args": [ { "var": "s" } ]
+                          }
+                        },
+                        "right": { "nat": 0 }
+                      }
+                    }
+                  },
+                  {
+                    "arm": {
+                      "unop": {
+                        "op": "not",
+                        "arg": {
+                          "app": {
+                            "func": { "var": "active" },
+                            "args": [ { "var": "s" } ]
+                          }
+                        }
+                      }
+                    },
+                    "consequence": {
+                      "binop": {
+                        "op": "eq",
+                        "left": {
+                          "app": {
+                            "func": { "var": "rank" },
+                            "args": [ { "var": "s" } ]
+                          }
+                        },
+                        "right": { "nat": 0 }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

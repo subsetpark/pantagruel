@@ -1,0 +1,345 @@
+{
+  "module": "Banking",
+  "imports": [],
+  "contexts": [ "Accounts" ],
+  "types": { "Account": { "kind": "domain" }, "User": { "kind": "domain" } },
+  "rules": {
+    "balance": { "params": [ "Account" ], "return": "Nat" },
+    "nobody": { "params": [], "return": "User" },
+    "owner": { "params": [ "Account" ], "return": "User" }
+  },
+  "chapters": [
+    {
+      "head": [
+        { "kind": "domain", "name": "Account" },
+        { "kind": "domain", "name": "User" },
+        {
+          "kind": "rule",
+          "name": "balance",
+          "params": [ { "name": "a", "type": "Account" } ],
+          "guards": [],
+          "return": "Nat",
+          "contexts": [ "Accounts" ],
+          "resolved": {
+            "func": { "params": [ "Account" ], "return": "Nat" }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "owner",
+          "params": [ { "name": "a", "type": "Account" } ],
+          "guards": [],
+          "return": "User",
+          "contexts": [ "Accounts" ],
+          "resolved": {
+            "func": { "params": [ "Account" ], "return": "User" }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "nobody",
+          "params": [],
+          "guards": [],
+          "return": "User",
+          "resolved": { "func": { "params": [], "return": "User" } }
+        }
+      ],
+      "body": [
+        {
+          "doc": [ [ "Every account has a positive balance." ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "a", "type": "Account" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "ge",
+                  "left": {
+                    "app": {
+                      "func": { "var": "balance" },
+                      "args": [ { "var": "a" } ]
+                    }
+                  },
+                  "right": { "nat": 0 }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "head": [
+        {
+          "doc": [
+            [ "Withdrawal reduces the balance of the target account." ]
+          ],
+          "kind": "action",
+          "label": "Withdraw",
+          "params": [
+            { "name": "a", "type": "Account" },
+            { "name": "amount", "type": "Nat" }
+          ],
+          "guards": [
+            {
+              "expr": {
+                "binop": {
+                  "op": "ge",
+                  "left": {
+                    "app": {
+                      "func": { "var": "balance" },
+                      "args": [ { "var": "a" } ]
+                    }
+                  },
+                  "right": { "var": "amount" }
+                }
+              }
+            }
+          ],
+          "contexts": [ "Accounts" ],
+          "resolved": {
+            "func": { "params": [ "Account", "Nat" ], "return": null }
+          }
+        }
+      ],
+      "body": [
+        {
+          "binop": {
+            "op": "eq",
+            "left": {
+              "app": {
+                "func": { "primed": "balance" },
+                "args": [ { "var": "a" } ]
+              }
+            },
+            "right": {
+              "binop": {
+                "op": "sub",
+                "left": {
+                  "app": {
+                    "func": { "var": "balance" },
+                    "args": [ { "var": "a" } ]
+                  }
+                },
+                "right": { "var": "amount" }
+              }
+            }
+          }
+        },
+        {
+          "forall": {
+            "params": [ { "name": "b", "type": "Account" } ],
+            "guards": [],
+            "body": {
+              "binop": {
+                "op": "impl",
+                "left": {
+                  "binop": {
+                    "op": "neq",
+                    "left": { "var": "b" },
+                    "right": { "var": "a" }
+                  }
+                },
+                "right": {
+                  "binop": {
+                    "op": "eq",
+                    "left": {
+                      "app": {
+                        "func": { "primed": "balance" },
+                        "args": [ { "var": "b" } ]
+                      }
+                    },
+                    "right": {
+                      "app": {
+                        "func": { "var": "balance" },
+                        "args": [ { "var": "b" } ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "forall": {
+            "params": [ { "name": "b", "type": "Account" } ],
+            "guards": [],
+            "body": {
+              "binop": {
+                "op": "eq",
+                "left": {
+                  "app": {
+                    "func": { "primed": "owner" },
+                    "args": [ { "var": "b" } ]
+                  }
+                },
+                "right": {
+                  "app": {
+                    "func": { "var": "owner" },
+                    "args": [ { "var": "b" } ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "head": [
+        {
+          "doc": [ [ "Transfer moves funds between accounts." ] ],
+          "kind": "action",
+          "label": "Transfer",
+          "params": [
+            { "name": "from", "type": "Account" },
+            { "name": "to", "type": "Account" },
+            { "name": "amount", "type": "Nat" }
+          ],
+          "guards": [
+            {
+              "expr": {
+                "binop": {
+                  "op": "ge",
+                  "left": {
+                    "app": {
+                      "func": { "var": "balance" },
+                      "args": [ { "var": "from" } ]
+                    }
+                  },
+                  "right": { "var": "amount" }
+                }
+              }
+            }
+          ],
+          "contexts": [ "Accounts" ],
+          "resolved": {
+            "func": {
+              "params": [ "Account", "Account", "Nat" ],
+              "return": null
+            }
+          }
+        }
+      ],
+      "body": [
+        {
+          "binop": {
+            "op": "eq",
+            "left": {
+              "app": {
+                "func": { "primed": "balance" },
+                "args": [ { "var": "from" } ]
+              }
+            },
+            "right": {
+              "binop": {
+                "op": "sub",
+                "left": {
+                  "app": {
+                    "func": { "var": "balance" },
+                    "args": [ { "var": "from" } ]
+                  }
+                },
+                "right": { "var": "amount" }
+              }
+            }
+          }
+        },
+        {
+          "binop": {
+            "op": "eq",
+            "left": {
+              "app": {
+                "func": { "primed": "balance" },
+                "args": [ { "var": "to" } ]
+              }
+            },
+            "right": {
+              "binop": {
+                "op": "add",
+                "left": {
+                  "app": {
+                    "func": { "var": "balance" },
+                    "args": [ { "var": "to" } ]
+                  }
+                },
+                "right": { "var": "amount" }
+              }
+            }
+          }
+        },
+        {
+          "forall": {
+            "params": [ { "name": "b", "type": "Account" } ],
+            "guards": [],
+            "body": {
+              "binop": {
+                "op": "impl",
+                "left": {
+                  "binop": {
+                    "op": "and",
+                    "left": {
+                      "binop": {
+                        "op": "neq",
+                        "left": { "var": "b" },
+                        "right": { "var": "from" }
+                      }
+                    },
+                    "right": {
+                      "binop": {
+                        "op": "neq",
+                        "left": { "var": "b" },
+                        "right": { "var": "to" }
+                      }
+                    }
+                  }
+                },
+                "right": {
+                  "binop": {
+                    "op": "eq",
+                    "left": {
+                      "app": {
+                        "func": { "primed": "balance" },
+                        "args": [ { "var": "b" } ]
+                      }
+                    },
+                    "right": {
+                      "app": {
+                        "func": { "var": "balance" },
+                        "args": [ { "var": "b" } ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "forall": {
+            "params": [ { "name": "b", "type": "Account" } ],
+            "guards": [],
+            "body": {
+              "binop": {
+                "op": "eq",
+                "left": {
+                  "app": {
+                    "func": { "primed": "owner" },
+                    "args": [ { "var": "b" } ]
+                  }
+                },
+                "right": {
+                  "app": {
+                    "func": { "var": "owner" },
+                    "args": [ { "var": "b" } ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

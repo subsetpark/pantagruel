@@ -1,0 +1,204 @@
+{
+  "module": "LIBRARY",
+  "imports": [],
+  "contexts": [],
+  "types": {
+    "Book": { "kind": "domain" },
+    "Loan": { "kind": "domain" },
+    "User": { "kind": "domain" }
+  },
+  "rules": {
+    "available": { "params": [ "Book" ], "return": "Bool" },
+    "book-of": { "params": [ "Loan" ], "return": "Book" },
+    "borrower": { "params": [ "Book" ], "return": "User" },
+    "loan-holder": { "params": [ "Loan" ], "return": "User" },
+    "loans": { "params": [ "User" ], "return": { "list": "Loan" } }
+  },
+  "chapters": [
+    {
+      "head": [
+        {
+          "doc": [
+            [
+              "A library management system specification",
+              "Demonstrates domains, procedures, and state transitions"
+            ],
+            [ "Domains" ]
+          ],
+          "kind": "domain",
+          "name": "User"
+        },
+        { "kind": "domain", "name": "Book" },
+        { "kind": "domain", "name": "Loan" },
+        {
+          "doc": [ [ "Rules with return types" ] ],
+          "kind": "rule",
+          "name": "available",
+          "params": [ { "name": "b", "type": "Book" } ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": { "func": { "params": [ "Book" ], "return": "Bool" } }
+        },
+        {
+          "kind": "rule",
+          "name": "borrower",
+          "params": [ { "name": "b", "type": "Book" } ],
+          "guards": [],
+          "return": "User",
+          "resolved": { "func": { "params": [ "Book" ], "return": "User" } }
+        },
+        {
+          "kind": "rule",
+          "name": "loans",
+          "params": [ { "name": "u", "type": "User" } ],
+          "guards": [],
+          "return": { "list": "Loan" },
+          "resolved": {
+            "func": { "params": [ "User" ], "return": { "list": "Loan" } }
+          }
+        },
+        {
+          "kind": "rule",
+          "name": "book-of",
+          "params": [ { "name": "l", "type": "Loan" } ],
+          "guards": [],
+          "return": "Book",
+          "resolved": { "func": { "params": [ "Loan" ], "return": "Book" } }
+        },
+        {
+          "kind": "rule",
+          "name": "loan-holder",
+          "params": [ { "name": "l", "type": "Loan" } ],
+          "guards": [],
+          "return": "User",
+          "resolved": { "func": { "params": [ "Loan" ], "return": "User" } }
+        },
+        {
+          "doc": [ [ "Action for state transitions" ] ],
+          "kind": "action",
+          "label": "Borrow",
+          "params": [
+            { "name": "u", "type": "User" }, { "name": "b", "type": "Book" }
+          ],
+          "guards": [],
+          "resolved": {
+            "func": { "params": [ "User", "Book" ], "return": null }
+          }
+        }
+      ],
+      "body": [
+        {
+          "doc": [
+            [
+              "Available books have no borrower constraint",
+              "Unavailable books have a borrower"
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "b", "type": "Book" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "impl",
+                  "left": {
+                    "unop": {
+                      "op": "not",
+                      "arg": {
+                        "app": {
+                          "func": { "var": "available" },
+                          "args": [ { "var": "b" } ]
+                        }
+                      }
+                    }
+                  },
+                  "right": {
+                    "binop": {
+                      "op": "in",
+                      "left": {
+                        "app": {
+                          "func": { "var": "borrower" },
+                          "args": [ { "var": "b" } ]
+                        }
+                      },
+                      "right": { "domain": "User" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Each loan references a valid book and user" ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "l", "type": "Loan" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "in",
+                  "left": {
+                    "app": {
+                      "func": { "var": "book-of" },
+                      "args": [ { "var": "l" } ]
+                    }
+                  },
+                  "right": { "domain": "Book" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "forall": {
+            "params": [ { "name": "l", "type": "Loan" } ],
+            "guards": [],
+            "body": {
+              "binop": {
+                "op": "in",
+                "left": {
+                  "app": {
+                    "func": { "var": "loan-holder" },
+                    "args": [ { "var": "l" } ]
+                  }
+                },
+                "right": { "domain": "User" }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "After borrowing, the book is no longer available" ] ],
+          "expr": {
+            "binop": {
+              "op": "eq",
+              "left": {
+                "app": {
+                  "func": { "primed": "available" },
+                  "args": [ { "var": "b" } ]
+                }
+              },
+              "right": { "bool": false }
+            }
+          }
+        },
+        {
+          "doc": [ [ "After borrowing, the borrower is recorded" ] ],
+          "expr": {
+            "binop": {
+              "op": "eq",
+              "left": {
+                "app": {
+                  "func": { "primed": "borrower" },
+                  "args": [ { "var": "b" } ]
+                }
+              },
+              "right": { "var": "u" }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

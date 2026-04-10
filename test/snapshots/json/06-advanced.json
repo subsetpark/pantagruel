@@ -1,0 +1,269 @@
+{
+  "module": "ADVANCED",
+  "imports": [],
+  "contexts": [],
+  "types": {
+    "Item": { "kind": "domain" },
+    "Key": { "kind": "domain" },
+    "Value": { "kind": "domain" }
+  },
+  "rules": {
+    "available": { "params": [ "Item" ], "return": "Bool" },
+    "default-value": { "params": [], "return": "Value" },
+    "mapping": { "params": [ "Key" ], "return": "Value" }
+  },
+  "chapters": [
+    {
+      "head": [
+        {
+          "doc": [ [ "Advanced features: overrides, qualified names" ] ],
+          "kind": "domain",
+          "name": "Key"
+        },
+        { "kind": "domain", "name": "Value" },
+        {
+          "kind": "rule",
+          "name": "mapping",
+          "params": [ { "name": "k", "type": "Key" } ],
+          "guards": [],
+          "return": "Value",
+          "resolved": { "func": { "params": [ "Key" ], "return": "Value" } }
+        },
+        {
+          "kind": "rule",
+          "name": "default-value",
+          "params": [],
+          "guards": [],
+          "return": "Value",
+          "resolved": { "func": { "params": [], "return": "Value" } }
+        }
+      ],
+      "body": [
+        {
+          "doc": [
+            [
+              "Function override syntax: f[k |-> v]",
+              "Creates a function like f but with f(k) = v"
+            ],
+            [ "Override with single mapping" ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "k", "type": "Key" },
+                { "name": "v", "type": "Value" }
+              ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": {
+                        "override": {
+                          "func": "mapping",
+                          "mappings": [
+                            {
+                              "key": { "var": "k" },
+                              "value": { "var": "v" }
+                            }
+                          ]
+                        }
+                      },
+                      "args": [ { "var": "k" } ]
+                    }
+                  },
+                  "right": { "var": "v" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Override preserves other values" ] ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "k1", "type": "Key" },
+                { "name": "k2", "type": "Key" },
+                { "name": "v", "type": "Value" }
+              ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "impl",
+                  "left": {
+                    "binop": {
+                      "op": "neq",
+                      "left": { "var": "k1" },
+                      "right": { "var": "k2" }
+                    }
+                  },
+                  "right": {
+                    "binop": {
+                      "op": "eq",
+                      "left": {
+                        "app": {
+                          "func": {
+                            "override": {
+                              "func": "mapping",
+                              "mappings": [
+                                {
+                                  "key": { "var": "k1" },
+                                  "value": { "var": "v" }
+                                }
+                              ]
+                            }
+                          },
+                          "args": [ { "var": "k2" } ]
+                        }
+                      },
+                      "right": {
+                        "app": {
+                          "func": { "var": "mapping" },
+                          "args": [ { "var": "k2" } ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Override doesn't affect other keys" ] ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "k1", "type": "Key" },
+                { "name": "k2", "type": "Key" },
+                { "name": "v", "type": "Value" }
+              ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "impl",
+                  "left": {
+                    "binop": {
+                      "op": "neq",
+                      "left": { "var": "k1" },
+                      "right": { "var": "k2" }
+                    }
+                  },
+                  "right": {
+                    "binop": {
+                      "op": "eq",
+                      "left": {
+                        "app": {
+                          "func": {
+                            "override": {
+                              "func": "mapping",
+                              "mappings": [
+                                {
+                                  "key": { "var": "k1" },
+                                  "value": { "var": "v" }
+                                }
+                              ]
+                            }
+                          },
+                          "args": [ { "var": "k2" } ]
+                        }
+                      },
+                      "right": {
+                        "app": {
+                          "func": { "var": "mapping" },
+                          "args": [ { "var": "k2" } ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "head": [
+        { "kind": "domain", "name": "Item" },
+        {
+          "kind": "rule",
+          "name": "available",
+          "params": [ { "name": "i", "type": "Item" } ],
+          "guards": [],
+          "return": "Bool",
+          "resolved": { "func": { "params": [ "Item" ], "return": "Bool" } }
+        }
+      ],
+      "body": [
+        {
+          "forall": {
+            "params": [ { "name": "i", "type": "Item" } ],
+            "guards": [],
+            "body": {
+              "binop": {
+                "op": "or",
+                "left": {
+                  "app": {
+                    "func": { "var": "available" },
+                    "args": [ { "var": "i" } ]
+                  }
+                },
+                "right": {
+                  "unop": {
+                    "op": "not",
+                    "arg": {
+                      "app": {
+                        "func": { "var": "available" },
+                        "args": [ { "var": "i" } ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Implication" ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "i", "type": "Item" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "impl",
+                  "left": { "bool": false },
+                  "right": {
+                    "app": {
+                      "func": { "var": "available" },
+                      "args": [ { "var": "i" } ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [ [ "Membership" ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "i", "type": "Item" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "in",
+                  "left": { "var": "i" },
+                  "right": { "domain": "Item" }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

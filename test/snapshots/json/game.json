@@ -1,0 +1,130 @@
+{
+  "module": "GAME",
+  "imports": [],
+  "contexts": [],
+  "types": { "Player": { "kind": "domain" } },
+  "rules": {
+    "finished": { "params": [], "return": "Bool" },
+    "score": { "params": [ "Player" ], "return": "Nat0" },
+    "winner": { "params": [], "return": "Player" }
+  },
+  "chapters": [
+    {
+      "head": [
+        { "kind": "domain", "name": "Player" },
+        {
+          "kind": "rule",
+          "name": "finished",
+          "params": [],
+          "guards": [],
+          "return": "Bool",
+          "resolved": { "func": { "params": [], "return": "Bool" } }
+        },
+        {
+          "kind": "rule",
+          "name": "winner",
+          "params": [],
+          "guards": [],
+          "return": "Player",
+          "resolved": { "func": { "params": [], "return": "Player" } }
+        },
+        {
+          "kind": "rule",
+          "name": "score",
+          "params": [ { "name": "p", "type": "Player" } ],
+          "guards": [],
+          "return": "Nat0",
+          "resolved": {
+            "func": { "params": [ "Player" ], "return": "Nat0" }
+          }
+        }
+      ],
+      "body": [
+        {
+          "binop": {
+            "op": "impl",
+            "left": { "var": "finished" },
+            "right": {
+              "forall": {
+                "params": [ { "name": "q", "type": "Player" } ],
+                "guards": [
+                  {
+                    "expr": {
+                      "binop": {
+                        "op": "neq",
+                        "left": { "var": "q" },
+                        "right": { "var": "winner" }
+                      }
+                    }
+                  }
+                ],
+                "body": {
+                  "binop": {
+                    "op": "gt",
+                    "left": {
+                      "app": {
+                        "func": { "var": "score" },
+                        "args": [ { "var": "winner" } ]
+                      }
+                    },
+                    "right": {
+                      "app": {
+                        "func": { "var": "score" },
+                        "args": [ { "var": "q" } ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "initially": {
+            "unop": { "op": "not", "arg": { "var": "finished" } }
+          }
+        },
+        {
+          "initially": {
+            "forall": {
+              "params": [ { "name": "p", "type": "Player" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": { "var": "score" },
+                      "args": [ { "var": "p" } ]
+                    }
+                  },
+                  "right": { "nat": 0 }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "head": [
+        {
+          "kind": "action",
+          "label": "End-Game",
+          "params": [],
+          "guards": [],
+          "resolved": { "func": { "params": [], "return": null } }
+        }
+      ],
+      "body": [
+        {
+          "binop": {
+            "op": "impl",
+            "left": { "unop": { "op": "not", "arg": { "var": "finished" } } },
+            "right": { "primed": "finished" }
+          }
+        }
+      ]
+    }
+  ]
+}
