@@ -1,4 +1,5 @@
 import ts from "typescript";
+import { findFunction } from "./translate-signature.js";
 
 /** A raw Pantagruel proposition extracted from a @pant annotation. */
 export interface PantAnnotation {
@@ -117,4 +118,21 @@ export function extractAnnotations(
   }
 
   return result;
+}
+
+/**
+ * Convenience wrapper: find a function by name and extract its @pant
+ * proposition texts as plain strings.
+ */
+export function extractFunctionAnnotations(
+  program: ts.Program,
+  fileName: string,
+  functionName: string,
+): string[] {
+  const sourceFile = program.getSourceFile(fileName);
+  if (!sourceFile) return [];
+
+  const { node } = findFunction(program, fileName, functionName);
+  const result = extractAnnotations(node, sourceFile);
+  return result.propositions.map((p) => p.text);
 }
