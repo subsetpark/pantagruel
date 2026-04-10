@@ -19,6 +19,7 @@ import {
   classifyFunction,
   findFunction,
   isAssertionCall,
+  isFollowableGuardCall,
   shortParamName,
   translateExpr,
   translateOperator,
@@ -267,13 +268,13 @@ function isGuardStatement(
   stmt: ts.Statement,
   checker: ts.TypeChecker,
 ): boolean {
-  // Assertion call: assert(cond), invariant(cond), etc.
+  // Assertion call or followable guard call
   if (
     ts.isExpressionStatement(stmt) &&
-    ts.isCallExpression(stmt.expression) &&
-    isAssertionCall(checker, stmt.expression) !== null
+    ts.isCallExpression(stmt.expression)
   ) {
-    return true;
+    if (isAssertionCall(checker, stmt.expression) !== null) return true;
+    if (isFollowableGuardCall(stmt.expression, checker)) return true;
   }
 
   if (!ts.isIfStatement(stmt)) {

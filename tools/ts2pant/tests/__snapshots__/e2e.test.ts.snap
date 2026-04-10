@@ -62,3 +62,20 @@ check
 all a: Int, b: Int | larger a b >= a and larger a b >= b.
 "
 `;
+
+exports[`emission snapshots > validate-helper.ts deposit 1`] = `
+"module Deposit.
+
+Account.
+balance a: Account => Int.
+~> Deposit @ account: Account, amount: Int, ~(amount <= 0), ~(balance account < 0).
+
+---
+
+balance' account = balance account + amount.
+
+check
+
+balance' account >= 0.
+"
+`;

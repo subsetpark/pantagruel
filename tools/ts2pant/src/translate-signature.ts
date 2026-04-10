@@ -1,5 +1,5 @@
 import ts from "typescript";
-import { Apply, Binop, Lit, type PantExpr, Unop, Var } from "./pant-expr.js";
+import { Apply, Binop, Lit, type PantExpr, Unop, Var, renderExpr } from "./pant-expr.js";
 import { mapTsType, type NumericStrategy } from "./translate-types.js";
 import type { PantAction, PantDeclaration, PantRule } from "./types.js";
 
@@ -170,30 +170,131 @@ export function extractAssertionGuard(
 }
 
 /**
- * Detect guard patterns in a function body.
- * Patterns:
- *   if (cond) { body } else { throw ... }
- *   if (!cond) { throw ... } (early return guard)
- *   assert(cond) — calls with `asserts` return type
+ * Resolve a call expression to a function body we can follow.
+ * Returns the function-like node and its parameters, or null if we should bail.
+ *
+ * Bail conditions: node_modules, non-function declaration, dynamic dispatch,
+ * higher-order calls (callee is a parameter).
  */
-export function detectGuard(
-  node: ts.FunctionDeclaration | ts.MethodDeclaration,
+function resolveCallTarget(
+  call: ts.CallExpression,
+  checker: ts.TypeChecker,
+): { body: ts.Block; params: ts.NodeArray<ts.ParameterDeclaration> } | null {
+  // Try getResolvedSignature first (works for direct calls, imports)
+  const sig = checker.getResolvedSignature(call);
+  let decl = sig?.declaration;
+
+  // For const-bound functions, resolve via symbol
+  if (!decl || !ts.isFunctionLike(decl)) {
+    const expr = call.expression;
+    if (ts.isIdentifier(expr)) {
+      const symbol = checker.getSymbolAtLocation(expr);
+      const vDecl = symbol?.valueDeclaration;
+      if (vDecl && ts.isVariableDeclaration(vDecl) && vDecl.initializer) {
+        const init = vDecl.initializer;
+        if (ts.isFunctionExpression(init) || ts.isArrowFunction(init)) {
+          decl = init;
+        }
+      }
+    }
+  }
+
+  if (!decl || !ts.isFunctionLike(decl)) return null;
+
+  // Bail: declaration is in node_modules
+  const sourceFile = decl.getSourceFile();
+  if (sourceFile.fileName.includes("node_modules")) return null;
+
+  // Get the body — must be a block (not expression-bodied arrow)
+  let body: ts.Block | undefined;
+  if (ts.isFunctionDeclaration(decl) || ts.isMethodDeclaration(decl)) {
+    body = decl.body;
+  } else if (ts.isFunctionExpression(decl)) {
+    body = decl.body;
+  } else if (ts.isArrowFunction(decl)) {
+    body = ts.isBlock(decl.body) ? decl.body : undefined;
+  }
+
+  if (!body) return null;
+
+  return { body, params: decl.parameters };
+}
+
+/**
+ * Build a parameter substitution map for following a call into a function.
+ * Maps formal parameter names to translated actual argument expressions.
+ */
+function buildSubstitutionMap(
+  call: ts.CallExpression,
+  targetParams: ts.NodeArray<ts.ParameterDeclaration>,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  callerParamNames: Map<string, string>,
+): Map<string, string> {
+  const innerMap = new Map<string, string>();
+  for (let i = 0; i < targetParams.length && i < call.arguments.length; i++) {
+    const formal = targetParams[i]!;
+    if (ts.isIdentifier(formal.name)) {
+      const actual = translateExpr(
+        call.arguments[i]!, checker, strategy, callerParamNames,
+      );
+      innerMap.set(formal.name.text, renderExpr(actual));
+    }
+  }
+  return innerMap;
+}
+
+/**
+ * Follow a call expression into the called function to extract guards.
+ * Conservative: bails on recursion, dynamic dispatch, node_modules, etc.
+ */
+function followGuards(
+  call: ts.CallExpression,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  callerParamNames: Map<string, string>,
+  visited: Set<ts.Node>,
+): PantExpr[] {
+  const target = resolveCallTarget(call, checker);
+  if (!target) return [];
+
+  // Bail: recursion
+  if (visited.has(target.body)) return [];
+
+  const innerParamNames = buildSubstitutionMap(
+    call, target.params, checker, strategy, callerParamNames,
+  );
+
+  visited.add(target.body);
+  const guards = scanBodyForGuards(
+    target.body, checker, strategy, innerParamNames, visited,
+  );
+  visited.delete(target.body);
+
+  return guards;
+}
+
+/**
+ * Scan leading statements of a function body for guard patterns.
+ * Extracts guards from if-throw patterns, assertion calls, and
+ * recursively follows direct calls to extract their guards.
+ */
+function scanBodyForGuards(
+  body: ts.Block,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
-): PantExpr | undefined {
-  if (!node.body) {
-    return undefined;
-  }
-
+  visited: Set<ts.Node>,
+): PantExpr[] {
   const guards: PantExpr[] = [];
 
-  for (const stmt of node.body.statements) {
-    // Pattern: assertion call — assert(cond), invariant(cond), etc.
+  for (const stmt of body.statements) {
+    // Pattern: call expression (assertion or followable call)
     if (
       ts.isExpressionStatement(stmt) &&
       ts.isCallExpression(stmt.expression)
     ) {
+      // Try assertion call first
       const g = extractAssertionGuard(
         checker,
         stmt.expression,
@@ -204,7 +305,17 @@ export function detectGuard(
         guards.push(g);
         continue;
       }
-      // Non-assertion call — stop scanning (side-effectful statement)
+
+      // Try following the call
+      const followed = followGuards(
+        stmt.expression, checker, strategy, paramNames, visited,
+      );
+      if (followed.length > 0) {
+        guards.push(...followed);
+        continue;
+      }
+
+      // Non-followable call — stop scanning (side-effectful statement)
       break;
     }
 
@@ -225,7 +336,6 @@ export function detectGuard(
       blockThrows(stmt.thenStatement) &&
       !stmt.elseStatement
     ) {
-      // Negate: if the condition is a prefix !, strip it
       if (
         ts.isPrefixUnaryExpression(stmt.expression) &&
         stmt.expression.operator === ts.SyntaxKind.ExclamationToken
@@ -235,7 +345,6 @@ export function detectGuard(
         );
         continue;
       }
-      // Otherwise negate the whole expression
       guards.push(
         Unop(
           "~",
@@ -245,9 +354,83 @@ export function detectGuard(
       continue;
     }
 
-    // If it's an if-statement but doesn't match a guard pattern, stop scanning
+    // If-statement doesn't match a guard pattern — stop scanning
     break;
   }
+
+  return guards;
+}
+
+/**
+ * Check if a call expression resolves to a function that is a "pure guard" —
+ * every statement in its body is a guard pattern, with no non-guard side effects.
+ * Used by isGuardStatement in translate-body.ts to filter followed calls.
+ */
+export function isFollowableGuardCall(
+  call: ts.CallExpression,
+  checker: ts.TypeChecker,
+): boolean {
+  const target = resolveCallTarget(call, checker);
+  if (!target) {
+    return false;
+  }
+
+  for (const stmt of target.body.statements) {
+    if (
+      ts.isExpressionStatement(stmt) &&
+      ts.isCallExpression(stmt.expression)
+    ) {
+      // Assertion call is always a guard
+      if (isAssertionCall(checker, stmt.expression) !== null) {
+        continue;
+      }
+      // Recursive followable check
+      if (isFollowableGuardCall(stmt.expression, checker)) {
+        continue;
+      }
+      return false;
+    }
+    if (!ts.isIfStatement(stmt)) {
+      return false;
+    }
+    if (!stmt.elseStatement && blockThrows(stmt.thenStatement)) {
+      continue;
+    }
+    if (stmt.elseStatement && blockThrows(stmt.elseStatement)) {
+      continue;
+    }
+    return false;
+  }
+  return target.body.statements.length > 0;
+}
+
+/**
+ * Detect guard patterns in a function body.
+ * Patterns:
+ *   if (cond) { body } else { throw ... }
+ *   if (!cond) { throw ... } (early return guard)
+ *   assert(cond) — calls with `asserts` return type
+ *   validateX(args) — direct calls to functions containing only guards
+ */
+export function detectGuard(
+  node: ts.FunctionDeclaration | ts.MethodDeclaration,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: Map<string, string>,
+): PantExpr | undefined {
+  if (!node.body) {
+    return undefined;
+  }
+
+  const visited = new Set<ts.Node>();
+  visited.add(node.body);
+  const guards = scanBodyForGuards(
+    node.body,
+    checker,
+    strategy,
+    paramNames,
+    visited,
+  );
 
   if (guards.length === 0) {
     return undefined;

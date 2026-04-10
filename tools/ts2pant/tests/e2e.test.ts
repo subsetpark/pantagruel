@@ -201,6 +201,11 @@ describe("emission snapshots", () => {
     const doc = buildDocument("assert-guard.ts", "deposit");
     expect(emitDocument(doc)).toMatchSnapshot();
   });
+
+  it("validate-helper.ts deposit", () => {
+    const doc = buildDocument("validate-helper.ts", "deposit");
+    expect(emitDocument(doc)).toMatchSnapshot();
+  });
 });
 
 // --- SMT check tests (require z3) ---
