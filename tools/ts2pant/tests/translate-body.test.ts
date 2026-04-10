@@ -3,6 +3,7 @@ import { createProgramFromSource } from "../src/extract.js";
 import { IntStrategy } from "../src/translate-types.js";
 import { translateBody } from "../src/translate-body.js";
 import type { PantDeclaration } from "../src/types.js";
+import { renderProp } from "../src/pant-expr.js";
 
 function translate(
   source: string,
@@ -11,13 +12,15 @@ function translate(
 ) {
   const fileName = "test.ts";
   const program = createProgramFromSource(source, fileName);
-  return translateBody({
+  const props = translateBody({
     program,
     fileName,
     functionName,
     strategy: IntStrategy,
     declarations,
   });
+  // Render to text for assertion compatibility
+  return props.map((p) => ({ text: renderProp(p) }));
 }
 
 describe("pure function: return expression -> proposition", () => {

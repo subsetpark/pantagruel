@@ -5,6 +5,7 @@ import { Command } from "commander";
 import { extractFunctionAnnotations } from "./annotations.js";
 import { emitDocument, runCheck } from "./emit.js";
 import { createProgram, extractReferencedTypes } from "./extract.js";
+import { RawProp } from "./pant-expr.js";
 import { translateBody as translateFunctionBody } from "./translate-body.js";
 import { translateSignature } from "./translate-signature.js";
 import {
@@ -132,7 +133,7 @@ export function addAnnotations(
     opts.functionName,
   );
 
-  const annotationProps = annotations.map((text) => ({ text }));
+  const annotationProps = annotations.map((text) => RawProp(text));
   return { ...doc, propositions: [...doc.propositions, ...annotationProps] };
 }
 

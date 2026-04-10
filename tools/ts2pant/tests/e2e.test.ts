@@ -8,6 +8,7 @@ import { translateBody } from "../src/translate-body.js";
 import { extractFunctionAnnotations } from "../src/annotations.js";
 import { emitDocument, runCheck } from "../src/emit.js";
 import type { PantDocument } from "../src/types.js";
+import { RawProp } from "../src/pant-expr.js";
 
 const FIXTURES = resolve(__dirname, "fixtures");
 const PROJECT_ROOT = resolve(__dirname, "../../..");
@@ -64,7 +65,7 @@ function buildDocument(
 
   // Annotations
   const annotations = extractFunctionAnnotations(program, fileName, functionName);
-  const annotationProps = annotations.map((text) => ({ text }));
+  const annotationProps = annotations.map((text) => RawProp(text));
   doc = { ...doc, propositions: [...doc.propositions, ...annotationProps] };
 
   return doc;
