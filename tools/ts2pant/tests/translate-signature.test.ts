@@ -212,6 +212,59 @@ describe("guarded mutator -> action with guard", () => {
   });
 });
 
+describe("overloaded functions", () => {
+  it("prefers implementation over overload signature", () => {
+    const source = `
+      function add(a: number, b: number): number;
+      function add(a: string, b: string): string;
+      function add(a: any, b: any): any {
+        return a + b;
+      }
+    `;
+    const program = createProgramFromSource(source);
+    const { node } = findFunction(program, "test.ts", "add");
+    // Should find the implementation (has body), not an overload signature
+    expect(node.body).toBeDefined();
+  });
+});
+
+describe("nested closure property assignment", () => {
+  it("does not classify outer function as mutating due to nested closure", () => {
+    const source = `
+      interface Account { balance: number; }
+      function makeResetter(a: Account): () => void {
+        return () => { a.balance = 0; };
+      }
+    `;
+    const program = createProgramFromSource(source);
+    const { node } = findFunction(program, "test.ts", "makeResetter");
+    const checker = program.getTypeChecker();
+    expect(classifyFunction(node, checker)).toBe("pure");
+  });
+});
+
+describe("guard detection stops at non-if statements", () => {
+  it("does not detect guard after non-guard statements", () => {
+    const source = `
+      interface Account { balance: number; }
+      function process(a: Account, amount: number): void {
+        a.balance = a.balance + 1;
+        if (a.balance >= amount) {
+          a.balance = a.balance - amount;
+        } else {
+          throw new Error("Insufficient funds");
+        }
+      }
+    `;
+    const result = translate(source, "process");
+
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind === "action") {
+      expect(result.declaration.guard).toBeUndefined();
+    }
+  });
+});
+
 describe("class method -> declaration with this param", () => {
   it("translates pure method with this as first param", () => {
     const source = `

@@ -21,10 +21,15 @@ export function findFunction(
   const sourceFile = program.getSourceFile(fileName);
   if (!sourceFile) throw new Error(`Source file not found: ${fileName}`);
 
+  let match:
+    | { node: ts.FunctionDeclaration | ts.MethodDeclaration; className?: string }
+    | undefined;
+
   // Search top-level functions
   for (const stmt of sourceFile.statements) {
     if (ts.isFunctionDeclaration(stmt) && stmt.name?.text === functionName) {
-      return { node: stmt };
+      if (stmt.body) return { node: stmt };
+      match ??= { node: stmt };
     }
   }
 
@@ -37,12 +42,14 @@ export function findFunction(
           ts.isIdentifier(member.name) &&
           member.name.text === functionName
         ) {
-          return { node: member, className: stmt.name.text };
+          if (member.body) return { node: member, className: stmt.name.text };
+          match ??= { node: member, className: stmt.name.text };
         }
       }
     }
   }
 
+  if (match) return match;
   throw new Error(`Function not found: ${functionName}`);
 }
 
@@ -70,6 +77,9 @@ function hasPropertyAssignment(node: ts.Node): boolean {
   let found = false;
   function visit(n: ts.Node) {
     if (found) return;
+    // Don't recurse into nested functions or classes
+    if (ts.isFunctionLike(n) && n !== node) return;
+    if (ts.isClassDeclaration(n) || ts.isClassExpression(n)) return;
     if (
       ts.isBinaryExpression(n) &&
       n.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
@@ -99,7 +109,8 @@ export function detectGuard(
   if (!node.body) return undefined;
 
   for (const stmt of node.body.statements) {
-    if (!ts.isIfStatement(stmt)) continue;
+    // Only extract guards from leading precondition checks
+    if (!ts.isIfStatement(stmt)) break;
 
     // Pattern 1: if (cond) { ... } else { throw }
     if (stmt.elseStatement && blockThrows(stmt.elseStatement)) {
@@ -127,6 +138,9 @@ export function detectGuard(
       // Otherwise negate the whole expression
       return `~(${translateExpr(stmt.expression, checker, strategy, paramNames)})`;
     }
+
+    // If it's an if-statement but doesn't match a guard pattern, stop scanning
+    break;
   }
 
   return undefined;
