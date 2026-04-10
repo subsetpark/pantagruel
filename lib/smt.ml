@@ -1690,9 +1690,17 @@ let collect_conds_in_expr (e : expr) : cond_info list =
 let collect_conds_from_doc (doc : document) : cond_info list =
   List.concat_map
     (fun chapter ->
-      List.concat_map
-        (fun (prop : expr located) -> collect_conds_in_expr prop.value)
-        chapter.body)
+      let body_conds =
+        List.concat_map
+          (fun (prop : expr located) -> collect_conds_in_expr prop.value)
+          chapter.body
+      in
+      let check_conds =
+        List.concat_map
+          (fun (prop : expr located) -> collect_conds_in_expr prop.value)
+          chapter.checks
+      in
+      body_conds @ check_conds)
     doc.chapters
 
 (** Build value terms for a cond exhaustiveness query. Only includes functions
@@ -1776,6 +1784,89 @@ let generate_exhaustiveness_query config env ~all_invariants:_ ~index cond =
     assertion_names = [];
   }
 
+(** Entailment query for invariant chapters: assert all invariants, negate the
+    check goal, test UNSAT. *)
+let generate_invariant_entailment_query config env invariant_props ~index
+    (goal : expr located) =
+  let buf = Buffer.create 1024 in
+  let goal_text = Pretty.str_expr goal.value in
+  Buffer.add_string buf
+    (Printf.sprintf "; Entailment check (invariant): %s\n" goal_text);
+  Buffer.add_string buf (generate_preamble ~constrain_primed:false config env);
+  (* Assert all invariants as assumptions *)
+  if invariant_props <> [] then begin
+    Buffer.add_string buf "\n; --- Invariants (assumptions) ---\n";
+    let inv_conj = conjoin_propositions config env invariant_props in
+    Buffer.add_string buf (Printf.sprintf "(assert %s)\n" inv_conj)
+  end;
+  (* Negate the check goal *)
+  Buffer.add_string buf "\n; --- Negated check goal ---\n";
+  let goal_smt = translate_proposition config env goal.value in
+  Buffer.add_string buf (Printf.sprintf "(assert (not %s))\n" goal_smt);
+  let value_terms = build_invariant_value_terms config env in
+  Buffer.add_string buf "(check-sat)\n";
+  append_get_value buf value_terms;
+  {
+    name = Printf.sprintf "entailment:invariant:%d" index;
+    description = Printf.sprintf "Entailed: %s" goal_text;
+    smt2 = Buffer.contents buf;
+    kind = Entailment;
+    value_terms;
+    invariant_text = goal_text;
+    assertion_names = [];
+  }
+
+(** Entailment query for action chapters: assert invariants + preconditions +
+    postconditions + frame, negate the check goal, test UNSAT. *)
+let generate_action_entailment_query config env ~all_invariants ~index
+    (goal : expr located) action =
+  let env = env_with_action_params env action.a_params in
+  let buf = Buffer.create 1024 in
+  let goal_text = Pretty.str_expr goal.value in
+  Buffer.add_string buf
+    (Printf.sprintf "; Entailment check (action %s): %s\n" action.a_label
+       goal_text);
+  Buffer.add_string buf (generate_preamble ~constrain_primed:false config env);
+  Buffer.add_string buf "\n; --- Action parameters ---\n";
+  Buffer.add_string buf (declare_action_params env action.a_params);
+  Buffer.add_string buf (declare_param_constraints env action.a_params);
+  declare_domain_membership config buf action.a_params env;
+  (* Assert all invariants hold in current state *)
+  if all_invariants <> [] then begin
+    Buffer.add_string buf "\n; --- Invariants (current state) ---\n";
+    let inv_current = conjoin_propositions config env all_invariants in
+    Buffer.add_string buf (Printf.sprintf "(assert %s)\n" inv_current)
+  end;
+  (* Assert preconditions *)
+  let preconditions = extract_preconditions config env action.a_guards in
+  List.iter
+    (fun pc -> Buffer.add_string buf (Printf.sprintf "(assert %s)\n" pc))
+    preconditions;
+  (* Assert action postconditions (transition relation) — no guard injection *)
+  let post_config = { config with inject_guards = false } in
+  Buffer.add_string buf "\n; --- Action postconditions (transition) ---\n";
+  let transition = conjoin_propositions post_config env action.a_propositions in
+  Buffer.add_string buf (Printf.sprintf "(assert %s)\n" transition);
+  (* Assert frame conditions *)
+  Buffer.add_string buf (generate_frame_conditions config env action.a_contexts);
+  (* Negate the check goal — no auto-priming, user writes primes explicitly *)
+  Buffer.add_string buf "\n; --- Negated check goal ---\n";
+  let goal_smt = translate_proposition config env goal.value in
+  Buffer.add_string buf (Printf.sprintf "(assert (not %s))\n" goal_smt);
+  let value_terms = build_value_terms config env action.a_params in
+  Buffer.add_string buf "(check-sat)\n";
+  append_get_value buf value_terms;
+  {
+    name = Printf.sprintf "entailment:%s:%d" action.a_label index;
+    description =
+      Printf.sprintf "Entailed by action '%s': %s" action.a_label goal_text;
+    smt2 = Buffer.contents buf;
+    kind = Entailment;
+    value_terms;
+    invariant_text = goal_text;
+    assertion_names = [];
+  }
+
 (** Generate all verification queries for a document *)
 let generate_queries config env (doc : document) =
   let chapters = classify_chapters doc in
@@ -1847,4 +1938,18 @@ let generate_queries config env (doc : document) =
           generate_exhaustiveness_query config env ~all_invariants:invariants
             ~index cond))
     conds;
+  (* Entailment queries for check blocks *)
+  let all_checks = collect_checks chapters in
+  List.iteri
+    (fun index (check_expr, check_context) ->
+      match check_context with
+      | CheckInvariant ->
+          add (fun () ->
+              generate_invariant_entailment_query config env invariants ~index
+                check_expr)
+      | CheckAction action ->
+          add (fun () ->
+              generate_action_entailment_query config env
+                ~all_invariants:invariants ~index check_expr action))
+    all_checks;
   List.rev !queries

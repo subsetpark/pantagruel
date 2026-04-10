@@ -31,6 +31,8 @@ type type_error =
       (** combiner symbol, actual body type *)
   | AggregateRequiresBool of string * ty * loc
       (** combiner symbol, actual body type *)
+  | CheckWithoutBody of loc
+      (** check block present but chapter body is empty *)
 [@@deriving show]
 
 let type_warnings : type_error list ref = ref []
@@ -531,7 +533,13 @@ let check_chapter_body ~chapter_idx env (chapter : chapter) =
 
   let ctx = { env = env'; loc = dummy_loc } in
 
-  map_result (check_proposition ctx) chapter.body
+  (* Reject check block without body *)
+  if chapter.checks <> [] && chapter.body = [] then
+    let loc = match chapter.checks with c :: _ -> c.loc | [] -> dummy_loc in
+    Error (CheckWithoutBody loc)
+  else
+    let* _ = map_result (check_proposition ctx) chapter.body in
+    map_result (check_proposition ctx) chapter.checks
 
 (** Check guards on all rule declarations in a chapter head *)
 let check_chapter_guards ~chapter_idx env (chapter : chapter) =

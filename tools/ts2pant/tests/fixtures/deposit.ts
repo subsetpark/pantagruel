@@ -4,7 +4,7 @@ interface Account {
 
 /**
  * Deposit funds into an account.
- * @pant all a: Account | balance' a >= 0
+ * @pant balance' account > balance account
  */
 function deposit(account: Account, amount: number): void {
   if (amount <= 0) {

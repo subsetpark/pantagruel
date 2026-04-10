@@ -204,7 +204,8 @@ let test_classify_chapters () =
   let chapters = Smt.classify_chapters doc in
   check int "chapter count" 2 (List.length chapters);
   (match List.nth chapters 0 with
-  | Smt.Invariant props -> check int "invariant props" 1 (List.length props)
+  | Smt.Invariant { propositions; _ } ->
+      check int "invariant props" 1 (List.length propositions)
   | Smt.Action _ -> fail "Expected invariant chapter");
   match List.nth chapters 1 with
   | Smt.Action { label; _ } -> check string "action label" "Withdraw" label
@@ -2264,6 +2265,72 @@ let aggregate_tests =
     test_case "integration" `Quick test_aggregate_integration;
   ]
 
+let test_entailment_invariant_query () =
+  let env, doc =
+    parse_and_collect
+      "module T.\n\
+       f a: Int => Int.\n\
+       ---\n\
+       all a: Int | f a = a + 1.\n\
+       check\n\
+       all a: Int | f a > a.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  let entailment =
+    List.filter (fun (q : Smt.query) -> q.kind = Smt.Entailment) queries
+  in
+  check int "entailment query count" 1 (List.length entailment);
+  let q = List.hd entailment in
+  check bool "has check-sat" true (contains q.smt2 "(check-sat)");
+  check bool "has negated goal" true (contains q.smt2 "(assert (not");
+  check bool "has f declaration" true (contains q.smt2 "(declare-fun f ")
+
+let test_entailment_action_query () =
+  let env, doc =
+    parse_and_collect
+      "module T.\n\
+       context Ctx.\n\
+       Account.\n\
+       {Ctx} balance a: Account => Nat.\n\
+       ---\n\
+       all a: Account | balance a >= 0.\n\
+       where\n\
+       Ctx ~> Deposit @ a: Account, amount: Nat.\n\
+       ---\n\
+       balance' a = balance a + amount.\n\
+       check\n\
+       balance' a >= balance a.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  let entailment =
+    List.filter (fun (q : Smt.query) -> q.kind = Smt.Entailment) queries
+  in
+  check int "entailment query count" 1 (List.length entailment);
+  let q = List.hd entailment in
+  check bool "has check-sat" true (contains q.smt2 "(check-sat)");
+  check bool "has negated goal" true (contains q.smt2 "(assert (not");
+  check bool "has postcondition" true (contains q.smt2 "balance_prime")
+
+let test_no_entailment_without_checks () =
+  let env, doc =
+    parse_and_collect
+      "module T.\nf a: Int => Int.\n---\nall a: Int | f a = a + 1.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  let entailment =
+    List.filter (fun (q : Smt.query) -> q.kind = Smt.Entailment) queries
+  in
+  check int "no entailment queries" 0 (List.length entailment)
+
+let entailment_tests =
+  [
+    test_case "invariant entailment query" `Quick
+      test_entailment_invariant_query;
+    test_case "action entailment query" `Quick test_entailment_action_query;
+    test_case "no entailment without checks" `Quick
+      test_no_entailment_without_checks;
+  ]
+
 let () =
   run "SMT"
     [
@@ -2281,4 +2348,5 @@ let () =
       ("cond", cond_tests);
       ("bug_finding", bug_finding_tests);
       ("aggregates", aggregate_tests);
+      ("entailment", entailment_tests);
     ]

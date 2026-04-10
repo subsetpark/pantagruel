@@ -5,7 +5,6 @@ import { Command } from "commander";
 import { extractFunctionAnnotations } from "./annotations.js";
 import { emitDocument, runCheck } from "./emit.js";
 import { createProgram, extractReferencedTypes } from "./extract.js";
-import { RawProp } from "./pant-expr.js";
 import { translateBody as translateFunctionBody } from "./translate-body.js";
 import { translateSignature } from "./translate-signature.js";
 import {
@@ -99,7 +98,7 @@ export function extract(opts: CliOptions): PantDocument {
   const moduleName =
     opts.functionName.charAt(0).toUpperCase() + opts.functionName.slice(1);
 
-  return { moduleName, declarations, propositions: [] };
+  return { moduleName, declarations, propositions: [], checks: [] };
 }
 
 /** Translate function body to propositions and append to doc. */
@@ -133,8 +132,8 @@ export function addAnnotations(
     opts.functionName,
   );
 
-  const annotationProps = annotations.map((text) => RawProp(text));
-  return { ...doc, propositions: [...doc.propositions, ...annotationProps] };
+  const annotationProps = annotations.map((text) => ({ text }));
+  return { ...doc, checks: [...doc.checks, ...annotationProps] };
 }
 
 function main(): void {

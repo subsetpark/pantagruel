@@ -577,7 +577,8 @@ process.
     | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
     | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
     | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _
-    | AggregateRequiresNumeric _ | AggregateRequiresBool _ ->
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
         false)
 
 let test_qualified_type_resolves_ambiguity () =
@@ -658,7 +659,8 @@ WRONG::count >= 0.
     | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
     | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
     | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _
-    | AggregateRequiresNumeric _ | AggregateRequiresBool _ ->
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
         false)
 
 let test_local_domain_shadows_import () =
@@ -970,7 +972,7 @@ all u: User | role u.
     | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
     | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
     | PrimedExtracontextual _ | BoolParam _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ ->
+    | AggregateRequiresBool _ | CheckWithoutBody _ ->
         false)
 
 let test_all_non_bool_body_error () =
@@ -992,7 +994,7 @@ some u: User | role u.
     | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
     | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
     | PrimedExtracontextual _ | BoolParam _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ ->
+    | AggregateRequiresBool _ | CheckWithoutBody _ ->
         false)
 
 let test_combiner_add_numeric () =
@@ -1035,7 +1037,7 @@ active u: User => Bool.
     | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
     | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
     | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _
-    | AggregateRequiresBool _ ->
+    | AggregateRequiresBool _ | CheckWithoutBody _ ->
         false)
 
 let test_combiner_bool_on_numeric_fails () =
@@ -1056,7 +1058,7 @@ and over each u: User | score u.
     | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
     | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
     | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _
-    | AggregateRequiresNumeric _ ->
+    | AggregateRequiresNumeric _ | CheckWithoutBody _ ->
         false)
 
 (* --- Closure tests --- *)
@@ -1268,7 +1270,7 @@ x.1 >= 0.
     | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
     | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
     | BoolParam _ | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ ->
+    | AggregateRequiresBool _ | CheckWithoutBody _ ->
         false)
 
 let test_not_numeric () =
@@ -1286,7 +1288,7 @@ f + 1 = 2.
     | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
     | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
     | BoolParam _ | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ ->
+    | AggregateRequiresBool _ | CheckWithoutBody _ ->
         false)
 
 let test_override_requires_arity1 () =
@@ -1307,7 +1309,7 @@ all a: A, b: B | f[a |-> b] a = a.
     | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
     | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
     | BoolParam _ | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ ->
+    | AggregateRequiresBool _ | CheckWithoutBody _ ->
         false)
 
 let test_projection_out_of_bounds () =
@@ -1326,7 +1328,7 @@ p.5 >= 0.
     | OverrideRequiresArity1 _ | PropositionNotBool _ | ShadowingTypeMismatch _
     | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
     | BoolParam _ | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ ->
+    | AggregateRequiresBool _ | CheckWithoutBody _ ->
         false)
 
 let test_unbound_type () =
@@ -1342,7 +1344,7 @@ f x: Nonexistent => Bool.
     | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
     | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
     | BoolParam _ | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ ->
+    | AggregateRequiresBool _ | CheckWithoutBody _ ->
         false)
 
 let test_builtin_redefined () = check_fails {|module TEST.
@@ -1366,7 +1368,7 @@ x in x.
     | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
     | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
     | BoolParam _ | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ ->
+    | AggregateRequiresBool _ | CheckWithoutBody _ ->
         false)
 
 let test_arithmetic_type_mismatch () =
@@ -1384,7 +1386,7 @@ f + 1 = 2.
     | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
     | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
     | BoolParam _ | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ ->
+    | AggregateRequiresBool _ | CheckWithoutBody _ ->
         false)
 
 (* --- Bug-finding tests --- *)
@@ -1460,7 +1462,8 @@ active? i: Item => Bool.
     | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
     | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
     | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _
-    | AggregateRequiresNumeric _ | AggregateRequiresBool _ ->
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
         false)
 
 let test_over_each_mul_nat () =
@@ -1490,7 +1493,8 @@ active? i: Item => Bool.
     | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
     | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
     | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _
-    | AggregateRequiresNumeric _ | AggregateRequiresBool _ ->
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
         false)
 
 let test_over_each_and_bool () =
@@ -1520,7 +1524,8 @@ and over each i: Item | weight i.
     | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
     | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
     | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _
-    | AggregateRequiresNumeric _ | AggregateRequiresBool _ ->
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
         false)
 
 let test_over_each_or_bool () =
@@ -1550,7 +1555,8 @@ or over each i: Item | weight i.
     | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
     | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
     | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _
-    | AggregateRequiresNumeric _ | AggregateRequiresBool _ ->
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
         false)
 
 let test_over_each_min_nat () =
@@ -1590,7 +1596,8 @@ active? i: Item => Bool.
     | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
     | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
     | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _
-    | AggregateRequiresNumeric _ | AggregateRequiresBool _ ->
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
         false)
 
 let test_over_each_min_bool_fails () =
@@ -1610,7 +1617,8 @@ active? i: Item => Bool.
     | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
     | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
     | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _
-    | AggregateRequiresNumeric _ | AggregateRequiresBool _ ->
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
         false)
 
 let test_over_each_bare_unchanged () =
@@ -1815,5 +1823,37 @@ let () =
             test_over_each_min_bool_fails;
           test_case "bare each behavior unchanged" `Quick
             test_over_each_bare_unchanged;
+        ] );
+      ( "check_block",
+        [
+          test_case "check block type-checks with same scope as body" `Quick
+            (fun () ->
+              check_ok
+                {|module T.
+f a: Int => Int.
+---
+all a: Int | f a = a + 1.
+check
+all a: Int | f a > a.
+|});
+          test_case "check block without body fails" `Quick (fun () ->
+              check_fails
+                {|module T.
+f a: Int => Int.
+---
+check
+all a: Int | f a > a.
+|});
+          test_case "check block can reference action params" `Quick (fun () ->
+              check_ok
+                {|module T.
+Account.
+balance a: Account => Int.
+~> Deposit @ a: Account, amount: Int.
+---
+balance' a = balance a + amount.
+check
+balance' a >= balance a.
+|});
         ] );
     ]

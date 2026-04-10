@@ -78,11 +78,20 @@ export function emitDocument(doc: PantDocument): string {
   lines.push("---");
   lines.push("");
 
-  if (doc.propositions.length === 0) {
+  if (doc.propositions.length === 0 && doc.checks.length === 0) {
     lines.push("true.");
   } else {
     for (const prop of doc.propositions) {
       lines.push(`${renderProp(prop)}.`);
+    }
+  }
+
+  if (doc.checks.length > 0) {
+    lines.push("");
+    lines.push("check");
+    lines.push("");
+    for (const chk of doc.checks) {
+      lines.push(`${chk.text}.`);
     }
   }
 

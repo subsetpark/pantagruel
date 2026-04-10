@@ -23,6 +23,7 @@ type type_error =
   | ComprehensionNeedEach of Types.ty * Ast.loc
   | AggregateRequiresNumeric of string * Types.ty * Ast.loc
   | AggregateRequiresBool of string * Types.ty * Ast.loc
+  | CheckWithoutBody of Ast.loc
 [@@deriving show]
 
 type context = { env : Env.t; loc : Ast.loc }

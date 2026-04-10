@@ -33,6 +33,8 @@ type action_unit = {
   action_decl : decl_info;
   tied_props : expr located list;
       (** Props using primed exprs or action params *)
+  tied_checks : expr located list;
+      (** Check (entailment) props from the same chapter *)
 }
 (** An action unit: an action + its associated propositions *)
 
@@ -402,7 +404,11 @@ let normalize (doc : document) (root_term : string) : document =
               (fun p -> uses_primed p.value || prop_uses_params params p.value)
               orig_chapter.body
           in
-          { action_decl = ad; tied_props = tied })
+          {
+            action_decl = ad;
+            tied_props = tied;
+            tied_checks = orig_chapter.checks;
+          })
         action_decls
     in
 
@@ -465,12 +471,14 @@ let normalize (doc : document) (root_term : string) : document =
 
     (* Step 7: Assign propositions to chapters *)
     let body_assignments = Array.make num_chapters [] in
+    let check_assignments = Array.make num_chapters [] in
 
     (* Action-tied props go with their action *)
     List.iter
       (fun au ->
         let level = au.action_decl.level in
-        body_assignments.(level) <- au.tied_props @ body_assignments.(level))
+        body_assignments.(level) <- au.tied_props @ body_assignments.(level);
+        check_assignments.(level) <- au.tied_checks @ check_assignments.(level))
       action_units;
 
     (* Independent props go to earliest valid chapter *)
@@ -480,6 +488,21 @@ let normalize (doc : document) (root_term : string) : document =
         let target = min chapter (num_chapters - 1) in
         body_assignments.(target) <- prop :: body_assignments.(target))
       independent_props;
+
+    (* Independent checks (from non-action chapters) go to earliest valid chapter *)
+    let independent_checks =
+      List.concat_map
+        (fun chapter ->
+          let params = action_params chapter in
+          if StringSet.is_empty params then chapter.checks else [])
+        doc.chapters
+    in
+    List.iter
+      (fun chk ->
+        let chapter = earliest_chapter_for_prop decl_levels chk.value in
+        let target = min chapter (num_chapters - 1) in
+        check_assignments.(target) <- chk :: check_assignments.(target))
+      independent_checks;
 
     (* Collect trailing docs from all original chapters *)
     let all_trailing_docs =
@@ -505,7 +528,8 @@ let normalize (doc : document) (root_term : string) : document =
              in
              let head = List.map (fun d -> d.decl) sorted_decls in
              let body = List.rev body_assignments.(level) in
-             { head; body; trailing_docs = [] })
+             let checks = List.rev check_assignments.(level) in
+             { head; body; checks; trailing_docs = [] })
            decl_assignments)
     in
 

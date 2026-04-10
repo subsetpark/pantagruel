@@ -8,7 +8,6 @@ import { translateBody } from "../src/translate-body.js";
 import { extractFunctionAnnotations } from "../src/annotations.js";
 import { emitDocument, runCheck } from "../src/emit.js";
 import type { PantDocument } from "../src/types.js";
-import { RawProp } from "../src/pant-expr.js";
 
 const FIXTURES = resolve(__dirname, "fixtures");
 const PROJECT_ROOT = resolve(__dirname, "../../..");
@@ -49,7 +48,7 @@ function buildDocument(
   // Module name
   const moduleName = functionName.charAt(0).toUpperCase() + functionName.slice(1);
 
-  let doc: PantDocument = { moduleName, declarations, propositions: [] };
+  let doc: PantDocument = { moduleName, declarations, propositions: [], checks: [] };
 
   // Body translation
   if (!opts.noBody) {
@@ -63,10 +62,10 @@ function buildDocument(
     doc = { ...doc, propositions: [...doc.propositions, ...bodyProps] };
   }
 
-  // Annotations
+  // Annotations go to checks (entailment goals)
   const annotations = extractFunctionAnnotations(program, fileName, functionName);
-  const annotationProps = annotations.map((text) => RawProp(text));
-  doc = { ...doc, propositions: [...doc.propositions, ...annotationProps] };
+  const annotationProps = annotations.map((text) => ({ text }));
+  doc = { ...doc, checks: [...doc.checks, ...annotationProps] };
 
   return doc;
 }
@@ -81,7 +80,8 @@ describe("emitDocument", () => {
     expect(output).toContain("module Larger.");
     expect(output).toContain("larger a: Int, b: Int => Int.");
     expect(output).toContain("---");
-    // Should contain the user annotation
+    // Annotation should be in the check block
+    expect(output).toContain("check");
     expect(output).toContain("all a: Int, b: Int | larger a b >= a and larger a b >= b.");
   });
 
@@ -94,8 +94,9 @@ describe("emitDocument", () => {
     expect(output).toContain("balance a: Account => Int.");
     expect(output).toContain("~> Deposit @");
     expect(output).toContain("---");
-    // Should contain the user annotation
-    expect(output).toContain("all a: Account | balance' a >= 0.");
+    // Annotation should be in the check block
+    expect(output).toContain("check");
+    expect(output).toContain("balance' account > balance account.");
   });
 
   it("emits skeleton-only when noBody is set", () => {
@@ -104,7 +105,8 @@ describe("emitDocument", () => {
 
     expect(output).toContain("module Larger.");
     expect(output).toContain("larger a: Int, b: Int => Int.");
-    // Should still contain the annotation
+    // Should still contain the annotation in check block
+    expect(output).toContain("check");
     expect(output).toContain("all a: Int, b: Int | larger a b >= a and larger a b >= b.");
   });
 });
@@ -127,7 +129,7 @@ describe("extractFunctionAnnotations", () => {
     const annotations = extractFunctionAnnotations(program, fileName, "deposit");
 
     expect(annotations).toHaveLength(1);
-    expect(annotations[0]).toBe("all a: Account | balance' a >= 0");
+    expect(annotations[0]).toBe("balance' account > balance account");
   });
 });
 
@@ -142,6 +144,7 @@ describe("full pipeline", () => {
     expect(lines[0]).toBe("module Larger.");
     expect(lines).toContain("---");
     expect(doc.propositions.length).toBeGreaterThanOrEqual(1);
+    expect(doc.checks.length).toBeGreaterThanOrEqual(1);
   });
 
   it("deposit.ts produces a checkable document", () => {
@@ -151,7 +154,7 @@ describe("full pipeline", () => {
     const lines = output.split("\n").filter(l => l.trim());
     expect(lines[0]).toBe("module Deposit.");
     expect(lines).toContain("---");
-    expect(doc.propositions.length).toBeGreaterThanOrEqual(1);
+    expect(doc.checks.length).toBeGreaterThanOrEqual(1);
   });
 
   it("max.ts emitted .pant type-checks through pant", () => {

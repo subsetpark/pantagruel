@@ -737,5 +737,60 @@ let () =
           test_case "chained comparison parse" `Quick
             test_chained_comparison_parse;
         ] );
+      ( "check_block",
+        [
+          test_case "chapter with check block" `Quick (fun () ->
+              let doc =
+                parse
+                  "module T.\n\
+                   f a: Int => Int.\n\
+                   ---\n\
+                   all a: Int | f a = a + 1.\n\
+                   check\n\
+                   all a: Int | f a > a.\n"
+              in
+              let chapter = List.hd doc.Ast.chapters in
+              check int "body props" 1 (List.length chapter.Ast.body);
+              check int "check props" 1 (List.length chapter.Ast.checks));
+          test_case "chapter without check block" `Quick (fun () ->
+              let doc =
+                parse
+                  "module T.\nf a: Int => Int.\n---\nall a: Int | f a > a.\n"
+              in
+              let chapter = List.hd doc.Ast.chapters in
+              check int "body props" 1 (List.length chapter.Ast.body);
+              check int "check props" 0 (List.length chapter.Ast.checks));
+          test_case "check block with multiple props" `Quick (fun () ->
+              let doc =
+                parse
+                  "module T.\n\
+                   f a: Int => Int.\n\
+                   ---\n\
+                   all a: Int | f a = a + 1.\n\
+                   check\n\
+                   all a: Int | f a > a.\n\
+                   all a: Int | f a > 0 -> f a > 1.\n"
+              in
+              let chapter = List.hd doc.Ast.chapters in
+              check int "body props" 1 (List.length chapter.Ast.body);
+              check int "check props" 2 (List.length chapter.Ast.checks));
+          test_case "check block with where" `Quick (fun () ->
+              let doc =
+                parse
+                  "module T.\n\
+                   f a: Int => Int.\n\
+                   ---\n\
+                   all a: Int | f a = a + 1.\n\
+                   check\n\
+                   all a: Int | f a > a.\n\
+                   where\n\
+                   g a: Int => Int.\n\
+                   ---\n\
+                   true.\n"
+              in
+              check int "chapters" 2 (List.length doc.Ast.chapters);
+              let ch1 = List.hd doc.Ast.chapters in
+              check int "ch1 checks" 1 (List.length ch1.Ast.checks));
+        ] );
       ("property", [ test_parser_no_crash ]);
     ]
