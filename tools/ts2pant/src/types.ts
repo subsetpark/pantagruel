@@ -26,6 +26,7 @@ export interface PantRule {
   name: string;
   params: PantParam[];
   returnType: string;
+  guard?: string;
 }
 
 /** A Pantagruel action declaration (e.g. `~> Withdraw @ u: User.`). */
@@ -33,6 +34,7 @@ export interface PantAction {
   kind: "action";
   label: string;
   params: PantParam[];
+  guard?: string;
 }
 
 /** A declaration in a Pantagruel document. */

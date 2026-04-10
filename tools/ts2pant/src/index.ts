@@ -60,7 +60,8 @@ function emit(doc: PantDocument): string {
         break;
       case "rule": {
         const params = decl.params.map((p) => `${p.name}: ${p.type}`).join(", ");
-        lines.push(`${decl.name} ${params} => ${decl.returnType}.`);
+        const guard = decl.guard ? `, ${decl.guard}` : "";
+        lines.push(`${decl.name} ${params}${guard} => ${decl.returnType}.`);
         break;
       }
       case "action": {
@@ -68,7 +69,8 @@ function emit(doc: PantDocument): string {
           lines.push(`~> ${decl.label}.`);
         } else {
           const params = decl.params.map((p) => `${p.name}: ${p.type}`).join(", ");
-          lines.push(`~> ${decl.label} @ ${params}.`);
+          const guard = decl.guard ? `, ${decl.guard}` : "";
+          lines.push(`~> ${decl.label} @ ${params}${guard}.`);
         }
         break;
       }

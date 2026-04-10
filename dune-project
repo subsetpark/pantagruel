@@ -19,4 +19,5 @@
   sexplib0
   parsexp
   (alcotest :with-test)
-  (qcheck-alcotest :with-test)))
+  (qcheck-alcotest :with-test)
+  (crowbar :with-test)))
