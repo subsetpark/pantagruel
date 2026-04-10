@@ -145,13 +145,20 @@ function describeRejectedBody(body: ts.Block): string {
 function isGuardStatement(stmt: ts.Statement): boolean {
   if (!ts.isIfStatement(stmt)) return false;
   // if (...) { throw } without else
-  if (!stmt.elseStatement && blockThrows(stmt.thenStatement)) return true;
+  if (!stmt.elseStatement && blockThrows(stmt.thenStatement)) {
+    return !expressionHasSideEffects(stmt.expression);
+  }
   // if (...) { ... } else { throw }
   if (stmt.elseStatement && blockThrows(stmt.elseStatement)) {
-    // Only a guard if the then-block has no side effects (no assignments/mutations).
-    // A mutating then-branch like `if (ok) { a.balance = 1; } else { throw e; }`
+    // Only a guard if the condition and then-block have no side effects.
+    // A side-effectful condition like `if (audit(a)) { throw ... }` must not be
+    // skipped. A mutating then-branch like `if (ok) { a.balance = 1; } else { throw e; }`
     // must NOT be classified as a guard — collectAssignments() needs to see it.
-    return blockHasNoSideEffects(stmt.thenStatement) && !blockReturns(stmt.thenStatement);
+    return (
+      !expressionHasSideEffects(stmt.expression) &&
+      blockHasNoSideEffects(stmt.thenStatement) &&
+      !blockReturns(stmt.thenStatement)
+    );
   }
   return false;
 }
@@ -281,9 +288,12 @@ export function translateBodyExpr(
     const prop = expr.name.text;
     const obj = translateBodyExpr(expr.expression, checker, strategy, paramNames);
     if (isUnsupported(obj)) return obj;
-    // .length -> #obj
+    // .length -> #obj (array only)
     if (prop === "length") {
-      return `#${obj}`;
+      const receiverType = checker.getTypeAtLocation(expr.expression);
+      if (checker.isArrayType(receiverType)) {
+        return `#${obj}`;
+      }
     }
     // Regular property access: a.balance -> balance a
     return `${prop} ${obj}`;
@@ -376,8 +386,12 @@ function translateCallExpr(
     const methodName = expr.expression.name.text;
     const obj = expr.expression.expression;
 
-    // .includes(x) -> x in obj
+    // .includes(x) -> x in obj (array only)
     if (methodName === "includes" && expr.arguments.length === 1) {
+      const receiverType = checker.getTypeAtLocation(obj);
+      if (!checker.isArrayType(receiverType)) {
+        return `> UNSUPPORTED: non-array .includes()`;
+      }
       const arg = translateBodyExpr(expr.arguments[0], checker, strategy, paramNames);
       if (isUnsupported(arg)) return arg;
       const objStr = translateBodyExpr(obj, checker, strategy, paramNames);
@@ -411,14 +425,13 @@ function tryTranslateFilterMap(
   const filterArg = filterCall.arguments[0];
   const mapArg = mapCall.arguments[0];
 
-  // Try to extract the element type from the source array
+  // Only translate filter/map on actual arrays
   const sourceType = checker.getTypeAtLocation(sourceObj);
+  if (!checker.isArrayType(sourceType)) return null;
   let elemTypeName = "?";
-  if (checker.isArrayType(sourceType)) {
-    const typeArgs = checker.getTypeArguments(sourceType as ts.TypeReference);
-    if (typeArgs.length === 1) {
-      elemTypeName = mapTsType(typeArgs[0], checker, strategy);
-    }
+  const typeArgs = checker.getTypeArguments(sourceType as ts.TypeReference);
+  if (typeArgs.length === 1) {
+    elemTypeName = mapTsType(typeArgs[0], checker, strategy);
   }
 
   const varName = freshBinder(paramNames);
