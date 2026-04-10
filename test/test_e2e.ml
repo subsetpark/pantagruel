@@ -64,7 +64,7 @@ let test_sample_typecheck name () =
           match Check.check_document env doc with
           | Error e ->
               failf "Type error in %s: %s" name (Check.show_type_error e)
-          | Ok () -> ()))
+          | Ok _warnings -> ()))
 
 (** Test that each sample produces non-empty JSON output *)
 let test_sample_json name () =

@@ -19,7 +19,7 @@ let parse_and_collect str =
   | Ok env -> (
       match Check.check_document env doc with
       | Error e -> failf "Type error: %s" (Check.show_type_error e)
-      | Ok () -> (env, doc))
+      | Ok _warnings -> (env, doc))
 
 (** QCheck generator for Types.ty, depth-limited *)
 let[@warning "-44"] gen_ty_at_depth =

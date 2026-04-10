@@ -47,11 +47,11 @@ let () =
                 (String.concat " -> " modules)
           | Pantagruel.Module.ParseError (_, msg) -> msg);
         exit 1
-    | Ok env ->
+    | Ok (env, warnings) ->
         List.iter
           (fun w ->
             Printf.eprintf "%s\n" (Pantagruel.Error.format_type_warning w))
-          (Pantagruel.Check.get_warnings ());
+          warnings;
         env
   in
   (* Pipe markdown through pandoc *)

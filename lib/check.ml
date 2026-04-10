@@ -534,8 +534,9 @@ let check_chapter_guards ~chapter_idx env (chapter : chapter) =
   let ctx = { env = env_visible; loc = dummy_loc } in
   map_result (check_rule_guards ctx) chapter.head
 
-(** Check entire document (Pass 2) *)
-let check_document env (doc : document) : (unit, type_error) result =
+(** Check entire document (Pass 2). Returns Ok with accumulated warnings, or
+    Error with the first type error. *)
+let check_document env (doc : document) : (type_error list, type_error) result =
   type_warnings := [];
   let rec check_chapters chapter_idx = function
     | [] -> Ok ()
@@ -546,4 +547,6 @@ let check_document env (doc : document) : (unit, type_error) result =
         let* _ = check_chapter_body ~chapter_idx env chapter in
         check_chapters (chapter_idx + 1) rest
   in
-  check_chapters 0 doc.chapters
+  match check_chapters 0 doc.chapters with
+  | Ok () -> Ok (get_warnings ())
+  | Error e -> Error e

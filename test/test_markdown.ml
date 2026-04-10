@@ -16,7 +16,7 @@ let render str =
   | Ok env -> (
       match Check.check_document env doc with
       | Error e -> fail (Check.show_type_error e)
-      | Ok () ->
+      | Ok _warnings ->
           let procs = Markdown_output.rule_names_of_env env in
           (procs, doc))
 

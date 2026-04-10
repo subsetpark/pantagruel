@@ -150,10 +150,10 @@ let check_doc doc =
 
     (* Check the document *)
     match Pantagruel.Module.check_with_imports registry doc with
-    | Ok env ->
+    | Ok (env, warnings) ->
         List.iter
           (fun w -> prerr_endline (Pantagruel.Error.format_type_warning w))
-          (Pantagruel.Check.get_warnings ());
+          warnings;
         if !do_check then run_smt_check env doc
         else if !do_normalize <> "" then begin
           let root = !do_normalize in

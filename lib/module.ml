@@ -214,10 +214,11 @@ let collect_with_imports registry (doc : Ast.document) =
   | Ok env -> Ok env
   | Error e -> Error (ParseError ("<main>", Error.format_collect_error e))
 
-(** Check a document with its imports, returning the resolved environment *)
+(** Check a document with its imports, returning the resolved environment and
+    any type warnings *)
 let check_with_imports registry (doc : Ast.document) =
   let* full_env = collect_with_imports registry doc in
   (* Type check *)
   match Check.check_document full_env doc with
-  | Ok () -> Ok full_env
+  | Ok warnings -> Ok (full_env, warnings)
   | Error e -> Error (ParseError ("<main>", Error.format_type_error e))

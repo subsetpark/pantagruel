@@ -15,7 +15,7 @@ let check_ok str =
   | Error e -> fail (Collect.show_collect_error e)
   | Ok env -> (
       match Check.check_document env doc with
-      | Ok () -> ()
+      | Ok _warnings -> ()
       | Error e -> fail (Check.show_type_error e))
 
 let check_fails str =
@@ -28,7 +28,7 @@ let check_fails str =
   | Error _ -> () (* Collection error is also a failure *)
   | Ok env -> (
       match Check.check_document env doc with
-      | Ok () -> fail "Expected type error"
+      | Ok _warnings -> fail "Expected type error"
       | Error _ -> ())
 
 (** Check that a document type-checks given a pre-built base_env *)
@@ -38,7 +38,7 @@ let check_ok_with_env base_env str =
   | Error e -> fail (Collect.show_collect_error e)
   | Ok env -> (
       match Check.check_document env doc with
-      | Ok () -> ()
+      | Ok _warnings -> ()
       | Error e -> fail (Check.show_type_error e))
 
 (** Check that a document fails to type-check given a pre-built base_env *)
@@ -48,7 +48,7 @@ let check_fails_with_env base_env str =
   | Error _ -> ()
   | Ok env -> (
       match Check.check_document env doc with
-      | Ok () -> fail "Expected error"
+      | Ok _warnings -> fail "Expected error"
       | Error _ -> ())
 
 (** Check that a document type-checks but emits warnings *)
@@ -62,7 +62,7 @@ let check_warns str =
   | Error e -> fail (Collect.show_collect_error e)
   | Ok env -> (
       match Check.check_document env doc with
-      | Ok () -> if Check.get_warnings () = [] then fail "Expected warning"
+      | Ok warnings -> if warnings = [] then fail "Expected warning"
       | Error e -> fail (Check.show_type_error e))
 
 (** Check that a document fails with a specific error type *)
@@ -72,7 +72,7 @@ let check_error_with_env base_env str pred =
   | Error _ -> () (* Collection error also OK *)
   | Ok env -> (
       match Check.check_document env doc with
-      | Ok () -> fail "Expected error"
+      | Ok _warnings -> fail "Expected error"
       | Error e ->
           if not (pred e) then
             fail
@@ -851,7 +851,7 @@ let check_error str pred =
   | Error _ -> () (* Collection error also OK *)
   | Ok env -> (
       match Check.check_document env doc with
-      | Ok () -> fail "Expected error"
+      | Ok _warnings -> fail "Expected error"
       | Error e ->
           if not (pred e) then
             fail

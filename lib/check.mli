@@ -23,12 +23,12 @@ type type_error =
   | ComprehensionNeedEach of Types.ty * Ast.loc
 [@@deriving show]
 
-val get_warnings : unit -> type_error list
-
 type context = { env : Env.t; loc : Ast.loc }
 
 val infer_type : context -> Ast.expr -> (Types.ty, type_error) result
 (** Infer the type of an expression *)
 
-val check_document : Env.t -> Ast.document -> (unit, type_error) result
-(** Type-check an entire document *)
+val check_document :
+  Env.t -> Ast.document -> (type_error list, type_error) result
+(** Type-check an entire document. Returns Ok with accumulated warnings, or
+    Error with the first type error. *)
