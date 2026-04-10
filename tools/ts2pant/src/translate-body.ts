@@ -164,10 +164,16 @@ function isGuardStatement(stmt: ts.Statement): boolean {
 }
 
 function blockThrows(node: ts.Statement): boolean {
+  if (ts.isThrowStatement(node)) return true;
   if (ts.isBlock(node)) {
-    return node.statements.some((s) => ts.isThrowStatement(s));
+    const stmts = node.statements;
+    if (stmts.length === 0) return false;
+    // Last statement must be a throw; all preceding must be side-effect-free
+    // (variable declarations for building the error message, etc.)
+    if (!ts.isThrowStatement(stmts[stmts.length - 1])) return false;
+    return stmts.slice(0, -1).every((s) => ts.isVariableStatement(s));
   }
-  return ts.isThrowStatement(node);
+  return false;
 }
 
 function blockReturns(node: ts.Statement): boolean {
@@ -206,13 +212,13 @@ export function translateBodyExpr(
   // Property access with special array operations
   if (ts.isPropertyAccessExpression(expr)) {
     const prop = expr.name.text;
+    const obj = translateBodyExpr(expr.expression, checker, strategy, paramNames);
+    if (isUnsupported(obj)) return obj;
     // .length -> #obj
     if (prop === "length") {
-      const obj = translateBodyExpr(expr.expression, checker, strategy, paramNames);
       return `#${obj}`;
     }
     // Regular property access: a.balance -> balance a
-    const obj = translateBodyExpr(expr.expression, checker, strategy, paramNames);
     return `${prop} ${obj}`;
   }
 
@@ -223,11 +229,13 @@ export function translateBodyExpr(
 
   // Prefix unary: !x -> ~(x), -x -> -(x)
   if (ts.isPrefixUnaryExpression(expr)) {
+    const operand = translateBodyExpr(expr.operand, checker, strategy, paramNames);
+    if (isUnsupported(operand)) return operand;
     if (expr.operator === ts.SyntaxKind.ExclamationToken) {
-      return `~(${translateBodyExpr(expr.operand, checker, strategy, paramNames)})`;
+      return `~(${operand})`;
     }
     if (expr.operator === ts.SyntaxKind.MinusToken) {
-      return `-(${translateBodyExpr(expr.operand, checker, strategy, paramNames)})`;
+      return `-(${operand})`;
     }
   }
 
@@ -262,6 +270,7 @@ function translateIfStatement(
   paramNames: Map<string, string>,
 ): string {
   const cond = translateBodyExpr(stmt.expression, checker, strategy, paramNames);
+  if (isUnsupported(cond)) return cond;
   const thenExpr = extractReturnFromBranch(stmt.thenStatement);
   const elseExpr = stmt.elseStatement
     ? extractReturnFromBranch(stmt.elseStatement)
@@ -308,7 +317,9 @@ function translateCallExpr(
     // .includes(x) -> x in obj
     if (methodName === "includes" && expr.arguments.length === 1) {
       const arg = translateBodyExpr(expr.arguments[0], checker, strategy, paramNames);
+      if (isUnsupported(arg)) return arg;
       const objStr = translateBodyExpr(obj, checker, strategy, paramNames);
+      if (isUnsupported(objStr)) return objStr;
       return `${arg} in ${objStr}`;
     }
 
@@ -379,8 +390,12 @@ function extractArrowBody(
   }
 
   if (ts.isBlock(expr.body)) {
-    // { return expr; }
-    for (const s of expr.body.statements) {
+    // Only allow a single return (after filtering guards), same rule as
+    // extractReturnExpression — blocks with locals or multiple statements
+    // would introduce free variables in the generated comprehension.
+    const nonGuard = expr.body.statements.filter((s) => !isGuardStatement(s));
+    if (nonGuard.length === 1) {
+      const s = nonGuard[0];
       if (ts.isReturnStatement(s) && s.expression) {
         return translateBodyExpr(s.expression, checker, strategy, arrowParams);
       }
@@ -409,15 +424,23 @@ function translateMutatingBody(
   const modifiedRules = new Set<string>();
 
   // Collect property assignments
-  collectAssignments(node.body, checker, strategy, paramNames, propositions, modifiedRules);
+  const hasUnsupportedMutation = collectAssignments(node.body, checker, strategy, paramNames, propositions, modifiedRules);
 
-  // Generate frame conditions
-  const frames = generateFrameConditions(modifiedRules, declarations);
-  propositions.push(...frames);
+  // Only generate frame conditions when all mutation shapes were translatable;
+  // unsupported control flow (if/loop/switch) makes frames unsound.
+  if (!hasUnsupportedMutation) {
+    const frames = generateFrameConditions(modifiedRules, declarations);
+    propositions.push(...frames);
+  }
 
   return propositions;
 }
 
+/**
+ * Collect property assignments from a block. Returns true if any unsupported
+ * mutating control flow (if/loop/switch) was encountered, signalling that
+ * frame condition generation should be suppressed.
+ */
 function collectAssignments(
   body: ts.Block | ts.Statement,
   checker: ts.TypeChecker,
@@ -425,7 +448,8 @@ function collectAssignments(
   paramNames: Map<string, string>,
   propositions: PantProposition[],
   modifiedRules: Set<string>,
-): void {
+): boolean {
+  let hasUnsupportedMutation = false;
   const stmts = ts.isBlock(body) ? Array.from(body.statements) : [body];
 
   for (const stmt of stmts) {
@@ -457,9 +481,12 @@ function collectAssignments(
 
     // Recurse into nested blocks
     if (ts.isBlock(stmt)) {
-      collectAssignments(stmt, checker, strategy, paramNames, propositions, modifiedRules);
+      if (collectAssignments(stmt, checker, strategy, paramNames, propositions, modifiedRules)) {
+        hasUnsupportedMutation = true;
+      }
     } else if (ts.isIfStatement(stmt)) {
       propositions.push({ text: `> UNSUPPORTED: conditional assignment (if/else)` });
+      hasUnsupportedMutation = true;
     } else if (
       ts.isForStatement(stmt) ||
       ts.isForOfStatement(stmt) ||
@@ -468,18 +495,28 @@ function collectAssignments(
       ts.isDoStatement(stmt)
     ) {
       propositions.push({ text: `> UNSUPPORTED: loop assignment` });
+      hasUnsupportedMutation = true;
     } else if (ts.isTryStatement(stmt)) {
-      collectAssignments(stmt.tryBlock, checker, strategy, paramNames, propositions, modifiedRules);
+      if (collectAssignments(stmt.tryBlock, checker, strategy, paramNames, propositions, modifiedRules)) {
+        hasUnsupportedMutation = true;
+      }
       if (stmt.catchClause) {
-        collectAssignments(stmt.catchClause.block, checker, strategy, paramNames, propositions, modifiedRules);
+        if (collectAssignments(stmt.catchClause.block, checker, strategy, paramNames, propositions, modifiedRules)) {
+          hasUnsupportedMutation = true;
+        }
       }
       if (stmt.finallyBlock) {
-        collectAssignments(stmt.finallyBlock, checker, strategy, paramNames, propositions, modifiedRules);
+        if (collectAssignments(stmt.finallyBlock, checker, strategy, paramNames, propositions, modifiedRules)) {
+          hasUnsupportedMutation = true;
+        }
       }
     } else if (ts.isSwitchStatement(stmt)) {
       propositions.push({ text: `> UNSUPPORTED: switch assignment` });
+      hasUnsupportedMutation = true;
     }
   }
+
+  return hasUnsupportedMutation;
 }
 
 /**

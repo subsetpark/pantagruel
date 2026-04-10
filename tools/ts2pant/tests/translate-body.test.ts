@@ -373,4 +373,140 @@ describe("guarded function body", () => {
     // Should not contain anything about the guard/throw
     expect(props.some((p) => p.text.includes("throw"))).toBe(false);
   });
+
+  it("does not treat branch with effects before throw as a guard", () => {
+    const source = `
+      interface Account { balance: number; }
+      function riskyWithdraw(a: Account, amount: number): void {
+        if (amount > 1000) {
+          a.balance = 0;
+          throw new Error("too large");
+        }
+        a.balance = a.balance - amount;
+      }
+    `;
+    const props = translate(source, "riskyWithdraw");
+
+    // The if-branch has a real assignment before the throw, so it should NOT
+    // be skipped as a guard — it should appear as unsupported conditional assignment.
+    expect(props.some((p) => p.text.includes("UNSUPPORTED"))).toBe(true);
+  });
+
+  it("treats guard with variable declaration before throw as a guard", () => {
+    const source = `
+      interface Account { balance: number; }
+      function withdraw(a: Account, amount: number): void {
+        if (!(a.balance >= amount)) {
+          const msg = "Insufficient: " + amount;
+          throw new Error(msg);
+        }
+        a.balance = a.balance - amount;
+      }
+    `;
+    const props = translate(source, "withdraw");
+
+    expect(props.some((p) => p.text === "balance' a = balance a - amount")).toBe(true);
+    expect(props.some((p) => p.text.includes("throw"))).toBe(false);
+  });
+});
+
+describe("unsupported child bubbling", () => {
+  it("bubbles unsupported through .length", () => {
+    const source = `
+      function test(): number {
+        return foo().length;
+      }
+      declare function foo(): string[];
+    `;
+    const props = translate(source, "test");
+
+    expect(props).toHaveLength(1);
+    expect(props[0].text).toMatch(/UNSUPPORTED/);
+  });
+
+  it("bubbles unsupported through negation", () => {
+    const source = `
+      function test(): boolean {
+        return !foo();
+      }
+      declare function foo(): boolean;
+    `;
+    const props = translate(source, "test");
+
+    expect(props).toHaveLength(1);
+    expect(props[0].text).toMatch(/UNSUPPORTED/);
+    // Should not contain ~( wrapping unsupported
+    expect(props[0].text).not.toMatch(/^~\(/);
+  });
+
+  it("bubbles unsupported through if condition", () => {
+    const source = `
+      function test(): number {
+        if (foo()) {
+          return 1;
+        } else {
+          return 2;
+        }
+      }
+      declare function foo(): boolean;
+    `;
+    const props = translate(source, "test");
+
+    expect(props).toHaveLength(1);
+    expect(props[0].text).toMatch(/UNSUPPORTED/);
+    // Should not contain cond wrapping unsupported
+    expect(props[0].text).not.toMatch(/^all.*cond/);
+  });
+});
+
+describe("arrow function body rejection", () => {
+  it("rejects block-bodied arrow with locals before return", () => {
+    const source = `
+      interface User { name: string; active: boolean; score: number; }
+      function highScoreNames(users: User[]): string[] {
+        return users.filter((u) => u.active).map((u) => { const s = u.score; return u.name; });
+      }
+    `;
+    const props = translate(source, "highScoreNames");
+
+    // The map arrow has a local variable, so the comprehension should not be emitted
+    expect(props).toHaveLength(1);
+    expect(props[0].text).toMatch(/UNSUPPORTED/);
+  });
+});
+
+describe("frame condition suppression", () => {
+  it("suppresses frame conditions when unsupported mutation is present", () => {
+    const source = `
+      interface Account { balance: number; owner: string; }
+      function conditionalUpdate(a: Account): void {
+        if (true) {
+          a.balance = 1;
+        }
+      }
+    `;
+    const declarations: PantDeclaration[] = [
+      { kind: "domain", name: "Account" },
+      {
+        kind: "rule",
+        name: "balance",
+        params: [{ name: "a", type: "Account" }],
+        returnType: "Int",
+      },
+      {
+        kind: "rule",
+        name: "owner",
+        params: [{ name: "a", type: "Account" }],
+        returnType: "String",
+      },
+    ];
+
+    const props = translate(source, "conditionalUpdate", declarations);
+
+    // Should have unsupported marker
+    expect(props.some((p) => p.text.includes("UNSUPPORTED"))).toBe(true);
+    // Should NOT have frame conditions — they'd be unsound
+    expect(props.some((p) => p.text.includes("owner'"))).toBe(false);
+    expect(props.some((p) => p.text.includes("balance'"))).toBe(false);
+  });
 });
