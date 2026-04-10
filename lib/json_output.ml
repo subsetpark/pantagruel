@@ -341,7 +341,7 @@ let chapter_to_json env chapter =
 
 (** Extract type definitions from environment *)
 let types_to_json env =
-  let bindings = Env.StringMap.bindings env.Env.types in
+  let bindings = Env.bindings_types env in
   let items =
     List.filter_map
       (fun (name, entry) ->
@@ -365,7 +365,7 @@ let types_to_json env =
 
 (** Extract rule definitions from environment *)
 let rules_to_json env =
-  let bindings = Env.StringMap.bindings env.Env.terms in
+  let bindings = Env.bindings_terms env in
   let items =
     List.filter_map
       (fun (name, entry) ->

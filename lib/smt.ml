@@ -3,581 +3,11 @@
 open Ast
 open Types
 
-type config = {
-  bound : int;
-  steps : int;
-  domain_bounds : int Env.StringMap.t;
-  inject_guards : bool;
-  quant_bound : string list;
-      (** Accumulated quantifier-bound variable names from enclosing scopes.
-          Used by [collect_body_guards] so that guard injection does not
-          incorrectly prime variables bound by outer quantifiers. *)
-}
-(** Configuration for bounded checking. [steps] controls k-step BMC depth.
-    [domain_bounds] maps domain names to per-domain minimum bounds (derived from
-    nullary constant counts). [quant_bound] is internal traversal state — use
-    [make_config] to construct. *)
-
-let make_config ~bound ~steps ~domain_bounds ~inject_guards =
-  { bound; steps; domain_bounds; inject_guards; quant_bound = [] }
-
-(** Fresh uninterpreted constants for non-exhaustive cond else-branches. When a
-    cond's last arm guard is not [true], we emit a fresh constant of the
-    appropriate sort so the gap is genuinely unconstrained rather than silently
-    assigned the last arm's consequence. *)
-let cond_aux_counter = ref 0
-
-let cond_aux_decls : string list ref = ref []
-
-let reset_cond_aux () =
-  cond_aux_counter := 0;
-  cond_aux_decls := []
-
-let fresh_cond_default sort =
-  let n = !cond_aux_counter in
-  incr cond_aux_counter;
-  let name = Printf.sprintf "_cond_undef_%d" n in
-  cond_aux_decls :=
-    Printf.sprintf "(declare-const %s %s)" name sort :: !cond_aux_decls;
-  name
-
-let drain_cond_aux_decls () =
-  let decls = List.rev !cond_aux_decls in
-  cond_aux_decls := [];
-  if decls = [] then ""
-  else "\n; --- Cond default constants ---\n" ^ String.concat "\n" decls ^ "\n"
-
-(** Insert accumulated cond-default declarations into a finished SMT-LIB2
-    string, right before the first [(assert ...)]. Must be called after all
-    [translate_*] calls for this query are done. *)
-let insert_cond_aux_decls smt2 =
-  let decls = drain_cond_aux_decls () in
-  if decls = "" then smt2
-  else
-    let lines = String.split_on_char '\n' smt2 in
-    let rec split_at_assert acc = function
-      | [] -> (List.rev acc, [])
-      | line :: rest
-        when String.length line >= 7 && String.sub line 0 7 = "(assert" ->
-          (List.rev acc, line :: rest)
-      | line :: rest -> split_at_assert (line :: acc) rest
-    in
-    let before, after = split_at_assert [] lines in
-    String.concat "\n" before ^ decls ^ String.concat "\n" after
-
-(** Compute per-domain minimum bounds by counting nullary constants. For each
-    domain, the bound is max(default_bound, number_of_nullary_constants). *)
-let compute_domain_bounds default_bound env =
-  let counts =
-    Env.StringMap.fold
-      (fun _name entry acc ->
-        match entry.Env.kind with
-        | Env.KRule ty -> (
-            match ty with
-            | (TyFunc ([], Some (TyDomain dname)) | TyDomain dname)
-              when Env.StringMap.find_opt dname env.Env.types
-                   |> Option.map (fun e -> e.Env.kind = Env.KDomain)
-                   |> Option.value ~default:false ->
-                let cur =
-                  Env.StringMap.find_opt dname acc |> Option.value ~default:0
-                in
-                Env.StringMap.add dname (cur + 1) acc
-            | TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString | TyNothing
-            | TyDomain _ | TyList _ | TyProduct _ | TySum _ | TyFunc _ ->
-                acc)
-        | Env.KDomain | Env.KAlias _ | Env.KVar _ | Env.KClosure _ -> acc)
-      env.Env.terms Env.StringMap.empty
-  in
-  Env.StringMap.filter_map
-    (fun _dname count -> if count > default_bound then Some count else None)
-    counts
-
-(** Get the bound for a specific domain, using per-domain override if available.
-*)
-let bound_for config domain_name =
-  match Env.StringMap.find_opt domain_name config.domain_bounds with
-  | Some b -> b
-  | None -> config.bound
-
-type query = {
-  name : string;
-  description : string;
-  smt2 : string;
-  kind : query_kind;
-  value_terms : string list;
-  invariant_text : string;
-  assertion_names : (string * string) list;
-      (** Maps SMT assertion name to human-readable text *)
-}
-(** A generated SMT query with metadata *)
-
-and query_kind =
-  | Contradiction  (** SAT = ok, UNSAT = contradiction found *)
-  | InvariantConsistency
-      (** SAT = ok (invariants jointly satisfiable), UNSAT = contradiction *)
-  | InvariantPreservation
-      (** SAT = violation (counterexample), UNSAT = preserved *)
-  | PreconditionSat  (** SAT = ok, UNSAT = dead operation *)
-  | BMCDeadlock
-      (** SAT = reachable deadlock found, UNSAT = no deadlock within k steps *)
-  | InitConsistency
-      (** SAT = ok (initial state possible), UNSAT = impossible initial state *)
-  | InitInvariant
-      (** SAT = violation (invariant not satisfied initially), UNSAT = ok *)
-  | BMCInvariant
-      (** SAT = reachable violation (concrete attack trace), UNSAT = safe up to
-          k steps *)
-  | CondExhaustiveness  (** SAT = non-exhaustive (counterexample), UNSAT = ok *)
-
-(** SMT sort name for a Pantagruel type *)
-let rec sort_of_ty = function
-  | TyBool -> "Bool"
-  | TyNat | TyNat0 | TyInt -> "Int"
-  | TyReal -> "Real"
-  | TyString -> "String"
-  | TyNothing -> "Int" (* bottom type, never instantiated *)
-  | TyDomain name -> name
-  | TyList inner ->
-      (* Model lists/sets as membership predicates: Array elem_sort Bool *)
-      Printf.sprintf "(Array %s Bool)" (sort_of_ty inner)
-  | TyProduct ts ->
-      let name = product_sort_name ts in
-      name
-  | TySum ts ->
-      let name = sum_sort_name ts in
-      name
-  | TyFunc _ -> "Int" (* functions are declared separately, not as sorts *)
-
-and product_sort_name ts =
-  "Pair_" ^ String.concat "_" (List.map sort_base_name ts)
-
-and sum_sort_name ts = "Sum_" ^ String.concat "_" (List.map sort_base_name ts)
-
-and sort_base_name = function
-  | TyBool -> "Bool"
-  | TyNat | TyNat0 | TyInt -> "Int"
-  | TyReal -> "Real"
-  | TyString -> "String"
-  | TyNothing -> "Nothing"
-  | TyDomain name -> name
-  | TyList inner -> "List_" ^ sort_base_name inner
-  | TyProduct ts -> product_sort_name ts
-  | TySum ts -> sum_sort_name ts
-  | TyFunc _ -> "Func"
-
-(** Generate domain element names *)
-let domain_elements name bound =
-  List.init bound (fun i -> Printf.sprintf "%s_%d" name i)
-
-(** Sanitize an identifier for SMT-LIB2 (replace hyphens, question marks) *)
-let sanitize_ident name =
-  name |> String.to_seq
-  |> Seq.map (fun c ->
-      match c with '-' -> '_' | '?' -> 'p' | '!' -> 'b' | _ -> c)
-  |> String.of_seq
-
-(** Generate sort declarations for user-defined domains *)
-let declare_domain_sorts config env =
-  let buf = Buffer.create 256 in
-  Env.StringMap.iter
-    (fun name entry ->
-      match entry.Env.kind with
-      | Env.KDomain ->
-          let elems = domain_elements name (bound_for config name) in
-          Buffer.add_string buf (Printf.sprintf "(declare-sort %s 0)\n" name);
-          List.iter
-            (fun elem ->
-              Buffer.add_string buf
-                (Printf.sprintf "(declare-const %s %s)\n" elem name))
-            elems;
-          if List.length elems > 1 then
-            Buffer.add_string buf
-              (Printf.sprintf "(assert (distinct %s))\n"
-                 (String.concat " " elems));
-          (* Closure axiom: every element of the sort is one of our constants *)
-          let disj = List.map (fun e -> Printf.sprintf "(= _x_ %s)" e) elems in
-          Buffer.add_string buf
-            (Printf.sprintf "(assert (forall ((_x_ %s)) (or %s)))\n" name
-               (String.concat " " disj))
-      | Env.KAlias _ | Env.KRule _ | Env.KVar _ | Env.KClosure _ -> ())
-    env.Env.types;
-  Buffer.contents buf
-
-(** Collect all product/sum types used in the environment for datatype
-    declarations *)
-let collect_composite_types env =
-  let products = Hashtbl.create 8 in
-  let sums = Hashtbl.create 8 in
-  let rec visit = function
-    | TyProduct ts ->
-        Hashtbl.replace products (product_sort_name ts) ts;
-        List.iter visit ts
-    | TySum ts ->
-        Hashtbl.replace sums (sum_sort_name ts) ts;
-        List.iter visit ts
-    | TyList inner -> visit inner
-    | TyFunc (params, ret) ->
-        List.iter visit params;
-        Option.iter visit ret
-    | TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString | TyNothing
-    | TyDomain _ ->
-        ()
-  in
-  Env.StringMap.iter
-    (fun _ entry ->
-      match entry.Env.kind with
-      | Env.KRule ty | Env.KVar ty | Env.KAlias ty | Env.KClosure (ty, _) ->
-          visit ty
-      | Env.KDomain -> ())
-    env.Env.terms;
-  Env.StringMap.iter
-    (fun _ entry ->
-      match entry.Env.kind with
-      | Env.KAlias ty -> visit ty
-      | Env.KDomain | Env.KRule _ | Env.KVar _ | Env.KClosure _ -> ())
-    env.Env.types;
-  (products, sums)
-
-(** Topologically sort composite type entries so that dependencies are declared
-    first. Each entry is (name, component_types). A type depends on another
-    composite type if any of its components is that type. *)
-let topo_sort_composites (entries : (string * ty list) list) =
-  let names = Hashtbl.create 8 in
-  List.iter (fun (n, _) -> Hashtbl.replace names n true) entries;
-  (* Compute which composite names each entry depends on *)
-  let rec collect_deps acc = function
-    | TyProduct ts ->
-        let n = product_sort_name ts in
-        let acc = if Hashtbl.mem names n then n :: acc else acc in
-        List.fold_left collect_deps acc ts
-    | TySum ts ->
-        let n = sum_sort_name ts in
-        let acc = if Hashtbl.mem names n then n :: acc else acc in
-        List.fold_left collect_deps acc ts
-    | TyList inner -> collect_deps acc inner
-    | TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString | TyNothing
-    | TyDomain _ | TyFunc _ ->
-        acc
-  in
-  let visited = Hashtbl.create 8 in
-  let result = ref [] in
-  let rec visit name =
-    if not (Hashtbl.mem visited name) then begin
-      Hashtbl.replace visited name true;
-      (match List.assoc_opt name entries with
-      | Some ts ->
-          let deps = List.fold_left collect_deps [] ts in
-          List.iter visit deps
-      | None -> ());
-      result := (name, List.assoc name entries) :: !result
-    end
-  in
-  List.iter (fun (name, _) -> visit name) entries;
-  List.rev !result
-
-(** Generate datatype declarations for product and sum types *)
-let declare_composite_types env =
-  let products, sums = collect_composite_types env in
-  let buf = Buffer.create 256 in
-  let product_list = Hashtbl.fold (fun k v acc -> (k, v) :: acc) products [] in
-  let sum_list = Hashtbl.fold (fun k v acc -> (k, v) :: acc) sums [] in
-  let sorted = topo_sort_composites (product_list @ sum_list) in
-  List.iter
-    (fun (name, ts) ->
-      if Hashtbl.mem products name then begin
-        let fields =
-          List.mapi
-            (fun i t -> Printf.sprintf "(fst_%d %s)" (i + 1) (sort_of_ty t))
-            ts
-        in
-        Buffer.add_string buf
-          (Printf.sprintf "(declare-datatype %s ((%s %s)))\n" name
-             (Printf.sprintf "mk_%s" name)
-             (String.concat " " fields))
-      end
-      else
-        let constructors =
-          List.mapi
-            (fun i t ->
-              Printf.sprintf "(mk_%s_%d (val_%s_%d %s))" name i name i
-                (sort_of_ty t))
-            ts
-        in
-        Buffer.add_string buf
-          (Printf.sprintf "(declare-datatype %s (%s))\n" name
-             (String.concat " " constructors)))
-    sorted;
-  Buffer.contents buf
-
-(** Extract the parameter types and return type from a rule type *)
-let decompose_func_ty = function
-  | TyFunc (params, Some ret) -> Some (params, ret)
-  | TyFunc (_, None)
-  | TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString | TyNothing | TyDomain _
-  | TyList _ | TyProduct _ | TySum _ ->
-      None
-
-(** Generate function declarations from the environment *)
-let declare_functions env =
-  let buf = Buffer.create 256 in
-  Env.StringMap.iter
-    (fun name entry ->
-      match entry.Env.kind with
-      | Env.KRule ty | Env.KClosure (ty, _) -> (
-          let sname = sanitize_ident name in
-          match decompose_func_ty ty with
-          | Some ([], ret) ->
-              Buffer.add_string buf
-                (Printf.sprintf "(declare-const %s %s)\n" sname (sort_of_ty ret));
-              Buffer.add_string buf
-                (Printf.sprintf "(declare-const %s_prime %s)\n" sname
-                   (sort_of_ty ret))
-          | Some (params, ret) ->
-              let param_sorts =
-                String.concat " " (List.map sort_of_ty params)
-              in
-              Buffer.add_string buf
-                (Printf.sprintf "(declare-fun %s (%s) %s)\n" sname param_sorts
-                   (sort_of_ty ret));
-              Buffer.add_string buf
-                (Printf.sprintf "(declare-fun %s_prime (%s) %s)\n" sname
-                   param_sorts (sort_of_ty ret))
-          | None -> ())
-      | Env.KDomain | Env.KAlias _ | Env.KVar _ -> ())
-    env.Env.terms;
-  Buffer.contents buf
-
-(** Generate closure axioms for a single closure rule. Produces finite-unrolling
-    axioms up to [bound-1] steps. [is_prime] controls whether to use primed
-    function names. *)
-let generate_closure_axiom config env ~is_prime closure_name target_name
-    domain_name =
-  let bound = bound_for config domain_name in
-  let cname = sanitize_ident closure_name ^ if is_prime then "_prime" else "" in
-  let tname = sanitize_ident target_name ^ if is_prime then "_prime" else "" in
-  (* Determine target shape to generate the right step expression *)
-  let target_entry = Env.lookup_term target_name env in
-  let target_is_list =
-    match[@warning "-4"] target_entry with
-    | Some { kind = Env.KRule (TyFunc (_, Some (TyList _))); _ } -> true
-    | _ -> false
-  in
-  let step_expr x y =
-    if target_is_list then Printf.sprintf "(select (%s %s) %s)" tname x y
-    else
-      let sum_sort = sum_sort_name [ TyDomain domain_name; TyNothing ] in
-      Printf.sprintf "(= (%s %s) (mk_%s_0 %s))" tname x sum_sort y
-  in
-  (* Fully grounded axioms: enumerate all (x, y) pairs and expand
-     intermediate chains over concrete domain elements.  This avoids
-     quantifier alternation (forall-exists) that causes solver timeouts. *)
-  let elems = domain_elements domain_name bound in
-  let max_depth = max 1 (bound - 1) in
-  let buf = Buffer.create 512 in
-  List.iter
-    (fun x ->
-      List.iter
-        (fun y ->
-          (* Build chain disjuncts for depths 1..max_depth *)
-          let chains = ref [] in
-          for depth = 1 to max_depth do
-            if depth = 1 then chains := step_expr x y :: !chains
-            else begin
-              (* Enumerate all tuples of (depth-1) intermediate nodes *)
-              let rec enum_intermediates k =
-                if k = 0 then [ [] ]
-                else
-                  List.concat_map
-                    (fun z ->
-                      List.map
-                        (fun rest -> z :: rest)
-                        (enum_intermediates (k - 1)))
-                    elems
-              in
-              let all_intermediates = enum_intermediates (depth - 1) in
-              List.iter
-                (fun intermediates ->
-                  let nodes = [ x ] @ intermediates @ [ y ] in
-                  let steps =
-                    List.init depth (fun i ->
-                        step_expr (List.nth nodes i) (List.nth nodes (i + 1)))
-                  in
-                  let chain =
-                    match steps with
-                    | [ s ] -> s
-                    | _ -> Printf.sprintf "(and %s)" (String.concat " " steps)
-                  in
-                  chains := chain :: !chains)
-                all_intermediates
-            end
-          done;
-          let all_chains = List.rev !chains in
-          let rhs =
-            match all_chains with
-            | [ single ] -> single
-            | _ -> Printf.sprintf "(or %s)" (String.concat " " all_chains)
-          in
-          Buffer.add_string buf
-            (Printf.sprintf "(assert (= (select (%s %s) %s) %s))\n" cname x y
-               rhs))
-        elems)
-    elems;
-  Buffer.contents buf
-
-(** Generate all closure axioms for the environment. When [~include_primed] is
-    false, only base (unprimed) axioms are emitted. This is used by BMC
-    step-indexing where primed names are handled via renaming and the last step
-    has no step+1 declarations. *)
-let generate_closure_axioms ?(include_primed = true) config env =
-  let buf = Buffer.create 256 in
-  Env.StringMap.iter
-    (fun name entry ->
-      match[@warning "-4"] entry.Env.kind with
-      | Env.KClosure (TyFunc ([ TyDomain dname ], _), target) ->
-          Buffer.add_string buf
-            (generate_closure_axiom config env ~is_prime:false name target dname);
-          if include_primed then
-            Buffer.add_string buf
-              (generate_closure_axiom config env ~is_prime:true name target
-                 dname)
-      | _ -> ())
-    env.Env.terms;
-  Buffer.contents buf
-
-(** Collect type constraint expressions (e.g., Nat >= 1, Nat0 >= 0) for
-    functions. Returns a list of (human_text, smt_expr) pairs. When
-    [constrain_primed] is false, primed functions are unconstrained. *)
-let collect_type_constraint_exprs ?(constrain_primed = true) _config env =
-  let constraints = ref [] in
-  let add_nat_constraint name sname params_sorts param_names ret_ty is_prime =
-    let fname = if is_prime then sname ^ "_prime" else sname in
-    let display_name = if is_prime then name ^ "'" else name in
-    let type_name, bound =
-      match ret_ty with
-      | TyNat -> ("Nat", 1)
-      | TyNat0 -> ("Nat0", 0)
-      | TyBool | TyInt | TyReal | TyString | TyNothing | TyDomain _ | TyList _
-      | TyProduct _ | TySum _ | TyFunc _ ->
-          ("", -1)
-    in
-    if bound >= 0 then begin
-      let smt_expr =
-        if params_sorts = [] then Printf.sprintf "(>= %s %d)" fname bound
-        else
-          Printf.sprintf "(forall (%s) (>= (%s %s) %d))"
-            (String.concat " "
-               (List.map2
-                  (fun n s -> Printf.sprintf "(%s %s)" n s)
-                  param_names params_sorts))
-            fname
-            (String.concat " " param_names)
-            bound
-      in
-      let human = Printf.sprintf "%s : %s" display_name type_name in
-      constraints := (human, smt_expr) :: !constraints
-    end
-  in
-  Env.StringMap.iter
-    (fun name entry ->
-      match entry.Env.kind with
-      | Env.KRule ty -> (
-          let sname = sanitize_ident name in
-          match decompose_func_ty ty with
-          | Some (params, ret) ->
-              let params_sorts = List.map sort_of_ty params in
-              let param_names =
-                List.mapi (fun i _ -> Printf.sprintf "x_%d" i) params
-              in
-              add_nat_constraint name sname params_sorts param_names ret false;
-              if constrain_primed then
-                add_nat_constraint name sname params_sorts param_names ret true
-          | None -> ())
-      | Env.KDomain | Env.KAlias _ | Env.KVar _ | Env.KClosure _ -> ())
-    env.Env.terms;
-  List.rev !constraints
-
-(** Generate type constraints as plain assertions (for queries that don't need
-    naming) *)
-let declare_type_constraints ?(constrain_primed = true) config env =
-  let buf = Buffer.create 256 in
-  let exprs = collect_type_constraint_exprs ~constrain_primed config env in
-  List.iter
-    (fun (_human, smt_expr) ->
-      Buffer.add_string buf (Printf.sprintf "(assert %s)\n" smt_expr))
-    exprs;
-  Buffer.contents buf
-
-(** Generate the full preamble: sorts, functions, domain elements, constraints.
-    When [constrain_primed] is false, primed functions are left unconstrained
-    (used for invariant preservation queries where we want to check if the
-    transition can violate type/invariant bounds). When
-    [include_type_constraints] is false, type constraints are omitted (used when
-    the caller will add them as named assertions instead). *)
-let generate_preamble ?(constrain_primed = true)
-    ?(include_type_constraints = true) config env =
-  let buf = Buffer.create 1024 in
-  Buffer.add_string buf "; --- Domain sorts and elements ---\n";
-  Buffer.add_string buf (declare_domain_sorts config env);
-  Buffer.add_string buf "\n; --- Composite types ---\n";
-  Buffer.add_string buf (declare_composite_types env);
-  Buffer.add_string buf "\n; --- Function declarations ---\n";
-  Buffer.add_string buf (declare_functions env);
-  let closure_axioms = generate_closure_axioms config env in
-  if closure_axioms <> "" then begin
-    Buffer.add_string buf "\n; --- Closure axioms ---\n";
-    Buffer.add_string buf closure_axioms
-  end;
-  if include_type_constraints then begin
-    Buffer.add_string buf "\n; --- Type constraints ---\n";
-    Buffer.add_string buf
-      (declare_type_constraints ~constrain_primed config env)
-  end;
-  Buffer.contents buf
-
-(** Word-boundary-aware string substitution. Replaces occurrences of [from] in
-    [s] with [to_], but only when [from] appears at a word boundary. Word
-    boundary characters: '(', ')', ' ', '\n', '\t', and string edges. *)
-let replace_word ~from ~to_ s =
-  let from_len = String.length from in
-  let s_len = String.length s in
-  if from_len = 0 || s_len = 0 then s
-  else
-    let is_boundary i =
-      i < 0 || i >= s_len
-      || match s.[i] with '(' | ')' | ' ' | '\n' | '\t' -> true | _ -> false
-    in
-    let buf = Buffer.create (s_len + 64) in
-    let i = ref 0 in
-    while !i <= s_len - from_len do
-      if
-        String.sub s !i from_len = from
-        && is_boundary (!i - 1)
-        && is_boundary (!i + from_len)
-      then begin
-        Buffer.add_string buf to_;
-        i := !i + from_len
-      end
-      else begin
-        Buffer.add_char buf s.[!i];
-        incr i
-      end
-    done;
-    (* Copy remaining characters *)
-    while !i < s_len do
-      Buffer.add_char buf s.[!i];
-      incr i
-    done;
-    Buffer.contents buf
-
-(** Resolve a parameter list to [(name, ty)] bindings, discarding any params
-    whose types cannot be resolved. *)
-let resolve_param_bindings env (params : param list) =
-  List.filter_map
-    (fun (p : param) ->
-      match Collect.resolve_type env p.param_type dummy_loc with
-      | Ok ty -> Some (p.param_name, ty)
-      | Error _ -> None)
-    params
+(* Re-export all submodules for backward compatibility — external code uses
+   Smt.config, Smt.query, Smt.make_config, Smt.declare_domain_sorts, etc. *)
+include Smt_types
+include Smt_preamble
+include Smt_doc
 
 (** Resolve the iteration variable, domain name, and any implicit guard for a
     comprehension. Supports two forms:
@@ -1616,11 +1046,6 @@ and translate_override _config _env name _pairs =
      in translate_app. *)
   Printf.sprintf "<<override:%s>>" (sanitize_ident name)
 
-and resolve_param_sort env te =
-  match Collect.resolve_type env te dummy_loc with
-  | Ok ty -> Some (sort_of_ty ty)
-  | Error _ -> None
-
 (** Translate a proposition expression to SMT, injecting guards from guarded
     function applications. For quantified expressions, delegates to
     translate_expr (guards are injected inside translate_quantifier). For
@@ -1648,97 +1073,6 @@ let translate_proposition config env (e : expr) =
             in
             Printf.sprintf "(=> %s %s)" guard_conj smt_expr)
 
-(** Classify chapters into invariant chapters and action chapters *)
-type chapter_class =
-  | Invariant of expr located list  (** Non-action body propositions *)
-  | Action of {
-      label : string;
-      params : param list;
-      guards : guard list;
-      contexts : string list;
-      propositions : expr located list;
-    }
-
-let classify_chapter (chapter : chapter) =
-  let action =
-    List.find_map
-      (fun (decl : declaration located) ->
-        match decl.value with
-        | DeclAction { label; params; guards; contexts } ->
-            Some (label, params, guards, contexts)
-        | DeclDomain _ | DeclAlias _ | DeclRule _ | DeclClosure _ -> None)
-      chapter.head
-  in
-  match action with
-  | Some (label, params, guards, contexts) ->
-      Action { label; params; guards; contexts; propositions = chapter.body }
-  | None -> Invariant chapter.body
-
-let classify_chapters (doc : document) = List.map classify_chapter doc.chapters
-
-(** Collect all invariants from the document (non-initially propositions) *)
-let collect_invariants chapters =
-  List.concat_map
-    (fun c ->
-      match c with
-      | Invariant props ->
-          List.filter
-            (fun (p : expr located) ->
-              match p.value with
-              | EInitially _ -> false
-              | EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _
-              | ELitString _ | ELitBool _ | EApp _ | EPrimed _ | EOverride _
-              | ETuple _ | EProj _ | EBinop _ | EUnop _ | EForall _ | EExists _
-              | EEach _ | ECond _ ->
-                  true)
-            props
-      | Action _ -> [])
-    chapters
-
-(** Collect all initial-state propositions, stripping the EInitially wrapper *)
-let collect_initial_props chapters =
-  List.concat_map
-    (fun c ->
-      match c with
-      | Invariant props ->
-          List.filter_map
-            (fun (p : expr located) ->
-              match p.value with
-              | EInitially e -> Some { p with value = e }
-              | EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _
-              | ELitString _ | ELitBool _ | EApp _ | EPrimed _ | EOverride _
-              | ETuple _ | EProj _ | EBinop _ | EUnop _ | EForall _ | EExists _
-              | EEach _ | ECond _ ->
-                  None)
-            props
-      | Action _ -> [])
-    chapters
-
-type action_info = {
-  a_label : string;
-  a_params : param list;
-  a_guards : guard list;
-  a_contexts : string list;
-  a_propositions : expr located list;
-}
-(** Collect all actions from the document *)
-
-let collect_actions chapters =
-  List.filter_map
-    (fun c ->
-      match c with
-      | Action { label; params; guards; contexts; propositions } ->
-          Some
-            {
-              a_label = label;
-              a_params = params;
-              a_guards = guards;
-              a_contexts = contexts;
-              a_propositions = propositions;
-            }
-      | Invariant _ -> None)
-    chapters
-
 (** Translate a list of propositions into a conjunction *)
 let conjoin_propositions config env props =
   match props with
@@ -1752,67 +1086,6 @@ let conjoin_propositions config env props =
       in
       Printf.sprintf "(and %s)" (String.concat " " parts)
 
-(** Generate frame condition expressions: for every rule NOT in the action's
-    context, produce the SMT expression asserting f_prime = f. Returns a list of
-    (function_name, smt_expr) pairs. *)
-let collect_frame_exprs _config env contexts =
-  match contexts with
-  | [] -> []
-  | _ ->
-      let all_members =
-        List.concat_map
-          (fun ctx_name ->
-            match Env.lookup_context ctx_name env with
-            | Some members -> members
-            | None -> [])
-          contexts
-      in
-      Env.StringMap.fold
-        (fun name entry acc ->
-          match entry.Env.kind with
-          | Env.KRule ty when not (List.mem name all_members) -> (
-              let sname = sanitize_ident name in
-              match decompose_func_ty ty with
-              | Some ([], _ret) ->
-                  (name, Printf.sprintf "(= %s_prime %s)" sname sname) :: acc
-              | Some (params, _ret) ->
-                  let param_sorts = List.map sort_of_ty params in
-                  let param_names =
-                    List.mapi (fun i _ -> Printf.sprintf "frame_x_%d" i) params
-                  in
-                  let bindings =
-                    List.map2
-                      (fun n s -> Printf.sprintf "(%s %s)" n s)
-                      param_names param_sorts
-                  in
-                  let args = String.concat " " param_names in
-                  ( name,
-                    Printf.sprintf "(forall (%s) (= (%s_prime %s) (%s %s)))"
-                      (String.concat " " bindings)
-                      sname args sname args )
-                  :: acc
-              | None -> acc)
-          | Env.KRule _ | Env.KDomain | Env.KAlias _ | Env.KVar _
-          | Env.KClosure _ ->
-              acc)
-        env.Env.terms []
-      |> List.rev
-
-(** Generate frame conditions as plain assertions (for invariant queries) *)
-let generate_frame_conditions config env context =
-  let exprs = collect_frame_exprs config env context in
-  match exprs with
-  | [] -> ""
-  | _ ->
-      let buf = Buffer.create 256 in
-      Buffer.add_string buf "; --- Frame conditions ---\n";
-      List.iter
-        (fun (_name, smt_expr) ->
-          Buffer.add_string buf (Printf.sprintf "(assert %s)\n" smt_expr))
-        exprs;
-      Buffer.contents buf
-
-(** Extract preconditions from action guards (non-binding boolean conditions) *)
 let extract_preconditions config env (guards : guard list) =
   List.filter_map
     (fun g ->
@@ -1821,60 +1094,6 @@ let extract_preconditions config env (guards : guard list) =
       | GIn _ | GParam _ -> None)
     guards
 
-(** Extend the type environment with action parameter bindings so that
-    expressions referencing action params can be type-inferred during SMT
-    translation (e.g., membership guards like [x in f param]). *)
-let env_with_action_params env (params : param list) =
-  Env.with_vars (resolve_param_bindings env params) env
-
-(** Generate parameter declarations for an action *)
-let declare_action_params env (params : param list) =
-  let buf = Buffer.create 128 in
-  List.iter
-    (fun (p : param) ->
-      let sort =
-        match resolve_param_sort env p.param_type with
-        | Some s -> s
-        | None ->
-            failwith
-              (Printf.sprintf
-                 "SMT translation: cannot resolve sort for action parameter \
-                  '%s'"
-                 p.param_name)
-      in
-      Buffer.add_string buf
-        (Printf.sprintf "(declare-const %s %s)\n"
-           (sanitize_ident p.param_name)
-           sort))
-    params;
-  Buffer.contents buf
-
-(** Generate parameter type constraints (Nat >= 1, Nat0 >= 0) *)
-let declare_param_constraints env (params : param list) =
-  let buf = Buffer.create 128 in
-  List.iter
-    (fun (p : param) ->
-      match Collect.resolve_type env p.param_type dummy_loc with
-      | Ok TyNat ->
-          Buffer.add_string buf
-            (Printf.sprintf "(assert (>= %s 1))\n"
-               (sanitize_ident p.param_name))
-      | Ok TyNat0 ->
-          Buffer.add_string buf
-            (Printf.sprintf "(assert (>= %s 0))\n"
-               (sanitize_ident p.param_name))
-      | Ok
-          ( TyBool | TyInt | TyReal | TyString | TyNothing | TyDomain _
-          | TyList _ | TyProduct _ | TySum _ | TyFunc _ )
-      | Error _ ->
-          ())
-    params;
-  Buffer.contents buf
-
-(** Build SMT term strings to request values for in counterexamples. Includes
-    action parameters, function applications to action params, and function
-    applications to domain elements (for invariant queries where violations may
-    occur on elements other than action params). *)
 let build_value_terms config env (params : param list) =
   let param_terms =
     List.map (fun (p : param) -> sanitize_ident p.param_name) params
@@ -1888,7 +1107,7 @@ let build_value_terms config env (params : param list) =
       params
   in
   let func_terms =
-    Env.StringMap.fold
+    Env.fold_terms
       (fun name entry acc ->
         match entry.Env.kind with
         | Env.KRule ty | Env.KClosure (ty, _) -> (
@@ -1941,7 +1160,7 @@ let build_value_terms config env (params : param list) =
                 List.concat from_params @ from_elems @ acc
             | _ -> acc)
         | Env.KDomain | Env.KAlias _ | Env.KVar _ -> acc)
-      env.Env.terms []
+      env []
   in
   param_terms @ func_terms
 
@@ -2176,66 +1395,11 @@ let generate_precondition_query config env invariant_props action =
     assertion_names = get_assertion_names na;
   }
 
-(** Collect all function names referenced in an expression *)
-let rec collect_function_refs (e : expr) =
-  match e with
-  | EVar name -> [ name ]
-  | EApp (func, args) ->
-      collect_function_refs func @ List.concat_map collect_function_refs args
-  | EPrimed name -> [ name ]
-  | EBinop (_, e1, e2) -> collect_function_refs e1 @ collect_function_refs e2
-  | EUnop (_, e) -> collect_function_refs e
-  | EForall (_, gs, body) | EExists (_, gs, body) | EEach (_, gs, _, body) ->
-      List.concat_map collect_guard_refs gs @ collect_function_refs body
-  | ETuple es -> List.concat_map collect_function_refs es
-  | EProj (e, _) -> collect_function_refs e
-  | EOverride (name, pairs) ->
-      name
-      :: List.concat_map
-           (fun (k, v) -> collect_function_refs k @ collect_function_refs v)
-           pairs
-  | ECond arms ->
-      List.concat_map
-        (fun (arm, cons) ->
-          collect_function_refs arm @ collect_function_refs cons)
-        arms
-  | EInitially e -> collect_function_refs e
-  | ELitBool _ | ELitNat _ | ELitReal _ | ELitString _ | EDomain _
-  | EQualified _ ->
-      []
-
-and collect_guard_refs = function
-  | GParam _ -> []
-  | GIn (_, e) -> collect_function_refs e
-  | GExpr e -> collect_function_refs e
-
-(** Check if invariant propositions touch any contextual functions. If they only
-    reference extracontextual functions, the frame conditions guarantee
-    preservation and we can skip the check. *)
-let invariant_touches_context env contexts invariant_props =
-  match contexts with
-  | [] -> true (* No context = check everything *)
-  | _ ->
-      let all_members =
-        List.concat_map
-          (fun ctx_name ->
-            match Env.lookup_context ctx_name env with
-            | Some members -> members
-            | None -> [])
-          contexts
-      in
-      let refs =
-        List.concat_map
-          (fun (p : expr located) -> collect_function_refs p.value)
-          invariant_props
-      in
-      List.exists (fun r -> List.mem r all_members) refs
-
 (** Build SMT value terms for invariant consistency queries (no action params,
     no primed functions). Includes nullary rules and unary rules applied to
     domain elements. *)
 let build_invariant_value_terms config env =
-  Env.StringMap.fold
+  Env.fold_terms
     (fun name entry acc ->
       match entry.Env.kind with
       | Env.KRule ty | Env.KClosure (ty, _) -> (
@@ -2255,7 +1419,7 @@ let build_invariant_value_terms config env =
                   acc)
           | _ -> acc)
       | Env.KDomain | Env.KAlias _ | Env.KVar _ -> acc)
-    env.Env.terms []
+    env []
 
 (** Query 0: Invariant consistency — checks that all invariants are jointly
     satisfiable. UNSAT = contradiction among invariants. *)
@@ -2294,16 +1458,6 @@ let generate_invariant_consistency_query config env invariant_props =
     invariant_text = "";
     assertion_names = get_assertion_names na;
   }
-
-(** Extract the GExpr preconditions from an action's guards as raw exprs *)
-let extract_precondition_exprs (guards : guard list) =
-  List.filter_map
-    (fun g -> match g with GExpr e -> Some e | GIn _ | GParam _ -> None)
-    guards
-
-(** Check if an action has no boolean preconditions (always enabled) *)
-let action_always_enabled action =
-  extract_precondition_exprs action.a_guards = []
 
 (** Query: Init consistency — checks that all init props + type constraints are
     jointly satisfiable. UNSAT = impossible initial state. *)
@@ -2381,14 +1535,14 @@ let generate_init_invariant_query config env init_props ~index
 
 (** Collect all rule names from env that should be renamed for BMC steps *)
 let collect_rule_names env =
-  Env.StringMap.fold
+  Env.fold_terms
     (fun name entry acc ->
       match entry.Env.kind with
       | Env.KRule ty | Env.KClosure (ty, _) -> (
           let sname = sanitize_ident name in
           match decompose_func_ty ty with Some _ -> sname :: acc | None -> acc)
       | Env.KDomain | Env.KAlias _ | Env.KVar _ -> acc)
-    env.Env.terms []
+    env []
 
 (** Rename all rule names in an SMT string for step [step]. Replaces
     [name_prime] → [name_s{step+1}] and [name] → [name_s{step}]. Sort
@@ -2416,7 +1570,7 @@ let rename_smt_for_step env smt step =
 let declare_step_functions config env steps =
   let buf = Buffer.create 512 in
   Buffer.add_string buf "; --- Step-indexed function declarations ---\n";
-  Env.StringMap.iter
+  Env.iter_terms
     (fun name entry ->
       match entry.Env.kind with
       | Env.KRule ty | Env.KClosure (ty, _) -> (
@@ -2439,7 +1593,7 @@ let declare_step_functions config env steps =
               done
           | None -> ())
       | Env.KDomain | Env.KAlias _ | Env.KVar _ -> ())
-    env.Env.terms;
+    env;
   (* Type constraints for each step *)
   Buffer.add_string buf "\n; --- Type constraints for all steps ---\n";
   let base_exprs =
@@ -2862,7 +2016,7 @@ let build_cond_value_terms config env cond =
   in
   List.concat_map
     (fun name ->
-      match[@warning "-4"] Env.StringMap.find_opt name env.Env.terms with
+      match[@warning "-4"] Env.lookup_term name env with
       | Some { kind = Env.KRule ty; _ }
       | Some { kind = Env.KClosure (ty, _); _ } -> (
           let sname = sanitize_ident name in
@@ -2914,13 +2068,6 @@ let generate_exhaustiveness_query config env ~all_invariants:_ ~index cond =
     invariant_text = cond.cond_text;
     assertion_names = [];
   }
-
-(** Wrap a query generator: reset cond-aux state, run the generator, and insert
-    any accumulated cond-default declarations into the output. *)
-let with_cond_aux f =
-  reset_cond_aux ();
-  let q = f () in
-  { q with smt2 = insert_cond_aux_decls q.smt2 }
 
 (** Generate all verification queries for a document *)
 let generate_queries config env (doc : document) =

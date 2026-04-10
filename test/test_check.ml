@@ -97,7 +97,7 @@ let make_import_env imports =
                   decl_chapter = 0;
                 }
               in
-              { e with Env.types = Env.StringMap.add name entry e.Env.types })
+              Env.add_type_entry name entry e)
             e types
         in
         List.fold_left
@@ -110,7 +110,7 @@ let make_import_env imports =
                 decl_chapter = 0;
               }
             in
-            { e with Env.terms = Env.StringMap.add name entry e.Env.terms })
+            Env.add_term_entry name entry e)
           e terms
       in
       Env.add_import env mod_env mod_name)

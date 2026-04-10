@@ -19,20 +19,11 @@ type entry = {
 
 module StringMap : Map.S with type key = string
 
-type t = {
-  types : entry StringMap.t;
-  terms : entry StringMap.t;
-  imported_types : (string * entry) list StringMap.t;
-  imported_terms : (string * entry) list StringMap.t;
-  current_module : string;
-  contexts : string list StringMap.t;
-  rule_guards : (Ast.param list * Ast.guard list) StringMap.t;
-  action : string option;
-  action_contexts : string list;
-  local_vars : string list;
-}
+type t
 
 val empty : string -> t
+val add_type_entry : string -> entry -> t -> t
+val add_term_entry : string -> entry -> t -> t
 val add_domain : string -> Ast.loc -> chapter:int -> t -> t
 val add_alias : string -> Types.ty -> Ast.loc -> chapter:int -> t -> t
 val add_rule : string -> Types.ty -> Ast.loc -> chapter:int -> t -> t
@@ -53,6 +44,15 @@ val is_local_var : string -> t -> bool
 val in_action_context : t -> bool
 val lookup_type : string -> t -> entry option
 val lookup_term : string -> t -> entry option
+val fold_terms : (string -> entry -> 'a -> 'a) -> t -> 'a -> 'a
+val iter_terms : (string -> entry -> unit) -> t -> unit
+val fold_types : (string -> entry -> 'a -> 'a) -> t -> 'a -> 'a
+val iter_types : (string -> entry -> unit) -> t -> unit
+val bindings_terms : t -> (string * entry) list
+val bindings_types : t -> (string * entry) list
+val action_contexts : t -> string list
+val current_module : t -> string
+val with_module_init : string -> t -> t
 val with_vars : (string * Types.ty) list -> t -> t
 val exports : t -> string list * string list
 val add_import : t -> t -> string -> t

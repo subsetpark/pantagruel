@@ -6,12 +6,12 @@ module StringSet = Set.Make (String)
 
 (** Extract rule names from environment *)
 let rule_names_of_env env =
-  Env.StringMap.fold
+  Env.fold_terms
     (fun name entry acc ->
       match entry.Env.kind with
       | Env.KRule _ | Env.KClosure _ -> StringSet.add name acc
       | Env.KDomain | Env.KAlias _ | Env.KVar _ -> acc)
-    env.Env.terms StringSet.empty
+    env StringSet.empty
 
 (* --- Rich markdown expression rendering with unicode operators --- *)
 

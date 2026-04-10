@@ -279,14 +279,7 @@ let collect_chapter_head ~chapter ~doc_contexts env
 (** Collect all declarations from document (Pass 1) *)
 let collect_all ~base_env (doc : document) : (Env.t, collect_error) result =
   let mod_name = Option.value ~default:"" doc.module_name in
-  let env =
-    {
-      base_env with
-      Env.current_module = mod_name;
-      action = None;
-      local_vars = [];
-    }
-  in
+  let env = Env.with_module_init mod_name base_env in
 
   (* Register context names from module-level declarations *)
   let* env =

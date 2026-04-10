@@ -57,6 +57,14 @@ let empty module_name =
     local_vars = [];
   }
 
+(** Add a raw entry to the type namespace *)
+let add_type_entry name entry env =
+  { env with types = StringMap.add name entry env.types }
+
+(** Add a raw entry to the term namespace *)
+let add_term_entry name entry env =
+  { env with terms = StringMap.add name entry env.terms }
+
 (** Add a domain to the type namespace *)
 let add_domain name loc ~chapter env =
   let entry =
@@ -155,6 +163,35 @@ let lookup_type name env = StringMap.find_opt name env.types
 
 (** Lookup a term by name *)
 let lookup_term name env = StringMap.find_opt name env.terms
+
+(** Fold over the terms namespace *)
+let fold_terms f env init = StringMap.fold f env.terms init
+
+(** Iterate over the terms namespace *)
+let iter_terms f env = StringMap.iter f env.terms
+
+(** Fold over the types namespace *)
+let fold_types f env init = StringMap.fold f env.types init
+
+(** Iterate over the types namespace *)
+let iter_types f env = StringMap.iter f env.types
+
+(** Get bindings of the terms namespace *)
+let bindings_terms env = StringMap.bindings env.terms
+
+(** Get bindings of the types namespace *)
+let bindings_types env = StringMap.bindings env.types
+
+(** Get the active action contexts *)
+let action_contexts env = env.action_contexts
+
+(** Get the current module name *)
+let current_module env = env.current_module
+
+(** Initialize environment for a new module: set module name, clear action and
+    local_vars *)
+let with_module_init mod_name env =
+  { env with current_module = mod_name; action = None; local_vars = [] }
 
 (** Create a child environment with additional variable bindings *)
 let with_vars vars env =

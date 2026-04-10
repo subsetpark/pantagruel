@@ -114,7 +114,7 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
               | _ -> ty
             in
             (* If action has contexts, check membership in union *)
-            match ctx.env.action_contexts with
+            match Env.action_contexts ctx.env with
             | [] -> Ok result_ty
             | ctxs ->
                 let all_members =
