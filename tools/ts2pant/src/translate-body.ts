@@ -30,7 +30,17 @@ export function translateBody(opts: TranslateBodyOptions): PantProposition[] {
   const paramList: Array<{ name: string; type: string }> = [];
 
   if (className) {
-    const pName = className[0].toLowerCase();
+    const baseName =
+      className.charAt(0).toLowerCase() + className.slice(1);
+    let pName = baseName;
+    const existing = new Set(
+      node.parameters
+        .map((p) => (ts.isIdentifier(p.name) ? p.name.text : null))
+        .filter((name): name is string => name !== null),
+    );
+    while (existing.has(pName)) {
+      pName = `${pName}_this`;
+    }
     paramNames.set("this", pName);
     paramList.push({ name: pName, type: className });
   }
@@ -104,15 +114,10 @@ function extractReturnExpression(body: ts.Block): ts.Expression | null {
     }
   }
 
-  // Multiple statements: look for if/else-return or trailing return
-  if (stmts.length >= 1) {
-    const last = stmts[stmts.length - 1];
-    if (ts.isReturnStatement(last) && last.expression) {
-      return last.expression;
-    }
-    if (ts.isIfStatement(last) && last.elseStatement) {
-      return last;
-    }
+  // Multiple non-guard statements are not representable yet without
+  // translating local bindings/control flow.
+  if (stmts.length > 1) {
+    return null;
   }
 
   return null;
@@ -298,8 +303,7 @@ function tryTranslateFilterMap(
   if (checker.isArrayType(sourceType)) {
     const typeArgs = checker.getTypeArguments(sourceType as ts.TypeReference);
     if (typeArgs.length === 1) {
-      const sym = typeArgs[0].aliasSymbol ?? typeArgs[0].symbol;
-      elemTypeName = sym ? sym.getName() : checker.typeToString(typeArgs[0]);
+      elemTypeName = mapTsType(typeArgs[0], checker, strategy);
     }
   }
 
@@ -373,14 +377,16 @@ function translateMutatingBody(
 }
 
 function collectAssignments(
-  block: ts.Block,
+  body: ts.Block | ts.Statement,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
   propositions: PantProposition[],
   modifiedRules: Set<string>,
 ): void {
-  for (const stmt of block.statements) {
+  const stmts = ts.isBlock(body) ? Array.from(body.statements) : [body];
+
+  for (const stmt of stmts) {
     // Skip guard statements (if-throw patterns)
     if (isGuardStatement(stmt)) continue;
 
@@ -393,15 +399,37 @@ function collectAssignments(
         const prop = bin.left.name.text;
         const obj = translateBodyExpr(bin.left.expression, checker, strategy, paramNames);
         const val = translateBodyExpr(bin.right, checker, strategy, paramNames);
+        if (
+          obj.startsWith("> UNSUPPORTED:") ||
+          val.startsWith("> UNSUPPORTED:")
+        ) {
+          propositions.push({
+            text: obj.startsWith("> UNSUPPORTED:") ? obj : val,
+          });
+          continue;
+        }
         propositions.push({ text: `${prop}' ${obj} = ${val}` });
         modifiedRules.add(prop);
       }
     }
 
-    // Conditional assignments — emit UNSUPPORTED comment rather than
-    // silently dropping the predicate.
-    if (ts.isIfStatement(stmt)) {
+    // Recurse into nested blocks
+    if (ts.isBlock(stmt)) {
+      collectAssignments(stmt, checker, strategy, paramNames, propositions, modifiedRules);
+    } else if (ts.isIfStatement(stmt)) {
       propositions.push({ text: `> UNSUPPORTED: conditional assignment (if/else)` });
+    } else if (
+      ts.isForStatement(stmt) ||
+      ts.isForOfStatement(stmt) ||
+      ts.isForInStatement(stmt) ||
+      ts.isWhileStatement(stmt) ||
+      ts.isDoStatement(stmt)
+    ) {
+      propositions.push({ text: `> UNSUPPORTED: loop assignment` });
+    } else if (ts.isTryStatement(stmt)) {
+      collectAssignments(stmt.tryBlock, checker, strategy, paramNames, propositions, modifiedRules);
+    } else if (ts.isSwitchStatement(stmt)) {
+      propositions.push({ text: `> UNSUPPORTED: switch assignment` });
     }
   }
 }

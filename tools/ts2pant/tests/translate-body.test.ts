@@ -318,7 +318,7 @@ describe("class method body translation", () => {
     `;
     const props = translate(source, "getBalance");
 
-    expect(props[0].text).toBe("all a: Account | getBalance a = balance a");
+    expect(props[0].text).toBe("all account: Account | getBalance account = balance account");
   });
 
   it("translates mutating class method", () => {
@@ -332,7 +332,7 @@ describe("class method body translation", () => {
     `;
     const props = translate(source, "deposit");
 
-    expect(props.some((p) => p.text === "balance' a = balance a + amount")).toBe(
+    expect(props.some((p) => p.text === "balance' account = balance account + amount")).toBe(
       true,
     );
   });
