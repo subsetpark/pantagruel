@@ -2,6 +2,12 @@
 
 import { Command } from "commander";
 import type { CliOptions, NumericType, PantDocument } from "./types.js";
+import { createProgram, extractReferencedTypes } from "./extract.js";
+import { translateTypes, IntStrategy, RealStrategy, type NumericStrategy } from "./translate-types.js";
+import { translateSignature } from "./translate-signature.js";
+import { translateBody as translateFunctionBody } from "./translate-body.js";
+import { extractFunctionAnnotations } from "./annotations.js";
+import { emitDocument, runCheck } from "./emit.js";
 
 function parseArgs(): CliOptions {
   const program = new Command();
@@ -32,83 +38,81 @@ function parseArgs(): CliOptions {
   };
 }
 
-/** Stub: extract types and function from the TS source. */
-function extract(_opts: CliOptions): PantDocument {
-  // TODO (Patch 7-8): Use TS compiler API to extract types and function signature
-  return { moduleName: "Generated", declarations: [], propositions: [] };
+function getStrategy(numericType: NumericType): NumericStrategy {
+  switch (numericType) {
+    case "Real": return RealStrategy;
+    case "Int":
+    case "Nat0":
+    default: return IntStrategy;
+  }
 }
 
-/** Stub: translate function body to propositions. */
-function translateBody(doc: PantDocument, _opts: CliOptions): PantDocument {
-  // TODO (Patch 9): Translate function body to Pantagruel propositions
-  return doc;
+/** Build a PantDocument from a TS source file and function name. */
+export function extract(opts: CliOptions): PantDocument {
+  const strategy = getStrategy(opts.numericType);
+  const program = createProgram(opts.inputFile);
+  const checker = program.getTypeChecker();
+
+  // Extract referenced types and translate to declarations
+  const extracted = extractReferencedTypes(program, opts.inputFile, opts.functionName);
+  const typeDecls = translateTypes(extracted, checker, strategy);
+
+  // Translate function signature
+  const { declaration: sigDecl } = translateSignature(
+    program, opts.inputFile, opts.functionName, strategy,
+  );
+
+  const declarations = [...typeDecls, sigDecl];
+
+  // Capitalize function name for module name
+  const moduleName = opts.functionName.charAt(0).toUpperCase() + opts.functionName.slice(1);
+
+  return { moduleName, declarations, propositions: [] };
 }
 
-/** Stub: emit Pantagruel source text. */
-function emit(doc: PantDocument): string {
-  const lines: string[] = [];
-  lines.push(`module ${doc.moduleName}.`);
-  lines.push("");
+/** Translate function body to propositions and append to doc. */
+export function addBodyPropositions(doc: PantDocument, opts: CliOptions): PantDocument {
+  const strategy = getStrategy(opts.numericType);
+  const program = createProgram(opts.inputFile);
 
-  for (const decl of doc.declarations) {
-    switch (decl.kind) {
-      case "domain":
-        lines.push(`${decl.name}.`);
-        break;
-      case "alias":
-        lines.push(`${decl.name} = ${decl.type}.`);
-        break;
-      case "rule": {
-        const params = decl.params.map((p) => `${p.name}: ${p.type}`).join(", ");
-        const guard = decl.guard ? `, ${decl.guard}` : "";
-        lines.push(`${decl.name} ${params}${guard} => ${decl.returnType}.`);
-        break;
-      }
-      case "action": {
-        if (decl.params.length === 0) {
-          lines.push(`~> ${decl.label}.`);
-        } else {
-          const params = decl.params.map((p) => `${p.name}: ${p.type}`).join(", ");
-          const guard = decl.guard ? `, ${decl.guard}` : "";
-          lines.push(`~> ${decl.label} @ ${params}${guard}.`);
-        }
-        break;
-      }
-    }
-  }
+  const propositions = translateFunctionBody({
+    program,
+    fileName: opts.inputFile,
+    functionName: opts.functionName,
+    strategy,
+    declarations: doc.declarations,
+  });
 
-  lines.push("");
-  lines.push("---");
-  lines.push("");
+  return { ...doc, propositions: [...doc.propositions, ...propositions] };
+}
 
-  if (doc.propositions.length === 0) {
-    lines.push("true.");
-  } else {
-    for (const prop of doc.propositions) {
-      lines.push(`${prop.text}.`);
-    }
-  }
+/** Extract @pant annotations and append as propositions. */
+export function addAnnotations(doc: PantDocument, opts: CliOptions): PantDocument {
+  const program = createProgram(opts.inputFile);
+  const annotations = extractFunctionAnnotations(program, opts.inputFile, opts.functionName);
 
-  lines.push("");
-  return lines.join("\n");
+  const annotationProps = annotations.map((text) => ({ text }));
+  return { ...doc, propositions: [...doc.propositions, ...annotationProps] };
 }
 
 function main(): void {
   const opts = parseArgs();
 
-  // Pipeline: extract -> translate body -> emit
+  // Pipeline: extract -> translate body -> add annotations -> emit
   let doc = extract(opts);
 
   if (!opts.noBody) {
-    doc = translateBody(doc, opts);
+    doc = addBodyPropositions(doc, opts);
   }
 
-  const output = emit(doc);
+  doc = addAnnotations(doc, opts);
+
+  const output = emitDocument(doc);
 
   if (opts.check) {
-    // TODO (Patch 11): Write to temp file and invoke pant --check
-    console.error("--check not yet implemented");
-    process.exit(1);
+    const result = runCheck(output);
+    process.stdout.write(result.output);
+    process.exit(result.passed ? 0 : 1);
   }
 
   process.stdout.write(output);

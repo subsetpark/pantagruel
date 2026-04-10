@@ -55,11 +55,8 @@ export function translateBody(opts: TranslateBodyOptions): PantProposition[] {
 
   if (sig) {
     for (const param of sig.getParameters()) {
-      const typeName = mapTsType(
-        checker.getTypeOfSymbol(param),
-        checker,
-        strategy,
-      );
+      const paramType = checker.getTypeOfSymbol(param);
+      const typeName = mapTsType(paramType, checker, strategy);
       paramNames.set(param.name, param.name);
       paramList.push({ name: param.name, type: typeName });
     }
