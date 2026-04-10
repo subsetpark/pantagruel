@@ -156,9 +156,10 @@ function isGuardStatement(stmt: ts.Statement): boolean {
   if (!stmt.elseStatement && blockThrows(stmt.thenStatement)) return true;
   // if (...) { ... } else { throw }
   if (stmt.elseStatement && blockThrows(stmt.elseStatement)) {
-    // Only a guard if the then-block is NOT a return (i.e., body continues)
-    // Actually for pure functions, if-else-throw is a guard handled by signature
-    return blockThrows(stmt.elseStatement) && !blockReturns(stmt.thenStatement);
+    // Only a guard if the then-block has no side effects (no assignments/mutations).
+    // A mutating then-branch like `if (ok) { a.balance = 1; } else { throw e; }`
+    // must NOT be classified as a guard — collectAssignments() needs to see it.
+    return blockHasNoSideEffects(stmt.thenStatement) && !blockReturns(stmt.thenStatement);
   }
   return false;
 }
@@ -181,6 +182,36 @@ function blockReturns(node: ts.Statement): boolean {
     return node.statements.some((s) => ts.isReturnStatement(s));
   }
   return ts.isReturnStatement(node);
+}
+
+/** Check that a statement/block contains no assignments or property writes. */
+function blockHasNoSideEffects(node: ts.Statement): boolean {
+  if (ts.isBlock(node)) {
+    return node.statements.every((s) => blockHasNoSideEffects(s));
+  }
+  if (ts.isExpressionStatement(node)) {
+    return !expressionHasSideEffects(node.expression);
+  }
+  // Variable declarations, return statements, throw statements are fine
+  if (ts.isVariableStatement(node) || ts.isReturnStatement(node) || ts.isThrowStatement(node)) {
+    return true;
+  }
+  // if/for/while/switch may contain mutations — treat as side-effectful
+  return false;
+}
+
+function expressionHasSideEffects(expr: ts.Expression): boolean {
+  if (ts.isBinaryExpression(expr)) {
+    // Any assignment operator
+    return expr.operatorToken.kind >= ts.SyntaxKind.EqualsToken &&
+           expr.operatorToken.kind <= ts.SyntaxKind.CaretEqualsToken;
+  }
+  if (ts.isCallExpression(expr)) return true;
+  if (ts.isPrefixUnaryExpression(expr) || ts.isPostfixUnaryExpression(expr)) {
+    const op = expr.operator;
+    return op === ts.SyntaxKind.PlusPlusToken || op === ts.SyntaxKind.MinusMinusToken;
+  }
+  return false;
 }
 
 /**
@@ -368,6 +399,8 @@ function tryTranslateFilterMap(
   const mapBody = extractArrowBody(mapArg, varName, extendedParams, checker, strategy);
 
   if (filterBody && mapBody) {
+    if (isUnsupported(filterBody)) return filterBody;
+    if (isUnsupported(mapBody)) return mapBody;
     return `each ${varName}: ${elemTypeName}, ${filterBody} | ${mapBody}`;
   }
 
@@ -469,6 +502,7 @@ function collectAssignments(
           obj.startsWith("> UNSUPPORTED:") ||
           val.startsWith("> UNSUPPORTED:")
         ) {
+          hasUnsupportedMutation = true;
           propositions.push({
             text: obj.startsWith("> UNSUPPORTED:") ? obj : val,
           });
