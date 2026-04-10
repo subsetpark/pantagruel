@@ -163,10 +163,13 @@ function translateExpr(
     return `${left} ${op} ${right}`;
   }
 
-  // Prefix unary: !x -> ~x
+  // Prefix unary: !x -> ~x, -x -> -x
   if (ts.isPrefixUnaryExpression(expr)) {
     if (expr.operator === ts.SyntaxKind.ExclamationToken) {
       return `~(${translateExpr(expr.operand, checker, strategy, paramNames)})`;
+    }
+    if (expr.operator === ts.SyntaxKind.MinusToken) {
+      return `-${translateExpr(expr.operand, checker, strategy, paramNames)}`;
     }
   }
 
