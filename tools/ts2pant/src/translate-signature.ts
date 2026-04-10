@@ -369,39 +369,43 @@ function scanBodyForGuards(
 export function isFollowableGuardCall(
   call: ts.CallExpression,
   checker: ts.TypeChecker,
+  visited: Set<ts.Node> = new Set(),
 ): boolean {
   const target = resolveCallTarget(call, checker);
   if (!target) {
     return false;
   }
+  if (visited.has(target.body)) {
+    return false;
+  }
+  if (target.body.statements.length === 0) {
+    return false;
+  }
 
-  for (const stmt of target.body.statements) {
+  visited.add(target.body);
+  const result = target.body.statements.every((stmt) => {
     if (
       ts.isExpressionStatement(stmt) &&
       ts.isCallExpression(stmt.expression)
     ) {
-      // Assertion call is always a guard
-      if (isAssertionCall(checker, stmt.expression) !== null) {
-        continue;
-      }
-      // Recursive followable check
-      if (isFollowableGuardCall(stmt.expression, checker)) {
-        continue;
-      }
-      return false;
+      return (
+        isAssertionCall(checker, stmt.expression) !== null ||
+        isFollowableGuardCall(stmt.expression, checker, visited)
+      );
     }
     if (!ts.isIfStatement(stmt)) {
       return false;
     }
     if (!stmt.elseStatement && blockThrows(stmt.thenStatement)) {
-      continue;
+      return true;
     }
     if (stmt.elseStatement && blockThrows(stmt.elseStatement)) {
-      continue;
+      return true;
     }
     return false;
-  }
-  return target.body.statements.length > 0;
+  });
+  visited.delete(target.body);
+  return result;
 }
 
 /**
@@ -439,10 +443,13 @@ export function detectGuard(
 }
 
 function blockThrows(node: ts.Statement): boolean {
+  if (ts.isThrowStatement(node)) return true;
   if (ts.isBlock(node)) {
-    return node.statements.some((s) => ts.isThrowStatement(s));
+    const stmts = node.statements;
+    if (stmts.length === 0) return false;
+    return ts.isThrowStatement(stmts[stmts.length - 1]!);
   }
-  return ts.isThrowStatement(node);
+  return false;
 }
 
 /**

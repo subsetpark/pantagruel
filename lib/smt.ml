@@ -1690,17 +1690,9 @@ let collect_conds_in_expr (e : expr) : cond_info list =
 let collect_conds_from_doc (doc : document) : cond_info list =
   List.concat_map
     (fun chapter ->
-      let body_conds =
-        List.concat_map
-          (fun (prop : expr located) -> collect_conds_in_expr prop.value)
-          chapter.body
-      in
-      let check_conds =
-        List.concat_map
-          (fun (prop : expr located) -> collect_conds_in_expr prop.value)
-          chapter.checks
-      in
-      body_conds @ check_conds)
+      List.concat_map
+        (fun (prop : expr located) -> collect_conds_in_expr prop.value)
+        (chapter.body @ chapter.checks))
     doc.chapters
 
 (** Build value terms for a cond exhaustiveness query. Only includes functions
