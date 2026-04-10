@@ -31,11 +31,11 @@ let parse_module_header path =
     let lexer = Lexer.create_from_channel path channel in
     (* Read tokens until we find MODULE <name> DOT *)
     let rec find_module () =
-      match Lexer.token lexer with
+      match[@warning "-4"] Lexer.token lexer with
       | Parser.MODULE -> (
-          match Lexer.token lexer with
+          match[@warning "-4"] Lexer.token lexer with
           | Parser.UPPER_IDENT name -> (
-              match Lexer.token lexer with
+              match[@warning "-4"] Lexer.token lexer with
               | Parser.DOT ->
                   close_in channel;
                   Ok name
@@ -89,7 +89,7 @@ let parse_channel filename channel =
         let expected_str =
           match expected with
           | [] -> ""
-          | _ -> ", expected " ^ String.concat ", " expected
+          | _ :: _ -> ", expected " ^ String.concat ", " expected
         in
         Error
           (ParseError

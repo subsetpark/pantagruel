@@ -571,7 +571,13 @@ Foo.
 process.
 |} (function
     | Check.AmbiguousName ("process", _, _) -> true
-    | _ -> false)
+    | UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
+    | NotAFunction _ | NotAList _ | NotAProduct _ | NotNumeric _
+    | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
+    | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
+    | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
+    | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _ ->
+        false)
 
 let test_qualified_type_resolves_ambiguity () =
   (* TQName resolves ambiguous type *)
@@ -645,7 +651,13 @@ Foo.
 WRONG::count >= 0.
 |} (function
     | Check.UnboundQualified ("WRONG", "count", _) -> true
-    | _ -> false)
+    | UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
+    | NotAFunction _ | NotAList _ | NotAProduct _ | NotNumeric _
+    | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
+    | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
+    | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
+    | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _ ->
+        false)
 
 let test_local_domain_shadows_import () =
   (* Local domain declaration shadows an imported one *)
@@ -949,7 +961,13 @@ all u: User | role u.
 |}
     (function
     | Check.ComprehensionNeedEach _ -> true
-    | _ -> false)
+    | UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
+    | NotAFunction _ | NotAList _ | NotAProduct _ | NotNumeric _
+    | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
+    | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
+    | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
+    | PrimedExtracontextual _ | BoolParam _ ->
+        false)
 
 let test_all_non_bool_body_error () =
   (* Non-Bool body with 'some' → ComprehensionNeedEach *)
@@ -964,7 +982,13 @@ some u: User | role u.
 |}
     (function
     | Check.ComprehensionNeedEach _ -> true
-    | _ -> false)
+    | UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
+    | NotAFunction _ | NotAList _ | NotAProduct _ | NotNumeric _
+    | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
+    | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
+    | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
+    | PrimedExtracontextual _ | BoolParam _ ->
+        false)
 
 let test_combiner_add_numeric () =
   (* + over each x: D | f x where f: D → Nat types as Nat *)
@@ -1000,7 +1024,14 @@ active u: User => Bool.
 |}
     (function
     | Check.AggregateRequiresNumeric _ -> true
-    | _ -> false)
+    | UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
+    | NotAFunction _ | NotAList _ | NotAProduct _ | NotNumeric _
+    | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
+    | OverrideRequiresArity1 _ | ProjectionOutOfBounds _
+    | PropositionNotBool _ | ShadowingTypeMismatch _ | AmbiguousName _
+    | UnboundQualified _ | PrimedExtracontextual _ | BoolParam _
+    | ComprehensionNeedEach _ | AggregateRequiresBool _ ->
+        false)
 
 let test_combiner_bool_on_numeric_fails () =
   (* and over each with Nat body → AggregateRequiresBool *)
@@ -1014,7 +1045,14 @@ and over each u: User | score u.
 |}
     (function
     | Check.AggregateRequiresBool _ -> true
-    | _ -> false)
+    | UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
+    | NotAFunction _ | NotAList _ | NotAProduct _ | NotNumeric _
+    | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
+    | OverrideRequiresArity1 _ | ProjectionOutOfBounds _
+    | PropositionNotBool _ | ShadowingTypeMismatch _ | AmbiguousName _
+    | UnboundQualified _ | PrimedExtracontextual _ | BoolParam _
+    | ComprehensionNeedEach _ | AggregateRequiresNumeric _ ->
+        false)
 
 (* --- Closure tests --- *)
 
@@ -1219,7 +1257,13 @@ x => Nat.
 x.1 >= 0.
 |} (function
     | Check.NotAProduct _ -> true
-    | _ -> false)
+    | UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
+    | NotAFunction _ | NotAList _ | NotNumeric _ | ExpectedBool _
+    | PrimedNonRule _ | PrimeOutsideActionContext _ | OverrideRequiresArity1 _
+    | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
+    | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
+    | BoolParam _ | ComprehensionNeedEach _ ->
+        false)
 
 let test_not_numeric () =
   check_error {|module TEST.
@@ -1230,7 +1274,13 @@ f => Bool.
 f + 1 = 2.
 |} (function
     | Check.NotNumeric _ -> true
-    | _ -> false)
+    | UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
+    | NotAFunction _ | NotAList _ | NotAProduct _ | ExpectedBool _
+    | PrimedNonRule _ | PrimeOutsideActionContext _ | OverrideRequiresArity1 _
+    | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
+    | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
+    | BoolParam _ | ComprehensionNeedEach _ ->
+        false)
 
 let test_override_requires_arity1 () =
   check_error
@@ -1244,7 +1294,13 @@ all a: A, b: B | f[a |-> b] a = a.
 |}
     (function
     | Check.OverrideRequiresArity1 _ -> true
-    | _ -> false)
+    | UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
+    | NotAFunction _ | NotAList _ | NotAProduct _ | NotNumeric _
+    | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
+    | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
+    | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
+    | BoolParam _ | ComprehensionNeedEach _ ->
+        false)
 
 let test_projection_out_of_bounds () =
   check_error {|module TEST.
@@ -1256,7 +1312,13 @@ p.5 >= 0.
 |}
     (function
     | Check.ProjectionOutOfBounds _ -> true
-    | _ -> false)
+    | UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
+    | NotAFunction _ | NotAList _ | NotAProduct _ | NotNumeric _
+    | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
+    | OverrideRequiresArity1 _ | PropositionNotBool _ | ShadowingTypeMismatch _
+    | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
+    | BoolParam _ | ComprehensionNeedEach _ ->
+        false)
 
 let test_unbound_type () =
   check_error {|module TEST.
@@ -1265,7 +1327,13 @@ f x: Nonexistent => Bool.
 ---
 |} (function
     | Check.UnboundType _ -> true
-    | _ -> false)
+    | UnboundVariable _ | TypeMismatch _ | ArityMismatch _ | NotAFunction _
+    | NotAList _ | NotAProduct _ | NotNumeric _ | ExpectedBool _
+    | PrimedNonRule _ | PrimeOutsideActionContext _ | OverrideRequiresArity1 _
+    | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
+    | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
+    | BoolParam _ | ComprehensionNeedEach _ ->
+        false)
 
 let test_builtin_redefined () = check_fails {|module TEST.
 
@@ -1282,7 +1350,13 @@ x => Foo.
 x in x.
 |} (function
     | Check.NotAList _ -> true
-    | _ -> false)
+    | UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
+    | NotAFunction _ | NotAProduct _ | NotNumeric _ | ExpectedBool _
+    | PrimedNonRule _ | PrimeOutsideActionContext _ | OverrideRequiresArity1 _
+    | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
+    | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
+    | BoolParam _ | ComprehensionNeedEach _ ->
+        false)
 
 let test_arithmetic_type_mismatch () =
   check_error {|module TEST.
@@ -1293,7 +1367,13 @@ f => Bool.
 f + 1 = 2.
 |} (function
     | Check.NotNumeric _ -> true
-    | _ -> false)
+    | UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
+    | NotAFunction _ | NotAList _ | NotAProduct _ | ExpectedBool _
+    | PrimedNonRule _ | PrimeOutsideActionContext _ | OverrideRequiresArity1 _
+    | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
+    | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
+    | BoolParam _ | ComprehensionNeedEach _ ->
+        false)
 
 (* --- Bug-finding tests --- *)
 

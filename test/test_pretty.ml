@@ -332,7 +332,9 @@ let test_roundtrip_type_exprs () =
             (Printf.sprintf "roundtrip: %s" printed)
             true
             (Ast.equal_type_expr te te2)
-      | _ -> fail "expected alias")
+      | Ast.DeclDomain _ | Ast.DeclRule _ | Ast.DeclAction _ | Ast.DeclClosure _
+        ->
+          fail "expected alias")
     tes
 
 (* --- Property-based: random type expression round trips --- *)
@@ -371,7 +373,9 @@ let test_type_expr_roundtrip =
            let doc = parse spec in
            match (List.hd (List.hd doc.chapters).head).Ast.value with
            | Ast.DeclAlias (_, te2) -> Ast.equal_type_expr te te2
-           | _ -> false
+           | Ast.DeclDomain _ | Ast.DeclRule _ | Ast.DeclAction _
+           | Ast.DeclClosure _ ->
+               false
          with _ -> false))
 
 (* --- Bug-finding tests --- *)

@@ -28,7 +28,7 @@
     let rec go params others = function
       | [] -> (List.rev params, List.rev others)
       | GParam p :: rest -> go (p :: params) others rest
-      | g :: rest -> go params (g :: others) rest
+      | ((GIn _ | GExpr _) as g) :: rest -> go params (g :: others) rest
     in
     go [] [] guards
 

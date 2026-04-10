@@ -54,7 +54,9 @@ let numeric_super = function
   | TyNat -> Some TyNat0
   | TyNat0 -> Some TyInt
   | TyInt -> Some TyReal
-  | _ -> None
+  | TyBool | TyReal | TyString | TyNothing | TyDomain _ | TyList _ | TyProduct _
+  | TySum _ | TyFunc _ ->
+      None
 
 let is_numeric ty = numeric_super ty <> None || equal_ty ty TyReal
 
@@ -66,7 +68,7 @@ let rec is_subtype t1 t2 =
   equal_ty t1 t2 || equal_ty t1 TyNothing
   || (match numeric_super t1 with Some up -> is_subtype up t2 | None -> false)
   ||
-  match (t1, t2) with
+  match[@warning "-4"] (t1, t2) with
   | TyList a, TyList b -> is_subtype a b
   | TyProduct as_, TyProduct bs ->
       List.length as_ = List.length bs && List.for_all2 is_subtype as_ bs
@@ -98,7 +100,7 @@ let rec join t1 t2 : (ty, unify_error) result =
     match lub_numeric t1 t2 with
     | Some lub -> Ok lub
     | None -> (
-        match (t1, t2) with
+        match[@warning "-4"] (t1, t2) with
         | TyList a, TyList b -> (
             match join a b with
             | Ok joined -> Ok (TyList joined)

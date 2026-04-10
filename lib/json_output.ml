@@ -225,7 +225,13 @@ let decl_to_json env (decl_loc : declaration located) =
       let resolved =
         match Env.lookup_type name env with
         | Some { kind = Env.KAlias ty; _ } -> Some (ty_to_json ty)
-        | _ -> None
+        | Some
+            {
+              kind = Env.KDomain | Env.KRule _ | Env.KVar _ | Env.KClosure _;
+              _;
+            }
+        | None ->
+            None
       in
       `Assoc
         (doc_json
@@ -240,7 +246,13 @@ let decl_to_json env (decl_loc : declaration located) =
       let resolved =
         match Env.lookup_term name env with
         | Some { kind = Env.KRule ty; _ } -> Some (ty_to_json ty)
-        | _ -> None
+        | Some
+            {
+              kind = Env.KDomain | Env.KAlias _ | Env.KVar _ | Env.KClosure _;
+              _;
+            }
+        | None ->
+            None
       in
       `Assoc
         (doc_json
@@ -282,7 +294,10 @@ let decl_to_json env (decl_loc : declaration located) =
       let resolved =
         match Env.lookup_term name env with
         | Some { kind = Env.KClosure (ty, _); _ } -> Some (ty_to_json ty)
-        | _ -> None
+        | Some
+            { kind = Env.KDomain | Env.KAlias _ | Env.KRule _ | Env.KVar _; _ }
+        | None ->
+            None
       in
       `Assoc
         (doc_json
@@ -341,7 +356,7 @@ let types_to_json env =
             | Env.KDomain -> `Assoc [ ("kind", `String "domain") ]
             | Env.KAlias ty ->
                 `Assoc [ ("kind", `String "alias"); ("type", ty_to_json ty) ]
-            | _ -> `Null
+            | Env.KRule _ | Env.KVar _ | Env.KClosure _ -> `Null
           in
           if kind_json = `Null then None else Some (name, kind_json))
       bindings
@@ -368,8 +383,10 @@ let rules_to_json env =
                           | None -> `Null
                           | Some t -> ty_to_json t );
                       ] )
-            | _ -> None)
-        | _ -> None)
+            | TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString | TyNothing
+            | TyDomain _ | TyList _ | TyProduct _ | TySum _ ->
+                None)
+        | Env.KDomain | Env.KAlias _ | Env.KVar _ -> None)
       bindings
   in
   `Assoc items

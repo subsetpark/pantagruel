@@ -10,7 +10,7 @@ let rule_names_of_env env =
     (fun name entry acc ->
       match entry.Env.kind with
       | Env.KRule _ | Env.KClosure _ -> StringSet.add name acc
-      | _ -> acc)
+      | Env.KDomain | Env.KAlias _ | Env.KVar _ -> acc)
     env.Env.terms StringSet.empty
 
 (* --- Rich markdown expression rendering with unicode operators --- *)
@@ -30,11 +30,11 @@ let pp_type_expr fmt te =
     | TName name -> fprintf fmt "`%s`" name
     | TQName (m, name) -> fprintf fmt "`%s`::`%s`" m name
     | TList t -> fprintf fmt "[%a]" go t
-    | t -> fprintf fmt "(%a)" go t
+    | (TProduct _ | TSum _) as t -> fprintf fmt "(%a)" go t
   and go_product fmt = function
     | TProduct ts ->
         pp_print_list ~pp_sep:(fun fmt () -> fprintf fmt " × ") go_atom fmt ts
-    | t -> go_atom fmt t
+    | (TName _ | TQName _ | TList _ | TSum _) as t -> go_atom fmt t
   in
   go fmt te
 
@@ -94,7 +94,10 @@ let rec pp_expr procs fmt = function
              fprintf fmt "%a ⇒ %a" (pp_biconditional procs) arm
                (pp_biconditional procs) cons))
         arms
-  | e -> pp_biconditional procs fmt e
+  | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+    | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+    | EBinop _ | EUnop _ ) as e ->
+      pp_biconditional procs fmt e
 
 and pp_quant_bindings procs fmt (params, guards) =
   let items =
@@ -116,26 +119,67 @@ and pp_quant_bindings procs fmt (params, guards) =
 and pp_biconditional procs fmt = function
   | EBinop (OpIff, e1, e2) ->
       fprintf fmt "%a ↔ %a" (pp_implication procs) e1 (pp_implication procs) e2
-  | e -> pp_implication procs fmt e
+  | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+    | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+    | EBinop
+        ( ( OpAnd | OpOr | OpImpl | OpEq | OpNeq | OpLt | OpGt | OpLe | OpGe
+          | OpIn | OpSubset | OpAdd | OpSub | OpMul | OpDiv ),
+          _,
+          _ )
+    | EUnop _ | EForall _ | EExists _ | EEach _ | ECond _ | EInitially _ ) as e
+    ->
+      pp_implication procs fmt e
 
 and pp_implication procs fmt = function
   | EBinop (OpImpl, e1, e2) ->
       fprintf fmt "%a → %a" (pp_disjunction procs) e1 (pp_implication procs) e2
-  | e -> pp_disjunction procs fmt e
+  | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+    | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+    | EBinop
+        ( ( OpAnd | OpOr | OpIff | OpEq | OpNeq | OpLt | OpGt | OpLe | OpGe
+          | OpIn | OpSubset | OpAdd | OpSub | OpMul | OpDiv ),
+          _,
+          _ )
+    | EUnop _ | EForall _ | EExists _ | EEach _ | ECond _ | EInitially _ ) as e
+    ->
+      pp_disjunction procs fmt e
 
 and pp_disjunction procs fmt = function
   | EBinop (OpOr, e1, e2) ->
       fprintf fmt "%a ∨ %a" (pp_disjunction procs) e1 (pp_conjunction procs) e2
-  | e -> pp_conjunction procs fmt e
+  | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+    | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+    | EBinop
+        ( ( OpAnd | OpImpl | OpIff | OpEq | OpNeq | OpLt | OpGt | OpLe | OpGe
+          | OpIn | OpSubset | OpAdd | OpSub | OpMul | OpDiv ),
+          _,
+          _ )
+    | EUnop _ | EForall _ | EExists _ | EEach _ | ECond _ | EInitially _ ) as e
+    ->
+      pp_conjunction procs fmt e
 
 and pp_conjunction procs fmt = function
   | EBinop (OpAnd, e1, e2) ->
       fprintf fmt "%a ∧ %a" (pp_conjunction procs) e1 (pp_negation procs) e2
-  | e -> pp_negation procs fmt e
+  | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+    | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+    | EBinop
+        ( ( OpOr | OpImpl | OpIff | OpEq | OpNeq | OpLt | OpGt | OpLe | OpGe
+          | OpIn | OpSubset | OpAdd | OpSub | OpMul | OpDiv ),
+          _,
+          _ )
+    | EUnop _ | EForall _ | EExists _ | EEach _ | ECond _ | EInitially _ ) as e
+    ->
+      pp_negation procs fmt e
 
 and pp_negation procs fmt = function
   | EUnop (OpNot, e) -> fprintf fmt "¬%a" (pp_negation procs) e
-  | e -> pp_comparison procs fmt e
+  | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+    | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+    | EBinop _
+    | EUnop ((OpNeg | OpCard), _)
+    | EForall _ | EExists _ | EEach _ | ECond _ | EInitially _ ) as e ->
+      pp_comparison procs fmt e
 
 and pp_comparison procs fmt = function
   | EBinop
@@ -143,30 +187,63 @@ and pp_comparison procs fmt = function
         e1,
         e2 ) ->
       fprintf fmt "%a %a %a" (pp_term procs) e1 pp_binop op (pp_term procs) e2
-  | e -> pp_term procs fmt e
+  | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+    | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+    | EBinop
+        ((OpAnd | OpOr | OpImpl | OpIff | OpAdd | OpSub | OpMul | OpDiv), _, _)
+    | EUnop _ | EForall _ | EExists _ | EEach _ | ECond _ | EInitially _ ) as e
+    ->
+      pp_term procs fmt e
 
 and pp_term procs fmt = function
   | EBinop (((OpAdd | OpSub) as op), e1, e2) ->
       fprintf fmt "%a %a %a" (pp_term procs) e1 pp_binop op (pp_factor procs) e2
-  | e -> pp_factor procs fmt e
+  | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+    | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+    | EBinop
+        ( ( OpAnd | OpOr | OpImpl | OpIff | OpEq | OpNeq | OpLt | OpGt | OpLe
+          | OpGe | OpIn | OpSubset | OpMul | OpDiv ),
+          _,
+          _ )
+    | EUnop _ | EForall _ | EExists _ | EEach _ | ECond _ | EInitially _ ) as e
+    ->
+      pp_factor procs fmt e
 
 and pp_factor procs fmt = function
   | EBinop (((OpMul | OpDiv) as op), e1, e2) ->
       fprintf fmt "%a %a %a" (pp_factor procs) e1 pp_binop op (pp_unary procs)
         e2
-  | e -> pp_unary procs fmt e
+  | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+    | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+    | EBinop
+        ( ( OpAnd | OpOr | OpImpl | OpIff | OpEq | OpNeq | OpLt | OpGt | OpLe
+          | OpGe | OpIn | OpSubset | OpAdd | OpSub ),
+          _,
+          _ )
+    | EUnop _ | EForall _ | EExists _ | EEach _ | ECond _ | EInitially _ ) as e
+    ->
+      pp_unary procs fmt e
 
 and pp_unary procs fmt = function
   | EUnop (OpCard, e) -> fprintf fmt "#%a" (pp_unary procs) e
   | EUnop (OpNeg, e) -> fprintf fmt "-%a" (pp_unary procs) e
-  | e -> pp_primary procs fmt e
+  | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+    | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+    | EBinop _
+    | EUnop (OpNot, _)
+    | EForall _ | EExists _ | EEach _ | ECond _ | EInitially _ ) as e ->
+      pp_primary procs fmt e
 
 and pp_primary procs fmt = function
   | EApp (f, args) when args <> [] ->
       fprintf fmt "%a %a" (pp_atom procs) f
         (pp_print_list ~pp_sep:pp_print_space (pp_atom procs))
         args
-  | e -> pp_atom procs fmt e
+  | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+    | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+    | EBinop _ | EUnop _ | EForall _ | EExists _ | EEach _ | ECond _
+    | EInitially _ ) as e ->
+      pp_atom procs fmt e
 
 and pp_atom procs fmt = function
   | EVar name -> pp_name procs fmt name
@@ -191,7 +268,9 @@ and pp_atom procs fmt = function
         es
   | EProj (e, n) -> fprintf fmt "%a.%d" (pp_atom procs) e n
   | EApp (f, []) -> pp_atom procs fmt f
-  | e -> fprintf fmt "(%a)" (pp_expr procs) e
+  | ( EApp _ | EBinop _ | EUnop _ | EForall _ | EExists _ | EEach _ | ECond _
+    | EInitially _ ) as e ->
+      fprintf fmt "(%a)" (pp_expr procs) e
 
 let pp_guard procs fmt = function
   | GParam p -> pp_param fmt p
@@ -304,7 +383,7 @@ let pp_chapter procs ?(skip_first_doc_groups = 0) ~total_chapters chapter_num
   let pp_domain_name fmt d =
     match d.value with
     | DeclDomain n | DeclAlias (n, _) -> fprintf fmt "`%s`" n
-    | _ -> ()
+    | DeclRule _ | DeclAction _ | DeclClosure _ -> ()
   in
 
   if domains <> [] then begin

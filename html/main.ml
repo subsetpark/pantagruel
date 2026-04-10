@@ -67,4 +67,4 @@ let () =
   Format.pp_print_flush fmt ();
   match Unix.close_process_out oc with
   | Unix.WEXITED code -> exit code
-  | _ -> exit 1
+  | Unix.WSIGNALED _ | Unix.WSTOPPED _ -> exit 1

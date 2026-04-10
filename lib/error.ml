@@ -135,4 +135,10 @@ let format_type_warning err =
             likely a mistake — use a predicate, a two-element domain, or split \
             into separate declarations"
            name decl_name)
-  | other -> format_type_error other
+  | ( UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
+    | NotAFunction _ | NotAList _ | NotAProduct _ | NotNumeric _
+    | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
+    | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
+    | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
+    | ComprehensionNeedEach _ ) as other ->
+      format_type_error other

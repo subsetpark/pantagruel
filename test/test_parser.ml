@@ -29,7 +29,8 @@ let test_action () =
   let chapter = List.hd doc.Ast.chapters in
   match (List.nth chapter.Ast.head 1).Ast.value with
   | Ast.DeclAction { label = "Check out"; contexts = []; _ } -> ()
-  | _ -> fail "Expected action"
+  | DeclDomain _ | DeclAlias _ | DeclRule _ | DeclClosure _ | DeclAction _ ->
+      fail "Expected action"
 
 let test_import () =
   let doc = parse "module TEST.\n\nimport FOO.\n\nBar.\n---\n" in
@@ -50,21 +51,24 @@ let test_all () =
   let chapter = List.hd doc.Ast.chapters in
   match (List.hd chapter.Ast.body).Ast.value with
   | Ast.EForall _ -> ()
-  | _ -> fail "Expected all"
+  | EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+  | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+  | EBinop _ | EUnop _ | EExists _ | EEach _ | ECond _ | EInitially _ ->
+      fail "Expected all"
 
 let test_application () =
   let doc =
     parse "module TEST.\n\nUser.\nf x: User => User.\n---\nf u = u.\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EBinop (Ast.OpEq, Ast.EApp (_, _), _) -> ()
   | _ -> fail "Expected application in equality"
 
 let test_type_alias () =
   let doc = parse "module TEST.\n\nPoint = Nat * Nat.\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.head).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.head).Ast.value with
   | Ast.DeclAlias ("Point", Ast.TProduct [ Ast.TName "Nat"; Ast.TName "Nat" ])
     ->
       ()
@@ -73,14 +77,14 @@ let test_type_alias () =
 let test_list_type () =
   let doc = parse "module TEST.\n\nUser.\nusers => [User].\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.nth chapter.Ast.head 1).Ast.value with
+  match[@warning "-4"] (List.nth chapter.Ast.head 1).Ast.value with
   | Ast.DeclRule { return_type = Ast.TList (Ast.TName "User"); _ } -> ()
   | _ -> fail "Expected list type"
 
 let test_sum_type () =
   let doc = parse "module TEST.\n\nResult = Nat + Nothing.\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.head).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.head).Ast.value with
   | Ast.DeclAlias ("Result", Ast.TSum _) -> ()
   | _ -> fail "Expected sum type"
 
@@ -94,7 +98,7 @@ let test_rule_guard () =
        ---\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.nth chapter.Ast.head 2).Ast.value with
+  match[@warning "-4"] (List.nth chapter.Ast.head 2).Ast.value with
   | Ast.DeclAction { guards = [ Ast.GExpr _ ]; _ } -> ()
   | _ -> fail "Expected action with guard"
 
@@ -104,7 +108,7 @@ let test_membership_binding () =
       "module TEST.\n\nItem.\nitems => [Item].\n---\nall i in items | true.\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EForall ([], [ Ast.GIn ("i", _) ], _) -> ()
   | _ -> fail "Expected membership binding"
 
@@ -113,7 +117,10 @@ let test_existential () =
   let chapter = List.hd doc.Ast.chapters in
   match (List.hd chapter.Ast.body).Ast.value with
   | Ast.EExists _ -> ()
-  | _ -> fail "Expected existential"
+  | EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+  | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+  | EBinop _ | EUnop _ | EForall _ | EEach _ | ECond _ | EInitially _ ->
+      fail "Expected existential"
 
 let test_doc_comment () =
   let doc = parse "module TEST.\n\n> This is a doc comment\nFoo.\n---\n" in
@@ -135,7 +142,7 @@ let test_multiple_guards () =
        ---\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.nth chapter.Ast.head 2).Ast.value with
+  match[@warning "-4"] (List.nth chapter.Ast.head 2).Ast.value with
   | Ast.DeclAction { guards = [ Ast.GExpr _; Ast.GExpr _ ]; _ } -> ()
   | _ -> fail "Expected action with two guards"
 
@@ -150,7 +157,7 @@ let test_disjunction_guard () =
        all n: Node, kind n = 1 or kind n = 2 | #children n = 0.\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EForall (_, [ Ast.GExpr (Ast.EBinop (Ast.OpOr, _, _)) ], _) -> ()
   | _ -> fail "Expected forall with disjunction guard"
 
@@ -167,7 +174,8 @@ let test_action_no_params () =
   | Ast.DeclAction
       { label = "Do something"; params = []; guards = []; contexts = [] } ->
       ()
-  | _ -> fail "Expected no-param action"
+  | DeclDomain _ | DeclAlias _ | DeclRule _ | DeclClosure _ | DeclAction _ ->
+      fail "Expected no-param action"
 
 let test_context_declaration () =
   let doc = parse "module TEST.\ncontext Banking.\n\nAccount.\n---\n" in
@@ -187,10 +195,12 @@ let test_rule_with_context () =
   let chapter = List.hd doc.Ast.chapters in
   (match (List.nth chapter.Ast.head 1).Ast.value with
   | Ast.DeclRule { name = "balance"; contexts = [ "Banking" ]; _ } -> ()
-  | _ -> fail "Expected rule with context footprint");
+  | DeclDomain _ | DeclAlias _ | DeclRule _ | DeclAction _ | DeclClosure _ ->
+      fail "Expected rule with context footprint");
   match (List.nth chapter.Ast.head 2).Ast.value with
   | Ast.DeclAction { label = "Withdraw"; contexts = [ "Banking" ]; _ } -> ()
-  | _ -> fail "Expected action with context"
+  | DeclDomain _ | DeclAlias _ | DeclRule _ | DeclClosure _ | DeclAction _ ->
+      fail "Expected action with context"
 
 let test_closure () =
   let doc =
@@ -204,7 +214,8 @@ let test_closure () =
   let chapter = List.hd doc.Ast.chapters in
   match (List.nth chapter.Ast.head 2).Ast.value with
   | Ast.DeclClosure { name = "ancestor"; target = "parent"; _ } -> ()
-  | _ -> fail "Expected closure declaration"
+  | DeclDomain _ | DeclAlias _ | DeclRule _ | DeclAction _ | DeclClosure _ ->
+      fail "Expected closure declaration"
 
 let test_over_each_add () =
   let doc =
@@ -216,7 +227,7 @@ let test_over_each_add () =
        + over each u: User | score u.\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EEach (_, _, Some Ast.CombAdd, _) -> ()
   | _ -> fail "Expected EEach with CombAdd"
 
@@ -231,7 +242,7 @@ let test_over_each_max_with_guard () =
        max over each u: User, active? u | score u.\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EEach (_, [ Ast.GExpr _ ], Some Ast.CombMax, _) -> ()
   | _ -> fail "Expected EEach with CombMax and guard"
 
@@ -245,7 +256,7 @@ let test_over_each_mul () =
        * over each u: User | score u.\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EEach (_, _, Some Ast.CombMul, _) -> ()
   | _ -> fail "Expected EEach with CombMul"
 
@@ -259,7 +270,7 @@ let test_over_each_and () =
        and over each u: User | active? u.\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EEach (_, _, Some Ast.CombAnd, _) -> ()
   | _ -> fail "Expected EEach with CombAnd"
 
@@ -273,7 +284,7 @@ let test_over_each_or () =
        or over each u: User | active? u.\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EEach (_, _, Some Ast.CombOr, _) -> ()
   | _ -> fail "Expected EEach with CombOr"
 
@@ -287,7 +298,7 @@ let test_over_each_min () =
        min over each u: User | score u.\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EEach (_, _, Some Ast.CombMin, _) -> ()
   | _ -> fail "Expected EEach with CombMin"
 
@@ -303,7 +314,11 @@ let test_bare_each_none_combiner () =
   let chapter = List.hd doc.Ast.chapters in
   match (List.hd chapter.Ast.body).Ast.value with
   | Ast.EEach (_, _, None, _) -> ()
-  | _ -> fail "Expected EEach with None combiner"
+  | EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+  | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+  | EBinop _ | EUnop _ | EForall _ | EExists _ | EEach _ | ECond _
+  | EInitially _ ->
+      fail "Expected EEach with None combiner"
 
 let test_each () =
   let doc =
@@ -316,7 +331,7 @@ let test_each () =
        all r: Role | r in (each u: User | role u).\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EForall (_, _, Ast.EBinop (Ast.OpIn, _, Ast.EEach _)) -> ()
   | _ -> fail "Expected each comprehension inside all"
 
@@ -331,7 +346,7 @@ let test_cond_simple () =
        true => 0.\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EForall (_, _, Ast.EBinop (Ast.OpEq, _, Ast.ECond arms)) ->
       check int "arms" 3 (List.length arms)
   | _ -> fail "Expected cond expression"
@@ -339,7 +354,7 @@ let test_cond_simple () =
 let test_cond_two_arms () =
   let doc = parse "module TEST.\n\nBool.\n---\ncond true => 1, false => 0.\n" in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.ECond
       [
         (Ast.ELitBool true, Ast.ELitNat 1); (Ast.ELitBool false, Ast.ELitNat 0);
@@ -352,28 +367,28 @@ let test_cond_two_arms () =
 let test_arithmetic () =
   let doc = parse "module TEST.\n\nFoo.\n---\n1 + 2 = 3.\n" in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EBinop (OpEq, EBinop (OpAdd, ELitNat 1, ELitNat 2), ELitNat 3) -> ()
   | _ -> fail "Expected 1 + 2 = 3"
 
 let test_multiply () =
   let doc = parse "module TEST.\n\nFoo.\n---\n3 * 4 = 12.\n" in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EBinop (OpEq, EBinop (OpMul, ELitNat 3, ELitNat 4), ELitNat 12) -> ()
   | _ -> fail "Expected 3 * 4 = 12"
 
 let test_subtraction () =
   let doc = parse "module TEST.\n\nFoo.\n---\n5 - 3 = 2.\n" in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EBinop (OpEq, EBinop (OpSub, _, _), _) -> ()
   | _ -> fail "Expected subtraction"
 
 let test_division () =
   let doc = parse "module TEST.\n\nFoo.\n---\n10 / 2 = 5.\n" in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EBinop (OpEq, EBinop (OpDiv, _, _), _) -> ()
   | _ -> fail "Expected division"
 
@@ -382,7 +397,7 @@ let test_logical_and () =
     parse "module TEST.\n\nFoo.\nf => Bool.\ng => Bool.\n---\nf and g.\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EBinop (OpAnd, _, _) -> ()
   | _ -> fail "Expected and"
 
@@ -391,14 +406,14 @@ let test_logical_or () =
     parse "module TEST.\n\nFoo.\nf => Bool.\ng => Bool.\n---\nf or g.\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EBinop (OpOr, _, _) -> ()
   | _ -> fail "Expected or"
 
 let test_logical_not () =
   let doc = parse "module TEST.\n\nFoo.\nf => Bool.\n---\n~f.\n" in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EUnop (OpNot, _) -> ()
   | _ -> fail "Expected not"
 
@@ -407,7 +422,7 @@ let test_biconditional () =
     parse "module TEST.\n\nFoo.\nf => Bool.\ng => Bool.\n---\nf <-> g.\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EBinop (OpIff, _, _) -> ()
   | _ -> fail "Expected iff"
 
@@ -416,7 +431,7 @@ let test_implication () =
     parse "module TEST.\n\nFoo.\nf => Bool.\ng => Bool.\n---\nf -> g.\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EBinop (OpImpl, _, _) -> ()
   | _ -> fail "Expected impl"
 
@@ -430,7 +445,7 @@ let test_comparison_ops () =
         parse (Printf.sprintf "module TEST.\n\nFoo.\n---\n1 %s 2.\n" sym)
       in
       let chapter = List.hd doc.Ast.chapters in
-      match (List.hd chapter.Ast.body).Ast.value with
+      match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
       | Ast.EBinop (op, _, _) when Ast.equal_binop op expected_op -> ()
       | _ -> fail (Printf.sprintf "Expected %s operator" sym))
     ops
@@ -438,7 +453,7 @@ let test_comparison_ops () =
 let test_in_operator () =
   let doc = parse "module TEST.\n\nUser.\n---\nall u: User | u in User.\n" in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EForall (_, _, EBinop (OpIn, _, _)) -> ()
   | _ -> fail "Expected in operator"
 
@@ -453,7 +468,7 @@ let test_subset_operator () =
        xs subset ys.\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EBinop (OpSubset, _, _) -> ()
   | _ -> fail "Expected subset operator"
 
@@ -468,14 +483,14 @@ let test_override () =
        all k: Key, v: Value | f[k |-> v] k = v.\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EForall (_, _, EBinop (OpEq, EApp (EOverride ("f", _), _), _)) -> ()
   | _ -> fail "Expected override"
 
 let test_tuple () =
   let doc = parse "module TEST.\n\nFoo.\n---\n(1, 2, 3) = (1, 2, 3).\n" in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EBinop (OpEq, ETuple _, ETuple _) -> ()
   | _ -> fail "Expected tuple"
 
@@ -484,7 +499,7 @@ let test_projection () =
     parse "module TEST.\n\nPoint = Nat * Nat.\np => Point.\n---\np.1 >= 0.\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EBinop (OpGe, EProj (_, 1), _) -> ()
   | _ -> fail "Expected projection"
 
@@ -499,21 +514,21 @@ let test_primed_expr () =
        f' u = u.\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EBinop (OpEq, EApp (EPrimed "f", _), _) -> ()
   | _ -> fail "Expected primed expression"
 
 let test_lit_real () =
   let doc = parse "module TEST.\n\nFoo.\n---\n3.14 >= 0.0.\n" in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EBinop (OpGe, ELitReal _, ELitReal _) -> ()
   | _ -> fail "Expected real literals"
 
 let test_lit_string () =
   let doc = parse "module TEST.\n\nFoo.\n---\n\"hello\" = \"hello\".\n" in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EBinop (OpEq, ELitString "hello", ELitString "hello") -> ()
   | _ -> fail "Expected string literals"
 
@@ -524,12 +539,15 @@ let test_initially () =
   let chapter = List.hd doc.Ast.chapters in
   match (List.hd chapter.Ast.body).Ast.value with
   | Ast.EInitially _ -> ()
-  | _ -> fail "Expected initially"
+  | EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+  | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+  | EBinop _ | EUnop _ | EForall _ | EExists _ | EEach _ | ECond _ ->
+      fail "Expected initially"
 
 let test_qualified_name () =
   let doc = parse "module TEST.\n\nFoo.\n---\nModule::name = Module::name.\n" in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EBinop (OpEq, EQualified ("Module", "name"), _) -> ()
   | _ -> fail "Expected qualified name"
 
@@ -546,7 +564,7 @@ let test_precedence_or_and () =
        a or b and c.\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EBinop (OpOr, EVar "a", EBinop (OpAnd, EVar "b", EVar "c")) -> ()
   | _ -> fail "Expected a or (b and c)"
 
@@ -554,19 +572,19 @@ let test_precedence_add_mul () =
   (* 1 + 2 * 3 should parse as 1 + (2 * 3) *)
   let doc = parse "module TEST.\n\nFoo.\n---\n1 + 2 * 3 = 7.\n" in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EBinop (OpEq, EBinop (OpAdd, ELitNat 1, EBinop (OpMul, _, _)), _) -> ()
   | _ -> fail "Expected 1 + (2 * 3)"
 
 let test_nested_types () =
   let doc = parse "module TEST.\n\nFoo.\nBar.\nxs => [Nat * Nat].\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
-  (match (List.nth chapter.Ast.head 2).Ast.value with
+  (match[@warning "-4"] (List.nth chapter.Ast.head 2).Ast.value with
   | Ast.DeclRule { return_type = TList (TProduct _); _ } -> ()
   | _ -> fail "Expected [Nat * Nat]");
   let doc = parse "module TEST.\n\nFoo.\nBar.\nxs => [Foo + Bar].\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.nth chapter.Ast.head 2).Ast.value with
+  match[@warning "-4"] (List.nth chapter.Ast.head 2).Ast.value with
   | Ast.DeclRule { return_type = TList (TSum _); _ } -> ()
   | _ -> fail "Expected [Foo + Bar]"
 
@@ -585,7 +603,7 @@ let test_implication_associativity () =
        a -> b -> c.\n"
   in
   let chapter = List.hd doc.Ast.chapters in
-  match (List.hd chapter.Ast.body).Ast.value with
+  match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
   | Ast.EBinop (OpImpl, EVar "a", EBinop (OpImpl, EVar "b", EVar "c")) ->
       () (* Right-associative: a -> (b -> c) *)
   | Ast.EBinop (OpImpl, EBinop (OpImpl, EVar "a", EVar "b"), EVar "c") ->

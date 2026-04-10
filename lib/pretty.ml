@@ -24,14 +24,14 @@ and pp_type_expr_atom fmt = function
   | TName name -> pp_print_string fmt name
   | TQName (m, name) -> fprintf fmt "%s::%s" m name
   | TList t -> fprintf fmt "[%a]" pp_type_expr t
-  | t -> fprintf fmt "(%a)" pp_type_expr t
+  | (TProduct _ | TSum _) as t -> fprintf fmt "(%a)" pp_type_expr t
 
 and pp_type_expr_product fmt = function
   | TProduct ts ->
       pp_print_list
         ~pp_sep:(fun fmt () -> fprintf fmt " * ")
         pp_type_expr_atom fmt ts
-  | t -> pp_type_expr_atom fmt t
+  | (TName _ | TQName _ | TList _ | TSum _) as t -> pp_type_expr_atom fmt t
 
 (** Print a binary operator *)
 let pp_binop fmt = function
@@ -81,12 +81,24 @@ let rec pp_expr fmt = function
         (pp_print_list ~pp_sep:pp_sep_comma (fun fmt (arm, cons) ->
              fprintf fmt "%a => %a" pp_biconditional arm pp_biconditional cons))
         arms
-  | e -> pp_biconditional fmt e
+  | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+    | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+    | EBinop _ | EUnop _ ) as e ->
+      pp_biconditional fmt e
 
 and pp_biconditional fmt = function
   | EBinop (OpIff, e1, e2) ->
       fprintf fmt "%a <-> %a" pp_implication e1 pp_implication e2
-  | e -> pp_implication fmt e
+  | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+    | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+    | EBinop
+        ( ( OpAnd | OpOr | OpImpl | OpEq | OpNeq | OpLt | OpGt | OpLe | OpGe
+          | OpIn | OpSubset | OpAdd | OpSub | OpMul | OpDiv ),
+          _,
+          _ )
+    | EUnop _ | EForall _ | EExists _ | EEach _ | ECond _ | EInitially _ ) as e
+    ->
+      pp_implication fmt e
 
 and pp_quant_params_guards fmt (params, guards) =
   let items =
@@ -110,21 +122,53 @@ and pp_param fmt p = fprintf fmt "%s: %a" p.param_name pp_type_expr p.param_type
 and pp_implication fmt = function
   | EBinop (OpImpl, e1, e2) ->
       fprintf fmt "%a -> %a" pp_disjunction e1 pp_implication e2
-  | e -> pp_disjunction fmt e
+  | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+    | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+    | EBinop
+        ( ( OpAnd | OpOr | OpIff | OpEq | OpNeq | OpLt | OpGt | OpLe | OpGe
+          | OpIn | OpSubset | OpAdd | OpSub | OpMul | OpDiv ),
+          _,
+          _ )
+    | EUnop _ | EForall _ | EExists _ | EEach _ | ECond _ | EInitially _ ) as e
+    ->
+      pp_disjunction fmt e
 
 and pp_disjunction fmt = function
   | EBinop (OpOr, e1, e2) ->
       fprintf fmt "%a or %a" pp_disjunction e1 pp_conjunction e2
-  | e -> pp_conjunction fmt e
+  | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+    | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+    | EBinop
+        ( ( OpAnd | OpImpl | OpIff | OpEq | OpNeq | OpLt | OpGt | OpLe | OpGe
+          | OpIn | OpSubset | OpAdd | OpSub | OpMul | OpDiv ),
+          _,
+          _ )
+    | EUnop _ | EForall _ | EExists _ | EEach _ | ECond _ | EInitially _ ) as e
+    ->
+      pp_conjunction fmt e
 
 and pp_conjunction fmt = function
   | EBinop (OpAnd, e1, e2) ->
       fprintf fmt "%a and %a" pp_conjunction e1 pp_negation e2
-  | e -> pp_negation fmt e
+  | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+    | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+    | EBinop
+        ( ( OpOr | OpImpl | OpIff | OpEq | OpNeq | OpLt | OpGt | OpLe | OpGe
+          | OpIn | OpSubset | OpAdd | OpSub | OpMul | OpDiv ),
+          _,
+          _ )
+    | EUnop _ | EForall _ | EExists _ | EEach _ | ECond _ | EInitially _ ) as e
+    ->
+      pp_negation fmt e
 
 and pp_negation fmt = function
   | EUnop (OpNot, e) -> fprintf fmt "~%a" pp_negation e
-  | e -> pp_comparison fmt e
+  | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+    | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+    | EBinop _
+    | EUnop ((OpNeg | OpCard), _)
+    | EForall _ | EExists _ | EEach _ | ECond _ | EInitially _ ) as e ->
+      pp_comparison fmt e
 
 and pp_comparison fmt = function
   | EBinop
@@ -132,29 +176,62 @@ and pp_comparison fmt = function
         e1,
         e2 ) ->
       fprintf fmt "%a %a %a" pp_term e1 pp_binop op pp_term e2
-  | e -> pp_term fmt e
+  | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+    | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+    | EBinop
+        ((OpAnd | OpOr | OpImpl | OpIff | OpAdd | OpSub | OpMul | OpDiv), _, _)
+    | EUnop _ | EForall _ | EExists _ | EEach _ | ECond _ | EInitially _ ) as e
+    ->
+      pp_term fmt e
 
 and pp_term fmt = function
   | EBinop (((OpAdd | OpSub) as op), e1, e2) ->
       fprintf fmt "%a %a %a" pp_term e1 pp_binop op pp_factor e2
-  | e -> pp_factor fmt e
+  | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+    | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+    | EBinop
+        ( ( OpAnd | OpOr | OpImpl | OpIff | OpEq | OpNeq | OpLt | OpGt | OpLe
+          | OpGe | OpIn | OpSubset | OpMul | OpDiv ),
+          _,
+          _ )
+    | EUnop _ | EForall _ | EExists _ | EEach _ | ECond _ | EInitially _ ) as e
+    ->
+      pp_factor fmt e
 
 and pp_factor fmt = function
   | EBinop (((OpMul | OpDiv) as op), e1, e2) ->
       fprintf fmt "%a %a %a" pp_factor e1 pp_binop op pp_unary e2
-  | e -> pp_unary fmt e
+  | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+    | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+    | EBinop
+        ( ( OpAnd | OpOr | OpImpl | OpIff | OpEq | OpNeq | OpLt | OpGt | OpLe
+          | OpGe | OpIn | OpSubset | OpAdd | OpSub ),
+          _,
+          _ )
+    | EUnop _ | EForall _ | EExists _ | EEach _ | ECond _ | EInitially _ ) as e
+    ->
+      pp_unary fmt e
 
 and pp_unary fmt = function
   | EUnop (OpCard, e) -> fprintf fmt "#%a" pp_unary e
   | EUnop (OpNeg, e) -> fprintf fmt "-%a" pp_unary e
-  | e -> pp_primary fmt e
+  | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+    | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+    | EBinop _
+    | EUnop (OpNot, _)
+    | EForall _ | EExists _ | EEach _ | ECond _ | EInitially _ ) as e ->
+      pp_primary fmt e
 
 and pp_primary fmt = function
   | EApp (f, args) when args <> [] ->
       fprintf fmt "%a %a" pp_atom f
         (pp_print_list ~pp_sep:pp_sep_space pp_atom)
         args
-  | e -> pp_atom fmt e
+  | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+    | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+    | EBinop _ | EUnop _ | EForall _ | EExists _ | EEach _ | ECond _
+    | EInitially _ ) as e ->
+      pp_atom fmt e
 
 and pp_atom fmt = function
   | EVar name -> pp_print_string fmt name
@@ -177,7 +254,9 @@ and pp_atom fmt = function
       fprintf fmt "(%a)" (pp_print_list ~pp_sep:pp_sep_comma pp_expr) es
   | EProj (e, n) -> fprintf fmt "%a.%d" pp_atom e n
   | EApp (f, []) -> pp_atom fmt f
-  | e -> fprintf fmt "(%a)" pp_expr e
+  | ( EApp _ | EBinop _ | EUnop _ | EForall _ | EExists _ | EEach _ | ECond _
+    | EInitially _ ) as e ->
+      fprintf fmt "(%a)" pp_expr e
 
 (** Print a guard *)
 let pp_guard fmt = function

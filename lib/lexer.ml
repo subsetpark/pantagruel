@@ -383,7 +383,18 @@ let describe_token = function
   | Parser.STRING _ -> "string literal"
   | Parser.PROJ _ -> "projection"
   | Parser.ACTION_LABEL _ -> "action label"
-  | tok -> string_of_token tok
+  | ( Parser.EOF | Parser.MODULE | Parser.IMPORT | Parser.WHERE | Parser.TRUE
+    | Parser.FALSE | Parser.AND | Parser.OR | Parser.NOT | Parser.FORALL
+    | Parser.EXISTS | Parser.EACH | Parser.IN | Parser.SUBSET
+    | Parser.SQUIG_ARROW | Parser.DARROW | Parser.ARROW | Parser.IFF | Parser.EQ
+    | Parser.NEQ | Parser.LT | Parser.GT | Parser.LE | Parser.GE | Parser.PLUS
+    | Parser.MINUS | Parser.TIMES | Parser.DIVIDE | Parser.CARD | Parser.PRIME
+    | Parser.MAPSTO | Parser.DOT | Parser.COMMA | Parser.COLON | Parser.DCOLON
+    | Parser.PIPE | Parser.AT | Parser.SEPARATOR | Parser.LPAREN | Parser.RPAREN
+    | Parser.LBRACKET | Parser.RBRACKET | Parser.LBRACE | Parser.RBRACE
+    | Parser.CONTEXT | Parser.INITIALLY | Parser.CLOSURE | Parser.COND
+    | Parser.OVER | Parser.MIN | Parser.MAX ) as tok ->
+      string_of_token tok
 
 (** All token constructors (with dummy values for parameterized tokens) *)
 let all_tokens =

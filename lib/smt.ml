@@ -82,8 +82,10 @@ let compute_domain_bounds default_bound env =
                   Env.StringMap.find_opt dname acc |> Option.value ~default:0
                 in
                 Env.StringMap.add dname (cur + 1) acc
-            | _ -> acc)
-        | _ -> acc)
+            | TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString | TyNothing
+            | TyDomain _ | TyList _ | TyProduct _ | TySum _ | TyFunc _ ->
+                acc)
+        | Env.KDomain | Env.KAlias _ | Env.KVar _ | Env.KClosure _ -> acc)
       env.Env.terms Env.StringMap.empty
   in
   Env.StringMap.filter_map
@@ -197,7 +199,7 @@ let declare_domain_sorts config env =
           Buffer.add_string buf
             (Printf.sprintf "(assert (forall ((_x_ %s)) (or %s)))\n" name
                (String.concat " " disj))
-      | _ -> ())
+      | Env.KAlias _ | Env.KRule _ | Env.KVar _ | Env.KClosure _ -> ())
     env.Env.types;
   Buffer.contents buf
 
@@ -217,7 +219,9 @@ let collect_composite_types env =
     | TyFunc (params, ret) ->
         List.iter visit params;
         Option.iter visit ret
-    | _ -> ()
+    | TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString | TyNothing
+    | TyDomain _ ->
+        ()
   in
   Env.StringMap.iter
     (fun _ entry ->
@@ -228,7 +232,9 @@ let collect_composite_types env =
     env.Env.terms;
   Env.StringMap.iter
     (fun _ entry ->
-      match entry.Env.kind with Env.KAlias ty -> visit ty | _ -> ())
+      match entry.Env.kind with
+      | Env.KAlias ty -> visit ty
+      | Env.KDomain | Env.KRule _ | Env.KVar _ | Env.KClosure _ -> ())
     env.Env.types;
   (products, sums)
 
@@ -249,7 +255,9 @@ let topo_sort_composites (entries : (string * ty list) list) =
         let acc = if Hashtbl.mem names n then n :: acc else acc in
         List.fold_left collect_deps acc ts
     | TyList inner -> collect_deps acc inner
-    | _ -> acc
+    | TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString | TyNothing
+    | TyDomain _ | TyFunc _ ->
+        acc
   in
   let visited = Hashtbl.create 8 in
   let result = ref [] in
@@ -304,7 +312,10 @@ let declare_composite_types env =
 (** Extract the parameter types and return type from a rule type *)
 let decompose_func_ty = function
   | TyFunc (params, Some ret) -> Some (params, ret)
-  | _ -> None
+  | TyFunc (_, None)
+  | TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString | TyNothing | TyDomain _
+  | TyList _ | TyProduct _ | TySum _ ->
+      None
 
 (** Generate function declarations from the environment *)
 let declare_functions env =
@@ -332,7 +343,7 @@ let declare_functions env =
                 (Printf.sprintf "(declare-fun %s_prime (%s) %s)\n" sname
                    param_sorts (sort_of_ty ret))
           | None -> ())
-      | _ -> ())
+      | Env.KDomain | Env.KAlias _ | Env.KVar _ -> ())
     env.Env.terms;
   Buffer.contents buf
 
@@ -347,7 +358,7 @@ let generate_closure_axiom config env ~is_prime closure_name target_name
   (* Determine target shape to generate the right step expression *)
   let target_entry = Env.lookup_term target_name env in
   let target_is_list =
-    match target_entry with
+    match[@warning "-4"] target_entry with
     | Some { kind = Env.KRule (TyFunc (_, Some (TyList _))); _ } -> true
     | _ -> false
   in
@@ -421,7 +432,7 @@ let generate_closure_axioms ?(include_primed = true) config env =
   let buf = Buffer.create 256 in
   Env.StringMap.iter
     (fun name entry ->
-      match entry.Env.kind with
+      match[@warning "-4"] entry.Env.kind with
       | Env.KClosure (TyFunc ([ TyDomain dname ], _), target) ->
           Buffer.add_string buf
             (generate_closure_axiom config env ~is_prime:false name target dname);
@@ -445,7 +456,9 @@ let collect_type_constraint_exprs ?(constrain_primed = true) _config env =
       match ret_ty with
       | TyNat -> ("Nat", 1)
       | TyNat0 -> ("Nat0", 0)
-      | _ -> ("", -1)
+      | TyBool | TyInt | TyReal | TyString | TyNothing | TyDomain _ | TyList _
+      | TyProduct _ | TySum _ | TyFunc _ ->
+          ("", -1)
     in
     if bound >= 0 then begin
       let smt_expr =
@@ -479,7 +492,7 @@ let collect_type_constraint_exprs ?(constrain_primed = true) _config env =
               if constrain_primed then
                 add_nat_constraint name sname params_sorts param_names ret true
           | None -> ())
-      | _ -> ())
+      | Env.KDomain | Env.KAlias _ | Env.KVar _ | Env.KClosure _ -> ())
     env.Env.terms;
   List.rev !constraints
 
@@ -578,21 +591,26 @@ let resolve_comprehension_binding env params guards =
       match Collect.resolve_type env p.param_type dummy_loc with
       | Ok (TyDomain dname) ->
           Ok (p.param_name, dname, None, [ (p.param_name, TyDomain dname) ])
-      | _ ->
+      | Ok
+          ( TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString | TyNothing
+          | TyList _ | TyProduct _ | TySum _ | TyFunc _ )
+      | Error _ ->
           Error "SMT translation: comprehension parameter must be a domain type"
       )
   | [] -> (
       (* Look for a leading GIn guard *)
       match guards with
       | GIn (name, list_expr) :: _rest -> (
-          match Check.infer_type { Check.env; loc = dummy_loc } list_expr with
+          match[@warning "-4"]
+            Check.infer_type { Check.env; loc = dummy_loc } list_expr
+          with
           | Ok (TyList (TyDomain dname)) ->
               Ok (name, dname, Some list_expr, [ (name, TyDomain dname) ])
           | _ ->
               Error
                 "SMT translation: membership comprehension requires a domain \
                  list")
-      | _ ->
+      | GExpr _ :: _ | GParam _ :: _ | [] ->
           Error
             "SMT translation: comprehension requires a typed or membership \
              binding")
@@ -619,7 +637,7 @@ let expand_comprehension translate config env params guards body =
           (fun g ->
             match g with
             | GExpr e -> Some (translate config env_inner e)
-            | _ -> None)
+            | GIn _ | GParam _ -> None)
           guards
       in
       (* For GIn bindings, add implicit membership guard *)
@@ -663,7 +681,9 @@ let rec substitute_vars (subst : (string * expr) list) (e : expr) : expr =
   | EProj (e1, i) -> EProj (substitute_vars subst e1, i)
   | EOverride (name, pairs) ->
       let name_expr =
-        match List.assoc_opt name subst with Some (EVar n) -> n | _ -> name
+        match[@warning "-4"] List.assoc_opt name subst with
+        | Some (EVar n) -> n
+        | _ -> name
       in
       EOverride
         ( name_expr,
@@ -757,7 +777,10 @@ and unprime_expr (e : expr) : expr =
   | EApp (func, args) -> EApp (unprime_expr func, List.map unprime_expr args)
   | EBinop (op, e1, e2) -> EBinop (op, unprime_expr e1, unprime_expr e2)
   | EUnop (op, e) -> EUnop (op, unprime_expr e)
-  | _ -> e
+  | EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+  | ELitBool _ | ETuple _ | EProj _ | EOverride _ | EForall _ | EExists _
+  | EEach _ | ECond _ | EInitially _ ->
+      e
 
 and prime_guards ~bound gs =
   List.fold_left
@@ -789,7 +812,7 @@ let collect_body_guards ?(bound = []) env (e : expr) : expr list =
               (fun (g : guard) ->
                 match g with
                 | GExpr ge -> guards := substitute_vars subst ge :: !guards
-                | _ -> ())
+                | GIn _ | GParam _ -> ())
               rule_guards
         | None -> ());
         List.iter walk args
@@ -808,7 +831,7 @@ let collect_body_guards ?(bound = []) env (e : expr) : expr list =
                 | GExpr ge ->
                     guards :=
                       prime_expr ~bound (substitute_vars subst ge) :: !guards
-                | _ -> ())
+                | GIn _ | GParam _ -> ())
               rule_guards
         | None -> ());
         List.iter walk args
@@ -816,20 +839,26 @@ let collect_body_guards ?(bound = []) env (e : expr) : expr list =
         walk func;
         List.iter walk args
     | EVar name -> (
-        (* Nullary auto-applied rule with guards *)
-        match Env.lookup_term name env with
+        match(* Nullary auto-applied rule with guards *)
+             [@warning "-4"]
+          Env.lookup_term name env
+        with
         | Some { kind = Env.KRule (TyFunc ([], Some _)); _ } -> (
             match Env.lookup_rule_guards name env with
             | Some (_, rule_guards) ->
                 List.iter
                   (fun (g : guard) ->
-                    match g with GExpr ge -> guards := ge :: !guards | _ -> ())
+                    match g with
+                    | GExpr ge -> guards := ge :: !guards
+                    | GIn _ | GParam _ -> ())
                   rule_guards
             | None -> ())
         | _ -> ())
     | EPrimed name -> (
-        (* Nullary auto-applied primed rule with guards *)
-        match Env.lookup_term name env with
+        match(* Nullary auto-applied primed rule with guards *)
+             [@warning "-4"]
+          Env.lookup_term name env
+        with
         | Some { kind = Env.KRule (TyFunc ([], Some _)); _ } -> (
             match Env.lookup_rule_guards name env with
             | Some (_, rule_guards) ->
@@ -837,7 +866,7 @@ let collect_body_guards ?(bound = []) env (e : expr) : expr list =
                   (fun (g : guard) ->
                     match g with
                     | GExpr ge -> guards := prime_expr ~bound ge :: !guards
-                    | _ -> ())
+                    | GIn _ | GParam _ -> ())
                   rule_guards
             | None -> ())
         | _ -> ())
@@ -920,7 +949,7 @@ let rec translate_expr config env (e : expr) =
   | EOverride (name, pairs) -> translate_override config env name pairs
 
 and translate_app config env func args =
-  match func with
+  match[@warning "-4"] func with
   | EOverride (name, pairs) ->
       (* f[k |-> v] applied to args: inline ite chain *)
       let sname = sanitize_ident name in
@@ -943,7 +972,7 @@ and translate_app config env func args =
       build_chain pairs
   | _ ->
       let func_str =
-        match func with
+        match[@warning "-4"] func with
         | EVar name -> sanitize_ident name
         | EPrimed name -> sanitize_ident name ^ "_prime"
         | _ -> translate_expr config env func
@@ -956,7 +985,8 @@ and translate_binop config env op e1 e2 =
   (* OpIn and OpSubset handle EDomain specially — don't eagerly translate *)
   | OpIn -> translate_in config env e1 e2
   | OpSubset -> translate_subset config env e1 e2
-  | _ -> (
+  | OpAnd | OpOr | OpImpl | OpIff | OpEq | OpNeq | OpLt | OpGt | OpLe | OpGe
+  | OpAdd | OpSub | OpMul | OpDiv -> (
       let t1 = translate_expr config env e1 in
       let t2 = translate_expr config env e2 in
       match op with
@@ -977,7 +1007,7 @@ and translate_binop config env op e1 e2 =
       | OpIn | OpSubset -> assert false (* handled above *))
 
 and translate_in config env elem set =
-  match set with
+  match[@warning "-4"] set with
   | EDomain name -> (
       (* x in Domain → disjunction over domain elements *)
       let elems = domain_elements name (bound_for config name) in
@@ -1018,7 +1048,7 @@ and translate_subset config env e1 e2 =
   let s1 = translate_expr config env e1 in
   (* xs subset Domain → every member of xs is in the domain (tautological
      for well-typed programs, but expand over finite elements for soundness) *)
-  match e2 with
+  match[@warning "-4"] e2 with
   | EEach (params, guards, None, body) -> (
       (* xs subset (each x: D | f x) → for every elem of xs, elem is in the
          comprehension. Expand: for each domain elem d of the LHS element type,
@@ -1027,7 +1057,9 @@ and translate_subset config env e1 e2 =
         expand_comprehension translate_expr config env params guards body
       in
       (* Infer LHS element type to get its domain *)
-      match Check.infer_type { Check.env; loc = dummy_loc } e1 with
+      match[@warning "-4"]
+        Check.infer_type { Check.env; loc = dummy_loc } e1
+      with
       | Ok (TyList (TyDomain lhs_dname)) ->
           let lhs_elems =
             domain_elements lhs_dname (bound_for config lhs_dname)
@@ -1067,7 +1099,9 @@ and translate_subset config env e1 e2 =
   | _ -> (
       let s2 = translate_expr config env e2 in
       (* xs subset ys: infer element type for quantifier binding *)
-      match Check.infer_type { Check.env; loc = dummy_loc } e1 with
+      match[@warning "-4"]
+        Check.infer_type { Check.env; loc = dummy_loc } e1
+      with
       | Ok (TyList (TyDomain name)) ->
           (* For domain lists, expand over finite domain elements *)
           let elems = domain_elements name (bound_for config name) in
@@ -1095,7 +1129,7 @@ and translate_unop config env op e =
   | OpCard -> translate_card config env e
 
 and translate_card config env e =
-  match e with
+  match[@warning "-4"] e with
   | EDomain name ->
       (* #Domain = bound (all elements exist) *)
       string_of_int (bound_for config name)
@@ -1114,18 +1148,20 @@ and translate_card config env e =
             match g with
             | GIn (name, list_expr) -> (
                 let infer e =
-                  match Check.infer_type { Check.env; loc = dummy_loc } e with
+                  match[@warning "-4"]
+                    Check.infer_type { Check.env; loc = dummy_loc } e
+                  with
                   | Ok (TyList elem_ty) -> Some (name, elem_ty)
                   | _ -> None
                 in
                 match infer list_expr with
                 | Some _ as r -> r
                 | None -> infer (unprime_expr list_expr))
-            | _ -> None)
+            | GExpr _ | GParam _ -> None)
           guards
       in
       let env_inner = Env.with_vars (param_bindings @ guard_bindings) env in
-      match
+      match[@warning "-4"]
         Check.infer_type { Check.env = env_inner; loc = dummy_loc } body
       with
       | Ok (TyDomain range_dname) ->
@@ -1155,7 +1191,9 @@ and translate_card config env e =
   | _ -> (
       (* #xs where xs : (Array T Bool) — count members over finite domain *)
       let set_str = translate_expr config env e in
-      match Check.infer_type { Check.env; loc = dummy_loc } e with
+      match[@warning "-4"]
+        Check.infer_type { Check.env; loc = dummy_loc } e
+      with
       | Ok (TyList (TyDomain name)) ->
           (* Sum over domain elements: (+ (ite (select xs d0) 1 0) ...) *)
           let elems = domain_elements name (bound_for config name) in
@@ -1196,14 +1234,16 @@ and translate_forall_comprehension config env params guards body =
         match g with
         | GIn (name, list_expr) -> (
             let infer e =
-              match Check.infer_type { Check.env; loc = dummy_loc } e with
+              match[@warning "-4"]
+                Check.infer_type { Check.env; loc = dummy_loc } e
+              with
               | Ok (TyList elem_ty) -> Some (name, elem_ty)
               | _ -> None
             in
             match infer list_expr with
             | Some _ as r -> r
             | None -> infer (unprime_expr list_expr))
-        | _ -> None)
+        | GExpr _ | GParam _ -> None)
       guards
   in
   let env_inner = Env.with_vars (param_bindings @ guard_bindings) env in
@@ -1304,7 +1344,11 @@ and translate_aggregate config env (comb : combiner) params guards body =
           Check.infer_type { Check.env = env_inner; loc = dummy_loc } body
         with
         | Ok TyReal -> true
-        | _ -> false)
+        | Ok
+            ( TyBool | TyNat | TyNat0 | TyInt | TyString | TyNothing
+            | TyDomain _ | TyList _ | TyProduct _ | TySum _ | TyFunc _ )
+        | Error _ ->
+            false)
     | Error _ -> false
   in
   let smt_op_and_identity =
@@ -1333,7 +1377,12 @@ and translate_aggregate config env (comb : combiner) params guards body =
       (* min/max: no identity element, inline comparison with ite.
          For guarded elements, only include when the guard holds;
          use a seen/acc pair so the first accepted value seeds the fold. *)
-      let cmp_op = match comb with CombMin -> "<=" | _ -> ">=" in
+      let cmp_op =
+        match comb with
+        | CombMin -> "<="
+        | CombMax -> ">="
+        | CombAdd | CombMul | CombAnd | CombOr -> assert false
+      in
       let inline_minmax a b =
         Printf.sprintf "(ite (%s %s %s) %s %s)" cmp_op a b a b
       in
@@ -1407,7 +1456,11 @@ and translate_quantifier config env quant params guards body =
         Some (Printf.sprintf "(>= %s 1)" (sanitize_ident p.param_name))
     | Ok TyNat0 ->
         Some (Printf.sprintf "(>= %s 0)" (sanitize_ident p.param_name))
-    | _ -> None
+    | Ok
+        ( TyBool | TyInt | TyReal | TyString | TyNothing | TyDomain _ | TyList _
+        | TyProduct _ | TySum _ | TyFunc _ )
+    | Error _ ->
+        None
   in
   let bindings =
     List.map
@@ -1459,7 +1512,9 @@ and translate_quantifier config env quant params guards body =
         | GIn (name, list_expr) ->
             (* Bind name as element type; resolve from list expression type *)
             let infer_elem_ty e =
-              match Check.infer_type { Check.env; loc = dummy_loc } e with
+              match[@warning "-4"]
+                Check.infer_type { Check.env; loc = dummy_loc } e
+              with
               | Ok (TyList elem_ty) -> Some elem_ty
               | Ok (TyDomain _ as ty) -> Some ty
               | _ -> None
@@ -1531,7 +1586,7 @@ and translate_quantifier config env quant params guards body =
         body_str
   | _ -> Printf.sprintf "(%s (%s) %s)" quant binding_str body_str
 
-and translate_cond config env = function
+and translate_cond config env = function[@warning "-4"]
   | [] -> assert false
   | [ (ELitBool true, cons) ] ->
       (* Catch-all: last arm is unconditional *)
@@ -1575,7 +1630,9 @@ let translate_proposition config env (e : expr) =
   | EForall _ | EExists _ | EEach _ ->
       (* Quantifiers handle their own guard injection *)
       translate_expr config env e
-  | _ -> (
+  | EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+  | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
+  | EBinop _ | EUnop _ | ECond _ | EInitially _ -> (
       if not config.inject_guards then translate_expr config env e
       else
         let app_guards = collect_body_guards env e in
@@ -1609,7 +1666,7 @@ let classify_chapter (chapter : chapter) =
         match decl.value with
         | DeclAction { label; params; guards; contexts } ->
             Some (label, params, guards, contexts)
-        | _ -> None)
+        | DeclDomain _ | DeclAlias _ | DeclRule _ | DeclClosure _ -> None)
       chapter.head
   in
   match action with
@@ -1627,7 +1684,13 @@ let collect_invariants chapters =
       | Invariant props ->
           List.filter
             (fun (p : expr located) ->
-              match p.value with EInitially _ -> false | _ -> true)
+              match p.value with
+              | EInitially _ -> false
+              | EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _
+              | ELitString _ | ELitBool _ | EApp _ | EPrimed _ | EOverride _
+              | ETuple _ | EProj _ | EBinop _ | EUnop _ | EForall _ | EExists _
+              | EEach _ | ECond _ ->
+                  true)
             props
       | Action _ -> [])
     chapters
@@ -1642,7 +1705,11 @@ let collect_initial_props chapters =
             (fun (p : expr located) ->
               match p.value with
               | EInitially e -> Some { p with value = e }
-              | _ -> None)
+              | EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _
+              | ELitString _ | ELitBool _ | EApp _ | EPrimed _ | EOverride _
+              | ETuple _ | EProj _ | EBinop _ | EUnop _ | EForall _ | EExists _
+              | EEach _ | ECond _ ->
+                  None)
             props
       | Action _ -> [])
     chapters
@@ -1725,7 +1792,9 @@ let collect_frame_exprs _config env contexts =
                       sname args sname args )
                   :: acc
               | None -> acc)
-          | _ -> acc)
+          | Env.KRule _ | Env.KDomain | Env.KAlias _ | Env.KVar _
+          | Env.KClosure _ ->
+              acc)
         env.Env.terms []
       |> List.rev
 
@@ -1747,7 +1816,9 @@ let generate_frame_conditions config env context =
 let extract_preconditions config env (guards : guard list) =
   List.filter_map
     (fun g ->
-      match g with GExpr e -> Some (translate_expr config env e) | _ -> None)
+      match g with
+      | GExpr e -> Some (translate_expr config env e)
+      | GIn _ | GParam _ -> None)
     guards
 
 (** Extend the type environment with action parameter bindings so that
@@ -1792,7 +1863,11 @@ let declare_param_constraints env (params : param list) =
           Buffer.add_string buf
             (Printf.sprintf "(assert (>= %s 0))\n"
                (sanitize_ident p.param_name))
-      | _ -> ())
+      | Ok
+          ( TyBool | TyInt | TyReal | TyString | TyNothing | TyDomain _
+          | TyList _ | TyProduct _ | TySum _ | TyFunc _ )
+      | Error _ ->
+          ())
     params;
   Buffer.contents buf
 
@@ -1818,7 +1893,7 @@ let build_value_terms config env (params : param list) =
         match entry.Env.kind with
         | Env.KRule ty | Env.KClosure (ty, _) -> (
             let sname = sanitize_ident name in
-            match decompose_func_ty ty with
+            match[@warning "-4"] decompose_func_ty ty with
             | Some ([], _ret) ->
                 (* Nullary rule: include current and primed *)
                 sname :: (sname ^ "_prime") :: acc
@@ -1859,11 +1934,13 @@ let build_value_terms config env (params : param list) =
                               Printf.sprintf "(%s_prime %s)" sname elem;
                             ])
                         elems
-                  | _ -> []
+                  | TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString
+                  | TyNothing | TyList _ | TyProduct _ | TySum _ | TyFunc _ ->
+                      []
                 in
                 List.concat from_params @ from_elems @ acc
             | _ -> acc)
-        | _ -> acc)
+        | Env.KDomain | Env.KAlias _ | Env.KVar _ -> acc)
       env.Env.terms []
   in
   param_terms @ func_terms
@@ -1911,7 +1988,11 @@ let add_type_constraints na config env (params : param list) =
           add_named_assert na "type"
             (Printf.sprintf "%s : Nat0" p.param_name)
             (Printf.sprintf "(>= %s 0)" (sanitize_ident p.param_name))
-      | _ -> ())
+      | Ok
+          ( TyBool | TyInt | TyReal | TyString | TyNothing | TyDomain _
+          | TyList _ | TyProduct _ | TySum _ | TyFunc _ )
+      | Error _ ->
+          ())
     params
 
 (** Query 1: Contradiction detection for an action. Asserts all postconditions
@@ -1928,7 +2009,11 @@ let declare_domain_membership config buf (params : param list) env =
           in
           Buffer.add_string buf
             (Printf.sprintf "(assert (or %s))\n" (String.concat " " disj))
-      | _ -> ())
+      | Ok
+          ( TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString | TyNothing
+          | TyList _ | TyProduct _ | TySum _ | TyFunc _ )
+      | Error _ ->
+          ())
     params
 
 let generate_contradiction_query config env action =
@@ -1948,7 +2033,7 @@ let generate_contradiction_query config env action =
   (* Named preconditions from guards *)
   let precond_exprs =
     List.filter_map
-      (fun g -> match g with GExpr e -> Some e | _ -> None)
+      (fun g -> match g with GExpr e -> Some e | GIn _ | GParam _ -> None)
       action.a_guards
   in
   List.iter
@@ -2069,7 +2154,7 @@ let generate_precondition_query config env invariant_props action =
   Buffer.add_string buf "\n; --- Preconditions ---\n";
   let precond_exprs =
     List.filter_map
-      (fun g -> match g with GExpr e -> Some e | _ -> None)
+      (fun g -> match g with GExpr e -> Some e | GIn _ | GParam _ -> None)
       action.a_guards
   in
   List.iter
@@ -2155,7 +2240,7 @@ let build_invariant_value_terms config env =
       match entry.Env.kind with
       | Env.KRule ty | Env.KClosure (ty, _) -> (
           let sname = sanitize_ident name in
-          match decompose_func_ty ty with
+          match[@warning "-4"] decompose_func_ty ty with
           | Some ([], _ret) -> sname :: acc
           | Some ([ param_ty ], _ret) -> (
               match param_ty with
@@ -2165,9 +2250,11 @@ let build_invariant_value_terms config env =
                     (fun elem -> Printf.sprintf "(%s %s)" sname elem)
                     elems
                   @ acc
-              | _ -> acc)
+              | TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString | TyNothing
+              | TyList _ | TyProduct _ | TySum _ | TyFunc _ ->
+                  acc)
           | _ -> acc)
-      | _ -> acc)
+      | Env.KDomain | Env.KAlias _ | Env.KVar _ -> acc)
     env.Env.terms []
 
 (** Query 0: Invariant consistency — checks that all invariants are jointly
@@ -2210,7 +2297,9 @@ let generate_invariant_consistency_query config env invariant_props =
 
 (** Extract the GExpr preconditions from an action's guards as raw exprs *)
 let extract_precondition_exprs (guards : guard list) =
-  List.filter_map (fun g -> match g with GExpr e -> Some e | _ -> None) guards
+  List.filter_map
+    (fun g -> match g with GExpr e -> Some e | GIn _ | GParam _ -> None)
+    guards
 
 (** Check if an action has no boolean preconditions (always enabled) *)
 let action_always_enabled action =
@@ -2298,7 +2387,7 @@ let collect_rule_names env =
       | Env.KRule ty | Env.KClosure (ty, _) -> (
           let sname = sanitize_ident name in
           match decompose_func_ty ty with Some _ -> sname :: acc | None -> acc)
-      | _ -> acc)
+      | Env.KDomain | Env.KAlias _ | Env.KVar _ -> acc)
     env.Env.terms []
 
 (** Rename all rule names in an SMT string for step [step]. Replaces
@@ -2349,7 +2438,7 @@ let declare_step_functions config env steps =
                      param_sorts (sort_of_ty ret))
               done
           | None -> ())
-      | _ -> ())
+      | Env.KDomain | Env.KAlias _ | Env.KVar _ -> ())
     env.Env.terms;
   (* Type constraints for each step *)
   Buffer.add_string buf "\n; --- Type constraints for all steps ---\n";
@@ -2419,7 +2508,11 @@ let build_step_transition config env actions step =
                     List.map (fun e -> Printf.sprintf "(= %s %s)" sname e) elems
                   in
                   Some (Printf.sprintf "(or %s)" (String.concat " " disj))
-              | _ -> None)
+              | Ok
+                  ( TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString
+                  | TyNothing | TyList _ | TyProduct _ | TySum _ | TyFunc _ )
+              | Error _ ->
+                  None)
             action.a_params
         in
         (* Type constraints for action params *)
@@ -2433,7 +2526,11 @@ let build_step_transition config env actions step =
               | Ok TyNat0 ->
                   Some
                     (Printf.sprintf "(>= %s 0)" (sanitize_ident p.param_name))
-              | _ -> None)
+              | Ok
+                  ( TyBool | TyInt | TyReal | TyString | TyNothing | TyDomain _
+                  | TyList _ | TyProduct _ | TySum _ | TyFunc _ )
+              | Error _ ->
+                  None)
             action.a_params
         in
         (* Preconditions (from guards) — translated in base names *)
@@ -2568,7 +2665,11 @@ let generate_all_actions_disabled config env actions step =
                 Some (Printf.sprintf "(>= %s 1)" (sanitize_ident p.param_name))
             | Ok TyNat0 ->
                 Some (Printf.sprintf "(>= %s 0)" (sanitize_ident p.param_name))
-            | _ -> None)
+            | Ok
+                ( TyBool | TyInt | TyReal | TyString | TyNothing | TyDomain _
+                | TyList _ | TyProduct _ | TySum _ | TyFunc _ )
+            | Error _ ->
+                None)
           action.a_params
       in
       let env_with_params = env_with_action_params env action.a_params in
@@ -2750,18 +2851,22 @@ let build_cond_value_terms config env cond =
           (fun (p : param) ->
             match Collect.resolve_type env p.param_type dummy_loc with
             | Ok (TyDomain dname) -> Some dname
-            | _ -> None)
+            | Ok
+                ( TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString
+                | TyNothing | TyList _ | TyProduct _ | TySum _ | TyFunc _ )
+            | Error _ ->
+                None)
           params)
       cond.cond_quantifiers
     |> List.sort_uniq String.compare
   in
   List.concat_map
     (fun name ->
-      match Env.StringMap.find_opt name env.Env.terms with
+      match[@warning "-4"] Env.StringMap.find_opt name env.Env.terms with
       | Some { kind = Env.KRule ty; _ }
       | Some { kind = Env.KClosure (ty, _); _ } -> (
           let sname = sanitize_ident name in
-          match decompose_func_ty ty with
+          match[@warning "-4"] decompose_func_ty ty with
           | Some ([], _) -> [ sname ]
           | Some ([ TyDomain dname ], _) when List.mem dname quant_domains ->
               let elems = domain_elements dname (bound_for config dname) in

@@ -295,7 +295,7 @@ let test_prime_expr () =
   (* Free variables get primed *)
   let e = EBinop (OpEq, EApp (EVar "f", [ EVar "x" ]), ELitNat 0) in
   let e' = Smt.prime_expr e in
-  (match e' with
+  (match[@warning "-4"] e' with
   | EBinop (OpEq, EApp (EPrimed "f", [ EPrimed "x" ]), ELitNat 0) -> ()
   | _ -> fail (Printf.sprintf "Unexpected primed expr: %s" (Ast.show_expr e')));
   (* Quantifier-bound variables are NOT primed *)
@@ -306,7 +306,7 @@ let test_prime_expr () =
         EBinop (OpGe, EApp (EVar "balance", [ EVar "a" ]), ELitNat 0) )
   in
   let e2' = Smt.prime_expr e2 in
-  match e2' with
+  match[@warning "-4"] e2' with
   | EForall
       (_, _, EBinop (OpGe, EApp (EPrimed "balance", [ EVar "a" ]), ELitNat 0))
     ->
@@ -1750,7 +1750,7 @@ let test_primed_guard_collection () =
   (* The guard should be primed: EPrimed "active?" applied to EVar "t"
      (t is not primed because it's not a rule name) *)
   let guard = List.hd guards in
-  match guard with
+  match[@warning "-4"] guard with
   | Ast.EApp (EPrimed "active?", [ EVar "t" ]) ->
       check bool "primed guard for active?" true true
   | _ ->

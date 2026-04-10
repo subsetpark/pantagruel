@@ -193,7 +193,7 @@ let action_params (chapter : chapter) : StringSet.t =
         match decl.value with
         | DeclAction { params; _ } ->
             Some (List.map (fun p -> p.param_name) params)
-        | _ -> None)
+        | DeclDomain _ | DeclAlias _ | DeclRule _ | DeclClosure _ -> None)
       chapter.head
   in
   match params with Some ps -> StringSet.of_list ps | None -> StringSet.empty

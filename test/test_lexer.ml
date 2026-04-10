@@ -72,7 +72,7 @@ let token_testable =
 let lex_all str =
   let lexer = Lexer.create_from_string "<test>" str in
   let rec go acc =
-    match Lexer.token lexer with
+    match[@warning "-4"] Lexer.token lexer with
     | Parser.EOF -> List.rev (Parser.EOF :: acc)
     | tok -> go (tok :: acc)
   in
@@ -320,7 +320,7 @@ let test_unknown_escape () =
   (* Bug #3: Unknown escape sequences silently accepted.
      "\q" silently becomes "q". Users think they wrote an escape. *)
   let tokens = lex_all {|"\q"|} in
-  match tokens with
+  match[@warning "-4"] tokens with
   | [ Parser.STRING s; Parser.EOF ] ->
       (* Document the behavior: unknown escape \q produces just 'q' *)
       check string "unknown escape \\q becomes q" "q" s

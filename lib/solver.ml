@@ -61,9 +61,9 @@ let parse_get_value_sexp (sexp : Sexp.t) =
           match pair with
           | List [ term; value ] ->
               Some (sexp_to_string term, sexp_to_string value)
-          | _ -> None)
+          | Atom _ | List _ -> None)
         pairs
-  | _ -> []
+  | Atom _ -> []
 
 (** Parse a (get-value ...) response from a raw string. Kept for test
     compatibility. *)
@@ -77,9 +77,9 @@ let parse_unsat_core_sexp (sexp : Sexp.t) =
   match sexp with
   | List atoms ->
       List.filter_map
-        (fun (a : Sexp.t) -> match a with Atom s -> Some s | _ -> None)
+        (fun (a : Sexp.t) -> match a with Atom s -> Some s | List _ -> None)
         atoms
-  | _ -> []
+  | Atom _ -> []
 
 (** Parse an unsat core response from a raw string. Kept for test compatibility.
 *)
@@ -98,7 +98,7 @@ let translate_value_sexp (sexp : Sexp.t) =
       match String.split_on_char '!' s with
       | domain :: "val" :: [ n ] -> domain ^ "_" ^ n
       | _ -> s)
-  | _ -> sexp_to_string sexp
+  | List _ -> sexp_to_string sexp
 
 (** Translate a raw string value for display. Kept for backward compatibility
     with format_counterexample. *)
@@ -373,7 +373,9 @@ let parse_solver_output output =
         let values =
           List.find_map
             (fun (s : Sexp.t) ->
-              match s with List _ -> Some (parse_get_value_sexp s) | _ -> None)
+              match s with
+              | List _ -> Some (parse_get_value_sexp s)
+              | Atom _ -> None)
             rest
           |> Option.value ~default:[]
         in
@@ -385,7 +387,7 @@ let parse_solver_output output =
               match s with
               | List (Atom "error" :: _) -> None
               | List _ -> Some (parse_unsat_core_sexp s)
-              | _ -> None)
+              | Atom _ -> None)
             rest
           |> Option.value ~default:[]
         in
@@ -394,7 +396,8 @@ let parse_solver_output output =
         let reason = String.concat " " (List.map sexp_to_string rest) in
         Unknown (if reason = "" then "unknown" else reason)
     | List (Atom "error" :: _) :: _ -> SolverError output
-    | _ -> SolverError (Printf.sprintf "Unexpected solver output: %s" output)
+    | List _ :: _ | Atom _ :: _ | [] ->
+        SolverError (Printf.sprintf "Unexpected solver output: %s" output)
 
 (** Run a solver on an SMT-LIB2 string *)
 let run_solver ?(solver = default_solver) ?(args = default_args)
@@ -820,7 +823,11 @@ let correlate_results results =
                         Printf.sprintf " '%s'" r.query.invariant_text
                       else ""
                     in
-                    let values = match r.result with Sat v -> v | _ -> [] in
+                    let values =
+                      match r.result with
+                      | Sat v -> v
+                      | Unsat _ | Unknown _ | SolverError _ -> []
+                    in
                     match bmc_r.result with
                     | Unsat _ ->
                         (* False alarm: inductive step fails, BMC safe *)
@@ -856,9 +863,9 @@ let correlate_results results =
                                 inv_desc action_label cx
                                 (format_bmc_counterexample bmc_values);
                           }
-                    | _ -> Some r)
+                    | Unknown _ | SolverError _ -> Some r)
                 | None -> Some r)
-            | _ -> Some r))
+            | Some _ | None -> Some r))
       results
 
 (** Run all queries and return results *)

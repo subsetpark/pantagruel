@@ -181,7 +181,7 @@ let add_import env other origin_module =
       (fun name entry index ->
         match entry.kind with
         | KVar _ -> index
-        | _ ->
+        | KDomain | KAlias _ | KRule _ | KClosure _ ->
             let existing =
               match StringMap.find_opt name index with
               | Some lst -> lst

@@ -27,7 +27,7 @@ let rec mentions_type name = function
   | TyFunc (params, ret) -> (
       List.exists (mentions_type name) params
       || match ret with Some t -> mentions_type name t | None -> false)
-  | _ -> false
+  | TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString | TyNothing -> false
 
 (** Convert AST type_expr to ty, expanding aliases *)
 let rec resolve_type env (te : type_expr) loc : (ty, collect_error) result =
@@ -39,12 +39,16 @@ let rec resolve_type env (te : type_expr) loc : (ty, collect_error) result =
           match Env.lookup_type name env with
           | Some { kind = Env.KDomain; _ } -> Ok (TyDomain name)
           | Some { kind = Env.KAlias ty; _ } -> Ok ty
-          | _ -> Error (UndefinedType (name, loc))))
+          | Some { kind = Env.KRule _ | Env.KVar _ | Env.KClosure _; _ } ->
+              Error (UndefinedType (name, loc))
+          | None -> Error (UndefinedType (name, loc))))
   | TQName (mod_name, type_name) -> (
       match Env.lookup_qualified_type mod_name type_name env with
       | Some { kind = Env.KDomain; _ } -> Ok (TyDomain type_name)
       | Some { kind = Env.KAlias ty; _ } -> Ok ty
-      | _ -> Error (UndefinedType (mod_name ^ "::" ^ type_name, loc)))
+      | Some { kind = Env.KRule _ | Env.KVar _ | Env.KClosure _; _ } ->
+          Error (UndefinedType (mod_name ^ "::" ^ type_name, loc))
+      | None -> Error (UndefinedType (mod_name ^ "::" ^ type_name, loc)))
   | TList t ->
       let* inner = resolve_type env t loc in
       Ok (TyList inner)
@@ -104,10 +108,18 @@ let collect_chapter_head ~chapter ~doc_contexts env
                   (match Env.lookup_type name env with
                   | Some { kind = Env.KAlias existing_ty; _ } ->
                       if existing_ty <> ty then changed := true
-                  | _ -> changed := true);
+                  | Some
+                      {
+                        kind =
+                          ( Env.KDomain | Env.KRule _ | Env.KVar _
+                          | Env.KClosure _ );
+                        _;
+                      } ->
+                      changed := true
+                  | None -> changed := true);
                   Ok (Env.add_alias name ty decl.loc ~chapter env)
                 end
-            | _ -> Ok env)
+            | DeclDomain _ | DeclRule _ | DeclAction _ | DeclClosure _ -> Ok env)
           env decls
       in
       if !changed then iterate env' else Ok env'
@@ -171,7 +183,7 @@ let collect_chapter_head ~chapter ~doc_contexts env
         let* ret_ty = resolve_type env return_type decl.loc in
         (* Return type must be [T] where T matches param type *)
         let* () =
-          match (ret_ty, param_ty) with
+          match[@warning "-4"] (ret_ty, param_ty) with
           | TyList t, _ when t = param_ty -> Ok ()
           | _ ->
               Error
@@ -183,9 +195,9 @@ let collect_chapter_head ~chapter ~doc_contexts env
         in
         (* Look up the target rule *)
         let* () =
-          match Env.lookup_term target env with
+          match[@warning "-4"] Env.lookup_term target env with
           | Some { kind = Env.KRule ty; _ } -> (
-              match ty with
+              match[@warning "-4"] ty with
               (* T => T + Nothing (partial parent) *)
               | TyFunc ([ t1 ], Some (TySum [ t2; TyNothing ]))
                 when t1 = param_ty && t2 = param_ty ->
@@ -214,7 +226,8 @@ let collect_chapter_head ~chapter ~doc_contexts env
         in
         let closure_ty = TyFunc ([ param_ty ], Some (TyList param_ty)) in
         Ok (Env.add_closure name closure_ty target decl.loc ~chapter env)
-    | _ -> Ok env (* Domains and aliases already done *)
+    | DeclDomain _ | DeclAlias _ ->
+        Ok env (* Domains and aliases already done *)
   in
 
   (* Pass 4: Validate context annotations on actions *)
@@ -231,7 +244,7 @@ let collect_chapter_head ~chapter ~doc_contexts env
           |> Result.map (fun _ -> ())
         in
         Ok env
-    | _ -> Ok env
+    | DeclDomain _ | DeclAlias _ | DeclRule _ | DeclClosure _ -> Ok env
   in
 
   (* Execute all passes *)
@@ -254,7 +267,9 @@ let collect_chapter_head ~chapter ~doc_contexts env
       | [ _ ] -> Ok ()
       | { value = DeclAction { label; _ }; loc; _ } :: _ :: _ ->
           Error (ActionNotLast (label, loc))
-      | _ :: rest -> check_last rest
+      | { value = DeclDomain _ | DeclAlias _ | DeclRule _ | DeclClosure _; _ }
+        :: rest ->
+          check_last rest
     in
     check_last decls
   in

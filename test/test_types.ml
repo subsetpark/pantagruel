@@ -217,7 +217,7 @@ let test_join_commutativity =
   QCheck_alcotest.to_alcotest
     (QCheck.Test.make ~name:"join commutativity" ~count:500
        (QCheck.pair arb_ty arb_ty) (fun (a, b) ->
-         match (Types.join a b, Types.join b a) with
+         match[@warning "-4"] (Types.join a b, Types.join b a) with
          | Ok x, Ok y -> Types.equal_ty x y
          | Error _, Error _ -> true (* both fail = commutative *)
          | _ -> false))

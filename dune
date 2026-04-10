@@ -1,4 +1,4 @@
 (env
  (_
   (flags
-   (:standard -w +a-4-40-41-42-58-70 -warn-error +a-4-40-41-42-58-70))))
+   (:standard -w +a-40-41-42-70 -warn-error +a-40-41-42-70))))

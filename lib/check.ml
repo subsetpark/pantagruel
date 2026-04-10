@@ -53,14 +53,16 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
   | ELitReal _ -> Ok TyReal
   | ELitString _ -> Ok TyString
   | EVar name -> (
-      match Env.lookup_term name ctx.env with
+      match[@warning "-4"] Env.lookup_term name ctx.env with
       | Some { kind = Env.KVar ty; _ } -> Ok ty
       | Some { kind = Env.KRule (TyFunc ([], Some ret)); _ } ->
           (* Nullary rule: auto-apply *)
           Ok ret
       | Some { kind = Env.KRule ty; _ } -> Ok ty
       | Some { kind = Env.KClosure (ty, _); _ } -> (
-          match ty with TyFunc ([], Some ret) -> Ok ret | _ -> Ok ty)
+          match[@warning "-4"] ty with
+          | TyFunc ([], Some ret) -> Ok ret
+          | _ -> Ok ty)
       | Some { kind = Env.KDomain | Env.KAlias _; _ } ->
           (* This shouldn't happen - domains/aliases are in type namespace *)
           Error (UnboundVariable (name, ctx.loc))
@@ -81,8 +83,10 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
           | Some modules -> Error (AmbiguousName (name, modules, ctx.loc))
           | None -> Error (UnboundType (name, ctx.loc))))
   | EQualified (mod_name, name) -> (
-      (* Try term namespace first *)
-      match Env.lookup_qualified_term mod_name name ctx.env with
+      match(* Try term namespace first *)
+           [@warning "-4"]
+        Env.lookup_qualified_term mod_name name ctx.env
+      with
       | Some { kind = Env.KRule (TyFunc ([], Some ret)); _ } -> Ok ret
       | Some { kind = Env.KRule ty; _ } -> Ok ty
       | Some { kind = Env.KVar ty; _ } -> Ok ty
@@ -91,7 +95,9 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
           match Env.lookup_qualified_type mod_name name ctx.env with
           | Some { kind = Env.KDomain; _ } -> Ok (TyList (TyDomain name))
           | Some { kind = Env.KAlias ty; _ } -> Ok (TyList ty)
-          | _ -> Error (UnboundQualified (mod_name, name, ctx.loc))))
+          | Some { kind = Env.KRule _ | Env.KVar _ | Env.KClosure _; _ } ->
+              Error (UnboundQualified (mod_name, name, ctx.loc))
+          | None -> Error (UnboundQualified (mod_name, name, ctx.loc))))
   | EPrimed name -> (
       if
         (* Validate: must be rule, must be in action context *)
@@ -103,7 +109,9 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
         match Env.lookup_term name ctx.env with
         | Some { kind = Env.KRule ty; _ } -> (
             let result_ty =
-              match ty with TyFunc ([], Some ret) -> ret | _ -> ty
+              match[@warning "-4"] ty with
+              | TyFunc ([], Some ret) -> ret
+              | _ -> ty
             in
             (* If action has contexts, check membership in union *)
             match ctx.env.action_contexts with
@@ -122,7 +130,9 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
         | Some { kind = Env.KClosure (ty, _); _ } ->
             (* Closures are derived — allow priming without context membership *)
             let result_ty =
-              match ty with TyFunc ([], Some ret) -> ret | _ -> ty
+              match[@warning "-4"] ty with
+              | TyFunc ([], Some ret) -> ret
+              | _ -> ty
             in
             Ok result_ty
         | Some { kind = Env.KVar _; _ } -> Error (PrimedNonRule (name, ctx.loc))
@@ -142,7 +152,9 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
           Ok (List.nth tys (idx - 1))
       | TyProduct tys ->
           Error (ProjectionOutOfBounds (idx, List.length tys, ctx.loc))
-      | _ -> Error (NotAProduct (ty, ctx.loc)))
+      | TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString | TyNothing
+      | TyDomain _ | TyList _ | TySum _ | TyFunc _ ->
+          Error (NotAProduct (ty, ctx.loc)))
   | EBinop (op, e1, e2) -> check_binop ctx op e1 e2
   | EUnop (op, e) -> check_unop ctx op e
   | EForall (params, guards, body) ->
@@ -161,7 +173,13 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
       match comb with
       | CombAdd ->
           if is_numeric body_ty then
-            Ok (match body_ty with TyNat -> TyNat0 | ty -> ty)
+            Ok
+              (match body_ty with
+              | TyNat -> TyNat0
+              | TyNat0 | TyInt | TyReal -> body_ty
+              | TyBool | TyString | TyNothing | TyDomain _ | TyList _
+              | TyProduct _ | TySum _ | TyFunc _ ->
+                  body_ty)
           else Error (AggregateRequiresNumeric ("+", body_ty, ctx.loc))
       | CombMul ->
           if is_numeric body_ty then Ok body_ty
@@ -245,7 +263,9 @@ and check_application ctx _func_expr func_ty args =
             Error (TypeMismatch (TyNat, arg_ty, ctx.loc))
           else Error (TypeMismatch (elem_ty, arg_ty, ctx.loc))
       | _ -> Error (ArityMismatch (1, List.length args, ctx.loc)))
-  | _ -> Error (NotAFunction (func_ty, ctx.loc))
+  | TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString | TyNothing | TyDomain _
+  | TyProduct _ | TySum _ ->
+      Error (NotAFunction (func_ty, ctx.loc))
 
 and check_binop ctx op e1 e2 =
   let* t1 = infer_type ctx e1 in
@@ -260,7 +280,10 @@ and check_binop ctx op e1 e2 =
       | Ok _ -> Ok TyBool
       | Error (Types.TypeMismatch (a, b)) ->
           Error (TypeMismatch (a, b, ctx.loc))
-      | Error _ -> Error (TypeMismatch (t1, t2, ctx.loc)))
+      | Error
+          ( Types.ArityMismatch _ | Types.NotAFunction _ | Types.NotAList _
+          | Types.NotAProduct _ | Types.NotNumeric _ ) ->
+          Error (TypeMismatch (t1, t2, ctx.loc)))
   | OpLt | OpGt | OpLe | OpGe ->
       if is_numeric t1 && is_numeric t2 then Ok TyBool
       else if not (is_numeric t1) then Error (NotNumeric (t1, ctx.loc))
@@ -271,10 +294,14 @@ and check_binop ctx op e1 e2 =
       | TyList elem_ty ->
           if is_subtype t1 elem_ty then Ok TyBool
           else Error (TypeMismatch (elem_ty, t1, ctx.loc))
-      | _ -> Error (NotAList (t2, ctx.loc)))
+      | TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString | TyNothing
+      | TyDomain _ | TyProduct _ | TySum _ | TyFunc _ ->
+          Error (NotAList (t2, ctx.loc)))
   | OpSubset -> (
-      (* s1 subset s2: both [T], element types must be compatible *)
-      match (t1, t2) with
+      match(* s1 subset s2: both [T], element types must be compatible *)
+           [@warning "-4"]
+        (t1, t2)
+      with
       | TyList a, TyList b ->
           if is_subtype a b then Ok TyBool
           else Error (TypeMismatch (t1, t2, ctx.loc))
@@ -301,7 +328,9 @@ and check_unop ctx op e =
   | OpCard -> (
       match ty with
       | TyList _ -> Ok TyNat0
-      | _ -> Error (NotAList (ty, ctx.loc)))
+      | TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString | TyNothing
+      | TyDomain _ | TyProduct _ | TySum _ | TyFunc _ ->
+          Error (NotAList (ty, ctx.loc)))
 
 (** Check that binding doesn't shadow with a different type. Emits a warning
     (rather than an error) when it does, since propositions from different
@@ -313,7 +342,10 @@ and check_no_type_shadow ctx name new_ty =
         type_warnings :=
           ShadowingTypeMismatch (name, existing_ty, new_ty, ctx.loc)
           :: !type_warnings
-  | _ -> ());
+  | Some { kind = Env.KDomain | Env.KAlias _ | Env.KRule _ | Env.KClosure _; _ }
+    ->
+      ()
+  | None -> ());
   Ok ()
 
 (** Resolve a parameter's type expression to an internal type *)
@@ -321,7 +353,13 @@ and resolve_param_type env loc p =
   match Collect.resolve_type env p.param_type loc with
   | Ok ty -> Ok (p.param_name, ty)
   | Error (Collect.UndefinedType (name, loc)) -> Error (UnboundType (name, loc))
-  | Error _ -> Error (UnboundType ("unknown", loc))
+  | Error
+      ( Collect.DuplicateDomain _ | Collect.DuplicateRule _
+      | Collect.RecursiveAlias _ | Collect.MultipleActions _
+      | Collect.ActionNotLast _ | Collect.BuiltinRedefined _
+      | Collect.DuplicateContext _ | Collect.UndefinedContext _
+      | Collect.ClosureTargetInvalid _ ) ->
+      Error (UnboundType ("unknown", loc))
 
 (** Process guards, extending context and collecting additional bindings. When
     [check_shadow] is true, validates that new bindings don't shadow existing
@@ -354,7 +392,9 @@ and process_guards ~check_shadow ~loc ctx guards =
                     current_ctx with
                     env = Env.add_var name elem_ty current_ctx.env;
                   } )
-          | _ -> Error (NotAList (list_ty, loc)))
+          | TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString | TyNothing
+          | TyDomain _ | TyProduct _ | TySum _ | TyFunc _ ->
+              Error (NotAList (list_ty, loc)))
       | GExpr e ->
           let* ty = infer_type (with_loc current_ctx loc) e in
           if equal_ty ty TyBool then Ok (bindings, current_ctx)
@@ -381,7 +421,7 @@ and check_quantifier ctx params guards body =
   infer_type ctx'' body
 
 and check_override ctx name pairs =
-  match Env.lookup_term name ctx.env with
+  match[@warning "-4"] Env.lookup_term name ctx.env with
   | Some { kind = Env.KRule (TyFunc ([ param_ty ], Some ret_ty)); _ } ->
       (* Override only for arity-1 rules *)
       let* _ =
@@ -415,7 +455,7 @@ let check_rule_guards ctx (decl : declaration located) =
     match decl.value with
     | DeclRule { name; _ } -> name
     | DeclAction { label; _ } -> label
-    | _ -> ""
+    | DeclDomain _ | DeclAlias _ | DeclClosure _ -> ""
   in
   let check_guards params guards =
     let* param_bindings =
@@ -437,7 +477,7 @@ let check_rule_guards ctx (decl : declaration located) =
   | DeclRule { params; guards; _ } -> check_guards params guards
   | DeclAction { params; guards; _ } -> check_guards params guards
   | DeclClosure _ -> Ok () (* Closures have no guards *)
-  | _ -> Ok () (* Not a rule/action, nothing to check *)
+  | DeclDomain _ | DeclAlias _ -> Ok ()
 
 (** Find the action in a chapter head, if any *)
 let find_action (head : declaration located list) =
@@ -446,7 +486,7 @@ let find_action (head : declaration located list) =
       match decl.value with
       | DeclAction { label; params; contexts; _ } ->
           Some (label, params, contexts)
-      | _ -> None)
+      | DeclDomain _ | DeclAlias _ | DeclRule _ | DeclClosure _ -> None)
     head
 
 (** Collect all rule/action parameters from a chapter head *)
@@ -456,7 +496,7 @@ let collect_all_params (head : declaration located list) =
       match decl.value with
       | DeclRule { params; _ } | DeclAction { params; _ } -> params
       | DeclClosure _ -> []
-      | _ -> [])
+      | DeclDomain _ | DeclAlias _ -> [])
     head
 
 (** Check a chapter body *)
