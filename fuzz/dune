@@ -1,7 +1,21 @@
 ; Fuzzing targets — requires crowbar.
-; Not built by default. To build and run:
+; Built separately from the main library. To run with AFL:
 ;   opam install crowbar
 ;   dune build fuzz/fuzz_lexer.exe
 ;   mkdir -p corpus findings
 ;   cp samples/*.pant corpus/
 ;   afl-fuzz -i corpus -o findings -- ./_build/default/fuzz/fuzz_lexer.exe @@
+;
+; Without AFL, crowbar runs in QuickCheck mode (random inputs).
+
+(executable
+ (name fuzz_lexer)
+ (libraries pantagruel crowbar))
+
+(executable
+ (name fuzz_parser)
+ (libraries pantagruel crowbar))
+
+(executable
+ (name fuzz_pipeline)
+ (libraries pantagruel crowbar))

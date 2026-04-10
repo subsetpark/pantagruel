@@ -34,6 +34,13 @@ jobs:
       - name: Check documentation builds
         run: opam exec -- dune build @doc
 
+      - name: Fuzz (QuickCheck mode)
+        run: |
+          opam install crowbar -y
+          opam exec -- dune exec fuzz/fuzz_lexer.exe
+          opam exec -- dune exec fuzz/fuzz_parser.exe
+          opam exec -- dune exec fuzz/fuzz_pipeline.exe
+
       - name: Check samples
         run: |
           for f in samples/*.pant; do
