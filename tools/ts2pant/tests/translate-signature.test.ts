@@ -193,6 +193,25 @@ describe("guarded mutator -> action with guard", () => {
     }
   });
 
+  it("ignores non-unconditional throw in else branch", () => {
+    const source = `
+      interface Account { balance: number; }
+      function withdraw(a: Account, amount: number): void {
+        if (a.balance >= amount) {
+          a.balance = a.balance - amount;
+        } else {
+          if (retry) throw new Error("Insufficient funds");
+        }
+      }
+    `;
+    const result = translate(source, "withdraw");
+
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind === "action") {
+      expect(result.declaration.guard).toBeUndefined();
+    }
+  });
+
   it("detects early-throw guard pattern with negation", () => {
     const source = `
       interface Account { balance: number; }
