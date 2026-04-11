@@ -7,7 +7,7 @@ exports[`annotations.ts > noAnnot 1`] = `
 `;
 
 exports[`annotations.ts > rangeCheck 1`] = `
-"module RangeCheck.\\n\\nrangeCheck x: Int => Bool.\\n\\n---\\n\\nrangeCheck x = x >= 0.\\n\\ncheck\\n\\nall x: Int |\\n  rangeCheck x >= 0.\\n"
+"module RangeCheck.\\n\\nrangeCheck x: Int => Bool.\\n\\n---\\n\\nrangeCheck x = (x >= 0).\\n\\ncheck\\n\\nall x: Int |\\n  rangeCheck x >= 0.\\n"
 `;
 
 exports[`annotations.ts > sum 1`] = `
@@ -15,15 +15,15 @@ exports[`annotations.ts > sum 1`] = `
 `;
 
 exports[`control-flow.ts > abs 1`] = `
-"module Abs.\\n\\nabs n: Int => Int.\\n\\n---\\n\\nabs n = cond n >= 0 => n, true => 0 - n.\\n"
+"module Abs.\\n\\nabs n: Int => Int.\\n\\n---\\n\\nabs n = (cond n >= 0 => n, true => 0 - n).\\n"
 `;
 
 exports[`control-flow.ts > effectiveBalance 1`] = `
-"module EffectiveBalance.\\n\\nAccount.\\nactive a1: Account => Bool.\\nbalance a1: Account => Int.\\neffectiveBalance a: Account => Int.\\n\\n---\\n\\neffectiveBalance a = cond active a => balance a, true => 0.\\n"
+"module EffectiveBalance.\\n\\nAccount.\\nactive a1: Account => Bool.\\nbalance a1: Account => Int.\\neffectiveBalance a: Account => Int.\\n\\n---\\n\\neffectiveBalance a = (cond active a => balance a, true => 0).\\n"
 `;
 
 exports[`control-flow.ts > max 1`] = `
-"module Max.\\n\\nmax a: Int, b: Int => Int.\\n\\n---\\n\\nmax a b = cond a >= b => a, true => b.\\n"
+"module Max.\\n\\nmax a: Int, b: Int => Int.\\n\\n---\\n\\nmax a b = (cond a >= b => a, true => b).\\n"
 `;
 
 exports[`expressions-arithmetic.ts > add 1`] = `
@@ -59,11 +59,11 @@ exports[`expressions-arithmetic.ts > remainder 1`] = `
 `;
 
 exports[`expressions-array.ts > activeNames 1`] = `
-"module ActiveNames.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nactiveNames users: [User] => [String].\\n\\n---\\n\\nactiveNames users = (each x: User, active x | name x).\\n"
+"module ActiveNames.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nactiveNames users: [User] => [String].\\n\\n---\\n\\nactiveNames users = (each x: User | name x).\\n"
 `;
 
 exports[`expressions-array.ts > contains 1`] = `
-"module Contains.\\n\\ncontains items: [String], x: String => Bool.\\n\\n---\\n\\ncontains items x = x in items.\\n"
+"module Contains.\\n\\ncontains items: [String], x: String => Bool.\\n\\n---\\n\\ncontains items x = (x in items).\\n"
 `;
 
 exports[`expressions-array.ts > count 1`] = `
@@ -71,51 +71,51 @@ exports[`expressions-array.ts > count 1`] = `
 `;
 
 exports[`expressions-array.ts > highScores 1`] = `
-"module HighScores.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nhighScores users: [User] => [Int].\\n\\n---\\n\\nhighScores users = (each x: User, score x > 0 | score x).\\n"
+"module HighScores.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nhighScores users: [User] => [Int].\\n\\n---\\n\\nhighScores users = (each x: Int, x > 0 | x).\\n"
 `;
 
 exports[`expressions-array.ts > nameLengths 1`] = `
-"module NameLengths.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nnameLengths users: [User] => [Int].\\n\\n---\\n\\nnameLengths users = (each x: User | length name x).\\n"
+"module NameLengths.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nnameLengths users: [User] => [Int].\\n\\n---\\n\\nnameLengths users = (each x: String | length x).\\n"
 `;
 
 exports[`expressions-boolean.ts > and 1`] = `
-"module And.\\n\\nand a: Bool, b: Bool => Bool.\\n\\n---\\n\\nand a b = a and b.\\n"
+"module And.\\n\\nand a: Bool, b: Bool => Bool.\\n\\n---\\n\\nand a b = (a and b).\\n"
 `;
 
 exports[`expressions-boolean.ts > andNot 1`] = `
-"module AndNot.\\n\\nandNot a: Bool, b: Bool => Bool.\\n\\n---\\n\\nandNot a b = a and ~(b).\\n"
+"module AndNot.\\n\\nandNot a: Bool, b: Bool => Bool.\\n\\n---\\n\\nandNot a b = (a and ~b).\\n"
 `;
 
 exports[`expressions-boolean.ts > not 1`] = `
-"module Not.\\n\\nnot a: Bool => Bool.\\n\\n---\\n\\nnot a = ~(a).\\n"
+"module Not.\\n\\nnot a: Bool => Bool.\\n\\n---\\n\\nnot a = (~a).\\n"
 `;
 
 exports[`expressions-boolean.ts > or 1`] = `
-"module Or.\\n\\nor a: Bool, b: Bool => Bool.\\n\\n---\\n\\nor a b = a or b.\\n"
+"module Or.\\n\\nor a: Bool, b: Bool => Bool.\\n\\n---\\n\\nor a b = (a or b).\\n"
 `;
 
 exports[`expressions-comparison.ts > eq 1`] = `
-"module Eq.\\n\\neq a: Int, b: Int => Bool.\\n\\n---\\n\\neq a b = a = b.\\n"
+"module Eq.\\n\\neq a: Int, b: Int => Bool.\\n\\n---\\n\\neq a b = (a = b).\\n"
 `;
 
 exports[`expressions-comparison.ts > gt 1`] = `
-"module Gt.\\n\\ngt a: Int, b: Int => Bool.\\n\\n---\\n\\ngt a b = a > b.\\n"
+"module Gt.\\n\\ngt a: Int, b: Int => Bool.\\n\\n---\\n\\ngt a b = (a > b).\\n"
 `;
 
 exports[`expressions-comparison.ts > gte 1`] = `
-"module Gte.\\n\\ngte a: Int, b: Int => Bool.\\n\\n---\\n\\ngte a b = a >= b.\\n"
+"module Gte.\\n\\ngte a: Int, b: Int => Bool.\\n\\n---\\n\\ngte a b = (a >= b).\\n"
 `;
 
 exports[`expressions-comparison.ts > lt 1`] = `
-"module Lt.\\n\\nlt a: Int, b: Int => Bool.\\n\\n---\\n\\nlt a b = a < b.\\n"
+"module Lt.\\n\\nlt a: Int, b: Int => Bool.\\n\\n---\\n\\nlt a b = (a < b).\\n"
 `;
 
 exports[`expressions-comparison.ts > lte 1`] = `
-"module Lte.\\n\\nlte a: Int, b: Int => Bool.\\n\\n---\\n\\nlte a b = a <= b.\\n"
+"module Lte.\\n\\nlte a: Int, b: Int => Bool.\\n\\n---\\n\\nlte a b = (a <= b).\\n"
 `;
 
 exports[`expressions-comparison.ts > neq 1`] = `
-"module Neq.\\n\\nneq a: Int, b: Int => Bool.\\n\\n---\\n\\nneq a b = a ~= b.\\n"
+"module Neq.\\n\\nneq a: Int, b: Int => Bool.\\n\\n---\\n\\nneq a b = (a ~= b).\\n"
 `;
 
 exports[`expressions-literals.ts > fortyTwo 1`] = `
@@ -135,7 +135,7 @@ exports[`expressions-misc.ts > asNumber 1`] = `
 `;
 
 exports[`expressions-misc.ts > negate 1`] = `
-"module Negate.\\n\\nnegate n: Int => Int.\\n\\n---\\n\\nnegate n = -(n).\\n"
+"module Negate.\\n\\nnegate n: Int => Int.\\n\\n---\\n\\nnegate n = -n.\\n"
 `;
 
 exports[`expressions-misc.ts > nonNull 1`] = `
@@ -147,7 +147,7 @@ exports[`expressions-misc.ts > parenAdd 1`] = `
 `;
 
 exports[`expressions-property.ts > effectiveBalance 1`] = `
-"module EffectiveBalance.\\n\\nUser.\\nname u: User => String.\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => User.\\nactive a1: Account => Bool.\\neffectiveBalance a: Account => Int.\\n\\n---\\n\\neffectiveBalance a = cond active a => balance a, true => 0.\\n"
+"module EffectiveBalance.\\n\\nUser.\\nname u: User => String.\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => User.\\nactive a1: Account => Bool.\\neffectiveBalance a: Account => Int.\\n\\n---\\n\\neffectiveBalance a = (cond active a => balance a, true => 0).\\n"
 `;
 
 exports[`expressions-property.ts > getOwner 1`] = `
@@ -155,7 +155,7 @@ exports[`expressions-property.ts > getOwner 1`] = `
 `;
 
 exports[`expressions-property.ts > getOwnerName 1`] = `
-"module GetOwnerName.\\n\\nUser.\\nname u: User => String.\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => User.\\nactive a1: Account => Bool.\\ngetOwnerName a: Account => String.\\n\\n---\\n\\ngetOwnerName a = name owner a.\\n"
+"module GetOwnerName.\\n\\nUser.\\nname u: User => String.\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => User.\\nactive a1: Account => Bool.\\ngetOwnerName a: Account => String.\\n\\n---\\n\\ngetOwnerName a = name (owner a).\\n"
 `;
 
 exports[`functions-class.ts > Account.deposit 1`] = `
@@ -199,7 +199,7 @@ exports[`functions-pure.ts > getVersion 1`] = `
 `;
 
 exports[`functions-pure.ts > isPositive 1`] = `
-"module IsPositive.\\n\\nisPositive n: Int => Bool.\\n\\n---\\n\\nisPositive n = n > 0.\\n"
+"module IsPositive.\\n\\nisPositive n: Int => Bool.\\n\\n---\\n\\nisPositive n = (n > 0).\\n"
 `;
 
 exports[`guards-assert.ts > deposit 1`] = `
@@ -207,11 +207,11 @@ exports[`guards-assert.ts > deposit 1`] = `
 `;
 
 exports[`guards-assert.ts > mixedGuard 1`] = `
-"module MixedGuard.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> MixedGuard @ account: Account, amount: Int, ~(amount <= 0) and (balance account >= 0).\\n\\n---\\n\\nbalance' account = balance account + amount.\\n"
+"module MixedGuard.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> MixedGuard @ account: Account, amount: Int, ~(amount <= 0) and balance account >= 0.\\n\\n---\\n\\nbalance' account = balance account + amount.\\n"
 `;
 
 exports[`guards-assert.ts > multiAssert 1`] = `
-"module MultiAssert.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> MultiAssert @ account: Account, amount: Int, (amount > 0) and (balance account >= 0).\\n\\n---\\n\\nbalance' account = balance account + amount.\\n"
+"module MultiAssert.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> MultiAssert @ account: Account, amount: Int, amount > 0 and balance account >= 0.\\n\\n---\\n\\nbalance' account = balance account + amount.\\n"
 `;
 
 exports[`guards-helper.ts > depositConst 1`] = `
@@ -219,7 +219,7 @@ exports[`guards-helper.ts > depositConst 1`] = `
 `;
 
 exports[`guards-helper.ts > depositDeep 1`] = `
-"module DepositDeep.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> DepositDeep @ account: Account, amount: Int, ~(amount <= 0) and ~((balance account) <= 0).\\n\\n---\\n\\nbalance' account = balance account + amount.\\n"
+"module DepositDeep.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> DepositDeep @ account: Account, amount: Int, ~(amount <= 0) and ~(((balance account)) <= 0).\\n\\n---\\n\\nbalance' account = balance account + amount.\\n"
 `;
 
 exports[`guards-helper.ts > depositDirect 1`] = `
@@ -255,11 +255,11 @@ exports[`types-composite.ts > getBooks 1`] = `
 `;
 
 exports[`types-composite.ts > getCity 1`] = `
-"module GetCity.\\n\\nAddress.\\ncity a: Address => String.\\nCustomer.\\naddress c: Customer => Address.\\nOrder.\\ncustomer o1: Order => Customer.\\ntotal o1: Order => Int.\\ngetCity o: Order => String.\\n\\n---\\n\\ngetCity o = city address customer o.\\n"
+"module GetCity.\\n\\nAddress.\\ncity a: Address => String.\\nCustomer.\\naddress c: Customer => Address.\\nOrder.\\ncustomer o1: Order => Customer.\\ntotal o1: Order => Int.\\ngetCity o: Order => String.\\n\\n---\\n\\ngetCity o = city (address (customer o)).\\n"
 `;
 
 exports[`types-composite.ts > getOwnerName 1`] = `
-"module GetOwnerName.\\n\\nUser.\\nname u: User => String.\\nAccount.\\nowner a1: Account => User.\\nbalance a1: Account => Int.\\ngetOwnerName a: Account => String.\\n\\n---\\n\\ngetOwnerName a = name owner a.\\n"
+"module GetOwnerName.\\n\\nUser.\\nname u: User => String.\\nAccount.\\nowner a1: Account => User.\\nbalance a1: Account => Int.\\ngetOwnerName a: Account => String.\\n\\n---\\n\\ngetOwnerName a = name (owner a).\\n"
 `;
 
 exports[`types-composite.ts > getPoint 1`] = `

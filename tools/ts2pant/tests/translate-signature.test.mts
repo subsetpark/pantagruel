@@ -1,13 +1,17 @@
-import { describe, it } from "node:test";
+import { before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
-import { renderExpr } from "../src/pant-expr.js";
+import { getAst, loadAst } from "../src/pant-wasm.js";
 import {
   classifyFunction,
   findFunction,
   translateSignature,
 } from "../src/translate-signature.js";
 import { IntStrategy, RealStrategy } from "../src/translate-types.js";
+
+before(async () => {
+  await loadAst();
+});
 
 // Tests for internal translateSignature APIs: classifyFunction, guard
 // expression structure, edge cases. See tests/fixtures/constructs/ for
@@ -129,7 +133,7 @@ describe("guard expression structure", () => {
     if (result.declaration.kind !== "action") {
       return;
     }
-    assert.equal(renderExpr(result.declaration.guard!), "balance a >= amount");
+    assert.equal(getAst().strExpr(result.declaration.guard!), "balance a >= amount");
   });
 
   it("early-throw with negation produces correct guard expression", () => {
@@ -147,7 +151,7 @@ describe("guard expression structure", () => {
     if (result.declaration.kind !== "action") {
       return;
     }
-    assert.equal(renderExpr(result.declaration.guard!), "balance a >= amount");
+    assert.equal(getAst().strExpr(result.declaration.guard!), "balance a >= amount");
   });
 
   it("skips guard when if-condition has side effects (call)", () => {
@@ -225,7 +229,7 @@ describe("guard expression structure", () => {
     if (result.declaration.kind !== "action") {
       return;
     }
-    assert.equal(renderExpr(result.declaration.guard!), "amount > 0");
+    assert.equal(getAst().strExpr(result.declaration.guard!), "amount > 0");
   });
 
   it("multiple assertion guards are combined with and", () => {
@@ -245,8 +249,8 @@ describe("guard expression structure", () => {
     if (result.declaration.kind !== "action") {
       return;
     }
-    assert.equal(renderExpr(result.declaration.guard!),
-      "(amount > 0) and (balance account >= 0)",
+    assert.equal(getAst().strExpr(result.declaration.guard!),
+      "amount > 0 and balance account >= 0",
     );
   });
 
@@ -267,8 +271,8 @@ describe("guard expression structure", () => {
     if (result.declaration.kind !== "action") {
       return;
     }
-    assert.equal(renderExpr(result.declaration.guard!),
-      "~(amount <= 0) and (balance account >= 0)",
+    assert.equal(getAst().strExpr(result.declaration.guard!),
+      "~(amount <= 0) and balance account >= 0",
     );
   });
 
@@ -307,7 +311,7 @@ describe("call-graph following guard expressions", () => {
     if (result.declaration.kind !== "action") {
       return;
     }
-    assert.equal(renderExpr(result.declaration.guard!), "~(amount <= 0)");
+    assert.equal(getAst().strExpr(result.declaration.guard!), "~(amount <= 0)");
   });
 
   it("substitutes formal params with actual args", () => {
@@ -326,7 +330,7 @@ describe("call-graph following guard expressions", () => {
     if (result.declaration.kind !== "action") {
       return;
     }
-    assert.equal(renderExpr(result.declaration.guard!),
+    assert.equal(getAst().strExpr(result.declaration.guard!),
       "~((balance account) <= 0)",
     );
   });
@@ -350,7 +354,7 @@ describe("call-graph following guard expressions", () => {
     if (result.declaration.kind !== "action") {
       return;
     }
-    assert.equal(renderExpr(result.declaration.guard!), "~(amount <= 0)");
+    assert.equal(getAst().strExpr(result.declaration.guard!), "~(amount <= 0)");
   });
 
   it("bails on recursive calls", () => {
@@ -393,7 +397,7 @@ describe("class method declarations", () => {
     if (result.declaration.kind !== "action") {
       return;
     }
-    assert.equal(renderExpr(result.declaration.guard!), "balance a >= amount");
+    assert.equal(getAst().strExpr(result.declaration.guard!), "balance a >= amount");
     assert.deepEqual(result.declaration.params[0], {
       name: "a",
       type: "Account",

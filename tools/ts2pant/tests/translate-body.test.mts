@@ -1,8 +1,13 @@
-import { describe, it } from "node:test";
+import { before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createSourceFileFromSource } from "../src/extract.js";
+import { loadAst } from "../src/pant-wasm.js";
 import { translateBody } from "../src/translate-body.js";
 import { IntStrategy } from "../src/translate-types.js";
+
+before(async () => {
+  await loadAst();
+});
 
 // Tests for internal translateBody API edge cases not coverable via
 // exported fixture functions (see tests/fixtures/constructs/ for

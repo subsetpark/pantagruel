@@ -2,7 +2,7 @@ import type { SourceFile } from "ts-morph";
 import { extractFunctionAnnotations } from "./annotations.js";
 import { extractReferencedTypes, getChecker } from "./extract.js";
 import { NameRegistry } from "./name-registry.js";
-import { loadParser, rewriteAnnotation } from "./pant-wasm.js";
+import { loadAst, loadParser, rewriteAnnotation } from "./pant-wasm.js";
 import { translateBody } from "./translate-body.js";
 import { translateSignature } from "./translate-signature.js";
 import { type NumericStrategy, translateTypes } from "./translate-types.js";
@@ -23,6 +23,10 @@ export async function buildPantDocument(
   opts: PipelineOptions,
 ): Promise<PantDocument> {
   const { sourceFile, functionName, strategy, noBody } = opts;
+
+  // Ensure wasm AST module is loaded before any translation
+  await loadAst();
+
   const checker = getChecker(sourceFile);
 
   // Strip class qualifier for module name
