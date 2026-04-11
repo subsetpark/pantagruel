@@ -1,6 +1,7 @@
 import type { SourceFile } from "ts-morph";
 import { extractFunctionAnnotations } from "./annotations.js";
 import { extractReferencedTypes, getChecker } from "./extract.js";
+import { NameRegistry } from "./name-registry.js";
 import { loadParser, rewriteAnnotation } from "./pant-wasm.js";
 import { translateBody } from "./translate-body.js";
 import { translateSignature } from "./translate-signature.js";
@@ -29,16 +30,23 @@ export async function buildPantDocument(
     ? functionName.split(".", 2)[1]!
     : functionName;
 
-  // Extract and translate types
-  const extracted = extractReferencedTypes(sourceFile, functionName);
-  const typeDecls = translateTypes(extracted, checker, strategy);
+  // Document-wide name registry ensures unique variable names across
+  // type-derived rules and the main function's parameters.
+  // Register the function's own param names first (they keep natural names);
+  // type-derived accessor rules adapt with suffixes if there's a collision.
+  const registry = new NameRegistry();
 
-  // Translate signature
+  // Translate signature first to claim the function's param names
   const { declaration: sigDecl, paramNameMap } = translateSignature(
     sourceFile,
     functionName,
     strategy,
+    registry,
   );
+
+  // Extract and translate types (type-derived param names adapt to registry)
+  const extracted = extractReferencedTypes(sourceFile, functionName);
+  const typeDecls = translateTypes(extracted, checker, strategy, registry);
   const declarations = [...typeDecls, sigDecl];
 
   const moduleName = baseName.charAt(0).toUpperCase() + baseName.slice(1);

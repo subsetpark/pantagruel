@@ -1,5 +1,6 @@
 import ts from "typescript";
 import type { ExtractedTypes } from "./extract.js";
+import type { NameRegistry } from "./name-registry.js";
 import type { PantDeclaration } from "./types.js";
 
 /** Strategy for mapping TS `number` to a Pantagruel numeric type. */
@@ -101,12 +102,14 @@ export function translateTypes(
   extracted: ExtractedTypes,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
+  registry?: NameRegistry,
 ): PantDeclaration[] {
   const decls: PantDeclaration[] = [];
 
   for (const iface of extracted.interfaces) {
     decls.push({ kind: "domain", name: iface.name });
-    const pName = paramName(iface.name);
+    const candidate = paramName(iface.name);
+    const pName = registry ? registry.register(candidate) : candidate;
     for (const prop of iface.properties) {
       decls.push({
         kind: "rule",

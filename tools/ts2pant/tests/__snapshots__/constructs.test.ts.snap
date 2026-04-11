@@ -73,8 +73,8 @@ exports[`control-flow.ts > effectiveBalance 1`] = `
 "module EffectiveBalance.
 
 Account.
-active a: Account => Bool.
-balance a: Account => Int.
+active a1: Account => Bool.
+balance a1: Account => Int.
 effectiveBalance a: Account => Int.
 
 ---
@@ -153,7 +153,7 @@ exports[`expressions-arithmetic.ts > netBalance 1`] = `
 "module NetBalance.
 
 Account.
-balance a: Account => Int.
+balance a1: Account => Int.
 netBalance a: Account, fee: Int => Int.
 
 ---
@@ -444,9 +444,9 @@ exports[`expressions-property.ts > effectiveBalance 1`] = `
 User.
 name u: User => String.
 Account.
-balance a: Account => Int.
-owner a: Account => User.
-active a: Account => Bool.
+balance a1: Account => Int.
+owner a1: Account => User.
+active a1: Account => Bool.
 effectiveBalance a: Account => Int.
 
 ---
@@ -461,9 +461,9 @@ exports[`expressions-property.ts > getOwner 1`] = `
 User.
 name u: User => String.
 Account.
-balance a: Account => Int.
-owner a: Account => User.
-active a: Account => Bool.
+balance a1: Account => Int.
+owner a1: Account => User.
+active a1: Account => Bool.
 getOwner a: Account => User.
 
 ---
@@ -478,9 +478,9 @@ exports[`expressions-property.ts > getOwnerName 1`] = `
 User.
 name u: User => String.
 Account.
-balance a: Account => Int.
-owner a: Account => User.
-active a: Account => Bool.
+balance a1: Account => Int.
+owner a1: Account => User.
+active a1: Account => Bool.
 getOwnerName a: Account => String.
 
 ---
@@ -515,14 +515,14 @@ exports[`functions-mutating.ts > deposit 1`] = `
 "module Deposit.
 
 Account.
-balance a: Account => Int.
-owner a: Account => String.
+balance a1: Account => Int.
+owner a1: Account => String.
 ~> Deposit @ a: Account, amount: Int.
 
 ---
 
 balance' a = balance a + amount.
-owner' a = owner a.
+owner' a1 = owner a1.
 "
 `;
 
@@ -530,14 +530,14 @@ exports[`functions-mutating.ts > depositWrapped 1`] = `
 "module DepositWrapped.
 
 Account.
-balance a: Account => Int.
-owner a: Account => String.
+balance a1: Account => Int.
+owner a1: Account => String.
 ~> DepositWrapped @ a: Account, amount: Int.
 
 ---
 
 balance' a = balance a + amount.
-owner' a = owner a.
+owner' a1 = owner a1.
 "
 `;
 
@@ -545,14 +545,14 @@ exports[`functions-mutating.ts > reset 1`] = `
 "module Reset.
 
 Account.
-balance a: Account => Int.
-owner a: Account => String.
+balance a1: Account => Int.
+owner a1: Account => String.
 ~> Reset @ a: Account.
 
 ---
 
 balance' a = 0.
-owner' a = owner a.
+owner' a1 = owner a1.
 "
 `;
 
@@ -560,8 +560,8 @@ exports[`functions-mutating.ts > transfer 1`] = `
 "module Transfer.
 
 Account.
-balance a: Account => Int.
-owner a: Account => String.
+balance a1: Account => Int.
+owner a1: Account => String.
 ~> Transfer @ a: Account, newOwner: String, fee: Int.
 
 ---
@@ -586,7 +586,7 @@ exports[`functions-pure.ts > getBalance 1`] = `
 "module GetBalance.
 
 Account.
-balance a: Account => Int.
+balance a1: Account => Int.
 getBalance a: Account => Int.
 
 ---
@@ -736,7 +736,7 @@ exports[`guards-if-throw.ts > earlyThrow 1`] = `
 "module EarlyThrow.
 
 Account.
-balance a: Account => Int.
+balance a1: Account => Int.
 ~> EarlyThrow @ a: Account, amount: Int, balance a >= amount.
 
 ---
@@ -749,7 +749,7 @@ exports[`guards-if-throw.ts > guardWithLocals 1`] = `
 "module GuardWithLocals.
 
 Account.
-balance a: Account => Int.
+balance a1: Account => Int.
 ~> GuardWithLocals @ a: Account, amount: Int, balance a >= amount.
 
 ---
@@ -762,7 +762,7 @@ exports[`guards-if-throw.ts > notGuardSideEffects 1`] = `
 "module NotGuardSideEffects.
 
 Account.
-balance a: Account => Int.
+balance a1: Account => Int.
 ~> NotGuardSideEffects @ a: Account, amount: Int.
 
 ---
@@ -776,7 +776,7 @@ exports[`guards-if-throw.ts > withdraw 1`] = `
 "module Withdraw.
 
 Account.
-balance a: Account => Int.
+balance a1: Account => Int.
 ~> Withdraw @ a: Account, amount: Int, balance a >= amount.
 
 ---
@@ -806,8 +806,8 @@ city a: Address => String.
 Customer.
 address c: Customer => Address.
 Order.
-customer o: Order => Customer.
-total o: Order => Int.
+customer o1: Order => Customer.
+total o1: Order => Int.
 getCity o: Order => String.
 
 ---
@@ -822,8 +822,8 @@ exports[`types-composite.ts > getOwnerName 1`] = `
 User.
 name u: User => String.
 Account.
-owner a: Account => User.
-balance a: Account => Int.
+owner a1: Account => User.
+balance a1: Account => Int.
 getOwnerName a: Account => String.
 
 ---
@@ -847,7 +847,7 @@ exports[`types-composite.ts > getResult 1`] = `
 "module GetResult.
 
 Value.
-data v: Value => String.
+data v1: Value => String.
 getResult v: Value + Nothing => Value + Nothing.
 
 ---
@@ -860,8 +860,8 @@ exports[`types-composite.ts > getStatus 1`] = `
 "module GetStatus.
 
 UserWithStatus.
-name u: UserWithStatus => String.
-status u: UserWithStatus => Int.
+name u1: UserWithStatus => String.
+status u1: UserWithStatus => Int.
 getStatus u: UserWithStatus => Int.
 
 ---
@@ -874,7 +874,7 @@ exports[`types-primitives.ts > getAssignee 1`] = `
 "module GetAssignee.
 
 Task.
-assignee t: Task => String + Nothing.
+assignee t1: Task => String + Nothing.
 getAssignee t: Task => String + Nothing.
 
 ---
@@ -887,7 +887,7 @@ exports[`types-primitives.ts > getBalance 1`] = `
 "module GetBalance.
 
 Account.
-balance a: Account => Int.
+balance a1: Account => Int.
 getBalance a: Account => Int.
 
 ---
@@ -900,8 +900,8 @@ exports[`types-primitives.ts > getName 1`] = `
 "module GetName.
 
 User.
-name u: User => String.
-active u: User => Bool.
+name u1: User => String.
+active u1: User => Bool.
 getName u: User => String.
 
 ---
@@ -914,8 +914,8 @@ exports[`types-primitives.ts > isActive 1`] = `
 "module IsActive.
 
 User.
-name u: User => String.
-active u: User => Bool.
+name u1: User => String.
+active u1: User => Bool.
 isActive u: User => Bool.
 
 ---
@@ -976,8 +976,8 @@ exports[`unsupported.ts > conditionalAssign 1`] = `
 "module ConditionalAssign.
 
 Account.
-balance a: Account => Int.
-owner a: Account => String.
+balance a1: Account => Int.
+owner a1: Account => String.
 ~> ConditionalAssign @ a: Account.
 
 ---
@@ -1005,8 +1005,8 @@ exports[`unsupported.ts > loopAssign 1`] = `
 "module LoopAssign.
 
 Account.
-balance a: Account => Int.
-owner a: Account => String.
+balance a1: Account => Int.
+owner a1: Account => String.
 ~> LoopAssign @ a: Account.
 
 ---

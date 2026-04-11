@@ -1,5 +1,6 @@
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
+import type { NameRegistry } from "./name-registry.js";
 import {
   Apply,
   Binop,
@@ -811,12 +812,16 @@ function capitalize(s: string): string {
 export function shortParamName(
   typeName: string,
   existingNames: Set<string>,
+  registry?: NameRegistry,
 ): string {
   let name = typeName[0]!.toLowerCase();
   let suffix = 1;
-  while (existingNames.has(name)) {
+  while (existingNames.has(name) || (registry && registry.isUsed(name))) {
     name = typeName[0]!.toLowerCase() + suffix;
     suffix++;
+  }
+  if (registry) {
+    registry.register(name);
   }
   return name;
 }
@@ -828,6 +833,7 @@ export function translateSignature(
   sourceFile: SourceFile,
   functionName: string,
   strategy: NumericStrategy,
+  registry?: NameRegistry,
 ): TranslatedSignature {
   const checker = sourceFile.getProject().getTypeChecker().compilerObject;
   const { node, className } = findFunction(sourceFile, functionName);
@@ -847,7 +853,7 @@ export function translateSignature(
 
   if (className) {
     const existingParamNames = new Set(sig.getParameters().map((p) => p.name));
-    const pName = shortParamName(className, existingParamNames);
+    const pName = shortParamName(className, existingParamNames, registry);
     params.push({ name: pName, type: className });
     paramNameMap.set("this", pName);
   }
@@ -858,8 +864,9 @@ export function translateSignature(
       checker,
       strategy,
     );
-    params.push({ name: param.name, type: paramType });
-    paramNameMap.set(param.name, param.name);
+    const pantName = registry ? registry.register(param.name) : param.name;
+    params.push({ name: pantName, type: paramType });
+    paramNameMap.set(param.name, pantName);
   }
 
   const guard = detectGuard(node, checker, strategy, paramNameMap);
