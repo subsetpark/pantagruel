@@ -407,7 +407,11 @@ let normalize (doc : document) (root_term : string) : document =
           {
             action_decl = ad;
             tied_props = tied;
-            tied_checks = orig_chapter.checks;
+            tied_checks =
+              List.filter
+                (fun c ->
+                  uses_primed c.value || prop_uses_params params c.value)
+                orig_chapter.checks;
           })
         action_decls
     in
@@ -489,20 +493,20 @@ let normalize (doc : document) (root_term : string) : document =
         body_assignments.(target) <- prop :: body_assignments.(target))
       independent_props;
 
-    (* Independent checks (from non-action chapters) go to earliest valid chapter *)
+    (* Independent checks: all checks not already tied to an action *)
+    let all_tied_checks =
+      List.concat_map (fun au -> au.tied_checks) action_units
+    in
     let independent_checks =
       List.concat_map
         (fun chapter ->
-          let has_action =
-            List.exists
-              (fun d ->
-                match d.value with
-                | DeclAction _ -> true
-                | DeclDomain _ | DeclAlias _ | DeclRule _ | DeclClosure _ ->
-                    false)
-              chapter.head
-          in
-          if has_action then [] else chapter.checks)
+          List.filter
+            (fun c ->
+              not
+                (List.exists
+                   (fun tc -> Ast.equal_loc c.loc tc.loc)
+                   all_tied_checks))
+            chapter.checks)
         doc.chapters
     in
     List.iter

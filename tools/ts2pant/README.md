@@ -83,7 +83,7 @@ balance' account = balance account + amount.
 
 ### Guard extraction
 
-Preconditions are extracted from two patterns and emitted as declaration guards:
+Preconditions are extracted from three patterns and emitted as declaration guards:
 
 **If-throw patterns:**
 
