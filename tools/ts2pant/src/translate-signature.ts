@@ -126,6 +126,10 @@ export function isAssertionCall(
   checker: ts.TypeChecker,
   call: ts.CallExpression,
 ): number | null {
+  if (!isPureExpression(call.expression)) {
+    return null;
+  }
+
   const sig = checker.getResolvedSignature(call);
   if (!sig) {
     return null;
