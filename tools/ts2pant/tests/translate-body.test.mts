@@ -28,7 +28,7 @@ describe("unsupported patterns", () => {
     assert.equal(props.length, 0);
   });
 
-  it("returns unsupported for function with multiple non-guard statements", () => {
+  it("translates function with leading const bindings via inline substitution", () => {
     const source = `
       function multi(x: number): number {
         const a = x + 1;
@@ -44,7 +44,7 @@ describe("unsupported patterns", () => {
     });
 
     assert.equal(props.length, 1);
-    assert.equal(props[0]?.kind, "unsupported");
+    assert.equal(props[0]?.kind, "equation");
   });
 
   it("returns empty for bare return with no expression", () => {

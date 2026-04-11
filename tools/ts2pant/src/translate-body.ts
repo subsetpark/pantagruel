@@ -138,16 +138,37 @@ function translatePureBody(
     return [];
   }
 
-  const returnExpr = extractReturnExpression(node.body, checker);
-  if (!returnExpr) {
+  const extracted = extractReturnExpression(node.body, checker);
+  if (!extracted) {
     const reason = describeRejectedBody(node.body, checker);
     return [{ kind: "unsupported", reason: `${functionName} — ${reason}` }];
   }
 
-  const body = translateBodyExpr(returnExpr, checker, strategy, paramNames);
+  // Translate const binding initializers for inline substitution
+  const substitutions: Array<{ name: string; expr: OpaqueExpr }> = [];
+  for (const binding of extracted.bindings) {
+    const initResult = translateBodyExpr(binding.initializer, checker, strategy, paramNames);
+    if (isBodyUnsupported(initResult)) {
+      return [{ kind: "unsupported", reason: initResult.unsupported }];
+    }
+    let initExpr = bodyExpr(initResult);
+    // Apply all prior substitutions to resolve chained references
+    for (const prior of substitutions) {
+      initExpr = ast.substituteBinder(initExpr, prior.name, prior.expr);
+    }
+    substitutions.push({ name: binding.name, expr: initExpr });
+  }
+
+  const body = translateBodyExpr(extracted.returnExpr, checker, strategy, paramNames);
 
   if (isBodyUnsupported(body)) {
     return [{ kind: "unsupported", reason: body.unsupported }];
+  }
+
+  // Apply const binding substitutions to the body expression
+  let rhs = bodyExpr(body);
+  for (const sub of substitutions) {
+    rhs = ast.substituteBinder(rhs, sub.name, sub.expr);
   }
 
   const argExprs = params.map((p) => ast.var(p.name));
@@ -157,39 +178,77 @@ function translatePureBody(
       kind: "equation",
       quantifiers: [] as OpaqueParam[],
       lhs,
-      rhs: bodyExpr(body),
+      rhs,
     },
   ];
 }
 
+interface ExtractedBody {
+  bindings: Array<{ name: string; initializer: ts.Expression }>;
+  returnExpr: ts.Expression;
+}
+
 /**
- * Extract the return expression from a function body.
+ * Extract the return expression from a function body, collecting any leading
+ * const bindings with pure initializers for inline substitution.
  * Handles:
  *   - Single return statement
+ *   - Leading const bindings + return statement
  *   - if/else with returns in both branches (produces a synthetic conditional)
+ * Returns null if the body contains let/var bindings or effectful const initializers.
  */
 function extractReturnExpression(
   body: ts.Block,
   checker: ts.TypeChecker,
-): ts.Expression | ts.IfStatement | null {
+): ExtractedBody | null {
   // Skip guard statements (if-throw patterns and assertion calls)
   const stmts = body.statements.filter((s) => !isGuardStatement(s, checker));
 
-  if (stmts.length === 1) {
-    const stmt = stmts[0]!;
-    if (ts.isReturnStatement(stmt) && stmt.expression) {
-      return stmt.expression;
+  if (stmts.length === 0) {
+    return null;
+  }
+
+  const bindings: Array<{ name: string; initializer: ts.Expression }> = [];
+  let i = 0;
+
+  // Collect leading const bindings
+  for (; i < stmts.length - 1; i++) {
+    const stmt = stmts[i]!;
+    if (!ts.isVariableStatement(stmt)) {
+      break;
     }
-    // if/else with returns
-    if (ts.isIfStatement(stmt) && stmt.elseStatement) {
-      return stmt;
+
+    const declList = stmt.declarationList;
+    // Reject let/var
+    if (!(declList.flags & ts.NodeFlags.Const)) {
+      return null;
+    }
+
+    for (const decl of declList.declarations) {
+      // Must have a simple identifier name and an initializer
+      if (!ts.isIdentifier(decl.name) || !decl.initializer) {
+        return null;
+      }
+      // Reject effectful initializers
+      if (expressionHasSideEffects(decl.initializer)) {
+        return null;
+      }
+      bindings.push({ name: decl.name.text, initializer: decl.initializer });
     }
   }
 
-  // Multiple non-guard statements are not representable yet without
-  // translating local bindings/control flow.
-  if (stmts.length > 1) {
+  // The last statement must be a return or if/else-with-returns
+  const last = stmts[i]!;
+  // If we didn't consume all preceding statements as const bindings, reject
+  if (i < stmts.length - 1) {
     return null;
+  }
+
+  if (ts.isReturnStatement(last) && last.expression) {
+    return { bindings, returnExpr: last.expression };
+  }
+  if (ts.isIfStatement(last) && last.elseStatement) {
+    return { bindings, returnExpr: last };
   }
 
   return null;
@@ -201,6 +260,20 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
     return "empty body";
   }
   if (stmts.length > 1) {
+    // Check for specific rejection reasons in leading statements
+    for (const stmt of stmts) {
+      if (ts.isVariableStatement(stmt)) {
+        const declList = stmt.declarationList;
+        if (!(declList.flags & ts.NodeFlags.Const)) {
+          return "let/var bindings not supported";
+        }
+        for (const decl of declList.declarations) {
+          if (decl.initializer && expressionHasSideEffects(decl.initializer)) {
+            return "const binding with side-effectful initializer";
+          }
+        }
+      }
+    }
     return "local bindings or multiple statements before return";
   }
   const stmt = stmts[0]!;
@@ -853,12 +926,62 @@ function collectAssignments(
 ): boolean {
   const ast = getAst();
   let hasUnsupportedMutation = false;
+  const constSubstitutions: Array<{ name: string; expr: OpaqueExpr }> = [];
   const stmts = ts.isBlock(body) ? Array.from(body.statements) : [body];
 
   for (const stmt of stmts) {
     // Skip guard statements (if-throw patterns and assertion calls)
     if (isGuardStatement(stmt, checker)) {
       continue;
+    }
+
+    // Handle const bindings: translate initializer and store for substitution
+    if (ts.isVariableStatement(stmt)) {
+      const declList = stmt.declarationList;
+      if (declList.flags & ts.NodeFlags.Const) {
+        let allPure = true;
+        for (const decl of declList.declarations) {
+          if (
+            !ts.isIdentifier(decl.name) ||
+            !decl.initializer ||
+            expressionHasSideEffects(decl.initializer)
+          ) {
+            allPure = false;
+            break;
+          }
+        }
+        if (allPure) {
+          for (const decl of declList.declarations) {
+            const name = (decl.name as ts.Identifier).text;
+            const initResult = translateBodyExpr(
+              decl.initializer!,
+              checker,
+              strategy,
+              paramNames,
+            );
+            if (isBodyUnsupported(initResult)) {
+              hasUnsupportedMutation = true;
+              propositions.push({
+                kind: "unsupported",
+                reason: initResult.unsupported,
+              });
+              continue;
+            }
+            let initExpr = bodyExpr(initResult);
+            // Apply all prior const substitutions to resolve chained references
+            for (const prior of constSubstitutions) {
+              initExpr = ast.substituteBinder(
+                initExpr,
+                prior.name,
+                prior.expr,
+              );
+            }
+            constSubstitutions.push({ name, expr: initExpr });
+          }
+          continue;
+        }
+      }
+      // let/var or effectful const — fall through to existing rejection
     }
 
     if (
@@ -888,11 +1011,18 @@ function collectAssignments(
           propositions.push({ kind: "unsupported", reason: val.unsupported });
           continue;
         }
+        // Apply const substitutions to assignment expressions
+        let objExpr = bodyExpr(obj);
+        let valExpr = bodyExpr(val);
+        for (const sub of constSubstitutions) {
+          objExpr = ast.substituteBinder(objExpr, sub.name, sub.expr);
+          valExpr = ast.substituteBinder(valExpr, sub.name, sub.expr);
+        }
         propositions.push({
           kind: "equation",
           quantifiers: [] as OpaqueParam[],
-          lhs: ast.app(ast.primed(prop), [bodyExpr(obj)]),
-          rhs: bodyExpr(val),
+          lhs: ast.app(ast.primed(prop), [objExpr]),
+          rhs: valExpr,
         });
         modifiedRules.add(prop);
         continue;
