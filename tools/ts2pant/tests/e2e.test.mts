@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -15,11 +15,19 @@ const PROJECT_ROOT = resolve(import.meta.dirname, "../../..");
 
 function solverAvailable(): boolean {
   try {
-    execSync("which z3", { stdio: "ignore" });
+    execFileSync("z3", ["-version"], { stdio: "ignore" });
     return true;
   } catch {
     return false;
   }
+}
+
+function assertPantTypeChecks(output: string): void {
+  execFileSync("dune", ["exec", "pant", "--"], {
+    cwd: PROJECT_ROOT,
+    input: output,
+    encoding: "utf-8",
+  });
 }
 
 function buildDocument(
@@ -129,20 +137,14 @@ describe("full pipeline", () => {
     const output = emitDocument(doc);
 
     // Run through pant (no --check, just type-checking) — should exit 0
-    execSync(`echo '${output.replace(/'/gu, "'\\''")}' | dune exec pant --`, {
-      encoding: "utf-8",
-      cwd: PROJECT_ROOT,
-    });
+    assertPantTypeChecks(output);
   });
 
   it("deposit.ts emitted .pant type-checks through pant", async () => {
     const doc = await buildDocument("deposit.ts", "deposit");
     const output = emitDocument(doc);
 
-    execSync(`echo '${output.replace(/'/gu, "'\\''")}' | dune exec pant --`, {
-      encoding: "utf-8",
-      cwd: PROJECT_ROOT,
-    });
+    assertPantTypeChecks(output);
   });
 });
 
