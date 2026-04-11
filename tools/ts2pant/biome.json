@@ -47,6 +47,9 @@
       }
     }
   },
+  "files": {
+    "includes": ["src/**", "tests/**", "!src/wasm/**"]
+  },
   "formatter": {
     "enabled": true,
     "indentStyle": "space",

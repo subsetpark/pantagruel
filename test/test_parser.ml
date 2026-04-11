@@ -804,4 +804,21 @@ let () =
               check int "ch2 checks" 0 (List.length ch2.Ast.checks));
         ] );
       ("property", [ test_parser_no_crash ]);
+      ( "standalone_expr",
+        [
+          test_case "simple application" `Quick (fun () ->
+              let e = Test_util.parse_expr "f a b" in
+              check string "roundtrip" "f a b" (Pretty.str_expr e));
+          test_case "binop" `Quick (fun () ->
+              let e = Test_util.parse_expr "f a b >= a and f a b >= b" in
+              check string "roundtrip" "f a b >= a and f a b >= b"
+                (Pretty.str_expr e));
+          test_case "with trailing dot" `Quick (fun () ->
+              let e = Test_util.parse_expr "f a b >= a." in
+              check string "roundtrip" "f a b >= a" (Pretty.str_expr e));
+          test_case "quantified" `Quick (fun () ->
+              let e = Test_util.parse_expr "all x: Int | f x > 0" in
+              check string "roundtrip" "all x: Int | f x > 0"
+                (Pretty.str_expr e));
+        ] );
     ]

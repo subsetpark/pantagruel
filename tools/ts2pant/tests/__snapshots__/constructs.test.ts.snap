@@ -522,7 +522,7 @@ owner a: Account => String.
 ---
 
 balance' a = balance a + amount.
-all a: Account | owner' a = owner a.
+owner' a = owner a.
 "
 `;
 
@@ -537,7 +537,7 @@ owner a: Account => String.
 ---
 
 balance' a = balance a + amount.
-all a: Account | owner' a = owner a.
+owner' a = owner a.
 "
 `;
 
@@ -552,7 +552,7 @@ owner a: Account => String.
 ---
 
 balance' a = 0.
-all a: Account | owner' a = owner a.
+owner' a = owner a.
 "
 `;
 

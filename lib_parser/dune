@@ -1,0 +1,21 @@
+(library
+ (name pantagruel_parser)
+ (libraries sedlex menhirLib)
+ (preprocess
+  (pps sedlex.ppx ppx_deriving.show ppx_deriving.eq)))
+
+(menhir
+ (modules parser)
+ (flags --explain --table))
+
+(copy_files ../lib/ast.ml)
+
+(copy_files ../lib/util.ml)
+
+(copy_files ../lib/doc_comments.ml)
+
+(copy_files ../lib/lexer.ml)
+
+(copy_files ../lib/pretty.ml)
+
+(copy_files ../lib/parser.mly)

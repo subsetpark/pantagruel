@@ -988,7 +988,8 @@ function collectAssignments(
 
 /**
  * Generate frame conditions: for each rule in declarations not explicitly
- * modified, emit `all x: T | rule' x = rule x`.
+ * modified, emit `rule' x = rule x`. Variables are already in scope from
+ * the rule declarations in the chapter head.
  */
 function generateFrameConditions(
   modifiedRules: Set<string>,
@@ -1008,11 +1009,7 @@ function generateFrameConditions(
     const lhs = PrimedApply(decl.name, ...paramArgs);
     const rhs =
       paramArgs.length > 0 ? Apply(decl.name, ...paramArgs) : Apply(decl.name);
-    const quantifiers = decl.params.map((p) => ({
-      name: p.name,
-      type: p.type,
-    }));
-    frames.push(Equation(quantifiers, lhs, rhs));
+    frames.push(Equation([], lhs, rhs));
   }
 
   return frames;
