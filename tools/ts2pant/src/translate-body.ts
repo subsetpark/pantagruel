@@ -290,18 +290,20 @@ function isGuardStatement(
   if (!ts.isIfStatement(stmt)) {
     return false;
   }
+  // Condition must be pure (aligned with classifyGuardIf's isPureExpression check)
+  if (!isPureExpression(stmt.expression)) {
+    return false;
+  }
   // if (...) { throw } without else
   if (!stmt.elseStatement && blockThrows(stmt.thenStatement)) {
-    return !expressionHasSideEffects(stmt.expression);
+    return true;
   }
   // if (...) { ... } else { throw }
   if (stmt.elseStatement && blockThrows(stmt.elseStatement)) {
-    // Only a guard if the condition and then-block have no side effects.
-    // A side-effectful condition like `if (audit(a)) { throw ... }` must not be
-    // skipped. A mutating then-branch like `if (ok) { a.balance = 1; } else { throw e; }`
+    // Only a guard if the then-block has no side effects and doesn't return.
+    // A mutating then-branch like `if (ok) { a.balance = 1; } else { throw e; }`
     // must NOT be classified as a guard — collectAssignments() needs to see it.
     return (
-      !expressionHasSideEffects(stmt.expression) &&
       blockHasNoSideEffects(stmt.thenStatement) &&
       !blockReturns(stmt.thenStatement)
     );

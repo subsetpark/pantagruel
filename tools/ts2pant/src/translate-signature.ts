@@ -131,6 +131,9 @@ export function isAssertionCall(
   if (!isPureExpression(call.expression)) {
     return null;
   }
+  if (!call.arguments.every(isPureExpression)) {
+    return null;
+  }
 
   const sig = checker.getResolvedSignature(call);
   if (!sig) {
