@@ -228,6 +228,37 @@ describe("array operations", () => {
       "all users: [User] | activeNames users = (each x: User, active x | name x)",
     );
   });
+
+  it("translates .map(f).map(g) composing projections", () => {
+    const source = `
+      interface User { name: string; active: boolean; }
+      interface Named { label: string; }
+      function labels(users: User[]): string[] {
+        return users.map((u) => u.name).map((n) => n.length);
+      }
+    `;
+    const props = translate(source, "labels");
+
+    // g(f(x)): the second map should compose with the first
+    expect(props[0].text).toBe(
+      "all users: [User] | labels users = (each x: User | length name x)",
+    );
+  });
+
+  it("translates .map(f).filter(g) composing projection into predicate", () => {
+    const source = `
+      interface User { name: string; score: number; }
+      function highScores(users: User[]): number[] {
+        return users.map((u) => u.score).filter((s) => s > 0);
+      }
+    `;
+    const props = translate(source, "highScores");
+
+    // filter predicate should reference f(x), not raw binder
+    expect(props[0].text).toBe(
+      "all users: [User] | highScores users = (each x: User, score x > 0 | score x)",
+    );
+  });
 });
 
 describe("mutating function: assignment -> primed proposition", () => {

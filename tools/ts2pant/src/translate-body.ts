@@ -19,6 +19,42 @@ function freshBinder(paramNames: Map<string, string>): string {
   return `x${i}`;
 }
 
+/** Replace every Var(name) in expr with replacement (for composing comprehension chains). */
+function substituteBinder(expr: PantExpr, name: string, replacement: PantExpr): PantExpr {
+  switch (expr.kind) {
+    case "var":
+      return expr.name === name ? replacement : expr;
+    case "literal":
+    case "unsupported":
+      return expr;
+    case "apply":
+      return { ...expr, args: expr.args.map((a) => substituteBinder(a, name, replacement)) };
+    case "primed-apply":
+      return { ...expr, args: expr.args.map((a) => substituteBinder(a, name, replacement)) };
+    case "binop":
+      return { ...expr, left: substituteBinder(expr.left, name, replacement), right: substituteBinder(expr.right, name, replacement) };
+    case "unop":
+      return { ...expr, operand: substituteBinder(expr.operand, name, replacement) };
+    case "cardinality":
+      return { ...expr, expr: substituteBinder(expr.expr, name, replacement) };
+    case "membership":
+      return { ...expr, element: substituteBinder(expr.element, name, replacement), collection: substituteBinder(expr.collection, name, replacement) };
+    case "cond":
+      return {
+        ...expr,
+        arms: expr.arms.map((a) => ({ guard: substituteBinder(a.guard, name, replacement), value: substituteBinder(a.value, name, replacement) })),
+        fallback: substituteBinder(expr.fallback, name, replacement),
+      };
+    case "comprehension":
+      if (expr.binder === name) return expr;
+      return {
+        ...expr,
+        body: substituteBinder(expr.body, name, replacement),
+        predicate: expr.predicate ? substituteBinder(expr.predicate, name, replacement) : undefined,
+      };
+  }
+}
+
 export interface TranslateBodyOptions {
   program: ts.Program;
   fileName: string;
@@ -402,27 +438,34 @@ function translateArrayMethod(
   const receiver = translateBodyExpr(tsReceiver, checker, strategy, paramNames);
   if (receiver.kind === "unsupported") return receiver;
 
-  // When composing with an existing comprehension, reuse its binder
   const isComposing = receiver.kind === "comprehension";
-  const varName = isComposing ? receiver.binder : freshBinder(paramNames);
+  const sourceBinder = isComposing ? receiver.binder : freshBinder(paramNames);
+  // Use a fresh binder for the callback so it doesn't collide with sourceBinder
+  const callbackBinder = isComposing
+    ? freshBinder(new Map([...paramNames, [sourceBinder, sourceBinder]]))
+    : sourceBinder;
   const extendedParams = new Map(paramNames);
-  extendedParams.set(varName, varName);
+  extendedParams.set(callbackBinder, callbackBinder);
 
-  const body = extractArrowBody(expr.arguments[0], varName, extendedParams, checker, strategy);
-  if (!body) return Unsupported(expr.getText());
-  if (body.kind === "unsupported") return body;
+  const rawBody = extractArrowBody(expr.arguments[0], callbackBinder, extendedParams, checker, strategy);
+  if (!rawBody) return Unsupported(expr.getText());
+  if (rawBody.kind === "unsupported") return rawBody;
+
+  // When composing, substitute the callback's binder with the prior step's body
+  // so that e.g. xs.map(f).map(g) becomes (each x: T | g(f(x))) not (each x: T | g(x))
+  const body = isComposing ? substituteBinder(rawBody, callbackBinder, receiver.body) : rawBody;
 
   if (methodName === "filter") {
     if (isComposing) {
       const combined = receiver.predicate ? Binop("and", receiver.predicate, body) : body;
       return { ...receiver, predicate: combined };
     }
-    return Comprehension(varName, elemType, Var(varName), body);
+    return Comprehension(sourceBinder, elemType, Var(sourceBinder), body);
   } else {
     if (isComposing) {
       return { ...receiver, body };
     }
-    return Comprehension(varName, elemType, body);
+    return Comprehension(sourceBinder, elemType, body);
   }
 }
 

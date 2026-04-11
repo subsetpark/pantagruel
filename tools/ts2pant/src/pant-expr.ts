@@ -87,17 +87,14 @@ export function renderExpr(expr: PantExpr): string {
       if (expr.args.length === 0) return `${expr.fn}'`;
       return `${expr.fn}' ${expr.args.map(renderArg).join(" ")}`;
     }
-    case "binop": {
-      const left = expr.left.kind === "binop" ? `(${renderExpr(expr.left)})` : renderExpr(expr.left);
-      const right = expr.right.kind === "binop" ? `(${renderExpr(expr.right)})` : renderExpr(expr.right);
-      return `${left} ${expr.op} ${right}`;
-    }
+    case "binop":
+      return `${renderArg(expr.left)} ${expr.op} ${renderArg(expr.right)}`;
     case "unop":
       return `${expr.op}(${renderExpr(expr.operand)})`;
     case "cardinality":
       return `#${renderArg(expr.expr)}`;
     case "membership":
-      return `${renderExpr(expr.element)} in ${renderExpr(expr.collection)}`;
+      return `${renderArg(expr.element)} in ${renderArg(expr.collection)}`;
     case "cond": {
       const arms = expr.arms.map((a) => `${renderExpr(a.guard)} => ${renderExpr(a.value)}`);
       arms.push(`true => ${renderExpr(expr.fallback)}`);
