@@ -1889,7 +1889,7 @@ balance a: Account => Int.
 ---
 balance' a = balance a + amount.
 check
-balance' a >= balance a.
+balance' a = balance a + amount.
 |});
         ] );
     ]

@@ -69,6 +69,10 @@ function getStrategy(numericType: NumericType): NumericStrategy {
 
 function main(): void {
   const opts = parseArgs();
+  if (opts.check && opts.noBody) {
+    process.stderr.write("Error: --check cannot be combined with --no-body\n");
+    process.exit(1);
+  }
   const strategy = getStrategy(opts.numericType);
   const sourceFile = createSourceFile(opts.inputFile);
 
