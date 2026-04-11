@@ -232,16 +232,19 @@ function buildSubstitutionMap(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   callerParamNames: Map<string, string>,
-): Map<string, string> {
+): Map<string, string> | null {
+  if (call.arguments.some(ts.isSpreadElement)) return null;
+
   const innerMap = new Map<string, string>();
-  for (let i = 0; i < targetParams.length && i < call.arguments.length; i++) {
+  for (let i = 0; i < targetParams.length; i++) {
     const formal = targetParams[i]!;
-    if (ts.isIdentifier(formal.name)) {
-      const actual = translateExpr(
-        call.arguments[i]!, checker, strategy, callerParamNames,
-      );
-      innerMap.set(formal.name.text, renderExpr(actual));
-    }
+    if (!ts.isIdentifier(formal.name)) return null;
+    if (formal.dotDotDotToken || i >= call.arguments.length) return null;
+
+    const actual = translateExpr(
+      call.arguments[i]!, checker, strategy, callerParamNames,
+    );
+    innerMap.set(formal.name.text, renderExpr(actual));
   }
   return innerMap;
 }
@@ -266,6 +269,7 @@ function followGuards(
   const innerParamNames = buildSubstitutionMap(
     call, target.params, checker, strategy, callerParamNames,
   );
+  if (!innerParamNames) return [];
 
   visited.add(target.body);
   const guards = scanBodyForGuards(
@@ -450,6 +454,7 @@ export function isFollowableGuardCall(
       ts.isExpressionStatement(stmt) &&
       ts.isCallExpression(stmt.expression)
     ) {
+      if (!stmt.expression.arguments.every(isPureExpression)) return false;
       return (
         isAssertionCall(checker, stmt.expression) !== null ||
         isFollowableGuardCall(stmt.expression, checker, visited)
