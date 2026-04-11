@@ -16,8 +16,18 @@ export type PantExpr =
   | { kind: "unop"; op: string; operand: PantExpr }
   | { kind: "cardinality"; expr: PantExpr }
   | { kind: "membership"; element: PantExpr; collection: PantExpr }
-  | { kind: "cond"; arms: { guard: PantExpr; value: PantExpr }[]; fallback: PantExpr }
-  | { kind: "comprehension"; binder: string; type: string; predicate?: PantExpr; body: PantExpr }
+  | {
+      kind: "cond";
+      arms: { guard: PantExpr; value: PantExpr }[];
+      fallback: PantExpr;
+    }
+  | {
+      kind: "comprehension";
+      binder: string;
+      type: string;
+      predicate?: PantExpr;
+      body: PantExpr;
+    }
   | { kind: "unsupported"; reason: string };
 
 // ---------------------------------------------------------------------------
@@ -40,23 +50,66 @@ export type PantProp =
 
 export const Var = (name: string): PantExpr => ({ kind: "var", name });
 export const Lit = (value: string): PantExpr => ({ kind: "literal", value });
-export const Apply = (fn: string, ...args: PantExpr[]): PantExpr => ({ kind: "apply", fn, args });
-export const PrimedApply = (fn: string, ...args: PantExpr[]): PantExpr => ({ kind: "primed-apply", fn, args });
-export const Binop = (op: string, left: PantExpr, right: PantExpr): PantExpr => ({ kind: "binop", op, left, right });
-export const Unop = (op: string, operand: PantExpr): PantExpr => ({ kind: "unop", op, operand });
-export const Cardinality = (expr: PantExpr): PantExpr => ({ kind: "cardinality", expr });
-export const Membership = (element: PantExpr, collection: PantExpr): PantExpr => ({ kind: "membership", element, collection });
-export const Cond = (arms: { guard: PantExpr; value: PantExpr }[], fallback: PantExpr): PantExpr => ({ kind: "cond", arms, fallback });
-export const Comprehension = (binder: string, type: string, body: PantExpr, predicate?: PantExpr): PantExpr => {
+export const Apply = (fn: string, ...args: PantExpr[]): PantExpr => ({
+  kind: "apply",
+  fn,
+  args,
+});
+export const PrimedApply = (fn: string, ...args: PantExpr[]): PantExpr => ({
+  kind: "primed-apply",
+  fn,
+  args,
+});
+export const Binop = (
+  op: string,
+  left: PantExpr,
+  right: PantExpr,
+): PantExpr => ({ kind: "binop", op, left, right });
+export const Unop = (op: string, operand: PantExpr): PantExpr => ({
+  kind: "unop",
+  op,
+  operand,
+});
+export const Cardinality = (expr: PantExpr): PantExpr => ({
+  kind: "cardinality",
+  expr,
+});
+export const Membership = (
+  element: PantExpr,
+  collection: PantExpr,
+): PantExpr => ({ kind: "membership", element, collection });
+export const Cond = (
+  arms: { guard: PantExpr; value: PantExpr }[],
+  fallback: PantExpr,
+): PantExpr => ({ kind: "cond", arms, fallback });
+export const Comprehension = (
+  binder: string,
+  type: string,
+  body: PantExpr,
+  predicate?: PantExpr,
+): PantExpr => {
   const base = { kind: "comprehension" as const, binder, type, body };
   return predicate !== undefined ? { ...base, predicate } : base;
 };
-export const Unsupported = (reason: string): PantExpr => ({ kind: "unsupported", reason });
-
-export const Equation = (quantifiers: Binding[], lhs: PantExpr, rhs: PantExpr): PantProp => ({
-  kind: "equation", quantifiers, lhs, rhs,
+export const Unsupported = (reason: string): PantExpr => ({
+  kind: "unsupported",
+  reason,
 });
-export const UnsupportedProp = (reason: string): PantProp => ({ kind: "unsupported", reason });
+
+export const Equation = (
+  quantifiers: Binding[],
+  lhs: PantExpr,
+  rhs: PantExpr,
+): PantProp => ({
+  kind: "equation",
+  quantifiers,
+  lhs,
+  rhs,
+});
+export const UnsupportedProp = (reason: string): PantProp => ({
+  kind: "unsupported",
+  reason,
+});
 export const RawProp = (text: string): PantProp => ({ kind: "raw", text });
 
 // ---------------------------------------------------------------------------
@@ -65,7 +118,9 @@ export const RawProp = (text: string): PantProp => ({ kind: "raw", text });
 
 /** True when the expression is compound and needs parens as an apply argument. */
 function needsParens(expr: PantExpr): boolean {
-  return expr.kind === "binop" || expr.kind === "cond" || expr.kind === "membership";
+  return (
+    expr.kind === "binop" || expr.kind === "cond" || expr.kind === "membership"
+  );
 }
 
 /** Render a PantExpr argument, wrapping in parens if compound. */
@@ -81,11 +136,15 @@ export function renderExpr(expr: PantExpr): string {
     case "literal":
       return expr.value;
     case "apply": {
-      if (expr.args.length === 0) return expr.fn;
+      if (expr.args.length === 0) {
+        return expr.fn;
+      }
       return `${expr.fn} ${expr.args.map(renderArg).join(" ")}`;
     }
     case "primed-apply": {
-      if (expr.args.length === 0) return `${expr.fn}'`;
+      if (expr.args.length === 0) {
+        return `${expr.fn}'`;
+      }
       return `${expr.fn}' ${expr.args.map(renderArg).join(" ")}`;
     }
     case "binop":
@@ -97,7 +156,8 @@ export function renderExpr(expr: PantExpr): string {
     case "membership":
       return `${renderArg(expr.element)} in ${renderArg(expr.collection)}`;
     case "cond": {
-      const rc = (e: PantExpr) => e.kind === "cond" ? `(${renderExpr(e)})` : renderExpr(e);
+      const rc = (e: PantExpr) =>
+        e.kind === "cond" ? `(${renderExpr(e)})` : renderExpr(e);
       const arms = expr.arms.map((a) => `${rc(a.guard)} => ${rc(a.value)}`);
       arms.push(`true => ${rc(expr.fallback)}`);
       return `cond ${arms.join(", ")}`;
@@ -108,6 +168,8 @@ export function renderExpr(expr: PantExpr): string {
     }
     case "unsupported":
       return `> UNSUPPORTED: ${expr.reason}`;
+    default:
+      throw new Error(`Unhandled expr kind: ${(expr as PantExpr).kind}`);
   }
 }
 
@@ -119,12 +181,16 @@ export function renderProp(prop: PantProp): string {
       if (prop.quantifiers.length === 0) {
         return `${lhs} = ${rhs}`;
       }
-      const bindings = prop.quantifiers.map((b) => `${b.name}: ${b.type}`).join(", ");
+      const bindings = prop.quantifiers
+        .map((b) => `${b.name}: ${b.type}`)
+        .join(", ");
       return `all ${bindings} | ${lhs} = ${rhs}`;
     }
     case "unsupported":
       return `> UNSUPPORTED: ${prop.reason}`;
     case "raw":
       return prop.text;
+    default:
+      throw new Error(`Unhandled prop kind: ${(prop as PantProp).kind}`);
   }
 }
