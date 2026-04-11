@@ -204,8 +204,9 @@ let test_classify_chapters () =
   let chapters = Smt.classify_chapters doc in
   check int "chapter count" 2 (List.length chapters);
   (match List.nth chapters 0 with
-  | Smt.Invariant { propositions; _ } ->
-      check int "invariant props" 1 (List.length propositions)
+  | Smt.Invariant { propositions; checks } ->
+      check int "invariant props" 1 (List.length propositions);
+      check int "invariant checks" 0 (List.length checks)
   | Smt.Action _ -> fail "Expected invariant chapter");
   match List.nth chapters 1 with
   | Smt.Action { label; _ } -> check string "action label" "Withdraw" label
@@ -2295,7 +2296,7 @@ let test_entailment_action_query () =
        ---\n\
        all a: Account | balance a >= 0.\n\
        where\n\
-       Ctx ~> Deposit @ a: Account, amount: Nat.\n\
+       Ctx ~> Deposit @ a: Account, amount: Nat, balance a >= amount.\n\
        ---\n\
        balance' a = balance a + amount.\n\
        check\n\
@@ -2311,6 +2312,8 @@ let test_entailment_action_query () =
   check bool "has negated goal" true (contains q.smt2 "(assert (not");
   check bool "has action postcondition" true
     (contains q.smt2 "(= (balance_prime a)");
+  check bool "has action precondition assumption" true
+    (contains q.smt2 "(>= (balance a) amount)");
   check bool "has invariant assumption" true
     (contains q.smt2 "(>= (balance a) 0)")
 
