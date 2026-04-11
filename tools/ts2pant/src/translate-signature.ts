@@ -127,17 +127,29 @@ export function isAssertionCall(
   call: ts.CallExpression,
 ): number | null {
   const sig = checker.getResolvedSignature(call);
-  if (!sig) return null;
+  if (!sig) {
+    return null;
+  }
   const decl = sig.declaration;
-  if (!decl || !ts.isFunctionLike(decl) || !decl.type) return null;
-  if (!ts.isTypePredicateNode(decl.type)) return null;
-  if (!decl.type.assertsModifier) return null;
+  if (!decl || !ts.isFunctionLike(decl) || !decl.type) {
+    return null;
+  }
+  if (!ts.isTypePredicateNode(decl.type)) {
+    return null;
+  }
+  if (!decl.type.assertsModifier) {
+    return null;
+  }
   // Reject `asserts value is Type` narrowing predicates — only bare `asserts condition`
-  if (decl.type.type) return null;
+  if (decl.type.type) {
+    return null;
+  }
 
   // Find which parameter is being asserted
   const paramName = decl.type.parameterName;
-  if (!ts.isIdentifier(paramName)) return null;
+  if (!ts.isIdentifier(paramName)) {
+    return null;
+  }
 
   const params = decl.parameters;
   for (let i = 0; i < params.length; i++) {
@@ -183,7 +195,9 @@ function resolveCallTarget(
   checker: ts.TypeChecker,
 ): { body: ts.Block; params: ts.NodeArray<ts.ParameterDeclaration> } | null {
   // Bail on property-access/method calls — dynamic dispatch, `this` unsubstituted
-  if (!ts.isIdentifier(call.expression)) return null;
+  if (!ts.isIdentifier(call.expression)) {
+    return null;
+  }
 
   // Try getResolvedSignature first (works for direct calls, imports)
   const sig = checker.getResolvedSignature(call);
@@ -201,11 +215,15 @@ function resolveCallTarget(
     }
   }
 
-  if (!decl || !ts.isFunctionLike(decl)) return null;
+  if (!decl || !ts.isFunctionLike(decl)) {
+    return null;
+  }
 
   // Bail: declaration is in node_modules
   const sourceFile = decl.getSourceFile();
-  if (sourceFile.fileName.includes("node_modules")) return null;
+  if (sourceFile.fileName.includes("node_modules")) {
+    return null;
+  }
 
   // Get the body — must be a block (not expression-bodied arrow)
   let body: ts.Block | undefined;
@@ -217,7 +235,9 @@ function resolveCallTarget(
     body = ts.isBlock(decl.body) ? decl.body : undefined;
   }
 
-  if (!body) return null;
+  if (!body) {
+    return null;
+  }
 
   return { body, params: decl.parameters };
 }
@@ -233,16 +253,25 @@ function buildSubstitutionMap(
   strategy: NumericStrategy,
   callerParamNames: Map<string, string>,
 ): Map<string, string> | null {
-  if (call.arguments.some(ts.isSpreadElement)) return null;
+  if (call.arguments.some(ts.isSpreadElement)) {
+    return null;
+  }
 
   const innerMap = new Map<string, string>();
   for (let i = 0; i < targetParams.length; i++) {
     const formal = targetParams[i]!;
-    if (!ts.isIdentifier(formal.name)) return null;
-    if (formal.dotDotDotToken || i >= call.arguments.length) return null;
+    if (!ts.isIdentifier(formal.name)) {
+      return null;
+    }
+    if (formal.dotDotDotToken || i >= call.arguments.length) {
+      return null;
+    }
 
     const actual = translateExpr(
-      call.arguments[i]!, checker, strategy, callerParamNames,
+      call.arguments[i]!,
+      checker,
+      strategy,
+      callerParamNames,
     );
     innerMap.set(formal.name.text, renderExpr(actual));
   }
@@ -261,19 +290,33 @@ function followGuards(
   visited: Set<ts.Node>,
 ): PantExpr[] {
   const target = resolveCallTarget(call, checker);
-  if (!target) return [];
+  if (!target) {
+    return [];
+  }
 
   // Bail: recursion
-  if (visited.has(target.body)) return [];
+  if (visited.has(target.body)) {
+    return [];
+  }
 
   const innerParamNames = buildSubstitutionMap(
-    call, target.params, checker, strategy, callerParamNames,
+    call,
+    target.params,
+    checker,
+    strategy,
+    callerParamNames,
   );
-  if (!innerParamNames) return [];
+  if (!innerParamNames) {
+    return [];
+  }
 
   visited.add(target.body);
   const guards = scanBodyForGuards(
-    target.body, checker, strategy, innerParamNames, visited,
+    target.body,
+    checker,
+    strategy,
+    innerParamNames,
+    visited,
   );
   visited.delete(target.body);
 
@@ -304,31 +347,47 @@ const ASSIGNMENT_OPERATORS = new Set([
  * property access, operators — no calls, assignments, or increments).
  */
 function isPureExpression(expr: ts.Expression): boolean {
-  if (ts.isIdentifier(expr) || ts.isNumericLiteral(expr) ||
-      ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr) ||
-      expr.kind === ts.SyntaxKind.TrueKeyword ||
-      expr.kind === ts.SyntaxKind.FalseKeyword ||
-      expr.kind === ts.SyntaxKind.NullKeyword ||
-      expr.kind === ts.SyntaxKind.ThisKeyword) {
+  if (
+    ts.isIdentifier(expr) ||
+    ts.isNumericLiteral(expr) ||
+    ts.isStringLiteral(expr) ||
+    ts.isNoSubstitutionTemplateLiteral(expr) ||
+    expr.kind === ts.SyntaxKind.TrueKeyword ||
+    expr.kind === ts.SyntaxKind.FalseKeyword ||
+    expr.kind === ts.SyntaxKind.NullKeyword ||
+    expr.kind === ts.SyntaxKind.ThisKeyword
+  ) {
     return true;
   }
-  if (ts.isParenthesizedExpression(expr) || ts.isAsExpression(expr) ||
-      ts.isNonNullExpression(expr)) {
+  if (
+    ts.isParenthesizedExpression(expr) ||
+    ts.isAsExpression(expr) ||
+    ts.isNonNullExpression(expr)
+  ) {
     return isPureExpression(expr.expression);
   }
   if (ts.isPropertyAccessExpression(expr)) {
     return isPureExpression(expr.expression);
   }
   if (ts.isElementAccessExpression(expr)) {
-    return isPureExpression(expr.expression) && isPureExpression(expr.argumentExpression);
+    return (
+      isPureExpression(expr.expression) &&
+      isPureExpression(expr.argumentExpression)
+    );
   }
   if (ts.isPrefixUnaryExpression(expr)) {
-    if (expr.operator === ts.SyntaxKind.PlusPlusToken ||
-        expr.operator === ts.SyntaxKind.MinusMinusToken) return false;
+    if (
+      expr.operator === ts.SyntaxKind.PlusPlusToken ||
+      expr.operator === ts.SyntaxKind.MinusMinusToken
+    ) {
+      return false;
+    }
     return isPureExpression(expr.operand);
   }
   if (ts.isBinaryExpression(expr)) {
-    if (ASSIGNMENT_OPERATORS.has(expr.operatorToken.kind)) return false;
+    if (ASSIGNMENT_OPERATORS.has(expr.operatorToken.kind)) {
+      return false;
+    }
     return isPureExpression(expr.left) && isPureExpression(expr.right);
   }
   // Calls, new, await, template expressions, etc. are not pure
@@ -341,8 +400,10 @@ function isPureExpression(expr: ts.Expression): boolean {
  * silently discard meaningful work.
  */
 function isNoopThenBranch(stmt: ts.Statement): boolean {
-  return ts.isEmptyStatement(stmt) ||
-    (ts.isBlock(stmt) && stmt.statements.length === 0);
+  return (
+    ts.isEmptyStatement(stmt) ||
+    (ts.isBlock(stmt) && stmt.statements.length === 0)
+  );
 }
 
 /**
@@ -367,9 +428,13 @@ function scanBodyForGuards(
     ) {
       // Skip extraction if callee or arguments contain side effects
       // (e.g. makeValidator().assertPositive(x) or assert(loadAmount() > 0))
-      if (!isPureExpression(stmt.expression.expression)) break;
+      if (!isPureExpression(stmt.expression.expression)) {
+        break;
+      }
       const argsArePure = stmt.expression.arguments.every(isPureExpression);
-      if (!argsArePure) break;
+      if (!argsArePure) {
+        break;
+      }
 
       // Try assertion call first
       const g = extractAssertionGuard(
@@ -385,7 +450,11 @@ function scanBodyForGuards(
 
       // Try following the call
       const followed = followGuards(
-        stmt.expression, checker, strategy, paramNames, visited,
+        stmt.expression,
+        checker,
+        strategy,
+        paramNames,
+        visited,
       );
       if (followed.length > 0) {
         guards.push(...followed);
@@ -407,7 +476,9 @@ function scanBodyForGuards(
       isNoopThenBranch(stmt.thenStatement) &&
       blockThrows(stmt.elseStatement)
     ) {
-      guards.push(translateExpr(stmt.expression, checker, strategy, paramNames));
+      guards.push(
+        translateExpr(stmt.expression, checker, strategy, paramNames),
+      );
       continue;
     }
 
@@ -470,8 +541,12 @@ export function isFollowableGuardCall(
       ts.isExpressionStatement(stmt) &&
       ts.isCallExpression(stmt.expression)
     ) {
-      if (!isPureExpression(stmt.expression.expression)) return false;
-      if (!stmt.expression.arguments.every(isPureExpression)) return false;
+      if (!isPureExpression(stmt.expression.expression)) {
+        return false;
+      }
+      if (!stmt.expression.arguments.every(isPureExpression)) {
+        return false;
+      }
       return (
         isAssertionCall(checker, stmt.expression) !== null ||
         isFollowableGuardCall(stmt.expression, checker, visited)
@@ -539,7 +614,9 @@ export function detectGuard(
 }
 
 function blockThrows(node: ts.Statement): boolean {
-  if (ts.isThrowStatement(node)) return true;
+  if (ts.isThrowStatement(node)) {
+    return true;
+  }
   if (ts.isBlock(node)) {
     const stmts = node.statements;
     return stmts.length === 1 && ts.isThrowStatement(stmts[0]!);

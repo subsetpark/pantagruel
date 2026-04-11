@@ -246,10 +246,7 @@ function extractReturnExpression(
   return null;
 }
 
-function describeRejectedBody(
-  body: ts.Block,
-  checker: ts.TypeChecker,
-): string {
+function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
   const stmts = body.statements.filter((s) => !isGuardStatement(s, checker));
   if (stmts.length === 0) {
     return "empty body";
@@ -269,15 +266,17 @@ function isGuardStatement(
   checker: ts.TypeChecker,
 ): boolean {
   // Assertion call or followable guard call
-  if (
-    ts.isExpressionStatement(stmt) &&
-    ts.isCallExpression(stmt.expression)
-  ) {
+  if (ts.isExpressionStatement(stmt) && ts.isCallExpression(stmt.expression)) {
     const call = stmt.expression;
-    if (call.arguments.some((arg) => expressionHasSideEffects(arg)))
+    if (call.arguments.some((arg) => expressionHasSideEffects(arg))) {
       return false;
-    if (isAssertionCall(checker, call) !== null) return true;
-    if (isFollowableGuardCall(call, checker)) return true;
+    }
+    if (isAssertionCall(checker, call) !== null) {
+      return true;
+    }
+    if (isFollowableGuardCall(call, checker)) {
+      return true;
+    }
   }
 
   if (!ts.isIfStatement(stmt)) {
@@ -577,7 +576,9 @@ function extractReturnFromBranch(
     // return (after filtering guards). Blocks with local declarations or
     // multiple non-guard statements are rejected so we don't leak
     // branch-scoped bindings into the generated proposition.
-    const nonGuard = stmt.statements.filter((s) => !isGuardStatement(s, checker));
+    const nonGuard = stmt.statements.filter(
+      (s) => !isGuardStatement(s, checker),
+    );
     if (nonGuard.length === 1) {
       const s = nonGuard[0]!;
       if (ts.isReturnStatement(s) && s.expression) {
@@ -763,7 +764,9 @@ function extractArrowBody(
     // Only allow a single return (after filtering guards), same rule as
     // extractReturnExpression — blocks with locals or multiple statements
     // would introduce free variables in the generated comprehension.
-    const nonGuard = expr.body.statements.filter((s) => !isGuardStatement(s, checker));
+    const nonGuard = expr.body.statements.filter(
+      (s) => !isGuardStatement(s, checker),
+    );
     if (nonGuard.length === 1) {
       const s = nonGuard[0]!;
       if (ts.isReturnStatement(s) && s.expression) {
