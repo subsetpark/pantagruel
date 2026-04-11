@@ -52,8 +52,13 @@ function getStrategy(numericType: NumericType): NumericStrategy {
   switch (numericType) {
     case "Real":
       return RealStrategy;
-    default:
+    case "Int":
+    case "Nat0":
       return IntStrategy;
+    default: {
+      const _exhaustive: never = numericType;
+      throw new Error(`Unhandled numeric type: ${_exhaustive}`);
+    }
   }
 }
 

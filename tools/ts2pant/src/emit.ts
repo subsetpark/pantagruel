@@ -64,8 +64,12 @@ export function emitDocument(doc: PantDocument): string {
         }
         break;
       }
-      default:
-        break;
+      default: {
+        const _exhaustive: never = decl;
+        throw new Error(
+          `Unhandled declaration kind: ${JSON.stringify(_exhaustive)}`,
+        );
+      }
     }
   }
 

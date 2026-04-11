@@ -30,7 +30,8 @@ export interface ExtractedTypes {
 export function createProgram(fileName: string): ts.Program {
   return ts.createProgram([fileName], {
     target: ts.ScriptTarget.ES2022,
-    module: ts.ModuleKind.Node16,
+    module: ts.ModuleKind.NodeNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeNext,
     strict: true,
   });
 }
