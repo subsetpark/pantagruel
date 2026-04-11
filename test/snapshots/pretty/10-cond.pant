@@ -26,4 +26,4 @@ rank s: Status => Nat.
 
 > Compute effective rank: active items use their rank, inactive get 0.
 
-all s: Status | cond active s => rank s >= 0, ~active s => rank s = 0.
+all s: Status | cond active s => rank s >= 0, ~(active s) => rank s = 0.

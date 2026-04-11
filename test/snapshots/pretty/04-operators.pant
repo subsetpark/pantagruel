@@ -13,7 +13,7 @@ discount => Real.
 
 > Logical operators: and, or, ~, -> (implication)
 
-all i: Item | in-stock i or ~in-stock i.
+all i: Item | in-stock i or ~(in-stock i).
 all i: Item | in-stock i and true -> in-stock i.
 all i: Item | false -> in-stock i.
 
@@ -25,7 +25,7 @@ count >= 0.
 discount < 1.0.
 discount > 0.0.
 discount <= 0.5.
-discount != 0.0.
+discount ~= 0.0.
 
 > Arithmetic operators: +, -, *, /
 
@@ -51,11 +51,11 @@ all xs: [Item] | #xs >= 0.
 > Unary minus
 
 all x: Int | -x + x = 0.
-all x: Real | --x = x.
+all x: Real | -(-x) = x.
 
 > Negation
 
-all i: Item | ~~in-stock i = in-stock i.
+all i: Item | ~(~(in-stock i = in-stock i)).
 
 > Quantifiers: all, some
 
