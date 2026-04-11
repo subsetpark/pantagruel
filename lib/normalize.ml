@@ -531,8 +531,9 @@ let normalize (doc : document) (root_term : string) : document =
               let target = max check_deps max_body_level in
               let target = min target (num_chapters - 1) in
               check_assignments.(target) <- chk :: check_assignments.(target);
-              if target > max_body_level && orig_ch.body <> []
-                 && not (Hashtbl.mem promoted target)
+              if
+                target > max_body_level && orig_ch.body <> []
+                && not (Hashtbl.mem promoted target)
               then begin
                 let rep = List.hd orig_ch.body in
                 body_assignments.(target) <- rep :: body_assignments.(target);
