@@ -539,6 +539,20 @@ export function isFollowableGuardCall(
   if (!target) {
     return false;
   }
+  // Reject spread arguments — buildSubstitutionMap cannot handle them.
+  if (call.arguments.some(ts.isSpreadElement)) {
+    return false;
+  }
+  // Validate parameter compatibility (mirrors buildSubstitutionMap checks).
+  for (let i = 0; i < target.params.length; i++) {
+    const formal = target.params[i]!;
+    if (!ts.isIdentifier(formal.name)) {
+      return false;
+    }
+    if (formal.dotDotDotToken || i >= call.arguments.length) {
+      return false;
+    }
+  }
   if (visited.has(target.body)) {
     return false;
   }
