@@ -1,0 +1,58 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.11/schema.json",
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "a11y": "error",
+      "security": "error",
+      "suspicious": {
+        "noBitwiseOperators": "off"
+      },
+      "style": {
+        "noNonNullAssertion": "off",
+        "noParameterAssign": "off",
+        "noMagicNumbers": "off",
+        "useBlockStatements": "error",
+        "useExportsLast": "off",
+        "useNodejsImportProtocol": "error",
+        "useDefaultSwitchClause": "error",
+        "noNestedTernary": "off"
+      },
+      "nursery": {
+        "noTernary": "off",
+        "noContinue": "off",
+        "noIncrementDecrement": "off",
+        "noExcessiveLinesPerFile": "off",
+        "useExplicitType": "off",
+        "useExplicitReturnType": "off",
+        "useNamedCaptureGroup": "off",
+        "useDestructuring": "off",
+        "useUnicodeRegex": "warn",
+        "noParametersOnlyUsedInRecursion": "warn",
+        "useConsistentMethodSignatures": "warn"
+      },
+      "complexity": {
+        "noExcessiveCognitiveComplexity": "off",
+        "useMaxParams": "off",
+        "noExcessiveLinesPerFunction": "off",
+        "useLiteralKeys": "off"
+      },
+      "correctness": {
+        "noNodejsModules": "off",
+        "noProcessGlobal": "off"
+      },
+      "performance": {
+        "useTopLevelRegex": "off"
+      }
+    }
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2
+  },
+  "assist": {
+    "enabled": true
+  }
+}

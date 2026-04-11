@@ -46,3 +46,42 @@ jobs:
           for f in samples/*.pant; do
             opam exec -- dune exec pant -- "$f"
           done
+
+  ts2pant:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/ts2pant
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.4.1"
+
+      - name: Install OCaml dependencies
+        working-directory: .
+        run: opam install . --deps-only --with-test
+
+      - name: Build pant
+        working-directory: .
+        run: opam exec -- dune build
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tools/ts2pant/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint and format
+        run: npx biome ci src
+
+      - name: Test
+        run: opam exec -- npx vitest run

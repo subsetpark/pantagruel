@@ -1,10 +1,10 @@
 import ts from "typescript";
-import type { PantDeclaration } from "./types.js";
 import type { ExtractedTypes } from "./extract.js";
+import type { PantDeclaration } from "./types.js";
 
 /** Strategy for mapping TS `number` to a Pantagruel numeric type. */
 export interface NumericStrategy {
-  mapNumber(context?: string): string;
+  mapNumber: (context?: string) => string;
 }
 
 export const IntStrategy: NumericStrategy = {
@@ -27,18 +27,22 @@ export function mapTsType(
 ): string {
   const flags = type.flags;
 
-  if (flags & ts.TypeFlags.String || flags & ts.TypeFlags.StringLiteral)
+  if (flags & ts.TypeFlags.String || flags & ts.TypeFlags.StringLiteral) {
     return "String";
-  if (flags & ts.TypeFlags.Number || flags & ts.TypeFlags.NumberLiteral)
+  }
+  if (flags & ts.TypeFlags.Number || flags & ts.TypeFlags.NumberLiteral) {
     return strategy.mapNumber();
-  if (flags & ts.TypeFlags.Boolean || flags & ts.TypeFlags.BooleanLiteral)
+  }
+  if (flags & ts.TypeFlags.Boolean || flags & ts.TypeFlags.BooleanLiteral) {
     return "Bool";
+  }
   if (
     flags & ts.TypeFlags.Null ||
     flags & ts.TypeFlags.Undefined ||
     flags & ts.TypeFlags.Void
-  )
+  ) {
     return "Nothing";
+  }
 
   // Tuple (check before array since tuples are also type references)
   if (checker.isTupleType(type)) {
@@ -50,7 +54,7 @@ export function mapTsType(
   if (checker.isArrayType(type)) {
     const typeArgs = checker.getTypeArguments(type as ts.TypeReference);
     if (typeArgs.length === 1) {
-      return `[${mapTsType(typeArgs[0], checker, strategy)}]`;
+      return `[${mapTsType(typeArgs[0]!, checker, strategy)}]`;
     }
     return checker.typeToString(type);
   }
@@ -65,9 +69,7 @@ export function mapTsType(
     // Deduplicate (e.g. boolean literal collapse)
     const unique = parts.filter((v, i, a) => a.indexOf(v) === i);
     // Sort Nothing to the end for consistent output
-    unique.sort((a, b) =>
-      a === "Nothing" ? 1 : b === "Nothing" ? -1 : 0,
-    );
+    unique.sort((a, b) => (a === "Nothing" ? 1 : b === "Nothing" ? -1 : 0));
     return unique.join(" + ");
   }
 
@@ -82,8 +84,10 @@ export function mapTsType(
 
 /** Derive a short parameter name from a type name (first letter, lowercased). */
 function paramName(typeName: string): string {
-  if (!typeName) return "x";
-  return typeName[0].toLowerCase();
+  if (!typeName) {
+    return "x";
+  }
+  return typeName[0]!.toLowerCase();
 }
 
 /**

@@ -32,7 +32,7 @@ export function parseAnnotations(text: string): AnnotationResult {
   const typeOverrides: PantTypeOverride[] = [];
 
   // Strip leading `*` and whitespace from each line (JSDoc formatting).
-  const lines = text.split("\n").map((l) => l.replace(/^\s*\*?\s?/, ""));
+  const lines = text.split("\n").map((l) => l.replace(/^\s*\*?\s?/u, ""));
 
   let inBlock = false;
   let blockLines: string[] = [];
@@ -41,7 +41,7 @@ export function parseAnnotations(text: string): AnnotationResult {
     const trimmed = line.trimEnd();
 
     if (inBlock) {
-      if (/^@pant-end\b/.test(trimmed.trimStart())) {
+      if (/^@pant-end\b/u.test(trimmed.trimStart())) {
         const blockText = blockLines.join("\n").trim();
         if (blockText) {
           propositions.push({ text: blockText });
@@ -54,30 +54,29 @@ export function parseAnnotations(text: string): AnnotationResult {
       continue;
     }
 
-    if (/^@pant-begin\b/.test(trimmed.trimStart())) {
+    if (/^@pant-begin\b/u.test(trimmed.trimStart())) {
       inBlock = true;
       blockLines = [];
       continue;
     }
 
     // @pant-type name: Type
-    const typeMatch = trimmed.match(/^\s*@pant-type\s+(\w+)\s*:\s*(.+)$/);
+    const typeMatch = trimmed.match(/^\s*@pant-type\s+(\w+)\s*:\s*(.+)$/u);
     if (typeMatch) {
-      const typeName = typeMatch[2].trim();
+      const typeName = typeMatch[2]?.trim();
       if (typeName) {
-        typeOverrides.push({ name: typeMatch[1], type: typeName });
+        typeOverrides.push({ name: typeMatch[1]!, type: typeName });
       }
       continue;
     }
 
     // @pant <proposition>  (but not @pant-begin, @pant-end, @pant-type)
-    const pantMatch = trimmed.match(/^\s*@pant\s+(.+)$/);
+    const pantMatch = trimmed.match(/^\s*@pant\s+(.+)$/u);
     if (pantMatch) {
-      const propText = pantMatch[1].trim();
+      const propText = pantMatch[1]?.trim();
       if (propText) {
         propositions.push({ text: propText });
       }
-      continue;
     }
   }
 
@@ -101,13 +100,17 @@ export function extractAnnotations(
     node.getFullStart(),
   );
 
-  if (!commentRanges) return result;
+  if (!commentRanges) {
+    return result;
+  }
 
   for (const range of commentRanges) {
     const commentText = fullText.slice(range.pos, range.end);
 
     // Only process JSDoc-style comments.
-    if (!commentText.startsWith("/**")) continue;
+    if (!commentText.startsWith("/**")) {
+      continue;
+    }
 
     // Strip /** and */ delimiters.
     const inner = commentText.slice(3, -2);
@@ -130,7 +133,9 @@ export function extractFunctionAnnotations(
   functionName: string,
 ): string[] {
   const sourceFile = program.getSourceFile(fileName);
-  if (!sourceFile) return [];
+  if (!sourceFile) {
+    return [];
+  }
 
   const { node } = findFunction(program, fileName, functionName);
   const result = extractAnnotations(node, sourceFile);

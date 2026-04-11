@@ -1,7 +1,13 @@
 import ts from "typescript";
-import type { PantProposition, PantDeclaration } from "./types.js";
+import {
+  classifyFunction,
+  findFunction,
+  shortParamName,
+  translateExpr,
+  translateOperator,
+} from "./translate-signature.js";
 import { mapTsType, type NumericStrategy } from "./translate-types.js";
-import { translateExpr, translateOperator, findFunction, classifyFunction, shortParamName } from "./translate-signature.js";
+import type { PantDeclaration, PantProposition } from "./types.js";
 
 function isUnsupported(s: string): boolean {
   return s.startsWith("> UNSUPPORTED:");
@@ -11,10 +17,14 @@ function isUnsupported(s: string): boolean {
 function freshBinder(paramNames: Map<string, string>): string {
   const used = new Set(paramNames.values());
   for (const candidate of ["x", "y", "z", "w", "v", "u", "t"]) {
-    if (!used.has(candidate)) return candidate;
+    if (!used.has(candidate)) {
+      return candidate;
+    }
   }
   let i = 0;
-  while (used.has(`x${i}`)) i++;
+  while (used.has(`x${i}`)) {
+    i++;
+  }
   return `x${i}`;
 }
 
@@ -47,7 +57,9 @@ export function translateBody(opts: TranslateBodyOptions): PantProposition[] {
   const sig = checker.getSignatureFromDeclaration(node);
 
   if (className) {
-    const existingParamNames = new Set(sig ? sig.getParameters().map((p) => p.name) : []);
+    const existingParamNames = new Set(
+      sig ? sig.getParameters().map((p) => p.name) : [],
+    );
     const pName = shortParamName(className, existingParamNames);
     paramNames.set("this", pName);
     paramList.push({ name: pName, type: className });
@@ -62,13 +74,29 @@ export function translateBody(opts: TranslateBodyOptions): PantProposition[] {
     }
   }
 
-  if (!node.body) return [];
+  if (!node.body) {
+    return [];
+  }
 
   if (classification === "pure") {
-    return translatePureBody(node, functionName, paramList, checker, strategy, paramNames);
-  } else {
-    return translateMutatingBody(node, functionName, paramList, checker, strategy, paramNames, declarations ?? []);
+    return translatePureBody(
+      node,
+      functionName,
+      paramList,
+      checker,
+      strategy,
+      paramNames,
+    );
   }
+  return translateMutatingBody(
+    node,
+    functionName,
+    paramList,
+    checker,
+    strategy,
+    paramNames,
+    declarations ?? [],
+  );
 }
 
 function translatePureBody(
@@ -79,7 +107,9 @@ function translatePureBody(
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
 ): PantProposition[] {
-  if (!node.body) return [];
+  if (!node.body) {
+    return [];
+  }
 
   const returnExpr = extractReturnExpression(node.body);
   if (!returnExpr) {
@@ -106,12 +136,14 @@ function translatePureBody(
  *   - Single return statement
  *   - if/else with returns in both branches (produces a synthetic conditional)
  */
-function extractReturnExpression(body: ts.Block): ts.Expression | null {
+function extractReturnExpression(
+  body: ts.Block,
+): ts.Expression | ts.IfStatement | null {
   // Skip guard statements (if-throw patterns) and find the meaningful return
   const stmts = body.statements.filter((s) => !isGuardStatement(s));
 
   if (stmts.length === 1) {
-    const stmt = stmts[0];
+    const stmt = stmts[0]!;
     if (ts.isReturnStatement(stmt) && stmt.expression) {
       return stmt.expression;
     }
@@ -132,15 +164,23 @@ function extractReturnExpression(body: ts.Block): ts.Expression | null {
 
 function describeRejectedBody(body: ts.Block): string {
   const stmts = body.statements.filter((s) => !isGuardStatement(s));
-  if (stmts.length === 0) return "empty body";
-  if (stmts.length > 1) return "local bindings or multiple statements before return";
-  const stmt = stmts[0];
-  if (ts.isReturnStatement(stmt) && !stmt.expression) return "return without expression";
+  if (stmts.length === 0) {
+    return "empty body";
+  }
+  if (stmts.length > 1) {
+    return "local bindings or multiple statements before return";
+  }
+  const stmt = stmts[0]!;
+  if (ts.isReturnStatement(stmt) && !stmt.expression) {
+    return "return without expression";
+  }
   return "non-translatable control flow";
 }
 
 function isGuardStatement(stmt: ts.Statement): boolean {
-  if (!ts.isIfStatement(stmt)) return false;
+  if (!ts.isIfStatement(stmt)) {
+    return false;
+  }
   // if (...) { throw } without else
   if (!stmt.elseStatement && blockThrows(stmt.thenStatement)) {
     return !expressionHasSideEffects(stmt.expression);
@@ -160,24 +200,34 @@ function isGuardStatement(stmt: ts.Statement): boolean {
   return false;
 }
 
-function variableStatementHasNoSideEffects(stmt: ts.VariableStatement): boolean {
+function variableStatementHasNoSideEffects(
+  stmt: ts.VariableStatement,
+): boolean {
   return stmt.declarationList.declarations.every(
-    (decl) =>
-      !decl.initializer || !expressionHasSideEffects(decl.initializer),
+    (decl) => !(decl.initializer && expressionHasSideEffects(decl.initializer)),
   );
 }
 
 function blockThrows(node: ts.Statement): boolean {
-  if (ts.isThrowStatement(node)) return true;
+  if (ts.isThrowStatement(node)) {
+    return true;
+  }
   if (ts.isBlock(node)) {
     const stmts = node.statements;
-    if (stmts.length === 0) return false;
+    if (stmts.length === 0) {
+      return false;
+    }
     // Last statement must be a throw; all preceding must be side-effect-free
     // (variable declarations for building the error message, etc.)
-    if (!ts.isThrowStatement(stmts[stmts.length - 1])) return false;
+    if (!ts.isThrowStatement(stmts.at(-1)!)) {
+      return false;
+    }
     return stmts
       .slice(0, -1)
-      .every((s) => ts.isVariableStatement(s) && variableStatementHasNoSideEffects(s));
+      .every(
+        (s) =>
+          ts.isVariableStatement(s) && variableStatementHasNoSideEffects(s),
+      );
   }
   return false;
 }
@@ -234,8 +284,12 @@ function expressionHasSideEffects(expr: ts.Expression): boolean {
       expressionHasSideEffects(expr.right)
     );
   }
-  if (ts.isCallExpression(expr)) return true;
-  if (ts.isNewExpression(expr) || ts.isAwaitExpression(expr)) return true;
+  if (ts.isCallExpression(expr)) {
+    return true;
+  }
+  if (ts.isNewExpression(expr) || ts.isAwaitExpression(expr)) {
+    return true;
+  }
   if (ts.isPrefixUnaryExpression(expr) || ts.isPostfixUnaryExpression(expr)) {
     const op = expr.operator;
     return (
@@ -244,10 +298,11 @@ function expressionHasSideEffects(expr: ts.Expression): boolean {
       expressionHasSideEffects(expr.operand)
     );
   }
-  return ts.forEachChild(
-    expr,
-    (child) => (ts.isExpression(child) ? expressionHasSideEffects(child) : false),
-  ) ?? false;
+  return (
+    ts.forEachChild(expr, (child) =>
+      ts.isExpression(child) ? expressionHasSideEffects(child) : false,
+    ) ?? false
+  );
 }
 
 /**
@@ -271,20 +326,48 @@ export function translateBodyExpr(
 
   // Ternary: a ? b : c -> cond a => b, true => c
   if (ts.isConditionalExpression(expr)) {
-    const cond = translateBodyExpr(expr.condition, checker, strategy, paramNames);
-    if (isUnsupported(cond)) return cond;
-    const whenTrue = translateBodyExpr(expr.whenTrue, checker, strategy, paramNames);
-    if (isUnsupported(whenTrue)) return whenTrue;
-    const whenFalse = translateBodyExpr(expr.whenFalse, checker, strategy, paramNames);
-    if (isUnsupported(whenFalse)) return whenFalse;
+    const cond = translateBodyExpr(
+      expr.condition,
+      checker,
+      strategy,
+      paramNames,
+    );
+    if (isUnsupported(cond)) {
+      return cond;
+    }
+    const whenTrue = translateBodyExpr(
+      expr.whenTrue,
+      checker,
+      strategy,
+      paramNames,
+    );
+    if (isUnsupported(whenTrue)) {
+      return whenTrue;
+    }
+    const whenFalse = translateBodyExpr(
+      expr.whenFalse,
+      checker,
+      strategy,
+      paramNames,
+    );
+    if (isUnsupported(whenFalse)) {
+      return whenFalse;
+    }
     return `cond ${cond} => ${whenTrue}, true => ${whenFalse}`;
   }
 
   // Property access with special array operations
   if (ts.isPropertyAccessExpression(expr)) {
     const prop = expr.name.text;
-    const obj = translateBodyExpr(expr.expression, checker, strategy, paramNames);
-    if (isUnsupported(obj)) return obj;
+    const obj = translateBodyExpr(
+      expr.expression,
+      checker,
+      strategy,
+      paramNames,
+    );
+    if (isUnsupported(obj)) {
+      return obj;
+    }
     // .length -> #obj (array only)
     if (prop === "length") {
       const receiverType = checker.getTypeAtLocation(expr.expression);
@@ -303,8 +386,15 @@ export function translateBodyExpr(
 
   // Prefix unary: !x -> ~(x), -x -> -(x)
   if (ts.isPrefixUnaryExpression(expr)) {
-    const operand = translateBodyExpr(expr.operand, checker, strategy, paramNames);
-    if (isUnsupported(operand)) return operand;
+    const operand = translateBodyExpr(
+      expr.operand,
+      checker,
+      strategy,
+      paramNames,
+    );
+    if (isUnsupported(operand)) {
+      return operand;
+    }
     if (expr.operator === ts.SyntaxKind.ExclamationToken) {
       return `~(${operand})`;
     }
@@ -316,11 +406,17 @@ export function translateBodyExpr(
   // Binary expression
   if (ts.isBinaryExpression(expr)) {
     const op = translateOperator(expr.operatorToken.kind);
-    if (op === "?") return `> UNSUPPORTED: operator ${ts.SyntaxKind[expr.operatorToken.kind]}`;
+    if (op === "?") {
+      return `> UNSUPPORTED: operator ${ts.SyntaxKind[expr.operatorToken.kind]}`;
+    }
     const left = translateBodyExpr(expr.left, checker, strategy, paramNames);
-    if (isUnsupported(left)) return left;
+    if (isUnsupported(left)) {
+      return left;
+    }
     const right = translateBodyExpr(expr.right, checker, strategy, paramNames);
-    if (isUnsupported(right)) return right;
+    if (isUnsupported(right)) {
+      return right;
+    }
     return `${left} ${op} ${right}`;
   }
 
@@ -329,7 +425,7 @@ export function translateBodyExpr(
     return translateExpr(expr, checker, strategy, paramNames);
   }
 
-  return `> UNSUPPORTED: non-expression statement`;
+  return "> UNSUPPORTED: non-expression statement";
 }
 
 function translateIfStatement(
@@ -338,8 +434,15 @@ function translateIfStatement(
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
 ): string {
-  const cond = translateBodyExpr(stmt.expression, checker, strategy, paramNames);
-  if (isUnsupported(cond)) return cond;
+  const cond = translateBodyExpr(
+    stmt.expression,
+    checker,
+    strategy,
+    paramNames,
+  );
+  if (isUnsupported(cond)) {
+    return cond;
+  }
   const thenExpr = extractReturnFromBranch(stmt.thenStatement);
   const elseExpr = stmt.elseStatement
     ? extractReturnFromBranch(stmt.elseStatement)
@@ -347,17 +450,23 @@ function translateIfStatement(
 
   if (thenExpr && elseExpr) {
     const thenStr = translateBodyExpr(thenExpr, checker, strategy, paramNames);
-    if (isUnsupported(thenStr)) return thenStr;
+    if (isUnsupported(thenStr)) {
+      return thenStr;
+    }
     const elseStr = translateBodyExpr(elseExpr, checker, strategy, paramNames);
-    if (isUnsupported(elseStr)) return elseStr;
+    if (isUnsupported(elseStr)) {
+      return elseStr;
+    }
     return `cond ${cond} => ${thenStr}, true => ${elseStr}`;
   }
 
-  return `> UNSUPPORTED: if statement without return in both branches`;
+  return "> UNSUPPORTED: if statement without return in both branches";
 }
 
 function extractReturnFromBranch(stmt: ts.Statement): ts.Expression | null {
-  if (ts.isReturnStatement(stmt) && stmt.expression) return stmt.expression;
+  if (ts.isReturnStatement(stmt) && stmt.expression) {
+    return stmt.expression;
+  }
   if (ts.isBlock(stmt)) {
     // Apply the same rule as extractReturnExpression: only allow a single
     // return (after filtering guards). Blocks with local declarations or
@@ -365,8 +474,10 @@ function extractReturnFromBranch(stmt: ts.Statement): ts.Expression | null {
     // branch-scoped bindings into the generated proposition.
     const nonGuard = stmt.statements.filter((s) => !isGuardStatement(s));
     if (nonGuard.length === 1) {
-      const s = nonGuard[0];
-      if (ts.isReturnStatement(s) && s.expression) return s.expression;
+      const s = nonGuard[0]!;
+      if (ts.isReturnStatement(s) && s.expression) {
+        return s.expression;
+      }
     }
   }
   return null;
@@ -387,19 +498,36 @@ function translateCallExpr(
     if (methodName === "includes" && expr.arguments.length === 1) {
       const receiverType = checker.getTypeAtLocation(obj);
       if (!checker.isArrayType(receiverType)) {
-        return `> UNSUPPORTED: non-array .includes()`;
+        return "> UNSUPPORTED: non-array .includes()";
       }
-      const arg = translateBodyExpr(expr.arguments[0], checker, strategy, paramNames);
-      if (isUnsupported(arg)) return arg;
+      const arg = translateBodyExpr(
+        expr.arguments[0]!,
+        checker,
+        strategy,
+        paramNames,
+      );
+      if (isUnsupported(arg)) {
+        return arg;
+      }
       const objStr = translateBodyExpr(obj, checker, strategy, paramNames);
-      if (isUnsupported(objStr)) return objStr;
+      if (isUnsupported(objStr)) {
+        return objStr;
+      }
       return `${arg} in ${objStr}`;
     }
 
     // .filter(p).map(f) -> each x: T, p x | f x
     if (methodName === "map" && ts.isCallExpression(obj)) {
-      const filterResult = tryTranslateFilterMap(obj, expr, checker, strategy, paramNames);
-      if (filterResult) return filterResult;
+      const filterResult = tryTranslateFilterMap(
+        obj,
+        expr,
+        checker,
+        strategy,
+        paramNames,
+      );
+      if (filterResult) {
+        return filterResult;
+      }
     }
   }
 
@@ -414,21 +542,29 @@ function tryTranslateFilterMap(
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
 ): string | null {
-  if (!ts.isPropertyAccessExpression(filterCall.expression)) return null;
-  if (filterCall.expression.name.text !== "filter") return null;
-  if (filterCall.arguments.length !== 1 || mapCall.arguments.length !== 1) return null;
+  if (!ts.isPropertyAccessExpression(filterCall.expression)) {
+    return null;
+  }
+  if (filterCall.expression.name.text !== "filter") {
+    return null;
+  }
+  if (filterCall.arguments.length !== 1 || mapCall.arguments.length !== 1) {
+    return null;
+  }
 
   const sourceObj = filterCall.expression.expression;
-  const filterArg = filterCall.arguments[0];
-  const mapArg = mapCall.arguments[0];
+  const filterArg = filterCall.arguments[0]!;
+  const mapArg = mapCall.arguments[0]!;
 
   // Only translate filter/map on actual arrays
   const sourceType = checker.getTypeAtLocation(sourceObj);
-  if (!checker.isArrayType(sourceType)) return null;
+  if (!checker.isArrayType(sourceType)) {
+    return null;
+  }
   let elemTypeName = "?";
   const typeArgs = checker.getTypeArguments(sourceType as ts.TypeReference);
   if (typeArgs.length === 1) {
-    elemTypeName = mapTsType(typeArgs[0], checker, strategy);
+    elemTypeName = mapTsType(typeArgs[0]!, checker, strategy);
   }
 
   const varName = freshBinder(paramNames);
@@ -436,12 +572,28 @@ function tryTranslateFilterMap(
   extendedParams.set(varName, varName);
 
   // Extract predicate body from arrow function
-  const filterBody = extractArrowBody(filterArg, varName, extendedParams, checker, strategy);
-  const mapBody = extractArrowBody(mapArg, varName, extendedParams, checker, strategy);
+  const filterBody = extractArrowBody(
+    filterArg,
+    varName,
+    extendedParams,
+    checker,
+    strategy,
+  );
+  const mapBody = extractArrowBody(
+    mapArg,
+    varName,
+    extendedParams,
+    checker,
+    strategy,
+  );
 
   if (filterBody && mapBody) {
-    if (isUnsupported(filterBody)) return filterBody;
-    if (isUnsupported(mapBody)) return mapBody;
+    if (isUnsupported(filterBody)) {
+      return filterBody;
+    }
+    if (isUnsupported(mapBody)) {
+      return mapBody;
+    }
     return `(each ${varName}: ${elemTypeName}, ${filterBody} | ${mapBody})`;
   }
 
@@ -455,14 +607,19 @@ function extractArrowBody(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
 ): string | null {
-  if (!ts.isArrowFunction(expr)) return null;
-  if (expr.parameters.length !== 1 || !ts.isIdentifier(expr.parameters[0].name)) {
-    return `> UNSUPPORTED: filter/map callback must have exactly one identifier parameter`;
+  if (!ts.isArrowFunction(expr)) {
+    return null;
+  }
+  if (
+    expr.parameters.length !== 1 ||
+    !ts.isIdentifier(expr.parameters[0]!.name)
+  ) {
+    return "> UNSUPPORTED: filter/map callback must have exactly one identifier parameter";
   }
 
   // Map arrow param to the fresh binder
   const arrowParams = new Map(paramNames);
-  arrowParams.set(expr.parameters[0].name.text, binderName);
+  arrowParams.set((expr.parameters[0]?.name as ts.Identifier).text, binderName);
 
   if (ts.isBlock(expr.body)) {
     // Only allow a single return (after filtering guards), same rule as
@@ -470,7 +627,7 @@ function extractArrowBody(
     // would introduce free variables in the generated comprehension.
     const nonGuard = expr.body.statements.filter((s) => !isGuardStatement(s));
     if (nonGuard.length === 1) {
-      const s = nonGuard[0];
+      const s = nonGuard[0]!;
       if (ts.isReturnStatement(s) && s.expression) {
         return translateBodyExpr(s.expression, checker, strategy, arrowParams);
       }
@@ -486,20 +643,29 @@ function extractArrowBody(
 
 function translateMutatingBody(
   node: ts.FunctionDeclaration | ts.MethodDeclaration,
-  functionName: string,
-  params: Array<{ name: string; type: string }>,
+  _functionName: string,
+  _params: Array<{ name: string; type: string }>,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
   declarations: PantDeclaration[],
 ): PantProposition[] {
-  if (!node.body) return [];
+  if (!node.body) {
+    return [];
+  }
 
   const propositions: PantProposition[] = [];
   const modifiedRules = new Set<string>();
 
   // Collect property assignments
-  const hasUnsupportedMutation = collectAssignments(node.body, checker, strategy, paramNames, propositions, modifiedRules);
+  const hasUnsupportedMutation = collectAssignments(
+    node.body,
+    checker,
+    strategy,
+    paramNames,
+    propositions,
+    modifiedRules,
+  );
 
   // Only generate frame conditions when all mutation shapes were translatable;
   // unsupported control flow (if/loop/switch) makes frames unsound.
@@ -529,16 +695,26 @@ function collectAssignments(
 
   for (const stmt of stmts) {
     // Skip guard statements (if-throw patterns)
-    if (isGuardStatement(stmt)) continue;
+    if (isGuardStatement(stmt)) {
+      continue;
+    }
 
-    if (ts.isExpressionStatement(stmt) && ts.isBinaryExpression(unwrapExpression(stmt.expression))) {
+    if (
+      ts.isExpressionStatement(stmt) &&
+      ts.isBinaryExpression(unwrapExpression(stmt.expression))
+    ) {
       const bin = unwrapExpression(stmt.expression) as ts.BinaryExpression;
       if (
         bin.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
         ts.isPropertyAccessExpression(bin.left)
       ) {
         const prop = bin.left.name.text;
-        const obj = translateBodyExpr(bin.left.expression, checker, strategy, paramNames);
+        const obj = translateBodyExpr(
+          bin.left.expression,
+          checker,
+          strategy,
+          paramNames,
+        );
         const val = translateBodyExpr(bin.right, checker, strategy, paramNames);
         if (
           obj.startsWith("> UNSUPPORTED:") ||
@@ -557,11 +733,22 @@ function collectAssignments(
 
     // Recurse into nested blocks
     if (ts.isBlock(stmt)) {
-      if (collectAssignments(stmt, checker, strategy, paramNames, propositions, modifiedRules)) {
+      if (
+        collectAssignments(
+          stmt,
+          checker,
+          strategy,
+          paramNames,
+          propositions,
+          modifiedRules,
+        )
+      ) {
         hasUnsupportedMutation = true;
       }
     } else if (ts.isIfStatement(stmt)) {
-      propositions.push({ text: `> UNSUPPORTED: conditional assignment (if/else)` });
+      propositions.push({
+        text: "> UNSUPPORTED: conditional assignment (if/else)",
+      });
       hasUnsupportedMutation = true;
     } else if (
       ts.isForStatement(stmt) ||
@@ -570,24 +757,49 @@ function collectAssignments(
       ts.isWhileStatement(stmt) ||
       ts.isDoStatement(stmt)
     ) {
-      propositions.push({ text: `> UNSUPPORTED: loop assignment` });
+      propositions.push({ text: "> UNSUPPORTED: loop assignment" });
       hasUnsupportedMutation = true;
     } else if (ts.isTryStatement(stmt)) {
-      if (collectAssignments(stmt.tryBlock, checker, strategy, paramNames, propositions, modifiedRules)) {
+      if (
+        collectAssignments(
+          stmt.tryBlock,
+          checker,
+          strategy,
+          paramNames,
+          propositions,
+          modifiedRules,
+        )
+      ) {
         hasUnsupportedMutation = true;
       }
-      if (stmt.catchClause) {
-        if (collectAssignments(stmt.catchClause.block, checker, strategy, paramNames, propositions, modifiedRules)) {
-          hasUnsupportedMutation = true;
-        }
+      if (
+        stmt.catchClause &&
+        collectAssignments(
+          stmt.catchClause.block,
+          checker,
+          strategy,
+          paramNames,
+          propositions,
+          modifiedRules,
+        )
+      ) {
+        hasUnsupportedMutation = true;
       }
-      if (stmt.finallyBlock) {
-        if (collectAssignments(stmt.finallyBlock, checker, strategy, paramNames, propositions, modifiedRules)) {
-          hasUnsupportedMutation = true;
-        }
+      if (
+        stmt.finallyBlock &&
+        collectAssignments(
+          stmt.finallyBlock,
+          checker,
+          strategy,
+          paramNames,
+          propositions,
+          modifiedRules,
+        )
+      ) {
+        hasUnsupportedMutation = true;
       }
     } else if (ts.isSwitchStatement(stmt)) {
-      propositions.push({ text: `> UNSUPPORTED: switch assignment` });
+      propositions.push({ text: "> UNSUPPORTED: switch assignment" });
       hasUnsupportedMutation = true;
     }
   }
@@ -606,13 +818,19 @@ function generateFrameConditions(
   const frames: PantProposition[] = [];
 
   for (const decl of declarations) {
-    if (decl.kind !== "rule") continue;
-    if (modifiedRules.has(decl.name)) continue;
+    if (decl.kind !== "rule") {
+      continue;
+    }
+    if (modifiedRules.has(decl.name)) {
+      continue;
+    }
 
     if (decl.params.length === 0) {
       frames.push({ text: `${decl.name}' = ${decl.name}` });
     } else {
-      const paramBindings = decl.params.map((p) => `${p.name}: ${p.type}`).join(", ");
+      const paramBindings = decl.params
+        .map((p) => `${p.name}: ${p.type}`)
+        .join(", ");
       const paramArgs = decl.params.map((p) => p.name).join(" ");
       frames.push({
         text: `all ${paramBindings} | ${decl.name}' ${paramArgs} = ${decl.name} ${paramArgs}`,
