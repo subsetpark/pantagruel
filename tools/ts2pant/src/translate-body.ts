@@ -852,6 +852,29 @@ function collectAssignments(
       continue;
     }
 
+    if (
+      ts.isVariableStatement(stmt) &&
+      stmt.declarationList.declarations.some(
+        (d) => d.initializer && expressionHasSideEffects(d.initializer),
+      )
+    ) {
+      propositions.push(UnsupportedProp("side-effectful variable initializer"));
+      hasUnsupportedMutation = true;
+      continue;
+    }
+
+    if (
+      (ts.isReturnStatement(stmt) || ts.isThrowStatement(stmt)) &&
+      stmt.expression &&
+      expressionHasSideEffects(stmt.expression)
+    ) {
+      propositions.push(
+        UnsupportedProp("side-effectful control-flow expression"),
+      );
+      hasUnsupportedMutation = true;
+      continue;
+    }
+
     // Recurse into nested blocks
     if (ts.isBlock(stmt)) {
       if (

@@ -204,6 +204,9 @@ export function translateExpr(
     const left = translateExpr(expr.left, _checker, _strategy, paramNames);
     const right = translateExpr(expr.right, _checker, _strategy, paramNames);
     const op = translateOperator(expr.operatorToken.kind);
+    if (op === "?") {
+      return Lit(expr.getText());
+    }
     return Binop(op, left, right);
   }
 
