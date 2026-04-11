@@ -2373,7 +2373,11 @@ let test_entailment_multiple_goals () =
   let entailment =
     List.filter (fun (q : Smt.query) -> q.kind = Smt.Entailment) queries
   in
-  check int "two entailment queries for two goals" 2 (List.length entailment)
+  check int "two entailment queries for two goals" 2 (List.length entailment);
+  check bool "has strict gt goal" true
+    (List.exists (fun (q : Smt.query) -> contains q.smt2 "(> (f ") entailment);
+  check bool "has gte goal" true
+    (List.exists (fun (q : Smt.query) -> contains q.smt2 "(>= (f ") entailment)
 
 let test_no_entailment_without_checks () =
   let env, doc =

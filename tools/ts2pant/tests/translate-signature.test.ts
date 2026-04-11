@@ -173,7 +173,28 @@ describe("void mutator -> action", () => {
 });
 
 describe("guarded mutator -> action with guard", () => {
-  it("detects if/else-throw guard pattern", () => {
+  it("detects if/else-throw guard pattern with no-op then", () => {
+    const source = `
+      interface Account { balance: number; }
+      function withdraw(a: Account, amount: number): void {
+        if (a.balance >= amount) {
+        } else {
+          throw new Error("Insufficient funds");
+        }
+        a.balance = a.balance - amount;
+      }
+    `;
+    const result = translate(source, "withdraw");
+
+    expect(result.classification).toBe("mutating");
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind === "action") {
+      expect(result.declaration.label).toBe("Withdraw");
+      expect(result.declaration.guard).toBe("balance a >= amount");
+    }
+  });
+
+  it("skips if/else-throw when then-branch has side effects", () => {
     const source = `
       interface Account { balance: number; }
       function withdraw(a: Account, amount: number): void {
@@ -190,7 +211,7 @@ describe("guarded mutator -> action with guard", () => {
     expect(result.declaration.kind).toBe("action");
     if (result.declaration.kind === "action") {
       expect(result.declaration.label).toBe("Withdraw");
-      expect(renderExpr(result.declaration.guard!)).toBe("balance a >= amount");
+      expect(result.declaration.guard).toBeUndefined();
     }
   });
 
@@ -553,7 +574,33 @@ describe("class method -> declaration with this param", () => {
     });
   });
 
-  it("translates guarded method", () => {
+  it("translates guarded method with no-op then branch", () => {
+    const source = `
+      class Account {
+        balance: number = 0;
+        withdraw(amount: number): void {
+          if (this.balance >= amount) {
+          } else {
+            throw new Error("Insufficient funds");
+          }
+          this.balance = this.balance - amount;
+        }
+      }
+    `;
+    const result = translate(source, "withdraw");
+
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind === "action") {
+      expect(result.declaration.label).toBe("Withdraw");
+      expect(result.declaration.guard).toBe("balance a >= amount");
+      expect(result.declaration.params[0]).toEqual({
+        name: "a",
+        type: "Account",
+      });
+    }
+  });
+
+  it("does not extract guard when then-branch has side effects", () => {
     const source = `
       class Account {
         balance: number = 0;
@@ -571,11 +618,9 @@ describe("class method -> declaration with this param", () => {
     expect(result.declaration.kind).toBe("action");
     if (result.declaration.kind === "action") {
       expect(result.declaration.label).toBe("Withdraw");
-      expect(renderExpr(result.declaration.guard!)).toBe("balance a >= amount");
-      expect(result.declaration.params[0]).toEqual({
-        name: "a",
-        type: "Account",
-      });
+      // Guard is NOT extracted because the then-branch has side effects
+      // (the mutation would be silently lost if hoisted as a guard)
+      expect(result.declaration.guard).toBeUndefined();
     }
   });
 });

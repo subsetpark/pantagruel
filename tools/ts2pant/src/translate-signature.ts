@@ -336,6 +336,16 @@ function isPureExpression(expr: ts.Expression): boolean {
 }
 
 /**
+ * Check whether a then-branch is effectively a no-op (empty block or
+ * empty statement), so extracting the condition as a guard won't
+ * silently discard meaningful work.
+ */
+function isNoopThenBranch(stmt: ts.Statement): boolean {
+  return ts.isEmptyStatement(stmt) ||
+    (ts.isBlock(stmt) && stmt.statements.length === 0);
+}
+
+/**
  * Scan leading statements of a function body for guard patterns.
  * Extracts guards from if-throw patterns, assertion calls, and
  * recursively follows direct calls to extract their guards.
@@ -355,7 +365,9 @@ function scanBodyForGuards(
       ts.isExpressionStatement(stmt) &&
       ts.isCallExpression(stmt.expression)
     ) {
-      // Skip extraction if arguments contain side effects (e.g. assert(loadAmount() > 0))
+      // Skip extraction if callee or arguments contain side effects
+      // (e.g. makeValidator().assertPositive(x) or assert(loadAmount() > 0))
+      if (!isPureExpression(stmt.expression.expression)) break;
       const argsArePure = stmt.expression.arguments.every(isPureExpression);
       if (!argsArePure) break;
 
@@ -389,8 +401,12 @@ function scanBodyForGuards(
       break;
     }
 
-    // Pattern 1: if (cond) { ... } else { throw }
-    if (stmt.elseStatement && blockThrows(stmt.elseStatement)) {
+    // Pattern 1: if (cond) { /* no-op */ } else { throw }
+    if (
+      stmt.elseStatement &&
+      isNoopThenBranch(stmt.thenStatement) &&
+      blockThrows(stmt.elseStatement)
+    ) {
       guards.push(translateExpr(stmt.expression, checker, strategy, paramNames));
       continue;
     }
@@ -454,6 +470,7 @@ export function isFollowableGuardCall(
       ts.isExpressionStatement(stmt) &&
       ts.isCallExpression(stmt.expression)
     ) {
+      if (!isPureExpression(stmt.expression.expression)) return false;
       if (!stmt.expression.arguments.every(isPureExpression)) return false;
       return (
         isAssertionCall(checker, stmt.expression) !== null ||
@@ -474,7 +491,11 @@ export function isFollowableGuardCall(
     if (!stmt.elseStatement && blockThrows(stmt.thenStatement)) {
       return true;
     }
-    if (stmt.elseStatement && blockThrows(stmt.elseStatement)) {
+    if (
+      stmt.elseStatement &&
+      isNoopThenBranch(stmt.thenStatement) &&
+      blockThrows(stmt.elseStatement)
+    ) {
       return true;
     }
     return false;
