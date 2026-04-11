@@ -2339,12 +2339,20 @@ let test_entailment_uses_chapter_local_invariants () =
   check int "entailment query count" 2 (List.length entailment);
   (* Find each query by axiom fingerprint, not position *)
   let q1 =
-    List.find (fun (q : Smt.query) -> contains q.smt2 "(= (f ") entailment
+    match
+      List.find_opt (fun (q : Smt.query) -> contains q.smt2 "(= (f ") entailment
+    with
+    | Some q -> q
+    | None -> fail "Expected entailment query containing f axiom"
   in
   check bool "q1 has f axiom" true (contains q1.smt2 "(= (f ");
   check bool "q1 lacks g axiom" false (contains q1.smt2 "(= (g ");
   let q2 =
-    List.find (fun (q : Smt.query) -> contains q.smt2 "(= (g ") entailment
+    match
+      List.find_opt (fun (q : Smt.query) -> contains q.smt2 "(= (g ") entailment
+    with
+    | Some q -> q
+    | None -> fail "Expected entailment query containing g axiom"
   in
   check bool "q2 has g axiom" true (contains q2.smt2 "(= (g ");
   check bool "q2 lacks f axiom" false (contains q2.smt2 "(= (f ");
