@@ -1,3 +1,5 @@
+import type { PantExpr, PantProp } from "./pant-expr.js";
+
 /** Pantagruel numeric type strategy. */
 export type NumericType = "Int" | "Real" | "Nat0";
 
@@ -26,7 +28,7 @@ export interface PantRule {
   name: string;
   params: PantParam[];
   returnType: string;
-  guard?: string;
+  guard?: PantExpr;
 }
 
 /** A Pantagruel action declaration (e.g. `~> Withdraw @ u: User.`). */
@@ -34,22 +36,20 @@ export interface PantAction {
   kind: "action";
   label: string;
   params: PantParam[];
-  guard?: string;
+  guard?: PantExpr;
 }
 
 /** A declaration in a Pantagruel document. */
 export type PantDeclaration = PantDomain | PantAlias | PantRule | PantAction;
 
-/** A Pantagruel proposition (a boolean expression in the body section). */
-export interface PantProposition {
-  text: string;
-}
+/** Re-export PantProp as the proposition type used in documents. */
+export type { PantProp };
 
 /** A complete Pantagruel document ready for emission. */
 export interface PantDocument {
   moduleName: string;
   declarations: PantDeclaration[];
-  propositions: PantProposition[];
+  propositions: PantProp[];
 }
 
 /** CLI options parsed from command-line arguments. */

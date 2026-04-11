@@ -6,6 +6,7 @@ import {
   classifyFunction,
   findFunction,
 } from "../src/translate-signature.js";
+import { renderExpr } from "../src/pant-expr.js";
 
 function translate(source: string, functionName: string, strategy = IntStrategy) {
   const fileName = "test.ts";
@@ -189,7 +190,7 @@ describe("guarded mutator -> action with guard", () => {
     expect(result.declaration.kind).toBe("action");
     if (result.declaration.kind === "action") {
       expect(result.declaration.label).toBe("Withdraw");
-      expect(result.declaration.guard).toBe("balance a >= amount");
+      expect(renderExpr(result.declaration.guard!)).toBe("balance a >= amount");
     }
   });
 
@@ -226,7 +227,7 @@ describe("guarded mutator -> action with guard", () => {
 
     expect(result.declaration.kind).toBe("action");
     if (result.declaration.kind === "action") {
-      expect(result.declaration.guard).toBe("(balance a >= amount)");
+      expect(renderExpr(result.declaration.guard!)).toBe("balance a >= amount");
     }
   });
 });
@@ -345,7 +346,7 @@ describe("class method -> declaration with this param", () => {
     expect(result.declaration.kind).toBe("action");
     if (result.declaration.kind === "action") {
       expect(result.declaration.label).toBe("Withdraw");
-      expect(result.declaration.guard).toBe("balance a >= amount");
+      expect(renderExpr(result.declaration.guard!)).toBe("balance a >= amount");
       expect(result.declaration.params[0]).toEqual({
         name: "a",
         type: "Account",

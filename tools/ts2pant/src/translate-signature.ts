@@ -1,4 +1,5 @@
 import ts from "typescript";
+import { Apply, Binop, Lit, type PantExpr, Unop, Var } from "./pant-expr.js";
 import { mapTsType, type NumericStrategy } from "./translate-types.js";
 import type { PantAction, PantDeclaration, PantRule } from "./types.js";
 
@@ -128,9 +129,9 @@ export function detectGuard(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
-): string | undefined {
+): PantExpr | undefined {
   if (!node.body) {
-    return;
+    return undefined;
   }
 
   for (const stmt of node.body.statements) {
@@ -163,12 +164,17 @@ export function detectGuard(
         );
       }
       // Otherwise negate the whole expression
-      return `~(${translateExpr(stmt.expression, checker, strategy, paramNames)})`;
+      return Unop(
+        "~",
+        translateExpr(stmt.expression, checker, strategy, paramNames),
+      );
     }
 
     // If it's an if-statement but doesn't match a guard pattern, stop scanning
     break;
   }
+
+  return undefined;
 }
 
 function blockThrows(node: ts.Statement): boolean {
@@ -179,66 +185,74 @@ function blockThrows(node: ts.Statement): boolean {
 }
 
 /**
- * Translate a TypeScript expression to Pantagruel syntax (best-effort).
+ * Translate a TypeScript expression to a PantExpr AST node (best-effort).
  */
 export function translateExpr(
   expr: ts.Expression,
   _checker: ts.TypeChecker,
   _strategy: NumericStrategy,
   paramNames: Map<string, string>,
-): string {
-  // Property access: a.balance -> balance a
+): PantExpr {
+  // Property access: a.balance -> Apply("balance", obj)
   if (ts.isPropertyAccessExpression(expr)) {
     const obj = translateExpr(expr.expression, _checker, _strategy, paramNames);
-    const prop = expr.name.text;
-    return `${prop} ${obj}`;
+    return Apply(expr.name.text, obj);
   }
 
-  // Binary expression: a >= b -> a >= b
+  // Binary expression: a >= b -> Binop(">=", a, b)
   if (ts.isBinaryExpression(expr)) {
     const left = translateExpr(expr.left, _checker, _strategy, paramNames);
     const right = translateExpr(expr.right, _checker, _strategy, paramNames);
     const op = translateOperator(expr.operatorToken.kind);
-    return `${left} ${op} ${right}`;
+    if (op === "?") {
+      return Lit(expr.getText());
+    }
+    return Binop(op, left, right);
   }
 
-  // Prefix unary: !x -> ~x, -x -> -x
+  // Prefix unary: !x -> Unop("~", x), -x -> Unop("-", x)
   if (ts.isPrefixUnaryExpression(expr)) {
     if (expr.operator === ts.SyntaxKind.ExclamationToken) {
-      return `~(${translateExpr(expr.operand, _checker, _strategy, paramNames)})`;
+      return Unop(
+        "~",
+        translateExpr(expr.operand, _checker, _strategy, paramNames),
+      );
     }
     if (expr.operator === ts.SyntaxKind.MinusToken) {
-      return `-${translateExpr(expr.operand, _checker, _strategy, paramNames)}`;
+      return Unop(
+        "-",
+        translateExpr(expr.operand, _checker, _strategy, paramNames),
+      );
     }
   }
 
-  // Parenthesized
+  // Parenthesized — unwrap (parens are a rendering concern)
   if (ts.isParenthesizedExpression(expr)) {
-    return `(${translateExpr(expr.expression, _checker, _strategy, paramNames)})`;
+    return translateExpr(expr.expression, _checker, _strategy, paramNames);
   }
 
   // `this` keyword
   if (expr.kind === ts.SyntaxKind.ThisKeyword) {
-    return paramNames.get("this") ?? "this";
+    return Var(paramNames.get("this") ?? "this");
   }
 
   // Identifier — use param name mapping if available
   if (ts.isIdentifier(expr)) {
-    return paramNames.get(expr.text) ?? expr.text;
+    return Var(paramNames.get(expr.text) ?? expr.text);
   }
 
   // Numeric literal
   if (ts.isNumericLiteral(expr)) {
-    return expr.text;
+    return Lit(expr.text);
   }
 
   // String literal
   if (ts.isStringLiteral(expr)) {
-    return `"${expr.text.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"')}"`;
+    return Lit(`"${expr.text.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"')}"`);
   }
 
   // Fallback
-  return expr.getText();
+  return Lit(expr.getText());
 }
 
 export function translateOperator(kind: ts.SyntaxKind): string {
@@ -343,14 +357,15 @@ export function translateSignature(
       decl.guard = guard;
     }
     return { declaration: decl, classification };
+  } else {
+    const decl: PantAction = {
+      kind: "action",
+      label: capitalize(functionName),
+      params,
+    };
+    if (guard) {
+      decl.guard = guard;
+    }
+    return { declaration: decl, classification };
   }
-  const decl: PantAction = {
-    kind: "action",
-    label: capitalize(functionName),
-    params,
-  };
-  if (guard) {
-    decl.guard = guard;
-  }
-  return { declaration: decl, classification };
 }

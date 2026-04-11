@@ -1,5 +1,21 @@
 import ts from "typescript";
 import {
+  Apply,
+  Binop,
+  Cardinality,
+  Comprehension,
+  Cond,
+  Equation,
+  Membership,
+  type PantExpr,
+  type PantProp,
+  PrimedApply,
+  Unop,
+  Unsupported,
+  UnsupportedProp,
+  Var,
+} from "./pant-expr.js";
+import {
   classifyFunction,
   findFunction,
   shortParamName,
@@ -7,11 +23,7 @@ import {
   translateOperator,
 } from "./translate-signature.js";
 import { mapTsType, type NumericStrategy } from "./translate-types.js";
-import type { PantDeclaration, PantProposition } from "./types.js";
-
-function isUnsupported(s: string): boolean {
-  return s.startsWith("> UNSUPPORTED:");
-}
+import type { PantDeclaration } from "./types.js";
 
 /** Generate a binder name not already used by params. */
 function freshBinder(paramNames: Map<string, string>): string {
@@ -26,6 +38,73 @@ function freshBinder(paramNames: Map<string, string>): string {
     i++;
   }
   return `x${i}`;
+}
+
+/** Replace every Var(name) in expr with replacement (for composing comprehension chains). */
+function substituteBinder(
+  expr: PantExpr,
+  name: string,
+  replacement: PantExpr,
+): PantExpr {
+  switch (expr.kind) {
+    case "var":
+      return expr.name === name ? replacement : expr;
+    case "literal":
+    case "unsupported":
+      return expr;
+    case "apply":
+      return {
+        ...expr,
+        args: expr.args.map((a) => substituteBinder(a, name, replacement)),
+      };
+    case "primed-apply":
+      return {
+        ...expr,
+        args: expr.args.map((a) => substituteBinder(a, name, replacement)),
+      };
+    case "binop":
+      return {
+        ...expr,
+        left: substituteBinder(expr.left, name, replacement),
+        right: substituteBinder(expr.right, name, replacement),
+      };
+    case "unop":
+      return {
+        ...expr,
+        operand: substituteBinder(expr.operand, name, replacement),
+      };
+    case "cardinality":
+      return { ...expr, expr: substituteBinder(expr.expr, name, replacement) };
+    case "membership":
+      return {
+        ...expr,
+        element: substituteBinder(expr.element, name, replacement),
+        collection: substituteBinder(expr.collection, name, replacement),
+      };
+    case "cond":
+      return {
+        ...expr,
+        arms: expr.arms.map((a) => ({
+          guard: substituteBinder(a.guard, name, replacement),
+          value: substituteBinder(a.value, name, replacement),
+        })),
+        fallback: substituteBinder(expr.fallback, name, replacement),
+      };
+    case "comprehension":
+      if (expr.binder === name) {
+        return expr;
+      }
+      return Comprehension(
+        expr.binder,
+        expr.type,
+        substituteBinder(expr.body, name, replacement),
+        expr.predicate
+          ? substituteBinder(expr.predicate, name, replacement)
+          : undefined,
+      );
+    default:
+      throw new Error(`Unhandled expr kind: ${(expr as PantExpr).kind}`);
+  }
 }
 
 export interface TranslateBodyOptions {
@@ -44,7 +123,7 @@ export interface TranslateBodyOptions {
  * Mutating functions: property assignments become primed propositions,
  * plus frame conditions for unmodified rules.
  */
-export function translateBody(opts: TranslateBodyOptions): PantProposition[] {
+export function translateBody(opts: TranslateBodyOptions): PantProp[] {
   const { program, fileName, functionName, strategy, declarations } = opts;
   const checker = program.getTypeChecker();
   const { node, className } = findFunction(program, fileName, functionName);
@@ -87,16 +166,15 @@ export function translateBody(opts: TranslateBodyOptions): PantProposition[] {
       strategy,
       paramNames,
     );
+  } else {
+    return translateMutatingBody(
+      node,
+      checker,
+      strategy,
+      paramNames,
+      declarations ?? [],
+    );
   }
-  return translateMutatingBody(
-    node,
-    functionName,
-    paramList,
-    checker,
-    strategy,
-    paramNames,
-    declarations ?? [],
-  );
 }
 
 function translatePureBody(
@@ -106,7 +184,7 @@ function translatePureBody(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
-): PantProposition[] {
+): PantProp[] {
   if (!node.body) {
     return [];
   }
@@ -114,20 +192,22 @@ function translatePureBody(
   const returnExpr = extractReturnExpression(node.body);
   if (!returnExpr) {
     const reason = describeRejectedBody(node.body);
-    return [{ text: `> UNSUPPORTED: ${functionName} — ${reason}` }];
+    return [UnsupportedProp(`${functionName} — ${reason}`)];
   }
 
-  const args = params.map((p) => p.name).join(" ");
-  const bindings = params.map((p) => `${p.name}: ${p.type}`).join(", ");
   const body = translateBodyExpr(returnExpr, checker, strategy, paramNames);
 
-  if (body.startsWith("> UNSUPPORTED:")) {
-    return [{ text: body }];
+  if (body.kind === "unsupported") {
+    return [UnsupportedProp(body.reason)];
   }
 
-  const head = bindings ? `all ${bindings} | ` : "";
-  const call = args ? `${functionName} ${args}` : functionName;
-  return [{ text: `${head}${call} = ${body}` }];
+  const argExprs = params.map((p) => Var(p.name));
+  const lhs =
+    argExprs.length > 0
+      ? Apply(functionName, ...argExprs)
+      : Apply(functionName);
+  const quantifiers = params.map((p) => ({ name: p.name, type: p.type }));
+  return [Equation(quantifiers, lhs, body)];
 }
 
 /**
@@ -204,7 +284,7 @@ function variableStatementHasNoSideEffects(
   stmt: ts.VariableStatement,
 ): boolean {
   return stmt.declarationList.declarations.every(
-    (decl) => !(decl.initializer && expressionHasSideEffects(decl.initializer)),
+    (decl) => !decl.initializer || !expressionHasSideEffects(decl.initializer),
   );
 }
 
@@ -219,7 +299,7 @@ function blockThrows(node: ts.Statement): boolean {
     }
     // Last statement must be a throw; all preceding must be side-effect-free
     // (variable declarations for building the error message, etc.)
-    if (!ts.isThrowStatement(stmts.at(-1)!)) {
+    if (!ts.isThrowStatement(stmts[stmts.length - 1]!)) {
       return false;
     }
     return stmts
@@ -306,7 +386,7 @@ function expressionHasSideEffects(expr: ts.Expression): boolean {
 }
 
 /**
- * Translate a TS expression to Pantagruel syntax, extending the base
+ * Translate a TS expression to a PantExpr AST node, extending the base
  * translateExpr with support for ternary, array ops, and if/else as cond.
  */
 export function translateBodyExpr(
@@ -314,7 +394,7 @@ export function translateBodyExpr(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
-): string {
+): PantExpr {
   if (ts.isExpression(expr)) {
     expr = unwrapExpression(expr);
   }
@@ -324,7 +404,7 @@ export function translateBodyExpr(
     return translateIfStatement(expr, checker, strategy, paramNames);
   }
 
-  // Ternary: a ? b : c -> cond a => b, true => c
+  // Ternary: a ? b : c -> Cond([{guard: a, value: b}], c)
   if (ts.isConditionalExpression(expr)) {
     const cond = translateBodyExpr(
       expr.condition,
@@ -332,7 +412,7 @@ export function translateBodyExpr(
       strategy,
       paramNames,
     );
-    if (isUnsupported(cond)) {
+    if (cond.kind === "unsupported") {
       return cond;
     }
     const whenTrue = translateBodyExpr(
@@ -341,7 +421,7 @@ export function translateBodyExpr(
       strategy,
       paramNames,
     );
-    if (isUnsupported(whenTrue)) {
+    if (whenTrue.kind === "unsupported") {
       return whenTrue;
     }
     const whenFalse = translateBodyExpr(
@@ -350,10 +430,10 @@ export function translateBodyExpr(
       strategy,
       paramNames,
     );
-    if (isUnsupported(whenFalse)) {
+    if (whenFalse.kind === "unsupported") {
       return whenFalse;
     }
-    return `cond ${cond} => ${whenTrue}, true => ${whenFalse}`;
+    return Cond([{ guard: cond, value: whenTrue }], whenFalse);
   }
 
   // Property access with special array operations
@@ -365,18 +445,18 @@ export function translateBodyExpr(
       strategy,
       paramNames,
     );
-    if (isUnsupported(obj)) {
+    if (obj.kind === "unsupported") {
       return obj;
     }
     // .length -> #obj (array only)
     if (prop === "length") {
       const receiverType = checker.getTypeAtLocation(expr.expression);
       if (checker.isArrayType(receiverType)) {
-        return `#${obj}`;
+        return Cardinality(obj);
       }
     }
-    // Regular property access: a.balance -> balance a
-    return `${prop} ${obj}`;
+    // Regular property access: a.balance -> Apply("balance", obj)
+    return Apply(prop, obj);
   }
 
   // Call expression: handle .includes(), .filter().map(), etc.
@@ -384,7 +464,7 @@ export function translateBodyExpr(
     return translateCallExpr(expr, checker, strategy, paramNames);
   }
 
-  // Prefix unary: !x -> ~(x), -x -> -(x)
+  // Prefix unary: !x -> Unop("~", x), -x -> Unop("-", x)
   if (ts.isPrefixUnaryExpression(expr)) {
     const operand = translateBodyExpr(
       expr.operand,
@@ -392,14 +472,14 @@ export function translateBodyExpr(
       strategy,
       paramNames,
     );
-    if (isUnsupported(operand)) {
+    if (operand.kind === "unsupported") {
       return operand;
     }
     if (expr.operator === ts.SyntaxKind.ExclamationToken) {
-      return `~(${operand})`;
+      return Unop("~", operand);
     }
     if (expr.operator === ts.SyntaxKind.MinusToken) {
-      return `-(${operand})`;
+      return Unop("-", operand);
     }
   }
 
@@ -407,17 +487,17 @@ export function translateBodyExpr(
   if (ts.isBinaryExpression(expr)) {
     const op = translateOperator(expr.operatorToken.kind);
     if (op === "?") {
-      return `> UNSUPPORTED: operator ${ts.SyntaxKind[expr.operatorToken.kind]}`;
+      return Unsupported(`operator ${ts.SyntaxKind[expr.operatorToken.kind]}`);
     }
     const left = translateBodyExpr(expr.left, checker, strategy, paramNames);
-    if (isUnsupported(left)) {
+    if (left.kind === "unsupported") {
       return left;
     }
     const right = translateBodyExpr(expr.right, checker, strategy, paramNames);
-    if (isUnsupported(right)) {
+    if (right.kind === "unsupported") {
       return right;
     }
-    return `${left} ${op} ${right}`;
+    return Binop(op, left, right);
   }
 
   // Fall through to base translateExpr for identifiers, literals, this, etc.
@@ -425,7 +505,7 @@ export function translateBodyExpr(
     return translateExpr(expr, checker, strategy, paramNames);
   }
 
-  return "> UNSUPPORTED: non-expression statement";
+  return Unsupported("non-expression statement");
 }
 
 function translateIfStatement(
@@ -433,14 +513,14 @@ function translateIfStatement(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
-): string {
+): PantExpr {
   const cond = translateBodyExpr(
     stmt.expression,
     checker,
     strategy,
     paramNames,
   );
-  if (isUnsupported(cond)) {
+  if (cond.kind === "unsupported") {
     return cond;
   }
   const thenExpr = extractReturnFromBranch(stmt.thenStatement);
@@ -449,18 +529,18 @@ function translateIfStatement(
     : null;
 
   if (thenExpr && elseExpr) {
-    const thenStr = translateBodyExpr(thenExpr, checker, strategy, paramNames);
-    if (isUnsupported(thenStr)) {
-      return thenStr;
+    const thenVal = translateBodyExpr(thenExpr, checker, strategy, paramNames);
+    if (thenVal.kind === "unsupported") {
+      return thenVal;
     }
-    const elseStr = translateBodyExpr(elseExpr, checker, strategy, paramNames);
-    if (isUnsupported(elseStr)) {
-      return elseStr;
+    const elseVal = translateBodyExpr(elseExpr, checker, strategy, paramNames);
+    if (elseVal.kind === "unsupported") {
+      return elseVal;
     }
-    return `cond ${cond} => ${thenStr}, true => ${elseStr}`;
+    return Cond([{ guard: cond, value: thenVal }], elseVal);
   }
 
-  return "> UNSUPPORTED: if statement without return in both branches";
+  return Unsupported("if statement without return in both branches");
 }
 
 function extractReturnFromBranch(stmt: ts.Statement): ts.Expression | null {
@@ -483,22 +563,108 @@ function extractReturnFromBranch(stmt: ts.Statement): ts.Expression | null {
   return null;
 }
 
+/** Get element type name for an array-typed TS expression, or null. */
+function getArrayElementType(
+  tsExpr: ts.Expression,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+): string | null {
+  const sourceType = checker.getTypeAtLocation(tsExpr);
+  if (!checker.isArrayType(sourceType)) {
+    return null;
+  }
+  const typeArgs = checker.getTypeArguments(sourceType as ts.TypeReference);
+  return typeArgs.length === 1
+    ? mapTsType(typeArgs[0]!, checker, strategy)
+    : "?";
+}
+
+/**
+ * Translate a .filter() or .map() call on an array to a comprehension,
+ * composing with any existing comprehension from a prior chain step.
+ */
+function translateArrayMethod(
+  methodName: "filter" | "map",
+  tsReceiver: ts.Expression,
+  expr: ts.CallExpression,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: Map<string, string>,
+): PantExpr | null {
+  const elemType = getArrayElementType(tsReceiver, checker, strategy);
+  if (!elemType) {
+    return null;
+  }
+
+  const receiver = translateBodyExpr(tsReceiver, checker, strategy, paramNames);
+  if (receiver.kind === "unsupported") {
+    return receiver;
+  }
+
+  const isComposing = receiver.kind === "comprehension";
+  const sourceBinder = isComposing ? receiver.binder : freshBinder(paramNames);
+  // Use a fresh binder for the callback so it doesn't collide with sourceBinder
+  const callbackBinder = isComposing
+    ? freshBinder(new Map([...paramNames, [sourceBinder, sourceBinder]]))
+    : sourceBinder;
+  const extendedParams = new Map(paramNames);
+  if (isComposing) {
+    extendedParams.set(sourceBinder, sourceBinder);
+  }
+  extendedParams.set(callbackBinder, callbackBinder);
+
+  const rawBody = extractArrowBody(
+    expr.arguments[0]!,
+    callbackBinder,
+    extendedParams,
+    checker,
+    strategy,
+  );
+  if (!rawBody) {
+    return Unsupported(expr.getText());
+  }
+  if (rawBody.kind === "unsupported") {
+    return rawBody;
+  }
+
+  // When composing, substitute the callback's binder with the prior step's body
+  // so that e.g. xs.map(f).map(g) becomes (each x: T | g(f(x))) not (each x: T | g(x))
+  const body = isComposing
+    ? substituteBinder(rawBody, callbackBinder, receiver.body)
+    : rawBody;
+
+  if (methodName === "filter") {
+    if (isComposing) {
+      const combined = receiver.predicate
+        ? Binop("and", receiver.predicate, body)
+        : body;
+      return { ...receiver, predicate: combined };
+    }
+    return Comprehension(sourceBinder, elemType, Var(sourceBinder), body);
+  } else {
+    if (isComposing) {
+      return { ...receiver, body };
+    }
+    return Comprehension(sourceBinder, elemType, body);
+  }
+}
+
 function translateCallExpr(
   expr: ts.CallExpression,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
-): string {
+): PantExpr {
   // Method calls: obj.method(args)
   if (ts.isPropertyAccessExpression(expr.expression)) {
     const methodName = expr.expression.name.text;
-    const obj = expr.expression.expression;
+    const tsReceiver = expr.expression.expression;
 
     // .includes(x) -> x in obj (array only)
     if (methodName === "includes" && expr.arguments.length === 1) {
-      const receiverType = checker.getTypeAtLocation(obj);
+      const receiverType = checker.getTypeAtLocation(tsReceiver);
       if (!checker.isArrayType(receiverType)) {
-        return "> UNSUPPORTED: non-array .includes()";
+        return Unsupported("non-array .includes()");
       }
       const arg = translateBodyExpr(
         expr.arguments[0]!,
@@ -506,98 +672,42 @@ function translateCallExpr(
         strategy,
         paramNames,
       );
-      if (isUnsupported(arg)) {
+      if (arg.kind === "unsupported") {
         return arg;
       }
-      const objStr = translateBodyExpr(obj, checker, strategy, paramNames);
-      if (isUnsupported(objStr)) {
-        return objStr;
+      const objExpr = translateBodyExpr(
+        tsReceiver,
+        checker,
+        strategy,
+        paramNames,
+      );
+      if (objExpr.kind === "unsupported") {
+        return objExpr;
       }
-      return `${arg} in ${objStr}`;
+      return Membership(arg, objExpr);
     }
 
-    // .filter(p).map(f) -> each x: T, p x | f x
-    if (methodName === "map" && ts.isCallExpression(obj)) {
-      const filterResult = tryTranslateFilterMap(
-        obj,
+    // .filter(pred) / .map(fn) — each independently produces or refines a comprehension
+    if (
+      (methodName === "filter" || methodName === "map") &&
+      expr.arguments.length === 1
+    ) {
+      const result = translateArrayMethod(
+        methodName,
+        tsReceiver,
         expr,
         checker,
         strategy,
         paramNames,
       );
-      if (filterResult) {
-        return filterResult;
+      if (result) {
+        return result;
       }
     }
   }
 
   // Unsupported call
-  return `> UNSUPPORTED: ${expr.getText()}`;
-}
-
-function tryTranslateFilterMap(
-  filterCall: ts.CallExpression,
-  mapCall: ts.CallExpression,
-  checker: ts.TypeChecker,
-  strategy: NumericStrategy,
-  paramNames: Map<string, string>,
-): string | null {
-  if (!ts.isPropertyAccessExpression(filterCall.expression)) {
-    return null;
-  }
-  if (filterCall.expression.name.text !== "filter") {
-    return null;
-  }
-  if (filterCall.arguments.length !== 1 || mapCall.arguments.length !== 1) {
-    return null;
-  }
-
-  const sourceObj = filterCall.expression.expression;
-  const filterArg = filterCall.arguments[0]!;
-  const mapArg = mapCall.arguments[0]!;
-
-  // Only translate filter/map on actual arrays
-  const sourceType = checker.getTypeAtLocation(sourceObj);
-  if (!checker.isArrayType(sourceType)) {
-    return null;
-  }
-  let elemTypeName = "?";
-  const typeArgs = checker.getTypeArguments(sourceType as ts.TypeReference);
-  if (typeArgs.length === 1) {
-    elemTypeName = mapTsType(typeArgs[0]!, checker, strategy);
-  }
-
-  const varName = freshBinder(paramNames);
-  const extendedParams = new Map(paramNames);
-  extendedParams.set(varName, varName);
-
-  // Extract predicate body from arrow function
-  const filterBody = extractArrowBody(
-    filterArg,
-    varName,
-    extendedParams,
-    checker,
-    strategy,
-  );
-  const mapBody = extractArrowBody(
-    mapArg,
-    varName,
-    extendedParams,
-    checker,
-    strategy,
-  );
-
-  if (filterBody && mapBody) {
-    if (isUnsupported(filterBody)) {
-      return filterBody;
-    }
-    if (isUnsupported(mapBody)) {
-      return mapBody;
-    }
-    return `(each ${varName}: ${elemTypeName}, ${filterBody} | ${mapBody})`;
-  }
-
-  return null;
+  return Unsupported(expr.getText());
 }
 
 function extractArrowBody(
@@ -606,7 +716,7 @@ function extractArrowBody(
   paramNames: Map<string, string>,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
-): string | null {
+): PantExpr | null {
   if (!ts.isArrowFunction(expr)) {
     return null;
   }
@@ -614,12 +724,15 @@ function extractArrowBody(
     expr.parameters.length !== 1 ||
     !ts.isIdentifier(expr.parameters[0]!.name)
   ) {
-    return "> UNSUPPORTED: filter/map callback must have exactly one identifier parameter";
+    return Unsupported(
+      "filter/map callback must have exactly one identifier parameter",
+    );
   }
 
   // Map arrow param to the fresh binder
+  const param = expr.parameters[0]!;
   const arrowParams = new Map(paramNames);
-  arrowParams.set((expr.parameters[0]?.name as ts.Identifier).text, binderName);
+  arrowParams.set((param.name as ts.Identifier).text, binderName);
 
   if (ts.isBlock(expr.body)) {
     // Only allow a single return (after filtering guards), same rule as
@@ -643,18 +756,16 @@ function extractArrowBody(
 
 function translateMutatingBody(
   node: ts.FunctionDeclaration | ts.MethodDeclaration,
-  _functionName: string,
-  _params: Array<{ name: string; type: string }>,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
   declarations: PantDeclaration[],
-): PantProposition[] {
+): PantProp[] {
   if (!node.body) {
     return [];
   }
 
-  const propositions: PantProposition[] = [];
+  const propositions: PantProp[] = [];
   const modifiedRules = new Set<string>();
 
   // Collect property assignments
@@ -687,7 +798,7 @@ function collectAssignments(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
-  propositions: PantProposition[],
+  propositions: PantProp[],
   modifiedRules: Set<string>,
 ): boolean {
   let hasUnsupportedMutation = false;
@@ -716,19 +827,52 @@ function collectAssignments(
           paramNames,
         );
         const val = translateBodyExpr(bin.right, checker, strategy, paramNames);
-        if (
-          obj.startsWith("> UNSUPPORTED:") ||
-          val.startsWith("> UNSUPPORTED:")
-        ) {
+        if (obj.kind === "unsupported") {
           hasUnsupportedMutation = true;
-          propositions.push({
-            text: obj.startsWith("> UNSUPPORTED:") ? obj : val,
-          });
+          propositions.push(UnsupportedProp(obj.reason));
           continue;
         }
-        propositions.push({ text: `${prop}' ${obj} = ${val}` });
+        if (val.kind === "unsupported") {
+          hasUnsupportedMutation = true;
+          propositions.push(UnsupportedProp(val.reason));
+          continue;
+        }
+        propositions.push(Equation([], PrimedApply(prop, obj), val));
         modifiedRules.add(prop);
+        continue;
       }
+    }
+
+    if (
+      ts.isExpressionStatement(stmt) &&
+      expressionHasSideEffects(stmt.expression)
+    ) {
+      propositions.push(UnsupportedProp("side-effectful expression"));
+      hasUnsupportedMutation = true;
+      continue;
+    }
+
+    if (
+      ts.isVariableStatement(stmt) &&
+      stmt.declarationList.declarations.some(
+        (d) => d.initializer && expressionHasSideEffects(d.initializer),
+      )
+    ) {
+      propositions.push(UnsupportedProp("side-effectful variable initializer"));
+      hasUnsupportedMutation = true;
+      continue;
+    }
+
+    if (
+      (ts.isReturnStatement(stmt) || ts.isThrowStatement(stmt)) &&
+      stmt.expression &&
+      expressionHasSideEffects(stmt.expression)
+    ) {
+      propositions.push(
+        UnsupportedProp("side-effectful control-flow expression"),
+      );
+      hasUnsupportedMutation = true;
+      continue;
     }
 
     // Recurse into nested blocks
@@ -746,9 +890,7 @@ function collectAssignments(
         hasUnsupportedMutation = true;
       }
     } else if (ts.isIfStatement(stmt)) {
-      propositions.push({
-        text: "> UNSUPPORTED: conditional assignment (if/else)",
-      });
+      propositions.push(UnsupportedProp("conditional assignment (if/else)"));
       hasUnsupportedMutation = true;
     } else if (
       ts.isForStatement(stmt) ||
@@ -757,49 +899,45 @@ function collectAssignments(
       ts.isWhileStatement(stmt) ||
       ts.isDoStatement(stmt)
     ) {
-      propositions.push({ text: "> UNSUPPORTED: loop assignment" });
+      propositions.push(UnsupportedProp("loop assignment"));
       hasUnsupportedMutation = true;
     } else if (ts.isTryStatement(stmt)) {
-      if (
-        collectAssignments(
-          stmt.tryBlock,
-          checker,
-          strategy,
-          paramNames,
-          propositions,
-          modifiedRules,
-        )
-      ) {
+      // try/catch branches are mutually exclusive; collecting from both would
+      // produce contradictory conjunctions. Only the finally block executes
+      // unconditionally.
+      if (stmt.catchClause) {
+        propositions.push(UnsupportedProp("try/catch assignment"));
         hasUnsupportedMutation = true;
+      } else {
+        if (
+          collectAssignments(
+            stmt.tryBlock,
+            checker,
+            strategy,
+            paramNames,
+            propositions,
+            modifiedRules,
+          )
+        ) {
+          hasUnsupportedMutation = true;
+        }
       }
-      if (
-        stmt.catchClause &&
-        collectAssignments(
-          stmt.catchClause.block,
-          checker,
-          strategy,
-          paramNames,
-          propositions,
-          modifiedRules,
-        )
-      ) {
-        hasUnsupportedMutation = true;
-      }
-      if (
-        stmt.finallyBlock &&
-        collectAssignments(
-          stmt.finallyBlock,
-          checker,
-          strategy,
-          paramNames,
-          propositions,
-          modifiedRules,
-        )
-      ) {
-        hasUnsupportedMutation = true;
+      if (stmt.finallyBlock) {
+        if (
+          collectAssignments(
+            stmt.finallyBlock,
+            checker,
+            strategy,
+            paramNames,
+            propositions,
+            modifiedRules,
+          )
+        ) {
+          hasUnsupportedMutation = true;
+        }
       }
     } else if (ts.isSwitchStatement(stmt)) {
-      propositions.push({ text: "> UNSUPPORTED: switch assignment" });
+      propositions.push(UnsupportedProp("switch assignment"));
       hasUnsupportedMutation = true;
     }
   }
@@ -814,8 +952,8 @@ function collectAssignments(
 function generateFrameConditions(
   modifiedRules: Set<string>,
   declarations: PantDeclaration[],
-): PantProposition[] {
-  const frames: PantProposition[] = [];
+): PantProp[] {
+  const frames: PantProp[] = [];
 
   for (const decl of declarations) {
     if (decl.kind !== "rule") {
@@ -825,17 +963,15 @@ function generateFrameConditions(
       continue;
     }
 
-    if (decl.params.length === 0) {
-      frames.push({ text: `${decl.name}' = ${decl.name}` });
-    } else {
-      const paramBindings = decl.params
-        .map((p) => `${p.name}: ${p.type}`)
-        .join(", ");
-      const paramArgs = decl.params.map((p) => p.name).join(" ");
-      frames.push({
-        text: `all ${paramBindings} | ${decl.name}' ${paramArgs} = ${decl.name} ${paramArgs}`,
-      });
-    }
+    const paramArgs = decl.params.map((p) => Var(p.name));
+    const lhs = PrimedApply(decl.name, ...paramArgs);
+    const rhs =
+      paramArgs.length > 0 ? Apply(decl.name, ...paramArgs) : Apply(decl.name);
+    const quantifiers = decl.params.map((p) => ({
+      name: p.name,
+      type: p.type,
+    }));
+    frames.push(Equation(quantifiers, lhs, rhs));
   }
 
   return frames;
