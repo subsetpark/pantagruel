@@ -1861,13 +1861,25 @@ all a: Int | f a > a.
                       (Printf.sprintf "Unexpected collection error: %s"
                          (Collect.show_collect_error e))
               in
-              match Check.check_document env doc with
-              | Ok _warnings -> fail "Expected CheckWithoutBody error"
-              | Error (Check.CheckWithoutBody _) -> ()
-              | Error e ->
-                  fail
-                    (Printf.sprintf "Wrong error type: %s"
-                       (Check.show_type_error e)));
+              let is_expected =
+                match Check.check_document env doc with
+                | Ok _warnings -> false
+                | Error (Check.CheckWithoutBody _) -> true
+                | Error
+                    ( UnboundVariable _ | UnboundType _ | TypeMismatch _
+                    | ArityMismatch _ | NotAFunction _ | NotAList _
+                    | NotAProduct _ | NotNumeric _ | ExpectedBool _
+                    | PrimedNonRule _ | PrimeOutsideActionContext _
+                    | OverrideRequiresArity1 _ | ProjectionOutOfBounds _
+                    | PropositionNotBool _ | ShadowingTypeMismatch _
+                    | AmbiguousName _ | UnboundQualified _
+                    | PrimedExtracontextual _ | BoolParam _
+                    | ComprehensionNeedEach _ | AggregateRequiresNumeric _
+                    | AggregateRequiresBool _ ) ->
+                    false
+              in
+              if not is_expected then
+                fail "Expected CheckWithoutBody error");
           test_case "check block can reference action params" `Quick (fun () ->
               check_ok
                 {|module T.
