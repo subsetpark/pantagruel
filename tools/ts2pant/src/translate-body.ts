@@ -402,7 +402,9 @@ function translateArrayMethod(
   const receiver = translateBodyExpr(tsReceiver, checker, strategy, paramNames);
   if (receiver.kind === "unsupported") return receiver;
 
-  const varName = freshBinder(paramNames);
+  // When composing with an existing comprehension, reuse its binder
+  const isComposing = receiver.kind === "comprehension";
+  const varName = isComposing ? receiver.binder : freshBinder(paramNames);
   const extendedParams = new Map(paramNames);
   extendedParams.set(varName, varName);
 
@@ -411,13 +413,13 @@ function translateArrayMethod(
   if (body.kind === "unsupported") return body;
 
   if (methodName === "filter") {
-    if (receiver.kind === "comprehension") {
+    if (isComposing) {
       const combined = receiver.predicate ? Binop("and", receiver.predicate, body) : body;
       return { ...receiver, predicate: combined };
     }
     return Comprehension(varName, elemType, Var(varName), body);
   } else {
-    if (receiver.kind === "comprehension") {
+    if (isComposing) {
       return { ...receiver, body };
     }
     return Comprehension(varName, elemType, body);

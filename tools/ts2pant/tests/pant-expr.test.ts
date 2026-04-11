@@ -48,9 +48,9 @@ describe("renderExpr", () => {
     expect(renderExpr(Binop("+", Var("a"), Lit("2")))).toBe("a + 2");
   });
 
-  it("renders nested binop without extra parens", () => {
+  it("renders nested binop with parens to preserve grouping", () => {
     expect(renderExpr(Binop("and", Var("a"), Binop("or", Var("b"), Var("c"))))).toBe(
-      "a and b or c",
+      "a and (b or c)",
     );
   });
 

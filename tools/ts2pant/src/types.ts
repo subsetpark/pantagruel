@@ -1,4 +1,4 @@
-import type { PantExpr } from "./pant-expr.js";
+import type { PantExpr, PantProp } from "./pant-expr.js";
 
 /** Pantagruel numeric type strategy. */
 export type NumericType = "Int" | "Real" | "Nat0";
@@ -43,7 +43,7 @@ export interface PantAction {
 export type PantDeclaration = PantDomain | PantAlias | PantRule | PantAction;
 
 /** Re-export PantProp as the proposition type used in documents. */
-export type { PantProp } from "./pant-expr.js";
+export type { PantProp };
 
 /** A complete Pantagruel document ready for emission. */
 export interface PantDocument {

@@ -87,8 +87,11 @@ export function renderExpr(expr: PantExpr): string {
       if (expr.args.length === 0) return `${expr.fn}'`;
       return `${expr.fn}' ${expr.args.map(renderArg).join(" ")}`;
     }
-    case "binop":
-      return `${renderExpr(expr.left)} ${expr.op} ${renderExpr(expr.right)}`;
+    case "binop": {
+      const left = expr.left.kind === "binop" ? `(${renderExpr(expr.left)})` : renderExpr(expr.left);
+      const right = expr.right.kind === "binop" ? `(${renderExpr(expr.right)})` : renderExpr(expr.right);
+      return `${left} ${expr.op} ${right}`;
+    }
     case "unop":
       return `${expr.op}(${renderExpr(expr.operand)})`;
     case "cardinality":
