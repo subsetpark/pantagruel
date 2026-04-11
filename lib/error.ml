@@ -84,6 +84,8 @@ let format_type_error err =
       fmt loc
         (Printf.sprintf "Aggregate combiner %s requires Bool body, got %s" sym
            (Types.format_ty ty))
+  | CheckWithoutBody loc ->
+      fmt loc "check block requires at least one body proposition"
 
 (** Format a collection error with location prefix *)
 let format_collect_error err =
@@ -141,5 +143,5 @@ let format_type_warning err =
     | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
     | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
     | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ ) as other ->
+    | AggregateRequiresBool _ | CheckWithoutBody _ ) as other ->
       format_type_error other

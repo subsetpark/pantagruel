@@ -339,6 +339,11 @@ let chapter_to_json env chapter =
     ]
   in
   let fields =
+    if chapter.checks <> [] then
+      fields @ [ ("checks", `List (List.map prop_to_json chapter.checks)) ]
+    else fields
+  in
+  let fields =
     if chapter.trailing_docs <> [] then
       fields
       @ [

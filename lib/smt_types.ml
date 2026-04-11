@@ -127,6 +127,7 @@ and query_kind =
       (** SAT = reachable violation (concrete attack trace), UNSAT = safe up to
           k steps *)
   | CondExhaustiveness  (** SAT = non-exhaustive (counterexample), UNSAT = ok *)
+  | Entailment  (** SAT = not entailed (counterexample), UNSAT = entailed *)
 
 (** SMT sort name for a Pantagruel type *)
 let rec sort_of_ty = function

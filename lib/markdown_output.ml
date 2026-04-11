@@ -433,6 +433,15 @@ let pp_chapter procs ?(skip_first_doc_groups = 0) ~total_chapters chapter_num
         if prop.doc <> [] then fprintf fmt "%a@\n@\n" pp_doc_comment prop.doc;
         fprintf fmt "%a.@\n@\n" (pp_expr procs) prop.value)
       chapter.body
+  end;
+
+  if chapter.checks <> [] then begin
+    fprintf fmt "**check**@\n@\n";
+    List.iter
+      (fun prop ->
+        if prop.doc <> [] then fprintf fmt "%a@\n@\n" pp_doc_comment prop.doc;
+        fprintf fmt "%a.@\n@\n" (pp_expr procs) prop.value)
+      chapter.checks
   end
 
 let pp_document procs fmt doc =

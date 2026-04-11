@@ -340,6 +340,7 @@ type layout_item =
   | LDecls of declaration located list  (** Contiguous declarations *)
   | LProps of expr located list  (** Contiguous propositions *)
   | LSeparator  (** --- *)
+  | LCheck  (** check *)
   | LWhere  (** where *)
 
 (** Split a list of located nodes into layout items. Doc comments on nodes
@@ -369,6 +370,10 @@ let layout_of_chapter chapter =
   layout_split ~make_group:(fun ds -> LDecls ds) chapter.head
   @ [ LSeparator ]
   @ layout_split ~make_group:(fun ps -> LProps ps) chapter.body
+  @ (if chapter.checks <> [] then
+       [ LCheck ]
+       @ layout_split ~make_group:(fun ps -> LProps ps) chapter.checks
+     else [])
   @ List.map (fun group -> LDocs group) chapter.trailing_docs
 
 let layout_of_document doc =
@@ -392,6 +397,7 @@ let render_layout ?(width = 80) fmt items =
       | LProps props ->
           List.iter (fun p -> fprintf fmt "%a.@\n" pp_expr p.value) props
       | LSeparator -> fprintf fmt "---@\n"
+      | LCheck -> fprintf fmt "check@\n"
       | LWhere -> fprintf fmt "where@\n")
     items
 

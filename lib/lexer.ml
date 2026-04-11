@@ -118,6 +118,7 @@ let keyword_or_lower_ident = function
   | "over" -> Parser.OVER
   | "min" -> Parser.MIN
   | "max" -> Parser.MAX
+  | "check" -> Parser.CHECK
   | s -> Parser.LOWER_IDENT s
 
 (** Skip line comment *)
@@ -373,6 +374,7 @@ let string_of_token = function
   | Parser.OVER -> "'over'"
   | Parser.MIN -> "'min'"
   | Parser.MAX -> "'max'"
+  | Parser.CHECK -> "'check'"
 
 (** Describe a token category (for "expected X" messages) *)
 let describe_token = function
@@ -393,7 +395,7 @@ let describe_token = function
     | Parser.PIPE | Parser.AT | Parser.SEPARATOR | Parser.LPAREN | Parser.RPAREN
     | Parser.LBRACKET | Parser.RBRACKET | Parser.LBRACE | Parser.RBRACE
     | Parser.CONTEXT | Parser.INITIALLY | Parser.CLOSURE | Parser.COND
-    | Parser.OVER | Parser.MIN | Parser.MAX ) as tok ->
+    | Parser.OVER | Parser.MIN | Parser.MAX | Parser.CHECK ) as tok ->
       string_of_token tok
 
 (** All token constructors (with dummy values for parameterized tokens) *)
@@ -455,6 +457,7 @@ let all_tokens =
     Parser.OVER;
     Parser.MIN;
     Parser.MAX;
+    Parser.CHECK;
     Parser.ACTION_LABEL "";
     Parser.EOF;
   ]

@@ -139,11 +139,14 @@ type declaration =
 type chapter = {
   head : declaration located list;
   body : expr located list;
+  checks : expr located list;
+      (** Proof-obligation propositions (after [check] keyword) *)
   trailing_docs : string list list;
       (** Doc comments after the last body proposition (before where/EOF) *)
 }
 [@@deriving show, eq]
-(** A chapter has a head (declarations) and body (propositions) *)
+(** A chapter has a head (declarations), body (propositions), and optional check
+    block (entailment goals) *)
 
 type document = {
   module_name : upper_ident option;  (** None = standalone (no module system) *)

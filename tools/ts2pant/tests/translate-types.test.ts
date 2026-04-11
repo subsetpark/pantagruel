@@ -1,189 +1,28 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
-  createProgramFromSource,
+  createSourceFileFromSource,
   extractAllTypes,
   extractReferencedTypes,
+  getChecker,
 } from "../src/extract.js";
 import {
-  translateTypes,
-  mapTsType,
   IntStrategy,
+  mapTsType,
   RealStrategy,
+  translateTypes,
 } from "../src/translate-types.js";
 
-function extractAndTranslate(
-  source: string,
-  strategy = IntStrategy,
-  fileName = "test.ts",
-) {
-  const program = createProgramFromSource(source, fileName);
-  const extracted = extractAllTypes(program, fileName);
-  const checker = program.getTypeChecker();
+// Tests for internal type translation APIs: mapTsType, extractReferencedTypes
+// recursive following, numeric strategy. See tests/fixtures/constructs/ for
+// exhaustive construct coverage via snapshots.
+
+function extractAndTranslate(source: string, strategy = IntStrategy) {
+  const sourceFile = createSourceFileFromSource(source);
+  const extracted = extractAllTypes(sourceFile);
+  const checker = getChecker(sourceFile);
   const decls = translateTypes(extracted, checker, strategy);
-  return { decls, extracted, checker, program };
+  return { decls, extracted, checker, sourceFile };
 }
-
-describe("interface -> domain + rules", () => {
-  it("extracts interface as domain plus one rule per property", () => {
-    const { decls } = extractAndTranslate(`
-      interface Account {
-        balance: number;
-        owner: string;
-      }
-    `);
-
-    expect(decls).toContainEqual({ kind: "domain", name: "Account" });
-    expect(decls).toContainEqual({
-      kind: "rule",
-      name: "balance",
-      params: [{ name: "a", type: "Account" }],
-      returnType: "Int",
-    });
-    expect(decls).toContainEqual({
-      kind: "rule",
-      name: "owner",
-      params: [{ name: "a", type: "Account" }],
-      returnType: "String",
-    });
-  });
-
-  it("maps boolean properties", () => {
-    const { decls } = extractAndTranslate(`
-      interface User {
-        active: boolean;
-      }
-    `);
-
-    expect(decls).toContainEqual({
-      kind: "rule",
-      name: "active",
-      params: [{ name: "u", type: "User" }],
-      returnType: "Bool",
-    });
-  });
-
-  it("maps array properties to list types", () => {
-    const { decls } = extractAndTranslate(`
-      interface Library {
-        books: string[];
-      }
-    `);
-
-    expect(decls).toContainEqual({
-      kind: "rule",
-      name: "books",
-      params: [{ name: "l", type: "Library" }],
-      returnType: "[String]",
-    });
-  });
-
-  it("maps properties referencing other interfaces", () => {
-    const { decls } = extractAndTranslate(`
-      interface User {
-        name: string;
-      }
-      interface Account {
-        owner: User;
-      }
-    `);
-
-    expect(decls).toContainEqual({ kind: "domain", name: "User" });
-    expect(decls).toContainEqual({ kind: "domain", name: "Account" });
-    expect(decls).toContainEqual({
-      kind: "rule",
-      name: "owner",
-      params: [{ name: "a", type: "Account" }],
-      returnType: "User",
-    });
-  });
-
-  it("maps null union to sum with Nothing", () => {
-    const { decls } = extractAndTranslate(`
-      interface Task {
-        assignee: string | null;
-      }
-    `);
-
-    expect(decls).toContainEqual({
-      kind: "rule",
-      name: "assignee",
-      params: [{ name: "t", type: "Task" }],
-      returnType: "String + Nothing",
-    });
-  });
-});
-
-describe("type alias -> alias declaration", () => {
-  it("maps tuple alias", () => {
-    const { decls } = extractAndTranslate(`
-      type Point = [number, number];
-    `);
-
-    expect(decls).toContainEqual({
-      kind: "alias",
-      name: "Point",
-      type: "Int * Int",
-    });
-  });
-
-  it("maps union alias", () => {
-    const { decls } = extractAndTranslate(`
-      interface Value { data: string; }
-      type Result = Value | null;
-    `);
-
-    expect(decls).toContainEqual({
-      kind: "alias",
-      name: "Result",
-      type: "Value + Nothing",
-    });
-  });
-
-  it("maps simple alias to named type", () => {
-    const { decls } = extractAndTranslate(`
-      type Name = string;
-    `);
-
-    expect(decls).toContainEqual({
-      kind: "alias",
-      name: "Name",
-      type: "String",
-    });
-  });
-});
-
-describe("enum -> domain", () => {
-  it("maps enum to domain declaration", () => {
-    const { decls } = extractAndTranslate(`
-      enum Color {
-        Red,
-        Green,
-        Blue,
-      }
-    `);
-
-    expect(decls).toContainEqual({ kind: "domain", name: "Color" });
-  });
-
-  it("extracts enum member names", () => {
-    const program = createProgramFromSource(`
-      enum Status {
-        Active,
-        Inactive,
-        Pending,
-      }
-    `);
-    const extracted = extractAllTypes(program, "test.ts");
-
-    expect(extracted.enums).toHaveLength(1);
-    expect(extracted.enums[0].name).toBe("Status");
-    expect(extracted.enums[0].members).toEqual([
-      "Active",
-      "Inactive",
-      "Pending",
-    ]);
-  });
-});
 
 describe("numeric strategy", () => {
   it("IntStrategy maps number to Int", () => {
@@ -215,6 +54,45 @@ describe("numeric strategy", () => {
   });
 });
 
+describe("class method referenced types", () => {
+  it("follows types from class method signatures", () => {
+    const source = `
+      interface User {
+        name: string;
+      }
+      class Account {
+        getOwner(u: User): User {
+          return u;
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const extracted = extractReferencedTypes(sourceFile, "Account.getOwner");
+    expect(extracted.interfaces.map((i) => i.name)).toContain("User");
+  });
+});
+
+describe("enum member extraction", () => {
+  it("extracts enum member names", () => {
+    const sourceFile = createSourceFileFromSource(`
+      enum Status {
+        Active,
+        Inactive,
+        Pending,
+      }
+    `);
+    const extracted = extractAllTypes(sourceFile);
+
+    expect(extracted.enums).toHaveLength(1);
+    expect(extracted.enums[0].name).toBe("Status");
+    expect(extracted.enums[0].members).toEqual([
+      "Active",
+      "Inactive",
+      "Pending",
+    ]);
+  });
+});
+
 describe("recursive type following", () => {
   it("follows types from function parameters", () => {
     const source = `
@@ -232,8 +110,8 @@ describe("recursive type following", () => {
         return account.balance;
       }
     `;
-    const program = createProgramFromSource(source);
-    const extracted = extractReferencedTypes(program, "test.ts", "getBalance");
+    const sourceFile = createSourceFileFromSource(source);
+    const extracted = extractReferencedTypes(sourceFile, "getBalance");
 
     const names = extracted.interfaces.map((i) => i.name);
     expect(names).toContain("Account");
@@ -250,8 +128,8 @@ describe("recursive type following", () => {
         return { name: "test" };
       }
     `;
-    const program = createProgramFromSource(source);
-    const extracted = extractReferencedTypes(program, "test.ts", "getUser");
+    const sourceFile = createSourceFileFromSource(source);
+    const extracted = extractReferencedTypes(sourceFile, "getUser");
 
     expect(extracted.interfaces.map((i) => i.name)).toContain("User");
   });
@@ -265,8 +143,8 @@ describe("recursive type following", () => {
         return [];
       }
     `;
-    const program = createProgramFromSource(source);
-    const extracted = extractReferencedTypes(program, "test.ts", "getItems");
+    const sourceFile = createSourceFileFromSource(source);
+    const extracted = extractReferencedTypes(sourceFile, "getItems");
 
     expect(extracted.interfaces.map((i) => i.name)).toContain("Item");
   });
@@ -288,12 +166,8 @@ describe("recursive type following", () => {
         return order.total;
       }
     `;
-    const program = createProgramFromSource(source);
-    const extracted = extractReferencedTypes(
-      program,
-      "test.ts",
-      "processOrder",
-    );
+    const sourceFile = createSourceFileFromSource(source);
+    const extracted = extractReferencedTypes(sourceFile, "processOrder");
 
     const names = extracted.interfaces.map((i) => i.name);
     expect(names).toContain("Order");
@@ -305,9 +179,9 @@ describe("recursive type following", () => {
 describe("mapTsType", () => {
   it("handles undefined/void as Nothing", () => {
     const source = `interface Foo { val: undefined; }`;
-    const program = createProgramFromSource(source);
-    const checker = program.getTypeChecker();
-    const extracted = extractAllTypes(program, "test.ts");
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = getChecker(sourceFile);
+    const extracted = extractAllTypes(sourceFile);
     const prop = extracted.interfaces[0].properties[0];
 
     expect(mapTsType(prop.type, checker, IntStrategy)).toBe("Nothing");
