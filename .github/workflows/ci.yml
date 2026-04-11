@@ -67,11 +67,8 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
-      - name: Lint
-        run: npx biome check src
-
-      - name: Format
-        run: npx biome format --check src
+      - name: Lint and format
+        run: npx biome ci src
 
       - name: Test
         run: npx vitest run
