@@ -18,14 +18,15 @@ fs.mkdirSync(outDir, { recursive: true });
 
 const jsSrc = path.join(repoRoot, "_build/default/wasm/pant_wasm.bc.wasm.js");
 const jsDst = path.join(outDir, "pant_wasm.bc.wasm.js");
-fs.copyFileSync(jsSrc, jsDst);
+
+// Read from dune's read-only _build output, patch in memory, write to dest
+const text = fs
+  .readFileSync(jsSrc, "utf8")
+  .replace(/require\.main\.filename/g, "__filename");
+fs.writeFileSync(jsDst, text);
+
 fs.cpSync(
   path.join(repoRoot, "_build/default/wasm/pant_wasm.bc.wasm.assets"),
   path.join(outDir, "pant_wasm.bc.wasm.assets"),
   { recursive: true },
 );
-
-const text = fs
-  .readFileSync(jsDst, "utf8")
-  .replace(/require\.main\.filename/g, "__filename");
-fs.writeFileSync(jsDst, text);
