@@ -1,17 +1,24 @@
-import { describe, it, expect } from "vitest";
-import { createProgramFromSource } from "../src/extract.js";
-import { IntStrategy, RealStrategy } from "../src/translate-types.js";
+import { describe, expect, it } from "vitest";
+import { createSourceFileFromSource, getChecker } from "../src/extract.js";
+import { renderExpr } from "../src/pant-expr.js";
 import {
-  translateSignature,
   classifyFunction,
   findFunction,
+  translateSignature,
 } from "../src/translate-signature.js";
-import { renderExpr } from "../src/pant-expr.js";
+import { IntStrategy, RealStrategy } from "../src/translate-types.js";
 
-function translate(source: string, functionName: string, strategy = IntStrategy) {
-  const fileName = "test.ts";
-  const program = createProgramFromSource(source, fileName);
-  return translateSignature(program, fileName, functionName, strategy);
+// Tests for internal translateSignature APIs: classifyFunction, guard
+// expression structure, edge cases. See tests/fixtures/constructs/ for
+// exhaustive construct coverage via snapshots.
+
+function translate(
+  source: string,
+  functionName: string,
+  strategy = IntStrategy,
+) {
+  const sourceFile = createSourceFileFromSource(source);
+  return translateSignature(sourceFile, functionName, strategy);
 }
 
 describe("classifyFunction", () => {
@@ -21,9 +28,9 @@ describe("classifyFunction", () => {
         return account.balance;
       }
     `;
-    const program = createProgramFromSource(source);
-    const { node } = findFunction(program, "test.ts", "getBalance");
-    const checker = program.getTypeChecker();
+    const sourceFile = createSourceFileFromSource(source);
+    const { node } = findFunction(sourceFile, "getBalance");
+    const checker = getChecker(sourceFile);
     expect(classifyFunction(node, checker)).toBe("pure");
   });
 
@@ -33,9 +40,9 @@ describe("classifyFunction", () => {
         account.balance = 0;
       }
     `;
-    const program = createProgramFromSource(source);
-    const { node } = findFunction(program, "test.ts", "reset");
-    const checker = program.getTypeChecker();
+    const sourceFile = createSourceFileFromSource(source);
+    const { node } = findFunction(sourceFile, "reset");
+    const checker = getChecker(sourceFile);
     expect(classifyFunction(node, checker)).toBe("mutating");
   });
 
@@ -46,54 +53,15 @@ describe("classifyFunction", () => {
         return name;
       }
     `;
-    const program = createProgramFromSource(source);
-    const { node } = findFunction(program, "test.ts", "setName");
-    const checker = program.getTypeChecker();
+    const sourceFile = createSourceFileFromSource(source);
+    const { node } = findFunction(sourceFile, "setName");
+    const checker = getChecker(sourceFile);
     expect(classifyFunction(node, checker)).toBe("mutating");
   });
 });
 
-describe("pure function -> rule", () => {
-  it("translates simple pure function to rule", () => {
-    const source = `
-      interface Account { balance: number; }
-      function getBalance(a: Account): number {
-        return a.balance;
-      }
-    `;
-    const result = translate(source, "getBalance");
-
-    expect(result.classification).toBe("pure");
-    expect(result.declaration).toEqual({
-      kind: "rule",
-      name: "getBalance",
-      params: [{ name: "a", type: "Account" }],
-      returnType: "Int",
-    });
-  });
-
-  it("translates multi-param pure function", () => {
-    const source = `
-      interface Account { balance: number; owner: string; }
-      function foo(a: Account, b: number): string {
-        return a.owner;
-      }
-    `;
-    const result = translate(source, "foo");
-
-    expect(result.classification).toBe("pure");
-    expect(result.declaration).toEqual({
-      kind: "rule",
-      name: "foo",
-      params: [
-        { name: "a", type: "Account" },
-        { name: "b", type: "Int" },
-      ],
-      returnType: "String",
-    });
-  });
-
-  it("respects numeric strategy", () => {
+describe("numeric strategy", () => {
+  it("respects RealStrategy for number types", () => {
     const source = `
       function double(n: number): number {
         return n * 2;
@@ -108,128 +76,6 @@ describe("pure function -> rule", () => {
       returnType: "Real",
     });
   });
-
-  it("translates boolean return type", () => {
-    const source = `
-      function isActive(active: boolean): boolean {
-        return active;
-      }
-    `;
-    const result = translate(source, "isActive");
-
-    expect(result.declaration.kind).toBe("rule");
-    if (result.declaration.kind === "rule") {
-      expect(result.declaration.returnType).toBe("Bool");
-    }
-  });
-
-  it("translates array return type", () => {
-    const source = `
-      function getNames(names: string[]): string[] {
-        return names;
-      }
-    `;
-    const result = translate(source, "getNames");
-
-    expect(result.declaration.kind).toBe("rule");
-    if (result.declaration.kind === "rule") {
-      expect(result.declaration.returnType).toBe("[String]");
-    }
-  });
-});
-
-describe("void mutator -> action", () => {
-  it("translates void function to action", () => {
-    const source = `
-      interface Account { balance: number; }
-      function deposit(a: Account, amount: number): void {
-        a.balance = a.balance + amount;
-      }
-    `;
-    const result = translate(source, "deposit");
-
-    expect(result.classification).toBe("mutating");
-    expect(result.declaration).toEqual({
-      kind: "action",
-      label: "Deposit",
-      params: [
-        { name: "a", type: "Account" },
-        { name: "amount", type: "Int" },
-      ],
-    });
-  });
-
-  it("capitalizes action label from function name", () => {
-    const source = `
-      function doSomething(): void {}
-    `;
-    const result = translate(source, "doSomething");
-
-    expect(result.declaration.kind).toBe("action");
-    if (result.declaration.kind === "action") {
-      expect(result.declaration.label).toBe("DoSomething");
-    }
-  });
-});
-
-describe("guarded mutator -> action with guard", () => {
-  it("detects if/else-throw guard pattern", () => {
-    const source = `
-      interface Account { balance: number; }
-      function withdraw(a: Account, amount: number): void {
-        if (a.balance >= amount) {
-          a.balance = a.balance - amount;
-        } else {
-          throw new Error("Insufficient funds");
-        }
-      }
-    `;
-    const result = translate(source, "withdraw");
-
-    expect(result.classification).toBe("mutating");
-    expect(result.declaration.kind).toBe("action");
-    if (result.declaration.kind === "action") {
-      expect(result.declaration.label).toBe("Withdraw");
-      expect(renderExpr(result.declaration.guard!)).toBe("balance a >= amount");
-    }
-  });
-
-  it("ignores non-unconditional throw in else branch", () => {
-    const source = `
-      interface Account { balance: number; }
-      function withdraw(a: Account, amount: number, retry: boolean): void {
-        if (a.balance >= amount) {
-          a.balance = a.balance - amount;
-        } else {
-          if (retry) throw new Error("Insufficient funds");
-        }
-      }
-    `;
-    const result = translate(source, "withdraw");
-
-    expect(result.declaration.kind).toBe("action");
-    if (result.declaration.kind === "action") {
-      expect(result.declaration.guard).toBeUndefined();
-    }
-  });
-
-  it("detects early-throw guard pattern with negation", () => {
-    const source = `
-      interface Account { balance: number; }
-      function withdraw(a: Account, amount: number): void {
-        if (!(a.balance >= amount)) {
-          throw new Error("Insufficient funds");
-        }
-        a.balance = a.balance - amount;
-      }
-    `;
-    const result = translate(source, "withdraw");
-
-    expect(result.declaration.kind).toBe("action");
-    if (result.declaration.kind === "action") {
-      expect(renderExpr(result.declaration.guard!)).toBe("balance a >= amount");
-    }
-  });
 });
 
 describe("overloaded functions", () => {
@@ -241,10 +87,12 @@ describe("overloaded functions", () => {
         return a + b;
       }
     `;
-    const program = createProgramFromSource(source);
-    const { node } = findFunction(program, "test.ts", "add");
-    // Should find the implementation (has body), not an overload signature
+    const sourceFile = createSourceFileFromSource(source);
+    const { node } = findFunction(sourceFile, "add");
     expect(node.body).toBeDefined();
+    // Verify translateSignature uses the implementation (any params), not the first overload
+    const result = translateSignature(sourceFile, "add", IntStrategy);
+    expect(result.declaration.params).toHaveLength(2);
   });
 });
 
@@ -256,15 +104,91 @@ describe("nested closure property assignment", () => {
         return () => { a.balance = 0; };
       }
     `;
-    const program = createProgramFromSource(source);
-    const { node } = findFunction(program, "test.ts", "makeResetter");
-    const checker = program.getTypeChecker();
+    const sourceFile = createSourceFileFromSource(source);
+    const { node } = findFunction(sourceFile, "makeResetter");
+    const checker = getChecker(sourceFile);
     expect(classifyFunction(node, checker)).toBe("pure");
   });
 });
 
-describe("guard detection stops at non-if statements", () => {
-  it("does not detect guard after non-guard statements", () => {
+describe("guard expression structure", () => {
+  it("if/else-throw produces correct guard expression", () => {
+    const source = `
+      interface Account { balance: number; }
+      function withdraw(a: Account, amount: number): void {
+        if (a.balance >= amount) {
+        } else {
+          throw new Error("Insufficient funds");
+        }
+        a.balance = a.balance - amount;
+      }
+    `;
+    const result = translate(source, "withdraw");
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") {
+      return;
+    }
+    expect(renderExpr(result.declaration.guard!)).toBe("balance a >= amount");
+  });
+
+  it("early-throw with negation produces correct guard expression", () => {
+    const source = `
+      interface Account { balance: number; }
+      function withdraw(a: Account, amount: number): void {
+        if (!(a.balance >= amount)) {
+          throw new Error("Insufficient funds");
+        }
+        a.balance = a.balance - amount;
+      }
+    `;
+    const result = translate(source, "withdraw");
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") {
+      return;
+    }
+    expect(renderExpr(result.declaration.guard!)).toBe("balance a >= amount");
+  });
+
+  it("skips guard when if-condition has side effects (call)", () => {
+    const source = `
+      interface Account { balance: number; }
+      function audit(): boolean { return true; }
+      function withdraw(a: Account, amount: number): void {
+        if (audit()) {
+        } else {
+          throw new Error("Audit failed");
+        }
+        a.balance = a.balance - amount;
+      }
+    `;
+    const result = translate(source, "withdraw");
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") {
+      return;
+    }
+    expect(result.declaration.guard).toBeUndefined();
+  });
+
+  it("skips guard when negated if-condition has side effects", () => {
+    const source = `
+      interface Account { balance: number; }
+      function check(): boolean { return true; }
+      function withdraw(a: Account, amount: number): void {
+        if (!check()) {
+          throw new Error("Check failed");
+        }
+        a.balance = a.balance - amount;
+      }
+    `;
+    const result = translate(source, "withdraw");
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") {
+      return;
+    }
+    expect(result.declaration.guard).toBeUndefined();
+  });
+
+  it("guard detection stops at non-if statements", () => {
     const source = `
       interface Account { balance: number; }
       function process(a: Account, amount: number): void {
@@ -277,58 +201,205 @@ describe("guard detection stops at non-if statements", () => {
       }
     `;
     const result = translate(source, "process");
-
     expect(result.declaration.kind).toBe("action");
-    if (result.declaration.kind === "action") {
-      expect(result.declaration.guard).toBeUndefined();
+    if (result.declaration.kind !== "action") {
+      return;
     }
+    expect(result.declaration.guard).toBeUndefined();
   });
-});
 
-describe("class method -> declaration with this param", () => {
-  it("translates pure method with this as first param", () => {
+  it("assert guard produces correct expression", () => {
     const source = `
-      class Account {
-        balance: number = 0;
-        getBalance(): number {
-          return this.balance;
-        }
+      function assert(condition: unknown, msg?: string): asserts condition {
+        if (!condition) throw new Error(msg ?? "Assertion failed");
       }
-    `;
-    const result = translate(source, "getBalance");
-
-    expect(result.classification).toBe("pure");
-    expect(result.declaration).toEqual({
-      kind: "rule",
-      name: "getBalance",
-      params: [{ name: "a", type: "Account" }],
-      returnType: "Int",
-    });
-  });
-
-  it("translates mutating method with this as first param", () => {
-    const source = `
-      class Account {
-        balance: number = 0;
-        deposit(amount: number): void {
-          this.balance = this.balance + amount;
-        }
+      interface Account { balance: number; }
+      function deposit(account: Account, amount: number): void {
+        assert(amount > 0, "Amount must be positive");
+        account.balance = account.balance + amount;
       }
     `;
     const result = translate(source, "deposit");
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") {
+      return;
+    }
+    expect(renderExpr(result.declaration.guard!)).toBe("amount > 0");
+  });
 
-    expect(result.classification).toBe("mutating");
-    expect(result.declaration).toEqual({
-      kind: "action",
-      label: "Deposit",
-      params: [
-        { name: "a", type: "Account" },
-        { name: "amount", type: "Int" },
-      ],
+  it("multiple assertion guards are combined with and", () => {
+    const source = `
+      function assert(condition: unknown, msg?: string): asserts condition {
+        if (!condition) throw new Error(msg ?? "Assertion failed");
+      }
+      interface Account { balance: number; }
+      function deposit(account: Account, amount: number): void {
+        assert(amount > 0);
+        assert(account.balance >= 0);
+        account.balance = account.balance + amount;
+      }
+    `;
+    const result = translate(source, "deposit");
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") {
+      return;
+    }
+    expect(renderExpr(result.declaration.guard!)).toBe(
+      "(amount > 0) and (balance account >= 0)",
+    );
+  });
+
+  it("combines if-throw + assertion guards", () => {
+    const source = `
+      function assert(condition: unknown): asserts condition {
+        if (!condition) throw new Error();
+      }
+      interface Account { balance: number; }
+      function deposit(account: Account, amount: number): void {
+        if (amount <= 0) { throw new Error("bad amount"); }
+        assert(account.balance >= 0);
+        account.balance = account.balance + amount;
+      }
+    `;
+    const result = translate(source, "deposit");
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") {
+      return;
+    }
+    expect(renderExpr(result.declaration.guard!)).toBe(
+      "~(amount <= 0) and (balance account >= 0)",
+    );
+  });
+
+  it("ignores non-assertion calls (stops scanning)", () => {
+    const source = `
+      function log(msg: string): void { console.log(msg); }
+      interface Account { balance: number; }
+      function deposit(account: Account, amount: number): void {
+        log("depositing");
+        account.balance = account.balance + amount;
+      }
+    `;
+    const result = translate(source, "deposit");
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") {
+      return;
+    }
+    expect(result.declaration.guard).toBeUndefined();
+  });
+});
+
+describe("call-graph following guard expressions", () => {
+  it("follows a direct call", () => {
+    const source = `
+      function validateAmount(amount: number): void {
+        if (amount <= 0) { throw new Error("bad"); }
+      }
+      interface Account { balance: number; }
+      function deposit(account: Account, amount: number): void {
+        validateAmount(amount);
+        account.balance = account.balance + amount;
+      }
+    `;
+    const result = translate(source, "deposit");
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") {
+      return;
+    }
+    expect(renderExpr(result.declaration.guard!)).toBe("~(amount <= 0)");
+  });
+
+  it("substitutes formal params with actual args", () => {
+    const source = `
+      function requirePositive(n: number): void {
+        if (n <= 0) { throw new Error(); }
+      }
+      interface Account { balance: number; }
+      function deposit(account: Account, amount: number): void {
+        requirePositive(account.balance);
+        account.balance = account.balance + amount;
+      }
+    `;
+    const result = translate(source, "deposit");
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") {
+      return;
+    }
+    expect(renderExpr(result.declaration.guard!)).toBe(
+      "~((balance account) <= 0)",
+    );
+  });
+
+  it("follows calls two levels deep", () => {
+    const source = `
+      function requirePositive(n: number): void {
+        if (n <= 0) { throw new Error(); }
+      }
+      function validateAmount(amount: number): void {
+        requirePositive(amount);
+      }
+      interface Account { balance: number; }
+      function deposit(account: Account, amount: number): void {
+        validateAmount(amount);
+        account.balance = account.balance + amount;
+      }
+    `;
+    const result = translate(source, "deposit");
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") {
+      return;
+    }
+    expect(renderExpr(result.declaration.guard!)).toBe("~(amount <= 0)");
+  });
+
+  it("bails on recursive calls", () => {
+    const source = `
+      function validate(n: number): void {
+        if (n > 100) validate(n - 1);
+        if (n <= 0) { throw new Error(); }
+      }
+      interface Account { balance: number; }
+      function deposit(account: Account, amount: number): void {
+        validate(amount);
+        account.balance = account.balance + amount;
+      }
+    `;
+    const result = translate(source, "deposit");
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") {
+      return;
+    }
+    expect(result.declaration.guard).toBeUndefined();
+  });
+});
+
+describe("class method declarations", () => {
+  it("translates guarded class method", () => {
+    const source = `
+      class Account {
+        balance: number = 0;
+        withdraw(amount: number): void {
+          if (this.balance >= amount) {
+          } else {
+            throw new Error("Insufficient funds");
+          }
+          this.balance = this.balance - amount;
+        }
+      }
+    `;
+    const result = translate(source, "withdraw");
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") {
+      return;
+    }
+    expect(renderExpr(result.declaration.guard!)).toBe("balance a >= amount");
+    expect(result.declaration.params[0]).toEqual({
+      name: "a",
+      type: "Account",
     });
   });
 
-  it("translates guarded method", () => {
+  it("does not extract guard when then-branch has side effects", () => {
     const source = `
       class Account {
         balance: number = 0;
@@ -342,15 +413,10 @@ describe("class method -> declaration with this param", () => {
       }
     `;
     const result = translate(source, "withdraw");
-
     expect(result.declaration.kind).toBe("action");
-    if (result.declaration.kind === "action") {
-      expect(result.declaration.label).toBe("Withdraw");
-      expect(renderExpr(result.declaration.guard!)).toBe("balance a >= amount");
-      expect(result.declaration.params[0]).toEqual({
-        name: "a",
-        type: "Account",
-      });
+    if (result.declaration.kind !== "action") {
+      return;
     }
+    expect(result.declaration.guard).toBeUndefined();
   });
 });

@@ -744,6 +744,28 @@ let interpret_result query result =
           Printf.sprintf "FAIL: Cond expression%s may not be exhaustive%s"
             cond_desc cx;
       }
+  (* Entailment: UNSAT = entailed (good), SAT = not entailed (bad) *)
+  | Smt.Entailment, Unsat _ ->
+      {
+        query;
+        result;
+        passed = true;
+        message = Printf.sprintf "OK: %s" query.description;
+      }
+  | Smt.Entailment, Sat values ->
+      let goal_desc =
+        if query.invariant_text <> "" then
+          Printf.sprintf " '%s'" query.invariant_text
+        else ""
+      in
+      {
+        query;
+        result;
+        passed = false;
+        message =
+          Printf.sprintf "FAIL: Not entailed:%s%s" goal_desc
+            (format_counterexample values);
+      }
   (* Unknown / error cases *)
   | _, Unknown reason ->
       {

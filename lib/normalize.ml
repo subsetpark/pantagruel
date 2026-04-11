@@ -203,6 +203,10 @@ let prop_uses_params params prop =
   let _, terms = symbols_in_expr prop in
   not (StringSet.is_empty (StringSet.inter params terms))
 
+(** Check if a proposition is tied to an action (uses primed exprs or action
+    params) *)
+let is_tied_prop params prop = uses_primed prop || prop_uses_params params prop
+
 (** Built-in type names that don't need declarations *)
 let builtin_types = StringSet.of_list Types.builtin_type_names
 
@@ -398,9 +402,7 @@ let normalize (doc : document) (root_term : string) : document =
           in
           let params = action_params orig_chapter in
           let tied =
-            List.filter
-              (fun p -> uses_primed p.value || prop_uses_params params p.value)
-              orig_chapter.body
+            List.filter (fun p -> is_tied_prop params p.value) orig_chapter.body
           in
           { action_decl = ad; tied_props = tied })
         action_decls
@@ -411,11 +413,7 @@ let normalize (doc : document) (root_term : string) : document =
       List.concat_map
         (fun chapter ->
           let params = action_params chapter in
-          List.filter
-            (fun p ->
-              (not (uses_primed p.value))
-              && not (prop_uses_params params p.value))
-            chapter.body)
+          List.filter (fun p -> not (is_tied_prop params p.value)) chapter.body)
         doc.chapters
     in
 
@@ -465,6 +463,7 @@ let normalize (doc : document) (root_term : string) : document =
 
     (* Step 7: Assign propositions to chapters *)
     let body_assignments = Array.make num_chapters [] in
+    let check_assignments = Array.make num_chapters [] in
 
     (* Action-tied props go with their action *)
     List.iter
@@ -480,6 +479,77 @@ let normalize (doc : document) (root_term : string) : document =
         let target = min chapter (num_chapters - 1) in
         body_assignments.(target) <- prop :: body_assignments.(target))
       independent_props;
+
+    (* Place checks: each check goes no earlier than the body it was proved from.
+       For each source chapter, compute where its body props landed, then place
+       checks at max(check's own deps, max level of source body props). *)
+    List.iter
+      (fun orig_ch ->
+        if orig_ch.checks <> [] then begin
+          let params = action_params orig_ch in
+          (* Find the action unit for this chapter, if any *)
+          let action_level =
+            match
+              List.find_opt
+                (fun au ->
+                  List.exists
+                    (fun d -> d.Ast.loc = au.action_decl.decl.Ast.loc)
+                    orig_ch.head)
+                action_units
+            with
+            | Some au -> Some au.action_decl.level
+            | None -> None
+          in
+          (* Compute max level where this chapter's body props were placed *)
+          let max_body_level =
+            List.fold_left
+              (fun acc p ->
+                let level =
+                  if is_tied_prop params p.value then
+                    (* Tied prop: placed at action level *)
+                    match action_level with
+                    | Some l -> l
+                    | None -> 0
+                  else
+                    (* Independent prop: placed at earliest_chapter_for_prop *)
+                    min
+                      (earliest_chapter_for_prop decl_levels p.value)
+                      (num_chapters - 1)
+                in
+                max acc level)
+              0 orig_ch.body
+          in
+          (* Place each check at max(its own deps, max_body_level).
+             If the check uses primes or action params, ensure it lands
+             no earlier than the action level.
+             If the check lands beyond max_body_level, promote the full
+             source body so the chapter isn't bodyless. *)
+          let promoted = Hashtbl.create 4 in
+          List.iter
+            (fun chk ->
+              let check_deps =
+                earliest_chapter_for_prop decl_levels chk.value
+              in
+              let target = max check_deps max_body_level in
+              (* If check is tied to the action, force target >= action_level *)
+              let target =
+                match action_level with
+                | Some l when is_tied_prop params chk.value -> max target l
+                | _ -> target
+              in
+              let target = min target (num_chapters - 1) in
+              check_assignments.(target) <- chk :: check_assignments.(target);
+              if
+                target > max_body_level && orig_ch.body <> []
+                && not (Hashtbl.mem promoted target)
+              then begin
+                body_assignments.(target) <-
+                  orig_ch.body @ body_assignments.(target);
+                Hashtbl.replace promoted target true
+              end)
+            orig_ch.checks
+        end)
+      doc.chapters;
 
     (* Collect trailing docs from all original chapters *)
     let all_trailing_docs =
@@ -505,11 +575,16 @@ let normalize (doc : document) (root_term : string) : document =
              in
              let head = List.map (fun d -> d.decl) sorted_decls in
              let body = List.rev body_assignments.(level) in
-             { head; body; trailing_docs = [] })
+             let checks = List.rev check_assignments.(level) in
+             { head; body; checks; trailing_docs = [] })
            decl_assignments)
     in
 
-    let non_empty = List.filter (fun ch -> ch.head <> []) new_chapters in
+    let non_empty =
+      List.filter
+        (fun ch -> ch.head <> [] || ch.body <> [] || ch.checks <> [])
+        new_chapters
+    in
     (* Attach trailing docs to the last chapter *)
     let non_empty =
       if all_trailing_docs <> [] then

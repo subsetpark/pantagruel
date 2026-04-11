@@ -8,13 +8,18 @@ open Smt_preamble
 
 (** Classify chapters into invariant chapters and action chapters *)
 type chapter_class =
-  | Invariant of expr located list  (** Non-action body propositions *)
+  | Invariant of {
+      head_bindings : param list;
+      propositions : expr located list;
+      checks : expr located list;
+    }
   | Action of {
       label : string;
       params : param list;
       guards : guard list;
       contexts : string list;
       propositions : expr located list;
+      checks : expr located list;
     }
 
 let classify_chapter (chapter : chapter) =
@@ -29,27 +34,58 @@ let classify_chapter (chapter : chapter) =
   in
   match action with
   | Some (label, params, guards, contexts) ->
-      Action { label; params; guards; contexts; propositions = chapter.body }
-  | None -> Invariant chapter.body
+      Action
+        {
+          label;
+          params;
+          guards;
+          contexts;
+          propositions = chapter.body;
+          checks = chapter.checks;
+        }
+  | None ->
+      let head_bindings =
+        List.concat_map
+          (fun (decl : declaration located) ->
+            match decl.value with
+            | DeclRule { params; _ } -> params
+            | DeclDomain _ | DeclAlias _ | DeclAction _ | DeclClosure _ -> [])
+          chapter.head
+      in
+      Invariant
+        { head_bindings; propositions = chapter.body; checks = chapter.checks }
 
 let classify_chapters (doc : document) = List.map classify_chapter doc.chapters
+
+(** Wrap a proposition in a universal quantifier over the given head bindings,
+    unless it is already quantified or the bindings are empty. *)
+let bind_head_params (bindings : param list) (p : expr located) =
+  match bindings with
+  | [] -> p
+  | _ -> (
+      match p.value with
+      | EForall _ | EExists _ -> p
+      | EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _
+      | ELitString _ | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _
+      | EProj _ | EBinop _ | EUnop _ | EEach _ | ECond _ | EInitially _ ->
+          { p with value = EForall (bindings, [], p.value) })
 
 (** Collect all invariants from the document (non-initially propositions) *)
 let collect_invariants chapters =
   List.concat_map
     (fun c ->
       match c with
-      | Invariant props ->
-          List.filter
+      | Invariant { head_bindings; propositions; _ } ->
+          List.filter_map
             (fun (p : expr located) ->
               match p.value with
-              | EInitially _ -> false
+              | EInitially _ -> None
               | EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _
               | ELitString _ | ELitBool _ | EApp _ | EPrimed _ | EOverride _
               | ETuple _ | EProj _ | EBinop _ | EUnop _ | EForall _ | EExists _
               | EEach _ | ECond _ ->
-                  true)
-            props
+                  Some (bind_head_params head_bindings p))
+            propositions
       | Action _ -> [])
     chapters
 
@@ -58,17 +94,18 @@ let collect_initial_props chapters =
   List.concat_map
     (fun c ->
       match c with
-      | Invariant props ->
+      | Invariant { head_bindings; propositions; _ } ->
           List.filter_map
             (fun (p : expr located) ->
               match p.value with
-              | EInitially e -> Some { p with value = e }
+              | EInitially e ->
+                  Some (bind_head_params head_bindings { p with value = e })
               | EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _
               | ELitString _ | ELitBool _ | EApp _ | EPrimed _ | EOverride _
               | ETuple _ | EProj _ | EBinop _ | EUnop _ | EForall _ | EExists _
               | EEach _ | ECond _ ->
                   None)
-            props
+            propositions
       | Action _ -> [])
     chapters
 
@@ -85,7 +122,7 @@ let collect_actions chapters =
   List.filter_map
     (fun c ->
       match c with
-      | Action { label; params; guards; contexts; propositions } ->
+      | Action { label; params; guards; contexts; propositions; _ } ->
           Some
             {
               a_label = label;
@@ -95,6 +132,36 @@ let collect_actions chapters =
               a_propositions = propositions;
             }
       | Invariant _ -> None)
+    chapters
+
+(** Check context: either from an invariant or action chapter *)
+type check_context =
+  | CheckInvariant of expr located list
+  | CheckAction of action_info
+
+(** Collect all check (entailment goal) propositions, paired with their chapter
+    context *)
+let collect_checks chapters =
+  List.concat_map
+    (fun c ->
+      match c with
+      | Invariant { head_bindings; propositions; checks } ->
+          let bound_props =
+            List.map (bind_head_params head_bindings) propositions
+          in
+          let bound_checks = List.map (bind_head_params head_bindings) checks in
+          List.map (fun chk -> (chk, CheckInvariant bound_props)) bound_checks
+      | Action { label; params; guards; contexts; propositions; checks } ->
+          let action =
+            {
+              a_label = label;
+              a_params = params;
+              a_guards = guards;
+              a_contexts = contexts;
+              a_propositions = propositions;
+            }
+          in
+          List.map (fun chk -> (chk, CheckAction action)) checks)
     chapters
 
 (** Generate frame condition expressions: for every rule NOT in the action's

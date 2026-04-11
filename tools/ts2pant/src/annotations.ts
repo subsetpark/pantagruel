@@ -1,3 +1,4 @@
+import type { SourceFile } from "ts-morph";
 import ts from "typescript";
 import { findFunction } from "./translate-signature.js";
 
@@ -128,16 +129,10 @@ export function extractAnnotations(
  * proposition texts as plain strings.
  */
 export function extractFunctionAnnotations(
-  program: ts.Program,
-  fileName: string,
+  sourceFile: SourceFile,
   functionName: string,
 ): string[] {
-  const sourceFile = program.getSourceFile(fileName);
-  if (!sourceFile) {
-    return [];
-  }
-
-  const { node } = findFunction(program, fileName, functionName);
-  const result = extractAnnotations(node, sourceFile);
+  const { node } = findFunction(sourceFile, functionName);
+  const result = extractAnnotations(node, sourceFile.compilerNode);
   return result.propositions.map((p) => p.text);
 }

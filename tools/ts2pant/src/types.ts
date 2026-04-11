@@ -50,6 +50,7 @@ export interface PantDocument {
   moduleName: string;
   declarations: PantDeclaration[];
   propositions: PantProp[];
+  checks: { text: string }[];
 }
 
 /** CLI options parsed from command-line arguments. */

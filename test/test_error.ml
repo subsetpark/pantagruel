@@ -32,6 +32,7 @@ let test_format_type_error_coverage () =
       ("ComprehensionNeedEach", ComprehensionNeedEach (TyNat, loc));
       ("AggregateRequiresNumeric", AggregateRequiresNumeric ("+", TyBool, loc));
       ("AggregateRequiresBool", AggregateRequiresBool ("and", TyNat, loc));
+      ("CheckWithoutBody", CheckWithoutBody loc);
     ]
   in
   List.iter

@@ -1,3 +1,4 @@
+import type { SourceFile } from "ts-morph";
 import ts from "typescript";
 import {
   Apply,
@@ -18,6 +19,9 @@ import {
 import {
   classifyFunction,
   findFunction,
+  isAssertionCall,
+  isFollowableGuardCall,
+  isPureExpression,
   shortParamName,
   translateExpr,
   translateOperator,
@@ -108,8 +112,7 @@ function substituteBinder(
 }
 
 export interface TranslateBodyOptions {
-  program: ts.Program;
-  fileName: string;
+  sourceFile: SourceFile;
   functionName: string;
   strategy: NumericStrategy;
   /** Declarations in scope — used for frame condition generation. */
@@ -124,9 +127,13 @@ export interface TranslateBodyOptions {
  * plus frame conditions for unmodified rules.
  */
 export function translateBody(opts: TranslateBodyOptions): PantProp[] {
-  const { program, fileName, functionName, strategy, declarations } = opts;
-  const checker = program.getTypeChecker();
-  const { node, className } = findFunction(program, fileName, functionName);
+  const { sourceFile, functionName, strategy, declarations } = opts;
+  const checker = sourceFile.getProject().getTypeChecker().compilerObject;
+  const { node, className } = findFunction(sourceFile, functionName);
+  // Strip class qualifier for use in Pantagruel identifiers
+  const baseName = functionName.includes(".")
+    ? functionName.split(".", 2)[1]!
+    : functionName;
   const classification = classifyFunction(node, checker);
 
   // Build param name map (same logic as translateSignature)
@@ -160,7 +167,7 @@ export function translateBody(opts: TranslateBodyOptions): PantProp[] {
   if (classification === "pure") {
     return translatePureBody(
       node,
-      functionName,
+      baseName,
       paramList,
       checker,
       strategy,
@@ -189,9 +196,9 @@ function translatePureBody(
     return [];
   }
 
-  const returnExpr = extractReturnExpression(node.body);
+  const returnExpr = extractReturnExpression(node.body, checker);
   if (!returnExpr) {
-    const reason = describeRejectedBody(node.body);
+    const reason = describeRejectedBody(node.body, checker);
     return [UnsupportedProp(`${functionName} — ${reason}`)];
   }
 
@@ -206,8 +213,7 @@ function translatePureBody(
     argExprs.length > 0
       ? Apply(functionName, ...argExprs)
       : Apply(functionName);
-  const quantifiers = params.map((p) => ({ name: p.name, type: p.type }));
-  return [Equation(quantifiers, lhs, body)];
+  return [Equation([], lhs, body)];
 }
 
 /**
@@ -218,9 +224,10 @@ function translatePureBody(
  */
 function extractReturnExpression(
   body: ts.Block,
+  checker: ts.TypeChecker,
 ): ts.Expression | ts.IfStatement | null {
-  // Skip guard statements (if-throw patterns) and find the meaningful return
-  const stmts = body.statements.filter((s) => !isGuardStatement(s));
+  // Skip guard statements (if-throw patterns and assertion calls)
+  const stmts = body.statements.filter((s) => !isGuardStatement(s, checker));
 
   if (stmts.length === 1) {
     const stmt = stmts[0]!;
@@ -242,8 +249,8 @@ function extractReturnExpression(
   return null;
 }
 
-function describeRejectedBody(body: ts.Block): string {
-  const stmts = body.statements.filter((s) => !isGuardStatement(s));
+function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
+  const stmts = body.statements.filter((s) => !isGuardStatement(s, checker));
   if (stmts.length === 0) {
     return "empty body";
   }
@@ -257,22 +264,45 @@ function describeRejectedBody(body: ts.Block): string {
   return "non-translatable control flow";
 }
 
-function isGuardStatement(stmt: ts.Statement): boolean {
+function isGuardStatement(
+  stmt: ts.Statement,
+  checker: ts.TypeChecker,
+): boolean {
+  // Assertion call or followable guard call — must match the same purity
+  // checks used by scanBodyForGuards in translate-signature.ts
+  if (ts.isExpressionStatement(stmt) && ts.isCallExpression(stmt.expression)) {
+    const call = stmt.expression;
+    if (!isPureExpression(call.expression)) {
+      return false;
+    }
+    if (!call.arguments.every(isPureExpression)) {
+      return false;
+    }
+    if (isAssertionCall(checker, call) !== null) {
+      return true;
+    }
+    if (isFollowableGuardCall(call, checker)) {
+      return true;
+    }
+  }
+
   if (!ts.isIfStatement(stmt)) {
+    return false;
+  }
+  // Condition must be pure (aligned with classifyGuardIf's isPureExpression check)
+  if (!isPureExpression(stmt.expression)) {
     return false;
   }
   // if (...) { throw } without else
   if (!stmt.elseStatement && blockThrows(stmt.thenStatement)) {
-    return !expressionHasSideEffects(stmt.expression);
+    return true;
   }
   // if (...) { ... } else { throw }
   if (stmt.elseStatement && blockThrows(stmt.elseStatement)) {
-    // Only a guard if the condition and then-block have no side effects.
-    // A side-effectful condition like `if (audit(a)) { throw ... }` must not be
-    // skipped. A mutating then-branch like `if (ok) { a.balance = 1; } else { throw e; }`
+    // Only a guard if the then-block has no side effects and doesn't return.
+    // A mutating then-branch like `if (ok) { a.balance = 1; } else { throw e; }`
     // must NOT be classified as a guard — collectAssignments() needs to see it.
     return (
-      !expressionHasSideEffects(stmt.expression) &&
       blockHasNoSideEffects(stmt.thenStatement) &&
       !blockReturns(stmt.thenStatement)
     );
@@ -354,6 +384,10 @@ function unwrapExpression(expr: ts.Expression): ts.Expression {
 
 function expressionHasSideEffects(expr: ts.Expression): boolean {
   expr = unwrapExpression(expr);
+
+  if (ts.isDeleteExpression(expr)) {
+    return true;
+  }
 
   if (ts.isBinaryExpression(expr)) {
     // Any assignment operator
@@ -523,9 +557,9 @@ function translateIfStatement(
   if (cond.kind === "unsupported") {
     return cond;
   }
-  const thenExpr = extractReturnFromBranch(stmt.thenStatement);
+  const thenExpr = extractReturnFromBranch(stmt.thenStatement, checker);
   const elseExpr = stmt.elseStatement
-    ? extractReturnFromBranch(stmt.elseStatement)
+    ? extractReturnFromBranch(stmt.elseStatement, checker)
     : null;
 
   if (thenExpr && elseExpr) {
@@ -543,7 +577,10 @@ function translateIfStatement(
   return Unsupported("if statement without return in both branches");
 }
 
-function extractReturnFromBranch(stmt: ts.Statement): ts.Expression | null {
+function extractReturnFromBranch(
+  stmt: ts.Statement,
+  checker: ts.TypeChecker,
+): ts.Expression | null {
   if (ts.isReturnStatement(stmt) && stmt.expression) {
     return stmt.expression;
   }
@@ -552,7 +589,9 @@ function extractReturnFromBranch(stmt: ts.Statement): ts.Expression | null {
     // return (after filtering guards). Blocks with local declarations or
     // multiple non-guard statements are rejected so we don't leak
     // branch-scoped bindings into the generated proposition.
-    const nonGuard = stmt.statements.filter((s) => !isGuardStatement(s));
+    const nonGuard = stmt.statements.filter(
+      (s) => !isGuardStatement(s, checker),
+    );
     if (nonGuard.length === 1) {
       const s = nonGuard[0]!;
       if (ts.isReturnStatement(s) && s.expression) {
@@ -738,7 +777,9 @@ function extractArrowBody(
     // Only allow a single return (after filtering guards), same rule as
     // extractReturnExpression — blocks with locals or multiple statements
     // would introduce free variables in the generated comprehension.
-    const nonGuard = expr.body.statements.filter((s) => !isGuardStatement(s));
+    const nonGuard = expr.body.statements.filter(
+      (s) => !isGuardStatement(s, checker),
+    );
     if (nonGuard.length === 1) {
       const s = nonGuard[0]!;
       if (ts.isReturnStatement(s) && s.expression) {
@@ -805,8 +846,8 @@ function collectAssignments(
   const stmts = ts.isBlock(body) ? Array.from(body.statements) : [body];
 
   for (const stmt of stmts) {
-    // Skip guard statements (if-throw patterns)
-    if (isGuardStatement(stmt)) {
+    // Skip guard statements (if-throw patterns and assertion calls)
+    if (isGuardStatement(stmt, checker)) {
       continue;
     }
 

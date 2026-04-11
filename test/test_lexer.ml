@@ -60,6 +60,7 @@ let token_to_string = function
   | Parser.OVER -> "OVER"
   | Parser.MIN -> "MIN"
   | Parser.MAX -> "MAX"
+  | Parser.CHECK -> "CHECK"
   | Parser.AT -> "AT"
   | Parser.ACTION_LABEL s -> "ACTION_LABEL(" ^ s ^ ")"
   | Parser.EOF -> "EOF"
@@ -84,11 +85,12 @@ let test_keywords () =
       Parser.MODULE;
       Parser.IMPORT;
       Parser.WHERE;
+      Parser.CHECK;
       Parser.TRUE;
       Parser.FALSE;
       Parser.EOF;
     ]
-    (lex_all "module import where true false")
+    (lex_all "module import where check true false")
 
 let test_identifiers () =
   check (list token_testable) "identifiers"

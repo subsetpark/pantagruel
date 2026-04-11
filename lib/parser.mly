@@ -55,7 +55,7 @@
 %token DOT COMMA COLON DCOLON PIPE AT SEPARATOR
 %token LPAREN RPAREN LBRACKET RBRACKET
 %token LBRACE RBRACE CONTEXT INITIALLY CLOSURE COND
-%token OVER MIN MAX
+%token OVER MIN MAX CHECK
 %token <string> ACTION_LABEL
 %token EOF
 
@@ -92,8 +92,12 @@ context_decl:
     { located $startpos $endpos (Upper name) }
 
 chapter:
-  | head=nonempty_list(declaration) SEPARATOR body=list(proposition)
-    { { head; body; trailing_docs = [] } }
+  | head=nonempty_list(declaration) SEPARATOR body=list(proposition) checks=check_block
+    { { head; body; checks; trailing_docs = [] } }
+
+check_block:
+  | (* empty *) { [] }
+  | CHECK cs=nonempty_list(proposition) { cs }
 
 (* Declarations - doc comments are looked up by start position *)
 declaration:
