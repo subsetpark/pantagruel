@@ -21,8 +21,9 @@ let bound_names_from_guards (guards : Ast.guard list) : string list =
       | Ast.GParam _ | Ast.GExpr _ -> None)
     guards
 
-(** Apply variable renames to an AST expression. Quantifier-bound names (from
-    params and GIn guards) are not renamed (they introduce fresh bindings). *)
+(** Apply variable renames to an AST expression. Capture-avoiding: renames are
+    dropped when the source or destination name is bound by a quantifier (params
+    or GIn guards), preventing both self-rename and variable capture. *)
 let rec rename_expr (renames : (string * string) list) (e : Ast.expr) : Ast.expr
     =
   let r = rename_expr renames in
@@ -43,7 +44,10 @@ let rec rename_expr (renames : (string * string) list) (e : Ast.expr) : Ast.expr
         @ bound_names_from_guards guards
       in
       let renames' =
-        List.filter (fun (old_name, _) -> not (List.mem old_name bound)) renames
+        List.filter
+          (fun (old_name, new_name) ->
+            (not (List.mem old_name bound)) && not (List.mem new_name bound))
+          renames
       in
       EForall
         ( params,
@@ -55,7 +59,10 @@ let rec rename_expr (renames : (string * string) list) (e : Ast.expr) : Ast.expr
         @ bound_names_from_guards guards
       in
       let renames' =
-        List.filter (fun (old_name, _) -> not (List.mem old_name bound)) renames
+        List.filter
+          (fun (old_name, new_name) ->
+            (not (List.mem old_name bound)) && not (List.mem new_name bound))
+          renames
       in
       EExists
         ( params,
@@ -67,7 +74,10 @@ let rec rename_expr (renames : (string * string) list) (e : Ast.expr) : Ast.expr
         @ bound_names_from_guards guards
       in
       let renames' =
-        List.filter (fun (old_name, _) -> not (List.mem old_name bound)) renames
+        List.filter
+          (fun (old_name, new_name) ->
+            (not (List.mem old_name bound)) && not (List.mem new_name bound))
+          renames
       in
       EEach
         ( params,

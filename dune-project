@@ -20,4 +20,5 @@
   parsexp
   (alcotest :with-test)
   (qcheck-alcotest :with-test)
-  (crowbar :with-test)))
+  (crowbar :with-test))
+ (depopts js_of_ocaml js_of_ocaml-ppx wasm_of_ocaml-compiler))
