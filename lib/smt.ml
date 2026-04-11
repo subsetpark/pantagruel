@@ -1690,15 +1690,17 @@ let collect_conds_in_expr (e : expr) : cond_info list =
 let collect_conds chapters : cond_info list =
   List.concat_map
     (fun c ->
-      let head_bindings, props =
+      let wrap_prop, props =
         match c with
         | Smt_doc.Invariant { head_bindings; propositions; checks } ->
-            (head_bindings, propositions @ checks)
-        | Smt_doc.Action { propositions; checks; _ } ->
-            ([], propositions @ checks)
-      in
-      let wrap_prop (p : expr located) =
-        Smt_doc.bind_head_params head_bindings p
+            ( (fun (p : expr located) ->
+                Smt_doc.bind_head_params head_bindings p),
+              propositions @ checks )
+        | Smt_doc.Action { params; guards; propositions; checks; _ } ->
+            ( (fun (p : expr located) ->
+                if params = [] && guards = [] then p
+                else { p with value = EForall (params, guards, p.value) }),
+              propositions @ checks )
       in
       List.concat_map
         (fun (prop : expr located) ->

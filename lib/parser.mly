@@ -66,7 +66,7 @@
 
 (* Standalone expression: for parsing a single proposition from a string *)
 standalone_expr:
-  | e=expr DOT { e }
+  | e=expr DOT EOF { e }
   | e=expr EOF { e }
 
 

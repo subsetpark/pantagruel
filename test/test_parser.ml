@@ -816,6 +816,14 @@ let () =
           test_case "with trailing dot" `Quick (fun () ->
               let e = Test_util.parse_expr "f a b >= a." in
               check string "roundtrip" "f a b >= a" (Pretty.str_expr e));
+          test_case "reject trailing tokens after dot" `Quick (fun () ->
+              let raised =
+                try
+                  ignore (Test_util.parse_expr "f a b. g c");
+                  false
+                with _ -> true
+              in
+              check bool "parse error raised" true raised);
           test_case "quantified" `Quick (fun () ->
               let e = Test_util.parse_expr "all x: Int | f x > 0" in
               check string "roundtrip" "all x: Int | f x > 0"

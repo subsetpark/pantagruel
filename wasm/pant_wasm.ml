@@ -13,8 +13,16 @@ let parse_expr_string (text : string) : (Ast.expr, string) result =
   | Lexer.Lexer_error (_, msg) -> Error msg
   | _ -> Error (Printf.sprintf "Parse error in: %s" text)
 
-(** Apply variable renames to an AST expression. Quantifier-bound names are not
-    renamed (they introduce fresh bindings). *)
+(** Collect names bound by guards (GIn introduces a binding). *)
+let bound_names_from_guards (guards : Ast.guard list) : string list =
+  List.filter_map
+    (function
+      | Ast.GIn (name, _) -> Some (Ast.lower_name name)
+      | Ast.GParam _ | Ast.GExpr _ -> None)
+    guards
+
+(** Apply variable renames to an AST expression. Quantifier-bound names
+    (from params and GIn guards) are not renamed (they introduce fresh bindings). *)
 let rec rename_expr (renames : (string * string) list) (e : Ast.expr) : Ast.expr
     =
   let r = rename_expr renames in
@@ -32,6 +40,7 @@ let rec rename_expr (renames : (string * string) list) (e : Ast.expr) : Ast.expr
   | EForall (params, guards, body) ->
       let bound =
         List.map (fun (p : Ast.param) -> Ast.lower_name p.param_name) params
+        @ bound_names_from_guards guards
       in
       let renames' =
         List.filter (fun (old_name, _) -> not (List.mem old_name bound)) renames
@@ -43,6 +52,7 @@ let rec rename_expr (renames : (string * string) list) (e : Ast.expr) : Ast.expr
   | EExists (params, guards, body) ->
       let bound =
         List.map (fun (p : Ast.param) -> Ast.lower_name p.param_name) params
+        @ bound_names_from_guards guards
       in
       let renames' =
         List.filter (fun (old_name, _) -> not (List.mem old_name bound)) renames
@@ -54,6 +64,7 @@ let rec rename_expr (renames : (string * string) list) (e : Ast.expr) : Ast.expr
   | EEach (params, guards, comb, body) ->
       let bound =
         List.map (fun (p : Ast.param) -> Ast.lower_name p.param_name) params
+        @ bound_names_from_guards guards
       in
       let renames' =
         List.filter (fun (old_name, _) -> not (List.mem old_name bound)) renames

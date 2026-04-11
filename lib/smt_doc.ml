@@ -57,18 +57,13 @@ let classify_chapter (chapter : chapter) =
 
 let classify_chapters (doc : document) = List.map classify_chapter doc.chapters
 
-(** Wrap a proposition in a universal quantifier over the given head bindings,
-    unless it is already quantified or the bindings are empty. *)
+(** Wrap a proposition in a universal quantifier over the given head bindings.
+    Always wraps, even if the proposition is already quantified, because
+    inner quantifiers may still reference head-level variables. *)
 let bind_head_params (bindings : param list) (p : expr located) =
   match bindings with
   | [] -> p
-  | _ -> (
-      match p.value with
-      | EForall _ | EExists _ -> p
-      | EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _
-      | ELitString _ | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _
-      | EProj _ | EBinop _ | EUnop _ | EEach _ | ECond _ | EInitially _ ->
-          { p with value = EForall (bindings, [], p.value) })
+  | _ -> { p with value = EForall (bindings, [], p.value) }
 
 (** Collect all invariants from the document (non-initially propositions) *)
 let collect_invariants chapters =

@@ -1,6 +1,7 @@
 (executable
  (name pant_wasm)
  (modes wasm)
+ (enabled_if (= %{env:BUILD_WASM=false} "true"))
  (libraries pantagruel_parser js_of_ocaml)
  (preprocess
   (pps js_of_ocaml-ppx)))
