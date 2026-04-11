@@ -55,6 +55,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: "5.4.1"
+
+      - name: Install OCaml dependencies
+        working-directory: .
+        run: opam install . --deps-only --with-test
+
+      - name: Build pant
+        working-directory: .
+        run: opam exec -- dune build
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -71,4 +84,4 @@ jobs:
         run: npx biome ci src
 
       - name: Test
-        run: npx vitest run
+        run: opam exec -- npx vitest run

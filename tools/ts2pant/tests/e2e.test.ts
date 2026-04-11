@@ -12,18 +12,6 @@ import type { PantDocument } from "../src/types.js";
 const FIXTURES = resolve(__dirname, "fixtures");
 const PROJECT_ROOT = resolve(__dirname, "../../..");
 
-function pantAvailable(): boolean {
-  try {
-    execSync("dune exec pant -- --help", {
-      stdio: "ignore",
-      cwd: resolve(__dirname, "../../.."),
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function solverAvailable(): boolean {
   try {
     execSync("which z3", { stdio: "ignore" });
@@ -165,9 +153,7 @@ describe("full pipeline", () => {
     expect(doc.propositions.length).toBeGreaterThanOrEqual(1);
   });
 
-  const hasPant = pantAvailable();
-
-  it.skipIf(!hasPant)("max.ts emitted .pant type-checks through pant", () => {
+  it("max.ts emitted .pant type-checks through pant", () => {
     const doc = buildDocument("max.ts", "larger");
     const output = emitDocument(doc);
 
@@ -178,7 +164,7 @@ describe("full pipeline", () => {
     );
   });
 
-  it.skipIf(!hasPant)("deposit.ts emitted .pant type-checks through pant", () => {
+  it("deposit.ts emitted .pant type-checks through pant", () => {
     const doc = buildDocument("deposit.ts", "deposit");
     const output = emitDocument(doc);
 
