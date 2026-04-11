@@ -799,7 +799,9 @@ let () =
               in
               check int "chapters" 2 (List.length doc.Ast.chapters);
               let ch1 = List.hd doc.Ast.chapters in
-              check int "ch1 checks" 1 (List.length ch1.Ast.checks));
+              check int "ch1 checks" 1 (List.length ch1.Ast.checks);
+              let ch2 = List.nth doc.Ast.chapters 1 in
+              check int "ch2 checks" 0 (List.length ch2.Ast.checks));
         ] );
       ("property", [ test_parser_no_crash ]);
     ]

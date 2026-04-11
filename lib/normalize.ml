@@ -33,8 +33,6 @@ type action_unit = {
   action_decl : decl_info;
   tied_props : expr located list;
       (** Props using primed exprs or action params *)
-  tied_checks : expr located list;
-      (** Check (entailment) props from the same chapter *)
 }
 (** An action unit: an action + its associated propositions *)
 
@@ -404,15 +402,7 @@ let normalize (doc : document) (root_term : string) : document =
               (fun p -> uses_primed p.value || prop_uses_params params p.value)
               orig_chapter.body
           in
-          {
-            action_decl = ad;
-            tied_props = tied;
-            tied_checks =
-              List.filter
-                (fun c ->
-                  uses_primed c.value || prop_uses_params params c.value)
-                orig_chapter.checks;
-          })
+          { action_decl = ad; tied_props = tied })
         action_decls
     in
 
@@ -481,8 +471,7 @@ let normalize (doc : document) (root_term : string) : document =
     List.iter
       (fun au ->
         let level = au.action_decl.level in
-        body_assignments.(level) <- au.tied_props @ body_assignments.(level);
-        check_assignments.(level) <- au.tied_checks @ check_assignments.(level))
+        body_assignments.(level) <- au.tied_props @ body_assignments.(level))
       action_units;
 
     (* Independent props go to earliest valid chapter *)
@@ -493,28 +482,57 @@ let normalize (doc : document) (root_term : string) : document =
         body_assignments.(target) <- prop :: body_assignments.(target))
       independent_props;
 
-    (* Independent checks: all checks not already tied to an action *)
-    let all_tied_checks =
-      List.concat_map (fun au -> au.tied_checks) action_units
-    in
-    let independent_checks =
-      List.concat_map
-        (fun chapter ->
-          List.filter
-            (fun c ->
-              not
-                (List.exists
-                   (fun tc -> Ast.equal_loc c.loc tc.loc)
-                   all_tied_checks))
-            chapter.checks)
-        doc.chapters
-    in
+    (* Place checks: each check goes no earlier than the body it was proved from.
+       For each source chapter, compute where its body props landed, then place
+       checks at max(check's own deps, max level of source body props). *)
     List.iter
-      (fun chk ->
-        let chapter = earliest_chapter_for_prop decl_levels chk.value in
-        let target = min chapter (num_chapters - 1) in
-        check_assignments.(target) <- chk :: check_assignments.(target))
-      independent_checks;
+      (fun orig_ch ->
+        if orig_ch.checks <> [] then begin
+          let params = action_params orig_ch in
+          (* Find the action unit for this chapter, if any *)
+          let action_level =
+            match
+              List.find_opt
+                (fun au ->
+                  List.exists
+                    (fun d -> d.Ast.loc = au.action_decl.decl.Ast.loc)
+                    orig_ch.head)
+                action_units
+            with
+            | Some au -> Some au.action_decl.level
+            | None -> None
+          in
+          (* Compute max level where this chapter's body props were placed *)
+          let max_body_level =
+            List.fold_left
+              (fun acc p ->
+                let level =
+                  if uses_primed p.value || prop_uses_params params p.value then
+                    (* Tied prop: placed at action level *)
+                    match action_level with
+                    | Some l -> l
+                    | None -> 0
+                  else
+                    (* Independent prop: placed at earliest_chapter_for_prop *)
+                    min
+                      (earliest_chapter_for_prop decl_levels p.value)
+                      (num_chapters - 1)
+                in
+                max acc level)
+              0 orig_ch.body
+          in
+          (* Place each check at max(its own deps, max_body_level) *)
+          List.iter
+            (fun chk ->
+              let check_deps =
+                earliest_chapter_for_prop decl_levels chk.value
+              in
+              let target = max check_deps max_body_level in
+              let target = min target (num_chapters - 1) in
+              check_assignments.(target) <- chk :: check_assignments.(target))
+            orig_ch.checks
+        end)
+      doc.chapters;
 
     (* Collect trailing docs from all original chapters *)
     let all_trailing_docs =

@@ -627,7 +627,23 @@ function blockThrows(node: ts.Statement): boolean {
   }
   if (ts.isBlock(node)) {
     const stmts = node.statements;
-    return stmts.length === 1 && ts.isThrowStatement(stmts[0]!);
+    if (stmts.length === 0) {
+      return false;
+    }
+    // Last statement must be a throw; all preceding must be side-effect-free
+    // variable declarations (e.g. building the error message).
+    if (!ts.isThrowStatement(stmts.at(-1)!)) {
+      return false;
+    }
+    return stmts
+      .slice(0, -1)
+      .every(
+        (s) =>
+          ts.isVariableStatement(s) &&
+          s.declarationList.declarations.every(
+            (d) => !d.initializer || isPureExpression(d.initializer),
+          ),
+      );
   }
   return false;
 }
