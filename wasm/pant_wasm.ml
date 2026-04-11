@@ -100,8 +100,46 @@ and rename_guard renames = function
   | Ast.GIn (name, e) -> Ast.GIn (name, rename_expr renames e)
   | Ast.GExpr e -> Ast.GExpr (rename_expr renames e)
 
-(** Substitute a variable name with an arbitrary expression. Respects
-    quantifier-bound variable shadowing. *)
+(** Collect free variable names in an expression (for capture checks). *)
+let rec free_vars (e : Ast.expr) : string list =
+  match e with
+  | EVar (Lower n) -> [ n ]
+  | EPrimed (Lower n) -> [ n ]
+  | EApp (f, args) -> free_vars f @ List.concat_map free_vars args
+  | EBinop (_, e1, e2) -> free_vars e1 @ free_vars e2
+  | EUnop (_, e1) -> free_vars e1
+  | EForall (params, guards, body) | EExists (params, guards, body) ->
+      let bound =
+        List.map (fun (p : Ast.param) -> Ast.lower_name p.param_name) params
+        @ bound_names_from_guards guards
+      in
+      let inner = List.concat_map free_vars_guard guards @ free_vars body in
+      List.filter (fun n -> not (List.mem n bound)) inner
+  | EEach (params, guards, _, body) ->
+      let bound =
+        List.map (fun (p : Ast.param) -> Ast.lower_name p.param_name) params
+        @ bound_names_from_guards guards
+      in
+      let inner = List.concat_map free_vars_guard guards @ free_vars body in
+      List.filter (fun n -> not (List.mem n bound)) inner
+  | ECond arms -> List.concat_map (fun (g, c) -> free_vars g @ free_vars c) arms
+  | ETuple es -> List.concat_map free_vars es
+  | EProj (e1, _) -> free_vars e1
+  | EOverride (Lower n, pairs) ->
+      n :: List.concat_map (fun (k, v) -> free_vars k @ free_vars v) pairs
+  | EInitially e1 -> free_vars e1
+  | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
+  | ELitBool _ ->
+      []
+
+and free_vars_guard = function
+  | Ast.GParam _ -> []
+  | Ast.GIn (_, e) -> free_vars e
+  | Ast.GExpr e -> free_vars e
+
+(** Substitute a variable name with an arbitrary expression. Capture-avoiding:
+    skips substitution under binders that shadow the target name or would
+    capture free variables from the replacement expression. *)
 let rec subst_var (name : string) (replacement : Ast.expr) (e : Ast.expr) :
     Ast.expr =
   let s = subst_var name replacement in
@@ -118,6 +156,8 @@ let rec subst_var (name : string) (replacement : Ast.expr) (e : Ast.expr) :
         List.map (fun (p : Ast.param) -> Ast.lower_name p.param_name) params
       in
       if List.mem name bound then e
+      else if List.exists (fun n -> List.mem n bound) (free_vars replacement)
+      then e
       else
         EForall (params, List.map (subst_guard name replacement) guards, s body)
   | EExists (params, guards, body) ->
@@ -125,6 +165,8 @@ let rec subst_var (name : string) (replacement : Ast.expr) (e : Ast.expr) :
         List.map (fun (p : Ast.param) -> Ast.lower_name p.param_name) params
       in
       if List.mem name bound then e
+      else if List.exists (fun n -> List.mem n bound) (free_vars replacement)
+      then e
       else
         EExists (params, List.map (subst_guard name replacement) guards, s body)
   | EEach (params, guards, comb, body) ->
@@ -132,6 +174,8 @@ let rec subst_var (name : string) (replacement : Ast.expr) (e : Ast.expr) :
         List.map (fun (p : Ast.param) -> Ast.lower_name p.param_name) params
       in
       if List.mem name bound then e
+      else if List.exists (fun n -> List.mem n bound) (free_vars replacement)
+      then e
       else
         EEach
           (params, List.map (subst_guard name replacement) guards, comb, s body)

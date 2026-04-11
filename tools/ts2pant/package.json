@@ -8,7 +8,7 @@
     "ts2pant": "dist/index.js"
   },
   "scripts": {
-    "build:wasm": "cd ../.. && BUILD_WASM=true dune build wasm/ && rm -rf tools/ts2pant/src/wasm && mkdir -p tools/ts2pant/src/wasm && cp _build/default/wasm/pant_wasm.bc.wasm.js tools/ts2pant/src/wasm/ && cp -r _build/default/wasm/pant_wasm.bc.wasm.assets tools/ts2pant/src/wasm/ && perl -i -pe 's/require\\.main\\.filename/__filename/' tools/ts2pant/src/wasm/pant_wasm.bc.wasm.js",
+    "build:wasm": "node scripts/build-wasm.mjs",
     "build": "npm run build:wasm && tsc",
     "start": "node dist/index.js",
     "test": "npx tsx --test tests/*.test.mts",

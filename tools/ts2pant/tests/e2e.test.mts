@@ -9,6 +9,7 @@ import {
   buildDocument as buildDocumentFromPath,
   emitDocument,
 } from "./helpers.mjs";
+import type { PantDocument } from "../src/types.js";
 
 const FIXTURES = resolve(import.meta.dirname, "fixtures");
 const PROJECT_ROOT = resolve(import.meta.dirname, "../../..");
@@ -34,7 +35,7 @@ function buildDocument(
   fixtureName: string,
   functionName: string,
   opts: { noBody?: boolean } = {},
-): Promise<import("../src/types.js").PantDocument> {
+): Promise<PantDocument> {
   return buildDocumentFromPath(
     resolve(FIXTURES, fixtureName),
     functionName,
