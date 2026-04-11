@@ -233,7 +233,7 @@ describe("array operations", () => {
     const source = `
       interface User { name: string; active: boolean; }
       interface Named { label: string; }
-      function labels(users: User[]): string[] {
+      function labels(users: User[]): number[] {
         return users.map((u) => u.name).map((n) => n.length);
       }
     `;

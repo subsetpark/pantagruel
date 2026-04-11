@@ -47,9 +47,10 @@ export const Unop = (op: string, operand: PantExpr): PantExpr => ({ kind: "unop"
 export const Cardinality = (expr: PantExpr): PantExpr => ({ kind: "cardinality", expr });
 export const Membership = (element: PantExpr, collection: PantExpr): PantExpr => ({ kind: "membership", element, collection });
 export const Cond = (arms: { guard: PantExpr; value: PantExpr }[], fallback: PantExpr): PantExpr => ({ kind: "cond", arms, fallback });
-export const Comprehension = (binder: string, type: string, body: PantExpr, predicate?: PantExpr): PantExpr => ({
-  kind: "comprehension", binder, type, predicate, body,
-});
+export const Comprehension = (binder: string, type: string, body: PantExpr, predicate?: PantExpr): PantExpr => {
+  const base = { kind: "comprehension" as const, binder, type, body };
+  return predicate !== undefined ? { ...base, predicate } : base;
+};
 export const Unsupported = (reason: string): PantExpr => ({ kind: "unsupported", reason });
 
 export const Equation = (quantifiers: Binding[], lhs: PantExpr, rhs: PantExpr): PantProp => ({
@@ -96,8 +97,9 @@ export function renderExpr(expr: PantExpr): string {
     case "membership":
       return `${renderArg(expr.element)} in ${renderArg(expr.collection)}`;
     case "cond": {
-      const arms = expr.arms.map((a) => `${renderExpr(a.guard)} => ${renderExpr(a.value)}`);
-      arms.push(`true => ${renderExpr(expr.fallback)}`);
+      const rc = (e: PantExpr) => e.kind === "cond" ? `(${renderExpr(e)})` : renderExpr(e);
+      const arms = expr.arms.map((a) => `${rc(a.guard)} => ${rc(a.value)}`);
+      arms.push(`true => ${rc(expr.fallback)}`);
       return `cond ${arms.join(", ")}`;
     }
     case "comprehension": {

@@ -254,10 +254,10 @@ function capitalize(s: string): string {
 }
 
 export function shortParamName(typeName: string, existingNames: Set<string>): string {
-  let name = typeName[0].toLowerCase();
+  let name = typeName[0]!.toLowerCase();
   let suffix = 1;
   while (existingNames.has(name)) {
-    name = typeName[0].toLowerCase() + suffix;
+    name = typeName[0]!.toLowerCase() + suffix;
     suffix++;
   }
   return name;

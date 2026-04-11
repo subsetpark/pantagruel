@@ -47,11 +47,11 @@ function substituteBinder(expr: PantExpr, name: string, replacement: PantExpr): 
       };
     case "comprehension":
       if (expr.binder === name) return expr;
-      return {
-        ...expr,
-        body: substituteBinder(expr.body, name, replacement),
-        predicate: expr.predicate ? substituteBinder(expr.predicate, name, replacement) : undefined,
-      };
+      return Comprehension(
+        expr.binder, expr.type,
+        substituteBinder(expr.body, name, replacement),
+        expr.predicate ? substituteBinder(expr.predicate, name, replacement) : undefined,
+      );
   }
 }
 
@@ -147,7 +147,7 @@ function extractReturnExpression(body: ts.Block): ts.Expression | ts.IfStatement
   const stmts = body.statements.filter((s) => !isGuardStatement(s));
 
   if (stmts.length === 1) {
-    const stmt = stmts[0];
+    const stmt = stmts[0]!;
     if (ts.isReturnStatement(stmt) && stmt.expression) {
       return stmt.expression;
     }
@@ -170,7 +170,7 @@ function describeRejectedBody(body: ts.Block): string {
   const stmts = body.statements.filter((s) => !isGuardStatement(s));
   if (stmts.length === 0) return "empty body";
   if (stmts.length > 1) return "local bindings or multiple statements before return";
-  const stmt = stmts[0];
+  const stmt = stmts[0]!;
   if (ts.isReturnStatement(stmt) && !stmt.expression) return "return without expression";
   return "non-translatable control flow";
 }
@@ -210,7 +210,7 @@ function blockThrows(node: ts.Statement): boolean {
     if (stmts.length === 0) return false;
     // Last statement must be a throw; all preceding must be side-effect-free
     // (variable declarations for building the error message, etc.)
-    if (!ts.isThrowStatement(stmts[stmts.length - 1])) return false;
+    if (!ts.isThrowStatement(stmts[stmts.length - 1]!)) return false;
     return stmts
       .slice(0, -1)
       .every((s) => ts.isVariableStatement(s) && variableStatementHasNoSideEffects(s));
@@ -401,7 +401,7 @@ function extractReturnFromBranch(stmt: ts.Statement): ts.Expression | null {
     // branch-scoped bindings into the generated proposition.
     const nonGuard = stmt.statements.filter((s) => !isGuardStatement(s));
     if (nonGuard.length === 1) {
-      const s = nonGuard[0];
+      const s = nonGuard[0]!;
       if (ts.isReturnStatement(s) && s.expression) return s.expression;
     }
   }
@@ -417,7 +417,7 @@ function getArrayElementType(
   const sourceType = checker.getTypeAtLocation(tsExpr);
   if (!checker.isArrayType(sourceType)) return null;
   const typeArgs = checker.getTypeArguments(sourceType as ts.TypeReference);
-  return typeArgs.length === 1 ? mapTsType(typeArgs[0], checker, strategy) : "?";
+  return typeArgs.length === 1 ? mapTsType(typeArgs[0]!, checker, strategy) : "?";
 }
 
 /**
@@ -445,9 +445,12 @@ function translateArrayMethod(
     ? freshBinder(new Map([...paramNames, [sourceBinder, sourceBinder]]))
     : sourceBinder;
   const extendedParams = new Map(paramNames);
+  if (isComposing) {
+    extendedParams.set(sourceBinder, sourceBinder);
+  }
   extendedParams.set(callbackBinder, callbackBinder);
 
-  const rawBody = extractArrowBody(expr.arguments[0], callbackBinder, extendedParams, checker, strategy);
+  const rawBody = extractArrowBody(expr.arguments[0]!, callbackBinder, extendedParams, checker, strategy);
   if (!rawBody) return Unsupported(expr.getText());
   if (rawBody.kind === "unsupported") return rawBody;
 
@@ -486,7 +489,7 @@ function translateCallExpr(
       if (!checker.isArrayType(receiverType)) {
         return Unsupported("non-array .includes()");
       }
-      const arg = translateBodyExpr(expr.arguments[0], checker, strategy, paramNames);
+      const arg = translateBodyExpr(expr.arguments[0]!, checker, strategy, paramNames);
       if (arg.kind === "unsupported") return arg;
       const objExpr = translateBodyExpr(tsReceiver, checker, strategy, paramNames);
       if (objExpr.kind === "unsupported") return objExpr;
@@ -512,13 +515,14 @@ function extractArrowBody(
   strategy: NumericStrategy,
 ): PantExpr | null {
   if (!ts.isArrowFunction(expr)) return null;
-  if (expr.parameters.length !== 1 || !ts.isIdentifier(expr.parameters[0].name)) {
+  if (expr.parameters.length !== 1 || !ts.isIdentifier(expr.parameters[0]!.name)) {
     return Unsupported("filter/map callback must have exactly one identifier parameter");
   }
 
   // Map arrow param to the fresh binder
+  const param = expr.parameters[0]!;
   const arrowParams = new Map(paramNames);
-  arrowParams.set(expr.parameters[0].name.text, binderName);
+  arrowParams.set((param.name as ts.Identifier).text, binderName);
 
   if (ts.isBlock(expr.body)) {
     // Only allow a single return (after filtering guards), same rule as
@@ -526,7 +530,7 @@ function extractArrowBody(
     // would introduce free variables in the generated comprehension.
     const nonGuard = expr.body.statements.filter((s) => !isGuardStatement(s));
     if (nonGuard.length === 1) {
-      const s = nonGuard[0];
+      const s = nonGuard[0]!;
       if (ts.isReturnStatement(s) && s.expression) {
         return translateBodyExpr(s.expression, checker, strategy, arrowParams);
       }
@@ -606,7 +610,14 @@ function collectAssignments(
         }
         propositions.push(Equation([], PrimedApply(prop, obj), val));
         modifiedRules.add(prop);
+        continue;
       }
+    }
+
+    if (ts.isExpressionStatement(stmt) && expressionHasSideEffects(stmt.expression)) {
+      propositions.push(UnsupportedProp("side-effectful expression"));
+      hasUnsupportedMutation = true;
+      continue;
     }
 
     // Recurse into nested blocks
@@ -627,11 +638,14 @@ function collectAssignments(
       propositions.push(UnsupportedProp("loop assignment"));
       hasUnsupportedMutation = true;
     } else if (ts.isTryStatement(stmt)) {
-      if (collectAssignments(stmt.tryBlock, checker, strategy, paramNames, propositions, modifiedRules)) {
-        hasUnsupportedMutation = true;
-      }
+      // try/catch branches are mutually exclusive; collecting from both would
+      // produce contradictory conjunctions. Only the finally block executes
+      // unconditionally.
       if (stmt.catchClause) {
-        if (collectAssignments(stmt.catchClause.block, checker, strategy, paramNames, propositions, modifiedRules)) {
+        propositions.push(UnsupportedProp("try/catch assignment"));
+        hasUnsupportedMutation = true;
+      } else {
+        if (collectAssignments(stmt.tryBlock, checker, strategy, paramNames, propositions, modifiedRules)) {
           hasUnsupportedMutation = true;
         }
       }
