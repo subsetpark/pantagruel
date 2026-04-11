@@ -116,7 +116,9 @@ export function extractReferencedTypes(
   if (!funcNode) {
     let methodMatches = 0;
     for (const cls of sourceFile.getClasses()) {
-      if (classHint && cls.getName() !== classHint) continue;
+      if (classHint && cls.getName() !== classHint) {
+        continue;
+      }
       const methods = cls
         .getMethods()
         .filter((m) => m.getName() === memberName);
@@ -125,7 +127,9 @@ export function extractReferencedTypes(
         funcNode = method.compilerNode;
         className = cls.getName();
         methodMatches += 1;
-        if (classHint) break;
+        if (classHint) {
+          break;
+        }
       }
     }
     if (!classHint && methodMatches > 1) {

@@ -1,7 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createSourceFileFromSource } from "../src/extract.js";
-import { IntStrategy } from "../src/translate-types.js";
 import { translateBody } from "../src/translate-body.js";
+import { IntStrategy } from "../src/translate-types.js";
 
 // Tests for internal translateBody API edge cases not coverable via
 // exported fixture functions (see tests/fixtures/constructs/ for

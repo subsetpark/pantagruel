@@ -1,10 +1,13 @@
-import { describe, it, expect } from "vitest";
-import { resolve } from "path";
-import { execSync } from "child_process";
-import { createSourceFile } from "../src/extract.js";
+import { execSync } from "node:child_process";
+import { resolve } from "node:path";
+import { describe, expect, it } from "vitest";
 import { extractFunctionAnnotations } from "../src/annotations.js";
 import { runCheck } from "../src/emit.js";
-import { buildDocument as buildDocumentFromPath, emitDocument } from "./helpers.js";
+import { createSourceFile } from "../src/extract.js";
+import {
+  buildDocument as buildDocumentFromPath,
+  emitDocument,
+} from "./helpers.js";
 
 const FIXTURES = resolve(__dirname, "fixtures");
 const PROJECT_ROOT = resolve(__dirname, "../../..");
@@ -23,7 +26,11 @@ function buildDocument(
   functionName: string,
   opts: { noBody?: boolean } = {},
 ) {
-  return buildDocumentFromPath(resolve(FIXTURES, fixtureName), functionName, opts);
+  return buildDocumentFromPath(
+    resolve(FIXTURES, fixtureName),
+    functionName,
+    opts,
+  );
 }
 
 // --- Emission tests ---
@@ -38,7 +45,9 @@ describe("emitDocument", () => {
     expect(output).toContain("---");
     // Annotation should be in the check block
     expect(output).toContain("check");
-    expect(output).toContain("all a: Int, b: Int | larger a b >= a and larger a b >= b.");
+    expect(output).toContain(
+      "all a: Int, b: Int | larger a b >= a and larger a b >= b.",
+    );
   });
 
   it("emits deposit.ts as valid Pantagruel", () => {
@@ -75,7 +84,9 @@ describe("extractFunctionAnnotations", () => {
     const annotations = extractFunctionAnnotations(sourceFile, "larger");
 
     expect(annotations).toHaveLength(1);
-    expect(annotations[0]).toBe("all a: Int, b: Int | larger a b >= a and larger a b >= b");
+    expect(annotations[0]).toBe(
+      "all a: Int, b: Int | larger a b >= a and larger a b >= b",
+    );
   });
 
   it("extracts @pant from deposit.ts", () => {
@@ -95,7 +106,7 @@ describe("full pipeline", () => {
     const doc = buildDocument("max.ts", "larger");
     const output = emitDocument(doc);
 
-    const lines = output.split("\n").filter(l => l.trim());
+    const lines = output.split("\n").filter((l) => l.trim());
     expect(lines[0]).toBe("module Larger.");
     expect(lines).toContain("---");
     expect(doc.propositions.length).toBeGreaterThanOrEqual(1);
@@ -106,7 +117,7 @@ describe("full pipeline", () => {
     const doc = buildDocument("deposit.ts", "deposit");
     const output = emitDocument(doc);
 
-    const lines = output.split("\n").filter(l => l.trim());
+    const lines = output.split("\n").filter((l) => l.trim());
     expect(lines[0]).toBe("module Deposit.");
     expect(lines).toContain("---");
     expect(doc.checks.length).toBeGreaterThanOrEqual(1);
@@ -117,20 +128,20 @@ describe("full pipeline", () => {
     const output = emitDocument(doc);
 
     // Run through pant (no --check, just type-checking) — should exit 0
-    execSync(
-      `echo '${output.replace(/'/g, "'\\''")}' | dune exec pant --`,
-      { encoding: "utf-8", cwd: PROJECT_ROOT },
-    );
+    execSync(`echo '${output.replace(/'/gu, "'\\''")}' | dune exec pant --`, {
+      encoding: "utf-8",
+      cwd: PROJECT_ROOT,
+    });
   });
 
   it("deposit.ts emitted .pant type-checks through pant", () => {
     const doc = buildDocument("deposit.ts", "deposit");
     const output = emitDocument(doc);
 
-    execSync(
-      `echo '${output.replace(/'/g, "'\\''")}' | dune exec pant --`,
-      { encoding: "utf-8", cwd: PROJECT_ROOT },
-    );
+    execSync(`echo '${output.replace(/'/gu, "'\\''")}' | dune exec pant --`, {
+      encoding: "utf-8",
+      cwd: PROJECT_ROOT,
+    });
   });
 });
 
@@ -175,7 +186,7 @@ describe("pant --check", () => {
 
     expect(result.passed).toBe(true);
     expect(result.checks.length).toBeGreaterThan(0);
-    expect(result.checks.every(c => c.passed)).toBe(true);
+    expect(result.checks.every((c) => c.passed)).toBe(true);
   });
 
   it.skipIf(!hasSolver)("deposit.ts assertions are checkable", () => {

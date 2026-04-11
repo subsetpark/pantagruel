@@ -1,8 +1,8 @@
-import { describe, it, expect } from "vitest";
-import { resolve } from "path";
-import { readdirSync } from "fs";
-import { createSourceFile } from "../src/extract.js";
+import { readdirSync } from "node:fs";
+import { resolve } from "node:path";
+import { describe, expect, it } from "vitest";
 import type { SourceFile } from "../src/extract.js";
+import { createSourceFile } from "../src/extract.js";
 import { buildDocument, emitDocument } from "./helpers.js";
 
 const CONSTRUCTS_DIR = resolve(__dirname, "fixtures/constructs");
@@ -14,7 +14,9 @@ function discoverTestTargets(sourceFile: SourceFile): string[] {
   for (const func of sourceFile.getFunctions()) {
     if (func.isExported()) {
       const name = func.getName();
-      if (name) targets.push(name);
+      if (name) {
+        targets.push(name);
+      }
     }
   }
 

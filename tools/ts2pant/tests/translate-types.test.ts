@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   createSourceFileFromSource,
   extractAllTypes,
@@ -6,20 +6,17 @@ import {
   getChecker,
 } from "../src/extract.js";
 import {
-  translateTypes,
-  mapTsType,
   IntStrategy,
+  mapTsType,
   RealStrategy,
+  translateTypes,
 } from "../src/translate-types.js";
 
 // Tests for internal type translation APIs: mapTsType, extractReferencedTypes
 // recursive following, numeric strategy. See tests/fixtures/constructs/ for
 // exhaustive construct coverage via snapshots.
 
-function extractAndTranslate(
-  source: string,
-  strategy = IntStrategy,
-) {
+function extractAndTranslate(source: string, strategy = IntStrategy) {
   const sourceFile = createSourceFileFromSource(source);
   const extracted = extractAllTypes(sourceFile);
   const checker = getChecker(sourceFile);

@@ -50,10 +50,10 @@ export function findFunction(
 
   // Search class methods
   for (const cls of sourceFile.getClasses()) {
-    if (classHint && cls.getName() !== classHint) continue;
-    const methods = cls
-      .getMethods()
-      .filter((m) => m.getName() === memberName);
+    if (classHint && cls.getName() !== classHint) {
+      continue;
+    }
+    const methods = cls.getMethods().filter((m) => m.getName() === memberName);
     const methodWithBody = methods.find((m) => m.hasBody());
     const method = methodWithBody ?? methods[0];
     if (method) {
