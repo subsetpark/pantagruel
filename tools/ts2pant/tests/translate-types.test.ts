@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
-  createProgramFromSource,
+  createSourceFileFromSource,
   extractAllTypes,
   extractReferencedTypes,
+  getChecker,
 } from "../src/extract.js";
 import {
   translateTypes,
@@ -18,13 +19,12 @@ import {
 function extractAndTranslate(
   source: string,
   strategy = IntStrategy,
-  fileName = "test.ts",
 ) {
-  const program = createProgramFromSource(source, fileName);
-  const extracted = extractAllTypes(program, fileName);
-  const checker = program.getTypeChecker();
+  const sourceFile = createSourceFileFromSource(source);
+  const extracted = extractAllTypes(sourceFile);
+  const checker = getChecker(sourceFile);
   const decls = translateTypes(extracted, checker, strategy);
-  return { decls, extracted, checker, program };
+  return { decls, extracted, checker, sourceFile };
 }
 
 describe("numeric strategy", () => {
@@ -59,14 +59,14 @@ describe("numeric strategy", () => {
 
 describe("enum member extraction", () => {
   it("extracts enum member names", () => {
-    const program = createProgramFromSource(`
+    const sourceFile = createSourceFileFromSource(`
       enum Status {
         Active,
         Inactive,
         Pending,
       }
     `);
-    const extracted = extractAllTypes(program, "test.ts");
+    const extracted = extractAllTypes(sourceFile);
 
     expect(extracted.enums).toHaveLength(1);
     expect(extracted.enums[0].name).toBe("Status");
@@ -95,8 +95,8 @@ describe("recursive type following", () => {
         return account.balance;
       }
     `;
-    const program = createProgramFromSource(source);
-    const extracted = extractReferencedTypes(program, "test.ts", "getBalance");
+    const sourceFile = createSourceFileFromSource(source);
+    const extracted = extractReferencedTypes(sourceFile, "getBalance");
 
     const names = extracted.interfaces.map((i) => i.name);
     expect(names).toContain("Account");
@@ -113,8 +113,8 @@ describe("recursive type following", () => {
         return { name: "test" };
       }
     `;
-    const program = createProgramFromSource(source);
-    const extracted = extractReferencedTypes(program, "test.ts", "getUser");
+    const sourceFile = createSourceFileFromSource(source);
+    const extracted = extractReferencedTypes(sourceFile, "getUser");
 
     expect(extracted.interfaces.map((i) => i.name)).toContain("User");
   });
@@ -128,8 +128,8 @@ describe("recursive type following", () => {
         return [];
       }
     `;
-    const program = createProgramFromSource(source);
-    const extracted = extractReferencedTypes(program, "test.ts", "getItems");
+    const sourceFile = createSourceFileFromSource(source);
+    const extracted = extractReferencedTypes(sourceFile, "getItems");
 
     expect(extracted.interfaces.map((i) => i.name)).toContain("Item");
   });
@@ -151,12 +151,8 @@ describe("recursive type following", () => {
         return order.total;
       }
     `;
-    const program = createProgramFromSource(source);
-    const extracted = extractReferencedTypes(
-      program,
-      "test.ts",
-      "processOrder",
-    );
+    const sourceFile = createSourceFileFromSource(source);
+    const extracted = extractReferencedTypes(sourceFile, "processOrder");
 
     const names = extracted.interfaces.map((i) => i.name);
     expect(names).toContain("Order");
@@ -168,9 +164,9 @@ describe("recursive type following", () => {
 describe("mapTsType", () => {
   it("handles undefined/void as Nothing", () => {
     const source = `interface Foo { val: undefined; }`;
-    const program = createProgramFromSource(source);
-    const checker = program.getTypeChecker();
-    const extracted = extractAllTypes(program, "test.ts");
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = getChecker(sourceFile);
+    const extracted = extractAllTypes(sourceFile);
     const prop = extracted.interfaces[0].properties[0];
 
     expect(mapTsType(prop.type, checker, IntStrategy)).toBe("Nothing");

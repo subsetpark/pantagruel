@@ -1,39 +1,27 @@
 import { describe, it, expect } from "vitest";
 import { resolve } from "path";
 import { readdirSync } from "fs";
-import ts from "typescript";
-import { createProgram } from "../src/extract.js";
+import { createSourceFile } from "../src/extract.js";
+import type { SourceFile } from "../src/extract.js";
 import { buildDocument, emitDocument } from "./helpers.js";
 
 const CONSTRUCTS_DIR = resolve(__dirname, "fixtures/constructs");
 
 /** Discover exported function names and class method names in a TS source file. */
-function discoverTestTargets(program: ts.Program, filePath: string): string[] {
-  const sourceFile = program.getSourceFile(filePath);
-  if (!sourceFile) return [];
-
+function discoverTestTargets(sourceFile: SourceFile): string[] {
   const targets: string[] = [];
 
-  for (const stmt of sourceFile.statements) {
-    const isExported = ts.canHaveModifiers(stmt) &&
-      ts.getModifiers(stmt)?.some(
-        (m) => m.kind === ts.SyntaxKind.ExportKeyword,
-      );
-
-    if (!isExported) continue;
-
-    if (ts.isFunctionDeclaration(stmt) && stmt.name) {
-      targets.push(stmt.name.text);
+  for (const func of sourceFile.getFunctions()) {
+    if (func.isExported()) {
+      const name = func.getName();
+      if (name) targets.push(name);
     }
+  }
 
-    if (ts.isClassDeclaration(stmt) && stmt.name) {
-      for (const member of stmt.members) {
-        if (
-          ts.isMethodDeclaration(member) &&
-          ts.isIdentifier(member.name)
-        ) {
-          targets.push(member.name.text);
-        }
+  for (const cls of sourceFile.getClasses()) {
+    if (cls.isExported()) {
+      for (const method of cls.getMethods()) {
+        targets.push(method.getName());
       }
     }
   }
@@ -48,8 +36,8 @@ const fixtureFiles = readdirSync(CONSTRUCTS_DIR)
 for (const file of fixtureFiles) {
   describe(file, () => {
     const filePath = resolve(CONSTRUCTS_DIR, file);
-    const program = createProgram(filePath);
-    const targets = discoverTestTargets(program, filePath);
+    const sourceFile = createSourceFile(filePath);
+    const targets = discoverTestTargets(sourceFile);
 
     for (const funcName of targets) {
       it(funcName, () => {

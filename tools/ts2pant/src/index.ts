@@ -4,7 +4,11 @@ import process from "node:process";
 import { Command } from "commander";
 import { extractFunctionAnnotations } from "./annotations.js";
 import { emitDocument, runCheck } from "./emit.js";
-import { createProgram, extractReferencedTypes } from "./extract.js";
+import {
+  createSourceFile,
+  extractReferencedTypes,
+  getChecker,
+} from "./extract.js";
 import { translateBody as translateFunctionBody } from "./translate-body.js";
 import { translateSignature } from "./translate-signature.js";
 import {
@@ -73,28 +77,20 @@ function getStrategy(numericType: NumericType): NumericStrategy {
 /** Build a PantDocument from a TS source file and function name. */
 export function extract(opts: CliOptions): PantDocument {
   const strategy = getStrategy(opts.numericType);
-  const program = createProgram(opts.inputFile);
-  const checker = program.getTypeChecker();
+  const sourceFile = createSourceFile(opts.inputFile);
+  const checker = getChecker(sourceFile);
 
-  // Extract referenced types and translate to declarations
-  const extracted = extractReferencedTypes(
-    program,
-    opts.inputFile,
-    opts.functionName,
-  );
+  const extracted = extractReferencedTypes(sourceFile, opts.functionName);
   const typeDecls = translateTypes(extracted, checker, strategy);
 
-  // Translate function signature
   const { declaration: sigDecl } = translateSignature(
-    program,
-    opts.inputFile,
+    sourceFile,
     opts.functionName,
     strategy,
   );
 
   const declarations = [...typeDecls, sigDecl];
 
-  // Capitalize function name for module name
   const moduleName =
     opts.functionName.charAt(0).toUpperCase() + opts.functionName.slice(1);
 
@@ -107,11 +103,10 @@ export function addBodyPropositions(
   opts: CliOptions,
 ): PantDocument {
   const strategy = getStrategy(opts.numericType);
-  const program = createProgram(opts.inputFile);
+  const sourceFile = createSourceFile(opts.inputFile);
 
   const propositions = translateFunctionBody({
-    program,
-    fileName: opts.inputFile,
+    sourceFile,
     functionName: opts.functionName,
     strategy,
     declarations: doc.declarations,
@@ -125,12 +120,8 @@ export function addAnnotations(
   doc: PantDocument,
   opts: CliOptions,
 ): PantDocument {
-  const program = createProgram(opts.inputFile);
-  const annotations = extractFunctionAnnotations(
-    program,
-    opts.inputFile,
-    opts.functionName,
-  );
+  const sourceFile = createSourceFile(opts.inputFile);
+  const annotations = extractFunctionAnnotations(sourceFile, opts.functionName);
 
   const annotationProps = annotations.map((text) => ({ text }));
   return { ...doc, checks: [...doc.checks, ...annotationProps] };

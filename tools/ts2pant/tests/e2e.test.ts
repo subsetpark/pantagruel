@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { resolve } from "path";
 import { execSync } from "child_process";
-import { createProgram } from "../src/extract.js";
+import { createSourceFile } from "../src/extract.js";
 import { extractFunctionAnnotations } from "../src/annotations.js";
 import { runCheck } from "../src/emit.js";
 import { buildDocument as buildDocumentFromPath, emitDocument } from "./helpers.js";
@@ -72,8 +72,8 @@ describe("emitDocument", () => {
 describe("extractFunctionAnnotations", () => {
   it("extracts @pant from max.ts", () => {
     const fileName = resolve(FIXTURES, "max.ts");
-    const program = createProgram(fileName);
-    const annotations = extractFunctionAnnotations(program, fileName, "larger");
+    const sourceFile = createSourceFile(fileName);
+    const annotations = extractFunctionAnnotations(sourceFile, "larger");
 
     expect(annotations).toHaveLength(1);
     expect(annotations[0]).toBe("all a: Int, b: Int | larger a b >= a and larger a b >= b");
@@ -81,8 +81,8 @@ describe("extractFunctionAnnotations", () => {
 
   it("extracts @pant from deposit.ts", () => {
     const fileName = resolve(FIXTURES, "deposit.ts");
-    const program = createProgram(fileName);
-    const annotations = extractFunctionAnnotations(program, fileName, "deposit");
+    const sourceFile = createSourceFile(fileName);
+    const annotations = extractFunctionAnnotations(sourceFile, "deposit");
 
     expect(annotations).toHaveLength(1);
     expect(annotations[0]).toBe("balance' account > balance account");

@@ -1,5 +1,14 @@
+import type { SourceFile } from "ts-morph";
 import ts from "typescript";
-import { Apply, Binop, Lit, type PantExpr, Unop, Var, renderExpr } from "./pant-expr.js";
+import {
+  Apply,
+  Binop,
+  Lit,
+  type PantExpr,
+  renderExpr,
+  Unop,
+  Var,
+} from "./pant-expr.js";
 import { mapTsType, type NumericStrategy } from "./translate-types.js";
 import type { PantAction, PantDeclaration, PantRule } from "./types.js";
 
@@ -13,55 +22,40 @@ export interface TranslatedSignature {
 /**
  * Find a function or method declaration by name in a source file.
  * Searches top-level functions and class methods.
+ * Returns raw compiler nodes for downstream expression walking.
  */
 export function findFunction(
-  program: ts.Program,
-  fileName: string,
+  sourceFile: SourceFile,
   functionName: string,
-): { node: ts.FunctionDeclaration | ts.MethodDeclaration; className?: string } {
-  const sourceFile = program.getSourceFile(fileName);
-  if (!sourceFile) {
-    throw new Error(`Source file not found: ${fileName}`);
-  }
-
-  let match:
-    | {
-        node: ts.FunctionDeclaration | ts.MethodDeclaration;
-        className?: string;
-      }
-    | undefined;
-
-  // Search top-level functions
-  for (const stmt of sourceFile.statements) {
-    if (ts.isFunctionDeclaration(stmt) && stmt.name?.text === functionName) {
-      if (stmt.body) {
-        return { node: stmt };
-      }
-      match ??= { node: stmt };
-    }
+): {
+  node: ts.FunctionDeclaration | ts.MethodDeclaration;
+  className?: string | undefined;
+} {
+  // Search top-level functions (prefer one with body over overload signatures)
+  const funcs = sourceFile
+    .getFunctions()
+    .filter((f) => f.getName() === functionName);
+  const funcWithBody = funcs.find((f) => f.hasBody());
+  const func = funcWithBody ?? funcs[0];
+  if (func) {
+    return { node: func.compilerNode as ts.FunctionDeclaration };
   }
 
   // Search class methods
-  for (const stmt of sourceFile.statements) {
-    if (ts.isClassDeclaration(stmt) && stmt.name) {
-      for (const member of stmt.members) {
-        if (
-          ts.isMethodDeclaration(member) &&
-          ts.isIdentifier(member.name) &&
-          member.name.text === functionName
-        ) {
-          if (member.body) {
-            return { node: member, className: stmt.name.text };
-          }
-          match ??= { node: member, className: stmt.name.text };
-        }
-      }
+  for (const cls of sourceFile.getClasses()) {
+    const methods = cls
+      .getMethods()
+      .filter((m) => m.getName() === functionName);
+    const methodWithBody = methods.find((m) => m.hasBody());
+    const method = methodWithBody ?? methods[0];
+    if (method) {
+      return {
+        node: method.compilerNode as ts.MethodDeclaration,
+        className: cls.getName(),
+      };
     }
   }
 
-  if (match) {
-    return match;
-  }
   throw new Error(`Function not found: ${functionName}`);
 }
 
@@ -785,13 +779,12 @@ export function shortParamName(
  * Translate a TypeScript function signature to a Pantagruel declaration.
  */
 export function translateSignature(
-  program: ts.Program,
-  fileName: string,
+  sourceFile: SourceFile,
   functionName: string,
   strategy: NumericStrategy,
 ): TranslatedSignature {
-  const checker = program.getTypeChecker();
-  const { node, className } = findFunction(program, fileName, functionName);
+  const checker = sourceFile.getProject().getTypeChecker().compilerObject;
+  const { node, className } = findFunction(sourceFile, functionName);
   const classification = classifyFunction(node, checker);
   const sig = checker.getSignatureFromDeclaration(node);
   if (!sig) {

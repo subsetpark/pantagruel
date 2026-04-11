@@ -1,4 +1,7 @@
+import { Project, type SourceFile } from "ts-morph";
 import ts from "typescript";
+
+export type { SourceFile } from "ts-morph";
 
 export interface ExtractedProperty {
   name: string;
@@ -26,7 +29,7 @@ export interface ExtractedTypes {
   enums: ExtractedEnum[];
 }
 
-const COMPILER_OPTIONS: ts.CompilerOptions = {
+const COMPILER_OPTIONS = {
   target: ts.ScriptTarget.ES2022,
   module: ts.ModuleKind.NodeNext,
   moduleResolution: ts.ModuleResolutionKind.NodeNext,
@@ -36,69 +39,49 @@ const COMPILER_OPTIONS: ts.CompilerOptions = {
   exactOptionalPropertyTypes: true,
   verbatimModuleSyntax: true,
   isolatedModules: true,
-};
+} satisfies ts.CompilerOptions;
 
-/** Create a TS Program from a source file on disk. */
-export function createProgram(fileName: string): ts.Program {
-  return ts.createProgram([fileName], COMPILER_OPTIONS);
+/** Create a ts-morph SourceFile from a file on disk. */
+export function createSourceFile(fileName: string): SourceFile {
+  const project = new Project({ compilerOptions: COMPILER_OPTIONS });
+  project.addSourceFileAtPath(fileName);
+  return project.getSourceFileOrThrow(fileName);
 }
 
-/** Create a TS Program from an in-memory source string (useful for tests). */
-export function createProgramFromSource(
+/** Create a ts-morph SourceFile from an in-memory source string (useful for tests). */
+export function createSourceFileFromSource(
   source: string,
   fileName = "test.ts",
-): ts.Program {
-  const sourceFile = ts.createSourceFile(
-    fileName,
-    source,
-    ts.ScriptTarget.ES2022,
-    true,
-  );
-  const defaultHost = ts.createCompilerHost(COMPILER_OPTIONS);
+): SourceFile {
+  const project = new Project({
+    compilerOptions: COMPILER_OPTIONS,
+    useInMemoryFileSystem: true,
+  });
+  return project.createSourceFile(fileName, source);
+}
 
-  const host: ts.CompilerHost = {
-    ...defaultHost,
-    getSourceFile(name, languageVersion) {
-      if (name === fileName) {
-        return sourceFile;
-      }
-      return defaultHost.getSourceFile(name, languageVersion);
-    },
-    fileExists(name) {
-      return name === fileName || defaultHost.fileExists(name);
-    },
-    readFile(name) {
-      return name === fileName ? source : defaultHost.readFile(name);
-    },
-  };
-
-  return ts.createProgram([fileName], COMPILER_OPTIONS, host);
+/** Get the raw TypeScript TypeChecker from a ts-morph SourceFile. */
+export function getChecker(sourceFile: SourceFile): ts.TypeChecker {
+  return sourceFile.getProject().getTypeChecker().compilerObject;
 }
 
 /** Extract all interfaces, type aliases, and enums from a source file. */
-export function extractAllTypes(
-  program: ts.Program,
-  fileName: string,
-): ExtractedTypes {
-  const checker = program.getTypeChecker();
-  const sourceFile = program.getSourceFile(fileName);
-  if (!sourceFile) {
-    throw new Error(`Source file not found: ${fileName}`);
-  }
+export function extractAllTypes(sourceFile: SourceFile): ExtractedTypes {
+  const checker = getChecker(sourceFile);
 
-  const result: ExtractedTypes = { interfaces: [], aliases: [], enums: [] };
+  const interfaces = sourceFile
+    .getInterfaces()
+    .map((node) => extractInterface(node.compilerNode, checker));
 
-  ts.forEachChild(sourceFile, (node) => {
-    if (ts.isInterfaceDeclaration(node)) {
-      result.interfaces.push(extractInterface(node, checker));
-    } else if (ts.isTypeAliasDeclaration(node)) {
-      result.aliases.push(extractAlias(node, checker));
-    } else if (ts.isEnumDeclaration(node)) {
-      result.enums.push(extractEnum(node));
-    }
-  });
+  const aliases = sourceFile
+    .getTypeAliases()
+    .map((node) => extractAlias(node.compilerNode, checker));
 
-  return result;
+  const enums = sourceFile
+    .getEnums()
+    .map((node) => extractEnum(node.compilerNode));
+
+  return { interfaces, aliases, enums };
 }
 
 /**
@@ -106,43 +89,27 @@ export function extractAllTypes(
  * following named types recursively.
  */
 export function extractReferencedTypes(
-  program: ts.Program,
-  fileName: string,
+  sourceFile: SourceFile,
   functionName: string,
 ): ExtractedTypes {
-  const checker = program.getTypeChecker();
-  const sourceFile = program.getSourceFile(fileName);
-  if (!sourceFile) {
-    throw new Error(`Source file not found: ${fileName}`);
-  }
+  const checker = getChecker(sourceFile);
 
+  // Find the function or class method
   let funcNode: ts.FunctionDeclaration | ts.MethodDeclaration | undefined;
   let className: string | undefined;
 
-  // Search top-level functions
-  for (const stmt of sourceFile.statements) {
-    if (ts.isFunctionDeclaration(stmt) && stmt.name?.text === functionName) {
-      funcNode = stmt;
-      break;
-    }
-  }
-
-  // Search class methods
-  if (!funcNode) {
-    for (const stmt of sourceFile.statements) {
-      if (ts.isClassDeclaration(stmt) && stmt.name) {
-        for (const member of stmt.members) {
-          if (
-            ts.isMethodDeclaration(member) &&
-            ts.isIdentifier(member.name) &&
-            member.name.text === functionName
-          ) {
-            funcNode = member;
-            className = stmt.name.text;
-            break;
-          }
-        }
-        if (funcNode) break;
+  const func = sourceFile
+    .getFunctions()
+    .find((f) => f.getName() === functionName);
+  if (func) {
+    funcNode = func.compilerNode;
+  } else {
+    for (const cls of sourceFile.getClasses()) {
+      const method = cls.getMethods().find((m) => m.getName() === functionName);
+      if (method) {
+        funcNode = method.compilerNode;
+        className = cls.getName();
+        break;
       }
     }
   }
@@ -168,7 +135,7 @@ export function extractReferencedTypes(
   }
   collectNamedTypes(signature.getReturnType(), checker, visited);
 
-  const allTypes = extractAllTypes(program, fileName);
+  const allTypes = extractAllTypes(sourceFile);
   return {
     interfaces: allTypes.interfaces.filter((i) => visited.has(i.name)),
     aliases: allTypes.aliases.filter((a) => visited.has(a.name)),

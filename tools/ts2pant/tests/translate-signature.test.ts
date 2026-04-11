@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createProgramFromSource } from "../src/extract.js";
+import { createSourceFileFromSource, getChecker } from "../src/extract.js";
 import { IntStrategy, RealStrategy } from "../src/translate-types.js";
 import {
   translateSignature,
@@ -13,9 +13,8 @@ import { renderExpr } from "../src/pant-expr.js";
 // exhaustive construct coverage via snapshots.
 
 function translate(source: string, functionName: string, strategy = IntStrategy) {
-  const fileName = "test.ts";
-  const program = createProgramFromSource(source, fileName);
-  return translateSignature(program, fileName, functionName, strategy);
+  const sourceFile = createSourceFileFromSource(source);
+  return translateSignature(sourceFile, functionName, strategy);
 }
 
 describe("classifyFunction", () => {
@@ -25,9 +24,9 @@ describe("classifyFunction", () => {
         return account.balance;
       }
     `;
-    const program = createProgramFromSource(source);
-    const { node } = findFunction(program, "test.ts", "getBalance");
-    const checker = program.getTypeChecker();
+    const sourceFile = createSourceFileFromSource(source);
+    const { node } = findFunction(sourceFile, "getBalance");
+    const checker = getChecker(sourceFile);
     expect(classifyFunction(node, checker)).toBe("pure");
   });
 
@@ -37,9 +36,9 @@ describe("classifyFunction", () => {
         account.balance = 0;
       }
     `;
-    const program = createProgramFromSource(source);
-    const { node } = findFunction(program, "test.ts", "reset");
-    const checker = program.getTypeChecker();
+    const sourceFile = createSourceFileFromSource(source);
+    const { node } = findFunction(sourceFile, "reset");
+    const checker = getChecker(sourceFile);
     expect(classifyFunction(node, checker)).toBe("mutating");
   });
 
@@ -50,9 +49,9 @@ describe("classifyFunction", () => {
         return name;
       }
     `;
-    const program = createProgramFromSource(source);
-    const { node } = findFunction(program, "test.ts", "setName");
-    const checker = program.getTypeChecker();
+    const sourceFile = createSourceFileFromSource(source);
+    const { node } = findFunction(sourceFile, "setName");
+    const checker = getChecker(sourceFile);
     expect(classifyFunction(node, checker)).toBe("mutating");
   });
 });
@@ -84,8 +83,8 @@ describe("overloaded functions", () => {
         return a + b;
       }
     `;
-    const program = createProgramFromSource(source);
-    const { node } = findFunction(program, "test.ts", "add");
+    const sourceFile = createSourceFileFromSource(source);
+    const { node } = findFunction(sourceFile, "add");
     expect(node.body).toBeDefined();
   });
 });
@@ -98,9 +97,9 @@ describe("nested closure property assignment", () => {
         return () => { a.balance = 0; };
       }
     `;
-    const program = createProgramFromSource(source);
-    const { node } = findFunction(program, "test.ts", "makeResetter");
-    const checker = program.getTypeChecker();
+    const sourceFile = createSourceFileFromSource(source);
+    const { node } = findFunction(sourceFile, "makeResetter");
+    const checker = getChecker(sourceFile);
     expect(classifyFunction(node, checker)).toBe("pure");
   });
 });

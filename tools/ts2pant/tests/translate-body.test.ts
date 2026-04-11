@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createProgramFromSource } from "../src/extract.js";
+import { createSourceFileFromSource } from "../src/extract.js";
 import { IntStrategy } from "../src/translate-types.js";
 import { translateBody } from "../src/translate-body.js";
 
@@ -12,11 +12,9 @@ describe("unsupported patterns", () => {
     const source = `
       declare function external(x: number): number;
     `;
-    const fileName = "test.ts";
-    const program = createProgramFromSource(source, fileName);
+    const sourceFile = createSourceFileFromSource(source);
     const props = translateBody({
-      program,
-      fileName,
+      sourceFile,
       functionName: "external",
       strategy: IntStrategy,
     });

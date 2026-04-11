@@ -1,4 +1,4 @@
-import { createProgram, extractReferencedTypes } from "../src/extract.js";
+import { createSourceFile, extractReferencedTypes, getChecker } from "../src/extract.js";
 import { translateTypes, IntStrategy } from "../src/translate-types.js";
 import { translateSignature } from "../src/translate-signature.js";
 import { translateBody } from "../src/translate-body.js";
@@ -16,17 +16,17 @@ export function buildDocument(
   functionName: string,
   opts: { noBody?: boolean } = {},
 ): PantDocument {
-  const program = createProgram(fileName);
-  const checker = program.getTypeChecker();
+  const sourceFile = createSourceFile(fileName);
+  const checker = getChecker(sourceFile);
   const strategy = IntStrategy;
 
   // Extract types
-  const extracted = extractReferencedTypes(program, fileName, functionName);
+  const extracted = extractReferencedTypes(sourceFile, functionName);
   const typeDecls = translateTypes(extracted, checker, strategy);
 
   // Translate signature
   const { declaration: sigDecl } = translateSignature(
-    program, fileName, functionName, strategy,
+    sourceFile, functionName, strategy,
   );
   const declarations = [...typeDecls, sigDecl];
 
@@ -38,8 +38,7 @@ export function buildDocument(
   // Body translation
   if (!opts.noBody) {
     const bodyProps = translateBody({
-      program,
-      fileName,
+      sourceFile,
       functionName,
       strategy,
       declarations,
@@ -48,7 +47,7 @@ export function buildDocument(
   }
 
   // Annotations go to checks (entailment goals)
-  const annotations = extractFunctionAnnotations(program, fileName, functionName);
+  const annotations = extractFunctionAnnotations(sourceFile, functionName);
   const annotationProps = annotations.map((text) => ({ text }));
   doc = { ...doc, checks: [...doc.checks, ...annotationProps] };
 

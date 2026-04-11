@@ -1,3 +1,4 @@
+import type { SourceFile } from "ts-morph";
 import ts from "typescript";
 import {
   Apply,
@@ -110,8 +111,7 @@ function substituteBinder(
 }
 
 export interface TranslateBodyOptions {
-  program: ts.Program;
-  fileName: string;
+  sourceFile: SourceFile;
   functionName: string;
   strategy: NumericStrategy;
   /** Declarations in scope — used for frame condition generation. */
@@ -126,9 +126,9 @@ export interface TranslateBodyOptions {
  * plus frame conditions for unmodified rules.
  */
 export function translateBody(opts: TranslateBodyOptions): PantProp[] {
-  const { program, fileName, functionName, strategy, declarations } = opts;
-  const checker = program.getTypeChecker();
-  const { node, className } = findFunction(program, fileName, functionName);
+  const { sourceFile, functionName, strategy, declarations } = opts;
+  const checker = sourceFile.getProject().getTypeChecker().compilerObject;
+  const { node, className } = findFunction(sourceFile, functionName);
   const classification = classifyFunction(node, checker);
 
   // Build param name map (same logic as translateSignature)
@@ -195,7 +195,6 @@ function translatePureBody(
   if (!returnExpr) {
     const reason = describeRejectedBody(node.body, checker);
     return [UnsupportedProp(`${functionName} — ${reason}`)];
-
   }
 
   const body = translateBodyExpr(returnExpr, checker, strategy, paramNames);
