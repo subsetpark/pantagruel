@@ -215,6 +215,45 @@ describe("guarded mutator -> action with guard", () => {
     }
   });
 
+  it("skips guard when if-condition has side effects (call)", () => {
+    const source = `
+      interface Account { balance: number; }
+      function audit(): boolean { return true; }
+      function withdraw(a: Account, amount: number): void {
+        if (audit()) {
+        } else {
+          throw new Error("Audit failed");
+        }
+        a.balance = a.balance - amount;
+      }
+    `;
+    const result = translate(source, "withdraw");
+
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind === "action") {
+      expect(result.declaration.guard).toBeUndefined();
+    }
+  });
+
+  it("skips guard when negated if-condition has side effects", () => {
+    const source = `
+      interface Account { balance: number; }
+      function check(): boolean { return true; }
+      function withdraw(a: Account, amount: number): void {
+        if (!check()) {
+          throw new Error("Check failed");
+        }
+        a.balance = a.balance - amount;
+      }
+    `;
+    const result = translate(source, "withdraw");
+
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind === "action") {
+      expect(result.declaration.guard).toBeUndefined();
+    }
+  });
+
   it("ignores non-unconditional throw in else branch", () => {
     const source = `
       interface Account { balance: number; }

@@ -470,6 +470,11 @@ function scanBodyForGuards(
       break;
     }
 
+    // Reject if-conditions with side effects (e.g. if (audit()) { throw })
+    if (!isPureExpression(stmt.expression)) {
+      break;
+    }
+
     // Pattern 1: if (cond) { /* no-op */ } else { throw }
     if (
       stmt.elseStatement &&
@@ -561,6 +566,9 @@ export function isFollowableGuardCall(
       return true;
     }
     if (!ts.isIfStatement(stmt)) {
+      return false;
+    }
+    if (!isPureExpression(stmt.expression)) {
       return false;
     }
     if (!stmt.elseStatement && blockThrows(stmt.thenStatement)) {
