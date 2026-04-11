@@ -519,7 +519,10 @@ let normalize (doc : document) (root_term : string) : document =
                 max acc level)
               0 orig_ch.body
           in
-          (* Place each check at max(its own deps, max_body_level) *)
+          (* Place each check at max(its own deps, max_body_level).
+             If the check lands beyond max_body_level, promote a
+             representative body prop so the chapter isn't bodyless. *)
+          let promoted = Hashtbl.create 4 in
           List.iter
             (fun chk ->
               let check_deps =
@@ -527,7 +530,14 @@ let normalize (doc : document) (root_term : string) : document =
               in
               let target = max check_deps max_body_level in
               let target = min target (num_chapters - 1) in
-              check_assignments.(target) <- chk :: check_assignments.(target))
+              check_assignments.(target) <- chk :: check_assignments.(target);
+              if target > max_body_level && orig_ch.body <> []
+                 && not (Hashtbl.mem promoted target)
+              then begin
+                let rep = List.hd orig_ch.body in
+                body_assignments.(target) <- rep :: body_assignments.(target);
+                Hashtbl.replace promoted target true
+              end)
             orig_ch.checks
         end)
       doc.chapters;

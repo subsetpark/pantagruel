@@ -20,8 +20,12 @@ function discoverTestTargets(sourceFile: SourceFile): string[] {
 
   for (const cls of sourceFile.getClasses()) {
     if (cls.isExported()) {
+      const clsName = cls.getName();
       for (const method of cls.getMethods()) {
-        targets.push(method.getName());
+        const qualified = clsName
+          ? `${clsName}.${method.getName()}`
+          : method.getName();
+        targets.push(qualified);
       }
     }
   }
@@ -38,6 +42,9 @@ for (const file of fixtureFiles) {
     const filePath = resolve(CONSTRUCTS_DIR, file);
     const sourceFile = createSourceFile(filePath);
     const targets = discoverTestTargets(sourceFile);
+    if (targets.length === 0) {
+      throw new Error(`No exported snapshot targets found in ${file}`);
+    }
 
     for (const funcName of targets) {
       it(funcName, () => {

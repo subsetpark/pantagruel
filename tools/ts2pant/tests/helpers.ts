@@ -30,8 +30,11 @@ export function buildDocument(
   );
   const declarations = [...typeDecls, sigDecl];
 
-  // Module name
-  const moduleName = functionName.charAt(0).toUpperCase() + functionName.slice(1);
+  // Module name (strip class qualifier if present)
+  const baseName = functionName.includes(".")
+    ? functionName.split(".", 2)[1]!
+    : functionName;
+  const moduleName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
 
   let doc: PantDocument = { moduleName, declarations, propositions: [], checks: [] };
 
@@ -46,10 +49,12 @@ export function buildDocument(
     doc = { ...doc, propositions: [...doc.propositions, ...bodyProps] };
   }
 
-  // Annotations go to checks (entailment goals)
-  const annotations = extractFunctionAnnotations(sourceFile, functionName);
-  const annotationProps = annotations.map((text) => ({ text }));
-  doc = { ...doc, checks: [...doc.checks, ...annotationProps] };
+  // Annotations go to checks (entailment goals) — skip for skeleton docs
+  if (!opts.noBody && doc.propositions.length > 0) {
+    const annotations = extractFunctionAnnotations(sourceFile, functionName);
+    const annotationProps = annotations.map((text) => ({ text }));
+    doc = { ...doc, checks: [...doc.checks, ...annotationProps] };
+  }
 
   return doc;
 }

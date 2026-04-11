@@ -21,4 +21,57 @@ describe("unsupported patterns", () => {
 
     expect(props).toHaveLength(0);
   });
+
+  it("returns unsupported for function with multiple non-guard statements", () => {
+    const source = `
+      function multi(x: number): number {
+        const a = x + 1;
+        const b = a * 2;
+        return b;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "multi",
+      strategy: IntStrategy,
+    });
+
+    expect(props).toHaveLength(1);
+    expect(props[0]?.kind).toBe("unsupported");
+  });
+
+  it("returns empty for bare return with no expression", () => {
+    const source = `
+      function noop(x: number): void {
+        return;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "noop",
+      strategy: IntStrategy,
+    });
+
+    expect(props).toHaveLength(0);
+  });
+
+  it("returns unsupported for single non-translatable statement", () => {
+    const source = `
+      function loop(x: number): number {
+        while (x > 0) { x--; }
+        return x;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "loop",
+      strategy: IntStrategy,
+    });
+
+    expect(props).toHaveLength(1);
+    expect(props[0]?.kind).toBe("unsupported");
+  });
 });

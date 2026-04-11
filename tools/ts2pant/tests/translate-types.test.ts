@@ -57,6 +57,24 @@ describe("numeric strategy", () => {
   });
 });
 
+describe("class method referenced types", () => {
+  it("follows types from class method signatures", () => {
+    const source = `
+      interface User {
+        name: string;
+      }
+      class Account {
+        getOwner(u: User): User {
+          return u;
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const extracted = extractReferencedTypes(sourceFile, "Account.getOwner");
+    expect(extracted.interfaces.map((i) => i.name)).toContain("User");
+  });
+});
+
 describe("enum member extraction", () => {
   it("extracts enum member names", () => {
     const sourceFile = createSourceFileFromSource(`

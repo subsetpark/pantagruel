@@ -489,7 +489,7 @@ all a: Account | getOwnerName a = name owner a.
 "
 `;
 
-exports[`functions-class.ts > deposit 1`] = `
+exports[`functions-class.ts > Account.deposit 1`] = `
 "module Deposit.
 
 ~> Deposit @ a: Account, amount: Int.
@@ -500,7 +500,7 @@ balance' a = balance a + amount.
 "
 `;
 
-exports[`functions-class.ts > getBalance 1`] = `
+exports[`functions-class.ts > Account.getBalance 1`] = `
 "module GetBalance.
 
 getBalance a: Account => Int.
@@ -685,7 +685,7 @@ exports[`guards-helper.ts > depositDeep 1`] = `
 
 Account.
 balance a: Account => Int.
-~> DepositDeep @ account: Account, amount: Int, ~(amount <= 0) and ~(balance account <= 0).
+~> DepositDeep @ account: Account, amount: Int, ~(amount <= 0) and ~((balance account) <= 0).
 
 ---
 
@@ -711,7 +711,7 @@ exports[`guards-helper.ts > depositMulti 1`] = `
 
 Account.
 balance a: Account => Int.
-~> DepositMulti @ account: Account, amount: Int, ~(amount <= 0) and ~(balance account <= 0).
+~> DepositMulti @ account: Account, amount: Int, ~(amount <= 0) and ~((balance account) <= 0).
 
 ---
 
@@ -724,7 +724,7 @@ exports[`guards-helper.ts > depositSubst 1`] = `
 
 Account.
 balance a: Account => Int.
-~> DepositSubst @ account: Account, amount: Int, ~(balance account <= 0).
+~> DepositSubst @ account: Account, amount: Int, ~((balance account) <= 0).
 
 ---
 

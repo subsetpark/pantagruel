@@ -147,7 +147,7 @@ check
 all a: Int, b: Int | larger a b >= a and larger a b >= b.
 ```
 
-With `--check`, the SMT solver verifies that the body propositions *entail* the annotation -- not just that they're satisfiable together:
+With `--check`, the SMT solver verifies that the annotation is *entailed* -- not just satisfiable. For pure functions this means the body propositions entail the annotation; for actions the query also assumes current-state invariants, action preconditions, and frame conditions before negating the goal:
 
 ```console
 $ ts2pant max.ts larger --check

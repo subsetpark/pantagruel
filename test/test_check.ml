@@ -1832,9 +1832,9 @@ let () =
                 {|module T.
 f a: Int => Int.
 ---
-all a: Int | f a = a + 1.
+f a = a + 1.
 check
-all a: Int | f a > a.
+f a > a.
 |});
           test_case "check block without body fails" `Quick (fun () ->
               check_error

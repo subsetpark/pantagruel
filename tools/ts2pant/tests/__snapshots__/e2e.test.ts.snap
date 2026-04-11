@@ -42,10 +42,6 @@ larger a: Int, b: Int => Int.
 ---
 
 true.
-
-check
-
-all a: Int, b: Int | larger a b >= a and larger a b >= b.
 "
 `;
 

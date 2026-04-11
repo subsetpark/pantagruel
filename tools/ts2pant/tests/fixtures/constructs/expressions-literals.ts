@@ -1,4 +1,4 @@
-// Literal values: numeric, string, boolean
+// Literal values: numeric, boolean
 
 /** numeric literal */
 export function fortyTwo(): number {

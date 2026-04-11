@@ -21,6 +21,7 @@ import {
   findFunction,
   isAssertionCall,
   isFollowableGuardCall,
+  isPureExpression,
   shortParamName,
   translateExpr,
   translateOperator,
@@ -129,6 +130,10 @@ export function translateBody(opts: TranslateBodyOptions): PantProp[] {
   const { sourceFile, functionName, strategy, declarations } = opts;
   const checker = sourceFile.getProject().getTypeChecker().compilerObject;
   const { node, className } = findFunction(sourceFile, functionName);
+  // Strip class qualifier for use in Pantagruel identifiers
+  const baseName = functionName.includes(".")
+    ? functionName.split(".", 2)[1]!
+    : functionName;
   const classification = classifyFunction(node, checker);
 
   // Build param name map (same logic as translateSignature)
@@ -162,7 +167,7 @@ export function translateBody(opts: TranslateBodyOptions): PantProp[] {
   if (classification === "pure") {
     return translatePureBody(
       node,
-      functionName,
+      baseName,
       paramList,
       checker,
       strategy,
@@ -264,10 +269,14 @@ function isGuardStatement(
   stmt: ts.Statement,
   checker: ts.TypeChecker,
 ): boolean {
-  // Assertion call or followable guard call
+  // Assertion call or followable guard call — must match the same purity
+  // checks used by scanBodyForGuards in translate-signature.ts
   if (ts.isExpressionStatement(stmt) && ts.isCallExpression(stmt.expression)) {
     const call = stmt.expression;
-    if (call.arguments.some((arg) => expressionHasSideEffects(arg))) {
+    if (!isPureExpression(call.expression)) {
+      return false;
+    }
+    if (!call.arguments.every(isPureExpression)) {
       return false;
     }
     if (isAssertionCall(checker, call) !== null) {

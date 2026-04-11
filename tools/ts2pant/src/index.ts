@@ -123,6 +123,9 @@ export function addAnnotations(
   const sourceFile = createSourceFile(opts.inputFile);
   const annotations = extractFunctionAnnotations(sourceFile, opts.functionName);
 
+  if (opts.noBody || doc.propositions.length === 0) {
+    return doc;
+  }
   const annotationProps = annotations.map((text) => ({ text }));
   return { ...doc, checks: [...doc.checks, ...annotationProps] };
 }

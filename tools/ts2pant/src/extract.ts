@@ -94,23 +94,44 @@ export function extractReferencedTypes(
 ): ExtractedTypes {
   const checker = getChecker(sourceFile);
 
-  // Find the function or class method
+  // Support "ClassName.methodName" for disambiguating methods
+  const [classHint, memberName] = functionName.includes(".")
+    ? (functionName.split(".", 2) as [string, string])
+    : [undefined, functionName];
+
+  // Find the function or class method, preferring implementations with bodies
   let funcNode: ts.FunctionDeclaration | ts.MethodDeclaration | undefined;
   let className: string | undefined;
 
-  const func = sourceFile
-    .getFunctions()
-    .find((f) => f.getName() === functionName);
-  if (func) {
-    funcNode = func.compilerNode;
-  } else {
+  if (!classHint) {
+    const funcs = sourceFile
+      .getFunctions()
+      .filter((f) => f.getName() === memberName);
+    const func = funcs.find((f) => f.hasBody()) ?? funcs[0];
+    if (func) {
+      funcNode = func.compilerNode;
+    }
+  }
+
+  if (!funcNode) {
+    let methodMatches = 0;
     for (const cls of sourceFile.getClasses()) {
-      const method = cls.getMethods().find((m) => m.getName() === functionName);
+      if (classHint && cls.getName() !== classHint) continue;
+      const methods = cls
+        .getMethods()
+        .filter((m) => m.getName() === memberName);
+      const method = methods.find((m) => m.hasBody()) ?? methods[0];
       if (method) {
         funcNode = method.compilerNode;
         className = cls.getName();
-        break;
+        methodMatches += 1;
+        if (classHint) break;
       }
+    }
+    if (!classHint && methodMatches > 1) {
+      throw new Error(
+        `Ambiguous method name: ${memberName}. Use ClassName.methodName`,
+      );
     }
   }
 

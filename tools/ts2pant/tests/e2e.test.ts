@@ -61,9 +61,8 @@ describe("emitDocument", () => {
 
     expect(output).toContain("module Larger.");
     expect(output).toContain("larger a: Int, b: Int => Int.");
-    // Should still contain the annotation in check block
-    expect(output).toContain("check");
-    expect(output).toContain("all a: Int, b: Int | larger a b >= a and larger a b >= b.");
+    // Skeleton output should NOT contain checks (no body to entail from)
+    expect(output).not.toContain("check");
   });
 });
 

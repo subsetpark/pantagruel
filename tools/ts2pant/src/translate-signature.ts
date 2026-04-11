@@ -31,21 +31,29 @@ export function findFunction(
   node: ts.FunctionDeclaration | ts.MethodDeclaration;
   className?: string | undefined;
 } {
+  // Support "ClassName.methodName" for disambiguating methods
+  const [classHint, memberName] = functionName.includes(".")
+    ? (functionName.split(".", 2) as [string, string])
+    : [undefined, functionName];
+
   // Search top-level functions (prefer one with body over overload signatures)
-  const funcs = sourceFile
-    .getFunctions()
-    .filter((f) => f.getName() === functionName);
-  const funcWithBody = funcs.find((f) => f.hasBody());
-  const func = funcWithBody ?? funcs[0];
-  if (func) {
-    return { node: func.compilerNode as ts.FunctionDeclaration };
+  if (!classHint) {
+    const funcs = sourceFile
+      .getFunctions()
+      .filter((f) => f.getName() === memberName);
+    const funcWithBody = funcs.find((f) => f.hasBody());
+    const func = funcWithBody ?? funcs[0];
+    if (func) {
+      return { node: func.compilerNode as ts.FunctionDeclaration };
+    }
   }
 
   // Search class methods
   for (const cls of sourceFile.getClasses()) {
+    if (classHint && cls.getName() !== classHint) continue;
     const methods = cls
       .getMethods()
-      .filter((m) => m.getName() === functionName);
+      .filter((m) => m.getName() === memberName);
     const methodWithBody = methods.find((m) => m.hasBody());
     const method = methodWithBody ?? methods[0];
     if (method) {
@@ -271,7 +279,12 @@ function buildSubstitutionMap(
       strategy,
       callerParamNames,
     );
-    innerMap.set(formal.name.text, renderExpr(actual));
+    const rendered = renderExpr(actual);
+    const safeRendered =
+      actual.kind === "var" || actual.kind === "literal"
+        ? rendered
+        : `(${rendered})`;
+    innerMap.set(formal.name.text, safeRendered);
   }
   return innerMap;
 }
@@ -344,7 +357,7 @@ const ASSIGNMENT_OPERATORS = new Set([
  * Check whether an expression is side-effect-free (identifiers, literals,
  * property access, operators — no calls, assignments, or increments).
  */
-function isPureExpression(expr: ts.Expression): boolean {
+export function isPureExpression(expr: ts.Expression): boolean {
   if (
     ts.isIdentifier(expr) ||
     ts.isNumericLiteral(expr) ||
@@ -785,6 +798,10 @@ export function translateSignature(
 ): TranslatedSignature {
   const checker = sourceFile.getProject().getTypeChecker().compilerObject;
   const { node, className } = findFunction(sourceFile, functionName);
+  // Strip class qualifier for use in Pantagruel identifiers
+  const baseName = functionName.includes(".")
+    ? functionName.split(".", 2)[1]!
+    : functionName;
   const classification = classifyFunction(node, checker);
   const sig = checker.getSignatureFromDeclaration(node);
   if (!sig) {
@@ -818,7 +835,7 @@ export function translateSignature(
     const returnType = mapTsType(sig.getReturnType(), checker, strategy);
     const decl: PantRule = {
       kind: "rule",
-      name: functionName,
+      name: baseName,
       params,
       returnType,
     };
@@ -829,7 +846,7 @@ export function translateSignature(
   } else {
     const decl: PantAction = {
       kind: "action",
-      label: capitalize(functionName),
+      label: capitalize(baseName),
       params,
     };
     if (guard) {

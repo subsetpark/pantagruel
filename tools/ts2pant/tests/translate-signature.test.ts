@@ -86,6 +86,9 @@ describe("overloaded functions", () => {
     const sourceFile = createSourceFileFromSource(source);
     const { node } = findFunction(sourceFile, "add");
     expect(node.body).toBeDefined();
+    // Verify translateSignature uses the implementation (any params), not the first overload
+    const result = translateSignature(sourceFile, "add", IntStrategy);
+    expect(result.declaration.params).toHaveLength(2);
   });
 });
 
@@ -117,9 +120,9 @@ describe("guard expression structure", () => {
       }
     `;
     const result = translate(source, "withdraw");
-    if (result.declaration.kind === "action") {
-      expect(renderExpr(result.declaration.guard!)).toBe("balance a >= amount");
-    }
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") return;
+    expect(renderExpr(result.declaration.guard!)).toBe("balance a >= amount");
   });
 
   it("early-throw with negation produces correct guard expression", () => {
@@ -133,9 +136,9 @@ describe("guard expression structure", () => {
       }
     `;
     const result = translate(source, "withdraw");
-    if (result.declaration.kind === "action") {
-      expect(renderExpr(result.declaration.guard!)).toBe("balance a >= amount");
-    }
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") return;
+    expect(renderExpr(result.declaration.guard!)).toBe("balance a >= amount");
   });
 
   it("skips guard when if-condition has side effects (call)", () => {
@@ -151,9 +154,9 @@ describe("guard expression structure", () => {
       }
     `;
     const result = translate(source, "withdraw");
-    if (result.declaration.kind === "action") {
-      expect(result.declaration.guard).toBeUndefined();
-    }
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") return;
+    expect(result.declaration.guard).toBeUndefined();
   });
 
   it("skips guard when negated if-condition has side effects", () => {
@@ -168,9 +171,9 @@ describe("guard expression structure", () => {
       }
     `;
     const result = translate(source, "withdraw");
-    if (result.declaration.kind === "action") {
-      expect(result.declaration.guard).toBeUndefined();
-    }
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") return;
+    expect(result.declaration.guard).toBeUndefined();
   });
 
   it("guard detection stops at non-if statements", () => {
@@ -186,9 +189,9 @@ describe("guard expression structure", () => {
       }
     `;
     const result = translate(source, "process");
-    if (result.declaration.kind === "action") {
-      expect(result.declaration.guard).toBeUndefined();
-    }
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") return;
+    expect(result.declaration.guard).toBeUndefined();
   });
 
   it("assert guard produces correct expression", () => {
@@ -203,9 +206,9 @@ describe("guard expression structure", () => {
       }
     `;
     const result = translate(source, "deposit");
-    if (result.declaration.kind === "action") {
-      expect(renderExpr(result.declaration.guard!)).toBe("amount > 0");
-    }
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") return;
+    expect(renderExpr(result.declaration.guard!)).toBe("amount > 0");
   });
 
   it("multiple assertion guards are combined with and", () => {
@@ -221,9 +224,9 @@ describe("guard expression structure", () => {
       }
     `;
     const result = translate(source, "deposit");
-    if (result.declaration.kind === "action") {
-      expect(renderExpr(result.declaration.guard!)).toBe("(amount > 0) and (balance account >= 0)");
-    }
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") return;
+    expect(renderExpr(result.declaration.guard!)).toBe("(amount > 0) and (balance account >= 0)");
   });
 
   it("combines if-throw + assertion guards", () => {
@@ -239,9 +242,9 @@ describe("guard expression structure", () => {
       }
     `;
     const result = translate(source, "deposit");
-    if (result.declaration.kind === "action") {
-      expect(renderExpr(result.declaration.guard!)).toBe("~(amount <= 0) and (balance account >= 0)");
-    }
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") return;
+    expect(renderExpr(result.declaration.guard!)).toBe("~(amount <= 0) and (balance account >= 0)");
   });
 
   it("ignores non-assertion calls (stops scanning)", () => {
@@ -254,9 +257,9 @@ describe("guard expression structure", () => {
       }
     `;
     const result = translate(source, "deposit");
-    if (result.declaration.kind === "action") {
-      expect(result.declaration.guard).toBeUndefined();
-    }
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") return;
+    expect(result.declaration.guard).toBeUndefined();
   });
 });
 
@@ -273,9 +276,9 @@ describe("call-graph following guard expressions", () => {
       }
     `;
     const result = translate(source, "deposit");
-    if (result.declaration.kind === "action") {
-      expect(renderExpr(result.declaration.guard!)).toBe("~(amount <= 0)");
-    }
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") return;
+    expect(renderExpr(result.declaration.guard!)).toBe("~(amount <= 0)");
   });
 
   it("substitutes formal params with actual args", () => {
@@ -290,9 +293,9 @@ describe("call-graph following guard expressions", () => {
       }
     `;
     const result = translate(source, "deposit");
-    if (result.declaration.kind === "action") {
-      expect(renderExpr(result.declaration.guard!)).toBe("~(balance account <= 0)");
-    }
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") return;
+    expect(renderExpr(result.declaration.guard!)).toBe("~((balance account) <= 0)");
   });
 
   it("follows calls two levels deep", () => {
@@ -310,9 +313,9 @@ describe("call-graph following guard expressions", () => {
       }
     `;
     const result = translate(source, "deposit");
-    if (result.declaration.kind === "action") {
-      expect(renderExpr(result.declaration.guard!)).toBe("~(amount <= 0)");
-    }
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") return;
+    expect(renderExpr(result.declaration.guard!)).toBe("~(amount <= 0)");
   });
 
   it("bails on recursive calls", () => {
@@ -329,6 +332,8 @@ describe("call-graph following guard expressions", () => {
     `;
     const result = translate(source, "deposit");
     expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") return;
+    expect(result.declaration.guard).toBeUndefined();
   });
 });
 
@@ -347,10 +352,10 @@ describe("class method declarations", () => {
       }
     `;
     const result = translate(source, "withdraw");
-    if (result.declaration.kind === "action") {
-      expect(renderExpr(result.declaration.guard!)).toBe("balance a >= amount");
-      expect(result.declaration.params[0]).toEqual({ name: "a", type: "Account" });
-    }
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") return;
+    expect(renderExpr(result.declaration.guard!)).toBe("balance a >= amount");
+    expect(result.declaration.params[0]).toEqual({ name: "a", type: "Account" });
   });
 
   it("does not extract guard when then-branch has side effects", () => {
@@ -367,8 +372,8 @@ describe("class method declarations", () => {
       }
     `;
     const result = translate(source, "withdraw");
-    if (result.declaration.kind === "action") {
-      expect(result.declaration.guard).toBeUndefined();
-    }
+    expect(result.declaration.kind).toBe("action");
+    if (result.declaration.kind !== "action") return;
+    expect(result.declaration.guard).toBeUndefined();
   });
 });
