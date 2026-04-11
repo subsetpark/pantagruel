@@ -1,4 +1,4 @@
-import type { OpaqueExpr, PropResult } from "./pant-ast.js";
+import type { OpaqueExpr, OpaqueParam } from "./pant-ast.js";
 
 /** Pantagruel numeric type strategy. */
 export type NumericType = "Int" | "Real" | "Nat0";
@@ -41,6 +41,20 @@ export interface PantAction {
 
 /** A declaration in a Pantagruel document. */
 export type PantDeclaration = PantDomain | PantAlias | PantRule | PantAction;
+
+/**
+ * Proposition result: either a structured equation, an unsupported
+ * translation, or a raw text proposition (from @pant annotations).
+ */
+export type PropResult =
+  | {
+      kind: "equation";
+      quantifiers: OpaqueParam[];
+      lhs: OpaqueExpr;
+      rhs: OpaqueExpr;
+    }
+  | { kind: "unsupported"; reason: string }
+  | { kind: "raw"; text: string };
 
 /** A complete Pantagruel document ready for emission. */
 export interface PantDocument {

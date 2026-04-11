@@ -9,9 +9,8 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import process from "node:process";
-import type { PropResult } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
-import type { PantDocument } from "./types.js";
+import type { PantDocument, PropResult } from "./types.js";
 
 export interface CheckResult {
   passed: boolean;

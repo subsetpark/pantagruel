@@ -165,7 +165,6 @@ let () =
 let () =
   Js.export "pantAst"
     (object%js
-       (* --- Expression constructors --- *)
        method var name = Ast.EVar (Lower (Js.to_string name))
        method domain name = Ast.EDomain (Upper (Js.to_string name))
        method app fn args = Ast.EApp (fn, js_array_to_list args)
@@ -197,7 +196,6 @@ let () =
        method exists params guards body =
          Ast.EExists (js_array_to_list params, js_array_to_list guards, body)
 
-       (* --- Binary operators --- *)
        method opAnd = Ast.OpAnd
        method opOr = Ast.OpOr
        method opImpl = Ast.OpImpl
@@ -214,13 +212,9 @@ let () =
        method opSub = Ast.OpSub
        method opMul = Ast.OpMul
        method opDiv = Ast.OpDiv
-
-       (* --- Unary operators --- *)
        method opNot = Ast.OpNot
        method opNeg = Ast.OpNeg
        method opCard = Ast.OpCard
-
-       (* --- Combiners (for over-each) --- *)
        method combAdd = Ast.CombAdd
        method combMul = Ast.CombMul
        method combAnd = Ast.CombAnd
@@ -228,7 +222,6 @@ let () =
        method combMin = Ast.CombMin
        method combMax = Ast.CombMax
 
-       (* --- Param / guard / type constructors --- *)
        method param name typeExpr =
          ({ Ast.param_name = Lower (Js.to_string name); param_type = typeExpr }
            : Ast.param)
@@ -240,8 +233,6 @@ let () =
        method gExpr e = Ast.GExpr e
        method gIn name e = Ast.GIn (Lower (Js.to_string name), e)
        method gParam p = Ast.GParam p
-
-       (* --- Declaration constructors --- *)
        method declDomain name = Ast.DeclDomain (Upper (Js.to_string name))
 
        method declAlias name typeExpr =
@@ -266,12 +257,10 @@ let () =
              contexts = [];
            }
 
-       (* --- Rendering --- *)
        method strExpr e = Js.string (Pretty.str_expr e)
        method strTypeExpr te = Js.string (Pretty.str_type_expr te)
        method strDecl d = Js.string (Pretty.str_declaration d)
 
-       (* --- AST traversal --- *)
        method substituteBinder expr name replacement =
          subst_var (Js.to_string name) replacement expr
     end)

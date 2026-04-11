@@ -1,6 +1,6 @@
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
-import type { OpaqueExpr, OpaqueParam, PropResult } from "./pant-ast.js";
+import type { OpaqueExpr, OpaqueParam } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
 import {
   classifyFunction,
@@ -13,7 +13,7 @@ import {
   translateOperator,
 } from "./translate-signature.js";
 import { mapTsType, type NumericStrategy } from "./translate-types.js";
-import type { PantDeclaration } from "./types.js";
+import type { PantDeclaration, PropResult } from "./types.js";
 
 /** Generate a binder name not already used by params. */
 function freshBinder(paramNames: Map<string, string>): string {
@@ -45,7 +45,10 @@ function isBodyUnsupported(r: BodyResult): r is { unsupported: string } {
 
 /** Extract the OpaqueExpr from a successful BodyResult. */
 function bodyExpr(r: BodyResult): OpaqueExpr {
-  return (r as { expr: OpaqueExpr }).expr;
+  if ("unsupported" in r) {
+    throw new Error(`bodyExpr called on unsupported: ${r.unsupported}`);
+  }
+  return r.expr;
 }
 
 export interface TranslateBodyOptions {

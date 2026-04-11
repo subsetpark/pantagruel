@@ -16,7 +16,6 @@ interface PantParserModule {
   prettyPrint: (text: string) => string | null;
 }
 
-let wasmLoaded = false;
 let wasmLoadPromise: Promise<void> | null = null;
 let pantParser: PantParserModule | null = null;
 let pantAst: PantAstModule | null = null;
@@ -30,7 +29,7 @@ let pantAst: PantAstModule | null = null;
  * CJS and ESM contexts.
  */
 async function ensureWasmLoaded(): Promise<void> {
-  if (wasmLoaded) {
+  if (pantAst) {
     return;
   }
   if (wasmLoadPromise) {
@@ -45,18 +44,20 @@ async function ensureWasmLoaded(): Promise<void> {
 
     require(loaderPath);
 
-    // Wait for async wasm initialization
-    await new Promise((resolve) => setTimeout(resolve, 200));
-
+    // Poll for async wasm initialization (the loader attaches globals asynchronously)
     const g = globalThis as Record<string, unknown>;
-    pantParser = g["pantParser"] as PantParserModule;
-    pantAst = g["pantAst"] as PantAstModule;
-
-    if (!pantParser || !pantAst) {
-      throw new Error("Failed to load Pantagruel wasm module");
+    const deadline = Date.now() + 10_000;
+    let delay = 1;
+    while (!g["pantParser"] || !g["pantAst"]) {
+      if (Date.now() > deadline) {
+        throw new Error("Timed out waiting for wasm module initialization");
+      }
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      delay = Math.min(delay * 2, 100);
     }
 
-    wasmLoaded = true;
+    pantParser = g["pantParser"] as PantParserModule;
+    pantAst = g["pantAst"] as PantAstModule;
   })();
 
   return wasmLoadPromise;

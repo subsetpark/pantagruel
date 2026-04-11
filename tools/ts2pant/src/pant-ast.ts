@@ -127,28 +127,3 @@ export interface PantAstModule {
     replacement: OpaqueExpr,
   ) => OpaqueExpr;
 }
-
-/**
- * Translation result: either an opaque expression or a failure.
- * Unsupported is a translation concept, not a Pantagruel AST node.
- */
-export type ExprResult = OpaqueExpr | { unsupported: string };
-
-/** Type guard for unsupported translation results. */
-export function isUnsupported(r: ExprResult): r is { unsupported: string } {
-  return typeof r === "object" && r !== null && "unsupported" in r;
-}
-
-/**
- * Proposition result: either a structured equation, an unsupported
- * translation, or a raw text proposition (from @pant annotations).
- */
-export type PropResult =
-  | {
-      kind: "equation";
-      quantifiers: OpaqueParam[];
-      lhs: OpaqueExpr;
-      rhs: OpaqueExpr;
-    }
-  | { kind: "unsupported"; reason: string }
-  | { kind: "raw"; text: string };
