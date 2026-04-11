@@ -30,6 +30,12 @@ export async function loadParser(): Promise<PantParserModule> {
   }
 
   loadPromise = (async () => {
+    // The wasm_of_ocaml loader uses CJS require() internally, which is
+    // unavailable in ESM-only environments like vitest.
+    if (typeof globalThis.process?.env?.["VITEST"] === "string") {
+      throw new Error("Wasm parser unavailable in vitest environment");
+    }
+
     // The wasm_of_ocaml loader is CJS and resolves .wasm assets relative
     // to require.main.filename. Use createRequire to load it from ESM.
     const __filename = fileURLToPath(import.meta.url);

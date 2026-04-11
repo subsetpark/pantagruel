@@ -1,6 +1,7 @@
 import type { SourceFile } from "ts-morph";
 import { extractFunctionAnnotations } from "./annotations.js";
 import { extractReferencedTypes, getChecker } from "./extract.js";
+import { loadParser, rewriteAnnotation } from "./pant-wasm.js";
 import { translateBody } from "./translate-body.js";
 import { translateSignature } from "./translate-signature.js";
 import { type NumericStrategy, translateTypes } from "./translate-types.js";
@@ -17,7 +18,9 @@ export interface PipelineOptions {
  * Build a PantDocument from a parsed SourceFile and function name.
  * Shared by the CLI entry point and the test helpers.
  */
-export function buildPantDocument(opts: PipelineOptions): PantDocument {
+export async function buildPantDocument(
+  opts: PipelineOptions,
+): Promise<PantDocument> {
   const { sourceFile, functionName, strategy, noBody } = opts;
   const checker = getChecker(sourceFile);
 
@@ -31,7 +34,7 @@ export function buildPantDocument(opts: PipelineOptions): PantDocument {
   const typeDecls = translateTypes(extracted, checker, strategy);
 
   // Translate signature
-  const { declaration: sigDecl } = translateSignature(
+  const { declaration: sigDecl, paramNameMap } = translateSignature(
     sourceFile,
     functionName,
     strategy,
@@ -60,7 +63,26 @@ export function buildPantDocument(opts: PipelineOptions): PantDocument {
   // Annotations go to checks (entailment goals) — skip for skeleton docs
   if (!noBody && doc.propositions.length > 0) {
     const annotations = extractFunctionAnnotations(sourceFile, functionName);
-    const annotationProps = annotations.map((text) => ({ text }));
+
+    // Rewrite annotation variable names using the embedded Pantagruel parser.
+    // paramNameMap maps TS names → pant names; annotations use TS names.
+    const hasRenames = [...paramNameMap.entries()].some(([k, v]) => k !== v);
+    let annotationTexts: string[];
+    if (hasRenames) {
+      try {
+        await loadParser();
+        annotationTexts = annotations.map((text) =>
+          rewriteAnnotation(text, paramNameMap),
+        );
+      } catch {
+        // Wasm parser unavailable (e.g., test environment) — pass through
+        annotationTexts = annotations;
+      }
+    } else {
+      annotationTexts = annotations;
+    }
+
+    const annotationProps = annotationTexts.map((text) => ({ text }));
     doc = { ...doc, checks: [...doc.checks, ...annotationProps] };
   }
 

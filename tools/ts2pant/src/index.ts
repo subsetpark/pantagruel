@@ -67,7 +67,7 @@ function getStrategy(numericType: NumericType): NumericStrategy {
   }
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const opts = parseArgs();
   if (opts.check && opts.noBody) {
     process.stderr.write("Error: --check cannot be combined with --no-body\n");
@@ -76,7 +76,7 @@ function main(): void {
   const strategy = getStrategy(opts.numericType);
   const sourceFile = createSourceFile(opts.inputFile);
 
-  const doc = buildPantDocument({
+  const doc = await buildPantDocument({
     sourceFile,
     functionName: opts.functionName,
     strategy,

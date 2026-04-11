@@ -49,8 +49,8 @@ for (const file of fixtureFiles) {
     }
 
     for (const funcName of targets) {
-      it(funcName, () => {
-        const doc = buildDocument(filePath, funcName);
+      it(funcName, async () => {
+        const doc = await buildDocument(filePath, funcName);
         const output = emitDocument(doc);
         expect(output).toMatchSnapshot();
       });

@@ -8,11 +8,11 @@ import type { PantDocument } from "../src/types.js";
  * Build a full PantDocument from a file path and function name.
  * Uses the shared pipeline (same as CLI).
  */
-export function buildDocument(
+export async function buildDocument(
   fileName: string,
   functionName: string,
   opts: { noBody?: boolean } = {},
-): PantDocument {
+): Promise<PantDocument> {
   const sourceFile = createSourceFile(fileName);
   return buildPantDocument({
     sourceFile,

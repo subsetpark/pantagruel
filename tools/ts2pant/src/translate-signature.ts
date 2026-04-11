@@ -17,6 +17,8 @@ export type Classification = "pure" | "mutating";
 export interface TranslatedSignature {
   declaration: PantDeclaration;
   classification: Classification;
+  /** Map from TS parameter names to Pantagruel parameter names. */
+  paramNameMap: Map<string, string>;
 }
 
 /**
@@ -873,7 +875,7 @@ export function translateSignature(
     if (guard) {
       decl.guard = guard;
     }
-    return { declaration: decl, classification };
+    return { declaration: decl, classification, paramNameMap };
   } else {
     const decl: PantAction = {
       kind: "action",
@@ -883,6 +885,6 @@ export function translateSignature(
     if (guard) {
       decl.guard = guard;
     }
-    return { declaration: decl, classification };
+    return { declaration: decl, classification, paramNameMap };
   }
 }

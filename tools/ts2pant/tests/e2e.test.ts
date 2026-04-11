@@ -25,7 +25,7 @@ function buildDocument(
   fixtureName: string,
   functionName: string,
   opts: { noBody?: boolean } = {},
-) {
+): Promise<import("../src/types.js").PantDocument> {
   return buildDocumentFromPath(
     resolve(FIXTURES, fixtureName),
     functionName,
@@ -36,8 +36,8 @@ function buildDocument(
 // --- Emission tests ---
 
 describe("emitDocument", () => {
-  it("emits max.ts as valid Pantagruel", () => {
-    const doc = buildDocument("max.ts", "larger");
+  it("emits max.ts as valid Pantagruel", async () => {
+    const doc = await buildDocument("max.ts", "larger");
     const output = emitDocument(doc);
 
     expect(output).toContain("module Larger.");
@@ -50,8 +50,8 @@ describe("emitDocument", () => {
     );
   });
 
-  it("emits deposit.ts as valid Pantagruel", () => {
-    const doc = buildDocument("deposit.ts", "deposit");
+  it("emits deposit.ts as valid Pantagruel", async () => {
+    const doc = await buildDocument("deposit.ts", "deposit");
     const output = emitDocument(doc);
 
     expect(output).toContain("module Deposit.");
@@ -64,8 +64,8 @@ describe("emitDocument", () => {
     expect(output).toContain("balance' account > balance account.");
   });
 
-  it("emits skeleton-only when noBody is set", () => {
-    const doc = buildDocument("max.ts", "larger", { noBody: true });
+  it("emits skeleton-only when noBody is set", async () => {
+    const doc = await buildDocument("max.ts", "larger", { noBody: true });
     const output = emitDocument(doc);
 
     expect(output).toContain("module Larger.");
@@ -102,8 +102,8 @@ describe("extractFunctionAnnotations", () => {
 // --- Full pipeline tests ---
 
 describe("full pipeline", () => {
-  it("max.ts produces a checkable document", () => {
-    const doc = buildDocument("max.ts", "larger");
+  it("max.ts produces a checkable document", async () => {
+    const doc = await buildDocument("max.ts", "larger");
     const output = emitDocument(doc);
 
     const lines = output.split("\n").filter((l) => l.trim());
@@ -113,8 +113,8 @@ describe("full pipeline", () => {
     expect(doc.checks.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("deposit.ts produces a checkable document", () => {
-    const doc = buildDocument("deposit.ts", "deposit");
+  it("deposit.ts produces a checkable document", async () => {
+    const doc = await buildDocument("deposit.ts", "deposit");
     const output = emitDocument(doc);
 
     const lines = output.split("\n").filter((l) => l.trim());
@@ -123,8 +123,8 @@ describe("full pipeline", () => {
     expect(doc.checks.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("max.ts emitted .pant type-checks through pant", () => {
-    const doc = buildDocument("max.ts", "larger");
+  it("max.ts emitted .pant type-checks through pant", async () => {
+    const doc = await buildDocument("max.ts", "larger");
     const output = emitDocument(doc);
 
     // Run through pant (no --check, just type-checking) — should exit 0
@@ -134,8 +134,8 @@ describe("full pipeline", () => {
     });
   });
 
-  it("deposit.ts emitted .pant type-checks through pant", () => {
-    const doc = buildDocument("deposit.ts", "deposit");
+  it("deposit.ts emitted .pant type-checks through pant", async () => {
+    const doc = await buildDocument("deposit.ts", "deposit");
     const output = emitDocument(doc);
 
     execSync(`echo '${output.replace(/'/gu, "'\\''")}' | dune exec pant --`, {
@@ -148,28 +148,28 @@ describe("full pipeline", () => {
 // --- Snapshot tests ---
 
 describe("emission snapshots", () => {
-  it("max.ts larger", () => {
-    const doc = buildDocument("max.ts", "larger");
+  it("max.ts larger", async () => {
+    const doc = await buildDocument("max.ts", "larger");
     expect(emitDocument(doc)).toMatchSnapshot();
   });
 
-  it("max.ts larger (skeleton only)", () => {
-    const doc = buildDocument("max.ts", "larger", { noBody: true });
+  it("max.ts larger (skeleton only)", async () => {
+    const doc = await buildDocument("max.ts", "larger", { noBody: true });
     expect(emitDocument(doc)).toMatchSnapshot();
   });
 
-  it("deposit.ts deposit", () => {
-    const doc = buildDocument("deposit.ts", "deposit");
+  it("deposit.ts deposit", async () => {
+    const doc = await buildDocument("deposit.ts", "deposit");
     expect(emitDocument(doc)).toMatchSnapshot();
   });
 
-  it("assert-guard.ts deposit", () => {
-    const doc = buildDocument("assert-guard.ts", "deposit");
+  it("assert-guard.ts deposit", async () => {
+    const doc = await buildDocument("assert-guard.ts", "deposit");
     expect(emitDocument(doc)).toMatchSnapshot();
   });
 
-  it("validate-helper.ts deposit", () => {
-    const doc = buildDocument("validate-helper.ts", "deposit");
+  it("validate-helper.ts deposit", async () => {
+    const doc = await buildDocument("validate-helper.ts", "deposit");
     expect(emitDocument(doc)).toMatchSnapshot();
   });
 });
@@ -179,8 +179,8 @@ describe("emission snapshots", () => {
 describe("pant --check", () => {
   const hasSolver = solverAvailable();
 
-  it.skipIf(!hasSolver)("max.ts assertions pass", () => {
-    const doc = buildDocument("max.ts", "larger");
+  it.skipIf(!hasSolver)("max.ts assertions pass", async () => {
+    const doc = await buildDocument("max.ts", "larger");
     const output = emitDocument(doc);
     const result = runCheck(output, { projectRoot: PROJECT_ROOT });
 
@@ -189,8 +189,8 @@ describe("pant --check", () => {
     expect(result.checks.every((c) => c.passed)).toBe(true);
   });
 
-  it.skipIf(!hasSolver)("deposit.ts assertions are checkable", () => {
-    const doc = buildDocument("deposit.ts", "deposit");
+  it.skipIf(!hasSolver)("deposit.ts assertions are checkable", async () => {
+    const doc = await buildDocument("deposit.ts", "deposit");
     const output = emitDocument(doc);
     const result = runCheck(output, { projectRoot: PROJECT_ROOT });
 
