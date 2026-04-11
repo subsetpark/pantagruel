@@ -1,0 +1,65 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`expressions-const-bindings > chainedConst 1`] = `
+[
+  {
+    "text": "all a: Int | chainedConst a = (a + 1)",
+  },
+]
+`;
+
+exports[`expressions-const-bindings > constInTernary 1`] = `
+[
+  {
+    "text": "all a: Int, b: Int | constInTernary a b = cond (a + b) > 0 => (a + b), true => 0",
+  },
+]
+`;
+
+exports[`expressions-const-bindings > constWithPropAccess 1`] = `
+[
+  {
+    "text": "all a: Account | constWithPropAccess a = (balance a) + 1",
+  },
+]
+`;
+
+exports[`expressions-const-bindings > effectfulConstRejected 1`] = `
+[
+  {
+    "text": "> UNSUPPORTED: effectfulConstRejected — const binding with side-effectful initializer",
+  },
+]
+`;
+
+exports[`expressions-const-bindings > letRejected 1`] = `
+[
+  {
+    "text": "> UNSUPPORTED: letRejected — let/var bindings not supported",
+  },
+]
+`;
+
+exports[`expressions-const-bindings > simpleConst 1`] = `
+[
+  {
+    "text": "all a: Int, b: Int | simpleConst a b = (a + b)",
+  },
+]
+`;
+
+exports[`functions-mutating-const > depositWithConst 1`] = `
+[
+  {
+    "text": "balance' a = (balance a + amount)",
+  },
+]
+`;
+
+exports[`functions-mutating-const > multiConstMutating 1`] = `
+[
+  {
+    "text": "balance' a = balance a - (amount * rate)",
+  },
+]
+`;

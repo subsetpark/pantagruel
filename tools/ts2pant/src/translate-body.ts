@@ -81,15 +81,26 @@ function translatePureBody(
 ): PantProposition[] {
   if (!node.body) return [];
 
-  const returnExpr = extractReturnExpression(node.body);
-  if (!returnExpr) {
+  const extracted = extractReturnExpression(node.body);
+  if (!extracted) {
     const reason = describeRejectedBody(node.body);
     return [{ text: `> UNSUPPORTED: ${functionName} — ${reason}` }];
   }
 
+  // Translate const bindings and add to paramNames for inline substitution
+  const extendedParams = new Map(paramNames);
+  for (const binding of extracted.bindings) {
+    const translated = translateBodyExpr(binding.initializer, checker, strategy, extendedParams);
+    if (isUnsupported(translated)) {
+      return [{ text: translated }];
+    }
+    // Wrap compound expressions in parens to preserve grouping
+    extendedParams.set(binding.name, translated.includes(" ") ? `(${translated})` : translated);
+  }
+
   const args = params.map((p) => p.name).join(" ");
   const bindings = params.map((p) => `${p.name}: ${p.type}`).join(", ");
-  const body = translateBodyExpr(returnExpr, checker, strategy, paramNames);
+  const body = translateBodyExpr(extracted.returnExpr, checker, strategy, extendedParams);
 
   if (body.startsWith("> UNSUPPORTED:")) {
     return [{ text: body }];
@@ -100,31 +111,57 @@ function translatePureBody(
   return [{ text: `${head}${call} = ${body}` }];
 }
 
+interface ExtractedBody {
+  bindings: Array<{ name: string; initializer: ts.Expression }>;
+  returnExpr: ts.Expression;
+}
+
 /**
- * Extract the return expression from a function body.
+ * Extract the return expression from a function body, collecting any leading
+ * const bindings with pure initializers for inline substitution.
  * Handles:
  *   - Single return statement
+ *   - Leading const bindings + return statement
  *   - if/else with returns in both branches (produces a synthetic conditional)
+ * Returns null if the body contains let/var bindings or effectful const initializers.
  */
-function extractReturnExpression(body: ts.Block): ts.Expression | null {
+function extractReturnExpression(body: ts.Block): ExtractedBody | null {
   // Skip guard statements (if-throw patterns) and find the meaningful return
   const stmts = body.statements.filter((s) => !isGuardStatement(s));
 
-  if (stmts.length === 1) {
-    const stmt = stmts[0];
-    if (ts.isReturnStatement(stmt) && stmt.expression) {
-      return stmt.expression;
-    }
-    // if/else with returns
-    if (ts.isIfStatement(stmt) && stmt.elseStatement) {
-      return stmt;
+  if (stmts.length === 0) return null;
+
+  const bindings: Array<{ name: string; initializer: ts.Expression }> = [];
+  let i = 0;
+
+  // Collect leading const bindings
+  for (; i < stmts.length - 1; i++) {
+    const stmt = stmts[i];
+    if (!ts.isVariableStatement(stmt)) break;
+
+    const declList = stmt.declarationList;
+    // Reject let/var
+    if (!(declList.flags & ts.NodeFlags.Const)) return null;
+
+    for (const decl of declList.declarations) {
+      // Must have a simple identifier name and an initializer
+      if (!ts.isIdentifier(decl.name) || !decl.initializer) return null;
+      // Reject effectful initializers
+      if (expressionHasSideEffects(decl.initializer)) return null;
+      bindings.push({ name: decl.name.text, initializer: decl.initializer });
     }
   }
 
-  // Multiple non-guard statements are not representable yet without
-  // translating local bindings/control flow.
-  if (stmts.length > 1) {
-    return null;
+  // The last statement must be a return or if/else-with-returns
+  const last = stmts[i];
+  // If we didn't consume all preceding statements as const bindings, reject
+  if (i < stmts.length - 1) return null;
+
+  if (ts.isReturnStatement(last) && last.expression) {
+    return { bindings, returnExpr: last.expression };
+  }
+  if (ts.isIfStatement(last) && last.elseStatement) {
+    return { bindings, returnExpr: last };
   }
 
   return null;
@@ -133,7 +170,23 @@ function extractReturnExpression(body: ts.Block): ts.Expression | null {
 function describeRejectedBody(body: ts.Block): string {
   const stmts = body.statements.filter((s) => !isGuardStatement(s));
   if (stmts.length === 0) return "empty body";
-  if (stmts.length > 1) return "local bindings or multiple statements before return";
+  if (stmts.length > 1) {
+    // Check for specific rejection reasons in leading statements
+    for (const stmt of stmts) {
+      if (ts.isVariableStatement(stmt)) {
+        const declList = stmt.declarationList;
+        if (!(declList.flags & ts.NodeFlags.Const)) {
+          return "let/var bindings not supported";
+        }
+        for (const decl of declList.declarations) {
+          if (decl.initializer && expressionHasSideEffects(decl.initializer)) {
+            return "const binding with side-effectful initializer";
+          }
+        }
+      }
+    }
+    return "local bindings or multiple statements before return";
+  }
   const stmt = stmts[0];
   if (ts.isReturnStatement(stmt) && !stmt.expression) return "return without expression";
   return "non-translatable control flow";
@@ -530,6 +583,34 @@ function collectAssignments(
   for (const stmt of stmts) {
     // Skip guard statements (if-throw patterns)
     if (isGuardStatement(stmt)) continue;
+
+    // Handle const bindings: translate initializer and add to paramNames
+    if (ts.isVariableStatement(stmt)) {
+      const declList = stmt.declarationList;
+      if (declList.flags & ts.NodeFlags.Const) {
+        let allPure = true;
+        for (const decl of declList.declarations) {
+          if (!ts.isIdentifier(decl.name) || !decl.initializer || expressionHasSideEffects(decl.initializer)) {
+            allPure = false;
+            break;
+          }
+        }
+        if (allPure) {
+          for (const decl of declList.declarations) {
+            const name = (decl.name as ts.Identifier).text;
+            const translated = translateBodyExpr(decl.initializer!, checker, strategy, paramNames);
+            if (isUnsupported(translated)) {
+              hasUnsupportedMutation = true;
+              propositions.push({ text: translated });
+              continue;
+            }
+            paramNames.set(name, translated.includes(" ") ? `(${translated})` : translated);
+          }
+          continue;
+        }
+      }
+      // let/var or effectful const — fall through to existing rejection
+    }
 
     if (ts.isExpressionStatement(stmt) && ts.isBinaryExpression(unwrapExpression(stmt.expression))) {
       const bin = unwrapExpression(stmt.expression) as ts.BinaryExpression;
