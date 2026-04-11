@@ -190,7 +190,7 @@ describe("guarded mutator -> action with guard", () => {
     expect(result.declaration.kind).toBe("action");
     if (result.declaration.kind === "action") {
       expect(result.declaration.label).toBe("Withdraw");
-      expect(result.declaration.guard).toBe("balance a >= amount");
+      expect(renderExpr(result.declaration.guard!)).toBe("balance a >= amount");
     }
   });
 
@@ -360,7 +360,7 @@ describe("asserts function guard detection", () => {
     const result = translate(source, "deposit");
     expect(result.declaration.kind).toBe("action");
     if (result.declaration.kind === "action") {
-      expect(result.declaration.guard).toBe("amount > 0");
+      expect(renderExpr(result.declaration.guard!)).toBe("amount > 0");
     }
   });
 
@@ -379,7 +379,7 @@ describe("asserts function guard detection", () => {
     const result = translate(source, "deposit");
     expect(result.declaration.kind).toBe("action");
     if (result.declaration.kind === "action") {
-      expect(result.declaration.guard).toBe("amount > 0, balance account >= 0");
+      expect(renderExpr(result.declaration.guard!)).toBe("(amount > 0) and (balance account >= 0)");
     }
   });
 
@@ -398,7 +398,7 @@ describe("asserts function guard detection", () => {
     const result = translate(source, "deposit");
     expect(result.declaration.kind).toBe("action");
     if (result.declaration.kind === "action") {
-      expect(result.declaration.guard).toBe("~(amount <= 0), balance account >= 0");
+      expect(renderExpr(result.declaration.guard!)).toBe("~(amount <= 0) and (balance account >= 0)");
     }
   });
 
@@ -434,7 +434,7 @@ describe("call-graph following for guard extraction", () => {
     const result = translate(source, "deposit");
     expect(result.declaration.kind).toBe("action");
     if (result.declaration.kind === "action") {
-      expect(result.declaration.guard).toBe("~(amount <= 0)");
+      expect(renderExpr(result.declaration.guard!)).toBe("~(amount <= 0)");
     }
   });
 
@@ -452,7 +452,7 @@ describe("call-graph following for guard extraction", () => {
     const result = translate(source, "deposit");
     expect(result.declaration.kind).toBe("action");
     if (result.declaration.kind === "action") {
-      expect(result.declaration.guard).toBe("~(balance account <= 0)");
+      expect(renderExpr(result.declaration.guard!)).toBe("~(balance account <= 0)");
     }
   });
 
@@ -474,7 +474,7 @@ describe("call-graph following for guard extraction", () => {
     const result = translate(source, "deposit");
     expect(result.declaration.kind).toBe("action");
     if (result.declaration.kind === "action") {
-      expect(result.declaration.guard).toBe("~(amount <= 0), ~(balance account < 0)");
+      expect(renderExpr(result.declaration.guard!)).toBe("~(amount <= 0) and ~(balance account < 0)");
     }
   });
 
@@ -495,7 +495,7 @@ describe("call-graph following for guard extraction", () => {
     const result = translate(source, "deposit");
     expect(result.declaration.kind).toBe("action");
     if (result.declaration.kind === "action") {
-      expect(result.declaration.guard).toBe("~(amount <= 0)");
+      expect(renderExpr(result.declaration.guard!)).toBe("~(amount <= 0)");
     }
   });
 
@@ -513,7 +513,7 @@ describe("call-graph following for guard extraction", () => {
     const result = translate(source, "deposit");
     expect(result.declaration.kind).toBe("action");
     if (result.declaration.kind === "action") {
-      expect(result.declaration.guard).toBe("~(amount <= 0)");
+      expect(renderExpr(result.declaration.guard!)).toBe("~(amount <= 0)");
     }
   });
 
@@ -565,7 +565,7 @@ describe("call-graph following for guard extraction", () => {
     const result = translate(source, "deposit");
     expect(result.declaration.kind).toBe("action");
     if (result.declaration.kind === "action") {
-      expect(result.declaration.guard).toBe("~(amount > 1000), ~(amount <= 0)");
+      expect(renderExpr(result.declaration.guard!)).toBe("~(amount > 1000) and ~(amount <= 0)");
     }
   });
 });
@@ -631,7 +631,7 @@ describe("class method -> declaration with this param", () => {
     expect(result.declaration.kind).toBe("action");
     if (result.declaration.kind === "action") {
       expect(result.declaration.label).toBe("Withdraw");
-      expect(result.declaration.guard).toBe("balance a >= amount");
+      expect(renderExpr(result.declaration.guard!)).toBe("balance a >= amount");
       expect(result.declaration.params[0]).toEqual({
         name: "a",
         type: "Account",
