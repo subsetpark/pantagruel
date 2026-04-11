@@ -407,6 +407,28 @@ function isNoopThenBranch(stmt: ts.Statement): boolean {
 }
 
 /**
+ * Check if an if-statement matches a guard pattern (pure condition + throw branch).
+ * Returns "positive" for if/no-op/else-throw, "negative" for if-throw (no else),
+ * or null if the pattern doesn't match.
+ */
+function classifyGuardIf(stmt: ts.IfStatement): "positive" | "negative" | null {
+  if (!isPureExpression(stmt.expression)) {
+    return null;
+  }
+  if (
+    stmt.elseStatement &&
+    isNoopThenBranch(stmt.thenStatement) &&
+    blockThrows(stmt.elseStatement)
+  ) {
+    return "positive";
+  }
+  if (!stmt.elseStatement && blockThrows(stmt.thenStatement)) {
+    return "negative";
+  }
+  return null;
+}
+
+/**
  * Scan leading statements of a function body for guard patterns.
  * Extracts guards from if-throw patterns, assertion calls, and
  * recursively follows direct calls to extract their guards.
@@ -470,29 +492,14 @@ function scanBodyForGuards(
       break;
     }
 
-    // Reject if-conditions with side effects (e.g. if (audit()) { throw })
-    if (!isPureExpression(stmt.expression)) {
-      break;
-    }
-
-    // Pattern 1: if (cond) { /* no-op */ } else { throw }
-    if (
-      stmt.elseStatement &&
-      isNoopThenBranch(stmt.thenStatement) &&
-      blockThrows(stmt.elseStatement)
-    ) {
+    const guardKind = classifyGuardIf(stmt);
+    if (guardKind === "positive") {
       guards.push(
         translateExpr(stmt.expression, checker, strategy, paramNames),
       );
       continue;
     }
-
-    // Pattern 2: if (!cond) { throw }  =>  guard is cond
-    if (
-      stmt.thenStatement &&
-      blockThrows(stmt.thenStatement) &&
-      !stmt.elseStatement
-    ) {
+    if (guardKind === "negative") {
       if (
         ts.isPrefixUnaryExpression(stmt.expression) &&
         stmt.expression.operator === ts.SyntaxKind.ExclamationToken
@@ -568,20 +575,7 @@ export function isFollowableGuardCall(
     if (!ts.isIfStatement(stmt)) {
       return false;
     }
-    if (!isPureExpression(stmt.expression)) {
-      return false;
-    }
-    if (!stmt.elseStatement && blockThrows(stmt.thenStatement)) {
-      return true;
-    }
-    if (
-      stmt.elseStatement &&
-      isNoopThenBranch(stmt.thenStatement) &&
-      blockThrows(stmt.elseStatement)
-    ) {
-      return true;
-    }
-    return false;
+    return classifyGuardIf(stmt) !== null;
   });
   visited.delete(target.body);
   return result;

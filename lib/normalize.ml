@@ -203,6 +203,10 @@ let prop_uses_params params prop =
   let _, terms = symbols_in_expr prop in
   not (StringSet.is_empty (StringSet.inter params terms))
 
+(** Check if a proposition is tied to an action (uses primed exprs or action
+    params) *)
+let is_tied_prop params prop = uses_primed prop || prop_uses_params params prop
+
 (** Built-in type names that don't need declarations *)
 let builtin_types = StringSet.of_list Types.builtin_type_names
 
@@ -398,9 +402,7 @@ let normalize (doc : document) (root_term : string) : document =
           in
           let params = action_params orig_chapter in
           let tied =
-            List.filter
-              (fun p -> uses_primed p.value || prop_uses_params params p.value)
-              orig_chapter.body
+            List.filter (fun p -> is_tied_prop params p.value) orig_chapter.body
           in
           { action_decl = ad; tied_props = tied })
         action_decls
@@ -411,11 +413,7 @@ let normalize (doc : document) (root_term : string) : document =
       List.concat_map
         (fun chapter ->
           let params = action_params chapter in
-          List.filter
-            (fun p ->
-              (not (uses_primed p.value))
-              && not (prop_uses_params params p.value))
-            chapter.body)
+          List.filter (fun p -> not (is_tied_prop params p.value)) chapter.body)
         doc.chapters
     in
 
@@ -507,7 +505,7 @@ let normalize (doc : document) (root_term : string) : document =
             List.fold_left
               (fun acc p ->
                 let level =
-                  if uses_primed p.value || prop_uses_params params p.value then
+                  if is_tied_prop params p.value then
                     (* Tied prop: placed at action level *)
                     match action_level with
                     | Some l -> l
