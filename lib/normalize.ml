@@ -520,8 +520,10 @@ let normalize (doc : document) (root_term : string) : document =
               0 orig_ch.body
           in
           (* Place each check at max(its own deps, max_body_level).
-             If the check lands beyond max_body_level, promote a
-             representative body prop so the chapter isn't bodyless. *)
+             If the check uses primes or action params, ensure it lands
+             no earlier than the action level.
+             If the check lands beyond max_body_level, promote the full
+             source body so the chapter isn't bodyless. *)
           let promoted = Hashtbl.create 4 in
           List.iter
             (fun chk ->
@@ -529,14 +531,20 @@ let normalize (doc : document) (root_term : string) : document =
                 earliest_chapter_for_prop decl_levels chk.value
               in
               let target = max check_deps max_body_level in
+              (* If check is tied to the action, force target >= action_level *)
+              let target =
+                match action_level with
+                | Some l when is_tied_prop params chk.value -> max target l
+                | _ -> target
+              in
               let target = min target (num_chapters - 1) in
               check_assignments.(target) <- chk :: check_assignments.(target);
               if
                 target > max_body_level && orig_ch.body <> []
                 && not (Hashtbl.mem promoted target)
               then begin
-                let rep = List.hd orig_ch.body in
-                body_assignments.(target) <- rep :: body_assignments.(target);
+                body_assignments.(target) <-
+                  orig_ch.body @ body_assignments.(target);
                 Hashtbl.replace promoted target true
               end)
             orig_ch.checks

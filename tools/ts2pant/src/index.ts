@@ -2,22 +2,15 @@
 
 import process from "node:process";
 import { Command } from "commander";
-import { extractFunctionAnnotations } from "./annotations.js";
 import { emitDocument, runCheck } from "./emit.js";
-import {
-  createSourceFile,
-  extractReferencedTypes,
-  getChecker,
-} from "./extract.js";
-import { translateBody as translateFunctionBody } from "./translate-body.js";
-import { translateSignature } from "./translate-signature.js";
+import { createSourceFile } from "./extract.js";
+import { buildPantDocument } from "./pipeline.js";
 import {
   IntStrategy,
   type NumericStrategy,
   RealStrategy,
-  translateTypes,
 } from "./translate-types.js";
-import type { CliOptions, NumericType, PantDocument } from "./types.js";
+import type { CliOptions, NumericType } from "./types.js";
 
 function parseArgs(): CliOptions {
   const program = new Command();
@@ -74,73 +67,17 @@ function getStrategy(numericType: NumericType): NumericStrategy {
   }
 }
 
-/** Build a PantDocument from a TS source file and function name. */
-export function extract(opts: CliOptions): PantDocument {
-  const strategy = getStrategy(opts.numericType);
-  const sourceFile = createSourceFile(opts.inputFile);
-  const checker = getChecker(sourceFile);
-
-  const extracted = extractReferencedTypes(sourceFile, opts.functionName);
-  const typeDecls = translateTypes(extracted, checker, strategy);
-
-  const { declaration: sigDecl } = translateSignature(
-    sourceFile,
-    opts.functionName,
-    strategy,
-  );
-
-  const declarations = [...typeDecls, sigDecl];
-
-  const moduleName =
-    opts.functionName.charAt(0).toUpperCase() + opts.functionName.slice(1);
-
-  return { moduleName, declarations, propositions: [], checks: [] };
-}
-
-/** Translate function body to propositions and append to doc. */
-export function addBodyPropositions(
-  doc: PantDocument,
-  opts: CliOptions,
-): PantDocument {
+function main(): void {
+  const opts = parseArgs();
   const strategy = getStrategy(opts.numericType);
   const sourceFile = createSourceFile(opts.inputFile);
 
-  const propositions = translateFunctionBody({
+  const doc = buildPantDocument({
     sourceFile,
     functionName: opts.functionName,
     strategy,
-    declarations: doc.declarations,
+    noBody: opts.noBody,
   });
-
-  return { ...doc, propositions: [...doc.propositions, ...propositions] };
-}
-
-/** Extract @pant annotations and append as propositions. */
-export function addAnnotations(
-  doc: PantDocument,
-  opts: CliOptions,
-): PantDocument {
-  const sourceFile = createSourceFile(opts.inputFile);
-  const annotations = extractFunctionAnnotations(sourceFile, opts.functionName);
-
-  if (opts.noBody || doc.propositions.length === 0) {
-    return doc;
-  }
-  const annotationProps = annotations.map((text) => ({ text }));
-  return { ...doc, checks: [...doc.checks, ...annotationProps] };
-}
-
-function main(): void {
-  const opts = parseArgs();
-
-  // Pipeline: extract -> translate body -> add annotations -> emit
-  let doc = extract(opts);
-
-  if (!opts.noBody) {
-    doc = addBodyPropositions(doc, opts);
-  }
-
-  doc = addAnnotations(doc, opts);
 
   const output = emitDocument(doc);
 

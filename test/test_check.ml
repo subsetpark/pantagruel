@@ -1837,25 +1837,37 @@ check
 f a > a.
 |});
           test_case "check block without body fails" `Quick (fun () ->
-              check_error
+              let src =
                 {|module T.
 f a: Int => Int.
 ---
 check
 all a: Int | f a > a.
 |}
-                (function
-                | Check.CheckWithoutBody _ -> true
-                | UnboundVariable _ | UnboundType _ | TypeMismatch _
-                | ArityMismatch _ | NotAFunction _ | NotAList _ | NotAProduct _
-                | NotNumeric _ | ExpectedBool _ | PrimedNonRule _
-                | PrimeOutsideActionContext _ | OverrideRequiresArity1 _
-                | ProjectionOutOfBounds _ | PropositionNotBool _
-                | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
-                | PrimedExtracontextual _ | BoolParam _
-                | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-                | AggregateRequiresBool _ ->
-                    false));
+              in
+              let doc = parse src in
+              let env =
+                match
+                  Collect.collect_all
+                    ~base_env:
+                      (Env.empty
+                         (Option.fold ~none:"" ~some:Ast.upper_name
+                            doc.module_name))
+                    doc
+                with
+                | Ok env -> env
+                | Error e ->
+                    fail
+                      (Printf.sprintf "Unexpected collection error: %s"
+                         (Collect.show_collect_error e))
+              in
+              match Check.check_document env doc with
+              | Ok _warnings -> fail "Expected CheckWithoutBody error"
+              | Error (Check.CheckWithoutBody _) -> ()
+              | Error e ->
+                  fail
+                    (Printf.sprintf "Wrong error type: %s"
+                       (Check.show_type_error e)));
           test_case "check block can reference action params" `Quick (fun () ->
               check_ok
                 {|module T.
