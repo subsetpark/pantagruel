@@ -29,10 +29,18 @@ function parseArgs(): CliOptions {
     .option("--numeric-type <type>", "Default numeric type mapping", "Int")
     .parse();
 
-  const [inputFile, functionName] = program.args as [string, string];
-  const opts = program.opts();
+  const inputFile = program.args[0];
+  const functionName = program.args[1];
+  if (!inputFile || !functionName) {
+    throw new Error("Expected <file> and <function>");
+  }
+  const opts = program.opts<{
+    check: boolean;
+    body: boolean;
+    numericType: string;
+  }>();
 
-  const numericType = opts["numericType"] as string;
+  const numericType = opts.numericType;
   if (!["Int", "Real", "Nat0"].includes(numericType)) {
     program.error(
       `--numeric-type must be one of: Int, Real, Nat0 (got "${numericType}")`,
@@ -42,8 +50,8 @@ function parseArgs(): CliOptions {
   return {
     inputFile,
     functionName,
-    check: opts["check"] as boolean,
-    noBody: opts["body"] === false,
+    check: opts.check,
+    noBody: opts.body === false,
     numericType: numericType as NumericType,
   };
 }

@@ -26,14 +26,21 @@ export interface ExtractedTypes {
   enums: ExtractedEnum[];
 }
 
+const COMPILER_OPTIONS: ts.CompilerOptions = {
+  target: ts.ScriptTarget.ES2022,
+  module: ts.ModuleKind.NodeNext,
+  moduleResolution: ts.ModuleResolutionKind.NodeNext,
+  strict: true,
+  noUncheckedIndexedAccess: true,
+  noPropertyAccessFromIndexSignature: true,
+  exactOptionalPropertyTypes: true,
+  verbatimModuleSyntax: true,
+  isolatedModules: true,
+};
+
 /** Create a TS Program from a source file on disk. */
 export function createProgram(fileName: string): ts.Program {
-  return ts.createProgram([fileName], {
-    target: ts.ScriptTarget.ES2022,
-    module: ts.ModuleKind.NodeNext,
-    moduleResolution: ts.ModuleResolutionKind.NodeNext,
-    strict: true,
-  });
+  return ts.createProgram([fileName], COMPILER_OPTIONS);
 }
 
 /** Create a TS Program from an in-memory source string (useful for tests). */
@@ -47,10 +54,7 @@ export function createProgramFromSource(
     ts.ScriptTarget.ES2022,
     true,
   );
-  const defaultHost = ts.createCompilerHost({
-    target: ts.ScriptTarget.ES2022,
-    strict: true,
-  });
+  const defaultHost = ts.createCompilerHost(COMPILER_OPTIONS);
 
   const host: ts.CompilerHost = {
     ...defaultHost,
@@ -68,11 +72,7 @@ export function createProgramFromSource(
     },
   };
 
-  return ts.createProgram(
-    [fileName],
-    { target: ts.ScriptTarget.ES2022, strict: true },
-    host,
-  );
+  return ts.createProgram([fileName], COMPILER_OPTIONS, host);
 }
 
 /** Extract all interfaces, type aliases, and enums from a source file. */
