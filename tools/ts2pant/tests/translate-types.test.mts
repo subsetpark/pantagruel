@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import {
   createSourceFileFromSource,
   extractAllTypes,
@@ -31,12 +32,11 @@ describe("numeric strategy", () => {
       IntStrategy,
     );
 
-    expect(decls).toContainEqual({
-      kind: "rule",
-      name: "value",
-      params: [{ name: "f", type: "Foo" }],
-      returnType: "Int",
-    });
+    assert.ok(decls.some((d: any) =>
+      d.kind === "rule" && d.name === "value" &&
+      d.params.length === 1 && d.params[0].name === "f" && d.params[0].type === "Foo" &&
+      d.returnType === "Int"
+    ));
   });
 
   it("RealStrategy maps number to Real", () => {
@@ -45,12 +45,11 @@ describe("numeric strategy", () => {
       RealStrategy,
     );
 
-    expect(decls).toContainEqual({
-      kind: "rule",
-      name: "value",
-      params: [{ name: "f", type: "Foo" }],
-      returnType: "Real",
-    });
+    assert.ok(decls.some((d: any) =>
+      d.kind === "rule" && d.name === "value" &&
+      d.params.length === 1 && d.params[0].name === "f" && d.params[0].type === "Foo" &&
+      d.returnType === "Real"
+    ));
   });
 });
 
@@ -68,7 +67,7 @@ describe("class method referenced types", () => {
     `;
     const sourceFile = createSourceFileFromSource(source);
     const extracted = extractReferencedTypes(sourceFile, "Account.getOwner");
-    expect(extracted.interfaces.map((i) => i.name)).toContain("User");
+    assert.ok(extracted.interfaces.map((i: any) => i.name).includes("User"));
   });
 });
 
@@ -83,9 +82,9 @@ describe("enum member extraction", () => {
     `);
     const extracted = extractAllTypes(sourceFile);
 
-    expect(extracted.enums).toHaveLength(1);
-    expect(extracted.enums[0].name).toBe("Status");
-    expect(extracted.enums[0].members).toEqual([
+    assert.equal(extracted.enums.length, 1);
+    assert.equal(extracted.enums[0].name, "Status");
+    assert.deepEqual(extracted.enums[0].members, [
       "Active",
       "Inactive",
       "Pending",
@@ -113,10 +112,10 @@ describe("recursive type following", () => {
     const sourceFile = createSourceFileFromSource(source);
     const extracted = extractReferencedTypes(sourceFile, "getBalance");
 
-    const names = extracted.interfaces.map((i) => i.name);
-    expect(names).toContain("Account");
-    expect(names).toContain("User");
-    expect(names).not.toContain("Unrelated");
+    const names = extracted.interfaces.map((i: any) => i.name);
+    assert.ok(names.includes("Account"));
+    assert.ok(names.includes("User"));
+    assert.ok(!names.includes("Unrelated"));
   });
 
   it("follows return type references", () => {
@@ -131,7 +130,7 @@ describe("recursive type following", () => {
     const sourceFile = createSourceFileFromSource(source);
     const extracted = extractReferencedTypes(sourceFile, "getUser");
 
-    expect(extracted.interfaces.map((i) => i.name)).toContain("User");
+    assert.ok(extracted.interfaces.map((i: any) => i.name).includes("User"));
   });
 
   it("follows array element types", () => {
@@ -146,7 +145,7 @@ describe("recursive type following", () => {
     const sourceFile = createSourceFileFromSource(source);
     const extracted = extractReferencedTypes(sourceFile, "getItems");
 
-    expect(extracted.interfaces.map((i) => i.name)).toContain("Item");
+    assert.ok(extracted.interfaces.map((i: any) => i.name).includes("Item"));
   });
 
   it("follows nested references transitively", () => {
@@ -169,10 +168,10 @@ describe("recursive type following", () => {
     const sourceFile = createSourceFileFromSource(source);
     const extracted = extractReferencedTypes(sourceFile, "processOrder");
 
-    const names = extracted.interfaces.map((i) => i.name);
-    expect(names).toContain("Order");
-    expect(names).toContain("User");
-    expect(names).toContain("Address");
+    const names = extracted.interfaces.map((i: any) => i.name);
+    assert.ok(names.includes("Order"));
+    assert.ok(names.includes("User"));
+    assert.ok(names.includes("Address"));
   });
 });
 
@@ -184,6 +183,6 @@ describe("mapTsType", () => {
     const extracted = extractAllTypes(sourceFile);
     const prop = extracted.interfaces[0].properties[0];
 
-    expect(mapTsType(prop.type, checker, IntStrategy)).toBe("Nothing");
+    assert.equal(mapTsType(prop.type, checker, IntStrategy), "Nothing");
   });
 });

@@ -1,16 +1,17 @@
 import { execSync } from "node:child_process";
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import { extractFunctionAnnotations } from "../src/annotations.js";
 import { runCheck } from "../src/emit.js";
 import { createSourceFile } from "../src/extract.js";
 import {
   buildDocument as buildDocumentFromPath,
   emitDocument,
-} from "./helpers.js";
+} from "./helpers.mjs";
 
-const FIXTURES = resolve(__dirname, "fixtures");
-const PROJECT_ROOT = resolve(__dirname, "../../..");
+const FIXTURES = resolve(import.meta.dirname, "fixtures");
+const PROJECT_ROOT = resolve(import.meta.dirname, "../../..");
 
 function solverAvailable(): boolean {
   try {
@@ -40,38 +41,38 @@ describe("emitDocument", () => {
     const doc = await buildDocument("max.ts", "larger");
     const output = emitDocument(doc);
 
-    expect(output).toContain("module Larger.");
-    expect(output).toContain("larger a: Int, b: Int => Int.");
-    expect(output).toContain("---");
+    assert.ok(output.includes("module Larger."));
+    assert.ok(output.includes("larger a: Int, b: Int => Int."));
+    assert.ok(output.includes("---"));
     // Annotation should be in the check block
-    expect(output).toContain("check");
-    expect(output).toContain(
+    assert.ok(output.includes("check"));
+    assert.ok(output.includes(
       "all a: Int, b: Int | larger a b >= a and larger a b >= b.",
-    );
+    ));
   });
 
   it("emits deposit.ts as valid Pantagruel", async () => {
     const doc = await buildDocument("deposit.ts", "deposit");
     const output = emitDocument(doc);
 
-    expect(output).toContain("module Deposit.");
-    expect(output).toContain("Account.");
-    expect(output).toContain("balance a: Account => Int.");
-    expect(output).toContain("~> Deposit @");
-    expect(output).toContain("---");
+    assert.ok(output.includes("module Deposit."));
+    assert.ok(output.includes("Account."));
+    assert.ok(output.includes("balance a: Account => Int."));
+    assert.ok(output.includes("~> Deposit @"));
+    assert.ok(output.includes("---"));
     // Annotation should be in the check block
-    expect(output).toContain("check");
-    expect(output).toContain("balance' account > balance account.");
+    assert.ok(output.includes("check"));
+    assert.ok(output.includes("balance' account > balance account."));
   });
 
   it("emits skeleton-only when noBody is set", async () => {
     const doc = await buildDocument("max.ts", "larger", { noBody: true });
     const output = emitDocument(doc);
 
-    expect(output).toContain("module Larger.");
-    expect(output).toContain("larger a: Int, b: Int => Int.");
+    assert.ok(output.includes("module Larger."));
+    assert.ok(output.includes("larger a: Int, b: Int => Int."));
     // Skeleton output should NOT contain checks (no body to entail from)
-    expect(output).not.toContain("check");
+    assert.ok(!output.includes("check"));
   });
 });
 
@@ -83,8 +84,8 @@ describe("extractFunctionAnnotations", () => {
     const sourceFile = createSourceFile(fileName);
     const annotations = extractFunctionAnnotations(sourceFile, "larger");
 
-    expect(annotations).toHaveLength(1);
-    expect(annotations[0]).toBe(
+    assert.equal(annotations.length, 1);
+    assert.equal(annotations[0],
       "all a: Int, b: Int | larger a b >= a and larger a b >= b",
     );
   });
@@ -94,8 +95,8 @@ describe("extractFunctionAnnotations", () => {
     const sourceFile = createSourceFile(fileName);
     const annotations = extractFunctionAnnotations(sourceFile, "deposit");
 
-    expect(annotations).toHaveLength(1);
-    expect(annotations[0]).toBe("balance' account > balance account");
+    assert.equal(annotations.length, 1);
+    assert.equal(annotations[0], "balance' account > balance account");
   });
 });
 
@@ -107,10 +108,10 @@ describe("full pipeline", () => {
     const output = emitDocument(doc);
 
     const lines = output.split("\n").filter((l) => l.trim());
-    expect(lines[0]).toBe("module Larger.");
-    expect(lines).toContain("---");
-    expect(doc.propositions.length).toBeGreaterThanOrEqual(1);
-    expect(doc.checks.length).toBeGreaterThanOrEqual(1);
+    assert.equal(lines[0], "module Larger.");
+    assert.ok(lines.includes("---"));
+    assert.ok(doc.propositions.length >= 1);
+    assert.ok(doc.checks.length >= 1);
   });
 
   it("deposit.ts produces a checkable document", async () => {
@@ -118,9 +119,9 @@ describe("full pipeline", () => {
     const output = emitDocument(doc);
 
     const lines = output.split("\n").filter((l) => l.trim());
-    expect(lines[0]).toBe("module Deposit.");
-    expect(lines).toContain("---");
-    expect(doc.checks.length).toBeGreaterThanOrEqual(1);
+    assert.equal(lines[0], "module Deposit.");
+    assert.ok(lines.includes("---"));
+    assert.ok(doc.checks.length >= 1);
   });
 
   it("max.ts emitted .pant type-checks through pant", async () => {
@@ -148,29 +149,29 @@ describe("full pipeline", () => {
 // --- Snapshot tests ---
 
 describe("emission snapshots", () => {
-  it("max.ts larger", async () => {
+  it("max.ts larger", async (t) => {
     const doc = await buildDocument("max.ts", "larger");
-    expect(emitDocument(doc)).toMatchSnapshot();
+    t.assert.snapshot(emitDocument(doc));
   });
 
-  it("max.ts larger (skeleton only)", async () => {
+  it("max.ts larger (skeleton only)", async (t) => {
     const doc = await buildDocument("max.ts", "larger", { noBody: true });
-    expect(emitDocument(doc)).toMatchSnapshot();
+    t.assert.snapshot(emitDocument(doc));
   });
 
-  it("deposit.ts deposit", async () => {
+  it("deposit.ts deposit", async (t) => {
     const doc = await buildDocument("deposit.ts", "deposit");
-    expect(emitDocument(doc)).toMatchSnapshot();
+    t.assert.snapshot(emitDocument(doc));
   });
 
-  it("assert-guard.ts deposit", async () => {
+  it("assert-guard.ts deposit", async (t) => {
     const doc = await buildDocument("assert-guard.ts", "deposit");
-    expect(emitDocument(doc)).toMatchSnapshot();
+    t.assert.snapshot(emitDocument(doc));
   });
 
-  it("validate-helper.ts deposit", async () => {
+  it("validate-helper.ts deposit", async (t) => {
     const doc = await buildDocument("validate-helper.ts", "deposit");
-    expect(emitDocument(doc)).toMatchSnapshot();
+    t.assert.snapshot(emitDocument(doc));
   });
 });
 
@@ -179,21 +180,21 @@ describe("emission snapshots", () => {
 describe("pant --check", () => {
   const hasSolver = solverAvailable();
 
-  it.skipIf(!hasSolver)("max.ts assertions pass", async () => {
+  it("max.ts assertions pass", { skip: !hasSolver ? "z3 not available" : undefined }, async () => {
     const doc = await buildDocument("max.ts", "larger");
     const output = emitDocument(doc);
     const result = runCheck(output, { projectRoot: PROJECT_ROOT });
 
-    expect(result.passed).toBe(true);
-    expect(result.checks.length).toBeGreaterThan(0);
-    expect(result.checks.every((c) => c.passed)).toBe(true);
+    assert.equal(result.passed, true);
+    assert.ok(result.checks.length > 0);
+    assert.ok(result.checks.every((c) => c.passed));
   });
 
-  it.skipIf(!hasSolver)("deposit.ts assertions are checkable", async () => {
+  it("deposit.ts assertions are checkable", { skip: !hasSolver ? "z3 not available" : undefined }, async () => {
     const doc = await buildDocument("deposit.ts", "deposit");
     const output = emitDocument(doc);
     const result = runCheck(output, { projectRoot: PROJECT_ROOT });
 
-    expect(result.checks.length).toBeGreaterThan(0);
+    assert.ok(result.checks.length > 0);
   });
 });

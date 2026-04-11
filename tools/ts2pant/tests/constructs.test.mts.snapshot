@@ -1,0 +1,323 @@
+exports[`annotations.ts > add 1`] = `
+"module Add.\\n\\nadd a: Int, b: Int => Int.\\n\\n---\\n\\nadd a b = a + b.\\n\\ncheck\\n\\nall a: Int, b: Int | add a b = a + b.\\n"
+`;
+
+exports[`annotations.ts > noAnnot 1`] = `
+"module NoAnnot.\\n\\nnoAnnot x: Int => Int.\\n\\n---\\n\\nnoAnnot x = x.\\n"
+`;
+
+exports[`annotations.ts > rangeCheck 1`] = `
+"module RangeCheck.\\n\\nrangeCheck x: Int => Bool.\\n\\n---\\n\\nrangeCheck x = x >= 0.\\n\\ncheck\\n\\nall x: Int |\\n  rangeCheck x >= 0.\\n"
+`;
+
+exports[`annotations.ts > sum 1`] = `
+"module Sum.\\n\\nsum a: Int, b: Int => Int.\\n\\n---\\n\\nsum a b = a + b.\\n\\ncheck\\n\\nall a: Int, b: Int | sum a b >= a.\\nall a: Int, b: Int | sum a b >= b.\\n"
+`;
+
+exports[`control-flow.ts > abs 1`] = `
+"module Abs.\\n\\nabs n: Int => Int.\\n\\n---\\n\\nabs n = cond n >= 0 => n, true => 0 - n.\\n"
+`;
+
+exports[`control-flow.ts > effectiveBalance 1`] = `
+"module EffectiveBalance.\\n\\nAccount.\\nactive a1: Account => Bool.\\nbalance a1: Account => Int.\\neffectiveBalance a: Account => Int.\\n\\n---\\n\\neffectiveBalance a = cond active a => balance a, true => 0.\\n"
+`;
+
+exports[`control-flow.ts > max 1`] = `
+"module Max.\\n\\nmax a: Int, b: Int => Int.\\n\\n---\\n\\nmax a b = cond a >= b => a, true => b.\\n"
+`;
+
+exports[`expressions-arithmetic.ts > add 1`] = `
+"module Add.\\n\\nadd a: Int, b: Int => Int.\\n\\n---\\n\\nadd a b = a + b.\\n"
+`;
+
+exports[`expressions-arithmetic.ts > diff 1`] = `
+"module Diff.\\n\\ndiff a: Int, b: Int => Int.\\n\\n---\\n\\ndiff a b = a - b.\\n"
+`;
+
+exports[`expressions-arithmetic.ts > double 1`] = `
+"module Double.\\n\\ndouble n: Int => Int.\\n\\n---\\n\\ndouble n = n * 2.\\n"
+`;
+
+exports[`expressions-arithmetic.ts > getVersion 1`] = `
+"module GetVersion.\\n\\ngetVersion  => Int.\\n\\n---\\n\\ngetVersion = 42.\\n"
+`;
+
+exports[`expressions-arithmetic.ts > half 1`] = `
+"module Half.\\n\\nhalf n: Int => Int.\\n\\n---\\n\\nhalf n = n / 2.\\n"
+`;
+
+exports[`expressions-arithmetic.ts > netBalance 1`] = `
+"module NetBalance.\\n\\nAccount.\\nbalance a1: Account => Int.\\nnetBalance a: Account, fee: Int => Int.\\n\\n---\\n\\nnetBalance a fee = balance a - fee.\\n"
+`;
+
+exports[`expressions-arithmetic.ts > power 1`] = `
+"module Power.\\n\\npower a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: operator AsteriskAsteriskToken.\\n"
+`;
+
+exports[`expressions-arithmetic.ts > remainder 1`] = `
+"module Remainder.\\n\\nremainder a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: operator PercentToken.\\n"
+`;
+
+exports[`expressions-array.ts > activeNames 1`] = `
+"module ActiveNames.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nactiveNames users: [User] => [String].\\n\\n---\\n\\nactiveNames users = (each x: User, active x | name x).\\n"
+`;
+
+exports[`expressions-array.ts > contains 1`] = `
+"module Contains.\\n\\ncontains items: [String], x: String => Bool.\\n\\n---\\n\\ncontains items x = x in items.\\n"
+`;
+
+exports[`expressions-array.ts > count 1`] = `
+"module Count.\\n\\ncount items: [String] => Int.\\n\\n---\\n\\ncount items = #items.\\n"
+`;
+
+exports[`expressions-array.ts > highScores 1`] = `
+"module HighScores.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nhighScores users: [User] => [Int].\\n\\n---\\n\\nhighScores users = (each x: User, score x > 0 | score x).\\n"
+`;
+
+exports[`expressions-array.ts > nameLengths 1`] = `
+"module NameLengths.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nnameLengths users: [User] => [Int].\\n\\n---\\n\\nnameLengths users = (each x: User | length name x).\\n"
+`;
+
+exports[`expressions-boolean.ts > and 1`] = `
+"module And.\\n\\nand a: Bool, b: Bool => Bool.\\n\\n---\\n\\nand a b = a and b.\\n"
+`;
+
+exports[`expressions-boolean.ts > andNot 1`] = `
+"module AndNot.\\n\\nandNot a: Bool, b: Bool => Bool.\\n\\n---\\n\\nandNot a b = a and ~(b).\\n"
+`;
+
+exports[`expressions-boolean.ts > not 1`] = `
+"module Not.\\n\\nnot a: Bool => Bool.\\n\\n---\\n\\nnot a = ~(a).\\n"
+`;
+
+exports[`expressions-boolean.ts > or 1`] = `
+"module Or.\\n\\nor a: Bool, b: Bool => Bool.\\n\\n---\\n\\nor a b = a or b.\\n"
+`;
+
+exports[`expressions-comparison.ts > eq 1`] = `
+"module Eq.\\n\\neq a: Int, b: Int => Bool.\\n\\n---\\n\\neq a b = a = b.\\n"
+`;
+
+exports[`expressions-comparison.ts > gt 1`] = `
+"module Gt.\\n\\ngt a: Int, b: Int => Bool.\\n\\n---\\n\\ngt a b = a > b.\\n"
+`;
+
+exports[`expressions-comparison.ts > gte 1`] = `
+"module Gte.\\n\\ngte a: Int, b: Int => Bool.\\n\\n---\\n\\ngte a b = a >= b.\\n"
+`;
+
+exports[`expressions-comparison.ts > lt 1`] = `
+"module Lt.\\n\\nlt a: Int, b: Int => Bool.\\n\\n---\\n\\nlt a b = a < b.\\n"
+`;
+
+exports[`expressions-comparison.ts > lte 1`] = `
+"module Lte.\\n\\nlte a: Int, b: Int => Bool.\\n\\n---\\n\\nlte a b = a <= b.\\n"
+`;
+
+exports[`expressions-comparison.ts > neq 1`] = `
+"module Neq.\\n\\nneq a: Int, b: Int => Bool.\\n\\n---\\n\\nneq a b = a ~= b.\\n"
+`;
+
+exports[`expressions-literals.ts > fortyTwo 1`] = `
+"module FortyTwo.\\n\\nfortyTwo  => Int.\\n\\n---\\n\\nfortyTwo = 42.\\n"
+`;
+
+exports[`expressions-literals.ts > no 1`] = `
+"module No.\\n\\nno  => Bool.\\n\\n---\\n\\nno = false.\\n"
+`;
+
+exports[`expressions-literals.ts > yes 1`] = `
+"module Yes.\\n\\nyes  => Bool.\\n\\n---\\n\\nyes = true.\\n"
+`;
+
+exports[`expressions-misc.ts > asNumber 1`] = `
+"module AsNumber.\\n\\nasNumber x: unknown => Int.\\n\\n---\\n\\nasNumber x = x.\\n"
+`;
+
+exports[`expressions-misc.ts > negate 1`] = `
+"module Negate.\\n\\nnegate n: Int => Int.\\n\\n---\\n\\nnegate n = -(n).\\n"
+`;
+
+exports[`expressions-misc.ts > nonNull 1`] = `
+"module NonNull.\\n\\nnonNull x: Int + Nothing => Int.\\n\\n---\\n\\nnonNull x = x.\\n"
+`;
+
+exports[`expressions-misc.ts > parenAdd 1`] = `
+"module ParenAdd.\\n\\nparenAdd a: Int, b: Int => Int.\\n\\n---\\n\\nparenAdd a b = a + b.\\n"
+`;
+
+exports[`expressions-property.ts > effectiveBalance 1`] = `
+"module EffectiveBalance.\\n\\nUser.\\nname u: User => String.\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => User.\\nactive a1: Account => Bool.\\neffectiveBalance a: Account => Int.\\n\\n---\\n\\neffectiveBalance a = cond active a => balance a, true => 0.\\n"
+`;
+
+exports[`expressions-property.ts > getOwner 1`] = `
+"module GetOwner.\\n\\nUser.\\nname u: User => String.\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => User.\\nactive a1: Account => Bool.\\ngetOwner a: Account => User.\\n\\n---\\n\\ngetOwner a = owner a.\\n"
+`;
+
+exports[`expressions-property.ts > getOwnerName 1`] = `
+"module GetOwnerName.\\n\\nUser.\\nname u: User => String.\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => User.\\nactive a1: Account => Bool.\\ngetOwnerName a: Account => String.\\n\\n---\\n\\ngetOwnerName a = name owner a.\\n"
+`;
+
+exports[`functions-class.ts > Account.deposit 1`] = `
+"module Deposit.\\n\\n~> Deposit @ a: Account, amount: Int.\\n\\n---\\n\\nbalance' a = balance a + amount.\\n"
+`;
+
+exports[`functions-class.ts > Account.getBalance 1`] = `
+"module GetBalance.\\n\\ngetBalance a: Account => Int.\\n\\n---\\n\\ngetBalance a = balance a.\\n"
+`;
+
+exports[`functions-mutating.ts > deposit 1`] = `
+"module Deposit.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> Deposit @ a: Account, amount: Int.\\n\\n---\\n\\nbalance' a = balance a + amount.\\nowner' a1 = owner a1.\\n"
+`;
+
+exports[`functions-mutating.ts > depositWrapped 1`] = `
+"module DepositWrapped.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> DepositWrapped @ a: Account, amount: Int.\\n\\n---\\n\\nbalance' a = balance a + amount.\\nowner' a1 = owner a1.\\n"
+`;
+
+exports[`functions-mutating.ts > reset 1`] = `
+"module Reset.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> Reset @ a: Account.\\n\\n---\\n\\nbalance' a = 0.\\nowner' a1 = owner a1.\\n"
+`;
+
+exports[`functions-mutating.ts > transfer 1`] = `
+"module Transfer.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> Transfer @ a: Account, newOwner: String, fee: Int.\\n\\n---\\n\\nbalance' a = balance a - fee.\\nowner' a = newOwner.\\n"
+`;
+
+exports[`functions-pure.ts > add 1`] = `
+"module Add.\\n\\nadd a: Int, b: Int => Int.\\n\\n---\\n\\nadd a b = a + b.\\n"
+`;
+
+exports[`functions-pure.ts > getBalance 1`] = `
+"module GetBalance.\\n\\nAccount.\\nbalance a1: Account => Int.\\ngetBalance a: Account => Int.\\n\\n---\\n\\ngetBalance a = balance a.\\n"
+`;
+
+exports[`functions-pure.ts > getNames 1`] = `
+"module GetNames.\\n\\ngetNames names: [String] => [String].\\n\\n---\\n\\ngetNames names = names.\\n"
+`;
+
+exports[`functions-pure.ts > getVersion 1`] = `
+"module GetVersion.\\n\\ngetVersion  => Int.\\n\\n---\\n\\ngetVersion = 42.\\n"
+`;
+
+exports[`functions-pure.ts > isPositive 1`] = `
+"module IsPositive.\\n\\nisPositive n: Int => Bool.\\n\\n---\\n\\nisPositive n = n > 0.\\n"
+`;
+
+exports[`guards-assert.ts > deposit 1`] = `
+"module Deposit.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> Deposit @ account: Account, amount: Int, amount > 0.\\n\\n---\\n\\nbalance' account = balance account + amount.\\n"
+`;
+
+exports[`guards-assert.ts > mixedGuard 1`] = `
+"module MixedGuard.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> MixedGuard @ account: Account, amount: Int, ~(amount <= 0) and (balance account >= 0).\\n\\n---\\n\\nbalance' account = balance account + amount.\\n"
+`;
+
+exports[`guards-assert.ts > multiAssert 1`] = `
+"module MultiAssert.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> MultiAssert @ account: Account, amount: Int, (amount > 0) and (balance account >= 0).\\n\\n---\\n\\nbalance' account = balance account + amount.\\n"
+`;
+
+exports[`guards-helper.ts > depositConst 1`] = `
+"module DepositConst.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> DepositConst @ account: Account, amount: Int, ~(amount <= 0).\\n\\n---\\n\\nbalance' account = balance account + amount.\\n"
+`;
+
+exports[`guards-helper.ts > depositDeep 1`] = `
+"module DepositDeep.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> DepositDeep @ account: Account, amount: Int, ~(amount <= 0) and ~((balance account) <= 0).\\n\\n---\\n\\nbalance' account = balance account + amount.\\n"
+`;
+
+exports[`guards-helper.ts > depositDirect 1`] = `
+"module DepositDirect.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> DepositDirect @ account: Account, amount: Int, ~(amount <= 0).\\n\\n---\\n\\nbalance' account = balance account + amount.\\n"
+`;
+
+exports[`guards-helper.ts > depositMulti 1`] = `
+"module DepositMulti.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> DepositMulti @ account: Account, amount: Int, ~(amount <= 0) and ~((balance account) <= 0).\\n\\n---\\n\\nbalance' account = balance account + amount.\\n"
+`;
+
+exports[`guards-helper.ts > depositSubst 1`] = `
+"module DepositSubst.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> DepositSubst @ account: Account, amount: Int, ~((balance account) <= 0).\\n\\n---\\n\\nbalance' account = balance account + amount.\\n"
+`;
+
+exports[`guards-if-throw.ts > earlyThrow 1`] = `
+"module EarlyThrow.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> EarlyThrow @ a: Account, amount: Int, balance a >= amount.\\n\\n---\\n\\nbalance' a = balance a - amount.\\n"
+`;
+
+exports[`guards-if-throw.ts > guardWithLocals 1`] = `
+"module GuardWithLocals.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> GuardWithLocals @ a: Account, amount: Int, balance a >= amount.\\n\\n---\\n\\nbalance' a = balance a - amount.\\n"
+`;
+
+exports[`guards-if-throw.ts > notGuardSideEffects 1`] = `
+"module NotGuardSideEffects.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> NotGuardSideEffects @ a: Account, amount: Int.\\n\\n---\\n\\n> UNSUPPORTED: conditional assignment (if/else).\\nbalance' a = balance a - amount.\\n"
+`;
+
+exports[`guards-if-throw.ts > withdraw 1`] = `
+"module Withdraw.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> Withdraw @ a: Account, amount: Int, balance a >= amount.\\n\\n---\\n\\nbalance' a = balance a - amount.\\n"
+`;
+
+exports[`types-composite.ts > getBooks 1`] = `
+"module GetBooks.\\n\\nLibrary.\\nbooks l: Library => [String].\\ngetBooks lib: Library => [String].\\n\\n---\\n\\ngetBooks lib = books lib.\\n"
+`;
+
+exports[`types-composite.ts > getCity 1`] = `
+"module GetCity.\\n\\nAddress.\\ncity a: Address => String.\\nCustomer.\\naddress c: Customer => Address.\\nOrder.\\ncustomer o1: Order => Customer.\\ntotal o1: Order => Int.\\ngetCity o: Order => String.\\n\\n---\\n\\ngetCity o = city address customer o.\\n"
+`;
+
+exports[`types-composite.ts > getOwnerName 1`] = `
+"module GetOwnerName.\\n\\nUser.\\nname u: User => String.\\nAccount.\\nowner a1: Account => User.\\nbalance a1: Account => Int.\\ngetOwnerName a: Account => String.\\n\\n---\\n\\ngetOwnerName a = name owner a.\\n"
+`;
+
+exports[`types-composite.ts > getPoint 1`] = `
+"module GetPoint.\\n\\ngetPoint  => Int * Int.\\n\\n---\\n\\ngetPoint = [0, 0].\\n"
+`;
+
+exports[`types-composite.ts > getResult 1`] = `
+"module GetResult.\\n\\nValue.\\ndata v1: Value => String.\\ngetResult v: Value + Nothing => Value + Nothing.\\n\\n---\\n\\ngetResult v = v.\\n"
+`;
+
+exports[`types-composite.ts > getStatus 1`] = `
+"module GetStatus.\\n\\nUserWithStatus.\\nname u1: UserWithStatus => String.\\nstatus u1: UserWithStatus => Int.\\ngetStatus u: UserWithStatus => Int.\\n\\n---\\n\\ngetStatus u = status u.\\n"
+`;
+
+exports[`types-primitives.ts > getAssignee 1`] = `
+"module GetAssignee.\\n\\nTask.\\nassignee t1: Task => String + Nothing.\\ngetAssignee t: Task => String + Nothing.\\n\\n---\\n\\ngetAssignee t = assignee t.\\n"
+`;
+
+exports[`types-primitives.ts > getBalance 1`] = `
+"module GetBalance.\\n\\nAccount.\\nbalance a1: Account => Int.\\ngetBalance a: Account => Int.\\n\\n---\\n\\ngetBalance a = balance a.\\n"
+`;
+
+exports[`types-primitives.ts > getName 1`] = `
+"module GetName.\\n\\nUser.\\nname u1: User => String.\\nactive u1: User => Bool.\\ngetName u: User => String.\\n\\n---\\n\\ngetName u = name u.\\n"
+`;
+
+exports[`types-primitives.ts > isActive 1`] = `
+"module IsActive.\\n\\nUser.\\nname u1: User => String.\\nactive u1: User => Bool.\\nisActive u: User => Bool.\\n\\n---\\n\\nisActive u = active u.\\n"
+`;
+
+exports[`unsupported.ts > arrowWithLocals 1`] = `
+"module ArrowWithLocals.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\narrowWithLocals users: [User] => [String].\\n\\n---\\n\\n> UNSUPPORTED: users.filter((u) => u.active).map((u) => { const s = u.score; return u.name; }).\\n"
+`;
+
+exports[`unsupported.ts > bubbleCondition 1`] = `
+"module BubbleCondition.\\n\\nbubbleCondition  => Int.\\n\\n---\\n\\n> UNSUPPORTED: bar().\\n"
+`;
+
+exports[`unsupported.ts > bubbleNegation 1`] = `
+"module BubbleNegation.\\n\\nbubbleNegation  => Bool.\\n\\n---\\n\\n> UNSUPPORTED: bar().\\n"
+`;
+
+exports[`unsupported.ts > callInReturn 1`] = `
+"module CallInReturn.\\n\\ncallInReturn  => Int.\\n\\n---\\n\\n> UNSUPPORTED: foo().\\n"
+`;
+
+exports[`unsupported.ts > conditionalAssign 1`] = `
+"module ConditionalAssign.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> ConditionalAssign @ a: Account.\\n\\n---\\n\\n> UNSUPPORTED: conditional assignment (if/else).\\n"
+`;
+
+exports[`unsupported.ts > destructuredParam 1`] = `
+"module DestructuredParam.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\ndestructuredParam users: [User] => [String].\\n\\n---\\n\\n> UNSUPPORTED: filter/map callback must have exactly one identifier parameter.\\n"
+`;
+
+exports[`unsupported.ts > loopAssign 1`] = `
+"module LoopAssign.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> LoopAssign @ a: Account.\\n\\n---\\n\\n> UNSUPPORTED: loop assignment.\\n"
+`;
+
+exports[`unsupported.ts > multiParamCallback 1`] = `
+"module MultiParamCallback.\\n\\nItem.\\nvalue i: Item => Int.\\nmultiParamCallback items: [Item] => [Int].\\n\\n---\\n\\n> UNSUPPORTED: filter/map callback must have exactly one identifier parameter.\\n"
+`;

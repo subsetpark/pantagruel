@@ -77,15 +77,10 @@ export async function buildPantDocument(
     const hasRenames = [...paramNameMap.entries()].some(([k, v]) => k !== v);
     let annotationTexts: string[];
     if (hasRenames) {
-      try {
-        await loadParser();
-        annotationTexts = annotations.map((text) =>
-          rewriteAnnotation(text, paramNameMap),
-        );
-      } catch {
-        // Wasm parser unavailable (e.g., test environment) — pass through
-        annotationTexts = annotations;
-      }
+      await loadParser();
+      annotationTexts = annotations.map((text) =>
+        rewriteAnnotation(text, paramNameMap),
+      );
     } else {
       annotationTexts = annotations;
     }

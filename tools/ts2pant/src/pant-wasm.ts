@@ -2,7 +2,7 @@
  * TypeScript wrapper for the Pantagruel wasm module (wasm_of_ocaml).
  *
  * Provides two exports from the same wasm binary:
- * - pantParser: parse → rename → pretty-print for annotation rewriting
+ * - pantParser: parse -> rename -> pretty-print for annotation rewriting
  * - pantAst: opaque AST constructors + rendering for document emission
  */
 
@@ -23,7 +23,11 @@ let pantAst: PantAstModule | null = null;
 
 /**
  * Load the wasm binary and extract both pantParser and pantAst exports.
- * Safe to call multiple times — only loads once.
+ * Safe to call multiple times -- only loads once.
+ *
+ * The wasm loader JS file is patched during build (build:wasm) to use
+ * __filename instead of require.main.filename, so it works in both
+ * CJS and ESM contexts.
  */
 async function ensureWasmLoaded(): Promise<void> {
   if (wasmLoaded) {
@@ -34,29 +38,12 @@ async function ensureWasmLoaded(): Promise<void> {
   }
 
   wasmLoadPromise = (async () => {
-    // The wasm_of_ocaml loader uses CJS require() internally, which is
-    // unavailable in ESM-only environments like vitest.
-    if (typeof globalThis.process?.env?.["VITEST"] === "string") {
-      throw new Error("Wasm module unavailable in vitest environment");
-    }
-
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
     const require = createRequire(import.meta.url);
+    const loaderPath = path.join(__dirname, "wasm", "pant_wasm.bc.wasm.js");
 
-    const wasmDir = path.join(__dirname, "wasm");
-    const origMain = require.main;
-    if (require.main) {
-      require.main.filename = path.join(wasmDir, "pant_wasm.bc.wasm.js");
-    }
-
-    try {
-      require(path.join(wasmDir, "pant_wasm.bc.wasm.js"));
-    } finally {
-      if (origMain && require.main) {
-        require.main.filename = origMain.filename;
-      }
-    }
+    require(loaderPath);
 
     // Wait for async wasm initialization
     await new Promise((resolve) => setTimeout(resolve, 200));
