@@ -60,6 +60,10 @@ jobs:
         with:
           ocaml-compiler: "5.4.1"
 
+      - name: Install binaryen
+        run: |
+          npm install -g binaryen
+
       - name: Install OCaml dependencies
         working-directory: .
         run: |

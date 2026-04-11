@@ -58,8 +58,8 @@ let classify_chapter (chapter : chapter) =
 let classify_chapters (doc : document) = List.map classify_chapter doc.chapters
 
 (** Wrap a proposition in a universal quantifier over the given head bindings.
-    Always wraps, even if the proposition is already quantified, because
-    inner quantifiers may still reference head-level variables. *)
+    Always wraps, even if the proposition is already quantified, because inner
+    quantifiers may still reference head-level variables. *)
 let bind_head_params (bindings : param list) (p : expr located) =
   match bindings with
   | [] -> p

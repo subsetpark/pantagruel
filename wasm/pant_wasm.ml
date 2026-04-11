@@ -21,8 +21,8 @@ let bound_names_from_guards (guards : Ast.guard list) : string list =
       | Ast.GParam _ | Ast.GExpr _ -> None)
     guards
 
-(** Apply variable renames to an AST expression. Quantifier-bound names
-    (from params and GIn guards) are not renamed (they introduce fresh bindings). *)
+(** Apply variable renames to an AST expression. Quantifier-bound names (from
+    params and GIn guards) are not renamed (they introduce fresh bindings). *)
 let rec rename_expr (renames : (string * string) list) (e : Ast.expr) : Ast.expr
     =
   let r = rename_expr renames in
