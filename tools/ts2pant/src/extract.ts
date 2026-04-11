@@ -116,12 +116,37 @@ export function extractReferencedTypes(
     throw new Error(`Source file not found: ${fileName}`);
   }
 
-  let funcNode: ts.FunctionDeclaration | undefined;
-  ts.forEachChild(sourceFile, (node) => {
-    if (ts.isFunctionDeclaration(node) && node.name?.text === functionName) {
-      funcNode = node;
+  let funcNode: ts.FunctionDeclaration | ts.MethodDeclaration | undefined;
+  let className: string | undefined;
+
+  // Search top-level functions
+  for (const stmt of sourceFile.statements) {
+    if (ts.isFunctionDeclaration(stmt) && stmt.name?.text === functionName) {
+      funcNode = stmt;
+      break;
     }
-  });
+  }
+
+  // Search class methods
+  if (!funcNode) {
+    for (const stmt of sourceFile.statements) {
+      if (ts.isClassDeclaration(stmt) && stmt.name) {
+        for (const member of stmt.members) {
+          if (
+            ts.isMethodDeclaration(member) &&
+            ts.isIdentifier(member.name) &&
+            member.name.text === functionName
+          ) {
+            funcNode = member;
+            className = stmt.name.text;
+            break;
+          }
+        }
+        if (funcNode) break;
+      }
+    }
+  }
+
   if (!funcNode) {
     throw new Error(`Function not found: ${functionName}`);
   }
@@ -132,6 +157,11 @@ export function extractReferencedTypes(
   }
 
   const visited = new Set<string>();
+
+  // For class methods, collect the class type (implicit `this` parameter)
+  if (className) {
+    visited.add(className);
+  }
 
   for (const param of signature.getParameters()) {
     collectNamedTypes(checker.getTypeOfSymbol(param), checker, visited);

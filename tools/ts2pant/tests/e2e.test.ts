@@ -1,13 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { resolve } from "path";
 import { execSync } from "child_process";
-import { createProgram, extractReferencedTypes } from "../src/extract.js";
-import { translateTypes, IntStrategy } from "../src/translate-types.js";
-import { translateSignature } from "../src/translate-signature.js";
-import { translateBody } from "../src/translate-body.js";
+import { createProgram } from "../src/extract.js";
 import { extractFunctionAnnotations } from "../src/annotations.js";
-import { emitDocument, runCheck } from "../src/emit.js";
-import type { PantDocument } from "../src/types.js";
+import { runCheck } from "../src/emit.js";
+import { buildDocument as buildDocumentFromPath, emitDocument } from "./helpers.js";
 
 const FIXTURES = resolve(__dirname, "fixtures");
 const PROJECT_ROOT = resolve(__dirname, "../../..");
@@ -21,53 +18,12 @@ function solverAvailable(): boolean {
   }
 }
 
-/**
- * Build a full PantDocument from a fixture file and function name.
- * Mirrors the pipeline in index.ts.
- */
 function buildDocument(
   fixtureName: string,
   functionName: string,
   opts: { noBody?: boolean } = {},
-): PantDocument {
-  const fileName = resolve(FIXTURES, fixtureName);
-  const program = createProgram(fileName);
-  const checker = program.getTypeChecker();
-  const strategy = IntStrategy;
-
-  // Extract types
-  const extracted = extractReferencedTypes(program, fileName, functionName);
-  const typeDecls = translateTypes(extracted, checker, strategy);
-
-  // Translate signature
-  const { declaration: sigDecl } = translateSignature(
-    program, fileName, functionName, strategy,
-  );
-  const declarations = [...typeDecls, sigDecl];
-
-  // Module name
-  const moduleName = functionName.charAt(0).toUpperCase() + functionName.slice(1);
-
-  let doc: PantDocument = { moduleName, declarations, propositions: [], checks: [] };
-
-  // Body translation
-  if (!opts.noBody) {
-    const bodyProps = translateBody({
-      program,
-      fileName,
-      functionName,
-      strategy,
-      declarations,
-    });
-    doc = { ...doc, propositions: [...doc.propositions, ...bodyProps] };
-  }
-
-  // Annotations go to checks (entailment goals)
-  const annotations = extractFunctionAnnotations(program, fileName, functionName);
-  const annotationProps = annotations.map((text) => ({ text }));
-  doc = { ...doc, checks: [...doc.checks, ...annotationProps] };
-
-  return doc;
+) {
+  return buildDocumentFromPath(resolve(FIXTURES, fixtureName), functionName, opts);
 }
 
 // --- Emission tests ---

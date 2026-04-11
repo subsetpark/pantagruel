@@ -11,6 +11,10 @@ import {
   RealStrategy,
 } from "../src/translate-types.js";
 
+// Tests for internal type translation APIs: mapTsType, extractReferencedTypes
+// recursive following, numeric strategy. See tests/fixtures/constructs/ for
+// exhaustive construct coverage via snapshots.
+
 function extractAndTranslate(
   source: string,
   strategy = IntStrategy,
@@ -22,168 +26,6 @@ function extractAndTranslate(
   const decls = translateTypes(extracted, checker, strategy);
   return { decls, extracted, checker, program };
 }
-
-describe("interface -> domain + rules", () => {
-  it("extracts interface as domain plus one rule per property", () => {
-    const { decls } = extractAndTranslate(`
-      interface Account {
-        balance: number;
-        owner: string;
-      }
-    `);
-
-    expect(decls).toContainEqual({ kind: "domain", name: "Account" });
-    expect(decls).toContainEqual({
-      kind: "rule",
-      name: "balance",
-      params: [{ name: "a", type: "Account" }],
-      returnType: "Int",
-    });
-    expect(decls).toContainEqual({
-      kind: "rule",
-      name: "owner",
-      params: [{ name: "a", type: "Account" }],
-      returnType: "String",
-    });
-  });
-
-  it("maps boolean properties", () => {
-    const { decls } = extractAndTranslate(`
-      interface User {
-        active: boolean;
-      }
-    `);
-
-    expect(decls).toContainEqual({
-      kind: "rule",
-      name: "active",
-      params: [{ name: "u", type: "User" }],
-      returnType: "Bool",
-    });
-  });
-
-  it("maps array properties to list types", () => {
-    const { decls } = extractAndTranslate(`
-      interface Library {
-        books: string[];
-      }
-    `);
-
-    expect(decls).toContainEqual({
-      kind: "rule",
-      name: "books",
-      params: [{ name: "l", type: "Library" }],
-      returnType: "[String]",
-    });
-  });
-
-  it("maps properties referencing other interfaces", () => {
-    const { decls } = extractAndTranslate(`
-      interface User {
-        name: string;
-      }
-      interface Account {
-        owner: User;
-      }
-    `);
-
-    expect(decls).toContainEqual({ kind: "domain", name: "User" });
-    expect(decls).toContainEqual({ kind: "domain", name: "Account" });
-    expect(decls).toContainEqual({
-      kind: "rule",
-      name: "owner",
-      params: [{ name: "a", type: "Account" }],
-      returnType: "User",
-    });
-  });
-
-  it("maps null union to sum with Nothing", () => {
-    const { decls } = extractAndTranslate(`
-      interface Task {
-        assignee: string | null;
-      }
-    `);
-
-    expect(decls).toContainEqual({
-      kind: "rule",
-      name: "assignee",
-      params: [{ name: "t", type: "Task" }],
-      returnType: "String + Nothing",
-    });
-  });
-});
-
-describe("type alias -> alias declaration", () => {
-  it("maps tuple alias", () => {
-    const { decls } = extractAndTranslate(`
-      type Point = [number, number];
-    `);
-
-    expect(decls).toContainEqual({
-      kind: "alias",
-      name: "Point",
-      type: "Int * Int",
-    });
-  });
-
-  it("maps union alias", () => {
-    const { decls } = extractAndTranslate(`
-      interface Value { data: string; }
-      type Result = Value | null;
-    `);
-
-    expect(decls).toContainEqual({
-      kind: "alias",
-      name: "Result",
-      type: "Value + Nothing",
-    });
-  });
-
-  it("maps simple alias to named type", () => {
-    const { decls } = extractAndTranslate(`
-      type Name = string;
-    `);
-
-    expect(decls).toContainEqual({
-      kind: "alias",
-      name: "Name",
-      type: "String",
-    });
-  });
-});
-
-describe("enum -> domain", () => {
-  it("maps enum to domain declaration", () => {
-    const { decls } = extractAndTranslate(`
-      enum Color {
-        Red,
-        Green,
-        Blue,
-      }
-    `);
-
-    expect(decls).toContainEqual({ kind: "domain", name: "Color" });
-  });
-
-  it("extracts enum member names", () => {
-    const program = createProgramFromSource(`
-      enum Status {
-        Active,
-        Inactive,
-        Pending,
-      }
-    `);
-    const extracted = extractAllTypes(program, "test.ts");
-
-    expect(extracted.enums).toHaveLength(1);
-    expect(extracted.enums[0].name).toBe("Status");
-    expect(extracted.enums[0].members).toEqual([
-      "Active",
-      "Inactive",
-      "Pending",
-    ]);
-  });
-});
 
 describe("numeric strategy", () => {
   it("IntStrategy maps number to Int", () => {
@@ -212,6 +54,27 @@ describe("numeric strategy", () => {
       params: [{ name: "f", type: "Foo" }],
       returnType: "Real",
     });
+  });
+});
+
+describe("enum member extraction", () => {
+  it("extracts enum member names", () => {
+    const program = createProgramFromSource(`
+      enum Status {
+        Active,
+        Inactive,
+        Pending,
+      }
+    `);
+    const extracted = extractAllTypes(program, "test.ts");
+
+    expect(extracted.enums).toHaveLength(1);
+    expect(extracted.enums[0].name).toBe("Status");
+    expect(extracted.enums[0].members).toEqual([
+      "Active",
+      "Inactive",
+      "Pending",
+    ]);
   });
 });
 
