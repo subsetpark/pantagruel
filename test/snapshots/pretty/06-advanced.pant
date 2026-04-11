@@ -33,6 +33,10 @@ available i: Item => Bool.
 
 all i: Item | available i or ~(available i).
 
+> Negation mixed with implication and conjunction
+
+all i: Item | ~(available i) -> false and available i.
+
 > Implication
 
 all i: Item | false -> available i.

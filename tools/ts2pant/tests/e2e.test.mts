@@ -195,6 +195,8 @@ describe("pant --check", () => {
     const output = emitDocument(doc);
     const result = runCheck(output, { projectRoot: PROJECT_ROOT });
 
+    assert.equal(result.passed, true);
     assert.ok(result.checks.length > 0);
+    assert.ok(result.checks.every((c) => c.passed));
   });
 });
