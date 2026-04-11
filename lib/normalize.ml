@@ -561,7 +561,11 @@ let normalize (doc : document) (root_term : string) : document =
            decl_assignments)
     in
 
-    let non_empty = List.filter (fun ch -> ch.head <> []) new_chapters in
+    let non_empty =
+      List.filter
+        (fun ch -> ch.head <> [] || ch.body <> [] || ch.checks <> [])
+        new_chapters
+    in
     (* Attach trailing docs to the last chapter *)
     let non_empty =
       if all_trailing_docs <> [] then
