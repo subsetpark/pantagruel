@@ -384,6 +384,10 @@ function unwrapExpression(expr: ts.Expression): ts.Expression {
 function expressionHasSideEffects(expr: ts.Expression): boolean {
   expr = unwrapExpression(expr);
 
+  if (ts.isDeleteExpression(expr)) {
+    return true;
+  }
+
   if (ts.isBinaryExpression(expr)) {
     // Any assignment operator
     return (

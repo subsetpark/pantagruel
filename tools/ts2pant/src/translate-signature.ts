@@ -406,21 +406,49 @@ export function isPureExpression(expr: ts.Expression): boolean {
 }
 
 /**
- * Check whether a then-branch is effectively a no-op (empty block or
- * empty statement), so extracting the condition as a guard won't
- * silently discard meaningful work.
+ * Check whether a then-branch is side-effect-free and non-returning,
+ * so extracting the condition as a guard won't silently discard
+ * meaningful work.  Aligned with isGuardStatement in translate-body.ts.
  */
-function isNoopThenBranch(stmt: ts.Statement): boolean {
-  return (
-    ts.isEmptyStatement(stmt) ||
-    (ts.isBlock(stmt) && stmt.statements.length === 0)
-  );
+function isSafeGuardThenBranch(stmt: ts.Statement): boolean {
+  return guardBranchHasNoSideEffects(stmt) && !guardBranchReturns(stmt);
+}
+
+function guardBranchReturns(node: ts.Statement): boolean {
+  if (ts.isBlock(node)) {
+    return node.statements.some((s) => ts.isReturnStatement(s));
+  }
+  return ts.isReturnStatement(node);
+}
+
+function guardBranchHasNoSideEffects(node: ts.Statement): boolean {
+  if (ts.isBlock(node)) {
+    return node.statements.every((s) => guardBranchHasNoSideEffects(s));
+  }
+  if (ts.isExpressionStatement(node)) {
+    return isPureExpression(node.expression);
+  }
+  if (ts.isVariableStatement(node)) {
+    return node.declarationList.declarations.every(
+      (d) => !d.initializer || isPureExpression(d.initializer),
+    );
+  }
+  if (ts.isReturnStatement(node) || ts.isThrowStatement(node)) {
+    return true;
+  }
+  if (ts.isEmptyStatement(node)) {
+    return true;
+  }
+  return false;
 }
 
 /**
  * Check if an if-statement matches a guard pattern (pure condition + throw branch).
- * Returns "positive" for if/no-op/else-throw, "negative" for if-throw (no else),
- * or null if the pattern doesn't match.
+ * Returns "positive" for if/side-effect-free-then/else-throw,
+ * "negative" for if-throw (no else), or null if the pattern doesn't match.
+ *
+ * The then-branch acceptance must stay aligned with isGuardStatement in
+ * translate-body.ts — both accept side-effect-free, non-returning then-blocks.
  */
 function classifyGuardIf(stmt: ts.IfStatement): "positive" | "negative" | null {
   if (!isPureExpression(stmt.expression)) {
@@ -428,7 +456,7 @@ function classifyGuardIf(stmt: ts.IfStatement): "positive" | "negative" | null {
   }
   if (
     stmt.elseStatement &&
-    isNoopThenBranch(stmt.thenStatement) &&
+    isSafeGuardThenBranch(stmt.thenStatement) &&
     blockThrows(stmt.elseStatement)
   ) {
     return "positive";
