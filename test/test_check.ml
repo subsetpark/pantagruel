@@ -1878,8 +1878,7 @@ all a: Int | f a > a.
                     | AggregateRequiresBool _ ) ->
                     false
               in
-              if not is_expected then
-                fail "Expected CheckWithoutBody error");
+              if not is_expected then fail "Expected CheckWithoutBody error");
           test_case "check block can reference action params" `Quick (fun () ->
               check_ok
                 {|module T.
