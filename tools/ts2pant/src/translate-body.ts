@@ -2,6 +2,7 @@ import type { SourceFile } from "ts-morph";
 import ts from "typescript";
 import type { OpaqueExpr, OpaqueParam } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
+import { isKnownPureCall } from "./purity.js";
 import {
   classifyFunction,
   findFunction,
@@ -247,7 +248,7 @@ function extractReturnExpression(
         return null;
       }
       // Reject effectful initializers
-      if (expressionHasSideEffects(decl.initializer)) {
+      if (expressionHasSideEffects(decl.initializer, checker)) {
         return null;
       }
       bindings.push({ name: decl.name.text, initializer: decl.initializer });
@@ -285,7 +286,10 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
           return "let/var bindings not supported";
         }
         for (const decl of declList.declarations) {
-          if (decl.initializer && expressionHasSideEffects(decl.initializer)) {
+          if (
+            decl.initializer &&
+            expressionHasSideEffects(decl.initializer, checker)
+          ) {
             return "const binding with side-effectful initializer";
           }
         }
@@ -398,16 +402,16 @@ function isGuardStatement(
     return false;
   }
   // if (...) { throw } without else
-  if (!stmt.elseStatement && blockThrows(stmt.thenStatement)) {
+  if (!stmt.elseStatement && blockThrows(stmt.thenStatement, checker)) {
     return true;
   }
   // if (...) { ... } else { throw }
-  if (stmt.elseStatement && blockThrows(stmt.elseStatement)) {
+  if (stmt.elseStatement && blockThrows(stmt.elseStatement, checker)) {
     // Only a guard if the then-block has no side effects and doesn't return.
     // A mutating then-branch like `if (ok) { a.balance = 1; } else { throw e; }`
     // must NOT be classified as a guard — collectAssignments() needs to see it.
     return (
-      blockHasNoSideEffects(stmt.thenStatement) &&
+      blockHasNoSideEffects(stmt.thenStatement, checker) &&
       !blockReturns(stmt.thenStatement)
     );
   }
@@ -416,13 +420,15 @@ function isGuardStatement(
 
 function variableStatementHasNoSideEffects(
   stmt: ts.VariableStatement,
+  checker: ts.TypeChecker,
 ): boolean {
   return stmt.declarationList.declarations.every(
-    (decl) => !decl.initializer || !expressionHasSideEffects(decl.initializer),
+    (decl) =>
+      !decl.initializer || !expressionHasSideEffects(decl.initializer, checker),
   );
 }
 
-function blockThrows(node: ts.Statement): boolean {
+function blockThrows(node: ts.Statement, checker: ts.TypeChecker): boolean {
   if (ts.isThrowStatement(node)) {
     return true;
   }
@@ -440,7 +446,8 @@ function blockThrows(node: ts.Statement): boolean {
       .slice(0, -1)
       .every(
         (s) =>
-          ts.isVariableStatement(s) && variableStatementHasNoSideEffects(s),
+          ts.isVariableStatement(s) &&
+          variableStatementHasNoSideEffects(s, checker),
       );
   }
   return false;
@@ -454,16 +461,19 @@ function blockReturns(node: ts.Statement): boolean {
 }
 
 /** Check that a statement/block contains no assignments or property writes. */
-function blockHasNoSideEffects(node: ts.Statement): boolean {
+function blockHasNoSideEffects(
+  node: ts.Statement,
+  checker: ts.TypeChecker,
+): boolean {
   if (ts.isBlock(node)) {
-    return node.statements.every((s) => blockHasNoSideEffects(s));
+    return node.statements.every((s) => blockHasNoSideEffects(s, checker));
   }
   if (ts.isExpressionStatement(node)) {
-    return !expressionHasSideEffects(node.expression);
+    return !expressionHasSideEffects(node.expression, checker);
   }
   // Variable declarations are fine only if initializers have no side effects
   if (ts.isVariableStatement(node)) {
-    return variableStatementHasNoSideEffects(node);
+    return variableStatementHasNoSideEffects(node, checker);
   }
   // Return statements, throw statements are fine
   if (ts.isReturnStatement(node) || ts.isThrowStatement(node)) {
@@ -509,7 +519,10 @@ function unwrapExpression(expr: ts.Expression): ts.Expression {
   return expr;
 }
 
-function expressionHasSideEffects(expr: ts.Expression): boolean {
+function expressionHasSideEffects(
+  expr: ts.Expression,
+  checker: ts.TypeChecker,
+): boolean {
   expr = unwrapExpression(expr);
 
   if (ts.isDeleteExpression(expr)) {
@@ -521,11 +534,14 @@ function expressionHasSideEffects(expr: ts.Expression): boolean {
     return (
       (expr.operatorToken.kind >= ts.SyntaxKind.EqualsToken &&
         expr.operatorToken.kind <= ts.SyntaxKind.CaretEqualsToken) ||
-      expressionHasSideEffects(expr.left) ||
-      expressionHasSideEffects(expr.right)
+      expressionHasSideEffects(expr.left, checker) ||
+      expressionHasSideEffects(expr.right, checker)
     );
   }
   if (ts.isCallExpression(expr)) {
+    if (isKnownPureCall(expr, checker)) {
+      return expr.arguments.some((a) => expressionHasSideEffects(a, checker));
+    }
     return true;
   }
   if (ts.isNewExpression(expr) || ts.isAwaitExpression(expr)) {
@@ -536,12 +552,12 @@ function expressionHasSideEffects(expr: ts.Expression): boolean {
     return (
       op === ts.SyntaxKind.PlusPlusToken ||
       op === ts.SyntaxKind.MinusMinusToken ||
-      expressionHasSideEffects(expr.operand)
+      expressionHasSideEffects(expr.operand, checker)
     );
   }
   return (
     ts.forEachChild(expr, (child) =>
-      ts.isExpression(child) ? expressionHasSideEffects(child) : false,
+      ts.isExpression(child) ? expressionHasSideEffects(child, checker) : false,
     ) ?? false
   );
 }
@@ -1104,7 +1120,7 @@ function collectAssignments(
           if (
             !ts.isIdentifier(decl.name) ||
             !decl.initializer ||
-            expressionHasSideEffects(decl.initializer)
+            expressionHasSideEffects(decl.initializer, checker)
           ) {
             allPure = false;
             break;
@@ -1192,7 +1208,7 @@ function collectAssignments(
 
     if (
       ts.isExpressionStatement(stmt) &&
-      expressionHasSideEffects(stmt.expression)
+      expressionHasSideEffects(stmt.expression, checker)
     ) {
       propositions.push({
         kind: "unsupported",
@@ -1205,7 +1221,8 @@ function collectAssignments(
     if (
       ts.isVariableStatement(stmt) &&
       stmt.declarationList.declarations.some(
-        (d) => d.initializer && expressionHasSideEffects(d.initializer),
+        (d) =>
+          d.initializer && expressionHasSideEffects(d.initializer, checker),
       )
     ) {
       propositions.push({
@@ -1219,7 +1236,7 @@ function collectAssignments(
     if (
       (ts.isReturnStatement(stmt) || ts.isThrowStatement(stmt)) &&
       stmt.expression &&
-      expressionHasSideEffects(stmt.expression)
+      expressionHasSideEffects(stmt.expression, checker)
     ) {
       propositions.push({
         kind: "unsupported",
