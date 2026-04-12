@@ -90,6 +90,75 @@ describe("unsupported patterns", () => {
     assert.equal(props.length, 0);
   });
 
+  it("inlines triple-chained const bindings via right-fold", () => {
+    const source = `
+      function triple(x: number): number {
+        const a = x;
+        const b = a + 1;
+        const c = b * a;
+        return c;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "triple",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    const prop = props[0]!;
+    assert.equal(prop.kind, "equation");
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      assert.equal(ast.strExpr(prop.rhs), "(x + 1) * x");
+    }
+  });
+
+  it("rejects self-referencing const (TDZ)", () => {
+    const source = `
+      function selfRef(x: number): number {
+        const a = a + 1;
+        return a;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "selfRef",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+  });
+
+  it("hygienic names don't collide with property accessors", () => {
+    // Regression: const named `balance` must not collide with the
+    // property accessor head `balance` in `a.balance`.
+    const source = `
+      interface Account { balance: number }
+      function addBonus(a: Account): number {
+        const balance = a.balance;
+        return balance + 10;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "addBonus",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    const prop = props[0]!;
+    assert.equal(prop.kind, "equation");
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      assert.equal(ast.strExpr(prop.rhs), "balance a + 10");
+    }
+  });
+
   it("returns unsupported for single non-translatable statement", () => {
     const source = `
       function loop(x: number): number {
