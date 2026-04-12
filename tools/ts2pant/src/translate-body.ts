@@ -149,17 +149,22 @@ function translatePureBody(
   // not silently inlined. All names are present by the return-expr pass,
   // which is the only place freshBinder can be called (const inits cannot
   // contain comprehensions since calls are side-effectful).
+  //
+  // Use hygienic internal names ($0, $1, ...) so substituteBinder doesn't
+  // collide with property-accessor heads (e.g., `balance` in `a.balance`
+  // is lowered to `app(var("balance"), [obj])`).
   const scopedParams = new Map(paramNames);
 
   // Translate const binding initializers for inline substitution
   const substitutions: Array<{ name: string; expr: OpaqueExpr }> = [];
   for (const [idx, binding] of extracted.bindings.entries()) {
-    // Reject forward references: if this initializer references a later
-    // const name, the TS code would throw a TDZ ReferenceError at runtime.
-    const laterNames = new Set(
-      extracted.bindings.slice(idx + 1).map((b) => b.name),
+    // Reject forward/self references: if this initializer references its
+    // own name or a later const name, the TS code would throw a TDZ
+    // ReferenceError at runtime.
+    const blockedNames = new Set(
+      extracted.bindings.slice(idx).map((b) => b.name),
     );
-    if (expressionReferencesNames(binding.initializer, laterNames)) {
+    if (expressionReferencesNames(binding.initializer, blockedNames)) {
       return [
         {
           kind: "unsupported",
@@ -168,6 +173,7 @@ function translatePureBody(
       ];
     }
 
+    const internalName = `$${idx}`;
     const initResult = translateBodyExpr(
       binding.initializer,
       checker,
@@ -182,9 +188,9 @@ function translatePureBody(
     for (const prior of substitutions) {
       initExpr = ast.substituteBinder(initExpr, prior.name, prior.expr);
     }
-    substitutions.push({ name: binding.name, expr: initExpr });
+    substitutions.push({ name: internalName, expr: initExpr });
     // Expose this binding for subsequent initializers and freshBinder
-    scopedParams.set(binding.name, binding.name);
+    scopedParams.set(binding.name, internalName);
   }
 
   const body = translateBodyExpr(
@@ -976,6 +982,7 @@ function collectAssignments(
 ): boolean {
   const ast = getAst();
   let hasUnsupportedMutation = false;
+  let constCounter = outerConstSubstitutions.length;
   const constSubstitutions: Array<{ name: string; expr: OpaqueExpr }> = [
     ...outerConstSubstitutions,
   ];
@@ -1008,9 +1015,9 @@ function collectAssignments(
           );
           for (const [di, decl] of declList.declarations.entries()) {
             const name = (decl.name as ts.Identifier).text;
-            // Reject forward references within this declaration list
-            const laterDeclNames = new Set(declNames.slice(di + 1));
-            if (expressionReferencesNames(decl.initializer!, laterDeclNames)) {
+            // Reject forward/self references within this declaration list
+            const blockedNames = new Set(declNames.slice(di));
+            if (expressionReferencesNames(decl.initializer!, blockedNames)) {
               hasUnsupportedMutation = true;
               propositions.push({
                 kind: "unsupported",
@@ -1018,6 +1025,7 @@ function collectAssignments(
               });
               continue;
             }
+            const internalName = `$${constCounter++}`;
             const initResult = translateBodyExpr(
               decl.initializer!,
               checker,
@@ -1038,20 +1046,26 @@ function collectAssignments(
               initExpr = ast.substituteBinder(initExpr, prior.name, prior.expr);
             }
             // Inner binding shadows any outer binding with the same name
-            const existing = constSubstitutions.findIndex(
-              (s) => s.name === name,
+            const existingIdx = constSubstitutions.findIndex(
+              (s) => s.name === paramNames.get(name),
             );
-            if (existing >= 0) {
-              constSubstitutions.splice(existing, 1);
+            if (existingIdx >= 0) {
+              constSubstitutions.splice(existingIdx, 1);
             }
-            constSubstitutions.push({ name, expr: initExpr });
-            // Reserve const name so freshBinder avoids collisions
-            paramNames.set(name, name);
+            constSubstitutions.push({ name: internalName, expr: initExpr });
+            // Map TS name to hygienic internal name for identifier resolution
+            paramNames.set(name, internalName);
           }
           continue;
         }
       }
-      // let/var or effectful const — fall through to existing rejection
+      // let/var or effectful const — unsupported local declaration
+      hasUnsupportedMutation = true;
+      propositions.push({
+        kind: "unsupported",
+        reason: "local variable declaration (let/var or effectful const)",
+      });
+      continue;
     }
 
     if (
