@@ -18,8 +18,11 @@ brew install pantagruel
 Requires OCaml 4.14+ and opam.
 
 ```bash
-# Install dependencies
-opam install menhir sedlex ppx_deriving yojson sexplib0 parsexp alcotest
+# Install all dependencies (core + WASM)
+opam install . --deps-only --with-test
+
+# Or install only core dependencies (no WASM build)
+opam install ./pantagruel.opam --deps-only --with-test
 
 # Build
 dune build
@@ -29,6 +32,15 @@ dune test
 
 # Install globally (optional)
 dune install
+```
+
+#### WASM build
+
+The WASM target is gated behind the `BUILD_WASM` environment variable. After installing
+all dependencies (including `pantagruel-wasm`):
+
+```bash
+BUILD_WASM=true dune build wasm/
 ```
 
 ## Development
