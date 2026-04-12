@@ -512,6 +512,13 @@ function expressionIsPure(
   if (ts.isObjectLiteralExpression(expr)) {
     return expr.properties.every((prop) => {
       if (ts.isPropertyAssignment(prop)) {
+        // Computed property names: { [expr]: value } evaluates expr eagerly
+        if (
+          ts.isComputedPropertyName(prop.name) &&
+          !expressionIsPure(prop.name.expression, checker)
+        ) {
+          return false;
+        }
         return expressionIsPure(prop.initializer, checker);
       }
       if (ts.isShorthandPropertyAssignment(prop)) {
@@ -520,7 +527,7 @@ function expressionIsPure(
       if (ts.isSpreadAssignment(prop)) {
         return expressionIsPure(prop.expression, checker);
       }
-      // Computed property names, method declarations, accessors → conservative
+      // Method declarations, accessors → conservative
       return false;
     });
   }
