@@ -144,15 +144,30 @@ function translatePureBody(
     return [{ kind: "unsupported", reason: `${functionName} — ${reason}` }];
   }
 
-  // Reserve const binding names so freshBinder avoids collisions
+  // Build scopedParams incrementally: only expose prior binding names
+  // when translating each initializer, so forward references (TDZ) are
+  // not silently inlined. All names are present by the return-expr pass,
+  // which is the only place freshBinder can be called (const inits cannot
+  // contain comprehensions since calls are side-effectful).
   const scopedParams = new Map(paramNames);
-  for (const binding of extracted.bindings) {
-    scopedParams.set(binding.name, binding.name);
-  }
 
   // Translate const binding initializers for inline substitution
   const substitutions: Array<{ name: string; expr: OpaqueExpr }> = [];
-  for (const binding of extracted.bindings) {
+  for (const [idx, binding] of extracted.bindings.entries()) {
+    // Reject forward references: if this initializer references a later
+    // const name, the TS code would throw a TDZ ReferenceError at runtime.
+    const laterNames = new Set(
+      extracted.bindings.slice(idx + 1).map((b) => b.name),
+    );
+    if (expressionReferencesNames(binding.initializer, laterNames)) {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName} — const initializer references a later binding`,
+        },
+      ];
+    }
+
     const initResult = translateBodyExpr(
       binding.initializer,
       checker,
@@ -168,6 +183,8 @@ function translatePureBody(
       initExpr = ast.substituteBinder(initExpr, prior.name, prior.expr);
     }
     substitutions.push({ name: binding.name, expr: initExpr });
+    // Expose this binding for subsequent initializers and freshBinder
+    scopedParams.set(binding.name, binding.name);
   }
 
   const body = translateBodyExpr(
@@ -402,6 +419,22 @@ function blockHasNoSideEffects(node: ts.Statement): boolean {
   }
   // if/for/while/switch may contain mutations — treat as side-effectful
   return false;
+}
+
+/** Check whether a TS expression references any name from the given set. */
+function expressionReferencesNames(
+  expr: ts.Expression,
+  names: Set<string>,
+): boolean {
+  expr = unwrapExpression(expr);
+  if (ts.isIdentifier(expr)) {
+    return names.has(expr.text);
+  }
+  return (
+    ts.forEachChild(expr, (child) =>
+      ts.isExpression(child) ? expressionReferencesNames(child, names) : false,
+    ) ?? false
+  );
 }
 
 /** Unwrap parentheses, type assertions, and non-null assertions to get the inner expression. */
@@ -970,8 +1003,21 @@ function collectAssignments(
           }
         }
         if (allPure) {
-          for (const decl of declList.declarations) {
+          const declNames = declList.declarations.map(
+            (d) => (d.name as ts.Identifier).text,
+          );
+          for (const [di, decl] of declList.declarations.entries()) {
             const name = (decl.name as ts.Identifier).text;
+            // Reject forward references within this declaration list
+            const laterDeclNames = new Set(declNames.slice(di + 1));
+            if (expressionReferencesNames(decl.initializer!, laterDeclNames)) {
+              hasUnsupportedMutation = true;
+              propositions.push({
+                kind: "unsupported",
+                reason: "const initializer references a later binding",
+              });
+              continue;
+            }
             const initResult = translateBodyExpr(
               decl.initializer!,
               checker,

@@ -52,6 +52,28 @@ describe("unsupported patterns", () => {
     }
   });
 
+  it("rejects forward const reference (TDZ)", () => {
+    // In TypeScript, `const a = b; const b = 1;` throws a ReferenceError
+    // due to the Temporal Dead Zone. Verify we reject rather than silently
+    // inlining b into a's initializer.
+    const source = `
+      function fwd(x: number): number {
+        const a = b;
+        const b = 1;
+        return a;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "fwd",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+  });
+
   it("returns empty for bare return with no expression", () => {
     const source = `
       function noop(x: number): void {
