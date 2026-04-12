@@ -6,17 +6,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Requires opam (OCaml package manager). All other OCaml tooling is installed via opam.
 
-### Ensure an opam switch exists
+### Ensure an opam switch is active
 
-Every opam command requires an active switch. If you get `No switch is currently set`, create one:
+Every opam command requires an active switch. Switches are heavyweight (~2GB each) — use one shared global switch, not one per worktree or project.
 
 ```bash
-# Check if a switch exists
+# Check if a switch is active
 opam switch show
 
-# If no switch exists, create one (uses OCaml 5.4.1):
-opam init -y            # first-time opam setup (skip if already initialized)
-opam switch create 5.4.1
+# If "No switch is currently set", select an existing one:
+opam switch list          # see available switches
+opam switch <name>        # activate one
+eval $(opam env)
+
+# If no switches exist at all (fresh machine), create one:
+opam init -y
+opam switch create default 5.4.1
 eval $(opam env)
 ```
 

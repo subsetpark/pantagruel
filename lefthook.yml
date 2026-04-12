@@ -6,4 +6,4 @@ pre-commit:
     - name: ts2pant
       root: "tools/ts2pant/"
       glob: "tools/ts2pant/**/*.{ts,mts}"
-      run: npx biome check src && npx tsc --noEmit && npm test
+      run: npx biome ci src && npx tsc --noEmit && opam exec -- npx tsx --test tests/*.test.mts

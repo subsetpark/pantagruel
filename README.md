@@ -18,9 +18,9 @@ brew install pantagruel
 Requires [opam](https://opam.ocaml.org/doc/Install.html) (OCaml package manager).
 
 ```bash
-# First-time setup: initialize opam and create a switch
+# First-time setup (skip if opam is already initialized with a switch):
 opam init -y
-opam switch create 5.4.1
+opam switch create default 5.4.1
 eval $(opam env)
 
 # Install dependencies
