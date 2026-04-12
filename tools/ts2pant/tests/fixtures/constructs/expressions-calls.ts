@@ -9,7 +9,7 @@ interface Account {
   owner: string;
 }
 
-declare function validate(a: Account): boolean;
+declare function validate(balance: number): boolean;
 
 /** free function call with two args */
 export function freeCall(a: number, b: number): number {
@@ -33,7 +33,7 @@ export function callInArithmetic(a: number, b: number): number {
 
 /** call with property access argument */
 export function callWithPropArg(a: Account): boolean {
-  return validate(a);
+  return validate(a.balance);
 }
 
 /** method call: receiver.method(args) */

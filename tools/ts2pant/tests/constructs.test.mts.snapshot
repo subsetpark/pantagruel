@@ -103,7 +103,7 @@ exports[`expressions-calls.ts > callInComparison 1`] = `
 `;
 
 exports[`expressions-calls.ts > callWithPropArg 1`] = `
-"module CallWithPropArg.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\ncallWithPropArg a: Account => Bool.\\n\\n---\\n\\n> UNSUPPORTED: validate(a).\\n"
+"module CallWithPropArg.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\ncallWithPropArg a: Account => Bool.\\n\\n---\\n\\n> UNSUPPORTED: validate(a.balance).\\n"
 `;
 
 exports[`expressions-calls.ts > freeCall 1`] = `
