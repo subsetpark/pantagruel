@@ -122,8 +122,7 @@ let test_operators () =
       Parser.EOF;
     ]
     (lex_all "=> -> = != <= >= < >");
-  check (list token_testable) "~= is NEQ"
-    [ Parser.NEQ; Parser.EOF ]
+  check (list token_testable) "~= is NEQ" [ Parser.NEQ; Parser.EOF ]
     (lex_all "~=")
 
 let test_logical () =
