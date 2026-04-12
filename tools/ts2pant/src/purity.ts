@@ -260,7 +260,10 @@ function expressionIsPure(
     return true;
   }
 
-  if (ts.isPropertyAccessExpression(expr) || ts.isElementAccessExpression(expr)) {
+  if (
+    ts.isPropertyAccessExpression(expr) ||
+    ts.isElementAccessExpression(expr)
+  ) {
     return true;
   }
 
@@ -337,7 +340,9 @@ function isEffectReturningCall(
 ): boolean {
   try {
     const signature = checker.getResolvedSignature(expr);
-    if (!signature) return false;
+    if (!signature) {
+      return false;
+    }
 
     const returnType = checker.getReturnTypeOfSignature(signature);
     return hasEffectTypeId(returnType);
@@ -351,14 +356,14 @@ function isEffectReturningCall(
  * which is the structural marker for Effect<A,E,R>.
  */
 function hasEffectTypeId(type: ts.Type): boolean {
-  // Check direct properties for EffectTypeId
+  // biome-ignore lint/security/noSecrets: EffectTypeId is an Effect-TS branded property name, not a secret
+  const EFFECT_TYPE_ID = "EffectTypeId";
+
+  // Check direct properties for the EffectTypeId branded property
   const props = type.getProperties();
   for (const prop of props) {
-    if (prop.name === "_tag" || prop.name === "EffectTypeId" || prop.name === "_op") {
-      // Heuristic: if it has EffectTypeId, it's an Effect type
-      if (prop.name === "EffectTypeId") {
-        return true;
-      }
+    if (prop.name === EFFECT_TYPE_ID) {
+      return true;
     }
   }
 
