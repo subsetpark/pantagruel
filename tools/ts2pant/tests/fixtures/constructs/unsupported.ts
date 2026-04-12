@@ -15,28 +15,6 @@ interface Item {
   value: number;
 }
 
-declare function foo(): string[];
-declare function bar(): boolean;
-
-/** function call in return → UNSUPPORTED */
-export function callInReturn(): number {
-  return foo().length;
-}
-
-/** unsupported bubbles through negation */
-export function bubbleNegation(): boolean {
-  return !bar();
-}
-
-/** unsupported bubbles through if condition */
-export function bubbleCondition(): number {
-  if (bar()) {
-    return 1;
-  } else {
-    return 2;
-  }
-}
-
 /** block-bodied arrow with locals in map → UNSUPPORTED */
 export function arrowWithLocals(users: User[]): string[] {
   return users.filter((u) => u.active).map((u) => { const s = u.score; return u.name; });

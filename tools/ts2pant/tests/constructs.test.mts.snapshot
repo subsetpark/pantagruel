@@ -94,12 +94,24 @@ exports[`expressions-boolean.ts > or 1`] = `
 "module Or.\\n\\nor a: Bool, b: Bool => Bool.\\n\\n---\\n\\nor a b = (a or b).\\n"
 `;
 
+exports[`expressions-calls.ts > bubbleCondition 1`] = `
+"module BubbleCondition.\\n\\nbubbleCondition  => Int.\\n\\n---\\n\\nbubbleCondition = (cond bar => 1, true => 2).\\n"
+`;
+
+exports[`expressions-calls.ts > bubbleNegation 1`] = `
+"module BubbleNegation.\\n\\nbubbleNegation  => Bool.\\n\\n---\\n\\nbubbleNegation = (~bar).\\n"
+`;
+
 exports[`expressions-calls.ts > callInArithmetic 1`] = `
 "module CallInArithmetic.\\n\\ncallInArithmetic a: Int, b: Int => Int.\\n\\n---\\n\\ncallInArithmetic a b = max a b + 1.\\n"
 `;
 
 exports[`expressions-calls.ts > callInComparison 1`] = `
 "module CallInComparison.\\n\\ncallInComparison a: Int, b: Int => Bool.\\n\\n---\\n\\ncallInComparison a b = (max a b > 0).\\n"
+`;
+
+exports[`expressions-calls.ts > callInReturn 1`] = `
+"module CallInReturn.\\n\\ncallInReturn  => Int.\\n\\n---\\n\\ncallInReturn = #foo.\\n"
 `;
 
 exports[`expressions-calls.ts > callWithPropArg 1`] = `
@@ -356,18 +368,6 @@ exports[`types-primitives.ts > isActive 1`] = `
 
 exports[`unsupported.ts > arrowWithLocals 1`] = `
 "module ArrowWithLocals.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\narrowWithLocals users: [User] => [String].\\n\\n---\\n\\n> UNSUPPORTED: users.filter((u) => u.active).map((u) => { const s = u.score; return u.name; }).\\n"
-`;
-
-exports[`unsupported.ts > bubbleCondition 1`] = `
-"module BubbleCondition.\\n\\nbubbleCondition  => Int.\\n\\n---\\n\\nbubbleCondition = (cond bar => 1, true => 2).\\n"
-`;
-
-exports[`unsupported.ts > bubbleNegation 1`] = `
-"module BubbleNegation.\\n\\nbubbleNegation  => Bool.\\n\\n---\\n\\nbubbleNegation = (~bar).\\n"
-`;
-
-exports[`unsupported.ts > callInReturn 1`] = `
-"module CallInReturn.\\n\\ncallInReturn  => Int.\\n\\n---\\n\\ncallInReturn = #foo.\\n"
 `;
 
 exports[`unsupported.ts > conditionalAssign 1`] = `

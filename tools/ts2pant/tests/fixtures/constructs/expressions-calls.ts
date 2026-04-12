@@ -11,6 +11,9 @@ interface Account {
 
 declare function validate(balance: number): boolean;
 
+declare function foo(): string[];
+declare function bar(): boolean;
+
 /** free function call with two args */
 export function freeCall(a: number, b: number): number {
   return max(a, b);
@@ -49,4 +52,23 @@ export function callInComparison(a: number, b: number): boolean {
 /** spread argument in call (should be rejected) */
 export function spreadCall(args: number[]): number {
   return max(...args);
+}
+
+/** function call in return */
+export function callInReturn(): number {
+  return foo().length;
+}
+
+/** unsupported bubbles through negation */
+export function bubbleNegation(): boolean {
+  return !bar();
+}
+
+/** unsupported bubbles through if condition */
+export function bubbleCondition(): number {
+  if (bar()) {
+    return 1;
+  } else {
+    return 2;
+  }
 }
