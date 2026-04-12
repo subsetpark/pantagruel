@@ -8,20 +8,18 @@ Requires opam (OCaml package manager). All other OCaml tooling is installed via 
 
 ### Ensure an opam switch is active
 
-Every opam command requires an active switch. Switches are heavyweight (~2GB each) — use one shared global switch, not one per worktree or project.
+Every opam command requires an active switch. Switches are heavyweight (~2GB each) — this repo uses a single **local switch** at the repo root. Worktrees share this switch via `opam env --switch=<repo-root> --set-switch`.
 
 ```bash
 # Check if a switch is active
 opam switch show
 
-# If "No switch is currently set", select an existing one:
-opam switch list          # see available switches
-opam switch <name>        # activate one
-eval $(opam env)
+# If "No switch is currently set" and the local switch exists:
+eval $(opam env --switch=/path/to/pantagruel --set-switch)
 
-# If no switches exist at all (fresh machine), create one:
-opam init -y
-opam switch create default 5.4.1
+# If no local switch exists (fresh clone), create one from the repo root:
+opam init -y              # only if opam has never been initialized
+opam switch create . 5.4.1
 eval $(opam env)
 ```
 
