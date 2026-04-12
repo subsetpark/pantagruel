@@ -376,6 +376,12 @@ function isArrowPure(
     return false;
   }
 
+  // Check parameter initializers: default values are eagerly evaluated
+  // when the argument is undefined, e.g. (x = sideEffect()) => x.
+  if (!parameterInitializersArePure(callback.parameters, checker)) {
+    return false;
+  }
+
   if (ts.isBlock(callback.body)) {
     // Block body: only pure if it's a single return statement
     const stmts = callback.body.statements;
@@ -391,6 +397,63 @@ function isArrowPure(
 
   // Expression body
   return expressionIsPure(callback.body, checker);
+}
+
+/**
+ * Check that all parameter default initializers are side-effect-free.
+ * Handles both simple defaults ((x = expr) => ...) and destructuring
+ * defaults (({a = expr}) => ..., ([a = expr]) => ...).
+ */
+function parameterInitializersArePure(
+  params: ts.NodeArray<ts.ParameterDeclaration>,
+  checker: ts.TypeChecker,
+): boolean {
+  for (const param of params) {
+    // Simple default: (x = expr)
+    if (param.initializer && !expressionIsPure(param.initializer, checker)) {
+      return false;
+    }
+    // Destructuring: check binding element initializers recursively
+    if (
+      ts.isObjectBindingPattern(param.name) ||
+      ts.isArrayBindingPattern(param.name)
+    ) {
+      if (!bindingPatternInitializersArePure(param.name, checker)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * Recursively check initializers in destructuring binding patterns.
+ */
+function bindingPatternInitializersArePure(
+  pattern: ts.BindingPattern,
+  checker: ts.TypeChecker,
+): boolean {
+  for (const element of pattern.elements) {
+    if (ts.isOmittedExpression(element)) {
+      continue;
+    }
+    if (
+      element.initializer &&
+      !expressionIsPure(element.initializer, checker)
+    ) {
+      return false;
+    }
+    // Nested destructuring: ({a: {b = expr}}) => ...
+    if (
+      ts.isObjectBindingPattern(element.name) ||
+      ts.isArrayBindingPattern(element.name)
+    ) {
+      if (!bindingPatternInitializersArePure(element.name, checker)) {
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 /**
@@ -496,10 +559,18 @@ function expressionIsPure(
 
   if (ts.isArrayLiteralExpression(expr)) {
     return expr.elements.every((el) => {
-      // Spread elements: [...arr] is pure if arr is pure (array iteration
-      // is pure for built-in arrays). Per Talpin & Jouvelot 1994,
-      // allocation effects are maskable — the fresh array is local.
+      // Spread elements: [...arr] is pure only for built-in arrays/tuples.
+      // Custom iterables invoke Symbol.iterator/next() which can execute
+      // arbitrary code. Per Talpin & Jouvelot 1994, allocation effects
+      // are maskable — the fresh array is local.
       if (ts.isSpreadElement(el)) {
+        const spreadType = checker.getTypeAtLocation(el.expression);
+        if (
+          !checker.isArrayType(spreadType) &&
+          !checker.isTupleType(spreadType)
+        ) {
+          return false;
+        }
         return expressionIsPure(el.expression, checker);
       }
       return expressionIsPure(el, checker);
