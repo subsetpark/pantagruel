@@ -943,7 +943,7 @@ expr        ::= 'all' bindings '|' expr               // Universal
               | expr+                                  // Application
               | atom
 
-cmp         ::= '=' | '~=' | '<' | '>' | '<=' | '>=' | 'in' | 'subset'
+cmp         ::= '=' | '~=' | '!=' | '<' | '>' | '<=' | '>=' | 'in' | 'subset'
 
 atom        ::= LOWER                                  // Variable
               | UPPER                                  // Domain
