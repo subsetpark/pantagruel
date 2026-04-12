@@ -20,9 +20,13 @@ const jsSrc = path.join(repoRoot, "_build/default/wasm/pant_wasm.bc.wasm.js");
 const jsDst = path.join(outDir, "pant_wasm.bc.wasm.js");
 
 // Read from dune's read-only _build output, patch in memory, write to dest
-const text = fs
-  .readFileSync(jsSrc, "utf8")
-  .replace(/require\.main\.filename/g, "__filename");
+const source = fs.readFileSync(jsSrc, "utf8");
+if (!source.match(/require\.main\.filename/g)) {
+  throw new Error(
+    "WASM loader patch failed: expected `require.main.filename` in generated loader",
+  );
+}
+const text = source.replace(/require\.main\.filename/g, "__filename");
 fs.writeFileSync(jsDst, text);
 
 fs.cpSync(
