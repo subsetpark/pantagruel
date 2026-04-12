@@ -177,3 +177,25 @@ describe("unsupported patterns", () => {
     assert.equal(props[0]?.kind, "unsupported");
   });
 });
+
+describe("translateCallExpr", () => {
+  it.skip("should translate free function call as uninterpreted application", () => {
+    // PENDING: Patch 2
+    // EUF encoding: max(a, b) → 'max a b'
+  });
+
+  it.skip("should translate method call with receiver as first argument", () => {
+    // PENDING: Patch 2
+    // Curried receiver: s.toUpperCase() → 'toUpperCase s'
+  });
+
+  it.skip("should translate zero-arity call as variable reference", () => {
+    // PENDING: Patch 2
+    // 0-arity EUF constant: now() → 'now'
+  });
+
+  it.skip("should reject spread arguments with UNSUPPORTED", () => {
+    // PENDING: Patch 2
+    // Pantagruel has no varargs; spread cannot be resolved to fixed arity
+  });
+});

@@ -94,6 +94,38 @@ exports[`expressions-boolean.ts > or 1`] = `
 "module Or.\\n\\nor a: Bool, b: Bool => Bool.\\n\\n---\\n\\nor a b = (a or b).\\n"
 `;
 
+exports[`expressions-calls.ts > callInArithmetic 1`] = `
+"module CallInArithmetic.\\n\\ncallInArithmetic a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: max(a, b).\\n"
+`;
+
+exports[`expressions-calls.ts > callInComparison 1`] = `
+"module CallInComparison.\\n\\ncallInComparison a: Int, b: Int => Bool.\\n\\n---\\n\\n> UNSUPPORTED: max(a, b).\\n"
+`;
+
+exports[`expressions-calls.ts > callWithPropArg 1`] = `
+"module CallWithPropArg.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\ncallWithPropArg a: Account => Bool.\\n\\n---\\n\\n> UNSUPPORTED: validate(a.balance).\\n"
+`;
+
+exports[`expressions-calls.ts > freeCall 1`] = `
+"module FreeCall.\\n\\nfreeCall a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: max(a, b).\\n"
+`;
+
+exports[`expressions-calls.ts > methodCall 1`] = `
+"module MethodCall.\\n\\nmethodCall s: String => String.\\n\\n---\\n\\n> UNSUPPORTED: s.toUpperCase().\\n"
+`;
+
+exports[`expressions-calls.ts > nestedCalls 1`] = `
+"module NestedCalls.\\n\\nnestedCalls x: Int, a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: clamp(x, 0, max(a, b)).\\n"
+`;
+
+exports[`expressions-calls.ts > spreadCall 1`] = `
+"module SpreadCall.\\n\\nspreadCall args: [Int] => Int.\\n\\n---\\n\\n> UNSUPPORTED: max(...args).\\n"
+`;
+
+exports[`expressions-calls.ts > zeroArityCall 1`] = `
+"module ZeroArityCall.\\n\\nzeroArityCall  => Int.\\n\\n---\\n\\n> UNSUPPORTED: now().\\n"
+`;
+
 exports[`expressions-comparison.ts > eq 1`] = `
 "module Eq.\\n\\neq a: Int, b: Int => Bool.\\n\\n---\\n\\neq a b = (a = b).\\n"
 `;
