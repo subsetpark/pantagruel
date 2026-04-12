@@ -1,14 +1,38 @@
 /**
  * Conservative purity oracle for TypeScript call expressions.
  *
- * Three-tier analysis (trivial instance of abstract interpretation over
- * a {pure, effectful} lattice — Cousot & Cousot, POPL 1977):
+ * Standard name: Allowlist-based must-analysis over a {pure, effectful}
+ * abstract domain (trivial two-point lattice).
  *
- *   Tier 1a: Known-pure builtin allowlist (Math methods, non-mutating String/Array methods)
- *   Tier 1b: Effect-TS combinator allowlist (pipe, flow, identity)
- *   Tier 1c: Conservative default (unknown = effectful)
+ * Framework: Abstract interpretation (Cousot & Cousot, POPL 1977).
+ *   - Domain: {pure, effectful} with pure ⊑ effectful.
+ *   - Default: effectful (⊤). Only positive evidence yields pure (⊥).
+ *   - This is a must-analysis: returns "pure" only when provably so.
  *
- * Ref: Lucassen & Gifford, Polymorphic Effect Systems, POPL 1988.
+ * Allowlist approach: Equivalent to the stub annotation technique used by
+ * the Checker Framework (@Pure/@SideEffectFree, Dietl et al. ICSE 2011)
+ * and Closure Compiler externs. The allowlist encodes the effect signature
+ * of known library functions without requiring whole-program inference.
+ *
+ * Higher-order functions: Call-site callback specialization per
+ * Lucassen & Gifford (POPL 1988). The effect of arr.map(f) depends on
+ * the effect of f at each call site, not on a fixed effect for map.
+ *
+ * Pragmatic assumptions (shared with Webpack, Rollup, Closure Compiler):
+ *   - Property access does not trigger effectful getters.
+ *   - Implicit toString()/valueOf() coercions in template literals are pure.
+ *   - Combinator names (pipe, flow, identity) match by identifier text,
+ *     not by import source. Argument purity checking provides a safety net.
+ *
+ * Tiers:
+ *   1a: Known-pure builtin allowlist (Math methods, String/Array methods)
+ *   1b: Effect-TS combinator allowlist (pipe, flow, identity)
+ *   1c: Conservative default (unknown = effectful)
+ *
+ * Ref: Cousot & Cousot, "Abstract Interpretation", POPL 1977.
+ * Ref: Lucassen & Gifford, "Polymorphic Effect Systems", POPL 1988.
+ * Ref: Dietl et al., "Building and Using Pluggable Type-Checkers", ICSE 2011.
+ * Ref: Talpin & Jouvelot, "The Type and Effect Discipline", I&C 1994.
  */
 import ts from "typescript";
 
@@ -268,10 +292,21 @@ function isArrowPure(
 }
 
 /**
- * Recursively check whether an expression is free of side effects.
+ * Compositional purity analysis over the expression AST.
  *
- * This mirrors the logic of expressionHasSideEffects in translate-body.ts,
- * but inverted: known-pure calls return true, unknown calls return false.
+ * Standard name: Structural induction over expression forms, classifying
+ * each into the {pure, effectful} lattice. This is the standard recursive
+ * descent approach described in Nielson, Nielson & Hankin, "Principles of
+ * Program Analysis" (Springer 1999), Ch. 2 — instantiated for a trivial
+ * two-point effect domain rather than a full type-and-effect system.
+ *
+ * Soundness invariant: returns true only when the expression is provably
+ * side-effect-free. Returns false (conservative) for any unknown form.
+ *
+ * Pragmatic assumption: property access is assumed pure (no effectful
+ * getters). This matches the universal assumption in JavaScript bundler
+ * tree-shaking (Webpack, Rollup, Closure Compiler). Getter-bearing types
+ * in specification-relevant code are out of scope for ts2pant.
  */
 function expressionIsPure(
   expr: ts.Expression,
@@ -301,6 +336,8 @@ function expressionIsPure(
     return true;
   }
 
+  // Property access: recurse into receiver. Assumes no effectful getters
+  // (see module-level pragmatic assumptions documentation).
   if (ts.isPropertyAccessExpression(expr)) {
     return expressionIsPure(expr.expression, checker);
   }
@@ -356,10 +393,39 @@ function expressionIsPure(
   }
 
   if (ts.isArrayLiteralExpression(expr)) {
-    return expr.elements.every((el) => expressionIsPure(el, checker));
+    return expr.elements.every((el) => {
+      // Spread elements: [...arr] is pure if arr is pure (array iteration
+      // is pure for built-in arrays). Per Talpin & Jouvelot 1994,
+      // allocation effects are maskable — the fresh array is local.
+      if (ts.isSpreadElement(el)) {
+        return expressionIsPure(el.expression, checker);
+      }
+      return expressionIsPure(el, checker);
+    });
+  }
+
+  // Object literals: { a: expr } is pure if all property values are pure.
+  // Allocation is a maskable effect (Talpin & Jouvelot, I&C 1994) — the
+  // fresh object is local and does not escape to observable state.
+  if (ts.isObjectLiteralExpression(expr)) {
+    return expr.properties.every((prop) => {
+      if (ts.isPropertyAssignment(prop)) {
+        return expressionIsPure(prop.initializer, checker);
+      }
+      if (ts.isShorthandPropertyAssignment(prop)) {
+        return true; // { x } just reads a variable
+      }
+      if (ts.isSpreadAssignment(prop)) {
+        return expressionIsPure(prop.expression, checker);
+      }
+      // Computed property names, method declarations, accessors → conservative
+      return false;
+    });
   }
 
   if (ts.isTemplateExpression(expr)) {
+    // Assumes implicit toString() on interpolated values is pure
+    // (see module-level pragmatic assumptions documentation).
     return expr.templateSpans.every((span) =>
       expressionIsPure(span.expression, checker),
     );
