@@ -10,11 +10,13 @@ reviews:
   changed_files_summary: false
   labeling_instructions: []
   finishing_touches:
-    docstrings: false
-    unit_tests: false
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
   auto_review:
     enabled: true
-    auto_pause_after_reviewed_commits: -1
+    auto_pause_after_reviewed_commits: 0
     drafts: false
   path_instructions:
     - path: "lib/**"
@@ -37,8 +39,15 @@ reviews:
         These are also used as integration tests — check that they exercise the feature they claim to demonstrate.
     - path: "tools/ts2pant/**"
       instructions: >
-        TypeScript-to-Pantagruel translator. TypeScript codebase (not OCaml).
-        Embeds a WASM build of the Pantagruel parser for capture-avoiding substitution and AST construction.
+        TypeScript-to-Pantagruel translator (not OCaml). Key review rules:
+        (1) Opaque AST discipline — all AST construction via getAst(), all substitution via ast.substituteBinder(). Never traverse or inspect OCaml heap values from TS.
+        (2) Name hygiene — fresh binders use $N names from monotonic UniqueSupply, never user identifiers. $ prefix cannot collide with property names.
+        (3) Explicit unsupported results — use { unsupported: reason } unions (BodyResult/PropResult), not exceptions. Reasons must be user-facing.
+        (4) Guard extraction before body translation — guards (if-throw, assert, helper propagation) extracted first to avoid double-processing. Detection must match between translate-signature.ts and translate-body.ts.
+        (5) Frame conditions mandatory for mutating functions — emit identity constraints (prop' obj = prop obj) for every accessor not in the modifies set.
+        (6) Numeric strategy pluggable — always strategy.mapNumber(), never hardcoded type strings.
+        (7) Standard algorithms with literature references — name the technique, cite the paper (Peyton Jones, Allen et al., Dijkstra, Lamport).
+        (8) Snapshot tests for new constructs — fixture in tests/fixtures/constructs/, auto-discovered by constructs.test.mts.
     - path: "wasm/**"
       instructions: >
         WebAssembly build of the Pantagruel parser via wasm_of_ocaml.
@@ -47,94 +56,9 @@ reviews:
     enabled: true
 knowledge_base:
   code_guidelines:
-    - description: "Exhaustive pattern matching"
-      content: >
-        All match expressions must be exhaustive. Never use wildcard catch-all patterns
-        that silently ignore new variants. When adding a new constructor to a variant type,
-        the compiler should force updates to every match site.
-    - description: "Numeric type hierarchy"
-      content: >
-        Pantagruel has a numeric subtyping hierarchy: Nat < Nat0 < Int < Real.
-        Nat is strictly positive, Nat0 includes zero. Type checking must respect
-        this hierarchy — a Nat is always valid where Nat0 is expected, etc.
-    - description: "No mutable state in the type checker"
-      content: >
-        The type environment (Env.t) is immutable and threaded through the pipeline.
-        Do not introduce mutable refs or hashtables for type information.
-    - description: "Declaration guards are semantic, not syntactic"
-      content: >
-        Declaration guards (e.g., `score u: User, active u => Nat.`) are stored in
-        Env.rule_guards and automatically injected as antecedents in SMT queries.
-        They are not just documentation — they affect verification.
-    - description: "Action labels are not terms"
-      content: >
-        Action labels (the text between ~> and @) are free-form human-readable
-        annotations. They are not in the term namespace and should not be resolved
-        or type-checked as expressions.
-    - description: "Primed expressions only in action contexts"
-      content: >
-        Primed expressions like f' denote post-state values and are only valid
-        inside action bodies (after ~>). The type checker must reject primed
-        expressions outside action contexts.
-    - description: "Tests must never be skipped"
-      content: >
-        If a test fails, fix the underlying issue rather than skipping or disabling it.
-        All tests run via `dune test`. The project uses Alcotest for unit tests
-        and QCheck for property-based tests.
-    - description: "OCaml style: prefer Result/Option over exceptions"
-      content: >
-        Use Result and Option types for expected failure modes. Reserve exceptions
-        for truly exceptional/unrecoverable situations. Pattern match on results
-        rather than catching exceptions.
-    - description: "ts2pant: opaque AST discipline"
-      content: >
-        All Pantagruel AST construction must go through getAst() methods returning
-        opaque handles (OpaqueExpr, OpaqueParam, etc.). All substitution must use
-        ast.substituteBinder(). TypeScript code must never traverse, inspect, or
-        pattern-match on OCaml heap values. This boundary is load-bearing for
-        capture-avoiding substitution correctness.
-    - description: "ts2pant: name hygiene via UniqueSupply"
-      content: >
-        Fresh binders must use hygienic names ($0, $1, etc.) from UniqueSupply,
-        never user-facing identifiers. Hygienic names use $ prefix which cannot
-        appear as property names, making collisions structurally impossible.
-        UniqueSupply must be monotonic — never reset or reuse counters.
-    - description: "ts2pant: explicit unsupported results, not exceptions"
-      content: >
-        Translation failures use explicit { unsupported: reason } results
-        (BodyResult/PropResult unions), not exceptions. Reasons must be
-        user-facing descriptions of what's not supported. Use isBodyUnsupported()
-        type guards for discrimination.
-    - description: "ts2pant: guard extraction before body translation"
-      content: >
-        Guards (if-throw preconditions, assert() calls, helper guard propagation)
-        must be extracted before body translation to avoid double-processing.
-        Guard detection in translate-signature.ts must match isGuardStatement()
-        in translate-body.ts exactly.
-    - description: "ts2pant: frame conditions for mutating functions"
-      content: >
-        Mutating functions (void return or property assignments) produce actions
-        with primed propositions. Frame conditions are mandatory: identify all
-        primed variables in the action body, then emit identity constraints
-        (prop' obj = prop obj) for every accessor rule not in the modifies set.
-    - description: "ts2pant: numeric strategy is pluggable, not hardcoded"
-      content: >
-        TypeScript number maps to Pantagruel types via a NumericStrategy interface
-        with .mapNumber(). Never hardcode "Int" or "Real" — always use
-        strategy.mapNumber(). Strategy is threaded through translateBody() and
-        translateTypes() per-document.
-    - description: "ts2pant: standard algorithms with literature references"
-      content: >
-        Translation algorithms must be named standard techniques with literature
-        citations, not ad-hoc approaches. Current references: let-elimination
-        (Peyton Jones & Marlow, JFP 2002), if-conversion (Allen et al., POPL 1983),
-        guarded commands (Dijkstra, CACM 1975), frame conditions (Lamport, TLA+).
-        New translation passes should follow this convention.
-    - description: "ts2pant: snapshot tests for new constructs"
-      content: >
-        New language constructs need a fixture file in tests/fixtures/constructs/
-        (category-based naming, e.g. expressions-arithmetic.ts, guards-assert.ts).
-        Exported functions are auto-discovered by constructs.test.mts. Regenerate
-        snapshots with npm run test:update-snapshots.
+    enabled: true
+    filePatterns:
+      - "CLAUDE.md"
+      - "tools/ts2pant/CLAUDE.md"
 chat:
   auto_reply: true
