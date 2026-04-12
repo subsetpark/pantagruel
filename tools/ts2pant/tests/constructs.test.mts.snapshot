@@ -95,27 +95,27 @@ exports[`expressions-boolean.ts > or 1`] = `
 `;
 
 exports[`expressions-calls.ts > callInArithmetic 1`] = `
-"module CallInArithmetic.\\n\\ncallInArithmetic a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: max(a, b).\\n"
+"module CallInArithmetic.\\n\\ncallInArithmetic a: Int, b: Int => Int.\\n\\n---\\n\\ncallInArithmetic a b = max a b + 1.\\n"
 `;
 
 exports[`expressions-calls.ts > callInComparison 1`] = `
-"module CallInComparison.\\n\\ncallInComparison a: Int, b: Int => Bool.\\n\\n---\\n\\n> UNSUPPORTED: max(a, b).\\n"
+"module CallInComparison.\\n\\ncallInComparison a: Int, b: Int => Bool.\\n\\n---\\n\\ncallInComparison a b = (max a b > 0).\\n"
 `;
 
 exports[`expressions-calls.ts > callWithPropArg 1`] = `
-"module CallWithPropArg.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\ncallWithPropArg a: Account => Bool.\\n\\n---\\n\\n> UNSUPPORTED: validate(a.balance).\\n"
+"module CallWithPropArg.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\ncallWithPropArg a: Account => Bool.\\n\\n---\\n\\ncallWithPropArg a = validate (balance a).\\n"
 `;
 
 exports[`expressions-calls.ts > freeCall 1`] = `
-"module FreeCall.\\n\\nfreeCall a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: max(a, b).\\n"
+"module FreeCall.\\n\\nfreeCall a: Int, b: Int => Int.\\n\\n---\\n\\nfreeCall a b = max a b.\\n"
 `;
 
 exports[`expressions-calls.ts > methodCall 1`] = `
-"module MethodCall.\\n\\nmethodCall s: String => String.\\n\\n---\\n\\n> UNSUPPORTED: s.toUpperCase().\\n"
+"module MethodCall.\\n\\nmethodCall s: String => String.\\n\\n---\\n\\nmethodCall s = toUpperCase s.\\n"
 `;
 
 exports[`expressions-calls.ts > nestedCalls 1`] = `
-"module NestedCalls.\\n\\nnestedCalls x: Int, a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: clamp(x, 0, max(a, b)).\\n"
+"module NestedCalls.\\n\\nnestedCalls x: Int, a: Int, b: Int => Int.\\n\\n---\\n\\nnestedCalls x a b = clamp x 0 (max a b).\\n"
 `;
 
 exports[`expressions-calls.ts > spreadCall 1`] = `
@@ -123,7 +123,7 @@ exports[`expressions-calls.ts > spreadCall 1`] = `
 `;
 
 exports[`expressions-calls.ts > zeroArityCall 1`] = `
-"module ZeroArityCall.\\n\\nzeroArityCall  => Int.\\n\\n---\\n\\n> UNSUPPORTED: now().\\n"
+"module ZeroArityCall.\\n\\nzeroArityCall  => Int.\\n\\n---\\n\\nzeroArityCall = now.\\n"
 `;
 
 exports[`expressions-comparison.ts > eq 1`] = `
@@ -359,15 +359,15 @@ exports[`unsupported.ts > arrowWithLocals 1`] = `
 `;
 
 exports[`unsupported.ts > bubbleCondition 1`] = `
-"module BubbleCondition.\\n\\nbubbleCondition  => Int.\\n\\n---\\n\\n> UNSUPPORTED: bar().\\n"
+"module BubbleCondition.\\n\\nbubbleCondition  => Int.\\n\\n---\\n\\nbubbleCondition = (cond bar => 1, true => 2).\\n"
 `;
 
 exports[`unsupported.ts > bubbleNegation 1`] = `
-"module BubbleNegation.\\n\\nbubbleNegation  => Bool.\\n\\n---\\n\\n> UNSUPPORTED: bar().\\n"
+"module BubbleNegation.\\n\\nbubbleNegation  => Bool.\\n\\n---\\n\\nbubbleNegation = (~bar).\\n"
 `;
 
 exports[`unsupported.ts > callInReturn 1`] = `
-"module CallInReturn.\\n\\ncallInReturn  => Int.\\n\\n---\\n\\n> UNSUPPORTED: foo().\\n"
+"module CallInReturn.\\n\\ncallInReturn  => Int.\\n\\n---\\n\\ncallInReturn = #foo.\\n"
 `;
 
 exports[`unsupported.ts > conditionalAssign 1`] = `

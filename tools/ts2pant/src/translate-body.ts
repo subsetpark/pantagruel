@@ -932,9 +932,57 @@ function translateCallExpr(
         return result;
       }
     }
+
+    // General method call: obj.method(args) → method obj args (EUF encoding)
+    // Ref: Kroening & Strichman, Decision Procedures, Ch. 4
+    if (expr.arguments.some(ts.isSpreadElement)) {
+      return { unsupported: expr.getText() };
+    }
+    const receiver = translateBodyExpr(
+      tsReceiver,
+      checker,
+      strategy,
+      paramNames,
+    );
+    if (isBodyUnsupported(receiver)) {
+      return receiver;
+    }
+    const methodArgs: OpaqueExpr[] = [bodyExpr(receiver)];
+    for (const arg of expr.arguments) {
+      const a = translateBodyExpr(arg, checker, strategy, paramNames);
+      if (isBodyUnsupported(a)) {
+        return a;
+      }
+      methodArgs.push(bodyExpr(a));
+    }
+    return { expr: ast.app(ast.var(methodName), methodArgs) };
   }
 
-  // Unsupported call
+  // Free function calls: fn(args) → fn args (EUF encoding)
+  if (ts.isIdentifier(expr.expression)) {
+    const fnName = expr.expression.text;
+
+    if (expr.arguments.some(ts.isSpreadElement)) {
+      return { unsupported: expr.getText() };
+    }
+
+    // Zero-arity call → variable reference (EUF constant)
+    if (expr.arguments.length === 0) {
+      return { expr: ast.var(paramNames.get(fnName) ?? fnName) };
+    }
+
+    const fnArgs: OpaqueExpr[] = [];
+    for (const arg of expr.arguments) {
+      const a = translateBodyExpr(arg, checker, strategy, paramNames);
+      if (isBodyUnsupported(a)) {
+        return a;
+      }
+      fnArgs.push(bodyExpr(a));
+    }
+    return { expr: ast.app(ast.var(paramNames.get(fnName) ?? fnName), fnArgs) };
+  }
+
+  // Unsupported call (computed calls, tagged templates, optional calls, etc.)
   return { unsupported: expr.getText() };
 }
 

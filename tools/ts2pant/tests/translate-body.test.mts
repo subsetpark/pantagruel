@@ -179,23 +179,89 @@ describe("unsupported patterns", () => {
 });
 
 describe("translateCallExpr", () => {
-  it.skip("should translate free function call as uninterpreted application", () => {
-    // PENDING: Patch 2
-    // EUF encoding: max(a, b) → 'max a b'
+  it("should translate free function call as uninterpreted application", () => {
+    const source = `
+      declare function max(a: number, b: number): number;
+      function f(a: number, b: number): number {
+        return max(a, b);
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    const prop = props[0]!;
+    assert.equal(prop.kind, "equation");
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      assert.equal(ast.strExpr(prop.rhs), "max a b");
+    }
   });
 
-  it.skip("should translate method call with receiver as first argument", () => {
-    // PENDING: Patch 2
-    // Curried receiver: s.toUpperCase() → 'toUpperCase s'
+  it("should translate method call with receiver as first argument", () => {
+    const source = `
+      function f(s: string): string {
+        return s.toUpperCase();
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    const prop = props[0]!;
+    assert.equal(prop.kind, "equation");
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      assert.equal(ast.strExpr(prop.rhs), "toUpperCase s");
+    }
   });
 
-  it.skip("should translate zero-arity call as variable reference", () => {
-    // PENDING: Patch 2
-    // 0-arity EUF constant: now() → 'now'
+  it("should translate zero-arity call as variable reference", () => {
+    const source = `
+      declare function now(): number;
+      function f(): number {
+        return now();
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    const prop = props[0]!;
+    assert.equal(prop.kind, "equation");
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      assert.equal(ast.strExpr(prop.rhs), "now");
+    }
   });
 
-  it.skip("should reject spread arguments with UNSUPPORTED", () => {
-    // PENDING: Patch 2
-    // Pantagruel has no varargs; spread cannot be resolved to fixed arity
+  it("should reject spread arguments with UNSUPPORTED", () => {
+    const source = `
+      declare function max(...args: number[]): number;
+      function f(args: number[]): number {
+        return max(...args);
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
   });
 });
