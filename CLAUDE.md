@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Setup
+
+```bash
+# Install all dependencies (core + WASM)
+opam install . --deps-only --with-test
+
+# Or install only core dependencies (no WASM build)
+opam install ./pantagruel.opam --deps-only --with-test
+```
+
 ## Build Commands
 
 ```bash
@@ -26,6 +36,9 @@ dune exec pant -- --normalize "Borrow" <file.pant>  # Top-down normal form from 
 dune exec pant -- --check <file.pant>           # Run all checks with z3
 dune exec pant -- --check --bound 5 <file.pant> # Set domain element bound (default: 3)
 dune exec pant -- --check --solver cvc5 <file.pant>  # Use alternative solver
+
+# Build WASM target (requires pantagruel-wasm deps)
+BUILD_WASM=true dune build wasm/
 ```
 
 ## Architecture
@@ -84,9 +97,11 @@ Pantagruel is a specification language checker written in OCaml. It processes `.
 - Conditionals: `cond guard1 => val1, guard2 => val2, true => default` (multi-armed, arms must be Bool, consequences must have same type, checked for exhaustiveness during `--check`)
 - Declaration guards: `score u: User, active u => Nat.` — guards are stored in the environment and automatically injected as antecedents in SMT queries when the guarded function is applied
 
-## Dependencies
+## Packages
 
-- **sedlex**: Unicode lexer generator
-- **menhir**: LR parser generator
-- **ppx_deriving**: Derives `show` and `eq` for types
-- **alcotest**: Test framework
+The project produces two opam packages, both declared in `dune-project`:
+
+- **pantagruel**: Core CLI tool and libraries. Dependencies: sedlex, menhir, ppx_deriving, yojson, sexplib0, parsexp, alcotest (test).
+- **pantagruel-wasm**: WebAssembly build of the parser. Dependencies: pantagruel, js_of_ocaml, js_of_ocaml-ppx, js_of_ocaml-compiler (build), wasm_of_ocaml-compiler (build).
+
+The WASM executable in `wasm/dune` is gated by `(enabled_if (= %{env:BUILD_WASM=false} "true"))` so that `dune build` succeeds even without the WASM dependencies installed.
