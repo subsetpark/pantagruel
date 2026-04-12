@@ -161,11 +161,23 @@ describe("isKnownPureCall", () => {
   });
 
   // --- Tier 1b: Effect-TS ---
+  //
+  // Two detection paths:
+  // (1) Symbol resolution: when `effect` package is installed, the callee is
+  //     traced to its declaration file via getAliasedSymbol. If it originates
+  //     from node_modules/effect/, it's classified by the library's purity
+  //     guarantee (all non-runner/non-allocator exports are pure).
+  // (2) Bare-name fallback: for test environments without `effect` installed,
+  //     pipe/flow/identity are matched by identifier name + argument purity.
+  //
+  // Tests below use `declare function` which exercises the fallback path.
+  // The symbol resolution path is exercised in integration tests with the
+  // real `effect` package.
 
-  it("should return false for Effect-returning function", () => {
-    // Generic return-type detection is unsound for user-defined functions
-    // whose body may have side effects before returning Effect.
-    // Conservative: treat unknown functions as impure regardless of return type.
+  it("should return false for user-defined Effect-returning function", () => {
+    // A user function returning Effect is NOT guaranteed pure — its body may
+    // have side effects. Only Effect library exports have the purity guarantee.
+    // Symbol resolution correctly distinguishes: user file != effect package.
     assert.equal(
       checkPurity(`
         interface Effect<A, E, R> {
@@ -182,6 +194,8 @@ describe("isKnownPureCall", () => {
   });
 
   it("should return false for Effect.runSync", () => {
+    // Runners are in the EFFECT_IMPURE_EXPORTS set — impure regardless of
+    // whether detected via symbol resolution or name matching.
     assert.equal(
       checkPurity(`
         interface Effect<A, E, R> {
@@ -200,7 +214,20 @@ describe("isKnownPureCall", () => {
     );
   });
 
-  it("should return true for pipe from effect/Function", () => {
+  it("should return false for Effect.runPromise", () => {
+    assert.equal(
+      checkPurity(`
+        declare const Effect: {
+          runPromise<A>(effect: any): Promise<A>;
+        };
+        function f(eff: any) { return Effect.runPromise(eff); }
+      `),
+      false,
+    );
+  });
+
+  it("should return true for pipe from effect/Function (fallback path)", () => {
+    // bare-name fallback: pipe matched by identifier + args checked for purity
     assert.equal(
       checkPurity(`
         declare function pipe<A, B>(a: A, f: (a: A) => B): B;
@@ -227,6 +254,18 @@ describe("isKnownPureCall", () => {
         declare function identity<A>(a: A): A;
         declare function sideEffect(): number;
         function f() { return identity(sideEffect()); }
+      `),
+      false,
+    );
+  });
+
+  it("should return false for makeSemaphore (mutable allocator)", () => {
+    assert.equal(
+      checkPurity(`
+        declare const Effect: {
+          makeSemaphore(permits: number): any;
+        };
+        function f() { return Effect.makeSemaphore(1); }
       `),
       false,
     );

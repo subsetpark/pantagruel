@@ -152,22 +152,43 @@ const HO_PURE_ARRAY_METHODS: ReadonlySet<string> = new Set([
 
 // ---------------------------------------------------------------------------
 // Tier 1b — Effect-TS awareness
+//
+// Standard name: Callee symbol resolution (Dietl et al., ICSE 2011).
+// The effect library's type declarations serve as implicit @Pure annotations.
+// We verify each call by tracing the callee symbol back to its declaration
+// file. If it originates from the `effect` package and is not in the impure
+// set, the library's referential transparency guarantee applies.
+//
+// Fallback: bare-name matching for pipe/flow/identity with argument purity
+// checking, for test environments where the `effect` package is not installed.
 // ---------------------------------------------------------------------------
 
-/** Known-pure Effect-TS combinators (from effect/Function). */
+/** Known-pure Effect-TS combinators (from effect/Function) — name-based fallback. */
 const EFFECT_PURE_COMBINATORS: ReadonlySet<string> = new Set([
   "pipe",
   "flow",
   "identity",
 ]);
 
-/** Known-impure Effect-TS runners — excluded even though they return Effect. */
-const EFFECT_IMPURE_RUNNERS: ReadonlySet<string> = new Set([
+/**
+ * Known-impure Effect-TS exports — runners and mutable allocators.
+ *
+ * Runners (@category Running Effects): execute an Effect, producing side effects.
+ * Mutable allocators: create synchronization primitives with observable state.
+ */
+const EFFECT_IMPURE_EXPORTS: ReadonlySet<string> = new Set([
+  // Runners
   "runSync",
-  "runPromise",
   "runSyncExit",
+  "runPromise",
   "runPromiseExit",
   "runFork",
+  "runCallback",
+  // Mutable allocators
+  "makeSemaphore",
+  "unsafeMakeSemaphore",
+  "makeLatch",
+  "unsafeMakeLatch",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -237,13 +258,29 @@ export function isKnownPureCall(
       }
     }
 
-    // Tier 1b: Effect-TS impure runners
-    if (EFFECT_IMPURE_RUNNERS.has(methodName)) {
+    // Tier 1b: Effect-TS impure runners (early exit before symbol resolution)
+    if (EFFECT_IMPURE_EXPORTS.has(methodName)) {
       return false;
     }
   }
 
-  // Tier 1b: bare identifier calls — pure combinators with pure arguments.
+  // --- Tier 1b: Effect-TS symbol resolution ---
+  // Trace the callee symbol to its declaration file. If it originates from
+  // the `effect` package and is not an impure export, the library's
+  // referential transparency guarantee applies: constructing an Effect
+  // value is always pure; only running it causes effects.
+  const effectExport = resolveEffectLibraryExport(expr.expression, checker);
+  if (effectExport !== null) {
+    if (EFFECT_IMPURE_EXPORTS.has(effectExport.name)) {
+      return false;
+    }
+    // All non-impure effect library exports are pure constructors/combinators.
+    // Arguments are still eagerly evaluated, so check their purity.
+    return expr.arguments.every((arg) => expressionIsPure(arg, checker));
+  }
+
+  // Tier 1b fallback: bare-name combinator matching for environments where
+  // the `effect` package is not installed (e.g. tests with `declare function`).
   // Arguments must be checked: identity(sideEffect()) is impure.
   if (ts.isIdentifier(expr.expression)) {
     if (EFFECT_PURE_COMBINATORS.has(expr.expression.text)) {
@@ -258,6 +295,71 @@ export function isKnownPureCall(
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Resolve a callee expression to an Effect-TS library export.
+ *
+ * Uses TypeChecker symbol resolution (getSymbolAtLocation + getAliasedSymbol)
+ * to trace the callee through import aliases back to its original declaration.
+ * Returns { module, name } if the declaration originates from the `effect`
+ * package, or null if it doesn't (user code, other packages, unresolvable).
+ *
+ * This is the sound alternative to return-type detection. A user function
+ * that returns Effect<A,E,R> will resolve to the user's source file, not
+ * to the effect package — so it correctly falls through to the conservative
+ * default.
+ *
+ * Handles: Effect.succeed(x), E.map(fn) (aliased import), pipe(x, ...) (bare).
+ */
+function resolveEffectLibraryExport(
+  callee: ts.Expression,
+  checker: ts.TypeChecker,
+): { module: string; name: string } | null {
+  try {
+    let symbol: ts.Symbol | undefined;
+
+    if (ts.isPropertyAccessExpression(callee)) {
+      // Effect.succeed, Effect.map, etc.
+      symbol = checker.getSymbolAtLocation(callee.name);
+    } else if (ts.isIdentifier(callee)) {
+      // pipe, flow, identity (bare imports)
+      symbol = checker.getSymbolAtLocation(callee);
+    }
+
+    if (!symbol) {
+      return null;
+    }
+
+    // Follow import aliases to the original declaration
+    let resolved = symbol;
+    while (resolved.flags & ts.SymbolFlags.Alias) {
+      resolved = checker.getAliasedSymbol(resolved);
+    }
+
+    const decls = resolved.getDeclarations();
+    if (!decls || decls.length === 0) {
+      return null;
+    }
+
+    const fileName = decls[0]!.getSourceFile().fileName;
+
+    // Match effect package declaration files.
+    // Patterns: node_modules/effect/dist/dts/Effect.d.ts
+    //           node_modules/effect/src/Effect.ts
+    //           node_modules/.pnpm/effect@.../node_modules/effect/dist/dts/Effect.d.ts
+    const match = fileName.match(
+      /node_modules\/effect\/(?:dist\/dts|src)\/(\w+)\.(?:d\.ts|ts)$/u,
+    );
+    if (!match) {
+      return null;
+    }
+
+    return { module: match[1]!, name: resolved.getName() };
+  } catch {
+    // TypeChecker can throw on malformed AST — conservative fallback
+    return null;
+  }
+}
 
 /**
  * Check whether an arrow function callback is side-effect-free.
