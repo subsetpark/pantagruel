@@ -427,7 +427,9 @@ function blockHasNoSideEffects(node: ts.Statement): boolean {
   return false;
 }
 
-/** Check whether a TS expression references any name from the given set. */
+/** Check whether a TS expression references any variable name from the given set.
+ *  Only checks identifier *uses* (variable references), not syntactic name
+ *  positions like property names in `a.balance` or method names in `a.foo()`. */
 function expressionReferencesNames(
   expr: ts.Expression,
   names: Set<string>,
@@ -435,6 +437,11 @@ function expressionReferencesNames(
   expr = unwrapExpression(expr);
   if (ts.isIdentifier(expr)) {
     return names.has(expr.text);
+  }
+  // For property access, only recurse into the object expression —
+  // the .name identifier is a syntactic token, not a variable reference.
+  if (ts.isPropertyAccessExpression(expr)) {
+    return expressionReferencesNames(expr.expression, names);
   }
   return (
     ts.forEachChild(expr, (child) =>
@@ -979,10 +986,10 @@ function collectAssignments(
   propositions: PropResult[],
   modifiedRules: Set<string>,
   outerConstSubstitutions: Array<{ name: string; expr: OpaqueExpr }> = [],
+  constIdCounter: { value: number } = { value: 0 },
 ): boolean {
   const ast = getAst();
   let hasUnsupportedMutation = false;
-  let constCounter = outerConstSubstitutions.length;
   const constSubstitutions: Array<{ name: string; expr: OpaqueExpr }> = [
     ...outerConstSubstitutions,
   ];
@@ -1025,7 +1032,7 @@ function collectAssignments(
               });
               continue;
             }
-            const internalName = `$${constCounter++}`;
+            const internalName = `$${constIdCounter.value++}`;
             const initResult = translateBodyExpr(
               decl.initializer!,
               checker,
@@ -1163,6 +1170,7 @@ function collectAssignments(
           propositions,
           modifiedRules,
           constSubstitutions,
+          constIdCounter,
         )
       ) {
         hasUnsupportedMutation = true;
@@ -1202,6 +1210,7 @@ function collectAssignments(
             propositions,
             modifiedRules,
             constSubstitutions,
+            constIdCounter,
           )
         ) {
           hasUnsupportedMutation = true;
@@ -1217,6 +1226,7 @@ function collectAssignments(
             propositions,
             modifiedRules,
             constSubstitutions,
+            constIdCounter,
           )
         ) {
           hasUnsupportedMutation = true;
