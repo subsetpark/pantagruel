@@ -4,8 +4,8 @@
  * Three-tier analysis (trivial instance of abstract interpretation over
  * a {pure, effectful} lattice — Cousot & Cousot, POPL 1977):
  *
- *   Tier 1a: Known-pure builtin allowlist (Math.*, non-mutating String/Array methods)
- *   Tier 1b: Effect-TS awareness (Effect<A,E,R> construction is always pure)
+ *   Tier 1a: Known-pure builtin allowlist (Math methods, non-mutating String/Array methods)
+ *   Tier 1b: Effect-TS combinator allowlist (pipe, flow, identity)
  *   Tier 1c: Conservative default (unknown = effectful)
  *
  * Ref: Lucassen & Gifford, Polymorphic Effect Systems, POPL 1988.
@@ -16,10 +16,54 @@ import ts from "typescript";
 // Tier 1a — Known-pure builtin allowlists
 // ---------------------------------------------------------------------------
 
-/** Namespaces where ALL methods are pure (e.g. Math.max, Math.abs). */
-const PURE_NAMESPACES: ReadonlySet<string> = new Set(["Math"]);
+/**
+ * Pure Math methods (enumerated, not blanket namespace).
+ * Math.random() is excluded — it is non-deterministic.
+ */
+const PURE_MATH_METHODS: ReadonlySet<string> = new Set([
+  "abs",
+  "acos",
+  "acosh",
+  "asin",
+  "asinh",
+  "atan",
+  "atan2",
+  "atanh",
+  "cbrt",
+  "ceil",
+  "clz32",
+  "cos",
+  "cosh",
+  "exp",
+  "expm1",
+  "floor",
+  "fround",
+  "hypot",
+  "imul",
+  "log",
+  "log10",
+  "log1p",
+  "log2",
+  "max",
+  "min",
+  "pow",
+  "round",
+  "sign",
+  "sin",
+  "sinh",
+  "sqrt",
+  "tan",
+  "tanh",
+  "trunc",
+]);
 
-/** Pure methods by primitive receiver type. */
+/**
+ * Pure methods by primitive receiver type.
+ *
+ * String methods that accept RegExp or replacement callbacks are excluded
+ * (split, replace, replaceAll, match, search) — these can execute user code
+ * via RegExp Symbol.replace/Symbol.match hooks.
+ */
 const PURE_METHODS_BY_TYPE: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   [
     "string",
@@ -35,14 +79,9 @@ const PURE_METHODS_BY_TYPE: ReadonlyMap<string, ReadonlySet<string>> = new Map([
       "toUpperCase",
       "charAt",
       "charCodeAt",
-      "split",
-      "replace",
-      "replaceAll",
       "repeat",
       "padStart",
       "padEnd",
-      "match",
-      "search",
       "concat",
       "normalize",
     ]),
@@ -127,8 +166,13 @@ export function isKnownPureCall(
     const methodName = expr.expression.name.text;
     const receiver = expr.expression.expression;
 
-    // Pure namespace: Math.max(...), Math.abs(...), etc.
-    if (ts.isIdentifier(receiver) && PURE_NAMESPACES.has(receiver.text)) {
+    // Pure Math methods: Math.max(...), Math.abs(...), etc.
+    // Math.random() is excluded (non-deterministic).
+    if (
+      ts.isIdentifier(receiver) &&
+      receiver.text === "Math" &&
+      PURE_MATH_METHODS.has(methodName)
+    ) {
       return true;
     }
 
@@ -157,33 +201,30 @@ export function isKnownPureCall(
         return true;
       }
 
-      // Higher-order array methods: pure if callback is side-effect-free
+      // Higher-order array methods: pure if callback AND all eagerly-evaluated
+      // args (thisArg, initialValue) are side-effect-free.
       if (HO_PURE_ARRAY_METHODS.has(methodName) && expr.arguments.length >= 1) {
-        const callback = expr.arguments[0]!;
-        if (isArrowPure(callback, checker)) {
-          return true;
-        }
-        // Non-arrow callback (function expression, identifier) → conservative
-        return false;
+        const [callback, ...restArgs] = expr.arguments;
+        return (
+          callback !== undefined &&
+          isArrowPure(callback, checker) &&
+          restArgs.every((arg) => expressionIsPure(arg, checker))
+        );
       }
     }
 
-    // Tier 1b: Effect-TS impure runners (check before return-type detection)
+    // Tier 1b: Effect-TS impure runners
     if (EFFECT_IMPURE_RUNNERS.has(methodName)) {
       return false;
     }
   }
 
-  // Tier 1a: bare identifier calls — check if it's a pure combinator
+  // Tier 1b: bare identifier calls — pure combinators with pure arguments.
+  // Arguments must be checked: identity(sideEffect()) is impure.
   if (ts.isIdentifier(expr.expression)) {
     if (EFFECT_PURE_COMBINATORS.has(expr.expression.text)) {
-      return true;
+      return expr.arguments.every((arg) => expressionIsPure(arg, checker));
     }
-  }
-
-  // --- Tier 1b: Effect-TS return type detection ---
-  if (isEffectReturningCall(expr, checker)) {
-    return true;
   }
 
   // --- Tier 1c: conservative default ---
@@ -260,10 +301,21 @@ function expressionIsPure(
     return true;
   }
 
-  if (
-    ts.isPropertyAccessExpression(expr) ||
-    ts.isElementAccessExpression(expr)
-  ) {
+  if (ts.isPropertyAccessExpression(expr)) {
+    return expressionIsPure(expr.expression, checker);
+  }
+
+  if (ts.isElementAccessExpression(expr)) {
+    return (
+      expressionIsPure(expr.expression, checker) &&
+      expr.argumentExpression !== undefined &&
+      expressionIsPure(expr.argumentExpression, checker)
+    );
+  }
+
+  // Arrow functions and function expressions are pure value-creating
+  // expressions — the function body is not executed at evaluation time.
+  if (ts.isArrowFunction(expr) || ts.isFunctionExpression(expr)) {
     return true;
   }
 
@@ -323,59 +375,5 @@ function expressionIsPure(
   }
 
   // Unknown expression kind → conservative
-  return false;
-}
-
-/**
- * Tier 1b: Check if a call returns an Effect<A,E,R> value.
- *
- * Detection: the return type has the EffectTypeId branded property.
- * This is structural and version-resilient — avoids source-path heuristics.
- *
- * Known-impure runners (runSync, runPromise, etc.) are excluded upstream.
- */
-function isEffectReturningCall(
-  expr: ts.CallExpression,
-  checker: ts.TypeChecker,
-): boolean {
-  try {
-    const signature = checker.getResolvedSignature(expr);
-    if (!signature) {
-      return false;
-    }
-
-    const returnType = checker.getReturnTypeOfSignature(signature);
-    return hasEffectTypeId(returnType);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Check whether a type has the EffectTypeId branded property,
- * which is the structural marker for Effect<A,E,R>.
- */
-function hasEffectTypeId(type: ts.Type): boolean {
-  // biome-ignore lint/security/noSecrets: EffectTypeId is an Effect-TS branded property name, not a secret
-  const EFFECT_TYPE_ID = "EffectTypeId";
-
-  // Check direct properties for the EffectTypeId branded property
-  const props = type.getProperties();
-  for (const prop of props) {
-    if (prop.name === EFFECT_TYPE_ID) {
-      return true;
-    }
-  }
-
-  // Check alias: Effect types might be aliased
-  if (type.aliasSymbol?.name === "Effect") {
-    return true;
-  }
-
-  // Check symbol name
-  if (type.symbol?.name === "Effect") {
-    return true;
-  }
-
   return false;
 }

@@ -59,6 +59,24 @@ describe("isKnownPureCall", () => {
     );
   });
 
+  it("should return false for Math.random", () => {
+    assert.equal(
+      checkPurity(`
+        function f() { return Math.random(); }
+      `),
+      false,
+    );
+  });
+
+  it("should return true for nested pure calls", () => {
+    assert.equal(
+      checkPurity(`
+        function f(x: number, y: number) { return Math.max(Math.abs(x), y); }
+      `),
+      true,
+    );
+  });
+
   // --- Tier 1a: String methods ---
 
   it("should return true for String.prototype.indexOf", () => {
@@ -144,8 +162,10 @@ describe("isKnownPureCall", () => {
 
   // --- Tier 1b: Effect-TS ---
 
-  it("should return true for Effect-returning function", () => {
-    // Simulate Effect type via structural branded type
+  it("should return false for Effect-returning function", () => {
+    // Generic return-type detection is unsound for user-defined functions
+    // whose body may have side effects before returning Effect.
+    // Conservative: treat unknown functions as impure regardless of return type.
     assert.equal(
       checkPurity(`
         interface Effect<A, E, R> {
@@ -157,12 +177,11 @@ describe("isKnownPureCall", () => {
         declare function succeed<A>(value: A): Effect<A, never, never>;
         function f(x: number) { return succeed(x); }
       `),
-      true,
+      false,
     );
   });
 
   it("should return false for Effect.runSync", () => {
-    // Even if it returns Effect, runSync is impure
     assert.equal(
       checkPurity(`
         interface Effect<A, E, R> {
@@ -188,6 +207,28 @@ describe("isKnownPureCall", () => {
         function f(x: number) { return pipe(x, n => n + 1); }
       `),
       true,
+    );
+  });
+
+  it("should return false for pipe with impure argument", () => {
+    assert.equal(
+      checkPurity(`
+        declare function pipe<A, B>(a: A, f: (a: A) => B): B;
+        declare function sideEffect(): number;
+        function f() { return pipe(sideEffect(), n => n + 1); }
+      `),
+      false,
+    );
+  });
+
+  it("should return false for identity with impure argument", () => {
+    assert.equal(
+      checkPurity(`
+        declare function identity<A>(a: A): A;
+        declare function sideEffect(): number;
+        function f() { return identity(sideEffect()); }
+      `),
+      false,
     );
   });
 
