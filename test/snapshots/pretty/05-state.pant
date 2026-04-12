@@ -28,8 +28,8 @@ owner' a = owner a.
 
 > Other accounts are unchanged (frame condition)
 
-all other: Account | other ~= a -> balance' other = balance other.
-all other: Account | other ~= a -> owner' other = owner other.
+all other: Account | other != a -> balance' other = balance other.
+all other: Account | other != a -> owner' other = owner other.
 
 > Pre-condition: can always deposit
 
@@ -53,7 +53,7 @@ balance a >= amount.
 
 > Frame condition
 
-all other: Account | other ~= a -> balance' other = balance other.
+all other: Account | other != a -> balance' other = balance other.
 
 where
 
@@ -73,9 +73,9 @@ balance' to = balance to + amount.
 
 > Pre-conditions
 
-from ~= to.
+from != to.
 balance from >= amount.
 
 > Frame: other accounts unchanged
 
-all other: Account | other ~= from and other ~= to -> balance' other = balance other.
+all other: Account | other != from and other != to -> balance' other = balance other.
