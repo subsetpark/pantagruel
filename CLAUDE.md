@@ -4,13 +4,65 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Setup
 
+Requires opam (OCaml package manager). All other OCaml tooling is installed via opam.
+
+### Ensure an opam switch exists
+
+Every opam command requires an active switch. If you get `No switch is currently set`, create one:
+
 ```bash
-# Install all dependencies (core + WASM)
+# Check if a switch exists
+opam switch show
+
+# If no switch exists, create one (uses OCaml 5.4.1):
+opam init -y            # first-time opam setup (skip if already initialized)
+opam switch create 5.4.1
+eval $(opam env)
+```
+
+All subsequent `opam install` and `dune` commands require the switch environment. If commands fail with opam/ocamlfind errors, run `eval $(opam env)` first.
+
+### Core only (OCaml CLI tool)
+
+```bash
+opam install ./pantagruel.opam --deps-only --with-test
+dune build
+dune test
+```
+
+### Core + WASM (needed for ts2pant)
+
+The WASM build compiles the Pantagruel parser to WebAssembly via `wasm_of_ocaml`. ts2pant embeds this binary for capture-avoiding substitution and AST construction.
+
+```bash
+# 1. Install core OCaml dependencies
 opam install . --deps-only --with-test
 
-# Or install only core dependencies (no WASM build)
-opam install ./pantagruel.opam --deps-only --with-test
+# 2. Install WASM toolchain (js_of_ocaml + wasm_of_ocaml)
+#    These are listed in pantagruel-wasm.opam but must be installed explicitly
+#    because `opam install . --deps-only` does not always pull build-only deps
+#    for secondary packages.
+opam install js_of_ocaml js_of_ocaml-ppx wasm_of_ocaml-compiler
+
+# 3. Install binaryen (WASM optimizer, required by wasm_of_ocaml at link time)
+npm install -g binaryen
+
+# 4. Build the core library (WASM build depends on pantagruel_parser)
+dune build
+
+# 5. Build the WASM binary (gated by BUILD_WASM env var)
+BUILD_WASM=true dune build wasm/
+#    Produces: _build/default/wasm/pant_wasm.bc.wasm.js
+#              _build/default/wasm/pant_wasm.bc.wasm.assets/
+
+# 6. Build ts2pant (copies + patches WASM into src/wasm/, then runs tsc)
+cd tools/ts2pant
+npm install
+npm run build        # runs build:wasm then tsc
+npm test             # verify everything works
 ```
+
+The `wasm/dune` file uses `(enabled_if (= %{env:BUILD_WASM=false} "true"))`, so `dune build` without `BUILD_WASM=true` skips the WASM target entirely. This lets `dune build` succeed without WASM dependencies installed.
 
 ## Build Commands
 
@@ -37,7 +89,7 @@ dune exec pant -- --check <file.pant>           # Run all checks with z3
 dune exec pant -- --check --bound 5 <file.pant> # Set domain element bound (default: 3)
 dune exec pant -- --check --solver cvc5 <file.pant>  # Use alternative solver
 
-# Build WASM target (requires pantagruel-wasm deps)
+# Build WASM target (see Setup above for dependency installation)
 BUILD_WASM=true dune build wasm/
 ```
 

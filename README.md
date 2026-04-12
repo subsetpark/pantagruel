@@ -15,13 +15,15 @@ brew install pantagruel
 
 ### From source
 
-Requires OCaml 4.14+ and opam.
+Requires [opam](https://opam.ocaml.org/doc/Install.html) (OCaml package manager).
 
 ```bash
-# Install all dependencies (core + WASM)
-opam install . --deps-only --with-test
+# First-time setup: initialize opam and create a switch
+opam init -y
+opam switch create 5.4.1
+eval $(opam env)
 
-# Or install only core dependencies (no WASM build)
+# Install dependencies
 opam install ./pantagruel.opam --deps-only --with-test
 
 # Build
@@ -34,13 +36,29 @@ dune test
 dune install
 ```
 
-#### WASM build
+#### WASM build (for ts2pant)
 
-The WASM target is gated behind the `BUILD_WASM` environment variable. After installing
-all dependencies (including `pantagruel-wasm`):
+The `tools/ts2pant` translator embeds the Pantagruel parser as a WASM binary (compiled via `wasm_of_ocaml`). The WASM target is gated behind the `BUILD_WASM` environment variable — `dune build` without it skips WASM entirely.
 
 ```bash
+# 1. Install core + WASM OCaml dependencies
+opam install . --deps-only --with-test
+opam install js_of_ocaml js_of_ocaml-ppx wasm_of_ocaml-compiler
+
+# 2. Install binaryen (WASM optimizer, required by wasm_of_ocaml at link time)
+npm install -g binaryen
+
+# 3. Build core library first (WASM depends on pantagruel_parser)
+dune build
+
+# 4. Build WASM binary
 BUILD_WASM=true dune build wasm/
+
+# 5. Build ts2pant (copies WASM into src/wasm/, compiles TypeScript)
+cd tools/ts2pant
+npm install
+npm run build
+npm test
 ```
 
 ## Development

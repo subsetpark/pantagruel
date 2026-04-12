@@ -1,0 +1,473 @@
+{
+  "projectName": "ts2pant-general-calls",
+
+  "specFile": null,
+
+  "workstream": {
+    "name": "ts2pant",
+    "milestone": "Milestone 2: general-function-calls",
+    "priorMilestones": ["Milestone 1: local-const-inlining"],
+    "unlocks": "Functions that call helpers become translatable. Combined with milestone 1, covers the majority of 'compute and return' patterns. Pure-call const inlining enables const x = Math.max(a, b) and similar patterns."
+  },
+
+  "problemStatement": "ts2pant currently rejects any function body containing a non-special function call. Only .includes(), .filter(), and .map() are handled; all other calls produce UNSUPPORTED markers. Additionally, expressionHasSideEffects treats ALL calls as side-effectful, preventing const-binding inlining for patterns like const max = Math.max(a, b). Together, these are the #2 blocker in the workstream analysis, rejecting any function that delegates to helpers, uses Math.*, or binds call results to local constants.",
+
+  "solutionSummary": "Two complementary changes. First, extend translateCallExpr with a general fallback encoding arbitrary calls as uninterpreted function applications (EUF theory, Kroening & Strichman Ch. 4): foo(a, b) → 'foo a b', obj.method(a) → 'method obj a'. Second, introduce a conservative purity oracle (syntactic effect analysis, Cousot & Cousot POPL 1977 — trivial instance over a {pure, effectful} lattice) with three tiers: (1a) known-pure builtin allowlist (Math.*, non-mutating String/Array methods), (1b) Effect-TS awareness (constructing Effect<A,E,R> is always pure — referential transparency by design), (1c) conservative default (unknown = effectful). The oracle is wired into expressionHasSideEffects to enable const-binding inlining for pure calls.",
+
+  "mergabilityStrategy": {
+    "featureFlagStrategy": "No feature flags needed. This is a CLI translator tool, not a web service.",
+    "featureFlags": [],
+    "patchOrderingStrategy": "Two independent tracks merge at Patch 4. Track A (Patches 1-2): general call translation. Track B (Patch 3): purity oracle infrastructure. Patch 4 wires the oracle into const inlining (needs both tracks). Patch 5 cleans up fixtures. Patches 1 and 3 can execute in parallel."
+  },
+
+  "currentStateAnalysis": "translateCallExpr in translate-body.ts (line 878) handles only .includes() → membership and .filter()/.map() → comprehensions. The catch-all at line 938 returns { unsupported: expr.getText() }. The ast.app() constructor exists and is used for property access (a.balance → balance a), so wasm infrastructure is ready. Separately, expressionHasSideEffects (line 512) returns true for ALL ts.isCallExpression nodes — this gates const-binding inlining via the shared inlineConstBindings function. The function takes no TypeChecker parameter, so type-based purity analysis requires threading checker through. Effect-TS is used in some target codebases; its Effect<A,E,R> type provides a structural signal for purity (construction is always referentially transparent).",
+
+  "requiredChanges": [
+    {
+      "file": "tools/ts2pant/src/translate-body.ts",
+      "line": 935,
+      "description": "Replace the catch-all unsupported return in translateCallExpr with general call handlers: (1) method calls after special cases → ast.app(var(methodName), [receiver, ...args]), (2) free function calls with identifier callee → ast.app(var(fnName), args) or ast.var(fnName) for 0-arity. Reject spread arguments.",
+      "signature": null
+    },
+    {
+      "file": "tools/ts2pant/src/purity.ts",
+      "line": null,
+      "description": "New module: conservative purity oracle with three tiers. Tier 1a: known-pure builtin allowlist (PURE_NAMESPACES, PURE_METHODS_BY_TYPE, PURE_ARRAY_METHODS, HO_PURE_ARRAY_METHODS). Tier 1b: Effect-TS awareness (detect Effect<A,E,R> return type via EffectTypeId branded property; known-pure Effect combinators; known-impure runners). Tier 1c: conservative default.",
+      "signature": "function isKnownPureCall(expr: ts.CallExpression, checker: ts.TypeChecker): boolean"
+    },
+    {
+      "file": "tools/ts2pant/src/translate-body.ts",
+      "line": 512,
+      "description": "Add required checker parameter to expressionHasSideEffects. For CallExpression nodes, delegate to isKnownPureCall. Thread checker through all recursive calls and update every call site to pass checker.",
+      "signature": "function expressionHasSideEffects(expr: ts.Expression, checker: ts.TypeChecker): boolean"
+    },
+    {
+      "file": "tools/ts2pant/tests/fixtures/constructs/expressions-calls.ts",
+      "line": null,
+      "description": "New fixture file: free call, multi-arg, zero-arity, nested, call-in-arithmetic, call-with-prop-arg, method call, call-in-comparison. Plus call patterns moved from unsupported.ts (callInReturn, bubbleNegation, bubbleCondition).",
+      "signature": null
+    },
+    {
+      "file": "tools/ts2pant/tests/fixtures/constructs/expressions-const-pure-calls.ts",
+      "line": null,
+      "description": "New fixture file for pure-call const inlining: const-with-math, const-with-string-method, const-with-chained-pure-calls, const-with-impure-call (still rejected).",
+      "signature": null
+    },
+    {
+      "file": "tools/ts2pant/tests/fixtures/constructs/unsupported.ts",
+      "line": 21,
+      "description": "Remove callInReturn, bubbleNegation, bubbleCondition (now translatable). Keep destructuredParam, multiParamCallback, conditionalAssign, loopAssign, arrowWithLocals.",
+      "signature": null
+    }
+  ],
+
+  "acceptanceCriteria": [
+    "translateCallExpr handles general free function calls foo(a, b) as ast.app(ast.var('foo'), [a', b'])",
+    "translateCallExpr handles general method calls obj.method(a) as ast.app(ast.var('method'), [obj', a'])",
+    "Zero-arity calls foo() produce ast.var('foo')",
+    "Existing special cases (.includes, .filter, .map) are unaffected",
+    "Spread arguments produce UNSUPPORTED with clear message",
+    "isKnownPureCall returns true for Math.* calls",
+    "isKnownPureCall returns true for non-mutating String/Array prototype methods",
+    "isKnownPureCall returns true for calls returning Effect<A,E,R> (detected via EffectTypeId branded property)",
+    "isKnownPureCall returns true for known Effect combinators (pipe, flow, Effect.map, etc.)",
+    "isKnownPureCall returns false for Effect.runSync/runPromise/runFork (runners are impure)",
+    "isKnownPureCall returns false for unknown calls (conservative default)",
+    "expressionHasSideEffects accepts optional checker parameter; when provided, uses purity oracle for call expressions",
+    "const x = Math.max(a, b); return x + 1 now inlines and translates",
+    "const x = unknownFn(); return x is still rejected (conservative)",
+    "All existing tests pass, new fixture and unit tests pass"
+  ],
+
+  "openQuestions": [],
+
+  "explicitOpinions": [
+    {
+      "opinion": "Encode all calls as uninterpreted functions (EUF theory)",
+      "rationale": "Standard approach from Kroening & Strichman Ch. 4. The only axiom is congruence (equal args → equal results). Sound, simple, composable. If a matching Pantagruel rule exists, the solver uses its constraints; otherwise universally quantified."
+    },
+    {
+      "opinion": "Method receiver is the first argument (curried encoding)",
+      "rationale": "Already the pattern for property access: a.balance → balance a. Consistent encoding."
+    },
+    {
+      "opinion": "Zero-arity calls become variable references",
+      "rationale": "foo() is a 0-arity function application — in Pantagruel, just a variable reference (EUF constant)."
+    },
+    {
+      "opinion": "Three-tier conservative purity oracle, not whole-program effect inference",
+      "rationale": "Full effect inference (Lucassen & Gifford, POPL 1988) requires whole-program analysis and effect polymorphism. A curated allowlist (Tier 1a) plus Effect-TS structural detection (Tier 1b) plus conservative default (Tier 1c) gives us practical coverage with zero false positives. This is a trivial instance of abstract interpretation (Cousot & Cousot, POPL 1977) over a {pure, effectful} lattice."
+    },
+    {
+      "opinion": "Effect-TS construction is always pure (Tier 1b)",
+      "rationale": "Effect<A,E,R> values are inert descriptions, not computations. This is referential transparency by design — the same guarantee as Haskell's IO monad. Even Effect.sync(() => sideEffect()) is pure at the construction level; the thunk is not invoked until a run* function executes it. Effect.runSync/runPromise/runFork are explicitly EXCLUDED from the pure set."
+    },
+    {
+      "opinion": "Spread arguments are categorically rejected",
+      "rationale": "Pantagruel has no varargs. Spread cannot be resolved to fixed arity statically."
+    },
+    {
+      "opinion": "Purity oracle lives in a dedicated module (src/purity.ts)",
+      "rationale": "The allowlist data is large, the concern is self-contained, and it can grow independently (Tier 2 body inspection in a future milestone). Clean separation from translation logic."
+    },
+    {
+      "opinion": "Math.max(a, b) translates to 'max Math a b' (include receiver); namespace-stripping is a follow-up",
+      "rationale": "Including the receiver is sound under EUF — the solver treats 'max Math a b' as an uninterpreted application. Namespace-stripping (detecting Math/JSON/Object as pure namespaces and dropping the receiver) is a readability optimization documented as a known follow-up in the workstream doc."
+    },
+    {
+      "opinion": "Optional calls foo?.() are rejected with message pointing to milestone 6",
+      "rationale": "Optional chaining is scoped to milestone 6 (remaining operators and nullish). Rejecting here with a clear UNSUPPORTED message avoids partial implementation."
+    },
+    {
+      "opinion": "Effect-TS type detection uses EffectTypeId branded property (robust, not source-path heuristic)",
+      "rationale": "The EffectTypeId is a unique symbol branded on every Effect<A,E,R> type. Detecting it via the TypeChecker's structural type resolution is version-resilient and unforgeable. Source-file path matching (checking for 'effect/' in node_modules) is fragile across monorepo layouts and package managers."
+    },
+    {
+      "opinion": "checker (ts.TypeChecker) is a required parameter on expressionHasSideEffects, not optional",
+      "rationale": "The TypeChecker is a fundamental component needed for type-based purity analysis, guard detection, and future milestones. Making it required (not optional) ensures all call sites provide it and prevents silent degradation to the conservative path. All current callers either have checker in scope or are reachable from translateBody which has it."
+    },
+    {
+      "opinion": "Arrow function bodies are checked for purity in higher-order array method callbacks",
+      "rationale": "arr.filter(x => foo(x)) is pure only if foo is in the allowlist. The purity oracle must recurse into arrow function bodies (both expression-bodied and block-bodied with single return) to check for side effects. Without this, higher-order array methods would always be classified as impure, defeating the purpose of including them in the allowlist."
+    }
+  ],
+
+  "patches": [
+    {
+      "number": 1,
+      "classification": "INFRA",
+      "title": "Add test fixtures and unit test stubs for general function calls",
+      "files": [
+        {
+          "path": "tools/ts2pant/tests/fixtures/constructs/expressions-calls.ts",
+          "action": "create",
+          "description": "Fixture file with exported functions exercising general call patterns: freeCall (2-arg), zeroArityCall (0-arg), nestedCalls, callInArithmetic, callWithPropArg, methodCall, callInComparison. Uses declare'd callees."
+        },
+        {
+          "path": "tools/ts2pant/tests/translate-body.test.mts",
+          "action": "modify",
+          "description": "Add skipped unit tests for translateCallExpr edge cases"
+        }
+      ],
+      "changes": [
+        "Create expressions-calls.ts with 7+ exported functions covering general call patterns",
+        "Each function uses declare'd callees with known signatures so type extraction produces correct declarations",
+        "Run npm run test:update-snapshots to generate initial snapshot expectations (UNSUPPORTED for general calls)",
+        "Add it.skip('translateCallExpr > should translate free function call as uninterpreted application') // PENDING: Patch 2",
+        "Add it.skip('translateCallExpr > should translate method call with receiver as first argument') // PENDING: Patch 2",
+        "Add it.skip('translateCallExpr > should translate zero-arity call as variable reference') // PENDING: Patch 2",
+        "Add it.skip('translateCallExpr > should reject spread arguments with UNSUPPORTED') // PENDING: Patch 2"
+      ],
+      "testStubsIntroduced": [
+        "translateCallExpr > should translate free function call as uninterpreted application",
+        "translateCallExpr > should translate method call with receiver as first argument",
+        "translateCallExpr > should translate zero-arity call as variable reference",
+        "translateCallExpr > should reject spread arguments with UNSUPPORTED"
+      ],
+      "testStubsImplemented": null,
+      "spec": "module TS2PANT_GENERAL_CALLS_PATCH_1.\n\n> Test fixtures and stubs only. No behavioral invariants.\n\nCallExpression.\n\n---\n"
+    },
+    {
+      "number": 2,
+      "classification": "BEHAVIOR",
+      "title": "Implement general function call translation via EUF encoding",
+      "files": [
+        {
+          "path": "tools/ts2pant/src/translate-body.ts",
+          "action": "modify",
+          "description": "Extend translateCallExpr with general call handlers after special cases"
+        },
+        {
+          "path": "tools/ts2pant/tests/translate-body.test.mts",
+          "action": "modify",
+          "description": "Unskip and implement unit tests for general call translation"
+        },
+        {
+          "path": "tools/ts2pant/tests/constructs.test.mts.snapshot",
+          "action": "modify",
+          "description": "Snapshot expectations update — general calls now produce translated output"
+        }
+      ],
+      "changes": [
+        "In translateCallExpr, INSIDE the ts.isPropertyAccessExpression block (after .includes/.filter/.map), add general method call handler: reject spread args, translate receiver and args via translateBodyExpr, return ast.app(ast.var(methodName), [receiver, ...translatedArgs])",
+        "In translateCallExpr, AFTER the property access block, add general free function call handler for ts.isIdentifier callees: reject spread args, if 0 args return ast.var(fnName) (using paramNames mapping), else translate args and return ast.app(ast.var(fnName), translatedArgs)",
+        "Keep final return { unsupported: expr.getText() } for non-identifier, non-property-access callees (computed calls, tagged templates, etc.)",
+        "Unskip and implement 4 unit tests: free call → ast.app, method call → receiver as first arg, zero-arity → ast.var, spread → unsupported",
+        "Run npm run test:update-snapshots — expressions-calls.ts expectations change from UNSUPPORTED to Pantagruel; unsupported.ts expectations for callInReturn/bubbleNegation/bubbleCondition also change"
+      ],
+      "testStubsIntroduced": null,
+      "testStubsImplemented": [
+        "translateCallExpr > should translate free function call as uninterpreted application",
+        "translateCallExpr > should translate method call with receiver as first argument",
+        "translateCallExpr > should translate zero-arity call as variable reference",
+        "translateCallExpr > should reject spread arguments with UNSUPPORTED"
+      ],
+      "spec": "module TS2PANT_GENERAL_CALLS_PATCH_2.\n\n> General function calls translate as uninterpreted\n> function applications (EUF theory).\n> Ref: Kroening & Strichman, Decision Procedures, Ch. 4.\n\nCallExpression.\n\nspecial-cased? c: CallExpression => Bool.\nhas-spread? c: CallExpression => Bool.\ntranslated? c: CallExpression => Bool.\n\n---\n\nall c: CallExpression, special-cased? c |\n  translated? c.\n\nall c: CallExpression, ~special-cased? c, ~has-spread? c |\n  translated? c.\n"
+    },
+    {
+      "number": 3,
+      "classification": "INFRA",
+      "title": "Create purity oracle module with allowlist and Effect-TS tier",
+      "files": [
+        {
+          "path": "tools/ts2pant/src/purity.ts",
+          "action": "create",
+          "description": "Conservative purity oracle. Three tiers: (1a) known-pure builtins allowlist, (1b) Effect-TS type detection, (1c) conservative default. Exports isKnownPureCall."
+        },
+        {
+          "path": "tools/ts2pant/tests/purity.test.mts",
+          "action": "create",
+          "description": "Unit tests for purity oracle: allowlist entries, Effect-TS detection, conservative default, impure runners"
+        },
+        {
+          "path": "tools/ts2pant/tests/fixtures/constructs/expressions-const-pure-calls.ts",
+          "action": "create",
+          "description": "Fixture file for pure-call const inlining patterns: Math.max, String.indexOf, chained pure, impure-still-rejected"
+        }
+      ],
+      "changes": [
+        "Create src/purity.ts with isKnownPureCall(expr: ts.CallExpression, checker: ts.TypeChecker): boolean",
+        "Tier 1a — PURE_NAMESPACES: Set(['Math']) — all methods on these namespaces are pure",
+        "Tier 1a — PURE_METHODS_BY_TYPE: Map with entries for 'string' (indexOf, slice, substring, includes, startsWith, endsWith, trim, toLowerCase, toUpperCase, charAt, charCodeAt, split, replace, replaceAll, repeat, padStart, padEnd, match, search, concat, normalize), 'number' (toFixed, toPrecision, toString, toExponential, toLocaleString)",
+        "Tier 1a — PURE_ARRAY_METHODS: Set(['at', 'concat', 'flat', 'includes', 'indexOf', 'join', 'keys', 'lastIndexOf', 'slice', 'toString', 'values']) — non-mutating, no callback",
+        "Tier 1a — HO_PURE_ARRAY_METHODS: Set(['every', 'filter', 'find', 'findIndex', 'flatMap', 'map', 'reduce', 'reduceRight', 'some']) — pure if callback arg is side-effect-free. For arrow function callbacks, recurse into the body: expression-bodied arrows check the expression; block-bodied arrows with a single return check the return expression. Other callback shapes (function expressions, identifiers) are conservatively treated as impure",
+        "Tier 1b — isEffectReturningCall: check if the callee's return type has the EffectTypeId branded property (structural detection via checker). Known-pure Effect combinators: pipe, flow, identity from effect/Function. Known-IMPURE runners: Effect.runSync, runPromise, runSyncExit, runPromiseExit, runFork — if callee matches a runner, return false even though it may return Effect",
+        "Tier 1c — default: return false (conservative, treat as effectful)",
+        "Use ts.TypeFlags.StringLike and ts.TypeFlags.NumberLike for primitive type detection; checker.isArrayType for arrays",
+        "For namespace detection: check ts.isIdentifier(receiver) && PURE_NAMESPACES.has(receiver.text)",
+        "Create tests/purity.test.mts with unit tests covering each tier",
+        "Create expressions-const-pure-calls.ts fixture with 4+ exported functions: constMathMax (const m = Math.max(a,b); return m+1), constStringMethod (const i = s.indexOf('x'); return i), constChainedPure (const a = Math.abs(x); const b = Math.max(a, y); return b), constImpureCall (const r = unknownFn(x); return r — should still UNSUPPORTED)",
+        "Run npm run test:update-snapshots (pure-call fixtures will initially show rejected-const-binding expectations since purity oracle is not yet wired in)"
+      ],
+      "testStubsIntroduced": [
+        "isKnownPureCall > should return true for Math.max",
+        "isKnownPureCall > should return true for Math.abs",
+        "isKnownPureCall > should return true for String.prototype.indexOf",
+        "isKnownPureCall > should return true for Array.prototype.includes",
+        "isKnownPureCall > should return true for array.filter with pure callback",
+        "isKnownPureCall > should return false for array.filter with impure callback",
+        "isKnownPureCall > should return true for Effect-returning function",
+        "isKnownPureCall > should return false for Effect.runSync",
+        "isKnownPureCall > should return false for unknown function",
+        "isKnownPureCall > should return true for pipe from effect/Function",
+        "isKnownPureCall > should return true for array.map with pure arrow callback",
+        "isKnownPureCall > should return false for array.map with impure arrow callback",
+        "isKnownPureCall > should return true for array.filter with expression-bodied arrow",
+        "isKnownPureCall > should return false for array.filter with block-bodied arrow containing side effect"
+      ],
+      "testStubsImplemented": [
+        "isKnownPureCall > should return true for Math.max",
+        "isKnownPureCall > should return true for Math.abs",
+        "isKnownPureCall > should return true for String.prototype.indexOf",
+        "isKnownPureCall > should return true for Array.prototype.includes",
+        "isKnownPureCall > should return true for array.filter with pure callback",
+        "isKnownPureCall > should return false for array.filter with impure callback",
+        "isKnownPureCall > should return true for Effect-returning function",
+        "isKnownPureCall > should return false for Effect.runSync",
+        "isKnownPureCall > should return false for unknown function",
+        "isKnownPureCall > should return true for pipe from effect/Function",
+        "isKnownPureCall > should return true for array.map with pure arrow callback",
+        "isKnownPureCall > should return false for array.map with impure arrow callback",
+        "isKnownPureCall > should return true for array.filter with expression-bodied arrow",
+        "isKnownPureCall > should return false for array.filter with block-bodied arrow containing side effect"
+      ],
+      "spec": "module TS2PANT_GENERAL_CALLS_PATCH_3.\n\n> Purity oracle: conservative syntactic effect analysis.\n> Ref: Cousot & Cousot, Abstract Interpretation, POPL 1977.\n> Trivial instance: lattice {pure, effectful}, default = effectful.\n\nCallExpression.\nPurityTier.\n\nbuiltin-allowlist => PurityTier.\neffect-ts-aware => PurityTier.\nconservative-default => PurityTier.\n\ntier c: CallExpression => PurityTier.\npure? c: CallExpression => Bool.\n\n---\n\nall c: CallExpression, tier c = builtin-allowlist |\n  pure? c.\n\nall c: CallExpression, tier c = effect-ts-aware |\n  pure? c.\n\nall c: CallExpression, tier c = conservative-default |\n  ~pure? c.\n"
+    },
+    {
+      "number": 4,
+      "classification": "BEHAVIOR",
+      "title": "Wire purity oracle into expressionHasSideEffects for const inlining",
+      "files": [
+        {
+          "path": "tools/ts2pant/src/translate-body.ts",
+          "action": "modify",
+          "description": "Make checker a required parameter on expressionHasSideEffects. For CallExpression nodes, delegate to isKnownPureCall. Thread checker through all call sites — every caller must provide it."
+        },
+        {
+          "path": "tools/ts2pant/tests/constructs.test.mts.snapshot",
+          "action": "modify",
+          "description": "Snapshot expectations for expressions-const-pure-calls.ts change from rejected to translated output"
+        }
+      ],
+      "changes": [
+        "Import isKnownPureCall from ./purity.js in translate-body.ts",
+        "Change expressionHasSideEffects signature to (expr: ts.Expression, checker: ts.TypeChecker): boolean — checker is REQUIRED, not optional",
+        "In the ts.isCallExpression branch (line 528): delegate to isKnownPureCall. If known pure, check argument purity recursively: return expr.arguments.some(a => expressionHasSideEffects(a, checker)). If not known pure, return true",
+        "Thread checker through ALL recursive expressionHasSideEffects calls: binary expressions, prefix/postfix, and the forEachChild fallback",
+        "Update ALL call sites to pass checker: extractReturnExpression (thread from translateBody), collectAssignments (already has checker), isGuardStatement (already has checker), variableStatementHasNoSideEffects (add checker param), blockHasNoSideEffects (add checker param), isPureExpression in translate-signature.ts (add checker param if it calls expressionHasSideEffects, or inline the check)",
+        "Run npm run test:update-snapshots — expressions-const-pure-calls.ts expectations now show inlined-and-translated output for pure calls; impure call fixture still shows rejected",
+        "Verify existing const-binding tests in expressions-const-bindings.ts are unchanged (no calls in those fixtures)"
+      ],
+      "testStubsIntroduced": null,
+      "testStubsImplemented": null,
+      "spec": "module TS2PANT_GENERAL_CALLS_PATCH_4.\n\n> Purity oracle wired into const-binding inlining.\n> Pure calls in const initializers are now inlineable.\n\nConstBinding.\nCallExpression.\n\npure? c: CallExpression => Bool.\ninitializer b: ConstBinding => CallExpression.\ninlineable? b: ConstBinding => Bool.\n\n---\n\n> Const bindings with pure call initializers are inlineable.\nall b: ConstBinding, pure? (initializer b) |\n  inlineable? b.\n\n> Const bindings with impure initializers are not inlineable.\nall b: ConstBinding, ~pure? (initializer b) |\n  ~inlineable? b.\n"
+    },
+    {
+      "number": 5,
+      "classification": "INFRA",
+      "title": "Reorganize fixtures — move translatable patterns from unsupported.ts",
+      "files": [
+        {
+          "path": "tools/ts2pant/tests/fixtures/constructs/unsupported.ts",
+          "action": "modify",
+          "description": "Remove callInReturn, bubbleNegation, bubbleCondition and their declare'd callees (foo, bar)"
+        },
+        {
+          "path": "tools/ts2pant/tests/fixtures/constructs/expressions-calls.ts",
+          "action": "modify",
+          "description": "Add callInReturn, bubbleNegation, bubbleCondition moved from unsupported.ts"
+        },
+        {
+          "path": "tools/ts2pant/tests/constructs.test.mts.snapshot",
+          "action": "modify",
+          "description": "Snapshot keys move from unsupported.ts to expressions-calls.ts namespace"
+        }
+      ],
+      "changes": [
+        "Remove declare function foo(): string[] and declare function bar(): boolean from unsupported.ts",
+        "Remove callInReturn, bubbleNegation, bubbleCondition from unsupported.ts",
+        "Add them to expressions-calls.ts with their declare'd callees",
+        "Run npm run test:update-snapshots",
+        "Verify unsupported.ts retains: arrowWithLocals, destructuredParam, multiParamCallback, conditionalAssign, loopAssign"
+      ],
+      "testStubsIntroduced": null,
+      "testStubsImplemented": null,
+      "spec": "module TS2PANT_GENERAL_CALLS_PATCH_5.\n\n> Fixture reorganization only. No new invariants.\n\nCallExpression.\n\n---\n"
+    }
+  ],
+
+  "testMap": [
+    {
+      "testName": "translateCallExpr > should translate free function call as uninterpreted application",
+      "file": "tools/ts2pant/tests/translate-body.test.mts",
+      "stubPatch": 1,
+      "implPatch": 2
+    },
+    {
+      "testName": "translateCallExpr > should translate method call with receiver as first argument",
+      "file": "tools/ts2pant/tests/translate-body.test.mts",
+      "stubPatch": 1,
+      "implPatch": 2
+    },
+    {
+      "testName": "translateCallExpr > should translate zero-arity call as variable reference",
+      "file": "tools/ts2pant/tests/translate-body.test.mts",
+      "stubPatch": 1,
+      "implPatch": 2
+    },
+    {
+      "testName": "translateCallExpr > should reject spread arguments with UNSUPPORTED",
+      "file": "tools/ts2pant/tests/translate-body.test.mts",
+      "stubPatch": 1,
+      "implPatch": 2
+    },
+    {
+      "testName": "isKnownPureCall > should return true for Math.max",
+      "file": "tools/ts2pant/tests/purity.test.mts",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "isKnownPureCall > should return true for Math.abs",
+      "file": "tools/ts2pant/tests/purity.test.mts",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "isKnownPureCall > should return true for String.prototype.indexOf",
+      "file": "tools/ts2pant/tests/purity.test.mts",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "isKnownPureCall > should return true for Array.prototype.includes",
+      "file": "tools/ts2pant/tests/purity.test.mts",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "isKnownPureCall > should return true for array.filter with pure callback",
+      "file": "tools/ts2pant/tests/purity.test.mts",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "isKnownPureCall > should return false for array.filter with impure callback",
+      "file": "tools/ts2pant/tests/purity.test.mts",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "isKnownPureCall > should return true for Effect-returning function",
+      "file": "tools/ts2pant/tests/purity.test.mts",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "isKnownPureCall > should return false for Effect.runSync",
+      "file": "tools/ts2pant/tests/purity.test.mts",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "isKnownPureCall > should return false for unknown function",
+      "file": "tools/ts2pant/tests/purity.test.mts",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "isKnownPureCall > should return true for pipe from effect/Function",
+      "file": "tools/ts2pant/tests/purity.test.mts",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "isKnownPureCall > should return true for array.map with pure arrow callback",
+      "file": "tools/ts2pant/tests/purity.test.mts",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "isKnownPureCall > should return false for array.map with impure arrow callback",
+      "file": "tools/ts2pant/tests/purity.test.mts",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "isKnownPureCall > should return true for array.filter with expression-bodied arrow",
+      "file": "tools/ts2pant/tests/purity.test.mts",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "isKnownPureCall > should return false for array.filter with block-bodied arrow containing side effect",
+      "file": "tools/ts2pant/tests/purity.test.mts",
+      "stubPatch": 3,
+      "implPatch": 3
+    }
+  ],
+
+  "dependencyGraph": [
+    { "patch": 1, "classification": "INFRA", "dependsOn": [] },
+    { "patch": 2, "classification": "BEHAVIOR", "dependsOn": [1] },
+    { "patch": 3, "classification": "INFRA", "dependsOn": [] },
+    { "patch": 4, "classification": "BEHAVIOR", "dependsOn": [2, 3] },
+    { "patch": 5, "classification": "INFRA", "dependsOn": [2, 4] }
+  ],
+
+  "mergabilityChecklist": {
+    "featureFlagStrategyDocumented": true,
+    "earlyPatchesNonFunctional": true,
+    "testStubsInInfraPatches": true,
+    "testImplsColocated": true,
+    "testMapComplete": true,
+    "testMapImplPatchMatchesCode": true,
+    "behaviorPatchesMinimal": true,
+    "dependencyGraphOrdered": true,
+    "behaviorPatchesJustified": true
+  },
+
+  "mergabilityInsight": "3 of 5 patches are INFRA. Patches 1 and 3 are independent and can execute in parallel (two tracks). The 2 BEHAVIOR patches are tightly scoped: Patch 2 modifies one function (translateCallExpr), Patch 4 adds one parameter to expressionHasSideEffects and threads it. Total new code: ~1 new file (purity.ts ~150 LOC), ~60 lines changed in translate-body.ts, 2 new fixture files.",
+
+  "finalStateSpec": "module TS2PANT_GENERAL_CALLS.\n\n> After milestone 2: general call translation + purity oracle.\n> Ref: Kroening & Strichman, Decision Procedures, Ch. 4 (EUF).\n> Ref: Cousot & Cousot, Abstract Interpretation, POPL 1977.\n> Ref: Lucassen & Gifford, Polymorphic Effect Systems, POPL 1988.\n\nCallExpression.\nConstBinding.\nPurityTier.\n\nbuiltin-allowlist => PurityTier.\neffect-ts-aware => PurityTier.\nconservative-default => PurityTier.\n\nspecial-cased? c: CallExpression => Bool.\nhas-spread? c: CallExpression => Bool.\nidentifier-callee? c: CallExpression => Bool.\nprop-access-callee? c: CallExpression => Bool.\ntranslated? c: CallExpression => Bool.\nrejected? c: CallExpression => Bool.\ntier c: CallExpression => PurityTier.\npure? c: CallExpression => Bool.\ninitializer b: ConstBinding => CallExpression.\ninlineable? b: ConstBinding => Bool.\n\n---\n\n> Every call expression has a definite translation outcome.\nall c: CallExpression |\n  translated? c or rejected? c.\n\n> Special cases always translate.\nall c: CallExpression, special-cased? c |\n  translated? c.\n\n> General calls with known callee shape and no spread translate.\nall c: CallExpression, ~special-cased? c, ~has-spread? c |\n  (identifier-callee? c or prop-access-callee? c)\n  -> translated? c.\n\n> Spread in non-special calls is rejected.\nall c: CallExpression, has-spread? c, ~special-cased? c |\n  rejected? c.\n\n> Purity tiers: allowlist and effect-ts are pure.\nall c: CallExpression, tier c = builtin-allowlist |\n  pure? c.\n\nall c: CallExpression, tier c = effect-ts-aware |\n  pure? c.\n\n> Conservative default is not pure.\nall c: CallExpression, tier c = conservative-default |\n  ~pure? c.\n\n> Const bindings with pure call initializers are inlineable.\nall b: ConstBinding, pure? (initializer b) |\n  inlineable? b.\n\n> Const bindings with impure initializers are not inlineable.\nall b: ConstBinding, ~pure? (initializer b) |\n  ~inlineable? b.\n"
+}

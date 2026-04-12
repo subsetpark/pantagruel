@@ -1,0 +1,20 @@
+#!/bin/bash
+set -euo pipefail
+
+cd "$ONTON_WORKTREE_PATH"
+
+# Ensure an opam switch exists (worktrees may not inherit shell env)
+if ! opam switch show >/dev/null 2>&1; then
+  echo "No opam switch set. Creating one..."
+  opam init -y --bare 2>/dev/null || true
+  opam switch create 5.4.1 --no-switch 2>/dev/null || true
+fi
+eval "$(opam env)"
+
+# OCaml: build the project
+opam exec -- dune build
+
+# ts2pant: install node dependencies and build wasm assets
+cd tools/ts2pant
+npm install --silent
+opam exec -- npm run build:wasm
