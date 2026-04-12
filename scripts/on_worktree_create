@@ -5,11 +5,12 @@ cd "$ONTON_WORKTREE_PATH"
 
 # Ensure opam environment is available.
 # Worktrees share a single global opam switch — do NOT create per-worktree
-# switches (each is ~2GB). If no switch is set, select the default one.
+# switches (each is ~2GB). If no switch is set, select an existing one.
 # If opam has never been initialized on this machine, fail loudly — switch
 # creation takes 10+ minutes and should be done manually.
 if ! opam switch show >/dev/null 2>&1; then
-  if opam switch list --short 2>/dev/null | head -1 | read -r switch; then
+  switch=$(opam switch list --short 2>/dev/null | head -1)
+  if [ -n "$switch" ]; then
     echo "No active opam switch. Selecting '$switch'..."
     opam switch "$switch"
   else
