@@ -51,7 +51,7 @@ type binop =
   | OpImpl  (** -> implication *)
   | OpIff  (** <-> biconditional *)
   | OpEq  (** = *)
-  | OpNeq  (** != *)
+  | OpNeq  (** ~= (also !=) *)
   | OpLt  (** < *)
   | OpGt  (** > *)
   | OpLe  (** <= *)

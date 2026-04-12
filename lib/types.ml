@@ -120,5 +120,5 @@ let rec join t1 t2 : (ty, unify_error) result =
         | _ -> Error (TypeMismatch (t1, t2)))
 
 (** Check if two types are compatible (have a common supertype). Used for
-    symmetric checks like = and != operands. *)
+    symmetric checks like = and ~= operands. *)
 let compatible t1 t2 = Result.is_ok (join t1 t2)

@@ -70,7 +70,7 @@ String escape sequences: `\\`, `\"`, `\n`, `\t`, `\r`
 | `in` | Membership |
 | `subset` | Subset |
 | `=` | Equality |
-| `!=` | Inequality |
+| `~=` | Inequality (`!=` also accepted) |
 | `<` | Less than |
 | `>` | Greater than |
 | `<=` | Less or equal |
@@ -213,7 +213,7 @@ Summary of which relation governs each context:
 |----------|------------|
 | *S* ≤ *T* (subtype) | Argument passing, `in`, `subset`, overrides, variable shadowing |
 | *S* ⊔ *T* (join) | Arithmetic result types |
-| *S* ~ *T* (compatible) | `=` and `!=` operands |
+| *S* ~ *T* (compatible) | `=` and `~=` operands |
 
 #### Literals
 
@@ -273,7 +273,7 @@ Summary of which relation governs each context:
 
 #### Equality and Inequality
 
-*e₁* `=` *e₂* and *e₁* `!=` *e₂*:
+*e₁* `=` *e₂* and *e₁* `~=` *e₂*:
 
 1. The operand types must be **compatible**: *T₁* ⊔ *T₂* must exist.
 2. Result type: `Bool`.
@@ -579,7 +579,7 @@ x / y               // Division
 
 ```
 x = y               // Equality
-x != y              // Inequality
+x ~= y              // Inequality
 x < y               // Less than
 x > y               // Greater than
 x <= y              // Less or equal
@@ -734,7 +734,7 @@ From lowest to highest:
 3. `or` (disjunction)
 4. `and` (conjunction)
 5. `~` (negation)
-6. `= != < > <= >= in subset` (comparison/membership)
+6. `= ~= < > <= >= in subset` (comparison/membership)
 7. `+ -` (addition/subtraction)
 8. `* /` (multiplication/division)
 9. `#` (cardinality)
@@ -943,7 +943,7 @@ expr        ::= 'all' bindings '|' expr               // Universal
               | expr+                                  // Application
               | atom
 
-cmp         ::= '=' | '!=' | '<' | '>' | '<=' | '>=' | 'in' | 'subset'
+cmp         ::= '=' | '~=' | '<' | '>' | '<=' | '>=' | 'in' | 'subset'
 
 atom        ::= LOWER                                  // Variable
               | UPPER                                  // Domain

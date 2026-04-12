@@ -16,6 +16,7 @@ depends: [
   "crowbar" {with-test}
   "odoc" {with-doc}
 ]
+depopts: ["js_of_ocaml" "js_of_ocaml-ppx" "wasm_of_ocaml-compiler"]
 build: [
   ["dune" "subst"] {dev}
   [

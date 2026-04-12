@@ -432,7 +432,7 @@ op-sub => BinOp.
 op-mul => BinOp.
 op-div => BinOp.
 
-> Equality and comparison: =, !=, <, >, <=, >=
+> Equality and comparison: =, ~=, <, >, <=, >=
 
 op-eq => BinOp.
 op-neq => BinOp.

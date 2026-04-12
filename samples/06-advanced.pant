@@ -16,11 +16,11 @@ all k: Key, v: Value | mapping[k |-> v] k = v.
 
 > Override preserves other values
 all k1: Key, k2: Key, v: Value |
-    k1 != k2 -> mapping[k1 |-> v] k2 = mapping k2.
+    k1 ~= k2 -> mapping[k1 |-> v] k2 = mapping k2.
 
 > Override doesn't affect other keys
 all k1: Key, k2: Key, v: Value |
-    k1 != k2 -> mapping[k1 |-> v] k2 = mapping k2.
+    k1 ~= k2 -> mapping[k1 |-> v] k2 = mapping k2.
 
 where
 

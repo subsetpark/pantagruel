@@ -343,7 +343,7 @@ let string_of_token = function
   | Parser.ARROW -> "'->'"
   | Parser.IFF -> "'<->'"
   | Parser.EQ -> "'='"
-  | Parser.NEQ -> "'!='"
+  | Parser.NEQ -> "'~='"
   | Parser.LT -> "'<'"
   | Parser.GT -> "'>'"
   | Parser.LE -> "'<='"

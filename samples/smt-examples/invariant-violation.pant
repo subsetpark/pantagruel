@@ -15,4 +15,4 @@ where
 Accounts ~> Withdraw @ a: Account, amount: Nat.
 ---
 balance' a = balance a - amount.
-all b: Account | b != a -> balance' b = balance b.
+all b: Account | b ~= a -> balance' b = balance b.
