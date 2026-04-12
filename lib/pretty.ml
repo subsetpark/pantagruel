@@ -40,7 +40,7 @@ let pp_binop fmt = function
   | OpImpl -> pp_print_string fmt "->"
   | OpIff -> pp_print_string fmt "<->"
   | OpEq -> pp_print_char fmt '='
-  | OpNeq -> pp_print_string fmt "!="
+  | OpNeq -> pp_print_string fmt "~="
   | OpLt -> pp_print_char fmt '<'
   | OpGt -> pp_print_char fmt '>'
   | OpLe -> pp_print_string fmt "<="

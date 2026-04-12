@@ -115,7 +115,7 @@ exports[`expressions-comparison.ts > lte 1`] = `
 `;
 
 exports[`expressions-comparison.ts > neq 1`] = `
-"module Neq.\\n\\nneq a: Int, b: Int => Bool.\\n\\n---\\n\\nneq a b = (a != b).\\n"
+"module Neq.\\n\\nneq a: Int, b: Int => Bool.\\n\\n---\\n\\nneq a b = (a ~= b).\\n"
 `;
 
 exports[`expressions-literals.ts > fortyTwo 1`] = `

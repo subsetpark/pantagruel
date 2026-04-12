@@ -66,7 +66,7 @@ let test_binop_eq () =
     (pp (Ast.EBinop (OpEq, EVar (Lower "a"), EVar (Lower "b"))))
 
 let test_binop_neq () =
-  check string "neq" "a != b"
+  check string "neq" "a ~= b"
     (pp (Ast.EBinop (OpNeq, EVar (Lower "a"), EVar (Lower "b"))))
 
 let test_binop_lt () =
