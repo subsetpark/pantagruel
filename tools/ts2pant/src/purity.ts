@@ -156,8 +156,11 @@ const HO_PURE_ARRAY_METHODS: ReadonlySet<string> = new Set([
 // Standard name: Callee symbol resolution (Dietl et al., ICSE 2011).
 // The effect library's type declarations serve as implicit @Pure annotations.
 // We verify each call by tracing the callee symbol back to its declaration
-// file. If it originates from the `effect` package and is not in the impure
-// set, the library's referential transparency guarantee applies.
+// file. Only exports explicitly listed in the pure allowlist are accepted.
+//
+// Approach: Explicit allowlist (not denylist). Only Effect-TS exports with
+// known purity guarantees are listed. Unknown exports default to impure,
+// consistent with the conservative must-analysis principle.
 //
 // Fallback: bare-name matching for pipe/flow/identity with argument purity
 // checking, for test environments where the `effect` package is not installed.
@@ -171,24 +174,228 @@ const EFFECT_PURE_COMBINATORS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Known-impure Effect-TS exports — runners and mutable allocators.
+ * Explicit allowlist of known-pure Effect-TS exports, keyed by module.
  *
- * Runners (@category Running Effects): execute an Effect, producing side effects.
- * Mutable allocators: create synchronization primitives with observable state.
+ * Only exports listed here are classified as pure. Unknown exports default
+ * to impure (conservative). This is an allowlist, not a denylist — adding
+ * a new Effect-TS version's exports requires updating this list.
+ *
+ * Source: Effect-TS API docs, @category annotations in Effect.d.ts.
+ * All constructors and combinators that return Effect<A,E,R> are pure
+ * (referential transparency by design). Runners and mutable allocators
+ * are excluded.
  */
-const EFFECT_IMPURE_EXPORTS: ReadonlySet<string> = new Set([
-  // Runners
-  "runSync",
-  "runSyncExit",
-  "runPromise",
-  "runPromiseExit",
-  "runFork",
-  "runCallback",
-  // Mutable allocators
-  "makeSemaphore",
-  "unsafeMakeSemaphore",
-  "makeLatch",
-  "unsafeMakeLatch",
+const EFFECT_PURE_EXPORTS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  [
+    "Effect",
+    new Set([
+      // Constructors (@category Creating Effects)
+      "succeed",
+      "fail",
+      "sync",
+      "promise",
+      "tryPromise",
+      "failSync",
+      "failCause",
+      "failCauseSync",
+      "die",
+      "dieSync",
+      "dieMessage",
+      "gen",
+      "suspend",
+      "never",
+      "void",
+      "succeedNone",
+      "succeedSome",
+      "yieldNow",
+      // Mapping
+      "map",
+      "mapBoth",
+      "mapError",
+      "mapErrorCause",
+      "as",
+      "asSome",
+      "asSomeError",
+      "asVoid",
+      "flip",
+      "negate",
+      "merge",
+      // Sequencing
+      "flatMap",
+      "flatten",
+      "andThen",
+      "tap",
+      "tapBoth",
+      "tapDefect",
+      "tapError",
+      "tapErrorCause",
+      "tapErrorTag",
+      // Error handling
+      "catchAll",
+      "catchAllCause",
+      "catchAllDefect",
+      "catchIf",
+      "catchSome",
+      "catchSomeCause",
+      "catchSomeDefect",
+      "catchTag",
+      "catchTags",
+      "cause",
+      "eventually",
+      "ignore",
+      "ignoreLogged",
+      "retry",
+      "retryOrElse",
+      "sandbox",
+      "unsandbox",
+      "orDie",
+      "orDieWith",
+      // Fallback
+      "orElse",
+      "orElseFail",
+      "orElseSucceed",
+      "firstSuccessOf",
+      // Zipping
+      "zip",
+      "zipLeft",
+      "zipRight",
+      "zipWith",
+      // Matching
+      "match",
+      "matchCause",
+      "matchCauseEffect",
+      "matchEffect",
+      // Filtering
+      "filter",
+      "filterMap",
+      "filterOrDie",
+      "filterOrDieMessage",
+      "filterOrElse",
+      "filterOrFail",
+      // Conditional
+      "when",
+      "whenEffect",
+      "unless",
+      "unlessEffect",
+      "if",
+      // Collecting
+      "all",
+      "allSuccesses",
+      "allWith",
+      "forEach",
+      "reduce",
+      "reduceEffect",
+      "reduceRight",
+      // Outcome
+      "either",
+      "exit",
+      "option",
+      // Optional
+      "fromNullable",
+      "optionFromOptional",
+      // Condition checking
+      "every",
+      "exists",
+      "isFailure",
+      "isSuccess",
+      "liftPredicate",
+      // Do notation
+      "Do",
+      "bind",
+      "bindAll",
+      "bindTo",
+      // Context/provide
+      "provide",
+      "provideService",
+      "provideServiceEffect",
+      "contextWith",
+      "contextWithEffect",
+      "mapInputContext",
+      "updateService",
+      // Timing
+      "delay",
+      "sleep",
+      "timed",
+      "timeout",
+      "timeoutFail",
+      "timeoutFailCause",
+      "timeoutTo",
+      // Repetition
+      "repeat",
+      "repeatN",
+      "repeatOrElse",
+      "forever",
+      "iterate",
+      "loop",
+      "schedule",
+      // Racing
+      "race",
+      "raceAll",
+      "raceFirst",
+      "raceWith",
+      // Validation
+      "validate",
+      "validateAll",
+      "validateFirst",
+      "validateWith",
+      // Scoping
+      "acquireRelease",
+      "acquireUseRelease",
+      "addFinalizer",
+      "ensuring",
+      "onError",
+      "onExit",
+      "scope",
+      "scoped",
+      // Logging (return Effect<void>)
+      "log",
+      "logDebug",
+      "logError",
+      "logFatal",
+      "logInfo",
+      "logTrace",
+      "logWarning",
+      // Tracing
+      "annotateCurrentSpan",
+      "currentSpan",
+      "withSpan",
+      // Interruption
+      "allowInterrupt",
+      "interrupt",
+      "interruptible",
+      "uninterruptible",
+      // Forking (returns Effect<Fiber>)
+      "fork",
+      "forkDaemon",
+      "forkScoped",
+      "forkAll",
+      // Caching
+      "cached",
+      "cachedWithTTL",
+      "once",
+      // Summarized
+      "summarized",
+      // Miscellaneous
+      "fn",
+      "partition",
+    ]),
+  ],
+  [
+    "Function",
+    new Set([
+      "pipe",
+      "flow",
+      "identity",
+      "dual",
+      "constTrue",
+      "constFalse",
+      "constVoid",
+      "constUndefined",
+      "absurd",
+      "hole",
+    ]),
+  ],
+  ["Pipeable", new Set(["pipe"])],
 ]);
 
 // ---------------------------------------------------------------------------
@@ -202,6 +409,19 @@ const EFFECT_IMPURE_EXPORTS: ReadonlySet<string> = new Set([
  * Returns `false` (conservative) for any unknown call.
  */
 export function isKnownPureCall(
+  expr: ts.CallExpression,
+  checker: ts.TypeChecker,
+): boolean {
+  try {
+    return isKnownPureCallInner(expr, checker);
+  } catch {
+    // TypeChecker can throw on malformed/incomplete ASTs.
+    // Conservative fallback: treat as effectful.
+    return false;
+  }
+}
+
+function isKnownPureCallInner(
   expr: ts.CallExpression,
   checker: ts.TypeChecker,
 ): boolean {
@@ -221,7 +441,7 @@ export function isKnownPureCall(
       return true;
     }
 
-    // Method on a typed receiver
+    // Method on a typed receiver (getTypeAtLocation may throw)
     const receiverType = checker.getTypeAtLocation(receiver);
 
     // String methods
@@ -257,26 +477,22 @@ export function isKnownPureCall(
         );
       }
     }
-
-    // Tier 1b: Effect-TS impure runners (early exit before symbol resolution)
-    if (EFFECT_IMPURE_EXPORTS.has(methodName)) {
-      return false;
-    }
   }
 
   // --- Tier 1b: Effect-TS symbol resolution ---
-  // Trace the callee symbol to its declaration file. If it originates from
-  // the `effect` package and is not an impure export, the library's
-  // referential transparency guarantee applies: constructing an Effect
-  // value is always pure; only running it causes effects.
+  // Trace the callee symbol to its declaration file. Only exports
+  // explicitly listed in EFFECT_PURE_EXPORTS are accepted as pure.
+  // Unknown effect exports default to impure (conservative).
   const effectExport = resolveEffectLibraryExport(expr.expression, checker);
   if (effectExport !== null) {
-    if (EFFECT_IMPURE_EXPORTS.has(effectExport.name)) {
-      return false;
+    const moduleAllowlist = EFFECT_PURE_EXPORTS.get(effectExport.module);
+    if (moduleAllowlist?.has(effectExport.name)) {
+      // Known-pure effect library export. Arguments are still eagerly
+      // evaluated, so check their purity.
+      return expr.arguments.every((arg) => expressionIsPure(arg, checker));
     }
-    // All non-impure effect library exports are pure constructors/combinators.
-    // Arguments are still eagerly evaluated, so check their purity.
-    return expr.arguments.every((arg) => expressionIsPure(arg, checker));
+    // Effect library export not in allowlist → conservative (impure)
+    return false;
   }
 
   // Tier 1b fallback: bare-name combinator matching for environments where
