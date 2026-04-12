@@ -923,10 +923,13 @@ function collectAssignments(
   paramNames: Map<string, string>,
   propositions: PropResult[],
   modifiedRules: Set<string>,
+  outerConstSubstitutions: Array<{ name: string; expr: OpaqueExpr }> = [],
 ): boolean {
   const ast = getAst();
   let hasUnsupportedMutation = false;
-  const constSubstitutions: Array<{ name: string; expr: OpaqueExpr }> = [];
+  const constSubstitutions: Array<{ name: string; expr: OpaqueExpr }> = [
+    ...outerConstSubstitutions,
+  ];
   const stmts = ts.isBlock(body) ? Array.from(body.statements) : [body];
 
   for (const stmt of stmts) {
@@ -1078,6 +1081,7 @@ function collectAssignments(
           paramNames,
           propositions,
           modifiedRules,
+          constSubstitutions,
         )
       ) {
         hasUnsupportedMutation = true;
@@ -1116,6 +1120,7 @@ function collectAssignments(
             paramNames,
             propositions,
             modifiedRules,
+            constSubstitutions,
           )
         ) {
           hasUnsupportedMutation = true;
@@ -1130,6 +1135,7 @@ function collectAssignments(
             paramNames,
             propositions,
             modifiedRules,
+            constSubstitutions,
           )
         ) {
           hasUnsupportedMutation = true;

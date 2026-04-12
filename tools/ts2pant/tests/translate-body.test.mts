@@ -1,7 +1,7 @@
 import { before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createSourceFileFromSource } from "../src/extract.js";
-import { loadAst } from "../src/pant-wasm.js";
+import { getAst, loadAst } from "../src/pant-wasm.js";
 import { translateBody } from "../src/translate-body.js";
 import { IntStrategy } from "../src/translate-types.js";
 
@@ -44,7 +44,12 @@ describe("unsupported patterns", () => {
     });
 
     assert.equal(props.length, 1);
-    assert.equal(props[0]?.kind, "equation");
+    const prop = props[0]!;
+    assert.equal(prop.kind, "equation");
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      assert.equal(ast.strExpr(prop.rhs), "(x + 1) * 2");
+    }
   });
 
   it("returns empty for bare return with no expression", () => {
