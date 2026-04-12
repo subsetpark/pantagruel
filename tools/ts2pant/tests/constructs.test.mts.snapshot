@@ -118,6 +118,30 @@ exports[`expressions-comparison.ts > neq 1`] = `
 "module Neq.\\n\\nneq a: Int, b: Int => Bool.\\n\\n---\\n\\nneq a b = (a ~= b).\\n"
 `;
 
+exports[`expressions-const-bindings.ts > chainedConst 1`] = `
+"module ChainedConst.\\n\\nchainedConst a: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: chainedConst \u2014 local bindings or multiple statements before return.\\n"
+`;
+
+exports[`expressions-const-bindings.ts > constInTernary 1`] = `
+"module ConstInTernary.\\n\\nconstInTernary a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: constInTernary \u2014 local bindings or multiple statements before return.\\n"
+`;
+
+exports[`expressions-const-bindings.ts > constWithPropAccess 1`] = `
+"module ConstWithPropAccess.\\n\\nAccount.\\nbalance a1: Account => Int.\\nconstWithPropAccess a: Account => Int.\\n\\n---\\n\\n> UNSUPPORTED: constWithPropAccess \u2014 local bindings or multiple statements before return.\\n"
+`;
+
+exports[`expressions-const-bindings.ts > effectfulConstRejected 1`] = `
+"module EffectfulConstRejected.\\n\\neffectfulConstRejected  => Int.\\n\\n---\\n\\n> UNSUPPORTED: effectfulConstRejected \u2014 local bindings or multiple statements before return.\\n"
+`;
+
+exports[`expressions-const-bindings.ts > letRejected 1`] = `
+"module LetRejected.\\n\\nletRejected  => Int.\\n\\n---\\n\\n> UNSUPPORTED: letRejected \u2014 local bindings or multiple statements before return.\\n"
+`;
+
+exports[`expressions-const-bindings.ts > simpleConst 1`] = `
+"module SimpleConst.\\n\\nsimpleConst a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: simpleConst \u2014 local bindings or multiple statements before return.\\n"
+`;
+
 exports[`expressions-literals.ts > fortyTwo 1`] = `
 "module FortyTwo.\\n\\nfortyTwo  => Int.\\n\\n---\\n\\nfortyTwo = 42.\\n"
 `;
@@ -164,6 +188,14 @@ exports[`functions-class.ts > Account.deposit 1`] = `
 
 exports[`functions-class.ts > Account.getBalance 1`] = `
 "module GetBalance.\\n\\ngetBalance a: Account => Int.\\n\\n---\\n\\ngetBalance a = balance a.\\n"
+`;
+
+exports[`functions-mutating-const.ts > depositWithConst 1`] = `
+"module DepositWithConst.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> DepositWithConst @ a: Account, amount: Int.\\n\\n---\\n\\nbalance' a = newBal.\\n"
+`;
+
+exports[`functions-mutating-const.ts > multiConstMutating 1`] = `
+"module MultiConstMutating.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> MultiConstMutating @ a: Account, amount: Int, rate: Int.\\n\\n---\\n\\nbalance' a = balance a - fee.\\n"
 `;
 
 exports[`functions-mutating.ts > deposit 1`] = `
