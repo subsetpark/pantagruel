@@ -1,7 +1,12 @@
+import { resolve } from "node:path";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import ts from "typescript";
-import { createSourceFileFromSource, getChecker } from "../src/extract.js";
+import {
+  createSourceFile,
+  createSourceFileFromSource,
+  getChecker,
+} from "../src/extract.js";
 import { isKnownPureCall } from "../src/purity.js";
 
 /**
@@ -281,5 +286,105 @@ describe("isKnownPureCall", () => {
       `),
       false,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Effect-TS symbol resolution tests (Tier 1b with real `effect` package)
+//
+// These tests use a real fixture file that imports from `effect`, so the
+// TypeChecker can resolve callee symbols back to node_modules/effect/.
+// This exercises the resolveEffectLibraryExport path (not the bare-name
+// fallback used in the declare-function tests above).
+// ---------------------------------------------------------------------------
+
+/**
+ * Find the first CallExpression inside a named exported function.
+ */
+function findCallInFunction(
+  sourceFile: ts.SourceFile,
+  funcName: string,
+): ts.CallExpression | undefined {
+  let result: ts.CallExpression | undefined;
+  function visit(node: ts.Node) {
+    if (result) return;
+    if (
+      ts.isFunctionDeclaration(node) &&
+      node.name?.text === funcName &&
+      node.body
+    ) {
+      // Find first call in this function's body
+      function findCall(n: ts.Node) {
+        if (result) return;
+        if (ts.isCallExpression(n)) {
+          result = n;
+          return;
+        }
+        ts.forEachChild(n, findCall);
+      }
+      ts.forEachChild(node.body, findCall);
+    }
+    ts.forEachChild(node, visit);
+  }
+  ts.forEachChild(sourceFile, visit);
+  return result;
+}
+
+describe("isKnownPureCall (Effect-TS symbol resolution)", () => {
+  const fixturePath = resolve(
+    import.meta.dirname,
+    "fixtures/effect-ts-purity.ts",
+  );
+  const sourceFile = createSourceFile(fixturePath);
+  const checker = getChecker(sourceFile);
+
+  function checkFixturePurity(funcName: string): boolean {
+    const callExpr = findCallInFunction(sourceFile.compilerNode, funcName);
+    if (!callExpr) {
+      throw new Error(`No CallExpression found in function ${funcName}`);
+    }
+    return isKnownPureCall(callExpr, checker);
+  }
+
+  // --- Pure constructors (symbol resolves to effect package) ---
+
+  it("Effect.succeed is pure (library constructor)", () => {
+    assert.equal(checkFixturePurity("effectSucceed"), true);
+  });
+
+  it("Effect.map is pure (library combinator)", () => {
+    assert.equal(checkFixturePurity("effectMap"), true);
+  });
+
+  it("Effect.flatMap is pure (library combinator)", () => {
+    assert.equal(checkFixturePurity("effectFlatMap"), true);
+  });
+
+  it("pipe from effect is pure (library combinator)", () => {
+    assert.equal(checkFixturePurity("effectPipe"), true);
+  });
+
+  it("Effect.sync is pure (library constructor)", () => {
+    assert.equal(checkFixturePurity("effectSync"), true);
+  });
+
+  it("Effect.fail is pure (library constructor)", () => {
+    assert.equal(checkFixturePurity("effectFail"), true);
+  });
+
+  // --- Impure runners ---
+
+  it("Effect.runSync is impure (runner)", () => {
+    assert.equal(checkFixturePurity("effectRunSync"), false);
+  });
+
+  it("Effect.runPromise is impure (runner)", () => {
+    assert.equal(checkFixturePurity("effectRunPromise"), false);
+  });
+
+  // --- User function returning Effect ---
+
+  it("user function returning Effect is impure (not a library export)", () => {
+    assert.equal(checkFixturePurity("userEffectReturning"), false);
   });
 });
