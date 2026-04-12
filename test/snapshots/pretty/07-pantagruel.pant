@@ -18,11 +18,11 @@ valid? d: Document, env: Env => Bool.
 
 > Every document contains at least one chapter.
 
-all doc: Document | #chapters doc >= 1.
+all doc: Document | #(chapters doc) >= 1.
 
 > Every chapter head contains at least one declaration.
 
-all doc: Document, c in chapters doc | #head c >= 1.
+all doc: Document, c in chapters doc | #(head c) >= 1.
 
 > Each chapter may contain at most one action.
 
@@ -66,7 +66,7 @@ all e: Expr, env: Env, is-app? e | infer e env = func-return (infer (app-func e)
 
 > Application arity must match the function's parameter count.
 
-all e: Expr, env: Env, is-app? e | #app-args e = #func-params (infer (app-func e) env).
+all e: Expr, env: Env, is-app? e | #(app-args e) = #(func-params (infer (app-func e) env)).
 
 > Tuple construction yields a product of the element types.
 
@@ -94,7 +94,7 @@ all e: Expr, env: Env, is-override? e | infer e env = term-type (override-name e
 
 > The overridden function must have exactly one parameter.
 
-all e: Expr, env: Env, is-override? e | #func-params (term-type (override-name e) env) = 1.
+all e: Expr, env: Env, is-override? e | #(func-params (term-type (override-name e) env)) = 1.
 
 > Quantifiers with Bool bodies are logical propositions.
 
@@ -269,15 +269,15 @@ proj-type t: Ty, k: Nat => Ty.
 
 > Every rule has the same number of parameter names as parameter types.
 
-all decl: Declaration, decl-kind decl = dk-rule | #rule-params decl = #rule-param-types decl.
+all decl: Declaration, decl-kind decl = dk-rule | #(rule-params decl) = #(rule-param-types decl).
 
 > The empty environment contains no type-namespace bindings.
 
-all name: Name | ~has-type? name empty-env.
+all name: Name | ~(has-type? name empty-env).
 
 > The empty environment contains no term-namespace bindings.
 
-all name: Name | ~has-term? name empty-env.
+all name: Name | ~(has-term? name empty-env).
 
 > Every type is a subtype of itself (reflexivity).
 
@@ -432,7 +432,7 @@ op-sub => BinOp.
 op-mul => BinOp.
 op-div => BinOp.
 
-> Equality and comparison: =, !=, <, >, <=, >=
+> Equality and comparison: =, ~=, <, >, <=, >=
 
 op-eq => BinOp.
 op-neq => BinOp.
@@ -474,11 +474,11 @@ unop-op e: Expr => UnOp.
 
 > Product types have at least two components.
 
-all t: Type, type-kind t = tk-product | #product-components t >= 2.
+all t: Type, type-kind t = tk-product | #(product-components t) >= 2.
 
 > Sum types have at least two components.
 
-all t: Type, type-kind t = tk-sum | #sum-components t >= 2.
+all t: Type, type-kind t = tk-sum | #(sum-components t) >= 2.
 
 where
 

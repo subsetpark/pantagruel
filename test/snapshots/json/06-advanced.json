@@ -227,6 +227,43 @@
           }
         },
         {
+          "doc": [ [ "Negation mixed with implication and conjunction" ] ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "i", "type": "Item" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "impl",
+                  "left": {
+                    "unop": {
+                      "op": "not",
+                      "arg": {
+                        "app": {
+                          "func": { "var": "available" },
+                          "args": [ { "var": "i" } ]
+                        }
+                      }
+                    }
+                  },
+                  "right": {
+                    "binop": {
+                      "op": "and",
+                      "left": { "bool": false },
+                      "right": {
+                        "app": {
+                          "func": { "var": "available" },
+                          "args": [ { "var": "i" } ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
           "doc": [ [ "Implication" ] ],
           "expr": {
             "forall": {

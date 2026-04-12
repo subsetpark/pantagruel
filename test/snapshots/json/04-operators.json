@@ -141,7 +141,7 @@
           }
         },
         {
-          "doc": [ [ "Comparison operators: =, !=, <, >, <=, >=" ] ],
+          "doc": [ [ "Comparison operators: =, ~=, <, >, <=, >=" ] ],
           "expr": {
             "forall": {
               "params": [ { "name": "i", "type": "Item" } ],

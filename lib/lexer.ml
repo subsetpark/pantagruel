@@ -223,6 +223,7 @@ let rec token_impl lexer =
     | "~>" ->
         lexer.in_action_label <- true;
         Parser.SQUIG_ARROW
+    | "~=" -> Parser.NEQ
     | '~' -> Parser.NOT
     | '\'' -> Parser.PRIME
     (* Single-char operators *)
@@ -342,7 +343,7 @@ let string_of_token = function
   | Parser.ARROW -> "'->'"
   | Parser.IFF -> "'<->'"
   | Parser.EQ -> "'='"
-  | Parser.NEQ -> "'!='"
+  | Parser.NEQ -> "'~='"
   | Parser.LT -> "'<'"
   | Parser.GT -> "'>'"
   | Parser.LE -> "'<='"

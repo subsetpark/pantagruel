@@ -8,9 +8,11 @@
     "ts2pant": "dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build:wasm": "node scripts/build-wasm.mjs",
+    "build": "npm run build:wasm && tsc",
     "start": "node dist/index.js",
-    "test": "vitest run",
+    "test": "npx tsx --test tests/*.test.mts",
+    "test:update-snapshots": "npx tsx --test --test-update-snapshots tests/*.test.mts",
     "lint": "biome check src",
     "lint:fix": "biome check --write src"
   },
@@ -22,6 +24,6 @@
   "devDependencies": {
     "@biomejs/biome": "^2.4.11",
     "@types/node": "^20.0.0",
-    "vitest": "^3.0.0"
+    "tsx": "^4.21.0"
   }
 }

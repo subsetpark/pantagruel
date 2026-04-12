@@ -40,7 +40,7 @@ let pp_binop fmt = function
   | OpImpl -> pp_print_string fmt "->"
   | OpIff -> pp_print_string fmt "<->"
   | OpEq -> pp_print_char fmt '='
-  | OpNeq -> pp_print_string fmt "!="
+  | OpNeq -> pp_print_string fmt "~="
   | OpLt -> pp_print_char fmt '<'
   | OpGt -> pp_print_char fmt '>'
   | OpLe -> pp_print_string fmt "<="
@@ -163,7 +163,7 @@ and pp_conjunction fmt = function
       pp_negation fmt e
 
 and pp_negation fmt = function
-  | EUnop (OpNot, e) -> fprintf fmt "~%a" pp_negation e
+  | EUnop (OpNot, e) -> fprintf fmt "~%a" pp_atom e
   | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
     | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
     | EBinop _
@@ -214,8 +214,8 @@ and pp_factor fmt = function
       pp_unary fmt e
 
 and pp_unary fmt = function
-  | EUnop (OpCard, e) -> fprintf fmt "#%a" pp_unary e
-  | EUnop (OpNeg, e) -> fprintf fmt "-%a" pp_unary e
+  | EUnop (OpCard, e) -> fprintf fmt "#%a" pp_atom e
+  | EUnop (OpNeg, e) -> fprintf fmt "-%a" pp_atom e
   | ( EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
     | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
     | EBinop _

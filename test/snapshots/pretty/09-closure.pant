@@ -4,4 +4,4 @@ ancestor b: Block => [Block] = closure parent.
 
 ---
 
-all b: Block | ~b in ancestor b.
+all b: Block | ~(b in ancestor b).

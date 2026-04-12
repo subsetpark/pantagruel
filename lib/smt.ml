@@ -1686,14 +1686,27 @@ let collect_conds_in_expr (e : expr) : cond_info list =
   walk [] e;
   List.rev !results
 
-(** Collect all cond expressions from a document *)
-let collect_conds_from_doc (doc : document) : cond_info list =
+(** Collect all cond expressions from classified chapters *)
+let collect_conds chapters : cond_info list =
   List.concat_map
-    (fun chapter ->
+    (fun c ->
+      let wrap_prop, props =
+        match c with
+        | Smt_doc.Invariant { head_bindings; propositions; checks } ->
+            ( (fun (p : expr located) ->
+                Smt_doc.bind_head_params head_bindings p),
+              propositions @ checks )
+        | Smt_doc.Action { params; guards; propositions; checks; _ } ->
+            ( (fun (p : expr located) ->
+                if params = [] && guards = [] then p
+                else { p with value = EForall (params, guards, p.value) }),
+              propositions @ checks )
+      in
       List.concat_map
-        (fun (prop : expr located) -> collect_conds_in_expr prop.value)
-        (chapter.body @ chapter.checks))
-    doc.chapters
+        (fun (prop : expr located) ->
+          collect_conds_in_expr (wrap_prop prop).value)
+        props)
+    chapters
 
 (** Build value terms for a cond exhaustiveness query. Only includes functions
     that appear in the cond guard expressions, applied to domain elements from
@@ -1923,7 +1936,7 @@ let generate_queries config env (doc : document) =
               ~steps:config.steps))
       invariants;
   (* Cond exhaustiveness queries *)
-  let conds = collect_conds_from_doc doc in
+  let conds = collect_conds chapters in
   List.iteri
     (fun index cond ->
       add (fun () ->

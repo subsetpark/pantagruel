@@ -519,7 +519,7 @@ A specification of the Pantagruel specification language.
 
 **op-div** ⇒ `BinOp`.
 
-> Equality and comparison: =, !=, <, >, <=, >=
+> Equality and comparison: =, ~=, <, >, <=, >=
 
 **op-eq** ⇒ `BinOp`.
 

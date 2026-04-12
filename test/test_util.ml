@@ -8,6 +8,12 @@ let parse str =
   let supplier = Lexer.menhir_token lexer in
   MenhirLib.Convert.Simplified.traditional2revised Parser.document supplier
 
+let parse_expr str =
+  let lexer = Lexer.create_from_string "<test>" str in
+  let supplier = Lexer.menhir_token lexer in
+  MenhirLib.Convert.Simplified.traditional2revised Parser.standalone_expr
+    supplier
+
 let parse_and_collect str =
   let doc = parse str in
   match

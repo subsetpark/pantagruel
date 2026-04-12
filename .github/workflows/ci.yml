@@ -60,13 +60,22 @@ jobs:
         with:
           ocaml-compiler: "5.4.1"
 
+      - name: Install binaryen
+        run: |
+          npm install -g binaryen
+
       - name: Install OCaml dependencies
         working-directory: .
-        run: opam install . --deps-only --with-test
+        run: |
+          opam install . --deps-only --with-test
+          opam install js_of_ocaml js_of_ocaml-ppx wasm_of_ocaml-compiler
 
       - name: Build pant
         working-directory: .
         run: opam exec -- dune build
+
+      - name: Build wasm for ts2pant
+        run: opam exec -- npm run build:wasm
 
       - uses: actions/setup-node@v4
         with:
@@ -84,4 +93,4 @@ jobs:
         run: npx biome ci src
 
       - name: Test
-        run: opam exec -- npx vitest run
+        run: opam exec -- npx tsx --test tests/*.test.mts

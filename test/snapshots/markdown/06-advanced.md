@@ -42,6 +42,10 @@ Advanced features: overrides, qualified names
 
 ∀ *i*: `Item` · **available** *i* ∨ ¬**available** *i*.
 
+> Negation mixed with implication and conjunction
+
+∀ *i*: `Item` · ¬**available** *i* → false ∧ **available** *i*.
+
 > Implication
 
 ∀ *i*: `Item` · false → **available** *i*.

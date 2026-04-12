@@ -15,14 +15,14 @@ all i: Item | in-stock i or ~in-stock i.
 all i: Item | in-stock i and true -> in-stock i.
 all i: Item | false -> in-stock i.
 
-> Comparison operators: =, !=, <, >, <=, >=
+> Comparison operators: =, ~=, <, >, <=, >=
 all i: Item | price i = price i.
 all i: Item | price i >= 0.0.
 count >= 0.
 discount < 1.0.
 discount > 0.0.
 discount <= 0.5.
-discount != 0.0.
+discount ~= 0.0.
 
 > Arithmetic operators: +, -, *, /
 all i: Item | price i - discount * price i >= 0.0.

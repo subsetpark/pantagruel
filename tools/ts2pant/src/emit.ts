@@ -9,8 +9,8 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import process from "node:process";
-import { renderExpr, renderProp } from "./pant-expr.js";
-import type { PantDocument } from "./types.js";
+import { getAst } from "./pant-wasm.js";
+import type { PantDocument, PropResult } from "./types.js";
 
 export interface CheckResult {
   passed: boolean;
@@ -27,6 +27,27 @@ export interface CheckItem {
 export interface CheckOptions {
   /** Working directory for dune exec. Defaults to process.cwd(). */
   projectRoot?: string;
+}
+
+function renderPropResult(prop: PropResult): string {
+  const ast = getAst();
+  switch (prop.kind) {
+    case "equation": {
+      const eq = ast.binop(ast.opEq(), prop.lhs, prop.rhs);
+      if (prop.quantifiers.length === 0) {
+        return ast.strExpr(eq);
+      }
+      return ast.strExpr(ast.forall(prop.quantifiers, [], eq));
+    }
+    case "unsupported":
+      return `> UNSUPPORTED: ${prop.reason}`;
+    case "raw":
+      return prop.text;
+    default: {
+      const _exhaustive: never = prop;
+      throw new Error(`Unhandled prop kind: ${JSON.stringify(_exhaustive)}`);
+    }
+  }
 }
 
 /**
@@ -49,7 +70,7 @@ export function emitDocument(doc: PantDocument): string {
         const params = decl.params
           .map((p) => `${p.name}: ${p.type}`)
           .join(", ");
-        const guard = decl.guard ? `, ${renderExpr(decl.guard)}` : "";
+        const guard = decl.guard ? `, ${getAst().strExpr(decl.guard)}` : "";
         lines.push(`${decl.name} ${params}${guard} => ${decl.returnType}.`);
         break;
       }
@@ -60,7 +81,7 @@ export function emitDocument(doc: PantDocument): string {
           const params = decl.params
             .map((p) => `${p.name}: ${p.type}`)
             .join(", ");
-          const guard = decl.guard ? `, ${renderExpr(decl.guard)}` : "";
+          const guard = decl.guard ? `, ${getAst().strExpr(decl.guard)}` : "";
           lines.push(`~> ${decl.label} @ ${params}${guard}.`);
         }
         break;
@@ -83,7 +104,7 @@ export function emitDocument(doc: PantDocument): string {
     lines.push("true.");
   } else {
     for (const prop of doc.propositions) {
-      lines.push(`${renderProp(prop)}.`);
+      lines.push(`${renderPropResult(prop)}.`);
     }
   }
 

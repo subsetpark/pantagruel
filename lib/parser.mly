@@ -60,8 +60,15 @@
 %token EOF
 
 %start <Ast.document> document
+%start <Ast.expr> standalone_expr
 
 %%
+
+(* Standalone expression: for parsing a single proposition from a string *)
+standalone_expr:
+  | e=expr DOT EOF { e }
+  | e=expr EOF { e }
+
 
 (* Document structure *)
 document:

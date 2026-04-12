@@ -7,7 +7,7 @@ score p: Player => Nat0.
 
 ---
 
-finished -> (all q: Player, q != winner | score winner > score q).
+finished -> (all q: Player, q ~= winner | score winner > score q).
 initially ~finished.
 initially all p: Player | score p = 0.
 

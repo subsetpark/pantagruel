@@ -1,7 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { before, describe, it } from "node:test";
+import assert from "node:assert/strict";
 import { createSourceFileFromSource } from "../src/extract.js";
+import { loadAst } from "../src/pant-wasm.js";
 import { translateBody } from "../src/translate-body.js";
 import { IntStrategy } from "../src/translate-types.js";
+
+before(async () => {
+  await loadAst();
+});
 
 // Tests for internal translateBody API edge cases not coverable via
 // exported fixture functions (see tests/fixtures/constructs/ for
@@ -19,7 +25,7 @@ describe("unsupported patterns", () => {
       strategy: IntStrategy,
     });
 
-    expect(props).toHaveLength(0);
+    assert.equal(props.length, 0);
   });
 
   it("returns unsupported for function with multiple non-guard statements", () => {
@@ -37,8 +43,8 @@ describe("unsupported patterns", () => {
       strategy: IntStrategy,
     });
 
-    expect(props).toHaveLength(1);
-    expect(props[0]?.kind).toBe("unsupported");
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
   });
 
   it("returns empty for bare return with no expression", () => {
@@ -54,7 +60,7 @@ describe("unsupported patterns", () => {
       strategy: IntStrategy,
     });
 
-    expect(props).toHaveLength(0);
+    assert.equal(props.length, 0);
   });
 
   it("returns unsupported for single non-translatable statement", () => {
@@ -71,7 +77,7 @@ describe("unsupported patterns", () => {
       strategy: IntStrategy,
     });
 
-    expect(props).toHaveLength(1);
-    expect(props[0]?.kind).toBe("unsupported");
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
   });
 });

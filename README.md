@@ -215,7 +215,7 @@ Arms are checked left to right. When `--check` is used, the checker verifies tha
 | Category | Operators |
 |----------|-----------|
 | Logical | `and`, `or`, `~` (negation), `->` (implication) |
-| Comparison | `=`, `!=`, `<`, `>`, `<=`, `>=` |
+| Comparison | `=`, `~=`, `<`, `>`, `<=`, `>=` |
 | Membership | `in`, `subset` |
 | Arithmetic | `+`, `-`, `*`, `/` |
 | Other | `#` (cardinality), `.N` (projection), `cond` (conditional) |
@@ -272,7 +272,7 @@ balance a: Account => Int.
 balance' a = balance a + amount.
 
 // Other accounts unchanged
-all other: Account | other != a -> balance' other = balance other.
+all other: Account | other ~= a -> balance' other = balance other.
 ```
 
 ### Data Structures
@@ -323,7 +323,7 @@ where
 Accounts ~> Withdraw @ a: Account, amount: Nat.
 ---
 balance' a = balance a - amount.
-all b: Account | b != a -> balance' b = balance b.
+all b: Account | b ~= a -> balance' b = balance b.
 ```
 
 ```bash

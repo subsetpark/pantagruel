@@ -27,5 +27,5 @@ Ctx ~> Create @ t: Thing, n: Nat0, ~active? t.
 active?' t.
 value' t = n.
 
-all t2: Thing, t2 != t | active?' t2 = active? t2.
-all t2: Thing, t2 != t | value' t2 = value t2.
+all t2: Thing, t2 ~= t | active?' t2 = active? t2.
+all t2: Thing, t2 ~= t | value' t2 = value t2.

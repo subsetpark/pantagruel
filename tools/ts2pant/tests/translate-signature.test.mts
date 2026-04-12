@@ -1,12 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { before, describe, it } from "node:test";
+import assert from "node:assert/strict";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
-import { renderExpr } from "../src/pant-expr.js";
+import { getAst, loadAst } from "../src/pant-wasm.js";
 import {
   classifyFunction,
   findFunction,
   translateSignature,
 } from "../src/translate-signature.js";
 import { IntStrategy, RealStrategy } from "../src/translate-types.js";
+
+before(async () => {
+  await loadAst();
+});
 
 // Tests for internal translateSignature APIs: classifyFunction, guard
 // expression structure, edge cases. See tests/fixtures/constructs/ for
@@ -31,7 +36,7 @@ describe("classifyFunction", () => {
     const sourceFile = createSourceFileFromSource(source);
     const { node } = findFunction(sourceFile, "getBalance");
     const checker = getChecker(sourceFile);
-    expect(classifyFunction(node, checker)).toBe("pure");
+    assert.equal(classifyFunction(node, checker), "pure");
   });
 
   it("classifies void function as mutating", () => {
@@ -43,7 +48,7 @@ describe("classifyFunction", () => {
     const sourceFile = createSourceFileFromSource(source);
     const { node } = findFunction(sourceFile, "reset");
     const checker = getChecker(sourceFile);
-    expect(classifyFunction(node, checker)).toBe("mutating");
+    assert.equal(classifyFunction(node, checker), "mutating");
   });
 
   it("classifies function with property assignment as mutating", () => {
@@ -56,7 +61,7 @@ describe("classifyFunction", () => {
     const sourceFile = createSourceFileFromSource(source);
     const { node } = findFunction(sourceFile, "setName");
     const checker = getChecker(sourceFile);
-    expect(classifyFunction(node, checker)).toBe("mutating");
+    assert.equal(classifyFunction(node, checker), "mutating");
   });
 });
 
@@ -69,7 +74,7 @@ describe("numeric strategy", () => {
     `;
     const result = translate(source, "double", RealStrategy);
 
-    expect(result.declaration).toEqual({
+    assert.deepEqual(result.declaration, {
       kind: "rule",
       name: "double",
       params: [{ name: "n", type: "Real" }],
@@ -89,10 +94,10 @@ describe("overloaded functions", () => {
     `;
     const sourceFile = createSourceFileFromSource(source);
     const { node } = findFunction(sourceFile, "add");
-    expect(node.body).toBeDefined();
+    assert.ok(node.body !== undefined);
     // Verify translateSignature uses the implementation (any params), not the first overload
     const result = translateSignature(sourceFile, "add", IntStrategy);
-    expect(result.declaration.params).toHaveLength(2);
+    assert.equal(result.declaration.params.length, 2);
   });
 });
 
@@ -107,7 +112,7 @@ describe("nested closure property assignment", () => {
     const sourceFile = createSourceFileFromSource(source);
     const { node } = findFunction(sourceFile, "makeResetter");
     const checker = getChecker(sourceFile);
-    expect(classifyFunction(node, checker)).toBe("pure");
+    assert.equal(classifyFunction(node, checker), "pure");
   });
 });
 
@@ -124,11 +129,11 @@ describe("guard expression structure", () => {
       }
     `;
     const result = translate(source, "withdraw");
-    expect(result.declaration.kind).toBe("action");
+    assert.equal(result.declaration.kind, "action");
     if (result.declaration.kind !== "action") {
       return;
     }
-    expect(renderExpr(result.declaration.guard!)).toBe("balance a >= amount");
+    assert.equal(getAst().strExpr(result.declaration.guard!), "balance a >= amount");
   });
 
   it("early-throw with negation produces correct guard expression", () => {
@@ -142,11 +147,11 @@ describe("guard expression structure", () => {
       }
     `;
     const result = translate(source, "withdraw");
-    expect(result.declaration.kind).toBe("action");
+    assert.equal(result.declaration.kind, "action");
     if (result.declaration.kind !== "action") {
       return;
     }
-    expect(renderExpr(result.declaration.guard!)).toBe("balance a >= amount");
+    assert.equal(getAst().strExpr(result.declaration.guard!), "balance a >= amount");
   });
 
   it("skips guard when if-condition has side effects (call)", () => {
@@ -162,11 +167,11 @@ describe("guard expression structure", () => {
       }
     `;
     const result = translate(source, "withdraw");
-    expect(result.declaration.kind).toBe("action");
+    assert.equal(result.declaration.kind, "action");
     if (result.declaration.kind !== "action") {
       return;
     }
-    expect(result.declaration.guard).toBeUndefined();
+    assert.equal(result.declaration.guard, undefined);
   });
 
   it("skips guard when negated if-condition has side effects", () => {
@@ -181,11 +186,11 @@ describe("guard expression structure", () => {
       }
     `;
     const result = translate(source, "withdraw");
-    expect(result.declaration.kind).toBe("action");
+    assert.equal(result.declaration.kind, "action");
     if (result.declaration.kind !== "action") {
       return;
     }
-    expect(result.declaration.guard).toBeUndefined();
+    assert.equal(result.declaration.guard, undefined);
   });
 
   it("guard detection stops at non-if statements", () => {
@@ -201,11 +206,11 @@ describe("guard expression structure", () => {
       }
     `;
     const result = translate(source, "process");
-    expect(result.declaration.kind).toBe("action");
+    assert.equal(result.declaration.kind, "action");
     if (result.declaration.kind !== "action") {
       return;
     }
-    expect(result.declaration.guard).toBeUndefined();
+    assert.equal(result.declaration.guard, undefined);
   });
 
   it("assert guard produces correct expression", () => {
@@ -220,11 +225,11 @@ describe("guard expression structure", () => {
       }
     `;
     const result = translate(source, "deposit");
-    expect(result.declaration.kind).toBe("action");
+    assert.equal(result.declaration.kind, "action");
     if (result.declaration.kind !== "action") {
       return;
     }
-    expect(renderExpr(result.declaration.guard!)).toBe("amount > 0");
+    assert.equal(getAst().strExpr(result.declaration.guard!), "amount > 0");
   });
 
   it("multiple assertion guards are combined with and", () => {
@@ -240,12 +245,12 @@ describe("guard expression structure", () => {
       }
     `;
     const result = translate(source, "deposit");
-    expect(result.declaration.kind).toBe("action");
+    assert.equal(result.declaration.kind, "action");
     if (result.declaration.kind !== "action") {
       return;
     }
-    expect(renderExpr(result.declaration.guard!)).toBe(
-      "(amount > 0) and (balance account >= 0)",
+    assert.equal(getAst().strExpr(result.declaration.guard!),
+      "amount > 0 and balance account >= 0",
     );
   });
 
@@ -262,12 +267,12 @@ describe("guard expression structure", () => {
       }
     `;
     const result = translate(source, "deposit");
-    expect(result.declaration.kind).toBe("action");
+    assert.equal(result.declaration.kind, "action");
     if (result.declaration.kind !== "action") {
       return;
     }
-    expect(renderExpr(result.declaration.guard!)).toBe(
-      "~(amount <= 0) and (balance account >= 0)",
+    assert.equal(getAst().strExpr(result.declaration.guard!),
+      "~(amount <= 0) and balance account >= 0",
     );
   });
 
@@ -281,11 +286,11 @@ describe("guard expression structure", () => {
       }
     `;
     const result = translate(source, "deposit");
-    expect(result.declaration.kind).toBe("action");
+    assert.equal(result.declaration.kind, "action");
     if (result.declaration.kind !== "action") {
       return;
     }
-    expect(result.declaration.guard).toBeUndefined();
+    assert.equal(result.declaration.guard, undefined);
   });
 });
 
@@ -302,11 +307,11 @@ describe("call-graph following guard expressions", () => {
       }
     `;
     const result = translate(source, "deposit");
-    expect(result.declaration.kind).toBe("action");
+    assert.equal(result.declaration.kind, "action");
     if (result.declaration.kind !== "action") {
       return;
     }
-    expect(renderExpr(result.declaration.guard!)).toBe("~(amount <= 0)");
+    assert.equal(getAst().strExpr(result.declaration.guard!), "~(amount <= 0)");
   });
 
   it("substitutes formal params with actual args", () => {
@@ -321,11 +326,11 @@ describe("call-graph following guard expressions", () => {
       }
     `;
     const result = translate(source, "deposit");
-    expect(result.declaration.kind).toBe("action");
+    assert.equal(result.declaration.kind, "action");
     if (result.declaration.kind !== "action") {
       return;
     }
-    expect(renderExpr(result.declaration.guard!)).toBe(
+    assert.equal(getAst().strExpr(result.declaration.guard!),
       "~((balance account) <= 0)",
     );
   });
@@ -345,11 +350,11 @@ describe("call-graph following guard expressions", () => {
       }
     `;
     const result = translate(source, "deposit");
-    expect(result.declaration.kind).toBe("action");
+    assert.equal(result.declaration.kind, "action");
     if (result.declaration.kind !== "action") {
       return;
     }
-    expect(renderExpr(result.declaration.guard!)).toBe("~(amount <= 0)");
+    assert.equal(getAst().strExpr(result.declaration.guard!), "~(amount <= 0)");
   });
 
   it("bails on recursive calls", () => {
@@ -365,11 +370,11 @@ describe("call-graph following guard expressions", () => {
       }
     `;
     const result = translate(source, "deposit");
-    expect(result.declaration.kind).toBe("action");
+    assert.equal(result.declaration.kind, "action");
     if (result.declaration.kind !== "action") {
       return;
     }
-    expect(result.declaration.guard).toBeUndefined();
+    assert.equal(result.declaration.guard, undefined);
   });
 });
 
@@ -388,12 +393,12 @@ describe("class method declarations", () => {
       }
     `;
     const result = translate(source, "withdraw");
-    expect(result.declaration.kind).toBe("action");
+    assert.equal(result.declaration.kind, "action");
     if (result.declaration.kind !== "action") {
       return;
     }
-    expect(renderExpr(result.declaration.guard!)).toBe("balance a >= amount");
-    expect(result.declaration.params[0]).toEqual({
+    assert.equal(getAst().strExpr(result.declaration.guard!), "balance a >= amount");
+    assert.deepEqual(result.declaration.params[0], {
       name: "a",
       type: "Account",
     });
@@ -413,10 +418,10 @@ describe("class method declarations", () => {
       }
     `;
     const result = translate(source, "withdraw");
-    expect(result.declaration.kind).toBe("action");
+    assert.equal(result.declaration.kind, "action");
     if (result.declaration.kind !== "action") {
       return;
     }
-    expect(result.declaration.guard).toBeUndefined();
+    assert.equal(result.declaration.guard, undefined);
   });
 });

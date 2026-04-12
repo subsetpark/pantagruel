@@ -1,14 +1,8 @@
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
-import {
-  Apply,
-  Binop,
-  Lit,
-  type PantExpr,
-  renderExpr,
-  Unop,
-  Var,
-} from "./pant-expr.js";
+import type { NameRegistry } from "./name-registry.js";
+import type { OpaqueBinop, OpaqueExpr } from "./pant-ast.js";
+import { getAst } from "./pant-wasm.js";
 import { mapTsType, type NumericStrategy } from "./translate-types.js";
 import type { PantAction, PantDeclaration, PantRule } from "./types.js";
 
@@ -17,6 +11,8 @@ export type Classification = "pure" | "mutating";
 export interface TranslatedSignature {
   declaration: PantDeclaration;
   classification: Classification;
+  /** Map from TS parameter names to Pantagruel parameter names. */
+  paramNameMap: Map<string, string>;
 }
 
 /**
@@ -180,7 +176,7 @@ export function extractAssertionGuard(
   call: ts.CallExpression,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
-): PantExpr | undefined {
+): OpaqueExpr | undefined {
   const paramIndex = isAssertionCall(checker, call);
   if (paramIndex === null) {
     return undefined;
@@ -262,6 +258,8 @@ function buildSubstitutionMap(
   strategy: NumericStrategy,
   callerParamNames: Map<string, string>,
 ): Map<string, string> | null {
+  const ast = getAst();
+
   if (call.arguments.some(ts.isSpreadElement)) {
     return null;
   }
@@ -282,11 +280,9 @@ function buildSubstitutionMap(
       strategy,
       callerParamNames,
     );
-    const rendered = renderExpr(actual);
-    const safeRendered =
-      actual.kind === "var" || actual.kind === "literal"
-        ? rendered
-        : `(${rendered})`;
+    const rendered = ast.strExpr(actual);
+    // Heuristic: if the rendered string contains spaces, it's compound and needs parens
+    const safeRendered = /\s/u.test(rendered) ? `(${rendered})` : rendered;
     innerMap.set(formal.name.text, safeRendered);
   }
   return innerMap;
@@ -302,7 +298,7 @@ function followGuards(
   strategy: NumericStrategy,
   callerParamNames: Map<string, string>,
   visited: Set<ts.Node>,
-): PantExpr[] {
+): OpaqueExpr[] {
   const target = resolveCallTarget(call, checker);
   if (!target) {
     return [];
@@ -481,8 +477,9 @@ function scanBodyForGuards(
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
   visited: Set<ts.Node>,
-): PantExpr[] {
-  const guards: PantExpr[] = [];
+): OpaqueExpr[] {
+  const ast = getAst();
+  const guards: OpaqueExpr[] = [];
 
   for (const stmt of body.statements) {
     // Pattern: call expression (assertion or followable call)
@@ -552,8 +549,8 @@ function scanBodyForGuards(
         continue;
       }
       guards.push(
-        Unop(
-          "~",
+        ast.unop(
+          ast.opNot(),
           translateExpr(stmt.expression, checker, strategy, paramNames),
         ),
       );
@@ -650,7 +647,9 @@ export function detectGuard(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
-): PantExpr | undefined {
+): OpaqueExpr | undefined {
+  const ast = getAst();
+
   if (!node.body) {
     return undefined;
   }
@@ -668,7 +667,7 @@ export function detectGuard(
   if (guards.length === 0) {
     return undefined;
   }
-  return guards.reduce((acc, g) => Binop("and", acc, g));
+  return guards.reduce((acc, g) => ast.binop(ast.opAnd(), acc, g));
 }
 
 function blockThrows(node: ts.Statement): boolean {
@@ -699,42 +698,44 @@ function blockThrows(node: ts.Statement): boolean {
 }
 
 /**
- * Translate a TypeScript expression to a PantExpr AST node (best-effort).
+ * Translate a TypeScript expression to an opaque Pantagruel AST node (best-effort).
  */
 export function translateExpr(
   expr: ts.Expression,
   _checker: ts.TypeChecker,
   _strategy: NumericStrategy,
   paramNames: Map<string, string>,
-): PantExpr {
-  // Property access: a.balance -> Apply("balance", obj)
+): OpaqueExpr {
+  const ast = getAst();
+
+  // Property access: a.balance -> app(var("balance"), [obj])
   if (ts.isPropertyAccessExpression(expr)) {
     const obj = translateExpr(expr.expression, _checker, _strategy, paramNames);
-    return Apply(expr.name.text, obj);
+    return ast.app(ast.var(expr.name.text), [obj]);
   }
 
-  // Binary expression: a >= b -> Binop(">=", a, b)
+  // Binary expression: a >= b -> binop(opGe(), a, b)
   if (ts.isBinaryExpression(expr)) {
     const left = translateExpr(expr.left, _checker, _strategy, paramNames);
     const right = translateExpr(expr.right, _checker, _strategy, paramNames);
     const op = translateOperator(expr.operatorToken.kind);
-    if (op === "?") {
-      return Lit(expr.getText());
+    if (op === null) {
+      return ast.var(expr.getText());
     }
-    return Binop(op, left, right);
+    return ast.binop(op, left, right);
   }
 
-  // Prefix unary: !x -> Unop("~", x), -x -> Unop("-", x)
+  // Prefix unary: !x -> unop(opNot(), x), -x -> unop(opNeg(), x)
   if (ts.isPrefixUnaryExpression(expr)) {
     if (expr.operator === ts.SyntaxKind.ExclamationToken) {
-      return Unop(
-        "~",
+      return ast.unop(
+        ast.opNot(),
         translateExpr(expr.operand, _checker, _strategy, paramNames),
       );
     }
     if (expr.operator === ts.SyntaxKind.MinusToken) {
-      return Unop(
-        "-",
+      return ast.unop(
+        ast.opNeg(),
         translateExpr(expr.operand, _checker, _strategy, paramNames),
       );
     }
@@ -747,58 +748,59 @@ export function translateExpr(
 
   // `this` keyword
   if (expr.kind === ts.SyntaxKind.ThisKeyword) {
-    return Var(paramNames.get("this") ?? "this");
+    return ast.var(paramNames.get("this") ?? "this");
   }
 
   // Identifier — use param name mapping if available
   if (ts.isIdentifier(expr)) {
-    return Var(paramNames.get(expr.text) ?? expr.text);
+    return ast.var(paramNames.get(expr.text) ?? expr.text);
   }
 
   // Numeric literal
   if (ts.isNumericLiteral(expr)) {
-    return Lit(expr.text);
+    return ast.litNat(Number(expr.text));
   }
 
   // String literal
   if (ts.isStringLiteral(expr)) {
-    return Lit(`"${expr.text.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"')}"`);
+    return ast.litString(expr.text);
   }
 
   // Fallback
-  return Lit(expr.getText());
+  return ast.var(expr.getText());
 }
 
-export function translateOperator(kind: ts.SyntaxKind): string {
+export function translateOperator(kind: ts.SyntaxKind): OpaqueBinop | null {
+  const ast = getAst();
   switch (kind) {
     case ts.SyntaxKind.GreaterThanEqualsToken:
-      return ">=";
+      return ast.opGe();
     case ts.SyntaxKind.LessThanEqualsToken:
-      return "<=";
+      return ast.opLe();
     case ts.SyntaxKind.GreaterThanToken:
-      return ">";
+      return ast.opGt();
     case ts.SyntaxKind.LessThanToken:
-      return "<";
+      return ast.opLt();
     case ts.SyntaxKind.EqualsEqualsEqualsToken:
     case ts.SyntaxKind.EqualsEqualsToken:
-      return "=";
+      return ast.opEq();
     case ts.SyntaxKind.ExclamationEqualsEqualsToken:
     case ts.SyntaxKind.ExclamationEqualsToken:
-      return "~=";
+      return ast.opNeq();
     case ts.SyntaxKind.AmpersandAmpersandToken:
-      return "and";
+      return ast.opAnd();
     case ts.SyntaxKind.BarBarToken:
-      return "or";
+      return ast.opOr();
     case ts.SyntaxKind.PlusToken:
-      return "+";
+      return ast.opAdd();
     case ts.SyntaxKind.MinusToken:
-      return "-";
+      return ast.opSub();
     case ts.SyntaxKind.AsteriskToken:
-      return "*";
+      return ast.opMul();
     case ts.SyntaxKind.SlashToken:
-      return "/";
+      return ast.opDiv();
     default:
-      return "?";
+      return null;
   }
 }
 
@@ -809,12 +811,16 @@ function capitalize(s: string): string {
 export function shortParamName(
   typeName: string,
   existingNames: Set<string>,
+  registry?: NameRegistry,
 ): string {
   let name = typeName[0]!.toLowerCase();
   let suffix = 1;
-  while (existingNames.has(name)) {
+  while (existingNames.has(name) || registry?.isUsed(name)) {
     name = typeName[0]!.toLowerCase() + suffix;
     suffix++;
+  }
+  if (registry) {
+    registry.register(name);
   }
   return name;
 }
@@ -826,6 +832,7 @@ export function translateSignature(
   sourceFile: SourceFile,
   functionName: string,
   strategy: NumericStrategy,
+  registry?: NameRegistry,
 ): TranslatedSignature {
   const checker = sourceFile.getProject().getTypeChecker().compilerObject;
   const { node, className } = findFunction(sourceFile, functionName);
@@ -845,7 +852,7 @@ export function translateSignature(
 
   if (className) {
     const existingParamNames = new Set(sig.getParameters().map((p) => p.name));
-    const pName = shortParamName(className, existingParamNames);
+    const pName = shortParamName(className, existingParamNames, registry);
     params.push({ name: pName, type: className });
     paramNameMap.set("this", pName);
   }
@@ -856,8 +863,9 @@ export function translateSignature(
       checker,
       strategy,
     );
-    params.push({ name: param.name, type: paramType });
-    paramNameMap.set(param.name, param.name);
+    const pantName = registry ? registry.register(param.name) : param.name;
+    params.push({ name: pantName, type: paramType });
+    paramNameMap.set(param.name, pantName);
   }
 
   const guard = detectGuard(node, checker, strategy, paramNameMap);
@@ -873,7 +881,7 @@ export function translateSignature(
     if (guard) {
       decl.guard = guard;
     }
-    return { declaration: decl, classification };
+    return { declaration: decl, classification, paramNameMap };
   } else {
     const decl: PantAction = {
       kind: "action",
@@ -883,6 +891,6 @@ export function translateSignature(
     if (guard) {
       decl.guard = guard;
     }
-    return { declaration: decl, classification };
+    return { declaration: decl, classification, paramNameMap };
   }
 }

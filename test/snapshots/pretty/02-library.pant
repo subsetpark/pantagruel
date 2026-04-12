@@ -26,7 +26,7 @@ loan-holder l: Loan => User.
 > Available books have no borrower constraint
 > Unavailable books have a borrower
 
-all b: Book | ~available b -> borrower b in User.
+all b: Book | ~(available b) -> borrower b in User.
 
 > Each loan references a valid book and user
 

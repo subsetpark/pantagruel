@@ -26,7 +26,7 @@ Demonstration of all operators and expressions
 
 ∀ *i*: `Item` · false → **in-stock** *i*.
 
-> Comparison operators: =, !=, <, >, <=, >=
+> Comparison operators: =, ~=, <, >, <=, >=
 
 ∀ *i*: `Item` · **price** *i* = **price** *i*.
 

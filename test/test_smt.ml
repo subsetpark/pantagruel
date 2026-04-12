@@ -204,7 +204,7 @@ let test_classify_chapters () =
   let chapters = Smt.classify_chapters doc in
   check int "chapter count" 2 (List.length chapters);
   (match List.nth chapters 0 with
-  | Smt.Invariant { propositions; checks } ->
+  | Smt.Invariant { propositions; checks; _ } ->
       check int "invariant props" 1 (List.length propositions);
       check int "invariant checks" 0 (List.length checks)
   | Smt.Action _ -> fail "Expected invariant chapter");
@@ -1941,7 +1941,7 @@ let test_cond_exhaustiveness_query () =
        all s: Status | level s = cond level s >= 10 => 2, level s >= 5 => 1, \
        true => 0.\n"
   in
-  let conds = Smt.collect_conds_from_doc doc in
+  let conds = Smt.collect_conds (Smt_doc.classify_chapters doc) in
   check int "one cond found" 1 (List.length conds);
   let cond = List.hd conds in
   check int "three arms" 3 (List.length cond.cond_arms)
@@ -1956,7 +1956,7 @@ let test_cond_exhaustiveness_with_true () =
        ---\n\
        all s: Status | level s = cond true => 1.\n"
   in
-  let conds = Smt.collect_conds_from_doc doc in
+  let conds = Smt.collect_conds (Smt_doc.classify_chapters doc) in
   check int "one cond" 1 (List.length conds);
   let queries = Smt.generate_queries config env doc in
   let exh_queries =

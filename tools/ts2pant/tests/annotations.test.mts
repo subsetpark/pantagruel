@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest";
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import ts from "typescript";
 import {
   parseAnnotations,
@@ -39,9 +40,9 @@ describe("parseAnnotations", () => {
      * @pant result f x = x + 1
      `;
     const result = parseAnnotations(text);
-    expect(result.propositions.length).toBe(1);
-    expect(result.propositions[0].text).toBe("result f x = x + 1");
-    expect(result.typeOverrides.length).toBe(0);
+    assert.equal(result.propositions.length, 1);
+    assert.equal(result.propositions[0].text, "result f x = x + 1");
+    assert.equal(result.typeOverrides.length, 0);
   });
 
   it("extracts multiple @pant propositions", () => {
@@ -50,9 +51,9 @@ describe("parseAnnotations", () => {
      * @pant result f x <= 100
      `;
     const result = parseAnnotations(text);
-    expect(result.propositions.length).toBe(2);
-    expect(result.propositions[0].text).toBe("result f x >= 0");
-    expect(result.propositions[1].text).toBe("result f x <= 100");
+    assert.equal(result.propositions.length, 2);
+    assert.equal(result.propositions[0].text, "result f x >= 0");
+    assert.equal(result.propositions[1].text, "result f x <= 100");
   });
 
   it("extracts a multi-line @pant-begin / @pant-end block", () => {
@@ -63,8 +64,8 @@ describe("parseAnnotations", () => {
      * @pant-end
      `;
     const result = parseAnnotations(text);
-    expect(result.propositions.length).toBe(1);
-    expect(result.propositions[0].text).toBe("all x: Nat |\n  result f x >= 0");
+    assert.equal(result.propositions.length, 1);
+    assert.equal(result.propositions[0].text, "all x: Nat |\n  result f x >= 0");
   });
 
   it("extracts @pant-type overrides", () => {
@@ -73,12 +74,12 @@ describe("parseAnnotations", () => {
      * @pant-type rate: Real
      `;
     const result = parseAnnotations(text);
-    expect(result.propositions.length).toBe(0);
-    expect(result.typeOverrides.length).toBe(2);
-    expect(result.typeOverrides[0].name).toBe("amount");
-    expect(result.typeOverrides[0].type).toBe("Nat");
-    expect(result.typeOverrides[1].name).toBe("rate");
-    expect(result.typeOverrides[1].type).toBe("Real");
+    assert.equal(result.propositions.length, 0);
+    assert.equal(result.typeOverrides.length, 2);
+    assert.equal(result.typeOverrides[0].name, "amount");
+    assert.equal(result.typeOverrides[0].type, "Nat");
+    assert.equal(result.typeOverrides[1].name, "rate");
+    assert.equal(result.typeOverrides[1].type, "Real");
   });
 
   it("returns empty result for no annotations", () => {
@@ -88,8 +89,8 @@ describe("parseAnnotations", () => {
      * @returns the result
      `;
     const result = parseAnnotations(text);
-    expect(result.propositions.length).toBe(0);
-    expect(result.typeOverrides.length).toBe(0);
+    assert.equal(result.propositions.length, 0);
+    assert.equal(result.typeOverrides.length, 0);
   });
 
   it("skips empty @pant tags", () => {
@@ -97,7 +98,7 @@ describe("parseAnnotations", () => {
      * @pant
      `;
     const result = parseAnnotations(text);
-    expect(result.propositions.length).toBe(0);
+    assert.equal(result.propositions.length, 0);
   });
 
   it("handles mixed annotations and type overrides", () => {
@@ -110,12 +111,12 @@ describe("parseAnnotations", () => {
      * @pant-end
      `;
     const result = parseAnnotations(text);
-    expect(result.typeOverrides.length).toBe(1);
-    expect(result.typeOverrides[0].name).toBe("n");
-    expect(result.typeOverrides[0].type).toBe("Nat0");
-    expect(result.propositions.length).toBe(2);
-    expect(result.propositions[0].text).toBe("result factorial n >= 1");
-    expect(result.propositions[1].text).toBe(
+    assert.equal(result.typeOverrides.length, 1);
+    assert.equal(result.typeOverrides[0].name, "n");
+    assert.equal(result.typeOverrides[0].type, "Nat0");
+    assert.equal(result.propositions.length, 2);
+    assert.equal(result.propositions[0].text, "result factorial n >= 1");
+    assert.equal(result.propositions[1].text,
       "all m: Nat0 |\n  result factorial m >= 1",
     );
   });
@@ -126,7 +127,7 @@ describe("parseAnnotations", () => {
      * @pant-end
      `;
     const result = parseAnnotations(text);
-    expect(result.propositions.length).toBe(0);
+    assert.equal(result.propositions.length, 0);
   });
 });
 
@@ -146,8 +147,8 @@ function add(a: number, b: number): number {
 `;
     const { node, sourceFile } = firstFunction(source);
     const result = extractAnnotations(node, sourceFile);
-    expect(result.propositions.length).toBe(1);
-    expect(result.propositions[0].text).toBe("result add a b = a + b");
+    assert.equal(result.propositions.length, 1);
+    assert.equal(result.propositions[0].text, "result add a b = a + b");
   });
 
   it("returns empty for function with no JSDoc", () => {
@@ -156,8 +157,8 @@ function noop(): void {}
 `;
     const { node, sourceFile } = firstFunction(source);
     const result = extractAnnotations(node, sourceFile);
-    expect(result.propositions.length).toBe(0);
-    expect(result.typeOverrides.length).toBe(0);
+    assert.equal(result.propositions.length, 0);
+    assert.equal(result.typeOverrides.length, 0);
   });
 
   it("returns empty for function with plain (non-JSDoc) comment", () => {
@@ -167,7 +168,7 @@ function noop(): void {}
 `;
     const { node, sourceFile } = firstFunction(source);
     const result = extractAnnotations(node, sourceFile);
-    expect(result.propositions.length).toBe(0);
+    assert.equal(result.propositions.length, 0);
   });
 
   it("extracts @pant-type from JSDoc on a function", () => {
@@ -182,10 +183,10 @@ function withdraw(amount: number): number {
 `;
     const { node, sourceFile } = firstFunction(source);
     const result = extractAnnotations(node, sourceFile);
-    expect(result.typeOverrides.length).toBe(1);
-    expect(result.typeOverrides[0].name).toBe("amount");
-    expect(result.typeOverrides[0].type).toBe("Nat");
-    expect(result.propositions.length).toBe(1);
+    assert.equal(result.typeOverrides.length, 1);
+    assert.equal(result.typeOverrides[0].name, "amount");
+    assert.equal(result.typeOverrides[0].type, "Nat");
+    assert.equal(result.propositions.length, 1);
   });
 
   it("extracts multi-line block from JSDoc", () => {
@@ -202,8 +203,8 @@ function f(x: number): number {
 `;
     const { node, sourceFile } = firstFunction(source);
     const result = extractAnnotations(node, sourceFile);
-    expect(result.propositions.length).toBe(1);
-    expect(result.propositions[0].text).toContain("all x: Nat |");
-    expect(result.propositions[0].text).toContain("result f x > 0");
+    assert.equal(result.propositions.length, 1);
+    assert.ok(result.propositions[0].text.includes("all x: Nat |"));
+    assert.ok(result.propositions[0].text.includes("result f x > 0"));
   });
 });

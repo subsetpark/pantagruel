@@ -3697,7 +3697,7 @@
           "resolved": { "func": { "params": [], "return": "BinOp" } }
         },
         {
-          "doc": [ [ "Equality and comparison: =, !=, <, >, <=, >=" ] ],
+          "doc": [ [ "Equality and comparison: =, ~=, <, >, <=, >=" ] ],
           "kind": "rule",
           "name": "op-eq",
           "params": [],

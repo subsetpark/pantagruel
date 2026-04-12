@@ -1,11 +1,11 @@
 import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, it } from "node:test";
 import type { SourceFile } from "../src/extract.js";
 import { createSourceFile } from "../src/extract.js";
-import { buildDocument, emitDocument } from "./helpers.js";
+import { buildDocument, emitDocument } from "./helpers.mjs";
 
-const CONSTRUCTS_DIR = resolve(__dirname, "fixtures/constructs");
+const CONSTRUCTS_DIR = resolve(import.meta.dirname, "fixtures/constructs");
 
 /** Discover exported function names and class method names in a TS source file. */
 function discoverTestTargets(sourceFile: SourceFile): string[] {
@@ -49,10 +49,10 @@ for (const file of fixtureFiles) {
     }
 
     for (const funcName of targets) {
-      it(funcName, () => {
-        const doc = buildDocument(filePath, funcName);
+      it(funcName, async (t) => {
+        const doc = await buildDocument(filePath, funcName);
         const output = emitDocument(doc);
-        expect(output).toMatchSnapshot();
+        t.assert.snapshot(output);
       });
     }
   });

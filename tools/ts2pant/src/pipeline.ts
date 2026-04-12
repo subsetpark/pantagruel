@@ -1,6 +1,8 @@
 import type { SourceFile } from "ts-morph";
 import { extractFunctionAnnotations } from "./annotations.js";
 import { extractReferencedTypes, getChecker } from "./extract.js";
+import { NameRegistry } from "./name-registry.js";
+import { loadAst, loadParser, rewriteAnnotation } from "./pant-wasm.js";
 import { translateBody } from "./translate-body.js";
 import { translateSignature } from "./translate-signature.js";
 import { type NumericStrategy, translateTypes } from "./translate-types.js";
@@ -17,8 +19,14 @@ export interface PipelineOptions {
  * Build a PantDocument from a parsed SourceFile and function name.
  * Shared by the CLI entry point and the test helpers.
  */
-export function buildPantDocument(opts: PipelineOptions): PantDocument {
+export async function buildPantDocument(
+  opts: PipelineOptions,
+): Promise<PantDocument> {
   const { sourceFile, functionName, strategy, noBody } = opts;
+
+  // Ensure wasm AST module is loaded before any translation
+  await loadAst();
+
   const checker = getChecker(sourceFile);
 
   // Strip class qualifier for module name
@@ -26,16 +34,23 @@ export function buildPantDocument(opts: PipelineOptions): PantDocument {
     ? functionName.split(".", 2)[1]!
     : functionName;
 
-  // Extract and translate types
-  const extracted = extractReferencedTypes(sourceFile, functionName);
-  const typeDecls = translateTypes(extracted, checker, strategy);
+  // Document-wide name registry ensures unique variable names across
+  // type-derived rules and the main function's parameters.
+  // Register the function's own param names first (they keep natural names);
+  // type-derived accessor rules adapt with suffixes if there's a collision.
+  const registry = new NameRegistry();
 
-  // Translate signature
-  const { declaration: sigDecl } = translateSignature(
+  // Translate signature first to claim the function's param names
+  const { declaration: sigDecl, paramNameMap } = translateSignature(
     sourceFile,
     functionName,
     strategy,
+    registry,
   );
+
+  // Extract and translate types (type-derived param names adapt to registry)
+  const extracted = extractReferencedTypes(sourceFile, functionName);
+  const typeDecls = translateTypes(extracted, checker, strategy, registry);
   const declarations = [...typeDecls, sigDecl];
 
   const moduleName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
@@ -60,7 +75,21 @@ export function buildPantDocument(opts: PipelineOptions): PantDocument {
   // Annotations go to checks (entailment goals) — skip for skeleton docs
   if (!noBody && doc.propositions.length > 0) {
     const annotations = extractFunctionAnnotations(sourceFile, functionName);
-    const annotationProps = annotations.map((text) => ({ text }));
+
+    // Rewrite annotation variable names using the embedded Pantagruel parser.
+    // paramNameMap maps TS names → pant names; annotations use TS names.
+    const hasRenames = [...paramNameMap.entries()].some(([k, v]) => k !== v);
+    let annotationTexts: string[];
+    if (hasRenames) {
+      await loadParser();
+      annotationTexts = annotations.map((text) =>
+        rewriteAnnotation(text, paramNameMap),
+      );
+    } else {
+      annotationTexts = annotations;
+    }
+
+    const annotationProps = annotationTexts.map((text) => ({ text }));
     doc = { ...doc, checks: [...doc.checks, ...annotationProps] };
   }
 
