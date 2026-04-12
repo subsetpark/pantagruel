@@ -147,7 +147,12 @@ function translatePureBody(
   // Translate const binding initializers for inline substitution
   const substitutions: Array<{ name: string; expr: OpaqueExpr }> = [];
   for (const binding of extracted.bindings) {
-    const initResult = translateBodyExpr(binding.initializer, checker, strategy, paramNames);
+    const initResult = translateBodyExpr(
+      binding.initializer,
+      checker,
+      strategy,
+      paramNames,
+    );
     if (isBodyUnsupported(initResult)) {
       return [{ kind: "unsupported", reason: initResult.unsupported }];
     }
@@ -159,7 +164,12 @@ function translatePureBody(
     substitutions.push({ name: binding.name, expr: initExpr });
   }
 
-  const body = translateBodyExpr(extracted.returnExpr, checker, strategy, paramNames);
+  const body = translateBodyExpr(
+    extracted.returnExpr,
+    checker,
+    strategy,
+    paramNames,
+  );
 
   if (isBodyUnsupported(body)) {
     return [{ kind: "unsupported", reason: body.unsupported }];
@@ -185,7 +195,7 @@ function translatePureBody(
 
 interface ExtractedBody {
   bindings: Array<{ name: string; initializer: ts.Expression }>;
-  returnExpr: ts.Expression;
+  returnExpr: ts.Expression | ts.IfStatement;
 }
 
 /**
@@ -973,11 +983,7 @@ function collectAssignments(
             let initExpr = bodyExpr(initResult);
             // Apply all prior const substitutions to resolve chained references
             for (const prior of constSubstitutions) {
-              initExpr = ast.substituteBinder(
-                initExpr,
-                prior.name,
-                prior.expr,
-              );
+              initExpr = ast.substituteBinder(initExpr, prior.name, prior.expr);
             }
             constSubstitutions.push({ name, expr: initExpr });
           }
