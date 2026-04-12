@@ -119,27 +119,27 @@ exports[`expressions-comparison.ts > neq 1`] = `
 `;
 
 exports[`expressions-const-bindings.ts > chainedConst 1`] = `
-"module ChainedConst.\\n\\nchainedConst a: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: chainedConst \u2014 local bindings or multiple statements before return.\\n"
+"module ChainedConst.\\n\\nchainedConst a: Int => Int.\\n\\n---\\n\\nchainedConst a = a + 1.\\n"
 `;
 
 exports[`expressions-const-bindings.ts > constInTernary 1`] = `
-"module ConstInTernary.\\n\\nconstInTernary a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: constInTernary \u2014 local bindings or multiple statements before return.\\n"
+"module ConstInTernary.\\n\\nconstInTernary a: Int, b: Int => Int.\\n\\n---\\n\\nconstInTernary a b = (cond a + b > 0 => a + b, true => 0).\\n"
 `;
 
 exports[`expressions-const-bindings.ts > constWithPropAccess 1`] = `
-"module ConstWithPropAccess.\\n\\nAccount.\\nbalance a1: Account => Int.\\nconstWithPropAccess a: Account => Int.\\n\\n---\\n\\n> UNSUPPORTED: constWithPropAccess \u2014 local bindings or multiple statements before return.\\n"
+"module ConstWithPropAccess.\\n\\nAccount.\\nbalance a1: Account => Int.\\nconstWithPropAccess a: Account => Int.\\n\\n---\\n\\nconstWithPropAccess a = balance a + 1.\\n"
 `;
 
 exports[`expressions-const-bindings.ts > effectfulConstRejected 1`] = `
-"module EffectfulConstRejected.\\n\\neffectfulConstRejected  => Int.\\n\\n---\\n\\n> UNSUPPORTED: effectfulConstRejected \u2014 local bindings or multiple statements before return.\\n"
+"module EffectfulConstRejected.\\n\\neffectfulConstRejected  => Int.\\n\\n---\\n\\n> UNSUPPORTED: effectfulConstRejected — const binding with side-effectful initializer.\\n"
 `;
 
 exports[`expressions-const-bindings.ts > letRejected 1`] = `
-"module LetRejected.\\n\\nletRejected  => Int.\\n\\n---\\n\\n> UNSUPPORTED: letRejected \u2014 local bindings or multiple statements before return.\\n"
+"module LetRejected.\\n\\nletRejected  => Int.\\n\\n---\\n\\n> UNSUPPORTED: letRejected — let/var bindings not supported.\\n"
 `;
 
 exports[`expressions-const-bindings.ts > simpleConst 1`] = `
-"module SimpleConst.\\n\\nsimpleConst a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: simpleConst \u2014 local bindings or multiple statements before return.\\n"
+"module SimpleConst.\\n\\nsimpleConst a: Int, b: Int => Int.\\n\\n---\\n\\nsimpleConst a b = a + b.\\n"
 `;
 
 exports[`expressions-literals.ts > fortyTwo 1`] = `
@@ -191,11 +191,11 @@ exports[`functions-class.ts > Account.getBalance 1`] = `
 `;
 
 exports[`functions-mutating-const.ts > depositWithConst 1`] = `
-"module DepositWithConst.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> DepositWithConst @ a: Account, amount: Int.\\n\\n---\\n\\nbalance' a = newBal.\\n"
+"module DepositWithConst.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> DepositWithConst @ a: Account, amount: Int.\\n\\n---\\n\\nbalance' a = balance a + amount.\\n"
 `;
 
 exports[`functions-mutating-const.ts > multiConstMutating 1`] = `
-"module MultiConstMutating.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> MultiConstMutating @ a: Account, amount: Int, rate: Int.\\n\\n---\\n\\nbalance' a = balance a - fee.\\n"
+"module MultiConstMutating.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> MultiConstMutating @ a: Account, amount: Int, rate: Int.\\n\\n---\\n\\nbalance' a = balance a - amount * rate.\\n"
 `;
 
 exports[`functions-mutating.ts > deposit 1`] = `

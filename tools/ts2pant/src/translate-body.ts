@@ -15,6 +15,21 @@ import {
 import { mapTsType, type NumericStrategy } from "./translate-types.js";
 import type { PantDeclaration, PropResult } from "./types.js";
 
+// --- Const-binding inlining infrastructure (let-elimination) ---
+
+interface UniqueSupply {
+  next: () => number;
+}
+function makeUniqueSupply(): UniqueSupply {
+  let counter = 0;
+  return { next: () => counter++ };
+}
+
+interface ConstBinding {
+  tsName: string;
+  initializer: ts.Expression;
+}
+
 /** Generate a binder name not already used by params. */
 function freshBinder(paramNames: Map<string, string>): string {
   const used = new Set(paramNames.values());
@@ -138,17 +153,40 @@ function translatePureBody(
     return [];
   }
 
-  const returnExpr = extractReturnExpression(node.body, checker);
-  if (!returnExpr) {
+  const extracted = extractReturnExpression(node.body, checker);
+  if (!extracted) {
     const reason = describeRejectedBody(node.body, checker);
     return [{ kind: "unsupported", reason: `${functionName} — ${reason}` }];
   }
 
-  const body = translateBodyExpr(returnExpr, checker, strategy, paramNames);
+  const inlined = inlineConstBindings(
+    extracted.bindings.map((b) => ({
+      tsName: b.name,
+      initializer: b.initializer,
+    })),
+    checker,
+    strategy,
+    paramNames,
+    makeUniqueSupply(),
+  );
+  if ("error" in inlined) {
+    return [
+      { kind: "unsupported", reason: `${functionName} — ${inlined.error}` },
+    ];
+  }
+
+  const body = translateBodyExpr(
+    extracted.returnExpr,
+    checker,
+    strategy,
+    inlined.scopedParams,
+  );
 
   if (isBodyUnsupported(body)) {
     return [{ kind: "unsupported", reason: body.unsupported }];
   }
+
+  const rhs = inlined.applyTo(bodyExpr(body));
 
   const argExprs = params.map((p) => ast.var(p.name));
   const lhs = ast.app(ast.var(functionName), argExprs);
@@ -157,39 +195,77 @@ function translatePureBody(
       kind: "equation",
       quantifiers: [] as OpaqueParam[],
       lhs,
-      rhs: bodyExpr(body),
+      rhs,
     },
   ];
 }
 
+interface ExtractedBody {
+  bindings: Array<{ name: string; initializer: ts.Expression }>;
+  returnExpr: ts.Expression | ts.IfStatement;
+}
+
 /**
- * Extract the return expression from a function body.
+ * Extract the return expression from a function body, collecting any leading
+ * const bindings with pure initializers for inline substitution.
  * Handles:
  *   - Single return statement
+ *   - Leading const bindings + return statement
  *   - if/else with returns in both branches (produces a synthetic conditional)
+ * Returns null if the body contains let/var bindings or effectful const initializers.
  */
 function extractReturnExpression(
   body: ts.Block,
   checker: ts.TypeChecker,
-): ts.Expression | ts.IfStatement | null {
+): ExtractedBody | null {
   // Skip guard statements (if-throw patterns and assertion calls)
   const stmts = body.statements.filter((s) => !isGuardStatement(s, checker));
 
-  if (stmts.length === 1) {
-    const stmt = stmts[0]!;
-    if (ts.isReturnStatement(stmt) && stmt.expression) {
-      return stmt.expression;
+  if (stmts.length === 0) {
+    return null;
+  }
+
+  const bindings: Array<{ name: string; initializer: ts.Expression }> = [];
+  let i = 0;
+
+  // Collect leading const bindings
+  for (; i < stmts.length - 1; i++) {
+    const stmt = stmts[i]!;
+    if (!ts.isVariableStatement(stmt)) {
+      break;
     }
-    // if/else with returns
-    if (ts.isIfStatement(stmt) && stmt.elseStatement) {
-      return stmt;
+
+    const declList = stmt.declarationList;
+    // Reject let/var
+    if (!(declList.flags & ts.NodeFlags.Const)) {
+      return null;
+    }
+
+    for (const decl of declList.declarations) {
+      // Must have a simple identifier name and an initializer
+      if (!ts.isIdentifier(decl.name) || !decl.initializer) {
+        return null;
+      }
+      // Reject effectful initializers
+      if (expressionHasSideEffects(decl.initializer)) {
+        return null;
+      }
+      bindings.push({ name: decl.name.text, initializer: decl.initializer });
     }
   }
 
-  // Multiple non-guard statements are not representable yet without
-  // translating local bindings/control flow.
-  if (stmts.length > 1) {
+  // The last statement must be a return or if/else-with-returns
+  const last = stmts[i]!;
+  // If we didn't consume all preceding statements as const bindings, reject
+  if (i < stmts.length - 1) {
     return null;
+  }
+
+  if (ts.isReturnStatement(last) && last.expression) {
+    return { bindings, returnExpr: last.expression };
+  }
+  if (ts.isIfStatement(last) && last.elseStatement) {
+    return { bindings, returnExpr: last };
   }
 
   return null;
@@ -201,6 +277,20 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
     return "empty body";
   }
   if (stmts.length > 1) {
+    // Check for specific rejection reasons in leading statements
+    for (const stmt of stmts) {
+      if (ts.isVariableStatement(stmt)) {
+        const declList = stmt.declarationList;
+        if (!(declList.flags & ts.NodeFlags.Const)) {
+          return "let/var bindings not supported";
+        }
+        for (const decl of declList.declarations) {
+          if (decl.initializer && expressionHasSideEffects(decl.initializer)) {
+            return "const binding with side-effectful initializer";
+          }
+        }
+      }
+    }
     return "local bindings or multiple statements before return";
   }
   const stmt = stmts[0]!;
@@ -208,6 +298,74 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
     return "return without expression";
   }
   return "non-translatable control flow";
+}
+
+/**
+ * Shared const-binding inlining (let-elimination) for both pure and mutating paths.
+ *
+ * Three phases:
+ *   1. TDZ validation on TS AST (rejects forward/self references)
+ *   2. Translate initializers forward, building scopedParams incrementally
+ *   3. Return a right-fold substitution closure
+ *
+ * The right-fold means substitutions are applied inside-out: the last binding
+ * is substituted first, so each step naturally resolves references to earlier
+ * bindings that are already embedded in the result.
+ */
+function inlineConstBindings(
+  bindings: ConstBinding[],
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  baseParams: Map<string, string>,
+  supply: UniqueSupply,
+):
+  | {
+      applyTo: (expr: OpaqueExpr) => OpaqueExpr;
+      scopedParams: Map<string, string>;
+    }
+  | { error: string } {
+  const ast = getAst();
+
+  // Phase 1: TDZ validation — reject forward/self references on TS AST
+  for (const [idx, binding] of bindings.entries()) {
+    const blockedNames = new Set(bindings.slice(idx).map((b) => b.tsName));
+    if (expressionReferencesNames(binding.initializer, blockedNames)) {
+      return { error: "const initializer references a later binding" };
+    }
+  }
+
+  // Phase 2: translate initializers, building scopedParams incrementally
+  const scopedParams = new Map(baseParams);
+  const translatedBindings: Array<{
+    hygienicName: string;
+    initExpr: OpaqueExpr;
+  }> = [];
+
+  for (const binding of bindings) {
+    const hygienicName = `$${supply.next()}`;
+    const initResult = translateBodyExpr(
+      binding.initializer,
+      checker,
+      strategy,
+      scopedParams,
+    );
+    if (isBodyUnsupported(initResult)) {
+      return { error: initResult.unsupported };
+    }
+    translatedBindings.push({ hygienicName, initExpr: bodyExpr(initResult) });
+    scopedParams.set(binding.tsName, hygienicName);
+  }
+
+  // Phase 3: right-fold substitution closure
+  const reversed = translatedBindings.slice().reverse();
+  const applyTo = (expr: OpaqueExpr): OpaqueExpr => {
+    for (const { hygienicName, initExpr } of reversed) {
+      expr = ast.substituteBinder(expr, hygienicName, initExpr);
+    }
+    return expr;
+  };
+
+  return { applyTo, scopedParams };
 }
 
 function isGuardStatement(
@@ -313,6 +471,29 @@ function blockHasNoSideEffects(node: ts.Statement): boolean {
   }
   // if/for/while/switch may contain mutations — treat as side-effectful
   return false;
+}
+
+/** Check whether a TS expression references any variable name from the given set.
+ *  Only checks identifier *uses* (variable references), not syntactic name
+ *  positions like property names in `a.balance` or method names in `a.foo()`. */
+function expressionReferencesNames(
+  expr: ts.Expression,
+  names: Set<string>,
+): boolean {
+  expr = unwrapExpression(expr);
+  if (ts.isIdentifier(expr)) {
+    return names.has(expr.text);
+  }
+  // For property access, only recurse into the object expression —
+  // the .name identifier is a syntactic token, not a variable reference.
+  if (ts.isPropertyAccessExpression(expr)) {
+    return expressionReferencesNames(expr.expression, names);
+  }
+  return (
+    ts.forEachChild(expr, (child) =>
+      ts.isExpression(child) ? expressionReferencesNames(child, names) : false,
+    ) ?? false
+  );
 }
 
 /** Unwrap parentheses, type assertions, and non-null assertions to get the inner expression. */
@@ -850,14 +1031,73 @@ function collectAssignments(
   paramNames: Map<string, string>,
   propositions: PropResult[],
   modifiedRules: Set<string>,
+  outerApply: (e: OpaqueExpr) => OpaqueExpr = (e) => e,
+  supply: UniqueSupply = makeUniqueSupply(),
 ): boolean {
   const ast = getAst();
   let hasUnsupportedMutation = false;
+  let applyConst = outerApply;
   const stmts = ts.isBlock(body) ? Array.from(body.statements) : [body];
 
   for (const stmt of stmts) {
     // Skip guard statements (if-throw patterns and assertion calls)
     if (isGuardStatement(stmt, checker)) {
+      continue;
+    }
+
+    // Handle const bindings via shared inlineConstBindings
+    if (ts.isVariableStatement(stmt)) {
+      const declList = stmt.declarationList;
+      if (declList.flags & ts.NodeFlags.Const) {
+        // Check all declarations are pure const with simple identifier names
+        const bindings: ConstBinding[] = [];
+        let allPure = true;
+        for (const decl of declList.declarations) {
+          if (
+            !ts.isIdentifier(decl.name) ||
+            !decl.initializer ||
+            expressionHasSideEffects(decl.initializer)
+          ) {
+            allPure = false;
+            break;
+          }
+          bindings.push({
+            tsName: decl.name.text,
+            initializer: decl.initializer,
+          });
+        }
+        if (allPure) {
+          const inlined = inlineConstBindings(
+            bindings,
+            checker,
+            strategy,
+            paramNames,
+            supply,
+          );
+          if ("error" in inlined) {
+            hasUnsupportedMutation = true;
+            propositions.push({
+              kind: "unsupported",
+              reason: inlined.error,
+            });
+          } else {
+            // Update paramNames with new const mappings for subsequent statements
+            for (const [key, value] of inlined.scopedParams) {
+              paramNames.set(key, value);
+            }
+            // Compose: inner substitutions applied first, then outer
+            const prevApply = applyConst;
+            applyConst = (e) => prevApply(inlined.applyTo(e));
+          }
+          continue;
+        }
+      }
+      // let/var or effectful const — unsupported local declaration
+      hasUnsupportedMutation = true;
+      propositions.push({
+        kind: "unsupported",
+        reason: "local variable declaration (let/var or effectful const)",
+      });
       continue;
     }
 
@@ -888,11 +1128,14 @@ function collectAssignments(
           propositions.push({ kind: "unsupported", reason: val.unsupported });
           continue;
         }
+        // Apply const substitutions to assignment expressions
+        const objExpr = applyConst(bodyExpr(obj));
+        const valExpr = applyConst(bodyExpr(val));
         propositions.push({
           kind: "equation",
           quantifiers: [] as OpaqueParam[],
-          lhs: ast.app(ast.primed(prop), [bodyExpr(obj)]),
-          rhs: bodyExpr(val),
+          lhs: ast.app(ast.primed(prop), [objExpr]),
+          rhs: valExpr,
         });
         modifiedRules.add(prop);
         continue;
@@ -948,6 +1191,8 @@ function collectAssignments(
           paramNames,
           propositions,
           modifiedRules,
+          applyConst,
+          supply,
         )
       ) {
         hasUnsupportedMutation = true;
@@ -986,6 +1231,8 @@ function collectAssignments(
             paramNames,
             propositions,
             modifiedRules,
+            applyConst,
+            supply,
           )
         ) {
           hasUnsupportedMutation = true;
@@ -1000,6 +1247,8 @@ function collectAssignments(
             paramNames,
             propositions,
             modifiedRules,
+            applyConst,
+            supply,
           )
         ) {
           hasUnsupportedMutation = true;
