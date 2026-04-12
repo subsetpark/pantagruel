@@ -144,6 +144,12 @@ function translatePureBody(
     return [{ kind: "unsupported", reason: `${functionName} — ${reason}` }];
   }
 
+  // Reserve const binding names so freshBinder avoids collisions
+  const scopedParams = new Map(paramNames);
+  for (const binding of extracted.bindings) {
+    scopedParams.set(binding.name, binding.name);
+  }
+
   // Translate const binding initializers for inline substitution
   const substitutions: Array<{ name: string; expr: OpaqueExpr }> = [];
   for (const binding of extracted.bindings) {
@@ -151,7 +157,7 @@ function translatePureBody(
       binding.initializer,
       checker,
       strategy,
-      paramNames,
+      scopedParams,
     );
     if (isBodyUnsupported(initResult)) {
       return [{ kind: "unsupported", reason: initResult.unsupported }];
@@ -168,7 +174,7 @@ function translatePureBody(
     extracted.returnExpr,
     checker,
     strategy,
-    paramNames,
+    scopedParams,
   );
 
   if (isBodyUnsupported(body)) {
@@ -985,7 +991,16 @@ function collectAssignments(
             for (const prior of constSubstitutions) {
               initExpr = ast.substituteBinder(initExpr, prior.name, prior.expr);
             }
+            // Inner binding shadows any outer binding with the same name
+            const existing = constSubstitutions.findIndex(
+              (s) => s.name === name,
+            );
+            if (existing >= 0) {
+              constSubstitutions.splice(existing, 1);
+            }
             constSubstitutions.push({ name, expr: initExpr });
+            // Reserve const name so freshBinder avoids collisions
+            paramNames.set(name, name);
           }
           continue;
         }
