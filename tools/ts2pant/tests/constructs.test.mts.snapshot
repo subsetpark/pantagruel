@@ -175,7 +175,7 @@ exports[`expressions-const-bindings.ts > simpleConst 1`] = `
 `;
 
 exports[`expressions-const-pure-calls.ts > constChainedPure 1`] = `
-"module ConstChainedPure.\\n\\nconstChainedPure x: Int, y: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: constChainedPure — const binding with side-effectful initializer.\\n"
+"module ConstChainedPure.\\n\\nconstChainedPure x: Int, y: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: constChainedPure — Math.abs(x).\\n"
 `;
 
 exports[`expressions-const-pure-calls.ts > constImpureCall 1`] = `
@@ -183,11 +183,11 @@ exports[`expressions-const-pure-calls.ts > constImpureCall 1`] = `
 `;
 
 exports[`expressions-const-pure-calls.ts > constMathMax 1`] = `
-"module ConstMathMax.\\n\\nconstMathMax a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: constMathMax — const binding with side-effectful initializer.\\n"
+"module ConstMathMax.\\n\\nconstMathMax a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: constMathMax — Math.max(a, b).\\n"
 `;
 
 exports[`expressions-const-pure-calls.ts > constStringMethod 1`] = `
-"module ConstStringMethod.\\n\\nconstStringMethod s: String => Int.\\n\\n---\\n\\n> UNSUPPORTED: constStringMethod — const binding with side-effectful initializer.\\n"
+"module ConstStringMethod.\\n\\nconstStringMethod s: String => Int.\\n\\n---\\n\\n> UNSUPPORTED: constStringMethod — s.indexOf(\\"x\\").\\n"
 `;
 
 exports[`expressions-literals.ts > fortyTwo 1`] = `
