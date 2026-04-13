@@ -59,12 +59,12 @@ export function callInReturn(): number {
   return foo().length;
 }
 
-/** unsupported bubbles through negation */
+/** call result bubbles through negation */
 export function bubbleNegation(): boolean {
   return !bar();
 }
 
-/** unsupported bubbles through if condition */
+/** call result bubbles through if condition */
 export function bubbleCondition(): number {
   if (bar()) {
     return 1;
