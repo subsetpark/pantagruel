@@ -186,6 +186,22 @@ exports[`expressions-const-bindings.ts > simpleConst 1`] = `
 "module SimpleConst.\\n\\nsimpleConst a: Int, b: Int => Int.\\n\\n---\\n\\nsimpleConst a b = a + b.\\n"
 `;
 
+exports[`expressions-const-pure-calls.ts > constChainedPure 1`] = `
+"module ConstChainedPure.\\n\\nconstChainedPure x: Int, y: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: constChainedPure — Math.abs(x).\\n"
+`;
+
+exports[`expressions-const-pure-calls.ts > constImpureCall 1`] = `
+"module ConstImpureCall.\\n\\nconstImpureCall x: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: constImpureCall — const binding with side-effectful initializer.\\n"
+`;
+
+exports[`expressions-const-pure-calls.ts > constMathMax 1`] = `
+"module ConstMathMax.\\n\\nconstMathMax a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: constMathMax — Math.max(a, b).\\n"
+`;
+
+exports[`expressions-const-pure-calls.ts > constStringMethod 1`] = `
+"module ConstStringMethod.\\n\\nconstStringMethod s: String => Int.\\n\\n---\\n\\n> UNSUPPORTED: constStringMethod — s.indexOf(\\"x\\").\\n"
+`;
+
 exports[`expressions-literals.ts > fortyTwo 1`] = `
 "module FortyTwo.\\n\\nfortyTwo  => Int.\\n\\n---\\n\\nfortyTwo = 42.\\n"
 `;
