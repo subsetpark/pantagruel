@@ -5,6 +5,11 @@
  (preprocess
   (pps sedlex.ppx)))
 
+(library
+ (name smt_check)
+ (libraries pantagruel sexplib0 parsexp)
+ (modules smt_check))
+
 (tests
  (names
   test_lexer
@@ -19,13 +24,18 @@
   test_solver
   test_error
   test_e2e
-  test_module)
- (modules :standard \ test_util)
- (libraries pantagruel test_util alcotest qcheck-alcotest)
+  test_module
+  test_smt_invariants
+  test_smt_property)
+ (modules :standard \ test_util smt_check)
+ (libraries pantagruel test_util smt_check alcotest qcheck-alcotest)
  (deps
   (glob_files ../samples/*.pant)
+  (glob_files ../samples/smt-examples/*.pant)
   (glob_files snapshots/json/*.json)
   (glob_files snapshots/pretty/*.pant)
-  (glob_files snapshots/markdown/*.md))
+  (glob_files snapshots/markdown/*.md)
+  (glob_files regression/*.pant)
+  regression/expected_failures.txt)
  (preprocess
   (pps sedlex.ppx)))

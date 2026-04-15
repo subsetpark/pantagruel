@@ -1,0 +1,42 @@
+# Layer 1 (test_smt_invariants) allowlist of known-pending structural failures
+# in the sample corpus. Format:
+#
+#   <fixture_basename>:<failure_kind>[,<failure_kind>...]
+#
+# Failure kinds (must match the kind tag emitted by Smt_check.failure_kind_tag):
+#   parse_error
+#   duplicate_binder
+#   vacuous_binder
+#   fallback_emission
+#
+# When a tracked bug is fixed, remove the corresponding entries. The harness
+# fails if an allowlist entry does not correspond to an actual failure
+# (so stale entries are caught immediately).
+#
+# Bugs currently tracked:
+#   1. bind_head_params over-quantifies invariants (lib/smt_doc.ml:46-66) —
+#      causes duplicate_binder and/or vacuous_binder on chapters that declare
+#      multiple rules sharing parameter names.
+#   2. translate_card non-domain fallback (lib/smt.ml:317-327) — emits a
+#      named fallback constant for cardinality of [Real] / [Int] / etc;
+#      flagged as fallback_emission until callers stop relying on the
+#      approximation.
+
+# Bug 1: bind_head_params over-quantifies invariants in chapters that
+# declare multiple rules whose parameters share names — every body
+# proposition gets wrapped in a (forall (... duplicate binders ...) ...).
+# Removing these entries is the acceptance test for the bug fix.
+01-basics.pant:duplicate_binder,vacuous_binder
+03-types.pant:vacuous_binder
+04-operators.pant:duplicate_binder,vacuous_binder
+05-state.pant:vacuous_binder
+06-advanced.pant:vacuous_binder
+07-pantagruel.pant:duplicate_binder,vacuous_binder
+08-contexts.pant:duplicate_binder
+10-cond.pant:duplicate_binder
+11-over-each.pant:duplicate_binder,vacuous_binder
+game.pant:vacuous_binder
+guarded-frame.pant:duplicate_binder
+non-exhaustive-cond.pant:duplicate_binder
+over-each-ok.pant:vacuous_binder
+underspecified.pant:duplicate_binder

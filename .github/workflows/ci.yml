@@ -40,6 +40,7 @@ jobs:
           opam exec -- dune exec fuzz/fuzz_lexer.exe
           opam exec -- dune exec fuzz/fuzz_parser.exe
           opam exec -- dune exec fuzz/fuzz_pipeline.exe
+          opam exec -- dune exec fuzz/fuzz_smt.exe
 
       - name: Check samples
         run: |

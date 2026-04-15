@@ -19,3 +19,7 @@
 (executable
  (name fuzz_pipeline)
  (libraries pantagruel crowbar))
+
+(executable
+ (name fuzz_smt)
+ (libraries pantagruel smt_check crowbar))
