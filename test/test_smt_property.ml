@@ -15,15 +15,10 @@
 
 open Pantagruel
 
-(** Failure kinds Layer 2 currently tolerates. Once a corresponding translator
-    bug is fixed, remove its tag here so the property tightens.
-
-    - [duplicate_binder], [vacuous_binder]: Bug 1 — bind_head_params
-      over-quantifies (lib/smt_doc.ml:46-66).
-    - [fallback_emission]: an acceptable approximation by design today; tightens
-      once translator can encode all source constructs faithfully. *)
-let kinds_pending_fix =
-  [ "duplicate_binder"; "vacuous_binder"; "fallback_emission" ]
+(** Failure kinds Layer 2 currently tolerates. Empty: all generated documents
+    must satisfy every structural invariant. Re-add a tag here only when a new
+    known-pending translator bug appears, with a comment linking to it. *)
+let kinds_pending_fix : string list = []
 
 let pp_doc = Test_util.print_document
 

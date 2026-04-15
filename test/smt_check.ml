@@ -242,29 +242,56 @@ let check_no_duplicate_binders (sexps : Sexp.t list) : failure list =
     sexps;
   List.rev !failures
 
-(** Every quantifier binder must appear free somewhere in its body. Body here
-    includes any guard antecedent emitted as [(=> (and guards...) inner)] —
-    guards live structurally inside the body, so [free_atoms body] picks them up
-    automatically. *)
+(** A body that consists entirely of a single literal/constant atom is
+    "trivially vacuous": the user explicitly wrote [all x: T | true] or similar.
+    Faithful translation preserves the no-op binders, but they are not a
+    translator bug. We also peel one layer of [(=> antecedent consequent)] —
+    quantifiers over [Nat]/[Nat0] are translated to
+    [(forall ((n Int)) (=> (>= n 1) <user-body>))], so the literal sits inside
+    an implication that's not user-authored. *)
+let rec body_is_trivial = function
+  | Sexp.Atom a ->
+      a = "true" || a = "false" || is_numeric_literal a || is_string_literal a
+  | Sexp.List [ Sexp.Atom "=>"; _antecedent; consequent ] ->
+      body_is_trivial consequent
+  | Sexp.List _ -> false
+
+(** Every quantifier binder must appear free somewhere in its body. The check is
+    designed to catch translator-introduced spurious binders, not user-authored
+    deliberate tautologies. We skip:
+
+    - bodies that are a trivial literal (peeling one [(=>)] layer to handle
+      Nat/Nat0 type-constraint antecedents the translator inserts);
+    - quantifiers where NO binder is used. Total vacuity is intentional
+      ([all c: Color | true] is a non-emptiness tautology); partial vacuity
+      ([all x: T, y: U | g x] with [y] unused) is what the check is for and
+      remains flagged. *)
 let check_no_vacuous_binders (sexps : Sexp.t list) : failure list =
   let failures = ref [] in
   List.iter
     (fun sexp ->
       iter_quantifiers sexp (fun q bindings body ->
-          let names = binder_names bindings in
-          let body_free = free_atoms body in
-          List.iter
-            (fun name ->
-              if not (StringSet.mem name body_free) then
-                failures :=
-                  {
-                    kind = Vacuous_binder;
-                    message =
-                      Printf.sprintf
-                        "%s binds %S but it does not appear free in body" q name;
-                  }
-                  :: !failures)
-            names))
+          if body_is_trivial body then ()
+          else
+            let names = binder_names bindings in
+            let body_free = free_atoms body in
+            let any_used =
+              List.exists (fun n -> StringSet.mem n body_free) names
+            in
+            if any_used then
+              List.iter
+                (fun name ->
+                  if not (StringSet.mem name body_free) then
+                    failures :=
+                      {
+                        kind = Vacuous_binder;
+                        message =
+                          Printf.sprintf
+                            "%s binds %S but it does not appear free in body" q
+                            name;
+                      }
+                      :: !failures)
+                names))
     sexps;
   List.rev !failures
 

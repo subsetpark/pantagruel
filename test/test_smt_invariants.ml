@@ -245,9 +245,8 @@ let sample_cases () =
 
 let regression_cases () =
   [
-    test_case "bug_overquantify.pant — duplicate + vacuous binders" `Quick
-      (test_regression_fixture "bug_overquantify.pant"
-         [ "duplicate_binder"; "vacuous_binder" ]);
+    test_case "bug_overquantify.pant — clean post-fix" `Quick
+      (test_regression_fixture "bug_overquantify.pant" []);
     test_case "bug_card_zero.pant — fallback emission" `Quick
       (test_regression_fixture "bug_card_zero.pant" [ "fallback_emission" ]);
   ]

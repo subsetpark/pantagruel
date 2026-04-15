@@ -13,10 +13,9 @@
 
 open Pantagruel
 
-(* Same allowlist as test_smt_property.ml. Keep these in sync; once a bug is
-   fixed, drop the corresponding kinds from BOTH lists. *)
-let kinds_pending_fix =
-  [ "duplicate_binder"; "vacuous_binder"; "fallback_emission" ]
+(* Same allowlist as test_smt_property.ml. Keep these in sync; re-add a kind
+   here only when a new known-pending translator bug appears. *)
+let kinds_pending_fix : string list = []
 
 let translate_and_check (doc : Ast.document) =
   let mod_name = Option.fold ~none:"" ~some:Ast.upper_name doc.module_name in
