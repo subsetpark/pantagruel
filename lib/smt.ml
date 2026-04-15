@@ -314,18 +314,17 @@ and translate_card config env e =
               elems
           in
           Printf.sprintf "(+ %s)" (String.concat " " terms)
-      | Ok (TyList elem_ty) ->
-          (* Non-domain list: try to resolve element type to a domain.
-             If the element type is truly unbounded (e.g., Int), cardinality
-             can't be computed in bounded model checking — emit 0 with a comment. *)
-          let sort = sort_of_ty elem_ty in
-          Printf.sprintf
-            "; WARNING: cardinality of non-domain list (%s) is approximate\n\
-             0 ; unbounded element type %s"
-            set_str sort
+      | Ok (TyList _elem_ty) ->
+          (* Non-domain list: element type is unbounded (e.g., Int) so
+             cardinality can't be computed in bounded model checking. Emit 0
+             as an approximation. We deliberately omit any inline ';'
+             comments — SMTLIB line comments run to end-of-line and would
+             swallow the surrounding context's closing parens / annotations. *)
+          let _ = set_str in
+          "0"
       | _ ->
           (* Can't determine element type at all *)
-          Printf.sprintf "; WARNING: unknown cardinality\n0")
+          "0")
 
 and translate_forall_comprehension config env params guards body =
   (* Standalone comprehension: (all x: D | f x) → array where exactly

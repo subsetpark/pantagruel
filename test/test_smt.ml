@@ -404,9 +404,11 @@ let test_card_non_domain_list () =
   let result =
     Smt.translate_expr config env (Ast.EUnop (OpCard, EVar (Lower "nums")))
   in
-  (* Non-domain list card should emit warning and 0 fallback *)
-  check bool "has WARNING" true (contains result "WARNING");
-  check bool "has 0 fallback" true (contains result "0")
+  (* Non-domain list card falls back to 0. Must NOT emit ';' line comments:
+     they would swallow the wrapping context's closing parens / annotations
+     and corrupt the surrounding SMT assertion. *)
+  check string "is bare 0" "0" result;
+  check bool "no line comment" false (contains result ";")
 
 let test_subset_domain_rhs () =
   (* Ensure OpSubset with EDomain on RHS doesn't trigger standalone failwith *)
