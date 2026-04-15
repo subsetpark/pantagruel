@@ -73,7 +73,7 @@ jobs:
 
       - name: Build pant
         working-directory: .
-        run: opam exec -- dune build
+        run: opam exec -- dune build @install
 
       - name: Build wasm for ts2pant
         run: opam exec -- npm run build:wasm
