@@ -23,7 +23,7 @@ jobs:
           ocaml-compiler: "5.4.1"
 
       - name: Install dependencies
-        run: opam install . --deps-only
+        run: opam install ./pantagruel.opam --deps-only
 
       - name: Build
         run: opam exec -- dune build -p pantagruel
