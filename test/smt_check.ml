@@ -255,6 +255,9 @@ let collect_failures (sexps : Sexp.t list) : failure list =
     if not (body_is_trivial body) then
       let body_free = free_atoms body in
       let any_used = List.exists (fun n -> StringSet.mem n body_free) names in
+      (* Flag partial vacuity (some binders used, some not) but not total
+         vacuity (no binders used) — the latter is caught by body_is_trivial
+         for literal bodies and is otherwise a tolerated edge case. *)
       if any_used then
         List.iter
           (fun name ->

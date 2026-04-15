@@ -409,13 +409,12 @@ let test_card_non_domain_list () =
      visible to downstream tooling (see lib/smt_types.ml `fresh_fallback`).
      Must NOT emit ';' line comments — they would swallow the wrapping
      context's closing parens / annotations and corrupt the SMT assertion. *)
-  check bool "is fallback constant"
-    (String.length result >= 15 && String.sub result 0 15 = "_card_fallback_")
-    true;
+  check bool "is fallback constant" true
+    (String.length result >= 15 && String.sub result 0 15 = "_card_fallback_");
   check bool "no line comment" false (contains result ";");
   (* The corresponding declaration is queued in fallback_decls. *)
   let drained = Smt.drain_fallback_decls () in
-  check bool "declaration queued" (contains drained "_card_fallback_") true
+  check bool "declaration queued" true (contains drained "_card_fallback_")
 
 let test_subset_domain_rhs () =
   (* Ensure OpSubset with EDomain on RHS doesn't trigger standalone failwith *)

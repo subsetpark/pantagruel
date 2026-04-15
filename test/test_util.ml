@@ -254,7 +254,7 @@ let[@warning "-44"] gen_bool_expr_at_depth =
                      with
                      | Ast.TName (Ast.Upper "Bool") ->
                          return (Ast.ELitBool true)
-                     | Ast.TName (Ast.Upper "Nat") -> return (Ast.ELitNat 0)
+                     | Ast.TName (Ast.Upper "Nat") -> return (Ast.ELitNat 1)
                      | _ -> return (Ast.EVar (Ast.Lower "x"))))
                params)
         in
