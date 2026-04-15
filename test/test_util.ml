@@ -31,7 +31,8 @@ let parse_and_collect str =
 (** Locate a directory by trying each candidate path in order; returns the first
     that exists. Used to make tests robust against the working directory that
     dune sets up (samples can live under [samples/], [../samples/], etc). *)
-let find_dir candidates = List.find_opt Sys.file_exists candidates
+let find_dir candidates =
+  List.find_opt (fun p -> Sys.file_exists p && Sys.is_directory p) candidates
 
 (** All [.pant] basenames in [dir], sorted lexicographically. *)
 let pant_files dir =
@@ -42,17 +43,16 @@ let pant_files dir =
 (** Parse a [.pant] file from disk into an [Ast.document]. *)
 let parse_pant_file path =
   let channel = open_in path in
-  let lexer = Lexer.create_from_channel path channel in
-  let supplier = Lexer.menhir_token lexer in
-  let doc =
-    MenhirLib.Convert.Simplified.traditional2revised Parser.document supplier
-  in
-  close_in channel;
-  doc
+  Fun.protect
+    ~finally:(fun () -> close_in_noerr channel)
+    (fun () ->
+      let lexer = Lexer.create_from_channel path channel in
+      let supplier = Lexer.menhir_token lexer in
+      MenhirLib.Convert.Simplified.traditional2revised Parser.document supplier)
 
 (** Run the canonical translator pipeline on a parsed document and return the
     generated SMT queries, or an error message if collection or type-checking
-    fails. The config matches [bin/main.ml --check] defaults: bound 3, steps 1,
+    fails. Test-specific baseline: bound 3, steps 1 (CLI default is steps 5),
     guards injected. Used by every Layer-1, Layer-2, and fuzz test that needs
     the full translator output. *)
 let translate_to_queries (doc : Ast.document) : (Smt.query list, string) result
@@ -221,10 +221,13 @@ let[@warning "-44"] gen_bool_expr_at_depth =
   let open QCheck.Gen in
   let lit = oneof_list [ Ast.ELitBool true; Ast.ELitBool false ] in
   let var_of world =
-    match world.vars with
+    let bool_vars =
+      List.filter (fun (_, ty) -> ty = Ast.TName (Ast.Upper "Bool")) world.vars
+    in
+    match bool_vars with
     | [] -> lit
     | _ ->
-        let* name, _ty = oneof_list world.vars in
+        let* name, _ty = oneof_list bool_vars in
         return (Ast.EVar (Ast.Lower name))
   in
   let app_of world =

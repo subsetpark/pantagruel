@@ -163,9 +163,19 @@ let free_atoms (sexp : Sexp.t) : StringSet.t =
             let bound' =
               List.fold_left (fun s n -> StringSet.add n s) bound names
             in
-            (* Descend into the binding sorts too — those are atoms but
-               typically refer to declared sorts (like a Domain name). *)
-            let acc = go bound acc bindings in
+            (* Descend only into binding sort terms, not binder names. *)
+            let acc =
+              match[@warning "-4"] bindings with
+              | Sexp.List binders ->
+                  List.fold_left
+                    (fun acc b ->
+                      match[@warning "-4"] b with
+                      | Sexp.List (_name :: sort_terms) ->
+                          List.fold_left (go bound) acc sort_terms
+                      | _ -> acc)
+                    acc binders
+              | _ -> acc
+            in
             go bound' acc body
         | [ Sexp.Atom "let"; bindings; body ] ->
             (* (let ((x e1) (y e2)) body) — bindings are scoped only in body *)
@@ -221,7 +231,16 @@ let fallback_kind_of_atom s =
       if
         String.length rest > String.length suffix
         && String.sub rest 0 (String.length suffix) = suffix
-      then Some kind
+      then
+        let counter =
+          String.sub rest (String.length suffix)
+            (String.length rest - String.length suffix)
+        in
+        let is_all_digits t =
+          String.length t > 0
+          && String.to_seq t |> Seq.for_all (fun c -> c >= '0' && c <= '9')
+        in
+        if is_all_digits counter then Some kind else None
       else None
     with Not_found -> None
 
