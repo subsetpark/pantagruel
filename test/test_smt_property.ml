@@ -22,25 +22,12 @@ let kinds_pending_fix : string list = []
 
 let pp_doc = Test_util.print_document
 
-(** Run the canonical translation pipeline for one generated document. *)
-let translate (doc : Ast.document) : (Smt.query list, string) result =
-  let mod_name = Option.fold ~none:"" ~some:Ast.upper_name doc.module_name in
-  match Collect.collect_all ~base_env:(Env.empty mod_name) doc with
-  | Error e -> Error (Collect.show_collect_error e)
-  | Ok env -> (
-      match Check.check_document env doc with
-      | Error e -> Error (Check.show_type_error e)
-      | Ok _ ->
-          let domain_bounds = Smt.compute_domain_bounds 3 env in
-          let config =
-            Smt.make_config ~bound:3 ~steps:1 ~domain_bounds ~inject_guards:true
-          in
-          Ok (Smt.generate_queries config env doc))
-
 (** [accepted doc] returns the queries iff [doc] type-checks. Discards via
     [QCheck.assume_fail] otherwise. *)
 let accepted doc : Smt.query list =
-  match translate doc with Error _ -> QCheck.assume_fail () | Ok qs -> qs
+  match Test_util.translate_to_queries doc with
+  | Error _ -> QCheck.assume_fail ()
+  | Ok qs -> qs
 
 (* ------------------------------------------------------------------ *)
 (* Properties                                                           *)

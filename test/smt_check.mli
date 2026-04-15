@@ -15,9 +15,6 @@ type failure_kind =
 val failure_kind_tag : failure_kind -> string
 (** Stable string tag matching the allowlist file format. *)
 
-val failure_kind_of_tag : string -> failure_kind option
-(** Inverse of [failure_kind_tag]; returns [None] for unknown tags. *)
-
 type failure = { kind : failure_kind; message : string }
 (** A concrete failure with enough context to debug. *)
 
@@ -29,7 +26,3 @@ val parse_smt2 : string -> (Sexplib0.Sexp.t list, string) result
 val check_query : string -> failure list
 (** Run all structural checks on a single SMT-LIB2 string. Failures are
     accumulated; the function does not short-circuit on the first error. *)
-
-val check_queries : string list -> failure list
-(** Run [check_query] on a list of query SMT-LIB2 strings, accumulating all
-    failures. *)

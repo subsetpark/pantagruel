@@ -10,16 +10,9 @@
     actual failure (so stale entries are caught). *)
 
 open Alcotest
-open Pantagruel
-
-(* ------------------------------------------------------------------ *)
-(* Filesystem helpers — mirror test_e2e.ml.                             *)
-(* ------------------------------------------------------------------ *)
-
-let find_dir candidates = List.find_opt Sys.file_exists candidates
 
 let sample_dir =
-  find_dir
+  Test_util.find_dir
     [
       "samples";
       "../samples";
@@ -28,7 +21,7 @@ let sample_dir =
     ]
 
 let smt_examples_dir =
-  find_dir
+  Test_util.find_dir
     [
       "samples/smt-examples";
       "../samples/smt-examples";
@@ -37,7 +30,7 @@ let smt_examples_dir =
     ]
 
 let regression_dir =
-  find_dir
+  Test_util.find_dir
     [
       "test/regression";
       "../test/regression";
@@ -47,42 +40,13 @@ let regression_dir =
       Filename.concat (Sys.getcwd ()) "test/regression";
     ]
 
-let pant_files dir =
-  Sys.readdir dir |> Array.to_list
-  |> List.filter (fun f -> Filename.check_suffix f ".pant")
-  |> List.sort String.compare
-
-let parse_file path =
-  let channel = open_in path in
-  let lexer = Lexer.create_from_channel path channel in
-  let supplier = Lexer.menhir_token lexer in
-  let doc =
-    MenhirLib.Convert.Simplified.traditional2revised Parser.document supplier
-  in
-  close_in channel;
-  doc
-
-(* ------------------------------------------------------------------ *)
-(* Pipeline.                                                            *)
-(* ------------------------------------------------------------------ *)
-
-(** Parse, collect, type-check and translate a [.pant] file to SMT queries.
-    Returns [None] when the upstream pipeline rejects the fixture (no SMT is
-    generated, so structural checks have nothing to inspect). *)
-let queries_of_path path : Smt.query list option =
-  let doc = parse_file path in
-  let mod_name = Option.fold ~none:"" ~some:Ast.upper_name doc.module_name in
-  match Collect.collect_all ~base_env:(Env.empty mod_name) doc with
+(** Parse + translate a [.pant] file to SMT queries; [None] if the upstream
+    pipeline rejects the fixture (no SMT is generated, so structural checks have
+    nothing to inspect). *)
+let queries_of_path path : Pantagruel.Smt.query list option =
+  match Test_util.translate_to_queries (Test_util.parse_pant_file path) with
+  | Ok qs -> Some qs
   | Error _ -> None
-  | Ok env -> (
-      match Check.check_document env doc with
-      | Error _ -> None
-      | Ok _ ->
-          let domain_bounds = Smt.compute_domain_bounds 3 env in
-          let config =
-            Smt.make_config ~bound:3 ~steps:1 ~domain_bounds ~inject_guards:true
-          in
-          Some (Smt.generate_queries config env doc))
 
 (* ------------------------------------------------------------------ *)
 (* Allowlist.                                                           *)
@@ -140,71 +104,60 @@ let load_allowlist () : KindSet.t StringMap.t =
 (* Per-fixture check.                                                   *)
 (* ------------------------------------------------------------------ *)
 
-(** Run [Smt_check] over every emitted query for one fixture. Returns the set of
-    failure kinds observed (deduplicated). *)
-let observed_kinds_for path : KindSet.t =
+(** Run [Smt_check] over every emitted query for one fixture, returning the flat
+    list of (query_name, failure) pairs. The translation pipeline runs exactly
+    once per fixture; [observed_kinds] and [format_failures] both derive from
+    this list. *)
+let collect_failures path : (string * Smt_check.failure) list =
   match queries_of_path path with
-  | None -> KindSet.empty
+  | None -> []
   | Some queries ->
-      List.fold_left
-        (fun acc (q : Smt.query) ->
-          List.fold_left
-            (fun acc (f : Smt_check.failure) ->
-              KindSet.add (Smt_check.failure_kind_tag f.kind) acc)
-            acc
-            (Smt_check.check_query q.smt2))
-        KindSet.empty queries
+      List.concat_map
+        (fun (q : Pantagruel.Smt.query) ->
+          List.map (fun f -> (q.name, f)) (Smt_check.check_query q.smt2))
+        queries
 
-(** Diff observed vs allowed kinds, returning (unexpected, missing). Each is a
-    list of failure-kind tags. [unexpected] = observed but not allowed.
-    [missing] = allowed but not observed (stale allowlist entries). *)
-let diff_kinds ~observed ~allowed =
-  let unexpected = KindSet.diff observed allowed |> KindSet.elements in
-  let missing = KindSet.diff allowed observed |> KindSet.elements in
-  (unexpected, missing)
+let observed_kinds (failures : (string * Smt_check.failure) list) : KindSet.t =
+  List.fold_left
+    (fun acc (_, (f : Smt_check.failure)) ->
+      KindSet.add (Smt_check.failure_kind_tag f.kind) acc)
+    KindSet.empty failures
 
-(** Format a per-fixture failure report for alcotest. *)
-let format_report fixture path ~unexpected ~missing =
-  let detail =
-    match queries_of_path path with
-    | None -> "  (no queries generated; upstream pipeline rejected)\n"
-    | Some queries ->
-        let buf = Buffer.create 256 in
-        List.iter
-          (fun (q : Smt.query) ->
-            List.iter
-              (fun f ->
-                Buffer.add_string buf "  - ";
-                Buffer.add_string buf q.name;
-                Buffer.add_string buf ": ";
-                Buffer.add_string buf (Smt_check.format_failure f);
-                Buffer.add_char buf '\n')
-              (Smt_check.check_query q.smt2))
-          queries;
-        Buffer.contents buf
-  in
-  let parts = ref [] in
-  if unexpected <> [] then
-    parts :=
-      Printf.sprintf "unexpected failures: [%s]" (String.concat ", " unexpected)
-      :: !parts;
-  if missing <> [] then
-    parts :=
-      Printf.sprintf "stale allowlist entries: [%s]"
-        (String.concat ", " missing)
-      :: !parts;
-  Printf.sprintf "%s — %s\n%s" fixture (String.concat "; " !parts) detail
+let format_failures failures =
+  let buf = Buffer.create 256 in
+  List.iter
+    (fun (qname, f) ->
+      Buffer.add_string buf "  - ";
+      Buffer.add_string buf qname;
+      Buffer.add_string buf ": ";
+      Buffer.add_string buf (Smt_check.format_failure f);
+      Buffer.add_char buf '\n')
+    failures;
+  Buffer.contents buf
 
 (** Sample / smt-examples fixture test. Allowlist-aware. *)
 let test_sample_fixture allowlist dir name () =
   let path = Filename.concat dir name in
-  let observed = observed_kinds_for path in
+  let failures = collect_failures path in
+  let observed = observed_kinds failures in
   let allowed =
     StringMap.find_opt name allowlist |> Option.value ~default:KindSet.empty
   in
-  let unexpected, missing = diff_kinds ~observed ~allowed in
+  let unexpected = KindSet.diff observed allowed |> KindSet.elements in
+  let missing = KindSet.diff allowed observed |> KindSet.elements in
   if unexpected <> [] || missing <> [] then
-    failf "%s" (format_report name path ~unexpected ~missing)
+    let parts =
+      List.filter_map
+        (fun (label, items) ->
+          if items = [] then None
+          else Some (Printf.sprintf "%s: [%s]" label (String.concat ", " items)))
+        [
+          ("unexpected failures", unexpected);
+          ("stale allowlist entries", missing);
+        ]
+    in
+    failf "%s — %s\n%s" name (String.concat "; " parts)
+      (format_failures failures)
 
 (* ------------------------------------------------------------------ *)
 (* Regression cases — explicit assertions on the two known bugs.        *)
@@ -219,7 +172,7 @@ let test_regression_fixture fixture expect_kinds () =
   | Some dir ->
       let path = Filename.concat dir fixture in
       if not (Sys.file_exists path) then failf "missing fixture: %s" path;
-      let observed = observed_kinds_for path in
+      let observed = observed_kinds (collect_failures path) in
       let expected = KindSet.of_list expect_kinds in
       let missing = KindSet.diff expected observed |> KindSet.elements in
       let extra = KindSet.diff observed expected |> KindSet.elements in
@@ -235,7 +188,7 @@ let test_regression_fixture fixture expect_kinds () =
 let sample_cases () =
   let allowlist = load_allowlist () in
   let from dir =
-    pant_files dir
+    Test_util.pant_files dir
     |> List.map (fun n ->
         test_case n `Quick (test_sample_fixture allowlist dir n))
   in

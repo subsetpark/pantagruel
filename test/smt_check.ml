@@ -14,13 +14,6 @@ let failure_kind_tag = function
   | Vacuous_binder -> "vacuous_binder"
   | Fallback_emission -> "fallback_emission"
 
-let failure_kind_of_tag = function
-  | "parse_error" -> Some Parse_error
-  | "duplicate_binder" -> Some Duplicate_binder
-  | "vacuous_binder" -> Some Vacuous_binder
-  | "fallback_emission" -> Some Fallback_emission
-  | _ -> None
-
 type failure = { kind : failure_kind; message : string }
 
 let format_failure { kind; message } =
@@ -197,58 +190,16 @@ let free_atoms (sexp : Sexp.t) : StringSet.t =
   in
   go StringSet.empty StringSet.empty sexp
 
-(** Iterate over every [(forall ...)] / [(exists ...)] form, calling [visit]
-    with [(quant_kind, bindings_sexp, body_sexp)]. Recurses through the entire
-    sexp tree including inside the body. *)
-let iter_quantifiers (sexp : Sexp.t)
-    (visit : string -> Sexp.t -> Sexp.t -> unit) =
-  let rec go = function
-    | Sexp.Atom _ -> ()
-    | Sexp.List items ->
-        (match[@warning "-4"] items with
-        | [ Sexp.Atom (("forall" | "exists") as q); bindings; body ] ->
-            visit q bindings body
-        | _ -> ());
-        List.iter go items
-  in
-  go sexp
-
 (* ------------------------------------------------------------------ *)
-(* Individual checks.                                                   *)
+(* Per-quantifier and per-atom checks, fused into one tree walk.        *)
 (* ------------------------------------------------------------------ *)
 
-(** Quantifier binders must be unique within their introducing form. *)
-let check_no_duplicate_binders (sexps : Sexp.t list) : failure list =
-  let failures = ref [] in
-  List.iter
-    (fun sexp ->
-      iter_quantifiers sexp (fun q bindings _body ->
-          let names = binder_names bindings in
-          let seen = Hashtbl.create 8 in
-          List.iter
-            (fun name ->
-              if Hashtbl.mem seen name then
-                failures :=
-                  {
-                    kind = Duplicate_binder;
-                    message =
-                      Printf.sprintf
-                        "%s introduces duplicate binder %S in (%s (%s) ...)" q
-                        name q (Sexp.to_string bindings);
-                  }
-                  :: !failures
-              else Hashtbl.add seen name ())
-            names))
-    sexps;
-  List.rev !failures
-
-(** A body that consists entirely of a single literal/constant atom is
-    "trivially vacuous": the user explicitly wrote [all x: T | true] or similar.
-    Faithful translation preserves the no-op binders, but they are not a
-    translator bug. We also peel one layer of [(=> antecedent consequent)] —
-    quantifiers over [Nat]/[Nat0] are translated to
-    [(forall ((n Int)) (=> (>= n 1) <user-body>))], so the literal sits inside
-    an implication that's not user-authored. *)
+(** A body that consists of a single literal/constant atom is "trivially
+    vacuous": the user explicitly wrote [all x: T | true]. Faithful translation
+    preserves the no-op binders, which is not a translator bug. We peel one
+    layer of [(=> antecedent consequent)] because quantifiers over [Nat]/[Nat0]
+    are translated to [(forall ((n Int)) (=> (>= n 1) <user-body>))], putting
+    any literal inside an implication the translator inserted, not the user. *)
 let rec body_is_trivial = function
   | Sexp.Atom a ->
       a = "true" || a = "false" || is_numeric_literal a || is_string_literal a
@@ -256,88 +207,91 @@ let rec body_is_trivial = function
       body_is_trivial consequent
   | Sexp.List _ -> false
 
-(** Every quantifier binder must appear free somewhere in its body. The check is
-    designed to catch translator-introduced spurious binders, not user-authored
-    deliberate tautologies. We skip:
+(** Atoms emitted by [Smt_types.fresh_fallback] have the shape
+    [_<kind>_fallback_<N>]. *)
+let fallback_kind_of_atom s =
+  let suffix = "_fallback_" in
+  let len = String.length s in
+  if len < 1 + String.length suffix + 1 || s.[0] <> '_' then None
+  else
+    try
+      let i = String.index_from s 1 '_' in
+      let kind = String.sub s 1 (i - 1) in
+      let rest = String.sub s i (len - i) in
+      if
+        String.length rest > String.length suffix
+        && String.sub rest 0 (String.length suffix) = suffix
+      then Some kind
+      else None
+    with Not_found -> None
 
-    - bodies that are a trivial literal (peeling one [(=>)] layer to handle
-      Nat/Nat0 type-constraint antecedents the translator inserts);
-    - quantifiers where NO binder is used. Total vacuity is intentional
-      ([all c: Color | true] is a non-emptiness tautology); partial vacuity
-      ([all x: T, y: U | g x] with [y] unused) is what the check is for and
-      remains flagged. *)
-let check_no_vacuous_binders (sexps : Sexp.t list) : failure list =
+(** Visit every quantifier and every atom in [sexps] in a single pass and
+    accumulate failures from all structural checks:
+    - duplicate binders within one [(forall ...)] / [(exists ...)] form
+    - vacuous binders (with the [body_is_trivial] / total-vacuity carve-outs)
+    - fallback-constant emissions (deduplicated). *)
+let collect_failures (sexps : Sexp.t list) : failure list =
   let failures = ref [] in
-  List.iter
-    (fun sexp ->
-      iter_quantifiers sexp (fun q bindings body ->
-          if body_is_trivial body then ()
-          else
-            let names = binder_names bindings in
-            let body_free = free_atoms body in
-            let any_used =
-              List.exists (fun n -> StringSet.mem n body_free) names
-            in
-            if any_used then
-              List.iter
-                (fun name ->
-                  if not (StringSet.mem name body_free) then
-                    failures :=
-                      {
-                        kind = Vacuous_binder;
-                        message =
-                          Printf.sprintf
-                            "%s binds %S but it does not appear free in body" q
-                            name;
-                      }
-                      :: !failures)
-                names))
-    sexps;
-  List.rev !failures
-
-(** Detect uses of the translator's named-fallback constants. The naming
-    convention is [_<kind>_fallback_N]. We scan all atoms in all sexps. *)
-let check_no_fallback_emissions (sexps : Sexp.t list) : failure list =
-  (* Atoms emitted by [Smt_types.fresh_fallback] have the shape
-     [_<kind>_fallback_<N>]. Extract the kind by splitting on `_`. *)
-  let suffix_marker = "_fallback_" in
-  let fallback_kind_of_atom s =
-    let len = String.length s in
-    if len < 1 + String.length suffix_marker + 1 then None
-    else if s.[0] <> '_' then None
-    else
-      try
-        let i = String.index_from s 1 '_' in
-        let kind = String.sub s 1 (i - 1) in
-        let rest = String.sub s i (len - i) in
-        if
-          String.length rest > String.length suffix_marker
-          && String.sub rest 0 (String.length suffix_marker) = suffix_marker
-        then Some kind
-        else None
-      with Not_found -> None
+  let push f = failures := f :: !failures in
+  let seen_fallbacks : (string * string, unit) Hashtbl.t = Hashtbl.create 4 in
+  let check_quantifier q bindings body =
+    let names = binder_names bindings in
+    (* duplicate binders *)
+    let seen = Hashtbl.create 8 in
+    List.iter
+      (fun name ->
+        if Hashtbl.mem seen name then
+          push
+            {
+              kind = Duplicate_binder;
+              message =
+                Printf.sprintf
+                  "%s introduces duplicate binder %S in (%s (%s) ...)" q name q
+                  (Sexp.to_string bindings);
+            }
+        else Hashtbl.add seen name ())
+      names;
+    (* vacuous binders *)
+    if not (body_is_trivial body) then
+      let body_free = free_atoms body in
+      let any_used = List.exists (fun n -> StringSet.mem n body_free) names in
+      if any_used then
+        List.iter
+          (fun name ->
+            if not (StringSet.mem name body_free) then
+              push
+                {
+                  kind = Vacuous_binder;
+                  message =
+                    Printf.sprintf
+                      "%s binds %S but it does not appear free in body" q name;
+                })
+          names
   in
-  let seen : (string * string, unit) Hashtbl.t = Hashtbl.create 4 in
   let rec walk = function
     | Sexp.Atom a -> (
         match fallback_kind_of_atom a with
+        | None -> ()
         | Some kind ->
-            if not (Hashtbl.mem seen (kind, a)) then
-              Hashtbl.add seen (kind, a) ()
-        | None -> ())
-    | Sexp.List items -> List.iter walk items
+            if not (Hashtbl.mem seen_fallbacks (kind, a)) then begin
+              Hashtbl.add seen_fallbacks (kind, a) ();
+              push
+                {
+                  kind = Fallback_emission;
+                  message =
+                    Printf.sprintf
+                      "kind=%s constant=%s (translator approximation)" kind a;
+                }
+            end)
+    | Sexp.List items ->
+        (match[@warning "-4"] items with
+        | [ Sexp.Atom (("forall" | "exists") as q); bindings; body ] ->
+            check_quantifier q bindings body
+        | _ -> ());
+        List.iter walk items
   in
   List.iter walk sexps;
-  Hashtbl.fold
-    (fun (kind, atom) () acc ->
-      {
-        kind = Fallback_emission;
-        message =
-          Printf.sprintf "kind=%s constant=%s (translator approximation)" kind
-            atom;
-      }
-      :: acc)
-    seen []
+  List.rev !failures
 
 (* ------------------------------------------------------------------ *)
 (* Public entry point.                                                  *)
@@ -347,10 +301,4 @@ let check_query (smt2 : string) : failure list =
   match parse_smt2 smt2 with
   | Error msg ->
       [ { kind = Parse_error; message = Printf.sprintf "parsexp: %s" msg } ]
-  | Ok sexps ->
-      check_no_duplicate_binders sexps
-      @ check_no_vacuous_binders sexps
-      @ check_no_fallback_emissions sexps
-
-let check_queries (smt2s : string list) : failure list =
-  List.concat_map check_query smt2s
+  | Ok sexps -> collect_failures sexps

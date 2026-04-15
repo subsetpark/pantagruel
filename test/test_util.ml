@@ -28,6 +28,48 @@ let parse_and_collect str =
       | Error e -> failf "Type error: %s" (Check.show_type_error e)
       | Ok _warnings -> (env, doc))
 
+(** Locate a directory by trying each candidate path in order; returns the first
+    that exists. Used to make tests robust against the working directory that
+    dune sets up (samples can live under [samples/], [../samples/], etc). *)
+let find_dir candidates = List.find_opt Sys.file_exists candidates
+
+(** All [.pant] basenames in [dir], sorted lexicographically. *)
+let pant_files dir =
+  Sys.readdir dir |> Array.to_list
+  |> List.filter (fun f -> Filename.check_suffix f ".pant")
+  |> List.sort String.compare
+
+(** Parse a [.pant] file from disk into an [Ast.document]. *)
+let parse_pant_file path =
+  let channel = open_in path in
+  let lexer = Lexer.create_from_channel path channel in
+  let supplier = Lexer.menhir_token lexer in
+  let doc =
+    MenhirLib.Convert.Simplified.traditional2revised Parser.document supplier
+  in
+  close_in channel;
+  doc
+
+(** Run the canonical translator pipeline on a parsed document and return the
+    generated SMT queries, or an error message if collection or type-checking
+    fails. The config matches [bin/main.ml --check] defaults: bound 3, steps 1,
+    guards injected. Used by every Layer-1, Layer-2, and fuzz test that needs
+    the full translator output. *)
+let translate_to_queries (doc : Ast.document) : (Smt.query list, string) result
+    =
+  let mod_name = Option.fold ~none:"" ~some:Ast.upper_name doc.module_name in
+  match Collect.collect_all ~base_env:(Env.empty mod_name) doc with
+  | Error e -> Error (Collect.show_collect_error e)
+  | Ok env -> (
+      match Check.check_document env doc with
+      | Error e -> Error (Check.show_type_error e)
+      | Ok _ ->
+          let domain_bounds = Smt.compute_domain_bounds 3 env in
+          let config =
+            Smt.make_config ~bound:3 ~steps:1 ~domain_bounds ~inject_guards:true
+          in
+          Ok (Smt.generate_queries config env doc))
+
 (** QCheck generator for Types.ty, depth-limited *)
 let[@warning "-44"] gen_ty_at_depth =
   let open QCheck.Gen in

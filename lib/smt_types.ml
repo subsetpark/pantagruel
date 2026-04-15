@@ -46,23 +46,27 @@ let drain_cond_aux_decls () =
   if decls = [] then ""
   else "\n; --- Cond default constants ---\n" ^ String.concat "\n" decls ^ "\n"
 
-(** Insert accumulated cond-default declarations into a finished SMT-LIB2
-    string, right before the first [(assert ...)]. Must be called after all
-    [translate_*] calls for this query are done. *)
-let insert_cond_aux_decls smt2 =
-  let decls = drain_cond_aux_decls () in
+(** Splice [decls] into [smt2] right before the first [(assert ...)] line. Used
+    to inject accumulated auxiliary declarations after the per-query translator
+    has already produced the body text. *)
+let splice_before_first_assert smt2 decls =
   if decls = "" then smt2
   else
     let lines = String.split_on_char '\n' smt2 in
-    let rec split_at_assert acc = function
+    let rec split acc = function
       | [] -> (List.rev acc, [])
       | line :: rest
         when String.length line >= 7 && String.sub line 0 7 = "(assert" ->
           (List.rev acc, line :: rest)
-      | line :: rest -> split_at_assert (line :: acc) rest
+      | line :: rest -> split (line :: acc) rest
     in
-    let before, after = split_at_assert [] lines in
+    let before, after = split [] lines in
     String.concat "\n" before ^ decls ^ String.concat "\n" after
+
+(** Insert accumulated cond-default declarations into a finished SMT-LIB2
+    string. Must be called after all [translate_*] calls for the query. *)
+let insert_cond_aux_decls smt2 =
+  splice_before_first_assert smt2 (drain_cond_aux_decls ())
 
 (** Fresh uninterpreted constants for translation fallbacks. When a translation
     site cannot produce a faithful SMT term (e.g. cardinality of a list over an
@@ -99,22 +103,9 @@ let drain_fallback_decls () =
   if decls = [] then ""
   else "\n; --- Fallback constants ---\n" ^ String.concat "\n" decls ^ "\n"
 
-(** Insert accumulated fallback declarations into a finished SMT-LIB2 string,
-    right before the first [(assert ...)]. Mirrors [insert_cond_aux_decls]. *)
+(** Insert accumulated fallback declarations into a finished SMT-LIB2 string. *)
 let insert_fallback_decls smt2 =
-  let decls = drain_fallback_decls () in
-  if decls = "" then smt2
-  else
-    let lines = String.split_on_char '\n' smt2 in
-    let rec split_at_assert acc = function
-      | [] -> (List.rev acc, [])
-      | line :: rest
-        when String.length line >= 7 && String.sub line 0 7 = "(assert" ->
-          (List.rev acc, line :: rest)
-      | line :: rest -> split_at_assert (line :: acc) rest
-    in
-    let before, after = split_at_assert [] lines in
-    String.concat "\n" before ^ decls ^ String.concat "\n" after
+  splice_before_first_assert smt2 (drain_fallback_decls ())
 
 (** Compute per-domain minimum bounds by counting nullary constants. For each
     domain, the bound is max(default_bound, number_of_nullary_constants). *)
