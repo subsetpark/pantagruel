@@ -214,6 +214,17 @@ let gen_world : gen_world QCheck.Gen.t =
   in
   return { world0 with rules; vars }
 
+(** Keep only the most-recent (nearest) binding per name, so that generators
+    respect shadowing and don't pick hidden outer bindings. *)
+let visible_vars vars =
+  let rec go seen acc = function
+    | [] -> List.rev acc
+    | ((name, _) as v) :: tl ->
+        if List.mem name seen then go seen acc tl
+        else go (name :: seen) (v :: acc) tl
+  in
+  go [] [] vars
+
 (** Boolean expression generator. Bias toward leaves; allow [forall]/[exists]
     that introduce fresh params (the patterns that exercise the
     over-quantification bug). *)
@@ -221,8 +232,9 @@ let[@warning "-44"] gen_bool_expr_at_depth =
   let open QCheck.Gen in
   let lit = oneof_list [ Ast.ELitBool true; Ast.ELitBool false ] in
   let var_of world =
+    let vars = visible_vars world.vars in
     let bool_vars =
-      List.filter (fun (_, ty) -> ty = Ast.TName (Ast.Upper "Bool")) world.vars
+      List.filter (fun (_, ty) -> ty = Ast.TName (Ast.Upper "Bool")) vars
     in
     match bool_vars with
     | [] -> lit
@@ -231,6 +243,7 @@ let[@warning "-44"] gen_bool_expr_at_depth =
         return (Ast.EVar (Ast.Lower name))
   in
   let app_of world =
+    let vars = visible_vars world.vars in
     let bool_rules =
       List.filter
         (fun (_, _, ret) -> ret = Ast.TName (Ast.Upper "Bool"))
@@ -245,7 +258,7 @@ let[@warning "-44"] gen_bool_expr_at_depth =
             (List.map
                (fun (p : Ast.param) ->
                  let v_opt =
-                   List.find_opt (fun (_, ty) -> ty = p.param_type) world.vars
+                   List.find_opt (fun (_, ty) -> ty = p.param_type) vars
                  in
                  match v_opt with
                  | Some (vname, _) -> return (Ast.EVar (Ast.Lower vname))
@@ -273,28 +286,20 @@ let[@warning "-44"] gen_bool_expr_at_depth =
             (2, app_of world);
             ( 1,
               let* p = gen_param_with world in
+              let pname = Ast.lower_name p.param_name in
               let* body =
                 self
                   ( depth - 1,
-                    {
-                      world with
-                      vars =
-                        (Ast.lower_name p.param_name, p.param_type)
-                        :: world.vars;
-                    } )
+                    { world with vars = (pname, p.param_type) :: world.vars } )
               in
               return (Ast.EForall ([ p ], [], body)) );
             ( 1,
               let* p = gen_param_with world in
+              let pname = Ast.lower_name p.param_name in
               let* body =
                 self
                   ( depth - 1,
-                    {
-                      world with
-                      vars =
-                        (Ast.lower_name p.param_name, p.param_type)
-                        :: world.vars;
-                    } )
+                    { world with vars = (pname, p.param_type) :: world.vars } )
               in
               return (Ast.EExists ([ p ], [], body)) );
           ])
