@@ -316,15 +316,19 @@ and translate_card config env e =
           Printf.sprintf "(+ %s)" (String.concat " " terms)
       | Ok (TyList _elem_ty) ->
           (* Non-domain list: element type is unbounded (e.g., Int) so
-             cardinality can't be computed in bounded model checking. Emit 0
-             as an approximation. We deliberately omit any inline ';'
-             comments — SMTLIB line comments run to end-of-line and would
-             swallow the surrounding context's closing parens / annotations. *)
+             cardinality can't be computed in bounded model checking. Emit a
+             fresh non-negative integer constant so the gap is visible to
+             downstream tooling rather than silently constrained to 0. *)
           let _ = set_str in
-          "0"
+          let name = fresh_fallback ~kind:"card" ~sort:"Int" in
+          add_fallback_assert (Printf.sprintf "(>= %s 0)" name);
+          name
       | _ ->
-          (* Can't determine element type at all *)
-          "0")
+          (* Can't determine element type at all — same fallback. *)
+          let _ = set_str in
+          let name = fresh_fallback ~kind:"card" ~sort:"Int" in
+          add_fallback_assert (Printf.sprintf "(>= %s 0)" name);
+          name)
 
 and translate_forall_comprehension config env params guards body =
   (* Standalone comprehension: (all x: D | f x) → array where exactly
@@ -735,8 +739,11 @@ and translate_cond config env = function[@warning "-4"]
 and translate_override _config _env name _pairs =
   (* Standalone override (not applied) — can't be directly represented in
      SMT-LIB2 without higher-order functions. Applied overrides are handled
-     in translate_app. *)
-  Printf.sprintf "<<override:%s>>" (sanitize_ident name)
+     in translate_app. Emit a fresh constant so the gap is visible to
+     downstream tooling rather than emitting a malformed token. The base
+     function name is recorded only for debug context. *)
+  let _ = name in
+  fresh_fallback ~kind:"override" ~sort:"Int"
 
 (** Translate a proposition expression to SMT, injecting guards from guarded
     function applications. For quantified expressions, delegates to

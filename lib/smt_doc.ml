@@ -57,13 +57,89 @@ let classify_chapter (chapter : chapter) =
 
 let classify_chapters (doc : document) = List.map classify_chapter doc.chapters
 
-(** Wrap a proposition in a universal quantifier over the given head bindings.
-    Always wraps, even if the proposition is already quantified, because inner
-    quantifiers may still reference head-level variables. *)
+module StringSet = Set.Make (String)
+(** [free_vars e] is the set of [lower_ident] names that appear free in [e].
+    Used by [bind_head_params] to decide which head-level rule parameters
+    actually need to be universally quantified for a given proposition. *)
+
+let free_vars (e : expr) : StringSet.t =
+  let bound_of_params (params : param list) =
+    List.fold_left
+      (fun s (p : param) -> StringSet.add (Ast.lower_name p.param_name) s)
+      StringSet.empty params
+  in
+  let rec go acc = function
+    | EVar (Lower n) | EPrimed (Lower n) -> StringSet.add n acc
+    | ELitNat _ | ELitReal _ | ELitString _ | ELitBool _ | EDomain _
+    | EQualified _ ->
+        acc
+    | EApp (f, args) -> List.fold_left go (go acc f) args
+    | ETuple exprs -> List.fold_left go acc exprs
+    | EProj (e, _) -> go acc e
+    | EBinop (_, e1, e2) -> go (go acc e1) e2
+    | EUnop (_, e) -> go acc e
+    | EOverride (Lower n, pairs) ->
+        let acc = StringSet.add n acc in
+        List.fold_left (fun acc (k, v) -> go (go acc k) v) acc pairs
+    | EForall (params, guards, body) | EExists (params, guards, body) ->
+        scope_quantifier acc params guards body
+    | EEach (params, guards, _comb, body) ->
+        scope_quantifier acc params guards body
+    | ECond arms -> List.fold_left (fun acc (g, c) -> go (go acc g) c) acc arms
+    | EInitially e -> go acc e
+  and scope_quantifier acc params guards body =
+    let initial_bound = bound_of_params params in
+    let final_bound, guard_free = scan_guards initial_bound guards in
+    let body_free = go StringSet.empty body in
+    let local_free =
+      StringSet.union guard_free (StringSet.diff body_free final_bound)
+    in
+    StringSet.union acc local_free
+  and scan_guards initial_bound guards =
+    List.fold_left
+      (fun (bound, acc) g ->
+        match g with
+        | GParam p -> (StringSet.add (Ast.lower_name p.param_name) bound, acc)
+        | GIn (Lower n, list_expr) ->
+            (* List expression is evaluated in the OUTER scope: its free
+               vars are filtered only by names bound BEFORE this guard. *)
+            let list_free =
+              StringSet.diff (go StringSet.empty list_expr) bound
+            in
+            (StringSet.add n bound, StringSet.union acc list_free)
+        | GExpr e ->
+            let e_free = StringSet.diff (go StringSet.empty e) bound in
+            (bound, StringSet.union acc e_free))
+      (initial_bound, StringSet.empty)
+      guards
+  in
+  go StringSet.empty e
+
+(** Wrap a proposition in a universal quantifier over the head bindings that
+    actually appear free in the proposition. Deduplicates by parameter name
+    (first declaration wins) so that chapters declaring multiple rules with a
+    shared parameter name don't introduce duplicate quantifier binders. Always
+    wraps when at least one binding survives the filter, even if the proposition
+    is itself quantified — inner quantifiers may still reference head-level
+    variables. *)
 let bind_head_params (bindings : param list) (p : expr located) =
   match bindings with
   | [] -> p
-  | _ -> { p with value = EForall (bindings, [], p.value) }
+  | _ -> (
+      let free = free_vars p.value in
+      let _, kept_rev =
+        List.fold_left
+          (fun (seen, acc) (param : param) ->
+            let name = Ast.lower_name param.param_name in
+            if StringSet.mem name seen then (seen, acc)
+            else if not (StringSet.mem name free) then (seen, acc)
+            else (StringSet.add name seen, param :: acc))
+          (StringSet.empty, []) bindings
+      in
+      let kept = List.rev kept_rev in
+      match kept with
+      | [] -> p
+      | _ -> { p with value = EForall (kept, [], p.value) })
 
 (** Collect all invariants from the document (non-initially propositions) *)
 let collect_invariants chapters =

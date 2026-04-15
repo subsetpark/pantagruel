@@ -1,0 +1,26 @@
+# Layer 1 (test_smt_invariants) allowlist of known-pending structural failures
+# in the sample corpus. Format:
+#
+#   <fixture_basename>:<failure_kind>[,<failure_kind>...]
+#
+# Failure kinds (must match the kind tag emitted by Smt_check.failure_kind_tag):
+#   parse_error
+#   duplicate_binder
+#   vacuous_binder
+#   fallback_emission
+#
+# When a tracked bug is fixed, remove the corresponding entries. The harness
+# fails if an allowlist entry does not correspond to an actual failure
+# (so stale entries are caught immediately).
+#
+# Bugs currently tracked:
+#   1. bind_head_params over-quantifies invariants (lib/smt_doc.ml:46-66) —
+#      causes duplicate_binder and/or vacuous_binder on chapters that declare
+#      multiple rules sharing parameter names.
+#   2. translate_card non-domain fallback (lib/smt.ml:317-327) — emits a
+#      named fallback constant for cardinality of [Real] / [Int] / etc;
+#      flagged as fallback_emission until callers stop relying on the
+#      approximation.
+
+# (No entries currently. Bug 1 — bind_head_params over-quantification —
+# was fixed; sample fixtures pass cleanly.)

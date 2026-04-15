@@ -1,0 +1,21 @@
+module BUG_OVERQUANTIFY.
+
+> Regression fixture for the bind_head_params over-quantification bug
+> (previously lib/smt_doc.ml:46-66). Two rules in one chapter head share
+> parameter name `n`, and the body has its own quantifier referencing `x`
+> only. Before the fix, SMT translation wrapped the body in
+> `(forall ((n A) (n A) (k A)) ...)` — duplicate binders and unused vars.
+> The fix in lib/smt_doc.ml filters head bindings to those that appear
+> free in the proposition and dedupes by name; this fixture must now
+> translate cleanly with no structural failures. The corresponding
+> regression test asserts an empty failure list.
+
+A.
+B.
+
+f n: A => B.
+g n: A, k: A => B.
+---
+
+> Body has its own quantifier; should NOT pull in n/k from rules.
+all x: A | x = x.

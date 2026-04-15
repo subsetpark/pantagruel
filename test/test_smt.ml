@@ -401,14 +401,20 @@ let test_card_non_domain_list () =
          (Types.TyFunc ([], Some (Types.TyList Types.TyInt)))
          Ast.dummy_loc ~chapter:0
   in
+  Smt.reset_fallbacks ();
   let result =
     Smt.translate_expr config env (Ast.EUnop (OpCard, EVar (Lower "nums")))
   in
-  (* Non-domain list card falls back to 0. Must NOT emit ';' line comments:
-     they would swallow the wrapping context's closing parens / annotations
-     and corrupt the surrounding SMT assertion. *)
-  check string "is bare 0" "0" result;
-  check bool "no line comment" false (contains result ";")
+  (* Non-domain list card emits a fresh fallback constant name so the gap is
+     visible to downstream tooling (see lib/smt_types.ml `fresh_fallback`).
+     Must NOT emit ';' line comments — they would swallow the wrapping
+     context's closing parens / annotations and corrupt the SMT assertion. *)
+  check bool "is fallback constant" true
+    (String.length result >= 15 && String.sub result 0 15 = "_card_fallback_");
+  check bool "no line comment" false (contains result ";");
+  (* The corresponding declaration is queued in fallback_decls. *)
+  let drained = Smt.drain_fallback_decls () in
+  check bool "declaration queued" true (contains drained "_card_fallback_")
 
 let test_subset_domain_rhs () =
   (* Ensure OpSubset with EDomain on RHS doesn't trigger standalone failwith *)

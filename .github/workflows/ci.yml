@@ -40,6 +40,7 @@ jobs:
           opam exec -- dune exec fuzz/fuzz_lexer.exe
           opam exec -- dune exec fuzz/fuzz_parser.exe
           opam exec -- dune exec fuzz/fuzz_pipeline.exe
+          opam exec -- dune exec fuzz/fuzz_smt.exe
 
       - name: Check samples
         run: |
@@ -67,12 +68,12 @@ jobs:
       - name: Install OCaml dependencies
         working-directory: .
         run: |
-          opam install . --deps-only --with-test
+          opam install . --deps-only
           opam install js_of_ocaml js_of_ocaml-ppx wasm_of_ocaml-compiler
 
       - name: Build pant
         working-directory: .
-        run: opam exec -- dune build
+        run: opam exec -- dune build @install
 
       - name: Build wasm for ts2pant
         run: opam exec -- npm run build:wasm

@@ -46,23 +46,66 @@ let drain_cond_aux_decls () =
   if decls = [] then ""
   else "\n; --- Cond default constants ---\n" ^ String.concat "\n" decls ^ "\n"
 
-(** Insert accumulated cond-default declarations into a finished SMT-LIB2
-    string, right before the first [(assert ...)]. Must be called after all
-    [translate_*] calls for this query are done. *)
-let insert_cond_aux_decls smt2 =
-  let decls = drain_cond_aux_decls () in
+(** Splice [decls] into [smt2] right before the first [(assert ...)] line. Used
+    to inject accumulated auxiliary declarations after the per-query translator
+    has already produced the body text. *)
+let splice_before_first_assert smt2 decls =
   if decls = "" then smt2
   else
     let lines = String.split_on_char '\n' smt2 in
-    let rec split_at_assert acc = function
+    let rec split acc = function
       | [] -> (List.rev acc, [])
       | line :: rest
         when String.length line >= 7 && String.sub line 0 7 = "(assert" ->
           (List.rev acc, line :: rest)
-      | line :: rest -> split_at_assert (line :: acc) rest
+      | line :: rest -> split (line :: acc) rest
     in
-    let before, after = split_at_assert [] lines in
+    let before, after = split [] lines in
     String.concat "\n" before ^ decls ^ String.concat "\n" after
+
+(** Insert accumulated cond-default declarations into a finished SMT-LIB2
+    string. Must be called after all [translate_*] calls for the query. *)
+let insert_cond_aux_decls smt2 =
+  splice_before_first_assert smt2 (drain_cond_aux_decls ())
+
+(** Fresh uninterpreted constants for translation fallbacks. When a translation
+    site cannot produce a faithful SMT term (e.g. cardinality of a list over an
+    unbounded element type, or a standalone first-class override that has no
+    direct SMT-LIB encoding), it emits a fresh constant of the appropriate sort
+    and uses its name in place of the silent literal it would otherwise emit.
+    The named constants make the approximation visible to downstream tooling (in
+    particular, the structural checks in [test/smt_check.ml]). *)
+let fallback_counter = ref 0
+
+let fallback_decls : string list ref = ref []
+
+let reset_fallbacks () =
+  fallback_counter := 0;
+  fallback_decls := []
+
+let fresh_fallback ~kind ~sort =
+  let n = !fallback_counter in
+  incr fallback_counter;
+  let name = Printf.sprintf "_%s_fallback_%d" kind n in
+  fallback_decls :=
+    Printf.sprintf "(declare-const %s %s)" name sort :: !fallback_decls;
+  name
+
+(** Queue an additional [(assert ...)] alongside the most recently declared
+    fallback constant — useful for soft constraints like non-negativity. *)
+let add_fallback_assert assertion_body =
+  fallback_decls :=
+    Printf.sprintf "(assert %s)" assertion_body :: !fallback_decls
+
+let drain_fallback_decls () =
+  let decls = List.rev !fallback_decls in
+  fallback_decls := [];
+  if decls = [] then ""
+  else "\n; --- Fallback constants ---\n" ^ String.concat "\n" decls ^ "\n"
+
+(** Insert accumulated fallback declarations into a finished SMT-LIB2 string. *)
+let insert_fallback_decls smt2 =
+  splice_before_first_assert smt2 (drain_fallback_decls ())
 
 (** Compute per-domain minimum bounds by counting nullary constants. For each
     domain, the bound is max(default_bound, number_of_nullary_constants). *)
@@ -176,9 +219,11 @@ let sanitize_ident name =
       match c with '-' -> '_' | '?' -> 'p' | '!' -> 'b' | _ -> c)
   |> String.of_seq
 
-(** Wrap a query generator: reset cond-aux state, run the generator, and insert
-    any accumulated cond-default declarations into the output. *)
+(** Wrap a query generator: reset per-query auxiliary state (cond defaults and
+    fallback constants), run the generator, and insert any accumulated
+    declarations into the output. *)
 let with_cond_aux f =
   reset_cond_aux ();
+  reset_fallbacks ();
   let q = f () in
-  { q with smt2 = insert_cond_aux_decls q.smt2 }
+  { q with smt2 = q.smt2 |> insert_cond_aux_decls |> insert_fallback_decls }
