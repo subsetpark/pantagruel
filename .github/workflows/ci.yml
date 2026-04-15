@@ -68,7 +68,7 @@ jobs:
       - name: Install OCaml dependencies
         working-directory: .
         run: |
-          opam install . --deps-only --with-test
+          opam install . --deps-only
           opam install js_of_ocaml js_of_ocaml-ppx wasm_of_ocaml-compiler
 
       - name: Build pant
