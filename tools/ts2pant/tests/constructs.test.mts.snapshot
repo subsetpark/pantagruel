@@ -294,6 +294,26 @@ exports[`functions-mutating-const.ts > multiConstMutating 1`] = `
 "module MultiConstMutating.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> MultiConstMutating @ a: Account, amount: Int, rate: Int.\\n\\n---\\n\\nbalance' a = balance a - amount * rate.\\n"
 `;
 
+exports[`functions-mutating-early-exit.ts > earlyReturnMulti 1`] = `
+"module EarlyReturnMulti.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> EarlyReturnMulti @ a: Account, g: Bool, v: Int, who: String.\\n\\n---\\n\\nbalance' a = (cond g => balance a, true => v).\\nowner' a = (cond g => owner a, true => who).\\n"
+`;
+
+exports[`functions-mutating-early-exit.ts > earlyReturnNoBraces 1`] = `
+"module EarlyReturnNoBraces.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> EarlyReturnNoBraces @ a: Account, g: Bool.\\n\\n---\\n\\nbalance' a = (cond g => balance a, true => 0).\\nowner' a1 = owner a1.\\n"
+`;
+
+exports[`functions-mutating-early-exit.ts > earlyReturnSimple 1`] = `
+"module EarlyReturnSimple.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> EarlyReturnSimple @ a: Account, g: Bool.\\n\\n---\\n\\nbalance' a = (cond g => balance a, true => 1).\\nowner' a1 = owner a1.\\n"
+`;
+
+exports[`functions-mutating-early-exit.ts > earlyReturnThenCond 1`] = `
+"module EarlyReturnThenCond.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> EarlyReturnThenCond @ a: Account, g: Bool, h: Bool.\\n\\n---\\n\\nbalance' a = (cond g => balance a, true => (cond h => 1, true => 2)).\\nowner' a1 = owner a1.\\n"
+`;
+
+exports[`functions-mutating-early-exit.ts > writeThenEarlyReturn 1`] = `
+"module WriteThenEarlyReturn.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> WriteThenEarlyReturn @ a: Account, g: Bool.\\n\\n---\\n\\nbalance' a = (cond g => 10, true => 10 + 5).\\nowner' a1 = owner a1.\\n"
+`;
+
 exports[`functions-mutating.ts > deposit 1`] = `
 "module Deposit.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> Deposit @ a: Account, amount: Int.\\n\\n---\\n\\nbalance' a = balance a + amount.\\nowner' a1 = owner a1.\\n"
 `;

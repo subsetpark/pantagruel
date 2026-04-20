@@ -287,7 +287,29 @@ describe("conditional mutations (symbolic last-write)", () => {
     assert.equal(props.filter((p) => p.kind === "equation").length, 0);
   });
 
-  it("rejects non-assignment statement (return) inside a branch", () => {
+  it("rejects return in a branch that isn't the bare early-exit shape", () => {
+    // The then-branch does something *before* returning — not a pure early
+    // exit, so if-conversion can't lift it.
+    const source = `
+      interface Account { balance: number; }
+      function mixed(a: Account, g: boolean): void {
+        if (g) { a.balance = 0; return; }
+        a.balance = 1;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "mixed",
+      strategy: IntStrategy,
+    });
+
+    const unsupported = props.find((p) => p.kind === "unsupported");
+    assert.ok(unsupported);
+    assert.equal(props.filter((p) => p.kind === "equation").length, 0);
+  });
+
+  it("early-exit if-conversion: `if (g) return;` guards subsequent writes under !g", () => {
     const source = `
       interface Account { balance: number; }
       function earlyReturn(a: Account, g: boolean): void {
@@ -302,9 +324,14 @@ describe("conditional mutations (symbolic last-write)", () => {
       strategy: IntStrategy,
     });
 
-    const unsupported = props.find((p) => p.kind === "unsupported");
-    assert.ok(unsupported);
-    assert.equal(props.filter((p) => p.kind === "equation").length, 0);
+    const equations = props.filter((p) => p.kind === "equation");
+    assert.equal(equations.length, 1);
+    const eq = equations[0]!;
+    if (eq.kind !== "equation") return;
+    const ast = getAst();
+    assert.equal(ast.strExpr(eq.lhs), "balance' a");
+    // Early return path keeps pre-state identity; fall-through path writes 1.
+    assert.equal(ast.strExpr(eq.rhs), "cond g => balance a, true => 1");
   });
 
   it("sequential composition: later conditional reads earlier unconditional write", () => {

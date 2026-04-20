@@ -99,6 +99,27 @@ function symbolicKey(prop: string, objExpr: OpaqueExpr): string {
   return `${prop}::${getAst().strExpr(objExpr)}`;
 }
 
+/**
+ * Detect `if (g) { return; }` (or `if (g) return;`) — bare early-exit
+ * with no else-branch. This is the shape Allen et al.'s if-conversion
+ * handles as an early-exit extension: the remaining statements at the
+ * same scope are conditionally executed under `!g`.
+ */
+function isEarlyReturnIf(stmt: ts.Statement): stmt is ts.IfStatement {
+  if (!ts.isIfStatement(stmt) || stmt.elseStatement) {
+    return false;
+  }
+  const then = stmt.thenStatement;
+  if (ts.isReturnStatement(then) && !then.expression) {
+    return true;
+  }
+  if (ts.isBlock(then) && then.statements.length === 1) {
+    const s = then.statements[0]!;
+    return ts.isReturnStatement(s) && !s.expression;
+  }
+  return false;
+}
+
 export interface TranslateBodyOptions {
   sourceFile: SourceFile;
   functionName: string;
@@ -1209,10 +1230,95 @@ function symbolicExecute(
   let applyConst = outerApply;
   const stmts = ts.isBlock(body) ? Array.from(body.statements) : [body];
 
-  for (const stmt of stmts) {
+  for (let i = 0; i < stmts.length; i++) {
+    const stmt = stmts[i]!;
     // Skip guard statements (if-throw patterns and assertion calls)
     if (isGuardStatement(stmt, checker)) {
       continue;
+    }
+
+    // Early-exit if-conversion (Allen et al., POPL 1983, extended to
+    // early exits). `if (g) { return; }` followed by remaining statements
+    // is equivalent to `if (!g) { <remaining> }` at the same scope: the
+    // writes after the early return only take effect when `!g`.
+    //
+    // Detection is limited to a bare `return;` (no expression) as the
+    // sole body of the then-branch, with no else-branch. Richer early-exit
+    // shapes (return with a value, mixed side effects before return) are
+    // out of scope.
+    if (!insideBranch && isEarlyReturnIf(stmt)) {
+      const ifStmt = stmt;
+      if (expressionHasSideEffects(ifStmt.expression, checker)) {
+        ok = false;
+        propositions.push({
+          kind: "unsupported",
+          reason: "impure if-condition in mutating body",
+        });
+        break;
+      }
+      const gResult = translateBodyExpr(
+        ifStmt.expression,
+        checker,
+        strategy,
+        paramNames,
+        state,
+      );
+      if (isBodyUnsupported(gResult)) {
+        ok = false;
+        propositions.push({
+          kind: "unsupported",
+          reason: gResult.unsupported,
+        });
+        break;
+      }
+      const gExpr = applyConst(bodyExpr(gResult));
+
+      // Execute remaining statements in a cloned state. They're now
+      // conditionally executed (under !g), so recurse with insideBranch=true
+      // to disallow further early exits in the reached region.
+      const sR = cloneSymbolicState(state);
+      const remainingProps: PropResult[] = [];
+      const remaining = stmts.slice(i + 1);
+      const remainingBlock = ts.factory.createBlock(remaining, true);
+      const okR = symbolicExecute(
+        remainingBlock,
+        checker,
+        strategy,
+        new Map(paramNames),
+        sR,
+        remainingProps,
+        applyConst,
+        supply,
+        true,
+      );
+      if (!okR) {
+        ok = false;
+        propositions.push(...remainingProps);
+        break;
+      }
+
+      // Merge: for each key touched by the remaining block, emit
+      // `cond(g => pre-state, true => post-remaining)`. The pre-state is
+      // the prior-write value if any, else the identity `prop obj`.
+      for (const key of sR.writtenKeys) {
+        const entryR = sR.writes.get(key)!;
+        const prior = state.writes.get(key);
+        const identity = ast.app(ast.var(entryR.prop), [entryR.objExpr]);
+        const vEarlyReturn = prior?.value ?? identity;
+        const vRemaining = entryR.value;
+        const merged = ast.cond([
+          [gExpr, vEarlyReturn],
+          [ast.litBool(true), vRemaining],
+        ]);
+        state.writes.set(key, {
+          prop: entryR.prop,
+          objExpr: entryR.objExpr,
+          value: merged,
+        });
+        state.writtenKeys.add(key);
+      }
+      // Remaining stmts have been consumed.
+      break;
     }
 
     // Handle const bindings via shared inlineConstBindings
