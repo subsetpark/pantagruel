@@ -146,7 +146,7 @@ guard. Supported ops: `+=`, `-=`, `*=`, `/=`. Non-commutative outer ops (`-`, `/
 outside the comprehension — never as combiners.
 
 **Shape C — pure reduce (expression).**
-`arr.reduce((a, x) => a OP f(x), init)` becomes `init OP (combOP over each x: T | f(x))`,
+`arr.reduce((a, x) => a OP f(x), init)` becomes `init OP (combOP over each x in arr | f(x))`,
 with `init` elided when it equals the combiner identity (0 for `+`, 1 for `*`, `true` for `&&`,
 `false` for `||`). `reduceRight` is accepted only for commutative combiners; non-commutative
 ops require acc on the left.
@@ -158,6 +158,20 @@ ops require acc on the left.
 - `state.modifiedProps` (shared across state clones) tracks which primed rules were emitted,
   including Shape A equations that bypass `state.writes`; used to compute frame conditions
   correctly when Shape A and Shape B appear in the same body.
+
+### Chain Fusion (.filter / .map / .reduce)
+
+**Standard name:** Deforestation.
+**Reference:** Wadler, ["Deforestation: Transforming Programs to Eliminate Trees"](https://homepages.inf.ed.ac.uk/wadler/papers/deforest/deforest.ps), TCS 1990.
+
+`xs.filter(p).map(f).reduce((a, x) => a OP g(x), init)` fuses into a single traversal:
+`init OP (combOP over each x in xs, p(x) | g(f(x)))`. Each `.filter`/`.map` returns a
+`BodyResult` with `pendingComprehension = { binder, arrExpr, guards }` carrying the chain
+state in deferred form; `r.expr` holds the current projection. `bodyExpr(r)` materializes
+into `ast.each([], [gIn(binder, arrExpr), ...guards], projection)` at the chain boundary
+(return statement, binop operand, const initializer, etc.). `.filter` extends `guards`;
+`.map` rewrites the projection via `ast.substituteBinder(callbackBody, callbackBinder, receiver.expr)`;
+`.reduce` fuses the pending chain into an `eachComb` instead of triggering materialization.
 
 ## PR #84 Post-Mortem: Why Standard Algorithms Matter
 

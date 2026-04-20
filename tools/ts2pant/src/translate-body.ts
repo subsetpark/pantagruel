@@ -53,21 +53,43 @@ function freshBinder(paramNames: Map<string, string>): string {
 
 /**
  * Result of translating a body expression. Either an opaque expression
- * (possibly tagged as a comprehension for chaining), or a failure.
+ * (possibly with a deferred list-comprehension structure for chain fusion),
+ * or a failure.
+ *
+ * When `pendingComprehension` is set, `expr` holds the *projection body*
+ * (e.g., `name u`) and the field carries the binder, root array, and
+ * accumulated filter predicates. Materialization (calling `bodyExpr`) emits
+ * the flat `each([], [gIn(binder, arrExpr), ...guards], expr)`.
+ *
+ * Deforestation (Wadler, TCS 1990) — chained `.filter`/`.map`/`.reduce` fuse
+ * into a single traversal by deferring materialization until a consumer
+ * outside the chain demands an opaque expression.
  */
+interface PendingComprehension {
+  binder: string;
+  arrExpr: OpaqueExpr;
+  guards: OpaqueGuard[];
+}
+
 type BodyResult =
   | { unsupported: string }
-  | { expr: OpaqueExpr; comprehensionBinder?: string };
+  | { expr: OpaqueExpr; pendingComprehension?: PendingComprehension };
 
 /** Type guard for unsupported BodyResult. */
 function isBodyUnsupported(r: BodyResult): r is { unsupported: string } {
   return "unsupported" in r;
 }
 
-/** Extract the OpaqueExpr from a successful BodyResult. */
+/** Extract the OpaqueExpr from a successful BodyResult, materializing any
+ * deferred comprehension chain into a flat `each` at the boundary. */
 function bodyExpr(r: BodyResult): OpaqueExpr {
   if ("unsupported" in r) {
     throw new Error(`bodyExpr called on unsupported: ${r.unsupported}`);
+  }
+  if (r.pendingComprehension) {
+    const ast = getAst();
+    const { binder, arrExpr, guards } = r.pendingComprehension;
+    return ast.each([], [ast.gIn(binder, arrExpr), ...guards], r.expr);
   }
   return r.expr;
 }
@@ -1091,8 +1113,13 @@ function getArrayElementType(
 }
 
 /**
- * Translate a .filter() or .map() call on an array to a comprehension,
- * composing with any existing comprehension from a prior chain step.
+ * Translate `.filter()` / `.map()` on an array. Returns a BodyResult whose
+ * `pendingComprehension` encodes the deferred chain (Wadler, TCS 1990).
+ * Materialization into `each([], [gIn(binder, arrExpr), ...guards], body)`
+ * happens at the chain boundary via `bodyExpr`.
+ *
+ * `.filter(p)` extends the guard list; `.map(f)` rewrites the projection.
+ * Composition preserves the original root array in `arrExpr`.
  */
 function translateArrayMethod(
   methodName: "filter" | "map",
@@ -1105,8 +1132,7 @@ function translateArrayMethod(
 ): BodyResult | null {
   const ast = getAst();
 
-  const elemType = getArrayElementType(tsReceiver, checker, strategy);
-  if (!elemType) {
+  if (!getArrayElementType(tsReceiver, checker, strategy)) {
     return null;
   }
 
@@ -1121,18 +1147,13 @@ function translateArrayMethod(
     return receiver;
   }
 
-  const isComposing = receiver.comprehensionBinder !== undefined;
-  const sourceBinder = isComposing
-    ? receiver.comprehensionBinder!
-    : freshBinder(paramNames);
-  // Use a fresh binder for the callback so it doesn't collide with sourceBinder
+  const pending = receiver.pendingComprehension;
+  const isComposing = pending !== undefined;
+  const sourceBinder = isComposing ? pending.binder : freshBinder(paramNames);
   const callbackBinder = isComposing
     ? freshBinder(new Map([...paramNames, [sourceBinder, sourceBinder]]))
     : sourceBinder;
   const extendedParams = new Map(paramNames);
-  if (isComposing) {
-    extendedParams.set(sourceBinder, sourceBinder);
-  }
   extendedParams.set(callbackBinder, callbackBinder);
 
   const rawBody = extractArrowBody(
@@ -1149,76 +1170,59 @@ function translateArrayMethod(
     return rawBody;
   }
 
-  // When composing, substitute the callback's binder with the prior step's body
-  // so that e.g. xs.map(f).map(g) becomes (each x: T | g(f(x))) not (each x: T | g(x))
-  //
-  // For composition, we need the inner comprehension's body expression. Since
-  // we can't inspect opaque values, we use ast.substituteBinder on the raw
-  // callback body, replacing the callback binder with a variable named after
-  // the source binder. The outer comprehension will bind that variable.
+  // Substitute the callback binder with the prior chain's *projection* (not
+  // `var(sourceBinder)` — for a prior `.map(u => score u)`, the element in
+  // scope is `score u`, not `u`). Initial step has no prior projection, so
+  // `callbackBinder === sourceBinder` and this is a no-op.
   const bodyE = isComposing
-    ? ast.substituteBinder(
-        bodyExpr(rawBody),
-        callbackBinder,
-        ast.var(sourceBinder),
-      )
+    ? ast.substituteBinder(bodyExpr(rawBody), callbackBinder, receiver.expr)
     : bodyExpr(rawBody);
 
   if (methodName === "filter") {
     if (isComposing) {
-      // Composing filter onto an existing comprehension: add a guard predicate.
-      // We build a new comprehension with both the existing body and the new
-      // filter predicate as a guard.
-      // The existing comprehension's body becomes the new body, and the filter
-      // predicate is added as an additional guard.
-      //
-      // We reconstruct the comprehension: each sourceBinder: elemType, guards + new guard | existingBody
-      // Since we can't inspect the opaque comprehension, we track enough to rebuild.
-      // For now, produce a standalone comprehension with the filter as a guard on the source binder variable.
       return {
-        expr: ast.each(
-          [ast.param(sourceBinder, ast.tName(elemType))],
-          [ast.gExpr(bodyE)],
-          ast.var(sourceBinder),
-        ),
-        comprehensionBinder: sourceBinder,
+        expr: receiver.expr,
+        pendingComprehension: {
+          binder: pending.binder,
+          arrExpr: pending.arrExpr,
+          guards: [...pending.guards, ast.gExpr(bodyE)],
+        },
       };
     }
     return {
-      expr: ast.each(
-        [ast.param(sourceBinder, ast.tName(elemType))],
-        [ast.gExpr(bodyE)],
-        ast.var(sourceBinder),
-      ),
-      comprehensionBinder: sourceBinder,
-    };
-  } else {
-    // map
-    if (isComposing) {
-      return {
-        expr: ast.each(
-          [ast.param(sourceBinder, ast.tName(elemType))],
-          [],
-          bodyE,
-        ),
-        comprehensionBinder: sourceBinder,
-      };
-    }
-    return {
-      expr: ast.each([ast.param(sourceBinder, ast.tName(elemType))], [], bodyE),
-      comprehensionBinder: sourceBinder,
+      expr: ast.var(sourceBinder),
+      pendingComprehension: {
+        binder: sourceBinder,
+        arrExpr: receiver.expr,
+        guards: [ast.gExpr(bodyE)],
+      },
     };
   }
+  // map
+  if (isComposing) {
+    return {
+      expr: bodyE,
+      pendingComprehension: pending,
+    };
+  }
+  return {
+    expr: bodyE,
+    pendingComprehension: {
+      binder: sourceBinder,
+      arrExpr: receiver.expr,
+      guards: [],
+    },
+  };
 }
 
 /**
  * Translate `arr.reduce((acc, x) => acc OP f(x), init)` to a comprehension fold.
- * Emits `init OP (combOP over each x: T | f(x))`, eliding `init` when it
+ * Emits `init OP (combOP over each x in arr | f(x))`, eliding `init` when it
  * equals the combiner's identity element.
  *
- * Rejects composition with upstream `.filter` / `.map` for now (the opaque-AST
- * constraint means we can't pull the filter predicate back out as a guard);
- * a future change could track the predicate alongside `comprehensionBinder`.
+ * Fuses with an upstream `.filter`/`.map` pending comprehension (Wadler,
+ * TCS 1990) into a single `eachComb` with accumulated guards and the
+ * composed projection.
  */
 function translateReduceCall(
   methodName: "reduce" | "reduceRight",
@@ -1235,8 +1239,7 @@ function translateReduceCall(
     return { unsupported: `.${methodName} requires an explicit initial value` };
   }
 
-  const elemType = getArrayElementType(tsReceiver, checker, strategy);
-  if (!elemType) {
+  if (!getArrayElementType(tsReceiver, checker, strategy)) {
     return null;
   }
 
@@ -1249,11 +1252,6 @@ function translateReduceCall(
   );
   if (isBodyUnsupported(receiver)) {
     return receiver;
-  }
-  if (receiver.comprehensionBinder !== undefined) {
-    return {
-      unsupported: `.${methodName} after .filter/.map composition is not yet supported`,
-    };
   }
 
   const cb = expr.arguments[0]!;
@@ -1339,9 +1337,16 @@ function translateReduceCall(
     };
   }
 
-  const sourceBinder = freshBinder(paramNames);
+  const pending = receiver.pendingComprehension;
+  // Fresh binder for the callback's `x`; in the composing case we'll substitute
+  // it away with the prior projection so the outer guard binds `pending.binder`.
+  const reservedForCallback = new Map(paramNames);
+  if (pending) {
+    reservedForCallback.set(pending.binder, pending.binder);
+  }
+  const xBinder = freshBinder(reservedForCallback);
   const extendedParams = new Map(paramNames);
-  extendedParams.set(xName, sourceBinder);
+  extendedParams.set(xName, xBinder);
 
   const innerResult = translateBodyExpr(
     innerExpr,
@@ -1355,12 +1360,27 @@ function translateReduceCall(
   }
 
   const comb = makeCombiner(info.combiner);
-  const folded = ast.eachComb(
-    [ast.param(sourceBinder, ast.tName(elemType))],
-    [],
-    comb,
-    bodyExpr(innerResult),
-  );
+  let folded: OpaqueExpr;
+  if (pending) {
+    const projectedInner = ast.substituteBinder(
+      bodyExpr(innerResult),
+      xBinder,
+      receiver.expr,
+    );
+    folded = ast.eachComb(
+      [],
+      [ast.gIn(pending.binder, pending.arrExpr), ...pending.guards],
+      comb,
+      projectedInner,
+    );
+  } else {
+    folded = ast.eachComb(
+      [],
+      [ast.gIn(xBinder, receiver.expr)],
+      comb,
+      bodyExpr(innerResult),
+    );
+  }
 
   const initNode = expr.arguments[1]!;
   const initText = initNode.getText().trim();

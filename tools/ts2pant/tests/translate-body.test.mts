@@ -712,7 +712,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     if (eqs[0]?.kind === "equation") {
       assert.equal(
         ast.strExpr(eqs[0].rhs),
-        "+ over each x: Item | value x",
+        "+ over each x in xs | value x",
       );
     }
   });
@@ -735,7 +735,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     if (eqs[0]?.kind === "equation") {
       assert.equal(
         ast.strExpr(eqs[0].rhs),
-        "100 + (+ over each x: Item | value x)",
+        "100 + (+ over each x in xs | value x)",
       );
     }
   });

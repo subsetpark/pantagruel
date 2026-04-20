@@ -63,7 +63,7 @@ exports[`expressions-arithmetic.ts > remainder 1`] = `
 `;
 
 exports[`expressions-array.ts > activeNames 1`] = `
-"module ActiveNames.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nactiveNames users: [User] => [String].\\n\\n---\\n\\nactiveNames users = (each x: User | name x).\\n"
+"module ActiveNames.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nactiveNames users: [User] => [String].\\n\\n---\\n\\nactiveNames users = (each x in users, active x | name x).\\n"
 `;
 
 exports[`expressions-array.ts > contains 1`] = `
@@ -75,11 +75,11 @@ exports[`expressions-array.ts > count 1`] = `
 `;
 
 exports[`expressions-array.ts > highScores 1`] = `
-"module HighScores.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nhighScores users: [User] => [Int].\\n\\n---\\n\\nhighScores users = (each x: Int, x > 0 | x).\\n"
+"module HighScores.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nhighScores users: [User] => [Int].\\n\\n---\\n\\nhighScores users = (each x in users, score x > 0 | score x).\\n"
 `;
 
 exports[`expressions-array.ts > nameLengths 1`] = `
-"module NameLengths.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nnameLengths users: [User] => [Int].\\n\\n---\\n\\nnameLengths users = (each x: String | length x).\\n"
+"module NameLengths.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nnameLengths users: [User] => [Int].\\n\\n---\\n\\nnameLengths users = (each x in users | length (name x)).\\n"
 `;
 
 exports[`expressions-boolean.ts > and 1`] = `
@@ -247,31 +247,31 @@ exports[`expressions-property.ts > getOwnerName 1`] = `
 `;
 
 exports[`expressions-reduce.ts > allActive 1`] = `
-"module AllActive.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nallActive xs: [Item] => Bool.\\n\\n---\\n\\nallActive xs = (and over each x: Item | active x).\\n"
+"module AllActive.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nallActive xs: [Item] => Bool.\\n\\n---\\n\\nallActive xs = (and over each x in xs | active x).\\n"
 `;
 
 exports[`expressions-reduce.ts > anyActive 1`] = `
-"module AnyActive.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nanyActive xs: [Item] => Bool.\\n\\n---\\n\\nanyActive xs = (or over each x: Item | active x).\\n"
+"module AnyActive.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nanyActive xs: [Item] => Bool.\\n\\n---\\n\\nanyActive xs = (or over each x in xs | active x).\\n"
 `;
 
 exports[`expressions-reduce.ts > productValues 1`] = `
-"module ProductValues.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nproductValues xs: [Item] => Int.\\n\\n---\\n\\nproductValues xs = (* over each x: Item | value x).\\n"
+"module ProductValues.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nproductValues xs: [Item] => Int.\\n\\n---\\n\\nproductValues xs = (* over each x in xs | value x).\\n"
 `;
 
 exports[`expressions-reduce.ts > subtractAll 1`] = `
-"module SubtractAll.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nsubtractAll xs: [Item] => Int.\\n\\n---\\n\\nsubtractAll xs = 1000 - (+ over each x: Item | value x).\\n"
+"module SubtractAll.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nsubtractAll xs: [Item] => Int.\\n\\n---\\n\\nsubtractAll xs = 1000 - (+ over each x in xs | value x).\\n"
 `;
 
 exports[`expressions-reduce.ts > sumAmounts 1`] = `
-"module SumAmounts.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nsumAmounts xs: [Item] => Int.\\n\\n---\\n\\nsumAmounts xs = (+ over each x: Item | value x).\\n"
+"module SumAmounts.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nsumAmounts xs: [Item] => Int.\\n\\n---\\n\\nsumAmounts xs = (+ over each x in xs | value x).\\n"
 `;
 
 exports[`expressions-reduce.ts > sumAmountsRight 1`] = `
-"module SumAmountsRight.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nsumAmountsRight xs: [Item] => Int.\\n\\n---\\n\\nsumAmountsRight xs = (+ over each x: Item | value x).\\n"
+"module SumAmountsRight.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nsumAmountsRight xs: [Item] => Int.\\n\\n---\\n\\nsumAmountsRight xs = (+ over each x in xs | value x).\\n"
 `;
 
 exports[`expressions-reduce.ts > sumFromBase 1`] = `
-"module SumFromBase.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nsumFromBase xs: [Item] => Int.\\n\\n---\\n\\nsumFromBase xs = 100 + (+ over each x: Item | value x).\\n"
+"module SumFromBase.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nsumFromBase xs: [Item] => Int.\\n\\n---\\n\\nsumFromBase xs = 100 + (+ over each x in xs | value x).\\n"
 `;
 
 exports[`functions-class.ts > Account.deposit 1`] = `
