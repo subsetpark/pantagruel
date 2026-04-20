@@ -250,6 +250,42 @@ exports[`functions-class.ts > Account.getBalance 1`] = `
 "module GetBalance.\\n\\ngetBalance a: Account => Int.\\n\\n---\\n\\ngetBalance a = balance a.\\n"
 `;
 
+exports[`functions-mutating-conditional.ts > accumulateIf 1`] = `
+"module AccumulateIf.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> AccumulateIf @ a: Account, g: Bool.\\n\\n---\\n\\nbalance' a = (cond g => 10 + 5, true => 10).\\nowner' a1 = owner a1.\\nactive' a1 = active a1.\\n"
+`;
+
+exports[`functions-mutating-conditional.ts > applyFee 1`] = `
+"module ApplyFee.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> ApplyFee @ a: Account, fee: Int.\\n\\n---\\n\\nbalance' a = (cond fee > 0 => balance a - fee, true => balance a).\\nowner' a1 = owner a1.\\nactive' a1 = active a1.\\n"
+`;
+
+exports[`functions-mutating-conditional.ts > asymmetric 1`] = `
+"module Asymmetric.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> Asymmetric @ a: Account, g: Bool, newOwner: String.\\n\\n---\\n\\nbalance' a = (cond g => 0, true => balance a).\\nowner' a = (cond g => owner a, true => newOwner).\\nactive' a1 = active a1.\\n"
+`;
+
+exports[`functions-mutating-conditional.ts > incrementIfPositive 1`] = `
+"module IncrementIfPositive.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> IncrementIfPositive @ a: Account, n: Int.\\n\\n---\\n\\nbalance' a = (cond n > 0 => balance a + n, true => balance a).\\nowner' a1 = owner a1.\\nactive' a1 = active a1.\\n"
+`;
+
+exports[`functions-mutating-conditional.ts > initializeAndMaybe 1`] = `
+"module InitializeAndMaybe.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> InitializeAndMaybe @ a: Account, g: Bool.\\n\\n---\\n\\nbalance' a = (cond g => 1, true => 0).\\nowner' a1 = owner a1.\\nactive' a1 = active a1.\\n"
+`;
+
+exports[`functions-mutating-conditional.ts > nestedIfs 1`] = `
+"module NestedIfs.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> NestedIfs @ a: Account, x: Bool, y: Bool.\\n\\n---\\n\\nbalance' a = (cond x => (cond y => 1, true => 2), true => 3).\\nowner' a1 = owner a1.\\nactive' a1 = active a1.\\n"
+`;
+
+exports[`functions-mutating-conditional.ts > setFlag 1`] = `
+"module SetFlag.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> SetFlag @ a: Account, g: Bool.\\n\\n---\\n\\nactive' a = (cond g => true, true => active a).\\nbalance' a1 = balance a1.\\nowner' a1 = owner a1.\\n"
+`;
+
+exports[`functions-mutating-conditional.ts > threeWay 1`] = `
+"module ThreeWay.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> ThreeWay @ a: Account, amount: Int.\\n\\n---\\n\\nbalance' a = (cond amount > 100 => balance a - 100, true => (cond amount > 0 => balance a - 50, true => 0)).\\nowner' a1 = owner a1.\\nactive' a1 = active a1.\\n"
+`;
+
+exports[`functions-mutating-conditional.ts > toggleActive 1`] = `
+"module ToggleActive.\\n\\nUser.\\nactive u1: User => Bool.\\n~> ToggleActive @ u: User.\\n\\n---\\n\\nactive' u = (cond active u => false, true => true).\\n"
+`;
+
 exports[`functions-mutating-const.ts > depositWithConst 1`] = `
 "module DepositWithConst.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> DepositWithConst @ a: Account, amount: Int.\\n\\n---\\n\\nbalance' a = balance a + amount.\\n"
 `;
@@ -335,7 +371,7 @@ exports[`guards-if-throw.ts > guardWithLocals 1`] = `
 `;
 
 exports[`guards-if-throw.ts > notGuardSideEffects 1`] = `
-"module NotGuardSideEffects.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> NotGuardSideEffects @ a: Account, amount: Int.\\n\\n---\\n\\n> UNSUPPORTED: conditional assignment (if/else).\\nbalance' a = balance a - amount.\\n"
+"module NotGuardSideEffects.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> NotGuardSideEffects @ a: Account, amount: Int.\\n\\n---\\n\\n> UNSUPPORTED: side-effectful control-flow expression.\\n"
 `;
 
 exports[`guards-if-throw.ts > withdraw 1`] = `
@@ -386,12 +422,12 @@ exports[`unsupported.ts > arrowWithLocals 1`] = `
 "module ArrowWithLocals.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\narrowWithLocals users: [User] => [String].\\n\\n---\\n\\n> UNSUPPORTED: users.filter((u) => u.active).map((u) => { const s = u.score; return u.name; }).\\n"
 `;
 
-exports[`unsupported.ts > conditionalAssign 1`] = `
-"module ConditionalAssign.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> ConditionalAssign @ a: Account.\\n\\n---\\n\\n> UNSUPPORTED: conditional assignment (if/else).\\n"
-`;
-
 exports[`unsupported.ts > destructuredParam 1`] = `
 "module DestructuredParam.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\ndestructuredParam users: [User] => [String].\\n\\n---\\n\\n> UNSUPPORTED: filter/map callback must have exactly one identifier parameter.\\n"
+`;
+
+exports[`unsupported.ts > impureGuardAssign 1`] = `
+"module ImpureGuardAssign.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> ImpureGuardAssign @ a: Account.\\n\\n---\\n\\n> UNSUPPORTED: impure if-condition in mutating body.\\n"
 `;
 
 exports[`unsupported.ts > loopAssign 1`] = `

@@ -147,6 +147,13 @@ describe("full pipeline", () => {
 
     assertPantTypeChecks(output);
   });
+
+  it("apply-fee.ts emitted .pant type-checks through pant", async () => {
+    const doc = await buildDocument("apply-fee.ts", "applyFee");
+    const output = emitDocument(doc);
+
+    assertPantTypeChecks(output);
+  });
 });
 
 // --- Snapshot tests ---
@@ -195,6 +202,16 @@ describe("pant --check", () => {
 
   it("deposit.ts assertions are checkable", { skip: !hasSolver ? "z3 not available" : undefined }, async () => {
     const doc = await buildDocument("deposit.ts", "deposit");
+    const output = emitDocument(doc);
+    const result = runCheck(output, { projectRoot: PROJECT_ROOT });
+
+    assert.equal(result.passed, true);
+    assert.ok(result.checks.length > 0);
+    assert.ok(result.checks.every((c) => c.passed));
+  });
+
+  it("apply-fee.ts conditional mutation is checkable", { skip: !hasSolver ? "z3 not available" : undefined }, async () => {
+    const doc = await buildDocument("apply-fee.ts", "applyFee");
     const output = emitDocument(doc);
     const result = runCheck(output, { projectRoot: PROJECT_ROOT });
 

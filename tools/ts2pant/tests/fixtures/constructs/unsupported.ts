@@ -30,9 +30,10 @@ export function multiParamCallback(items: Item[]): number[] {
   return items.filter((x) => x.value > 0).map((x, i) => x.value + i);
 }
 
-/** conditional assignment → UNSUPPORTED */
-export function conditionalAssign(a: Account): void {
-  if (true) {
+/** conditional assignment with impure guard → UNSUPPORTED */
+declare function check(): boolean;
+export function impureGuardAssign(a: Account): void {
+  if (check()) {
     a.balance = 1;
   }
 }

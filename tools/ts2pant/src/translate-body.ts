@@ -67,6 +67,38 @@ function bodyExpr(r: BodyResult): OpaqueExpr {
   return r.expr;
 }
 
+// --- Symbolic last-write state (Dijkstra's guarded commands, 1975) ---
+//
+// Forward symbolic execution with path merging. Each property-assignment
+// statement updates `writes[prop::objRepr]`. If statements clone the state
+// for each branch and merge via `cond` at the join. Later reads of the same
+// property access see the accumulated value. See CLAUDE.md § Guarded Commands.
+
+interface WriteEntry {
+  prop: string;
+  objExpr: OpaqueExpr;
+  value: OpaqueExpr;
+}
+
+interface SymbolicState {
+  writes: Map<string, WriteEntry>;
+  // Keys *written during the current branch* (reset on clone). Used by the
+  // if-merge algorithm to determine which locations are "touched."
+  writtenKeys: Set<string>;
+}
+
+function makeSymbolicState(): SymbolicState {
+  return { writes: new Map(), writtenKeys: new Set() };
+}
+
+function cloneSymbolicState(s: SymbolicState): SymbolicState {
+  return { writes: new Map(s.writes), writtenKeys: new Set() };
+}
+
+function symbolicKey(prop: string, objExpr: OpaqueExpr): string {
+  return `${prop}::${getAst().strExpr(objExpr)}`;
+}
+
 export interface TranslateBodyOptions {
   sourceFile: SourceFile;
   functionName: string;
@@ -322,6 +354,7 @@ function inlineConstBindings(
   strategy: NumericStrategy,
   baseParams: Map<string, string>,
   supply: UniqueSupply,
+  state?: SymbolicState,
 ):
   | {
       applyTo: (expr: OpaqueExpr) => OpaqueExpr;
@@ -352,6 +385,7 @@ function inlineConstBindings(
       checker,
       strategy,
       scopedParams,
+      state,
     );
     if (isBodyUnsupported(initResult)) {
       return { error: initResult.unsupported };
@@ -565,12 +599,17 @@ function expressionHasSideEffects(
 /**
  * Translate a TS expression to an opaque Pantagruel AST node, extending the
  * base translateExpr with support for ternary, array ops, and if/else as cond.
+ *
+ * When a `state` is provided (mutating-body context), property-access reads
+ * first consult the symbolic state so that `a.balance` after an assignment
+ * `a.balance = v` evaluates to `v`.
  */
 export function translateBodyExpr(
   expr: ts.Expression | ts.Statement,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
+  state?: SymbolicState,
 ): BodyResult {
   const ast = getAst();
 
@@ -580,7 +619,7 @@ export function translateBodyExpr(
 
   // if/else statement -> cond
   if (ts.isIfStatement(expr)) {
-    return translateIfStatement(expr, checker, strategy, paramNames);
+    return translateIfStatement(expr, checker, strategy, paramNames, state);
   }
 
   // Ternary: a ? b : c -> cond([[a, b], [true, c]])
@@ -590,6 +629,7 @@ export function translateBodyExpr(
       checker,
       strategy,
       paramNames,
+      state,
     );
     if (isBodyUnsupported(cond)) {
       return cond;
@@ -599,6 +639,7 @@ export function translateBodyExpr(
       checker,
       strategy,
       paramNames,
+      state,
     );
     if (isBodyUnsupported(whenTrue)) {
       return whenTrue;
@@ -608,6 +649,7 @@ export function translateBodyExpr(
       checker,
       strategy,
       paramNames,
+      state,
     );
     if (isBodyUnsupported(whenFalse)) {
       return whenFalse;
@@ -628,6 +670,7 @@ export function translateBodyExpr(
       checker,
       strategy,
       paramNames,
+      state,
     );
     if (isBodyUnsupported(obj)) {
       return obj;
@@ -639,13 +682,21 @@ export function translateBodyExpr(
         return { expr: ast.unop(ast.opCard(), bodyExpr(obj)) };
       }
     }
+    // Consult symbolic state for a prior write at this location.
+    if (state !== undefined) {
+      const key = symbolicKey(prop, bodyExpr(obj));
+      const entry = state.writes.get(key);
+      if (entry !== undefined) {
+        return { expr: entry.value };
+      }
+    }
     // Regular property access: a.balance -> app(var("balance"), [obj])
     return { expr: ast.app(ast.var(prop), [bodyExpr(obj)]) };
   }
 
   // Call expression: handle .includes(), .filter().map(), etc.
   if (ts.isCallExpression(expr)) {
-    return translateCallExpr(expr, checker, strategy, paramNames);
+    return translateCallExpr(expr, checker, strategy, paramNames, state);
   }
 
   // Prefix unary: !x -> unop(opNot(), x), -x -> unop(opNeg(), x)
@@ -655,6 +706,7 @@ export function translateBodyExpr(
       checker,
       strategy,
       paramNames,
+      state,
     );
     if (isBodyUnsupported(operand)) {
       return operand;
@@ -675,11 +727,23 @@ export function translateBodyExpr(
         unsupported: `operator ${ts.SyntaxKind[expr.operatorToken.kind]}`,
       };
     }
-    const left = translateBodyExpr(expr.left, checker, strategy, paramNames);
+    const left = translateBodyExpr(
+      expr.left,
+      checker,
+      strategy,
+      paramNames,
+      state,
+    );
     if (isBodyUnsupported(left)) {
       return left;
     }
-    const right = translateBodyExpr(expr.right, checker, strategy, paramNames);
+    const right = translateBodyExpr(
+      expr.right,
+      checker,
+      strategy,
+      paramNames,
+      state,
+    );
     if (isBodyUnsupported(right)) {
       return right;
     }
@@ -699,6 +763,7 @@ function translateIfStatement(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
+  state?: SymbolicState,
 ): BodyResult {
   const ast = getAst();
 
@@ -707,6 +772,7 @@ function translateIfStatement(
     checker,
     strategy,
     paramNames,
+    state,
   );
   if (isBodyUnsupported(cond)) {
     return cond;
@@ -717,11 +783,23 @@ function translateIfStatement(
     : null;
 
   if (thenExpr && elseExpr) {
-    const thenVal = translateBodyExpr(thenExpr, checker, strategy, paramNames);
+    const thenVal = translateBodyExpr(
+      thenExpr,
+      checker,
+      strategy,
+      paramNames,
+      state,
+    );
     if (isBodyUnsupported(thenVal)) {
       return thenVal;
     }
-    const elseVal = translateBodyExpr(elseExpr, checker, strategy, paramNames);
+    const elseVal = translateBodyExpr(
+      elseExpr,
+      checker,
+      strategy,
+      paramNames,
+      state,
+    );
     if (isBodyUnsupported(elseVal)) {
       return elseVal;
     }
@@ -788,6 +866,7 @@ function translateArrayMethod(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
+  state?: SymbolicState,
 ): BodyResult | null {
   const ast = getAst();
 
@@ -796,7 +875,13 @@ function translateArrayMethod(
     return null;
   }
 
-  const receiver = translateBodyExpr(tsReceiver, checker, strategy, paramNames);
+  const receiver = translateBodyExpr(
+    tsReceiver,
+    checker,
+    strategy,
+    paramNames,
+    state,
+  );
   if (isBodyUnsupported(receiver)) {
     return receiver;
   }
@@ -896,6 +981,7 @@ function translateCallExpr(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
+  state?: SymbolicState,
 ): BodyResult {
   const ast = getAst();
 
@@ -915,6 +1001,7 @@ function translateCallExpr(
         checker,
         strategy,
         paramNames,
+        state,
       );
       if (isBodyUnsupported(arg)) {
         return arg;
@@ -924,6 +1011,7 @@ function translateCallExpr(
         checker,
         strategy,
         paramNames,
+        state,
       );
       if (isBodyUnsupported(objExpr)) {
         return objExpr;
@@ -943,6 +1031,7 @@ function translateCallExpr(
         checker,
         strategy,
         paramNames,
+        state,
       );
       if (result) {
         return result;
@@ -959,13 +1048,14 @@ function translateCallExpr(
       checker,
       strategy,
       paramNames,
+      state,
     );
     if (isBodyUnsupported(receiver)) {
       return receiver;
     }
     const methodArgs: OpaqueExpr[] = [bodyExpr(receiver)];
     for (const arg of expr.arguments) {
-      const a = translateBodyExpr(arg, checker, strategy, paramNames);
+      const a = translateBodyExpr(arg, checker, strategy, paramNames, state);
       if (isBodyUnsupported(a)) {
         return a;
       }
@@ -989,7 +1079,7 @@ function translateCallExpr(
 
     const fnArgs: OpaqueExpr[] = [];
     for (const arg of expr.arguments) {
-      const a = translateBodyExpr(arg, checker, strategy, paramNames);
+      const a = translateBodyExpr(arg, checker, strategy, paramNames, state);
       if (isBodyUnsupported(a)) {
         return a;
       }
@@ -1060,46 +1150,62 @@ function translateMutatingBody(
     return [];
   }
 
+  const ast = getAst();
   const propositions: PropResult[] = [];
-  const modifiedRules = new Set<string>();
+  const state = makeSymbolicState();
 
-  // Collect property assignments
-  const hasUnsupportedMutation = collectAssignments(
+  const ok = symbolicExecute(
     node.body,
     checker,
     strategy,
     paramNames,
+    state,
     propositions,
-    modifiedRules,
   );
 
-  // Only generate frame conditions when all mutation shapes were translatable;
-  // unsupported control flow (if/loop/switch) makes frames unsound.
-  if (!hasUnsupportedMutation) {
-    const frames = generateFrameConditions(modifiedRules, declarations);
-    propositions.push(...frames);
+  // Only emit state equations + frames when the whole body was translatable;
+  // partial emission would be unsound (frames would mask unhandled writes).
+  if (!ok) {
+    return propositions;
   }
+
+  const modifiedRules = new Set<string>();
+  for (const [, entry] of state.writes) {
+    propositions.push({
+      kind: "equation",
+      quantifiers: [] as OpaqueParam[],
+      lhs: ast.app(ast.primed(entry.prop), [entry.objExpr]),
+      rhs: entry.value,
+    });
+    modifiedRules.add(entry.prop);
+  }
+
+  const frames = generateFrameConditions(modifiedRules, declarations);
+  propositions.push(...frames);
 
   return propositions;
 }
 
 /**
- * Collect property assignments from a block. Returns true if any unsupported
- * mutating control flow (if/loop/switch) was encountered, signalling that
- * frame condition generation should be suppressed.
+ * Forward symbolic execution with path merging (Dijkstra CACM 1975;
+ * Allen POPL 1983 if-conversion). Updates `state.writes` for each property
+ * assignment; merges `if`/`else` via `cond` at the join point. Returns
+ * `false` when an unsupported construct was encountered; unsupported
+ * markers are pushed into `propositions` for the caller to inspect.
  */
-function collectAssignments(
+function symbolicExecute(
   body: ts.Block | ts.Statement,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
+  state: SymbolicState,
   propositions: PropResult[],
-  modifiedRules: Set<string>,
   outerApply: (e: OpaqueExpr) => OpaqueExpr = (e) => e,
   supply: UniqueSupply = makeUniqueSupply(),
+  insideBranch: boolean = false,
 ): boolean {
   const ast = getAst();
-  let hasUnsupportedMutation = false;
+  let ok = true;
   let applyConst = outerApply;
   const stmts = ts.isBlock(body) ? Array.from(body.statements) : [body];
 
@@ -1113,7 +1219,6 @@ function collectAssignments(
     if (ts.isVariableStatement(stmt)) {
       const declList = stmt.declarationList;
       if (declList.flags & ts.NodeFlags.Const) {
-        // Check all declarations are pure const with simple identifier names
         const bindings: ConstBinding[] = [];
         let allPure = true;
         for (const decl of declList.declarations) {
@@ -1137,27 +1242,25 @@ function collectAssignments(
             strategy,
             paramNames,
             supply,
+            state,
           );
           if ("error" in inlined) {
-            hasUnsupportedMutation = true;
+            ok = false;
             propositions.push({
               kind: "unsupported",
               reason: inlined.error,
             });
           } else {
-            // Update paramNames with new const mappings for subsequent statements
             for (const [key, value] of inlined.scopedParams) {
               paramNames.set(key, value);
             }
-            // Compose: inner substitutions applied first, then outer
             const prevApply = applyConst;
             applyConst = (e) => prevApply(inlined.applyTo(e));
           }
           continue;
         }
       }
-      // let/var or effectful const — unsupported local declaration
-      hasUnsupportedMutation = true;
+      ok = false;
       propositions.push({
         kind: "unsupported",
         reason: "local variable declaration (let/var or effectful const)",
@@ -1165,6 +1268,7 @@ function collectAssignments(
       continue;
     }
 
+    // Property assignment: obj.prop = rhs
     if (
       ts.isExpressionStatement(stmt) &&
       ts.isBinaryExpression(unwrapExpression(stmt.expression))
@@ -1180,28 +1284,30 @@ function collectAssignments(
           checker,
           strategy,
           paramNames,
+          state,
         );
-        const val = translateBodyExpr(bin.right, checker, strategy, paramNames);
         if (isBodyUnsupported(obj)) {
-          hasUnsupportedMutation = true;
+          ok = false;
           propositions.push({ kind: "unsupported", reason: obj.unsupported });
           continue;
         }
+        const val = translateBodyExpr(
+          bin.right,
+          checker,
+          strategy,
+          paramNames,
+          state,
+        );
         if (isBodyUnsupported(val)) {
-          hasUnsupportedMutation = true;
+          ok = false;
           propositions.push({ kind: "unsupported", reason: val.unsupported });
           continue;
         }
-        // Apply const substitutions to assignment expressions
         const objExpr = applyConst(bodyExpr(obj));
         const valExpr = applyConst(bodyExpr(val));
-        propositions.push({
-          kind: "equation",
-          quantifiers: [] as OpaqueParam[],
-          lhs: ast.app(ast.primed(prop), [objExpr]),
-          rhs: valExpr,
-        });
-        modifiedRules.add(prop);
+        const key = symbolicKey(prop, objExpr);
+        state.writes.set(key, { prop, objExpr, value: valExpr });
+        state.writtenKeys.add(key);
         continue;
       }
     }
@@ -1214,7 +1320,7 @@ function collectAssignments(
         kind: "unsupported",
         reason: "side-effectful expression",
       });
-      hasUnsupportedMutation = true;
+      ok = false;
       continue;
     }
 
@@ -1229,7 +1335,7 @@ function collectAssignments(
         kind: "unsupported",
         reason: "side-effectful variable initializer",
       });
-      hasUnsupportedMutation = true;
+      ok = false;
       continue;
     }
 
@@ -1242,33 +1348,143 @@ function collectAssignments(
         kind: "unsupported",
         reason: "side-effectful control-flow expression",
       });
-      hasUnsupportedMutation = true;
+      ok = false;
       continue;
     }
 
-    // Recurse into nested blocks
-    if (ts.isBlock(stmt)) {
-      if (
-        collectAssignments(
-          stmt,
-          checker,
-          strategy,
-          paramNames,
-          propositions,
-          modifiedRules,
-          applyConst,
-          supply,
-        )
-      ) {
-        hasUnsupportedMutation = true;
+    // Bare `return;` at top level is a no-op (void function). Inside a
+    // branch it's unsound — symbolic execution assumes each branch reaches
+    // the join point with a well-defined state. Early exit would leave
+    // later writes conditionally unreachable, which the merge cannot encode.
+    if (ts.isReturnStatement(stmt) && !stmt.expression) {
+      if (insideBranch) {
+        propositions.push({
+          kind: "unsupported",
+          reason: "return in mutating branch",
+        });
+        ok = false;
       }
-    } else if (ts.isIfStatement(stmt)) {
+      continue;
+    }
+
+    // `return expr;` or `throw;` always break the path-merging model.
+    if (ts.isReturnStatement(stmt) || ts.isThrowStatement(stmt)) {
       propositions.push({
         kind: "unsupported",
-        reason: "conditional assignment (if/else)",
+        reason: "return/throw in mutating body",
       });
-      hasUnsupportedMutation = true;
-    } else if (
+      ok = false;
+      continue;
+    }
+
+    // Nested block — flow state through sequentially
+    if (ts.isBlock(stmt)) {
+      const inner = symbolicExecute(
+        stmt,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        propositions,
+        applyConst,
+        supply,
+        insideBranch,
+      );
+      if (!inner) {
+        ok = false;
+      }
+      continue;
+    }
+
+    // Conditional mutation: path merging via cond
+    if (ts.isIfStatement(stmt)) {
+      if (expressionHasSideEffects(stmt.expression, checker)) {
+        ok = false;
+        propositions.push({
+          kind: "unsupported",
+          reason: "impure if-condition in mutating body",
+        });
+        continue;
+      }
+      const gResult = translateBodyExpr(
+        stmt.expression,
+        checker,
+        strategy,
+        paramNames,
+        state,
+      );
+      if (isBodyUnsupported(gResult)) {
+        ok = false;
+        propositions.push({
+          kind: "unsupported",
+          reason: gResult.unsupported,
+        });
+        continue;
+      }
+      const gExpr = applyConst(bodyExpr(gResult));
+
+      const sT = cloneSymbolicState(state);
+      const thenProps: PropResult[] = [];
+      const okT = symbolicExecute(
+        stmt.thenStatement,
+        checker,
+        strategy,
+        new Map(paramNames),
+        sT,
+        thenProps,
+        applyConst,
+        supply,
+        true,
+      );
+      if (!okT) {
+        ok = false;
+        propositions.push(...thenProps);
+        continue;
+      }
+
+      const sE = cloneSymbolicState(state);
+      const elseProps: PropResult[] = [];
+      if (stmt.elseStatement) {
+        const okE = symbolicExecute(
+          stmt.elseStatement,
+          checker,
+          strategy,
+          new Map(paramNames),
+          sE,
+          elseProps,
+          applyConst,
+          supply,
+          true,
+        );
+        if (!okE) {
+          ok = false;
+          propositions.push(...elseProps);
+          continue;
+        }
+      }
+
+      // Merge touched keys via cond(g => vT, true => vE)
+      const touched = new Set<string>([...sT.writtenKeys, ...sE.writtenKeys]);
+      for (const key of touched) {
+        const entryT = sT.writes.get(key);
+        const entryE = sE.writes.get(key);
+        // At least one branch wrote the key, so at least one entry exists.
+        const objExpr = (entryT ?? entryE)!.objExpr;
+        const prop = (entryT ?? entryE)!.prop;
+        const identity = ast.app(ast.var(prop), [objExpr]);
+        const vT = entryT?.value ?? identity;
+        const vE = entryE?.value ?? identity;
+        const merged = ast.cond([
+          [gExpr, vT],
+          [ast.litBool(true), vE],
+        ]);
+        state.writes.set(key, { prop, objExpr, value: merged });
+        state.writtenKeys.add(key);
+      }
+      continue;
+    }
+
+    if (
       ts.isForStatement(stmt) ||
       ts.isForOfStatement(stmt) ||
       ts.isForInStatement(stmt) ||
@@ -1276,56 +1492,60 @@ function collectAssignments(
       ts.isDoStatement(stmt)
     ) {
       propositions.push({ kind: "unsupported", reason: "loop assignment" });
-      hasUnsupportedMutation = true;
-    } else if (ts.isTryStatement(stmt)) {
-      // try/catch branches are mutually exclusive; collecting from both would
-      // produce contradictory conjunctions. Only the finally block executes
-      // unconditionally.
+      ok = false;
+      continue;
+    }
+
+    if (ts.isTryStatement(stmt)) {
       if (stmt.catchClause) {
         propositions.push({
           kind: "unsupported",
           reason: "try/catch assignment",
         });
-        hasUnsupportedMutation = true;
+        ok = false;
       } else {
-        if (
-          collectAssignments(
-            stmt.tryBlock,
-            checker,
-            strategy,
-            paramNames,
-            propositions,
-            modifiedRules,
-            applyConst,
-            supply,
-          )
-        ) {
-          hasUnsupportedMutation = true;
+        const inner = symbolicExecute(
+          stmt.tryBlock,
+          checker,
+          strategy,
+          paramNames,
+          state,
+          propositions,
+          applyConst,
+          supply,
+          insideBranch,
+        );
+        if (!inner) {
+          ok = false;
         }
       }
       if (stmt.finallyBlock) {
-        if (
-          collectAssignments(
-            stmt.finallyBlock,
-            checker,
-            strategy,
-            paramNames,
-            propositions,
-            modifiedRules,
-            applyConst,
-            supply,
-          )
-        ) {
-          hasUnsupportedMutation = true;
+        const inner = symbolicExecute(
+          stmt.finallyBlock,
+          checker,
+          strategy,
+          paramNames,
+          state,
+          propositions,
+          applyConst,
+          supply,
+          insideBranch,
+        );
+        if (!inner) {
+          ok = false;
         }
       }
-    } else if (ts.isSwitchStatement(stmt)) {
+      continue;
+    }
+
+    if (ts.isSwitchStatement(stmt)) {
       propositions.push({ kind: "unsupported", reason: "switch assignment" });
-      hasUnsupportedMutation = true;
+      ok = false;
+      continue;
     }
   }
 
-  return hasUnsupportedMutation;
+  return ok;
 }
 
 /**

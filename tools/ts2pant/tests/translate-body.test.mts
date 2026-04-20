@@ -265,3 +265,140 @@ describe("translateCallExpr", () => {
     assert.equal(props[0]?.kind, "unsupported");
   });
 });
+
+describe("conditional mutations (symbolic last-write)", () => {
+  it("rejects conditional mutation when if-condition is impure", () => {
+    const source = `
+      interface Account { balance: number; }
+      declare function check(): boolean;
+      function impure(a: Account): void {
+        if (check()) { a.balance = 1; }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "impure",
+      strategy: IntStrategy,
+    });
+
+    const unsupported = props.find((p) => p.kind === "unsupported");
+    assert.ok(unsupported, "expected at least one unsupported proposition");
+    assert.equal(props.filter((p) => p.kind === "equation").length, 0);
+  });
+
+  it("rejects non-assignment statement (return) inside a branch", () => {
+    const source = `
+      interface Account { balance: number; }
+      function earlyReturn(a: Account, g: boolean): void {
+        if (g) { return; }
+        a.balance = 1;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "earlyReturn",
+      strategy: IntStrategy,
+    });
+
+    const unsupported = props.find((p) => p.kind === "unsupported");
+    assert.ok(unsupported);
+    assert.equal(props.filter((p) => p.kind === "equation").length, 0);
+  });
+
+  it("sequential composition: later conditional reads earlier unconditional write", () => {
+    const source = `
+      interface Account { balance: number; }
+      function compose(a: Account, g: boolean): void {
+        a.balance = 10;
+        if (g) { a.balance = a.balance + 5; }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "compose",
+      strategy: IntStrategy,
+    });
+
+    const equations = props.filter((p) => p.kind === "equation");
+    assert.equal(equations.length, 1);
+    const eq = equations[0]!;
+    if (eq.kind !== "equation") return;
+    const ast = getAst();
+    assert.equal(ast.strExpr(eq.lhs), "balance' a");
+    // Conditional branch sees the prior write (10) rather than the pre-state `balance a`.
+    assert.equal(ast.strExpr(eq.rhs), "cond g => 10 + 5, true => 10");
+  });
+
+  it("both branches writing same prop merge into a single cond equation", () => {
+    const source = `
+      interface User { active: boolean; }
+      function toggle(u: User): void {
+        if (u.active) { u.active = false; }
+        else { u.active = true; }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "toggle",
+      strategy: IntStrategy,
+    });
+
+    const equations = props.filter((p) => p.kind === "equation");
+    assert.equal(equations.length, 1);
+    const eq = equations[0]!;
+    if (eq.kind !== "equation") return;
+    const ast = getAst();
+    assert.equal(ast.strExpr(eq.lhs), "active' u");
+    assert.equal(
+      ast.strExpr(eq.rhs),
+      "cond active u => false, true => true",
+    );
+  });
+
+  it("asymmetric writes produce separate per-prop cond equations", () => {
+    const source = `
+      interface Account { balance: number; owner: string; }
+      function asym(a: Account, g: boolean, newOwner: string): void {
+        if (g) { a.balance = 0; }
+        else { a.owner = newOwner; }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "asym",
+      strategy: IntStrategy,
+    });
+
+    const equations = props.filter((p) => p.kind === "equation");
+    assert.equal(equations.length, 2);
+    const ast = getAst();
+    const lhsStrings = equations.map((e) =>
+      e.kind === "equation" ? ast.strExpr(e.lhs) : "",
+    );
+    assert.deepEqual(lhsStrings.sort(), ["balance' a", "owner' a"]);
+    // Each branch should use the pre-state identity in its untouched arm.
+    const balanceEq = equations.find(
+      (e) => e.kind === "equation" && ast.strExpr(e.lhs) === "balance' a",
+    );
+    const ownerEq = equations.find(
+      (e) => e.kind === "equation" && ast.strExpr(e.lhs) === "owner' a",
+    );
+    if (balanceEq?.kind === "equation") {
+      assert.equal(
+        ast.strExpr(balanceEq.rhs),
+        "cond g => 0, true => balance a",
+      );
+    }
+    if (ownerEq?.kind === "equation") {
+      assert.equal(
+        ast.strExpr(ownerEq.rhs),
+        "cond g => owner a, true => newOwner",
+      );
+    }
+  });
+});
