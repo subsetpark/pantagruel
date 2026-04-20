@@ -274,6 +274,10 @@ exports[`functions-mutating-conditional.ts > accumulateIf 1`] = `
 "module AccumulateIf.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> AccumulateIf @ a: Account, g: Bool.\\n\\n---\\n\\nbalance' a = (cond g => 10 + 5, true => 10).\\nowner' a1 = owner a1.\\nactive' a1 = active a1.\\n"
 `;
 
+exports[`functions-mutating-conditional.ts > accumulateIfCompound 1`] = `
+"module AccumulateIfCompound.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> AccumulateIfCompound @ a: Account, g: Bool.\\n\\n---\\n\\nbalance' a = (cond g => 10 + 5, true => 10).\\nowner' a1 = owner a1.\\nactive' a1 = active a1.\\n"
+`;
+
 exports[`functions-mutating-conditional.ts > applyFee 1`] = `
 "module ApplyFee.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> ApplyFee @ a: Account, fee: Int.\\n\\n---\\n\\nbalance' a = (cond fee > 0 => balance a - fee, true => balance a).\\nowner' a1 = owner a1.\\nactive' a1 = active a1.\\n"
 `;
@@ -284,6 +288,10 @@ exports[`functions-mutating-conditional.ts > asymmetric 1`] = `
 
 exports[`functions-mutating-conditional.ts > incrementIfPositive 1`] = `
 "module IncrementIfPositive.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> IncrementIfPositive @ a: Account, n: Int.\\n\\n---\\n\\nbalance' a = (cond n > 0 => balance a + n, true => balance a).\\nowner' a1 = owner a1.\\nactive' a1 = active a1.\\n"
+`;
+
+exports[`functions-mutating-conditional.ts > incrementIfPositiveCompound 1`] = `
+"module IncrementIfPositiveCompound.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> IncrementIfPositiveCompound @ a: Account, n: Int.\\n\\n---\\n\\nbalance' a = (cond n > 0 => balance a + n, true => balance a).\\nowner' a1 = owner a1.\\nactive' a1 = active a1.\\n"
 `;
 
 exports[`functions-mutating-conditional.ts > initializeAndMaybe 1`] = `
@@ -306,12 +314,20 @@ exports[`functions-mutating-conditional.ts > toggleActive 1`] = `
 "module ToggleActive.\\n\\nUser.\\nactive u1: User => Bool.\\n~> ToggleActive @ u: User.\\n\\n---\\n\\nactive' u = (cond active u => false, true => true).\\n"
 `;
 
+exports[`functions-mutating-const.ts > aliasedSequentialWrites 1`] = `
+"module AliasedSequentialWrites.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> AliasedSequentialWrites @ a: Account.\\n\\n---\\n\\nbalance' a = 1 + 2.\\n"
+`;
+
 exports[`functions-mutating-const.ts > depositWithConst 1`] = `
 "module DepositWithConst.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> DepositWithConst @ a: Account, amount: Int.\\n\\n---\\n\\nbalance' a = balance a + amount.\\n"
 `;
 
 exports[`functions-mutating-const.ts > multiConstMutating 1`] = `
 "module MultiConstMutating.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> MultiConstMutating @ a: Account, amount: Int, rate: Int.\\n\\n---\\n\\nbalance' a = balance a - amount * rate.\\n"
+`;
+
+exports[`functions-mutating-early-exit.ts > chainedEarlyReturns 1`] = `
+"module ChainedEarlyReturns.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> ChainedEarlyReturns @ a: Account, g: Bool, h: Bool.\\n\\n---\\n\\nbalance' a = (cond g => balance a, true => (cond h => balance a, true => 1)).\\nowner' a1 = owner a1.\\n"
 `;
 
 exports[`functions-mutating-early-exit.ts > earlyReturnMulti 1`] = `

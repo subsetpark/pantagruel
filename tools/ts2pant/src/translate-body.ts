@@ -85,14 +85,27 @@ interface SymbolicState {
   // Keys *written during the current branch* (reset on clone). Used by the
   // if-merge algorithm to determine which locations are "touched."
   writtenKeys: Set<string>;
+  // Canonicalizer — applies the ambient const-binding substitution to an
+  // expression before it is used as a state key. Writes store keys under the
+  // post-substitution form so `const x = a; x.balance = 1` and a later
+  // `x.balance` read resolve to the same key. Updated by `symbolicExecute`
+  // whenever a new const binding is inlined so the in-flight `applyConst`
+  // stays in sync with the state.
+  canonicalize: (e: OpaqueExpr) => OpaqueExpr;
 }
 
-function makeSymbolicState(): SymbolicState {
-  return { writes: new Map(), writtenKeys: new Set() };
+function makeSymbolicState(
+  canonicalize: (e: OpaqueExpr) => OpaqueExpr = (e) => e,
+): SymbolicState {
+  return { writes: new Map(), writtenKeys: new Set(), canonicalize };
 }
 
 function cloneSymbolicState(s: SymbolicState): SymbolicState {
-  return { writes: new Map(s.writes), writtenKeys: new Set() };
+  return {
+    writes: new Map(s.writes),
+    writtenKeys: new Set(),
+    canonicalize: s.canonicalize,
+  };
 }
 
 function symbolicKey(prop: string, objExpr: OpaqueExpr): string {
@@ -170,6 +183,11 @@ function detectEarlyExit(stmt: ts.Statement): EarlyExitDetection | null {
  * Map TypeScript compound-assignment tokens (`+=`, `-=`, ...) to their
  * binary operator counterparts. Used to desugar `a.prop += v` into
  * `a.prop = a.prop + v` during translation of mutating bodies.
+ *
+ * Restricted to the four arithmetic operators Pantagruel's AST supports
+ * (`+`, `-`, `*`, `/`). `%=` and `**=` are intentionally excluded because
+ * the underlying `%` and `**` operators have no Pantagruel counterpart —
+ * desugaring them would produce an unsupported binary expression anyway.
  */
 const COMPOUND_ASSIGN_TO_BINOP: Map<ts.SyntaxKind, ts.BinaryOperator> = new Map(
   [
@@ -177,11 +195,6 @@ const COMPOUND_ASSIGN_TO_BINOP: Map<ts.SyntaxKind, ts.BinaryOperator> = new Map(
     [ts.SyntaxKind.MinusEqualsToken, ts.SyntaxKind.MinusToken],
     [ts.SyntaxKind.AsteriskEqualsToken, ts.SyntaxKind.AsteriskToken],
     [ts.SyntaxKind.SlashEqualsToken, ts.SyntaxKind.SlashToken],
-    [ts.SyntaxKind.PercentEqualsToken, ts.SyntaxKind.PercentToken],
-    [
-      ts.SyntaxKind.AsteriskAsteriskEqualsToken,
-      ts.SyntaxKind.AsteriskAsteriskToken,
-    ],
   ],
 );
 
@@ -768,9 +781,13 @@ export function translateBodyExpr(
         return { expr: ast.unop(ast.opCard(), bodyExpr(obj)) };
       }
     }
-    // Consult symbolic state for a prior write at this location.
+    // Consult symbolic state for a prior write at this location. Apply the
+    // same canonicalization as the write site (see SymbolicState) so that
+    // reads through const aliases hit the prior write — e.g.,
+    // `const x = a; x.balance = 1; x.balance += 2` must see the `= 1` write
+    // under a key that matches both the read and the write.
     if (state !== undefined) {
-      const key = symbolicKey(prop, bodyExpr(obj));
+      const key = symbolicKey(prop, state.canonicalize(bodyExpr(obj)));
       const entry = state.writes.get(key);
       if (entry !== undefined) {
         return { expr: entry.value };
@@ -1293,6 +1310,9 @@ function symbolicExecute(
   const ast = getAst();
   let ok = true;
   let applyConst = outerApply;
+  // Keep the state's canonicalize in sync with the frame's applyConst so
+  // symbolic-state reads see the same normalization the write site uses.
+  state.canonicalize = applyConst;
   const stmts = ts.isBlock(body) ? Array.from(body.statements) : [body];
 
   for (let i = 0; i < stmts.length; i++) {
@@ -1334,8 +1354,13 @@ function symbolicExecute(
       const gExpr = applyConst(bodyExpr(gResult));
 
       // Continuation = (other-branch's stmts if any) ++ post-if stmts.
-      // Execute in a cloned state with insideBranch=true to forbid further
-      // early exits in the reached region.
+      // The continuation is the fall-through path at the same logical scope
+      // as the current statement list, so preserve the caller's `insideBranch`
+      // flag rather than forcing it. This lets a chain of top-level guards
+      // like `if (g) return; if (h) return; a.balance = 1` flatten into
+      // nested conds via successive if-conversion passes (Allen et al.,
+      // POPL 1983); forcing `true` would instead reject the second guard as
+      // `return in mutating branch`.
       const continuation = [...exit.continuationPrefix, ...stmts.slice(i + 1)];
       const sR = cloneSymbolicState(state);
       const remainingProps: PropResult[] = [];
@@ -1349,7 +1374,7 @@ function symbolicExecute(
         remainingProps,
         applyConst,
         supply,
-        true,
+        insideBranch,
       );
       if (!okR) {
         ok = false;
@@ -1428,6 +1453,7 @@ function symbolicExecute(
             }
             const prevApply = applyConst;
             applyConst = (e) => prevApply(inlined.applyTo(e));
+            state.canonicalize = applyConst;
           }
           continue;
         }

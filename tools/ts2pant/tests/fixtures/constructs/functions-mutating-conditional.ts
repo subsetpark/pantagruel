@@ -61,6 +61,13 @@ export function incrementIfPositive(a: Account, n: number): void {
   }
 }
 
+/** compound assignment syntax should desugar to read-modify-write */
+export function incrementIfPositiveCompound(a: Account, n: number): void {
+  if (n > 0) {
+    a.balance += n;
+  }
+}
+
 /** sequential composition: unconditional write followed by conditional overwrite */
 export function initializeAndMaybe(a: Account, g: boolean): void {
   a.balance = 0;
@@ -74,6 +81,14 @@ export function accumulateIf(a: Account, g: boolean): void {
   a.balance = 10;
   if (g) {
     a.balance = a.balance + 5;
+  }
+}
+
+/** conditional branch reads an earlier unconditional write via compound syntax */
+export function accumulateIfCompound(a: Account, g: boolean): void {
+  a.balance = 10;
+  if (g) {
+    a.balance += 5;
   }
 }
 

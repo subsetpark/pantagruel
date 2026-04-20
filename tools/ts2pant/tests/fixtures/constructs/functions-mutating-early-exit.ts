@@ -69,3 +69,14 @@ export function elseReturnThenMore(a: Account, g: boolean, v: number): void {
   }
   a.owner = "done";
 }
+
+/** chained early returns: second guard must still trigger if-conversion */
+export function chainedEarlyReturns(a: Account, g: boolean, h: boolean): void {
+  if (g) {
+    return;
+  }
+  if (h) {
+    return;
+  }
+  a.balance = 1;
+}
