@@ -1,5 +1,8 @@
 import type { SourceFile } from "ts-morph";
-import { extractFunctionAnnotations } from "./annotations.js";
+import {
+  extractFunctionAnnotations,
+  extractFunctionTypeOverrides,
+} from "./annotations.js";
 import { extractReferencedTypes, getChecker } from "./extract.js";
 import { NameRegistry } from "./name-registry.js";
 import { loadAst, loadParser, rewriteAnnotation } from "./pant-wasm.js";
@@ -40,12 +43,17 @@ export async function buildPantDocument(
   // type-derived accessor rules adapt with suffixes if there's a collision.
   const registry = new NameRegistry();
 
+  // @pant-type overrides are extracted up front so they can influence
+  // parameter type mapping during signature translation.
+  const overrides = extractFunctionTypeOverrides(sourceFile, functionName);
+
   // Translate signature first to claim the function's param names
   const { declaration: sigDecl, paramNameMap } = translateSignature(
     sourceFile,
     functionName,
     strategy,
     registry,
+    overrides,
   );
 
   // Extract and translate types (type-derived param names adapt to registry)

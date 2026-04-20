@@ -136,3 +136,16 @@ export function extractFunctionAnnotations(
   const result = extractAnnotations(node, sourceFile.compilerNode);
   return result.propositions.map((p) => p.text);
 }
+
+/**
+ * Convenience wrapper: find a function by name and extract its @pant-type
+ * overrides as a Map from TS parameter name to Pantagruel type string.
+ */
+export function extractFunctionTypeOverrides(
+  sourceFile: SourceFile,
+  functionName: string,
+): Map<string, string> {
+  const { node } = findFunction(sourceFile, functionName);
+  const result = extractAnnotations(node, sourceFile.compilerNode);
+  return new Map(result.typeOverrides.map((o) => [o.name, o.type]));
+}
