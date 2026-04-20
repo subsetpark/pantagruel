@@ -1,8 +1,5 @@
 import type { SourceFile } from "ts-morph";
-import {
-  extractFunctionAnnotations,
-  extractFunctionTypeOverrides,
-} from "./annotations.js";
+import { extractFunctionAnnotationsAndOverrides } from "./annotations.js";
 import { extractReferencedTypes, getChecker } from "./extract.js";
 import { NameRegistry } from "./name-registry.js";
 import { loadAst, loadParser, rewriteAnnotation } from "./pant-wasm.js";
@@ -43,9 +40,11 @@ export async function buildPantDocument(
   // type-derived accessor rules adapt with suffixes if there's a collision.
   const registry = new NameRegistry();
 
-  // @pant-type overrides are extracted up front so they can influence
-  // parameter type mapping during signature translation.
-  const overrides = extractFunctionTypeOverrides(sourceFile, functionName);
+  // Extract @pant propositions and @pant-type overrides in one JSDoc pass.
+  // Overrides influence parameter type mapping during signature translation;
+  // propositions become entailment checks once the body is translated.
+  const { propositionTexts: annotations, typeOverrides: overrides } =
+    extractFunctionAnnotationsAndOverrides(sourceFile, functionName);
 
   // Translate signature first to claim the function's param names
   const { declaration: sigDecl, paramNameMap } = translateSignature(
@@ -82,8 +81,6 @@ export async function buildPantDocument(
 
   // Annotations go to checks (entailment goals) — skip for skeleton docs
   if (!noBody && doc.propositions.length > 0) {
-    const annotations = extractFunctionAnnotations(sourceFile, functionName);
-
     // Rewrite annotation variable names using the embedded Pantagruel parser.
     // paramNameMap maps TS names → pant names; annotations use TS names.
     const hasRenames = [...paramNameMap.entries()].some(([k, v]) => k !== v);

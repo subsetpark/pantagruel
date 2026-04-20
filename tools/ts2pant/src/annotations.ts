@@ -124,6 +124,28 @@ export function extractAnnotations(
   return result;
 }
 
+/** Combined proposition texts + type overrides from a function's JSDoc. */
+export interface FunctionAnnotations {
+  propositionTexts: string[];
+  typeOverrides: Map<string, string>;
+}
+
+/**
+ * Find a function by name and extract both @pant propositions and
+ * @pant-type overrides in a single JSDoc pass.
+ */
+export function extractFunctionAnnotationsAndOverrides(
+  sourceFile: SourceFile,
+  functionName: string,
+): FunctionAnnotations {
+  const { node } = findFunction(sourceFile, functionName);
+  const result = extractAnnotations(node, sourceFile.compilerNode);
+  return {
+    propositionTexts: result.propositions.map((p) => p.text),
+    typeOverrides: new Map(result.typeOverrides.map((o) => [o.name, o.type])),
+  };
+}
+
 /**
  * Convenience wrapper: find a function by name and extract its @pant
  * proposition texts as plain strings.
@@ -132,9 +154,8 @@ export function extractFunctionAnnotations(
   sourceFile: SourceFile,
   functionName: string,
 ): string[] {
-  const { node } = findFunction(sourceFile, functionName);
-  const result = extractAnnotations(node, sourceFile.compilerNode);
-  return result.propositions.map((p) => p.text);
+  return extractFunctionAnnotationsAndOverrides(sourceFile, functionName)
+    .propositionTexts;
 }
 
 /**
@@ -145,7 +166,6 @@ export function extractFunctionTypeOverrides(
   sourceFile: SourceFile,
   functionName: string,
 ): Map<string, string> {
-  const { node } = findFunction(sourceFile, functionName);
-  const result = extractAnnotations(node, sourceFile.compilerNode);
-  return new Map(result.typeOverrides.map((o) => [o.name, o.type]));
+  return extractFunctionAnnotationsAndOverrides(sourceFile, functionName)
+    .typeOverrides;
 }
