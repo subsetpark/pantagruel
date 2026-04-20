@@ -833,6 +833,7 @@ export function translateSignature(
   functionName: string,
   strategy: NumericStrategy,
   registry?: NameRegistry,
+  overrides?: Map<string, string>,
 ): TranslatedSignature {
   const checker = sourceFile.getProject().getTypeChecker().compilerObject;
   const { node, className } = findFunction(sourceFile, functionName);
@@ -858,11 +859,12 @@ export function translateSignature(
   }
 
   for (const param of sig.getParameters()) {
-    const paramType = mapTsType(
+    const defaultType = mapTsType(
       checker.getTypeOfSymbol(param),
       checker,
       strategy,
     );
+    const paramType = overrides?.get(param.name) ?? defaultType;
     const pantName = registry ? registry.register(param.name) : param.name;
     params.push({ name: pantName, type: paramType });
     paramNameMap.set(param.name, pantName);

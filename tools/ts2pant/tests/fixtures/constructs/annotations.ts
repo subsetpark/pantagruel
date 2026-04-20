@@ -32,3 +32,11 @@ export function rangeCheck(x: number): boolean {
 export function noAnnot(x: number): number {
   return x;
 }
+
+/**
+ * @pant-type amount: Nat0
+ * @pant all a: Nat0 | deposited a >= 0
+ */
+export function deposited(amount: number): number {
+  return amount;
+}

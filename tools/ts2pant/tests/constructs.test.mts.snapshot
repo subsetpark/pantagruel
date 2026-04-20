@@ -2,6 +2,10 @@ exports[`annotations.ts > add 1`] = `
 "module Add.\\n\\nadd a: Int, b: Int => Int.\\n\\n---\\n\\nadd a b = a + b.\\n\\ncheck\\n\\nall a: Int, b: Int | add a b = a + b.\\n"
 `;
 
+exports[`annotations.ts > deposited 1`] = `
+"module Deposited.\\n\\ndeposited amount: Nat0 => Int.\\n\\n---\\n\\ndeposited amount = amount.\\n\\ncheck\\n\\nall a: Nat0 | deposited a >= 0.\\n"
+`;
+
 exports[`annotations.ts > noAnnot 1`] = `
 "module NoAnnot.\\n\\nnoAnnot x: Int => Int.\\n\\n---\\n\\nnoAnnot x = x.\\n"
 `;

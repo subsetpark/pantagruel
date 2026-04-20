@@ -425,3 +425,76 @@ describe("class method declarations", () => {
     assert.equal(result.declaration.guard, undefined);
   });
 });
+
+describe("@pant-type override", () => {
+  it("overrides parameter type with the annotated Pantagruel type", () => {
+    const source = `
+      /**
+       * @pant-type amount: Nat
+       */
+      function withdraw(amount: number): number {
+        return amount;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const overrides = new Map([["amount", "Nat"]]);
+    const result = translateSignature(
+      sourceFile,
+      "withdraw",
+      IntStrategy,
+      undefined,
+      overrides,
+    );
+    assert.equal(result.declaration.kind, "rule");
+    if (result.declaration.kind !== "rule") {
+      return;
+    }
+    assert.equal(result.declaration.params[0]?.name, "amount");
+    assert.equal(result.declaration.params[0]?.type, "Nat");
+  });
+
+  it("leaves non-overridden params at the default strategy type", () => {
+    const source = `
+      function pay(amount: number, memo: number): number {
+        return amount;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const overrides = new Map([["amount", "Nat"]]);
+    const result = translateSignature(
+      sourceFile,
+      "pay",
+      IntStrategy,
+      undefined,
+      overrides,
+    );
+    assert.equal(result.declaration.kind, "rule");
+    if (result.declaration.kind !== "rule") {
+      return;
+    }
+    assert.equal(result.declaration.params[0]?.type, "Nat");
+    assert.equal(result.declaration.params[1]?.type, "Int");
+  });
+
+  it("ignores overrides for parameter names that don't exist", () => {
+    const source = `
+      function pay(amount: number): number {
+        return amount;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const overrides = new Map([["nonexistent", "Nat"]]);
+    const result = translateSignature(
+      sourceFile,
+      "pay",
+      IntStrategy,
+      undefined,
+      overrides,
+    );
+    assert.equal(result.declaration.kind, "rule");
+    if (result.declaration.kind !== "rule") {
+      return;
+    }
+    assert.equal(result.declaration.params[0]?.type, "Int");
+  });
+});
