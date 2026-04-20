@@ -99,26 +99,91 @@ function symbolicKey(prop: string, objExpr: OpaqueExpr): string {
   return `${prop}::${getAst().strExpr(objExpr)}`;
 }
 
-/**
- * Detect `if (g) { return; }` (or `if (g) return;`) — bare early-exit
- * with no else-branch. This is the shape Allen et al.'s if-conversion
- * handles as an early-exit extension: the remaining statements at the
- * same scope are conditionally executed under `!g`.
- */
-function isEarlyReturnIf(stmt: ts.Statement): stmt is ts.IfStatement {
-  if (!ts.isIfStatement(stmt) || stmt.elseStatement) {
-    return false;
-  }
-  const then = stmt.thenStatement;
-  if (ts.isReturnStatement(then) && !then.expression) {
+function isBareReturn(stmt: ts.Statement): boolean {
+  if (ts.isReturnStatement(stmt) && !stmt.expression) {
     return true;
   }
-  if (ts.isBlock(then) && then.statements.length === 1) {
-    const s = then.statements[0]!;
+  if (ts.isBlock(stmt) && stmt.statements.length === 1) {
+    const s = stmt.statements[0]!;
     return ts.isReturnStatement(s) && !s.expression;
   }
   return false;
 }
+
+function flattenStmt(stmt: ts.Statement): ts.Statement[] {
+  return ts.isBlock(stmt) ? Array.from(stmt.statements) : [stmt];
+}
+
+/**
+ * Early-exit if-conversion (Allen et al., POPL 1983, extended to early
+ * exits). Recognizes three patterns with a bare `return;` on one side:
+ *
+ *   if (c) { return; }              → early-exit when c; continuation = post-if
+ *   if (c) { return; } else { X }   → early-exit when c; continuation = X ++ post-if
+ *   if (c) { X } else { return; }   → early-exit when !c; continuation = X ++ post-if
+ *
+ * The non-returning branch's statements are lifted into the continuation
+ * (to be executed together with the statements following the `if`). The
+ * flag `earlyExitWhenTrue` indicates whether the if-condition directly
+ * represents the early-exit path or needs to be negated at the merge.
+ */
+interface EarlyExitDetection {
+  condition: ts.Expression;
+  /** If false, early exit is taken when !condition. */
+  earlyExitWhenTrue: boolean;
+  continuationPrefix: ts.Statement[];
+}
+
+function detectEarlyExit(stmt: ts.Statement): EarlyExitDetection | null {
+  if (!ts.isIfStatement(stmt)) {
+    return null;
+  }
+  const thenExits = isBareReturn(stmt.thenStatement);
+  const elseExits =
+    stmt.elseStatement !== undefined && isBareReturn(stmt.elseStatement);
+
+  if (thenExits && !stmt.elseStatement) {
+    return {
+      condition: stmt.expression,
+      earlyExitWhenTrue: true,
+      continuationPrefix: [],
+    };
+  }
+  if (thenExits && stmt.elseStatement && !elseExits) {
+    return {
+      condition: stmt.expression,
+      earlyExitWhenTrue: true,
+      continuationPrefix: flattenStmt(stmt.elseStatement),
+    };
+  }
+  if (!thenExits && elseExits) {
+    return {
+      condition: stmt.expression,
+      earlyExitWhenTrue: false,
+      continuationPrefix: flattenStmt(stmt.thenStatement),
+    };
+  }
+  return null;
+}
+
+/**
+ * Map TypeScript compound-assignment tokens (`+=`, `-=`, ...) to their
+ * binary operator counterparts. Used to desugar `a.prop += v` into
+ * `a.prop = a.prop + v` during translation of mutating bodies.
+ */
+const COMPOUND_ASSIGN_TO_BINOP: Map<ts.SyntaxKind, ts.BinaryOperator> = new Map(
+  [
+    [ts.SyntaxKind.PlusEqualsToken, ts.SyntaxKind.PlusToken],
+    [ts.SyntaxKind.MinusEqualsToken, ts.SyntaxKind.MinusToken],
+    [ts.SyntaxKind.AsteriskEqualsToken, ts.SyntaxKind.AsteriskToken],
+    [ts.SyntaxKind.SlashEqualsToken, ts.SyntaxKind.SlashToken],
+    [ts.SyntaxKind.PercentEqualsToken, ts.SyntaxKind.PercentToken],
+    [
+      ts.SyntaxKind.AsteriskAsteriskEqualsToken,
+      ts.SyntaxKind.AsteriskAsteriskToken,
+    ],
+  ],
+);
 
 export interface TranslateBodyOptions {
   sourceFile: SourceFile;
@@ -1238,17 +1303,12 @@ function symbolicExecute(
     }
 
     // Early-exit if-conversion (Allen et al., POPL 1983, extended to
-    // early exits). `if (g) { return; }` followed by remaining statements
-    // is equivalent to `if (!g) { <remaining> }` at the same scope: the
-    // writes after the early return only take effect when `!g`.
-    //
-    // Detection is limited to a bare `return;` (no expression) as the
-    // sole body of the then-branch, with no else-branch. Richer early-exit
-    // shapes (return with a value, mixed side effects before return) are
-    // out of scope.
-    if (!insideBranch && isEarlyReturnIf(stmt)) {
-      const ifStmt = stmt;
-      if (expressionHasSideEffects(ifStmt.expression, checker)) {
+    // early exits). Any `if` with a bare-return branch lifts the remaining
+    // statements — plus the other branch's statements when present — into
+    // a single continuation conditioned on the non-early-exit path.
+    const exit = !insideBranch ? detectEarlyExit(stmt) : null;
+    if (exit !== null) {
+      if (expressionHasSideEffects(exit.condition, checker)) {
         ok = false;
         propositions.push({
           kind: "unsupported",
@@ -1257,7 +1317,7 @@ function symbolicExecute(
         break;
       }
       const gResult = translateBodyExpr(
-        ifStmt.expression,
+        exit.condition,
         checker,
         strategy,
         paramNames,
@@ -1273,15 +1333,15 @@ function symbolicExecute(
       }
       const gExpr = applyConst(bodyExpr(gResult));
 
-      // Execute remaining statements in a cloned state. They're now
-      // conditionally executed (under !g), so recurse with insideBranch=true
-      // to disallow further early exits in the reached region.
+      // Continuation = (other-branch's stmts if any) ++ post-if stmts.
+      // Execute in a cloned state with insideBranch=true to forbid further
+      // early exits in the reached region.
+      const continuation = [...exit.continuationPrefix, ...stmts.slice(i + 1)];
       const sR = cloneSymbolicState(state);
       const remainingProps: PropResult[] = [];
-      const remaining = stmts.slice(i + 1);
-      const remainingBlock = ts.factory.createBlock(remaining, true);
+      const continuationBlock = ts.factory.createBlock(continuation, true);
       const okR = symbolicExecute(
-        remainingBlock,
+        continuationBlock,
         checker,
         strategy,
         new Map(paramNames),
@@ -1297,19 +1357,25 @@ function symbolicExecute(
         break;
       }
 
-      // Merge: for each key touched by the remaining block, emit
-      // `cond(g => pre-state, true => post-remaining)`. The pre-state is
-      // the prior-write value if any, else the identity `prop obj`.
+      // Merge: for each key touched by the continuation, emit a cond
+      // selecting the pre-state value when we take the early exit and
+      // the continuation's value otherwise. `earlyExitWhenTrue` picks
+      // which arm of the cond the condition guards.
       for (const key of sR.writtenKeys) {
         const entryR = sR.writes.get(key)!;
         const prior = state.writes.get(key);
         const identity = ast.app(ast.var(entryR.prop), [entryR.objExpr]);
         const vEarlyReturn = prior?.value ?? identity;
-        const vRemaining = entryR.value;
-        const merged = ast.cond([
-          [gExpr, vEarlyReturn],
-          [ast.litBool(true), vRemaining],
-        ]);
+        const vContinuation = entryR.value;
+        const merged = exit.earlyExitWhenTrue
+          ? ast.cond([
+              [gExpr, vEarlyReturn],
+              [ast.litBool(true), vContinuation],
+            ])
+          : ast.cond([
+              [gExpr, vContinuation],
+              [ast.litBool(true), vEarlyReturn],
+            ]);
         state.writes.set(key, {
           prop: entryR.prop,
           objExpr: entryR.objExpr,
@@ -1317,7 +1383,7 @@ function symbolicExecute(
         });
         state.writtenKeys.add(key);
       }
-      // Remaining stmts have been consumed.
+      // Remaining stmts have been consumed by the continuation.
       break;
     }
 
@@ -1380,8 +1446,11 @@ function symbolicExecute(
       ts.isBinaryExpression(unwrapExpression(stmt.expression))
     ) {
       const bin = unwrapExpression(stmt.expression) as ts.BinaryExpression;
+      const compoundOp = COMPOUND_ASSIGN_TO_BINOP.get(bin.operatorToken.kind);
+      const isSimpleAssign =
+        bin.operatorToken.kind === ts.SyntaxKind.EqualsToken;
       if (
-        bin.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+        (isSimpleAssign || compoundOp !== undefined) &&
         ts.isPropertyAccessExpression(bin.left)
       ) {
         const prop = bin.left.name.text;
@@ -1397,8 +1466,16 @@ function symbolicExecute(
           propositions.push({ kind: "unsupported", reason: obj.unsupported });
           continue;
         }
+        // For compound assignment `a.p OP= v`, desugar rhs to `a.p OP v`.
+        // The rhs's `a.p` read goes through translateBodyExpr, which
+        // consults the symbolic state and returns the prior-write value
+        // or the pre-state identity.
+        const rhsNode =
+          compoundOp !== undefined
+            ? ts.factory.createBinaryExpression(bin.left, compoundOp, bin.right)
+            : bin.right;
         const val = translateBodyExpr(
-          bin.right,
+          rhsNode,
           checker,
           strategy,
           paramNames,
@@ -1647,7 +1724,6 @@ function symbolicExecute(
     if (ts.isSwitchStatement(stmt)) {
       propositions.push({ kind: "unsupported", reason: "switch assignment" });
       ok = false;
-      continue;
     }
   }
 

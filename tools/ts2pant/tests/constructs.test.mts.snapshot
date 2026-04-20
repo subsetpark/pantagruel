@@ -250,6 +250,26 @@ exports[`functions-class.ts > Account.getBalance 1`] = `
 "module GetBalance.\\n\\ngetBalance a: Account => Int.\\n\\n---\\n\\ngetBalance a = balance a.\\n"
 `;
 
+exports[`functions-mutating-compound.ts > addAmount 1`] = `
+"module AddAmount.\\n\\nAccount.\\nbalance a1: Account => Int.\\ncount a1: Account => Int.\\n~> AddAmount @ a: Account, amount: Int.\\n\\n---\\n\\nbalance' a = balance a + amount.\\ncount' a1 = count a1.\\n"
+`;
+
+exports[`functions-mutating-compound.ts > bumpBoth 1`] = `
+"module BumpBoth.\\n\\nAccount.\\nbalance a1: Account => Int.\\ncount a1: Account => Int.\\n~> BumpBoth @ a: Account, amount: Int.\\n\\n---\\n\\nbalance' a = balance a + amount.\\ncount' a = count a + 1.\\n"
+`;
+
+exports[`functions-mutating-compound.ts > conditionalBump 1`] = `
+"module ConditionalBump.\\n\\nAccount.\\nbalance a1: Account => Int.\\ncount a1: Account => Int.\\n~> ConditionalBump @ a: Account, amount: Int, g: Bool.\\n\\n---\\n\\nbalance' a = (cond g => 0 + amount, true => 0).\\ncount' a1 = count a1.\\n"
+`;
+
+exports[`functions-mutating-compound.ts > scaleBalance 1`] = `
+"module ScaleBalance.\\n\\nAccount.\\nbalance a1: Account => Int.\\ncount a1: Account => Int.\\n~> ScaleBalance @ a: Account, factor: Int.\\n\\n---\\n\\nbalance' a = balance a * factor.\\ncount' a1 = count a1.\\n"
+`;
+
+exports[`functions-mutating-compound.ts > subtractAmount 1`] = `
+"module SubtractAmount.\\n\\nAccount.\\nbalance a1: Account => Int.\\ncount a1: Account => Int.\\n~> SubtractAmount @ a: Account, amount: Int.\\n\\n---\\n\\nbalance' a = balance a - amount.\\ncount' a1 = count a1.\\n"
+`;
+
 exports[`functions-mutating-conditional.ts > accumulateIf 1`] = `
 "module AccumulateIf.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> AccumulateIf @ a: Account, g: Bool.\\n\\n---\\n\\nbalance' a = (cond g => 10 + 5, true => 10).\\nowner' a1 = owner a1.\\nactive' a1 = active a1.\\n"
 `;
@@ -308,6 +328,14 @@ exports[`functions-mutating-early-exit.ts > earlyReturnSimple 1`] = `
 
 exports[`functions-mutating-early-exit.ts > earlyReturnThenCond 1`] = `
 "module EarlyReturnThenCond.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> EarlyReturnThenCond @ a: Account, g: Bool, h: Bool.\\n\\n---\\n\\nbalance' a = (cond g => balance a, true => (cond h => 1, true => 2)).\\nowner' a1 = owner a1.\\n"
+`;
+
+exports[`functions-mutating-early-exit.ts > elseBranchReturn 1`] = `
+"module ElseBranchReturn.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> ElseBranchReturn @ a: Account, g: Bool, v: Int.\\n\\n---\\n\\nbalance' a = (cond g => v, true => balance a).\\nowner' a1 = owner a1.\\n"
+`;
+
+exports[`functions-mutating-early-exit.ts > elseReturnThenMore 1`] = `
+"module ElseReturnThenMore.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> ElseReturnThenMore @ a: Account, g: Bool, v: Int.\\n\\n---\\n\\nbalance' a = (cond g => v, true => balance a).\\nowner' a = (cond g => \\"done\\", true => owner a).\\n"
 `;
 
 exports[`functions-mutating-early-exit.ts > writeThenEarlyReturn 1`] = `

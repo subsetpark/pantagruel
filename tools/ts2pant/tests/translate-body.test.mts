@@ -386,6 +386,78 @@ describe("conditional mutations (symbolic last-write)", () => {
     );
   });
 
+  it("compound assignment += desugars to read-modify-write", () => {
+    const source = `
+      interface Account { balance: number; }
+      function addAmount(a: Account, amount: number): void {
+        a.balance += amount;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "addAmount",
+      strategy: IntStrategy,
+    });
+
+    const equations = props.filter((p) => p.kind === "equation");
+    assert.equal(equations.length, 1);
+    const eq = equations[0]!;
+    if (eq.kind !== "equation") return;
+    const ast = getAst();
+    assert.equal(ast.strExpr(eq.lhs), "balance' a");
+    assert.equal(ast.strExpr(eq.rhs), "balance a + amount");
+  });
+
+  it("compound assignment after unconditional write reads through prior write", () => {
+    const source = `
+      interface Account { balance: number; }
+      function writeThenBump(a: Account, amount: number): void {
+        a.balance = 10;
+        a.balance += amount;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "writeThenBump",
+      strategy: IntStrategy,
+    });
+
+    const equations = props.filter((p) => p.kind === "equation");
+    assert.equal(equations.length, 1);
+    const eq = equations[0]!;
+    if (eq.kind !== "equation") return;
+    const ast = getAst();
+    assert.equal(ast.strExpr(eq.lhs), "balance' a");
+    // compound-assign rhs reads the prior write (10) via symbolic state.
+    assert.equal(ast.strExpr(eq.rhs), "10 + amount");
+  });
+
+  it("else-branch early exit: `if (c) { X } else { return; }` gates X under c", () => {
+    const source = `
+      interface Account { balance: number; }
+      function elseReturn(a: Account, g: boolean, v: number): void {
+        if (g) { a.balance = v; } else { return; }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "elseReturn",
+      strategy: IntStrategy,
+    });
+
+    const equations = props.filter((p) => p.kind === "equation");
+    assert.equal(equations.length, 1);
+    const eq = equations[0]!;
+    if (eq.kind !== "equation") return;
+    const ast = getAst();
+    assert.equal(ast.strExpr(eq.lhs), "balance' a");
+    // Continuation-path (g true) writes v; early-exit (g false) preserves pre-state.
+    assert.equal(ast.strExpr(eq.rhs), "cond g => v, true => balance a");
+  });
+
   it("asymmetric writes produce separate per-prop cond equations", () => {
     const source = `
       interface Account { balance: number; owner: string; }

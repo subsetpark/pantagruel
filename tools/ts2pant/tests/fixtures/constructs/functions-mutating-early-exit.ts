@@ -50,3 +50,22 @@ export function writeThenEarlyReturn(a: Account, g: boolean): void {
   }
   a.balance = a.balance + 5;
 }
+
+/** early return lives in the else-branch — continuation is the then-branch */
+export function elseBranchReturn(a: Account, g: boolean, v: number): void {
+  if (g) {
+    a.balance = v;
+  } else {
+    return;
+  }
+}
+
+/** both-arm case: then has writes, else is bare return, followed by post-if */
+export function elseReturnThenMore(a: Account, g: boolean, v: number): void {
+  if (g) {
+    a.balance = v;
+  } else {
+    return;
+  }
+  a.owner = "done";
+}
