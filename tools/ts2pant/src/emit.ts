@@ -34,10 +34,11 @@ function renderPropResult(prop: PropResult): string {
   switch (prop.kind) {
     case "equation": {
       const eq = ast.binop(ast.opEq(), prop.lhs, prop.rhs);
-      if (prop.quantifiers.length === 0) {
+      const guards = prop.guards ?? [];
+      if (prop.quantifiers.length === 0 && guards.length === 0) {
         return ast.strExpr(eq);
       }
-      return ast.strExpr(ast.forall(prop.quantifiers, [], eq));
+      return ast.strExpr(ast.forall(prop.quantifiers, guards, eq));
     }
     case "unsupported":
       return `> UNSUPPORTED: ${prop.reason}`;

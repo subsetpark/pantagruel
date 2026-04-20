@@ -1,6 +1,11 @@
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
-import type { OpaqueExpr, OpaqueParam } from "./pant-ast.js";
+import type {
+  OpaqueCombiner,
+  OpaqueExpr,
+  OpaqueGuard,
+  OpaqueParam,
+} from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
 import { isKnownPureCall } from "./purity.js";
 import {
@@ -85,6 +90,11 @@ interface SymbolicState {
   // Keys *written during the current branch* (reset on clone). Used by the
   // if-merge algorithm to determine which locations are "touched."
   writtenKeys: Set<string>;
+  // Names of rules that have been modified by *any* write in this execution,
+  // including Shape A loop writes whose per-element equation is emitted
+  // directly (bypassing `writes`). Consumed by the frame-condition generator
+  // so loop-modified rules don't get a spurious identity frame.
+  modifiedProps: Set<string>;
   // Canonicalizer — applies the ambient const-binding substitution to an
   // expression before it is used as a state key. Writes store keys under the
   // post-substitution form so `const x = a; x.balance = 1` and a later
@@ -97,13 +107,19 @@ interface SymbolicState {
 function makeSymbolicState(
   canonicalize: (e: OpaqueExpr) => OpaqueExpr = (e) => e,
 ): SymbolicState {
-  return { writes: new Map(), writtenKeys: new Set(), canonicalize };
+  return {
+    writes: new Map(),
+    writtenKeys: new Set(),
+    modifiedProps: new Set(),
+    canonicalize,
+  };
 }
 
 function cloneSymbolicState(s: SymbolicState): SymbolicState {
   return {
     writes: new Map(s.writes),
     writtenKeys: new Set(),
+    modifiedProps: s.modifiedProps,
     canonicalize: s.canonicalize,
   };
 }
@@ -197,6 +213,122 @@ const COMPOUND_ASSIGN_TO_BINOP: Map<ts.SyntaxKind, ts.BinaryOperator> = new Map(
     [ts.SyntaxKind.SlashEqualsToken, ts.SyntaxKind.SlashToken],
   ],
 );
+
+/**
+ * Map each compound assignment operator to the pair it induces for
+ * loop-fold translation: the *inside* combiner (for the comprehension)
+ * and the *outside* binary operator (joining prior state to the aggregate).
+ *
+ *   a.p += f(x)  iterated  =>  p' a = p a + (+ over each x in arr | f x)
+ *   a.p -= f(x)  iterated  =>  p' a = p a - (+ over each x in arr | f x)
+ *   a.p *= f(x)  iterated  =>  p' a = p a * (* over each x in arr | f x)
+ *   a.p /= f(x)  iterated  =>  p' a = p a / (* over each x in arr | f x)
+ *
+ * Non-commutative outer ops (`-`, `/`) pair with the commutative combiner
+ * of their identity group (`+`/`*`), since e.g. `p - f(x1) - f(x2)`
+ * equals `p - (f(x1) + f(x2))`.
+ */
+type CombinerKind = "add" | "mul" | "and" | "or";
+
+interface FoldOps {
+  combiner: CombinerKind;
+  outer: ts.BinaryOperator;
+}
+const COMPOUND_ASSIGN_TO_FOLD: Map<ts.SyntaxKind, FoldOps> = new Map([
+  [
+    ts.SyntaxKind.PlusEqualsToken,
+    { combiner: "add", outer: ts.SyntaxKind.PlusToken },
+  ],
+  [
+    ts.SyntaxKind.MinusEqualsToken,
+    { combiner: "add", outer: ts.SyntaxKind.MinusToken },
+  ],
+  [
+    ts.SyntaxKind.AsteriskEqualsToken,
+    { combiner: "mul", outer: ts.SyntaxKind.AsteriskToken },
+  ],
+  [
+    ts.SyntaxKind.SlashEqualsToken,
+    { combiner: "mul", outer: ts.SyntaxKind.SlashToken },
+  ],
+]);
+
+interface ReduceOpInfo {
+  combiner: CombinerKind;
+  outer: ts.BinaryOperator;
+  /** Source text of the init value that permits eliding init (combiner identity). */
+  identityText: string | null;
+  /** Whether `acc` can appear on either side — true iff the outer op is commutative. */
+  commutative: boolean;
+}
+
+/** Map a TypeScript binary operator (as used in `.reduce` callback body) to fold info. */
+function binopToReduceInfo(kind: ts.SyntaxKind): ReduceOpInfo | null {
+  switch (kind) {
+    case ts.SyntaxKind.PlusToken:
+      return {
+        combiner: "add",
+        outer: kind,
+        identityText: "0",
+        commutative: true,
+      };
+    case ts.SyntaxKind.MinusToken:
+      return {
+        combiner: "add",
+        outer: kind,
+        identityText: null,
+        commutative: false,
+      };
+    case ts.SyntaxKind.AsteriskToken:
+      return {
+        combiner: "mul",
+        outer: kind,
+        identityText: "1",
+        commutative: true,
+      };
+    case ts.SyntaxKind.SlashToken:
+      return {
+        combiner: "mul",
+        outer: kind,
+        identityText: null,
+        commutative: false,
+      };
+    case ts.SyntaxKind.AmpersandAmpersandToken:
+      return {
+        combiner: "and",
+        outer: kind,
+        identityText: "true",
+        commutative: true,
+      };
+    case ts.SyntaxKind.BarBarToken:
+      return {
+        combiner: "or",
+        outer: kind,
+        identityText: "false",
+        commutative: true,
+      };
+    default:
+      return null;
+  }
+}
+
+function makeCombiner(kind: CombinerKind): OpaqueCombiner {
+  const ast = getAst();
+  switch (kind) {
+    case "add":
+      return ast.combAdd();
+    case "mul":
+      return ast.combMul();
+    case "and":
+      return ast.combAnd();
+    case "or":
+      return ast.combOr();
+    default: {
+      const _exhaustive: never = kind;
+      throw new Error(`unknown combiner kind: ${_exhaustive as string}`);
+    }
+  }
+}
 
 export interface TranslateBodyOptions {
   sourceFile: SourceFile;
@@ -1079,6 +1211,618 @@ function translateArrayMethod(
   }
 }
 
+/**
+ * Translate `arr.reduce((acc, x) => acc OP f(x), init)` to a comprehension fold.
+ * Emits `init OP (combOP over each x: T | f(x))`, eliding `init` when it
+ * equals the combiner's identity element.
+ *
+ * Rejects composition with upstream `.filter` / `.map` for now (the opaque-AST
+ * constraint means we can't pull the filter predicate back out as a guard);
+ * a future change could track the predicate alongside `comprehensionBinder`.
+ */
+function translateReduceCall(
+  methodName: "reduce" | "reduceRight",
+  tsReceiver: ts.Expression,
+  expr: ts.CallExpression,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: Map<string, string>,
+  state?: SymbolicState,
+): BodyResult | null {
+  const ast = getAst();
+
+  if (expr.arguments.length !== 2) {
+    return { unsupported: `.${methodName} requires an explicit initial value` };
+  }
+
+  const elemType = getArrayElementType(tsReceiver, checker, strategy);
+  if (!elemType) {
+    return null;
+  }
+
+  const receiver = translateBodyExpr(
+    tsReceiver,
+    checker,
+    strategy,
+    paramNames,
+    state,
+  );
+  if (isBodyUnsupported(receiver)) {
+    return receiver;
+  }
+  if (receiver.comprehensionBinder !== undefined) {
+    return {
+      unsupported: `.${methodName} after .filter/.map composition is not yet supported`,
+    };
+  }
+
+  const cb = expr.arguments[0]!;
+  if (!ts.isArrowFunction(cb)) {
+    return { unsupported: `.${methodName} callback must be an arrow function` };
+  }
+  if (cb.parameters.length !== 2) {
+    return {
+      unsupported: `.${methodName} callback must take exactly (acc, x)`,
+    };
+  }
+  const accParamNode = cb.parameters[0]!;
+  const xParamNode = cb.parameters[1]!;
+  if (
+    !ts.isIdentifier(accParamNode.name) ||
+    !ts.isIdentifier(xParamNode.name)
+  ) {
+    return {
+      unsupported: `.${methodName} callback parameters must be identifiers`,
+    };
+  }
+  const accName = (accParamNode.name as ts.Identifier).text;
+  const xName = (xParamNode.name as ts.Identifier).text;
+
+  let body: ts.Expression;
+  if (ts.isBlock(cb.body)) {
+    const stmts = cb.body.statements;
+    if (
+      stmts.length !== 1 ||
+      !ts.isReturnStatement(stmts[0]!) ||
+      !stmts[0]!.expression
+    ) {
+      return {
+        unsupported: `.${methodName} callback block body must be a single return`,
+      };
+    }
+    body = stmts[0]!.expression;
+  } else {
+    body = cb.body;
+  }
+  body = unwrapExpression(body);
+
+  if (!ts.isBinaryExpression(body)) {
+    return {
+      unsupported: `.${methodName} callback body must be 'acc OP f(x)'`,
+    };
+  }
+  const info = binopToReduceInfo(body.operatorToken.kind);
+  if (info === null) {
+    return {
+      unsupported: `.${methodName} operator ${ts.SyntaxKind[body.operatorToken.kind]} has no combiner`,
+    };
+  }
+
+  // `reduceRight` visits elements right-to-left; safe only for commutative combiners.
+  if (methodName === "reduceRight" && !info.commutative) {
+    return {
+      unsupported: `.reduceRight with non-commutative operator`,
+    };
+  }
+
+  const leftRoot = getRootIdentifier(body.left);
+  const rightRoot = getRootIdentifier(body.right);
+  let innerExpr: ts.Expression;
+  if (leftRoot === accName && rightRoot !== accName) {
+    innerExpr = body.right;
+  } else if (rightRoot === accName && leftRoot !== accName) {
+    if (!info.commutative) {
+      return {
+        unsupported: `.${methodName} with acc on the right of a non-commutative operator`,
+      };
+    }
+    innerExpr = body.left;
+  } else {
+    return {
+      unsupported: `.${methodName} callback must reference acc exactly once`,
+    };
+  }
+
+  if (expressionReferencesNames(innerExpr, new Set([accName]))) {
+    return {
+      unsupported: `.${methodName} inner expression must not reference acc`,
+    };
+  }
+
+  const sourceBinder = freshBinder(paramNames);
+  const extendedParams = new Map(paramNames);
+  extendedParams.set(xName, sourceBinder);
+
+  const innerResult = translateBodyExpr(
+    innerExpr,
+    checker,
+    strategy,
+    extendedParams,
+    state,
+  );
+  if (isBodyUnsupported(innerResult)) {
+    return innerResult;
+  }
+
+  const comb = makeCombiner(info.combiner);
+  const folded = ast.eachComb(
+    [ast.param(sourceBinder, ast.tName(elemType))],
+    [],
+    comb,
+    bodyExpr(innerResult),
+  );
+
+  const initNode = expr.arguments[1]!;
+  const initText = initNode.getText().trim();
+  if (info.identityText !== null && initText === info.identityText) {
+    return { expr: folded };
+  }
+
+  const initResult = translateBodyExpr(
+    initNode,
+    checker,
+    strategy,
+    paramNames,
+    state,
+  );
+  if (isBodyUnsupported(initResult)) {
+    return initResult;
+  }
+
+  const outerOp = translateOperator(info.outer);
+  if (outerOp === null) {
+    return { unsupported: `.${methodName} outer operator translation` };
+  }
+  return {
+    expr: ast.binop(outerOp, bodyExpr(initResult), folded),
+  };
+}
+
+// --- Structured iteration (for-of / forEach / reduce) ---
+//
+// Catamorphisms over arrays (Meijer et al., "Functional Programming with
+// Bananas, Lenses, Envelopes and Barbed Wire", FPCA 1991). Three shapes:
+//
+//   A. `for (const x of arr) { x.p = e }`   → `all x in arr | p' x = e`
+//   B. `for (const x of arr) { a.p OP= f }` → `p' a = p a OP (combOP over each x in arr | f)`
+//   C. `arr.reduce((acc, x) => acc OP f, i)`→ `i OP (combOP over each x in arr | f)`
+//
+// See CLAUDE.md § Structured Iteration.
+
+interface ShapeBLeaf {
+  /** `a` in `a.total += x.v` — the accumulator base expression (must not depend on iterator). */
+  target: ts.Expression;
+  /** `total` in `a.total += x.v`. */
+  prop: string;
+  /** Fold op pair (inner combiner + outer binary operator). */
+  ops: FoldOps;
+  /** RHS expression `f(x)` — may reference the iterator. */
+  rhs: ts.Expression;
+  /** Optional guard from a wrapping `if (g(x)) { a.p OP= f(x) }`. */
+  guard?: ts.Expression;
+}
+
+type LoopStmtClass =
+  | { kind: "shapeA" }
+  | { kind: "shapeB"; leaves: ShapeBLeaf[] }
+  | { unsupported: string };
+
+/** Extract the root identifier of a chained property access (`a.b.c` → `a`). */
+function getRootIdentifier(expr: ts.Expression): string | null {
+  expr = unwrapExpression(expr);
+  if (ts.isIdentifier(expr)) {
+    return expr.text;
+  }
+  if (ts.isPropertyAccessExpression(expr)) {
+    return getRootIdentifier(expr.expression);
+  }
+  return null;
+}
+
+/**
+ * Classify one loop-body statement as Shape A (iterator-targeted write),
+ * Shape B (accumulator fold), or unsupported. Handles nested if-stmts:
+ *   - if all branches are Shape A, the whole is Shape A
+ *   - if the stmt is `if (g(x)) { a.p OP= f }` with no else, it becomes a
+ *     single Shape B leaf with `guard = g(x)`.
+ */
+function classifyLoopStmt(
+  stmt: ts.Statement,
+  iterName: string,
+  checker: ts.TypeChecker,
+  parentGuard?: ts.Expression,
+): LoopStmtClass {
+  if (
+    ts.isExpressionStatement(stmt) &&
+    ts.isBinaryExpression(unwrapExpression(stmt.expression))
+  ) {
+    const bin = unwrapExpression(stmt.expression) as ts.BinaryExpression;
+    if (!ts.isPropertyAccessExpression(bin.left)) {
+      return {
+        unsupported: "loop body assignment target must be a property access",
+      };
+    }
+    const rootName = getRootIdentifier(bin.left.expression);
+    const isSimpleAssign = bin.operatorToken.kind === ts.SyntaxKind.EqualsToken;
+    const compoundFold = COMPOUND_ASSIGN_TO_FOLD.get(bin.operatorToken.kind);
+
+    if (rootName === iterName) {
+      if (!isSimpleAssign) {
+        return {
+          unsupported: "compound assignment on loop iterator property",
+        };
+      }
+      return { kind: "shapeA" };
+    }
+    if (compoundFold === undefined) {
+      return {
+        unsupported:
+          "loop accumulator write must use a compound assignment (+=, -=, *=, /=)",
+      };
+    }
+    if (expressionReferencesNames(bin.left.expression, new Set([iterName]))) {
+      return { unsupported: "loop accumulator target depends on iterator" };
+    }
+    const leaf: ShapeBLeaf = {
+      target: bin.left.expression,
+      prop: bin.left.name.text,
+      ops: compoundFold,
+      rhs: bin.right,
+    };
+    if (parentGuard) {
+      leaf.guard = parentGuard;
+    }
+    return { kind: "shapeB", leaves: [leaf] };
+  }
+
+  if (ts.isIfStatement(stmt)) {
+    if (expressionHasSideEffects(stmt.expression, checker)) {
+      return { unsupported: "impure if-condition in loop body" };
+    }
+    const thenStmts = flattenStmt(stmt.thenStatement);
+    const elseStmts = stmt.elseStatement ? flattenStmt(stmt.elseStatement) : [];
+
+    // Shape A: every branch-leaf is an iterator-write
+    const allA = [...thenStmts, ...elseStmts].every((s) => {
+      const c = classifyLoopStmt(s, iterName, checker);
+      return "kind" in c && c.kind === "shapeA";
+    });
+    if (allA) {
+      return { kind: "shapeA" };
+    }
+
+    // Shape B: `if (g) { a.p OP= f }` — single leaf, no else, no parent guard
+    if (
+      elseStmts.length === 0 &&
+      thenStmts.length === 1 &&
+      parentGuard === undefined
+    ) {
+      const inner = classifyLoopStmt(
+        thenStmts[0]!,
+        iterName,
+        checker,
+        stmt.expression,
+      );
+      if ("kind" in inner && inner.kind === "shapeB") {
+        return inner;
+      }
+    }
+    return {
+      unsupported:
+        "loop body if-statement mixes shapes or has an unsupported structure",
+    };
+  }
+
+  if (ts.isBlock(stmt)) {
+    const stmts = Array.from(stmt.statements);
+    const classes = stmts.map((s) =>
+      classifyLoopStmt(s, iterName, checker, parentGuard),
+    );
+    const firstBad = classes.find((c) => "unsupported" in c);
+    if (firstBad) {
+      return firstBad;
+    }
+    const allA = classes.every((c) => "kind" in c && c.kind === "shapeA");
+    if (allA) {
+      return { kind: "shapeA" };
+    }
+    const allB = classes.every((c) => "kind" in c && c.kind === "shapeB");
+    if (allB) {
+      const leaves = classes.flatMap(
+        (c) => (c as { kind: "shapeB"; leaves: ShapeBLeaf[] }).leaves,
+      );
+      return { kind: "shapeB", leaves };
+    }
+    return {
+      unsupported: "loop body block mixes iterator and accumulator writes",
+    };
+  }
+
+  return { unsupported: `loop body statement: ${ts.SyntaxKind[stmt.kind]}` };
+}
+
+/**
+ * Emit Shape A / Shape B propositions for a loop body.
+ *
+ * Shape A uses a sub-`symbolicExecute` to reuse the full symbolic-state
+ * machinery (path merging via `cond` for conditional writes). Each emitted
+ * write is wrapped in `all x in arr | p' x = v`.
+ *
+ * Shape B writes are merged into the caller's `state`: the outer state's
+ * prior value (or the pre-state identity) is combined with the comprehension
+ * `(combOP over each x in arr[, g(x)] | f(x))` via the outer binary operator.
+ */
+function translateForOfLoopBody(
+  iterName: string,
+  arrExpr: OpaqueExpr,
+  bodyStmts: ts.Statement[],
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: Map<string, string>,
+  state: SymbolicState,
+  propositions: PropResult[],
+  applyConst: (e: OpaqueExpr) => OpaqueExpr,
+  supply: UniqueSupply,
+): boolean {
+  const ast = getAst();
+
+  const shapeAStmts: ts.Statement[] = [];
+  const shapeBLeaves: ShapeBLeaf[] = [];
+  for (const stmt of bodyStmts) {
+    const cls = classifyLoopStmt(stmt, iterName, checker);
+    if ("unsupported" in cls) {
+      propositions.push({ kind: "unsupported", reason: cls.unsupported });
+      return false;
+    }
+    if (cls.kind === "shapeA") {
+      shapeAStmts.push(stmt);
+    } else {
+      shapeBLeaves.push(...cls.leaves);
+    }
+  }
+
+  if (shapeAStmts.length > 0) {
+    const subParams = new Map(paramNames);
+    subParams.set(iterName, iterName);
+    const subState = makeSymbolicState(applyConst);
+    const subProps: PropResult[] = [];
+    const subBlock = ts.factory.createBlock(shapeAStmts, true);
+    const okA = symbolicExecute(
+      subBlock,
+      checker,
+      strategy,
+      subParams,
+      subState,
+      subProps,
+      applyConst,
+      supply,
+      false,
+    );
+    if (!okA) {
+      for (const p of subProps) {
+        propositions.push(p);
+      }
+      return false;
+    }
+    for (const [, entry] of subState.writes) {
+      propositions.push({
+        kind: "equation",
+        quantifiers: [] as OpaqueParam[],
+        guards: [ast.gIn(iterName, arrExpr)],
+        lhs: ast.app(ast.primed(entry.prop), [entry.objExpr]),
+        rhs: entry.value,
+      });
+      state.modifiedProps.add(entry.prop);
+    }
+  }
+
+  for (const leaf of shapeBLeaves) {
+    const subParams = new Map(paramNames);
+    subParams.set(iterName, iterName);
+
+    const accResult = translateBodyExpr(
+      leaf.target,
+      checker,
+      strategy,
+      paramNames,
+      state,
+    );
+    if (isBodyUnsupported(accResult)) {
+      propositions.push({ kind: "unsupported", reason: accResult.unsupported });
+      return false;
+    }
+    const accExpr = applyConst(bodyExpr(accResult));
+
+    const rhsResult = translateBodyExpr(leaf.rhs, checker, strategy, subParams);
+    if (isBodyUnsupported(rhsResult)) {
+      propositions.push({ kind: "unsupported", reason: rhsResult.unsupported });
+      return false;
+    }
+    const rhsExpr = applyConst(bodyExpr(rhsResult));
+
+    const guards: OpaqueGuard[] = [ast.gIn(iterName, arrExpr)];
+    if (leaf.guard) {
+      const gResult = translateBodyExpr(
+        leaf.guard,
+        checker,
+        strategy,
+        subParams,
+      );
+      if (isBodyUnsupported(gResult)) {
+        propositions.push({ kind: "unsupported", reason: gResult.unsupported });
+        return false;
+      }
+      guards.push(ast.gExpr(applyConst(bodyExpr(gResult))));
+    }
+
+    const comb = makeCombiner(leaf.ops.combiner);
+    const folded = ast.eachComb([], guards, comb, rhsExpr);
+
+    const outerOp = translateOperator(leaf.ops.outer);
+    if (outerOp === null) {
+      propositions.push({
+        kind: "unsupported",
+        reason: "loop-fold outer operator",
+      });
+      return false;
+    }
+    const key = symbolicKey(leaf.prop, accExpr);
+    const priorEntry = state.writes.get(key);
+    const priorVal =
+      priorEntry?.value ?? ast.app(ast.var(leaf.prop), [accExpr]);
+    const newVal = ast.binop(outerOp, priorVal, folded);
+
+    state.writes.set(key, { prop: leaf.prop, objExpr: accExpr, value: newVal });
+    state.writtenKeys.add(key);
+  }
+
+  return true;
+}
+
+/** Translate a `for (const x of arr) { ... }` statement. */
+function translateForOfLoop(
+  stmt: ts.ForOfStatement,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: Map<string, string>,
+  state: SymbolicState,
+  propositions: PropResult[],
+  applyConst: (e: OpaqueExpr) => OpaqueExpr,
+  supply: UniqueSupply,
+): boolean {
+  const initList = stmt.initializer;
+  if (
+    !ts.isVariableDeclarationList(initList) ||
+    !(initList.flags & ts.NodeFlags.Const) ||
+    initList.declarations.length !== 1
+  ) {
+    propositions.push({
+      kind: "unsupported",
+      reason: "for-of initializer must be a single const binding",
+    });
+    return false;
+  }
+  const decl = initList.declarations[0]!;
+  if (!ts.isIdentifier(decl.name)) {
+    propositions.push({
+      kind: "unsupported",
+      reason: "for-of destructuring pattern is not supported",
+    });
+    return false;
+  }
+  const iterName = decl.name.text;
+
+  const arrResult = translateBodyExpr(
+    stmt.expression,
+    checker,
+    strategy,
+    paramNames,
+    state,
+  );
+  if (isBodyUnsupported(arrResult)) {
+    propositions.push({ kind: "unsupported", reason: arrResult.unsupported });
+    return false;
+  }
+  const arrExpr = applyConst(bodyExpr(arrResult));
+  const bodyStmts = flattenStmt(stmt.statement);
+
+  return translateForOfLoopBody(
+    iterName,
+    arrExpr,
+    bodyStmts,
+    checker,
+    strategy,
+    paramNames,
+    state,
+    propositions,
+    applyConst,
+    supply,
+  );
+}
+
+/**
+ * Translate a `arr.forEach(x => { ... })` call-statement. Returns null if
+ * the call is not a forEach (caller falls back to normal handling).
+ */
+function translateForEachStmt(
+  call: ts.CallExpression,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: Map<string, string>,
+  state: SymbolicState,
+  propositions: PropResult[],
+  applyConst: (e: OpaqueExpr) => OpaqueExpr,
+  supply: UniqueSupply,
+): boolean | null {
+  if (
+    !ts.isPropertyAccessExpression(call.expression) ||
+    call.expression.name.text !== "forEach" ||
+    call.arguments.length !== 1
+  ) {
+    return null;
+  }
+  const receiver = call.expression.expression;
+  const arg = call.arguments[0]!;
+  if (!ts.isArrowFunction(arg)) {
+    propositions.push({
+      kind: "unsupported",
+      reason: "forEach callback must be an arrow function",
+    });
+    return false;
+  }
+  if (
+    arg.parameters.length !== 1 ||
+    !ts.isIdentifier(arg.parameters[0]!.name)
+  ) {
+    propositions.push({
+      kind: "unsupported",
+      reason: "forEach callback must take a single identifier parameter",
+    });
+    return false;
+  }
+  const iterName = (arg.parameters[0]!.name as ts.Identifier).text;
+
+  const arrResult = translateBodyExpr(
+    receiver,
+    checker,
+    strategy,
+    paramNames,
+    state,
+  );
+  if (isBodyUnsupported(arrResult)) {
+    propositions.push({ kind: "unsupported", reason: arrResult.unsupported });
+    return false;
+  }
+  const arrExpr = applyConst(bodyExpr(arrResult));
+
+  const bodyStmts = ts.isBlock(arg.body)
+    ? Array.from(arg.body.statements)
+    : [ts.factory.createExpressionStatement(arg.body)];
+
+  return translateForOfLoopBody(
+    iterName,
+    arrExpr,
+    bodyStmts,
+    checker,
+    strategy,
+    paramNames,
+    state,
+    propositions,
+    applyConst,
+    supply,
+  );
+}
+
 function translateCallExpr(
   expr: ts.CallExpression,
   checker: ts.TypeChecker,
@@ -1128,6 +1872,22 @@ function translateCallExpr(
       expr.arguments.length === 1
     ) {
       const result = translateArrayMethod(
+        methodName,
+        tsReceiver,
+        expr,
+        checker,
+        strategy,
+        paramNames,
+        state,
+      );
+      if (result) {
+        return result;
+      }
+    }
+
+    // .reduce(cb, init) / .reduceRight(cb, init) — fold into `over each` aggregate
+    if (methodName === "reduce" || methodName === "reduceRight") {
+      const result = translateReduceCall(
         methodName,
         tsReceiver,
         expr,
@@ -1272,7 +2032,6 @@ function translateMutatingBody(
     return propositions;
   }
 
-  const modifiedRules = new Set<string>();
   for (const [, entry] of state.writes) {
     propositions.push({
       kind: "equation",
@@ -1280,10 +2039,10 @@ function translateMutatingBody(
       lhs: ast.app(ast.primed(entry.prop), [entry.objExpr]),
       rhs: entry.value,
     });
-    modifiedRules.add(entry.prop);
+    state.modifiedProps.add(entry.prop);
   }
 
-  const frames = generateFrameConditions(modifiedRules, declarations);
+  const frames = generateFrameConditions(state.modifiedProps, declarations);
   propositions.push(...frames);
 
   return propositions;
@@ -1521,6 +2280,32 @@ function symbolicExecute(
       }
     }
 
+    // `arr.forEach(x => { ... })` — structurally equivalent to `for-of` when
+    // used as a statement. Dispatch to the same loop-body translator.
+    if (
+      ts.isExpressionStatement(stmt) &&
+      ts.isCallExpression(unwrapExpression(stmt.expression)) &&
+      !insideBranch
+    ) {
+      const call = unwrapExpression(stmt.expression) as ts.CallExpression;
+      const okF = translateForEachStmt(
+        call,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        propositions,
+        applyConst,
+        supply,
+      );
+      if (okF !== null) {
+        if (!okF) {
+          ok = false;
+        }
+        continue;
+      }
+    }
+
     if (
       ts.isExpressionStatement(stmt) &&
       expressionHasSideEffects(stmt.expression, checker)
@@ -1689,6 +2474,23 @@ function symbolicExecute(
         ]);
         state.writes.set(key, { prop, objExpr, value: merged });
         state.writtenKeys.add(key);
+      }
+      continue;
+    }
+
+    if (ts.isForOfStatement(stmt) && !insideBranch) {
+      const okL = translateForOfLoop(
+        stmt,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        propositions,
+        applyConst,
+        supply,
+      );
+      if (!okL) {
+        ok = false;
       }
       continue;
     }

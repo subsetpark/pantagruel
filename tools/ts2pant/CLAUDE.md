@@ -123,6 +123,42 @@ body, emit frame conditions (`prop' obj = prop obj`) for everything not in the s
 `cond x ~= Nothing => prop x, true => Nothing`. This is the lifting encoding —
 partiality expressed as conditional expressions over the `Nothing` value.
 
+### Structured Iteration (for-of, forEach, reduce)
+
+**Standard name:** Catamorphisms / structural recursion on lists.
+**Reference:** Meijer, Fokkinga, Paterson, ["Functional Programming with Bananas, Lenses,
+Envelopes and Barbed Wire"](https://maartenfokkinga.github.io/utwente/mmf91m.pdf), FPCA 1991;
+Lamport, *Specifying Systems* (TLA+ `\A x \in arr` idiom for per-element next-state).
+
+ts2pant accepts three shapes that are all instances of the catamorphism `foldr : (a -> b -> b) -> b -> [a] -> b`:
+
+**Shape A — uniform iterator write (mutating).**
+`for (const x of arr) { x.p = e(x) }` and `arr.forEach(x => { x.p = e(x) })` become
+`all x in arr | p' x = e(x).` (universal-quantifier proposition form; binding is Pantagruel's
+bare `x in arr` via `ast.gIn`, with empty `params`). The body runs through a fresh
+sub-`symbolicExecute` with `x` bound, so conditional writes inside the loop pass through
+the standard if-conversion machinery.
+
+**Shape B — accumulator fold (mutating).**
+`for (const x of arr) { a.p OP= f(x) }` becomes `p' a = p a OP (combOP over each x in arr | f(x)).`
+Single-branch `if (g(x)) { a.p OP= f(x) }` folds `g(x)` into the comprehension as an extra
+guard. Supported ops: `+=`, `-=`, `*=`, `/=`. Non-commutative outer ops (`-`, `/`) only appear
+outside the comprehension — never as combiners.
+
+**Shape C — pure reduce (expression).**
+`arr.reduce((a, x) => a OP f(x), init)` becomes `init OP (combOP over each x: T | f(x))`,
+with `init` elided when it equals the combiner identity (0 for `+`, 1 for `*`, `true` for `&&`,
+`false` for `||`). `reduceRight` is accepted only for commutative combiners; non-commutative
+ops require acc on the left.
+
+**Invariants:**
+- Sub-execution uses a *fresh* `SymbolicState` — the iterator's writes must not leak.
+- Shape B writes merge into the outer `state.writes` via `binop(outerOp, priorVal, eachComb)`
+  so frame conditions for untouched properties still fire.
+- `state.modifiedProps` (shared across state clones) tracks which primed rules were emitted,
+  including Shape A equations that bypass `state.writes`; used to compute frame conditions
+  correctly when Shape A and Shape B appear in the same body.
+
 ## PR #84 Post-Mortem: Why Standard Algorithms Matter
 
 The initial const-inlining implementation used ad-hoc string-name substitution rather
