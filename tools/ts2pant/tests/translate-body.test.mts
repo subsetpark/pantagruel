@@ -712,7 +712,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     if (eqs[0]?.kind === "equation") {
       assert.equal(
         ast.strExpr(eqs[0].rhs),
-        "+ over each x in xs | value x",
+        "+ over each $0 in xs | value $0",
       );
     }
   });
@@ -735,7 +735,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     if (eqs[0]?.kind === "equation") {
       assert.equal(
         ast.strExpr(eqs[0].rhs),
-        "100 + (+ over each x in xs | value x)",
+        "100 + (+ over each $0 in xs | value $0)",
       );
     }
   });
@@ -772,6 +772,63 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     assert.ok(props.some((p) => p.kind === "unsupported"));
   });
 
+  it("rejects Shape A loop in an early-exit continuation", () => {
+    // Shape A equations emit directly into `propositions`, not `state.writes`.
+    // The early-exit merge path only threads guards through `state.writes`,
+    // so accepting this would silently drop the loop equation while leaving
+    // `state.modifiedProps` populated (suppressing the frame). Reject instead.
+    const source = `
+      interface User { active: boolean; }
+      function f(g: boolean, us: User[]): void {
+        if (g) return;
+        for (const u of us) { u.active = true; }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.ok(
+      props.some((p) => p.kind === "unsupported"),
+      "expected an unsupported marker",
+    );
+  });
+
+  it("Shape B reads observe Shape A writes in the same iteration", () => {
+    const source = `
+      interface Account { total: number; }
+      interface Item { value: number; }
+      function f(a: Account, xs: Item[]): void {
+        for (const x of xs) {
+          x.value = x.value + 1;
+          a.total += x.value;
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    const ast = getAst();
+    const eqs = props.filter((p) => p.kind === "equation");
+    const totalEq = eqs.find(
+      (e) => e.kind === "equation" && ast.strExpr(e.lhs) === "total' a",
+    );
+    assert.ok(totalEq, "expected a Shape B equation for total");
+    if (totalEq?.kind === "equation") {
+      // Shape B's `x.value` read must resolve through the in-iteration
+      // Shape A write `value' x = value x + 1`, not the pre-state `value x`.
+      assert.equal(
+        ast.strExpr(totalEq.rhs),
+        "total a + (+ over each x in xs | value x + 1)",
+      );
+    }
+  });
+
   it("Shape C: reduce elides parenthesized/signed-zero init variants", () => {
     const variants = ["(0)", "0.0", "+0", "-0", " 0 "];
     for (const initText of variants) {
@@ -793,7 +850,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       if (eqs[0]?.kind === "equation") {
         assert.equal(
           ast.strExpr(eqs[0].rhs),
-          "+ over each x in xs | value x",
+          "+ over each $0 in xs | value $0",
           `variant ${initText}: init should have been elided`,
         );
       }

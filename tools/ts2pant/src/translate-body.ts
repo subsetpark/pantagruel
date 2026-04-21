@@ -31,24 +31,13 @@ function makeUniqueSupply(): UniqueSupply {
   return { next: () => counter++ };
 }
 
+function freshHygienicBinder(supply: UniqueSupply): string {
+  return `$${supply.next()}`;
+}
+
 interface ConstBinding {
   tsName: string;
   initializer: ts.Expression;
-}
-
-/** Generate a binder name not already used by params. */
-function freshBinder(paramNames: Map<string, string>): string {
-  const used = new Set(paramNames.values());
-  for (const candidate of ["x", "y", "z", "w", "v", "u", "t"]) {
-    if (!used.has(candidate)) {
-      return candidate;
-    }
-  }
-  let i = 0;
-  while (used.has(`x${i}`)) {
-    i++;
-  }
-  return `x${i}`;
 }
 
 /**
@@ -488,6 +477,7 @@ function translatePureBody(
     return [{ kind: "unsupported", reason: `${functionName} — ${reason}` }];
   }
 
+  const supply = makeUniqueSupply();
   const inlined = inlineConstBindings(
     extracted.bindings.map((b) => ({
       tsName: b.name,
@@ -496,7 +486,7 @@ function translatePureBody(
     checker,
     strategy,
     paramNames,
-    makeUniqueSupply(),
+    supply,
   );
   if ("error" in inlined) {
     return [
@@ -509,6 +499,8 @@ function translatePureBody(
     checker,
     strategy,
     inlined.scopedParams,
+    undefined,
+    supply,
   );
 
   if (isBodyUnsupported(body)) {
@@ -682,6 +674,7 @@ function inlineConstBindings(
       strategy,
       scopedParams,
       state,
+      supply,
     );
     if (isBodyUnsupported(initResult)) {
       return { error: initResult.unsupported };
@@ -905,7 +898,8 @@ export function translateBodyExpr(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
-  state?: SymbolicState,
+  state: SymbolicState | undefined,
+  supply: UniqueSupply,
 ): BodyResult {
   const ast = getAst();
 
@@ -915,7 +909,14 @@ export function translateBodyExpr(
 
   // if/else statement -> cond
   if (ts.isIfStatement(expr)) {
-    return translateIfStatement(expr, checker, strategy, paramNames, state);
+    return translateIfStatement(
+      expr,
+      checker,
+      strategy,
+      paramNames,
+      state,
+      supply,
+    );
   }
 
   // Ternary: a ? b : c -> cond([[a, b], [true, c]])
@@ -926,6 +927,7 @@ export function translateBodyExpr(
       strategy,
       paramNames,
       state,
+      supply,
     );
     if (isBodyUnsupported(cond)) {
       return cond;
@@ -936,6 +938,7 @@ export function translateBodyExpr(
       strategy,
       paramNames,
       state,
+      supply,
     );
     if (isBodyUnsupported(whenTrue)) {
       return whenTrue;
@@ -946,6 +949,7 @@ export function translateBodyExpr(
       strategy,
       paramNames,
       state,
+      supply,
     );
     if (isBodyUnsupported(whenFalse)) {
       return whenFalse;
@@ -967,6 +971,7 @@ export function translateBodyExpr(
       strategy,
       paramNames,
       state,
+      supply,
     );
     if (isBodyUnsupported(obj)) {
       return obj;
@@ -996,7 +1001,14 @@ export function translateBodyExpr(
 
   // Call expression: handle .includes(), .filter().map(), etc.
   if (ts.isCallExpression(expr)) {
-    return translateCallExpr(expr, checker, strategy, paramNames, state);
+    return translateCallExpr(
+      expr,
+      checker,
+      strategy,
+      paramNames,
+      state,
+      supply,
+    );
   }
 
   // Prefix unary: !x -> unop(opNot(), x), -x -> unop(opNeg(), x)
@@ -1007,6 +1019,7 @@ export function translateBodyExpr(
       strategy,
       paramNames,
       state,
+      supply,
     );
     if (isBodyUnsupported(operand)) {
       return operand;
@@ -1033,6 +1046,7 @@ export function translateBodyExpr(
       strategy,
       paramNames,
       state,
+      supply,
     );
     if (isBodyUnsupported(left)) {
       return left;
@@ -1043,6 +1057,7 @@ export function translateBodyExpr(
       strategy,
       paramNames,
       state,
+      supply,
     );
     if (isBodyUnsupported(right)) {
       return right;
@@ -1063,7 +1078,8 @@ function translateIfStatement(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
-  state?: SymbolicState,
+  state: SymbolicState | undefined,
+  supply: UniqueSupply,
 ): BodyResult {
   const ast = getAst();
 
@@ -1073,6 +1089,7 @@ function translateIfStatement(
     strategy,
     paramNames,
     state,
+    supply,
   );
   if (isBodyUnsupported(cond)) {
     return cond;
@@ -1089,6 +1106,7 @@ function translateIfStatement(
       strategy,
       paramNames,
       state,
+      supply,
     );
     if (isBodyUnsupported(thenVal)) {
       return thenVal;
@@ -1099,6 +1117,7 @@ function translateIfStatement(
       strategy,
       paramNames,
       state,
+      supply,
     );
     if (isBodyUnsupported(elseVal)) {
       return elseVal;
@@ -1171,7 +1190,8 @@ function translateArrayMethod(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
-  state?: SymbolicState,
+  state: SymbolicState | undefined,
+  supply: UniqueSupply,
 ): BodyResult | null {
   const ast = getAst();
 
@@ -1185,6 +1205,7 @@ function translateArrayMethod(
     strategy,
     paramNames,
     state,
+    supply,
   );
   if (isBodyUnsupported(receiver)) {
     return receiver;
@@ -1192,9 +1213,14 @@ function translateArrayMethod(
 
   const pending = receiver.pendingComprehension;
   const isComposing = pending !== undefined;
-  const sourceBinder = isComposing ? pending.binder : freshBinder(paramNames);
+  // Hygienic `$N` binders (Barendregt convention): they cannot clash with
+  // user-visible identifiers or with other fresh binders from the same
+  // translation session.
+  const sourceBinder = isComposing
+    ? pending.binder
+    : freshHygienicBinder(supply);
   const callbackBinder = isComposing
-    ? freshBinder(new Map([...paramNames, [sourceBinder, sourceBinder]]))
+    ? freshHygienicBinder(supply)
     : sourceBinder;
   const extendedParams = new Map(paramNames);
   extendedParams.set(callbackBinder, callbackBinder);
@@ -1205,6 +1231,7 @@ function translateArrayMethod(
     extendedParams,
     checker,
     strategy,
+    supply,
   );
   if (!rawBody) {
     return { unsupported: expr.getText() };
@@ -1274,7 +1301,8 @@ function translateReduceCall(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
-  state?: SymbolicState,
+  state: SymbolicState | undefined,
+  supply: UniqueSupply,
 ): BodyResult | null {
   const ast = getAst();
 
@@ -1292,6 +1320,7 @@ function translateReduceCall(
     strategy,
     paramNames,
     state,
+    supply,
   );
   if (isBodyUnsupported(receiver)) {
     return receiver;
@@ -1381,13 +1410,10 @@ function translateReduceCall(
   }
 
   const pending = receiver.pendingComprehension;
-  // Fresh binder for the callback's `x`; in the composing case we'll substitute
-  // it away with the prior projection so the outer guard binds `pending.binder`.
-  const reservedForCallback = new Map(paramNames);
-  if (pending) {
-    reservedForCallback.set(pending.binder, pending.binder);
-  }
-  const xBinder = freshBinder(reservedForCallback);
+  // Hygienic `$N` binder for the callback's `x`; in the composing case we'll
+  // substitute it away with the prior projection so the outer guard binds
+  // `pending.binder`.
+  const xBinder = freshHygienicBinder(supply);
   const extendedParams = new Map(paramNames);
   extendedParams.set(xName, xBinder);
 
@@ -1397,6 +1423,7 @@ function translateReduceCall(
     strategy,
     extendedParams,
     state,
+    supply,
   );
   if (isBodyUnsupported(innerResult)) {
     return innerResult;
@@ -1439,6 +1466,7 @@ function translateReduceCall(
     strategy,
     paramNames,
     state,
+    supply,
   );
   if (isBodyUnsupported(initResult)) {
     return initResult;
@@ -1656,10 +1684,17 @@ function translateForOfLoopBody(
     }
   }
 
+  // `subState` captures Shape A's per-iteration writes so that Shape B reads
+  // of the iterator's properties resolve to the updated expression. E.g.
+  // `x.value = x.value + 1; a.total += x.value` must fold as
+  // `total a + (+ over each x in xs | value x + 1)`, not `value x`. Property
+  // reads against non-iterator objects pass through unchanged (they don't
+  // appear as keys in `subState.writes`).
+  const subState = makeSymbolicState(applyConst);
+  const subParams = new Map(paramNames);
+  subParams.set(iterName, iterName);
+
   if (shapeAStmts.length > 0) {
-    const subParams = new Map(paramNames);
-    subParams.set(iterName, iterName);
-    const subState = makeSymbolicState(applyConst);
     const subProps: PropResult[] = [];
     const subBlock = ts.factory.createBlock(shapeAStmts, true);
     const okA = symbolicExecute(
@@ -1692,15 +1727,13 @@ function translateForOfLoopBody(
   }
 
   for (const leaf of shapeBLeaves) {
-    const subParams = new Map(paramNames);
-    subParams.set(iterName, iterName);
-
     const accResult = translateBodyExpr(
       leaf.target,
       checker,
       strategy,
       paramNames,
       state,
+      supply,
     );
     if (isBodyUnsupported(accResult)) {
       propositions.push({ kind: "unsupported", reason: accResult.unsupported });
@@ -1708,7 +1741,14 @@ function translateForOfLoopBody(
     }
     const accExpr = applyConst(bodyExpr(accResult));
 
-    const rhsResult = translateBodyExpr(leaf.rhs, checker, strategy, subParams);
+    const rhsResult = translateBodyExpr(
+      leaf.rhs,
+      checker,
+      strategy,
+      subParams,
+      subState,
+      supply,
+    );
     if (isBodyUnsupported(rhsResult)) {
       propositions.push({ kind: "unsupported", reason: rhsResult.unsupported });
       return false;
@@ -1722,6 +1762,8 @@ function translateForOfLoopBody(
         checker,
         strategy,
         subParams,
+        subState,
+        supply,
       );
       if (isBodyUnsupported(gResult)) {
         propositions.push({ kind: "unsupported", reason: gResult.unsupported });
@@ -1793,6 +1835,7 @@ function translateForOfLoop(
     strategy,
     paramNames,
     state,
+    supply,
   );
   if (isBodyUnsupported(arrResult)) {
     propositions.push({ kind: "unsupported", reason: arrResult.unsupported });
@@ -1863,6 +1906,7 @@ function translateForEachStmt(
     strategy,
     paramNames,
     state,
+    supply,
   );
   if (isBodyUnsupported(arrResult)) {
     propositions.push({ kind: "unsupported", reason: arrResult.unsupported });
@@ -1893,7 +1937,8 @@ function translateCallExpr(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
-  state?: SymbolicState,
+  state: SymbolicState | undefined,
+  supply: UniqueSupply,
 ): BodyResult {
   const ast = getAst();
 
@@ -1914,6 +1959,7 @@ function translateCallExpr(
         strategy,
         paramNames,
         state,
+        supply,
       );
       if (isBodyUnsupported(arg)) {
         return arg;
@@ -1924,6 +1970,7 @@ function translateCallExpr(
         strategy,
         paramNames,
         state,
+        supply,
       );
       if (isBodyUnsupported(objExpr)) {
         return objExpr;
@@ -1944,6 +1991,7 @@ function translateCallExpr(
         strategy,
         paramNames,
         state,
+        supply,
       );
       if (result) {
         return result;
@@ -1960,6 +2008,7 @@ function translateCallExpr(
         strategy,
         paramNames,
         state,
+        supply,
       );
       if (result) {
         return result;
@@ -1977,13 +2026,21 @@ function translateCallExpr(
       strategy,
       paramNames,
       state,
+      supply,
     );
     if (isBodyUnsupported(receiver)) {
       return receiver;
     }
     const methodArgs: OpaqueExpr[] = [bodyExpr(receiver)];
     for (const arg of expr.arguments) {
-      const a = translateBodyExpr(arg, checker, strategy, paramNames, state);
+      const a = translateBodyExpr(
+        arg,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
       if (isBodyUnsupported(a)) {
         return a;
       }
@@ -2007,7 +2064,14 @@ function translateCallExpr(
 
     const fnArgs: OpaqueExpr[] = [];
     for (const arg of expr.arguments) {
-      const a = translateBodyExpr(arg, checker, strategy, paramNames, state);
+      const a = translateBodyExpr(
+        arg,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
       if (isBodyUnsupported(a)) {
         return a;
       }
@@ -2026,6 +2090,7 @@ function extractArrowBody(
   paramNames: Map<string, string>,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
+  supply: UniqueSupply,
 ): BodyResult | null {
   if (!ts.isArrowFunction(expr)) {
     return null;
@@ -2055,14 +2120,28 @@ function extractArrowBody(
     if (nonGuard.length === 1) {
       const s = nonGuard[0]!;
       if (ts.isReturnStatement(s) && s.expression) {
-        return translateBodyExpr(s.expression, checker, strategy, arrowParams);
+        return translateBodyExpr(
+          s.expression,
+          checker,
+          strategy,
+          arrowParams,
+          undefined,
+          supply,
+        );
       }
     }
     return null;
   }
 
   // Expression body
-  return translateBodyExpr(expr.body, checker, strategy, arrowParams);
+  return translateBodyExpr(
+    expr.body,
+    checker,
+    strategy,
+    arrowParams,
+    undefined,
+    supply,
+  );
 }
 
 // --- Mutating function body translation ---
@@ -2166,6 +2245,7 @@ function symbolicExecute(
         strategy,
         paramNames,
         state,
+        supply,
       );
       if (isBodyUnsupported(gResult)) {
         ok = false;
@@ -2203,6 +2283,25 @@ function symbolicExecute(
       if (!okR) {
         ok = false;
         propositions.push(...remainingProps);
+        break;
+      }
+
+      // Shape A loop equations emit directly into `propositions` rather than
+      // flowing through `state.writes`, so they'd be silently dropped by the
+      // merge-only path below. Reject when the continuation produced such
+      // equations — we'd need to thread `gExpr` into each rhs (and reconcile
+      // `state.modifiedProps`) to preserve the early-exit semantics, which
+      // isn't yet implemented.
+      const directEquations = remainingProps.filter(
+        (p) => p.kind === "equation",
+      );
+      if (directEquations.length > 0) {
+        ok = false;
+        propositions.push({
+          kind: "unsupported",
+          reason:
+            "loop with per-iteration writes cannot appear after an early-exit guard",
+        });
         break;
       }
 
@@ -2310,6 +2409,7 @@ function symbolicExecute(
           strategy,
           paramNames,
           state,
+          supply,
         );
         if (isBodyUnsupported(obj)) {
           ok = false;
@@ -2330,6 +2430,7 @@ function symbolicExecute(
           strategy,
           paramNames,
           state,
+          supply,
         );
         if (isBodyUnsupported(val)) {
           ok = false;
@@ -2471,6 +2572,7 @@ function symbolicExecute(
         strategy,
         paramNames,
         state,
+        supply,
       );
       if (isBodyUnsupported(gResult)) {
         ok = false;
