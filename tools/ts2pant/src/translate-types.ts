@@ -60,6 +60,17 @@ export function mapTsType(
     return checker.typeToString(type);
   }
 
+  // Set — modeled as a list. Pantagruel lists already encode membership
+  // (smt_types.ml: Array elem_sort Bool), so `s.has(x)` can become `x in s`
+  // with list semantics. Uniqueness is not tracked as a logical invariant.
+  if (isSetType(type)) {
+    const typeArgs = checker.getTypeArguments(type as ts.TypeReference);
+    if (typeArgs.length === 1) {
+      return `[${mapTsType(typeArgs[0]!, checker, strategy)}]`;
+    }
+    return checker.typeToString(type);
+  }
+
   // Union
   if (type.isUnion()) {
     // Boolean is represented as true | false union
@@ -81,6 +92,16 @@ export function mapTsType(
   }
 
   return checker.typeToString(type);
+}
+
+/**
+ * Detect a TypeScript `Set<T>` by symbol name. Brittle against user-defined
+ * classes named `Set`, but matches how `isArrayType` effectively works and is
+ * the pragmatic choice — a user class named `Set` is vanishingly rare.
+ */
+export function isSetType(type: ts.Type): boolean {
+  const symbol = type.getSymbol();
+  return symbol?.getName() === "Set";
 }
 
 /** Derive a short parameter name from a type name (first letter, lowercased). */

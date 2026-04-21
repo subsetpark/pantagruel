@@ -123,6 +123,7 @@ This works with any function declared as `asserts condition` -- Node's `assert`,
 | `boolean` | `Bool` |
 | `string` | `String` |
 | `T[]` | `[T]` |
+| `Set<T>` | `[T]` (membership via `.has(x)` → `x in`, cardinality via `.size` → `#`; uniqueness is not tracked) |
 | `T \| null` / `T \| undefined` | `T + Nothing` |
 | `interface Foo { ... }` | `Foo.` (domain) + rules for each property |
 

@@ -18,7 +18,11 @@ import {
   translateExpr,
   translateOperator,
 } from "./translate-signature.js";
-import { mapTsType, type NumericStrategy } from "./translate-types.js";
+import {
+  isSetType,
+  mapTsType,
+  type NumericStrategy,
+} from "./translate-types.js";
 import type { PantDeclaration, PropResult } from "./types.js";
 
 // --- Const-binding inlining infrastructure (let-elimination) ---
@@ -976,10 +980,12 @@ export function translateBodyExpr(
     if (isBodyUnsupported(obj)) {
       return obj;
     }
-    // .length -> #obj (array only)
-    if (prop === "length") {
+    // .length (array) / .size (Set) -> #obj
+    if (prop === "length" || prop === "size") {
       const receiverType = checker.getTypeAtLocation(expr.expression);
-      if (checker.isArrayType(receiverType)) {
+      const isArray = prop === "length" && checker.isArrayType(receiverType);
+      const isSet = prop === "size" && isSetType(receiverType);
+      if (isArray || isSet) {
         return { expr: ast.unop(ast.opCard(), bodyExpr(obj)) };
       }
     }
@@ -1947,11 +1953,22 @@ function translateCallExpr(
     const methodName = expr.expression.name.text;
     const tsReceiver = expr.expression.expression;
 
-    // .includes(x) -> x in obj (array only)
-    if (methodName === "includes" && expr.arguments.length === 1) {
+    // .includes(x) on Array / .has(x) on Set -> x in obj
+    if (
+      (methodName === "includes" || methodName === "has") &&
+      expr.arguments.length === 1
+    ) {
       const receiverType = checker.getTypeAtLocation(tsReceiver);
-      if (!checker.isArrayType(receiverType)) {
-        return { unsupported: "non-array .includes()" };
+      const isArray =
+        methodName === "includes" && checker.isArrayType(receiverType);
+      const isSet = methodName === "has" && isSetType(receiverType);
+      if (!isArray && !isSet) {
+        return {
+          unsupported:
+            methodName === "includes"
+              ? "non-array .includes()"
+              : "non-Set .has()",
+        };
       }
       const arg = translateBodyExpr(
         expr.arguments[0]!,

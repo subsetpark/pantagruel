@@ -274,6 +274,18 @@ exports[`expressions-reduce.ts > sumFromBase 1`] = `
 "module SumFromBase.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nsumFromBase xs: [Item] => Int.\\n\\n---\\n\\nsumFromBase xs = 100 + (+ over each $0 in xs | value $0).\\n"
 `;
 
+exports[`expressions-set.ts > both 1`] = `
+"module Both.\\n\\nboth xs: [String], x: String, y: String => Bool.\\n\\n---\\n\\nboth xs x y = (x in xs and y in xs).\\n\\ncheck\\n\\nall xs: [String], x: String, y: String | both xs x y -> x in xs.\\n"
+`;
+
+exports[`expressions-set.ts > cardinality 1`] = `
+"module Cardinality.\\n\\ncardinality xs: [String] => Int.\\n\\n---\\n\\ncardinality xs = #xs.\\n"
+`;
+
+exports[`expressions-set.ts > contains 1`] = `
+"module Contains.\\n\\ncontains xs: [String], x: String => Bool.\\n\\n---\\n\\ncontains xs x = (x in xs).\\n"
+`;
+
 exports[`functions-class.ts > Account.deposit 1`] = `
 "module Deposit.\\n\\n~> Deposit @ a: Account, amount: Int.\\n\\n---\\n\\nbalance' a = balance a + amount.\\n"
 `;
