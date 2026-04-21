@@ -276,33 +276,54 @@ let generate_closure_axioms ?(include_primed = true) config env =
     [constrain_primed] is false, primed functions are unconstrained. *)
 let collect_type_constraint_exprs ?(constrain_primed = true) _config env =
   let constraints = ref [] in
+  let bound_of = function
+    | TyNat -> Some ("Nat", 1)
+    | TyNat0 -> Some ("Nat0", 0)
+    | TyBool | TyInt | TyReal | TyString | TyNothing | TyDomain _ | TyList _
+    | TyProduct _ | TySum _ | TyFunc _ ->
+        None
+  in
   let add_nat_constraint name sname params_sorts param_names ret_ty is_prime =
     let fname = if is_prime then sname ^ "_prime" else sname in
     let display_name = if is_prime then name ^ "'" else name in
-    let type_name, bound =
-      match ret_ty with
-      | TyNat -> ("Nat", 1)
-      | TyNat0 -> ("Nat0", 0)
-      | TyBool | TyInt | TyReal | TyString | TyNothing | TyDomain _ | TyList _
-      | TyProduct _ | TySum _ | TyFunc _ ->
-          ("", -1)
+    let applied =
+      if params_sorts = [] then fname
+      else Printf.sprintf "(%s %s)" fname (String.concat " " param_names)
     in
-    if bound >= 0 then begin
-      let smt_expr =
-        if params_sorts = [] then Printf.sprintf "(>= %s %d)" fname bound
-        else
-          Printf.sprintf "(forall (%s) (>= (%s %s) %d))"
-            (String.concat " "
-               (List.map2
-                  (fun n s -> Printf.sprintf "(%s %s)" n s)
-                  param_names params_sorts))
-            fname
-            (String.concat " " param_names)
-            bound
-      in
-      let human = Printf.sprintf "%s : %s" display_name type_name in
-      constraints := (human, smt_expr) :: !constraints
-    end
+    let param_binders =
+      List.map2
+        (fun n s -> Printf.sprintf "(%s %s)" n s)
+        param_names params_sorts
+    in
+    let wrap_forall binders body =
+      if binders = [] then body
+      else Printf.sprintf "(forall (%s) %s)" (String.concat " " binders) body
+    in
+    (match bound_of ret_ty with
+    | Some (type_name, bound) ->
+        let smt_expr =
+          wrap_forall param_binders (Printf.sprintf "(>= %s %d)" applied bound)
+        in
+        let human = Printf.sprintf "%s : %s" display_name type_name in
+        constraints := (human, smt_expr) :: !constraints
+    | None -> ());
+    match[@warning "-4"] ret_ty with
+    | TyList elem_ty -> (
+        match bound_of elem_ty with
+        | Some (type_name, bound) ->
+            let elem_binder = "k_elem" in
+            let inner_binders =
+              param_binders @ [ Printf.sprintf "(%s Int)" elem_binder ]
+            in
+            let smt_expr =
+              wrap_forall inner_binders
+                (Printf.sprintf "(=> (select %s %s) (>= %s %d))" applied
+                   elem_binder elem_binder bound)
+            in
+            let human = Printf.sprintf "%s : [%s]" display_name type_name in
+            constraints := (human, smt_expr) :: !constraints
+        | None -> ())
+    | _ -> ()
   in
   Env.iter_terms
     (fun name entry ->
