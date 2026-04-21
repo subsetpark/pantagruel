@@ -138,7 +138,7 @@ The owner domain depends on where the Map appears.
 **Stage A — Map is a declared interface field.** The owner is the user's
 interface; the rule name is the field name.
 
-```
+```text
 entriesKey c: Cache, k: K => Bool.
 entries c: Cache, k: K, entriesKey c k => V.
 ```
@@ -149,7 +149,7 @@ domain, one per unique `(K, V)` per module; naming is `KToVMap` with
 compound `K`/`V` mangled (`[String]` → `ListString`, `A + B` → `AOrB`,
 `A * B` → `AAndB`).
 
-```
+```text
 StringToIntMap.
 stringToIntMapKey m: StringToIntMap, k: String => Bool.
 stringToIntMap m: StringToIntMap, k: String, stringToIntMapKey m k => Int.

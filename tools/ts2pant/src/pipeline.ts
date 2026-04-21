@@ -93,6 +93,20 @@ export async function buildPantDocument(
       mapSynth,
     });
     doc = { ...doc, propositions: [...doc.propositions, ...bodyProps] };
+
+    // Drain any Map (K, V) pairs registered on demand during body translation
+    // (e.g., `build().get(k)!` where `build`'s return type wasn't surfaced
+    // through the signature or referenced types). emit() is incremental, so
+    // this returns only entries new since the pre-body emit.
+    if (mapSynth) {
+      const extraSynthDecls = mapSynth.emit();
+      if (extraSynthDecls.length > 0) {
+        doc = {
+          ...doc,
+          declarations: [...doc.declarations, ...extraSynthDecls],
+        };
+      }
+    }
   }
 
   // Annotations go to checks (entailment goals) — skip for skeleton docs

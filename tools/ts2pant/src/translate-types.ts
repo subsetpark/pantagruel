@@ -48,10 +48,11 @@ export interface MapSynthEntry {
  */
 export class MapSynthesizer {
   private byKV = new Map<string, MapSynthEntry>();
+  private emitted = new Set<string>();
 
   constructor(private registry: NameRegistry) {}
 
-  register(kType: string, vType: string): string {
+  register(kType: string, vType: string): string | null {
     const key = `${kType}|${vType}`;
     const cached = this.byKV.get(key);
     if (cached) {
@@ -60,9 +61,7 @@ export class MapSynthesizer {
     const kFrag = manglePantTypeToFragment(kType);
     const vFrag = manglePantTypeToFragment(vType);
     if (!kFrag || !vFrag) {
-      throw new Error(
-        `Cannot synthesize Map domain for K=${kType}, V=${vType}`,
-      );
+      return null;
     }
     const baseDomain = `${kFrag}To${vFrag}Map`;
     const domain = this.registry.register(baseDomain);
@@ -84,12 +83,19 @@ export class MapSynthesizer {
    * Materialize accumulated decls (domain + membership predicate + guarded
    * value rule) in registration order. Rule-internal binder names are
    * registered *here*, after callers have claimed their own param names,
-   * so the synth decls get hygienic suffixes (e.g., `m1`, `k1`).
+   * so the synth decls get hygienic suffixes (e.g., `m1`, `k1`). Incremental:
+   * a second call only emits entries registered since the previous call, so
+   * the pipeline can drain new body-level registrations after signature/type
+   * translation has already run.
    */
   emit(): PantDeclaration[] {
     const decls: PantDeclaration[] = [];
     const ast = getAst();
-    for (const entry of this.byKV.values()) {
+    for (const [key, entry] of this.byKV) {
+      if (this.emitted.has(key)) {
+        continue;
+      }
+      this.emitted.add(key);
       const { domain, rule, keyPred } = entry.names;
       const mName = this.registry.register("m");
       const kName = this.registry.register("k");
@@ -199,13 +205,19 @@ export function mapTsType(
     return checker.typeToString(type);
   }
 
-  // Map — synthesize a domain when a synthesizer is provided.
+  // Map — synthesize a domain when a synthesizer is provided. If the K or V
+  // type is unmangleable (e.g., contains an unsupported TS type), register
+  // returns null and we fall through to checker.typeToString — the same
+  // unsupported-type fallback used by the array and set branches above.
   if (isMapType(type) && synth) {
     const typeArgs = checker.getTypeArguments(type as ts.TypeReference);
     if (typeArgs.length === 2) {
       const kType = mapTsType(typeArgs[0]!, checker, strategy, synth);
       const vType = mapTsType(typeArgs[1]!, checker, strategy, synth);
-      return synth.register(kType, vType);
+      const domain = synth.register(kType, vType);
+      if (domain !== null) {
+        return domain;
+      }
     }
   }
 

@@ -554,10 +554,12 @@ interface ExtractedBody {
 
 /**
  * True when the property access names a field declared on a user-defined
- * interface (e.g., `cache.entries` where `entries` is declared in
- * `interface Cache`). Disambiguates Stage A (interface-field Map encoding)
- * from Stage B (synthesized-domain Map encoding) for `.get`/`.has` on a
- * Map-typed receiver.
+ * interface or class (e.g., `cache.entries` where `entries` is declared in
+ * `interface Cache`, or `this.entries` inside a class method). Disambiguates
+ * Stage A (interface/class-field Map encoding) from Stage B (synthesized-
+ * domain Map encoding) for `.get`/`.has` on a Map-typed receiver. Class
+ * methods reuse the surrounding module's field declarations rather than
+ * synthesized handles.
  */
 function isInterfaceFieldAccess(
   node: ts.PropertyAccessExpression,
@@ -572,6 +574,13 @@ function isInterfaceFieldAccess(
       ts.isPropertySignature(decl) &&
       decl.parent &&
       ts.isInterfaceDeclaration(decl.parent)
+    ) {
+      return true;
+    }
+    if (
+      ts.isPropertyDeclaration(decl) &&
+      decl.parent &&
+      ts.isClassDeclaration(decl.parent)
     ) {
       return true;
     }
@@ -2053,7 +2062,12 @@ function translateCallExpr(
         };
       }
 
-      // Stage B: synthesized rule lookup.
+      // Stage B: synthesized rule lookup. Register on demand — a body-only
+      // receiver (e.g., `build().get(k)!` where `build`'s return type wasn't
+      // surfaced through the current function's signature or referenced
+      // types) wouldn't be pre-registered by the signature/type passes.
+      // The pipeline drains any new registrations with a second emit() call
+      // after body translation completes.
       const receiverType = checker.getTypeAtLocation(tsReceiver);
       const typeArgs = checker.getTypeArguments(
         receiverType as ts.TypeReference,
@@ -2063,7 +2077,11 @@ function translateCallExpr(
       }
       const kType = mapTsType(typeArgs[0]!, checker, strategy, supply.mapSynth);
       const vType = mapTsType(typeArgs[1]!, checker, strategy, supply.mapSynth);
-      const info = supply.mapSynth?.lookup(kType, vType);
+      let info = supply.mapSynth?.lookup(kType, vType);
+      if (!info && supply.mapSynth) {
+        supply.mapSynth.register(kType, vType);
+        info = supply.mapSynth.lookup(kType, vType);
+      }
       if (!info) {
         return {
           unsupported: `Map<${kType}, ${vType}> not synthesized`,
