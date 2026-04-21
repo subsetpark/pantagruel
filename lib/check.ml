@@ -264,8 +264,8 @@ and check_application ctx _func_expr func_ty args =
             (* Indexing: xs i : T *)
             Ok elem_ty
           else if is_subtype arg_ty elem_ty && not (is_numeric elem_ty) then
-            (* Search: xs x : Nat + Nothing *)
-            Ok (TySum [ TyNat; TyNothing ])
+            (* Search: xs x : Nat, guarded by (x in xs) at proposition level *)
+            Ok TyNat
           else if is_numeric elem_ty then
             (* Numeric list: only indexing allowed, and arg wasn't Nat *)
             Error (TypeMismatch (TyNat, arg_ty, ctx.loc))

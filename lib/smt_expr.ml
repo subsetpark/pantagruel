@@ -242,47 +242,65 @@ and prime_guards ~bound gs =
 let collect_body_guards ?(bound = []) env (e : expr) : expr list =
   let guards = ref [] in
   let rec walk = function
-    | EApp (EVar (Lower name), args) ->
-        (match Env.lookup_rule_guards name env with
-        | Some (formal_params, rule_guards) ->
-            let subst =
-              List.combine
-                (List.map
-                   (fun (p : param) -> Ast.lower_name p.param_name)
-                   formal_params)
-                args
-            in
-            List.iter
-              (fun (g : guard) ->
-                match g with
-                | GExpr ge -> guards := substitute_vars subst ge :: !guards
-                | GIn _ | GParam _ -> ())
-              rule_guards
-        | None -> ());
-        List.iter walk args
-    | EApp (EPrimed (Lower name), args) ->
-        (* Primed application: collect guards in primed form *)
-        (match Env.lookup_rule_guards name env with
-        | Some (formal_params, rule_guards) ->
-            let subst =
-              List.combine
-                (List.map
-                   (fun (p : param) -> Ast.lower_name p.param_name)
-                   formal_params)
-                args
-            in
-            List.iter
-              (fun (g : guard) ->
-                match g with
-                | GExpr ge ->
-                    guards :=
-                      prime_expr ~bound (substitute_vars subst ge) :: !guards
-                | GIn _ | GParam _ -> ())
-              rule_guards
-        | None -> ());
-        List.iter walk args
     | EApp (func, args) ->
-        walk func;
+        (* List-search guard: xs x where xs : [T] and x : T injects (x in xs) *)
+        (match args with
+        | [ arg ] -> (
+            match[@warning "-4"]
+              Check.infer_type { Check.env; loc = Ast.dummy_loc } func
+            with
+            | Ok (TyList elem_ty) -> (
+                match[@warning "-4"]
+                  Check.infer_type { Check.env; loc = Ast.dummy_loc } arg
+                with
+                | Ok arg_ty
+                  when is_subtype arg_ty elem_ty
+                       && (not (is_subtype arg_ty TyNat))
+                       && not (is_numeric elem_ty) ->
+                    guards := EBinop (OpIn, arg, func) :: !guards
+                | _ -> ())
+            | _ -> ())
+        | _ -> ());
+        (match[@warning "-4"] func with
+        | EVar (Lower name) -> (
+            match Env.lookup_rule_guards name env with
+            | Some (formal_params, rule_guards) ->
+                let subst =
+                  List.combine
+                    (List.map
+                       (fun (p : param) -> Ast.lower_name p.param_name)
+                       formal_params)
+                    args
+                in
+                List.iter
+                  (fun (g : guard) ->
+                    match g with
+                    | GExpr ge -> guards := substitute_vars subst ge :: !guards
+                    | GIn _ | GParam _ -> ())
+                  rule_guards
+            | None -> ())
+        | EPrimed (Lower name) -> (
+            (* Primed application: collect guards in primed form *)
+            match Env.lookup_rule_guards name env with
+            | Some (formal_params, rule_guards) ->
+                let subst =
+                  List.combine
+                    (List.map
+                       (fun (p : param) -> Ast.lower_name p.param_name)
+                       formal_params)
+                    args
+                in
+                List.iter
+                  (fun (g : guard) ->
+                    match g with
+                    | GExpr ge ->
+                        guards :=
+                          prime_expr ~bound (substitute_vars subst ge)
+                          :: !guards
+                    | GIn _ | GParam _ -> ())
+                  rule_guards
+            | None -> ())
+        | _ -> walk func);
         List.iter walk args
     | EVar (Lower name) -> (
         match(* Nullary auto-applied rule with guards *)

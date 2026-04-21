@@ -60,36 +60,63 @@ let rec translate_expr config env (e : expr) =
   | EOverride (Lower name, pairs) -> translate_override config env name pairs
 
 and translate_app config env func args =
-  match[@warning "-4"] func with
-  | EOverride (Lower name, pairs) ->
-      (* f[k |-> v] applied to args: inline ite chain *)
-      let sname = sanitize_ident name in
-      let args_str = List.map (translate_expr config env) args in
-      let applied_args = String.concat " " args_str in
-      (* For arity-1 overrides, the single arg is the dispatch key *)
-      let arg_str =
-        match args_str with
-        | [] -> failwith "SMT translation: override applied with 0 arguments"
-        | hd :: _ -> hd
-      in
-      let rec build_chain = function
-        | [] -> Printf.sprintf "(%s %s)" sname applied_args
-        | (k, v) :: rest ->
-            Printf.sprintf "(ite (= %s %s) %s %s)" arg_str
-              (translate_expr config env k)
-              (translate_expr config env v)
-              (build_chain rest)
-      in
-      build_chain pairs
-  | _ ->
-      let func_str =
-        match[@warning "-4"] func with
-        | EVar (Lower name) -> sanitize_ident name
-        | EPrimed (Lower name) -> sanitize_ident name ^ "_prime"
-        | _ -> translate_expr config env func
-      in
-      let args_str = List.map (translate_expr config env) args in
-      Printf.sprintf "(%s %s)" func_str (String.concat " " args_str)
+  (* List-search: xs x where xs : [T] and x : T (non-numeric T, non-Nat x)
+     emits a fresh uninterpreted Int. The (x in xs) guard injected by
+     collect_body_guards makes the value sound when x is present; when
+     absent, the guard absorbs the assertion so the value doesn't matter. *)
+  let list_search =
+    match args with
+    | [ arg ] -> (
+        match[@warning "-4"]
+          Check.infer_type { Check.env; loc = dummy_loc } func
+        with
+        | Ok (TyList elem_ty) -> (
+            match[@warning "-4"]
+              Check.infer_type { Check.env; loc = dummy_loc } arg
+            with
+            | Ok arg_ty
+              when is_subtype arg_ty elem_ty
+                   && (not (is_subtype arg_ty TyNat))
+                   && not (is_numeric elem_ty) ->
+                Some (fresh_fallback ~kind:"list_search" ~sort:"Int")
+            | _ -> None)
+        | _ -> None)
+    | _ -> None
+  in
+  match list_search with
+  | Some name -> name
+  | None -> (
+      match[@warning "-4"] func with
+      | EOverride (Lower name, pairs) ->
+          (* f[k |-> v] applied to args: inline ite chain *)
+          let sname = sanitize_ident name in
+          let args_str = List.map (translate_expr config env) args in
+          let applied_args = String.concat " " args_str in
+          (* For arity-1 overrides, the single arg is the dispatch key *)
+          let arg_str =
+            match args_str with
+            | [] ->
+                failwith "SMT translation: override applied with 0 arguments"
+            | hd :: _ -> hd
+          in
+          let rec build_chain = function
+            | [] -> Printf.sprintf "(%s %s)" sname applied_args
+            | (k, v) :: rest ->
+                Printf.sprintf "(ite (= %s %s) %s %s)" arg_str
+                  (translate_expr config env k)
+                  (translate_expr config env v)
+                  (build_chain rest)
+          in
+          build_chain pairs
+      | _ ->
+          let func_str =
+            match[@warning "-4"] func with
+            | EVar (Lower name) -> sanitize_ident name
+            | EPrimed (Lower name) -> sanitize_ident name ^ "_prime"
+            | _ -> translate_expr config env func
+          in
+          let args_str = List.map (translate_expr config env) args in
+          Printf.sprintf "(%s %s)" func_str (String.concat " " args_str))
 
 and translate_binop config env op e1 e2 =
   match op with

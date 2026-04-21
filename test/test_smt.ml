@@ -1820,6 +1820,28 @@ let test_inject_guards_false_skips () =
   let result_with = Smt.translate_proposition config env expr in
   check bool "has implication with guards" true (contains result_with "(=>")
 
+let test_list_search_injects_membership_guard () =
+  (* xs x where xs : [T] and x : T should emit an implicit (x in xs) guard
+     and the application itself should translate to a fresh Int placeholder. *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "Color" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "colors"
+         (Types.TyFunc ([], Some (Types.TyList (Types.TyDomain "Color"))))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "red"
+         (Types.TyFunc ([], Some (Types.TyDomain "Color")))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EBinop
+      (OpGe, EApp (EVar (Lower "colors"), [ EVar (Lower "red") ]), ELitNat 1)
+  in
+  let result = Smt.translate_proposition config env expr in
+  check bool "wraps with implication" true (contains result "(=>");
+  check bool "guard references colors membership" true
+    (contains result "(select colors red)")
+
 let test_guarded_decl_e2e () =
   (* Full spec from bug report: guarded declarations should not cause
      spurious invariant preservation failures *)
@@ -1905,6 +1927,8 @@ let guard_injection_tests =
     test_case "primed guard collection" `Quick test_primed_guard_collection;
     test_case "inject_guards false skips" `Quick test_inject_guards_false_skips;
     test_case "guarded decl e2e" `Quick test_guarded_decl_e2e;
+    test_case "list search injects membership guard" `Quick
+      test_list_search_injects_membership_guard;
   ]
 
 (* --- Cond expression tests --- *)
