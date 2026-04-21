@@ -18,7 +18,12 @@ import {
   translateExpr,
   translateOperator,
 } from "./translate-signature.js";
-import { mapTsType, type NumericStrategy } from "./translate-types.js";
+import {
+  isMapType,
+  isSetType,
+  mapTsType,
+  type NumericStrategy,
+} from "./translate-types.js";
 import type { PantDeclaration, PropResult } from "./types.js";
 
 // --- Const-binding inlining infrastructure (let-elimination) ---
@@ -976,10 +981,12 @@ export function translateBodyExpr(
     if (isBodyUnsupported(obj)) {
       return obj;
     }
-    // .length -> #obj (array only)
-    if (prop === "length") {
+    // .length (array) / .size (Set) -> #obj
+    if (prop === "length" || prop === "size") {
       const receiverType = checker.getTypeAtLocation(expr.expression);
-      if (checker.isArrayType(receiverType)) {
+      const isArray = prop === "length" && checker.isArrayType(receiverType);
+      const isSet = prop === "size" && isSetType(receiverType);
+      if (isArray || isSet) {
         return { expr: ast.unop(ast.opCard(), bodyExpr(obj)) };
       }
     }
@@ -1947,11 +1954,61 @@ function translateCallExpr(
     const methodName = expr.expression.name.text;
     const tsReceiver = expr.expression.expression;
 
-    // .includes(x) -> x in obj (array only)
-    if (methodName === "includes" && expr.arguments.length === 1) {
+    // .get(k) / .has(k) on a Map<K,V> field -> 2-arity rule application.
+    // Map fields translate to a pair of rules: `<name>Key c k => Bool` and
+    // `<name> c k, <name>Key c k => V`. See translate-types.ts.
+    if (
+      (methodName === "get" || methodName === "has") &&
+      expr.arguments.length === 1 &&
+      ts.isPropertyAccessExpression(tsReceiver) &&
+      isMapType(checker.getTypeAtLocation(tsReceiver))
+    ) {
+      const fieldName = tsReceiver.name.text;
+      const innerObj = tsReceiver.expression;
+      const kExpr = translateBodyExpr(
+        expr.arguments[0]!,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
+      if (isBodyUnsupported(kExpr)) {
+        return kExpr;
+      }
+      const objExpr = translateBodyExpr(
+        innerObj,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
+      if (isBodyUnsupported(objExpr)) {
+        return objExpr;
+      }
+      const ruleName = methodName === "has" ? `${fieldName}Key` : fieldName;
+      return {
+        expr: ast.app(ast.var(ruleName), [bodyExpr(objExpr), bodyExpr(kExpr)]),
+      };
+    }
+
+    // .includes(x) on Array / .has(x) on Set -> x in obj
+    if (
+      (methodName === "includes" || methodName === "has") &&
+      expr.arguments.length === 1
+    ) {
       const receiverType = checker.getTypeAtLocation(tsReceiver);
-      if (!checker.isArrayType(receiverType)) {
-        return { unsupported: "non-array .includes()" };
+      const isArray =
+        methodName === "includes" && checker.isArrayType(receiverType);
+      const isSet = methodName === "has" && isSetType(receiverType);
+      if (!isArray && !isSet) {
+        return {
+          unsupported:
+            methodName === "includes"
+              ? "non-array .includes()"
+              : "non-Set .has()",
+        };
       }
       const arg = translateBodyExpr(
         expr.arguments[0]!,

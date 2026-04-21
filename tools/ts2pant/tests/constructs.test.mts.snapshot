@@ -218,6 +218,18 @@ exports[`expressions-literals.ts > yes 1`] = `
 "module Yes.\\n\\nyes  => Bool.\\n\\n---\\n\\nyes = true.\\n"
 `;
 
+exports[`expressions-map.ts > congruence 1`] = `
+"module Congruence.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\ncongruence c: Cache, k: String => Bool.\\n\\n---\\n\\ncongruence c k = entriesKey c k.\\n\\ncheck\\n\\nall c: Cache, k: String | congruence c k -> entries c k = entries c k.\\n"
+`;
+
+exports[`expressions-map.ts > contains 1`] = `
+"module Contains.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\ncontains c: Cache, k: String => Bool.\\n\\n---\\n\\ncontains c k = entriesKey c k.\\n"
+`;
+
+exports[`expressions-map.ts > lookup 1`] = `
+"module Lookup.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\nlookup c: Cache, k: String => Int.\\n\\n---\\n\\nlookup c k = entries c k.\\n"
+`;
+
 exports[`expressions-misc.ts > asNumber 1`] = `
 "module AsNumber.\\n\\nasNumber x: unknown => Int.\\n\\n---\\n\\nasNumber x = x.\\n"
 `;
@@ -272,6 +284,18 @@ exports[`expressions-reduce.ts > sumAmountsRight 1`] = `
 
 exports[`expressions-reduce.ts > sumFromBase 1`] = `
 "module SumFromBase.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nsumFromBase xs: [Item] => Int.\\n\\n---\\n\\nsumFromBase xs = 100 + (+ over each $0 in xs | value $0).\\n"
+`;
+
+exports[`expressions-set.ts > both 1`] = `
+"module Both.\\n\\nboth xs: [String], x: String, y: String => Bool.\\n\\n---\\n\\nboth xs x y = (x in xs and y in xs).\\n\\ncheck\\n\\nall xs: [String], x: String, y: String | both xs x y -> x in xs.\\n"
+`;
+
+exports[`expressions-set.ts > cardinality 1`] = `
+"module Cardinality.\\n\\ncardinality xs: [String] => Int.\\n\\n---\\n\\ncardinality xs = #xs.\\n"
+`;
+
+exports[`expressions-set.ts > contains 1`] = `
+"module Contains.\\n\\ncontains xs: [String], x: String => Bool.\\n\\n---\\n\\ncontains xs x = (x in xs).\\n"
 `;
 
 exports[`functions-class.ts > Account.deposit 1`] = `

@@ -123,6 +123,36 @@ body, emit frame conditions (`prop' obj = prop obj`) for everything not in the s
 `cond x ~= Nothing => prop x, true => Nothing`. This is the lifting encoding —
 partiality expressed as conditional expressions over the `Nothing` value.
 
+### Partial Rules (Map Fields)
+
+**Standard name:** Precondition-guarded partial function; declaration guard.
+**Reference:** Dafny Reference Manual (preconditions); Dijkstra, CACM 1975 (guards).
+
+A `Map<K, V>` field on a TypeScript interface becomes a *pair* of Pantagruel
+rules: a Bool-valued membership predicate and a `V`-valued rule guarded by it.
+
+```
+entriesKey c: Cache, k: K => Bool.
+entries c: Cache, k: K, entriesKey c k => V.
+```
+
+`.has(k)` translates to `entriesKey obj k`; `.get(k)` (or `.get(k)!`) translates
+to `entries obj k`. Pantagruel stores declaration guards in `Env.rule_guards`
+and automatically injects them as antecedents in SMT queries, so uses of
+`entries obj k` are implicitly conditioned on `entriesKey obj k`.
+
+**Why this encoding, not `V + Nothing`?** Pantagruel has no first-class
+`Nothing` expression value and no sum destructuring. With a sum-typed return,
+`.has` has no clean translation and `.get` cannot be used in arithmetic /
+comparisons without a lifting operation the language doesn't provide. The
+guarded-rule encoding trades a small semantic gap (absent keys are
+uninterpreted rather than explicitly `undefined`) for a much richer set of
+usable specifications.
+
+**Scope:** currently read-only and interface-field-only. Map parameters,
+mutation (`.set`/`.delete`), construction, and iteration are unsupported —
+see `tests/fixtures/constructs/expressions-map.ts` for the supported shape.
+
 ### Structured Iteration (for-of, forEach, reduce)
 
 **Standard name:** Catamorphisms / structural recursion on lists.

@@ -123,6 +123,8 @@ This works with any function declared as `asserts condition` -- Node's `assert`,
 | `boolean` | `Bool` |
 | `string` | `String` |
 | `T[]` | `[T]` |
+| `Set<T>` | `[T]` (membership via `.has(x)` → `x in`, cardinality via `.size` → `#`; uniqueness is not tracked) |
+| `Map<K, V>` field on `interface` | two rules: `<name>Key c: C, k: K => Bool` and `<name> c: C, k: K, <name>Key c k => V` (read via `.get(k)` → `<name> c k`, membership via `.has(k)` → `<name>Key c k`) |
 | `T \| null` / `T \| undefined` | `T + Nothing` |
 | `interface Foo { ... }` | `Foo.` (domain) + rules for each property |
 
@@ -175,6 +177,7 @@ FAIL: Not entailed: 'balance' account >= 0'
 - **No local variables.** Functions with `let`/`const` bindings before the return are rejected as unsupported.
 - **No loops.** `for`/`while` are not translated.
 - **Array operations** are partially supported: `.filter().map()` chains, `.includes()`, `.length`. Other array methods are unsupported.
+- **`Map<K, V>` support is read-only and interface-field-only.** Map fields translate into a value rule guarded by a membership predicate. Map parameters (not as interface fields), mutation (`.set`, `.delete`), construction (`new Map()`), and iteration (`.entries`, `.keys`, `.values`, `.forEach`) are not yet supported.
 
 ## Development
 
