@@ -63,22 +63,34 @@ and translate_app config env func args =
   (* List-search: xs x where xs : [T] and x : T (non-numeric T, non-Nat x)
      emits a fresh uninterpreted Int. The (x in xs) guard injected by
      collect_body_guards makes the value sound when x is present; when
-     absent, the guard absorbs the assertion so the value doesn't matter. *)
+     absent, the guard absorbs the assertion so the value doesn't matter.
+     Primed terms fail Check.infer_type outside action-context, so we
+     retry against the unprimed form. Identical [(func, arg)] translations
+     share a placeholder via [intern_list_search_symbol] so that repeats
+     like [xs x = xs x] stay referentially stable. *)
+  let infer_with_unprime e =
+    match Check.infer_type { Check.env; loc = dummy_loc } e with
+    | Ok ty -> Some ty
+    | Error _ -> (
+        match
+          Check.infer_type { Check.env; loc = dummy_loc } (unprime_expr e)
+        with
+        | Ok ty -> Some ty
+        | Error _ -> None)
+  in
   let list_search =
     match args with
     | [ arg ] -> (
-        match[@warning "-4"]
-          Check.infer_type { Check.env; loc = dummy_loc } func
-        with
-        | Ok (TyList elem_ty) -> (
-            match[@warning "-4"]
-              Check.infer_type { Check.env; loc = dummy_loc } arg
-            with
-            | Ok arg_ty
+        match[@warning "-4"] infer_with_unprime func with
+        | Some (TyList elem_ty) -> (
+            match[@warning "-4"] infer_with_unprime arg with
+            | Some arg_ty
               when is_subtype arg_ty elem_ty
                    && (not (is_subtype arg_ty TyNat))
                    && not (is_numeric elem_ty) ->
-                Some (fresh_fallback ~kind:"list_search" ~sort:"Int")
+                let func_s = translate_expr config env func in
+                let arg_s = translate_expr config env arg in
+                Some (intern_list_search_symbol ~func_s ~arg_s)
             | _ -> None)
         | _ -> None)
     | _ -> None

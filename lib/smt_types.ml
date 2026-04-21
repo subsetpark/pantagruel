@@ -91,6 +91,21 @@ let fresh_fallback ~kind ~sort =
     Printf.sprintf "(declare-const %s %s)" name sort :: !fallback_decls;
   name
 
+(** Query-local cache of list-search placeholder symbols. Identical
+    [(func_s, arg_s)] keys reuse the same fresh constant so that [xs x = xs x]
+    translates to a referentially stable equality. *)
+let list_search_cache : (string * string, string) Hashtbl.t = Hashtbl.create 8
+
+let reset_list_search_cache () = Hashtbl.clear list_search_cache
+
+let intern_list_search_symbol ~func_s ~arg_s =
+  match Hashtbl.find_opt list_search_cache (func_s, arg_s) with
+  | Some name -> name
+  | None ->
+      let name = fresh_fallback ~kind:"list_search" ~sort:"Int" in
+      Hashtbl.add list_search_cache (func_s, arg_s) name;
+      name
+
 (** Queue an additional [(assert ...)] alongside the most recently declared
     fallback constant — useful for soft constraints like non-negativity. *)
 let add_fallback_assert assertion_body =
@@ -225,5 +240,6 @@ let sanitize_ident name =
 let with_cond_aux f =
   reset_cond_aux ();
   reset_fallbacks ();
+  reset_list_search_cache ();
   let q = f () in
   { q with smt2 = q.smt2 |> insert_cond_aux_decls |> insert_fallback_decls }

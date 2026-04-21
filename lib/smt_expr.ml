@@ -243,17 +243,27 @@ let collect_body_guards ?(bound = []) env (e : expr) : expr list =
   let guards = ref [] in
   let rec walk = function
     | EApp (func, args) ->
-        (* List-search guard: xs x where xs : [T] and x : T injects (x in xs) *)
+        (* List-search guard: xs x where xs : [T] and x : T injects (x in xs).
+           Primed terms fail Check.infer_type outside action-context, so we
+           retry against the unprimed form. *)
+        let infer_with_unprime e =
+          match Check.infer_type { Check.env; loc = Ast.dummy_loc } e with
+          | Ok ty -> Some ty
+          | Error _ -> (
+              match
+                Check.infer_type
+                  { Check.env; loc = Ast.dummy_loc }
+                  (unprime_expr e)
+              with
+              | Ok ty -> Some ty
+              | Error _ -> None)
+        in
         (match args with
         | [ arg ] -> (
-            match[@warning "-4"]
-              Check.infer_type { Check.env; loc = Ast.dummy_loc } func
-            with
-            | Ok (TyList elem_ty) -> (
-                match[@warning "-4"]
-                  Check.infer_type { Check.env; loc = Ast.dummy_loc } arg
-                with
-                | Ok arg_ty
+            match[@warning "-4"] infer_with_unprime func with
+            | Some (TyList elem_ty) -> (
+                match[@warning "-4"] infer_with_unprime arg with
+                | Some arg_ty
                   when is_subtype arg_ty elem_ty
                        && (not (is_subtype arg_ty TyNat))
                        && not (is_numeric elem_ty) ->
@@ -275,7 +285,10 @@ let collect_body_guards ?(bound = []) env (e : expr) : expr list =
                 List.iter
                   (fun (g : guard) ->
                     match g with
-                    | GExpr ge -> guards := substitute_vars subst ge :: !guards
+                    | GExpr ge ->
+                        let ge = substitute_vars subst ge in
+                        walk ge;
+                        guards := ge :: !guards
                     | GIn _ | GParam _ -> ())
                   rule_guards
             | None -> ())
@@ -294,9 +307,9 @@ let collect_body_guards ?(bound = []) env (e : expr) : expr list =
                   (fun (g : guard) ->
                     match g with
                     | GExpr ge ->
-                        guards :=
-                          prime_expr ~bound (substitute_vars subst ge)
-                          :: !guards
+                        let ge = prime_expr ~bound (substitute_vars subst ge) in
+                        walk ge;
+                        guards := ge :: !guards
                     | GIn _ | GParam _ -> ())
                   rule_guards
             | None -> ())

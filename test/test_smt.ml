@@ -1842,6 +1842,41 @@ let test_list_search_injects_membership_guard () =
   check bool "guard references colors membership" true
     (contains result "(select colors red)")
 
+let test_list_search_stable_across_repeats () =
+  (* xs x = xs x must translate to an equality between identical placeholders.
+     Fresh-per-occurrence symbols would produce (= a b) with a != b and
+     introduce false counterexamples. *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "Color" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "colors"
+         (Types.TyFunc ([], Some (Types.TyList (Types.TyDomain "Color"))))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "red"
+         (Types.TyFunc ([], Some (Types.TyDomain "Color")))
+         Ast.dummy_loc ~chapter:0
+  in
+  let call = Ast.EApp (EVar (Lower "colors"), [ EVar (Lower "red") ]) in
+  let expr = Ast.EBinop (OpEq, call, call) in
+  Smt.reset_fallbacks ();
+  Smt.reset_list_search_cache ();
+  let result = Smt.translate_proposition config env expr in
+  let count_substring s sub =
+    let n = String.length s and m = String.length sub in
+    let rec loop i acc =
+      if i + m > n then acc
+      else if String.sub s i m = sub then loop (i + m) (acc + 1)
+      else loop (i + 1) acc
+    in
+    loop 0 0
+  in
+  (* No second placeholder means interning reused the first. *)
+  check bool "no second placeholder emitted" false
+    (contains result "_list_search_fallback_1");
+  (* Same symbol on both sides of the equality. *)
+  check int "placeholder referenced twice" 2
+    (count_substring result "_list_search_fallback_0")
+
 let test_guarded_decl_e2e () =
   (* Full spec from bug report: guarded declarations should not cause
      spurious invariant preservation failures *)
@@ -1929,6 +1964,8 @@ let guard_injection_tests =
     test_case "guarded decl e2e" `Quick test_guarded_decl_e2e;
     test_case "list search injects membership guard" `Quick
       test_list_search_injects_membership_guard;
+    test_case "list search stable across repeats" `Quick
+      test_list_search_stable_across_repeats;
   ]
 
 (* --- Cond expression tests --- *)
