@@ -1112,7 +1112,8 @@ let test_list_nat0_element_constraint () =
          Ast.dummy_loc ~chapter:0
   in
   let constraints = Smt.declare_type_constraints config env in
-  check bool "has >= k_elem 0" true (contains constraints "(>= k_elem 0)")
+  check bool "has implication shape" true
+    (contains constraints "(=> (select ys k_elem) (>= k_elem 0))")
 
 let test_list_with_params_element_constraint () =
   (* Parameterized rule: constraint applies under both the param and the elem quantifier *)
@@ -1127,7 +1128,8 @@ let test_list_with_params_element_constraint () =
   let constraints = Smt.declare_type_constraints config env in
   check bool "param binder present" true (contains constraints "(x_0 User)");
   check bool "element select applied" true
-    (contains constraints "(select (following x_0) k_elem)")
+    (contains constraints "(select (following x_0) k_elem)");
+  check bool "has >= k_elem 1" true (contains constraints "(>= k_elem 1)")
 
 let test_list_domain_element_no_constraint () =
   (* [Domain] elements aren't numeric -> no element bound *)
