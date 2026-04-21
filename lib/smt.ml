@@ -88,8 +88,13 @@ and translate_app config env func args =
               when is_subtype arg_ty elem_ty
                    && (not (is_subtype arg_ty TyNat))
                    && not (is_numeric elem_ty) ->
-                let func_s = translate_expr config env func in
-                let arg_s = translate_expr config env arg in
+                (* Key on a pure AST serialization: translate_expr is
+                   stateful (mints fallback/cond-default names and queues
+                   declarations), so using its output would break interning
+                   for any list-search whose subexpressions trigger those
+                   paths and would leave orphaned declarations behind. *)
+                let func_s = Ast.show_expr func in
+                let arg_s = Ast.show_expr arg in
                 Some (intern_list_search_symbol ~func_s ~arg_s)
             | _ -> None)
         | _ -> None)

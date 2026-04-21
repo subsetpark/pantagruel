@@ -271,17 +271,26 @@ let collect_body_guards ?(bound = []) env (e : expr) : expr list =
                 | _ -> ())
             | _ -> ())
         | _ -> ());
+        (* A guarded nullary rule returning a list can appear here in
+           list-search form (e.g. [colors red] where [colors] has no formals
+           but [red] is the search key). Its declaration guards reference
+           only its own formals — which are zero — so no substitution is
+           needed; skip [List.combine] when the lengths disagree. *)
+        let subst_for formal_params =
+          let formal_names =
+            List.map
+              (fun (p : param) -> Ast.lower_name p.param_name)
+              formal_params
+          in
+          if List.length formal_names = List.length args then
+            List.combine formal_names args
+          else []
+        in
         (match[@warning "-4"] func with
         | EVar (Lower name) -> (
             match Env.lookup_rule_guards name env with
             | Some (formal_params, rule_guards) ->
-                let subst =
-                  List.combine
-                    (List.map
-                       (fun (p : param) -> Ast.lower_name p.param_name)
-                       formal_params)
-                    args
-                in
+                let subst = subst_for formal_params in
                 List.iter
                   (fun (g : guard) ->
                     match g with
@@ -296,13 +305,7 @@ let collect_body_guards ?(bound = []) env (e : expr) : expr list =
             (* Primed application: collect guards in primed form *)
             match Env.lookup_rule_guards name env with
             | Some (formal_params, rule_guards) ->
-                let subst =
-                  List.combine
-                    (List.map
-                       (fun (p : param) -> Ast.lower_name p.param_name)
-                       formal_params)
-                    args
-                in
+                let subst = subst_for formal_params in
                 List.iter
                   (fun (g : guard) ->
                     match g with

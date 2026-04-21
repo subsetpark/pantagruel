@@ -1877,6 +1877,38 @@ let test_list_search_stable_across_repeats () =
   check int "placeholder referenced twice" 2
     (count_substring result "_list_search_fallback_0")
 
+let test_list_search_guarded_nullary_list () =
+  (* Regression: a guarded nullary rule returning a list can appear in
+     list-search form (e.g. [colors red]). collect_body_guards must not
+     crash on the length mismatch between [formal_params = []] and
+     [args = [red]]. *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "Color" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "ready"
+         (Types.TyFunc ([], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "colors"
+         (Types.TyFunc ([], Some (Types.TyList (Types.TyDomain "Color"))))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "red"
+         (Types.TyFunc ([], Some (Types.TyDomain "Color")))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule_guards "colors" [] [ GExpr (EVar (Lower "ready")) ]
+  in
+  let expr =
+    Ast.EBinop
+      (OpGe, EApp (EVar (Lower "colors"), [ EVar (Lower "red") ]), ELitNat 1)
+  in
+  Smt.reset_fallbacks ();
+  Smt.reset_list_search_cache ();
+  let result = Smt.translate_proposition config env expr in
+  (* Declaration guard (ready) must be injected unchanged. *)
+  check bool "declaration guard injected" true (contains result "ready");
+  (* The implicit membership guard must also be present. *)
+  check bool "membership guard injected" true
+    (contains result "(select colors red)")
+
 let test_guarded_decl_e2e () =
   (* Full spec from bug report: guarded declarations should not cause
      spurious invariant preservation failures *)
@@ -1966,6 +1998,8 @@ let guard_injection_tests =
       test_list_search_injects_membership_guard;
     test_case "list search stable across repeats" `Quick
       test_list_search_stable_across_repeats;
+    test_case "list search guarded nullary list" `Quick
+      test_list_search_guarded_nullary_list;
   ]
 
 (* --- Cond expression tests --- *)
