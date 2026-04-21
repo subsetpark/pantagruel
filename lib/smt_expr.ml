@@ -242,47 +242,81 @@ and prime_guards ~bound gs =
 let collect_body_guards ?(bound = []) env (e : expr) : expr list =
   let guards = ref [] in
   let rec walk = function
-    | EApp (EVar (Lower name), args) ->
-        (match Env.lookup_rule_guards name env with
-        | Some (formal_params, rule_guards) ->
-            let subst =
-              List.combine
-                (List.map
-                   (fun (p : param) -> Ast.lower_name p.param_name)
-                   formal_params)
-                args
-            in
-            List.iter
-              (fun (g : guard) ->
-                match g with
-                | GExpr ge -> guards := substitute_vars subst ge :: !guards
-                | GIn _ | GParam _ -> ())
-              rule_guards
-        | None -> ());
-        List.iter walk args
-    | EApp (EPrimed (Lower name), args) ->
-        (* Primed application: collect guards in primed form *)
-        (match Env.lookup_rule_guards name env with
-        | Some (formal_params, rule_guards) ->
-            let subst =
-              List.combine
-                (List.map
-                   (fun (p : param) -> Ast.lower_name p.param_name)
-                   formal_params)
-                args
-            in
-            List.iter
-              (fun (g : guard) ->
-                match g with
-                | GExpr ge ->
-                    guards :=
-                      prime_expr ~bound (substitute_vars subst ge) :: !guards
-                | GIn _ | GParam _ -> ())
-              rule_guards
-        | None -> ());
-        List.iter walk args
     | EApp (func, args) ->
-        walk func;
+        (* List-search guard: xs x where xs : [T] and x : T injects (x in xs).
+           Primed terms fail Check.infer_type outside action-context, so we
+           retry against the unprimed form. *)
+        let infer_with_unprime e =
+          match Check.infer_type { Check.env; loc = Ast.dummy_loc } e with
+          | Ok ty -> Some ty
+          | Error _ -> (
+              match
+                Check.infer_type
+                  { Check.env; loc = Ast.dummy_loc }
+                  (unprime_expr e)
+              with
+              | Ok ty -> Some ty
+              | Error _ -> None)
+        in
+        (match args with
+        | [ arg ] -> (
+            match[@warning "-4"] infer_with_unprime func with
+            | Some (TyList elem_ty) -> (
+                match[@warning "-4"] infer_with_unprime arg with
+                | Some arg_ty
+                  when is_subtype arg_ty elem_ty
+                       && (not (is_subtype arg_ty TyNat))
+                       && not (is_numeric elem_ty) ->
+                    guards := EBinop (OpIn, arg, func) :: !guards
+                | _ -> ())
+            | _ -> ())
+        | _ -> ());
+        (* A guarded nullary rule returning a list can appear here in
+           list-search form (e.g. [colors red] where [colors] has no formals
+           but [red] is the search key). Its declaration guards reference
+           only its own formals — which are zero — so no substitution is
+           needed; skip [List.combine] when the lengths disagree. *)
+        let subst_for formal_params =
+          let formal_names =
+            List.map
+              (fun (p : param) -> Ast.lower_name p.param_name)
+              formal_params
+          in
+          if List.length formal_names = List.length args then
+            List.combine formal_names args
+          else []
+        in
+        (match[@warning "-4"] func with
+        | EVar (Lower name) -> (
+            match Env.lookup_rule_guards name env with
+            | Some (formal_params, rule_guards) ->
+                let subst = subst_for formal_params in
+                List.iter
+                  (fun (g : guard) ->
+                    match g with
+                    | GExpr ge ->
+                        let ge = substitute_vars subst ge in
+                        walk ge;
+                        guards := ge :: !guards
+                    | GIn _ | GParam _ -> ())
+                  rule_guards
+            | None -> ())
+        | EPrimed (Lower name) -> (
+            (* Primed application: collect guards in primed form *)
+            match Env.lookup_rule_guards name env with
+            | Some (formal_params, rule_guards) ->
+                let subst = subst_for formal_params in
+                List.iter
+                  (fun (g : guard) ->
+                    match g with
+                    | GExpr ge ->
+                        let ge = prime_expr ~bound (substitute_vars subst ge) in
+                        walk ge;
+                        guards := ge :: !guards
+                    | GIn _ | GParam _ -> ())
+                  rule_guards
+            | None -> ())
+        | _ -> walk func);
         List.iter walk args
     | EVar (Lower name) -> (
         match(* Nullary auto-applied rule with guards *)

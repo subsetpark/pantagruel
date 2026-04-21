@@ -1820,6 +1820,129 @@ let test_inject_guards_false_skips () =
   let result_with = Smt.translate_proposition config env expr in
   check bool "has implication with guards" true (contains result_with "(=>")
 
+let test_list_search_injects_membership_guard () =
+  (* xs x where xs : [T] and x : T should emit an implicit (x in xs) guard
+     and the application itself should translate to a fresh Int placeholder. *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "Color" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "colors"
+         (Types.TyFunc ([], Some (Types.TyList (Types.TyDomain "Color"))))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "red"
+         (Types.TyFunc ([], Some (Types.TyDomain "Color")))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.EBinop
+      (OpGe, EApp (EVar (Lower "colors"), [ EVar (Lower "red") ]), ELitNat 1)
+  in
+  let result = Smt.translate_proposition config env expr in
+  check bool "wraps with implication" true (contains result "(=>");
+  check bool "guard references colors membership" true
+    (contains result "(select colors red)")
+
+let test_list_search_stable_across_repeats () =
+  (* xs x = xs x must translate to an equality between identical placeholders.
+     Fresh-per-occurrence symbols would produce (= a b) with a != b and
+     introduce false counterexamples. *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "Color" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "colors"
+         (Types.TyFunc ([], Some (Types.TyList (Types.TyDomain "Color"))))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "red"
+         (Types.TyFunc ([], Some (Types.TyDomain "Color")))
+         Ast.dummy_loc ~chapter:0
+  in
+  let call = Ast.EApp (EVar (Lower "colors"), [ EVar (Lower "red") ]) in
+  let expr = Ast.EBinop (OpEq, call, call) in
+  Smt.reset_fallbacks ();
+  Smt.reset_list_search_cache ();
+  let result = Smt.translate_proposition config env expr in
+  let count_substring s sub =
+    let n = String.length s and m = String.length sub in
+    let rec loop i acc =
+      if i + m > n then acc
+      else if String.sub s i m = sub then loop (i + m) (acc + 1)
+      else loop (i + 1) acc
+    in
+    loop 0 0
+  in
+  (* No second placeholder means interning reused the first. *)
+  check bool "no second placeholder emitted" false
+    (contains result "_list_search_fallback_1");
+  (* Same symbol on both sides of the equality. *)
+  check int "placeholder referenced twice" 2
+    (count_substring result "_list_search_fallback_0")
+
+let test_list_search_guarded_nullary_list () =
+  (* Regression: a guarded nullary rule returning a list can appear in
+     list-search form (e.g. [colors red]). collect_body_guards must not
+     crash on the length mismatch between [formal_params = []] and
+     [args = [red]]. *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "Color" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "ready"
+         (Types.TyFunc ([], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "colors"
+         (Types.TyFunc ([], Some (Types.TyList (Types.TyDomain "Color"))))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "red"
+         (Types.TyFunc ([], Some (Types.TyDomain "Color")))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule_guards "colors" [] [ GExpr (EVar (Lower "ready")) ]
+  in
+  let expr =
+    Ast.EBinop
+      (OpGe, EApp (EVar (Lower "colors"), [ EVar (Lower "red") ]), ELitNat 1)
+  in
+  Smt.reset_fallbacks ();
+  Smt.reset_list_search_cache ();
+  let result = Smt.translate_proposition config env expr in
+  (* Declaration guard (ready) must be injected unchanged. *)
+  check bool "declaration guard injected" true (contains result "ready");
+  (* The implicit membership guard must also be present. *)
+  check bool "membership guard injected" true
+    (contains result "(select colors red)")
+
+let test_list_search_precondition_injects_guard () =
+  (* Action preconditions that mention a list-search must be asserted with
+     the implicit membership guard conjoined (not just as a standalone
+     uninterpreted Int), otherwise contradiction/precondition/BMC queries
+     can treat nonsense states as satisfiable. *)
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       context Ctx.\n\
+       Color.\n\
+       {Ctx} colors => [Color].\n\
+       red => Color.\n\
+       ---\n\
+       true.\n\
+       where\n\
+       Ctx ~> Pick @ c: Color, colors red > 0.\n\
+       ---\n\
+       true.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  let precond_q =
+    List.find (fun (q : Smt.query) -> q.kind = Smt.PreconditionSat) queries
+  in
+  (* The membership guard (select colors red) must be asserted alongside
+     the precondition body, so the list-search placeholder is constrained
+     only when red actually belongs to colors. *)
+  check bool "precond query has membership guard" true
+    (contains precond_q.smt2 "(select colors red)");
+  let contra_q =
+    List.find (fun (q : Smt.query) -> q.kind = Smt.Contradiction) queries
+  in
+  check bool "contradiction query has membership guard" true
+    (contains contra_q.smt2 "(select colors red)")
+
 let test_guarded_decl_e2e () =
   (* Full spec from bug report: guarded declarations should not cause
      spurious invariant preservation failures *)
@@ -1905,6 +2028,14 @@ let guard_injection_tests =
     test_case "primed guard collection" `Quick test_primed_guard_collection;
     test_case "inject_guards false skips" `Quick test_inject_guards_false_skips;
     test_case "guarded decl e2e" `Quick test_guarded_decl_e2e;
+    test_case "list search injects membership guard" `Quick
+      test_list_search_injects_membership_guard;
+    test_case "list search stable across repeats" `Quick
+      test_list_search_stable_across_repeats;
+    test_case "list search guarded nullary list" `Quick
+      test_list_search_guarded_nullary_list;
+    test_case "list search precondition injects guard" `Quick
+      test_list_search_precondition_injects_guard;
   ]
 
 (* --- Cond expression tests --- *)

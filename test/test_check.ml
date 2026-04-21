@@ -1420,6 +1420,43 @@ x => Nat.
     fail "Expected parse error for chained comparison"
   with _ -> ()
 
+let test_list_search_returns_nat () =
+  (* List-search xs x : Nat (not Nat + Nothing). Usable in a Nat context
+     such as comparison with a literal. *)
+  check_ok
+    {|module TEST.
+
+Color.
+colors => [Color].
+red => Color.
+---
+colors red > 0.
+|}
+
+let test_list_search_vs_indexing_types () =
+  (* xs 1 indexes → Color; xs red searches → Nat. Both must be valid. *)
+  check_ok
+    {|module TEST.
+
+Color.
+colors => [Color].
+red => Color.
+---
+colors 1 in Color.
+colors red > 0.
+|}
+
+let test_list_search_numeric_forbidden () =
+  (* Numeric list: search not allowed. Arg typed Real cannot index (not Nat)
+     and search is disabled because element type is numeric. *)
+  check_fails {|module TEST.
+
+xs => [Nat].
+r => Real.
+---
+xs r > 0.
+|}
+
 let test_list_indexing_nat0 () =
   (* Verify that list indexing with Nat0 works — Nat is a subtype of Nat0,
      and indexing should accept Nat-typed indices. *)
@@ -1670,6 +1707,10 @@ let () =
           test_case "subset" `Quick test_subset_op;
           test_case "initially" `Quick test_initially_expr;
           test_case "list indexing" `Quick test_list_indexing;
+          test_case "list search returns nat" `Quick
+            test_list_search_returns_nat;
+          test_case "list search vs indexing" `Quick
+            test_list_search_vs_indexing_types;
           test_case "declaration guards" `Quick test_declaration_guards_in_rules;
         ] );
       ( "invalid",
@@ -1707,6 +1748,8 @@ let () =
           test_case "NotAList membership" `Quick test_not_a_list_membership;
           test_case "arithmetic type mismatch" `Quick
             test_arithmetic_type_mismatch;
+          test_case "list search numeric forbidden" `Quick
+            test_list_search_numeric_forbidden;
         ] );
       ( "env import",
         [

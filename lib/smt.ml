@@ -60,36 +60,80 @@ let rec translate_expr config env (e : expr) =
   | EOverride (Lower name, pairs) -> translate_override config env name pairs
 
 and translate_app config env func args =
-  match[@warning "-4"] func with
-  | EOverride (Lower name, pairs) ->
-      (* f[k |-> v] applied to args: inline ite chain *)
-      let sname = sanitize_ident name in
-      let args_str = List.map (translate_expr config env) args in
-      let applied_args = String.concat " " args_str in
-      (* For arity-1 overrides, the single arg is the dispatch key *)
-      let arg_str =
-        match args_str with
-        | [] -> failwith "SMT translation: override applied with 0 arguments"
-        | hd :: _ -> hd
-      in
-      let rec build_chain = function
-        | [] -> Printf.sprintf "(%s %s)" sname applied_args
-        | (k, v) :: rest ->
-            Printf.sprintf "(ite (= %s %s) %s %s)" arg_str
-              (translate_expr config env k)
-              (translate_expr config env v)
-              (build_chain rest)
-      in
-      build_chain pairs
-  | _ ->
-      let func_str =
-        match[@warning "-4"] func with
-        | EVar (Lower name) -> sanitize_ident name
-        | EPrimed (Lower name) -> sanitize_ident name ^ "_prime"
-        | _ -> translate_expr config env func
-      in
-      let args_str = List.map (translate_expr config env) args in
-      Printf.sprintf "(%s %s)" func_str (String.concat " " args_str)
+  (* List-search: xs x where xs : [T] and x : T (non-numeric T, non-Nat x)
+     emits a fresh uninterpreted Int. The (x in xs) guard injected by
+     collect_body_guards makes the value sound when x is present; when
+     absent, the guard absorbs the assertion so the value doesn't matter.
+     Primed terms fail Check.infer_type outside action-context, so we
+     retry against the unprimed form. Identical [(func, arg)] translations
+     share a placeholder via [intern_list_search_symbol] so that repeats
+     like [xs x = xs x] stay referentially stable. *)
+  let infer_with_unprime e =
+    match Check.infer_type { Check.env; loc = dummy_loc } e with
+    | Ok ty -> Some ty
+    | Error _ -> (
+        match
+          Check.infer_type { Check.env; loc = dummy_loc } (unprime_expr e)
+        with
+        | Ok ty -> Some ty
+        | Error _ -> None)
+  in
+  let list_search =
+    match args with
+    | [ arg ] -> (
+        match[@warning "-4"] infer_with_unprime func with
+        | Some (TyList elem_ty) -> (
+            match[@warning "-4"] infer_with_unprime arg with
+            | Some arg_ty
+              when is_subtype arg_ty elem_ty
+                   && (not (is_subtype arg_ty TyNat))
+                   && not (is_numeric elem_ty) ->
+                (* Key on a pure AST serialization: translate_expr is
+                   stateful (mints fallback/cond-default names and queues
+                   declarations), so using its output would break interning
+                   for any list-search whose subexpressions trigger those
+                   paths and would leave orphaned declarations behind. *)
+                let func_s = Ast.show_expr func in
+                let arg_s = Ast.show_expr arg in
+                Some (intern_list_search_symbol ~func_s ~arg_s)
+            | _ -> None)
+        | _ -> None)
+    | _ -> None
+  in
+  match list_search with
+  | Some name -> name
+  | None -> (
+      match[@warning "-4"] func with
+      | EOverride (Lower name, pairs) ->
+          (* f[k |-> v] applied to args: inline ite chain *)
+          let sname = sanitize_ident name in
+          let args_str = List.map (translate_expr config env) args in
+          let applied_args = String.concat " " args_str in
+          (* For arity-1 overrides, the single arg is the dispatch key *)
+          let arg_str =
+            match args_str with
+            | [] ->
+                failwith "SMT translation: override applied with 0 arguments"
+            | hd :: _ -> hd
+          in
+          let rec build_chain = function
+            | [] -> Printf.sprintf "(%s %s)" sname applied_args
+            | (k, v) :: rest ->
+                Printf.sprintf "(ite (= %s %s) %s %s)" arg_str
+                  (translate_expr config env k)
+                  (translate_expr config env v)
+                  (build_chain rest)
+          in
+          build_chain pairs
+      | _ ->
+          let func_str =
+            match[@warning "-4"] func with
+            | EVar (Lower name) -> sanitize_ident name
+            | EPrimed (Lower name) -> sanitize_ident name ^ "_prime"
+            | _ -> translate_expr config env func
+          in
+          let args_str = List.map (translate_expr config env) args in
+          Printf.sprintf "(%s %s)" func_str (String.concat " " args_str))
 
 and translate_binop config env op e1 e2 =
   match op with
@@ -785,11 +829,29 @@ let conjoin_propositions config env props =
       in
       Printf.sprintf "(and %s)" (String.concat " " parts)
 
+(** Translate a precondition expression, conjoining any implicit guards (from
+    declaration guards or list-search membership) as additional conjuncts. A
+    precondition that mentions e.g. [xs x] semantically requires both
+    [(x in xs)] and the body — unlike an invariant, the guard cannot be an
+    implication, because [(=> G P)] is vacuously true when [G] is false and
+    would let contradiction/precondition/BMC queries miss real infeasibilities.
+*)
+let translate_precondition config env (e : expr) : string =
+  if not config.inject_guards then translate_expr config env e
+  else
+    let app_guards = collect_body_guards env e in
+    let body = translate_expr config env e in
+    match app_guards with
+    | [] -> body
+    | _ ->
+        let guard_strs = List.map (translate_expr config env) app_guards in
+        Printf.sprintf "(and %s %s)" (String.concat " " guard_strs) body
+
 let extract_preconditions config env (guards : guard list) =
   List.filter_map
     (fun g ->
       match g with
-      | GExpr e -> Some (translate_expr config env e)
+      | GExpr e -> Some (translate_precondition config env e)
       | GIn _ | GParam _ -> None)
     guards
 
@@ -961,7 +1023,7 @@ let generate_contradiction_query config env action =
   List.iter
     (fun e ->
       add_named_assert na "precond" (Pretty.str_expr e)
-        (translate_expr config env e))
+        (translate_precondition config env e))
     precond_exprs;
   (* Named frame conditions *)
   let frame_exprs = collect_frame_exprs config env action.a_contexts in
@@ -1083,7 +1145,7 @@ let generate_precondition_query config env invariant_props action =
     (fun e ->
       add_named_assert na "precond"
         (Printf.sprintf "Precondition: %s" (Pretty.str_expr e))
-        (translate_expr config env e))
+        (translate_precondition config env e))
     precond_exprs;
   Buffer.add_string buf "(check-sat)\n";
   Buffer.add_string buf "(get-unsat-core)\n";
@@ -1544,7 +1606,7 @@ let generate_all_actions_disabled config env actions step =
         List.map
           (fun e ->
             rename_smt_for_step env
-              (translate_expr config env_with_params e)
+              (translate_precondition config env_with_params e)
               step)
           precond_exprs
       in

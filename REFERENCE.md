@@ -254,7 +254,7 @@ Summary of which relation governs each context:
 *xs e* where *xs* : `[T]` (exactly one argument):
 
 - **Indexing.** If *e* : *S* with *S* ≤ `Nat`, result type is *T*. Lists are 1-indexed, so the index type is `Nat` (positive integers only — `Nat0` is not accepted).
-- **Search.** If *T* is not numeric and *e* : *S* with *S* ≤ *T*, result type is `Nat + Nothing` — the 1-based position of the element if found, or `Nothing` if absent.
+- **Search.** If *T* is not numeric and *e* : *S* with *S* ≤ *T*, result type is `Nat` — the 1-based position of the element. Any proposition containing *xs e* is implicitly guarded by `e in xs`; when the element is absent, the index is unconstrained and the guard absorbs the assertion. Use `e in xs` to test presence directly.
 - When *T* is numeric, only indexing is available. Search is disallowed because the argument would be ambiguous between an index and an element to search for.
 
 #### Arithmetic
