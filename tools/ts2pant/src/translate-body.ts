@@ -21,6 +21,7 @@ import {
 import {
   isMapType,
   isSetType,
+  type MapSynthesizer,
   mapTsType,
   type NumericStrategy,
 } from "./translate-types.js";
@@ -28,12 +29,19 @@ import type { PantDeclaration, PropResult } from "./types.js";
 
 // --- Const-binding inlining infrastructure (let-elimination) ---
 
+/**
+ * Per-body translation context threaded through every `translateBodyExpr`
+ * call. Carries the hygienic-binder counter and (optionally) the
+ * module-wide `MapSynthesizer` so `.get`/`.has` on non-field Map receivers
+ * can resolve to the synthesized rule names.
+ */
 interface UniqueSupply {
   next: () => number;
+  mapSynth?: MapSynthesizer | undefined;
 }
-function makeUniqueSupply(): UniqueSupply {
+function makeUniqueSupply(mapSynth?: MapSynthesizer): UniqueSupply {
   let counter = 0;
-  return { next: () => counter++ };
+  return { next: () => counter++, mapSynth };
 }
 
 function freshHygienicBinder(supply: UniqueSupply): string {
@@ -395,6 +403,13 @@ export interface TranslateBodyOptions {
   strategy: NumericStrategy;
   /** Declarations in scope — used for frame condition generation. */
   declarations?: PantDeclaration[];
+  /**
+   * Synthesizer populated during signature and type translation. Used by
+   * the body translator to (a) resolve Map-parameter types to their
+   * synthesized domain names when reconstructing the param list, and
+   * (b) dispatch `.get`/`.has` on non-interface-field Map receivers.
+   */
+  mapSynth?: MapSynthesizer | undefined;
 }
 
 /**
@@ -405,7 +420,7 @@ export interface TranslateBodyOptions {
  * plus frame conditions for unmodified rules.
  */
 export function translateBody(opts: TranslateBodyOptions): PropResult[] {
-  const { sourceFile, functionName, strategy, declarations } = opts;
+  const { sourceFile, functionName, strategy, declarations, mapSynth } = opts;
   const checker = sourceFile.getProject().getTypeChecker().compilerObject;
   const { node, className } = findFunction(sourceFile, functionName);
   // Strip class qualifier for use in Pantagruel identifiers
@@ -432,7 +447,10 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
   if (sig) {
     for (const param of sig.getParameters()) {
       const paramType = checker.getTypeOfSymbol(param);
-      const typeName = mapTsType(paramType, checker, strategy);
+      // Pass the synthesizer so Map parameters resolve to their synthesized
+      // domain names (idempotent; the signature pass already registered
+      // them, so this is a lookup rather than a fresh registration).
+      const typeName = mapTsType(paramType, checker, strategy, mapSynth);
       paramNames.set(param.name, param.name);
       paramList.push({ name: param.name, type: typeName });
     }
@@ -450,6 +468,7 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
       checker,
       strategy,
       paramNames,
+      mapSynth,
     );
   } else {
     return translateMutatingBody(
@@ -458,6 +477,7 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
       strategy,
       paramNames,
       declarations ?? [],
+      mapSynth,
     );
   }
 }
@@ -469,6 +489,7 @@ function translatePureBody(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
+  mapSynth?: MapSynthesizer,
 ): PropResult[] {
   const ast = getAst();
 
@@ -482,7 +503,7 @@ function translatePureBody(
     return [{ kind: "unsupported", reason: `${functionName} — ${reason}` }];
   }
 
-  const supply = makeUniqueSupply();
+  const supply = makeUniqueSupply(mapSynth);
   const inlined = inlineConstBindings(
     extracted.bindings.map((b) => ({
       tsName: b.name,
@@ -529,6 +550,42 @@ function translatePureBody(
 interface ExtractedBody {
   bindings: Array<{ name: string; initializer: ts.Expression }>;
   returnExpr: ts.Expression | ts.IfStatement;
+}
+
+/**
+ * True when the property access names a field declared on a user-defined
+ * interface or class (e.g., `cache.entries` where `entries` is declared in
+ * `interface Cache`, or `this.entries` inside a class method). Disambiguates
+ * Stage A (interface/class-field Map encoding) from Stage B (synthesized-
+ * domain Map encoding) for `.get`/`.has` on a Map-typed receiver. Class
+ * methods reuse the surrounding module's field declarations rather than
+ * synthesized handles.
+ */
+function isInterfaceFieldAccess(
+  node: ts.PropertyAccessExpression,
+  checker: ts.TypeChecker,
+): boolean {
+  const symbol = checker.getSymbolAtLocation(node.name);
+  if (!symbol) {
+    return false;
+  }
+  for (const decl of symbol.getDeclarations() ?? []) {
+    if (
+      ts.isPropertySignature(decl) &&
+      decl.parent &&
+      ts.isInterfaceDeclaration(decl.parent)
+    ) {
+      return true;
+    }
+    if (
+      ts.isPropertyDeclaration(decl) &&
+      decl.parent &&
+      ts.isClassDeclaration(decl.parent)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -1954,17 +2011,96 @@ function translateCallExpr(
     const methodName = expr.expression.name.text;
     const tsReceiver = expr.expression.expression;
 
-    // .get(k) / .has(k) on a Map<K,V> field -> 2-arity rule application.
-    // Map fields translate to a pair of rules: `<name>Key c k => Bool` and
-    // `<name> c k, <name>Key c k => V`. See translate-types.ts.
+    // .get(k) / .has(k) on a Map<K,V> receiver -> 2-arity rule application.
+    // Two paths, same encoding shape:
+    //   Stage A — receiver is a property access to a declared interface
+    //     field. The field's own name is the rule; the owner is the user's
+    //     interface (translate-types.ts, interface-field branch).
+    //   Stage B — receiver is anything else (parameter, call result, etc.).
+    //     The rule was synthesized at signature/type translation time and
+    //     is looked up by (K, V) via the MapSynthesizer.
     if (
       (methodName === "get" || methodName === "has") &&
       expr.arguments.length === 1 &&
-      ts.isPropertyAccessExpression(tsReceiver) &&
       isMapType(checker.getTypeAtLocation(tsReceiver))
     ) {
-      const fieldName = tsReceiver.name.text;
-      const innerObj = tsReceiver.expression;
+      const stageA =
+        ts.isPropertyAccessExpression(tsReceiver) &&
+        isInterfaceFieldAccess(tsReceiver, checker);
+
+      if (stageA && ts.isPropertyAccessExpression(tsReceiver)) {
+        const fieldName = tsReceiver.name.text;
+        const innerObj = tsReceiver.expression;
+        const kExpr = translateBodyExpr(
+          expr.arguments[0]!,
+          checker,
+          strategy,
+          paramNames,
+          state,
+          supply,
+        );
+        if (isBodyUnsupported(kExpr)) {
+          return kExpr;
+        }
+        const objExpr = translateBodyExpr(
+          innerObj,
+          checker,
+          strategy,
+          paramNames,
+          state,
+          supply,
+        );
+        if (isBodyUnsupported(objExpr)) {
+          return objExpr;
+        }
+        const ruleName = methodName === "has" ? `${fieldName}Key` : fieldName;
+        return {
+          expr: ast.app(ast.var(ruleName), [
+            bodyExpr(objExpr),
+            bodyExpr(kExpr),
+          ]),
+        };
+      }
+
+      // Stage B: synthesized rule lookup. Register on demand — a body-only
+      // receiver (e.g., `build().get(k)!` where `build`'s return type wasn't
+      // surfaced through the current function's signature or referenced
+      // types) wouldn't be pre-registered by the signature/type passes.
+      // The pipeline drains any new registrations with a second emit() call
+      // after body translation completes.
+      const receiverType = checker.getTypeAtLocation(tsReceiver);
+      const typeArgs = checker.getTypeArguments(
+        receiverType as ts.TypeReference,
+      );
+      if (typeArgs.length !== 2) {
+        return { unsupported: "Map with unexpected arity" };
+      }
+      const kType = mapTsType(typeArgs[0]!, checker, strategy, supply.mapSynth);
+      const vType = mapTsType(typeArgs[1]!, checker, strategy, supply.mapSynth);
+      let info = supply.mapSynth?.lookup(kType, vType);
+      if (!info && supply.mapSynth) {
+        supply.mapSynth.register(kType, vType);
+        info = supply.mapSynth.lookup(kType, vType);
+      }
+      if (!info) {
+        // register returns null only when K or V mangles to something that
+        // isn't a valid Pantagruel identifier — typically because mapTsType
+        // fell back to checker.typeToString for an unsupported TS construct.
+        return {
+          unsupported: `Map<${kType}, ${vType}>: key or value type cannot be mangled into a synthesized domain name`,
+        };
+      }
+      const objExpr = translateBodyExpr(
+        tsReceiver,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
+      if (isBodyUnsupported(objExpr)) {
+        return objExpr;
+      }
       const kExpr = translateBodyExpr(
         expr.arguments[0]!,
         checker,
@@ -1976,18 +2112,8 @@ function translateCallExpr(
       if (isBodyUnsupported(kExpr)) {
         return kExpr;
       }
-      const objExpr = translateBodyExpr(
-        innerObj,
-        checker,
-        strategy,
-        paramNames,
-        state,
-        supply,
-      );
-      if (isBodyUnsupported(objExpr)) {
-        return objExpr;
-      }
-      const ruleName = methodName === "has" ? `${fieldName}Key` : fieldName;
+      const ruleName =
+        methodName === "has" ? info.names.keyPred : info.names.rule;
       return {
         expr: ast.app(ast.var(ruleName), [bodyExpr(objExpr), bodyExpr(kExpr)]),
       };
@@ -2209,6 +2335,7 @@ function translateMutatingBody(
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
   declarations: PantDeclaration[],
+  mapSynth?: MapSynthesizer,
 ): PropResult[] {
   if (!node.body) {
     return [];
@@ -2217,6 +2344,7 @@ function translateMutatingBody(
   const ast = getAst();
   const propositions: PropResult[] = [];
   const state = makeSymbolicState();
+  const supply = makeUniqueSupply(mapSynth);
 
   const ok = symbolicExecute(
     node.body,
@@ -2225,6 +2353,8 @@ function translateMutatingBody(
     paramNames,
     state,
     propositions,
+    (e) => e,
+    supply,
   );
 
   // Only emit state equations + frames when the whole body was translatable;

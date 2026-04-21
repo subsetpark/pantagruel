@@ -218,6 +218,34 @@ exports[`expressions-literals.ts > yes 1`] = `
 "module Yes.\\n\\nyes  => Bool.\\n\\n---\\n\\nyes = true.\\n"
 `;
 
+exports[`expressions-map-params.ts > contains 1`] = `
+"module Contains.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k1: String => Bool.\\nstringToIntMap m1: StringToIntMap, k1: String, stringToIntMapKey m1 k1 => Int.\\ncontains m: StringToIntMap, k: String => Bool.\\n\\n---\\n\\ncontains m k = stringToIntMapKey m k.\\n"
+`;
+
+exports[`expressions-map-params.ts > lookup 1`] = `
+"module Lookup.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k1: String => Bool.\\nstringToIntMap m1: StringToIntMap, k1: String, stringToIntMapKey m1 k1 => Int.\\nlookup m: StringToIntMap, k: String => Int.\\n\\n---\\n\\nlookup m k = stringToIntMap m k.\\n"
+`;
+
+exports[`expressions-map-params.ts > nestedLookup 1`] = `
+"module NestedLookup.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k: String => Bool.\\nstringToIntMap m1: StringToIntMap, k: String, stringToIntMapKey m1 k => Int.\\nStringToStringToIntMapMap.\\nstringToStringToIntMapMapKey m2: StringToStringToIntMapMap, k3: String => Bool.\\nstringToStringToIntMapMap m2: StringToStringToIntMapMap, k3: String, stringToStringToIntMapMapKey m2 k3 => StringToIntMap.\\nnestedLookup m: StringToStringToIntMapMap, k1: String, k2: String => Int.\\n\\n---\\n\\nnestedLookup m k1 k2 = stringToIntMap (stringToStringToIntMapMap m k1) k2.\\n"
+`;
+
+exports[`expressions-map-params.ts > passThrough 1`] = `
+"module PassThrough.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k: String => Bool.\\nstringToIntMap m1: StringToIntMap, k: String, stringToIntMapKey m1 k => Int.\\npassThrough m: StringToIntMap => StringToIntMap.\\n\\n---\\n\\npassThrough m = m.\\n"
+`;
+
+exports[`expressions-map-params.ts > pickByFlag 1`] = `
+"module PickByFlag.\\n\\nStringToBoolMap.\\nstringToBoolMapKey m: StringToBoolMap, k1: String => Bool.\\nstringToBoolMap m: StringToBoolMap, k1: String, stringToBoolMapKey m k1 => Bool.\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k2: String => Bool.\\nstringToIntMap m1: StringToIntMap, k2: String, stringToIntMapKey m1 k2 => Int.\\npickByFlag flags: StringToBoolMap, values: StringToIntMap, k: String => Int.\\n\\n---\\n\\npickByFlag flags values k = (cond stringToBoolMapKey flags k => stringToIntMap values k, true => 0).\\n"
+`;
+
+exports[`expressions-map-params.ts > sumAt 1`] = `
+"module SumAt.\\n\\nStringToIntMap.\\nstringToIntMapKey m: StringToIntMap, k1: String => Bool.\\nstringToIntMap m: StringToIntMap, k1: String, stringToIntMapKey m k1 => Int.\\nsumAt m1: StringToIntMap, m2: StringToIntMap, k: String => Int.\\n\\n---\\n\\nsumAt m1 m2 k = stringToIntMap m1 k + stringToIntMap m2 k.\\n\\ncheck\\n\\nall m1: StringToIntMap, m2: StringToIntMap, k: String | stringToIntMapKey m1 k and stringToIntMapKey m2 k -> sumAt m1 m2 k = stringToIntMap m1 k + stringToIntMap m2 k.\\n"
+`;
+
+exports[`expressions-map-params.ts > tagsFor 1`] = `
+"module TagsFor.\\n\\nStringToListStringMap.\\nstringToListStringMapKey m: StringToListStringMap, k1: String => Bool.\\nstringToListStringMap m: StringToListStringMap, k1: String, stringToListStringMapKey m k1 => [String].\\ntagsFor tags: StringToListStringMap, k: String => [String].\\n\\n---\\n\\ntagsFor tags k = stringToListStringMap tags k.\\n"
+`;
+
 exports[`expressions-map.ts > congruence 1`] = `
 "module Congruence.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\ncongruence c: Cache, k: String => Bool.\\n\\n---\\n\\ncongruence c k = entriesKey c k.\\n\\ncheck\\n\\nall c: Cache, k: String | congruence c k -> entries c k = entries c k.\\n"
 `;

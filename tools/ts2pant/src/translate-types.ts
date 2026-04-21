@@ -4,6 +4,126 @@ import type { NameRegistry } from "./name-registry.js";
 import { getAst } from "./pant-wasm.js";
 import type { PantDeclaration } from "./types.js";
 
+/**
+ * Mangle a Pantagruel type string into an identifier-safe fragment suitable
+ * for embedding inside a synthesized Map domain name.
+ *   "String"           → "String"
+ *   "[String]"         → "ListString"
+ *   "String + Nothing" → "StringOrNothing"
+ *   "A * B"            → "AAndB"
+ * Returns null if the mangled result still contains non-identifier chars
+ * (e.g., a bare `Map<...>` literal from a Map in value position with no
+ * synthesizer upstream). Distinct Pantagruel types produce distinct
+ * fragments.
+ */
+export function manglePantTypeToFragment(pantType: string): string | null {
+  const mangled = pantType
+    .replace(/\s+/gu, "")
+    .replace(/\+/gu, "Or")
+    .replace(/\*/gu, "And")
+    .replace(/\[/gu, "List")
+    .replace(/\]/gu, "");
+  return /^[A-Za-z_][A-Za-z0-9_]*$/u.test(mangled) ? mangled : null;
+}
+
+export interface MapSynthNames {
+  domain: string;
+  rule: string;
+  keyPred: string;
+}
+
+export interface MapSynthEntry {
+  names: MapSynthNames;
+  kType: string;
+  vType: string;
+}
+
+/**
+ * Accumulates `Map<K, V>` occurrences encountered anywhere in the module's
+ * type positions (parameters, return types, nested inside another Map's V,
+ * inside arrays / tuples / unions) and synthesizes one domain + guarded-rule
+ * pair per unique `(K, V)`. McCarthy's theory of arrays applied via
+ * Pantagruel rules: synthesized domain is the array sort, distinct elements
+ * are distinct maps, `.get` is a partial function guarded by `.has`.
+ */
+export class MapSynthesizer {
+  private byKV = new Map<string, MapSynthEntry>();
+  private emitted = new Set<string>();
+
+  constructor(private registry: NameRegistry) {}
+
+  register(kType: string, vType: string): string | null {
+    const key = `${kType}|${vType}`;
+    const cached = this.byKV.get(key);
+    if (cached) {
+      return cached.names.domain;
+    }
+    const kFrag = manglePantTypeToFragment(kType);
+    const vFrag = manglePantTypeToFragment(vType);
+    if (!kFrag || !vFrag) {
+      return null;
+    }
+    const baseDomain = `${kFrag}To${vFrag}Map`;
+    const domain = this.registry.register(baseDomain);
+    const rule = domain[0]!.toLowerCase() + domain.slice(1);
+    const entry: MapSynthEntry = {
+      names: { domain, rule, keyPred: `${rule}Key` },
+      kType,
+      vType,
+    };
+    this.byKV.set(key, entry);
+    return domain;
+  }
+
+  lookup(kType: string, vType: string): MapSynthEntry | undefined {
+    return this.byKV.get(`${kType}|${vType}`);
+  }
+
+  /**
+   * Materialize accumulated decls (domain + membership predicate + guarded
+   * value rule) in registration order. Rule-internal binder names are
+   * registered *here*, after callers have claimed their own param names,
+   * so the synth decls get hygienic suffixes (e.g., `m1`, `k1`). Incremental:
+   * a second call only emits entries registered since the previous call, so
+   * the pipeline can drain new body-level registrations after signature/type
+   * translation has already run.
+   */
+  emit(): PantDeclaration[] {
+    const decls: PantDeclaration[] = [];
+    const ast = getAst();
+    for (const [key, entry] of this.byKV) {
+      if (this.emitted.has(key)) {
+        continue;
+      }
+      this.emitted.add(key);
+      const { domain, rule, keyPred } = entry.names;
+      const mName = this.registry.register("m");
+      const kName = this.registry.register("k");
+      decls.push({ kind: "domain", name: domain });
+      decls.push({
+        kind: "rule",
+        name: keyPred,
+        params: [
+          { name: mName, type: domain },
+          { name: kName, type: entry.kType },
+        ],
+        returnType: "Bool",
+      });
+      decls.push({
+        kind: "rule",
+        name: rule,
+        params: [
+          { name: mName, type: domain },
+          { name: kName, type: entry.kType },
+        ],
+        returnType: entry.vType,
+        guard: ast.app(ast.var(keyPred), [ast.var(mName), ast.var(kName)]),
+      });
+    }
+    return decls;
+  }
+}
+
 /** Strategy for mapping TS `number` to a Pantagruel numeric type. */
 export interface NumericStrategy {
   mapNumber: (context?: string) => string;
@@ -21,11 +141,22 @@ export const RealStrategy: NumericStrategy = {
   },
 };
 
-/** Map a TypeScript type to a Pantagruel type string. */
+/**
+ * Map a TypeScript type to a Pantagruel type string.
+ *
+ * When `synth` is provided, `Map<K, V>` in any type position (parameter,
+ * return, nested in another Map's V, inside an array/tuple/union) is
+ * registered with the synthesizer and replaced with the synthesized domain
+ * name. Without `synth`, Map types fall through to the caller's fallback
+ * (typically `checker.typeToString()` which yields unparseable output).
+ * The `synth`-less behavior is preserved for Stage A: interface-field Maps
+ * are handled specially in `translateTypes` and must not be synthesized.
+ */
 export function mapTsType(
   type: ts.Type,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
+  synth?: MapSynthesizer,
 ): string {
   const flags = type.flags;
 
@@ -49,14 +180,16 @@ export function mapTsType(
   // Tuple (check before array since tuples are also type references)
   if (checker.isTupleType(type)) {
     const typeArgs = checker.getTypeArguments(type as ts.TypeReference);
-    return typeArgs.map((t) => mapTsType(t, checker, strategy)).join(" * ");
+    return typeArgs
+      .map((t) => mapTsType(t, checker, strategy, synth))
+      .join(" * ");
   }
 
   // Array
   if (checker.isArrayType(type)) {
     const typeArgs = checker.getTypeArguments(type as ts.TypeReference);
     if (typeArgs.length === 1) {
-      return `[${mapTsType(typeArgs[0]!, checker, strategy)}]`;
+      return `[${mapTsType(typeArgs[0]!, checker, strategy, synth)}]`;
     }
     return checker.typeToString(type);
   }
@@ -67,9 +200,25 @@ export function mapTsType(
   if (isSetType(type)) {
     const typeArgs = checker.getTypeArguments(type as ts.TypeReference);
     if (typeArgs.length === 1) {
-      return `[${mapTsType(typeArgs[0]!, checker, strategy)}]`;
+      return `[${mapTsType(typeArgs[0]!, checker, strategy, synth)}]`;
     }
     return checker.typeToString(type);
+  }
+
+  // Map — synthesize a domain when a synthesizer is provided. If the K or V
+  // type is unmangleable (e.g., contains an unsupported TS type), register
+  // returns null and we fall through to checker.typeToString — the same
+  // unsupported-type fallback used by the array and set branches above.
+  if (isMapType(type) && synth) {
+    const typeArgs = checker.getTypeArguments(type as ts.TypeReference);
+    if (typeArgs.length === 2) {
+      const kType = mapTsType(typeArgs[0]!, checker, strategy, synth);
+      const vType = mapTsType(typeArgs[1]!, checker, strategy, synth);
+      const domain = synth.register(kType, vType);
+      if (domain !== null) {
+        return domain;
+      }
+    }
   }
 
   // Union
@@ -78,7 +227,7 @@ export function mapTsType(
     if (type.types.every((t) => t.flags & ts.TypeFlags.BooleanLiteral)) {
       return "Bool";
     }
-    const parts = type.types.map((t) => mapTsType(t, checker, strategy));
+    const parts = type.types.map((t) => mapTsType(t, checker, strategy, synth));
     // Deduplicate (e.g. boolean literal collapse)
     const unique = parts.filter((v, i, a) => a.indexOf(v) === i);
     // Sort Nothing to the end for consistent output
@@ -133,6 +282,7 @@ export function translateTypes(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   registry?: NameRegistry,
+  synth?: MapSynthesizer,
 ): PantDeclaration[] {
   const decls: PantDeclaration[] = [];
 
@@ -146,8 +296,13 @@ export function translateTypes(
           prop.type as ts.TypeReference,
         );
         if (typeArgs.length === 2) {
-          const kType = mapTsType(typeArgs[0]!, checker, strategy);
-          const vType = mapTsType(typeArgs[1]!, checker, strategy);
+          // Stage A field-Map encoding: rule name is the field name; the
+          // domain is the user's interface. K and V are still translated
+          // via mapTsType with the synth passed through, so a nested Map
+          // inside V (e.g., `inner: Map<K, Map<K', V'>>`) registers its
+          // own synthesized domain and the Stage A rule's V references it.
+          const kType = mapTsType(typeArgs[0]!, checker, strategy, synth);
+          const vType = mapTsType(typeArgs[1]!, checker, strategy, synth);
           const kName = registry ? registry.register("k") : "k";
           const keyPredName = `${prop.name}Key`;
           decls.push({
@@ -180,7 +335,7 @@ export function translateTypes(
         kind: "rule",
         name: prop.name,
         params: [{ name: pName, type: iface.name }],
-        returnType: mapTsType(prop.type, checker, strategy),
+        returnType: mapTsType(prop.type, checker, strategy, synth),
       });
     }
   }
@@ -189,7 +344,7 @@ export function translateTypes(
     decls.push({
       kind: "alias",
       name: alias.name,
-      type: mapTsType(alias.type, checker, strategy),
+      type: mapTsType(alias.type, checker, strategy, synth),
     });
   }
 

@@ -125,6 +125,7 @@ This works with any function declared as `asserts condition` -- Node's `assert`,
 | `T[]` | `[T]` |
 | `Set<T>` | `[T]` (membership via `.has(x)` → `x in`, cardinality via `.size` → `#`; uniqueness is not tracked) |
 | `Map<K, V>` field on `interface` | two rules: `<name>Key c: C, k: K => Bool` and `<name> c: C, k: K, <name>Key c k => V` (read via `.get(k)` → `<name> c k`, membership via `.has(k)` → `<name>Key c k`) |
+| `Map<K, V>` in any other type position (parameter, return, nested) | synthesizes a handle domain per `(K, V)` pair per module: `KToVMap.` plus the same rule pair as above, with the user's interface replaced by the synthesized domain. Non-identifier `K`/`V` are mangled — `[String]` → `ListString`, `A + B` → `AOrB`, `A * B` → `AAndB`. `.get(k)` → `kToVMap m k`, `.has(k)` → `kToVMapKey m k`. Nested Maps register bottom-up (e.g., `Map<string, Map<string, number>>` emits `StringToIntMap` then `StringToStringToIntMapMap`). |
 | `T \| null` / `T \| undefined` | `T + Nothing` |
 | `interface Foo { ... }` | `Foo.` (domain) + rules for each property |
 
@@ -177,7 +178,7 @@ FAIL: Not entailed: 'balance' account >= 0'
 - **No local variables.** Functions with `let`/`const` bindings before the return are rejected as unsupported.
 - **No loops.** `for`/`while` are not translated.
 - **Array operations** are partially supported: `.filter().map()` chains, `.includes()`, `.length`. Other array methods are unsupported.
-- **`Map<K, V>` support is read-only and interface-field-only.** Map fields translate into a value rule guarded by a membership predicate. Map parameters (not as interface fields), mutation (`.set`, `.delete`), construction (`new Map()`), and iteration (`.entries`, `.keys`, `.values`, `.forEach`) are not yet supported.
+- **`Map<K, V>` support is read-only.** Interface-field Maps and Maps in any other type position (parameter, return, nested) both translate into a value rule guarded by a membership predicate — the only difference is whether the owner domain is the user's interface or a synthesized `KToVMap` handle. Mutation (`.set`, `.delete`), construction (`new Map()`), and iteration (`.entries`, `.keys`, `.values`, `.forEach`) are not yet supported.
 
 ## Development
 

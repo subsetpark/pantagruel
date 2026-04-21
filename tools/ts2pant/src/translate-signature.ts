@@ -3,7 +3,11 @@ import ts from "typescript";
 import type { NameRegistry } from "./name-registry.js";
 import type { OpaqueBinop, OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
-import { mapTsType, type NumericStrategy } from "./translate-types.js";
+import {
+  MapSynthesizer,
+  mapTsType,
+  type NumericStrategy,
+} from "./translate-types.js";
 import type { PantAction, PantDeclaration, PantRule } from "./types.js";
 
 export type Classification = "pure" | "mutating";
@@ -13,6 +17,13 @@ export interface TranslatedSignature {
   classification: Classification;
   /** Map from TS parameter names to Pantagruel parameter names. */
   paramNameMap: Map<string, string>;
+  /**
+   * Synthesizer for `Map<K, V>` domains encountered during signature
+   * translation (parameter and return types). Pass through to downstream
+   * stages (`translateTypes`, `translateBody`) so they register and look up
+   * Maps in the same table. Present only when a `registry` was supplied.
+   */
+  mapSynth?: MapSynthesizer | undefined;
 }
 
 /**
@@ -851,6 +862,10 @@ export function translateSignature(
   const params: Array<{ name: string; type: string }> = [];
   const paramNameMap = new Map<string, string>();
 
+  // A synthesizer is only meaningful when a registry is present (it uses
+  // the registry to claim unique synthesized domain names).
+  const mapSynth = registry ? new MapSynthesizer(registry) : undefined;
+
   if (className) {
     const existingParamNames = new Set(sig.getParameters().map((p) => p.name));
     const pName = shortParamName(className, existingParamNames, registry);
@@ -863,6 +878,7 @@ export function translateSignature(
       checker.getTypeOfSymbol(param),
       checker,
       strategy,
+      mapSynth,
     );
     const paramType = overrides?.get(param.name) ?? defaultType;
     const pantName = registry ? registry.register(param.name) : param.name;
@@ -873,7 +889,12 @@ export function translateSignature(
   const guard = detectGuard(node, checker, strategy, paramNameMap);
 
   if (classification === "pure") {
-    const returnType = mapTsType(sig.getReturnType(), checker, strategy);
+    const returnType = mapTsType(
+      sig.getReturnType(),
+      checker,
+      strategy,
+      mapSynth,
+    );
     const decl: PantRule = {
       kind: "rule",
       name: baseName,
@@ -883,7 +904,7 @@ export function translateSignature(
     if (guard) {
       decl.guard = guard;
     }
-    return { declaration: decl, classification, paramNameMap };
+    return { declaration: decl, classification, paramNameMap, mapSynth };
   } else {
     const decl: PantAction = {
       kind: "action",
@@ -893,6 +914,6 @@ export function translateSignature(
     if (guard) {
       decl.guard = guard;
     }
-    return { declaration: decl, classification, paramNameMap };
+    return { declaration: decl, classification, paramNameMap, mapSynth };
   }
 }

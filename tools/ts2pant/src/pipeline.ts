@@ -47,7 +47,11 @@ export async function buildPantDocument(
     extractFunctionAnnotationsAndOverrides(sourceFile, functionName);
 
   // Translate signature first to claim the function's param names
-  const { declaration: sigDecl, paramNameMap } = translateSignature(
+  const {
+    declaration: sigDecl,
+    paramNameMap,
+    mapSynth,
+  } = translateSignature(
     sourceFile,
     functionName,
     strategy,
@@ -55,10 +59,21 @@ export async function buildPantDocument(
     overrides,
   );
 
-  // Extract and translate types (type-derived param names adapt to registry)
+  // Extract and translate types (type-derived param names adapt to registry).
+  // Pass the synthesizer so nested Maps inside interface-field V register too.
   const extracted = extractReferencedTypes(sourceFile, functionName);
-  const typeDecls = translateTypes(extracted, checker, strategy, registry);
-  const declarations = [...typeDecls, sigDecl];
+  const typeDecls = translateTypes(
+    extracted,
+    checker,
+    strategy,
+    registry,
+    mapSynth,
+  );
+  // After both sig and types have registered their Maps, emit the synth
+  // decls (one domain + membership predicate + guarded value rule per
+  // unique (K, V)). Splice before sigDecl so the sig's references resolve.
+  const synthDecls = mapSynth ? mapSynth.emit() : [];
+  const declarations = [...typeDecls, ...synthDecls, sigDecl];
 
   const moduleName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
   let doc: PantDocument = {
@@ -75,8 +90,23 @@ export async function buildPantDocument(
       functionName,
       strategy,
       declarations,
+      mapSynth,
     });
     doc = { ...doc, propositions: [...doc.propositions, ...bodyProps] };
+
+    // Drain any Map (K, V) pairs registered on demand during body translation
+    // (e.g., `build().get(k)!` where `build`'s return type wasn't surfaced
+    // through the signature or referenced types). emit() is incremental, so
+    // this returns only entries new since the pre-body emit.
+    if (mapSynth) {
+      const extraSynthDecls = mapSynth.emit();
+      if (extraSynthDecls.length > 0) {
+        doc = {
+          ...doc,
+          declarations: [...doc.declarations, ...extraSynthDecls],
+        };
+      }
+    }
   }
 
   // Annotations go to checks (entailment goals) — skip for skeleton docs
