@@ -1092,6 +1092,58 @@ let test_nat_type_constraints () =
   check bool "has >= 1 for Nat" true (contains constraints ">= (balance");
   check bool "has assert" true (contains constraints "(assert")
 
+let test_list_nat_element_constraint () =
+  (* [Nat] nullary: element bound asserted over the array membership *)
+  let env =
+    Env.empty ""
+    |> Env.add_rule "xs"
+         (Types.TyFunc ([], Some (Types.TyList Types.TyNat)))
+         Ast.dummy_loc ~chapter:0
+  in
+  let constraints = Smt.declare_type_constraints config env in
+  check bool "has select xs" true (contains constraints "(select xs k_elem)");
+  check bool "has >= k_elem 1" true (contains constraints "(>= k_elem 1)")
+
+let test_list_nat0_element_constraint () =
+  let env =
+    Env.empty ""
+    |> Env.add_rule "ys"
+         (Types.TyFunc ([], Some (Types.TyList Types.TyNat0)))
+         Ast.dummy_loc ~chapter:0
+  in
+  let constraints = Smt.declare_type_constraints config env in
+  check bool "has implication shape" true
+    (contains constraints "(=> (select ys k_elem) (>= k_elem 0))")
+
+let test_list_with_params_element_constraint () =
+  (* Parameterized rule: constraint applies under both the param and the elem quantifier *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "User" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "following"
+         (Types.TyFunc
+            ([ Types.TyDomain "User" ], Some (Types.TyList Types.TyNat)))
+         Ast.dummy_loc ~chapter:0
+  in
+  let constraints = Smt.declare_type_constraints config env in
+  check bool "param binder present" true (contains constraints "(x_0 User)");
+  check bool "element select applied" true
+    (contains constraints "(select (following x_0) k_elem)");
+  check bool "has >= k_elem 1" true (contains constraints "(>= k_elem 1)")
+
+let test_list_domain_element_no_constraint () =
+  (* [Domain] elements aren't numeric -> no element bound *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "Color" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "palette"
+         (Types.TyFunc ([], Some (Types.TyList (Types.TyDomain "Color"))))
+         Ast.dummy_loc ~chapter:0
+  in
+  let constraints = Smt.declare_type_constraints config env in
+  check bool "no k_elem for non-numeric elem" false
+    (contains constraints "k_elem")
+
 let test_invariant_query_content () =
   let env, doc =
     parse_and_collect
@@ -1153,6 +1205,14 @@ let integration_tests =
     test_case "prime expr" `Quick test_prime_expr;
     test_case "sanitize ident" `Quick test_sanitize_ident;
     test_case "nat type constraints" `Quick test_nat_type_constraints;
+    test_case "list<Nat> element constraint" `Quick
+      test_list_nat_element_constraint;
+    test_case "list<Nat0> element constraint" `Quick
+      test_list_nat0_element_constraint;
+    test_case "list<Nat> with params element constraint" `Quick
+      test_list_with_params_element_constraint;
+    test_case "list<Domain> no element constraint" `Quick
+      test_list_domain_element_no_constraint;
     test_case "invariant query content" `Quick test_invariant_query_content;
     test_case "init query content" `Quick test_init_query_content;
   ]
