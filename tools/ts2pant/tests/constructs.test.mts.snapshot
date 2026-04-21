@@ -63,7 +63,7 @@ exports[`expressions-arithmetic.ts > remainder 1`] = `
 `;
 
 exports[`expressions-array.ts > activeNames 1`] = `
-"module ActiveNames.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nactiveNames users: [User] => [String].\\n\\n---\\n\\nactiveNames users = (each x: User | name x).\\n"
+"module ActiveNames.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nactiveNames users: [User] => [String].\\n\\n---\\n\\nactiveNames users = (each $0 in users, active $0 | name $0).\\n"
 `;
 
 exports[`expressions-array.ts > contains 1`] = `
@@ -75,11 +75,11 @@ exports[`expressions-array.ts > count 1`] = `
 `;
 
 exports[`expressions-array.ts > highScores 1`] = `
-"module HighScores.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nhighScores users: [User] => [Int].\\n\\n---\\n\\nhighScores users = (each x: Int, x > 0 | x).\\n"
+"module HighScores.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nhighScores users: [User] => [Int].\\n\\n---\\n\\nhighScores users = (each $0 in users, score $0 > 0 | score $0).\\n"
 `;
 
 exports[`expressions-array.ts > nameLengths 1`] = `
-"module NameLengths.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nnameLengths users: [User] => [Int].\\n\\n---\\n\\nnameLengths users = (each x: String | length x).\\n"
+"module NameLengths.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nnameLengths users: [User] => [Int].\\n\\n---\\n\\nnameLengths users = (each $0 in users | length (name $0)).\\n"
 `;
 
 exports[`expressions-boolean.ts > and 1`] = `
@@ -246,6 +246,34 @@ exports[`expressions-property.ts > getOwnerName 1`] = `
 "module GetOwnerName.\\n\\nUser.\\nname u: User => String.\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => User.\\nactive a1: Account => Bool.\\ngetOwnerName a: Account => String.\\n\\n---\\n\\ngetOwnerName a = name (owner a).\\n"
 `;
 
+exports[`expressions-reduce.ts > allActive 1`] = `
+"module AllActive.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nallActive xs: [Item] => Bool.\\n\\n---\\n\\nallActive xs = (and over each $0 in xs | active $0).\\n"
+`;
+
+exports[`expressions-reduce.ts > anyActive 1`] = `
+"module AnyActive.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nanyActive xs: [Item] => Bool.\\n\\n---\\n\\nanyActive xs = (or over each $0 in xs | active $0).\\n"
+`;
+
+exports[`expressions-reduce.ts > productValues 1`] = `
+"module ProductValues.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nproductValues xs: [Item] => Int.\\n\\n---\\n\\nproductValues xs = (* over each $0 in xs | value $0).\\n"
+`;
+
+exports[`expressions-reduce.ts > subtractAll 1`] = `
+"module SubtractAll.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nsubtractAll xs: [Item] => Int.\\n\\n---\\n\\nsubtractAll xs = 1000 - (+ over each $0 in xs | value $0).\\n"
+`;
+
+exports[`expressions-reduce.ts > sumAmounts 1`] = `
+"module SumAmounts.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nsumAmounts xs: [Item] => Int.\\n\\n---\\n\\nsumAmounts xs = (+ over each $0 in xs | value $0).\\n"
+`;
+
+exports[`expressions-reduce.ts > sumAmountsRight 1`] = `
+"module SumAmountsRight.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nsumAmountsRight xs: [Item] => Int.\\n\\n---\\n\\nsumAmountsRight xs = (+ over each $0 in xs | value $0).\\n"
+`;
+
+exports[`expressions-reduce.ts > sumFromBase 1`] = `
+"module SumFromBase.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nsumFromBase xs: [Item] => Int.\\n\\n---\\n\\nsumFromBase xs = 100 + (+ over each $0 in xs | value $0).\\n"
+`;
+
 exports[`functions-class.ts > Account.deposit 1`] = `
 "module Deposit.\\n\\n~> Deposit @ a: Account, amount: Int.\\n\\n---\\n\\nbalance' a = balance a + amount.\\n"
 `;
@@ -360,6 +388,38 @@ exports[`functions-mutating-early-exit.ts > elseReturnThenMore 1`] = `
 
 exports[`functions-mutating-early-exit.ts > writeThenEarlyReturn 1`] = `
 "module WriteThenEarlyReturn.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> WriteThenEarlyReturn @ a: Account, g: Bool.\\n\\n---\\n\\nbalance' a = (cond g => 10, true => 10 + 5).\\nowner' a1 = owner a1.\\n"
+`;
+
+exports[`functions-mutating-loop.ts > activateActive 1`] = `
+"module ActivateActive.\\n\\nUser.\\nactive u: User => Bool.\\nscore u: User => Int.\\n~> ActivateActive @ users: [User].\\n\\n---\\n\\nall u in users | active' u = (cond score u > 0 => true, true => active u).\\nscore' u = score u.\\n"
+`;
+
+exports[`functions-mutating-loop.ts > activateAll 1`] = `
+"module ActivateAll.\\n\\nUser.\\nactive u: User => Bool.\\nscore u: User => Int.\\n~> ActivateAll @ users: [User].\\n\\n---\\n\\nall u in users | active' u = true.\\nscore' u = score u.\\n"
+`;
+
+exports[`functions-mutating-loop.ts > deductFees 1`] = `
+"module DeductFees.\\n\\nAccount.\\ntotal a1: Account => Int.\\nbalance a1: Account => Int.\\nFee.\\namount f: Fee => Int.\\n~> DeductFees @ a: Account, fees: [Fee].\\n\\n---\\n\\nbalance' a = balance a - (+ over each f in fees | amount f).\\ntotal' a1 = total a1.\\namount' f = amount f.\\n"
+`;
+
+exports[`functions-mutating-loop.ts > forEachActivate 1`] = `
+"module ForEachActivate.\\n\\nUser.\\nactive u: User => Bool.\\nscore u: User => Int.\\n~> ForEachActivate @ users: [User].\\n\\n---\\n\\nall u in users | active' u = true.\\nscore' u = score u.\\n"
+`;
+
+exports[`functions-mutating-loop.ts > forEachSum 1`] = `
+"module ForEachSum.\\n\\nAccount.\\ntotal a1: Account => Int.\\nbalance a1: Account => Int.\\nItem.\\nvalue i: Item => Int.\\ntagged i: Item => Bool.\\n~> ForEachSum @ a: Account, items: [Item].\\n\\n---\\n\\ntotal' a = total a + (+ over each x in items | value x).\\nbalance' a1 = balance a1.\\nvalue' i = value i.\\ntagged' i = tagged i.\\n"
+`;
+
+exports[`functions-mutating-loop.ts > mixedUpdates 1`] = `
+"module MixedUpdates.\\n\\nAccount.\\ntotal a1: Account => Int.\\nbalance a1: Account => Int.\\nItem.\\nvalue i: Item => Int.\\ntagged i: Item => Bool.\\n~> MixedUpdates @ a: Account, items: [Item].\\n\\n---\\n\\nall x in items | tagged' x = true.\\ntotal' a = total a + (+ over each x in items | value x).\\nbalance' a1 = balance a1.\\nvalue' i = value i.\\n"
+`;
+
+exports[`functions-mutating-loop.ts > sumAmounts 1`] = `
+"module SumAmounts.\\n\\nAccount.\\ntotal a1: Account => Int.\\nbalance a1: Account => Int.\\nItem.\\nvalue i: Item => Int.\\ntagged i: Item => Bool.\\n~> SumAmounts @ a: Account, items: [Item].\\n\\n---\\n\\ntotal' a = total a + (+ over each x in items | value x).\\nbalance' a1 = balance a1.\\nvalue' i = value i.\\ntagged' i = tagged i.\\n"
+`;
+
+exports[`functions-mutating-loop.ts > sumPositive 1`] = `
+"module SumPositive.\\n\\nAccount.\\ntotal a1: Account => Int.\\nbalance a1: Account => Int.\\nItem.\\nvalue i: Item => Int.\\ntagged i: Item => Bool.\\n~> SumPositive @ a: Account, items: [Item].\\n\\n---\\n\\ntotal' a = total a + (+ over each x in items, value x > 0 | value x).\\nbalance' a1 = balance a1.\\nvalue' i = value i.\\ntagged' i = tagged i.\\n"
 `;
 
 exports[`functions-mutating.ts > deposit 1`] = `

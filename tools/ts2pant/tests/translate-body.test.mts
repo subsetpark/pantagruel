@@ -501,3 +501,359 @@ describe("conditional mutations (symbolic last-write)", () => {
     }
   });
 });
+
+describe("structured iteration (for-of, forEach, reduce)", () => {
+  it("Shape A: uniform iterator write emits `all x in arr | p' x = v`", () => {
+    const source = `
+      interface User { active: boolean; }
+      function f(us: User[]): void {
+        for (const u of us) { u.active = true; }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    const eqs = props.filter((p) => p.kind === "equation");
+    const loopEq = eqs.find(
+      (e) => e.kind === "equation" && (e.guards?.length ?? 0) > 0,
+    );
+    assert.ok(loopEq, "expected one loop equation with a guard");
+    if (loopEq?.kind === "equation") {
+      const ast = getAst();
+      const rendered = ast.strExpr(
+        ast.forall([], loopEq.guards ?? [], ast.var("__body__")),
+      );
+      assert.match(rendered, /all u in us \| /);
+      assert.equal(ast.strExpr(loopEq.lhs), "active' u");
+      assert.equal(ast.strExpr(loopEq.rhs), "true");
+    }
+  });
+
+  it("Shape A: conditional iterator write delegates to symbolic-execute", () => {
+    const source = `
+      interface User { active: boolean; score: number; }
+      function f(us: User[]): void {
+        for (const u of us) {
+          if (u.score > 0) { u.active = true; }
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    const eqs = props.filter((p) => p.kind === "equation");
+    const loopEq = eqs.find(
+      (e) => e.kind === "equation" && (e.guards?.length ?? 0) > 0,
+    );
+    assert.ok(loopEq);
+    if (loopEq?.kind === "equation") {
+      const ast = getAst();
+      assert.equal(
+        ast.strExpr(loopEq.rhs),
+        "cond score u > 0 => true, true => active u",
+      );
+    }
+  });
+
+  it("Shape B: += emits `p a + (+ over each x in arr | rhs)`", () => {
+    const source = `
+      interface Account { total: number; }
+      interface Item { value: number; }
+      function f(a: Account, xs: Item[]): void {
+        for (const x of xs) { a.total += x.value; }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    const eqs = props.filter((p) => p.kind === "equation");
+    const totalEq = eqs.find(
+      (e) =>
+        e.kind === "equation" && getAst().strExpr(e.lhs) === "total' a",
+    );
+    assert.ok(totalEq);
+    if (totalEq?.kind === "equation") {
+      const ast = getAst();
+      assert.equal(
+        ast.strExpr(totalEq.rhs),
+        "total a + (+ over each x in xs | value x)",
+      );
+    }
+  });
+
+  it("Shape B: guard folds into the comprehension", () => {
+    const source = `
+      interface Account { total: number; }
+      interface Item { value: number; }
+      function f(a: Account, xs: Item[]): void {
+        for (const x of xs) {
+          if (x.value > 0) { a.total += x.value; }
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    const eqs = props.filter((p) => p.kind === "equation");
+    const totalEq = eqs.find(
+      (e) =>
+        e.kind === "equation" && getAst().strExpr(e.lhs) === "total' a",
+    );
+    assert.ok(totalEq);
+    if (totalEq?.kind === "equation") {
+      const ast = getAst();
+      assert.equal(
+        ast.strExpr(totalEq.rhs),
+        "total a + (+ over each x in xs, value x > 0 | value x)",
+      );
+    }
+  });
+
+  it("Mixed body emits one Shape A equation and one Shape B equation", () => {
+    const source = `
+      interface Account { total: number; }
+      interface Item { value: number; tagged: boolean; }
+      function f(a: Account, xs: Item[]): void {
+        for (const x of xs) {
+          x.tagged = true;
+          a.total += x.value;
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    const eqs = props.filter((p) => p.kind === "equation");
+    const ast = getAst();
+    const lhsStrings = eqs.map((e) =>
+      e.kind === "equation" ? ast.strExpr(e.lhs) : "",
+    );
+    assert.ok(lhsStrings.includes("tagged' x"));
+    assert.ok(lhsStrings.includes("total' a"));
+  });
+
+  it("rejects simple-assign fold (requires compound assignment)", () => {
+    const source = `
+      interface Account { total: number; }
+      interface Item { value: number; }
+      function f(a: Account, xs: Item[]): void {
+        for (const x of xs) { a.total = a.total + x.value; }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.ok(props.some((p) => p.kind === "unsupported"));
+  });
+
+  it("forEach dispatches to the same loop-body translator", () => {
+    const source = `
+      interface Account { total: number; }
+      interface Item { value: number; }
+      function f(a: Account, xs: Item[]): void {
+        xs.forEach((x) => { a.total += x.value; });
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    const eqs = props.filter((p) => p.kind === "equation");
+    const totalEq = eqs.find(
+      (e) =>
+        e.kind === "equation" && getAst().strExpr(e.lhs) === "total' a",
+    );
+    assert.ok(totalEq);
+    if (totalEq?.kind === "equation") {
+      const ast = getAst();
+      assert.equal(
+        ast.strExpr(totalEq.rhs),
+        "total a + (+ over each x in xs | value x)",
+      );
+    }
+  });
+
+  it("Shape C: reduce elides init when it equals combiner identity", () => {
+    const source = `
+      interface Item { value: number; }
+      function f(xs: Item[]): number {
+        return xs.reduce((a, x) => a + x.value, 0);
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    const eqs = props.filter((p) => p.kind === "equation");
+    assert.equal(eqs.length, 1);
+    const ast = getAst();
+    if (eqs[0]?.kind === "equation") {
+      assert.equal(
+        ast.strExpr(eqs[0].rhs),
+        "+ over each $0 in xs | value $0",
+      );
+    }
+  });
+
+  it("Shape C: reduce preserves non-identity init", () => {
+    const source = `
+      interface Item { value: number; }
+      function f(xs: Item[]): number {
+        return xs.reduce((a, x) => a + x.value, 100);
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    const eqs = props.filter((p) => p.kind === "equation");
+    const ast = getAst();
+    if (eqs[0]?.kind === "equation") {
+      assert.equal(
+        ast.strExpr(eqs[0].rhs),
+        "100 + (+ over each $0 in xs | value $0)",
+      );
+    }
+  });
+
+  it("Shape C: reduce rejects implicit-init form", () => {
+    const source = `
+      interface Item { value: number; }
+      function f(xs: Item[]): number {
+        return xs.reduce((a, x) => a + x.value);
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.ok(props.some((p) => p.kind === "unsupported"));
+  });
+
+  it("Shape C: reduceRight rejects non-commutative operators", () => {
+    const source = `
+      interface Item { value: number; }
+      function f(xs: Item[]): number {
+        return xs.reduceRight((a, x) => a - x.value, 0);
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.ok(props.some((p) => p.kind === "unsupported"));
+  });
+
+  it("rejects Shape A loop in an early-exit continuation", () => {
+    // Shape A equations emit directly into `propositions`, not `state.writes`.
+    // The early-exit merge path only threads guards through `state.writes`,
+    // so accepting this would silently drop the loop equation while leaving
+    // `state.modifiedProps` populated (suppressing the frame). Reject instead.
+    const source = `
+      interface User { active: boolean; }
+      function f(g: boolean, us: User[]): void {
+        if (g) return;
+        for (const u of us) { u.active = true; }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.ok(
+      props.some((p) => p.kind === "unsupported"),
+      "expected an unsupported marker",
+    );
+  });
+
+  it("Shape B reads observe Shape A writes in the same iteration", () => {
+    const source = `
+      interface Account { total: number; }
+      interface Item { value: number; }
+      function f(a: Account, xs: Item[]): void {
+        for (const x of xs) {
+          x.value = x.value + 1;
+          a.total += x.value;
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    const ast = getAst();
+    const eqs = props.filter((p) => p.kind === "equation");
+    const totalEq = eqs.find(
+      (e) => e.kind === "equation" && ast.strExpr(e.lhs) === "total' a",
+    );
+    assert.ok(totalEq, "expected a Shape B equation for total");
+    if (totalEq?.kind === "equation") {
+      // Shape B's `x.value` read must resolve through the in-iteration
+      // Shape A write `value' x = value x + 1`, not the pre-state `value x`.
+      assert.equal(
+        ast.strExpr(totalEq.rhs),
+        "total a + (+ over each x in xs | value x + 1)",
+      );
+    }
+  });
+
+  it("Shape C: reduce elides parenthesized/signed-zero init variants", () => {
+    const variants = ["(0)", "0.0", "+0", "-0", " 0 "];
+    for (const initText of variants) {
+      const source = `
+        interface Item { value: number; }
+        function f(xs: Item[]): number {
+          return xs.reduce((a, x) => a + x.value, ${initText});
+        }
+      `;
+      const sourceFile = createSourceFileFromSource(source);
+      const props = translateBody({
+        sourceFile,
+        functionName: "f",
+        strategy: IntStrategy,
+      });
+      const eqs = props.filter((p) => p.kind === "equation");
+      assert.equal(eqs.length, 1, `variant ${initText}: expected 1 equation`);
+      const ast = getAst();
+      if (eqs[0]?.kind === "equation") {
+        assert.equal(
+          ast.strExpr(eqs[0].rhs),
+          "+ over each $0 in xs | value $0",
+          `variant ${initText}: init should have been elided`,
+        );
+      }
+    }
+  });
+});

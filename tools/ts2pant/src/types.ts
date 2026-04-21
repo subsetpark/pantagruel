@@ -1,4 +1,4 @@
-import type { OpaqueExpr, OpaqueParam } from "./pant-ast.js";
+import type { OpaqueExpr, OpaqueGuard, OpaqueParam } from "./pant-ast.js";
 
 /** Pantagruel numeric type strategy. */
 export type NumericType = "Int" | "Real" | "Nat0";
@@ -50,6 +50,7 @@ export type PropResult =
   | {
       kind: "equation";
       quantifiers: OpaqueParam[];
+      guards?: OpaqueGuard[];
       lhs: OpaqueExpr;
       rhs: OpaqueExpr;
     }

@@ -1,6 +1,11 @@
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
-import type { OpaqueExpr, OpaqueParam } from "./pant-ast.js";
+import type {
+  OpaqueCombiner,
+  OpaqueExpr,
+  OpaqueGuard,
+  OpaqueParam,
+} from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
 import { isKnownPureCall } from "./purity.js";
 import {
@@ -26,43 +31,54 @@ function makeUniqueSupply(): UniqueSupply {
   return { next: () => counter++ };
 }
 
+function freshHygienicBinder(supply: UniqueSupply): string {
+  return `$${supply.next()}`;
+}
+
 interface ConstBinding {
   tsName: string;
   initializer: ts.Expression;
 }
 
-/** Generate a binder name not already used by params. */
-function freshBinder(paramNames: Map<string, string>): string {
-  const used = new Set(paramNames.values());
-  for (const candidate of ["x", "y", "z", "w", "v", "u", "t"]) {
-    if (!used.has(candidate)) {
-      return candidate;
-    }
-  }
-  let i = 0;
-  while (used.has(`x${i}`)) {
-    i++;
-  }
-  return `x${i}`;
-}
-
 /**
  * Result of translating a body expression. Either an opaque expression
- * (possibly tagged as a comprehension for chaining), or a failure.
+ * (possibly with a deferred list-comprehension structure for chain fusion),
+ * or a failure.
+ *
+ * When `pendingComprehension` is set, `expr` holds the *projection body*
+ * (e.g., `name u`) and the field carries the binder, root array, and
+ * accumulated filter predicates. Materialization (calling `bodyExpr`) emits
+ * the flat `each([], [gIn(binder, arrExpr), ...guards], expr)`.
+ *
+ * Deforestation (Wadler, TCS 1990) — chained `.filter`/`.map`/`.reduce` fuse
+ * into a single traversal by deferring materialization until a consumer
+ * outside the chain demands an opaque expression.
  */
+interface PendingComprehension {
+  binder: string;
+  arrExpr: OpaqueExpr;
+  guards: OpaqueGuard[];
+}
+
 type BodyResult =
   | { unsupported: string }
-  | { expr: OpaqueExpr; comprehensionBinder?: string };
+  | { expr: OpaqueExpr; pendingComprehension?: PendingComprehension };
 
 /** Type guard for unsupported BodyResult. */
 function isBodyUnsupported(r: BodyResult): r is { unsupported: string } {
   return "unsupported" in r;
 }
 
-/** Extract the OpaqueExpr from a successful BodyResult. */
+/** Extract the OpaqueExpr from a successful BodyResult, materializing any
+ * deferred comprehension chain into a flat `each` at the boundary. */
 function bodyExpr(r: BodyResult): OpaqueExpr {
   if ("unsupported" in r) {
     throw new Error(`bodyExpr called on unsupported: ${r.unsupported}`);
+  }
+  if (r.pendingComprehension) {
+    const ast = getAst();
+    const { binder, arrExpr, guards } = r.pendingComprehension;
+    return ast.each([], [ast.gIn(binder, arrExpr), ...guards], r.expr);
   }
   return r.expr;
 }
@@ -85,6 +101,11 @@ interface SymbolicState {
   // Keys *written during the current branch* (reset on clone). Used by the
   // if-merge algorithm to determine which locations are "touched."
   writtenKeys: Set<string>;
+  // Names of rules that have been modified by *any* write in this execution,
+  // including Shape A loop writes whose per-element equation is emitted
+  // directly (bypassing `writes`). Consumed by the frame-condition generator
+  // so loop-modified rules don't get a spurious identity frame.
+  modifiedProps: Set<string>;
   // Canonicalizer — applies the ambient const-binding substitution to an
   // expression before it is used as a state key. Writes store keys under the
   // post-substitution form so `const x = a; x.balance = 1` and a later
@@ -97,13 +118,19 @@ interface SymbolicState {
 function makeSymbolicState(
   canonicalize: (e: OpaqueExpr) => OpaqueExpr = (e) => e,
 ): SymbolicState {
-  return { writes: new Map(), writtenKeys: new Set(), canonicalize };
+  return {
+    writes: new Map(),
+    writtenKeys: new Set(),
+    modifiedProps: new Set(),
+    canonicalize,
+  };
 }
 
 function cloneSymbolicState(s: SymbolicState): SymbolicState {
   return {
     writes: new Map(s.writes),
     writtenKeys: new Set(),
+    modifiedProps: s.modifiedProps,
     canonicalize: s.canonicalize,
   };
 }
@@ -198,6 +225,165 @@ const COMPOUND_ASSIGN_TO_BINOP: Map<ts.SyntaxKind, ts.BinaryOperator> = new Map(
   ],
 );
 
+/**
+ * Map each compound assignment operator to the pair it induces for
+ * loop-fold translation: the *inside* combiner (for the comprehension)
+ * and the *outside* binary operator (joining prior state to the aggregate).
+ *
+ *   a.p += f(x)  iterated  =>  p' a = p a + (+ over each x in arr | f x)
+ *   a.p -= f(x)  iterated  =>  p' a = p a - (+ over each x in arr | f x)
+ *   a.p *= f(x)  iterated  =>  p' a = p a * (* over each x in arr | f x)
+ *   a.p /= f(x)  iterated  =>  p' a = p a / (* over each x in arr | f x)
+ *
+ * Non-commutative outer ops (`-`, `/`) pair with the commutative combiner
+ * of their identity group (`+`/`*`), since e.g. `p - f(x1) - f(x2)`
+ * equals `p - (f(x1) + f(x2))`.
+ */
+type CombinerKind = "add" | "mul" | "and" | "or";
+
+interface FoldOps {
+  combiner: CombinerKind;
+  outer: ts.BinaryOperator;
+}
+const COMPOUND_ASSIGN_TO_FOLD: Map<ts.SyntaxKind, FoldOps> = new Map([
+  [
+    ts.SyntaxKind.PlusEqualsToken,
+    { combiner: "add", outer: ts.SyntaxKind.PlusToken },
+  ],
+  [
+    ts.SyntaxKind.MinusEqualsToken,
+    { combiner: "add", outer: ts.SyntaxKind.MinusToken },
+  ],
+  [
+    ts.SyntaxKind.AsteriskEqualsToken,
+    { combiner: "mul", outer: ts.SyntaxKind.AsteriskToken },
+  ],
+  [
+    ts.SyntaxKind.SlashEqualsToken,
+    { combiner: "mul", outer: ts.SyntaxKind.SlashToken },
+  ],
+]);
+
+interface ReduceOpInfo {
+  combiner: CombinerKind;
+  outer: ts.BinaryOperator;
+  /** Source text of the init value that permits eliding init (combiner identity). */
+  identityText: string | null;
+  /** Whether `acc` can appear on either side — true iff the outer op is commutative. */
+  commutative: boolean;
+}
+
+/** Map a TypeScript binary operator (as used in `.reduce` callback body) to fold info. */
+function binopToReduceInfo(kind: ts.SyntaxKind): ReduceOpInfo | null {
+  switch (kind) {
+    case ts.SyntaxKind.PlusToken:
+      return {
+        combiner: "add",
+        outer: kind,
+        identityText: "0",
+        commutative: true,
+      };
+    case ts.SyntaxKind.MinusToken:
+      return {
+        combiner: "add",
+        outer: kind,
+        identityText: null,
+        commutative: false,
+      };
+    case ts.SyntaxKind.AsteriskToken:
+      return {
+        combiner: "mul",
+        outer: kind,
+        identityText: "1",
+        commutative: true,
+      };
+    case ts.SyntaxKind.SlashToken:
+      return {
+        combiner: "mul",
+        outer: kind,
+        identityText: null,
+        commutative: false,
+      };
+    case ts.SyntaxKind.AmpersandAmpersandToken:
+      return {
+        combiner: "and",
+        outer: kind,
+        identityText: "true",
+        commutative: true,
+      };
+    case ts.SyntaxKind.BarBarToken:
+      return {
+        combiner: "or",
+        outer: kind,
+        identityText: "false",
+        commutative: true,
+      };
+    default:
+      return null;
+  }
+}
+
+/**
+ * Decide whether an init expression evaluates to the combiner's identity element.
+ * Normalizes parenthesized/cast wrappers and numeric-literal variants so that
+ * `0`, `(0)`, `0.0`, `+0`, `-0` all match identity 0 for `+`, etc. Avoids
+ * relying on raw source text, which fails on whitespace or syntactically
+ * distinct but semantically equivalent forms.
+ */
+function isIdentityInit(node: ts.Expression, identityText: string): boolean {
+  const inner = unwrapExpression(node);
+  if (identityText === "true") {
+    return inner.kind === ts.SyntaxKind.TrueKeyword;
+  }
+  if (identityText === "false") {
+    return inner.kind === ts.SyntaxKind.FalseKeyword;
+  }
+  const n = evaluateNumericLiteral(inner);
+  if (n === null) {
+    return false;
+  }
+  const target = Number(identityText);
+  return Number.isFinite(target) && n === target;
+}
+
+function evaluateNumericLiteral(node: ts.Expression): number | null {
+  if (ts.isNumericLiteral(node)) {
+    const n = Number(node.text);
+    return Number.isFinite(n) ? n : null;
+  }
+  if (
+    ts.isPrefixUnaryExpression(node) &&
+    (node.operator === ts.SyntaxKind.PlusToken ||
+      node.operator === ts.SyntaxKind.MinusToken) &&
+    ts.isNumericLiteral(node.operand)
+  ) {
+    const n = Number(node.operand.text);
+    if (!Number.isFinite(n)) {
+      return null;
+    }
+    return node.operator === ts.SyntaxKind.MinusToken ? -n : n;
+  }
+  return null;
+}
+
+function makeCombiner(kind: CombinerKind): OpaqueCombiner {
+  const ast = getAst();
+  switch (kind) {
+    case "add":
+      return ast.combAdd();
+    case "mul":
+      return ast.combMul();
+    case "and":
+      return ast.combAnd();
+    case "or":
+      return ast.combOr();
+    default: {
+      const _exhaustive: never = kind;
+      throw new Error(`unknown combiner kind: ${_exhaustive as string}`);
+    }
+  }
+}
+
 export interface TranslateBodyOptions {
   sourceFile: SourceFile;
   functionName: string;
@@ -291,6 +477,7 @@ function translatePureBody(
     return [{ kind: "unsupported", reason: `${functionName} — ${reason}` }];
   }
 
+  const supply = makeUniqueSupply();
   const inlined = inlineConstBindings(
     extracted.bindings.map((b) => ({
       tsName: b.name,
@@ -299,7 +486,7 @@ function translatePureBody(
     checker,
     strategy,
     paramNames,
-    makeUniqueSupply(),
+    supply,
   );
   if ("error" in inlined) {
     return [
@@ -312,6 +499,8 @@ function translatePureBody(
     checker,
     strategy,
     inlined.scopedParams,
+    undefined,
+    supply,
   );
 
   if (isBodyUnsupported(body)) {
@@ -485,6 +674,7 @@ function inlineConstBindings(
       strategy,
       scopedParams,
       state,
+      supply,
     );
     if (isBodyUnsupported(initResult)) {
       return { error: initResult.unsupported };
@@ -708,7 +898,8 @@ export function translateBodyExpr(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
-  state?: SymbolicState,
+  state: SymbolicState | undefined,
+  supply: UniqueSupply,
 ): BodyResult {
   const ast = getAst();
 
@@ -718,7 +909,14 @@ export function translateBodyExpr(
 
   // if/else statement -> cond
   if (ts.isIfStatement(expr)) {
-    return translateIfStatement(expr, checker, strategy, paramNames, state);
+    return translateIfStatement(
+      expr,
+      checker,
+      strategy,
+      paramNames,
+      state,
+      supply,
+    );
   }
 
   // Ternary: a ? b : c -> cond([[a, b], [true, c]])
@@ -729,6 +927,7 @@ export function translateBodyExpr(
       strategy,
       paramNames,
       state,
+      supply,
     );
     if (isBodyUnsupported(cond)) {
       return cond;
@@ -739,6 +938,7 @@ export function translateBodyExpr(
       strategy,
       paramNames,
       state,
+      supply,
     );
     if (isBodyUnsupported(whenTrue)) {
       return whenTrue;
@@ -749,6 +949,7 @@ export function translateBodyExpr(
       strategy,
       paramNames,
       state,
+      supply,
     );
     if (isBodyUnsupported(whenFalse)) {
       return whenFalse;
@@ -770,6 +971,7 @@ export function translateBodyExpr(
       strategy,
       paramNames,
       state,
+      supply,
     );
     if (isBodyUnsupported(obj)) {
       return obj;
@@ -799,7 +1001,14 @@ export function translateBodyExpr(
 
   // Call expression: handle .includes(), .filter().map(), etc.
   if (ts.isCallExpression(expr)) {
-    return translateCallExpr(expr, checker, strategy, paramNames, state);
+    return translateCallExpr(
+      expr,
+      checker,
+      strategy,
+      paramNames,
+      state,
+      supply,
+    );
   }
 
   // Prefix unary: !x -> unop(opNot(), x), -x -> unop(opNeg(), x)
@@ -810,6 +1019,7 @@ export function translateBodyExpr(
       strategy,
       paramNames,
       state,
+      supply,
     );
     if (isBodyUnsupported(operand)) {
       return operand;
@@ -836,6 +1046,7 @@ export function translateBodyExpr(
       strategy,
       paramNames,
       state,
+      supply,
     );
     if (isBodyUnsupported(left)) {
       return left;
@@ -846,6 +1057,7 @@ export function translateBodyExpr(
       strategy,
       paramNames,
       state,
+      supply,
     );
     if (isBodyUnsupported(right)) {
       return right;
@@ -866,7 +1078,8 @@ function translateIfStatement(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
-  state?: SymbolicState,
+  state: SymbolicState | undefined,
+  supply: UniqueSupply,
 ): BodyResult {
   const ast = getAst();
 
@@ -876,6 +1089,7 @@ function translateIfStatement(
     strategy,
     paramNames,
     state,
+    supply,
   );
   if (isBodyUnsupported(cond)) {
     return cond;
@@ -892,6 +1106,7 @@ function translateIfStatement(
       strategy,
       paramNames,
       state,
+      supply,
     );
     if (isBodyUnsupported(thenVal)) {
       return thenVal;
@@ -902,6 +1117,7 @@ function translateIfStatement(
       strategy,
       paramNames,
       state,
+      supply,
     );
     if (isBodyUnsupported(elseVal)) {
       return elseVal;
@@ -959,8 +1175,13 @@ function getArrayElementType(
 }
 
 /**
- * Translate a .filter() or .map() call on an array to a comprehension,
- * composing with any existing comprehension from a prior chain step.
+ * Translate `.filter()` / `.map()` on an array. Returns a BodyResult whose
+ * `pendingComprehension` encodes the deferred chain (Wadler, TCS 1990).
+ * Materialization into `each([], [gIn(binder, arrExpr), ...guards], body)`
+ * happens at the chain boundary via `bodyExpr`.
+ *
+ * `.filter(p)` extends the guard list; `.map(f)` rewrites the projection.
+ * Composition preserves the original root array in `arrExpr`.
  */
 function translateArrayMethod(
   methodName: "filter" | "map",
@@ -969,12 +1190,12 @@ function translateArrayMethod(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
-  state?: SymbolicState,
+  state: SymbolicState | undefined,
+  supply: UniqueSupply,
 ): BodyResult | null {
   const ast = getAst();
 
-  const elemType = getArrayElementType(tsReceiver, checker, strategy);
-  if (!elemType) {
+  if (!getArrayElementType(tsReceiver, checker, strategy)) {
     return null;
   }
 
@@ -984,23 +1205,24 @@ function translateArrayMethod(
     strategy,
     paramNames,
     state,
+    supply,
   );
   if (isBodyUnsupported(receiver)) {
     return receiver;
   }
 
-  const isComposing = receiver.comprehensionBinder !== undefined;
+  const pending = receiver.pendingComprehension;
+  const isComposing = pending !== undefined;
+  // Hygienic `$N` binders (Barendregt convention): they cannot clash with
+  // user-visible identifiers or with other fresh binders from the same
+  // translation session.
   const sourceBinder = isComposing
-    ? receiver.comprehensionBinder!
-    : freshBinder(paramNames);
-  // Use a fresh binder for the callback so it doesn't collide with sourceBinder
+    ? pending.binder
+    : freshHygienicBinder(supply);
   const callbackBinder = isComposing
-    ? freshBinder(new Map([...paramNames, [sourceBinder, sourceBinder]]))
+    ? freshHygienicBinder(supply)
     : sourceBinder;
   const extendedParams = new Map(paramNames);
-  if (isComposing) {
-    extendedParams.set(sourceBinder, sourceBinder);
-  }
   extendedParams.set(callbackBinder, callbackBinder);
 
   const rawBody = extractArrowBody(
@@ -1009,6 +1231,7 @@ function translateArrayMethod(
     extendedParams,
     checker,
     strategy,
+    supply,
   );
   if (!rawBody) {
     return { unsupported: expr.getText() };
@@ -1017,66 +1240,696 @@ function translateArrayMethod(
     return rawBody;
   }
 
-  // When composing, substitute the callback's binder with the prior step's body
-  // so that e.g. xs.map(f).map(g) becomes (each x: T | g(f(x))) not (each x: T | g(x))
-  //
-  // For composition, we need the inner comprehension's body expression. Since
-  // we can't inspect opaque values, we use ast.substituteBinder on the raw
-  // callback body, replacing the callback binder with a variable named after
-  // the source binder. The outer comprehension will bind that variable.
+  // Substitute the callback binder with the prior chain's *projection* (not
+  // `var(sourceBinder)` — for a prior `.map(u => score u)`, the element in
+  // scope is `score u`, not `u`). Initial step has no prior projection, so
+  // `callbackBinder === sourceBinder` and this is a no-op.
   const bodyE = isComposing
-    ? ast.substituteBinder(
-        bodyExpr(rawBody),
-        callbackBinder,
-        ast.var(sourceBinder),
-      )
+    ? ast.substituteBinder(bodyExpr(rawBody), callbackBinder, receiver.expr)
     : bodyExpr(rawBody);
 
   if (methodName === "filter") {
     if (isComposing) {
-      // Composing filter onto an existing comprehension: add a guard predicate.
-      // We build a new comprehension with both the existing body and the new
-      // filter predicate as a guard.
-      // The existing comprehension's body becomes the new body, and the filter
-      // predicate is added as an additional guard.
-      //
-      // We reconstruct the comprehension: each sourceBinder: elemType, guards + new guard | existingBody
-      // Since we can't inspect the opaque comprehension, we track enough to rebuild.
-      // For now, produce a standalone comprehension with the filter as a guard on the source binder variable.
       return {
-        expr: ast.each(
-          [ast.param(sourceBinder, ast.tName(elemType))],
-          [ast.gExpr(bodyE)],
-          ast.var(sourceBinder),
-        ),
-        comprehensionBinder: sourceBinder,
+        expr: receiver.expr,
+        pendingComprehension: {
+          binder: pending.binder,
+          arrExpr: pending.arrExpr,
+          guards: [...pending.guards, ast.gExpr(bodyE)],
+        },
       };
     }
     return {
-      expr: ast.each(
-        [ast.param(sourceBinder, ast.tName(elemType))],
-        [ast.gExpr(bodyE)],
-        ast.var(sourceBinder),
-      ),
-      comprehensionBinder: sourceBinder,
-    };
-  } else {
-    // map
-    if (isComposing) {
-      return {
-        expr: ast.each(
-          [ast.param(sourceBinder, ast.tName(elemType))],
-          [],
-          bodyE,
-        ),
-        comprehensionBinder: sourceBinder,
-      };
-    }
-    return {
-      expr: ast.each([ast.param(sourceBinder, ast.tName(elemType))], [], bodyE),
-      comprehensionBinder: sourceBinder,
+      expr: ast.var(sourceBinder),
+      pendingComprehension: {
+        binder: sourceBinder,
+        arrExpr: receiver.expr,
+        guards: [ast.gExpr(bodyE)],
+      },
     };
   }
+  // map
+  if (isComposing) {
+    return {
+      expr: bodyE,
+      pendingComprehension: pending,
+    };
+  }
+  return {
+    expr: bodyE,
+    pendingComprehension: {
+      binder: sourceBinder,
+      arrExpr: receiver.expr,
+      guards: [],
+    },
+  };
+}
+
+/**
+ * Translate `arr.reduce((acc, x) => acc OP f(x), init)` to a comprehension fold.
+ * Emits `init OP (combOP over each x in arr | f(x))`, eliding `init` when it
+ * equals the combiner's identity element.
+ *
+ * Fuses with an upstream `.filter`/`.map` pending comprehension (Wadler,
+ * TCS 1990) into a single `eachComb` with accumulated guards and the
+ * composed projection.
+ */
+function translateReduceCall(
+  methodName: "reduce" | "reduceRight",
+  tsReceiver: ts.Expression,
+  expr: ts.CallExpression,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: Map<string, string>,
+  state: SymbolicState | undefined,
+  supply: UniqueSupply,
+): BodyResult | null {
+  const ast = getAst();
+
+  if (expr.arguments.length !== 2) {
+    return { unsupported: `.${methodName} requires an explicit initial value` };
+  }
+
+  if (!getArrayElementType(tsReceiver, checker, strategy)) {
+    return null;
+  }
+
+  const receiver = translateBodyExpr(
+    tsReceiver,
+    checker,
+    strategy,
+    paramNames,
+    state,
+    supply,
+  );
+  if (isBodyUnsupported(receiver)) {
+    return receiver;
+  }
+
+  const cb = expr.arguments[0]!;
+  if (!ts.isArrowFunction(cb)) {
+    return { unsupported: `.${methodName} callback must be an arrow function` };
+  }
+  if (cb.parameters.length !== 2) {
+    return {
+      unsupported: `.${methodName} callback must take exactly (acc, x)`,
+    };
+  }
+  const accParamNode = cb.parameters[0]!;
+  const xParamNode = cb.parameters[1]!;
+  if (
+    !ts.isIdentifier(accParamNode.name) ||
+    !ts.isIdentifier(xParamNode.name)
+  ) {
+    return {
+      unsupported: `.${methodName} callback parameters must be identifiers`,
+    };
+  }
+  const accName = (accParamNode.name as ts.Identifier).text;
+  const xName = (xParamNode.name as ts.Identifier).text;
+
+  let body: ts.Expression;
+  if (ts.isBlock(cb.body)) {
+    const stmts = cb.body.statements;
+    if (
+      stmts.length !== 1 ||
+      !ts.isReturnStatement(stmts[0]!) ||
+      !stmts[0]!.expression
+    ) {
+      return {
+        unsupported: `.${methodName} callback block body must be a single return`,
+      };
+    }
+    body = stmts[0]!.expression;
+  } else {
+    body = cb.body;
+  }
+  body = unwrapExpression(body);
+
+  if (!ts.isBinaryExpression(body)) {
+    return {
+      unsupported: `.${methodName} callback body must be 'acc OP f(x)'`,
+    };
+  }
+  const info = binopToReduceInfo(body.operatorToken.kind);
+  if (info === null) {
+    return {
+      unsupported: `.${methodName} operator ${ts.SyntaxKind[body.operatorToken.kind]} has no combiner`,
+    };
+  }
+
+  // `reduceRight` visits elements right-to-left; safe only for commutative combiners.
+  if (methodName === "reduceRight" && !info.commutative) {
+    return {
+      unsupported: `.reduceRight with non-commutative operator`,
+    };
+  }
+
+  const leftRoot = getRootIdentifier(body.left);
+  const rightRoot = getRootIdentifier(body.right);
+  let innerExpr: ts.Expression;
+  if (leftRoot === accName && rightRoot !== accName) {
+    innerExpr = body.right;
+  } else if (rightRoot === accName && leftRoot !== accName) {
+    if (!info.commutative) {
+      return {
+        unsupported: `.${methodName} with acc on the right of a non-commutative operator`,
+      };
+    }
+    innerExpr = body.left;
+  } else {
+    return {
+      unsupported: `.${methodName} callback must reference acc exactly once`,
+    };
+  }
+
+  if (expressionReferencesNames(innerExpr, new Set([accName]))) {
+    return {
+      unsupported: `.${methodName} inner expression must not reference acc`,
+    };
+  }
+
+  const pending = receiver.pendingComprehension;
+  // Hygienic `$N` binder for the callback's `x`; in the composing case we'll
+  // substitute it away with the prior projection so the outer guard binds
+  // `pending.binder`.
+  const xBinder = freshHygienicBinder(supply);
+  const extendedParams = new Map(paramNames);
+  extendedParams.set(xName, xBinder);
+
+  const innerResult = translateBodyExpr(
+    innerExpr,
+    checker,
+    strategy,
+    extendedParams,
+    state,
+    supply,
+  );
+  if (isBodyUnsupported(innerResult)) {
+    return innerResult;
+  }
+
+  const comb = makeCombiner(info.combiner);
+  let folded: OpaqueExpr;
+  if (pending) {
+    const projectedInner = ast.substituteBinder(
+      bodyExpr(innerResult),
+      xBinder,
+      receiver.expr,
+    );
+    folded = ast.eachComb(
+      [],
+      [ast.gIn(pending.binder, pending.arrExpr), ...pending.guards],
+      comb,
+      projectedInner,
+    );
+  } else {
+    folded = ast.eachComb(
+      [],
+      [ast.gIn(xBinder, receiver.expr)],
+      comb,
+      bodyExpr(innerResult),
+    );
+  }
+
+  const initNode = expr.arguments[1]!;
+  if (
+    info.identityText !== null &&
+    isIdentityInit(initNode, info.identityText)
+  ) {
+    return { expr: folded };
+  }
+
+  const initResult = translateBodyExpr(
+    initNode,
+    checker,
+    strategy,
+    paramNames,
+    state,
+    supply,
+  );
+  if (isBodyUnsupported(initResult)) {
+    return initResult;
+  }
+
+  const outerOp = translateOperator(info.outer);
+  if (outerOp === null) {
+    return { unsupported: `.${methodName} outer operator translation` };
+  }
+  return {
+    expr: ast.binop(outerOp, bodyExpr(initResult), folded),
+  };
+}
+
+// --- Structured iteration (for-of / forEach / reduce) ---
+//
+// Catamorphisms over arrays (Meijer et al., "Functional Programming with
+// Bananas, Lenses, Envelopes and Barbed Wire", FPCA 1991). Three shapes:
+//
+//   A. `for (const x of arr) { x.p = e }`   → `all x in arr | p' x = e`
+//   B. `for (const x of arr) { a.p OP= f }` → `p' a = p a OP (combOP over each x in arr | f)`
+//   C. `arr.reduce((acc, x) => acc OP f, i)`→ `i OP (combOP over each x in arr | f)`
+//
+// See CLAUDE.md § Structured Iteration.
+
+interface ShapeBLeaf {
+  /** `a` in `a.total += x.v` — the accumulator base expression (must not depend on iterator). */
+  target: ts.Expression;
+  /** `total` in `a.total += x.v`. */
+  prop: string;
+  /** Fold op pair (inner combiner + outer binary operator). */
+  ops: FoldOps;
+  /** RHS expression `f(x)` — may reference the iterator. */
+  rhs: ts.Expression;
+  /** Optional guard from a wrapping `if (g(x)) { a.p OP= f(x) }`. */
+  guard?: ts.Expression;
+}
+
+type LoopStmtClass =
+  | { kind: "shapeA" }
+  | { kind: "shapeB"; leaves: ShapeBLeaf[] }
+  | { unsupported: string };
+
+/** Extract the root identifier of a chained property access (`a.b.c` → `a`). */
+function getRootIdentifier(expr: ts.Expression): string | null {
+  expr = unwrapExpression(expr);
+  if (ts.isIdentifier(expr)) {
+    return expr.text;
+  }
+  if (ts.isPropertyAccessExpression(expr)) {
+    return getRootIdentifier(expr.expression);
+  }
+  return null;
+}
+
+/**
+ * Classify one loop-body statement as Shape A (iterator-targeted write),
+ * Shape B (accumulator fold), or unsupported. Handles nested if-stmts:
+ *   - if all branches are Shape A, the whole is Shape A
+ *   - if the stmt is `if (g(x)) { a.p OP= f }` with no else, it becomes a
+ *     single Shape B leaf with `guard = g(x)`.
+ */
+function classifyLoopStmt(
+  stmt: ts.Statement,
+  iterName: string,
+  checker: ts.TypeChecker,
+  parentGuard?: ts.Expression,
+): LoopStmtClass {
+  if (
+    ts.isExpressionStatement(stmt) &&
+    ts.isBinaryExpression(unwrapExpression(stmt.expression))
+  ) {
+    const bin = unwrapExpression(stmt.expression) as ts.BinaryExpression;
+    if (!ts.isPropertyAccessExpression(bin.left)) {
+      return {
+        unsupported: "loop body assignment target must be a property access",
+      };
+    }
+    const rootName = getRootIdentifier(bin.left.expression);
+    const isSimpleAssign = bin.operatorToken.kind === ts.SyntaxKind.EqualsToken;
+    const compoundFold = COMPOUND_ASSIGN_TO_FOLD.get(bin.operatorToken.kind);
+
+    if (rootName === iterName) {
+      if (!isSimpleAssign) {
+        return {
+          unsupported: "compound assignment on loop iterator property",
+        };
+      }
+      return { kind: "shapeA" };
+    }
+    if (compoundFold === undefined) {
+      return {
+        unsupported:
+          "loop accumulator write must use a compound assignment (+=, -=, *=, /=)",
+      };
+    }
+    if (expressionReferencesNames(bin.left.expression, new Set([iterName]))) {
+      return { unsupported: "loop accumulator target depends on iterator" };
+    }
+    const leaf: ShapeBLeaf = {
+      target: bin.left.expression,
+      prop: bin.left.name.text,
+      ops: compoundFold,
+      rhs: bin.right,
+    };
+    if (parentGuard) {
+      leaf.guard = parentGuard;
+    }
+    return { kind: "shapeB", leaves: [leaf] };
+  }
+
+  if (ts.isIfStatement(stmt)) {
+    if (expressionHasSideEffects(stmt.expression, checker)) {
+      return { unsupported: "impure if-condition in loop body" };
+    }
+    const thenStmts = flattenStmt(stmt.thenStatement);
+    const elseStmts = stmt.elseStatement ? flattenStmt(stmt.elseStatement) : [];
+
+    // Shape A: every branch-leaf is an iterator-write
+    const allA = [...thenStmts, ...elseStmts].every((s) => {
+      const c = classifyLoopStmt(s, iterName, checker);
+      return "kind" in c && c.kind === "shapeA";
+    });
+    if (allA) {
+      return { kind: "shapeA" };
+    }
+
+    // Shape B: `if (g) { a.p OP= f }` — single leaf, no else, no parent guard
+    if (
+      elseStmts.length === 0 &&
+      thenStmts.length === 1 &&
+      parentGuard === undefined
+    ) {
+      const inner = classifyLoopStmt(
+        thenStmts[0]!,
+        iterName,
+        checker,
+        stmt.expression,
+      );
+      if ("kind" in inner && inner.kind === "shapeB") {
+        return inner;
+      }
+    }
+    return {
+      unsupported:
+        "loop body if-statement mixes shapes or has an unsupported structure",
+    };
+  }
+
+  if (ts.isBlock(stmt)) {
+    const stmts = Array.from(stmt.statements);
+    const classes = stmts.map((s) =>
+      classifyLoopStmt(s, iterName, checker, parentGuard),
+    );
+    const firstBad = classes.find((c) => "unsupported" in c);
+    if (firstBad) {
+      return firstBad;
+    }
+    const allA = classes.every((c) => "kind" in c && c.kind === "shapeA");
+    if (allA) {
+      return { kind: "shapeA" };
+    }
+    const allB = classes.every((c) => "kind" in c && c.kind === "shapeB");
+    if (allB) {
+      const leaves = classes.flatMap(
+        (c) => (c as { kind: "shapeB"; leaves: ShapeBLeaf[] }).leaves,
+      );
+      return { kind: "shapeB", leaves };
+    }
+    return {
+      unsupported: "loop body block mixes iterator and accumulator writes",
+    };
+  }
+
+  return { unsupported: `loop body statement: ${ts.SyntaxKind[stmt.kind]}` };
+}
+
+/**
+ * Emit Shape A / Shape B propositions for a loop body.
+ *
+ * Shape A uses a sub-`symbolicExecute` to reuse the full symbolic-state
+ * machinery (path merging via `cond` for conditional writes). Each emitted
+ * write is wrapped in `all x in arr | p' x = v`.
+ *
+ * Shape B writes are merged into the caller's `state`: the outer state's
+ * prior value (or the pre-state identity) is combined with the comprehension
+ * `(combOP over each x in arr[, g(x)] | f(x))` via the outer binary operator.
+ */
+function translateForOfLoopBody(
+  iterName: string,
+  arrExpr: OpaqueExpr,
+  bodyStmts: ts.Statement[],
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: Map<string, string>,
+  state: SymbolicState,
+  propositions: PropResult[],
+  applyConst: (e: OpaqueExpr) => OpaqueExpr,
+  supply: UniqueSupply,
+): boolean {
+  const ast = getAst();
+
+  const shapeAStmts: ts.Statement[] = [];
+  const shapeBLeaves: ShapeBLeaf[] = [];
+  for (const stmt of bodyStmts) {
+    const cls = classifyLoopStmt(stmt, iterName, checker);
+    if ("unsupported" in cls) {
+      propositions.push({ kind: "unsupported", reason: cls.unsupported });
+      return false;
+    }
+    if (cls.kind === "shapeA") {
+      shapeAStmts.push(stmt);
+    } else {
+      shapeBLeaves.push(...cls.leaves);
+    }
+  }
+
+  // `subState` captures Shape A's per-iteration writes so that Shape B reads
+  // of the iterator's properties resolve to the updated expression. E.g.
+  // `x.value = x.value + 1; a.total += x.value` must fold as
+  // `total a + (+ over each x in xs | value x + 1)`, not `value x`. Property
+  // reads against non-iterator objects pass through unchanged (they don't
+  // appear as keys in `subState.writes`).
+  const subState = makeSymbolicState(applyConst);
+  const subParams = new Map(paramNames);
+  subParams.set(iterName, iterName);
+
+  if (shapeAStmts.length > 0) {
+    const subProps: PropResult[] = [];
+    const subBlock = ts.factory.createBlock(shapeAStmts, true);
+    const okA = symbolicExecute(
+      subBlock,
+      checker,
+      strategy,
+      subParams,
+      subState,
+      subProps,
+      applyConst,
+      supply,
+      false,
+    );
+    if (!okA) {
+      for (const p of subProps) {
+        propositions.push(p);
+      }
+      return false;
+    }
+    for (const [, entry] of subState.writes) {
+      propositions.push({
+        kind: "equation",
+        quantifiers: [] as OpaqueParam[],
+        guards: [ast.gIn(iterName, arrExpr)],
+        lhs: ast.app(ast.primed(entry.prop), [entry.objExpr]),
+        rhs: entry.value,
+      });
+      state.modifiedProps.add(entry.prop);
+    }
+  }
+
+  for (const leaf of shapeBLeaves) {
+    const accResult = translateBodyExpr(
+      leaf.target,
+      checker,
+      strategy,
+      paramNames,
+      state,
+      supply,
+    );
+    if (isBodyUnsupported(accResult)) {
+      propositions.push({ kind: "unsupported", reason: accResult.unsupported });
+      return false;
+    }
+    const accExpr = applyConst(bodyExpr(accResult));
+
+    const rhsResult = translateBodyExpr(
+      leaf.rhs,
+      checker,
+      strategy,
+      subParams,
+      subState,
+      supply,
+    );
+    if (isBodyUnsupported(rhsResult)) {
+      propositions.push({ kind: "unsupported", reason: rhsResult.unsupported });
+      return false;
+    }
+    const rhsExpr = applyConst(bodyExpr(rhsResult));
+
+    const guards: OpaqueGuard[] = [ast.gIn(iterName, arrExpr)];
+    if (leaf.guard) {
+      const gResult = translateBodyExpr(
+        leaf.guard,
+        checker,
+        strategy,
+        subParams,
+        subState,
+        supply,
+      );
+      if (isBodyUnsupported(gResult)) {
+        propositions.push({ kind: "unsupported", reason: gResult.unsupported });
+        return false;
+      }
+      guards.push(ast.gExpr(applyConst(bodyExpr(gResult))));
+    }
+
+    const comb = makeCombiner(leaf.ops.combiner);
+    const folded = ast.eachComb([], guards, comb, rhsExpr);
+
+    const outerOp = translateOperator(leaf.ops.outer);
+    if (outerOp === null) {
+      propositions.push({
+        kind: "unsupported",
+        reason: "loop-fold outer operator",
+      });
+      return false;
+    }
+    const key = symbolicKey(leaf.prop, accExpr);
+    const priorEntry = state.writes.get(key);
+    const priorVal =
+      priorEntry?.value ?? ast.app(ast.var(leaf.prop), [accExpr]);
+    const newVal = ast.binop(outerOp, priorVal, folded);
+
+    state.writes.set(key, { prop: leaf.prop, objExpr: accExpr, value: newVal });
+    state.writtenKeys.add(key);
+  }
+
+  return true;
+}
+
+/** Translate a `for (const x of arr) { ... }` statement. */
+function translateForOfLoop(
+  stmt: ts.ForOfStatement,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: Map<string, string>,
+  state: SymbolicState,
+  propositions: PropResult[],
+  applyConst: (e: OpaqueExpr) => OpaqueExpr,
+  supply: UniqueSupply,
+): boolean {
+  const initList = stmt.initializer;
+  if (
+    !ts.isVariableDeclarationList(initList) ||
+    !(initList.flags & ts.NodeFlags.Const) ||
+    initList.declarations.length !== 1
+  ) {
+    propositions.push({
+      kind: "unsupported",
+      reason: "for-of initializer must be a single const binding",
+    });
+    return false;
+  }
+  const decl = initList.declarations[0]!;
+  if (!ts.isIdentifier(decl.name)) {
+    propositions.push({
+      kind: "unsupported",
+      reason: "for-of destructuring pattern is not supported",
+    });
+    return false;
+  }
+  const iterName = decl.name.text;
+
+  const arrResult = translateBodyExpr(
+    stmt.expression,
+    checker,
+    strategy,
+    paramNames,
+    state,
+    supply,
+  );
+  if (isBodyUnsupported(arrResult)) {
+    propositions.push({ kind: "unsupported", reason: arrResult.unsupported });
+    return false;
+  }
+  const arrExpr = applyConst(bodyExpr(arrResult));
+  const bodyStmts = flattenStmt(stmt.statement);
+
+  return translateForOfLoopBody(
+    iterName,
+    arrExpr,
+    bodyStmts,
+    checker,
+    strategy,
+    paramNames,
+    state,
+    propositions,
+    applyConst,
+    supply,
+  );
+}
+
+/**
+ * Translate a `arr.forEach(x => { ... })` call-statement. Returns null if
+ * the call is not a forEach (caller falls back to normal handling).
+ */
+function translateForEachStmt(
+  call: ts.CallExpression,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: Map<string, string>,
+  state: SymbolicState,
+  propositions: PropResult[],
+  applyConst: (e: OpaqueExpr) => OpaqueExpr,
+  supply: UniqueSupply,
+): boolean | null {
+  if (
+    !ts.isPropertyAccessExpression(call.expression) ||
+    call.expression.name.text !== "forEach" ||
+    call.arguments.length !== 1
+  ) {
+    return null;
+  }
+  const receiver = call.expression.expression;
+  const arg = call.arguments[0]!;
+  if (!ts.isArrowFunction(arg)) {
+    propositions.push({
+      kind: "unsupported",
+      reason: "forEach callback must be an arrow function",
+    });
+    return false;
+  }
+  if (
+    arg.parameters.length !== 1 ||
+    !ts.isIdentifier(arg.parameters[0]!.name)
+  ) {
+    propositions.push({
+      kind: "unsupported",
+      reason: "forEach callback must take a single identifier parameter",
+    });
+    return false;
+  }
+  const iterName = (arg.parameters[0]!.name as ts.Identifier).text;
+
+  const arrResult = translateBodyExpr(
+    receiver,
+    checker,
+    strategy,
+    paramNames,
+    state,
+    supply,
+  );
+  if (isBodyUnsupported(arrResult)) {
+    propositions.push({ kind: "unsupported", reason: arrResult.unsupported });
+    return false;
+  }
+  const arrExpr = applyConst(bodyExpr(arrResult));
+
+  const bodyStmts = ts.isBlock(arg.body)
+    ? Array.from(arg.body.statements)
+    : [ts.factory.createExpressionStatement(arg.body)];
+
+  return translateForOfLoopBody(
+    iterName,
+    arrExpr,
+    bodyStmts,
+    checker,
+    strategy,
+    paramNames,
+    state,
+    propositions,
+    applyConst,
+    supply,
+  );
 }
 
 function translateCallExpr(
@@ -1084,7 +1937,8 @@ function translateCallExpr(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
-  state?: SymbolicState,
+  state: SymbolicState | undefined,
+  supply: UniqueSupply,
 ): BodyResult {
   const ast = getAst();
 
@@ -1105,6 +1959,7 @@ function translateCallExpr(
         strategy,
         paramNames,
         state,
+        supply,
       );
       if (isBodyUnsupported(arg)) {
         return arg;
@@ -1115,6 +1970,7 @@ function translateCallExpr(
         strategy,
         paramNames,
         state,
+        supply,
       );
       if (isBodyUnsupported(objExpr)) {
         return objExpr;
@@ -1135,6 +1991,24 @@ function translateCallExpr(
         strategy,
         paramNames,
         state,
+        supply,
+      );
+      if (result) {
+        return result;
+      }
+    }
+
+    // .reduce(cb, init) / .reduceRight(cb, init) — fold into `over each` aggregate
+    if (methodName === "reduce" || methodName === "reduceRight") {
+      const result = translateReduceCall(
+        methodName,
+        tsReceiver,
+        expr,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
       );
       if (result) {
         return result;
@@ -1152,13 +2026,21 @@ function translateCallExpr(
       strategy,
       paramNames,
       state,
+      supply,
     );
     if (isBodyUnsupported(receiver)) {
       return receiver;
     }
     const methodArgs: OpaqueExpr[] = [bodyExpr(receiver)];
     for (const arg of expr.arguments) {
-      const a = translateBodyExpr(arg, checker, strategy, paramNames, state);
+      const a = translateBodyExpr(
+        arg,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
       if (isBodyUnsupported(a)) {
         return a;
       }
@@ -1182,7 +2064,14 @@ function translateCallExpr(
 
     const fnArgs: OpaqueExpr[] = [];
     for (const arg of expr.arguments) {
-      const a = translateBodyExpr(arg, checker, strategy, paramNames, state);
+      const a = translateBodyExpr(
+        arg,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
       if (isBodyUnsupported(a)) {
         return a;
       }
@@ -1201,6 +2090,7 @@ function extractArrowBody(
   paramNames: Map<string, string>,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
+  supply: UniqueSupply,
 ): BodyResult | null {
   if (!ts.isArrowFunction(expr)) {
     return null;
@@ -1230,14 +2120,28 @@ function extractArrowBody(
     if (nonGuard.length === 1) {
       const s = nonGuard[0]!;
       if (ts.isReturnStatement(s) && s.expression) {
-        return translateBodyExpr(s.expression, checker, strategy, arrowParams);
+        return translateBodyExpr(
+          s.expression,
+          checker,
+          strategy,
+          arrowParams,
+          undefined,
+          supply,
+        );
       }
     }
     return null;
   }
 
   // Expression body
-  return translateBodyExpr(expr.body, checker, strategy, arrowParams);
+  return translateBodyExpr(
+    expr.body,
+    checker,
+    strategy,
+    arrowParams,
+    undefined,
+    supply,
+  );
 }
 
 // --- Mutating function body translation ---
@@ -1272,7 +2176,6 @@ function translateMutatingBody(
     return propositions;
   }
 
-  const modifiedRules = new Set<string>();
   for (const [, entry] of state.writes) {
     propositions.push({
       kind: "equation",
@@ -1280,10 +2183,10 @@ function translateMutatingBody(
       lhs: ast.app(ast.primed(entry.prop), [entry.objExpr]),
       rhs: entry.value,
     });
-    modifiedRules.add(entry.prop);
+    state.modifiedProps.add(entry.prop);
   }
 
-  const frames = generateFrameConditions(modifiedRules, declarations);
+  const frames = generateFrameConditions(state.modifiedProps, declarations);
   propositions.push(...frames);
 
   return propositions;
@@ -1342,6 +2245,7 @@ function symbolicExecute(
         strategy,
         paramNames,
         state,
+        supply,
       );
       if (isBodyUnsupported(gResult)) {
         ok = false;
@@ -1379,6 +2283,25 @@ function symbolicExecute(
       if (!okR) {
         ok = false;
         propositions.push(...remainingProps);
+        break;
+      }
+
+      // Shape A loop equations emit directly into `propositions` rather than
+      // flowing through `state.writes`, so they'd be silently dropped by the
+      // merge-only path below. Reject when the continuation produced such
+      // equations — we'd need to thread `gExpr` into each rhs (and reconcile
+      // `state.modifiedProps`) to preserve the early-exit semantics, which
+      // isn't yet implemented.
+      const directEquations = remainingProps.filter(
+        (p) => p.kind === "equation",
+      );
+      if (directEquations.length > 0) {
+        ok = false;
+        propositions.push({
+          kind: "unsupported",
+          reason:
+            "loop with per-iteration writes cannot appear after an early-exit guard",
+        });
         break;
       }
 
@@ -1486,6 +2409,7 @@ function symbolicExecute(
           strategy,
           paramNames,
           state,
+          supply,
         );
         if (isBodyUnsupported(obj)) {
           ok = false;
@@ -1506,6 +2430,7 @@ function symbolicExecute(
           strategy,
           paramNames,
           state,
+          supply,
         );
         if (isBodyUnsupported(val)) {
           ok = false;
@@ -1517,6 +2442,32 @@ function symbolicExecute(
         const key = symbolicKey(prop, objExpr);
         state.writes.set(key, { prop, objExpr, value: valExpr });
         state.writtenKeys.add(key);
+        continue;
+      }
+    }
+
+    // `arr.forEach(x => { ... })` — structurally equivalent to `for-of` when
+    // used as a statement. Dispatch to the same loop-body translator.
+    if (
+      ts.isExpressionStatement(stmt) &&
+      ts.isCallExpression(unwrapExpression(stmt.expression)) &&
+      !insideBranch
+    ) {
+      const call = unwrapExpression(stmt.expression) as ts.CallExpression;
+      const okF = translateForEachStmt(
+        call,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        propositions,
+        applyConst,
+        supply,
+      );
+      if (okF !== null) {
+        if (!okF) {
+          ok = false;
+        }
         continue;
       }
     }
@@ -1621,6 +2572,7 @@ function symbolicExecute(
         strategy,
         paramNames,
         state,
+        supply,
       );
       if (isBodyUnsupported(gResult)) {
         ok = false;
@@ -1689,6 +2641,23 @@ function symbolicExecute(
         ]);
         state.writes.set(key, { prop, objExpr, value: merged });
         state.writtenKeys.add(key);
+      }
+      continue;
+    }
+
+    if (ts.isForOfStatement(stmt) && !insideBranch) {
+      const okL = translateForOfLoop(
+        stmt,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        propositions,
+        applyConst,
+        supply,
+      );
+      if (!okL) {
+        ok = false;
       }
       continue;
     }
