@@ -123,23 +123,46 @@ body, emit frame conditions (`prop' obj = prop obj`) for everything not in the s
 `cond x ~= Nothing => prop x, true => Nothing`. This is the lifting encoding —
 partiality expressed as conditional expressions over the `Nothing` value.
 
-### Partial Rules (Map Fields)
+### Partial Rules (Map<K, V>)
 
-**Standard name:** Precondition-guarded partial function; declaration guard.
-**Reference:** Dafny Reference Manual (preconditions); Dijkstra, CACM 1975 (guards).
+**Standard name:** Precondition-guarded partial function; declaration guard;
+McCarthy's theory of arrays for the synthesized owner sort.
+**Reference:** Dafny Reference Manual (preconditions); Dijkstra, CACM 1975
+(guards); Kroening & Strichman, *Decision Procedures* Ch. 7 (arrays as
+`select`/`store` over a sort of map handles).
 
-A `Map<K, V>` field on a TypeScript interface becomes a *pair* of Pantagruel
+A `Map<K, V>` anywhere in the type language becomes a *pair* of Pantagruel
 rules: a Bool-valued membership predicate and a `V`-valued rule guarded by it.
+The owner domain depends on where the Map appears.
+
+**Stage A — Map is a declared interface field.** The owner is the user's
+interface; the rule name is the field name.
 
 ```
 entriesKey c: Cache, k: K => Bool.
 entries c: Cache, k: K, entriesKey c k => V.
 ```
 
-`.has(k)` translates to `entriesKey obj k`; `.get(k)` (or `.get(k)!`) translates
-to `entries obj k`. Pantagruel stores declaration guards in `Env.rule_guards`
-and automatically injects them as antecedents in SMT queries, so uses of
-`entries obj k` are implicitly conditioned on `entriesKey obj k`.
+**Stage B — Map is anywhere else** (parameter, return type, nested inside
+another Map's V, inside an array/tuple/union). The owner is a *synthesized*
+domain, one per unique `(K, V)` per module; naming is `KToVMap` with
+compound `K`/`V` mangled (`[String]` → `ListString`, `A + B` → `AOrB`,
+`A * B` → `AAndB`).
+
+```
+StringToIntMap.
+stringToIntMapKey m: StringToIntMap, k: String => Bool.
+stringToIntMap m: StringToIntMap, k: String, stringToIntMapKey m k => Int.
+```
+
+Both stages use the same encoding; only the owner differs. `.has(k)` →
+membership predicate; `.get(k)` (or `.get(k)!`) → value rule. Pantagruel
+stores declaration guards in `Env.rule_guards` and automatically injects
+them as antecedents in SMT queries, so uses of the value rule are implicitly
+conditioned on the membership predicate. Nested Maps register bottom-up via
+recursive `mapTsType` calls: `Map<string, Map<string, number>>` emits
+`StringToIntMap` first and then `StringToStringToIntMapMap` whose V
+references it.
 
 **Why this encoding, not `V + Nothing`?** Pantagruel has no first-class
 `Nothing` expression value and no sum destructuring. With a sum-typed return,
@@ -149,9 +172,17 @@ guarded-rule encoding trades a small semantic gap (absent keys are
 uninterpreted rather than explicitly `undefined`) for a much richer set of
 usable specifications.
 
-**Scope:** currently read-only and interface-field-only. Map parameters,
-mutation (`.set`/`.delete`), construction, and iteration are unsupported —
-see `tests/fixtures/constructs/expressions-map.ts` for the supported shape.
+**Why synthesize a sort per `(K, V)`?** Following McCarthy's theory of
+arrays: the synthesized sort is the array sort, distinct values of that sort
+are distinct maps (EUF keeps their lookups independent — `sumAt m1 m2 k` is
+sound because `m1 ≠ m2` does not imply `stringToIntMap m1 k = stringToIntMap m2 k`),
+and the guarded `select` lookup is Dafny-style partial-function discipline.
+
+**Scope:** read-only. Mutation (`.set`/`.delete`), construction
+(`new Map()`), and iteration (`.entries`/`.keys`/`.values`/`.forEach`) are
+unsupported. See `tests/fixtures/constructs/expressions-map.ts` (Stage A)
+and `tests/fixtures/constructs/expressions-map-params.ts` (Stage B) for
+supported shapes.
 
 ### Structured Iteration (for-of, forEach, reduce)
 
