@@ -829,11 +829,29 @@ let conjoin_propositions config env props =
       in
       Printf.sprintf "(and %s)" (String.concat " " parts)
 
+(** Translate a precondition expression, conjoining any implicit guards (from
+    declaration guards or list-search membership) as additional conjuncts. A
+    precondition that mentions e.g. [xs x] semantically requires both
+    [(x in xs)] and the body — unlike an invariant, the guard cannot be an
+    implication, because [(=> G P)] is vacuously true when [G] is false and
+    would let contradiction/precondition/BMC queries miss real infeasibilities.
+*)
+let translate_precondition config env (e : expr) : string =
+  if not config.inject_guards then translate_expr config env e
+  else
+    let app_guards = collect_body_guards env e in
+    let body = translate_expr config env e in
+    match app_guards with
+    | [] -> body
+    | _ ->
+        let guard_strs = List.map (translate_expr config env) app_guards in
+        Printf.sprintf "(and %s %s)" (String.concat " " guard_strs) body
+
 let extract_preconditions config env (guards : guard list) =
   List.filter_map
     (fun g ->
       match g with
-      | GExpr e -> Some (translate_expr config env e)
+      | GExpr e -> Some (translate_precondition config env e)
       | GIn _ | GParam _ -> None)
     guards
 
@@ -1005,7 +1023,7 @@ let generate_contradiction_query config env action =
   List.iter
     (fun e ->
       add_named_assert na "precond" (Pretty.str_expr e)
-        (translate_expr config env e))
+        (translate_precondition config env e))
     precond_exprs;
   (* Named frame conditions *)
   let frame_exprs = collect_frame_exprs config env action.a_contexts in
@@ -1127,7 +1145,7 @@ let generate_precondition_query config env invariant_props action =
     (fun e ->
       add_named_assert na "precond"
         (Printf.sprintf "Precondition: %s" (Pretty.str_expr e))
-        (translate_expr config env e))
+        (translate_precondition config env e))
     precond_exprs;
   Buffer.add_string buf "(check-sat)\n";
   Buffer.add_string buf "(get-unsat-core)\n";
@@ -1588,7 +1606,7 @@ let generate_all_actions_disabled config env actions step =
         List.map
           (fun e ->
             rename_smt_for_step env
-              (translate_expr config env_with_params e)
+              (translate_precondition config env_with_params e)
               step)
           precond_exprs
       in

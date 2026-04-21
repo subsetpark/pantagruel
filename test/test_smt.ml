@@ -1909,6 +1909,40 @@ let test_list_search_guarded_nullary_list () =
   check bool "membership guard injected" true
     (contains result "(select colors red)")
 
+let test_list_search_precondition_injects_guard () =
+  (* Action preconditions that mention a list-search must be asserted with
+     the implicit membership guard conjoined (not just as a standalone
+     uninterpreted Int), otherwise contradiction/precondition/BMC queries
+     can treat nonsense states as satisfiable. *)
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       context Ctx.\n\
+       Color.\n\
+       {Ctx} colors => [Color].\n\
+       red => Color.\n\
+       ---\n\
+       true.\n\
+       where\n\
+       Ctx ~> Pick @ c: Color, colors red > 0.\n\
+       ---\n\
+       true.\n"
+  in
+  let queries = Smt.generate_queries config env doc in
+  let precond_q =
+    List.find (fun (q : Smt.query) -> q.kind = Smt.PreconditionSat) queries
+  in
+  (* The membership guard (select colors red) must be asserted alongside
+     the precondition body, so the list-search placeholder is constrained
+     only when red actually belongs to colors. *)
+  check bool "precond query has membership guard" true
+    (contains precond_q.smt2 "(select colors red)");
+  let contra_q =
+    List.find (fun (q : Smt.query) -> q.kind = Smt.Contradiction) queries
+  in
+  check bool "contradiction query has membership guard" true
+    (contains contra_q.smt2 "(select colors red)")
+
 let test_guarded_decl_e2e () =
   (* Full spec from bug report: guarded declarations should not cause
      spurious invariant preservation failures *)
@@ -2000,6 +2034,8 @@ let guard_injection_tests =
       test_list_search_stable_across_repeats;
     test_case "list search guarded nullary list" `Quick
       test_list_search_guarded_nullary_list;
+    test_case "list search precondition injects guard" `Quick
+      test_list_search_precondition_injects_guard;
   ]
 
 (* --- Cond expression tests --- *)
