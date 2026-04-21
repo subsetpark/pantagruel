@@ -1,6 +1,7 @@
 import ts from "typescript";
 import type { ExtractedTypes } from "./extract.js";
 import type { NameRegistry } from "./name-registry.js";
+import { getAst } from "./pant-wasm.js";
 import type { PantDeclaration } from "./types.js";
 
 /** Strategy for mapping TS `number` to a Pantagruel numeric type. */
@@ -104,6 +105,14 @@ export function isSetType(type: ts.Type): boolean {
   return symbol?.getName() === "Set";
 }
 
+/**
+ * Detect a TypeScript `Map<K, V>` by symbol name. Same caveat as `isSetType`.
+ */
+export function isMapType(type: ts.Type): boolean {
+  const symbol = type.getSymbol();
+  return symbol?.getName() === "Map";
+}
+
 /** Derive a short parameter name from a type name (first letter, lowercased). */
 function paramName(typeName: string): string {
   if (!typeName) {
@@ -132,6 +141,41 @@ export function translateTypes(
     const candidate = paramName(iface.name);
     const pName = registry ? registry.register(candidate) : candidate;
     for (const prop of iface.properties) {
+      if (isMapType(prop.type)) {
+        const typeArgs = checker.getTypeArguments(
+          prop.type as ts.TypeReference,
+        );
+        if (typeArgs.length === 2) {
+          const kType = mapTsType(typeArgs[0]!, checker, strategy);
+          const vType = mapTsType(typeArgs[1]!, checker, strategy);
+          const kName = registry ? registry.register("k") : "k";
+          const keyPredName = `${prop.name}Key`;
+          decls.push({
+            kind: "rule",
+            name: keyPredName,
+            params: [
+              { name: pName, type: iface.name },
+              { name: kName, type: kType },
+            ],
+            returnType: "Bool",
+          });
+          const ast = getAst();
+          decls.push({
+            kind: "rule",
+            name: prop.name,
+            params: [
+              { name: pName, type: iface.name },
+              { name: kName, type: kType },
+            ],
+            returnType: vType,
+            guard: ast.app(ast.var(keyPredName), [
+              ast.var(pName),
+              ast.var(kName),
+            ]),
+          });
+          continue;
+        }
+      }
       decls.push({
         kind: "rule",
         name: prop.name,

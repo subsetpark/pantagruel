@@ -218,6 +218,18 @@ exports[`expressions-literals.ts > yes 1`] = `
 "module Yes.\\n\\nyes  => Bool.\\n\\n---\\n\\nyes = true.\\n"
 `;
 
+exports[`expressions-map.ts > congruence 1`] = `
+"module Congruence.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\ncongruence c: Cache, k: String => Bool.\\n\\n---\\n\\ncongruence c k = entriesKey c k.\\n\\ncheck\\n\\nall c: Cache, k: String | congruence c k -> entries c k = entries c k.\\n"
+`;
+
+exports[`expressions-map.ts > contains 1`] = `
+"module Contains.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\ncontains c: Cache, k: String => Bool.\\n\\n---\\n\\ncontains c k = entriesKey c k.\\n"
+`;
+
+exports[`expressions-map.ts > lookup 1`] = `
+"module Lookup.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\nlookup c: Cache, k: String => Int.\\n\\n---\\n\\nlookup c k = entries c k.\\n"
+`;
+
 exports[`expressions-misc.ts > asNumber 1`] = `
 "module AsNumber.\\n\\nasNumber x: unknown => Int.\\n\\n---\\n\\nasNumber x = x.\\n"
 `;

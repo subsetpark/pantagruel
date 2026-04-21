@@ -19,6 +19,7 @@ import {
   translateOperator,
 } from "./translate-signature.js";
 import {
+  isMapType,
   isSetType,
   mapTsType,
   type NumericStrategy,
@@ -1952,6 +1953,45 @@ function translateCallExpr(
   if (ts.isPropertyAccessExpression(expr.expression)) {
     const methodName = expr.expression.name.text;
     const tsReceiver = expr.expression.expression;
+
+    // .get(k) / .has(k) on a Map<K,V> field -> 2-arity rule application.
+    // Map fields translate to a pair of rules: `<name>Key c k => Bool` and
+    // `<name> c k, <name>Key c k => V`. See translate-types.ts.
+    if (
+      (methodName === "get" || methodName === "has") &&
+      expr.arguments.length === 1 &&
+      ts.isPropertyAccessExpression(tsReceiver) &&
+      isMapType(checker.getTypeAtLocation(tsReceiver))
+    ) {
+      const fieldName = tsReceiver.name.text;
+      const innerObj = tsReceiver.expression;
+      const kExpr = translateBodyExpr(
+        expr.arguments[0]!,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
+      if (isBodyUnsupported(kExpr)) {
+        return kExpr;
+      }
+      const objExpr = translateBodyExpr(
+        innerObj,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
+      if (isBodyUnsupported(objExpr)) {
+        return objExpr;
+      }
+      const ruleName = methodName === "has" ? `${fieldName}Key` : fieldName;
+      return {
+        expr: ast.app(ast.var(ruleName), [bodyExpr(objExpr), bodyExpr(kExpr)]),
+      };
+    }
 
     // .includes(x) on Array / .has(x) on Set -> x in obj
     if (
