@@ -2083,8 +2083,11 @@ function translateCallExpr(
         info = supply.mapSynth.lookup(kType, vType);
       }
       if (!info) {
+        // register returns null only when K or V mangles to something that
+        // isn't a valid Pantagruel identifier — typically because mapTsType
+        // fell back to checker.typeToString for an unsupported TS construct.
         return {
-          unsupported: `Map<${kType}, ${vType}> not synthesized`,
+          unsupported: `Map<${kType}, ${vType}>: key or value type cannot be mangled into a synthesized domain name`,
         };
       }
       const objExpr = translateBodyExpr(
