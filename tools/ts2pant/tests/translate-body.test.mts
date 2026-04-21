@@ -755,4 +755,48 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     });
     assert.ok(props.some((p) => p.kind === "unsupported"));
   });
+
+  it("Shape C: reduceRight rejects non-commutative operators", () => {
+    const source = `
+      interface Item { value: number; }
+      function f(xs: Item[]): number {
+        return xs.reduceRight((a, x) => a - x.value, 0);
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.ok(props.some((p) => p.kind === "unsupported"));
+  });
+
+  it("Shape C: reduce elides parenthesized/signed-zero init variants", () => {
+    const variants = ["(0)", "0.0", "+0", "-0", " 0 "];
+    for (const initText of variants) {
+      const source = `
+        interface Item { value: number; }
+        function f(xs: Item[]): number {
+          return xs.reduce((a, x) => a + x.value, ${initText});
+        }
+      `;
+      const sourceFile = createSourceFileFromSource(source);
+      const props = translateBody({
+        sourceFile,
+        functionName: "f",
+        strategy: IntStrategy,
+      });
+      const eqs = props.filter((p) => p.kind === "equation");
+      assert.equal(eqs.length, 1, `variant ${initText}: expected 1 equation`);
+      const ast = getAst();
+      if (eqs[0]?.kind === "equation") {
+        assert.equal(
+          ast.strExpr(eqs[0].rhs),
+          "+ over each x in xs | value x",
+          `variant ${initText}: init should have been elided`,
+        );
+      }
+    }
+  });
 });

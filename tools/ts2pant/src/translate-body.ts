@@ -334,6 +334,49 @@ function binopToReduceInfo(kind: ts.SyntaxKind): ReduceOpInfo | null {
   }
 }
 
+/**
+ * Decide whether an init expression evaluates to the combiner's identity element.
+ * Normalizes parenthesized/cast wrappers and numeric-literal variants so that
+ * `0`, `(0)`, `0.0`, `+0`, `-0` all match identity 0 for `+`, etc. Avoids
+ * relying on raw source text, which fails on whitespace or syntactically
+ * distinct but semantically equivalent forms.
+ */
+function isIdentityInit(node: ts.Expression, identityText: string): boolean {
+  const inner = unwrapExpression(node);
+  if (identityText === "true") {
+    return inner.kind === ts.SyntaxKind.TrueKeyword;
+  }
+  if (identityText === "false") {
+    return inner.kind === ts.SyntaxKind.FalseKeyword;
+  }
+  const n = evaluateNumericLiteral(inner);
+  if (n === null) {
+    return false;
+  }
+  const target = Number(identityText);
+  return Number.isFinite(target) && n === target;
+}
+
+function evaluateNumericLiteral(node: ts.Expression): number | null {
+  if (ts.isNumericLiteral(node)) {
+    const n = Number(node.text);
+    return Number.isFinite(n) ? n : null;
+  }
+  if (
+    ts.isPrefixUnaryExpression(node) &&
+    (node.operator === ts.SyntaxKind.PlusToken ||
+      node.operator === ts.SyntaxKind.MinusToken) &&
+    ts.isNumericLiteral(node.operand)
+  ) {
+    const n = Number(node.operand.text);
+    if (!Number.isFinite(n)) {
+      return null;
+    }
+    return node.operator === ts.SyntaxKind.MinusToken ? -n : n;
+  }
+  return null;
+}
+
 function makeCombiner(kind: CombinerKind): OpaqueCombiner {
   const ast = getAst();
   switch (kind) {
@@ -1383,8 +1426,10 @@ function translateReduceCall(
   }
 
   const initNode = expr.arguments[1]!;
-  const initText = initNode.getText().trim();
-  if (info.identityText !== null && initText === info.identityText) {
+  if (
+    info.identityText !== null &&
+    isIdentityInit(initNode, info.identityText)
+  ) {
     return { expr: folded };
   }
 
