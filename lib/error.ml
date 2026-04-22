@@ -40,10 +40,15 @@ let format_type_error err =
       fmt loc (Printf.sprintf "Primed '%s' only valid in action context" name)
   | OverrideKeyArityMismatch (name, arity, loc) ->
       fmt loc
-        (Printf.sprintf
-           "Override key arity mismatch for rule '%s': expected %d-tuple key \
-            (or bare expression for arity-1)"
-           name arity)
+        (if arity = 1 then
+           Printf.sprintf
+             "Override key arity mismatch for rule '%s': expected bare \
+              expression key"
+             name
+         else
+           Printf.sprintf
+             "Override key arity mismatch for rule '%s': expected %d-tuple key"
+             name arity)
   | ProjectionOutOfBounds (idx, len, loc) ->
       fmt loc
         (Printf.sprintf "Projection .%d out of bounds for %d-tuple" idx len)

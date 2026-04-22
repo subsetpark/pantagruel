@@ -122,8 +122,11 @@ and translate_app config env func args =
             | (k, v) :: rest ->
                 let guard_str =
                   match[@warning "-4"] (k, args_str) with
-                  | ETuple parts, _
-                    when List.length parts = List.length args_str -> (
+                  | ETuple parts, _ -> (
+                      if List.length parts <> List.length args_str then
+                        failwith
+                          "SMT translation: override key arity does not match \
+                           application arity";
                       let eqs =
                         List.map2
                           (fun part arg ->

@@ -689,7 +689,7 @@ all k: Key, v: Value | mapping[k |-> v] k = v.
 
 For an N-ary rule, the override key is a tuple whose arity matches the rule's parameter list:
 
-```
+```pant
 store h: Handle, k: Key => Value.
 all h: Handle, k: Key, v: Value | store[(h, k) |-> v] h k = v.
 ```

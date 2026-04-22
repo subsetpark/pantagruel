@@ -1753,6 +1753,8 @@ let () =
           test_case "list search vs indexing" `Quick
             test_list_search_vs_indexing_types;
           test_case "declaration guards" `Quick test_declaration_guards_in_rules;
+          test_case "Override N-ary tuple key OK" `Quick
+            test_override_nary_tuple_key_ok;
         ] );
       ( "invalid",
         [
@@ -1785,8 +1787,6 @@ let () =
             test_override_key_bare_on_nary_rule;
           test_case "OverrideKeyArityMismatch wrong tuple arity" `Quick
             test_override_key_tuple_arity_mismatch;
-          test_case "Override N-ary tuple key OK" `Quick
-            test_override_nary_tuple_key_ok;
           test_case "ProjectionOutOfBounds" `Quick test_projection_out_of_bounds;
           test_case "UnboundType" `Quick test_unbound_type;
           test_case "BuiltinRedefined" `Quick test_builtin_redefined;
