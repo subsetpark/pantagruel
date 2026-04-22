@@ -218,6 +218,58 @@ exports[`expressions-literals.ts > yes 1`] = `
 "module Yes.\\n\\nyes  => Bool.\\n\\n---\\n\\nyes = true.\\n"
 `;
 
+exports[`expressions-map-mutation-field.ts > cacheEvict 1`] = `
+"module CacheEvict.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\n~> CacheEvict @ c: Cache, k: String.\\n\\n---\\n\\nall m: Cache, k2: String | entriesKey' m k2 = entriesKey[(c, k) |-> false] m k2.\\n"
+`;
+
+exports[`expressions-map-mutation-field.ts > cacheEvictParen 1`] = `
+"module CacheEvictParen.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\n~> CacheEvictParen @ c: Cache, k: String.\\n\\n---\\n\\nall m: Cache, k2: String | entriesKey' m k2 = entriesKey[(c, k) |-> false] m k2.\\n"
+`;
+
+exports[`expressions-map-mutation-field.ts > cachePut 1`] = `
+"module CachePut.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\n~> CachePut @ c: Cache, k: String, v: Int.\\n\\n---\\n\\nall m: Cache, k2: String | entries' m k2 = entries[(c, k) |-> v] m k2.\\nall m1: Cache, k3: String | entriesKey' m1 k3 = entriesKey[(c, k) |-> true] m1 k3.\\n"
+`;
+
+exports[`expressions-map-mutation-field.ts > cachePutNonNull 1`] = `
+"module CachePutNonNull.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\n~> CachePutNonNull @ c: Cache, k: String, v: Int.\\n\\n---\\n\\nall m: Cache, k2: String | entries' m k2 = entries[(c, k) |-> v] m k2.\\nall m1: Cache, k3: String | entriesKey' m1 k3 = entriesKey[(c, k) |-> true] m1 k3.\\n"
+`;
+
+exports[`expressions-map-mutation.ts > bump 1`] = `
+"module Bump.\\n\\nStringToIntMap.\\nstringToIntMapKey m: StringToIntMap, k1: String => Bool.\\nstringToIntMap m: StringToIntMap, k1: String, stringToIntMapKey m k1 => Int.\\n~> Bump @ counts: StringToIntMap, k: String.\\n\\n---\\n\\nall m1: StringToIntMap, k2: String | stringToIntMap' m1 k2 = stringToIntMap[(counts, k) |-> stringToIntMap counts k + 1] m1 k2.\\nall m2: StringToIntMap, k3: String | stringToIntMapKey' m2 k3 = stringToIntMapKey[(counts, k) |-> true] m2 k3.\\n"
+`;
+
+exports[`expressions-map-mutation.ts > deleteThenCopy 1`] = `
+"module DeleteThenCopy.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k: String => Bool.\\nstringToIntMap m1: StringToIntMap, k: String, stringToIntMapKey m1 k => Int.\\n~> DeleteThenCopy @ m: StringToIntMap, kA: String, kB: String, v: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k1: String | stringToIntMap' m2 k1 = stringToIntMap[(m, kB) |-> stringToIntMap m kA] m2 k1.\\nall m3: StringToIntMap, k2: String | stringToIntMapKey' m3 k2 = stringToIntMapKey[(m, kA) |-> false, (m, kB) |-> true] m3 k2.\\n"
+`;
+
+exports[`expressions-map-mutation.ts > put 1`] = `
+"module Put.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k1: String => Bool.\\nstringToIntMap m1: StringToIntMap, k1: String, stringToIntMapKey m1 k1 => Int.\\n~> Put @ m: StringToIntMap, k: String, v: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k2: String | stringToIntMap' m2 k2 = stringToIntMap[(m, k) |-> v] m2 k2.\\nall m3: StringToIntMap, k3: String | stringToIntMapKey' m3 k3 = stringToIntMapKey[(m, k) |-> true] m3 k3.\\n"
+`;
+
+exports[`expressions-map-mutation.ts > putIfAbsent 1`] = `
+"module PutIfAbsent.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k1: String => Bool.\\nstringToIntMap m1: StringToIntMap, k1: String, stringToIntMapKey m1 k1 => Int.\\n~> PutIfAbsent @ m: StringToIntMap, k: String, v: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k2: String | stringToIntMap' m2 k2 = stringToIntMap[(m, k) |-> cond ~(stringToIntMapKey m k) => v, true => stringToIntMap m k] m2 k2.\\nall m3: StringToIntMap, k3: String | stringToIntMapKey' m3 k3 = stringToIntMapKey[(m, k) |-> cond ~(stringToIntMapKey m k) => true, true => stringToIntMapKey m k] m3 k3.\\n"
+`;
+
+exports[`expressions-map-mutation.ts > putPair 1`] = `
+"module PutPair.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k: String => Bool.\\nstringToIntMap m1: StringToIntMap, k: String, stringToIntMapKey m1 k => Int.\\n~> PutPair @ m: StringToIntMap, k1: String, v1: Int, k2: String, v2: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k3: String | stringToIntMap' m2 k3 = stringToIntMap[(m, k1) |-> v1, (m, k2) |-> v2] m2 k3.\\nall m3: StringToIntMap, k4: String | stringToIntMapKey' m3 k4 = stringToIntMapKey[(m, k1) |-> true, (m, k2) |-> true] m3 k4.\\n"
+`;
+
+exports[`expressions-map-mutation.ts > remove 1`] = `
+"module Remove.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k1: String => Bool.\\nstringToIntMap m1: StringToIntMap, k1: String, stringToIntMapKey m1 k1 => Int.\\n~> Remove @ m: StringToIntMap, k: String.\\n\\n---\\n\\nall m2: StringToIntMap, k2: String | stringToIntMapKey' m2 k2 = stringToIntMapKey[(m, k) |-> false] m2 k2.\\n"
+`;
+
+exports[`expressions-map-mutation.ts > setAndCopy 1`] = `
+"module SetAndCopy.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k: String => Bool.\\nstringToIntMap m1: StringToIntMap, k: String, stringToIntMapKey m1 k => Int.\\n~> SetAndCopy @ m: StringToIntMap, kSrc: String, kDst: String, v: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k1: String | stringToIntMap' m2 k1 = stringToIntMap[(m, kSrc) |-> v, (m, kDst) |-> stringToIntMap[(m, kSrc) |-> v] m kSrc] m2 k1.\\nall m3: StringToIntMap, k2: String | stringToIntMapKey' m3 k2 = stringToIntMapKey[(m, kSrc) |-> true, (m, kDst) |-> true] m3 k2.\\n"
+`;
+
+exports[`expressions-map-mutation.ts > setThenDelete 1`] = `
+"module SetThenDelete.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k1: String => Bool.\\nstringToIntMap m1: StringToIntMap, k1: String, stringToIntMapKey m1 k1 => Int.\\n~> SetThenDelete @ m: StringToIntMap, k: String, v: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k2: String | stringToIntMapKey' m2 k2 = stringToIntMapKey[(m, k) |-> false] m2 k2.\\n"
+`;
+
+exports[`expressions-map-mutation.ts > setTwice 1`] = `
+"module SetTwice.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k1: String => Bool.\\nstringToIntMap m1: StringToIntMap, k1: String, stringToIntMapKey m1 k1 => Int.\\n~> SetTwice @ m: StringToIntMap, k: String, v1: Int, v2: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k2: String | stringToIntMap' m2 k2 = stringToIntMap[(m, k) |-> v2] m2 k2.\\nall m3: StringToIntMap, k3: String | stringToIntMapKey' m3 k3 = stringToIntMapKey[(m, k) |-> true] m3 k3.\\n"
+`;
+
 exports[`expressions-map-params.ts > contains 1`] = `
 "module Contains.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k1: String => Bool.\\nstringToIntMap m1: StringToIntMap, k1: String, stringToIntMapKey m1 k1 => Int.\\ncontains m: StringToIntMap, k: String => Bool.\\n\\n---\\n\\ncontains m k = stringToIntMapKey m k.\\n"
 `;
@@ -256,6 +308,10 @@ exports[`expressions-map.ts > contains 1`] = `
 
 exports[`expressions-map.ts > lookup 1`] = `
 "module Lookup.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\nlookup c: Cache, k: String => Int.\\n\\n---\\n\\nlookup c k = entries c k.\\n"
+`;
+
+exports[`expressions-map.ts > lookupNonNull 1`] = `
+"module LookupNonNull.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\nlookupNonNull c: Cache, k: String => Int.\\n\\n---\\n\\nlookupNonNull c k = entries c k.\\n"
 `;
 
 exports[`expressions-misc.ts > asNumber 1`] = `

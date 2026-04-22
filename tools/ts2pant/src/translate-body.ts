@@ -20,6 +20,7 @@ import {
 } from "./translate-signature.js";
 import {
   cellRegisterMap,
+  cellRegisterName,
   isMapType,
   isSetType,
   lookupMapKV,
@@ -85,13 +86,55 @@ interface PendingComprehension {
   guards: OpaqueGuard[];
 }
 
+/**
+ * A Map mutation effect produced by `.set(k, v)` or `.delete(k)` on a
+ * Map-typed receiver. The effect is not an expression — it can only appear
+ * as a statement (ExpressionStatement) and is consumed by `symbolicExecute`
+ * which installs a MapRuleWriteEntry in the symbolic state. Encountering an
+ * effect in expression position is a translation failure.
+ */
+interface MapMutation {
+  op: "set" | "delete";
+  ruleName: string;
+  keyPredName: string;
+  ownerType: string;
+  keyType: string;
+  objExpr: OpaqueExpr;
+  keyExpr: OpaqueExpr;
+  valueExpr: OpaqueExpr | null;
+}
+
 type BodyResult =
   | { unsupported: string }
-  | { expr: OpaqueExpr; pendingComprehension?: PendingComprehension };
+  | { expr: OpaqueExpr; pendingComprehension?: PendingComprehension }
+  | { effect: MapMutation };
 
 /** Type guard for unsupported BodyResult. */
 function isBodyUnsupported(r: BodyResult): r is { unsupported: string } {
   return "unsupported" in r;
+}
+
+/** Type guard for effect BodyResult. */
+function isBodyEffect(r: BodyResult): r is { effect: MapMutation } {
+  return "effect" in r;
+}
+
+/**
+ * Turn an `effect` result into an `unsupported` marker. Expression-position
+ * consumers of `translateBodyExpr` use this after the unsupported check so
+ * the remaining value narrows to the `{ expr, pendingComprehension? }` form.
+ * Only `symbolicExecute`'s ExpressionStatement handler consumes effects
+ * directly.
+ */
+function rejectEffect(
+  r: BodyResult,
+):
+  | { unsupported: string }
+  | { expr: OpaqueExpr; pendingComprehension?: PendingComprehension } {
+  if ("effect" in r) {
+    return { unsupported: "Map mutation outside statement position" };
+  }
+  return r;
 }
 
 /** Extract the OpaqueExpr from a successful BodyResult, materializing any
@@ -99,6 +142,9 @@ function isBodyUnsupported(r: BodyResult): r is { unsupported: string } {
 function bodyExpr(r: BodyResult): OpaqueExpr {
   if ("unsupported" in r) {
     throw new Error(`bodyExpr called on unsupported: ${r.unsupported}`);
+  }
+  if ("effect" in r) {
+    throw new Error("bodyExpr called on effect result");
   }
   if (r.pendingComprehension) {
     const ast = getAst();
@@ -115,11 +161,45 @@ function bodyExpr(r: BodyResult): OpaqueExpr {
 // for each branch and merge via `cond` at the join. Later reads of the same
 // property access see the accumulated value. See CLAUDE.md § Guarded Commands.
 
-interface WriteEntry {
+interface PropertyWriteEntry {
+  kind: "property";
   prop: string;
   objExpr: OpaqueExpr;
   value: OpaqueExpr;
 }
+
+// Accumulated point-updates to a Map-backed rule pair (value rule + membership
+// predicate). One entry per distinct rule name coalesces all `.set`/`.delete`
+// writes to the same receiver's underlying rule: a function writing
+// `m.set(k1, v1); m.set(k2, v2)` produces one MapRuleWriteEntry with two
+// valueOverrides and two membershipOverrides. Emission uses Pantagruel's
+// N-ary override `R[(m, k) |-> v]` (samples/06-advanced.pant).
+
+/**
+ * One point-update within a rule override. `keyTuple = (objExpr, keyExpr)`
+ * is the override LHS the emitter hands to `ast.override`; `objExpr` and
+ * `keyExpr` are kept around so the merge fallback can build the pre-state
+ * expression `R objExpr keyExpr` (pretty) instead of projecting off the
+ * tuple (ugly but equivalent).
+ */
+interface MapOverride {
+  keyTuple: OpaqueExpr;
+  objExpr: OpaqueExpr;
+  keyExpr: OpaqueExpr;
+  value: OpaqueExpr;
+}
+
+interface MapRuleWriteEntry {
+  kind: "map";
+  ruleName: string;
+  keyPredName: string;
+  ownerType: string;
+  keyType: string;
+  valueOverrides: MapOverride[];
+  membershipOverrides: MapOverride[];
+}
+
+type WriteEntry = PropertyWriteEntry | MapRuleWriteEntry;
 
 /**
  * Per-body symbolic-execution accumulator. Held as a cell of immutable
@@ -196,6 +276,240 @@ function setCanonicalize(
 
 function symbolicKey(prop: string, objExpr: OpaqueExpr): string {
   return `${prop}::${getAst().strExpr(objExpr)}`;
+}
+
+/**
+ * State-map key for Map writes. Writes coalesce into one MapRuleWriteEntry
+ * so multiple `.set`/`.delete` calls to the same rule accumulate as distinct
+ * `(tuple |-> value)` override pairs (collapsed into one override expression
+ * at emission). Keying by just `ruleName` is too coarse for Stage A, where
+ * two different interfaces can share a field name (e.g., `A.cache` and
+ * `B.cache`) — emission quantifies one `ownerType`/`keyType` per entry, so
+ * crossed-field writes would be emitted against the first writer's types.
+ * Include the full rule identity (rule, key predicate, owner, key) so only
+ * writes that share a target rule coalesce.
+ */
+function mapWriteKey(
+  ruleName: string,
+  keyPredName: string,
+  ownerType: string,
+  keyType: string,
+): string {
+  return `map::${ruleName}::${keyPredName}::${ownerType}::${keyType}`;
+}
+
+/**
+ * Collapse two arrays of overrides (from the two branches of an if, or
+ * a branch vs. identity fallback) into a single array, keyed by canonical
+ * tuple form. Per canonical key, the per-branch values are combined via
+ * `combine`. Overrides that only exist in one side use the caller-supplied
+ * `fallback` expression (pre-state `R m k` for value; pre-state `Rkey m k`
+ * for membership) for the missing side.
+ *
+ * Order is preserved from `aSide` first, then any `bSide` keys not already
+ * seen. The canonical form comes from `ast.strExpr(keyTuple)`.
+ */
+function mergeOverrides(
+  aSide: ReadonlyArray<MapOverride>,
+  bSide: ReadonlyArray<MapOverride>,
+  fallback: (o: MapOverride) => OpaqueExpr,
+  combine: (vA: OpaqueExpr, vB: OpaqueExpr) => OpaqueExpr,
+): MapOverride[] {
+  const ast = getAst();
+  const canonical = (t: OpaqueExpr) => ast.strExpr(t);
+  const bByKey = new Map<string, OpaqueExpr>();
+  for (const o of bSide) {
+    bByKey.set(canonical(o.keyTuple), o.value);
+  }
+  const seen = new Set<string>();
+  const out: MapOverride[] = [];
+  for (const o of aSide) {
+    const k = canonical(o.keyTuple);
+    seen.add(k);
+    const vB = bByKey.get(k) ?? fallback(o);
+    out.push({ ...o, value: combine(o.value, vB) });
+  }
+  for (const o of bSide) {
+    const k = canonical(o.keyTuple);
+    if (seen.has(k)) {
+      continue;
+    }
+    const vA = fallback(o);
+    out.push({ ...o, value: combine(vA, o.value) });
+  }
+  return out;
+}
+
+/**
+ * Install a `.set`/`.delete` effect into the symbolic state. Creates a new
+ * MapRuleWriteEntry on first use per rule; subsequent effects on the same
+ * rule append their (tuple |-> value) overrides. The key tuple is `(m, k)`
+ * — `m` is the receiver (so distinct receivers at the same key don't
+ * collide), `k` is the key argument.
+ */
+function installMapWrite(
+  state: SymbolicState,
+  effect: MapMutation,
+  applyConst: (e: OpaqueExpr) => OpaqueExpr,
+): void {
+  const ast = getAst();
+  const key = mapWriteKey(
+    effect.ruleName,
+    effect.keyPredName,
+    effect.ownerType,
+    effect.keyType,
+  );
+  const objExpr = applyConst(effect.objExpr);
+  const keyExpr = applyConst(effect.keyExpr);
+  const keyTuple = ast.tuple([objExpr, keyExpr]);
+  const tupleKeyText = ast.strExpr(keyTuple);
+  const isSameTuple = (o: MapOverride) =>
+    ast.strExpr(o.keyTuple) === tupleKeyText;
+
+  // cloneSymbolicState only shallow-copies `writes`, so the MapRuleWriteEntry
+  // object is shared with sibling branches and the outer state. Copy the
+  // entry (including its arrays) before mutating so branch-local writes
+  // don't leak.
+  const prev = state.writes.get(key);
+  const entry: MapRuleWriteEntry =
+    prev !== undefined && prev.kind === "map"
+      ? {
+          ...prev,
+          valueOverrides: [...prev.valueOverrides],
+          membershipOverrides: [...prev.membershipOverrides],
+        }
+      : {
+          kind: "map",
+          ruleName: effect.ruleName,
+          keyPredName: effect.keyPredName,
+          ownerType: effect.ownerType,
+          keyType: effect.keyType,
+          valueOverrides: [],
+          membershipOverrides: [],
+        };
+
+  // Pantagruel override semantics are first-pair-wins, but for a sequence
+  // `m.set(k, 1); m.set(k, 2)` inside one path the later write must win.
+  // Drop any prior override for the same (obj, key) tuple on both sides
+  // before appending the new one.
+  entry.valueOverrides = entry.valueOverrides.filter((o) => !isSameTuple(o));
+  entry.membershipOverrides = entry.membershipOverrides.filter(
+    (o) => !isSameTuple(o),
+  );
+
+  if (effect.op === "set") {
+    const valueExpr = applyConst(effect.valueExpr!);
+    entry.valueOverrides = [
+      ...entry.valueOverrides,
+      { keyTuple, objExpr, keyExpr, value: valueExpr },
+    ];
+    entry.membershipOverrides = [
+      ...entry.membershipOverrides,
+      { keyTuple, objExpr, keyExpr, value: ast.litBool(true) },
+    ];
+  } else {
+    // delete: membership goes false; value rule need not be restated because
+    // the declaration guard makes the value-rule body vacuous under false
+    // membership.
+    entry.membershipOverrides = [
+      ...entry.membershipOverrides,
+      { keyTuple, objExpr, keyExpr, value: ast.litBool(false) },
+    ];
+  }
+  putWrite(state, key, entry);
+  addWrittenKey(state, key);
+  state.modifiedProps.add(effect.ruleName);
+  state.modifiedProps.add(effect.keyPredName);
+}
+
+/**
+ * Build a `.get`/`.has` read expression that threads staged writes. When a
+ * prior `.set`/`.delete` on the same rule has been installed in the symbolic
+ * state, the returned read applies Pantagruel's N-ary override inline —
+ * `R[(m, k) |-> v](obj, key)` — so a `.set(k, v)` followed by `.get(k)` or
+ * `.has(k)` in the same body observes the just-written value. The ite
+ * expansion matches McCarthy's select/store (Kroening & Strichman Ch. 7):
+ * at the override key the override fires, everywhere else it falls through
+ * to the pre-state rule application. Without a staged entry, returns the
+ * plain pre-state rule application.
+ *
+ * `.get` respects staged `.delete`s: a value override whose tuple has a
+ * literal `false` as its latest membership claim is dropped from the read,
+ * so `m.set(k, v); m.delete(k); m.get(k)` falls through to the pre-state
+ * rule rather than returning `v`. Pantagruel's declaration guard handles
+ * this at emission time (vacuous value under false membership — Dafny-style
+ * partial function), but an inline override application has no such guard,
+ * so the filter is explicit at the read site.
+ */
+function readMapThroughWrites(
+  state: SymbolicState | undefined,
+  methodName: "get" | "has",
+  ruleName: string,
+  keyPredName: string,
+  ownerType: string,
+  keyType: string,
+  objExpr: OpaqueExpr,
+  keyExpr: OpaqueExpr,
+): OpaqueExpr {
+  const ast = getAst();
+  const appliedRule = methodName === "has" ? keyPredName : ruleName;
+  if (state === undefined) {
+    return ast.app(ast.var(appliedRule), [objExpr, keyExpr]);
+  }
+  // Apply the ambient const-binding substitution so the read's receiver/key
+  // normalize to the same form the write site stored (installMapWrite passes
+  // its tuple components through applyConst). Otherwise a `const x = a;
+  // x.cache.set(k, v); x.cache.get(k)` would have `(a, k) |-> v` on the
+  // write and `(x, k)` on the read, and the ite in the override expansion
+  // wouldn't fire because the const alias has been inlined away and the SMT
+  // engine has no remaining equality to recover.
+  const canonObj = state.canonicalize(objExpr);
+  const canonKey = state.canonicalize(keyExpr);
+  const entry = state.writes.get(
+    mapWriteKey(ruleName, keyPredName, ownerType, keyType),
+  );
+  const baseRead = ast.app(ast.var(appliedRule), [canonObj, canonKey]);
+  if (entry === undefined || entry.kind !== "map") {
+    return baseRead;
+  }
+  const overrides = readOverridesFor(entry, methodName);
+  if (overrides.length === 0) {
+    return baseRead;
+  }
+  return ast.app(
+    ast.override(
+      appliedRule,
+      overrides.map((o) => [o.keyTuple, o.value] as [OpaqueExpr, OpaqueExpr]),
+    ),
+    [canonObj, canonKey],
+  );
+}
+
+/**
+ * Pick the override list to use for an inline `.get`/`.has` read. `.has`
+ * uses the raw membership list. `.get` drops value overrides whose tuple
+ * has a literal `false` latest membership — a staged `.delete` supersedes
+ * any earlier staged `.set` at that tuple. Conditional membership (e.g.
+ * `cond g => false, true => true` after a branch-merged `.delete`) is not
+ * filtered; only literal `false` is detected here.
+ */
+function readOverridesFor(
+  entry: MapRuleWriteEntry,
+  methodName: "get" | "has",
+): MapOverride[] {
+  if (methodName === "has") {
+    return [...entry.membershipOverrides];
+  }
+  const ast = getAst();
+  const canonical = (t: OpaqueExpr) => ast.strExpr(t);
+  const falseText = ast.strExpr(ast.litBool(false));
+  const latestMembership = new Map<string, string>();
+  for (const m of entry.membershipOverrides) {
+    latestMembership.set(canonical(m.keyTuple), ast.strExpr(m.value));
+  }
+  return entry.valueOverrides.filter(
+    (o) => latestMembership.get(canonical(o.keyTuple)) !== falseText,
+  );
 }
 
 /**
@@ -1131,7 +1445,7 @@ export function translateBodyExpr(
     if (state !== undefined) {
       const key = symbolicKey(prop, state.canonicalize(bodyExpr(obj)));
       const entry = state.writes.get(key);
-      if (entry !== undefined) {
+      if (entry !== undefined && entry.kind === "property") {
         return { expr: entry.value };
       }
     }
@@ -1140,14 +1454,13 @@ export function translateBodyExpr(
   }
 
   // Call expression: handle .includes(), .filter().map(), etc.
+  // A Map.set/delete call returns a `{ effect }` BodyResult which only
+  // `symbolicExecute` consumes as a statement; in any expression context
+  // (ternary arm, binary operand, arg, etc.) turn it into `{ unsupported }`
+  // so downstream `bodyExpr()` calls see a narrow result and never throw.
   if (ts.isCallExpression(expr)) {
-    return translateCallExpr(
-      expr,
-      checker,
-      strategy,
-      paramNames,
-      state,
-      supply,
+    return rejectEffect(
+      translateCallExpr(expr, checker, strategy, paramNames, state, supply),
     );
   }
 
@@ -1339,7 +1652,7 @@ function translateArrayMethod(
     return null;
   }
 
-  const receiver = translateBodyExpr(
+  const receiverRaw = translateBodyExpr(
     tsReceiver,
     checker,
     strategy,
@@ -1347,6 +1660,7 @@ function translateArrayMethod(
     state,
     supply,
   );
+  const receiver = rejectEffect(receiverRaw);
   if (isBodyUnsupported(receiver)) {
     return receiver;
   }
@@ -1454,7 +1768,7 @@ function translateReduceCall(
     return null;
   }
 
-  const receiver = translateBodyExpr(
+  const receiverRaw = translateBodyExpr(
     tsReceiver,
     checker,
     strategy,
@@ -1462,6 +1776,7 @@ function translateReduceCall(
     state,
     supply,
   );
+  const receiver = rejectEffect(receiverRaw);
   if (isBodyUnsupported(receiver)) {
     return receiver;
   }
@@ -1855,6 +2170,13 @@ function translateForOfLoopBody(
       return false;
     }
     for (const [, entry] of subState.writes) {
+      if (entry.kind !== "property") {
+        propositions.push({
+          kind: "unsupported",
+          reason: "Map mutation inside Shape A loop",
+        });
+        return false;
+      }
       propositions.push({
         kind: "equation",
         quantifiers: [] as OpaqueParam[],
@@ -1925,11 +2247,23 @@ function translateForOfLoopBody(
     }
     const key = symbolicKey(leaf.prop, accExpr);
     const priorEntry = state.writes.get(key);
+    if (priorEntry !== undefined && priorEntry.kind !== "property") {
+      propositions.push({
+        kind: "unsupported",
+        reason: "loop-fold accumulator over a Map receiver",
+      });
+      return false;
+    }
     const priorVal =
       priorEntry?.value ?? ast.app(ast.var(leaf.prop), [accExpr]);
     const newVal = ast.binop(outerOp, priorVal, folded);
 
-    putWrite(state, key, { prop: leaf.prop, objExpr: accExpr, value: newVal });
+    putWrite(state, key, {
+      kind: "property",
+      prop: leaf.prop,
+      objExpr: accExpr,
+      value: newVal,
+    });
     addWrittenKey(state, key);
   }
 
@@ -2087,6 +2421,161 @@ function translateCallExpr(
     const methodName = expr.expression.name.text;
     const tsReceiver = expr.expression.expression;
 
+    // .set(k, v) / .delete(k) on a Map<K,V> receiver -> emit a `{ effect: ... }`
+    // BodyResult that `symbolicExecute` consumes to install a MapRuleWriteEntry.
+    // Stage A / Stage B disambiguation mirrors the .get/.has branch below; the
+    // owner and key types are captured on the effect so `translateMutatingBody`
+    // can emit the quantifier binders when expanding the override equation.
+    if (
+      ((methodName === "set" && expr.arguments.length === 2) ||
+        (methodName === "delete" && expr.arguments.length === 1)) &&
+      isMapType(checker.getTypeAtLocation(tsReceiver))
+    ) {
+      // Unwrap parens, non-null assertions, and type-only wrappers so
+      // `(cache.entries).set(...)` and `cache.entries!.set(...)` reach the
+      // same Stage A detection as the bare `cache.entries.set(...)` form.
+      const normalizedReceiver = unwrapExpression(tsReceiver);
+      const stageA =
+        ts.isPropertyAccessExpression(normalizedReceiver) &&
+        isInterfaceFieldAccess(normalizedReceiver, checker);
+
+      const keyArg = expr.arguments[0]!;
+      const kExprRaw = translateBodyExpr(
+        keyArg,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
+      const kExpr = rejectEffect(kExprRaw);
+      if (isBodyUnsupported(kExpr)) {
+        return kExpr;
+      }
+
+      let valueExpr: OpaqueExpr | null = null;
+      if (methodName === "set") {
+        const vRaw = translateBodyExpr(
+          expr.arguments[1]!,
+          checker,
+          strategy,
+          paramNames,
+          state,
+          supply,
+        );
+        const vExpr = rejectEffect(vRaw);
+        if (isBodyUnsupported(vExpr)) {
+          return vExpr;
+        }
+        valueExpr = bodyExpr(vExpr);
+      }
+
+      if (stageA && ts.isPropertyAccessExpression(normalizedReceiver)) {
+        const fieldName = normalizedReceiver.name.text;
+        const innerObj = normalizedReceiver.expression;
+        const objRaw = translateBodyExpr(
+          innerObj,
+          checker,
+          strategy,
+          paramNames,
+          state,
+          supply,
+        );
+        const objExpr = rejectEffect(objRaw);
+        if (isBodyUnsupported(objExpr)) {
+          return objExpr;
+        }
+        const ownerType = mapTsType(
+          checker.getTypeAtLocation(innerObj),
+          checker,
+          strategy,
+          supply.synthCell,
+        );
+        const typeArgs = checker.getTypeArguments(
+          checker.getTypeAtLocation(normalizedReceiver) as ts.TypeReference,
+        );
+        if (typeArgs.length !== 2) {
+          return { unsupported: "Map with unexpected arity" };
+        }
+        const keyType = mapTsType(
+          typeArgs[0]!,
+          checker,
+          strategy,
+          supply.synthCell,
+        );
+        return {
+          effect: {
+            op: methodName as "set" | "delete",
+            ruleName: fieldName,
+            keyPredName: `${fieldName}Key`,
+            ownerType,
+            keyType,
+            objExpr: bodyExpr(objExpr),
+            keyExpr: bodyExpr(kExpr),
+            valueExpr,
+          },
+        };
+      }
+
+      // Stage B — synthesized rule lookup (same on-demand registration as
+      // the .get/.has branch).
+      const receiverType = checker.getTypeAtLocation(tsReceiver);
+      const typeArgs = checker.getTypeArguments(
+        receiverType as ts.TypeReference,
+      );
+      if (typeArgs.length !== 2) {
+        return { unsupported: "Map with unexpected arity" };
+      }
+      const kType = mapTsType(
+        typeArgs[0]!,
+        checker,
+        strategy,
+        supply.synthCell,
+      );
+      const vType = mapTsType(
+        typeArgs[1]!,
+        checker,
+        strategy,
+        supply.synthCell,
+      );
+      let info = supply.synthCell
+        ? lookupMapKV(supply.synthCell.synth, kType, vType)
+        : undefined;
+      if (!info && supply.synthCell) {
+        cellRegisterMap(supply.synthCell, kType, vType);
+        info = lookupMapKV(supply.synthCell.synth, kType, vType);
+      }
+      if (!info) {
+        return {
+          unsupported: `Map<${kType}, ${vType}>: key or value type cannot be mangled into a synthesized domain name`,
+        };
+      }
+      const objRaw = translateBodyExpr(
+        tsReceiver,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
+      const objExpr = rejectEffect(objRaw);
+      if (isBodyUnsupported(objExpr)) {
+        return objExpr;
+      }
+      return {
+        effect: {
+          op: methodName as "set" | "delete",
+          ruleName: info.names.rule,
+          keyPredName: info.names.keyPred,
+          ownerType: info.names.domain,
+          keyType: kType,
+          objExpr: bodyExpr(objExpr),
+          keyExpr: bodyExpr(kExpr),
+          valueExpr,
+        },
+      };
+    }
+
     // .get(k) / .has(k) on a Map<K,V> receiver -> 2-arity rule application.
     // Two paths, same encoding shape:
     //   Stage A — receiver is a property access to a declared interface
@@ -2100,13 +2589,16 @@ function translateCallExpr(
       expr.arguments.length === 1 &&
       isMapType(checker.getTypeAtLocation(tsReceiver))
     ) {
+      // Match the .set/.delete branch: unwrap so wrapped field receivers
+      // (`(cache.entries).get(k)`, `cache.entries!.has(k)`) stay on Stage A.
+      const normalizedReceiver = unwrapExpression(tsReceiver);
       const stageA =
-        ts.isPropertyAccessExpression(tsReceiver) &&
-        isInterfaceFieldAccess(tsReceiver, checker);
+        ts.isPropertyAccessExpression(normalizedReceiver) &&
+        isInterfaceFieldAccess(normalizedReceiver, checker);
 
-      if (stageA && ts.isPropertyAccessExpression(tsReceiver)) {
-        const fieldName = tsReceiver.name.text;
-        const innerObj = tsReceiver.expression;
+      if (stageA && ts.isPropertyAccessExpression(normalizedReceiver)) {
+        const fieldName = normalizedReceiver.name.text;
+        const innerObj = normalizedReceiver.expression;
         const kExpr = translateBodyExpr(
           expr.arguments[0]!,
           checker,
@@ -2129,12 +2621,35 @@ function translateCallExpr(
         if (isBodyUnsupported(objExpr)) {
           return objExpr;
         }
-        const ruleName = methodName === "has" ? `${fieldName}Key` : fieldName;
+        const typeArgs = checker.getTypeArguments(
+          checker.getTypeAtLocation(normalizedReceiver) as ts.TypeReference,
+        );
+        if (typeArgs.length !== 2) {
+          return { unsupported: "Map with unexpected arity" };
+        }
+        const ownerType = mapTsType(
+          checker.getTypeAtLocation(innerObj),
+          checker,
+          strategy,
+          supply.synthCell,
+        );
+        const keyType = mapTsType(
+          typeArgs[0]!,
+          checker,
+          strategy,
+          supply.synthCell,
+        );
         return {
-          expr: ast.app(ast.var(ruleName), [
+          expr: readMapThroughWrites(
+            state,
+            methodName as "get" | "has",
+            fieldName,
+            `${fieldName}Key`,
+            ownerType,
+            keyType,
             bodyExpr(objExpr),
             bodyExpr(kExpr),
-          ]),
+          ),
         };
       }
 
@@ -2200,10 +2715,17 @@ function translateCallExpr(
       if (isBodyUnsupported(kExpr)) {
         return kExpr;
       }
-      const ruleName =
-        methodName === "has" ? info.names.keyPred : info.names.rule;
       return {
-        expr: ast.app(ast.var(ruleName), [bodyExpr(objExpr), bodyExpr(kExpr)]),
+        expr: readMapThroughWrites(
+          state,
+          methodName as "get" | "has",
+          info.names.rule,
+          info.names.keyPred,
+          info.names.domain,
+          kType,
+          bodyExpr(objExpr),
+          bodyExpr(kExpr),
+        ),
       };
     }
 
@@ -2452,13 +2974,73 @@ function translateMutatingBody(
   }
 
   for (const [, entry] of state.writes) {
-    propositions.push({
-      kind: "equation",
-      quantifiers: [] as OpaqueParam[],
-      lhs: ast.app(ast.primed(entry.prop), [entry.objExpr]),
-      rhs: entry.value,
-    });
-    addModifiedProp(state, entry.prop);
+    if (entry.kind === "property") {
+      propositions.push({
+        kind: "equation",
+        quantifiers: [] as OpaqueParam[],
+        lhs: ast.app(ast.primed(entry.prop), [entry.objExpr]),
+        rhs: entry.value,
+      });
+      addModifiedProp(state, entry.prop);
+      continue;
+    }
+    // Map write: emit one quantified equation per modified rule using the
+    // override expression as the RHS applied to fresh quantifier binders.
+    // Binders are allocated through the document-wide name registry (inside
+    // synthCell) so they don't collide with the function's own params or
+    // with type-derived accessor rule binders — unlike the internal
+    // `freshHygienicBinder` which emits `$N` names that don't round-trip
+    // through the Pantagruel parser.
+    const allocBinder = (hint: string): string =>
+      synthCell
+        ? cellRegisterName(synthCell, hint)
+        : freshHygienicBinder(supply);
+    // `valueOverrides` empty (pure `.delete`) — skip the value rule; the
+    // membership going false makes the rule-guard vacuous.
+    if (entry.valueOverrides.length > 0) {
+      const m1 = allocBinder("m");
+      const k1 = allocBinder("k");
+      propositions.push({
+        kind: "equation",
+        quantifiers: [
+          ast.param(m1, ast.tName(entry.ownerType)),
+          ast.param(k1, ast.tName(entry.keyType)),
+        ] as OpaqueParam[],
+        lhs: ast.app(ast.primed(entry.ruleName), [ast.var(m1), ast.var(k1)]),
+        rhs: ast.app(
+          ast.override(
+            entry.ruleName,
+            entry.valueOverrides.map(
+              (o) => [o.keyTuple, o.value] as [OpaqueExpr, OpaqueExpr],
+            ),
+          ),
+          [ast.var(m1), ast.var(k1)],
+        ),
+      });
+      addModifiedProp(state, entry.ruleName);
+    }
+    if (entry.membershipOverrides.length > 0) {
+      const m1 = allocBinder("m");
+      const k1 = allocBinder("k");
+      propositions.push({
+        kind: "equation",
+        quantifiers: [
+          ast.param(m1, ast.tName(entry.ownerType)),
+          ast.param(k1, ast.tName(entry.keyType)),
+        ] as OpaqueParam[],
+        lhs: ast.app(ast.primed(entry.keyPredName), [ast.var(m1), ast.var(k1)]),
+        rhs: ast.app(
+          ast.override(
+            entry.keyPredName,
+            entry.membershipOverrides.map(
+              (o) => [o.keyTuple, o.value] as [OpaqueExpr, OpaqueExpr],
+            ),
+          ),
+          [ast.var(m1), ast.var(k1)],
+        ),
+      });
+      addModifiedProp(state, entry.keyPredName);
+    }
   }
 
   const frames = generateFrameConditions(state.modifiedProps, declarations);
@@ -2586,22 +3168,86 @@ function symbolicExecute(
       for (const key of sR.writtenKeys) {
         const entryR = sR.writes.get(key)!;
         const prior = state.writes.get(key);
-        const identity = ast.app(ast.var(entryR.prop), [entryR.objExpr]);
-        const vEarlyReturn = prior?.value ?? identity;
-        const vContinuation = entryR.value;
-        const merged = exit.earlyExitWhenTrue
-          ? ast.cond([
-              [gExpr, vEarlyReturn],
-              [ast.litBool(true), vContinuation],
-            ])
-          : ast.cond([
-              [gExpr, vContinuation],
-              [ast.litBool(true), vEarlyReturn],
-            ]);
+        if (prior !== undefined && prior.kind !== entryR.kind) {
+          ok = false;
+          propositions.push({
+            kind: "unsupported",
+            reason:
+              "branches wrote the same key with different kinds (property vs. map)",
+          });
+          break;
+        }
+        if (entryR.kind === "property") {
+          const priorP = prior as PropertyWriteEntry | undefined;
+          const identity = ast.app(ast.var(entryR.prop), [entryR.objExpr]);
+          const vEarlyReturn = priorP?.value ?? identity;
+          const vContinuation = entryR.value;
+          const merged = exit.earlyExitWhenTrue
+            ? ast.cond([
+                [gExpr, vEarlyReturn],
+                [ast.litBool(true), vContinuation],
+              ])
+            : ast.cond([
+                [gExpr, vContinuation],
+                [ast.litBool(true), vEarlyReturn],
+              ]);
+          putWrite(state, key, {
+            kind: "property",
+            prop: entryR.prop,
+            objExpr: entryR.objExpr,
+            value: merged,
+          });
+          addWrittenKey(state, key);
+          continue;
+        }
+        // Map: continuation-side overrides are taken only when NOT on the
+        // early-exit arm. The early-exit fallback for each override (m, k)
+        // is the accumulated outer-state value if the outer state had a
+        // prior write there, else the pre-state lookup — so outer writes
+        // persist across the exit arm.
+        const priorMap =
+          prior !== undefined && prior.kind === "map"
+            ? (prior as MapRuleWriteEntry)
+            : undefined;
+        const ruleVar = ast.var(entryR.ruleName);
+        const keyVar = ast.var(entryR.keyPredName);
+        const valueFallback = (o: MapOverride): OpaqueExpr =>
+          ast.app(ruleVar, [o.objExpr, o.keyExpr]);
+        const memberFallback = (o: MapOverride): OpaqueExpr =>
+          ast.app(keyVar, [o.objExpr, o.keyExpr]);
+        const combineContCond = (
+          vCont: OpaqueExpr,
+          vExit: OpaqueExpr,
+        ): OpaqueExpr =>
+          exit.earlyExitWhenTrue
+            ? ast.cond([
+                [gExpr, vExit],
+                [ast.litBool(true), vCont],
+              ])
+            : ast.cond([
+                [gExpr, vCont],
+                [ast.litBool(true), vExit],
+              ]);
+        const mergedValue = mergeOverrides(
+          entryR.valueOverrides,
+          priorMap?.valueOverrides ?? [],
+          valueFallback,
+          combineContCond,
+        );
+        const mergedMember = mergeOverrides(
+          entryR.membershipOverrides,
+          priorMap?.membershipOverrides ?? [],
+          memberFallback,
+          combineContCond,
+        );
         putWrite(state, key, {
-          prop: entryR.prop,
-          objExpr: entryR.objExpr,
-          value: merged,
+          kind: "map",
+          ruleName: entryR.ruleName,
+          keyPredName: entryR.keyPredName,
+          ownerType: entryR.ownerType,
+          keyType: entryR.keyType,
+          valueOverrides: mergedValue,
+          membershipOverrides: mergedMember,
         });
         addWrittenKey(state, key);
       }
@@ -2663,6 +3309,52 @@ function symbolicExecute(
       continue;
     }
 
+    // Map mutation: `m.set(k, v)` or `m.delete(k)` as a statement.
+    // translateCallExpr returns a `{ effect }` result for these calls; the
+    // write is installed via installMapWrite, which coalesces multiple
+    // writes to the same rule into one MapRuleWriteEntry.
+    if (
+      ts.isExpressionStatement(stmt) &&
+      ts.isCallExpression(unwrapExpression(stmt.expression))
+    ) {
+      const call = unwrapExpression(stmt.expression) as ts.CallExpression;
+      const callResult = translateCallExpr(
+        call,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
+      if (isBodyEffect(callResult)) {
+        installMapWrite(state, callResult.effect, applyConst);
+        continue;
+      }
+      // If the call *looks like* a Map.set/Map.delete (right method name,
+      // arity, and receiver type) but translateCallExpr returned an
+      // unsupported marker, propagate the specific reason rather than
+      // falling through to the generic "side-effectful expression" error.
+      // Other unsupported results (non-Map calls the EUF encoder rejected
+      // because of an arrow-function argument, etc.) still fall through so
+      // the forEach handler below gets its chance.
+      if (
+        isBodyUnsupported(callResult) &&
+        ts.isPropertyAccessExpression(call.expression) &&
+        ((call.expression.name.text === "set" && call.arguments.length === 2) ||
+          (call.expression.name.text === "delete" &&
+            call.arguments.length === 1)) &&
+        isMapType(checker.getTypeAtLocation(call.expression.expression))
+      ) {
+        ok = false;
+        propositions.push({
+          kind: "unsupported",
+          reason: callResult.unsupported,
+        });
+        continue;
+      }
+      // Otherwise fall through to forEach / side-effect handling below.
+    }
+
     // Property assignment: obj.prop = rhs
     if (
       ts.isExpressionStatement(stmt) &&
@@ -2714,7 +3406,12 @@ function symbolicExecute(
         const objExpr = applyConst(bodyExpr(obj));
         const valExpr = applyConst(bodyExpr(val));
         const key = symbolicKey(prop, objExpr);
-        putWrite(state, key, { prop, objExpr, value: valExpr });
+        putWrite(state, key, {
+          kind: "property",
+          prop,
+          objExpr,
+          value: valExpr,
+        });
         addWrittenKey(state, key);
         continue;
       }
@@ -2900,21 +3597,84 @@ function symbolicExecute(
 
       // Merge touched keys via cond(g => vT, true => vE)
       const touched = new Set<string>([...sT.writtenKeys, ...sE.writtenKeys]);
+      let mergeOk = true;
       for (const key of touched) {
         const entryT = sT.writes.get(key);
         const entryE = sE.writes.get(key);
         // At least one branch wrote the key, so at least one entry exists.
-        const objExpr = (entryT ?? entryE)!.objExpr;
-        const prop = (entryT ?? entryE)!.prop;
-        const identity = ast.app(ast.var(prop), [objExpr]);
-        const vT = entryT?.value ?? identity;
-        const vE = entryE?.value ?? identity;
-        const merged = ast.cond([
-          [gExpr, vT],
-          [ast.litBool(true), vE],
-        ]);
-        putWrite(state, key, { prop, objExpr, value: merged });
+        const pick = (entryT ?? entryE)!;
+        if (entryT && entryE && entryT.kind !== entryE.kind) {
+          ok = false;
+          mergeOk = false;
+          propositions.push({
+            kind: "unsupported",
+            reason:
+              "branches wrote the same key with different kinds (property vs. map)",
+          });
+          break;
+        }
+        if (pick.kind === "property") {
+          const entryTP = entryT as PropertyWriteEntry | undefined;
+          const entryEP = entryE as PropertyWriteEntry | undefined;
+          const objExpr = pick.objExpr;
+          const prop = pick.prop;
+          const identity = ast.app(ast.var(prop), [objExpr]);
+          const vT = entryTP?.value ?? identity;
+          const vE = entryEP?.value ?? identity;
+          const merged = ast.cond([
+            [gExpr, vT],
+            [ast.litBool(true), vE],
+          ]);
+          putWrite(state, key, {
+            kind: "property",
+            prop,
+            objExpr,
+            value: merged,
+          });
+          addWrittenKey(state, key);
+          continue;
+        }
+        // Map: merge per-override-pair under gExpr. Identity fallbacks per
+        // side use the pre-state lookup at the override's (m, k) tuple.
+        const entryTM = entryT as MapRuleWriteEntry | undefined;
+        const entryEM = entryE as MapRuleWriteEntry | undefined;
+        const base = entryTM ?? entryEM!;
+        const ruleVar = ast.var(base.ruleName);
+        const keyVar = ast.var(base.keyPredName);
+        const valueFallback = (o: MapOverride): OpaqueExpr =>
+          ast.app(ruleVar, [o.objExpr, o.keyExpr]);
+        const memberFallback = (o: MapOverride): OpaqueExpr =>
+          ast.app(keyVar, [o.objExpr, o.keyExpr]);
+        const combineCond = (vA: OpaqueExpr, vB: OpaqueExpr): OpaqueExpr =>
+          ast.cond([
+            [gExpr, vA],
+            [ast.litBool(true), vB],
+          ]);
+        const mergedValue = mergeOverrides(
+          entryTM?.valueOverrides ?? [],
+          entryEM?.valueOverrides ?? [],
+          valueFallback,
+          combineCond,
+        );
+        const mergedMember = mergeOverrides(
+          entryTM?.membershipOverrides ?? [],
+          entryEM?.membershipOverrides ?? [],
+          memberFallback,
+          combineCond,
+        );
+        putWrite(state, key, {
+          kind: "map",
+          ruleName: base.ruleName,
+          keyPredName: base.keyPredName,
+          ownerType: base.ownerType,
+          keyType: base.keyType,
+          valueOverrides: mergedValue,
+          membershipOverrides: mergedMember,
+        });
         addWrittenKey(state, key);
+      }
+      if (!mergeOk) {
+        continue;
       }
       continue;
     }

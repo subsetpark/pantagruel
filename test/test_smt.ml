@@ -994,8 +994,10 @@ let test_override_nary_tuple_key () =
     (contains result "(and ");
   check bool "arity-2 override fallback applies both args" true
     (contains result "(f h1 k1)");
-  check bool "arity-2 override guard mentions h" true (contains result "h1 h");
-  check bool "arity-2 override guard mentions k" true (contains result "k1 k")
+  check bool "arity-2 override guard mentions h equality" true
+    (contains result "(= h1 h)");
+  check bool "arity-2 override guard mentions k equality" true
+    (contains result "(= k1 k)")
 
 let test_initially () =
   let env = Env.empty "" in

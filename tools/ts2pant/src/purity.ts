@@ -122,6 +122,9 @@ const PURE_METHODS_BY_TYPE: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ],
 ]);
 
+/** Non-mutating `Map<K, V>` methods — read-only lookups. */
+const PURE_MAP_METHODS: ReadonlySet<string> = new Set(["get", "has"]);
+
 /** Non-mutating array methods that take no callback. */
 const PURE_ARRAY_METHODS: ReadonlySet<string> = new Set([
   "at",
@@ -457,6 +460,20 @@ function isKnownPureCallInner(
       const pureMethods = PURE_METHODS_BY_TYPE.get("number");
       if (pureMethods?.has(methodName)) {
         return true;
+      }
+    }
+
+    // Map methods — .get(k) and .has(k) are pure lookups. Pantagruel's
+    // read encoding (guarded rule application) has no effects, so these
+    // are safe inside if-conditions and rhs expressions of mutating bodies.
+    // The receiver expression itself is evaluated eagerly, so it must also
+    // be pure (e.g., `effectfulFactory().get(k)` is not pure).
+    if (receiverType.getSymbol()?.getName() === "Map") {
+      if (PURE_MAP_METHODS.has(methodName)) {
+        return (
+          expressionIsPure(receiver, checker) &&
+          expr.arguments.every((arg) => expressionIsPure(arg, checker))
+        );
       }
     }
 

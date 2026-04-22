@@ -178,11 +178,53 @@ are distinct maps (EUF keeps their lookups independent — `sumAt m1 m2 k` is
 sound because `m1 ≠ m2` does not imply `stringToIntMap m1 k = stringToIntMap m2 k`),
 and the guarded `select` lookup is Dafny-style partial-function discipline.
 
-**Scope:** read-only. Mutation (`.set`/`.delete`), construction
-(`new Map()`), and iteration (`.entries`/`.keys`/`.values`/`.forEach`) are
-unsupported. See `tests/fixtures/constructs/expressions-map.ts` (Stage A)
-and `tests/fixtures/constructs/expressions-map-params.ts` (Stage B) for
-supported shapes.
+**Scope:** reads and point-update mutation. Construction (`new Map()`)
+and iteration (`.entries`/`.keys`/`.values`/`.forEach`) are unsupported.
+See `tests/fixtures/constructs/expressions-map.ts` (Stage A reads),
+`tests/fixtures/constructs/expressions-map-params.ts` (Stage B reads),
+`tests/fixtures/constructs/expressions-map-mutation.ts` (Stage B
+mutation), and `tests/fixtures/constructs/expressions-map-mutation-field.ts`
+(Stage A mutation) for supported shapes.
+
+#### Mutation (.set / .delete)
+
+**Standard name:** Point update in McCarthy's theory of arrays (`store`);
+TLA+ `[f EXCEPT ![m][k] = v]` with implicit frame.
+**Reference:** Kroening & Strichman Ch. 7 (`select`/`store` axioms);
+Lamport, *Specifying Systems* Ch. 2–3 (EXCEPT expression and next-state
+relations).
+
+`m.set(k, v)` and `m.delete(k)` emit one point-update per call using
+Pantagruel's N-ary override `R[(m, k) |-> v]`. The override's ite
+expansion (`(= (R_prime m1 k1) (ite (and (= m1 m) (= k1 k)) v (R m1 k1)))`
+in SMT) carries the "everything-else unchanged" frame implicitly at
+the exact override key — exactly TLA+'s EXCEPT semantics.
+
+Each `.set` on a Map receiver modifies two rules: the value rule `R`
+and its membership predicate `Rkey`. One quantified equation is emitted
+per modified rule:
+
+```text
+all m1: T, k1: K
+  | R' m1 k1 = R[(m, k) |-> v] m1 k1.
+all m2: T, k2: K
+  | Rkey' m2 k2 = Rkey[(m, k) |-> true] m2 k2.
+```
+
+For `.delete`, only the membership equation is emitted (with `|-> false`);
+the value rule is not restated because Pantagruel's declaration guard
+makes the value-rule body vacuous under false membership.
+
+Multiple writes to the same rule inside one execution path accumulate
+as distinct `(tuple |-> value)` pairs in a single override expression:
+`m.set(k1, v1); m.set(k2, v2)` emits `R[(m, k1) |-> v1, (m, k2) |-> v2]`.
+Conditional writes (`if (g) m.set(k, v)`) merge via `cond` over the
+per-key override values, with the else-branch fallback being the
+current symbolic value already accumulated for that `(m, k)` pair;
+this is the pre-state `R m k` only when no earlier write to the same
+key has occurred on the path. Quantifier binders come from
+the document-wide `NameRegistry` so they stay unique against the
+function's own params (which have already claimed `m`, `k`, etc.).
 
 ### Structured Iteration (for-of, forEach, reduce)
 
