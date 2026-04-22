@@ -350,6 +350,22 @@ exports[`expressions-readonly-set.ts > containsReadonly 1`] = `
 "module ContainsReadonly.\\n\\ncontainsReadonly xs: [String], x: String => Bool.\\n\\n---\\n\\ncontainsReadonly xs x = (x in xs).\\n"
 `;
 
+exports[`expressions-record-return.ts > emptyBag 1`] = `
+"module EmptyBag.\\n\\nBag.\\nitems b: Bag => [String].\\nemptyBag  => Bag.\\n\\n---\\n\\nall x: String | ~(x in items emptyBag).\\n"
+`;
+
+exports[`expressions-record-return.ts > emptyBagShadowed 1`] = `
+"module EmptyBagShadowed.\\n\\nBag.\\nitems b: Bag => [String].\\nemptyBagShadowed x: Int => Bag.\\n\\n---\\n\\nall x1: String | ~(x1 in items (emptyBagShadowed x)).\\n"
+`;
+
+exports[`expressions-record-return.ts > origin 1`] = `
+"module Origin.\\n\\nPoint.\\nx p: Point => Int.\\ny p: Point => Int.\\norigin  => Point.\\n\\n---\\n\\nx origin = 0.\\ny origin = 0.\\n"
+`;
+
+exports[`expressions-record-return.ts > translate 1`] = `
+"module Translate.\\n\\nPoint.\\nx p1: Point => Int.\\ny p1: Point => Int.\\ntranslate p: Point, dx: Int, dy: Int => Point.\\n\\n---\\n\\nx (translate p dx dy) = x p + dx.\\ny (translate p dx dy) = y p + dy.\\n"
+`;
+
 exports[`expressions-reduce.ts > allActive 1`] = `
 "module AllActive.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nallActive xs: [Item] => Bool.\\n\\n---\\n\\nallActive xs = (and over each $0 in xs | active $0).\\n"
 `;

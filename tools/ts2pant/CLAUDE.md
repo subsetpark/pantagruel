@@ -226,6 +226,67 @@ key has occurred on the path. Quantifier binders come from
 the document-wide `NameRegistry` so they stay unique against the
 function's own params (which have already claimed `m`, `k`, etc.).
 
+### Record Returns (Object-Literal Return Expressions)
+
+**Standard name:** Observational specification / field-selector
+axiomatization of records.
+**Reference:** Kroening & Strichman, *Decision Procedures* Ch. 8
+(recursive data structures — records as disjoint-range field selectors);
+Dafny Reference Manual (function specifications via per-field
+postconditions).
+
+Pantagruel has no record-constructor expression syntax — interfaces are
+opaque domains reachable only through per-field accessor rules. A pure
+function that returns `{ f1: e1, f2: e2 }` therefore decomposes into one
+equation per declared field of the return type, observing the function's
+result through each accessor:
+
+```text
+f a: A, b: B => NamedInterface.
+---
+all a: A, b: B | f1 (f a b) = e1.
+all a: A, b: B | f2 (f a b) = e2.
+```
+
+For a nullary `emptyRecord(): I` the quantifier collapses:
+
+```text
+emptyRecord => I.
+---
+f1 emptyRecord = e1.
+f2 emptyRecord = e2.
+```
+
+**Empty-set initializer.** Pantagruel has no empty-list literal, so
+`new Set()` (only; not `new Set(iterable)`) in a `Set<T>` / `ReadonlySet<T>`
+/ `T[]` field position emits the membership-negation form rather than an
+equation:
+
+```text
+all x: T | ~(x in f_i (f <args>)).
+```
+
+This is a universally quantified assertion, not an equation — hence the
+new `assertion` kind on `PropResult` in `types.ts`.
+
+**Requirements / rejections.**
+- Return type must be a *named* interface/class/alias. Anonymous record
+  types (return `{name: string, registry: NameRegistry}` with no name)
+  are rejected with a clear message and tracked as a separate feature.
+- Every declared field must be present in the object literal; extra
+  fields are rejected.
+- Property kinds accepted: `PropertyAssignment` with identifier or string
+  key, and `ShorthandPropertyAssignment` (`{name}` sugar for
+  `{name: name}`). Spread, methods, accessors, and computed keys are
+  rejected.
+- Initializer expressions go through the normal `translateBodyExpr`
+  pipeline (const-inlining, etc.), so arithmetic and accessor reads
+  work without extra plumbing.
+
+See `tests/fixtures/constructs/expressions-record-return.ts` for the
+supported shapes and `tests/dogfood.test.mts` for the self-translation
+baseline (`emptyNameRegistry`).
+
 ### Structured Iteration (for-of, forEach, reduce)
 
 **Standard name:** Catamorphisms / structural recursion on lists.

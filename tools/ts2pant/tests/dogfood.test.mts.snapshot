@@ -1,3 +1,7 @@
+exports[`dogfood: src/name-registry.ts > emptyNameRegistry — translates and type-checks 1`] = `
+"module EmptyNameRegistry.\\n\\nNameRegistry.\\nused n: NameRegistry => [String].\\nemptyNameRegistry  => NameRegistry.\\n\\n---\\n\\nall x: String | ~(x in used emptyNameRegistry).\\n"
+`;
+
 exports[`dogfood: src/name-registry.ts > isUsed — translates and type-checks 1`] = `
 "module IsUsed.\\n\\nNameRegistry.\\nused n: NameRegistry => [String].\\nisUsed registry: NameRegistry, name: String => Bool.\\n\\n---\\n\\nisUsed registry name = (name in used registry).\\n"
 `;

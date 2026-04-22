@@ -54,7 +54,29 @@ larger a: Int, b: Int => Int.
 all a: Int, b: Int | larger a b = cond a >= b => a, true => b.
 ```
 
-Supported return expressions: arithmetic, comparisons, ternaries (`? :` becomes `cond`), if/else with returns in both branches.
+Supported return expressions: arithmetic, comparisons, ternaries (`? :` becomes `cond`), if/else with returns in both branches, and object literals (record returns, below).
+
+### Record returns
+
+A pure function whose body is `return { f1: e1, f2: e2 }` decomposes into one equation per declared field of the return type. Pantagruel has no record-constructor syntax; interfaces are opaque domains reached only through per-field accessor rules, so the function's result is axiomatized by what each accessor returns:
+
+```typescript
+interface Point { x: number; y: number; }
+function translate(p: Point, dx: number, dy: number): Point {
+  return { x: p.x + dx, y: p.y + dy };
+}
+```
+
+```text
+translate p: Point, dx: Int, dy: Int => Point.
+
+---
+
+all p: Point, dx: Int, dy: Int | x (translate p dx dy) = x p + dx.
+all p: Point, dx: Int, dy: Int | y (translate p dx dy) = y p + dy.
+```
+
+Return type must be a named interface/class/alias (anonymous record types are not yet supported). `new Set()` in a set-typed field position is special-cased as "empty set" and emits an assertion `all x: T | ~(x in <field> (f <args>))` — Pantagruel has no empty-list literal.
 
 ### Mutating functions
 
