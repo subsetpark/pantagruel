@@ -1,12 +1,16 @@
 (library
  (name pantagruel_parser)
- (libraries sedlex menhirLib)
+ (libraries sedlex menhirLib bindlib)
  (preprocess
   (pps sedlex.ppx ppx_deriving.show ppx_deriving.eq)))
 
 (menhir
  (modules parser)
  (flags --explain --table))
+
+(copy_files ../lib/binder.ml)
+
+(copy_files ../lib/binder.mli)
 
 (copy_files ../lib/ast.ml)
 

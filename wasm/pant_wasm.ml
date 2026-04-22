@@ -38,7 +38,8 @@ let rec rename_expr (renames : (string * string) list) (e : Ast.expr) : Ast.expr
   | EApp (f, args) -> EApp (r f, List.map r args)
   | EBinop (op, e1, e2) -> EBinop (op, r e1, r e2)
   | EUnop (op, e1) -> EUnop (op, r e1)
-  | EForall (params, guards, body) ->
+  | EForall (mb, metas) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       let bound =
         List.map (fun (p : Ast.param) -> Ast.lower_name p.param_name) params
         @ bound_names_from_guards guards
@@ -49,11 +50,11 @@ let rec rename_expr (renames : (string * string) list) (e : Ast.expr) : Ast.expr
             (not (List.mem old_name bound)) && not (List.mem new_name bound))
           renames
       in
-      EForall
-        ( params,
-          List.map (rename_guard renames') guards,
-          rename_expr renames' body )
-  | EExists (params, guards, body) ->
+      Ast.make_forall params
+        (List.map (rename_guard renames') guards)
+        (rename_expr renames' body)
+  | EExists (mb, metas) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       let bound =
         List.map (fun (p : Ast.param) -> Ast.lower_name p.param_name) params
         @ bound_names_from_guards guards
@@ -64,11 +65,11 @@ let rec rename_expr (renames : (string * string) list) (e : Ast.expr) : Ast.expr
             (not (List.mem old_name bound)) && not (List.mem new_name bound))
           renames
       in
-      EExists
-        ( params,
-          List.map (rename_guard renames') guards,
-          rename_expr renames' body )
-  | EEach (params, guards, comb, body) ->
+      Ast.make_exists params
+        (List.map (rename_guard renames') guards)
+        (rename_expr renames' body)
+  | EEach (mb, metas, comb) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       let bound =
         List.map (fun (p : Ast.param) -> Ast.lower_name p.param_name) params
         @ bound_names_from_guards guards
@@ -79,11 +80,10 @@ let rec rename_expr (renames : (string * string) list) (e : Ast.expr) : Ast.expr
             (not (List.mem old_name bound)) && not (List.mem new_name bound))
           renames
       in
-      EEach
-        ( params,
-          List.map (rename_guard renames') guards,
-          comb,
-          rename_expr renames' body )
+      Ast.make_each params
+        (List.map (rename_guard renames') guards)
+        comb
+        (rename_expr renames' body)
   | ECond arms -> ECond (List.map (fun (g, c) -> (r g, r c)) arms)
   | ETuple es -> ETuple (List.map r es)
   | EProj (e1, n) -> EProj (r e1, n)
@@ -108,14 +108,16 @@ let rec free_vars (e : Ast.expr) : string list =
   | EApp (f, args) -> free_vars f @ List.concat_map free_vars args
   | EBinop (_, e1, e2) -> free_vars e1 @ free_vars e2
   | EUnop (_, e1) -> free_vars e1
-  | EForall (params, guards, body) | EExists (params, guards, body) ->
+  | EForall (mb, metas) | EExists (mb, metas) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       let bound =
         List.map (fun (p : Ast.param) -> Ast.lower_name p.param_name) params
         @ bound_names_from_guards guards
       in
       let inner = List.concat_map free_vars_guard guards @ free_vars body in
       List.filter (fun n -> not (List.mem n bound)) inner
-  | EEach (params, guards, _, body) ->
+  | EEach (mb, metas, _) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       let bound =
         List.map (fun (p : Ast.param) -> Ast.lower_name p.param_name) params
         @ bound_names_from_guards guards
@@ -151,7 +153,8 @@ let rec subst_var (name : string) (replacement : Ast.expr) (e : Ast.expr) :
   | EApp (f, args) -> EApp (s f, List.map s args)
   | EBinop (op, e1, e2) -> EBinop (op, s e1, s e2)
   | EUnop (op, e1) -> EUnop (op, s e1)
-  | EForall (params, guards, body) ->
+  | EForall (mb, metas) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       let bound =
         List.map (fun (p : Ast.param) -> Ast.lower_name p.param_name) params
       in
@@ -159,8 +162,11 @@ let rec subst_var (name : string) (replacement : Ast.expr) (e : Ast.expr) :
       else if List.exists (fun n -> List.mem n bound) (free_vars replacement)
       then e
       else
-        EForall (params, List.map (subst_guard name replacement) guards, s body)
-  | EExists (params, guards, body) ->
+        Ast.make_forall params
+          (List.map (subst_guard name replacement) guards)
+          (s body)
+  | EExists (mb, metas) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       let bound =
         List.map (fun (p : Ast.param) -> Ast.lower_name p.param_name) params
       in
@@ -168,8 +174,11 @@ let rec subst_var (name : string) (replacement : Ast.expr) (e : Ast.expr) :
       else if List.exists (fun n -> List.mem n bound) (free_vars replacement)
       then e
       else
-        EExists (params, List.map (subst_guard name replacement) guards, s body)
-  | EEach (params, guards, comb, body) ->
+        Ast.make_exists params
+          (List.map (subst_guard name replacement) guards)
+          (s body)
+  | EEach (mb, metas, comb) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       let bound =
         List.map (fun (p : Ast.param) -> Ast.lower_name p.param_name) params
       in
@@ -177,8 +186,9 @@ let rec subst_var (name : string) (replacement : Ast.expr) (e : Ast.expr) :
       else if List.exists (fun n -> List.mem n bound) (free_vars replacement)
       then e
       else
-        EEach
-          (params, List.map (subst_guard name replacement) guards, comb, s body)
+        Ast.make_each params
+          (List.map (subst_guard name replacement) guards)
+          comb (s body)
   | ECond arms -> ECond (List.map (fun (g, c) -> (s g, s c)) arms)
   | ETuple es -> ETuple (List.map s es)
   | EProj (e1, n) -> EProj (s e1, n)
@@ -249,17 +259,20 @@ let () =
        method initially e = Ast.EInitially e
 
        method forall params guards body =
-         Ast.EForall (js_array_to_list params, js_array_to_list guards, body)
+         Ast.make_forall (js_array_to_list params) (js_array_to_list guards)
+           body
 
        method each params guards body =
-         Ast.EEach (js_array_to_list params, js_array_to_list guards, None, body)
+         Ast.make_each (js_array_to_list params) (js_array_to_list guards) None
+           body
 
        method eachComb params guards comb body =
-         Ast.EEach
-           (js_array_to_list params, js_array_to_list guards, Some comb, body)
+         Ast.make_each (js_array_to_list params) (js_array_to_list guards)
+           (Some comb) body
 
        method exists params guards body =
-         Ast.EExists (js_array_to_list params, js_array_to_list guards, body)
+         Ast.make_exists (js_array_to_list params) (js_array_to_list guards)
+           body
 
        method opAnd = Ast.OpAnd
        method opOr = Ast.OpOr

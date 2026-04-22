@@ -204,18 +204,22 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
           Error (NotAProduct (ty, ctx.loc)))
   | EBinop (op, e1, e2) -> check_binop ctx op e1 e2
   | EUnop (op, e) -> check_unop ctx op e
-  | EForall (params, guards, body) ->
+  | EForall (mb, metas) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       let* body_ty = check_quantifier ctx params guards body in
       if equal_ty body_ty TyBool then Ok TyBool
       else Error (ComprehensionNeedEach (body_ty, ctx.loc))
-  | EExists (params, guards, body) ->
+  | EExists (mb, metas) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       let* body_ty = check_quantifier ctx params guards body in
       if equal_ty body_ty TyBool then Ok TyBool
       else Error (ComprehensionNeedEach (body_ty, ctx.loc))
-  | EEach (params, guards, None, body) ->
+  | EEach (mb, metas, None) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       let* body_ty = check_quantifier ctx params guards body in
       Ok (TyList body_ty)
-  | EEach (params, guards, Some comb, body) -> (
+  | EEach (mb, metas, Some comb) -> (
+      let params, guards, body = Ast.unbind_quant mb metas in
       let* body_ty = check_quantifier ctx params guards body in
       match comb with
       | CombAdd ->

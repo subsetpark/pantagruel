@@ -236,13 +236,13 @@ biconditional:
 
 quantified:
   | FORALL pg=quant_params_guards PIPE e=expr
-    { let (params, guards) = pg in EForall (params, guards, e) }
+    { let (params, guards) = pg in Ast.make_forall params guards e }
   | EXISTS pg=quant_params_guards PIPE e=expr
-    { let (params, guards) = pg in EExists (params, guards, e) }
+    { let (params, guards) = pg in Ast.make_exists params guards e }
   | EACH pg=quant_params_guards PIPE e=expr
-    { let (params, guards) = pg in EEach (params, guards, None, e) }
+    { let (params, guards) = pg in Ast.make_each params guards None e }
   | c=combiner OVER EACH pg=quant_params_guards PIPE e=expr
-    { let (params, guards) = pg in EEach (params, guards, Some c, e) }
+    { let (params, guards) = pg in Ast.make_each params guards (Some c) e }
 
 combiner:
   | PLUS  { CombAdd }

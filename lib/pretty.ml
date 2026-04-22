@@ -64,16 +64,20 @@ let pp_combiner fmt = function
 (** Print an expression with proper precedence handling *)
 let rec pp_expr fmt = function
   | EInitially e -> fprintf fmt "initially %a" pp_expr e
-  | EForall (params, guards, body) ->
+  | EForall (mb, metas) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       fprintf fmt "all %a | %a" pp_quant_params_guards (params, guards) pp_expr
         body
-  | EExists (params, guards, body) ->
+  | EExists (mb, metas) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       fprintf fmt "some %a | %a" pp_quant_params_guards (params, guards) pp_expr
         body
-  | EEach (params, guards, None, body) ->
+  | EEach (mb, metas, None) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       fprintf fmt "each %a | %a" pp_quant_params_guards (params, guards) pp_expr
         body
-  | EEach (params, guards, Some comb, body) ->
+  | EEach (mb, metas, Some comb) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       fprintf fmt "%a over each %a | %a" pp_combiner comb pp_quant_params_guards
         (params, guards) pp_expr body
   | ECond arms ->

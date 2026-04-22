@@ -67,16 +67,20 @@ let pp_params_sep fmt () = fprintf fmt ", "
 
 let rec pp_expr procs fmt = function
   | EInitially e -> fprintf fmt "initially %a" (pp_expr procs) e
-  | EForall (params, guards, body) ->
+  | EForall (mb, metas) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       fprintf fmt "∀ %a · %a" (pp_quant_bindings procs) (params, guards)
         (pp_expr procs) body
-  | EExists (params, guards, body) ->
+  | EExists (mb, metas) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       fprintf fmt "∃ %a · %a" (pp_quant_bindings procs) (params, guards)
         (pp_expr procs) body
-  | EEach (params, guards, None, body) ->
+  | EEach (mb, metas, None) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       fprintf fmt "each %a · %a" (pp_quant_bindings procs) (params, guards)
         (pp_expr procs) body
-  | EEach (params, guards, Some comb, body) ->
+  | EEach (mb, metas, Some comb) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       let comb_str =
         match comb with
         | CombAdd -> "+"

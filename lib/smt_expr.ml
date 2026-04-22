@@ -1,5 +1,10 @@
 (** SMT expression transformation utilities: substitution, priming, guard
-    collection, and comprehension expansion *)
+    collection, and comprehension expansion.
+
+    Capture-avoiding substitution and priming on quantifier binders are
+    implemented via the [Binder.Mbinder] primitives — the hand-rolled walkers
+    that used to filter substitution domains by bound names have collapsed to
+    unbind / recurse / rebind. *)
 
 open Ast
 open Types
@@ -94,8 +99,9 @@ let expand_comprehension translate config env params guards body =
         elems
 
 (** Capture-avoiding substitution: replace EVar names according to the mapping.
-    Stops at quantifier/comprehension boundaries to avoid capturing bound vars.
-*)
+    Top-level quantifier params are handled by [Binder.Mbinder.subst]; for the
+    GParam / GIn binders inside the guard list, we still filter the substitution
+    domain manually (those bindings are not reified in the mbinder). *)
 let rec substitute_vars (subst : (string * expr) list) (e : expr) : expr =
   match e with
   | EVar (Lower name) -> (
@@ -118,27 +124,48 @@ let rec substitute_vars (subst : (string * expr) list) (e : expr) : expr =
           List.map
             (fun (k, v) -> (substitute_vars subst k, substitute_vars subst v))
             pairs )
-  | EForall (ps, gs, body) ->
-      let bound =
-        List.map (fun (p : param) -> Ast.lower_name p.param_name) ps
+  | EForall (mb, metas) ->
+      let params, gs, body = Ast.unbind_quant mb metas in
+      let subst_no_params =
+        List.filter
+          (fun (n, _) ->
+            not
+              (List.exists
+                 (fun (p : param) -> Ast.lower_name p.param_name = n)
+                 params))
+          subst
       in
-      let subst' = List.filter (fun (n, _) -> not (List.mem n bound)) subst in
-      let subst'', gs' = substitute_guards subst' gs in
-      EForall (ps, gs', substitute_vars subst'' body)
-  | EExists (ps, gs, body) ->
-      let bound =
-        List.map (fun (p : param) -> Ast.lower_name p.param_name) ps
+      let subst'', gs' = substitute_guards subst_no_params gs in
+      let body' = substitute_vars subst'' body in
+      Ast.make_forall params gs' body'
+  | EExists (mb, metas) ->
+      let params, gs, body = Ast.unbind_quant mb metas in
+      let subst_no_params =
+        List.filter
+          (fun (n, _) ->
+            not
+              (List.exists
+                 (fun (p : param) -> Ast.lower_name p.param_name = n)
+                 params))
+          subst
       in
-      let subst' = List.filter (fun (n, _) -> not (List.mem n bound)) subst in
-      let subst'', gs' = substitute_guards subst' gs in
-      EExists (ps, gs', substitute_vars subst'' body)
-  | EEach (ps, gs, comb, body) ->
-      let bound =
-        List.map (fun (p : param) -> Ast.lower_name p.param_name) ps
+      let subst'', gs' = substitute_guards subst_no_params gs in
+      let body' = substitute_vars subst'' body in
+      Ast.make_exists params gs' body'
+  | EEach (mb, metas, comb) ->
+      let params, gs, body = Ast.unbind_quant mb metas in
+      let subst_no_params =
+        List.filter
+          (fun (n, _) ->
+            not
+              (List.exists
+                 (fun (p : param) -> Ast.lower_name p.param_name = n)
+                 params))
+          subst
       in
-      let subst' = List.filter (fun (n, _) -> not (List.mem n bound)) subst in
-      let subst'', gs' = substitute_guards subst' gs in
-      EEach (ps, gs', comb, substitute_vars subst'' body)
+      let subst'', gs' = substitute_guards subst_no_params gs in
+      let body' = substitute_vars subst'' body in
+      Ast.make_each params gs' comb body'
   | ECond arms ->
       ECond
         (List.map
@@ -212,27 +239,45 @@ let rec rename_var_refs env (subst : (string * string) list) (e : expr) : expr =
             (fun (k, v) ->
               (rename_var_refs env subst k, rename_var_refs env subst v))
             pairs )
-  | EForall (ps, gs, body) ->
-      let bound =
-        List.map (fun (p : param) -> Ast.lower_name p.param_name) ps
+  | EForall (mb, metas) ->
+      let params, gs, body = Ast.unbind_quant mb metas in
+      let subst' =
+        List.filter
+          (fun (n, _) ->
+            not
+              (List.exists
+                 (fun (p : param) -> Ast.lower_name p.param_name = n)
+                 params))
+          subst
       in
-      let subst' = List.filter (fun (n, _) -> not (List.mem n bound)) subst in
       let gs' = rename_guards env subst' gs in
-      EForall (ps, gs', rename_var_refs env subst' body)
-  | EExists (ps, gs, body) ->
-      let bound =
-        List.map (fun (p : param) -> Ast.lower_name p.param_name) ps
+      Ast.make_forall params gs' (rename_var_refs env subst' body)
+  | EExists (mb, metas) ->
+      let params, gs, body = Ast.unbind_quant mb metas in
+      let subst' =
+        List.filter
+          (fun (n, _) ->
+            not
+              (List.exists
+                 (fun (p : param) -> Ast.lower_name p.param_name = n)
+                 params))
+          subst
       in
-      let subst' = List.filter (fun (n, _) -> not (List.mem n bound)) subst in
       let gs' = rename_guards env subst' gs in
-      EExists (ps, gs', rename_var_refs env subst' body)
-  | EEach (ps, gs, comb, body) ->
-      let bound =
-        List.map (fun (p : param) -> Ast.lower_name p.param_name) ps
+      Ast.make_exists params gs' (rename_var_refs env subst' body)
+  | EEach (mb, metas, comb) ->
+      let params, gs, body = Ast.unbind_quant mb metas in
+      let subst' =
+        List.filter
+          (fun (n, _) ->
+            not
+              (List.exists
+                 (fun (p : param) -> Ast.lower_name p.param_name = n)
+                 params))
+          subst
       in
-      let subst' = List.filter (fun (n, _) -> not (List.mem n bound)) subst in
       let gs' = rename_guards env subst' gs in
-      EEach (ps, gs', comb, rename_var_refs env subst' body)
+      Ast.make_each params gs' comb (rename_var_refs env subst' body)
   | ECond arms ->
       ECond
         (List.map
@@ -274,24 +319,27 @@ let rec prime_expr ?(bound = []) (e : expr) : expr =
   | EUnop (op, e) -> EUnop (op, prime_expr ~bound e)
   | ETuple es -> ETuple (List.map (prime_expr ~bound) es)
   | EProj (e, i) -> EProj (prime_expr ~bound e, i)
-  | EForall (ps, gs, body) ->
+  | EForall (mb, metas) ->
+      let params, gs, body = Ast.unbind_quant mb metas in
       let bound' =
-        List.map (fun (p : param) -> Ast.lower_name p.param_name) ps @ bound
+        List.map (fun (p : param) -> Ast.lower_name p.param_name) params @ bound
       in
       let bound'', gs' = prime_guards ~bound:bound' gs in
-      EForall (ps, gs', prime_expr ~bound:bound'' body)
-  | EExists (ps, gs, body) ->
+      Ast.make_forall params gs' (prime_expr ~bound:bound'' body)
+  | EExists (mb, metas) ->
+      let params, gs, body = Ast.unbind_quant mb metas in
       let bound' =
-        List.map (fun (p : param) -> Ast.lower_name p.param_name) ps @ bound
+        List.map (fun (p : param) -> Ast.lower_name p.param_name) params @ bound
       in
       let bound'', gs' = prime_guards ~bound:bound' gs in
-      EExists (ps, gs', prime_expr ~bound:bound'' body)
-  | EEach (ps, gs, comb, body) ->
+      Ast.make_exists params gs' (prime_expr ~bound:bound'' body)
+  | EEach (mb, metas, comb) ->
+      let params, gs, body = Ast.unbind_quant mb metas in
       let bound' =
-        List.map (fun (p : param) -> Ast.lower_name p.param_name) ps @ bound
+        List.map (fun (p : param) -> Ast.lower_name p.param_name) params @ bound
       in
       let bound'', gs' = prime_guards ~bound:bound' gs in
-      EEach (ps, gs', comb, prime_expr ~bound:bound'' body)
+      Ast.make_each params gs' comb (prime_expr ~bound:bound'' body)
   | ECond arms ->
       ECond
         (List.map

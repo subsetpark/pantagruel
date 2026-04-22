@@ -302,23 +302,26 @@ let test_prime_expr () =
   | _ -> fail (Printf.sprintf "Unexpected primed expr: %s" (Ast.show_expr e')));
   (* Quantifier-bound variables are NOT primed *)
   let e2 =
-    EForall
-      ( [ { param_name = Lower "a"; param_type = TName (Upper "Account") } ],
-        [],
-        EBinop
-          (OpGe, EApp (EVar (Lower "balance"), [ EVar (Lower "a") ]), ELitNat 0)
-      )
+    Ast.make_forall
+      [ { param_name = Lower "a"; param_type = TName (Upper "Account") } ]
+      []
+      (EBinop
+         (OpGe, EApp (EVar (Lower "balance"), [ EVar (Lower "a") ]), ELitNat 0))
   in
   let e2' = Smt.prime_expr e2 in
   match[@warning "-4"] e2' with
-  | EForall
-      ( _,
-        _,
-        EBinop
+  | EForall (mb, metas) -> (
+      let _, _, body = Ast.unbind_quant mb metas in
+      match body with
+      | EBinop
           ( OpGe,
             EApp (EPrimed (Lower "balance"), [ EVar (Lower "a") ]),
-            ELitNat 0 ) ) ->
-      ()
+            ELitNat 0 ) ->
+          ()
+      | _ ->
+          fail
+            (Printf.sprintf "Quantifier-bound var should not be primed: %s"
+               (Ast.show_expr e2')))
   | _ ->
       fail
         (Printf.sprintf "Quantifier-bound var should not be primed: %s"
@@ -1364,11 +1367,10 @@ let test_in_each_comprehension () =
     Ast.EBinop
       ( OpIn,
         EVar (Lower "r"),
-        EEach
-          ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
-            [],
-            None,
-            EApp (EVar (Lower "role"), [ EVar (Lower "u") ]) ) )
+        Ast.make_each
+          [ { param_name = Lower "u"; param_type = TName (Upper "User") } ]
+          [] None
+          (EApp (EVar (Lower "role"), [ EVar (Lower "u") ])) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "has (= r (role User_0))" true
@@ -1395,11 +1397,11 @@ let test_in_each_comprehension_guarded () =
     Ast.EBinop
       ( OpIn,
         EVar (Lower "r"),
-        EEach
-          ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
-            [ GExpr (EApp (EVar (Lower "active"), [ EVar (Lower "u") ])) ],
-            None,
-            EApp (EVar (Lower "role"), [ EVar (Lower "u") ]) ) )
+        Ast.make_each
+          [ { param_name = Lower "u"; param_type = TName (Upper "User") } ]
+          [ GExpr (EApp (EVar (Lower "active"), [ EVar (Lower "u") ])) ]
+          None
+          (EApp (EVar (Lower "role"), [ EVar (Lower "u") ])) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "has guard (active User_0)" true
@@ -1426,11 +1428,10 @@ let test_in_membership_comprehension () =
     Ast.EBinop
       ( OpIn,
         EVar (Lower "r"),
-        EEach
-          ( [],
-            [ GIn (Lower "u", EVar (Lower "admins")) ],
-            None,
-            EApp (EVar (Lower "role"), [ EVar (Lower "u") ]) ) )
+        Ast.make_each []
+          [ GIn (Lower "u", EVar (Lower "admins")) ]
+          None
+          (EApp (EVar (Lower "role"), [ EVar (Lower "u") ])) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "has select admins" true (contains result "(select admins");
@@ -1451,11 +1452,10 @@ let test_card_each_comprehension () =
   let expr =
     Ast.EUnop
       ( OpCard,
-        EEach
-          ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
-            [],
-            None,
-            EApp (EVar (Lower "role"), [ EVar (Lower "u") ]) ) )
+        Ast.make_each
+          [ { param_name = Lower "u"; param_type = TName (Upper "User") } ]
+          [] None
+          (EApp (EVar (Lower "role"), [ EVar (Lower "u") ])) )
   in
   let result = Smt.translate_expr config env expr in
   check bool "has ite" true (contains result "(ite");
@@ -1473,11 +1473,10 @@ let test_each_comprehension_standalone () =
          Ast.dummy_loc ~chapter:0
   in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
-        [],
-        None,
-        EApp (EVar (Lower "role"), [ EVar (Lower "u") ]) )
+    Ast.make_each
+      [ { param_name = Lower "u"; param_type = TName (Upper "User") } ]
+      [] None
+      (EApp (EVar (Lower "role"), [ EVar (Lower "u") ]))
   in
   let result = Smt.translate_expr config env expr in
   check bool "has as const" true (contains result "as const");
@@ -1494,11 +1493,10 @@ let test_aggregate_add () =
          Ast.dummy_loc ~chapter:0
   in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
-        [],
-        Some CombAdd,
-        EApp (EVar (Lower "score"), [ EVar (Lower "u") ]) )
+    Ast.make_each
+      [ { param_name = Lower "u"; param_type = TName (Upper "User") } ]
+      [] (Some CombAdd)
+      (EApp (EVar (Lower "score"), [ EVar (Lower "u") ]))
   in
   let result = Smt.translate_expr config env expr in
   check bool "has +" true (contains result "(+");
@@ -1515,11 +1513,10 @@ let test_aggregate_and () =
          Ast.dummy_loc ~chapter:0
   in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
-        [],
-        Some CombAnd,
-        EApp (EVar (Lower "active"), [ EVar (Lower "u") ]) )
+    Ast.make_each
+      [ { param_name = Lower "u"; param_type = TName (Upper "User") } ]
+      [] (Some CombAnd)
+      (EApp (EVar (Lower "active"), [ EVar (Lower "u") ]))
   in
   let result = Smt.translate_expr config env expr in
   check bool "has and" true (contains result "(and");
@@ -1538,11 +1535,11 @@ let test_aggregate_min_guarded () =
          Ast.dummy_loc ~chapter:0
   in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
-        [ GExpr (EApp (EVar (Lower "active"), [ EVar (Lower "u") ])) ],
-        Some CombMin,
-        EApp (EVar (Lower "score"), [ EVar (Lower "u") ]) )
+    Ast.make_each
+      [ { param_name = Lower "u"; param_type = TName (Upper "User") } ]
+      [ GExpr (EApp (EVar (Lower "active"), [ EVar (Lower "u") ])) ]
+      (Some CombMin)
+      (EApp (EVar (Lower "score"), [ EVar (Lower "u") ]))
   in
   let result = Smt.translate_expr config env expr in
   check bool "has <=" true (contains result "(<=");
@@ -1562,11 +1559,10 @@ let test_aggregate_add_empty () =
          Ast.dummy_loc ~chapter:0
   in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
-        [],
-        Some CombAdd,
-        EApp (EVar (Lower "score"), [ EVar (Lower "u") ]) )
+    Ast.make_each
+      [ { param_name = Lower "u"; param_type = TName (Upper "User") } ]
+      [] (Some CombAdd)
+      (EApp (EVar (Lower "score"), [ EVar (Lower "u") ]))
   in
   let result = Smt.translate_expr zero_config env expr in
   check string "empty add = identity" "0" result
@@ -1588,11 +1584,10 @@ let test_aggregate_decl_guard_injection () =
          [ GExpr (EApp (EVar (Lower "active"), [ EVar (Lower "u") ])) ]
   in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
-        [],
-        Some CombAdd,
-        EApp (EVar (Lower "score"), [ EVar (Lower "u") ]) )
+    Ast.make_each
+      [ { param_name = Lower "u"; param_type = TName (Upper "User") } ]
+      [] (Some CombAdd)
+      (EApp (EVar (Lower "score"), [ EVar (Lower "u") ]))
   in
   let result = Smt.translate_expr config env expr in
   check bool "has (active User_0)" true (contains result "(active User_0)");
@@ -1611,11 +1606,11 @@ let test_aggregate_add_real () =
          Ast.dummy_loc ~chapter:0
   in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
-        [ GExpr (EApp (EVar (Lower "active"), [ EVar (Lower "u") ])) ],
-        Some CombAdd,
-        EApp (EVar (Lower "real_score"), [ EVar (Lower "u") ]) )
+    Ast.make_each
+      [ { param_name = Lower "u"; param_type = TName (Upper "User") } ]
+      [ GExpr (EApp (EVar (Lower "active"), [ EVar (Lower "u") ])) ]
+      (Some CombAdd)
+      (EApp (EVar (Lower "real_score"), [ EVar (Lower "u") ]))
   in
   let result = Smt.translate_expr config env expr in
   check bool "has 0.0 identity" true (contains result "0.0");
@@ -1635,11 +1630,10 @@ let test_aggregate_add_real_empty () =
          Ast.dummy_loc ~chapter:0
   in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
-        [],
-        Some CombAdd,
-        EApp (EVar (Lower "real_score"), [ EVar (Lower "u") ]) )
+    Ast.make_each
+      [ { param_name = Lower "u"; param_type = TName (Upper "User") } ]
+      [] (Some CombAdd)
+      (EApp (EVar (Lower "real_score"), [ EVar (Lower "u") ]))
   in
   let result = Smt.translate_expr zero_config env expr in
   check string "empty real add = 0.0" "0.0" result
@@ -1654,11 +1648,10 @@ let test_aggregate_min_real () =
          Ast.dummy_loc ~chapter:0
   in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
-        [],
-        Some CombMin,
-        EApp (EVar (Lower "real_score"), [ EVar (Lower "u") ]) )
+    Ast.make_each
+      [ { param_name = Lower "u"; param_type = TName (Upper "User") } ]
+      [] (Some CombMin)
+      (EApp (EVar (Lower "real_score"), [ EVar (Lower "u") ]))
   in
   let result = Smt.translate_expr config env expr in
   check bool "has 0.0 seed" true (contains result "0.0");
@@ -1827,16 +1820,16 @@ let test_nested_quantifier_guards () =
   in
   (* all x: User | (some y: User | role y = role x) *)
   let expr =
-    Ast.EForall
-      ( [ { param_name = Lower "x"; param_type = TName (Upper "User") } ],
-        [],
-        EExists
-          ( [ { param_name = Lower "y"; param_type = TName (Upper "User") } ],
-            [],
-            EBinop
-              ( OpEq,
-                EApp (EVar (Lower "role"), [ EVar (Lower "y") ]),
-                EApp (EVar (Lower "role"), [ EVar (Lower "x") ]) ) ) )
+    Ast.make_forall
+      [ { param_name = Lower "x"; param_type = TName (Upper "User") } ]
+      []
+      (Ast.make_exists
+         [ { param_name = Lower "y"; param_type = TName (Upper "User") } ]
+         []
+         (EBinop
+            ( OpEq,
+              EApp (EVar (Lower "role"), [ EVar (Lower "y") ]),
+              EApp (EVar (Lower "role"), [ EVar (Lower "x") ]) )))
   in
   let result = Smt.translate_expr config env expr in
   (* Outer forall should NOT have the guard (nested quantifier handles its own).
@@ -1853,10 +1846,10 @@ let test_unguarded_rule_unchanged () =
          Ast.dummy_loc ~chapter:0
   in
   let expr =
-    Ast.EForall
-      ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
-        [],
-        EApp (EVar (Lower "name"), [ EVar (Lower "u") ]) )
+    Ast.make_forall
+      [ { param_name = Lower "u"; param_type = TName (Upper "User") } ]
+      []
+      (EApp (EVar (Lower "name"), [ EVar (Lower "u") ]))
   in
   let result = Smt.translate_expr config env expr in
   (* No guard injection — plain forall without => *)
@@ -1880,12 +1873,11 @@ let test_guard_substitution () =
   in
   (* all x: User | score x >= 0 — the guard "active u" should become "active x" *)
   let expr =
-    Ast.EForall
-      ( [ { param_name = Lower "x"; param_type = TName (Upper "User") } ],
-        [],
-        EBinop
-          (OpGe, EApp (EVar (Lower "score"), [ EVar (Lower "x") ]), ELitNat 0)
-      )
+    Ast.make_forall
+      [ { param_name = Lower "x"; param_type = TName (Upper "User") } ]
+      []
+      (EBinop
+         (OpGe, EApp (EVar (Lower "score"), [ EVar (Lower "x") ]), ELitNat 0))
   in
   let result = Smt.translate_expr config env expr in
   (* Guard should be substituted: (active x), not (active u) *)
@@ -2271,11 +2263,10 @@ let make_aggregate_env () =
 let test_aggregate_add_item () =
   let env = make_aggregate_env () in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
-        [],
-        Some CombAdd,
-        EApp (EVar (Lower "price"), [ EVar (Lower "i") ]) )
+    Ast.make_each
+      [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ]
+      [] (Some CombAdd)
+      (EApp (EVar (Lower "price"), [ EVar (Lower "i") ]))
   in
   let result = Smt.translate_expr config env expr in
   check bool "uses +" true (contains result "(+");
@@ -2286,11 +2277,11 @@ let test_aggregate_add_item () =
 let test_aggregate_add_guarded () =
   let env = make_aggregate_env () in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
-        [ GExpr (EApp (EVar (Lower "available?"), [ EVar (Lower "i") ])) ],
-        Some CombAdd,
-        EApp (EVar (Lower "price"), [ EVar (Lower "i") ]) )
+    Ast.make_each
+      [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ]
+      [ GExpr (EApp (EVar (Lower "available?"), [ EVar (Lower "i") ])) ]
+      (Some CombAdd)
+      (EApp (EVar (Lower "price"), [ EVar (Lower "i") ]))
   in
   let result = Smt.translate_expr config env expr in
   check bool "uses +" true (contains result "(+");
@@ -2301,11 +2292,10 @@ let test_aggregate_add_guarded () =
 let test_aggregate_mul () =
   let env = make_aggregate_env () in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
-        [],
-        Some CombMul,
-        EApp (EVar (Lower "price"), [ EVar (Lower "i") ]) )
+    Ast.make_each
+      [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ]
+      [] (Some CombMul)
+      (EApp (EVar (Lower "price"), [ EVar (Lower "i") ]))
   in
   let result = Smt.translate_expr config env expr in
   check bool "uses *" true (contains result "(*")
@@ -2313,11 +2303,10 @@ let test_aggregate_mul () =
 let test_aggregate_and_item () =
   let env = make_aggregate_env () in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
-        [],
-        Some CombAnd,
-        EApp (EVar (Lower "available?"), [ EVar (Lower "i") ]) )
+    Ast.make_each
+      [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ]
+      [] (Some CombAnd)
+      (EApp (EVar (Lower "available?"), [ EVar (Lower "i") ]))
   in
   let result = Smt.translate_expr config env expr in
   check bool "uses and" true (contains result "(and")
@@ -2325,11 +2314,11 @@ let test_aggregate_and_item () =
 let test_aggregate_and_guarded () =
   let env = make_aggregate_env () in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
-        [ GExpr (EApp (EVar (Lower "available?"), [ EVar (Lower "i") ])) ],
-        Some CombAnd,
-        EApp (EVar (Lower "available?"), [ EVar (Lower "i") ]) )
+    Ast.make_each
+      [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ]
+      [ GExpr (EApp (EVar (Lower "available?"), [ EVar (Lower "i") ])) ]
+      (Some CombAnd)
+      (EApp (EVar (Lower "available?"), [ EVar (Lower "i") ]))
   in
   let result = Smt.translate_expr config env expr in
   check bool "uses and" true (contains result "(and");
@@ -2340,11 +2329,11 @@ let test_aggregate_and_guarded () =
 let test_aggregate_or_guarded () =
   let env = make_aggregate_env () in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
-        [ GExpr (EApp (EVar (Lower "available?"), [ EVar (Lower "i") ])) ],
-        Some CombOr,
-        EApp (EVar (Lower "available?"), [ EVar (Lower "i") ]) )
+    Ast.make_each
+      [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ]
+      [ GExpr (EApp (EVar (Lower "available?"), [ EVar (Lower "i") ])) ]
+      (Some CombOr)
+      (EApp (EVar (Lower "available?"), [ EVar (Lower "i") ]))
   in
   let result = Smt.translate_expr config env expr in
   check bool "uses or" true (contains result "(or");
@@ -2355,11 +2344,10 @@ let test_aggregate_or_guarded () =
 let test_aggregate_or () =
   let env = make_aggregate_env () in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
-        [],
-        Some CombOr,
-        EApp (EVar (Lower "available?"), [ EVar (Lower "i") ]) )
+    Ast.make_each
+      [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ]
+      [] (Some CombOr)
+      (EApp (EVar (Lower "available?"), [ EVar (Lower "i") ]))
   in
   let result = Smt.translate_expr config env expr in
   check bool "uses or" true (contains result "(or")
@@ -2367,11 +2355,10 @@ let test_aggregate_or () =
 let test_aggregate_min () =
   let env = make_aggregate_env () in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
-        [],
-        Some CombMin,
-        EApp (EVar (Lower "price"), [ EVar (Lower "i") ]) )
+    Ast.make_each
+      [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ]
+      [] (Some CombMin)
+      (EApp (EVar (Lower "price"), [ EVar (Lower "i") ]))
   in
   let result = Smt.translate_expr config env expr in
   check bool "uses <" true (contains result "(<");
@@ -2380,11 +2367,10 @@ let test_aggregate_min () =
 let test_aggregate_max () =
   let env = make_aggregate_env () in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
-        [],
-        Some CombMax,
-        EApp (EVar (Lower "price"), [ EVar (Lower "i") ]) )
+    Ast.make_each
+      [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ]
+      [] (Some CombMax)
+      (EApp (EVar (Lower "price"), [ EVar (Lower "i") ]))
   in
   let result = Smt.translate_expr config env expr in
   check bool "uses >" true (contains result "(>");
@@ -2398,11 +2384,10 @@ let test_aggregate_empty_domain () =
       ~inject_guards:true
   in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
-        [],
-        Some CombAdd,
-        EApp (EVar (Lower "price"), [ EVar (Lower "i") ]) )
+    Ast.make_each
+      [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ]
+      [] (Some CombAdd)
+      (EApp (EVar (Lower "price"), [ EVar (Lower "i") ]))
   in
   let result = Smt.translate_expr zero_config env expr in
   check string "empty domain returns 0" "0" result
@@ -2414,11 +2399,10 @@ let test_aggregate_empty_domain_mul () =
       ~inject_guards:true
   in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
-        [],
-        Some CombMul,
-        EApp (EVar (Lower "price"), [ EVar (Lower "i") ]) )
+    Ast.make_each
+      [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ]
+      [] (Some CombMul)
+      (EApp (EVar (Lower "price"), [ EVar (Lower "i") ]))
   in
   let result = Smt.translate_expr zero_config env expr in
   check string "empty domain returns 1" "1" result
@@ -2430,11 +2414,10 @@ let test_aggregate_empty_domain_and () =
       ~inject_guards:true
   in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
-        [],
-        Some CombAnd,
-        EApp (EVar (Lower "available?"), [ EVar (Lower "i") ]) )
+    Ast.make_each
+      [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ]
+      [] (Some CombAnd)
+      (EApp (EVar (Lower "available?"), [ EVar (Lower "i") ]))
   in
   let result = Smt.translate_expr zero_config env expr in
   check string "empty domain returns true" "true" result
@@ -2446,11 +2429,10 @@ let test_aggregate_empty_domain_or () =
       ~inject_guards:true
   in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
-        [],
-        Some CombOr,
-        EApp (EVar (Lower "available?"), [ EVar (Lower "i") ]) )
+    Ast.make_each
+      [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ]
+      [] (Some CombOr)
+      (EApp (EVar (Lower "available?"), [ EVar (Lower "i") ]))
   in
   let result = Smt.translate_expr zero_config env expr in
   check string "empty domain returns false" "false" result
@@ -2463,11 +2445,10 @@ let test_aggregate_empty_domain_min () =
       ~inject_guards:true
   in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
-        [],
-        Some CombMin,
-        EApp (EVar (Lower "price"), [ EVar (Lower "i") ]) )
+    Ast.make_each
+      [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ]
+      [] (Some CombMin)
+      (EApp (EVar (Lower "price"), [ EVar (Lower "i") ]))
   in
   check_raises "empty domain min raises"
     (Failure "SMT: min/max over empty domain") (fun () ->
@@ -2480,11 +2461,10 @@ let test_aggregate_empty_domain_max () =
       ~inject_guards:true
   in
   let expr =
-    Ast.EEach
-      ( [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ],
-        [],
-        Some CombMax,
-        EApp (EVar (Lower "price"), [ EVar (Lower "i") ]) )
+    Ast.make_each
+      [ { param_name = Lower "i"; param_type = TName (Upper "Item") } ]
+      [] (Some CombMax)
+      (EApp (EVar (Lower "price"), [ EVar (Lower "i") ]))
   in
   check_raises "empty domain max raises"
     (Failure "SMT: min/max over empty domain") (fun () ->

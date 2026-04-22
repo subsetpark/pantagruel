@@ -137,7 +137,8 @@ let rec expr_to_json = function
               [ ("op", `String (unop_to_string op)); ("arg", expr_to_json e) ]
           );
         ]
-  | EForall (params, guards, body) ->
+  | EForall (mb, metas) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       `Assoc
         [
           ( "forall",
@@ -148,7 +149,8 @@ let rec expr_to_json = function
                 ("body", expr_to_json body);
               ] );
         ]
-  | EExists (params, guards, body) ->
+  | EExists (mb, metas) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       `Assoc
         [
           ( "exists",
@@ -159,7 +161,8 @@ let rec expr_to_json = function
                 ("body", expr_to_json body);
               ] );
         ]
-  | EEach (params, guards, comb, body) ->
+  | EEach (mb, metas, comb) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       let combiner_json =
         match comb with
         | None -> `Null

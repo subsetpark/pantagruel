@@ -292,7 +292,7 @@ let[@warning "-44"] gen_bool_expr_at_depth =
                   ( depth - 1,
                     { world with vars = (pname, p.param_type) :: world.vars } )
               in
-              return (Ast.EForall ([ p ], [], body)) );
+              return (Ast.make_forall [ p ] [] body) );
             ( 1,
               let* p = gen_param_with world in
               let pname = Ast.lower_name p.param_name in
@@ -301,7 +301,7 @@ let[@warning "-44"] gen_bool_expr_at_depth =
                   ( depth - 1,
                     { world with vars = (pname, p.param_type) :: world.vars } )
               in
-              return (Ast.EExists ([ p ], [], body)) );
+              return (Ast.make_exists [ p ] [] body) );
           ])
 
 let gen_bool_expr world = gen_bool_expr_at_depth (2, world)

@@ -142,15 +142,15 @@ let test_expr_to_json_quantifiers () =
   in
   check bool "forall" true
     (has_key "forall"
-       (Json_output.expr_to_json (Ast.EForall (p, [], ELitBool true))));
+       (Json_output.expr_to_json (Ast.make_forall p [] (ELitBool true))));
   check bool "exists" true
     (has_key "exists"
-       (Json_output.expr_to_json (Ast.EExists (p, [], ELitBool true))));
+       (Json_output.expr_to_json (Ast.make_exists p [] (ELitBool true))));
   check bool "each" true
     (has_key "each"
-       (Json_output.expr_to_json (Ast.EEach (p, [], None, EVar (Lower "x")))));
+       (Json_output.expr_to_json (Ast.make_each p [] None (EVar (Lower "x")))));
   (match
-     Json_output.expr_to_json (Ast.EEach (p, [], None, EVar (Lower "x")))
+     Json_output.expr_to_json (Ast.make_each p [] None (EVar (Lower "x")))
    with
   | `Assoc [ ("each", `Assoc fields) ] -> (
       match List.assoc "combiner" fields with
@@ -159,7 +159,7 @@ let test_expr_to_json_quantifiers () =
   | _ -> fail "Expected each JSON object");
   (match
      Json_output.expr_to_json
-       (Ast.EEach (p, [], Some CombMin, EVar (Lower "x")))
+       (Ast.make_each p [] (Some CombMin) (EVar (Lower "x")))
    with
   | `Assoc [ ("each", `Assoc fields) ] -> (
       match List.assoc "combiner" fields with
