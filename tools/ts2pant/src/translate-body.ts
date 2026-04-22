@@ -420,6 +420,14 @@ function installMapWrite(
  * at the override key the override fires, everywhere else it falls through
  * to the pre-state rule application. Without a staged entry, returns the
  * plain pre-state rule application.
+ *
+ * `.get` respects staged `.delete`s: a value override whose tuple has a
+ * literal `false` as its latest membership claim is dropped from the read,
+ * so `m.set(k, v); m.delete(k); m.get(k)` falls through to the pre-state
+ * rule rather than returning `v`. Pantagruel's declaration guard handles
+ * this at emission time (vacuous value under false membership — Dafny-style
+ * partial function), but an inline override application has no such guard,
+ * so the filter is explicit at the read site.
  */
 function readMapThroughWrites(
   state: SymbolicState | undefined,
@@ -452,8 +460,7 @@ function readMapThroughWrites(
   if (entry === undefined || entry.kind !== "map") {
     return baseRead;
   }
-  const overrides =
-    methodName === "has" ? entry.membershipOverrides : entry.valueOverrides;
+  const overrides = readOverridesFor(entry, methodName);
   if (overrides.length === 0) {
     return baseRead;
   }
@@ -463,6 +470,33 @@ function readMapThroughWrites(
       overrides.map((o) => [o.keyTuple, o.value] as [OpaqueExpr, OpaqueExpr]),
     ),
     [canonObj, canonKey],
+  );
+}
+
+/**
+ * Pick the override list to use for an inline `.get`/`.has` read. `.has`
+ * uses the raw membership list. `.get` drops value overrides whose tuple
+ * has a literal `false` latest membership — a staged `.delete` supersedes
+ * any earlier staged `.set` at that tuple. Conditional membership (e.g.
+ * `cond g => false, true => true` after a branch-merged `.delete`) is not
+ * filtered; only literal `false` is detected here.
+ */
+function readOverridesFor(
+  entry: MapRuleWriteEntry,
+  methodName: "get" | "has",
+): MapOverride[] {
+  if (methodName === "has") {
+    return [...entry.membershipOverrides];
+  }
+  const ast = getAst();
+  const canonical = (t: OpaqueExpr) => ast.strExpr(t);
+  const falseText = ast.strExpr(ast.litBool(false));
+  const latestMembership = new Map<string, string>();
+  for (const m of entry.membershipOverrides) {
+    latestMembership.set(canonical(m.keyTuple), ast.strExpr(m.value));
+  }
+  return entry.valueOverrides.filter(
+    (o) => latestMembership.get(canonical(o.keyTuple)) !== falseText,
   );
 }
 

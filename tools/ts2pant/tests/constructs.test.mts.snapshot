@@ -230,6 +230,10 @@ exports[`expressions-map-mutation.ts > bump 1`] = `
 "module Bump.\\n\\nStringToIntMap.\\nstringToIntMapKey m: StringToIntMap, k1: String => Bool.\\nstringToIntMap m: StringToIntMap, k1: String, stringToIntMapKey m k1 => Int.\\n~> Bump @ counts: StringToIntMap, k: String.\\n\\n---\\n\\nall m1: StringToIntMap, k2: String | stringToIntMap' m1 k2 = stringToIntMap[(counts, k) |-> stringToIntMap counts k + 1] m1 k2.\\nall m2: StringToIntMap, k3: String | stringToIntMapKey' m2 k3 = stringToIntMapKey[(counts, k) |-> true] m2 k3.\\n"
 `;
 
+exports[`expressions-map-mutation.ts > deleteThenCopy 1`] = `
+"module DeleteThenCopy.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k: String => Bool.\\nstringToIntMap m1: StringToIntMap, k: String, stringToIntMapKey m1 k => Int.\\n~> DeleteThenCopy @ m: StringToIntMap, kA: String, kB: String, v: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k1: String | stringToIntMap' m2 k1 = stringToIntMap[(m, kA) |-> v, (m, kB) |-> stringToIntMap m kA] m2 k1.\\nall m3: StringToIntMap, k2: String | stringToIntMapKey' m3 k2 = stringToIntMapKey[(m, kA) |-> true, (m, kA) |-> false, (m, kB) |-> true] m3 k2.\\n"
+`;
+
 exports[`expressions-map-mutation.ts > put 1`] = `
 "module Put.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k1: String => Bool.\\nstringToIntMap m1: StringToIntMap, k1: String, stringToIntMapKey m1 k1 => Int.\\n~> Put @ m: StringToIntMap, k: String, v: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k2: String | stringToIntMap' m2 k2 = stringToIntMap[(m, k) |-> v] m2 k2.\\nall m3: StringToIntMap, k3: String | stringToIntMapKey' m3 k3 = stringToIntMapKey[(m, k) |-> true] m3 k3.\\n"
 `;

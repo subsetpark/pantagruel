@@ -70,3 +70,23 @@ export function setAndCopy(
   m.set(kSrc, v);
   m.set(kDst, m.get(kSrc)!);
 }
+
+/**
+ * Read-after-delete — `.get(kA)` after `.set(kA, v); .delete(kA)` must not
+ * pick up the staged `v`. Pantagruel's declaration guard makes the value
+ * rule vacuous under false membership at emission time, but an inline
+ * override read has no such guard — so the filter in readMapThroughWrites
+ * drops the stale value override at `(m, kA)` once its latest membership
+ * is false. The inner `m.get(kA)!` therefore lowers to the pre-state
+ * `stringToIntMap m kA`.
+ */
+export function deleteThenCopy(
+  m: Map<string, number>,
+  kA: string,
+  kB: string,
+  v: number,
+): void {
+  m.set(kA, v);
+  m.delete(kA);
+  m.set(kB, m.get(kA)!);
+}
