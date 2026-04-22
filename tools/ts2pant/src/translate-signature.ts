@@ -1,10 +1,11 @@
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
-import type { NameRegistry } from "./name-registry.js";
 import type { OpaqueBinop, OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
 import {
-  MapSynthesizer,
+  cellIsUsed,
+  cellRegisterName,
+  type MapSynthCell,
   mapTsType,
   type NumericStrategy,
 } from "./translate-types.js";
@@ -18,12 +19,12 @@ export interface TranslatedSignature {
   /** Map from TS parameter names to Pantagruel parameter names. */
   paramNameMap: Map<string, string>;
   /**
-   * Synthesizer for `Map<K, V>` domains encountered during signature
+   * Synthesizer cell for `Map<K, V>` domains encountered during signature
    * translation (parameter and return types). Pass through to downstream
    * stages (`translateTypes`, `translateBody`) so they register and look up
-   * Maps in the same table. Present only when a `registry` was supplied.
+   * Maps in the same table. Present only when a `synthCell` was supplied.
    */
-  mapSynth?: MapSynthesizer | undefined;
+  synthCell?: MapSynthCell | undefined;
 }
 
 /**
@@ -186,7 +187,7 @@ export function extractAssertionGuard(
   checker: ts.TypeChecker,
   call: ts.CallExpression,
   strategy: NumericStrategy,
-  paramNames: Map<string, string>,
+  paramNames: ReadonlyMap<string, string>,
 ): OpaqueExpr | undefined {
   const paramIndex = isAssertionCall(checker, call);
   if (paramIndex === null) {
@@ -267,7 +268,7 @@ function buildSubstitutionMap(
   targetParams: ts.NodeArray<ts.ParameterDeclaration>,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
-  callerParamNames: Map<string, string>,
+  callerParamNames: ReadonlyMap<string, string>,
 ): Map<string, string> | null {
   const ast = getAst();
 
@@ -307,7 +308,7 @@ function followGuards(
   call: ts.CallExpression,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
-  callerParamNames: Map<string, string>,
+  callerParamNames: ReadonlyMap<string, string>,
   visited: Set<ts.Node>,
 ): OpaqueExpr[] {
   const target = resolveCallTarget(call, checker);
@@ -486,7 +487,7 @@ function scanBodyForGuards(
   body: ts.Block,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
-  paramNames: Map<string, string>,
+  paramNames: ReadonlyMap<string, string>,
   visited: Set<ts.Node>,
 ): OpaqueExpr[] {
   const ast = getAst();
@@ -657,7 +658,7 @@ export function detectGuard(
   node: ts.FunctionDeclaration | ts.MethodDeclaration,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
-  paramNames: Map<string, string>,
+  paramNames: ReadonlyMap<string, string>,
 ): OpaqueExpr | undefined {
   const ast = getAst();
 
@@ -715,7 +716,7 @@ export function translateExpr(
   expr: ts.Expression,
   _checker: ts.TypeChecker,
   _strategy: NumericStrategy,
-  paramNames: Map<string, string>,
+  paramNames: ReadonlyMap<string, string>,
 ): OpaqueExpr {
   const ast = getAst();
 
@@ -822,16 +823,19 @@ function capitalize(s: string): string {
 export function shortParamName(
   typeName: string,
   existingNames: Set<string>,
-  registry?: NameRegistry,
+  synthCell?: MapSynthCell,
 ): string {
   let name = typeName[0]!.toLowerCase();
   let suffix = 1;
-  while (existingNames.has(name) || registry?.isUsed(name)) {
+  while (
+    existingNames.has(name) ||
+    (synthCell ? cellIsUsed(synthCell, name) : false)
+  ) {
     name = typeName[0]!.toLowerCase() + suffix;
     suffix++;
   }
-  if (registry) {
-    registry.register(name);
+  if (synthCell) {
+    cellRegisterName(synthCell, name);
   }
   return name;
 }
@@ -843,7 +847,7 @@ export function translateSignature(
   sourceFile: SourceFile,
   functionName: string,
   strategy: NumericStrategy,
-  registry?: NameRegistry,
+  synthCell?: MapSynthCell,
   overrides?: Map<string, string>,
 ): TranslatedSignature {
   const checker = sourceFile.getProject().getTypeChecker().compilerObject;
@@ -862,13 +866,9 @@ export function translateSignature(
   const params: Array<{ name: string; type: string }> = [];
   const paramNameMap = new Map<string, string>();
 
-  // A synthesizer is only meaningful when a registry is present (it uses
-  // the registry to claim unique synthesized domain names).
-  const mapSynth = registry ? new MapSynthesizer(registry) : undefined;
-
   if (className) {
     const existingParamNames = new Set(sig.getParameters().map((p) => p.name));
-    const pName = shortParamName(className, existingParamNames, registry);
+    const pName = shortParamName(className, existingParamNames, synthCell);
     params.push({ name: pName, type: className });
     paramNameMap.set("this", pName);
   }
@@ -878,10 +878,12 @@ export function translateSignature(
       checker.getTypeOfSymbol(param),
       checker,
       strategy,
-      mapSynth,
+      synthCell,
     );
     const paramType = overrides?.get(param.name) ?? defaultType;
-    const pantName = registry ? registry.register(param.name) : param.name;
+    const pantName = synthCell
+      ? cellRegisterName(synthCell, param.name)
+      : param.name;
     params.push({ name: pantName, type: paramType });
     paramNameMap.set(param.name, pantName);
   }
@@ -893,7 +895,7 @@ export function translateSignature(
       sig.getReturnType(),
       checker,
       strategy,
-      mapSynth,
+      synthCell,
     );
     const decl: PantRule = {
       kind: "rule",
@@ -904,7 +906,7 @@ export function translateSignature(
     if (guard) {
       decl.guard = guard;
     }
-    return { declaration: decl, classification, paramNameMap, mapSynth };
+    return { declaration: decl, classification, paramNameMap, synthCell };
   } else {
     const decl: PantAction = {
       kind: "action",
@@ -914,6 +916,6 @@ export function translateSignature(
     if (guard) {
       decl.guard = guard;
     }
-    return { declaration: decl, classification, paramNameMap, mapSynth };
+    return { declaration: decl, classification, paramNameMap, synthCell };
   }
 }

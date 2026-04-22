@@ -1,11 +1,15 @@
 import type { SourceFile } from "ts-morph";
 import { extractFunctionAnnotationsAndOverrides } from "./annotations.js";
 import { extractReferencedTypes, getChecker } from "./extract.js";
-import { NameRegistry } from "./name-registry.js";
 import { loadAst, loadParser, rewriteAnnotation } from "./pant-wasm.js";
 import { translateBody } from "./translate-body.js";
 import { translateSignature } from "./translate-signature.js";
-import { type NumericStrategy, translateTypes } from "./translate-types.js";
+import {
+  cellEmitSynth,
+  type NumericStrategy,
+  newMapSynthCell,
+  translateTypes,
+} from "./translate-types.js";
 import type { PantDocument } from "./types.js";
 
 export interface PipelineOptions {
@@ -35,10 +39,13 @@ export async function buildPantDocument(
     : functionName;
 
   // Document-wide name registry ensures unique variable names across
-  // type-derived rules and the main function's parameters.
-  // Register the function's own param names first (they keep natural names);
-  // type-derived accessor rules adapt with suffixes if there's a collision.
-  const registry = new NameRegistry();
+  // type-derived rules and the main function's parameters. Held inside a
+  // `MapSynthCell` together with the Map synthesizer so deep body-level call
+  // sites can register on demand without threading state through every
+  // BodyResult. Register the function's own param names first (they keep
+  // natural names); type-derived accessor rules adapt with suffixes if
+  // there's a collision.
+  const synthCell = newMapSynthCell();
 
   // Extract @pant propositions and @pant-type overrides in one JSDoc pass.
   // Overrides influence parameter type mapping during signature translation;
@@ -47,32 +54,22 @@ export async function buildPantDocument(
     extractFunctionAnnotationsAndOverrides(sourceFile, functionName);
 
   // Translate signature first to claim the function's param names
-  const {
-    declaration: sigDecl,
-    paramNameMap,
-    mapSynth,
-  } = translateSignature(
+  const { declaration: sigDecl, paramNameMap } = translateSignature(
     sourceFile,
     functionName,
     strategy,
-    registry,
+    synthCell,
     overrides,
   );
 
   // Extract and translate types (type-derived param names adapt to registry).
   // Pass the synthesizer so nested Maps inside interface-field V register too.
   const extracted = extractReferencedTypes(sourceFile, functionName);
-  const typeDecls = translateTypes(
-    extracted,
-    checker,
-    strategy,
-    registry,
-    mapSynth,
-  );
+  const typeDecls = translateTypes(extracted, checker, strategy, synthCell);
   // After both sig and types have registered their Maps, emit the synth
   // decls (one domain + membership predicate + guarded value rule per
   // unique (K, V)). Splice before sigDecl so the sig's references resolve.
-  const synthDecls = mapSynth ? mapSynth.emit() : [];
+  const synthDecls = cellEmitSynth(synthCell);
   const declarations = [...typeDecls, ...synthDecls, sigDecl];
 
   const moduleName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
@@ -90,22 +87,20 @@ export async function buildPantDocument(
       functionName,
       strategy,
       declarations,
-      mapSynth,
+      synthCell,
     });
     doc = { ...doc, propositions: [...doc.propositions, ...bodyProps] };
 
     // Drain any Map (K, V) pairs registered on demand during body translation
     // (e.g., `build().get(k)!` where `build`'s return type wasn't surfaced
-    // through the signature or referenced types). emit() is incremental, so
-    // this returns only entries new since the pre-body emit.
-    if (mapSynth) {
-      const extraSynthDecls = mapSynth.emit();
-      if (extraSynthDecls.length > 0) {
-        doc = {
-          ...doc,
-          declarations: [...doc.declarations, ...extraSynthDecls],
-        };
-      }
+    // through the signature or referenced types). cellEmitSynth is
+    // incremental, so this returns only entries new since the pre-body emit.
+    const extraSynthDecls = cellEmitSynth(synthCell);
+    if (extraSynthDecls.length > 0) {
+      doc = {
+        ...doc,
+        declarations: [...doc.declarations, ...extraSynthDecls],
+      };
     }
   }
 
