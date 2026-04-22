@@ -617,17 +617,22 @@ export function isSetType(type: ts.Type): boolean {
 /**
  * Detect an anonymous object/record type — a TS inline shape with no
  * declared interface / alias. These surface with the compiler-assigned
- * symbol name `__type`. Callable types (`{ (): void }`) would also
- * match on the name alone; we guard against those by rejecting shapes
- * with call signatures. Zero-property records (`{}`) are intentionally
- * supported and synthesize as `EmptyRec` via `registerRecordShape`.
+ * symbol name `__type`. Callable types (`{ (): void }`) and constructor
+ * types (`{ new(): T }`) would also match on the name alone; we guard
+ * against those by rejecting shapes with call or construct signatures —
+ * record synthesis is only for finite field-based shapes. Zero-property
+ * records (`{}`) are intentionally supported and synthesize as
+ * `EmptyRec` via `registerRecordShape`.
  */
 export function isAnonymousRecord(type: ts.Type): boolean {
   const symbol = type.getSymbol();
   if (symbol?.getName() !== "__type") {
     return false;
   }
-  if (type.getCallSignatures().length > 0) {
+  if (
+    type.getCallSignatures().length > 0 ||
+    type.getConstructSignatures().length > 0
+  ) {
     return false;
   }
   return true;
