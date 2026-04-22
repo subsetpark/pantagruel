@@ -37,6 +37,7 @@
   (glob_files snapshots/pretty/*.pant)
   (glob_files snapshots/markdown/*.md)
   (glob_files regression/*.pant)
-  regression/expected_failures.txt)
+  regression/expected_failures.txt
+  regression/free_vars.baseline)
  (preprocess
   (pps sedlex.ppx)))
