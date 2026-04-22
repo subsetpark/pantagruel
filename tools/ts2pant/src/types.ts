@@ -54,6 +54,12 @@ export type PropResult =
       lhs: OpaqueExpr;
       rhs: OpaqueExpr;
     }
+  | {
+      kind: "assertion";
+      quantifiers: OpaqueParam[];
+      guards?: OpaqueGuard[];
+      body: OpaqueExpr;
+    }
   | { kind: "unsupported"; reason: string }
   | { kind: "raw"; text: string };
 

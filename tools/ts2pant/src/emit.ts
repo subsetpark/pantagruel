@@ -40,6 +40,13 @@ function renderPropResult(prop: PropResult): string {
       }
       return ast.strExpr(ast.forall(prop.quantifiers, guards, eq));
     }
+    case "assertion": {
+      const guards = prop.guards ?? [];
+      if (prop.quantifiers.length === 0 && guards.length === 0) {
+        return ast.strExpr(prop.body);
+      }
+      return ast.strExpr(ast.forall(prop.quantifiers, guards, prop.body));
+    }
     case "unsupported":
       return `> UNSUPPORTED: ${prop.reason}`;
     case "raw":

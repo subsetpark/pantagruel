@@ -37,4 +37,11 @@ describe("dogfood: src/name-registry.ts", () => {
     t.assert.snapshot(output);
     assertPantTypeChecks(output);
   });
+
+  it("emptyNameRegistry — translates and type-checks", async (t) => {
+    const doc = await buildDocumentFromPath(filePath, "emptyNameRegistry");
+    const output = emitDocument(doc);
+    t.assert.snapshot(output);
+    assertPantTypeChecks(output);
+  });
 });

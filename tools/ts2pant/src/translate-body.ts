@@ -891,6 +891,31 @@ function translatePureBody(
     ];
   }
 
+  // Record returns: when the function returns an object literal, decompose
+  // into one equation per field of the return type. Observational
+  // axiomatization (Kroening & Strichman Ch. 8; Dafny-style postcondition
+  // decomposition): `f(a) = { p: e }` becomes `p (f a) = e` for each field.
+  // Pantagruel has no record-constructor syntax — its interfaces are opaque
+  // domains exposed only through per-field accessor rules — so this is the
+  // natural shape.
+  if (
+    ts.isExpression(extracted.returnExpr) &&
+    ts.isObjectLiteralExpression(extracted.returnExpr)
+  ) {
+    return translateRecordReturn(
+      extracted.returnExpr,
+      functionName,
+      params,
+      node,
+      checker,
+      strategy,
+      inlined.scopedParams,
+      supply,
+      synthCell,
+      inlined.applyTo,
+    );
+  }
+
   const body = translateBodyExpr(
     extracted.returnExpr,
     checker,
@@ -916,6 +941,230 @@ function translatePureBody(
       rhs,
     },
   ];
+}
+
+/**
+ * Translate a function whose body returns an object literal
+ * `{ f1: e1, f2: e2 }` into one equation per field of the return type.
+ * Each equation shape: `all <params> | f_i (fn <args>) = e_i.` — the
+ * field's accessor rule applied to the function application is equated
+ * to the field's initializer expression.
+ *
+ * `new Set()` in a `[T]` field position is special-cased as "empty set"
+ * and emits an assertion `all x: T | not (x in f_i (fn <args>))` instead
+ * of an equation, since Pantagruel has no empty-list literal.
+ *
+ * Requirements:
+ *   - Return type must be a named TypeScript interface/class/alias whose
+ *     accessor rules are already declared elsewhere in the document.
+ *   - The object literal must supply exactly one PropertyAssignment or
+ *     ShorthandPropertyAssignment per declared field of the return type.
+ *   - Initializers must translate as pure expressions (or be the
+ *     `new Set()` special case above).
+ */
+function translateRecordReturn(
+  lit: ts.ObjectLiteralExpression,
+  functionName: string,
+  params: Array<{ name: string; type: string }>,
+  fnNode: ts.FunctionDeclaration | ts.MethodDeclaration,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  scopedParams: ReadonlyMap<string, string>,
+  supply: UniqueSupply,
+  synthCell: MapSynthCell | undefined,
+  applyConst: (e: OpaqueExpr) => OpaqueExpr,
+): PropResult[] {
+  const ast = getAst();
+
+  // Resolve return type. Use the signature's declared return rather than
+  // the object literal's inferred type (which would be
+  // `{ f1: SetLike, ... }` with contextual widening not applied).
+  const sig = checker.getSignatureFromDeclaration(fnNode);
+  const returnType = sig?.getReturnType();
+  if (!returnType) {
+    return [
+      {
+        kind: "unsupported",
+        reason: `${functionName} — cannot resolve return type for record return`,
+      },
+    ];
+  }
+  const returnSymbol = returnType.aliasSymbol ?? returnType.symbol;
+  const returnTypeName = returnSymbol?.getName();
+  if (!returnTypeName || returnTypeName === "__type") {
+    return [
+      {
+        kind: "unsupported",
+        reason: `${functionName} — record return of anonymous type not yet supported`,
+      },
+    ];
+  }
+
+  // Collect declared fields in declaration order so emission order is
+  // deterministic (matches the interface, not the literal's source order).
+  const declaredFields = returnType.getProperties().map((prop) => ({
+    name: prop.getName(),
+    type: checker.getTypeOfSymbolAtLocation(prop, fnNode),
+  }));
+
+  // Index literal properties by name. Reject unsupported property kinds.
+  const literalByName = new Map<string, ts.Expression>();
+  for (const prop of lit.properties) {
+    if (ts.isPropertyAssignment(prop)) {
+      if (!ts.isIdentifier(prop.name) && !ts.isStringLiteral(prop.name)) {
+        return [
+          {
+            kind: "unsupported",
+            reason: `${functionName} — record return with computed or non-simple key`,
+          },
+        ];
+      }
+      literalByName.set(prop.name.text, prop.initializer);
+    } else if (ts.isShorthandPropertyAssignment(prop)) {
+      literalByName.set(prop.name.text, prop.name);
+    } else {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName} — record return with spread/method/accessor property`,
+        },
+      ];
+    }
+  }
+
+  // Every declared field must be supplied. Extra fields on the literal
+  // are flagged separately below.
+  const missing = declaredFields
+    .filter((f) => !literalByName.has(f.name))
+    .map((f) => f.name);
+  if (missing.length > 0) {
+    return [
+      {
+        kind: "unsupported",
+        reason: `${functionName} — record return missing field(s): ${missing.join(", ")}`,
+      },
+    ];
+  }
+  const extras = [...literalByName.keys()].filter(
+    (n) => !declaredFields.some((f) => f.name === n),
+  );
+  if (extras.length > 0) {
+    return [
+      {
+        kind: "unsupported",
+        reason: `${functionName} — record return has extra field(s): ${extras.join(", ")}`,
+      },
+    ];
+  }
+
+  const argExprs = params.map((p) => ast.var(p.name));
+  const fnApp = ast.app(ast.var(functionName), argExprs);
+
+  // Rule parameters are implicitly in scope for body propositions, so we
+  // don't re-quantify over them — emission matches the existing single-
+  // equation path (`larger a b = cond ...`). Only fresh binders introduced
+  // by a field's translation (e.g., the empty-set membership binder) are
+  // quantified explicitly.
+  const results: PropResult[] = [];
+  for (const field of declaredFields) {
+    const initializer = literalByName.get(field.name)!;
+    const fieldApp = ast.app(ast.var(field.name), [fnApp]);
+
+    // Special case: `new Set()` means "empty set". Emit as membership
+    // negation since Pantagruel has no empty-list literal.
+    if (isEmptySetConstruction(initializer)) {
+      const elemType = getSetElementTypeName(
+        field.type,
+        checker,
+        strategy,
+        synthCell,
+      );
+      if (!elemType) {
+        return [
+          {
+            kind: "unsupported",
+            reason: `${functionName} — new Set() initializer on non-set field '${field.name}'`,
+          },
+        ];
+      }
+      const binderName = synthCell
+        ? cellRegisterName(synthCell, "x")
+        : freshHygienicBinder(supply);
+      const binderParam = ast.param(binderName, ast.tName(elemType));
+      const body = ast.unop(
+        ast.opNot(),
+        ast.binop(ast.opIn(), ast.var(binderName), fieldApp),
+      );
+      results.push({
+        kind: "assertion",
+        quantifiers: [binderParam],
+        body,
+      });
+      continue;
+    }
+
+    const body = translateBodyExpr(
+      initializer,
+      checker,
+      strategy,
+      scopedParams,
+      undefined,
+      supply,
+    );
+    if (isBodyUnsupported(body)) {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName}.${field.name} — ${body.unsupported}`,
+        },
+      ];
+    }
+    if (isBodyEffect(body)) {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName}.${field.name} — effect outside statement position`,
+        },
+      ];
+    }
+    const rhs = applyConst(bodyExpr(body));
+    results.push({
+      kind: "equation",
+      quantifiers: [],
+      lhs: fieldApp,
+      rhs,
+    });
+  }
+
+  return results;
+}
+
+/** `new Set()` (zero args) — the only Set construction form we currently
+ * translate. `new Set(iterable)` and subclass constructors are rejected. */
+function isEmptySetConstruction(expr: ts.Expression): boolean {
+  return (
+    ts.isNewExpression(expr) &&
+    ts.isIdentifier(expr.expression) &&
+    expr.expression.text === "Set" &&
+    (expr.arguments === undefined || expr.arguments.length === 0)
+  );
+}
+
+/** Return the Pantagruel type name of `T` in a `Set<T>` / `ReadonlySet<T>`
+ * / `[T]` (array) field, or null if the field isn't set-shaped. */
+function getSetElementTypeName(
+  fieldType: ts.Type,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  synthCell: MapSynthCell | undefined,
+): string | null {
+  if (isSetType(fieldType) || checker.isArrayType(fieldType)) {
+    const typeArgs = checker.getTypeArguments(fieldType as ts.TypeReference);
+    if (typeArgs.length === 1) {
+      return mapTsType(typeArgs[0]!, checker, strategy, synthCell);
+    }
+  }
+  return null;
 }
 
 interface ExtractedBody {
@@ -3761,8 +4010,13 @@ function symbolicExecute(
 
 /**
  * Generate frame conditions: for each rule in declarations not explicitly
- * modified, emit `rule' x = rule x`. Variables are already in scope from
- * the rule declarations in the chapter head.
+ * modified, emit `rule' x = rule x` using the rule's own parameter names
+ * as free variable references. Pantagruel's SMT translator auto-quantifies
+ * free rule-param references in action-body propositions via
+ * [bind_head_params] (see `lib/smt_doc.ml`), so the emission stays flat.
+ * This also preserves declaration guards through pant's guard-injection
+ * machinery on the quantified form, which would be lost if ts2pant
+ * pre-wrapped with a local `all` here.
  */
 function generateFrameConditions(
   modifiedRules: Set<string>,
