@@ -578,7 +578,9 @@ function registerAnonymousRecord(
     // Resolve the property's declared type. For anonymous object types,
     // `PropertySignature` is the usual declaration kind; fall back to the
     // checker when the property has no source declaration (structural
-    // shapes from mapped / indexed-access types).
+    // shapes from mapped / indexed-access types). The fallback cast
+    // reaches an internal TypeScript compiler property and should be
+    // revisited if the compiler internals change.
     const decl = prop.getDeclarations()?.[0];
     const propType = decl
       ? checker.getTypeOfSymbolAtLocation(prop, decl)
@@ -615,9 +617,10 @@ export function isSetType(type: ts.Type): boolean {
 /**
  * Detect an anonymous object/record type — a TS inline shape with no
  * declared interface / alias. These surface with the compiler-assigned
- * symbol name `__type`. Callable types (`{ (): void }`) and indexed
- * access shapes would also match on the name alone; we guard against
- * those by requiring at least one property and no call signatures.
+ * symbol name `__type`. Callable types (`{ (): void }`) would also
+ * match on the name alone; we guard against those by rejecting shapes
+ * with call signatures. Zero-property records (`{}`) are intentionally
+ * supported and synthesize as `EmptyRec` via `registerRecordShape`.
  */
 export function isAnonymousRecord(type: ts.Type): boolean {
   const symbol = type.getSymbol();
