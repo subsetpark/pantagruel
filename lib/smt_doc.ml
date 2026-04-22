@@ -123,14 +123,29 @@ let free_vars (e : expr) : StringSet.t =
   in
   go StringSet.empty e
 
+(** Set of [lower_ident] names bound by [params]. Used by callers of
+    [bind_head_params] to exclude shadowed names — e.g. action params whose
+    names happen to collide with a rule param in the same chapter head. *)
+let param_name_set (params : param list) =
+  List.fold_left
+    (fun acc (p : param) -> StringSet.add (Ast.lower_name p.param_name) acc)
+    StringSet.empty params
+
 (** Wrap a proposition in a universal quantifier over the head bindings that
     actually appear free in the proposition. Deduplicates by parameter name
     (first declaration wins) so that chapters declaring multiple rules with a
     shared parameter name don't introduce duplicate quantifier binders. Always
     wraps when at least one binding survives the filter, even if the proposition
     is itself quantified — inner quantifiers may still reference head-level
-    variables. *)
-let bind_head_params (bindings : param list) (p : expr located) =
+    variables.
+
+    [?exclude] names are skipped even if they appear free. Callers use this for
+    action params: their names are declared as SMT constants, and if one happens
+    to coincide with a head-rule-param name the free occurrence refers to the
+    action constant — quantifying it would silently strengthen the proposition
+    by shadowing the constant. *)
+let bind_head_params ?(exclude = StringSet.empty) (bindings : param list)
+    (p : expr located) =
   match bindings with
   | [] -> p
   | _ -> (
@@ -140,6 +155,7 @@ let bind_head_params (bindings : param list) (p : expr located) =
           (fun (seen, acc) (param : param) ->
             let name = Ast.lower_name param.param_name in
             if StringSet.mem name seen then (seen, acc)
+            else if StringSet.mem name exclude then (seen, acc)
             else if not (StringSet.mem name free) then (seen, acc)
             else (StringSet.add name seen, param :: acc))
           (StringSet.empty, []) bindings
@@ -210,14 +226,15 @@ let collect_actions chapters =
       match c with
       | Action
           { label; params; guards; contexts; head_bindings; propositions; _ } ->
+          let exclude = param_name_set params in
+          let bind_action = bind_head_params ~exclude head_bindings in
           Some
             {
               a_label = label;
               a_params = params;
               a_guards = guards;
               a_contexts = contexts;
-              a_propositions =
-                List.map (bind_head_params head_bindings) propositions;
+              a_propositions = List.map bind_action propositions;
             }
       | Invariant _ -> None)
     chapters
@@ -249,10 +266,10 @@ let collect_checks chapters =
             propositions;
             checks;
           } ->
-          let bound_props =
-            List.map (bind_head_params head_bindings) propositions
-          in
-          let bound_checks = List.map (bind_head_params head_bindings) checks in
+          let exclude = param_name_set params in
+          let bind_action = bind_head_params ~exclude head_bindings in
+          let bound_props = List.map bind_action propositions in
+          let bound_checks = List.map bind_action checks in
           let action =
             {
               a_label = label;

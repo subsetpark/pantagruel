@@ -48,6 +48,13 @@ let queries_of_path path : Pantagruel.Smt.query list option =
   | Ok qs -> Some qs
   | Error _ -> None
 
+(** Parse + translate a [.pant] file, returning the translation result directly.
+    Unlike [queries_of_path] this preserves the [Error] variant so regression
+    tests can fail loudly when a fixture they expect to translate cleanly
+    regresses into a pipeline rejection. *)
+let translate_path path : (Pantagruel.Smt.query list, string) result =
+  Test_util.translate_to_queries (Test_util.parse_pant_file path)
+
 (* ------------------------------------------------------------------ *)
 (* Allowlist.                                                           *)
 (* ------------------------------------------------------------------ *)
@@ -165,13 +172,19 @@ let test_sample_fixture allowlist dir name () =
 
 (** Assert that [fixture] in the regression dir produces every kind in
     [expect_kinds]. Used to lock in behavior pending bug fixes; once a bug is
-    fixed, flip [expect_kinds] to [[]] so the test asserts cleanliness. *)
+    fixed, flip [expect_kinds] to [[]] so the test asserts cleanliness. Fails
+    loudly if the fixture is rejected by the upstream pipeline — otherwise a
+    regression that stops producing SMT altogether would look identical to a
+    clean post-fix run. *)
 let test_regression_fixture fixture expect_kinds () =
   match regression_dir with
   | None -> failf "regression directory not found"
   | Some dir ->
       let path = Filename.concat dir fixture in
       if not (Sys.file_exists path) then failf "missing fixture: %s" path;
+      (match translate_path path with
+      | Ok _ -> ()
+      | Error msg -> failf "%s — translation failed: %s" fixture msg);
       let observed = observed_kinds (collect_failures path) in
       let expected = KindSet.of_list expect_kinds in
       let missing = KindSet.diff expected observed |> KindSet.elements in
@@ -180,6 +193,51 @@ let test_regression_fixture fixture expect_kinds () =
         failf "%s — missing expected: [%s]; extra unexpected: [%s]" fixture
           (String.concat ", " missing)
           (String.concat ", " extra)
+
+(** Assert the SMT emitted for [fixture] contains no universal quantifier that
+    binds a name also declared as a constant. This catches the
+    [bind_head_params] action-param shadow bug: when an action param's name
+    coincides with a head-rule-param's name, the action body's free reference
+    must resolve to the declared constant, not a wrapping
+    [(forall ((<name> ...)) ...)]. *)
+let test_no_shadowing_forall fixture shadowed_name () =
+  match regression_dir with
+  | None -> failf "regression directory not found"
+  | Some dir ->
+      let path = Filename.concat dir fixture in
+      if not (Sys.file_exists path) then failf "missing fixture: %s" path;
+      let queries =
+        match translate_path path with
+        | Ok qs -> qs
+        | Error msg -> failf "%s — translation failed: %s" fixture msg
+      in
+      let needle = Printf.sprintf "(%s " shadowed_name in
+      List.iter
+        (fun (q : Pantagruel.Smt.query) ->
+          (* Only action queries declare the name as a constant; other queries
+             may legitimately bind it in a head-level forall. *)
+          let declares_const =
+            let decl = Printf.sprintf "(declare-const %s " shadowed_name in
+            let len = String.length decl in
+            let rec scan i =
+              if i + len > String.length q.smt2 then false
+              else if String.sub q.smt2 i len = decl then true
+              else scan (i + 1)
+            in
+            scan 0
+          in
+          if declares_const then
+            let forall_prefix = Printf.sprintf "(forall ((%s " shadowed_name in
+            let len = String.length forall_prefix in
+            let rec scan i =
+              if i + len > String.length q.smt2 then ()
+              else if String.sub q.smt2 i len = forall_prefix then
+                failf "%s: query %S contains %S while also declaring %S" fixture
+                  q.name needle shadowed_name
+              else scan (i + 1)
+            in
+            scan 0)
+        queries
 
 (* ------------------------------------------------------------------ *)
 (* Test suite assembly.                                                 *)
@@ -204,6 +262,10 @@ let regression_cases () =
       (test_regression_fixture "bug_card_zero.pant" [ "fallback_emission" ]);
     test_case "bug_action_body_rule_params.pant — clean post-fix" `Quick
       (test_regression_fixture "bug_action_body_rule_params.pant" []);
+    test_case "bug_action_param_shadows_rule.pant — translates cleanly" `Quick
+      (test_regression_fixture "bug_action_param_shadows_rule.pant" []);
+    test_case "bug_action_param_shadows_rule.pant — no shadow forall" `Quick
+      (test_no_shadowing_forall "bug_action_param_shadows_rule.pant" "a1");
   ]
 
 let () =

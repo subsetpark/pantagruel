@@ -22,3 +22,7 @@ owner a1: Account => String.
 
 balance' a = 0.
 owner' a1 = owner a1.
+
+check
+balance' a = 0.
+owner' a1 = owner a1.
