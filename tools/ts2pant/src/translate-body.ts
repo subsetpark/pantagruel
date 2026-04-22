@@ -1,5 +1,6 @@
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
+import { type NameRegistry, registerName } from "./name-registry.js";
 import type {
   OpaqueCombiner,
   OpaqueExpr,
@@ -1083,13 +1084,33 @@ function translateRecordReturn(
   // equation path (`larger a b = cond ...`). Only fresh binders introduced
   // by a field's translation (e.g., the empty-set membership binder) are
   // quantified explicitly.
+  //
+  // Empty-set binders are *serialized* into the final assertion, so they
+  // must be valid Pantagruel identifiers and must not capture the function's
+  // own params. The synthCell branch already avoids both issues: its
+  // registry was seeded by translateSignature with every param name, so
+  // `cellRegisterName(synthCell, "x")` returns `x1` when `x` is a param.
+  // The fallback (no synthCell — direct callers / tests) seeds a local
+  // registry from `params` to preserve the same guarantees.
+  let localRegistry: NameRegistry = {
+    used: new Set(params.map((p) => p.name)),
+  };
+  const allocEmittedBinder = (hint: string): string => {
+    if (synthCell) {
+      return cellRegisterName(synthCell, hint);
+    }
+    const r = registerName(localRegistry, hint);
+    localRegistry = r.registry;
+    return r.name;
+  };
+
   const results: PropResult[] = [];
   for (const field of declaredFields) {
     const initializer = literalByName.get(field.name)!;
     const fieldApp = ast.app(ast.var(field.name), [fnApp]);
 
     // Special case: `new Set()` means "empty set". Emit as membership
-    // negation since Pantagruel has no empty-list literal.
+    // negation since Pantagruel has no empty-set literal.
     if (isEmptySetConstruction(initializer)) {
       const elemType = getSetElementTypeName(
         field.type,
@@ -1105,9 +1126,7 @@ function translateRecordReturn(
           },
         ];
       }
-      const binderName = synthCell
-        ? cellRegisterName(synthCell, "x")
-        : freshHygienicBinder(supply);
+      const binderName = allocEmittedBinder("x");
       const binderParam = ast.param(binderName, ast.tName(elemType));
       const body = ast.unop(
         ast.opNot(),

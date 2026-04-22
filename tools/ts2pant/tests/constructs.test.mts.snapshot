@@ -354,6 +354,10 @@ exports[`expressions-record-return.ts > emptyBag 1`] = `
 "module EmptyBag.\\n\\nBag.\\nitems b: Bag => [String].\\nemptyBag  => Bag.\\n\\n---\\n\\nall x: String | ~(x in items emptyBag).\\n"
 `;
 
+exports[`expressions-record-return.ts > emptyBagShadowed 1`] = `
+"module EmptyBagShadowed.\\n\\nBag.\\nitems b: Bag => [String].\\nemptyBagShadowed x: Int => Bag.\\n\\n---\\n\\nall x1: String | ~(x1 in items (emptyBagShadowed x)).\\n"
+`;
+
 exports[`expressions-record-return.ts > origin 1`] = `
 "module Origin.\\n\\nPoint.\\nx p: Point => Int.\\ny p: Point => Int.\\norigin  => Point.\\n\\n---\\n\\nx origin = 0.\\ny origin = 0.\\n"
 `;

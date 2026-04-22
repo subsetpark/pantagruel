@@ -29,3 +29,12 @@ export interface Bag {
 export function emptyBag(): Bag {
   return { items: new Set() };
 }
+
+/** Param name `x` collides with the binder hint used for the empty-set
+ *  quantifier; the binder is suffixed (e.g. `x1`) so it cannot capture the
+ *  rule parameter. The param is intentionally unread — the fixture exists
+ *  only to prove the name doesn't get captured. */
+// biome-ignore lint/correctness/noUnusedFunctionParameters: deliberate shadowing test
+export function emptyBagShadowed(x: number): Bag {
+  return { items: new Set() };
+}
