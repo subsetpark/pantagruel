@@ -89,9 +89,11 @@ let free_vars (e : expr) : StringSet.t =
     | EOverride (Lower n, pairs) ->
         let acc = StringSet.add n acc in
         List.fold_left (fun acc (k, v) -> go (go acc k) v) acc pairs
-    | EForall (params, guards, body) | EExists (params, guards, body) ->
+    | EForall (mb, metas) | EExists (mb, metas) ->
+        let params, guards, body = Ast.unbind_quant mb metas in
         scope_quantifier acc params guards body
-    | EEach (params, guards, _comb, body) ->
+    | EEach (mb, metas, _comb) ->
+        let params, guards, body = Ast.unbind_quant mb metas in
         scope_quantifier acc params guards body
     | ECond arms -> List.fold_left (fun acc (g, c) -> go (go acc g) c) acc arms
     | EInitially e -> go acc e
@@ -163,7 +165,7 @@ let bind_head_params ?(exclude = StringSet.empty) (bindings : param list)
       let kept = List.rev kept_rev in
       match kept with
       | [] -> p
-      | _ -> { p with value = EForall (kept, [], p.value) })
+      | _ -> { p with value = Ast.make_forall kept [] p.value })
 
 (** Collect all invariants from the document (non-initially propositions) *)
 let collect_invariants chapters =
@@ -412,8 +414,9 @@ let rec collect_function_refs (e : expr) =
   | EPrimed (Lower name) -> [ name ]
   | EBinop (_, e1, e2) -> collect_function_refs e1 @ collect_function_refs e2
   | EUnop (_, e) -> collect_function_refs e
-  | EForall (_, gs, body) | EExists (_, gs, body) | EEach (_, gs, _, body) ->
-      List.concat_map collect_guard_refs gs @ collect_function_refs body
+  | EForall (mb, metas) | EExists (mb, metas) ->
+      collect_function_refs_q mb metas
+  | EEach (mb, metas, _) -> collect_function_refs_q mb metas
   | ETuple es -> List.concat_map collect_function_refs es
   | EProj (e, _) -> collect_function_refs e
   | EOverride (Lower name, pairs) ->
@@ -435,6 +438,10 @@ and collect_guard_refs = function
   | GParam _ -> []
   | GIn (_, e) -> collect_function_refs e
   | GExpr e -> collect_function_refs e
+
+and collect_function_refs_q mb metas =
+  let _, gs, body = Ast.unbind_quant mb metas in
+  List.concat_map collect_guard_refs gs @ collect_function_refs body
 
 (** Check if invariant propositions touch any contextual functions. If they only
     reference extracontextual functions, the frame conditions guarantee

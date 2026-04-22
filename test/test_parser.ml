@@ -109,7 +109,11 @@ let test_membership_binding () =
   in
   let chapter = List.hd doc.Ast.chapters in
   match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
-  | Ast.EForall ([], [ Ast.GIn (Lower "i", _) ], _) -> ()
+  | Ast.EForall (mb, metas) -> (
+      let _, guards, _ = Ast.unbind_quant mb metas in
+      match guards with
+      | [ Ast.GIn (Lower "i", _) ] -> ()
+      | _ -> fail "Expected membership binding")
   | _ -> fail "Expected membership binding"
 
 let test_existential () =
@@ -158,7 +162,11 @@ let test_disjunction_guard () =
   in
   let chapter = List.hd doc.Ast.chapters in
   match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
-  | Ast.EForall (_, [ Ast.GExpr (Ast.EBinop (Ast.OpOr, _, _)) ], _) -> ()
+  | Ast.EForall (mb, metas) -> (
+      let _, guards, _ = Ast.unbind_quant mb metas in
+      match guards with
+      | [ Ast.GExpr (Ast.EBinop (Ast.OpOr, _, _)) ] -> ()
+      | _ -> fail "Expected forall with disjunction guard")
   | _ -> fail "Expected forall with disjunction guard"
 
 let test_no_module () =
@@ -234,7 +242,7 @@ let test_over_each_add () =
   in
   let chapter = List.hd doc.Ast.chapters in
   match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
-  | Ast.EEach (_, _, Some Ast.CombAdd, _) -> ()
+  | Ast.EEach (_, _, Some Ast.CombAdd) -> ()
   | _ -> fail "Expected EEach with CombAdd"
 
 let test_over_each_max_with_guard () =
@@ -249,7 +257,11 @@ let test_over_each_max_with_guard () =
   in
   let chapter = List.hd doc.Ast.chapters in
   match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
-  | Ast.EEach (_, [ Ast.GExpr _ ], Some Ast.CombMax, _) -> ()
+  | Ast.EEach (mb, metas, Some Ast.CombMax) -> (
+      let _, guards, _ = Ast.unbind_quant mb metas in
+      match guards with
+      | [ Ast.GExpr _ ] -> ()
+      | _ -> fail "Expected EEach with CombMax and guard")
   | _ -> fail "Expected EEach with CombMax and guard"
 
 let test_over_each_mul () =
@@ -263,7 +275,7 @@ let test_over_each_mul () =
   in
   let chapter = List.hd doc.Ast.chapters in
   match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
-  | Ast.EEach (_, _, Some Ast.CombMul, _) -> ()
+  | Ast.EEach (_, _, Some Ast.CombMul) -> ()
   | _ -> fail "Expected EEach with CombMul"
 
 let test_over_each_and () =
@@ -277,7 +289,7 @@ let test_over_each_and () =
   in
   let chapter = List.hd doc.Ast.chapters in
   match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
-  | Ast.EEach (_, _, Some Ast.CombAnd, _) -> ()
+  | Ast.EEach (_, _, Some Ast.CombAnd) -> ()
   | _ -> fail "Expected EEach with CombAnd"
 
 let test_over_each_or () =
@@ -291,7 +303,7 @@ let test_over_each_or () =
   in
   let chapter = List.hd doc.Ast.chapters in
   match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
-  | Ast.EEach (_, _, Some Ast.CombOr, _) -> ()
+  | Ast.EEach (_, _, Some Ast.CombOr) -> ()
   | _ -> fail "Expected EEach with CombOr"
 
 let test_over_each_min () =
@@ -305,7 +317,7 @@ let test_over_each_min () =
   in
   let chapter = List.hd doc.Ast.chapters in
   match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
-  | Ast.EEach (_, _, Some Ast.CombMin, _) -> ()
+  | Ast.EEach (_, _, Some Ast.CombMin) -> ()
   | _ -> fail "Expected EEach with CombMin"
 
 let test_bare_each_none_combiner () =
@@ -319,7 +331,7 @@ let test_bare_each_none_combiner () =
   in
   let chapter = List.hd doc.Ast.chapters in
   match (List.hd chapter.Ast.body).Ast.value with
-  | Ast.EEach (_, _, None, _) -> ()
+  | Ast.EEach (_, _, None) -> ()
   | EVar _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
   | ELitBool _ | EApp _ | EPrimed _ | EOverride _ | ETuple _ | EProj _
   | EBinop _ | EUnop _ | EForall _ | EExists _ | EEach _ | ECond _
@@ -338,7 +350,11 @@ let test_each () =
   in
   let chapter = List.hd doc.Ast.chapters in
   match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
-  | Ast.EForall (_, _, Ast.EBinop (Ast.OpIn, _, Ast.EEach _)) -> ()
+  | Ast.EForall (mb, metas) -> (
+      let _, _, body = Ast.unbind_quant mb metas in
+      match body with
+      | Ast.EBinop (Ast.OpIn, _, Ast.EEach _) -> ()
+      | _ -> fail "Expected each comprehension inside all")
   | _ -> fail "Expected each comprehension inside all"
 
 let test_cond_simple () =
@@ -353,8 +369,12 @@ let test_cond_simple () =
   in
   let chapter = List.hd doc.Ast.chapters in
   match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
-  | Ast.EForall (_, _, Ast.EBinop (Ast.OpEq, _, Ast.ECond arms)) ->
-      check int "arms" 3 (List.length arms)
+  | Ast.EForall (mb, metas) -> (
+      let _, _, body = Ast.unbind_quant mb metas in
+      match body with
+      | Ast.EBinop (Ast.OpEq, _, Ast.ECond arms) ->
+          check int "arms" 3 (List.length arms)
+      | _ -> fail "Expected cond expression")
   | _ -> fail "Expected cond expression"
 
 let test_cond_two_arms () =
@@ -460,7 +480,11 @@ let test_in_operator () =
   let doc = parse "module TEST.\n\nUser.\n---\nall u: User | u in User.\n" in
   let chapter = List.hd doc.Ast.chapters in
   match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
-  | Ast.EForall (_, _, EBinop (OpIn, _, _)) -> ()
+  | Ast.EForall (mb, metas) -> (
+      let _, _, body = Ast.unbind_quant mb metas in
+      match body with
+      | EBinop (OpIn, _, _) -> ()
+      | _ -> fail "Expected in operator")
   | _ -> fail "Expected in operator"
 
 let test_subset_operator () =
@@ -490,8 +514,11 @@ let test_override () =
   in
   let chapter = List.hd doc.Ast.chapters in
   match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
-  | Ast.EForall (_, _, EBinop (OpEq, EApp (EOverride (Lower "f", _), _), _)) ->
-      ()
+  | Ast.EForall (mb, metas) -> (
+      let _, _, body = Ast.unbind_quant mb metas in
+      match body with
+      | EBinop (OpEq, EApp (EOverride (Lower "f", _), _), _) -> ()
+      | _ -> fail "Expected override")
   | _ -> fail "Expected override"
 
 let test_tuple () =

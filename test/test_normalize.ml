@@ -140,10 +140,10 @@ let test_symbols_in_expr_binop () =
 let test_symbols_in_expr_quantifier () =
   let types, terms =
     Normalize.symbols_in_expr
-      (Ast.EForall
-         ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
-           [],
-           EApp (EVar (Lower "f"), [ EVar (Lower "u") ]) ))
+      (Ast.make_forall
+         [ { param_name = Lower "u"; param_type = TName (Upper "User") } ]
+         []
+         (EApp (EVar (Lower "f"), [ EVar (Lower "u") ])))
   in
   check bool "quant type User" true (Normalize.StringSet.mem "User" types);
   check bool "quant term f" true (Normalize.StringSet.mem "f" terms)

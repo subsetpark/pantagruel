@@ -73,29 +73,31 @@ let symbols_in_expr expr =
         go e2
     | EUnop (_, e) -> go e
     | EInitially e -> go e
-    | EForall (params, guards, body)
-    | EExists (params, guards, body)
-    | EEach (params, guards, _, body) ->
-        List.iter
-          (fun p ->
-            types := StringSet.union !types (types_in_type_expr p.param_type))
-          params;
-        List.iter
-          (function
-            | GParam p ->
-                types :=
-                  StringSet.union !types (types_in_type_expr p.param_type)
-            | GIn (_, e) ->
-                go e (* x in xs - the list expression has dependencies *)
-            | GExpr e -> go e)
-          guards;
-        go body
+    | EForall (mb, metas) | EExists (mb, metas) ->
+        let params, guards, body = Ast.unbind_quant mb metas in
+        go_quant params guards body
+    | EEach (mb, metas, _) ->
+        let params, guards, body = Ast.unbind_quant mb metas in
+        go_quant params guards body
     | ECond arms ->
         List.iter
           (fun (arm, cons) ->
             go arm;
             go cons)
           arms
+  and go_quant params guards body =
+    List.iter
+      (fun p ->
+        types := StringSet.union !types (types_in_type_expr p.param_type))
+      params;
+    List.iter
+      (function
+        | GParam p ->
+            types := StringSet.union !types (types_in_type_expr p.param_type)
+        | GIn (_, e) -> go e
+        | GExpr e -> go e)
+      guards;
+    go body
   in
   go expr;
   (!types, !terms)
@@ -168,9 +170,17 @@ let rec uses_primed = function
   | EProj (e, _) -> uses_primed e
   | EBinop (_, e1, e2) -> uses_primed e1 || uses_primed e2
   | EUnop (_, e) -> uses_primed e
-  | EForall (_, guards, body)
-  | EExists (_, guards, body)
-  | EEach (_, guards, _, body) ->
+  | EForall (mb, metas) | EExists (mb, metas) ->
+      let _, guards, body = Ast.unbind_quant mb metas in
+      List.exists
+        (function
+          | GExpr e -> uses_primed e
+          | GIn (_, e) -> uses_primed e
+          | GParam _ -> false)
+        guards
+      || uses_primed body
+  | EEach (mb, metas, _) ->
+      let _, guards, body = Ast.unbind_quant mb metas in
       List.exists
         (function
           | GExpr e -> uses_primed e

@@ -53,7 +53,7 @@ let test_substitute_avoids_capture () =
   let t : Ast.type_expr = Ast.TName (Ast.Upper "T") in
   let param_y : Ast.param = { param_name = Ast.Lower "y"; param_type = t } in
   let body_x = Ast.EVar (Ast.Lower "x") in
-  let input = Ast.EForall ([ param_y ], [], body_x) in
+  let input = Ast.make_forall [ param_y ] [] body_x in
   let subst = [ ("x", Ast.EVar (Ast.Lower "y")) ] in
   let result = Smt.substitute_vars subst input in
   (* Expected: a forall whose binder has been alpha-renamed away from [y]
@@ -76,16 +76,16 @@ let test_substitute_preserves_alpha_equivalence () =
   let mk name : Ast.param = { param_name = Ast.Lower name; param_type = t } in
   (* [all a: T | f a]  vs  [all b: T | f b] — alpha-equivalent. *)
   let e1 =
-    Ast.EForall
-      ( [ mk "a" ],
-        [],
-        Ast.EApp (Ast.EVar (Ast.Lower "f"), [ Ast.EVar (Ast.Lower "a") ]) )
+    Ast.make_forall
+      [ mk "a" ]
+      []
+      (Ast.EApp (Ast.EVar (Ast.Lower "f"), [ Ast.EVar (Ast.Lower "a") ]))
   in
   let e2 =
-    Ast.EForall
-      ( [ mk "b" ],
-        [],
-        Ast.EApp (Ast.EVar (Ast.Lower "f"), [ Ast.EVar (Ast.Lower "b") ]) )
+    Ast.make_forall
+      [ mk "b" ]
+      []
+      (Ast.EApp (Ast.EVar (Ast.Lower "f"), [ Ast.EVar (Ast.Lower "b") ]))
   in
   let subst = [ ("f", Ast.EVar (Ast.Lower "g")) ] in
   let r1 = Smt.substitute_vars subst e1 in

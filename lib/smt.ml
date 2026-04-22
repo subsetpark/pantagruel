@@ -139,13 +139,17 @@ let rec translate_expr config env (e : expr) =
       Printf.sprintf "(fst_%d %s)" idx (translate_expr config env e)
   | EBinop (op, e1, e2) -> translate_binop config env op e1 e2
   | EUnop (op, e) -> translate_unop config env op e
-  | EForall (params, guards, body) ->
+  | EForall (mb, metas) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       translate_quantifier config env "forall" params guards body
-  | EEach (params, guards, None, body) ->
+  | EEach (mb, metas, None) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       translate_forall_comprehension config env params guards body
-  | EEach (params, guards, Some comb, body) ->
+  | EEach (mb, metas, Some comb) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       translate_aggregate config env comb params guards body
-  | EExists (params, guards, body) ->
+  | EExists (mb, metas) ->
+      let params, guards, body = Ast.unbind_quant mb metas in
       translate_quantifier config env "exists" params guards body
   | ECond arms -> translate_cond config env arms
   | EInitially e -> translate_expr config env e
@@ -294,9 +298,10 @@ and translate_in config env elem set =
       | [] -> "false"
       | [ single ] -> single
       | _ -> Printf.sprintf "(or %s)" (String.concat " " disj))
-  | EEach (params, guards, None, body) -> (
+  | EEach (mb, metas, None) -> (
       (* y in (each x: D | f x) → disjunction: (= y (f d0)) ∨ (= y (f d1)) ...
          y in (each x: D, g x | f x) → (g d0 ∧ = y (f d0)) ∨ ... *)
+      let params, guards, body = Ast.unbind_quant mb metas in
       let expanded =
         expand_comprehension translate_expr config env params guards body
       in
@@ -324,10 +329,11 @@ and translate_subset config env e1 e2 =
   (* xs subset Domain → every member of xs is in the domain (tautological
      for well-typed programs, but expand over finite elements for soundness) *)
   match[@warning "-4"] e2 with
-  | EEach (params, guards, None, body) -> (
+  | EEach (mb, metas, None) -> (
       (* xs subset (each x: D | f x) → for every elem of xs, elem is in the
          comprehension. Expand: for each domain elem d of the LHS element type,
          (select xs d) => (exists comprehension elem matching d). *)
+      let params, guards, body = Ast.unbind_quant mb metas in
       let expanded =
         expand_comprehension translate_expr config env params guards body
       in
@@ -408,10 +414,11 @@ and translate_card config env e =
   | EDomain (Upper name) ->
       (* #Domain = bound (all elements exist) *)
       string_of_int (bound_for config name)
-  | EEach (params, guards, None, body) -> (
+  | EEach (mb, metas, None) -> (
       (* #(each x: D | f x) — count distinct values in the comprehension.
          Requires the range type to be a bounded domain. Expand over range
          domain elements, check if each is produced by any source element. *)
+      let params, guards, body = Ast.unbind_quant mb metas in
       let expanded =
         expand_comprehension translate_expr config env params guards body
       in
@@ -1858,8 +1865,17 @@ let collect_conds_in_expr (e : expr) : cond_info list =
             walk quant_ctx arm;
             walk quant_ctx cons)
           arms
-    | EForall (ps, gs, body) | EExists (ps, gs, body) | EEach (ps, gs, _, body)
-      ->
+    | EForall (mb, metas) | EExists (mb, metas) ->
+        let ps, gs, body = Ast.unbind_quant mb metas in
+        walk ((ps, gs) :: quant_ctx) body;
+        List.iter
+          (function
+            | GExpr e -> walk quant_ctx e
+            | GIn (_, e) -> walk quant_ctx e
+            | GParam _ -> ())
+          gs
+    | EEach (mb, metas, _) ->
+        let ps, gs, body = Ast.unbind_quant mb metas in
         walk ((ps, gs) :: quant_ctx) body;
         List.iter
           (function
@@ -1903,7 +1919,7 @@ let collect_conds chapters : cond_info list =
         | Smt_doc.Action { params; guards; propositions; checks; _ } ->
             ( (fun (p : expr located) ->
                 if params = [] && guards = [] then p
-                else { p with value = EForall (params, guards, p.value) }),
+                else { p with value = Ast.make_forall params guards p.value }),
               propositions @ checks )
       in
       List.concat_map
@@ -1973,7 +1989,7 @@ let generate_exhaustiveness_query config env ~all_invariants:_ ~index cond =
   (* Wrap in surrounding quantifier bindings *)
   let wrapped =
     List.fold_right
-      (fun (ps, gs) body -> EForall (ps, gs, body))
+      (fun (ps, gs) body -> Ast.make_forall ps gs body)
       cond.cond_quantifiers disj
   in
   (* Translate and negate *)

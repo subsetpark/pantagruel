@@ -121,36 +121,34 @@ let test_unop_card () =
 let test_forall () =
   check string "forall" "all x: Nat | x > 0"
     (pp
-       (Ast.EForall
-          ( [ { param_name = Lower "x"; param_type = TName (Upper "Nat") } ],
-            [],
-            EBinop (OpGt, EVar (Lower "x"), ELitNat 0) )))
+       (Ast.make_forall
+          [ { param_name = Lower "x"; param_type = TName (Upper "Nat") } ]
+          []
+          (EBinop (OpGt, EVar (Lower "x"), ELitNat 0))))
 
 let test_exists () =
   check string "exists" "some x: Nat | x > 0"
     (pp
-       (Ast.EExists
-          ( [ { param_name = Lower "x"; param_type = TName (Upper "Nat") } ],
-            [],
-            EBinop (OpGt, EVar (Lower "x"), ELitNat 0) )))
+       (Ast.make_exists
+          [ { param_name = Lower "x"; param_type = TName (Upper "Nat") } ]
+          []
+          (EBinop (OpGt, EVar (Lower "x"), ELitNat 0))))
 
 let test_each () =
   check string "each" "each u: User | f u"
     (pp
-       (Ast.EEach
-          ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
-            [],
-            None,
-            EApp (EVar (Lower "f"), [ EVar (Lower "u") ]) )))
+       (Ast.make_each
+          [ { param_name = Lower "u"; param_type = TName (Upper "User") } ]
+          [] None
+          (EApp (EVar (Lower "f"), [ EVar (Lower "u") ]))))
 
 let test_each_with_combiner () =
   check string "over each" "+ over each u: User | f u"
     (pp
-       (Ast.EEach
-          ( [ { param_name = Lower "u"; param_type = TName (Upper "User") } ],
-            [],
-            Some CombAdd,
-            EApp (EVar (Lower "f"), [ EVar (Lower "u") ]) )))
+       (Ast.make_each
+          [ { param_name = Lower "u"; param_type = TName (Upper "User") } ]
+          [] (Some CombAdd)
+          (EApp (EVar (Lower "f"), [ EVar (Lower "u") ]))))
 
 let test_cond () =
   check string "cond" "cond a => 1, b => 2"
