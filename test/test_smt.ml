@@ -311,12 +311,18 @@ let test_prime_expr () =
   let e2' = Smt.prime_expr e2 in
   match[@warning "-4"] e2' with
   | EForall (mb, metas) -> (
-      let _, _, body = Ast.unbind_quant mb metas in
+      let params, _, body = Ast.unbind_quant mb metas in
+      let bound_name =
+        match params with
+        | [ { param_name = Lower name; _ } ] -> name
+        | _ -> fail "Expected one quantified parameter"
+      in
       match body with
       | EBinop
           ( OpGe,
-            EApp (EPrimed (Lower "balance"), [ EVar (Lower "a") ]),
-            ELitNat 0 ) ->
+            EApp (EPrimed (Lower "balance"), [ EVar (Lower name) ]),
+            ELitNat 0 )
+        when String.equal name bound_name ->
           ()
       | _ ->
           fail

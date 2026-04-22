@@ -109,8 +109,8 @@ let test_membership_binding () =
   in
   let chapter = List.hd doc.Ast.chapters in
   match[@warning "-4"] (List.hd chapter.Ast.body).Ast.value with
-  | Ast.EForall (mb, []) -> (
-      let _, guards, _ = Ast.unbind_quant mb [] in
+  | Ast.EForall (mb, metas) -> (
+      let _, guards, _ = Ast.unbind_quant mb metas in
       match guards with
       | [ Ast.GIn (Lower "i", _) ] -> ()
       | _ -> fail "Expected membership binding")
