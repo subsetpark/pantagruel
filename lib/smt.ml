@@ -41,11 +41,23 @@ let alpha_rename_binders env (params : Ast.param list) (guards : Ast.guard list)
     in
     from_params @ from_guards
   in
-  (* Seed [occupied] with every binder in this quantifier, not just those
-     that shadow a rule. Non-rule binders must still be avoided when picking
-     fresh names — e.g., renaming rule-shadowing binder [foo] to [foo_q]
-     would collide with a sibling binder already named [foo_q]. *)
-  let occupied = ref (Smt_doc.StringSet.of_list binder_names) in
+  (* Seed [occupied] with every binder in this quantifier and every outer
+     quantifier binder already in scope via [env.vars]. Sibling binders must
+     be avoided (renaming [foo] to [foo_q] would collide with a sibling
+     [foo_q]); outer binders must be avoided too, because a fresh name that
+     matches an enclosing binder would capture outer references and change
+     the formula's meaning. Rules / closures are handled separately by
+     [is_rule_name] in [fresh_for]. *)
+  let occupied =
+    ref
+      (Env.fold_all_terms
+         (fun name entry acc ->
+           match entry.Env.kind with
+           | Env.KVar _ -> Smt_doc.StringSet.add name acc
+           | Env.KRule _ | Env.KClosure _ | Env.KDomain | Env.KAlias _ -> acc)
+         env
+         (Smt_doc.StringSet.of_list binder_names))
+  in
   let fresh_for orig =
     let rec try_n n =
       let cand =

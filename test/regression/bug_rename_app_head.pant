@@ -1,0 +1,19 @@
+module BUG_RENAME_APP_HEAD.
+
+> Regression fixture for the rename_var_refs application-head bug in
+> lib/smt_expr.ml. Before the fix, `rename_var_refs` kept any EApp head
+> whose name resolved to a rule via [Env.lookup_term], even when the
+> rename map explicitly mapped that name. For a quantifier binder [xs]
+> shadowing a nullary rule [xs: [Nat0]] with body `xs 1` (list-indexing
+> at the AST level), alpha-rename would bind [xs_q] but leave the body's
+> `xs 1` calling the outer rule. The fix makes the explicit substitution
+> win in head position when the name is in the subst map. The companion
+> unit test asserts the emitted SMT contains [(xs_q 1)] rather than
+> [(xs 1)] inside the quantifier body.
+
+xs => [Nat0].
+p a: Nat0 => Bool.
+
+---
+
+all xs: [Nat0] | #xs > 0 and p (xs 1).

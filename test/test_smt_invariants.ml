@@ -300,6 +300,15 @@ let regression_cases () =
       (test_regression_fixture "bug_rule_param_collision.pant" []);
     test_case "bug_rule_param_collision.pant — quantifier binder renamed" `Quick
       (test_smt_contains "bug_rule_param_collision.pant" "name_q");
+    test_case "bug_nested_binder_collision.pant — clean post-fix" `Quick
+      (test_regression_fixture "bug_nested_binder_collision.pant" []);
+    test_case
+      "bug_nested_binder_collision.pant — inner rename skips outer binder"
+      `Quick
+      (test_smt_contains "bug_nested_binder_collision.pant" "x_q1");
+    test_case "bug_rename_app_head.pant — renamed binder used in head position"
+      `Quick
+      (test_smt_contains "bug_rename_app_head.pant" "(xs_q 1)");
   ]
 
 let () =
