@@ -3,6 +3,7 @@
   "imports": [],
   "contexts": [],
   "types": {
+    "Handle": { "kind": "domain" },
     "Item": { "kind": "domain" },
     "Key": { "kind": "domain" },
     "Value": { "kind": "domain" }
@@ -10,7 +11,8 @@
   "rules": {
     "available": { "params": [ "Item" ], "return": "Bool" },
     "default-value": { "params": [], "return": "Value" },
-    "mapping": { "params": [ "Key" ], "return": "Value" }
+    "mapping": { "params": [ "Key" ], "return": "Value" },
+    "store": { "params": [ "Handle", "Key" ], "return": "Value" }
   },
   "chapters": [
     {
@@ -36,6 +38,28 @@
           "guards": [],
           "return": "Value",
           "resolved": { "func": { "params": [], "return": "Value" } }
+        },
+        {
+          "doc": [
+            [
+              "N-ary override: map-valued rule keyed by an owner handle and a key.",
+              "Override key is a tuple whose arity matches the rule's parameter list."
+            ]
+          ],
+          "kind": "domain",
+          "name": "Handle"
+        },
+        {
+          "kind": "rule",
+          "name": "store",
+          "params": [
+            { "name": "h", "type": "Handle" }, { "name": "k", "type": "Key" }
+          ],
+          "guards": [],
+          "return": "Value",
+          "resolved": {
+            "func": { "params": [ "Handle", "Key" ], "return": "Value" }
+          }
         }
       ],
       "body": [
@@ -175,6 +199,115 @@
                           "func": { "var": "mapping" },
                           "args": [ { "var": "k2" } ]
                         }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "doc": [
+            [
+              "N-ary override with a tuple key: the override binds the combined position",
+              "(h, k) and leaves every other (h', k') untouched."
+            ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [
+                { "name": "h", "type": "Handle" },
+                { "name": "k", "type": "Key" },
+                { "name": "v", "type": "Value" }
+              ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "eq",
+                  "left": {
+                    "app": {
+                      "func": {
+                        "override": {
+                          "func": "store",
+                          "mappings": [
+                            {
+                              "key": {
+                                "tuple": [ { "var": "h" }, { "var": "k" } ]
+                              },
+                              "value": { "var": "v" }
+                            }
+                          ]
+                        }
+                      },
+                      "args": [ { "var": "h" }, { "var": "k" } ]
+                    }
+                  },
+                  "right": { "var": "v" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "forall": {
+            "params": [
+              { "name": "h1", "type": "Handle" },
+              { "name": "h2", "type": "Handle" },
+              { "name": "k1", "type": "Key" },
+              { "name": "k2", "type": "Key" },
+              { "name": "v", "type": "Value" }
+            ],
+            "guards": [],
+            "body": {
+              "binop": {
+                "op": "impl",
+                "left": {
+                  "binop": {
+                    "op": "or",
+                    "left": {
+                      "binop": {
+                        "op": "neq",
+                        "left": { "var": "h1" },
+                        "right": { "var": "h2" }
+                      }
+                    },
+                    "right": {
+                      "binop": {
+                        "op": "neq",
+                        "left": { "var": "k1" },
+                        "right": { "var": "k2" }
+                      }
+                    }
+                  }
+                },
+                "right": {
+                  "binop": {
+                    "op": "eq",
+                    "left": {
+                      "app": {
+                        "func": {
+                          "override": {
+                            "func": "store",
+                            "mappings": [
+                              {
+                                "key": {
+                                  "tuple": [
+                                    { "var": "h1" }, { "var": "k1" }
+                                  ]
+                                },
+                                "value": { "var": "v" }
+                              }
+                            ]
+                          }
+                        },
+                        "args": [ { "var": "h2" }, { "var": "k2" } ]
+                      }
+                    },
+                    "right": {
+                      "app": {
+                        "func": { "var": "store" },
+                        "args": [ { "var": "h2" }, { "var": "k2" } ]
                       }
                     }
                   }

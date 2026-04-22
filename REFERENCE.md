@@ -369,10 +369,14 @@ Primed expressions denote the post-state value of a rule in a state transition.
 
 *f*`[`*k₁* `|->` *v₁*`,` ... `,` *kₙ* `|->` *vₙ*`]`:
 
-1. *f* must be a rule of arity 1 with a return type: *f* : (*T*) → *R*.
-2. Each key must be a **subtype** of the parameter type: *kᵢ* : *Sᵢ* with *Sᵢ* ≤ *T*.
+1. *f* must be a rule with a return type: *f* : (*T₁, …, Tₐ*) → *R*.
+2. Each key must match the rule's parameter arity *a*:
+    * When *a* = 1, *kᵢ* is a bare expression and *kᵢ* : *Sᵢ* must be a **subtype** of the parameter type: *Sᵢ* ≤ *T₁*.
+    * When *a* > 1, *kᵢ* must be a tuple `(kᵢ₁, …, kᵢₐ)` whose components type-check componentwise: *kᵢⱼ* : *Sᵢⱼ* with *Sᵢⱼ* ≤ *Tⱼ*.
 3. Each value must be a **subtype** of the return type: *vᵢ* : *Uᵢ* with *Uᵢ* ≤ *R*.
-4. Result type: (*T*) → *R*.
+4. Result type: (*T₁, …, Tₐ*) → *R*.
+
+An applied override `f[k |-> v] x₁ … xₐ` is semantically an everything-else-unchanged point update: it equals *v* when the key matches each *xⱼ* componentwise, and equals `f x₁ … xₐ` otherwise. This is McCarthy's `store` extended to multi-index arrays (Kroening & Strichman Ch. 7).
 
 ### Additional Constraints
 
@@ -681,6 +685,13 @@ f[x |-> 0, y |-> 1]     // Multiple overrides
 
 ```
 all k: Key, v: Value | mapping[k |-> v] k = v.
+```
+
+For an N-ary rule, the override key is a tuple whose arity matches the rule's parameter list:
+
+```
+store h: Handle, k: Key => Value.
+all h: Handle, k: Key, v: Value | store[(h, k) |-> v] h k = v.
 ```
 
 ### Qualified Names

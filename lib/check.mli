@@ -12,7 +12,7 @@ type type_error =
   | ExpectedBool of Types.ty * Ast.loc
   | PrimedNonRule of string * Ast.loc
   | PrimeOutsideActionContext of string * Ast.loc
-  | OverrideRequiresArity1 of string * int * Ast.loc
+  | OverrideKeyArityMismatch of string * int * Ast.loc
   | ProjectionOutOfBounds of int * int * Ast.loc
   | PropositionNotBool of Types.ty * Ast.loc
   | ShadowingTypeMismatch of string * Types.ty * Types.ty * Ast.loc

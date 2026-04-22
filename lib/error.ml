@@ -38,10 +38,12 @@ let format_type_error err =
       fmt loc (Printf.sprintf "Cannot prime '%s': not a rule" name)
   | PrimeOutsideActionContext (name, loc) ->
       fmt loc (Printf.sprintf "Primed '%s' only valid in action context" name)
-  | OverrideRequiresArity1 (name, arity, loc) ->
+  | OverrideKeyArityMismatch (name, arity, loc) ->
       fmt loc
-        (Printf.sprintf "Override requires arity-1 rule, '%s' has arity %d" name
-           arity)
+        (Printf.sprintf
+           "Override key arity mismatch for rule '%s': expected %d-tuple key \
+            (or bare expression for arity-1)"
+           name arity)
   | ProjectionOutOfBounds (idx, len, loc) ->
       fmt loc
         (Printf.sprintf "Projection .%d out of bounds for %d-tuple" idx len)
@@ -140,8 +142,9 @@ let format_type_warning err =
   | ( UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
     | NotAFunction _ | NotAList _ | NotAProduct _ | NotNumeric _
     | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
-    | OverrideRequiresArity1 _ | ProjectionOutOfBounds _ | PropositionNotBool _
-    | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
-    | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ | CheckWithoutBody _ ) as other ->
+    | OverrideKeyArityMismatch _ | ProjectionOutOfBounds _
+    | PropositionNotBool _ | AmbiguousName _ | UnboundQualified _
+    | PrimedExtracontextual _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ) as other ->
       format_type_error other
