@@ -9,6 +9,18 @@ import { getAst } from "./pant-wasm.js";
 import type { PantDeclaration } from "./types.js";
 
 /**
+ * Sentinel returned by `mapTsType` when an anonymous-record type is
+ * encountered but synthesis is unavailable or fails. Distinct from the
+ * compiler's `__type` symbol name so that downstream code (notably
+ * `translateRecordReturn`) can detect synthesis failure rather than
+ * silently treat the unmangleable shape as a supported anonymous record.
+ * The value is not a valid Pantagruel identifier — emission of a signature
+ * containing it will be visibly broken rather than referring to an
+ * undeclared domain.
+ */
+export const UNSUPPORTED_ANONYMOUS_RECORD = "__unsupported_anon_record__";
+
+/**
  * Mangle a Pantagruel type string into an identifier-safe fragment suitable
  * for embedding inside a synthesized Map domain name.
  *   "String"           → "String"
@@ -53,7 +65,7 @@ export interface MapSynthEntry {
  * Immutable record: pure `registerMapKV` / `lookupMapKV` / `emitSynthDecls`
  * helpers operate on it, returning fresh records. Deep call sites that need
  * to register on demand (e.g., `translateBody` via `.get(k)` on an
- * expression-computed Map receiver) wrap synth + registry in a `MapSynthCell`
+ * expression-computed Map receiver) wrap synth + registry in a `SynthCell`
  * to avoid threading updates through every `BodyResult`.
  */
 export interface MapSynth {
@@ -171,27 +183,195 @@ export function emitSynthDecls(
   };
 }
 
+/** Fields of a synthesized record, in canonical (alphabetically sorted) order. */
+export interface RecordSynthField {
+  name: string;
+  type: string;
+}
+
+export interface RecordSynthEntry {
+  domain: string;
+  /** Binder name for accessor-rule parameters on this domain
+   *  (e.g., `r` in `name r: NameRegRec => String.`). Registry-allocated so
+   *  binders across multiple synthesized record domains don't collide. */
+  binder: string;
+  fields: RecordSynthField[];
+}
+
 /**
- * Mutable 2-field cell bundling a `MapSynth` and `NameRegistry`. Used by
- * deep call sites (mapTsType recursion, body translation) that would
- * otherwise have to thread the pair through every return value. The fields
- * are reassigned in place with freshly-computed immutable records; the
- * inner `MapSynth` / `NameRegistry` remain pure values. Cell-field
- * assignment is itself within ts2pant's self-translation envelope
- * (translatable as primed rules on the cell).
+ * Accumulates anonymous object-literal type occurrences encountered anywhere
+ * in the module's type positions (parameters, return types, nested fields)
+ * and synthesizes one domain + one accessor rule per field per unique
+ * shape. Records are specified *observationally* — Pantagruel has no
+ * record-constructor expression syntax, so a function returning a record
+ * literal is axiomatized by what each accessor returns when applied.
+ *
+ * Dedup by canonical shape string: fields sorted alphabetically by name,
+ * each paired with its Pantagruel type, joined with `|`. Field-order
+ * permutations in source (`{a, b}` vs `{b, a}`) hash to the same key.
+ *
+ * Immutable record (same discipline as `MapSynth`): pure register / lookup /
+ * emit helpers return fresh records. Deep call sites wrap synth + registry
+ * in a `SynthCell` to avoid threading updates through every return value.
  */
-export interface MapSynthCell {
+export interface RecordSynth {
+  readonly byShape: ReadonlyMap<string, RecordSynthEntry>;
+  readonly emitted: ReadonlySet<string>;
+}
+
+export function emptyRecordSynth(): RecordSynth {
+  return { byShape: new Map(), emitted: new Set() };
+}
+
+/** Canonical shape string: sorted `<name>:<type>|<name>:<type>|...`. */
+function recordShapeKey(fields: ReadonlyArray<RecordSynthField>): string {
+  return fields.map((f) => `${f.name}:${f.type}`).join("|");
+}
+
+/** Capitalize first letter. `"name"` → `"Name"`. */
+function capitalize(s: string): string {
+  return s.length === 0 ? s : s[0]!.toUpperCase() + s.slice(1);
+}
+
+/**
+ * Conservative gate against `mapTsType` fallback strings reaching synth
+ * registration. Pantagruel type expressions are built from identifiers,
+ * the list bracket `[T]`, sum `T + U`, product `T * U`, parens, the
+ * module qualifier `::`, and whitespace. Compiler-text fallbacks
+ * (`Map<string, number>`, `{ x: number }`, `() => void`) contain
+ * characters outside that set and must be rejected at synth time.
+ */
+function isValidPantFieldType(s: string): boolean {
+  return s.length > 0 && /^[A-Za-z0-9_:\s[\]+*()]+$/u.test(s);
+}
+
+/**
+ * Register an anonymous record shape. Idempotent: re-registering the same
+ * sorted-field set returns the cached domain. Returns `{domain: null, ...}`
+ * when any field name or type fragment is unmangleable.
+ *
+ * `fields` must already be in canonical (alphabetically sorted) order with
+ * Pantagruel type strings; the caller (`cellRegisterRecord`) is responsible
+ * for that normalization.
+ */
+export function registerRecordShape(
+  synth: RecordSynth,
+  registry: NameRegistry,
+  fields: ReadonlyArray<RecordSynthField>,
+): { domain: string | null; synth: RecordSynth; registry: NameRegistry } {
+  const key = recordShapeKey(fields);
+  const cached = synth.byShape.get(key);
+  if (cached) {
+    return { domain: cached.domain, synth, registry };
+  }
+  // Validate field names (must be valid identifiers) and field types
+  // (must be parseable Pantagruel type expressions). `mapTsType` falls
+  // back to `checker.typeToString` for unsupported types, yielding
+  // strings like `Map<string, number>` or `{ x: number }` that contain
+  // TS-compiler artifacts (`<`, `>`, `{`, `}`, `,`, etc.) — never legal
+  // Pantagruel. Reject any field whose type isn't drawn from the
+  // Pantagruel type-expression character set so the broken text can't
+  // reach `emitRecordSynthDecls`.
+  for (const f of fields) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(f.name)) {
+      return { domain: null, synth, registry };
+    }
+    if (!isValidPantFieldType(f.type)) {
+      return { domain: null, synth, registry };
+    }
+  }
+  const baseDomain =
+    fields.length === 0
+      ? "EmptyRec"
+      : `${fields.map((f) => capitalize(f.name)).join("")}Rec`;
+  const reg1 = registerName(registry, baseDomain);
+  const domain = reg1.name;
+  // Allocate a shared binder name for this domain's accessor rules.
+  // Using "r" as the mnemonic (matching Map synth's "m"/"k" convention).
+  const bReg = registerName(reg1.registry, "r");
+  const binder = bReg.name;
+  const entry: RecordSynthEntry = {
+    domain,
+    binder,
+    fields: fields.map((f) => ({ ...f })),
+  };
+  const newByShape = new Map(synth.byShape);
+  newByShape.set(key, entry);
+  return {
+    domain,
+    synth: { byShape: newByShape, emitted: synth.emitted },
+    registry: bReg.registry,
+  };
+}
+
+export function lookupRecordShape(
+  synth: RecordSynth,
+  fields: ReadonlyArray<RecordSynthField>,
+): RecordSynthEntry | undefined {
+  return synth.byShape.get(recordShapeKey(fields));
+}
+
+/**
+ * Materialize accumulated record decls (domain + one accessor rule per
+ * field) in registration order. Incremental like `emitSynthDecls`: only
+ * entries not in `synth.emitted` are emitted, so the pipeline can drain
+ * new body-level registrations after signature/type translation has
+ * already run.
+ */
+export function emitRecordSynthDecls(
+  synth: RecordSynth,
+  registry: NameRegistry,
+): { decls: PantDeclaration[]; synth: RecordSynth; registry: NameRegistry } {
+  const decls: PantDeclaration[] = [];
+  const newEmitted = new Set(synth.emitted);
+  for (const [key, entry] of synth.byShape) {
+    if (newEmitted.has(key)) {
+      continue;
+    }
+    newEmitted.add(key);
+    decls.push({ kind: "domain", name: entry.domain });
+    for (const field of entry.fields) {
+      decls.push({
+        kind: "rule",
+        name: field.name,
+        params: [{ name: entry.binder, type: entry.domain }],
+        returnType: field.type,
+      });
+    }
+  }
+  return {
+    decls,
+    synth: { byShape: synth.byShape, emitted: newEmitted },
+    registry,
+  };
+}
+
+/**
+ * Mutable 3-field cell bundling a `MapSynth`, `RecordSynth` and
+ * `NameRegistry`. Used by deep call sites (mapTsType recursion, body
+ * translation) that would otherwise have to thread state through every
+ * return value. The fields are reassigned in place with freshly-computed
+ * immutable records; the inner values remain pure. Cell-field assignment
+ * is itself within ts2pant's self-translation envelope (translatable as
+ * primed rules on the cell).
+ */
+export interface SynthCell {
   synth: MapSynth;
+  recordSynth: RecordSynth;
   registry: NameRegistry;
 }
 
-export function newMapSynthCell(registry?: NameRegistry): MapSynthCell {
-  return { synth: emptyMapSynth(), registry: registry ?? emptyNameRegistry() };
+export function newSynthCell(registry?: NameRegistry): SynthCell {
+  return {
+    synth: emptyMapSynth(),
+    recordSynth: emptyRecordSynth(),
+    registry: registry ?? emptyNameRegistry(),
+  };
 }
 
 /** Cell-mutating wrapper around `registerMapKV` for the legacy call shape. */
 export function cellRegisterMap(
-  cell: MapSynthCell,
+  cell: SynthCell,
   kType: string,
   vType: string,
 ): string | null {
@@ -201,24 +381,50 @@ export function cellRegisterMap(
   return r.domain;
 }
 
+/** Cell-mutating wrapper around `registerRecordShape`. `fields` must be in
+ *  canonical (alphabetically sorted) order. */
+export function cellRegisterRecord(
+  cell: SynthCell,
+  fields: ReadonlyArray<RecordSynthField>,
+): string | null {
+  const r = registerRecordShape(cell.recordSynth, cell.registry, fields);
+  cell.recordSynth = r.synth;
+  cell.registry = r.registry;
+  return r.domain;
+}
+
+/** Cell read-through for `lookupRecordShape`. `fields` must be canonical. */
+export function cellLookupRecord(
+  cell: SynthCell,
+  fields: ReadonlyArray<RecordSynthField>,
+): RecordSynthEntry | undefined {
+  return lookupRecordShape(cell.recordSynth, fields);
+}
+
 /** Cell-mutating wrapper around `registerName`. */
-export function cellRegisterName(cell: MapSynthCell, name: string): string {
+export function cellRegisterName(cell: SynthCell, name: string): string {
   const r = registerName(cell.registry, name);
   cell.registry = r.registry;
   return r.name;
 }
 
 /** Cell read-through for `isUsed`. */
-export function cellIsUsed(cell: MapSynthCell, name: string): boolean {
+export function cellIsUsed(cell: SynthCell, name: string): boolean {
   return cell.registry.used.has(name);
 }
 
-/** Cell-mutating wrapper around `emitSynthDecls`. */
-export function cellEmitSynth(cell: MapSynthCell): PantDeclaration[] {
-  const r = emitSynthDecls(cell.synth, cell.registry);
-  cell.synth = r.synth;
-  cell.registry = r.registry;
-  return r.decls;
+/** Cell-mutating wrapper that drains both Map and Record synth decls.
+ *  Emits Maps first so Record accessor-rule return types can reference
+ *  any Map domain registered bottom-up. Incremental: each call returns
+ *  only the entries added since the previous drain. */
+export function cellEmitSynth(cell: SynthCell): PantDeclaration[] {
+  const mapR = emitSynthDecls(cell.synth, cell.registry);
+  cell.synth = mapR.synth;
+  cell.registry = mapR.registry;
+  const recR = emitRecordSynthDecls(cell.recordSynth, cell.registry);
+  cell.recordSynth = recR.synth;
+  cell.registry = recR.registry;
+  return [...mapR.decls, ...recR.decls];
 }
 
 /** Strategy for mapping TS `number` to a Pantagruel numeric type. */
@@ -253,7 +459,7 @@ export function mapTsType(
   type: ts.Type,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
-  synthCell?: MapSynthCell,
+  synthCell?: SynthCell,
 ): string {
   const flags = type.flags;
 
@@ -334,6 +540,30 @@ export function mapTsType(
     return unique.join(" + ");
   }
 
+  // Anonymous record type — synthesize a domain + accessor rules per
+  // unique shape. Mirrors the `Map<K, V>` synth pattern: registration is
+  // idempotent on canonical (sorted-field) shape, one domain per shape,
+  // nested anonymous records compose bottom-up via recursive mapTsType.
+  // Never fall through to the generic symbol branch on failure — that
+  // branch returns `__type`, which is the same sentinel
+  // `translateRecordReturn` uses to detect anonymous returns and would
+  // silently mark the function as a supported record return whose
+  // synthesized domain has not actually been registered.
+  if (isAnonymousRecord(type)) {
+    if (synthCell) {
+      const domain = registerAnonymousRecord(
+        type,
+        checker,
+        strategy,
+        synthCell,
+      );
+      if (domain !== null) {
+        return domain;
+      }
+    }
+    return UNSUPPORTED_ANONYMOUS_RECORD;
+  }
+
   // Named type (interface, class, enum, type alias)
   const symbol = type.aliasSymbol ?? type.symbol;
   if (symbol) {
@@ -341,6 +571,50 @@ export function mapTsType(
   }
 
   return checker.typeToString(type);
+}
+
+/**
+ * Collect declared fields from an anonymous object type, map each field's
+ * type via `mapTsType`, sort fields alphabetically by name, and register
+ * with the synth cell. Returns the synthesized domain name, or null if
+ * any field's type is unmangleable or a field name is a non-identifier.
+ *
+ * Callers must have already checked `isAnonymousRecord(type)`.
+ */
+function registerAnonymousRecord(
+  type: ts.Type,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  synthCell: SynthCell,
+): string | null {
+  const properties = type.getProperties();
+  const fields: RecordSynthField[] = [];
+  for (const prop of properties) {
+    // Resolve the property's declared type. For anonymous object types,
+    // `PropertySignature` is the usual declaration kind; fall back to the
+    // checker when the property has no source declaration (structural
+    // shapes from mapped / indexed-access types). The fallback cast
+    // reaches an internal TypeScript compiler property and should be
+    // revisited if the compiler internals change.
+    const decl = prop.getDeclarations()?.[0];
+    const propType = decl
+      ? checker.getTypeOfSymbolAtLocation(prop, decl)
+      : (prop as unknown as { type?: ts.Type }).type;
+    if (!propType) {
+      return null;
+    }
+    const mapped = mapTsType(propType, checker, strategy, synthCell);
+    // Propagate failure from a nested anonymous-record synthesis.
+    // Without this, the parent shape would register with the sentinel
+    // string as a field type and emit invalid output.
+    if (mapped === UNSUPPORTED_ANONYMOUS_RECORD) {
+      return null;
+    }
+    fields.push({ name: prop.getName(), type: mapped });
+  }
+  // Canonical order: sort alphabetically by field name.
+  fields.sort((a, b) => a.name.localeCompare(b.name));
+  return cellRegisterRecord(synthCell, fields);
 }
 
 /**
@@ -353,6 +627,42 @@ export function isSetType(type: ts.Type): boolean {
   const symbol = type.getSymbol();
   const name = symbol?.getName();
   return name === "Set" || name === "ReadonlySet";
+}
+
+/**
+ * Detect an anonymous object/record type — a TS inline shape with no
+ * declared interface / alias. These surface with the compiler-assigned
+ * symbol name `__type`. Several other shapes match on the name alone
+ * and must be rejected because record synthesis is only for finite
+ * field-based shapes:
+ *   - Callable / constructor types (`{ (): T }`, `{ new(): T }`) —
+ *     detected via call/construct signatures.
+ *   - Index-signature dictionaries (`{ [k: string]: T }`,
+ *     `{ [k: number]: T }`) — `getProperties()` returns empty for
+ *     these, so without an explicit guard they would synthesize as
+ *     `EmptyRec`, misclassifying an unbounded dictionary as a finite
+ *     empty record.
+ * Zero-property records (`{}`) are intentionally supported and
+ * synthesize as `EmptyRec` via `registerRecordShape`.
+ */
+export function isAnonymousRecord(type: ts.Type): boolean {
+  const symbol = type.getSymbol();
+  if (symbol?.getName() !== "__type") {
+    return false;
+  }
+  if (
+    type.getCallSignatures().length > 0 ||
+    type.getConstructSignatures().length > 0
+  ) {
+    return false;
+  }
+  if (
+    type.getStringIndexType() !== undefined ||
+    type.getNumberIndexType() !== undefined
+  ) {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -382,7 +692,7 @@ export function translateTypes(
   extracted: ExtractedTypes,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
-  synthCell?: MapSynthCell,
+  synthCell?: SynthCell,
 ): PantDeclaration[] {
   const decls: PantDeclaration[] = [];
 

@@ -26,7 +26,8 @@
   test_e2e
   test_module
   test_smt_invariants
-  test_smt_property)
+  test_smt_property
+  test_smt_substitution)
  (modules :standard \ test_util smt_check)
  (libraries pantagruel test_util smt_check alcotest qcheck-alcotest)
  (deps
