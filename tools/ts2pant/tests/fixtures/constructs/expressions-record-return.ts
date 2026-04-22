@@ -24,7 +24,7 @@ export interface Bag {
 }
 
 /** `new Set()` in a set-typed field position → empty-set via membership
- *  negation. Pantagruel has no empty-list literal; the emitted form is
+ *  negation. Pantagruel has no empty-set literal; the emitted form is
  *  `all x: T | ~(x in items f)`. */
 export function emptyBag(): Bag {
   return { items: new Set() };
