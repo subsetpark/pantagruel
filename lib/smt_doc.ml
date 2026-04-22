@@ -18,6 +18,13 @@ type chapter_class =
       params : param list;
       guards : guard list;
       contexts : string list;
+      head_bindings : param list;
+          (** Rule parameters declared in the same chapter head as the action.
+              These are visible in action-body propositions per REFERENCE.md
+              "Forward Declaration Rules" but are not declared as SMT constants
+              (only action params are). Used by [collect_actions] to
+              auto-quantify propositions that reference them, matching the
+              treatment [bind_head_params] gives to invariants. *)
       propositions : expr located list;
       checks : expr located list;
     }
@@ -32,6 +39,14 @@ let classify_chapter (chapter : chapter) =
         | DeclDomain _ | DeclAlias _ | DeclRule _ | DeclClosure _ -> None)
       chapter.head
   in
+  let head_bindings =
+    List.concat_map
+      (fun (decl : declaration located) ->
+        match decl.value with
+        | DeclRule { params; _ } -> params
+        | DeclDomain _ | DeclAlias _ | DeclAction _ | DeclClosure _ -> [])
+      chapter.head
+  in
   match action with
   | Some (label, params, guards, contexts) ->
       Action
@@ -40,18 +55,11 @@ let classify_chapter (chapter : chapter) =
           params;
           guards;
           contexts;
+          head_bindings;
           propositions = chapter.body;
           checks = chapter.checks;
         }
   | None ->
-      let head_bindings =
-        List.concat_map
-          (fun (decl : declaration located) ->
-            match decl.value with
-            | DeclRule { params; _ } -> params
-            | DeclDomain _ | DeclAlias _ | DeclAction _ | DeclClosure _ -> [])
-          chapter.head
-      in
       Invariant
         { head_bindings; propositions = chapter.body; checks = chapter.checks }
 
@@ -188,19 +196,28 @@ type action_info = {
   a_propositions : expr located list;
 }
 
-(** Collect all actions from the document *)
+(** Collect all actions from the document. Applies [bind_head_params] to each
+    proposition so that references to rule parameters declared in the same
+    chapter head (which are in type-check scope per REFERENCE.md but are not
+    SMT-declared — only action params are) get wrapped in a universal quantifier
+    over the rule param. Without this, a proposition like
+    [count' a1 = count a1.] — where [a1] is [count]'s declared param — fails at
+    SMT time with "unknown constant a1". Mirrors the invariant treatment in
+    [collect_invariants]. *)
 let collect_actions chapters =
   List.filter_map
     (fun c ->
       match c with
-      | Action { label; params; guards; contexts; propositions; _ } ->
+      | Action
+          { label; params; guards; contexts; head_bindings; propositions; _ } ->
           Some
             {
               a_label = label;
               a_params = params;
               a_guards = guards;
               a_contexts = contexts;
-              a_propositions = propositions;
+              a_propositions =
+                List.map (bind_head_params head_bindings) propositions;
             }
       | Invariant _ -> None)
     chapters
@@ -222,17 +239,30 @@ let collect_checks chapters =
           in
           let bound_checks = List.map (bind_head_params head_bindings) checks in
           List.map (fun chk -> (chk, CheckInvariant bound_props)) bound_checks
-      | Action { label; params; guards; contexts; propositions; checks } ->
+      | Action
+          {
+            label;
+            params;
+            guards;
+            contexts;
+            head_bindings;
+            propositions;
+            checks;
+          } ->
+          let bound_props =
+            List.map (bind_head_params head_bindings) propositions
+          in
+          let bound_checks = List.map (bind_head_params head_bindings) checks in
           let action =
             {
               a_label = label;
               a_params = params;
               a_guards = guards;
               a_contexts = contexts;
-              a_propositions = propositions;
+              a_propositions = bound_props;
             }
           in
-          List.map (fun chk -> (chk, CheckAction action)) checks)
+          List.map (fun chk -> (chk, CheckAction action)) bound_checks)
     chapters
 
 (** Generate frame condition expressions: for every rule NOT in the action's

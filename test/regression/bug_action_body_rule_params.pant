@@ -1,0 +1,24 @@
+module BUG_ACTION_BODY_RULE_PARAMS.
+
+> Regression fixture for the action-body free-rule-param SMT bug. Rule
+> params are visible in their chapter's body propositions per
+> REFERENCE.md "Forward Declaration Rules", but for ACTION chapters
+> lib/smt_doc.ml's collect_actions did not apply bind_head_params, so
+> propositions like `owner' a1 = owner a1.` type-checked fine but failed
+> at SMT time with "unknown constant a1" because only action params get
+> SMT-declared. The fix applies bind_head_params to action propositions
+> during collect_actions, mirroring collect_invariants. This fixture
+> exercises the shape: two rules with param `a1`, an action with
+> differently-named param `a`, and a frame-style proposition referencing
+> only `a1`. Must translate and --check cleanly.
+
+Account.
+balance a1: Account => Int.
+owner a1: Account => String.
+
+~> Reset @ a: Account.
+
+---
+
+balance' a = 0.
+owner' a1 = owner a1.

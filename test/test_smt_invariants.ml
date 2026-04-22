@@ -202,6 +202,8 @@ let regression_cases () =
       (test_regression_fixture "bug_overquantify.pant" []);
     test_case "bug_card_zero.pant — fallback emission" `Quick
       (test_regression_fixture "bug_card_zero.pant" [ "fallback_emission" ]);
+    test_case "bug_action_body_rule_params.pant — clean post-fix" `Quick
+      (test_regression_fixture "bug_action_body_rule_params.pant" []);
   ]
 
 let () =
