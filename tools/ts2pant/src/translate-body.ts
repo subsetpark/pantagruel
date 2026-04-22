@@ -19,9 +19,11 @@ import {
   translateOperator,
 } from "./translate-signature.js";
 import {
+  cellRegisterMap,
   isMapType,
   isSetType,
-  type MapSynthesizer,
+  lookupMapKV,
+  type MapSynthCell,
   mapTsType,
   type NumericStrategy,
 } from "./translate-types.js";
@@ -32,20 +34,30 @@ import type { PantDeclaration, PropResult } from "./types.js";
 /**
  * Per-body translation context threaded through every `translateBodyExpr`
  * call. Carries the hygienic-binder counter and (optionally) the
- * module-wide `MapSynthesizer` so `.get`/`.has` on non-field Map receivers
+ * module-wide `MapSynthCell` so `.get`/`.has` on non-field Map receivers
  * can resolve to the synthesized rule names.
+ *
+ * Mutable 2-field record: `n` is reassigned in place by `nextSupply`. This
+ * is within ts2pant's self-translation envelope (cell-field reassignment
+ * translates to primed rules on the cell), unlike the prior closure over a
+ * `let counter = 0`.
  */
 interface UniqueSupply {
-  next: () => number;
-  mapSynth?: MapSynthesizer | undefined;
+  n: number;
+  synthCell?: MapSynthCell | undefined;
 }
-function makeUniqueSupply(mapSynth?: MapSynthesizer): UniqueSupply {
-  let counter = 0;
-  return { next: () => counter++, mapSynth };
+function makeUniqueSupply(synthCell?: MapSynthCell): UniqueSupply {
+  return { n: 0, synthCell };
+}
+
+function nextSupply(supply: UniqueSupply): number {
+  const value = supply.n;
+  supply.n = value + 1;
+  return value;
 }
 
 function freshHygienicBinder(supply: UniqueSupply): string {
-  return `$${supply.next()}`;
+  return `$${nextSupply(supply)}`;
 }
 
 interface ConstBinding {
@@ -109,22 +121,33 @@ interface WriteEntry {
   value: OpaqueExpr;
 }
 
+/**
+ * Per-body symbolic-execution accumulator. Held as a cell of immutable
+ * records: `writes`, `writtenKeys`, `modifiedProps` are typed as read-only
+ * views, and updates replace the whole map/set via `putWrite`,
+ * `addWrittenKey`, `addModifiedProp`. Cell-field reassignment is within
+ * ts2pant's self-translation envelope (translatable as primed rules on the
+ * cell), whereas the prior `.set`/`.add` in-place mutation was not.
+ *
+ * `modifiedProps` is *shared* across cloned cells — it tracks which rules
+ * have been modified anywhere in this execution, including Shape A loop
+ * writes whose per-element equation is emitted directly (bypassing
+ * `writes`). Consumed by the frame-condition generator so loop-modified
+ * rules don't get a spurious identity frame.
+ *
+ * `canonicalize` applies the ambient const-binding substitution to an
+ * expression before it is used as a state key. Writes store keys under the
+ * post-substitution form so `const x = a; x.balance = 1` and a later
+ * `x.balance` read resolve to the same key. Updated by `symbolicExecute`
+ * whenever a new const binding is inlined so the in-flight `applyConst`
+ * stays in sync with the state.
+ */
 interface SymbolicState {
-  writes: Map<string, WriteEntry>;
+  writes: ReadonlyMap<string, WriteEntry>;
   // Keys *written during the current branch* (reset on clone). Used by the
   // if-merge algorithm to determine which locations are "touched."
-  writtenKeys: Set<string>;
-  // Names of rules that have been modified by *any* write in this execution,
-  // including Shape A loop writes whose per-element equation is emitted
-  // directly (bypassing `writes`). Consumed by the frame-condition generator
-  // so loop-modified rules don't get a spurious identity frame.
+  writtenKeys: ReadonlySet<string>;
   modifiedProps: Set<string>;
-  // Canonicalizer — applies the ambient const-binding substitution to an
-  // expression before it is used as a state key. Writes store keys under the
-  // post-substitution form so `const x = a; x.balance = 1` and a later
-  // `x.balance` read resolve to the same key. Updated by `symbolicExecute`
-  // whenever a new const binding is inlined so the in-flight `applyConst`
-  // stays in sync with the state.
   canonicalize: (e: OpaqueExpr) => OpaqueExpr;
 }
 
@@ -148,8 +171,42 @@ function cloneSymbolicState(s: SymbolicState): SymbolicState {
   };
 }
 
+function putWrite(state: SymbolicState, key: string, entry: WriteEntry): void {
+  const next = new Map(state.writes);
+  next.set(key, entry);
+  state.writes = next;
+}
+
+function addWrittenKey(state: SymbolicState, key: string): void {
+  const next = new Set(state.writtenKeys);
+  next.add(key);
+  state.writtenKeys = next;
+}
+
+function addModifiedProp(state: SymbolicState, prop: string): void {
+  state.modifiedProps.add(prop);
+}
+
+function setCanonicalize(
+  state: SymbolicState,
+  fn: (e: OpaqueExpr) => OpaqueExpr,
+): void {
+  state.canonicalize = fn;
+}
+
 function symbolicKey(prop: string, objExpr: OpaqueExpr): string {
   return `${prop}::${getAst().strExpr(objExpr)}`;
+}
+
+/**
+ * Return a fresh Map equal to `m` plus the binding `k -> v`. Used instead of
+ * `m.set(k, v)` so the immutable-record discipline holds: callers either
+ * thread the returned map or assign it into a cell field.
+ */
+function withParam<K, V>(m: ReadonlyMap<K, V>, k: K, v: V): ReadonlyMap<K, V> {
+  const next = new Map(m);
+  next.set(k, v);
+  return next;
 }
 
 function isBareReturn(stmt: ts.Statement): boolean {
@@ -404,12 +461,12 @@ export interface TranslateBodyOptions {
   /** Declarations in scope — used for frame condition generation. */
   declarations?: PantDeclaration[];
   /**
-   * Synthesizer populated during signature and type translation. Used by
-   * the body translator to (a) resolve Map-parameter types to their
+   * Synthesizer cell populated during signature and type translation. Used
+   * by the body translator to (a) resolve Map-parameter types to their
    * synthesized domain names when reconstructing the param list, and
    * (b) dispatch `.get`/`.has` on non-interface-field Map receivers.
    */
-  mapSynth?: MapSynthesizer | undefined;
+  synthCell?: MapSynthCell | undefined;
 }
 
 /**
@@ -420,7 +477,7 @@ export interface TranslateBodyOptions {
  * plus frame conditions for unmodified rules.
  */
 export function translateBody(opts: TranslateBodyOptions): PropResult[] {
-  const { sourceFile, functionName, strategy, declarations, mapSynth } = opts;
+  const { sourceFile, functionName, strategy, declarations, synthCell } = opts;
   const checker = sourceFile.getProject().getTypeChecker().compilerObject;
   const { node, className } = findFunction(sourceFile, functionName);
   // Strip class qualifier for use in Pantagruel identifiers
@@ -450,7 +507,7 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
       // Pass the synthesizer so Map parameters resolve to their synthesized
       // domain names (idempotent; the signature pass already registered
       // them, so this is a lookup rather than a fresh registration).
-      const typeName = mapTsType(paramType, checker, strategy, mapSynth);
+      const typeName = mapTsType(paramType, checker, strategy, synthCell);
       paramNames.set(param.name, param.name);
       paramList.push({ name: param.name, type: typeName });
     }
@@ -468,7 +525,7 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
       checker,
       strategy,
       paramNames,
-      mapSynth,
+      synthCell,
     );
   } else {
     return translateMutatingBody(
@@ -477,7 +534,7 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
       strategy,
       paramNames,
       declarations ?? [],
-      mapSynth,
+      synthCell,
     );
   }
 }
@@ -488,8 +545,8 @@ function translatePureBody(
   params: Array<{ name: string; type: string }>,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
-  paramNames: Map<string, string>,
-  mapSynth?: MapSynthesizer,
+  paramNames: ReadonlyMap<string, string>,
+  synthCell?: MapSynthCell,
 ): PropResult[] {
   const ast = getAst();
 
@@ -503,7 +560,7 @@ function translatePureBody(
     return [{ kind: "unsupported", reason: `${functionName} — ${reason}` }];
   }
 
-  const supply = makeUniqueSupply(mapSynth);
+  const supply = makeUniqueSupply(synthCell);
   const inlined = inlineConstBindings(
     extracted.bindings.map((b) => ({
       tsName: b.name,
@@ -609,13 +666,13 @@ function extractReturnExpression(
   }
 
   const bindings: Array<{ name: string; initializer: ts.Expression }> = [];
-  let i = 0;
 
-  // Collect leading const bindings
-  for (; i < stmts.length - 1; i++) {
-    const stmt = stmts[i]!;
+  // Every statement before the last must be a const binding; any other shape
+  // rejects the whole body. The last statement is the return / if-else-return.
+  const last = stmts[stmts.length - 1]!;
+  for (const stmt of stmts.slice(0, -1)) {
     if (!ts.isVariableStatement(stmt)) {
-      break;
+      return null;
     }
 
     const declList = stmt.declarationList;
@@ -635,13 +692,6 @@ function extractReturnExpression(
       }
       bindings.push({ name: decl.name.text, initializer: decl.initializer });
     }
-  }
-
-  // The last statement must be a return or if/else-with-returns
-  const last = stmts[i]!;
-  // If we didn't consume all preceding statements as const bindings, reject
-  if (i < stmts.length - 1) {
-    return null;
   }
 
   if (ts.isReturnStatement(last) && last.expression) {
@@ -702,13 +752,13 @@ function inlineConstBindings(
   bindings: ConstBinding[],
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
-  baseParams: Map<string, string>,
+  baseParams: ReadonlyMap<string, string>,
   supply: UniqueSupply,
   state?: SymbolicState,
 ):
   | {
       applyTo: (expr: OpaqueExpr) => OpaqueExpr;
-      scopedParams: Map<string, string>;
+      scopedParams: ReadonlyMap<string, string>;
     }
   | { error: string } {
   const ast = getAst();
@@ -721,38 +771,64 @@ function inlineConstBindings(
     }
   }
 
-  // Phase 2: translate initializers, building scopedParams incrementally
-  const scopedParams = new Map(baseParams);
-  const translatedBindings: Array<{
-    hygienicName: string;
-    initExpr: OpaqueExpr;
-  }> = [];
+  // Phase 2: translate initializers as a left fold, threading scopedParams
+  // and translatedBindings through the accumulator. Errors short-circuit
+  // subsequent work via the `tag: "error"` discriminant; successful steps
+  // return a fresh map via `withParam` so no `.set`-style mutation remains.
+  type Acc =
+    | {
+        tag: "ok";
+        scopedParams: ReadonlyMap<string, string>;
+        translatedBindings: ReadonlyArray<{
+          hygienicName: string;
+          initExpr: OpaqueExpr;
+        }>;
+      }
+    | { tag: "error"; error: string };
 
-  for (const binding of bindings) {
-    const hygienicName = `$${supply.next()}`;
-    const initResult = translateBodyExpr(
-      binding.initializer,
-      checker,
-      strategy,
-      scopedParams,
-      state,
-      supply,
-    );
-    if (isBodyUnsupported(initResult)) {
-      return { error: initResult.unsupported };
-    }
-    translatedBindings.push({ hygienicName, initExpr: bodyExpr(initResult) });
-    scopedParams.set(binding.tsName, hygienicName);
+  const folded = bindings.reduce<Acc>(
+    (acc, binding) => {
+      if (acc.tag === "error") {
+        return acc;
+      }
+      const hygienicName = `$${nextSupply(supply)}`;
+      const initResult = translateBodyExpr(
+        binding.initializer,
+        checker,
+        strategy,
+        acc.scopedParams,
+        state,
+        supply,
+      );
+      if (isBodyUnsupported(initResult)) {
+        return { tag: "error", error: initResult.unsupported };
+      }
+      return {
+        tag: "ok",
+        scopedParams: withParam(acc.scopedParams, binding.tsName, hygienicName),
+        translatedBindings: [
+          ...acc.translatedBindings,
+          { hygienicName, initExpr: bodyExpr(initResult) },
+        ],
+      };
+    },
+    { tag: "ok", scopedParams: baseParams, translatedBindings: [] },
+  );
+
+  if (folded.tag === "error") {
+    return { error: folded.error };
   }
 
-  // Phase 3: right-fold substitution closure
-  const reversed = translatedBindings.slice().reverse();
-  const applyTo = (expr: OpaqueExpr): OpaqueExpr => {
-    for (const { hygienicName, initExpr } of reversed) {
-      expr = ast.substituteBinder(expr, hygienicName, initExpr);
-    }
-    return expr;
-  };
+  // Phase 3: right-fold substitution closure. `reduceRight` applies the last
+  // binding first so references to earlier bindings inside its init remain
+  // unresolved — they get substituted in subsequent iterations.
+  const { scopedParams, translatedBindings } = folded;
+  const applyTo = (expr: OpaqueExpr): OpaqueExpr =>
+    translatedBindings.reduceRight(
+      (acc, { hygienicName, initExpr }) =>
+        ast.substituteBinder(acc, hygienicName, initExpr),
+      expr,
+    );
 
   return { applyTo, scopedParams };
 }
@@ -959,7 +1035,7 @@ export function translateBodyExpr(
   expr: ts.Expression | ts.Statement,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
-  paramNames: Map<string, string>,
+  paramNames: ReadonlyMap<string, string>,
   state: SymbolicState | undefined,
   supply: UniqueSupply,
 ): BodyResult {
@@ -1141,7 +1217,7 @@ function translateIfStatement(
   stmt: ts.IfStatement,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
-  paramNames: Map<string, string>,
+  paramNames: ReadonlyMap<string, string>,
   state: SymbolicState | undefined,
   supply: UniqueSupply,
 ): BodyResult {
@@ -1253,7 +1329,7 @@ function translateArrayMethod(
   expr: ts.CallExpression,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
-  paramNames: Map<string, string>,
+  paramNames: ReadonlyMap<string, string>,
   state: SymbolicState | undefined,
   supply: UniqueSupply,
 ): BodyResult | null {
@@ -1364,7 +1440,7 @@ function translateReduceCall(
   expr: ts.CallExpression,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
-  paramNames: Map<string, string>,
+  paramNames: ReadonlyMap<string, string>,
   state: SymbolicState | undefined,
   supply: UniqueSupply,
 ): BodyResult | null {
@@ -1725,7 +1801,7 @@ function translateForOfLoopBody(
   bodyStmts: ts.Statement[],
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
-  paramNames: Map<string, string>,
+  paramNames: ReadonlyMap<string, string>,
   state: SymbolicState,
   propositions: PropResult[],
   applyConst: (e: OpaqueExpr) => OpaqueExpr,
@@ -1786,7 +1862,7 @@ function translateForOfLoopBody(
         lhs: ast.app(ast.primed(entry.prop), [entry.objExpr]),
         rhs: entry.value,
       });
-      state.modifiedProps.add(entry.prop);
+      addModifiedProp(state, entry.prop);
     }
   }
 
@@ -1853,8 +1929,8 @@ function translateForOfLoopBody(
       priorEntry?.value ?? ast.app(ast.var(leaf.prop), [accExpr]);
     const newVal = ast.binop(outerOp, priorVal, folded);
 
-    state.writes.set(key, { prop: leaf.prop, objExpr: accExpr, value: newVal });
-    state.writtenKeys.add(key);
+    putWrite(state, key, { prop: leaf.prop, objExpr: accExpr, value: newVal });
+    addWrittenKey(state, key);
   }
 
   return true;
@@ -1865,7 +1941,7 @@ function translateForOfLoop(
   stmt: ts.ForOfStatement,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
-  paramNames: Map<string, string>,
+  paramNames: ReadonlyMap<string, string>,
   state: SymbolicState,
   propositions: PropResult[],
   applyConst: (e: OpaqueExpr) => OpaqueExpr,
@@ -1930,7 +2006,7 @@ function translateForEachStmt(
   call: ts.CallExpression,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
-  paramNames: Map<string, string>,
+  paramNames: ReadonlyMap<string, string>,
   state: SymbolicState,
   propositions: PropResult[],
   applyConst: (e: OpaqueExpr) => OpaqueExpr,
@@ -2000,7 +2076,7 @@ function translateCallExpr(
   expr: ts.CallExpression,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
-  paramNames: Map<string, string>,
+  paramNames: ReadonlyMap<string, string>,
   state: SymbolicState | undefined,
   supply: UniqueSupply,
 ): BodyResult {
@@ -2018,7 +2094,7 @@ function translateCallExpr(
     //     interface (translate-types.ts, interface-field branch).
     //   Stage B — receiver is anything else (parameter, call result, etc.).
     //     The rule was synthesized at signature/type translation time and
-    //     is looked up by (K, V) via the MapSynthesizer.
+    //     is looked up by (K, V) via the MapSynth cell.
     if (
       (methodName === "get" || methodName === "has") &&
       expr.arguments.length === 1 &&
@@ -2075,12 +2151,24 @@ function translateCallExpr(
       if (typeArgs.length !== 2) {
         return { unsupported: "Map with unexpected arity" };
       }
-      const kType = mapTsType(typeArgs[0]!, checker, strategy, supply.mapSynth);
-      const vType = mapTsType(typeArgs[1]!, checker, strategy, supply.mapSynth);
-      let info = supply.mapSynth?.lookup(kType, vType);
-      if (!info && supply.mapSynth) {
-        supply.mapSynth.register(kType, vType);
-        info = supply.mapSynth.lookup(kType, vType);
+      const kType = mapTsType(
+        typeArgs[0]!,
+        checker,
+        strategy,
+        supply.synthCell,
+      );
+      const vType = mapTsType(
+        typeArgs[1]!,
+        checker,
+        strategy,
+        supply.synthCell,
+      );
+      let info = supply.synthCell
+        ? lookupMapKV(supply.synthCell.synth, kType, vType)
+        : undefined;
+      if (!info && supply.synthCell) {
+        cellRegisterMap(supply.synthCell, kType, vType);
+        info = lookupMapKV(supply.synthCell.synth, kType, vType);
       }
       if (!info) {
         // register returns null only when K or V mangles to something that
@@ -2270,7 +2358,7 @@ function translateCallExpr(
 function extractArrowBody(
   expr: ts.Expression,
   binderName: string,
-  paramNames: Map<string, string>,
+  paramNames: ReadonlyMap<string, string>,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   supply: UniqueSupply,
@@ -2335,7 +2423,7 @@ function translateMutatingBody(
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
   declarations: PantDeclaration[],
-  mapSynth?: MapSynthesizer,
+  synthCell?: MapSynthCell,
 ): PropResult[] {
   if (!node.body) {
     return [];
@@ -2344,7 +2432,7 @@ function translateMutatingBody(
   const ast = getAst();
   const propositions: PropResult[] = [];
   const state = makeSymbolicState();
-  const supply = makeUniqueSupply(mapSynth);
+  const supply = makeUniqueSupply(synthCell);
 
   const ok = symbolicExecute(
     node.body,
@@ -2370,7 +2458,7 @@ function translateMutatingBody(
       lhs: ast.app(ast.primed(entry.prop), [entry.objExpr]),
       rhs: entry.value,
     });
-    state.modifiedProps.add(entry.prop);
+    addModifiedProp(state, entry.prop);
   }
 
   const frames = generateFrameConditions(state.modifiedProps, declarations);
@@ -2402,11 +2490,10 @@ function symbolicExecute(
   let applyConst = outerApply;
   // Keep the state's canonicalize in sync with the frame's applyConst so
   // symbolic-state reads see the same normalization the write site uses.
-  state.canonicalize = applyConst;
+  setCanonicalize(state, applyConst);
   const stmts = ts.isBlock(body) ? Array.from(body.statements) : [body];
 
-  for (let i = 0; i < stmts.length; i++) {
-    const stmt = stmts[i]!;
+  for (const [i, stmt] of stmts.entries()) {
     // Skip guard statements (if-throw patterns and assertion calls)
     if (isGuardStatement(stmt, checker)) {
       continue;
@@ -2511,12 +2598,12 @@ function symbolicExecute(
               [gExpr, vContinuation],
               [ast.litBool(true), vEarlyReturn],
             ]);
-        state.writes.set(key, {
+        putWrite(state, key, {
           prop: entryR.prop,
           objExpr: entryR.objExpr,
           value: merged,
         });
-        state.writtenKeys.add(key);
+        addWrittenKey(state, key);
       }
       // Remaining stmts have been consumed by the continuation.
       break;
@@ -2563,7 +2650,7 @@ function symbolicExecute(
             }
             const prevApply = applyConst;
             applyConst = (e) => prevApply(inlined.applyTo(e));
-            state.canonicalize = applyConst;
+            setCanonicalize(state, applyConst);
           }
           continue;
         }
@@ -2627,8 +2714,8 @@ function symbolicExecute(
         const objExpr = applyConst(bodyExpr(obj));
         const valExpr = applyConst(bodyExpr(val));
         const key = symbolicKey(prop, objExpr);
-        state.writes.set(key, { prop, objExpr, value: valExpr });
-        state.writtenKeys.add(key);
+        putWrite(state, key, { prop, objExpr, value: valExpr });
+        addWrittenKey(state, key);
         continue;
       }
     }
@@ -2826,8 +2913,8 @@ function symbolicExecute(
           [gExpr, vT],
           [ast.litBool(true), vE],
         ]);
-        state.writes.set(key, { prop, objExpr, value: merged });
-        state.writtenKeys.add(key);
+        putWrite(state, key, { prop, objExpr, value: merged });
+        addWrittenKey(state, key);
       }
       continue;
     }
