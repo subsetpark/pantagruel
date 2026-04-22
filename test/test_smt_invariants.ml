@@ -211,7 +211,6 @@ let test_no_shadowing_forall fixture shadowed_name () =
         | Ok qs -> qs
         | Error msg -> failf "%s — translation failed: %s" fixture msg
       in
-      let needle = Printf.sprintf "(%s " shadowed_name in
       List.iter
         (fun (q : Pantagruel.Smt.query) ->
           (* Only action queries declare the name as a constant; other queries
@@ -232,8 +231,9 @@ let test_no_shadowing_forall fixture shadowed_name () =
             let rec scan i =
               if i + len > String.length q.smt2 then ()
               else if String.sub q.smt2 i len = forall_prefix then
-                failf "%s: query %S contains %S while also declaring %S" fixture
-                  q.name needle shadowed_name
+                failf
+                  "%s: query %S contains %S while also declaring constant %S"
+                  fixture q.name forall_prefix shadowed_name
               else scan (i + 1)
             in
             scan 0)
