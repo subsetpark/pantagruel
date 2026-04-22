@@ -16,7 +16,8 @@ type type_error =
   | ExpectedBool of ty * loc
   | PrimedNonRule of string * loc
   | PrimeOutsideActionContext of string * loc
-  | OverrideRequiresArity1 of string * int * loc
+  | OverrideKeyArityMismatch of string * int * loc
+      (** rule name, expected arity (from the rule's param list) *)
   | ProjectionOutOfBounds of int * int * loc
   | PropositionNotBool of ty * loc
   | ShadowingTypeMismatch of
@@ -430,25 +431,46 @@ and check_quantifier ctx params guards body =
 
 and check_override ctx name pairs =
   match[@warning "-4"] Env.lookup_term name ctx.env with
-  | Some { kind = Env.KRule (TyFunc ([ param_ty ], Some ret_ty)); _ } ->
-      (* Override only for arity-1 rules *)
+  | Some { kind = Env.KRule (TyFunc (param_tys, Some ret_ty)); _ }
+    when param_tys <> [] ->
+      (* Override key must match the rule's parameter arity. For arity-1 rules
+         the key is a bare expression typed against the single parameter; for
+         arity-N rules the key must be an N-tuple whose components match the
+         parameter types componentwise. See Kroening & Strichman Ch. 7
+         (McCarthy's [store] applied to multi-index arrays). *)
+      let arity = List.length param_tys in
       let* _ =
         map_result
           (fun (k, v) ->
-            let* k_ty = infer_type ctx k in
             let* v_ty = infer_type ctx v in
             let* _ =
-              if is_subtype k_ty param_ty then Ok ()
-              else Error (TypeMismatch (param_ty, k_ty, ctx.loc))
+              if is_subtype v_ty ret_ty then Ok ()
+              else Error (TypeMismatch (ret_ty, v_ty, ctx.loc))
             in
-            if is_subtype v_ty ret_ty then Ok ()
-            else Error (TypeMismatch (ret_ty, v_ty, ctx.loc)))
+            check_override_key ctx name param_tys arity k)
           pairs
       in
-      Ok (TyFunc ([ param_ty ], Some ret_ty))
-  | Some { kind = Env.KRule (TyFunc (params, _)); _ } ->
-      Error (OverrideRequiresArity1 (name, List.length params, ctx.loc))
+      Ok (TyFunc (param_tys, Some ret_ty))
   | _ -> Error (UnboundVariable (name, ctx.loc))
+
+and check_override_key ctx name param_tys arity k =
+  match[@warning "-4"] (arity, k) with
+  | 1, _ ->
+      let param_ty = List.hd param_tys in
+      let* k_ty = infer_type ctx k in
+      if is_subtype k_ty param_ty then Ok ()
+      else Error (TypeMismatch (param_ty, k_ty, ctx.loc))
+  | _, ETuple parts when List.length parts = arity ->
+      let* _ =
+        map_result
+          (fun (part, pty) ->
+            let* pt = infer_type ctx part in
+            if is_subtype pt pty then Ok ()
+            else Error (TypeMismatch (pty, pt, ctx.loc)))
+          (List.combine parts param_tys)
+      in
+      Ok ()
+  | _ -> Error (OverrideKeyArityMismatch (name, arity, ctx.loc))
 
 (** Check a single proposition *)
 let check_proposition ctx (prop : expr located) =

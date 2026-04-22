@@ -4,13 +4,21 @@ Advanced features: overrides, qualified names
 
 ### Domains
 
-`Key`, `Value`
+`Key`.
+
+`Value`.
+
+> N-ary override: map-valued rule keyed by an owner handle and a key. Override key is a tuple whose arity matches the rule's parameter list.
+
+`Handle`.
 
 ### Rules
 
 **mapping** *k*: `Key` ⇒ `Value`.
 
 **default-value** ⇒ `Value`.
+
+**store** *h*: `Handle`, *k*: `Key` ⇒ `Value`.
 
 ---
 
@@ -27,6 +35,13 @@ Advanced features: overrides, qualified names
 > Override doesn't affect other keys
 
 ∀ *k1*: `Key`, *k2*: `Key`, *v*: `Value` · *k1* ≠ *k2* → **mapping**[*k1* ↦ *v*] *k2* = **mapping** *k2*.
+
+> N-ary override with a tuple key: the override binds the combined position (h, k) and leaves every other (h', k') untouched.
+
+∀ *h*: `Handle`, *k*: `Key`, *v*: `Value` · **store**[(*h*, *k*) ↦ *v*] *h* *k* = *v*.
+
+∀ *h1*: `Handle`, *h2*: `Handle`, *k1*: `Key`, *k2*: `Key`, *v*: `Value` · *h1* ≠ *h2* ∨ *k1* ≠ *k2* → **store**[(*h1*, *k1*) ↦ *v*] *h2* *k2* = **store** *h2*
+*k2*.
 
 ## Chapter 2
 

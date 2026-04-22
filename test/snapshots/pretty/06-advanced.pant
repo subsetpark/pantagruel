@@ -7,6 +7,12 @@ Value.
 mapping k: Key => Value.
 default-value => Value.
 
+> N-ary override: map-valued rule keyed by an owner handle and a key.
+> Override key is a tuple whose arity matches the rule's parameter list.
+
+Handle.
+store h: Handle, k: Key => Value.
+
 ---
 
 > Function override syntax: f[k |-> v]
@@ -23,6 +29,12 @@ all k1: Key, k2: Key, v: Value | k1 ~= k2 -> mapping[k1 |-> v] k2 = mapping k2.
 > Override doesn't affect other keys
 
 all k1: Key, k2: Key, v: Value | k1 ~= k2 -> mapping[k1 |-> v] k2 = mapping k2.
+
+> N-ary override with a tuple key: the override binds the combined position
+> (h, k) and leaves every other (h', k') untouched.
+
+all h: Handle, k: Key, v: Value | store[(h, k) |-> v] h k = v.
+all h1: Handle, h2: Handle, k1: Key, k2: Key, v: Value | h1 ~= h2 or k1 ~= k2 -> store[(h1, k1) |-> v] h2 k2 = store h2 k2.
 
 where
 

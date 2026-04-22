@@ -21,7 +21,7 @@ let test_format_type_error_coverage () =
       ("ExpectedBool", ExpectedBool (TyNat, loc));
       ("PrimedNonRule", PrimedNonRule ("x", loc));
       ("PrimeOutsideActionContext", PrimeOutsideActionContext ("f", loc));
-      ("OverrideRequiresArity1", OverrideRequiresArity1 ("f", 2, loc));
+      ("OverrideKeyArityMismatch", OverrideKeyArityMismatch ("f", 2, loc));
       ("ProjectionOutOfBounds", ProjectionOutOfBounds (5, 2, loc));
       ("PropositionNotBool", PropositionNotBool (TyNat, loc));
       ("ShadowingTypeMismatch", ShadowingTypeMismatch ("x", TyBool, TyNat, loc));
