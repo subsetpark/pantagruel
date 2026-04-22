@@ -90,3 +90,34 @@ export function deleteThenCopy(
   m.delete(kA);
   m.set(kB, m.get(kA)!);
 }
+
+/**
+ * Repeated writes to the same key — the later write must win. Pantagruel
+ * override expansion is first-pair-wins, so `installMapWrite` must drop
+ * the prior `(m, k) |-> v1` pair when `(m, k) |-> v2` is appended; the
+ * emitted override contains only the last write at `(m, k)`.
+ */
+export function setTwice(
+  m: Map<string, number>,
+  k: string,
+  v1: number,
+  v2: number,
+): void {
+  m.set(k, v1);
+  m.set(k, v2);
+}
+
+/**
+ * Set then delete on the same key — membership must end up `false` after
+ * the delete (the later write), not `true` from the stale `.set`. Without
+ * per-tuple dedupe in `installMapWrite`, first-pair-wins would keep the
+ * `.set`'s membership `|-> true` ahead of the `.delete`'s `|-> false`.
+ */
+export function setThenDelete(
+  m: Map<string, number>,
+  k: string,
+  v: number,
+): void {
+  m.set(k, v);
+  m.delete(k);
+}

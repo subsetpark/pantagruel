@@ -362,6 +362,9 @@ function installMapWrite(
   const objExpr = applyConst(effect.objExpr);
   const keyExpr = applyConst(effect.keyExpr);
   const keyTuple = ast.tuple([objExpr, keyExpr]);
+  const tupleKeyText = ast.strExpr(keyTuple);
+  const isSameTuple = (o: MapOverride) =>
+    ast.strExpr(o.keyTuple) === tupleKeyText;
 
   // cloneSymbolicState only shallow-copies `writes`, so the MapRuleWriteEntry
   // object is shared with sibling branches and the outer state. Copy the
@@ -384,6 +387,15 @@ function installMapWrite(
           valueOverrides: [],
           membershipOverrides: [],
         };
+
+  // Pantagruel override semantics are first-pair-wins, but for a sequence
+  // `m.set(k, 1); m.set(k, 2)` inside one path the later write must win.
+  // Drop any prior override for the same (obj, key) tuple on both sides
+  // before appending the new one.
+  entry.valueOverrides = entry.valueOverrides.filter((o) => !isSameTuple(o));
+  entry.membershipOverrides = entry.membershipOverrides.filter(
+    (o) => !isSameTuple(o),
+  );
 
   if (effect.op === "set") {
     const valueExpr = applyConst(effect.valueExpr!);
@@ -3309,6 +3321,28 @@ function symbolicExecute(
       );
       if (isBodyEffect(callResult)) {
         installMapWrite(state, callResult.effect, applyConst);
+        continue;
+      }
+      // If the call *looks like* a Map.set/Map.delete (right method name,
+      // arity, and receiver type) but translateCallExpr returned an
+      // unsupported marker, propagate the specific reason rather than
+      // falling through to the generic "side-effectful expression" error.
+      // Other unsupported results (non-Map calls the EUF encoder rejected
+      // because of an arrow-function argument, etc.) still fall through so
+      // the forEach handler below gets its chance.
+      if (
+        isBodyUnsupported(callResult) &&
+        ts.isPropertyAccessExpression(call.expression) &&
+        ((call.expression.name.text === "set" && call.arguments.length === 2) ||
+          (call.expression.name.text === "delete" &&
+            call.arguments.length === 1)) &&
+        isMapType(checker.getTypeAtLocation(call.expression.expression))
+      ) {
+        ok = false;
+        propositions.push({
+          kind: "unsupported",
+          reason: callResult.unsupported,
+        });
         continue;
       }
       // Otherwise fall through to forEach / side-effect handling below.
