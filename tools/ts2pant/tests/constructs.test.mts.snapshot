@@ -222,8 +222,16 @@ exports[`expressions-map-mutation-field.ts > cacheEvict 1`] = `
 "module CacheEvict.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\n~> CacheEvict @ c: Cache, k: String.\\n\\n---\\n\\nall m: Cache, k2: String | entriesKey' m k2 = entriesKey[(c, k) |-> false] m k2.\\n"
 `;
 
+exports[`expressions-map-mutation-field.ts > cacheEvictParen 1`] = `
+"module CacheEvictParen.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\n~> CacheEvictParen @ c: Cache, k: String.\\n\\n---\\n\\nall m: Cache, k2: String | entriesKey' m k2 = entriesKey[(c, k) |-> false] m k2.\\n"
+`;
+
 exports[`expressions-map-mutation-field.ts > cachePut 1`] = `
 "module CachePut.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\n~> CachePut @ c: Cache, k: String, v: Int.\\n\\n---\\n\\nall m: Cache, k2: String | entries' m k2 = entries[(c, k) |-> v] m k2.\\nall m1: Cache, k3: String | entriesKey' m1 k3 = entriesKey[(c, k) |-> true] m1 k3.\\n"
+`;
+
+exports[`expressions-map-mutation-field.ts > cachePutNonNull 1`] = `
+"module CachePutNonNull.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\n~> CachePutNonNull @ c: Cache, k: String, v: Int.\\n\\n---\\n\\nall m: Cache, k2: String | entries' m k2 = entries[(c, k) |-> v] m k2.\\nall m1: Cache, k3: String | entriesKey' m1 k3 = entriesKey[(c, k) |-> true] m1 k3.\\n"
 `;
 
 exports[`expressions-map-mutation.ts > bump 1`] = `
@@ -300,6 +308,10 @@ exports[`expressions-map.ts > contains 1`] = `
 
 exports[`expressions-map.ts > lookup 1`] = `
 "module Lookup.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\nlookup c: Cache, k: String => Int.\\n\\n---\\n\\nlookup c k = entries c k.\\n"
+`;
+
+exports[`expressions-map.ts > lookupNonNull 1`] = `
+"module LookupNonNull.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\nlookupNonNull c: Cache, k: String => Int.\\n\\n---\\n\\nlookupNonNull c k = entries c k.\\n"
 `;
 
 exports[`expressions-misc.ts > asNumber 1`] = `

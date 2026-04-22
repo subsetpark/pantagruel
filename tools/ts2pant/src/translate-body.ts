@@ -2431,9 +2431,13 @@ function translateCallExpr(
         (methodName === "delete" && expr.arguments.length === 1)) &&
       isMapType(checker.getTypeAtLocation(tsReceiver))
     ) {
+      // Unwrap parens, non-null assertions, and type-only wrappers so
+      // `(cache.entries).set(...)` and `cache.entries!.set(...)` reach the
+      // same Stage A detection as the bare `cache.entries.set(...)` form.
+      const normalizedReceiver = unwrapExpression(tsReceiver);
       const stageA =
-        ts.isPropertyAccessExpression(tsReceiver) &&
-        isInterfaceFieldAccess(tsReceiver, checker);
+        ts.isPropertyAccessExpression(normalizedReceiver) &&
+        isInterfaceFieldAccess(normalizedReceiver, checker);
 
       const keyArg = expr.arguments[0]!;
       const kExprRaw = translateBodyExpr(
@@ -2466,9 +2470,9 @@ function translateCallExpr(
         valueExpr = bodyExpr(vExpr);
       }
 
-      if (stageA && ts.isPropertyAccessExpression(tsReceiver)) {
-        const fieldName = tsReceiver.name.text;
-        const innerObj = tsReceiver.expression;
+      if (stageA && ts.isPropertyAccessExpression(normalizedReceiver)) {
+        const fieldName = normalizedReceiver.name.text;
+        const innerObj = normalizedReceiver.expression;
         const objRaw = translateBodyExpr(
           innerObj,
           checker,
@@ -2488,7 +2492,7 @@ function translateCallExpr(
           supply.synthCell,
         );
         const typeArgs = checker.getTypeArguments(
-          checker.getTypeAtLocation(tsReceiver) as ts.TypeReference,
+          checker.getTypeAtLocation(normalizedReceiver) as ts.TypeReference,
         );
         if (typeArgs.length !== 2) {
           return { unsupported: "Map with unexpected arity" };
@@ -2585,13 +2589,16 @@ function translateCallExpr(
       expr.arguments.length === 1 &&
       isMapType(checker.getTypeAtLocation(tsReceiver))
     ) {
+      // Match the .set/.delete branch: unwrap so wrapped field receivers
+      // (`(cache.entries).get(k)`, `cache.entries!.has(k)`) stay on Stage A.
+      const normalizedReceiver = unwrapExpression(tsReceiver);
       const stageA =
-        ts.isPropertyAccessExpression(tsReceiver) &&
-        isInterfaceFieldAccess(tsReceiver, checker);
+        ts.isPropertyAccessExpression(normalizedReceiver) &&
+        isInterfaceFieldAccess(normalizedReceiver, checker);
 
-      if (stageA && ts.isPropertyAccessExpression(tsReceiver)) {
-        const fieldName = tsReceiver.name.text;
-        const innerObj = tsReceiver.expression;
+      if (stageA && ts.isPropertyAccessExpression(normalizedReceiver)) {
+        const fieldName = normalizedReceiver.name.text;
+        const innerObj = normalizedReceiver.expression;
         const kExpr = translateBodyExpr(
           expr.arguments[0]!,
           checker,
@@ -2615,7 +2622,7 @@ function translateCallExpr(
           return objExpr;
         }
         const typeArgs = checker.getTypeArguments(
-          checker.getTypeAtLocation(tsReceiver) as ts.TypeReference,
+          checker.getTypeAtLocation(normalizedReceiver) as ts.TypeReference,
         );
         if (typeArgs.length !== 2) {
           return { unsupported: "Map with unexpected arity" };
