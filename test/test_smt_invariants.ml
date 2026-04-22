@@ -40,18 +40,9 @@ let regression_dir =
       Filename.concat (Sys.getcwd ()) "test/regression";
     ]
 
-(** Parse + translate a [.pant] file to SMT queries; [None] if the upstream
-    pipeline rejects the fixture (no SMT is generated, so structural checks have
-    nothing to inspect). *)
-let queries_of_path path : Pantagruel.Smt.query list option =
-  match Test_util.translate_to_queries (Test_util.parse_pant_file path) with
-  | Ok qs -> Some qs
-  | Error _ -> None
-
-(** Parse + translate a [.pant] file, returning the translation result directly.
-    Unlike [queries_of_path] this preserves the [Error] variant so regression
-    tests can fail loudly when a fixture they expect to translate cleanly
-    regresses into a pipeline rejection. *)
+(** Parse + translate a [.pant] file, returning the translation result. Callers
+    must handle [Error] explicitly so a fixture whose pipeline collapses does
+    not silently pass as "no failures". *)
 let translate_path path : (Pantagruel.Smt.query list, string) result =
   Test_util.translate_to_queries (Test_util.parse_pant_file path)
 
@@ -121,14 +112,6 @@ let failures_of_queries (queries : Pantagruel.Smt.query list) :
       List.map (fun f -> (q.name, f)) (Smt_check.check_query q.smt2))
     queries
 
-(** Path-based variant: translate [path] and collect failures. Returns [[]] if
-    the upstream pipeline rejects the fixture, so structural checks have nothing
-    to inspect. *)
-let collect_failures path : (string * Smt_check.failure) list =
-  match queries_of_path path with
-  | None -> []
-  | Some queries -> failures_of_queries queries
-
 let observed_kinds (failures : (string * Smt_check.failure) list) : KindSet.t =
   List.fold_left
     (fun acc (_, (f : Smt_check.failure)) ->
@@ -147,10 +130,17 @@ let format_failures failures =
     failures;
   Buffer.contents buf
 
-(** Sample / smt-examples fixture test. Allowlist-aware. *)
+(** Sample / smt-examples fixture test. Allowlist-aware. Fails loudly on
+    translation errors — a sample whose pipeline collapses entirely should not
+    look identical to a clean translation against an empty allowlist. *)
 let test_sample_fixture allowlist dir name () =
   let path = Filename.concat dir name in
-  let failures = collect_failures path in
+  let queries =
+    match translate_path path with
+    | Ok qs -> qs
+    | Error msg -> failf "%s — translation failed: %s" name msg
+  in
+  let failures = failures_of_queries queries in
   let observed = observed_kinds failures in
   let allowed =
     StringMap.find_opt name allowlist |> Option.value ~default:KindSet.empty
