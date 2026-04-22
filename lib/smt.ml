@@ -41,12 +41,11 @@ let alpha_rename_binders env (params : Ast.param list) (guards : Ast.guard list)
     in
     from_params @ from_guards
   in
-  let occupied =
-    ref
-      (List.fold_left
-         (fun s n -> if is_rule_name n then Smt_doc.StringSet.add n s else s)
-         Smt_doc.StringSet.empty binder_names)
-  in
+  (* Seed [occupied] with every binder in this quantifier, not just those
+     that shadow a rule. Non-rule binders must still be avoided when picking
+     fresh names — e.g., renaming rule-shadowing binder [foo] to [foo_q]
+     would collide with a sibling binder already named [foo_q]. *)
+  let occupied = ref (Smt_doc.StringSet.of_list binder_names) in
   let fresh_for orig =
     let rec try_n n =
       let cand =

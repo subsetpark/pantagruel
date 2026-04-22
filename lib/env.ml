@@ -120,14 +120,16 @@ let add_closure name ty target loc ~chapter env =
   { env with terms = StringMap.add name entry env.terms }
 
 (** Add a variable to the var namespace (also tracks as local var). If [name]
-    matches an existing nullary rule in [terms], fire the shadow reporter so the
-    check layer can emit a warning — the nullary-rule auto-apply case is the one
-    place where a var genuinely overrides a rule the user could otherwise reach
-    by bare reference. Non-nullary rule collisions are not shadowing (syntactic
-    position disambiguates) and don't warn. *)
+    matches an existing nullary declaration in [terms] (rule or closure), fire
+    the shadow reporter so the check layer can emit a warning — nullary
+    rules/closures auto-apply in bare-atom position, so a same-named variable
+    genuinely eclipses a binding the user could otherwise reach by bare
+    reference. Non-nullary collisions are not shadowing (syntactic position
+    disambiguates) and don't warn. *)
 let add_var name ty env =
   (match[@warning "-4"] StringMap.find_opt name env.terms with
-  | Some { kind = KRule (TyFunc ([], Some ret)); loc = rule_loc; _ } ->
+  | Some { kind = KRule (TyFunc ([], Some ret)); loc = rule_loc; _ }
+  | Some { kind = KClosure (TyFunc ([], Some ret), _); loc = rule_loc; _ } ->
       !shadow_reporter name ret ty rule_loc Ast.dummy_loc
   | _ -> ());
   let entry =
@@ -221,7 +223,11 @@ let fold_terms f env init = StringMap.fold f env.terms init
 let iter_terms f env = StringMap.iter f env.terms
 
 (** Fold over every binding in both [terms] and [vars]. Used where callers need
-    the union (e.g., sort collection for SMT preamble). *)
+    the union (e.g., sort collection for SMT preamble). Fold order: [terms]
+    first, then [vars]. The two namespaces are disjoint in well-formed programs,
+    but if a name appeared in both the [vars] entry would be visited second (and
+    so could override in a last-write-wins folder). Current callers are
+    order-insensitive. *)
 let fold_all_terms f env init =
   let acc = StringMap.fold f env.terms init in
   StringMap.fold f env.vars acc

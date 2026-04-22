@@ -28,12 +28,13 @@ type type_error =
       (** function name, context names *)
   | BoolParam of string * string * loc  (** param name, declaration name *)
   | NullaryRuleShadowedByVar of string * ty * ty * loc
-      (** name, rule's return type, variable's type, rule declaration loc.
+      (** name, declaration's return type, variable's type, declaration loc.
           Emitted by [Env.add_var] via the shadow_reporter when a variable is
-          introduced with the same name as an existing nullary rule — the one
-          case where var-versus-rule shadowing is semantically observable
-          (nullary rules auto-apply in bare-atom position, so a same-named
-          variable eclipses the rule). *)
+          introduced with the same name as an existing nullary declaration (rule
+          or closure) — the one case where var-versus-term shadowing is
+          semantically observable (both nullary rules and nullary closures
+          auto-apply in bare-atom position, so a same-named variable eclipses
+          them). *)
   | ComprehensionNeedEach of ty * loc
   | AggregateRequiresNumeric of string * ty * loc
       (** combiner symbol, actual body type *)

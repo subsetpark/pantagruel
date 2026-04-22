@@ -68,10 +68,12 @@ val bindings_types : t -> (string * entry) list
 val shadow_reporter :
   (string -> Types.ty -> Types.ty -> Ast.loc -> Ast.loc -> unit) ref
 (** Callback invoked by [add_var] when a variable is added with the same name as
-    an existing nullary rule. Args: name, rule's return type, var's type, rule's
-    declaration loc, var's add loc. The check layer installs a reporter that
-    pushes a warning into its type-warning accumulator; default is a no-op for
-    tests that use env in isolation. *)
+    an existing nullary declaration (rule or closure). Both kinds auto-apply in
+    bare-atom position, so a same-named variable eclipses them identically.
+    Args: name, declaration's return type, var's type, declaration's loc, var's
+    add loc. The check layer installs a reporter that pushes a warning into its
+    type-warning accumulator; default is a no-op for tests that use env in
+    isolation. *)
 
 val action_contexts : t -> string list
 val current_module : t -> string
