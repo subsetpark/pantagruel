@@ -111,18 +111,23 @@ let load_allowlist () : KindSet.t StringMap.t =
 (* Per-fixture check.                                                   *)
 (* ------------------------------------------------------------------ *)
 
-(** Run [Smt_check] over every emitted query for one fixture, returning the flat
-    list of (query_name, failure) pairs. The translation pipeline runs exactly
-    once per fixture; [observed_kinds] and [format_failures] both derive from
-    this list. *)
+(** Run [Smt_check] over every emitted query, returning the flat list of
+    (query_name, failure) pairs. Takes already-translated queries so callers
+    that have a translation result in hand don't re-run the pipeline. *)
+let failures_of_queries (queries : Pantagruel.Smt.query list) :
+    (string * Smt_check.failure) list =
+  List.concat_map
+    (fun (q : Pantagruel.Smt.query) ->
+      List.map (fun f -> (q.name, f)) (Smt_check.check_query q.smt2))
+    queries
+
+(** Path-based variant: translate [path] and collect failures. Returns [[]] if
+    the upstream pipeline rejects the fixture, so structural checks have nothing
+    to inspect. *)
 let collect_failures path : (string * Smt_check.failure) list =
   match queries_of_path path with
   | None -> []
-  | Some queries ->
-      List.concat_map
-        (fun (q : Pantagruel.Smt.query) ->
-          List.map (fun f -> (q.name, f)) (Smt_check.check_query q.smt2))
-        queries
+  | Some queries -> failures_of_queries queries
 
 let observed_kinds (failures : (string * Smt_check.failure) list) : KindSet.t =
   List.fold_left
@@ -182,10 +187,12 @@ let test_regression_fixture fixture expect_kinds () =
   | Some dir ->
       let path = Filename.concat dir fixture in
       if not (Sys.file_exists path) then failf "missing fixture: %s" path;
-      (match translate_path path with
-      | Ok _ -> ()
-      | Error msg -> failf "%s — translation failed: %s" fixture msg);
-      let observed = observed_kinds (collect_failures path) in
+      let queries =
+        match translate_path path with
+        | Ok qs -> qs
+        | Error msg -> failf "%s — translation failed: %s" fixture msg
+      in
+      let observed = observed_kinds (failures_of_queries queries) in
       let expected = KindSet.of_list expect_kinds in
       let missing = KindSet.diff expected observed |> KindSet.elements in
       let extra = KindSet.diff observed expected |> KindSet.elements in
