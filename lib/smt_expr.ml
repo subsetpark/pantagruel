@@ -99,9 +99,11 @@ let expand_comprehension translate config env params guards body =
         elems
 
 (** Capture-avoiding substitution: replace EVar names according to the mapping.
-    Top-level quantifier params are handled by [Binder.Mbinder.subst]; for the
-    GParam / GIn binders inside the guard list, we still filter the substitution
-    domain manually (those bindings are not reified in the mbinder). *)
+    When the substitution's range contains a free name that matches a quantifier
+    binder along the way, the binder is alpha-renamed to a fresh name before
+    substituting so the introduced occurrence stays free. The rename cascades
+    through nested binders that happen to share the fresh name, preserving
+    standard capture-avoidance semantics. *)
 let rec substitute_vars (subst : (string * expr) list) (e : expr) : expr =
   match e with
   | EVar (Lower name) -> (
@@ -125,47 +127,20 @@ let rec substitute_vars (subst : (string * expr) list) (e : expr) : expr =
             (fun (k, v) -> (substitute_vars subst k, substitute_vars subst v))
             pairs )
   | EForall (mb, metas) ->
-      let params, gs, body = Ast.unbind_quant mb metas in
-      let subst_no_params =
-        List.filter
-          (fun (n, _) ->
-            not
-              (List.exists
-                 (fun (p : param) -> Ast.lower_name p.param_name = n)
-                 params))
-          subst
+      let params, gs, body =
+        substitute_quant_children subst (Ast.unbind_quant mb metas)
       in
-      let subst'', gs' = substitute_guards subst_no_params gs in
-      let body' = substitute_vars subst'' body in
-      Ast.make_forall params gs' body'
+      Ast.make_forall params gs body
   | EExists (mb, metas) ->
-      let params, gs, body = Ast.unbind_quant mb metas in
-      let subst_no_params =
-        List.filter
-          (fun (n, _) ->
-            not
-              (List.exists
-                 (fun (p : param) -> Ast.lower_name p.param_name = n)
-                 params))
-          subst
+      let params, gs, body =
+        substitute_quant_children subst (Ast.unbind_quant mb metas)
       in
-      let subst'', gs' = substitute_guards subst_no_params gs in
-      let body' = substitute_vars subst'' body in
-      Ast.make_exists params gs' body'
+      Ast.make_exists params gs body
   | EEach (mb, metas, comb) ->
-      let params, gs, body = Ast.unbind_quant mb metas in
-      let subst_no_params =
-        List.filter
-          (fun (n, _) ->
-            not
-              (List.exists
-                 (fun (p : param) -> Ast.lower_name p.param_name = n)
-                 params))
-          subst
+      let params, gs, body =
+        substitute_quant_children subst (Ast.unbind_quant mb metas)
       in
-      let subst'', gs' = substitute_guards subst_no_params gs in
-      let body' = substitute_vars subst'' body in
-      Ast.make_each params gs' comb body'
+      Ast.make_each params gs comb body
   | ECond arms ->
       ECond
         (List.map
@@ -176,6 +151,111 @@ let rec substitute_vars (subst : (string * expr) list) (e : expr) : expr =
   | EPrimed _ | ELitBool _ | ELitNat _ | ELitReal _ | ELitString _ | EDomain _
   | EQualified _ ->
       e
+
+(** Rewrite a quantifier's unbound triple under [subst], alpha-renaming any
+    binder params whose names would otherwise capture a free occurrence in the
+    substitution's range. Returns the rewritten [(params, guards, body)] ready
+    to feed into [Ast.make_forall] / [make_exists] / [make_each]. *)
+and substitute_quant_children (subst : (string * expr) list)
+    ((params, gs, body) : param list * guard list * expr) :
+    param list * guard list * expr =
+  (* Step 1: compute the rename map for any params whose names clash with
+     free names in the (unshadowed) substitution range. *)
+  let param_names =
+    List.map (fun (p : param) -> Ast.lower_name p.param_name) params
+  in
+  let subst_visible =
+    List.filter (fun (n, _) -> not (List.mem n param_names)) subst
+  in
+  let rename_map = compute_rename_map subst_visible params gs body in
+  let params, gs, body =
+    if rename_map = [] then (params, gs, body)
+    else
+      let new_params =
+        List.map
+          (fun (p : param) ->
+            let name = Ast.lower_name p.param_name in
+            match[@warning "-4"] List.assoc_opt name rename_map with
+            | Some (EVar (Lower fresh)) -> { p with param_name = Lower fresh }
+            | _ -> p)
+          params
+      in
+      let rsub', gs' = substitute_guards rename_map gs in
+      let body' = substitute_vars rsub' body in
+      (new_params, gs', body')
+  in
+  (* Step 2: apply the user substitution, dropping entries now shadowed by the
+     (possibly renamed) params. *)
+  let param_names' =
+    List.map (fun (p : param) -> Ast.lower_name p.param_name) params
+  in
+  let subst_no_params =
+    List.filter (fun (n, _) -> not (List.mem n param_names')) subst
+  in
+  let subst'', gs' = substitute_guards subst_no_params gs in
+  let body' = substitute_vars subst'' body in
+  (params, gs', body')
+
+(** Build the alpha-rename map for a quantifier's params: for each param whose
+    name appears free in the substitution's range, pick a fresh name that
+    collides with nothing else in scope (substitution free vars, body/guard free
+    vars, sibling params, guard-bound names). *)
+and compute_rename_map (subst : (string * expr) list) (params : param list)
+    (gs : guard list) (body : expr) : (string * expr) list =
+  let subst_free =
+    List.fold_left
+      (fun acc (_, rep) -> Smt_doc.StringSet.union acc (Smt_doc.free_vars rep))
+      Smt_doc.StringSet.empty subst
+  in
+  let param_names =
+    List.map (fun (p : param) -> Ast.lower_name p.param_name) params
+  in
+  let conflicts =
+    List.filter (fun n -> Smt_doc.StringSet.mem n subst_free) param_names
+  in
+  if conflicts = [] then []
+  else
+    let body_free = Smt_doc.free_vars body in
+    let guard_free =
+      List.fold_left
+        (fun acc g ->
+          match g with
+          | GIn (_, e) | GExpr e ->
+              Smt_doc.StringSet.union acc (Smt_doc.free_vars e)
+          | GParam _ -> acc)
+        Smt_doc.StringSet.empty gs
+    in
+    let guard_bound =
+      List.fold_left
+        (fun acc g ->
+          match g with
+          | GParam p -> Smt_doc.StringSet.add (Ast.lower_name p.param_name) acc
+          | GIn (Lower n, _) -> Smt_doc.StringSet.add n acc
+          | GExpr _ -> acc)
+        Smt_doc.StringSet.empty gs
+    in
+    let siblings = Smt_doc.StringSet.of_list param_names in
+    let used =
+      ref
+        (List.fold_left Smt_doc.StringSet.union Smt_doc.StringSet.empty
+           [ subst_free; body_free; guard_free; siblings; guard_bound ])
+    in
+    let fresh base =
+      let rec go i =
+        let candidate = Printf.sprintf "%s_%d" base i in
+        if Smt_doc.StringSet.mem candidate !used then go (i + 1)
+        else begin
+          used := Smt_doc.StringSet.add candidate !used;
+          candidate
+        end
+      in
+      go 1
+    in
+    List.filter_map
+      (fun name ->
+        if List.mem name conflicts then Some (name, EVar (Lower (fresh name)))
+        else None)
+      param_names
 
 and substitute_guards subst gs =
   List.fold_left
