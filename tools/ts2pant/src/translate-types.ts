@@ -9,6 +9,18 @@ import { getAst } from "./pant-wasm.js";
 import type { PantDeclaration } from "./types.js";
 
 /**
+ * Sentinel returned by `mapTsType` when an anonymous-record type is
+ * encountered but synthesis is unavailable or fails. Distinct from the
+ * compiler's `__type` symbol name so that downstream code (notably
+ * `translateRecordReturn`) can detect synthesis failure rather than
+ * silently treat the unmangleable shape as a supported anonymous record.
+ * The value is not a valid Pantagruel identifier — emission of a signature
+ * containing it will be visibly broken rather than referring to an
+ * undeclared domain.
+ */
+export const UNSUPPORTED_ANONYMOUS_RECORD = "__unsupported_anon_record__";
+
+/**
  * Mangle a Pantagruel type string into an identifier-safe fragment suitable
  * for embedding inside a synthesized Map domain name.
  *   "String"           → "String"
@@ -517,11 +529,24 @@ export function mapTsType(
   // unique shape. Mirrors the `Map<K, V>` synth pattern: registration is
   // idempotent on canonical (sorted-field) shape, one domain per shape,
   // nested anonymous records compose bottom-up via recursive mapTsType.
-  if (isAnonymousRecord(type) && synthCell) {
-    const domain = registerAnonymousRecord(type, checker, strategy, synthCell);
-    if (domain !== null) {
-      return domain;
+  // Never fall through to the generic symbol branch on failure — that
+  // branch returns `__type`, which is the same sentinel
+  // `translateRecordReturn` uses to detect anonymous returns and would
+  // silently mark the function as a supported record return whose
+  // synthesized domain has not actually been registered.
+  if (isAnonymousRecord(type)) {
+    if (synthCell) {
+      const domain = registerAnonymousRecord(
+        type,
+        checker,
+        strategy,
+        synthCell,
+      );
+      if (domain !== null) {
+        return domain;
+      }
     }
+    return UNSUPPORTED_ANONYMOUS_RECORD;
   }
 
   // Named type (interface, class, enum, type alias)

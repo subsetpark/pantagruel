@@ -28,6 +28,7 @@ import {
   mapTsType,
   type NumericStrategy,
   type SynthCell,
+  UNSUPPORTED_ANONYMOUS_RECORD,
 } from "./translate-types.js";
 import type { PantDeclaration, PropResult } from "./types.js";
 
@@ -1027,6 +1028,20 @@ function translateRecordReturn(
         },
       ];
     }
+    // Re-run the (idempotent) synth-mapping to confirm registration
+    // actually succeeded for this shape. If a field type is unmangleable
+    // the synth returns the failure sentinel rather than a domain name,
+    // and the body emission below would otherwise reference accessor
+    // rules that were never declared.
+    const mapped = mapTsType(returnType, checker, strategy, synthCell);
+    if (mapped === UNSUPPORTED_ANONYMOUS_RECORD) {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName} — anonymous record return shape could not be synthesized`,
+        },
+      ];
+    }
   }
 
   // Collect declared fields. For named interfaces this is the declared
@@ -1178,7 +1193,9 @@ function emitRecordEquations(
   const ast = getAst();
 
   // Re-index the literal's properties by name for this level. Nested
-  // calls each index their own literal.
+  // calls each index their own literal. Apply the same exact-field
+  // contract as the top-level record return: reject unsupported property
+  // kinds, duplicate keys, missing fields, and extra fields.
   const literalByName = new Map<string, ts.Expression>();
   for (const prop of lit.properties) {
     if (ts.isPropertyAssignment(prop)) {
@@ -1190,8 +1207,24 @@ function emitRecordEquations(
           },
         ];
       }
+      if (literalByName.has(prop.name.text)) {
+        return [
+          {
+            kind: "unsupported",
+            reason: `${functionName} — nested record literal repeats field '${prop.name.text}'`,
+          },
+        ];
+      }
       literalByName.set(prop.name.text, prop.initializer);
     } else if (ts.isShorthandPropertyAssignment(prop)) {
+      if (literalByName.has(prop.name.text)) {
+        return [
+          {
+            kind: "unsupported",
+            reason: `${functionName} — nested record literal repeats field '${prop.name.text}'`,
+          },
+        ];
+      }
       literalByName.set(prop.name.text, prop.name);
     } else {
       return [
@@ -1201,6 +1234,18 @@ function emitRecordEquations(
         },
       ];
     }
+  }
+
+  const extras = [...literalByName.keys()].filter(
+    (n) => !declaredFields.some((f) => f.name === n),
+  );
+  if (extras.length > 0) {
+    return [
+      {
+        kind: "unsupported",
+        reason: `${functionName} — nested record literal has extra field(s): ${extras.join(", ")}`,
+      },
+    ];
   }
 
   const results: PropResult[] = [];
@@ -1271,6 +1316,10 @@ function emitRecordEquations(
         applyConst,
         allocEmittedBinder,
       );
+      const subUnsupported = subResults.find((p) => p.kind === "unsupported");
+      if (subUnsupported) {
+        return [subUnsupported];
+      }
       results.push(...subResults);
       continue;
     }
