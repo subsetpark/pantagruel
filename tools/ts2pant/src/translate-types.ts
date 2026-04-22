@@ -344,13 +344,15 @@ export function mapTsType(
 }
 
 /**
- * Detect a TypeScript `Set<T>` by symbol name. Brittle against user-defined
- * classes named `Set`, but matches how `isArrayType` effectively works and is
- * the pragmatic choice — a user class named `Set` is vanishingly rare.
+ * Detect a TypeScript `Set<T>` or `ReadonlySet<T>` by symbol name. Both
+ * translate to `[T]` since Pantagruel lists encode membership. Brittle
+ * against user-defined classes by the same name, but matches how
+ * `isArrayType` effectively works and is the pragmatic choice.
  */
 export function isSetType(type: ts.Type): boolean {
   const symbol = type.getSymbol();
-  return symbol?.getName() === "Set";
+  const name = symbol?.getName();
+  return name === "Set" || name === "ReadonlySet";
 }
 
 /**

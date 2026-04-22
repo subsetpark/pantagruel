@@ -286,6 +286,14 @@ exports[`expressions-property.ts > getOwnerName 1`] = `
 "module GetOwnerName.\\n\\nUser.\\nname u: User => String.\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => User.\\nactive a1: Account => Bool.\\ngetOwnerName a: Account => String.\\n\\n---\\n\\ngetOwnerName a = name (owner a).\\n"
 `;
 
+exports[`expressions-readonly-set.ts > cardinalityReadonly 1`] = `
+"module CardinalityReadonly.\\n\\ncardinalityReadonly xs: [String] => Int.\\n\\n---\\n\\ncardinalityReadonly xs = #xs.\\n"
+`;
+
+exports[`expressions-readonly-set.ts > containsReadonly 1`] = `
+"module ContainsReadonly.\\n\\ncontainsReadonly xs: [String], x: String => Bool.\\n\\n---\\n\\ncontainsReadonly xs x = (x in xs).\\n"
+`;
+
 exports[`expressions-reduce.ts > allActive 1`] = `
 "module AllActive.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nallActive xs: [Item] => Bool.\\n\\n---\\n\\nallActive xs = (and over each $0 in xs | active $0).\\n"
 `;
