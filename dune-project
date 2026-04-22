@@ -18,6 +18,7 @@
   yojson
   sexplib0
   parsexp
+  bindlib
   (alcotest :with-test)
   (qcheck-alcotest :with-test)
   (crowbar :with-test)))
