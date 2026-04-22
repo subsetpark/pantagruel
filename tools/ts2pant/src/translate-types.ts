@@ -234,6 +234,18 @@ function capitalize(s: string): string {
 }
 
 /**
+ * Conservative gate against `mapTsType` fallback strings reaching synth
+ * registration. Pantagruel type expressions are built from identifiers,
+ * the list bracket `[T]`, sum `T + U`, product `T * U`, parens, the
+ * module qualifier `::`, and whitespace. Compiler-text fallbacks
+ * (`Map<string, number>`, `{ x: number }`, `() => void`) contain
+ * characters outside that set and must be rejected at synth time.
+ */
+function isValidPantFieldType(s: string): boolean {
+  return s.length > 0 && /^[A-Za-z0-9_:\s[\]+*()]+$/u.test(s);
+}
+
+/**
  * Register an anonymous record shape. Idempotent: re-registering the same
  * sorted-field set returns the cached domain. Returns `{domain: null, ...}`
  * when any field name or type fragment is unmangleable.
@@ -252,18 +264,21 @@ export function registerRecordShape(
   if (cached) {
     return { domain: cached.domain, synth, registry };
   }
-  // Validate field names (must be valid identifiers) and base name
-  // mangleability.
+  // Validate field names (must be valid identifiers) and field types
+  // (must be parseable Pantagruel type expressions). `mapTsType` falls
+  // back to `checker.typeToString` for unsupported types, yielding
+  // strings like `Map<string, number>` or `{ x: number }` that contain
+  // TS-compiler artifacts (`<`, `>`, `{`, `}`, `,`, etc.) — never legal
+  // Pantagruel. Reject any field whose type isn't drawn from the
+  // Pantagruel type-expression character set so the broken text can't
+  // reach `emitRecordSynthDecls`.
   for (const f of fields) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/u.test(f.name)) {
       return { domain: null, synth, registry };
     }
-    // Field types need not mangle to a single identifier (e.g. `[String]`
-    // is a valid accessor-rule return type); we just need them to be
-    // legal Pantagruel type strings. `mapTsType` already produces those
-    // or falls through to `checker.typeToString` which yields unparseable
-    // output — that latter case is the only real failure mode. Accept
-    // anything for now and let upstream mangleability checks gate.
+    if (!isValidPantFieldType(f.type)) {
+      return { domain: null, synth, registry };
+    }
   }
   const baseDomain =
     fields.length === 0
@@ -617,12 +632,18 @@ export function isSetType(type: ts.Type): boolean {
 /**
  * Detect an anonymous object/record type — a TS inline shape with no
  * declared interface / alias. These surface with the compiler-assigned
- * symbol name `__type`. Callable types (`{ (): void }`) and constructor
- * types (`{ new(): T }`) would also match on the name alone; we guard
- * against those by rejecting shapes with call or construct signatures —
- * record synthesis is only for finite field-based shapes. Zero-property
- * records (`{}`) are intentionally supported and synthesize as
- * `EmptyRec` via `registerRecordShape`.
+ * symbol name `__type`. Several other shapes match on the name alone
+ * and must be rejected because record synthesis is only for finite
+ * field-based shapes:
+ *   - Callable / constructor types (`{ (): T }`, `{ new(): T }`) —
+ *     detected via call/construct signatures.
+ *   - Index-signature dictionaries (`{ [k: string]: T }`,
+ *     `{ [k: number]: T }`) — `getProperties()` returns empty for
+ *     these, so without an explicit guard they would synthesize as
+ *     `EmptyRec`, misclassifying an unbounded dictionary as a finite
+ *     empty record.
+ * Zero-property records (`{}`) are intentionally supported and
+ * synthesize as `EmptyRec` via `registerRecordShape`.
  */
 export function isAnonymousRecord(type: ts.Type): boolean {
   const symbol = type.getSymbol();
@@ -632,6 +653,12 @@ export function isAnonymousRecord(type: ts.Type): boolean {
   if (
     type.getCallSignatures().length > 0 ||
     type.getConstructSignatures().length > 0
+  ) {
+    return false;
+  }
+  if (
+    type.getStringIndexType() !== undefined ||
+    type.getNumberIndexType() !== undefined
   ) {
     return false;
   }

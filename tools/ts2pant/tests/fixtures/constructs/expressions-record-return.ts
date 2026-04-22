@@ -71,8 +71,10 @@ export function nestPair(): { outer: { inner: string } } {
 }
 
 /** Empty anonymous return — default synthesized name `EmptyRec`, no
- *  accessor rules. */
-export function nothing(): Record<string, never> {
+ *  accessor rules. The return type is the empty object literal `{}`,
+ *  not `Record<string, never>` (which carries a string index signature
+ *  and is rejected as an unbounded dictionary, not a finite record). */
+export function nothing(): {} {
   return {};
 }
 
