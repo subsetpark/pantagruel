@@ -76,7 +76,9 @@ all p: Point, dx: Int, dy: Int | x (translate p dx dy) = x p + dx.
 all p: Point, dx: Int, dy: Int | y (translate p dx dy) = y p + dy.
 ```
 
-Return type must be a named interface/class/alias (anonymous record types are not yet supported). `new Set()` in a set-typed field position is special-cased as "empty set" and emits an assertion `all x: T | ~(x in <field> (f <args>))` — Pantagruel has no empty-list literal.
+Anonymous return types — `function f(): { name: string; reg: NameRegistry } { ... }` — synthesize a domain per shape (mirroring the `Map<K, V>` handle pattern). The domain name is derived from sorted field names; `{name, reg}` → `NameRegRec`, empty `{}` → `EmptyRec`. Accessor rules are declared alongside the synthesized domain. Nested object literals in body position decompose recursively (`{outer: {inner: "hi"}}` → `inner (outer f) = "hi".`).
+
+`new Set()` in a set-typed field position is special-cased as "empty set" and emits an assertion `all x: T | ~(x in <field> (f <args>))` — Pantagruel has no empty-list literal.
 
 ### Mutating functions
 

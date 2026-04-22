@@ -350,6 +350,10 @@ exports[`expressions-readonly-set.ts > containsReadonly 1`] = `
 "module ContainsReadonly.\\n\\ncontainsReadonly xs: [String], x: String => Bool.\\n\\n---\\n\\ncontainsReadonly xs x = (x in xs).\\n"
 `;
 
+exports[`expressions-record-return.ts > emptyAnonBag 1`] = `
+"module EmptyAnonBag.\\n\\nItemsRec.\\nitems r: ItemsRec => [String].\\nemptyAnonBag  => ItemsRec.\\n\\n---\\n\\nall x: String | ~(x in items emptyAnonBag).\\n"
+`;
+
 exports[`expressions-record-return.ts > emptyBag 1`] = `
 "module EmptyBag.\\n\\nBag.\\nitems b: Bag => [String].\\nemptyBag  => Bag.\\n\\n---\\n\\nall x: String | ~(x in items emptyBag).\\n"
 `;
@@ -358,8 +362,24 @@ exports[`expressions-record-return.ts > emptyBagShadowed 1`] = `
 "module EmptyBagShadowed.\\n\\nBag.\\nitems b: Bag => [String].\\nemptyBagShadowed x: Int => Bag.\\n\\n---\\n\\nall x1: String | ~(x1 in items (emptyBagShadowed x)).\\n"
 `;
 
+exports[`expressions-record-return.ts > nestPair 1`] = `
+"module NestPair.\\n\\nInnerRec.\\ninner r: InnerRec => String.\\nOuterRec.\\nouter r1: OuterRec => InnerRec.\\nnestPair  => OuterRec.\\n\\n---\\n\\ninner (outer nestPair) = \\"hi\\".\\n"
+`;
+
+exports[`expressions-record-return.ts > nothing 1`] = `
+"module Nothing.\\n\\nEmptyRec.\\nnothing  => EmptyRec.\\n\\n---\\n\\ntrue.\\n"
+`;
+
 exports[`expressions-record-return.ts > origin 1`] = `
 "module Origin.\\n\\nPoint.\\nx p: Point => Int.\\ny p: Point => Int.\\norigin  => Point.\\n\\n---\\n\\nx origin = 0.\\ny origin = 0.\\n"
+`;
+
+exports[`expressions-record-return.ts > registerShape 1`] = `
+"module RegisterShape.\\n\\nNameRegistry.\\nused n: NameRegistry => [String].\\nNameRegRec.\\nname r1: NameRegRec => String.\\nreg r1: NameRegRec => NameRegistry.\\nregisterShape r: NameRegistry, s: String => NameRegRec.\\n\\n---\\n\\nname (registerShape r s) = s.\\nreg (registerShape r s) = r.\\n"
+`;
+
+exports[`expressions-record-return.ts > registerShapeFlipped 1`] = `
+"module RegisterShapeFlipped.\\n\\nNameRegistry.\\nused n: NameRegistry => [String].\\nNameRegRec.\\nname r1: NameRegRec => String.\\nreg r1: NameRegRec => NameRegistry.\\nregisterShapeFlipped r: NameRegistry, s: String => NameRegRec.\\n\\n---\\n\\nname (registerShapeFlipped r s) = s.\\nreg (registerShapeFlipped r s) = r.\\n"
 `;
 
 exports[`expressions-record-return.ts > translate 1`] = `

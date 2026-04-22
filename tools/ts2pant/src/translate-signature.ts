@@ -6,9 +6,9 @@ import {
   cellIsUsed,
   cellRegisterName,
   isMapType,
-  type MapSynthCell,
   mapTsType,
   type NumericStrategy,
+  type SynthCell,
 } from "./translate-types.js";
 import type { PantAction, PantDeclaration, PantRule } from "./types.js";
 
@@ -25,7 +25,7 @@ export interface TranslatedSignature {
    * stages (`translateTypes`, `translateBody`) so they register and look up
    * Maps in the same table. Present only when a `synthCell` was supplied.
    */
-  synthCell?: MapSynthCell | undefined;
+  synthCell?: SynthCell | undefined;
 }
 
 /**
@@ -836,7 +836,7 @@ function capitalize(s: string): string {
 export function shortParamName(
   typeName: string,
   existingNames: Set<string>,
-  synthCell?: MapSynthCell,
+  synthCell?: SynthCell,
 ): string {
   let name = typeName[0]!.toLowerCase();
   let suffix = 1;
@@ -860,7 +860,7 @@ export function translateSignature(
   sourceFile: SourceFile,
   functionName: string,
   strategy: NumericStrategy,
-  synthCell?: MapSynthCell,
+  synthCell?: SynthCell,
   overrides?: Map<string, string>,
 ): TranslatedSignature {
   const checker = sourceFile.getProject().getTypeChecker().compilerObject;

@@ -269,10 +269,45 @@ all x: T | ~(x in f_i (f <args>)).
 This is a universally quantified assertion, not an equation — hence the
 new `assertion` kind on `PropResult` in `types.ts`.
 
+**Anonymous record returns — synthesized domain per shape.** A function
+whose return type is an inline object literal — `{name: string, reg: NameRegistry}`
+— has no interface to decompose against. Mirroring the `Map<K, V>` synth
+pattern, ts2pant synthesizes one Pantagruel domain per unique shape,
+plus one accessor rule per field:
+
+```text
+NameRegRec.
+name r: NameRegRec => String.
+reg r: NameRegRec => NameRegistry.
+registerShape r: NameRegistry, s: String => NameRegRec.
+---
+name (registerShape r s) = s.
+reg (registerShape r s) = r.
+```
+
+- **Dedup key** = canonical shape string: fields sorted alphabetically
+  by name, paired with their Pantagruel types, joined with `|`. Field-
+  order permutations hash to the same key, so `{a, b}` and `{b, a}`
+  share a domain.
+- **Domain name** = sorted capitalized field names concatenated +
+  `Rec` suffix. Empty shape (`{}`) → `EmptyRec`. Collisions resolve
+  via `NameRegistry`'s numeric suffixing.
+- **Nested shapes compose bottom-up.** `{outer: {inner: string}}`
+  registers `InnerRec` first, then `OuterRec` whose `outer` accessor
+  returns `InnerRec`. Nested object-literal initializers in body
+  position recursively decompose into per-accessor equations
+  (`inner (outer f) = "hi".`) since Pantagruel has no record-
+  constructor expression.
+- **Cross-module composition** uses Pantagruel's module namespacing
+  (`ModA::NameRegRec` ≠ `ModB::NameRegRec`). Per-module synth is fine
+  — lexical collision is handled by the import machinery at
+  `lib/env.ml:213-265`; structural identification across modules is a
+  checker concern, not ts2pant's.
+
 **Requirements / rejections.**
-- Return type must be a *named* interface/class/alias. Anonymous record
-  types (return `{name: string, registry: NameRegistry}` with no name)
-  are rejected with a clear message and tracked as a separate feature.
+- Return type must be an object type — a named interface/class/alias
+  or an anonymous `__type`. Unions, function types, and other exotic
+  shapes are rejected.
 - Every declared field must be present in the object literal; extra
   fields are rejected.
 - Property kinds accepted: `PropertyAssignment` with identifier or string
@@ -281,7 +316,13 @@ new `assertion` kind on `PropResult` in `types.ts`.
   rejected.
 - Initializer expressions go through the normal `translateBodyExpr`
   pipeline (const-inlining, etc.), so arithmetic and accessor reads
-  work without extra plumbing.
+  work without extra plumbing. Nested object-literal initializers
+  decompose recursively.
+- **Known limitation**: accessor rule names are the field names
+  directly, and the user's function parameters share that namespace.
+  A field named `name` with a parameter also named `name` produces a
+  Pantagruel error (parameter shadows accessor rule). Workaround:
+  rename params, or use a named interface with distinct field names.
 
 See `tests/fixtures/constructs/expressions-record-return.ts` for the
 supported shapes and `tests/dogfood.test.mts` for the self-translation

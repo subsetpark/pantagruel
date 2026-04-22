@@ -25,9 +25,9 @@ import {
   isMapType,
   isSetType,
   lookupMapKV,
-  type MapSynthCell,
   mapTsType,
   type NumericStrategy,
+  type SynthCell,
 } from "./translate-types.js";
 import type { PantDeclaration, PropResult } from "./types.js";
 
@@ -36,7 +36,7 @@ import type { PantDeclaration, PropResult } from "./types.js";
 /**
  * Per-body translation context threaded through every `translateBodyExpr`
  * call. Carries the hygienic-binder counter and (optionally) the
- * module-wide `MapSynthCell` so `.get`/`.has` on non-field Map receivers
+ * module-wide `SynthCell` so `.get`/`.has` on non-field Map receivers
  * can resolve to the synthesized rule names.
  *
  * Mutable 2-field record: `n` is reassigned in place by `nextSupply`. This
@@ -46,9 +46,9 @@ import type { PantDeclaration, PropResult } from "./types.js";
  */
 interface UniqueSupply {
   n: number;
-  synthCell?: MapSynthCell | undefined;
+  synthCell?: SynthCell | undefined;
 }
-function makeUniqueSupply(synthCell?: MapSynthCell): UniqueSupply {
+function makeUniqueSupply(synthCell?: SynthCell): UniqueSupply {
   return { n: 0, synthCell };
 }
 
@@ -781,7 +781,7 @@ export interface TranslateBodyOptions {
    * synthesized domain names when reconstructing the param list, and
    * (b) dispatch `.get`/`.has` on non-interface-field Map receivers.
    */
-  synthCell?: MapSynthCell | undefined;
+  synthCell?: SynthCell | undefined;
 }
 
 /**
@@ -861,7 +861,7 @@ function translatePureBody(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: ReadonlyMap<string, string>,
-  synthCell?: MapSynthCell,
+  synthCell?: SynthCell,
 ): PropResult[] {
   const ast = getAst();
 
@@ -972,7 +972,7 @@ function translateRecordReturn(
   strategy: NumericStrategy,
   scopedParams: ReadonlyMap<string, string>,
   supply: UniqueSupply,
-  synthCell: MapSynthCell | undefined,
+  synthCell: SynthCell | undefined,
   applyConst: (e: OpaqueExpr) => OpaqueExpr,
 ): PropResult[] {
   const ast = getAst();
@@ -992,21 +992,54 @@ function translateRecordReturn(
   }
   const returnSymbol = returnType.aliasSymbol ?? returnType.symbol;
   const returnTypeName = returnSymbol?.getName();
-  if (!returnTypeName || returnTypeName === "__type") {
+  if (!returnTypeName) {
     return [
       {
         kind: "unsupported",
-        reason: `${functionName} — record return of anonymous type not yet supported`,
+        reason: `${functionName} — cannot resolve return type name for record return`,
       },
     ];
   }
+  // Anonymous record return (`returnTypeName === "__type"`): the
+  // `mapTsType` branch during signature translation has already
+  // registered the shape with the synth cell, so the synthesized
+  // domain and its accessor rules are declared by the time the body
+  // is translated. The field-emission loop below works unchanged — it
+  // iterates `returnType.getProperties()` (which enumerates the
+  // anonymous shape's declared fields just as well as an interface's)
+  // and emits one equation per field, applying each accessor rule to
+  // the function application. Reject only when the cell is missing or
+  // when upstream synth registration failed (field types unmangleable).
+  if (returnTypeName === "__type") {
+    if (!synthCell) {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName} — anonymous record return requires a synth cell`,
+        },
+      ];
+    }
+    if (returnType.getCallSignatures().length > 0) {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName} — callable anonymous return type`,
+        },
+      ];
+    }
+  }
 
-  // Collect declared fields in declaration order so emission order is
-  // deterministic (matches the interface, not the literal's source order).
-  const declaredFields = returnType.getProperties().map((prop) => ({
-    name: prop.getName(),
-    type: checker.getTypeOfSymbolAtLocation(prop, fnNode),
-  }));
+  // Collect declared fields. For named interfaces this is the declared
+  // property list; for anonymous records it's the same shape seen through
+  // the structural type's properties. Canonical order matches the synth's
+  // sorted order (by field name) so the emission stays deterministic.
+  const declaredFields = returnType
+    .getProperties()
+    .map((prop) => ({
+      name: prop.getName(),
+      type: checker.getTypeOfSymbolAtLocation(prop, fnNode),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   // Index literal properties by name. Reject unsupported property kinds
   // and duplicate keys (the spec requires exactly one assignment per
@@ -1104,13 +1137,86 @@ function translateRecordReturn(
     return r.name;
   };
 
+  return emitRecordEquations(
+    lit,
+    fnApp,
+    declaredFields,
+    functionName,
+    checker,
+    strategy,
+    scopedParams,
+    supply,
+    synthCell,
+    applyConst,
+    allocEmittedBinder,
+  );
+}
+
+/**
+ * Emit one equation per field of a record-typed receiver. Shared between
+ * the top-level function return (receiver = function application) and
+ * nested object-literal initializers (receiver = accessor application on
+ * the outer record). Recurses when a field's initializer is itself an
+ * object literal — translating a literal value under Pantagruel's
+ * observational discipline requires decomposing it into per-accessor
+ * equations, since there's no record-constructor expression to fall back
+ * on.
+ */
+function emitRecordEquations(
+  lit: ts.ObjectLiteralExpression,
+  receiverExpr: OpaqueExpr,
+  declaredFields: Array<{ name: string; type: ts.Type }>,
+  functionName: string,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  scopedParams: ReadonlyMap<string, string>,
+  supply: UniqueSupply,
+  synthCell: SynthCell | undefined,
+  applyConst: (e: OpaqueExpr) => OpaqueExpr,
+  allocEmittedBinder: (hint: string) => string,
+): PropResult[] {
+  const ast = getAst();
+
+  // Re-index the literal's properties by name for this level. Nested
+  // calls each index their own literal.
+  const literalByName = new Map<string, ts.Expression>();
+  for (const prop of lit.properties) {
+    if (ts.isPropertyAssignment(prop)) {
+      if (!ts.isIdentifier(prop.name) && !ts.isStringLiteral(prop.name)) {
+        return [
+          {
+            kind: "unsupported",
+            reason: `${functionName} — nested record literal with computed or non-simple key`,
+          },
+        ];
+      }
+      literalByName.set(prop.name.text, prop.initializer);
+    } else if (ts.isShorthandPropertyAssignment(prop)) {
+      literalByName.set(prop.name.text, prop.name);
+    } else {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName} — nested record literal with spread/method/accessor property`,
+        },
+      ];
+    }
+  }
+
   const results: PropResult[] = [];
   for (const field of declaredFields) {
-    const initializer = literalByName.get(field.name)!;
-    const fieldApp = ast.app(ast.var(field.name), [fnApp]);
+    const initializer = literalByName.get(field.name);
+    if (!initializer) {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName} — nested record literal missing field '${field.name}'`,
+        },
+      ];
+    }
+    const fieldApp = ast.app(ast.var(field.name), [receiverExpr]);
 
-    // Special case: `new Set()` means "empty set". Emit as membership
-    // negation since Pantagruel has no empty-set literal.
+    // `new Set()` → empty-set membership negation.
     if (isEmptySetConstruction(initializer)) {
       const elemType = getSetElementTypeName(
         field.type,
@@ -1137,6 +1243,35 @@ function translateRecordReturn(
         quantifiers: [binderParam],
         body,
       });
+      continue;
+    }
+
+    // Nested object literal → recursively decompose into per-subfield
+    // equations with `fieldApp` as the new receiver. Pantagruel has no
+    // record-constructor expression; the only way to specify a record
+    // value is observationally (equations on its accessors).
+    if (ts.isObjectLiteralExpression(initializer)) {
+      const subFields = field.type
+        .getProperties()
+        .map((prop) => ({
+          name: prop.getName(),
+          type: checker.getTypeOfSymbol(prop),
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      const subResults = emitRecordEquations(
+        initializer,
+        fieldApp,
+        subFields,
+        `${functionName}.${field.name}`,
+        checker,
+        strategy,
+        scopedParams,
+        supply,
+        synthCell,
+        applyConst,
+        allocEmittedBinder,
+      );
+      results.push(...subResults);
       continue;
     }
 
@@ -1193,7 +1328,7 @@ function getSetElementTypeName(
   fieldType: ts.Type,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
-  synthCell: MapSynthCell | undefined,
+  synthCell: SynthCell | undefined,
 ): string | null {
   if (isSetType(fieldType) || checker.isArrayType(fieldType)) {
     const typeArgs = checker.getTypeArguments(fieldType as ts.TypeReference);
@@ -3231,7 +3366,7 @@ function translateMutatingBody(
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
   declarations: PantDeclaration[],
-  synthCell?: MapSynthCell,
+  synthCell?: SynthCell,
 ): PropResult[] {
   if (!node.body) {
     return [];

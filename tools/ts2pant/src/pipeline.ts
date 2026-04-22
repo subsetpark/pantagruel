@@ -7,7 +7,7 @@ import { translateSignature } from "./translate-signature.js";
 import {
   cellEmitSynth,
   type NumericStrategy,
-  newMapSynthCell,
+  newSynthCell,
   translateTypes,
 } from "./translate-types.js";
 import type { PantDocument } from "./types.js";
@@ -40,12 +40,12 @@ export async function buildPantDocument(
 
   // Document-wide name registry ensures unique variable names across
   // type-derived rules and the main function's parameters. Held inside a
-  // `MapSynthCell` together with the Map synthesizer so deep body-level call
+  // `SynthCell` together with the Map synthesizer so deep body-level call
   // sites can register on demand without threading state through every
   // BodyResult. Register the function's own param names first (they keep
   // natural names); type-derived accessor rules adapt with suffixes if
   // there's a collision.
-  const synthCell = newMapSynthCell();
+  const synthCell = newSynthCell();
 
   // Extract @pant propositions and @pant-type overrides in one JSDoc pass.
   // Overrides influence parameter type mapping during signature translation;
