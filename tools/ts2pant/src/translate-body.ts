@@ -348,40 +348,48 @@ function installMapWrite(
   const keyExpr = applyConst(effect.keyExpr);
   const keyTuple = ast.tuple([objExpr, keyExpr]);
 
-  let entry = state.writes.get(key) as MapRuleWriteEntry | undefined;
-  if (entry === undefined || entry.kind !== "map") {
-    entry = {
-      kind: "map",
-      ruleName: effect.ruleName,
-      keyPredName: effect.keyPredName,
-      ownerType: effect.ownerType,
-      keyType: effect.keyType,
-      valueOverrides: [],
-      membershipOverrides: [],
-    };
-    putWrite(state, key, entry);
-  }
+  // cloneSymbolicState only shallow-copies `writes`, so the MapRuleWriteEntry
+  // object is shared with sibling branches and the outer state. Copy the
+  // entry (including its arrays) before mutating so branch-local writes
+  // don't leak.
+  const prev = state.writes.get(key);
+  const entry: MapRuleWriteEntry =
+    prev !== undefined && prev.kind === "map"
+      ? {
+          ...prev,
+          valueOverrides: [...prev.valueOverrides],
+          membershipOverrides: [...prev.membershipOverrides],
+        }
+      : {
+          kind: "map",
+          ruleName: effect.ruleName,
+          keyPredName: effect.keyPredName,
+          ownerType: effect.ownerType,
+          keyType: effect.keyType,
+          valueOverrides: [],
+          membershipOverrides: [],
+        };
 
   if (effect.op === "set") {
     const valueExpr = applyConst(effect.valueExpr!);
-    entry.valueOverrides.push({ keyTuple, objExpr, keyExpr, value: valueExpr });
-    entry.membershipOverrides.push({
-      keyTuple,
-      objExpr,
-      keyExpr,
-      value: ast.litBool(true),
-    });
+    entry.valueOverrides = [
+      ...entry.valueOverrides,
+      { keyTuple, objExpr, keyExpr, value: valueExpr },
+    ];
+    entry.membershipOverrides = [
+      ...entry.membershipOverrides,
+      { keyTuple, objExpr, keyExpr, value: ast.litBool(true) },
+    ];
   } else {
     // delete: membership goes false; value rule need not be restated because
     // the declaration guard makes the value-rule body vacuous under false
     // membership.
-    entry.membershipOverrides.push({
-      keyTuple,
-      objExpr,
-      keyExpr,
-      value: ast.litBool(false),
-    });
+    entry.membershipOverrides = [
+      ...entry.membershipOverrides,
+      { keyTuple, objExpr, keyExpr, value: ast.litBool(false) },
+    ];
   }
+  putWrite(state, key, entry);
   addWrittenKey(state, key);
   state.modifiedProps.add(effect.ruleName);
   state.modifiedProps.add(effect.keyPredName);
@@ -1329,14 +1337,13 @@ export function translateBodyExpr(
   }
 
   // Call expression: handle .includes(), .filter().map(), etc.
+  // A Map.set/delete call returns a `{ effect }` BodyResult which only
+  // `symbolicExecute` consumes as a statement; in any expression context
+  // (ternary arm, binary operand, arg, etc.) turn it into `{ unsupported }`
+  // so downstream `bodyExpr()` calls see a narrow result and never throw.
   if (ts.isCallExpression(expr)) {
-    return translateCallExpr(
-      expr,
-      checker,
-      strategy,
-      paramNames,
-      state,
-      supply,
+    return rejectEffect(
+      translateCallExpr(expr, checker, strategy, paramNames, state, supply),
     );
   }
 
@@ -3041,7 +3048,13 @@ function symbolicExecute(
         }
         // Map: continuation-side overrides are taken only when NOT on the
         // early-exit arm. The early-exit fallback for each override (m, k)
-        // is the pre-state lookup.
+        // is the accumulated outer-state value if the outer state had a
+        // prior write there, else the pre-state lookup — so outer writes
+        // persist across the exit arm.
+        const priorMap =
+          prior !== undefined && prior.kind === "map"
+            ? (prior as MapRuleWriteEntry)
+            : undefined;
         const ruleVar = ast.var(entryR.ruleName);
         const keyVar = ast.var(entryR.keyPredName);
         const valueFallback = (o: MapOverride): OpaqueExpr =>
@@ -3063,13 +3076,13 @@ function symbolicExecute(
               ]);
         const mergedValue = mergeOverrides(
           entryR.valueOverrides,
-          [],
+          priorMap?.valueOverrides ?? [],
           valueFallback,
           combineContCond,
         );
         const mergedMember = mergeOverrides(
           entryR.membershipOverrides,
-          [],
+          priorMap?.membershipOverrides ?? [],
           memberFallback,
           combineContCond,
         );

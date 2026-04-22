@@ -220,7 +220,9 @@ as distinct `(tuple |-> value)` pairs in a single override expression:
 `m.set(k1, v1); m.set(k2, v2)` emits `R[(m, k1) |-> v1, (m, k2) |-> v2]`.
 Conditional writes (`if (g) m.set(k, v)`) merge via `cond` over the
 per-key override values, with the else-branch fallback being the
-pre-state `R m k` at that specific key. Quantifier binders come from
+current symbolic value already accumulated for that `(m, k)` pair;
+this is the pre-state `R m k` only when no earlier write to the same
+key has occurred on the path. Quantifier binders come from
 the document-wide `NameRegistry` so they stay unique against the
 function's own params (which have already claimed `m`, `k`, etc.).
 
