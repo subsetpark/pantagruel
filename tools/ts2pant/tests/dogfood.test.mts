@@ -14,13 +14,16 @@ import {
 
 const SRC = resolve(import.meta.dirname, "../src");
 const PROJECT_ROOT = resolve(import.meta.dirname, "../../..");
+const PANT_TIMEOUT_MS = Number(
+  process.env.TS2PANT_DOGFOOD_TIMEOUT_MS ?? 30_000,
+);
 
 function assertPantTypeChecks(output: string): void {
   execFileSync("dune", ["exec", "pant", "--"], {
     cwd: PROJECT_ROOT,
     input: output,
     encoding: "utf-8",
-    timeout: 30_000,
+    timeout: PANT_TIMEOUT_MS,
     killSignal: "SIGKILL",
   });
 }
