@@ -1007,7 +1007,9 @@ function translateRecordReturn(
     type: checker.getTypeOfSymbolAtLocation(prop, fnNode),
   }));
 
-  // Index literal properties by name. Reject unsupported property kinds.
+  // Index literal properties by name. Reject unsupported property kinds
+  // and duplicate keys (the spec requires exactly one assignment per
+  // declared field).
   const literalByName = new Map<string, ts.Expression>();
   for (const prop of lit.properties) {
     if (ts.isPropertyAssignment(prop)) {
@@ -1019,8 +1021,24 @@ function translateRecordReturn(
           },
         ];
       }
+      if (literalByName.has(prop.name.text)) {
+        return [
+          {
+            kind: "unsupported",
+            reason: `${functionName} — record return repeats field '${prop.name.text}'`,
+          },
+        ];
+      }
       literalByName.set(prop.name.text, prop.initializer);
     } else if (ts.isShorthandPropertyAssignment(prop)) {
+      if (literalByName.has(prop.name.text)) {
+        return [
+          {
+            kind: "unsupported",
+            reason: `${functionName} — record return repeats field '${prop.name.text}'`,
+          },
+        ];
+      }
       literalByName.set(prop.name.text, prop.name);
     } else {
       return [
