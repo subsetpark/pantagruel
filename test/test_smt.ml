@@ -931,6 +931,39 @@ let test_override () =
   check bool "standalone override placeholder" true
     (contains result2 "override")
 
+let test_override_unary_tuple_key () =
+  (* Arity-1 rule whose single parameter is a product type: the override key
+     (a, b) is a tuple literal but must still follow the bare-expression
+     (arity-1) path, not be misclassified as a 2-ary key. *)
+  let env =
+    Env.empty ""
+    |> Env.add_domain "A" Ast.dummy_loc ~chapter:0
+    |> Env.add_domain "B" Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "g"
+         (Types.TyFunc
+            ( [ Types.TyProduct [ Types.TyDomain "A"; Types.TyDomain "B" ] ],
+              Some Types.TyNat ))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_var "a" (Types.TyDomain "A")
+    |> Env.add_var "b" (Types.TyDomain "B")
+    |> Env.add_var "p"
+         (Types.TyProduct [ Types.TyDomain "A"; Types.TyDomain "B" ])
+  in
+  let result =
+    Smt.translate_expr config env
+      (Ast.EApp
+         ( EOverride
+             ( Lower "g",
+               [ (ETuple [ EVar (Lower "a"); EVar (Lower "b") ], ELitNat 42) ]
+             ),
+           [ EVar (Lower "p") ] ))
+  in
+  check bool "unary tuple-key override has ite" true (contains result "ite");
+  check bool "unary tuple-key override has no conjunctive guard" false
+    (contains result "(and ");
+  check bool "unary tuple-key override fallback applies single arg" true
+    (contains result "(g p)")
+
 let test_override_nary_tuple_key () =
   (* Arity-2 rule with a tuple-keyed override: the ite guard conjoins equality
      on each arg. McCarthy's [store] extended to multi-index arrays. *)
@@ -1086,6 +1119,7 @@ let expression_tests =
     test_case "projection" `Quick test_proj;
     test_case "tuple" `Quick test_tuple;
     test_case "override" `Quick test_override;
+    test_case "override unary tuple key" `Quick test_override_unary_tuple_key;
     test_case "override N-ary tuple key" `Quick test_override_nary_tuple_key;
     test_case "initially" `Quick test_initially;
     test_case "cardinality domain" `Quick test_card_domain;

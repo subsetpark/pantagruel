@@ -121,29 +121,32 @@ and translate_app config env func args =
             | [] -> Printf.sprintf "(%s %s)" sname applied_args
             | (k, v) :: rest ->
                 let guard_str =
-                  match[@warning "-4"] (k, args_str) with
-                  | ETuple parts, _ -> (
-                      if List.length parts <> List.length args_str then
-                        failwith
-                          "SMT translation: override key arity does not match \
-                           application arity";
-                      let eqs =
-                        List.map2
-                          (fun part arg ->
-                            Printf.sprintf "(= %s %s)" arg
-                              (translate_expr config env part))
-                          parts args_str
-                      in
-                      match eqs with
-                      | [ one ] -> one
-                      | _ -> Printf.sprintf "(and %s)" (String.concat " " eqs))
-                  | _, [ arg ] ->
+                  match args_str with
+                  | [ arg ] ->
+                      (* Arity-1: bare-expression key, even when the key is
+                         itself a tuple literal (e.g. a rule whose single
+                         parameter has a product type). *)
                       Printf.sprintf "(= %s %s)" arg
                         (translate_expr config env k)
-                  | _ ->
-                      failwith
-                        "SMT translation: override key arity does not match \
-                         application arity"
+                  | _ -> (
+                      match[@warning "-4"] k with
+                      | ETuple parts ->
+                          if List.length parts <> List.length args_str then
+                            failwith
+                              "SMT translation: override key arity does not \
+                               match application arity";
+                          let eqs =
+                            List.map2
+                              (fun part arg ->
+                                Printf.sprintf "(= %s %s)" arg
+                                  (translate_expr config env part))
+                              parts args_str
+                          in
+                          Printf.sprintf "(and %s)" (String.concat " " eqs)
+                      | _ ->
+                          failwith
+                            "SMT translation: override key arity does not \
+                             match application arity")
                 in
                 Printf.sprintf "(ite %s %s %s)" guard_str
                   (translate_expr config env v)
