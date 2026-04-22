@@ -165,6 +165,102 @@ and substitute_guards subst gs =
       | GExpr e -> (subst, acc @ [ GExpr (substitute_vars subst e) ]))
     (subst, []) gs
 
+(** Rename *variable references* only, leaving rule-reference positions alone.
+    An [EVar name] appearing as the head of an [EApp] is treated as a
+    rule-reference whenever [name] is declared as a [KRule] / [KClosure] in
+    [env] (post-namespace-split semantics) — *unless* [name] is a key in
+    [subst], which means the caller is explicitly alpha-renaming a binder that
+    shadows the rule. In that case the application head refers to the binder
+    (e.g. list-indexing on a nullary-rule-shadowing binder), and the explicit
+    substitution must win. Similarly [EOverride] and [EPrimed] carry rule names.
+    Used by [translate_quantifier] to alpha-rename binders that would otherwise
+    shadow declared SMT function symbols. *)
+let rec rename_var_refs env (subst : (string * string) list) (e : expr) : expr =
+  let subst_name name =
+    match List.assoc_opt name subst with Some r -> r | None -> name
+  in
+  match e with
+  | EVar (Lower name) -> EVar (Lower (subst_name name))
+  | EApp (EVar (Lower name), args) when List.mem_assoc name subst ->
+      (* Explicit rename wins: the current-scope binder shadows any rule of
+         the same name, so a call to [name] in the body references the
+         (renamed) binder, not the rule. *)
+      EApp
+        ( EVar (Lower (subst_name name)),
+          List.map (rename_var_refs env subst) args )
+  | EApp (EVar (Lower name), args) ->
+      let head =
+        match[@warning "-4"] Env.lookup_term name env with
+        | Some { kind = Env.KRule _ | Env.KClosure _; _ } ->
+            EVar (Lower name) (* rule ref — keep *)
+        | _ -> EVar (Lower (subst_name name))
+      in
+      EApp (head, List.map (rename_var_refs env subst) args)
+  | EApp (func, args) ->
+      EApp
+        ( rename_var_refs env subst func,
+          List.map (rename_var_refs env subst) args )
+  | EBinop (op, e1, e2) ->
+      EBinop (op, rename_var_refs env subst e1, rename_var_refs env subst e2)
+  | EUnop (op, e1) -> EUnop (op, rename_var_refs env subst e1)
+  | ETuple es -> ETuple (List.map (rename_var_refs env subst) es)
+  | EProj (e1, i) -> EProj (rename_var_refs env subst e1, i)
+  | EOverride (name, pairs) ->
+      EOverride
+        ( name,
+          List.map
+            (fun (k, v) ->
+              (rename_var_refs env subst k, rename_var_refs env subst v))
+            pairs )
+  | EForall (ps, gs, body) ->
+      let bound =
+        List.map (fun (p : param) -> Ast.lower_name p.param_name) ps
+      in
+      let subst' = List.filter (fun (n, _) -> not (List.mem n bound)) subst in
+      let gs' = rename_guards env subst' gs in
+      EForall (ps, gs', rename_var_refs env subst' body)
+  | EExists (ps, gs, body) ->
+      let bound =
+        List.map (fun (p : param) -> Ast.lower_name p.param_name) ps
+      in
+      let subst' = List.filter (fun (n, _) -> not (List.mem n bound)) subst in
+      let gs' = rename_guards env subst' gs in
+      EExists (ps, gs', rename_var_refs env subst' body)
+  | EEach (ps, gs, comb, body) ->
+      let bound =
+        List.map (fun (p : param) -> Ast.lower_name p.param_name) ps
+      in
+      let subst' = List.filter (fun (n, _) -> not (List.mem n bound)) subst in
+      let gs' = rename_guards env subst' gs in
+      EEach (ps, gs', comb, rename_var_refs env subst' body)
+  | ECond arms ->
+      ECond
+        (List.map
+           (fun (arm, cons) ->
+             (rename_var_refs env subst arm, rename_var_refs env subst cons))
+           arms)
+  | EInitially e1 -> EInitially (rename_var_refs env subst e1)
+  | EPrimed _ | ELitBool _ | ELitNat _ | ELitReal _ | ELitString _ | EDomain _
+  | EQualified _ ->
+      e
+
+and rename_guards env subst gs =
+  List.fold_left
+    (fun (subst, acc) g ->
+      match g with
+      | GParam p ->
+          let subst' =
+            List.filter (fun (n, _) -> n <> Ast.lower_name p.param_name) subst
+          in
+          (subst', acc @ [ GParam p ])
+      | GIn (Lower name, e) ->
+          let e' = rename_var_refs env subst e in
+          let subst' = List.filter (fun (n, _) -> n <> name) subst in
+          (subst', acc @ [ GIn (Lower name, e') ])
+      | GExpr e -> (subst, acc @ [ GExpr (rename_var_refs env subst e) ]))
+    (subst, []) gs
+  |> snd
+
 (** Substitute primed names in an expression (for invariant checking in next
     state). Tracks locally-bound names (from quantifiers) to avoid priming them.
 *)

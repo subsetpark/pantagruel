@@ -419,6 +419,20 @@ Item.
 ---
 |}
 
+let test_nullary_rule_shadowed_by_var () =
+  (* Introducing a variable whose name matches an existing nullary rule
+     emits the NullaryRuleShadowedByVar warning — the rule auto-applies in
+     bare-atom position, so a same-named variable eclipses it. *)
+  check_warns
+    {|module TEST.
+
+Item.
+pi => Nat.
+circleArea r: Nat, pi: Nat => Nat.
+---
+all r: Nat, pi: Nat | circleArea r pi = pi * r * r.
+|}
+
 let test_bool_return_type_ok () =
   (* Bool as return type is fine *)
   check_ok {|module TEST.
@@ -577,8 +591,9 @@ process.
     | OverrideKeyArityMismatch _ | ProjectionOutOfBounds _
     | PropositionNotBool _ | ShadowingTypeMismatch _ | AmbiguousName _
     | UnboundQualified _ | PrimedExtracontextual _ | BoolParam _
-    | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ | CheckWithoutBody _ ->
+    | NullaryRuleShadowedByVar _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
         false)
 
 let test_qualified_type_resolves_ambiguity () =
@@ -659,8 +674,9 @@ WRONG::count >= 0.
     | OverrideKeyArityMismatch _ | ProjectionOutOfBounds _
     | PropositionNotBool _ | ShadowingTypeMismatch _ | AmbiguousName _
     | UnboundQualified _ | PrimedExtracontextual _ | BoolParam _
-    | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ | CheckWithoutBody _ ->
+    | NullaryRuleShadowedByVar _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
         false)
 
 let test_local_domain_shadows_import () =
@@ -972,8 +988,8 @@ all u: User | role u.
     | OverrideKeyArityMismatch _ | ProjectionOutOfBounds _
     | PropositionNotBool _ | ShadowingTypeMismatch _ | AmbiguousName _
     | UnboundQualified _ | PrimedExtracontextual _ | BoolParam _
-    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
-      ->
+    | NullaryRuleShadowedByVar _ | AggregateRequiresNumeric _
+    | AggregateRequiresBool _ | CheckWithoutBody _ ->
         false)
 
 let test_all_non_bool_body_error () =
@@ -995,8 +1011,8 @@ some u: User | role u.
     | OverrideKeyArityMismatch _ | ProjectionOutOfBounds _
     | PropositionNotBool _ | ShadowingTypeMismatch _ | AmbiguousName _
     | UnboundQualified _ | PrimedExtracontextual _ | BoolParam _
-    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
-      ->
+    | NullaryRuleShadowedByVar _ | AggregateRequiresNumeric _
+    | AggregateRequiresBool _ | CheckWithoutBody _ ->
         false)
 
 let test_combiner_add_numeric () =
@@ -1039,7 +1055,8 @@ active u: User => Bool.
     | OverrideKeyArityMismatch _ | ProjectionOutOfBounds _
     | PropositionNotBool _ | ShadowingTypeMismatch _ | AmbiguousName _
     | UnboundQualified _ | PrimedExtracontextual _ | BoolParam _
-    | ComprehensionNeedEach _ | AggregateRequiresBool _ | CheckWithoutBody _ ->
+    | NullaryRuleShadowedByVar _ | ComprehensionNeedEach _
+    | AggregateRequiresBool _ | CheckWithoutBody _ ->
         false)
 
 let test_combiner_bool_on_numeric_fails () =
@@ -1060,8 +1077,8 @@ and over each u: User | score u.
     | OverrideKeyArityMismatch _ | ProjectionOutOfBounds _
     | PropositionNotBool _ | ShadowingTypeMismatch _ | AmbiguousName _
     | UnboundQualified _ | PrimedExtracontextual _ | BoolParam _
-    | ComprehensionNeedEach _ | AggregateRequiresNumeric _ | CheckWithoutBody _
-      ->
+    | NullaryRuleShadowedByVar _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | CheckWithoutBody _ ->
         false)
 
 (* --- Closure tests --- *)
@@ -1272,8 +1289,9 @@ x.1 >= 0.
     | PrimedNonRule _ | PrimeOutsideActionContext _ | OverrideKeyArityMismatch _
     | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
     | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
-    | BoolParam _ | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ | CheckWithoutBody _ ->
+    | BoolParam _ | NullaryRuleShadowedByVar _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
         false)
 
 let test_not_numeric () =
@@ -1290,8 +1308,9 @@ f + 1 = 2.
     | PrimedNonRule _ | PrimeOutsideActionContext _ | OverrideKeyArityMismatch _
     | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
     | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
-    | BoolParam _ | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ | CheckWithoutBody _ ->
+    | BoolParam _ | NullaryRuleShadowedByVar _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
         false)
 
 let test_override_key_bare_on_nary_rule () =
@@ -1313,8 +1332,9 @@ all a: A, b: B | f[a |-> a] a b = a.
     | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
     | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
     | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
-    | BoolParam _ | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ | CheckWithoutBody _ ->
+    | BoolParam _ | NullaryRuleShadowedByVar _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
         false)
 
 let test_override_key_tuple_arity_mismatch () =
@@ -1335,8 +1355,9 @@ all a: A, b: B | f[(a, b, a) |-> a] a b = a.
     | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
     | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
     | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
-    | BoolParam _ | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ | CheckWithoutBody _ ->
+    | BoolParam _ | NullaryRuleShadowedByVar _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
         false)
 
 let test_override_nary_tuple_key_ok () =
@@ -1367,9 +1388,9 @@ p.5 >= 0.
     | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _
     | OverrideKeyArityMismatch _ | PropositionNotBool _
     | ShadowingTypeMismatch _ | AmbiguousName _ | UnboundQualified _
-    | PrimedExtracontextual _ | BoolParam _ | ComprehensionNeedEach _
-    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
-      ->
+    | PrimedExtracontextual _ | BoolParam _ | NullaryRuleShadowedByVar _
+    | ComprehensionNeedEach _ | AggregateRequiresNumeric _
+    | AggregateRequiresBool _ | CheckWithoutBody _ ->
         false)
 
 let test_unbound_type () =
@@ -1384,8 +1405,9 @@ f x: Nonexistent => Bool.
     | PrimedNonRule _ | PrimeOutsideActionContext _ | OverrideKeyArityMismatch _
     | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
     | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
-    | BoolParam _ | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ | CheckWithoutBody _ ->
+    | BoolParam _ | NullaryRuleShadowedByVar _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
         false)
 
 let test_builtin_redefined () = check_fails {|module TEST.
@@ -1408,8 +1430,9 @@ x in x.
     | PrimedNonRule _ | PrimeOutsideActionContext _ | OverrideKeyArityMismatch _
     | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
     | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
-    | BoolParam _ | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ | CheckWithoutBody _ ->
+    | BoolParam _ | NullaryRuleShadowedByVar _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
         false)
 
 let test_arithmetic_type_mismatch () =
@@ -1426,8 +1449,9 @@ f + 1 = 2.
     | PrimedNonRule _ | PrimeOutsideActionContext _ | OverrideKeyArityMismatch _
     | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
     | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
-    | BoolParam _ | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ | CheckWithoutBody _ ->
+    | BoolParam _ | NullaryRuleShadowedByVar _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
         false)
 
 (* --- Bug-finding tests --- *)
@@ -1540,8 +1564,9 @@ active? i: Item => Bool.
     | OverrideKeyArityMismatch _ | ProjectionOutOfBounds _
     | PropositionNotBool _ | ShadowingTypeMismatch _ | AmbiguousName _
     | UnboundQualified _ | PrimedExtracontextual _ | BoolParam _
-    | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ | CheckWithoutBody _ ->
+    | NullaryRuleShadowedByVar _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
         false)
 
 let test_over_each_mul_nat () =
@@ -1571,8 +1596,9 @@ active? i: Item => Bool.
     | OverrideKeyArityMismatch _ | ProjectionOutOfBounds _
     | PropositionNotBool _ | ShadowingTypeMismatch _ | AmbiguousName _
     | UnboundQualified _ | PrimedExtracontextual _ | BoolParam _
-    | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ | CheckWithoutBody _ ->
+    | NullaryRuleShadowedByVar _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
         false)
 
 let test_over_each_and_bool () =
@@ -1602,8 +1628,9 @@ and over each i: Item | weight i.
     | OverrideKeyArityMismatch _ | ProjectionOutOfBounds _
     | PropositionNotBool _ | ShadowingTypeMismatch _ | AmbiguousName _
     | UnboundQualified _ | PrimedExtracontextual _ | BoolParam _
-    | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ | CheckWithoutBody _ ->
+    | NullaryRuleShadowedByVar _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
         false)
 
 let test_over_each_or_bool () =
@@ -1633,8 +1660,9 @@ or over each i: Item | weight i.
     | OverrideKeyArityMismatch _ | ProjectionOutOfBounds _
     | PropositionNotBool _ | ShadowingTypeMismatch _ | AmbiguousName _
     | UnboundQualified _ | PrimedExtracontextual _ | BoolParam _
-    | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ | CheckWithoutBody _ ->
+    | NullaryRuleShadowedByVar _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
         false)
 
 let test_over_each_min_nat () =
@@ -1674,8 +1702,9 @@ active? i: Item => Bool.
     | OverrideKeyArityMismatch _ | ProjectionOutOfBounds _
     | PropositionNotBool _ | ShadowingTypeMismatch _ | AmbiguousName _
     | UnboundQualified _ | PrimedExtracontextual _ | BoolParam _
-    | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ | CheckWithoutBody _ ->
+    | NullaryRuleShadowedByVar _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
         false)
 
 let test_over_each_min_bool_fails () =
@@ -1695,8 +1724,9 @@ active? i: Item => Bool.
     | OverrideKeyArityMismatch _ | ProjectionOutOfBounds _
     | PropositionNotBool _ | ShadowingTypeMismatch _ | AmbiguousName _
     | UnboundQualified _ | PrimedExtracontextual _ | BoolParam _
-    | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-    | AggregateRequiresBool _ | CheckWithoutBody _ ->
+    | NullaryRuleShadowedByVar _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
         false)
 
 let test_over_each_bare_unchanged () =
@@ -1781,6 +1811,8 @@ let () =
             test_local_duplicate_proc_still_errors;
           test_case "bool param rule" `Quick test_bool_param_rule;
           test_case "bool param action" `Quick test_bool_param_action;
+          test_case "nullary rule shadowed by var" `Quick
+            test_nullary_rule_shadowed_by_var;
           test_case "NotAProduct" `Quick test_not_a_product;
           test_case "NotNumeric" `Quick test_not_numeric;
           test_case "OverrideKeyArityMismatch bare key on N-ary rule" `Quick
@@ -1962,8 +1994,8 @@ all a: Int | f a > a.
                     | PropositionNotBool _ | ShadowingTypeMismatch _
                     | AmbiguousName _ | UnboundQualified _
                     | PrimedExtracontextual _ | BoolParam _
-                    | ComprehensionNeedEach _ | AggregateRequiresNumeric _
-                    | AggregateRequiresBool _ ) ->
+                    | NullaryRuleShadowedByVar _ | ComprehensionNeedEach _
+                    | AggregateRequiresNumeric _ | AggregateRequiresBool _ ) ->
                     false
               in
               if not is_expected then fail "Expected CheckWithoutBody error");

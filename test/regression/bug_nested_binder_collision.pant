@@ -1,0 +1,20 @@
+module BUG_NESTED_BINDER_COLLISION.
+
+> Regression fixture for the alpha-rename capture bug in lib/smt.ml's
+> `alpha_rename_binders`. Before the fix, fresh_for only reserved the
+> current quantifier's own binders when picking a fresh name, ignoring
+> outer quantifier binders already in [env.vars]. A nested quantifier
+> whose binder [x] shadows a rule [x] would get renamed to [x_q] — even
+> when an enclosing quantifier already bound [x_q], capturing outer
+> references and silently changing the formula's meaning. The fix seeds
+> `occupied` with outer binders via [Env.fold_all_terms] filtered by
+> KVar, so the inner rename skips to [x_q1]. The companion unit test
+> asserts the emitted SMT contains [x_q1] (distinct from outer [x_q]).
+
+D.
+x => D.
+p a: D => Bool.
+
+---
+
+all x_q: D | p x_q and (all x: D | p x).
