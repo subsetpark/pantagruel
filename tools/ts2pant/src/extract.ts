@@ -1,6 +1,8 @@
 import { Project, type SourceFile } from "ts-morph";
 import ts from "typescript";
 
+import { isMapType, isSetType } from "./translate-types.js";
+
 export type { SourceFile } from "ts-morph";
 
 export interface ExtractedProperty {
@@ -267,7 +269,12 @@ function collectNamedTypes(
     return;
   }
 
-  if (checker.isArrayType(type) || checker.isTupleType(type)) {
+  if (
+    checker.isArrayType(type) ||
+    checker.isTupleType(type) ||
+    isSetType(type) ||
+    isMapType(type)
+  ) {
     const typeArgs = checker.getTypeArguments(type as ts.TypeReference);
     for (const arg of typeArgs) {
       collectNamedTypes(arg, checker, visited);

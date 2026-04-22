@@ -5,3 +5,11 @@ exports[`dogfood: src/name-registry.ts > emptyNameRegistry — translates and ty
 exports[`dogfood: src/name-registry.ts > isUsed — translates and type-checks 1`] = `
 "module IsUsed.\\n\\nNameRegistry.\\nused n: NameRegistry => [String].\\nisUsed registry: NameRegistry, name: String => Bool.\\n\\n---\\n\\nisUsed registry name = (name in used registry).\\n"
 `;
+
+exports[`dogfood: src/translate-types.ts > emptyMapSynth — translates and type-checks 1`] = `
+"module EmptyMapSynth.\\n\\nMapSynthNames.\\ndomain m: MapSynthNames => String.\\nrule m: MapSynthNames => String.\\nkeyPred m: MapSynthNames => String.\\nMapSynthEntry.\\nnames m1: MapSynthEntry => MapSynthNames.\\nkType m1: MapSynthEntry => String.\\nvType m1: MapSynthEntry => String.\\nMapSynth.\\nbyKVKey m2: MapSynth, k: String => Bool.\\nbyKV m2: MapSynth, k: String, byKVKey m2 k => MapSynthEntry.\\nemitted m2: MapSynth => [String].\\nemptyMapSynth  => MapSynth.\\n\\n---\\n\\nall k1: String | ~(byKVKey emptyMapSynth k1).\\nall x: String | ~(x in emitted emptyMapSynth).\\n"
+`;
+
+exports[`dogfood: src/translate-types.ts > emptyRecordSynth — translates and type-checks 1`] = `
+"module EmptyRecordSynth.\\n\\nRecordSynthField.\\nname r: RecordSynthField => String.\\ntype r: RecordSynthField => String.\\nRecordSynthEntry.\\ndomain r1: RecordSynthEntry => String.\\nbinder r1: RecordSynthEntry => String.\\nfields r1: RecordSynthEntry => [RecordSynthField].\\nRecordSynth.\\nbyShapeKey r2: RecordSynth, k: String => Bool.\\nbyShape r2: RecordSynth, k: String, byShapeKey r2 k => RecordSynthEntry.\\nemitted r2: RecordSynth => [String].\\nemptyRecordSynth  => RecordSynth.\\n\\n---\\n\\nall k1: String | ~(byShapeKey emptyRecordSynth k1).\\nall x: String | ~(x in emitted emptyRecordSynth).\\n"
+`;

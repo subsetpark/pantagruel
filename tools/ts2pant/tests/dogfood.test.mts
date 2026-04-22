@@ -45,3 +45,21 @@ describe("dogfood: src/name-registry.ts", () => {
     assertPantTypeChecks(output);
   });
 });
+
+describe("dogfood: src/translate-types.ts", () => {
+  const filePath = resolve(SRC, "translate-types.ts");
+
+  it("emptyMapSynth — translates and type-checks", async (t) => {
+    const doc = await buildDocumentFromPath(filePath, "emptyMapSynth");
+    const output = emitDocument(doc);
+    t.assert.snapshot(output);
+    assertPantTypeChecks(output);
+  });
+
+  it("emptyRecordSynth — translates and type-checks", async (t) => {
+    const doc = await buildDocumentFromPath(filePath, "emptyRecordSynth");
+    const output = emitDocument(doc);
+    t.assert.snapshot(output);
+    assertPantTypeChecks(output);
+  });
+});
