@@ -8,10 +8,9 @@ import {
 
 // Dogfood: translate ts2pant's own source files with ts2pant itself.
 // Depth-first — one target module at a time, smallest function first.
-// See /Users/zax/.claude/plans/let-s-start-with-annotating-distributed-koala.md
-// for the roadmap. Each passing case here is a concrete self-translation
-// baseline; failing cases are documented separately in the plan file as
-// diagnostics driving the next feature to build.
+// Each passing case here is a concrete self-translation baseline; failing
+// cases are tracked in the project roadmap as diagnostics driving the next
+// feature to build.
 
 const SRC = resolve(import.meta.dirname, "../src");
 const PROJECT_ROOT = resolve(import.meta.dirname, "../../..");
@@ -21,6 +20,8 @@ function assertPantTypeChecks(output: string): void {
     cwd: PROJECT_ROOT,
     input: output,
     encoding: "utf-8",
+    timeout: 30_000,
+    killSignal: "SIGKILL",
   });
 }
 
