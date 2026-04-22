@@ -466,9 +466,14 @@ function isKnownPureCallInner(
     // Map methods — .get(k) and .has(k) are pure lookups. Pantagruel's
     // read encoding (guarded rule application) has no effects, so these
     // are safe inside if-conditions and rhs expressions of mutating bodies.
+    // The receiver expression itself is evaluated eagerly, so it must also
+    // be pure (e.g., `effectfulFactory().get(k)` is not pure).
     if (receiverType.getSymbol()?.getName() === "Map") {
       if (PURE_MAP_METHODS.has(methodName)) {
-        return expr.arguments.every((arg) => expressionIsPure(arg, checker));
+        return (
+          expressionIsPure(receiver, checker) &&
+          expr.arguments.every((arg) => expressionIsPure(arg, checker))
+        );
       }
     }
 

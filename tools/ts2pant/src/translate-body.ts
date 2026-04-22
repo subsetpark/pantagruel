@@ -279,13 +279,23 @@ function symbolicKey(prop: string, objExpr: OpaqueExpr): string {
 }
 
 /**
- * State-map key for Map writes. All writes to the same rule coalesce into
- * one MapRuleWriteEntry so multiple `.set` calls on one receiver accumulate
- * as distinct `(tuple |-> value)` override pairs rather than separate
- * entries (the emission collapses them into one override expression).
+ * State-map key for Map writes. Writes coalesce into one MapRuleWriteEntry
+ * so multiple `.set`/`.delete` calls to the same rule accumulate as distinct
+ * `(tuple |-> value)` override pairs (collapsed into one override expression
+ * at emission). Keying by just `ruleName` is too coarse for Stage A, where
+ * two different interfaces can share a field name (e.g., `A.cache` and
+ * `B.cache`) — emission quantifies one `ownerType`/`keyType` per entry, so
+ * crossed-field writes would be emitted against the first writer's types.
+ * Include the full rule identity (rule, key predicate, owner, key) so only
+ * writes that share a target rule coalesce.
  */
-function mapWriteKey(ruleName: string): string {
-  return `map::${ruleName}`;
+function mapWriteKey(
+  ruleName: string,
+  keyPredName: string,
+  ownerType: string,
+  keyType: string,
+): string {
+  return `map::${ruleName}::${keyPredName}::${ownerType}::${keyType}`;
 }
 
 /**
@@ -343,7 +353,12 @@ function installMapWrite(
   applyConst: (e: OpaqueExpr) => OpaqueExpr,
 ): void {
   const ast = getAst();
-  const key = mapWriteKey(effect.ruleName);
+  const key = mapWriteKey(
+    effect.ruleName,
+    effect.keyPredName,
+    effect.ownerType,
+    effect.keyType,
+  );
   const objExpr = applyConst(effect.objExpr);
   const keyExpr = applyConst(effect.keyExpr);
   const keyTuple = ast.tuple([objExpr, keyExpr]);
@@ -393,6 +408,62 @@ function installMapWrite(
   addWrittenKey(state, key);
   state.modifiedProps.add(effect.ruleName);
   state.modifiedProps.add(effect.keyPredName);
+}
+
+/**
+ * Build a `.get`/`.has` read expression that threads staged writes. When a
+ * prior `.set`/`.delete` on the same rule has been installed in the symbolic
+ * state, the returned read applies Pantagruel's N-ary override inline —
+ * `R[(m, k) |-> v](obj, key)` — so a `.set(k, v)` followed by `.get(k)` or
+ * `.has(k)` in the same body observes the just-written value. The ite
+ * expansion matches McCarthy's select/store (Kroening & Strichman Ch. 7):
+ * at the override key the override fires, everywhere else it falls through
+ * to the pre-state rule application. Without a staged entry, returns the
+ * plain pre-state rule application.
+ */
+function readMapThroughWrites(
+  state: SymbolicState | undefined,
+  methodName: "get" | "has",
+  ruleName: string,
+  keyPredName: string,
+  ownerType: string,
+  keyType: string,
+  objExpr: OpaqueExpr,
+  keyExpr: OpaqueExpr,
+): OpaqueExpr {
+  const ast = getAst();
+  const appliedRule = methodName === "has" ? keyPredName : ruleName;
+  if (state === undefined) {
+    return ast.app(ast.var(appliedRule), [objExpr, keyExpr]);
+  }
+  // Apply the ambient const-binding substitution so the read's receiver/key
+  // normalize to the same form the write site stored (installMapWrite passes
+  // its tuple components through applyConst). Otherwise a `const x = a;
+  // x.cache.set(k, v); x.cache.get(k)` would have `(a, k) |-> v` on the
+  // write and `(x, k)` on the read, and the ite in the override expansion
+  // wouldn't fire because the const alias has been inlined away and the SMT
+  // engine has no remaining equality to recover.
+  const canonObj = state.canonicalize(objExpr);
+  const canonKey = state.canonicalize(keyExpr);
+  const entry = state.writes.get(
+    mapWriteKey(ruleName, keyPredName, ownerType, keyType),
+  );
+  const baseRead = ast.app(ast.var(appliedRule), [canonObj, canonKey]);
+  if (entry === undefined || entry.kind !== "map") {
+    return baseRead;
+  }
+  const overrides =
+    methodName === "has" ? entry.membershipOverrides : entry.valueOverrides;
+  if (overrides.length === 0) {
+    return baseRead;
+  }
+  return ast.app(
+    ast.override(
+      appliedRule,
+      overrides.map((o) => [o.keyTuple, o.value] as [OpaqueExpr, OpaqueExpr]),
+    ),
+    [canonObj, canonKey],
+  );
 }
 
 /**
@@ -2497,12 +2568,35 @@ function translateCallExpr(
         if (isBodyUnsupported(objExpr)) {
           return objExpr;
         }
-        const ruleName = methodName === "has" ? `${fieldName}Key` : fieldName;
+        const typeArgs = checker.getTypeArguments(
+          checker.getTypeAtLocation(tsReceiver) as ts.TypeReference,
+        );
+        if (typeArgs.length !== 2) {
+          return { unsupported: "Map with unexpected arity" };
+        }
+        const ownerType = mapTsType(
+          checker.getTypeAtLocation(innerObj),
+          checker,
+          strategy,
+          supply.synthCell,
+        );
+        const keyType = mapTsType(
+          typeArgs[0]!,
+          checker,
+          strategy,
+          supply.synthCell,
+        );
         return {
-          expr: ast.app(ast.var(ruleName), [
+          expr: readMapThroughWrites(
+            state,
+            methodName as "get" | "has",
+            fieldName,
+            `${fieldName}Key`,
+            ownerType,
+            keyType,
             bodyExpr(objExpr),
             bodyExpr(kExpr),
-          ]),
+          ),
         };
       }
 
@@ -2568,10 +2662,17 @@ function translateCallExpr(
       if (isBodyUnsupported(kExpr)) {
         return kExpr;
       }
-      const ruleName =
-        methodName === "has" ? info.names.keyPred : info.names.rule;
       return {
-        expr: ast.app(ast.var(ruleName), [bodyExpr(objExpr), bodyExpr(kExpr)]),
+        expr: readMapThroughWrites(
+          state,
+          methodName as "get" | "has",
+          info.names.rule,
+          info.names.keyPred,
+          info.names.domain,
+          kType,
+          bodyExpr(objExpr),
+          bodyExpr(kExpr),
+        ),
       };
     }
 

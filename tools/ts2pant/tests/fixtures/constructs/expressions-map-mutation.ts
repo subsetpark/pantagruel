@@ -53,3 +53,20 @@ export function putPair(
   m.set(k1, v1);
   m.set(k2, v2);
 }
+
+/**
+ * Read-after-write — `.get(kSrc)` after `.set(kSrc, v)` must observe the
+ * staged write. The second `.set`'s value threads the prior override
+ * inline as `stringToIntMap[(m, kSrc) |-> v] m kSrc`, so the emitted
+ * equation correctly reflects "copy the just-written value at kSrc into
+ * kDst" rather than reading the pre-state rule.
+ */
+export function setAndCopy(
+  m: Map<string, number>,
+  kSrc: string,
+  kDst: string,
+  v: number,
+): void {
+  m.set(kSrc, v);
+  m.set(kDst, m.get(kSrc)!);
+}

@@ -246,6 +246,10 @@ exports[`expressions-map-mutation.ts > remove 1`] = `
 "module Remove.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k1: String => Bool.\\nstringToIntMap m1: StringToIntMap, k1: String, stringToIntMapKey m1 k1 => Int.\\n~> Remove @ m: StringToIntMap, k: String.\\n\\n---\\n\\nall m2: StringToIntMap, k2: String | stringToIntMapKey' m2 k2 = stringToIntMapKey[(m, k) |-> false] m2 k2.\\n"
 `;
 
+exports[`expressions-map-mutation.ts > setAndCopy 1`] = `
+"module SetAndCopy.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k: String => Bool.\\nstringToIntMap m1: StringToIntMap, k: String, stringToIntMapKey m1 k => Int.\\n~> SetAndCopy @ m: StringToIntMap, kSrc: String, kDst: String, v: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k1: String | stringToIntMap' m2 k1 = stringToIntMap[(m, kSrc) |-> v, (m, kDst) |-> stringToIntMap[(m, kSrc) |-> v] m kSrc] m2 k1.\\nall m3: StringToIntMap, k2: String | stringToIntMapKey' m3 k2 = stringToIntMapKey[(m, kSrc) |-> true, (m, kDst) |-> true] m3 k2.\\n"
+`;
+
 exports[`expressions-map-params.ts > contains 1`] = `
 "module Contains.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k1: String => Bool.\\nstringToIntMap m1: StringToIntMap, k1: String, stringToIntMapKey m1 k1 => Int.\\ncontains m: StringToIntMap, k: String => Bool.\\n\\n---\\n\\ncontains m k = stringToIntMapKey m k.\\n"
 `;
