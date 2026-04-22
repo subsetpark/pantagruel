@@ -1,0 +1,22 @@
+module BUG_ACTION_PARAM_SHADOWS_RULE.
+
+> Regression fixture for the action-param / rule-param name-collision
+> case in lib/smt_doc.ml's `bind_head_params`. Before the fix,
+> `collect_actions` passed chapter head bindings to `bind_head_params`
+> without excluding the action's own parameter names — so a proposition
+> like `balance' a1 = 0.` (where `a1` is both the action param AND a rule
+> param in the same chapter head) got wrapped in `forall a1. ...`,
+> silently strengthening the transition relation from "the Reset'd
+> account has balance 0" to "all accounts have balance 0 after Reset".
+> The fix excludes action param names from the head-binding quantifier;
+> the companion unit test (test/test_smt_invariants.ml) asserts that
+> the emitted action SMT contains no `(forall ((a1 Account))` binder.
+
+Account.
+balance a1: Account => Int.
+
+~> Reset @ a1: Account.
+
+---
+
+balance' a1 = 0.
