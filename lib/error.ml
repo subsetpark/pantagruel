@@ -77,6 +77,9 @@ let format_type_error err =
            (String.concat ", " ctx_names))
   | BoolParam (name, decl_name, loc) ->
       fmt loc (Printf.sprintf "Bool parameter '%s' in '%s'" name decl_name)
+  | NullaryRuleShadowedByVar (name, _rule_ret, _var_ty, loc) ->
+      (* Shadowing is a warning; this branch is kept for completeness *)
+      fmt loc (Printf.sprintf "Variable '%s' shadows nullary rule" name)
   | ComprehensionNeedEach (ty, loc) ->
       fmt loc
         (Printf.sprintf
@@ -144,6 +147,13 @@ let format_type_warning err =
             likely a mistake — use a predicate, a two-element domain, or split \
             into separate declarations"
            name decl_name)
+  | NullaryRuleShadowedByVar (name, rule_ret, var_ty, rule_loc) ->
+      fmt rule_loc
+        (Printf.sprintf
+           "Variable '%s' shadows nullary rule of return type %s (variable has \
+            type %s) — bare references to '%s' in body propositions will \
+            resolve to the variable"
+           name (Types.format_ty rule_ret) (Types.format_ty var_ty) name)
   | ( UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
     | NotAFunction _ | NotAList _ | NotAProduct _ | NotNumeric _
     | ExpectedBool _ | PrimedNonRule _ | PrimeOutsideActionContext _

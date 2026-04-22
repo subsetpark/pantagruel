@@ -263,6 +263,8 @@ let regression_cases () =
       (test_regression_fixture "bug_action_param_shadows_rule.pant" []);
     test_case "bug_action_param_shadows_rule.pant — no shadow forall" `Quick
       (test_no_shadowing_forall "bug_action_param_shadows_rule.pant" "a1");
+    test_case "bug_rule_param_collision.pant — clean post-fix" `Quick
+      (test_regression_fixture "bug_rule_param_collision.pant" []);
   ]
 
 let () =

@@ -24,11 +24,23 @@ module StringMap = Map.Make (String)
 
 type t = {
   types : entry StringMap.t;  (** Type namespace: domains and aliases *)
-  terms : entry StringMap.t;  (** Term namespace: rules and variables *)
+  terms : entry StringMap.t;
+      (** Term namespace: rules (KRule) and closures (KClosure) only. Variables
+          live in [vars]. Separating the two namespaces lets application heads /
+          primed / override positions resolve against [terms] without being
+          shadowed by same-named parameters — the six-of-seven syntactic
+          positions in which a lower identifier can appear are rule-only; only
+          bare-atom references are ambiguous, and those resolve through
+          [lookup_bare] with var-first-then-nullary-rule fallback. *)
+  vars : entry StringMap.t;
+      (** Variable namespace: KVar only. Parameters, quantifier binders, and
+          shorthand-bound values. Separated from [terms] so a param named the
+          same as a same-named rule no longer overwrites the rule in lookup. *)
   imported_types : (string * entry) list StringMap.t;
       (** Import index: name -> [(module, entry)] for types *)
   imported_terms : (string * entry) list StringMap.t;
-      (** Import index: name -> [(module, entry)] for terms *)
+      (** Import index: name -> [(module, entry)] for terms (rules). Imports
+          never include variables ([add_import] filters [KVar]). *)
   current_module : string;  (** Current module name *)
   contexts : string list StringMap.t;
       (** Context declarations: context name -> member function names *)
@@ -47,6 +59,7 @@ let empty module_name =
   {
     types = StringMap.empty;
     terms = StringMap.empty;
+    vars = StringMap.empty;
     imported_types = StringMap.empty;
     imported_terms = StringMap.empty;
     current_module = module_name;
@@ -56,6 +69,14 @@ let empty module_name =
     action_contexts = [];
     local_vars = [];
   }
+
+(** Callback for reporting that an [add_var] call shadowed a nullary rule of the
+    same name. Installed by [check.ml] so the existing warning pipeline picks up
+    the event without creating a circular dependency between [env.ml] and
+    [check.ml]. Default is no-op so tests that use the env directly don't
+    require setting it. *)
+let shadow_reporter : (string -> ty -> ty -> Ast.loc -> Ast.loc -> unit) ref =
+  ref (fun _ _ _ _ _ -> ())
 
 (** Add a raw entry to the type namespace *)
 let add_type_entry name entry env =
@@ -98,8 +119,17 @@ let add_closure name ty target loc ~chapter env =
   in
   { env with terms = StringMap.add name entry env.terms }
 
-(** Add a variable to the term namespace (also tracks as local var) *)
+(** Add a variable to the var namespace (also tracks as local var). If [name]
+    matches an existing nullary rule in [terms], fire the shadow reporter so the
+    check layer can emit a warning — the nullary-rule auto-apply case is the one
+    place where a var genuinely overrides a rule the user could otherwise reach
+    by bare reference. Non-nullary rule collisions are not shadowing (syntactic
+    position disambiguates) and don't warn. *)
 let add_var name ty env =
+  (match[@warning "-4"] StringMap.find_opt name env.terms with
+  | Some { kind = KRule (TyFunc ([], Some ret)); loc = rule_loc; _ } ->
+      !shadow_reporter name ret ty rule_loc Ast.dummy_loc
+  | _ -> ());
   let entry =
     {
       kind = KVar ty;
@@ -110,7 +140,7 @@ let add_var name ty env =
   in
   {
     env with
-    terms = StringMap.add name entry env.terms;
+    vars = StringMap.add name entry env.vars;
     local_vars = name :: env.local_vars;
   }
 
@@ -161,14 +191,40 @@ let in_action_context env = Option.is_some env.action
 (** Lookup a type by name *)
 let lookup_type name env = StringMap.find_opt name env.types
 
-(** Lookup a term by name *)
+(** Lookup a term (rule or closure) by name. Does not fall back to variables —
+    callers using this for application heads, primed references, override LHS,
+    or qualifier resolution get rule-only semantics. *)
 let lookup_term name env = StringMap.find_opt name env.terms
 
-(** Fold over the terms namespace *)
+(** Lookup a variable by name. *)
+let lookup_var name env = StringMap.find_opt name env.vars
+
+(** Lookup for bare-atom references in value position: try variables first, then
+    fall back to nullary rules (for auto-application). This is the one syntactic
+    position where rule and var names can refer to the same lexical token;
+    variables shadow nullary rules (their entries in [vars] were added later and
+    the user presumably meant the local binding).
+
+    Non-nullary rules in this position would indicate a first-class function
+    reference; Pantagruel has no first-class functions, so this is an error
+    upstream, but we still return the rule entry so the caller can produce a
+    meaningful error rather than an unbound-variable one. *)
+let lookup_bare name env =
+  match StringMap.find_opt name env.vars with
+  | Some _ as e -> e
+  | None -> StringMap.find_opt name env.terms
+
+(** Fold over the terms namespace (rules and closures). *)
 let fold_terms f env init = StringMap.fold f env.terms init
 
-(** Iterate over the terms namespace *)
+(** Iterate over the terms namespace (rules and closures). *)
 let iter_terms f env = StringMap.iter f env.terms
+
+(** Fold over every binding in both [terms] and [vars]. Used where callers need
+    the union (e.g., sort collection for SMT preamble). *)
+let fold_all_terms f env init =
+  let acc = StringMap.fold f env.terms init in
+  StringMap.fold f env.vars acc
 
 (** Fold over the types namespace *)
 let fold_types f env init = StringMap.fold f env.types init
@@ -176,7 +232,7 @@ let fold_types f env init = StringMap.fold f env.types init
 (** Iterate over the types namespace *)
 let iter_types f env = StringMap.iter f env.types
 
-(** Get bindings of the terms namespace *)
+(** Get bindings of the terms namespace (rules and closures only). *)
 let bindings_terms env = StringMap.bindings env.terms
 
 (** Get bindings of the types namespace *)
@@ -188,26 +244,28 @@ let action_contexts env = env.action_contexts
 (** Get the current module name *)
 let current_module env = env.current_module
 
-(** Initialize environment for a new module: set module name, clear action and
-    local_vars *)
+(** Initialize environment for a new module: set module name, clear action,
+    local_vars, and any scoped variables (which belong to a prior chapter body
+    and should not leak). *)
 let with_module_init mod_name env =
-  { env with current_module = mod_name; action = None; local_vars = [] }
+  {
+    env with
+    current_module = mod_name;
+    action = None;
+    local_vars = [];
+    vars = StringMap.empty;
+  }
 
 (** Create a child environment with additional variable bindings *)
 let with_vars vars env =
   List.fold_left (fun env (name, ty) -> add_var name ty env) env vars
 
-(** Get all exported names (for module system) *)
+(** Get all exported names (for module system). Variables are never exported —
+    only rules, closures, domains, and aliases cross module boundaries — so
+    [vars] is ignored here. *)
 let exports env =
   let type_names = StringMap.bindings env.types |> List.map fst in
-  let term_names =
-    StringMap.bindings env.terms
-    |> List.filter (fun (_, e) ->
-        match e.kind with
-        | KVar _ -> false
-        | KClosure _ | KDomain | KAlias _ | KRule _ -> true)
-    |> List.map fst
-  in
+  let term_names = StringMap.bindings env.terms |> List.map fst in
   (type_names, term_names)
 
 (** Add another environment's exports to the import index, then rebuild flat
@@ -303,7 +361,12 @@ let visible_in_head chapter_idx env =
   let filter_map m =
     StringMap.filter (fun _ entry -> entry.decl_chapter <= chapter_idx) m
   in
-  { env with types = filter_map env.types; terms = filter_map env.terms }
+  {
+    env with
+    types = filter_map env.types;
+    terms = filter_map env.terms;
+    vars = filter_map env.vars;
+  }
 
 (** Filter environment for visibility in a chapter body. Declaration in chapter
     N is visible in bodies of chapters M >= N-1. Imports (decl_chapter = -1) are
@@ -312,4 +375,9 @@ let visible_in_body chapter_idx env =
   let filter_map m =
     StringMap.filter (fun _ entry -> entry.decl_chapter <= chapter_idx + 1) m
   in
-  { env with types = filter_map env.types; terms = filter_map env.terms }
+  {
+    env with
+    types = filter_map env.types;
+    terms = filter_map env.terms;
+    vars = filter_map env.vars;
+  }

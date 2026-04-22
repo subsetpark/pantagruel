@@ -27,6 +27,13 @@ type type_error =
   | PrimedExtracontextual of string * string list * loc
       (** function name, context names *)
   | BoolParam of string * string * loc  (** param name, declaration name *)
+  | NullaryRuleShadowedByVar of string * ty * ty * loc
+      (** name, rule's return type, variable's type, rule declaration loc.
+          Emitted by [Env.add_var] via the shadow_reporter when a variable is
+          introduced with the same name as an existing nullary rule — the one
+          case where var-versus-rule shadowing is semantically observable
+          (nullary rules auto-apply in bare-atom position, so a same-named
+          variable eclipses the rule). *)
   | ComprehensionNeedEach of ty * loc
   | AggregateRequiresNumeric of string * ty * loc
       (** combiner symbol, actual body type *)
@@ -38,6 +45,16 @@ type type_error =
 
 let type_warnings : type_error list ref = ref []
 let get_warnings () = List.rev !type_warnings
+
+(* Install the shadow-reporter callback so [Env.add_var]'s nullary-rule
+   collision detection funnels into the existing type-warnings pipeline.
+   Module-initialization statement; runs once when check.ml is loaded. *)
+let () =
+  Env.shadow_reporter :=
+    fun name rule_ret var_ty rule_loc _var_loc ->
+      type_warnings :=
+        NullaryRuleShadowedByVar (name, rule_ret, var_ty, rule_loc)
+        :: !type_warnings
 
 type context = {
   env : Env.t;
@@ -56,7 +73,13 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
   | ELitReal _ -> Ok TyReal
   | ELitString _ -> Ok TyString
   | EVar (Lower name) -> (
-      match[@warning "-4"] Env.lookup_term name ctx.env with
+      match(* Bare-atom reference: variables first, then nullary rules
+         (auto-applied) per Env.lookup_bare. The two namespaces are
+         separate at the env level; only this position and qualified-name
+         resolution consider both. *)
+           [@warning "-4"]
+        Env.lookup_bare name ctx.env
+      with
       | Some { kind = Env.KVar ty; _ } -> Ok ty
       | Some { kind = Env.KRule (TyFunc ([], Some ret)); _ } ->
           (* Nullary rule: auto-apply *)
@@ -143,7 +166,27 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
             Error (UnboundVariable (name, ctx.loc))
         | None -> Error (UnboundVariable (name, ctx.loc)))
   | EApp (func, args) ->
-      let* func_ty = infer_type ctx func in
+      (* Application heads are syntactically rule-only. If the head is a
+         bare lower identifier, probe [lookup_term] (rules and closures)
+         first — otherwise a parameter of the same name would mask the
+         rule and the application would fail with "not a function". Fall
+         back to [infer_type] (which uses [lookup_bare]) if the head isn't
+         a rule; that preserves list-indexing and list-search, whose
+         "function head" is actually a variable or a nullary rule
+         auto-applied to produce a list. *)
+      let* func_ty =
+        match[@warning "-4"] func with
+        | EVar (Lower name) -> (
+            match[@warning "-4"] Env.lookup_term name ctx.env with
+            | Some { kind = Env.KRule (TyFunc (_ :: _, _) as ty); _ } -> Ok ty
+            | Some { kind = Env.KClosure (ty, _); _ } -> Ok ty
+            | _ ->
+                (* Nullary rules, variables, and missing entries — let the
+                   general [infer_type] path handle auto-apply / list
+                   indexing / unbound diagnostics. *)
+                infer_type ctx func)
+        | _ -> infer_type ctx func
+      in
       check_application ctx func func_ty args
   | ETuple exprs ->
       let* tys = map_result (infer_type ctx) exprs in
@@ -343,18 +386,18 @@ and check_unop ctx op e =
 
 (** Check that binding doesn't shadow with a different type. Emits a warning
     (rather than an error) when it does, since propositions from different
-    chapters may legitimately reuse variable names at different types. *)
+    chapters may legitimately reuse variable names at different types. After the
+    env-namespace split, this probes [vars] rather than [terms] (which now holds
+    only rules / closures). Nullary-rule shadowing is detected separately inside
+    [Env.add_var] via the shadow_reporter. *)
 and check_no_type_shadow ctx name new_ty =
-  (match Env.lookup_term name ctx.env with
+  (match[@warning "-4"] Env.lookup_var name ctx.env with
   | Some { kind = Env.KVar existing_ty; _ } ->
       if not (is_subtype new_ty existing_ty) then
         type_warnings :=
           ShadowingTypeMismatch (name, existing_ty, new_ty, ctx.loc)
           :: !type_warnings
-  | Some { kind = Env.KDomain | Env.KAlias _ | Env.KRule _ | Env.KClosure _; _ }
-    ->
-      ()
-  | None -> ());
+  | _ -> ());
   Ok ()
 
 (** Resolve a parameter's type expression to an internal type *)

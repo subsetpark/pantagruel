@@ -20,6 +20,7 @@ type type_error =
   | UnboundQualified of string * string * Ast.loc
   | PrimedExtracontextual of string * string list * Ast.loc
   | BoolParam of string * string * Ast.loc
+  | NullaryRuleShadowedByVar of string * Types.ty * Types.ty * Ast.loc
   | ComprehensionNeedEach of Types.ty * Ast.loc
   | AggregateRequiresNumeric of string * Types.ty * Ast.loc
   | AggregateRequiresBool of string * Types.ty * Ast.loc

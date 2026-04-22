@@ -1,0 +1,21 @@
+module BUG_RULE_PARAM_COLLISION.
+
+> Regression fixture for the accessor-rule / parameter-name collision
+> pre-term-namespace-split. Previously, a rule named `name` (an accessor
+> on the Point interface) and a function whose parameter is also named
+> `name` would collide: the body proposition
+> `name (makePoint name) = name.` failed to type-check with
+> "Cannot call String: not a function", because the flat `env.terms`
+> map let the parameter overwrite the rule entry and the LHS's `name`
+> resolved to a String. After the env split, `env.terms` holds rules
+> only, `env.vars` holds parameters, and application heads look up only
+> in the former. The LHS correctly resolves to the accessor rule and
+> the body type-checks.
+
+Point.
+name p: Point => String.
+makePoint name: String => Point.
+
+---
+
+name (makePoint name) = name.
