@@ -5,6 +5,7 @@ import { getAst } from "./pant-wasm.js";
 import {
   cellIsUsed,
   cellRegisterName,
+  isMapType,
   type MapSynthCell,
   mapTsType,
   type NumericStrategy,
@@ -77,7 +78,8 @@ export function findFunction(
 
 /**
  * Classify a function as pure or mutating.
- * Mutating: void return type or has property assignments in body.
+ * Mutating: void return type or has mutations in body (property assignments,
+ * or `.set`/`.delete` calls on a Map receiver).
  * Pure: everything else.
  */
 export function classifyFunction(
@@ -94,14 +96,14 @@ export function classifyFunction(
     return "mutating";
   }
 
-  if (node.body && hasPropertyAssignment(node.body)) {
+  if (node.body && hasMutation(node.body, checker)) {
     return "mutating";
   }
 
   return "pure";
 }
 
-function hasPropertyAssignment(node: ts.Node): boolean {
+function hasMutation(node: ts.Node, checker: ts.TypeChecker): boolean {
   let found = false;
   function visit(n: ts.Node) {
     if (found) {
@@ -118,6 +120,17 @@ function hasPropertyAssignment(node: ts.Node): boolean {
       ts.isBinaryExpression(n) &&
       n.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
       ts.isPropertyAccessExpression(n.left)
+    ) {
+      found = true;
+      return;
+    }
+    // `.set(k, v)` or `.delete(k)` on a Map-typed receiver is a mutation.
+    if (
+      ts.isCallExpression(n) &&
+      ts.isPropertyAccessExpression(n.expression) &&
+      (n.expression.name.text === "set" ||
+        n.expression.name.text === "delete") &&
+      isMapType(checker.getTypeAtLocation(n.expression.expression))
     ) {
       found = true;
       return;
