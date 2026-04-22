@@ -587,6 +587,12 @@ function registerAnonymousRecord(
       return null;
     }
     const mapped = mapTsType(propType, checker, strategy, synthCell);
+    // Propagate failure from a nested anonymous-record synthesis.
+    // Without this, the parent shape would register with the sentinel
+    // string as a field type and emit invalid output.
+    if (mapped === UNSUPPORTED_ANONYMOUS_RECORD) {
+      return null;
+    }
     fields.push({ name: prop.getName(), type: mapped });
   }
   // Canonical order: sort alphabetically by field name.
