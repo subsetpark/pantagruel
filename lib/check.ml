@@ -168,24 +168,37 @@ let rec infer_type ctx (expr : expr) : (ty, type_error) result =
         | None -> Error (UnboundVariable (name, ctx.loc)))
   | EApp (func, args) ->
       (* Application heads are syntactically rule-only. If the head is a
-         bare lower identifier, probe [lookup_term] (rules and closures)
-         first — otherwise a parameter of the same name would mask the
-         rule and the application would fail with "not a function". Fall
-         back to [infer_type] (which uses [lookup_bare]) if the head isn't
-         a rule; that preserves list-indexing and list-search, whose
-         "function head" is actually a variable or a nullary rule
-         auto-applied to produce a list. *)
+         bare lower identifier, probe [lookup_term_arity] for the overload
+         whose arity matches the argument count — otherwise a parameter of
+         the same name would mask the rule and the application would fail
+         with "not a function". Fall back to [infer_type] (which uses
+         [lookup_bare]) if no matching overload exists; that preserves
+         list-indexing, list-search, and shim-based arity-mismatch diagnostics
+         for single-arity rules. Qualified heads ([M::f]) take the same
+         arity-aware path via [lookup_qualified_term_arity] so imported
+         overload families dispatch to the right arity instead of the
+         first-overload shim. *)
+      let n_args = List.length args in
       let* func_ty =
         match[@warning "-4"] func with
         | EVar (Lower name) -> (
-            match[@warning "-4"] Env.lookup_term name ctx.env with
+            match[@warning "-4"] Env.lookup_term_arity name n_args ctx.env with
             | Some { kind = Env.KRule (TyFunc (_ :: _, _) as ty); _ } -> Ok ty
             | Some { kind = Env.KClosure (ty, _); _ } -> Ok ty
             | _ ->
-                (* Nullary rules, variables, and missing entries — let the
-                   general [infer_type] path handle auto-apply / list
-                   indexing / unbound diagnostics. *)
+                (* No overload at this exact arity. Nullary rules,
+                   variables, list indexing, and unbound diagnostics flow
+                   through the general [infer_type] path — whose [lookup_bare]
+                   uses the first-overload shim, so single-arity rules keep
+                   their pre-overload ArityMismatch semantics. *)
                 infer_type ctx func)
+        | EQualified (Upper mod_name, name) -> (
+            match[@warning "-4"]
+              Env.lookup_qualified_term_arity mod_name name n_args ctx.env
+            with
+            | Some { kind = Env.KRule (TyFunc (_ :: _, _) as ty); _ } -> Ok ty
+            | Some { kind = Env.KClosure (ty, _); _ } -> Ok ty
+            | _ -> infer_type ctx func)
         | _ -> infer_type ctx func
       in
       check_application ctx func func_ty args
@@ -415,7 +428,8 @@ and resolve_param_type env loc p =
       | Collect.RecursiveAlias _ | Collect.MultipleActions _
       | Collect.ActionNotLast _ | Collect.BuiltinRedefined _
       | Collect.DuplicateContext _ | Collect.UndefinedContext _
-      | Collect.ClosureTargetInvalid _ ) ->
+      | Collect.ClosureTargetInvalid _ | Collect.OverloadCoherenceViolation _ )
+    ->
       Error (UnboundType ("unknown", loc))
 
 (** Process guards, extending context and collecting additional bindings. When
@@ -478,14 +492,41 @@ and check_quantifier ctx params guards body =
   infer_type ctx'' body
 
 and check_override ctx name pairs =
-  match[@warning "-4"] Env.lookup_term name ctx.env with
-  | Some { kind = Env.KRule (TyFunc (param_tys, Some ret_ty)); _ }
-    when param_tys <> [] ->
-      (* Override key must match the rule's parameter arity. For arity-1 rules
-         the key is a bare expression typed against the single parameter; for
-         arity-N rules the key must be an N-tuple whose components match the
-         parameter types componentwise. See Kroening & Strichman Ch. 7
-         (McCarthy's [store] applied to multi-index arrays). *)
+  (* Resolve against the declared overloads rather than the first key's
+     syntactic shape. An N-tuple key syntactically suggests an arity-N rule,
+     but a unary rule whose single parameter has a product type also accepts
+     tuple keys; pre-selecting by tuple length alone misclassifies the
+     latter. When a unique non-nullary overload exists, dispatch to it
+     directly and let [check_override_key] validate the tuple-vs-product
+     mapping. When multiple overloads exist, prefer the arity matching the
+     tuple shape. *)
+  let non_nullary_overloads =
+    List.filter_map
+      (fun (arity, (e : Env.entry)) ->
+        match[@warning "-4"] e.kind with
+        | Env.KRule (TyFunc ((_ :: _ as param_tys), Some ret_ty)) ->
+            Some (arity, (param_tys, ret_ty))
+        | _ -> None)
+      (Env.overloads_of name ctx.env)
+  in
+  let tuple_arity =
+    match[@warning "-4"] pairs with
+    | (ETuple parts, _) :: _ -> List.length parts
+    | _ -> 1
+  in
+  let selected =
+    match non_nullary_overloads with
+    | [] -> None
+    | [ (_, ty_pair) ] -> Some ty_pair
+    | _ -> List.assoc_opt tuple_arity non_nullary_overloads
+  in
+  match selected with
+  | Some (param_tys, ret_ty) ->
+      (* See Kroening & Strichman Ch. 7 (McCarthy's [store] applied to
+         multi-index arrays). For arity-1 rules the key is a bare expression
+         typed against the single parameter (even if that parameter's type is
+         a product); for arity-N rules the key must be an N-tuple whose
+         components match the parameter types componentwise. *)
       let arity = List.length param_tys in
       let* _ =
         map_result
@@ -499,7 +540,13 @@ and check_override ctx name pairs =
           pairs
       in
       Ok (TyFunc (param_tys, Some ret_ty))
-  | _ -> Error (UnboundVariable (name, ctx.loc))
+  | None -> (
+      (* Either no declaration at all (unbound), or there are overloads but
+         none matched the tuple shape (arity mismatch). *)
+      match non_nullary_overloads with
+      | [] -> Error (UnboundVariable (name, ctx.loc))
+      | (actual_arity, _) :: _ ->
+          Error (OverrideKeyArityMismatch (name, actual_arity, ctx.loc)))
 
 and check_override_key ctx name param_tys arity k =
   match[@warning "-4"] (arity, k) with

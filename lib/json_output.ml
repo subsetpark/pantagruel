@@ -249,9 +249,10 @@ let decl_to_json env (decl_loc : declaration located) =
         @ match resolved with Some t -> [ ("resolved", t) ] | None -> [])
   | DeclRule { name; params; guards; return_type; contexts } ->
       let name = Ast.lower_name name in
-      (* Look up resolved type from environment *)
+      (* Look up resolved type for the specific overload whose arity matches
+         this declaration's param count. *)
       let resolved =
-        match Env.lookup_term name env with
+        match Env.lookup_term_arity name (List.length params) env with
         | Some { kind = Env.KRule ty; _ } -> Some (ty_to_json ty)
         | Some
             {
@@ -307,8 +308,9 @@ let decl_to_json env (decl_loc : declaration located) =
           ])
   | DeclClosure { name; param; return_type; target } ->
       let name = Ast.lower_name name in
+      (* Closures are structurally arity-1. *)
       let resolved =
-        match Env.lookup_term name env with
+        match Env.lookup_term_arity name 1 env with
         | Some { kind = Env.KClosure (ty, _); _ } -> Some (ty_to_json ty)
         | Some
             { kind = Env.KDomain | Env.KAlias _ | Env.KRule _ | Env.KVar _; _ }
@@ -384,7 +386,10 @@ let types_to_json env =
   in
   `Assoc items
 
-(** Extract rule definitions from environment *)
+(** Extract rule definitions from environment. When a name has two or more arity
+    overloads, each overload's JSON key is mangled with "/N" (e.g. "foo/2") to
+    avoid Assoc key collisions. Single-arity rules keep their bare name so
+    non-overloaded fixtures emit byte-identical JSON. *)
 let rules_to_json env =
   let bindings = Env.bindings_terms env in
   let items =
@@ -394,8 +399,13 @@ let rules_to_json env =
         | Env.KRule ty | Env.KClosure (ty, _) -> (
             match ty with
             | Types.TyFunc (params, ret) ->
+                let key =
+                  if Env.name_is_overloaded name env then
+                    Printf.sprintf "%s/%d" name (List.length params)
+                  else name
+                in
                 Some
-                  ( name,
+                  ( key,
                     `Assoc
                       [
                         ("params", `List (List.map ty_to_json params));

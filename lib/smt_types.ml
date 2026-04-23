@@ -234,6 +234,35 @@ let sanitize_ident name =
       match c with '-' -> '_' | '?' -> 'p' | '!' -> 'b' | _ -> c)
   |> String.of_seq
 
+(** SMT symbol name for a rule or closure reference. When the name has two or
+    more arity overloads in [env], the symbol is mangled with an arity-tagged
+    suffix ([foo$1], [foo$2]) so each overload gets a distinct SMT function
+    symbol; single-arity rules keep their unmangled form to preserve existing
+    snapshot output. The [$] separator is injective against [sanitize_ident]:
+    Pantagruel lower identifiers permit only [a-zA-Z0-9-_?!] (and sanitize maps
+    those into [a-zA-Z0-9_]), so a sanitized identifier can never contain [$].
+    That guarantees an unrelated rule literally named [foo_1] cannot collide
+    with [foo/1]'s mangled form. *)
+let smt_rule_name env name arity =
+  if Env.name_is_overloaded name env then
+    sanitize_ident name ^ "$" ^ string_of_int arity
+  else sanitize_ident name
+
+(** SMT symbol for an [EQualified] reference. When [(name, arity)] lives in the
+    flat terms map (unambiguous import — exactly one origin), the qualified call
+    shares a symbol with the unqualified one so that [all x | A::f x = f x]
+    asserts the identity two users would expect. When it's reachable only via
+    the qualified lookup (two or more modules export the same [(name, arity)]),
+    each qualified call gets a distinct module-prefixed symbol. [$] is injective
+    against [sanitize_ident] for both the module and the name component, so
+    [A$f$1] can't collide with anything a user could write literally. *)
+let smt_qualified_rule_name env mod_name name arity =
+  match Env.lookup_term_arity name arity env with
+  | Some _ -> smt_rule_name env name arity
+  | None ->
+      sanitize_ident mod_name ^ "$" ^ sanitize_ident name ^ "$"
+      ^ string_of_int arity
+
 (** Wrap a query generator: reset per-query auxiliary state (cond defaults and
     fallback constants), run the generator, and insert any accumulated
     declarations into the output. *)

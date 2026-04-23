@@ -28,9 +28,12 @@ include Smt_expr
 let alpha_rename_binders env (params : Ast.param list) (guards : Ast.guard list)
     (body : Ast.expr) : Ast.param list * Ast.guard list * Ast.expr =
   let is_rule_name name =
-    match[@warning "-4"] Env.lookup_term name env with
-    | Some { kind = Env.KRule _ | Env.KClosure _; _ } -> true
-    | _ -> false
+    List.exists
+      (fun (_, (e : Env.entry)) ->
+        match[@warning "-4"] e.kind with
+        | Env.KRule _ | Env.KClosure _ -> true
+        | _ -> false)
+      (Env.overloads_of name env)
   in
   let binder_names =
     let from_params =
@@ -141,7 +144,18 @@ let rec translate_expr config env (e : expr) =
   | ELitNat n -> string_of_int n
   | ELitReal f -> Printf.sprintf "%.17g" f
   | ELitString s -> Printf.sprintf "\"%s\"" (String.escaped s)
-  | EVar (Lower name) -> sanitize_ident name
+  | EVar (Lower name) -> (
+      match(* Bare-atom reference: either a variable / parameter, or a nullary
+         rule auto-applied. Route variables through sanitize_ident (they
+         live in a separate namespace and are never arity-overloaded);
+         route rules through smt_rule_name so an overloaded nullary rule
+         gets its arity-0 mangled form. *)
+           [@warning "-4"]
+        Env.lookup_bare name env
+      with
+      | Some { kind = Env.KRule _ | Env.KClosure _; _ } ->
+          smt_rule_name env name 0
+      | _ -> sanitize_ident name)
   | EDomain (Upper name) ->
       (* Domain as a set value shouldn't appear standalone — OpIn, OpSubset,
          and OpCard all handle EDomain specially. If we reach here, it's an
@@ -149,8 +163,18 @@ let rec translate_expr config env (e : expr) =
       failwith
         (Printf.sprintf
            "SMT translation: EDomain '%s' appeared in standalone position" name)
-  | EQualified (_, name) -> sanitize_ident name
-  | EPrimed (Lower name) -> sanitize_ident name ^ "_prime"
+  | EQualified (Upper mod_name, name) ->
+      (* Bare qualified reference is always a nullary rule/domain auto-apply.
+         Route through [smt_qualified_rule_name] so unambiguous imports share
+         the unqualified symbol emitted by [declare_functions], while
+         same-(name, arity) imports from two modules get distinct module-
+         prefixed symbols (matching the qualified declarations in the
+         preamble). *)
+      smt_qualified_rule_name env mod_name name 0
+  | EPrimed (Lower name) ->
+      (* Bare primed reference: always a nullary rule (arity 0) in action
+         context. Mangle via smt_rule_name when the name is overloaded. *)
+      smt_rule_name env name 0 ^ "_prime"
   | EApp (func, args) -> translate_app config env func args
   | ETuple exprs ->
       let ts = List.map (translate_expr config env) exprs in
@@ -238,7 +262,7 @@ and translate_app config env func args =
              compared componentwise against the args, yielding a conjunctive
              guard — McCarthy's [store] extended to multi-index arrays
              (Kroening & Strichman Ch. 7). *)
-          let sname = sanitize_ident name in
+          let sname = smt_rule_name env name (List.length args) in
           let args_str = List.map (translate_expr config env) args in
           let applied_args = String.concat " " args_str in
           (match args_str with
@@ -281,10 +305,13 @@ and translate_app config env func args =
           in
           build_chain pairs
       | _ ->
+          let arity = List.length args in
           let func_str =
             match[@warning "-4"] func with
-            | EVar (Lower name) -> sanitize_ident name
-            | EPrimed (Lower name) -> sanitize_ident name ^ "_prime"
+            | EVar (Lower name) -> smt_rule_name env name arity
+            | EPrimed (Lower name) -> smt_rule_name env name arity ^ "_prime"
+            | EQualified (Upper mod_name, name) ->
+                smt_qualified_rule_name env mod_name name arity
             | _ -> translate_expr config env func
           in
           let args_str = List.map (translate_expr config env) args in
@@ -1038,12 +1065,15 @@ let build_value_terms config env (params : param list) =
       (fun name entry acc ->
         match entry.Env.kind with
         | Env.KRule ty | Env.KClosure (ty, _) -> (
-            let sname = sanitize_ident name in
             match[@warning "-4"] decompose_func_ty ty with
             | Some ([], _ret) ->
-                (* Nullary rule: include current and primed *)
+                (* Nullary rule: include current and primed. Route through
+                   smt_rule_name so overloaded rules query the same
+                   arity-mangled symbol the preamble declared. *)
+                let sname = smt_rule_name env name 0 in
                 sname :: (sname ^ "_prime") :: acc
             | Some ([ param_ty ], _ret) ->
+                let sname = smt_rule_name env name 1 in
                 (* Unary rule: apply to each matching param *)
                 let from_params =
                   List.filter_map
@@ -1332,10 +1362,12 @@ let build_invariant_value_terms config env =
     (fun name entry acc ->
       match entry.Env.kind with
       | Env.KRule ty | Env.KClosure (ty, _) -> (
-          let sname = sanitize_ident name in
           match[@warning "-4"] decompose_func_ty ty with
-          | Some ([], _ret) -> sname :: acc
+          | Some ([], _ret) ->
+              let sname = smt_rule_name env name 0 in
+              sname :: acc
           | Some ([ param_ty ], _ret) -> (
+              let sname = smt_rule_name env name 1 in
               match param_ty with
               | TyDomain dname ->
                   let elems = domain_elements dname (bound_for config dname) in
@@ -1462,14 +1494,19 @@ let generate_init_invariant_query config env init_props ~index
     assertion_names = [];
   }
 
-(** Collect all rule names from env that should be renamed for BMC steps *)
+(** Collect all rule-symbol names from env that should be renamed for BMC steps.
+    Each arity overload contributes its mangled name so the BMC renamer
+    substitutes step-indexed copies consistently with the preamble emission. *)
 let collect_rule_names env =
   Env.fold_terms
     (fun name entry acc ->
       match entry.Env.kind with
       | Env.KRule ty | Env.KClosure (ty, _) -> (
-          let sname = sanitize_ident name in
-          match decompose_func_ty ty with Some _ -> sname :: acc | None -> acc)
+          match decompose_func_ty ty with
+          | Some (params, _ret) ->
+              let sname = smt_rule_name env name (List.length params) in
+              sname :: acc
+          | None -> acc)
       | Env.KDomain | Env.KAlias _ | Env.KVar _ -> acc)
     env []
 
@@ -1503,15 +1540,16 @@ let declare_step_functions config env steps =
     (fun name entry ->
       match entry.Env.kind with
       | Env.KRule ty | Env.KClosure (ty, _) -> (
-          let sname = sanitize_ident name in
           match decompose_func_ty ty with
           | Some ([], ret) ->
+              let sname = smt_rule_name env name 0 in
               for i = 0 to steps do
                 Buffer.add_string buf
                   (Printf.sprintf "(declare-const %s_s%d %s)\n" sname i
                      (sort_of_ty ret))
               done
           | Some (params, ret) ->
+              let sname = smt_rule_name env name (List.length params) in
               let param_sorts =
                 String.concat " " (List.map sort_of_ty params)
               in
@@ -1977,17 +2015,23 @@ let build_cond_value_terms config env cond =
   in
   List.concat_map
     (fun name ->
-      match[@warning "-4"] Env.lookup_term name env with
-      | Some { kind = Env.KRule ty; _ }
-      | Some { kind = Env.KClosure (ty, _); _ } -> (
-          let sname = sanitize_ident name in
-          match[@warning "-4"] decompose_func_ty ty with
-          | Some ([], _) -> [ sname ]
-          | Some ([ TyDomain dname ], _) when List.mem dname quant_domains ->
-              let elems = domain_elements dname (bound_for config dname) in
-              List.map (fun e -> Printf.sprintf "(%s %s)" sname e) elems
+      (* Iterate every arity overload of this name so conditional exhaustiveness
+         queries cover the full family. Each overload gets its (possibly
+         mangled) SMT symbol from smt_rule_name. *)
+      List.concat_map
+        (fun (arity, (entry : Env.entry)) ->
+          match[@warning "-4"] entry.Env.kind with
+          | Env.KRule ty | Env.KClosure (ty, _) -> (
+              let sname = smt_rule_name env name arity in
+              match[@warning "-4"] decompose_func_ty ty with
+              | Some ([], _) -> [ sname ]
+              | Some ([ TyDomain dname ], _) when List.mem dname quant_domains
+                ->
+                  let elems = domain_elements dname (bound_for config dname) in
+                  List.map (fun e -> Printf.sprintf "(%s %s)" sname e) elems
+              | _ -> [])
           | _ -> [])
-      | _ -> [])
+        (Env.overloads_of name env))
     refs
 
 (** Generate exhaustiveness query for a single cond expression *)

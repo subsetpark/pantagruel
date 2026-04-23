@@ -405,9 +405,21 @@ let collect_body_guards ?(bound = []) env (e : expr) : expr list =
             List.combine formal_names args
           else []
         in
+        let n_args = List.length args in
+        (* Guard lookup falls back to arity-0 when arity-n_args has no
+           guards — this handles list-search on a guarded nullary list-
+           returning rule (e.g. [colors red]: colors is arity-0 but the
+           application has 1 arg; its declaration guards live under the
+           nullary key). subst_for already zeros out the substitution
+           when formal_params and args lengths disagree. *)
+        let lookup_guards name =
+          match Env.lookup_rule_guards_arity name n_args env with
+          | Some _ as r -> r
+          | None -> Env.lookup_rule_guards_arity name 0 env
+        in
         (match[@warning "-4"] func with
         | EVar (Lower name) -> (
-            match Env.lookup_rule_guards name env with
+            match lookup_guards name with
             | Some (formal_params, rule_guards) ->
                 let subst = subst_for formal_params in
                 List.iter
@@ -422,7 +434,7 @@ let collect_body_guards ?(bound = []) env (e : expr) : expr list =
             | None -> ())
         | EPrimed (Lower name) -> (
             (* Primed application: collect guards in primed form *)
-            match Env.lookup_rule_guards name env with
+            match lookup_guards name with
             | Some (formal_params, rule_guards) ->
                 let subst = subst_for formal_params in
                 List.iter
@@ -440,10 +452,10 @@ let collect_body_guards ?(bound = []) env (e : expr) : expr list =
     | EVar (Lower name) -> (
         match(* Nullary auto-applied rule with guards *)
              [@warning "-4"]
-          Env.lookup_term name env
+          Env.lookup_term_arity name 0 env
         with
         | Some { kind = Env.KRule (TyFunc ([], Some _)); _ } -> (
-            match Env.lookup_rule_guards name env with
+            match Env.lookup_rule_guards_arity name 0 env with
             | Some (_, rule_guards) ->
                 List.iter
                   (fun (g : guard) ->
@@ -456,10 +468,10 @@ let collect_body_guards ?(bound = []) env (e : expr) : expr list =
     | EPrimed (Lower name) -> (
         match(* Nullary auto-applied primed rule with guards *)
              [@warning "-4"]
-          Env.lookup_term name env
+          Env.lookup_term_arity name 0 env
         with
         | Some { kind = Env.KRule (TyFunc ([], Some _)); _ } -> (
-            match Env.lookup_rule_guards name env with
+            match Env.lookup_rule_guards_arity name 0 env with
             | Some (_, rule_guards) ->
                 List.iter
                   (fun (g : guard) ->

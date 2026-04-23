@@ -4,6 +4,8 @@ open Ast
 open Types
 open Util
 
+type coherence_position = Param of int | Return [@@deriving show]
+
 type collect_error =
   | DuplicateDomain of string * loc * loc
   | DuplicateRule of string * loc * loc
@@ -15,6 +17,12 @@ type collect_error =
   | DuplicateContext of string * loc
   | UndefinedContext of string * loc
   | ClosureTargetInvalid of string * string * loc
+  | OverloadCoherenceViolation of {
+      name : string;
+      position : coherence_position;
+      first : string * ty * loc;
+      second : string * ty * loc;
+    }
 [@@deriving show]
 
 let is_builtin_type name =
@@ -59,6 +67,104 @@ let rec resolve_type env (te : type_expr) loc : (ty, collect_error) result =
   | TSum ts ->
       let* tys = map_result (fun t -> resolve_type env t loc) ts in
       Ok (TySum tys)
+
+(** Verify that a new rule declaration is coherent with any existing local
+    overloads of the same name. Coherence (positional): all overloads share the
+    return type, and at every shared parameter position both the name and type
+    agree. Only local declarations participate in the check — imported overloads
+    are considered a different family to keep cross-module ambiguity a separate
+    concern. *)
+let check_overload_coherence name (params : Ast.param list) param_types
+    (ret_ty : ty) (new_loc : Ast.loc) env : (unit, collect_error) result =
+  let new_arity = List.length params in
+  let rec check_against = function
+    | [] -> Ok ()
+    | (existing_arity, (entry : Env.entry)) :: rest ->
+        if entry.module_origin <> None then check_against rest
+        else
+          let existing_ret, existing_param_types, is_closure =
+            match[@warning "-4"] entry.kind with
+            | Env.KRule (TyFunc (ptys, Some r)) -> (r, ptys, false)
+            | Env.KClosure (TyFunc (ptys, Some r), _) -> (r, ptys, true)
+            | _ -> (TyNothing, [], false)
+          in
+          let* () =
+            if equal_ty existing_ret ret_ty then Ok ()
+            else
+              Error
+                (OverloadCoherenceViolation
+                   {
+                     name;
+                     position = Return;
+                     first = ("", existing_ret, entry.loc);
+                     second = ("", ret_ty, new_loc);
+                   })
+          in
+          (* Closures do not populate [Env.rule_guards], so the formal
+             parameter names required for positional coherence aren't
+             available. Skip the positional name-check for a closure
+             overload — return-type coherence above still runs, and the
+             param-type check [check_position] would normally do is also
+             performed here against [existing_param_types]. *)
+          let existing_params =
+            match Env.lookup_rule_guards_arity name existing_arity env with
+            | Some (ps, _) -> Some ps
+            | None -> None
+          in
+          let shared = min new_arity existing_arity in
+          let rec check_position i =
+            if i >= shared then Ok ()
+            else
+              let newp : Ast.param = List.nth params i in
+              let newp_name = Ast.lower_name newp.param_name in
+              let newp_ty = List.nth param_types i in
+              let exp_ty = List.nth existing_param_types i in
+              match existing_params with
+              | None when is_closure ->
+                  (* Closure has no formal-name metadata. Check type
+                     agreement only; skip positional name comparison. *)
+                  if equal_ty exp_ty newp_ty then check_position (i + 1)
+                  else
+                    Error
+                      (OverloadCoherenceViolation
+                         {
+                           name;
+                           position = Param i;
+                           first = ("", exp_ty, entry.loc);
+                           second = (newp_name, newp_ty, new_loc);
+                         })
+              | None ->
+                  (* Non-closure missing rule_guards entry shouldn't happen;
+                     defensively compare types only. *)
+                  if equal_ty exp_ty newp_ty then check_position (i + 1)
+                  else
+                    Error
+                      (OverloadCoherenceViolation
+                         {
+                           name;
+                           position = Param i;
+                           first = ("", exp_ty, entry.loc);
+                           second = (newp_name, newp_ty, new_loc);
+                         })
+              | Some ps ->
+                  let exp : Ast.param = List.nth ps i in
+                  let exp_name = Ast.lower_name exp.param_name in
+                  if exp_name = newp_name && equal_ty exp_ty newp_ty then
+                    check_position (i + 1)
+                  else
+                    Error
+                      (OverloadCoherenceViolation
+                         {
+                           name;
+                           position = Param i;
+                           first = (exp_name, exp_ty, entry.loc);
+                           second = (newp_name, newp_ty, new_loc);
+                         })
+          in
+          let* () = check_position 0 in
+          check_against rest
+  in
+  check_against (Env.overloads_of name env)
 
 (** Collect declarations from one chapter head. Uses multi-pass approach so
     declarations can reference each other regardless of order. *)
@@ -155,10 +261,16 @@ let collect_chapter_head ~chapter ~doc_contexts env
         in
         let proc_ty = TyFunc (param_types, Some ret_ty) in
         let* env =
-          match Env.lookup_term name env with
+          let new_arity = List.length params in
+          match Env.lookup_term_arity name new_arity env with
           | Some existing when existing.module_origin = None ->
               Error (DuplicateRule (name, decl.loc, existing.loc))
-          | _ -> Ok (Env.add_rule name proc_ty decl.loc ~chapter env)
+          | _ ->
+              let* () =
+                check_overload_coherence name params param_types ret_ty decl.loc
+                  env
+              in
+              Ok (Env.add_rule name proc_ty decl.loc ~chapter env)
         in
         let env = Env.add_rule_guards name params guards env in
         (* Add rule to each context's member list *)
@@ -177,9 +289,10 @@ let collect_chapter_head ~chapter ~doc_contexts env
         Ok env
     | DeclClosure
         { name = Lower name; param; return_type; target = Lower target } ->
-        (* Validate: no duplicate rule name *)
+        (* Validate: no duplicate rule name. Closures are always arity-1, so
+           check for a same-arity collision. *)
         let* env =
-          match Env.lookup_term name env with
+          match Env.lookup_term_arity name 1 env with
           | Some existing when existing.module_origin = None ->
               Error (DuplicateRule (name, decl.loc, existing.loc))
           | _ -> Ok env
@@ -199,9 +312,11 @@ let collect_chapter_head ~chapter ~doc_contexts env
                        (Types.format_ty param_ty),
                      decl.loc ))
         in
-        (* Look up the target rule *)
+        (* Look up the target rule — closure targets are always unary, so
+           probe the arity-1 slot so unary targets are found even when the
+           name has other arity overloads. *)
         let* () =
-          match[@warning "-4"] Env.lookup_term target env with
+          match[@warning "-4"] Env.lookup_term_arity target 1 env with
           | Some { kind = Env.KRule ty; _ } -> (
               match[@warning "-4"] ty with
               (* T => T + Nothing (partial parent) *)
@@ -231,6 +346,15 @@ let collect_chapter_head ~chapter ~doc_contexts env
                      decl.loc ))
         in
         let closure_ty = TyFunc ([ param_ty ], Some (TyList param_ty)) in
+        (* Closures must satisfy positional coherence with any other
+           overloads of [name] already declared locally, just like rules.
+           Without this check, acceptance of e.g. [closure f/1] alongside
+           [rule f/2] with an incompatible shared-position type depends on
+           declaration order. *)
+        let* () =
+          check_overload_coherence name [ param ] [ param_ty ] (TyList param_ty)
+            decl.loc env
+        in
         Ok (Env.add_closure name closure_ty target decl.loc ~chapter env)
     | DeclDomain _ | DeclAlias _ ->
         Ok env (* Domains and aliases already done *)

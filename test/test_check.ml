@@ -522,6 +522,35 @@ let test_env_disjoint_imports () =
   check bool "Bar not ambiguous" true
     (Option.is_none (Env.ambiguous_type_modules "Bar" env))
 
+let test_env_disjoint_arity_not_ambiguous () =
+  (* Regression: A exports f/1 and B exports f/2. Arity already
+     disambiguates the call, so [ambiguous_term_modules] must not
+     union modules across arities. *)
+  let env =
+    make_import_env
+      [
+        ( "MOD_A",
+          [],
+          [
+            ("f", Env.KRule (Types.TyFunc ([ Types.TyNat ], Some Types.TyBool)));
+          ] );
+        ( "MOD_B",
+          [],
+          [
+            ( "f",
+              Env.KRule
+                (Types.TyFunc ([ Types.TyNat; Types.TyNat ], Some Types.TyBool))
+            );
+          ] );
+      ]
+  in
+  check bool "f/1 unambiguously imported" true
+    (Option.is_some (Env.lookup_term_arity "f" 1 env));
+  check bool "f/2 unambiguously imported" true
+    (Option.is_some (Env.lookup_term_arity "f" 2 env));
+  check bool "f not reported as ambiguous across disjoint arities" true
+    (Option.is_none (Env.ambiguous_term_modules "f" env))
+
 (* --- Integration tests: imports with collect + check --- *)
 
 let test_unambiguous_import_type () =
@@ -725,12 +754,172 @@ Foo.
 |}
 
 let test_local_duplicate_proc_still_errors () =
-  (* Two local rules with same name still error *)
+  (* Two local rules with the same name and same arity still error — under
+     arity-overloading this fires DuplicateRule before the return-type
+     coherence check, because same (name, arity) is a true duplicate. *)
   check_fails {|
 Foo.
 do-thing f: Foo => Bool.
 do-thing f: Foo => Nat.
 ---
+|}
+
+(* --- Arity-overloading tests --- *)
+
+(* Helper: assert the collection pass errors with a specific Collect.collect_error
+   matcher. *)
+let check_collect_error str pred =
+  let doc = parse str in
+  match
+    Collect.collect_all
+      ~base_env:
+        (Env.empty (Option.fold ~none:"" ~some:Ast.upper_name doc.module_name))
+      doc
+  with
+  | Ok _ -> fail "Expected a collection error"
+  | Error e ->
+      if not (pred e) then
+        fail
+          (Printf.sprintf "Wrong error type: %s" (Collect.show_collect_error e))
+
+let test_two_arity_overload_ok () =
+  (* Coherent family: position 0 is a:Nat across both heads, return type
+     matches, only the 2-arity head adds position 1 (b:Foo). *)
+  check_ok
+    {|module TEST.
+Foo.
+f a: Nat, b: Foo => Bool.
+f a: Nat => Bool.
+---
+true.
+|}
+
+let test_overload_param_type_mismatch () =
+  check_collect_error
+    {|module TEST.
+Foo.
+f a: Nat, b: Foo => Bool.
+f a: Real => Bool.
+---
+true.
+|}
+    (function[@warning "-4"]
+    | Collect.OverloadCoherenceViolation { position = Param 0; _ } -> true
+    | _ -> false)
+
+let test_overload_param_name_mismatch () =
+  check_collect_error
+    {|module TEST.
+f a: Nat, b: Real => Bool.
+f x: Nat => Bool.
+---
+true.
+|}
+    (function[@warning "-4"]
+    | Collect.OverloadCoherenceViolation { position = Param 0; _ } -> true
+    | _ -> false)
+
+let test_overload_return_mismatch () =
+  check_collect_error
+    {|module TEST.
+f a: Nat, b: Real => Bool.
+f a: Nat => Nat.
+---
+true.
+|}
+    (function[@warning "-4"]
+    | Collect.OverloadCoherenceViolation { position = Return; _ } -> true
+    | _ -> false)
+
+let test_overload_same_arity_still_duplicate () =
+  check_collect_error
+    {|module TEST.
+f a: Nat => Bool.
+f a: Nat => Bool.
+---
+true.
+|}
+    (function[@warning "-4"]
+    | Collect.DuplicateRule _ -> true
+    | _ -> false)
+
+let test_overload_dispatch_by_arity () =
+  (* Proposition body applies both the arity-1 and arity-2 heads; each
+     dispatches to its own overload. *)
+  check_ok
+    {|module TEST.
+Foo.
+f a: Nat, b: Foo => Bool.
+f a: Nat => Bool.
+---
+f 3 = true.
+all a: Nat, b: Foo | f a b = false.
+|}
+
+let test_overload_nullary_plus_unary () =
+  (* Bare reference auto-applies the nullary overload; applied reference
+     dispatches to the unary. (Use 1 not 0 so the literal has type Nat; a
+     bare 0 infers as Nat0, which is a supertype of Nat and would fail
+     subtype checking against the unary f's Nat parameter.) *)
+  check_ok
+    {|module TEST.
+f => Bool.
+f a: Nat => Bool.
+---
+f = true.
+f 1 = false.
+|}
+
+let test_overload_closure_incoherent_rejected () =
+  (* Regression: a closure declaration must participate in positional
+     coherence like any other rule in the overload family. Here the rule
+     ancestor/2 is declared first with Nat at position 0; the subsequent
+     closure ancestor/1 has Block at position 0, which is incompatible.
+     The DeclClosure branch previously skipped [check_overload_coherence],
+     so this ordering was accepted even though the reversed ordering (which
+     flows through DeclRule's check) was rejected. *)
+  check_collect_error
+    {|module TEST.
+Block.
+parent b: Block => Block + Nothing.
+ancestor a: Nat, b: Block => [Block].
+ancestor b: Block => [Block] = closure parent.
+---
+true.
+|}
+    (function[@warning "-4"]
+    | Collect.OverloadCoherenceViolation { position = Param 0; _ } -> true
+    | _ -> false)
+
+let test_overload_closure_plus_rule () =
+  (* Regression: mixing a closure f/1 with a rule f/2 previously crashed
+     the positional-coherence check because closures don't populate
+     [Env.rule_guards], so [List.nth existing_params 0] raised on the
+     missing formal-name metadata. Return-type agreement and positional
+     type agreement still run; only the name check is skipped for the
+     closure overload. *)
+  check_ok
+    {|module TEST.
+Block.
+parent b: Block => Block + Nothing.
+ancestor b: Block => [Block] = closure parent.
+ancestor b: Block, root: Block => [Block].
+---
+true.
+|}
+
+let test_family_proposition_no_application () =
+  (* A proposition that mentions the family's params without applying any
+     overload binds under the family-wide position-indexed types: `a` is
+     Nat (position 0), `b` is Foo (position 1). Well-formed regardless of
+     which overload (if any) is active. *)
+  check_ok
+    {|module TEST.
+Foo.
+f a: Nat, b: Foo => Bool.
+f a: Nat => Bool.
+---
+all a: Nat, b: Foo | f a = f a b.
 |}
 
 (* --- Context tests --- *)
@@ -1373,6 +1562,21 @@ g a1: A, b1: B => A.
 all a: A, b: B | g a b = f[(a, b) |-> a] a b.
 |}
 
+let test_override_unary_product_param_tuple_key_ok () =
+  (* Regression: a unary rule whose single parameter has a product type must
+     still accept a tuple-literal override key. Pre-fix, check_override
+     pre-computed target_arity from the key's syntactic shape and rejected
+     this as an arity mismatch against a nonexistent arity-2 overload. *)
+  check_ok
+    {|module TEST.
+
+A.
+B.
+f p: A * B => Nat.
+---
+all a: A, b: B, p: A * B | f[(a, b) |-> 1] p = 1.
+|}
+
 let test_projection_out_of_bounds () =
   check_error {|module TEST.
 
@@ -1785,6 +1989,8 @@ let () =
           test_case "declaration guards" `Quick test_declaration_guards_in_rules;
           test_case "Override N-ary tuple key OK" `Quick
             test_override_nary_tuple_key_ok;
+          test_case "Override unary product-param tuple key OK" `Quick
+            test_override_unary_product_param_tuple_key_ok;
         ] );
       ( "invalid",
         [
@@ -1828,12 +2034,36 @@ let () =
           test_case "list search numeric forbidden" `Quick
             test_list_search_numeric_forbidden;
         ] );
+      ( "arity overloading",
+        [
+          test_case "two-arity family accepted" `Quick
+            test_two_arity_overload_ok;
+          test_case "param type mismatch at shared position" `Quick
+            test_overload_param_type_mismatch;
+          test_case "param name mismatch at shared position" `Quick
+            test_overload_param_name_mismatch;
+          test_case "return type mismatch" `Quick test_overload_return_mismatch;
+          test_case "same-arity duplicate still errors" `Quick
+            test_overload_same_arity_still_duplicate;
+          test_case "dispatch by arity in body" `Quick
+            test_overload_dispatch_by_arity;
+          test_case "nullary + unary family" `Quick
+            test_overload_nullary_plus_unary;
+          test_case "closure + rule in same family" `Quick
+            test_overload_closure_plus_rule;
+          test_case "closure incoherent with rule rejected" `Quick
+            test_overload_closure_incoherent_rejected;
+          test_case "family-wide proposition without application" `Quick
+            test_family_proposition_no_application;
+        ] );
       ( "env import",
         [
           test_case "single import" `Quick test_env_single_import;
           test_case "ambiguous import" `Quick test_env_ambiguous_import;
           test_case "qualified lookup" `Quick test_env_qualified_lookup;
           test_case "disjoint imports" `Quick test_env_disjoint_imports;
+          test_case "disjoint arities not ambiguous" `Quick
+            test_env_disjoint_arity_not_ambiguous;
         ] );
       ( "import resolution",
         [
