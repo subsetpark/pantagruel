@@ -16,7 +16,10 @@ type ty =
   | TyFunc of ty list * ty option  (** params, return; None = Void *)
 [@@deriving show, eq]
 
-(** Centralized builtin type registry *)
+(** Centralized builtin type registry. [TyNothing] is intentionally absent: it
+    is an internal bottom type used for unification and default returns, not a
+    user-writable type. Users express optionality via guarded rules or [[T]]
+    with a [#<= 1] invariant. *)
 let builtins =
   [
     ("Bool", TyBool);
@@ -25,7 +28,6 @@ let builtins =
     ("Int", TyInt);
     ("Real", TyReal);
     ("String", TyString);
-    ("Nothing", TyNothing);
   ]
 
 let builtin_of_name name = List.assoc_opt name builtins

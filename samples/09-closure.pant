@@ -1,5 +1,5 @@
 Block.
-parent b: Block => Block + Nothing.
+parent b: Block => [Block].
 ancestor b: Block => [Block] = closure parent.
 ---
 all b: Block | ~(b in ancestor b).

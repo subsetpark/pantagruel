@@ -5,10 +5,7 @@
   "types": { "Block": { "kind": "domain" } },
   "rules": {
     "ancestor": { "params": [ "Block" ], "return": { "list": "Block" } },
-    "parent": {
-      "params": [ "Block" ],
-      "return": { "sum": [ "Block", "Nothing" ] }
-    }
+    "parent": { "params": [ "Block" ], "return": { "list": "Block" } }
   },
   "chapters": [
     {
@@ -19,12 +16,9 @@
           "name": "parent",
           "params": [ { "name": "b", "type": "Block" } ],
           "guards": [],
-          "return": { "sum": [ "Block", "Nothing" ] },
+          "return": { "list": "Block" },
           "resolved": {
-            "func": {
-              "params": [ "Block" ],
-              "return": { "sum": [ "Block", "Nothing" ] }
-            }
+            "func": { "params": [ "Block" ], "return": { "list": "Block" } }
           }
         },
         {

@@ -1085,7 +1085,7 @@ let test_domain_closure_bound_one () =
     parse_and_collect
       "module Test.\n\
        Block.\n\
-       parent b: Block => Block + Nothing.\n\
+       parent b: Block => [Block].\n\
        ancestor b: Block => [Block] = closure parent.\n\
        ---\n\
        all b: Block | ~(b in ancestor b).\n"
@@ -1690,7 +1690,7 @@ let test_closure_axiom_generation () =
     parse_and_collect
       "module Test.\n\
        Block.\n\
-       parent b: Block => Block + Nothing.\n\
+       parent b: Block => [Block].\n\
        ancestor b: Block => [Block] = closure parent.\n\
        ---\n\
        all b: Block | ~(b in ancestor b).\n"

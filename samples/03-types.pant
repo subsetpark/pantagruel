@@ -2,7 +2,7 @@ module TYPES.
 
 > Demonstration of all type features
 
-> Built-in types: Bool, Nat, Nat0, Int, Real, String, Nothing
+> Built-in types: Bool, Nat, Nat0, Int, Real, String
 > Nat = positive integers (1, 2, 3, ...)
 > Nat0 = non-negative integers (0, 1, 2, ...)
 > Numeric hierarchy: Nat < Nat0 < Int < Real
@@ -16,9 +16,8 @@ Point = Nat * Nat.
 Point3D = Nat * Nat * Nat.
 ColoredPoint = Point * Color.
 
-> Type aliases with sum types (unions)
-Result = Nat + Nothing.
-MaybeColor = Color + Nothing.
+> Type aliases with sum types (unions of two inhabited types)
+Tag = Color + Shape.
 
 > Type aliases with list types
 Colors = [Color].
@@ -30,7 +29,10 @@ origin => Point.
 red => Color.
 distance p: Point, q: Point => Real.
 colors => [Color].
-lookup i: Nat => Color + Nothing.
+
+> Optional return values: use a list constrained to length <= 1
+> (Pantagruel has no Maybe/Option type; see guards for the alternative idiom.)
+lookup i: Nat => [Color].
 
 ---
 > Tuple construction with parentheses
@@ -50,6 +52,9 @@ red in colors.
 > List cardinality
 #colors >= 0.
 #Color >= 0.
+
+> Optional-value idiom: lookup returns at most one element
+all i: Nat | #(lookup i) <= 1.
 
 > Numeric operations respect the hierarchy
 all n: Nat, m: Nat0 | n + m >= 0.

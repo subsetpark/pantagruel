@@ -61,7 +61,7 @@ let test_type_expr_to_json () =
   check bool "TProduct" true (Yojson.Basic.Util.member "product" j <> `Null);
   let j =
     Json_output.type_expr_to_json
-      (Ast.TSum [ TName (Upper "Nat"); TName (Upper "Nothing") ])
+      (Ast.TSum [ TName (Upper "Nat"); TName (Upper "Bool") ])
   in
   check bool "TSum" true (Yojson.Basic.Util.member "sum" j <> `Null)
 
@@ -236,7 +236,7 @@ let test_decl_to_json_closure () =
     parse_and_collect
       "module T.\n\n\
        Block.\n\
-       parent b: Block => Block + Nothing.\n\
+       parent b: Block => [Block].\n\
        ancestor b: Block => [Block] = closure parent.\n\
        ---\n"
   in

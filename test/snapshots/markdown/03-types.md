@@ -1,6 +1,6 @@
 Demonstration of all type features
 
-Built-in types: Bool, Nat, Nat0, Int, Real, String, Nothing
+Built-in types: Bool, Nat, Nat0, Int, Real, String
 Nat = positive integers (1, 2, 3, ...)
 Nat0 = non-negative integers (0, 1, 2, ...)
 Numeric hierarchy: Nat < Nat0 < Int < Real
@@ -21,11 +21,9 @@ Numeric hierarchy: Nat < Nat0 < Int < Real
 
 `ColoredPoint` = `Point` × `Color`.
 
-> Type aliases with sum types (unions)
+> Type aliases with sum types (unions of two inhabited types)
 
-`Result` = `Nat` + `Nothing`.
-
-`MaybeColor` = `Color` + `Nothing`.
+`Tag` = `Color` + `Shape`.
 
 > Type aliases with list types
 
@@ -47,7 +45,9 @@ Numeric hierarchy: Nat < Nat0 < Int < Real
 
 **colors** ⇒ [`Color`].
 
-**lookup** *i*: `Nat` ⇒ `Color` + `Nothing`.
+> Optional return values: use a list constrained to length <= 1 (Pantagruel has no Maybe/Option type; see guards for the alternative idiom.)
+
+**lookup** *i*: `Nat` ⇒ [`Color`].
 
 ---
 
@@ -76,6 +76,10 @@ Numeric hierarchy: Nat < Nat0 < Int < Real
 #**colors** ≥ 0.
 
 #`Color` ≥ 0.
+
+> Optional-value idiom: lookup returns at most one element
+
+∀ *i*: `Nat` · #**lookup** *i* ≤ 1.
 
 > Numeric operations respect the hierarchy
 

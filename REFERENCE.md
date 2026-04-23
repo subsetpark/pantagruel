@@ -121,7 +121,6 @@ Every expression in Pantagruel is assigned a type from the following universe.
 | `Int` | All integers (..., −1, 0, 1, ...) |
 | `Real` | Real numbers |
 | `String` | Text strings |
-| `Nothing` | The empty type (uninhabited — no values) |
 
 **Domain types.** Each domain declaration `D.` introduces a distinct type `D`. Domain types are pairwise unrelated, and unrelated to all built-in types.
 
@@ -133,7 +132,7 @@ Every expression in Pantagruel is assigned a type from the following universe.
 |-------------|--------|---------|
 | List | `[T]` | `[User]`, `[[Nat]]` |
 | Product | `T * U`, `T * U * V`, ... | `Nat * Nat`, `Point * Color` |
-| Sum | `T + U`, `T + U + V`, ... | `Value + Nothing` |
+| Sum | `T + U`, `T + U + V`, ... | `Success + Failure` |
 
 Product and sum types must have at least two components. They are **positional**: `Nat * Bool` and `Bool * Nat` are distinct types.
 
@@ -146,8 +145,6 @@ Products are constructed with parentheses — `(1, 2)` — and accessed with pro
 The **subtype** relation *S* ≤ *T*, read "*S* fits where *T* is expected," is a partial order on types. It is defined by the following rules, closed under reflexivity and transitivity.
 
 **Reflexivity.** Every type is a subtype of itself: *T* ≤ *T*.
-
-**Bottom.** `Nothing` is a subtype of every type: `Nothing` ≤ *T* for all *T*. Since `Nothing` is uninhabited, this is vacuously safe — there is no `Nothing` value that could violate the expectations of *T*.
 
 **Numeric chain.** The numeric types form a chain of strict inclusions:
 
@@ -176,7 +173,6 @@ Each `Nat` value is also a `Nat0` value, each `Nat0` value is also an `Int` valu
 | `Nat * Bool` ≤ `Int * Bool` | Yes | `Nat` ≤ `Int` and `Bool` ≤ `Bool` |
 | `Int` ≤ `Nat` | No | `Int` is above `Nat` in the chain |
 | `Bool` ≤ `Nat` | No | Incomparable |
-| `Nothing` ≤ `[User]` | Yes | Bottom type |
 | `User` ≤ `String` | No | Incomparable domain types |
 
 ### Least Upper Bound (Join)
@@ -185,7 +181,7 @@ The **join** of two types, written *S* ⊔ *T*, is the smallest type that both *
 
 **Equal types.** *T* ⊔ *T* = *T*.
 
-**Subtype pairs.** When *S* ≤ *T*, then *S* ⊔ *T* = *T*. This covers the numeric chain (`Nat` ⊔ `Int` = `Int`, `Nat0` ⊔ `Real` = `Real`) and the bottom type (`Nothing` ⊔ *T* = *T*).
+**Subtype pairs.** When *S* ≤ *T*, then *S* ⊔ *T* = *T*. This covers the numeric chain: `Nat` ⊔ `Int` = `Int`, `Nat0` ⊔ `Real` = `Real`.
 
 **Compound types.** The join is computed position by position:
 
@@ -405,9 +401,19 @@ Creates a named alias for a type expression:
 
 ```
 Point = Nat * Nat.
-Result = Value + Nothing.
+Outcome = Success + Failure.
 Users = [User].
 ```
+
+**Optional values.** Pantagruel has no `Maybe`/`Option` type. To express "this value may or may not exist," use a **guarded rule** (partial function) or a **list with at most one element** — see *Guards* and *List types* below. The list-lifted form constrains the length to at most one via a cardinality invariant:
+
+```
+lookup i: Nat => [Color].
+---
+all i: Nat | #(lookup i) <= 1.
+```
+
+Here `#` is the cardinality operator and `<= 1` enforces at most one element — absence is `#(lookup i) = 0`, presence is `(lookup i).1`. Sum types are for disjoint alternatives that both carry data, not for presence/absence.
 
 ### Rule Declaration
 
@@ -434,16 +440,14 @@ origin => Point.
 Declares a rule as the non-reflexive transitive closure of another rule:
 
 ```
-parent b: Block => Block + Nothing.
+parent b: Block => [Block].
 ancestor b: Block => [Block] = closure parent.
 ```
 
 **Syntax**: `name param => [T] = closure target.`
 
 - The closure always returns `[T]` — the set of all elements reachable from the parameter by one or more applications of the target rule.
-- The target rule must have one of these shapes:
-  - `T => T + Nothing` — a partial endorelation (single parent, may be absent)
-  - `T => [T]` — a multi-valued endorelation (multiple children)
+- The target rule must have shape `T => [T]` — an endorelation represented as a list of related elements per input. The empty list encodes "no relation for this input" (a partial relation); a list of length ≤ 1 encodes a partial function; longer lists encode multi-valued relations.
 - The parameter type must match the domain type `T` of the target.
 - The closure is **non-reflexive**: `ancestor b` does not include `b` itself (unless `b` is reachable from itself through a cycle).
 - Closure rules are **derived** — they do not receive frame conditions in SMT verification. Their post-state (`ancestor'`) is automatically derived from the target's post-state (`parent'`).
@@ -453,7 +457,7 @@ ancestor b: Block => [Block] = closure parent.
 
 ```
 Block.
-parent b: Block => Block + Nothing.
+parent b: Block => [Block].
 ancestor b: Block => [Block] = closure parent.
 ---
 all b: Block | ~(b in ancestor b).

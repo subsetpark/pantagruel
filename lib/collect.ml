@@ -319,11 +319,7 @@ let collect_chapter_head ~chapter ~doc_contexts env
           match[@warning "-4"] Env.lookup_term_arity target 1 env with
           | Some { kind = Env.KRule ty; _ } -> (
               match[@warning "-4"] ty with
-              (* T => T + Nothing (partial parent) *)
-              | TyFunc ([ t1 ], Some (TySum [ t2; TyNothing ]))
-                when t1 = param_ty && t2 = param_ty ->
-                  Ok ()
-              (* T => [T] (multi-child) *)
+              (* T => [T] (zero-or-more children per node) *)
               | TyFunc ([ t1 ], Some (TyList t2))
                 when t1 = param_ty && t2 = param_ty ->
                   Ok ()
@@ -331,11 +327,8 @@ let collect_chapter_head ~chapter ~doc_contexts env
                   Error
                     (ClosureTargetInvalid
                        ( name,
-                         Printf.sprintf
-                           "target '%s' must have shape %s => %s + Nothing or \
-                            %s => [%s]"
+                         Printf.sprintf "target '%s' must have shape %s => [%s]"
                            target (Types.format_ty param_ty)
-                           (Types.format_ty param_ty) (Types.format_ty param_ty)
                            (Types.format_ty param_ty),
                          decl.loc )))
           | _ ->

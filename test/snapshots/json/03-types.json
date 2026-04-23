@@ -10,10 +10,6 @@
     },
     "Colors": { "kind": "alias", "type": { "list": "Color" } },
     "Matrix": { "kind": "alias", "type": { "list": { "list": "Nat" } } },
-    "MaybeColor": {
-      "kind": "alias",
-      "type": { "sum": [ "Color", "Nothing" ] }
-    },
     "Point": { "kind": "alias", "type": { "product": [ "Nat", "Nat" ] } },
     "Point3D": {
       "kind": "alias",
@@ -23,8 +19,8 @@
       "kind": "alias",
       "type": { "list": { "product": [ "Nat", "Nat" ] } }
     },
-    "Result": { "kind": "alias", "type": { "sum": [ "Nat", "Nothing" ] } },
-    "Shape": { "kind": "domain" }
+    "Shape": { "kind": "domain" },
+    "Tag": { "kind": "alias", "type": { "sum": [ "Color", "Shape" ] } }
   },
   "rules": {
     "colors": { "params": [], "return": { "list": "Color" } },
@@ -34,10 +30,7 @@
       ],
       "return": "Real"
     },
-    "lookup": {
-      "params": [ "Nat" ],
-      "return": { "sum": [ "Color", "Nothing" ] }
-    },
+    "lookup": { "params": [ "Nat" ], "return": { "list": "Color" } },
     "origin": { "params": [], "return": { "product": [ "Nat", "Nat" ] } },
     "red": { "params": [], "return": "Color" }
   },
@@ -48,7 +41,7 @@
           "doc": [
             [ "Demonstration of all type features" ],
             [
-              "Built-in types: Bool, Nat, Nat0, Int, Real, String, Nothing",
+              "Built-in types: Bool, Nat, Nat0, Int, Real, String",
               "Nat = positive integers (1, 2, 3, ...)",
               "Nat0 = non-negative integers (0, 1, 2, ...)",
               "Numeric hierarchy: Nat < Nat0 < Int < Real"
@@ -81,17 +74,13 @@
           }
         },
         {
-          "doc": [ [ "Type aliases with sum types (unions)" ] ],
+          "doc": [
+            [ "Type aliases with sum types (unions of two inhabited types)" ]
+          ],
           "kind": "alias",
-          "name": "Result",
-          "type": { "sum": [ "Nat", "Nothing" ] },
-          "resolved": { "sum": [ "Nat", "Nothing" ] }
-        },
-        {
-          "kind": "alias",
-          "name": "MaybeColor",
-          "type": { "sum": [ "Color", "Nothing" ] },
-          "resolved": { "sum": [ "Color", "Nothing" ] }
+          "name": "Tag",
+          "type": { "sum": [ "Color", "Shape" ] },
+          "resolved": { "sum": [ "Color", "Shape" ] }
         },
         {
           "doc": [ [ "Type aliases with list types" ] ],
@@ -164,16 +153,19 @@
           }
         },
         {
+          "doc": [
+            [
+              "Optional return values: use a list constrained to length <= 1",
+              "(Pantagruel has no Maybe/Option type; see guards for the alternative idiom.)"
+            ]
+          ],
           "kind": "rule",
           "name": "lookup",
           "params": [ { "name": "i", "type": "Nat" } ],
           "guards": [],
-          "return": { "sum": [ "Color", "Nothing" ] },
+          "return": { "list": "Color" },
           "resolved": {
-            "func": {
-              "params": [ "Nat" ],
-              "return": { "sum": [ "Color", "Nothing" ] }
-            }
+            "func": { "params": [ "Nat" ], "return": { "list": "Color" } }
           }
         }
       ],
@@ -270,6 +262,34 @@
               "unop": { "op": "card", "arg": { "domain": "Color" } }
             },
             "right": { "nat": 0 }
+          }
+        },
+        {
+          "doc": [
+            [ "Optional-value idiom: lookup returns at most one element" ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "i", "type": "Nat" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "le",
+                  "left": {
+                    "unop": {
+                      "op": "card",
+                      "arg": {
+                        "app": {
+                          "func": { "var": "lookup" },
+                          "args": [ { "var": "i" } ]
+                        }
+                      }
+                    }
+                  },
+                  "right": { "nat": 1 }
+                }
+              }
+            }
           }
         },
         {

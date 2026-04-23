@@ -38,7 +38,7 @@ Write domain declarations and type aliases. Show the user what you have so far.
 Ask: What information is associated with each entity? What properties can change over time?
 
 - Each answer becomes a rule declaration (`owner a: Account => User.`).
-- Clarify return types precisely: is it one value or many? Can it be absent? (`User + Nothing` vs `User` vs `[User]`)
+- Clarify return types precisely: is it one value or many? Can it be absent? See **Modeling Optional Values** below — Pantagruel has no `Maybe`/`Option` type; use guards or list-lifting.
 - Ask about nullary rules (global state): "Is there anything true of the system as a whole, not tied to a specific entity?"
 
 Write rule declarations. Run `pant <file>` to check for type errors.
@@ -176,6 +176,50 @@ Interpret results with the user:
 
 Declaration guards on rules (e.g., `score u: User, active u => Nat.`) are automatically injected as antecedents in SMT queries. This means the solver treats guarded functions as partial — it won't produce counterexamples that apply a function outside its declared domain. When writing guards, consider that they will constrain all verification queries involving that function.
 
+## Modeling Optional Values
+
+Pantagruel has no `Maybe`/`Option` type. **Do not use `T + Nothing`** — `Nothing` has no inhabitants, and the language does not support sum-type projection, so there is no value to return and no way to case-split on it. Sum types work for disjoint alternatives that both carry data (e.g. `Success * Result + Failure * Reason`), not for "present-or-absent."
+
+When a rule's value may not exist for every input, choose one of the following. The first is the default.
+
+### 1. Partial function via guard (preferred)
+
+Declare the rule with a guard that captures when it's defined. Pantagruel injects the guard as an antecedent in SMT queries, so the solver treats the rule as partial and won't fabricate counterexamples outside its domain.
+
+```
+{Loans} borrower b: Book, ~available? b => Member.
+```
+
+This reads "for a checked-out book, the borrower is a member." The rule simply has no meaning when `available? b` holds — callers must establish the guard to use it.
+
+This is the Z / VDM / B / Event-B idiom (`f: A ⇸ B`, `dom f`) and is the natural fit whenever "presence" is really a precondition on the caller rather than data the system stores about.
+
+### 2. Lift the codomain to a list (when optionality is first-class data)
+
+When the "maybe there, maybe not" status needs to be stored, compared, or aggregated over — not just guarded against at call sites — model it as a list constrained to length ≤ 1. This is Alloy's `lone` multiplicity.
+
+```
+{Loans} borrower b: Book => [Member].
+---
+all b: Book | #(borrower b) <= 1.
+```
+
+Absence is `#(borrower b) = 0`; presence-and-value is `(borrower b).1` after establishing `#(borrower b) = 1`. Use this when the optionality interacts with other set/list machinery (counts, membership, aggregation).
+
+### 3. Sentinel / distinguished element (rare)
+
+When the codomain has a genuine "empty" member with its own meaning — `0` for `Nat0`, `[]` for a list-typed rule, a domain element that *really is* a valid answer — make the function total and let that value encode absence.
+
+Only use this when the sentinel is a real domain value, not a stand-in for "missing." Conflating "zero balance" with "no account" is a bug waiting to happen.
+
+### How to choose
+
+- **Is this a precondition on the caller?** → guard (1)
+- **Is the absence itself data the spec reasons about?** → `[T]` with `<= 1` (2)
+- **Does the codomain already contain a natural empty element?** → sentinel (3)
+
+When in doubt, start with (1). It composes cleanly with the rest of the language and matches how partial functions are handled in classical model-oriented specification.
+
 ## Syntax Cheatsheet
 
 ### Document structure
@@ -204,7 +248,7 @@ User.
 
 // Type alias
 Point = Nat * Nat.
-Result = Value + Nothing.
+Outcome = Success + Failure.            // sum: both arms carry data
 
 // Rule (with return type)
 owner d: Document => User.
@@ -237,10 +281,10 @@ ancestor b: Block => [Block] = closure parent.
 ### Types
 
 ```
-Nat Nat0 Int Real Bool String Nothing   // primitives
+Nat Nat0 Int Real Bool String           // primitives
 [T]                                     // list
 T * U                                   // product
-T + U                                   // sum (either/or)
+T + U                                   // sum (both arms must be inhabited)
 ```
 
 Numeric hierarchy: `Nat < Nat0 < Int < Real`
@@ -353,17 +397,18 @@ Chapter 1 uses `available?` and `borrower` without declaring them. Chapter 2 wil
 
 **User**: `available?` is whether a book can be checked out. `borrower` is who has it — could be nobody if it's available.
 
-**Agent**:
+**Agent**: Since `borrower` has no value when a book is available, we have two idiomatic choices: make it a partial function guarded by `~available?`, or lift it to `[Member]` with at most one element. The guard version reads more directly here — a book only has a borrower when it's checked out:
 
 ```
 where
 
 > Glossary for checkout terms.
 {Loans} available? b: Book => Bool.
-{Loans} borrower b: Book => Member + Nothing.
+{Loans} borrower b: Book, ~available? b => Member.
 ---
-all b: Book | available? b <-> borrower b = nothing.
 ```
+
+The guard on `borrower` means the checker treats it as undefined when `available? b` holds, so we don't need a separate "no-borrower" sentinel. Callers that need the borrower must first establish `~available? b`.
 
 Are there any other concepts used here that need further definition, or is this the leaf level?
 
