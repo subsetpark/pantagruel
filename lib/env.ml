@@ -230,16 +230,17 @@ let lookup_rule_guards name env =
 let lookup_rule_guards_arity name arity env =
   TermMap.find_opt (name, arity) env.rule_guards
 
-(** Store declaration guards for a rule. Arity is derived from the param list.
-*)
+(** Store declaration metadata for a rule (params + guards). Arity is derived
+    from the param list. Unlike the pre-overloading version, stores the record
+    even when [guards] is empty, so that coherence checks on subsequent arity
+    overloads can recover the shared-position parameter names from the env
+    without a parallel storage mechanism. *)
 let add_rule_guards name params guards env =
-  if guards = [] then env
-  else
-    let arity = List.length params in
-    {
-      env with
-      rule_guards = TermMap.add (name, arity) (params, guards) env.rule_guards;
-    }
+  let arity = List.length params in
+  {
+    env with
+    rule_guards = TermMap.add (name, arity) (params, guards) env.rule_guards;
+  }
 
 (** Set the active action contexts *)
 let with_action_contexts ctxs env = { env with action_contexts = ctxs }

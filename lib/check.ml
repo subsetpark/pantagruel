@@ -415,7 +415,8 @@ and resolve_param_type env loc p =
       | Collect.RecursiveAlias _ | Collect.MultipleActions _
       | Collect.ActionNotLast _ | Collect.BuiltinRedefined _
       | Collect.DuplicateContext _ | Collect.UndefinedContext _
-      | Collect.ClosureTargetInvalid _ ) ->
+      | Collect.ClosureTargetInvalid _ | Collect.OverloadCoherenceViolation _ )
+    ->
       Error (UnboundType ("unknown", loc))
 
 (** Process guards, extending context and collecting additional bindings. When

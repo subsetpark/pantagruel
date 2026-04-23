@@ -4,6 +4,8 @@ open Ast
 open Types
 open Util
 
+type coherence_position = Param of int | Return [@@deriving show]
+
 type collect_error =
   | DuplicateDomain of string * loc * loc
   | DuplicateRule of string * loc * loc
@@ -15,6 +17,12 @@ type collect_error =
   | DuplicateContext of string * loc
   | UndefinedContext of string * loc
   | ClosureTargetInvalid of string * string * loc
+  | OverloadCoherenceViolation of {
+      name : string;
+      position : coherence_position;
+      first : string * ty * loc;
+      second : string * ty * loc;
+    }
 [@@deriving show]
 
 let is_builtin_type name =
@@ -59,6 +67,71 @@ let rec resolve_type env (te : type_expr) loc : (ty, collect_error) result =
   | TSum ts ->
       let* tys = map_result (fun t -> resolve_type env t loc) ts in
       Ok (TySum tys)
+
+(** Verify that a new rule declaration is coherent with any existing local
+    overloads of the same name. Coherence (positional): all overloads share the
+    return type, and at every shared parameter position both the name and type
+    agree. Only local declarations participate in the check — imported overloads
+    are considered a different family to keep cross-module ambiguity a separate
+    concern. *)
+let check_overload_coherence name (params : Ast.param list) param_types
+    (ret_ty : ty) (new_loc : Ast.loc) env : (unit, collect_error) result =
+  let new_arity = List.length params in
+  let rec check_against = function
+    | [] -> Ok ()
+    | (existing_arity, (entry : Env.entry)) :: rest ->
+        if entry.module_origin <> None then check_against rest
+        else
+          let existing_ret, existing_param_types =
+            match[@warning "-4"] entry.kind with
+            | Env.KRule (TyFunc (ptys, Some r))
+            | Env.KClosure (TyFunc (ptys, Some r), _) ->
+                (r, ptys)
+            | _ -> (TyNothing, [])
+          in
+          let* () =
+            if equal_ty existing_ret ret_ty then Ok ()
+            else
+              Error
+                (OverloadCoherenceViolation
+                   {
+                     name;
+                     position = Return;
+                     first = ("", existing_ret, entry.loc);
+                     second = ("", ret_ty, new_loc);
+                   })
+          in
+          let existing_params =
+            match Env.lookup_rule_guards_arity name existing_arity env with
+            | Some (ps, _) -> ps
+            | None -> []
+          in
+          let shared = min new_arity existing_arity in
+          let rec check_position i =
+            if i >= shared then Ok ()
+            else
+              let exp : Ast.param = List.nth existing_params i in
+              let newp : Ast.param = List.nth params i in
+              let exp_name = Ast.lower_name exp.param_name in
+              let newp_name = Ast.lower_name newp.param_name in
+              let exp_ty = List.nth existing_param_types i in
+              let newp_ty = List.nth param_types i in
+              if exp_name = newp_name && equal_ty exp_ty newp_ty then
+                check_position (i + 1)
+              else
+                Error
+                  (OverloadCoherenceViolation
+                     {
+                       name;
+                       position = Param i;
+                       first = (exp_name, exp_ty, entry.loc);
+                       second = (newp_name, newp_ty, new_loc);
+                     })
+          in
+          let* () = check_position 0 in
+          check_against rest
+  in
+  check_against (Env.overloads_of name env)
 
 (** Collect declarations from one chapter head. Uses multi-pass approach so
     declarations can reference each other regardless of order. *)
@@ -155,10 +228,16 @@ let collect_chapter_head ~chapter ~doc_contexts env
         in
         let proc_ty = TyFunc (param_types, Some ret_ty) in
         let* env =
-          match Env.lookup_term name env with
+          let new_arity = List.length params in
+          match Env.lookup_term_arity name new_arity env with
           | Some existing when existing.module_origin = None ->
               Error (DuplicateRule (name, decl.loc, existing.loc))
-          | _ -> Ok (Env.add_rule name proc_ty decl.loc ~chapter env)
+          | _ ->
+              let* () =
+                check_overload_coherence name params param_types ret_ty decl.loc
+                  env
+              in
+              Ok (Env.add_rule name proc_ty decl.loc ~chapter env)
         in
         let env = Env.add_rule_guards name params guards env in
         (* Add rule to each context's member list *)

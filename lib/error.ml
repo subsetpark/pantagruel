@@ -128,6 +128,29 @@ let format_collect_error err =
       fmt loc (Printf.sprintf "Undefined context '%s'" name)
   | ClosureTargetInvalid (name, reason, loc) ->
       fmt loc (Printf.sprintf "Invalid closure '%s': %s" name reason)
+  | OverloadCoherenceViolation { name; position; first; second } -> (
+      let _, first_ty, first_loc = first in
+      let _, second_ty, second_loc = second in
+      match position with
+      | Return ->
+          fmt second_loc
+            (Printf.sprintf
+               "Overloads of '%s' disagree on return type: expected %s (from \
+                earlier declaration at %s), got %s"
+               name (Types.format_ty first_ty) (format_loc first_loc)
+               (Types.format_ty second_ty))
+      | Param i ->
+          let first_name, _, _ = first in
+          let second_name, _, _ = second in
+          fmt second_loc
+            (Printf.sprintf
+               "Overloads of '%s' disagree at position %d: earlier declaration \
+                at %s uses '%s: %s', this declaration uses '%s: %s'. \
+                Arity-overloaded rules must share parameter names and types at \
+                every shared position."
+               name i (format_loc first_loc) first_name
+               (Types.format_ty first_ty) second_name
+               (Types.format_ty second_ty)))
 
 (** Format a type warning with location prefix *)
 let format_type_warning err =
