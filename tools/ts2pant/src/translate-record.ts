@@ -494,7 +494,7 @@ function emitRecordEquations(
         .getProperties()
         .map((prop) => ({
           name: prop.getName(),
-          type: checker.getTypeOfSymbol(prop),
+          type: checker.getTypeOfSymbolAtLocation(prop, initializer),
         }))
         .sort((a, b) => a.name.localeCompare(b.name));
       const subResults = emitRecordEquations(
