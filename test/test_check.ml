@@ -870,6 +870,27 @@ f = true.
 f 1 = false.
 |}
 
+let test_overload_closure_incoherent_rejected () =
+  (* Regression: a closure declaration must participate in positional
+     coherence like any other rule in the overload family. Here the rule
+     ancestor/2 is declared first with Nat at position 0; the subsequent
+     closure ancestor/1 has Block at position 0, which is incompatible.
+     The DeclClosure branch previously skipped [check_overload_coherence],
+     so this ordering was accepted even though the reversed ordering (which
+     flows through DeclRule's check) was rejected. *)
+  check_collect_error
+    {|module TEST.
+Block.
+parent b: Block => Block + Nothing.
+ancestor a: Nat, b: Block => [Block].
+ancestor b: Block => [Block] = closure parent.
+---
+true.
+|}
+    (function[@warning "-4"]
+    | Collect.OverloadCoherenceViolation { position = Param 0; _ } -> true
+    | _ -> false)
+
 let test_overload_closure_plus_rule () =
   (* Regression: mixing a closure f/1 with a rule f/2 previously crashed
      the positional-coherence check because closures don't populate
@@ -2030,6 +2051,8 @@ let () =
             test_overload_nullary_plus_unary;
           test_case "closure + rule in same family" `Quick
             test_overload_closure_plus_rule;
+          test_case "closure incoherent with rule rejected" `Quick
+            test_overload_closure_incoherent_rejected;
           test_case "family-wide proposition without application" `Quick
             test_family_proposition_no_application;
         ] );

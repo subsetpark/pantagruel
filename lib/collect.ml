@@ -346,6 +346,15 @@ let collect_chapter_head ~chapter ~doc_contexts env
                      decl.loc ))
         in
         let closure_ty = TyFunc ([ param_ty ], Some (TyList param_ty)) in
+        (* Closures must satisfy positional coherence with any other
+           overloads of [name] already declared locally, just like rules.
+           Without this check, acceptance of e.g. [closure f/1] alongside
+           [rule f/2] with an incompatible shared-position type depends on
+           declaration order. *)
+        let* () =
+          check_overload_coherence name [ param ] [ param_ty ] (TyList param_ty)
+            decl.loc env
+        in
         Ok (Env.add_closure name closure_ty target decl.loc ~chapter env)
     | DeclDomain _ | DeclAlias _ ->
         Ok env (* Domains and aliases already done *)
