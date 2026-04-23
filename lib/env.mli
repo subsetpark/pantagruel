@@ -19,6 +19,10 @@ type entry = {
 
 module StringMap : Map.S with type key = string
 
+module TermMap : Map.S with type key = string * int
+(** Arity-keyed map for the term namespace. Keyed by [(name, arity)] so rules
+    can be overloaded by arity under positional coherence. *)
+
 type t
 
 val empty : string -> t
@@ -37,7 +41,14 @@ val clear_action : t -> t
 val add_context : string -> string list -> t -> t
 val add_rule_to_context : string -> string -> t -> t
 val lookup_context : string -> t -> string list option
+
 val lookup_rule_guards : string -> t -> (Ast.param list * Ast.guard list) option
+(** Compatibility shim — returns the first overload's guards. *)
+
+val lookup_rule_guards_arity :
+  string -> int -> t -> (Ast.param list * Ast.guard list) option
+(** Arity-aware rule-guard lookup. *)
+
 val add_rule_guards : string -> Ast.param list -> Ast.guard list -> t -> t
 val with_action_contexts : string list -> t -> t
 val is_local_var : string -> t -> bool
@@ -45,14 +56,27 @@ val in_action_context : t -> bool
 val lookup_type : string -> t -> entry option
 
 val lookup_term : string -> t -> entry option
-(** Lookup a rule or closure (no variable fallback). *)
+(** Compatibility shim — returns the first overload (ascending arity). *)
+
+val lookup_term_arity : string -> int -> t -> entry option
+(** Arity-aware term lookup: returns exactly the overload whose declared arity
+    matches. *)
+
+val overloads_of : string -> t -> (int * entry) list
+(** Every overload of [name] sorted by ascending arity. [] when no declaration
+    exists. *)
+
+val name_is_overloaded : string -> t -> bool
+(** True iff [name] has two or more arity overloads. Used to decide whether the
+    SMT emitter mangles the output symbol with an arity suffix. *)
 
 val lookup_var : string -> t -> entry option
 (** Lookup a variable only. *)
 
 val lookup_bare : string -> t -> entry option
 (** Bare-atom (value-position) lookup: variables first, then rules. The one site
-    where rule and variable namespaces may legitimately collide. *)
+    where rule and variable namespaces may legitimately collide. Patch 1 shim
+    returns any arity; Patch 3 tightens to nullary-only. *)
 
 val fold_terms : (string -> entry -> 'a -> 'a) -> t -> 'a -> 'a
 val iter_terms : (string -> entry -> unit) -> t -> unit
