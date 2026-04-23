@@ -666,11 +666,13 @@ export function isAnonymousRecord(type: ts.Type): boolean {
 }
 
 /**
- * Detect a TypeScript `Map<K, V>` by symbol name. Same caveat as `isSetType`.
+ * Detect a TypeScript `Map<K, V>` or `ReadonlyMap<K, V>` by symbol name.
+ * Same caveat as `isSetType`.
  */
 export function isMapType(type: ts.Type): boolean {
   const symbol = type.getSymbol();
-  return symbol?.getName() === "Map";
+  const name = symbol?.getName();
+  return name === "Map" || name === "ReadonlyMap";
 }
 
 /** Derive a short parameter name from a type name (first letter, lowercased). */
