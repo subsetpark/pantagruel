@@ -49,6 +49,12 @@ val lookup_rule_guards_arity :
   string -> int -> t -> (Ast.param list * Ast.guard list) option
 (** Arity-aware rule-guard lookup. *)
 
+val lookup_qualified_rule_guards_arity :
+  string -> string -> int -> t -> (Ast.param list * Ast.guard list) option
+(** Arity-aware qualified rule-guard lookup: returns exactly the overload's
+    guards exported by [mod_name]. Used by SMT guard injection so that imported
+    overloads don't collide when two modules export the same [(name, arity)]. *)
+
 val add_rule_guards : string -> Ast.param list -> Ast.guard list -> t -> t
 val with_action_contexts : string list -> t -> t
 val is_local_var : string -> t -> bool

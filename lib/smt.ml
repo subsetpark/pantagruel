@@ -1061,12 +1061,15 @@ let build_value_terms config env (params : param list) =
       (fun name entry acc ->
         match entry.Env.kind with
         | Env.KRule ty | Env.KClosure (ty, _) -> (
-            let sname = sanitize_ident name in
             match[@warning "-4"] decompose_func_ty ty with
             | Some ([], _ret) ->
-                (* Nullary rule: include current and primed *)
+                (* Nullary rule: include current and primed. Route through
+                   smt_rule_name so overloaded rules query the same
+                   arity-mangled symbol the preamble declared. *)
+                let sname = smt_rule_name env name 0 in
                 sname :: (sname ^ "_prime") :: acc
             | Some ([ param_ty ], _ret) ->
+                let sname = smt_rule_name env name 1 in
                 (* Unary rule: apply to each matching param *)
                 let from_params =
                   List.filter_map

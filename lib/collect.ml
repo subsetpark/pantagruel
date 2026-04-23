@@ -82,12 +82,11 @@ let check_overload_coherence name (params : Ast.param list) param_types
     | (existing_arity, (entry : Env.entry)) :: rest ->
         if entry.module_origin <> None then check_against rest
         else
-          let existing_ret, existing_param_types =
+          let existing_ret, existing_param_types, is_closure =
             match[@warning "-4"] entry.kind with
-            | Env.KRule (TyFunc (ptys, Some r))
-            | Env.KClosure (TyFunc (ptys, Some r), _) ->
-                (r, ptys)
-            | _ -> (TyNothing, [])
+            | Env.KRule (TyFunc (ptys, Some r)) -> (r, ptys, false)
+            | Env.KClosure (TyFunc (ptys, Some r), _) -> (r, ptys, true)
+            | _ -> (TyNothing, [], false)
           in
           let* () =
             if equal_ty existing_ret ret_ty then Ok ()
@@ -101,32 +100,66 @@ let check_overload_coherence name (params : Ast.param list) param_types
                      second = ("", ret_ty, new_loc);
                    })
           in
+          (* Closures do not populate [Env.rule_guards], so the formal
+             parameter names required for positional coherence aren't
+             available. Skip the positional name-check for a closure
+             overload — return-type coherence above still runs, and the
+             param-type check [check_position] would normally do is also
+             performed here against [existing_param_types]. *)
           let existing_params =
             match Env.lookup_rule_guards_arity name existing_arity env with
-            | Some (ps, _) -> ps
-            | None -> []
+            | Some (ps, _) -> Some ps
+            | None -> None
           in
           let shared = min new_arity existing_arity in
           let rec check_position i =
             if i >= shared then Ok ()
             else
-              let exp : Ast.param = List.nth existing_params i in
               let newp : Ast.param = List.nth params i in
-              let exp_name = Ast.lower_name exp.param_name in
               let newp_name = Ast.lower_name newp.param_name in
-              let exp_ty = List.nth existing_param_types i in
               let newp_ty = List.nth param_types i in
-              if exp_name = newp_name && equal_ty exp_ty newp_ty then
-                check_position (i + 1)
-              else
-                Error
-                  (OverloadCoherenceViolation
-                     {
-                       name;
-                       position = Param i;
-                       first = (exp_name, exp_ty, entry.loc);
-                       second = (newp_name, newp_ty, new_loc);
-                     })
+              let exp_ty = List.nth existing_param_types i in
+              match existing_params with
+              | None when is_closure ->
+                  (* Closure has no formal-name metadata. Check type
+                     agreement only; skip positional name comparison. *)
+                  if equal_ty exp_ty newp_ty then check_position (i + 1)
+                  else
+                    Error
+                      (OverloadCoherenceViolation
+                         {
+                           name;
+                           position = Param i;
+                           first = ("", exp_ty, entry.loc);
+                           second = (newp_name, newp_ty, new_loc);
+                         })
+              | None ->
+                  (* Non-closure missing rule_guards entry shouldn't happen;
+                     defensively compare types only. *)
+                  if equal_ty exp_ty newp_ty then check_position (i + 1)
+                  else
+                    Error
+                      (OverloadCoherenceViolation
+                         {
+                           name;
+                           position = Param i;
+                           first = ("", exp_ty, entry.loc);
+                           second = (newp_name, newp_ty, new_loc);
+                         })
+              | Some ps ->
+                  let exp : Ast.param = List.nth ps i in
+                  let exp_name = Ast.lower_name exp.param_name in
+                  if exp_name = newp_name && equal_ty exp_ty newp_ty then
+                    check_position (i + 1)
+                  else
+                    Error
+                      (OverloadCoherenceViolation
+                         {
+                           name;
+                           position = Param i;
+                           first = (exp_name, exp_ty, entry.loc);
+                           second = (newp_name, newp_ty, new_loc);
+                         })
           in
           let* () = check_position 0 in
           check_against rest

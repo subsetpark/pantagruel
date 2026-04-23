@@ -841,6 +841,23 @@ f = true.
 f 1 = false.
 |}
 
+let test_overload_closure_plus_rule () =
+  (* Regression: mixing a closure f/1 with a rule f/2 previously crashed
+     the positional-coherence check because closures don't populate
+     [Env.rule_guards], so [List.nth existing_params 0] raised on the
+     missing formal-name metadata. Return-type agreement and positional
+     type agreement still run; only the name check is skipped for the
+     closure overload. *)
+  check_ok
+    {|module TEST.
+Block.
+parent b: Block => Block + Nothing.
+ancestor b: Block => [Block] = closure parent.
+ancestor b: Block, root: Block => [Block].
+---
+true.
+|}
+
 let test_family_proposition_no_application () =
   (* A proposition that mentions the family's params without applying any
      overload binds under the family-wide position-indexed types: `a` is
@@ -1982,6 +1999,8 @@ let () =
             test_overload_dispatch_by_arity;
           test_case "nullary + unary family" `Quick
             test_overload_nullary_plus_unary;
+          test_case "closure + rule in same family" `Quick
+            test_overload_closure_plus_rule;
           test_case "family-wide proposition without application" `Quick
             test_family_proposition_no_application;
         ] );

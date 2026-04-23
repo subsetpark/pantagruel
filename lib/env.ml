@@ -60,8 +60,18 @@ type t = {
       (** Context declarations: context name -> member function names *)
   rule_guards : (Ast.param list * Ast.guard list) TermMap.t;
       (** Declaration guards keyed by (rule name, arity): formal params +
-          guards. Keying by arity mirrors the term namespace so per-overload
-          guards stay distinct. *)
+          guards. Holds LOCAL declarations plus any unambiguously-imported
+          guards (single-origin entries from [imported_rule_guards]). Imports
+          whose (name, arity) is exported by more than one module are excluded
+          here — they remain reachable via [lookup_qualified_rule_guards_arity].
+      *)
+  imported_rule_guards :
+    (string * (Ast.param list * Ast.guard list)) list TermMap.t;
+      (** Import index: (name, arity) -> [(module, guards)]. Mirrors
+          [imported_terms] so that two modules exporting the same
+          [(name, arity)] don't clobber each other's declaration guards.
+          Qualified guard lookup reads directly from this index; flat
+          [rule_guards] only promotes single-origin entries. *)
   action : string option;  (** Action in current chapter (for prime checking) *)
   action_contexts : string list;
       (** Active contexts for current action (for primed-in-context enforcement)
@@ -81,6 +91,7 @@ let empty module_name =
     current_module = module_name;
     contexts = StringMap.empty;
     rule_guards = TermMap.empty;
+    imported_rule_guards = TermMap.empty;
     action = None;
     action_contexts = [];
     local_vars = [];
@@ -229,6 +240,16 @@ let lookup_rule_guards name env =
 (** Lookup rule guards by [(name, arity)]. *)
 let lookup_rule_guards_arity name arity env =
   TermMap.find_opt (name, arity) env.rule_guards
+
+(** Lookup rule guards by module, name, AND arity in the import index. Returns
+    exactly the overload's guards exported by [mod_name]. *)
+let lookup_qualified_rule_guards_arity mod_name name arity env =
+  match TermMap.find_opt (name, arity) env.imported_rule_guards with
+  | Some entries -> (
+      match List.find_opt (fun (m, _) -> m = mod_name) entries with
+      | Some (_, guards) -> Some guards
+      | None -> None)
+  | None -> None
 
 (** Store declaration metadata for a rule (params + guards). Arity is derived
     from the param list. Unlike the pre-overloading version, stores the record
@@ -389,8 +410,21 @@ let add_import env other origin_module =
             else TermMap.add key ((origin_module, entry) :: existing) index)
       other_map index
   in
+  let add_to_guards_index index other_rule_guards =
+    TermMap.fold
+      (fun key guards index ->
+        let existing =
+          match TermMap.find_opt key index with Some lst -> lst | None -> []
+        in
+        if List.exists (fun (m, _) -> m = origin_module) existing then index
+        else TermMap.add key ((origin_module, guards) :: existing) index)
+      other_rule_guards index
+  in
   let imported_types = add_to_type_index env.imported_types other.types in
   let imported_terms = add_to_term_index env.imported_terms other.terms in
+  let imported_rule_guards =
+    add_to_guards_index env.imported_rule_guards other.rule_guards
+  in
   let flat_of_type_index index =
     StringMap.fold
       (fun name entries acc ->
@@ -413,24 +447,28 @@ let add_import env other origin_module =
         | _ -> acc)
       index TermMap.empty
   in
+  let flat_of_guards_index index =
+    TermMap.fold
+      (fun key entries acc ->
+        match entries with
+        | [ (_, guards) ] -> TermMap.add key guards acc
+        | _ -> acc)
+      index TermMap.empty
+  in
   let merged_contexts =
     StringMap.fold
       (fun name members acc -> StringMap.add name members acc)
       other.contexts env.contexts
   in
-  let merged_rule_guards =
-    TermMap.fold
-      (fun key guards acc -> TermMap.add key guards acc)
-      other.rule_guards env.rule_guards
-  in
   {
     env with
     imported_types;
     imported_terms;
+    imported_rule_guards;
     types = flat_of_type_index imported_types;
     terms = flat_of_term_index imported_terms;
     contexts = merged_contexts;
-    rule_guards = merged_rule_guards;
+    rule_guards = flat_of_guards_index imported_rule_guards;
   }
 
 (** Lookup a type by module and name in the import index *)
