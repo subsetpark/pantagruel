@@ -45,12 +45,28 @@ import type { PantDeclaration, PropResult } from "./types.js";
  * translates to primed rules on the cell), unlike the prior closure over a
  * `let counter = 0`.
  */
+/**
+ * When set, rewrites `<paramName> ?? <rhs>` nullish-coalescing expressions at
+ * translation time. Used by the optional-param-with-default split to emit two
+ * rule heads from a single TS function: the "with-param" variant translates
+ * the coalesce as the LHS (param), the "without-param" variant as the RHS
+ * (default expression).
+ */
+interface NullishRewrite {
+  paramName: string;
+  mode: "take-lhs" | "take-rhs";
+}
+
 interface UniqueSupply {
   n: number;
   synthCell?: SynthCell | undefined;
+  nullishRewrite?: NullishRewrite | undefined;
 }
-function makeUniqueSupply(synthCell?: SynthCell): UniqueSupply {
-  return { n: 0, synthCell };
+function makeUniqueSupply(
+  synthCell?: SynthCell,
+  nullishRewrite?: NullishRewrite,
+): UniqueSupply {
+  return { n: 0, synthCell, nullishRewrite };
 }
 
 function nextSupply(supply: UniqueSupply): number {
@@ -783,6 +799,21 @@ export interface TranslateBodyOptions {
    * (b) dispatch `.get`/`.has` on non-interface-field Map receivers.
    */
   synthCell?: SynthCell | undefined;
+  /**
+   * Rewrite directive for `<paramName> ?? <rhs>` expressions. When the
+   * optional-param-with-default detector finds a splittable function, the
+   * pipeline calls translateBody twice: once with mode "take-lhs" (emits
+   * the full-arity head referencing the param) and once with mode
+   * "take-rhs" + excludeParam set (emits the reduced-arity head with the
+   * default substituted and the optional param dropped from scope).
+   */
+  nullishRewrite?: NullishRewrite | undefined;
+  /**
+   * When set, omit this parameter from the paramList / paramNames that the
+   * body-translator threads. Paired with nullishRewrite "take-rhs" so the
+   * reduced-arity body sees no reference to the now-defaulted param.
+   */
+  excludeParam?: string | undefined;
 }
 
 /**
@@ -793,7 +824,15 @@ export interface TranslateBodyOptions {
  * plus frame conditions for unmodified rules.
  */
 export function translateBody(opts: TranslateBodyOptions): PropResult[] {
-  const { sourceFile, functionName, strategy, declarations, synthCell } = opts;
+  const {
+    sourceFile,
+    functionName,
+    strategy,
+    declarations,
+    synthCell,
+    nullishRewrite,
+    excludeParam,
+  } = opts;
   const checker = sourceFile.getProject().getTypeChecker().compilerObject;
   const { node, className } = findFunction(sourceFile, functionName);
   // Strip class qualifier for use in Pantagruel identifiers
@@ -819,6 +858,9 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
 
   if (sig) {
     for (const param of sig.getParameters()) {
+      if (excludeParam !== undefined && param.name === excludeParam) {
+        continue;
+      }
       const paramType = checker.getTypeOfSymbol(param);
       // Pass the synthesizer so Map parameters resolve to their synthesized
       // domain names (idempotent; the signature pass already registered
@@ -842,6 +884,7 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
       strategy,
       paramNames,
       synthCell,
+      nullishRewrite,
     );
   } else {
     return translateMutatingBody(
@@ -863,6 +906,7 @@ function translatePureBody(
   strategy: NumericStrategy,
   paramNames: ReadonlyMap<string, string>,
   synthCell?: SynthCell,
+  nullishRewrite?: NullishRewrite,
 ): PropResult[] {
   const ast = getAst();
 
@@ -876,7 +920,7 @@ function translatePureBody(
     return [{ kind: "unsupported", reason: `${functionName} — ${reason}` }];
   }
 
-  const supply = makeUniqueSupply(synthCell);
+  const supply = makeUniqueSupply(synthCell, nullishRewrite);
   const inlined = inlineConstBindings(
     extracted.bindings.map((b) => ({
       tsName: b.name,
@@ -1957,6 +2001,29 @@ export function translateBodyExpr(
 
   // Binary expression
   if (ts.isBinaryExpression(expr)) {
+    // Nullish-coalescing rewrite: when the pipeline has registered a rewrite
+    // for `<paramName> ?? <rhs>` and this expression matches, translate only
+    // one side per the rewrite mode. Enables the optional-param-with-default
+    // idiom to split into two arity overloads. A non-matching ?? (param name
+    // differs, or rewrite not active) falls through to the generic
+    // unsupported-operator path below.
+    if (
+      expr.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken &&
+      supply.nullishRewrite &&
+      ts.isIdentifier(expr.left) &&
+      expr.left.text === supply.nullishRewrite.paramName
+    ) {
+      const picked =
+        supply.nullishRewrite.mode === "take-lhs" ? expr.left : expr.right;
+      return translateBodyExpr(
+        picked,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
+    }
     const op = translateOperator(expr.operatorToken.kind);
     if (op === null) {
       return {

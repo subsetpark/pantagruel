@@ -1,9 +1,10 @@
-import { before, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { before, describe, it } from "node:test";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import {
   classifyFunction,
+  detectOptionalParamDefault,
   findFunction,
   translateSignature,
 } from "../src/translate-signature.js";
@@ -133,7 +134,10 @@ describe("guard expression structure", () => {
     if (result.declaration.kind !== "action") {
       return;
     }
-    assert.equal(getAst().strExpr(result.declaration.guard!), "balance a >= amount");
+    assert.equal(
+      getAst().strExpr(result.declaration.guard!),
+      "balance a >= amount",
+    );
   });
 
   it("early-throw with negation produces correct guard expression", () => {
@@ -151,7 +155,10 @@ describe("guard expression structure", () => {
     if (result.declaration.kind !== "action") {
       return;
     }
-    assert.equal(getAst().strExpr(result.declaration.guard!), "balance a >= amount");
+    assert.equal(
+      getAst().strExpr(result.declaration.guard!),
+      "balance a >= amount",
+    );
   });
 
   it("skips guard when if-condition has side effects (call)", () => {
@@ -249,7 +256,8 @@ describe("guard expression structure", () => {
     if (result.declaration.kind !== "action") {
       return;
     }
-    assert.equal(getAst().strExpr(result.declaration.guard!),
+    assert.equal(
+      getAst().strExpr(result.declaration.guard!),
       "amount > 0 and balance account >= 0",
     );
   });
@@ -271,7 +279,8 @@ describe("guard expression structure", () => {
     if (result.declaration.kind !== "action") {
       return;
     }
-    assert.equal(getAst().strExpr(result.declaration.guard!),
+    assert.equal(
+      getAst().strExpr(result.declaration.guard!),
       "~(amount <= 0) and balance account >= 0",
     );
   });
@@ -330,7 +339,8 @@ describe("call-graph following guard expressions", () => {
     if (result.declaration.kind !== "action") {
       return;
     }
-    assert.equal(getAst().strExpr(result.declaration.guard!),
+    assert.equal(
+      getAst().strExpr(result.declaration.guard!),
       "~((balance account) <= 0)",
     );
   });
@@ -397,7 +407,10 @@ describe("class method declarations", () => {
     if (result.declaration.kind !== "action") {
       return;
     }
-    assert.equal(getAst().strExpr(result.declaration.guard!), "balance a >= amount");
+    assert.equal(
+      getAst().strExpr(result.declaration.guard!),
+      "balance a >= amount",
+    );
     assert.deepEqual(result.declaration.params[0], {
       name: "a",
       type: "Account",
@@ -496,5 +509,82 @@ describe("@pant-type override", () => {
       return;
     }
     assert.equal(result.declaration.params[0]?.type, "Int");
+  });
+});
+
+describe("detectOptionalParamDefault", () => {
+  it("matches the ??-default idiom", () => {
+    const source = `
+      function makePoint(initial?: number): { x: number; y: number } {
+        return { x: initial ?? 0, y: 0 };
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const { node } = findFunction(sourceFile, "makePoint");
+    const result = detectOptionalParamDefault(node);
+    assert.notEqual(result, null);
+    assert.equal(result?.paramName, "initial");
+    assert.equal(result?.defaultExpr.getText(), "0");
+  });
+
+  it("rejects an optional param used outside ??", () => {
+    const source = `
+      function f(value?: number): number {
+        return value ?? 1 + value;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const { node } = findFunction(sourceFile, "f");
+    // The trailing bare \`value\` reference disqualifies the split.
+    assert.equal(detectOptionalParamDefault(node), null);
+  });
+
+  it("rejects when two ??-uses disagree on the default expression", () => {
+    const source = `
+      function f(value?: number): number {
+        return (value ?? 0) + (value ?? 1);
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const { node } = findFunction(sourceFile, "f");
+    assert.equal(detectOptionalParamDefault(node), null);
+  });
+
+  it("rejects when no parameter is optional", () => {
+    const source = `
+      function f(value: number): number {
+        return value;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const { node } = findFunction(sourceFile, "f");
+    assert.equal(detectOptionalParamDefault(node), null);
+  });
+
+  it("rejects when multiple parameters are optional", () => {
+    const source = `
+      function f(a?: number, b?: number): number {
+        return (a ?? 0) + (b ?? 0);
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const { node } = findFunction(sourceFile, "f");
+    assert.equal(detectOptionalParamDefault(node), null);
+  });
+
+  it("ignores same-named record-literal keys", () => {
+    // The key `value:` in `{ value: value ?? 0 }` is lexically the param
+    // name but is a property key, not a reference. The detection must not
+    // mistake it for an out-of-?? use.
+    const source = `
+      function f(value?: number): { value: number } {
+        return { value: value ?? 0 };
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const { node } = findFunction(sourceFile, "f");
+    const result = detectOptionalParamDefault(node);
+    assert.notEqual(result, null);
+    assert.equal(result?.paramName, "value");
   });
 });

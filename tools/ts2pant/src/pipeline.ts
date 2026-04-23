@@ -3,7 +3,11 @@ import { extractFunctionAnnotationsAndOverrides } from "./annotations.js";
 import { extractReferencedTypes, getChecker } from "./extract.js";
 import { loadAst, loadParser, rewriteAnnotation } from "./pant-wasm.js";
 import { translateBody } from "./translate-body.js";
-import { translateSignature } from "./translate-signature.js";
+import {
+  detectOptionalParamDefault,
+  findFunction,
+  translateSignature,
+} from "./translate-signature.js";
 import {
   cellEmitSynth,
   type NumericStrategy,
@@ -53,14 +57,45 @@ export async function buildPantDocument(
   const { propositionTexts: annotations, typeOverrides: overrides } =
     extractFunctionAnnotationsAndOverrides(sourceFile, functionName);
 
-  // Translate signature first to claim the function's param names
+  // Detect the optional-param-with-??-default idiom up front. When it
+  // matches, the function translates to two arity overloads (with-param and
+  // without-param) under Pantagruel's positional-coherence rules rather than
+  // one signature carrying a `T | Nothing` union that has no useful
+  // inhabitants.
+  const { node: fnNode } = findFunction(sourceFile, functionName);
+  const optSplit = detectOptionalParamDefault(fnNode);
+
+  // Translate signature first to claim the function's param names. When
+  // splitting, the "with-param" head's signature strips `| undefined` from
+  // the optional param's declared type; the paramNameMap from this head is
+  // the one we thread to annotation-rewriting (the full-arity head is the
+  // referent for any @pant mention of the optional param).
   const { declaration: sigDecl, paramNameMap } = translateSignature(
     sourceFile,
     functionName,
     strategy,
     synthCell,
     overrides,
+    optSplit ? { unwrapOptionalParam: optSplit.paramName } : undefined,
   );
+
+  // Second signature (reduced arity) when splitting: same name, optional
+  // param dropped. Emitted alongside the full-arity head. Reuses the first
+  // head's param-name map so shared positions name their params identically
+  // — Pantagruel's positional coherence requires this, and without the
+  // reuse the synthCell's allocator would suffix the duplicate names.
+  let reducedSigDecl: typeof sigDecl | undefined;
+  if (optSplit) {
+    const { declaration } = translateSignature(
+      sourceFile,
+      functionName,
+      strategy,
+      synthCell,
+      overrides,
+      { excludeParam: optSplit.paramName, reuseParamNames: paramNameMap },
+    );
+    reducedSigDecl = declaration;
+  }
 
   // Extract and translate types (type-derived param names adapt to registry).
   // Pass the synthesizer so nested Maps inside interface-field V register too.
@@ -70,7 +105,12 @@ export async function buildPantDocument(
   // decls (one domain + membership predicate + guarded value rule per
   // unique (K, V)). Splice before sigDecl so the sig's references resolve.
   const synthDecls = cellEmitSynth(synthCell);
-  const declarations = [...typeDecls, ...synthDecls, sigDecl];
+  const declarations = [
+    ...typeDecls,
+    ...synthDecls,
+    sigDecl,
+    ...(reducedSigDecl ? [reducedSigDecl] : []),
+  ];
 
   const moduleName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
   let doc: PantDocument = {
@@ -88,8 +128,35 @@ export async function buildPantDocument(
       strategy,
       declarations,
       synthCell,
+      ...(optSplit
+        ? {
+            nullishRewrite: {
+              paramName: optSplit.paramName,
+              mode: "take-lhs",
+            },
+          }
+        : {}),
     });
     doc = { ...doc, propositions: [...doc.propositions, ...bodyProps] };
+
+    // Second body translation for the reduced-arity head: substitute the
+    // default expression for the nullish-coalesce (take-rhs) and drop the
+    // optional param from scope.
+    if (optSplit) {
+      const reducedProps = translateBody({
+        sourceFile,
+        functionName,
+        strategy,
+        declarations,
+        synthCell,
+        nullishRewrite: {
+          paramName: optSplit.paramName,
+          mode: "take-rhs",
+        },
+        excludeParam: optSplit.paramName,
+      });
+      doc = { ...doc, propositions: [...doc.propositions, ...reducedProps] };
+    }
 
     // Drain any Map (K, V) pairs registered on demand during body translation
     // (e.g., `build().get(k)!` where `build`'s return type wasn't surfaced
