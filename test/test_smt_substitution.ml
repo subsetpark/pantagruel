@@ -57,7 +57,13 @@ let test_substitute_avoids_capture () =
 (** Sequential guard binders ([GParam] / [GIn]) also shadow, and need the same
     alpha-rename treatment as top-level quantifier params. Regression for the
     [all | y in ys, x] shape: substituting [x -> EVar y] must keep the
-    introduced [y] free rather than capturing it under the [GIn y] binder. *)
+    introduced [y] free rather than capturing it under the [GIn y] binder.
+
+    Asserts the result's shape directly rather than leaning on [free_vars] as an
+    oracle: a buggy implementation that left the [GIn] binder as [y] and
+    substituted [y] into the body would produce a quantifier that [free_vars]
+    correctly reports as not-free-in-y, but the structural check below would
+    still fail. *)
 let test_substitute_avoids_capture_in_guards () =
   let ys = Ast.EVar (Ast.Lower "ys") in
   let guards : Ast.guard list =
@@ -66,9 +72,22 @@ let test_substitute_avoids_capture_in_guards () =
   let input = Ast.make_forall [] guards (Ast.ELitBool true) in
   let subst = [ ("x", Ast.EVar (Ast.Lower "y")) ] in
   let result = Smt.substitute_vars subst input in
-  let free = Smt.free_vars result in
-  check bool "y is free after GIn-binder rename" true
-    (Smt.StringSet.mem "y" free)
+  (match[@warning "-4"] result with
+  | Ast.EForall (mb, metas) -> (
+      let _params, result_guards, _body = Ast.unbind_quant mb metas in
+      match[@warning "-4"] result_guards with
+      | [
+       Ast.GIn (Ast.Lower bind_name, _);
+       Ast.GExpr (Ast.EVar (Ast.Lower body_name));
+      ] ->
+          check bool "GIn binder is alpha-renamed away from y" true
+            (not (String.equal bind_name "y"));
+          check string "GExpr references the substituted free y" "y" body_name
+      | _ -> fail "unexpected guard shape in substituted result")
+  | _ -> fail "result is not an EForall");
+  (* free_vars is consistent with the structural check: y stays free. *)
+  check bool "y is free in the substituted quantifier" true
+    (Smt.StringSet.mem "y" (Smt.free_vars result))
 
 (* ------------------------------------------------------------------ *)
 (* Test 3: alpha-equivalent inputs produce alpha-equivalent outputs
