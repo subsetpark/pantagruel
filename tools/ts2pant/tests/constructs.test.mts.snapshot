@@ -330,6 +330,18 @@ exports[`expressions-misc.ts > parenAdd 1`] = `
 "module ParenAdd.\\n\\nparenAdd a: Int, b: Int => Int.\\n\\n---\\n\\nparenAdd a b = a + b.\\n"
 `;
 
+exports[`expressions-optional-default.ts > makeConfig 1`] = `
+"module MakeConfig.\\n\\nConfig.\\ntimeout c: Config => Int.\\nmakeConfig base: Int, extra: Int => Config.\\nmakeConfig base: Int => Config.\\n\\n---\\n\\ntimeout (makeConfig base extra) = base + extra.\\ntimeout (makeConfig base) = base + 10.\\n"
+`;
+
+exports[`expressions-optional-default.ts > makePoint 1`] = `
+"module MakePoint.\\n\\nPoint.\\nx p: Point => Int.\\ny p: Point => Int.\\nmakePoint initial: Int => Point.\\nmakePoint  => Point.\\n\\n---\\n\\nx (makePoint initial) = initial.\\ny (makePoint initial) = 0.\\nx makePoint = 0.\\ny makePoint = 0.\\n"
+`;
+
+exports[`expressions-optional-default.ts > usesOptionalDirectly 1`] = `
+"module UsesOptionalDirectly.\\n\\nusesOptionalDirectly value: Int + Nothing => Int.\\n\\n---\\n\\n> UNSUPPORTED: operator QuestionQuestionToken.\\n"
+`;
+
 exports[`expressions-property.ts > effectiveBalance 1`] = `
 "module EffectiveBalance.\\n\\nUser.\\nname u: User => String.\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => User.\\nactive a1: Account => Bool.\\neffectiveBalance a: Account => Int.\\n\\n---\\n\\neffectiveBalance a = (cond active a => balance a, true => 0).\\n"
 `;

@@ -856,12 +856,121 @@ export function shortParamName(
 /**
  * Translate a TypeScript function signature to a Pantagruel declaration.
  */
+/**
+ * Detect the optional-param-with-??-default idiom:
+ *
+ *   function f(a: A, p?: P): R { return ... p ?? defaultExpr ... }
+ *
+ * Preconditions for a clean split into two arity overloads:
+ *  - Exactly one parameter is optional (has a `?:` marker).
+ *  - Every reference to the optional param inside the function body is the
+ *    LHS of a `??` operator whose RHS is the default expression. All such
+ *    occurrences share the same default expression (same TS AST node) so the
+ *    two-head emission is unambiguous.
+ *
+ * Returns the detected triple or null when the pattern doesn't match. When
+ * null is returned the caller falls back to the single-signature path, and
+ * any `??` in the body surfaces as its usual unsupported-operator error.
+ */
+export function detectOptionalParamDefault(
+  node: ts.FunctionDeclaration | ts.MethodDeclaration,
+): { paramName: string; defaultExpr: ts.Expression } | null {
+  if (!node.body) {
+    return null;
+  }
+
+  const optionalParams = node.parameters.filter(
+    (p) => p.questionToken !== undefined,
+  );
+  if (optionalParams.length !== 1) {
+    return null;
+  }
+  const optParam = optionalParams[0]!;
+  if (!ts.isIdentifier(optParam.name)) {
+    return null;
+  }
+  const paramName = optParam.name.text;
+
+  const nullishUses: ts.BinaryExpression[] = [];
+  let hasNonNullishUse = false;
+  const visit = (cur: ts.Node): void => {
+    if (ts.isIdentifier(cur) && cur.text === paramName) {
+      const parent = cur.parent;
+      // Filter out non-reference occurrences: declaration sites and key /
+      // member positions where the identifier is a name, not a value. These
+      // positions happen to be lexically identical to the param name (e.g.
+      // `{ registry: registry ?? ... }` — the key shares the name with the
+      // value reference on the RHS) but they do not count as uses.
+      // A ShorthandPropertyAssignment's name IS a value reference (it stands
+      // for `{ foo: foo }`), so it DOES count. All other "name" positions
+      // below are keys or binders, not references to the param.
+      const isReferencePosition = !(
+        (parent && ts.isParameter(parent)) ||
+        (parent && ts.isPropertyAssignment(parent) && parent.name === cur) ||
+        (parent &&
+          ts.isPropertyAccessExpression(parent) &&
+          parent.name === cur) ||
+        (parent && ts.isPropertySignature(parent) && parent.name === cur) ||
+        (parent && ts.isPropertyDeclaration(parent) && parent.name === cur) ||
+        (parent && ts.isMethodDeclaration(parent) && parent.name === cur) ||
+        (parent && ts.isMethodSignature(parent) && parent.name === cur) ||
+        (parent && ts.isBindingElement(parent) && parent.name === cur)
+      );
+      if (!isReferencePosition) {
+        // skip
+      } else if (
+        parent &&
+        ts.isBinaryExpression(parent) &&
+        parent.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken &&
+        parent.left === cur
+      ) {
+        nullishUses.push(parent);
+      } else {
+        hasNonNullishUse = true;
+      }
+    }
+    ts.forEachChild(cur, visit);
+  };
+  visit(node.body);
+
+  if (nullishUses.length === 0 || hasNonNullishUse) {
+    return null;
+  }
+
+  // Every occurrence must share the same RHS (structurally — we compare
+  // against the first's text). Different defaults would require a cond
+  // lowering that we don't support here.
+  const firstDefault = nullishUses[0]!.right;
+  const firstText = firstDefault.getText();
+  for (let i = 1; i < nullishUses.length; i++) {
+    if (nullishUses[i]!.right.getText() !== firstText) {
+      return null;
+    }
+  }
+
+  return { paramName, defaultExpr: firstDefault };
+}
+
 export function translateSignature(
   sourceFile: SourceFile,
   functionName: string,
   strategy: NumericStrategy,
   synthCell?: SynthCell,
   overrides?: Map<string, string>,
+  opts?: {
+    /** When set, emit this param with its non-undefined type (strip `| Nothing`).
+     *  Pairs with the "take-lhs" body variant in the optional-param split. */
+    unwrapOptionalParam?: string;
+    /** When set, omit this param from the emitted signature. Pairs with the
+     *  "take-rhs" body variant so the reduced-arity head has one fewer param. */
+    excludeParam?: string;
+    /** Pre-existing TS-name → Pant-name mapping. Takes precedence over the
+     *  synthCell's name allocator. Used by the reduced-arity head of an
+     *  optional-param split so that both overloads name position i
+     *  identically (positional-coherence requirement on the Pantagruel
+     *  side). */
+    reuseParamNames?: ReadonlyMap<string, string>;
+  },
 ): TranslatedSignature {
   const checker = sourceFile.getProject().getTypeChecker().compilerObject;
   const { node, className } = findFunction(sourceFile, functionName);
@@ -887,16 +996,30 @@ export function translateSignature(
   }
 
   for (const param of sig.getParameters()) {
-    const defaultType = mapTsType(
-      checker.getTypeOfSymbol(param),
-      checker,
-      strategy,
-      synthCell,
-    );
+    if (opts?.excludeParam === param.name) {
+      continue;
+    }
+    const symbolType = checker.getTypeOfSymbol(param);
+    // For an unwrapped optional param, use the declared TypeNode's type
+    // (without the `| undefined` union TS synthesized for `?:`). Falling back
+    // to symbolType when no TypeNode is available keeps non-annotated params
+    // working.
+    let resolvedType = symbolType;
+    if (opts?.unwrapOptionalParam === param.name) {
+      const decls = param.declarations ?? [];
+      for (const d of decls) {
+        if (ts.isParameter(d) && d.type) {
+          resolvedType = checker.getTypeFromTypeNode(d.type);
+          break;
+        }
+      }
+    }
+    const defaultType = mapTsType(resolvedType, checker, strategy, synthCell);
     const paramType = overrides?.get(param.name) ?? defaultType;
-    const pantName = synthCell
-      ? cellRegisterName(synthCell, param.name)
-      : param.name;
+    const reusedName = opts?.reuseParamNames?.get(param.name);
+    const pantName =
+      reusedName ??
+      (synthCell ? cellRegisterName(synthCell, param.name) : param.name);
     params.push({ name: pantName, type: paramType });
     paramNameMap.set(param.name, pantName);
   }
