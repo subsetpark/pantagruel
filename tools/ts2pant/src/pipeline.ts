@@ -4,6 +4,7 @@ import { extractReferencedTypes, getChecker } from "./extract.js";
 import { loadAst, loadParser, rewriteAnnotation } from "./pant-wasm.js";
 import { translateBody } from "./translate-body.js";
 import {
+  classifyFunction,
   detectOptionalParamDefault,
   findFunction,
   translateSignature,
@@ -62,8 +63,16 @@ export async function buildPantDocument(
   // without-param) under Pantagruel's positional-coherence rules rather than
   // one signature carrying a `T | Nothing` union that has no useful
   // inhabitants.
+  //
+  // Gated to pure functions: nullishRewrite is only threaded through
+  // translatePureBody, so a mutating body like `obj.timeout = extra ?? 10`
+  // would emit two action heads while both body passes still hit the
+  // unsupported `??` operator. Fall back to the single-head path there.
   const { node: fnNode } = findFunction(sourceFile, functionName);
-  const optSplit = detectOptionalParamDefault(fnNode);
+  const optSplit =
+    classifyFunction(fnNode, checker) === "pure"
+      ? detectOptionalParamDefault(fnNode)
+      : null;
 
   // Translate signature first to claim the function's param names. When
   // splitting, the "with-param" head's signature strips `| undefined` from
