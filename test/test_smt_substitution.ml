@@ -6,7 +6,9 @@
     baseline shipped from Patch 2. The bodies run against the Bindlib-backed AST
     landed in Patch 3 — quantifiers are built via [Ast.make_forall] and
     structural equality goes through [Ast.equal_expr], which unbinds
-    [Binder.Mbinder.t] for alpha-aware comparison. *)
+    [Binder.Mbinder.t] for alpha-aware comparison.
+
+    Property-based tests use QCheck2. *)
 
 open Alcotest
 open Pantagruel
@@ -123,7 +125,7 @@ let test_substitute_avoids_capture_in_gparam () =
 (* ------------------------------------------------------------------ *)
 (* Test 3: alpha-equivalent inputs produce alpha-equivalent outputs
    under substitute_vars. Smoke check on a hand-built pair; then a
-   QCheck generator pairs two quantifiers with renamed binders and
+   QCheck2 generator pairs two quantifiers with renamed binders and
    asserts alpha-equivalence is preserved across substitution.          *)
 (* ------------------------------------------------------------------ *)
 
@@ -148,29 +150,29 @@ let test_substitute_preserves_alpha_equivalence () =
   let r2 = Smt.substitute_vars subst e2 in
   check expr_testable "substitute_vars preserves alpha-equivalence" r1 r2
 
-(** QCheck property: pairs of alpha-equivalent quantifiers produce
+(** QCheck2 property: pairs of alpha-equivalent quantifiers produce
     alpha-equivalent results under a caller-chosen substitution. *)
 let prop_alpha_equiv_preserved =
-  let gen_names = QCheck.Gen.oneof_list [ "a"; "b"; "c"; "p"; "q"; "r" ] in
+  let gen_names = QCheck2.Gen.oneof_list [ "a"; "b"; "c"; "p"; "q"; "r" ] in
   let gen_fresh_pair =
-    QCheck.Gen.map
+    QCheck2.Gen.map
       (fun (n1, n2) -> if n1 = n2 then (n1, n1 ^ "_alt") else (n1, n2))
-      (QCheck.Gen.pair gen_names gen_names)
+      (QCheck2.Gen.pair gen_names gen_names)
   in
   let gen_body_ref name =
-    QCheck.Gen.oneof
+    QCheck2.Gen.oneof
       [
-        QCheck.Gen.return (Ast.EVar (Ast.Lower name));
-        QCheck.Gen.return
+        QCheck2.Gen.return (Ast.EVar (Ast.Lower name));
+        QCheck2.Gen.return
           (Ast.EApp (Ast.EVar (Ast.Lower "f"), [ Ast.EVar (Ast.Lower name) ]));
-        QCheck.Gen.return
+        QCheck2.Gen.return
           (Ast.EBinop (Ast.OpEq, Ast.EVar (Ast.Lower name), Ast.ELitNat 0));
       ]
   in
   let t : Ast.type_expr = Ast.TName (Ast.Upper "T") in
   let gen =
-    QCheck.Gen.bind gen_fresh_pair (fun (n1, n2) ->
-        QCheck.Gen.map
+    QCheck2.Gen.bind gen_fresh_pair (fun (n1, n2) ->
+        QCheck2.Gen.map
           (fun body1 ->
             let body2 =
               Smt.substitute_vars [ (n1, Ast.EVar (Ast.Lower n2)) ] body1
@@ -187,18 +189,15 @@ let prop_alpha_equiv_preserved =
             (e1, e2, subst))
           (gen_body_ref n1))
   in
-  let arb =
-    QCheck.make
-      ~print:(fun (e1, e2, subst) ->
-        Printf.sprintf "(%s, %s, [%s])" (Ast.show_expr e1) (Ast.show_expr e2)
-          (String.concat "; "
-             (List.map
-                (fun (k, v) -> Printf.sprintf "%s -> %s" k (Ast.show_expr v))
-                subst)))
-      gen
+  let print (e1, e2, subst) =
+    Printf.sprintf "(%s, %s, [%s])" (Ast.show_expr e1) (Ast.show_expr e2)
+      (String.concat "; "
+         (List.map
+            (fun (k, v) -> Printf.sprintf "%s -> %s" k (Ast.show_expr v))
+            subst))
   in
-  QCheck.Test.make ~count:100 ~name:"substitute preserves alpha-equivalence" arb
-    (fun (e1, e2, subst) ->
+  QCheck2.Test.make ~count:100 ~name:"substitute preserves alpha-equivalence"
+    ~print gen (fun (e1, e2, subst) ->
       let r1 = Smt.substitute_vars subst e1 in
       let r2 = Smt.substitute_vars subst e2 in
       Ast.equal_expr r1 r2)

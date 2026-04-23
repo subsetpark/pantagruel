@@ -161,25 +161,31 @@ let test_compatible () =
 
 (* --- Property-based tests --- *)
 
-let arb_ty = Test_util.arb_ty
+let gen_ty = Test_util.gen_ty
+let print_ty = Test_util.print_ty
+let print_pair (a, b) = Printf.sprintf "(%s, %s)" (print_ty a) (print_ty b)
+
+let print_triple (a, b, c) =
+  Printf.sprintf "(%s, %s, %s)" (print_ty a) (print_ty b) (print_ty c)
 
 let test_subtype_reflexivity =
   QCheck_alcotest.to_alcotest
-    (QCheck.Test.make ~name:"subtype reflexivity" ~count:200 arb_ty (fun t ->
-         Types.is_subtype t t))
+    (QCheck2.Test.make ~name:"subtype reflexivity" ~count:200 ~print:print_ty
+       gen_ty (fun t -> Types.is_subtype t t))
 
 let test_subtype_transitivity =
   QCheck_alcotest.to_alcotest
-    (QCheck.Test.make ~name:"subtype transitivity" ~count:500
-       (QCheck.triple arb_ty arb_ty arb_ty) (fun (a, b, c) ->
+    (QCheck2.Test.make ~name:"subtype transitivity" ~count:500
+       ~print:print_triple (QCheck2.Gen.triple gen_ty gen_ty gen_ty)
+       (fun (a, b, c) ->
          if Types.is_subtype a b && Types.is_subtype b c then
            Types.is_subtype a c
          else true (* vacuously true *)))
 
 let test_join_commutativity =
   QCheck_alcotest.to_alcotest
-    (QCheck.Test.make ~name:"join commutativity" ~count:500
-       (QCheck.pair arb_ty arb_ty) (fun (a, b) ->
+    (QCheck2.Test.make ~name:"join commutativity" ~count:500 ~print:print_pair
+       (QCheck2.Gen.pair gen_ty gen_ty) (fun (a, b) ->
          match[@warning "-4"] (Types.join a b, Types.join b a) with
          | Ok x, Ok y -> Types.equal_ty x y
          | Error _, Error _ -> true (* both fail = commutative *)
@@ -187,25 +193,25 @@ let test_join_commutativity =
 
 let test_join_reflexivity =
   QCheck_alcotest.to_alcotest
-    (QCheck.Test.make ~name:"join reflexivity" ~count:200 arb_ty (fun t ->
-         Types.join t t = Ok t))
+    (QCheck2.Test.make ~name:"join reflexivity" ~count:200 ~print:print_ty
+       gen_ty (fun t -> Types.join t t = Ok t))
 
 let test_compatible_symmetry =
   QCheck_alcotest.to_alcotest
-    (QCheck.Test.make ~name:"compatible symmetry" ~count:500
-       (QCheck.pair arb_ty arb_ty) (fun (a, b) ->
+    (QCheck2.Test.make ~name:"compatible symmetry" ~count:500 ~print:print_pair
+       (QCheck2.Gen.pair gen_ty gen_ty) (fun (a, b) ->
          Types.compatible a b = Types.compatible b a))
 
 let test_subtype_implies_compatible =
   QCheck_alcotest.to_alcotest
-    (QCheck.Test.make ~name:"subtype implies compatible" ~count:500
-       (QCheck.pair arb_ty arb_ty) (fun (a, b) ->
+    (QCheck2.Test.make ~name:"subtype implies compatible" ~count:500
+       ~print:print_pair (QCheck2.Gen.pair gen_ty gen_ty) (fun (a, b) ->
          if Types.is_subtype a b then Types.compatible a b else true))
 
 let test_join_upper_bound =
   QCheck_alcotest.to_alcotest
-    (QCheck.Test.make ~name:"join is upper bound" ~count:500
-       (QCheck.pair arb_ty arb_ty) (fun (a, b) ->
+    (QCheck2.Test.make ~name:"join is upper bound" ~count:500 ~print:print_pair
+       (QCheck2.Gen.pair gen_ty gen_ty) (fun (a, b) ->
          match Types.join a b with
          | Ok lub -> Types.is_subtype a lub && Types.is_subtype b lub
          | Error _ -> true))

@@ -669,8 +669,8 @@ let test_chained_comparison_parse () =
 
 let test_parser_no_crash =
   QCheck_alcotest.to_alcotest
-    (QCheck.Test.make ~name:"parser never crashes on arbitrary input"
-       ~count:2000 QCheck.string (fun input ->
+    (QCheck2.Test.make ~name:"parser never crashes on arbitrary input"
+       ~count:2000 ~print:Fun.id QCheck2.Gen.string (fun input ->
          (try ignore (parse input) with _ -> ());
          true))
 
