@@ -1,0 +1,8 @@
+bug_action_body_rule_params.pant	0	0	a,balance
+bug_action_body_rule_params.pant	0	1	a1,owner
+bug_action_param_shadows_rule.pant	0	0	a1,balance
+bug_card_zero.pant	0	0	dim,v
+bug_nested_binder_collision.pant	0	0	p
+bug_overquantify.pant	0	0	
+bug_rename_app_head.pant	0	0	p
+bug_rule_param_collision.pant	0	0	makePoint,name
