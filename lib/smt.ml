@@ -28,9 +28,12 @@ include Smt_expr
 let alpha_rename_binders env (params : Ast.param list) (guards : Ast.guard list)
     (body : Ast.expr) : Ast.param list * Ast.guard list * Ast.expr =
   let is_rule_name name =
-    match[@warning "-4"] Env.lookup_term name env with
-    | Some { kind = Env.KRule _ | Env.KClosure _; _ } -> true
-    | _ -> false
+    List.exists
+      (fun (_, (e : Env.entry)) ->
+        match[@warning "-4"] e.kind with
+        | Env.KRule _ | Env.KClosure _ -> true
+        | _ -> false)
+      (Env.overloads_of name env)
   in
   let binder_names =
     let from_params =
@@ -160,7 +163,11 @@ let rec translate_expr config env (e : expr) =
       failwith
         (Printf.sprintf
            "SMT translation: EDomain '%s' appeared in standalone position" name)
-  | EQualified (_, name) -> sanitize_ident name
+  | EQualified (_, name) ->
+      (* Bare qualified reference is always a nullary rule/domain auto-apply.
+         Mangle via smt_rule_name when the name is overloaded so it matches
+         the corresponding declaration in the SMT preamble. *)
+      smt_rule_name env name 0
   | EPrimed (Lower name) ->
       (* Bare primed reference: always a nullary rule (arity 0) in action
          context. Mangle via smt_rule_name when the name is overloaded. *)
@@ -300,6 +307,7 @@ and translate_app config env func args =
             match[@warning "-4"] func with
             | EVar (Lower name) -> smt_rule_name env name arity
             | EPrimed (Lower name) -> smt_rule_name env name arity ^ "_prime"
+            | EQualified (_, name) -> smt_rule_name env name arity
             | _ -> translate_expr config env func
           in
           let args_str = List.map (translate_expr config env) args in

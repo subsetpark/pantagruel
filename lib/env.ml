@@ -254,11 +254,14 @@ let in_action_context env = Option.is_some env.action
 (** Lookup a type by name *)
 let lookup_type name env = StringMap.find_opt name env.types
 
-(** Lookup a term (rule or closure) by name. Compatibility shim — returns the
-    first overload by ascending arity. Arity-aware callers should use
-    [lookup_term_arity] to pick a specific overload. *)
+(** Lookup a term (rule or closure) by name. Returns [Some entry] only when
+    [name] has exactly one declared overload — callers that need a specific
+    arity in the presence of multiple overloads must use [lookup_term_arity].
+    Previously this returned the lowest-arity overload as a compatibility shim,
+    but that silently picked the wrong shape for name-only callers (e.g. closure
+    target validation) once arity overloads landed. *)
 let lookup_term name env =
-  match overloads_of name env with [] -> None | (_, e) :: _ -> Some e
+  match overloads_of name env with [ (_, e) ] -> Some e | _ -> None
 
 (** Lookup a term (rule or closure) by name AND arity. Returns exactly the
     overload whose declared arity matches. *)
@@ -268,13 +271,20 @@ let lookup_term_arity name arity env = TermMap.find_opt (name, arity) env.terms
 let lookup_var name env = StringMap.find_opt name env.vars
 
 (** Lookup for bare-atom references in value position: try variables first, then
-    fall back to term entries. Patch 1 shim: accepts any arity. Patch 3 will
-    tighten this to nullary-only to preserve Pantagruel's no-first-class-
-    functions discipline in the overload world. *)
+    fall back to term entries. A bare reference auto-applies a nullary rule, so
+    probe the arity-0 slot first; if none, return any overload so that
+    downstream arity-checking surfaces an ArityMismatch (preserving the
+    pre-overload diagnostic shape for single-arity rules and producing a similar
+    error when a user bare-references an overloaded name with no nullary
+    member). *)
 let lookup_bare name env =
   match StringMap.find_opt name env.vars with
   | Some _ as e -> e
-  | None -> lookup_term name env
+  | None -> (
+      match lookup_term_arity name 0 env with
+      | Some _ as e -> e
+      | None -> (
+          match overloads_of name env with (_, e) :: _ -> Some e | [] -> None))
 
 (** Fold over the terms namespace. Shim over the arity-keyed storage that keeps
     the old [(name -> entry -> acc -> acc)] callback signature. Each overload is
@@ -446,6 +456,16 @@ let lookup_qualified_term mod_name name env =
             | None -> None
           else None)
     env.imported_terms None
+
+(** Lookup a term by module, name, AND arity in the import index. Returns
+    exactly the overload whose declared arity matches. *)
+let lookup_qualified_term_arity mod_name name arity env =
+  match TermMap.find_opt (name, arity) env.imported_terms with
+  | Some entries -> (
+      match List.find_opt (fun (m, _) -> m = mod_name) entries with
+      | Some (_, entry) -> Some entry
+      | None -> None)
+  | None -> None
 
 (** Check if a type name is ambiguous across imports. Returns Some
     [module_names] if ambiguous, None otherwise *)

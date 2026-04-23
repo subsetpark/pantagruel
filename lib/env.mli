@@ -56,7 +56,9 @@ val in_action_context : t -> bool
 val lookup_type : string -> t -> entry option
 
 val lookup_term : string -> t -> entry option
-(** Compatibility shim — returns the first overload (ascending arity). *)
+(** Returns [Some entry] only when [name] has exactly one overload. Callers that
+    need a specific arity in the presence of multiple overloads must use
+    [lookup_term_arity]. *)
 
 val lookup_term_arity : string -> int -> t -> entry option
 (** Arity-aware term lookup: returns exactly the overload whose declared arity
@@ -107,6 +109,11 @@ val exports : t -> string list * string list
 val add_import : t -> t -> string -> t
 val lookup_qualified_type : string -> string -> t -> entry option
 val lookup_qualified_term : string -> string -> t -> entry option
+
+val lookup_qualified_term_arity : string -> string -> int -> t -> entry option
+(** Arity-aware qualified term lookup: returns exactly the overload whose
+    declared arity matches, among [mod_name]'s exports of [name]. *)
+
 val ambiguous_type_modules : string -> t -> string list option
 val ambiguous_term_modules : string -> t -> string list option
 val visible_in_head : int -> t -> t

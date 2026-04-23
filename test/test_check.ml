@@ -1495,6 +1495,21 @@ g a1: A, b1: B => A.
 all a: A, b: B | g a b = f[(a, b) |-> a] a b.
 |}
 
+let test_override_unary_product_param_tuple_key_ok () =
+  (* Regression: a unary rule whose single parameter has a product type must
+     still accept a tuple-literal override key. Pre-fix, check_override
+     pre-computed target_arity from the key's syntactic shape and rejected
+     this as an arity mismatch against a nonexistent arity-2 overload. *)
+  check_ok
+    {|module TEST.
+
+A.
+B.
+f p: A * B => Nat.
+---
+all a: A, b: B, p: A * B | f[(a, b) |-> 1] p = 1.
+|}
+
 let test_projection_out_of_bounds () =
   check_error {|module TEST.
 
@@ -1907,6 +1922,8 @@ let () =
           test_case "declaration guards" `Quick test_declaration_guards_in_rules;
           test_case "Override N-ary tuple key OK" `Quick
             test_override_nary_tuple_key_ok;
+          test_case "Override unary product-param tuple key OK" `Quick
+            test_override_unary_product_param_tuple_key_ok;
         ] );
       ( "invalid",
         [

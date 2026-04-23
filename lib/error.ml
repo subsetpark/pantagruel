@@ -148,7 +148,7 @@ let format_collect_error err =
                 at %s uses '%s: %s', this declaration uses '%s: %s'. \
                 Arity-overloaded rules must share parameter names and types at \
                 every shared position."
-               name i (format_loc first_loc) first_name
+               name (i + 1) (format_loc first_loc) first_name
                (Types.format_ty first_ty) second_name
                (Types.format_ty second_ty)))
 

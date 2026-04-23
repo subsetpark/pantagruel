@@ -235,13 +235,17 @@ let sanitize_ident name =
   |> String.of_seq
 
 (** SMT symbol name for a rule or closure reference. When the name has two or
-    more arity overloads in [env], the symbol is mangled with an arity suffix
-    ([foo_1], [foo_2]) so each overload gets a distinct SMT function symbol;
-    single-arity rules keep their unmangled form to preserve existing snapshot
-    output. *)
+    more arity overloads in [env], the symbol is mangled with an arity-tagged
+    suffix ([foo$1], [foo$2]) so each overload gets a distinct SMT function
+    symbol; single-arity rules keep their unmangled form to preserve existing
+    snapshot output. The [$] separator is injective against [sanitize_ident]:
+    Pantagruel lower identifiers permit only [a-zA-Z0-9-_?!] (and sanitize maps
+    those into [a-zA-Z0-9_]), so a sanitized identifier can never contain [$].
+    That guarantees an unrelated rule literally named [foo_1] cannot collide
+    with [foo/1]'s mangled form. *)
 let smt_rule_name env name arity =
   if Env.name_is_overloaded name env then
-    sanitize_ident name ^ "_" ^ string_of_int arity
+    sanitize_ident name ^ "$" ^ string_of_int arity
   else sanitize_ident name
 
 (** Wrap a query generator: reset per-query auxiliary state (cond defaults and

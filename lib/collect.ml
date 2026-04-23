@@ -256,9 +256,10 @@ let collect_chapter_head ~chapter ~doc_contexts env
         Ok env
     | DeclClosure
         { name = Lower name; param; return_type; target = Lower target } ->
-        (* Validate: no duplicate rule name *)
+        (* Validate: no duplicate rule name. Closures are always arity-1, so
+           check for a same-arity collision. *)
         let* env =
-          match Env.lookup_term name env with
+          match Env.lookup_term_arity name 1 env with
           | Some existing when existing.module_origin = None ->
               Error (DuplicateRule (name, decl.loc, existing.loc))
           | _ -> Ok env
@@ -278,9 +279,11 @@ let collect_chapter_head ~chapter ~doc_contexts env
                        (Types.format_ty param_ty),
                      decl.loc ))
         in
-        (* Look up the target rule *)
+        (* Look up the target rule — closure targets are always unary, so
+           probe the arity-1 slot so unary targets are found even when the
+           name has other arity overloads. *)
         let* () =
-          match[@warning "-4"] Env.lookup_term target env with
+          match[@warning "-4"] Env.lookup_term_arity target 1 env with
           | Some { kind = Env.KRule ty; _ } -> (
               match[@warning "-4"] ty with
               (* T => T + Nothing (partial parent) *)
