@@ -54,6 +54,22 @@ let test_substitute_avoids_capture () =
   check expr_testable "result is alpha-equivalent to (all z:T | y)" expected
     result
 
+(** Sequential guard binders ([GParam] / [GIn]) also shadow, and need the same
+    alpha-rename treatment as top-level quantifier params. Regression for the
+    [all | y in ys, x] shape: substituting [x -> EVar y] must keep the
+    introduced [y] free rather than capturing it under the [GIn y] binder. *)
+let test_substitute_avoids_capture_in_guards () =
+  let ys = Ast.EVar (Ast.Lower "ys") in
+  let guards : Ast.guard list =
+    [ Ast.GIn (Ast.Lower "y", ys); Ast.GExpr (Ast.EVar (Ast.Lower "x")) ]
+  in
+  let input = Ast.make_forall [] guards (Ast.ELitBool true) in
+  let subst = [ ("x", Ast.EVar (Ast.Lower "y")) ] in
+  let result = Smt.substitute_vars subst input in
+  let free = Smt.free_vars result in
+  check bool "y is free after GIn-binder rename" true
+    (Smt.StringSet.mem "y" free)
+
 (* ------------------------------------------------------------------ *)
 (* Test 3: alpha-equivalent inputs produce alpha-equivalent outputs
    under substitute_vars. Smoke check on a hand-built pair; then a
@@ -237,6 +253,8 @@ let () =
             test_substitute_identity_on_nonfree;
           test_case "substitute_vars avoids capture in (all y:T | x) case"
             `Quick test_substitute_avoids_capture;
+          test_case "substitute_vars avoids capture across GIn guard binders"
+            `Quick test_substitute_avoids_capture_in_guards;
           test_case "substitute_vars preserves alpha-equivalence" `Quick
             test_substitute_preserves_alpha_equivalence;
           QCheck_alcotest.to_alcotest prop_alpha_equiv_preserved;
