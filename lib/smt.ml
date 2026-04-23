@@ -90,21 +90,47 @@ let alpha_rename_binders env (params : Ast.param list) (guards : Ast.guard list)
       | None -> p
     in
     let params' = List.map rename_param params in
-    let rename_subst = List.map (fun (k, v) -> (k, EVar (Lower v))) renames in
-    let guards' =
-      List.map
-        (fun g ->
+    (* Params are in scope for every guard and the body; seed [active] with
+       their renames. Guards fold left-to-right, adding each binder's rename
+       to [active] only AFTER the guard that introduces it — so the guard's
+       own expression (and earlier guards' expressions) see the pre-binder
+       scope. This matters when a binder name shadows an outer rule: the
+       reference in an earlier guard should resolve to the rule and must not
+       be rewritten to the bound-variable form. GIn's list expression is
+       evaluated in the OUTER scope per [ast.ml], so it too is substituted
+       under the pre-binder [active]. *)
+    let param_subst =
+      List.filter_map
+        (fun (p : Ast.param) ->
+          let n = Ast.lower_name p.param_name in
+          match List.assoc_opt n renames with
+          | Some fresh -> Some (n, EVar (Lower fresh))
+          | None -> None)
+        params
+    in
+    let extend_subst subst name =
+      match List.assoc_opt name renames with
+      | Some fresh -> (name, EVar (Lower fresh)) :: subst
+      | None -> subst
+    in
+    let guards_rev, final_subst =
+      List.fold_left
+        (fun (acc, active) g ->
           match g with
-          | GParam p -> GParam (rename_param p)
+          | GExpr e -> (GExpr (Smt_expr.substitute_vars active e) :: acc, active)
+          | GParam p ->
+              let n = Ast.lower_name p.param_name in
+              (GParam (rename_param p) :: acc, extend_subst active n)
           | GIn (Lower n, e) ->
+              let e' = Smt_expr.substitute_vars active e in
               let n' =
                 match List.assoc_opt n renames with Some x -> x | None -> n
               in
-              GIn (Lower n', Smt_expr.substitute_vars rename_subst e)
-          | GExpr e -> GExpr (Smt_expr.substitute_vars rename_subst e))
-        guards
+              (GIn (Lower n', e') :: acc, extend_subst active n))
+        ([], param_subst) guards
     in
-    let body' = Smt_expr.substitute_vars rename_subst body in
+    let guards' = List.rev guards_rev in
+    let body' = Smt_expr.substitute_vars final_subst body in
     (params', guards', body')
 
 (** Translate an expression to SMT-LIB2 term string *)
