@@ -1469,17 +1469,26 @@ export function translateBodyExpr(
       return obj;
     }
     // Optional chain `x?.prop` under list-lift. With `x: [T]` on the Pant
-    // side, the functor-lift encoding is `each t in x | prop t`, giving
+    // side, the functor-lift encoding is `each $n in x | prop $n`, giving
     // `[U]` — empty when x is null/empty, singleton when x is present.
-    // This composes cleanly through nested `?.` (each step is another
-    // comprehension over the list result). When the receiver is not
-    // nullable in TS, `?.` degenerates to `.` and falls through.
-    if (expr.questionDotToken !== undefined) {
-      const receiverTsType = checker.getTypeAtLocation(expr.expression);
-      if (isNullableTsType(receiverTsType)) {
-        const binderName = supply.synthCell
-          ? cellRegisterName(supply.synthCell, "t")
-          : freshHygienicBinder(supply);
+    // Chains compose as nested comprehensions: TS parses `x?.a.b` as outer
+    // `.b` (no questionDotToken) wrapping inner `x?.a` (questionDotToken),
+    // with the outer tail marked by `NodeFlags.OptionalChain`. Lift at the
+    // tail too, so `x?.a.b` becomes `each $n' in (each $n in x | a $n) | b $n'`
+    // rather than falling through to a plain property access on the list-
+    // lifted receiver. When the receiver is not nullable in TS, `?.`
+    // degenerates to `.` and falls through.
+    const inOptionalChain = (expr.flags & ts.NodeFlags.OptionalChain) !== 0;
+    if (inOptionalChain) {
+      let shouldLift = false;
+      if (expr.questionDotToken !== undefined) {
+        const receiverTsType = checker.getTypeAtLocation(expr.expression);
+        shouldLift = isNullableTsType(receiverTsType);
+      } else if (ts.isOptionalChain(expr.expression)) {
+        shouldLift = true;
+      }
+      if (shouldLift) {
+        const binderName = freshHygienicBinder(supply);
         return {
           expr: ast.each(
             [],

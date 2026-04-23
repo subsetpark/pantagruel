@@ -8,6 +8,11 @@
 
 interface Account {
   readonly balance: number;
+  readonly owner: Owner;
+}
+
+interface Owner {
+  readonly id: number;
 }
 
 /** `x ?? y` with non-nullable default → `cond #x = 0 => y, true => (x 1)`.
@@ -30,4 +35,20 @@ export function maybeBalance(a: Account | null): number | undefined {
 /** `??` on a non-nullable LHS degenerates to just the LHS. */
 export function nonNullDefault(x: number): number {
   return x ?? 0;
+}
+
+/** Mixed chain `x?.a.b`: TS parses this with `?.` only on the first hop;
+ *  the trailing `.b` must still be lifted over the comprehension produced
+ *  by `?.a`. Expect `each $n in x | id ($m ∘ owner) $n` — the tail access
+ *  composes inside the same outer lift. */
+export function maybeOwnerId(a: Account | null): number | undefined {
+  return a?.owner.id;
+}
+
+/** Double-guarded chain `x?.a?.b`: both hops get `?.` — each step adds
+ *  another comprehension layer over the list-lift result of the previous. */
+export function maybeOwnerIdOptional(
+  a: Account | null,
+): number | undefined {
+  return a?.owner?.id;
 }

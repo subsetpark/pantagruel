@@ -9,7 +9,6 @@ import {
 import {
   IntStrategy,
   mapTsType,
-  NULL_MARKER,
   RealStrategy,
   translateTypes,
 } from "../src/translate-types.js";
@@ -177,17 +176,19 @@ describe("recursive type following", () => {
 });
 
 describe("mapTsType", () => {
-  it("lone undefined returns NULL_MARKER sentinel", () => {
-    // Lone null/undefined/void has no user-writable Pantagruel type —
-    // Nothing was retired from the user surface. mapTsType returns an
-    // internal sentinel that fails visibly if it reaches emission.
+  it("top-level undefined falls through to checker.typeToString", () => {
+    // Lone null/undefined/void has no Pantagruel encoding. mapTsType no
+    // longer returns an internal sentinel; it falls through to
+    // `checker.typeToString` so emission mirrors the source. The result
+    // is not a valid Pantagruel identifier, so downstream emission still
+    // fails visibly.
     const source = `interface Foo { val: undefined; }`;
     const sourceFile = createSourceFileFromSource(source);
     const checker = getChecker(sourceFile);
     const extracted = extractAllTypes(sourceFile);
     const prop = extracted.interfaces[0].properties[0];
 
-    assert.equal(mapTsType(prop.type, checker, IntStrategy), NULL_MARKER);
+    assert.equal(mapTsType(prop.type, checker, IntStrategy), "undefined");
   });
 
   it("list-lifts `T | null` to `[T]`", () => {

@@ -335,7 +335,15 @@ exports[`expressions-nullish.ts > defaultToZero 1`] = `
 `;
 
 exports[`expressions-nullish.ts > maybeBalance 1`] = `
-"module MaybeBalance.\\n\\nAccount.\\nbalance a1: Account => Int.\\nmaybeBalance a: [Account] => [Int].\\n\\n---\\n\\nmaybeBalance a = (each t in a | balance t).\\n"
+"module MaybeBalance.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => Owner.\\nOwner.\\nid o: Owner => Int.\\nmaybeBalance a: [Account] => [Int].\\n\\n---\\n\\nmaybeBalance a = (each $0 in a | balance $0).\\n"
+`;
+
+exports[`expressions-nullish.ts > maybeOwnerId 1`] = `
+"module MaybeOwnerId.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => Owner.\\nOwner.\\nid o: Owner => Int.\\nmaybeOwnerId a: [Account] => [Int].\\n\\n---\\n\\nmaybeOwnerId a = (each $1 in (each $0 in a | owner $0) | id $1).\\n"
+`;
+
+exports[`expressions-nullish.ts > maybeOwnerIdOptional 1`] = `
+"module MaybeOwnerIdOptional.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => Owner.\\nOwner.\\nid o: Owner => Int.\\nmaybeOwnerIdOptional a: [Account] => [Int].\\n\\n---\\n\\nmaybeOwnerIdOptional a = (each $1 in (each $0 in a | owner $0) | id $1).\\n"
 `;
 
 exports[`expressions-nullish.ts > nonNullDefault 1`] = `

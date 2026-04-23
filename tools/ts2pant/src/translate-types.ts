@@ -21,16 +21,22 @@ import type { PantDeclaration } from "./types.js";
 export const UNSUPPORTED_ANONYMOUS_RECORD = "__unsupported_anon_record__";
 
 /**
- * Sentinel returned by `mapTsType` for TypeScript `null` / `undefined` /
- * `void`. Pantagruel retired `Nothing` from the user-facing type surface —
- * there is no writable type for "absence". In a union (`T | null`) the
- * union-combining code strips this marker and emits `[T]`, the list-lift
- * encoding of optionality (Alloy's `lone` multiplicity; length 0 or 1).
- * The value is not a valid Pantagruel identifier — emission of a type
- * containing this raw string will be visibly broken rather than silently
- * producing a domain reference that doesn't resolve.
+ * TypeScript type flags for `null` / `undefined` / `void`. Pantagruel
+ * retired `Nothing` from the user-facing type surface — there is no
+ * writable type for "absence". `mapTsType` handles these only inside a
+ * union (`T | null` → `[T]` via list-lift / Alloy's `lone` multiplicity).
+ * A top-level `null` / `undefined` / `void` has no Pantagruel encoding
+ * and falls through to `checker.typeToString`, matching the generic
+ * unsupported-shape fallback and keeping any internal marker from
+ * leaking into emitted declarations.
  */
-export const NULL_MARKER = "__null__";
+const NULLISH_FLAGS =
+  ts.TypeFlags.Null | ts.TypeFlags.Undefined | ts.TypeFlags.Void;
+
+/** True for TypeScript `null` / `undefined` / `void`. */
+function isTsNullish(type: ts.Type): boolean {
+  return (type.flags & NULLISH_FLAGS) !== 0;
+}
 
 /**
  * Mangle a Pantagruel type string into an identifier-safe fragment suitable
@@ -484,13 +490,10 @@ export function mapTsType(
   if (flags & ts.TypeFlags.Boolean || flags & ts.TypeFlags.BooleanLiteral) {
     return "Bool";
   }
-  if (
-    flags & ts.TypeFlags.Null ||
-    flags & ts.TypeFlags.Undefined ||
-    flags & ts.TypeFlags.Void
-  ) {
-    return NULL_MARKER;
-  }
+  // Top-level `null` / `undefined` / `void` have no Pantagruel encoding.
+  // Fall through to the generic `checker.typeToString` fallback below so
+  // the unsupported string reflects the source rather than an internal
+  // sentinel. Null handling for unions happens in the union branch.
 
   // Tuple (check before array since tuples are also type references)
   if (checker.isTupleType(type)) {
@@ -542,23 +545,25 @@ export function mapTsType(
     if (type.types.every((t) => t.flags & ts.TypeFlags.BooleanLiteral)) {
       return "Bool";
     }
-    const parts = type.types.map((t) =>
+    // List-lift encoding for optionality: strip null/undefined/void before
+    // recursing so the internal "nothing" marker never escapes to callers.
+    // `T | null` → `[T]`, `A | B | null` → `[A + B]`. Pantagruel has no
+    // `Nothing` at the user surface — a union with null/undefined/void
+    // wraps the rest in a list of length 0 or 1 (Alloy `lone`).
+    const hasNullish = type.types.some(isTsNullish);
+    const nonNullTypes = type.types.filter((t) => !isTsNullish(t));
+    if (nonNullTypes.length === 0) {
+      // Degenerate `null | undefined` — no non-null members. Fall through
+      // to the generic checker fallback below so the broken output mirrors
+      // the source rather than an internal sentinel.
+      return checker.typeToString(type);
+    }
+    const parts = nonNullTypes.map((t) =>
       mapTsType(t, checker, strategy, synthCell),
     );
-    // Deduplicate (e.g. boolean literal collapse, `null | undefined` → one marker)
     const unique = parts.filter((v, i, a) => a.indexOf(v) === i);
-    const nonNull = unique.filter((p) => p !== NULL_MARKER);
-    // List-lift encoding for optionality: `T | null` → `[T]`,
-    // `A | B | null` → `[A + B]`. Pantagruel has no `Nothing` at the user
-    // surface, so a union containing null/undefined/void wraps the rest
-    // in a list of length 0 or 1 (Alloy `lone` multiplicity).
-    if (nonNull.length !== unique.length) {
-      if (nonNull.length === 0) {
-        // Degenerate `null | undefined` with no non-null members — keep
-        // the sentinel so emission fails visibly.
-        return NULL_MARKER;
-      }
-      return `[${nonNull.join(" + ")}]`;
+    if (hasNullish) {
+      return `[${unique.join(" + ")}]`;
     }
     return unique.join(" + ");
   }
