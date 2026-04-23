@@ -303,11 +303,12 @@ let collect_frame_exprs _config env contexts =
         (fun name entry acc ->
           match entry.Env.kind with
           | Env.KRule ty when not (List.mem name all_members) -> (
-              let sname = sanitize_ident name in
               match decompose_func_ty ty with
               | Some ([], _ret) ->
+                  let sname = smt_rule_name env name 0 in
                   (name, Printf.sprintf "(= %s_prime %s)" sname sname) :: acc
               | Some (params, _ret) ->
+                  let sname = smt_rule_name env name (List.length params) in
                   let param_sorts = List.map sort_of_ty params in
                   let param_names =
                     List.mapi (fun i _ -> Printf.sprintf "frame_x_%d" i) params

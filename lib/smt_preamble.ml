@@ -151,15 +151,16 @@ let declare_functions env =
     (fun name entry ->
       match entry.Env.kind with
       | Env.KRule ty | Env.KClosure (ty, _) -> (
-          let sname = sanitize_ident name in
           match decompose_func_ty ty with
           | Some ([], ret) ->
+              let sname = smt_rule_name env name 0 in
               Buffer.add_string buf
                 (Printf.sprintf "(declare-const %s %s)\n" sname (sort_of_ty ret));
               Buffer.add_string buf
                 (Printf.sprintf "(declare-const %s_prime %s)\n" sname
                    (sort_of_ty ret))
           | Some (params, ret) ->
+              let sname = smt_rule_name env name (List.length params) in
               let param_sorts =
                 String.concat " " (List.map sort_of_ty params)
               in
@@ -180,10 +181,17 @@ let declare_functions env =
 let generate_closure_axiom config env ~is_prime closure_name target_name
     domain_name =
   let bound = bound_for config domain_name in
-  let cname = sanitize_ident closure_name ^ if is_prime then "_prime" else "" in
-  let tname = sanitize_ident target_name ^ if is_prime then "_prime" else "" in
+  (* Closures and their targets are structurally unary. Mangle via
+     smt_rule_name so that overloaded families (rare for closures but
+     possible for targets) produce the correct arity-1 SMT symbol. *)
+  let cname =
+    smt_rule_name env closure_name 1 ^ if is_prime then "_prime" else ""
+  in
+  let tname =
+    smt_rule_name env target_name 1 ^ if is_prime then "_prime" else ""
+  in
   (* Determine target shape to generate the right step expression *)
-  let target_entry = Env.lookup_term target_name env in
+  let target_entry = Env.lookup_term_arity target_name 1 env in
   let target_is_list =
     match[@warning "-4"] target_entry with
     | Some { kind = Env.KRule (TyFunc (_, Some (TyList _))); _ } -> true
@@ -329,9 +337,9 @@ let collect_type_constraint_exprs ?(constrain_primed = true) _config env =
     (fun name entry ->
       match entry.Env.kind with
       | Env.KRule ty -> (
-          let sname = sanitize_ident name in
           match decompose_func_ty ty with
           | Some (params, ret) ->
+              let sname = smt_rule_name env name (List.length params) in
               let params_sorts = List.map sort_of_ty params in
               let param_names =
                 List.mapi (fun i _ -> Printf.sprintf "x_%d" i) params

@@ -234,6 +234,16 @@ let sanitize_ident name =
       match c with '-' -> '_' | '?' -> 'p' | '!' -> 'b' | _ -> c)
   |> String.of_seq
 
+(** SMT symbol name for a rule or closure reference. When the name has two or
+    more arity overloads in [env], the symbol is mangled with an arity suffix
+    ([foo_1], [foo_2]) so each overload gets a distinct SMT function symbol;
+    single-arity rules keep their unmangled form to preserve existing snapshot
+    output. *)
+let smt_rule_name env name arity =
+  if Env.name_is_overloaded name env then
+    sanitize_ident name ^ "_" ^ string_of_int arity
+  else sanitize_ident name
+
 (** Wrap a query generator: reset per-query auxiliary state (cond defaults and
     fallback constants), run the generator, and insert any accumulated
     declarations into the output. *)
