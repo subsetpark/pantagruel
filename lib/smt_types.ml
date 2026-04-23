@@ -248,6 +248,21 @@ let smt_rule_name env name arity =
     sanitize_ident name ^ "$" ^ string_of_int arity
   else sanitize_ident name
 
+(** SMT symbol for an [EQualified] reference. When [(name, arity)] lives in the
+    flat terms map (unambiguous import — exactly one origin), the qualified call
+    shares a symbol with the unqualified one so that [all x | A::f x = f x]
+    asserts the identity two users would expect. When it's reachable only via
+    the qualified lookup (two or more modules export the same [(name, arity)]),
+    each qualified call gets a distinct module-prefixed symbol. [$] is injective
+    against [sanitize_ident] for both the module and the name component, so
+    [A$f$1] can't collide with anything a user could write literally. *)
+let smt_qualified_rule_name env mod_name name arity =
+  match Env.lookup_term_arity name arity env with
+  | Some _ -> smt_rule_name env name arity
+  | None ->
+      sanitize_ident mod_name ^ "$" ^ sanitize_ident name ^ "$"
+      ^ string_of_int arity
+
 (** Wrap a query generator: reset per-query auxiliary state (cond defaults and
     fallback constants), run the generator, and insert any accumulated
     declarations into the output. *)

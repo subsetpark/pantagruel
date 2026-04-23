@@ -163,11 +163,14 @@ let rec translate_expr config env (e : expr) =
       failwith
         (Printf.sprintf
            "SMT translation: EDomain '%s' appeared in standalone position" name)
-  | EQualified (_, name) ->
+  | EQualified (Upper mod_name, name) ->
       (* Bare qualified reference is always a nullary rule/domain auto-apply.
-         Mangle via smt_rule_name when the name is overloaded so it matches
-         the corresponding declaration in the SMT preamble. *)
-      smt_rule_name env name 0
+         Route through [smt_qualified_rule_name] so unambiguous imports share
+         the unqualified symbol emitted by [declare_functions], while
+         same-(name, arity) imports from two modules get distinct module-
+         prefixed symbols (matching the qualified declarations in the
+         preamble). *)
+      smt_qualified_rule_name env mod_name name 0
   | EPrimed (Lower name) ->
       (* Bare primed reference: always a nullary rule (arity 0) in action
          context. Mangle via smt_rule_name when the name is overloaded. *)
@@ -307,7 +310,8 @@ and translate_app config env func args =
             match[@warning "-4"] func with
             | EVar (Lower name) -> smt_rule_name env name arity
             | EPrimed (Lower name) -> smt_rule_name env name arity ^ "_prime"
-            | EQualified (_, name) -> smt_rule_name env name arity
+            | EQualified (Upper mod_name, name) ->
+                smt_qualified_rule_name env mod_name name arity
             | _ -> translate_expr config env func
           in
           let args_str = List.map (translate_expr config env) args in

@@ -89,6 +89,12 @@ val lookup_bare : string -> t -> entry option
 val fold_terms : (string -> entry -> 'a -> 'a) -> t -> 'a -> 'a
 val iter_terms : (string -> entry -> unit) -> t -> unit
 
+val fold_imported_terms :
+  (string -> string -> int -> entry -> 'a -> 'a) -> t -> 'a -> 'a
+(** Fold over every [(module, name, arity, entry)] pairing in the imported-
+    terms index. Entries exported by more than one module are visited once per
+    module so callers can emit module-qualified SMT declarations. *)
+
 val fold_all_terms : (string -> entry -> 'a -> 'a) -> t -> 'a -> 'a
 (** Fold over both rules/closures ([terms]) and variables ([vars]). *)
 

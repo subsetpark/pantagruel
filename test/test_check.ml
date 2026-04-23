@@ -522,6 +522,35 @@ let test_env_disjoint_imports () =
   check bool "Bar not ambiguous" true
     (Option.is_none (Env.ambiguous_type_modules "Bar" env))
 
+let test_env_disjoint_arity_not_ambiguous () =
+  (* Regression: A exports f/1 and B exports f/2. Arity already
+     disambiguates the call, so [ambiguous_term_modules] must not
+     union modules across arities. *)
+  let env =
+    make_import_env
+      [
+        ( "MOD_A",
+          [],
+          [
+            ("f", Env.KRule (Types.TyFunc ([ Types.TyNat ], Some Types.TyBool)));
+          ] );
+        ( "MOD_B",
+          [],
+          [
+            ( "f",
+              Env.KRule
+                (Types.TyFunc ([ Types.TyNat; Types.TyNat ], Some Types.TyBool))
+            );
+          ] );
+      ]
+  in
+  check bool "f/1 unambiguously imported" true
+    (Option.is_some (Env.lookup_term_arity "f" 1 env));
+  check bool "f/2 unambiguously imported" true
+    (Option.is_some (Env.lookup_term_arity "f" 2 env));
+  check bool "f not reported as ambiguous across disjoint arities" true
+    (Option.is_none (Env.ambiguous_term_modules "f" env))
+
 (* --- Integration tests: imports with collect + check --- *)
 
 let test_unambiguous_import_type () =
@@ -2010,6 +2039,8 @@ let () =
           test_case "ambiguous import" `Quick test_env_ambiguous_import;
           test_case "qualified lookup" `Quick test_env_qualified_lookup;
           test_case "disjoint imports" `Quick test_env_disjoint_imports;
+          test_case "disjoint arities not ambiguous" `Quick
+            test_env_disjoint_arity_not_ambiguous;
         ] );
       ( "import resolution",
         [

@@ -317,6 +317,18 @@ let fold_terms f env init =
 (** Iterate over the terms namespace (rules and closures). *)
 let iter_terms f env = TermMap.iter (fun (n, _) entry -> f n entry) env.terms
 
+(** Fold over every [(module, name, arity, entry)] pairing in the imported-
+    terms index. Iterates entries that came from more than one module as
+    separate pairings, exposing full provenance for callers that need
+    module-qualified SMT emission. *)
+let fold_imported_terms f env init =
+  TermMap.fold
+    (fun (name, arity) entries acc ->
+      List.fold_left
+        (fun acc (origin, entry) -> f origin name arity entry acc)
+        acc entries)
+    env.imported_terms init
+
 (** Fold over every binding in both [terms] and [vars]. Used where callers need
     the union (e.g., sort collection for SMT preamble). Fold order: [terms]
     first, then [vars]. *)
@@ -513,17 +525,21 @@ let ambiguous_type_modules name env =
   | _ -> None
 
 (** Check if a term name is ambiguous across imports. Returns Some
-    [module_names] if ambiguous, None otherwise. With arity-keyed imports, a
-    name is ambiguous when *any* arity overload is declared in multiple modules
-    — collected across arities and deduplicated. *)
+    [module_names] if ambiguous, None otherwise. A name is ambiguous only when
+    at least one [(name, arity)] bucket is exported by more than one module;
+    disjoint-arity imports (A::f/1 + B::f/2) remain unambiguous because arity
+    syntactically disambiguates the call site. *)
 let ambiguous_term_modules name env =
-  let all_entries =
+  let modules =
     TermMap.fold
-      (fun (n, _) entries acc -> if n = name then entries @ acc else acc)
+      (fun (n, _) entries acc ->
+        if n = name && List.length entries > 1 then
+          List.rev_append (List.map fst entries) acc
+        else acc)
       env.imported_terms []
+    |> List.sort_uniq String.compare
   in
-  let modules = List.map fst all_entries |> List.sort_uniq String.compare in
-  if List.length modules > 1 then Some modules else None
+  match modules with [] -> None | _ -> Some modules
 
 (** Filter environment for visibility in a chapter head. Declaration in chapter
     N is visible in heads of chapters M >= N. Imports (decl_chapter = -1) are
