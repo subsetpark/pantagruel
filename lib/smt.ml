@@ -10,22 +10,28 @@ include Smt_preamble
 include Smt_doc
 include Smt_expr
 
-(** Compute alpha-renames for quantifier binders that would shadow a declared
-    rule / closure symbol at the SMT top level, then rewrite the params, guards,
-    and body accordingly. Returns the input unchanged when no renames are
-    needed. *)
+(** Alpha-rename quantifier binders whose string names collide with a declared
+    rule / closure symbol at the SMT top level.
+
+    This is a *name-collision* pass, not a capture-avoidance pass: Bindlib's
+    mbinder already keeps binder identity free of capture in the AST. But
+    [Ast.lower_name] returns the user-chosen string unchanged, and SMT's scope
+    rules shadow the top-level declaration within the quantifier body. So an
+    emission like [(forall ((name ...)) (name x))] — with [name] a declared rule
+    — would read [name x] as applying the bound variable, not the rule.
+
+    The rewrite itself delegates to [Smt_expr.substitute_vars] (library-backed
+    via Bindlib); no hand-rolled walker. We just compute fresh strings that
+    don't collide with sibling binders, outer quantifier binders in [env], or
+    any declared rule / closure, and hand the rename map to the substitution
+    primitive. *)
 let alpha_rename_binders env (params : Ast.param list) (guards : Ast.guard list)
     (body : Ast.expr) : Ast.param list * Ast.guard list * Ast.expr =
-  (* Names already declared as SMT top-level functions. We treat only
-     rule / closure kinds — variables in [Env.vars] aren't top-level SMT
-     decls (they're quantifier binders from enclosing scope, already
-     renamed if they needed to be). *)
   let is_rule_name name =
     match[@warning "-4"] Env.lookup_term name env with
     | Some { kind = Env.KRule _ | Env.KClosure _; _ } -> true
     | _ -> false
   in
-  (* Every binder introduced in this quantifier, in lexical order. *)
   let binder_names =
     let from_params =
       List.map (fun (p : Ast.param) -> Ast.lower_name p.param_name) params
@@ -41,13 +47,11 @@ let alpha_rename_binders env (params : Ast.param list) (guards : Ast.guard list)
     in
     from_params @ from_guards
   in
-  (* Seed [occupied] with every binder in this quantifier and every outer
-     quantifier binder already in scope via [env.vars]. Sibling binders must
-     be avoided (renaming [foo] to [foo_q] would collide with a sibling
-     [foo_q]); outer binders must be avoided too, because a fresh name that
-     matches an enclosing binder would capture outer references and change
-     the formula's meaning. Rules / closures are handled separately by
-     [is_rule_name] in [fresh_for]. *)
+  (* Seed [occupied] with sibling binders in this quantifier and any outer
+     quantifier binder in scope via [env.vars]. A fresh name matching an
+     enclosing binder would capture outer references when the body rebinds;
+     a fresh name matching a sibling would duplicate. Rules / closures are
+     checked separately in [fresh_for]. *)
   let occupied =
     ref
       (Env.fold_all_terms
@@ -86,20 +90,47 @@ let alpha_rename_binders env (params : Ast.param list) (guards : Ast.guard list)
       | None -> p
     in
     let params' = List.map rename_param params in
-    let guards' =
-      List.map
-        (fun g ->
+    (* Params are in scope for every guard and the body; seed [active] with
+       their renames. Guards fold left-to-right, adding each binder's rename
+       to [active] only AFTER the guard that introduces it — so the guard's
+       own expression (and earlier guards' expressions) see the pre-binder
+       scope. This matters when a binder name shadows an outer rule: the
+       reference in an earlier guard should resolve to the rule and must not
+       be rewritten to the bound-variable form. GIn's list expression is
+       evaluated in the OUTER scope per [ast.ml], so it too is substituted
+       under the pre-binder [active]. *)
+    let param_subst =
+      List.filter_map
+        (fun (p : Ast.param) ->
+          let n = Ast.lower_name p.param_name in
+          match List.assoc_opt n renames with
+          | Some fresh -> Some (n, EVar (Lower fresh))
+          | None -> None)
+        params
+    in
+    let extend_subst subst name =
+      match List.assoc_opt name renames with
+      | Some fresh -> (name, EVar (Lower fresh)) :: subst
+      | None -> subst
+    in
+    let guards_rev, final_subst =
+      List.fold_left
+        (fun (acc, active) g ->
           match g with
-          | GParam p -> GParam (rename_param p)
+          | GExpr e -> (GExpr (Smt_expr.substitute_vars active e) :: acc, active)
+          | GParam p ->
+              let n = Ast.lower_name p.param_name in
+              (GParam (rename_param p) :: acc, extend_subst active n)
           | GIn (Lower n, e) ->
+              let e' = Smt_expr.substitute_vars active e in
               let n' =
                 match List.assoc_opt n renames with Some x -> x | None -> n
               in
-              GIn (Lower n', Smt_expr.rename_var_refs env renames e)
-          | GExpr e -> GExpr (Smt_expr.rename_var_refs env renames e))
-        guards
+              (GIn (Lower n', e') :: acc, extend_subst active n))
+        ([], param_subst) guards
     in
-    let body' = Smt_expr.rename_var_refs env renames body in
+    let guards' = List.rev guards_rev in
+    let body' = Smt_expr.substitute_vars final_subst body in
     (params', guards', body')
 
 (** Translate an expression to SMT-LIB2 term string *)
@@ -732,21 +763,11 @@ and translate_aggregate config env (comb : combiner) params guards body =
             dummy_acc lets)
 
 and translate_quantifier config env quant params guards body =
-  (* Alpha-rename any binder whose name collides with a declared rule /
-     closure symbol at the SMT top level. Without this, SMT's scope
-     rules shadow the function declaration within the quantifier body
-     and [(name (makePoint name))] — where [name] is both the binder
-     and an outer rule — is interpreted as applying the bound variable,
-     which z3 surfaces as "select requires 1 arguments". The
-     Pantagruel namespace split keeps rule and var references distinct
-     at the language level; this alpha-rename preserves the
-     distinction in the SMT emission.
-
-     The rename uses [Smt_expr.rename_var_refs] which walks the AST
-     and only rewrites variable-reference positions — application
-     heads, overrides, primed names, and qualified names stay under
-     the original name, so rule references to [name] inside the body
-     continue to resolve to the declared function. *)
+  (* Alpha-rename any binder whose string name would shadow a declared rule /
+     closure symbol at the SMT top level — Bindlib keeps binder *identity*
+     fresh but preserves the user-chosen name string, and SMT's scope rules
+     would reinterpret [(name x)] inside the quantifier body as applying the
+     bound variable. See [alpha_rename_binders]. *)
   let params, guards, body = alpha_rename_binders env params guards body in
   (* Enrich env with formal parameter bindings so that type inference
      on guard expressions (e.g., GIn list exprs) can resolve them. *)

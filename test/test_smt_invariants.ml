@@ -237,10 +237,9 @@ let test_no_shadowing_forall fixture shadowed_name () =
         queries
 
 (** Assert that at least one emitted SMT query for [fixture] contains [needle]
-    as a substring. Used to lock in structural post-fix shapes — e.g., the
-    alpha-rename of colliding quantifier binders produces a specific suffixed
-    name that [test_regression_fixture] (which only checks structural
-    invariants) would miss. *)
+    as a substring. Used to lock in structural post-fix shapes — e.g. the
+    alpha-renamed binder suffix that [test_regression_fixture] (which only
+    checks structural-failure kinds) would miss. *)
 let test_smt_contains fixture needle () =
   match regression_dir with
   | None -> failf "regression directory not found"
@@ -306,9 +305,15 @@ let regression_cases () =
       "bug_nested_binder_collision.pant — inner rename skips outer binder"
       `Quick
       (test_smt_contains "bug_nested_binder_collision.pant" "x_q1");
+    test_case "bug_rename_app_head.pant — clean post-fix" `Quick
+      (test_regression_fixture "bug_rename_app_head.pant"
+         [ "fallback_emission" ]);
     test_case "bug_rename_app_head.pant — renamed binder used in head position"
       `Quick
       (test_smt_contains "bug_rename_app_head.pant" "(xs_q 1)");
+    test_case "bug_rename_app_head.pant — binder does not shadow declared xs"
+      `Quick
+      (test_no_shadowing_forall "bug_rename_app_head.pant" "xs");
   ]
 
 let () =
