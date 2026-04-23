@@ -1,7 +1,7 @@
-import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { describe, it } from "node:test";
 import {
+  assertPantTypeChecks,
   buildDocument as buildDocumentFromPath,
   emitDocument,
 } from "./helpers.mjs";
@@ -13,20 +13,9 @@ import {
 // feature to build.
 
 const SRC = resolve(import.meta.dirname, "../src");
-const PROJECT_ROOT = resolve(import.meta.dirname, "../../..");
 const PANT_TIMEOUT_MS = Number(
   process.env.TS2PANT_DOGFOOD_TIMEOUT_MS ?? 30_000,
 );
-
-function assertPantTypeChecks(output: string): void {
-  execFileSync("dune", ["exec", "pant", "--"], {
-    cwd: PROJECT_ROOT,
-    input: output,
-    encoding: "utf-8",
-    timeout: PANT_TIMEOUT_MS,
-    killSignal: "SIGKILL",
-  });
-}
 
 describe("dogfood: src/name-registry.ts", () => {
   const filePath = resolve(SRC, "name-registry.ts");
@@ -35,14 +24,14 @@ describe("dogfood: src/name-registry.ts", () => {
     const doc = await buildDocumentFromPath(filePath, "isUsed");
     const output = emitDocument(doc);
     t.assert.snapshot(output);
-    assertPantTypeChecks(output);
+    assertPantTypeChecks(output, PANT_TIMEOUT_MS);
   });
 
   it("emptyNameRegistry — translates and type-checks", async (t) => {
     const doc = await buildDocumentFromPath(filePath, "emptyNameRegistry");
     const output = emitDocument(doc);
     t.assert.snapshot(output);
-    assertPantTypeChecks(output);
+    assertPantTypeChecks(output, PANT_TIMEOUT_MS);
   });
 });
 

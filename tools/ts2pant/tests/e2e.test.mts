@@ -6,13 +6,15 @@ import { extractFunctionAnnotations } from "../src/annotations.js";
 import { runCheck } from "../src/emit.js";
 import { createSourceFile } from "../src/extract.js";
 import {
+  PROJECT_ROOT,
+  assertPantTypeChecks,
   buildDocument as buildDocumentFromPath,
   emitDocument,
+  getPantBin,
 } from "./helpers.mjs";
 import type { PantDocument } from "../src/types.js";
 
 const FIXTURES = resolve(import.meta.dirname, "fixtures");
-const PROJECT_ROOT = resolve(import.meta.dirname, "../../..");
 
 function solverAvailable(): boolean {
   try {
@@ -21,14 +23,6 @@ function solverAvailable(): boolean {
   } catch {
     return false;
   }
-}
-
-function assertPantTypeChecks(output: string): void {
-  execFileSync("dune", ["exec", "pant", "--"], {
-    cwd: PROJECT_ROOT,
-    input: output,
-    encoding: "utf-8",
-  });
 }
 
 function buildDocument(
@@ -193,7 +187,10 @@ describe("pant --check", () => {
   it("max.ts assertions pass", { skip: !hasSolver ? "z3 not available" : undefined }, async () => {
     const doc = await buildDocument("max.ts", "larger");
     const output = emitDocument(doc);
-    const result = runCheck(output, { projectRoot: PROJECT_ROOT });
+    const result = runCheck(output, {
+      projectRoot: PROJECT_ROOT,
+      pantBin: getPantBin(),
+    });
 
     assert.equal(result.passed, true);
     assert.ok(result.checks.length > 0);
@@ -203,7 +200,10 @@ describe("pant --check", () => {
   it("deposit.ts assertions are checkable", { skip: !hasSolver ? "z3 not available" : undefined }, async () => {
     const doc = await buildDocument("deposit.ts", "deposit");
     const output = emitDocument(doc);
-    const result = runCheck(output, { projectRoot: PROJECT_ROOT });
+    const result = runCheck(output, {
+      projectRoot: PROJECT_ROOT,
+      pantBin: getPantBin(),
+    });
 
     assert.equal(result.passed, true);
     assert.ok(result.checks.length > 0);
@@ -213,7 +213,10 @@ describe("pant --check", () => {
   it("apply-fee.ts conditional mutation is checkable", { skip: !hasSolver ? "z3 not available" : undefined }, async () => {
     const doc = await buildDocument("apply-fee.ts", "applyFee");
     const output = emitDocument(doc);
-    const result = runCheck(output, { projectRoot: PROJECT_ROOT });
+    const result = runCheck(output, {
+      projectRoot: PROJECT_ROOT,
+      pantBin: getPantBin(),
+    });
 
     assert.equal(result.passed, true);
     assert.ok(result.checks.length > 0);
