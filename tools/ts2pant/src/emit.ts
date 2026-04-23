@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import {
   existsSync,
   mkdtempSync,
@@ -27,6 +27,12 @@ export interface CheckItem {
 export interface CheckOptions {
   /** Working directory for dune exec. Defaults to process.cwd(). */
   projectRoot?: string;
+  /**
+   * Path to a prebuilt `pant` binary. When set, invoked directly — avoids
+   * the ~75ms/call overhead of `dune exec`. When unset, falls back to
+   * `dune exec pant --` from {@link projectRoot}.
+   */
+  pantBin?: string;
 }
 
 function renderPropResult(prop: PropResult): string {
@@ -141,11 +147,17 @@ export function runCheck(pantSource: string, opts?: CheckOptions): CheckResult {
   try {
     writeFileSync(filePath, pantSource);
 
-    const output = execSync(`dune exec pant -- --check "${filePath}"`, {
-      encoding: "utf-8",
-      timeout: 60_000,
-      cwd,
-    });
+    const output = opts?.pantBin
+      ? execFileSync(opts.pantBin, ["--check", filePath], {
+          encoding: "utf-8",
+          timeout: 60_000,
+          cwd,
+        })
+      : execSync(`dune exec pant -- --check "${filePath}"`, {
+          encoding: "utf-8",
+          timeout: 60_000,
+          cwd,
+        });
 
     const checks = parseCheckOutput(output);
     const passed = checks.every((c) => c.passed);
