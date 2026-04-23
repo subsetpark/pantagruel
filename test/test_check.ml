@@ -881,7 +881,7 @@ let test_overload_closure_incoherent_rejected () =
   check_collect_error
     {|module TEST.
 Block.
-parent b: Block => Block + Nothing.
+parent b: Block => [Block].
 ancestor a: Nat, b: Block => [Block].
 ancestor b: Block => [Block] = closure parent.
 ---
@@ -901,7 +901,7 @@ let test_overload_closure_plus_rule () =
   check_ok
     {|module TEST.
 Block.
-parent b: Block => Block + Nothing.
+parent b: Block => [Block].
 ancestor b: Block => [Block] = closure parent.
 ancestor b: Block, root: Block => [Block].
 ---
@@ -1273,19 +1273,19 @@ and over each u: User | score u.
 (* --- Closure tests --- *)
 
 let test_closure_valid () =
-  (* Closure of T => T + Nothing target, returns [T] *)
+  (* Closure of T => [T] target (partial parent via empty list), returns [T] *)
   check_ok
     {|module TEST.
 
 Block.
-parent b: Block => Block + Nothing.
+parent b: Block => [Block].
 ancestor b: Block => [Block] = closure parent.
 ---
 all b: Block | ~(b in ancestor b).
 |}
 
 let test_closure_list_target () =
-  (* Closure of T => [T] target *)
+  (* Closure of T => [T] multi-child target *)
   check_ok
     {|module TEST.
 
@@ -1317,6 +1317,19 @@ Node.
 reachable n: Node => [Node] = closure nonexistent.
 ---
 |}
+
+let test_nothing_not_user_writable () =
+  (* [Nothing] is an internal-only bottom type; users cannot name it. *)
+  check_collect_error
+    {|module TEST.
+
+User.
+lookup i: Nat => User + Nothing.
+---
+|}
+    (function[@warning "-4"]
+    | Collect.UndefinedType ("Nothing", _) -> true
+    | _ -> false)
 
 let test_cond_valid () =
   check_ok
@@ -1690,8 +1703,8 @@ x => Nat.
   with _ -> ()
 
 let test_list_search_returns_nat () =
-  (* List-search xs x : Nat (not Nat + Nothing). Usable in a Nat context
-     such as comparison with a literal. *)
+  (* List-search xs x : Nat. Usable in a Nat context such as comparison
+     with a literal. *)
   check_ok
     {|module TEST.
 
@@ -2130,6 +2143,8 @@ let () =
           test_case "closure list target" `Quick test_closure_list_target;
           test_case "closure invalid target" `Quick test_closure_invalid_target;
           test_case "closure missing target" `Quick test_closure_missing_target;
+          test_case "Nothing not user-writable" `Quick
+            test_nothing_not_user_writable;
         ] );
       ( "cond",
         [

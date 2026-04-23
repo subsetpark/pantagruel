@@ -82,7 +82,7 @@ let test_list_type () =
   | _ -> fail "Expected list type"
 
 let test_sum_type () =
-  let doc = parse "module TEST.\n\nResult = Nat + Nothing.\n---\n" in
+  let doc = parse "module TEST.\n\nResult = Nat + Bool.\n---\n" in
   let chapter = List.hd doc.Ast.chapters in
   match[@warning "-4"] (List.hd chapter.Ast.head).Ast.value with
   | Ast.DeclAlias (Upper "Result", Ast.TSum _) -> ()
@@ -220,7 +220,7 @@ let test_closure () =
     parse
       "module TEST.\n\n\
        Block.\n\
-       parent b: Block => Block + Nothing.\n\
+       parent b: Block => [Block].\n\
        ancestor b: Block => [Block] = closure parent.\n\
        ---\n"
   in

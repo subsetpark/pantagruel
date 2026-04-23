@@ -307,7 +307,7 @@ let test_decl_closure () =
     render
       "module T.\n\
        Block.\n\
-       parent b: Block => Block + Nothing.\n\
+       parent b: Block => [Block].\n\
        ancestor b: Block => [Block] = closure parent.\n\
        ---\n"
   in

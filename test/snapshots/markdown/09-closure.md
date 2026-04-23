@@ -4,7 +4,7 @@
 
 ### Rules
 
-**parent** *b*: `Block` ⇒ `Block` + `Nothing`.
+**parent** *b*: `Block` ⇒ [`Block`].
 
 **ancestor** *b*: `Block` ⇒ [`Block`] = closure **parent**.
 
