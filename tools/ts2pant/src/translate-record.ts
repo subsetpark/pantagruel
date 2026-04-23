@@ -11,8 +11,10 @@ import {
 } from "./translate-body.js";
 import {
   cellRegisterName,
+  isAnonymousRecord,
   isMapType,
   isSetType,
+  lookupMapKV,
   mapTsType,
   type NumericStrategy,
   type SynthCell,
@@ -100,6 +102,25 @@ export function translateRecordReturn(
         {
           kind: "unsupported",
           reason: `${functionName} — callable anonymous return type`,
+        },
+      ];
+    }
+    if (returnType.getConstructSignatures().length > 0) {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName} — constructible anonymous return type`,
+        },
+      ];
+    }
+    if (
+      returnType.getStringIndexType() !== undefined ||
+      returnType.getNumberIndexType() !== undefined
+    ) {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName} — index-signature anonymous return type (unbounded dictionary, not a finite record)`,
         },
       ];
     }
@@ -230,6 +251,7 @@ export function translateRecordReturn(
   return emitRecordEquations(
     lit,
     fnApp,
+    returnType,
     declaredFields,
     functionName,
     checker,
@@ -255,6 +277,7 @@ export function translateRecordReturn(
 function emitRecordEquations(
   lit: ts.ObjectLiteralExpression,
   receiverExpr: OpaqueExpr,
+  receiverType: ts.Type,
   declaredFields: Array<{ name: string; type: ts.Type }>,
   functionName: string,
   checker: ts.TypeChecker,
@@ -265,6 +288,14 @@ function emitRecordEquations(
   applyConst: (e: OpaqueExpr) => OpaqueExpr,
   allocEmittedBinder: (hint: string) => string,
 ): PropResult[] {
+  // Stage A (named interface receiver): Map fields encode as a pair of
+  // binary rules — `<field>Key(receiver, k)` membership predicate plus a
+  // V-valued rule guarded by it (translate-types.ts interface-field branch).
+  // Stage B (synthesized anonymous record receiver): Map fields encode as
+  // a unary accessor returning a synthesized `KToVMap` domain, and the
+  // map's key predicate lives on the synthesized domain, not the record.
+  // We branch on this per Map-valued field below.
+  const receiverIsAnon = isAnonymousRecord(receiverType);
   const ast = getAst();
 
   // Re-index the literal's properties by name for this level. Nested
@@ -366,11 +397,23 @@ function emitRecordEquations(
       continue;
     }
 
-    // `new Map()` → empty-map key-predicate negation. The Stage A
-    // field-Map encoding in translate-types.ts emits a `<field>Key`
-    // predicate alongside the value rule; "empty" means no key is
-    // registered: `all k: K | ~(<field>Key receiver k)`.
+    // `new Map()` → empty-map key-predicate negation. The predicate being
+    // negated differs between Stage A and Stage B (see receiverIsAnon
+    // comment above):
+    //   Stage A: `all k: K | ~(<field>Key receiver k)` — the interface's
+    //     own binary membership predicate.
+    //   Stage B: `all k: K | ~(<kToVMapKey> (field receiver) k)` — the
+    //     synthesized map's key predicate, applied to the synth-domain
+    //     value that the unary accessor returns.
     if (isEmptyMapConstruction(initializer)) {
+      if (!isMapType(field.type)) {
+        return [
+          {
+            kind: "unsupported",
+            reason: `${functionName} — new Map() initializer on non-map field '${field.name}'`,
+          },
+        ];
+      }
       const keyType = getMapKeyTypeName(
         field.type,
         checker,
@@ -387,10 +430,36 @@ function emitRecordEquations(
       }
       const binderName = allocEmittedBinder("k");
       const binderParam = ast.param(binderName, ast.tName(keyType));
-      const keyPredApp = ast.app(ast.var(`${field.name}Key`), [
-        receiverExpr,
-        ast.var(binderName),
-      ]);
+      let keyPredApp: OpaqueExpr;
+      if (receiverIsAnon) {
+        const vType = getMapValueTypeName(
+          field.type,
+          checker,
+          strategy,
+          synthCell,
+        );
+        const synthEntry =
+          synthCell && vType
+            ? lookupMapKV(synthCell.synth, keyType, vType)
+            : undefined;
+        if (!synthEntry) {
+          return [
+            {
+              kind: "unsupported",
+              reason: `${functionName} — new Map() on anonymous record field '${field.name}' with unregistered synth entry`,
+            },
+          ];
+        }
+        keyPredApp = ast.app(ast.var(synthEntry.names.keyPred), [
+          fieldApp,
+          ast.var(binderName),
+        ]);
+      } else {
+        keyPredApp = ast.app(ast.var(`${field.name}Key`), [
+          receiverExpr,
+          ast.var(binderName),
+        ]);
+      }
       const body = ast.unop(ast.opNot(), keyPredApp);
       results.push({
         kind: "assertion",
@@ -398,6 +467,22 @@ function emitRecordEquations(
         body,
       });
       continue;
+    }
+
+    // Non-empty Map-valued initializer reaches the generic equation path
+    // below as a unary `field(receiver) = <init>`. That shape is only
+    // correct when the accessor is unary (Stage B) and the RHS has the
+    // synthesized domain type; it's always wrong for Stage A binary
+    // accessors, and for Stage B we don't currently translate any
+    // Map-producing expression other than `new Map()`. Reject both up
+    // front rather than emit invalid Pantagruel.
+    if (isMapType(field.type)) {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName} — Map-valued field '${field.name}' with non-empty initializer`,
+        },
+      ];
     }
 
     // Nested object literal → recursively decompose into per-subfield
@@ -415,6 +500,7 @@ function emitRecordEquations(
       const subResults = emitRecordEquations(
         initializer,
         fieldApp,
+        field.type,
         subFields,
         `${functionName}.${field.name}`,
         checker,
@@ -520,6 +606,23 @@ function getMapKeyTypeName(
     const typeArgs = checker.getTypeArguments(fieldType as ts.TypeReference);
     if (typeArgs.length === 2) {
       return mapTsType(typeArgs[0]!, checker, strategy, synthCell);
+    }
+  }
+  return null;
+}
+
+/** Return the Pantagruel type name of `V` in a `Map<K, V>` /
+ * `ReadonlyMap<K, V>` field, or null if the field isn't map-shaped. */
+function getMapValueTypeName(
+  fieldType: ts.Type,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  synthCell: SynthCell | undefined,
+): string | null {
+  if (isMapType(fieldType)) {
+    const typeArgs = checker.getTypeArguments(fieldType as ts.TypeReference);
+    if (typeArgs.length === 2) {
+      return mapTsType(typeArgs[1]!, checker, strategy, synthCell);
     }
   }
   return null;
