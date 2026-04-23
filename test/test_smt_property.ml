@@ -2,7 +2,7 @@
     Pantagruel documents.
 
     Strategy: generate small documents via [Test_util.gen_document], filter via
-    [QCheck.assume] to those that type-check, then run the same structural
+    [QCheck2.assume] to those that type-check, then run the same structural
     invariants as Layer 1 ([Smt_check]) on the emitted SMT. Properties:
     - translation totality (no exception)
     - well-formed SMT (parses as sexps)
@@ -23,10 +23,10 @@ let kinds_pending_fix : string list = []
 let pp_doc = Test_util.print_document
 
 (** [accepted doc] returns the queries iff [doc] type-checks. Discards via
-    [QCheck.assume_fail] otherwise. *)
+    [QCheck2.assume_fail] otherwise. *)
 let accepted doc : Smt.query list =
   match Test_util.translate_to_queries doc with
-  | Error _ -> QCheck.assume_fail ()
+  | Error _ -> QCheck2.assume_fail ()
   | Ok qs -> qs
 
 (* ------------------------------------------------------------------ *)
@@ -66,9 +66,7 @@ let count = 200
 
 let mk_property ~name ~prop =
   QCheck_alcotest.to_alcotest
-    (QCheck.Test.make ~name ~count
-       (QCheck.set_print pp_doc Test_util.arb_document)
-       prop)
+    (QCheck2.Test.make ~name ~count ~print:pp_doc Test_util.gen_document prop)
 
 let () =
   Alcotest.run "SmtProperty"

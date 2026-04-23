@@ -376,12 +376,13 @@ let test_roundtrip_type_exprs () =
 
 (* --- Property-based: random type expression round trips --- *)
 
-let arb_type_expr = Test_util.arb_type_expr
+let gen_type_expr = Test_util.gen_type_expr
+let print_type_expr = Test_util.print_type_expr
 
 let test_type_expr_roundtrip =
   QCheck_alcotest.to_alcotest
-    (QCheck.Test.make ~name:"type expr roundtrip" ~count:200 arb_type_expr
-       (fun te ->
+    (QCheck2.Test.make ~name:"type expr roundtrip" ~count:200
+       ~print:print_type_expr gen_type_expr (fun te ->
          let printed = Pretty.str_type_expr te in
          let spec = Printf.sprintf "module T.\nAlias = %s.\n---\n" printed in
          try

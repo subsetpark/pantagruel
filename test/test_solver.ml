@@ -173,22 +173,22 @@ let test_format_counterexample_filters_unchanged () =
 
 let test_translate_display_name_no_crash =
   QCheck_alcotest.to_alcotest
-    (QCheck.Test.make ~name:"translate_display_name never crashes" ~count:1000
-       QCheck.string (fun s ->
+    (QCheck2.Test.make ~name:"translate_display_name never crashes" ~count:1000
+       ~print:Fun.id QCheck2.Gen.string (fun s ->
          ignore (Solver.translate_display_name s);
          true))
 
 let test_classify_term_no_crash =
   QCheck_alcotest.to_alcotest
-    (QCheck.Test.make ~name:"classify_term never crashes" ~count:1000
-       QCheck.string (fun s ->
+    (QCheck2.Test.make ~name:"classify_term never crashes" ~count:1000
+       ~print:Fun.id QCheck2.Gen.string (fun s ->
          ignore (Solver.classify_term s);
          true))
 
 let test_parse_solver_output_no_crash =
   QCheck_alcotest.to_alcotest
-    (QCheck.Test.make ~name:"parse_solver_output never crashes" ~count:1000
-       QCheck.string (fun s ->
+    (QCheck2.Test.make ~name:"parse_solver_output never crashes" ~count:1000
+       ~print:Fun.id QCheck2.Gen.string (fun s ->
          ignore (Solver.parse_solver_output s);
          true))
 
