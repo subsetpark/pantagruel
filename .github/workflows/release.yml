@@ -22,6 +22,12 @@ jobs:
         with:
           ocaml-compiler: "5.4.1"
 
+      - name: Use opam.ocaml.org archive cache
+        # erratique.ch (upstream for cmdliner, mtime, fpath, logs, uutf, ...)
+        # is frequently flaky; the community cache mirrors opam-repository
+        # archives behind a CDN, so opam only falls back to upstream on a miss.
+        run: opam option archive-mirrors=https://opam.ocaml.org/cache
+
       - name: Install dependencies
         run: opam install ./pantagruel.opam --deps-only
 
