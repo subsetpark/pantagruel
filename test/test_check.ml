@@ -725,12 +725,134 @@ Foo.
 |}
 
 let test_local_duplicate_proc_still_errors () =
-  (* Two local rules with same name still error *)
+  (* Two local rules with the same name and same arity still error — under
+     arity-overloading this fires DuplicateRule before the return-type
+     coherence check, because same (name, arity) is a true duplicate. *)
   check_fails {|
 Foo.
 do-thing f: Foo => Bool.
 do-thing f: Foo => Nat.
 ---
+|}
+
+(* --- Arity-overloading tests --- *)
+
+(* Helper: assert the collection pass errors with a specific Collect.collect_error
+   matcher. *)
+let check_collect_error str pred =
+  let doc = parse str in
+  match
+    Collect.collect_all
+      ~base_env:
+        (Env.empty (Option.fold ~none:"" ~some:Ast.upper_name doc.module_name))
+      doc
+  with
+  | Ok _ -> fail "Expected a collection error"
+  | Error e ->
+      if not (pred e) then
+        fail
+          (Printf.sprintf "Wrong error type: %s" (Collect.show_collect_error e))
+
+let test_two_arity_overload_ok () =
+  (* Coherent family: position 0 is a:Nat across both heads, return type
+     matches, only the 2-arity head adds position 1 (b:Foo). *)
+  check_ok
+    {|module TEST.
+Foo.
+f a: Nat, b: Foo => Bool.
+f a: Nat => Bool.
+---
+true.
+|}
+
+let test_overload_param_type_mismatch () =
+  check_collect_error
+    {|module TEST.
+Foo.
+f a: Nat, b: Foo => Bool.
+f a: Real => Bool.
+---
+true.
+|}
+    (function[@warning "-4"]
+    | Collect.OverloadCoherenceViolation { position = Param 0; _ } -> true
+    | _ -> false)
+
+let test_overload_param_name_mismatch () =
+  check_collect_error
+    {|module TEST.
+f a: Nat, b: Real => Bool.
+f x: Nat => Bool.
+---
+true.
+|}
+    (function[@warning "-4"]
+    | Collect.OverloadCoherenceViolation { position = Param 0; _ } -> true
+    | _ -> false)
+
+let test_overload_return_mismatch () =
+  check_collect_error
+    {|module TEST.
+f a: Nat, b: Real => Bool.
+f a: Nat => Nat.
+---
+true.
+|}
+    (function[@warning "-4"]
+    | Collect.OverloadCoherenceViolation { position = Return; _ } -> true
+    | _ -> false)
+
+let test_overload_same_arity_still_duplicate () =
+  check_collect_error
+    {|module TEST.
+f a: Nat => Bool.
+f a: Nat => Bool.
+---
+true.
+|}
+    (function[@warning "-4"]
+    | Collect.DuplicateRule _ -> true
+    | _ -> false)
+
+let test_overload_dispatch_by_arity () =
+  (* Proposition body applies both the arity-1 and arity-2 heads; each
+     dispatches to its own overload. *)
+  check_ok
+    {|module TEST.
+Foo.
+f a: Nat, b: Foo => Bool.
+f a: Nat => Bool.
+---
+f 3 = true.
+all a: Nat, b: Foo | f a b = false.
+|}
+
+let test_overload_nullary_plus_unary () =
+  (* Bare reference auto-applies the nullary overload; applied reference
+     dispatches to the unary. (Use 1 not 0 so the literal has type Nat; a
+     bare 0 infers as Nat0, which is a supertype of Nat and would fail
+     subtype checking against the unary f's Nat parameter.) *)
+  check_ok
+    {|module TEST.
+f => Bool.
+f a: Nat => Bool.
+---
+f = true.
+f 1 = false.
+|}
+
+let test_family_proposition_no_application () =
+  (* A proposition that mentions the family's params without applying any
+     overload binds under the family-wide position-indexed types: `a` is
+     Nat (position 0), `b` is Foo (position 1). Well-formed regardless of
+     which overload (if any) is active. *)
+  check_ok
+    {|module TEST.
+Foo.
+f a: Nat, b: Foo => Bool.
+f a: Nat => Bool.
+---
+all a: Nat, b: Foo | f a = f a b.
 |}
 
 (* --- Context tests --- *)
@@ -1827,6 +1949,24 @@ let () =
             test_arithmetic_type_mismatch;
           test_case "list search numeric forbidden" `Quick
             test_list_search_numeric_forbidden;
+        ] );
+      ( "arity overloading",
+        [
+          test_case "two-arity family accepted" `Quick
+            test_two_arity_overload_ok;
+          test_case "param type mismatch at shared position" `Quick
+            test_overload_param_type_mismatch;
+          test_case "param name mismatch at shared position" `Quick
+            test_overload_param_name_mismatch;
+          test_case "return type mismatch" `Quick test_overload_return_mismatch;
+          test_case "same-arity duplicate still errors" `Quick
+            test_overload_same_arity_still_duplicate;
+          test_case "dispatch by arity in body" `Quick
+            test_overload_dispatch_by_arity;
+          test_case "nullary + unary family" `Quick
+            test_overload_nullary_plus_unary;
+          test_case "family-wide proposition without application" `Quick
+            test_family_proposition_no_application;
         ] );
       ( "env import",
         [
