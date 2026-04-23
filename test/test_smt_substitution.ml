@@ -89,6 +89,37 @@ let test_substitute_avoids_capture_in_guards () =
   check bool "y is free in the substituted quantifier" true
     (Smt.StringSet.mem "y" (Smt.free_vars result))
 
+(** Sibling regression for [GParam] (typed) guard binders. Shape:
+    [all | y: T, x]. The [GParam y:T] binds [y] for subsequent guards and the
+    body; substituting [x -> EVar y] must rename it so the introduced [y] stays
+    free. *)
+let test_substitute_avoids_capture_in_gparam () =
+  let t : Ast.type_expr = Ast.TName (Ast.Upper "T") in
+  let guards : Ast.guard list =
+    [
+      Ast.GParam { param_name = Ast.Lower "y"; param_type = t };
+      Ast.GExpr (Ast.EVar (Ast.Lower "x"));
+    ]
+  in
+  let input = Ast.make_forall [] guards (Ast.ELitBool true) in
+  let subst = [ ("x", Ast.EVar (Ast.Lower "y")) ] in
+  let result = Smt.substitute_vars subst input in
+  (match[@warning "-4"] result with
+  | Ast.EForall (mb, metas) -> (
+      let _params, result_guards, _body = Ast.unbind_quant mb metas in
+      match[@warning "-4"] result_guards with
+      | [
+       Ast.GParam { param_name = Ast.Lower bind_name; _ };
+       Ast.GExpr (Ast.EVar (Ast.Lower body_name));
+      ] ->
+          check bool "GParam binder is alpha-renamed away from y" true
+            (not (String.equal bind_name "y"));
+          check string "GExpr references the substituted free y" "y" body_name
+      | _ -> fail "unexpected guard shape in substituted result")
+  | _ -> fail "result is not an EForall");
+  check bool "y is free in the substituted quantifier" true
+    (Smt.StringSet.mem "y" (Smt.free_vars result))
+
 (* ------------------------------------------------------------------ *)
 (* Test 3: alpha-equivalent inputs produce alpha-equivalent outputs
    under substitute_vars. Smoke check on a hand-built pair; then a
@@ -274,6 +305,8 @@ let () =
             `Quick test_substitute_avoids_capture;
           test_case "substitute_vars avoids capture across GIn guard binders"
             `Quick test_substitute_avoids_capture_in_guards;
+          test_case "substitute_vars avoids capture across GParam guard binders"
+            `Quick test_substitute_avoids_capture_in_gparam;
           test_case "substitute_vars preserves alpha-equivalence" `Quick
             test_substitute_preserves_alpha_equivalence;
           QCheck_alcotest.to_alcotest prop_alpha_equiv_preserved;
