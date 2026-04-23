@@ -9,6 +9,7 @@ import {
 import {
   IntStrategy,
   mapTsType,
+  NULL_MARKER,
   RealStrategy,
   translateTypes,
 } from "../src/translate-types.js";
@@ -176,13 +177,41 @@ describe("recursive type following", () => {
 });
 
 describe("mapTsType", () => {
-  it("handles undefined/void as Nothing", () => {
+  it("lone undefined returns NULL_MARKER sentinel", () => {
+    // Lone null/undefined/void has no user-writable Pantagruel type —
+    // Nothing was retired from the user surface. mapTsType returns an
+    // internal sentinel that fails visibly if it reaches emission.
     const source = `interface Foo { val: undefined; }`;
     const sourceFile = createSourceFileFromSource(source);
     const checker = getChecker(sourceFile);
     const extracted = extractAllTypes(sourceFile);
     const prop = extracted.interfaces[0].properties[0];
 
-    assert.equal(mapTsType(prop.type, checker, IntStrategy), "Nothing");
+    assert.equal(mapTsType(prop.type, checker, IntStrategy), NULL_MARKER);
+  });
+
+  it("list-lifts `T | null` to `[T]`", () => {
+    const source = `interface Foo { val: string | null; }`;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = getChecker(sourceFile);
+    const extracted = extractAllTypes(sourceFile);
+    const prop = extracted.interfaces[0].properties[0];
+
+    assert.equal(mapTsType(prop.type, checker, IntStrategy), "[String]");
+  });
+
+  it("list-lifts multi-arm union with null to `[A + B]`", () => {
+    const source = `
+      interface A { a: string; }
+      interface B { b: number; }
+      interface Foo { val: A | B | null; }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = getChecker(sourceFile);
+    const extracted = extractAllTypes(sourceFile);
+    const foo = extracted.interfaces.find((i: any) => i.name === "Foo")!;
+    const prop = foo.properties[0];
+
+    assert.equal(mapTsType(prop.type, checker, IntStrategy), "[A + B]");
   });
 });

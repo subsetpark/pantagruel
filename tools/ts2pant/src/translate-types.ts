@@ -21,11 +21,23 @@ import type { PantDeclaration } from "./types.js";
 export const UNSUPPORTED_ANONYMOUS_RECORD = "__unsupported_anon_record__";
 
 /**
+ * Sentinel returned by `mapTsType` for TypeScript `null` / `undefined` /
+ * `void`. Pantagruel retired `Nothing` from the user-facing type surface —
+ * there is no writable type for "absence". In a union (`T | null`) the
+ * union-combining code strips this marker and emits `[T]`, the list-lift
+ * encoding of optionality (Alloy's `lone` multiplicity; length 0 or 1).
+ * The value is not a valid Pantagruel identifier — emission of a type
+ * containing this raw string will be visibly broken rather than silently
+ * producing a domain reference that doesn't resolve.
+ */
+export const NULL_MARKER = "__null__";
+
+/**
  * Mangle a Pantagruel type string into an identifier-safe fragment suitable
  * for embedding inside a synthesized Map domain name.
  *   "String"           → "String"
  *   "[String]"         → "ListString"
- *   "String + Nothing" → "StringOrNothing"
+ *   "String + Int"     → "StringOrInt"
  *   "A * B"            → "AAndB"
  * Returns null if the mangled result still contains non-identifier chars
  * (e.g., a bare `Map<...>` literal from a Map in value position with no
@@ -477,7 +489,7 @@ export function mapTsType(
     flags & ts.TypeFlags.Undefined ||
     flags & ts.TypeFlags.Void
   ) {
-    return "Nothing";
+    return NULL_MARKER;
   }
 
   // Tuple (check before array since tuples are also type references)
@@ -533,10 +545,21 @@ export function mapTsType(
     const parts = type.types.map((t) =>
       mapTsType(t, checker, strategy, synthCell),
     );
-    // Deduplicate (e.g. boolean literal collapse)
+    // Deduplicate (e.g. boolean literal collapse, `null | undefined` → one marker)
     const unique = parts.filter((v, i, a) => a.indexOf(v) === i);
-    // Sort Nothing to the end for consistent output
-    unique.sort((a, b) => (a === "Nothing" ? 1 : b === "Nothing" ? -1 : 0));
+    const nonNull = unique.filter((p) => p !== NULL_MARKER);
+    // List-lift encoding for optionality: `T | null` → `[T]`,
+    // `A | B | null` → `[A + B]`. Pantagruel has no `Nothing` at the user
+    // surface, so a union containing null/undefined/void wraps the rest
+    // in a list of length 0 or 1 (Alloy `lone` multiplicity).
+    if (nonNull.length !== unique.length) {
+      if (nonNull.length === 0) {
+        // Degenerate `null | undefined` with no non-null members — keep
+        // the sentinel so emission fails visibly.
+        return NULL_MARKER;
+      }
+      return `[${nonNull.join(" + ")}]`;
+    }
     return unique.join(" + ");
   }
 

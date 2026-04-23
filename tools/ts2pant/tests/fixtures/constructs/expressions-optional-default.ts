@@ -1,16 +1,15 @@
-// Optional parameter with a `??`-default. ts2pant detects the idiom and
-// emits two Pantagruel arity overloads: one with the param, one without.
-// Coherence (same name, same type at position 0 across both heads, same
-// return type) is enforced by the core language.
+// Optional parameter with a `??`-default under the general list-lift
+// lowering: an optional TS param `p?: P` list-lifts to `p: [P]` and each
+// `p ?? c` use expands to `cond #p = 0 => c, true => (p 1)`.
 
 export interface Point {
   readonly x: number;
   readonly y: number;
 }
 
-/** Single optional param, literal default. Translates to two heads:
- *    makePoint initial: Int => Point.
- *    makePoint             => Point.
+/** Single optional param, literal default. Translates to:
+ *    makePoint initial: [Int] => Point.
+ *    x (makePoint initial) = (cond #initial = 0 => 0, true => initial 1).
  */
 export function makePoint(initial?: number): Point {
   return { x: initial ?? 0, y: 0 };
@@ -20,17 +19,14 @@ export interface Config {
   readonly timeout: number;
 }
 
-/** Optional param comes after a required one. The required param is shared
- *  across both overloads (position 0); the optional is only in the longer
- *  head. Default is also a literal. */
+/** Optional param after a required one — same list-lift treatment; the
+ *  required param passes through unchanged. */
 export function makeConfig(base: number, extra?: number): Config {
   return { timeout: base + (extra ?? 10) };
 }
 
-/** Negative: optional param is used outside a `??` expression — ts2pant
- *  leaves the signature as the single `T + Nothing` form and body emission
- *  falls back to the existing unsupported-operator error when it encounters
- *  a bare reference it can't reduce. */
+/** Multiple `??` uses on the same optional param — each expands
+ *  independently, producing nested `cond` expressions. */
 export function usesOptionalDirectly(value?: number): number {
   return value ?? 0 + (value ?? 1);
 }

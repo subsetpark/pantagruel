@@ -323,23 +323,39 @@ exports[`expressions-misc.ts > negate 1`] = `
 `;
 
 exports[`expressions-misc.ts > nonNull 1`] = `
-"module NonNull.\\n\\nnonNull x: Int + Nothing => Int.\\n\\n---\\n\\nnonNull x = x.\\n"
+"module NonNull.\\n\\nnonNull x: [Int] => Int.\\n\\n---\\n\\nnonNull x = x.\\n"
 `;
 
 exports[`expressions-misc.ts > parenAdd 1`] = `
 "module ParenAdd.\\n\\nparenAdd a: Int, b: Int => Int.\\n\\n---\\n\\nparenAdd a b = a + b.\\n"
 `;
 
+exports[`expressions-nullish.ts > defaultToZero 1`] = `
+"module DefaultToZero.\\n\\ndefaultToZero x: [Int] => Int.\\n\\n---\\n\\ndefaultToZero x = (cond #x = 0 => 0, true => x 1).\\n"
+`;
+
+exports[`expressions-nullish.ts > maybeBalance 1`] = `
+"module MaybeBalance.\\n\\nAccount.\\nbalance a1: Account => Int.\\nmaybeBalance a: [Account] => [Int].\\n\\n---\\n\\nmaybeBalance a = (each t in a | balance t).\\n"
+`;
+
+exports[`expressions-nullish.ts > nonNullDefault 1`] = `
+"module NonNullDefault.\\n\\nnonNullDefault x: Int => Int.\\n\\n---\\n\\nnonNullDefault x = x.\\n"
+`;
+
+exports[`expressions-nullish.ts > preferLeft 1`] = `
+"module PreferLeft.\\n\\npreferLeft x: [Int], y: [Int] => [Int].\\n\\n---\\n\\npreferLeft x y = (cond #x = 0 => y, true => x).\\n"
+`;
+
 exports[`expressions-optional-default.ts > makeConfig 1`] = `
-"module MakeConfig.\\n\\nConfig.\\ntimeout c: Config => Int.\\nmakeConfig base: Int, extra: Int => Config.\\nmakeConfig base: Int => Config.\\n\\n---\\n\\ntimeout (makeConfig base extra) = base + extra.\\ntimeout (makeConfig base) = base + 10.\\n"
+"module MakeConfig.\\n\\nConfig.\\ntimeout c: Config => Int.\\nmakeConfig base: Int, extra: [Int] => Config.\\n\\n---\\n\\ntimeout (makeConfig base extra) = base + (cond #extra = 0 => 10, true => extra 1).\\n"
 `;
 
 exports[`expressions-optional-default.ts > makePoint 1`] = `
-"module MakePoint.\\n\\nPoint.\\nx p: Point => Int.\\ny p: Point => Int.\\nmakePoint initial: Int => Point.\\nmakePoint  => Point.\\n\\n---\\n\\nx (makePoint initial) = initial.\\ny (makePoint initial) = 0.\\nx makePoint = 0.\\ny makePoint = 0.\\n"
+"module MakePoint.\\n\\nPoint.\\nx p: Point => Int.\\ny p: Point => Int.\\nmakePoint initial: [Int] => Point.\\n\\n---\\n\\nx (makePoint initial) = (cond #initial = 0 => 0, true => initial 1).\\ny (makePoint initial) = 0.\\n"
 `;
 
 exports[`expressions-optional-default.ts > usesOptionalDirectly 1`] = `
-"module UsesOptionalDirectly.\\n\\nusesOptionalDirectly value: Int + Nothing => Int.\\n\\n---\\n\\n> UNSUPPORTED: operator QuestionQuestionToken.\\n"
+"module UsesOptionalDirectly.\\n\\nusesOptionalDirectly value: [Int] => Int.\\n\\n---\\n\\nusesOptionalDirectly value = (cond #value = 0 => 0 + (cond #value = 0 => 1, true => value 1), true => value 1).\\n"
 `;
 
 exports[`expressions-property.ts > effectiveBalance 1`] = `
@@ -687,7 +703,7 @@ exports[`types-composite.ts > getPoint 1`] = `
 `;
 
 exports[`types-composite.ts > getResult 1`] = `
-"module GetResult.\\n\\nValue.\\ndata v1: Value => String.\\ngetResult v: Value + Nothing => Value + Nothing.\\n\\n---\\n\\ngetResult v = v.\\n"
+"module GetResult.\\n\\nValue.\\ndata v1: Value => String.\\ngetResult v: [Value] => [Value].\\n\\n---\\n\\ngetResult v = v.\\n"
 `;
 
 exports[`types-composite.ts > getStatus 1`] = `
@@ -695,7 +711,7 @@ exports[`types-composite.ts > getStatus 1`] = `
 `;
 
 exports[`types-primitives.ts > getAssignee 1`] = `
-"module GetAssignee.\\n\\nTask.\\nassignee t1: Task => String + Nothing.\\ngetAssignee t: Task => String + Nothing.\\n\\n---\\n\\ngetAssignee t = assignee t.\\n"
+"module GetAssignee.\\n\\nTask.\\nassignee t1: Task => [String].\\ngetAssignee t: Task => [String].\\n\\n---\\n\\ngetAssignee t = assignee t.\\n"
 `;
 
 exports[`types-primitives.ts > getBalance 1`] = `

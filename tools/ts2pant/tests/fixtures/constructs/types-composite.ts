@@ -60,7 +60,7 @@ export function getPoint(): Point {
   return [0, 0];
 }
 
-/** union alias → Value + Nothing */
+/** union alias with null → [Value] (list-lift; length 0 or 1) */
 export function getResult(v: Value | null): Value | null {
   return v;
 }

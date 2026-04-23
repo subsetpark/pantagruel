@@ -5,7 +5,7 @@
 // The value rule is guarded by the membership predicate. Declaration guards
 // are automatically injected as antecedents in SMT queries, so absent keys
 // say nothing about the value — a cleaner specification semantics than
-// modeling partiality as `V + Nothing`.
+// modeling partiality via the list-lift encoding `[V]`.
 
 interface Cache {
   entries: Map<string, number>;

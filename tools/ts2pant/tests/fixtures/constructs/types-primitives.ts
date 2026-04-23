@@ -28,7 +28,7 @@ export function isActive(u: User): boolean {
   return u.active;
 }
 
-/** string | null → String + Nothing */
+/** string | null → [String] (list-lift; length 0 or 1) */
 export function getAssignee(t: Task): string | null {
   return t.assignee;
 }
