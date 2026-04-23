@@ -405,7 +405,15 @@ Outcome = Success + Failure.
 Users = [User].
 ```
 
-**Optional values.** Pantagruel has no `Maybe`/`Option` type. To express "this value may or may not exist," use a **guarded rule** (partial function) or a **list with at most one element** — see *Guards* and *List types* below. Sum types are for disjoint alternatives that both carry data, not for presence/absence.
+**Optional values.** Pantagruel has no `Maybe`/`Option` type. To express "this value may or may not exist," use a **guarded rule** (partial function) or a **list with at most one element** — see *Guards* and *List types* below. The list-lifted form constrains the length to at most one via a cardinality invariant:
+
+```
+lookup i: Nat => [Color].
+---
+all i: Nat | #(lookup i) <= 1.
+```
+
+Here `#` is the cardinality operator and `<= 1` enforces at most one element — absence is `#(lookup i) = 0`, presence is `(lookup i).1`. Sum types are for disjoint alternatives that both carry data, not for presence/absence.
 
 ### Rule Declaration
 

@@ -77,6 +77,10 @@ Numeric hierarchy: Nat < Nat0 < Int < Real
 
 #`Color` ≥ 0.
 
+> Optional-value idiom: lookup returns at most one element
+
+∀ *i*: `Nat` · #**lookup** *i* ≤ 1.
+
 > Numeric operations respect the hierarchy
 
 ∀ *n*: `Nat`, *m*: `Nat0` · *n* + *m* ≥ 0.

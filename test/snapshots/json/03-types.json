@@ -265,6 +265,34 @@
           }
         },
         {
+          "doc": [
+            [ "Optional-value idiom: lookup returns at most one element" ]
+          ],
+          "expr": {
+            "forall": {
+              "params": [ { "name": "i", "type": "Nat" } ],
+              "guards": [],
+              "body": {
+                "binop": {
+                  "op": "le",
+                  "left": {
+                    "unop": {
+                      "op": "card",
+                      "arg": {
+                        "app": {
+                          "func": { "var": "lookup" },
+                          "args": [ { "var": "i" } ]
+                        }
+                      }
+                    }
+                  },
+                  "right": { "nat": 1 }
+                }
+              }
+            }
+          }
+        },
+        {
           "doc": [ [ "Numeric operations respect the hierarchy" ] ],
           "expr": {
             "forall": {

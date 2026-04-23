@@ -19,7 +19,7 @@ type ty =
 (** Centralized builtin type registry. [TyNothing] is intentionally absent: it
     is an internal bottom type used for unification and default returns, not a
     user-writable type. Users express optionality via guarded rules or [[T]]
-    with a [#=< 1] invariant. *)
+    with a [#<= 1] invariant. *)
 let builtins =
   [
     ("Bool", TyBool);

@@ -65,6 +65,10 @@ red in colors.
 #colors >= 0.
 #Color >= 0.
 
+> Optional-value idiom: lookup returns at most one element
+
+all i: Nat | #(lookup i) <= 1.
+
 > Numeric operations respect the hierarchy
 
 all n: Nat, m: Nat0 | n + m >= 0.

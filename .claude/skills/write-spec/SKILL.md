@@ -201,7 +201,7 @@ When the "maybe there, maybe not" status needs to be stored, compared, or aggreg
 ```
 {Loans} borrower b: Book => [Member].
 ---
-all b: Book | #(borrower b) =< 1.
+all b: Book | #(borrower b) <= 1.
 ```
 
 Absence is `#(borrower b) = 0`; presence-and-value is `(borrower b).1` after establishing `#(borrower b) = 1`. Use this when the optionality interacts with other set/list machinery (counts, membership, aggregation).
@@ -215,7 +215,7 @@ Only use this when the sentinel is a real domain value, not a stand-in for "miss
 ### How to choose
 
 - **Is this a precondition on the caller?** → guard (1)
-- **Is the absence itself data the spec reasons about?** → `[T]` with `=< 1` (2)
+- **Is the absence itself data the spec reasons about?** → `[T]` with `<= 1` (2)
 - **Does the codomain already contain a natural empty element?** → sentinel (3)
 
 When in doubt, start with (1). It composes cleanly with the rest of the language and matches how partial functions are handled in classical model-oriented specification.
