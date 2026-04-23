@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, it } from "node:test";
 import type { SourceFile } from "../src/extract.js";
 import { createSourceFile } from "../src/extract.js";
-import { buildDocument, emitDocument } from "./helpers.mjs";
+import { buildDocumentFromSourceFile, emitDocument } from "./helpers.mjs";
 
 const CONSTRUCTS_DIR = resolve(import.meta.dirname, "fixtures/constructs");
 
@@ -50,7 +50,7 @@ for (const file of fixtureFiles) {
 
     for (const funcName of targets) {
       it(funcName, async (t) => {
-        const doc = await buildDocument(filePath, funcName);
+        const doc = await buildDocumentFromSourceFile(sourceFile, funcName);
         const output = emitDocument(doc);
         t.assert.snapshot(output);
       });
