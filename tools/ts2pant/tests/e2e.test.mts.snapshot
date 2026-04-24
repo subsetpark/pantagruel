@@ -1,9 +1,9 @@
 exports[`emission snapshots > assert-guard.ts deposit 1`] = `
-"module Deposit.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> Deposit @ account: Account, amount: Int, amount > 0 and balance account >= 0.\\n\\n---\\n\\nbalance' account = balance account + amount.\\n\\ncheck\\n\\nbalance' account > balance account.\\n"
+"module Deposit.\\n\\nAccount.\\naccount--balance a: Account => Int.\\n~> Deposit @ account: Account, amount: Int, amount > 0 and account--balance account >= 0.\\n\\n---\\n\\naccount--balance' account = account--balance account + amount.\\n\\ncheck\\n\\naccount--balance' account > account--balance account.\\n"
 `;
 
 exports[`emission snapshots > deposit.ts deposit 1`] = `
-"module Deposit.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> Deposit @ account: Account, amount: Int, ~(amount <= 0).\\n\\n---\\n\\nbalance' account = balance account + amount.\\n\\ncheck\\n\\nbalance' account > balance account.\\n"
+"module Deposit.\\n\\nAccount.\\naccount--balance a: Account => Int.\\n~> Deposit @ account: Account, amount: Int, ~(amount <= 0).\\n\\n---\\n\\naccount--balance' account = account--balance account + amount.\\n\\ncheck\\n\\naccount--balance' account > account--balance account.\\n"
 `;
 
 exports[`emission snapshots > max.ts larger (skeleton only) 1`] = `
@@ -15,5 +15,5 @@ exports[`emission snapshots > max.ts larger 1`] = `
 `;
 
 exports[`emission snapshots > validate-helper.ts deposit 1`] = `
-"module Deposit.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> Deposit @ account: Account, amount: Int, ~(amount <= 0) and ~(balance account < 0).\\n\\n---\\n\\nbalance' account = balance account + amount.\\n\\ncheck\\n\\nbalance' account >= 0.\\n"
+"module Deposit.\\n\\nAccount.\\naccount--balance a: Account => Int.\\n~> Deposit @ account: Account, amount: Int, ~(amount <= 0) and ~(account--balance account < 0).\\n\\n---\\n\\naccount--balance' account = account--balance account + amount.\\n\\ncheck\\n\\naccount--balance' account >= 0.\\n"
 `;

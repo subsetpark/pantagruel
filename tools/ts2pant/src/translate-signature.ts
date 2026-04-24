@@ -5,10 +5,13 @@ import { getAst } from "./pant-wasm.js";
 import {
   cellIsUsed,
   cellRegisterName,
+  fieldRuleName,
   isMapType,
   mapTsType,
   type NumericStrategy,
+  resolveFieldOwner,
   type SynthCell,
+  toPantTermName,
 } from "./translate-types.js";
 import type { PantAction, PantDeclaration, PantRule } from "./types.js";
 
@@ -201,6 +204,7 @@ export function extractAssertionGuard(
   call: ts.CallExpression,
   strategy: NumericStrategy,
   paramNames: ReadonlyMap<string, string>,
+  synthCell?: SynthCell,
 ): OpaqueExpr | undefined {
   const paramIndex = isAssertionCall(checker, call);
   if (paramIndex === null) {
@@ -210,7 +214,7 @@ export function extractAssertionGuard(
     return undefined;
   }
   const arg = call.arguments[paramIndex]!;
-  return translateExpr(arg, checker, strategy, paramNames);
+  return translateExpr(arg, checker, strategy, paramNames, synthCell);
 }
 
 /**
@@ -282,6 +286,7 @@ function buildSubstitutionMap(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   callerParamNames: ReadonlyMap<string, string>,
+  synthCell?: SynthCell,
 ): Map<string, string> | null {
   const ast = getAst();
 
@@ -304,6 +309,7 @@ function buildSubstitutionMap(
       checker,
       strategy,
       callerParamNames,
+      synthCell,
     );
     const rendered = ast.strExpr(actual);
     // Heuristic: if the rendered string contains spaces, it's compound and needs parens
@@ -323,6 +329,7 @@ function followGuards(
   strategy: NumericStrategy,
   callerParamNames: ReadonlyMap<string, string>,
   visited: Set<ts.Node>,
+  synthCell?: SynthCell,
 ): OpaqueExpr[] {
   const target = resolveCallTarget(call, checker);
   if (!target) {
@@ -340,6 +347,7 @@ function followGuards(
     checker,
     strategy,
     callerParamNames,
+    synthCell,
   );
   if (!innerParamNames) {
     return [];
@@ -352,6 +360,7 @@ function followGuards(
     strategy,
     innerParamNames,
     visited,
+    synthCell,
   );
   visited.delete(target.body);
 
@@ -502,6 +511,7 @@ function scanBodyForGuards(
   strategy: NumericStrategy,
   paramNames: ReadonlyMap<string, string>,
   visited: Set<ts.Node>,
+  synthCell?: SynthCell,
 ): OpaqueExpr[] {
   const ast = getAst();
   const guards: OpaqueExpr[] = [];
@@ -528,6 +538,7 @@ function scanBodyForGuards(
         stmt.expression,
         strategy,
         paramNames,
+        synthCell,
       );
       if (g !== undefined) {
         guards.push(g);
@@ -541,6 +552,7 @@ function scanBodyForGuards(
         strategy,
         paramNames,
         visited,
+        synthCell,
       );
       if (followed.length > 0) {
         guards.push(...followed);
@@ -559,7 +571,13 @@ function scanBodyForGuards(
     const guardKind = classifyGuardIf(stmt);
     if (guardKind === "positive") {
       guards.push(
-        translateExpr(stmt.expression, checker, strategy, paramNames),
+        translateExpr(
+          stmt.expression,
+          checker,
+          strategy,
+          paramNames,
+          synthCell,
+        ),
       );
       continue;
     }
@@ -569,14 +587,26 @@ function scanBodyForGuards(
         stmt.expression.operator === ts.SyntaxKind.ExclamationToken
       ) {
         guards.push(
-          translateExpr(stmt.expression.operand, checker, strategy, paramNames),
+          translateExpr(
+            stmt.expression.operand,
+            checker,
+            strategy,
+            paramNames,
+            synthCell,
+          ),
         );
         continue;
       }
       guards.push(
         ast.unop(
           ast.opNot(),
-          translateExpr(stmt.expression, checker, strategy, paramNames),
+          translateExpr(
+            stmt.expression,
+            checker,
+            strategy,
+            paramNames,
+            synthCell,
+          ),
         ),
       );
       continue;
@@ -672,6 +702,7 @@ export function detectGuard(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: ReadonlyMap<string, string>,
+  synthCell?: SynthCell,
 ): OpaqueExpr | undefined {
   const ast = getAst();
 
@@ -687,12 +718,45 @@ export function detectGuard(
     strategy,
     paramNames,
     visited,
+    synthCell,
   );
 
   if (guards.length === 0) {
     return undefined;
   }
   return guards.reduce((acc, g) => ast.binop(ast.opAnd(), acc, g));
+}
+
+/** Resolve a receiver type to the owner name that declares [fieldName],
+ *  then qualify via [fieldRuleName]. Delegates to `resolveFieldOwner`,
+ *  which walks the property-declaration chain (handles inheritance) and
+ *  aggregates distinct owners across union/intersection members. When
+ *  ambiguous (>1 distinct owner), falls back to the bare kebab'd field
+ *  name — the guard-extraction path here is an *optional* analysis
+ *  (`detectGuard` returns `undefined` if no guard is extractable), so a
+ *  bare fallback simply means the would-be guard never fires instead
+ *  of producing a silently wrong qualified symbol. The body-side
+ *  `qualifyFieldAccess` is stricter (returns null for ambiguous) because
+ *  its output is an identifier in emitted propositions, not a hint for
+ *  an optional analysis. */
+function qualifyFieldAccess(
+  receiverType: ts.Type,
+  fieldName: string,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  synthCell?: SynthCell,
+): string {
+  const r = resolveFieldOwner(
+    receiverType,
+    fieldName,
+    checker,
+    strategy,
+    synthCell,
+  );
+  if (r.kind === "resolved") {
+    return fieldRuleName(r.owner, fieldName);
+  }
+  return toPantTermName(fieldName);
 }
 
 function blockThrows(node: ts.Statement): boolean {
@@ -727,22 +791,48 @@ function blockThrows(node: ts.Statement): boolean {
  */
 export function translateExpr(
   expr: ts.Expression,
-  _checker: ts.TypeChecker,
+  checker: ts.TypeChecker,
   _strategy: NumericStrategy,
   paramNames: ReadonlyMap<string, string>,
+  synthCell?: SynthCell,
 ): OpaqueExpr {
   const ast = getAst();
 
-  // Property access: a.balance -> app(var("balance"), [obj])
+  // Property access: a.balance -> app(var("account-balance"), [obj])
   if (ts.isPropertyAccessExpression(expr)) {
-    const obj = translateExpr(expr.expression, _checker, _strategy, paramNames);
-    return ast.app(ast.var(expr.name.text), [obj]);
+    const obj = translateExpr(
+      expr.expression,
+      checker,
+      _strategy,
+      paramNames,
+      synthCell,
+    );
+    const ruleName = qualifyFieldAccess(
+      checker.getTypeAtLocation(expr.expression),
+      expr.name.text,
+      checker,
+      _strategy,
+      synthCell,
+    );
+    return ast.app(ast.var(ruleName), [obj]);
   }
 
   // Binary expression: a >= b -> binop(opGe(), a, b)
   if (ts.isBinaryExpression(expr)) {
-    const left = translateExpr(expr.left, _checker, _strategy, paramNames);
-    const right = translateExpr(expr.right, _checker, _strategy, paramNames);
+    const left = translateExpr(
+      expr.left,
+      checker,
+      _strategy,
+      paramNames,
+      synthCell,
+    );
+    const right = translateExpr(
+      expr.right,
+      checker,
+      _strategy,
+      paramNames,
+      synthCell,
+    );
     const op = translateOperator(expr.operatorToken.kind);
     if (op === null) {
       return ast.var(expr.getText());
@@ -755,20 +845,26 @@ export function translateExpr(
     if (expr.operator === ts.SyntaxKind.ExclamationToken) {
       return ast.unop(
         ast.opNot(),
-        translateExpr(expr.operand, _checker, _strategy, paramNames),
+        translateExpr(expr.operand, checker, _strategy, paramNames, synthCell),
       );
     }
     if (expr.operator === ts.SyntaxKind.MinusToken) {
       return ast.unop(
         ast.opNeg(),
-        translateExpr(expr.operand, _checker, _strategy, paramNames),
+        translateExpr(expr.operand, checker, _strategy, paramNames, synthCell),
       );
     }
   }
 
   // Parenthesized — unwrap (parens are a rendering concern)
   if (ts.isParenthesizedExpression(expr)) {
-    return translateExpr(expr.expression, _checker, _strategy, paramNames);
+    return translateExpr(
+      expr.expression,
+      checker,
+      _strategy,
+      paramNames,
+      synthCell,
+    );
   }
 
   // `this` keyword
@@ -866,9 +962,9 @@ export function translateSignature(
   const checker = sourceFile.getProject().getTypeChecker().compilerObject;
   const { node, className } = findFunction(sourceFile, functionName);
   // Strip class qualifier for use in Pantagruel identifiers
-  const baseName = functionName.includes(".")
-    ? functionName.split(".", 2)[1]!
-    : functionName;
+  const baseName = toPantTermName(
+    functionName.includes(".") ? functionName.split(".", 2)[1]! : functionName,
+  );
   const classification = classifyFunction(node, checker);
   const sig = checker.getSignatureFromDeclaration(node);
   if (!sig) {
@@ -892,12 +988,12 @@ export function translateSignature(
     const paramType = overrides?.get(param.name) ?? defaultType;
     const pantName = synthCell
       ? cellRegisterName(synthCell, param.name)
-      : param.name;
+      : toPantTermName(param.name);
     params.push({ name: pantName, type: paramType });
     paramNameMap.set(param.name, pantName);
   }
 
-  const guard = detectGuard(node, checker, strategy, paramNameMap);
+  const guard = detectGuard(node, checker, strategy, paramNameMap, synthCell);
 
   if (classification === "pure") {
     const returnType = mapTsType(

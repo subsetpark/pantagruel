@@ -22,12 +22,15 @@ import {
 import {
   cellRegisterMap,
   cellRegisterName,
+  fieldRuleName,
   isMapType,
   isSetType,
   lookupMapKV,
   mapTsType,
   type NumericStrategy,
+  resolveFieldOwner,
   type SynthCell,
+  toPantTermName,
 } from "./translate-types.js";
 import type { PantDeclaration, PropResult } from "./types.js";
 
@@ -796,6 +799,15 @@ export interface TranslateBodyOptions {
    * (b) dispatch `.get`/`.has` on non-interface-field Map receivers.
    */
   synthCell?: SynthCell | undefined;
+  /**
+   * TS-name → Pant-name mapping produced by `translateSignature`. When
+   * provided, the body translator uses these exact names rather than
+   * recomputing from `toPantTermName(param.name)`. Required so that
+   * collision-resolved names (e.g., `r1` when `r` was already claimed by
+   * a synth-record binder) stay in lockstep between the declared
+   * signature and body-emitted applications.
+   */
+  paramNameMap?: ReadonlyMap<string, string> | undefined;
 }
 
 /**
@@ -806,26 +818,55 @@ export interface TranslateBodyOptions {
  * plus frame conditions for unmodified rules.
  */
 export function translateBody(opts: TranslateBodyOptions): PropResult[] {
-  const { sourceFile, functionName, strategy, declarations, synthCell } = opts;
+  const {
+    sourceFile,
+    functionName,
+    strategy,
+    declarations,
+    synthCell,
+    paramNameMap,
+  } = opts;
   const checker = sourceFile.getProject().getTypeChecker().compilerObject;
   const { node, className } = findFunction(sourceFile, functionName);
   // Strip class qualifier for use in Pantagruel identifiers
-  const baseName = functionName.includes(".")
-    ? functionName.split(".", 2)[1]!
-    : functionName;
+  const baseName = toPantTermName(
+    functionName.includes(".") ? functionName.split(".", 2)[1]! : functionName,
+  );
   const classification = classifyFunction(node, checker);
 
-  // Build param name map (same logic as translateSignature)
+  // Build param name map (same logic as translateSignature). When the
+  // caller passes `paramNameMap` from `translateSignature`, prefer those
+  // allocated names — recomputing via `toPantTermName` drops the
+  // registry-based collision resolution that signature translation
+  // performed (e.g., a param whose kebab-cased name clashed with a
+  // synth-record binder was suffixed to `r1` at declaration time, and
+  // the body must reference that same suffixed name).
+  //
+  // Invariant: if a shared `synthCell` is supplied, the signature pass
+  // has already advanced its registry, so re-claiming here would
+  // silently suffix (`r` → `r1`) and the body would reference
+  // different binders than the declared head. Require `paramNameMap`
+  // so allocations stay in lockstep between sig and body.
+  if (synthCell && !paramNameMap) {
+    throw new Error(
+      "translateBody: paramNameMap is required when a shared synthCell is supplied — " +
+        "the signature pass has already claimed names from the registry, so the body " +
+        "must reuse them rather than re-register (which would silently suffix).",
+    );
+  }
   const paramNames = new Map<string, string>();
   const paramList: Array<{ name: string; type: string }> = [];
 
   const sig = checker.getSignatureFromDeclaration(node);
 
   if (className) {
-    const existingParamNames = new Set(
-      sig ? sig.getParameters().map((p) => p.name) : [],
-    );
-    const pName = shortParamName(className, existingParamNames);
+    const thisName = paramNameMap?.get("this");
+    const pName =
+      thisName ??
+      shortParamName(
+        className,
+        new Set(sig ? sig.getParameters().map((p) => p.name) : []),
+      );
     paramNames.set("this", pName);
     paramList.push({ name: pName, type: className });
   }
@@ -837,8 +878,14 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
       // domain names (idempotent; the signature pass already registered
       // them, so this is a lookup rather than a fresh registration).
       const typeName = mapTsType(paramType, checker, strategy, synthCell);
-      paramNames.set(param.name, param.name);
-      paramList.push({ name: param.name, type: typeName });
+      // With a `paramNameMap` we reuse the signature pass's allocations
+      // exactly. Without (standalone / test callers with no synthCell),
+      // we fall back to the pure kebab-case — no registry to collide
+      // against, so no suffixing is needed.
+      const pantName =
+        paramNameMap?.get(param.name) ?? toPantTermName(param.name);
+      paramNames.set(param.name, pantName);
+      paramList.push({ name: pantName, type: typeName });
     }
   }
 
@@ -972,6 +1019,50 @@ interface ExtractedBody {
  * methods reuse the surrounding module's field declarations rather than
  * synthesized handles.
  */
+/** Resolve a receiver type to the owner name that declares [fieldName],
+ *  then qualify via [fieldRuleName]. Delegates to `resolveFieldOwner`,
+ *  which walks the property-declaration chain (handles inheritance) and
+ *  tracks distinct owners across union/intersection members so it can
+ *  signal ambiguity rather than pick an arbitrary branch. Returns `null`
+ *  when the field is ambiguous across distinct owners — property-access
+ *  reads/writes must resolve to a single stable owner to stay in
+ *  lockstep with declaration emission, so ambiguous sites must surface
+ *  as unsupported. A `null`-result from here is always a caller-visible
+ *  signal to emit `{ unsupported }`. Non-ambiguous unresolvable cases
+ *  (built-in types, type parameters, anonymous shapes with no synth
+ *  context) still fall back to the bare kebab'd field name — those
+ *  don't collide with qualified rule names. */
+function qualifyFieldAccess(
+  receiverType: ts.Type,
+  fieldName: string,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  synthCell: SynthCell | undefined,
+): string | null {
+  const r = resolveFieldOwner(
+    receiverType,
+    fieldName,
+    checker,
+    strategy,
+    synthCell,
+  );
+  if (r.kind === "resolved") {
+    return fieldRuleName(r.owner, fieldName);
+  }
+  if (r.kind === "ambiguous") {
+    return null;
+  }
+  return toPantTermName(fieldName);
+}
+
+function ambiguousFieldMsg(fieldName: string): string {
+  return (
+    `property access .${fieldName}: ambiguous owner — ` +
+    `union/intersection members declare this field on multiple distinct ` +
+    `types, so no single qualified accessor rule applies`
+  );
+}
+
 function isInterfaceFieldAccess(
   node: ts.PropertyAccessExpression,
   checker: ts.TypeChecker,
@@ -1507,20 +1598,33 @@ export function translateBodyExpr(
         return { expr: ast.unop(ast.opCard(), bodyExpr(obj)) };
       }
     }
+    // Qualify the rule symbol by the receiver's interface, matching the
+    // declaration-site emission in translateTypes. Symbolic-state keys use
+    // the qualified form too so writes and reads hash under the same key.
+    const receiverType = checker.getTypeAtLocation(expr.expression);
+    const ruleName = qualifyFieldAccess(
+      receiverType,
+      prop,
+      checker,
+      strategy,
+      supply.synthCell,
+    );
+    if (ruleName === null) {
+      return { unsupported: ambiguousFieldMsg(prop) };
+    }
     // Consult symbolic state for a prior write at this location. Apply the
     // same canonicalization as the write site (see SymbolicState) so that
     // reads through const aliases hit the prior write — e.g.,
     // `const x = a; x.balance = 1; x.balance += 2` must see the `= 1` write
     // under a key that matches both the read and the write.
     if (state !== undefined) {
-      const key = symbolicKey(prop, state.canonicalize(bodyExpr(obj)));
+      const key = symbolicKey(ruleName, state.canonicalize(bodyExpr(obj)));
       const entry = state.writes.get(key);
       if (entry !== undefined && entry.kind === "property") {
         return { expr: entry.value };
       }
     }
-    // Regular property access: a.balance -> app(var("balance"), [obj])
-    return { expr: ast.app(ast.var(prop), [bodyExpr(obj)]) };
+    return { expr: ast.app(ast.var(ruleName), [bodyExpr(obj)]) };
   }
 
   // Call expression: handle .includes(), .filter().map(), etc.
@@ -1647,7 +1751,15 @@ export function translateBodyExpr(
 
   // Fall through to base translateExpr for identifiers, literals, this, etc.
   if (ts.isExpression(expr)) {
-    return { expr: translateExpr(expr, checker, strategy, paramNames) };
+    return {
+      expr: translateExpr(
+        expr,
+        checker,
+        strategy,
+        paramNames,
+        supply.synthCell,
+      ),
+    };
   }
 
   return { unsupported: "non-expression statement" };
@@ -2115,6 +2227,8 @@ function classifyLoopStmt(
   stmt: ts.Statement,
   iterName: string,
   checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  synthCell: SynthCell | undefined,
   parentGuard?: ts.Expression,
 ): LoopStmtClass {
   if (
@@ -2148,9 +2262,27 @@ function classifyLoopStmt(
     if (expressionReferencesNames(bin.left.expression, new Set([iterName]))) {
       return { unsupported: "loop accumulator target depends on iterator" };
     }
+    // Qualify the field name at classification time so downstream use
+    // sites (write emission, prior-read identity, modifiedProps tracking)
+    // all see the Pantagruel rule symbol, not the raw TS field name.
+    // Pass synth context so anonymous-record accumulators (including
+    // alias-backed ones) resolve to the synthesized owner rather than
+    // falling back to the bare field name.
+    const receiverType = checker.getTypeAtLocation(bin.left.expression);
+    const rawProp = bin.left.name.text;
+    const propName = qualifyFieldAccess(
+      receiverType,
+      rawProp,
+      checker,
+      strategy,
+      synthCell,
+    );
+    if (propName === null) {
+      return { unsupported: ambiguousFieldMsg(rawProp) };
+    }
     const leaf: ShapeBLeaf = {
       target: bin.left.expression,
-      prop: bin.left.name.text,
+      prop: propName,
       ops: compoundFold,
       rhs: bin.right,
     };
@@ -2169,7 +2301,7 @@ function classifyLoopStmt(
 
     // Shape A: every branch-leaf is an iterator-write
     const allA = [...thenStmts, ...elseStmts].every((s) => {
-      const c = classifyLoopStmt(s, iterName, checker);
+      const c = classifyLoopStmt(s, iterName, checker, strategy, synthCell);
       return "kind" in c && c.kind === "shapeA";
     });
     if (allA) {
@@ -2186,6 +2318,8 @@ function classifyLoopStmt(
         thenStmts[0]!,
         iterName,
         checker,
+        strategy,
+        synthCell,
         stmt.expression,
       );
       if ("kind" in inner && inner.kind === "shapeB") {
@@ -2201,7 +2335,7 @@ function classifyLoopStmt(
   if (ts.isBlock(stmt)) {
     const stmts = Array.from(stmt.statements);
     const classes = stmts.map((s) =>
-      classifyLoopStmt(s, iterName, checker, parentGuard),
+      classifyLoopStmt(s, iterName, checker, strategy, synthCell, parentGuard),
     );
     const firstBad = classes.find((c) => "unsupported" in c);
     if (firstBad) {
@@ -2254,7 +2388,13 @@ function translateForOfLoopBody(
   const shapeAStmts: ts.Statement[] = [];
   const shapeBLeaves: ShapeBLeaf[] = [];
   for (const stmt of bodyStmts) {
-    const cls = classifyLoopStmt(stmt, iterName, checker);
+    const cls = classifyLoopStmt(
+      stmt,
+      iterName,
+      checker,
+      strategy,
+      supply.synthCell,
+    );
     if ("unsupported" in cls) {
       propositions.push({ kind: "unsupported", reason: cls.unsupported });
       return false;
@@ -2598,7 +2738,7 @@ function translateCallExpr(
       }
 
       if (stageA && ts.isPropertyAccessExpression(normalizedReceiver)) {
-        const fieldName = normalizedReceiver.name.text;
+        const rawFieldName = normalizedReceiver.name.text;
         const innerObj = normalizedReceiver.expression;
         const objRaw = translateBodyExpr(
           innerObj,
@@ -2618,6 +2758,18 @@ function translateCallExpr(
           strategy,
           supply.synthCell,
         );
+        // Qualify the field-derived rule + keyPred names, matching the
+        // Stage A emission in translateTypes.
+        const fieldName = qualifyFieldAccess(
+          checker.getTypeAtLocation(innerObj),
+          rawFieldName,
+          checker,
+          strategy,
+          supply.synthCell,
+        );
+        if (fieldName === null) {
+          return { unsupported: ambiguousFieldMsg(rawFieldName) };
+        }
         const typeArgs = checker.getTypeArguments(
           checker.getTypeAtLocation(normalizedReceiver) as ts.TypeReference,
         );
@@ -2634,7 +2786,7 @@ function translateCallExpr(
           effect: {
             op: methodName as "set" | "delete",
             ruleName: fieldName,
-            keyPredName: `${fieldName}Key`,
+            keyPredName: `${fieldName}-key`,
             ownerType,
             keyType,
             objExpr: bodyExpr(objExpr),
@@ -2724,8 +2876,18 @@ function translateCallExpr(
         isInterfaceFieldAccess(normalizedReceiver, checker);
 
       if (stageA && ts.isPropertyAccessExpression(normalizedReceiver)) {
-        const fieldName = normalizedReceiver.name.text;
+        const rawFieldName = normalizedReceiver.name.text;
         const innerObj = normalizedReceiver.expression;
+        const fieldName = qualifyFieldAccess(
+          checker.getTypeAtLocation(innerObj),
+          rawFieldName,
+          checker,
+          strategy,
+          supply.synthCell,
+        );
+        if (fieldName === null) {
+          return { unsupported: ambiguousFieldMsg(rawFieldName) };
+        }
         const kExpr = translateBodyExpr(
           expr.arguments[0]!,
           checker,
@@ -2771,7 +2933,7 @@ function translateCallExpr(
             state,
             methodName as "get" | "has",
             fieldName,
-            `${fieldName}Key`,
+            `${fieldName}-key`,
             ownerType,
             keyType,
             bodyExpr(objExpr),
@@ -2977,9 +3139,16 @@ function translateCallExpr(
       return { unsupported: expr.getText() };
     }
 
+    // Normalize the callee name with the same kebab-casing applied to
+    // function declarations (see `baseName` at the top of
+    // `translateBody`). Without this, a recursive or helper call like
+    // `camelCase()` would emit `camelCase` while the declaration is
+    // `camel-case`, producing an undeclared-rule reference.
+    const calleeName = paramNames.get(fnName) ?? toPantTermName(fnName);
+
     // Zero-arity call → variable reference (EUF constant)
     if (expr.arguments.length === 0) {
-      return { expr: ast.var(paramNames.get(fnName) ?? fnName) };
+      return { expr: ast.var(calleeName) };
     }
 
     const fnArgs: OpaqueExpr[] = [];
@@ -2997,7 +3166,7 @@ function translateCallExpr(
       }
       fnArgs.push(bodyExpr(a));
     }
-    return { expr: ast.app(ast.var(paramNames.get(fnName) ?? fnName), fnArgs) };
+    return { expr: ast.app(ast.var(calleeName), fnArgs) };
   }
 
   // Unsupported call (computed calls, tagged templates, optional calls, etc.)
@@ -3495,7 +3664,26 @@ function symbolicExecute(
         (isSimpleAssign || compoundOp !== undefined) &&
         ts.isPropertyAccessExpression(bin.left)
       ) {
-        const prop = bin.left.name.text;
+        const rawProp = bin.left.name.text;
+        const receiverType = checker.getTypeAtLocation(bin.left.expression);
+        // Qualify once at the write site; the state keys, primed-lhs
+        // emission, modifiedProps tracking, and frame conditions all see
+        // the same already-qualified rule name.
+        const prop = qualifyFieldAccess(
+          receiverType,
+          rawProp,
+          checker,
+          strategy,
+          supply.synthCell,
+        );
+        if (prop === null) {
+          ok = false;
+          propositions.push({
+            kind: "unsupported",
+            reason: ambiguousFieldMsg(rawProp),
+          });
+          continue;
+        }
         const obj = translateBodyExpr(
           bin.left.expression,
           checker,

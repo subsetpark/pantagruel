@@ -7,11 +7,11 @@ exports[`annotations.ts > deposited 1`] = `
 `;
 
 exports[`annotations.ts > noAnnot 1`] = `
-"module NoAnnot.\\n\\nnoAnnot x: Int => Int.\\n\\n---\\n\\nnoAnnot x = x.\\n"
+"module NoAnnot.\\n\\nno-annot x: Int => Int.\\n\\n---\\n\\nno-annot x = x.\\n"
 `;
 
 exports[`annotations.ts > rangeCheck 1`] = `
-"module RangeCheck.\\n\\nrangeCheck x: Int => Bool.\\n\\n---\\n\\nrangeCheck x = (x >= 0).\\n\\ncheck\\n\\nall x: Int |\\n  rangeCheck x >= 0.\\n"
+"module RangeCheck.\\n\\nrange-check x: Int => Bool.\\n\\n---\\n\\nrange-check x = (x >= 0).\\n\\ncheck\\n\\nall x: Int | range-check x >= 0.\\n"
 `;
 
 exports[`annotations.ts > sum 1`] = `
@@ -23,7 +23,7 @@ exports[`control-flow.ts > abs 1`] = `
 `;
 
 exports[`control-flow.ts > effectiveBalance 1`] = `
-"module EffectiveBalance.\\n\\nAccount.\\nactive a1: Account => Bool.\\nbalance a1: Account => Int.\\neffectiveBalance a: Account => Int.\\n\\n---\\n\\neffectiveBalance a = (cond active a => balance a, true => 0).\\n"
+"module EffectiveBalance.\\n\\nAccount.\\naccount--active a1: Account => Bool.\\naccount--balance a1: Account => Int.\\neffective-balance a: Account => Int.\\n\\n---\\n\\neffective-balance a = (cond account--active a => account--balance a, true => 0).\\n"
 `;
 
 exports[`control-flow.ts > max 1`] = `
@@ -43,7 +43,7 @@ exports[`expressions-arithmetic.ts > double 1`] = `
 `;
 
 exports[`expressions-arithmetic.ts > getVersion 1`] = `
-"module GetVersion.\\n\\ngetVersion  => Int.\\n\\n---\\n\\ngetVersion = 42.\\n"
+"module GetVersion.\\n\\nget-version  => Int.\\n\\n---\\n\\nget-version = 42.\\n"
 `;
 
 exports[`expressions-arithmetic.ts > half 1`] = `
@@ -51,7 +51,7 @@ exports[`expressions-arithmetic.ts > half 1`] = `
 `;
 
 exports[`expressions-arithmetic.ts > netBalance 1`] = `
-"module NetBalance.\\n\\nAccount.\\nbalance a1: Account => Int.\\nnetBalance a: Account, fee: Int => Int.\\n\\n---\\n\\nnetBalance a fee = balance a - fee.\\n"
+"module NetBalance.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nnet-balance a: Account, fee: Int => Int.\\n\\n---\\n\\nnet-balance a fee = account--balance a - fee.\\n"
 `;
 
 exports[`expressions-arithmetic.ts > power 1`] = `
@@ -63,7 +63,7 @@ exports[`expressions-arithmetic.ts > remainder 1`] = `
 `;
 
 exports[`expressions-array.ts > activeNames 1`] = `
-"module ActiveNames.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nactiveNames users: [User] => [String].\\n\\n---\\n\\nactiveNames users = (each $0 in users, active $0 | name $0).\\n"
+"module ActiveNames.\\n\\nUser.\\nuser--name u: User => String.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\nactive-names users: [User] => [String].\\n\\n---\\n\\nactive-names users = (each $0 in users, user--active $0 | user--name $0).\\n"
 `;
 
 exports[`expressions-array.ts > contains 1`] = `
@@ -75,11 +75,11 @@ exports[`expressions-array.ts > count 1`] = `
 `;
 
 exports[`expressions-array.ts > highScores 1`] = `
-"module HighScores.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nhighScores users: [User] => [Int].\\n\\n---\\n\\nhighScores users = (each $0 in users, score $0 > 0 | score $0).\\n"
+"module HighScores.\\n\\nUser.\\nuser--name u: User => String.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\nhigh-scores users: [User] => [Int].\\n\\n---\\n\\nhigh-scores users = (each $0 in users, user--score $0 > 0 | user--score $0).\\n"
 `;
 
 exports[`expressions-array.ts > nameLengths 1`] = `
-"module NameLengths.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\nnameLengths users: [User] => [Int].\\n\\n---\\n\\nnameLengths users = (each $0 in users | length (name $0)).\\n"
+"module NameLengths.\\n\\nUser.\\nuser--name u: User => String.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\nname-lengths users: [User] => [Int].\\n\\n---\\n\\nname-lengths users = (each $0 in users | length (user--name $0)).\\n"
 `;
 
 exports[`expressions-boolean.ts > and 1`] = `
@@ -87,7 +87,7 @@ exports[`expressions-boolean.ts > and 1`] = `
 `;
 
 exports[`expressions-boolean.ts > andNot 1`] = `
-"module AndNot.\\n\\nandNot a: Bool, b: Bool => Bool.\\n\\n---\\n\\nandNot a b = (a and ~b).\\n"
+"module AndNot.\\n\\nand-not a: Bool, b: Bool => Bool.\\n\\n---\\n\\nand-not a b = (a and ~b).\\n"
 `;
 
 exports[`expressions-boolean.ts > not 1`] = `
@@ -99,47 +99,47 @@ exports[`expressions-boolean.ts > or 1`] = `
 `;
 
 exports[`expressions-calls.ts > bubbleCondition 1`] = `
-"module BubbleCondition.\\n\\nbubbleCondition  => Int.\\n\\n---\\n\\nbubbleCondition = (cond bar => 1, true => 2).\\n"
+"module BubbleCondition.\\n\\nbubble-condition  => Int.\\n\\n---\\n\\nbubble-condition = (cond bar => 1, true => 2).\\n"
 `;
 
 exports[`expressions-calls.ts > bubbleNegation 1`] = `
-"module BubbleNegation.\\n\\nbubbleNegation  => Bool.\\n\\n---\\n\\nbubbleNegation = (~bar).\\n"
+"module BubbleNegation.\\n\\nbubble-negation  => Bool.\\n\\n---\\n\\nbubble-negation = (~bar).\\n"
 `;
 
 exports[`expressions-calls.ts > callInArithmetic 1`] = `
-"module CallInArithmetic.\\n\\ncallInArithmetic a: Int, b: Int => Int.\\n\\n---\\n\\ncallInArithmetic a b = max a b + 1.\\n"
+"module CallInArithmetic.\\n\\ncall-in-arithmetic a: Int, b: Int => Int.\\n\\n---\\n\\ncall-in-arithmetic a b = max a b + 1.\\n"
 `;
 
 exports[`expressions-calls.ts > callInComparison 1`] = `
-"module CallInComparison.\\n\\ncallInComparison a: Int, b: Int => Bool.\\n\\n---\\n\\ncallInComparison a b = (max a b > 0).\\n"
+"module CallInComparison.\\n\\ncall-in-comparison a: Int, b: Int => Bool.\\n\\n---\\n\\ncall-in-comparison a b = (max a b > 0).\\n"
 `;
 
 exports[`expressions-calls.ts > callInReturn 1`] = `
-"module CallInReturn.\\n\\ncallInReturn  => Int.\\n\\n---\\n\\ncallInReturn = #foo.\\n"
+"module CallInReturn.\\n\\ncall-in-return  => Int.\\n\\n---\\n\\ncall-in-return = #foo.\\n"
 `;
 
 exports[`expressions-calls.ts > callWithPropArg 1`] = `
-"module CallWithPropArg.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\ncallWithPropArg a: Account => Bool.\\n\\n---\\n\\ncallWithPropArg a = validate (balance a).\\n"
+"module CallWithPropArg.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\ncall-with-prop-arg a: Account => Bool.\\n\\n---\\n\\ncall-with-prop-arg a = validate (account--balance a).\\n"
 `;
 
 exports[`expressions-calls.ts > freeCall 1`] = `
-"module FreeCall.\\n\\nfreeCall a: Int, b: Int => Int.\\n\\n---\\n\\nfreeCall a b = max a b.\\n"
+"module FreeCall.\\n\\nfree-call a: Int, b: Int => Int.\\n\\n---\\n\\nfree-call a b = max a b.\\n"
 `;
 
 exports[`expressions-calls.ts > methodCall 1`] = `
-"module MethodCall.\\n\\nmethodCall s: String => String.\\n\\n---\\n\\nmethodCall s = toUpperCase s.\\n"
+"module MethodCall.\\n\\nmethod-call s: String => String.\\n\\n---\\n\\nmethod-call s = toUpperCase s.\\n"
 `;
 
 exports[`expressions-calls.ts > nestedCalls 1`] = `
-"module NestedCalls.\\n\\nnestedCalls x: Int, a: Int, b: Int => Int.\\n\\n---\\n\\nnestedCalls x a b = clamp x 0 (max a b).\\n"
+"module NestedCalls.\\n\\nnested-calls x: Int, a: Int, b: Int => Int.\\n\\n---\\n\\nnested-calls x a b = clamp x 0 (max a b).\\n"
 `;
 
 exports[`expressions-calls.ts > spreadCall 1`] = `
-"module SpreadCall.\\n\\nspreadCall args: [Int] => Int.\\n\\n---\\n\\n> UNSUPPORTED: max(...args).\\n"
+"module SpreadCall.\\n\\nspread-call args: [Int] => Int.\\n\\n---\\n\\n> UNSUPPORTED: max(...args).\\n"
 `;
 
 exports[`expressions-calls.ts > zeroArityCall 1`] = `
-"module ZeroArityCall.\\n\\nzeroArityCall  => Int.\\n\\n---\\n\\nzeroArityCall = now.\\n"
+"module ZeroArityCall.\\n\\nzero-arity-call  => Int.\\n\\n---\\n\\nzero-arity-call = now.\\n"
 `;
 
 exports[`expressions-comparison.ts > eq 1`] = `
@@ -167,47 +167,47 @@ exports[`expressions-comparison.ts > neq 1`] = `
 `;
 
 exports[`expressions-const-bindings.ts > chainedConst 1`] = `
-"module ChainedConst.\\n\\nchainedConst a: Int => Int.\\n\\n---\\n\\nchainedConst a = a + 1.\\n"
+"module ChainedConst.\\n\\nchained-const a: Int => Int.\\n\\n---\\n\\nchained-const a = a + 1.\\n"
 `;
 
 exports[`expressions-const-bindings.ts > constInTernary 1`] = `
-"module ConstInTernary.\\n\\nconstInTernary a: Int, b: Int => Int.\\n\\n---\\n\\nconstInTernary a b = (cond a + b > 0 => a + b, true => 0).\\n"
+"module ConstInTernary.\\n\\nconst-in-ternary a: Int, b: Int => Int.\\n\\n---\\n\\nconst-in-ternary a b = (cond a + b > 0 => a + b, true => 0).\\n"
 `;
 
 exports[`expressions-const-bindings.ts > constWithPropAccess 1`] = `
-"module ConstWithPropAccess.\\n\\nAccount.\\nbalance a1: Account => Int.\\nconstWithPropAccess a: Account => Int.\\n\\n---\\n\\nconstWithPropAccess a = balance a + 1.\\n"
+"module ConstWithPropAccess.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nconst-with-prop-access a: Account => Int.\\n\\n---\\n\\nconst-with-prop-access a = account--balance a + 1.\\n"
 `;
 
 exports[`expressions-const-bindings.ts > effectfulConstRejected 1`] = `
-"module EffectfulConstRejected.\\n\\neffectfulConstRejected  => Int.\\n\\n---\\n\\n> UNSUPPORTED: effectfulConstRejected — const binding with side-effectful initializer.\\n"
+"module EffectfulConstRejected.\\n\\neffectful-const-rejected  => Int.\\n\\n---\\n\\n> UNSUPPORTED: effectful-const-rejected — const binding with side-effectful initializer.\\n"
 `;
 
 exports[`expressions-const-bindings.ts > letRejected 1`] = `
-"module LetRejected.\\n\\nletRejected  => Int.\\n\\n---\\n\\n> UNSUPPORTED: letRejected — let/var bindings not supported.\\n"
+"module LetRejected.\\n\\nlet-rejected  => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-rejected — let/var bindings not supported.\\n"
 `;
 
 exports[`expressions-const-bindings.ts > simpleConst 1`] = `
-"module SimpleConst.\\n\\nsimpleConst a: Int, b: Int => Int.\\n\\n---\\n\\nsimpleConst a b = a + b.\\n"
+"module SimpleConst.\\n\\nsimple-const a: Int, b: Int => Int.\\n\\n---\\n\\nsimple-const a b = a + b.\\n"
 `;
 
 exports[`expressions-const-pure-calls.ts > constChainedPure 1`] = `
-"module ConstChainedPure.\\n\\nconstChainedPure x: Int, y: Int => Int.\\n\\n---\\n\\nconstChainedPure x y = max Math (abs Math x) y.\\n"
+"module ConstChainedPure.\\n\\nconst-chained-pure x: Int, y: Int => Int.\\n\\n---\\n\\nconst-chained-pure x y = max Math (abs Math x) y.\\n"
 `;
 
 exports[`expressions-const-pure-calls.ts > constImpureCall 1`] = `
-"module ConstImpureCall.\\n\\nconstImpureCall x: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: constImpureCall — const binding with side-effectful initializer.\\n"
+"module ConstImpureCall.\\n\\nconst-impure-call x: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: const-impure-call — const binding with side-effectful initializer.\\n"
 `;
 
 exports[`expressions-const-pure-calls.ts > constMathMax 1`] = `
-"module ConstMathMax.\\n\\nconstMathMax a: Int, b: Int => Int.\\n\\n---\\n\\nconstMathMax a b = max Math a b + 1.\\n"
+"module ConstMathMax.\\n\\nconst-math-max a: Int, b: Int => Int.\\n\\n---\\n\\nconst-math-max a b = max Math a b + 1.\\n"
 `;
 
 exports[`expressions-const-pure-calls.ts > constStringMethod 1`] = `
-"module ConstStringMethod.\\n\\nconstStringMethod s: String => Int.\\n\\n---\\n\\nconstStringMethod s = indexOf s \\"x\\".\\n"
+"module ConstStringMethod.\\n\\nconst-string-method s: String => Int.\\n\\n---\\n\\nconst-string-method s = indexOf s \\"x\\".\\n"
 `;
 
 exports[`expressions-literals.ts > fortyTwo 1`] = `
-"module FortyTwo.\\n\\nfortyTwo  => Int.\\n\\n---\\n\\nfortyTwo = 42.\\n"
+"module FortyTwo.\\n\\nforty-two  => Int.\\n\\n---\\n\\nforty-two = 42.\\n"
 `;
 
 exports[`expressions-literals.ts > no 1`] = `
@@ -219,103 +219,103 @@ exports[`expressions-literals.ts > yes 1`] = `
 `;
 
 exports[`expressions-map-mutation-field.ts > cacheEvict 1`] = `
-"module CacheEvict.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\n~> CacheEvict @ c: Cache, k: String.\\n\\n---\\n\\nall m: Cache, k2: String | entriesKey' m k2 = entriesKey[(c, k) |-> false] m k2.\\n"
+"module CacheEvict.\\n\\nCache.\\ncache--entries-key c1: Cache, k1: String => Bool.\\ncache--entries c1: Cache, k1: String, cache--entries-key c1 k1 => Int.\\n~> Cache-evict @ c: Cache, k: String.\\n\\n---\\n\\nall m: Cache, k2: String | cache--entries-key' m k2 = cache--entries-key[(c, k) |-> false] m k2.\\n"
 `;
 
 exports[`expressions-map-mutation-field.ts > cacheEvictParen 1`] = `
-"module CacheEvictParen.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\n~> CacheEvictParen @ c: Cache, k: String.\\n\\n---\\n\\nall m: Cache, k2: String | entriesKey' m k2 = entriesKey[(c, k) |-> false] m k2.\\n"
+"module CacheEvictParen.\\n\\nCache.\\ncache--entries-key c1: Cache, k1: String => Bool.\\ncache--entries c1: Cache, k1: String, cache--entries-key c1 k1 => Int.\\n~> Cache-evict-paren @ c: Cache, k: String.\\n\\n---\\n\\nall m: Cache, k2: String | cache--entries-key' m k2 = cache--entries-key[(c, k) |-> false] m k2.\\n"
 `;
 
 exports[`expressions-map-mutation-field.ts > cachePut 1`] = `
-"module CachePut.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\n~> CachePut @ c: Cache, k: String, v: Int.\\n\\n---\\n\\nall m: Cache, k2: String | entries' m k2 = entries[(c, k) |-> v] m k2.\\nall m1: Cache, k3: String | entriesKey' m1 k3 = entriesKey[(c, k) |-> true] m1 k3.\\n"
+"module CachePut.\\n\\nCache.\\ncache--entries-key c1: Cache, k1: String => Bool.\\ncache--entries c1: Cache, k1: String, cache--entries-key c1 k1 => Int.\\n~> Cache-put @ c: Cache, k: String, v: Int.\\n\\n---\\n\\nall m: Cache, k2: String | cache--entries' m k2 = cache--entries[(c, k) |-> v] m k2.\\nall m1: Cache, k3: String | cache--entries-key' m1 k3 = cache--entries-key[(c, k) |-> true] m1 k3.\\n"
 `;
 
 exports[`expressions-map-mutation-field.ts > cachePutNonNull 1`] = `
-"module CachePutNonNull.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\n~> CachePutNonNull @ c: Cache, k: String, v: Int.\\n\\n---\\n\\nall m: Cache, k2: String | entries' m k2 = entries[(c, k) |-> v] m k2.\\nall m1: Cache, k3: String | entriesKey' m1 k3 = entriesKey[(c, k) |-> true] m1 k3.\\n"
+"module CachePutNonNull.\\n\\nCache.\\ncache--entries-key c1: Cache, k1: String => Bool.\\ncache--entries c1: Cache, k1: String, cache--entries-key c1 k1 => Int.\\n~> Cache-put-non-null @ c: Cache, k: String, v: Int.\\n\\n---\\n\\nall m: Cache, k2: String | cache--entries' m k2 = cache--entries[(c, k) |-> v] m k2.\\nall m1: Cache, k3: String | cache--entries-key' m1 k3 = cache--entries-key[(c, k) |-> true] m1 k3.\\n"
 `;
 
 exports[`expressions-map-mutation.ts > bump 1`] = `
-"module Bump.\\n\\nStringToIntMap.\\nstringToIntMapKey m: StringToIntMap, k1: String => Bool.\\nstringToIntMap m: StringToIntMap, k1: String, stringToIntMapKey m k1 => Int.\\n~> Bump @ counts: StringToIntMap, k: String.\\n\\n---\\n\\nall m1: StringToIntMap, k2: String | stringToIntMap' m1 k2 = stringToIntMap[(counts, k) |-> stringToIntMap counts k + 1] m1 k2.\\nall m2: StringToIntMap, k3: String | stringToIntMapKey' m2 k3 = stringToIntMapKey[(counts, k) |-> true] m2 k3.\\n"
+"module Bump.\\n\\nStringToIntMap.\\nstring-to-int-map-key m: StringToIntMap, k1: String => Bool.\\nstring-to-int-map m: StringToIntMap, k1: String, string-to-int-map-key m k1 => Int.\\n~> Bump @ counts: StringToIntMap, k: String.\\n\\n---\\n\\nall m1: StringToIntMap, k2: String | string-to-int-map' m1 k2 = string-to-int-map[(counts, k) |-> string-to-int-map counts k + 1] m1 k2.\\nall m2: StringToIntMap, k3: String | string-to-int-map-key' m2 k3 = string-to-int-map-key[(counts, k) |-> true] m2 k3.\\n"
 `;
 
 exports[`expressions-map-mutation.ts > deleteThenCopy 1`] = `
-"module DeleteThenCopy.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k: String => Bool.\\nstringToIntMap m1: StringToIntMap, k: String, stringToIntMapKey m1 k => Int.\\n~> DeleteThenCopy @ m: StringToIntMap, kA: String, kB: String, v: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k1: String | stringToIntMap' m2 k1 = stringToIntMap[(m, kB) |-> stringToIntMap m kA] m2 k1.\\nall m3: StringToIntMap, k2: String | stringToIntMapKey' m3 k2 = stringToIntMapKey[(m, kA) |-> false, (m, kB) |-> true] m3 k2.\\n"
+"module DeleteThenCopy.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\n~> Delete-then-copy @ m: StringToIntMap, k-a: String, k-b: String, v: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k1: String | string-to-int-map' m2 k1 = string-to-int-map[(m, k-b) |-> string-to-int-map m k-a] m2 k1.\\nall m3: StringToIntMap, k2: String | string-to-int-map-key' m3 k2 = string-to-int-map-key[(m, k-a) |-> false, (m, k-b) |-> true] m3 k2.\\n"
 `;
 
 exports[`expressions-map-mutation.ts > put 1`] = `
-"module Put.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k1: String => Bool.\\nstringToIntMap m1: StringToIntMap, k1: String, stringToIntMapKey m1 k1 => Int.\\n~> Put @ m: StringToIntMap, k: String, v: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k2: String | stringToIntMap' m2 k2 = stringToIntMap[(m, k) |-> v] m2 k2.\\nall m3: StringToIntMap, k3: String | stringToIntMapKey' m3 k3 = stringToIntMapKey[(m, k) |-> true] m3 k3.\\n"
+"module Put.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k1: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k1: String, string-to-int-map-key m1 k1 => Int.\\n~> Put @ m: StringToIntMap, k: String, v: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k2: String | string-to-int-map' m2 k2 = string-to-int-map[(m, k) |-> v] m2 k2.\\nall m3: StringToIntMap, k3: String | string-to-int-map-key' m3 k3 = string-to-int-map-key[(m, k) |-> true] m3 k3.\\n"
 `;
 
 exports[`expressions-map-mutation.ts > putIfAbsent 1`] = `
-"module PutIfAbsent.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k1: String => Bool.\\nstringToIntMap m1: StringToIntMap, k1: String, stringToIntMapKey m1 k1 => Int.\\n~> PutIfAbsent @ m: StringToIntMap, k: String, v: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k2: String | stringToIntMap' m2 k2 = stringToIntMap[(m, k) |-> cond ~(stringToIntMapKey m k) => v, true => stringToIntMap m k] m2 k2.\\nall m3: StringToIntMap, k3: String | stringToIntMapKey' m3 k3 = stringToIntMapKey[(m, k) |-> cond ~(stringToIntMapKey m k) => true, true => stringToIntMapKey m k] m3 k3.\\n"
+"module PutIfAbsent.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k1: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k1: String, string-to-int-map-key m1 k1 => Int.\\n~> Put-if-absent @ m: StringToIntMap, k: String, v: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k2: String | string-to-int-map' m2 k2 = string-to-int-map[(m, k) |-> cond ~(string-to-int-map-key m k) => v, true => string-to-int-map m k] m2 k2.\\nall m3: StringToIntMap, k3: String | string-to-int-map-key' m3 k3 = string-to-int-map-key[(m, k) |-> cond ~(string-to-int-map-key m k) => true, true => string-to-int-map-key m k] m3 k3.\\n"
 `;
 
 exports[`expressions-map-mutation.ts > putPair 1`] = `
-"module PutPair.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k: String => Bool.\\nstringToIntMap m1: StringToIntMap, k: String, stringToIntMapKey m1 k => Int.\\n~> PutPair @ m: StringToIntMap, k1: String, v1: Int, k2: String, v2: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k3: String | stringToIntMap' m2 k3 = stringToIntMap[(m, k1) |-> v1, (m, k2) |-> v2] m2 k3.\\nall m3: StringToIntMap, k4: String | stringToIntMapKey' m3 k4 = stringToIntMapKey[(m, k1) |-> true, (m, k2) |-> true] m3 k4.\\n"
+"module PutPair.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\n~> Put-pair @ m: StringToIntMap, k1: String, v1: Int, k2: String, v2: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k3: String | string-to-int-map' m2 k3 = string-to-int-map[(m, k1) |-> v1, (m, k2) |-> v2] m2 k3.\\nall m3: StringToIntMap, k4: String | string-to-int-map-key' m3 k4 = string-to-int-map-key[(m, k1) |-> true, (m, k2) |-> true] m3 k4.\\n"
 `;
 
 exports[`expressions-map-mutation.ts > remove 1`] = `
-"module Remove.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k1: String => Bool.\\nstringToIntMap m1: StringToIntMap, k1: String, stringToIntMapKey m1 k1 => Int.\\n~> Remove @ m: StringToIntMap, k: String.\\n\\n---\\n\\nall m2: StringToIntMap, k2: String | stringToIntMapKey' m2 k2 = stringToIntMapKey[(m, k) |-> false] m2 k2.\\n"
+"module Remove.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k1: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k1: String, string-to-int-map-key m1 k1 => Int.\\n~> Remove @ m: StringToIntMap, k: String.\\n\\n---\\n\\nall m2: StringToIntMap, k2: String | string-to-int-map-key' m2 k2 = string-to-int-map-key[(m, k) |-> false] m2 k2.\\n"
 `;
 
 exports[`expressions-map-mutation.ts > setAndCopy 1`] = `
-"module SetAndCopy.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k: String => Bool.\\nstringToIntMap m1: StringToIntMap, k: String, stringToIntMapKey m1 k => Int.\\n~> SetAndCopy @ m: StringToIntMap, kSrc: String, kDst: String, v: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k1: String | stringToIntMap' m2 k1 = stringToIntMap[(m, kSrc) |-> v, (m, kDst) |-> stringToIntMap[(m, kSrc) |-> v] m kSrc] m2 k1.\\nall m3: StringToIntMap, k2: String | stringToIntMapKey' m3 k2 = stringToIntMapKey[(m, kSrc) |-> true, (m, kDst) |-> true] m3 k2.\\n"
+"module SetAndCopy.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\n~> Set-and-copy @ m: StringToIntMap, k-src: String, k-dst: String, v: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k1: String | string-to-int-map' m2 k1 = string-to-int-map[(m, k-src) |-> v, (m, k-dst) |-> string-to-int-map[(m, k-src) |-> v] m k-src] m2 k1.\\nall m3: StringToIntMap, k2: String | string-to-int-map-key' m3 k2 = string-to-int-map-key[(m, k-src) |-> true, (m, k-dst) |-> true] m3 k2.\\n"
 `;
 
 exports[`expressions-map-mutation.ts > setThenDelete 1`] = `
-"module SetThenDelete.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k1: String => Bool.\\nstringToIntMap m1: StringToIntMap, k1: String, stringToIntMapKey m1 k1 => Int.\\n~> SetThenDelete @ m: StringToIntMap, k: String, v: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k2: String | stringToIntMapKey' m2 k2 = stringToIntMapKey[(m, k) |-> false] m2 k2.\\n"
+"module SetThenDelete.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k1: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k1: String, string-to-int-map-key m1 k1 => Int.\\n~> Set-then-delete @ m: StringToIntMap, k: String, v: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k2: String | string-to-int-map-key' m2 k2 = string-to-int-map-key[(m, k) |-> false] m2 k2.\\n"
 `;
 
 exports[`expressions-map-mutation.ts > setTwice 1`] = `
-"module SetTwice.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k1: String => Bool.\\nstringToIntMap m1: StringToIntMap, k1: String, stringToIntMapKey m1 k1 => Int.\\n~> SetTwice @ m: StringToIntMap, k: String, v1: Int, v2: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k2: String | stringToIntMap' m2 k2 = stringToIntMap[(m, k) |-> v2] m2 k2.\\nall m3: StringToIntMap, k3: String | stringToIntMapKey' m3 k3 = stringToIntMapKey[(m, k) |-> true] m3 k3.\\n"
+"module SetTwice.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k1: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k1: String, string-to-int-map-key m1 k1 => Int.\\n~> Set-twice @ m: StringToIntMap, k: String, v1: Int, v2: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k2: String | string-to-int-map' m2 k2 = string-to-int-map[(m, k) |-> v2] m2 k2.\\nall m3: StringToIntMap, k3: String | string-to-int-map-key' m3 k3 = string-to-int-map-key[(m, k) |-> true] m3 k3.\\n"
 `;
 
 exports[`expressions-map-params.ts > contains 1`] = `
-"module Contains.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k1: String => Bool.\\nstringToIntMap m1: StringToIntMap, k1: String, stringToIntMapKey m1 k1 => Int.\\ncontains m: StringToIntMap, k: String => Bool.\\n\\n---\\n\\ncontains m k = stringToIntMapKey m k.\\n"
+"module Contains.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k1: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k1: String, string-to-int-map-key m1 k1 => Int.\\ncontains m: StringToIntMap, k: String => Bool.\\n\\n---\\n\\ncontains m k = string-to-int-map-key m k.\\n"
 `;
 
 exports[`expressions-map-params.ts > lookup 1`] = `
-"module Lookup.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k1: String => Bool.\\nstringToIntMap m1: StringToIntMap, k1: String, stringToIntMapKey m1 k1 => Int.\\nlookup m: StringToIntMap, k: String => Int.\\n\\n---\\n\\nlookup m k = stringToIntMap m k.\\n"
+"module Lookup.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k1: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k1: String, string-to-int-map-key m1 k1 => Int.\\nlookup m: StringToIntMap, k: String => Int.\\n\\n---\\n\\nlookup m k = string-to-int-map m k.\\n"
 `;
 
 exports[`expressions-map-params.ts > nestedLookup 1`] = `
-"module NestedLookup.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k: String => Bool.\\nstringToIntMap m1: StringToIntMap, k: String, stringToIntMapKey m1 k => Int.\\nStringToStringToIntMapMap.\\nstringToStringToIntMapMapKey m2: StringToStringToIntMapMap, k3: String => Bool.\\nstringToStringToIntMapMap m2: StringToStringToIntMapMap, k3: String, stringToStringToIntMapMapKey m2 k3 => StringToIntMap.\\nnestedLookup m: StringToStringToIntMapMap, k1: String, k2: String => Int.\\n\\n---\\n\\nnestedLookup m k1 k2 = stringToIntMap (stringToStringToIntMapMap m k1) k2.\\n"
+"module NestedLookup.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\nStringToStringToIntMapMap.\\nstring-to-string-to-int-map-map-key m2: StringToStringToIntMapMap, k3: String => Bool.\\nstring-to-string-to-int-map-map m2: StringToStringToIntMapMap, k3: String, string-to-string-to-int-map-map-key m2 k3 => StringToIntMap.\\nnested-lookup m: StringToStringToIntMapMap, k1: String, k2: String => Int.\\n\\n---\\n\\nnested-lookup m k1 k2 = string-to-int-map (string-to-string-to-int-map-map m k1) k2.\\n"
 `;
 
 exports[`expressions-map-params.ts > passThrough 1`] = `
-"module PassThrough.\\n\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k: String => Bool.\\nstringToIntMap m1: StringToIntMap, k: String, stringToIntMapKey m1 k => Int.\\npassThrough m: StringToIntMap => StringToIntMap.\\n\\n---\\n\\npassThrough m = m.\\n"
+"module PassThrough.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\npass-through m: StringToIntMap => StringToIntMap.\\n\\n---\\n\\npass-through m = m.\\n"
 `;
 
 exports[`expressions-map-params.ts > pickByFlag 1`] = `
-"module PickByFlag.\\n\\nStringToBoolMap.\\nstringToBoolMapKey m: StringToBoolMap, k1: String => Bool.\\nstringToBoolMap m: StringToBoolMap, k1: String, stringToBoolMapKey m k1 => Bool.\\nStringToIntMap.\\nstringToIntMapKey m1: StringToIntMap, k2: String => Bool.\\nstringToIntMap m1: StringToIntMap, k2: String, stringToIntMapKey m1 k2 => Int.\\npickByFlag flags: StringToBoolMap, values: StringToIntMap, k: String => Int.\\n\\n---\\n\\npickByFlag flags values k = (cond stringToBoolMapKey flags k => stringToIntMap values k, true => 0).\\n"
+"module PickByFlag.\\n\\nStringToBoolMap.\\nstring-to-bool-map-key m: StringToBoolMap, k1: String => Bool.\\nstring-to-bool-map m: StringToBoolMap, k1: String, string-to-bool-map-key m k1 => Bool.\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k2: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k2: String, string-to-int-map-key m1 k2 => Int.\\npick-by-flag flags: StringToBoolMap, values: StringToIntMap, k: String => Int.\\n\\n---\\n\\npick-by-flag flags values k = (cond string-to-bool-map-key flags k => string-to-int-map values k, true => 0).\\n"
 `;
 
 exports[`expressions-map-params.ts > sumAt 1`] = `
-"module SumAt.\\n\\nStringToIntMap.\\nstringToIntMapKey m: StringToIntMap, k1: String => Bool.\\nstringToIntMap m: StringToIntMap, k1: String, stringToIntMapKey m k1 => Int.\\nsumAt m1: StringToIntMap, m2: StringToIntMap, k: String => Int.\\n\\n---\\n\\nsumAt m1 m2 k = stringToIntMap m1 k + stringToIntMap m2 k.\\n\\ncheck\\n\\nall m1: StringToIntMap, m2: StringToIntMap, k: String | stringToIntMapKey m1 k and stringToIntMapKey m2 k -> sumAt m1 m2 k = stringToIntMap m1 k + stringToIntMap m2 k.\\n"
+"module SumAt.\\n\\nStringToIntMap.\\nstring-to-int-map-key m: StringToIntMap, k1: String => Bool.\\nstring-to-int-map m: StringToIntMap, k1: String, string-to-int-map-key m k1 => Int.\\nsum-at m1: StringToIntMap, m2: StringToIntMap, k: String => Int.\\n\\n---\\n\\nsum-at m1 m2 k = string-to-int-map m1 k + string-to-int-map m2 k.\\n\\ncheck\\n\\nall m1: StringToIntMap, m2: StringToIntMap, k: String | string-to-int-map-key m1 k and string-to-int-map-key m2 k -> sum-at m1 m2 k = string-to-int-map m1 k + string-to-int-map m2 k.\\n"
 `;
 
 exports[`expressions-map-params.ts > tagsFor 1`] = `
-"module TagsFor.\\n\\nStringToListStringMap.\\nstringToListStringMapKey m: StringToListStringMap, k1: String => Bool.\\nstringToListStringMap m: StringToListStringMap, k1: String, stringToListStringMapKey m k1 => [String].\\ntagsFor tags: StringToListStringMap, k: String => [String].\\n\\n---\\n\\ntagsFor tags k = stringToListStringMap tags k.\\n"
+"module TagsFor.\\n\\nStringToListStringMap.\\nstring-to-list-string-map-key m: StringToListStringMap, k1: String => Bool.\\nstring-to-list-string-map m: StringToListStringMap, k1: String, string-to-list-string-map-key m k1 => [String].\\ntags-for tags: StringToListStringMap, k: String => [String].\\n\\n---\\n\\ntags-for tags k = string-to-list-string-map tags k.\\n"
 `;
 
 exports[`expressions-map.ts > congruence 1`] = `
-"module Congruence.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\ncongruence c: Cache, k: String => Bool.\\n\\n---\\n\\ncongruence c k = entriesKey c k.\\n\\ncheck\\n\\nall c: Cache, k: String | congruence c k -> entries c k = entries c k.\\n"
+"module Congruence.\\n\\nCache.\\ncache--entries-key c1: Cache, k1: String => Bool.\\ncache--entries c1: Cache, k1: String, cache--entries-key c1 k1 => Int.\\ncongruence c: Cache, k: String => Bool.\\n\\n---\\n\\ncongruence c k = cache--entries-key c k.\\n\\ncheck\\n\\nall c: Cache, k: String | congruence c k -> cache--entries c k = cache--entries c k.\\n"
 `;
 
 exports[`expressions-map.ts > contains 1`] = `
-"module Contains.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\ncontains c: Cache, k: String => Bool.\\n\\n---\\n\\ncontains c k = entriesKey c k.\\n"
+"module Contains.\\n\\nCache.\\ncache--entries-key c1: Cache, k1: String => Bool.\\ncache--entries c1: Cache, k1: String, cache--entries-key c1 k1 => Int.\\ncontains c: Cache, k: String => Bool.\\n\\n---\\n\\ncontains c k = cache--entries-key c k.\\n"
 `;
 
 exports[`expressions-map.ts > lookup 1`] = `
-"module Lookup.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\nlookup c: Cache, k: String => Int.\\n\\n---\\n\\nlookup c k = entries c k.\\n"
+"module Lookup.\\n\\nCache.\\ncache--entries-key c1: Cache, k1: String => Bool.\\ncache--entries c1: Cache, k1: String, cache--entries-key c1 k1 => Int.\\nlookup c: Cache, k: String => Int.\\n\\n---\\n\\nlookup c k = cache--entries c k.\\n"
 `;
 
 exports[`expressions-map.ts > lookupNonNull 1`] = `
-"module LookupNonNull.\\n\\nCache.\\nentriesKey c1: Cache, k1: String => Bool.\\nentries c1: Cache, k1: String, entriesKey c1 k1 => Int.\\nlookupNonNull c: Cache, k: String => Int.\\n\\n---\\n\\nlookupNonNull c k = entries c k.\\n"
+"module LookupNonNull.\\n\\nCache.\\ncache--entries-key c1: Cache, k1: String => Bool.\\ncache--entries c1: Cache, k1: String, cache--entries-key c1 k1 => Int.\\nlookup-non-null c: Cache, k: String => Int.\\n\\n---\\n\\nlookup-non-null c k = cache--entries c k.\\n"
 `;
 
 exports[`expressions-misc.ts > asNumber 1`] = `
-"module AsNumber.\\n\\nasNumber x: unknown => Int.\\n\\n---\\n\\nasNumber x = x.\\n"
+"module AsNumber.\\n\\nas-number x: unknown => Int.\\n\\n---\\n\\nas-number x = x.\\n"
 `;
 
 exports[`expressions-misc.ts > negate 1`] = `
@@ -323,83 +323,83 @@ exports[`expressions-misc.ts > negate 1`] = `
 `;
 
 exports[`expressions-misc.ts > nonNull 1`] = `
-"module NonNull.\\n\\nnonNull x: [Int] => Int.\\n\\n---\\n\\nnonNull x = x.\\n"
+"module NonNull.\\n\\nnon-null x: [Int] => Int.\\n\\n---\\n\\nnon-null x = x.\\n"
 `;
 
 exports[`expressions-misc.ts > parenAdd 1`] = `
-"module ParenAdd.\\n\\nparenAdd a: Int, b: Int => Int.\\n\\n---\\n\\nparenAdd a b = a + b.\\n"
+"module ParenAdd.\\n\\nparen-add a: Int, b: Int => Int.\\n\\n---\\n\\nparen-add a b = a + b.\\n"
 `;
 
 exports[`expressions-nullish.ts > defaultToZero 1`] = `
-"module DefaultToZero.\\n\\ndefaultToZero x: [Int] => Int.\\n\\n---\\n\\ndefaultToZero x = (cond #x = 0 => 0, true => x 1).\\n"
+"module DefaultToZero.\\n\\ndefault-to-zero x: [Int] => Int.\\n\\n---\\n\\ndefault-to-zero x = (cond #x = 0 => 0, true => x 1).\\n"
 `;
 
 exports[`expressions-nullish.ts > maybeBalance 1`] = `
-"module MaybeBalance.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => Owner.\\nOwner.\\nid o: Owner => Int.\\nmaybeBalance a: [Account] => [Int].\\n\\n---\\n\\nmaybeBalance a = (each $0 in a | balance $0).\\n"
+"module MaybeBalance.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => Owner.\\nOwner.\\nowner--id o: Owner => Int.\\nmaybe-balance a: [Account] => [Int].\\n\\n---\\n\\nmaybe-balance a = (each $0 in a | balance $0).\\n"
 `;
 
 exports[`expressions-nullish.ts > maybeOwnerId 1`] = `
-"module MaybeOwnerId.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => Owner.\\nOwner.\\nid o: Owner => Int.\\nmaybeOwnerId a: [Account] => [Int].\\n\\n---\\n\\nmaybeOwnerId a = (each $1 in (each $0 in a | owner $0) | id $1).\\n"
+"module MaybeOwnerId.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => Owner.\\nOwner.\\nowner--id o: Owner => Int.\\nmaybe-owner-id a: [Account] => [Int].\\n\\n---\\n\\nmaybe-owner-id a = (each $1 in (each $0 in a | owner $0) | id $1).\\n"
 `;
 
 exports[`expressions-nullish.ts > maybeOwnerIdOptional 1`] = `
-"module MaybeOwnerIdOptional.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => Owner.\\nOwner.\\nid o: Owner => Int.\\nmaybeOwnerIdOptional a: [Account] => [Int].\\n\\n---\\n\\nmaybeOwnerIdOptional a = (each $1 in (each $0 in a | owner $0) | id $1).\\n"
+"module MaybeOwnerIdOptional.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => Owner.\\nOwner.\\nowner--id o: Owner => Int.\\nmaybe-owner-id-optional a: [Account] => [Int].\\n\\n---\\n\\nmaybe-owner-id-optional a = (each $1 in (each $0 in a | owner $0) | id $1).\\n"
 `;
 
 exports[`expressions-nullish.ts > nonNullDefault 1`] = `
-"module NonNullDefault.\\n\\nnonNullDefault x: Int => Int.\\n\\n---\\n\\nnonNullDefault x = x.\\n"
+"module NonNullDefault.\\n\\nnon-null-default x: Int => Int.\\n\\n---\\n\\nnon-null-default x = x.\\n"
 `;
 
 exports[`expressions-nullish.ts > preferLeft 1`] = `
-"module PreferLeft.\\n\\npreferLeft x: [Int], y: [Int] => [Int].\\n\\n---\\n\\npreferLeft x y = (cond #x = 0 => y, true => x).\\n"
+"module PreferLeft.\\n\\nprefer-left x: [Int], y: [Int] => [Int].\\n\\n---\\n\\nprefer-left x y = (cond #x = 0 => y, true => x).\\n"
 `;
 
 exports[`expressions-optional-default.ts > makeConfig 1`] = `
-"module MakeConfig.\\n\\nConfig.\\ntimeout c: Config => Int.\\nmakeConfig base: Int, extra: [Int] => Config.\\n\\n---\\n\\ntimeout (makeConfig base extra) = base + (cond #extra = 0 => 10, true => extra 1).\\n"
+"module MakeConfig.\\n\\nConfig.\\nconfig--timeout c: Config => Int.\\nmake-config base: Int, extra: [Int] => Config.\\n\\n---\\n\\nconfig--timeout (make-config base extra) = base + (cond #extra = 0 => 10, true => extra 1).\\n"
 `;
 
 exports[`expressions-optional-default.ts > makePoint 1`] = `
-"module MakePoint.\\n\\nPoint.\\nx p: Point => Int.\\ny p: Point => Int.\\nmakePoint initial: [Int] => Point.\\n\\n---\\n\\nx (makePoint initial) = (cond #initial = 0 => 0, true => initial 1).\\ny (makePoint initial) = 0.\\n"
+"module MakePoint.\\n\\nPoint.\\npoint--x p: Point => Int.\\npoint--y p: Point => Int.\\nmake-point initial: [Int] => Point.\\n\\n---\\n\\npoint--x (make-point initial) = (cond #initial = 0 => 0, true => initial 1).\\npoint--y (make-point initial) = 0.\\n"
 `;
 
 exports[`expressions-optional-default.ts > usesOptionalDirectly 1`] = `
-"module UsesOptionalDirectly.\\n\\nusesOptionalDirectly value: [Int] => Int.\\n\\n---\\n\\nusesOptionalDirectly value = (cond #value = 0 => 0 + (cond #value = 0 => 1, true => value 1), true => value 1).\\n"
+"module UsesOptionalDirectly.\\n\\nuses-optional-directly value: [Int] => Int.\\n\\n---\\n\\nuses-optional-directly value = (cond #value = 0 => 0 + (cond #value = 0 => 1, true => value 1), true => value 1).\\n"
 `;
 
 exports[`expressions-property.ts > effectiveBalance 1`] = `
-"module EffectiveBalance.\\n\\nUser.\\nname u: User => String.\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => User.\\nactive a1: Account => Bool.\\neffectiveBalance a: Account => Int.\\n\\n---\\n\\neffectiveBalance a = (cond active a => balance a, true => 0).\\n"
+"module EffectiveBalance.\\n\\nUser.\\nuser--name u: User => String.\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => User.\\naccount--active a1: Account => Bool.\\neffective-balance a: Account => Int.\\n\\n---\\n\\neffective-balance a = (cond account--active a => account--balance a, true => 0).\\n"
 `;
 
 exports[`expressions-property.ts > getOwner 1`] = `
-"module GetOwner.\\n\\nUser.\\nname u: User => String.\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => User.\\nactive a1: Account => Bool.\\ngetOwner a: Account => User.\\n\\n---\\n\\ngetOwner a = owner a.\\n"
+"module GetOwner.\\n\\nUser.\\nuser--name u: User => String.\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => User.\\naccount--active a1: Account => Bool.\\nget-owner a: Account => User.\\n\\n---\\n\\nget-owner a = account--owner a.\\n"
 `;
 
 exports[`expressions-property.ts > getOwnerName 1`] = `
-"module GetOwnerName.\\n\\nUser.\\nname u: User => String.\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => User.\\nactive a1: Account => Bool.\\ngetOwnerName a: Account => String.\\n\\n---\\n\\ngetOwnerName a = name (owner a).\\n"
+"module GetOwnerName.\\n\\nUser.\\nuser--name u: User => String.\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => User.\\naccount--active a1: Account => Bool.\\nget-owner-name a: Account => String.\\n\\n---\\n\\nget-owner-name a = user--name (account--owner a).\\n"
 `;
 
 exports[`expressions-readonly-set.ts > cardinalityReadonly 1`] = `
-"module CardinalityReadonly.\\n\\ncardinalityReadonly xs: [String] => Int.\\n\\n---\\n\\ncardinalityReadonly xs = #xs.\\n"
+"module CardinalityReadonly.\\n\\ncardinality-readonly xs: [String] => Int.\\n\\n---\\n\\ncardinality-readonly xs = #xs.\\n"
 `;
 
 exports[`expressions-readonly-set.ts > containsReadonly 1`] = `
-"module ContainsReadonly.\\n\\ncontainsReadonly xs: [String], x: String => Bool.\\n\\n---\\n\\ncontainsReadonly xs x = (x in xs).\\n"
+"module ContainsReadonly.\\n\\ncontains-readonly xs: [String], x: String => Bool.\\n\\n---\\n\\ncontains-readonly xs x = (x in xs).\\n"
 `;
 
 exports[`expressions-record-return.ts > emptyAnonBag 1`] = `
-"module EmptyAnonBag.\\n\\nItemsRec.\\nitems r: ItemsRec => [String].\\nemptyAnonBag  => ItemsRec.\\n\\n---\\n\\nall x: String | ~(x in items emptyAnonBag).\\n"
+"module EmptyAnonBag.\\n\\nItemsRec.\\nitems-rec--items r: ItemsRec => [String].\\nempty-anon-bag  => ItemsRec.\\n\\n---\\n\\nall x: String | ~(x in items-rec--items empty-anon-bag).\\n"
 `;
 
 exports[`expressions-record-return.ts > emptyBag 1`] = `
-"module EmptyBag.\\n\\nBag.\\nitems b: Bag => [String].\\nemptyBag  => Bag.\\n\\n---\\n\\nall x: String | ~(x in items emptyBag).\\n"
+"module EmptyBag.\\n\\nBag.\\nbag--items b: Bag => [String].\\nempty-bag  => Bag.\\n\\n---\\n\\nall x: String | ~(x in bag--items empty-bag).\\n"
 `;
 
 exports[`expressions-record-return.ts > emptyBagShadowed 1`] = `
-"module EmptyBagShadowed.\\n\\nBag.\\nitems b: Bag => [String].\\nemptyBagShadowed x: Int => Bag.\\n\\n---\\n\\nall x1: String | ~(x1 in items (emptyBagShadowed x)).\\n"
+"module EmptyBagShadowed.\\n\\nBag.\\nbag--items b: Bag => [String].\\nempty-bag-shadowed x: Int => Bag.\\n\\n---\\n\\nall x1: String | ~(x1 in bag--items (empty-bag-shadowed x)).\\n"
 `;
 
 exports[`expressions-record-return.ts > nestPair 1`] = `
-"module NestPair.\\n\\nInnerRec.\\ninner r: InnerRec => String.\\nOuterRec.\\nouter r1: OuterRec => InnerRec.\\nnestPair  => OuterRec.\\n\\n---\\n\\ninner (outer nestPair) = \\"hi\\".\\n"
+"module NestPair.\\n\\nInnerRec.\\ninner-rec--inner r: InnerRec => String.\\nOuterRec.\\nouter-rec--outer r1: OuterRec => InnerRec.\\nnest-pair  => OuterRec.\\n\\n---\\n\\ninner-rec--inner (outer-rec--outer nest-pair) = \\"hi\\".\\n"
 `;
 
 exports[`expressions-record-return.ts > nothing 1`] = `
@@ -407,47 +407,55 @@ exports[`expressions-record-return.ts > nothing 1`] = `
 `;
 
 exports[`expressions-record-return.ts > origin 1`] = `
-"module Origin.\\n\\nPoint.\\nx p: Point => Int.\\ny p: Point => Int.\\norigin  => Point.\\n\\n---\\n\\nx origin = 0.\\ny origin = 0.\\n"
+"module Origin.\\n\\nPoint.\\npoint--x p: Point => Int.\\npoint--y p: Point => Int.\\norigin  => Point.\\n\\n---\\n\\npoint--x origin = 0.\\npoint--y origin = 0.\\n"
+`;
+
+exports[`expressions-record-return.ts > originAliased 1`] = `
+"module OriginAliased.\\n\\nPtAlias = XYRec.\\nXYRec.\\nxy-rec--x r: XYRec => Int.\\nxy-rec--y r: XYRec => Int.\\norigin-aliased  => XYRec.\\n\\n---\\n\\nxy-rec--x origin-aliased = 0.\\nxy-rec--y origin-aliased = 0.\\n"
+`;
+
+exports[`expressions-record-return.ts > readR 1`] = `
+"module ReadR.\\n\\nFooRec.\\nfoo-rec--foo r: FooRec => Int.\\nread-r r1: FooRec => Int.\\n\\n---\\n\\nread-r r1 = foo-rec--foo r1.\\n"
 `;
 
 exports[`expressions-record-return.ts > registerShape 1`] = `
-"module RegisterShape.\\n\\nNameRegistry.\\nused n: NameRegistry => [String].\\nNameRegRec.\\nname r1: NameRegRec => String.\\nreg r1: NameRegRec => NameRegistry.\\nregisterShape r: NameRegistry, s: String => NameRegRec.\\n\\n---\\n\\nname (registerShape r s) = s.\\nreg (registerShape r s) = r.\\n"
+"module RegisterShape.\\n\\nNameRegistry.\\nname-registry--used n: NameRegistry => [String].\\nNameRegRec.\\nname-reg-rec--name r1: NameRegRec => String.\\nname-reg-rec--reg r1: NameRegRec => NameRegistry.\\nregister-shape r: NameRegistry, s: String => NameRegRec.\\n\\n---\\n\\nname-reg-rec--name (register-shape r s) = s.\\nname-reg-rec--reg (register-shape r s) = r.\\n"
 `;
 
 exports[`expressions-record-return.ts > registerShapeFlipped 1`] = `
-"module RegisterShapeFlipped.\\n\\nNameRegistry.\\nused n: NameRegistry => [String].\\nNameRegRec.\\nname r1: NameRegRec => String.\\nreg r1: NameRegRec => NameRegistry.\\nregisterShapeFlipped r: NameRegistry, s: String => NameRegRec.\\n\\n---\\n\\nname (registerShapeFlipped r s) = s.\\nreg (registerShapeFlipped r s) = r.\\n"
+"module RegisterShapeFlipped.\\n\\nNameRegistry.\\nname-registry--used n: NameRegistry => [String].\\nNameRegRec.\\nname-reg-rec--name r1: NameRegRec => String.\\nname-reg-rec--reg r1: NameRegRec => NameRegistry.\\nregister-shape-flipped r: NameRegistry, s: String => NameRegRec.\\n\\n---\\n\\nname-reg-rec--name (register-shape-flipped r s) = s.\\nname-reg-rec--reg (register-shape-flipped r s) = r.\\n"
 `;
 
 exports[`expressions-record-return.ts > translate 1`] = `
-"module Translate.\\n\\nPoint.\\nx p1: Point => Int.\\ny p1: Point => Int.\\ntranslate p: Point, dx: Int, dy: Int => Point.\\n\\n---\\n\\nx (translate p dx dy) = x p + dx.\\ny (translate p dx dy) = y p + dy.\\n"
+"module Translate.\\n\\nPoint.\\npoint--x p1: Point => Int.\\npoint--y p1: Point => Int.\\ntranslate p: Point, dx: Int, dy: Int => Point.\\n\\n---\\n\\npoint--x (translate p dx dy) = point--x p + dx.\\npoint--y (translate p dx dy) = point--y p + dy.\\n"
 `;
 
 exports[`expressions-reduce.ts > allActive 1`] = `
-"module AllActive.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nallActive xs: [Item] => Bool.\\n\\n---\\n\\nallActive xs = (and over each $0 in xs | active $0).\\n"
+"module AllActive.\\n\\nItem.\\nitem--value i: Item => Int.\\nitem--active i: Item => Bool.\\nall-active xs: [Item] => Bool.\\n\\n---\\n\\nall-active xs = (and over each $0 in xs | item--active $0).\\n"
 `;
 
 exports[`expressions-reduce.ts > anyActive 1`] = `
-"module AnyActive.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nanyActive xs: [Item] => Bool.\\n\\n---\\n\\nanyActive xs = (or over each $0 in xs | active $0).\\n"
+"module AnyActive.\\n\\nItem.\\nitem--value i: Item => Int.\\nitem--active i: Item => Bool.\\nany-active xs: [Item] => Bool.\\n\\n---\\n\\nany-active xs = (or over each $0 in xs | item--active $0).\\n"
 `;
 
 exports[`expressions-reduce.ts > productValues 1`] = `
-"module ProductValues.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nproductValues xs: [Item] => Int.\\n\\n---\\n\\nproductValues xs = (* over each $0 in xs | value $0).\\n"
+"module ProductValues.\\n\\nItem.\\nitem--value i: Item => Int.\\nitem--active i: Item => Bool.\\nproduct-values xs: [Item] => Int.\\n\\n---\\n\\nproduct-values xs = (* over each $0 in xs | item--value $0).\\n"
 `;
 
 exports[`expressions-reduce.ts > subtractAll 1`] = `
-"module SubtractAll.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nsubtractAll xs: [Item] => Int.\\n\\n---\\n\\nsubtractAll xs = 1000 - (+ over each $0 in xs | value $0).\\n"
+"module SubtractAll.\\n\\nItem.\\nitem--value i: Item => Int.\\nitem--active i: Item => Bool.\\nsubtract-all xs: [Item] => Int.\\n\\n---\\n\\nsubtract-all xs = 1000 - (+ over each $0 in xs | item--value $0).\\n"
 `;
 
 exports[`expressions-reduce.ts > sumAmounts 1`] = `
-"module SumAmounts.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nsumAmounts xs: [Item] => Int.\\n\\n---\\n\\nsumAmounts xs = (+ over each $0 in xs | value $0).\\n"
+"module SumAmounts.\\n\\nItem.\\nitem--value i: Item => Int.\\nitem--active i: Item => Bool.\\nsum-amounts xs: [Item] => Int.\\n\\n---\\n\\nsum-amounts xs = (+ over each $0 in xs | item--value $0).\\n"
 `;
 
 exports[`expressions-reduce.ts > sumAmountsRight 1`] = `
-"module SumAmountsRight.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nsumAmountsRight xs: [Item] => Int.\\n\\n---\\n\\nsumAmountsRight xs = (+ over each $0 in xs | value $0).\\n"
+"module SumAmountsRight.\\n\\nItem.\\nitem--value i: Item => Int.\\nitem--active i: Item => Bool.\\nsum-amounts-right xs: [Item] => Int.\\n\\n---\\n\\nsum-amounts-right xs = (+ over each $0 in xs | item--value $0).\\n"
 `;
 
 exports[`expressions-reduce.ts > sumFromBase 1`] = `
-"module SumFromBase.\\n\\nItem.\\nvalue i: Item => Int.\\nactive i: Item => Bool.\\nsumFromBase xs: [Item] => Int.\\n\\n---\\n\\nsumFromBase xs = 100 + (+ over each $0 in xs | value $0).\\n"
+"module SumFromBase.\\n\\nItem.\\nitem--value i: Item => Int.\\nitem--active i: Item => Bool.\\nsum-from-base xs: [Item] => Int.\\n\\n---\\n\\nsum-from-base xs = 100 + (+ over each $0 in xs | item--value $0).\\n"
 `;
 
 exports[`expressions-set.ts > both 1`] = `
@@ -463,167 +471,171 @@ exports[`expressions-set.ts > contains 1`] = `
 `;
 
 exports[`functions-class.ts > Account.deposit 1`] = `
-"module Deposit.\\n\\n~> Deposit @ a: Account, amount: Int.\\n\\n---\\n\\nbalance' a = balance a + amount.\\n"
+"module Deposit.\\n\\n~> Deposit @ a: Account, amount: Int.\\n\\n---\\n\\naccount--balance' a = account--balance a + amount.\\n"
 `;
 
 exports[`functions-class.ts > Account.getBalance 1`] = `
-"module GetBalance.\\n\\ngetBalance a: Account => Int.\\n\\n---\\n\\ngetBalance a = balance a.\\n"
+"module GetBalance.\\n\\nget-balance a: Account => Int.\\n\\n---\\n\\nget-balance a = account--balance a.\\n"
 `;
 
 exports[`functions-mutating-compound.ts > addAmount 1`] = `
-"module AddAmount.\\n\\nAccount.\\nbalance a1: Account => Int.\\ncount a1: Account => Int.\\n~> AddAmount @ a: Account, amount: Int.\\n\\n---\\n\\nbalance' a = balance a + amount.\\ncount' a1 = count a1.\\n"
+"module AddAmount.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--count a1: Account => Int.\\n~> Add-amount @ a: Account, amount: Int.\\n\\n---\\n\\naccount--balance' a = account--balance a + amount.\\naccount--count' a1 = account--count a1.\\n"
 `;
 
 exports[`functions-mutating-compound.ts > bumpBoth 1`] = `
-"module BumpBoth.\\n\\nAccount.\\nbalance a1: Account => Int.\\ncount a1: Account => Int.\\n~> BumpBoth @ a: Account, amount: Int.\\n\\n---\\n\\nbalance' a = balance a + amount.\\ncount' a = count a + 1.\\n"
+"module BumpBoth.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--count a1: Account => Int.\\n~> Bump-both @ a: Account, amount: Int.\\n\\n---\\n\\naccount--balance' a = account--balance a + amount.\\naccount--count' a = account--count a + 1.\\n"
 `;
 
 exports[`functions-mutating-compound.ts > conditionalBump 1`] = `
-"module ConditionalBump.\\n\\nAccount.\\nbalance a1: Account => Int.\\ncount a1: Account => Int.\\n~> ConditionalBump @ a: Account, amount: Int, g: Bool.\\n\\n---\\n\\nbalance' a = (cond g => 0 + amount, true => 0).\\ncount' a1 = count a1.\\n"
+"module ConditionalBump.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--count a1: Account => Int.\\n~> Conditional-bump @ a: Account, amount: Int, g: Bool.\\n\\n---\\n\\naccount--balance' a = (cond g => 0 + amount, true => 0).\\naccount--count' a1 = account--count a1.\\n"
 `;
 
 exports[`functions-mutating-compound.ts > scaleBalance 1`] = `
-"module ScaleBalance.\\n\\nAccount.\\nbalance a1: Account => Int.\\ncount a1: Account => Int.\\n~> ScaleBalance @ a: Account, factor: Int.\\n\\n---\\n\\nbalance' a = balance a * factor.\\ncount' a1 = count a1.\\n"
+"module ScaleBalance.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--count a1: Account => Int.\\n~> Scale-balance @ a: Account, factor: Int.\\n\\n---\\n\\naccount--balance' a = account--balance a * factor.\\naccount--count' a1 = account--count a1.\\n"
 `;
 
 exports[`functions-mutating-compound.ts > subtractAmount 1`] = `
-"module SubtractAmount.\\n\\nAccount.\\nbalance a1: Account => Int.\\ncount a1: Account => Int.\\n~> SubtractAmount @ a: Account, amount: Int.\\n\\n---\\n\\nbalance' a = balance a - amount.\\ncount' a1 = count a1.\\n"
+"module SubtractAmount.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--count a1: Account => Int.\\n~> Subtract-amount @ a: Account, amount: Int.\\n\\n---\\n\\naccount--balance' a = account--balance a - amount.\\naccount--count' a1 = account--count a1.\\n"
 `;
 
 exports[`functions-mutating-conditional.ts > accumulateIf 1`] = `
-"module AccumulateIf.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> AccumulateIf @ a: Account, g: Bool.\\n\\n---\\n\\nbalance' a = (cond g => 10 + 5, true => 10).\\nowner' a1 = owner a1.\\nactive' a1 = active a1.\\n"
+"module AccumulateIf.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\naccount--active a1: Account => Bool.\\n~> Accumulate-if @ a: Account, g: Bool.\\n\\n---\\n\\naccount--balance' a = (cond g => 10 + 5, true => 10).\\naccount--owner' a1 = account--owner a1.\\naccount--active' a1 = account--active a1.\\n"
 `;
 
 exports[`functions-mutating-conditional.ts > accumulateIfCompound 1`] = `
-"module AccumulateIfCompound.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> AccumulateIfCompound @ a: Account, g: Bool.\\n\\n---\\n\\nbalance' a = (cond g => 10 + 5, true => 10).\\nowner' a1 = owner a1.\\nactive' a1 = active a1.\\n"
+"module AccumulateIfCompound.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\naccount--active a1: Account => Bool.\\n~> Accumulate-if-compound @ a: Account, g: Bool.\\n\\n---\\n\\naccount--balance' a = (cond g => 10 + 5, true => 10).\\naccount--owner' a1 = account--owner a1.\\naccount--active' a1 = account--active a1.\\n"
 `;
 
 exports[`functions-mutating-conditional.ts > applyFee 1`] = `
-"module ApplyFee.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> ApplyFee @ a: Account, fee: Int.\\n\\n---\\n\\nbalance' a = (cond fee > 0 => balance a - fee, true => balance a).\\nowner' a1 = owner a1.\\nactive' a1 = active a1.\\n"
+"module ApplyFee.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\naccount--active a1: Account => Bool.\\n~> Apply-fee @ a: Account, fee: Int.\\n\\n---\\n\\naccount--balance' a = (cond fee > 0 => account--balance a - fee, true => account--balance a).\\naccount--owner' a1 = account--owner a1.\\naccount--active' a1 = account--active a1.\\n"
 `;
 
 exports[`functions-mutating-conditional.ts > asymmetric 1`] = `
-"module Asymmetric.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> Asymmetric @ a: Account, g: Bool, newOwner: String.\\n\\n---\\n\\nbalance' a = (cond g => 0, true => balance a).\\nowner' a = (cond g => owner a, true => newOwner).\\nactive' a1 = active a1.\\n"
+"module Asymmetric.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\naccount--active a1: Account => Bool.\\n~> Asymmetric @ a: Account, g: Bool, new-owner: String.\\n\\n---\\n\\naccount--balance' a = (cond g => 0, true => account--balance a).\\naccount--owner' a = (cond g => account--owner a, true => new-owner).\\naccount--active' a1 = account--active a1.\\n"
 `;
 
 exports[`functions-mutating-conditional.ts > incrementIfPositive 1`] = `
-"module IncrementIfPositive.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> IncrementIfPositive @ a: Account, n: Int.\\n\\n---\\n\\nbalance' a = (cond n > 0 => balance a + n, true => balance a).\\nowner' a1 = owner a1.\\nactive' a1 = active a1.\\n"
+"module IncrementIfPositive.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\naccount--active a1: Account => Bool.\\n~> Increment-if-positive @ a: Account, n: Int.\\n\\n---\\n\\naccount--balance' a = (cond n > 0 => account--balance a + n, true => account--balance a).\\naccount--owner' a1 = account--owner a1.\\naccount--active' a1 = account--active a1.\\n"
 `;
 
 exports[`functions-mutating-conditional.ts > incrementIfPositiveCompound 1`] = `
-"module IncrementIfPositiveCompound.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> IncrementIfPositiveCompound @ a: Account, n: Int.\\n\\n---\\n\\nbalance' a = (cond n > 0 => balance a + n, true => balance a).\\nowner' a1 = owner a1.\\nactive' a1 = active a1.\\n"
+"module IncrementIfPositiveCompound.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\naccount--active a1: Account => Bool.\\n~> Increment-if-positive-compound @ a: Account, n: Int.\\n\\n---\\n\\naccount--balance' a = (cond n > 0 => account--balance a + n, true => account--balance a).\\naccount--owner' a1 = account--owner a1.\\naccount--active' a1 = account--active a1.\\n"
 `;
 
 exports[`functions-mutating-conditional.ts > initializeAndMaybe 1`] = `
-"module InitializeAndMaybe.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> InitializeAndMaybe @ a: Account, g: Bool.\\n\\n---\\n\\nbalance' a = (cond g => 1, true => 0).\\nowner' a1 = owner a1.\\nactive' a1 = active a1.\\n"
+"module InitializeAndMaybe.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\naccount--active a1: Account => Bool.\\n~> Initialize-and-maybe @ a: Account, g: Bool.\\n\\n---\\n\\naccount--balance' a = (cond g => 1, true => 0).\\naccount--owner' a1 = account--owner a1.\\naccount--active' a1 = account--active a1.\\n"
 `;
 
 exports[`functions-mutating-conditional.ts > nestedIfs 1`] = `
-"module NestedIfs.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> NestedIfs @ a: Account, x: Bool, y: Bool.\\n\\n---\\n\\nbalance' a = (cond x => (cond y => 1, true => 2), true => 3).\\nowner' a1 = owner a1.\\nactive' a1 = active a1.\\n"
+"module NestedIfs.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\naccount--active a1: Account => Bool.\\n~> Nested-ifs @ a: Account, x: Bool, y: Bool.\\n\\n---\\n\\naccount--balance' a = (cond x => (cond y => 1, true => 2), true => 3).\\naccount--owner' a1 = account--owner a1.\\naccount--active' a1 = account--active a1.\\n"
 `;
 
 exports[`functions-mutating-conditional.ts > setFlag 1`] = `
-"module SetFlag.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> SetFlag @ a: Account, g: Bool.\\n\\n---\\n\\nactive' a = (cond g => true, true => active a).\\nbalance' a1 = balance a1.\\nowner' a1 = owner a1.\\n"
+"module SetFlag.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\naccount--active a1: Account => Bool.\\n~> Set-flag @ a: Account, g: Bool.\\n\\n---\\n\\naccount--active' a = (cond g => true, true => account--active a).\\naccount--balance' a1 = account--balance a1.\\naccount--owner' a1 = account--owner a1.\\n"
 `;
 
 exports[`functions-mutating-conditional.ts > threeWay 1`] = `
-"module ThreeWay.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\nactive a1: Account => Bool.\\n~> ThreeWay @ a: Account, amount: Int.\\n\\n---\\n\\nbalance' a = (cond amount > 100 => balance a - 100, true => (cond amount > 0 => balance a - 50, true => 0)).\\nowner' a1 = owner a1.\\nactive' a1 = active a1.\\n"
+"module ThreeWay.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\naccount--active a1: Account => Bool.\\n~> Three-way @ a: Account, amount: Int.\\n\\n---\\n\\naccount--balance' a = (cond amount > 100 => account--balance a - 100, true => (cond amount > 0 => account--balance a - 50, true => 0)).\\naccount--owner' a1 = account--owner a1.\\naccount--active' a1 = account--active a1.\\n"
 `;
 
 exports[`functions-mutating-conditional.ts > toggleActive 1`] = `
-"module ToggleActive.\\n\\nUser.\\nactive u1: User => Bool.\\n~> ToggleActive @ u: User.\\n\\n---\\n\\nactive' u = (cond active u => false, true => true).\\n"
+"module ToggleActive.\\n\\nUser.\\nuser--active u1: User => Bool.\\n~> Toggle-active @ u: User.\\n\\n---\\n\\nuser--active' u = (cond user--active u => false, true => true).\\n"
 `;
 
 exports[`functions-mutating-const.ts > aliasedSequentialWrites 1`] = `
-"module AliasedSequentialWrites.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> AliasedSequentialWrites @ a: Account.\\n\\n---\\n\\nbalance' a = 1 + 2.\\n"
+"module AliasedSequentialWrites.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\n~> Aliased-sequential-writes @ a: Account.\\n\\n---\\n\\naccount--balance' a = 1 + 2.\\n"
 `;
 
 exports[`functions-mutating-const.ts > depositWithConst 1`] = `
-"module DepositWithConst.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> DepositWithConst @ a: Account, amount: Int.\\n\\n---\\n\\nbalance' a = balance a + amount.\\n"
+"module DepositWithConst.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\n~> Deposit-with-const @ a: Account, amount: Int.\\n\\n---\\n\\naccount--balance' a = account--balance a + amount.\\n"
 `;
 
 exports[`functions-mutating-const.ts > multiConstMutating 1`] = `
-"module MultiConstMutating.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> MultiConstMutating @ a: Account, amount: Int, rate: Int.\\n\\n---\\n\\nbalance' a = balance a - amount * rate.\\n"
+"module MultiConstMutating.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\n~> Multi-const-mutating @ a: Account, amount: Int, rate: Int.\\n\\n---\\n\\naccount--balance' a = account--balance a - amount * rate.\\n"
 `;
 
 exports[`functions-mutating-early-exit.ts > chainedEarlyReturns 1`] = `
-"module ChainedEarlyReturns.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> ChainedEarlyReturns @ a: Account, g: Bool, h: Bool.\\n\\n---\\n\\nbalance' a = (cond g => balance a, true => (cond h => balance a, true => 1)).\\nowner' a1 = owner a1.\\n"
+"module ChainedEarlyReturns.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Chained-early-returns @ a: Account, g: Bool, h: Bool.\\n\\n---\\n\\naccount--balance' a = (cond g => account--balance a, true => (cond h => account--balance a, true => 1)).\\naccount--owner' a1 = account--owner a1.\\n"
 `;
 
 exports[`functions-mutating-early-exit.ts > earlyReturnMulti 1`] = `
-"module EarlyReturnMulti.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> EarlyReturnMulti @ a: Account, g: Bool, v: Int, who: String.\\n\\n---\\n\\nbalance' a = (cond g => balance a, true => v).\\nowner' a = (cond g => owner a, true => who).\\n"
+"module EarlyReturnMulti.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Early-return-multi @ a: Account, g: Bool, v: Int, who: String.\\n\\n---\\n\\naccount--balance' a = (cond g => account--balance a, true => v).\\naccount--owner' a = (cond g => account--owner a, true => who).\\n"
 `;
 
 exports[`functions-mutating-early-exit.ts > earlyReturnNoBraces 1`] = `
-"module EarlyReturnNoBraces.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> EarlyReturnNoBraces @ a: Account, g: Bool.\\n\\n---\\n\\nbalance' a = (cond g => balance a, true => 0).\\nowner' a1 = owner a1.\\n"
+"module EarlyReturnNoBraces.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Early-return-no-braces @ a: Account, g: Bool.\\n\\n---\\n\\naccount--balance' a = (cond g => account--balance a, true => 0).\\naccount--owner' a1 = account--owner a1.\\n"
 `;
 
 exports[`functions-mutating-early-exit.ts > earlyReturnSimple 1`] = `
-"module EarlyReturnSimple.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> EarlyReturnSimple @ a: Account, g: Bool.\\n\\n---\\n\\nbalance' a = (cond g => balance a, true => 1).\\nowner' a1 = owner a1.\\n"
+"module EarlyReturnSimple.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Early-return-simple @ a: Account, g: Bool.\\n\\n---\\n\\naccount--balance' a = (cond g => account--balance a, true => 1).\\naccount--owner' a1 = account--owner a1.\\n"
 `;
 
 exports[`functions-mutating-early-exit.ts > earlyReturnThenCond 1`] = `
-"module EarlyReturnThenCond.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> EarlyReturnThenCond @ a: Account, g: Bool, h: Bool.\\n\\n---\\n\\nbalance' a = (cond g => balance a, true => (cond h => 1, true => 2)).\\nowner' a1 = owner a1.\\n"
+"module EarlyReturnThenCond.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Early-return-then-cond @ a: Account, g: Bool, h: Bool.\\n\\n---\\n\\naccount--balance' a = (cond g => account--balance a, true => (cond h => 1, true => 2)).\\naccount--owner' a1 = account--owner a1.\\n"
 `;
 
 exports[`functions-mutating-early-exit.ts > elseBranchReturn 1`] = `
-"module ElseBranchReturn.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> ElseBranchReturn @ a: Account, g: Bool, v: Int.\\n\\n---\\n\\nbalance' a = (cond g => v, true => balance a).\\nowner' a1 = owner a1.\\n"
+"module ElseBranchReturn.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Else-branch-return @ a: Account, g: Bool, v: Int.\\n\\n---\\n\\naccount--balance' a = (cond g => v, true => account--balance a).\\naccount--owner' a1 = account--owner a1.\\n"
 `;
 
 exports[`functions-mutating-early-exit.ts > elseReturnThenMore 1`] = `
-"module ElseReturnThenMore.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> ElseReturnThenMore @ a: Account, g: Bool, v: Int.\\n\\n---\\n\\nbalance' a = (cond g => v, true => balance a).\\nowner' a = (cond g => \\"done\\", true => owner a).\\n"
+"module ElseReturnThenMore.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Else-return-then-more @ a: Account, g: Bool, v: Int.\\n\\n---\\n\\naccount--balance' a = (cond g => v, true => account--balance a).\\naccount--owner' a = (cond g => \\"done\\", true => account--owner a).\\n"
 `;
 
 exports[`functions-mutating-early-exit.ts > writeThenEarlyReturn 1`] = `
-"module WriteThenEarlyReturn.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> WriteThenEarlyReturn @ a: Account, g: Bool.\\n\\n---\\n\\nbalance' a = (cond g => 10, true => 10 + 5).\\nowner' a1 = owner a1.\\n"
+"module WriteThenEarlyReturn.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Write-then-early-return @ a: Account, g: Bool.\\n\\n---\\n\\naccount--balance' a = (cond g => 10, true => 10 + 5).\\naccount--owner' a1 = account--owner a1.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > activateActive 1`] = `
-"module ActivateActive.\\n\\nUser.\\nactive u: User => Bool.\\nscore u: User => Int.\\n~> ActivateActive @ users: [User].\\n\\n---\\n\\nall u in users | active' u = (cond score u > 0 => true, true => active u).\\nscore' u = score u.\\n"
+"module ActivateActive.\\n\\nUser.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\n~> Activate-active @ users: [User].\\n\\n---\\n\\nall u in users | user--active' u = (cond user--score u > 0 => true, true => user--active u).\\nuser--score' u = user--score u.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > activateAll 1`] = `
-"module ActivateAll.\\n\\nUser.\\nactive u: User => Bool.\\nscore u: User => Int.\\n~> ActivateAll @ users: [User].\\n\\n---\\n\\nall u in users | active' u = true.\\nscore' u = score u.\\n"
+"module ActivateAll.\\n\\nUser.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\n~> Activate-all @ users: [User].\\n\\n---\\n\\nall u in users | user--active' u = true.\\nuser--score' u = user--score u.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > deductFees 1`] = `
-"module DeductFees.\\n\\nAccount.\\ntotal a1: Account => Int.\\nbalance a1: Account => Int.\\nFee.\\namount f: Fee => Int.\\n~> DeductFees @ a: Account, fees: [Fee].\\n\\n---\\n\\nbalance' a = balance a - (+ over each f in fees | amount f).\\ntotal' a1 = total a1.\\namount' f = amount f.\\n"
+"module DeductFees.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nFee.\\nfee--amount f: Fee => Int.\\n~> Deduct-fees @ a: Account, fees: [Fee].\\n\\n---\\n\\naccount--balance' a = account--balance a - (+ over each f in fees | fee--amount f).\\naccount--total' a1 = account--total a1.\\nfee--amount' f = fee--amount f.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > forEachActivate 1`] = `
-"module ForEachActivate.\\n\\nUser.\\nactive u: User => Bool.\\nscore u: User => Int.\\n~> ForEachActivate @ users: [User].\\n\\n---\\n\\nall u in users | active' u = true.\\nscore' u = score u.\\n"
+"module ForEachActivate.\\n\\nUser.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\n~> For-each-activate @ users: [User].\\n\\n---\\n\\nall u in users | user--active' u = true.\\nuser--score' u = user--score u.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > forEachSum 1`] = `
-"module ForEachSum.\\n\\nAccount.\\ntotal a1: Account => Int.\\nbalance a1: Account => Int.\\nItem.\\nvalue i: Item => Int.\\ntagged i: Item => Bool.\\n~> ForEachSum @ a: Account, items: [Item].\\n\\n---\\n\\ntotal' a = total a + (+ over each x in items | value x).\\nbalance' a1 = balance a1.\\nvalue' i = value i.\\ntagged' i = tagged i.\\n"
+"module ForEachSum.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> For-each-sum @ a: Account, items: [Item].\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each x in items | item--value x).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\nitem--tagged' i = item--tagged i.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > mixedUpdates 1`] = `
-"module MixedUpdates.\\n\\nAccount.\\ntotal a1: Account => Int.\\nbalance a1: Account => Int.\\nItem.\\nvalue i: Item => Int.\\ntagged i: Item => Bool.\\n~> MixedUpdates @ a: Account, items: [Item].\\n\\n---\\n\\nall x in items | tagged' x = true.\\ntotal' a = total a + (+ over each x in items | value x).\\nbalance' a1 = balance a1.\\nvalue' i = value i.\\n"
+"module MixedUpdates.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Mixed-updates @ a: Account, items: [Item].\\n\\n---\\n\\nall x in items | item--tagged' x = true.\\naccount--total' a = account--total a + (+ over each x in items | item--value x).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > sumAmounts 1`] = `
-"module SumAmounts.\\n\\nAccount.\\ntotal a1: Account => Int.\\nbalance a1: Account => Int.\\nItem.\\nvalue i: Item => Int.\\ntagged i: Item => Bool.\\n~> SumAmounts @ a: Account, items: [Item].\\n\\n---\\n\\ntotal' a = total a + (+ over each x in items | value x).\\nbalance' a1 = balance a1.\\nvalue' i = value i.\\ntagged' i = tagged i.\\n"
+"module SumAmounts.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Sum-amounts @ a: Account, items: [Item].\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each x in items | item--value x).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\nitem--tagged' i = item--tagged i.\\n"
+`;
+
+exports[`functions-mutating-loop.ts > sumIntoAnon 1`] = `
+"module SumIntoAnon.\\n\\nTotalRec.\\ntotal-rec--total r: TotalRec => Int.\\n~> Sum-into-anon @ acc: TotalRec, items: [Int].\\n\\n---\\n\\ntotal-rec--total' acc = total-rec--total acc + (+ over each x in items | x).\\n"
 `;
 
 exports[`functions-mutating-loop.ts > sumPositive 1`] = `
-"module SumPositive.\\n\\nAccount.\\ntotal a1: Account => Int.\\nbalance a1: Account => Int.\\nItem.\\nvalue i: Item => Int.\\ntagged i: Item => Bool.\\n~> SumPositive @ a: Account, items: [Item].\\n\\n---\\n\\ntotal' a = total a + (+ over each x in items, value x > 0 | value x).\\nbalance' a1 = balance a1.\\nvalue' i = value i.\\ntagged' i = tagged i.\\n"
+"module SumPositive.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Sum-positive @ a: Account, items: [Item].\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each x in items, item--value x > 0 | item--value x).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\nitem--tagged' i = item--tagged i.\\n"
 `;
 
 exports[`functions-mutating.ts > deposit 1`] = `
-"module Deposit.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> Deposit @ a: Account, amount: Int.\\n\\n---\\n\\nbalance' a = balance a + amount.\\nowner' a1 = owner a1.\\n"
+"module Deposit.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Deposit @ a: Account, amount: Int.\\n\\n---\\n\\naccount--balance' a = account--balance a + amount.\\naccount--owner' a1 = account--owner a1.\\n"
 `;
 
 exports[`functions-mutating.ts > depositWrapped 1`] = `
-"module DepositWrapped.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> DepositWrapped @ a: Account, amount: Int.\\n\\n---\\n\\nbalance' a = balance a + amount.\\nowner' a1 = owner a1.\\n"
+"module DepositWrapped.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Deposit-wrapped @ a: Account, amount: Int.\\n\\n---\\n\\naccount--balance' a = account--balance a + amount.\\naccount--owner' a1 = account--owner a1.\\n"
 `;
 
 exports[`functions-mutating.ts > reset 1`] = `
-"module Reset.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> Reset @ a: Account.\\n\\n---\\n\\nbalance' a = 0.\\nowner' a1 = owner a1.\\n"
+"module Reset.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Reset @ a: Account.\\n\\n---\\n\\naccount--balance' a = 0.\\naccount--owner' a1 = account--owner a1.\\n"
 `;
 
 exports[`functions-mutating.ts > transfer 1`] = `
-"module Transfer.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> Transfer @ a: Account, newOwner: String, fee: Int.\\n\\n---\\n\\nbalance' a = balance a - fee.\\nowner' a = newOwner.\\n"
+"module Transfer.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Transfer @ a: Account, new-owner: String, fee: Int.\\n\\n---\\n\\naccount--balance' a = account--balance a - fee.\\naccount--owner' a = new-owner.\\n"
 `;
 
 exports[`functions-pure.ts > add 1`] = `
@@ -631,125 +643,125 @@ exports[`functions-pure.ts > add 1`] = `
 `;
 
 exports[`functions-pure.ts > getBalance 1`] = `
-"module GetBalance.\\n\\nAccount.\\nbalance a1: Account => Int.\\ngetBalance a: Account => Int.\\n\\n---\\n\\ngetBalance a = balance a.\\n"
+"module GetBalance.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nget-balance a: Account => Int.\\n\\n---\\n\\nget-balance a = account--balance a.\\n"
 `;
 
 exports[`functions-pure.ts > getNames 1`] = `
-"module GetNames.\\n\\ngetNames names: [String] => [String].\\n\\n---\\n\\ngetNames names = names.\\n"
+"module GetNames.\\n\\nget-names names: [String] => [String].\\n\\n---\\n\\nget-names names = names.\\n"
 `;
 
 exports[`functions-pure.ts > getVersion 1`] = `
-"module GetVersion.\\n\\ngetVersion  => Int.\\n\\n---\\n\\ngetVersion = 42.\\n"
+"module GetVersion.\\n\\nget-version  => Int.\\n\\n---\\n\\nget-version = 42.\\n"
 `;
 
 exports[`functions-pure.ts > isPositive 1`] = `
-"module IsPositive.\\n\\nisPositive n: Int => Bool.\\n\\n---\\n\\nisPositive n = (n > 0).\\n"
+"module IsPositive.\\n\\nis-positive n: Int => Bool.\\n\\n---\\n\\nis-positive n = (n > 0).\\n"
 `;
 
 exports[`guards-assert.ts > deposit 1`] = `
-"module Deposit.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> Deposit @ account: Account, amount: Int, amount > 0.\\n\\n---\\n\\nbalance' account = balance account + amount.\\n"
+"module Deposit.\\n\\nAccount.\\naccount--balance a: Account => Int.\\n~> Deposit @ account: Account, amount: Int, amount > 0.\\n\\n---\\n\\naccount--balance' account = account--balance account + amount.\\n"
 `;
 
 exports[`guards-assert.ts > mixedGuard 1`] = `
-"module MixedGuard.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> MixedGuard @ account: Account, amount: Int, ~(amount <= 0) and balance account >= 0.\\n\\n---\\n\\nbalance' account = balance account + amount.\\n"
+"module MixedGuard.\\n\\nAccount.\\naccount--balance a: Account => Int.\\n~> Mixed-guard @ account: Account, amount: Int, ~(amount <= 0) and account--balance account >= 0.\\n\\n---\\n\\naccount--balance' account = account--balance account + amount.\\n"
 `;
 
 exports[`guards-assert.ts > multiAssert 1`] = `
-"module MultiAssert.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> MultiAssert @ account: Account, amount: Int, amount > 0 and balance account >= 0.\\n\\n---\\n\\nbalance' account = balance account + amount.\\n"
+"module MultiAssert.\\n\\nAccount.\\naccount--balance a: Account => Int.\\n~> Multi-assert @ account: Account, amount: Int, amount > 0 and account--balance account >= 0.\\n\\n---\\n\\naccount--balance' account = account--balance account + amount.\\n"
 `;
 
 exports[`guards-helper.ts > depositConst 1`] = `
-"module DepositConst.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> DepositConst @ account: Account, amount: Int, ~(amount <= 0).\\n\\n---\\n\\nbalance' account = balance account + amount.\\n"
+"module DepositConst.\\n\\nAccount.\\naccount--balance a: Account => Int.\\n~> Deposit-const @ account: Account, amount: Int, ~(amount <= 0).\\n\\n---\\n\\naccount--balance' account = account--balance account + amount.\\n"
 `;
 
 exports[`guards-helper.ts > depositDeep 1`] = `
-"module DepositDeep.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> DepositDeep @ account: Account, amount: Int, ~(amount <= 0) and ~(((balance account)) <= 0).\\n\\n---\\n\\nbalance' account = balance account + amount.\\n"
+"module DepositDeep.\\n\\nAccount.\\naccount--balance a: Account => Int.\\n~> Deposit-deep @ account: Account, amount: Int, ~(amount <= 0) and ~(((account--balance account)) <= 0).\\n\\n---\\n\\naccount--balance' account = account--balance account + amount.\\n"
 `;
 
 exports[`guards-helper.ts > depositDirect 1`] = `
-"module DepositDirect.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> DepositDirect @ account: Account, amount: Int, ~(amount <= 0).\\n\\n---\\n\\nbalance' account = balance account + amount.\\n"
+"module DepositDirect.\\n\\nAccount.\\naccount--balance a: Account => Int.\\n~> Deposit-direct @ account: Account, amount: Int, ~(amount <= 0).\\n\\n---\\n\\naccount--balance' account = account--balance account + amount.\\n"
 `;
 
 exports[`guards-helper.ts > depositMulti 1`] = `
-"module DepositMulti.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> DepositMulti @ account: Account, amount: Int, ~(amount <= 0) and ~((balance account) <= 0).\\n\\n---\\n\\nbalance' account = balance account + amount.\\n"
+"module DepositMulti.\\n\\nAccount.\\naccount--balance a: Account => Int.\\n~> Deposit-multi @ account: Account, amount: Int, ~(amount <= 0) and ~((account--balance account) <= 0).\\n\\n---\\n\\naccount--balance' account = account--balance account + amount.\\n"
 `;
 
 exports[`guards-helper.ts > depositSubst 1`] = `
-"module DepositSubst.\\n\\nAccount.\\nbalance a: Account => Int.\\n~> DepositSubst @ account: Account, amount: Int, ~((balance account) <= 0).\\n\\n---\\n\\nbalance' account = balance account + amount.\\n"
+"module DepositSubst.\\n\\nAccount.\\naccount--balance a: Account => Int.\\n~> Deposit-subst @ account: Account, amount: Int, ~((account--balance account) <= 0).\\n\\n---\\n\\naccount--balance' account = account--balance account + amount.\\n"
 `;
 
 exports[`guards-if-throw.ts > earlyThrow 1`] = `
-"module EarlyThrow.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> EarlyThrow @ a: Account, amount: Int, balance a >= amount.\\n\\n---\\n\\nbalance' a = balance a - amount.\\n"
+"module EarlyThrow.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\n~> Early-throw @ a: Account, amount: Int, account--balance a >= amount.\\n\\n---\\n\\naccount--balance' a = account--balance a - amount.\\n"
 `;
 
 exports[`guards-if-throw.ts > guardWithLocals 1`] = `
-"module GuardWithLocals.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> GuardWithLocals @ a: Account, amount: Int, balance a >= amount.\\n\\n---\\n\\nbalance' a = balance a - amount.\\n"
+"module GuardWithLocals.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\n~> Guard-with-locals @ a: Account, amount: Int, account--balance a >= amount.\\n\\n---\\n\\naccount--balance' a = account--balance a - amount.\\n"
 `;
 
 exports[`guards-if-throw.ts > notGuardSideEffects 1`] = `
-"module NotGuardSideEffects.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> NotGuardSideEffects @ a: Account, amount: Int.\\n\\n---\\n\\n> UNSUPPORTED: side-effectful control-flow expression.\\n"
+"module NotGuardSideEffects.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\n~> Not-guard-side-effects @ a: Account, amount: Int.\\n\\n---\\n\\n> UNSUPPORTED: side-effectful control-flow expression.\\n"
 `;
 
 exports[`guards-if-throw.ts > withdraw 1`] = `
-"module Withdraw.\\n\\nAccount.\\nbalance a1: Account => Int.\\n~> Withdraw @ a: Account, amount: Int, balance a >= amount.\\n\\n---\\n\\nbalance' a = balance a - amount.\\n"
+"module Withdraw.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\n~> Withdraw @ a: Account, amount: Int, account--balance a >= amount.\\n\\n---\\n\\naccount--balance' a = account--balance a - amount.\\n"
 `;
 
 exports[`types-composite.ts > getBooks 1`] = `
-"module GetBooks.\\n\\nLibrary.\\nbooks l: Library => [String].\\ngetBooks lib: Library => [String].\\n\\n---\\n\\ngetBooks lib = books lib.\\n"
+"module GetBooks.\\n\\nLibrary.\\nlibrary--books l: Library => [String].\\nget-books lib: Library => [String].\\n\\n---\\n\\nget-books lib = library--books lib.\\n"
 `;
 
 exports[`types-composite.ts > getCity 1`] = `
-"module GetCity.\\n\\nAddress.\\ncity a: Address => String.\\nCustomer.\\naddress c: Customer => Address.\\nOrder.\\ncustomer o1: Order => Customer.\\ntotal o1: Order => Int.\\ngetCity o: Order => String.\\n\\n---\\n\\ngetCity o = city (address (customer o)).\\n"
+"module GetCity.\\n\\nAddress.\\naddress--city a: Address => String.\\nCustomer.\\ncustomer--address c: Customer => Address.\\nOrder.\\norder--customer o1: Order => Customer.\\norder--total o1: Order => Int.\\nget-city o: Order => String.\\n\\n---\\n\\nget-city o = address--city (customer--address (order--customer o)).\\n"
 `;
 
 exports[`types-composite.ts > getOwnerName 1`] = `
-"module GetOwnerName.\\n\\nUser.\\nname u: User => String.\\nAccount.\\nowner a1: Account => User.\\nbalance a1: Account => Int.\\ngetOwnerName a: Account => String.\\n\\n---\\n\\ngetOwnerName a = name (owner a).\\n"
+"module GetOwnerName.\\n\\nUser.\\nuser--name u: User => String.\\nAccount.\\naccount--owner a1: Account => User.\\naccount--balance a1: Account => Int.\\nget-owner-name a: Account => String.\\n\\n---\\n\\nget-owner-name a = user--name (account--owner a).\\n"
 `;
 
 exports[`types-composite.ts > getPoint 1`] = `
-"module GetPoint.\\n\\ngetPoint  => Int * Int.\\n\\n---\\n\\ngetPoint = [0, 0].\\n"
+"module GetPoint.\\n\\nget-point  => Int * Int.\\n\\n---\\n\\nget-point = [0, 0].\\n"
 `;
 
 exports[`types-composite.ts > getResult 1`] = `
-"module GetResult.\\n\\nValue.\\ndata v1: Value => String.\\ngetResult v: [Value] => [Value].\\n\\n---\\n\\ngetResult v = v.\\n"
+"module GetResult.\\n\\nValue.\\nvalue--data v1: Value => String.\\nget-result v: [Value] => [Value].\\n\\n---\\n\\nget-result v = v.\\n"
 `;
 
 exports[`types-composite.ts > getStatus 1`] = `
-"module GetStatus.\\n\\nUserWithStatus.\\nname u1: UserWithStatus => String.\\nstatus u1: UserWithStatus => Int.\\ngetStatus u: UserWithStatus => Int.\\n\\n---\\n\\ngetStatus u = status u.\\n"
+"module GetStatus.\\n\\nUserWithStatus.\\nuser-with-status--name u1: UserWithStatus => String.\\nuser-with-status--status u1: UserWithStatus => Int.\\nget-status u: UserWithStatus => Int.\\n\\n---\\n\\nget-status u = user-with-status--status u.\\n"
 `;
 
 exports[`types-primitives.ts > getAssignee 1`] = `
-"module GetAssignee.\\n\\nTask.\\nassignee t1: Task => [String].\\ngetAssignee t: Task => [String].\\n\\n---\\n\\ngetAssignee t = assignee t.\\n"
+"module GetAssignee.\\n\\nTask.\\ntask--assignee t1: Task => [String].\\nget-assignee t: Task => [String].\\n\\n---\\n\\nget-assignee t = task--assignee t.\\n"
 `;
 
 exports[`types-primitives.ts > getBalance 1`] = `
-"module GetBalance.\\n\\nAccount.\\nbalance a1: Account => Int.\\ngetBalance a: Account => Int.\\n\\n---\\n\\ngetBalance a = balance a.\\n"
+"module GetBalance.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nget-balance a: Account => Int.\\n\\n---\\n\\nget-balance a = account--balance a.\\n"
 `;
 
 exports[`types-primitives.ts > getName 1`] = `
-"module GetName.\\n\\nUser.\\nname u1: User => String.\\nactive u1: User => Bool.\\ngetName u: User => String.\\n\\n---\\n\\ngetName u = name u.\\n"
+"module GetName.\\n\\nUser.\\nuser--name u1: User => String.\\nuser--active u1: User => Bool.\\nget-name u: User => String.\\n\\n---\\n\\nget-name u = user--name u.\\n"
 `;
 
 exports[`types-primitives.ts > isActive 1`] = `
-"module IsActive.\\n\\nUser.\\nname u1: User => String.\\nactive u1: User => Bool.\\nisActive u: User => Bool.\\n\\n---\\n\\nisActive u = active u.\\n"
+"module IsActive.\\n\\nUser.\\nuser--name u1: User => String.\\nuser--active u1: User => Bool.\\nis-active u: User => Bool.\\n\\n---\\n\\nis-active u = user--active u.\\n"
 `;
 
 exports[`unsupported.ts > arrowWithLocals 1`] = `
-"module ArrowWithLocals.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\narrowWithLocals users: [User] => [String].\\n\\n---\\n\\n> UNSUPPORTED: users.filter((u) => u.active).map((u) => { const s = u.score; return u.name; }).\\n"
+"module ArrowWithLocals.\\n\\nUser.\\nuser--name u: User => String.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\narrow-with-locals users: [User] => [String].\\n\\n---\\n\\n> UNSUPPORTED: users.filter((u) => u.active).map((u) => { const s = u.score; return u.name; }).\\n"
 `;
 
 exports[`unsupported.ts > destructuredParam 1`] = `
-"module DestructuredParam.\\n\\nUser.\\nname u: User => String.\\nactive u: User => Bool.\\nscore u: User => Int.\\ndestructuredParam users: [User] => [String].\\n\\n---\\n\\n> UNSUPPORTED: filter/map callback must have exactly one identifier parameter.\\n"
+"module DestructuredParam.\\n\\nUser.\\nuser--name u: User => String.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\ndestructured-param users: [User] => [String].\\n\\n---\\n\\n> UNSUPPORTED: filter/map callback must have exactly one identifier parameter.\\n"
 `;
 
 exports[`unsupported.ts > impureGuardAssign 1`] = `
-"module ImpureGuardAssign.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> ImpureGuardAssign @ a: Account.\\n\\n---\\n\\n> UNSUPPORTED: impure if-condition in mutating body.\\n"
+"module ImpureGuardAssign.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Impure-guard-assign @ a: Account.\\n\\n---\\n\\n> UNSUPPORTED: impure if-condition in mutating body.\\n"
 `;
 
 exports[`unsupported.ts > loopAssign 1`] = `
-"module LoopAssign.\\n\\nAccount.\\nbalance a1: Account => Int.\\nowner a1: Account => String.\\n~> LoopAssign @ a: Account.\\n\\n---\\n\\n> UNSUPPORTED: loop assignment.\\n"
+"module LoopAssign.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Loop-assign @ a: Account.\\n\\n---\\n\\n> UNSUPPORTED: loop assignment.\\n"
 `;
 
 exports[`unsupported.ts > multiParamCallback 1`] = `
-"module MultiParamCallback.\\n\\nItem.\\nvalue i: Item => Int.\\nmultiParamCallback items: [Item] => [Int].\\n\\n---\\n\\n> UNSUPPORTED: filter/map callback must have exactly one identifier parameter.\\n"
+"module MultiParamCallback.\\n\\nItem.\\nitem--value i: Item => Int.\\nmulti-param-callback items: [Item] => [Int].\\n\\n---\\n\\n> UNSUPPORTED: filter/map callback must have exactly one identifier parameter.\\n"
 `;

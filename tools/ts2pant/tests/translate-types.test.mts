@@ -1,7 +1,8 @@
-import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import {
   createSourceFileFromSource,
+  type ExtractedInterface,
   extractAllTypes,
   extractReferencedTypes,
   getChecker,
@@ -12,6 +13,7 @@ import {
   RealStrategy,
   translateTypes,
 } from "../src/translate-types.js";
+import type { PantDeclaration } from "../src/types.js";
 
 // Tests for internal type translation APIs: mapTsType, extractReferencedTypes
 // recursive following, numeric strategy. See tests/fixtures/constructs/ for
@@ -32,11 +34,17 @@ describe("numeric strategy", () => {
       IntStrategy,
     );
 
-    assert.ok(decls.some((d: any) =>
-      d.kind === "rule" && d.name === "value" &&
-      d.params.length === 1 && d.params[0].name === "f" && d.params[0].type === "Foo" &&
-      d.returnType === "Int"
-    ));
+    assert.ok(
+      decls.some(
+        (d: PantDeclaration) =>
+          d.kind === "rule" &&
+          d.name === "foo--value" &&
+          d.params.length === 1 &&
+          d.params[0].name === "f" &&
+          d.params[0].type === "Foo" &&
+          d.returnType === "Int",
+      ),
+    );
   });
 
   it("RealStrategy maps number to Real", () => {
@@ -45,11 +53,17 @@ describe("numeric strategy", () => {
       RealStrategy,
     );
 
-    assert.ok(decls.some((d: any) =>
-      d.kind === "rule" && d.name === "value" &&
-      d.params.length === 1 && d.params[0].name === "f" && d.params[0].type === "Foo" &&
-      d.returnType === "Real"
-    ));
+    assert.ok(
+      decls.some(
+        (d: PantDeclaration) =>
+          d.kind === "rule" &&
+          d.name === "foo--value" &&
+          d.params.length === 1 &&
+          d.params[0].name === "f" &&
+          d.params[0].type === "Foo" &&
+          d.returnType === "Real",
+      ),
+    );
   });
 });
 
@@ -67,7 +81,11 @@ describe("class method referenced types", () => {
     `;
     const sourceFile = createSourceFileFromSource(source);
     const extracted = extractReferencedTypes(sourceFile, "Account.getOwner");
-    assert.ok(extracted.interfaces.map((i: any) => i.name).includes("User"));
+    assert.ok(
+      extracted.interfaces
+        .map((i: ExtractedInterface) => i.name)
+        .includes("User"),
+    );
   });
 });
 
@@ -112,7 +130,7 @@ describe("recursive type following", () => {
     const sourceFile = createSourceFileFromSource(source);
     const extracted = extractReferencedTypes(sourceFile, "getBalance");
 
-    const names = extracted.interfaces.map((i: any) => i.name);
+    const names = extracted.interfaces.map((i: ExtractedInterface) => i.name);
     assert.ok(names.includes("Account"));
     assert.ok(names.includes("User"));
     assert.ok(!names.includes("Unrelated"));
@@ -130,7 +148,11 @@ describe("recursive type following", () => {
     const sourceFile = createSourceFileFromSource(source);
     const extracted = extractReferencedTypes(sourceFile, "getUser");
 
-    assert.ok(extracted.interfaces.map((i: any) => i.name).includes("User"));
+    assert.ok(
+      extracted.interfaces
+        .map((i: ExtractedInterface) => i.name)
+        .includes("User"),
+    );
   });
 
   it("follows array element types", () => {
@@ -145,7 +167,11 @@ describe("recursive type following", () => {
     const sourceFile = createSourceFileFromSource(source);
     const extracted = extractReferencedTypes(sourceFile, "getItems");
 
-    assert.ok(extracted.interfaces.map((i: any) => i.name).includes("Item"));
+    assert.ok(
+      extracted.interfaces
+        .map((i: ExtractedInterface) => i.name)
+        .includes("Item"),
+    );
   });
 
   it("follows nested references transitively", () => {
@@ -168,7 +194,7 @@ describe("recursive type following", () => {
     const sourceFile = createSourceFileFromSource(source);
     const extracted = extractReferencedTypes(sourceFile, "processOrder");
 
-    const names = extracted.interfaces.map((i: any) => i.name);
+    const names = extracted.interfaces.map((i: ExtractedInterface) => i.name);
     assert.ok(names.includes("Order"));
     assert.ok(names.includes("User"));
     assert.ok(names.includes("Address"));
