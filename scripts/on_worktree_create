@@ -16,6 +16,11 @@ else
   exit 1
 fi
 
+# Install any deps that landed since the switch was last synced. No-op when
+# the switch already has everything — cheap insurance against a new library
+# in dune-project causing "Library X not found" at build time.
+opam install ./pantagruel.opam --deps-only --with-test --yes
+
 # OCaml: build the project
 opam exec -- dune build
 
