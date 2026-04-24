@@ -1186,6 +1186,15 @@ function recognizeMuSearch(
   if (!ts.isIdentifier(update.operand) || update.operand.text !== counterName) {
     return null;
   }
+  // Predicate must reference the counter; otherwise the loop is either a
+  // no-op or a divergence, neither of which is a μ-search. Translating
+  // such a shape as `min over each j: Nat, j >= INIT, ~Q | j` (with Q
+  // free of j) changes behavior at the non-terminating case.
+  if (
+    !expressionReferencesNames(whileStmt.expression, new Set([counterName]))
+  ) {
+    return null;
+  }
 
   return {
     counterName,
@@ -1466,9 +1475,21 @@ function translateMuSearchInit(
   }
   const initExpr = bodyExpr(initResult);
 
-  const jName = supply.synthCell
-    ? cellRegisterName(supply.synthCell, "j")
-    : `j${nextSupply(supply)}`;
+  // `synthCell` path uses the document-wide NameRegistry (kebab-cased,
+  // numeric-suffixed) and is inherently collision-safe against other
+  // registered names. The standalone fallback has to guard itself against
+  // the current frame's Pant names — `scopedParams.values()` is the set
+  // the comprehension binder must avoid so predicate translation cannot
+  // alias a param to the fresh binder.
+  let jName: string;
+  if (supply.synthCell) {
+    jName = cellRegisterName(supply.synthCell, "j");
+  } else {
+    const usedNames = new Set(scopedParams.values());
+    do {
+      jName = `j${nextSupply(supply)}`;
+    } while (usedNames.has(jName));
+  }
   const predicateScope = withParam(scopedParams, mu.counterName, jName);
   const predResult = translateBodyExpr(
     mu.predicateTsExpr,

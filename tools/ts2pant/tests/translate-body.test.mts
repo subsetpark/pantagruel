@@ -1060,4 +1060,28 @@ describe("Kleene μ-search (while-loop minimum)", () => {
       );
     }
   });
+
+  it("rejects when the predicate does not reference the counter", () => {
+    // `while (Q) i++` with Q free of i is not a μ-search: it is a no-op
+    // (Q false) or a divergence (Q true). Lowering it as
+    // `min over each j | ~Q` would change behavior in the divergent case.
+    const source = `
+      export function bogus(used: ReadonlySet<number>, flag: boolean): number {
+        let i = 1;
+        while (flag) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "bogus",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+  });
 });
