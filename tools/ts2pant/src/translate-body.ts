@@ -3114,6 +3114,11 @@ function translateCallExpr(
 
     // General method call: obj.method(args) → method obj args (EUF encoding)
     // Ref: Kroening & Strichman, Decision Procedures, Ch. 4
+    //
+    // Normalize the method name with the same kebab-casing applied to
+    // declarations (mirrors the free-function branch below). A property
+    // token is not a variable reference, so the callee is never resolved
+    // through `paramNames`.
     if (expr.arguments.some(ts.isSpreadElement)) {
       return { unsupported: expr.getText() };
     }
@@ -3143,7 +3148,7 @@ function translateCallExpr(
       }
       methodArgs.push(bodyExpr(a));
     }
-    return { expr: ast.app(ast.var(methodName), methodArgs) };
+    return { expr: ast.app(ast.var(toPantTermName(methodName)), methodArgs) };
   }
 
   // Free function calls: fn(args) → fn args (EUF encoding)

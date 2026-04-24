@@ -288,12 +288,16 @@ export function toPantTermName(name: string): string {
     return kebab;
   }
   // All-punctuation / all-underscore input. Emit a stable fallback:
-  // `t` + hex of each codepoint. Deterministic, non-colliding across
-  // distinct inputs, and always non-empty + lexable.
+  // `t_` + hex of each codepoint, joined by `_`. Underscores cannot
+  // appear in kebab output (the `[_\s]+` step rewrites them to `-`),
+  // so the `t_`-prefixed namespace is disjoint from every normal
+  // normalization — `toPantTermName("$")` -> `t_24` no longer collides
+  // with `toPantTermName("t24")` -> `t24`. Hex-joined codepoints are
+  // injective across distinct inputs.
   const hex = Array.from(name)
     .map((c) => c.codePointAt(0)!.toString(16))
-    .join("-");
-  return `t${hex || "0"}`;
+    .join("_");
+  return `t_${hex || "0"}`;
 }
 
 /**

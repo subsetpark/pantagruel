@@ -127,7 +127,7 @@ exports[`expressions-calls.ts > freeCall 1`] = `
 `;
 
 exports[`expressions-calls.ts > methodCall 1`] = `
-"module MethodCall.\\n\\nmethod-call s: String => String.\\n\\n---\\n\\nmethod-call s = toUpperCase s.\\n"
+"module MethodCall.\\n\\nmethod-call s: String => String.\\n\\n---\\n\\nmethod-call s = to-upper-case s.\\n"
 `;
 
 exports[`expressions-calls.ts > nestedCalls 1`] = `
@@ -203,7 +203,7 @@ exports[`expressions-const-pure-calls.ts > constMathMax 1`] = `
 `;
 
 exports[`expressions-const-pure-calls.ts > constStringMethod 1`] = `
-"module ConstStringMethod.\\n\\nconst-string-method s: String => Int.\\n\\n---\\n\\nconst-string-method s = indexOf s \\"x\\".\\n"
+"module ConstStringMethod.\\n\\nconst-string-method s: String => Int.\\n\\n---\\n\\nconst-string-method s = index-of s \\"x\\".\\n"
 `;
 
 exports[`expressions-literals.ts > fortyTwo 1`] = `
