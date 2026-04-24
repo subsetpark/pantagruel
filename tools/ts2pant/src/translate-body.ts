@@ -1190,7 +1190,7 @@ function recognizeMuSearch(
   }
   // Predicate must reference the counter; otherwise the loop is either a
   // no-op or a divergence, neither of which is a μ-search. Translating
-  // such a shape as `min over each j: Nat, j >= INIT, ~Q | j` (with Q
+  // such a shape as `min over each j: Int, j >= INIT, ~Q | j` (with Q
   // free of j) changes behavior at the non-terminating case.
   if (
     !expressionReferencesNames(whileStmt.expression, new Set([counterName]))
@@ -1457,13 +1457,14 @@ function translateBindingInit(
 }
 
 /**
- * Emit a `min over each j: Nat, j >= init, ~P(j) | j` expression for a
- * recognized μ-search binding. A fresh comprehension binder takes the place
- * of the loop counter inside the predicate. The binder is allocated through
- * the document-wide name registry (when present) so it never collides with
- * the function's own params or with type-derived rule binders; the `$N`
- * `freshHygienicBinder` form would not round-trip through Pantagruel's parser
- * since `$` isn't a legal identifier character.
+ * Emit a `min over each j: Int, j >= init, ~P(j) | j` expression for a
+ * recognized μ-search binding (binder type follows `strategy.mapNumber()`).
+ * A fresh comprehension binder takes the place of the loop counter inside
+ * the predicate. The binder is allocated through the document-wide name
+ * registry (when present) so it never collides with the function's own
+ * params or with type-derived rule binders; the `$N` `freshHygienicBinder`
+ * form would not round-trip through Pantagruel's parser since `$` isn't a
+ * legal identifier character.
  */
 function translateMuSearchInit(
   mu: MuSearch,
@@ -1517,9 +1518,13 @@ function translateMuSearchInit(
   }
   const predExpr = bodyExpr(predResult);
 
+  // Binder type follows the active NumericStrategy so the comprehension
+  // stays consistent with how `number` is emitted elsewhere. A hardcoded
+  // `Nat` would exclude negative INITs from the search domain and
+  // diverge from the containing body's numeric type.
   return {
     value: ast.eachComb(
-      [ast.param(jName, ast.tName("Nat"))],
+      [ast.param(jName, ast.tName(strategy.mapNumber()))],
       [
         ast.gExpr(ast.binop(ast.opGe(), ast.var(jName), initExpr)),
         ast.gExpr(ast.unop(ast.opNot(), predExpr)),

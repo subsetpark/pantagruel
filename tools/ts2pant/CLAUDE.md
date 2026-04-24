@@ -416,17 +416,19 @@ into `ast.each([], [gIn(binder, arrExpr), ...guards], projection)` at the chain 
 
 ### Kleene Minimization (While-Loop μ-Search)
 
-**Standard name:** Kleene μ-operator / bounded minimization.
+**Standard name:** Kleene μ-operator / unbounded minimization (with an
+explicit lower-bound guard `j >= INIT`).
 **Reference:** Kleene, *General Recursive Functions of Natural Numbers*,
 Math. Ann. 112 (1936); Kroening & Strichman, *Decision Procedures* Ch. 4
-(quantifier elimination over bounded integer ranges).
+(quantifier elimination over integer ranges).
 
 `let counter = INIT; while (P(counter)) { counter++ }` is the canonical
 "find the least integer ≥ INIT satisfying ¬P" pattern. Pure-body translation
 recognizes this exact statement pair in the prelude scan and emits
-`min over each j: Nat, j >= INIT, ~P(j) | j`, which is Pantagruel's direct
-target for μ-minimization (`ast.eachComb` with `combMin`). The loop counter
-is replaced inside the predicate by a fresh comprehension binder, and the
+`min over each j: Int, j >= INIT, ~P(j) | j` (binder type follows the
+active `NumericStrategy`), which is Pantagruel's direct target for
+μ-minimization (`ast.eachComb` with `combMin`). The loop counter is
+replaced inside the predicate by a fresh comprehension binder, and the
 resulting expression flows through the standard `inlineConstBindings`
 substitution closure — so any post-loop reference to the counter inlines
 the `min over each` directly into the consumer expression.
@@ -436,7 +438,7 @@ let suffix = 1;
 while (used.has(suffix)) { suffix++; }
 return suffix;
 // →
-foo used = (min over each j: Nat, j >= 1, ~(j in used) | j).
+foo used = (min over each j: Int, j >= 1, ~(j in used) | j).
 ```
 
 **Recognizer scope (`recognizeMuSearch` in `translate-body.ts`).** Conservative
@@ -466,15 +468,19 @@ round-trip through Pantagruel's parser (`$N` from `freshHygienicBinder`
 does not — `$` isn't legal). When a `synthCell` is plumbed through (the
 normal pipeline), `cellRegisterName(synthCell, "j")` yields a kebab-cased,
 collision-suffixed name (`j`, then `j1`, `j2`, …). Standalone test paths
-without a synthCell fall back to `j${nextSupply(supply)}`, which produces
-`j1`, `j2`, … but doesn't coordinate with the rest of the document.
+without a synthCell fall back to `j${nextSupply(supply)}` — not globally
+coordinated with the rest of the document, but locally collision-safe:
+`translateMuSearchInit` iterates the supply in a `do`/`while` against
+`new Set(scopedParams.values())` so the fresh binder cannot alias any
+Pant name already bound in the current frame.
 
 **SMT note.** `pant` type-checks the emitted form, but `pant --check`
-currently rejects `each j: Nat | …` with "comprehension parameter must be
-a domain type" — the SMT backend only enumerates user-defined domains, not
-unbounded `Nat`. End-to-end SMT verification of a μ-search result therefore
-needs either an explicit upper-bound guard or backend support for bounded
-`Nat` enumeration, neither of which is in scope here.
+currently rejects an `each j: Int | …` (or `Nat`) with "comprehension
+parameter must be a domain type" — the SMT backend only enumerates
+user-defined domains, not unbounded integers. End-to-end SMT verification
+of a μ-search result therefore needs either an explicit upper-bound guard
+or backend support for bounded integer enumeration, neither of which is
+in scope here.
 
 ## PR #84 Post-Mortem: Why Standard Algorithms Matter
 

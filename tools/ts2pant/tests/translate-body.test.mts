@@ -859,7 +859,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
 });
 
 describe("Kleene μ-search (while-loop minimum)", () => {
-  it("translates `let i = INIT; while (P(i)) i++` as `min over each j: Nat, j >= INIT, ~P(j) | j`", () => {
+  it("translates `let i = INIT; while (P(i)) i++` as `min over each j: Int, j >= INIT, ~P(j) | j`", () => {
     const source = `
       export function firstUnused(used: ReadonlySet<number>): number {
         let i = 1;
@@ -887,7 +887,7 @@ describe("Kleene μ-search (while-loop minimum)", () => {
       // The full pipeline (with synthCell) produces just `j`.
       assert.equal(
         ast.strExpr(prop.rhs),
-        "min over each j1: Nat, j1 >= 1, ~(j1 in used) | j1",
+        "min over each j1: Int, j1 >= 1, ~(j1 in used) | j1",
       );
     }
   });
@@ -916,7 +916,7 @@ describe("Kleene μ-search (while-loop minimum)", () => {
       const ast = getAst();
       assert.equal(
         ast.strExpr(prop.rhs),
-        "(min over each j1: Nat, j1 >= 0, ~(j1 in used) | j1) + 1",
+        "(min over each j1: Int, j1 >= 0, ~(j1 in used) | j1) + 1",
       );
     }
   });
@@ -946,7 +946,7 @@ describe("Kleene μ-search (while-loop minimum)", () => {
       const ast = getAst();
       assert.equal(
         ast.strExpr(prop.rhs),
-        "k + (min over each j2: Nat, j2 >= 1, ~(j2 in used) | j2)",
+        "k + (min over each j2: Int, j2 >= 1, ~(j2 in used) | j2)",
       );
     }
   });
@@ -1060,7 +1060,7 @@ describe("Kleene μ-search (while-loop minimum)", () => {
       const ast = getAst();
       assert.equal(
         ast.strExpr(prop.rhs),
-        "min over each j1: Nat, j1 >= 1, ~(j1 in used) | j1",
+        "min over each j1: Int, j1 >= 1, ~(j1 in used) | j1",
       );
     }
   });
