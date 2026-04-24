@@ -18,7 +18,7 @@ export function contains(m: Map<string, number>, k: string): boolean {
  * Two parameters of the *same* Map type: one shared synthesized domain.
  * Two distinct elements; EUF keeps their lookups independent. The
  * annotation exercises both guards together.
- * @pant all m1: StringToIntMap, m2: StringToIntMap, k: String | stringToIntMapKey m1 k and stringToIntMapKey m2 k -> sumAt m1 m2 k = stringToIntMap m1 k + stringToIntMap m2 k
+ * @pant all m1: StringToIntMap, m2: StringToIntMap, k: String | string-to-int-map-key m1 k and string-to-int-map-key m2 k -> sumAt m1 m2 k = string-to-int-map m1 k + string-to-int-map m2 k
  */
 export function sumAt(
   m1: Map<string, number>,

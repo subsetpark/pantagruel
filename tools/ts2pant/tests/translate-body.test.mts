@@ -155,7 +155,7 @@ describe("unsupported patterns", () => {
     assert.equal(prop.kind, "equation");
     if (prop.kind === "equation") {
       const ast = getAst();
-      assert.equal(ast.strExpr(prop.rhs), "balance a + 10");
+      assert.equal(ast.strExpr(prop.rhs), "account--balance a + 10");
     }
   });
 
@@ -220,7 +220,7 @@ describe("translateCallExpr", () => {
     assert.equal(prop.kind, "equation");
     if (prop.kind === "equation") {
       const ast = getAst();
-      assert.equal(ast.strExpr(prop.rhs), "toUpperCase s");
+      assert.equal(ast.strExpr(prop.rhs), "to-upper-case s");
     }
   });
 
@@ -329,9 +329,9 @@ describe("conditional mutations (symbolic last-write)", () => {
     const eq = equations[0]!;
     if (eq.kind !== "equation") return;
     const ast = getAst();
-    assert.equal(ast.strExpr(eq.lhs), "balance' a");
+    assert.equal(ast.strExpr(eq.lhs), "account--balance' a");
     // Early return path keeps pre-state identity; fall-through path writes 1.
-    assert.equal(ast.strExpr(eq.rhs), "cond g => balance a, true => 1");
+    assert.equal(ast.strExpr(eq.rhs), "cond g => account--balance a, true => 1");
   });
 
   it("sequential composition: later conditional reads earlier unconditional write", () => {
@@ -354,7 +354,7 @@ describe("conditional mutations (symbolic last-write)", () => {
     const eq = equations[0]!;
     if (eq.kind !== "equation") return;
     const ast = getAst();
-    assert.equal(ast.strExpr(eq.lhs), "balance' a");
+    assert.equal(ast.strExpr(eq.lhs), "account--balance' a");
     // Conditional branch sees the prior write (10) rather than the pre-state `balance a`.
     assert.equal(ast.strExpr(eq.rhs), "cond g => 10 + 5, true => 10");
   });
@@ -379,10 +379,10 @@ describe("conditional mutations (symbolic last-write)", () => {
     const eq = equations[0]!;
     if (eq.kind !== "equation") return;
     const ast = getAst();
-    assert.equal(ast.strExpr(eq.lhs), "active' u");
+    assert.equal(ast.strExpr(eq.lhs), "user--active' u");
     assert.equal(
       ast.strExpr(eq.rhs),
-      "cond active u => false, true => true",
+      "cond user--active u => false, true => true",
     );
   });
 
@@ -405,8 +405,8 @@ describe("conditional mutations (symbolic last-write)", () => {
     const eq = equations[0]!;
     if (eq.kind !== "equation") return;
     const ast = getAst();
-    assert.equal(ast.strExpr(eq.lhs), "balance' a");
-    assert.equal(ast.strExpr(eq.rhs), "balance a + amount");
+    assert.equal(ast.strExpr(eq.lhs), "account--balance' a");
+    assert.equal(ast.strExpr(eq.rhs), "account--balance a + amount");
   });
 
   it("compound assignment after unconditional write reads through prior write", () => {
@@ -429,7 +429,7 @@ describe("conditional mutations (symbolic last-write)", () => {
     const eq = equations[0]!;
     if (eq.kind !== "equation") return;
     const ast = getAst();
-    assert.equal(ast.strExpr(eq.lhs), "balance' a");
+    assert.equal(ast.strExpr(eq.lhs), "account--balance' a");
     // compound-assign rhs reads the prior write (10) via symbolic state.
     assert.equal(ast.strExpr(eq.rhs), "10 + amount");
   });
@@ -453,9 +453,9 @@ describe("conditional mutations (symbolic last-write)", () => {
     const eq = equations[0]!;
     if (eq.kind !== "equation") return;
     const ast = getAst();
-    assert.equal(ast.strExpr(eq.lhs), "balance' a");
+    assert.equal(ast.strExpr(eq.lhs), "account--balance' a");
     // Continuation-path (g true) writes v; early-exit (g false) preserves pre-state.
-    assert.equal(ast.strExpr(eq.rhs), "cond g => v, true => balance a");
+    assert.equal(ast.strExpr(eq.rhs), "cond g => v, true => account--balance a");
   });
 
   it("asymmetric writes produce separate per-prop cond equations", () => {
@@ -479,24 +479,24 @@ describe("conditional mutations (symbolic last-write)", () => {
     const lhsStrings = equations.map((e) =>
       e.kind === "equation" ? ast.strExpr(e.lhs) : "",
     );
-    assert.deepEqual(lhsStrings.sort(), ["balance' a", "owner' a"]);
+    assert.deepEqual(lhsStrings.sort(), ["account--balance' a", "account--owner' a"]);
     // Each branch should use the pre-state identity in its untouched arm.
     const balanceEq = equations.find(
-      (e) => e.kind === "equation" && ast.strExpr(e.lhs) === "balance' a",
+      (e) => e.kind === "equation" && ast.strExpr(e.lhs) === "account--balance' a",
     );
     const ownerEq = equations.find(
-      (e) => e.kind === "equation" && ast.strExpr(e.lhs) === "owner' a",
+      (e) => e.kind === "equation" && ast.strExpr(e.lhs) === "account--owner' a",
     );
     if (balanceEq?.kind === "equation") {
       assert.equal(
         ast.strExpr(balanceEq.rhs),
-        "cond g => 0, true => balance a",
+        "cond g => 0, true => account--balance a",
       );
     }
     if (ownerEq?.kind === "equation") {
       assert.equal(
         ast.strExpr(ownerEq.rhs),
-        "cond g => owner a, true => newOwner",
+        "cond g => account--owner a, true => new-owner",
       );
     }
   });
@@ -527,7 +527,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
         ast.forall([], loopEq.guards ?? [], ast.var("__body__")),
       );
       assert.match(rendered, /all u in us \| /);
-      assert.equal(ast.strExpr(loopEq.lhs), "active' u");
+      assert.equal(ast.strExpr(loopEq.lhs), "user--active' u");
       assert.equal(ast.strExpr(loopEq.rhs), "true");
     }
   });
@@ -556,7 +556,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       const ast = getAst();
       assert.equal(
         ast.strExpr(loopEq.rhs),
-        "cond score u > 0 => true, true => active u",
+        "cond user--score u > 0 => true, true => user--active u",
       );
     }
   });
@@ -578,14 +578,14 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     const eqs = props.filter((p) => p.kind === "equation");
     const totalEq = eqs.find(
       (e) =>
-        e.kind === "equation" && getAst().strExpr(e.lhs) === "total' a",
+        e.kind === "equation" && getAst().strExpr(e.lhs) === "account--total' a",
     );
     assert.ok(totalEq);
     if (totalEq?.kind === "equation") {
       const ast = getAst();
       assert.equal(
         ast.strExpr(totalEq.rhs),
-        "total a + (+ over each x in xs | value x)",
+        "account--total a + (+ over each x in xs | item--value x)",
       );
     }
   });
@@ -609,14 +609,14 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     const eqs = props.filter((p) => p.kind === "equation");
     const totalEq = eqs.find(
       (e) =>
-        e.kind === "equation" && getAst().strExpr(e.lhs) === "total' a",
+        e.kind === "equation" && getAst().strExpr(e.lhs) === "account--total' a",
     );
     assert.ok(totalEq);
     if (totalEq?.kind === "equation") {
       const ast = getAst();
       assert.equal(
         ast.strExpr(totalEq.rhs),
-        "total a + (+ over each x in xs, value x > 0 | value x)",
+        "account--total a + (+ over each x in xs, item--value x > 0 | item--value x)",
       );
     }
   });
@@ -643,8 +643,8 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     const lhsStrings = eqs.map((e) =>
       e.kind === "equation" ? ast.strExpr(e.lhs) : "",
     );
-    assert.ok(lhsStrings.includes("tagged' x"));
-    assert.ok(lhsStrings.includes("total' a"));
+    assert.ok(lhsStrings.includes("item--tagged' x"));
+    assert.ok(lhsStrings.includes("account--total' a"));
   });
 
   it("rejects simple-assign fold (requires compound assignment)", () => {
@@ -681,14 +681,14 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     const eqs = props.filter((p) => p.kind === "equation");
     const totalEq = eqs.find(
       (e) =>
-        e.kind === "equation" && getAst().strExpr(e.lhs) === "total' a",
+        e.kind === "equation" && getAst().strExpr(e.lhs) === "account--total' a",
     );
     assert.ok(totalEq);
     if (totalEq?.kind === "equation") {
       const ast = getAst();
       assert.equal(
         ast.strExpr(totalEq.rhs),
-        "total a + (+ over each x in xs | value x)",
+        "account--total a + (+ over each x in xs | item--value x)",
       );
     }
   });
@@ -712,7 +712,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     if (eqs[0]?.kind === "equation") {
       assert.equal(
         ast.strExpr(eqs[0].rhs),
-        "+ over each $0 in xs | value $0",
+        "+ over each $0 in xs | item--value $0",
       );
     }
   });
@@ -735,7 +735,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     if (eqs[0]?.kind === "equation") {
       assert.equal(
         ast.strExpr(eqs[0].rhs),
-        "100 + (+ over each $0 in xs | value $0)",
+        "100 + (+ over each $0 in xs | item--value $0)",
       );
     }
   });
@@ -816,7 +816,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     const ast = getAst();
     const eqs = props.filter((p) => p.kind === "equation");
     const totalEq = eqs.find(
-      (e) => e.kind === "equation" && ast.strExpr(e.lhs) === "total' a",
+      (e) => e.kind === "equation" && ast.strExpr(e.lhs) === "account--total' a",
     );
     assert.ok(totalEq, "expected a Shape B equation for total");
     if (totalEq?.kind === "equation") {
@@ -824,7 +824,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       // Shape A write `value' x = value x + 1`, not the pre-state `value x`.
       assert.equal(
         ast.strExpr(totalEq.rhs),
-        "total a + (+ over each x in xs | value x + 1)",
+        "account--total a + (+ over each x in xs | item--value x + 1)",
       );
     }
   });
@@ -850,7 +850,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       if (eqs[0]?.kind === "equation") {
         assert.equal(
           ast.strExpr(eqs[0].rhs),
-          "+ over each $0 in xs | value $0",
+          "+ over each $0 in xs | item--value $0",
           `variant ${initText}: init should have been elided`,
         );
       }

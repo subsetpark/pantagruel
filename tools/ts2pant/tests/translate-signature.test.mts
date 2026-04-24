@@ -135,7 +135,7 @@ describe("guard expression structure", () => {
     }
     assert.equal(
       getAst().strExpr(result.declaration.guard!),
-      "balance a >= amount",
+      "account--balance a >= amount",
     );
   });
 
@@ -156,7 +156,7 @@ describe("guard expression structure", () => {
     }
     assert.equal(
       getAst().strExpr(result.declaration.guard!),
-      "balance a >= amount",
+      "account--balance a >= amount",
     );
   });
 
@@ -257,7 +257,7 @@ describe("guard expression structure", () => {
     }
     assert.equal(
       getAst().strExpr(result.declaration.guard!),
-      "amount > 0 and balance account >= 0",
+      "amount > 0 and account--balance account >= 0",
     );
   });
 
@@ -280,7 +280,7 @@ describe("guard expression structure", () => {
     }
     assert.equal(
       getAst().strExpr(result.declaration.guard!),
-      "~(amount <= 0) and balance account >= 0",
+      "~(amount <= 0) and account--balance account >= 0",
     );
   });
 
@@ -340,7 +340,7 @@ describe("call-graph following guard expressions", () => {
     }
     assert.equal(
       getAst().strExpr(result.declaration.guard!),
-      "~((balance account) <= 0)",
+      "~((account--balance account) <= 0)",
     );
   });
 
@@ -408,7 +408,7 @@ describe("class method declarations", () => {
     }
     assert.equal(
       getAst().strExpr(result.declaration.guard!),
-      "balance a >= amount",
+      "account--balance a >= amount",
     );
     assert.deepEqual(result.declaration.params[0], {
       name: "a",

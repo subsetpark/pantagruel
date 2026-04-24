@@ -11,12 +11,14 @@ import {
 } from "./translate-body.js";
 import {
   cellRegisterName,
+  fieldRuleName,
   isAnonymousRecord,
   isMapType,
   isSetType,
   lookupMapKV,
   mapTsType,
   type NumericStrategy,
+  resolveRecordOwner,
   type SynthCell,
   UNSUPPORTED_ANONYMOUS_RECORD,
 } from "./translate-types.js";
@@ -78,17 +80,23 @@ export function translateRecordReturn(
       },
     ];
   }
-  // Anonymous record return (`returnTypeName === "__type"`): the
-  // `mapTsType` branch during signature translation has already
-  // registered the shape with the synth cell, so the synthesized
-  // domain and its accessor rules are declared by the time the body
-  // is translated. The field-emission loop below works unchanged — it
-  // iterates `returnType.getProperties()` (which enumerates the
-  // anonymous shape's declared fields just as well as an interface's)
-  // and emits one equation per field, applying each accessor rule to
-  // the function application. Reject only when the cell is missing or
-  // when upstream synth registration failed (field types unmangleable).
-  if (returnTypeName === "__type") {
+  // Anonymous record return: the `mapTsType` branch during signature
+  // translation has already registered the shape with the synth cell,
+  // so the synthesized domain and its accessor rules are declared by
+  // the time the body is translated. The field-emission loop below
+  // works unchanged — it iterates `returnType.getProperties()` (which
+  // enumerates the anonymous shape's declared fields just as well as
+  // an interface's) and emits one equation per field, applying each
+  // accessor rule to the function application.
+  //
+  // `isAnonymousRecord` inspects the underlying structural symbol
+  // (`type.getSymbol()?.getName() === "__type"`), so it matches both
+  // bare anonymous returns and alias-backed ones (`type Point = {x, y}`)
+  // — the alias name doesn't correspond to a declared Pantagruel
+  // domain, so we must resolve through the synth even when `aliasSymbol`
+  // is set. Reject only when the cell is missing or upstream synth
+  // registration failed.
+  if (isAnonymousRecord(returnType)) {
     if (!synthCell) {
       return [
         {
@@ -296,6 +304,20 @@ function emitRecordEquations(
   // map's key predicate lives on the synthesized domain, not the record.
   // We branch on this per Map-valued field below.
   const receiverIsAnon = isAnonymousRecord(receiverType);
+  // Accessor rule symbols are qualified with the owning domain so that
+  // distinct interfaces / synth shapes with a same-named field produce
+  // distinct arity-1 rules under Pantagruel's positional coherence. The
+  // same resolver runs at declaration time (translate-types.ts) and
+  // at this body-emission site, so the two stay in lockstep for both
+  // named interfaces and synthesized record domains.
+  const ownerName = resolveRecordOwner(
+    receiverType,
+    checker,
+    strategy,
+    synthCell,
+  );
+  const ruleSymbol = (fieldName: string): string =>
+    ownerName ? fieldRuleName(ownerName, fieldName) : fieldName;
   const ast = getAst();
 
   // Re-index the literal's properties by name for this level. Nested
@@ -365,7 +387,7 @@ function emitRecordEquations(
         },
       ];
     }
-    const fieldApp = ast.app(ast.var(field.name), [receiverExpr]);
+    const fieldApp = ast.app(ast.var(ruleSymbol(field.name)), [receiverExpr]);
 
     // `new Set()` → empty-set membership negation.
     if (isEmptySetConstruction(initializer)) {
@@ -455,7 +477,7 @@ function emitRecordEquations(
           ast.var(binderName),
         ]);
       } else {
-        keyPredApp = ast.app(ast.var(`${field.name}Key`), [
+        keyPredApp = ast.app(ast.var(`${ruleSymbol(field.name)}-key`), [
           receiverExpr,
           ast.var(binderName),
         ]);

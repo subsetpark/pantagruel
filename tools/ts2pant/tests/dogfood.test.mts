@@ -45,16 +45,22 @@ describe("dogfood: src/translate-types.ts", () => {
     assertPantTypeChecks(output);
     // `MapSynth.byKV: ReadonlyMap<string, MapSynthEntry>` → Stage A
     // encoding: a binary membership predicate alongside the value rule.
-    t.assert.match(output, /byKVKey m\d*: MapSynth, k: String => Bool\./u);
+    // Accessor rule names are qualified with the owning domain so two
+    // interfaces with a same-named field produce distinct arity-1 rules
+    // under positional coherence.
     t.assert.match(
       output,
-      /byKV m\d*: MapSynth, k: String, byKVKey m\d* k => MapSynthEntry\./u,
+      /map-synth--by-kv-key m\d*: MapSynth, k: String => Bool\./u,
+    );
+    t.assert.match(
+      output,
+      /map-synth--by-kv m\d*: MapSynth, k: String, map-synth--by-kv-key m\d* k => MapSynthEntry\./u,
     );
     // `return { byKV: new Map(), emitted: new Set() }` → empty-map
     // initializer emits Stage A membership-negation assertion.
     t.assert.match(
       output,
-      /all k\d*: String \| ~\(byKVKey emptyMapSynth k\d*\)\./u,
+      /all k\d*: String \| ~\(map-synth--by-kv-key empty-map-synth k\d*\)\./u,
     );
     // `collectNamedTypes` recursion must follow `ReadonlyMap<K, V>` into V:
     // `MapSynthEntry` is only reachable through `byKV`'s value type.
@@ -73,11 +79,11 @@ describe("dogfood: src/translate-types.ts", () => {
     // than only on a compound snapshot.
     t.assert.match(
       output,
-      /byShapeKey r\d*: RecordSynth, k: String => Bool\./u,
+      /record-synth--by-shape-key r\d*: RecordSynth, k: String => Bool\./u,
     );
     t.assert.match(
       output,
-      /all k\d*: String \| ~\(byShapeKey emptyRecordSynth k\d*\)\./u,
+      /all k\d*: String \| ~\(record-synth--by-shape-key empty-record-synth k\d*\)\./u,
     );
     t.assert.match(output, /^RecordSynthEntry\.$/mu);
   });

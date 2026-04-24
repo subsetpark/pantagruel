@@ -1,10 +1,11 @@
+import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { describe, it } from "node:test";
-import assert from "node:assert/strict";
 import { extractFunctionAnnotations } from "../src/annotations.js";
 import { runCheck } from "../src/emit.js";
 import { createSourceFile } from "../src/extract.js";
+import type { PantDocument } from "../src/types.js";
 import {
   PROJECT_ROOT,
   assertPantTypeChecks,
@@ -12,7 +13,6 @@ import {
   emitDocument,
   getPantBin,
 } from "./helpers.mjs";
-import type { PantDocument } from "../src/types.js";
 
 const FIXTURES = resolve(import.meta.dirname, "fixtures");
 
@@ -49,9 +49,11 @@ describe("emitDocument", () => {
     assert.ok(output.includes("---"));
     // Annotation should be in the check block
     assert.ok(output.includes("check"));
-    assert.ok(output.includes(
-      "all a: Int, b: Int | larger a b >= a and larger a b >= b.",
-    ));
+    assert.ok(
+      output.includes(
+        "all a: Int, b: Int | larger a b >= a and larger a b >= b.",
+      ),
+    );
   });
 
   it("emits deposit.ts as valid Pantagruel", async () => {
@@ -60,12 +62,14 @@ describe("emitDocument", () => {
 
     assert.ok(output.includes("module Deposit."));
     assert.ok(output.includes("Account."));
-    assert.ok(output.includes("balance a: Account => Int."));
+    assert.ok(output.includes("account--balance a: Account => Int."));
     assert.ok(output.includes("~> Deposit @"));
     assert.ok(output.includes("---"));
     // Annotation should be in the check block
     assert.ok(output.includes("check"));
-    assert.ok(output.includes("balance' account > balance account."));
+    assert.ok(
+      output.includes("account--balance' account > account--balance account."),
+    );
   });
 
   it("emits skeleton-only when noBody is set", async () => {
@@ -88,7 +92,8 @@ describe("extractFunctionAnnotations", () => {
     const annotations = extractFunctionAnnotations(sourceFile, "larger");
 
     assert.equal(annotations.length, 1);
-    assert.equal(annotations[0],
+    assert.equal(
+      annotations[0],
       "all a: Int, b: Int | larger a b >= a and larger a b >= b",
     );
   });
@@ -184,7 +189,9 @@ describe("emission snapshots", () => {
 describe("pant --check", () => {
   const hasSolver = solverAvailable();
 
-  it("max.ts assertions pass", { skip: !hasSolver ? "z3 not available" : undefined }, async () => {
+  it("max.ts assertions pass", {
+    skip: !hasSolver ? "z3 not available" : undefined,
+  }, async () => {
     const doc = await buildDocument("max.ts", "larger");
     const output = emitDocument(doc);
     const result = runCheck(output, {
@@ -197,7 +204,9 @@ describe("pant --check", () => {
     assert.ok(result.checks.every((c) => c.passed));
   });
 
-  it("deposit.ts assertions are checkable", { skip: !hasSolver ? "z3 not available" : undefined }, async () => {
+  it("deposit.ts assertions are checkable", {
+    skip: !hasSolver ? "z3 not available" : undefined,
+  }, async () => {
     const doc = await buildDocument("deposit.ts", "deposit");
     const output = emitDocument(doc);
     const result = runCheck(output, {
@@ -210,7 +219,9 @@ describe("pant --check", () => {
     assert.ok(result.checks.every((c) => c.passed));
   });
 
-  it("apply-fee.ts conditional mutation is checkable", { skip: !hasSolver ? "z3 not available" : undefined }, async () => {
+  it("apply-fee.ts conditional mutation is checkable", {
+    skip: !hasSolver ? "z3 not available" : undefined,
+  }, async () => {
     const doc = await buildDocument("apply-fee.ts", "applyFee");
     const output = emitDocument(doc);
     const result = runCheck(output, {

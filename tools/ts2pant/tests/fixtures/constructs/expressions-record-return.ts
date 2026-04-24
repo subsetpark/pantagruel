@@ -84,3 +84,25 @@ export function nothing(): {} {
 export function emptyAnonBag(): { items: ReadonlySet<string> } {
   return { items: new Set() };
 }
+
+/** Alias-backed anonymous record — `type Pt = {...}` has `aliasSymbol`
+ *  but its underlying structural shape is `__type`, so record-return
+ *  emission must resolve the owner through `isAnonymousRecord` /
+ *  `mapTsType` rather than the alias name. If emission used the alias
+ *  name directly, the body would reference `pt-x`/`pt-y` rules that
+ *  were never declared (the synth registered them under the
+ *  structural shape's domain). */
+type PtAlias = { x: number; y: number };
+export function originAliased(): PtAlias {
+  return { x: 0, y: 0 };
+}
+
+/** Param named `r` collides with the synth-record binder (also `r`).
+ *  `translateSignature` resolves the collision by suffixing the param
+ *  to `r1`; the body translator must pick up that same suffixed name
+ *  via the threaded `paramNameMap` rather than recomputing it from
+ *  `toPantTermName("r")` (which would give the bare `r` and produce
+ *  an unbound identifier on the RHS). */
+export function readR(r: { foo: number }): number {
+  return r.foo;
+}

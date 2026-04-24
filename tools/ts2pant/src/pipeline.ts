@@ -6,6 +6,7 @@ import { translateBody } from "./translate-body.js";
 import { translateSignature } from "./translate-signature.js";
 import {
   cellEmitSynth,
+  fieldRuleName,
   type NumericStrategy,
   newSynthCell,
   translateTypes,
@@ -88,6 +89,7 @@ export async function buildPantDocument(
       strategy,
       declarations,
       synthCell,
+      paramNameMap,
     });
     doc = { ...doc, propositions: [...doc.propositions, ...bodyProps] };
 
@@ -106,14 +108,38 @@ export async function buildPantDocument(
 
   // Annotations go to checks (entailment goals) — skip for skeleton docs
   if (!noBody && doc.propositions.length > 0) {
-    // Rewrite annotation variable names using the embedded Pantagruel parser.
-    // paramNameMap maps TS names → pant names; annotations use TS names.
-    const hasRenames = [...paramNameMap.entries()].some(([k, v]) => k !== v);
+    // Rewrite annotation names using the embedded Pantagruel parser.
+    // paramNameMap maps TS params -> Pant names; function renames map the
+    // translated function's TS spelling to its emitted Pant rule name; field
+    // renames map unique property names (e.g. `balance`) to the synthesized
+    // accessor rule symbol (e.g. `account-balance`) so user annotations can
+    // keep referring to the TS property spelling.
+    //
+    // Collision policy: params and the function name are written first and
+    // win against field-accessor renames. `annotationFieldRenames` produces
+    // only unique (name, owner) pairs across declared interfaces AND
+    // synthesized record shapes; an unqualified field name that maps to
+    // more than one owner is omitted so the annotation text reaches the
+    // parser unrewritten (and the user-level error surfaces at check time).
+    const renames = new Map(paramNameMap);
+    if (sigDecl.kind === "rule") {
+      renames.set(baseName, sigDecl.name);
+    }
+    for (const [from, to] of annotationFieldRenames(extracted, synthCell)) {
+      // Don't overwrite: a param or function rename with the same TS
+      // spelling is ambiguous with the field accessor; leaving the
+      // earlier entry in place keeps the user's param/fn reference
+      // intact and forces a qualified form for the accessor.
+      if (!renames.has(from)) {
+        renames.set(from, to);
+      }
+    }
+    const hasRenames = [...renames.entries()].some(([k, v]) => k !== v);
     let annotationTexts: string[];
     if (hasRenames) {
       await loadParser();
       annotationTexts = annotations.map((text) =>
-        rewriteAnnotation(text, paramNameMap),
+        rewriteAnnotation(text, renames),
       );
     } else {
       annotationTexts = annotations;
@@ -124,4 +150,42 @@ export async function buildPantDocument(
   }
 
   return doc;
+}
+
+function annotationFieldRenames(
+  extracted: Awaited<ReturnType<typeof extractReferencedTypes>>,
+  synthCell: ReturnType<typeof newSynthCell>,
+): Map<string, string> {
+  // Enumerate (ownerName, fieldName) pairs from both declared interfaces
+  // and synthesized record-return shapes so bare field names emitted by
+  // anonymous-record accessors can also be rewritten in annotations.
+  // Counting across both sources lets us drop renames that would be
+  // ambiguous — a field name shared by two owners has no unique target.
+  const ownersByField = new Map<string, string[]>();
+  const addOwner = (fieldName: string, ownerName: string): void => {
+    const existing = ownersByField.get(fieldName);
+    if (existing) {
+      existing.push(ownerName);
+    } else {
+      ownersByField.set(fieldName, [ownerName]);
+    }
+  };
+  for (const iface of extracted.interfaces) {
+    for (const prop of iface.properties) {
+      addOwner(prop.name, iface.name);
+    }
+  }
+  for (const entry of synthCell.recordSynth.byShape.values()) {
+    for (const field of entry.fields) {
+      addOwner(field.name, entry.domain);
+    }
+  }
+
+  const renames = new Map<string, string>();
+  for (const [fieldName, owners] of ownersByField) {
+    if (owners.length === 1) {
+      renames.set(fieldName, fieldRuleName(owners[0]!, fieldName));
+    }
+  }
+  return renames;
 }

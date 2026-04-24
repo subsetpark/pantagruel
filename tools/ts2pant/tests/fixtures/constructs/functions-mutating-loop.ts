@@ -85,3 +85,15 @@ export function forEachSum(a: Account, items: Item[]): void {
     a.total += x.value;
   });
 }
+
+/** Shape B where the accumulator is an anonymous record (not a named
+ *  interface). The accessor rule is declared under the synthesized
+ *  domain (e.g. `total-rec--total`), so `qualifyFieldAccess` in
+ *  `classifyLoopStmt` must receive the synth context — otherwise the
+ *  emitted `total' acc = ...` would reference a rule that was never
+ *  declared. */
+export function sumIntoAnon(acc: { total: number }, items: number[]): void {
+  for (const x of items) {
+    acc.total += x;
+  }
+}
