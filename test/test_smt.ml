@@ -1704,7 +1704,7 @@ let test_mu_search_nat0 () =
   check bool "emits (>= ... 0)" true (contains drained "0)")
 
 let test_mu_search_int () =
-  (* min over each j: Int, j >= -5 | j — Int has no implicit lower bound *)
+  (* min over each j: Int, j >= -5 | j — Int has no implicit lower bound. *)
   let env = Env.empty "" in
   Smt.reset_fallbacks ();
   let expr =
@@ -1716,7 +1716,18 @@ let test_mu_search_int () =
   let _ = Smt.translate_expr config env expr in
   let drained = Smt.drain_fallback_decls () in
   check bool "emits forall Int witness" true
-    (contains drained "(forall ((_mu_j_")
+    (contains drained "(forall ((_mu_j_");
+  (* Regression guard against [type_lower_bound] accidentally treating TyInt
+     like Nat / Nat0 — the only [(>= X 0)] / [(>= X 1)] terms on the witness
+     or j-binder would come from such an implicit bound. *)
+  check bool "no implicit >= 0 on _mu_fallback_ witness" true
+    (not (contains drained "(>= _mu_fallback_0 0)"));
+  check bool "no implicit >= 1 on _mu_fallback_ witness" true
+    (not (contains drained "(>= _mu_fallback_0 1)"));
+  check bool "no implicit >= 0 on _mu_j_ binder" true
+    (not (contains drained "(>= _mu_j__mu_fallback_0 0)"));
+  check bool "no implicit >= 1 on _mu_j_ binder" true
+    (not (contains drained "(>= _mu_j__mu_fallback_0 1)"))
 
 let test_mu_search_guarded_predicate () =
   (* min over each j: Nat, j >= 1, ~(active? j) | j
@@ -1825,7 +1836,7 @@ let test_mu_search_max_rejected () =
       false
     with Failure msg ->
       contains msg "unbounded" || contains msg "μ-search"
-      || contains msg "domain type"
+      || contains msg "upper-bound"
   in
   check bool "max over unbounded numeric errors" true raised
 
