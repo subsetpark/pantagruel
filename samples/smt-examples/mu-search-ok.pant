@@ -1,0 +1,15 @@
+> μ-search (Kleene minimization): the least Nat satisfying a predicate.
+> `min over each j: Nat, …, P(j) | j` compiles to a skolemized
+> least-witness assertion instead of enumeration — the SMT backend
+> cannot enumerate unbounded Nat, but it can check
+>   ∃r. P(r) ∧ ∀j. j < r ⇒ ¬P(j).
+module MuSearchOk.
+
+big? n: Nat => Bool.
+first-big => Nat.
+
+---
+
+all n: Nat | big? n <-> n >= 10.
+first-big = (min over each j: Nat, j >= 1, big? j | j).
+first-big = 10.

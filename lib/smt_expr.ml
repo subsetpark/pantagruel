@@ -24,9 +24,17 @@ let resolve_comprehension_binding env params guards =
       | Ok (TyDomain dname) ->
           let pn = Ast.lower_name p.param_name in
           Ok (pn, dname, None, [ (pn, TyDomain dname) ])
+      | Ok ((TyNat | TyNat0 | TyInt | TyReal) as ty) ->
+          Error
+            (Printf.sprintf
+               "SMT translation: comprehension over unbounded %s is only \
+                supported as μ-search (`min over each j: %s, … | j`); add an \
+                explicit upper-bound guard (e.g. `j < N`) to enable general \
+                enumeration"
+               (format_ty ty) (format_ty ty))
       | Ok
-          ( TyBool | TyNat | TyNat0 | TyInt | TyReal | TyString | TyNothing
-          | TyList _ | TyProduct _ | TySum _ | TyFunc _ )
+          ( TyBool | TyString | TyNothing | TyList _ | TyProduct _ | TySum _
+          | TyFunc _ )
       | Error _ ->
           Error "SMT translation: comprehension parameter must be a domain type"
       )
@@ -50,6 +58,26 @@ let resolve_comprehension_binding env params guards =
   | _ ->
       Error
         "SMT translation: multi-parameter comprehensions not supported in SMT"
+
+(** Resolve a single-parameter numeric-typed comprehension binder (Nat / Nat0 /
+    Int). Unlike [resolve_comprehension_binding], does not synthesize a finite
+    domain — it is used by symbolic-predicate translations (currently just
+    μ-search minimization) that don't enumerate over a bounded set. Returns
+    [Error] for domain / list / membership bindings and multi-parameter
+    comprehensions so callers can fall back to the enumerating path. *)
+let resolve_numeric_comprehension_binding env params =
+  match params with
+  | [ (p : param) ] -> (
+      match Collect.resolve_type env p.param_type dummy_loc with
+      | Ok ((TyNat | TyNat0 | TyInt) as ty) ->
+          let pn = Ast.lower_name p.param_name in
+          Ok (pn, ty, [ (pn, ty) ])
+      | Ok
+          ( TyBool | TyReal | TyString | TyNothing | TyDomain _ | TyList _
+          | TyProduct _ | TySum _ | TyFunc _ )
+      | Error _ ->
+          Error "comprehension binder is not numeric")
+  | _ -> Error "comprehension binder is not numeric"
 
 (** Expand a comprehension over finite domain elements. Returns a list of
     (guard_str option, value_str) pairs for each domain element substitution.

@@ -1663,6 +1663,128 @@ let test_aggregate_min_real () =
   check bool "has 0.0 seed" true (contains result "0.0");
   check bool "has <=" true (contains result "(<=")
 
+let test_mu_search_nat () =
+  (* min over each j: Nat, j >= 1 | j
+     → least-witness encoding: fresh r with
+       (assert (and (>= r 1) (>= r 1)))
+       (assert (forall ((_mu_j_r Int)) (=> (and (>= _mu_j_r 1) (< _mu_j_r r) (>= _mu_j_r 1)) false))) *)
+  let env = Env.empty "" in
+  Smt.reset_fallbacks ();
+  let expr =
+    Ast.make_each
+      [ { param_name = Lower "j"; param_type = TName (Upper "Nat") } ]
+      [ GExpr (EBinop (OpGe, EVar (Lower "j"), ELitNat 1)) ]
+      (Some CombMin) (EVar (Lower "j"))
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "returns fallback constant" true
+    (String.length result >= 12 && String.sub result 0 12 = "_mu_fallback");
+  let drained = Smt.drain_fallback_decls () in
+  check bool "declares fresh Int constant" true
+    (contains drained "_mu_fallback");
+  check bool "emits nat lower-bound on r" true (contains drained "(>= ");
+  check bool "emits forall over Int witness" true
+    (contains drained "(forall ((_mu_j_");
+  check bool "emits (< j r) ordering" true (contains drained "(< _mu_j_");
+  check bool "emits => false closure" true (contains drained "false")
+
+let test_mu_search_nat0 () =
+  (* min over each j: Nat0 | j — lower bound 0, no extra guards *)
+  let env = Env.empty "" in
+  Smt.reset_fallbacks ();
+  let expr =
+    Ast.make_each
+      [ { param_name = Lower "j"; param_type = TName (Upper "Nat0") } ]
+      [] (Some CombMin) (EVar (Lower "j"))
+  in
+  let result = Smt.translate_expr config env expr in
+  check bool "is fallback constant" true
+    (String.length result >= 3 && String.sub result 0 3 = "_mu");
+  let drained = Smt.drain_fallback_decls () in
+  check bool "emits (>= ... 0)" true (contains drained "0)")
+
+let test_mu_search_int () =
+  (* min over each j: Int, j >= -5 | j — Int has no implicit lower bound *)
+  let env = Env.empty "" in
+  Smt.reset_fallbacks ();
+  let expr =
+    Ast.make_each
+      [ { param_name = Lower "j"; param_type = TName (Upper "Int") } ]
+      [ GExpr (EBinop (OpGe, EVar (Lower "j"), EUnop (OpNeg, ELitNat 5))) ]
+      (Some CombMin) (EVar (Lower "j"))
+  in
+  let _ = Smt.translate_expr config env expr in
+  let drained = Smt.drain_fallback_decls () in
+  check bool "emits forall Int witness" true
+    (contains drained "(forall ((_mu_j_")
+
+let test_mu_search_guarded_predicate () =
+  (* min over each j: Nat, j >= 1, ~(active? j) | j
+     emits guard at both r and j witness *)
+  let env =
+    Env.empty ""
+    |> Env.add_rule "active?"
+         (Types.TyFunc ([ Types.TyNat ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+  in
+  Smt.reset_fallbacks ();
+  let expr =
+    Ast.make_each
+      [ { param_name = Lower "j"; param_type = TName (Upper "Nat") } ]
+      [
+        GExpr (EBinop (OpGe, EVar (Lower "j"), ELitNat 1));
+        GExpr
+          (EUnop (OpNot, EApp (EVar (Lower "active?"), [ EVar (Lower "j") ])));
+      ]
+      (Some CombMin) (EVar (Lower "j"))
+  in
+  let _ = Smt.translate_expr config env expr in
+  let drained = Smt.drain_fallback_decls () in
+  check bool "predicate appears applied to r" true
+    (contains drained "(activep _mu_fallback");
+  check bool "predicate appears applied to j witness" true
+    (contains drained "(activep _mu_j_")
+
+let test_mu_search_max_rejected () =
+  (* max over each j: Nat | j — unbounded above, must still error *)
+  let env = Env.empty "" in
+  Smt.reset_fallbacks ();
+  let expr =
+    Ast.make_each
+      [ { param_name = Lower "j"; param_type = TName (Upper "Nat") } ]
+      [] (Some CombMax) (EVar (Lower "j"))
+  in
+  let raised =
+    try
+      let _ = Smt.translate_expr config env expr in
+      false
+    with Failure msg ->
+      contains msg "unbounded" || contains msg "μ-search"
+      || contains msg "domain type"
+  in
+  check bool "max over unbounded numeric errors" true raised
+
+let test_card_nat_comprehension_error () =
+  (* #(each j: Nat | j >= 1) — not a μ-search shape; must emit the refined
+     diagnostic pointing at μ-search / explicit bound. *)
+  let env = Env.empty "" in
+  let expr =
+    Ast.EUnop
+      ( OpCard,
+        Ast.make_each
+          [ { param_name = Lower "j"; param_type = TName (Upper "Nat") } ]
+          [ GExpr (EBinop (OpGe, EVar (Lower "j"), ELitNat 1)) ]
+          None (EVar (Lower "j")) )
+  in
+  let raised_with_hint =
+    try
+      let _ = Smt.translate_expr config env expr in
+      false
+    with Failure msg -> contains msg "μ-search" || contains msg "upper-bound"
+  in
+  check bool "refined diagnostic mentions μ-search or upper bound" true
+    raised_with_hint
+
 let comprehension_tests =
   [
     test_case "in each comprehension" `Quick test_in_each_comprehension;
@@ -1680,6 +1802,14 @@ let comprehension_tests =
     test_case "aggregate add real" `Quick test_aggregate_add_real;
     test_case "aggregate add real empty" `Quick test_aggregate_add_real_empty;
     test_case "aggregate min real" `Quick test_aggregate_min_real;
+    test_case "μ-search nat" `Quick test_mu_search_nat;
+    test_case "μ-search nat0" `Quick test_mu_search_nat0;
+    test_case "μ-search int" `Quick test_mu_search_int;
+    test_case "μ-search guarded predicate" `Quick
+      test_mu_search_guarded_predicate;
+    test_case "μ-search max rejected" `Quick test_mu_search_max_rejected;
+    test_case "card nat comprehension error" `Quick
+      test_card_nat_comprehension_error;
   ]
 
 (* --- Closure tests --- *)

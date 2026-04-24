@@ -640,6 +640,96 @@ and translate_aggregate config env (comb : combiner) params guards body =
   let inner_config =
     { config with quant_bound = local_bound @ config.quant_bound }
   in
+  (* μ-search: `min over each j: Nat|Nat0|Int, G₁(j), …, Gₙ(j) | j` compiles
+     to a Skolem-style least-witness encoding instead of enumerating the
+     (unbounded) iterator. Detected shape: CombMin, single numeric-typed
+     param, body is exactly the binder, all guards are plain expressions.
+     Emits a fresh Int constant r along with:
+       (assert (and <type-bound[r]> G₁(r) … Gₙ(r)))
+       (assert (forall ((j Int)) (=> (and <type-bound[j]> (< j r) Gᵢ(j)…) false)))
+     where <type-bound[x]> is `(>= x 1)` for Nat, `(>= x 0)` for Nat0, absent
+     for Int. The result string is r. *)
+  let mu_search =
+    match comb with
+    | CombMin -> (
+        match resolve_numeric_comprehension_binding env params with
+        | Error _ -> None
+        | Ok (binder_name, binder_ty, bindings) -> (
+            let all_gexpr =
+              List.for_all
+                (function GExpr _ -> true | GIn _ | GParam _ -> false)
+                guards
+            in
+            if not all_gexpr then None
+            else
+              match[@warning "-4"] body with
+              | EVar (Lower n) when n = binder_name ->
+                  Some (binder_name, binder_ty, bindings)
+              | _ -> None))
+    | CombAdd | CombMul | CombAnd | CombOr | CombMax -> None
+  in
+  match mu_search with
+  | Some (binder_name, binder_ty, bindings) ->
+      let env_inner = Env.with_vars bindings env in
+      let r = fresh_fallback ~kind:"mu" ~sort:"Int" in
+      let pname = sanitize_ident binder_name in
+      let guard_templates =
+        List.filter_map
+          (function
+            | GExpr e -> Some (translate_expr inner_config env_inner e)
+            | GIn _ | GParam _ -> None)
+          guards
+      in
+      let type_lower_bound name =
+        match binder_ty with
+        | TyNat -> Some (Printf.sprintf "(>= %s 1)" name)
+        | TyNat0 -> Some (Printf.sprintf "(>= %s 0)" name)
+        | TyInt -> None
+        | TyBool | TyReal | TyString | TyNothing | TyDomain _ | TyList _
+        | TyProduct _ | TySum _ | TyFunc _ ->
+            None
+      in
+      let sub_with ~to_ template = replace_word ~from:pname ~to_ template in
+      let r_guards =
+        Option.to_list (type_lower_bound r)
+        @ List.map (sub_with ~to_:r) guard_templates
+      in
+      let assert_r =
+        match r_guards with
+        | [] -> "true"
+        | [ g ] -> g
+        | gs -> Printf.sprintf "(and %s)" (String.concat " " gs)
+      in
+      add_fallback_assert assert_r;
+      let j_name = Printf.sprintf "_mu_j_%s" r in
+      let j_guards =
+        Option.to_list (type_lower_bound j_name)
+        @ [ Printf.sprintf "(< %s %s)" j_name r ]
+        @ List.map (sub_with ~to_:j_name) guard_templates
+      in
+      let forall_body =
+        match j_guards with
+        | [] -> "false"
+        | [ g ] -> Printf.sprintf "(=> %s false)" g
+        | gs -> Printf.sprintf "(=> (and %s) false)" (String.concat " " gs)
+      in
+      add_fallback_assert
+        (Printf.sprintf "(forall ((%s Int)) %s)" j_name forall_body);
+      r
+  | None ->
+      translate_aggregate_finite config env inner_config comb params guards body
+
+and translate_aggregate_finite config env inner_config (comb : combiner) params
+    guards body =
+  let local_bound =
+    List.map (fun (p : param) -> Ast.lower_name p.param_name) params
+    @ List.concat_map
+        (function
+          | GParam p -> [ Ast.lower_name p.param_name ]
+          | GIn (n, _) -> [ Ast.lower_name n ]
+          | GExpr _ -> [])
+        guards
+  in
   let expanded =
     expand_comprehension translate_expr inner_config env params guards body
   in
