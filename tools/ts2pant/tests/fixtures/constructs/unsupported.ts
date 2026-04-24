@@ -44,3 +44,8 @@ export function loopAssign(a: Account): void {
     a.balance = a.balance + 1;
   }
 }
+
+/** parameter-level Set mutation → UNSUPPORTED (Stage B out of scope) */
+export function paramSetAdd(s: Set<string>, x: string): void {
+  s.add(x);
+}
