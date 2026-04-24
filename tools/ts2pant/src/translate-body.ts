@@ -1274,6 +1274,20 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
     return "empty body";
   }
   if (stmts.length > 1) {
+    // `let counter = INIT; while (...) { ... }` that failed `recognizeMuSearch`
+    // — typically a compound while body. Report a μ-search-specific
+    // reason before the generic let/var rejection fires.
+    for (let i = 0; i < stmts.length - 1; i++) {
+      const a = stmts[i]!;
+      const b = stmts[i + 1]!;
+      if (
+        ts.isVariableStatement(a) &&
+        a.declarationList.flags & ts.NodeFlags.Let &&
+        ts.isWhileStatement(b)
+      ) {
+        return "unsupported while-loop shape (not a recognized μ-search)";
+      }
+    }
     // Check for specific rejection reasons in leading statements
     for (const stmt of stmts) {
       if (ts.isVariableStatement(stmt)) {
@@ -1521,10 +1535,21 @@ function translateMuSearchInit(
   // Binder type follows the active NumericStrategy so the comprehension
   // stays consistent with how `number` is emitted elsewhere. A hardcoded
   // `Nat` would exclude negative INITs from the search domain and
-  // diverge from the containing body's numeric type.
+  // diverge from the containing body's numeric type. Real is rejected:
+  // μ-search enumerates the discrete sequence `INIT, INIT+1, …` from
+  // `counter++`, whereas `min over each j: Real, j >= INIT, ~P(j) | j`
+  // ranges over a dense domain — e.g. `while (i * i < 2) i++` would
+  // return √2 instead of 2.
+  const counterType = strategy.mapNumber();
+  if (counterType === "Real") {
+    return {
+      error:
+        "μ-search is only supported for discrete numeric strategies (got Real)",
+    };
+  }
   return {
     value: ast.eachComb(
-      [ast.param(jName, ast.tName(strategy.mapNumber()))],
+      [ast.param(jName, ast.tName(counterType))],
       [
         ast.gExpr(ast.binop(ast.opGe(), ast.var(jName), initExpr)),
         ast.gExpr(ast.unop(ast.opNot(), predExpr)),
@@ -1646,26 +1671,55 @@ function blockHasNoSideEffects(
   return false;
 }
 
-/** Check whether a TS expression references any variable name from the given set.
- *  Only checks identifier *uses* (variable references), not syntactic name
- *  positions like property names in `a.balance` or method names in `a.foo()`. */
+/** Check whether a TS expression references any variable name from the given
+ *  set as a free variable. Scope-aware: nested function/arrow parameters
+ *  shadow outer bindings, so `xs.some(i => i > 0)` does not report dependence
+ *  on an outer `i`. Default-value expressions and property-access `.name`
+ *  tokens are handled specially. */
 function expressionReferencesNames(
   expr: ts.Expression,
   names: Set<string>,
 ): boolean {
-  expr = unwrapExpression(expr);
-  if (ts.isIdentifier(expr)) {
-    return names.has(expr.text);
+  return nodeReferencesNames(unwrapExpression(expr), names);
+}
+
+function nodeReferencesNames(node: ts.Node, names: Set<string>): boolean {
+  if (names.size === 0) {
+    return false;
   }
-  // For property access, only recurse into the object expression —
-  // the .name identifier is a syntactic token, not a variable reference.
-  if (ts.isPropertyAccessExpression(expr)) {
-    return expressionReferencesNames(expr.expression, names);
+  if (ts.isIdentifier(node)) {
+    return names.has(node.text);
+  }
+  // Property access: the `.name` token is a syntactic position, not a
+  // variable reference.
+  if (ts.isPropertyAccessExpression(node)) {
+    return nodeReferencesNames(node.expression, names);
+  }
+  // Nested function scopes: parameter names shadow outer bindings inside
+  // the body, but parameter default-value expressions are evaluated in
+  // the outer scope.
+  if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
+    for (const p of node.parameters) {
+      if (p.initializer && nodeReferencesNames(p.initializer, names)) {
+        return true;
+      }
+    }
+    const shadowed = new Set<string>();
+    for (const p of node.parameters) {
+      if (ts.isIdentifier(p.name)) {
+        shadowed.add(p.name.text);
+      }
+    }
+    const innerNames = new Set<string>();
+    for (const n of names) {
+      if (!shadowed.has(n)) {
+        innerNames.add(n);
+      }
+    }
+    return nodeReferencesNames(node.body, innerNames);
   }
   return (
-    ts.forEachChild(expr, (child) =>
-      ts.isExpression(child) ? expressionReferencesNames(child, names) : false,
-    ) ?? false
+    ts.forEachChild(node, (child) => nodeReferencesNames(child, names)) ?? false
   );
 }
 
@@ -1703,7 +1757,16 @@ function expressionHasSideEffects(
   }
   if (ts.isCallExpression(expr)) {
     if (isKnownPureCall(expr, checker)) {
-      return expr.arguments.some((a) => expressionHasSideEffects(a, checker));
+      // Known-pure callees still require a pure callee expression —
+      // `makeString().trim()` passes the name-based builtin allowlist
+      // but the receiver `makeString()` is itself a user call with
+      // unknown effects. The Tier 1a checks in `isKnownPureCall`
+      // already enforce this for Map/Set/HO-array, but not for
+      // Math/String/Number/PURE_ARRAY entries, so we double-check here.
+      return (
+        expressionHasSideEffects(expr.expression, checker) ||
+        expr.arguments.some((a) => expressionHasSideEffects(a, checker))
+      );
     }
     return true;
   }

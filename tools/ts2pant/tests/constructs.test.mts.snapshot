@@ -471,7 +471,7 @@ exports[`expressions-set.ts > contains 1`] = `
 `;
 
 exports[`expressions-while-mu-search.ts > compoundWhileBody 1`] = `
-"module CompoundWhileBody.\\n\\ncompound-while-body used: [Int] => Int.\\n\\n---\\n\\n> UNSUPPORTED: compound-while-body — let/var bindings not supported.\\n"
+"module CompoundWhileBody.\\n\\ncompound-while-body used: [Int] => Int.\\n\\n---\\n\\n> UNSUPPORTED: compound-while-body — unsupported while-loop shape (not a recognized μ-search).\\n"
 `;
 
 exports[`expressions-while-mu-search.ts > firstUnusedSuffix 1`] = `

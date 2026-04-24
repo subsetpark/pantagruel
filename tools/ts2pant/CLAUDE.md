@@ -447,13 +447,20 @@ syntactic match:
   initializer (translated as the comprehension's lower-bound RHS).
 - Immediately followed by a `while` whose body is exactly one statement: an
   `ExpressionStatement` wrapping `i++` or `++i` on the same identifier.
-- Predicate must reference the loop counter (otherwise the loop is a no-op
-  or divergence, not a μ-search).
+- Predicate must reference the loop counter as a *free variable*
+  (otherwise the loop is a no-op or divergence, not a μ-search).
+  `expressionReferencesNames` is scope-aware, so a counter-named
+  parameter inside a nested arrow (`xs.some(i => …)`) does not count
+  as a free reference to the outer `i`.
 - Init and predicate must be side-effect-free. The purity screen lives
   alongside the TDZ check in `inlineConstBindings`, not in the recognizer
   itself; it rejects assignments, bare `++`/`--`, and unknown-pure calls.
   `translateBodyExpr` has no handler for `++`/`--`, so without this screen
   `while (used.has(i++)) i++;` would silently lower to garbage.
+- Active `NumericStrategy` must be discrete (`IntStrategy`). Under
+  `RealStrategy` the comprehension would range over a dense domain while
+  `counter++` enumerates `INIT, INIT+1, …`; `translateMuSearchInit`
+  returns an explicit error in that case.
 
 Compound bodies (`{ i++; foo(); }`), counter aliasing (`while (P) { j++; }`),
 `const` counters, `i += 1` / `i = i + 1` updates, and bare `while` without a

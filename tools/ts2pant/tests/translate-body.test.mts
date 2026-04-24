@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createSourceFileFromSource } from "../src/extract.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import { translateBody } from "../src/translate-body.js";
-import { IntStrategy } from "../src/translate-types.js";
+import { IntStrategy, RealStrategy } from "../src/translate-types.js";
 
 before(async () => {
   await loadAst();
@@ -881,13 +881,12 @@ describe("Kleene μ-search (while-loop minimum)", () => {
     assert.equal(prop.kind, "equation");
     if (prop.kind === "equation") {
       const ast = getAst();
-      // No synthCell in this standalone test path, so the comprehension
-      // binder falls back to `j${nextSupply}` — supply slot 0 was consumed
-      // by the binding's hygienic placeholder, so `j1` is correct here.
-      // The full pipeline (with synthCell) produces just `j`.
-      assert.equal(
+      // Match any `jN` binder and assert consistent use throughout the
+      // comprehension. The specific `N` depends on UniqueSupply slot
+      // consumption and shouldn't break hygiene refactors.
+      assert.match(
         ast.strExpr(prop.rhs),
-        "min over each j1: Int, j1 >= 1, ~(j1 in used) | j1",
+        /^min over each (j\d+): Int, \1 >= 1, ~\(\1 in used\) \| \1$/,
       );
     }
   });
@@ -914,9 +913,9 @@ describe("Kleene μ-search (while-loop minimum)", () => {
     assert.equal(prop.kind, "equation");
     if (prop.kind === "equation") {
       const ast = getAst();
-      assert.equal(
+      assert.match(
         ast.strExpr(prop.rhs),
-        "(min over each j1: Int, j1 >= 0, ~(j1 in used) | j1) + 1",
+        /^\(min over each (j\d+): Int, \1 >= 0, ~\(\1 in used\) \| \1\) \+ 1$/,
       );
     }
   });
@@ -944,9 +943,9 @@ describe("Kleene μ-search (while-loop minimum)", () => {
     assert.equal(prop.kind, "equation");
     if (prop.kind === "equation") {
       const ast = getAst();
-      assert.equal(
+      assert.match(
         ast.strExpr(prop.rhs),
-        "k + (min over each j2: Int, j2 >= 1, ~(j2 in used) | j2)",
+        /^k \+ \(min over each (j\d+): Int, \1 >= 1, ~\(\1 in used\) \| \1\)$/,
       );
     }
   });
@@ -1058,9 +1057,9 @@ describe("Kleene μ-search (while-loop minimum)", () => {
     assert.equal(prop.kind, "equation");
     if (prop.kind === "equation") {
       const ast = getAst();
-      assert.equal(
+      assert.match(
         ast.strExpr(prop.rhs),
-        "min over each j1: Int, j1 >= 1, ~(j1 in used) | j1",
+        /^min over each (j\d+): Int, \1 >= 1, ~\(\1 in used\) \| \1$/,
       );
     }
   });
@@ -1130,6 +1129,56 @@ describe("Kleene μ-search (while-loop minimum)", () => {
     const props = translateBody({
       sourceFile,
       functionName: "bogus",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+  });
+
+  it("rejects RealStrategy because the dense domain breaks `counter++`", () => {
+    // μ-search enumerates `INIT, INIT+1, …` discretely. Under
+    // RealStrategy the comprehension would range over a dense domain
+    // and could return a value the loop never visits (e.g. √2 when
+    // `while (i * i < 2) i++` should terminate at 2).
+    const source = `
+      export function overReal(used: ReadonlySet<number>): number {
+        let i = 0;
+        while (used.has(i)) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "overReal",
+      strategy: RealStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+  });
+
+  it("counter references inside shadowing arrow params do not count as free refs", () => {
+    // `[1].some(i => ...)` shadows the outer counter `i`. The predicate
+    // does NOT reference the outer counter, so recognizeMuSearch rejects
+    // the shape rather than falsely lowering it to a μ-search whose
+    // search-domain guard is free of `j`.
+    const source = `
+      export function shadowed(): number {
+        let i = 0;
+        while ([1, 2, 3].some(i => i > 0)) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "shadowed",
       strategy: IntStrategy,
     });
 
