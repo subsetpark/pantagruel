@@ -1113,13 +1113,16 @@ function isInterfaceFieldAccess(
  */
 /**
  * Recognize the Kleene μ-minimization pattern as a `let counter = init;`
- * statement followed by `while (P(counter)) { counter++; }`.
+ * statement followed by `while (P(counter)) counter++;` (with or without
+ * braces around the while body).
  *
  * Returns `{ counterName, initTsExpr, predicateTsExpr }` if the pair at
- * `stmts[idx]` and `stmts[idx + 1]` matches; null otherwise. The recognizer
- * is conservative: counter must be a single identifier with a side-effect-free
- * initializer, the predicate must be side-effect-free, and the loop body must
- * be exactly `counter++` or `++counter` (no compound bodies, no other writes).
+ * `stmts[idx]` and `stmts[idx + 1]` matches; null otherwise. Shape-only
+ * match: counter must be a single identifier with any initializer, and the
+ * loop body must be exactly `counter++` or `++counter` on the same
+ * identifier (no compound bodies, no other writes). Purity of the
+ * initializer and predicate is not pre-screened here — anything that
+ * fails to translate downstream surfaces with its natural error message.
  *
  * Standard name: Kleene μ-operator / bounded minimization.
  * Reference: Kleene, *General Recursive Functions of Natural Numbers*,
@@ -1155,16 +1158,19 @@ function recognizeMuSearch(
     return null;
   }
 
-  // Body must be a block containing exactly one `counter++` or `++counter`.
-  // Side-effect purity of init and predicate is not pre-screened here: the
-  // recognizer identifies the syntactic shape; the downstream translation
-  // surfaces any unsupported expressions with their natural error message.
+  // Body must be exactly one `counter++` or `++counter`, either as the
+  // direct child of the while (unbraced) or as the sole statement of a
+  // single-statement block. Side-effect purity of init and predicate is
+  // not pre-screened here: the recognizer identifies the syntactic shape;
+  // the downstream translation surfaces any unsupported expressions with
+  // their natural error message.
   const body = whileStmt.statement;
-  if (!ts.isBlock(body) || body.statements.length !== 1) {
-    return null;
-  }
-  const bodyStmt = body.statements[0]!;
-  if (!ts.isExpressionStatement(bodyStmt)) {
+  const bodyStmt: ts.Statement | null = ts.isBlock(body)
+    ? body.statements.length === 1
+      ? body.statements[0]!
+      : null
+    : body;
+  if (!bodyStmt || !ts.isExpressionStatement(bodyStmt)) {
     return null;
   }
   const update = bodyStmt.expression;

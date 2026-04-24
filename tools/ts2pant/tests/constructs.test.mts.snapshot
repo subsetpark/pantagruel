@@ -486,6 +486,10 @@ exports[`expressions-while-mu-search.ts > offsetUnusedSuffix 1`] = `
 "module OffsetUnusedSuffix.\\n\\noffset-unused-suffix used: [Int], offset: Int => Int.\\n\\n---\\n\\noffset-unused-suffix used offset = offset + (min over each j: Nat, j >= 1, ~(j in used) | j).\\n"
 `;
 
+exports[`expressions-while-mu-search.ts > unbracedWhileBody 1`] = `
+"module UnbracedWhileBody.\\n\\nunbraced-while-body used: [Int] => Int.\\n\\n---\\n\\nunbraced-while-body used = (min over each j: Nat, j >= 1, ~(j in used) | j).\\n"
+`;
+
 exports[`functions-class.ts > Account.deposit 1`] = `
 "module Deposit.\\n\\n~> Deposit @ a: Account, amount: Int.\\n\\n---\\n\\naccount--balance' a = account--balance a + amount.\\n"
 `;

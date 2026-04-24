@@ -52,3 +52,11 @@ export function compoundWhileBody(used: ReadonlySet<number>): number {
   }
   return i;
 }
+
+/** Unbraced while body — the body is an ExpressionStatement directly,
+ *  not wrapped in a Block. CLAUDE.md's canonical form permits this. */
+export function unbracedWhileBody(used: ReadonlySet<number>): number {
+  let i = 1;
+  while (used.has(i)) i++;
+  return i;
+}
