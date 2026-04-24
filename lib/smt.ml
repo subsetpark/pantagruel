@@ -669,17 +669,9 @@ and translate_aggregate config env (comb : combiner) params guards body =
     | CombAdd | CombMul | CombAnd | CombOr | CombMax -> None
   in
   match mu_search with
-  | Some (binder_name, binder_ty, bindings) ->
-      let env_inner = Env.with_vars bindings env in
+  | Some (binder_name, binder_ty, _bindings) ->
       let r = fresh_fallback ~kind:"mu" ~sort:"Int" in
-      let pname = sanitize_ident binder_name in
-      let guard_templates =
-        List.filter_map
-          (function
-            | GExpr e -> Some (translate_expr inner_config env_inner e)
-            | GIn _ | GParam _ -> None)
-          guards
-      in
+      let j_name = Printf.sprintf "_mu_j_%s" r in
       let type_lower_bound name =
         match binder_ty with
         | TyNat -> Some (Printf.sprintf "(>= %s 1)" name)
@@ -689,11 +681,37 @@ and translate_aggregate config env (comb : combiner) params guards body =
         | TyProduct _ | TySum _ | TyFunc _ ->
             None
       in
-      let sub_with ~to_ template = replace_word ~from:pname ~to_ template in
-      let r_guards =
-        Option.to_list (type_lower_bound r)
-        @ List.map (sub_with ~to_:r) guard_templates
+      (* Translate a guard after capture-avoiding AST substitution of the
+         μ-search binder with [repl]. Conjoins any list-search and
+         declaration guards uncovered in the substituted expression, matching
+         the shape of [translate_precondition] so the witness constraints are
+         sound. *)
+      let translate_guard_with repl g =
+        let sub = [ (binder_name, EVar (Lower repl)) ] in
+        let g' = substitute_vars sub g in
+        let repl_env = Env.with_vars [ (repl, binder_ty) ] env in
+        let body_str = translate_expr config repl_env g' in
+        if not config.inject_guards then body_str
+        else
+          let app_guards = collect_body_guards repl_env g' in
+          match app_guards with
+          | [] -> body_str
+          | _ ->
+              let guard_strs =
+                List.map (translate_expr config repl_env) app_guards
+              in
+              Printf.sprintf "(and %s %s)"
+                (String.concat " " guard_strs)
+                body_str
       in
+      let guards_at repl =
+        List.filter_map
+          (function
+            | GExpr e -> Some (translate_guard_with repl e)
+            | GIn _ | GParam _ -> None)
+          guards
+      in
+      let r_guards = Option.to_list (type_lower_bound r) @ guards_at r in
       let assert_r =
         match r_guards with
         | [] -> "true"
@@ -701,11 +719,10 @@ and translate_aggregate config env (comb : combiner) params guards body =
         | gs -> Printf.sprintf "(and %s)" (String.concat " " gs)
       in
       add_fallback_assert assert_r;
-      let j_name = Printf.sprintf "_mu_j_%s" r in
       let j_guards =
         Option.to_list (type_lower_bound j_name)
         @ [ Printf.sprintf "(< %s %s)" j_name r ]
-        @ List.map (sub_with ~to_:j_name) guard_templates
+        @ guards_at j_name
       in
       let forall_body =
         match j_guards with

@@ -24,7 +24,7 @@ let resolve_comprehension_binding env params guards =
       | Ok (TyDomain dname) ->
           let pn = Ast.lower_name p.param_name in
           Ok (pn, dname, None, [ (pn, TyDomain dname) ])
-      | Ok ((TyNat | TyNat0 | TyInt | TyReal) as ty) ->
+      | Ok ((TyNat | TyNat0 | TyInt) as ty) ->
           Error
             (Printf.sprintf
                "SMT translation: comprehension over unbounded %s is only \
@@ -32,6 +32,11 @@ let resolve_comprehension_binding env params guards =
                 explicit upper-bound guard (e.g. `j < N`) to enable general \
                 enumeration"
                (format_ty ty) (format_ty ty))
+      | Ok TyReal ->
+          Error
+            "SMT translation: comprehension over unbounded Real is not \
+             supported in SMT; μ-search requires a discrete well-ordered \
+             numeric type"
       | Ok
           ( TyBool | TyString | TyNothing | TyList _ | TyProduct _ | TySum _
           | TyFunc _ )

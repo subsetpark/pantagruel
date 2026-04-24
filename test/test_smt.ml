@@ -1745,6 +1745,39 @@ let test_mu_search_guarded_predicate () =
   check bool "predicate appears applied to j witness" true
     (contains drained "(activep _mu_j_")
 
+let test_mu_search_nested_binder_capture () =
+  (* min over each j: Nat, (some j: Nat | p? j) | j — the inner quantifier
+     rebinds [j], so the outer μ-search substitution must NOT rewrite the
+     inner binder or its body. Regression against the old string-based
+     replace_word substitution, which would have rewritten both. *)
+  let env =
+    Env.empty ""
+    |> Env.add_rule "p?"
+         (Types.TyFunc ([ Types.TyNat ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+  in
+  Smt.reset_fallbacks ();
+  let inner =
+    Ast.make_exists
+      [ { param_name = Lower "j"; param_type = TName (Upper "Nat") } ]
+      []
+      (EApp (EVar (Lower "p?"), [ EVar (Lower "j") ]))
+  in
+  let expr =
+    Ast.make_each
+      [ { param_name = Lower "j"; param_type = TName (Upper "Nat") } ]
+      [ GExpr inner ] (Some CombMin) (EVar (Lower "j"))
+  in
+  let _ = Smt.translate_expr config env expr in
+  let drained = Smt.drain_fallback_decls () in
+  (* Inner binder must still be bound as [j] (or alpha-renamed to avoid
+     collision with the outer witness) — never rewritten to the outer
+     μ-search witness constant. *)
+  check bool "inner exists keeps a j-family binder" true
+    (contains drained "(exists ((j " || contains drained "(exists ((j_");
+  check bool "inner binder not replaced by outer witness" true
+    (not (contains drained "(exists ((_mu_fallback"))
+
 let test_mu_search_max_rejected () =
   (* max over each j: Nat | j — unbounded above, must still error *)
   let env = Env.empty "" in
@@ -1807,6 +1840,8 @@ let comprehension_tests =
     test_case "μ-search int" `Quick test_mu_search_int;
     test_case "μ-search guarded predicate" `Quick
       test_mu_search_guarded_predicate;
+    test_case "μ-search nested binder capture" `Quick
+      test_mu_search_nested_binder_capture;
     test_case "μ-search max rejected" `Quick test_mu_search_max_rejected;
     test_case "card nat comprehension error" `Quick
       test_card_nat_comprehension_error;
