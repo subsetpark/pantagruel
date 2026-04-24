@@ -294,6 +294,12 @@ let collect_failures (sexps : Sexp.t list) : failure list =
     | Sexp.Atom a -> (
         match fallback_kind_of_atom a with
         | None -> ()
+        | Some "mu" ->
+            (* μ-search emits a fresh Int constant as the Skolem witness for a
+               least-element assertion — it is not a translator approximation
+               but the faithful encoding of [min over each j: Nat | j]. See
+               [Smt.translate_aggregate]. *)
+            ()
         | Some kind ->
             if not (Hashtbl.mem seen_fallbacks (kind, a)) then begin
               Hashtbl.add seen_fallbacks (kind, a) ();

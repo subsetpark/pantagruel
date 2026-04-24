@@ -640,6 +640,119 @@ and translate_aggregate config env (comb : combiner) params guards body =
   let inner_config =
     { config with quant_bound = local_bound @ config.quant_bound }
   in
+  (* μ-search: `min over each j: Nat|Nat0|Int, G₁(j), …, Gₙ(j) | j` compiles
+     to a Skolem-style least-witness encoding instead of enumerating the
+     (unbounded) iterator. Detected shape: CombMin, single numeric-typed
+     param, body is exactly the binder, all guards are plain expressions.
+     Emits a fresh Int constant r along with:
+       (assert (and <type-bound[r]> G₁(r) … Gₙ(r)))
+       (assert (forall ((j Int)) (=> (and <type-bound[j]> (< j r) Gᵢ(j)…) false)))
+     where <type-bound[x]> is `(>= x 1)` for Nat, `(>= x 0)` for Nat0, absent
+     for Int. The result string is r. *)
+  let mu_search =
+    match comb with
+    | CombMin -> (
+        match resolve_numeric_comprehension_binding env params with
+        | Error _ -> None
+        | Ok (binder_name, binder_ty, bindings) -> (
+            let all_gexpr =
+              List.for_all
+                (function GExpr _ -> true | GIn _ | GParam _ -> false)
+                guards
+            in
+            if not all_gexpr then None
+            else
+              match[@warning "-4"] body with
+              | EVar (Lower n) when n = binder_name ->
+                  Some (binder_name, binder_ty, bindings)
+              | _ -> None))
+    | CombAdd | CombMul | CombAnd | CombOr | CombMax -> None
+  in
+  match mu_search with
+  | Some (binder_name, binder_ty, _bindings) ->
+      let r = fresh_fallback ~kind:"mu" ~sort:"Int" in
+      let j_name = Printf.sprintf "_mu_j_%s" r in
+      let type_lower_bound name =
+        match binder_ty with
+        | TyNat -> Some (Printf.sprintf "(>= %s 1)" name)
+        | TyNat0 -> Some (Printf.sprintf "(>= %s 0)" name)
+        | TyInt -> None
+        | TyBool | TyReal | TyString | TyNothing | TyDomain _ | TyList _
+        | TyProduct _ | TySum _ | TyFunc _ ->
+            None
+      in
+      (* Translate a guard after capture-avoiding AST substitution of the
+         μ-search binder with [repl]. Conjoins any list-search and
+         declaration guards uncovered in the substituted expression, matching
+         the shape of [translate_precondition] so the witness constraints are
+         sound. *)
+      let translate_guard_with repl g =
+        let sub = [ (binder_name, EVar (Lower repl)) ] in
+        let g' = substitute_vars sub g in
+        let repl_env = Env.with_vars [ (repl, binder_ty) ] env in
+        (* Thread the witness and any outer quantifier binders through
+           [quant_bound] so that primed-guard injection (via [prime_expr]
+           inside [collect_body_guards]) does not prime the Skolem witness
+           or outer-bound vars into undeclared [_mu_fallback_*_prime] atoms. *)
+        let bound_names = repl :: config.quant_bound in
+        let guard_config = { config with quant_bound = bound_names } in
+        let body_str = translate_expr guard_config repl_env g' in
+        if not config.inject_guards then body_str
+        else
+          let app_guards = collect_body_guards ~bound:bound_names repl_env g' in
+          match app_guards with
+          | [] -> body_str
+          | _ ->
+              let guard_strs =
+                List.map (translate_expr guard_config repl_env) app_guards
+              in
+              Printf.sprintf "(and %s %s)"
+                (String.concat " " guard_strs)
+                body_str
+      in
+      let guards_at repl =
+        List.filter_map
+          (function
+            | GExpr e -> Some (translate_guard_with repl e)
+            | GIn _ | GParam _ -> None)
+          guards
+      in
+      let r_guards = Option.to_list (type_lower_bound r) @ guards_at r in
+      let assert_r =
+        match r_guards with
+        | [] -> "true"
+        | [ g ] -> g
+        | gs -> Printf.sprintf "(and %s)" (String.concat " " gs)
+      in
+      add_fallback_assert assert_r;
+      let j_guards =
+        Option.to_list (type_lower_bound j_name)
+        @ [ Printf.sprintf "(< %s %s)" j_name r ]
+        @ guards_at j_name
+      in
+      let forall_body =
+        match j_guards with
+        | [] -> "false"
+        | [ g ] -> Printf.sprintf "(=> %s false)" g
+        | gs -> Printf.sprintf "(=> (and %s) false)" (String.concat " " gs)
+      in
+      add_fallback_assert
+        (Printf.sprintf "(forall ((%s Int)) %s)" j_name forall_body);
+      r
+  | None ->
+      translate_aggregate_finite config env inner_config comb params guards body
+
+and translate_aggregate_finite config env inner_config (comb : combiner) params
+    guards body =
+  let local_bound =
+    List.map (fun (p : param) -> Ast.lower_name p.param_name) params
+    @ List.concat_map
+        (function
+          | GParam p -> [ Ast.lower_name p.param_name ]
+          | GIn (n, _) -> [ Ast.lower_name n ]
+          | GExpr _ -> [])
+        guards
+  in
   let expanded =
     expand_comprehension translate_expr inner_config env params guards body
   in
