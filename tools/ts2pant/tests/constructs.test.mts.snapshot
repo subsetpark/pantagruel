@@ -335,15 +335,15 @@ exports[`expressions-nullish.ts > defaultToZero 1`] = `
 `;
 
 exports[`expressions-nullish.ts > maybeBalance 1`] = `
-"module MaybeBalance.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => Owner.\\nOwner.\\nowner--id o: Owner => Int.\\nmaybe-balance a: [Account] => [Int].\\n\\n---\\n\\nmaybe-balance a = (each $0 in a | balance $0).\\n"
+"module MaybeBalance.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => Owner.\\nOwner.\\nowner--id o: Owner => Int.\\nmaybe-balance a: [Account] => [Int].\\n\\n---\\n\\nmaybe-balance a = (each $0 in a | account--balance $0).\\n"
 `;
 
 exports[`expressions-nullish.ts > maybeOwnerId 1`] = `
-"module MaybeOwnerId.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => Owner.\\nOwner.\\nowner--id o: Owner => Int.\\nmaybe-owner-id a: [Account] => [Int].\\n\\n---\\n\\nmaybe-owner-id a = (each $1 in (each $0 in a | owner $0) | id $1).\\n"
+"module MaybeOwnerId.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => Owner.\\nOwner.\\nowner--id o: Owner => Int.\\nmaybe-owner-id a: [Account] => [Int].\\n\\n---\\n\\nmaybe-owner-id a = (each $1 in (each $0 in a | account--owner $0) | owner--id $1).\\n"
 `;
 
 exports[`expressions-nullish.ts > maybeOwnerIdOptional 1`] = `
-"module MaybeOwnerIdOptional.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => Owner.\\nOwner.\\nowner--id o: Owner => Int.\\nmaybe-owner-id-optional a: [Account] => [Int].\\n\\n---\\n\\nmaybe-owner-id-optional a = (each $1 in (each $0 in a | owner $0) | id $1).\\n"
+"module MaybeOwnerIdOptional.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => Owner.\\nOwner.\\nowner--id o: Owner => Int.\\nmaybe-owner-id-optional a: [Account] => [Int].\\n\\n---\\n\\nmaybe-owner-id-optional a = (each $1 in (each $0 in a | account--owner $0) | owner--id $1).\\n"
 `;
 
 exports[`expressions-nullish.ts > nonNullDefault 1`] = `

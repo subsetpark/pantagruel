@@ -1579,12 +1579,27 @@ export function translateBodyExpr(
         shouldLift = true;
       }
       if (shouldLift) {
+        // Qualify the accessor by the receiver's element type so the
+        // comprehension body matches the declaration-site rule emitted by
+        // translateTypes. `resolveFieldOwner` walks union members, so a
+        // nullable receiver like `Account | null` resolves to `Account`.
+        const receiverTsType = checker.getTypeAtLocation(expr.expression);
+        const ruleName = qualifyFieldAccess(
+          receiverTsType,
+          prop,
+          checker,
+          strategy,
+          supply.synthCell,
+        );
+        if (ruleName === null) {
+          return { unsupported: ambiguousFieldMsg(prop) };
+        }
         const binderName = freshHygienicBinder(supply);
         return {
           expr: ast.each(
             [],
             [ast.gIn(binderName, bodyExpr(obj))],
-            ast.app(ast.var(prop), [ast.var(binderName)]),
+            ast.app(ast.var(ruleName), [ast.var(binderName)]),
           ),
         };
       }

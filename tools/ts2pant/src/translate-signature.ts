@@ -987,7 +987,7 @@ export function translateSignature(
     const defaultType = mapTsType(symbolType, checker, strategy, synthCell);
     const paramType = overrides?.get(param.name) ?? defaultType;
     const pantName = synthCell
-      ? cellRegisterName(synthCell, param.name)
+      ? cellRegisterName(synthCell, toPantTermName(param.name))
       : toPantTermName(param.name);
     params.push({ name: pantName, type: paramType });
     paramNameMap.set(param.name, pantName);

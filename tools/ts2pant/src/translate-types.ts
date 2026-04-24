@@ -608,7 +608,7 @@ export function resolveRecordOwner(
       return mapped;
     }
   }
-  const sym = type.aliasSymbol ?? type.symbol;
+  const sym = type.symbol ?? type.aliasSymbol;
   const symName = sym?.getName();
   if (sym && symName && symName !== "__type") {
     return symName;
