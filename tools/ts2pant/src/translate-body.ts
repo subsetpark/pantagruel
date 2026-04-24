@@ -1683,6 +1683,40 @@ function expressionReferencesNames(
   return nodeReferencesNames(unwrapExpression(expr), names);
 }
 
+/** Walk a binding pattern (identifier, object, array) and collect every
+ *  identifier it binds, including nested patterns and rest elements. */
+function collectBindingNames(name: ts.BindingName, out: Set<string>): void {
+  if (ts.isIdentifier(name)) {
+    out.add(name.text);
+    return;
+  }
+  for (const element of name.elements) {
+    if (ts.isBindingElement(element)) {
+      collectBindingNames(element.name, out);
+    }
+  }
+}
+
+/** Collect default-value expressions from anywhere inside a binding
+ *  pattern. These are evaluated in the enclosing scope, not the binding's
+ *  own scope. */
+function collectBindingDefaults(
+  name: ts.BindingName,
+  out: ts.Expression[],
+): void {
+  if (ts.isIdentifier(name)) {
+    return;
+  }
+  for (const element of name.elements) {
+    if (ts.isBindingElement(element)) {
+      if (element.initializer) {
+        out.push(element.initializer);
+      }
+      collectBindingDefaults(element.name, out);
+    }
+  }
+}
+
 function nodeReferencesNames(node: ts.Node, names: Set<string>): boolean {
   if (names.size === 0) {
     return false;
@@ -1695,20 +1729,55 @@ function nodeReferencesNames(node: ts.Node, names: Set<string>): boolean {
   if (ts.isPropertyAccessExpression(node)) {
     return nodeReferencesNames(node.expression, names);
   }
-  // Nested function scopes: parameter names shadow outer bindings inside
-  // the body, but parameter default-value expressions are evaluated in
+  // Object-literal property key: `{ foo: expr }` — `foo` is a syntactic
+  // key, not a variable reference. Only the initializer references
+  // free vars, and computed-property-name expressions are evaluated in
   // the outer scope.
+  if (ts.isPropertyAssignment(node)) {
+    if (
+      ts.isComputedPropertyName(node.name) &&
+      nodeReferencesNames(node.name.expression, names)
+    ) {
+      return true;
+    }
+    return nodeReferencesNames(node.initializer, names);
+  }
+  // Shorthand `{ foo }` *is* sugar for `{ foo: foo }` — the identifier
+  // at that position is a variable reference. Default value (`{ foo = e }`
+  // in destructuring-assignment form) evaluates in the outer scope.
+  if (ts.isShorthandPropertyAssignment(node)) {
+    if (names.has(node.name.text)) {
+      return true;
+    }
+    if (node.objectAssignmentInitializer) {
+      return nodeReferencesNames(node.objectAssignmentInitializer, names);
+    }
+    return false;
+  }
+  // Nested function scopes: all parameter bindings (including nested
+  // identifiers inside destructuring patterns and a named function
+  // expression's own name) shadow outer bindings inside the body. All
+  // default-value expressions — top-level and nested — are evaluated in
+  // the outer scope before bindings take effect.
   if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
     for (const p of node.parameters) {
       if (p.initializer && nodeReferencesNames(p.initializer, names)) {
         return true;
       }
+      const nestedDefaults: ts.Expression[] = [];
+      collectBindingDefaults(p.name, nestedDefaults);
+      for (const d of nestedDefaults) {
+        if (nodeReferencesNames(d, names)) {
+          return true;
+        }
+      }
     }
     const shadowed = new Set<string>();
     for (const p of node.parameters) {
-      if (ts.isIdentifier(p.name)) {
-        shadowed.add(p.name.text);
-      }
+      collectBindingNames(p.name, shadowed);
+    }
+    if (ts.isFunctionExpression(node) && node.name) {
+      shadowed.add(node.name.text);
     }
     const innerNames = new Set<string>();
     for (const n of names) {

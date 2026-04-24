@@ -449,9 +449,10 @@ syntactic match:
   `ExpressionStatement` wrapping `i++` or `++i` on the same identifier.
 - Predicate must reference the loop counter as a *free variable*
   (otherwise the loop is a no-op or divergence, not a μ-search).
-  `expressionReferencesNames` is scope-aware, so a counter-named
-  parameter inside a nested arrow (`xs.some(i => …)`) does not count
-  as a free reference to the outer `i`.
+  `expressionReferencesNames` is scope-aware: parameters of nested
+  arrow/function expressions (plain, destructured object or array, and
+  a named function expression's own name) all shadow outer bindings,
+  and object-literal property *keys* don't count as references.
 - Init and predicate must be side-effect-free. The purity screen lives
   alongside the TDZ check in `inlineConstBindings`, not in the recognizer
   itself; it rejects assignments, bare `++`/`--`, and unknown-pure calls.

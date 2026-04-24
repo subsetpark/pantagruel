@@ -1185,4 +1185,65 @@ describe("Kleene μ-search (while-loop minimum)", () => {
     assert.equal(props.length, 1);
     assert.equal(props[0]?.kind, "unsupported");
   });
+
+  it("destructured arrow params also shadow the outer counter", () => {
+    // Object/array patterns bind identifiers just as plain params do.
+    // The scope-aware check must descend into binding patterns to
+    // discover `i` is shadowed by `({ i })` or `([i])`.
+    const objSource = `
+      export function shadowedObj(): number {
+        let i = 0;
+        while ([{ i: 0 }].some(({ i }) => i > 0)) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    const arrSource = `
+      export function shadowedArr(): number {
+        let i = 0;
+        while ([[0]].some(([i]) => i > 0)) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    for (const [name, src] of [
+      ["shadowedObj", objSource],
+      ["shadowedArr", arrSource],
+    ] as const) {
+      const sourceFile = createSourceFileFromSource(src);
+      const props = translateBody({
+        sourceFile,
+        functionName: name,
+        strategy: IntStrategy,
+      });
+      assert.equal(props.length, 1);
+      assert.equal(props[0]?.kind, "unsupported", `${name} should be rejected`);
+    }
+  });
+
+  it("named function expression's own name shadows the outer counter", () => {
+    // `function i() {}` binds `i` inside its own body (for recursive
+    // self-reference), so `i > 0` inside the body refers to the function
+    // value, not to the outer counter.
+    const source = `
+      export function shadowedFnName(): number {
+        let i = 0;
+        while ((function i() { return false; })()) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "shadowedFnName",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+  });
 });
