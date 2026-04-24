@@ -1778,6 +1778,38 @@ let test_mu_search_nested_binder_capture () =
   check bool "inner binder not replaced by outer witness" true
     (not (contains drained "(exists ((_mu_fallback"))
 
+let test_mu_search_primed_guard_witness () =
+  (* min over each j: Nat, guarded' j | j — where [guarded] has a declaration
+     guard [active? j]. When [collect_body_guards] walks the primed
+     application, it primes the substituted guard. Without threading the
+     witness into [~bound], the Skolem constant would be primed into an
+     undeclared [_mu_fallback_*_prime] atom. *)
+  let env =
+    Env.empty ""
+    |> Env.add_rule "guarded"
+         (Types.TyFunc ([ Types.TyNat ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule "active?"
+         (Types.TyFunc ([ Types.TyNat ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+    |> Env.add_rule_guards "guarded"
+         [ Ast.{ param_name = Lower "j"; param_type = TName (Upper "Nat") } ]
+         [ GExpr (EApp (EVar (Lower "active?"), [ EVar (Lower "j") ])) ]
+  in
+  Smt.reset_fallbacks ();
+  let expr =
+    Ast.make_each
+      [ { param_name = Lower "j"; param_type = TName (Upper "Nat") } ]
+      [ GExpr (EApp (EPrimed (Lower "guarded"), [ EVar (Lower "j") ])) ]
+      (Some CombMin) (EVar (Lower "j"))
+  in
+  let _ = Smt.translate_expr config env expr in
+  let drained = Smt.drain_fallback_decls () in
+  check bool "witness not primed into _mu_fallback_*_prime" true
+    (not (contains drained "_mu_fallback_0_prime"));
+  check bool "witness j-binder not primed" true
+    (not (contains drained "_mu_j__mu_fallback_0_prime"))
+
 let test_mu_search_max_rejected () =
   (* max over each j: Nat | j — unbounded above, must still error *)
   let env = Env.empty "" in
@@ -1842,6 +1874,8 @@ let comprehension_tests =
       test_mu_search_guarded_predicate;
     test_case "μ-search nested binder capture" `Quick
       test_mu_search_nested_binder_capture;
+    test_case "μ-search primed guard witness" `Quick
+      test_mu_search_primed_guard_witness;
     test_case "μ-search max rejected" `Quick test_mu_search_max_rejected;
     test_case "card nat comprehension error" `Quick
       test_card_nat_comprehension_error;

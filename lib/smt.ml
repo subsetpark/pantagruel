@@ -690,15 +690,21 @@ and translate_aggregate config env (comb : combiner) params guards body =
         let sub = [ (binder_name, EVar (Lower repl)) ] in
         let g' = substitute_vars sub g in
         let repl_env = Env.with_vars [ (repl, binder_ty) ] env in
-        let body_str = translate_expr config repl_env g' in
+        (* Thread the witness and any outer quantifier binders through
+           [quant_bound] so that primed-guard injection (via [prime_expr]
+           inside [collect_body_guards]) does not prime the Skolem witness
+           or outer-bound vars into undeclared [_mu_fallback_*_prime] atoms. *)
+        let bound_names = repl :: config.quant_bound in
+        let guard_config = { config with quant_bound = bound_names } in
+        let body_str = translate_expr guard_config repl_env g' in
         if not config.inject_guards then body_str
         else
-          let app_guards = collect_body_guards repl_env g' in
+          let app_guards = collect_body_guards ~bound:bound_names repl_env g' in
           match app_guards with
           | [] -> body_str
           | _ ->
               let guard_strs =
-                List.map (translate_expr config repl_env) app_guards
+                List.map (translate_expr guard_config repl_env) app_guards
               in
               Printf.sprintf "(and %s %s)"
                 (String.concat " " guard_strs)
