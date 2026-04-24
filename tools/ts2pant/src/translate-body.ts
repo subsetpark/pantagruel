@@ -1697,10 +1697,11 @@ function collectBindingNames(name: ts.BindingName, out: Set<string>): void {
   }
 }
 
-/** Collect default-value expressions from anywhere inside a binding
- *  pattern. These are evaluated in the enclosing scope, not the binding's
- *  own scope. */
-function collectBindingDefaults(
+/** Collect sub-expressions of a binding pattern that are evaluated in the
+ *  enclosing scope before the bound names take effect: computed property
+ *  keys (`{ [expr]: x }`) and default-value expressions (`{ x = expr }` or
+ *  `[x = expr]`). */
+function collectBindingOuterScopeExprs(
   name: ts.BindingName,
   out: ts.Expression[],
 ): void {
@@ -1709,10 +1710,16 @@ function collectBindingDefaults(
   }
   for (const element of name.elements) {
     if (ts.isBindingElement(element)) {
+      if (
+        element.propertyName &&
+        ts.isComputedPropertyName(element.propertyName)
+      ) {
+        out.push(element.propertyName.expression);
+      }
       if (element.initializer) {
         out.push(element.initializer);
       }
-      collectBindingDefaults(element.name, out);
+      collectBindingOuterScopeExprs(element.name, out);
     }
   }
 }
@@ -1756,18 +1763,19 @@ function nodeReferencesNames(node: ts.Node, names: Set<string>): boolean {
   }
   // Nested function scopes: all parameter bindings (including nested
   // identifiers inside destructuring patterns and a named function
-  // expression's own name) shadow outer bindings inside the body. All
-  // default-value expressions — top-level and nested — are evaluated in
-  // the outer scope before bindings take effect.
+  // expression's own name) shadow outer bindings inside the body.
+  // Expressions evaluated before bindings take effect — top-level
+  // default values, nested default values, and computed property keys —
+  // are still walked in the outer scope.
   if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
     for (const p of node.parameters) {
       if (p.initializer && nodeReferencesNames(p.initializer, names)) {
         return true;
       }
-      const nestedDefaults: ts.Expression[] = [];
-      collectBindingDefaults(p.name, nestedDefaults);
-      for (const d of nestedDefaults) {
-        if (nodeReferencesNames(d, names)) {
+      const outerScopeExprs: ts.Expression[] = [];
+      collectBindingOuterScopeExprs(p.name, outerScopeExprs);
+      for (const e of outerScopeExprs) {
+        if (nodeReferencesNames(e, names)) {
           return true;
         }
       }

@@ -1223,6 +1223,44 @@ describe("Kleene μ-search (while-loop minimum)", () => {
     }
   });
 
+  it("computed destructuring key in a nested param sees the outer counter", () => {
+    // `({ [i]: x }) => …` — the computed key `[i]` is evaluated in the
+    // outer scope before the `x` binding takes effect, so it IS a real
+    // free reference to the outer counter `i`. The recognizer must
+    // accept this as a valid μ-search body. After the reshape, `used`
+    // is declared-but-unused, so the key also supplies the counter
+    // reference that the predicate-must-reference-counter check looks
+    // for.
+    const source = `
+      export function computedKeyRef(): number {
+        let i = 0;
+        while ([{}].some(({ [i]: x }: { [k: number]: number }) => x === 0)) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "computedKeyRef",
+      strategy: IntStrategy,
+    });
+
+    // A free-ref to `i` via the computed key makes this a recognized
+    // μ-search shape; regardless of whether downstream translation of
+    // the indexed-record predicate succeeds, the distinguishing
+    // property is that the recognizer does NOT reject it for "predicate
+    // does not reference counter".
+    assert.equal(props.length, 1);
+    if (props[0]?.kind === "unsupported") {
+      assert.doesNotMatch(
+        props[0].reason,
+        /predicate does not reference the counter|not a recognized μ-search/,
+      );
+    }
+  });
+
   it("named function expression's own name shadows the outer counter", () => {
     // `function i() {}` binds `i` inside its own body (for recursive
     // self-reference), so `i > 0` inside the body refers to the function
