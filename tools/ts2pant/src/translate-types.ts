@@ -21,11 +21,29 @@ import type { PantDeclaration } from "./types.js";
 export const UNSUPPORTED_ANONYMOUS_RECORD = "__unsupported_anon_record__";
 
 /**
+ * TypeScript type flags for `null` / `undefined` / `void`. Pantagruel
+ * retired `Nothing` from the user-facing type surface — there is no
+ * writable type for "absence". `mapTsType` handles these only inside a
+ * union (`T | null` → `[T]` via list-lift / Alloy's `lone` multiplicity).
+ * A top-level `null` / `undefined` / `void` has no Pantagruel encoding
+ * and falls through to `checker.typeToString`, matching the generic
+ * unsupported-shape fallback and keeping any internal marker from
+ * leaking into emitted declarations.
+ */
+const NULLISH_FLAGS =
+  ts.TypeFlags.Null | ts.TypeFlags.Undefined | ts.TypeFlags.Void;
+
+/** True for TypeScript `null` / `undefined` / `void`. */
+function isTsNullish(type: ts.Type): boolean {
+  return (type.flags & NULLISH_FLAGS) !== 0;
+}
+
+/**
  * Mangle a Pantagruel type string into an identifier-safe fragment suitable
  * for embedding inside a synthesized Map domain name.
  *   "String"           → "String"
  *   "[String]"         → "ListString"
- *   "String + Nothing" → "StringOrNothing"
+ *   "String + Int"     → "StringOrInt"
  *   "A * B"            → "AAndB"
  * Returns null if the mangled result still contains non-identifier chars
  * (e.g., a bare `Map<...>` literal from a Map in value position with no
@@ -472,13 +490,10 @@ export function mapTsType(
   if (flags & ts.TypeFlags.Boolean || flags & ts.TypeFlags.BooleanLiteral) {
     return "Bool";
   }
-  if (
-    flags & ts.TypeFlags.Null ||
-    flags & ts.TypeFlags.Undefined ||
-    flags & ts.TypeFlags.Void
-  ) {
-    return "Nothing";
-  }
+  // Top-level `null` / `undefined` / `void` have no Pantagruel encoding.
+  // Fall through to the generic `checker.typeToString` fallback below so
+  // the unsupported string reflects the source rather than an internal
+  // sentinel. Null handling for unions happens in the union branch.
 
   // Tuple (check before array since tuples are also type references)
   if (checker.isTupleType(type)) {
@@ -530,13 +545,26 @@ export function mapTsType(
     if (type.types.every((t) => t.flags & ts.TypeFlags.BooleanLiteral)) {
       return "Bool";
     }
-    const parts = type.types.map((t) =>
+    // List-lift encoding for optionality: strip null/undefined/void before
+    // recursing so the internal "nothing" marker never escapes to callers.
+    // `T | null` → `[T]`, `A | B | null` → `[A + B]`. Pantagruel has no
+    // `Nothing` at the user surface — a union with null/undefined/void
+    // wraps the rest in a list of length 0 or 1 (Alloy `lone`).
+    const hasNullish = type.types.some(isTsNullish);
+    const nonNullTypes = type.types.filter((t) => !isTsNullish(t));
+    if (nonNullTypes.length === 0) {
+      // Degenerate `null | undefined` — no non-null members. Fall through
+      // to the generic checker fallback below so the broken output mirrors
+      // the source rather than an internal sentinel.
+      return checker.typeToString(type);
+    }
+    const parts = nonNullTypes.map((t) =>
       mapTsType(t, checker, strategy, synthCell),
     );
-    // Deduplicate (e.g. boolean literal collapse)
     const unique = parts.filter((v, i, a) => a.indexOf(v) === i);
-    // Sort Nothing to the end for consistent output
-    unique.sort((a, b) => (a === "Nothing" ? 1 : b === "Nothing" ? -1 : 0));
+    if (hasNullish) {
+      return `[${unique.join(" + ")}]`;
+    }
     return unique.join(" + ");
   }
 

@@ -150,7 +150,7 @@ This works with any function declared as `asserts condition` -- Node's `assert`,
 | `Set<T>` | `[T]` (membership via `.has(x)` → `x in`, cardinality via `.size` → `#`; uniqueness is not tracked) |
 | `Map<K, V>` field on `interface` | two rules: `<name>Key c: C, k: K => Bool` and `<name> c: C, k: K, <name>Key c k => V` (read via `.get(k)` → `<name> c k`, membership via `.has(k)` → `<name>Key c k`; mutation via `.set(k, v)` / `.delete(k)` → Pantagruel N-ary override `<name>[(c, k) \|-> v]` on each modified rule) |
 | `Map<K, V>` in any other type position (parameter, return, nested) | synthesizes a handle domain per `(K, V)` pair per module: `KToVMap.` plus the same rule pair as above, with the user's interface replaced by the synthesized domain. Non-identifier `K`/`V` are mangled — `[String]` → `ListString`, `A + B` → `AOrB`, `A * B` → `AAndB`. `.get(k)` → `kToVMap m k`, `.has(k)` → `kToVMapKey m k`. `.set(k, v)` / `.delete(k)` emit the same override-based mutation encoding as the interface-field case. Nested Maps register bottom-up (e.g., `Map<string, Map<string, number>>` emits `StringToIntMap` then `StringToStringToIntMapMap`). |
-| `T \| null` / `T \| undefined` | `T + Nothing` |
+| `T \| null` / `T \| undefined` | `[T]` (list-lift encoding — length 0 or 1; Alloy `lone` multiplicity) |
 | `interface Foo { ... }` | `Foo.` (domain) + rules for each property |
 
 ### Annotations and entailment checking

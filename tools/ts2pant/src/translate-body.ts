@@ -44,28 +44,12 @@ import type { PantDeclaration, PropResult } from "./types.js";
  * translates to primed rules on the cell), unlike the prior closure over a
  * `let counter = 0`.
  */
-/**
- * When set, rewrites `<paramName> ?? <rhs>` nullish-coalescing expressions at
- * translation time. Used by the optional-param-with-default split to emit two
- * rule heads from a single TS function: the "with-param" variant translates
- * the coalesce as the LHS (param), the "without-param" variant as the RHS
- * (default expression).
- */
-interface NullishRewrite {
-  paramName: string;
-  mode: "take-lhs" | "take-rhs";
-}
-
 export interface UniqueSupply {
   n: number;
   synthCell?: SynthCell | undefined;
-  nullishRewrite?: NullishRewrite | undefined;
 }
-function makeUniqueSupply(
-  synthCell?: SynthCell,
-  nullishRewrite?: NullishRewrite,
-): UniqueSupply {
-  return { n: 0, synthCell, nullishRewrite };
+function makeUniqueSupply(synthCell?: SynthCell): UniqueSupply {
+  return { n: 0, synthCell };
 }
 
 function nextSupply(supply: UniqueSupply): number {
@@ -76,6 +60,20 @@ function nextSupply(supply: UniqueSupply): number {
 
 function freshHygienicBinder(supply: UniqueSupply): string {
   return `$${nextSupply(supply)}`;
+}
+
+/**
+ * True when a TypeScript type includes `null`, `undefined`, or `void` —
+ * i.e., when `mapTsType` will list-lift it to `[T]`. Used at `??` and `?.`
+ * sites to decide whether the receiver needs the cardinality-based lowering
+ * (nullable) or can pass through as-is (already concrete).
+ */
+function isNullableTsType(type: ts.Type): boolean {
+  const mask = ts.TypeFlags.Null | ts.TypeFlags.Undefined | ts.TypeFlags.Void;
+  if (type.isUnion()) {
+    return type.types.some((t) => (t.flags & mask) !== 0);
+  }
+  return (type.flags & mask) !== 0;
 }
 
 interface ConstBinding {
@@ -798,21 +796,6 @@ export interface TranslateBodyOptions {
    * (b) dispatch `.get`/`.has` on non-interface-field Map receivers.
    */
   synthCell?: SynthCell | undefined;
-  /**
-   * Rewrite directive for `<paramName> ?? <rhs>` expressions. When the
-   * optional-param-with-default detector finds a splittable function, the
-   * pipeline calls translateBody twice: once with mode "take-lhs" (emits
-   * the full-arity head referencing the param) and once with mode
-   * "take-rhs" + excludeParam set (emits the reduced-arity head with the
-   * default substituted and the optional param dropped from scope).
-   */
-  nullishRewrite?: NullishRewrite | undefined;
-  /**
-   * When set, omit this parameter from the paramList / paramNames that the
-   * body-translator threads. Paired with nullishRewrite "take-rhs" so the
-   * reduced-arity body sees no reference to the now-defaulted param.
-   */
-  excludeParam?: string | undefined;
 }
 
 /**
@@ -823,15 +806,7 @@ export interface TranslateBodyOptions {
  * plus frame conditions for unmodified rules.
  */
 export function translateBody(opts: TranslateBodyOptions): PropResult[] {
-  const {
-    sourceFile,
-    functionName,
-    strategy,
-    declarations,
-    synthCell,
-    nullishRewrite,
-    excludeParam,
-  } = opts;
+  const { sourceFile, functionName, strategy, declarations, synthCell } = opts;
   const checker = sourceFile.getProject().getTypeChecker().compilerObject;
   const { node, className } = findFunction(sourceFile, functionName);
   // Strip class qualifier for use in Pantagruel identifiers
@@ -857,9 +832,6 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
 
   if (sig) {
     for (const param of sig.getParameters()) {
-      if (excludeParam !== undefined && param.name === excludeParam) {
-        continue;
-      }
       const paramType = checker.getTypeOfSymbol(param);
       // Pass the synthesizer so Map parameters resolve to their synthesized
       // domain names (idempotent; the signature pass already registered
@@ -883,7 +855,6 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
       strategy,
       paramNames,
       synthCell,
-      nullishRewrite,
     );
   } else {
     return translateMutatingBody(
@@ -905,7 +876,6 @@ function translatePureBody(
   strategy: NumericStrategy,
   paramNames: ReadonlyMap<string, string>,
   synthCell?: SynthCell,
-  nullishRewrite?: NullishRewrite,
 ): PropResult[] {
   const ast = getAst();
 
@@ -919,7 +889,7 @@ function translatePureBody(
     return [{ kind: "unsupported", reason: `${functionName} — ${reason}` }];
   }
 
-  const supply = makeUniqueSupply(synthCell, nullishRewrite);
+  const supply = makeUniqueSupply(synthCell);
   const inlined = inlineConstBindings(
     extracted.bindings.map((b) => ({
       tsName: b.name,
@@ -1498,6 +1468,36 @@ export function translateBodyExpr(
     if (isBodyUnsupported(obj)) {
       return obj;
     }
+    // Optional chain `x?.prop` under list-lift. With `x: [T]` on the Pant
+    // side, the functor-lift encoding is `each $n in x | prop $n`, giving
+    // `[U]` — empty when x is null/empty, singleton when x is present.
+    // Chains compose as nested comprehensions: TS parses `x?.a.b` as outer
+    // `.b` (no questionDotToken) wrapping inner `x?.a` (questionDotToken),
+    // with the outer tail marked by `NodeFlags.OptionalChain`. Lift at the
+    // tail too, so `x?.a.b` becomes `each $n' in (each $n in x | a $n) | b $n'`
+    // rather than falling through to a plain property access on the list-
+    // lifted receiver. When the receiver is not nullable in TS, `?.`
+    // degenerates to `.` and falls through.
+    const inOptionalChain = (expr.flags & ts.NodeFlags.OptionalChain) !== 0;
+    if (inOptionalChain) {
+      let shouldLift = false;
+      if (expr.questionDotToken !== undefined) {
+        const receiverTsType = checker.getTypeAtLocation(expr.expression);
+        shouldLift = isNullableTsType(receiverTsType);
+      } else if (ts.isOptionalChain(expr.expression)) {
+        shouldLift = true;
+      }
+      if (shouldLift) {
+        const binderName = freshHygienicBinder(supply);
+        return {
+          expr: ast.each(
+            [],
+            [ast.gIn(binderName, bodyExpr(obj))],
+            ast.app(ast.var(prop), [ast.var(binderName)]),
+          ),
+        };
+      }
+    }
     // .length (array) / .size (Set) -> #obj
     if (prop === "length" || prop === "size") {
       const receiverType = checker.getTypeAtLocation(expr.expression);
@@ -1557,28 +1557,62 @@ export function translateBodyExpr(
 
   // Binary expression
   if (ts.isBinaryExpression(expr)) {
-    // Nullish-coalescing rewrite: when the pipeline has registered a rewrite
-    // for `<paramName> ?? <rhs>` and this expression matches, translate only
-    // one side per the rewrite mode. Enables the optional-param-with-default
-    // idiom to split into two arity overloads. A non-matching ?? (param name
-    // differs, or rewrite not active) falls through to the generic
-    // unsupported-operator path below.
-    if (
-      expr.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken &&
-      supply.nullishRewrite &&
-      ts.isIdentifier(expr.left) &&
-      expr.left.text === supply.nullishRewrite.paramName
-    ) {
-      const picked =
-        supply.nullishRewrite.mode === "take-lhs" ? expr.left : expr.right;
-      return translateBodyExpr(
-        picked,
+    // Nullish-coalescing lowering under the list-lift encoding.
+    // `x ?? y` where `x: T | null` translates to `x: [T]` on the Pant side,
+    // with `#x = 0` as the null test. The result type depends on `y`:
+    //   - `y: T`      (default, non-nullable)  → result `T`;
+    //                 emit `cond #x = 0 => y, true => (x 1)`.
+    //   - `y: [T]`    (nested nullable)         → result `[T]`;
+    //                 emit `cond #x = 0 => y, true => x`.
+    // When `x` is not nullable in TS, `??` is semantically a no-op — emit
+    // just the LHS. This matches Dafny's nullable-typed fromMaybe pattern
+    // (Dafny Reference Manual §"Nullable Types"). See CLAUDE.md "Option-
+    // Type Elimination" for the broader encoding.
+    if (expr.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) {
+      const leftTsType = checker.getTypeAtLocation(expr.left);
+      const leftResult = translateBodyExpr(
+        expr.left,
         checker,
         strategy,
         paramNames,
         state,
         supply,
       );
+      if (isBodyUnsupported(leftResult)) {
+        return leftResult;
+      }
+      if (!isNullableTsType(leftTsType)) {
+        // LHS can never be nullish — `??` degenerates to just the LHS.
+        return leftResult;
+      }
+      const rightResult = translateBodyExpr(
+        expr.right,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
+      if (isBodyUnsupported(rightResult)) {
+        return rightResult;
+      }
+      const xExpr = bodyExpr(leftResult);
+      const yExpr = bodyExpr(rightResult);
+      const rightTsType = checker.getTypeAtLocation(expr.right);
+      const cardZero = ast.binop(
+        ast.opEq(),
+        ast.unop(ast.opCard(), xExpr),
+        ast.litNat(0),
+      );
+      const presentBranch = isNullableTsType(rightTsType)
+        ? xExpr
+        : ast.app(xExpr, [ast.litNat(1)]);
+      return {
+        expr: ast.cond([
+          [cardZero, yExpr],
+          [ast.litBool(true), presentBranch],
+        ]),
+      };
     }
     const op = translateOperator(expr.operatorToken.kind);
     if (op === null) {

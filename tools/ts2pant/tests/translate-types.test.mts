@@ -176,13 +176,43 @@ describe("recursive type following", () => {
 });
 
 describe("mapTsType", () => {
-  it("handles undefined/void as Nothing", () => {
+  it("top-level undefined falls through to checker.typeToString", () => {
+    // Lone null/undefined/void has no Pantagruel encoding. mapTsType no
+    // longer returns an internal sentinel; it falls through to
+    // `checker.typeToString` so emission mirrors the source. The result
+    // is not a valid Pantagruel identifier, so downstream emission still
+    // fails visibly.
     const source = `interface Foo { val: undefined; }`;
     const sourceFile = createSourceFileFromSource(source);
     const checker = getChecker(sourceFile);
     const extracted = extractAllTypes(sourceFile);
     const prop = extracted.interfaces[0].properties[0];
 
-    assert.equal(mapTsType(prop.type, checker, IntStrategy), "Nothing");
+    assert.equal(mapTsType(prop.type, checker, IntStrategy), "undefined");
+  });
+
+  it("list-lifts `T | null` to `[T]`", () => {
+    const source = `interface Foo { val: string | null; }`;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = getChecker(sourceFile);
+    const extracted = extractAllTypes(sourceFile);
+    const prop = extracted.interfaces[0].properties[0];
+
+    assert.equal(mapTsType(prop.type, checker, IntStrategy), "[String]");
+  });
+
+  it("list-lifts multi-arm union with null to `[A + B]`", () => {
+    const source = `
+      interface A { a: string; }
+      interface B { b: number; }
+      interface Foo { val: A | B | null; }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = getChecker(sourceFile);
+    const extracted = extractAllTypes(sourceFile);
+    const foo = extracted.interfaces.find((i: any) => i.name === "Foo")!;
+    const prop = foo.properties[0];
+
+    assert.equal(mapTsType(prop.type, checker, IntStrategy), "[A + B]");
   });
 });

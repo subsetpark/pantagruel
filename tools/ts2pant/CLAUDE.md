@@ -116,12 +116,43 @@ body, emit frame conditions (`prop' obj = prop obj`) for everything not in the s
 
 ### Option-Type Elimination (Nullish Coalescing, Optional Chaining)
 
-**Standard name:** Option/Maybe elimination.
-**Reference:** Dafny Reference Manual (nullable types, preconditions).
+**Standard name:** Option/Maybe elimination via Alloy `lone` multiplicity.
+**Reference:** Dafny Reference Manual (nullable types, preconditions);
+Jackson, *Software Abstractions* 2nd ed. (Alloy multiplicities: `one`, `lone`, `some`).
 
-`x ?? y` becomes `cond x ~= Nothing => x, true => y`. `x?.prop` becomes
-`cond x ~= Nothing => prop x, true => Nothing`. This is the lifting encoding —
-partiality expressed as conditional expressions over the `Nothing` value.
+Pantagruel retired `Nothing` from its user-facing type surface — there is
+no writable "absence" type and no sum destructuring. Optionality is encoded
+in the type language via **list-lift**: `T | null` / `T | undefined` maps
+to `[T]`, a list of length 0 or 1 (Alloy's `lone` multiplicity). Type-level
+unions fold the null marker into the list wrapper: `A | B | null` → `[A + B]`.
+
+Under list-lift, `??` and `?.` have a universal lowering — the empty-list
+cardinality test `#x = 0` replaces the absent `~= Nothing` check, and list
+indexing `(x 1)` replaces singleton extraction:
+
+- `x ?? y` with `x: [T]`:
+  - `y: T` (non-nullable default) → `cond #x = 0 => y, true => (x 1)`
+    (result `T`).
+  - `y: [T]` (nested nullable) → `cond #x = 0 => y, true => x`
+    (result `[T]`).
+  - `x` not nullable in TS → `x` alone (`??` degenerates; no case-split).
+- `x?.prop` with `x: [T]`, `prop: T => U` → `each t in x | prop t`
+  (result `[U]`). Functor lift: empty stays empty; singleton becomes
+  `[prop v]`. Chains `x?.a?.b` compose as comprehensions over
+  comprehensions — each step lifts through the list.
+
+Nullability is determined from the TS type at the AST location (presence
+of `null` / `undefined` / `void` in the union), not from the emitted Pant
+type — so we avoid misclassifying genuine arrays (`number[]`) as optional.
+See `isNullableTsType` and the `QuestionQuestionToken` / `questionDotToken`
+branches in `translate-body.ts`.
+
+Optional parameters (`p?: P`) list-lift to `p: [P]` via `mapTsType`'s
+union-with-`undefined` handling; `p ?? c` inside the body expands to the
+cardinality case-split above, giving one list-lifted signature rather than
+multiple arity overloads. This preserves one-source-one-target for
+everything reached through the general lowering — no special-case
+detection at the signature level.
 
 ### Partial Rules (Map<K, V>)
 
@@ -164,13 +195,18 @@ recursive `mapTsType` calls: `Map<string, Map<string, number>>` emits
 `StringToIntMap` first and then `StringToStringToIntMapMap` whose V
 references it.
 
-**Why this encoding, not `V + Nothing`?** Pantagruel has no first-class
-`Nothing` expression value and no sum destructuring. With a sum-typed return,
-`.has` has no clean translation and `.get` cannot be used in arithmetic /
-comparisons without a lifting operation the language doesn't provide. The
+**Why this encoding, not `[V]` list-lift?** `Nothing` is no longer part of
+Pantagruel's user-facing type surface, and list-lift (`[V]`, length 0 or 1)
+is the type-level answer for plain nullable unions — see "Option-Type
+Elimination" above. For Map lookups it would still be unsatisfactory: `.has`
+would force `#(get c k) = 1` case-splits at every use site, arithmetic on
+`.get(k)` results would need an unfold-the-singleton idiom, and distinct
+maps sharing a key would not automatically have independent lookups. The
 guarded-rule encoding trades a small semantic gap (absent keys are
-uninterpreted rather than explicitly `undefined`) for a much richer set of
-usable specifications.
+uninterpreted rather than explicitly "missing") for a much richer set of
+usable specifications — declaration guards inject the membership antecedent
+into SMT queries automatically, so `.get` participates in arithmetic and
+comparisons without a lifting operation.
 
 **Why synthesize a sort per `(K, V)`?** Following McCarthy's theory of
 arrays: the synthesized sort is the array sort, distinct values of that sort

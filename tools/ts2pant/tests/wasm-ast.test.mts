@@ -65,8 +65,8 @@ describe("wasm AST constructors", async () => {
     assert.equal(ast.strTypeExpr(ast.tName("Int")), "Int");
     assert.equal(ast.strTypeExpr(ast.tList(ast.tName("User"))), "[User]");
     assert.equal(
-      ast.strTypeExpr(ast.tSum([ast.tName("Value"), ast.tName("Nothing")])),
-      "Value + Nothing",
+      ast.strTypeExpr(ast.tSum([ast.tName("Value"), ast.tName("Int")])),
+      "Value + Int",
     );
   });
 
