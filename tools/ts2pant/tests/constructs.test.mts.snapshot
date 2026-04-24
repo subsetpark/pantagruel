@@ -470,6 +470,26 @@ exports[`expressions-set.ts > contains 1`] = `
 "module Contains.\\n\\ncontains xs: [String], x: String => Bool.\\n\\n---\\n\\ncontains xs x = (x in xs).\\n"
 `;
 
+exports[`expressions-while-mu-search.ts > compoundWhileBody 1`] = `
+"module CompoundWhileBody.\\n\\ncompound-while-body used: [Int] => Int.\\n\\n---\\n\\n> UNSUPPORTED: compound-while-body — unsupported while-loop shape (not a recognized μ-search).\\n"
+`;
+
+exports[`expressions-while-mu-search.ts > firstUnusedSuffix 1`] = `
+"module FirstUnusedSuffix.\\n\\nfirst-unused-suffix used: [Int] => Int.\\n\\n---\\n\\nfirst-unused-suffix used = (min over each j: Int, j >= 1, ~(j in used) | j).\\n"
+`;
+
+exports[`expressions-while-mu-search.ts > nextSlotPlusOne 1`] = `
+"module NextSlotPlusOne.\\n\\nnext-slot-plus-one used: [Int] => Int.\\n\\n---\\n\\nnext-slot-plus-one used = (min over each j: Int, j >= 0, ~(j in used) | j) + 1.\\n"
+`;
+
+exports[`expressions-while-mu-search.ts > offsetUnusedSuffix 1`] = `
+"module OffsetUnusedSuffix.\\n\\noffset-unused-suffix used: [Int], offset: Int => Int.\\n\\n---\\n\\noffset-unused-suffix used offset = offset + (min over each j: Int, j >= 1, ~(j in used) | j).\\n"
+`;
+
+exports[`expressions-while-mu-search.ts > unbracedWhileBody 1`] = `
+"module UnbracedWhileBody.\\n\\nunbraced-while-body used: [Int] => Int.\\n\\n---\\n\\nunbraced-while-body used = (min over each j: Int, j >= 1, ~(j in used) | j).\\n"
+`;
+
 exports[`functions-class.ts > Account.deposit 1`] = `
 "module Deposit.\\n\\n~> Deposit @ a: Account, amount: Int.\\n\\n---\\n\\naccount--balance' a = account--balance a + amount.\\n"
 `;

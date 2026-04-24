@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createSourceFileFromSource } from "../src/extract.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import { translateBody } from "../src/translate-body.js";
-import { IntStrategy } from "../src/translate-types.js";
+import { IntStrategy, RealStrategy } from "../src/translate-types.js";
 
 before(async () => {
   await loadAst();
@@ -852,6 +852,491 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
           ast.strExpr(eqs[0].rhs),
           "+ over each $0 in xs | item--value $0",
           `variant ${initText}: init should have been elided`,
+        );
+      }
+    }
+  });
+});
+
+describe("Kleene μ-search (while-loop minimum)", () => {
+  it("translates `let i = INIT; while (P(i)) i++` as `min over each j: Int, j >= INIT, ~P(j) | j`", () => {
+    const source = `
+      export function firstUnused(used: ReadonlySet<number>): number {
+        let i = 1;
+        while (used.has(i)) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "firstUnused",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    const prop = props[0]!;
+    assert.equal(prop.kind, "equation");
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      // Match any `jN` binder and assert consistent use throughout the
+      // comprehension. The specific `N` depends on UniqueSupply slot
+      // consumption and shouldn't break hygiene refactors.
+      assert.match(
+        ast.strExpr(prop.rhs),
+        /^min over each (j\d+): Int, \1 >= 1, ~\(\1 in used\) \| \1$/,
+      );
+    }
+  });
+
+  it("inlines the μ-result into downstream expressions", () => {
+    const source = `
+      export function nextSlot(used: ReadonlySet<number>): number {
+        let i = 0;
+        while (used.has(i)) {
+          i++;
+        }
+        return i + 1;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "nextSlot",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    const prop = props[0]!;
+    assert.equal(prop.kind, "equation");
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      assert.match(
+        ast.strExpr(prop.rhs),
+        /^\(min over each (j\d+): Int, \1 >= 0, ~\(\1 in used\) \| \1\) \+ 1$/,
+      );
+    }
+  });
+
+  it("composes μ-search with leading const bindings via shared inlining", () => {
+    const source = `
+      export function offset(used: ReadonlySet<number>, k: number): number {
+        const base = k;
+        let i = 1;
+        while (used.has(i)) {
+          i++;
+        }
+        return base + i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "offset",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    const prop = props[0]!;
+    assert.equal(prop.kind, "equation");
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      assert.match(
+        ast.strExpr(prop.rhs),
+        /^k \+ \(min over each (j\d+): Int, \1 >= 1, ~\(\1 in used\) \| \1\)$/,
+      );
+    }
+  });
+
+  it("rejects while bodies with more than one statement", () => {
+    const source = `
+      export function compound(used: ReadonlySet<number>): number {
+        let i = 0;
+        while (used.has(i)) {
+          i++;
+          i++;
+        }
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "compound",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+  });
+
+  it("rejects when the loop body increments a different variable", () => {
+    const source = `
+      export function aliased(used: ReadonlySet<number>): number {
+        let i = 0;
+        let j = 0;
+        while (used.has(i)) {
+          j++;
+        }
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "aliased",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+  });
+
+  it("rejects when the counter is `const` instead of `let`", () => {
+    // Body contains a canonical `i++` so the rejection is specifically
+    // attributable to the `const` declarator, not to the body shape.
+    const source = `
+      export function constCounter(used: ReadonlySet<number>): number {
+        const i = 0;
+        while (used.has(i)) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "constCounter",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+  });
+
+  it("rejects when no `let` precedes the while", () => {
+    const source = `
+      export function bareWhile(used: ReadonlySet<number>): number {
+        while (used.has(0)) {}
+        return 0;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "bareWhile",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+  });
+
+  it("accepts prefix `++counter` as well as postfix `counter++`", () => {
+    const source = `
+      export function prefixInc(used: ReadonlySet<number>): number {
+        let i = 1;
+        while (used.has(i)) {
+          ++i;
+        }
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "prefixInc",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    const prop = props[0]!;
+    assert.equal(prop.kind, "equation");
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      assert.match(
+        ast.strExpr(prop.rhs),
+        /^min over each (j\d+): Int, \1 >= 1, ~\(\1 in used\) \| \1$/,
+      );
+    }
+  });
+
+  it("rejects when the initializer has side effects", () => {
+    // `start++` in the init would otherwise lower to a bogus var since
+    // `translateBodyExpr` has no handler for bare `++`/`--`. The TDZ
+    // phase in inlineConstBindings catches this explicitly.
+    const source = `
+      export function bogusInit(used: ReadonlySet<number>, start: number): number {
+        let i = start++;
+        while (used.has(i)) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "bogusInit",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+  });
+
+  it("rejects when the predicate has side effects", () => {
+    // `used.has(i++)` embeds a `++` inside the predicate — the TDZ
+    // side-effect screen short-circuits before translation rather than
+    // silently lowering `i++` via the `ast.var(getText())` fallback.
+    const source = `
+      export function bogusPred(used: ReadonlySet<number>): number {
+        let i = 0;
+        while (used.has(i++)) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "bogusPred",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+  });
+
+  it("rejects when the predicate does not reference the counter", () => {
+    // `while (Q) i++` with Q free of i is not a μ-search: it is a no-op
+    // (Q false) or a divergence (Q true). Lowering it as
+    // `min over each j | ~Q` would change behavior in the divergent case.
+    const source = `
+      export function bogus(used: ReadonlySet<number>, flag: boolean): number {
+        let i = 1;
+        while (flag) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "bogus",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+  });
+
+  it("rejects RealStrategy because the dense domain breaks `counter++`", () => {
+    // μ-search enumerates `INIT, INIT+1, …` discretely. Under
+    // RealStrategy the comprehension would range over a dense domain
+    // and could return a value the loop never visits (e.g. √2 when
+    // `while (i * i < 2) i++` should terminate at 2).
+    const source = `
+      export function overReal(used: ReadonlySet<number>): number {
+        let i = 0;
+        while (used.has(i)) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "overReal",
+      strategy: RealStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+  });
+
+  it("counter references inside shadowing arrow params do not count as free refs", () => {
+    // `[1].some(i => ...)` shadows the outer counter `i`. The predicate
+    // does NOT reference the outer counter, so recognizeMuSearch rejects
+    // the shape rather than falsely lowering it to a μ-search whose
+    // search-domain guard is free of `j`.
+    const source = `
+      export function shadowed(): number {
+        let i = 0;
+        while ([1, 2, 3].some(i => i > 0)) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "shadowed",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+  });
+
+  it("destructured arrow params also shadow the outer counter", () => {
+    // Object/array patterns bind identifiers just as plain params do.
+    // The scope-aware check must descend into binding patterns to
+    // discover `i` is shadowed by `({ i })` or `([i])`.
+    const objSource = `
+      export function shadowedObj(): number {
+        let i = 0;
+        while ([{ i: 0 }].some(({ i }) => i > 0)) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    const arrSource = `
+      export function shadowedArr(): number {
+        let i = 0;
+        while ([[0]].some(([i]) => i > 0)) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    for (const [name, src] of [
+      ["shadowedObj", objSource],
+      ["shadowedArr", arrSource],
+    ] as const) {
+      const sourceFile = createSourceFileFromSource(src);
+      const props = translateBody({
+        sourceFile,
+        functionName: name,
+        strategy: IntStrategy,
+      });
+      assert.equal(props.length, 1);
+      assert.equal(props[0]?.kind, "unsupported", `${name} should be rejected`);
+    }
+  });
+
+  it("computed destructuring key in a nested param sees the outer counter", () => {
+    // `({ [i]: x }) => …` — the computed key `[i]` is evaluated in the
+    // outer scope before the `x` binding takes effect, so it IS a real
+    // free reference to the outer counter `i`. The recognizer must
+    // accept this as a valid μ-search body. After the reshape, `used`
+    // is declared-but-unused, so the key also supplies the counter
+    // reference that the predicate-must-reference-counter check looks
+    // for.
+    const source = `
+      export function computedKeyRef(): number {
+        let i = 0;
+        while ([{}].some(({ [i]: x }: { [k: number]: number }) => x === 0)) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "computedKeyRef",
+      strategy: IntStrategy,
+    });
+
+    // A free-ref to `i` via the computed key makes this a recognized
+    // μ-search shape; regardless of whether downstream translation of
+    // the indexed-record predicate succeeds, the distinguishing
+    // property is that the recognizer does NOT reject it for "predicate
+    // does not reference counter".
+    assert.equal(props.length, 1);
+    if (props[0]?.kind === "unsupported") {
+      assert.doesNotMatch(
+        props[0].reason,
+        /predicate does not reference the counter|not a recognized μ-search/,
+      );
+    }
+  });
+
+  it("named function expression's own name shadows the outer counter", () => {
+    // `function i() {}` binds `i` inside its own body (for recursive
+    // self-reference), so the reference to `i` inside the body refers
+    // to the function value, not to the outer counter. The predicate
+    // therefore has no free reference to the outer `i`, and
+    // recognizeMuSearch rejects on the "predicate doesn't reference
+    // counter" path — that rejection is the distinguishing signal.
+    const source = `
+      export function shadowedFnName(): number {
+        let i = 0;
+        while ((function i(): boolean { return i.length > 0; })()) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "shadowedFnName",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+    if (props[0]?.kind === "unsupported") {
+      // The rejection must be attributable to the shadowing → no free
+      // counter reference, not to some unrelated downstream error.
+      assert.match(
+        props[0].reason,
+        /not a recognized μ-search/,
+      );
+    }
+  });
+
+  it("object/class method scopes shadow outer bindings", () => {
+    // `({ test(i) { return i > 0; } }).test(0)` — the method's
+    // parameter `i` shadows the outer counter. The predicate has no
+    // free reference to the outer `i`, so the recognizer rejects.
+    const methodSource = `
+      export function shadowedMethod(): number {
+        let i = 0;
+        while (({ test(i: number): boolean { return i > 0; } }).test(0)) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    // `({ i() { return 0; } }).i()` — the method name `i` is a
+    // syntactic key, not a free reference.
+    const methodNameSource = `
+      export function shadowedMethodName(): number {
+        let i = 0;
+        while (({ i(): number { return 0; } }).i()) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    for (const [name, src] of [
+      ["shadowedMethod", methodSource],
+      ["shadowedMethodName", methodNameSource],
+    ] as const) {
+      const sourceFile = createSourceFileFromSource(src);
+      const props = translateBody({
+        sourceFile,
+        functionName: name,
+        strategy: IntStrategy,
+      });
+      assert.equal(props.length, 1);
+      assert.equal(props[0]?.kind, "unsupported", `${name} should be rejected`);
+      if (props[0]?.kind === "unsupported") {
+        assert.match(
+          props[0].reason,
+          /not a recognized μ-search/,
+          `${name} should reject on μ-search path`,
         );
       }
     }

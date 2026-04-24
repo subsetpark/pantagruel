@@ -79,9 +79,24 @@ function isNullableTsType(type: ts.Type): boolean {
   return (type.flags & mask) !== 0;
 }
 
-interface ConstBinding {
-  tsName: string;
-  initializer: ts.Expression;
+/**
+ * Recognized prelude binding. The pure-body extractor consumes a sequence of
+ * these before the final return statement. Two shapes:
+ *
+ *   - `const`: ordinary `const x = e;` (let-elimination).
+ *   - `muSearch`: the `let counter = init; while (P(counter)) counter++;`
+ *     pair, recognized as Kleene μ-minimization and emitted as a synthetic
+ *     binding whose value is `min over each $j: Nat, $j >= init, ~P($j) | $j`.
+ *     See `recognizeMuSearch` and `emitMuSearch`.
+ */
+type ConstBinding =
+  | { kind: "const"; tsName: string; initializer: ts.Expression }
+  | { kind: "muSearch"; tsName: string; mu: MuSearch };
+
+interface MuSearch {
+  counterName: string;
+  initTsExpr: ts.Expression;
+  predicateTsExpr: ts.Expression;
 }
 
 /**
@@ -938,10 +953,7 @@ function translatePureBody(
 
   const supply = makeUniqueSupply(synthCell);
   const inlined = inlineConstBindings(
-    extracted.bindings.map((b) => ({
-      tsName: b.name,
-      initializer: b.initializer,
-    })),
+    extracted.bindings,
     checker,
     strategy,
     paramNames,
@@ -1006,7 +1018,7 @@ function translatePureBody(
 }
 
 interface ExtractedBody {
-  bindings: Array<{ name: string; initializer: ts.Expression }>;
+  bindings: ConstBinding[];
   returnExpr: ts.Expression | ts.IfStatement;
 }
 
@@ -1099,6 +1111,100 @@ function isInterfaceFieldAccess(
  *   - if/else with returns in both branches (produces a synthetic conditional)
  * Returns null if the body contains let/var bindings or effectful const initializers.
  */
+/**
+ * Recognize the Kleene μ-minimization pattern as a `let counter = init;`
+ * statement followed by `while (P(counter)) counter++;` (with or without
+ * braces around the while body).
+ *
+ * Returns `{ counterName, initTsExpr, predicateTsExpr }` if the pair at
+ * `stmts[idx]` and `stmts[idx + 1]` matches; null otherwise. Shape-only
+ * match: counter must be a single identifier with any initializer, and the
+ * loop body must be exactly `counter++` or `++counter` on the same
+ * identifier (no compound bodies, no other writes). Purity of the
+ * initializer and predicate is screened in `inlineConstBindings`'s TDZ
+ * phase (alongside the sibling forward-reference check) rather than here —
+ * `translateBodyExpr` has no handler for bare `++`/`--` expressions, so a
+ * side-effectful init or predicate would otherwise lower silently.
+ *
+ * Standard name: Kleene μ-operator / bounded minimization.
+ * Reference: Kleene, *General Recursive Functions of Natural Numbers*,
+ * Math. Ann. 112 (1936); Kroening & Strichman, *Decision Procedures* Ch. 4.
+ */
+function recognizeMuSearch(
+  stmts: readonly ts.Statement[],
+  idx: number,
+  _checker: ts.TypeChecker,
+): MuSearch | null {
+  if (idx + 1 >= stmts.length) {
+    return null;
+  }
+  const letStmt = stmts[idx]!;
+  const whileStmt = stmts[idx + 1]!;
+
+  if (!ts.isVariableStatement(letStmt)) {
+    return null;
+  }
+  if (!(letStmt.declarationList.flags & ts.NodeFlags.Let)) {
+    return null;
+  }
+  if (letStmt.declarationList.declarations.length !== 1) {
+    return null;
+  }
+  const decl = letStmt.declarationList.declarations[0]!;
+  if (!ts.isIdentifier(decl.name) || !decl.initializer) {
+    return null;
+  }
+  const counterName = decl.name.text;
+
+  if (!ts.isWhileStatement(whileStmt)) {
+    return null;
+  }
+
+  // Body must be exactly one `counter++` or `++counter`, either as the
+  // direct child of the while (unbraced) or as the sole statement of a
+  // single-statement block. Side-effect purity of init and predicate is
+  // not pre-screened here: the recognizer identifies the syntactic shape;
+  // the downstream translation surfaces any unsupported expressions with
+  // their natural error message.
+  const body = whileStmt.statement;
+  const bodyStmt: ts.Statement | null = ts.isBlock(body)
+    ? body.statements.length === 1
+      ? body.statements[0]!
+      : null
+    : body;
+  if (!bodyStmt || !ts.isExpressionStatement(bodyStmt)) {
+    return null;
+  }
+  const update = bodyStmt.expression;
+  if (
+    !ts.isPostfixUnaryExpression(update) &&
+    !ts.isPrefixUnaryExpression(update)
+  ) {
+    return null;
+  }
+  if (update.operator !== ts.SyntaxKind.PlusPlusToken) {
+    return null;
+  }
+  if (!ts.isIdentifier(update.operand) || update.operand.text !== counterName) {
+    return null;
+  }
+  // Predicate must reference the counter; otherwise the loop is either a
+  // no-op or a divergence, neither of which is a μ-search. Translating
+  // such a shape as `min over each j: Int, j >= INIT, ~Q | j` (with Q
+  // free of j) changes behavior at the non-terminating case.
+  if (
+    !expressionReferencesNames(whileStmt.expression, new Set([counterName]))
+  ) {
+    return null;
+  }
+
+  return {
+    counterName,
+    initTsExpr: decl.initializer,
+    predicateTsExpr: whileStmt.expression,
+  };
+}
+
 function extractReturnExpression(
   body: ts.Block,
   checker: ts.TypeChecker,
@@ -1110,35 +1216,48 @@ function extractReturnExpression(
     return null;
   }
 
-  const bindings: Array<{ name: string; initializer: ts.Expression }> = [];
+  const bindings: ConstBinding[] = [];
 
-  // Every statement before the last must be a const binding; any other shape
-  // rejects the whole body. The last statement is the return / if-else-return.
-  const last = stmts[stmts.length - 1]!;
-  for (const stmt of stmts.slice(0, -1)) {
+  // Every statement before the last must be either a const binding or a
+  // recognized μ-search pair (`let counter = init; while (P) counter++`).
+  // Any other shape rejects the whole body. The last statement is the
+  // return / if-else-return.
+  const lastIdx = stmts.length - 1;
+  let i = 0;
+  while (i < lastIdx) {
+    const mu = recognizeMuSearch(stmts, i, checker);
+    if (mu) {
+      bindings.push({ kind: "muSearch", tsName: mu.counterName, mu });
+      i += 2;
+      continue;
+    }
+
+    const stmt = stmts[i]!;
     if (!ts.isVariableStatement(stmt)) {
       return null;
     }
-
     const declList = stmt.declarationList;
-    // Reject let/var
     if (!(declList.flags & ts.NodeFlags.Const)) {
       return null;
     }
 
     for (const decl of declList.declarations) {
-      // Must have a simple identifier name and an initializer
       if (!ts.isIdentifier(decl.name) || !decl.initializer) {
         return null;
       }
-      // Reject effectful initializers
       if (expressionHasSideEffects(decl.initializer, checker)) {
         return null;
       }
-      bindings.push({ name: decl.name.text, initializer: decl.initializer });
+      bindings.push({
+        kind: "const",
+        tsName: decl.name.text,
+        initializer: decl.initializer,
+      });
     }
+    i += 1;
   }
 
+  const last = stmts[lastIdx]!;
   if (ts.isReturnStatement(last) && last.expression) {
     return { bindings, returnExpr: last.expression };
   }
@@ -1155,6 +1274,20 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
     return "empty body";
   }
   if (stmts.length > 1) {
+    // `let counter = INIT; while (...) { ... }` that failed `recognizeMuSearch`
+    // — typically a compound while body. Report a μ-search-specific
+    // reason before the generic let/var rejection fires.
+    for (let i = 0; i < stmts.length - 1; i++) {
+      const a = stmts[i]!;
+      const b = stmts[i + 1]!;
+      if (
+        ts.isVariableStatement(a) &&
+        a.declarationList.flags & ts.NodeFlags.Let &&
+        ts.isWhileStatement(b)
+      ) {
+        return "unsupported while-loop shape (not a recognized μ-search)";
+      }
+    }
     // Check for specific rejection reasons in leading statements
     for (const stmt of stmts) {
       if (ts.isVariableStatement(stmt)) {
@@ -1208,11 +1341,36 @@ function inlineConstBindings(
   | { error: string } {
   const ast = getAst();
 
-  // Phase 1: TDZ validation — reject forward/self references on TS AST
+  // Phase 1: TDZ validation — reject forward/self references on TS AST.
+  // For μ-search bindings, validate both the init and the predicate; the
+  // predicate may reference its own counter (that's the loop), so the
+  // counter is removed from the blocked set when checking the predicate.
+  // Side-effectful init or predicate (assignments, ++/--, unknown-pure
+  // calls) are also rejected here: translateBodyExpr has no explicit
+  // handler for ++/-- and silently falls through to `ast.var(getText())`,
+  // so without this screen a loop like `while (used.has(i++)) i++;`
+  // would lower to a Pant expression containing a bogus var `"i++"`.
   for (const [idx, binding] of bindings.entries()) {
     const blockedNames = new Set(bindings.slice(idx).map((b) => b.tsName));
-    if (expressionReferencesNames(binding.initializer, blockedNames)) {
-      return { error: "const initializer references a later binding" };
+    if (binding.kind === "const") {
+      if (expressionReferencesNames(binding.initializer, blockedNames)) {
+        return { error: "const initializer references a later binding" };
+      }
+    } else {
+      if (expressionHasSideEffects(binding.mu.initTsExpr, checker)) {
+        return { error: "while-loop init has side effects" };
+      }
+      if (expressionHasSideEffects(binding.mu.predicateTsExpr, checker)) {
+        return { error: "while-loop predicate has side effects" };
+      }
+      if (expressionReferencesNames(binding.mu.initTsExpr, blockedNames)) {
+        return { error: "while-loop init references a later binding" };
+      }
+      const predBlocked = new Set(blockedNames);
+      predBlocked.delete(binding.mu.counterName);
+      if (expressionReferencesNames(binding.mu.predicateTsExpr, predBlocked)) {
+        return { error: "while-loop predicate references a later binding" };
+      }
     }
   }
 
@@ -1237,23 +1395,33 @@ function inlineConstBindings(
         return acc;
       }
       const hygienicName = `$${nextSupply(supply)}`;
-      const initResult = translateBodyExpr(
-        binding.initializer,
-        checker,
-        strategy,
-        acc.scopedParams,
-        state,
-        supply,
-      );
-      if (isBodyUnsupported(initResult)) {
-        return { tag: "error", error: initResult.unsupported };
+      const initExpr =
+        binding.kind === "const"
+          ? translateBindingInit(
+              binding.initializer,
+              checker,
+              strategy,
+              acc.scopedParams,
+              state,
+              supply,
+            )
+          : translateMuSearchInit(
+              binding.mu,
+              checker,
+              strategy,
+              acc.scopedParams,
+              state,
+              supply,
+            );
+      if ("error" in initExpr) {
+        return { tag: "error", error: initExpr.error };
       }
       return {
         tag: "ok",
         scopedParams: withParam(acc.scopedParams, binding.tsName, hygienicName),
         translatedBindings: [
           ...acc.translatedBindings,
-          { hygienicName, initExpr: bodyExpr(initResult) },
+          { hygienicName, initExpr: initExpr.value },
         ],
       };
     },
@@ -1276,6 +1444,120 @@ function inlineConstBindings(
     );
 
   return { applyTo, scopedParams };
+}
+
+type BindingInitResult = { value: OpaqueExpr } | { error: string };
+
+function translateBindingInit(
+  initializer: ts.Expression,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  scopedParams: ReadonlyMap<string, string>,
+  state: SymbolicState | undefined,
+  supply: UniqueSupply,
+): BindingInitResult {
+  const result = translateBodyExpr(
+    initializer,
+    checker,
+    strategy,
+    scopedParams,
+    state,
+    supply,
+  );
+  if (isBodyUnsupported(result)) {
+    return { error: result.unsupported };
+  }
+  return { value: bodyExpr(result) };
+}
+
+/**
+ * Emit a `min over each j: Int, j >= init, ~P(j) | j` expression for a
+ * recognized μ-search binding (binder type follows `strategy.mapNumber()`).
+ * A fresh comprehension binder takes the place of the loop counter inside
+ * the predicate. The binder is allocated through the document-wide name
+ * registry (when present) so it never collides with the function's own
+ * params or with type-derived rule binders; the `$N` `freshHygienicBinder`
+ * form would not round-trip through Pantagruel's parser since `$` isn't a
+ * legal identifier character.
+ */
+function translateMuSearchInit(
+  mu: MuSearch,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  scopedParams: ReadonlyMap<string, string>,
+  state: SymbolicState | undefined,
+  supply: UniqueSupply,
+): BindingInitResult {
+  const ast = getAst();
+
+  const initResult = translateBodyExpr(
+    mu.initTsExpr,
+    checker,
+    strategy,
+    scopedParams,
+    state,
+    supply,
+  );
+  if (isBodyUnsupported(initResult)) {
+    return { error: initResult.unsupported };
+  }
+  const initExpr = bodyExpr(initResult);
+
+  // `synthCell` path uses the document-wide NameRegistry (kebab-cased,
+  // numeric-suffixed) and is inherently collision-safe against other
+  // registered names. The standalone fallback has to guard itself against
+  // the current frame's Pant names — `scopedParams.values()` is the set
+  // the comprehension binder must avoid so predicate translation cannot
+  // alias a param to the fresh binder.
+  let jName: string;
+  if (supply.synthCell) {
+    jName = cellRegisterName(supply.synthCell, "j");
+  } else {
+    const usedNames = new Set(scopedParams.values());
+    do {
+      jName = `j${nextSupply(supply)}`;
+    } while (usedNames.has(jName));
+  }
+  const predicateScope = withParam(scopedParams, mu.counterName, jName);
+  const predResult = translateBodyExpr(
+    mu.predicateTsExpr,
+    checker,
+    strategy,
+    predicateScope,
+    state,
+    supply,
+  );
+  if (isBodyUnsupported(predResult)) {
+    return { error: predResult.unsupported };
+  }
+  const predExpr = bodyExpr(predResult);
+
+  // Binder type follows the active NumericStrategy so the comprehension
+  // stays consistent with how `number` is emitted elsewhere. A hardcoded
+  // `Nat` would exclude negative INITs from the search domain and
+  // diverge from the containing body's numeric type. Real is rejected:
+  // μ-search enumerates the discrete sequence `INIT, INIT+1, …` from
+  // `counter++`, whereas `min over each j: Real, j >= INIT, ~P(j) | j`
+  // ranges over a dense domain — e.g. `while (i * i < 2) i++` would
+  // return √2 instead of 2.
+  const counterType = strategy.mapNumber();
+  if (counterType === "Real") {
+    return {
+      error:
+        "μ-search is only supported for discrete numeric strategies (got Real)",
+    };
+  }
+  return {
+    value: ast.eachComb(
+      [ast.param(jName, ast.tName(counterType))],
+      [
+        ast.gExpr(ast.binop(ast.opGe(), ast.var(jName), initExpr)),
+        ast.gExpr(ast.unop(ast.opNot(), predExpr)),
+      ],
+      ast.combMin(),
+      ast.var(jName),
+    ),
+  };
 }
 
 function isGuardStatement(
@@ -1389,26 +1671,154 @@ function blockHasNoSideEffects(
   return false;
 }
 
-/** Check whether a TS expression references any variable name from the given set.
- *  Only checks identifier *uses* (variable references), not syntactic name
- *  positions like property names in `a.balance` or method names in `a.foo()`. */
+/** Check whether a TS expression references any variable name from the given
+ *  set as a free variable. Scope-aware: nested function/arrow parameters
+ *  shadow outer bindings, so `xs.some(i => i > 0)` does not report dependence
+ *  on an outer `i`. Default-value expressions and property-access `.name`
+ *  tokens are handled specially. */
 function expressionReferencesNames(
   expr: ts.Expression,
   names: Set<string>,
 ): boolean {
-  expr = unwrapExpression(expr);
-  if (ts.isIdentifier(expr)) {
-    return names.has(expr.text);
+  return nodeReferencesNames(unwrapExpression(expr), names);
+}
+
+/** Walk a binding pattern (identifier, object, array) and collect every
+ *  identifier it binds, including nested patterns and rest elements. */
+function collectBindingNames(name: ts.BindingName, out: Set<string>): void {
+  if (ts.isIdentifier(name)) {
+    out.add(name.text);
+    return;
   }
-  // For property access, only recurse into the object expression —
-  // the .name identifier is a syntactic token, not a variable reference.
-  if (ts.isPropertyAccessExpression(expr)) {
-    return expressionReferencesNames(expr.expression, names);
+  for (const element of name.elements) {
+    if (ts.isBindingElement(element)) {
+      collectBindingNames(element.name, out);
+    }
+  }
+}
+
+/** Collect sub-expressions of a binding pattern that are evaluated in the
+ *  enclosing scope before the bound names take effect: computed property
+ *  keys (`{ [expr]: x }`) and default-value expressions (`{ x = expr }` or
+ *  `[x = expr]`). */
+function collectBindingOuterScopeExprs(
+  name: ts.BindingName,
+  out: ts.Expression[],
+): void {
+  if (ts.isIdentifier(name)) {
+    return;
+  }
+  for (const element of name.elements) {
+    if (ts.isBindingElement(element)) {
+      if (
+        element.propertyName &&
+        ts.isComputedPropertyName(element.propertyName)
+      ) {
+        out.push(element.propertyName.expression);
+      }
+      if (element.initializer) {
+        out.push(element.initializer);
+      }
+      collectBindingOuterScopeExprs(element.name, out);
+    }
+  }
+}
+
+function nodeReferencesNames(node: ts.Node, names: Set<string>): boolean {
+  if (names.size === 0) {
+    return false;
+  }
+  if (ts.isIdentifier(node)) {
+    return names.has(node.text);
+  }
+  // Property access: the `.name` token is a syntactic position, not a
+  // variable reference.
+  if (ts.isPropertyAccessExpression(node)) {
+    return nodeReferencesNames(node.expression, names);
+  }
+  // Object-literal property key: `{ foo: expr }` — `foo` is a syntactic
+  // key, not a variable reference. Only the initializer references
+  // free vars, and computed-property-name expressions are evaluated in
+  // the outer scope.
+  if (ts.isPropertyAssignment(node)) {
+    if (
+      ts.isComputedPropertyName(node.name) &&
+      nodeReferencesNames(node.name.expression, names)
+    ) {
+      return true;
+    }
+    return nodeReferencesNames(node.initializer, names);
+  }
+  // Shorthand `{ foo }` *is* sugar for `{ foo: foo }` — the identifier
+  // at that position is a variable reference. Default value (`{ foo = e }`
+  // in destructuring-assignment form) evaluates in the outer scope.
+  if (ts.isShorthandPropertyAssignment(node)) {
+    if (names.has(node.name.text)) {
+      return true;
+    }
+    if (node.objectAssignmentInitializer) {
+      return nodeReferencesNames(node.objectAssignmentInitializer, names);
+    }
+    return false;
+  }
+  // Nested function-like scopes. Parameter bindings (including nested
+  // identifiers inside destructuring patterns and a named function
+  // expression's own name) shadow outer bindings inside the body.
+  // Expressions evaluated before bindings take effect — top-level
+  // default values, nested default values, computed destructuring
+  // keys, and a method/accessor's own computed property-name
+  // expression — are still walked in the outer scope. A method's
+  // non-computed name is a syntactic key and is not a reference.
+  if (
+    ts.isArrowFunction(node) ||
+    ts.isFunctionExpression(node) ||
+    ts.isMethodDeclaration(node) ||
+    ts.isGetAccessorDeclaration(node) ||
+    ts.isSetAccessorDeclaration(node) ||
+    ts.isConstructorDeclaration(node)
+  ) {
+    for (const p of node.parameters) {
+      if (p.initializer && nodeReferencesNames(p.initializer, names)) {
+        return true;
+      }
+      const outerScopeExprs: ts.Expression[] = [];
+      collectBindingOuterScopeExprs(p.name, outerScopeExprs);
+      for (const e of outerScopeExprs) {
+        if (nodeReferencesNames(e, names)) {
+          return true;
+        }
+      }
+    }
+    if (
+      (ts.isMethodDeclaration(node) ||
+        ts.isGetAccessorDeclaration(node) ||
+        ts.isSetAccessorDeclaration(node)) &&
+      ts.isComputedPropertyName(node.name) &&
+      nodeReferencesNames(node.name.expression, names)
+    ) {
+      return true;
+    }
+    const shadowed = new Set<string>();
+    for (const p of node.parameters) {
+      collectBindingNames(p.name, shadowed);
+    }
+    if (ts.isFunctionExpression(node) && node.name) {
+      shadowed.add(node.name.text);
+    }
+    const innerNames = new Set<string>();
+    for (const n of names) {
+      if (!shadowed.has(n)) {
+        innerNames.add(n);
+      }
+    }
+    // Overload signatures and ambient methods have no body.
+    if (!node.body) {
+      return false;
+    }
+    return nodeReferencesNames(node.body, innerNames);
   }
   return (
-    ts.forEachChild(expr, (child) =>
-      ts.isExpression(child) ? expressionReferencesNames(child, names) : false,
-    ) ?? false
+    ts.forEachChild(node, (child) => nodeReferencesNames(child, names)) ?? false
   );
 }
 
@@ -1446,7 +1856,16 @@ function expressionHasSideEffects(
   }
   if (ts.isCallExpression(expr)) {
     if (isKnownPureCall(expr, checker)) {
-      return expr.arguments.some((a) => expressionHasSideEffects(a, checker));
+      // Known-pure callees still require a pure callee expression —
+      // `makeString().trim()` passes the name-based builtin allowlist
+      // but the receiver `makeString()` is itself a user call with
+      // unknown effects. The Tier 1a checks in `isKnownPureCall`
+      // already enforce this for Map/Set/HO-array, but not for
+      // Math/String/Number/PURE_ARRAY entries, so we double-check here.
+      return (
+        expressionHasSideEffects(expr.expression, checker) ||
+        expr.arguments.some((a) => expressionHasSideEffects(a, checker))
+      );
     }
     return true;
   }
@@ -3587,6 +4006,7 @@ function symbolicExecute(
             break;
           }
           bindings.push({
+            kind: "const",
             tsName: decl.name.text,
             initializer: decl.initializer,
           });

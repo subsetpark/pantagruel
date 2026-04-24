@@ -414,6 +414,85 @@ into `ast.each([], [gIn(binder, arrExpr), ...guards], projection)` at the chain 
 `.map` rewrites the projection via `ast.substituteBinder(callbackBody, callbackBinder, receiver.expr)`;
 `.reduce` fuses the pending chain into an `eachComb` instead of triggering materialization.
 
+### Kleene Minimization (While-Loop μ-Search)
+
+**Standard name:** Kleene μ-operator / unbounded minimization (with an
+explicit lower-bound guard `j >= INIT`).
+**Reference:** Kleene, *General Recursive Functions of Natural Numbers*,
+Math. Ann. 112 (1936); Kroening & Strichman, *Decision Procedures* Ch. 4
+(quantifier elimination over integer ranges).
+
+`let counter = INIT; while (P(counter)) { counter++ }` is the canonical
+"find the least integer ≥ INIT satisfying ¬P" pattern. Pure-body translation
+recognizes this exact statement pair in the prelude scan and emits
+`min over each j: Int, j >= INIT, ~P(j) | j` (binder type follows the
+active `NumericStrategy`), which is Pantagruel's direct target for
+μ-minimization (`ast.eachComb` with `combMin`). The loop counter is
+replaced inside the predicate by a fresh comprehension binder, and the
+resulting expression flows through the standard `inlineConstBindings`
+substitution closure — so any post-loop reference to the counter inlines
+the `min over each` directly into the consumer expression.
+
+```text
+let suffix = 1;
+while (used.has(suffix)) { suffix++; }
+return suffix;
+// →
+foo used = (min over each j: Int, j >= 1, ~(j in used) | j).
+```
+
+**Recognizer scope (`recognizeMuSearch` in `translate-body.ts`).** Conservative
+syntactic match:
+- `let` (not `const`/`var`), single declarator, simple identifier, any
+  initializer (translated as the comprehension's lower-bound RHS).
+- Immediately followed by a `while` whose body is exactly one statement: an
+  `ExpressionStatement` wrapping `i++` or `++i` on the same identifier.
+- Predicate must reference the loop counter as a *free variable*
+  (otherwise the loop is a no-op or divergence, not a μ-search).
+  `expressionReferencesNames` is scope-aware: parameters of nested
+  function-likes — arrow functions, function expressions, object/class
+  methods, getters/setters, and constructors — all shadow outer
+  bindings. Plain identifiers, destructured object/array patterns,
+  nested destructuring, and a named function expression's own name are
+  all collected. Object-literal property keys and non-computed
+  method-name tokens don't count as references.
+- Init and predicate must be side-effect-free. The purity screen lives
+  alongside the TDZ check in `inlineConstBindings`, not in the recognizer
+  itself; it rejects assignments, bare `++`/`--`, and unknown-pure calls.
+  `translateBodyExpr` has no handler for `++`/`--`, so without this screen
+  `while (used.has(i++)) i++;` would silently lower to garbage.
+- Active `NumericStrategy` must be discrete (`IntStrategy`). Under
+  `RealStrategy` the comprehension would range over a dense domain while
+  `counter++` enumerates `INIT, INIT+1, …`; `translateMuSearchInit`
+  returns an explicit error in that case.
+
+Compound bodies (`{ i++; foo(); }`), counter aliasing (`while (P) { j++; }`),
+`const` counters, `i += 1` / `i = i + 1` updates, and bare `while` without a
+preceding `let` all fall through to `extractReturnExpression`'s normal
+rejection path. Extending the recognizer to cover those is straightforward
+when a need arises; the canonical `i++` form covers `name-registry.ts`'s
+`registerName` and `translate-signature.ts`'s `shortParamName`, the two
+μ-search sites in ts2pant's own source.
+
+**Comprehension binder allocation.** The comprehension's binder must
+round-trip through Pantagruel's parser (`$N` from `freshHygienicBinder`
+does not — `$` isn't legal). When a `synthCell` is plumbed through (the
+normal pipeline), `cellRegisterName(synthCell, "j")` yields a kebab-cased,
+collision-suffixed name (`j`, then `j1`, `j2`, …). Standalone test paths
+without a synthCell fall back to `j${nextSupply(supply)}` — not globally
+coordinated with the rest of the document, but locally collision-safe:
+`translateMuSearchInit` iterates the supply in a `do`/`while` against
+`new Set(scopedParams.values())` so the fresh binder cannot alias any
+Pant name already bound in the current frame.
+
+**SMT note.** `pant` type-checks the emitted form, but `pant --check`
+currently rejects an `each j: Int | …` (or `Nat`) with "comprehension
+parameter must be a domain type" — the SMT backend only enumerates
+user-defined domains, not unbounded integers. End-to-end SMT verification
+of a μ-search result therefore needs either an explicit upper-bound guard
+or backend support for bounded integer enumeration, neither of which is
+in scope here.
+
 ## PR #84 Post-Mortem: Why Standard Algorithms Matter
 
 The initial const-inlining implementation used ad-hoc string-name substitution rather
