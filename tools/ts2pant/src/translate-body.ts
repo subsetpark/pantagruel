@@ -1761,13 +1761,22 @@ function nodeReferencesNames(node: ts.Node, names: Set<string>): boolean {
     }
     return false;
   }
-  // Nested function scopes: all parameter bindings (including nested
+  // Nested function-like scopes. Parameter bindings (including nested
   // identifiers inside destructuring patterns and a named function
   // expression's own name) shadow outer bindings inside the body.
   // Expressions evaluated before bindings take effect — top-level
-  // default values, nested default values, and computed property keys —
-  // are still walked in the outer scope.
-  if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
+  // default values, nested default values, computed destructuring
+  // keys, and a method/accessor's own computed property-name
+  // expression — are still walked in the outer scope. A method's
+  // non-computed name is a syntactic key and is not a reference.
+  if (
+    ts.isArrowFunction(node) ||
+    ts.isFunctionExpression(node) ||
+    ts.isMethodDeclaration(node) ||
+    ts.isGetAccessorDeclaration(node) ||
+    ts.isSetAccessorDeclaration(node) ||
+    ts.isConstructorDeclaration(node)
+  ) {
     for (const p of node.parameters) {
       if (p.initializer && nodeReferencesNames(p.initializer, names)) {
         return true;
@@ -1779,6 +1788,15 @@ function nodeReferencesNames(node: ts.Node, names: Set<string>): boolean {
           return true;
         }
       }
+    }
+    if (
+      (ts.isMethodDeclaration(node) ||
+        ts.isGetAccessorDeclaration(node) ||
+        ts.isSetAccessorDeclaration(node)) &&
+      ts.isComputedPropertyName(node.name) &&
+      nodeReferencesNames(node.name.expression, names)
+    ) {
+      return true;
     }
     const shadowed = new Set<string>();
     for (const p of node.parameters) {
@@ -1792,6 +1810,10 @@ function nodeReferencesNames(node: ts.Node, names: Set<string>): boolean {
       if (!shadowed.has(n)) {
         innerNames.add(n);
       }
+    }
+    // Overload signatures and ambient methods have no body.
+    if (!node.body) {
+      return false;
     }
     return nodeReferencesNames(node.body, innerNames);
   }

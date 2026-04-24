@@ -450,9 +450,12 @@ syntactic match:
 - Predicate must reference the loop counter as a *free variable*
   (otherwise the loop is a no-op or divergence, not a μ-search).
   `expressionReferencesNames` is scope-aware: parameters of nested
-  arrow/function expressions (plain, destructured object or array, and
-  a named function expression's own name) all shadow outer bindings,
-  and object-literal property *keys* don't count as references.
+  function-likes — arrow functions, function expressions, object/class
+  methods, getters/setters, and constructors — all shadow outer
+  bindings. Plain identifiers, destructured object/array patterns,
+  nested destructuring, and a named function expression's own name are
+  all collected. Object-literal property keys and non-computed
+  method-name tokens don't count as references.
 - Init and predicate must be side-effect-free. The purity screen lives
   alongside the TDZ check in `inlineConstBindings`, not in the recognizer
   itself; it rejects assignments, bare `++`/`--`, and unknown-pure calls.

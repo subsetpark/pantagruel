@@ -1263,12 +1263,15 @@ describe("Kleene μ-search (while-loop minimum)", () => {
 
   it("named function expression's own name shadows the outer counter", () => {
     // `function i() {}` binds `i` inside its own body (for recursive
-    // self-reference), so `i > 0` inside the body refers to the function
-    // value, not to the outer counter.
+    // self-reference), so the reference to `i` inside the body refers
+    // to the function value, not to the outer counter. The predicate
+    // therefore has no free reference to the outer `i`, and
+    // recognizeMuSearch rejects on the "predicate doesn't reference
+    // counter" path — that rejection is the distinguishing signal.
     const source = `
       export function shadowedFnName(): number {
         let i = 0;
-        while ((function i() { return false; })()) {
+        while ((function i(): boolean { return i.length > 0; })()) {
           i++;
         }
         return i;
@@ -1283,5 +1286,59 @@ describe("Kleene μ-search (while-loop minimum)", () => {
 
     assert.equal(props.length, 1);
     assert.equal(props[0]?.kind, "unsupported");
+    if (props[0]?.kind === "unsupported") {
+      // The rejection must be attributable to the shadowing → no free
+      // counter reference, not to some unrelated downstream error.
+      assert.match(
+        props[0].reason,
+        /not a recognized μ-search/,
+      );
+    }
+  });
+
+  it("object/class method scopes shadow outer bindings", () => {
+    // `({ test(i) { return i > 0; } }).test(0)` — the method's
+    // parameter `i` shadows the outer counter. The predicate has no
+    // free reference to the outer `i`, so the recognizer rejects.
+    const methodSource = `
+      export function shadowedMethod(): number {
+        let i = 0;
+        while (({ test(i: number): boolean { return i > 0; } }).test(0)) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    // `({ i() { return 0; } }).i()` — the method name `i` is a
+    // syntactic key, not a free reference.
+    const methodNameSource = `
+      export function shadowedMethodName(): number {
+        let i = 0;
+        while (({ i(): number { return 0; } }).i()) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    for (const [name, src] of [
+      ["shadowedMethod", methodSource],
+      ["shadowedMethodName", methodNameSource],
+    ] as const) {
+      const sourceFile = createSourceFileFromSource(src);
+      const props = translateBody({
+        sourceFile,
+        functionName: name,
+        strategy: IntStrategy,
+      });
+      assert.equal(props.length, 1);
+      assert.equal(props[0]?.kind, "unsupported", `${name} should be rejected`);
+      if (props[0]?.kind === "unsupported") {
+        assert.match(
+          props[0].reason,
+          /not a recognized μ-search/,
+          `${name} should reject on μ-search path`,
+        );
+      }
+    }
   });
 });
