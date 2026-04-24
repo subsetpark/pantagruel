@@ -857,3 +857,207 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     }
   });
 });
+
+describe("Kleene μ-search (while-loop minimum)", () => {
+  it("translates `let i = INIT; while (P(i)) i++` as `min over each j: Nat, j >= INIT, ~P(j) | j`", () => {
+    const source = `
+      export function firstUnused(used: ReadonlySet<number>): number {
+        let i = 1;
+        while (used.has(i)) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "firstUnused",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    const prop = props[0]!;
+    assert.equal(prop.kind, "equation");
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      // No synthCell in this standalone test path, so the comprehension
+      // binder falls back to `j${nextSupply}` — supply slot 0 was consumed
+      // by the binding's hygienic placeholder, so `j1` is correct here.
+      // The full pipeline (with synthCell) produces just `j`.
+      assert.equal(
+        ast.strExpr(prop.rhs),
+        "min over each j1: Nat, j1 >= 1, ~(j1 in used) | j1",
+      );
+    }
+  });
+
+  it("inlines the μ-result into downstream expressions", () => {
+    const source = `
+      export function nextSlot(used: ReadonlySet<number>): number {
+        let i = 0;
+        while (used.has(i)) {
+          i++;
+        }
+        return i + 1;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "nextSlot",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    const prop = props[0]!;
+    assert.equal(prop.kind, "equation");
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      assert.equal(
+        ast.strExpr(prop.rhs),
+        "(min over each j1: Nat, j1 >= 0, ~(j1 in used) | j1) + 1",
+      );
+    }
+  });
+
+  it("composes μ-search with leading const bindings via shared inlining", () => {
+    const source = `
+      export function offset(used: ReadonlySet<number>, k: number): number {
+        const base = k;
+        let i = 1;
+        while (used.has(i)) {
+          i++;
+        }
+        return base + i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "offset",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    const prop = props[0]!;
+    assert.equal(prop.kind, "equation");
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      assert.equal(
+        ast.strExpr(prop.rhs),
+        "k + (min over each j2: Nat, j2 >= 1, ~(j2 in used) | j2)",
+      );
+    }
+  });
+
+  it("rejects while bodies with more than one statement", () => {
+    const source = `
+      export function compound(used: ReadonlySet<number>): number {
+        let i = 0;
+        while (used.has(i)) {
+          i++;
+          i++;
+        }
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "compound",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+  });
+
+  it("rejects when the loop body increments a different variable", () => {
+    const source = `
+      export function aliased(used: ReadonlySet<number>): number {
+        let i = 0;
+        let j = 0;
+        while (used.has(i)) {
+          j++;
+        }
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "aliased",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+  });
+
+  it("rejects when the counter is `const` instead of `let`", () => {
+    const source = `
+      export function constCounter(used: ReadonlySet<number>): number {
+        const i = 0;
+        while (used.has(i)) {}
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "constCounter",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+  });
+
+  it("rejects when no `let` precedes the while", () => {
+    const source = `
+      export function bareWhile(used: ReadonlySet<number>): number {
+        while (used.has(0)) {}
+        return 0;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "bareWhile",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+  });
+
+  it("accepts prefix `++counter` as well as postfix `counter++`", () => {
+    const source = `
+      export function prefixInc(used: ReadonlySet<number>): number {
+        let i = 1;
+        while (used.has(i)) {
+          ++i;
+        }
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "prefixInc",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    const prop = props[0]!;
+    assert.equal(prop.kind, "equation");
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      assert.equal(
+        ast.strExpr(prop.rhs),
+        "min over each j1: Nat, j1 >= 1, ~(j1 in used) | j1",
+      );
+    }
+  });
+});

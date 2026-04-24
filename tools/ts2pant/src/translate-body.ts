@@ -79,9 +79,24 @@ function isNullableTsType(type: ts.Type): boolean {
   return (type.flags & mask) !== 0;
 }
 
-interface ConstBinding {
-  tsName: string;
-  initializer: ts.Expression;
+/**
+ * Recognized prelude binding. The pure-body extractor consumes a sequence of
+ * these before the final return statement. Two shapes:
+ *
+ *   - `const`: ordinary `const x = e;` (let-elimination).
+ *   - `muSearch`: the `let counter = init; while (P(counter)) counter++;`
+ *     pair, recognized as Kleene μ-minimization and emitted as a synthetic
+ *     binding whose value is `min over each $j: Nat, $j >= init, ~P($j) | $j`.
+ *     See `recognizeMuSearch` and `emitMuSearch`.
+ */
+type ConstBinding =
+  | { kind: "const"; tsName: string; initializer: ts.Expression }
+  | { kind: "muSearch"; tsName: string; mu: MuSearch };
+
+interface MuSearch {
+  counterName: string;
+  initTsExpr: ts.Expression;
+  predicateTsExpr: ts.Expression;
 }
 
 /**
@@ -938,10 +953,7 @@ function translatePureBody(
 
   const supply = makeUniqueSupply(synthCell);
   const inlined = inlineConstBindings(
-    extracted.bindings.map((b) => ({
-      tsName: b.name,
-      initializer: b.initializer,
-    })),
+    extracted.bindings,
     checker,
     strategy,
     paramNames,
@@ -1006,7 +1018,7 @@ function translatePureBody(
 }
 
 interface ExtractedBody {
-  bindings: Array<{ name: string; initializer: ts.Expression }>;
+  bindings: ConstBinding[];
   returnExpr: ts.Expression | ts.IfStatement;
 }
 
@@ -1099,6 +1111,83 @@ function isInterfaceFieldAccess(
  *   - if/else with returns in both branches (produces a synthetic conditional)
  * Returns null if the body contains let/var bindings or effectful const initializers.
  */
+/**
+ * Recognize the Kleene μ-minimization pattern as a `let counter = init;`
+ * statement followed by `while (P(counter)) { counter++; }`.
+ *
+ * Returns `{ counterName, initTsExpr, predicateTsExpr }` if the pair at
+ * `stmts[idx]` and `stmts[idx + 1]` matches; null otherwise. The recognizer
+ * is conservative: counter must be a single identifier with a side-effect-free
+ * initializer, the predicate must be side-effect-free, and the loop body must
+ * be exactly `counter++` or `++counter` (no compound bodies, no other writes).
+ *
+ * Standard name: Kleene μ-operator / bounded minimization.
+ * Reference: Kleene, *General Recursive Functions of Natural Numbers*,
+ * Math. Ann. 112 (1936); Kroening & Strichman, *Decision Procedures* Ch. 4.
+ */
+function recognizeMuSearch(
+  stmts: readonly ts.Statement[],
+  idx: number,
+  _checker: ts.TypeChecker,
+): MuSearch | null {
+  if (idx + 1 >= stmts.length) {
+    return null;
+  }
+  const letStmt = stmts[idx]!;
+  const whileStmt = stmts[idx + 1]!;
+
+  if (!ts.isVariableStatement(letStmt)) {
+    return null;
+  }
+  if (!(letStmt.declarationList.flags & ts.NodeFlags.Let)) {
+    return null;
+  }
+  if (letStmt.declarationList.declarations.length !== 1) {
+    return null;
+  }
+  const decl = letStmt.declarationList.declarations[0]!;
+  if (!ts.isIdentifier(decl.name) || !decl.initializer) {
+    return null;
+  }
+  const counterName = decl.name.text;
+
+  if (!ts.isWhileStatement(whileStmt)) {
+    return null;
+  }
+
+  // Body must be a block containing exactly one `counter++` or `++counter`.
+  // Side-effect purity of init and predicate is not pre-screened here: the
+  // recognizer identifies the syntactic shape; the downstream translation
+  // surfaces any unsupported expressions with their natural error message.
+  const body = whileStmt.statement;
+  if (!ts.isBlock(body) || body.statements.length !== 1) {
+    return null;
+  }
+  const bodyStmt = body.statements[0]!;
+  if (!ts.isExpressionStatement(bodyStmt)) {
+    return null;
+  }
+  const update = bodyStmt.expression;
+  if (
+    !ts.isPostfixUnaryExpression(update) &&
+    !ts.isPrefixUnaryExpression(update)
+  ) {
+    return null;
+  }
+  if (update.operator !== ts.SyntaxKind.PlusPlusToken) {
+    return null;
+  }
+  if (!ts.isIdentifier(update.operand) || update.operand.text !== counterName) {
+    return null;
+  }
+
+  return {
+    counterName,
+    initTsExpr: decl.initializer,
+    predicateTsExpr: whileStmt.expression,
+  };
+}
+
 function extractReturnExpression(
   body: ts.Block,
   checker: ts.TypeChecker,
@@ -1110,35 +1199,48 @@ function extractReturnExpression(
     return null;
   }
 
-  const bindings: Array<{ name: string; initializer: ts.Expression }> = [];
+  const bindings: ConstBinding[] = [];
 
-  // Every statement before the last must be a const binding; any other shape
-  // rejects the whole body. The last statement is the return / if-else-return.
-  const last = stmts[stmts.length - 1]!;
-  for (const stmt of stmts.slice(0, -1)) {
+  // Every statement before the last must be either a const binding or a
+  // recognized μ-search pair (`let counter = init; while (P) counter++`).
+  // Any other shape rejects the whole body. The last statement is the
+  // return / if-else-return.
+  const lastIdx = stmts.length - 1;
+  let i = 0;
+  while (i < lastIdx) {
+    const mu = recognizeMuSearch(stmts, i, checker);
+    if (mu) {
+      bindings.push({ kind: "muSearch", tsName: mu.counterName, mu });
+      i += 2;
+      continue;
+    }
+
+    const stmt = stmts[i]!;
     if (!ts.isVariableStatement(stmt)) {
       return null;
     }
-
     const declList = stmt.declarationList;
-    // Reject let/var
     if (!(declList.flags & ts.NodeFlags.Const)) {
       return null;
     }
 
     for (const decl of declList.declarations) {
-      // Must have a simple identifier name and an initializer
       if (!ts.isIdentifier(decl.name) || !decl.initializer) {
         return null;
       }
-      // Reject effectful initializers
       if (expressionHasSideEffects(decl.initializer, checker)) {
         return null;
       }
-      bindings.push({ name: decl.name.text, initializer: decl.initializer });
+      bindings.push({
+        kind: "const",
+        tsName: decl.name.text,
+        initializer: decl.initializer,
+      });
     }
+    i += 1;
   }
 
+  const last = stmts[lastIdx]!;
   if (ts.isReturnStatement(last) && last.expression) {
     return { bindings, returnExpr: last.expression };
   }
@@ -1208,11 +1310,25 @@ function inlineConstBindings(
   | { error: string } {
   const ast = getAst();
 
-  // Phase 1: TDZ validation — reject forward/self references on TS AST
+  // Phase 1: TDZ validation — reject forward/self references on TS AST.
+  // For μ-search bindings, validate both the init and the predicate; the
+  // predicate may reference its own counter (that's the loop), so the
+  // counter is removed from the blocked set when checking the predicate.
   for (const [idx, binding] of bindings.entries()) {
     const blockedNames = new Set(bindings.slice(idx).map((b) => b.tsName));
-    if (expressionReferencesNames(binding.initializer, blockedNames)) {
-      return { error: "const initializer references a later binding" };
+    if (binding.kind === "const") {
+      if (expressionReferencesNames(binding.initializer, blockedNames)) {
+        return { error: "const initializer references a later binding" };
+      }
+    } else {
+      if (expressionReferencesNames(binding.mu.initTsExpr, blockedNames)) {
+        return { error: "while-loop init references a later binding" };
+      }
+      const predBlocked = new Set(blockedNames);
+      predBlocked.delete(binding.mu.counterName);
+      if (expressionReferencesNames(binding.mu.predicateTsExpr, predBlocked)) {
+        return { error: "while-loop predicate references a later binding" };
+      }
     }
   }
 
@@ -1237,23 +1353,33 @@ function inlineConstBindings(
         return acc;
       }
       const hygienicName = `$${nextSupply(supply)}`;
-      const initResult = translateBodyExpr(
-        binding.initializer,
-        checker,
-        strategy,
-        acc.scopedParams,
-        state,
-        supply,
-      );
-      if (isBodyUnsupported(initResult)) {
-        return { tag: "error", error: initResult.unsupported };
+      const initExpr =
+        binding.kind === "const"
+          ? translateBindingInit(
+              binding.initializer,
+              checker,
+              strategy,
+              acc.scopedParams,
+              state,
+              supply,
+            )
+          : translateMuSearchInit(
+              binding.mu,
+              checker,
+              strategy,
+              acc.scopedParams,
+              state,
+              supply,
+            );
+      if ("error" in initExpr) {
+        return { tag: "error", error: initExpr.error };
       }
       return {
         tag: "ok",
         scopedParams: withParam(acc.scopedParams, binding.tsName, hygienicName),
         translatedBindings: [
           ...acc.translatedBindings,
-          { hygienicName, initExpr: bodyExpr(initResult) },
+          { hygienicName, initExpr: initExpr.value },
         ],
       };
     },
@@ -1276,6 +1402,92 @@ function inlineConstBindings(
     );
 
   return { applyTo, scopedParams };
+}
+
+type BindingInitResult = { value: OpaqueExpr } | { error: string };
+
+function translateBindingInit(
+  initializer: ts.Expression,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  scopedParams: ReadonlyMap<string, string>,
+  state: SymbolicState | undefined,
+  supply: UniqueSupply,
+): BindingInitResult {
+  const result = translateBodyExpr(
+    initializer,
+    checker,
+    strategy,
+    scopedParams,
+    state,
+    supply,
+  );
+  if (isBodyUnsupported(result)) {
+    return { error: result.unsupported };
+  }
+  return { value: bodyExpr(result) };
+}
+
+/**
+ * Emit a `min over each j: Nat, j >= init, ~P(j) | j` expression for a
+ * recognized μ-search binding. A fresh comprehension binder takes the place
+ * of the loop counter inside the predicate. The binder is allocated through
+ * the document-wide name registry (when present) so it never collides with
+ * the function's own params or with type-derived rule binders; the `$N`
+ * `freshHygienicBinder` form would not round-trip through Pantagruel's parser
+ * since `$` isn't a legal identifier character.
+ */
+function translateMuSearchInit(
+  mu: MuSearch,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  scopedParams: ReadonlyMap<string, string>,
+  state: SymbolicState | undefined,
+  supply: UniqueSupply,
+): BindingInitResult {
+  const ast = getAst();
+
+  const initResult = translateBodyExpr(
+    mu.initTsExpr,
+    checker,
+    strategy,
+    scopedParams,
+    state,
+    supply,
+  );
+  if (isBodyUnsupported(initResult)) {
+    return { error: initResult.unsupported };
+  }
+  const initExpr = bodyExpr(initResult);
+
+  const jName = supply.synthCell
+    ? cellRegisterName(supply.synthCell, "j")
+    : `j${nextSupply(supply)}`;
+  const predicateScope = withParam(scopedParams, mu.counterName, jName);
+  const predResult = translateBodyExpr(
+    mu.predicateTsExpr,
+    checker,
+    strategy,
+    predicateScope,
+    state,
+    supply,
+  );
+  if (isBodyUnsupported(predResult)) {
+    return { error: predResult.unsupported };
+  }
+  const predExpr = bodyExpr(predResult);
+
+  return {
+    value: ast.eachComb(
+      [ast.param(jName, ast.tName("Nat"))],
+      [
+        ast.gExpr(ast.binop(ast.opGe(), ast.var(jName), initExpr)),
+        ast.gExpr(ast.unop(ast.opNot(), predExpr)),
+      ],
+      ast.combMin(),
+      ast.var(jName),
+    ),
+  };
 }
 
 function isGuardStatement(
@@ -3587,6 +3799,7 @@ function symbolicExecute(
             break;
           }
           bindings.push({
+            kind: "const",
             tsName: decl.name.text,
             initializer: decl.initializer,
           });
