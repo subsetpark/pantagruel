@@ -1664,17 +1664,16 @@ let test_aggregate_min_real () =
   check bool "has <=" true (contains result "(<=")
 
 let test_mu_search_nat () =
-  (* min over each j: Nat, j >= 1 | j
+  (* min over each j: Nat | j
      → least-witness encoding: fresh r with
-       (assert (and (>= r 1) (>= r 1)))
-       (assert (forall ((_mu_j_r Int)) (=> (and (>= _mu_j_r 1) (< _mu_j_r r) (>= _mu_j_r 1)) false))) *)
+       (assert (>= r 1))
+       (assert (forall ((_mu_j_r Int)) (=> (and (>= _mu_j_r 1) (< _mu_j_r r)) false))) *)
   let env = Env.empty "" in
   Smt.reset_fallbacks ();
   let expr =
     Ast.make_each
       [ { param_name = Lower "j"; param_type = TName (Upper "Nat") } ]
-      [ GExpr (EBinop (OpGe, EVar (Lower "j"), ELitNat 1)) ]
-      (Some CombMin) (EVar (Lower "j"))
+      [] (Some CombMin) (EVar (Lower "j"))
   in
   let result = Smt.translate_expr config env expr in
   check bool "returns fallback constant" true
@@ -1682,7 +1681,10 @@ let test_mu_search_nat () =
   let drained = Smt.drain_fallback_decls () in
   check bool "declares fresh Int constant" true
     (contains drained "_mu_fallback");
-  check bool "emits nat lower-bound on r" true (contains drained "(>= ");
+  check bool "emits Nat >= 1 on witness" true
+    (contains drained "(>= _mu_fallback_0 1)");
+  check bool "emits Nat >= 1 on j witness" true
+    (contains drained "(>= _mu_j__mu_fallback_0 1)");
   check bool "emits forall over Int witness" true
     (contains drained "(forall ((_mu_j_");
   check bool "emits (< j r) ordering" true (contains drained "(< _mu_j_");
@@ -1701,7 +1703,10 @@ let test_mu_search_nat0 () =
   check bool "is fallback constant" true
     (String.length result >= 3 && String.sub result 0 3 = "_mu");
   let drained = Smt.drain_fallback_decls () in
-  check bool "emits (>= ... 0)" true (contains drained "0)")
+  check bool "emits Nat0 >= 0 on witness" true
+    (contains drained "(>= _mu_fallback_0 0)");
+  check bool "emits Nat0 >= 0 on j witness" true
+    (contains drained "(>= _mu_j__mu_fallback_0 0)")
 
 let test_mu_search_int () =
   (* min over each j: Int, j >= -5 | j — Int has no implicit lower bound. *)
