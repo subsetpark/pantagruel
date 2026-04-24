@@ -137,10 +137,33 @@ interface MapMutation {
   valueExpr: OpaqueExpr | null;
 }
 
+/**
+ * A Set mutation effect produced by `.add(x)`, `.delete(x)`, or `.clear()`
+ * on a Set-typed receiver that resolves to a declared interface field
+ * (Stage A only; parameter-level Set mutation is rejected upstream). Like
+ * MapMutation, it is a statement-position effect consumed by
+ * `symbolicExecute` which installs a SetRuleWriteEntry in the symbolic
+ * state.
+ *
+ * Sets-as-lists: encoded as `[T]` list-valued field accessor (one arity-1
+ * rule, unlike Map's value+membership rule pair). `elemExpr` is null for
+ * `.clear()`.
+ */
+interface SetMutation {
+  op: "add" | "delete" | "clear";
+  ruleName: string;
+  ownerType: string;
+  elemType: string;
+  objExpr: OpaqueExpr;
+  elemExpr: OpaqueExpr | null;
+}
+
+type CollectionMutation = MapMutation | SetMutation;
+
 type BodyResult =
   | { unsupported: string }
   | { expr: OpaqueExpr; pendingComprehension?: PendingComprehension }
-  | { effect: MapMutation };
+  | { effect: CollectionMutation };
 
 /** Type guard for unsupported BodyResult. */
 export function isBodyUnsupported(r: BodyResult): r is { unsupported: string } {
@@ -148,8 +171,15 @@ export function isBodyUnsupported(r: BodyResult): r is { unsupported: string } {
 }
 
 /** Type guard for effect BodyResult. */
-export function isBodyEffect(r: BodyResult): r is { effect: MapMutation } {
+export function isBodyEffect(
+  r: BodyResult,
+): r is { effect: CollectionMutation } {
   return "effect" in r;
+}
+
+/** Discriminator: Map effects carry a `keyPredName`; Set effects don't. */
+function isMapEffect(e: CollectionMutation): e is MapMutation {
+  return "keyPredName" in e;
 }
 
 /**
@@ -165,7 +195,9 @@ function rejectEffect(
   | { unsupported: string }
   | { expr: OpaqueExpr; pendingComprehension?: PendingComprehension } {
   if ("effect" in r) {
-    return { unsupported: "Map mutation outside statement position" };
+    return {
+      unsupported: "collection mutation outside statement position",
+    };
   }
   return r;
 }
@@ -232,7 +264,45 @@ interface MapRuleWriteEntry {
   membershipOverrides: MapOverride[];
 }
 
-type WriteEntry = PropertyWriteEntry | MapRuleWriteEntry;
+/**
+ * One point-update within a Set membership override. `elemExpr` is the
+ * element being added or removed; `value` is `ast.litBool(true)` for
+ * `.add`, `ast.litBool(false)` for `.delete`, or a `cond` after branch
+ * merge. Parallel to `MapOverride` but scalar-keyed rather than tuple-
+ * keyed — Sets have no separate key-and-value axis.
+ */
+interface SetOverride {
+  elemExpr: OpaqueExpr;
+  value: OpaqueExpr;
+}
+
+/**
+ * Accumulated point-updates to a Set-backed field-accessor rule. One entry
+ * per distinct `(ruleName, ownerType, elemType, canonical-receiver)` in
+ * `state.writes`. Unlike MapRuleWriteEntry, only one override list (the
+ * field-accessor rule IS the membership predicate at the list-semantics
+ * level — `s.has(x)` is `x in s`).
+ *
+ * `cleared` records that a `.clear()` reset the accumulated overrides to
+ * the empty list. After a clear, the emission drops the pre-state
+ * `y in tags c` fallthrough and uses literal `false` instead — anything
+ * that isn't in `memberOverrides` after a clear is gone.
+ *
+ * `objExpr` is the canonicalized receiver; the emission quantifier runs
+ * only over the element (type `elemType`), while the LHS applies the
+ * primed rule to this receiver as a free term.
+ */
+interface SetRuleWriteEntry {
+  kind: "set";
+  ruleName: string;
+  ownerType: string;
+  elemType: string;
+  objExpr: OpaqueExpr;
+  memberOverrides: SetOverride[];
+  cleared: boolean;
+}
+
+type WriteEntry = PropertyWriteEntry | MapRuleWriteEntry | SetRuleWriteEntry;
 
 /**
  * Per-body symbolic-execution accumulator. Held as a cell of immutable
@@ -334,36 +404,40 @@ function mapWriteKey(
 /**
  * Collapse two arrays of overrides (from the two branches of an if, or
  * a branch vs. identity fallback) into a single array, keyed by canonical
- * tuple form. Per canonical key, the per-branch values are combined via
+ * position form. Per canonical key, the per-branch values are combined via
  * `combine`. Overrides that only exist in one side use the caller-supplied
  * `fallback` expression (pre-state `R m k` for value; pre-state `Rkey m k`
- * for membership) for the missing side.
+ * for membership; pre-state `y in s` for set membership) for the missing
+ * side.
  *
  * Order is preserved from `aSide` first, then any `bSide` keys not already
- * seen. The canonical form comes from `ast.strExpr(keyTuple)`.
+ * seen. The canonical form comes from `ast.strExpr(keyOf(o))`. Generic over
+ * the override record so Map (tuple-keyed) and Set (element-keyed) writes
+ * share the same merge plumbing.
  */
-function mergeOverrides(
-  aSide: ReadonlyArray<MapOverride>,
-  bSide: ReadonlyArray<MapOverride>,
-  fallback: (o: MapOverride) => OpaqueExpr,
+function mergeOverrides<O extends { value: OpaqueExpr }>(
+  aSide: ReadonlyArray<O>,
+  bSide: ReadonlyArray<O>,
+  keyOf: (o: O) => OpaqueExpr,
+  fallback: (o: O) => OpaqueExpr,
   combine: (vA: OpaqueExpr, vB: OpaqueExpr) => OpaqueExpr,
-): MapOverride[] {
+): O[] {
   const ast = getAst();
   const canonical = (t: OpaqueExpr) => ast.strExpr(t);
   const bByKey = new Map<string, OpaqueExpr>();
   for (const o of bSide) {
-    bByKey.set(canonical(o.keyTuple), o.value);
+    bByKey.set(canonical(keyOf(o)), o.value);
   }
   const seen = new Set<string>();
-  const out: MapOverride[] = [];
+  const out: O[] = [];
   for (const o of aSide) {
-    const k = canonical(o.keyTuple);
+    const k = canonical(keyOf(o));
     seen.add(k);
     const vB = bByKey.get(k) ?? fallback(o);
     out.push({ ...o, value: combine(o.value, vB) });
   }
   for (const o of bSide) {
-    const k = canonical(o.keyTuple);
+    const k = canonical(keyOf(o));
     if (seen.has(k)) {
       continue;
     }
@@ -543,6 +617,249 @@ function readOverridesFor(
   return entry.valueOverrides.filter(
     (o) => latestMembership.get(canonical(o.keyTuple)) !== falseText,
   );
+}
+
+/**
+ * State-map key for Set writes. Includes ownerType and elemType to
+ * disambiguate two interfaces that happen to share a field name but with
+ * different element types (analogous to `mapWriteKey`'s guard against
+ * cross-interface collisions). Parallel to `mapWriteKey` at :310.
+ */
+function setWriteKey(
+  ruleName: string,
+  ownerType: string,
+  elemType: string,
+): string {
+  return `set::${ruleName}::${ownerType}::${elemType}`;
+}
+
+/**
+ * Install a `.add` / `.delete` / `.clear` effect into the symbolic state.
+ * Creates a new SetRuleWriteEntry on first use per rule; subsequent
+ * effects accumulate overrides on the same entry.
+ *
+ * Later-wins per element: a later `.delete(x)` drops any prior `.add(x)`
+ * override at the same canonical element form before appending its own
+ * `false` override. Mirrors the tuple-keyed later-wins in
+ * `installMapWrite`.
+ *
+ * `.clear()` resets `memberOverrides` to the empty list and sets
+ * `cleared = true`. Subsequent `.add`/`.delete` calls on the same
+ * receiver in the same path accumulate normally on top of the cleared
+ * baseline; at emission the pre-state `y in tags c` fallthrough is
+ * replaced with literal `false`.
+ */
+function installSetWrite(
+  state: SymbolicState,
+  effect: SetMutation,
+  applyConst: (e: OpaqueExpr) => OpaqueExpr,
+): void {
+  const ast = getAst();
+  const key = setWriteKey(effect.ruleName, effect.ownerType, effect.elemType);
+  const objExpr = applyConst(effect.objExpr);
+
+  const prev = state.writes.get(key);
+  const entry: SetRuleWriteEntry =
+    prev !== undefined && prev.kind === "set"
+      ? { ...prev, memberOverrides: [...prev.memberOverrides] }
+      : {
+          kind: "set",
+          ruleName: effect.ruleName,
+          ownerType: effect.ownerType,
+          elemType: effect.elemType,
+          objExpr,
+          memberOverrides: [],
+          cleared: false,
+        };
+
+  if (effect.op === "clear") {
+    entry.memberOverrides = [];
+    entry.cleared = true;
+    putWrite(state, key, entry);
+    addWrittenKey(state, key);
+    state.modifiedProps.add(effect.ruleName);
+    return;
+  }
+
+  const elemExpr = applyConst(effect.elemExpr!);
+  const elemText = ast.strExpr(elemExpr);
+  const isSameElem = (o: SetOverride) => ast.strExpr(o.elemExpr) === elemText;
+  entry.memberOverrides = entry.memberOverrides.filter((o) => !isSameElem(o));
+  entry.memberOverrides.push({
+    elemExpr,
+    value: effect.op === "add" ? ast.litBool(true) : ast.litBool(false),
+  });
+  putWrite(state, key, entry);
+  addWrittenKey(state, key);
+  state.modifiedProps.add(effect.ruleName);
+}
+
+/**
+ * Read a Set `.has(x)` through staged writes. Parallel to
+ * `readMapThroughWrites`. When a prior `.add`/`.delete`/`.clear` has been
+ * installed, the returned expression is a `cond` over per-element equality
+ * arms with the pre-state `x in s` lookup as the fallthrough (or literal
+ * `false` when `cleared = true`). Without a staged entry, returns the
+ * plain pre-state membership `x in s`.
+ *
+ * Unlike the Map read (which emits `ast.override` — an N-ary rule override
+ * applied to the receiver+key), Set membership goes through `ast.binop`
+ * with `ast.opIn` and a cond over equality arms. `ast.override` would be
+ * invalid on a list-valued field accessor.
+ */
+function readSetThroughWrites(
+  state: SymbolicState | undefined,
+  ruleName: string,
+  ownerType: string,
+  elemType: string,
+  objExpr: OpaqueExpr,
+  queryExpr: OpaqueExpr,
+): OpaqueExpr {
+  const ast = getAst();
+  const baseIn = (obj: OpaqueExpr, q: OpaqueExpr) =>
+    ast.binop(ast.opIn(), q, ast.app(ast.var(ruleName), [obj]));
+  if (state === undefined) {
+    return baseIn(objExpr, queryExpr);
+  }
+  const canonObj = state.canonicalize(objExpr);
+  const canonQuery = state.canonicalize(queryExpr);
+  const entry = state.writes.get(setWriteKey(ruleName, ownerType, elemType));
+  if (entry === undefined || entry.kind !== "set") {
+    return baseIn(canonObj, canonQuery);
+  }
+  if (entry.memberOverrides.length === 0) {
+    return entry.cleared ? ast.litBool(false) : baseIn(canonObj, canonQuery);
+  }
+  const fallback: [OpaqueExpr, OpaqueExpr] = entry.cleared
+    ? [ast.litBool(true), ast.litBool(false)]
+    : [ast.litBool(true), baseIn(canonObj, canonQuery)];
+  return ast.cond([
+    ...entry.memberOverrides.map(
+      (o) =>
+        [ast.binop(ast.opEq(), canonQuery, o.elemExpr), o.value] as [
+          OpaqueExpr,
+          OpaqueExpr,
+        ],
+    ),
+    fallback,
+  ]);
+}
+
+/**
+ * Emit quantified equations for a Map rule pair (value rule +
+ * membership predicate). Extracted from the previous inline emission so
+ * the outer loop can dispatch uniformly across Property / Map / Set
+ * entries. `valueOverrides` empty (pure `.delete`) — skip the value
+ * rule; the membership going false makes the rule-guard vacuous.
+ */
+function emitMapEquations(
+  entry: MapRuleWriteEntry,
+  propositions: PropResult[],
+  allocBinder: (hint: string) => string,
+  state: SymbolicState,
+): void {
+  const ast = getAst();
+  if (entry.valueOverrides.length > 0) {
+    const m1 = allocBinder("m");
+    const k1 = allocBinder("k");
+    propositions.push({
+      kind: "equation",
+      quantifiers: [
+        ast.param(m1, ast.tName(entry.ownerType)),
+        ast.param(k1, ast.tName(entry.keyType)),
+      ] as OpaqueParam[],
+      lhs: ast.app(ast.primed(entry.ruleName), [ast.var(m1), ast.var(k1)]),
+      rhs: ast.app(
+        ast.override(
+          entry.ruleName,
+          entry.valueOverrides.map(
+            (o) => [o.keyTuple, o.value] as [OpaqueExpr, OpaqueExpr],
+          ),
+        ),
+        [ast.var(m1), ast.var(k1)],
+      ),
+    });
+    addModifiedProp(state, entry.ruleName);
+  }
+  if (entry.membershipOverrides.length > 0) {
+    const m1 = allocBinder("m");
+    const k1 = allocBinder("k");
+    propositions.push({
+      kind: "equation",
+      quantifiers: [
+        ast.param(m1, ast.tName(entry.ownerType)),
+        ast.param(k1, ast.tName(entry.keyType)),
+      ] as OpaqueParam[],
+      lhs: ast.app(ast.primed(entry.keyPredName), [ast.var(m1), ast.var(k1)]),
+      rhs: ast.app(
+        ast.override(
+          entry.keyPredName,
+          entry.membershipOverrides.map(
+            (o) => [o.keyTuple, o.value] as [OpaqueExpr, OpaqueExpr],
+          ),
+        ),
+        [ast.var(m1), ast.var(k1)],
+      ),
+    });
+    addModifiedProp(state, entry.keyPredName);
+  }
+}
+
+/**
+ * Emit the one universally-quantified Bool equation for a Set
+ * membership write:
+ *   all y: T | y in tags' c <=> cond <per-elem arms>, true => <tail>.
+ *
+ * The tail is `y in tags c` (pre-state membership) for normal
+ * accumulated writes, or literal `false` when a `.clear()` reset the
+ * overrides. An empty override list with `cleared = true` collapses the
+ * cond to `all y | ~(y in tags' c)` because every arm degenerates.
+ *
+ * Parallel in role to `emitMapEquations`, but emits one equation (Sets
+ * have no separate value-rule / membership-predicate split) and uses
+ * `<=>` over `in` rather than `=` over `ast.override`. The receiver is
+ * carried on the entry itself; the quantifier runs only over the
+ * element.
+ */
+function emitSetMembershipEquation(
+  entry: SetRuleWriteEntry,
+  propositions: PropResult[],
+  allocBinder: (hint: string) => string,
+  state: SymbolicState,
+): void {
+  const ast = getAst();
+  if (entry.memberOverrides.length === 0 && !entry.cleared) {
+    return;
+  }
+  const y = allocBinder("y");
+  const yVar = ast.var(y);
+  const memberIn = (rule: OpaqueExpr) => ast.binop(ast.opIn(), yVar, rule);
+  const primedApp = ast.app(ast.primed(entry.ruleName), [entry.objExpr]);
+  const preApp = ast.app(ast.var(entry.ruleName), [entry.objExpr]);
+  const fallback: [OpaqueExpr, OpaqueExpr] = entry.cleared
+    ? [ast.litBool(true), ast.litBool(false)]
+    : [ast.litBool(true), memberIn(preApp)];
+  const condArms: [OpaqueExpr, OpaqueExpr][] = entry.memberOverrides.map(
+    (o) =>
+      [ast.binop(ast.opEq(), yVar, o.elemExpr), o.value] as [
+        OpaqueExpr,
+        OpaqueExpr,
+      ],
+  );
+  const rhs =
+    condArms.length === 0 ? fallback[1] : ast.cond([...condArms, fallback]);
+  // Emitted as an assertion (a quantified Bool formula), not an equation:
+  // Pantagruel's equation kind is LHS = RHS (`=`), but Set membership
+  // writes require `<=>` over `in`, which is structurally a Bool
+  // biconditional. Mirrors how the empty-Set initializer in
+  // translate-record.ts emits its `~(y in f_i (f <args>))` assertion
+  // rather than an equation.
+  propositions.push({
+    kind: "assertion",
+    quantifiers: [ast.param(y, ast.tName(entry.elemType))] as OpaqueParam[],
+    body: ast.binop(ast.opIff(), memberIn(primedApp), rhs),
+  });
+  addModifiedProp(state, entry.ruleName);
 }
 
 /**
@@ -3122,6 +3439,100 @@ function translateCallExpr(
     const methodName = expr.expression.name.text;
     const tsReceiver = expr.expression.expression;
 
+    // .add(x) / .delete(x) / .clear() on a Set<T> receiver -> emit a
+    // `{ effect: SetMutation }` that `symbolicExecute` consumes via
+    // `installSetWrite`. Stage A only: the receiver must be a
+    // property-access to a declared interface field. Parameter-level Set
+    // mutation is rejected explicitly — there is no wrapper domain to
+    // prime against.
+    //
+    // `.delete` dispatches to this branch before the Map branch below
+    // because `isMapType` and `isSetType` are mutually exclusive, so the
+    // Map check would short-circuit cleanly even if the order were
+    // reversed; placing Set first keeps the translation path compact.
+    if (
+      ((methodName === "add" && expr.arguments.length === 1) ||
+        (methodName === "delete" && expr.arguments.length === 1) ||
+        (methodName === "clear" && expr.arguments.length === 0)) &&
+      isSetType(checker.getTypeAtLocation(tsReceiver))
+    ) {
+      const normalizedReceiver = unwrapExpression(tsReceiver);
+      if (
+        !ts.isPropertyAccessExpression(normalizedReceiver) ||
+        !isInterfaceFieldAccess(normalizedReceiver, checker)
+      ) {
+        return { unsupported: "parameter-level Set mutation" };
+      }
+      const innerObj = normalizedReceiver.expression;
+      const rawFieldName = normalizedReceiver.name.text;
+      const fieldName = qualifyFieldAccess(
+        checker.getTypeAtLocation(innerObj),
+        rawFieldName,
+        checker,
+        strategy,
+        supply.synthCell,
+      );
+      if (fieldName === null) {
+        return { unsupported: ambiguousFieldMsg(rawFieldName) };
+      }
+      const ownerType = mapTsType(
+        checker.getTypeAtLocation(innerObj),
+        checker,
+        strategy,
+        supply.synthCell,
+      );
+      const setTypeArgs = checker.getTypeArguments(
+        checker.getTypeAtLocation(normalizedReceiver) as ts.TypeReference,
+      );
+      if (setTypeArgs.length !== 1) {
+        return { unsupported: "Set with unexpected arity" };
+      }
+      const elemType = mapTsType(
+        setTypeArgs[0]!,
+        checker,
+        strategy,
+        supply.synthCell,
+      );
+      const objRaw = translateBodyExpr(
+        innerObj,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
+      const objExpr = rejectEffect(objRaw);
+      if (isBodyUnsupported(objExpr)) {
+        return objExpr;
+      }
+      let elemOpaque: OpaqueExpr | null = null;
+      if (methodName !== "clear") {
+        const eRaw = translateBodyExpr(
+          expr.arguments[0]!,
+          checker,
+          strategy,
+          paramNames,
+          state,
+          supply,
+        );
+        const eExpr = rejectEffect(eRaw);
+        if (isBodyUnsupported(eExpr)) {
+          return eExpr;
+        }
+        elemOpaque = bodyExpr(eExpr);
+      }
+      return {
+        effect: {
+          op: methodName as "add" | "delete" | "clear",
+          ruleName: fieldName,
+          ownerType,
+          elemType,
+          objExpr: bodyExpr(objExpr),
+          elemExpr: elemOpaque,
+        },
+      };
+    }
+
     // .set(k, v) / .delete(k) on a Map<K,V> receiver -> emit a `{ effect: ... }`
     // BodyResult that `symbolicExecute` consumes to install a MapRuleWriteEntry.
     // Stage A / Stage B disambiguation mirrors the .get/.has branch below; the
@@ -3480,7 +3891,7 @@ function translateCallExpr(
       if (isBodyUnsupported(arg)) {
         return arg;
       }
-      const objExpr = translateBodyExpr(
+      const objRaw = translateBodyExpr(
         tsReceiver,
         checker,
         strategy,
@@ -3488,8 +3899,70 @@ function translateCallExpr(
         state,
         supply,
       );
+      const objExpr = rejectEffect(objRaw);
       if (isBodyUnsupported(objExpr)) {
         return objExpr;
+      }
+      // Stage A Set: receiver is a declared interface field. Route through
+      // `readSetThroughWrites` so prior `.add`/`.delete`/`.clear` in the
+      // same body are observed inline as `cond` over equality arms with
+      // the pre-state membership as fallthrough. Degenerates cleanly to
+      // `arg in receiver` when no staged entry exists.
+      if (isSet) {
+        const normalizedReceiver = unwrapExpression(tsReceiver);
+        if (
+          ts.isPropertyAccessExpression(normalizedReceiver) &&
+          isInterfaceFieldAccess(normalizedReceiver, checker)
+        ) {
+          const innerObj = normalizedReceiver.expression;
+          const rawFieldName = normalizedReceiver.name.text;
+          const fieldName = qualifyFieldAccess(
+            checker.getTypeAtLocation(innerObj),
+            rawFieldName,
+            checker,
+            strategy,
+            supply.synthCell,
+          );
+          if (fieldName !== null) {
+            const ownerType = mapTsType(
+              checker.getTypeAtLocation(innerObj),
+              checker,
+              strategy,
+              supply.synthCell,
+            );
+            const typeArgs = checker.getTypeArguments(
+              receiverType as ts.TypeReference,
+            );
+            const elemType =
+              typeArgs.length === 1
+                ? mapTsType(typeArgs[0]!, checker, strategy, supply.synthCell)
+                : null;
+            if (elemType !== null) {
+              const innerObjRaw = translateBodyExpr(
+                innerObj,
+                checker,
+                strategy,
+                paramNames,
+                state,
+                supply,
+              );
+              const innerObjExpr = rejectEffect(innerObjRaw);
+              if (isBodyUnsupported(innerObjExpr)) {
+                return innerObjExpr;
+              }
+              return {
+                expr: readSetThroughWrites(
+                  state,
+                  fieldName,
+                  ownerType,
+                  elemType,
+                  bodyExpr(innerObjExpr),
+                  bodyExpr(arg),
+                ),
+              };
+            }
+          }
+        }
       }
       return { expr: ast.binop(ast.opIn(), bodyExpr(arg), bodyExpr(objExpr)) };
     }
@@ -3708,73 +4181,38 @@ function translateMutatingBody(
     return propositions;
   }
 
+  // Quantifier binders allocated through the document-wide name registry
+  // (inside synthCell) so they don't collide with the function's own
+  // params or with type-derived accessor rule binders — unlike the
+  // internal `freshHygienicBinder` which emits `$N` names that don't
+  // round-trip through the Pantagruel parser.
+  const allocBinder = (hint: string): string =>
+    synthCell ? cellRegisterName(synthCell, hint) : freshHygienicBinder(supply);
   for (const [, entry] of state.writes) {
-    if (entry.kind === "property") {
-      propositions.push({
-        kind: "equation",
-        quantifiers: [] as OpaqueParam[],
-        lhs: ast.app(ast.primed(entry.prop), [entry.objExpr]),
-        rhs: entry.value,
-      });
-      addModifiedProp(state, entry.prop);
-      continue;
-    }
-    // Map write: emit one quantified equation per modified rule using the
-    // override expression as the RHS applied to fresh quantifier binders.
-    // Binders are allocated through the document-wide name registry (inside
-    // synthCell) so they don't collide with the function's own params or
-    // with type-derived accessor rule binders — unlike the internal
-    // `freshHygienicBinder` which emits `$N` names that don't round-trip
-    // through the Pantagruel parser.
-    const allocBinder = (hint: string): string =>
-      synthCell
-        ? cellRegisterName(synthCell, hint)
-        : freshHygienicBinder(supply);
-    // `valueOverrides` empty (pure `.delete`) — skip the value rule; the
-    // membership going false makes the rule-guard vacuous.
-    if (entry.valueOverrides.length > 0) {
-      const m1 = allocBinder("m");
-      const k1 = allocBinder("k");
-      propositions.push({
-        kind: "equation",
-        quantifiers: [
-          ast.param(m1, ast.tName(entry.ownerType)),
-          ast.param(k1, ast.tName(entry.keyType)),
-        ] as OpaqueParam[],
-        lhs: ast.app(ast.primed(entry.ruleName), [ast.var(m1), ast.var(k1)]),
-        rhs: ast.app(
-          ast.override(
-            entry.ruleName,
-            entry.valueOverrides.map(
-              (o) => [o.keyTuple, o.value] as [OpaqueExpr, OpaqueExpr],
-            ),
-          ),
-          [ast.var(m1), ast.var(k1)],
-        ),
-      });
-      addModifiedProp(state, entry.ruleName);
-    }
-    if (entry.membershipOverrides.length > 0) {
-      const m1 = allocBinder("m");
-      const k1 = allocBinder("k");
-      propositions.push({
-        kind: "equation",
-        quantifiers: [
-          ast.param(m1, ast.tName(entry.ownerType)),
-          ast.param(k1, ast.tName(entry.keyType)),
-        ] as OpaqueParam[],
-        lhs: ast.app(ast.primed(entry.keyPredName), [ast.var(m1), ast.var(k1)]),
-        rhs: ast.app(
-          ast.override(
-            entry.keyPredName,
-            entry.membershipOverrides.map(
-              (o) => [o.keyTuple, o.value] as [OpaqueExpr, OpaqueExpr],
-            ),
-          ),
-          [ast.var(m1), ast.var(k1)],
-        ),
-      });
-      addModifiedProp(state, entry.keyPredName);
+    switch (entry.kind) {
+      case "property":
+        propositions.push({
+          kind: "equation",
+          quantifiers: [] as OpaqueParam[],
+          lhs: ast.app(ast.primed(entry.prop), [entry.objExpr]),
+          rhs: entry.value,
+        });
+        addModifiedProp(state, entry.prop);
+        break;
+      case "map":
+        emitMapEquations(entry, propositions, allocBinder, state);
+        break;
+      case "set":
+        emitSetMembershipEquation(entry, propositions, allocBinder, state);
+        break;
+      default: {
+        // Exhaustiveness guard: `entry.kind` is discriminated across
+        // property / map / set. If a new kind is added without updating
+        // this switch, the `_exhaustive: never` assignment will fail to
+        // compile — TS's standard exhaustive-switch pattern.
+        const _exhaustive: never = entry;
+        void _exhaustive;
+      }
     }
   }
 
@@ -3908,7 +4346,7 @@ function symbolicExecute(
           propositions.push({
             kind: "unsupported",
             reason:
-              "branches wrote the same key with different kinds (property vs. map)",
+              "branches wrote the same key with different kinds (property / map / set mismatch)",
           });
           break;
         }
@@ -3935,21 +4373,11 @@ function symbolicExecute(
           addWrittenKey(state, key);
           continue;
         }
-        // Map: continuation-side overrides are taken only when NOT on the
-        // early-exit arm. The early-exit fallback for each override (m, k)
-        // is the accumulated outer-state value if the outer state had a
-        // prior write there, else the pre-state lookup — so outer writes
-        // persist across the exit arm.
-        const priorMap =
-          prior !== undefined && prior.kind === "map"
-            ? (prior as MapRuleWriteEntry)
-            : undefined;
-        const ruleVar = ast.var(entryR.ruleName);
-        const keyVar = ast.var(entryR.keyPredName);
-        const valueFallback = (o: MapOverride): OpaqueExpr =>
-          ast.app(ruleVar, [o.objExpr, o.keyExpr]);
-        const memberFallback = (o: MapOverride): OpaqueExpr =>
-          ast.app(keyVar, [o.objExpr, o.keyExpr]);
+        // Map / Set: continuation-side overrides are taken only when NOT
+        // on the early-exit arm. The early-exit fallback for each
+        // override is the accumulated outer-state value if the outer
+        // state had a prior write there, else the pre-state lookup — so
+        // outer writes persist across the exit arm.
         const combineContCond = (
           vCont: OpaqueExpr,
           vExit: OpaqueExpr,
@@ -3963,26 +4391,70 @@ function symbolicExecute(
                 [gExpr, vCont],
                 [ast.litBool(true), vExit],
               ]);
-        const mergedValue = mergeOverrides(
-          entryR.valueOverrides,
-          priorMap?.valueOverrides ?? [],
-          valueFallback,
-          combineContCond,
-        );
-        const mergedMember = mergeOverrides(
-          entryR.membershipOverrides,
-          priorMap?.membershipOverrides ?? [],
-          memberFallback,
+        if (entryR.kind === "map") {
+          const priorMap =
+            prior !== undefined && prior.kind === "map" ? prior : undefined;
+          const ruleVar = ast.var(entryR.ruleName);
+          const keyVar = ast.var(entryR.keyPredName);
+          const valueFallback = (o: MapOverride): OpaqueExpr =>
+            ast.app(ruleVar, [o.objExpr, o.keyExpr]);
+          const memberFallback = (o: MapOverride): OpaqueExpr =>
+            ast.app(keyVar, [o.objExpr, o.keyExpr]);
+          const mergedValue = mergeOverrides(
+            entryR.valueOverrides,
+            priorMap?.valueOverrides ?? [],
+            (o) => o.keyTuple,
+            valueFallback,
+            combineContCond,
+          );
+          const mergedMember = mergeOverrides(
+            entryR.membershipOverrides,
+            priorMap?.membershipOverrides ?? [],
+            (o) => o.keyTuple,
+            memberFallback,
+            combineContCond,
+          );
+          putWrite(state, key, {
+            kind: "map",
+            ruleName: entryR.ruleName,
+            keyPredName: entryR.keyPredName,
+            ownerType: entryR.ownerType,
+            keyType: entryR.keyType,
+            valueOverrides: mergedValue,
+            membershipOverrides: mergedMember,
+          });
+          addWrittenKey(state, key);
+          continue;
+        }
+        // Set: fallback is the pre-state membership `y in s` at the
+        // canonical receiver + override element. `cleared` is inherited
+        // from the continuation — an early-exit path with an outer-state
+        // clear can't re-establish pre-state membership, so we leave the
+        // flag as continuation's.
+        const priorSet =
+          prior !== undefined && prior.kind === "set" ? prior : undefined;
+        const setRuleVar = ast.var(entryR.ruleName);
+        const setFallback = (o: SetOverride): OpaqueExpr =>
+          ast.binop(
+            ast.opIn(),
+            o.elemExpr,
+            ast.app(setRuleVar, [entryR.objExpr]),
+          );
+        const mergedSet = mergeOverrides(
+          entryR.memberOverrides,
+          priorSet?.memberOverrides ?? [],
+          (o) => o.elemExpr,
+          setFallback,
           combineContCond,
         );
         putWrite(state, key, {
-          kind: "map",
+          kind: "set",
           ruleName: entryR.ruleName,
-          keyPredName: entryR.keyPredName,
           ownerType: entryR.ownerType,
-          keyType: entryR.keyType,
-          valueOverrides: mergedValue,
-          membershipOverrides: mergedMember,
+          elemType: entryR.elemType,
+          objExpr: entryR.objExpr,
+          memberOverrides: mergedSet,
+          cleared: entryR.cleared || (priorSet?.cleared ?? false),
         });
         addWrittenKey(state, key);
       }
@@ -4063,30 +4535,45 @@ function symbolicExecute(
         supply,
       );
       if (isBodyEffect(callResult)) {
-        installMapWrite(state, callResult.effect, applyConst);
+        if (isMapEffect(callResult.effect)) {
+          installMapWrite(state, callResult.effect, applyConst);
+        } else {
+          installSetWrite(state, callResult.effect, applyConst);
+        }
         continue;
       }
-      // If the call *looks like* a Map.set/Map.delete (right method name,
-      // arity, and receiver type) but translateCallExpr returned an
-      // unsupported marker, propagate the specific reason rather than
-      // falling through to the generic "side-effectful expression" error.
-      // Other unsupported results (non-Map calls the EUF encoder rejected
-      // because of an arrow-function argument, etc.) still fall through so
-      // the forEach handler below gets its chance.
+      // If the call *looks like* a Map.set/Map.delete or a
+      // Set.add/Set.delete/Set.clear (right method name, arity, and
+      // receiver type) but translateCallExpr returned an unsupported
+      // marker, propagate the specific reason rather than falling through
+      // to the generic "side-effectful expression" error. Other
+      // unsupported results (non-Map/Set calls the EUF encoder rejected
+      // because of an arrow-function argument, etc.) still fall through
+      // so the forEach handler below gets its chance.
       if (
         isBodyUnsupported(callResult) &&
-        ts.isPropertyAccessExpression(call.expression) &&
-        ((call.expression.name.text === "set" && call.arguments.length === 2) ||
-          (call.expression.name.text === "delete" &&
-            call.arguments.length === 1)) &&
-        isMapType(checker.getTypeAtLocation(call.expression.expression))
+        ts.isPropertyAccessExpression(call.expression)
       ) {
-        ok = false;
-        propositions.push({
-          kind: "unsupported",
-          reason: callResult.unsupported,
-        });
-        continue;
+        const mName = call.expression.name.text;
+        const argc = call.arguments.length;
+        const recvType = checker.getTypeAtLocation(call.expression.expression);
+        const looksLikeMapMutation =
+          ((mName === "set" && argc === 2) ||
+            (mName === "delete" && argc === 1)) &&
+          isMapType(recvType);
+        const looksLikeSetMutation =
+          ((mName === "add" && argc === 1) ||
+            (mName === "delete" && argc === 1) ||
+            (mName === "clear" && argc === 0)) &&
+          isSetType(recvType);
+        if (looksLikeMapMutation || looksLikeSetMutation) {
+          ok = false;
+          propositions.push({
+            kind: "unsupported",
+            reason: callResult.unsupported,
+          });
+          continue;
+        }
       }
       // Otherwise fall through to forEach / side-effect handling below.
     }
@@ -4364,7 +4851,7 @@ function symbolicExecute(
           propositions.push({
             kind: "unsupported",
             reason:
-              "branches wrote the same key with different kinds (property vs. map)",
+              "branches wrote the same key with different kinds (property / map / set mismatch)",
           });
           break;
         }
@@ -4389,42 +4876,79 @@ function symbolicExecute(
           addWrittenKey(state, key);
           continue;
         }
-        // Map: merge per-override-pair under gExpr. Identity fallbacks per
-        // side use the pre-state lookup at the override's (m, k) tuple.
-        const entryTM = entryT as MapRuleWriteEntry | undefined;
-        const entryEM = entryE as MapRuleWriteEntry | undefined;
-        const base = entryTM ?? entryEM!;
-        const ruleVar = ast.var(base.ruleName);
-        const keyVar = ast.var(base.keyPredName);
-        const valueFallback = (o: MapOverride): OpaqueExpr =>
-          ast.app(ruleVar, [o.objExpr, o.keyExpr]);
-        const memberFallback = (o: MapOverride): OpaqueExpr =>
-          ast.app(keyVar, [o.objExpr, o.keyExpr]);
         const combineCond = (vA: OpaqueExpr, vB: OpaqueExpr): OpaqueExpr =>
           ast.cond([
             [gExpr, vA],
             [ast.litBool(true), vB],
           ]);
-        const mergedValue = mergeOverrides(
-          entryTM?.valueOverrides ?? [],
-          entryEM?.valueOverrides ?? [],
-          valueFallback,
-          combineCond,
-        );
-        const mergedMember = mergeOverrides(
-          entryTM?.membershipOverrides ?? [],
-          entryEM?.membershipOverrides ?? [],
-          memberFallback,
+        if (pick.kind === "map") {
+          // Map: merge per-override-pair under gExpr. Identity fallbacks
+          // per side use the pre-state lookup at the override's (m, k)
+          // tuple.
+          const entryTM = entryT as MapRuleWriteEntry | undefined;
+          const entryEM = entryE as MapRuleWriteEntry | undefined;
+          const base = entryTM ?? entryEM!;
+          const ruleVar = ast.var(base.ruleName);
+          const keyVar = ast.var(base.keyPredName);
+          const valueFallback = (o: MapOverride): OpaqueExpr =>
+            ast.app(ruleVar, [o.objExpr, o.keyExpr]);
+          const memberFallback = (o: MapOverride): OpaqueExpr =>
+            ast.app(keyVar, [o.objExpr, o.keyExpr]);
+          const mergedValue = mergeOverrides(
+            entryTM?.valueOverrides ?? [],
+            entryEM?.valueOverrides ?? [],
+            (o) => o.keyTuple,
+            valueFallback,
+            combineCond,
+          );
+          const mergedMember = mergeOverrides(
+            entryTM?.membershipOverrides ?? [],
+            entryEM?.membershipOverrides ?? [],
+            (o) => o.keyTuple,
+            memberFallback,
+            combineCond,
+          );
+          putWrite(state, key, {
+            kind: "map",
+            ruleName: base.ruleName,
+            keyPredName: base.keyPredName,
+            ownerType: base.ownerType,
+            keyType: base.keyType,
+            valueOverrides: mergedValue,
+            membershipOverrides: mergedMember,
+          });
+          addWrittenKey(state, key);
+          continue;
+        }
+        // Set: merge per-element under gExpr. Fallback is the pre-state
+        // `y in s` at the canonical receiver (both branches of a Set
+        // merge reference the same interface field, so `objExpr` is
+        // structurally identical — pick either).
+        const entryTS = entryT as SetRuleWriteEntry | undefined;
+        const entryES = entryE as SetRuleWriteEntry | undefined;
+        const baseS = entryTS ?? entryES!;
+        const setRuleVar = ast.var(baseS.ruleName);
+        const setFallback = (o: SetOverride): OpaqueExpr =>
+          ast.binop(
+            ast.opIn(),
+            o.elemExpr,
+            ast.app(setRuleVar, [baseS.objExpr]),
+          );
+        const mergedSet = mergeOverrides(
+          entryTS?.memberOverrides ?? [],
+          entryES?.memberOverrides ?? [],
+          (o) => o.elemExpr,
+          setFallback,
           combineCond,
         );
         putWrite(state, key, {
-          kind: "map",
-          ruleName: base.ruleName,
-          keyPredName: base.keyPredName,
-          ownerType: base.ownerType,
-          keyType: base.keyType,
-          valueOverrides: mergedValue,
-          membershipOverrides: mergedMember,
+          kind: "set",
+          ruleName: baseS.ruleName,
+          ownerType: baseS.ownerType,
+          elemType: baseS.elemType,
+          objExpr: baseS.objExpr,
+          memberOverrides: mergedSet,
+          cleared: (entryTS?.cleared ?? false) || (entryES?.cleared ?? false),
         });
         addWrittenKey(state, key);
       }

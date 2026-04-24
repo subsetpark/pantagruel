@@ -458,6 +458,46 @@ exports[`expressions-reduce.ts > sumFromBase 1`] = `
 "module SumFromBase.\\n\\nItem.\\nitem--value i: Item => Int.\\nitem--active i: Item => Bool.\\nsum-from-base xs: [Item] => Int.\\n\\n---\\n\\nsum-from-base xs = 100 + (+ over each $0 in xs | item--value $0).\\n"
 `;
 
+exports[`expressions-set-mutation-field.ts > tagAdd 1`] = `
+"module TagAdd.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-add @ c: Tagged, x: String.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> (cond y = x => true, true => y in tagged--tags c).\\n"
+`;
+
+exports[`expressions-set-mutation-field.ts > tagAddIf 1`] = `
+"module TagAddIf.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-add-if @ c: Tagged, x: String, guard: Bool.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> (cond y = x => (cond guard => true, true => x in tagged--tags c), true => y in tagged--tags c).\\n"
+`;
+
+exports[`expressions-set-mutation-field.ts > tagAddNonNull 1`] = `
+"module TagAddNonNull.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-add-non-null @ c: Tagged, x: String.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> (cond y = x => true, true => y in tagged--tags c).\\n"
+`;
+
+exports[`expressions-set-mutation-field.ts > tagAddParen 1`] = `
+"module TagAddParen.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-add-paren @ c: Tagged, x: String.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> (cond y = x => true, true => y in tagged--tags c).\\n"
+`;
+
+exports[`expressions-set-mutation-field.ts > tagAddThenRemove 1`] = `
+"module TagAddThenRemove.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-add-then-remove @ c: Tagged, x: String.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> (cond y = x => false, true => y in tagged--tags c).\\n"
+`;
+
+exports[`expressions-set-mutation-field.ts > tagAddTwo 1`] = `
+"module TagAddTwo.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-add-two @ c: Tagged, a: String, b: String.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> (cond y = a => true, y = b => true, true => y in tagged--tags c).\\n"
+`;
+
+exports[`expressions-set-mutation-field.ts > tagClear 1`] = `
+"module TagClear.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-clear @ c: Tagged.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> false.\\n"
+`;
+
+exports[`expressions-set-mutation-field.ts > tagClearAndAdd 1`] = `
+"module TagClearAndAdd.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-clear-and-add @ c: Tagged, x: String.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> (cond y = x => true, true => false).\\n"
+`;
+
+exports[`expressions-set-mutation-field.ts > tagRemove 1`] = `
+"module TagRemove.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-remove @ c: Tagged, x: String.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> (cond y = x => false, true => y in tagged--tags c).\\n"
+`;
+
+exports[`expressions-set-mutation-field.ts > tagRemoveIfAddElse 1`] = `
+"module TagRemoveIfAddElse.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-remove-if-add-else @ c: Tagged, x: String, y: String, guard: Bool.\\n\\n---\\n\\nall y1: String | y1 in tagged--tags' c <-> (cond y1 = y => (cond guard => true, true => true), y1 = x => (cond guard => false, true => x in tagged--tags c), true => y1 in tagged--tags c).\\n"
+`;
+
 exports[`expressions-set.ts > both 1`] = `
 "module Both.\\n\\nboth xs: [String], x: String, y: String => Bool.\\n\\n---\\n\\nboth xs x y = (x in xs and y in xs).\\n\\ncheck\\n\\nall xs: [String], x: String, y: String | both xs x y -> x in xs.\\n"
 `;
@@ -784,4 +824,8 @@ exports[`unsupported.ts > loopAssign 1`] = `
 
 exports[`unsupported.ts > multiParamCallback 1`] = `
 "module MultiParamCallback.\\n\\nItem.\\nitem--value i: Item => Int.\\nmulti-param-callback items: [Item] => [Int].\\n\\n---\\n\\n> UNSUPPORTED: filter/map callback must have exactly one identifier parameter.\\n"
+`;
+
+exports[`unsupported.ts > paramSetAdd 1`] = `
+"module ParamSetAdd.\\n\\n~> Param-set-add @ s: [String], x: String.\\n\\n---\\n\\n> UNSUPPORTED: parameter-level Set mutation.\\n"
 `;

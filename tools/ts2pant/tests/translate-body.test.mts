@@ -1342,3 +1342,86 @@ describe("Kleene μ-search (while-loop minimum)", () => {
     }
   });
 });
+
+describe("Set mutation (Stage A: interface-field .add / .delete / .clear)", () => {
+  it("later-wins: add(x) then delete(x) drops the add arm", () => {
+    const source = `
+      interface Tagged { tags: Set<string>; }
+      function f(c: Tagged, x: string): void {
+        c.tags.add(x);
+        c.tags.delete(x);
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    const assertions = props.filter((p) => p.kind === "assertion");
+    assert.equal(assertions.length, 1);
+    const ast = getAst();
+    const a = assertions[0];
+    if (a?.kind === "assertion") {
+      // Only the final `.delete(x)` arm remains — the prior add was
+      // filtered by installSetWrite's later-wins per-element dedupe.
+      // Binder name varies by supply (`$0` without synthCell, `y` with);
+      // match shape with a regex.
+      const bodyText = ast.strExpr(a.body);
+      assert.match(
+        bodyText,
+        /^\S+ in tagged--tags' c <-> \(cond \S+ = x => false, true => \S+ in tagged--tags c\)$/,
+        `unexpected body shape: ${bodyText}`,
+      );
+    }
+  });
+
+  it("clear resets overrides and drops pre-state fallthrough", () => {
+    const source = `
+      interface Tagged { tags: Set<string>; }
+      function f(c: Tagged): void {
+        c.tags.clear();
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    const assertions = props.filter((p) => p.kind === "assertion");
+    assert.equal(assertions.length, 1);
+    const ast = getAst();
+    const a = assertions[0];
+    if (a?.kind === "assertion") {
+      // `.clear()` alone → all y | y in tags' c <-> false
+      // (semantically the empty Set, matching the empty-Set-initializer
+      // form from translate-record.ts but via the mutation pipeline).
+      const bodyText = ast.strExpr(a.body);
+      assert.match(
+        bodyText,
+        /^\S+ in tagged--tags' c <-> false$/,
+        `unexpected body shape: ${bodyText}`,
+      );
+    }
+  });
+
+  it("parameter-level Set mutation is rejected with specific reason", () => {
+    const source = `
+      function f(s: Set<string>, x: string): void {
+        s.add(x);
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    const unsupported = props.find((p) => p.kind === "unsupported");
+    assert.ok(unsupported);
+    if (unsupported?.kind === "unsupported") {
+      assert.equal(unsupported.reason, "parameter-level Set mutation");
+    }
+  });
+});
