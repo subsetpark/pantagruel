@@ -996,10 +996,14 @@ describe("Kleene μ-search (while-loop minimum)", () => {
   });
 
   it("rejects when the counter is `const` instead of `let`", () => {
+    // Body contains a canonical `i++` so the rejection is specifically
+    // attributable to the `const` declarator, not to the body shape.
     const source = `
       export function constCounter(used: ReadonlySet<number>): number {
         const i = 0;
-        while (used.has(i)) {}
+        while (used.has(i)) {
+          i++;
+        }
         return i;
       }
     `;
@@ -1059,6 +1063,54 @@ describe("Kleene μ-search (while-loop minimum)", () => {
         "min over each j1: Nat, j1 >= 1, ~(j1 in used) | j1",
       );
     }
+  });
+
+  it("rejects when the initializer has side effects", () => {
+    // `start++` in the init would otherwise lower to a bogus var since
+    // `translateBodyExpr` has no handler for bare `++`/`--`. The TDZ
+    // phase in inlineConstBindings catches this explicitly.
+    const source = `
+      export function bogusInit(used: ReadonlySet<number>, start: number): number {
+        let i = start++;
+        while (used.has(i)) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "bogusInit",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+  });
+
+  it("rejects when the predicate has side effects", () => {
+    // `used.has(i++)` embeds a `++` inside the predicate — the TDZ
+    // side-effect screen short-circuits before translation rather than
+    // silently lowering `i++` via the `ast.var(getText())` fallback.
+    const source = `
+      export function bogusPred(used: ReadonlySet<number>): number {
+        let i = 0;
+        while (used.has(i++)) {
+          i++;
+        }
+        return i;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "bogusPred",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
   });
 
   it("rejects when the predicate does not reference the counter", () => {

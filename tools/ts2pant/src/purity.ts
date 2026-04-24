@@ -35,6 +35,7 @@
  * Ref: Talpin & Jouvelot, "The Type and Effect Discipline", I&C 1994.
  */
 import ts from "typescript";
+import { isSetType } from "./translate-types.js";
 
 // ---------------------------------------------------------------------------
 // Tier 1a — Known-pure builtin allowlists
@@ -475,6 +476,16 @@ function isKnownPureCallInner(
           expr.arguments.every((arg) => expressionIsPure(arg, checker))
         );
       }
+    }
+
+    // Set / ReadonlySet — .has(x) is a pure membership test. Same
+    // eager-evaluation rule as Map.has: the receiver and args must also
+    // be pure.
+    if (isSetType(receiverType) && methodName === "has") {
+      return (
+        expressionIsPure(receiver, checker) &&
+        expr.arguments.every((arg) => expressionIsPure(arg, checker))
+      );
     }
 
     // Array methods

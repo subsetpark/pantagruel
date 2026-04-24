@@ -1121,8 +1121,10 @@ function isInterfaceFieldAccess(
  * match: counter must be a single identifier with any initializer, and the
  * loop body must be exactly `counter++` or `++counter` on the same
  * identifier (no compound bodies, no other writes). Purity of the
- * initializer and predicate is not pre-screened here — anything that
- * fails to translate downstream surfaces with its natural error message.
+ * initializer and predicate is screened in `inlineConstBindings`'s TDZ
+ * phase (alongside the sibling forward-reference check) rather than here —
+ * `translateBodyExpr` has no handler for bare `++`/`--` expressions, so a
+ * side-effectful init or predicate would otherwise lower silently.
  *
  * Standard name: Kleene μ-operator / bounded minimization.
  * Reference: Kleene, *General Recursive Functions of Natural Numbers*,
@@ -1329,6 +1331,11 @@ function inlineConstBindings(
   // For μ-search bindings, validate both the init and the predicate; the
   // predicate may reference its own counter (that's the loop), so the
   // counter is removed from the blocked set when checking the predicate.
+  // Side-effectful init or predicate (assignments, ++/--, unknown-pure
+  // calls) are also rejected here: translateBodyExpr has no explicit
+  // handler for ++/-- and silently falls through to `ast.var(getText())`,
+  // so without this screen a loop like `while (used.has(i++)) i++;`
+  // would lower to a Pant expression containing a bogus var `"i++"`.
   for (const [idx, binding] of bindings.entries()) {
     const blockedNames = new Set(bindings.slice(idx).map((b) => b.tsName));
     if (binding.kind === "const") {
@@ -1336,6 +1343,12 @@ function inlineConstBindings(
         return { error: "const initializer references a later binding" };
       }
     } else {
+      if (expressionHasSideEffects(binding.mu.initTsExpr, checker)) {
+        return { error: "while-loop init has side effects" };
+      }
+      if (expressionHasSideEffects(binding.mu.predicateTsExpr, checker)) {
+        return { error: "while-loop predicate has side effects" };
+      }
       if (expressionReferencesNames(binding.mu.initTsExpr, blockedNames)) {
         return { error: "while-loop init references a later binding" };
       }
