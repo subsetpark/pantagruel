@@ -389,8 +389,79 @@ describe("if-early-return prelude arms", () => {
     if (props[0]?.kind === "unsupported") {
       assert.match(
         props[0].reason,
-        /early-return arms combined with record return/u,
+        /record return combined with early-return arms or if\/else branches/u,
       );
+    }
+  });
+
+  it("rejects record-shaped arm value with non-literal terminal", () => {
+    const source = `
+      interface Pair { a: number; b: number }
+      declare function makePair(n: number): Pair;
+      export function f(n: number): Pair {
+        if (n < 0) return { a: 0, b: 0 };
+        return makePair(n);
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+    if (props[0]?.kind === "unsupported") {
+      assert.match(
+        props[0].reason,
+        /record return combined with early-return arms or if\/else branches/u,
+      );
+    }
+  });
+
+  it("rejects record-shaped if/else terminal branches", () => {
+    const source = `
+      interface Pair { a: number; b: number }
+      export function f(n: number): Pair {
+        if (n < 0) {
+          return { a: 0, b: 0 };
+        } else {
+          return { a: n, b: n + 1 };
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+    if (props[0]?.kind === "unsupported") {
+      assert.match(
+        props[0].reason,
+        /record return combined with early-return arms or if\/else branches/u,
+      );
+    }
+  });
+
+  it("emits trailing-if diagnostic for single `if (P) return E;` body", () => {
+    const source = `
+      export function f(n: number): number {
+        if (n < 0) return 0;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+    if (props[0]?.kind === "unsupported") {
+      assert.match(props[0].reason, /if-without-else as final statement/u);
     }
   });
 });

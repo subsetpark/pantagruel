@@ -1299,27 +1299,26 @@ function translatePureBody(
   // Pantagruel has no record-constructor syntax — its interfaces are opaque
   // domains exposed only through per-field accessor rules — so this is the
   // natural shape.
-  if (
+  //
+  // Per-field decomposition only handles the canonical "object-literal
+  // terminal with no arms" shape. Object literals in other positions (early-
+  // return arm values, branches of an if/else terminal) would otherwise fall
+  // through to translateBodyExpr's `ast.var(getText())` fallback and emit
+  // garbage Pantagruel — reject those uniformly.
+  const armHasObjLit = extracted.bindings.some(
+    (b) =>
+      b.kind === "earlyReturn" && ts.isObjectLiteralExpression(b.valueExpr),
+  );
+  const terminalIsObjLit =
     ts.isExpression(extracted.returnExpr) &&
-    ts.isObjectLiteralExpression(extracted.returnExpr)
-  ) {
-    if (inlined.arms.length > 0) {
-      // Record return + early-return arms would need per-field cond
-      // decomposition (each f_i emits `f_i (...) = cond P_k => f_i E_k, …,
-      // true => f_i terminal`), which requires every arm value to also be
-      // an object literal of the same shape. Out of scope for the initial
-      // if-conversion generalization — punt with a targeted message.
-      return [
-        {
-          kind: "unsupported",
-          reason:
-            `${functionName} — early-return arms combined with record ` +
-            `return are not yet supported`,
-        },
-      ];
-    }
+    ts.isObjectLiteralExpression(extracted.returnExpr);
+  const terminalIfHasObjLitBranch =
+    ts.isIfStatement(extracted.returnExpr) &&
+    ifTerminalHasObjLitBranch(extracted.returnExpr, checker);
+
+  if (terminalIsObjLit && inlined.arms.length === 0) {
     return translateRecordReturn(
-      extracted.returnExpr,
+      extracted.returnExpr as ts.ObjectLiteralExpression,
       functionName,
       params,
       node,
@@ -1330,6 +1329,17 @@ function translatePureBody(
       synthCell,
       inlined.applyTo,
     );
+  }
+
+  if (terminalIsObjLit || armHasObjLit || terminalIfHasObjLitBranch) {
+    return [
+      {
+        kind: "unsupported",
+        reason:
+          `${functionName} — record return combined with early-return ` +
+          `arms or if/else branches is not yet supported`,
+      },
+    ];
   }
 
   const body = translateBodyExpr(
@@ -1738,6 +1748,13 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
   const stmt = stmts[0]!;
   if (ts.isReturnStatement(stmt) && !stmt.expression) {
     return "return without expression";
+  }
+  if (
+    ts.isIfStatement(stmt) &&
+    !stmt.elseStatement &&
+    recognizeEarlyReturnArm(stmt) !== null
+  ) {
+    return "if-without-else as final statement (use `if (P) return E` for early-return arms or add an else branch)";
   }
   return "non-translatable control flow";
 }
@@ -2766,6 +2783,26 @@ function extractReturnFromBranch(
     }
   }
   return null;
+}
+
+function ifTerminalHasObjLitBranch(
+  stmt: ts.IfStatement,
+  checker: ts.TypeChecker,
+): boolean {
+  const branchHasObjLit = (branch: ts.Statement): boolean => {
+    const ret = extractReturnFromBranch(branch, checker);
+    return ret !== null && ts.isObjectLiteralExpression(ret);
+  };
+  if (branchHasObjLit(stmt.thenStatement)) {
+    return true;
+  }
+  if (!stmt.elseStatement) {
+    return false;
+  }
+  if (ts.isIfStatement(stmt.elseStatement)) {
+    return ifTerminalHasObjLitBranch(stmt.elseStatement, checker);
+  }
+  return branchHasObjLit(stmt.elseStatement);
 }
 
 /** Get element type name for an array-typed TS expression, or null. */
