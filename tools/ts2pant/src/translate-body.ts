@@ -1,8 +1,16 @@
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
-import { irLet, irWrap } from "./ir.js";
+import { type IRExpr, irLet, irWrap } from "./ir.js";
 import { buildIR, isBuildUnsupported } from "./ir-build.js";
 import { lowerExpr } from "./ir-emit.js";
+import { type IR1Expr, ir1FromL2 } from "./ir1.js";
+import {
+  buildL1Conditional,
+  buildL1ConditionalFromArms,
+  isL1ConditionalForm,
+  isL1Unsupported,
+  lowerL1ToOpaque,
+} from "./ir1-build.js";
 import type {
   OpaqueCombiner,
   OpaqueExpr,
@@ -349,7 +357,7 @@ type WriteEntry = PropertyWriteEntry | MapRuleWriteEntry | SetRuleWriteEntry;
  * whenever a new const binding is inlined so the in-flight `applyConst`
  * stays in sync with the state.
  */
-interface SymbolicState {
+export interface SymbolicState {
   writes: ReadonlyMap<string, WriteEntry>;
   // Keys *written during the current branch* (reset on clone). Used by the
   // if-merge algorithm to determine which locations are "touched."
@@ -1361,12 +1369,56 @@ function translatePureBody(
   // ir-emit). See CLAUDE.md §"Intermediate Representation" for the
   // migration roadmap.
   let rhs: OpaqueExpr;
-  // IR pipeline only handles Expression returns in Stage 1; an
-  // IfStatement returnExpr (TS allows `if (c) return a; return b` to
-  // be lifted into a single conditional return — see
-  // `extractReturnExpression`) still goes through the legacy path until
-  // Stage 8 cutover wires up `Cond` / early-return handling natively.
-  if (useIRPipeline() && ts.isExpression(extracted.returnExpr)) {
+
+  // Layer 1 imperative-IR conditional pipeline (workstream M1).
+  // Routes when the body has prelude arms (early-return if-conversion)
+  // or a conditional terminal (if/switch/ternary/Bool-typed `&&`/`||`).
+  // Plain non-conditional returns fall through to the IR or legacy path.
+  const l1IsConditionalReturn =
+    ts.isIfStatement(extracted.returnExpr) ||
+    ts.isSwitchStatement(extracted.returnExpr) ||
+    (ts.isExpression(extracted.returnExpr) &&
+      isL1ConditionalForm(extracted.returnExpr, checker));
+  if (inlined.arms.length > 0 || l1IsConditionalReturn) {
+    const l1Ctx = {
+      checker,
+      strategy,
+      paramNames: inlined.scopedParams,
+      state: undefined as SymbolicState | undefined,
+      supply,
+    };
+    // Wrap pre-translated arm OpaqueExprs as L1 from-l2 expressions so
+    // the L1 cond-builder can compose them with the L1-translated
+    // terminal. Each arm's guard and value are independent
+    // sub-expressions whose internal normalization isn't M1's concern;
+    // M2/M3 will progressively replace these wraps with native L1
+    // construction.
+    const preludeL1: Array<readonly [IR1Expr, IR1Expr]> = inlined.arms.map(
+      ([g, v]) => [ir1FromL2(irWrap(g)), ir1FromL2(irWrap(v))] as const,
+    );
+    const built = buildL1ConditionalFromArms(
+      preludeL1,
+      extracted.returnExpr,
+      l1Ctx,
+    );
+    if (isL1Unsupported(built)) {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName} — ${built.unsupported}`,
+        },
+      ];
+    }
+    // Wrap the lowered cond in IRWrap so the const-binding Let chain
+    // (Stage 6) can substitute hygienic-name references inside it via
+    // Pant's `substituteBinder`.
+    let bodyIR: IRExpr = irWrap(lowerL1ToOpaque(built));
+    for (let i = inlined.translatedBindings.length - 1; i >= 0; i--) {
+      const tb = inlined.translatedBindings[i]!;
+      bodyIR = irLet(tb.hygienicName, irWrap(tb.initExpr), bodyIR);
+    }
+    rhs = lowerExpr(bodyIR);
+  } else if (useIRPipeline() && ts.isExpression(extracted.returnExpr)) {
     const ir = buildIR(
       extracted.returnExpr,
       checker,
@@ -1444,7 +1496,7 @@ function translatePureBody(
 
 interface ExtractedBody {
   bindings: ConstBinding[];
-  returnExpr: ts.Expression | ts.IfStatement;
+  returnExpr: ts.Expression | ts.IfStatement | ts.SwitchStatement;
 }
 
 /**
@@ -1732,6 +1784,13 @@ function extractReturnExpression(
     return { bindings, returnExpr: last.expression };
   }
   if (ts.isIfStatement(last) && last.elseStatement) {
+    return { bindings, returnExpr: last };
+  }
+  // Switch as a terminal — handled by the L1 conditional builder
+  // (workstream M1). The L1 path requires a default that's last, every
+  // case ending in `return EXPR`, and only literal case labels;
+  // anything else surfaces as UNSUPPORTED at build time.
+  if (ts.isSwitchStatement(last)) {
     return { bindings, returnExpr: last };
   }
 
@@ -2414,7 +2473,7 @@ function unwrapExpression(expr: ts.Expression): ts.Expression {
   return expr;
 }
 
-function expressionHasSideEffects(
+export function expressionHasSideEffects(
   expr: ts.Expression,
   checker: ts.TypeChecker,
 ): boolean {
@@ -2488,59 +2547,25 @@ export function translateBodyExpr(
     expr = unwrapExpression(expr);
   }
 
-  // if/else statement -> cond
-  if (ts.isIfStatement(expr)) {
-    return translateIfStatement(
-      expr,
-      checker,
-      strategy,
-      paramNames,
-      state,
-      supply,
+  // Layer 1 imperative-IR conditional pipeline (workstream M1).
+  // Conditional value forms — if/else statements, ternaries, switch,
+  // and Bool-typed `&&`/`||` — flow through `buildL1Conditional` and
+  // collapse to one canonical `Cond` form. The legacy if-statement and
+  // ternary handlers were deleted at the M1 patch-3 cutover; L1
+  // rejection here is terminal (no fall-through).
+  if (
+    ts.isIfStatement(expr) ||
+    ts.isSwitchStatement(expr) ||
+    isL1ConditionalForm(expr, checker)
+  ) {
+    const l1 = buildL1Conditional(
+      expr as ts.Expression | ts.IfStatement | ts.SwitchStatement,
+      { checker, strategy, paramNames, state, supply },
     );
-  }
-
-  // Ternary: a ? b : c -> cond([[a, b], [true, c]])
-  if (ts.isConditionalExpression(expr)) {
-    const cond = translateBodyExpr(
-      expr.condition,
-      checker,
-      strategy,
-      paramNames,
-      state,
-      supply,
-    );
-    if (isBodyUnsupported(cond)) {
-      return cond;
+    if (isL1Unsupported(l1)) {
+      return { unsupported: l1.unsupported };
     }
-    const whenTrue = translateBodyExpr(
-      expr.whenTrue,
-      checker,
-      strategy,
-      paramNames,
-      state,
-      supply,
-    );
-    if (isBodyUnsupported(whenTrue)) {
-      return whenTrue;
-    }
-    const whenFalse = translateBodyExpr(
-      expr.whenFalse,
-      checker,
-      strategy,
-      paramNames,
-      state,
-      supply,
-    );
-    if (isBodyUnsupported(whenFalse)) {
-      return whenFalse;
-    }
-    return {
-      expr: ast.cond([
-        [bodyExpr(cond), bodyExpr(whenTrue)],
-        [ast.litBool(true), bodyExpr(whenFalse)],
-      ]),
-    };
+    return { expr: lowerL1ToOpaque(l1) };
   }
 
   // Property access with special array operations
@@ -2778,67 +2803,7 @@ export function translateBodyExpr(
   return { unsupported: "non-expression statement" };
 }
 
-function translateIfStatement(
-  stmt: ts.IfStatement,
-  checker: ts.TypeChecker,
-  strategy: NumericStrategy,
-  paramNames: ReadonlyMap<string, string>,
-  state: SymbolicState | undefined,
-  supply: UniqueSupply,
-): BodyResult {
-  const ast = getAst();
-
-  const cond = translateBodyExpr(
-    stmt.expression,
-    checker,
-    strategy,
-    paramNames,
-    state,
-    supply,
-  );
-  if (isBodyUnsupported(cond)) {
-    return cond;
-  }
-  const thenExpr = extractReturnFromBranch(stmt.thenStatement, checker);
-  const elseExpr = stmt.elseStatement
-    ? extractReturnFromBranch(stmt.elseStatement, checker)
-    : null;
-
-  if (thenExpr && elseExpr) {
-    const thenVal = translateBodyExpr(
-      thenExpr,
-      checker,
-      strategy,
-      paramNames,
-      state,
-      supply,
-    );
-    if (isBodyUnsupported(thenVal)) {
-      return thenVal;
-    }
-    const elseVal = translateBodyExpr(
-      elseExpr,
-      checker,
-      strategy,
-      paramNames,
-      state,
-      supply,
-    );
-    if (isBodyUnsupported(elseVal)) {
-      return elseVal;
-    }
-    return {
-      expr: ast.cond([
-        [bodyExpr(cond), bodyExpr(thenVal)],
-        [ast.litBool(true), bodyExpr(elseVal)],
-      ]),
-    };
-  }
-
-  return { unsupported: "if statement without return in both branches" };
-}
-
-function extractReturnFromBranch(
+export function extractReturnFromBranch(
   stmt: ts.Statement,
   checker: ts.TypeChecker,
 ): ts.Expression | null {
