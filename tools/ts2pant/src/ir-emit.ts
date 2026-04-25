@@ -28,6 +28,7 @@ import type {
   OpaqueBinop,
   OpaqueCombiner,
   OpaqueExpr,
+  OpaqueGuard,
   OpaqueParam,
   OpaqueUnop,
 } from "./pant-ast.js";
@@ -349,9 +350,7 @@ export function lowerStmts(_stmts: IRStmt[]): never {
  */
 export function lowerEquation(eq: IREquation): {
   quantifiers: OpaqueParam[];
-  guards: ReturnType<typeof getAst>["gExpr"] extends (e: OpaqueExpr) => infer G
-    ? G[]
-    : never;
+  guards: OpaqueGuard[];
   lhs: OpaqueExpr;
   rhs: OpaqueExpr;
 } {
@@ -368,9 +367,7 @@ export function lowerEquation(eq: IREquation): {
 
 export function lowerAssert(a: IRAssertExit): {
   quantifiers: OpaqueParam[];
-  guards: ReturnType<typeof getAst>["gExpr"] extends (e: OpaqueExpr) => infer G
-    ? G[]
-    : never;
+  guards: OpaqueGuard[];
   body: OpaqueExpr;
 } {
   const ast = getAst();
