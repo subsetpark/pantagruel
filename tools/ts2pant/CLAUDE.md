@@ -642,8 +642,8 @@ canonicalized receiver), not program-variable names. Three reasons:
 | 4 | μ-search → `Comb(min, Each)` | partial — substitution mechanism is on IR (Stage 6); the comprehension construction itself is still in `translateMuSearchInit` (legacy OpaqueExpr) and migrates to native `Comb(min, Each)` in a future stage |
 | 5 | `.length` / `.size` → `Unop(card, x)` | ✅ landed |
 | 6 | Const-binding inlining → `Let` (pure path) | ✅ landed (mutating-path const-bindings stay on legacy `applyTo` until Stage 9) |
-| 7 | Chain fusion → `Each` composition | pending |
-| 8 | Pure-path cutover (delete `IRWrap`, delete legacy pure-path) | pending |
+| 7 | Chain fusion → `Each` composition | ✅ tracked via IRWrap (anchors locked); native IR construction deferred — see "Note on chain fusion" below |
+| 8 | Pure-path cutover — delete legacy code where possible (IRWrap survives for chain-fusion outputs) | pending |
 | 9 | Mutating-path SSA: write-keyed `LetIf`, `Write` IR nodes | pending |
 | 10 | Frame conditions → IR pass | pending |
 | 11 | Mutating-path cutover, final cleanup | pending |
@@ -652,6 +652,21 @@ The `--use-ir` flag (env var `TS2PANT_USE_IR=1`) routes the pure path through
 the IR pipeline. Default off until Stage 8 cutover. Per-stage gate is the
 `tests/ir-equivalence.test.mts` smoke test (string-equal output between
 legacy and IR pipelines on the anchor fixtures).
+
+**Note on chain fusion (Stage 7).** `.filter`/`.map`/`.reduce` chains
+already produce semantically-identical output through the `IRWrap`
+fallback path: legacy `translateArrayMethod` and `translateReduceCall`
+materialize an OpaqueExpr `each(...)` / `eachComb(...)`, which `ir-build`
+wraps. Locked-in IR-equivalence anchors confirm byte-equality across all
+shapes (`activeNames`, `nameLengths`, `highScores` from
+`expressions-array.ts`; the full `expressions-reduce.ts` suite). Native
+IR construction (a real `Each` IR node assembled in `ir-build`) is
+**intentionally deferred** because the existing 300+ lines of TS-AST
+inspection in legacy would translate to ~200 lines of mechanical
+duplication producing identical output — the architectural payoff is
+only at Stage 8 cutover (deleting the legacy code). We keep `IRWrap`
+in place for chain-fusion outputs through Stage 8 and reconsider once
+the mutating-path migration (Stage 9) settles the IR shape.
 
 ## PR #84 Post-Mortem: Why Standard Algorithms Matter
 

@@ -83,6 +83,26 @@ const ANCHORS: Array<{ file: string; functions: string[] }> = [
     file: "expressions-while-mu-search.ts",
     functions: ["firstUnusedSuffix", "nextSlotPlusOne", "offsetUnusedSuffix"],
   },
+  // Stage 7: chain fusion (.filter/.map/.reduce). These work via the
+  // IRWrap fallback today (legacy materialization produces an
+  // OpaqueExpr `each(...)` that ir-build wraps); native IR construction
+  // in ir-build replaces the fallback in Stage 7 itself.
+  {
+    file: "expressions-array.ts",
+    functions: ["activeNames", "nameLengths", "highScores"],
+  },
+  {
+    file: "expressions-reduce.ts",
+    functions: [
+      "sumAmounts",
+      "productValues",
+      "allActive",
+      "anyActive",
+      "sumFromBase",
+      "subtractAll",
+      "sumAmountsRight",
+    ],
+  },
 ];
 
 async function emitWithFlag(
