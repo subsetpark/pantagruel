@@ -136,7 +136,7 @@ export type IR1Expr =
  */
 export type IR1Stmt =
   /** Block of statements. Non-empty; single-statement blocks collapse. */
-  | { kind: "block"; stmts: ReadonlyArray<IR1Stmt> }
+  | { kind: "block"; stmts: readonly [IR1Stmt, ...IR1Stmt[]] }
   /** Hygienic let-binding. Inlined at lowering (Pant has no `let`). */
   | { kind: "let"; name: string; value: IR1Expr }
   /**
@@ -152,7 +152,10 @@ export type IR1Stmt =
    */
   | {
       kind: "cond-stmt";
-      arms: ReadonlyArray<readonly [IR1Expr, IR1Stmt]>;
+      arms: readonly [
+        readonly [IR1Expr, IR1Stmt],
+        ...ReadonlyArray<readonly [IR1Expr, IR1Stmt]>,
+      ];
       otherwise: IR1Stmt | null;
     }
   /** Uniform iteration. Introduced in M3. */
@@ -332,7 +335,10 @@ export const ir1Assign = (_target: IR1Expr, _value: IR1Expr): IR1Stmt =>
   NOT_IMPL("assign", "M2 (assign + μ-search)");
 
 export const ir1CondStmt = (
-  _arms: ReadonlyArray<readonly [IR1Expr, IR1Stmt]>,
+  _arms: readonly [
+    readonly [IR1Expr, IR1Stmt],
+    ...ReadonlyArray<readonly [IR1Expr, IR1Stmt]>,
+  ],
   _otherwise: IR1Stmt | null,
 ): IR1Stmt => NOT_IMPL("cond-stmt", "M3 (iteration + mutation)");
 

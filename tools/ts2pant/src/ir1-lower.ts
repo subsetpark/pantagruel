@@ -24,6 +24,7 @@
 
 import {
   type IRExpr,
+  type IRStmt,
   irAppExpr,
   irAppName,
   irBinop,
@@ -103,10 +104,11 @@ export function lowerL1Expr(e: IR1Expr): IRExpr {
  * targets. Until then, calling this function on any L1 statement is a
  * bug; M1 only constructs and lowers L1 *expressions*.
  *
- * The function signature is locked here so the L1 lowering API surface is
- * declared at M1; the body fills in at M3.
+ * The signature returns the eventual M3 type (`IRStmt[]`) so adding the
+ * real implementation in M3 is not a public type break — the body throws
+ * unconditionally until then.
  */
-export function lowerL1Stmt(s: IR1Stmt): never {
+export function lowerL1Stmt(s: IR1Stmt): IRStmt[] {
   void s;
   throw new Error(
     "lowerL1Stmt: Layer 1 statement lowering is M3 (iteration + mutation); " +
