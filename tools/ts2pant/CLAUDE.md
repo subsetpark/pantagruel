@@ -638,7 +638,7 @@ canonicalized receiver), not program-variable names. Three reasons:
 |-------|---------------------|--------|
 | 1 | Foundation: types, build (Var/Lit/Identifier), emit, subst, `--use-ir` flag, anchor fixture | ✅ landed |
 | 2 | Optional chaining `?.` → `Each` | ✅ landed |
-| 3 | Nullish coalescing `??` → `Cond` | pending |
+| 3 | Nullish coalescing `??` → `Cond` | ✅ landed |
 | 4 | μ-search → `Comb(min, Each)` | pending |
 | 5 | `.length` / `.size` → `App(card, [x])` | pending |
 | 6 | Const-binding inlining → `Let` (cross-cutting pure + mutating) | pending |

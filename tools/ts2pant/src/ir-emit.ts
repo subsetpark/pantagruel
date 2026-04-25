@@ -257,6 +257,11 @@ function lowerApp(head: IRHead, args: OpaqueExpr[]): OpaqueExpr {
       }
       return ast.unop(lowerUnop(head.op), args[0]!);
     }
+    case "expr": {
+      // Arbitrary expression head — list-indexing `(x 1)`, etc.
+      // Mirrors Pant's `ast.app(fn: OpaqueExpr, args)`.
+      return ast.app(lowerExpr(head.expr), args);
+    }
     default: {
       const _exhaustive: never = head;
       void _exhaustive;

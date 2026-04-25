@@ -38,7 +38,10 @@ export function substIR(body: IRExpr, name: string, value: IRExpr): IRExpr {
     case "app":
       return {
         kind: "app",
-        head: body.head,
+        head:
+          body.head.kind === "expr"
+            ? { kind: "expr", expr: substIR(body.head.expr, name, value) }
+            : body.head,
         args: body.args.map((a) => substIR(a, name, value)),
       };
 

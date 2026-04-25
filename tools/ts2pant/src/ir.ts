@@ -56,7 +56,7 @@ export type IRLiteral =
 // --------------------------------------------------------------------------
 
 /**
- * The function/operator at the head of an `App`. Three shapes:
+ * The function/operator at the head of an `App`. Four shapes:
  *
  * - `name` — a plain rule, function, or parameter reference. Lowers to
  *   `ast.app(ast.var(name), [...])`. Use `primed = true` for next-state
@@ -66,14 +66,17 @@ export type IRLiteral =
  *   l, r)` / `ast.unop(op, e)` directly. Centralising op identity here
  *   means a Pant op rename is one switch case in `ir-emit.ts`.
  *
- * - `card` — list cardinality `#x`. Folded under `unop` semantically but
- *   surfaced separately for emit clarity (it's the only Pant unop that
- *   commonly appears inline in TS source as `.length` or `.size`).
+ * - `expr` — an arbitrary expression head. Mirrors Pant's
+ *   `ast.app(fn: OpaqueExpr, args: OpaqueExpr[])` signature, where `fn`
+ *   can be any expression (e.g. list-indexing `(x 1)` is application
+ *   of list `x` to argument `1`, with `x` being any expression — not
+ *   necessarily a named identifier).
  */
 export type IRHead =
   | { kind: "name"; name: string; primed?: boolean }
   | { kind: "binop"; op: IRBinop }
-  | { kind: "unop"; op: IRUnop };
+  | { kind: "unop"; op: IRUnop }
+  | { kind: "expr"; expr: IRExpr };
 
 export type IRBinop =
   | "and"
@@ -351,6 +354,17 @@ export const irAppName = (name: string, args: IRExpr[]): IRExpr => ({
 export const irAppPrimed = (name: string, args: IRExpr[]): IRExpr => ({
   kind: "app",
   head: { kind: "name", name, primed: true },
+  args,
+});
+
+/**
+ * Application with an arbitrary expression head. Used for list-indexing
+ * (`(x 1)` is `App(expr=x, [Lit(1)])`) and other cases where the
+ * applied "function" is itself an expression rather than a named ref.
+ */
+export const irAppExpr = (head: IRExpr, args: IRExpr[]): IRExpr => ({
+  kind: "app",
+  head: { kind: "expr", expr: head },
   args,
 });
 

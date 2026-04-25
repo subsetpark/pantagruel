@@ -17,10 +17,13 @@
 import ts from "typescript";
 import {
   type IRExpr,
+  irAppExpr,
   irAppName,
+  irBinop,
   irLitBool,
   irLitNat,
   irLitString,
+  irUnop,
   irVar,
   irWrap,
 } from "./ir.js";
@@ -135,6 +138,43 @@ export function buildIR(
         };
       }
     }
+  }
+
+  // Stage 3: Nullish coalescing `x ?? y` under list-lift. With `x: [T]`
+  // on the Pant side, `#x = 0` is the null test:
+  //   - `y: T` (non-nullable default) → `cond #x = 0 => y, true => (x 1)`
+  //   - `y: [T]` (nested nullable) → `cond #x = 0 => y, true => x`
+  //   - `x` not nullable in TS → `??` degenerates to just `x`.
+  // See CLAUDE.md "Option-Type Elimination" for the broader encoding.
+  if (
+    ts.isBinaryExpression(expr) &&
+    expr.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken
+  ) {
+    const leftTsType = checker.getTypeAtLocation(expr.left);
+    const leftIR = buildIR(expr.left, checker, strategy, paramNames, supply);
+    if (isBuildUnsupported(leftIR)) {
+      return leftIR;
+    }
+    if (!isNullableTsType(leftTsType)) {
+      // LHS can never be nullish — `??` degenerates.
+      return leftIR;
+    }
+    const rightIR = buildIR(expr.right, checker, strategy, paramNames, supply);
+    if (isBuildUnsupported(rightIR)) {
+      return rightIR;
+    }
+    const rightTsType = checker.getTypeAtLocation(expr.right);
+    const cardZero = irBinop("eq", irUnop("card", leftIR), irLitNat(0));
+    const presentBranch: IRExpr = isNullableTsType(rightTsType)
+      ? leftIR
+      : irAppExpr(leftIR, [irLitNat(1)]);
+    return {
+      kind: "cond",
+      arms: [
+        [cardZero, rightIR],
+        [irLitBool(true), presentBranch],
+      ],
+    };
   }
 
   // Fallback: translate via the legacy pipeline and wrap. Subsequent

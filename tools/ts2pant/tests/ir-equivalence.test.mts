@@ -37,12 +37,22 @@ const ANCHORS: Array<{ file: string; functions: string[] }> = [
     file: "expressions-ir-anchor.ts",
     functions: ["effectiveValue"],
   },
-  // Stage 2: optional chaining `?.` (the `??` cases stay on the legacy
-  // path until Stage 3, but the IR-equivalence test still asserts byte-
-  // equality, which holds because IRWrap fallback covers `??`).
+  // Stages 2 (`?.`) + 3 (`??`): the entire expressions-nullish.ts fixture.
   {
     file: "expressions-nullish.ts",
-    functions: ["maybeBalance", "maybeOwnerId", "maybeOwnerIdOptional"],
+    functions: [
+      "defaultToZero",
+      "preferLeft",
+      "maybeBalance",
+      "nonNullDefault",
+      "maybeOwnerId",
+      "maybeOwnerIdOptional",
+    ],
+  },
+  // Stage 3: optional-parameter list-lift + `??` default
+  {
+    file: "expressions-optional-default.ts",
+    functions: ["makePoint", "makeConfig", "usesOptionalDirectly"],
   },
 ];
 
