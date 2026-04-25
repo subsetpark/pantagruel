@@ -514,14 +514,37 @@ inventing workarounds for similar issues, stop and find the standard algorithm.
 
 ## Testing
 
+Always invoke tests through `just` from the workspace root. The `package.json` `test:*` scripts are implementation detail (just dispatches to them) and skip the cross-language dep ordering — running `npm run test:integration` directly will fail with "pant binary not found" unless you've separately built it.
+
 ```bash
-cd tools/ts2pant && npm test                # all tests (node:test runner via tsx)
-cd tools/ts2pant && npm run test:update-snapshots  # update snapshot expectations
+just ts2pant-test                      # unit + integration
+just ts2pant-test-unit                 # unit only (no pant binary needed)
+just ts2pant-test-integration          # builds pant first, then runs e2e + dogfood
+just ts2pant-test-update-snapshots     # accept current output as new snapshots
+just ts2pant-precommit                 # mirror what lefthook runs
 ```
+
+### Test layout
+
+Tests are split into two suites by their dependency on the pant OCaml binary:
+
+- **`tests/*.test.mts` — unit suite.** Pure translation-logic tests. No pant binary, no dune, runs in milliseconds. Files: `annotations`, `constructs`, `purity`, `translate-body`, `translate-signature`, `translate-types`, `wasm-ast`.
+- **`tests/integration/*.test.mts` — integration suite.** Each test in this directory invokes the `pant` binary (via `assertPantTypeChecks` or `runCheck` from `tests/helpers.mts`). Files: `e2e`, `dogfood`.
+
+The split exists for stability, not just performance. `getPantBin()` in `tests/helpers.mts` is **pure** — it never invokes a build. It reads `process.env.PANT_BIN` if set, otherwise checks that `${PROJECT_ROOT}/_build/default/bin/main.exe` exists, and throws with an actionable error otherwise. The build is the responsibility of the workspace-level `just build-pant` recipe (which `just ts2pant-test-integration` depends on). Stale-lock recovery + the `dune build` invocation live in the `build-pant` recipe in the root `justfile`, not in JS — orchestration belongs to the orchestrator.
+
+**Why the split is load-bearing.** Node's test runner uses `--test-isolation=process` by default, spawning one subprocess per test file. The original `getPantBin()` ran `execSync("dune build bin/main.exe")` lazily inside every worker, so 9 fresh subprocesses raced for the same `_build/.lock`. A SIGKILL on any one worker (e.g. user aborting a hung pre-commit) left the lock in a poisoned state, and every subsequent build hung indefinitely. The pre-commit hook hung for 15+ hours during the μ-search PR before this fix landed; the post-mortem is the reason this section exists.
+
+**Reintroducing the lazy-build pattern is forbidden.** If a new test needs the pant binary, route it through the integration suite — don't add an `execSync("dune build")` to `helpers.mts` or any `tests/*.test.mts` file.
+
+### Snapshot files
+
+Each `*.test.mts` has a sibling `*.test.mts.snapshot` (Node test runner's snapshot format). When the integration suite is moved between directories, the `.snapshot` files must move with it; the runner resolves snapshot paths from the test file's location, so a missing-snapshot error usually means a mismatched move.
 
 Test structure:
 - `tests/fixtures/constructs/` — TypeScript fixture files, one per construct category
 - `tests/constructs.test.mts` — snapshot tests comparing emitted Pantagruel against expectations
 - `tests/translate-body.test.mts` — unit tests for internal translation edge cases
 - `tests/translate-signature.test.mts` — signature extraction and guard detection tests
-- `tests/e2e.test.mts` — end-to-end pipeline tests including `pant --check` verification
+- `tests/integration/e2e.test.mts` — end-to-end pipeline tests including `pant --check` verification
+- `tests/integration/dogfood.test.mts` — translates ts2pant's own source with ts2pant; verifies through `pant`

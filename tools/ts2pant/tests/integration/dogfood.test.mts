@@ -4,7 +4,7 @@ import {
   assertPantTypeChecks,
   buildDocument as buildDocumentFromPath,
   emitDocument,
-} from "./helpers.mjs";
+} from "../helpers.mjs";
 
 // Dogfood: translate ts2pant's own source files with ts2pant itself.
 // Depth-first — one target module at a time, smallest function first.
@@ -12,7 +12,7 @@ import {
 // cases are tracked in the project roadmap as diagnostics driving the next
 // feature to build.
 
-const SRC = resolve(import.meta.dirname, "../src");
+const SRC = resolve(import.meta.dirname, "../../src");
 const PANT_TIMEOUT_MS = Number(
   process.env.TS2PANT_DOGFOOD_TIMEOUT_MS ?? 30_000,
 );

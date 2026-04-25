@@ -2,19 +2,19 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { describe, it } from "node:test";
-import { extractFunctionAnnotations } from "../src/annotations.js";
-import { runCheck } from "../src/emit.js";
-import { createSourceFile } from "../src/extract.js";
-import type { PantDocument } from "../src/types.js";
+import { extractFunctionAnnotations } from "../../src/annotations.js";
+import { runCheck } from "../../src/emit.js";
+import { createSourceFile } from "../../src/extract.js";
+import type { PantDocument } from "../../src/types.js";
 import {
   PROJECT_ROOT,
   assertPantTypeChecks,
   buildDocument as buildDocumentFromPath,
   emitDocument,
   getPantBin,
-} from "./helpers.mjs";
+} from "../helpers.mjs";
 
-const FIXTURES = resolve(import.meta.dirname, "fixtures");
+const FIXTURES = resolve(import.meta.dirname, "../fixtures");
 
 function solverAvailable(): boolean {
   try {

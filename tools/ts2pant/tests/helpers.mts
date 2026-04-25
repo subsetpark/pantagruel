@@ -1,4 +1,4 @@
-import { execFileSync, execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { emitDocument } from "../src/emit.js";
@@ -12,15 +12,37 @@ export const PROJECT_ROOT = resolve(import.meta.dirname, "../../..");
 let cachedPantBin: string | undefined;
 
 /**
- * Resolve the `pant` binary path, running `dune build` once per process.
- * Invoking the binary directly avoids the ~75ms/call overhead of `dune exec`.
+ * Resolve the `pant` binary path. **Pure** — never invokes a build.
+ *
+ * Two resolution paths:
+ *   1. `PANT_BIN` env var (CI override, or any caller that already knows
+ *      where the binary lives).
+ *   2. `${PROJECT_ROOT}/_build/default/bin/main.exe` from a prior
+ *      `npm run prebuild:pant` (or `dune build @install` in CI).
+ *
+ * If neither is satisfied, throw with an actionable message. We refuse
+ * to lazily `dune build` here because Node's test runner spawns one
+ * worker per test file (`--test-isolation=process`), so the per-process
+ * cache below doesn't amortize across workers — every worker would race
+ * for `_build/.lock`, and a SIGKILLed worker would poison the lock for
+ * every subsequent run. The pre-commit hook that hung for 15+ hours
+ * before this fix landed traced back to that exact pattern.
  */
 export function getPantBin(): string {
   if (cachedPantBin !== undefined) return cachedPantBin;
-  execSync("dune build bin/main.exe", { cwd: PROJECT_ROOT, stdio: "inherit" });
+  const fromEnv = process.env.PANT_BIN;
+  if (fromEnv && existsSync(fromEnv)) {
+    cachedPantBin = fromEnv;
+    return fromEnv;
+  }
   const binPath = resolve(PROJECT_ROOT, "_build/default/bin/main.exe");
   if (!existsSync(binPath)) {
-    throw new Error(`pant binary not found at ${binPath} after dune build`);
+    throw new Error(
+      `pant binary not found at ${binPath}. Run \`just build-pant\` from ` +
+        `the workspace root before invoking integration tests, or set ` +
+        `PANT_BIN to the path of an already-built pant binary. ` +
+        `\`just ts2pant-test-integration\` does both in one step.`,
+    );
   }
   cachedPantBin = binPath;
   return binPath;
