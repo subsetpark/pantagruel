@@ -639,9 +639,9 @@ canonicalized receiver), not program-variable names. Three reasons:
 | 1 | Foundation: types, build (Var/Lit/Identifier), emit, subst, `--use-ir` flag, anchor fixture | ✅ landed |
 | 2 | Optional chaining `?.` → `Each` | ✅ landed |
 | 3 | Nullish coalescing `??` → `Cond` | ✅ landed |
-| 4 | μ-search → `Comb(min, Each)` | pending |
-| 5 | `.length` / `.size` → `App(card, [x])` | pending |
-| 6 | Const-binding inlining → `Let` (cross-cutting pure + mutating) | pending |
+| 4 | μ-search → `Comb(min, Each)` | deferred → bundled into Stage 6 |
+| 5 | `.length` / `.size` → `Unop(card, x)` | ✅ landed |
+| 6 | Const-binding inlining → `Let` (cross-cutting pure + mutating) **+ μ-search** | pending |
 | 7 | Chain fusion → `Each` composition | pending |
 | 8 | Pure-path cutover (delete `IRWrap`, delete legacy pure-path) | pending |
 | 9 | Mutating-path SSA: write-keyed `LetIf`, `Write` IR nodes | pending |

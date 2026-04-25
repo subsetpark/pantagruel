@@ -54,6 +54,15 @@ const ANCHORS: Array<{ file: string; functions: string[] }> = [
     file: "expressions-optional-default.ts",
     functions: ["makePoint", "makeConfig", "usesOptionalDirectly"],
   },
+  // Stage 5: `.length` / `.size` cardinality
+  {
+    file: "expressions-array.ts",
+    functions: ["count"],
+  },
+  {
+    file: "expressions-set.ts",
+    functions: ["cardinality"],
+  },
 ];
 
 async function emitWithFlag(

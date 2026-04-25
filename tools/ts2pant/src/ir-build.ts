@@ -37,7 +37,7 @@ import {
   translateBodyExpr,
   type UniqueSupply,
 } from "./translate-body.js";
-import type { NumericStrategy } from "./translate-types.js";
+import { isSetType, type NumericStrategy } from "./translate-types.js";
 
 /**
  * Translate a TypeScript expression to IR.
@@ -86,6 +86,35 @@ export function buildIR(
   if (ts.isIdentifier(expr)) {
     const renamed = paramNames.get(expr.text) ?? expr.text;
     return irVar(renamed);
+  }
+
+  // Stage 5: `.length` (Array) / `.size` (Set) → `Unop(card, x)`. Plain
+  // property access on a non-optional, non-effectful receiver where the
+  // property is the cardinality slot. Falls through (to legacy / qualified
+  // field access) for property names other than `length`/`size`, and for
+  // receivers that are neither Array nor Set.
+  if (
+    ts.isPropertyAccessExpression(expr) &&
+    !(expr.flags & ts.NodeFlags.OptionalChain) &&
+    (expr.name.text === "length" || expr.name.text === "size")
+  ) {
+    const receiverTsType = checker.getTypeAtLocation(expr.expression);
+    const isArray =
+      expr.name.text === "length" && checker.isArrayType(receiverTsType);
+    const isSet = expr.name.text === "size" && isSetType(receiverTsType);
+    if (isArray || isSet) {
+      const objIR = buildIR(
+        expr.expression,
+        checker,
+        strategy,
+        paramNames,
+        supply,
+      );
+      if (isBuildUnsupported(objIR)) {
+        return objIR;
+      }
+      return irUnop("card", objIR);
+    }
   }
 
   // Stage 2: Optional chain `x?.prop` (and tail of a chain marked by
