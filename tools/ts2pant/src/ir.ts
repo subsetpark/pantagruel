@@ -392,7 +392,79 @@ export const irLet = (name: string, value: IRExpr, body: IRExpr): IRExpr => ({
   body,
 });
 
+export const irEach = (
+  binder: string,
+  src: IRExpr,
+  guards: IRExpr[],
+  proj: IRExpr,
+  binderType?: string,
+): IRExpr =>
+  binderType !== undefined
+    ? { kind: "each", binder, binderType, src, guards, proj }
+    : { kind: "each", binder, src, guards, proj };
+
+export const irComb = (
+  combiner: IRCombiner,
+  each: IRExprEach,
+  init?: IRExpr,
+): IRExpr =>
+  init !== undefined
+    ? { kind: "comb", combiner, init, each }
+    : { kind: "comb", combiner, each };
+
+export const irForall = (
+  binder: string,
+  binderType: string,
+  body: IRExpr,
+  guard?: IRExpr,
+): IRExpr =>
+  guard !== undefined
+    ? { kind: "forall", binder, binderType, guard, body }
+    : { kind: "forall", binder, binderType, body };
+
+export const irExists = (
+  binder: string,
+  binderType: string,
+  body: IRExpr,
+  guard?: IRExpr,
+): IRExpr =>
+  guard !== undefined
+    ? { kind: "exists", binder, binderType, guard, body }
+    : { kind: "exists", binder, binderType, body };
+
 export const irWrap = (expr: OpaqueExpr): IRExpr => ({ kind: "ir-wrap", expr });
+
+// IRStmt constructors. Stage 9 introduces the IRStmt layer; the helpers
+// here mirror each variant's shape so callers don't drift into hand-built
+// objects when statement-position forms start landing.
+
+export const irStmtWrite = (
+  target: IRWriteTarget,
+  value: IRExpr | null,
+): IRStmt => ({ kind: "write", target, value });
+
+export const irStmtLetIf = (
+  phiVars: string[],
+  cond: IRExpr,
+  thenBranch: IRStmt[],
+  elseBranch: IRStmt[],
+  continuation: IRStmt[],
+): IRStmt => ({
+  kind: "let-if",
+  phiVars,
+  cond,
+  // biome-ignore lint/suspicious/noThenProperty: IRStmt ADT shape uses `then`/`else` for branching mutation merge; matches IRSC discipline.
+  then: thenBranch,
+  else: elseBranch,
+  continuation,
+});
+
+export const irStmtSeq = (stmts: IRStmt[]): IRStmt => ({ kind: "seq", stmts });
+
+export const irStmtAssert = (
+  quantifiers: Array<{ name: string; type: string }>,
+  body: IRExpr,
+): IRStmt => ({ kind: "assert", quantifiers, body });
 
 // Type guards (small, useful for migration code)
 
