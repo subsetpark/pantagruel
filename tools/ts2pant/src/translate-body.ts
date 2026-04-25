@@ -1,8 +1,16 @@
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
-import { irLet, irWrap } from "./ir.js";
+import { type IRExpr, irLet, irWrap } from "./ir.js";
 import { buildIR, isBuildUnsupported } from "./ir-build.js";
 import { lowerExpr } from "./ir-emit.js";
+import { type IR1Expr, ir1FromL2 } from "./ir1.js";
+import {
+  buildL1Conditional,
+  buildL1ConditionalFromArms,
+  isL1ConditionalForm,
+  isL1Unsupported,
+  lowerL1ToOpaque,
+} from "./ir1-build.js";
 import type {
   OpaqueCombiner,
   OpaqueExpr,
@@ -46,6 +54,18 @@ import type { PantDeclaration, PropResult } from "./types.js";
 function useIRPipeline(): boolean {
   const g = globalThis as { process?: { env?: Record<string, string> } };
   return g.process?.env?.["TS2PANT_USE_IR"] === "1";
+}
+
+/**
+ * True if the imperative-IR (Layer 1) conditional pipeline is enabled
+ * via `TS2PANT_USE_L1=1`. M1 patch 2 uses this flag to gate the L1
+ * conditional builder during validation; patch 3 deletes the flag and
+ * makes L1 always-on for conditional value forms (workstream
+ * `workstreams/ts2pant-imperative-ir.md`, milestone M1).
+ */
+function useL1Pipeline(): boolean {
+  const g = globalThis as { process?: { env?: Record<string, string> } };
+  return g.process?.env?.["TS2PANT_USE_L1"] === "1";
 }
 
 // --- Const-binding inlining infrastructure (let-elimination) ---
@@ -349,7 +369,7 @@ type WriteEntry = PropertyWriteEntry | MapRuleWriteEntry | SetRuleWriteEntry;
  * whenever a new const binding is inlined so the in-flight `applyConst`
  * stays in sync with the state.
  */
-interface SymbolicState {
+export interface SymbolicState {
   writes: ReadonlyMap<string, WriteEntry>;
   // Keys *written during the current branch* (reset on clone). Used by the
   // if-merge algorithm to determine which locations are "touched."
@@ -1361,12 +1381,87 @@ function translatePureBody(
   // ir-emit). See CLAUDE.md §"Intermediate Representation" for the
   // migration roadmap.
   let rhs: OpaqueExpr;
-  // IR pipeline only handles Expression returns in Stage 1; an
-  // IfStatement returnExpr (TS allows `if (c) return a; return b` to
-  // be lifted into a single conditional return — see
-  // `extractReturnExpression`) still goes through the legacy path until
-  // Stage 8 cutover wires up `Cond` / early-return handling natively.
-  if (useIRPipeline() && ts.isExpression(extracted.returnExpr)) {
+
+  // Layer 1 imperative-IR conditional pipeline (workstream M1, gated on
+  // `TS2PANT_USE_L1=1` during patch 2; always-on after patch 3 cutover).
+  // Routes when the body has prelude arms (early-return if-conversion)
+  // or a conditional terminal (if/switch/ternary/Bool-typed &&/||) —
+  // exactly the cases where L1 normalization unifies recognition.
+  // Plain non-conditional returns fall through to the existing IR or
+  // legacy path.
+  const l1IsConditionalReturn =
+    ts.isIfStatement(extracted.returnExpr) ||
+    ts.isSwitchStatement(extracted.returnExpr) ||
+    (ts.isExpression(extracted.returnExpr) &&
+      isL1ConditionalForm(extracted.returnExpr, checker));
+  if (useL1Pipeline() && (inlined.arms.length > 0 || l1IsConditionalReturn)) {
+    const l1Ctx = {
+      checker,
+      strategy,
+      paramNames: inlined.scopedParams,
+      state: undefined as SymbolicState | undefined,
+      supply,
+    };
+    // Wrap pre-translated arm OpaqueExprs as L1 from-l2 expressions so
+    // the L1 cond-builder can compose them with the L1-translated
+    // terminal. Each arm's guard and value are independent
+    // sub-expressions whose internal normalization isn't M1's concern;
+    // M2/M3 will progressively replace these wraps with native L1
+    // construction.
+    const preludeL1: Array<readonly [IR1Expr, IR1Expr]> = inlined.arms.map(
+      ([g, v]) => [ir1FromL2(irWrap(g)), ir1FromL2(irWrap(v))] as const,
+    );
+    const built = buildL1ConditionalFromArms(
+      preludeL1,
+      extracted.returnExpr,
+      l1Ctx,
+    );
+    if (!isL1Unsupported(built)) {
+      // Wrap the lowered cond in IRWrap so the const-binding Let chain
+      // (Stage 6) can substitute hygienic-name references inside it via
+      // Pant's `substituteBinder`. This mirrors the IR-pipeline branch
+      // below — a uniform IRWrap-wrapped body lets the same Let chain
+      // work whether the body came from the IR builder or the L1 cond
+      // builder.
+      let bodyIR: IRExpr = irWrap(lowerL1ToOpaque(built));
+      for (let i = inlined.translatedBindings.length - 1; i >= 0; i--) {
+        const tb = inlined.translatedBindings[i]!;
+        bodyIR = irLet(tb.hygienicName, irWrap(tb.initExpr), bodyIR);
+      }
+      rhs = lowerExpr(bodyIR);
+    } else {
+      // L1 rejected — fall through to legacy. Patch 2 keeps both paths
+      // available so dogfood can measure rejection rate. Patch 3 deletes
+      // the legacy paths and the rejection becomes terminal.
+      const body = translateBodyExpr(
+        extracted.returnExpr,
+        checker,
+        strategy,
+        inlined.scopedParams,
+        undefined,
+        supply,
+      );
+      if (isBodyUnsupported(body)) {
+        return [
+          {
+            kind: "unsupported",
+            reason: `${functionName} — ${built.unsupported} (L1) / ${body.unsupported} (legacy)`,
+          },
+        ];
+      }
+      const terminal = bodyExpr(body);
+      const merged =
+        inlined.arms.length === 0
+          ? terminal
+          : ast.cond([
+              ...inlined.arms.map(
+                ([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr],
+              ),
+              [ast.litBool(true), terminal] as [OpaqueExpr, OpaqueExpr],
+            ]);
+      rhs = inlined.applyTo(merged);
+    }
+  } else if (useIRPipeline() && ts.isExpression(extracted.returnExpr)) {
     const ir = buildIR(
       extracted.returnExpr,
       checker,
@@ -1444,7 +1539,7 @@ function translatePureBody(
 
 interface ExtractedBody {
   bindings: ConstBinding[];
-  returnExpr: ts.Expression | ts.IfStatement;
+  returnExpr: ts.Expression | ts.IfStatement | ts.SwitchStatement;
 }
 
 /**
@@ -1732,6 +1827,13 @@ function extractReturnExpression(
     return { bindings, returnExpr: last.expression };
   }
   if (ts.isIfStatement(last) && last.elseStatement) {
+    return { bindings, returnExpr: last };
+  }
+  // Switch as a terminal — only when L1 is enabled. Under USE_L1=0
+  // switches still fall through to the normal rejection path because
+  // there is no legacy switch translator. Under USE_L1=1, the L1
+  // conditional builder accepts switches in this position.
+  if (ts.isSwitchStatement(last) && useL1Pipeline()) {
     return { bindings, returnExpr: last };
   }
 
@@ -2414,7 +2516,7 @@ function unwrapExpression(expr: ts.Expression): ts.Expression {
   return expr;
 }
 
-function expressionHasSideEffects(
+export function expressionHasSideEffects(
   expr: ts.Expression,
   checker: ts.TypeChecker,
 ): boolean {
@@ -2486,6 +2588,30 @@ export function translateBodyExpr(
 
   if (ts.isExpression(expr)) {
     expr = unwrapExpression(expr);
+  }
+
+  // Layer 1 imperative-IR conditional pipeline (workstream M1, gated on
+  // `TS2PANT_USE_L1=1` during patch 2). Routes if-statement, ternary,
+  // switch, and Bool-typed `&&`/`||` through the L1 builder. Other forms
+  // and L1 rejections fall through to the legacy handlers below.
+  if (useL1Pipeline()) {
+    if (
+      ts.isIfStatement(expr) ||
+      ts.isSwitchStatement(expr) ||
+      isL1ConditionalForm(expr, checker)
+    ) {
+      const l1 = buildL1Conditional(
+        expr as ts.Expression | ts.IfStatement | ts.SwitchStatement,
+        { checker, strategy, paramNames, state, supply },
+      );
+      if (!isL1Unsupported(l1)) {
+        return { expr: lowerL1ToOpaque(l1) };
+      }
+      // L1 rejected — under USE_L1=1 with patch 2, fall through to the
+      // legacy handlers so dogfood / existing fixtures still translate.
+      // Patch 3 deletes the legacy conditional paths and the rejection
+      // becomes terminal.
+    }
   }
 
   // if/else statement -> cond

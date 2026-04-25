@@ -867,3 +867,47 @@ function expressionIsPure(
   // Unknown expression kind → conservative
   return false;
 }
+
+// ---------------------------------------------------------------------------
+// Bool-type detection (M1 imperative-IR workstream — &&/|| normalization)
+// ---------------------------------------------------------------------------
+
+/**
+ * True when every constituent of `expr`'s apparent type satisfies the
+ * `BooleanLike` flag (`boolean`, `true`, `false`, the synthesized union
+ * `true | false`). Returns false for `boolean | undefined`, `any`,
+ * `unknown`, and any union that includes a non-Bool constituent.
+ *
+ * Used by the L1 conditional builder to gate `&&`/`||` normalization
+ * (workstream M1 / `workstreams/ts2pant-imperative-ir.md`): TS short-
+ * circuit on non-Bool operands has truthy/falsy semantics that diverge
+ * from `Cond`'s Boolean-guard semantics, so non-Bool short-circuit is
+ * rejected (conservative-refusal policy 3(b)).
+ *
+ * The check uses the apparent type at the location, walks union
+ * constituents, and requires every constituent to be Bool. Optional
+ * Bools (`boolean | undefined`) reject — the user must disambiguate via
+ * `??` first. Bool literal types (`true`, `false`) and unions of them
+ * accept.
+ */
+export function isStaticallyBoolTyped(
+  expr: ts.Expression,
+  checker: ts.TypeChecker,
+): boolean {
+  const t = checker.getTypeAtLocation(expr);
+  return isAllBool(t);
+}
+
+function isAllBool(t: ts.Type): boolean {
+  if (t.isUnion()) {
+    return t.types.every(isAllBool);
+  }
+  if (t.isIntersection()) {
+    // Intersection narrowed to bool is still bool; require every
+    // constituent to be Bool. Intersections like `boolean & {}` are
+    // accepted because both constituents map to BooleanLike under
+    // structural type resolution.
+    return t.types.every(isAllBool);
+  }
+  return (t.flags & ts.TypeFlags.BooleanLike) !== 0;
+}
