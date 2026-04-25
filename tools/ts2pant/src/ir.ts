@@ -99,10 +99,17 @@ export type IRBinop =
 export type IRUnop = "not" | "neg" | "card";
 
 /**
+ * Combiners with a corresponding Pant binop, suitable for non-identity
+ * `init` folding. `Comb(add, 5, ...)` lowers to `5 + (+ over each ...)`,
+ * etc. min/max have no binop equivalent and so cannot carry `init`.
+ */
+export type IRFoldCombiner = "add" | "mul" | "and" | "or";
+
+/**
  * Combiner for `Comb(...)`. Mirrors Pant's `combAdd`/`combMul`/`combAnd`/
  * `combOr`/`combMin`/`combMax`.
  */
-export type IRCombiner = "add" | "mul" | "and" | "or" | "min" | "max";
+export type IRCombiner = IRFoldCombiner | "min" | "max";
 
 // --------------------------------------------------------------------------
 // Expression forms (pure, value-position)
@@ -152,12 +159,24 @@ export type IRExpr =
       proj: IRExpr;
     }
   /**
-   * Aggregate over a comprehension. `init` is optional with
-   * identity-elision (e.g. `0` for `add`, `1` for `mul`) handled at
-   * lowering time, not by callers. Lowers to `ast.eachComb(...)`,
-   * with `init` folded in via `ast.binop` if non-identity.
+   * Aggregate over a comprehension with a foldable combiner (add/mul/
+   * and/or). `init` is optional with identity-elision (e.g. `0` for
+   * `add`, `1` for `mul`) handled at lowering time, not by callers.
+   * Lowers to `ast.eachComb(...)`, with `init` folded in via
+   * `ast.binop` if non-identity.
    */
-  | { kind: "comb"; combiner: IRCombiner; init?: IRExpr; each: IRExprEach }
+  | {
+      kind: "comb";
+      combiner: IRFoldCombiner;
+      init?: IRExpr;
+      each: IRExprEach;
+    }
+  /**
+   * Aggregate over a comprehension with min/max. No `init` because Pant
+   * has no `min`/`max` binop to fold a seed through; the type forbids
+   * it so the lowering can't crash on a malformed node.
+   */
+  | { kind: "comb"; combiner: "min" | "max"; each: IRExprEach }
   /**
    * Universal quantifier. Lowers to `ast.forall(...)`.
    */
@@ -403,14 +422,24 @@ export const irEach = (
     ? { kind: "each", binder, binderType, src, guards, proj }
     : { kind: "each", binder, src, guards, proj };
 
-export const irComb = (
+export function irComb(
+  combiner: IRFoldCombiner,
+  each: IRExprEach,
+  init?: IRExpr,
+): IRExpr;
+export function irComb(combiner: "min" | "max", each: IRExprEach): IRExpr;
+export function irComb(
   combiner: IRCombiner,
   each: IRExprEach,
   init?: IRExpr,
-): IRExpr =>
-  init !== undefined
+): IRExpr {
+  if (combiner === "min" || combiner === "max") {
+    return { kind: "comb", combiner, each };
+  }
+  return init !== undefined
     ? { kind: "comb", combiner, init, each }
     : { kind: "comb", combiner, each };
+}
 
 export const irForall = (
   binder: string,
@@ -471,3 +500,13 @@ export const irStmtAssert = (
 export const isIRWrap = (
   e: IRExpr,
 ): e is Extract<IRExpr, { kind: "ir-wrap" }> => e.kind === "ir-wrap";
+
+/**
+ * Narrow a `Comb(...)` to its foldable variant. TypeScript does not
+ * auto-narrow on a secondary discriminator across a same-kind union, so
+ * callers that need to access `init` must route through this guard.
+ */
+export const isFoldComb = (
+  e: Extract<IRExpr, { kind: "comb" }>,
+): e is Extract<IRExpr, { kind: "comb"; combiner: IRFoldCombiner }> =>
+  e.combiner !== "min" && e.combiner !== "max";

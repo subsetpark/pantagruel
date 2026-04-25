@@ -30,6 +30,7 @@ import {
   irExists,
   irForall,
   irLet,
+  isFoldComb,
 } from "./ir.js";
 
 /**
@@ -83,6 +84,9 @@ export function substIR(body: IRExpr, name: string, value: IRExpr): IRExpr {
 
     case "comb": {
       const each = substIR(body.each, name, value) as IRExprEach;
+      if (!isFoldComb(body)) {
+        return irComb(body.combiner, each);
+      }
       const init =
         body.init !== undefined ? substIR(body.init, name, value) : undefined;
       return irComb(body.combiner, each, init);

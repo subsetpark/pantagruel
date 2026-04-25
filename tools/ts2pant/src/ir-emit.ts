@@ -14,15 +14,16 @@
  * See CLAUDE.md §IR for the form-by-form lowering rationale.
  */
 
-import type {
-  IRAssertExit,
-  IRBinop,
-  IRCombiner,
-  IREquation,
-  IRExpr,
-  IRHead,
-  IRStmt,
-  IRUnop,
+import {
+  type IRAssertExit,
+  type IRBinop,
+  type IRCombiner,
+  type IREquation,
+  type IRExpr,
+  type IRFoldCombiner,
+  type IRHead,
+  type IRUnop,
+  isFoldComb,
 } from "./ir.js";
 import type {
   OpaqueBinop,
@@ -202,10 +203,14 @@ export function lowerExpr(e: IRExpr): OpaqueExpr {
         lowerCombiner(e.combiner),
         lowerExpr(each.proj),
       );
-      // Identity-elision: `Comb(add, 0, ...)` collapses to the bare
-      // comprehension; non-identity `init` folds in via the
-      // corresponding Pant binop.
-      if (e.init === undefined || isIdentityFor(e.combiner, e.init)) {
+      // min/max have no `init` by construction (forbidden at the IR
+      // type level). Foldable combiners get identity-elision and a
+      // binop-fold for non-identity `init`.
+      if (
+        !isFoldComb(e) ||
+        e.init === undefined ||
+        isIdentityFor(e.combiner, e.init)
+      ) {
         return combExpr;
       }
       return ast.binop(
@@ -277,7 +282,7 @@ function lowerApp(head: IRHead, args: OpaqueExpr[]): OpaqueExpr {
 // Combiner identity helpers
 // --------------------------------------------------------------------------
 
-function combinerToBinop(c: IRCombiner): OpaqueBinop {
+function combinerToBinop(c: IRFoldCombiner): OpaqueBinop {
   const ast = getAst();
   switch (c) {
     case "add":
@@ -288,23 +293,15 @@ function combinerToBinop(c: IRCombiner): OpaqueBinop {
       return ast.opAnd();
     case "or":
       return ast.opOr();
-    case "min":
-    case "max":
-      // No binop equivalent — caller must not request init-folding for
-      // min/max. Identity-elision (`isIdentityFor`) returns false for
-      // these, but `e.init !== undefined` reaching here is a bug.
-      throw new Error(
-        `Comb combiner "${c}" has no binop fold; init must be undefined`,
-      );
     default: {
       const _exhaustive: never = c;
       void _exhaustive;
-      throw new Error("unreachable: IRCombiner");
+      throw new Error("unreachable: IRFoldCombiner");
     }
   }
 }
 
-function isIdentityFor(c: IRCombiner, init: IRExpr): boolean {
+function isIdentityFor(c: IRFoldCombiner, init: IRExpr): boolean {
   if (init.kind !== "lit") {
     return false;
   }
@@ -318,9 +315,6 @@ function isIdentityFor(c: IRCombiner, init: IRExpr): boolean {
       return v.kind === "bool" && v.value === true;
     case "or":
       return v.kind === "bool" && v.value === false;
-    case "min":
-    case "max":
-      return false;
     default: {
       const _exhaustive: never = c;
       void _exhaustive;
@@ -330,19 +324,8 @@ function isIdentityFor(c: IRCombiner, init: IRExpr): boolean {
 }
 
 // --------------------------------------------------------------------------
-// IRStmt and IRBody — Stage 1 stubs (will expand in Stage 9+)
+// IREquation / IRAssertExit lowering
 // --------------------------------------------------------------------------
-
-/**
- * Lower an `IRStmt` list. Stage 1 throws — statement-layer emission is
- * Stage 9+ work. The signature is reserved here so call sites can be
- * stubbed without circular dependencies.
- */
-export function lowerStmts(_stmts: IRStmt[]): never {
-  throw new Error(
-    "IRStmt lowering not implemented yet — Stage 9 introduces this",
-  );
-}
 
 /**
  * Lower an `IREquation` to a `PropResult`-shaped object suitable for
