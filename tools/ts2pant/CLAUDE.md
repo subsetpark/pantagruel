@@ -518,6 +518,141 @@ result is now in scope; consumers other than the μ-search aggregate (`#`,
 explicit upper-bound guard or a domain-typed iterator and emit a targeted
 diagnostic otherwise.
 
+## Intermediate Representation
+
+ts2pant has accumulated ~18 surface-syntax recognizers in `src/translate-body.ts`
+that cross-talk through `BodyResult`, `state.writes`, and the document-wide
+`SynthCell` / `NameRegistry`. Each new TS pattern (μ-search, optional chaining,
+Set mutation, …) adds another recognizer plus state-merge logic. PR #84's
+post-mortem (below) names this exact failure mode.
+
+The structural fix is to lift the recognizers behind a small typed
+**intermediate representation** so each surface pattern lowers via a TS→IR
+rewrite and the Pant emitter reads only IR forms. The reference precedent is
+**IRSC** from Vekris, Cosman, Jhala, "Refinement Types for TypeScript"
+([PLDI 2016, arxiv:1604.02480](https://arxiv.org/pdf/1604.02480)). Their
+motivating quote — *"FRSC, while syntactically similar to TS, is not entirely
+suitable for refinement type checking in its current form, due to features
+like assignment. To overcome this challenge we translate FRSC to a functional
+language IRSC through a Static Single Assignment (SSA) transformation"* — is
+exactly our situation.
+
+The IR is being introduced incrementally over 11 stages on a single branch.
+Stage status lives in §"IR Migration Status" below; deviations from IRSC
+live in §"Divergences from IRSC".
+
+### Files
+
+- `src/ir.ts` — `IRExpr` / `IRStmt` / `IRBody` ADTs with constructor helpers.
+- `src/ir-build.ts` — TS-AST → IR (with `IRWrap` escape hatch during migration).
+- `src/ir-emit.ts` — IR → `OpaqueExpr` / `PropResult[]` lowering.
+- `src/ir-subst.ts` — IR-level capture-avoiding substitution.
+
+### Two layers
+
+Pure / value-position uses **`IRExpr`**; effect / statement-position uses
+**`IRStmt`**. IRSC merges these via `u⟨e⟩` hole contexts; we keep them
+separate because Pantagruel's mutating output is a list of equations + frame
+conditions, not a unit-returning expression.
+
+### `IRExpr` — 10 forms
+
+| Form | Lowers to | TS shapes that produce it |
+|------|-----------|---------------------------|
+| `Var(name, primed?)` | `ast.var` / `ast.primed` | identifier; primed for next-state references in mutating bodies |
+| `Lit(literal)` | `ast.litNat` / `ast.litBool` / `ast.litString` | numeric / string / boolean literal |
+| `App(head, args)` | `ast.app` / `ast.binop` / `ast.unop` (head-dispatched) | binops, method calls (receiver as first arg), qualified field accessors, builtins (`in`, `#`, `=`, comparison) |
+| `Cond([(g, v)])` | `ast.cond` | ternary, early-return if-conversion, `??` lowering, conditional mutation merge |
+| `Let(name, value, body)` | substituted out at emit (Pant has no `let`) | `const x = e1; ... return e2` (Stage 6+) |
+| `Each(binder, src, [g], proj)` | `ast.each` | for-of Shape A/B, `?.` lowering, `.filter`/`.map` chain |
+| `Comb(comb, init?, each)` | `ast.eachComb` (with optional binop fold for non-identity init) | `.reduce`, μ-search (`Comb(min, ...)`) |
+| `Forall(binder, type, guard?, body)` | `ast.forall` | `all x: T \| ...` quantifier emission |
+| `Exists(binder, type, guard?, body)` | `ast.exists` | `some x: T \| ...` quantifier emission |
+| `IRWrap(OpaqueExpr)` | identity | **migration-only escape hatch**; deleted at Stage 8 cutover |
+
+### `IRStmt` — 4 forms
+
+| Form | Lowers to | Notes |
+|------|-----------|-------|
+| `Write(target, value)` | one primed equation per modified rule | `target` is a descriptor (`property-field` / `map-entry` / `set-member`); op is on the descriptor |
+| `LetIf(φ-vars, cond, then, else, cont)` | branching mutation merge via cond-merge of overrides | **`φ-vars` are write-keys**, not program names — see §"Divergences from IRSC" |
+| `Seq(stmts)` | sequential composition | trivial |
+| `Assert(quants, body)` | `kind: "assertion"` `PropResult` | empty-Set / empty-Map field initializers |
+
+### Body output
+
+```
+IRBody = {
+  equations: IREquation[];   // one per record-return field, or one for non-record return; in mutating mode, one per modified rule
+  assertions: IRAssertExit[]; // empty-Set / empty-Map initializers
+  frames: IREquation[];       // identity equations for unmodified rules
+}
+```
+
+### Divergences from IRSC
+
+Two deliberate divergences. Both are documented here so a future agent doesn't
+"fix" them back to paper-faithful IRSC.
+
+**1. No `FieldAccess` form.** ts2pant lowers `e.f` to `App(qualified-rule,
+[e])` at construction time via `qualifyFieldAccess`. Adding a `FieldAccess`
+form would force every consumer to check both shapes and reintroduces the
+cross-talk problem. The qualified-rule pattern is already the invariant at
+`translate-body.ts:2378`.
+
+**2. Hybrid SSA scope.** IRSC uses SSA over program names for *all*
+assignments. We use ordinary `Let` (no φ) for const-bindings and `LetIf`
+only for branching mutation, with φ-vars as **write-keys** (rule-name +
+canonicalized receiver), not program-variable names. Three reasons:
+
+- `inlineConstBindings` (translate-body.ts) is already a working right-fold
+  substitution closure — the standard let-elimination algorithm. SSA-then-
+  de-SSA would replace a debugged algorithm with a redundant one.
+- Pantagruel has no `let` in the output. Full SSA means SSA-construct then
+  SSA-destruct via substitution — twice the substitution machinery.
+- The mutating path's existing φ-merge is already keyed by write-keys
+  (translate-body.ts merge loop). What we're calling `LetIf` is a renaming
+  of that merge, not a new SSA discipline.
+
+### Invariants
+
+- **Opaque AST constraint.** Every property an IR pass needs to query must be
+  a discriminator on the IR ADT, never on the lowered `OpaqueExpr`. No
+  syntactic peeking on `OpaqueExpr` from any IR pass.
+- **Hygienic binders.** IR binder names (`Let.name`, `Each.binder`,
+  `Forall.binder`, `Exists.binder`) come from the document-wide
+  `UniqueSupply` / `cellRegisterName`. They cannot collide with parameter
+  names or accessor rules. `ir-subst.ts` relies on this for straight
+  name-based rewriting without α-renaming.
+- **`Write` is statement-only.** Never appears in `IRExpr`. A method call
+  that lowers to a `Write` is a statement; one that lowers to an `App` is
+  an expression. The lowerer rejects Writes appearing in expression
+  position.
+- **`Cond` is value-position.** `LetIf` is statement-position with non-empty
+  φ-vars. The two never overlap; the rule prevents the recognizer-redundancy
+  bug that the IR is meant to eliminate.
+
+### IR Migration Status
+
+| Stage | Recognizer / scope | Status |
+|-------|---------------------|--------|
+| 1 | Foundation: types, build (Var/Lit/Identifier), emit, subst, `--use-ir` flag, anchor fixture | ✅ landed |
+| 2 | Optional chaining `?.` → `Each` | pending |
+| 3 | Nullish coalescing `??` → `Cond` | pending |
+| 4 | μ-search → `Comb(min, Each)` | pending |
+| 5 | `.length` / `.size` → `App(card, [x])` | pending |
+| 6 | Const-binding inlining → `Let` (cross-cutting pure + mutating) | pending |
+| 7 | Chain fusion → `Each` composition | pending |
+| 8 | Pure-path cutover (delete `IRWrap`, delete legacy pure-path) | pending |
+| 9 | Mutating-path SSA: write-keyed `LetIf`, `Write` IR nodes | pending |
+| 10 | Frame conditions → IR pass | pending |
+| 11 | Mutating-path cutover, final cleanup | pending |
+
+The `--use-ir` flag (env var `TS2PANT_USE_IR=1`) routes the pure path through
+the IR pipeline. Default off until Stage 8 cutover. Per-stage gate is the
+`tests/ir-equivalence.test.mts` smoke test (string-equal output between
+legacy and IR pipelines on the anchor fixtures).
+
 ## PR #84 Post-Mortem: Why Standard Algorithms Matter
 
 The initial const-inlining implementation used ad-hoc string-name substitution rather

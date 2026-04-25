@@ -1,5 +1,7 @@
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
+import { buildIR, isBuildUnsupported } from "./ir-build.js";
+import { lowerExpr } from "./ir-emit.js";
 import type {
   OpaqueCombiner,
   OpaqueExpr,
@@ -33,6 +35,17 @@ import {
   toPantTermName,
 } from "./translate-types.js";
 import type { PantDeclaration, PropResult } from "./types.js";
+
+/**
+ * Read the `TS2PANT_USE_IR` env var safely from globalThis without
+ * pulling in @types/node into the tsconfig. The flag routes the
+ * pure-path return-expression translation through the IR pipeline
+ * (Stage 1 — see CLAUDE.md §"Intermediate Representation").
+ */
+function useIRPipeline(): boolean {
+  const g = globalThis as { process?: { env?: Record<string, string> } };
+  return g.process?.env?.["TS2PANT_USE_IR"] === "1";
+}
 
 // --- Const-binding inlining infrastructure (let-elimination) ---
 
@@ -1342,20 +1355,46 @@ function translatePureBody(
     ];
   }
 
-  const body = translateBodyExpr(
-    extracted.returnExpr,
-    checker,
-    strategy,
-    inlined.scopedParams,
-    undefined,
-    supply,
-  );
+  // IR pipeline: when `TS2PANT_USE_IR=1` is set in the environment,
+  // route the return-expression translation through the IR (ir-build →
+  // ir-emit). Stage 1 of the IR migration: pure-path only, with `IRWrap`
+  // covering forms not yet natively built. See CLAUDE.md §"Intermediate
+  // Representation" for the migration roadmap.
+  let terminal: OpaqueExpr;
+  // IR pipeline only handles Expression returns in Stage 1; an
+  // IfStatement returnExpr (TS allows `if (c) return a; return b` to
+  // be lifted into a single conditional return — see
+  // `extractReturnExpression`) still goes through the legacy path until
+  // Stage 8 cutover wires up `Cond` / early-return handling natively.
+  if (useIRPipeline() && ts.isExpression(extracted.returnExpr)) {
+    const ir = buildIR(
+      extracted.returnExpr,
+      checker,
+      strategy,
+      inlined.scopedParams,
+      supply,
+    );
+    if (isBuildUnsupported(ir)) {
+      return [{ kind: "unsupported", reason: ir.unsupported }];
+    }
+    terminal = lowerExpr(ir);
+  } else {
+    const body = translateBodyExpr(
+      extracted.returnExpr,
+      checker,
+      strategy,
+      inlined.scopedParams,
+      undefined,
+      supply,
+    );
 
-  if (isBodyUnsupported(body)) {
-    return [{ kind: "unsupported", reason: body.unsupported }];
+    if (isBodyUnsupported(body)) {
+      return [{ kind: "unsupported", reason: body.unsupported }];
+    }
+
+    terminal = bodyExpr(body);
   }
 
-  const terminal = bodyExpr(body);
   const merged =
     inlined.arms.length === 0
       ? terminal
