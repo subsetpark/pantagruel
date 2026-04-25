@@ -40,6 +40,7 @@ These cover the full scope of ts2pant's translation work:
 | Frame problem in specifications | Borgida et al., ["And Nothing Else Changes"](https://www.researchgate.net/publication/221555223_And_Nothing_Else_Changes_The_Frame_Problem_in_Procedure_Specifications), IEEE TSE 1995 | Definitive treatment of frame conditions in procedure specifications |
 | Capture-avoiding substitution | [Locally Nameless Representation](https://boarders.github.io/posts/locally-nameless/) (Charguéraud 2012) | Alternative to named substitution; useful background for understanding why hygiene matters |
 | Partial functions / option types | [Dafny Reference Manual](https://dafny.org/dafny/DafnyRef/DafnyRef) | Nullable types, preconditions, `modifies` clauses — practical verification language patterns |
+| IRSC / SSA-based IR | Vekris, Cosman, Jhala, ["Refinement Types for TypeScript"](https://arxiv.org/pdf/1604.02480), PLDI 2016 | Lifting surface-syntax recognizers into a typed intermediate representation via SSA-style translation; precedent for the IR introduced in §"Intermediate Representation" |
 
 ## Architecture
 
@@ -581,7 +582,7 @@ conditions, not a unit-returning expression.
 
 ### Body output
 
-```
+```text
 IRBody = {
   equations: IREquation[];   // one per record-return field, or one for non-record return; in mutating mode, one per modified rule
   assertions: IRAssertExit[]; // empty-Set / empty-Map initializers

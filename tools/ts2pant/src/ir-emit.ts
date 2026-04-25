@@ -182,19 +182,10 @@ export function lowerExpr(e: IRExpr): OpaqueExpr {
     }
 
     case "each": {
-      const param = ast.param(
-        e.binder,
-        ast.tName(e.binderType ?? unknownBinderType()),
-      );
       const guards = [
         ast.gIn(e.binder, lowerExpr(e.src)),
         ...e.guards.map((g) => ast.gExpr(lowerExpr(g))),
       ];
-      // For comprehensions over a list expression, the binder is bound by
-      // a `gIn` guard, not by a `param` of its own — so `params` is empty
-      // and `guards` carries the binder. This matches the existing usage:
-      // `ast.each([], [ast.gIn(binder, src), ...], proj)`.
-      void param;
       return ast.each([], guards, lowerExpr(e.proj));
     }
 
@@ -388,16 +379,4 @@ export function lowerAssert(a: IRAssertExit): {
     guards: (a.guards ?? []).map((g) => ast.gExpr(lowerExpr(g))),
     body: lowerExpr(a.body),
   };
-}
-
-// --------------------------------------------------------------------------
-// Diagnostics
-// --------------------------------------------------------------------------
-
-function unknownBinderType(): string {
-  // An `Each` form should always carry a binderType once Stage 4 (μ-search,
-  // which canonically introduces a typed `j: Nat` binder) lands. Until
-  // then, leaving binderType undefined falls back to a placeholder so
-  // emission proceeds — but `pant --check` will reject the result.
-  return "Unknown";
 }
