@@ -696,6 +696,22 @@ and last, and case labels must be literal. `&&`/`||` Bool-type detection
 is in `purity.ts:isStaticallyBoolTyped` (apparent-type walk requiring
 every union/intersection constituent to satisfy `BooleanLike`).
 
+**M2 (imperative-ir-assign-mu-search): landed.** `ir1Assign` and
+`ir1While` activated. Increment surface forms (`i++`, `++i`, `i--`,
+`--i`, `i += k`, `i -= k`, `i = i ⊕ k`, `i = k ⊕ i` for commutative
+`⊕`) build to canonical L1 `Assign(target, BinOp(<op>, target, <k>))`
+via `buildL1IncrementStep` in `ir1-build.ts`. The five `+1` spellings
+(`i++`, `++i`, `i += 1`, `i = i + 1`, `i = 1 + i`) produce *byte-
+identical* L1 output — that's the M2 architectural promise. μ-search
+recognition moves to L1: the TS-AST `recognizeLetWhilePair` is purely
+structural (consume let + while as a unit); the canonical-shape
+check (`BinOp(add, Var(c), Lit(1))`), predicate-references-counter
+check, and discrete-strategy check all live in the L1 path
+(`isCanonicalMuSearchForm` in `ir1-lower.ts` + the unified
+`translateMuSearchInit` body). Legacy `translateMuSearchInitLegacy`
+is deleted. Three additional `+1` spellings now translate (was just
+`i++`/`++i` pre-M2).
+
 **The `from-l2` adapter** (`ir1.ts`'s `IR1Expr.from-l2`) is the explicit
 transitional mechanism for sub-expressions whose normalization is not
 the current milestone's concern (e.g., guard expressions inside an L1

@@ -147,7 +147,42 @@ exploratory.
 
 ---
 
-### Milestone 2: imperative-ir-assign-mu-search
+### Milestone 2: imperative-ir-assign-mu-search — ✅ landed
+
+**Status**: landed across four stacked commits on
+`zax--ts2pant-m2-assign-musearch`:
+
+- Patch 1 (`4675728`) — activate `ir1Assign` and `ir1While`; add
+  `buildL1IncrementStep` covering all five `+1` spellings + non-`+1`
+  forms; new unit tests for vocabulary activation and step
+  normalization.
+- Patch 2 (`ea32328`) — L1 builder (`buildL1LetWhile`) + L1 recognizer
+  (`isCanonicalMuSearchForm`); plumb behind `TS2PANT_USE_L1_MUSEARCH`.
+  Validation: byte-identical output across all 463 existing tests
+  under both flag states.
+- Patch 3 (`c3dc24b`) — hard-rule cutover. Flag deleted.
+  `recognizeMuSearch` renamed to `recognizeLetWhilePair` and stripped
+  of all μ-search semantics (step shape, predicate-references-counter)
+  — those checks now live in `isCanonicalMuSearchForm` and the
+  unified `translateMuSearchInit`. Legacy `translateMuSearchInitLegacy`
+  deleted. Three new fixtures (`compoundIncrementStep`,
+  `explicitIncrementStep`, `explicitIncrementStepFlipped`) verify the
+  five-spelling collapse to one canonical form. Net **−64 lines**.
+- Patch 4 — docs (this commit).
+
+**Architectural payoff**: TS-AST has *no* μ-search semantics. The
+recognizer is structural-only (let + while pair); the canonical-shape
+check, predicate-references-counter check, and discrete-strategy
+check all live at the L1 layer. The five `+1` surface spellings
+collapse to a single L1 `Assign(Var(c), BinOp(add, Var(c), Lit(1)))`
+that the recognizer pattern-matches once.
+
+**Pessimism rate**: 0 — the increment normalizer's `+1` recognition is
+strictly broader than legacy's `++`/`++i`-only, and dogfood translates
+unchanged. The new failure messages for the named-fn-expression and
+method-shadowing cases are more specific than the old "not a
+recognized μ-search" (now "predicate does not reference the counter"
+or "predicate has side effects") and tests were updated.
 
 **Definition of Done**:
 - `ir1-build.ts` extends to translate increment surface forms: `i++`, `++i`,
