@@ -263,12 +263,16 @@ export type IRStmt =
   | { kind: "write"; target: IRWriteTarget; value: IRExpr | null }
   /**
    * Branching mutation merge. **`phiVars` are write-keys**, not program
-   * variable names — see ir.ts §"Hybrid SSA scope" rationale.
+   * variable names — see ir.ts §"Hybrid SSA scope" rationale. The tuple
+   * type enforces non-empty φ-vars at the type level, mirroring the
+   * `LetIf` invariant from CLAUDE.md §IR — a `let-if` with no φ-vars
+   * is structurally a value-position `Cond`, and the discrimination
+   * between the two must hold statically.
    * Stage 9 introduces this; Stage 1 only declares the type.
    */
   | {
       kind: "let-if";
-      phiVars: string[];
+      phiVars: [string, ...string[]];
       cond: IRExpr;
       then: IRStmt[];
       else: IRStmt[];
@@ -472,7 +476,7 @@ export const irStmtWrite = (
 ): IRStmt => ({ kind: "write", target, value });
 
 export const irStmtLetIf = (
-  phiVars: string[],
+  phiVars: [string, ...string[]],
   cond: IRExpr,
   thenBranch: IRStmt[],
   elseBranch: IRStmt[],

@@ -83,6 +83,9 @@ export function substIR(body: IRExpr, name: string, value: IRExpr): IRExpr {
     }
 
     case "comb": {
+      // body.each is statically IRExprEach by the IRExpr definition (and the
+      // irComb constructor enforces it on the build side); the cast restores
+      // that narrowing after substIR's IRExpr → IRExpr signature widens it.
       const each = substIR(body.each, name, value) as IRExprEach;
       if (!isFoldComb(body)) {
         return irComb(body.combiner, each);
