@@ -642,12 +642,10 @@ canonicalized receiver), not program-variable names. Three reasons:
 | 3 | Nullish coalescing `??` → `Cond` | ✅ landed |
 | 4 | μ-search → `Comb(min, Each)` | partial — substitution mechanism is on IR (Stage 6); the comprehension construction itself is still in `translateMuSearchInit` (legacy OpaqueExpr) and migrates to native `Comb(min, Each)` in a future stage |
 | 5 | `.length` / `.size` → `Unop(card, x)` | ✅ landed |
-| 6 | Const-binding inlining → `Let` (pure path) | ✅ landed (mutating-path const-bindings stay on legacy `applyTo` until Stage 9) |
+| 6 | Const-binding inlining → `Let` (pure path) | ✅ landed (mutating-path const-bindings stay on legacy `applyTo` until workstream M3) |
 | 7 | Chain fusion → `Each` composition | ✅ tracked via IRWrap (anchors locked); native IR construction deferred — see "Note on chain fusion" below |
 | 8 | Pure-path cutover — delete legacy code where possible (IRWrap survives for chain-fusion outputs) | pending |
-| 9 | Mutating-path SSA: write-keyed `LetIf`, `Write` IR nodes | pending |
-| 10 | Frame conditions → IR pass | pending |
-| 11 | Mutating-path cutover, final cleanup | pending |
+| 9–11 | **Superseded** by `workstreams/ts2pant-imperative-ir.md` — mutating-path SSA, frame conditions, and final cutover re-form on top of an IRSC-faithful imperative IR layer (Layer 1) with normalization passes. See workstream M1 (conditionals), M2 (assign + μ-search), M3 (iteration + mutation). | superseded |
 
 The `--use-ir` flag (env var `TS2PANT_USE_IR=1`) routes the pure path through
 the IR pipeline. Default off until Stage 8 cutover. Per-stage gate is the
@@ -667,7 +665,26 @@ inspection in legacy would translate to ~200 lines of mechanical
 duplication producing identical output — the architectural payoff is
 only at Stage 8 cutover (deleting the legacy code). We keep `IRWrap`
 in place for chain-fusion outputs through Stage 8 and reconsider once
-the mutating-path migration (Stage 9) settles the IR shape.
+the mutating-path work (workstream M3) settles the Layer 1 → Layer 2
+lowering shape.
+
+### Imperative IR Workstream (supersedes Stages 9–11)
+
+After Stage 8, ts2pant moves to a layered architecture: **Layer 1** is a
+TS-faithful imperative IR (`Block`, `Cond`, `Foreach`, `Assign`, `For`,
+`While`, `Return`, …) where normalization passes collapse syntactic
+equivalences (increment spellings, conditional families, iteration
+families) into a small canonical vocabulary. **Layer 2** is today's
+`IRExpr`/`IRStmt` (Pant-shaped expression IR). **Layer 3** is `OpaqueExpr`.
+Lowering goes Layer 1 → Layer 2 → Layer 3.
+
+The full milestone breakdown — vocabulary lock at M1, conditionals (M1),
+assign + μ-search (M2), iteration + mutation (M3, where the former Stages
+9–11 land), deferred classes (M4 equality/nullish, M5 property access),
+cleanup (M6) — lives in `workstreams/ts2pant-imperative-ir.md`. Decisions
+on canonical forms, conservative-refusal policy, hard-rule-per-class
+migration, and the `Foreach`-with-statement-body rationale are recorded
+there.
 
 ## PR #84 Post-Mortem: Why Standard Algorithms Matter
 
