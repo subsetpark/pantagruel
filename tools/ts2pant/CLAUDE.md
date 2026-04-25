@@ -505,14 +505,18 @@ coordinated with the rest of the document, but locally collision-safe:
 Pant name already bound in the current frame.
 
 **SMT note.** `pant --check` accepts the emitted form via a sound Skolem
-least-witness encoding (PR #126): `min over each j: T, G | j` with
-`T ∈ {Nat, Nat0, Int}` compiles to a fresh Int constant `r` together with
-`(and <type-bound[r]> G(r))` and a `(forall ((j Int)) (=> (and …
-(< j r) G(j)) false))` "no smaller witness" assertion. End-to-end
-verification of a μ-search result is now in scope; consumers other than
-the μ-search aggregate (`#`, `+/*/and/or/max over`, bare `each`,
-membership, subset) still require an explicit upper-bound guard or a
-domain-typed iterator and emit a targeted diagnostic otherwise.
+least-witness encoding (PR #126). On the checker side, `min over each j: T,
+G | j` is supported for integer sorts `T ∈ {Nat, Nat0, Int}`, compiling to
+a fresh Int constant `r` together with `(and <type-bound[r]> G(r))` and a
+`(forall ((j Int)) (=> (and … (< j r) G(j)) false))` "no smaller witness"
+assertion. ts2pant itself only has `IntStrategy` and `RealStrategy` (there
+is no `NatStrategy`), so the translator-emitted μ-search form uses `Int`
+in practice; the checker's `Nat`/`Nat0` support is exercised by hand-written
+specs rather than ts2pant output. End-to-end verification of a μ-search
+result is now in scope; consumers other than the μ-search aggregate (`#`,
+`+/*/and/or/max over`, bare `each`, membership, subset) still require an
+explicit upper-bound guard or a domain-typed iterator and emit a targeted
+diagnostic otherwise.
 
 ## PR #84 Post-Mortem: Why Standard Algorithms Matter
 

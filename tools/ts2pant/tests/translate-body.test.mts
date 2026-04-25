@@ -215,6 +215,7 @@ describe("if-early-return prelude arms", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
+    assert.equal(props.length, 1);
     const prop = props[0]!;
     assert.equal(prop.kind, "equation");
     if (prop.kind === "equation") {
@@ -241,6 +242,7 @@ describe("if-early-return prelude arms", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
+    assert.equal(props.length, 1);
     const prop = props[0]!;
     assert.equal(prop.kind, "equation");
     if (prop.kind === "equation") {
@@ -266,6 +268,7 @@ describe("if-early-return prelude arms", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
+    assert.equal(props.length, 1);
     const prop = props[0]!;
     assert.equal(prop.kind, "equation");
     if (prop.kind === "equation") {
@@ -292,6 +295,7 @@ describe("if-early-return prelude arms", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
+    assert.equal(props.length, 1);
     const prop = props[0]!;
     assert.equal(prop.kind, "equation");
     if (prop.kind === "equation") {
