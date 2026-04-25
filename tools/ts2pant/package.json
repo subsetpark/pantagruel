@@ -11,8 +11,10 @@
     "build:wasm": "node scripts/build-wasm.mjs",
     "build": "npm run build:wasm && tsc",
     "start": "node dist/index.js",
-    "test": "npx tsx --test tests/*.test.mts",
-    "test:update-snapshots": "npx tsx --test --test-update-snapshots tests/*.test.mts",
+    "test:unit": "npx tsx --test --test-timeout=300000 tests/*.test.mts",
+    "test:integration": "npx tsx --test --test-timeout=300000 tests/integration/*.test.mts",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:update-snapshots": "npx tsx --test --test-update-snapshots --test-timeout=300000 tests/*.test.mts tests/integration/*.test.mts",
     "lint": "biome check src",
     "lint:fix": "biome check --write src"
   },

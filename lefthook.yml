@@ -4,6 +4,5 @@ pre-commit:
       glob: "*.{ml,mli,mly}"
       run: opam exec -- dune build && opam exec -- dune build @fmt && opam exec -- dune test
     - name: ts2pant
-      root: "tools/ts2pant/"
       glob: "tools/ts2pant/**/*.{ts,mts}"
-      run: npx biome ci src && npx tsc --noEmit && opam exec -- npx tsx --test tests/*.test.mts
+      run: just ts2pant-precommit
