@@ -111,16 +111,14 @@ export function substIR(body: IRExpr, name: string, value: IRExpr): IRExpr {
     }
 
     case "ir-wrap":
-      // OpaqueExpr is opaque from TypeScript — substitution into an
-      // already-lowered expression goes through `pant-ast.ts`'s
-      // `substituteBinder`. But that requires lowering `value` first,
-      // which means we need a callback. For Stage 1 we don't expect any
-      // path that constructs a `Let` whose body contains an `IRWrap`
-      // referring to the bound name (ir-build wraps wholesale OpaqueExpr
-      // for unimplemented forms; the bound name `name` couldn't appear
-      // inside a wrapped form by construction). Once Stage 6 lands
-      // const-binding inlining, this case needs a strategy.
-      return body;
+      // Substitution into an already-lowered OpaqueExpr cannot happen at
+      // the IR layer (OpaqueExpr is opaque from TypeScript). Routing
+      // `Let` through `lowerExpr` + `ast.substituteBinder` is the
+      // only correct path; failing fast here prevents a future caller
+      // from silently dropping a substitution by hitting this case.
+      throw new Error(
+        "substIR cannot substitute inside ir-wrap; lower first and use ast.substituteBinder",
+      );
     default: {
       const _exhaustive: never = body;
       void _exhaustive;
