@@ -60,3 +60,36 @@ export function unbracedWhileBody(used: ReadonlySet<number>): number {
   while (used.has(i)) i++;
   return i;
 }
+
+/** Compound-assignment increment step (`i += 1`). M2's L1 normalizer
+ *  collapses this to the same canonical Assign as `i++` — same Pant
+ *  output. */
+export function compoundIncrementStep(used: ReadonlySet<number>): number {
+  let i = 1;
+  while (used.has(i)) {
+    i += 1;
+  }
+  return i;
+}
+
+/** Explicit-assignment increment step (`i = i + 1`). M2 collapses to
+ *  the canonical Assign. */
+export function explicitIncrementStep(used: ReadonlySet<number>): number {
+  let i = 1;
+  while (used.has(i)) {
+    i = i + 1;
+  }
+  return i;
+}
+
+/** Counter on the right of the explicit `+` (`i = 1 + i`) —
+ *  commutative-rewrite gives the same canonical Assign. */
+export function explicitIncrementStepFlipped(
+  used: ReadonlySet<number>,
+): number {
+  let i = 1;
+  while (used.has(i)) {
+    i = 1 + i;
+  }
+  return i;
+}

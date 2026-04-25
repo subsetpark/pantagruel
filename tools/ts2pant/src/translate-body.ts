@@ -59,18 +59,6 @@ function useIRPipeline(): boolean {
   return g.process?.env?.["TS2PANT_USE_IR"] === "1";
 }
 
-/**
- * True if the imperative-IR (Layer 1) μ-search pipeline is enabled via
- * `TS2PANT_USE_L1_MUSEARCH=1`. M2 patch 2 uses this flag to gate the L1
- * recognizer during validation; patch 3 deletes the flag and makes L1
- * always-on for μ-search lowering (workstream
- * `workstreams/ts2pant-imperative-ir.md`, milestone M2).
- */
-function useL1MuSearchPipeline(): boolean {
-  const g = globalThis as { process?: { env?: Record<string, string> } };
-  return g.process?.env?.["TS2PANT_USE_L1_MUSEARCH"] === "1";
-}
-
 // --- Const-binding inlining infrastructure (let-elimination) ---
 
 /**
@@ -124,7 +112,7 @@ export function isNullableTsType(type: ts.Type): boolean {
  *   - `muSearch`: the `let counter = init; while (P(counter)) counter++;`
  *     pair, recognized as Kleene μ-minimization and emitted as a synthetic
  *     binding whose value is `min over each $j: Nat, $j >= init, ~P($j) | $j`.
- *     See `recognizeMuSearch` and `emitMuSearch`.
+ *     See `recognizeLetWhilePair` and `emitMuSearch`.
  */
 type ConstBinding =
   | { kind: "const"; tsName: string; initializer: ts.Expression }
@@ -1630,7 +1618,16 @@ function isInterfaceFieldAccess(
  * Reference: Kleene, *General Recursive Functions of Natural Numbers*,
  * Math. Ann. 112 (1936); Kroening & Strichman, *Decision Procedures* Ch. 4.
  */
-function recognizeMuSearch(
+/**
+ * Recognize a `let + while` pair as one prelude unit. Purely structural:
+ * the let must have a single identifier declarator with an initializer,
+ * the while body must be a single expression-statement (or a single-stmt
+ * block thereof). No μ-search-specific semantics here — those live at
+ * `ir1-lower.ts:isCanonicalMuSearchForm` and the L1 path in
+ * `translateMuSearchInit`. This recognizer's only job is to consume
+ * the pair structurally so `extractReturnExpression` can keep walking.
+ */
+function recognizeLetWhilePair(
   stmts: readonly ts.Statement[],
   idx: number,
   _checker: ts.TypeChecker,
@@ -1660,14 +1657,9 @@ function recognizeMuSearch(
     return null;
   }
 
-  // Body must be exactly one expression-statement whose expression is a
-  // recognized `+1` increment on the counter — `i++`, `++i`, `i += 1`,
-  // `i = i + 1`, or `i = 1 + i`. All five spellings are accepted (the
-  // L1 builder collapses them to one canonical Assign at lowering).
-  // Side-effect purity of init and predicate is not pre-screened here:
-  // the recognizer identifies the syntactic shape; the downstream
-  // translation surfaces any unsupported expressions with their natural
-  // error message.
+  // Body must be a single expression-statement (unbraced or single-stmt
+  // block). No semantic check on the step — that's the L1 recognizer's
+  // job.
   const body = whileStmt.statement;
   const bodyStmt: ts.Statement | null = ts.isBlock(body)
     ? body.statements.length === 1
@@ -1677,80 +1669,13 @@ function recognizeMuSearch(
   if (!bodyStmt || !ts.isExpressionStatement(bodyStmt)) {
     return null;
   }
-  const update = bodyStmt.expression;
-  if (!isPlusOneStep(update, counterName)) {
-    return null;
-  }
-  // Predicate must reference the counter; otherwise the loop is either a
-  // no-op or a divergence, neither of which is a μ-search. Translating
-  // such a shape as `min over each j: Int, j >= INIT, ~Q | j` (with Q
-  // free of j) changes behavior at the non-terminating case.
-  if (
-    !expressionReferencesNames(whileStmt.expression, new Set([counterName]))
-  ) {
-    return null;
-  }
 
   return {
     counterName,
     initTsExpr: decl.initializer,
     predicateTsExpr: whileStmt.expression,
-    stepExpr: update,
+    stepExpr: bodyStmt.expression,
   };
-}
-
-/**
- * Recognize a `+1` increment-step expression on the named counter. The
- * five spellings — `i++`, `++i`, `i += 1`, `i = i + 1`, `i = 1 + i` —
- * all return true. Anything else returns false; in particular, `i--`,
- * `i += 2`, and `i = i + k` for non-literal `k` reject. The L1
- * `buildL1IncrementStep` accepts a broader set of increment forms; this
- * predicate is the narrower `+1` filter the μ-search recognizer uses.
- */
-function isPlusOneStep(expr: ts.Expression, counterName: string): boolean {
-  // `i++` / `++i`
-  if (ts.isPostfixUnaryExpression(expr) || ts.isPrefixUnaryExpression(expr)) {
-    return (
-      expr.operator === ts.SyntaxKind.PlusPlusToken &&
-      ts.isIdentifier(expr.operand) &&
-      expr.operand.text === counterName
-    );
-  }
-  if (!ts.isBinaryExpression(expr)) {
-    return false;
-  }
-  const opKind = expr.operatorToken.kind;
-  // `i += 1`
-  if (opKind === ts.SyntaxKind.PlusEqualsToken) {
-    return (
-      ts.isIdentifier(expr.left) &&
-      expr.left.text === counterName &&
-      isLiteralOne(expr.right)
-    );
-  }
-  // `i = i + 1` / `i = 1 + i`
-  if (opKind === ts.SyntaxKind.EqualsToken) {
-    if (!ts.isIdentifier(expr.left) || expr.left.text !== counterName) {
-      return false;
-    }
-    if (
-      !ts.isBinaryExpression(expr.right) ||
-      expr.right.operatorToken.kind !== ts.SyntaxKind.PlusToken
-    ) {
-      return false;
-    }
-    const a = expr.right.left;
-    const b = expr.right.right;
-    return (
-      (ts.isIdentifier(a) && a.text === counterName && isLiteralOne(b)) ||
-      (ts.isIdentifier(b) && b.text === counterName && isLiteralOne(a))
-    );
-  }
-  return false;
-}
-
-function isLiteralOne(expr: ts.Expression): boolean {
-  return ts.isNumericLiteral(expr) && Number(expr.text) === 1;
 }
 
 /**
@@ -1811,7 +1736,7 @@ function extractReturnExpression(
   const lastIdx = stmts.length - 1;
   let i = 0;
   while (i < lastIdx) {
-    const mu = recognizeMuSearch(stmts, i, checker);
+    const mu = recognizeLetWhilePair(stmts, i, checker);
     if (mu) {
       bindings.push({ kind: "muSearch", tsName: mu.counterName, mu });
       i += 2;
@@ -1880,7 +1805,7 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
     // failed rather than a heuristic guess.
     let i = 0;
     while (i < lastIdx) {
-      if (recognizeMuSearch(stmts, i, checker)) {
+      if (recognizeLetWhilePair(stmts, i, checker)) {
         i += 2;
         continue;
       }
@@ -1897,7 +1822,7 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
         }
         return "if-with-return body must be a single return statement";
       }
-      // A let; while pair where recognizeMuSearch failed — probably a
+      // A let; while pair where recognizeLetWhilePair failed — probably a
       // compound while body or non-`i++` body.
       if (
         ts.isVariableStatement(stmt) &&
@@ -2197,43 +2122,14 @@ function translateMuSearchInit(
   state: SymbolicState | undefined,
   supply: UniqueSupply,
 ): BindingInitResult {
-  if (useL1MuSearchPipeline()) {
-    return translateMuSearchInitViaL1(
-      mu,
-      checker,
-      strategy,
-      scopedParams,
-      state,
-      supply,
-    );
-  }
-  return translateMuSearchInitLegacy(
-    mu,
-    checker,
-    strategy,
-    scopedParams,
-    state,
-    supply,
-  );
-}
+  const ast = getAst();
 
-/**
- * L1 imperative-IR path for μ-search lowering (workstream M2 patch 2).
- * Builds the canonical L1 form `Block([Let(c, init), While(p, Assign(c,
- * BinOp(add, c, Lit(1))))])` and validates it via the L1 recognizer
- * (`isCanonicalMuSearchForm` in `ir1-lower.ts`). On successful
- * validation, lowers to the same OpaqueExpr the legacy path produces —
- * byte-equality is the cutover gate. Patch 3 deletes the legacy path
- * and inlines this function as the sole μ-search lowering.
- */
-function translateMuSearchInitViaL1(
-  mu: MuSearch,
-  checker: ts.TypeChecker,
-  strategy: NumericStrategy,
-  scopedParams: ReadonlyMap<string, string>,
-  state: SymbolicState | undefined,
-  supply: UniqueSupply,
-): BindingInitResult {
+  // L1 imperative-IR path. Build the canonical L1 form
+  // `Block([Let(c, init), While(p, Assign(c, BinOp(add, c, Lit(1))))])`
+  // and validate via the L1 recognizer. The recognizer is the canonical
+  // home for the canonical-shape check (step is `+1`); the TS-AST
+  // `recognizeLetWhilePair` is purely structural. Predicate-references-
+  // counter and discrete-strategy checks live below as semantic gates.
   const l1Ctx = {
     checker,
     strategy,
@@ -2255,30 +2151,36 @@ function translateMuSearchInitViaL1(
   if (!recognized.ok) {
     return { error: recognized.unsupported };
   }
-  // Canonical-shape validation passed. Use the same OpaqueExpr-building
-  // mechanics as legacy — same scopedParams, same binder allocation,
-  // same eachComb construction. Byte-equality with legacy is the
-  // cutover gate.
-  return translateMuSearchInitLegacy(
-    mu,
-    checker,
-    strategy,
-    scopedParams,
-    state,
-    supply,
-  );
-}
 
-function translateMuSearchInitLegacy(
-  mu: MuSearch,
-  checker: ts.TypeChecker,
-  strategy: NumericStrategy,
-  scopedParams: ReadonlyMap<string, string>,
-  state: SymbolicState | undefined,
-  supply: UniqueSupply,
-): BindingInitResult {
-  const ast = getAst();
+  // Predicate must reference the counter; otherwise the loop is either
+  // a no-op or a divergence, neither of which is a μ-search. Translating
+  // such a shape as `min over each j: Int, j >= INIT, ~Q | j` (with Q
+  // free of j) changes behavior at the non-terminating case.
+  if (
+    !expressionReferencesNames(mu.predicateTsExpr, new Set([mu.counterName]))
+  ) {
+    return {
+      error: "μ-search predicate does not reference the counter",
+    };
+  }
 
+  // Binder type follows the active NumericStrategy so the comprehension
+  // stays consistent with how `number` is emitted elsewhere. A hardcoded
+  // `Nat` would exclude negative INITs from the search domain and
+  // diverge from the containing body's numeric type. Real is rejected:
+  // μ-search enumerates the discrete sequence `INIT, INIT+1, …` from
+  // `counter++`, whereas `min over each j: Real, j >= INIT, ~P(j) | j`
+  // ranges over a dense domain — e.g. `while (i * i < 2) i++` would
+  // return √2 instead of 2.
+  const counterType = strategy.mapNumber();
+  if (counterType === "Real") {
+    return {
+      error:
+        "μ-search is only supported for discrete numeric strategies (got Real)",
+    };
+  }
+
+  // Translate the init expression for the comprehension's `j >= INIT` guard.
   const initResult = translateBodyExpr(
     mu.initTsExpr,
     checker,
@@ -2321,21 +2223,6 @@ function translateMuSearchInitLegacy(
   }
   const predExpr = bodyExpr(predResult);
 
-  // Binder type follows the active NumericStrategy so the comprehension
-  // stays consistent with how `number` is emitted elsewhere. A hardcoded
-  // `Nat` would exclude negative INITs from the search domain and
-  // diverge from the containing body's numeric type. Real is rejected:
-  // μ-search enumerates the discrete sequence `INIT, INIT+1, …` from
-  // `counter++`, whereas `min over each j: Real, j >= INIT, ~P(j) | j`
-  // ranges over a dense domain — e.g. `while (i * i < 2) i++` would
-  // return √2 instead of 2.
-  const counterType = strategy.mapNumber();
-  if (counterType === "Real") {
-    return {
-      error:
-        "μ-search is only supported for discrete numeric strategies (got Real)",
-    };
-  }
   return {
     value: ast.eachComb(
       [ast.param(jName, ast.tName(counterType))],
