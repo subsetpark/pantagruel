@@ -1,22 +1,12 @@
 /**
- * Integration tests for the L1 imperative-IR plumbing
- * (workstream M1, patch 2).
+ * Regression tests for the L1 conditional pipeline (workstream M1).
  *
- * Sets `TS2PANT_USE_L1=1` for the duration of these tests so the L1
- * conditional pipeline is exercised end-to-end. Asserts:
- *
- * 1. **L1 conditional shapes translate** that the legacy pipeline
- *    currently rejects: switch (clean) becomes a cond.
- * 2. **L1 conservative-refusal cases** produce the expected UNSUPPORTED
- *    reasons: switch fall-through, switch default-not-last, switch
- *    without default, non-Bool `&&`/`||`, non-literal switch case label,
- *    object-literal arms.
- * 3. **L1 byte-equality with legacy** for forms both pipelines handle:
- *    if-with-returns, ternary, Bool-typed `&&`/`||`. Translating the
- *    same source under USE_L1=0 vs USE_L1=1 produces identical Pant.
- *
- * The byte-equality check is the cutover gate — Patch 3 deletes the
- * legacy paths, so snapshots can't change between the two runs.
+ * After M1 patch 3 (hard-rule cutover), all conditional value forms —
+ * if-with-returns, ternary chains, switch w/o fall-through, Bool-typed
+ * `&&`/`||` — flow through the L1 builder. These tests verify the
+ * resulting Pant for representative shapes and lock in the rejection
+ * reasons for cases the L1 builder conservatively refuses (workstream
+ * policy 3(b)).
  */
 
 import assert from "node:assert/strict";
@@ -30,36 +20,10 @@ before(async () => {
   await loadAst();
 });
 
-function withL1<T>(fn: () => T): T {
-  const prev = process.env.TS2PANT_USE_L1;
-  process.env.TS2PANT_USE_L1 = "1";
-  try {
-    return fn();
-  } finally {
-    if (prev === undefined) {
-      delete process.env.TS2PANT_USE_L1;
-    } else {
-      process.env.TS2PANT_USE_L1 = prev;
-    }
-  }
-}
-
-function withoutL1<T>(fn: () => T): T {
-  const prev = process.env.TS2PANT_USE_L1;
-  delete process.env.TS2PANT_USE_L1;
-  try {
-    return fn();
-  } finally {
-    if (prev !== undefined) {
-      process.env.TS2PANT_USE_L1 = prev;
-    }
-  }
-}
-
-function translate(source: string, name: string): {
-  unsupported: string | null;
-  pant: string | null;
-} {
+function translate(
+  source: string,
+  name: string,
+): { unsupported: string | null; pant: string | null } {
   const sourceFile = createSourceFileFromSource(source);
   const props = translateBody({
     sourceFile,
@@ -81,11 +45,11 @@ function translate(source: string, name: string): {
 }
 
 // ---------------------------------------------------------------------------
-// 1. L1 enables forms the legacy pipeline can't translate
+// L1 capabilities — switch, multi-arm if-chains, flat ternary chains
 // ---------------------------------------------------------------------------
 
 describe("L1: switch (clean) translates", () => {
-  it("switch with literal numeric cases and default → cond", () => {
+  it("switch with literal numeric cases and default → flat cond", () => {
     const source = `
       function classify(x: number): number {
         switch (x) {
@@ -95,14 +59,12 @@ describe("L1: switch (clean) translates", () => {
         }
       }
     `;
-    const { unsupported, pant } = withL1(() => translate(source, "classify"));
-    assert.equal(unsupported, null, "switch should translate under L1");
-    assert.match(pant!, /cond/);
-    assert.match(pant!, /x = 0/);
-    assert.match(pant!, /x = 1/);
-    assert.match(pant!, /100/);
-    assert.match(pant!, /200/);
-    assert.match(pant!, /300/);
+    const { unsupported, pant } = translate(source, "classify");
+    assert.equal(unsupported, null);
+    assert.equal(
+      pant,
+      "cond x = 0 => 100, x = 1 => 200, true => 300",
+    );
   });
 
   it("switch with string cases", () => {
@@ -115,9 +77,8 @@ describe("L1: switch (clean) translates", () => {
         }
       }
     `;
-    const { unsupported, pant } = withL1(() => translate(source, "tag"));
+    const { unsupported } = translate(source, "tag");
     assert.equal(unsupported, null);
-    assert.match(pant!, /cond/);
   });
 
   it("switch with only default collapses to the default value", () => {
@@ -128,36 +89,71 @@ describe("L1: switch (clean) translates", () => {
         }
       }
     `;
-    const { unsupported, pant } = withL1(() => translate(source, "constant"));
+    const { unsupported, pant } = translate(source, "constant");
     assert.equal(unsupported, null);
-    // No cond — just the literal.
     assert.equal(pant, "42");
   });
 });
 
+describe("L1: flat-cond canonicalization", () => {
+  it("right-leaning ternary chain flattens to one cond", () => {
+    const source = `
+      function bucket(n: number): number {
+        return n < 0 ? 0 : n < 10 ? 1 : n < 100 ? 2 : 3;
+      }
+    `;
+    const { unsupported, pant } = translate(source, "bucket");
+    assert.equal(unsupported, null);
+    assert.equal(
+      pant,
+      "cond n < 0 => 0, n < 10 => 1, n < 100 => 2, true => 3",
+    );
+  });
+
+  it("if/else-if/else chain flattens to one cond", () => {
+    const source = `
+      function classify(n: number): number {
+        if (n < 0) {
+          return -1;
+        } else if (n === 0) {
+          return 0;
+        } else {
+          return 1;
+        }
+      }
+    `;
+    const { unsupported, pant } = translate(source, "classify");
+    assert.equal(unsupported, null);
+    assert.equal(
+      pant,
+      "cond n < 0 => -1, n = 0 => 0, true => 1",
+    );
+  });
+
+  it("early-return arm + ternary terminal merges into one flat cond", () => {
+    const source = `
+      function nested(n: number): number {
+        if (n < 0) {
+          return -1;
+        }
+        return n === 0 ? 0 : 1;
+      }
+    `;
+    const { unsupported, pant } = translate(source, "nested");
+    assert.equal(unsupported, null);
+    assert.equal(
+      pant,
+      "cond n < 0 => -1, n = 0 => 0, true => 1",
+    );
+  });
+});
+
 // ---------------------------------------------------------------------------
-// 2. L1 rejection cases produce the expected UNSUPPORTED reasons
+// L1 conservative-refusal — locked rejection reasons (policy 3(b))
 // ---------------------------------------------------------------------------
 
 describe("L1: conservative-refusal rejection cases", () => {
-  it("switch without default rejects (literal-union exhaustiveness deferred)", () => {
-    const source = `
-      function noDefault(x: number): number {
-        switch (x) {
-          case 0: return 1;
-          case 1: return 2;
-        }
-        return 0;
-      }
-    `;
-    const { unsupported } = withL1(() => translate(source, "noDefault"));
-    // Either (a) the switch isn't recognized as a terminal because of the
-    // trailing `return 0`, or (b) the switch is recognized and rejected.
-    // Either way: not a clean translation.
-    assert.notEqual(unsupported, null);
-  });
-
-  it("switch with default not last rejects", () => {
+  it("switch with default not last rejects with specific reason", () => {
     const source = `
       function badOrder(x: number): number {
         switch (x) {
@@ -166,12 +162,12 @@ describe("L1: conservative-refusal rejection cases", () => {
         }
       }
     `;
-    const { unsupported } = withL1(() => translate(source, "badOrder"));
+    const { unsupported } = translate(source, "badOrder");
     assert.notEqual(unsupported, null);
     assert.match(unsupported!, /default must be the last/);
   });
 
-  it("switch with fall-through (case body not ending in return) rejects", () => {
+  it("switch fall-through (case body not ending in return) rejects", () => {
     const source = `
       function fallthrough(x: number): number {
         switch (x) {
@@ -181,23 +177,21 @@ describe("L1: conservative-refusal rejection cases", () => {
         }
       }
     `;
-    const { unsupported } = withL1(() => translate(source, "fallthrough"));
+    const { unsupported } = translate(source, "fallthrough");
     assert.notEqual(unsupported, null);
     assert.match(unsupported!, /case must end with `return EXPR`/);
   });
 
-  it("switch with break-only case rejects", () => {
+  it("switch break-only case rejects", () => {
     const source = `
       function breakOnly(x: number): number {
-        let r = 0;
         switch (x) {
           case 0: { break; }
           default: { return 0; }
         }
-        return r;
       }
     `;
-    const { unsupported } = withL1(() => translate(source, "breakOnly"));
+    const { unsupported } = translate(source, "breakOnly");
     assert.notEqual(unsupported, null);
   });
 
@@ -210,80 +204,58 @@ describe("L1: conservative-refusal rejection cases", () => {
         }
       }
     `;
-    const { unsupported } = withL1(() => translate(source, "nonLiteral"));
+    const { unsupported } = translate(source, "nonLiteral");
     assert.notEqual(unsupported, null);
     assert.match(unsupported!, /literal/);
   });
 
-  it("non-Bool && in conditional position rejects (with L1 hooked at &&/||)", () => {
-    // `a && b` where both operands are number — under L1 the &&/|| Bool
-    // typing check rejects. Without L1, this would translate as a binop.
-    // Under L1 the rejection falls through to legacy (patch 2 keeps both
-    // available); legacy handles non-Bool && by producing `a and b` via
-    // translateOperator. Under patch 2, the L1 path simply doesn't fire
-    // for non-Bool short-circuit (isL1ConditionalForm returns false), so
-    // we fall through cleanly. Verify the legacy path still works.
+  it("non-Bool && stays on the legacy operator path (degraded but accepted)", () => {
+    // Non-Bool `&&` / `||` is *not* an L1 conditional form — `isL1ConditionalForm`
+    // requires both operands Bool-typed. So `a && b` with `a: number` falls
+    // through to the legacy `translateOperator` path and lowers to `a and b`
+    // as a binop. Translation succeeds.
     const source = `
       function combine(a: number, b: number): number {
         return a && b;
       }
     `;
-    // L1 path won't recognize this as conditional (operands non-Bool),
-    // so isL1ConditionalForm returns false and translation proceeds via
-    // the legacy &&/|| binop path.
-    const { unsupported, pant } = withL1(() => translate(source, "combine"));
-    // Translation succeeds via legacy fallback.
+    const { unsupported, pant } = translate(source, "combine");
     assert.equal(unsupported, null);
     assert.match(pant!, /and/);
   });
 });
 
 // ---------------------------------------------------------------------------
-// 3. L1 byte-equality with legacy on shared forms (cutover gate)
+// Forms that already produced flat output before cutover are unchanged
 // ---------------------------------------------------------------------------
 
-describe("L1: byte-equality with legacy on shared forms", () => {
-  function translateBoth(source: string, name: string) {
-    const legacy = withoutL1(() => translate(source, name));
-    const l1 = withL1(() => translate(source, name));
-    return { legacy, l1 };
-  }
-
-  it("ternary translates identically under L1=0 and L1=1", () => {
+describe("L1: forms unchanged from pre-cutover", () => {
+  it("single ternary lowers to single-arm cond", () => {
     const source = `
       function abs(n: number): number {
         return n >= 0 ? n : -n;
       }
     `;
-    const { legacy, l1 } = translateBoth(source, "abs");
-    assert.equal(legacy.unsupported, null);
-    assert.equal(l1.unsupported, null);
-    assert.equal(legacy.pant, l1.pant);
+    const { unsupported, pant } = translate(source, "abs");
+    assert.equal(unsupported, null);
+    assert.equal(pant, "cond n >= 0 => n, true => -n");
   });
 
-  it("ternary chain: L1 flattens, legacy nests (expected divergence)", () => {
-    // Right-leaning ternary chain. L1's `buildFromTernary` flattens via
-    // recursive descent; legacy `translateBodyExpr` recurses, producing
-    // nested `cond [..., true => (cond ...)]`. Both are semantically
-    // equivalent; the L1 form is the canonical normalization.
+  it("single-arm early-return + plain terminal lowers correctly", () => {
     const source = `
-      function bucket(n: number): number {
-        return n < 0 ? 0 : n < 10 ? 1 : n < 100 ? 2 : 3;
+      function piecewise(n: number): number {
+        if (n < 0) {
+          return -1;
+        }
+        return n;
       }
     `;
-    const { legacy, l1 } = translateBoth(source, "bucket");
-    assert.equal(legacy.unsupported, null);
-    assert.equal(l1.unsupported, null);
-    // L1 produces flat: 4 arms in one cond.
-    assert.match(
-      l1.pant!,
-      /^cond n < 0 => 0, n < 10 => 1, n < 100 => 2, true => 3$/,
-    );
-    // Legacy nests; the strings genuinely differ.
-    assert.notEqual(legacy.pant, l1.pant);
+    const { unsupported, pant } = translate(source, "piecewise");
+    assert.equal(unsupported, null);
+    assert.equal(pant, "cond n < 0 => -1, true => n");
   });
 
-  it("if-with-returns translates identically under both modes", () => {
+  it("two-branch if/else translates to single-arm cond", () => {
     const source = `
       function abs2(n: number): number {
         if (n >= 0) {
@@ -293,98 +265,30 @@ describe("L1: byte-equality with legacy on shared forms", () => {
         }
       }
     `;
-    const { legacy, l1 } = translateBoth(source, "abs2");
-    assert.equal(legacy.unsupported, null);
-    assert.equal(l1.unsupported, null);
-    assert.equal(legacy.pant, l1.pant);
+    const { unsupported, pant } = translate(source, "abs2");
+    assert.equal(unsupported, null);
+    assert.equal(pant, "cond n >= 0 => n, true => -n");
   });
 
-  it("if/else-if/else chain: legacy rejects (unsupported), L1 flattens", () => {
-    // `if (g1) {return e1} else if (g2) {return e2} else {return e3}`.
-    // Legacy `translateIfStatement` only handles two-branch if/else
-    // (its `extractReturnFromBranch` rejects IfStatement-shaped else
-    // branches). L1's buildFromIfStatement walks the chain and produces
-    // one flat cond — a strict capability gain.
-    const source = `
-      function classify(n: number): number {
-        if (n < 0) {
-          return -1;
-        } else if (n === 0) {
-          return 0;
-        } else {
-          return 1;
-        }
-      }
-    `;
-    const { legacy, l1 } = translateBoth(source, "classify");
-    // Legacy doesn't support multi-arm if-chains.
-    assert.notEqual(legacy.unsupported, null);
-    // L1 produces the flat cond.
-    assert.equal(l1.unsupported, null);
-    assert.match(
-      l1.pant!,
-      /^cond n < 0 => -1, n = 0 => 0, true => 1$/,
-    );
-  });
-
-  it("Bool-typed && translates identically under both modes", () => {
+  it("Bool-typed && translates to binop", () => {
     const source = `
       function bothPositive(a: number, b: number): boolean {
         return a > 0 && b > 0;
       }
     `;
-    const { legacy, l1 } = translateBoth(source, "bothPositive");
-    assert.equal(legacy.unsupported, null);
-    assert.equal(l1.unsupported, null);
-    assert.equal(legacy.pant, l1.pant);
+    const { unsupported, pant } = translate(source, "bothPositive");
+    assert.equal(unsupported, null);
+    assert.equal(pant, "a > 0 and b > 0");
   });
 
-  it("Bool-typed || translates identically under both modes", () => {
+  it("Bool-typed || translates to binop", () => {
     const source = `
       function eitherPositive(a: number, b: number): boolean {
         return a > 0 || b > 0;
       }
     `;
-    const { legacy, l1 } = translateBoth(source, "eitherPositive");
-    assert.equal(legacy.unsupported, null);
-    assert.equal(l1.unsupported, null);
-    assert.equal(legacy.pant, l1.pant);
-  });
-
-  it("early-return arms translate identically under both modes", () => {
-    const source = `
-      function piecewise(n: number): number {
-        if (n < 0) {
-          return -1;
-        }
-        return n;
-      }
-    `;
-    const { legacy, l1 } = translateBoth(source, "piecewise");
-    assert.equal(legacy.unsupported, null);
-    assert.equal(l1.unsupported, null);
-    assert.equal(legacy.pant, l1.pant);
-  });
-
-  it("early-return arm + ternary terminal: L1 merges into one cond", () => {
-    // `if (P) return E; return ternary` — L1's buildL1ConditionalFromArms
-    // flattens the prelude arm with the ternary terminal into one cond.
-    // Legacy materializes them as nested cond at the arm-merge step.
-    const source = `
-      function nested(n: number): number {
-        if (n < 0) {
-          return -1;
-        }
-        return n === 0 ? 0 : 1;
-      }
-    `;
-    const { legacy, l1 } = translateBoth(source, "nested");
-    assert.equal(legacy.unsupported, null);
-    assert.equal(l1.unsupported, null);
-    assert.match(
-      l1.pant!,
-      /^cond n < 0 => -1, n = 0 => 0, true => 1$/,
-    );
-    assert.notEqual(legacy.pant, l1.pant);
+    const { unsupported, pant } = translate(source, "eitherPositive");
+    assert.equal(unsupported, null);
+    assert.equal(pant, "a > 0 or b > 0");
   });
 });
