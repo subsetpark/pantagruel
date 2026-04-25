@@ -37,6 +37,13 @@ const ANCHORS: Array<{ file: string; functions: string[] }> = [
     file: "expressions-ir-anchor.ts",
     functions: ["effectiveValue"],
   },
+  // Stage 2: optional chaining `?.` (the `??` cases stay on the legacy
+  // path until Stage 3, but the IR-equivalence test still asserts byte-
+  // equality, which holds because IRWrap fallback covers `??`).
+  {
+    file: "expressions-nullish.ts",
+    functions: ["maybeBalance", "maybeOwnerId", "maybeOwnerIdOptional"],
+  },
 ];
 
 async function emitWithFlag(

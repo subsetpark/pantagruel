@@ -1,16 +1,14 @@
 /**
  * TS-AST → IR construction.
  *
- * Stage 1 scope: handles `Var` (Identifier), `Lit` (numeric / string /
- * boolean literal), and the trivial cases of `App` (free function call
- * with all args themselves IR-buildable). Everything else falls back to
- * the legacy `translateBodyExpr` and wraps the result in `IRWrap` — so
- * the IR pipeline is end-to-end exercisable without committing to
- * full coverage in one stage.
+ * Stages migrated to native IR construction (latest first):
+ * - Stage 2: Optional chaining `x?.f` → `Each(t, x, [], App(qualified-rule, [t]))`.
+ * - Stage 1: `Var` (Identifier), `Lit` (numeric / string / boolean
+ *   literal). Trivial cases of `App` (free function call with all args
+ *   themselves IR-buildable). Everything else falls back to legacy
+ *   `translateBodyExpr` and wraps in `IRWrap`.
  *
- * Subsequent stages migrate one recognizer at a time from
- * `translate-body.ts` into this file; each migration removes one
- * `IRWrap` fallback and adds a native IR construction. By Stage 8
+ * Subsequent stages (3+) migrate one recognizer at a time. By Stage 8
  * (pure-path cutover) the `IRWrap` escape hatch is deleted entirely.
  *
  * See `ir.ts` and CLAUDE.md §IR for the form table.
@@ -19,6 +17,7 @@
 import ts from "typescript";
 import {
   type IRExpr,
+  irAppName,
   irLitBool,
   irLitNat,
   irLitString,
@@ -26,8 +25,12 @@ import {
   irWrap,
 } from "./ir.js";
 import {
+  ambiguousFieldMsg,
   bodyExpr,
+  freshHygienicBinder,
   isBodyUnsupported,
+  isNullableTsType,
+  qualifyFieldAccess,
   translateBodyExpr,
   type UniqueSupply,
 } from "./translate-body.js";
@@ -39,10 +42,9 @@ import type { NumericStrategy } from "./translate-types.js";
  * Returns either an `IRExpr` (success) or `{ unsupported: string }` to
  * propagate translation rejections through the existing convention.
  *
- * Stage 1: native IR construction for Identifier / NumericLiteral /
- * StringLiteral / true / false; falls back to `translateBodyExpr` +
- * `IRWrap` for everything else (so Cond, App, etc. all go through
- * IRWrap until their dedicated stages migrate them).
+ * Non-natively-built forms fall back to `translateBodyExpr` + `IRWrap`
+ * so the IR pipeline is end-to-end exercisable without committing to
+ * full coverage in one stage.
  */
 export function buildIR(
   expr: ts.Expression,
@@ -83,11 +85,63 @@ export function buildIR(
     return irVar(renamed);
   }
 
-  // Stage 1 fallback: translate via the legacy pipeline and wrap the
-  // result. Subsequent stages migrate specific recognizers (Cond, App,
-  // Each, Comb, Forall, Exists) into native IR construction here.
-  // `state` is undefined because pure-path bodies don't read symbolic
-  // state; mutating-path migration happens in Stage 9.
+  // Stage 2: Optional chain `x?.prop` (and tail of a chain marked by
+  // NodeFlags.OptionalChain) under list-lift. With `x: [T]` on the Pant
+  // side, the functor-lift encoding is `each $n in x | prop $n`, giving
+  // `[U]` — empty when x is null/empty, singleton when x is present.
+  // Chains compose as nested Each comprehensions: `x?.a.b` becomes
+  // `Each($n', Each($n, x, [], a $n), [], b $n')`. When the receiver is
+  // not nullable in TS, `?.` degenerates to `.` and falls through.
+  if (ts.isPropertyAccessExpression(expr)) {
+    const inOptionalChain = (expr.flags & ts.NodeFlags.OptionalChain) !== 0;
+    if (inOptionalChain) {
+      let shouldLift = false;
+      if (expr.questionDotToken !== undefined) {
+        const receiverTsType = checker.getTypeAtLocation(expr.expression);
+        shouldLift = isNullableTsType(receiverTsType);
+      } else if (ts.isOptionalChain(expr.expression)) {
+        shouldLift = true;
+      }
+      if (shouldLift) {
+        const prop = expr.name.text;
+        const receiverTsType = checker.getTypeAtLocation(expr.expression);
+        const ruleName = qualifyFieldAccess(
+          receiverTsType,
+          prop,
+          checker,
+          strategy,
+          supply.synthCell,
+        );
+        if (ruleName === null) {
+          return { unsupported: ambiguousFieldMsg(prop) };
+        }
+        const innerIR = buildIR(
+          expr.expression,
+          checker,
+          strategy,
+          paramNames,
+          supply,
+        );
+        if (isBuildUnsupported(innerIR)) {
+          return innerIR;
+        }
+        const binderName = freshHygienicBinder(supply);
+        return {
+          kind: "each",
+          binder: binderName,
+          src: innerIR,
+          guards: [],
+          proj: irAppName(ruleName, [irVar(binderName)]),
+        };
+      }
+    }
+  }
+
+  // Fallback: translate via the legacy pipeline and wrap. Subsequent
+  // stages migrate specific recognizers (Cond, App, Comb, Forall,
+  // Exists) into native IR construction here. `state` is undefined
+  // because pure-path bodies don't read symbolic state; mutating-path
+  // migration happens in Stage 9.
   const legacy = translateBodyExpr(
     expr,
     checker,

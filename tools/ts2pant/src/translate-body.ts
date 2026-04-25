@@ -74,7 +74,7 @@ function nextSupply(supply: UniqueSupply): number {
   return value;
 }
 
-function freshHygienicBinder(supply: UniqueSupply): string {
+export function freshHygienicBinder(supply: UniqueSupply): string {
   return `$${nextSupply(supply)}`;
 }
 
@@ -84,7 +84,7 @@ function freshHygienicBinder(supply: UniqueSupply): string {
  * sites to decide whether the receiver needs the cardinality-based lowering
  * (nullable) or can pass through as-is (already concrete).
  */
-function isNullableTsType(type: ts.Type): boolean {
+export function isNullableTsType(type: ts.Type): boolean {
   const mask = ts.TypeFlags.Null | ts.TypeFlags.Undefined | ts.TypeFlags.Void;
   if (type.isUnion()) {
     return type.types.some((t) => (t.flags & mask) !== 0);
@@ -1443,7 +1443,7 @@ interface ExtractedBody {
  *  (built-in types, type parameters, anonymous shapes with no synth
  *  context) still fall back to the bare kebab'd field name — those
  *  don't collide with qualified rule names. */
-function qualifyFieldAccess(
+export function qualifyFieldAccess(
   receiverType: ts.Type,
   fieldName: string,
   checker: ts.TypeChecker,
@@ -1466,7 +1466,7 @@ function qualifyFieldAccess(
   return toPantTermName(fieldName);
 }
 
-function ambiguousFieldMsg(fieldName: string): string {
+export function ambiguousFieldMsg(fieldName: string): string {
   return (
     `property access .${fieldName}: ambiguous owner — ` +
     `union/intersection members declare this field on multiple distinct ` +
