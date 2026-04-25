@@ -41,13 +41,16 @@ import {
   type IR1Stmt,
   ir1Assign,
   ir1Binop,
+  ir1Block,
   ir1Cond,
   ir1FromL2,
+  ir1Let,
   ir1LitBool,
   ir1LitNat,
   ir1LitString,
   ir1Unop,
   ir1Var,
+  ir1While,
 } from "./ir1.js";
 import { lowerL1Expr } from "./ir1-lower.js";
 import type { OpaqueExpr } from "./pant-ast.js";
@@ -814,4 +817,51 @@ function explicitOpToBinop(kind: ts.SyntaxKind): IR1Binop | null {
 
 function isCommutativeBinop(op: IR1Binop): boolean {
   return op === "add" || op === "mul";
+}
+
+// ---------------------------------------------------------------------------
+// μ-search L1 form construction (M2)
+//
+// Build the canonical L1 representation of a let+while+increment μ-search
+// prelude pair: `Block([Let(c, init), While(p, <step-Assign>)])`. The step
+// is built via `buildL1IncrementStep`. Sub-expressions (init, predicate)
+// flow through the legacy `translateBodyExpr` pipeline and wrap as
+// `from-l2` — same scoped delegation pattern M1 conditionals use.
+//
+// The TS-AST recognizer (`recognizeMuSearch` in `translate-body.ts`)
+// has already validated structural acceptance (let-decl + while-stmt +
+// expression-statement body) before this builder runs. Semantic
+// recognition (canonical step shape, predicate references counter,
+// strategy is discrete) lives in `ir1-lower.ts:isCanonicalMuSearchForm`.
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the L1 representation of a μ-search-shaped TS prelude:
+ *
+ *   `Block([Let(counter, init), While(predicate, step)])`
+ *
+ * `step` is the canonical L1 Assign produced by `buildL1IncrementStep`
+ * — for the five `+1` spellings, it's
+ * `Assign(Var(counter), BinOp(add, Var(counter), Lit(1)))`.
+ */
+export function buildL1LetWhile(
+  counterName: string,
+  initExpr: ts.Expression,
+  predicateExpr: ts.Expression,
+  stepExpr: ts.Expression,
+  ctx: L1BuildContext,
+): L1StmtBuildResult {
+  const init = buildSubExpr(initExpr, ctx);
+  if (isL1Unsupported(init)) {
+    return init;
+  }
+  const predicate = buildSubExpr(predicateExpr, ctx);
+  if (isL1Unsupported(predicate)) {
+    return predicate;
+  }
+  const step = buildL1IncrementStep(stepExpr, counterName, ctx);
+  if (isL1StmtUnsupported(step)) {
+    return step;
+  }
+  return ir1Block([ir1Let(counterName, init), ir1While(predicate, step)]);
 }
