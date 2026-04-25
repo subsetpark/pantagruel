@@ -206,6 +206,30 @@ exports[`expressions-const-pure-calls.ts > constStringMethod 1`] = `
 "module ConstStringMethod.\\n\\nconst-string-method s: String => Int.\\n\\n---\\n\\nconst-string-method s = index-of s \\"x\\".\\n"
 `;
 
+exports[`expressions-if-early-return.ts > armBetweenBindings 1`] = `
+"module ArmBetweenBindings.\\n\\narm-between-bindings n: Int => Int.\\n\\n---\\n\\narm-between-bindings n = (cond n + 1 < 0 => 0, true => n + 1 + (n + 1)).\\n"
+`;
+
+exports[`expressions-if-early-return.ts > armThenMuSearch 1`] = `
+"module ArmThenMuSearch.\\n\\narm-then-mu-search n: Int, used: [Int] => Int.\\n\\n---\\n\\narm-then-mu-search n used = (cond n < 0 => 0, true => (min over each j: Int, j >= 1, ~(j in used) | j)).\\n"
+`;
+
+exports[`expressions-if-early-return.ts > bindingThenArm 1`] = `
+"module BindingThenArm.\\n\\nbinding-then-arm n: Int => Int.\\n\\n---\\n\\nbinding-then-arm n = (cond n + n < 0 => 0, true => n + n).\\n"
+`;
+
+exports[`expressions-if-early-return.ts > singleArm 1`] = `
+"module SingleArm.\\n\\nsingle-arm n: Int => Int.\\n\\n---\\n\\nsingle-arm n = (cond n < 0 => 0, true => n + 1).\\n"
+`;
+
+exports[`expressions-if-early-return.ts > twoArms 1`] = `
+"module TwoArms.\\n\\ntwo-arms n: Int => Int.\\n\\n---\\n\\ntwo-arms n = (cond n < 0 => -1, n = 0 => 0, true => n + 1).\\n"
+`;
+
+exports[`expressions-if-early-return.ts > unbracedArm 1`] = `
+"module UnbracedArm.\\n\\nunbraced-arm n: Int => Int.\\n\\n---\\n\\nunbraced-arm n = (cond n < 0 => 0, true => n).\\n"
+`;
+
 exports[`expressions-literals.ts > fortyTwo 1`] = `
 "module FortyTwo.\\n\\nforty-two  => Int.\\n\\n---\\n\\nforty-two = 42.\\n"
 `;
