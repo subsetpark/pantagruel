@@ -2,9 +2,18 @@
  * TS AST → Layer 1 builder.
  *
  * **M1 scope** (workstream M1: imperative-ir-conditionals): conditional
- * **value** forms only — ternary chains, if-with-returns, switch without
+ * **value** forms — ternary chains, if-with-returns, switch without
  * fall-through, `&&`/`||` when both operands are statically Bool-typed.
  * All collapse to one canonical L1 `cond([(g, v)], otherwise)` form.
+ *
+ * **M2 scope** (workstream M2: imperative-ir-assign-mu-search): increment
+ * surface forms (`i++`, `++i`, `i += k`, `i -= k`, `i = i ⊕ k`,
+ * `i = k ⊕ i`) build to canonical L1 `Assign(target, BinOp(<op>, target, <k>))`.
+ * The five `+1` spellings produce identical L1 output. The TS-AST level
+ * does NOT carry μ-search semantics — it only provides structural
+ * acceptance for the let+while pair; semantic recognition (predicate
+ * references counter, step is `+1`, discrete numeric strategy) lives
+ * entirely in `ir1-lower.ts`'s `recognizeAndLowerMuSearch`.
  *
  * Sub-expressions inside conditionals (the guard, the value, the switch
  * discriminant) are translated through the legacy `translateBodyExpr`
@@ -27,7 +36,10 @@ import ts from "typescript";
 import { irWrap } from "./ir.js";
 import { lowerExpr } from "./ir-emit.js";
 import {
+  type IR1Binop,
   type IR1Expr,
+  type IR1Stmt,
+  ir1Assign,
   ir1Binop,
   ir1Cond,
   ir1FromL2,
@@ -35,6 +47,7 @@ import {
   ir1LitNat,
   ir1LitString,
   ir1Unop,
+  ir1Var,
 } from "./ir1.js";
 import { lowerL1Expr } from "./ir1-lower.js";
 import type { OpaqueExpr } from "./pant-ast.js";
@@ -585,4 +598,220 @@ function buildFromShortCircuit(
     return ir1Binop("and", left, right);
   }
   return ir1Binop("or", left, right);
+}
+
+// ---------------------------------------------------------------------------
+// Increment-step normalization (M2)
+//
+// Collapse all surface spellings of an increment on a counter into one
+// canonical L1 `Assign(Var(c), BinOp(<op>, Var(c), <k>))`. The five `+1`
+// spellings (`i++`, `++i`, `i += 1`, `i = i + 1`, `i = 1 + i`) all
+// produce identical L1 output. Compound assignments (`i += k`) and
+// commutative explicit forms (`i = k * i`) build to the same Assign
+// shape with the appropriate op and operand.
+//
+// The TS-AST level here is purely structural — it does NOT validate
+// that the step is `+1`, that the step matches a μ-search shape, or
+// anything semantic about the surrounding context. The L1 recognizer in
+// `ir1-lower.ts:recognizeAndLowerMuSearch` is responsible for those
+// checks.
+// ---------------------------------------------------------------------------
+
+export type L1StmtBuildResult = IR1Stmt | { unsupported: string };
+
+export const isL1StmtUnsupported = (
+  r: L1StmtBuildResult,
+): r is { unsupported: string } =>
+  typeof r === "object" && r !== null && "unsupported" in r;
+
+/**
+ * Build an L1 increment-step `Assign` from a TS expression-statement
+ * body. Accepts six surface shapes on the named counter:
+ *
+ *  - `c++` / `++c` → `Assign(Var(c), BinOp(add, Var(c), Lit(1)))`
+ *  - `c--` / `--c` → `Assign(Var(c), BinOp(sub, Var(c), Lit(1)))`
+ *  - `c += k`, `c -= k`, `c *= k`, `c /= k`, `c %= k`
+ *      → `Assign(Var(c), BinOp(<op>, Var(c), <k>))`
+ *  - `c = c ⊕ k` / `c = k ⊕ c` (commutative `⊕`)
+ *      → `Assign(Var(c), BinOp(<op>, Var(c), <k>))`
+ *
+ * The non-`+1` cases produce a valid L1 form but the μ-search recognizer
+ * at L1 lowering rejects them. `i = k - i` (non-commutative on right)
+ * rejects here because canonical form requires the counter on the
+ * left side of the binop.
+ *
+ * Anything else — assignment to a different variable, non-binop RHS,
+ * non-literal `k` (not rejected here; the L1 recognizer handles it) —
+ * either rejects or builds a non-canonical Assign that downstream
+ * recognition won't match.
+ */
+export function buildL1IncrementStep(
+  expr: ts.Expression,
+  counterName: string,
+  ctx: L1BuildContext,
+): L1StmtBuildResult {
+  // `c++` / `++c` / `c--` / `--c`
+  if (ts.isPostfixUnaryExpression(expr) || ts.isPrefixUnaryExpression(expr)) {
+    if (!ts.isIdentifier(expr.operand) || expr.operand.text !== counterName) {
+      return { unsupported: "increment operand is not the counter" };
+    }
+    if (expr.operator === ts.SyntaxKind.PlusPlusToken) {
+      return ir1Assign(
+        ir1Var(counterName),
+        ir1Binop("add", ir1Var(counterName), ir1LitNat(1)),
+      );
+    }
+    if (expr.operator === ts.SyntaxKind.MinusMinusToken) {
+      return ir1Assign(
+        ir1Var(counterName),
+        ir1Binop("sub", ir1Var(counterName), ir1LitNat(1)),
+      );
+    }
+    return { unsupported: "unsupported unary increment operator" };
+  }
+
+  if (!ts.isBinaryExpression(expr)) {
+    return { unsupported: "step is not an assignment or increment" };
+  }
+
+  const opKind = expr.operatorToken.kind;
+
+  // Compound assignments: `c += k`, `c -= k`, `c *= k`, `c /= k`, `c %= k`
+  const compoundOp = compoundOpToBinop(opKind);
+  if (compoundOp !== null) {
+    if (!ts.isIdentifier(expr.left) || expr.left.text !== counterName) {
+      return {
+        unsupported: "compound-assignment target is not the counter",
+      };
+    }
+    // Prefer native L1 for numeric-literal RHS so the μ-search recognizer
+    // can pattern-match `BinOp(add, Var(c), Lit(1))` byte-equally across
+    // all five `+1` spellings. Non-literal RHS falls back to the legacy
+    // sub-expression pipeline via `buildSubExpr`.
+    const litRhs = tryBuildL1NumericLiteral(expr.right);
+    const rhs = litRhs ?? buildSubExpr(expr.right, ctx);
+    if (isL1Unsupported(rhs)) {
+      return rhs;
+    }
+    return ir1Assign(
+      ir1Var(counterName),
+      ir1Binop(compoundOp, ir1Var(counterName), rhs),
+    );
+  }
+
+  // Plain assignment: `c = c ⊕ k` or `c = k ⊕ c` (commutative ⊕ only).
+  if (opKind === ts.SyntaxKind.EqualsToken) {
+    if (!ts.isIdentifier(expr.left) || expr.left.text !== counterName) {
+      return { unsupported: "assignment target is not the counter" };
+    }
+    if (!ts.isBinaryExpression(expr.right)) {
+      return {
+        unsupported: "assignment RHS is not a binary expression",
+      };
+    }
+    const rhsOpKind = expr.right.operatorToken.kind;
+    const explicitOp = explicitOpToBinop(rhsOpKind);
+    if (explicitOp === null) {
+      return {
+        unsupported: "assignment RHS uses an unsupported binary operator",
+      };
+    }
+    const a = expr.right.left;
+    const b = expr.right.right;
+    const aIsCounter = ts.isIdentifier(a) && a.text === counterName;
+    const bIsCounter = ts.isIdentifier(b) && b.text === counterName;
+    if (aIsCounter && !bIsCounter) {
+      // `c = c ⊕ k`
+      const litK = tryBuildL1NumericLiteral(b);
+      const k = litK ?? buildSubExpr(b, ctx);
+      if (isL1Unsupported(k)) {
+        return k;
+      }
+      return ir1Assign(
+        ir1Var(counterName),
+        ir1Binop(explicitOp, ir1Var(counterName), k),
+      );
+    }
+    if (bIsCounter && !aIsCounter) {
+      // `c = k ⊕ c` — only commutative ops.
+      if (!isCommutativeBinop(explicitOp)) {
+        return {
+          unsupported:
+            "non-commutative operator with counter on the right of RHS",
+        };
+      }
+      const litK = tryBuildL1NumericLiteral(a);
+      const k = litK ?? buildSubExpr(a, ctx);
+      if (isL1Unsupported(k)) {
+        return k;
+      }
+      return ir1Assign(
+        ir1Var(counterName),
+        ir1Binop(explicitOp, ir1Var(counterName), k),
+      );
+    }
+    return {
+      unsupported: "assignment RHS does not reference counter exactly once",
+    };
+  }
+
+  return { unsupported: "step shape is not a recognized increment form" };
+}
+
+/**
+ * Try to build a native L1 literal expression. Returns null for anything
+ * that's not a non-negative integer numeric literal — those go through
+ * `buildSubExpr` (which wraps via `from-l2`) at the caller.
+ *
+ * The point: when the increment step is `i += 1` or `i = i + 1`, the
+ * `1` must lower to a native L1 `LitNat(1)` so the μ-search recognizer
+ * can pattern-match `BinOp(add, Var(c), Lit(1))` against it. If the
+ * literal got wrapped via `from-l2` instead, the recognizer would see
+ * `BinOp(add, Var(c), FromL2(...))` and fail.
+ */
+function tryBuildL1NumericLiteral(expr: ts.Expression): IR1Expr | null {
+  if (ts.isNumericLiteral(expr)) {
+    const n = Number(expr.text);
+    if (Number.isFinite(n) && Number.isInteger(n) && n >= 0) {
+      return ir1LitNat(n);
+    }
+    if (Number.isFinite(n) && Number.isInteger(n) && n < 0) {
+      return ir1Unop("neg", ir1LitNat(-n));
+    }
+  }
+  return null;
+}
+
+function compoundOpToBinop(kind: ts.SyntaxKind): IR1Binop | null {
+  switch (kind) {
+    case ts.SyntaxKind.PlusEqualsToken:
+      return "add";
+    case ts.SyntaxKind.MinusEqualsToken:
+      return "sub";
+    case ts.SyntaxKind.AsteriskEqualsToken:
+      return "mul";
+    case ts.SyntaxKind.SlashEqualsToken:
+      return "div";
+    default:
+      return null;
+  }
+}
+
+function explicitOpToBinop(kind: ts.SyntaxKind): IR1Binop | null {
+  switch (kind) {
+    case ts.SyntaxKind.PlusToken:
+      return "add";
+    case ts.SyntaxKind.MinusToken:
+      return "sub";
+    case ts.SyntaxKind.AsteriskToken:
+      return "mul";
+    case ts.SyntaxKind.SlashToken:
+      return "div";
+    default:
+      return null;
+  }
+}
+
+function isCommutativeBinop(op: IR1Binop): boolean {
+  return op === "add" || op === "mul";
 }

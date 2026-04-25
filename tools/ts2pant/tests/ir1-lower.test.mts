@@ -281,11 +281,41 @@ describe("L1 → L2 → OpaqueExpr — full pipeline byte-equality with legacy",
 // Vocabulary-locked stubs throw not-implemented
 // ---------------------------------------------------------------------------
 
-describe("vocabulary-locked stubs (M2/M3 forms)", () => {
-  it("ir1Assign throws not-implemented (M2)", () => {
-    assert.throws(() => ir1Assign(ir1Var("x"), ir1LitNat(1)), /M2/);
+describe("M2: ir1Assign and ir1While constructors are active", () => {
+  it("ir1Assign builds an `assign` statement", () => {
+    const stmt = ir1Assign(ir1Var("i"), ir1LitNat(1));
+    assert.equal(stmt.kind, "assign");
+    if (stmt.kind === "assign") {
+      assert.deepEqual(stmt.target, ir1Var("i"));
+      assert.deepEqual(stmt.value, ir1LitNat(1));
+    }
   });
 
+  it("ir1Assign target may be a Member expression", () => {
+    const stmt = ir1Assign(
+      ir1Member(ir1Var("a"), "balance"),
+      ir1LitNat(0),
+    );
+    assert.equal(stmt.kind, "assign");
+    if (stmt.kind === "assign") {
+      assert.equal(stmt.target.kind, "member");
+    }
+  });
+
+  it("ir1While builds a `while` statement with body", () => {
+    const stmt = ir1While(
+      ir1Var("p"),
+      ir1Assign(ir1Var("i"), ir1LitNat(0)),
+    );
+    assert.equal(stmt.kind, "while");
+    if (stmt.kind === "while") {
+      assert.deepEqual(stmt.cond, ir1Var("p"));
+      assert.equal(stmt.body.kind, "assign");
+    }
+  });
+});
+
+describe("vocabulary-locked stubs (M3 forms)", () => {
   it("ir1CondStmt throws not-implemented (M3)", () => {
     assert.throws(
       () => ir1CondStmt([[ir1Var("g"), ir1Return(ir1Var("v"))]], null),
@@ -301,17 +331,7 @@ describe("vocabulary-locked stubs (M2/M3 forms)", () => {
   });
 
   it("ir1For throws not-implemented (M3)", () => {
-    assert.throws(
-      () => ir1For(null, null, null, ir1Return(null)),
-      /M3/,
-    );
-  });
-
-  it("ir1While throws not-implemented (M3)", () => {
-    assert.throws(
-      () => ir1While(ir1Var("g"), ir1Return(null)),
-      /M3/,
-    );
+    assert.throws(() => ir1For(null, null, null, ir1Return(null)), /M3/);
   });
 
   it("ir1Throw throws not-implemented (M3)", () => {
