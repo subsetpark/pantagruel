@@ -24,7 +24,6 @@ import type {
   IRStmt,
   IRUnop,
 } from "./ir.js";
-import { substIR } from "./ir-subst.js";
 import type {
   OpaqueBinop,
   OpaqueCombiner,
@@ -166,8 +165,20 @@ export function lowerExpr(e: IRExpr): OpaqueExpr {
 
     case "let": {
       // Pant has no let — inline the value into the body via
-      // capture-avoiding substitution (ir-subst.ts).
-      return lowerExpr(substIR(e.body, e.name, e.value));
+      // `substituteBinder` (Pant's capture-avoiding substitution at the
+      // OpaqueExpr layer). Right-fold semantics drop out of recursive
+      // lowering: `Let(a, ea, Let(b, eb, body))` lowers the inner Let
+      // first (substituting b), then the outer (substituting a) — so
+      // an `eb` that references `a` still gets resolved correctly. We
+      // intentionally call `substituteBinder` here rather than `substIR`
+      // because the body may contain `IRWrap(...)` (legacy fallback
+      // output) that ir-subst can't traverse, and `substituteBinder`
+      // operates uniformly on the lowered OpaqueExpr.
+      return ast.substituteBinder(
+        lowerExpr(e.body),
+        e.name,
+        lowerExpr(e.value),
+      );
     }
 
     case "each": {

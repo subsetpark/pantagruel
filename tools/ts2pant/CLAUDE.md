@@ -639,9 +639,9 @@ canonicalized receiver), not program-variable names. Three reasons:
 | 1 | Foundation: types, build (Var/Lit/Identifier), emit, subst, `--use-ir` flag, anchor fixture | ✅ landed |
 | 2 | Optional chaining `?.` → `Each` | ✅ landed |
 | 3 | Nullish coalescing `??` → `Cond` | ✅ landed |
-| 4 | μ-search → `Comb(min, Each)` | deferred → bundled into Stage 6 |
+| 4 | μ-search → `Comb(min, Each)` | partial — substitution mechanism is on IR (Stage 6); the comprehension construction itself is still in `translateMuSearchInit` (legacy OpaqueExpr) and migrates to native `Comb(min, Each)` in a future stage |
 | 5 | `.length` / `.size` → `Unop(card, x)` | ✅ landed |
-| 6 | Const-binding inlining → `Let` (cross-cutting pure + mutating) **+ μ-search** | pending |
+| 6 | Const-binding inlining → `Let` (pure path) | ✅ landed (mutating-path const-bindings stay on legacy `applyTo` until Stage 9) |
 | 7 | Chain fusion → `Each` composition | pending |
 | 8 | Pure-path cutover (delete `IRWrap`, delete legacy pure-path) | pending |
 | 9 | Mutating-path SSA: write-keyed `LetIf`, `Write` IR nodes | pending |

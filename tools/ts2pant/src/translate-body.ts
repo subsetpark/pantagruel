@@ -1357,10 +1357,9 @@ function translatePureBody(
 
   // IR pipeline: when `TS2PANT_USE_IR=1` is set in the environment,
   // route the return-expression translation through the IR (ir-build →
-  // ir-emit). Stage 1 of the IR migration: pure-path only, with `IRWrap`
-  // covering forms not yet natively built. See CLAUDE.md §"Intermediate
-  // Representation" for the migration roadmap.
-  let terminal: OpaqueExpr;
+  // ir-emit). See CLAUDE.md §"Intermediate Representation" for the
+  // migration roadmap.
+  let rhs: OpaqueExpr;
   // IR pipeline only handles Expression returns in Stage 1; an
   // IfStatement returnExpr (TS allows `if (c) return a; return b` to
   // be lifted into a single conditional return — see
@@ -1377,7 +1376,39 @@ function translatePureBody(
     if (isBuildUnsupported(ir)) {
       return [{ kind: "unsupported", reason: ir.unsupported }];
     }
-    terminal = lowerExpr(ir);
+    // Stage 6: build IR `Let` nodes around the body for each const-
+    // binding instead of applying the legacy `applyTo` substitution
+    // closure. lowerExpr's Let case calls Pant's `substituteBinder`,
+    // which is the same primitive `applyTo` used — so the result is
+    // semantically identical to the legacy path. Right-fold semantics
+    // are preserved: outermost Let is the first binding, innermost is
+    // the body.
+    //
+    // Early-return arms (PR #129 if-conversion) are already OpaqueExprs
+    // containing hygienic-name references. Lower the IR terminal, merge
+    // it with the arms into a `cond`, then wrap the result as IRWrap
+    // inside the Let chain — substituteBinder traverses opaque
+    // expressions, so hygienic names inside arms get substituted by the
+    // Let chain just like names inside the IR body.
+    let bodyIR = ir;
+    if (inlined.arms.length > 0) {
+      const terminalExpr = lowerExpr(bodyIR);
+      const mergedExpr = ast.cond([
+        ...inlined.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
+        [ast.litBool(true), terminalExpr] as [OpaqueExpr, OpaqueExpr],
+      ]);
+      bodyIR = { kind: "ir-wrap", expr: mergedExpr };
+    }
+    for (let i = inlined.translatedBindings.length - 1; i >= 0; i--) {
+      const tb = inlined.translatedBindings[i]!;
+      bodyIR = {
+        kind: "let",
+        name: tb.hygienicName,
+        value: { kind: "ir-wrap", expr: tb.initExpr },
+        body: bodyIR,
+      };
+    }
+    rhs = lowerExpr(bodyIR);
   } else {
     const body = translateBodyExpr(
       extracted.returnExpr,
@@ -1392,17 +1423,16 @@ function translatePureBody(
       return [{ kind: "unsupported", reason: body.unsupported }];
     }
 
-    terminal = bodyExpr(body);
+    const terminal = bodyExpr(body);
+    const merged =
+      inlined.arms.length === 0
+        ? terminal
+        : ast.cond([
+            ...inlined.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
+            [ast.litBool(true), terminal] as [OpaqueExpr, OpaqueExpr],
+          ]);
+    rhs = inlined.applyTo(merged);
   }
-
-  const merged =
-    inlined.arms.length === 0
-      ? terminal
-      : ast.cond([
-          ...inlined.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
-          [ast.litBool(true), terminal] as [OpaqueExpr, OpaqueExpr],
-        ]);
-  const rhs = inlined.applyTo(merged);
 
   const argExprs = params.map((p) => ast.var(p.name));
   const lhs = ast.app(ast.var(functionName), argExprs);
@@ -1810,7 +1840,19 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
  * is substituted first, so each step naturally resolves references to earlier
  * bindings that are already embedded in the result.
  */
-function inlineConstBindings(
+/**
+ * One translated const-binding: a hygienic name (`$N`) and the
+ * already-translated initializer as an OpaqueExpr. Exposed so the IR
+ * pipeline (Stage 6+) can wrap these in `IRWrap`-valued IR `Let` nodes
+ * and let `lowerExpr`'s `substituteBinder` do the substitution at
+ * lowering time, replacing the legacy `applyTo` closure.
+ */
+export interface TranslatedBinding {
+  hygienicName: string;
+  initExpr: OpaqueExpr;
+}
+
+export function inlineConstBindings(
   bindings: ConstBinding[],
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
@@ -1820,6 +1862,7 @@ function inlineConstBindings(
 ):
   | {
       applyTo: (expr: OpaqueExpr) => OpaqueExpr;
+      translatedBindings: ReadonlyArray<TranslatedBinding>;
       scopedParams: ReadonlyMap<string, string>;
       arms: ReadonlyArray<readonly [OpaqueExpr, OpaqueExpr]>;
     }
@@ -1983,7 +2026,7 @@ function inlineConstBindings(
       expr,
     );
 
-  return { applyTo, scopedParams, arms };
+  return { applyTo, translatedBindings, scopedParams, arms };
 }
 
 type BindingInitResult = { value: OpaqueExpr } | { error: string };

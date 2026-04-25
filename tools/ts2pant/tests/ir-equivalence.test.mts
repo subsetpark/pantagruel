@@ -63,6 +63,26 @@ const ANCHORS: Array<{ file: string; functions: string[] }> = [
     file: "expressions-set.ts",
     functions: ["cardinality"],
   },
+  // Stage 6: const-binding inlining via IR Let nodes (initializers are
+  // IRWrap of legacy-translated OpaqueExpr; substitution flows through
+  // lowerExpr's substituteBinder rather than the legacy `applyTo`
+  // closure). Includes μ-search bindings, which still go through
+  // `translateMuSearchInit` for the comprehension construction (the
+  // recognizer + lowering stay legacy; only the binding-substitution
+  // mechanism is on IR — see WORKING-NOTES Decisions deferred).
+  {
+    file: "expressions-const-bindings.ts",
+    functions: [
+      "simpleConst",
+      "chainedConst",
+      "constWithPropAccess",
+      "constInTernary",
+    ],
+  },
+  {
+    file: "expressions-while-mu-search.ts",
+    functions: ["firstUnusedSuffix", "nextSlotPlusOne", "offsetUnusedSuffix"],
+  },
 ];
 
 async function emitWithFlag(
