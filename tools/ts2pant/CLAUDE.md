@@ -670,21 +670,67 @@ lowering shape.
 
 ### Imperative IR Workstream (supersedes Stages 9–11)
 
-After Stage 8, ts2pant moves to a layered architecture: **Layer 1** is a
-TS-faithful imperative IR (`Block`, `Cond`, `Foreach`, `Assign`, `For`,
-`While`, `Return`, …) where normalization passes collapse syntactic
-equivalences (increment spellings, conditional families, iteration
-families) into a small canonical vocabulary. **Layer 2** is today's
-`IRExpr`/`IRStmt` (Pant-shaped expression IR). **Layer 3** is `OpaqueExpr`.
-Lowering goes Layer 1 → Layer 2 → Layer 3.
+ts2pant has a layered architecture: **Layer 1** is a TS-faithful imperative
+IR (`Block`, `Cond`, `Foreach`, `Assign`, `For`, `While`, `Return`, …) in
+`src/ir1.ts` where normalization passes collapse syntactic equivalences
+(increment spellings, conditional families, iteration families) into a
+small canonical vocabulary. **Layer 2** is today's `IRExpr`/`IRStmt` in
+`src/ir.ts` (Pant-shaped expression IR). **Layer 3** is `OpaqueExpr`.
+Lowering: TS AST → Layer 1 (`ir1-build.ts`) → Layer 2 (`ir1-lower.ts`) →
+OpaqueExpr (`ir-emit.ts`).
 
-The full milestone breakdown — vocabulary lock at M1, conditionals (M1),
-assign + μ-search (M2), iteration + mutation (M3, where the former Stages
-9–11 land), deferred classes (M4 equality/nullish, M5 property access),
-cleanup (M6) — lives in `workstreams/ts2pant-imperative-ir.md`. Decisions
-on canonical forms, conservative-refusal policy, hard-rule-per-class
-migration, and the `Foreach`-with-statement-body rationale are recorded
-there.
+The full milestone breakdown lives in
+`workstreams/ts2pant-imperative-ir.md`. Decisions on canonical forms,
+conservative-refusal policy, hard-rule-per-class migration, and the
+`Foreach`-with-statement-body rationale are recorded there.
+
+**M1 (imperative-ir-conditionals): landed.** Conditional value forms —
+if-with-returns (single, two-branch, multi-arm chain), ternary chains
+(right-associative flatten), switch without fall-through, `&&`/`||` when
+both operands are statically Bool-typed — all collapse to a single
+canonical `Cond([(g, v)], otherwise)`. The L1 path is always-on; the
+legacy `translateIfStatement` and inline ternary handler are deleted.
+Switch was previously fully unsupported; it now translates with the
+caveat that every case must end in `return EXPR`, default is required
+and last, and case labels must be literal. `&&`/`||` Bool-type detection
+is in `purity.ts:isStaticallyBoolTyped` (apparent-type walk requiring
+every union/intersection constituent to satisfy `BooleanLike`).
+
+**The `from-l2` adapter** (`ir1.ts`'s `IR1Expr.from-l2`) is the explicit
+transitional mechanism for sub-expressions whose normalization is not
+the current milestone's concern (e.g., guard expressions inside an L1
+conditional — their internal structure is M2/M3 territory). The adapter
+wraps a pre-built Layer 2 `IRExpr` and lowers verbatim. Lifetime:
+shrinks at M3 (more sub-expressions reach L1 natively); deleted at M6.
+Do not introduce new uses outside the build pipeline's scoped
+sub-expression delegation.
+
+**Locked decisions** (re-litigation requires explicit user sign-off):
+- Layer 1 vocabulary is locked at M1. Forms can be added in later
+  milestones (e.g., `IsNullish` primitive at M4) but the existing forms
+  cannot be changed. Forms unused in M1 (`assign`, `foreach`, `for`,
+  `while`, `throw`, `expr-stmt`, statement-position `cond-stmt`) are
+  declared at the type level; their constructors throw
+  `not-implemented` until the milestone that introduces them lands.
+- **No `IR1Wrap` form.** Layer 1 is not an escape-hatch layer — the
+  build pass either produces L1 or rejects with `unsupported`. The
+  `from-l2` form is *not* a wrap-anything escape hatch; it's a scoped
+  delegation point with a defined lifetime.
+- **Conservative-refusal policy 3(b).** When the build pass cannot prove
+  an equivalence (switch fall-through, `==`-on-non-Bool, default-not-last,
+  non-Bool short-circuit, non-literal switch case label, object-literal
+  in a value-position arm), the function rejects with a specific
+  `unsupported` reason rather than emitting potentially-incorrect Pant.
+- **Hard rule per equivalence class** (workstream decision 4): every
+  TS construct in a given equivalence class moves to the L1 path in
+  one milestone. Half-migrated classes coexisting with legacy
+  recognizers are forbidden — that is the cross-talk hazard the IR is
+  meant to retire.
+- **Mutation lands with iteration in M3.** `Foreach` body must be a
+  *statement* admitting `Assign` to support Shape A (uniform iterator
+  write), Shape B (accumulator fold), and `.reduce` desugaring
+  uniformly. The former Stages 9–11 (mutating-path SSA, frame
+  conditions, mutating-path cutover) re-form inside M3.
 
 ## PR #84 Post-Mortem: Why Standard Algorithms Matter
 

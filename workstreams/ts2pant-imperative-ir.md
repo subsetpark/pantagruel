@@ -70,7 +70,30 @@ unchanged and lands as currently described.
 
 ## Milestones
 
-### Milestone 1: imperative-ir-conditionals
+### Milestone 1: imperative-ir-conditionals — ✅ landed
+
+**Status**: landed across four stacked commits on
+`zax--ts2pant-imperative-ir-workstream`:
+
+- Patch 1 (`9e3b185`) — L1 vocabulary (`ir1.ts`) + lowering (`ir1-lower.ts`)
+  + unit tests. ~880 lines of new code, no plumbing changes.
+- Patch 2 (`7600ec3`) — L1 builder (`ir1-build.ts`) +
+  `isStaticallyBoolTyped` (`purity.ts`) + plumbing into `translate-body.ts`
+  gated on `TS2PANT_USE_L1=1`. New L1-plumbing integration tests.
+  Validation: byte-identical output for all 431 existing tests under both
+  flag states.
+- Patch 3 (`9bbb25c`) — hard-rule cutover. Flag deleted, legacy
+  `translateIfStatement` and inline ternary handler removed. Net −257
+  lines. 469 tests pass under always-on L1.
+- Patch 4 — docs (this commit).
+
+**Pessimism rate**: 0 — no existing fixture or dogfood case rejects under
+the conservative-refusal policy. The `&&`/`||` Bool-type predicate
+accepts every site reached by current fixtures because non-Bool
+short-circuit isn't an L1-conditional form (it falls through to the
+legacy `translateOperator` path, which Patch 3 left intact for non-
+conditional uses including `.reduce` callbacks). Real-fixture pessimism
+will surface only as new TS code drops in; revisit policy if that happens.
 
 **Definition of Done**:
 - New module `tools/ts2pant/src/ir1.ts` (Layer 1 IR types) declares the full
