@@ -20,6 +20,8 @@ import {
   irAppExpr,
   irAppName,
   irBinop,
+  irCond,
+  irEach,
   irLitBool,
   irLitNat,
   irLitString,
@@ -158,13 +160,12 @@ export function buildIR(
           return innerIR;
         }
         const binderName = freshHygienicBinder(supply);
-        return {
-          kind: "each",
-          binder: binderName,
-          src: innerIR,
-          guards: [],
-          proj: irAppName(ruleName, [irVar(binderName)]),
-        };
+        return irEach(
+          binderName,
+          innerIR,
+          [],
+          irAppName(ruleName, [irVar(binderName)]),
+        );
       }
     }
   }
@@ -197,13 +198,10 @@ export function buildIR(
     const presentBranch: IRExpr = isNullableTsType(rightTsType)
       ? leftIR
       : irAppExpr(leftIR, [irLitNat(1)]);
-    return {
-      kind: "cond",
-      arms: [
-        [cardZero, rightIR],
-        [irLitBool(true), presentBranch],
-      ],
-    };
+    return irCond([
+      [cardZero, rightIR],
+      [irLitBool(true), presentBranch],
+    ]);
   }
 
   // Fallback: translate via the legacy pipeline and wrap. Subsequent

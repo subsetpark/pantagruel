@@ -1,5 +1,6 @@
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
+import { irLet, irWrap } from "./ir.js";
 import { buildIR, isBuildUnsupported } from "./ir-build.js";
 import { lowerExpr } from "./ir-emit.js";
 import type {
@@ -1401,12 +1402,7 @@ function translatePureBody(
     }
     for (let i = inlined.translatedBindings.length - 1; i >= 0; i--) {
       const tb = inlined.translatedBindings[i]!;
-      bodyIR = {
-        kind: "let",
-        name: tb.hygienicName,
-        value: { kind: "ir-wrap", expr: tb.initExpr },
-        body: bodyIR,
-      };
+      bodyIR = irLet(tb.hygienicName, irWrap(tb.initExpr), bodyIR);
     }
     rhs = lowerExpr(bodyIR);
   } else {

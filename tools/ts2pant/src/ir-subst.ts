@@ -20,7 +20,17 @@
  * α-renaming pass added.
  */
 
-import type { IRExpr } from "./ir.js";
+import {
+  type IRExpr,
+  type IRExprEach,
+  irApp,
+  irComb,
+  irCond,
+  irEach,
+  irExists,
+  irForall,
+  irLet,
+} from "./ir.js";
 
 /**
  * Substitute every free occurrence of `name` in `body` with `value`.
@@ -36,34 +46,30 @@ export function substIR(body: IRExpr, name: string, value: IRExpr): IRExpr {
       return body;
 
     case "app":
-      return {
-        kind: "app",
-        head:
-          body.head.kind === "expr"
-            ? { kind: "expr", expr: substIR(body.head.expr, name, value) }
-            : body.head,
-        args: body.args.map((a) => substIR(a, name, value)),
-      };
+      return irApp(
+        body.head.kind === "expr"
+          ? { kind: "expr", expr: substIR(body.head.expr, name, value) }
+          : body.head,
+        body.args.map((a) => substIR(a, name, value)),
+      );
 
     case "cond":
-      return {
-        kind: "cond",
-        arms: body.arms.map(([g, v]) => [
+      return irCond(
+        body.arms.map(([g, v]): [IRExpr, IRExpr] => [
           substIR(g, name, value),
           substIR(v, name, value),
         ]),
-      };
+      );
 
     case "let":
       // Let always evaluates `value` in the outer scope (substitute it),
       // and only substitutes in the body if the let's binder doesn't
       // shadow `name`.
-      return {
-        kind: "let",
-        name: body.name,
-        value: substIR(body.value, name, value),
-        body: body.name === name ? body.body : substIR(body.body, name, value),
-      };
+      return irLet(
+        body.name,
+        substIR(body.value, name, value),
+        body.name === name ? body.body : substIR(body.body, name, value),
+      );
 
     case "each": {
       const src = substIR(body.src, name, value);
@@ -72,31 +78,14 @@ export function substIR(body: IRExpr, name: string, value: IRExpr): IRExpr {
         ? body.guards
         : body.guards.map((g) => substIR(g, name, value));
       const proj = shadowed ? body.proj : substIR(body.proj, name, value);
-      return body.binderType !== undefined
-        ? {
-            kind: "each",
-            binder: body.binder,
-            binderType: body.binderType,
-            src,
-            guards,
-            proj,
-          }
-        : { kind: "each", binder: body.binder, src, guards, proj };
+      return irEach(body.binder, src, guards, proj, body.binderType);
     }
 
     case "comb": {
-      const each = substIR(body.each, name, value) as Extract<
-        IRExpr,
-        { kind: "each" }
-      >;
-      return body.init !== undefined
-        ? {
-            kind: "comb",
-            combiner: body.combiner,
-            init: substIR(body.init, name, value),
-            each,
-          }
-        : { kind: "comb", combiner: body.combiner, each };
+      const each = substIR(body.each, name, value) as IRExprEach;
+      const init =
+        body.init !== undefined ? substIR(body.init, name, value) : undefined;
+      return irComb(body.combiner, each, init);
     }
 
     case "forall": {
@@ -107,20 +96,7 @@ export function substIR(body: IRExpr, name: string, value: IRExpr): IRExpr {
           ? substIR(body.guard, name, value)
           : undefined;
       const newBody = shadowed ? body.body : substIR(body.body, name, value);
-      return newGuard !== undefined
-        ? {
-            kind: "forall",
-            binder: body.binder,
-            binderType: body.binderType,
-            guard: newGuard,
-            body: newBody,
-          }
-        : {
-            kind: "forall",
-            binder: body.binder,
-            binderType: body.binderType,
-            body: newBody,
-          };
+      return irForall(body.binder, body.binderType, newBody, newGuard);
     }
 
     case "exists": {
@@ -131,20 +107,7 @@ export function substIR(body: IRExpr, name: string, value: IRExpr): IRExpr {
           ? substIR(body.guard, name, value)
           : undefined;
       const newBody = shadowed ? body.body : substIR(body.body, name, value);
-      return newGuard !== undefined
-        ? {
-            kind: "exists",
-            binder: body.binder,
-            binderType: body.binderType,
-            guard: newGuard,
-            body: newBody,
-          }
-        : {
-            kind: "exists",
-            binder: body.binder,
-            binderType: body.binderType,
-            body: newBody,
-          };
+      return irExists(body.binder, body.binderType, newBody, newGuard);
     }
 
     case "ir-wrap":
