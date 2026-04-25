@@ -41,6 +41,7 @@ import type { OpaqueExpr } from "./pant-ast.js";
 import { isStaticallyBoolTyped } from "./purity.js";
 import type { SymbolicState, UniqueSupply } from "./translate-body.js";
 import {
+  bodyExpr,
   expressionHasSideEffects,
   extractReturnFromBranch,
   isBodyUnsupported,
@@ -143,7 +144,10 @@ function buildSubExpr(expr: ts.Expression, ctx: L1BuildContext): L1BuildResult {
       unsupported: "collection mutation cannot appear in a conditional arm",
     };
   }
-  return ir1FromL2(irWrap(result.expr));
+  // Materialize any deferred .filter()/.map() chain into a flat each(...)
+  // before wrapping — using result.expr directly would drop the traversal
+  // and lower the bare projection body instead.
+  return ir1FromL2(irWrap(bodyExpr(result)));
 }
 
 // ---------------------------------------------------------------------------
@@ -465,13 +469,25 @@ function buildCaseLabel(
   label: ts.Expression,
   ctx: L1BuildContext,
 ): L1BuildResult {
+  // TS parses `case -1:` as a PrefixUnaryExpression(MinusToken,
+  // NumericLiteral) — handle it before the bare-NumericLiteral branch
+  // so negative literal labels stay in the supported subset rather
+  // than falling through as "must be a literal".
+  if (
+    ts.isPrefixUnaryExpression(label) &&
+    label.operator === ts.SyntaxKind.MinusToken &&
+    ts.isNumericLiteral(label.operand)
+  ) {
+    const n = Number(label.operand.text);
+    if (Number.isFinite(n) && Number.isInteger(n)) {
+      return ir1Unop("neg", ir1LitNat(n));
+    }
+    return { unsupported: "switch case label: non-integer numeric literal" };
+  }
   if (ts.isNumericLiteral(label)) {
     const n = Number(label.text);
     if (Number.isFinite(n) && Number.isInteger(n) && n >= 0) {
       return ir1LitNat(n);
-    }
-    if (Number.isFinite(n) && Number.isInteger(n) && n < 0) {
-      return ir1Unop("neg", ir1LitNat(-n));
     }
     return { unsupported: "switch case label: non-integer numeric literal" };
   }

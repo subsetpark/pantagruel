@@ -358,7 +358,7 @@ parallel if both are needed.
 | First slice = conditionals, not increment-only (1(b)) | Richer demonstration of the architecture earning its keep. Touches more recognizer surface area than μ-search alone. M1 conditionals + M2 assign + M3 iteration is a steeper but more honest validation curve than three small increments. |
 | No `If(cond, then, else)` separate from `Cond` | Single-armed if = `Cond([(g, body)], None)`. Multi-armed normalizes to the same form. One downstream pattern. |
 | No `Inc(target)` separate from `Assign` | `i++` builds as `Assign(i, BinOp(Add, Var(i), Lit(1)))`. The "+1 step" is a single arithmetic predicate at μ-search lowering, not a separate form. |
-| `&&`/`||` normalized only when Bool-typed | Truthy/falsy semantics on non-Bool values diverge from `Cond`'s Boolean guards. Conservative refusal on non-Bool. |
+| `&&`/`\|\|` normalized only when Bool-typed | Truthy/falsy semantics on non-Bool values diverge from `Cond`'s Boolean guards. Conservative refusal on non-Bool. |
 | `switch` fall-through rejected at L1 build | Each case must end in `break`/`return`/`throw`. Fall-through is a different control structure with no clean canonical form. |
 | `Reduce` desugared into `Let + Foreach + Assign` | IRSC-faithful (every iteration is `Foreach`; fold is a downstream pattern). Avoids a second iteration form. |
 | Workstream supersedes Stages 9–11 of `tools/ts2pant/CLAUDE.md` IR Migration Status; Stage 8 unchanged | Stage 8 (pure-path cutover, deleting legacy code subsumed by IR) depends only on PR #128 landing, not on this architecture. Stages 9–11 (mutating-path SSA, frame conditions, mutating-path cutover) re-form on the Layer 1 substrate inside M3. |

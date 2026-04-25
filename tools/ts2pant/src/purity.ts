@@ -904,9 +904,10 @@ function isAllBool(t: ts.Type): boolean {
   }
   if (t.isIntersection()) {
     // Intersection narrowed to bool is still bool; require every
-    // constituent to be Bool. Intersections like `boolean & {}` are
-    // accepted because both constituents map to BooleanLike under
-    // structural type resolution.
+    // constituent to be Bool. In practice, intersections like
+    // `boolean & {}` are simplified by TypeScript's checker to
+    // `boolean` before we see them; the constituent check is a
+    // conservative guard for complex intersection shapes.
     return t.types.every(isAllBool);
   }
   return (t.flags & ts.TypeFlags.BooleanLike) !== 0;
