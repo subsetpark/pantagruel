@@ -528,7 +528,7 @@ just ts2pant-precommit                 # mirror what lefthook runs
 
 Tests are split into two suites by their dependency on the pant OCaml binary:
 
-- **`tests/*.test.mts` — unit suite.** Pure translation-logic tests. No pant binary, no dune, runs in milliseconds. Files: `annotations`, `constructs`, `purity`, `translate-body`, `translate-signature`, `translate-types`, `wasm-ast`.
+- **`tests/*.test.mts` — unit suite.** Pure translation-logic tests. No pant binary, no dune, runs in a few seconds. Files: `annotations`, `constructs`, `purity`, `translate-body`, `translate-signature`, `translate-types`, `wasm-ast`.
 - **`tests/integration/*.test.mts` — integration suite.** Each test in this directory invokes the `pant` binary (via `assertPantTypeChecks` or `runCheck` from `tests/helpers.mts`). Files: `e2e`, `dogfood`.
 
 The split exists for stability, not just performance. `getPantBin()` in `tests/helpers.mts` is **pure** — it never invokes a build. It reads `process.env.PANT_BIN` if set, otherwise checks that `${PROJECT_ROOT}/_build/default/bin/main.exe` exists, and throws with an actionable error otherwise. The build is the responsibility of the workspace-level `just build-pant` recipe (which `just ts2pant-test-integration` depends on). Stale-lock recovery + the `dune build` invocation live in the `build-pant` recipe in the root `justfile`, not in JS — orchestration belongs to the orchestrator.
@@ -539,7 +539,7 @@ The split exists for stability, not just performance. `getPantBin()` in `tests/h
 
 ### Snapshot files
 
-Each `*.test.mts` has a sibling `*.test.mts.snapshot` (Node test runner's snapshot format). When the integration suite is moved between directories, the `.snapshot` files must move with it; the runner resolves snapshot paths from the test file's location, so a missing-snapshot error usually means a mismatched move.
+Each snapshot-based `*.test.mts` has a sibling `*.test.mts.snapshot` (Node test runner's snapshot format). When snapshot tests are moved between directories, their `.snapshot` files must move with them; the runner resolves snapshot paths from the test file's location, so a missing-snapshot error usually means a mismatched move.
 
 Test structure:
 - `tests/fixtures/constructs/` — TypeScript fixture files, one per construct category

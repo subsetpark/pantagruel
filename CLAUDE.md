@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Requires opam (OCaml package manager) and `just` (cross-language task runner: `brew install just` on macOS, `cargo install just` otherwise). All other OCaml tooling is installed via opam.
 
-**`just` is the workspace-level entry point.** Run `just --list` from the repo root to see every task. The recipes encode cross-language dependency ordering — `just ts2pant-test-integration` builds the pant binary first, then runs the integration tests, exactly as CI does. Never run `dune build` from inside test code; that pattern caused a 15-hour pre-commit hang because Node's per-file test isolation made every worker race for `_build/.lock`. See `tools/ts2pant/scripts/prebuild-pant.mjs` and `tools/ts2pant/CLAUDE.md` § "Test layout".
+**`just` is the workspace-level entry point.** Run `just --list` from the repo root to see every task. The recipes encode cross-language dependency ordering — `just ts2pant-test-integration` builds the pant binary first, then runs the integration tests, exactly as CI does. Never run `dune build` from inside test code; that pattern caused a 15-hour pre-commit hang because Node's per-file test isolation made every worker race for `_build/.lock`. See `tools/ts2pant/scripts/build-wasm.mjs` and `tools/ts2pant/CLAUDE.md` § "Test layout".
 
 ### Ensure an opam switch is active
 
