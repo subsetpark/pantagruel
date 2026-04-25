@@ -178,6 +178,294 @@ describe("unsupported patterns", () => {
   });
 });
 
+describe("if-early-return prelude arms", () => {
+  it("translates a single early-return arm followed by a return", () => {
+    const source = `
+      export function f(n: number): number {
+        if (n < 0) return 0;
+        return n + 1;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.equal(props.length, 1);
+    const prop = props[0]!;
+    assert.equal(prop.kind, "equation");
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      assert.equal(ast.strExpr(prop.rhs), "cond n < 0 => 0, true => n + 1");
+    }
+  });
+
+  it("threads const bindings through both the arm and the catch-all", () => {
+    const source = `
+      export function f(n: number): number {
+        const doubled = n + n;
+        if (doubled < 0) return 0;
+        return doubled;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.equal(props.length, 1);
+    const prop = props[0]!;
+    assert.equal(prop.kind, "equation");
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      assert.equal(
+        ast.strExpr(prop.rhs),
+        "cond n + n < 0 => 0, true => n + n",
+      );
+    }
+  });
+
+  it("supports an arm between two const bindings", () => {
+    const source = `
+      export function f(n: number): number {
+        const a = n + 1;
+        if (a < 0) return 0;
+        const b = a + a;
+        return b;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.equal(props.length, 1);
+    const prop = props[0]!;
+    assert.equal(prop.kind, "equation");
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      assert.equal(
+        ast.strExpr(prop.rhs),
+        "cond n + 1 < 0 => 0, true => n + 1 + (n + 1)",
+      );
+    }
+  });
+
+  it("supports multiple arms — first match wins", () => {
+    const source = `
+      export function f(n: number): number {
+        if (n < 0) return -1;
+        if (n === 0) return 0;
+        return n + 1;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.equal(props.length, 1);
+    const prop = props[0]!;
+    assert.equal(prop.kind, "equation");
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      assert.equal(
+        ast.strExpr(prop.rhs),
+        "cond n < 0 => -1, n = 0 => 0, true => n + 1",
+      );
+    }
+  });
+
+  it("composes arms with a μ-search prelude", () => {
+    const source = `
+      export function f(n: number, used: ReadonlySet<number>): number {
+        if (n < 0) return 0;
+        let j = 1;
+        while (used.has(j)) { j++; }
+        return j;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.equal(props.length, 1);
+    const prop = props[0]!;
+    assert.equal(prop.kind, "equation");
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      assert.match(ast.strExpr(prop.rhs), /^cond n < 0 => 0, true => /u);
+      assert.match(ast.strExpr(prop.rhs), /min over each j\d*: Int/u);
+    }
+  });
+
+  it("rejects an if-with-multi-statement body in prelude position", () => {
+    const source = `
+      export function f(n: number): number {
+        if (n < 0) {
+          const x = 1;
+          return x;
+        }
+        return n;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+    if (props[0]?.kind === "unsupported") {
+      assert.match(props[0].reason, /single return statement/u);
+    }
+  });
+
+  it("rejects an if-with-else in non-final position", () => {
+    const source = `
+      export function f(n: number): number {
+        if (n < 0) {
+          return 0;
+        } else {
+          return -n;
+        }
+        return n;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+    if (props[0]?.kind === "unsupported") {
+      assert.match(props[0].reason, /if-with-else only supported as the final/u);
+    }
+  });
+
+  it("rejects an arm whose value references a later binding (TDZ)", () => {
+    const source = `
+      export function f(n: number): number {
+        if (n < 0) return later;
+        const later = n + 1;
+        return later;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+  });
+
+  it("rejects early-return + record return (per-field cond decomposition not yet supported)", () => {
+    const source = `
+      interface Pair { a: number; b: number }
+      export function f(n: number): Pair {
+        if (n < 0) return { a: 0, b: 0 };
+        return { a: n, b: n + 1 };
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+    if (props[0]?.kind === "unsupported") {
+      assert.match(
+        props[0].reason,
+        /record return combined with early-return arms or if\/else branches/u,
+      );
+    }
+  });
+
+  it("rejects record-shaped arm value with non-literal terminal", () => {
+    const source = `
+      interface Pair { a: number; b: number }
+      declare function makePair(n: number): Pair;
+      export function f(n: number): Pair {
+        if (n < 0) return { a: 0, b: 0 };
+        return makePair(n);
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+    if (props[0]?.kind === "unsupported") {
+      assert.match(
+        props[0].reason,
+        /record return combined with early-return arms or if\/else branches/u,
+      );
+    }
+  });
+
+  it("rejects record-shaped if/else terminal branches", () => {
+    const source = `
+      interface Pair { a: number; b: number }
+      export function f(n: number): Pair {
+        if (n < 0) {
+          return { a: 0, b: 0 };
+        } else {
+          return { a: n, b: n + 1 };
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+    if (props[0]?.kind === "unsupported") {
+      assert.match(
+        props[0].reason,
+        /record return combined with early-return arms or if\/else branches/u,
+      );
+    }
+  });
+
+  it("emits trailing-if diagnostic for single `if (P) return E;` body", () => {
+    const source = `
+      export function f(n: number): number {
+        if (n < 0) return 0;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+    if (props[0]?.kind === "unsupported") {
+      assert.match(props[0].reason, /if-without-else as final statement/u);
+    }
+  });
+});
+
 describe("translateCallExpr", () => {
   it("should translate free function call as uninterpreted application", () => {
     const source = `

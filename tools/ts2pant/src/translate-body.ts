@@ -91,7 +91,17 @@ function isNullableTsType(type: ts.Type): boolean {
  */
 type ConstBinding =
   | { kind: "const"; tsName: string; initializer: ts.Expression }
-  | { kind: "muSearch"; tsName: string; mu: MuSearch };
+  | { kind: "muSearch"; tsName: string; mu: MuSearch }
+  | {
+      kind: "earlyReturn";
+      predicateExpr: ts.Expression;
+      valueExpr: ts.Expression;
+    };
+
+/** Names a binding introduces into scope (none for an early-return arm). */
+function bindingNames(b: ConstBinding): readonly string[] {
+  return b.kind === "earlyReturn" ? [] : [b.tsName];
+}
 
 interface MuSearch {
   counterName: string;
@@ -1289,12 +1299,26 @@ function translatePureBody(
   // Pantagruel has no record-constructor syntax — its interfaces are opaque
   // domains exposed only through per-field accessor rules — so this is the
   // natural shape.
-  if (
+  //
+  // Per-field decomposition only handles the canonical "object-literal
+  // terminal with no arms" shape. Object literals in other positions (early-
+  // return arm values, branches of an if/else terminal) would otherwise fall
+  // through to translateBodyExpr's `ast.var(getText())` fallback and emit
+  // garbage Pantagruel — reject those uniformly.
+  const armHasObjLit = extracted.bindings.some(
+    (b) =>
+      b.kind === "earlyReturn" && ts.isObjectLiteralExpression(b.valueExpr),
+  );
+  const terminalIsObjLit =
     ts.isExpression(extracted.returnExpr) &&
-    ts.isObjectLiteralExpression(extracted.returnExpr)
-  ) {
+    ts.isObjectLiteralExpression(extracted.returnExpr);
+  const terminalIfHasObjLitBranch =
+    ts.isIfStatement(extracted.returnExpr) &&
+    ifTerminalHasObjLitBranch(extracted.returnExpr, checker);
+
+  if (terminalIsObjLit && inlined.arms.length === 0) {
     return translateRecordReturn(
-      extracted.returnExpr,
+      extracted.returnExpr as ts.ObjectLiteralExpression,
       functionName,
       params,
       node,
@@ -1305,6 +1329,17 @@ function translatePureBody(
       synthCell,
       inlined.applyTo,
     );
+  }
+
+  if (terminalIsObjLit || armHasObjLit || terminalIfHasObjLitBranch) {
+    return [
+      {
+        kind: "unsupported",
+        reason:
+          `${functionName} — record return combined with early-return ` +
+          `arms or if/else branches is not yet supported`,
+      },
+    ];
   }
 
   const body = translateBodyExpr(
@@ -1320,7 +1355,15 @@ function translatePureBody(
     return [{ kind: "unsupported", reason: body.unsupported }];
   }
 
-  const rhs = inlined.applyTo(bodyExpr(body));
+  const terminal = bodyExpr(body);
+  const merged =
+    inlined.arms.length === 0
+      ? terminal
+      : ast.cond([
+          ...inlined.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
+          [ast.litBool(true), terminal] as [OpaqueExpr, OpaqueExpr],
+        ]);
+  const rhs = inlined.applyTo(merged);
 
   const argExprs = params.map((p) => ast.var(p.name));
   const lhs = ast.app(ast.var(functionName), argExprs);
@@ -1522,6 +1565,44 @@ function recognizeMuSearch(
   };
 }
 
+/**
+ * Recognize a prelude *early-return arm*: an `IfStatement` whose body is
+ * exactly one return-with-expression and which has no `else` clause. Such a
+ * statement contributes one arm `(predicate, returnValue)` to a synthetic
+ * `cond` that wraps the rest of the function body — the standard
+ * if-conversion of an early-exit guard (Allen et al. POPL 1983).
+ *
+ * Mirrors the body-shape constraint of `extractReturnFromBranch` so that
+ * prelude-position and terminal-position if-conversion accept the same
+ * branch shapes. An if with an `else` falls through to the existing
+ * terminal-position handling unchanged.
+ */
+function recognizeEarlyReturnArm(
+  stmt: ts.Statement,
+): { predicateExpr: ts.Expression; valueExpr: ts.Expression } | null {
+  if (!ts.isIfStatement(stmt)) {
+    return null;
+  }
+  if (stmt.elseStatement) {
+    return null;
+  }
+  const body = stmt.thenStatement;
+  let returnStmt: ts.Statement | null = null;
+  if (ts.isReturnStatement(body)) {
+    returnStmt = body;
+  } else if (ts.isBlock(body) && body.statements.length === 1) {
+    returnStmt = body.statements[0]!;
+  }
+  if (
+    !returnStmt ||
+    !ts.isReturnStatement(returnStmt) ||
+    !returnStmt.expression
+  ) {
+    return null;
+  }
+  return { predicateExpr: stmt.expression, valueExpr: returnStmt.expression };
+}
+
 function extractReturnExpression(
   body: ts.Block,
   checker: ts.TypeChecker,
@@ -1546,6 +1627,13 @@ function extractReturnExpression(
     if (mu) {
       bindings.push({ kind: "muSearch", tsName: mu.counterName, mu });
       i += 2;
+      continue;
+    }
+
+    const arm = recognizeEarlyReturnArm(stmts[i]!);
+    if (arm) {
+      bindings.push({ kind: "earlyReturn", ...arm });
+      i += 1;
       continue;
     }
 
@@ -1591,22 +1679,39 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
     return "empty body";
   }
   if (stmts.length > 1) {
-    // `let counter = INIT; while (...) { ... }` that failed `recognizeMuSearch`
-    // — typically a compound while body. Report a μ-search-specific
-    // reason before the generic let/var rejection fires.
-    for (let i = 0; i < stmts.length - 1; i++) {
-      const a = stmts[i]!;
-      const b = stmts[i + 1]!;
+    const lastIdx = stmts.length - 1;
+    // Walk the prelude with the same recognizers `extractReturnExpression`
+    // uses, so the reported reason matches the first pattern that actually
+    // failed rather than a heuristic guess.
+    let i = 0;
+    while (i < lastIdx) {
+      if (recognizeMuSearch(stmts, i, checker)) {
+        i += 2;
+        continue;
+      }
+      const stmt = stmts[i]!;
+      if (recognizeEarlyReturnArm(stmt)) {
+        i += 1;
+        continue;
+      }
+      // An if-shaped statement that didn't match recognizeEarlyReturnArm:
+      // diagnose precisely.
+      if (ts.isIfStatement(stmt)) {
+        if (stmt.elseStatement) {
+          return "if-with-else only supported as the final statement";
+        }
+        return "if-with-return body must be a single return statement";
+      }
+      // A let; while pair where recognizeMuSearch failed — probably a
+      // compound while body or non-`i++` body.
       if (
-        ts.isVariableStatement(a) &&
-        a.declarationList.flags & ts.NodeFlags.Let &&
-        ts.isWhileStatement(b)
+        ts.isVariableStatement(stmt) &&
+        stmt.declarationList.flags & ts.NodeFlags.Let &&
+        i + 1 < stmts.length &&
+        ts.isWhileStatement(stmts[i + 1]!)
       ) {
         return "unsupported while-loop shape (not a recognized μ-search)";
       }
-    }
-    // Check for specific rejection reasons in leading statements
-    for (const stmt of stmts) {
       if (ts.isVariableStatement(stmt)) {
         const declList = stmt.declarationList;
         if (!(declList.flags & ts.NodeFlags.Const)) {
@@ -1621,12 +1726,35 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
           }
         }
       }
+      if (ts.isExpressionStatement(stmt)) {
+        return "expression statement before return (only const / μ-search / if-early-return allowed)";
+      }
+      return "local bindings or multiple statements before return";
+    }
+    // Prelude scanned cleanly — the rejection must be at the terminal
+    // statement (e.g., trailing if without else, or non-return).
+    const last = stmts[lastIdx]!;
+    if (ts.isIfStatement(last) && !last.elseStatement) {
+      return "if-without-else as final statement (use `if (P) return E` for early-return arms or add an else branch)";
+    }
+    if (!ts.isReturnStatement(last)) {
+      return "final statement must be a return";
+    }
+    if (!last.expression) {
+      return "return without expression";
     }
     return "local bindings or multiple statements before return";
   }
   const stmt = stmts[0]!;
   if (ts.isReturnStatement(stmt) && !stmt.expression) {
     return "return without expression";
+  }
+  if (
+    ts.isIfStatement(stmt) &&
+    !stmt.elseStatement &&
+    recognizeEarlyReturnArm(stmt) !== null
+  ) {
+    return "if-without-else as final statement (use `if (P) return E` for early-return arms or add an else branch)";
   }
   return "non-translatable control flow";
 }
@@ -1654,6 +1782,7 @@ function inlineConstBindings(
   | {
       applyTo: (expr: OpaqueExpr) => OpaqueExpr;
       scopedParams: ReadonlyMap<string, string>;
+      arms: ReadonlyArray<readonly [OpaqueExpr, OpaqueExpr]>;
     }
   | { error: string } {
   const ast = getAst();
@@ -1668,12 +1797,14 @@ function inlineConstBindings(
   // so without this screen a loop like `while (used.has(i++)) i++;`
   // would lower to a Pant expression containing a bogus var `"i++"`.
   for (const [idx, binding] of bindings.entries()) {
-    const blockedNames = new Set(bindings.slice(idx).map((b) => b.tsName));
+    const blockedNames = new Set(
+      bindings.slice(idx).flatMap((b) => bindingNames(b) as string[]),
+    );
     if (binding.kind === "const") {
       if (expressionReferencesNames(binding.initializer, blockedNames)) {
         return { error: "const initializer references a later binding" };
       }
-    } else {
+    } else if (binding.kind === "muSearch") {
       if (expressionHasSideEffects(binding.mu.initTsExpr, checker)) {
         return { error: "while-loop init has side effects" };
       }
@@ -1688,13 +1819,34 @@ function inlineConstBindings(
       if (expressionReferencesNames(binding.mu.predicateTsExpr, predBlocked)) {
         return { error: "while-loop predicate references a later binding" };
       }
+    } else {
+      // earlyReturn arm — predicate and value must be pure and may not refer
+      // to bindings declared after this point. The arm itself binds nothing,
+      // so `blockedNames` here just contains the names of later const /
+      // μ-search bindings (earlyReturn entries contribute nothing).
+      if (expressionHasSideEffects(binding.predicateExpr, checker)) {
+        return { error: "early-return predicate has side effects" };
+      }
+      if (expressionHasSideEffects(binding.valueExpr, checker)) {
+        return { error: "early-return value has side effects" };
+      }
+      if (expressionReferencesNames(binding.predicateExpr, blockedNames)) {
+        return { error: "early-return predicate references a later binding" };
+      }
+      if (expressionReferencesNames(binding.valueExpr, blockedNames)) {
+        return { error: "early-return value references a later binding" };
+      }
     }
   }
 
   // Phase 2: translate initializers as a left fold, threading scopedParams
-  // and translatedBindings through the accumulator. Errors short-circuit
-  // subsequent work via the `tag: "error"` discriminant; successful steps
-  // return a fresh map via `withParam` so no `.set`-style mutation remains.
+  // and translatedBindings through the accumulator. Early-return arms are
+  // accumulated alongside (they don't introduce a name, but their predicate
+  // and value are translated under the scope visible at their position so
+  // references to earlier bindings resolve to the correct hygienic `$N`
+  // names). Errors short-circuit subsequent work via the `tag: "error"`
+  // discriminant; successful steps return a fresh map via `withParam` so no
+  // `.set`-style mutation remains.
   type Acc =
     | {
         tag: "ok";
@@ -1703,6 +1855,7 @@ function inlineConstBindings(
           hygienicName: string;
           initExpr: OpaqueExpr;
         }>;
+        arms: ReadonlyArray<readonly [OpaqueExpr, OpaqueExpr]>;
       }
     | { tag: "error"; error: string };
 
@@ -1710,6 +1863,36 @@ function inlineConstBindings(
     (acc, binding) => {
       if (acc.tag === "error") {
         return acc;
+      }
+      if (binding.kind === "earlyReturn") {
+        const predRes = translateBindingInit(
+          binding.predicateExpr,
+          checker,
+          strategy,
+          acc.scopedParams,
+          state,
+          supply,
+        );
+        if ("error" in predRes) {
+          return { tag: "error", error: predRes.error };
+        }
+        const valRes = translateBindingInit(
+          binding.valueExpr,
+          checker,
+          strategy,
+          acc.scopedParams,
+          state,
+          supply,
+        );
+        if ("error" in valRes) {
+          return { tag: "error", error: valRes.error };
+        }
+        return {
+          tag: "ok",
+          scopedParams: acc.scopedParams,
+          translatedBindings: acc.translatedBindings,
+          arms: [...acc.arms, [predRes.value, valRes.value] as const],
+        };
       }
       const hygienicName = `$${nextSupply(supply)}`;
       const initExpr =
@@ -1740,9 +1923,10 @@ function inlineConstBindings(
           ...acc.translatedBindings,
           { hygienicName, initExpr: initExpr.value },
         ],
+        arms: acc.arms,
       };
     },
-    { tag: "ok", scopedParams: baseParams, translatedBindings: [] },
+    { tag: "ok", scopedParams: baseParams, translatedBindings: [], arms: [] },
   );
 
   if (folded.tag === "error") {
@@ -1752,7 +1936,7 @@ function inlineConstBindings(
   // Phase 3: right-fold substitution closure. `reduceRight` applies the last
   // binding first so references to earlier bindings inside its init remain
   // unresolved — they get substituted in subsequent iterations.
-  const { scopedParams, translatedBindings } = folded;
+  const { scopedParams, translatedBindings, arms } = folded;
   const applyTo = (expr: OpaqueExpr): OpaqueExpr =>
     translatedBindings.reduceRight(
       (acc, { hygienicName, initExpr }) =>
@@ -1760,7 +1944,7 @@ function inlineConstBindings(
       expr,
     );
 
-  return { applyTo, scopedParams };
+  return { applyTo, scopedParams, arms };
 }
 
 type BindingInitResult = { value: OpaqueExpr } | { error: string };
@@ -2599,6 +2783,26 @@ function extractReturnFromBranch(
     }
   }
   return null;
+}
+
+function ifTerminalHasObjLitBranch(
+  stmt: ts.IfStatement,
+  checker: ts.TypeChecker,
+): boolean {
+  const branchHasObjLit = (branch: ts.Statement): boolean => {
+    const ret = extractReturnFromBranch(branch, checker);
+    return ret !== null && ts.isObjectLiteralExpression(ret);
+  };
+  if (branchHasObjLit(stmt.thenStatement)) {
+    return true;
+  }
+  if (!stmt.elseStatement) {
+    return false;
+  }
+  if (ts.isIfStatement(stmt.elseStatement)) {
+    return ifTerminalHasObjLitBranch(stmt.elseStatement, checker);
+  }
+  return branchHasObjLit(stmt.elseStatement);
 }
 
 /** Get element type name for an array-typed TS expression, or null. */

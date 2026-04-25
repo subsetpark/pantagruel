@@ -95,6 +95,25 @@ c2 => e2, true => e3`. Process the statement list **bottom-up**: the final `retu
 is the base case; each `if (c) return e` becomes one arm of a conditional whose
 else-branch is the translation of remaining statements.
 
+**Pure-path scope.** `extractReturnExpression`'s prelude scan accepts a
+`recognizeEarlyReturnArm` shape — `if (P) return E;` with no `else` and a body
+that is exactly one return-with-expression — at any position before the
+terminal statement, interleaved with const bindings and recognized μ-search
+pairs. Each arm's predicate and value are translated under the scope visible
+at its position (so they see prior bindings via hygienic `$N` substitution),
+accumulated into `inlineConstBindings`'s `arms: [pred, val][]` field, and
+materialized into a single `cond` whose catch-all is the terminal expression.
+The if-with-else terminal-position handler is unchanged — it remains the
+target for *complete-dispatch* `if/else` returning from both branches.
+
+Constraints (mirrored by `extractReturnFromBranch` for terminal-position
+branches): no else, single-return body, side-effect-free predicate and value,
+TDZ-clean (no reference to bindings declared after the arm). Arms combined
+with a record-typed return are not yet supported — per-field `cond`
+decomposition would require every arm value to be an object literal of the
+same shape, and is left as a follow-on to keep the if-conversion change
+self-contained.
+
 ### Uninterpreted Functions (General Function Calls)
 
 **Standard name:** EUF (Equality with Uninterpreted Functions).
@@ -485,13 +504,19 @@ coordinated with the rest of the document, but locally collision-safe:
 `new Set(scopedParams.values())` so the fresh binder cannot alias any
 Pant name already bound in the current frame.
 
-**SMT note.** `pant` type-checks the emitted form, but `pant --check`
-currently rejects an `each j: Int | …` (or `Nat`) with "comprehension
-parameter must be a domain type" — the SMT backend only enumerates
-user-defined domains, not unbounded integers. End-to-end SMT verification
-of a μ-search result therefore needs either an explicit upper-bound guard
-or backend support for bounded integer enumeration, neither of which is
-in scope here.
+**SMT note.** `pant --check` accepts the emitted form via a sound Skolem
+least-witness encoding (PR #126). On the checker side, `min over each j: T,
+G | j` is supported for integer sorts `T ∈ {Nat, Nat0, Int}`, compiling to
+a fresh Int constant `r` together with `(and <type-bound[r]> G(r))` and a
+`(forall ((j Int)) (=> (and … (< j r) G(j)) false))` "no smaller witness"
+assertion. ts2pant itself only has `IntStrategy` and `RealStrategy` (there
+is no `NatStrategy`), so the translator-emitted μ-search form uses `Int`
+in practice; the checker's `Nat`/`Nat0` support is exercised by hand-written
+specs rather than ts2pant output. End-to-end verification of a μ-search
+result is now in scope; consumers other than the μ-search aggregate (`#`,
+`+/*/and/or/max over`, bare `each`, membership, subset) still require an
+explicit upper-bound guard or a domain-typed iterator and emit a targeted
+diagnostic otherwise.
 
 ## PR #84 Post-Mortem: Why Standard Algorithms Matter
 
