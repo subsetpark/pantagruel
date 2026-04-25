@@ -346,6 +346,16 @@ export const irVar = (name: string, primed = false): IRExpr => ({
   primed,
 });
 
+/**
+ * **Precondition**: `value` must be a non-negative safe integer.
+ * Negative integers and reals lower as `Unop(neg, ...)` / `App(...)` —
+ * see `IRLiteral`. Callers are responsible for the check; the constructor
+ * does not validate at runtime, in keeping with the codebase's
+ * trust-internal-code / validate-at-boundaries convention.
+ * Caller sites today (all in `ir-build.ts`): the numeric-literal branch
+ * guards `Number.isFinite(n) && Number.isInteger(n) && n >= 0`; the `??`
+ * lowering uses literal `0` and `1`.
+ */
 export const irLitNat = (value: number): IRExpr => ({
   kind: "lit",
   value: { kind: "nat", value },
