@@ -1,5 +1,8 @@
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
+import { irLet, irWrap } from "./ir.js";
+import { buildIR, isBuildUnsupported } from "./ir-build.js";
+import { lowerExpr } from "./ir-emit.js";
 import type {
   OpaqueCombiner,
   OpaqueExpr,
@@ -34,6 +37,17 @@ import {
 } from "./translate-types.js";
 import type { PantDeclaration, PropResult } from "./types.js";
 
+/**
+ * Read the `TS2PANT_USE_IR` env var safely from globalThis without
+ * pulling in @types/node into the tsconfig. The flag routes the
+ * pure-path return-expression translation through the IR pipeline
+ * (Stage 1 — see CLAUDE.md §"Intermediate Representation").
+ */
+function useIRPipeline(): boolean {
+  const g = globalThis as { process?: { env?: Record<string, string> } };
+  return g.process?.env?.["TS2PANT_USE_IR"] === "1";
+}
+
 // --- Const-binding inlining infrastructure (let-elimination) ---
 
 /**
@@ -61,7 +75,7 @@ function nextSupply(supply: UniqueSupply): number {
   return value;
 }
 
-function freshHygienicBinder(supply: UniqueSupply): string {
+export function freshHygienicBinder(supply: UniqueSupply): string {
   return `$${nextSupply(supply)}`;
 }
 
@@ -71,7 +85,7 @@ function freshHygienicBinder(supply: UniqueSupply): string {
  * sites to decide whether the receiver needs the cardinality-based lowering
  * (nullable) or can pass through as-is (already concrete).
  */
-function isNullableTsType(type: ts.Type): boolean {
+export function isNullableTsType(type: ts.Type): boolean {
   const mask = ts.TypeFlags.Null | ts.TypeFlags.Undefined | ts.TypeFlags.Void;
   if (type.isUnion()) {
     return type.types.some((t) => (t.flags & mask) !== 0);
@@ -1342,28 +1356,79 @@ function translatePureBody(
     ];
   }
 
-  const body = translateBodyExpr(
-    extracted.returnExpr,
-    checker,
-    strategy,
-    inlined.scopedParams,
-    undefined,
-    supply,
-  );
+  // IR pipeline: when `TS2PANT_USE_IR=1` is set in the environment,
+  // route the return-expression translation through the IR (ir-build →
+  // ir-emit). See CLAUDE.md §"Intermediate Representation" for the
+  // migration roadmap.
+  let rhs: OpaqueExpr;
+  // IR pipeline only handles Expression returns in Stage 1; an
+  // IfStatement returnExpr (TS allows `if (c) return a; return b` to
+  // be lifted into a single conditional return — see
+  // `extractReturnExpression`) still goes through the legacy path until
+  // Stage 8 cutover wires up `Cond` / early-return handling natively.
+  if (useIRPipeline() && ts.isExpression(extracted.returnExpr)) {
+    const ir = buildIR(
+      extracted.returnExpr,
+      checker,
+      strategy,
+      inlined.scopedParams,
+      supply,
+    );
+    if (isBuildUnsupported(ir)) {
+      return [{ kind: "unsupported", reason: ir.unsupported }];
+    }
+    // Stage 6: build IR `Let` nodes around the body for each const-
+    // binding instead of applying the legacy `applyTo` substitution
+    // closure. lowerExpr's Let case calls Pant's `substituteBinder`,
+    // which is the same primitive `applyTo` used — so the result is
+    // semantically identical to the legacy path. Right-fold semantics
+    // are preserved: outermost Let is the first binding, innermost is
+    // the body.
+    //
+    // Early-return arms (PR #129 if-conversion) are already OpaqueExprs
+    // containing hygienic-name references. Lower the IR terminal, merge
+    // it with the arms into a `cond`, then wrap the result as IRWrap
+    // inside the Let chain — substituteBinder traverses opaque
+    // expressions, so hygienic names inside arms get substituted by the
+    // Let chain just like names inside the IR body.
+    let bodyIR = ir;
+    if (inlined.arms.length > 0) {
+      const terminalExpr = lowerExpr(bodyIR);
+      const mergedExpr = ast.cond([
+        ...inlined.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
+        [ast.litBool(true), terminalExpr] as [OpaqueExpr, OpaqueExpr],
+      ]);
+      bodyIR = { kind: "ir-wrap", expr: mergedExpr };
+    }
+    for (let i = inlined.translatedBindings.length - 1; i >= 0; i--) {
+      const tb = inlined.translatedBindings[i]!;
+      bodyIR = irLet(tb.hygienicName, irWrap(tb.initExpr), bodyIR);
+    }
+    rhs = lowerExpr(bodyIR);
+  } else {
+    const body = translateBodyExpr(
+      extracted.returnExpr,
+      checker,
+      strategy,
+      inlined.scopedParams,
+      undefined,
+      supply,
+    );
 
-  if (isBodyUnsupported(body)) {
-    return [{ kind: "unsupported", reason: body.unsupported }];
+    if (isBodyUnsupported(body)) {
+      return [{ kind: "unsupported", reason: body.unsupported }];
+    }
+
+    const terminal = bodyExpr(body);
+    const merged =
+      inlined.arms.length === 0
+        ? terminal
+        : ast.cond([
+            ...inlined.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
+            [ast.litBool(true), terminal] as [OpaqueExpr, OpaqueExpr],
+          ]);
+    rhs = inlined.applyTo(merged);
   }
-
-  const terminal = bodyExpr(body);
-  const merged =
-    inlined.arms.length === 0
-      ? terminal
-      : ast.cond([
-          ...inlined.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
-          [ast.litBool(true), terminal] as [OpaqueExpr, OpaqueExpr],
-        ]);
-  const rhs = inlined.applyTo(merged);
 
   const argExprs = params.map((p) => ast.var(p.name));
   const lhs = ast.app(ast.var(functionName), argExprs);
@@ -1404,7 +1469,7 @@ interface ExtractedBody {
  *  (built-in types, type parameters, anonymous shapes with no synth
  *  context) still fall back to the bare kebab'd field name — those
  *  don't collide with qualified rule names. */
-function qualifyFieldAccess(
+export function qualifyFieldAccess(
   receiverType: ts.Type,
   fieldName: string,
   checker: ts.TypeChecker,
@@ -1427,7 +1492,7 @@ function qualifyFieldAccess(
   return toPantTermName(fieldName);
 }
 
-function ambiguousFieldMsg(fieldName: string): string {
+export function ambiguousFieldMsg(fieldName: string): string {
   return (
     `property access .${fieldName}: ambiguous owner — ` +
     `union/intersection members declare this field on multiple distinct ` +
@@ -1771,7 +1836,19 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
  * is substituted first, so each step naturally resolves references to earlier
  * bindings that are already embedded in the result.
  */
-function inlineConstBindings(
+/**
+ * One translated const-binding: a hygienic name (`$N`) and the
+ * already-translated initializer as an OpaqueExpr. Exposed so the IR
+ * pipeline (Stage 6+) can wrap these in `IRWrap`-valued IR `Let` nodes
+ * and let `lowerExpr`'s `substituteBinder` do the substitution at
+ * lowering time, replacing the legacy `applyTo` closure.
+ */
+export interface TranslatedBinding {
+  hygienicName: string;
+  initExpr: OpaqueExpr;
+}
+
+export function inlineConstBindings(
   bindings: ConstBinding[],
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
@@ -1781,6 +1858,7 @@ function inlineConstBindings(
 ):
   | {
       applyTo: (expr: OpaqueExpr) => OpaqueExpr;
+      translatedBindings: ReadonlyArray<TranslatedBinding>;
       scopedParams: ReadonlyMap<string, string>;
       arms: ReadonlyArray<readonly [OpaqueExpr, OpaqueExpr]>;
     }
@@ -1944,7 +2022,7 @@ function inlineConstBindings(
       expr,
     );
 
-  return { applyTo, scopedParams, arms };
+  return { applyTo, translatedBindings, scopedParams, arms };
 }
 
 type BindingInitResult = { value: OpaqueExpr } | { error: string };

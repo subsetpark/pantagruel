@@ -230,6 +230,10 @@ exports[`expressions-if-early-return.ts > unbracedArm 1`] = `
 "module UnbracedArm.\\n\\nunbraced-arm n: Int => Int.\\n\\n---\\n\\nunbraced-arm n = (cond n < 0 => 0, true => n).\\n"
 `;
 
+exports[`expressions-ir-anchor.ts > effectiveValue 1`] = `
+"module EffectiveValue.\\n\\nCache.\\ncache--fallback c1: Cache => Int.\\ncache--value c1: Cache => [Int].\\neffective-value c: Cache, factor: Int => Int.\\n\\n---\\n\\neffective-value c factor = (cond factor > 0 => (cond #(cache--value c) = 0 => cache--fallback c, true => (cache--value c) 1) * factor, true => (cond #(cache--value c) = 0 => cache--fallback c, true => (cache--value c) 1)).\\n"
+`;
+
 exports[`expressions-literals.ts > fortyTwo 1`] = `
 "module FortyTwo.\\n\\nforty-two  => Int.\\n\\n---\\n\\nforty-two = 42.\\n"
 `;
