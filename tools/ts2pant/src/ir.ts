@@ -146,9 +146,8 @@ export type IRExpr =
    */
   | { kind: "let"; name: string; value: IRExpr; body: IRExpr }
   /**
-   * List comprehension. `params` ranges over `src`-keyed binders;
-   * `guards` filter; `proj` is the projected expression.
-   * Lowers to `ast.each(...)`.
+   * List comprehension. `binder` ranges over `src`; `guards` filter;
+   * `proj` is the projected expression. Lowers to `ast.each(...)`.
    */
   | {
       kind: "each";
