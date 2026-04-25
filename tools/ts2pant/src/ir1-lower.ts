@@ -9,13 +9,11 @@
  * declared but throws — it lands in M3 alongside iteration + mutation
  * normalization.
  *
- * **Cond lowering — byte-equality with legacy.** L1 `cond({arms,
- * otherwise})` produces L2 `irCond([...arms, [litBool(true), otherwise]])`,
- * exactly the legacy `ast.cond([...arms, [litBool(true), default]])` shape
- * the existing recognizers emit today. This is the cutover gate: M1's
- * Patch 3 deletes legacy conditional handlers and snapshots must be
- * byte-identical, which only holds if L1 → L2 produces the same L2 cond
- * tree as the deleted code did.
+ * **Cond lowering.** L1 `cond({arms, otherwise})` produces L2
+ * `irCond([...arms, [litBool(true), otherwise]])`. The trailing
+ * `(true, otherwise)` arm is the canonical L2 cond shape; L1's
+ * separate `otherwise` field exists so consumers can't construct a
+ * value-position cond without a default.
  *
  * **Member lowering — already-qualified name.** L1 `member(receiver,
  * name)` lowers to L2 `App(name=name, [receiver])`. The build pass is
@@ -31,8 +29,6 @@ import {
   irBinop,
   irCond,
   irLitBool,
-  irLitNat,
-  irLitString,
   irUnop,
   irVar,
 } from "./ir.js";
@@ -46,22 +42,10 @@ export function lowerL1Expr(e: IR1Expr): IRExpr {
     case "var":
       return irVar(e.name, e.primed ?? false);
 
-    case "lit": {
-      const v = e.value;
-      switch (v.kind) {
-        case "nat":
-          return irLitNat(v.value);
-        case "bool":
-          return irLitBool(v.value);
-        case "string":
-          return irLitString(v.value);
-        default: {
-          const _exhaustive: never = v;
-          void _exhaustive;
-          throw new Error("unreachable: IR1Literal");
-        }
-      }
-    }
+    case "lit":
+      // L1 `lit` and L2 `lit` share the same shape (`IR1Literal = IRLiteral`),
+      // so the variant is structurally a valid `IRExpr`. Pass through.
+      return e;
 
     case "binop":
       return irBinop(e.op, lowerL1Expr(e.lhs), lowerL1Expr(e.rhs));

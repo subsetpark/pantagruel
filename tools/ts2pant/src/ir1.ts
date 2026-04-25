@@ -37,43 +37,20 @@
  * `tools/ts2pant/CLAUDE.md` §"Imperative IR Workstream".
  */
 
-import type { IRExpr } from "./ir.js";
+import type { IRBinop, IRExpr, IRLiteral, IRUnop } from "./ir.js";
 
 // --------------------------------------------------------------------------
 // Literals, binops, unops
 // --------------------------------------------------------------------------
+//
+// L1 reuses the L2 atom types directly — literal/binop/unop operator names
+// have one source of truth across both layers. Lowering for `lit` is then
+// a structural pass-through (same shape on both sides); binop/unop still
+// need to wrap into L2's App-headed form during lowering.
 
-/**
- * Literal values appearing in `Lit(...)`. Mirrors L2 `IRLiteral` exactly —
- * same shape on both sides keeps lowering trivial.
- */
-export type IR1Literal =
-  | { kind: "nat"; value: number }
-  | { kind: "bool"; value: boolean }
-  | { kind: "string"; value: string };
-
-/**
- * Binary operators. Mirrors L2 `IRBinop` for direct lowering.
- */
-export type IR1Binop =
-  | "and"
-  | "or"
-  | "impl"
-  | "iff"
-  | "eq"
-  | "neq"
-  | "lt"
-  | "gt"
-  | "le"
-  | "ge"
-  | "in"
-  | "subset"
-  | "add"
-  | "sub"
-  | "mul"
-  | "div";
-
-export type IR1Unop = "not" | "neg" | "card";
+export type IR1Literal = IRLiteral;
+export type IR1Binop = IRBinop;
+export type IR1Unop = IRUnop;
 
 // --------------------------------------------------------------------------
 // Expression forms (value-position)
@@ -293,9 +270,17 @@ export const ir1Cond = (
 ): IR1Expr => ({ kind: "cond", arms, otherwise });
 
 /**
- * Transitional delegation to a pre-built Layer 2 IRExpr. See module doc
- * for lifetime — this scaffolds incremental migration and is deleted at
+ * Transitional delegation to a pre-built Layer 2 IRExpr. Use only inside
+ * `ir1-build.ts` for sub-expressions whose normalization is not the
+ * current milestone's concern, and in `translatePureBody`'s arm-cond
+ * assembly where `inlineConstBindings` produces pre-translated
+ * OpaqueExprs. See module doc for lifetime — shrinks at M3, deleted at
  * M6.
+ *
+ * @deprecated transitional; do not introduce new call sites outside the
+ * scoped sub-expression delegation in `ir1-build.ts` /
+ * `translate-body.ts:translatePureBody`. Lifetime is bounded by the
+ * workstream — see `workstreams/ts2pant-imperative-ir.md`.
  */
 export const ir1FromL2 = (expr: IRExpr): IR1Expr => ({
   kind: "from-l2",

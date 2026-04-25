@@ -2803,7 +2803,7 @@ export function translateBodyExpr(
   return { unsupported: "non-expression statement" };
 }
 
-function extractReturnFromBranch(
+export function extractReturnFromBranch(
   stmt: ts.Statement,
   checker: ts.TypeChecker,
 ): ts.Expression | null {

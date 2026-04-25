@@ -19,10 +19,8 @@
  * within the workstream — see CLAUDE.md §"Imperative IR".
  *
  * **Hard rule per equivalence class** (workstream decision 4): every
- * conditional-value-shaped TS construct goes through this builder once
- * Patch 3 cuts over. During Patch 2, the path is gated by the
- * `TS2PANT_USE_L1=1` env var so legacy and L1 paths can be compared
- * byte-for-byte.
+ * conditional-value-shaped TS construct goes through this builder. There
+ * is no fall-through to a legacy handler — L1 rejection is terminal.
  */
 
 import ts from "typescript";
@@ -44,6 +42,7 @@ import { isStaticallyBoolTyped } from "./purity.js";
 import type { SymbolicState, UniqueSupply } from "./translate-body.js";
 import {
   expressionHasSideEffects,
+  extractReturnFromBranch,
   isBodyUnsupported,
   translateBodyExpr,
 } from "./translate-body.js";
@@ -321,7 +320,10 @@ function buildFromIfStatement(
     if (isL1Unsupported(guard)) {
       return guard;
     }
-    const thenExpr = extractReturnFromStatement(current.thenStatement);
+    const thenExpr = extractReturnFromBranch(
+      current.thenStatement,
+      ctx.checker,
+    );
     if (!thenExpr) {
       return {
         unsupported: "if-then branch must contain a single return-with-value",
@@ -338,7 +340,10 @@ function buildFromIfStatement(
       current = current.elseStatement;
       continue;
     }
-    const elseExpr = extractReturnFromStatement(current.elseStatement);
+    const elseExpr = extractReturnFromBranch(
+      current.elseStatement,
+      ctx.checker,
+    );
     if (!elseExpr) {
       return {
         unsupported: "if-else branch must contain a single return-with-value",
@@ -358,31 +363,6 @@ function buildFromIfStatement(
       elseValue,
     );
   }
-}
-
-/**
- * Extract `return EXPR` from a then/else branch — accepts either a
- * `ReturnStatement` directly or a `Block` containing exactly one
- * `ReturnStatement` (after filtering throws/asserts, which act as guards
- * but aren't represented in L1 expression position). Mirrors today's
- * `extractReturnFromBranch` in translate-body.ts:2841 but is kept local
- * to ir1-build.ts so the L1 builder doesn't depend on translate-body's
- * internal helpers staying exported.
- *
- * **Rejection of object-literal returns**: handled at `buildSubExpr`
- * (called downstream); not here.
- */
-function extractReturnFromStatement(stmt: ts.Statement): ts.Expression | null {
-  if (ts.isReturnStatement(stmt) && stmt.expression) {
-    return stmt.expression;
-  }
-  if (ts.isBlock(stmt) && stmt.statements.length === 1) {
-    const s = stmt.statements[0]!;
-    if (ts.isReturnStatement(s) && s.expression) {
-      return s.expression;
-    }
-  }
-  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -540,8 +520,8 @@ function extractCaseReturn(
   if (lastIdx > 0 && stmts[lastIdx]!.kind === ts.SyntaxKind.BreakStatement) {
     lastIdx--;
   }
-  // Also accept `{ return EXPR; }` block.
   const last: ts.Statement = stmts[lastIdx]!;
+  // Accept `{ return EXPR; }` block.
   if (
     ts.isBlock(last) &&
     last.statements.length === 1 &&
@@ -549,9 +529,6 @@ function extractCaseReturn(
     last.statements[0]!.expression
   ) {
     return last.statements[0]!.expression!;
-  }
-  if (lastIdx !== stmts.length - 1 && lastIdx < 0) {
-    return null;
   }
   // Only one effective statement allowed (after trailing-break trim).
   if (lastIdx !== 0) {
