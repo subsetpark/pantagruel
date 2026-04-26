@@ -472,14 +472,25 @@ interface EmitStmtState {
   // is the order in which writes were first encountered, which feeds
   // deterministic emission and frame-ordering.
   writes: Map<string, WriteAcc>;
-  // Assertions accumulated in textual order (Set membership writes).
+  // Pre-finalized equations from quantified-stmt envelopes (these
+  // have their quantifier prefix already applied and bypass the
+  // writes-coalescing path).
+  equations: IREquation[];
+  // Assertions accumulated in textual order (Set membership writes
+  // via finalize, plus quantified-stmt assertions and direct asserts).
   assertions: IRAssertExit[];
+  // Modified rule names produced by quantified-stmt sub-states or
+  // direct emissions; merged with finalize-time modifiedProps in the
+  // final result.
+  modifiedProps: Set<string>;
 }
 
 function makeEmitState(): EmitStmtState {
   return {
     writes: new Map(),
+    equations: [],
     assertions: [],
+    modifiedProps: new Set(),
   };
 }
 
@@ -586,11 +597,11 @@ function headKey(head: IRHead): string {
   }
 }
 
-function processStmt(s: IRStmt, st: EmitStmtState): void {
+function processStmt(s: IRStmt, st: EmitStmtState, ctx: EmitStmtCtx): void {
   switch (s.kind) {
     case "seq":
       for (const child of s.stmts) {
-        processStmt(child, st);
+        processStmt(child, st, ctx);
       }
       return;
 
@@ -599,7 +610,7 @@ function processStmt(s: IRStmt, st: EmitStmtState): void {
       return;
 
     case "let-if":
-      processLetIf(s, st);
+      processLetIf(s, st, ctx);
       return;
 
     case "assert":
@@ -609,11 +620,61 @@ function processStmt(s: IRStmt, st: EmitStmtState): void {
       });
       return;
 
+    case "quantified-stmt":
+      processQuantified(s, st, ctx);
+      return;
+
     default: {
       const _exhaustive: never = s;
       void _exhaustive;
       throw new Error("unreachable: IRStmt");
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// `quantified-stmt` envelope (M3 Patch 3)
+//
+// The envelope carries `quantifiers` and `guards` that prepend onto every
+// equation and assertion the body produces. Used canonically for Shape A
+// iteration: `Foreach(x, src, Assign(Member(x, p), e))` lowers to
+// `quantified-stmt([{x, T}], [in(x, src)], write{property-field})`,
+// emitting as `all x: T, x in src | p' x = e`.
+//
+// Implementation: process the body in a sub-EmitStmtState; finalize that
+// sub-state to recover its equations/assertions; prepend the envelope's
+// quants/guards to each; push the wrapped equations/assertions into the
+// outer state's pre-finalized buckets (NOT the writes accumulator —
+// quantified writes don't coalesce with non-quantified writes to the
+// same write-key).
+// ---------------------------------------------------------------------------
+
+function processQuantified(
+  s: Extract<IRStmt, { kind: "quantified-stmt" }>,
+  st: EmitStmtState,
+  ctx: EmitStmtCtx,
+): void {
+  const subSt = makeEmitState();
+  processStmt(s.body, subSt, ctx);
+  const sub = finalizeEmit(subSt, ctx);
+
+  for (const eq of sub.equations) {
+    st.equations.push({
+      quantifiers: [...s.quantifiers, ...eq.quantifiers],
+      guards: [...s.guards, ...(eq.guards ?? [])],
+      lhs: eq.lhs,
+      rhs: eq.rhs,
+    });
+  }
+  for (const a of sub.assertions) {
+    st.assertions.push({
+      quantifiers: [...s.quantifiers, ...a.quantifiers],
+      guards: [...s.guards, ...(a.guards ?? [])],
+      body: a.body,
+    });
+  }
+  for (const r of sub.modifiedProps) {
+    st.modifiedProps.add(r);
   }
 }
 
@@ -647,6 +708,7 @@ function processStmt(s: IRStmt, st: EmitStmtState): void {
 function processLetIf(
   s: Extract<IRStmt, { kind: "let-if" }>,
   st: EmitStmtState,
+  ctx: EmitStmtCtx,
 ): void {
   // Direct `assert` inside a let-if branch lacks a clear φ-merge story
   // (assertions are unconditionally quantified bool formulas; conditioning
@@ -657,7 +719,7 @@ function processLetIf(
   // an iff-with-guard, but defer until a fixture demands it.
   const stT = makeEmitState();
   for (const child of s.then) {
-    processStmt(child, stT);
+    processStmt(child, stT, ctx);
   }
   if (stT.assertions.length > 0) {
     throw new Error(
@@ -668,7 +730,7 @@ function processLetIf(
 
   const stE = makeEmitState();
   for (const child of s.else) {
-    processStmt(child, stE);
+    processStmt(child, stE, ctx);
   }
   if (stE.assertions.length > 0) {
     throw new Error(
@@ -686,7 +748,7 @@ function processLetIf(
   }
 
   for (const child of s.continuation) {
-    processStmt(child, st);
+    processStmt(child, st, ctx);
   }
 }
 
@@ -977,14 +1039,18 @@ export function emitStmt(
   const st = makeEmitState();
   const items = Array.isArray(stmts) ? stmts : [stmts];
   for (const s of items) {
-    processStmt(s, st);
+    processStmt(s, st, ctx);
   }
   return finalizeEmit(st, ctx);
 }
 
 function finalizeEmit(st: EmitStmtState, ctx: EmitStmtCtx): EmitStmtResult {
-  const equations: IREquation[] = [];
-  const modifiedProps = new Set<string>();
+  // Start with any pre-finalized equations / assertions / modifiedProps
+  // pulled in by quantified-stmt envelopes during processing. These
+  // bypassed the writes accumulator because their quantifier prefix
+  // would not be commutative with same-write-key coalescing.
+  const equations: IREquation[] = [...st.equations];
+  const modifiedProps = new Set<string>(st.modifiedProps);
 
   for (const acc of st.writes.values()) {
     switch (acc.kind) {

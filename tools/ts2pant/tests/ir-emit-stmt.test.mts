@@ -7,6 +7,7 @@ import {
   irLitNat,
   irLitString,
   irStmtAssert,
+  irStmtQuantified,
   irStmtSeq,
   irStmtWrite,
   irVar,
@@ -611,6 +612,148 @@ describe("emitStmt — let-if φ-merge (Set writes)", () => {
     assert.equal(
       rendered,
       "all y: String | y in tags' c <-> (cond y = e1 => (cond g => true, true => e1 in tags c), y = e2 => (cond g => e2 in tags c, true => true), true => y in tags c)",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Patch 3: quantified-stmt envelope
+// ---------------------------------------------------------------------------
+
+describe("emitStmt — quantified-stmt envelope (Shape A target)", () => {
+  it("wraps a property-field write in `all x in src | p' x = e`", () => {
+    // Foreach(x, src, Assign(Member(x, "active"), true)) lowers to
+    // quantified-stmt([{x, User}], [in(x, users)],
+    //   write{property-field, "active", x, true}).
+    const target: IRWriteTarget = {
+      kind: "property-field",
+      ruleName: "active",
+      objExpr: irVar("x"),
+    };
+    const body = irStmtWrite(target, irBinop("eq", irLitNat(1), irLitNat(1))); // dummy expr
+    const wrapped = irStmtQuantified(
+      [{ name: "x", type: "User" }],
+      [irBinop("in", irVar("x"), irVar("users"))],
+      body,
+    );
+    const result = emitStmt(wrapped, ctx());
+    assert.equal(result.equations.length, 1);
+    const rendered = renderEquation(lowerEquation(result.equations[0]!));
+    assert.equal(rendered, "active' x = 1 = 1");
+    assert.equal(result.equations[0]!.quantifiers.length, 1);
+    assert.equal(result.equations[0]!.quantifiers[0]!.name, "x");
+    assert.equal(result.equations[0]!.guards?.length, 1);
+    assert.deepEqual([...result.modifiedProps], ["active"]);
+  });
+
+  it("simple Shape A: assigning a constant value", () => {
+    const target: IRWriteTarget = {
+      kind: "property-field",
+      ruleName: "active",
+      objExpr: irVar("x"),
+    };
+    const wrapped = irStmtQuantified(
+      [{ name: "x", type: "User" }],
+      [irBinop("in", irVar("x"), irVar("users"))],
+      irStmtWrite(target, irLitString("on")),
+    );
+    const result = emitStmt(wrapped, ctx());
+    assert.equal(result.equations.length, 1);
+    const eq = result.equations[0]!;
+    const lowered = lowerEquation(eq);
+    const ast = getAst();
+    // The forall envelope assembles via Pant's forall constructor with our
+    // params + guards; the body is the equation expression `lhs = rhs`.
+    const envelope = ast.forall(
+      lowered.quantifiers,
+      lowered.guards,
+      ast.binop(ast.opEq(), lowered.lhs, lowered.rhs),
+    );
+    assert.equal(
+      ast.strExpr(envelope),
+      "all x: User, x in users | active' x = \"on\"",
+    );
+  });
+
+  it("composes nested quantified-stmt envelopes (concats quants/guards)", () => {
+    const target: IRWriteTarget = {
+      kind: "property-field",
+      ruleName: "joint",
+      objExpr: irVar("y"),
+    };
+    const inner = irStmtQuantified(
+      [{ name: "y", type: "Item" }],
+      [irBinop("in", irVar("y"), irVar("items"))],
+      irStmtWrite(target, irLitNat(1)),
+    );
+    const outer = irStmtQuantified(
+      [{ name: "x", type: "User" }],
+      [irBinop("in", irVar("x"), irVar("users"))],
+      inner,
+    );
+    const result = emitStmt(outer, ctx());
+    assert.equal(result.equations.length, 1);
+    const eq = result.equations[0]!;
+    assert.deepEqual(
+      eq.quantifiers.map((q) => q.name),
+      ["x", "y"],
+    );
+    assert.equal(eq.guards?.length, 2);
+  });
+
+  it("seq inside quantified-stmt wraps each emitted equation independently", () => {
+    const tA: IRWriteTarget = {
+      kind: "property-field",
+      ruleName: "alpha",
+      objExpr: irVar("x"),
+    };
+    const tB: IRWriteTarget = {
+      kind: "property-field",
+      ruleName: "beta",
+      objExpr: irVar("x"),
+    };
+    const wrapped = irStmtQuantified(
+      [{ name: "x", type: "T" }],
+      [irBinop("in", irVar("x"), irVar("xs"))],
+      irStmtSeq([
+        irStmtWrite(tA, irLitNat(1)),
+        irStmtWrite(tB, irLitNat(2)),
+      ]),
+    );
+    const result = emitStmt(wrapped, ctx());
+    assert.equal(result.equations.length, 2);
+    for (const eq of result.equations) {
+      assert.deepEqual(
+        eq.quantifiers.map((q) => q.name),
+        ["x"],
+      );
+    }
+    assert.deepEqual([...result.modifiedProps], ["alpha", "beta"]);
+  });
+
+  it("quantified-stmt over a Set assertion prepends quants to the assertion", () => {
+    const target: IRWriteTarget = {
+      kind: "set-member",
+      ruleName: "tags",
+      ownerType: "Card",
+      elemType: "String",
+      objExpr: irVar("c"),
+      elemExpr: irVar("e"),
+      op: "add",
+    };
+    const wrapped = irStmtQuantified(
+      [{ name: "x", type: "Card" }],
+      [irBinop("in", irVar("x"), irVar("cards"))],
+      irStmtWrite(target, null),
+    );
+    const result = emitStmt(wrapped, ctx());
+    assert.equal(result.assertions.length, 1);
+    const a = result.assertions[0]!;
+    // Outer x quantifier is prepended; inner y quantifier (allocated by
+    // emitSetMembershipAssertion) follows.
+    assert.deepEqual(
+      a.quantifiers.map((q) => q.name),
+      ["x", "y"],
     );
   });
 });

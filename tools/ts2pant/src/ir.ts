@@ -309,6 +309,26 @@ export type IRStmt =
       kind: "assert";
       quantifiers: Array<{ name: string; type: string }>;
       body: IRExpr;
+    }
+  /**
+   * Universal-quantification envelope around a statement body. Each
+   * equation/assertion produced by `body` gets `quantifiers` prepended
+   * to its quantifier list and `guards` prepended to its guard list.
+   *
+   * Canonical use: Shape A iteration. `Foreach(x, src,
+   * Assign(Member(x, p), e))` lowers to
+   * `quantified-stmt([{x, T}], [in(x, src)], write{property-field}(p, x,
+   * e))`, which emits as `all x: T, x in src | p' x = e`.
+   *
+   * M3 Patch 3 introduces this form. The body is a single IRStmt; nested
+   * quantifications compose via nested envelopes (each layer prepends
+   * its own quants).
+   */
+  | {
+      kind: "quantified-stmt";
+      quantifiers: Array<{ name: string; type: string }>;
+      guards: IRExpr[];
+      body: IRStmt;
     };
 
 // --------------------------------------------------------------------------
@@ -547,6 +567,12 @@ export const irStmtAssert = (
   quantifiers: Array<{ name: string; type: string }>,
   body: IRExpr,
 ): IRStmt => ({ kind: "assert", quantifiers, body });
+
+export const irStmtQuantified = (
+  quantifiers: Array<{ name: string; type: string }>,
+  guards: IRExpr[],
+  body: IRStmt,
+): IRStmt => ({ kind: "quantified-stmt", quantifiers, guards, body });
 
 // Type guards (small, useful for migration code)
 
