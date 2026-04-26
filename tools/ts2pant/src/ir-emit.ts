@@ -22,7 +22,16 @@ import {
   type IRExpr,
   type IRFoldCombiner,
   type IRHead,
+  type IRStmt,
   type IRUnop,
+  type IRWriteTarget,
+  irAppName,
+  irAppPrimed,
+  irBinop,
+  irCond,
+  irLitBool,
+  irVar,
+  irWrap,
   isFoldComb,
 } from "./ir.js";
 import type {
@@ -370,5 +379,505 @@ export function lowerAssert(a: IRAssertExit): {
     quantifiers: a.quantifiers.map((q) => ast.param(q.name, ast.tName(q.type))),
     guards: (a.guards ?? []).map((g) => ast.gExpr(lowerExpr(g))),
     body: lowerExpr(a.body),
+  };
+}
+
+// --------------------------------------------------------------------------
+// IRStmt → IREquation[] / IRAssertExit[] (M3 Patch 1)
+// --------------------------------------------------------------------------
+//
+// `emitStmt` walks a sequence of L2 IRStmts and accumulates their effects
+// into a structured result: equations (one per modified rule, with
+// per-rule overrides coalesced into a single override expression),
+// assertions (Set membership writes), and the deterministic insertion-
+// ordered set of modified rule names used by callers to drive frame-
+// condition synthesis.
+//
+// Coalescing discipline mirrors the legacy `state.writes` Map in
+// `translate-body.ts`: multiple `.set` calls on the same Map rule
+// produce a single equation with multiple key-tuple overrides;
+// repeated property-field writes overwrite (last-write-wins);
+// `.clear()` on a Set drops the pre-state membership fallthrough.
+//
+// **Patch 1 scope**: `seq` (recurse + concat into a single
+// accumulator) and `write` (all three target kinds). `let-if` and
+// `quantified-stmt` arms throw NOT_IMPL — Patches 2 and 3 land them.
+
+/**
+ * Caller-supplied allocator for fresh quantifier binders. Used for the
+ * `m1`/`k1`/`y` binders introduced by Map and Set write equations. The
+ * production caller wires this to the document-wide `NameRegistry` (via
+ * `cellRegisterName`) so binders don't collide with the function's
+ * params or other emitted binders. Standalone tests can pass any
+ * collision-safe allocator.
+ */
+export interface EmitStmtCtx {
+  allocBinder: (hint: string) => string;
+}
+
+export interface EmitStmtResult {
+  equations: IREquation[];
+  assertions: IRAssertExit[];
+  /**
+   * Names of primed rules emitted by this statement sequence, in
+   * insertion order. Threaded into `state.modifiedProps` by the
+   * caller so `generateFrameConditions` produces frames for
+   * unmodified rules only.
+   */
+  modifiedProps: Set<string>;
+}
+
+interface PropertyWriteAcc {
+  kind: "property";
+  ruleName: string;
+  objExpr: IRExpr;
+  value: IRExpr;
+}
+
+interface MapOverrideAcc {
+  keyExpr: IRExpr;
+  value: IRExpr;
+}
+
+interface MapWriteAcc {
+  kind: "map";
+  ruleName: string;
+  keyPredName: string;
+  ownerType: string;
+  keyType: string;
+  objExpr: IRExpr;
+  valueOverrides: MapOverrideAcc[];
+  membershipOverrides: MapOverrideAcc[];
+}
+
+interface SetOverrideAcc {
+  elemExpr: IRExpr;
+  value: IRExpr;
+}
+
+interface SetWriteAcc {
+  kind: "set";
+  ruleName: string;
+  ownerType: string;
+  elemType: string;
+  objExpr: IRExpr;
+  memberOverrides: SetOverrideAcc[];
+  cleared: boolean;
+}
+
+type WriteAcc = PropertyWriteAcc | MapWriteAcc | SetWriteAcc;
+
+interface EmitStmtState {
+  // Insertion-ordered Map keyed by write-key string. Iteration order
+  // is the order in which writes were first encountered, which feeds
+  // deterministic emission and frame-ordering.
+  writes: Map<string, WriteAcc>;
+  // Assertions accumulated in textual order (Set membership writes).
+  assertions: IRAssertExit[];
+}
+
+function makeEmitState(): EmitStmtState {
+  return {
+    writes: new Map(),
+    assertions: [],
+  };
+}
+
+/**
+ * Compute a stable string key for a write target. Different writes to
+ * the same rule + canonical receiver coalesce; writes to different
+ * receivers stay separate.
+ *
+ * Patch 1 uses a structural string of the IRExpr; semantic
+ * canonicalization (e.g., resolving `applyConst` substitutions) is the
+ * caller's responsibility before emitting (mirrors how legacy
+ * `installMapWrite` runs `applyConst` on the receiver before keying).
+ */
+function writeKey(target: IRWriteTarget): string {
+  const objKey = irExprKey(target.objExpr);
+  switch (target.kind) {
+    case "property-field":
+      return `prop:${target.ruleName}:${objKey}`;
+    case "map-entry":
+      return `map:${target.ruleName}:${objKey}`;
+    case "set-member":
+      return `set:${target.ruleName}:${objKey}`;
+    default: {
+      const _exhaustive: never = target;
+      void _exhaustive;
+      throw new Error("unreachable: IRWriteTarget");
+    }
+  }
+}
+
+/**
+ * Structural string key for an IRExpr. Used only for write-coalescing
+ * — the strings are not stable across IR refactors, but they are
+ * stable within a single translation pass, which is all we need.
+ * `ir-wrap` falls back to the OpaqueExpr identity (best-effort:
+ * `OpaqueExpr` is opaque from TS, so two structurally-equal wraps
+ * may produce different keys; in practice, callers pass the same
+ * canonicalized OpaqueExpr instance for matching receivers).
+ */
+function irExprKey(e: IRExpr): string {
+  switch (e.kind) {
+    case "var":
+      return `v:${e.primed ? "'" : ""}${e.name}`;
+    case "lit":
+      return litKey(e.value);
+    case "app":
+      return `a:${headKey(e.head)}(${e.args.map(irExprKey).join(",")})`;
+    case "cond":
+      return `c:${e.arms.map(([g, v]) => `${irExprKey(g)}=>${irExprKey(v)}`).join("|")}`;
+    case "let":
+      return `l:${e.name}=${irExprKey(e.value)};${irExprKey(e.body)}`;
+    case "each":
+      return `ea:${e.binder}@${irExprKey(e.src)}|${e.guards.map(irExprKey).join(",")}|${irExprKey(e.proj)}`;
+    case "comb":
+      return `cb:${e.combiner}|${irExprKey(e.each)}`;
+    case "comb-typed":
+      return `ct:${e.combiner}|${e.binder}:${e.binderType}|${e.guards.map(irExprKey).join(",")}|${irExprKey(e.proj)}`;
+    case "forall":
+      return `fa:${e.binder}:${e.binderType}|${e.guard ? irExprKey(e.guard) : ""}|${irExprKey(e.body)}`;
+    case "exists":
+      return `ex:${e.binder}:${e.binderType}|${e.guard ? irExprKey(e.guard) : ""}|${irExprKey(e.body)}`;
+    case "ir-wrap":
+      // OpaqueExpr is opaque from TS — best-effort identity.
+      return `w:${String(e.expr)}`;
+    default: {
+      const _exhaustive: never = e;
+      void _exhaustive;
+      throw new Error("unreachable: IRExpr");
+    }
+  }
+}
+
+function litKey(v: Extract<IRExpr, { kind: "lit" }>["value"]): string {
+  switch (v.kind) {
+    case "nat":
+      return `n:${v.value}`;
+    case "bool":
+      return `b:${v.value}`;
+    case "string":
+      return `s:${v.value}`;
+    default: {
+      const _exhaustive: never = v;
+      void _exhaustive;
+      throw new Error("unreachable: IRLiteral");
+    }
+  }
+}
+
+function headKey(head: IRHead): string {
+  switch (head.kind) {
+    case "name":
+      return `${head.primed ? "'" : ""}${head.name}`;
+    case "binop":
+      return `bo:${head.op}`;
+    case "unop":
+      return `uo:${head.op}`;
+    case "expr":
+      return `e:${irExprKey(head.expr)}`;
+    default: {
+      const _exhaustive: never = head;
+      void _exhaustive;
+      throw new Error("unreachable: IRHead");
+    }
+  }
+}
+
+function processStmt(s: IRStmt, st: EmitStmtState): void {
+  switch (s.kind) {
+    case "seq":
+      for (const child of s.stmts) {
+        processStmt(child, st);
+      }
+      return;
+
+    case "write":
+      processWrite(s.target, s.value, st);
+      return;
+
+    case "let-if":
+      throw new Error(
+        "emitStmt: `let-if` lowering is M3 Patch 2 (φ-merged IREquation[]); " +
+          "see plan at /Users/zax/.claude/plans/plan-it-snug-tulip.md",
+      );
+
+    case "assert":
+      st.assertions.push({
+        quantifiers: s.quantifiers,
+        body: s.body,
+      });
+      return;
+
+    default: {
+      const _exhaustive: never = s;
+      void _exhaustive;
+      throw new Error("unreachable: IRStmt");
+    }
+  }
+}
+
+function processWrite(
+  target: IRWriteTarget,
+  value: IRExpr | null,
+  st: EmitStmtState,
+): void {
+  const key = writeKey(target);
+  switch (target.kind) {
+    case "property-field": {
+      if (value === null) {
+        throw new Error(
+          "emitStmt: property-field write requires a non-null value",
+        );
+      }
+      // Last-write-wins: legacy `putWrite` overwrites prior entries
+      // for the same write-key. Sequential writes to the same property
+      // produce a single equation with the latest value.
+      st.writes.set(key, {
+        kind: "property",
+        ruleName: target.ruleName,
+        objExpr: target.objExpr,
+        value,
+      });
+      return;
+    }
+
+    case "map-entry": {
+      const prior = st.writes.get(key);
+      const existing: MapWriteAcc =
+        prior !== undefined && prior.kind === "map"
+          ? prior
+          : {
+              kind: "map",
+              ruleName: target.ruleName,
+              keyPredName: target.keyPredName,
+              ownerType: target.ownerType,
+              keyType: target.keyType,
+              objExpr: target.objExpr,
+              valueOverrides: [],
+              membershipOverrides: [],
+            };
+      const op = target.op;
+      const keyExpr = target.keyExpr;
+      if (op === "set") {
+        if (value === null) {
+          throw new Error("emitStmt: map-entry set requires a non-null value");
+        }
+        existing.valueOverrides.push({ keyExpr, value });
+        existing.membershipOverrides.push({ keyExpr, value: irLitBool(true) });
+      } else {
+        // delete: drop any previous value override at the same key
+        // and append a `false` membership override. Pantagruel's
+        // declaration-guard discipline makes the value-rule body
+        // vacuous under false membership, so we don't restate the
+        // value for delete (matches legacy `installMapWrite`).
+        existing.membershipOverrides.push({ keyExpr, value: irLitBool(false) });
+      }
+      st.writes.set(key, existing);
+      return;
+    }
+
+    case "set-member": {
+      const prior = st.writes.get(key);
+      const existing: SetWriteAcc =
+        prior !== undefined && prior.kind === "set"
+          ? prior
+          : {
+              kind: "set",
+              ruleName: target.ruleName,
+              ownerType: target.ownerType,
+              elemType: target.elemType,
+              objExpr: target.objExpr,
+              memberOverrides: [],
+              cleared: false,
+            };
+      switch (target.op) {
+        case "add":
+          if (target.elemExpr === null) {
+            throw new Error("emitStmt: set-member add requires elemExpr");
+          }
+          existing.memberOverrides.push({
+            elemExpr: target.elemExpr,
+            value: irLitBool(true),
+          });
+          break;
+        case "delete":
+          if (target.elemExpr === null) {
+            throw new Error("emitStmt: set-member delete requires elemExpr");
+          }
+          existing.memberOverrides.push({
+            elemExpr: target.elemExpr,
+            value: irLitBool(false),
+          });
+          break;
+        case "clear":
+          existing.cleared = true;
+          existing.memberOverrides = [];
+          break;
+        default:
+          throw new Error("unreachable: set-member op");
+      }
+      st.writes.set(key, existing);
+      return;
+    }
+    default: {
+      const _exhaustive: never = target;
+      void _exhaustive;
+      throw new Error("unreachable: IRWriteTarget");
+    }
+  }
+}
+
+/**
+ * Walk an IRStmt (or array of IRStmts) and produce the L2 emission
+ * result: per-rule equations (with overrides coalesced), assertions,
+ * and the insertion-order set of modified rule names.
+ */
+export function emitStmt(
+  stmts: IRStmt | IRStmt[],
+  ctx: EmitStmtCtx,
+): EmitStmtResult {
+  const st = makeEmitState();
+  const items = Array.isArray(stmts) ? stmts : [stmts];
+  for (const s of items) {
+    processStmt(s, st);
+  }
+  return finalizeEmit(st, ctx);
+}
+
+function finalizeEmit(st: EmitStmtState, ctx: EmitStmtCtx): EmitStmtResult {
+  const equations: IREquation[] = [];
+  const modifiedProps = new Set<string>();
+
+  for (const acc of st.writes.values()) {
+    switch (acc.kind) {
+      case "property":
+        equations.push(emitPropertyEquation(acc));
+        modifiedProps.add(acc.ruleName);
+        break;
+      case "map": {
+        const eqs = emitMapEquations(acc, ctx);
+        equations.push(...eqs);
+        if (acc.valueOverrides.length > 0) {
+          modifiedProps.add(acc.ruleName);
+        }
+        if (acc.membershipOverrides.length > 0) {
+          modifiedProps.add(acc.keyPredName);
+        }
+        break;
+      }
+      case "set": {
+        const a = emitSetMembershipAssertion(acc, ctx);
+        if (a !== null) {
+          st.assertions.push(a);
+          modifiedProps.add(acc.ruleName);
+        }
+        break;
+      }
+      default: {
+        const _exhaustive: never = acc;
+        void _exhaustive;
+        throw new Error("unreachable: WriteAcc");
+      }
+    }
+  }
+
+  return {
+    equations,
+    assertions: st.assertions,
+    modifiedProps,
+  };
+}
+
+function emitPropertyEquation(acc: PropertyWriteAcc): IREquation {
+  return {
+    quantifiers: [],
+    lhs: irAppPrimed(acc.ruleName, [acc.objExpr]),
+    rhs: acc.value,
+  };
+}
+
+function emitMapEquations(acc: MapWriteAcc, ctx: EmitStmtCtx): IREquation[] {
+  const ast = getAst();
+  const eqs: IREquation[] = [];
+  if (acc.valueOverrides.length > 0) {
+    const m1 = ctx.allocBinder("m");
+    const k1 = ctx.allocBinder("k");
+    const overrides = acc.valueOverrides.map(
+      (o) =>
+        [
+          ast.tuple([lowerExpr(acc.objExpr), lowerExpr(o.keyExpr)]),
+          lowerExpr(o.value),
+        ] as [OpaqueExpr, OpaqueExpr],
+    );
+    const rhs = irWrap(
+      ast.app(ast.override(acc.ruleName, overrides), [
+        ast.var(m1),
+        ast.var(k1),
+      ]),
+    );
+    eqs.push({
+      quantifiers: [
+        { name: m1, type: acc.ownerType },
+        { name: k1, type: acc.keyType },
+      ],
+      lhs: irAppPrimed(acc.ruleName, [irVar(m1), irVar(k1)]),
+      rhs,
+    });
+  }
+  if (acc.membershipOverrides.length > 0) {
+    const m1 = ctx.allocBinder("m");
+    const k1 = ctx.allocBinder("k");
+    const overrides = acc.membershipOverrides.map(
+      (o) =>
+        [
+          ast.tuple([lowerExpr(acc.objExpr), lowerExpr(o.keyExpr)]),
+          lowerExpr(o.value),
+        ] as [OpaqueExpr, OpaqueExpr],
+    );
+    const rhs = irWrap(
+      ast.app(ast.override(acc.keyPredName, overrides), [
+        ast.var(m1),
+        ast.var(k1),
+      ]),
+    );
+    eqs.push({
+      quantifiers: [
+        { name: m1, type: acc.ownerType },
+        { name: k1, type: acc.keyType },
+      ],
+      lhs: irAppPrimed(acc.keyPredName, [irVar(m1), irVar(k1)]),
+      rhs,
+    });
+  }
+  return eqs;
+}
+
+function emitSetMembershipAssertion(
+  acc: SetWriteAcc,
+  ctx: EmitStmtCtx,
+): IRAssertExit | null {
+  if (acc.memberOverrides.length === 0 && !acc.cleared) {
+    return null;
+  }
+  const y = ctx.allocBinder("y");
+  const yVar = irVar(y);
+  const memberIn = (rule: IRExpr) => irBinop("in", yVar, rule);
+  const primedApp = irAppPrimed(acc.ruleName, [acc.objExpr]);
+  const preApp = irAppName(acc.ruleName, [acc.objExpr]);
+  const fallback: [IRExpr, IRExpr] = acc.cleared
+    ? [irLitBool(true), irLitBool(false)]
+    : [irLitBool(true), memberIn(preApp)];
+  const condArms: Array<[IRExpr, IRExpr]> = acc.memberOverrides.map((o) => [
+    irBinop("eq", yVar, o.elemExpr),
+    o.value,
+  ]);
+  const rhs =
+    condArms.length === 0 ? fallback[1] : irCond([...condArms, fallback]);
+  return {
+    quantifiers: [{ name: y, type: acc.elemType }],
+    body: irBinop("iff", memberIn(primedApp), rhs),
   };
 }
