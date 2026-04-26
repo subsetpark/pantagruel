@@ -128,16 +128,15 @@ function bindingNames(b: ConstBinding): readonly string[] {
   return b.kind === "earlyReturn" ? [] : [b.tsName];
 }
 
-interface MuSearch {
+export interface MuSearch {
   counterName: string;
   initTsExpr: ts.Expression;
   predicateTsExpr: ts.Expression;
   /**
    * The expression-statement body of the while loop — the increment
-   * step. Carried so the L1 path (`recognizeAndLowerMuSearch` in
-   * `ir1-lower.ts`) can build the canonical L1 representation. The
-   * legacy `translateMuSearchInit` ignores this field; cutover at
-   * M2 patch 3 removes legacy entirely.
+   * step. Used by the L1 builder to construct the canonical
+   * `Block([Let, While(_, Assign)])` form for `isCanonicalMuSearchForm`
+   * to pattern-match against.
    */
   stepExpr: ts.Expression;
 }
@@ -2137,19 +2136,13 @@ function translateMuSearchInit(
     state,
     supply,
   };
-  const form = buildL1LetWhile(
-    mu.counterName,
-    mu.initTsExpr,
-    mu.predicateTsExpr,
-    mu.stepExpr,
-    l1Ctx,
-  );
+  const form = buildL1LetWhile(mu, l1Ctx);
   if (isL1StmtUnsupported(form)) {
     return { error: form.unsupported };
   }
-  const recognized = isCanonicalMuSearchForm(form, mu.counterName);
-  if (!recognized.ok) {
-    return { error: recognized.unsupported };
+  const rejection = isCanonicalMuSearchForm(form, mu.counterName);
+  if (rejection !== null) {
+    return { error: rejection.unsupported };
   }
 
   // Predicate must reference the counter; otherwise the loop is either

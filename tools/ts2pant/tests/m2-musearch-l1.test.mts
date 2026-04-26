@@ -1,23 +1,19 @@
 /**
- * Integration tests for the M2 L1 μ-search pipeline (workstream M2
- * patch 2).
+ * Regression tests for the M2 L1 μ-search pipeline (workstream M2).
  *
- * Sets `TS2PANT_USE_L1_MUSEARCH=1` so the L1 path is exercised
- * end-to-end. Asserts:
+ * After M2 patch 3 (cutover), the L1 path is the only μ-search path —
+ * legacy `translateMuSearchInitLegacy` is deleted and the
+ * `TS2PANT_USE_L1_MUSEARCH` flag is gone. These tests assert:
  *
- * 1. **Byte-equality with legacy** for the existing μ-search shapes
- *    (`i++`, `++i`, unbraced body, post-loop counter use, +const-binding
- *    interleave). Translating the same source under flag-off vs flag-on
- *    produces identical Pant. This is the cutover gate for M2 patch 3.
- *
- * 2. **L1 path accepts the broader `+1` spellings** (`i += 1`,
- *    `i = i + 1`, `i = 1 + i`) and produces the same canonical
- *    `min over each j: Int, j >= 1, ~(j in used) | j` form.
- *
- * 3. **L1 recognizer rejection** for non-canonical shapes that the
- *    TS-AST recognizer accepts (none today; the TS recognizer is
- *    narrower than L1 in M2 patch 2 — patch 3 will widen TS-AST and
- *    rely on the L1 recognizer for canonical-shape rejection).
+ * 1. **All five `+1` spellings produce byte-identical output** —
+ *    `i++`, `++i`, `i += 1`, `i = i + 1`, `i = 1 + i` collapse to
+ *    one canonical L1 `Assign(Var(c), BinOp(add, Var(c), Lit(1)))`
+ *    that lowers to `min over each j: T, j >= INIT, ¬P(j) | j`.
+ *    This is the M2 architectural promise.
+ * 2. **Existing μ-search shapes still translate** — `i++` step, post-
+ *    loop counter use, const-binding interleave.
+ * 3. **Conservative rejections fire** — compound while body,
+ *    non-`+1` step, predicate not referencing counter.
  */
 
 import assert from "node:assert/strict";
@@ -30,32 +26,6 @@ import { IntStrategy } from "../src/translate-types.js";
 before(async () => {
   await loadAst();
 });
-
-function withFlag<T>(flag: string, value: string, fn: () => T): T {
-  const prev = process.env[flag];
-  process.env[flag] = value;
-  try {
-    return fn();
-  } finally {
-    if (prev === undefined) {
-      delete process.env[flag];
-    } else {
-      process.env[flag] = prev;
-    }
-  }
-}
-
-function withoutFlag<T>(flag: string, fn: () => T): T {
-  const prev = process.env[flag];
-  delete process.env[flag];
-  try {
-    return fn();
-  } finally {
-    if (prev !== undefined) {
-      process.env[flag] = prev;
-    }
-  }
-}
 
 function translate(
   source: string,
@@ -80,22 +50,12 @@ function translate(
   return { unsupported: null, pant: getAst().strExpr(p.rhs) };
 }
 
-function translateBoth(source: string, name: string) {
-  const legacy = withoutFlag("TS2PANT_USE_L1_MUSEARCH", () =>
-    translate(source, name),
-  );
-  const l1 = withFlag("TS2PANT_USE_L1_MUSEARCH", "1", () =>
-    translate(source, name),
-  );
-  return { legacy, l1 };
-}
-
 // ---------------------------------------------------------------------------
-// 1. Byte-equality with legacy on existing shapes (cutover gate)
+// Existing μ-search shapes still translate
 // ---------------------------------------------------------------------------
 
-describe("M2 μ-search L1: byte-equality with legacy", () => {
-  it("`i++` step produces identical output", () => {
+describe("M2 μ-search L1: existing shapes translate", () => {
+  it("`i++` step produces canonical min-over-each", () => {
     const source = `
       function firstUnused(used: ReadonlySet<number>): number {
         let i = 1;
@@ -103,25 +63,9 @@ describe("M2 μ-search L1: byte-equality with legacy", () => {
         return i;
       }
     `;
-    const { legacy, l1 } = translateBoth(source, "firstUnused");
-    assert.equal(legacy.unsupported, null);
-    assert.equal(l1.unsupported, null);
-    assert.equal(legacy.pant, l1.pant);
-    assert.match(l1.pant!, /min over each j\d*: Int/);
-  });
-
-  it("`++i` step produces identical output", () => {
-    const source = `
-      function firstUnused(used: ReadonlySet<number>): number {
-        let i = 0;
-        while (used.has(i)) ++i;
-        return i;
-      }
-    `;
-    const { legacy, l1 } = translateBoth(source, "firstUnused");
-    assert.equal(legacy.unsupported, null);
-    assert.equal(l1.unsupported, null);
-    assert.equal(legacy.pant, l1.pant);
+    const { unsupported, pant } = translate(source, "firstUnused");
+    assert.equal(unsupported, null);
+    assert.match(pant!, /min over each j\d*: Int/);
   });
 
   it("μ-search counter referenced post-loop", () => {
@@ -132,10 +76,10 @@ describe("M2 μ-search L1: byte-equality with legacy", () => {
         return i + 1;
       }
     `;
-    const { legacy, l1 } = translateBoth(source, "nextSlotPlusOne");
-    assert.equal(legacy.unsupported, null);
-    assert.equal(l1.unsupported, null);
-    assert.equal(legacy.pant, l1.pant);
+    const { unsupported, pant } = translate(source, "nextSlotPlusOne");
+    assert.equal(unsupported, null);
+    assert.match(pant!, /min over each j\d*: Int/);
+    assert.match(pant!, /\+ 1/);
   });
 
   it("μ-search interleaved with const binding", () => {
@@ -147,15 +91,13 @@ describe("M2 μ-search L1: byte-equality with legacy", () => {
         return n + i;
       }
     `;
-    const { legacy, l1 } = translateBoth(source, "offset");
-    assert.equal(legacy.unsupported, null);
-    assert.equal(l1.unsupported, null);
-    assert.equal(legacy.pant, l1.pant);
+    const { unsupported } = translate(source, "offset");
+    assert.equal(unsupported, null);
   });
 });
 
 // ---------------------------------------------------------------------------
-// 2. L1 accepts broader +1 spellings; all produce the canonical form
+// All five `+1` spellings produce byte-identical canonical output
 // ---------------------------------------------------------------------------
 
 describe("M2 μ-search L1: all five +1 spellings produce identical Pant", () => {
@@ -167,18 +109,17 @@ describe("M2 μ-search L1: all five +1 spellings produce identical Pant", () => 
         return i;
       }
     `;
-    const { l1 } = translateBoth(source, "findSuffix");
-    if (l1.unsupported) {
-      throw new Error(`unsupported: ${l1.unsupported}`);
+    const { unsupported, pant } = translate(source, "findSuffix");
+    if (unsupported) {
+      throw new Error(`unsupported: ${unsupported}`);
     }
-    return l1.pant!;
+    return pant!;
   }
 
   it("all five spellings produce identical L1 output", () => {
-    // Each translation gets a fresh `UniqueSupply` and a fresh
-    // `SourceFile`, so binder allocation is deterministic per call.
-    // The five spellings must produce byte-identical Pant — that's the
-    // M2 architectural promise.
+    // Each translation gets a fresh `UniqueSupply` and `SourceFile`, so
+    // binder allocation is deterministic per call. The five spellings
+    // must produce byte-identical Pant — the M2 architectural promise.
     const baseline = translateForm("i++");
     assert.match(baseline, /min over each j\d*: Int/);
     assert.match(baseline, /~\(j\d* in used\)/);
@@ -191,11 +132,11 @@ describe("M2 μ-search L1: all five +1 spellings produce identical Pant", () => 
 });
 
 // ---------------------------------------------------------------------------
-// 3. Existing rejection cases remain rejected
+// Conservative rejections
 // ---------------------------------------------------------------------------
 
 describe("M2 μ-search L1: rejection cases", () => {
-  it("compound while body still rejects", () => {
+  it("compound while body rejects", () => {
     const source = `
       function compound(used: ReadonlySet<number>): number {
         let i = 0;
@@ -206,12 +147,11 @@ describe("M2 μ-search L1: rejection cases", () => {
         return i;
       }
     `;
-    const { legacy, l1 } = translateBoth(source, "compound");
-    assert.notEqual(legacy.unsupported, null);
-    assert.notEqual(l1.unsupported, null);
+    const { unsupported } = translate(source, "compound");
+    assert.notEqual(unsupported, null);
   });
 
-  it("`i += 2` step rejects under both modes", () => {
+  it("`i += 2` step rejects (non-canonical)", () => {
     const source = `
       function nonUnit(used: ReadonlySet<number>): number {
         let i = 0;
@@ -221,11 +161,9 @@ describe("M2 μ-search L1: rejection cases", () => {
         return i;
       }
     `;
-    const { legacy, l1 } = translateBoth(source, "nonUnit");
-    // Legacy (with the broadened isPlusOneStep at TS-AST recognizer)
-    // also rejects this — `i += 2` is not a +1 step.
-    assert.notEqual(legacy.unsupported, null);
-    assert.notEqual(l1.unsupported, null);
+    const { unsupported } = translate(source, "nonUnit");
+    assert.notEqual(unsupported, null);
+    assert.match(unsupported!, /canonical|step/);
   });
 
   it("predicate not referencing counter rejects", () => {
@@ -238,8 +176,7 @@ describe("M2 μ-search L1: rejection cases", () => {
         return i;
       }
     `;
-    const { legacy, l1 } = translateBoth(source, "noRef");
-    assert.notEqual(legacy.unsupported, null);
-    assert.notEqual(l1.unsupported, null);
+    const { unsupported } = translate(source, "noRef");
+    assert.notEqual(unsupported, null);
   });
 });

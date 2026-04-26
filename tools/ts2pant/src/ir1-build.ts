@@ -55,7 +55,11 @@ import {
 import { lowerL1Expr } from "./ir1-lower.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { isStaticallyBoolTyped } from "./purity.js";
-import type { SymbolicState, UniqueSupply } from "./translate-body.js";
+import type {
+  MuSearch,
+  SymbolicState,
+  UniqueSupply,
+} from "./translate-body.js";
 import {
   bodyExpr,
   expressionHasSideEffects,
@@ -485,26 +489,21 @@ function buildCaseLabel(
   label: ts.Expression,
   ctx: L1BuildContext,
 ): L1BuildResult {
-  // TS parses `case -1:` as a PrefixUnaryExpression(MinusToken,
-  // NumericLiteral) — handle it before the bare-NumericLiteral branch
-  // so negative literal labels stay in the supported subset rather
-  // than falling through as "must be a literal".
-  if (
-    ts.isPrefixUnaryExpression(label) &&
-    label.operator === ts.SyntaxKind.MinusToken &&
-    ts.isNumericLiteral(label.operand)
-  ) {
-    const n = Number(label.operand.text);
-    if (Number.isFinite(n) && Number.isInteger(n)) {
-      return ir1Unop("neg", ir1LitNat(n));
-    }
-    return { unsupported: "switch case label: non-integer numeric literal" };
+  // Numeric literals: handles both plain `case 1:` and `case -1:`
+  // (TS parses the latter as PrefixUnary(MinusToken, NumericLiteral)).
+  const intLit = tryBuildL1IntegerLiteral(label);
+  if (intLit !== null) {
+    return intLit;
   }
-  if (ts.isNumericLiteral(label)) {
-    const n = Number(label.text);
-    if (Number.isFinite(n) && Number.isInteger(n) && n >= 0) {
-      return ir1LitNat(n);
-    }
+  // Reject non-integer numerics with a precise reason; non-numeric
+  // labels (string, bool, identifier) fall through to their own
+  // branches below.
+  if (
+    ts.isNumericLiteral(label) ||
+    (ts.isPrefixUnaryExpression(label) &&
+      label.operator === ts.SyntaxKind.MinusToken &&
+      ts.isNumericLiteral(label.operand))
+  ) {
     return { unsupported: "switch case label: non-integer numeric literal" };
   }
   if (ts.isStringLiteral(label)) {
@@ -691,7 +690,7 @@ export function buildL1IncrementStep(
     // can pattern-match `BinOp(add, Var(c), Lit(1))` byte-equally across
     // all five `+1` spellings. Non-literal RHS falls back to the legacy
     // sub-expression pipeline via `buildSubExpr`.
-    const litRhs = tryBuildL1NumericLiteral(expr.right);
+    const litRhs = tryBuildL1IntegerLiteral(expr.right);
     const rhs = litRhs ?? buildSubExpr(expr.right, ctx);
     if (isL1Unsupported(rhs)) {
       return rhs;
@@ -725,7 +724,7 @@ export function buildL1IncrementStep(
     const bIsCounter = ts.isIdentifier(b) && b.text === counterName;
     if (aIsCounter && !bIsCounter) {
       // `c = c ⊕ k`
-      const litK = tryBuildL1NumericLiteral(b);
+      const litK = tryBuildL1IntegerLiteral(b);
       const k = litK ?? buildSubExpr(b, ctx);
       if (isL1Unsupported(k)) {
         return k;
@@ -743,7 +742,7 @@ export function buildL1IncrementStep(
             "non-commutative operator with counter on the right of RHS",
         };
       }
-      const litK = tryBuildL1NumericLiteral(a);
+      const litK = tryBuildL1IntegerLiteral(a);
       const k = litK ?? buildSubExpr(a, ctx);
       if (isL1Unsupported(k)) {
         return k;
@@ -762,24 +761,35 @@ export function buildL1IncrementStep(
 }
 
 /**
- * Try to build a native L1 literal expression. Returns null for anything
- * that's not a non-negative integer numeric literal — those go through
- * `buildSubExpr` (which wraps via `from-l2`) at the caller.
+ * Build a native L1 integer-literal expression from a TS source.
+ * Accepts a plain non-negative `NumericLiteral` and `-N` written as
+ * `PrefixUnary(MinusToken, NumericLiteral)` (TS's representation of
+ * negative integer literals). Returns null for anything else — strings,
+ * booleans, identifier references, non-integer numerics — which the
+ * caller handles via its own fallback.
  *
- * The point: when the increment step is `i += 1` or `i = i + 1`, the
- * `1` must lower to a native L1 `LitNat(1)` so the μ-search recognizer
- * can pattern-match `BinOp(add, Var(c), Lit(1))` against it. If the
- * literal got wrapped via `from-l2` instead, the recognizer would see
- * `BinOp(add, Var(c), FromL2(...))` and fail.
+ * Critical for canonical-form matching: when the increment step is
+ * `i += 1` or `i = i + 1`, the `1` must lower to a native L1
+ * `LitNat(1)` so `isCanonicalMuSearchForm` can pattern-match
+ * `BinOp(add, Var(c), Lit(1))`. A `from-l2`-wrapped literal would
+ * defeat the canonical-shape check.
  */
-function tryBuildL1NumericLiteral(expr: ts.Expression): IR1Expr | null {
+function tryBuildL1IntegerLiteral(expr: ts.Expression): IR1Expr | null {
+  if (
+    ts.isPrefixUnaryExpression(expr) &&
+    expr.operator === ts.SyntaxKind.MinusToken &&
+    ts.isNumericLiteral(expr.operand)
+  ) {
+    const n = Number(expr.operand.text);
+    if (Number.isFinite(n) && Number.isInteger(n)) {
+      return ir1Unop("neg", ir1LitNat(n));
+    }
+    return null;
+  }
   if (ts.isNumericLiteral(expr)) {
     const n = Number(expr.text);
     if (Number.isFinite(n) && Number.isInteger(n) && n >= 0) {
       return ir1LitNat(n);
-    }
-    if (Number.isFinite(n) && Number.isInteger(n) && n < 0) {
-      return ir1Unop("neg", ir1LitNat(-n));
     }
   }
   return null;
@@ -845,23 +855,20 @@ function isCommutativeBinop(op: IR1Binop): boolean {
  * `Assign(Var(counter), BinOp(add, Var(counter), Lit(1)))`.
  */
 export function buildL1LetWhile(
-  counterName: string,
-  initExpr: ts.Expression,
-  predicateExpr: ts.Expression,
-  stepExpr: ts.Expression,
+  mu: MuSearch,
   ctx: L1BuildContext,
 ): L1StmtBuildResult {
-  const init = buildSubExpr(initExpr, ctx);
+  const init = buildSubExpr(mu.initTsExpr, ctx);
   if (isL1Unsupported(init)) {
     return init;
   }
-  const predicate = buildSubExpr(predicateExpr, ctx);
+  const predicate = buildSubExpr(mu.predicateTsExpr, ctx);
   if (isL1Unsupported(predicate)) {
     return predicate;
   }
-  const step = buildL1IncrementStep(stepExpr, counterName, ctx);
+  const step = buildL1IncrementStep(mu.stepExpr, mu.counterName, ctx);
   if (isL1StmtUnsupported(step)) {
     return step;
   }
-  return ir1Block([ir1Let(counterName, init), ir1While(predicate, step)]);
+  return ir1Block([ir1Let(mu.counterName, init), ir1While(predicate, step)]);
 }

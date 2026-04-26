@@ -132,65 +132,42 @@ export function lowerL1Stmt(s: IR1Stmt): IRStmt[] {
 // ---------------------------------------------------------------------------
 
 /**
- * Result of recognizing the canonical μ-search L1 form.
- */
-export type MuSearchRecognition =
-  | {
-      ok: true;
-      counterName: string;
-      init: IR1Expr;
-      predicate: IR1Expr;
-    }
-  | { ok: false; unsupported: string };
-
-/**
- * Recognize the canonical μ-search L1 shape on the named counter.
+ * Validate that an L1 form matches the canonical μ-search shape on the
+ * named counter. Returns `null` on success, an `{ unsupported }`
+ * descriptor with a specific reason on failure. The L1 form's
+ * sub-expressions (init, predicate) are not extracted — the caller
+ * already has them via the source `MuSearch` and re-translates them
+ * under binder substitution for the comprehension.
  */
 export function isCanonicalMuSearchForm(
   form: IR1Stmt,
   counterName: string,
-): MuSearchRecognition {
+): { unsupported: string } | null {
   if (form.kind !== "block") {
-    return { ok: false, unsupported: "μ-search prelude must be a Block" };
+    return { unsupported: "μ-search prelude must be a Block" };
   }
   if (form.stmts.length !== 2) {
     return {
-      ok: false,
       unsupported: "μ-search prelude must contain exactly Let + While",
     };
   }
   const letStmt = form.stmts[0];
   const whileStmt = form.stmts[1]!;
   if (letStmt.kind !== "let") {
-    return {
-      ok: false,
-      unsupported: "first prelude statement must be a Let binding",
-    };
+    return { unsupported: "first prelude statement must be a Let binding" };
   }
   if (letStmt.name !== counterName) {
-    return {
-      ok: false,
-      unsupported: "Let binding name does not match counter",
-    };
+    return { unsupported: "Let binding name does not match counter" };
   }
   if (whileStmt.kind !== "while") {
-    return {
-      ok: false,
-      unsupported: "second prelude statement must be a While loop",
-    };
+    return { unsupported: "second prelude statement must be a While loop" };
   }
   const body = whileStmt.body;
   if (body.kind !== "assign") {
-    return {
-      ok: false,
-      unsupported: "while body must be a single Assign step",
-    };
+    return { unsupported: "while body must be a single Assign step" };
   }
   if (body.target.kind !== "var" || body.target.name !== counterName) {
-    return {
-      ok: false,
-      unsupported: "Assign target is not the counter",
-    };
+    return { unsupported: "Assign target is not the counter" };
   }
   const value = body.value;
   if (
@@ -202,15 +179,7 @@ export function isCanonicalMuSearchForm(
     value.rhs.value.kind !== "nat" ||
     value.rhs.value.value !== 1
   ) {
-    return {
-      ok: false,
-      unsupported: "step is not a canonical `+1` increment",
-    };
+    return { unsupported: "step is not a canonical `+1` increment" };
   }
-  return {
-    ok: true,
-    counterName,
-    init: letStmt.value,
-    predicate: whileStmt.cond,
-  };
+  return null;
 }
