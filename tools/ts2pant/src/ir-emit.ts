@@ -599,10 +599,8 @@ function processStmt(s: IRStmt, st: EmitStmtState): void {
       return;
 
     case "let-if":
-      throw new Error(
-        "emitStmt: `let-if` lowering is M3 Patch 2 (φ-merged IREquation[]); " +
-          "see plan at /Users/zax/.claude/plans/plan-it-snug-tulip.md",
-      );
+      processLetIf(s, st);
+      return;
 
     case "assert":
       st.assertions.push({
@@ -617,6 +615,243 @@ function processStmt(s: IRStmt, st: EmitStmtState): void {
       throw new Error("unreachable: IRStmt");
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// φ-merge for `let-if` (M3 Patch 2)
+//
+// L1 `cond-stmt(arms, else)` lowers to L2 `let-if(phiVars, cond, then,
+// else, continuation)`. The lowering pass forks two sub-EmitStmtStates
+// for the then/else branches, processes their statements independently,
+// then merges the per-write-key accumulators via cond(g => vT, true =>
+// vE) — the same merge discipline as legacy `mergeOverrides` /
+// `combineCond` in translate-body.ts:5018-5170, ported into the IR
+// layer.
+//
+// Branches that don't write a given key fall back to the *pre-state*
+// expression for that key:
+//   - property: app(ruleName, [objExpr]) — pre-state read
+//   - map override: app(ruleName, [objExpr, keyExpr]) — pre-state lookup
+//   - set override: in(elemExpr, app(ruleName, [objExpr])) — pre-state membership
+//
+// The φ-merged write goes into the outer state; the let-if's
+// `continuation` then runs against the outer state with merged values
+// observable.
+//
+// `phiVars` on the IRStmt is informational at the IR level — the merge
+// computes the union of touched keys from the actual sub-state writes.
+// The field exists for type-level non-emptiness invariants (per ir.ts
+// §"Hybrid SSA scope") but isn't validated against the merge result.
+// ---------------------------------------------------------------------------
+
+function processLetIf(
+  s: Extract<IRStmt, { kind: "let-if" }>,
+  st: EmitStmtState,
+): void {
+  // Direct `assert` inside a let-if branch lacks a clear φ-merge story
+  // (assertions are unconditionally quantified bool formulas; conditioning
+  // the body on the let-if guard would change the proposition shape). In
+  // practice, ts2pant emits `assert` only at function entry for empty-
+  // Set/empty-Map initializers, never inside conditional branches. Any
+  // case that arises can be plumbed through later by wrapping the body in
+  // an iff-with-guard, but defer until a fixture demands it.
+  const stT = makeEmitState();
+  for (const child of s.then) {
+    processStmt(child, stT);
+  }
+  if (stT.assertions.length > 0) {
+    throw new Error(
+      "emitStmt: assertions inside a let-if `then` branch are not yet " +
+        "supported (would require iff-with-guard wrap; no fixture currently demands it)",
+    );
+  }
+
+  const stE = makeEmitState();
+  for (const child of s.else) {
+    processStmt(child, stE);
+  }
+  if (stE.assertions.length > 0) {
+    throw new Error(
+      "emitStmt: assertions inside a let-if `else` branch are not yet " +
+        "supported (would require iff-with-guard wrap; no fixture currently demands it)",
+    );
+  }
+
+  const touched = new Set<string>([...stT.writes.keys(), ...stE.writes.keys()]);
+  for (const key of touched) {
+    const accT = stT.writes.get(key);
+    const accE = stE.writes.get(key);
+    const merged = mergeWriteAccs(accT, accE, s.cond);
+    st.writes.set(key, merged);
+  }
+
+  for (const child of s.continuation) {
+    processStmt(child, st);
+  }
+}
+
+function mergeWriteAccs(
+  accT: WriteAcc | undefined,
+  accE: WriteAcc | undefined,
+  guard: IRExpr,
+): WriteAcc {
+  if (accT === undefined && accE === undefined) {
+    throw new Error("emitStmt: mergeWriteAccs called with no input");
+  }
+  if (accT !== undefined && accE !== undefined && accT.kind !== accE.kind) {
+    throw new Error(
+      `emitStmt: branches wrote the same key with different kinds (${accT.kind} vs ${accE.kind})`,
+    );
+  }
+  const pick = (accT ?? accE)!;
+  switch (pick.kind) {
+    case "property":
+      return mergePropertyAcc(
+        accT as PropertyWriteAcc | undefined,
+        accE as PropertyWriteAcc | undefined,
+        pick,
+        guard,
+      );
+    case "map":
+      return mergeMapAcc(
+        accT as MapWriteAcc | undefined,
+        accE as MapWriteAcc | undefined,
+        pick,
+        guard,
+      );
+    case "set":
+      return mergeSetAcc(
+        accT as SetWriteAcc | undefined,
+        accE as SetWriteAcc | undefined,
+        pick,
+        guard,
+      );
+    default: {
+      const _exhaustive: never = pick;
+      void _exhaustive;
+      throw new Error("unreachable: WriteAcc");
+    }
+  }
+}
+
+function combineCond(g: IRExpr, vA: IRExpr, vB: IRExpr): IRExpr {
+  return irCond([
+    [g, vA],
+    [irLitBool(true), vB],
+  ]);
+}
+
+function mergePropertyAcc(
+  accT: PropertyWriteAcc | undefined,
+  accE: PropertyWriteAcc | undefined,
+  pick: PropertyWriteAcc,
+  guard: IRExpr,
+): PropertyWriteAcc {
+  const identity = irAppName(pick.ruleName, [pick.objExpr]);
+  const vT = accT?.value ?? identity;
+  const vE = accE?.value ?? identity;
+  return {
+    kind: "property",
+    ruleName: pick.ruleName,
+    objExpr: pick.objExpr,
+    value: combineCond(guard, vT, vE),
+  };
+}
+
+function mergeMapAcc(
+  accT: MapWriteAcc | undefined,
+  accE: MapWriteAcc | undefined,
+  pick: MapWriteAcc,
+  guard: IRExpr,
+): MapWriteAcc {
+  const valueFallback = (o: MapOverrideAcc): IRExpr =>
+    irAppName(pick.ruleName, [pick.objExpr, o.keyExpr]);
+  const memberFallback = (o: MapOverrideAcc): IRExpr =>
+    irAppName(pick.keyPredName, [pick.objExpr, o.keyExpr]);
+  return {
+    kind: "map",
+    ruleName: pick.ruleName,
+    keyPredName: pick.keyPredName,
+    ownerType: pick.ownerType,
+    keyType: pick.keyType,
+    objExpr: pick.objExpr,
+    valueOverrides: mergeIROverrides(
+      accT?.valueOverrides ?? [],
+      accE?.valueOverrides ?? [],
+      (o) => o.keyExpr,
+      valueFallback,
+      guard,
+    ),
+    membershipOverrides: mergeIROverrides(
+      accT?.membershipOverrides ?? [],
+      accE?.membershipOverrides ?? [],
+      (o) => o.keyExpr,
+      memberFallback,
+      guard,
+    ),
+  };
+}
+
+function mergeSetAcc(
+  accT: SetWriteAcc | undefined,
+  accE: SetWriteAcc | undefined,
+  pick: SetWriteAcc,
+  guard: IRExpr,
+): SetWriteAcc {
+  const fallback = (o: SetOverrideAcc): IRExpr =>
+    irBinop("in", o.elemExpr, irAppName(pick.ruleName, [pick.objExpr]));
+  return {
+    kind: "set",
+    ruleName: pick.ruleName,
+    ownerType: pick.ownerType,
+    elemType: pick.elemType,
+    objExpr: pick.objExpr,
+    memberOverrides: mergeIROverrides(
+      accT?.memberOverrides ?? [],
+      accE?.memberOverrides ?? [],
+      (o) => o.elemExpr,
+      fallback,
+      guard,
+    ),
+    cleared: (accT?.cleared ?? false) || (accE?.cleared ?? false),
+  };
+}
+
+/**
+ * Merge two override lists by key. Mirrors legacy `mergeOverrides` at
+ * translate-body.ts:460. For each key present in either side, produce
+ * an output override with the same key shape and a cond-merged value;
+ * keys missing from a branch get the per-branch fallback (pre-state
+ * lookup).
+ */
+function mergeIROverrides<O extends { value: IRExpr }>(
+  aSide: ReadonlyArray<O>,
+  bSide: ReadonlyArray<O>,
+  keyOf: (o: O) => IRExpr,
+  fallback: (o: O) => IRExpr,
+  guard: IRExpr,
+): O[] {
+  const bByKey = new Map<string, IRExpr>();
+  for (const o of bSide) {
+    bByKey.set(irExprKey(keyOf(o)), o.value);
+  }
+  const seen = new Set<string>();
+  const out: O[] = [];
+  for (const o of aSide) {
+    const k = irExprKey(keyOf(o));
+    seen.add(k);
+    const vB = bByKey.get(k) ?? fallback(o);
+    out.push({ ...o, value: combineCond(guard, o.value, vB) });
+  }
+  for (const o of bSide) {
+    const k = irExprKey(keyOf(o));
+    if (seen.has(k)) {
+      continue;
+    }
+    const vA = fallback(o);
+    out.push({ ...o, value: combineCond(guard, vA, o.value) });
+  }
+  return out;
 }
 
 function processWrite(

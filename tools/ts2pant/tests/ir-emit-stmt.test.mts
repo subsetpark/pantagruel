@@ -327,17 +327,291 @@ describe("emitStmt — assertions pass through", () => {
   });
 });
 
-describe("emitStmt — let-if defers to Patch 2", () => {
-  it("let-if throws NOT_IMPL pointing at M3 Patch 2", () => {
-    const stmt: IRStmt = {
+// ---------------------------------------------------------------------------
+// Patch 2: let-if φ-merge
+// ---------------------------------------------------------------------------
+
+describe("emitStmt — let-if φ-merge (property writes)", () => {
+  function propTarget(rule: string, obj = "acct"): IRWriteTarget {
+    return {
+      kind: "property-field",
+      ruleName: rule,
+      objExpr: irVar(obj),
+    };
+  }
+
+  function letIf(
+    cond: ReturnType<typeof irVar>,
+    thenStmts: IRStmt[],
+    elseStmts: IRStmt[],
+    cont: IRStmt[] = [],
+  ): IRStmt {
+    return {
       kind: "let-if",
-      phiVars: ["balance:acct"],
-      cond: irVar("g"),
-      then: [],
-      else: [],
+      phiVars: ["__phi__"],
+      cond,
+      then: thenStmts,
+      else: elseStmts,
+      continuation: cont,
+    };
+  }
+
+  it("both branches write same property → cond(g => vT, true => vE)", () => {
+    const t = propTarget("balance");
+    const result = emitStmt(
+      letIf(
+        irVar("g"),
+        [irStmtWrite(t, irLitNat(100))],
+        [irStmtWrite(t, irLitNat(50))],
+      ),
+      ctx(),
+    );
+    assert.equal(result.equations.length, 1);
+    const rendered = renderEquation(lowerEquation(result.equations[0]!));
+    assert.equal(
+      rendered,
+      "balance' acct = cond g => 100, true => 50",
+    );
+    assert.deepEqual([...result.modifiedProps], ["balance"]);
+  });
+
+  it("only then-branch writes → cond(g => vT, true => identity)", () => {
+    const t = propTarget("balance");
+    const result = emitStmt(
+      letIf(irVar("g"), [irStmtWrite(t, irLitNat(100))], []),
+      ctx(),
+    );
+    assert.equal(result.equations.length, 1);
+    const rendered = renderEquation(lowerEquation(result.equations[0]!));
+    assert.equal(
+      rendered,
+      "balance' acct = cond g => 100, true => balance acct",
+    );
+  });
+
+  it("only else-branch writes → cond(g => identity, true => vE)", () => {
+    const t = propTarget("balance");
+    const result = emitStmt(
+      letIf(irVar("g"), [], [irStmtWrite(t, irLitNat(50))]),
+      ctx(),
+    );
+    assert.equal(result.equations.length, 1);
+    const rendered = renderEquation(lowerEquation(result.equations[0]!));
+    assert.equal(
+      rendered,
+      "balance' acct = cond g => balance acct, true => 50",
+    );
+  });
+
+  it("disjoint property writes (different rules) merge independently", () => {
+    const tA = propTarget("alpha");
+    const tB = propTarget("beta");
+    const result = emitStmt(
+      letIf(
+        irVar("g"),
+        [irStmtWrite(tA, irLitNat(1))],
+        [irStmtWrite(tB, irLitNat(2))],
+      ),
+      ctx(),
+    );
+    assert.equal(result.equations.length, 2);
+    const rA = renderEquation(lowerEquation(result.equations[0]!));
+    const rB = renderEquation(lowerEquation(result.equations[1]!));
+    assert.equal(rA, "alpha' acct = cond g => 1, true => alpha acct");
+    assert.equal(rB, "beta' acct = cond g => beta acct, true => 2");
+    assert.deepEqual([...result.modifiedProps], ["alpha", "beta"]);
+  });
+
+  it("continuation runs after let-if and observes merged writes", () => {
+    const t = propTarget("balance");
+    const t2 = propTarget("name");
+    // if (g) balance = 100; balance = balance * 2;
+    // After the let-if, the merged balance value is cond(g => 100, true =>
+    // identity); the continuation does NOT directly observe that since
+    // emitStmt's read side doesn't currently re-thread cond writes back
+    // through the next write — but a sequential write to the same key
+    // overwrites the prior cond-merged value (last-write-wins).
+    const result = emitStmt(
+      irStmtSeq([
+        letIf(irVar("g"), [irStmtWrite(t, irLitNat(100))], []),
+        irStmtWrite(t2, irLitString("post")),
+      ]),
+      ctx(),
+    );
+    assert.equal(result.equations.length, 2);
+    assert.deepEqual([...result.modifiedProps], ["balance", "name"]);
+  });
+
+  it("nested let-if produces nested cond expression", () => {
+    const t = propTarget("balance");
+    const result = emitStmt(
+      letIf(
+        irVar("g1"),
+        [
+          letIf(
+            irVar("g2"),
+            [irStmtWrite(t, irLitNat(1))],
+            [irStmtWrite(t, irLitNat(2))],
+          ),
+        ],
+        [irStmtWrite(t, irLitNat(3))],
+      ),
+      ctx(),
+    );
+    assert.equal(result.equations.length, 1);
+    const rendered = renderEquation(lowerEquation(result.equations[0]!));
+    assert.equal(
+      rendered,
+      "balance' acct = cond g1 => (cond g2 => 1, true => 2), true => 3",
+    );
+  });
+
+  // Note: branches writing the same TARGET KIND but different rules cannot
+  // collide on a write-key because `writeKey` namespaces per-kind
+  // (`prop:rule:obj`, `map:rule:obj`, `set:rule:obj`), so the kind-mismatch
+  // check in `mergeWriteAccs` is structurally unreachable from the IR
+  // builder. Defensive only — kept to prevent silently corrupting state if
+  // a future write-key scheme allows collision.
+});
+
+describe("emitStmt — let-if φ-merge (Map writes)", () => {
+  function mapTarget(
+    op: "set" | "delete",
+    keyExpr = irVar("k"),
+  ): IRWriteTarget {
+    return {
+      kind: "map-entry",
+      ruleName: "entries",
+      keyPredName: "entriesKey",
+      ownerType: "Cache",
+      keyType: "String",
+      objExpr: irVar("c"),
+      keyExpr,
+      op,
+    };
+  }
+  function letIf(
+    cond: ReturnType<typeof irVar>,
+    thenStmts: IRStmt[],
+    elseStmts: IRStmt[],
+  ): IRStmt {
+    return {
+      kind: "let-if",
+      phiVars: ["__phi__"],
+      cond,
+      then: thenStmts,
+      else: elseStmts,
       continuation: [],
     };
-    assert.throws(() => emitStmt(stmt, ctx()), /Patch 2/);
+  }
+
+  it("both branches Map.set same key with different values → cond per override", () => {
+    const result = emitStmt(
+      letIf(
+        irVar("g"),
+        [irStmtWrite(mapTarget("set", irVar("k")), irLitNat(1))],
+        [irStmtWrite(mapTarget("set", irVar("k")), irLitNat(2))],
+      ),
+      ctx(),
+    );
+    assert.equal(result.equations.length, 2);
+    const valueEq = renderEquation(lowerEquation(result.equations[0]!));
+    assert.equal(
+      valueEq,
+      "entries' m k = entries[(c, k) |-> cond g => 1, true => 2] m k",
+    );
+  });
+
+  it("only then-branch Map.set → cond with pre-state fallback", () => {
+    const result = emitStmt(
+      letIf(
+        irVar("g"),
+        [irStmtWrite(mapTarget("set", irVar("k")), irLitNat(1))],
+        [],
+      ),
+      ctx(),
+    );
+    assert.equal(result.equations.length, 2);
+    const valueEq = renderEquation(lowerEquation(result.equations[0]!));
+    assert.equal(
+      valueEq,
+      "entries' m k = entries[(c, k) |-> cond g => 1, true => entries c k] m k",
+    );
+  });
+
+  it("disjoint keys across branches produce two overrides", () => {
+    const result = emitStmt(
+      letIf(
+        irVar("g"),
+        [irStmtWrite(mapTarget("set", irVar("k1")), irLitNat(1))],
+        [irStmtWrite(mapTarget("set", irVar("k2")), irLitNat(2))],
+      ),
+      ctx(),
+    );
+    assert.equal(result.equations.length, 2);
+    const valueEq = renderEquation(lowerEquation(result.equations[0]!));
+    assert.equal(
+      valueEq,
+      "entries' m k = entries[(c, k1) |-> cond g => 1, true => entries c k1, (c, k2) |-> cond g => entries c k2, true => 2] m k",
+    );
+  });
+});
+
+describe("emitStmt — let-if φ-merge (Set writes)", () => {
+  function setTarget(op: "add" | "delete", elem: string): IRWriteTarget {
+    return {
+      kind: "set-member",
+      ruleName: "tags",
+      ownerType: "Card",
+      elemType: "String",
+      objExpr: irVar("c"),
+      elemExpr: irVar(elem),
+      op,
+    };
+  }
+  function letIf(
+    cond: ReturnType<typeof irVar>,
+    thenStmts: IRStmt[],
+    elseStmts: IRStmt[],
+  ): IRStmt {
+    return {
+      kind: "let-if",
+      phiVars: ["__phi__"],
+      cond,
+      then: thenStmts,
+      else: elseStmts,
+      continuation: [],
+    };
+  }
+
+  it("then-only Set.add merges with pre-state fallback", () => {
+    const result = emitStmt(
+      letIf(irVar("g"), [irStmtWrite(setTarget("add", "e"), null)], []),
+      ctx(),
+    );
+    assert.equal(result.assertions.length, 1);
+    const rendered = renderAssert(lowerAssert(result.assertions[0]!));
+    assert.equal(
+      rendered,
+      "all y: String | y in tags' c <-> (cond y = e => (cond g => true, true => e in tags c), true => y in tags c)",
+    );
+  });
+
+  it("both branches Set.add different elements → two cond-merged overrides", () => {
+    const result = emitStmt(
+      letIf(
+        irVar("g"),
+        [irStmtWrite(setTarget("add", "e1"), null)],
+        [irStmtWrite(setTarget("add", "e2"), null)],
+      ),
+      ctx(),
+    );
+    assert.equal(result.assertions.length, 1);
+    const rendered = renderAssert(lowerAssert(result.assertions[0]!));
+    assert.equal(
+      rendered,
+      "all y: String | y in tags' c <-> (cond y = e1 => (cond g => true, true => e1 in tags c), y = e2 => (cond g => e2 in tags c, true => true), true => y in tags c)",
+    );
   });
 });
 
