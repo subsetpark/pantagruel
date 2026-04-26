@@ -268,7 +268,7 @@ export function bodyExpr(r: BodyResult): OpaqueExpr {
 // for each branch and merge via `cond` at the join. Later reads of the same
 // property access see the accumulated value. See CLAUDE.md § Guarded Commands.
 
-interface PropertyWriteEntry {
+export interface PropertyWriteEntry {
   kind: "property";
   prop: string;
   objExpr: OpaqueExpr;
@@ -289,14 +289,14 @@ interface PropertyWriteEntry {
  * expression `R objExpr keyExpr` (pretty) instead of projecting off the
  * tuple (ugly but equivalent).
  */
-interface MapOverride {
+export interface MapOverride {
   keyTuple: OpaqueExpr;
   objExpr: OpaqueExpr;
   keyExpr: OpaqueExpr;
   value: OpaqueExpr;
 }
 
-interface MapRuleWriteEntry {
+export interface MapRuleWriteEntry {
   kind: "map";
   ruleName: string;
   keyPredName: string;
@@ -313,7 +313,7 @@ interface MapRuleWriteEntry {
  * merge. Parallel to `MapOverride` but scalar-keyed rather than tuple-
  * keyed — Sets have no separate key-and-value axis.
  */
-interface SetOverride {
+export interface SetOverride {
   elemExpr: OpaqueExpr;
   value: OpaqueExpr;
 }
@@ -334,7 +334,7 @@ interface SetOverride {
  * only over the element (type `elemType`), while the LHS applies the
  * primed rule to this receiver as a free term.
  */
-interface SetRuleWriteEntry {
+export interface SetRuleWriteEntry {
   kind: "set";
   ruleName: string;
   ownerType: string;
@@ -344,7 +344,10 @@ interface SetRuleWriteEntry {
   cleared: boolean;
 }
 
-type WriteEntry = PropertyWriteEntry | MapRuleWriteEntry | SetRuleWriteEntry;
+export type WriteEntry =
+  | PropertyWriteEntry
+  | MapRuleWriteEntry
+  | SetRuleWriteEntry;
 
 /**
  * Per-body symbolic-execution accumulator. Held as a cell of immutable
@@ -376,7 +379,7 @@ export interface SymbolicState {
   canonicalize: (e: OpaqueExpr) => OpaqueExpr;
 }
 
-function makeSymbolicState(
+export function makeSymbolicState(
   canonicalize: (e: OpaqueExpr) => OpaqueExpr = (e) => e,
 ): SymbolicState {
   return {
@@ -387,7 +390,7 @@ function makeSymbolicState(
   };
 }
 
-function cloneSymbolicState(s: SymbolicState): SymbolicState {
+export function cloneSymbolicState(s: SymbolicState): SymbolicState {
   return {
     writes: new Map(s.writes),
     writtenKeys: new Set(),
@@ -396,30 +399,34 @@ function cloneSymbolicState(s: SymbolicState): SymbolicState {
   };
 }
 
-function putWrite(state: SymbolicState, key: string, entry: WriteEntry): void {
+export function putWrite(
+  state: SymbolicState,
+  key: string,
+  entry: WriteEntry,
+): void {
   const next = new Map(state.writes);
   next.set(key, entry);
   state.writes = next;
 }
 
-function addWrittenKey(state: SymbolicState, key: string): void {
+export function addWrittenKey(state: SymbolicState, key: string): void {
   const next = new Set(state.writtenKeys);
   next.add(key);
   state.writtenKeys = next;
 }
 
-function addModifiedProp(state: SymbolicState, prop: string): void {
+export function addModifiedProp(state: SymbolicState, prop: string): void {
   state.modifiedProps.add(prop);
 }
 
-function setCanonicalize(
+export function setCanonicalize(
   state: SymbolicState,
   fn: (e: OpaqueExpr) => OpaqueExpr,
 ): void {
   state.canonicalize = fn;
 }
 
-function symbolicKey(prop: string, objExpr: OpaqueExpr): string {
+export function symbolicKey(prop: string, objExpr: OpaqueExpr): string {
   return `${prop}::${getAst().strExpr(objExpr)}`;
 }
 
@@ -457,7 +464,7 @@ function mapWriteKey(
  * the override record so Map (tuple-keyed) and Set (element-keyed) writes
  * share the same merge plumbing.
  */
-function mergeOverrides<O extends { value: OpaqueExpr }>(
+export function mergeOverrides<O extends { value: OpaqueExpr }>(
   aSide: ReadonlyArray<O>,
   bSide: ReadonlyArray<O>,
   keyOf: (o: O) => OpaqueExpr,
