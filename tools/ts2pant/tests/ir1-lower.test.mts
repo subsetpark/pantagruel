@@ -10,7 +10,7 @@ import {
   irUnop,
   irVar,
 } from "../src/ir.js";
-import { lowerExpr } from "../src/ir-emit.js";
+import { emitStmt, lowerEquation, lowerExpr } from "../src/ir-emit.js";
 import {
   ir1App,
   ir1Assign,
@@ -120,10 +120,9 @@ describe("lowerL1Expr — applications", () => {
 
   it("non-var-headed app lowers via L2 expr-headed application", () => {
     // (cond ? f : g)(x) — pathological but syntactically valid
-    const l1 = ir1App(
-      ir1Cond([[ir1Var("c"), ir1Var("f")]], ir1Var("g")),
-      [ir1Var("x")],
-    );
+    const l1 = ir1App(ir1Cond([[ir1Var("c"), ir1Var("f")]], ir1Var("g")), [
+      ir1Var("x"),
+    ]);
     const l2 = lowerL1Expr(l1);
     // Just check the shape: head is expression-kind, args has one var.
     assert.equal(l2.kind, "app");
@@ -220,10 +219,7 @@ describe("lowerL1Expr — from-l2 transitional adapter", () => {
     assert.deepEqual(
       l2,
       irCond([
-        [
-          irVar("g", false),
-          irBinop("add", irVar("a", false), irLitNat(1)),
-        ],
+        [irVar("g", false), irBinop("add", irVar("a", false), irLitNat(1))],
         [irLitBool(true), irLitNat(0)],
       ]),
     );
@@ -293,10 +289,7 @@ describe("M2: ir1Assign and ir1While constructors are active", () => {
   });
 
   it("ir1Assign target may be a Member expression", () => {
-    const stmt = ir1Assign(
-      ir1Member(ir1Var("a"), "balance"),
-      ir1LitNat(0),
-    );
+    const stmt = ir1Assign(ir1Member(ir1Var("a"), "balance"), ir1LitNat(0));
     assert.equal(stmt.kind, "assign");
     if (stmt.kind === "assign") {
       assert.equal(stmt.target.kind, "member");
@@ -304,10 +297,7 @@ describe("M2: ir1Assign and ir1While constructors are active", () => {
   });
 
   it("ir1While builds a `while` statement with body", () => {
-    const stmt = ir1While(
-      ir1Var("p"),
-      ir1Assign(ir1Var("i"), ir1LitNat(0)),
-    );
+    const stmt = ir1While(ir1Var("p"), ir1Assign(ir1Var("i"), ir1LitNat(0)));
     assert.equal(stmt.kind, "while");
     if (stmt.kind === "while") {
       assert.deepEqual(stmt.cond, ir1Var("p"));
@@ -316,36 +306,30 @@ describe("M2: ir1Assign and ir1While constructors are active", () => {
   });
 });
 
-describe("vocabulary-locked stubs (M3 forms)", () => {
-  it("ir1CondStmt throws not-implemented (M3)", () => {
-    assert.throws(
-      () => ir1CondStmt([[ir1Var("g"), ir1Return(ir1Var("v"))]], null),
-      /M3/,
-    );
+describe("M3 statement constructors (Patch 4 — no longer NOT_IMPL)", () => {
+  it("ir1CondStmt builds a cond-stmt", () => {
+    const stmt = ir1CondStmt([[ir1Var("g"), ir1Return(ir1Var("v"))]], null);
+    assert.equal(stmt.kind, "cond-stmt");
   });
 
-  it("ir1Foreach throws not-implemented (M3)", () => {
-    assert.throws(
-      () => ir1Foreach("x", ir1Var("xs"), ir1Return(ir1Var("x"))),
-      /M3/,
-    );
+  it("ir1Foreach builds a foreach", () => {
+    const stmt = ir1Foreach("x", ir1Var("xs"), ir1Return(ir1Var("x")));
+    assert.equal(stmt.kind, "foreach");
   });
 
-  it("ir1For throws not-implemented (M3)", () => {
-    assert.throws(() => ir1For(null, null, null, ir1Return(null)), /M3/);
+  it("ir1For builds a for", () => {
+    const stmt = ir1For(null, null, null, ir1Return(null));
+    assert.equal(stmt.kind, "for");
   });
 
-  it("ir1Throw throws not-implemented (M3)", () => {
-    assert.throws(() => ir1Throw(ir1Var("err")), /M3/);
+  it("ir1Throw builds a throw", () => {
+    const stmt = ir1Throw(ir1Var("err"));
+    assert.equal(stmt.kind, "throw");
   });
 
-  it("ir1ExprStmt throws not-implemented (M3)", () => {
-    assert.throws(() => ir1ExprStmt(ir1Var("e")), /M3/);
-  });
-
-  it("lowerL1Stmt throws — statement lowering is M3", () => {
-    const stmt = ir1Return(ir1Var("x"));
-    assert.throws(() => lowerL1Stmt(stmt), /M3/);
+  it("ir1ExprStmt builds an expr-stmt", () => {
+    const stmt = ir1ExprStmt(ir1Var("e"));
+    assert.equal(stmt.kind, "expr-stmt");
   });
 });
 
@@ -355,10 +339,7 @@ describe("vocabulary-locked stubs (M3 forms)", () => {
 
 describe("active statement constructors (block, let, return)", () => {
   it("ir1Block constructs a block of two statements", () => {
-    const block = ir1Block([
-      ir1Let("x", ir1LitNat(1)),
-      ir1Return(ir1Var("x")),
-    ]);
+    const block = ir1Block([ir1Let("x", ir1LitNat(1)), ir1Return(ir1Var("x"))]);
     assert.equal(block.kind, "block");
   });
 
@@ -447,6 +428,113 @@ describe("L2 comb-typed form (typed comprehension)", () => {
     const l2 = irCombTyped("max", "k", "Nat", [], irVar("k"));
     const lowered = lowerExpr(l2);
     // No guards beyond the typed binder.
-    assert.match(ast.strExpr(lowered), /max over each k: Nat \| k/);
+    assert.match(ast.strExpr(lowered), /max over each k: Nat \| k/u);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3 Patch 4: lowerL1Stmt for non-iteration kinds
+// ---------------------------------------------------------------------------
+
+function makeAlloc(): (hint: string) => string {
+  const counts = new Map<string, number>();
+  return (hint: string): string => {
+    const n = counts.get(hint) ?? 0;
+    counts.set(hint, n + 1);
+    return n === 0 ? hint : `${hint}${n}`;
+  };
+}
+
+describe("lowerL1Stmt — block + assign + cond-stmt (M3 Patch 4)", () => {
+  it("block of one assign lowers to a single L2 write", () => {
+    const block = ir1Block([
+      ir1Assign(ir1Member(ir1Var("acct"), "balance"), ir1LitNat(100)),
+    ]);
+    const stmts = lowerL1Stmt(block);
+    assert.equal(stmts.length, 1);
+    assert.equal(stmts[0]!.kind, "write");
+  });
+
+  it("assign with member target produces write{property-field}", () => {
+    const stmt = ir1Assign(
+      ir1Member(ir1Var("acct"), "balance"),
+      ir1LitNat(100),
+    );
+    const stmts = lowerL1Stmt(stmt);
+    assert.equal(stmts.length, 1);
+    const w = stmts[0]!;
+    assert.equal(w.kind, "write");
+    if (w.kind === "write") {
+      assert.equal(w.target.kind, "property-field");
+      if (w.target.kind === "property-field") {
+        assert.equal(w.target.ruleName, "balance");
+      }
+    }
+  });
+
+  it("assign with var target rejects (μ-search territory)", () => {
+    const stmt = ir1Assign(ir1Var("c"), ir1LitNat(1));
+    assert.throws(() => lowerL1Stmt(stmt), /var-target/u);
+  });
+
+  it("end-to-end: cond-stmt lowers and emits a φ-merged equation", () => {
+    // if (g) acct.balance = 100; else acct.balance = 50;
+    const stmt = ir1CondStmt(
+      [
+        [
+          ir1Var("g"),
+          ir1Assign(ir1Member(ir1Var("acct"), "balance"), ir1LitNat(100)),
+        ],
+      ],
+      ir1Assign(ir1Member(ir1Var("acct"), "balance"), ir1LitNat(50)),
+    );
+    const lowered = lowerL1Stmt(stmt);
+    const result = emitStmt(lowered, { allocBinder: makeAlloc() });
+    assert.equal(result.equations.length, 1);
+    const ast = getAst();
+    const eq = lowerEquation(result.equations[0]!);
+    assert.equal(
+      `${ast.strExpr(eq.lhs)} = ${ast.strExpr(eq.rhs)}`,
+      "balance' acct = cond g => 100, true => 50",
+    );
+  });
+
+  it("multi-armed cond-stmt folds right-to-left into nested let-if", () => {
+    // if (g1) p = 1 else if (g2) p = 2 else p = 3
+    const stmt = ir1CondStmt(
+      [
+        [ir1Var("g1"), ir1Assign(ir1Member(ir1Var("o"), "p"), ir1LitNat(1))],
+        [ir1Var("g2"), ir1Assign(ir1Member(ir1Var("o"), "p"), ir1LitNat(2))],
+      ],
+      ir1Assign(ir1Member(ir1Var("o"), "p"), ir1LitNat(3)),
+    );
+    const lowered = lowerL1Stmt(stmt);
+    const result = emitStmt(lowered, { allocBinder: makeAlloc() });
+    assert.equal(result.equations.length, 1);
+    const ast = getAst();
+    const eq = lowerEquation(result.equations[0]!);
+    assert.equal(
+      `${ast.strExpr(eq.lhs)} = ${ast.strExpr(eq.rhs)}`,
+      "p' o = cond g1 => 1, true => (cond g2 => 2, true => 3)",
+    );
+  });
+
+  it("iteration kinds throw with pointer to Patch 5", () => {
+    assert.throws(
+      () => lowerL1Stmt(ir1Foreach("x", ir1Var("xs"), ir1Return(null))),
+      /Patch 5/u,
+    );
+    assert.throws(
+      () => lowerL1Stmt(ir1For(null, null, null, ir1Return(null))),
+      /Patch 5/u,
+    );
+    assert.throws(() => lowerL1Stmt(ir1Throw(ir1Var("e"))), /Patch 5/u);
+    assert.throws(() => lowerL1Stmt(ir1ExprStmt(ir1Var("e"))), /Patch 5/u);
+    assert.throws(() => lowerL1Stmt(ir1Let("x", ir1LitNat(0))), /Patch 5/u);
+    assert.throws(() => lowerL1Stmt(ir1Return(null)), /Patch 5/u);
+    assert.throws(
+      () => lowerL1Stmt(ir1While(ir1Var("g"), ir1Return(null))),
+      /Patch 5/u,
+    );
   });
 });

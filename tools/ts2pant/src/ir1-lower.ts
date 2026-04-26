@@ -31,6 +31,8 @@ import {
   irCombTyped,
   irCond,
   irLitBool,
+  irStmtSeq,
+  irStmtWrite,
   irUnop,
   irVar,
   irWrap,
@@ -103,22 +105,107 @@ export function lowerL1Expr(e: IR1Expr): IRExpr {
 }
 
 /**
- * Lower a Layer 1 statement to a list of L2 `IRStmt`. **Not implemented
- * in M1** — statement lowering lands in M3 alongside iteration + mutation
- * normalization, where L2's `Write` / `LetIf` / `Seq` forms become the
- * targets. Until then, calling this function on any L1 statement is a
- * bug; M1 only constructs and lowers L1 *expressions*.
+ * Lower a Layer 1 statement to a list of L2 `IRStmt`.
  *
- * The signature returns the eventual M3 type (`IRStmt[]`) so adding the
- * real implementation in M3 is not a public type break — the body throws
- * unconditionally until then.
+ * **M3 Patch 4 scope**: handles `block` (→ `seq`) and `cond-stmt` (→
+ * `let-if`) and `assign` with a `member` target (→ `write{property-field}`).
+ * Iteration kinds (`foreach`, `for`, `while`, `throw`) and the more
+ * complex non-iteration kinds (`let` substitution, `return` packaging,
+ * `expr-stmt` Map/Set effect detection) throw `not-implemented` pointing
+ * at Patch 5, where the L1 build side gets wired up alongside the
+ * branched-mutation cutover.
+ *
+ * Callers feed the resulting `IRStmt[]` to `emitStmt` (Patch 1) which
+ * produces `{ equations, assertions, modifiedProps }` for installation
+ * into the propositions array.
  */
 export function lowerL1Stmt(s: IR1Stmt): IRStmt[] {
-  void s;
-  throw new Error(
-    "lowerL1Stmt: Layer 1 statement lowering is M3 (iteration + mutation); " +
-      "see workstreams/ts2pant-imperative-ir.md",
-  );
+  switch (s.kind) {
+    case "block": {
+      const lowered: IRStmt[] = [];
+      for (const child of s.stmts) {
+        lowered.push(...lowerL1Stmt(child));
+      }
+      // Single-element `seq` collapses to its child at L2; >1 wraps in
+      // `seq` so the emit pass sees a uniform sequence.
+      if (lowered.length === 1) {
+        return lowered;
+      }
+      return [irStmtSeq(lowered)];
+    }
+
+    case "assign": {
+      // M3 Patch 4 supports member-target assigns (property writes).
+      // Var-target assigns are reserved for μ-search counter steps and
+      // are handled by `lowerL1MuSearch`, not by general statement
+      // lowering.
+      if (s.target.kind !== "member") {
+        throw new Error(
+          `lowerL1Stmt: assign with target kind '${s.target.kind}' is not ` +
+            "supported by general statement lowering (var-target is " +
+            "μ-search-only via lowerL1MuSearch)",
+        );
+      }
+      return [
+        irStmtWrite(
+          {
+            kind: "property-field",
+            ruleName: s.target.name,
+            objExpr: lowerL1Expr(s.target.receiver),
+          },
+          lowerL1Expr(s.value),
+        ),
+      ];
+    }
+
+    case "cond-stmt": {
+      // Multi-armed cond-stmt folds right-to-left into nested `let-if`.
+      // Each arm `(g, body)` becomes a `let-if(cond=g, then=lower(body),
+      // else=<rest>)`. The final `otherwise` (or empty stmts) is the
+      // innermost else-branch.
+      const otherwiseStmts: IRStmt[] =
+        s.otherwise === null ? [] : lowerL1Stmt(s.otherwise);
+      let acc: IRStmt[] = otherwiseStmts;
+      for (let i = s.arms.length - 1; i >= 0; i--) {
+        const [guard, body] = s.arms[i]!;
+        const thenStmts = lowerL1Stmt(body);
+        // phiVars is informational at this lowering layer — emitStmt's
+        // let-if processor computes touched keys from the actual
+        // sub-state writes. Use a placeholder `["__phi__"]` to satisfy
+        // the IRStmt type's non-empty invariant.
+        acc = [
+          {
+            kind: "let-if",
+            phiVars: ["__phi__"],
+            cond: lowerL1Expr(guard),
+            // biome-ignore lint/suspicious/noThenProperty: IRStmt ADT shape uses `then`/`else` for branching mutation merge.
+            then: thenStmts,
+            else: acc,
+            continuation: [],
+          },
+        ];
+      }
+      return acc;
+    }
+
+    case "let":
+    case "return":
+    case "expr-stmt":
+    case "while":
+    case "foreach":
+    case "for":
+    case "throw":
+      throw new Error(
+        `lowerL1Stmt: lowering for L1 form '${s.kind}' is M3 Patch 5 ` +
+          "(L1 build + iteration cutover); see plan",
+      );
+
+    default: {
+      const _exhaustive: never = s;
+      void _exhaustive;
+      throw new Error("unreachable: IR1Stmt");
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

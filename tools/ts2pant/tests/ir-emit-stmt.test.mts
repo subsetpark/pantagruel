@@ -148,7 +148,10 @@ describe("emitStmt — property-field writes", () => {
       objExpr: irVar("a"),
     };
     const result = emitStmt(
-      irStmtSeq([irStmtWrite(t1, irLitNat(0)), irStmtWrite(t2, irLitString("x"))]),
+      irStmtSeq([
+        irStmtWrite(t1, irLitNat(0)),
+        irStmtWrite(t2, irLitString("x")),
+      ]),
       ctx(),
     );
     assert.equal(result.equations.length, 2);
@@ -157,7 +160,10 @@ describe("emitStmt — property-field writes", () => {
 });
 
 describe("emitStmt — map-entry writes", () => {
-  function mapTarget(op: "set" | "delete", keyExpr = irVar("k")): IRWriteTarget {
+  function mapTarget(
+    op: "set" | "delete",
+    keyExpr = irVar("k"),
+  ): IRWriteTarget {
     return {
       kind: "map-entry",
       ruleName: "entries",
@@ -171,17 +177,11 @@ describe("emitStmt — map-entry writes", () => {
   }
 
   it("Map.set emits two equations: value override + membership override", () => {
-    const result = emitStmt(
-      irStmtWrite(mapTarget("set"), irLitNat(42)),
-      ctx(),
-    );
+    const result = emitStmt(irStmtWrite(mapTarget("set"), irLitNat(42)), ctx());
     assert.equal(result.equations.length, 2);
     const valueEq = renderEquation(lowerEquation(result.equations[0]!));
     const memberEq = renderEquation(lowerEquation(result.equations[1]!));
-    assert.equal(
-      valueEq,
-      "entries' m k = entries[(c, k) |-> 42] m k",
-    );
+    assert.equal(valueEq, "entries' m k = entries[(c, k) |-> 42] m k");
     assert.equal(
       memberEq,
       "entriesKey' m1 k1 = entriesKey[(c, k) |-> true] m1 k1",
@@ -369,10 +369,7 @@ describe("emitStmt — let-if φ-merge (property writes)", () => {
     );
     assert.equal(result.equations.length, 1);
     const rendered = renderEquation(lowerEquation(result.equations[0]!));
-    assert.equal(
-      rendered,
-      "balance' acct = cond g => 100, true => 50",
-    );
+    assert.equal(rendered, "balance' acct = cond g => 100, true => 50");
     assert.deepEqual([...result.modifiedProps], ["balance"]);
   });
 
@@ -671,7 +668,7 @@ describe("emitStmt — quantified-stmt envelope (Shape A target)", () => {
     );
     assert.equal(
       ast.strExpr(envelope),
-      "all x: User, x in users | active' x = \"on\"",
+      'all x: User, x in users | active\' x = "on"',
     );
   });
 
@@ -715,10 +712,7 @@ describe("emitStmt — quantified-stmt envelope (Shape A target)", () => {
     const wrapped = irStmtQuantified(
       [{ name: "x", type: "T" }],
       [irBinop("in", irVar("x"), irVar("xs"))],
-      irStmtSeq([
-        irStmtWrite(tA, irLitNat(1)),
-        irStmtWrite(tB, irLitNat(2)),
-      ]),
+      irStmtSeq([irStmtWrite(tA, irLitNat(1)), irStmtWrite(tB, irLitNat(2))]),
     );
     const result = emitStmt(wrapped, ctx());
     assert.equal(result.equations.length, 2);

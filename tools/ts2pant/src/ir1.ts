@@ -320,18 +320,10 @@ export const ir1Return = (expr: IR1Expr | null): IR1Stmt => ({
 });
 
 // --------------------------------------------------------------------------
-// Vocabulary-locked stubs (constructors throw until the milestone that
-// introduces them lands). Forms are declared in IR1Stmt at the type level
-// so consumers can pattern-match without runtime branch errors; the
-// constructors here surface premature use.
+// Statement constructors for forms beyond the M1 active set.
+// All forms are now active as of M3 Patch 4; lowering for the iteration
+// kinds (foreach / for / throw / while-outside-μ-search) lands in Patch 5.
 // --------------------------------------------------------------------------
-
-const NOT_IMPL = (form: string, milestone: string): never => {
-  throw new Error(
-    `IR1 form '${form}' is vocabulary-locked but not implemented until ${milestone}; ` +
-      `see workstreams/ts2pant-imperative-ir.md`,
-  );
-};
 
 /**
  * Assignment / read-modify-write. Canonical form for all increment and
@@ -352,25 +344,25 @@ export const ir1Assign = (target: IR1Expr, value: IR1Expr): IR1Stmt => ({
 });
 
 export const ir1CondStmt = (
-  _arms: readonly [
+  arms: readonly [
     readonly [IR1Expr, IR1Stmt],
     ...ReadonlyArray<readonly [IR1Expr, IR1Stmt]>,
   ],
-  _otherwise: IR1Stmt | null,
-): IR1Stmt => NOT_IMPL("cond-stmt", "M3 (iteration + mutation)");
+  otherwise: IR1Stmt | null,
+): IR1Stmt => ({ kind: "cond-stmt", arms, otherwise });
 
 export const ir1Foreach = (
-  _binder: string,
-  _source: IR1Expr,
-  _body: IR1Stmt,
-): IR1Stmt => NOT_IMPL("foreach", "M3 (iteration + mutation)");
+  binder: string,
+  source: IR1Expr,
+  body: IR1Stmt,
+): IR1Stmt => ({ kind: "foreach", binder, source, body });
 
 export const ir1For = (
-  _init: IR1Stmt | null,
-  _cond: IR1Expr | null,
-  _step: IR1Stmt | null,
-  _body: IR1Stmt,
-): IR1Stmt => NOT_IMPL("for", "M3 (iteration + mutation)");
+  init: IR1Stmt | null,
+  cond: IR1Expr | null,
+  step: IR1Stmt | null,
+  body: IR1Stmt,
+): IR1Stmt => ({ kind: "for", init, cond, step, body });
 
 /**
  * Bounded while loop. M2 activates this form to faithfully represent
@@ -387,8 +379,9 @@ export const ir1While = (cond: IR1Expr, body: IR1Stmt): IR1Stmt => ({
   body,
 });
 
-export const ir1Throw = (_expr: IR1Expr): IR1Stmt =>
-  NOT_IMPL("throw", "M3 (iteration + mutation)");
+export const ir1Throw = (expr: IR1Expr): IR1Stmt => ({ kind: "throw", expr });
 
-export const ir1ExprStmt = (_expr: IR1Expr): IR1Stmt =>
-  NOT_IMPL("expr-stmt", "M3 (iteration + mutation)");
+export const ir1ExprStmt = (expr: IR1Expr): IR1Stmt => ({
+  kind: "expr-stmt",
+  expr,
+});
