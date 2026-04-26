@@ -316,34 +316,42 @@ describe("M2: ir1Assign and ir1While constructors are active", () => {
   });
 });
 
-describe("vocabulary-locked stubs (M3 forms)", () => {
-  it("ir1CondStmt throws not-implemented (M3)", () => {
-    assert.throws(
-      () => ir1CondStmt([[ir1Var("g"), ir1Return(ir1Var("v"))]], null),
-      /M3/,
+describe("M3 statement constructors are active (no longer NOT_IMPL)", () => {
+  // Constructors return IR1Stmt values of the appropriate kind.
+  // Lowering for these forms is provided by the new `lowerL1Body` fold
+  // (Patch R2) that operates on L1 statements. Until R2 lands,
+  // `lowerL1Stmt` (the M1/M2 expression-only entry point) still throws
+  // — the new fold has its own entry point.
+
+  it("ir1CondStmt builds a cond-stmt", () => {
+    const stmt = ir1CondStmt(
+      [[ir1Var("g"), ir1Return(ir1Var("v"))]],
+      null,
     );
+    assert.equal(stmt.kind, "cond-stmt");
   });
 
-  it("ir1Foreach throws not-implemented (M3)", () => {
-    assert.throws(
-      () => ir1Foreach("x", ir1Var("xs"), ir1Return(ir1Var("x"))),
-      /M3/,
-    );
+  it("ir1Foreach builds a foreach", () => {
+    const stmt = ir1Foreach("x", ir1Var("xs"), ir1Return(ir1Var("x")));
+    assert.equal(stmt.kind, "foreach");
   });
 
-  it("ir1For throws not-implemented (M3)", () => {
-    assert.throws(() => ir1For(null, null, null, ir1Return(null)), /M3/);
+  it("ir1For builds a for", () => {
+    const stmt = ir1For(null, null, null, ir1Return(null));
+    assert.equal(stmt.kind, "for");
   });
 
-  it("ir1Throw throws not-implemented (M3)", () => {
-    assert.throws(() => ir1Throw(ir1Var("err")), /M3/);
+  it("ir1Throw builds a throw", () => {
+    const stmt = ir1Throw(ir1Var("err"));
+    assert.equal(stmt.kind, "throw");
   });
 
-  it("ir1ExprStmt throws not-implemented (M3)", () => {
-    assert.throws(() => ir1ExprStmt(ir1Var("e")), /M3/);
+  it("ir1ExprStmt builds an expr-stmt", () => {
+    const stmt = ir1ExprStmt(ir1Var("e"));
+    assert.equal(stmt.kind, "expr-stmt");
   });
 
-  it("lowerL1Stmt throws — statement lowering is M3", () => {
+  it("lowerL1Stmt — statement lowering still throws (replaced by lowerL1Body)", () => {
     const stmt = ir1Return(ir1Var("x"));
     assert.throws(() => lowerL1Stmt(stmt), /M3/);
   });
