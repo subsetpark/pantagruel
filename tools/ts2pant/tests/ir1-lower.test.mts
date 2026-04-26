@@ -391,3 +391,68 @@ describe("active statement constructors (block, let, return)", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// L2 `comb-typed` form (M2 cleanup) — typed-comprehension with no source
+// ---------------------------------------------------------------------------
+
+describe("L2 comb-typed form (typed comprehension)", () => {
+  it("min over each j: Int, j >= 1, ¬p(j) | j → eachComb with typed param", async () => {
+    const { irBinop, irLitNat, irUnop, irVar, irAppName, irCombTyped } =
+      await import("../src/ir.js");
+    const ast = getAst();
+    const l2 = irCombTyped(
+      "min",
+      "j",
+      "Int",
+      [
+        irBinop("ge", irVar("j"), irLitNat(1)),
+        irUnop("not", irAppName("p", [irVar("j")])),
+      ],
+      irVar("j"),
+    );
+    const lowered = lowerExpr(l2);
+    assert.equal(
+      ast.strExpr(lowered),
+      "min over each j: Int, j >= 1, ~(p j) | j",
+    );
+  });
+
+  it("byte-equality with a hand-built legacy eachComb", async () => {
+    const { irBinop, irLitNat, irUnop, irVar, irAppName, irCombTyped } =
+      await import("../src/ir.js");
+    const ast = getAst();
+    // Hand-built legacy form — what today's translateMuSearchInit emits.
+    const legacy = ast.eachComb(
+      [ast.param("j", ast.tName("Int"))],
+      [
+        ast.gExpr(ast.binop(ast.opGe(), ast.var("j"), ast.litNat(1))),
+        ast.gExpr(ast.unop(ast.opNot(), ast.app(ast.var("p"), [ast.var("j")]))),
+      ],
+      ast.combMin(),
+      ast.var("j"),
+    );
+    const l2 = irCombTyped(
+      "min",
+      "j",
+      "Int",
+      [
+        irBinop("ge", irVar("j"), irLitNat(1)),
+        irUnop("not", irAppName("p", [irVar("j")])),
+      ],
+      irVar("j"),
+    );
+    assert.equal(ast.strExpr(lowerExpr(l2)), ast.strExpr(legacy));
+  });
+
+  it("max combiner accepted (forbids init at type level)", async () => {
+    const { irLitNat, irVar, irCombTyped } = await import("../src/ir.js");
+    const ast = getAst();
+    const l2 = irCombTyped("max", "k", "Nat", [], irVar("k"));
+    const lowered = lowerExpr(l2);
+    // No guards beyond the typed binder.
+    assert.match(ast.strExpr(lowered), /max over each k: Nat \| k/);
+    // Suppress unused var warning.
+    void irLitNat;
+  });
+});

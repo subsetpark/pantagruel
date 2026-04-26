@@ -95,6 +95,21 @@ export function substIR(body: IRExpr, name: string, value: IRExpr): IRExpr {
       return irComb(body.combiner, each, init);
     }
 
+    case "comb-typed": {
+      const shadowed = body.binder === name;
+      if (shadowed) {
+        return body;
+      }
+      return {
+        kind: "comb-typed",
+        combiner: body.combiner,
+        binder: body.binder,
+        binderType: body.binderType,
+        guards: body.guards.map((g) => substIR(g, name, value)),
+        proj: substIR(body.proj, name, value),
+      };
+    }
+
     case "forall": {
       const shadowed = body.binder === name;
       const newGuard = shadowed
