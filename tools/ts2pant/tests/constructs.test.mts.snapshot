@@ -538,8 +538,20 @@ exports[`expressions-set.ts > contains 1`] = `
 "module Contains.\\n\\ncontains xs: [String], x: String => Bool.\\n\\n---\\n\\ncontains xs x = (x in xs).\\n"
 `;
 
+exports[`expressions-while-mu-search.ts > compoundIncrementStep 1`] = `
+"module CompoundIncrementStep.\\n\\ncompound-increment-step used: [Int] => Int.\\n\\n---\\n\\ncompound-increment-step used = (min over each j: Int, j >= 1, ~(j in used) | j).\\n"
+`;
+
 exports[`expressions-while-mu-search.ts > compoundWhileBody 1`] = `
 "module CompoundWhileBody.\\n\\ncompound-while-body used: [Int] => Int.\\n\\n---\\n\\n> UNSUPPORTED: compound-while-body — unsupported while-loop shape (not a recognized μ-search).\\n"
+`;
+
+exports[`expressions-while-mu-search.ts > explicitIncrementStep 1`] = `
+"module ExplicitIncrementStep.\\n\\nexplicit-increment-step used: [Int] => Int.\\n\\n---\\n\\nexplicit-increment-step used = (min over each j: Int, j >= 1, ~(j in used) | j).\\n"
+`;
+
+exports[`expressions-while-mu-search.ts > explicitIncrementStepFlipped 1`] = `
+"module ExplicitIncrementStepFlipped.\\n\\nexplicit-increment-step-flipped used: [Int] => Int.\\n\\n---\\n\\nexplicit-increment-step-flipped used = (min over each j: Int, j >= 1, ~(j in used) | j).\\n"
 `;
 
 exports[`expressions-while-mu-search.ts > firstUnusedSuffix 1`] = `

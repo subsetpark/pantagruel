@@ -147,7 +147,68 @@ exploratory.
 
 ---
 
-### Milestone 2: imperative-ir-assign-mu-search
+### Milestone 2: imperative-ir-assign-mu-search — ✅ landed
+
+**Status**: landed across four stacked commits on
+`zax--ts2pant-m2-assign-musearch`:
+
+- Patch 1 (`4675728`) — activate `ir1Assign` and `ir1While`; add
+  `buildL1IncrementStep` covering all five `+1` spellings + non-`+1`
+  forms; new unit tests for vocabulary activation and step
+  normalization.
+- Patch 2 (`ea32328`) — L1 builder (`buildL1LetWhile`) + L1 recognizer
+  (`isCanonicalMuSearchForm`); plumb behind `TS2PANT_USE_L1_MUSEARCH`.
+  Validation: byte-identical output across all 463 existing tests
+  under both flag states.
+- Patch 3 (`c3dc24b`) — hard-rule cutover. Flag deleted.
+  `recognizeMuSearch` renamed to `recognizeLetWhilePair` and stripped
+  of all μ-search semantics (step shape, predicate-references-counter)
+  — those checks now live in `isCanonicalMuSearchForm` and the
+  unified `translateMuSearchInit`. Legacy `translateMuSearchInitLegacy`
+  deleted. Three new fixtures (`compoundIncrementStep`,
+  `explicitIncrementStep`, `explicitIncrementStepFlipped`) verify the
+  five-spelling collapse to one canonical form. Net **−64 lines**.
+- Patch 4 — docs (this commit).
+
+**Architectural payoff**: TS-AST has *no* μ-search semantics. The
+recognizer is structural-only (let + while pair); the canonical-shape
+check, predicate-references-counter check, and discrete-strategy
+check all live at the L1 layer. The five `+1` surface spellings
+collapse to a single L1 `Assign(Var(c), BinOp(add, Var(c), Lit(1)))`
+that the recognizer pattern-matches once.
+
+**Pessimism rate**: 0 — the increment normalizer's `+1` recognition is
+strictly broader than legacy's `++`/`++i`-only, and dogfood translates
+unchanged. The new failure messages for the named-fn-expression and
+method-shadowing cases are more specific than the old "not a
+recognized μ-search" (now "predicate does not reference the counter"
+or "predicate has side effects") and tests were updated.
+
+**M2 cleanup (post-cutover follow-up)**: in the same PR, four
+additional commits move μ-search lowering entirely out of
+`translate-body.ts`. Articulated principle: *"L1 should be entirely
+concerned with the syntax of TypeScript; it should be completely
+unopinionated and ignorant about how TypeScript's semantics are
+translated into specific lowerings."* Concretely:
+
+- L2 gains a new `comb-typed` form for source-less typed
+  comprehension — the missing vocabulary that legacy
+  `translateMuSearchInit` worked around by going directly to
+  OpaqueExpr.
+- `lowerL1MuSearch` lands in `ir1-lower.ts` carrying all μ-search
+  semantics: canonical-shape pattern match, strategy validation,
+  binder allocation (via callback), counter-binder substitution
+  (via Pant's `substituteBinder` on the lowered OpaqueExpr).
+- `buildL1LetWhile` adds the predicate-references-counter check
+  as a structural sanity check on the let+while pair.
+- `translateMuSearchInit` shrinks to a thin orchestrator that
+  wires the lowering context and delegates to the L1 → L2 →
+  OpaqueExpr pipeline. No Pantagruel-target awareness.
+
+Snapshot byte-equality preserved across all 8 μ-search fixtures.
+translate-body.ts net −60 lines. Side benefit: predicate is now
+translated once at L1 build (rather than twice as in pre-cleanup
+M2) — substitution happens on the lowered OpaqueExpr.
 
 **Definition of Done**:
 - `ir1-build.ts` extends to translate increment surface forms: `i++`, `++i`,

@@ -18,10 +18,11 @@
  * **Vocabulary lock at M1.** The forms declared here are the locked Layer
  * 1 vocabulary. Forms can be *added* in later milestones (e.g.,
  * `IsNullish` primitive at M4) but the existing forms cannot be changed.
- * Forms unused in M1 (`assign`, `foreach`, `for`, `while`, `throw`,
- * `expr-stmt`, statement-position `cond-stmt`) are declared at the type
- * level; their constructors throw `not-implemented` until the milestone
- * that introduces them lands.
+ * Forms not yet active (`foreach`, `for`, `throw`, `expr-stmt`,
+ * statement-position `cond-stmt`) are declared at the type level; their
+ * constructors throw `not-implemented` until the milestone that
+ * introduces them lands. M1 activated `block`, `let`, `return`, and
+ * expression-position `cond`; M2 adds `assign` and `while`.
  *
  * **No `IR1Wrap` form.** Layer 1 is *not* an escape-hatch layer — the
  * build pass either produces L1 or rejects with `unsupported`. An L1
@@ -123,12 +124,12 @@ export type IR1Expr =
 
 /**
  * Layer 1 statements. Ten forms cover the imperative TS shape needed
- * across the workstream. M1 actively uses `block`, `let`, `cond`, and
- * `return`; the others are vocabulary-locked but their constructors
- * throw until the milestone that introduces them lands:
+ * across the workstream. Active in M1+M2: `block`, `let`, `return`,
+ * `cond` (expression-position via `IR1Expr`), `assign`, `while`. The
+ * remaining forms are vocabulary-locked but their constructors throw
+ * until the milestone that introduces them lands:
  *
- * - `assign` — M2 (canonical form for `++`/`--`/compound-assign/`x = expr`)
- * - `foreach`, `for`, `while` — M3 (iteration normalization)
+ * - `foreach`, `for` — M3 (iteration normalization)
  * - `throw` — M3 (iteration body for guard-throw assertions)
  * - `expr-stmt` — M3 (effect-bearing expressions in statement position)
  * - statement-position `cond-stmt` — M3 (conditional with statement body,
@@ -142,7 +143,7 @@ export type IR1Stmt =
   /**
    * Assignment. Canonical form for all increment/compound-assign/explicit
    * mutation forms. Target is an L1 expression (typically `var` or
-   * `member`). Introduced in M2; constructor throws until then.
+   * `member`). M2 actively uses this for the μ-search counter step.
    */
   | { kind: "assign"; target: IR1Expr; value: IR1Expr }
   /**
@@ -177,8 +178,9 @@ export type IR1Stmt =
       body: IR1Stmt;
     }
   /**
-   * Bounded while loop (rejected if not provably bounded). Introduced
-   * in M3.
+   * Bounded while loop. M2 actively uses this to represent the
+   * μ-search let/while/increment shape; general bounded-while lowering
+   * (accumulator iteration, fixed-point search) lands in M3.
    */
   | { kind: "while"; cond: IR1Expr; body: IR1Stmt }
   /** Return statement. Optional expression for void-returning bodies. */
@@ -331,8 +333,23 @@ const NOT_IMPL = (form: string, milestone: string): never => {
   );
 };
 
-export const ir1Assign = (_target: IR1Expr, _value: IR1Expr): IR1Stmt =>
-  NOT_IMPL("assign", "M2 (assign + μ-search)");
+/**
+ * Assignment / read-modify-write. Canonical form for all increment and
+ * compound-assignment surface spellings. M2 activates this form for the
+ * μ-search counter step; broader mutation patterns land in M3.
+ *
+ * `target` is typically `Var(name)` (a counter) or `Member(receiver,
+ * name)` (a property write); `value` is the new value, which for
+ * increment forms is `BinOp(<op>, target, <k>)`. The L1 → L2 lowering
+ * for `Assign` is *not* generic — only `recognizeAndLowerMuSearch` in
+ * `ir1-lower.ts` introspects the surrounding L1 shape and produces L2
+ * output for it. A standalone `Assign` reaching `lowerL1Stmt` rejects.
+ */
+export const ir1Assign = (target: IR1Expr, value: IR1Expr): IR1Stmt => ({
+  kind: "assign",
+  target,
+  value,
+});
 
 export const ir1CondStmt = (
   _arms: readonly [
@@ -355,8 +372,20 @@ export const ir1For = (
   _body: IR1Stmt,
 ): IR1Stmt => NOT_IMPL("for", "M3 (iteration + mutation)");
 
-export const ir1While = (_cond: IR1Expr, _body: IR1Stmt): IR1Stmt =>
-  NOT_IMPL("while", "M3 (iteration + mutation)");
+/**
+ * Bounded while loop. M2 activates this form to faithfully represent
+ * the let/while/increment shape of a μ-search-shaped TS body —
+ * `recognizeAndLowerMuSearch` in `ir1-lower.ts` introspects the
+ * `Block([Let, While(_, Assign)])` shape and lowers to `Comb(min, Each)`.
+ * General while-loop lowering (bounded fixed-point, accumulator
+ * iteration) lands in M3; until then a standalone `While` reaching
+ * `lowerL1Stmt` rejects.
+ */
+export const ir1While = (cond: IR1Expr, body: IR1Stmt): IR1Stmt => ({
+  kind: "while",
+  cond,
+  body,
+});
 
 export const ir1Throw = (_expr: IR1Expr): IR1Stmt =>
   NOT_IMPL("throw", "M3 (iteration + mutation)");

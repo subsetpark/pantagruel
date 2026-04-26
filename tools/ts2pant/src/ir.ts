@@ -177,6 +177,26 @@ export type IRExpr =
    */
   | { kind: "comb"; combiner: "min" | "max"; each: IRExprEach }
   /**
+   * Aggregate over a *typed* comprehension with no source — `min over
+   * each j: T, g₁, …, gₙ | proj`. Distinct from `Comb(_, Each)` because
+   * `Each` requires a `src` (collection to iterate); `comb-typed`
+   * iterates over a primitive type. The canonical lowering target for
+   * μ-search (`min over each j: Int, j >= INIT, ¬P(j) | j`).
+   *
+   * Lowers to `ast.eachComb([param(binder, type)], guards, comb, proj)`.
+   *
+   * No `init` for the same reason as min/max `Comb` — Pant has no
+   * fold operator to seed.
+   */
+  | {
+      kind: "comb-typed";
+      combiner: "min" | "max";
+      binder: string;
+      binderType: string;
+      guards: IRExpr[];
+      proj: IRExpr;
+    }
+  /**
    * Universal quantifier. Lowers to `ast.forall(...)`.
    */
   | {
@@ -453,6 +473,26 @@ export function irComb(
     ? { kind: "comb", combiner, init, each }
     : { kind: "comb", combiner, each };
 }
+
+/**
+ * Aggregate over a typed comprehension with no source. The canonical
+ * lowering target for μ-search. See the `comb-typed` variant in
+ * `IRExpr` for the semantics.
+ */
+export const irCombTyped = (
+  combiner: "min" | "max",
+  binder: string,
+  binderType: string,
+  guards: IRExpr[],
+  proj: IRExpr,
+): IRExpr => ({
+  kind: "comb-typed",
+  combiner,
+  binder,
+  binderType,
+  guards,
+  proj,
+});
 
 export const irForall = (
   binder: string,

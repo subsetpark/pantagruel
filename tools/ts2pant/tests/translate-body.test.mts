@@ -1553,9 +1553,11 @@ describe("Kleene μ-search (while-loop minimum)", () => {
     // `function i() {}` binds `i` inside its own body (for recursive
     // self-reference), so the reference to `i` inside the body refers
     // to the function value, not to the outer counter. The predicate
-    // therefore has no free reference to the outer `i`, and
-    // recognizeMuSearch rejects on the "predicate doesn't reference
-    // counter" path — that rejection is the distinguishing signal.
+    // therefore has no free reference to the outer `i`. After M2's
+    // cutover the TS-AST recognizer is purely structural; the
+    // shadowing rejection comes from either the L1 predicate-
+    // references-counter check or the legacy purity check (the IIFE
+    // call is conservatively classified as effectful).
     const source = `
       export function shadowedFnName(): number {
         let i = 0;
@@ -1575,11 +1577,13 @@ describe("Kleene μ-search (while-loop minimum)", () => {
     assert.equal(props.length, 1);
     assert.equal(props[0]?.kind, "unsupported");
     if (props[0]?.kind === "unsupported") {
-      // The rejection must be attributable to the shadowing → no free
-      // counter reference, not to some unrelated downstream error.
+      // The rejection must be attributable to the shadowing — either
+      // via the predicate-not-referencing-counter check or via the
+      // purity oracle classifying the IIFE call as effectful. Both
+      // are valid signals that the loop is not a clean μ-search.
       assert.match(
         props[0].reason,
-        /not a recognized μ-search/,
+        /predicate does not reference the counter|predicate has side effects/,
       );
     }
   });
@@ -1623,8 +1627,8 @@ describe("Kleene μ-search (while-loop minimum)", () => {
       if (props[0]?.kind === "unsupported") {
         assert.match(
           props[0].reason,
-          /not a recognized μ-search/,
-          `${name} should reject on μ-search path`,
+          /predicate does not reference the counter|predicate has side effects/,
+          `${name} should reject on shadowing or purity path`,
         );
       }
     }

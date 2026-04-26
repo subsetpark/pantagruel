@@ -7,10 +7,13 @@ import { type IR1Expr, ir1FromL2 } from "./ir1.js";
 import {
   buildL1Conditional,
   buildL1ConditionalFromArms,
+  buildL1LetWhile,
   isL1ConditionalForm,
+  isL1StmtUnsupported,
   isL1Unsupported,
   lowerL1ToOpaque,
 } from "./ir1-build.js";
+import { lowerL1MuSearch, type MuSearchLowerCtx } from "./ir1-lower.js";
 import type {
   OpaqueCombiner,
   OpaqueExpr,
@@ -109,7 +112,7 @@ export function isNullableTsType(type: ts.Type): boolean {
  *   - `muSearch`: the `let counter = init; while (P(counter)) counter++;`
  *     pair, recognized as Kleene μ-minimization and emitted as a synthetic
  *     binding whose value is `min over each $j: Nat, $j >= init, ~P($j) | $j`.
- *     See `recognizeMuSearch` and `emitMuSearch`.
+ *     See `recognizeLetWhilePair` and `emitMuSearch`.
  */
 type ConstBinding =
   | { kind: "const"; tsName: string; initializer: ts.Expression }
@@ -125,10 +128,17 @@ function bindingNames(b: ConstBinding): readonly string[] {
   return b.kind === "earlyReturn" ? [] : [b.tsName];
 }
 
-interface MuSearch {
+export interface MuSearch {
   counterName: string;
   initTsExpr: ts.Expression;
   predicateTsExpr: ts.Expression;
+  /**
+   * The expression-statement body of the while loop — the increment
+   * step. Used by the L1 builder to construct the canonical
+   * `Block([Let, While(_, Assign)])` form for `isCanonicalMuSearchForm`
+   * to pattern-match against.
+   */
+  stepExpr: ts.Expression;
 }
 
 /**
@@ -1607,7 +1617,16 @@ function isInterfaceFieldAccess(
  * Reference: Kleene, *General Recursive Functions of Natural Numbers*,
  * Math. Ann. 112 (1936); Kroening & Strichman, *Decision Procedures* Ch. 4.
  */
-function recognizeMuSearch(
+/**
+ * Recognize a `let + while` pair as one prelude unit. Purely structural:
+ * the let must have a single identifier declarator with an initializer,
+ * the while body must be a single expression-statement (or a single-stmt
+ * block thereof). No μ-search-specific semantics here — those live at
+ * `ir1-lower.ts:isCanonicalMuSearchForm` and the L1 path in
+ * `translateMuSearchInit`. This recognizer's only job is to consume
+ * the pair structurally so `extractReturnExpression` can keep walking.
+ */
+function recognizeLetWhilePair(
   stmts: readonly ts.Statement[],
   idx: number,
   _checker: ts.TypeChecker,
@@ -1637,12 +1656,9 @@ function recognizeMuSearch(
     return null;
   }
 
-  // Body must be exactly one `counter++` or `++counter`, either as the
-  // direct child of the while (unbraced) or as the sole statement of a
-  // single-statement block. Side-effect purity of init and predicate is
-  // not pre-screened here: the recognizer identifies the syntactic shape;
-  // the downstream translation surfaces any unsupported expressions with
-  // their natural error message.
+  // Body must be a single expression-statement (unbraced or single-stmt
+  // block). No semantic check on the step — that's the L1 recognizer's
+  // job.
   const body = whileStmt.statement;
   const bodyStmt: ts.Statement | null = ts.isBlock(body)
     ? body.statements.length === 1
@@ -1652,33 +1668,12 @@ function recognizeMuSearch(
   if (!bodyStmt || !ts.isExpressionStatement(bodyStmt)) {
     return null;
   }
-  const update = bodyStmt.expression;
-  if (
-    !ts.isPostfixUnaryExpression(update) &&
-    !ts.isPrefixUnaryExpression(update)
-  ) {
-    return null;
-  }
-  if (update.operator !== ts.SyntaxKind.PlusPlusToken) {
-    return null;
-  }
-  if (!ts.isIdentifier(update.operand) || update.operand.text !== counterName) {
-    return null;
-  }
-  // Predicate must reference the counter; otherwise the loop is either a
-  // no-op or a divergence, neither of which is a μ-search. Translating
-  // such a shape as `min over each j: Int, j >= INIT, ~Q | j` (with Q
-  // free of j) changes behavior at the non-terminating case.
-  if (
-    !expressionReferencesNames(whileStmt.expression, new Set([counterName]))
-  ) {
-    return null;
-  }
 
   return {
     counterName,
     initTsExpr: decl.initializer,
     predicateTsExpr: whileStmt.expression,
+    stepExpr: bodyStmt.expression,
   };
 }
 
@@ -1740,7 +1735,7 @@ function extractReturnExpression(
   const lastIdx = stmts.length - 1;
   let i = 0;
   while (i < lastIdx) {
-    const mu = recognizeMuSearch(stmts, i, checker);
+    const mu = recognizeLetWhilePair(stmts, i, checker);
     if (mu) {
       bindings.push({ kind: "muSearch", tsName: mu.counterName, mu });
       i += 2;
@@ -1809,7 +1804,7 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
     // failed rather than a heuristic guess.
     let i = 0;
     while (i < lastIdx) {
-      if (recognizeMuSearch(stmts, i, checker)) {
+      if (recognizeLetWhilePair(stmts, i, checker)) {
         i += 2;
         continue;
       }
@@ -1826,7 +1821,7 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
         }
         return "if-with-return body must be a single return statement";
       }
-      // A let; while pair where recognizeMuSearch failed — probably a
+      // A let; while pair where recognizeLetWhilePair failed — probably a
       // compound while body or non-`i++` body.
       if (
         ts.isVariableStatement(stmt) &&
@@ -2109,14 +2104,18 @@ function translateBindingInit(
 }
 
 /**
- * Emit a `min over each j: Int, j >= init, ~P(j) | j` expression for a
- * recognized μ-search binding (binder type follows `strategy.mapNumber()`).
- * A fresh comprehension binder takes the place of the loop counter inside
- * the predicate. The binder is allocated through the document-wide name
- * registry (when present) so it never collides with the function's own
- * params or with type-derived rule binders; the `$N` `freshHygienicBinder`
- * form would not round-trip through Pantagruel's parser since `$` isn't a
- * legal identifier character.
+ * Translate a recognized μ-search prelude binding to an OpaqueExpr.
+ * Pure orchestrator — builds the canonical L1 form, hands off to
+ * `lowerL1MuSearch` for the L1 → L2 lowering (which carries all
+ * μ-search semantics), and lowers the L2 result to OpaqueExpr.
+ *
+ * Per the layering principle (workstream `ts2pant-imperative-ir.md`):
+ * `translate-body.ts` has no Pantagruel-target awareness for μ-search.
+ * The canonical-shape check, strategy validation, binder allocation,
+ * predicate substitution, and `comb-typed` construction all live in
+ * `ir1-lower.ts:lowerL1MuSearch`. This function only wires the
+ * lowering context — including the synthCell-aware binder allocator
+ * that needs translate-body's internal supply / scopedParams state.
  */
 function translateMuSearchInit(
   mu: MuSearch,
@@ -2126,76 +2125,47 @@ function translateMuSearchInit(
   state: SymbolicState | undefined,
   supply: UniqueSupply,
 ): BindingInitResult {
-  const ast = getAst();
-
-  const initResult = translateBodyExpr(
-    mu.initTsExpr,
+  const buildCtx = {
     checker,
     strategy,
-    scopedParams,
+    paramNames: scopedParams,
     state,
     supply,
-  );
-  if (isBodyUnsupported(initResult)) {
-    return { error: initResult.unsupported };
-  }
-  const initExpr = bodyExpr(initResult);
-
-  // `synthCell` path uses the document-wide NameRegistry (kebab-cased,
-  // numeric-suffixed) and is inherently collision-safe against other
-  // registered names. The standalone fallback has to guard itself against
-  // the current frame's Pant names — `scopedParams.values()` is the set
-  // the comprehension binder must avoid so predicate translation cannot
-  // alias a param to the fresh binder.
-  let jName: string;
-  if (supply.synthCell) {
-    jName = cellRegisterName(supply.synthCell, "j");
-  } else {
-    const usedNames = new Set(scopedParams.values());
-    do {
-      jName = `j${nextSupply(supply)}`;
-    } while (usedNames.has(jName));
-  }
-  const predicateScope = withParam(scopedParams, mu.counterName, jName);
-  const predResult = translateBodyExpr(
-    mu.predicateTsExpr,
-    checker,
-    strategy,
-    predicateScope,
-    state,
-    supply,
-  );
-  if (isBodyUnsupported(predResult)) {
-    return { error: predResult.unsupported };
-  }
-  const predExpr = bodyExpr(predResult);
-
-  // Binder type follows the active NumericStrategy so the comprehension
-  // stays consistent with how `number` is emitted elsewhere. A hardcoded
-  // `Nat` would exclude negative INITs from the search domain and
-  // diverge from the containing body's numeric type. Real is rejected:
-  // μ-search enumerates the discrete sequence `INIT, INIT+1, …` from
-  // `counter++`, whereas `min over each j: Real, j >= INIT, ~P(j) | j`
-  // ranges over a dense domain — e.g. `while (i * i < 2) i++` would
-  // return √2 instead of 2.
-  const counterType = strategy.mapNumber();
-  if (counterType === "Real") {
-    return {
-      error:
-        "μ-search is only supported for discrete numeric strategies (got Real)",
-    };
-  }
-  return {
-    value: ast.eachComb(
-      [ast.param(jName, ast.tName(counterType))],
-      [
-        ast.gExpr(ast.binop(ast.opGe(), ast.var(jName), initExpr)),
-        ast.gExpr(ast.unop(ast.opNot(), predExpr)),
-      ],
-      ast.combMin(),
-      ast.var(jName),
-    ),
   };
+  const form = buildL1LetWhile(mu, buildCtx);
+  if (isL1StmtUnsupported(form)) {
+    return { error: form.unsupported };
+  }
+  const lowerCtx: MuSearchLowerCtx = {
+    strategy,
+    counterPantName: scopedParams.get(mu.counterName) ?? mu.counterName,
+    allocateBinder: (hint) => {
+      // synthCell path: document-wide NameRegistry (kebab-cased,
+      // numeric-suffixed) — collision-safe across the document.
+      if (supply.synthCell) {
+        return cellRegisterName(supply.synthCell, hint);
+      }
+      // Standalone fallback: avoid colliding with the current frame's
+      // Pant names so predicate substitution can't alias a param.
+      const usedNames = new Set(scopedParams.values());
+      let name: string;
+      do {
+        name = `${hint}${nextSupply(supply)}`;
+      } while (usedNames.has(name));
+      return name;
+    },
+  };
+  const lowered = lowerL1MuSearch(form, mu.counterName, lowerCtx);
+  if (isLowerUnsupported(lowered)) {
+    return { error: lowered.unsupported };
+  }
+  return { value: lowerExpr(lowered) };
+}
+
+function isLowerUnsupported(
+  r: IRExpr | { unsupported: string },
+): r is { unsupported: string } {
+  return typeof r === "object" && r !== null && "unsupported" in r;
 }
 
 function isGuardStatement(
@@ -2314,7 +2284,7 @@ function blockHasNoSideEffects(
  *  shadow outer bindings, so `xs.some(i => i > 0)` does not report dependence
  *  on an outer `i`. Default-value expressions and property-access `.name`
  *  tokens are handled specially. */
-function expressionReferencesNames(
+export function expressionReferencesNames(
   expr: ts.Expression,
   names: Set<string>,
 ): boolean {

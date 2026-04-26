@@ -3,6 +3,7 @@ import { before, describe, it } from "node:test";
 import {
   irAppName,
   irBinop,
+  irCombTyped,
   irCond,
   irLitBool,
   irLitNat,
@@ -281,11 +282,41 @@ describe("L1 → L2 → OpaqueExpr — full pipeline byte-equality with legacy",
 // Vocabulary-locked stubs throw not-implemented
 // ---------------------------------------------------------------------------
 
-describe("vocabulary-locked stubs (M2/M3 forms)", () => {
-  it("ir1Assign throws not-implemented (M2)", () => {
-    assert.throws(() => ir1Assign(ir1Var("x"), ir1LitNat(1)), /M2/);
+describe("M2: ir1Assign and ir1While constructors are active", () => {
+  it("ir1Assign builds an `assign` statement", () => {
+    const stmt = ir1Assign(ir1Var("i"), ir1LitNat(1));
+    assert.equal(stmt.kind, "assign");
+    if (stmt.kind === "assign") {
+      assert.deepEqual(stmt.target, ir1Var("i"));
+      assert.deepEqual(stmt.value, ir1LitNat(1));
+    }
   });
 
+  it("ir1Assign target may be a Member expression", () => {
+    const stmt = ir1Assign(
+      ir1Member(ir1Var("a"), "balance"),
+      ir1LitNat(0),
+    );
+    assert.equal(stmt.kind, "assign");
+    if (stmt.kind === "assign") {
+      assert.equal(stmt.target.kind, "member");
+    }
+  });
+
+  it("ir1While builds a `while` statement with body", () => {
+    const stmt = ir1While(
+      ir1Var("p"),
+      ir1Assign(ir1Var("i"), ir1LitNat(0)),
+    );
+    assert.equal(stmt.kind, "while");
+    if (stmt.kind === "while") {
+      assert.deepEqual(stmt.cond, ir1Var("p"));
+      assert.equal(stmt.body.kind, "assign");
+    }
+  });
+});
+
+describe("vocabulary-locked stubs (M3 forms)", () => {
   it("ir1CondStmt throws not-implemented (M3)", () => {
     assert.throws(
       () => ir1CondStmt([[ir1Var("g"), ir1Return(ir1Var("v"))]], null),
@@ -301,17 +332,7 @@ describe("vocabulary-locked stubs (M2/M3 forms)", () => {
   });
 
   it("ir1For throws not-implemented (M3)", () => {
-    assert.throws(
-      () => ir1For(null, null, null, ir1Return(null)),
-      /M3/,
-    );
-  });
-
-  it("ir1While throws not-implemented (M3)", () => {
-    assert.throws(
-      () => ir1While(ir1Var("g"), ir1Return(null)),
-      /M3/,
-    );
+    assert.throws(() => ir1For(null, null, null, ir1Return(null)), /M3/);
   });
 
   it("ir1Throw throws not-implemented (M3)", () => {
@@ -369,5 +390,63 @@ describe("active statement constructors (block, let, return)", () => {
     if (stmt.kind === "return") {
       assert.equal(stmt.expr, null);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// L2 `comb-typed` form (M2 cleanup) — typed-comprehension with no source
+// ---------------------------------------------------------------------------
+
+describe("L2 comb-typed form (typed comprehension)", () => {
+  it("min over each j: Int, j >= 1, ¬p(j) | j → eachComb with typed param", () => {
+    const ast = getAst();
+    const l2 = irCombTyped(
+      "min",
+      "j",
+      "Int",
+      [
+        irBinop("ge", irVar("j"), irLitNat(1)),
+        irUnop("not", irAppName("p", [irVar("j")])),
+      ],
+      irVar("j"),
+    );
+    const lowered = lowerExpr(l2);
+    assert.equal(
+      ast.strExpr(lowered),
+      "min over each j: Int, j >= 1, ~(p j) | j",
+    );
+  });
+
+  it("byte-equality with a hand-built legacy eachComb", () => {
+    const ast = getAst();
+    // Hand-built legacy form — what today's translateMuSearchInit emits.
+    const legacy = ast.eachComb(
+      [ast.param("j", ast.tName("Int"))],
+      [
+        ast.gExpr(ast.binop(ast.opGe(), ast.var("j"), ast.litNat(1))),
+        ast.gExpr(ast.unop(ast.opNot(), ast.app(ast.var("p"), [ast.var("j")]))),
+      ],
+      ast.combMin(),
+      ast.var("j"),
+    );
+    const l2 = irCombTyped(
+      "min",
+      "j",
+      "Int",
+      [
+        irBinop("ge", irVar("j"), irLitNat(1)),
+        irUnop("not", irAppName("p", [irVar("j")])),
+      ],
+      irVar("j"),
+    );
+    assert.equal(ast.strExpr(lowerExpr(l2)), ast.strExpr(legacy));
+  });
+
+  it("max combiner accepted (forbids init at type level)", () => {
+    const ast = getAst();
+    const l2 = irCombTyped("max", "k", "Nat", [], irVar("k"));
+    const lowered = lowerExpr(l2);
+    // No guards beyond the typed binder.
+    assert.match(ast.strExpr(lowered), /max over each k: Nat \| k/);
   });
 });

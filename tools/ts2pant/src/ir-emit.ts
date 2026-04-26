@@ -220,6 +220,18 @@ export function lowerExpr(e: IRExpr): OpaqueExpr {
       );
     }
 
+    case "comb-typed": {
+      // Source-less typed comprehension — `min over each j: T, g | proj`.
+      // Distinct from `comb` (which iterates a `src`); produces the
+      // typed-param form via `eachComb([param(b, type)], ...)`.
+      return ast.eachComb(
+        [ast.param(e.binder, ast.tName(e.binderType))],
+        e.guards.map((g) => ast.gExpr(lowerExpr(g))),
+        lowerCombiner(e.combiner),
+        lowerExpr(e.proj),
+      );
+    }
+
     case "forall": {
       const param: OpaqueParam = ast.param(e.binder, ast.tName(e.binderType));
       const guards = e.guard ? [ast.gExpr(lowerExpr(e.guard))] : [];
