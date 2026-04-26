@@ -696,6 +696,50 @@ and last, and case labels must be literal. `&&`/`||` Bool-type detection
 is in `purity.ts:isStaticallyBoolTyped` (apparent-type walk requiring
 every union/intersection constituent to satisfy `BooleanLike`).
 
+**M3 (imperative-ir-iteration-mutation): partial — Patches 1–5 landed.**
+The L1/L2 statement-lowering plumbing is in place but the L1 build
+side and legacy cutover are deferred. What landed:
+
+- **`emitStmt`** in `ir-emit.ts` — walks L2 IRStmt[]
+  (`seq`/`write`/`let-if`/`quantified-stmt`/`assert`) and produces
+  `{equations, assertions, modifiedProps}`. Coalesces multi-writes
+  to the same write-key (property: last-write-wins; map-entry +
+  set-member: append override). `let-if` branches are merged via
+  per-write-key cond(g => vT, true => vE), with missing-branch
+  fallback to the appropriate pre-state read. Mirrors legacy
+  `mergeOverrides`/`combineCond` semantics at the IR layer.
+- **L2 `quantified-stmt`** form — new IRStmt variant for Shape A's
+  `all x in src | …` envelope. Mirrors M2's `comb-typed` pattern
+  (declare + emit + subst + tests; introduced before the L1 path
+  needs it).
+- **L1 statement vocabulary unblocked** — `cond-stmt`, `expr-stmt`,
+  `foreach`, `for`, `throw` constructors no longer throw NOT_IMPL.
+  `IR1Foreach` gains `binderType: string`.
+- **`lowerL1Stmt`** in `ir1-lower.ts` for `block` (→ `seq`),
+  member-target `assign` (→ `write{property-field}`), `cond-stmt`
+  (→ nested `let-if`), and `foreach` Shape A (→ `quantified-stmt`
+  with single-armed guard folding into the comprehension).
+  Var-target assigns reject (μ-search counter only). Other kinds
+  (let / return / expr-stmt / while / for / throw / Shape B / Shape
+  C) defer to follow-up.
+
+What's deferred (originally M3 DoD; tracked in
+`workstreams/ts2pant-imperative-ir.md`):
+
+- L1 build pass: `buildL1ForOf`, `buildL1ForEachCall`,
+  `buildL1ReduceCall`, `buildL1CondStmt` translating TS AST → L1
+  statements.
+- Cutover: replace legacy `translateForOfLoop` /
+  `translateForEachStmt` / `translateReduceCall` and the
+  branched-mutation arm of `symbolicExecute` with the L1 path,
+  delete the legacy `mergeOverrides` / `combineCond`.
+- Shape B (accumulator fold) + Shape C (.reduce as expression)
+  recognition at L1 build site.
+
+The deferred work is a follow-up PR. Current state is plumbing-only
+— production iteration / branched-mutation paths are still the
+legacy `symbolicExecute` machinery.
+
 **M2 (imperative-ir-assign-mu-search): landed.** `ir1Assign` and
 `ir1While` activated. Increment surface forms (`i++`, `++i`, `i--`,
 `--i`, `i += k`, `i -= k`, `i = i ⊕ k`, `i = k ⊕ i` for commutative

@@ -253,9 +253,56 @@ re-forms on top of `Assign`.
 
 ---
 
-### Milestone 3: imperative-ir-iteration-mutation
+### Milestone 3: imperative-ir-iteration-mutation — 🟡 partial (Patches 1–5 landed)
 
-**Definition of Done**:
+**Status (2026-04-26)**: M3 split into 7 patches; Patches 1–5 + docs
+landed on `zax--ts2pant-m3-iteration-mutation`. The plumbing side
+(L1 statement vocabulary, L1→L2 lowering, L2 IRStmt→IREquation
+emit) is complete and exercised by 26 hand-built tests across
+`tests/ir-emit-stmt.test.mts` and `tests/ir1-lower.test.mts`. The
+**L1 build pass** (`buildL1ForOf` / `buildL1ForEachCall` /
+`buildL1ReduceCall` / `buildL1CondStmt` translating TS AST → L1
+statements) and the **legacy-iteration / branched-mutation
+cutover** (replacing `translateForOfLoop` /
+`translateForEachStmt` / `translateReduceCall` and the
+branched-mutation arm of `symbolicExecute`) are deferred to a
+follow-up milestone (M3.5 or M3 follow-up PR).
+
+What landed:
+- **emitStmt** in `tools/ts2pant/src/ir-emit.ts` — walks L2 `IRStmt[]`
+  (seq / write / let-if / quantified-stmt / assert) and produces
+  `{ equations: IREquation[], assertions: IRAssertExit[],
+    modifiedProps: Set<string> }`. Coalesces multiple writes to the
+  same write-key (property-field last-write-wins; map-entry +
+  set-member append into override lists). φ-merge for let-if
+  follows the same discipline as legacy `mergeOverrides` /
+  `combineCond` but at the IR layer.
+- **L2 quantified-stmt form** for Shape A's `all x in src | …`
+  envelope — new IRStmt variant + emit + ir-subst handling. Mirrors
+  M2's `comb-typed` pattern.
+- **L1 statement vocabulary unblocked** — `cond-stmt`, `expr-stmt`,
+  `foreach`, `for`, `throw` constructors no longer throw `NOT_IMPL`;
+  `IR1Foreach` carries `binderType: string` so the L1 → L2 lowering
+  can emit the typed quantifier without re-running TS type
+  inference.
+- **lowerL1Stmt** in `ir1-lower.ts` for non-iteration kinds (block,
+  member-target assign, multi-armed cond-stmt → nested let-if) and
+  for `foreach` Shape A (with optional single-armed guard fold).
+  Iteration kinds beyond Shape A (Shape B, Shape C, classic for,
+  while-outside-μ-search) defer to follow-up.
+
+What's deferred to follow-up (was originally part of M3 DoD):
+- L1 build pass for iteration surface forms (`for-of`, `forEach`,
+  `.reduce`).
+- Cutover from legacy `translateForOfLoop` / `translateForEachStmt`
+  / `translateReduceCall` to the L1 path.
+- Cutover from legacy branched-mutation arm of `symbolicExecute`
+  (the `mergeOverrides` / `combineCond` machinery).
+- Shape B (accumulator fold) and Shape C (.reduce-as-expression)
+  recognition at L1 build time.
+
+**Original Definition of Done** (preserved below for reference; not
+all DoD items landed in this PR):
 - `ir1-build.ts` extends to translate iteration surface forms:
   `for (const x of arr) {body}`, `arr.forEach(x => {body})`,
   `for (let i = 0; i < arr.length; i++) {body using arr[i]}` (when `arr[i]`
