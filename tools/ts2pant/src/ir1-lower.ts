@@ -188,15 +188,17 @@ export function lowerL1Stmt(s: IR1Stmt): IRStmt[] {
       return acc;
     }
 
+    case "foreach":
+      return lowerL1Foreach(s);
+
     case "let":
     case "return":
     case "expr-stmt":
     case "while":
-    case "foreach":
     case "for":
     case "throw":
       throw new Error(
-        `lowerL1Stmt: lowering for L1 form '${s.kind}' is M3 Patch 5 ` +
+        `lowerL1Stmt: lowering for L1 form '${s.kind}' is deferred ` +
           "(L1 build + iteration cutover); see plan",
       );
 
@@ -205,6 +207,94 @@ export function lowerL1Stmt(s: IR1Stmt): IRStmt[] {
       void _exhaustive;
       throw new Error("unreachable: IR1Stmt");
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// L1 foreach lowering (M3 Patch 5)
+//
+// `foreach(x: T, src, body)` lowers to one of:
+//   - Shape A: body is `Assign(Member(x, p), e)` (or block of such writes)
+//     → `quantified-stmt([{x, T}], [in(x, src)], lower(body))`
+//   - Shape A with guard: body is `CondStmt([(g, body')], None)`
+//     → `quantified-stmt([{x, T}], [in(x, src), g], lower(body'))`
+//
+// Shape B (accumulator fold) and Shape C (.reduce as expression) are
+// recognized at the L1 build site (`ir1-build.ts`) and lowered there to
+// L2 IRExpr forms (`comb`, `comb-typed`); they do not flow through this
+// statement-level lowering. Mixed Shape A + Shape B bodies: each Shape
+// B accumulator becomes its own L2 fold expression at build time and
+// is wired into the surrounding equation; the residual Shape A writes
+// pass through this lowering.
+//
+// **Implementation discipline (M3 Patch 5)**: this lowering recognizes
+// the canonical Shape A (and guarded Shape A) shape only. Other body
+// shapes (multiple statements, mutation through receivers other than
+// the iterator, nested foreach) are rejected with a specific error.
+// The build pass is responsible for either canonicalizing into one of
+// these shapes at L1 construction time or rejecting up-front.
+// ---------------------------------------------------------------------------
+
+function lowerL1Foreach(s: Extract<IR1Stmt, { kind: "foreach" }>): IRStmt[] {
+  const inGuard = irBinop("in", irVar(s.binder), lowerL1Expr(s.source));
+  // Strip a single-armed guard cond-stmt at the top of the body
+  // (Shape A with guard). Multi-armed cond inside a foreach is
+  // structurally suspicious — reject for now (workstream open
+  // question).
+  let body = s.body;
+  const extraGuards: IRExpr[] = [inGuard];
+  if (body.kind === "cond-stmt") {
+    if (body.arms.length !== 1 || body.otherwise !== null) {
+      throw new Error(
+        "lowerL1Foreach: only single-armed cond-stmt (no else) is " +
+          "supported as a foreach body guard (Shape B with guard); " +
+          "got multi-armed or with-else cond-stmt",
+      );
+    }
+    const [g, innerBody] = body.arms[0]!;
+    extraGuards.push(lowerL1Expr(g));
+    body = innerBody;
+  }
+  // Body must be either a single member-target assign or a block of
+  // such assigns.
+  validateShapeABody(body);
+  const loweredBody = lowerL1Stmt(body);
+  // Wrap the (possibly multi-statement) body in a `seq` if needed,
+  // then wrap that in `quantified-stmt`.
+  const innerStmt: IRStmt =
+    loweredBody.length === 1
+      ? loweredBody[0]!
+      : { kind: "seq", stmts: loweredBody };
+  return [
+    {
+      kind: "quantified-stmt",
+      quantifiers: [{ name: s.binder, type: s.binderType }],
+      guards: extraGuards,
+      body: innerStmt,
+    },
+  ];
+}
+
+function validateShapeABody(body: IR1Stmt): void {
+  if (body.kind === "block") {
+    for (const child of body.stmts) {
+      validateShapeABody(child);
+    }
+    return;
+  }
+  if (body.kind !== "assign") {
+    throw new Error(
+      `lowerL1Foreach: foreach body must be Assign(Member, e) (Shape A); ` +
+        `got '${body.kind}' — Shape B (accumulator fold) and other ` +
+        "iteration shapes are recognized at the L1 build pass and lowered " +
+        "to L2 IRExpr (comb), not via this statement-level path",
+    );
+  }
+  if (body.target.kind !== "member") {
+    throw new Error(
+      `lowerL1Foreach: Shape A assign must target a Member; got ` +
+        `'${body.target.kind}'`,
+    );
   }
 }
 

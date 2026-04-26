@@ -313,7 +313,7 @@ describe("M3 statement constructors (Patch 4 — no longer NOT_IMPL)", () => {
   });
 
   it("ir1Foreach builds a foreach", () => {
-    const stmt = ir1Foreach("x", ir1Var("xs"), ir1Return(ir1Var("x")));
+    const stmt = ir1Foreach("x", "T", ir1Var("xs"), ir1Return(ir1Var("x")));
     assert.equal(stmt.kind, "foreach");
   });
 
@@ -519,22 +519,124 @@ describe("lowerL1Stmt — block + assign + cond-stmt (M3 Patch 4)", () => {
     );
   });
 
-  it("iteration kinds throw with pointer to Patch 5", () => {
-    assert.throws(
-      () => lowerL1Stmt(ir1Foreach("x", ir1Var("xs"), ir1Return(null))),
-      /Patch 5/u,
-    );
+  it("deferred kinds (let/return/expr-stmt/while/for/throw) throw", () => {
+    // Patch 5 added foreach lowering; the remaining kinds defer to a
+    // follow-up patch (build-side + cutover work).
     assert.throws(
       () => lowerL1Stmt(ir1For(null, null, null, ir1Return(null))),
-      /Patch 5/u,
+      /deferred/u,
     );
-    assert.throws(() => lowerL1Stmt(ir1Throw(ir1Var("e"))), /Patch 5/u);
-    assert.throws(() => lowerL1Stmt(ir1ExprStmt(ir1Var("e"))), /Patch 5/u);
-    assert.throws(() => lowerL1Stmt(ir1Let("x", ir1LitNat(0))), /Patch 5/u);
-    assert.throws(() => lowerL1Stmt(ir1Return(null)), /Patch 5/u);
+    assert.throws(() => lowerL1Stmt(ir1Throw(ir1Var("e"))), /deferred/u);
+    assert.throws(() => lowerL1Stmt(ir1ExprStmt(ir1Var("e"))), /deferred/u);
+    assert.throws(() => lowerL1Stmt(ir1Let("x", ir1LitNat(0))), /deferred/u);
+    assert.throws(() => lowerL1Stmt(ir1Return(null)), /deferred/u);
     assert.throws(
       () => lowerL1Stmt(ir1While(ir1Var("g"), ir1Return(null))),
-      /Patch 5/u,
+      /deferred/u,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M3 Patch 5: lowerL1Foreach for Shape A
+// ---------------------------------------------------------------------------
+
+describe("lowerL1Foreach — Shape A (M3 Patch 5)", () => {
+  it("simple uniform write: for x in users { x.active = true }", () => {
+    const stmt = ir1Foreach(
+      "x",
+      "User",
+      ir1Var("users"),
+      ir1Assign(ir1Member(ir1Var("x"), "active"), ir1LitBool(true)),
+    );
+    const stmts = lowerL1Stmt(stmt);
+    assert.equal(stmts.length, 1);
+    const q = stmts[0]!;
+    assert.equal(q.kind, "quantified-stmt");
+    if (q.kind === "quantified-stmt") {
+      assert.equal(q.quantifiers.length, 1);
+      assert.equal(q.quantifiers[0]!.name, "x");
+      assert.equal(q.quantifiers[0]!.type, "User");
+      assert.equal(q.guards.length, 1); // in(x, users)
+    }
+    const result = emitStmt(stmts, { allocBinder: makeAlloc() });
+    assert.equal(result.equations.length, 1);
+    const ast = getAst();
+    const eq = lowerEquation(result.equations[0]!);
+    assert.equal(
+      ast.strExpr(
+        ast.forall(
+          eq.quantifiers,
+          eq.guards,
+          ast.binop(ast.opEq(), eq.lhs, eq.rhs),
+        ),
+      ),
+      "all x: User, x in users | active' x = true",
+    );
+  });
+
+  it("Shape A with guard: for x in users { if (g(x)) { x.active = true } }", () => {
+    const stmt = ir1Foreach(
+      "x",
+      "User",
+      ir1Var("users"),
+      ir1CondStmt(
+        [
+          [
+            ir1App(ir1Var("g"), [ir1Var("x")]),
+            ir1Assign(ir1Member(ir1Var("x"), "active"), ir1LitBool(true)),
+          ],
+        ],
+        null,
+      ),
+    );
+    const stmts = lowerL1Stmt(stmt);
+    assert.equal(stmts.length, 1);
+    const q = stmts[0]!;
+    if (q.kind === "quantified-stmt") {
+      assert.equal(q.guards.length, 2); // in(x, users) + g(x)
+    }
+  });
+
+  it("rejects multi-armed cond inside foreach body", () => {
+    const stmt = ir1Foreach(
+      "x",
+      "User",
+      ir1Var("users"),
+      ir1CondStmt(
+        [
+          [
+            ir1Var("g"),
+            ir1Assign(ir1Member(ir1Var("x"), "p"), ir1LitNat(1)),
+          ],
+        ],
+        ir1Assign(ir1Member(ir1Var("x"), "p"), ir1LitNat(2)),
+      ),
+    );
+    assert.throws(() => lowerL1Stmt(stmt), /multi-armed or with-else/);
+  });
+
+  it("rejects body that isn't Shape A", () => {
+    const stmt = ir1Foreach("x", "T", ir1Var("xs"), ir1Return(null));
+    assert.throws(() => lowerL1Stmt(stmt), /Shape A|return/);
+  });
+
+  it("multi-statement Shape A body: block of writes", () => {
+    const stmt = ir1Foreach(
+      "x",
+      "User",
+      ir1Var("users"),
+      ir1Block([
+        ir1Assign(ir1Member(ir1Var("x"), "active"), ir1LitBool(true)),
+        ir1Assign(
+          ir1Member(ir1Var("x"), "checkedAt"),
+          ir1LitNat(0),
+        ),
+      ]),
+    );
+    const stmts = lowerL1Stmt(stmt);
+    const result = emitStmt(stmts, { allocBinder: makeAlloc() });
+    assert.equal(result.equations.length, 2);
+    assert.deepEqual([...result.modifiedProps], ["active", "checkedAt"]);
   });
 });

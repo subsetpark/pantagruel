@@ -159,10 +159,19 @@ export type IR1Stmt =
       ];
       otherwise: IR1Stmt | null;
     }
-  /** Uniform iteration. Introduced in M3. */
+  /**
+   * Uniform iteration over a typed source. The `binderType` field carries
+   * the iterator's element type (Pant name) so the L1 → L2 lowering can
+   * synthesize the `all x: T, x in src | …` envelope without re-running TS
+   * type inference. Build-side is responsible for populating it from
+   * `checker.getTypeAtLocation`.
+   *
+   * Introduced (vocabulary) in M1; lowering active in M3.
+   */
   | {
       kind: "foreach";
       binder: string;
+      binderType: string;
       source: IR1Expr;
       body: IR1Stmt;
     }
@@ -353,9 +362,10 @@ export const ir1CondStmt = (
 
 export const ir1Foreach = (
   binder: string,
+  binderType: string,
   source: IR1Expr,
   body: IR1Stmt,
-): IR1Stmt => ({ kind: "foreach", binder, source, body });
+): IR1Stmt => ({ kind: "foreach", binder, binderType, source, body });
 
 export const ir1For = (
   init: IR1Stmt | null,
