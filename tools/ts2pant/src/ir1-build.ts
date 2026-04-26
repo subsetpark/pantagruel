@@ -63,6 +63,7 @@ import type {
 import {
   bodyExpr,
   expressionHasSideEffects,
+  expressionReferencesNames,
   extractReturnFromBranch,
   isBodyUnsupported,
   translateBodyExpr,
@@ -858,6 +859,19 @@ export function buildL1LetWhile(
   mu: MuSearch,
   ctx: L1BuildContext,
 ): L1StmtBuildResult {
+  // Structural sanity: a let+while pair where the while predicate
+  // doesn't reference the let-bound counter is either a no-op or
+  // a divergent loop. Reject at build time on the TS expression
+  // (free-var walk is straightforward there); post-translation the
+  // predicate is wrapped in `from-l2(irWrap(OpaqueExpr))` and the
+  // equivalent check would need a wasm helper to introspect OpaqueExpr.
+  if (
+    !expressionReferencesNames(mu.predicateTsExpr, new Set([mu.counterName]))
+  ) {
+    return {
+      unsupported: "while predicate does not reference the let-bound counter",
+    };
+  }
   const init = buildSubExpr(mu.initTsExpr, ctx);
   if (isL1Unsupported(init)) {
     return init;

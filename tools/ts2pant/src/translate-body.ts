@@ -2345,7 +2345,7 @@ function blockHasNoSideEffects(
  *  shadow outer bindings, so `xs.some(i => i > 0)` does not report dependence
  *  on an outer `i`. Default-value expressions and property-access `.name`
  *  tokens are handled specially. */
-function expressionReferencesNames(
+export function expressionReferencesNames(
   expr: ts.Expression,
   names: Set<string>,
 ): boolean {

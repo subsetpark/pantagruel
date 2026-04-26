@@ -28,12 +28,17 @@ import {
   irAppExpr,
   irAppName,
   irBinop,
+  irCombTyped,
   irCond,
   irLitBool,
   irUnop,
   irVar,
+  irWrap,
 } from "./ir.js";
+import { lowerExpr } from "./ir-emit.js";
 import type { IR1Expr, IR1Stmt } from "./ir1.js";
+import { getAst } from "./pant-wasm.js";
+import type { NumericStrategy } from "./translate-types.js";
 
 /**
  * Lower a Layer 1 expression to Layer 2 `IRExpr`.
@@ -182,4 +187,140 @@ export function isCanonicalMuSearchForm(
     return { unsupported: "step is not a canonical `+1` increment" };
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// μ-search L1 → L2 lowering (M2 cleanup)
+//
+// `lowerL1MuSearch` is the single source of μ-search semantics. It
+// pattern-matches the canonical L1 form, validates the predicate
+// references the counter and the strategy is discrete, and produces
+// an L2 `comb-typed` expression. The L2 → OpaqueExpr step in
+// `ir-emit.ts` produces the same `min over each j: T, j >= INIT,
+// ¬P(j) | j` shape today's legacy `translateMuSearchInit` emits —
+// byte-equality is the cutover gate.
+//
+// The substitution counter→binder happens on the lowered OpaqueExpr
+// via `ast.substituteBinder` (Pant's capture-avoiding substitution
+// at the wasm layer) rather than re-translating the predicate under
+// a new scope. One translation per sub-expression — no double work.
+// ---------------------------------------------------------------------------
+
+/**
+ * Context for μ-search lowering. The binder allocator is a callback
+ * because the production path uses the synthCell-aware
+ * `cellRegisterName` (collision-safe against the document-wide
+ * NameRegistry) and standalone test paths fall back to a numeric
+ * supply with collision checks against `scopedParams`. Threading the
+ * synthCell + supply directly would couple `ir1-lower.ts` to
+ * `translate-body.ts` internals; the callback inverts the dependency.
+ */
+export interface MuSearchLowerCtx {
+  strategy: NumericStrategy;
+  /**
+   * Pant name for the counter in the current translation scope.
+   * Typically `scopedParams.get(counterName) ?? counterName`. Used
+   * as the variable name to substitute on the lowered predicate.
+   */
+  counterPantName: string;
+  /** Allocate a fresh binder name (e.g., `j`, `j1`, …). */
+  allocateBinder(hint: string): string;
+}
+
+/**
+ * Extract the L2 IRExpr from an L1 `from-l2` wrap, or return null if
+ * the L1 expression is not a `from-l2`.
+ */
+function extractFromL2(e: IR1Expr): IRExpr | null {
+  return e.kind === "from-l2" ? e.expr : null;
+}
+
+/**
+ * Lower an L1 μ-search-shaped form to an L2 `comb-typed`. Validates
+ * canonical shape, predicate-references-counter, and strategy.
+ *
+ * Caller responsibility: build the L1 form via `buildL1LetWhile`
+ * (which translates init and predicate sub-expressions through the
+ * legacy `translateBodyExpr` pipeline and wraps via `from-l2`).
+ *
+ * Returns `IRExpr` (an L2 `comb-typed`) on success, or
+ * `{ unsupported }` with a specific reason.
+ */
+export function lowerL1MuSearch(
+  form: IR1Stmt,
+  counterName: string,
+  ctx: MuSearchLowerCtx,
+): IRExpr | { unsupported: string } {
+  const rejection = isCanonicalMuSearchForm(form, counterName);
+  if (rejection !== null) {
+    return rejection;
+  }
+  // Strategy must be discrete. μ-search enumerates `INIT, INIT+1, …`;
+  // a Real binder would range over a dense domain and diverge from
+  // that semantics.
+  const counterType = ctx.strategy.mapNumber();
+  if (counterType === "Real") {
+    return {
+      unsupported:
+        "μ-search is only supported for discrete numeric strategies (got Real)",
+    };
+  }
+  // After `isCanonicalMuSearchForm` has validated, we know the form
+  // shape: Block([Let(c, init), While(p, Assign(c, c + 1))]).
+  // Re-destructure to extract the init and predicate sub-expressions.
+  if (form.kind !== "block" || form.stmts.length !== 2) {
+    // Unreachable — the canonical-shape check above already verified
+    // this. Defense in depth.
+    return { unsupported: "μ-search prelude shape changed unexpectedly" };
+  }
+  const letStmt = form.stmts[0];
+  const whileStmt = form.stmts[1]!;
+  if (letStmt.kind !== "let" || whileStmt.kind !== "while") {
+    return { unsupported: "μ-search prelude shape changed unexpectedly" };
+  }
+  // The init and predicate are wrapped in `from-l2` by
+  // `buildL1LetWhile` because their internal structure is not L1's
+  // concern (M1 / M2 architectural commitment). Unwrap them here.
+  const initL2 = extractFromL2(letStmt.value);
+  if (initL2 === null) {
+    return {
+      unsupported: "μ-search init is not a from-l2 wrap (build pipeline error)",
+    };
+  }
+  const predicateL2 = extractFromL2(whileStmt.cond);
+  if (predicateL2 === null) {
+    return {
+      unsupported:
+        "μ-search predicate is not a from-l2 wrap (build pipeline error)",
+    };
+  }
+  // Predicate-references-counter is a precondition checked at L1
+  // build time (see `buildL1LetWhile` in `ir1-build.ts`). Skipping
+  // here — the lowering trusts that the L1 form represents a
+  // well-formed let+while pair.
+  const ast = getAst();
+  const predicateOpaque = lowerExpr(predicateL2);
+  // Allocate the comprehension binder and substitute counter → binder
+  // on the lowered predicate. `substituteBinder` is Pant's
+  // capture-avoiding substitution at the wasm layer; it traverses
+  // OpaqueExpr correctly (the L2 IR cannot — `irWrap` holds an
+  // opaque expression that `substIR` refuses to enter).
+  const binder = ctx.allocateBinder("j");
+  const substitutedPredicate = ast.substituteBinder(
+    predicateOpaque,
+    ctx.counterPantName,
+    ast.var(binder),
+  );
+  // Build the L2 comb-typed:
+  //   min over each j: T, j >= INIT, ¬P[c := j] | j
+  return irCombTyped(
+    "min",
+    binder,
+    counterType,
+    [
+      irBinop("ge", irVar(binder), initL2),
+      irUnop("not", irWrap(substitutedPredicate)),
+    ],
+    irVar(binder),
+  );
 }
