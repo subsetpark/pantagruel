@@ -703,14 +703,32 @@ every union/intersection constituent to satisfy `BooleanLike`).
 via `buildL1IncrementStep` in `ir1-build.ts`. The five `+1` spellings
 (`i++`, `++i`, `i += 1`, `i = i + 1`, `i = 1 + i`) produce *byte-
 identical* L1 output — that's the M2 architectural promise. μ-search
-recognition moves to L1: the TS-AST `recognizeLetWhilePair` is purely
-structural (consume let + while as a unit); the canonical-shape
-check (`BinOp(add, Var(c), Lit(1))`), predicate-references-counter
-check, and discrete-strategy check all live in the L1 path
-(`isCanonicalMuSearchForm` in `ir1-lower.ts` + the unified
-`translateMuSearchInit` body). Legacy `translateMuSearchInitLegacy`
-is deleted. Three additional `+1` spellings now translate (was just
-`i++`/`++i` pre-M2).
+recognition and lowering live entirely in the L1/L2 layers
+(`isCanonicalMuSearchForm` and `lowerL1MuSearch` in `ir1-lower.ts`,
+producing an L2 `comb-typed` expression that emits to OpaqueExpr in
+`ir-emit.ts`). The TS-AST `recognizeLetWhilePair` is purely
+structural (consumes the let + while pair) — `translate-body.ts`
+carries no Pantagruel-target awareness for μ-search. Three
+additional `+1` spellings now translate (was just `i++`/`++i`
+pre-M2).
+
+**Layering principle.** This is the architectural commitment that
+M2 ratifies and the M2 cleanup completes:
+
+1. **L1** (`ir1.ts`, `ir1-build.ts`) — canonicalized TypeScript
+   syntax. No Pantagruel-target awareness.
+2. **L1 → L2 lowering** (`ir1-lower.ts`) — the *only* layer that
+   knows Pantagruel-target patterns (μ-search recognition,
+   counter-binder substitution).
+3. **L2** (`ir.ts`) — Pantagruel-shaped expression IR. Includes
+   `comb-typed` for source-less typed comprehension (μ-search's
+   target).
+4. **L2 → OpaqueExpr** (`ir-emit.ts`) — mechanical emission.
+5. **`translate-body.ts`** — TS-AST orchestrator. Wires lowering
+   contexts; no target-language semantics.
+
+Deviations from this principle should be flagged in review and
+either justified explicitly or refactored.
 
 **The `from-l2` adapter** (`ir1.ts`'s `IR1Expr.from-l2`) is the explicit
 transitional mechanism for sub-expressions whose normalization is not

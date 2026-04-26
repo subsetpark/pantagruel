@@ -184,6 +184,32 @@ method-shadowing cases are more specific than the old "not a
 recognized μ-search" (now "predicate does not reference the counter"
 or "predicate has side effects") and tests were updated.
 
+**M2 cleanup (post-cutover follow-up)**: in the same PR, four
+additional commits move μ-search lowering entirely out of
+`translate-body.ts`. Articulated principle: *"L1 should be entirely
+concerned with the syntax of TypeScript; it should be completely
+unopinionated and ignorant about how TypeScript's semantics are
+translated into specific lowerings."* Concretely:
+
+- L2 gains a new `comb-typed` form for source-less typed
+  comprehension — the missing vocabulary that legacy
+  `translateMuSearchInit` worked around by going directly to
+  OpaqueExpr.
+- `lowerL1MuSearch` lands in `ir1-lower.ts` carrying all μ-search
+  semantics: canonical-shape pattern match, strategy validation,
+  binder allocation (via callback), counter-binder substitution
+  (via Pant's `substituteBinder` on the lowered OpaqueExpr).
+- `buildL1LetWhile` adds the predicate-references-counter check
+  as a structural sanity check on the let+while pair.
+- `translateMuSearchInit` shrinks to a thin orchestrator that
+  wires the lowering context and delegates to the L1 → L2 →
+  OpaqueExpr pipeline. No Pantagruel-target awareness.
+
+Snapshot byte-equality preserved across all 8 μ-search fixtures.
+translate-body.ts net −60 lines. Side benefit: predicate is now
+translated once at L1 build (rather than twice as in pre-cleanup
+M2) — substitution happens on the lowered OpaqueExpr.
+
 **Definition of Done**:
 - `ir1-build.ts` extends to translate increment surface forms: `i++`, `++i`,
   `i--`, `--i`, `i += k`, `-=`, `*=`, `/=`, `%=`, `i = i ⊕ k` (commutative
