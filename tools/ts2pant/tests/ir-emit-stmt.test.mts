@@ -4,6 +4,7 @@ import {
   type IRStmt,
   type IRWriteTarget,
   irBinop,
+  irGuardIn,
   irLitNat,
   irLitString,
   irStmtAssert,
@@ -630,7 +631,7 @@ describe("emitStmt — quantified-stmt envelope (Shape A target)", () => {
     const body = irStmtWrite(target, irBinop("eq", irLitNat(1), irLitNat(1))); // dummy expr
     const wrapped = irStmtQuantified(
       [{ name: "x", type: "User" }],
-      [irBinop("in", irVar("x"), irVar("users"))],
+      [irGuardIn("x", irVar("users"))],
       body,
     );
     const result = emitStmt(wrapped, ctx());
@@ -651,7 +652,7 @@ describe("emitStmt — quantified-stmt envelope (Shape A target)", () => {
     };
     const wrapped = irStmtQuantified(
       [{ name: "x", type: "User" }],
-      [irBinop("in", irVar("x"), irVar("users"))],
+      [irGuardIn("x", irVar("users"))],
       irStmtWrite(target, irLitString("on")),
     );
     const result = emitStmt(wrapped, ctx());
@@ -680,12 +681,12 @@ describe("emitStmt — quantified-stmt envelope (Shape A target)", () => {
     };
     const inner = irStmtQuantified(
       [{ name: "y", type: "Item" }],
-      [irBinop("in", irVar("y"), irVar("items"))],
+      [irGuardIn("y", irVar("items"))],
       irStmtWrite(target, irLitNat(1)),
     );
     const outer = irStmtQuantified(
       [{ name: "x", type: "User" }],
-      [irBinop("in", irVar("x"), irVar("users"))],
+      [irGuardIn("x", irVar("users"))],
       inner,
     );
     const result = emitStmt(outer, ctx());
@@ -711,7 +712,7 @@ describe("emitStmt — quantified-stmt envelope (Shape A target)", () => {
     };
     const wrapped = irStmtQuantified(
       [{ name: "x", type: "T" }],
-      [irBinop("in", irVar("x"), irVar("xs"))],
+      [irGuardIn("x", irVar("xs"))],
       irStmtSeq([irStmtWrite(tA, irLitNat(1)), irStmtWrite(tB, irLitNat(2))]),
     );
     const result = emitStmt(wrapped, ctx());
@@ -737,7 +738,7 @@ describe("emitStmt — quantified-stmt envelope (Shape A target)", () => {
     };
     const wrapped = irStmtQuantified(
       [{ name: "x", type: "Card" }],
-      [irBinop("in", irVar("x"), irVar("cards"))],
+      [irGuardIn("x", irVar("cards"))],
       irStmtWrite(target, null),
     );
     const result = emitStmt(wrapped, ctx());

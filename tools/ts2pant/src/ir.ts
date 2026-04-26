@@ -327,7 +327,7 @@ export type IRStmt =
   | {
       kind: "quantified-stmt";
       quantifiers: Array<{ name: string; type: string }>;
-      guards: IRExpr[];
+      guards: IRGuard[];
       body: IRStmt;
     };
 
@@ -363,16 +363,50 @@ export interface IRBody {
  * non-empty for the `all m, k | R' m k = ...` shape from Map/Set
  * mutation.
  */
+/**
+ * Guards on quantified equations and assertions. Two flavors that
+ * Pantagruel distinguishes structurally:
+ *
+ * - `expr`: a Bool predicate guard that lowers via `ast.gExpr`. The
+ *   binder must already be in scope (typically from a quantifier or a
+ *   sibling `in` guard).
+ * - `in`: a binder-introducing guard that lowers via `ast.gIn`. The
+ *   binder enters scope here, with the quantification ranging over the
+ *   `src` collection. Canonical for Shape A iteration emission, where
+ *   the iterator binder is introduced through the iteration source
+ *   rather than via a typed quantifier.
+ *
+ * Distinct guard kinds matter because legacy iteration emission relies
+ * on `gIn` to produce `all x in src | …` (no typed quantifier on `x`),
+ * while predicate guards produce `all p1: T | <pred> => …`. The IR
+ * layer needs both forms to round-trip the legacy output shape
+ * exactly.
+ */
+export type IRGuard =
+  | { kind: "expr"; expr: IRExpr }
+  | { kind: "in"; binder: string; src: IRExpr };
+
+export const irGuardExpr = (expr: IRExpr): IRGuard => ({
+  kind: "expr",
+  expr,
+});
+
+export const irGuardIn = (binder: string, src: IRExpr): IRGuard => ({
+  kind: "in",
+  binder,
+  src,
+});
+
 export interface IREquation {
   quantifiers: Array<{ name: string; type: string }>;
-  guards?: IRExpr[];
+  guards?: IRGuard[];
   lhs: IRExpr;
   rhs: IRExpr;
 }
 
 export interface IRAssertExit {
   quantifiers: Array<{ name: string; type: string }>;
-  guards?: IRExpr[];
+  guards?: IRGuard[];
   body: IRExpr;
 }
 
@@ -570,7 +604,7 @@ export const irStmtAssert = (
 
 export const irStmtQuantified = (
   quantifiers: Array<{ name: string; type: string }>,
-  guards: IRExpr[],
+  guards: IRGuard[],
   body: IRStmt,
 ): IRStmt => ({ kind: "quantified-stmt", quantifiers, guards, body });
 

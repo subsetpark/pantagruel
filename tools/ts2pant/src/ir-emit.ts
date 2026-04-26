@@ -21,6 +21,7 @@ import {
   type IREquation,
   type IRExpr,
   type IRFoldCombiner,
+  type IRGuard,
   type IRHead,
   type IRStmt,
   type IRUnop,
@@ -352,6 +353,21 @@ function isIdentityFor(c: IRFoldCombiner, init: IRExpr): boolean {
  * Lower an `IREquation` to a `PropResult`-shaped object suitable for
  * pushing into the propositions array. Caller wraps in `kind: "equation"`.
  */
+function lowerGuard(g: IRGuard): OpaqueGuard {
+  const ast = getAst();
+  switch (g.kind) {
+    case "expr":
+      return ast.gExpr(lowerExpr(g.expr));
+    case "in":
+      return ast.gIn(g.binder, lowerExpr(g.src));
+    default: {
+      const _exhaustive: never = g;
+      void _exhaustive;
+      throw new Error("unreachable: IRGuard");
+    }
+  }
+}
+
 export function lowerEquation(eq: IREquation): {
   quantifiers: OpaqueParam[];
   guards: OpaqueGuard[];
@@ -363,7 +379,7 @@ export function lowerEquation(eq: IREquation): {
     quantifiers: eq.quantifiers.map((q) =>
       ast.param(q.name, ast.tName(q.type)),
     ),
-    guards: (eq.guards ?? []).map((g) => ast.gExpr(lowerExpr(g))),
+    guards: (eq.guards ?? []).map(lowerGuard),
     lhs: lowerExpr(eq.lhs),
     rhs: lowerExpr(eq.rhs),
   };
@@ -377,7 +393,7 @@ export function lowerAssert(a: IRAssertExit): {
   const ast = getAst();
   return {
     quantifiers: a.quantifiers.map((q) => ast.param(q.name, ast.tName(q.type))),
-    guards: (a.guards ?? []).map((g) => ast.gExpr(lowerExpr(g))),
+    guards: (a.guards ?? []).map(lowerGuard),
     body: lowerExpr(a.body),
   };
 }

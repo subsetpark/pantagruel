@@ -554,10 +554,10 @@ describe("lowerL1Foreach — Shape A (M3 Patch 5)", () => {
     const q = stmts[0]!;
     assert.equal(q.kind, "quantified-stmt");
     if (q.kind === "quantified-stmt") {
-      assert.equal(q.quantifiers.length, 1);
-      assert.equal(q.quantifiers[0]!.name, "x");
-      assert.equal(q.quantifiers[0]!.type, "User");
-      assert.equal(q.guards.length, 1); // in(x, users)
+      // Empty quantifiers — binder enters scope through gIn guard.
+      assert.equal(q.quantifiers.length, 0);
+      assert.equal(q.guards.length, 1);
+      assert.equal(q.guards[0]!.kind, "in");
     }
     const result = emitStmt(stmts, { allocBinder: makeAlloc() });
     assert.equal(result.equations.length, 1);
@@ -571,7 +571,7 @@ describe("lowerL1Foreach — Shape A (M3 Patch 5)", () => {
           ast.binop(ast.opEq(), eq.lhs, eq.rhs),
         ),
       ),
-      "all x: User, x in users | active' x = true",
+      "all x in users | active' x = true",
     );
   });
 

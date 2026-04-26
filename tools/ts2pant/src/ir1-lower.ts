@@ -24,12 +24,15 @@
 
 import {
   type IRExpr,
+  type IRGuard,
   type IRStmt,
   irAppExpr,
   irAppName,
   irBinop,
   irCombTyped,
   irCond,
+  irGuardExpr,
+  irGuardIn,
   irLitBool,
   irStmtSeq,
   irStmtWrite,
@@ -236,13 +239,15 @@ export function lowerL1Stmt(s: IR1Stmt): IRStmt[] {
 // ---------------------------------------------------------------------------
 
 function lowerL1Foreach(s: Extract<IR1Stmt, { kind: "foreach" }>): IRStmt[] {
-  const inGuard = irBinop("in", irVar(s.binder), lowerL1Expr(s.source));
+  // The iteration source becomes a binder-introducing `gIn` guard,
+  // matching legacy emission `all x in src | …` (no typed quantifier
+  // on x — Pantagruel infers x's type from the source).
+  const guards: IRGuard[] = [irGuardIn(s.binder, lowerL1Expr(s.source))];
   // Strip a single-armed guard cond-stmt at the top of the body
   // (Shape A with guard). Multi-armed cond inside a foreach is
   // structurally suspicious — reject for now (workstream open
   // question).
   let body = s.body;
-  const extraGuards: IRExpr[] = [inGuard];
   if (body.kind === "cond-stmt") {
     if (body.arms.length !== 1 || body.otherwise !== null) {
       throw new Error(
@@ -252,15 +257,13 @@ function lowerL1Foreach(s: Extract<IR1Stmt, { kind: "foreach" }>): IRStmt[] {
       );
     }
     const [g, innerBody] = body.arms[0]!;
-    extraGuards.push(lowerL1Expr(g));
+    guards.push(irGuardExpr(lowerL1Expr(g)));
     body = innerBody;
   }
   // Body must be either a single member-target assign or a block of
   // such assigns.
   validateShapeABody(body);
   const loweredBody = lowerL1Stmt(body);
-  // Wrap the (possibly multi-statement) body in a `seq` if needed,
-  // then wrap that in `quantified-stmt`.
   const innerStmt: IRStmt =
     loweredBody.length === 1
       ? loweredBody[0]!
@@ -268,8 +271,11 @@ function lowerL1Foreach(s: Extract<IR1Stmt, { kind: "foreach" }>): IRStmt[] {
   return [
     {
       kind: "quantified-stmt",
-      quantifiers: [{ name: s.binder, type: s.binderType }],
-      guards: extraGuards,
+      // Empty quantifiers: the binder enters scope through the gIn
+      // guard, not through a typed quantifier. Matches legacy
+      // emission shape exactly.
+      quantifiers: [],
+      guards,
       body: innerStmt,
     },
   ];
