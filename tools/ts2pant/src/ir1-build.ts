@@ -633,7 +633,7 @@ export const isL1StmtUnsupported = (
  *
  *  - `c++` / `++c` → `Assign(Var(c), BinOp(add, Var(c), Lit(1)))`
  *  - `c--` / `--c` → `Assign(Var(c), BinOp(sub, Var(c), Lit(1)))`
- *  - `c += k`, `c -= k`, `c *= k`, `c /= k`, `c %= k`
+ *  - `c += k`, `c -= k`, `c *= k`, `c /= k`
  *      → `Assign(Var(c), BinOp(<op>, Var(c), <k>))`
  *  - `c = c ⊕ k` / `c = k ⊕ c` (commutative `⊕`)
  *      → `Assign(Var(c), BinOp(<op>, Var(c), <k>))`
@@ -679,7 +679,7 @@ export function buildL1IncrementStep(
 
   const opKind = expr.operatorToken.kind;
 
-  // Compound assignments: `c += k`, `c -= k`, `c *= k`, `c /= k`, `c %= k`
+  // Compound assignments: `c += k`, `c -= k`, `c *= k`, `c /= k`
   const compoundOp = compoundOpToBinop(opKind);
   if (compoundOp !== null) {
     if (!ts.isIdentifier(expr.left) || expr.left.text !== counterName) {

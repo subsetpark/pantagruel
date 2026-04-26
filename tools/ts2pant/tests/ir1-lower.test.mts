@@ -3,6 +3,7 @@ import { before, describe, it } from "node:test";
 import {
   irAppName,
   irBinop,
+  irCombTyped,
   irCond,
   irLitBool,
   irLitNat,
@@ -397,9 +398,7 @@ describe("active statement constructors (block, let, return)", () => {
 // ---------------------------------------------------------------------------
 
 describe("L2 comb-typed form (typed comprehension)", () => {
-  it("min over each j: Int, j >= 1, ¬p(j) | j → eachComb with typed param", async () => {
-    const { irBinop, irLitNat, irUnop, irVar, irAppName, irCombTyped } =
-      await import("../src/ir.js");
+  it("min over each j: Int, j >= 1, ¬p(j) | j → eachComb with typed param", () => {
     const ast = getAst();
     const l2 = irCombTyped(
       "min",
@@ -418,9 +417,7 @@ describe("L2 comb-typed form (typed comprehension)", () => {
     );
   });
 
-  it("byte-equality with a hand-built legacy eachComb", async () => {
-    const { irBinop, irLitNat, irUnop, irVar, irAppName, irCombTyped } =
-      await import("../src/ir.js");
+  it("byte-equality with a hand-built legacy eachComb", () => {
     const ast = getAst();
     // Hand-built legacy form — what today's translateMuSearchInit emits.
     const legacy = ast.eachComb(
@@ -445,14 +442,11 @@ describe("L2 comb-typed form (typed comprehension)", () => {
     assert.equal(ast.strExpr(lowerExpr(l2)), ast.strExpr(legacy));
   });
 
-  it("max combiner accepted (forbids init at type level)", async () => {
-    const { irLitNat, irVar, irCombTyped } = await import("../src/ir.js");
+  it("max combiner accepted (forbids init at type level)", () => {
     const ast = getAst();
     const l2 = irCombTyped("max", "k", "Nat", [], irVar("k"));
     const lowered = lowerExpr(l2);
     // No guards beyond the typed binder.
     assert.match(ast.strExpr(lowered), /max over each k: Nat \| k/);
-    // Suppress unused var warning.
-    void irLitNat;
   });
 });
