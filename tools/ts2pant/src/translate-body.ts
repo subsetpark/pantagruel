@@ -13,7 +13,7 @@ import {
   isL1Unsupported,
   lowerL1ToOpaque,
 } from "./ir1-build.js";
-import { isCanonicalMuSearchForm } from "./ir1-lower.js";
+import { lowerL1MuSearch, type MuSearchLowerCtx } from "./ir1-lower.js";
 import type {
   OpaqueCombiner,
   OpaqueExpr,
@@ -2104,14 +2104,18 @@ function translateBindingInit(
 }
 
 /**
- * Emit a `min over each j: Int, j >= init, ~P(j) | j` expression for a
- * recognized μ-search binding (binder type follows `strategy.mapNumber()`).
- * A fresh comprehension binder takes the place of the loop counter inside
- * the predicate. The binder is allocated through the document-wide name
- * registry (when present) so it never collides with the function's own
- * params or with type-derived rule binders; the `$N` `freshHygienicBinder`
- * form would not round-trip through Pantagruel's parser since `$` isn't a
- * legal identifier character.
+ * Translate a recognized μ-search prelude binding to an OpaqueExpr.
+ * Pure orchestrator — builds the canonical L1 form, hands off to
+ * `lowerL1MuSearch` for the L1 → L2 lowering (which carries all
+ * μ-search semantics), and lowers the L2 result to OpaqueExpr.
+ *
+ * Per the layering principle (workstream `ts2pant-imperative-ir.md`):
+ * `translate-body.ts` has no Pantagruel-target awareness for μ-search.
+ * The canonical-shape check, strategy validation, binder allocation,
+ * predicate substitution, and `comb-typed` construction all live in
+ * `ir1-lower.ts:lowerL1MuSearch`. This function only wires the
+ * lowering context — including the synthCell-aware binder allocator
+ * that needs translate-body's internal supply / scopedParams state.
  */
 function translateMuSearchInit(
   mu: MuSearch,
@@ -2121,112 +2125,47 @@ function translateMuSearchInit(
   state: SymbolicState | undefined,
   supply: UniqueSupply,
 ): BindingInitResult {
-  const ast = getAst();
-
-  // L1 imperative-IR path. Build the canonical L1 form
-  // `Block([Let(c, init), While(p, Assign(c, BinOp(add, c, Lit(1))))])`
-  // and validate via the L1 recognizer. The recognizer is the canonical
-  // home for the canonical-shape check (step is `+1`); the TS-AST
-  // `recognizeLetWhilePair` is purely structural. Predicate-references-
-  // counter and discrete-strategy checks live below as semantic gates.
-  const l1Ctx = {
+  const buildCtx = {
     checker,
     strategy,
     paramNames: scopedParams,
     state,
     supply,
   };
-  const form = buildL1LetWhile(mu, l1Ctx);
+  const form = buildL1LetWhile(mu, buildCtx);
   if (isL1StmtUnsupported(form)) {
     return { error: form.unsupported };
   }
-  const rejection = isCanonicalMuSearchForm(form, mu.counterName);
-  if (rejection !== null) {
-    return { error: rejection.unsupported };
-  }
-
-  // Predicate must reference the counter; otherwise the loop is either
-  // a no-op or a divergence, neither of which is a μ-search. Translating
-  // such a shape as `min over each j: Int, j >= INIT, ~Q | j` (with Q
-  // free of j) changes behavior at the non-terminating case.
-  if (
-    !expressionReferencesNames(mu.predicateTsExpr, new Set([mu.counterName]))
-  ) {
-    return {
-      error: "μ-search predicate does not reference the counter",
-    };
-  }
-
-  // Binder type follows the active NumericStrategy so the comprehension
-  // stays consistent with how `number` is emitted elsewhere. A hardcoded
-  // `Nat` would exclude negative INITs from the search domain and
-  // diverge from the containing body's numeric type. Real is rejected:
-  // μ-search enumerates the discrete sequence `INIT, INIT+1, …` from
-  // `counter++`, whereas `min over each j: Real, j >= INIT, ~P(j) | j`
-  // ranges over a dense domain — e.g. `while (i * i < 2) i++` would
-  // return √2 instead of 2.
-  const counterType = strategy.mapNumber();
-  if (counterType === "Real") {
-    return {
-      error:
-        "μ-search is only supported for discrete numeric strategies (got Real)",
-    };
-  }
-
-  // Translate the init expression for the comprehension's `j >= INIT` guard.
-  const initResult = translateBodyExpr(
-    mu.initTsExpr,
-    checker,
+  const lowerCtx: MuSearchLowerCtx = {
     strategy,
-    scopedParams,
-    state,
-    supply,
-  );
-  if (isBodyUnsupported(initResult)) {
-    return { error: initResult.unsupported };
-  }
-  const initExpr = bodyExpr(initResult);
-
-  // `synthCell` path uses the document-wide NameRegistry (kebab-cased,
-  // numeric-suffixed) and is inherently collision-safe against other
-  // registered names. The standalone fallback has to guard itself against
-  // the current frame's Pant names — `scopedParams.values()` is the set
-  // the comprehension binder must avoid so predicate translation cannot
-  // alias a param to the fresh binder.
-  let jName: string;
-  if (supply.synthCell) {
-    jName = cellRegisterName(supply.synthCell, "j");
-  } else {
-    const usedNames = new Set(scopedParams.values());
-    do {
-      jName = `j${nextSupply(supply)}`;
-    } while (usedNames.has(jName));
-  }
-  const predicateScope = withParam(scopedParams, mu.counterName, jName);
-  const predResult = translateBodyExpr(
-    mu.predicateTsExpr,
-    checker,
-    strategy,
-    predicateScope,
-    state,
-    supply,
-  );
-  if (isBodyUnsupported(predResult)) {
-    return { error: predResult.unsupported };
-  }
-  const predExpr = bodyExpr(predResult);
-
-  return {
-    value: ast.eachComb(
-      [ast.param(jName, ast.tName(counterType))],
-      [
-        ast.gExpr(ast.binop(ast.opGe(), ast.var(jName), initExpr)),
-        ast.gExpr(ast.unop(ast.opNot(), predExpr)),
-      ],
-      ast.combMin(),
-      ast.var(jName),
-    ),
+    counterPantName: scopedParams.get(mu.counterName) ?? mu.counterName,
+    allocateBinder: (hint) => {
+      // synthCell path: document-wide NameRegistry (kebab-cased,
+      // numeric-suffixed) — collision-safe across the document.
+      if (supply.synthCell) {
+        return cellRegisterName(supply.synthCell, hint);
+      }
+      // Standalone fallback: avoid colliding with the current frame's
+      // Pant names so predicate substitution can't alias a param.
+      const usedNames = new Set(scopedParams.values());
+      let name: string;
+      do {
+        name = `${hint}${nextSupply(supply)}`;
+      } while (usedNames.has(name));
+      return name;
+    },
   };
+  const lowered = lowerL1MuSearch(form, mu.counterName, lowerCtx);
+  if (isLowerUnsupported(lowered)) {
+    return { error: lowered.unsupported };
+  }
+  return { value: lowerExpr(lowered) };
+}
+
+function isLowerUnsupported(
+  r: IRExpr | { unsupported: string },
+): r is { unsupported: string } {
+  return typeof r === "object" && r !== null && "unsupported" in r;
 }
 
 function isGuardStatement(
