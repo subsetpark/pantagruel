@@ -987,7 +987,16 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
-    assert.ok(props.some((p) => p.kind === "unsupported"));
+    assert.ok(
+      props.some(
+        (p) =>
+          p.kind === "unsupported" &&
+          /guarded Shape A iterator write is not supported alongside a Shape B fold leaf/.test(
+            p.reason,
+          ),
+      ),
+      "expected the guarded-Shape-A + Shape-B-fold rejection",
+    );
   });
 
   it("rejects forEach with default-value parameter", () => {
@@ -1251,7 +1260,14 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
-    assert.ok(props.some((p) => p.kind === "unsupported"));
+    assert.ok(
+      props.some(
+        (p) =>
+          p.kind === "unsupported" &&
+          /foreach body cannot contain a set-effect statement/.test(p.reason),
+      ),
+      "expected the ensureForeachBodyShape rejection for set-effect",
+    );
   });
 
   it("rejects a foreach inside an if-branch (build-pass rejection)", () => {
@@ -1277,7 +1293,16 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
-    assert.ok(props.some((p) => p.kind === "unsupported"));
+    assert.ok(
+      props.some(
+        (p) =>
+          p.kind === "unsupported" &&
+          /branch body must be a property assignment, Map\/Set effect, or nested if/.test(
+            p.reason,
+          ),
+      ),
+      "expected the buildL1MutationBody branch-shape rejection",
+    );
   });
 
   it("rejects simple-assign fold (requires compound assignment)", () => {
