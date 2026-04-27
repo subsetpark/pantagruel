@@ -739,7 +739,7 @@ exports[`functions-mutating-loop.ts > sumPositiveAssert 1`] = `
 `;
 
 exports[`functions-mutating-loop.ts > sumScaledAssert 1`] = `
-"module SumScaledAssert.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Sum-scaled-assert @ a: Account, items: [Item], scale: Int.\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each $0 in items | item--value $0).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\nitem--tagged' i = item--tagged i.\\n"
+"module SumScaledAssert.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Sum-scaled-assert @ a: Account, items: [Item], scale: Int, scale >= 0.\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each $0 in items | item--value $0).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\nitem--tagged' i = item--tagged i.\\n"
 `;
 
 exports[`functions-mutating.ts > deposit 1`] = `

@@ -98,18 +98,24 @@ export function sumIntoAnon(acc: { total: number }, items: number[]): void {
   }
 }
 
-/** Iterator-INDEPENDENT guard inside a loop body — the
- *  `if (!(scale >= 0)) throw …` reasserts a top-level precondition
- *  on the (parameter) `scale` and doesn't constrain elements of
- *  `items`. The build pass strips it (mirroring what
- *  `symbolicExecute` does at top level) and the loop translates to
- *  its Shape B fold. Without guard-filtering inside loop bodies, the
- *  ThrowStatement would surface as an unsupported loop body. */
+/** Iterator-INDEPENDENT guard inside a loop body — the inner
+ *  `if (!(scale >= 0)) throw …` is a *duplicate* of the same
+ *  precondition asserted before the loop, so stripping the inner copy
+ *  is sound (the top-level guard already constrains `scale` for any
+ *  items length, including 0). The build pass strips the duplicate
+ *  inner guard mirroring what `symbolicExecute` does at top level,
+ *  and the loop translates to its Shape B fold. Without guard-
+ *  filtering inside loop bodies, the inner ThrowStatement would
+ *  surface as an unsupported loop body even though it carries no
+ *  semantic content beyond the top-level guard. */
 export function sumScaledAssert(
   a: Account,
   items: Item[],
   scale: number,
 ): void {
+  if (!(scale >= 0)) {
+    throw new Error("scale must be non-negative");
+  }
   for (const x of items) {
     if (!(scale >= 0)) {
       throw new Error("scale must be non-negative");
