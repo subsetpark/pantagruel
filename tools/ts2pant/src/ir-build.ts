@@ -19,7 +19,6 @@ import {
   type IRExpr,
   irAppExpr,
   irAppName,
-  irBinop,
   irCond,
   irEach,
   irLitBool,
@@ -29,6 +28,8 @@ import {
   irVar,
   irWrap,
 } from "./ir.js";
+import { ir1FromL2, ir1IsNullish } from "./ir1.js";
+import { lowerL1Expr } from "./ir1-lower.js";
 import {
   ambiguousFieldMsg,
   bodyExpr,
@@ -194,7 +195,11 @@ export function buildIR(
       return rightIR;
     }
     const rightTsType = checker.getTypeAtLocation(expr.right);
-    const cardZero = irBinop("eq", irUnop("card", leftIR), irLitNat(0));
+    // Construct the cardinality-zero null test through L1 IsNullish so
+    // every nullish-shape lowering shares one source of truth (M4).
+    // The lowering chain `from-l2 → IsNullish → eq(card(_), 0)` is
+    // byte-identical to the inlined form, which is the cutover gate.
+    const cardZero = lowerL1Expr(ir1IsNullish(ir1FromL2(leftIR)));
     const presentBranch: IRExpr = isNullableTsType(rightTsType)
       ? leftIR
       : irAppExpr(leftIR, [irLitNat(1)]);

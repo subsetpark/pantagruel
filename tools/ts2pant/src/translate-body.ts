@@ -3,7 +3,7 @@ import ts from "typescript";
 import { type IRExpr, irLet, irWrap } from "./ir.js";
 import { buildIR, isBuildUnsupported } from "./ir-build.js";
 import { lowerExpr } from "./ir-emit.js";
-import { type IR1Expr, ir1Binop, ir1FromL2 } from "./ir1.js";
+import { type IR1Expr, ir1Binop, ir1FromL2, ir1IsNullish } from "./ir1.js";
 import {
   buildL1Conditional,
   buildL1ConditionalFromArms,
@@ -2898,11 +2898,11 @@ export function translateBodyExpr(
       const xExpr = bodyExpr(leftResult);
       const yExpr = bodyExpr(rightResult);
       const rightTsType = checker.getTypeAtLocation(expr.right);
-      const cardZero = ast.binop(
-        ast.opEq(),
-        ast.unop(ast.opCard(), xExpr),
-        ast.litNat(0),
-      );
+      // Construct the cardinality-zero null test through L1 IsNullish so
+      // every nullish-shape lowering shares one source of truth (M4).
+      // The lowering chain `from-l2 → IsNullish → eq(card(_), 0)` is
+      // byte-identical to the inlined form, which is the cutover gate.
+      const cardZero = lowerL1ToOpaque(ir1IsNullish(ir1FromL2(irWrap(xExpr))));
       const presentBranch = isNullableTsType(rightTsType)
         ? xExpr
         : ast.app(xExpr, [ast.litNat(1)]);
