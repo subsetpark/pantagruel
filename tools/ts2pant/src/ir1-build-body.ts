@@ -66,7 +66,7 @@ import {
   type UniqueSupply,
   unwrapExpression,
 } from "./translate-body.js";
-import type { NumericStrategy } from "./translate-types.js";
+import { cellRegisterName, type NumericStrategy } from "./translate-types.js";
 
 export interface BuildBodyCtx {
   checker: ts.TypeChecker;
@@ -254,7 +254,19 @@ function finishForeach(
   bodyStmt: ts.Statement,
   ctx: BuildBodyCtx,
 ): BuildResult<IR1Stmt> {
-  const binder = freshHygienicBinder(ctx.supply);
+  // Pant identifiers must start with a lowercase letter and may
+  // continue with letters / digits / `-` / `_` (see `lib/lexer.ml`).
+  // `freshHygienicBinder` returns `$N`, which the Pant parser rejects.
+  // The foreach binder is emitted in the lowered Pant text (`all $N
+  // in src | …` and `each $N in src | …`), so we route through the
+  // document-wide `cellRegisterName` for a Pant-legal, collision-free
+  // name. The TS iter name is kebab-cased and uniquified via
+  // `NameRegistry`. Standalone test paths without a `synthCell` fall
+  // back to `freshHygienicBinder` — those tests assert on string
+  // shape, not Pant validity.
+  const binder = ctx.supply.synthCell
+    ? cellRegisterName(ctx.supply.synthCell, iterName)
+    : freshHygienicBinder(ctx.supply);
   const r = buildL1ForeachBody(bodyStmt, iterName, binder, ctx);
   if (isUnsupported(r)) {
     return r;
