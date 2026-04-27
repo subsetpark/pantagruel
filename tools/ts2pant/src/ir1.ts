@@ -16,13 +16,13 @@
  * pure expressions).
  *
  * **Vocabulary lock at M1.** The forms declared here are the locked Layer
- * 1 vocabulary. Forms can be *added* in later milestones (e.g.,
- * `IsNullish` primitive at M4) but the existing forms cannot be changed.
- * Forms not yet active (`foreach`, `for`, `throw`, `expr-stmt`,
- * statement-position `cond-stmt`) are declared at the type level; their
- * constructors throw `not-implemented` until the milestone that
- * introduces them lands. M1 activated `block`, `let`, `return`, and
- * expression-position `cond`; M2 adds `assign` and `while`.
+ * 1 vocabulary. Forms can be *added* in later milestones — the
+ * `is-nullish` primitive landed at M4 — but existing forms cannot be
+ * changed. Forms not yet active (`foreach`, `for`, `throw`,
+ * `expr-stmt`, statement-position `cond-stmt`) are declared at the type
+ * level; their constructors throw `not-implemented` until the milestone
+ * that introduces them lands. M1 activated `block`, `let`, `return`,
+ * and expression-position `cond`; M2 adds `assign` and `while`.
  *
  * **No `IR1Wrap` form.** Layer 1 is *not* an escape-hatch layer — the
  * build pass either produces L1 or rejects with `unsupported`. An L1
@@ -58,7 +58,7 @@ export type IR1Unop = IRUnop;
 // --------------------------------------------------------------------------
 
 /**
- * Layer 1 expressions. Seven forms preserve TS-shape canonicalization:
+ * Layer 1 expressions. Eight forms preserve TS-shape canonicalization:
  *
  * - `var`, `lit` — literal references
  * - `binop`, `unop` — arithmetic/logical/comparison operators
@@ -69,6 +69,10 @@ export type IR1Unop = IRUnop;
  * - `cond` — multi-arm value-position conditional (M1 canonical form for
  *   if-with-returns, ternary chains, switch w/o fall-through, &&/||
  *   when Bool-typed)
+ * - `is-nullish` — canonical Bool null/undefined test (M4 canonical form
+ *   for `x == null`, `x === null`, `x === undefined`, the long
+ *   `||`-form, and `typeof x === "undefined"`). Lowers to the
+ *   cardinality-zero shape `#x = 0` under list-lift.
  *
  * Plus one transitional form:
  *
@@ -104,6 +108,16 @@ export type IR1Expr =
       arms: ReadonlyArray<readonly [IR1Expr, IR1Expr]>;
       otherwise: IR1Expr;
     }
+  /**
+   * Canonical Bool test for null/undefined. Lowers mechanically to the
+   * cardinality-zero shape `#x = 0`, which is the same shape `??` and
+   * `?.` already use under the list-lift encoding (`T | null` → `[T]`).
+   * `operand` is an arbitrary L1 expression — receiver chains
+   * (`obj.prop`) and other non-`Var` shapes are accepted; the build pass
+   * is responsible for verifying operand-identity in long-form
+   * recognition (`x === null || x === undefined`).
+   */
+  | { kind: "is-nullish"; operand: IR1Expr }
   /**
    * Transitional delegation to a pre-built Layer 2 IRExpr. Used for
    * sub-expressions whose internal structure is outside the current
@@ -415,6 +429,20 @@ export const ir1Cond = (
   ],
   otherwise: IR1Expr,
 ): IR1Expr => ({ kind: "cond", arms, otherwise });
+
+/**
+ * Canonical L1 nullish test. The M4 build pass routes all nullish
+ * surface forms (`x == null`, `x === null`, `x === undefined`, the
+ * long `||`-form, and `typeof x === "undefined"`) through this
+ * constructor; negated forms wrap as `unop("not", isNullish(x))`.
+ * Lowers mechanically to `#x = 0` (cardinality-zero under list-lift),
+ * the same shape `??` and `?.` already use. Operand may be any L1
+ * expression — receiver chains and other non-`Var` shapes are accepted.
+ */
+export const ir1IsNullish = (operand: IR1Expr): IR1Expr => ({
+  kind: "is-nullish",
+  operand,
+});
 
 /**
  * Transitional delegation to a pre-built Layer 2 IRExpr. Use only inside
