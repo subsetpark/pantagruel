@@ -221,6 +221,22 @@ describe("ir1-build-functor-lift", () => {
     expectLifted(tryRecognizeFunctorLift(candidate, ctx));
   });
 
+  it("lifts through transparent wrappers (`as`, `!`, `satisfies`)", () => {
+    // Each of `as` / `!` / `satisfies` is runtime-transparent and must
+    // not block recognition. A guard wrapped in `as boolean`, an
+    // operand widened with `as`, or a present-side projection asserted
+    // with `!` or `satisfies` should still recognize.
+    const { candidate, ctx } = setup(
+      `interface User { readonly name: string; }
+       function f(u: User | null): string[] {
+         return ((u as User | null) == null) as boolean
+           ? ([] satisfies string[])
+           : [u!.name];
+       }`,
+    );
+    expectLifted(tryRecognizeFunctorLift(candidate, ctx));
+  });
+
   // ------------------------------------------------------------------
   // Eligibility-failure cases (each check fails in isolation)
   // ------------------------------------------------------------------

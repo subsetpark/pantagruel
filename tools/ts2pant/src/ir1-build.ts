@@ -57,7 +57,7 @@ import {
   type NullishTranslate,
   recognizeAnyLeaf,
   recognizeNullishForm,
-  unwrapParens,
+  unwrapTransparentExpression,
 } from "./nullish-recognizer.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
@@ -236,7 +236,7 @@ const ARRAY_MULTI_PRODUCING_METHODS = new Set([
 
 /** True when `expr` is an empty-equivalent literal — `[]`, `null`, `undefined`. */
 function isEmptyEquivalent(expr: ts.Expression): boolean {
-  const u = unwrapParens(expr);
+  const u = unwrapTransparentExpression(expr);
   if (ts.isArrayLiteralExpression(u) && u.elements.length === 0) {
     return true;
   }
@@ -258,7 +258,7 @@ function isEmptyEquivalent(expr: ts.Expression): boolean {
  * unchanged; they fail the present-side check below.
  */
 function unwrapSingletonArray(expr: ts.Expression): ts.Expression {
-  const u = unwrapParens(expr);
+  const u = unwrapTransparentExpression(expr);
   if (ts.isArrayLiteralExpression(u) && u.elements.length === 1) {
     const el = u.elements[0]!;
     if (!ts.isSpreadElement(el)) {
@@ -279,7 +279,7 @@ function isSingleElementProducingOf(
   expr: ts.Expression,
   operandName: string,
 ): boolean {
-  const u = unwrapParens(expr);
+  const u = unwrapTransparentExpression(expr);
   if (ts.isArrayLiteralExpression(u)) {
     return false;
   }
@@ -399,7 +399,7 @@ export function tryRecognizeFunctorLift(
   ctx: L1BuildContext,
 ): IR1Expr | null {
   // (a) Guard is a leaf nullish form.
-  const guard = unwrapParens(cand.guard);
+  const guard = unwrapTransparentExpression(cand.guard);
   if (!ts.isBinaryExpression(guard)) {
     return null;
   }
@@ -407,7 +407,7 @@ export function tryRecognizeFunctorLift(
   if (leaf === null) {
     return null;
   }
-  const operandNode = unwrapParens(leaf.operand);
+  const operandNode = unwrapTransparentExpression(leaf.operand);
   if (!ts.isIdentifier(operandNode)) {
     return null;
   }
@@ -444,12 +444,23 @@ export function tryRecognizeFunctorLift(
   // rewrites references to the operand's Pant name with the fresh
   // binder; `ast.substituteBinder` is Pant's capture-avoiding
   // substitution, so a fresh hygienic binder is sufficient.
+  //
+  // Snapshot the hygienic supply counter so that a `buildSubExpr`
+  // failure (which can advance `supply.n` via deferred-comprehension
+  // allocations before returning unsupported) doesn't perturb the
+  // fallback Cond path's binder sequencing. The synthCell registration
+  // via `cellRegisterName` runs only after the last failure point, so
+  // it needs no rollback. Counter increments past the last failure
+  // point are the lift's real allocations and stay committed.
+  const supplyCounterSnapshot = ctx.supply.n;
   const operandSub = buildSubExpr(operandNode, ctx);
   if (isL1Unsupported(operandSub)) {
+    ctx.supply.n = supplyCounterSnapshot;
     return null;
   }
   const projectionSub = buildSubExpr(projection, ctx);
   if (isL1Unsupported(projectionSub)) {
+    ctx.supply.n = supplyCounterSnapshot;
     return null;
   }
 
