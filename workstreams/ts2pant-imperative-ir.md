@@ -29,18 +29,20 @@ differ by program position:
 This asymmetry is intentional and was hard-won — see § "Architectural
 Lessons" below.
 
-## Current State (post-M3)
+## Current State (post-M4)
 
-M1 (conditionals), M2 (assign + μ-search), and M3 (iteration + mutation)
-have landed. Layer 1 IR is the canonical input shape for every
-mutating-body construct ts2pant supports plus the conditional /
-assign / iteration expression forms.
+M1 (conditionals), M2 (assign + μ-search), M3 (iteration + mutation),
+and M4 (equality + nullish) have landed. Layer 1 IR is the canonical
+input shape for every mutating-body construct ts2pant supports, plus
+the conditional / assign / iteration expression forms, plus the
+equality / nullish equivalence class.
 
 **What's on Layer 1**:
 
-- Expression forms: `var`, `lit`, `binop`, `unop`, `app`, `member`, `cond`,
-  `from-l2` (transitional adapter for sub-expressions outside the current
-  milestone's normalization concern).
+- Expression forms: `var`, `lit`, `binop`, `unop`, `app`, `member`,
+  `cond`, `is-nullish` (M4 canonical Bool null/undefined test),
+  `from-l2` (transitional adapter for sub-expressions outside the
+  current milestone's normalization concern).
 - Statement forms: `block`, `let`, `assign`, `cond-stmt`, `foreach`
   (with optional `body` and `foldLeaves` for Shape A + Shape B), `for`
   (declared, unused), `while` (μ-search only), `return`, `throw`
@@ -53,16 +55,24 @@ companion `src/ir-subst.ts` were the speculative target of the
 parallel-build PRs (#134/#135/#137) that got closed; PR #138 deleted
 them once M3 confirmed nothing built or lowered them.
 
-**What's still on the legacy path** (pre-M4/M5/M6):
+**What's still on the legacy path** (pre-M5/M6):
 
 - Property access (`obj.f` / `obj["f"]`) — qualified at build time via
   `qualifyFieldAccess`; no L1 `Member` normalization yet.
-- Equality / nullish (`==` vs `===`, `x == null` family) — no
-  `IsNullish` primitive yet.
 - Pure-path `.reduce` chain fusion — `translateReduceCall` builds an
   L2 `eachComb` directly. Architecturally separate from M3's
   mutating-body foreach.
 - `IRWrap` escape hatch in L2 — survives until M6.
+
+**Combined-shape recognizer precedent (M4 Patch 5).** The functor-lift
+recognizer (`tryRecognizeFunctorLift` in `ir1-build.ts`) is the first
+combined-shape recognizer crossing milestone boundaries — it matches
+M1 Cond + M4 IsNullish in a single rewrite. The motivation is
+load-bearing: Pant has no list literal, so the alternative
+cardinality-dispatch lowering for null-guarded list-lifted conditionals
+has no expressible target. Future milestones may need to follow this
+pattern when Pant's expression vocabulary forces a multi-form match;
+see "Architectural Lesson 5" below.
 
 ## Key Challenges
 
@@ -188,6 +198,45 @@ expression-level normalization (M4 / M5 territory) without blocking
 statement-level normalization (M1 / M2 / M3). Its lifetime is bounded
 by M4 + M5 landing — at that point sub-expressions reach L1 natively
 and `from-l2` shrinks for real, then deletes at M6.
+
+### Lesson 5: combined-shape recognizers are sometimes load-bearing
+
+**The setup at M4**: the equality / nullish equivalence class has three
+canonical L1 forms (`IsNullish`, `BinOp(eq | neq, …)`, and the
+loose-eq rejection). Each one is the canonical lowering for one
+syntactic class. So far, so milestone-shaped.
+
+**The forcing function**: idiomatic null-guard-then-list-return TS —
+`if (x == null) return []; return [f(x)];` and the equivalent ternaries
+— would map naturally to a cardinality-dispatch lowering `cond
+IsNullish(x) => [], true => [f((x 1))]`. But Pantagruel has no list
+literal. There is no expressible Pant target for `[f((x 1))]`. Without
+some other recognition path, idiomatic TS code in this shape simply
+doesn't translate.
+
+**The fix**: M4 Patch 5's functor-lift recognizer matches a *combined*
+shape — M1's Cond on the outside, M4's IsNullish (or any nullish leaf
+form) on the guard, with empty/single-element-projection branch
+checks — and lowers to `each $n in x | f $n`. The recognizer crosses
+two milestone boundaries by construction.
+
+**Generalizable principle**: when Pant's expression vocabulary lacks
+a target for a specific TS shape, a recognizer crossing milestone
+boundaries can be the only translatable path. This isn't a violation
+of the "hard rule per equivalence class" discipline — the equivalence
+class is normalized correctly inside its own milestone (M4 still
+canonicalizes nullish testing onto `IsNullish`); the combined recognizer
+is a *secondary* lowering that fires for a specific cross-class shape
+where the primary path would emit untranslatable Pant.
+
+The litmus test: would the alternative lowering produce valid Pant?
+If no, a combined recognizer is structurally necessary. If yes, the
+combined match is an optimization that should be deferred until the
+optimization is genuinely worth carrying.
+
+M4's functor-lift recognizer is the precedent. Future milestones may
+need to follow it; M5 (property access) doesn't obviously need one,
+but the general principle is now on the table.
 
 ## Milestones
 
@@ -455,30 +504,103 @@ remains in `translate-body.ts`.
 
 ---
 
-### Milestone 4 (deferred): equality-nullish-normalization
+### Milestone 4: equality-nullish-normalization — ✅ landed
+
+**Status**: landed across six stacked patches on
+`ts2pant-m4-equality-nullish`.
+
+The equality / nullish equivalence class flows through Layer 1.
+Every TS expression in the class normalizes to one of three canonical
+shapes — `IsNullish(operand)`, `BinOp(eq | neq, …)`, or the functor-lift
+`each $n in x | f $n` — plus an unconditional rejection of any
+surviving loose `==` / `!=`.
+
+**Slice breakdown:**
+
+- Patch 1 — Add L1 `IsNullish` form and mechanical lowering. Lowers to
+  `binop(eq, unop(card, x), litNat(0))` — byte-identical to the shape
+  `??` and `?.` already emit. No call sites yet; build-pass cutover
+  follows in P2.
+- Patch 2 — Recognize nullish surface forms via L1 `IsNullish`. The
+  build pass intercepts `x == null`, `x != null`, `x === null`,
+  `x === undefined`, the `!==` negations, the long disjunction
+  `x === null || x === undefined`, the conjunction-negated long form,
+  and `typeof x === 'undefined'` (and `!==`) before the generic
+  binop dispatcher fires. Long-form recognition uses
+  `structurallyEqualExpression` (not `node.getText()`) for
+  whitespace-tolerant operand identity. Negative forms wrap as
+  `unop(not, IsNullish(operand))`. Partial-match disjunctions recurse
+  on `||`/`&&` operands.
+- Patch 3 — Canonicalize strict equality; reject all surviving loose-eq.
+  `===` / `!==` route through L1 `BinOp(eq | neq, …)` unconditionally.
+  `==` / `!=` are rejected with a specific reason ("loose equality
+  (== / !=) is unsupported; use === / !==") on the body / L1
+  expression-translation paths in `translate-body.ts` and
+  `translate-signature.ts`'s `translateExpr`, *after* the nullish
+  recognizer has had a chance to fold `x == null`. The signature
+  guard-classification path (`containsUnsupportedOperator` in
+  `translate-signature.ts`, used by `classifyGuardIf` and
+  helper-followability) is stricter — it rejects ALL loose equality
+  including `x == null`, so an `if (x == null) throw` is *not*
+  classified as a guard and stays in the body where the body
+  translator's nullish recognizer handles it. No type-based exception
+  on either path — the principle is rule-1 of § "Developer Steering
+  Principles" in `tools/ts2pant/CLAUDE.md`.
+- Patch 4 — Refactor the `??` builder to construct its guard via L1
+  `IsNullish`. Snapshot byte-equality is the cutover gate; the
+  OpaqueExpr is identical pre- and post-M4.
+- Patch 5 — Functor-lift recognizer for null-guarded list-lifted
+  conditionals. `if (x == null) return []; return [f(x)];` and the
+  three other supported shapes lower to `each $n in x | f $n`. Crosses
+  M1 (Cond) + M4 (IsNullish) by design — see Lesson 5 below.
+- Patch 6 — Docs + dogfood verification (this commit).
+
+**Pessimism rate (loose-eq rejection)**: N=5 loose-equality sites
+across fixtures + dogfood, all consumed by the nullish recognizer.
+0 rejected. **0%.** No real-fixture or dogfood site exercises a
+non-nullish loose-eq that would surface the rejection path; rejection
+is covered by synthetic cases in `tests/equality-canonicalization.test.mts`.
 
 **Definition of Done**:
-- New Layer 1 primitive `IsNullish(expr)`. Surface forms `x == null`,
-  `x === null || x === undefined`, `x === undefined`, `typeof x === 'undefined'`
-  all collapse to `IsNullish(Var(x))`.
-- `BinOp(===, …)` is the canonical equality form; `BinOp(==, …)` rejected
-  unless we can prove operand types Bool/numeric/string-literal-equivalent.
-- Existing `??` and `?.` lowerings (currently on Layer 2 since Stages 2–3)
-  are revisited if their interaction with `IsNullish` simplifies — but no
-  redesign required; the goal is M4 absorbs the equality/nullish equivalence
-  class without disturbing existing forms.
-- Hard rule honored for the equality/nullish class.
+
+- [x] New Layer 1 primitive `IsNullish(expr)`. Surface forms
+  `x == null`, `x === null`, `x === undefined`, the long-form
+  disjunction, `typeof x === 'undefined'` and their negations all
+  collapse to `IsNullish(operand)` (or `unop(not, IsNullish(…))`
+  for negative polarity).
+- [x] `BinOp(eq | neq, …)` is the canonical strict-equality form;
+  `===` / `!==` always canonicalize.
+- [x] Loose `==` / `!=` rejected unconditionally outside the nullish
+  recognizer (no type-based exception).
+- [x] `??` builder refactored to construct its guard via L1
+  `IsNullish`; snapshot byte-equal pre/post.
+- [x] Functor-lift recognizer (combined M1 Cond + M4 IsNullish shape)
+  lowers null-guarded list-lifted conditionals to `each $n in x |
+  f $n`. Four supported TS shapes (positive ternary, negated ternary,
+  positive if-conversion, negated if-conversion); operand restricted
+  to a simple identifier; multi-element non-empty branches
+  deliberately rejected.
+- [x] All 598 unit tests + 22 integration tests pass; `pant --check`
+  passes for every M4 fixture function (equality-nullish + functor-lift).
+- [x] Hard rule honored for the equality/nullish class — every
+  nullish-shaped TS expression flows through L1; legacy direct
+  equality-to-null path retired.
+
+**Resolved open questions**:
+
+| Question | Resolution |
+|----------|------------|
+| M4 standalone vs absorbed into M3 | Landed standalone. M3 was absorbed enough by iteration + mutation; equality/nullish is expression-only and a clean six-patch slice. |
+| Loose-eq policy: type-based accept exception, or unconditional reject? | Reject all surviving loose-eq. Per § "Developer Steering Principles" rule 1, `==` is ambiguous in TS regardless of operand type — defining a "safe-loose-eq" subset would be exactly the guesswork the IRSC discipline rejects. The `x == null` carve-out is path-scoped: on the body / L1 expression-translation paths, Patch 2's nullish recognizer consumes it before the loose-eq dispatcher fires; on the signature guard-classification path (`containsUnsupportedOperator`), all loose equality is rejected unconditionally including `x == null`, so a guard with `x == null` falls through to the body where the body translator handles it. |
+| Combined-shape recognizer scope (functor-lift crossing M1 + M4) | Included as Patch 5. Pant has no list literal — without the recognizer, idiomatic null-guards over list-lifted return types are untranslatable. Sets the precedent recorded in Lesson 5. |
 
 **Why this is a safe pause point**: Equality and nullish are
-expression-only; no statement-level forms touched. All other classes
-already on Layer 1 from M1–M3.
+expression-only; no statement-level forms touched. M5 (property
+access) and M6 (cleanup) can land independently.
 
-**Unlocks**: M6 cleanup can delete more legacy expression-handling code.
-
-**Open Questions**:
-- Whether to land at all. Decided post-M3 based on real-fixture pressure
-  from M1's conservative-refusal measurements. May absorb into M3 if
-  pressure is high.
+**Unlocks**: M6 cleanup can shrink `from-l2` further (sub-expressions
+of nullish and equality forms now build natively on L1; property
+access defers to M5).
 
 ---
 
@@ -558,15 +680,15 @@ clear the L2 statement vocabulary was free to delete):
 1 (imperative-ir-conditionals)        → []
 2 (imperative-ir-assign-mu-search)    → [1]
 3 (imperative-ir-iteration-mutation)  → [2]
-4 (equality-nullish-normalization)    → [3]   (deferred; may absorb into 3)
+4 (equality-nullish-normalization)    → [3]   (✅ landed standalone)
 5 (property-access-normalization)     → [3]   (deferred; may absorb into 3)
 6 (legacy-recognizer-cleanup)         → [3, 4, 5]
 ```
 
-PR #128 must merge before M1 begins. M1–M3 are strictly sequential because
+PR #128 must merge before M1 begins. M1–M4 are strictly sequential because
 each adds a class to the same Layer 1 vocabulary and the hard-rule
-constraint forbids partial migration of a class. M4 and M5 can run in
-parallel if both are needed.
+constraint forbids partial migration of a class. M5 can run independently
+of M4 once M3 has landed.
 
 ## Open Questions
 
@@ -574,16 +696,21 @@ parallel if both are needed.
 |----------|-------|------------|
 | Decrement μ-search (`i--`) SMT encoding | Layer 1 admits it; SMT lowering for `max over each j: Int, j <= INIT, ~P(j) \| j` (the *greatest* `j ≤ INIT` satisfying `¬P` — dual of the increment case's `min over j ≥ INIT`) needs verification on a fixture. | When a fixture demands it |
 | Index-for with mutating `arr[i] = …` writes | Aliasing semantics non-trivial. Deferred unless a fixture demands it. | When a fixture demands it |
-| M4 standalone vs absorbed | Depends on real-fixture pressure on equality/nullish forms inside iteration bodies. | Pre-M4 |
 | M5 standalone vs absorbed | Property access likely absorbs into whichever earlier milestone first needs uniform `Member` shape. | Pre-M5 |
+| `.indexOf(x) === -1` array-absence recognition | Currently translates correctly via `===` canonicalization (EUF equality on the sentinel `-1`). Routing through `IsNullish` would be a stricter modeling of "absence" but isn't required for correctness. | When a fixture demands it |
+| Enum-sentinel-as-nullish absorption (`x === SomeEnum.NONE`) | Typed equality on a named constant; works as-is via `===` canonicalization. Absorption into `IsNullish` would require user-declared "absence" values that ts2pant doesn't model today. | When a fixture demands it |
+| Truthiness coercion (`Boolean(x)`, `!!x`) | Semantically distinct from nullish testing (truthy excludes `0`, `""`, `false`). May stay UNSUPPORTED indefinitely or become its own milestone. | Defer; revisit if a fixture demands it |
 
 Resolved questions (kept for history):
 
 | Resolved | Resolution |
 |----------|------------|
-| Conservative-refusal pessimism rate | M1, M2, M3 all measured 0% pessimism on existing fixtures. Policy 3(b) holds. |
+| Conservative-refusal pessimism rate | M1, M2, M3, M4 all measured 0% pessimism on existing fixtures. Policy 3(b) holds. |
 | `Reduce` as own L1 form vs desugared | Pure-path `.reduce` stays on `translateReduceCall` (chain-fusion via `BodyResult.pendingComprehension`); not absorbed into L1. The "desugared into `Let + Foreach + Assign`" framing in the original plan was wrong — chain fusion is expression-position, architecturally separate from M3's mutating foreach. |
 | Frame-condition emission ordering | Frames flow through `state.modifiedProps` (Set with insertion-order iteration) — same path as legacy. No L1 → L2 lowering pass for frames; M3's `lowerL1Body` reuses the existing primitive. |
+| M4 standalone vs absorbed into M3 | Landed standalone post-M3. M3 was absorbed enough by iteration + mutation; equality/nullish was a clean six-patch slice on its own. |
+| Loose-eq policy at M4 | Reject all surviving loose-eq unconditionally. Per § "Developer Steering Principles" rule 1 in `tools/ts2pant/CLAUDE.md` — `==` is ambiguous in TS regardless of operand type, so steering the programmer to `===`/`!==` is the right move. |
+| Combined-shape recognizer scope at M4 | Included as Patch 5 (functor-lift). Pant has no list literal; without the recognizer, idiomatic null-guarded list-lifted conditionals are untranslatable. Sets the precedent recorded in Architectural Lesson 5. |
 
 ## Decisions Made
 

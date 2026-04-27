@@ -42,6 +42,47 @@ These cover the full scope of ts2pant's translation work:
 | Partial functions / option types | [Dafny Reference Manual](https://dafny.org/dafny/DafnyRef/DafnyRef) | Nullable types, preconditions, `modifies` clauses — practical verification language patterns |
 | IRSC / SSA-based IR | Vekris, Cosman, Jhala, ["Refinement Types for TypeScript"](https://arxiv.org/pdf/1604.02480), PLDI 2016 | Lifting surface-syntax recognizers into a typed intermediate representation via SSA-style translation; precedent for the IR introduced in §"Intermediate Representation" |
 
+## Developer Steering Principles
+
+ts2pant is a translator, not a style guide. But it does have to make a
+decision when a TS surface form doesn't unambiguously map to a Pantagruel
+target — and the decision is the same in both directions: **be honest
+about which side owes the work**.
+
+The two-sided rule:
+
+1. **When TS itself is ambiguous, ts2pant rejects and steers the
+   programmer to an unambiguous TS form.** The rewrite is owed to the
+   *TS* program, not to Pantagruel — TS would be clearer code if it said
+   what it meant. Example: `==` is rejected unconditionally outside the
+   nullish recognizer (M4 Patch 3). `a == b` between two arbitrary
+   operands is ambiguous in TS regardless of where it ends up — does
+   the author want value equality, or do they want JS coercion
+   semantics? ts2pant doesn't guess; it asks the programmer to say
+   `===` (or `!==`) and move on.
+
+2. **When TS is unambiguous but doesn't fit a pantagruel-shaped
+   recognizer, ts2pant adapts to recognize it.** The programmer should
+   not be taxed by the tool's preferred input shape — refusing
+   idiomatic, unambiguous TS purely to fit ts2pant's recognizer
+   internals is the same kind of guesswork-tax in reverse. Example:
+   `(a === null) || (a === undefined) || other` is unambiguous,
+   idiomatic TS. The nullish recognizer recurses on `||`/`&&`
+   operands and extracts nullish pairs opportunistically rather than
+   forcing the programmer to rewrite into a recognizer-shaped subset.
+
+**The test:** does the TS code's intent read clearly to a TS reader?
+If yes, ts2pant adapts to recognize it. If no, ts2pant rejects with a
+specific reason explaining the rewrite the programmer should make to
+*their TS*. The principle is structural: the burden of clarity lives
+with whichever side of the translation introduced the ambiguity.
+
+**Precedent:** M4 (equality and nullish normalization) is where this
+principle was articulated. `==` rejection (rule 1) sits alongside
+partial-match disjunction recognition (rule 2) inside the same
+milestone — they're two halves of one steering posture, not in
+tension. Future milestones inherit this principle.
+
 ## Architecture
 
 ts2pant translates TypeScript function bodies into Pantagruel propositions. The main
@@ -148,7 +189,15 @@ unions fold the null marker into the list wrapper: `A | B | null` → `[A + B]`.
 
 Under list-lift, `??` and `?.` have a universal lowering — the empty-list
 cardinality test `#x = 0` replaces the absent `~= Nothing` check, and list
-indexing `(x 1)` replaces singleton extraction:
+indexing `(x 1)` replaces singleton extraction. Post-M4, the `#x = 0`
+shape is the lowering of an L1 `IsNullish(x)` primitive — see § "Imperative
+IR Workstream" / "M4". The OpaqueExpr is identical pre- and post-M4; only
+the construction route changed (legacy `??` builder → L1 IsNullish →
+mechanical lower). On the body/L1 expression-translation path, other
+null/undefined surface forms (`x == null`, `x === null`, `x === undefined`,
+the long disjunction, `typeof x === 'undefined'`) all flow through the
+same primitive. The signature/guard-classification path is stricter —
+see § "Imperative IR Workstream" / "M4" for the asymmetry.
 
 - `x ?? y` with `x: [T]`:
   - `y: T` (non-nullable default) → `cond #x = 0 => y, true => (x 1)`
@@ -173,6 +222,17 @@ cardinality case-split above, giving one list-lifted signature rather than
 multiple arity overloads. This preserves one-source-one-target for
 everything reached through the general lowering — no special-case
 detection at the signature level.
+
+**Null-guarded list-lifted conditionals** — TS code that pattern-matches
+on a nullable receiver and returns a list-lifted projection
+(`u == null ? [] : [u.name]`, `if (u === null) return []; return [u.name]`,
+and the negated polarity variants) is a Pantagruel-untranslatable shape
+without a recognizer: Pant has no list literal, so the alternative
+cardinality-dispatch lowering `cond #u = 0 => [], true => [name (u 1)]`
+has no expressible target. The functor-lift recognizer (M4 Patch 5) is
+the canonical handling for this family — see § "Functor-Lift Recognizer"
+below. The four supported TS shapes lower uniformly to `each $n in u |
+name $n`, the same comprehension shape `?.` already uses.
 
 ### Partial Rules (Map<K, V>)
 
@@ -419,6 +479,93 @@ ops require acc on the left.
 - `state.modifiedProps` (shared across state clones) tracks which primed rules were emitted,
   including Shape A equations that bypass `state.writes`; used to compute frame conditions
   correctly when Shape A and Shape B appear in the same body.
+
+### Functor-Lift Recognizer
+
+**Standard name:** Functor lift / `Maybe` (option) `fmap`. The list-lift
+encoding makes `T | null` into `[T]` (length 0 or 1); the recognizer is
+exactly `fmap : (a -> b) -> Maybe a -> Maybe b` specialized to the
+list-as-Maybe representation.
+**Reference:** Wadler, ["The Essence of Functional Programming"](https://homepages.inf.ed.ac.uk/wadler/papers/essence/essence.ps),
+POPL 1992, §2 (the Maybe monad and `fmap`); Hutton & Meijer,
+["Monadic Parsing in Haskell"](https://www.cs.nott.ac.uk/~pszgmh/pearl.pdf), JFP 1998
+(structural lift over `Maybe` as the canonical idiom for null-guarded
+projections).
+
+`if (x == null) return []; return [f(x)];` and the equivalent ternary /
+negated forms lower to `each $n in x | f $n`. This is *not* an
+optimization — Pantagruel has no list literal, so the alternative
+cardinality-dispatch lowering `cond #x = 0 => [], true => [f (x 1)]`
+has no expressible Pant target. Without the recognizer these
+idiomatic null-guards reject; with it they translate uniformly through
+the same comprehension shape `?.` already produces.
+
+**Why this lives here.** The recognizer is itself an instance of the
+"recognize idiomatic TS" side of the Developer Steering Principles
+(§ above). Idiomatic null-guard-then-list-return is unambiguous TS;
+forcing the programmer to rewrite as `?.`-chains or comprehensions
+would tax the user for a Pant-vocabulary gap that the translator can
+absorb structurally. Combined-shape recognizers crossing milestone
+boundaries (this one straddles M1 Cond + M4 IsNullish) are sometimes
+load-bearing; see `workstreams/ts2pant-imperative-ir.md`
+§ "Architectural Lesson 5".
+
+**Soundness conditions** (`tryRecognizeFunctorLift` in `ir1-build.ts`):
+
+1. **Guard is a leaf nullish form** — `x == null`, `x === null`,
+   `x === undefined`, `typeof x === 'undefined'`, or any of their
+   negations. Composite guards (long-form disjunction, parenthesized
+   chains, `&&`-conjuncts) fall through; only the leaves of M4's
+   nullish recognizer are eligible here.
+2. **The "empty side" branch is empty-equivalent** — `[]`, `null`, or
+   `undefined`. (Polarity follows the guard: a positive guard puts the
+   empty side on the then-branch; a negated guard puts it on the
+   else-branch.)
+3. **The "present side" branch is single-element-producing of the
+   operand** — after stripping a single-element array wrapper (`[u.name]`
+   → `u.name`), the expression must reference the operand and not be a
+   multi-element construction. Multi-element array literals, spreads,
+   and known multi-producing array methods (`.concat`, `.flat`,
+   `.flatMap`, `.filter`, `.map`, `.slice`, `.splice`) are
+   deliberately rejected — `each` over a length-≤1 list cannot soundly
+   produce multiple output elements per input.
+4. **The conditional's static result type is list-lifted** — `T[]`,
+   `T | null`, `T | undefined`, or `T | null | undefined`. Computed
+   from the `ConditionalExpression` for ternaries; from the enclosing
+   function's return type for if-conversion entry points.
+
+**Supported TS shapes** (operand restricted to a simple identifier;
+property-access operands defer to M5):
+
+```ts
+// (a) Positive ternary, with array wrapper or bare projection.
+u == null ? [] : [u.name]
+u == null ? null : u.name
+
+// (b) Negated ternary.
+u !== null ? u.age : null
+
+// (c) Positive if-conversion (early return = empty side).
+if (u === null) { return []; }
+return [u.name];
+
+// (d) Negated if-conversion (early return = present side).
+if (u !== null) { return [u.name]; }
+return [];
+```
+
+All four lower to `each $n in u | name $n` (or `age $n`, etc.). The
+fixture is `tests/fixtures/constructs/expressions-functor-lift.ts`.
+
+**Deliberate rejection of multi-element non-empty branches.** A shape
+like `if (xs == null) return []; return [xs[0], xs[1]];` would require
+the lift to multiply elements per input — `each x in xs | …` over a
+length-≤1 list cannot produce two output elements. The recognizer
+refuses, and these forms fall through to the standard L1 Cond build
+(which then rejects at the no-list-literal wall — there is no
+translatable target). This is intentional under the steering principle's
+rule 1: the TS itself is fine, but ts2pant cannot translate
+"sometimes-multi-element" pattern-matching without misrepresenting it.
 
 ### Chain Fusion (.filter / .map / .reduce)
 
@@ -745,6 +892,95 @@ deleted — `symbolicExecute`'s if-statement / for-of / forEach arms are
 thin dispatchers to the L1 path. Pure-path `.reduce` (chain fusion via
 `BodyResult.pendingComprehension`) is expression-position and
 architecturally separate; it stays on `translateReduceCall`.
+
+**M4 (equality-nullish-normalization): landed.** Every TS expression
+in the equality / nullish equivalence class flows through Layer 1.
+
+*Canonical forms:*
+
+- `IsNullish(operand)` — the canonical Bool null/undefined test.
+  Recognized from `x == null`, `x != null`, `x === null`,
+  `x === undefined` (and the `!==` negations), the long disjunction
+  `x === null || x === undefined`, the conjunction-negated long form
+  `x !== null && x !== undefined`, and `typeof x === 'undefined'` (and
+  `!==`). Negated forms wrap as `unop(not, IsNullish(operand))`.
+  Lowers mechanically to the cardinality-zero shape `#x = 0` —
+  byte-identical to the pre-M4 hand-emitted shape `??` and `?.`
+  already used. The operand may be any L1 expression (not just a
+  `Var`). Long-form recognition uses a structural `structurallyEqualExpression`
+  walk, not `node.getText()`, so whitespace/comment/quote-style
+  variation in the source doesn't break recognition. Partial-match
+  disjunctions (`(a === null) || (a === undefined) || other`) recurse
+  on the `||`/`&&` operands and extract nullish prefixes
+  opportunistically — see § "Developer Steering Principles" rule 2.
+- `BinOp(eq | neq, lhs, rhs)` — canonical strict equality. Produced
+  unconditionally from `===` / `!==`. The L1 form admits arbitrary
+  operands; sub-expressions wrap via `from-l2` until M5 brings property
+  access onto L1 natively.
+- Functor-lift `each $n in x | f $n` — the canonical lowering for
+  null-guarded list-lifted conditionals (see § "Functor-Lift
+  Recognizer" above for the four soundness conditions). Combined-shape
+  match crossing M1 (Cond) + M4 (IsNullish); load-bearing because
+  Pant has no list literal — the alternative cardinality-dispatch
+  lowering has no expressible target.
+
+*Equality rule:* `===` / `!==` always canonicalize through L1; `==` /
+`!=` is rejected unconditionally outside the nullish recognizer. There
+is no type-based "safe loose-eq" exception. The rejection is the rule-1
+case of § "Developer Steering Principles": loose equality is ambiguous
+in TS itself between value-equality and JS-coercion semantics, and
+ts2pant steers the programmer toward `===`/`!==` where intent is
+unambiguous rather than guess.
+
+The `x == null` carve-out is **path-scoped**, not global:
+
+- *Body / L1 expression-translation path* (`translateBodyExpr` and
+  `translateExpr` in `translate-signature.ts`) — the nullish recognizer
+  fires *before* the loose-eq rejection dispatcher, so `x == null` and
+  `x != null` are folded to `IsNullish` (or its negation) and translate
+  successfully.
+- *Signature / guard-classification path* (`containsUnsupportedOperator`
+  in `translate-signature.ts`, used by `classifyGuardIf` and
+  helper-followability checks) — strict: ALL loose equality (`==` /
+  `!=`), including `x == null` and `x != null`, returns
+  `containsUnsupportedOperator = true` and the guard is **not**
+  classified as a guard. The if-statement stays in the body, where the
+  body translator then folds it via the recognizer — so the runtime
+  check survives, but it's no longer factored out as a precondition.
+
+The asymmetry is deliberate: a guard is a *factored-out* runtime check
+with no body, so misclassifying one would silently drop the check on
+both sides; classifying conservatively keeps the if-statement intact.
+
+*from-l2 shrinkage scope.* Sub-expressions of nullish and equality
+forms now build natively on L1: the `IsNullish` operand is an
+arbitrary L1 expression, and `BinOp(eq | neq, …)` operands are L1.
+The `from-l2` adapter still wraps internal sub-expressions where
+those operands themselves come from `translateBodyExpr` (property
+access in particular) — full elimination is M5 territory.
+
+*Out of scope by design* (candidates for future milestones if real
+fixtures demand them):
+
+- `.indexOf(x) === -1` array-absence idioms — these are EUF equality
+  on a sentinel value, not nullish testing. They translate correctly
+  today via `===` canonicalization; they just don't route through
+  `IsNullish`.
+- `x === SomeEnum.NONE` enum-sentinel patterns — typed equality on a
+  named constant. Works as-is via `===` canonicalization; absorption
+  into `IsNullish` would require a notion of user-declared "absence"
+  values that ts2pant doesn't have.
+- `Boolean(x)` / `!!x` truthiness coercion — semantically distinct
+  from nullish testing (truthy includes `0`, `""`, `false`). Tests
+  presence in JS's truthy-coercion sense, not absence in the nullish
+  sense. May stay UNSUPPORTED indefinitely or become its own
+  milestone.
+
+*Pessimism rate (loose-eq rejection):* N=5 loose-equality sites across
+fixtures + dogfood, all consumed by the nullish recognizer. 0 rejected.
+**0%.** No fixture or dogfood site exercises a non-nullish loose-eq
+that would surface the rejection path; rejection is exercised by
+synthetic cases in `tests/equality-canonicalization.test.mts`.
 
 **Layering principle.** This is the architectural commitment that
 M2 ratifies and the M2 cleanup completes:
