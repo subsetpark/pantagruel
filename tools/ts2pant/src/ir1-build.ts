@@ -184,7 +184,7 @@ function buildSubExpr(expr: ts.Expression, ctx: L1BuildContext): L1BuildResult {
 // ---------------------------------------------------------------------------
 //
 // `if (x == null) return []; else return [f(x)]` — and the equivalent
-// ternary forms — lower as `each $n in x | f $n`, the canonical
+// ternary forms — lower as `each n in x | f n`, the canonical
 // list-lifted comprehension under the `T | null → [T]` encoding. Pant
 // has no list literal, so the alternative cardinality-dispatch lowering
 // (`cond #x = 0 => [], true => [f((x 1))]`) has no expressible Pant
@@ -262,7 +262,7 @@ function isEmptyEquivalent(
 /**
  * If `expr` is a single-element array literal (`[e]`), return `e`. The
  * lift treats `[u.name]` and `u.name` symmetrically — both project to
- * the same `each $n in u | name $n` shape.
+ * the same `each n in u | name n` shape.
  *
  * Spread elements (`[...xs]`) and multi-element literals fall through
  * unchanged; they fail the present-side check below.
@@ -380,8 +380,8 @@ function allocateLiftBinder(ctx: L1BuildContext, hint: string): string {
 }
 
 /**
- * Functor-lift recognizer. Returns an L1 `from-l2(each $n in x | proj
- * $n)` when the four eligibility checks pass; returns `null` to fall
+ * Functor-lift recognizer. Returns an L1 `from-l2(each n in x | proj
+ * n)` when the four eligibility checks pass; returns `null` to fall
  * through to the standard L1 Cond build.
  *
  * Eligibility:
@@ -626,7 +626,7 @@ function buildFromTernary(
   ctx: L1BuildContext,
 ): L1BuildResult {
   // M4 Patch 5: functor-lift on a null-guarded list-lifted ternary —
-  // `(x == null) ? [] : [f(x)]` collapses to `each $n in x | f $n`.
+  // `(x == null) ? [] : [f(x)]` collapses to `each n in x | f n`.
   // Only the outermost ternary is examined (no chain unwinding), since
   // the lift requires the full (guard, then, else) shape on one node.
   const lifted = tryRecognizeFunctorLift(

@@ -3,9 +3,11 @@
  * (`tryRecognizeFunctorLift` in `src/ir1-build.ts`).
  *
  * The recognizer collapses null-guarded list-lifted conditionals like
- * `(x == null) ? [] : [f(x)]` into `each $n in x | f $n` — Pant has
+ * `(x == null) ? [] : [f(x)]` into `each n in x | f n` — Pant has
  * no list literal, so this is the canonical (and only translatable)
- * lowering for these shapes.
+ * lowering for these shapes. (The binder is plain `n` / `n1` /
+ * etc., not the internal `$N` hygienic class — comprehension binders
+ * must round-trip through Pant's parser, which rejects `$`.)
  *
  * Each test parses a function declaration containing a single ternary
  * or if-statement, runs the recognizer on the (guard, then, else)
@@ -457,7 +459,18 @@ describe("ir1-build-functor-lift", () => {
       "maybe-user",
       `expected setup to sanitize maybeUser → maybe-user, got ${sanitizedName}`,
     );
-    const occurrences = out.split(sanitizedName).length - 1;
+    // Token-bounded match instead of `out.split(sanitizedName)` so a
+    // hypothetical longer token like `maybe-user-suffix` doesn't double-
+    // count `maybe-user`. The negative-lookbehind/lookahead asserts the
+    // surrounding chars aren't valid Pant identifier continuations
+    // (alphanumerics, `_`, `-`, plus the trailing-`?`/`!` shapes Pant
+    // accepts in identifiers).
+    const escaped = sanitizedName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const tokenRx = new RegExp(
+      `(?<![A-Za-z0-9?!_-])${escaped}(?![A-Za-z0-9?!_-])`,
+      "g",
+    );
+    const occurrences = (out.match(tokenRx) ?? []).length;
     assert.equal(
       occurrences,
       1,
