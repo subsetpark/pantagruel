@@ -193,9 +193,11 @@ indexing `(x 1)` replaces singleton extraction. Post-M4, the `#x = 0`
 shape is the lowering of an L1 `IsNullish(x)` primitive — see § "Imperative
 IR Workstream" / "M4". The OpaqueExpr is identical pre- and post-M4; only
 the construction route changed (legacy `??` builder → L1 IsNullish →
-mechanical lower). Other null/undefined surface forms (`x == null`,
-`x === null`, `x === undefined`, the long disjunction, `typeof
-x === 'undefined'`) all flow through the same primitive.
+mechanical lower). On the body/L1 expression-translation path, other
+null/undefined surface forms (`x == null`, `x === null`, `x === undefined`,
+the long disjunction, `typeof x === 'undefined'`) all flow through the
+same primitive. The signature/guard-classification path is stricter —
+see § "Imperative IR Workstream" / "M4" for the asymmetry.
 
 - `x ?? y` with `x: [T]`:
   - `y: T` (non-nullable default) → `cond #x = 0 => y, true => (x 1)`
@@ -928,9 +930,27 @@ is no type-based "safe loose-eq" exception. The rejection is the rule-1
 case of § "Developer Steering Principles": loose equality is ambiguous
 in TS itself between value-equality and JS-coercion semantics, and
 ts2pant steers the programmer toward `===`/`!==` where intent is
-unambiguous rather than guess. The one exception — `x == null` — is
-universally idiomatic for null-or-undefined and is consumed by the
-nullish recognizer before the dispatcher is reached.
+unambiguous rather than guess.
+
+The `x == null` carve-out is **path-scoped**, not global:
+
+- *Body / L1 expression-translation path* (`translateBodyExpr` and
+  `translateExpr` in `translate-signature.ts`) — the nullish recognizer
+  fires *before* the loose-eq rejection dispatcher, so `x == null` and
+  `x != null` are folded to `IsNullish` (or its negation) and translate
+  successfully.
+- *Signature / guard-classification path* (`containsUnsupportedOperator`
+  in `translate-signature.ts`, used by `classifyGuardIf` and
+  helper-followability checks) — strict: ALL loose equality (`==` /
+  `!=`), including `x == null` and `x != null`, returns
+  `containsUnsupportedOperator = true` and the guard is **not**
+  classified as a guard. The if-statement stays in the body, where the
+  body translator then folds it via the recognizer — so the runtime
+  check survives, but it's no longer factored out as a precondition.
+
+The asymmetry is deliberate: a guard is a *factored-out* runtime check
+with no body, so misclassifying one would silently drop the check on
+both sides; classifying conservatively keeps the if-statement intact.
 
 *from-l2 shrinkage scope.* Sub-expressions of nullish and equality
 forms now build natively on L1: the `IsNullish` operand is an

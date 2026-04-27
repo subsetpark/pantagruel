@@ -534,9 +534,18 @@ surviving loose `==` / `!=`.
 - Patch 3 — Canonicalize strict equality; reject all surviving loose-eq.
   `===` / `!==` route through L1 `BinOp(eq | neq, …)` unconditionally.
   `==` / `!=` are rejected with a specific reason ("loose equality
-  (== / !=) is unsupported; use === / !==") in both `translate-body.ts`
-  and `translate-signature.ts`. No type-based exception — the principle
-  is rule-1 of § "Developer Steering Principles" in `tools/ts2pant/CLAUDE.md`.
+  (== / !=) is unsupported; use === / !==") on the body / L1
+  expression-translation paths in `translate-body.ts` and
+  `translate-signature.ts`'s `translateExpr`, *after* the nullish
+  recognizer has had a chance to fold `x == null`. The signature
+  guard-classification path (`containsUnsupportedOperator` in
+  `translate-signature.ts`, used by `classifyGuardIf` and
+  helper-followability) is stricter — it rejects ALL loose equality
+  including `x == null`, so an `if (x == null) throw` is *not*
+  classified as a guard and stays in the body where the body
+  translator's nullish recognizer handles it. No type-based exception
+  on either path — the principle is rule-1 of § "Developer Steering
+  Principles" in `tools/ts2pant/CLAUDE.md`.
 - Patch 4 — Refactor the `??` builder to construct its guard via L1
   `IsNullish`. Snapshot byte-equality is the cutover gate; the
   OpaqueExpr is identical pre- and post-M4.
@@ -582,7 +591,7 @@ is covered by synthetic cases in `tests/equality-canonicalization.test.mts`.
 | Question | Resolution |
 |----------|------------|
 | M4 standalone vs absorbed into M3 | Landed standalone. M3 was absorbed enough by iteration + mutation; equality/nullish is expression-only and a clean six-patch slice. |
-| Loose-eq policy: type-based accept exception, or unconditional reject? | Reject all surviving loose-eq. Per § "Developer Steering Principles" rule 1, `==` is ambiguous in TS regardless of operand type — defining a "safe-loose-eq" subset would be exactly the guesswork the IRSC discipline rejects. The `x == null` exception survives because Patch 2's nullish recognizer consumes it before the dispatcher is reached. |
+| Loose-eq policy: type-based accept exception, or unconditional reject? | Reject all surviving loose-eq. Per § "Developer Steering Principles" rule 1, `==` is ambiguous in TS regardless of operand type — defining a "safe-loose-eq" subset would be exactly the guesswork the IRSC discipline rejects. The `x == null` carve-out is path-scoped: on the body / L1 expression-translation paths, Patch 2's nullish recognizer consumes it before the loose-eq dispatcher fires; on the signature guard-classification path (`containsUnsupportedOperator`), all loose equality is rejected unconditionally including `x == null`, so a guard with `x == null` falls through to the body where the body translator handles it. |
 | Combined-shape recognizer scope (functor-lift crossing M1 + M4) | Included as Patch 5. Pant has no list literal — without the recognizer, idiomatic null-guards over list-lifted return types are untranslatable. Sets the precedent recorded in Lesson 5. |
 
 **Why this is a safe pause point**: Equality and nullish are
