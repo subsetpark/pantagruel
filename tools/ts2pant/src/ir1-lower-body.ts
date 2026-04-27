@@ -147,22 +147,39 @@ function lowerMapEffect(
 ): boolean {
   const objExpr = lowerL1ExprToOpaque(stmt.objExpr);
   const keyExpr = lowerL1ExprToOpaque(stmt.keyExpr);
-  const valueExpr =
-    stmt.valueExpr !== null ? lowerL1ExprToOpaque(stmt.valueExpr) : null;
-  installMapWrite(
-    state,
-    {
-      op: stmt.op,
-      ruleName: stmt.ruleName,
-      keyPredName: stmt.keyPredName,
-      ownerType: stmt.ownerType,
-      keyType: stmt.keyType,
-      objExpr,
-      keyExpr,
-      valueExpr,
-    },
-    ctx.applyConst,
-  );
+  // The discriminated union encodes the op/payload invariant: `set`
+  // carries a value, `delete` is value-less.
+  if (stmt.op === "set") {
+    installMapWrite(
+      state,
+      {
+        op: "set",
+        ruleName: stmt.ruleName,
+        keyPredName: stmt.keyPredName,
+        ownerType: stmt.ownerType,
+        keyType: stmt.keyType,
+        objExpr,
+        keyExpr,
+        valueExpr: lowerL1ExprToOpaque(stmt.valueExpr),
+      },
+      ctx.applyConst,
+    );
+  } else {
+    installMapWrite(
+      state,
+      {
+        op: "delete",
+        ruleName: stmt.ruleName,
+        keyPredName: stmt.keyPredName,
+        ownerType: stmt.ownerType,
+        keyType: stmt.keyType,
+        objExpr,
+        keyExpr,
+        valueExpr: null,
+      },
+      ctx.applyConst,
+    );
+  }
   return true;
 }
 
@@ -172,20 +189,34 @@ function lowerSetEffect(
   ctx: LowerBodyCtx,
 ): boolean {
   const objExpr = lowerL1ExprToOpaque(stmt.objExpr);
-  const elemExpr =
-    stmt.elemExpr !== null ? lowerL1ExprToOpaque(stmt.elemExpr) : null;
-  installSetWrite(
-    state,
-    {
-      op: stmt.op,
-      ruleName: stmt.ruleName,
-      ownerType: stmt.ownerType,
-      elemType: stmt.elemType,
-      objExpr,
-      elemExpr,
-    },
-    ctx.applyConst,
-  );
+  // Discriminated: `add`/`delete` carry an element, `clear` is element-less.
+  if (stmt.op === "clear") {
+    installSetWrite(
+      state,
+      {
+        op: "clear",
+        ruleName: stmt.ruleName,
+        ownerType: stmt.ownerType,
+        elemType: stmt.elemType,
+        objExpr,
+        elemExpr: null,
+      },
+      ctx.applyConst,
+    );
+  } else {
+    installSetWrite(
+      state,
+      {
+        op: stmt.op,
+        ruleName: stmt.ruleName,
+        ownerType: stmt.ownerType,
+        elemType: stmt.elemType,
+        objExpr,
+        elemExpr: lowerL1ExprToOpaque(stmt.elemExpr),
+      },
+      ctx.applyConst,
+    );
+  }
   return true;
 }
 

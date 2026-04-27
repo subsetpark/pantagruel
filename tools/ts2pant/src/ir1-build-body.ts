@@ -30,15 +30,18 @@ import { irWrap } from "./ir.js";
 import {
   type IR1Expr,
   type IR1FoldLeaf,
+  type IR1ForeachBody,
   type IR1Stmt,
   ir1Assign,
   ir1Block,
   ir1CondStmt,
   ir1Foreach,
   ir1FromL2,
-  ir1MapEffect,
+  ir1MapDelete,
+  ir1MapSet,
   ir1Member,
-  ir1SetEffect,
+  ir1SetAddOrDelete,
+  ir1SetClear,
 } from "./ir1.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import {
@@ -190,12 +193,20 @@ function finishForeach(
     return r;
   }
   const { bodyStmts, foldLeaves } = r;
-  const body: IR1Stmt | null =
+  // bodyStmts comes from `classifyForeachStmt` which only produces
+  // `assign` / `cond-stmt` / `map-effect` / `set-effect` (Shape A
+  // iterator writes) — all `IR1ForeachBody` shapes. The block here
+  // is also Shape-A-only, satisfying `IR1ForeachBody.block`'s
+  // self-recursive constraint.
+  const body: IR1ForeachBody | null =
     bodyStmts.length === 0
       ? null
       : bodyStmts.length === 1
         ? bodyStmts[0]!
-        : ir1Block([bodyStmts[0]!, ...bodyStmts.slice(1)]);
+        : ({
+            kind: "block",
+            stmts: [bodyStmts[0]!, ...bodyStmts.slice(1)],
+          } as IR1ForeachBody);
   if (body === null && foldLeaves.length === 0) {
     return { unsupported: "empty foreach body" };
   }
@@ -203,7 +214,7 @@ function finishForeach(
 }
 
 interface ForeachBodyResult {
-  bodyStmts: IR1Stmt[];
+  bodyStmts: IR1ForeachBody[];
   foldLeaves: IR1FoldLeaf[];
 }
 
@@ -223,7 +234,7 @@ interface ShapeBLeafTS {
 }
 
 type ForeachStmtClass =
-  | { kind: "shapeA"; built: IR1Stmt }
+  | { kind: "shapeA"; built: IR1ForeachBody }
   | { kind: "shapeB"; leaves: ShapeBLeafTS[] };
 
 /**
@@ -280,7 +291,7 @@ function buildL1ForeachBody(
     paramNames: subParams,
   };
 
-  const bodyStmts: IR1Stmt[] = [];
+  const bodyStmts: IR1ForeachBody[] = [];
   const foldLeaves: IR1FoldLeaf[] = [];
 
   for (const s of stmts) {
@@ -356,7 +367,9 @@ function classifyForeachStmt(
               "Shape A iterator write under an if-guard is not supported in foreach",
           };
         }
-        return { kind: "shapeA", built };
+        // `buildL1AssignStmt` only emits `ir1Assign(...)` (kind "assign"),
+        // a member of `IR1ForeachBody`.
+        return { kind: "shapeA", built: built as IR1ForeachBody };
       }
       const built = buildL1AssignStmt(stmt as ts.ExpressionStatement, subCtx);
       if (isUnsupported(built)) {
@@ -368,7 +381,7 @@ function classifyForeachStmt(
             "Shape A iterator write under an if-guard is not supported in foreach",
         };
       }
-      return { kind: "shapeA", built };
+      return { kind: "shapeA", built: built as IR1ForeachBody };
     }
     if (compoundFold === undefined) {
       return {
@@ -437,12 +450,14 @@ function classifyForeachStmt(
       };
     }
     // Shape A: build the cond-stmt via the standard if-mutation builder
-    // against subCtx so the iter binder is in scope.
+    // against subCtx so the iter binder is in scope. `buildL1IfMutation`
+    // returns `ir1CondStmt(...)` (kind "cond-stmt"), a member of
+    // `IR1ForeachBody`.
     const built = buildL1IfMutation(stmt, subCtx);
     if (isUnsupported(built)) {
       return built;
     }
-    return { kind: "shapeA", built };
+    return { kind: "shapeA", built: built as IR1ForeachBody };
   }
 
   return {
@@ -708,17 +723,29 @@ function buildL1EffectCall(
     const m = effect as Extract<typeof effect, { op: "set" | "delete" }> & {
       keyExpr: OpaqueExpr;
     };
-    return ir1MapEffect(
-      m.op,
+    const objExpr = ir1FromL2(irWrap(ctx.applyConst(m.objExpr)));
+    const keyExpr = ir1FromL2(irWrap(ctx.applyConst(m.keyExpr)));
+    if (m.op === "set") {
+      // Upstream MapMutation still types valueExpr as nullable; for op
+      // "set" it's invariably non-null (translateCallExpr guarantees it),
+      // so assert here at the boundary into the discriminated IR1 form.
+      return ir1MapSet(
+        m.ruleName,
+        m.keyPredName,
+        m.ownerType,
+        m.keyType,
+        objExpr,
+        keyExpr,
+        ir1FromL2(irWrap(ctx.applyConst(m.valueExpr!))),
+      );
+    }
+    return ir1MapDelete(
       m.ruleName,
       m.keyPredName,
       m.ownerType,
       m.keyType,
-      ir1FromL2(irWrap(ctx.applyConst(m.objExpr))),
-      ir1FromL2(irWrap(ctx.applyConst(m.keyExpr))),
-      m.valueExpr !== null
-        ? ir1FromL2(irWrap(ctx.applyConst(m.valueExpr)))
-        : null,
+      objExpr,
+      keyExpr,
     );
   }
   // Set mutation: op ∈ {add, delete, clear}, no keyExpr field
@@ -726,13 +753,18 @@ function buildL1EffectCall(
     typeof effect,
     { op: "add" | "delete" | "clear" }
   > & { elemExpr: OpaqueExpr | null };
-  return ir1SetEffect(
+  const objExpr = ir1FromL2(irWrap(ctx.applyConst(s.objExpr)));
+  if (s.op === "clear") {
+    return ir1SetClear(s.ruleName, s.ownerType, s.elemType, objExpr);
+  }
+  // add / delete — elemExpr is non-null per translateCallExpr.
+  return ir1SetAddOrDelete(
     s.op,
     s.ruleName,
     s.ownerType,
     s.elemType,
-    ir1FromL2(irWrap(ctx.applyConst(s.objExpr))),
-    s.elemExpr !== null ? ir1FromL2(irWrap(ctx.applyConst(s.elemExpr))) : null,
+    objExpr,
+    ir1FromL2(irWrap(ctx.applyConst(s.elemExpr!))),
   );
 }
 

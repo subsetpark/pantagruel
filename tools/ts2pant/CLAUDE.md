@@ -730,9 +730,13 @@ existing `SymbolicState` from `translate-body.ts` and emitting
 `PropResult[]`. No L2 statement vocabulary; the existing `SymbolicState`
 primitives (`putWrite`, `mergeOverrides`, `installMapWrite`,
 `installSetWrite`) are reused so frame-condition synthesis is
-unchanged. Both `Foreach.body` (Shape A — uniform iterator writes)
-and `Foreach.foldLeaves` (Shape B — accumulator folds `a.p OP= f(x)`)
-emit per-iteration equations through this single fold. Map/Set effects
+unchanged. `Foreach.body` (Shape A — uniform iterator writes) emits
+one universally-quantified per-iteration equation per modified rule
+(`all $N in src | prop' $N = …`), while `Foreach.foldLeaves` (Shape B
+— accumulator folds `a.p OP= f(x)`) emits one *aggregated* accumulator
+equation per leaf with a `comb over each $N in src[, guard] | rhs`
+right-hand side. Both flow through the same fold but produce
+distinct output shapes. Map/Set effects
 inside branches (`m.set(k, v)`, `s.add(e)`, etc.) are first-class L1
 forms (`map-effect`, `set-effect`). The legacy iteration recognizers
 (`translateForOfLoop`, `translateForOfLoopBody`, `translateForEachStmt`,

@@ -193,7 +193,9 @@ export type IR1Stmt =
    *   the iter binder), processed via a sub-state and emitted as
    *   quantified equations. `null` when the body is pure Shape B
    *   (accumulator-fold only) — there's no per-iteration mutation
-   *   to emit.
+   *   to emit. Typed as `IR1ForeachBody` (subset of `IR1Stmt`) so
+   *   `return` / `throw` / nested loops cannot appear at the IR
+   *   construction site — see `IR1ForeachBody` below.
    * - `foldLeaves`: Shape B accumulator-fold contributions (`a.p OP=
    *   f(x)`), emitted as single equations with a comb-aggregate RHS.
    *   Empty for pure-Shape-A bodies. Each leaf may carry an optional
@@ -203,7 +205,7 @@ export type IR1Stmt =
       kind: "foreach";
       binder: string;
       source: IR1Expr;
-      body: IR1Stmt | null;
+      body: IR1ForeachBody | null;
       foldLeaves: IR1FoldLeaf[];
     }
   /**
@@ -245,30 +247,72 @@ export type IR1Stmt =
    * here so `ir1.ts` doesn't need to import from `translate-body.ts`
    * (one-way dependency: translate-body imports ir1 types). The
    * build/lower pair convert between the two representations.
+   *
+   * Discriminated on `op` so the payload invariant is encoded in the
+   * type: `set` carries a value, `delete` is value-less.
    */
   | {
       kind: "map-effect";
-      op: "set" | "delete";
+      op: "set";
       ruleName: string;
       keyPredName: string;
       ownerType: string;
       keyType: string;
       objExpr: IR1Expr;
       keyExpr: IR1Expr;
-      valueExpr: IR1Expr | null;
+      valueExpr: IR1Expr;
+    }
+  | {
+      kind: "map-effect";
+      op: "delete";
+      ruleName: string;
+      keyPredName: string;
+      ownerType: string;
+      keyType: string;
+      objExpr: IR1Expr;
+      keyExpr: IR1Expr;
+      valueExpr: null;
     }
   /**
    * Set mutation effect: `s.add(e)`, `s.delete(e)`, `s.clear()`.
-   * Same translation discipline as `map-effect`.
+   * Same translation discipline as `map-effect` — `add` / `delete`
+   * carry the affected element, `clear` is element-less.
    */
   | {
       kind: "set-effect";
-      op: "add" | "delete" | "clear";
+      op: "add" | "delete";
       ruleName: string;
       ownerType: string;
       elemType: string;
       objExpr: IR1Expr;
-      elemExpr: IR1Expr | null;
+      elemExpr: IR1Expr;
+    }
+  | {
+      kind: "set-effect";
+      op: "clear";
+      ruleName: string;
+      ownerType: string;
+      elemType: string;
+      objExpr: IR1Expr;
+      elemExpr: null;
+    };
+
+/**
+ * Statement shapes admissible as the body of an `IR1Stmt.foreach` —
+ * Shape A iterator writes only. Excludes `return`, `throw`, nested
+ * `for` / `while`, and other forms `lowerL1Body` would reject. Block
+ * bodies recurse: a `block` here may only contain other
+ * `IR1ForeachBody` shapes. Construction sites that try to embed a
+ * `return` (or any other non-iteration form) fail at the type level.
+ */
+export type IR1ForeachBody =
+  | Extract<
+      IR1Stmt,
+      { kind: "assign" | "cond-stmt" | "map-effect" | "set-effect" }
+    >
+  | {
+      kind: "block";
+      stmts: readonly [IR1ForeachBody, ...IR1ForeachBody[]];
     };
 
 // --------------------------------------------------------------------------
@@ -438,7 +482,7 @@ export const ir1CondStmt = (
 export const ir1Foreach = (
   binder: string,
   source: IR1Expr,
-  body: IR1Stmt | null,
+  body: IR1ForeachBody | null,
   foldLeaves: IR1FoldLeaf[] = [],
 ): IR1Stmt => ({ kind: "foreach", binder, source, body, foldLeaves });
 
@@ -471,18 +515,23 @@ export const ir1ExprStmt = (expr: IR1Expr): IR1Stmt => ({
   expr,
 });
 
-export const ir1MapEffect = (
-  op: "set" | "delete",
+/**
+ * Map mutation constructors. Split per `op` so the type system enforces
+ * the payload invariant (`set` always carries a value; `delete` never
+ * does). Build/lower call sites must dispatch on `op` before
+ * constructing — see `buildL1EffectCall` in `ir1-build-body.ts`.
+ */
+export const ir1MapSet = (
   ruleName: string,
   keyPredName: string,
   ownerType: string,
   keyType: string,
   objExpr: IR1Expr,
   keyExpr: IR1Expr,
-  valueExpr: IR1Expr | null,
+  valueExpr: IR1Expr,
 ): IR1Stmt => ({
   kind: "map-effect",
-  op,
+  op: "set",
   ruleName,
   keyPredName,
   ownerType,
@@ -492,13 +541,37 @@ export const ir1MapEffect = (
   valueExpr,
 });
 
-export const ir1SetEffect = (
-  op: "add" | "delete" | "clear",
+export const ir1MapDelete = (
+  ruleName: string,
+  keyPredName: string,
+  ownerType: string,
+  keyType: string,
+  objExpr: IR1Expr,
+  keyExpr: IR1Expr,
+): IR1Stmt => ({
+  kind: "map-effect",
+  op: "delete",
+  ruleName,
+  keyPredName,
+  ownerType,
+  keyType,
+  objExpr,
+  keyExpr,
+  valueExpr: null,
+});
+
+/**
+ * Set mutation constructors. Split per `op` for the same reason as
+ * `ir1MapSet` / `ir1MapDelete`: `add` / `delete` always carry an
+ * element; `clear` never does.
+ */
+export const ir1SetAddOrDelete = (
+  op: "add" | "delete",
   ruleName: string,
   ownerType: string,
   elemType: string,
   objExpr: IR1Expr,
-  elemExpr: IR1Expr | null,
+  elemExpr: IR1Expr,
 ): IR1Stmt => ({
   kind: "set-effect",
   op,
@@ -507,4 +580,19 @@ export const ir1SetEffect = (
   elemType,
   objExpr,
   elemExpr,
+});
+
+export const ir1SetClear = (
+  ruleName: string,
+  ownerType: string,
+  elemType: string,
+  objExpr: IR1Expr,
+): IR1Stmt => ({
+  kind: "set-effect",
+  op: "clear",
+  ruleName,
+  ownerType,
+  elemType,
+  objExpr,
+  elemExpr: null,
 });

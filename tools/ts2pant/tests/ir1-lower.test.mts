@@ -331,7 +331,14 @@ describe("M3 statement constructors are active", () => {
   });
 
   it("ir1Foreach builds a foreach", () => {
-    const stmt = ir1Foreach("x", ir1Var("xs"), ir1Return(ir1Var("x")));
+    // Body must be in `IR1ForeachBody` — Shape A iterator writes only.
+    // `ir1Assign(Member(x, "p"), v)` is a member-target assign, the
+    // canonical Shape A form.
+    const stmt = ir1Foreach(
+      "x",
+      ir1Var("xs"),
+      ir1Assign(ir1Member(ir1Var("x"), "p"), ir1LitNat(1)),
+    );
     assert.equal(stmt.kind, "foreach");
   });
 

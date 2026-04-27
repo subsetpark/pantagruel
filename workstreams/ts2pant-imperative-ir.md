@@ -382,9 +382,11 @@ re-forms on top of `Assign`.
 The iteration + mutation classes flow through Layer 1: iteration surface
 forms (`for (const x of arr) { … }`, `arr.forEach(x => { … })`) build to
 canonical `Foreach(binder, source, body, foldLeaves)`, branched mutation
-builds to canonical statement-position `CondStmt`. The L1 → L2 lowering
-threads the existing `SymbolicState` (the same primitives the legacy
-mutating path uses — `putWrite`, `mergeOverrides`, `installMapWrite`,
+builds to canonical statement-position `CondStmt`. The mutating path
+**bypasses L2 entirely** — `lowerL1Body` in `ir1-lower-body.ts` walks
+the `IR1Stmt` tree and emits `PropResult[]` directly while threading
+the existing `SymbolicState` (the same primitives the legacy mutating
+path uses — `putWrite`, `mergeOverrides`, `installMapWrite`,
 `installSetWrite`) so frame-condition emission is unchanged.
 
 **Strategy:** rip-out-first. After two architectural false starts (the
@@ -570,7 +572,7 @@ parallel if both are needed.
 
 | Question | Notes | Resolve By |
 |----------|-------|------------|
-| Decrement μ-search (`i--`) SMT encoding | Layer 1 admits it; SMT lowering for `min over each j: Int, j <= INIT, ~P(j) | j` needs verification on a fixture. | When a fixture demands it |
+| Decrement μ-search (`i--`) SMT encoding | Layer 1 admits it; SMT lowering for `min over each j: Int, j <= INIT, ~P(j) \| j` needs verification on a fixture. | When a fixture demands it |
 | Index-for with mutating `arr[i] = …` writes | Aliasing semantics non-trivial. Deferred unless a fixture demands it. | When a fixture demands it |
 | M4 standalone vs absorbed | Depends on real-fixture pressure on equality/nullish forms inside iteration bodies. | Pre-M4 |
 | M5 standalone vs absorbed | Property access likely absorbs into whichever earlier milestone first needs uniform `Member` shape. | Pre-M5 |
