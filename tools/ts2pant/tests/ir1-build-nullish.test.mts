@@ -343,4 +343,80 @@ describe("ir1-build-nullish", () => {
     const l1 = recognizeNullishForm(expr, checker, makeTranslate());
     assert.equal(l1, null);
   });
+
+  // ─── Sentinel-vs-sentinel rejection ─────────────────────────────────
+
+  it("`null === undefined` falls through (sentinel-vs-sentinel)", () => {
+    // The "operand" would itself be a nullish sentinel — folding to
+    // `IsNullish(undefined)` lowers to `#undefined = 0`, ill-typed.
+    const { expr, checker } = parseBinExpr("null === undefined");
+    const l1 = recognizeNullishForm(expr, checker, makeTranslate());
+    assert.equal(l1, null);
+  });
+
+  it("`undefined !== null` falls through (sentinel-vs-sentinel, negated)", () => {
+    const { expr, checker } = parseBinExpr("undefined !== null");
+    const l1 = recognizeNullishForm(expr, checker, makeTranslate());
+    assert.equal(l1, null);
+  });
+
+  it("`null === null` falls through (same-kind sentinel)", () => {
+    // Always-true; folding to `IsNullish(null)` is ill-typed.
+    const { expr, checker } = parseBinExpr("null === null");
+    const l1 = recognizeNullishForm(expr, checker, makeTranslate());
+    assert.equal(l1, null);
+  });
+
+  it("`undefined === undefined` falls through (same-kind sentinel)", () => {
+    const { expr, checker } = parseBinExpr("undefined === undefined");
+    const l1 = recognizeNullishForm(expr, checker, makeTranslate());
+    assert.equal(l1, null);
+  });
+
+  it("`typeof null === 'undefined'` falls through (sentinel inside typeof)", () => {
+    // `typeof null` is "object", so this is always false. Folding to
+    // `IsNullish(null)` is wrong both semantically and as Pant shape.
+    const { expr, checker } = parseBinExpr("typeof null === 'undefined'");
+    const l1 = recognizeNullishForm(expr, checker, makeTranslate());
+    assert.equal(l1, null);
+  });
+
+  // ─── Duplicate-fold dedup ───────────────────────────────────────────
+
+  it("duplicate-operand long form collapses to a single is-nullish", () => {
+    // `(P or P) ≡ P`: chains with multiple fold pairs sharing the
+    // same operand should produce ONE IsNullish, not two joined by
+    // `or`. Also avoids translating the same operand twice through
+    // the shared UniqueSupply (which could diverge fresh-binder
+    // counters for chain-typed operands).
+    const { expr, checker } = parseBinExpr(
+      "x === null || x === undefined || x === null || x === undefined",
+    );
+    const l1 = asL1(recognizeNullishForm(expr, checker, makeTranslate()));
+    // Top-level should be a single `is-nullish`, not `binop(or, …)`.
+    const operand = expectIsNullish(l1);
+    expectOperandText(operand, "x");
+  });
+
+  it("two distinct duplicate folds keep both is-nullish (different operands)", () => {
+    // Sanity: dedup is by operand identity, not by fold count.
+    // `x..., x..., y..., y...` should produce
+    // `IsNullish(x) or IsNullish(y)`, not collapse to one.
+    const { expr, checker } = parseBinExpr(
+      "x === null || x === undefined || y === null || y === undefined",
+    );
+    const l1 = asL1(recognizeNullishForm(expr, checker, makeTranslate()));
+    assert.equal(l1.kind, "binop");
+    if (l1.kind === "binop") {
+      assert.equal(l1.op, "or");
+      assert.equal(l1.lhs.kind, "is-nullish");
+      assert.equal(l1.rhs.kind, "is-nullish");
+      if (l1.lhs.kind === "is-nullish") {
+        expectOperandText(l1.lhs.operand, "x");
+      }
+      if (l1.rhs.kind === "is-nullish") {
+        expectOperandText(l1.rhs.operand, "y");
+      }
+    }
+  });
 });

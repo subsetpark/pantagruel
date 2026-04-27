@@ -73,11 +73,38 @@ function isNullableType(type: ts.Type): boolean {
   return (type.flags & mask) !== 0;
 }
 
+/**
+ * Resolve `operand`'s type for the nullability gate, ignoring TS
+ * flow-narrowing. The plain `getTypeAtLocation(operand)` would return
+ * the narrowed type — and inside a long-form chain
+ * (`x === null || x === undefined || x === null`) TypeScript narrows
+ * `x` to non-nullable in later clauses based on prior negative
+ * comparisons. The recognizer is operating syntactically, so we want
+ * the *declared* type at each occurrence: `x: number | null | undefined`
+ * stays nullable in every leaf of the chain.
+ *
+ * For Identifiers and PropertyAccess we resolve the symbol and ask
+ * for `getTypeOfSymbolAtLocation(symbol, declaration)`, which is
+ * narrowing-free. For shapes without a clear symbol (call results,
+ * etc.) we fall back to `getTypeAtLocation` — those are rarely
+ * repeated in a chain, so the narrowing risk is low.
+ */
+function getOperandDeclaredType(
+  operand: ts.Expression,
+  checker: ts.TypeChecker,
+): ts.Type {
+  const symbol = checker.getSymbolAtLocation(operand);
+  if (symbol?.valueDeclaration) {
+    return checker.getTypeOfSymbolAtLocation(symbol, symbol.valueDeclaration);
+  }
+  return checker.getTypeAtLocation(operand);
+}
+
 function isOperandNullable(
   operand: ts.Expression,
   checker: ts.TypeChecker,
 ): boolean {
-  return isNullableType(checker.getTypeAtLocation(operand));
+  return isNullableType(getOperandDeclaredType(operand, checker));
 }
 
 /**
@@ -126,6 +153,19 @@ function isUndefinedIdentifier(
 function isUndefinedStringLiteral(e: ts.Expression): boolean {
   const u = unwrapParens(e);
   return ts.isStringLiteral(u) && u.text === "undefined";
+}
+
+/**
+ * True when `e` is itself one of the nullish sentinels — either the
+ * `null` keyword or a checker-resolved global `undefined`. Used to
+ * reject sentinel-vs-sentinel comparisons (`null === undefined`,
+ * `undefined !== null`, even `null === null`) where the proposed
+ * "operand" is itself a sentinel — folding such a comparison to
+ * `IsNullish(sentinel)` lowers to `#null = 0` or `#undefined = 0`,
+ * which is meaningless and ill-typed in Pant.
+ */
+function isNullishSentinel(e: ts.Expression, checker: ts.TypeChecker): boolean {
+  return isNullKeyword(e) || isUndefinedIdentifier(e, checker);
 }
 
 function isTypeofExpression(e: ts.Expression): ts.Expression | null {
@@ -185,25 +225,35 @@ export function recognizeNullishLeaf(
       return null;
   }
 
-  const matchIfNullable = (operand: ts.Expression): NullishLeafMatch | null =>
-    isOperandNullable(operand, checker) ? { operand, negated } : null;
+  // Refuse the fold when the candidate operand is itself a nullish
+  // sentinel — `null === undefined`, `undefined !== null`, even
+  // `null === null` and `undefined === undefined`. Such comparisons
+  // are constants in TS, and folding them to `IsNullish(null)` /
+  // `IsNullish(undefined)` lowers to `#null = 0` (cardinality of a
+  // literal sentinel), which is ill-typed in Pant.
+  const matchIfValid = (operand: ts.Expression): NullishLeafMatch | null => {
+    if (isNullishSentinel(operand, checker)) {
+      return null;
+    }
+    return isOperandNullable(operand, checker) ? { operand, negated } : null;
+  };
 
   const leftIsNull = isNullKeyword(expr.left);
   const rightIsNull = isNullKeyword(expr.right);
   if (rightIsNull) {
-    return matchIfNullable(expr.left);
+    return matchIfValid(expr.left);
   }
   if (leftIsNull) {
-    return matchIfNullable(expr.right);
+    return matchIfValid(expr.right);
   }
   if (strict) {
     const leftIsUndef = isUndefinedIdentifier(expr.left, checker);
     const rightIsUndef = isUndefinedIdentifier(expr.right, checker);
     if (rightIsUndef) {
-      return matchIfNullable(expr.left);
+      return matchIfValid(expr.left);
     }
     if (leftIsUndef) {
-      return matchIfNullable(expr.right);
+      return matchIfValid(expr.right);
     }
   }
   return null;
@@ -245,14 +295,23 @@ export function recognizeTypeofUndefined(
   const leftTypeofOperand = isTypeofExpression(expr.left);
   const rightTypeofOperand = isTypeofExpression(expr.right);
 
-  const matchIfNullable = (operand: ts.Expression): NullishLeafMatch | null =>
-    isOperandNullable(operand, checker) ? { operand, negated } : null;
+  // Same sentinel-rejection as `recognizeNullishLeaf`: `typeof null
+  // === 'undefined'` is `false` (typeof null is "object"), so folding
+  // to `IsNullish(null)` is wrong both semantically and as Pant
+  // shape. Refuse if the operand inside `typeof` is itself a
+  // nullish sentinel.
+  const matchIfValid = (operand: ts.Expression): NullishLeafMatch | null => {
+    if (isNullishSentinel(operand, checker)) {
+      return null;
+    }
+    return isOperandNullable(operand, checker) ? { operand, negated } : null;
+  };
 
   if (leftTypeofOperand !== null && isUndefinedStringLiteral(expr.right)) {
-    return matchIfNullable(leftTypeofOperand);
+    return matchIfValid(leftTypeofOperand);
   }
   if (rightTypeofOperand !== null && isUndefinedStringLiteral(expr.left)) {
-    return matchIfNullable(rightTypeofOperand);
+    return matchIfValid(rightTypeofOperand);
   }
   return null;
 }
@@ -406,9 +465,39 @@ function recognizeLongForm(
     return null;
   }
 
-  const skipIndices = new Set<number>(folds.map((f) => f.secondIndex));
+  // Post-process: dedupe folds whose operands are structurally equal
+  // to an earlier fold's operand. `(P or P) ≡ P` and `(P and P) ≡ P`,
+  // so a chain like `x === null || x === undefined || x === null ||
+  // x === undefined` should produce a single `IsNullish(x)`, not two
+  // structurally-equivalent ones joined by `or`. Absorbing the
+  // duplicate fold also avoids translating the same operand twice
+  // through the shared `UniqueSupply` — fresh-binder counters would
+  // otherwise diverge between the two translations of a chain-typed
+  // operand (e.g., `arr.filter(p)`), producing redundant L1 with
+  // different binder names per `IsNullish`.
+  const dedupedFolds: Fold[] = [];
+  const absorbedSkip = new Set<number>();
+  for (const f of folds) {
+    const equiv = dedupedFolds.find((d) =>
+      structurallyEqualExpression(d.operand, f.operand),
+    );
+    if (equiv === undefined) {
+      dedupedFolds.push(f);
+    } else {
+      // Both positions of the duplicate fold are absorbed by the
+      // earlier fold's IsNullish. They produce no items in
+      // reconstruction.
+      absorbedSkip.add(f.firstIndex);
+      absorbedSkip.add(f.secondIndex);
+    }
+  }
+
+  const skipIndices = new Set<number>([
+    ...dedupedFolds.map((f) => f.secondIndex),
+    ...absorbedSkip,
+  ]);
   const foldByFirst = new Map<number, ts.Expression>(
-    folds.map((f) => [f.firstIndex, f.operand]),
+    dedupedFolds.map((f) => [f.firstIndex, f.operand]),
   );
 
   // Bool-type gate on leftover operands. After folding, the result
