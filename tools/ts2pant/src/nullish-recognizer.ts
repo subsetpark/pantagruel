@@ -319,8 +319,13 @@ export function recognizeTypeofUndefined(
 /**
  * Combined leaf matcher: tries `recognizeNullishLeaf` first, then
  * `recognizeTypeofUndefined`. Returns `null` if neither matches.
+ *
+ * Exported for the M4 functor-lift recognizer (`tryRecognizeFunctorLift`
+ * in `ir1-build.ts`), which needs to inspect a conditional's guard for
+ * a leaf nullish form before deciding whether to lift the conditional
+ * to a functor `each` over the operand.
  */
-function recognizeAnyLeaf(
+export function recognizeAnyLeaf(
   expr: ts.BinaryExpression,
   checker: ts.TypeChecker,
 ): NullishLeafMatch | null {
@@ -586,3 +591,8 @@ export function recognizeNullishForm(
   }
   return null;
 }
+
+// Re-export the parens-unwrap helper for the functor-lift recognizer,
+// which needs to peek through parenthesized wrappers on guard / branch
+// expressions before classifying their shape.
+export { unwrapParens };

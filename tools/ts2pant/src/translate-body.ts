@@ -12,6 +12,7 @@ import {
   isL1StmtUnsupported,
   isL1Unsupported,
   lowerL1ToOpaque,
+  tryRecognizeFunctorLift,
 } from "./ir1-build.js";
 import {
   buildL1ForEachCall,
@@ -1447,6 +1448,51 @@ function translatePureBody(
   }
 
   const supply = makeUniqueSupply(synthCell);
+
+  // M4 Patch 5: functor-lift on the if-conversion shape
+  //   `if (x == null) return []; return [f(x)];`
+  // Detected at the prelude level (one earlyReturn arm + an
+  // expression terminal) so the lift can produce one comprehension
+  // instead of an `unsupported`-rejecting cardinality-dispatch Cond.
+  if (
+    extracted.bindings.length === 1 &&
+    extracted.bindings[0]!.kind === "earlyReturn" &&
+    ts.isExpression(extracted.returnExpr)
+  ) {
+    const arm = extracted.bindings[0] as Extract<
+      ConstBinding,
+      { kind: "earlyReturn" }
+    >;
+    const lifted = tryRecognizeFunctorLift(
+      {
+        guard: arm.predicateExpr,
+        thenExpr: arm.valueExpr,
+        elseExpr: extracted.returnExpr,
+        contextNode: node,
+      },
+      {
+        checker,
+        strategy,
+        paramNames,
+        state: undefined,
+        supply,
+      },
+    );
+    if (lifted !== null) {
+      const liftedRhs = lowerL1ToOpaque(lifted);
+      const argExprs = params.map((p) => ast.var(p.name));
+      const lhs = ast.app(ast.var(functionName), argExprs);
+      return [
+        {
+          kind: "equation",
+          quantifiers: [] as OpaqueParam[],
+          lhs,
+          rhs: liftedRhs,
+        },
+      ];
+    }
+  }
+
   const inlined = inlineConstBindings(
     extracted.bindings,
     checker,

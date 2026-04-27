@@ -55,9 +55,12 @@ import {
 import { lowerL1Expr } from "./ir1-lower.js";
 import {
   type NullishTranslate,
+  recognizeAnyLeaf,
   recognizeNullishForm,
+  unwrapParens,
 } from "./nullish-recognizer.js";
 import type { OpaqueExpr } from "./pant-ast.js";
+import { getAst } from "./pant-wasm.js";
 import { isStaticallyBoolTyped } from "./purity.js";
 import type {
   MuSearch,
@@ -70,9 +73,14 @@ import {
   expressionReferencesNames,
   extractReturnFromBranch,
   isBodyUnsupported,
+  isNullableTsType,
   translateBodyExpr,
 } from "./translate-body.js";
-import type { NumericStrategy } from "./translate-types.js";
+import {
+  cellRegisterName,
+  type NumericStrategy,
+  toPantTermName,
+} from "./translate-types.js";
 
 /**
  * Context threaded through L1 build. Mirrors the parameter set of
@@ -173,6 +181,297 @@ function buildSubExpr(expr: ts.Expression, ctx: L1BuildContext): L1BuildResult {
   // before wrapping — using result.expr directly would drop the traversal
   // and lower the bare projection body instead.
   return ir1FromL2(irWrap(bodyExpr(result)));
+}
+
+// ---------------------------------------------------------------------------
+// Functor-lift recognizer (M4 Patch 5)
+// ---------------------------------------------------------------------------
+//
+// `if (x == null) return []; else return [f(x)]` — and the equivalent
+// ternary forms — lower as `each $n in x | f $n`, the canonical
+// list-lifted comprehension under the `T | null → [T]` encoding. Pant
+// has no list literal, so the alternative cardinality-dispatch lowering
+// (`cond #x = 0 => [], true => [f((x 1))]`) has no expressible Pant
+// target. This recognizer is the difference between translatable and
+// untranslatable surface for idiomatic null-guarded list-returning TS.
+//
+// Eligibility is conservative: all four checks must hold (nullish
+// guard, empty-equivalent empty side, single-element-producing present
+// side referencing the operand, list-lifted result type). Any failure
+// returns null and the caller falls through to standard L1 Cond
+// construction — which then rejects at the no-list-literal wall, the
+// pre-M4 behavior preserved.
+
+/**
+ * Candidate input for the functor-lift recognizer: the three TS
+ * expressions that make up a value-position conditional, plus the
+ * AST node from which the conditional's static result type can be
+ * inferred (the ConditionalExpression itself, or the IfStatement
+ * containing the branches).
+ */
+export interface FunctorLiftCandidate {
+  guard: ts.Expression;
+  thenExpr: ts.Expression;
+  elseExpr: ts.Expression;
+  /**
+   * Node at which to compute the result type:
+   *   - For a ternary, the `ConditionalExpression` itself
+   *     (`getTypeAtLocation` returns the union of branch types).
+   *   - For an `if (x == null) return []; return [f(x)]` shape, the
+   *     enclosing function declaration so the return type can drive
+   *     the list-lifted check.
+   */
+  contextNode: ts.Node;
+}
+
+const ARRAY_MULTI_PRODUCING_METHODS = new Set([
+  "concat",
+  "flat",
+  "flatMap",
+  "filter",
+  "map",
+  "slice",
+  "splice",
+]);
+
+/** True when `expr` is an empty-equivalent literal — `[]`, `null`, `undefined`. */
+function isEmptyEquivalent(expr: ts.Expression): boolean {
+  const u = unwrapParens(expr);
+  if (ts.isArrayLiteralExpression(u) && u.elements.length === 0) {
+    return true;
+  }
+  if (u.kind === ts.SyntaxKind.NullKeyword) {
+    return true;
+  }
+  if (ts.isIdentifier(u) && u.text === "undefined") {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * If `expr` is a single-element array literal (`[e]`), return `e`. The
+ * lift treats `[u.name]` and `u.name` symmetrically — both project to
+ * the same `each $n in u | name $n` shape.
+ *
+ * Spread elements (`[...xs]`) and multi-element literals fall through
+ * unchanged; they fail the present-side check below.
+ */
+function unwrapSingletonArray(expr: ts.Expression): ts.Expression {
+  const u = unwrapParens(expr);
+  if (ts.isArrayLiteralExpression(u) && u.elements.length === 1) {
+    const el = u.elements[0]!;
+    if (!ts.isSpreadElement(el)) {
+      return el as ts.Expression;
+    }
+  }
+  return u;
+}
+
+/**
+ * True when `expr` is a single-element-producing expression of
+ * `operandName`. After stripping a single-element array wrapper, the
+ * expression must reference the operand and not be a multi-element
+ * construction (multi-element array literal, spread, or known
+ * multi-producing array method like `.concat` / `.flat`).
+ */
+function isSingleElementProducingOf(
+  expr: ts.Expression,
+  operandName: string,
+): boolean {
+  const u = unwrapParens(expr);
+  if (ts.isArrayLiteralExpression(u)) {
+    return false;
+  }
+  if (ts.isSpreadElement(u)) {
+    return false;
+  }
+  if (ts.isCallExpression(u) && ts.isPropertyAccessExpression(u.expression)) {
+    if (ARRAY_MULTI_PRODUCING_METHODS.has(u.expression.name.text)) {
+      return false;
+    }
+  }
+  return expressionReferencesNames(u, new Set([operandName]));
+}
+
+/**
+ * True when `node`'s static type (or the enclosing function's return
+ * type, for an IfStatement) is list-lifted: `T[]`, `T | null`,
+ * `T | undefined`, or `T | null | undefined`.
+ */
+function isListLiftedTsType(t: ts.Type, checker: ts.TypeChecker): boolean {
+  if (checker.isArrayType(t)) {
+    return true;
+  }
+  return isNullableTsType(t);
+}
+
+function isListLiftedAtNode(node: ts.Node, checker: ts.TypeChecker): boolean {
+  if (ts.isConditionalExpression(node)) {
+    return isListLiftedTsType(checker.getTypeAtLocation(node), checker);
+  }
+  // For an if-statement (or return-statement, or the enclosing function
+  // node itself for the if-conversion entry point at the top of a
+  // pure body), the result type is the enclosing function's return
+  // type. Walk up to the function-like declaration if `node` isn't
+  // already one.
+  let fnLike: ts.SignatureDeclaration | null = null;
+  if (
+    ts.isFunctionDeclaration(node) ||
+    ts.isFunctionExpression(node) ||
+    ts.isArrowFunction(node) ||
+    ts.isMethodDeclaration(node) ||
+    ts.isGetAccessorDeclaration(node) ||
+    ts.isConstructorDeclaration(node)
+  ) {
+    fnLike = node;
+  } else if (ts.isIfStatement(node) || ts.isReturnStatement(node)) {
+    fnLike =
+      ts.findAncestor(
+        node,
+        (a): a is ts.SignatureDeclaration =>
+          ts.isFunctionDeclaration(a) ||
+          ts.isFunctionExpression(a) ||
+          ts.isArrowFunction(a) ||
+          ts.isMethodDeclaration(a) ||
+          ts.isGetAccessorDeclaration(a) ||
+          ts.isConstructorDeclaration(a),
+      ) ?? null;
+  }
+  if (!fnLike) {
+    return false;
+  }
+  const sig = checker.getSignatureFromDeclaration(fnLike);
+  if (!sig) {
+    return false;
+  }
+  return isListLiftedTsType(checker.getReturnTypeOfSignature(sig), checker);
+}
+
+/**
+ * Allocate a fresh comprehension binder name. Mirrors the μ-search
+ * binder allocator: prefer `cellRegisterName` against the document-wide
+ * NameRegistry when a synthCell is plumbed through; fall back to a
+ * supply-based name with a collision check against the active scoped
+ * params for standalone test paths.
+ */
+function allocateLiftBinder(ctx: L1BuildContext, hint: string): string {
+  if (ctx.supply.synthCell) {
+    return cellRegisterName(ctx.supply.synthCell, hint);
+  }
+  const used = new Set(ctx.paramNames.values());
+  let name: string;
+  do {
+    const n = ctx.supply.n;
+    ctx.supply.n = n + 1;
+    name = `${hint}${n}`;
+  } while (used.has(name));
+  return name;
+}
+
+/**
+ * Functor-lift recognizer. Returns an L1 `from-l2(each $n in x | proj
+ * $n)` when the four eligibility checks pass; returns `null` to fall
+ * through to the standard L1 Cond build.
+ *
+ * Eligibility:
+ *   (a) Guard is a leaf nullish form (`x == null`, `x === null`,
+ *       `x === undefined`, `typeof x === 'undefined'`, or their
+ *       negations).
+ *   (b) The "empty side" (the branch corresponding to `IsNullish(x) =
+ *       true`) is empty-equivalent: `[]`, `null`, or `undefined`.
+ *   (c) The "present side" (the `not IsNullish(x)` branch), after
+ *       stripping a single-element array wrapper, is a
+ *       single-element-producing expression that references the
+ *       operand. Multi-element constructions reject.
+ *   (d) The conditional's static result type is list-lifted (`T[]`,
+ *       `T | null`, `T | undefined`, …).
+ *
+ * Operand restriction: the leaf operand must be a simple identifier.
+ * Substitution maps the operand's Pant name to the binder via
+ * `ast.substituteBinder`, which only rewrites variable references.
+ * Property-access operands (`obj.prop == null`) would require
+ * generalizing substitution to arbitrary expressions and are out of
+ * scope for Patch 5; they fall through to the standard Cond build.
+ */
+export function tryRecognizeFunctorLift(
+  cand: FunctorLiftCandidate,
+  ctx: L1BuildContext,
+): IR1Expr | null {
+  // (a) Guard is a leaf nullish form.
+  const guard = unwrapParens(cand.guard);
+  if (!ts.isBinaryExpression(guard)) {
+    return null;
+  }
+  const leaf = recognizeAnyLeaf(guard, ctx.checker);
+  if (leaf === null) {
+    return null;
+  }
+  const operandNode = unwrapParens(leaf.operand);
+  if (!ts.isIdentifier(operandNode)) {
+    return null;
+  }
+  const operandName = operandNode.text;
+
+  // Polarity: a positive nullish guard (`x === null`) means the
+  // then-branch is the empty side; a negated guard (`x !== null`)
+  // means the then-branch is the present side.
+  const emptyExpr = leaf.negated ? cand.elseExpr : cand.thenExpr;
+  const presentExpr = leaf.negated ? cand.thenExpr : cand.elseExpr;
+
+  // (b) Empty side is empty-equivalent.
+  if (!isEmptyEquivalent(emptyExpr)) {
+    return null;
+  }
+
+  // (c) Present side, after stripping a singleton array wrapper, is a
+  //     single-element-producing expression of `operandName`.
+  const projection = unwrapSingletonArray(presentExpr);
+  if (!isSingleElementProducingOf(projection, operandName)) {
+    return null;
+  }
+
+  // (d) Result type is list-lifted.
+  if (!isListLiftedAtNode(cand.contextNode, ctx.checker)) {
+    return null;
+  }
+
+  // Build the lifted L1 expression.
+  //
+  // The operand and projection both translate through the legacy
+  // pipeline so embedded sub-expressions stay normalized exactly as
+  // they would on the standard Cond path. The substitution then
+  // rewrites references to the operand's Pant name with the fresh
+  // binder; `ast.substituteBinder` is Pant's capture-avoiding
+  // substitution, so a fresh hygienic binder is sufficient.
+  const operandSub = buildSubExpr(operandNode, ctx);
+  if (isL1Unsupported(operandSub)) {
+    return null;
+  }
+  const projectionSub = buildSubExpr(projection, ctx);
+  if (isL1Unsupported(projectionSub)) {
+    return null;
+  }
+
+  const operandOpaque = lowerExpr(lowerL1Expr(operandSub));
+  const projectionOpaque = lowerExpr(lowerL1Expr(projectionSub));
+
+  const operandPantName =
+    ctx.paramNames.get(operandName) ?? toPantTermName(operandName);
+  const binderName = allocateLiftBinder(ctx, "n");
+  const ast = getAst();
+  const substitutedProjection = ast.substituteBinder(
+    projectionOpaque,
+    operandPantName,
+    ast.var(binderName),
+  );
+
+  const opaqueEach = ast.each(
+    [],
+    [ast.gIn(binderName, operandOpaque)],
+    substitutedProjection,
+  );
+  return ir1FromL2(irWrap(opaqueEach));
 }
 
 // ---------------------------------------------------------------------------
@@ -298,6 +597,23 @@ function buildFromTernary(
   expr: ts.ConditionalExpression,
   ctx: L1BuildContext,
 ): L1BuildResult {
+  // M4 Patch 5: functor-lift on a null-guarded list-lifted ternary —
+  // `(x == null) ? [] : [f(x)]` collapses to `each $n in x | f $n`.
+  // Only the outermost ternary is examined (no chain unwinding), since
+  // the lift requires the full (guard, then, else) shape on one node.
+  const lifted = tryRecognizeFunctorLift(
+    {
+      guard: expr.condition,
+      thenExpr: expr.whenTrue,
+      elseExpr: expr.whenFalse,
+      contextNode: expr,
+    },
+    ctx,
+  );
+  if (lifted !== null) {
+    return lifted;
+  }
+
   const arms: Array<readonly [IR1Expr, IR1Expr]> = [];
   let current: ts.Expression = expr;
   // Right-leaning chain: a ? x : (b ? y : (c ? z : w)) → flatten.
@@ -336,6 +652,29 @@ function buildFromIfStatement(
   stmt: ts.IfStatement,
   ctx: L1BuildContext,
 ): L1BuildResult {
+  // M4 Patch 5: functor-lift on the simple two-branch shape
+  // `if (x == null) return []; else return [f(x)]`. Only attempts the
+  // lift when there is no else-if chain — multi-arm if-with-returns
+  // can't be uniformly lifted to one comprehension.
+  if (stmt.elseStatement && !ts.isIfStatement(stmt.elseStatement)) {
+    const thenExpr = extractReturnFromBranch(stmt.thenStatement, ctx.checker);
+    const elseExpr = extractReturnFromBranch(stmt.elseStatement, ctx.checker);
+    if (thenExpr !== null && elseExpr !== null) {
+      const lifted = tryRecognizeFunctorLift(
+        {
+          guard: stmt.expression,
+          thenExpr,
+          elseExpr,
+          contextNode: stmt,
+        },
+        ctx,
+      );
+      if (lifted !== null) {
+        return lifted;
+      }
+    }
+  }
+
   const arms: Array<readonly [IR1Expr, IR1Expr]> = [];
   let current: ts.IfStatement = stmt;
   while (true) {
