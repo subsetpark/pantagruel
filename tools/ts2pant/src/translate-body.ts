@@ -13,6 +13,8 @@ import {
   isL1Unsupported,
   lowerL1ToOpaque,
 } from "./ir1-build.js";
+import { buildL1IfMutation, isUnsupported } from "./ir1-build-body.js";
+import { lowerL1Body } from "./ir1-lower-body.js";
 import { lowerL1MuSearch, type MuSearchLowerCtx } from "./ir1-lower.js";
 import type {
   OpaqueCombiner,
@@ -4514,16 +4516,31 @@ function symbolicExecute(
       continue;
     }
 
-    // M3 rip: branched mutation (if-with-mutation) deleted. The L1 path
-    // replaces it via `buildL1Body` recognizing the if-statement as an
-    // L1 `cond-stmt` and `lowerL1Body` performing the per-write-key
-    // φ-merge. Until that path is wired, if-with-mutation rejects.
+    // Branched mutation: build L1 cond-stmt, lower via lowerL1Body
+    // (single-fold over L1 statements; threads SymbolicState).
+    // Slice 1 handles simple property assigns; richer branch shapes
+    // (Map/Set effects, compound assigns, etc.) reject from the build
+    // pass and fall through to the legacy unsupported below.
     if (ts.isIfStatement(stmt)) {
-      propositions.push({
-        kind: "unsupported",
-        reason: "M3 rip: branched mutation pending L1 cutover",
+      const built = buildL1IfMutation(stmt, {
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+        applyConst,
       });
-      ok = false;
+      if (isUnsupported(built)) {
+        propositions.push({
+          kind: "unsupported",
+          reason: built.unsupported,
+        });
+        ok = false;
+        continue;
+      }
+      if (!lowerL1Body(built, state, propositions, { applyConst })) {
+        ok = false;
+      }
       continue;
     }
 
