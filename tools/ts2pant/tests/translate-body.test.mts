@@ -555,32 +555,69 @@ describe("translateCallExpr", () => {
 });
 
 describe("conditional mutations (symbolic last-write)", () => {
-  it("rejects an assignment whose RHS is a Map/Set mutation effect", () => {
-    // `m.set(k, v)` returns the Map, but the translator categorizes
-    // it as an effect (statement-only). Without a `rejectEffect`
-    // guard at the assignment handler, `bodyExpr(val)` would throw on
-    // the `{ effect }` shape; with the guard we get a clean
-    // `unsupported` reason instead.
-    const source = `
-      interface A { p: Map<string, number>; }
-      function f(a: A, k: string, v: number): void {
-        a.p = a.p.set(k, v) as unknown as Map<string, number>;
-      }
-    `;
-    const sourceFile = createSourceFileFromSource(source);
-    const props = translateBody({
-      sourceFile,
-      functionName: "f",
-      strategy: IntStrategy,
+  // `m.set(k, v)` etc. return the receiver/boolean, but the
+  // translator categorizes them as effects (statement-only). Without
+  // a `rejectEffect` guard at the assignment handler, `bodyExpr(val)`
+  // would throw on the `{ effect }` shape; with the guard we get a
+  // clean `unsupported` reason instead. Cover both Map and Set
+  // mutation kinds so a regression in either's effect-recognition
+  // path doesn't slip through.
+  const collectionRhsCases = [
+    {
+      name: "Map.set",
+      source: `
+        interface A { p: Map<string, number>; }
+        function f(a: A, k: string, v: number): void {
+          a.p = a.p.set(k, v) as unknown as Map<string, number>;
+        }
+      `,
+    },
+    {
+      name: "Map.delete",
+      source: `
+        interface A { p: Map<string, number>; q: boolean; }
+        function f(a: A, k: string): void {
+          a.q = a.p.delete(k);
+        }
+      `,
+    },
+    {
+      name: "Set.add",
+      source: `
+        interface A { p: Set<string>; }
+        function f(a: A, x: string): void {
+          a.p = a.p.add(x) as unknown as Set<string>;
+        }
+      `,
+    },
+    {
+      name: "Set.delete",
+      source: `
+        interface A { p: Set<string>; q: boolean; }
+        function f(a: A, x: string): void {
+          a.q = a.p.delete(x);
+        }
+      `,
+    },
+  ];
+  for (const { name, source } of collectionRhsCases) {
+    it(`rejects an assignment whose RHS is a ${name} mutation effect`, () => {
+      const sourceFile = createSourceFileFromSource(source);
+      const props = translateBody({
+        sourceFile,
+        functionName: "f",
+        strategy: IntStrategy,
+      });
+      assert.ok(
+        props.some(
+          (p) =>
+            p.kind === "unsupported" &&
+            /collection mutation outside statement position/.test(p.reason),
+        ),
+        `${name}: expected the rejectEffect rejection`,
+      );
     });
-    assert.ok(
-      props.some(
-        (p) =>
-          p.kind === "unsupported" &&
-          /collection mutation outside statement position/.test(p.reason),
-      ),
-    );
-  });
+  }
 
   it("rejects conditional mutation when if-condition is impure", () => {
     const source = `
