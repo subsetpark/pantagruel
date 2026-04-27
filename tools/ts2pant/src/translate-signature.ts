@@ -3,6 +3,11 @@ import ts from "typescript";
 import { irWrap } from "./ir.js";
 import { lowerExpr } from "./ir-emit.js";
 import { ir1FromL2 } from "./ir1.js";
+import {
+  buildL1MemberAccess,
+  type L1BuildContext,
+  unwrapParens,
+} from "./ir1-build.js";
 import { lowerL1Expr } from "./ir1-lower.js";
 import {
   type NullishTranslate,
@@ -13,11 +18,9 @@ import { getAst } from "./pant-wasm.js";
 import {
   cellIsUsed,
   cellRegisterName,
-  fieldRuleName,
   isMapType,
   mapTsType,
   type NumericStrategy,
-  resolveFieldOwner,
   type SynthCell,
   toPantTermName,
 } from "./translate-types.js";
@@ -880,38 +883,6 @@ export function detectGuard(
   return guards.reduce((acc, g) => ast.binop(ast.opAnd(), acc, g));
 }
 
-/** Resolve a receiver type to the owner name that declares [fieldName],
- *  then qualify via [fieldRuleName]. Delegates to `resolveFieldOwner`,
- *  which walks the property-declaration chain (handles inheritance) and
- *  aggregates distinct owners across union/intersection members. When
- *  ambiguous (>1 distinct owner), falls back to the bare kebab'd field
- *  name — the guard-extraction path here is an *optional* analysis
- *  (`detectGuard` returns `undefined` if no guard is extractable), so a
- *  bare fallback simply means the would-be guard never fires instead
- *  of producing a silently wrong qualified symbol. The body-side
- *  `qualifyFieldAccess` is stricter (returns null for ambiguous) because
- *  its output is an identifier in emitted propositions, not a hint for
- *  an optional analysis. */
-function qualifyFieldAccess(
-  receiverType: ts.Type,
-  fieldName: string,
-  checker: ts.TypeChecker,
-  strategy: NumericStrategy,
-  synthCell?: SynthCell,
-): string {
-  const r = resolveFieldOwner(
-    receiverType,
-    fieldName,
-    checker,
-    strategy,
-    synthCell,
-  );
-  if (r.kind === "resolved") {
-    return fieldRuleName(r.owner, fieldName);
-  }
-  return toPantTermName(fieldName);
-}
-
 function blockThrows(node: ts.Statement): boolean {
   if (ts.isThrowStatement(node)) {
     return true;
@@ -958,26 +929,38 @@ export function translateExpr(
 ): TranslateExprResult {
   const ast = getAst();
 
-  // Property access: a.balance -> app(var("account-balance"), [obj])
-  if (ts.isPropertyAccessExpression(expr)) {
-    const obj = translateExpr(
-      expr.expression,
+  // M5: plain (non-optional) property access routes through L1 Member.
+  // The lowered shape is byte-equal to the legacy
+  // `app(var(qualifiedRule), [obj])` construction; this cutover
+  // canonicalizes the build path. Optional-chain access and
+  // ElementAccess fall through to the rest of the dispatch.
+  if (
+    ts.isPropertyAccessExpression(expr) &&
+    (expr.flags & ts.NodeFlags.OptionalChain) === 0
+  ) {
+    const l1Ctx: L1BuildContext = {
       checker,
-      _strategy,
+      strategy: _strategy,
       paramNames,
-      synthCell,
-    );
-    if (isTranslateExprUnsupported(obj)) {
-      return obj;
+      state: undefined,
+      supply: { n: 0, synthCell },
+    };
+    const member = buildL1MemberAccess(expr, l1Ctx);
+    if ("unsupported" in member) {
+      return member;
     }
-    const ruleName = qualifyFieldAccess(
-      checker.getTypeAtLocation(expr.expression),
-      expr.name.text,
-      checker,
-      _strategy,
-      synthCell,
-    );
-    return ast.app(ast.var(ruleName), [obj]);
+    return lowerExpr(lowerL1Expr(member));
+  }
+  // Defensively unwrap parens for the paren-stripping invariant — a
+  // paren-wrapped property access (`(a).b`) routes through the same
+  // Member dispatch as `a.b`.
+  const stripped = unwrapParens(expr) as ts.Expression;
+  if (
+    stripped !== expr &&
+    ts.isPropertyAccessExpression(stripped) &&
+    (stripped.flags & ts.NodeFlags.OptionalChain) === 0
+  ) {
+    return translateExpr(stripped, checker, _strategy, paramNames, synthCell);
   }
 
   // Binary expression: a >= b -> binop(opGe(), a, b)

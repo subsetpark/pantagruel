@@ -8,10 +8,12 @@ import {
   buildL1Conditional,
   buildL1ConditionalFromArms,
   buildL1LetWhile,
+  buildL1MemberAccess,
   isL1ConditionalForm,
   isL1StmtUnsupported,
   isL1Unsupported,
   lowerL1ToOpaque,
+  tryBuildL1Cardinality,
   tryRecognizeFunctorLift,
 } from "./ir1-build.js";
 import {
@@ -2771,30 +2773,19 @@ export function translateBodyExpr(
     return { expr: lowerL1ToOpaque(l1) };
   }
 
-  // Property access with special array operations
+  // Property access. Dispatch order:
+  //   (1) Optional chain → functor-lift via comprehension (legacy path;
+  //       M5 doesn't touch ?.).
+  //   (2) Cardinality (`.length` / `.size` on list-shaped types) →
+  //       L1 `Unop(card, x)`. Pant's primitive for cardinality is
+  //       `#x`, not a `length` / `size` rule application — routing
+  //       through Member would emit a dangling EUF rule. Fires before
+  //       Member dispatch.
+  //   (3) Plain (non-optional) property access → canonical L1 Member.
+  //       The lowering at `ir1-lower.ts` produces `App(qualifiedRule,
+  //       [receiver])` — byte-equal to the legacy direct construction.
   if (ts.isPropertyAccessExpression(expr)) {
     const prop = expr.name.text;
-    const obj = translateBodyExpr(
-      expr.expression,
-      checker,
-      strategy,
-      paramNames,
-      state,
-      supply,
-    );
-    if (isBodyUnsupported(obj)) {
-      return obj;
-    }
-    // Optional chain `x?.prop` under list-lift. With `x: [T]` on the Pant
-    // side, the functor-lift encoding is `each $n in x | prop $n`, giving
-    // `[U]` — empty when x is null/empty, singleton when x is present.
-    // Chains compose as nested comprehensions: TS parses `x?.a.b` as outer
-    // `.b` (no questionDotToken) wrapping inner `x?.a` (questionDotToken),
-    // with the outer tail marked by `NodeFlags.OptionalChain`. Lift at the
-    // tail too, so `x?.a.b` becomes `each $n' in (each $n in x | a $n) | b $n'`
-    // rather than falling through to a plain property access on the list-
-    // lifted receiver. When the receiver is not nullable in TS, `?.`
-    // degenerates to `.` and falls through.
     const inOptionalChain = (expr.flags & ts.NodeFlags.OptionalChain) !== 0;
     if (inOptionalChain) {
       let shouldLift = false;
@@ -2805,10 +2796,17 @@ export function translateBodyExpr(
         shouldLift = true;
       }
       if (shouldLift) {
-        // Qualify the accessor by the receiver's element type so the
-        // comprehension body matches the declaration-site rule emitted by
-        // translateTypes. `resolveFieldOwner` walks union members, so a
-        // nullable receiver like `Account | null` resolves to `Account`.
+        const obj = translateBodyExpr(
+          expr.expression,
+          checker,
+          strategy,
+          paramNames,
+          state,
+          supply,
+        );
+        if (isBodyUnsupported(obj)) {
+          return obj;
+        }
         const receiverTsType = checker.getTypeAtLocation(expr.expression);
         const ruleName = qualifyFieldAccess(
           receiverTsType,
@@ -2829,43 +2827,25 @@ export function translateBodyExpr(
           ),
         };
       }
+      // Receiver isn't actually nullable in TS — `?.` degenerates to
+      // `.`; fall through to cardinality / Member dispatch.
     }
-    // .length (array) / .size (Set) -> #obj
-    if (prop === "length" || prop === "size") {
-      const receiverType = checker.getTypeAtLocation(expr.expression);
-      const isArray = prop === "length" && checker.isArrayType(receiverType);
-      const isSet = prop === "size" && isSetType(receiverType);
-      if (isArray || isSet) {
-        return { expr: ast.unop(ast.opCard(), bodyExpr(obj)) };
-      }
-    }
-    // Qualify the rule symbol by the receiver's interface, matching the
-    // declaration-site emission in translateTypes. Symbolic-state keys use
-    // the qualified form too so writes and reads hash under the same key.
-    const receiverType = checker.getTypeAtLocation(expr.expression);
-    const ruleName = qualifyFieldAccess(
-      receiverType,
-      prop,
+    const l1Ctx = {
       checker,
       strategy,
-      supply.synthCell,
-    );
-    if (ruleName === null) {
-      return { unsupported: ambiguousFieldMsg(prop) };
+      paramNames,
+      state,
+      supply,
+    };
+    const card = tryBuildL1Cardinality(expr, l1Ctx);
+    if (card !== null) {
+      return { expr: lowerL1ToOpaque(card) };
     }
-    // Consult symbolic state for a prior write at this location. Apply the
-    // same canonicalization as the write site (see SymbolicState) so that
-    // reads through const aliases hit the prior write — e.g.,
-    // `const x = a; x.balance = 1; x.balance += 2` must see the `= 1` write
-    // under a key that matches both the read and the write.
-    if (state !== undefined) {
-      const key = symbolicKey(ruleName, state.canonicalize(bodyExpr(obj)));
-      const entry = state.writes.get(key);
-      if (entry !== undefined && entry.kind === "property") {
-        return { expr: entry.value };
-      }
+    const member = buildL1MemberAccess(expr, l1Ctx);
+    if ("unsupported" in member) {
+      return member;
     }
-    return { expr: ast.app(ast.var(ruleName), [bodyExpr(obj)]) };
+    return { expr: lowerL1ToOpaque(member) };
   }
 
   // Call expression: handle .includes(), .filter().map(), etc.
