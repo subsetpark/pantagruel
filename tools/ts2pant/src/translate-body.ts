@@ -17,6 +17,7 @@ import {
   tryRecognizeFunctorLift,
 } from "./ir1-build.js";
 import {
+  buildL1AssignStmt,
   buildL1ForEachCall,
   buildL1ForOfMutation,
   buildL1IfMutation,
@@ -3460,17 +3461,27 @@ export function translateCallExpr(
         return { unsupported: "parameter-level Set mutation" };
       }
       const innerObj = normalizedReceiver.expression;
-      const rawFieldName = normalizedReceiver.name.text;
-      const fieldName = qualifyFieldAccess(
-        checker.getTypeAtLocation(innerObj),
-        rawFieldName,
+      // M5: route Stage A receiver-property qualification through the
+      // canonical L1 Member helper. It bundles `qualifyFieldAccess` +
+      // receiver translation in one call and yields the rule name and
+      // receiver L1 expression for the effect descriptor.
+      const memberR = buildL1MemberAccess(normalizedReceiver, {
         checker,
         strategy,
-        supply.synthCell,
-      );
-      if (fieldName === null) {
-        return { unsupported: ambiguousFieldMsg(rawFieldName) };
+        paramNames,
+        state,
+        supply,
+      });
+      if (isL1Unsupported(memberR)) {
+        return { unsupported: memberR.unsupported };
       }
+      if (memberR.kind !== "member") {
+        return {
+          unsupported:
+            "Set mutation receiver did not resolve to canonical L1 Member",
+        };
+      }
+      const fieldName = memberR.name;
       const ownerType = mapTsType(
         checker.getTypeAtLocation(innerObj),
         checker,
@@ -3489,18 +3500,7 @@ export function translateCallExpr(
         strategy,
         supply.synthCell,
       );
-      const objRaw = translateBodyExpr(
-        innerObj,
-        checker,
-        strategy,
-        paramNames,
-        state,
-        supply,
-      );
-      const objExpr = rejectEffect(objRaw);
-      if (isBodyUnsupported(objExpr)) {
-        return objExpr;
-      }
+      const objOpaque = lowerL1ToOpaque(memberR.receiver);
       let elemOpaque: OpaqueExpr | null = null;
       if (methodName !== "clear") {
         const eRaw = translateBodyExpr(
@@ -3523,7 +3523,7 @@ export function translateCallExpr(
           ruleName: fieldName,
           ownerType,
           elemType,
-          objExpr: bodyExpr(objExpr),
+          objExpr: objOpaque,
           elemExpr: elemOpaque,
         },
       };
@@ -3579,38 +3579,33 @@ export function translateCallExpr(
       }
 
       if (stageA && ts.isPropertyAccessExpression(normalizedReceiver)) {
-        const rawFieldName = normalizedReceiver.name.text;
         const innerObj = normalizedReceiver.expression;
-        const objRaw = translateBodyExpr(
-          innerObj,
+        // M5: Stage A receiver-property qualification through the
+        // canonical L1 Member helper. The qualified rule + receiver
+        // OpaqueExpr feed the Map effect descriptor.
+        const memberR = buildL1MemberAccess(normalizedReceiver, {
           checker,
           strategy,
           paramNames,
           state,
           supply,
-        );
-        const objExpr = rejectEffect(objRaw);
-        if (isBodyUnsupported(objExpr)) {
-          return objExpr;
+        });
+        if (isL1Unsupported(memberR)) {
+          return { unsupported: memberR.unsupported };
         }
+        if (memberR.kind !== "member") {
+          return {
+            unsupported:
+              "Map mutation receiver did not resolve to canonical L1 Member",
+          };
+        }
+        const fieldName = memberR.name;
         const ownerType = mapTsType(
           checker.getTypeAtLocation(innerObj),
           checker,
           strategy,
           supply.synthCell,
         );
-        // Qualify the field-derived rule + keyPred names, matching the
-        // Stage A emission in translateTypes.
-        const fieldName = qualifyFieldAccess(
-          checker.getTypeAtLocation(innerObj),
-          rawFieldName,
-          checker,
-          strategy,
-          supply.synthCell,
-        );
-        if (fieldName === null) {
-          return { unsupported: ambiguousFieldMsg(rawFieldName) };
-        }
         const typeArgs = checker.getTypeArguments(
           checker.getTypeAtLocation(normalizedReceiver) as ts.TypeReference,
         );
@@ -3630,7 +3625,7 @@ export function translateCallExpr(
             keyPredName: `${fieldName}-key`,
             ownerType,
             keyType,
-            objExpr: bodyExpr(objExpr),
+            objExpr: lowerL1ToOpaque(memberR.receiver),
             keyExpr: bodyExpr(kExpr),
             valueExpr,
           },
@@ -3717,18 +3712,27 @@ export function translateCallExpr(
         isInterfaceFieldAccess(normalizedReceiver, checker);
 
       if (stageA && ts.isPropertyAccessExpression(normalizedReceiver)) {
-        const rawFieldName = normalizedReceiver.name.text;
         const innerObj = normalizedReceiver.expression;
-        const fieldName = qualifyFieldAccess(
-          checker.getTypeAtLocation(innerObj),
-          rawFieldName,
+        // M5: Stage A receiver-property qualification through the L1
+        // Member helper. The receiver L1 lowers to an OpaqueExpr for
+        // `readMapThroughWrites`.
+        const memberR = buildL1MemberAccess(normalizedReceiver, {
           checker,
           strategy,
-          supply.synthCell,
-        );
-        if (fieldName === null) {
-          return { unsupported: ambiguousFieldMsg(rawFieldName) };
+          paramNames,
+          state,
+          supply,
+        });
+        if (isL1Unsupported(memberR)) {
+          return { unsupported: memberR.unsupported };
         }
+        if (memberR.kind !== "member") {
+          return {
+            unsupported:
+              "Map read receiver did not resolve to canonical L1 Member",
+          };
+        }
+        const fieldName = memberR.name;
         const kExpr = translateBodyExpr(
           expr.arguments[0]!,
           checker,
@@ -3739,17 +3743,6 @@ export function translateCallExpr(
         );
         if (isBodyUnsupported(kExpr)) {
           return kExpr;
-        }
-        const objExpr = translateBodyExpr(
-          innerObj,
-          checker,
-          strategy,
-          paramNames,
-          state,
-          supply,
-        );
-        if (isBodyUnsupported(objExpr)) {
-          return objExpr;
         }
         const typeArgs = checker.getTypeArguments(
           checker.getTypeAtLocation(normalizedReceiver) as ts.TypeReference,
@@ -3777,7 +3770,7 @@ export function translateCallExpr(
             `${fieldName}-key`,
             ownerType,
             keyType,
-            bodyExpr(objExpr),
+            lowerL1ToOpaque(memberR.receiver),
             bodyExpr(kExpr),
           ),
         };
@@ -3911,15 +3904,19 @@ export function translateCallExpr(
           isInterfaceFieldAccess(normalizedReceiver, checker)
         ) {
           const innerObj = normalizedReceiver.expression;
-          const rawFieldName = normalizedReceiver.name.text;
-          const fieldName = qualifyFieldAccess(
-            checker.getTypeAtLocation(innerObj),
-            rawFieldName,
+          // M5: route Stage A field qualification through L1 Member.
+          // Falls through to the generic membership construction below
+          // if the helper rejects (ambiguous owner / non-Member result),
+          // mirroring the legacy `fieldName === null` graceful fallback.
+          const memberR = buildL1MemberAccess(normalizedReceiver, {
             checker,
             strategy,
-            supply.synthCell,
-          );
-          if (fieldName !== null) {
+            paramNames,
+            state,
+            supply,
+          });
+          if (!isL1Unsupported(memberR) && memberR.kind === "member") {
+            const fieldName = memberR.name;
             const ownerType = mapTsType(
               checker.getTypeAtLocation(innerObj),
               checker,
@@ -3934,25 +3931,13 @@ export function translateCallExpr(
                 ? mapTsType(typeArgs[0]!, checker, strategy, supply.synthCell)
                 : null;
             if (elemType !== null) {
-              const innerObjRaw = translateBodyExpr(
-                innerObj,
-                checker,
-                strategy,
-                paramNames,
-                state,
-                supply,
-              );
-              const innerObjExpr = rejectEffect(innerObjRaw);
-              if (isBodyUnsupported(innerObjExpr)) {
-                return innerObjExpr;
-              }
               return {
                 expr: readSetThroughWrites(
                   state,
                   fieldName,
                   ownerType,
                   elemType,
-                  bodyExpr(innerObjExpr),
+                  lowerL1ToOpaque(memberR.receiver),
                   bodyExpr(arg),
                 ),
               };
@@ -4587,7 +4572,12 @@ function symbolicExecute(
       // Otherwise fall through to forEach / side-effect handling below.
     }
 
-    // Property assignment: obj.prop = rhs
+    // Property assignment: obj.prop = rhs. Routes through L1: build
+    // canonical `Assign(Member(receiver, name), value)` via
+    // `buildL1AssignStmt`, then `lowerL1Body` installs the write into
+    // `SymbolicState`. Output is byte-equal to the legacy direct
+    // construction (M5 hard-rule cutover for the property-access
+    // equivalence class — assignment targets are L1 Member).
     if (
       ts.isExpressionStatement(stmt) &&
       ts.isBinaryExpression(unwrapExpression(stmt.expression))
@@ -4600,77 +4590,25 @@ function symbolicExecute(
         (isSimpleAssign || compoundOp !== undefined) &&
         ts.isPropertyAccessExpression(bin.left)
       ) {
-        const rawProp = bin.left.name.text;
-        const receiverType = checker.getTypeAtLocation(bin.left.expression);
-        // Qualify once at the write site; the state keys, primed-lhs
-        // emission, modifiedProps tracking, and frame conditions all see
-        // the same already-qualified rule name.
-        const prop = qualifyFieldAccess(
-          receiverType,
-          rawProp,
+        const built = buildL1AssignStmt(stmt, {
           checker,
           strategy,
-          supply.synthCell,
-        );
-        if (prop === null) {
+          paramNames,
+          state,
+          supply,
+          applyConst,
+        });
+        if (isUnsupported(built)) {
           ok = false;
           propositions.push({
             kind: "unsupported",
-            reason: ambiguousFieldMsg(rawProp),
+            reason: built.unsupported,
           });
           continue;
         }
-        // `rejectEffect` collapses a value-position Map/Set mutation
-        // (e.g. `a.p = m.set(k, v)`) into `unsupported` so `bodyExpr`
-        // never throws on the `{ effect }` shape downstream.
-        const obj = rejectEffect(
-          translateBodyExpr(
-            bin.left.expression,
-            checker,
-            strategy,
-            paramNames,
-            state,
-            supply,
-          ),
-        );
-        if (isBodyUnsupported(obj)) {
+        if (!lowerL1Body(built, state, propositions, { applyConst })) {
           ok = false;
-          propositions.push({ kind: "unsupported", reason: obj.unsupported });
-          continue;
         }
-        // For compound assignment `a.p OP= v`, desugar rhs to `a.p OP v`.
-        // The rhs's `a.p` read goes through translateBodyExpr, which
-        // consults the symbolic state and returns the prior-write value
-        // or the pre-state identity.
-        const rhsNode =
-          compoundOp !== undefined
-            ? ts.factory.createBinaryExpression(bin.left, compoundOp, bin.right)
-            : bin.right;
-        const val = rejectEffect(
-          translateBodyExpr(
-            rhsNode,
-            checker,
-            strategy,
-            paramNames,
-            state,
-            supply,
-          ),
-        );
-        if (isBodyUnsupported(val)) {
-          ok = false;
-          propositions.push({ kind: "unsupported", reason: val.unsupported });
-          continue;
-        }
-        const objExpr = applyConst(bodyExpr(obj));
-        const valExpr = applyConst(bodyExpr(val));
-        const key = symbolicKey(prop, objExpr);
-        state.writes = putWrite(state.writes, key, {
-          kind: "property",
-          prop,
-          objExpr,
-          value: valExpr,
-        });
-        state.writtenKeys = addWrittenKey(state.writtenKeys, key);
         continue;
       }
     }

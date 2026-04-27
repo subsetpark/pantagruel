@@ -1052,7 +1052,7 @@ const COMPOUND_ASSIGN_TO_BINOP: Map<ts.SyntaxKind, ts.BinaryOperator> = new Map(
  * `lhs = lhs OP rhs` via `COMPOUND_ASSIGN_TO_BINOP` so the IR carries
  * one canonical assign shape regardless of surface spelling.
  */
-function buildL1AssignStmt(
+export function buildL1AssignStmt(
   stmt: ts.ExpressionStatement,
   ctx: BuildBodyCtx,
 ): BuildResult<IR1Stmt> {
