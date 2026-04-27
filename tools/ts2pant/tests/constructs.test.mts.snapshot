@@ -270,6 +270,34 @@ exports[`expressions-equality-nullish.ts > typeofUndefinedNeq 1`] = `
 "module TypeofUndefinedNeq.\\n\\ntypeof-undefined-neq x: [Int] => Bool.\\n\\n---\\n\\ntypeof-undefined-neq x = (~(#x = 0)).\\n"
 `;
 
+exports[`expressions-functor-lift.ts > ifConversion 1`] = `
+"module IfConversion.\\n\\nUser.\\nuser--name u1: User => String.\\nuser--age u1: User => Int.\\nif-conversion u: [User] => [String].\\n\\n---\\n\\nif-conversion u = (each n in u | user--name n).\\n"
+`;
+
+exports[`expressions-functor-lift.ts > looseGuardLift 1`] = `
+"module LooseGuardLift.\\n\\nUser.\\nuser--name u1: User => String.\\nuser--age u1: User => Int.\\nloose-guard-lift u: [User] => [String].\\n\\n---\\n\\nloose-guard-lift u = (each n in u | user--name n).\\n"
+`;
+
+exports[`expressions-functor-lift.ts > negatedIfConversion 1`] = `
+"module NegatedIfConversion.\\n\\nUser.\\nuser--name u1: User => String.\\nuser--age u1: User => Int.\\nnegated-if-conversion u: [User] => [String].\\n\\n---\\n\\nnegated-if-conversion u = (each n in u | user--name n).\\n"
+`;
+
+exports[`expressions-functor-lift.ts > negatedTernary 1`] = `
+"module NegatedTernary.\\n\\nUser.\\nuser--name u1: User => String.\\nuser--age u1: User => Int.\\nnegated-ternary u: [User] => [Int].\\n\\n---\\n\\nnegated-ternary u = (each n in u | user--age n).\\n"
+`;
+
+exports[`expressions-functor-lift.ts > optionalChain 1`] = `
+"module OptionalChain.\\n\\nUser.\\nuser--name u1: User => String.\\nuser--age u1: User => Int.\\noptional-chain u: [User] => [String].\\n\\n---\\n\\noptional-chain u = (each n in u | user--name n).\\n"
+`;
+
+exports[`expressions-functor-lift.ts > optionalNames 1`] = `
+"module OptionalNames.\\n\\nUser.\\nuser--name u1: User => String.\\nuser--age u1: User => Int.\\noptional-names u: [User] => [String].\\n\\n---\\n\\noptional-names u = (each n in u | user--name n).\\n"
+`;
+
+exports[`expressions-functor-lift.ts > typeofGuardLift 1`] = `
+"module TypeofGuardLift.\\n\\nUser.\\nuser--name u1: User => String.\\nuser--age u1: User => Int.\\ntypeof-guard-lift u: [User] => [String].\\n\\n---\\n\\ntypeof-guard-lift u = (each n in u | user--name n).\\n"
+`;
+
 exports[`expressions-if-early-return.ts > armBetweenBindings 1`] = `
 "module ArmBetweenBindings.\\n\\narm-between-bindings n: Int => Int.\\n\\n---\\n\\narm-between-bindings n = (cond n + 1 < 0 => 0, true => n + 1 + (n + 1)).\\n"
 `;

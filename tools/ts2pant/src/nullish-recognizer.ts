@@ -319,8 +319,13 @@ export function recognizeTypeofUndefined(
 /**
  * Combined leaf matcher: tries `recognizeNullishLeaf` first, then
  * `recognizeTypeofUndefined`. Returns `null` if neither matches.
+ *
+ * Exported for the M4 functor-lift recognizer (`tryRecognizeFunctorLift`
+ * in `ir1-build.ts`), which needs to inspect a conditional's guard for
+ * a leaf nullish form before deciding whether to lift the conditional
+ * to a functor `each` over the operand.
  */
-function recognizeAnyLeaf(
+export function recognizeAnyLeaf(
   expr: ts.BinaryExpression,
   checker: ts.TypeChecker,
 ): NullishLeafMatch | null {
@@ -585,4 +590,38 @@ export function recognizeNullishForm(
     return recognizeLongForm(expr, "and", checker, translate);
   }
   return null;
+}
+
+// Re-export the parens-unwrap helper for the functor-lift recognizer,
+// which needs to peek through parenthesized wrappers on guard / branch
+// expressions before classifying their shape.
+export { unwrapParens };
+
+/**
+ * Peel transparent TypeScript wrappers — parens, `as` casts, non-null
+ * assertions (`!`), and `satisfies` expressions — to expose the
+ * inner expression. These wrappers carry no runtime semantics and
+ * must not block recognizer matches: a guard like
+ * `(x as User | null) == null` and a present-side projection like
+ * `[u.name] satisfies string[]` should be recognized just as their
+ * unwrapped forms would be.
+ *
+ * Mirrors the symmetric `unwrapExpression` handling in
+ * `translate-body.ts` (see CodeRabbit review thread on cross-recognizer
+ * symmetry). The narrower `unwrapParens` is preserved for internal
+ * nullish-recognizer use because long-form chain detection
+ * (`flattenChain`, `recognizeLongForm`) only walks `||`/`&&` shapes
+ * and does not need to thread through `as`/`!`/`satisfies`.
+ */
+export function unwrapTransparentExpression(e: ts.Expression): ts.Expression {
+  let cur = e;
+  while (
+    ts.isParenthesizedExpression(cur) ||
+    ts.isAsExpression(cur) ||
+    ts.isNonNullExpression(cur) ||
+    ts.isSatisfiesExpression(cur)
+  ) {
+    cur = cur.expression;
+  }
+  return cur;
 }
