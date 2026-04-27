@@ -903,11 +903,17 @@ export function translateOperator(kind: ts.SyntaxKind): OpaqueBinop | null {
     case ts.SyntaxKind.LessThanToken:
       return ast.opLt();
     case ts.SyntaxKind.EqualsEqualsEqualsToken:
-    case ts.SyntaxKind.EqualsEqualsToken:
       return ast.opEq();
     case ts.SyntaxKind.ExclamationEqualsEqualsToken:
-    case ts.SyntaxKind.ExclamationEqualsToken:
       return ast.opNeq();
+    // M4 P3: loose equality (`==` / `!=`) is unsupported. Patch 2's
+    // nullish recognizer consumes `x == null` / `x != null` before
+    // this dispatcher is reached on the pure path; any `==`/`!=`
+    // here has ambiguous intent and we reject (return null) to steer
+    // the programmer toward `===`/`!==`.
+    case ts.SyntaxKind.EqualsEqualsToken:
+    case ts.SyntaxKind.ExclamationEqualsToken:
+      return null;
     case ts.SyntaxKind.AmpersandAmpersandToken:
       return ast.opAnd();
     case ts.SyntaxKind.BarBarToken:

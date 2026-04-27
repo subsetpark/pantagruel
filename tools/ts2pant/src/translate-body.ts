@@ -3,7 +3,7 @@ import ts from "typescript";
 import { type IRExpr, irLet, irWrap } from "./ir.js";
 import { buildIR, isBuildUnsupported } from "./ir-build.js";
 import { lowerExpr } from "./ir-emit.js";
-import { type IR1Expr, ir1FromL2 } from "./ir1.js";
+import { type IR1Expr, ir1Binop, ir1FromL2 } from "./ir1.js";
 import {
   buildL1Conditional,
   buildL1ConditionalFromArms,
@@ -2855,6 +2855,56 @@ export function translateBodyExpr(
           [ast.litBool(true), presentBranch],
         ]),
       };
+    }
+    // M4 P3: reject loose equality unconditionally. Patch 2's nullish
+    // recognizer consumes `x == null` / `x != null` family before we
+    // reach this point; everything else is `==`/`!=` whose intent is
+    // ambiguous between value-equality and JS coercion semantics — we
+    // steer the programmer toward `===`/`!==` rather than guess.
+    if (
+      expr.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken ||
+      expr.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsToken
+    ) {
+      return {
+        unsupported: "loose equality (== / !=) is unsupported; use === / !==",
+      };
+    }
+    // M4 P3: canonicalize strict equality through Layer 1
+    // `BinOp(eq | neq, ...)`. Sub-expressions wrap via `ir1FromL2`
+    // (M5 territory — sub-expressions reach L1 natively then).
+    if (
+      expr.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken ||
+      expr.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken
+    ) {
+      const left = translateBodyExpr(
+        expr.left,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
+      if (isBodyUnsupported(left)) {
+        return left;
+      }
+      const right = translateBodyExpr(
+        expr.right,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
+      if (isBodyUnsupported(right)) {
+        return right;
+      }
+      const l1Op =
+        expr.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken
+          ? "eq"
+          : "neq";
+      const lhsL1 = ir1FromL2(irWrap(bodyExpr(left)));
+      const rhsL1 = ir1FromL2(irWrap(bodyExpr(right)));
+      return { expr: lowerL1ToOpaque(ir1Binop(l1Op, lhsL1, rhsL1)) };
     }
     const op = translateOperator(expr.operatorToken.kind);
     if (op === null) {

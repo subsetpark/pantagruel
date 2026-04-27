@@ -206,6 +206,26 @@ exports[`expressions-const-pure-calls.ts > constStringMethod 1`] = `
 "module ConstStringMethod.\\n\\nconst-string-method s: String => Int.\\n\\n---\\n\\nconst-string-method s = index-of s \\"x\\".\\n"
 `;
 
+exports[`expressions-equality-nullish.ts > strictEqAgainstLit 1`] = `
+"module StrictEqAgainstLit.\\n\\nstrict-eq-against-lit n: Int => Bool.\\n\\n---\\n\\nstrict-eq-against-lit n = (n = 0).\\n"
+`;
+
+exports[`expressions-equality-nullish.ts > strictEqExprOperands 1`] = `
+"module StrictEqExprOperands.\\n\\nstrict-eq-expr-operands a: Int, b: Int => Bool.\\n\\n---\\n\\nstrict-eq-expr-operands a b = (a + 1 = b * 2).\\n"
+`;
+
+exports[`expressions-equality-nullish.ts > strictEqNumbers 1`] = `
+"module StrictEqNumbers.\\n\\nstrict-eq-numbers a: Int, b: Int => Bool.\\n\\n---\\n\\nstrict-eq-numbers a b = (a = b).\\n"
+`;
+
+exports[`expressions-equality-nullish.ts > strictNeqInArm 1`] = `
+"module StrictNeqInArm.\\n\\nstrict-neq-in-arm a: Int, b: Int => Bool.\\n\\n---\\n\\nstrict-neq-in-arm a b = (cond a < 0 => a ~= b, true => a = b).\\n"
+`;
+
+exports[`expressions-equality-nullish.ts > strictNeqStrings 1`] = `
+"module StrictNeqStrings.\\n\\nstrict-neq-strings a: String, b: String => Bool.\\n\\n---\\n\\nstrict-neq-strings a b = (a ~= b).\\n"
+`;
+
 exports[`expressions-if-early-return.ts > armBetweenBindings 1`] = `
 "module ArmBetweenBindings.\\n\\narm-between-bindings n: Int => Int.\\n\\n---\\n\\narm-between-bindings n = (cond n + 1 < 0 => 0, true => n + 1 + (n + 1)).\\n"
 `;
