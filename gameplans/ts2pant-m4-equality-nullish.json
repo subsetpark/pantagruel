@@ -1,0 +1,811 @@
+{
+  "projectName": "ts2pant-m4-equality-nullish",
+  "specFile": null,
+  "workstream": {
+    "name": "ts2pant-imperative-ir",
+    "milestone": "M4: equality-nullish-normalization",
+    "priorMilestones": [
+      "M1: imperative-ir-conditionals",
+      "M2: imperative-ir-assign-mu-search",
+      "M3: imperative-ir-iteration-mutation"
+    ],
+    "unlocks": "M5 (property access normalization) and M6 (legacy cleanup); shrinks `from-l2` use for nullish/equality sub-expressions, retiring one of the two open escape-hatch surfaces."
+  },
+  "problemStatement": "ts2pant currently has no canonical handling for null/undefined tests. The five surface forms (`x == null`, `x === null`, `x === undefined`, `x === null || x === undefined`, `typeof x === 'undefined'`) all fall through to a generic equality binop that emits `(x = null)` in Pant — a type mismatch against the `[T]` list-lift encoding used everywhere else, producing unsatisfiable specs. Loose vs. strict equality (`==` vs `===`) collapses identically to `ast.opEq()` regardless of operand type, silently accepting forms whose JS coercion semantics don't translate. M4 is the next workstream slice: collapse the equality/nullish equivalence class onto Layer 1 with one canonical form per construct.",
+  "solutionSummary": "Add a Layer 1 `IsNullish(expr)` primitive whose lowering is mechanical (`#x = 0`, the cardinality-zero shape already used by `??` and `?.`). Recognize all five nullish surface forms in the build pass and route them through `IsNullish`, with negation absorbed into a `not(IsNullish(...))` wrapper. Canonicalize strict equality (`===` / `!==`) to L1 `BinOp(eq | neq, ...)`; reject all loose equality (`==` / `!=`) not consumed by the nullish recognizer (3(b) conservative-refusal policy — `==` is inherently ambiguous and ts2pant should steer programmers toward `===`/`!==` rather than guess intent). Refactor the `??` builder to construct its guard via `IsNullish` so the lowered OpaqueExpr is byte-identical pre- and post-M4 — the snapshot is the cutover gate. Add a functor-lift recognizer that maps null-guarded list-lifted conditionals (`if (x == null) return []; else return [f(x)]`) to `each $n in x | f $n` directly, since the alternative cardinality-dispatch lowering isn't expressible (Pant has no list literal). `?.` does not refactor — its `each x in src | …` lowering carries the cardinality test implicitly. Hard-rule honored: every nullish-shaped TS expression flows through L1 once M4 lands; legacy direct equality-to-null path is retired (with negligible legacy code, since the prior path was effectively broken).",
+  "currentStateAnalysis": "Equality and nullish handling is split across three sites with no canonical form: (1) `translate-signature.ts:894-926` `translateOperator` maps both `==`/`===` to `ast.opEq()` and both `!=`/`!==` to `ast.opNeq()` — no distinction, no operand-type check; (2) `translate-body.ts:2801-2887` dispatches `BinaryExpression` and special-cases `??` at L2813-2857 (emits `cond #x = 0 => y, true => (x 1)` directly via `ast.binop(opEq, unop(card, x), litNat(0))`); (3) `translate-body.ts:2685-2729` and `ir-build.ts:135` handle `?.` via `each $n in x | prop $n` lowering. Test fixtures cover only `??`/`?.` (`tests/fixtures/constructs/expressions-nullish.ts`); no fixture exercises any direct nullish-equality form, so the broken-output behavior is invisible to CI today. `IR1Expr` in `src/ir1.ts` currently has 7 forms plus the `from-l2` adapter; `IsNullish` is documented as a future addition (`ir1.ts:20`). `from-l2` use sites (lines 171, 486, 866 in `ir1-build.ts`; 1079 in `ir1-build-body.ts`) include guards/conditions/values that often involve nullish or equality sub-expressions — M4 shrinks the surface for these specifically.",
+  "mergabilityStrategy": {
+    "featureFlagStrategy": "No feature flag. M4 is mostly additive — the five nullish surface forms currently produce broken (type-mismatched) Pant output that no fixture exercises, so there's no observable behavior to gate. The one snapshot-sensitive change is Patch 4's `??` builder refactor, which is gated by snapshot byte-equality (the cutover criterion the workstream uses for its other landing patches). Equality canonicalization (Patch 3) introduces a new rejection path; new fixtures cover it before the change lands.",
+    "featureFlags": [],
+    "patchOrderingStrategy": "Patch 1 (INFRA) adds the L1 vocabulary and lowering with mechanical tests. Patches 2 and 3 (BEHAVIOR) recognize the new surface forms and the equality canonicalization respectively — each lands with its own fixture so the spec arrives with the implementation. Patch 4 (INFRA) refactors `??` builder snapshot-byte-equal. Patch 5 (INFRA) is docs + dogfood verification. Patches 2 and 3 are independent and can land in either order."
+  },
+  "requiredChanges": [
+    {
+      "file": "tools/ts2pant/src/ir1.ts",
+      "line": 79,
+      "description": "Add `IsNullish` to the `IR1Expr` union; add `ir1IsNullish` constructor",
+      "signature": "export const ir1IsNullish = (operand: IR1Expr): IR1Expr => ({ kind: \"is-nullish\", operand })"
+    },
+    {
+      "file": "tools/ts2pant/src/ir1-lower.ts",
+      "line": 46,
+      "description": "Add `is-nullish` case to `lowerL1Expr`: lower to `irBinop(\"eq\", irUnop(\"card\", operand), irLitNat(0))`",
+      "signature": null
+    },
+    {
+      "file": "tools/ts2pant/src/translate-body.ts",
+      "line": 2801,
+      "description": "Recognize nullish surface forms (`x == null`, `x === null`, `x === undefined`, `x === null || x === undefined`, `typeof x === 'undefined'` and their negations) before falling through to the generic binop dispatcher; build via `ir1IsNullish` and lower via `lowerL1Expr`",
+      "signature": "function recognizeNullishForm(expr: ts.BinaryExpression, ...): IR1Expr | null"
+    },
+    {
+      "file": "tools/ts2pant/src/translate-body.ts",
+      "line": 2859,
+      "description": "Equality canonicalization at the binop dispatcher: `===`/`!==` build via L1 `BinOp(eq|neq, ...)`; `==`/`!=` reject with `unsupported: \"loose equality (== / !=) is unsupported; use === / !==\"` (Patch 2's nullish recognizer has already consumed `x == null` etc. before this fires)",
+      "signature": null
+    },
+    {
+      "file": "tools/ts2pant/src/translate-signature.ts",
+      "line": 894,
+      "description": "Mirror the equality rejection in `translateOperator` (signature-position pure path): `==`/`!=` returns null (existing convention for unsupported operators)",
+      "signature": null
+    },
+    {
+      "file": "tools/ts2pant/src/translate-body.ts",
+      "line": 2813,
+      "description": "Refactor `??` builder to construct the cardinality guard via `IsNullish` (build L1 `is-nullish(x)`, lower via `lowerL1Expr`); snapshot byte-equality with pre-M4 output",
+      "signature": null
+    },
+    {
+      "file": "tools/ts2pant/src/ir-build.ts",
+      "line": 188,
+      "description": "Mirror the `??` refactor in the pure-path `ir-build.ts` builder so both translation paths construct nullish guards via the same L1 primitive",
+      "signature": null
+    },
+    {
+      "file": "tools/ts2pant/tests/fixtures/constructs/expressions-equality-nullish.ts",
+      "line": null,
+      "description": "New fixture covering all M4 surface shapes: each nullish recognizer, loose-eq accept and reject cases, strict-eq passthrough",
+      "signature": null
+    },
+    {
+      "file": "tools/ts2pant/src/ir1-build.ts",
+      "line": null,
+      "description": "Add `tryRecognizeFunctorLift` for null-guarded list-lifted conditionals; if matched, build to `ir1FromL2(L2 each)` directly instead of falling through to L1 Cond build",
+      "signature": "function tryRecognizeFunctorLift(node: ts.ConditionalExpression | ts.IfStatement, checker, …): IR1Expr | null"
+    },
+    {
+      "file": "tools/ts2pant/tests/fixtures/constructs/expressions-functor-lift.ts",
+      "line": null,
+      "description": "New fixture covering supported functor-lift shapes (ternary positive/negated, if-conversion positive/negated) and deliberate-reject shapes (multi-element non-empty branch, non-list-lifted result type)",
+      "signature": null
+    },
+    {
+      "file": "tools/ts2pant/tests/ir1-build-functor-lift.test.mts",
+      "line": null,
+      "description": "Unit tests for the recognizer's eligibility checks (each soundness condition tested independently)",
+      "signature": null
+    },
+    {
+      "file": "tools/ts2pant/tests/ir1-lower.test.mts",
+      "line": null,
+      "description": "Add unit tests for `IsNullish` lowering (mechanical: assert it produces `binop(eq, unop(card, x), litNat(0))`)",
+      "signature": null
+    },
+    {
+      "file": "tools/ts2pant/tests/ir1-build-nullish.test.mts",
+      "line": null,
+      "description": "New unit-test file for the surface-form recognizers (operand-identity check on `||`-form, typeof handling, negation absorption)",
+      "signature": null
+    },
+    {
+      "file": "tools/ts2pant/CLAUDE.md",
+      "line": null,
+      "description": "Update the IR Workstream section: M4 landed status, IsNullish canonical form, equality canonicalization rules, `from-l2` shrinkage note",
+      "signature": null
+    },
+    {
+      "file": "workstreams/ts2pant-imperative-ir.md",
+      "line": null,
+      "description": "Mark M4 ✅ landed; record pessimism rate from real-fixture measurement; close out related Open Questions",
+      "signature": null
+    }
+  ],
+  "acceptanceCriteria": [
+    "`IR1Expr` declares an `is-nullish` form with constructor `ir1IsNullish`; vocabulary lock honored (existing forms unchanged).",
+    "`lowerL1Expr` lowers `IsNullish(x)` to `irBinop(\"eq\", irUnop(\"card\", lowerL1Expr(x)), irLitNat(0))` — byte-identical to the cardinality test the legacy `??` and `?.` builders emit.",
+    "All five nullish surface forms (`x == null`, `x === null`, `x === undefined`, `x === null || x === undefined`, `typeof x === 'undefined'`) build to a single L1 `IsNullish(operand)`. The four negated forms build to `unop(not, IsNullish(operand))`.",
+    "Long-form `x === null || x === undefined` (and its negation) is recognized only when both halves test the *same* operand expression (operand-identity check); operand-mismatch falls through to generic-binop or `unsupported`.",
+    "Strict equality (`===`, `!==`) builds to L1 `BinOp(eq, …)` / `BinOp(neq, …)` unconditionally.",
+    "Loose equality (`==`, `!=`) that survives Patch 2's nullish recognizer (i.e., is not `x == null` etc.) is rejected with `unsupported: loose equality (== / !=) is unsupported; use === / !==`. No type-based accept path; the rejection is unconditional.",
+    "`??` builder constructs its cardinality guard via L1 `IsNullish`; the lowered OpaqueExpr is snapshot byte-equal with pre-M4 output for every existing `expressions-nullish.ts` fixture case.",
+    "New fixture `tests/fixtures/constructs/expressions-equality-nullish.ts` covers all surface shapes (positive, negated, long-form, typeof, loose-eq accept, loose-eq reject, strict-eq passthrough). Snapshot landed.",
+    "`pant --check` passes for the new fixture; dogfood (translation of ts2pant's own source) passes byte-equal.",
+    "`tools/ts2pant/CLAUDE.md` and `workstreams/ts2pant-imperative-ir.md` updated to reflect M4 landed status. The 'M4 standalone vs absorbed' open question is resolved.",
+    "Hard rule honored: every TS BinaryExpression with `==`/`===`/`!=`/`!==` operator (and the long-form / typeof shapes) goes through the L1 build pipeline. No remaining direct OpaqueExpr emission for equality at the TS-AST level.",
+    "Real-fixture pessimism rate from the loose-equality rejection is measured and recorded in the workstream document. ts2pant's own source uses `===` exclusively, so dogfood pessimism should be 0; fixture pessimism (if any) is documented as the cost of steering programmers to strict equality.",
+    "Null-guarded list-lifted conditionals (`if (x == null) return []; else return [f(x)]` and ternary equivalents) now translate via the functor-lift recognizer to `each $n in x | f $n`. Multi-element non-empty branches and non-list-lifted result types fall through to the standard Cond build (which currently rejects at the empty-list literal — that's the pre-M4 behavior, preserved as a deliberate reject path)."
+  ],
+  "openQuestions": [],
+  "explicitOpinions": [
+    {
+      "opinion": "`IsNullish(operand)` accepts an arbitrary L1 expression as operand, not just a `Var`.",
+      "rationale": "The workstream DoD says surface forms 'collapse to `IsNullish(Var(x))`', but the operand of `?.` chains and nested expressions can be arbitrary. Restricting to `Var` would block recognition of `obj.prop == null`, which is a common nullish-test idiom. The build pass enforces operand-identity in long-form recognition; the L1 form itself is operand-shape-agnostic."
+    },
+    {
+      "opinion": "No `IsDefined(x)` form. Negation is `unop(not, IsNullish(x))`.",
+      "rationale": "One canonical form per construct (IRSC discipline). A separate `IsDefined` would force every consumer to pattern-match both shapes — exactly the cross-talk hazard the IR is meant to retire. The L2 lowering of `not(IsNullish(x))` is `unop(not, binop(eq, unop(card, x), litNat(0)))` which simplifies trivially during SMT solving."
+    },
+    {
+      "opinion": "Loose equality (`==`/`!=`) is rejected unconditionally outside the nullish-recognizer path; no type-based accept exception.",
+      "rationale": "`==` is inherently ambiguous between value-equality and coercion semantics; ts2pant should not guess. The right move is to steer the TS programmer toward `===`/`!==`, where intent is unambiguous. Trying to define a 'safe-loose-eq' subset (canonical types both sides, with-or-without nullable narrowing, etc.) is exactly the kind of guesswork the IRSC discipline rejects. The one exception — `x == null` — survives because it's universally idiomatic for null-or-undefined and Patch 2's nullish recognizer consumes it before Patch 3 runs."
+    },
+    {
+      "opinion": "`?.` does not refactor through `IsNullish` in M4.",
+      "rationale": "The `?.` lowering uses `each $n in src | …`, which is a comprehension over a list-lifted receiver. The cardinality test is implicit in the `each` (empty list ⇒ empty result); there's no separate `#x = 0` guard to factor out. Refactoring would require restructuring to `cond IsNullish(src) => …, true => …`, changing the OpaqueExpr shape and breaking byte-equality. Out of scope."
+    },
+    {
+      "opinion": "When sound, prefer `each $n in xs | …` (functor lift over list-lifted optionals) to `cond IsNullish(x) => …, true => …` (cardinality dispatch) for nullish lowerings.",
+      "rationale": "The list-lift encoding represents `T | null` as `[T]` (Alloy `lone` multiplicity). `each` over a length-≤1 list IS the conditional dispatch, and Pant's idioms compose more cleanly over comprehensions than over cardinality conditionals (chain fusion, `over each`, etc.). `?.` already follows this pattern; M4 honors it for new nullish surface forms wherever the result type and branch shapes admit a sound rewrite. `IsNullish` remains the fallback for pure Bool-predicate uses (where the result is a Bool, not a list-lifted value) — for those the cardinality test `#x = 0` is the only natural shape."
+    },
+    {
+      "opinion": "M4 includes the functor-lift recognizer (Patch 5), even though it's a combined-shape match crossing M1 (Cond) and M4 (IsNullish).",
+      "rationale": "Pant has no list literal — there's no expressible Pant target for `cond #x = 0 => [], true => [f((x 1))]`. Without the recognizer, idiomatic TS null-guards over list-lifted return types simply don't translate. This isn't an optimization; it's the difference between translatable and untranslatable surface. The alternative — defer to M4.5/M5 — leaves a known-broken translation path live across milestones, which violates the workstream's rip-out-first discipline (Lesson 2). Combined-shape recognition crossing milestones is a precedent that future milestones may need to follow when Pant's expression vocabulary forces a multi-form match."
+    },
+    {
+      "opinion": "No feature flag for the cutover. The change is mostly additive (broken legacy output replaced with correct output) plus one snapshot-byte-equal refactor.",
+      "rationale": "M3's lesson 2 ('rip-out-first beats parallel-build for retiring legacy') argues against parallel-build under hard-rule discipline. Here there's barely any legacy to rip — nullish forms produced broken output that no fixture exercised. A feature flag would gate observation of bugs that nobody saw. Snapshot byte-equality is the gate for Patch 4; rejection-path tests are the gate for Patch 3."
+    },
+    {
+      "opinion": "Patches 2 and 3 are independent and can land in either order.",
+      "rationale": "Nullish recognition (Patch 2) consumes patterns *before* the generic binop dispatcher fires; equality canonicalization (Patch 3) modifies the generic dispatcher. The two changes touch the same dispatcher region (translate-body.ts:2801-2887) but at different points (early-recognition vs. fall-through). Their dependency on Patch 1 is the only ordering constraint."
+    },
+    {
+      "opinion": "Operand-identity on long-form recognition uses a structural AST walk (`structurallyEqualExpression`), not `node.getText()`.",
+      "rationale": "`a.b === null || a.b === undefined` should be recognized; `a.b === null || a.c === undefined` should not. `getText()` reads raw source — it's whitespace-/comment-/quote-style-/parenthesization-sensitive (e.g., `a.b` vs `a /* note */.b` would compare unequal even though the AST is identical). False non-matches fall through to a generic `||` translation that produces broken Pant for the surrounding shape, so the cost of using `getText` isn't hypothetical. A ~30-line structural walk over the realistic operand shapes (Identifier, PropertyAccess, ElementAccess, Call, Parenthesized, This) avoids the trap and pays forward into M5's property-access normalization, where the same equality predicate is needed."
+    },
+    {
+      "opinion": "Don't make the programmer rewrite idiomatic TS into pantagruel-friendly shapes. Recognize partial-match disjunctions: `(a === null) || (a === undefined) || other` extracts the nullish prefix into IsNullish and ORs with the rest.",
+      "rationale": "ts2pant's job is to meet the programmer where they are. Steering toward less ambiguous code is right when the *TS* is itself ambiguous (`==` is ambiguous in TS regardless of pantagruel — that's why we reject it). But `(a === null) || (a === undefined) || other` is unambiguous, idiomatic TS — refusing to canonicalize it would force the programmer to rewrite their code purely to fit ts2pant's recognizer, which is a tax on the user, not the tool. Recognizer recurses on `||`/`&&` operands and extracts nullish pairs opportunistically."
+    }
+  ],
+  "patches": [
+    {
+      "number": 1,
+      "classification": "INFRA",
+      "title": "Add L1 IsNullish form and mechanical lowering",
+      "files": [
+        {
+          "path": "tools/ts2pant/src/ir1.ts",
+          "action": "modify",
+          "description": "Add `is-nullish` variant to `IR1Expr` union; add constructor `ir1IsNullish`; update jsdoc to remove the 'M4' future-tense annotation"
+        },
+        {
+          "path": "tools/ts2pant/src/ir1-lower.ts",
+          "action": "modify",
+          "description": "Add `is-nullish` case to `lowerL1Expr` switch: lower to `irBinop(\"eq\", irUnop(\"card\", lowerL1Expr(operand)), irLitNat(0))`"
+        },
+        {
+          "path": "tools/ts2pant/tests/ir1-lower.test.mts",
+          "action": "modify",
+          "description": "Add lowering tests for `is-nullish`: assert structural shape of lowered L2 IR and OpaqueExpr"
+        }
+      ],
+      "changes": [
+        "Extend `IR1Expr` union in `src/ir1.ts` with `| { kind: \"is-nullish\"; operand: IR1Expr }`",
+        "Add `export const ir1IsNullish = (operand: IR1Expr): IR1Expr => ({ kind: \"is-nullish\", operand });` near other expression constructors (around line 396)",
+        "Update the IR1Expr jsdoc block (lines 60-78) to list `is-nullish` and remove the 'M4' future-tense note from line 20",
+        "In `src/ir1-lower.ts:46-103` `lowerL1Expr`, add `case \"is-nullish\": return irBinop(\"eq\", irUnop(\"card\", lowerL1Expr(e.operand)), { kind: \"lit\", value: { kind: \"nat\", value: 0 } });` (use `irLitNat` if exported; otherwise the inline literal shape)",
+        "Verify the existing exhaustiveness `_exhaustive: never = e` check at the bottom of `lowerL1Expr` still holds with the new variant",
+        "Add tests in `tests/ir1-lower.test.mts`: (a) `lowerL1Expr(ir1IsNullish(ir1Var(\"x\")))` returns an L2 binop with op=\"eq\", lhs is a unop(\"card\", var(\"x\")), rhs is litNat(0); (b) lowering composes — `is-nullish(member(receiver, \"prop\"))` works; (c) emit-to-OpaqueExpr produces the same shape as a manually-constructed `ast.binop(ast.opEq(), ast.unop(ast.opCard(), ast.var(\"x\")), ast.litNat(0))`",
+        "Run `just ts2pant-test-unit` — should pass without touching translate-body.ts"
+      ],
+      "testStubsIntroduced": [
+        "ir1-lower > IsNullish lowers to binop(eq, unop(card, x), litNat(0))",
+        "ir1-lower > IsNullish operand can be a member expression",
+        "ir1-lower > IsNullish lowered shape matches manual ast.binop construction"
+      ],
+      "testStubsImplemented": [
+        "ir1-lower > IsNullish lowers to binop(eq, unop(card, x), litNat(0))",
+        "ir1-lower > IsNullish operand can be a member expression",
+        "ir1-lower > IsNullish lowered shape matches manual ast.binop construction"
+      ],
+      "spec": "module TS2PANT_M4_PATCH_1.\n\n> Patch 1 adds the L1 `IsNullish` expression form and its mechanical\n> lowering to L2.\n>\n> The vocabulary lock is preserved: forms can be added in later\n> milestones (this is what M1 promised at workstream commit time).\n\nL1Expr.\nL2Expr.\n\nis-nullish? e: L1Expr => Bool.\noperand e: L1Expr, is-nullish? e => L1Expr.\n\nlower-l1 e: L1Expr => L2Expr.\n\n> An L2 cardinality-zero test: shape `#x = 0`.\ncard-zero? l: L2Expr => Bool.\n\n---\n\n> Lowering of an IsNullish form yields the cardinality-zero shape.\n> Downstream emitters never see the IsNullish form directly — only its\n> lowered card-zero shape.\nall e: L1Expr, is-nullish? e | card-zero? (lower-l1 e).\n"
+    },
+    {
+      "number": 2,
+      "classification": "BEHAVIOR",
+      "title": "Recognize nullish surface forms via L1 IsNullish",
+      "files": [
+        {
+          "path": "tools/ts2pant/src/translate-body.ts",
+          "action": "modify",
+          "description": "Recognize the five nullish surface forms in the `BinaryExpression` dispatcher; build via `ir1IsNullish` and lower; handle negation"
+        },
+        {
+          "path": "tools/ts2pant/src/ast-equal.ts",
+          "action": "create",
+          "description": "Structural AST equality helper for comparing TS expression operands (Identifier, PropertyAccess, ElementAccess, Call, Parenthesized, This). Reused in M5 for Member-path comparison"
+        },
+        {
+          "path": "tools/ts2pant/tests/ast-equal.test.mts",
+          "action": "create",
+          "description": "Unit tests for `structurallyEqualExpression` covering each supported node kind plus formatting variants (whitespace, comments, quote style, parenthesization) that getText would falsely distinguish"
+        },
+        {
+          "path": "tools/ts2pant/tests/ir1-build-nullish.test.mts",
+          "action": "create",
+          "description": "Unit tests for the new recognizer: positive forms, negated forms, long-form operand-identity check, typeof handling, fall-through cases"
+        },
+        {
+          "path": "tools/ts2pant/tests/fixtures/constructs/expressions-equality-nullish.ts",
+          "action": "create",
+          "description": "Fixture covering all positive and negated nullish surface forms"
+        },
+        {
+          "path": "tools/ts2pant/tests/constructs.test.mts.snapshot",
+          "action": "modify",
+          "description": "Snapshot updates from the new fixture"
+        }
+      ],
+      "changes": [
+        "Add `recognizeNullishForm(expr: ts.BinaryExpression, checker, …): { l1: IR1Expr; negated: boolean } | null` near the top of `translate-body.ts`'s binop dispatcher (around line 2801)",
+        "Match `x == null`, `x != null`, `x === null`, `x === undefined`, `x !== null`, `x !== undefined` by inspecting `expr.left`, `expr.right`, and `expr.operatorToken.kind`. Operand `x` is whichever side is non-null/non-undefined",
+        "Match the long form `x === null || x === undefined` (and `&&`-negated form) by recursing on `BinaryExpression` with `BarBarToken` / `AmpersandAmpersandToken`. The recognizer is flat-aware: for a chain `a || b || c || …`, collect all operands at the same `||` level into a flat list, scan for any two operands that are nullish-shaped against the *same operand expression*, fold those two into a single `IsNullish` node, and rebuild the disjunction with the remaining clauses around it. Same for `&&` chains using the negated form. This means `(a === null) || (a === undefined) || other` recognizes as `IsNullish(a) || other`",
+        "Add `structurallyEqualExpression(a: ts.Expression, b: ts.Expression): boolean` in a new helper module `tools/ts2pant/src/ast-equal.ts` (or co-located with the recognizer if more convenient). Walks the AST node-by-node comparing kinds and child structure. Initial coverage: `Identifier` (compare `.text`), `PropertyAccessExpression` (recurse on `.expression`, compare `.name.text`), `ElementAccessExpression` (recurse on `.expression` and `.argumentExpression`), `CallExpression` (recurse on `.expression`, recurse pairwise on `.arguments`), `ParenthesizedExpression` (unwrap and recurse), `ThisExpression` (always equal). Anything else: return false (conservative). This avoids `node.getText()` whitespace/comment/quote-style/parenthesization sensitivity. The same helper will be reused in M5 for `Member`-path normalization, so building it generically here pays forward",
+        "Add `recognizeTypeofUndefined(expr): { operand: ts.Expression; negated: boolean } | null` to handle `typeof x === 'undefined'` and `typeof x !== 'undefined'`",
+        "In the binop dispatcher (translate-body.ts:2801), call recognizers before falling through to `translateOperator`. On match: translate the operand via `translateBodyExpr`, wrap as `ir1FromL2(operandOpaque)` (shrinks at M5/M6), build `ir1IsNullish(operandL1)`, optionally wrap with `ir1Unop(\"not\", …)` for negation, and lower via `lowerL1Expr` to OpaqueExpr",
+        "On long-form operand-mismatch (e.g., `(a === null) || (b === undefined)` — different operands): do not fold those two into IsNullish; fall through to generic `||`/`&&` handling (preserves current behavior for non-nullish disjunctions)",
+        "Mirror the same recognizers in `translate-signature.ts` (pure path, around line 821-841) — keep both paths consistent",
+        "Create new fixture `tests/fixtures/constructs/expressions-equality-nullish.ts` with one exported function per surface form: `looseNullEq`, `looseNullNeq`, `strictNullEq`, `strictUndefinedEq`, `strictNullNeq`, `strictUndefinedNeq`, `longFormPositive`, `longFormNegated`, `typeofUndefinedEq`, `typeofUndefinedNeq`, plus the operand-mismatch fall-through case `disjunctionDifferentOperands`",
+        "Create `tests/ir1-build-nullish.test.mts`: assert the build pass produces the expected L1 shape for each surface form (positive form yields `ir1IsNullish(...)`; negated yields `ir1Unop('not', ir1IsNullish(...))`); operand-mismatch in long form does NOT match the recognizer",
+        "Run `just ts2pant-test-update-snapshots` once to capture the new snapshot, then verify the snapshot matches expectations by hand-inspection",
+        "Run `just ts2pant-test-integration` — `pant --check` should accept all the new fixture functions as well-typed (they now produce valid `[T]`-typed cardinality tests instead of broken `(x = null)`)"
+      ],
+      "testStubsIntroduced": [
+        "ast-equal > identifiers compare structurally",
+        "ast-equal > dotted paths compare structurally",
+        "ast-equal > indexed access compares structurally",
+        "ast-equal > calls compare structurally including arguments",
+        "ast-equal > parenthesized wrappers are unwrapped",
+        "ast-equal > comments inside nodes are ignored",
+        "ast-equal > quote-style differences ignored on string element-access keys",
+        "ast-equal > different operand shapes return false",
+        "ir1-build-nullish > x == null builds is-nullish",
+        "ir1-build-nullish > x === null builds is-nullish",
+        "ir1-build-nullish > x === undefined builds is-nullish",
+        "ir1-build-nullish > x === null || x === undefined builds is-nullish (operand identity)",
+        "ir1-build-nullish > typeof x === 'undefined' builds is-nullish",
+        "ir1-build-nullish > x != null builds not(is-nullish)",
+        "ir1-build-nullish > x !== null builds not(is-nullish)",
+        "ir1-build-nullish > x !== null && x !== undefined builds not(is-nullish)",
+        "ir1-build-nullish > typeof x !== 'undefined' builds not(is-nullish)",
+        "ir1-build-nullish > a === null || b === undefined falls through (operand mismatch)",
+        "ir1-build-nullish > x === null || x === undefined || other extracts is-nullish prefix",
+        "ir1-build-nullish > other || x === null || x === undefined extracts is-nullish suffix",
+        "ir1-build-nullish > other && x !== null && x !== undefined extracts not-is-nullish",
+        "constructs > expressions-equality-nullish snapshot"
+      ],
+      "testStubsImplemented": [
+        "ast-equal > identifiers compare structurally",
+        "ast-equal > dotted paths compare structurally",
+        "ast-equal > indexed access compares structurally",
+        "ast-equal > calls compare structurally including arguments",
+        "ast-equal > parenthesized wrappers are unwrapped",
+        "ast-equal > comments inside nodes are ignored",
+        "ast-equal > quote-style differences ignored on string element-access keys",
+        "ast-equal > different operand shapes return false",
+        "ir1-build-nullish > x == null builds is-nullish",
+        "ir1-build-nullish > x === null builds is-nullish",
+        "ir1-build-nullish > x === undefined builds is-nullish",
+        "ir1-build-nullish > x === null || x === undefined builds is-nullish (operand identity)",
+        "ir1-build-nullish > typeof x === 'undefined' builds is-nullish",
+        "ir1-build-nullish > x != null builds not(is-nullish)",
+        "ir1-build-nullish > x !== null builds not(is-nullish)",
+        "ir1-build-nullish > x !== null && x !== undefined builds not(is-nullish)",
+        "ir1-build-nullish > typeof x !== 'undefined' builds not(is-nullish)",
+        "ir1-build-nullish > a === null || b === undefined falls through (operand mismatch)",
+        "ir1-build-nullish > x === null || x === undefined || other extracts is-nullish prefix",
+        "ir1-build-nullish > other || x === null || x === undefined extracts is-nullish suffix",
+        "ir1-build-nullish > other && x !== null && x !== undefined extracts not-is-nullish",
+        "constructs > expressions-equality-nullish snapshot"
+      ],
+      "spec": "module TS2PANT_M4_PATCH_2.\n\n> Patch 2 routes every nullish surface form through L1 IsNullish.\n>\n> Surface forms in scope (operand `x`):\n>   - x == null\n>   - x != null         (negated)\n>   - x === null\n>   - x === undefined\n>   - x !== null        (negated)\n>   - x !== undefined   (negated)\n>   - x === null || x === undefined        (long form)\n>   - x !== null && x !== undefined        (negated long form)\n>   - typeof x === 'undefined'\n>   - typeof x !== 'undefined'              (negated)\n\nTSExpr.\nL1Expr.\n\nis-nullish-form? t: TSExpr => Bool.\nis-negated-nullish-form? t: TSExpr => Bool.\nnullish-operand t: TSExpr, is-nullish-form? t => TSExpr.\nnullish-operand-of-neg t: TSExpr, is-negated-nullish-form? t => TSExpr.\n\nbuild-l1 t: TSExpr => L1Expr.\n\nis-nullish? e: L1Expr => Bool.\nis-not? e: L1Expr => Bool.\noperand e: L1Expr, is-nullish? e => L1Expr.\ninner e: L1Expr, is-not? e => L1Expr.\n\nbuild-l1-of-tsexpr t: TSExpr, is-nullish-form? t => L1Expr.\n\n---\n\n> Positive nullish forms build to a single L1 IsNullish.\nall t: TSExpr, is-nullish-form? t | is-nullish? (build-l1 t).\n\n> Negated nullish forms build to `not (IsNullish ...)`.\nall t: TSExpr, is-negated-nullish-form? t |\n  is-not? (build-l1 t)\n  and is-nullish? (inner (build-l1 t)).\n"
+    },
+    {
+      "number": 3,
+      "classification": "BEHAVIOR",
+      "title": "Canonicalize strict equality; reject all surviving loose-eq",
+      "files": [
+        {
+          "path": "tools/ts2pant/src/translate-body.ts",
+          "action": "modify",
+          "description": "Canonicalize `===`/`!==` through L1 `BinOp(eq|neq, ...)`; reject any `==`/`!=` that reaches this point (Patch 2's nullish recognizer has already consumed the `x == null` family)"
+        },
+        {
+          "path": "tools/ts2pant/src/translate-signature.ts",
+          "action": "modify",
+          "description": "Mirror the equality rejection in the pure-path operator dispatcher (line 894-926): return null for `==`/`!=`, route `===`/`!==` through L1"
+        },
+        {
+          "path": "tools/ts2pant/tests/fixtures/constructs/expressions-equality-nullish.ts",
+          "action": "modify",
+          "description": "Extend the M4 fixture with strict-eq passthrough cases; deliberate `==` reject cases live in the unit test (not the snapshot fixture)"
+        },
+        {
+          "path": "tools/ts2pant/tests/constructs.test.mts.snapshot",
+          "action": "modify",
+          "description": "Snapshot updates"
+        }
+      ],
+      "changes": [
+        "In `translate-body.ts:2859` (after the `??` branch and Patch 2's nullish recognizer), dispatch on operator kind: for `===`/`!==`, build via L1 `ir1Binop(\"eq\" | \"neq\", lhsL1, rhsL1)` then `lowerL1Expr`; for `==`/`!=`, return `{ unsupported: \"loose equality (== / !=) is unsupported; use === / !==\" }`",
+        "Operand sub-expressions wrap via `ir1FromL2(translateBodyExpr(...))` (M5 territory — sub-expressions reach L1 natively then)",
+        "In `translate-signature.ts:905-910` `translateOperator`: leave `===`/`!==` mapped to `ast.opEq()` / `ast.opNeq()` (unchanged); change `==` / `!=` to return null (the existing convention for unsupported operators). Verify that the `||`/long-form recognizer in Patch 2 has already consumed `x == null` and `x != null` before `translateOperator` is reached on the pure path",
+        "Add a new test file `tools/ts2pant/tests/equality-canonicalization.test.mts` with assertions: `===` builds L1 `binop(eq)`; `!==` builds L1 `binop(neq)`; `==` (non-nullish) rejects with the expected reason string; `!=` (non-nullish) rejects",
+        "Extend the M4 fixture with strict-eq passthrough functions (`strictEqNumbers`, `strictNeqStrings`, etc.) — these are the snapshot-tested side. The `==` reject case lives only in the unit test (rejection isn't snapshot-tested; the constructs runner skips functions that fail to translate)",
+        "Run `just ts2pant-test` — verify dogfood still passes. ts2pant's own source uses `===` exclusively, so dogfood pessimism is expected to be 0",
+        "Measure pessimism: grep fixtures and dogfood for `==` / `!=` sites surviving Patch 2's nullish consumption. Expected count: 0. Record the result in the workstream document via Patch 5"
+      ],
+      "testStubsIntroduced": [
+        "equality-canonicalization > === builds binop(eq) via L1",
+        "equality-canonicalization > !== builds binop(neq) via L1",
+        "equality-canonicalization > == (non-nullish) rejects with unsupported reason",
+        "equality-canonicalization > != (non-nullish) rejects with unsupported reason",
+        "equality-canonicalization > === preserves operand sub-expression translation",
+        "equality-canonicalization > !== inside a return expression composes with cond"
+      ],
+      "testStubsImplemented": [
+        "equality-canonicalization > === builds binop(eq) via L1",
+        "equality-canonicalization > !== builds binop(neq) via L1",
+        "equality-canonicalization > == (non-nullish) rejects with unsupported reason",
+        "equality-canonicalization > != (non-nullish) rejects with unsupported reason",
+        "equality-canonicalization > === preserves operand sub-expression translation",
+        "equality-canonicalization > !== inside a return expression composes with cond"
+      ],
+      "spec": "module TS2PANT_M4_PATCH_3.\n\n> Patch 3 canonicalizes strict equality and rejects surviving loose\n> equality.\n>\n> Both `===` and `!==` build to L1 BinOp with op = \"eq\" / \"neq\".\n> Any `==` / `!=` that reaches this point is rejected unconditionally\n> with `unsupported: \"loose equality (== / !=) is unsupported; use\n> === / !==\"`. Patch 2's nullish recognizer has already consumed the\n> idiomatic `x == null` family before this rule fires; everything else\n> is `==` whose intent is ambiguous and should be steered to `===`.\n\nTSBinaryExpr.\nL1Expr.\n\nbinary-op b: TSBinaryExpr => Op.\nOp.\nloose-eq => Op.\nloose-neq => Op.\nstrict-eq => Op.\nstrict-neq => Op.\n\nbuild-l1 b: TSBinaryExpr => L1Expr.\nunsupported? e: L1Expr => Bool.\n\nis-binop? e: L1Expr => Bool.\nbinop-op e: L1Expr, is-binop? e => Op.\n\n---\n\n> Strict equality always canonicalizes.\nall b: TSBinaryExpr, binary-op b = strict-eq |\n  is-binop? (build-l1 b)\n  and binop-op (build-l1 b) = strict-eq.\n\nall b: TSBinaryExpr, binary-op b = strict-neq |\n  is-binop? (build-l1 b)\n  and binop-op (build-l1 b) = strict-neq.\n\n> Loose equality is rejected unconditionally (the nullish family is\n> consumed earlier and never reaches this rule).\nall b: TSBinaryExpr, binary-op b = loose-eq | unsupported? (build-l1 b).\nall b: TSBinaryExpr, binary-op b = loose-neq | unsupported? (build-l1 b).\n"
+    },
+    {
+      "number": 4,
+      "classification": "INFRA",
+      "title": "Refactor `??` builder to construct guard via IsNullish",
+      "files": [
+        {
+          "path": "tools/ts2pant/src/translate-body.ts",
+          "action": "modify",
+          "description": "Replace inline `ast.binop(opEq, unop(card, x), litNat(0))` in the `??` handler with `lowerL1Expr(ir1IsNullish(ir1FromL2(xOpaque)))`"
+        },
+        {
+          "path": "tools/ts2pant/src/ir-build.ts",
+          "action": "modify",
+          "description": "Mirror the same refactor in the pure-path `??` builder"
+        }
+      ],
+      "changes": [
+        "In `translate-body.ts:2813-2857`, replace the `ast.binop(ast.opEq(), ast.unop(ast.opCard(), xExpr), ast.litNat(0))` construction at line 2844 with `lowerL1Expr(ir1IsNullish(ir1FromL2(xExpr)))`",
+        "In `src/ir-build.ts:188-198` (pure-path `??` builder), do the same refactor — use `ir1IsNullish` for the cardinality test, then lower",
+        "No changes to the surrounding `cond #x = 0 => y, true => (x 1)` shape — only the guard is restructured. The lowered OpaqueExpr is byte-identical because Patch 1's lowering produces the same `binop(eq, unop(card, x), litNat(0))` shape",
+        "Run `just ts2pant-test` — every `expressions-nullish.ts` snapshot must remain byte-equal. This is the cutover gate",
+        "If any snapshot diverges: investigate. The likely cause is a missed unwrap of `ir1FromL2(x)` somewhere in the chain. Patch 4 must NOT be merged without snapshot byte-equality",
+        "Verify `?.` is unchanged — it does not refactor in M4 (per explicitOpinion above). The `?.` lowering still uses `ast.each(...)` directly"
+      ],
+      "testStubsIntroduced": null,
+      "testStubsImplemented": null,
+      "spec": "module TS2PANT_M4_PATCH_4.\n\n> Patch 4 refactors the `??` builder to construct its cardinality\n> guard via IsNullish, instead of inlining `binop(eq, unop(card, x),\n> litNat(0))` directly.\n>\n> Snapshot byte-equality is the cutover gate: the lowered OpaqueExpr\n> shape must be identical pre- and post-refactor.\n>\n> `?.` does not change here — its lowering uses `each x in src | ...`,\n> which carries the cardinality test implicitly and has no direct\n> IsNullish refactor opportunity.\n\nL1Expr.\nOpaqueExpr.\n\nis-nullish-coalesce? e: L1Expr => Bool.\nguard-of-coalesce e: L1Expr, is-nullish-coalesce? e => L1Expr.\n\nis-nullish? e: L1Expr => Bool.\n\nlower-to-opaque e: L1Expr => OpaqueExpr.\n\n---\n\n> Every nullish-coalesce build site uses an IsNullish guard.\nall e: L1Expr, is-nullish-coalesce? e |\n  is-nullish? (guard-of-coalesce e).\n\n> The lowered output is determined solely by the L1 form: lowering\n> is a function. Snapshot byte-equality follows from this and from\n> Patch 1's mechanical IsNullish lowering rule.\nall a: L1Expr, b: L1Expr, a = b |\n  lower-to-opaque a = lower-to-opaque b.\n"
+    },
+    {
+      "number": 5,
+      "classification": "BEHAVIOR",
+      "title": "Functor-lift recognizer for null-guarded list-lifted conditionals",
+      "files": [
+        {
+          "path": "tools/ts2pant/src/ir1-build.ts",
+          "action": "modify",
+          "description": "Add `tryRecognizeFunctorLift` helper; in the L1 Cond build path, attempt the recognizer before falling through to standard Cond construction"
+        },
+        {
+          "path": "tools/ts2pant/src/translate-body.ts",
+          "action": "modify",
+          "description": "Mirror the recognizer at the mutating-path expression-position site (so early-return null-guards inside mutating bodies also lift)"
+        },
+        {
+          "path": "tools/ts2pant/tests/ir1-build-functor-lift.test.mts",
+          "action": "create",
+          "description": "Unit tests for the recognizer: each eligibility condition tested in isolation, plus combined positive cases"
+        },
+        {
+          "path": "tools/ts2pant/tests/fixtures/constructs/expressions-functor-lift.ts",
+          "action": "create",
+          "description": "Fixture covering supported lift shapes and deliberate-reject shapes"
+        },
+        {
+          "path": "tools/ts2pant/tests/constructs.test.mts.snapshot",
+          "action": "modify",
+          "description": "Snapshots for the new fixture"
+        }
+      ],
+      "changes": [
+        "Implement `tryRecognizeFunctorLift(node, checker, paramNames, supply): IR1Expr | null` in `src/ir1-build.ts`. Inputs: a TS conditional shape (`ConditionalExpression`, or an `IfStatement` whose body and else are both single-return forms after M1's if-conversion screen).",
+        "Eligibility checks (all must hold; otherwise return null and fall through to standard Cond build):",
+        "  (a) Guard is nullish-shaped per Patch 2's recognizer. Extract `operand` and `negated` flag.",
+        "  (b) The 'empty side' (whichever branch corresponds to `IsNullish(x) = true`) is empty-equivalent: TS empty array literal (`[]` with zero elements), `null` literal, or `undefined` literal. Anything else: not eligible.",
+        "  (c) The 'present side' (the `not IsNullish(x)` branch) translates as a single-element-producing expression of `x` — an identifier `x`, a property access `x.foo`, a call `f(x)` or `x.method(...)`, or an arithmetic/logical combination thereof. Multi-element constructions (array literals with multiple elements, spread expressions, concat calls) fail this check.",
+        "  (d) The conditional's static result type is list-lifted: TS array (`U[]`), `T | null`, `T | undefined`, or `T | null | undefined`. Use `checker.getContextualType` or the contextual return type. Non-list-lifted result types (`number`, `string`, plain objects) fail this check.",
+        "When all four hold: translate the operand `x` via the legacy pipeline (wrap in `ir1FromL2`); allocate a fresh binder name `$n` via `cellRegisterName(supply.synthCell, 'n')`; translate the present side under a scope where `x` substitutes for `$n` (use `ast.substituteBinder` on the lowered OpaqueExpr to replace `x`'s Pant name with `$n`); construct the L2 each via `ast.each([], [ast.gIn(binderName, operandOpaque)], substitutedPresentOpaque)`; wrap as `ir1FromL2(opaqueEach)` and return.",
+        "When any check fails: return null. The caller falls through to the standard L1 Cond build (Patch 2's nullish recognizer + M1 Cond), which then lowers via cardinality-dispatch — but for empty-list-typed branches that translation hits the no-list-literal wall and rejects with `unsupported`. That rejection IS the pre-M4 behavior, deliberately preserved.",
+        "Mirror the recognizer entry point in `translate-body.ts` for early-return / ternary expression-position uses inside mutating bodies. Share the eligibility logic with `ir1-build.ts` via an exported helper.",
+        "Create `tests/fixtures/constructs/expressions-functor-lift.ts`: `optionalNames(u: User | null): string[]` (returns `[]` or `[u.name]`); `optionalChain(u: User | null): string | null` (returns `null` or `u.name`); `negatedTernary(x: T | null)` (`(x != null) ? f(x) : null`); `ifConversion(x: T | null)` (`if (x === null) return []; return [g(x)]`); plus deliberate-reject cases that still translate via fall-through (currently: end up as `unsupported`).",
+        "Add unit tests in `tests/ir1-build-functor-lift.test.mts`: each eligibility check fails independently → recognizer returns null; all checks pass → recognizer returns `ir1FromL2(L2 each)` with correct binder substitution; substitution preserves capture-avoidance (binder name doesn't clash with parameters); handle nested null-guards (inner lift inside outer lift) — recursive recognition works via build-time recursion.",
+        "Run `just ts2pant-test-integration` — every fixture in `expressions-functor-lift.ts` must pant-check successfully (the lift produces well-typed `[U]` results matching the declared return type)",
+        "Run `just ts2pant-test` and dogfood — verify no existing snapshot regresses. Pre-M4, no fixture exercised this shape (because they all fail at the empty-list literal); the new fixture is the first to hit this code path"
+      ],
+      "testStubsIntroduced": [
+        "ir1-build-functor-lift > positive ternary lifts",
+        "ir1-build-functor-lift > negated ternary lifts",
+        "ir1-build-functor-lift > if-conversion lifts",
+        "ir1-build-functor-lift > non-list-lifted result type does not lift",
+        "ir1-build-functor-lift > multi-element non-empty branch does not lift",
+        "ir1-build-functor-lift > non-empty-equivalent empty branch does not lift",
+        "ir1-build-functor-lift > non-nullish guard does not lift",
+        "ir1-build-functor-lift > binder substitution avoids capture",
+        "ir1-build-functor-lift > nested null-guards recurse",
+        "constructs > expressions-functor-lift snapshot"
+      ],
+      "testStubsImplemented": [
+        "ir1-build-functor-lift > positive ternary lifts",
+        "ir1-build-functor-lift > negated ternary lifts",
+        "ir1-build-functor-lift > if-conversion lifts",
+        "ir1-build-functor-lift > non-list-lifted result type does not lift",
+        "ir1-build-functor-lift > multi-element non-empty branch does not lift",
+        "ir1-build-functor-lift > non-empty-equivalent empty branch does not lift",
+        "ir1-build-functor-lift > non-nullish guard does not lift",
+        "ir1-build-functor-lift > binder substitution avoids capture",
+        "ir1-build-functor-lift > nested null-guards recurse",
+        "constructs > expressions-functor-lift snapshot"
+      ],
+      "spec": "module TS2PANT_M4_PATCH_5.\n\n> Patch 5 introduces the functor-lift recognizer.\n>\n> When a TS conditional shape has an IsNullish-shaped guard, an\n> empty-equivalent on the empty side, and a function-of-x on the\n> present side, AND the result type is list-lifted, the recognizer\n> fires and the conditional builds to L1 `from-l2(each $n in x | f $n)`\n> instead of an L1 Cond.\n>\n> Soundness conditions are conservative; if any fails, we fall\n> through to the standard Cond build. Cond's lowering for the\n> empty-list-typed branch is untranslatable in Pant (no list\n> literal), so a fall-through here means the function rejects with\n> `unsupported` later — which is the pre-M4 behavior, preserved.\n>\n> Recognizer covers: ternary `(g) ? empty : f(x)`, ternary\n> `(neg-g) ? f(x) : empty`, and the if-conversion analogs.\n\nTSExpr.\nTSType.\nL1Expr.\n\nis-conditional? t: TSExpr => Bool.\nguard t: TSExpr, is-conditional? t => TSExpr.\nempty-side t: TSExpr, is-conditional? t => TSExpr.\npresent-side t: TSExpr, is-conditional? t => TSExpr.\n\nis-nullish-guard? t: TSExpr => Bool.\nguard-operand t: TSExpr, is-nullish-guard? t => TSExpr.\n\nis-empty-equivalent? t: TSExpr => Bool.\nis-single-functor-of? t: TSExpr, x: TSExpr => Bool.\n\nresult-type t: TSExpr => TSType.\nis-list-lifted? ty: TSType => Bool.\n\nfunctor-lift-eligible? t: TSExpr, is-conditional? t => Bool.\n\nbuild-l1 t: TSExpr => L1Expr.\n\nis-each? e: L1Expr => Bool.\nis-cond? e: L1Expr => Bool.\n\n---\n\n> Eligibility requires all four conservative conditions.\nall t: TSExpr, is-conditional? t |\n  functor-lift-eligible? t =\n    is-nullish-guard? (guard t)\n    and is-empty-equivalent? (empty-side t)\n    and is-single-functor-of? (present-side t) (guard-operand (guard t))\n    and is-list-lifted? (result-type t).\n\n> Eligible shapes lower via the each functor lift.\nall t: TSExpr, is-conditional? t, functor-lift-eligible? t |\n  is-each? (build-l1 t).\n\n> Ineligible shapes fall through to the standard cond build.\nall t: TSExpr, is-conditional? t, ~ functor-lift-eligible? t |\n  is-cond? (build-l1 t).\n"
+    },
+    {
+      "number": 6,
+      "classification": "INFRA",
+      "title": "M4 docs and dogfood verification",
+      "files": [
+        {
+          "path": "tools/ts2pant/CLAUDE.md",
+          "action": "modify",
+          "description": "Add an M4 status block to the IR Workstream section: canonical IsNullish form, equality canonicalization rules, `from-l2` shrinkage notes"
+        },
+        {
+          "path": "workstreams/ts2pant-imperative-ir.md",
+          "action": "modify",
+          "description": "Mark M4 ✅ landed; record pessimism rate; resolve the 'M4 standalone vs absorbed' open question"
+        }
+      ],
+      "changes": [
+        "Add a new top-level § 'Developer Steering Principles' to `tools/ts2pant/CLAUDE.md`, immediately after § 'First Principles: This Is Program Translation, Not Novel Research'. Articulate the two-sided rule: (1) When TS itself is ambiguous, ts2pant rejects and steers the programmer to an unambiguous TS form — the rewrite is owed to the *TS* program, not to pantagruel. Example: `==` rejected, programmer rewrites as `===`. (2) When TS is unambiguous but doesn't match a pantagruel-shaped recognizer, ts2pant adapts to recognize it — the programmer should not be taxed by the tool's preferred input shape. Example: `(a === null) || (a === undefined) || other` is unambiguous TS; ts2pant recognizes the nullish prefix opportunistically rather than forcing rewrites. The test: does the TS code's intent read clearly to a TS reader? If yes, recognize. If no, reject and explain. Future milestones inherit this principle. Reference M4 (equality vs. partial-match disjunction) as the precedent",
+        "In `tools/ts2pant/CLAUDE.md` § 'Imperative IR Workstream', add a new subsection 'M4 (equality-nullish-normalization): landed.' mirroring the M2/M3 status blocks: canonical form (`IsNullish(operand)` lowering to `#x = 0`), equality rule (`===`/`!==` always canonicalize; `==`/`!=` rejected unconditionally outside the nullish recognizer — cross-reference the Developer Steering principle), functor-lift recognizer (null-guarded list-lifted conditionals → `each $n in x | f $n`, soundness conditions enumerated), `from-l2` shrinkage scope (sub-expressions of nullish/equality forms now build natively on L1)",
+        "In `tools/ts2pant/CLAUDE.md` § 'Option-Type Elimination', add a forward reference to the new IsNullish primitive — note that the encoding (`#x = 0`) is unchanged but is now produced by lowering an L1 IsNullish rather than emitted directly. Document the new functor-lift recognizer as the canonical handling for null-guarded list-lifted conditionals",
+        "Add a new § 'Functor-Lift Recognizer' to CLAUDE.md (alongside the existing structured-iteration section): standard name (functor lift / Maybe-monad fmap), reference to Wadler 'The Essence of Functional Programming' or equivalent, the four soundness conditions, the four supported TS shapes, and the deliberate rejection of multi-element non-empty branches. Note that this recognizer is itself an instance of the 'recognize idiomatic TS' side of the Developer Steering principle",
+        "In `workstreams/ts2pant-imperative-ir.md` § 'Milestone 4 (deferred)': change heading to 'Milestone 4: equality-nullish-normalization — ✅ landed', add the same status block format used by M1-M3 (slice breakdown, pessimism rate, definition-of-done checkboxes). Record three resolved open questions: 'M4 standalone vs absorbed' (resolved: landed standalone), 'loose-eq policy' (resolved: reject all surviving loose-eq), 'combined-shape recognizer scope' (resolved: included as Patch 5)",
+        "Update workstream § 'Current State (post-M3)' → § 'Current State (post-M4)': move equality / nullish out of 'What's still on the legacy path'; update the 'What's on Layer 1' list to include `IsNullish`; note the precedent set by Patch 5's combined-shape recognizer (M1 Cond + M4 IsNullish) for future cross-milestone normalization needs",
+        "Add a new § 'Architectural Lesson 5: combined-shape recognizers are sometimes load-bearing' to the workstream doc, articulating: when Pant's expression vocabulary lacks a target for a TS shape, a combined recognizer crossing milestone boundaries can be the only translatable path. M4's functor-lift recognizer is the precedent",
+        "Run `just ts2pant-test` and `just ts2pant-test-integration` end-to-end. All tests + dogfood pass byte-equal. `pant --check` passes for every M4-fixture function (equality-nullish + functor-lift)",
+        "Compute and record the loose-equality pessimism count. Workstream document records: 'Pessimism rate (loose-eq rejection): N=X across fixtures+dogfood. Y%.'",
+        "In `tools/ts2pant/CLAUDE.md` § 'Imperative IR Workstream', M4 status block: explicitly enumerate what M4 does NOT cover (out-of-scope by design): `.indexOf(x) === -1` array-absence idioms (these are EUF equality on a sentinel — they translate correctly today, just not via IsNullish); `x === SomeEnum.NONE` enum-sentinel patterns (typed equality, works as-is via `===` canonicalization); `Boolean(x)` / `!!x` truthiness coercion (tests presence, not equality — semantically distinct from nullish testing). These remain candidates for future milestones if real fixtures demand them",
+        "In `workstreams/ts2pant-imperative-ir.md` § 'Open Questions' table, add three deferred-to-future-milestone rows: (1) `.indexOf(x) === -1` recognition — resolve when a fixture demands it; (2) enum-sentinel-as-nullish absorption — resolve when a fixture demands it; (3) truthiness coercion (`Boolean(x)` / `!!x`) handling — may stay UNSUPPORTED indefinitely or become its own milestone",
+        "Final review: skim `translate-body.ts:2780-2900` and `ir1-build.ts` to verify no leftover direct OpaqueExpr emission for nullish, equality, or functor-lift-eligible forms outside the L1 path"
+      ],
+      "testStubsIntroduced": null,
+      "testStubsImplemented": null,
+      "spec": "module TS2PANT_M4_PATCH_5.\n\n> Patch 5 — documentation + dogfood verification. No new code paths.\n>\n> Updates `tools/ts2pant/CLAUDE.md` and\n> `workstreams/ts2pant-imperative-ir.md` to reflect M4 landed status.\n> Adds a fixture covering all supported equality/nullish surface\n> shapes. Confirms `pant --check` and dogfood remain green.\n\nDoc.\nFixture.\n\nm4-status-recorded? d: Doc => Bool.\nfixture-covers-equality-nullish? f: Fixture => Bool.\n\n---\n\ntrue.\n"
+    }
+  ],
+  "testMap": [
+    {
+      "testName": "ir1-lower > IsNullish lowers to binop(eq, unop(card, x), litNat(0))",
+      "file": "tools/ts2pant/tests/ir1-lower.test.mts",
+      "stubPatch": 1,
+      "implPatch": 1
+    },
+    {
+      "testName": "ir1-lower > IsNullish operand can be a member expression",
+      "file": "tools/ts2pant/tests/ir1-lower.test.mts",
+      "stubPatch": 1,
+      "implPatch": 1
+    },
+    {
+      "testName": "ir1-lower > IsNullish lowered shape matches manual ast.binop construction",
+      "file": "tools/ts2pant/tests/ir1-lower.test.mts",
+      "stubPatch": 1,
+      "implPatch": 1
+    },
+    {
+      "testName": "ast-equal > identifiers compare structurally",
+      "file": "tools/ts2pant/tests/ast-equal.test.mts",
+      "stubPatch": 2,
+      "implPatch": 2
+    },
+    {
+      "testName": "ast-equal > dotted paths compare structurally",
+      "file": "tools/ts2pant/tests/ast-equal.test.mts",
+      "stubPatch": 2,
+      "implPatch": 2
+    },
+    {
+      "testName": "ast-equal > indexed access compares structurally",
+      "file": "tools/ts2pant/tests/ast-equal.test.mts",
+      "stubPatch": 2,
+      "implPatch": 2
+    },
+    {
+      "testName": "ast-equal > calls compare structurally including arguments",
+      "file": "tools/ts2pant/tests/ast-equal.test.mts",
+      "stubPatch": 2,
+      "implPatch": 2
+    },
+    {
+      "testName": "ast-equal > parenthesized wrappers are unwrapped",
+      "file": "tools/ts2pant/tests/ast-equal.test.mts",
+      "stubPatch": 2,
+      "implPatch": 2
+    },
+    {
+      "testName": "ast-equal > comments inside nodes are ignored",
+      "file": "tools/ts2pant/tests/ast-equal.test.mts",
+      "stubPatch": 2,
+      "implPatch": 2
+    },
+    {
+      "testName": "ast-equal > quote-style differences ignored on string element-access keys",
+      "file": "tools/ts2pant/tests/ast-equal.test.mts",
+      "stubPatch": 2,
+      "implPatch": 2
+    },
+    {
+      "testName": "ast-equal > different operand shapes return false",
+      "file": "tools/ts2pant/tests/ast-equal.test.mts",
+      "stubPatch": 2,
+      "implPatch": 2
+    },
+    {
+      "testName": "ir1-build-nullish > x == null builds is-nullish",
+      "file": "tools/ts2pant/tests/ir1-build-nullish.test.mts",
+      "stubPatch": 2,
+      "implPatch": 2
+    },
+    {
+      "testName": "ir1-build-nullish > x === null builds is-nullish",
+      "file": "tools/ts2pant/tests/ir1-build-nullish.test.mts",
+      "stubPatch": 2,
+      "implPatch": 2
+    },
+    {
+      "testName": "ir1-build-nullish > x === undefined builds is-nullish",
+      "file": "tools/ts2pant/tests/ir1-build-nullish.test.mts",
+      "stubPatch": 2,
+      "implPatch": 2
+    },
+    {
+      "testName": "ir1-build-nullish > x === null || x === undefined builds is-nullish (operand identity)",
+      "file": "tools/ts2pant/tests/ir1-build-nullish.test.mts",
+      "stubPatch": 2,
+      "implPatch": 2
+    },
+    {
+      "testName": "ir1-build-nullish > typeof x === 'undefined' builds is-nullish",
+      "file": "tools/ts2pant/tests/ir1-build-nullish.test.mts",
+      "stubPatch": 2,
+      "implPatch": 2
+    },
+    {
+      "testName": "ir1-build-nullish > x != null builds not(is-nullish)",
+      "file": "tools/ts2pant/tests/ir1-build-nullish.test.mts",
+      "stubPatch": 2,
+      "implPatch": 2
+    },
+    {
+      "testName": "ir1-build-nullish > x !== null builds not(is-nullish)",
+      "file": "tools/ts2pant/tests/ir1-build-nullish.test.mts",
+      "stubPatch": 2,
+      "implPatch": 2
+    },
+    {
+      "testName": "ir1-build-nullish > x !== null && x !== undefined builds not(is-nullish)",
+      "file": "tools/ts2pant/tests/ir1-build-nullish.test.mts",
+      "stubPatch": 2,
+      "implPatch": 2
+    },
+    {
+      "testName": "ir1-build-nullish > typeof x !== 'undefined' builds not(is-nullish)",
+      "file": "tools/ts2pant/tests/ir1-build-nullish.test.mts",
+      "stubPatch": 2,
+      "implPatch": 2
+    },
+    {
+      "testName": "ir1-build-nullish > a === null || b === undefined falls through (operand mismatch)",
+      "file": "tools/ts2pant/tests/ir1-build-nullish.test.mts",
+      "stubPatch": 2,
+      "implPatch": 2
+    },
+    {
+      "testName": "ir1-build-nullish > x === null || x === undefined || other extracts is-nullish prefix",
+      "file": "tools/ts2pant/tests/ir1-build-nullish.test.mts",
+      "stubPatch": 2,
+      "implPatch": 2
+    },
+    {
+      "testName": "ir1-build-nullish > other || x === null || x === undefined extracts is-nullish suffix",
+      "file": "tools/ts2pant/tests/ir1-build-nullish.test.mts",
+      "stubPatch": 2,
+      "implPatch": 2
+    },
+    {
+      "testName": "ir1-build-nullish > other && x !== null && x !== undefined extracts not-is-nullish",
+      "file": "tools/ts2pant/tests/ir1-build-nullish.test.mts",
+      "stubPatch": 2,
+      "implPatch": 2
+    },
+    {
+      "testName": "constructs > expressions-equality-nullish snapshot",
+      "file": "tools/ts2pant/tests/constructs.test.mts",
+      "stubPatch": 2,
+      "implPatch": 2
+    },
+    {
+      "testName": "equality-canonicalization > === builds binop(eq) via L1",
+      "file": "tools/ts2pant/tests/equality-canonicalization.test.mts",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "equality-canonicalization > !== builds binop(neq) via L1",
+      "file": "tools/ts2pant/tests/equality-canonicalization.test.mts",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "equality-canonicalization > == (non-nullish) rejects with unsupported reason",
+      "file": "tools/ts2pant/tests/equality-canonicalization.test.mts",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "equality-canonicalization > != (non-nullish) rejects with unsupported reason",
+      "file": "tools/ts2pant/tests/equality-canonicalization.test.mts",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "equality-canonicalization > === preserves operand sub-expression translation",
+      "file": "tools/ts2pant/tests/equality-canonicalization.test.mts",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "equality-canonicalization > !== inside a return expression composes with cond",
+      "file": "tools/ts2pant/tests/equality-canonicalization.test.mts",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "ir1-build-functor-lift > positive ternary lifts",
+      "file": "tools/ts2pant/tests/ir1-build-functor-lift.test.mts",
+      "stubPatch": 5,
+      "implPatch": 5
+    },
+    {
+      "testName": "ir1-build-functor-lift > negated ternary lifts",
+      "file": "tools/ts2pant/tests/ir1-build-functor-lift.test.mts",
+      "stubPatch": 5,
+      "implPatch": 5
+    },
+    {
+      "testName": "ir1-build-functor-lift > if-conversion lifts",
+      "file": "tools/ts2pant/tests/ir1-build-functor-lift.test.mts",
+      "stubPatch": 5,
+      "implPatch": 5
+    },
+    {
+      "testName": "ir1-build-functor-lift > non-list-lifted result type does not lift",
+      "file": "tools/ts2pant/tests/ir1-build-functor-lift.test.mts",
+      "stubPatch": 5,
+      "implPatch": 5
+    },
+    {
+      "testName": "ir1-build-functor-lift > multi-element non-empty branch does not lift",
+      "file": "tools/ts2pant/tests/ir1-build-functor-lift.test.mts",
+      "stubPatch": 5,
+      "implPatch": 5
+    },
+    {
+      "testName": "ir1-build-functor-lift > non-empty-equivalent empty branch does not lift",
+      "file": "tools/ts2pant/tests/ir1-build-functor-lift.test.mts",
+      "stubPatch": 5,
+      "implPatch": 5
+    },
+    {
+      "testName": "ir1-build-functor-lift > non-nullish guard does not lift",
+      "file": "tools/ts2pant/tests/ir1-build-functor-lift.test.mts",
+      "stubPatch": 5,
+      "implPatch": 5
+    },
+    {
+      "testName": "ir1-build-functor-lift > binder substitution avoids capture",
+      "file": "tools/ts2pant/tests/ir1-build-functor-lift.test.mts",
+      "stubPatch": 5,
+      "implPatch": 5
+    },
+    {
+      "testName": "ir1-build-functor-lift > nested null-guards recurse",
+      "file": "tools/ts2pant/tests/ir1-build-functor-lift.test.mts",
+      "stubPatch": 5,
+      "implPatch": 5
+    },
+    {
+      "testName": "constructs > expressions-functor-lift snapshot",
+      "file": "tools/ts2pant/tests/constructs.test.mts",
+      "stubPatch": 5,
+      "implPatch": 5
+    }
+  ],
+  "dependencyGraph": [
+    {
+      "patch": 1,
+      "classification": "INFRA",
+      "dependsOn": []
+    },
+    {
+      "patch": 2,
+      "classification": "BEHAVIOR",
+      "dependsOn": [
+        1
+      ]
+    },
+    {
+      "patch": 3,
+      "classification": "BEHAVIOR",
+      "dependsOn": [
+        1
+      ]
+    },
+    {
+      "patch": 4,
+      "classification": "INFRA",
+      "dependsOn": [
+        1,
+        2
+      ]
+    },
+    {
+      "patch": 5,
+      "classification": "BEHAVIOR",
+      "dependsOn": [
+        1,
+        2
+      ]
+    },
+    {
+      "patch": 6,
+      "classification": "INFRA",
+      "dependsOn": [
+        2,
+        3,
+        4,
+        5
+      ]
+    }
+  ],
+  "mergabilityChecklist": {
+    "featureFlagStrategyDocumented": true,
+    "earlyPatchesNonFunctional": true,
+    "testStubsInInfraPatches": true,
+    "testImplsColocated": true,
+    "testMapComplete": true,
+    "testMapImplPatchMatchesCode": true,
+    "behaviorPatchesMinimal": true,
+    "dependencyGraphOrdered": true,
+    "behaviorPatchesJustified": true
+  },
+  "mergabilityInsight": "3 of 6 patches are INFRA (Patch 1: vocabulary; Patch 4: snapshot-byte-equal refactor; Patch 6: docs). 3 are BEHAVIOR (Patch 2: nullish recognition; Patch 3: equality canonicalization; Patch 5: functor-lift recognizer). Patches 2 and 3 are parallelizable — both depend only on Patch 1. Patch 5 depends on Patches 1+2 (it consumes Patch 2's nullish-shape recognition for guard detection). Each BEHAVIOR patch ships with its own fixture and tests in the same patch. The work is mostly additive: nullish forms previously produced broken (type-mismatched) Pant output that no fixture exercised, so observable behavior is unchanged for green tests and improved for the new fixtures. The snapshot gate on Patch 4 catches any inadvertent shape change in the `??` lowered output. Patch 5 is the load-bearing translatability fix — it's the only path that makes null-guarded list-lifted TS functions translate at all (the alternative cardinality lowering is unexpressible in Pant).",
+  "finalStateSpec": "module TS2PANT_M4.\n\n> ════════════════════════════════════════════════════════════\n> M4: equality and nullish normalization\n> ════════════════════════════════════════════════════════════\n>\n> After M4, every TS-AST expression in the equality/nullish\n> equivalence class flows through Layer 1. The class is\n> normalized into three canonical paths plus an unconditional\n> rejection on surviving loose equality:\n>\n>   - `IsNullish(x)` — the canonical Bool null/undefined test.\n>     Recognized from x==null, x===null, x===undefined, the\n>     ||-long form, and typeof-undefined. Negated forms wrap as\n>     `not(IsNullish(x))`.\n>   - `BinOp(eq | neq, lhs, rhs)` — canonical equality, only\n>     produced from `===` / `!==`.\n>   - Functor-lift `each $n in x | f $n` — the canonical lowering\n>     for null-guarded list-lifted conditionals. Pant has no list\n>     literal, so cardinality-dispatch is not a viable alternative;\n>     this path makes idiomatic null-guard-then-list-return TS\n>     functions translate.\n>   - Any `==` / `!=` not consumed by the nullish recognizer is\n>     rejected. ts2pant steers the programmer toward `===`/`!==`\n>     rather than guess loose-equality intent.\n\nTSExpr.\nTSType.\nL1Expr.\nL2Expr.\nOpaqueExpr.\n\n> ─── L1 form predicates ───────────────────────────────────────\n\nis-nullish? e: L1Expr => Bool.\nis-not? e: L1Expr => Bool.\nis-binop-eq? e: L1Expr => Bool.\nis-binop-neq? e: L1Expr => Bool.\nis-each? e: L1Expr => Bool.\nis-cond? e: L1Expr => Bool.\n\noperand e: L1Expr, is-nullish? e => L1Expr.\ninner e: L1Expr, is-not? e => L1Expr.\n\n> ─── TS-side classification ───────────────────────────────────\n\nis-positive-nullish? t: TSExpr => Bool.\nis-negative-nullish? t: TSExpr => Bool.\nis-strict-eq? t: TSExpr => Bool.\nis-strict-neq? t: TSExpr => Bool.\nis-loose-eq? t: TSExpr => Bool.\nis-loose-neq? t: TSExpr => Bool.\n\nis-conditional? t: TSExpr => Bool.\nfunctor-lift-eligible? t: TSExpr, is-conditional? t => Bool.\n\n> ─── Build / lower pipeline ───────────────────────────────────\n\nbuild-l1 t: TSExpr => L1Expr.\nlower-l1 e: L1Expr => L2Expr.\nemit l: L2Expr => OpaqueExpr.\nunsupported? e: L1Expr => Bool.\n\n> ─── L2 / OpaqueExpr shape predicate ─────────────────────────\n\ncard-zero? l: L2Expr => Bool.\n\n---\n\n> ─── Canonical form: every nullish surface form maps to one\n>     L1 IsNullish (or its negation). ───────────────────────────\n\nall t: TSExpr, is-positive-nullish? t |\n  is-nullish? (build-l1 t).\n\nall t: TSExpr, is-negative-nullish? t |\n  is-not? (build-l1 t)\n  and is-nullish? (inner (build-l1 t)).\n\n> ─── Lowering: IsNullish becomes the cardinality-zero shape. ──\n\nall e: L1Expr, is-nullish? e | card-zero? (lower-l1 e).\n\n> ─── Strict equality canonicalizes unconditionally. ──────────\n\nall t: TSExpr, is-strict-eq? t | is-binop-eq? (build-l1 t).\nall t: TSExpr, is-strict-neq? t | is-binop-neq? (build-l1 t).\n\n> ─── Surviving loose equality is rejected unconditionally.\n>     The nullish family is consumed before this rule fires. ───\n\nall t: TSExpr, is-loose-eq? t | unsupported? (build-l1 t).\nall t: TSExpr, is-loose-neq? t | unsupported? (build-l1 t).\n\n> ─── Functor-lift recognizer: eligible conditionals lower to\n>     `each`; ineligible conditionals fall through to L1 Cond\n>     (which then rejects at the no-list-literal wall). ────────\n\nall t: TSExpr, is-conditional? t, functor-lift-eligible? t |\n  is-each? (build-l1 t).\n\nall t: TSExpr, is-conditional? t, ~ functor-lift-eligible? t |\n  is-cond? (build-l1 t).\n"
+}
