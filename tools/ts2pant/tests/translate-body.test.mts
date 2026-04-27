@@ -1144,8 +1144,24 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
+    // Lock the full conditional-mutation shape so a regression that
+    // accepts the parens but mistranslates the body (e.g., dropping
+    // the cond fallback or changing the value) still fails the test.
+    assert.equal(
+      props.some((p) => p.kind === "unsupported"),
+      false,
+      "did not expect any unsupported propositions",
+    );
     const eq = props.find((p) => p.kind === "equation");
     assert.ok(eq, "expected an equation");
+    if (eq?.kind === "equation") {
+      const ast = getAst();
+      assert.equal(ast.strExpr(eq.lhs), "account--total' a");
+      assert.equal(
+        ast.strExpr(eq.rhs),
+        "cond g => 1, true => account--total a",
+      );
+    }
   });
 
   it("rejects non-iterator-rooted assigns inside foreach branches", () => {
