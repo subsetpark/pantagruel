@@ -17,6 +17,30 @@ import type { PantAction, PantDeclaration, PantRule } from "./types.js";
 
 export type Classification = "pure" | "mutating";
 
+/**
+ * Result of translating a TS expression to a Pant `OpaqueExpr`.
+ * Either the translated expression, or an explicit `{ unsupported }`
+ * marker for operators the conservative-refusal policy rejects (today:
+ * loose equality `==` / `!=`). Distinct from `translateOperator`'s
+ * `null` return — that signals "operator not handled" and falls through
+ * to a raw-text fallback (acceptable for genuinely-unknown operators
+ * that pant will fail to parse downstream). This `{ unsupported }`
+ * signals "operator forbidden"; callers must check and bail cleanly
+ * rather than emit raw source text as a Pant variable.
+ *
+ * Mirrors the `L1BuildResult` shape in `ir1-build.ts` (and the
+ * `BodyResult` union in `translate-body.ts`) — the codebase convention
+ * for unsupported translations is an explicit discriminated-union
+ * result, never an exception.
+ */
+export type TranslateExprResult = OpaqueExpr | { unsupported: string };
+
+export function isTranslateExprUnsupported(
+  r: TranslateExprResult,
+): r is { unsupported: string } {
+  return typeof r === "object" && r !== null && "unsupported" in r;
+}
+
 export interface TranslatedSignature {
   declaration: PantDeclaration;
   classification: Classification;
@@ -214,7 +238,13 @@ export function extractAssertionGuard(
     return undefined;
   }
   const arg = call.arguments[paramIndex]!;
-  return translateExpr(arg, checker, strategy, paramNames, synthCell);
+  const result = translateExpr(arg, checker, strategy, paramNames, synthCell);
+  if (isTranslateExprUnsupported(result)) {
+    // Assertion contains an explicitly-unsupported operator (loose
+    // equality). Skip the guard rather than emit raw text.
+    return undefined;
+  }
+  return result;
 }
 
 /**
@@ -304,13 +334,20 @@ function buildSubstitutionMap(
       return null;
     }
 
-    const actual = translateExpr(
+    const actualResult = translateExpr(
       call.arguments[i]!,
       checker,
       strategy,
       callerParamNames,
       synthCell,
     );
+    if (isTranslateExprUnsupported(actualResult)) {
+      // Argument contains an explicitly-unsupported operator. Bail the
+      // entire substitution rather than emit a partial map that would
+      // inline raw source text into a guard.
+      return null;
+    }
+    const actual = actualResult;
     const rendered = ast.strExpr(actual);
     // Heuristic: if the rendered string contains spaces, it's compound and needs parens
     const safeRendered = /\s/u.test(rendered) ? `(${rendered})` : rendered;
@@ -385,6 +422,69 @@ const ASSIGNMENT_OPERATORS = new Set([
   ts.SyntaxKind.AmpersandAmpersandEqualsToken,
   ts.SyntaxKind.QuestionQuestionEqualsToken,
 ]);
+
+/**
+ * Walk an expression looking for operators that `translateExpr` /
+ * `translateBodyExpr` explicitly reject (today: loose equality `==` and
+ * `!=`). Used by guard-detection predicates to keep them aligned with
+ * the actual translator — a guard whose condition contains a forbidden
+ * operator must NOT be classified as a guard, otherwise the body filter
+ * would silently drop the statement while signature extraction would
+ * separately drop the guard, losing the runtime check on both sides.
+ *
+ * Mirrors the rejection list in `translateExpr`'s binary-expression
+ * branch (translate-signature.ts) and `translateBodyExpr`'s
+ * binary-expression branch (translate-body.ts). Adding a new operator
+ * to those rejection lists must also add it here.
+ */
+export function containsUnsupportedOperator(expr: ts.Expression): boolean {
+  if (ts.isBinaryExpression(expr)) {
+    if (
+      expr.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken ||
+      expr.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsToken
+    ) {
+      return true;
+    }
+    return (
+      containsUnsupportedOperator(expr.left) ||
+      containsUnsupportedOperator(expr.right)
+    );
+  }
+  if (
+    ts.isParenthesizedExpression(expr) ||
+    ts.isAsExpression(expr) ||
+    ts.isNonNullExpression(expr) ||
+    ts.isSatisfiesExpression(expr)
+  ) {
+    return containsUnsupportedOperator(expr.expression);
+  }
+  if (ts.isPrefixUnaryExpression(expr) || ts.isPostfixUnaryExpression(expr)) {
+    return containsUnsupportedOperator(expr.operand);
+  }
+  if (ts.isPropertyAccessExpression(expr)) {
+    return containsUnsupportedOperator(expr.expression);
+  }
+  if (ts.isElementAccessExpression(expr)) {
+    return (
+      containsUnsupportedOperator(expr.expression) ||
+      containsUnsupportedOperator(expr.argumentExpression)
+    );
+  }
+  if (ts.isCallExpression(expr)) {
+    return (
+      containsUnsupportedOperator(expr.expression) ||
+      expr.arguments.some(containsUnsupportedOperator)
+    );
+  }
+  if (ts.isConditionalExpression(expr)) {
+    return (
+      containsUnsupportedOperator(expr.condition) ||
+      containsUnsupportedOperator(expr.whenTrue) ||
+      containsUnsupportedOperator(expr.whenFalse)
+    );
+  }
+  return false;
+}
 
 /**
  * Check whether an expression is side-effect-free (identifiers, literals,
@@ -487,6 +587,15 @@ function classifyGuardIf(stmt: ts.IfStatement): "positive" | "negative" | null {
   if (!isPureExpression(stmt.expression)) {
     return null;
   }
+  // M4 P3: a guard whose condition contains a forbidden operator (loose
+  // equality) cannot be translated. If we classified it as a guard, the
+  // body filter would drop the statement and signature extraction would
+  // separately drop the guard — losing the runtime check on both sides.
+  // Refuse the classification so the statement stays in the body, where
+  // the body translator will surface a specific `unsupported` reason.
+  if (containsUnsupportedOperator(stmt.expression)) {
+    return null;
+  }
   if (
     stmt.elseStatement &&
     isSafeGuardThenBranch(stmt.thenStatement) &&
@@ -570,15 +679,19 @@ function scanBodyForGuards(
 
     const guardKind = classifyGuardIf(stmt);
     if (guardKind === "positive") {
-      guards.push(
-        translateExpr(
-          stmt.expression,
-          checker,
-          strategy,
-          paramNames,
-          synthCell,
-        ),
+      const g = tryTranslateGuardExpr(
+        stmt.expression,
+        checker,
+        strategy,
+        paramNames,
+        synthCell,
       );
+      if (g === null) {
+        // Guard contains explicitly-unsupported operator — stop scanning
+        // rather than emit a partial guard set with raw source text.
+        break;
+      }
+      guards.push(g);
       continue;
     }
     if (guardKind === "negative") {
@@ -586,29 +699,30 @@ function scanBodyForGuards(
         ts.isPrefixUnaryExpression(stmt.expression) &&
         stmt.expression.operator === ts.SyntaxKind.ExclamationToken
       ) {
-        guards.push(
-          translateExpr(
-            stmt.expression.operand,
-            checker,
-            strategy,
-            paramNames,
-            synthCell,
-          ),
+        const g = tryTranslateGuardExpr(
+          stmt.expression.operand,
+          checker,
+          strategy,
+          paramNames,
+          synthCell,
         );
+        if (g === null) {
+          break;
+        }
+        guards.push(g);
         continue;
       }
-      guards.push(
-        ast.unop(
-          ast.opNot(),
-          translateExpr(
-            stmt.expression,
-            checker,
-            strategy,
-            paramNames,
-            synthCell,
-          ),
-        ),
+      const g = tryTranslateGuardExpr(
+        stmt.expression,
+        checker,
+        strategy,
+        paramNames,
+        synthCell,
       );
+      if (g === null) {
+        break;
+      }
+      guards.push(ast.unop(ast.opNot(), g));
       continue;
     }
 
@@ -617,6 +731,27 @@ function scanBodyForGuards(
   }
 
   return guards;
+}
+
+/**
+ * Translate a guard expression, returning `null` when the expression
+ * contains an explicitly-unsupported operator (today: loose equality).
+ * Mirrors the bail behavior in `extractAssertionGuard` and
+ * `buildSubstitutionMap` — one helper unifies the union check so all
+ * three guard-extraction paths reject identically.
+ */
+function tryTranslateGuardExpr(
+  expr: ts.Expression,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: ReadonlyMap<string, string>,
+  synthCell: SynthCell | undefined,
+): OpaqueExpr | null {
+  const result = translateExpr(expr, checker, strategy, paramNames, synthCell);
+  if (isTranslateExprUnsupported(result)) {
+    return null;
+  }
+  return result;
 }
 
 /**
@@ -667,6 +802,14 @@ export function isFollowableGuardCall(
       if (!stmt.expression.arguments.every(isPureExpression)) {
         return false;
       }
+      // M4 P3: an assertion call whose argument contains a forbidden
+      // operator (loose equality) cannot be translated. Reject the
+      // whole helper rather than silently dropping the guard during
+      // signature extraction. The body translator will then surface
+      // the rejection on the helper call itself.
+      if (stmt.expression.arguments.some(containsUnsupportedOperator)) {
+        return false;
+      }
       return (
         isAssertionCall(checker, stmt.expression) !== null ||
         isFollowableGuardCall(stmt.expression, checker, visited)
@@ -683,6 +826,8 @@ export function isFollowableGuardCall(
     if (!ts.isIfStatement(stmt)) {
       return false;
     }
+    // classifyGuardIf already rejects untranslatable conditions —
+    // this is the same check scanBodyForGuards relies on.
     return classifyGuardIf(stmt) !== null;
   });
   visited.delete(target.body);
@@ -787,7 +932,14 @@ function blockThrows(node: ts.Statement): boolean {
 }
 
 /**
- * Translate a TypeScript expression to an opaque Pantagruel AST node (best-effort).
+ * Translate a TypeScript expression to an opaque Pantagruel AST node
+ * (best-effort), or return `{ unsupported: reason }` for operators the
+ * conservative-refusal policy rejects (today: loose `==`/`!=`).
+ *
+ * Callers must check the result via `isTranslateExprUnsupported` and
+ * bail cleanly. This mirrors the `BodyResult` / `L1BuildResult`
+ * convention — the codebase signals unsupported translations through
+ * explicit discriminated-union results, never exceptions.
  */
 export function translateExpr(
   expr: ts.Expression,
@@ -795,7 +947,7 @@ export function translateExpr(
   _strategy: NumericStrategy,
   paramNames: ReadonlyMap<string, string>,
   synthCell?: SynthCell,
-): OpaqueExpr {
+): TranslateExprResult {
   const ast = getAst();
 
   // Property access: a.balance -> app(var("account-balance"), [obj])
@@ -807,6 +959,9 @@ export function translateExpr(
       paramNames,
       synthCell,
     );
+    if (isTranslateExprUnsupported(obj)) {
+      return obj;
+    }
     const ruleName = qualifyFieldAccess(
       checker.getTypeAtLocation(expr.expression),
       expr.name.text,
@@ -819,6 +974,20 @@ export function translateExpr(
 
   // Binary expression: a >= b -> binop(opGe(), a, b)
   if (ts.isBinaryExpression(expr)) {
+    // M4 P3: reject loose equality (== / !=) explicitly. Falling
+    // through to the `ast.var(expr.getText())` path below would emit
+    // raw source text as a Pant variable name, violating
+    // conservative-refusal policy 3(b). Return an explicit `unsupported`
+    // marker — entry-point callers (extractAssertionGuard,
+    // buildSubstitutionMap, scanBodyForGuards) propagate it and bail.
+    if (
+      expr.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken ||
+      expr.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsToken
+    ) {
+      return {
+        unsupported: "loose equality (== / !=) is unsupported; use === / !==",
+      };
+    }
     const left = translateExpr(
       expr.left,
       checker,
@@ -826,6 +995,9 @@ export function translateExpr(
       paramNames,
       synthCell,
     );
+    if (isTranslateExprUnsupported(left)) {
+      return left;
+    }
     const right = translateExpr(
       expr.right,
       checker,
@@ -833,6 +1005,9 @@ export function translateExpr(
       paramNames,
       synthCell,
     );
+    if (isTranslateExprUnsupported(right)) {
+      return right;
+    }
     const op = translateOperator(expr.operatorToken.kind);
     if (op === null) {
       return ast.var(expr.getText());
@@ -843,21 +1018,46 @@ export function translateExpr(
   // Prefix unary: !x -> unop(opNot(), x), -x -> unop(opNeg(), x)
   if (ts.isPrefixUnaryExpression(expr)) {
     if (expr.operator === ts.SyntaxKind.ExclamationToken) {
-      return ast.unop(
-        ast.opNot(),
-        translateExpr(expr.operand, checker, _strategy, paramNames, synthCell),
+      const operand = translateExpr(
+        expr.operand,
+        checker,
+        _strategy,
+        paramNames,
+        synthCell,
       );
+      if (isTranslateExprUnsupported(operand)) {
+        return operand;
+      }
+      return ast.unop(ast.opNot(), operand);
     }
     if (expr.operator === ts.SyntaxKind.MinusToken) {
-      return ast.unop(
-        ast.opNeg(),
-        translateExpr(expr.operand, checker, _strategy, paramNames, synthCell),
+      const operand = translateExpr(
+        expr.operand,
+        checker,
+        _strategy,
+        paramNames,
+        synthCell,
       );
+      if (isTranslateExprUnsupported(operand)) {
+        return operand;
+      }
+      return ast.unop(ast.opNeg(), operand);
     }
   }
 
-  // Parenthesized — unwrap (parens are a rendering concern)
-  if (ts.isParenthesizedExpression(expr)) {
+  // Transparent wrappers — unwrap before any translation, including
+  // before falling through to the raw-text fallback at the end of this
+  // function. Without this, `(x == 0) as boolean` and `(x == 0)!` would
+  // bypass the loose-equality rejection above and emit raw source text
+  // as a Pant variable name. Mirrors `unwrapExpression` in
+  // translate-body.ts and the wrapper handling in `isPureExpression` /
+  // `containsUnsupportedOperator`.
+  if (
+    ts.isParenthesizedExpression(expr) ||
+    ts.isAsExpression(expr) ||
+    ts.isNonNullExpression(expr) ||
+    ts.isSatisfiesExpression(expr)
+  ) {
     return translateExpr(
       expr.expression,
       checker,
@@ -903,11 +1103,17 @@ export function translateOperator(kind: ts.SyntaxKind): OpaqueBinop | null {
     case ts.SyntaxKind.LessThanToken:
       return ast.opLt();
     case ts.SyntaxKind.EqualsEqualsEqualsToken:
-    case ts.SyntaxKind.EqualsEqualsToken:
       return ast.opEq();
     case ts.SyntaxKind.ExclamationEqualsEqualsToken:
-    case ts.SyntaxKind.ExclamationEqualsToken:
       return ast.opNeq();
+    // M4 P3: loose equality (`==` / `!=`) is unsupported. Patch 2's
+    // nullish recognizer consumes `x == null` / `x != null` before
+    // this dispatcher is reached on the pure path; any `==`/`!=`
+    // here has ambiguous intent and we reject (return null) to steer
+    // the programmer toward `===`/`!==`.
+    case ts.SyntaxKind.EqualsEqualsToken:
+    case ts.SyntaxKind.ExclamationEqualsToken:
+      return null;
     case ts.SyntaxKind.AmpersandAmpersandToken:
       return ast.opAnd();
     case ts.SyntaxKind.BarBarToken:

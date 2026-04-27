@@ -3,7 +3,7 @@ import ts from "typescript";
 import { type IRExpr, irLet, irWrap } from "./ir.js";
 import { buildIR, isBuildUnsupported } from "./ir-build.js";
 import { lowerExpr } from "./ir-emit.js";
-import { type IR1Expr, ir1FromL2 } from "./ir1.js";
+import { type IR1Expr, ir1Binop, ir1FromL2 } from "./ir1.js";
 import {
   buildL1Conditional,
   buildL1ConditionalFromArms,
@@ -32,10 +32,12 @@ import { isKnownPureCall } from "./purity.js";
 import { translateRecordReturn } from "./translate-record.js";
 import {
   classifyFunction,
+  containsUnsupportedOperator,
   findFunction,
   isAssertionCall,
   isFollowableGuardCall,
   isPureExpression,
+  isTranslateExprUnsupported,
   shortParamName,
   translateExpr,
   translateOperator,
@@ -2312,6 +2314,13 @@ export function isGuardStatement(
     if (!call.arguments.every(isPureExpression)) {
       return false;
     }
+    // M4 P3: an assertion arg containing loose equality cannot translate.
+    // Filtering the call out of the body would silently drop the runtime
+    // check on both sides; keep it so the body translator surfaces the
+    // rejection.
+    if (call.arguments.some(containsUnsupportedOperator)) {
+      return false;
+    }
     if (isAssertionCall(checker, call) !== null) {
       return true;
     }
@@ -2325,6 +2334,13 @@ export function isGuardStatement(
   }
   // Condition must be pure (aligned with classifyGuardIf's isPureExpression check)
   if (!isPureExpression(stmt.expression)) {
+    return false;
+  }
+  // M4 P3: same as classifyGuardIf — refuse to classify an if-throw guard
+  // whose condition contains an explicitly-unsupported operator. The body
+  // translator will then handle the if-statement on the regular path,
+  // where it will surface a specific `unsupported` reason.
+  if (containsUnsupportedOperator(stmt.expression)) {
     return false;
   }
   // if (...) { throw } without else
@@ -2856,6 +2872,56 @@ export function translateBodyExpr(
         ]),
       };
     }
+    // M4 P3: reject loose equality unconditionally. Patch 2's nullish
+    // recognizer consumes `x == null` / `x != null` family before we
+    // reach this point; everything else is `==`/`!=` whose intent is
+    // ambiguous between value-equality and JS coercion semantics — we
+    // steer the programmer toward `===`/`!==` rather than guess.
+    if (
+      expr.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken ||
+      expr.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsToken
+    ) {
+      return {
+        unsupported: "loose equality (== / !=) is unsupported; use === / !==",
+      };
+    }
+    // M4 P3: canonicalize strict equality through Layer 1
+    // `BinOp(eq | neq, ...)`. Sub-expressions wrap via `ir1FromL2`
+    // (M5 territory — sub-expressions reach L1 natively then).
+    if (
+      expr.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken ||
+      expr.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken
+    ) {
+      const left = translateBodyExpr(
+        expr.left,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
+      if (isBodyUnsupported(left)) {
+        return left;
+      }
+      const right = translateBodyExpr(
+        expr.right,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
+      if (isBodyUnsupported(right)) {
+        return right;
+      }
+      const l1Op =
+        expr.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken
+          ? "eq"
+          : "neq";
+      const lhsL1 = ir1FromL2(irWrap(bodyExpr(left)));
+      const rhsL1 = ir1FromL2(irWrap(bodyExpr(right)));
+      return { expr: lowerL1ToOpaque(ir1Binop(l1Op, lhsL1, rhsL1)) };
+    }
     const op = translateOperator(expr.operatorToken.kind);
     if (op === null) {
       return {
@@ -2889,15 +2955,17 @@ export function translateBodyExpr(
 
   // Fall through to base translateExpr for identifiers, literals, this, etc.
   if (ts.isExpression(expr)) {
-    return {
-      expr: translateExpr(
-        expr,
-        checker,
-        strategy,
-        paramNames,
-        supply.synthCell,
-      ),
-    };
+    const result = translateExpr(
+      expr,
+      checker,
+      strategy,
+      paramNames,
+      supply.synthCell,
+    );
+    if (isTranslateExprUnsupported(result)) {
+      return { unsupported: result.unsupported };
+    }
+    return { expr: result };
   }
 
   return { unsupported: "non-expression statement" };
