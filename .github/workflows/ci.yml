@@ -36,11 +36,11 @@ jobs:
         # ownership root doesn't recognize.
         run: git config --global --add safe.directory '*'
 
-      - name: Use opam.ocaml.org archive cache
-        # erratique.ch (upstream for cmdliner, mtime, fpath, logs, uutf, ...)
-        # is frequently flaky; the community cache mirrors opam-repository
-        # archives behind a CDN, so opam only falls back to upstream on a miss.
-        run: opam option archive-mirrors='["https://opam.ocaml.org/cache"]'
+      - name: Diagnose opam
+        run: |
+          opam --version
+          opam switch list
+          opam config list
 
       - name: Install dependencies
         run: |
@@ -87,9 +87,6 @@ jobs:
 
       - name: Trust workspace
         run: git config --global --add safe.directory '*'
-
-      - name: Use opam.ocaml.org archive cache
-        run: opam option archive-mirrors='["https://opam.ocaml.org/cache"]'
 
       - name: Install just
         # Install directly from the GitHub release tarball so we don't depend
