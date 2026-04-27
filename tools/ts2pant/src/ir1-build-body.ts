@@ -136,6 +136,12 @@ function buildL1MutationBody(
     const [head, ...rest] = stmts;
     return ir1Block([head!, ...rest]);
   }
+  if (ts.isIfStatement(stmt)) {
+    // Nested if inside a branch body — recurse via the same builder.
+    // Handles `else if` chains (TS parses these as nested IfStatement)
+    // and inner ifs in the then-branch.
+    return buildL1IfMutation(stmt, ctx);
+  }
   if (ts.isExpressionStatement(stmt)) {
     if (ts.isCallExpression(stmt.expression)) {
       return buildL1EffectCall(stmt.expression, ctx);
@@ -213,6 +219,20 @@ function buildL1EffectCall(
  * expression statement. Slice 1 supports simple `=` only; compound
  * assigns (`+=` etc.) return `{unsupported}` and are deferred.
  */
+/**
+ * Map TS compound-assign operator kinds to their plain binary
+ * counterparts. `+=` desugars to `lhs = lhs + rhs`, `-=` to `lhs =
+ * lhs - rhs`, and so on.
+ */
+const COMPOUND_ASSIGN_TO_BINOP: Map<ts.SyntaxKind, ts.BinaryOperator> = new Map(
+  [
+    [ts.SyntaxKind.PlusEqualsToken, ts.SyntaxKind.PlusToken],
+    [ts.SyntaxKind.MinusEqualsToken, ts.SyntaxKind.MinusToken],
+    [ts.SyntaxKind.AsteriskEqualsToken, ts.SyntaxKind.AsteriskToken],
+    [ts.SyntaxKind.SlashEqualsToken, ts.SyntaxKind.SlashToken],
+  ],
+);
+
 function buildL1AssignStmt(
   stmt: ts.ExpressionStatement,
   ctx: BuildBodyCtx,
@@ -221,8 +241,10 @@ function buildL1AssignStmt(
   if (!ts.isBinaryExpression(expr)) {
     return { unsupported: "branch statement must be an assignment" };
   }
-  if (expr.operatorToken.kind !== ts.SyntaxKind.EqualsToken) {
-    return { unsupported: "branch compound-assign deferred" };
+  const isSimpleAssign = expr.operatorToken.kind === ts.SyntaxKind.EqualsToken;
+  const compoundOp = COMPOUND_ASSIGN_TO_BINOP.get(expr.operatorToken.kind);
+  if (!isSimpleAssign && compoundOp === undefined) {
+    return { unsupported: "unsupported assignment operator" };
   }
   if (!ts.isPropertyAccessExpression(expr.left)) {
     return { unsupported: "assign target must be a property access" };
@@ -250,8 +272,17 @@ function buildL1AssignStmt(
   if (isBodyUnsupported(objR)) {
     return { unsupported: objR.unsupported };
   }
+  // For compound `a.p OP= v`, desugar the rhs to `a.p OP v`. The new
+  // `a.p` read goes through translateBodyExpr, which consults the
+  // symbolic state and returns the prior-write value or the pre-state
+  // identity — same discipline as the top-level property-assign arm
+  // of `symbolicExecute` (see translate-body.ts:4378-4395).
+  const rhsNode =
+    compoundOp !== undefined
+      ? ts.factory.createBinaryExpression(expr.left, compoundOp, expr.right)
+      : expr.right;
   const valR = translateBodyExpr(
-    expr.right,
+    rhsNode,
     ctx.checker,
     ctx.strategy,
     ctx.paramNames,
