@@ -238,7 +238,7 @@ function isMapEffect(e: CollectionMutation): e is MapMutation {
  * Only `symbolicExecute`'s ExpressionStatement handler consumes effects
  * directly.
  */
-function rejectEffect(
+export function rejectEffect(
   r: BodyResult,
 ):
   | { unsupported: string }
@@ -2267,7 +2267,7 @@ function isLowerUnsupported(
   return typeof r === "object" && r !== null && "unsupported" in r;
 }
 
-function isGuardStatement(
+export function isGuardStatement(
   stmt: ts.Statement,
   checker: ts.TypeChecker,
 ): boolean {

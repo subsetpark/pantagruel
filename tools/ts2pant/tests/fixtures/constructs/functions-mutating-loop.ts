@@ -97,3 +97,17 @@ export function sumIntoAnon(acc: { total: number }, items: number[]): void {
     acc.total += x;
   }
 }
+
+/** Shape B with a per-iteration guard call — the `if (...) throw …`
+ *  precondition is filtered before classification, the same way
+ *  `symbolicExecute` strips top-level guards, so the loop translates
+ *  to its Shape B fold. Without the guard-filtering pass, the
+ *  ThrowStatement would surface as an unsupported loop body. */
+export function sumPositiveAssert(a: Account, items: Item[]): void {
+  for (const x of items) {
+    if (!(x.value >= 0)) {
+      throw new Error("non-negative value required");
+    }
+    a.total += x.value;
+  }
+}

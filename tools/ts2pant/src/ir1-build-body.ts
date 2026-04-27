@@ -55,8 +55,10 @@ import {
   getRootIdentifier,
   isBodyEffect,
   isBodyUnsupported,
+  isGuardStatement,
   putWrite,
   qualifyFieldAccess,
+  rejectEffect,
   type SymbolicState,
   symbolicKey,
   translateBodyExpr,
@@ -85,6 +87,48 @@ export function isUnsupported<T>(
     x !== null &&
     "unsupported" in (x as Record<string, unknown>)
   );
+}
+
+/**
+ * Validate that a built `IR1Stmt` is admissible as a `foreach` body:
+ * only `assign` (with `member` target), `cond-stmt`, and `block`s of
+ * those. The cast to `IR1ForeachBody` is type-level only — `cond-stmt`
+ * arms are `IR1Stmt` in the static type, so we recurse into them at
+ * runtime to keep the M3 Shape A contract honest. Map/Set effects
+ * inside an `if` branch in the foreach body are rejected here rather
+ * than later in `lowerForeach`'s sub-state walk.
+ */
+function ensureForeachBodyShape(stmt: IR1Stmt): BuildResult<IR1ForeachBody> {
+  if (stmt.kind === "assign") {
+    return stmt;
+  }
+  if (stmt.kind === "block") {
+    for (const child of stmt.stmts) {
+      const r = ensureForeachBodyShape(child);
+      if (isUnsupported(r)) {
+        return r;
+      }
+    }
+    return stmt as IR1ForeachBody;
+  }
+  if (stmt.kind === "cond-stmt") {
+    for (const [, arm] of stmt.arms) {
+      const r = ensureForeachBodyShape(arm);
+      if (isUnsupported(r)) {
+        return r;
+      }
+    }
+    if (stmt.otherwise !== null) {
+      const r = ensureForeachBodyShape(stmt.otherwise);
+      if (isUnsupported(r)) {
+        return r;
+      }
+    }
+    return stmt as IR1ForeachBody;
+  }
+  return {
+    unsupported: `foreach body cannot contain a ${stmt.kind} statement (Shape A is assign-only)`,
+  };
 }
 
 /**
@@ -119,13 +163,15 @@ export function buildL1ForOfMutation(
     return { unsupported: "for-of destructuring pattern is not supported" };
   }
   const iterName = decl.name.text;
-  const sourceR = translateBodyExpr(
-    stmt.expression,
-    ctx.checker,
-    ctx.strategy,
-    ctx.paramNames,
-    ctx.state,
-    ctx.supply,
+  const sourceR = rejectEffect(
+    translateBodyExpr(
+      stmt.expression,
+      ctx.checker,
+      ctx.strategy,
+      ctx.paramNames,
+      ctx.state,
+      ctx.supply,
+    ),
   );
   if (isBodyUnsupported(sourceR)) {
     return { unsupported: sourceR.unsupported };
@@ -163,13 +209,15 @@ export function buildL1ForEachCall(
     };
   }
   const iterName = arg.parameters[0]!.name.text;
-  const sourceR = translateBodyExpr(
-    call.expression.expression,
-    ctx.checker,
-    ctx.strategy,
-    ctx.paramNames,
-    ctx.state,
-    ctx.supply,
+  const sourceR = rejectEffect(
+    translateBodyExpr(
+      call.expression.expression,
+      ctx.checker,
+      ctx.strategy,
+      ctx.paramNames,
+      ctx.state,
+      ctx.supply,
+    ),
   );
   if (isBodyUnsupported(sourceR)) {
     return { unsupported: sourceR.unsupported };
@@ -273,9 +321,15 @@ function buildL1ForeachBody(
   binder: string,
   ctx: BuildBodyCtx,
 ): BuildResult<ForeachBodyResult> {
-  const stmts = ts.isBlock(bodyStmt)
+  // Strip guard statements (`assert(...)`, `if (g) throw …`) before
+  // classification, mirroring what `symbolicExecute` does for top-level
+  // bodies. Without this, a guarded loop body like
+  // `for (const x of xs) { assert(x.amount > 0); a.total += x.amount; }`
+  // would fail classification on the guard call.
+  const rawStmts = ts.isBlock(bodyStmt)
     ? Array.from(bodyStmt.statements)
     : [bodyStmt];
+  const stmts = rawStmts.filter((s) => !isGuardStatement(s, ctx.checker));
   // Build-time subState: forks the outer state so prior writes are
   // visible during in-iter sub-expression translation, then accumulates
   // Shape A property writes so Shape B rhs/guard sub-expressions observe
@@ -293,6 +347,13 @@ function buildL1ForeachBody(
 
   const bodyStmts: IR1ForeachBody[] = [];
   const foldLeaves: IR1FoldLeaf[] = [];
+  // Track whether any Shape A statement is a non-bare-assign (i.e., a
+  // cond-stmt). `simulateShapeA` only models bare assigns into the
+  // subState, so a guarded Shape A write leaves the iter binder's
+  // properties at their pre-iter value during Shape B `rhs`/`guard`
+  // translation. Combining the two would silently produce a fold-RHS
+  // built against the stale iter property — reject conservatively.
+  let hasGuardedShapeA = false;
 
   for (const s of stmts) {
     const cls = classifyForeachStmt(s, iterName, subCtx, ctx, null);
@@ -301,6 +362,9 @@ function buildL1ForeachBody(
     }
     if (cls.kind === "shapeA") {
       bodyStmts.push(cls.built);
+      if (cls.built.kind !== "assign") {
+        hasGuardedShapeA = true;
+      }
       // Simulate the property write into subState. We re-translate the
       // assign so subsequent Shape B reads observe the value computed
       // against the in-iter scope.
@@ -309,6 +373,12 @@ function buildL1ForeachBody(
         return sim;
       }
     } else {
+      if (hasGuardedShapeA) {
+        return {
+          unsupported:
+            "guarded Shape A iterator write is not supported alongside a Shape B fold leaf — the fold would read the iter binder's pre-iter value",
+        };
+      }
       for (const leaf of cls.leaves) {
         const built = buildShapeBLeaf(leaf, ctx, subCtx);
         if (isUnsupported(built)) {
@@ -451,13 +521,19 @@ function classifyForeachStmt(
     }
     // Shape A: build the cond-stmt via the standard if-mutation builder
     // against subCtx so the iter binder is in scope. `buildL1IfMutation`
-    // returns `ir1CondStmt(...)` (kind "cond-stmt"), a member of
-    // `IR1ForeachBody`.
+    // can emit `map-effect` / `set-effect` from inner `m.set/.add` calls;
+    // foreach bodies are assign-only at the M3 contract level, so reject
+    // here rather than letting the lower pass surface an "out of scope"
+    // diagnostic.
     const built = buildL1IfMutation(stmt, subCtx);
     if (isUnsupported(built)) {
       return built;
     }
-    return { kind: "shapeA", built: built as IR1ForeachBody };
+    const shapeCheck = ensureForeachBodyShape(built);
+    if (isUnsupported(shapeCheck)) {
+      return shapeCheck;
+    }
+    return { kind: "shapeA", built: shapeCheck };
   }
 
   return {
@@ -476,26 +552,30 @@ function buildShapeBLeaf(
   outerCtx: BuildBodyCtx,
   subCtx: BuildBodyCtx,
 ): BuildResult<IR1FoldLeaf> {
-  const targetR = translateBodyExpr(
-    leaf.target,
-    outerCtx.checker,
-    outerCtx.strategy,
-    outerCtx.paramNames,
-    outerCtx.state,
-    outerCtx.supply,
+  const targetR = rejectEffect(
+    translateBodyExpr(
+      leaf.target,
+      outerCtx.checker,
+      outerCtx.strategy,
+      outerCtx.paramNames,
+      outerCtx.state,
+      outerCtx.supply,
+    ),
   );
   if (isBodyUnsupported(targetR)) {
     return { unsupported: targetR.unsupported };
   }
   const target = ir1FromL2(irWrap(outerCtx.applyConst(bodyExpr(targetR))));
 
-  const rhsR = translateBodyExpr(
-    leaf.rhs,
-    subCtx.checker,
-    subCtx.strategy,
-    subCtx.paramNames,
-    subCtx.state,
-    subCtx.supply,
+  const rhsR = rejectEffect(
+    translateBodyExpr(
+      leaf.rhs,
+      subCtx.checker,
+      subCtx.strategy,
+      subCtx.paramNames,
+      subCtx.state,
+      subCtx.supply,
+    ),
   );
   if (isBodyUnsupported(rhsR)) {
     return { unsupported: rhsR.unsupported };
@@ -504,13 +584,15 @@ function buildShapeBLeaf(
 
   let guard: IR1Expr | null = null;
   if (leaf.guard !== null) {
-    const gR = translateBodyExpr(
-      leaf.guard,
-      subCtx.checker,
-      subCtx.strategy,
-      subCtx.paramNames,
-      subCtx.state,
-      subCtx.supply,
+    const gR = rejectEffect(
+      translateBodyExpr(
+        leaf.guard,
+        subCtx.checker,
+        subCtx.strategy,
+        subCtx.paramNames,
+        subCtx.state,
+        subCtx.supply,
+      ),
     );
     if (isBodyUnsupported(gR)) {
       return { unsupported: gR.unsupported };
@@ -567,13 +649,19 @@ function simulateShapeA(
   if (prop === null) {
     return { unsupported: ambiguousFieldMsg(rawProp) };
   }
-  const objR = translateBodyExpr(
-    expr.left.expression,
-    subCtx.checker,
-    subCtx.strategy,
-    subCtx.paramNames,
-    subCtx.state,
-    subCtx.supply,
+  // `rejectEffect` turns a Map/Set mutation result into `unsupported`
+  // so the simulation never feeds an `{ effect }` shape into
+  // `bodyExpr` (which throws). Mirrors the guard in
+  // `buildL1AssignStmt`.
+  const objR = rejectEffect(
+    translateBodyExpr(
+      expr.left.expression,
+      subCtx.checker,
+      subCtx.strategy,
+      subCtx.paramNames,
+      subCtx.state,
+      subCtx.supply,
+    ),
   );
   if (isBodyUnsupported(objR)) {
     return { unsupported: objR.unsupported };
@@ -582,13 +670,15 @@ function simulateShapeA(
     compoundOp !== undefined
       ? ts.factory.createBinaryExpression(expr.left, compoundOp, expr.right)
       : expr.right;
-  const valR = translateBodyExpr(
-    rhsNode,
-    subCtx.checker,
-    subCtx.strategy,
-    subCtx.paramNames,
-    subCtx.state,
-    subCtx.supply,
+  const valR = rejectEffect(
+    translateBodyExpr(
+      rhsNode,
+      subCtx.checker,
+      subCtx.strategy,
+      subCtx.paramNames,
+      subCtx.state,
+      subCtx.supply,
+    ),
   );
   if (isBodyUnsupported(valR)) {
     return { unsupported: valR.unsupported };
@@ -658,7 +748,14 @@ function buildL1MutationBody(
 ): BuildResult<IR1Stmt> {
   if (ts.isBlock(stmt)) {
     const stmts: IR1Stmt[] = [];
-    for (const child of stmt.statements) {
+    // Strip guard statements (`assert(...)`, `if (g) throw …`) so
+    // branch-local preconditions don't surface as unsupported branch
+    // bodies — same discipline as `symbolicExecute` and the foreach
+    // builder above.
+    const children = stmt.statements.filter(
+      (s) => !isGuardStatement(s, ctx.checker),
+    );
+    for (const child of children) {
       const built = buildL1MutationBody(child, ctx);
       if (isUnsupported(built)) {
         return built;
@@ -815,13 +912,15 @@ function buildL1AssignStmt(
   if (prop === null) {
     return { unsupported: ambiguousFieldMsg(rawProp) };
   }
-  const objR = translateBodyExpr(
-    expr.left.expression,
-    ctx.checker,
-    ctx.strategy,
-    ctx.paramNames,
-    ctx.state,
-    ctx.supply,
+  const objR = rejectEffect(
+    translateBodyExpr(
+      expr.left.expression,
+      ctx.checker,
+      ctx.strategy,
+      ctx.paramNames,
+      ctx.state,
+      ctx.supply,
+    ),
   );
   if (isBodyUnsupported(objR)) {
     return { unsupported: objR.unsupported };
@@ -834,13 +933,19 @@ function buildL1AssignStmt(
     compoundOp !== undefined
       ? ts.factory.createBinaryExpression(expr.left, compoundOp, expr.right)
       : expr.right;
-  const valR = translateBodyExpr(
-    rhsNode,
-    ctx.checker,
-    ctx.strategy,
-    ctx.paramNames,
-    ctx.state,
-    ctx.supply,
+  // `rejectEffect` turns a Map/Set mutation result into `unsupported`
+  // — without this, a value-position `m.set(k, v)` (or `s.add(x)`)
+  // would slip past `isBodyUnsupported` and `bodyExpr` would throw
+  // when called on the `{ effect }` shape downstream.
+  const valR = rejectEffect(
+    translateBodyExpr(
+      rhsNode,
+      ctx.checker,
+      ctx.strategy,
+      ctx.paramNames,
+      ctx.state,
+      ctx.supply,
+    ),
   );
   if (isBodyUnsupported(valR)) {
     return { unsupported: valR.unsupported };

@@ -726,6 +726,10 @@ exports[`functions-mutating-loop.ts > sumPositive 1`] = `
 "module SumPositive.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Sum-positive @ a: Account, items: [Item].\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each $0 in items, item--value $0 > 0 | item--value $0).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\nitem--tagged' i = item--tagged i.\\n"
 `;
 
+exports[`functions-mutating-loop.ts > sumPositiveAssert 1`] = `
+"module SumPositiveAssert.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Sum-positive-assert @ a: Account, items: [Item].\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each $0 in items | item--value $0).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\nitem--tagged' i = item--tagged i.\\n"
+`;
+
 exports[`functions-mutating.ts > deposit 1`] = `
 "module Deposit.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Deposit @ a: Account, amount: Int.\\n\\n---\\n\\naccount--balance' a = account--balance a + amount.\\naccount--owner' a1 = account--owner a1.\\n"
 `;

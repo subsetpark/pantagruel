@@ -299,17 +299,22 @@ export type IR1Stmt =
 
 /**
  * Statement shapes admissible as the body of an `IR1Stmt.foreach` —
- * Shape A iterator writes only. Excludes `return`, `throw`, nested
- * `for` / `while`, and other forms `lowerL1Body` would reject. Block
- * bodies recurse: a `block` here may only contain other
- * `IR1ForeachBody` shapes. Construction sites that try to embed a
- * `return` (or any other non-iteration form) fail at the type level.
+ * the M3 Shape A contract: per-iter property writes (`assign` against
+ * `Member(iter, p)`), conditional writes (`cond-stmt`), and blocks
+ * composing those. Map/Set effects do not belong in the foreach body
+ * (the lower pass would reject them as out-of-scope); a `for (x of
+ * xs) { tags.add(x) }`-style write to an outer collection is not a
+ * Shape A iteration. Other forms (`return`, `throw`, nested `for` /
+ * `while`, `let`, `expr-stmt`) are also excluded — they have no
+ * meaning under per-iteration quantified emission.
+ *
+ * Block bodies recurse so the no-escape-hatch invariant holds at any
+ * depth. The `cond-stmt` variant's arms are still `IR1Stmt` (so the
+ * type doesn't capture the nested invariant); the build pass closes
+ * that gap at runtime via `ensureForeachBodyShape`.
  */
 export type IR1ForeachBody =
-  | Extract<
-      IR1Stmt,
-      { kind: "assign" | "cond-stmt" | "map-effect" | "set-effect" }
-    >
+  | Extract<IR1Stmt, { kind: "assign" | "cond-stmt" }>
   | {
       kind: "block";
       stmts: readonly [IR1ForeachBody, ...IR1ForeachBody[]];

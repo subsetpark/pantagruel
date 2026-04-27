@@ -938,6 +938,55 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     assert.ok(lhsStrings.includes("account--total' a"));
   });
 
+  it("rejects guarded Shape A combined with a Shape B fold leaf", () => {
+    // The Shape A write `if (g) x.value = …` is a cond-stmt — the
+    // build-time `simulateShapeA` only models bare assigns into the
+    // subState, so the Shape B fold's `x.value` read would otherwise
+    // see the stale pre-iter value. Conservative refusal is correct
+    // per M3 policy 3(b).
+    const source = `
+      interface Item { value: number; tagged: boolean; }
+      interface Account { total: number; }
+      function f(a: Account, xs: Item[]): void {
+        for (const x of xs) {
+          if (x.tagged) { x.value = 1; }
+          a.total += x.value;
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.ok(props.some((p) => p.kind === "unsupported"));
+  });
+
+  it("rejects Map/Set effects inside foreach body branches", () => {
+    // `foreach.body` is the M3 Shape A contract — assign-only.
+    // `if (g) tags.add(x)` would emit a `set-effect` inside the body,
+    // outside the contract; the build pass rejects via
+    // `ensureForeachBodyShape` rather than letting the lower pass
+    // surface "out of scope" later.
+    const source = `
+      interface Item { value: number; }
+      interface Tagged { tags: Set<string>; flag: boolean; }
+      function f(tag: Tagged, xs: Item[]): void {
+        for (const x of xs) {
+          if (tag.flag) { tag.tags.add("seen"); }
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.ok(props.some((p) => p.kind === "unsupported"));
+  });
+
   it("rejects simple-assign fold (requires compound assignment)", () => {
     const source = `
       interface Account { total: number; }
