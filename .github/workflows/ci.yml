@@ -97,14 +97,6 @@ jobs:
             | tar -xz -C /usr/local/bin just
           just --version
 
-      - name: Install OCaml dependencies
-        run: |
-          opam install . --deps-only
-          opam install js_of_ocaml js_of_ocaml-ppx wasm_of_ocaml-compiler
-
-      - name: Build pant
-        run: opam exec -- just build-pant
-
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
@@ -112,8 +104,18 @@ jobs:
           cache-dependency-path: tools/ts2pant/package-lock.json
 
       - name: Install binaryen
-        # Needed at link time by wasm_of_ocaml; install after Node is set up.
+        # `conf-binaryen` (pulled in by `wasm_of_ocaml-compiler`) probes for
+        # `wasm-opt` at opam install time, so binaryen must be on PATH before
+        # the next step. Also needed at link time by wasm_of_ocaml.
         run: npm install -g binaryen
+
+      - name: Install OCaml dependencies
+        run: |
+          opam install . --deps-only
+          opam install js_of_ocaml js_of_ocaml-ppx wasm_of_ocaml-compiler
+
+      - name: Build pant
+        run: opam exec -- just build-pant
 
       - name: Build wasm for ts2pant
         run: opam exec -- just ts2pant-build-wasm
