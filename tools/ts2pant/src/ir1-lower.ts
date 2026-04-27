@@ -31,6 +31,7 @@ import {
   irCombTyped,
   irCond,
   irLitBool,
+  irLitNat,
   irUnop,
   irVar,
   irWrap,
@@ -90,6 +91,11 @@ export function lowerL1Expr(e: IR1Expr): IRExpr {
       armPairs.push([irLitBool(true), lowerL1Expr(e.otherwise)]);
       return irCond(armPairs);
     }
+
+    case "is-nullish":
+      // Mechanical lowering under list-lift: `T | null` → `[T]`, so
+      // "is nullish" is "list is empty", i.e. `#operand = 0`.
+      return irBinop("eq", irUnop("card", lowerL1Expr(e.operand)), irLitNat(0));
 
     case "from-l2":
       return e.expr;

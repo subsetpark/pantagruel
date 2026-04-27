@@ -22,6 +22,7 @@ import {
   ir1For,
   ir1Foreach,
   ir1FromL2,
+  ir1IsNullish,
   ir1Let,
   ir1LitBool,
   ir1LitNat,
@@ -196,6 +197,46 @@ describe("lowerL1Expr — cond (byte-equality with legacy ast.cond)", () => {
         [irLitBool(true), irVar("z", false)],
       ]),
     );
+  });
+});
+
+describe("lowerL1Expr — is-nullish (M4 canonical nullish test)", () => {
+  it("IsNullish lowers to binop(eq, unop(card, x), litNat(0))", () => {
+    const l1 = ir1IsNullish(ir1Var("x"));
+    const l2 = lowerL1Expr(l1);
+    assert.deepEqual(
+      l2,
+      irBinop("eq", irUnop("card", irVar("x", false)), irLitNat(0)),
+    );
+  });
+
+  it("IsNullish operand can be a member expression", () => {
+    // is-nullish(receiver.prop)
+    const l1 = ir1IsNullish(ir1Member(ir1Var("receiver"), "prop"));
+    const l2 = lowerL1Expr(l1);
+    assert.deepEqual(
+      l2,
+      irBinop(
+        "eq",
+        irUnop("card", irAppName("prop", [irVar("receiver", false)])),
+        irLitNat(0),
+      ),
+    );
+  });
+
+  it("IsNullish lowered shape matches manual ast.binop construction", () => {
+    const ast = getAst();
+
+    // Manual: ast.binop(opEq, unop(opCard, var "x"), litNat 0)
+    const manual = ast.binop(
+      ast.opEq(),
+      ast.unop(ast.opCard(), ast.var("x")),
+      ast.litNat(0),
+    );
+
+    const l1Lowered = lowerExpr(lowerL1Expr(ir1IsNullish(ir1Var("x"))));
+
+    assert.equal(ast.strExpr(l1Lowered), ast.strExpr(manual));
   });
 });
 
