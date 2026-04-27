@@ -1,5 +1,13 @@
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
+import { irWrap } from "./ir.js";
+import { lowerExpr } from "./ir-emit.js";
+import { ir1FromL2 } from "./ir1.js";
+import { lowerL1Expr } from "./ir1-lower.js";
+import {
+  type NullishTranslate,
+  recognizeNullishForm,
+} from "./nullish-recognizer.js";
 import type { OpaqueBinop, OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
 import {
@@ -974,7 +982,37 @@ export function translateExpr(
 
   // Binary expression: a >= b -> binop(opGe(), a, b)
   if (ts.isBinaryExpression(expr)) {
-    // M4 P3: reject loose equality (== / !=) explicitly. Falling
+    // M4 P2: recognize nullish surface forms (`x == null`,
+    // `x === undefined`, the long form, `typeof x === 'undefined'`,
+    // …) and collapse them to L1 `IsNullish`. Runs *before* the
+    // loose-eq rejection below so `x == null` (a loose-eq nullish)
+    // gets folded, not rejected. Mirrors the body-side recognition
+    // site in `translate-body.ts`.
+    //
+    // The translate callback unwraps `translateExpr`'s discriminated-
+    // union result; an upstream `{ unsupported }` propagates through
+    // the recognizer.
+    const translate: NullishTranslate = (sub) => {
+      const subResult = translateExpr(
+        sub,
+        checker,
+        _strategy,
+        paramNames,
+        synthCell,
+      );
+      if (isTranslateExprUnsupported(subResult)) {
+        return subResult;
+      }
+      return ir1FromL2(irWrap(subResult));
+    };
+    const recognized = recognizeNullishForm(expr, translate);
+    if (recognized !== null && !("unsupported" in recognized)) {
+      return lowerExpr(lowerL1Expr(recognized));
+    }
+    // M4 P3: reject any surviving loose equality (== / !=). The
+    // nullish recognizer above consumes loose-eq nullish forms; what
+    // reaches here is `==` / `!=` against non-nullish operands, which
+    // is inherently ambiguous in TS coercion semantics. Falling
     // through to the `ast.var(expr.getText())` path below would emit
     // raw source text as a Pant variable name, violating
     // conservative-refusal policy 3(b). Return an explicit `unsupported`

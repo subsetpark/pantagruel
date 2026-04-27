@@ -21,6 +21,10 @@ import {
 } from "./ir1-build-body.js";
 import { lowerL1MuSearch, type MuSearchLowerCtx } from "./ir1-lower.js";
 import { lowerL1Body } from "./ir1-lower-body.js";
+import {
+  type NullishTranslate,
+  recognizeNullishForm,
+} from "./nullish-recognizer.js";
 import type {
   OpaqueCombiner,
   OpaqueExpr,
@@ -2661,6 +2665,43 @@ export function translateBodyExpr(
 
   if (ts.isExpression(expr)) {
     expr = unwrapExpression(expr);
+  }
+
+  // M4: nullish surface forms (`x == null`, `x === undefined`, the
+  // `||`-long form, `typeof x === 'undefined'`, etc.) collapse to a
+  // canonical L1 `IsNullish` (with `unop(not, …)` for negated forms).
+  // Runs *before* the L1 conditional dispatch so a Bool-typed
+  // `||`/`&&` chain that's actually a long-form nullish test does not
+  // get consumed by `buildFromShortCircuit`. Operand mismatch (e.g.,
+  // `a === null || b === undefined`) returns `null` and falls through
+  // to the normal Bool-typed short-circuit path.
+  if (ts.isBinaryExpression(expr)) {
+    const translate: NullishTranslate = (sub) => {
+      const subResult = translateBodyExpr(
+        sub,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
+      if (isBodyUnsupported(subResult)) {
+        return subResult;
+      }
+      if (isBodyEffect(subResult)) {
+        return {
+          unsupported: "collection mutation cannot appear in a nullish operand",
+        };
+      }
+      return ir1FromL2(irWrap(bodyExpr(subResult)));
+    };
+    const recognized = recognizeNullishForm(expr, translate);
+    if (recognized !== null) {
+      if ("unsupported" in recognized) {
+        return { unsupported: recognized.unsupported };
+      }
+      return { expr: lowerL1ToOpaque(recognized) };
+    }
   }
 
   // Layer 1 imperative-IR conditional pipeline (workstream M1).
