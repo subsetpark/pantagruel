@@ -388,7 +388,7 @@ export function buildL1MemberAccess(
     // Pure path: prefer canonical nested Member trees. Cardinality
     // dispatch fires first so a chain like `arr.length.foo` wouldn't
     // silently route `arr.length` through Member.
-    const card = tryBuildL1Cardinality(receiverNode, ctx);
+    const card = tryBuildL1Cardinality(receiverNode, ctx, options);
     if (card !== null) {
       receiverL1 = card;
     } else {
