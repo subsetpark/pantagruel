@@ -13,7 +13,11 @@ import { before, describe, it } from "node:test";
 import { createSourceFileFromSource } from "../src/extract.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import { translateBody } from "../src/translate-body.js";
-import { translateSignature } from "../src/translate-signature.js";
+import {
+  containsUnsupportedOperator,
+  translateSignature,
+} from "../src/translate-signature.js";
+import ts from "typescript";
 import { IntStrategy } from "../src/translate-types.js";
 import type { PropResult } from "../src/types.js";
 
@@ -209,5 +213,135 @@ describe("equality-canonicalization (signature/guard path)", () => {
       return;
     }
     assert.equal(result.declaration.guard, undefined);
+  });
+
+  // ------------------------------------------------------------------
+  // Predicate alignment: isFollowableGuardCall / isGuardStatement must
+  // match scanBodyForGuards on translatability. If they diverge, the
+  // body filter silently drops a guard statement that signature
+  // extraction also fails to translate — losing the runtime check on
+  // both sides.
+  // ------------------------------------------------------------------
+
+  it("followable helper with == in if-throw guard isn't silently dropped", () => {
+    // The helper's `if (amount == 0) throw` cannot translate; the
+    // helper must NOT be classified as followable, so the call stays
+    // in the body where the body translator surfaces the rejection.
+    const source = `
+      function ensureValid(amount: number): void {
+        if (amount == 0) { throw new Error("zero"); }
+      }
+      interface Account { balance: number; }
+      function deposit(account: Account, amount: number): void {
+        ensureValid(amount);
+        account.balance = account.balance + amount;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const result = translateSignature(sourceFile, "deposit", IntStrategy);
+    assert.equal(result.declaration.kind, "action");
+    if (result.declaration.kind !== "action") {
+      return;
+    }
+    // No guard inlined from the helper.
+    assert.equal(result.declaration.guard, undefined);
+    // Body translation must reject (statement preserved + non-guard
+    // call rejected) rather than silently dropping the helper call.
+    const props = translateBody({
+      sourceFile,
+      functionName: "deposit",
+      strategy: IntStrategy,
+    });
+    assert.ok(
+      props.some((p) => p.kind === "unsupported"),
+      `expected an unsupported prop; saw: ${JSON.stringify(props.map((p) => p.kind))}`,
+    );
+  });
+
+  it("followable helper with == in assertion arg isn't silently dropped", () => {
+    const source = `
+      function assert(condition: unknown): asserts condition {
+        if (!condition) throw new Error();
+      }
+      function ensureValid(amount: number): void {
+        assert(amount == 0);
+      }
+      interface Account { balance: number; }
+      function deposit(account: Account, amount: number): void {
+        ensureValid(amount);
+        account.balance = account.balance + amount;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const result = translateSignature(sourceFile, "deposit", IntStrategy);
+    assert.equal(result.declaration.kind, "action");
+    if (result.declaration.kind !== "action") {
+      return;
+    }
+    assert.equal(result.declaration.guard, undefined);
+    const props = translateBody({
+      sourceFile,
+      functionName: "deposit",
+      strategy: IntStrategy,
+    });
+    assert.ok(
+      props.some((p) => p.kind === "unsupported"),
+      `expected an unsupported prop; saw: ${JSON.stringify(props.map((p) => p.kind))}`,
+    );
+  });
+
+  // ------------------------------------------------------------------
+  // containsUnsupportedOperator — the syntactic walk that aligns the
+  // predicate side (classifyGuardIf, isGuardStatement, isFollowableGuardCall)
+  // with translateExpr's actual rejection list.
+  // ------------------------------------------------------------------
+
+  it("containsUnsupportedOperator detects loose equality at any depth", () => {
+    function exprOf(src: string): ts.Expression {
+      const sf = createSourceFileFromSource(`const _x = ${src};`);
+      const stmt = sf.compilerNode.statements[0] as ts.VariableStatement;
+      const decl = stmt.declarationList.declarations[0]!;
+      return decl.initializer!;
+    }
+    assert.equal(containsUnsupportedOperator(exprOf("a == b")), true);
+    assert.equal(containsUnsupportedOperator(exprOf("a != b")), true);
+    assert.equal(containsUnsupportedOperator(exprOf("(a == b)")), true);
+    assert.equal(containsUnsupportedOperator(exprOf("!(a == b)")), true);
+    assert.equal(containsUnsupportedOperator(exprOf("a + (b == c)")), true);
+    assert.equal(containsUnsupportedOperator(exprOf("f(a == b)")), true);
+    assert.equal(
+      containsUnsupportedOperator(exprOf("a === b ? a == b : false")),
+      true,
+    );
+    // Negative cases — strict equality and other operators are accepted.
+    assert.equal(containsUnsupportedOperator(exprOf("a === b")), false);
+    assert.equal(containsUnsupportedOperator(exprOf("a !== b")), false);
+    assert.equal(containsUnsupportedOperator(exprOf("a + b")), false);
+    assert.equal(containsUnsupportedOperator(exprOf("a.b.c")), false);
+  });
+
+  it("followable helper with translatable guards still works", () => {
+    // Sanity: the predicate gating only rejects untranslatable guards.
+    // A standard helper continues to follow.
+    const source = `
+      function ensureValid(amount: number): void {
+        if (amount <= 0) { throw new Error("nonpositive"); }
+      }
+      interface Account { balance: number; }
+      function deposit(account: Account, amount: number): void {
+        ensureValid(amount);
+        account.balance = account.balance + amount;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const result = translateSignature(sourceFile, "deposit", IntStrategy);
+    assert.equal(result.declaration.kind, "action");
+    if (result.declaration.kind !== "action") {
+      return;
+    }
+    assert.equal(
+      getAst().strExpr(result.declaration.guard!),
+      "~(amount <= 0)",
+    );
   });
 });

@@ -32,6 +32,7 @@ import { isKnownPureCall } from "./purity.js";
 import { translateRecordReturn } from "./translate-record.js";
 import {
   classifyFunction,
+  containsUnsupportedOperator,
   findFunction,
   isAssertionCall,
   isFollowableGuardCall,
@@ -2313,6 +2314,13 @@ export function isGuardStatement(
     if (!call.arguments.every(isPureExpression)) {
       return false;
     }
+    // M4 P3: an assertion arg containing loose equality cannot translate.
+    // Filtering the call out of the body would silently drop the runtime
+    // check on both sides; keep it so the body translator surfaces the
+    // rejection.
+    if (call.arguments.some(containsUnsupportedOperator)) {
+      return false;
+    }
     if (isAssertionCall(checker, call) !== null) {
       return true;
     }
@@ -2326,6 +2334,13 @@ export function isGuardStatement(
   }
   // Condition must be pure (aligned with classifyGuardIf's isPureExpression check)
   if (!isPureExpression(stmt.expression)) {
+    return false;
+  }
+  // M4 P3: same as classifyGuardIf — refuse to classify an if-throw guard
+  // whose condition contains an explicitly-unsupported operator. The body
+  // translator will then handle the if-statement on the regular path,
+  // where it will surface a specific `unsupported` reason.
+  if (containsUnsupportedOperator(stmt.expression)) {
     return false;
   }
   // if (...) { throw } without else

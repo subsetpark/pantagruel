@@ -424,6 +424,68 @@ const ASSIGNMENT_OPERATORS = new Set([
 ]);
 
 /**
+ * Walk an expression looking for operators that `translateExpr` /
+ * `translateBodyExpr` explicitly reject (today: loose equality `==` and
+ * `!=`). Used by guard-detection predicates to keep them aligned with
+ * the actual translator — a guard whose condition contains a forbidden
+ * operator must NOT be classified as a guard, otherwise the body filter
+ * would silently drop the statement while signature extraction would
+ * separately drop the guard, losing the runtime check on both sides.
+ *
+ * Mirrors the rejection list in `translateExpr`'s binary-expression
+ * branch (translate-signature.ts) and `translateBodyExpr`'s
+ * binary-expression branch (translate-body.ts). Adding a new operator
+ * to those rejection lists must also add it here.
+ */
+export function containsUnsupportedOperator(expr: ts.Expression): boolean {
+  if (ts.isBinaryExpression(expr)) {
+    if (
+      expr.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken ||
+      expr.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsToken
+    ) {
+      return true;
+    }
+    return (
+      containsUnsupportedOperator(expr.left) ||
+      containsUnsupportedOperator(expr.right)
+    );
+  }
+  if (
+    ts.isParenthesizedExpression(expr) ||
+    ts.isAsExpression(expr) ||
+    ts.isNonNullExpression(expr)
+  ) {
+    return containsUnsupportedOperator(expr.expression);
+  }
+  if (ts.isPrefixUnaryExpression(expr) || ts.isPostfixUnaryExpression(expr)) {
+    return containsUnsupportedOperator(expr.operand);
+  }
+  if (ts.isPropertyAccessExpression(expr)) {
+    return containsUnsupportedOperator(expr.expression);
+  }
+  if (ts.isElementAccessExpression(expr)) {
+    return (
+      containsUnsupportedOperator(expr.expression) ||
+      containsUnsupportedOperator(expr.argumentExpression)
+    );
+  }
+  if (ts.isCallExpression(expr)) {
+    return (
+      containsUnsupportedOperator(expr.expression) ||
+      expr.arguments.some(containsUnsupportedOperator)
+    );
+  }
+  if (ts.isConditionalExpression(expr)) {
+    return (
+      containsUnsupportedOperator(expr.condition) ||
+      containsUnsupportedOperator(expr.whenTrue) ||
+      containsUnsupportedOperator(expr.whenFalse)
+    );
+  }
+  return false;
+}
+
+/**
  * Check whether an expression is side-effect-free (identifiers, literals,
  * property access, operators — no calls, assignments, or increments).
  */
@@ -522,6 +584,15 @@ function guardBranchHasNoSideEffects(node: ts.Statement): boolean {
  */
 function classifyGuardIf(stmt: ts.IfStatement): "positive" | "negative" | null {
   if (!isPureExpression(stmt.expression)) {
+    return null;
+  }
+  // M4 P3: a guard whose condition contains a forbidden operator (loose
+  // equality) cannot be translated. If we classified it as a guard, the
+  // body filter would drop the statement and signature extraction would
+  // separately drop the guard — losing the runtime check on both sides.
+  // Refuse the classification so the statement stays in the body, where
+  // the body translator will surface a specific `unsupported` reason.
+  if (containsUnsupportedOperator(stmt.expression)) {
     return null;
   }
   if (
@@ -730,6 +801,14 @@ export function isFollowableGuardCall(
       if (!stmt.expression.arguments.every(isPureExpression)) {
         return false;
       }
+      // M4 P3: an assertion call whose argument contains a forbidden
+      // operator (loose equality) cannot be translated. Reject the
+      // whole helper rather than silently dropping the guard during
+      // signature extraction. The body translator will then surface
+      // the rejection on the helper call itself.
+      if (stmt.expression.arguments.some(containsUnsupportedOperator)) {
+        return false;
+      }
       return (
         isAssertionCall(checker, stmt.expression) !== null ||
         isFollowableGuardCall(stmt.expression, checker, visited)
@@ -746,6 +825,8 @@ export function isFollowableGuardCall(
     if (!ts.isIfStatement(stmt)) {
       return false;
     }
+    // classifyGuardIf already rejects untranslatable conditions —
+    // this is the same check scanBodyForGuards relies on.
     return classifyGuardIf(stmt) !== null;
   });
   visited.delete(target.body);
