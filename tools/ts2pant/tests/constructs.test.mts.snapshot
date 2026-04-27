@@ -518,6 +518,10 @@ exports[`expressions-set-mutation-field.ts > tagClearAndAdd 1`] = `
 "module TagClearAndAdd.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-clear-and-add @ c: Tagged, x: String.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> (cond y = x => true, true => false).\\n"
 `;
 
+exports[`expressions-set-mutation-field.ts > tagClearIf 1`] = `
+"module TagClearIf.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-clear-if @ c: Tagged, guard: Bool.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> (cond guard => false, true => y in tagged--tags c).\\n"
+`;
+
 exports[`expressions-set-mutation-field.ts > tagRemove 1`] = `
 "module TagRemove.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-remove @ c: Tagged, x: String.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> (cond y = x => false, true => y in tagged--tags c).\\n"
 `;

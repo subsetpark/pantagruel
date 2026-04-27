@@ -51,6 +51,16 @@ export function tagAddIf(c: Tagged, x: string, guard: boolean): void {
   }
 }
 
+// Conditional clear: the merge must guard the clear by the branch
+// condition, so the membership equation reads
+// `cond guard => false, true => y in tagged--tags c` — NOT an
+// unconditional clear (the bug `cleared: boolean` produced).
+export function tagClearIf(c: Tagged, guard: boolean): void {
+  if (guard) {
+    c.tags.clear();
+  }
+}
+
 // Conditional delete alongside an unconditional add on a different
 // element: two distinct override-element arms, with the delete merged
 // under its guard.

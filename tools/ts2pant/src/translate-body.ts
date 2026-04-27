@@ -332,10 +332,14 @@ export interface SetOverride {
  * field-accessor rule IS the membership predicate at the list-semantics
  * level — `s.has(x)` is `x in s`).
  *
- * `cleared` records that a `.clear()` reset the accumulated overrides to
- * the empty list. After a clear, the emission drops the pre-state
- * `y in tags c` fallthrough and uses literal `false` instead — anything
- * that isn't in `memberOverrides` after a clear is gone.
+ * `cleared` is a Bool-valued symbolic predicate: literal `false` means no
+ * `.clear()` is in effect (membership falls through to pre-state); literal
+ * `true` means an unconditional clear (membership for any element not in
+ * `memberOverrides` is `false`); a non-literal expression is a guarded
+ * clear from a branch merge — under the symbolic predicate, membership
+ * is `false`; otherwise pre-state. Encoded as `OpaqueExpr` rather than
+ * boolean so `if (g) s.clear()` can express "cleared on path g" without
+ * collapsing the merge to an unconditional clear.
  *
  * `objExpr` is the canonicalized receiver; the emission quantifier runs
  * only over the element (type `elemType`), while the LHS applies the
@@ -348,7 +352,7 @@ export interface SetRuleWriteEntry {
   elemType: string;
   objExpr: OpaqueExpr;
   memberOverrides: SetOverride[];
-  cleared: boolean;
+  cleared: OpaqueExpr;
 }
 
 export type WriteEntry =
@@ -462,6 +466,75 @@ function setCanonicalize(
 
 export function symbolicKey(prop: string, objExpr: OpaqueExpr): string {
   return `${prop}::${getAst().strExpr(objExpr)}`;
+}
+
+/**
+ * Canonical Bool-literal `false` expression and a static-equality probe.
+ * Used to short-circuit Set `cleared` flows when the predicate is provably
+ * `litBool(false)` — i.e., no clear has happened — so existing snapshots
+ * for plain pre-state membership reads are unchanged.
+ */
+function setClearedFalse(): OpaqueExpr {
+  return getAst().litBool(false);
+}
+
+function isStaticBoolLit(e: OpaqueExpr, value: boolean): boolean {
+  const ast = getAst();
+  return ast.strExpr(e) === ast.strExpr(ast.litBool(value));
+}
+
+/**
+ * "If `cleared`, false; otherwise pre-state membership." Used by both the
+ * Set read path and the Set emission path to project a symbolic clear
+ * predicate over a pre-state membership expression.
+ *
+ * Folds when `cleared` is statically `false` (returns `pre`) or `true`
+ * (returns literal `false`) so unconditional and never-cleared cases keep
+ * their existing emission shape; a non-literal `cleared` (a guarded clear
+ * from a branch merge) emits `cond cleared => false, true => pre`.
+ */
+function clearedFallback(cleared: OpaqueExpr, pre: OpaqueExpr): OpaqueExpr {
+  const ast = getAst();
+  if (isStaticBoolLit(cleared, false)) {
+    return pre;
+  }
+  if (isStaticBoolLit(cleared, true)) {
+    return ast.litBool(false);
+  }
+  return ast.cond([
+    [cleared, ast.litBool(false)],
+    [ast.litBool(true), pre],
+  ]);
+}
+
+/**
+ * Combine branch-local `cleared` predicates at a merge point. Folds the
+ * statically-known shapes so emission stays compact:
+ *
+ * - both branches agree → that expression (no information from gExpr)
+ * - then-only clear (`true`/`false`) → `gExpr`
+ * - else-only clear (`false`/`true`) → `~gExpr`
+ * - mixed → `cond gExpr => tCleared, true => eCleared`
+ */
+export function mergeClearedCond(
+  gExpr: OpaqueExpr,
+  tCleared: OpaqueExpr,
+  eCleared: OpaqueExpr,
+): OpaqueExpr {
+  const ast = getAst();
+  if (ast.strExpr(tCleared) === ast.strExpr(eCleared)) {
+    return tCleared;
+  }
+  if (isStaticBoolLit(tCleared, true) && isStaticBoolLit(eCleared, false)) {
+    return gExpr;
+  }
+  if (isStaticBoolLit(tCleared, false) && isStaticBoolLit(eCleared, true)) {
+    return ast.unop(ast.opNot(), gExpr);
+  }
+  return ast.cond([
+    [gExpr, tCleared],
+    [ast.litBool(true), eCleared],
+  ]);
 }
 
 /**
@@ -755,12 +828,12 @@ export function installSetWrite(
           elemType: effect.elemType,
           objExpr,
           memberOverrides: [],
-          cleared: false,
+          cleared: setClearedFalse(),
         };
 
   if (effect.op === "clear") {
     entry.memberOverrides = [];
-    entry.cleared = true;
+    entry.cleared = ast.litBool(true);
     state.writes = putWrite(state.writes, key, entry);
     state.writtenKeys = addWrittenKey(state.writtenKeys, key);
     state.modifiedProps = addModifiedProp(state.modifiedProps, effect.ruleName);
@@ -813,12 +886,11 @@ function readSetThroughWrites(
   if (entry === undefined || entry.kind !== "set") {
     return baseIn(canonObj, canonQuery);
   }
+  const preState = baseIn(canonObj, canonQuery);
+  const tail = clearedFallback(entry.cleared, preState);
   if (entry.memberOverrides.length === 0) {
-    return entry.cleared ? ast.litBool(false) : baseIn(canonObj, canonQuery);
+    return tail;
   }
-  const fallback: [OpaqueExpr, OpaqueExpr] = entry.cleared
-    ? [ast.litBool(true), ast.litBool(false)]
-    : [ast.litBool(true), baseIn(canonObj, canonQuery)];
   return ast.cond([
     ...entry.memberOverrides.map(
       (o) =>
@@ -827,7 +899,7 @@ function readSetThroughWrites(
           OpaqueExpr,
         ],
     ),
-    fallback,
+    [ast.litBool(true), tail],
   ]);
 }
 
@@ -917,7 +989,10 @@ function emitSetMembershipEquation(
   state: SymbolicState,
 ): void {
   const ast = getAst();
-  if (entry.memberOverrides.length === 0 && !entry.cleared) {
+  if (
+    entry.memberOverrides.length === 0 &&
+    isStaticBoolLit(entry.cleared, false)
+  ) {
     return;
   }
   const y = allocBinder("y");
@@ -925,9 +1000,7 @@ function emitSetMembershipEquation(
   const memberIn = (rule: OpaqueExpr) => ast.binop(ast.opIn(), yVar, rule);
   const primedApp = ast.app(ast.primed(entry.ruleName), [entry.objExpr]);
   const preApp = ast.app(ast.var(entry.ruleName), [entry.objExpr]);
-  const fallback: [OpaqueExpr, OpaqueExpr] = entry.cleared
-    ? [ast.litBool(true), ast.litBool(false)]
-    : [ast.litBool(true), memberIn(preApp)];
+  const tail = clearedFallback(entry.cleared, memberIn(preApp));
   const condArms: [OpaqueExpr, OpaqueExpr][] = entry.memberOverrides.map(
     (o) =>
       [ast.binop(ast.opEq(), yVar, o.elemExpr), o.value] as [
@@ -936,7 +1009,9 @@ function emitSetMembershipEquation(
       ],
   );
   const rhs =
-    condArms.length === 0 ? fallback[1] : ast.cond([...condArms, fallback]);
+    condArms.length === 0
+      ? tail
+      : ast.cond([...condArms, [ast.litBool(true), tail]]);
   // Emitted as an assertion (a quantified Bool formula), not an equation:
   // Pantagruel's equation kind is LHS = RHS (`=`), but Set membership
   // writes require `<=>` over `in`, which is structurally a Bool
@@ -4182,10 +4257,10 @@ function symbolicExecute(
           continue;
         }
         // Set: fallback is the pre-state membership `y in s` at the
-        // canonical receiver + override element. `cleared` is inherited
-        // from the continuation — an early-exit path with an outer-state
-        // clear can't re-establish pre-state membership, so we leave the
-        // flag as continuation's.
+        // canonical receiver + override element. `cleared` is symbolic
+        // and merges through `combineContCond` so a one-sided clear
+        // emerges as a guarded predicate rather than collapsing to an
+        // unconditional clear.
         const priorSet =
           prior !== undefined && prior.kind === "set" ? prior : undefined;
         const setRuleVar = ast.var(entryR.ruleName);
@@ -4202,6 +4277,11 @@ function symbolicExecute(
           setFallback,
           combineContCond,
         );
+        const priorCleared = priorSet?.cleared ?? ast.litBool(false);
+        const mergedCleared =
+          ast.strExpr(entryR.cleared) === ast.strExpr(priorCleared)
+            ? entryR.cleared
+            : combineContCond(entryR.cleared, priorCleared);
         state.writes = putWrite(state.writes, key, {
           kind: "set",
           ruleName: entryR.ruleName,
@@ -4209,7 +4289,7 @@ function symbolicExecute(
           elemType: entryR.elemType,
           objExpr: entryR.objExpr,
           memberOverrides: mergedSet,
-          cleared: entryR.cleared || (priorSet?.cleared ?? false),
+          cleared: mergedCleared,
         });
         state.writtenKeys = addWrittenKey(state.writtenKeys, key);
       }

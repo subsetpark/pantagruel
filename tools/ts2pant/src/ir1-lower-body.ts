@@ -38,6 +38,7 @@ import {
   type MapOverride,
   type MapRuleWriteEntry,
   makeSymbolicState,
+  mergeClearedCond,
   mergeOverrides,
   type PropertyWriteEntry,
   putWrite,
@@ -419,6 +420,13 @@ function lowerCondStmt(
       setFallback,
       combineCond,
     );
+    // Set `cleared` is symbolic so a one-sided `s.clear()` produces a
+    // guarded `cond gExpr => true, true => false` rather than collapsing
+    // to an unconditional clear. Both sides start as the outer state's
+    // `cleared` (via `cloneSymbolicState`) — `?? false` only fires when
+    // a branch lacks a Set entry entirely.
+    const tCleared = tS?.cleared ?? ast.litBool(false);
+    const eCleared = eS?.cleared ?? ast.litBool(false);
     state.writes = putWrite(state.writes, key, {
       kind: "set",
       ruleName: baseS.ruleName,
@@ -426,7 +434,7 @@ function lowerCondStmt(
       elemType: baseS.elemType,
       objExpr: baseS.objExpr,
       memberOverrides: mergedSet,
-      cleared: (tS?.cleared ?? false) || (eS?.cleared ?? false),
+      cleared: mergeClearedCond(gExpr, tCleared, eCleared),
     });
     state.writtenKeys = addWrittenKey(state.writtenKeys, key);
   }
