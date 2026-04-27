@@ -1,0 +1,451 @@
+{
+  "projectName": "bindlib-migration",
+
+  "specFile": null,
+
+  "workstream": null,
+
+  "problemStatement": "Pantagruel's AST uses string-named binders in EForall/EExists/EEach (and, indirectly, in rule declarations and comprehension guards). Capture-avoiding substitution, priming, free-variable collection, and (post-PR-#110) alpha-renaming are implemented by a family of hand-rolled AST walkers in lib/smt_expr.ml, lib/smt_doc.ml, and lib/smt.ml. These walkers have a documented latent capture bug in substitute_vars: they filter the substitution's domain by bound names but do not alpha-rename the binder when the substitution's range contains a name that becomes captured. PR #110 added rename_var_refs, rename_guards, and alpha_rename_binders to patch one symptom; the underlying design problem — substitution correctness distributed across bespoke walkers — remains. Issue #111 proposes migrating binder handling to a proper library so correctness comes from a well-tested primitive and the whole helper family collapses.",
+
+  "solutionSummary": "Adopt the Bindlib library as the AST's binder abstraction and rewrite the walker family as thin wrappers over its primitives. Phase 1 adds the opam dependency and a thin adapter module (Pantagruel.Binder) that re-exports Bindlib's Var/Binder/Mbinder types under project-local names — this seam also contains the Bindlib-vs-locally-nameless choice, so Patch 3's AST reshape is insulated from that decision. Phase 2 reshapes Ast.expr so that EForall/EExists/EEach carry a Bindlib mbinder instead of a (param list * expr) pair, hand-writes show/equal instances for the three affected variants (Bindlib's mbinder is opaque to ppx_deriving, and we want alpha-aware equality anyway), and updates every consumer (parser, pretty-printer, check, collect, JSON/markdown output, normalize, SMT pipeline) to construct binders via bind_mvar and destructure via unmbind. The substitute_vars / prime_expr / free_vars rewrites collapse to one-line calls into Bindlib; collect_body_guards keeps its logic but delegates scope tracking to unmbind. Patch 5 retires PR #110's alpha-rename helpers (rename_var_refs, rename_guards, alpha_rename_binders) — the library subsumes them. Behavior on existing fixtures is preserved; the latent capture bug is closed automatically by the library.",
+
+  "currentStateAnalysis": "On master (post PR #110 merge, 2026-04-22): lib/smt_expr.ml (~476 LOC) defines substitute_vars, substitute_guards, prime_expr, prime_guards, unprime_expr, collect_body_guards, and — newly from #110 — rename_var_refs and rename_guards as mutually-recursive walkers over Ast.expr. lib/smt.ml (~2164 LOC) defines alpha_rename_binders at line 17 and invokes it at line 743 to patch SMT binder capture when a quantifier binder shadows a declared rule. lib/smt_doc.ml defines free_vars and bind_head_params, both of which hand-roll scope tracking using StringSet. lib/smt.ml `include`s Smt_expr so the walkers' public API leaks into the Smt module's surface. The AST (lib/ast.ml) stores binder params as `param list` and guards as `guard list`; binder names are plain strings carried in Lower/Upper identifier wrappers; every type has `[@@deriving show, eq]`. No Bindlib dependency is declared in pantagruel.opam. The opam repository has bindlib 6.0.0 available (OCaml >= 4.07; dune >= 2.7; compatible with the project's OCaml 5.4.1 switch).",
+
+  "mergabilityStrategy": {
+    "featureFlagStrategy": "No feature flag. This is an internal refactor of the AST's binder representation. Observable behavior of `pant`, `pant --json`, `pant --check`, and `pant --normalize` on every existing fixture must be preserved byte-for-byte (modulo the latent capture bug, which no fixture exercises today). Snapshot tests in test/snapshots/ gate against unintended output drift. The migration is staged over five patches so that each patch is independently mergeable and revertable — the AST reshape (Patch 3) is the atomic cut-over point.",
+    "featureFlags": [],
+    "patchOrderingStrategy": "Early (Patch 1): add library dependency and adapter module — no semantic impact. Early (Patch 2): add pending test stubs for capture-avoidance properties — compiles but pending. Middle (Patch 3): atomic AST reshape + walker rewrites + consumer updates — one reviewable but large diff; behavior preserved. Middle (Patch 4): un-skip and implement the tests from Patch 2, confirming capture-avoidance. Late (Patch 5): retire redundant helpers (rename_var_refs / alpha_rename_binders from PR #110 if merged; simplify bind_head_params to use Bindlib's free-vars). Every patch is INFRA because the user-visible behavior of existing fixtures is preserved."
+  },
+
+  "requiredChanges": [
+    {
+      "file": "pantagruel.opam",
+      "line": null,
+      "description": "Add `bindlib` to the depends list. Generated from dune-project, so the real edit is in dune-project.",
+      "signature": null
+    },
+    {
+      "file": "dune-project",
+      "line": null,
+      "description": "Add `bindlib` to the (depends ...) stanza for the pantagruel package.",
+      "signature": null
+    },
+    {
+      "file": "lib/dune",
+      "line": null,
+      "description": "Add `bindlib` to the (libraries ...) stanza.",
+      "signature": null
+    },
+    {
+      "file": "lib/binder.ml",
+      "line": null,
+      "description": "New adapter module wrapping Bindlib's Var/Binder/Mbinder primitives under project-local names.",
+      "signature": "module Var : sig type 'a t val make : string -> 'a t val name : 'a t -> string end\nmodule Mbinder : sig type ('a, 'b) t val bind : 'a Var.t array -> 'b -> ('a, 'b) t val unbind : ('a, 'b) t -> 'a Var.t array * 'b val subst : ('a, 'b) t -> 'a array -> 'b val free_vars : ('a -> 'a Var.t list) -> ('a, 'b) t -> 'a Var.t list end"
+    },
+    {
+      "file": "lib/binder.mli",
+      "line": null,
+      "description": "Interface file for lib/binder.ml exposing only the adapter API (not raw Bindlib types).",
+      "signature": null
+    },
+    {
+      "file": "lib/ast.ml",
+      "line": 105,
+      "description": "Reshape EForall / EExists / EEach so the binder carries an mbinder. Keep `param` for parser-side surface (name + type_expr) but introduce a `param_meta` type that travels alongside the mbinder so the pretty-printer can recover the user-written name and type annotation. Drop `[@@deriving show, eq]` at the `expr` level (Bindlib's mbinder is opaque to ppx_deriving) and hand-write `equal_expr` / `pp_expr` that unbind for structural + alpha-aware comparison.",
+      "signature": "type expr = ... | EForall of (expr, guarded_body) Binder.Mbinder.t * param_meta list | EExists of ... | EEach of (expr, guarded_body) Binder.Mbinder.t * param_meta list * combiner option\nand guarded_body = guard list * expr\nval equal_expr : expr -> expr -> bool\nval pp_expr : Format.formatter -> expr -> unit"
+    },
+    {
+      "file": "lib/parser.mly",
+      "line": null,
+      "description": "Update quantifier / comprehension productions to build mbinders via Binder.Mbinder.bind after collecting params.",
+      "signature": null
+    },
+    {
+      "file": "lib/pretty.ml",
+      "line": null,
+      "description": "Update quantifier printing to call Binder.Mbinder.unbind, recover param metadata, and print the user-facing name + type annotation.",
+      "signature": null
+    },
+    {
+      "file": "lib/smt_expr.ml",
+      "line": 99,
+      "description": "Rewrite substitute_vars, substitute_guards, prime_expr, prime_guards as thin wrappers over Binder.Mbinder.subst / map_binder. collect_body_guards continues to walk the expression but uses unbind when it descends into quantifiers.",
+      "signature": "val substitute_vars : (string * expr) list -> expr -> expr\nval prime_expr : ?bound:string list -> expr -> expr\nval collect_body_guards : ?bound:string list -> Env.t -> expr -> expr list"
+    },
+    {
+      "file": "lib/smt_doc.ml",
+      "line": 73,
+      "description": "Rewrite free_vars as a wrapper over Binder.Mbinder.free_vars. Simplify bind_head_params to use the rewritten free_vars (semantics unchanged).",
+      "signature": "val free_vars : expr -> StringSet.t\nval bind_head_params : ?exclude:StringSet.t -> param list -> expr located -> expr located"
+    },
+    {
+      "file": "lib/smt.ml",
+      "line": null,
+      "description": "No logic changes expected — the `include Smt_expr` line preserves the public API. Call sites that pattern-match on EForall/EExists/EEach must be updated to destructure the mbinder.",
+      "signature": null
+    },
+    {
+      "file": "lib/check.ml",
+      "line": null,
+      "description": "Update every `match expr with | EForall ...` to call Binder.Mbinder.unbind and thread the bound names into the local env.",
+      "signature": null
+    },
+    {
+      "file": "lib/collect.ml",
+      "line": null,
+      "description": "Same as check.ml — update match arms on quantifier constructors.",
+      "signature": null
+    },
+    {
+      "file": "lib/json_output.ml",
+      "line": null,
+      "description": "Update JSON emission for quantifiers to use unbind; preserve the user-facing param names in the emitted JSON so `pant --json` output is byte-for-byte identical on existing fixtures.",
+      "signature": null
+    },
+    {
+      "file": "lib/markdown_output.ml",
+      "line": null,
+      "description": "Same as json_output.ml — emit user-facing names via unbind.",
+      "signature": null
+    },
+    {
+      "file": "lib/normalize.ml",
+      "line": null,
+      "description": "Update normal-form rewrites on quantifiers to use unbind/bind.",
+      "signature": null
+    },
+    {
+      "file": "test/test_smt_substitution.ml",
+      "line": null,
+      "description": "New test file. QCheck2 properties: substitution identity when var is not free; capture-avoidance in the substitute [x -> y] (all y:T | x) case; alpha-equivalence preservation under substitution; free_vars matches legacy implementation on the full regression fixture corpus.",
+      "signature": null
+    },
+    {
+      "file": "test/dune",
+      "line": null,
+      "description": "Add test_smt_substitution to the test executables.",
+      "signature": null
+    }
+  ],
+
+  "acceptanceCriteria": [
+    "bindlib is declared in dune-project and pulled in by opam install . --deps-only.",
+    "lib/binder.ml adapter module exists and exposes Var.t / Mbinder.t / bind_mvar / unbind / subst / free_vars under project-local names.",
+    "Ast.expr's EForall / EExists / EEach carry a Bindlib mbinder (no `param list` for the binder payload).",
+    "substitute_vars, prime_expr, free_vars are thin wrappers over Binder primitives — each under 20 LOC.",
+    "dune build produces no warnings and no errors across the default profile.",
+    "dune test passes unchanged on all existing regression fixtures (test/regression/*.pant) and all snapshot tests (test/snapshots/).",
+    "New test test_smt_substitution exercises the capture-avoidance property that was latent on master and passes.",
+    "rename_var_refs, rename_guards (lib/smt_expr.ml), and alpha_rename_binders (lib/smt.ml) are removed; no caller references them.",
+    "bind_head_params uses the rewritten free_vars (no hand-rolled scope tracking).",
+    "pant --json, pant --check, and pant --normalize produce byte-identical output on every fixture in test/ (no snapshot drift)."
+  ],
+
+  "openQuestions": [],
+
+  "explicitOpinions": [
+    {
+      "opinion": "Pick Bindlib over locally-nameless, with locally-nameless as a documented fallback.",
+      "rationale": "Bindlib is stable, maintained, and has non-trivial downstream users (Dedukti). Its abstraction surface is minimal — bind_var, unbind, subst, free_vars — and the correctness properties we want come from the library. Locally-nameless requires us to hand-roll the atom / index machinery and reprove its invariants."
+    },
+    {
+      "opinion": "Route all Bindlib usage through a project-local adapter module (lib/binder.ml) rather than sprinkling Bindlib calls across the codebase.",
+      "rationale": "The adapter is a stable seam: if Bindlib's ppx ergonomics turn out poor and we need to fall back to locally-nameless, only lib/binder.ml changes. It also keeps the type signatures in ast.ml readable (Binder.Mbinder.t rather than the raw Bindlib.mbinder constructor)."
+    },
+    {
+      "opinion": "Atomic AST reshape in a single patch (Patch 3) rather than a parallel dual-representation approach.",
+      "rationale": "A parallel AST would require maintaining two representations and conversion functions, doubling the review surface and the testing burden for a refactor that has no user-visible intermediate states. The AST reshape is large but mechanical — every consumer descends through a small number of match arms. Reviewing one coherent patch is easier than reviewing the migration + the scaffolding + the removal across three commits."
+    },
+    {
+      "opinion": "Keep ts2pant's UniqueSupply / NameRegistry after the migration, even though Bindlib makes them redundant for correctness.",
+      "rationale": "Their value shifts from correctness (was: belt) to readability (is: suspenders). Fresh hygienic names like `$1` still produce better pretty-printed output than Bindlib's default alpha-renaming choices, which prioritize freshness over readability."
+    },
+    {
+      "opinion": "Classify every patch as INFRA, not BEHAVIOR.",
+      "rationale": "The issue explicitly states the migration is semantics-preserving on existing fixtures — the latent capture bug is not triggered by any current input. Fixing a bug that never manifests does not count as behavior change under the gameplan classification."
+    },
+    {
+      "opinion": "Hand-write equal_expr and pp_expr; drop `[@@deriving show, eq]` at the expr level.",
+      "rationale": "Bindlib's ('a, 'b) mbinder is an opaque closure with no structural equality and no default printer. Autogenerated show/eq cannot descend into a binder. A ~30-line hand-rolled deriver that unbinds each quantifier variant gives us the right thing anyway — alpha-aware equality — which callers like test_parser.ml's round-trip tests already implicitly want."
+    },
+    {
+      "opinion": "Keep a locally-nameless fallback plan inside the adapter module's design.",
+      "rationale": "If Bindlib's typing proves incompatible with some downstream consumer (most likely the pretty-printer or the JSON encoder), the fallback is a hand-rolled Chargueraud-style locally-nameless representation. Because every consumer calls through lib/binder.ml rather than Bindlib directly, swapping the implementation is a single-file change. Patch 1's adapter API is designed with both backends in mind — only primitives that both representations support are exposed."
+    }
+  ],
+
+  "patches": [
+    {
+      "number": 1,
+      "classification": "INFRA",
+      "title": "Add bindlib dependency and Binder adapter module",
+      "files": [
+        {
+          "path": "dune-project",
+          "action": "modify",
+          "description": "Add bindlib to the pantagruel package's depends list."
+        },
+        {
+          "path": "pantagruel.opam",
+          "action": "modify",
+          "description": "Regenerate via dune to include bindlib."
+        },
+        {
+          "path": "lib/dune",
+          "action": "modify",
+          "description": "Add bindlib to (libraries ...)."
+        },
+        {
+          "path": "lib/binder.ml",
+          "action": "create",
+          "description": "Adapter module: Var (make/name), Mbinder (bind/unbind/subst/free_vars). Re-exports selected Bindlib primitives under stable local names."
+        },
+        {
+          "path": "lib/binder.mli",
+          "action": "create",
+          "description": "Interface file constraining the adapter surface. Does not re-export raw Bindlib types."
+        }
+      ],
+      "changes": [
+        "Add `bindlib` to the depends stanza in dune-project and regenerate pantagruel.opam (via `dune build` or manual sync).",
+        "Create lib/binder.ml with `module Var = Bindlib.Var`, `module Mbinder` wrapping Bindlib.mbinder / bind_mvar / unmbind / msubst / mbinder_arity / mbinder_names, plus a `free_vars : ('a -> 'a Var.t list) -> ('a, 'b) t -> 'a Var.t list` helper.",
+        "Restrict the adapter API to primitives that both Bindlib and a hand-rolled locally-nameless backend can support (Var.make/Var.name, Mbinder.bind/unbind/subst/free_vars, alpha-aware equality). This keeps the locally-nameless fallback a single-file swap if Bindlib proves incompatible downstream.",
+        "Create lib/binder.mli with the public surface only; do not re-export raw Bindlib types.",
+        "Add `bindlib` to lib/dune (libraries ...).",
+        "Run `dune build` to confirm the new module compiles."
+      ],
+      "testStubsIntroduced": null,
+      "testStubsImplemented": null,
+      "spec": "module BINDLIB_MIGRATION_PATCH_1.\n\n> Patch 1 introduces the Binder adapter module wrapping Bindlib's\n> Var and Mbinder primitives. No AST changes yet; no invariants\n> asserted. The contribution is the adapter surface itself,\n> available to subsequent patches.\n\nBinder.\nVar.\n---\ntrue.\n"
+    },
+    {
+      "number": 2,
+      "classification": "INFRA",
+      "title": "Add pending test stubs for capture-avoiding substitution",
+      "files": [
+        {
+          "path": "test/test_smt_substitution.ml",
+          "action": "create",
+          "description": "Alcotest + QCheck2 file declaring pending tests for substitute identity, capture-avoidance (substitute [x -> y] (all y:T | x)), alpha-equivalence preservation, and free_vars parity with the legacy implementation."
+        },
+        {
+          "path": "test/dune",
+          "action": "modify",
+          "description": "Register test_smt_substitution as a test executable."
+        }
+      ],
+      "changes": [
+        "Create test/test_smt_substitution.ml with four tests tagged `PENDING: Patch 4` — each raises Failure \"pending\" so the test executable compiles and runs, but the tests themselves are skipped via Alcotest's `Skip` return.",
+        "Test 1: substitute_vars is the identity when the domain name is not free in e.",
+        "Test 2: substitute_vars [x -> EVar y] (EForall [y:T] (EVar x)) produces a quantifier alpha-equivalent to EForall [z:T] (EVar y) — the current implementation captures; the post-migration implementation must not.",
+        "Test 3: alpha-equivalent inputs produce alpha-equivalent outputs under substitute_vars.",
+        "Test 4: free_vars over the regression fixture corpus agrees with the legacy StringSet-based implementation (captured as a frozen baseline at stub time).",
+        "Register the new executable in test/dune."
+      ],
+      "testStubsIntroduced": [
+        "Smt_substitution > substitute_vars is identity on non-free names",
+        "Smt_substitution > substitute_vars avoids capture in (all y:T | x) case",
+        "Smt_substitution > substitute_vars preserves alpha-equivalence",
+        "Smt_substitution > free_vars matches legacy implementation"
+      ],
+      "testStubsImplemented": null,
+      "spec": "module BINDLIB_MIGRATION_PATCH_2.\n\n> Patch 2 introduces pending test stubs for the capture-avoidance\n> properties that Patch 4 will activate. No invariants asserted\n> yet — the stubs compile but are skipped.\n\nBinder.\nVar.\nExpr.\n---\ntrue.\n"
+    },
+    {
+      "number": 3,
+      "classification": "INFRA",
+      "title": "Reshape AST to use Bindlib mbinders; rewrite walkers",
+      "files": [
+        {
+          "path": "lib/ast.ml",
+          "action": "modify",
+          "description": "Change EForall / EExists / EEach to carry (expr, guarded_body) Binder.Mbinder.t plus a param_meta list for pretty-printing. Introduce param_meta = { name : lower_ident; type_expr : type_expr }. Drop `[@@deriving show, eq]` at the expr level and hand-write equal_expr / pp_expr (alpha-aware via unbind)."
+        },
+        {
+          "path": "lib/parser.mly",
+          "action": "modify",
+          "description": "Build quantifier / comprehension AST nodes via Binder.Mbinder.bind over the parsed params."
+        },
+        {
+          "path": "lib/pretty.ml",
+          "action": "modify",
+          "description": "Unbind quantifiers to recover user-facing names + types for printing."
+        },
+        {
+          "path": "lib/smt_expr.ml",
+          "action": "modify",
+          "description": "Rewrite substitute_vars, substitute_guards, prime_expr, prime_guards, unprime_expr as thin wrappers over Binder.Mbinder.subst / msubst. collect_body_guards uses unbind to descend."
+        },
+        {
+          "path": "lib/smt_doc.ml",
+          "action": "modify",
+          "description": "Rewrite free_vars over Binder.Mbinder.free_vars. bind_head_params delegates scope tracking to the new free_vars."
+        },
+        {
+          "path": "lib/smt.ml",
+          "action": "modify",
+          "description": "Update any direct pattern matches on EForall/EExists/EEach to unbind the mbinder."
+        },
+        {
+          "path": "lib/check.ml",
+          "action": "modify",
+          "description": "Update quantifier type-checking to unbind and add bindings to the environment."
+        },
+        {
+          "path": "lib/collect.ml",
+          "action": "modify",
+          "description": "Update declaration-gathering to handle the new AST shape."
+        },
+        {
+          "path": "lib/json_output.ml",
+          "action": "modify",
+          "description": "Emit quantifiers by unbinding and writing user-facing names (byte-compatible with existing snapshots)."
+        },
+        {
+          "path": "lib/markdown_output.ml",
+          "action": "modify",
+          "description": "Same as json_output.ml."
+        },
+        {
+          "path": "lib/normalize.ml",
+          "action": "modify",
+          "description": "Rewrite normal-form transformations on quantifiers via unbind/bind."
+        },
+        {
+          "path": "lib/env.ml",
+          "action": "modify",
+          "description": "If any rule-guard storage references raw binder params, adapt it to the new param_meta type."
+        }
+      ],
+      "changes": [
+        "Redefine ast.ml expr: `EForall of (expr, guarded_body) Binder.Mbinder.t * param_meta list`; similarly for EExists and EEach; add `and guarded_body = guard list * expr`.",
+        "Introduce param_meta = { name : lower_ident; type_expr : type_expr } (mirrors param, kept for pretty-printing / error messages).",
+        "Drop `[@@deriving show, eq]` from the `expr` (and `guard`, `guarded_body`) type declarations — Bindlib's mbinder is opaque to ppx_deriving.",
+        "Hand-write `equal_expr : expr -> expr -> bool`: for EForall/EExists/EEach, unbind both sides with `Binder.Mbinder.unbind2` (or unbind + fresh-name rebind) and recurse, so alpha-equivalent expressions compare equal. For non-binder variants, delegate to the standard structural comparison.",
+        "Hand-write `pp_expr : Format.formatter -> expr -> unit`: for EForall/EExists/EEach, unbind and use param_meta to recover the user-facing names + type annotations.",
+        "Parser: in each quantifier production, allocate Binder.Var.t for each param, call Binder.Mbinder.bind, and attach the param_meta list alongside.",
+        "Pretty printer: replace pattern matches on EForall (ps, gs, body) with `let vars, (gs, body) = Binder.Mbinder.unbind mb in ...`; use param_meta to recover the type annotations.",
+        "smt_expr.ml: reimplement substitute_vars as a fold that walks the expression and calls Binder.Mbinder.subst on the quantifier nodes. Drop substitute_guards' bound-name bookkeeping — guards still need explicit threading, but the binder-level bookkeeping is gone.",
+        "smt_expr.ml: reimplement prime_expr similarly.",
+        "smt_doc.ml: free_vars = Binder.Mbinder.free_vars applied to the quantifier nodes plus a standard walk over non-binding constructors.",
+        "smt_doc.ml: bind_head_params uses the rewritten free_vars (delete the in-file scope-tracking helpers scope_quantifier / scan_guards).",
+        "check.ml / collect.ml / normalize.ml / json_output.ml / markdown_output.ml: update every match arm that destructured a quantifier, using Binder.Mbinder.unbind and converting the fresh Var.t values back to Lower identifiers via Binder.Var.name.",
+        "Run `dune build` — no warnings. Run `dune test` — all existing tests pass. If any snapshot drift occurs (e.g., JSON field order for binder names), update the snapshot and include the diff in the patch for review."
+      ],
+      "testStubsIntroduced": null,
+      "testStubsImplemented": null,
+      "spec": "module BINDLIB_MIGRATION_PATCH_3.\n\n> Patch 3 reshapes binder sites to use Bindlib's mbinder. After\n> this patch, substitution respects alpha-equivalence and free\n> variables are computed by the library. The latent capture bug\n> is closed as a consequence (tests activated in Patch 4).\n\nExpr.\nSubst.\nsubstitute s: Subst, e: Expr => Expr.\nalpha-equivalent? e1: Expr, e2: Expr => Bool.\n---\n> Substitution respects alpha-equivalence.\nall s: Subst, e1: Expr, e2: Expr, alpha-equivalent? e1 e2 | alpha-equivalent? (substitute s e1) (substitute s e2).\n"
+    },
+    {
+      "number": 4,
+      "classification": "INFRA",
+      "title": "Activate capture-avoidance tests",
+      "files": [
+        {
+          "path": "test/test_smt_substitution.ml",
+          "action": "modify",
+          "description": "Remove pending markers; implement test bodies against the Bindlib-backed AST."
+        }
+      ],
+      "changes": [
+        "Replace each `raise (Failure \"pending\")` with the real test body.",
+        "Test 1 body: construct e with free var set {a}, call substitute_vars [b -> ...] e, assert result = e.",
+        "Test 2 body: construct EForall [y:Int] (EVar x), call substitute_vars [x -> EVar y], assert the result is alpha-equivalent to EForall [z:Int] (EVar y) (via Binder.Mbinder.eq or a manual alpha-equivalence check).",
+        "Test 3 body: QCheck2 property — generate two alpha-equivalent expressions e1, e2 and a substitution s, assert substitute_vars s e1 is alpha-equivalent to substitute_vars s e2.",
+        "Test 4 body: for each fixture in test/regression/, parse it, collect the StringSet produced by the rewritten free_vars, and compare against a frozen baseline captured from the legacy implementation at Patch 2 stub time. (The baseline file ships with Patch 2.)",
+        "Run `dune test` — all four tests pass."
+      ],
+      "testStubsIntroduced": null,
+      "testStubsImplemented": [
+        "Smt_substitution > substitute_vars is identity on non-free names",
+        "Smt_substitution > substitute_vars avoids capture in (all y:T | x) case",
+        "Smt_substitution > substitute_vars preserves alpha-equivalence",
+        "Smt_substitution > free_vars matches legacy implementation"
+      ],
+      "spec": "module BINDLIB_MIGRATION_PATCH_4.\n\n> Patch 4 activates the capture-avoidance tests. Formal\n> postconditions: substitution is the identity when the variable\n> is not free, and is capture-free for the (all y:T | x) case.\n\nExpr.\nVar.\nfree? x: Var, e: Expr => Bool.\nbound-by e: Expr, x: Var => Expr.\nsubstitute x: Var, rep: Expr, e: Expr => Expr.\nalpha-equivalent? e1: Expr, e2: Expr => Bool.\n---\n> Substitution is the identity when the variable is not free.\nall x: Var, rep: Expr, e: Expr, free? x e = false | substitute x rep e = e.\n\n> Capture-avoiding substitution.\nall x: Var, y: Var, rep: Expr, e: Expr, free? x e, free? y rep = false | alpha-equivalent? (substitute x rep (bound-by e y)) (bound-by (substitute x rep e) y).\n"
+    },
+    {
+      "number": 5,
+      "classification": "INFRA",
+      "title": "Retire #110's alpha-rename helpers and consolidate",
+      "files": [
+        {
+          "path": "lib/smt_expr.ml",
+          "action": "modify",
+          "description": "Delete rename_var_refs (line 178) and rename_guards (line ~247). Tighten substitute_vars docstring to cite Binder.Mbinder."
+        },
+        {
+          "path": "lib/smt.ml",
+          "action": "modify",
+          "description": "Delete alpha_rename_binders (line 17) and its call site in the check pipeline (~line 743). The quantifier-binder-shadows-declared-rule case is handled structurally by Bindlib's fresh-variable allocation."
+        },
+        {
+          "path": "lib/smt_doc.ml",
+          "action": "modify",
+          "description": "Delete any vestigial scope-tracking helpers that Patch 3 already stopped calling."
+        }
+      ],
+      "changes": [
+        "Delete rename_var_refs and rename_guards from lib/smt_expr.ml.",
+        "Delete alpha_rename_binders and its invocation in lib/smt.ml (~line 743). Verify the three regression fixtures from PR #110 (bug_nested_binder_collision.pant, bug_rename_app_head.pant, bug_rule_param_collision.pant) still pass — they should, because Bindlib allocates fresh binder atoms that cannot collide with declared rule names.",
+        "Grep for any vestigial `bound : string list` threading in walkers that the Bindlib-backed API no longer needs; remove.",
+        "Update docstrings on substitute_vars and prime_expr to cite Binder.Mbinder as the source of capture-avoidance (remove the Barendregt-at-callsite caveat).",
+        "Confirm `dune build` and `dune test` remain green."
+      ],
+      "testStubsIntroduced": null,
+      "testStubsImplemented": null,
+      "spec": "module BINDLIB_MIGRATION_PATCH_5.\n\n> Patch 5 removes helpers made redundant by the migration.\n> No new invariants; the contribution is a smaller attack\n> surface for binder-related bugs.\n\nExpr.\nSubst.\nsubstitute s: Subst, e: Expr => Expr.\nalpha-equivalent? e1: Expr, e2: Expr => Bool.\n---\n> Substitution still respects alpha-equivalence after cleanup.\nall s: Subst, e1: Expr, e2: Expr, alpha-equivalent? e1 e2 | alpha-equivalent? (substitute s e1) (substitute s e2).\n"
+    }
+  ],
+
+  "testMap": [
+    {
+      "testName": "Smt_substitution > substitute_vars is identity on non-free names",
+      "file": "test/test_smt_substitution.ml",
+      "stubPatch": 2,
+      "implPatch": 4
+    },
+    {
+      "testName": "Smt_substitution > substitute_vars avoids capture in (all y:T | x) case",
+      "file": "test/test_smt_substitution.ml",
+      "stubPatch": 2,
+      "implPatch": 4
+    },
+    {
+      "testName": "Smt_substitution > substitute_vars preserves alpha-equivalence",
+      "file": "test/test_smt_substitution.ml",
+      "stubPatch": 2,
+      "implPatch": 4
+    },
+    {
+      "testName": "Smt_substitution > free_vars matches legacy implementation",
+      "file": "test/test_smt_substitution.ml",
+      "stubPatch": 2,
+      "implPatch": 4
+    }
+  ],
+
+  "dependencyGraph": [
+    { "patch": 1, "classification": "INFRA", "dependsOn": [] },
+    { "patch": 2, "classification": "INFRA", "dependsOn": [1] },
+    { "patch": 3, "classification": "INFRA", "dependsOn": [1] },
+    { "patch": 4, "classification": "INFRA", "dependsOn": [2, 3] },
+    { "patch": 5, "classification": "INFRA", "dependsOn": [3] }
+  ],
+
+  "mergabilityChecklist": {
+    "featureFlagStrategyDocumented": true,
+    "earlyPatchesNonFunctional": true,
+    "testStubsInInfraPatches": true,
+    "testImplsColocated": true,
+    "testMapComplete": true,
+    "testMapImplPatchMatchesCode": true,
+    "behaviorPatchesMinimal": true,
+    "dependencyGraphOrdered": true,
+    "behaviorPatchesJustified": true
+  },
+
+  "mergabilityInsight": "5 of 5 patches are INFRA. The migration preserves observable behavior on every existing fixture — the latent capture bug that motivates the refactor is not triggered by any current input. Patches 2 and 3 can execute in parallel after Patch 1 lands (test stubs reference only the adapter module, not the reshaped AST). Patch 4 activates the tests once Patch 3 has landed. Patch 5 is an optional consolidation that depends only on Patch 3.",
+
+  "finalStateSpec": "module BINDLIB_MIGRATION.\n\n> ══════════════════════════════════════════\n> THE GUARANTEE\n> ══════════════════════════════════════════\n> After this gameplan, Pantagruel's AST binder sites (EForall,\n> EExists, EEach) are represented by Bindlib's mbinder. Capture\n> avoidance is enforced by the library; the hand-rolled walker\n> family in lib/smt_expr.ml collapses to thin wrappers. The\n> latent capture bug in substitute_vars is closed.\n\nExpr.\nVar.\nSubst.\nfree? x: Var, e: Expr => Bool.\nbound-by e: Expr, x: Var => Expr.\nsubstitute x: Var, rep: Expr, e: Expr => Expr.\nsubstitute-many s: Subst, e: Expr => Expr.\nalpha-equivalent? e1: Expr, e2: Expr => Bool.\n---\n> Substitution is the identity when the variable is not free.\nall x: Var, rep: Expr, e: Expr, free? x e = false | substitute x rep e = e.\n\n> Capture-avoiding substitution.\nall x: Var, y: Var, rep: Expr, e: Expr, free? x e, free? y rep = false | alpha-equivalent? (substitute x rep (bound-by e y)) (bound-by (substitute x rep e) y).\n\n> Substitution respects alpha-equivalence.\nall s: Subst, e1: Expr, e2: Expr, alpha-equivalent? e1 e2 | alpha-equivalent? (substitute-many s e1) (substitute-many s e2).\n\nwhere\n\n> ══════════════════════════════════════════\n> REDUCED SURFACE\n> ══════════════════════════════════════════\n> The walker family (substitute_vars, prime_expr, free_vars)\n> is implemented via Bindlib primitives. Helpers added by PR\n> #110 (rename_var_refs, alpha_rename_binders) are removed.\n\nSmtExpr.\nhand-rolled-walkers s: SmtExpr => Nat0.\nlibrary-backed? s: SmtExpr => Bool.\n---\n> No hand-rolled capture-avoidance walkers remain.\nall s: SmtExpr | library-backed? s.\nall s: SmtExpr | hand-rolled-walkers s = 0.\n"
+}
