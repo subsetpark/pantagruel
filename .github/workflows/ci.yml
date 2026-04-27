@@ -72,6 +72,12 @@ jobs:
 
       - name: Install just
         uses: extractions/setup-just@v3
+        with:
+          # Pin a specific version so the action doesn't have to resolve
+          # the latest release via the GitHub API on each run — that
+          # resolution is intermittently flaky ("no release for just
+          # matching version specifier"). Bump as needed.
+          just-version: "1.50.0"
 
       - name: Install OCaml dependencies
         run: |
