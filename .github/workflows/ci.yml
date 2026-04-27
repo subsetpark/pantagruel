@@ -6,26 +6,24 @@ on:
   pull_request:
     branches: [master]
 
+# Both jobs run inside the official `ocaml/opam` Docker image, which has opam
+# and the OCaml 5.4 switch baked in. This bypasses `ocaml/setup-ocaml` (which
+# does a live GitHub release lookup at job start) — that lookup has been
+# repeatedly broken by upstream opam release naming changes (see git log for
+# the chain of pin commits this replaces). Bump the image tag to upgrade OCaml.
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: ocaml/opam:ubuntu-24.04-ocaml-5.4
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set up OCaml
-        # Pinned to v3.6.0 + allow-prerelease-opam — v3.6.1 (current
-        # `@v3` head) added a broken fallback-to-older-opam-release
-        # codepath. v3.6.0 alone now also fails the lookup with
-        # "Failed to find any opam release that matches the specified
-        # version constraint" because the latest stable opam release
-        # falls outside the action's default version constraint.
-        # Allowing prereleases lets the lookup pick a matching opam
-        # build instead of failing the setup step. Drop the pin once
-        # `@v3` is healthy again.
-        uses: ocaml/setup-ocaml@v3.6.0
-        with:
-          ocaml-compiler: "5.4.1"
-          allow-prerelease-opam: true
+      - name: Trust workspace
+        # GHA mounts the workspace into the container with ownership that git
+        # sees as foreign; without this, `git` invocations inside dune/opam
+        # subprocesses fail with "dubious ownership".
+        run: git config --global --add safe.directory '*'
 
       - name: Use opam.ocaml.org archive cache
         # erratique.ch (upstream for cmdliner, mtime, fpath, logs, uutf, ...)
@@ -66,30 +64,25 @@ jobs:
 
   ts2pant:
     runs-on: ubuntu-latest
+    container:
+      image: ocaml/opam:ubuntu-24.04-ocaml-5.4
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set up OCaml
-        # Pinned to v3.6.0 + allow-prerelease-opam — see rationale in the build job above.
-        uses: ocaml/setup-ocaml@v3.6.0
-        with:
-          ocaml-compiler: "5.4.1"
-          allow-prerelease-opam: true
+      - name: Trust workspace
+        run: git config --global --add safe.directory '*'
 
       - name: Use opam.ocaml.org archive cache
         run: opam option archive-mirrors='["https://opam.ocaml.org/cache"]'
 
-      - name: Install binaryen
-        run: npm install -g binaryen
-
       - name: Install just
-        uses: extractions/setup-just@v3
-        with:
-          # Pin a specific version so the action doesn't have to resolve
-          # the latest release via the GitHub API on each run — that
-          # resolution is intermittently flaky ("no release for just
-          # matching version specifier"). Bump as needed.
-          just-version: "1.50.0"
+        # Install directly from the GitHub release tarball so we don't depend
+        # on `extractions/setup-just`'s release-lookup logic. Pinned for
+        # reproducibility; bump as needed.
+        run: |
+          curl -fsSL https://github.com/casey/just/releases/download/1.50.0/just-1.50.0-x86_64-unknown-linux-musl.tar.gz \
+            | sudo tar -xz -C /usr/local/bin just
+          just --version
 
       - name: Install OCaml dependencies
         run: |
@@ -99,14 +92,18 @@ jobs:
       - name: Build pant
         run: opam exec -- just build-pant
 
-      - name: Build wasm for ts2pant
-        run: opam exec -- just ts2pant-build-wasm
-
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: tools/ts2pant/package-lock.json
+
+      - name: Install binaryen
+        # Needed at link time by wasm_of_ocaml; install after Node is set up.
+        run: npm install -g binaryen
+
+      - name: Build wasm for ts2pant
+        run: opam exec -- just ts2pant-build-wasm
 
       - name: Install ts2pant dependencies
         run: just ts2pant-install
