@@ -4,10 +4,40 @@ import { createSourceFileFromSource } from "../src/extract.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import { translateBody } from "../src/translate-body.js";
 import { IntStrategy, RealStrategy } from "../src/translate-types.js";
+import type { PropResult } from "../src/types.js";
 
 before(async () => {
   await loadAst();
 });
+
+/**
+ * Assert that `props` contains an `unsupported` proposition whose
+ * `reason` matches `pattern`. The repeated `props.some(p => p.kind ===
+ * "unsupported" && /…/ .test(p.reason))` shape is concise on its own
+ * but adds up across the dozen-odd rejection tests; this helper unifies
+ * the failure message so a regression that fires the wrong rejection
+ * path produces a consistent diagnostic.
+ */
+function assertUnsupportedReason(
+  props: readonly PropResult[],
+  pattern: RegExp,
+  description: string,
+): void {
+  const matched = props.some(
+    (p) => p.kind === "unsupported" && pattern.test(p.reason),
+  );
+  if (matched) {
+    return;
+  }
+  const allReasons = props
+    .filter((p) => p.kind === "unsupported")
+    .map((p) => (p as { reason: string }).reason);
+  assert.fail(
+    `${description}: no unsupported prop matched ${pattern}\n  saw: ${
+      allReasons.length > 0 ? JSON.stringify(allReasons) : "(no unsupported props)"
+    }`,
+  );
+}
 
 // Tests for internal translateBody API edge cases not coverable via
 // exported fixture functions (see tests/fixtures/constructs/ for
@@ -608,12 +638,9 @@ describe("conditional mutations (symbolic last-write)", () => {
         functionName: "f",
         strategy: IntStrategy,
       });
-      assert.ok(
-        props.some(
-          (p) =>
-            p.kind === "unsupported" &&
-            /collection mutation outside statement position/.test(p.reason),
-        ),
+      assertUnsupportedReason(
+        props,
+        /collection mutation outside statement position/,
         `${name}: expected the rejectEffect rejection`,
       );
     });
@@ -1024,14 +1051,9 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
-    assert.ok(
-      props.some(
-        (p) =>
-          p.kind === "unsupported" &&
-          /guarded Shape A iterator write is not supported alongside a Shape B fold leaf/.test(
-            p.reason,
-          ),
-      ),
+    assertUnsupportedReason(
+      props,
+      /guarded Shape A iterator write is not supported alongside a Shape B fold leaf/,
       "expected the guarded-Shape-A + Shape-B-fold rejection",
     );
   });
@@ -1052,12 +1074,10 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
-    assert.ok(
-      props.some(
-        (p) =>
-          p.kind === "unsupported" &&
-          /single plain identifier parameter/.test(p.reason),
-      ),
+    assertUnsupportedReason(
+      props,
+      /single plain identifier parameter/,
+      "expected the forEach plain-identifier rejection",
     );
   });
 
@@ -1074,12 +1094,10 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
-    assert.ok(
-      props.some(
-        (p) =>
-          p.kind === "unsupported" &&
-          /single plain identifier parameter/.test(p.reason),
-      ),
+    assertUnsupportedReason(
+      props,
+      /single plain identifier parameter/,
+      "expected the forEach plain-identifier rejection",
     );
   });
 
@@ -1099,12 +1117,10 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
-    assert.ok(
-      props.some(
-        (p) =>
-          p.kind === "unsupported" &&
-          /single plain identifier parameter/.test(p.reason),
-      ),
+    assertUnsupportedReason(
+      props,
+      /single plain identifier parameter/,
+      "expected the forEach plain-identifier rejection",
     );
   });
 
@@ -1129,14 +1145,10 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
-    assert.ok(
-      props.some(
-        (p) =>
-          p.kind === "unsupported" &&
-          /accumulator rhs reads from the accumulator's own root/.test(
-            p.reason,
-          ),
-      ),
+    assertUnsupportedReason(
+      props,
+      /accumulator rhs reads from the accumulator's own root/,
+      "expected the accumulator-self-dependent rhs rejection",
     );
   });
 
@@ -1161,14 +1173,10 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
-    assert.ok(
-      props.some(
-        (p) =>
-          p.kind === "unsupported" &&
-          /accumulator guard reads from the accumulator's own root/.test(
-            p.reason,
-          ),
-      ),
+    assertUnsupportedReason(
+      props,
+      /accumulator guard reads from the accumulator's own root/,
+      "expected the accumulator-self-dependent guard rejection",
     );
   });
 
@@ -1232,12 +1240,10 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
-    assert.ok(
-      props.some(
-        (p) =>
-          p.kind === "unsupported" &&
-          /property rooted at the iterator binder/.test(p.reason),
-      ),
+    assertUnsupportedReason(
+      props,
+      /property rooted at the iterator binder/,
+      "expected the non-iter-rooted-assign rejection",
     );
   });
 
@@ -1267,12 +1273,10 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
-    assert.ok(
-      props.some(
-        (p) =>
-          p.kind === "unsupported" &&
-          /iterator-dependent guard inside a loop/.test(p.reason),
-      ),
+    assertUnsupportedReason(
+      props,
+      /iterator-dependent guard inside a loop/,
+      "expected the iter-dependent-guard rejection",
     );
   });
 
@@ -1297,13 +1301,36 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
-    assert.ok(
-      props.some(
-        (p) =>
-          p.kind === "unsupported" &&
-          /foreach body cannot contain a set-effect statement/.test(p.reason),
-      ),
+    assertUnsupportedReason(
+      props,
+      /foreach body cannot contain a set-effect statement/,
       "expected the ensureForeachBodyShape rejection for set-effect",
+    );
+  });
+
+  it("rejects Map effects inside foreach body branches", () => {
+    // Mirrors the set-effect case above but for the `map-effect`
+    // sibling on the `ensureForeachBodyShape` rejection surface, so
+    // a regression in either path is pinned independently.
+    const source = `
+      interface Item { value: number; }
+      interface Tagged { tags: Map<string, boolean>; flag: boolean; }
+      function f(tag: Tagged, xs: Item[]): void {
+        for (const x of xs) {
+          if (tag.flag) { tag.tags.set("seen", true); }
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assertUnsupportedReason(
+      props,
+      /foreach body cannot contain a map-effect statement/,
+      "expected the ensureForeachBodyShape rejection for map-effect",
     );
   });
 
@@ -1330,14 +1357,9 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
-    assert.ok(
-      props.some(
-        (p) =>
-          p.kind === "unsupported" &&
-          /branch body must be a property assignment, Map\/Set effect, or nested if/.test(
-            p.reason,
-          ),
-      ),
+    assertUnsupportedReason(
+      props,
+      /branch body must be a property assignment, Map\/Set effect, or nested if/,
       "expected the buildL1MutationBody branch-shape rejection",
     );
   });
