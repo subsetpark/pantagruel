@@ -232,10 +232,27 @@ function lowerForeach(
 
   // Shape A: Sub-state captures the body's per-iteration writes so they
   // don't leak into the outer state. Skipped when body is null (pure
-  // Shape B foreach).
+  // Shape B foreach). The body lowers into a *local* `bodyProps`
+  // buffer (mirroring `lowerCondStmt`) so a nested
+  // proposition-emitting form — a future `for-of` inside a
+  // `cond-stmt` arm, or anything else that pushes `equation` /
+  // `assertion` directly — can't escape the outer iterator scope.
+  // Today `IR1ForeachBody` is narrow enough that this can only fire as
+  // defense-in-depth, but keeping the buffer isolated means future IR
+  // additions don't silently leak.
   if (stmt.body !== null) {
     const subState = makeSymbolicState(ctx.applyConst);
-    if (!lowerL1Body(stmt.body, subState, propositions, ctx)) {
+    const bodyProps: PropResult[] = [];
+    if (!lowerL1Body(stmt.body, subState, bodyProps, ctx)) {
+      propositions.push(...bodyProps);
+      return false;
+    }
+    if (bodyProps.length > 0) {
+      propositions.push({
+        kind: "unsupported",
+        reason:
+          "nested proposition-emitting loop body is not supported — the inner proposition would escape the outer iterator scope",
+      });
       return false;
     }
     for (const [, entry] of subState.writes) {

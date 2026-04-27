@@ -446,6 +446,42 @@ describe("lowerL1Body — branch-local foreach equations", () => {
       ),
     );
   });
+
+  it("rejects a nested proposition-emitting foreach body", () => {
+    // `lowerForeach` lowers its body into a local `bodyProps` buffer
+    // and rejects if any quantified prop appears, mirroring
+    // `lowerCondStmt`'s discipline. Today's `IR1ForeachBody` excludes
+    // `foreach`, so this is unreachable through the build pass —
+    // direct construction exercises the defense-in-depth guarantee.
+    // The inner foreach emits `all $1 in ys | active' $1 = true` which
+    // would otherwise leak past the outer iterator scope.
+    const inner = ir1Foreach(
+      "$1",
+      ir1Var("ys"),
+      ir1Assign(ir1Member(ir1Var("$1"), "active"), ir1LitBool(true)),
+    );
+    // Construct via cast since `IR1ForeachBody` rejects nested
+    // foreach at the type level — this test specifically exercises
+    // the runtime path that catches a hand-built (or future-IR)
+    // violation.
+    const outer = ir1Foreach(
+      "$0",
+      ir1Var("xs"),
+      inner as unknown as Parameters<typeof ir1Foreach>[2],
+    );
+    const propositions: PropResult[] = [];
+    const ok = lowerL1Body(outer, makeSymbolicState(), propositions, {
+      applyConst: (e) => e,
+    });
+    assert.equal(ok, false);
+    assert.ok(
+      propositions.some(
+        (p) =>
+          p.kind === "unsupported" &&
+          /escape the outer iterator scope/.test(p.reason),
+      ),
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
