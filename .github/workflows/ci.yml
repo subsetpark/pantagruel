@@ -16,13 +16,24 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ocaml/opam:ubuntu-24.04-ocaml-5.4
+      # Override the image's default `opam` (uid 1000) user — GHA mounts the
+      # workspace with ownership the in-image opam user can't write to, so
+      # `actions/checkout@v6` fails before any of our steps run.
+      options: --user root
+    env:
+      # Reuse the switch baked into the image (which lives under the opam
+      # user's home) instead of letting opam create a fresh one under /root.
+      OPAMROOT: /home/opam/.opam
+      # opam refuses to run as root by default; this overrides that check.
+      OPAMROOTISOK: "1"
+      OPAMYES: "1"
     steps:
       - uses: actions/checkout@v6
 
       - name: Trust workspace
-        # GHA mounts the workspace into the container with ownership that git
-        # sees as foreign; without this, `git` invocations inside dune/opam
-        # subprocesses fail with "dubious ownership".
+        # Without this, `git` invocations inside dune/opam subprocesses fail
+        # with "dubious ownership" because the workspace is mounted with
+        # ownership root doesn't recognize.
         run: git config --global --add safe.directory '*'
 
       - name: Use opam.ocaml.org archive cache
@@ -66,6 +77,11 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ocaml/opam:ubuntu-24.04-ocaml-5.4
+      options: --user root
+    env:
+      OPAMROOT: /home/opam/.opam
+      OPAMROOTISOK: "1"
+      OPAMYES: "1"
     steps:
       - uses: actions/checkout@v6
 
@@ -81,7 +97,7 @@ jobs:
         # reproducibility; bump as needed.
         run: |
           curl -fsSL https://github.com/casey/just/releases/download/1.50.0/just-1.50.0-x86_64-unknown-linux-musl.tar.gz \
-            | sudo tar -xz -C /usr/local/bin just
+            | tar -xz -C /usr/local/bin just
           just --version
 
       - name: Install OCaml dependencies
