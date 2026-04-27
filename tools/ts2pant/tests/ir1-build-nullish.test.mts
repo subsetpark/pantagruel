@@ -306,6 +306,33 @@ describe("ir1-build-nullish", () => {
     assert.equal(l1, null);
   });
 
+  it("non-Bool leftover clause falls through (Bool-typed gate)", () => {
+    // Mixed-type long form: `x === null || x === undefined || n` where
+    // `n: number` is not Bool. Folding would rebuild as
+    // `IsNullish(x) or n`, mixing a Bool with a number — changes JS's
+    // truthy short-circuit semantics. Refuse to fold.
+    const { expr, checker } = parseBinExpr(
+      "x === null || x === undefined || n",
+      { n: "number" },
+    );
+    const l1 = recognizeNullishForm(expr, checker, makeTranslate());
+    assert.equal(l1, null);
+  });
+
+  it("Bool leftover clause still folds (Bool-typed gate)", () => {
+    // Sanity: the Bool gate doesn't reject the legitimate residue
+    // case where `other: boolean` — same shape as the existing
+    // prefix-extraction test, but tests the gate path explicitly.
+    const { expr, checker } = parseBinExpr(
+      "x === null || x === undefined || other",
+    );
+    const l1 = asL1(recognizeNullishForm(expr, checker, makeTranslate()));
+    assert.equal(l1.kind, "binop");
+    if (l1.kind === "binop") {
+      assert.equal(l1.lhs.kind, "is-nullish");
+    }
+  });
+
   it("shadowed `undefined` falls through (shadowing gate)", () => {
     // A locally bound `undefined: number` doesn't resolve to the
     // global undefined value. The recognizer's symbol-resolution

@@ -2676,6 +2676,11 @@ export function translateBodyExpr(
   // `a === null || b === undefined`) returns `null` and falls through
   // to the normal Bool-typed short-circuit path.
   if (ts.isBinaryExpression(expr)) {
+    // `translateBodyExpr` itself converts effectful call expressions
+    // into `{ unsupported }` via `rejectEffect` (the CallExpression
+    // arm below), so the effect variant of `BodyResult` never
+    // reaches us here — the surfaced rejection carries the upstream
+    // "collection mutation outside statement position" message.
     const translate: NullishTranslate = (sub) => {
       const subResult = translateBodyExpr(
         sub,
@@ -2687,11 +2692,6 @@ export function translateBodyExpr(
       );
       if (isBodyUnsupported(subResult)) {
         return subResult;
-      }
-      if (isBodyEffect(subResult)) {
-        return {
-          unsupported: "collection mutation cannot appear in a nullish operand",
-        };
       }
       return ir1FromL2(irWrap(bodyExpr(subResult)));
     };

@@ -56,6 +56,7 @@
 import ts from "typescript";
 import { structurallyEqualExpression } from "./ast-equal.js";
 import { type IR1Expr, ir1Binop, ir1IsNullish, ir1Unop } from "./ir1.js";
+import { isStaticallyBoolTyped } from "./purity.js";
 
 /**
  * True when the TS type at this AST location includes `null`,
@@ -409,6 +410,23 @@ function recognizeLongForm(
   const foldByFirst = new Map<number, ts.Expression>(
     folds.map((f) => [f.firstIndex, f.operand]),
   );
+
+  // Bool-type gate on leftover operands. After folding, the result
+  // becomes `IsNullish(...) <combinator> <leftover...>`. `IsNullish`
+  // is Bool by construction, but the leftover clauses must also be
+  // statically Bool — otherwise the rebuilt `or`/`and` would mix a
+  // Bool with a value-typed clause, changing JS's truthy-coercion
+  // short-circuit semantics. Refuse to fold rather than emit
+  // potentially-incorrect IR (workstream conservative-refusal 3(b));
+  // the caller falls through to its normal binop path.
+  for (let i = 0; i < operands.length; i++) {
+    if (skipIndices.has(i) || foldByFirst.has(i)) {
+      continue;
+    }
+    if (!isStaticallyBoolTyped(operands[i] as ts.Expression, checker)) {
+      return null;
+    }
+  }
 
   const items: IR1Expr[] = [];
   for (let i = 0; i < operands.length; i++) {
