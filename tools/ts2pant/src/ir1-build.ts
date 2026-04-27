@@ -76,11 +76,7 @@ import {
   isNullableTsType,
   translateBodyExpr,
 } from "./translate-body.js";
-import {
-  cellRegisterName,
-  type NumericStrategy,
-  toPantTermName,
-} from "./translate-types.js";
+import { cellRegisterName, type NumericStrategy } from "./translate-types.js";
 
 /**
  * Context threaded through L1 build. Mirrors the parameter set of
@@ -234,8 +230,21 @@ const ARRAY_MULTI_PRODUCING_METHODS = new Set([
   "splice",
 ]);
 
-/** True when `expr` is an empty-equivalent literal — `[]`, `null`, `undefined`. */
-function isEmptyEquivalent(expr: ts.Expression): boolean {
+/**
+ * True when `expr` is an empty-equivalent literal — `[]`, `null`, or
+ * the global `undefined`. The `undefined` check is checker-aware
+ * because `undefined` is not a reserved word in JS: a parameter,
+ * local, or import named `undefined` is a legal binding that shadows
+ * the global. The resolved type's flags must include `Undefined`; a
+ * shadowed `undefined: number` resolves to `number` (no Undefined
+ * flag) and is rejected — falling through to the standard Cond
+ * build rather than silently rewriting semantics. Mirrors the
+ * shadowing gate in nullish-recognizer.ts.
+ */
+function isEmptyEquivalent(
+  expr: ts.Expression,
+  checker: ts.TypeChecker,
+): boolean {
   const u = unwrapTransparentExpression(expr);
   if (ts.isArrayLiteralExpression(u) && u.elements.length === 0) {
     return true;
@@ -244,7 +253,8 @@ function isEmptyEquivalent(expr: ts.Expression): boolean {
     return true;
   }
   if (ts.isIdentifier(u) && u.text === "undefined") {
-    return true;
+    const type = checker.getTypeAtLocation(u);
+    return (type.flags & ts.TypeFlags.Undefined) !== 0;
   }
   return false;
 }
@@ -420,7 +430,7 @@ export function tryRecognizeFunctorLift(
   const presentExpr = leaf.negated ? cand.thenExpr : cand.elseExpr;
 
   // (b) Empty side is empty-equivalent.
-  if (!isEmptyEquivalent(emptyExpr)) {
+  if (!isEmptyEquivalent(emptyExpr, ctx.checker)) {
     return null;
   }
 
@@ -467,8 +477,15 @@ export function tryRecognizeFunctorLift(
   const operandOpaque = lowerExpr(lowerL1Expr(operandSub));
   const projectionOpaque = lowerExpr(lowerL1Expr(projectionSub));
 
-  const operandPantName =
-    ctx.paramNames.get(operandName) ?? toPantTermName(operandName);
+  // Mirror `translateExpr`'s identifier handling
+  // (`translate-signature.ts:1122` — `paramNames.get(expr.text) ?? expr.text`).
+  // Only *parameters* go through name sanitization on translation;
+  // bare identifiers (locals, captures from outer scope) are emitted
+  // as their raw TS text. Sanitizing here would produce
+  // `toPantTermName("maybeUser") = "maybe-user"`, which the lowered
+  // projection — which still references `maybeUser` — would never
+  // match, leaving the binder unsubstituted and the lift broken.
+  const operandPantName = ctx.paramNames.get(operandName) ?? operandName;
   const binderName = allocateLiftBinder(ctx, "n");
   const ast = getAst();
   const substitutedProjection = ast.substituteBinder(

@@ -19,10 +19,11 @@ import ts from "typescript";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
 import {
   type FunctorLiftCandidate,
+  lowerL1ToOpaque,
   tryRecognizeFunctorLift,
 } from "../src/ir1-build.js";
 import type { IR1Expr } from "../src/ir1.js";
-import { loadAst } from "../src/pant-wasm.js";
+import { getAst, loadAst } from "../src/pant-wasm.js";
 import type { UniqueSupply } from "../src/translate-body.js";
 import { IntStrategy, newSynthCell } from "../src/translate-types.js";
 
@@ -315,6 +316,23 @@ describe("ir1-build-functor-lift", () => {
     assert.equal(tryRecognizeFunctorLift(candidate, ctx), null);
   });
 
+  it("shadowed `undefined` empty branch falls through", () => {
+    // `undefined` is not a reserved word — a parameter named
+    // `undefined` is a legal binding that shadows the global. If
+    // `isEmptyEquivalent` matched the identifier text alone, the
+    // lift would silently rewrite `u == null ? undefined : [u.v]`
+    // (where `undefined` resolves to a `string` parameter) to an
+    // each comprehension, dropping the shadowed value. Reject.
+    const { candidate, ctx } = setup(
+      `interface Box { readonly v: number; }
+       function f(u: Box | null, undefined: string): string {
+         return u == null ? undefined : "x";
+       }`,
+    );
+    assert.equal(tryRecognizeFunctorLift(candidate, ctx), null);
+  });
+
+
   // ------------------------------------------------------------------
   // Substitution / capture avoidance / nesting
   // ------------------------------------------------------------------
@@ -345,6 +363,38 @@ describe("ir1-build-functor-lift", () => {
     // verifies the binder name is fresh against ts2pant's
     // document-wide registry.)
     expectLifted(tryRecognizeFunctorLift(candidate, ctx));
+  });
+
+  it("camelCase parameter substitution doesn't kebab-mangle the binder target", () => {
+    // The operand's substitution name must match the spelling
+    // `translateBodyExpr` emits for the identifier — for parameters,
+    // that's `paramNames.get(text)` (already canonicalized at signature
+    // translation), and for bare references it's the raw text. Running
+    // `toPantTermName` here would target `maybe-user` while the lowered
+    // projection still references `maybeUser`, leaving the binder
+    // unsubstituted and the lift broken. Verify by stringifying the
+    // lowered output: the original identifier must NOT appear (replaced
+    // by the binder), and the binder name MUST appear.
+    const { candidate, ctx } = setup(
+      `interface User { readonly name: string; }
+       function f(maybeUser: User | null): string[] {
+         return maybeUser == null ? [] : [maybeUser.name];
+       }`,
+    );
+    const lifted = expectLifted(tryRecognizeFunctorLift(candidate, ctx));
+    const ast = getAst();
+    const out = ast.strExpr(lowerL1ToOpaque(lifted));
+    // The lifted form is `each <binder> in maybeUser | <accessor> <binder>`,
+    // so `maybeUser` appears once in the source position; the projection
+    // has no remaining `maybeUser` reference (substituted by the binder).
+    // If the bug were live, `maybeUser` would appear twice — once as
+    // the iter source and once unsubstituted in the projection.
+    const occurrences = out.split("maybeUser").length - 1;
+    assert.equal(
+      occurrences,
+      1,
+      `expected exactly one occurrence of 'maybeUser' (as iter source), got ${occurrences} in: ${out}`,
+    );
   });
 
   it("nested null-guards: inner ternary inside outer present-side", () => {
