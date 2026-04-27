@@ -13,6 +13,7 @@ import { before, describe, it } from "node:test";
 import { createSourceFileFromSource } from "../src/extract.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import { translateBody } from "../src/translate-body.js";
+import { translateSignature } from "../src/translate-signature.js";
 import { IntStrategy } from "../src/translate-types.js";
 import type { PropResult } from "../src/types.js";
 
@@ -121,5 +122,92 @@ describe("equality-canonicalization", () => {
       expectEquationStr(props),
       "cond a < 0 => a ~= b, true => a = b",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Signature / guard path: loose equality must reject cleanly rather than
+// fall through to `ast.var(expr.getText())`, which would emit raw source
+// text as a Pant variable name (conservative-refusal policy 3(b)).
+// ---------------------------------------------------------------------------
+
+describe("equality-canonicalization (signature/guard path)", () => {
+  it("assertion guard with == drops the guard rather than emit raw text", () => {
+    const source = `
+      function assert(condition: unknown, msg?: string): asserts condition {
+        if (!condition) throw new Error(msg ?? "Assertion failed");
+      }
+      interface Account { balance: number; }
+      function deposit(account: Account, amount: number): void {
+        assert(amount == 0, "must be zero");
+        account.balance = account.balance + amount;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const result = translateSignature(sourceFile, "deposit", IntStrategy);
+    assert.equal(result.declaration.kind, "action");
+    if (result.declaration.kind !== "action") {
+      return;
+    }
+    // The guard must NOT be the raw text `amount == 0` — bail cleanly.
+    assert.equal(result.declaration.guard, undefined);
+  });
+
+  it("if-throw guard with != drops the guard rather than emit raw text", () => {
+    const source = `
+      interface Account { balance: number; }
+      function deposit(account: Account, amount: number): void {
+        if (amount != 0) { throw new Error("nonzero"); }
+        account.balance = account.balance + amount;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const result = translateSignature(sourceFile, "deposit", IntStrategy);
+    assert.equal(result.declaration.kind, "action");
+    if (result.declaration.kind !== "action") {
+      return;
+    }
+    assert.equal(result.declaration.guard, undefined);
+  });
+
+  it("if-throw guard with strict !== still produces a guard", () => {
+    // Sanity check that the bail logic is operator-specific — strict
+    // inequality continues to work in guard extraction.
+    const source = `
+      interface Account { balance: number; }
+      function deposit(account: Account, amount: number): void {
+        if (amount !== 0) { throw new Error("nonzero"); }
+        account.balance = account.balance + amount;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const result = translateSignature(sourceFile, "deposit", IntStrategy);
+    assert.equal(result.declaration.kind, "action");
+    if (result.declaration.kind !== "action") {
+      return;
+    }
+    assert.equal(
+      getAst().strExpr(result.declaration.guard!),
+      "~(amount ~= 0)",
+    );
+  });
+
+  it("nested == inside a strict-eq guard also bails", () => {
+    // The throw is inside translateExpr's recursion; outer translateExpr
+    // catches it through the wrapped entry-point caller.
+    const source = `
+      interface Account { balance: number; }
+      function deposit(account: Account, amount: number): void {
+        if ((amount == 0) === false) { throw new Error("guarded"); }
+        account.balance = account.balance + amount;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const result = translateSignature(sourceFile, "deposit", IntStrategy);
+    assert.equal(result.declaration.kind, "action");
+    if (result.declaration.kind !== "action") {
+      return;
+    }
+    assert.equal(result.declaration.guard, undefined);
   });
 });
