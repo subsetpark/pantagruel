@@ -25,7 +25,12 @@ import {
 import type { IR1Expr } from "../src/ir1.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import type { UniqueSupply } from "../src/translate-body.js";
-import { IntStrategy, newSynthCell } from "../src/translate-types.js";
+import {
+  cellRegisterName,
+  IntStrategy,
+  newSynthCell,
+  toPantTermName,
+} from "../src/translate-types.js";
 
 before(async () => {
   await loadAst();
@@ -55,13 +60,23 @@ function setup(source: string): SetupResult {
   if (!fn || !fn.body) {
     throw new Error("setup: expected a function declaration with a body");
   }
+  // Build paramNames the same way production does: each TS parameter
+  // name is sanitized through `toPantTermName` and registered against
+  // the document-wide NameRegistry via `cellRegisterName`. Keeping the
+  // test's allocation path in lockstep with `translateSignature`'s
+  // `paramNameMap` (translate-signature.ts:1241–1244) means the test
+  // exercises the real substitution path — `maybeUser` parameter
+  // canonicalizes to `maybe-user` in the lowered Pant, so the lift
+  // must look up the same Pant name when targeting `substituteBinder`.
+  const synthCell = newSynthCell();
   const paramNames = new Map<string, string>();
   for (const p of fn.parameters) {
     if (ts.isIdentifier(p.name)) {
-      paramNames.set(p.name.text, p.name.text);
+      const pantName = cellRegisterName(synthCell, toPantTermName(p.name.text));
+      paramNames.set(p.name.text, pantName);
     }
   }
-  const supply: UniqueSupply = { n: 0, synthCell: newSynthCell() };
+  const supply: UniqueSupply = { n: 0, synthCell };
   const ctx = {
     checker,
     strategy: IntStrategy,
@@ -320,13 +335,24 @@ describe("ir1-build-functor-lift", () => {
     // `undefined` is not a reserved word — a parameter named
     // `undefined` is a legal binding that shadows the global. If
     // `isEmptyEquivalent` matched the identifier text alone, the
-    // lift would silently rewrite `u == null ? undefined : [u.v]`
-    // (where `undefined` resolves to a `string` parameter) to an
-    // each comprehension, dropping the shadowed value. Reject.
+    // lift would silently rewrite the conditional to a comprehension,
+    // dropping the shadowed value. To make the empty-branch check
+    // (b) the deciding gate, the other three eligibility checks must
+    // all pass:
+    //   (a) guard `u == null` is a leaf nullish form on `u`
+    //   (c) present branch `[u]` (after singleton unwrap) is `u`,
+    //       which references the operand
+    //   (d) the conditional's static result type is list-lifted —
+    //       both branches type as `Box[]` (the shadowed `undefined`
+    //       parameter has type `Box[]`), so the conditional itself
+    //       is `Box[]` and `isListLiftedTsType` accepts it
+    // Pre-fix this test would have green-lit the lift on the text
+    // match alone; post-fix the checker resolves the `undefined`
+    // identifier to `Box[]` (no Undefined flag) and (b) rejects.
     const { candidate, ctx } = setup(
       `interface Box { readonly v: number; }
-       function f(u: Box | null, undefined: string): string {
-         return u == null ? undefined : "x";
+       function f(u: Box | null, undefined: Box[]): Box[] {
+         return u == null ? undefined : [u];
        }`,
     );
     assert.equal(tryRecognizeFunctorLift(candidate, ctx), null);
@@ -366,15 +392,22 @@ describe("ir1-build-functor-lift", () => {
   });
 
   it("camelCase parameter substitution doesn't kebab-mangle the binder target", () => {
-    // The operand's substitution name must match the spelling
+    // The operand's substitution name must match the spelling that
     // `translateBodyExpr` emits for the identifier — for parameters,
-    // that's `paramNames.get(text)` (already canonicalized at signature
-    // translation), and for bare references it's the raw text. Running
-    // `toPantTermName` here would target `maybe-user` while the lowered
-    // projection still references `maybeUser`, leaving the binder
-    // unsubstituted and the lift broken. Verify by stringifying the
-    // lowered output: the original identifier must NOT appear (replaced
-    // by the binder), and the binder name MUST appear.
+    // that's `paramNames.get(text)` (sanitized at signature translation
+    // via `toPantTermName` + `cellRegisterName`); for bare references
+    // it's the raw text. `setup()` mirrors production's allocation,
+    // so `maybeUser` is registered as `maybe-user` in `paramNames`.
+    // The lowered projection references `maybe-user`, and the lift's
+    // substitution target must too — both paths look up
+    // `paramNames.get(operandName)`, so any divergence between body
+    // and lift lookup logic (e.g., body uses raw text but lift
+    // sanitizes) would leave the projection's reference unsubstituted.
+    //
+    // Verify by counting occurrences of the sanitized operand name
+    // `maybe-user` in the lowered output: exactly 1 (the iter source).
+    // If substitution failed, the projection's reference would
+    // persist, giving 2.
     const { candidate, ctx } = setup(
       `interface User { readonly name: string; }
        function f(maybeUser: User | null): string[] {
@@ -384,16 +417,20 @@ describe("ir1-build-functor-lift", () => {
     const lifted = expectLifted(tryRecognizeFunctorLift(candidate, ctx));
     const ast = getAst();
     const out = ast.strExpr(lowerL1ToOpaque(lifted));
-    // The lifted form is `each <binder> in maybeUser | <accessor> <binder>`,
-    // so `maybeUser` appears once in the source position; the projection
-    // has no remaining `maybeUser` reference (substituted by the binder).
-    // If the bug were live, `maybeUser` would appear twice — once as
-    // the iter source and once unsubstituted in the projection.
-    const occurrences = out.split("maybeUser").length - 1;
+    const sanitizedName = ctx.paramNames.get("maybeUser");
+    if (sanitizedName === undefined) {
+      throw new Error("test setup error: paramNames missing maybeUser");
+    }
+    assert.equal(
+      sanitizedName,
+      "maybe-user",
+      `expected setup to sanitize maybeUser → maybe-user, got ${sanitizedName}`,
+    );
+    const occurrences = out.split(sanitizedName).length - 1;
     assert.equal(
       occurrences,
       1,
-      `expected exactly one occurrence of 'maybeUser' (as iter source), got ${occurrences} in: ${out}`,
+      `expected exactly one occurrence of '${sanitizedName}' (as iter source), got ${occurrences} in: ${out}`,
     );
   });
 
