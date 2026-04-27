@@ -243,15 +243,29 @@ export function buildL1ForEachCall(
   if (!ts.isArrowFunction(arg)) {
     return { unsupported: "forEach callback must be an arrow function" };
   }
-  if (
-    arg.parameters.length !== 1 ||
-    !ts.isIdentifier(arg.parameters[0]!.name)
-  ) {
+  if (arg.parameters.length !== 1) {
     return {
-      unsupported: "forEach callback must take a single identifier parameter",
+      unsupported: "forEach callback must take a single parameter",
     };
   }
-  const iterName = arg.parameters[0]!.name.text;
+  const param = arg.parameters[0]!;
+  // Default-value initializers run in the enclosing scope before the
+  // bound name takes effect; rest (`...x`) and optional (`x?`) forms
+  // change callback semantics in ways the build path doesn't model.
+  // Require a plain identifier with no initializer / rest / optional
+  // marker so the iter binder is unambiguously bound.
+  if (
+    !ts.isIdentifier(param.name) ||
+    param.initializer !== undefined ||
+    param.dotDotDotToken !== undefined ||
+    param.questionToken !== undefined
+  ) {
+    return {
+      unsupported:
+        "forEach callback must take a single plain identifier parameter (no default, rest, or optional)",
+    };
+  }
+  const iterName = param.name.text;
   const sourceR = rejectEffect(
     translateBodyExpr(
       call.expression.expression,
@@ -881,8 +895,13 @@ function buildL1MutationBody(
     return buildL1IfMutation(stmt, ctx);
   }
   if (ts.isExpressionStatement(stmt)) {
-    if (ts.isCallExpression(stmt.expression)) {
-      return buildL1EffectCall(stmt.expression, ctx);
+    // Unwrap parenthesized expressions so `(obj.p = 1);` and
+    // `(m.set(k, v));` classify the same way as their unparenthesized
+    // forms — the outer foreach classifier already canonicalizes
+    // through `unwrapExpression`, so the branch path should match.
+    const expr = unwrapExpression(stmt.expression);
+    if (ts.isCallExpression(expr)) {
+      return buildL1EffectCall(expr, ctx);
     }
     return buildL1AssignStmt(stmt, ctx);
   }
@@ -993,7 +1012,10 @@ function buildL1AssignStmt(
   stmt: ts.ExpressionStatement,
   ctx: BuildBodyCtx,
 ): BuildResult<IR1Stmt> {
-  const expr = stmt.expression;
+  // Unwrap parenthesized forms so `(obj.p = 1);` is accepted the same
+  // way as `obj.p = 1;`, mirroring the canonicalization the
+  // `classifyForeachStmt` outer dispatch already does.
+  const expr = unwrapExpression(stmt.expression);
   if (!ts.isBinaryExpression(expr)) {
     return { unsupported: "branch statement must be an assignment" };
   }

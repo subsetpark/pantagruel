@@ -990,6 +990,75 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     assert.ok(props.some((p) => p.kind === "unsupported"));
   });
 
+  it("rejects forEach with default-value parameter", () => {
+    // Default initializers run in the enclosing scope before the
+    // bound name takes effect — accepting `(x = fallback) => …` as
+    // if it were a bare iter binder would silently drop the default.
+    const source = `
+      interface User { active: boolean; }
+      function f(us: User[]): void {
+        us.forEach((u = us[0]!) => { u.active = true; });
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.ok(
+      props.some(
+        (p) =>
+          p.kind === "unsupported" &&
+          /single plain identifier parameter/.test(p.reason),
+      ),
+    );
+  });
+
+  it("rejects forEach with rest parameter", () => {
+    const source = `
+      interface User { active: boolean; }
+      function f(us: User[]): void {
+        us.forEach((...u: User[]) => { u[0]!.active = true; });
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.ok(
+      props.some(
+        (p) =>
+          p.kind === "unsupported" &&
+          /single plain identifier parameter/.test(p.reason),
+      ),
+    );
+  });
+
+  it("accepts parenthesized branch-body assignment statements", () => {
+    // `(obj.p = 1);` is the same as `obj.p = 1;` — the build pass
+    // should canonicalize through `unwrapExpression` so redundant
+    // parens don't change classification.
+    const source = `
+      interface Account { total: number; }
+      function f(a: Account, g: boolean): void {
+        if (g) {
+          (a.total = 1);
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    const eq = props.find((p) => p.kind === "equation");
+    assert.ok(eq, "expected an equation");
+  });
+
   it("rejects non-iterator-rooted assigns inside foreach branches", () => {
     // Shape A means *uniform iterator writes* — `x.p = e` where `x`
     // is the loop's iter binder. A nested `if (g) { acc.total =
