@@ -814,8 +814,10 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       const rendered = ast.strExpr(
         ast.forall([], loopEq.guards ?? [], ast.var("__body__")),
       );
-      assert.match(rendered, /all u in us \| /);
-      assert.equal(ast.strExpr(loopEq.lhs), "user--active' u");
+      assert.match(rendered, /all (\$\d+) in us \| /);
+      const m = rendered.match(/all (\$\d+) in us \| /)!;
+      const binder = m[1]!;
+      assert.equal(ast.strExpr(loopEq.lhs), `user--active' ${binder}`);
       assert.equal(ast.strExpr(loopEq.rhs), "true");
     }
   });
@@ -842,9 +844,10 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     assert.ok(loopEq);
     if (loopEq?.kind === "equation") {
       const ast = getAst();
-      assert.equal(
-        ast.strExpr(loopEq.rhs),
-        "cond user--score u > 0 => true, true => user--active u",
+      const r = ast.strExpr(loopEq.rhs);
+      assert.match(
+        r,
+        /^cond user--score (\$\d+) > 0 => true, true => user--active \1$/,
       );
     }
   });
@@ -871,9 +874,9 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     assert.ok(totalEq);
     if (totalEq?.kind === "equation") {
       const ast = getAst();
-      assert.equal(
+      assert.match(
         ast.strExpr(totalEq.rhs),
-        "account--total a + (+ over each x in xs | item--value x)",
+        /^account--total a \+ \(\+ over each (\$\d+) in xs \| item--value \1\)$/,
       );
     }
   });
@@ -902,9 +905,9 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     assert.ok(totalEq);
     if (totalEq?.kind === "equation") {
       const ast = getAst();
-      assert.equal(
+      assert.match(
         ast.strExpr(totalEq.rhs),
-        "account--total a + (+ over each x in xs, item--value x > 0 | item--value x)",
+        /^account--total a \+ \(\+ over each (\$\d+) in xs, item--value \1 > 0 \| item--value \1\)$/,
       );
     }
   });
@@ -931,7 +934,7 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     const lhsStrings = eqs.map((e) =>
       e.kind === "equation" ? ast.strExpr(e.lhs) : "",
     );
-    assert.ok(lhsStrings.includes("item--tagged' x"));
+    assert.ok(lhsStrings.some((s) => /^item--tagged' \$\d+$/.test(s)));
     assert.ok(lhsStrings.includes("account--total' a"));
   });
 
@@ -974,9 +977,9 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     assert.ok(totalEq);
     if (totalEq?.kind === "equation") {
       const ast = getAst();
-      assert.equal(
+      assert.match(
         ast.strExpr(totalEq.rhs),
-        "account--total a + (+ over each x in xs | item--value x)",
+        /^account--total a \+ \(\+ over each (\$\d+) in xs \| item--value \1\)$/,
       );
     }
   });
@@ -1110,10 +1113,39 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     if (totalEq?.kind === "equation") {
       // Shape B's `x.value` read must resolve through the in-iteration
       // Shape A write `value' x = value x + 1`, not the pre-state `value x`.
-      assert.equal(
+      assert.match(
         ast.strExpr(totalEq.rhs),
-        "account--total a + (+ over each x in xs | item--value x + 1)",
+        /^account--total a \+ \(\+ over each (\$\d+) in xs \| item--value \1 \+ 1\)$/,
       );
+    }
+  });
+
+  it("foreach body sees writes that happened before the loop", () => {
+    // Shape A write `a.total = 1` precedes the loop. Inside the loop,
+    // each iteration writes `x.value = a.total` — that read must
+    // resolve to the prior `1`, not the pre-state `account--total a`.
+    const source = `
+      interface Account { total: number; }
+      interface Item { value: number; }
+      function f(a: Account, xs: Item[]): void {
+        a.total = 1;
+        for (const x of xs) { x.value = a.total; }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    const ast = getAst();
+    const eqs = props.filter((p) => p.kind === "equation");
+    const loopEq = eqs.find(
+      (e) => e.kind === "equation" && (e.guards?.length ?? 0) > 0,
+    );
+    assert.ok(loopEq, "expected a Shape A loop equation");
+    if (loopEq?.kind === "equation") {
+      assert.equal(ast.strExpr(loopEq.rhs), "1");
     }
   });
 

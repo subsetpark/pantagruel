@@ -45,12 +45,13 @@ import {
   addWrittenKey,
   ambiguousFieldMsg,
   bodyExpr,
+  cloneSymbolicState,
   expressionHasSideEffects,
   expressionReferencesNames,
+  freshHygienicBinder,
   getRootIdentifier,
   isBodyEffect,
   isBodyUnsupported,
-  makeSymbolicState,
   putWrite,
   qualifyFieldAccess,
   type SymbolicState,
@@ -91,9 +92,10 @@ export function isUnsupported<T>(
  * statements become L1 stmts in the foreach body; Shape B statements
  * become `IR1FoldLeaf` entries.
  *
- * The iter binder is added to a copy of `paramNames` for the body's
- * sub-expression translation so reads of `x.p` resolve through
- * `qualifyFieldAccess` to the property's rule.
+ * The TS iter name is bound to a fresh hygienic binder (`$N`) in a
+ * copy of `paramNames`, so reads of `x.p` inside the body resolve to
+ * `prop $N` — the IR binder cannot collide with parameter names or
+ * accessor rules and obeys the document-wide UniqueSupply invariant.
  */
 export function buildL1ForOfMutation(
   stmt: ts.ForOfStatement,
@@ -182,7 +184,8 @@ function finishForeach(
   bodyStmt: ts.Statement,
   ctx: BuildBodyCtx,
 ): BuildResult<IR1Stmt> {
-  const r = buildL1ForeachBody(bodyStmt, iterName, ctx);
+  const binder = freshHygienicBinder(ctx.supply);
+  const r = buildL1ForeachBody(bodyStmt, iterName, binder, ctx);
   if (isUnsupported(r)) {
     return r;
   }
@@ -196,7 +199,7 @@ function finishForeach(
   if (body === null && foldLeaves.length === 0) {
     return { unsupported: "empty foreach body" };
   }
-  return ir1Foreach(iterName, source, body, foldLeaves);
+  return ir1Foreach(binder, source, body, foldLeaves);
 }
 
 interface ForeachBodyResult {
@@ -256,18 +259,21 @@ const COMPOUND_ASSIGN_TO_FOLD: Map<
 function buildL1ForeachBody(
   bodyStmt: ts.Statement,
   iterName: string,
+  binder: string,
   ctx: BuildBodyCtx,
 ): BuildResult<ForeachBodyResult> {
   const stmts = ts.isBlock(bodyStmt)
     ? Array.from(bodyStmt.statements)
     : [bodyStmt];
-  // Build-time subState: accumulates Shape A property writes so Shape B
-  // rhs/guard sub-expression translation observes them. The lower pass
-  // runs its own subState over the body statements; this one is purely
-  // local to the build pass.
-  const subState = makeSymbolicState(ctx.applyConst);
+  // Build-time subState: forks the outer state so prior writes are
+  // visible during in-iter sub-expression translation, then accumulates
+  // Shape A property writes so Shape B rhs/guard sub-expressions observe
+  // them. The fork prevents Shape A writes from leaking back into the
+  // outer state. The lower pass runs its own subState over the body
+  // statements; this one is purely local to the build pass.
+  const subState = cloneSymbolicState(ctx.state);
   const subParams = new Map(ctx.paramNames);
-  subParams.set(iterName, iterName);
+  subParams.set(iterName, binder);
   const subCtx: BuildBodyCtx = {
     ...ctx,
     state: subState,
@@ -666,7 +672,8 @@ function buildL1MutationBody(
     return buildL1AssignStmt(stmt, ctx);
   }
   return {
-    unsupported: `unsupported branch body kind: ${ts.SyntaxKind[stmt.kind]}`,
+    unsupported:
+      "branch body must be a property assignment, Map/Set effect, or nested if",
   };
 }
 

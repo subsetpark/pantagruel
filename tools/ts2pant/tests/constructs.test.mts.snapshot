@@ -687,39 +687,39 @@ exports[`functions-mutating-early-exit.ts > writeThenEarlyReturn 1`] = `
 `;
 
 exports[`functions-mutating-loop.ts > activateActive 1`] = `
-"module ActivateActive.\\n\\nUser.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\n~> Activate-active @ users: [User].\\n\\n---\\n\\nall u in users | user--active' u = (cond user--score u > 0 => true, true => user--active u).\\nuser--score' u = user--score u.\\n"
+"module ActivateActive.\\n\\nUser.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\n~> Activate-active @ users: [User].\\n\\n---\\n\\nall $0 in users | user--active' $0 = (cond user--score $0 > 0 => true, true => user--active $0).\\nuser--score' u = user--score u.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > activateAll 1`] = `
-"module ActivateAll.\\n\\nUser.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\n~> Activate-all @ users: [User].\\n\\n---\\n\\nall u in users | user--active' u = true.\\nuser--score' u = user--score u.\\n"
+"module ActivateAll.\\n\\nUser.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\n~> Activate-all @ users: [User].\\n\\n---\\n\\nall $0 in users | user--active' $0 = true.\\nuser--score' u = user--score u.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > deductFees 1`] = `
-"module DeductFees.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nFee.\\nfee--amount f: Fee => Int.\\n~> Deduct-fees @ a: Account, fees: [Fee].\\n\\n---\\n\\naccount--balance' a = account--balance a - (+ over each f in fees | fee--amount f).\\naccount--total' a1 = account--total a1.\\nfee--amount' f = fee--amount f.\\n"
+"module DeductFees.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nFee.\\nfee--amount f: Fee => Int.\\n~> Deduct-fees @ a: Account, fees: [Fee].\\n\\n---\\n\\naccount--balance' a = account--balance a - (+ over each $0 in fees | fee--amount $0).\\naccount--total' a1 = account--total a1.\\nfee--amount' f = fee--amount f.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > forEachActivate 1`] = `
-"module ForEachActivate.\\n\\nUser.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\n~> For-each-activate @ users: [User].\\n\\n---\\n\\nall u in users | user--active' u = true.\\nuser--score' u = user--score u.\\n"
+"module ForEachActivate.\\n\\nUser.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\n~> For-each-activate @ users: [User].\\n\\n---\\n\\nall $0 in users | user--active' $0 = true.\\nuser--score' u = user--score u.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > forEachSum 1`] = `
-"module ForEachSum.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> For-each-sum @ a: Account, items: [Item].\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each x in items | item--value x).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\nitem--tagged' i = item--tagged i.\\n"
+"module ForEachSum.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> For-each-sum @ a: Account, items: [Item].\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each $0 in items | item--value $0).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\nitem--tagged' i = item--tagged i.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > mixedUpdates 1`] = `
-"module MixedUpdates.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Mixed-updates @ a: Account, items: [Item].\\n\\n---\\n\\nall x in items | item--tagged' x = true.\\naccount--total' a = account--total a + (+ over each x in items | item--value x).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\n"
+"module MixedUpdates.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Mixed-updates @ a: Account, items: [Item].\\n\\n---\\n\\nall $0 in items | item--tagged' $0 = true.\\naccount--total' a = account--total a + (+ over each $0 in items | item--value $0).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > sumAmounts 1`] = `
-"module SumAmounts.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Sum-amounts @ a: Account, items: [Item].\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each x in items | item--value x).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\nitem--tagged' i = item--tagged i.\\n"
+"module SumAmounts.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Sum-amounts @ a: Account, items: [Item].\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each $0 in items | item--value $0).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\nitem--tagged' i = item--tagged i.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > sumIntoAnon 1`] = `
-"module SumIntoAnon.\\n\\nTotalRec.\\ntotal-rec--total r: TotalRec => Int.\\n~> Sum-into-anon @ acc: TotalRec, items: [Int].\\n\\n---\\n\\ntotal-rec--total' acc = total-rec--total acc + (+ over each x in items | x).\\n"
+"module SumIntoAnon.\\n\\nTotalRec.\\ntotal-rec--total r: TotalRec => Int.\\n~> Sum-into-anon @ acc: TotalRec, items: [Int].\\n\\n---\\n\\ntotal-rec--total' acc = total-rec--total acc + (+ over each $0 in items | $0).\\n"
 `;
 
 exports[`functions-mutating-loop.ts > sumPositive 1`] = `
-"module SumPositive.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Sum-positive @ a: Account, items: [Item].\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each x in items, item--value x > 0 | item--value x).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\nitem--tagged' i = item--tagged i.\\n"
+"module SumPositive.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Sum-positive @ a: Account, items: [Item].\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each $0 in items, item--value $0 > 0 | item--value $0).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\nitem--tagged' i = item--tagged i.\\n"
 `;
 
 exports[`functions-mutating.ts > deposit 1`] = `
@@ -799,7 +799,7 @@ exports[`guards-if-throw.ts > guardWithLocals 1`] = `
 `;
 
 exports[`guards-if-throw.ts > notGuardSideEffects 1`] = `
-"module NotGuardSideEffects.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\n~> Not-guard-side-effects @ a: Account, amount: Int.\\n\\n---\\n\\n> UNSUPPORTED: unsupported branch body kind: ThrowStatement.\\n"
+"module NotGuardSideEffects.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\n~> Not-guard-side-effects @ a: Account, amount: Int.\\n\\n---\\n\\n> UNSUPPORTED: branch body must be a property assignment, Map/Set effect, or nested if.\\n"
 `;
 
 exports[`guards-if-throw.ts > withdraw 1`] = `
