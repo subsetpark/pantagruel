@@ -1,0 +1,611 @@
+{
+  "projectName": "ts2pant",
+
+  "specFile": "scratch/over-each.pant",
+
+  "workstream": null,
+
+  "problemStatement": "TypeScript functions encode behavioral specifications implicitly in their implementations, but there is no way to state and verify formal properties about them. Users should be able to annotate TypeScript functions with Pantagruel assertions and model-check those assertions against the function's actual behavior, bridging the gap between implementation and specification.",
+
+  "solutionSummary": "Build a two-part system: (1) extend Pantagruel with the `over each` aggregate quantifier to handle common TS patterns like reduce/sum/min/max, and (2) build a TypeScript tool (ts2pant) that parses TS functions and their participating types, translates them into Pantagruel declarations and propositions, merges user-provided @pant assertions, and invokes `pant --check` for SMT verification. The function is the unit of translation: pure functions become rules with defining propositions; mutating functions become actions with pre/post conditions. Types referenced by the function are extracted as domains, type aliases, and rules.",
+
+  "currentStateAnalysis": "Pantagruel is a mature spec language with lexer, parser, type checker, and SMT-based bounded model checker. It handles domains, rules, actions, quantifiers (all/some/each), conditionals, primed expressions, and function overrides. However: (1) it cannot express aggregation over collections (sum, min, max) — the quantifier family is incomplete, lacking combiners beyond and/or/collect; (2) there is no tooling to generate .pant files from source code in any language. The SMT backend already expands comprehensions over finite domain elements, so aggregate quantifiers can follow the same pattern with arithmetic combination.",
+
+  "mergabilityStrategy": {
+    "featureFlagStrategy": "No feature flags needed. Language extensions are additive (new syntax that doesn't affect existing specs). The translator is a new standalone tool.",
+    "featureFlags": [],
+    "patchOrderingStrategy": "Patches 1-4 extend Pantagruel's language (INFRA — no existing behavior changes). Patches 5-6 set up the translator project structure (INFRA). Patches 7-10 implement translator features incrementally (BEHAVIOR). Patch 11 wires up end-to-end verification (BEHAVIOR)."
+  },
+
+  "requiredChanges": [
+    {
+      "file": "lib/ast.ml",
+      "line": 97,
+      "description": "Add combiner type and extend EEach with optional combiner",
+      "signature": "type combiner = CombAdd | CombMul | CombAnd | CombOr | CombMin | CombMax"
+    },
+    {
+      "file": "lib/lexer.ml",
+      "line": null,
+      "description": "Add OVER, MIN, MAX tokens",
+      "signature": null
+    },
+    {
+      "file": "lib/parser.mly",
+      "line": 225,
+      "description": "Add combiner OVER EACH guards BAR expr production",
+      "signature": null
+    },
+    {
+      "file": "lib/check.ml",
+      "line": null,
+      "description": "Type-check aggregate expressions: verify body type matches combiner, infer result type",
+      "signature": null
+    },
+    {
+      "file": "lib/smt.ml",
+      "line": null,
+      "description": "Encode aggregate quantifiers by expanding over domain elements and combining with arithmetic/logical operations",
+      "signature": null
+    },
+    {
+      "file": "tools/ts2pant/src/index.ts",
+      "line": null,
+      "description": "CLI entry point for ts2pant tool",
+      "signature": null
+    },
+    {
+      "file": "tools/ts2pant/src/extract.ts",
+      "line": null,
+      "description": "TypeScript type and function extraction using TS compiler API",
+      "signature": null
+    },
+    {
+      "file": "tools/ts2pant/src/translate.ts",
+      "line": null,
+      "description": "Translation from TS AST constructs to Pantagruel AST strings",
+      "signature": null
+    },
+    {
+      "file": "tools/ts2pant/src/annotations.ts",
+      "line": null,
+      "description": "Parse @pant annotations from JSDoc/comments",
+      "signature": null
+    },
+    {
+      "file": "tools/ts2pant/src/emit.ts",
+      "line": null,
+      "description": "Emit combined .pant file and invoke pant --check",
+      "signature": null
+    }
+  ],
+
+  "acceptanceCriteria": [
+    "Pantagruel parses and type-checks `+ over each x: T | e` syntax for all six combiners (+, *, and, or, min, max)",
+    "`pant --check` correctly verifies aggregate quantifier assertions via SMT",
+    "ts2pant extracts TypeScript interfaces, type aliases, and enums as Pantagruel domains and type aliases",
+    "ts2pant translates pure function signatures to Pantagruel rule declarations",
+    "ts2pant translates mutating function signatures to Pantagruel action declarations",
+    "ts2pant translates function bodies (conditionals, comparisons, arithmetic, property access) to Pantagruel propositions",
+    "ts2pant parses @pant JSDoc annotations and merges them with translated propositions",
+    "ts2pant generates a valid .pant file and invokes pant --check, reporting results",
+    "Existing Pantagruel tests continue to pass (language extension is additive)"
+  ],
+
+  "openQuestions": [],
+
+  "explicitOpinions": [
+    {
+      "opinion": "The function is the unit of translation, not the module or class",
+      "rationale": "A function's signature and body are self-contained enough to produce a meaningful spec. Module-level translation would require solving import resolution, re-exports, and other concerns that add complexity without proportional value."
+    },
+    {
+      "opinion": "over-each is a quantifier-level extension, not a library of built-in rules",
+      "rationale": "sum/min/max over a domain cannot be defined in userspace because Pantagruel has no recursion or induction over list structure. The binding/iteration infrastructure already exists in quantifiers — the language just needs more combiners. The combiner goes before the quantifier (+ over each) to read naturally and parse unambiguously."
+    },
+    {
+      "opinion": "No let-binding extension needed",
+      "rationale": "Every intermediate variable in a TS function can either be hoisted to its own Pantagruel rule or inlined into a single expression. Since the generated Pantagruel is an intermediate representation for SMT checking (not a human-maintained document), readability of the generated .pant is not a concern."
+    },
+    {
+      "opinion": "User assertions are the primary value; body translation is best-effort",
+      "rationale": "The translator's main job is generating the structural context (domains, rules, action declarations) so users can write assertions without boilerplate. Body translation is useful but secondary — many TS patterns (async, exceptions, complex control flow) don't map cleanly to Pantagruel."
+    },
+    {
+      "opinion": "TypeScript compiler API over tree-sitter for parsing",
+      "rationale": "We need resolved type information (what type is this property? what does this interface extend?), not just syntax. The TS compiler API provides the type checker, which is essential for mapping TS types to Pantagruel types."
+    },
+    {
+      "opinion": "Numeric type mapping must be a swappable strategy, not a hardcoded choice",
+      "rationale": "TS `number` could reasonably map to Int, Real, or Nat0 depending on context. We don't yet know which default is best. The type mapper should be a configurable function (e.g. a strategy object or a CLI flag) so we can experiment without changing the core translation logic. @pant-type annotations provide per-parameter overrides regardless of default."
+    },
+    {
+      "opinion": "Body translation should be a separable, optional pass",
+      "rationale": "We don't yet know how valuable body translation is vs skeleton-only. The architecture must allow the body translator to be toggled off entirely (e.g. --no-body flag) so users can rely purely on their @pant annotations. This means the emitter must work with zero translated propositions. Body translation can grow incrementally without blocking the core workflow."
+    }
+  ],
+
+  "patches": [
+    {
+      "number": 1,
+      "classification": "INFRA",
+      "title": "Add over-each AST, lexer tokens, and parser grammar",
+      "files": [
+        {
+          "path": "lib/ast.ml",
+          "action": "modify",
+          "description": "Add combiner variant type; change EEach to carry optional combiner"
+        },
+        {
+          "path": "lib/lexer.ml",
+          "action": "modify",
+          "description": "Add OVER, MIN, MAX tokens; reserve keywords"
+        },
+        {
+          "path": "lib/parser.mly",
+          "action": "modify",
+          "description": "Add combiner rule and COMBINER OVER EACH production"
+        }
+      ],
+      "changes": [
+        "In ast.ml: add `type combiner = CombAdd | CombMul | CombAnd | CombOr | CombMin | CombMax [@@deriving show, eq]`",
+        "In ast.ml: change `EEach of param list * guard list * expr` to `EEach of param list * guard list * combiner option * expr`",
+        "In lexer.ml: add OVER, MIN, MAX to token definitions and keyword matching",
+        "In parser.mly: add OVER, MIN, MAX to token declarations",
+        "In parser.mly: add `combiner:` rule matching PLUS->CombAdd, TIMES->CombMul, AND->CombAnd, OR->CombOr, MIN->CombMin, MAX->CombMax",
+        "In parser.mly: add `| combiner OVER EACH quant_params_guards BAR expr` production yielding EEach with Some combiner",
+        "In parser.mly: update existing EACH production to yield EEach with None combiner",
+        "Update all EEach pattern matches in parser.mly helper functions (if any)"
+      ],
+      "testStubsIntroduced": [
+        "over-each > should lex OVER, MIN, MAX as distinct tokens",
+        "over-each > should parse '+ over each x: T | e' as EEach with CombAdd",
+        "over-each > should parse 'max over each x: T, g | e' with guards",
+        "over-each > should parse bare 'each x: T | e' as EEach with None combiner"
+      ],
+      "testStubsImplemented": null,
+      "spec": "module TS2PANT_PATCH_1.\n\n> Patch 1 extends the AST and parser.\n> The contribution is structural: new syntax is recognized.\n\nCombiner.\nExpression.\n\ncomb-add => Combiner.\ncomb-mul => Combiner.\ncomb-and => Combiner.\ncomb-or => Combiner.\ncomb-min => Combiner.\ncomb-max => Combiner.\n\nhas-over? e: Expression => Bool.\ncombiner e: Expression, has-over? e => Combiner.\n\n---\n\n> Every parsed over-each has a combiner.\nall e: Expression, has-over? e | combiner e in Combiner.\n"
+    },
+    {
+      "number": 2,
+      "classification": "INFRA",
+      "title": "Update all EEach consumers for new combiner field",
+      "files": [
+        {
+          "path": "lib/check.ml",
+          "action": "modify",
+          "description": "Update EEach pattern match to pass through combiner (no new type logic yet)"
+        },
+        {
+          "path": "lib/smt.ml",
+          "action": "modify",
+          "description": "Update all EEach pattern matches to handle combiner option (pass-through for None)"
+        },
+        {
+          "path": "lib/pretty.ml",
+          "action": "modify",
+          "description": "Pretty-print over-each with combiner prefix"
+        },
+        {
+          "path": "lib/markdown_output.ml",
+          "action": "modify",
+          "description": "Render over-each with combiner symbol"
+        },
+        {
+          "path": "lib/json_output.ml",
+          "action": "modify",
+          "description": "Serialize combiner field in JSON output"
+        },
+        {
+          "path": "lib/normalize.ml",
+          "action": "modify",
+          "description": "Update EEach pattern match in normalization"
+        }
+      ],
+      "changes": [
+        "Find every `EEach (params, guards, body)` pattern match across the codebase and update to `EEach (params, guards, combiner, body)`",
+        "For check.ml: pass through combiner without new type logic (Patch 3 adds that)",
+        "For smt.ml: when combiner is None, use existing comprehension logic unchanged; when Some, failwith 'not yet implemented' (Patch 4 adds encoding)",
+        "For pretty.ml: when combiner is Some, emit e.g. '+ over each ...' prefix",
+        "For markdown_output.ml: when combiner is Some, emit Unicode combiner symbol + 'over each' prefix",
+        "For json_output.ml: add 'combiner' field (null or string) to EEach serialization",
+        "For normalize.ml: pass combiner through unchanged"
+      ],
+      "testStubsIntroduced": null,
+      "testStubsImplemented": null,
+      "spec": "module TS2PANT_PATCH_2.\n\n> Mechanical update: all EEach consumers handle the new field.\n> Existing each behavior unchanged.\n\nExpression.\nhas-over? e: Expression => Bool.\n\n---\n\ntrue.\n"
+    },
+    {
+      "number": 3,
+      "classification": "INFRA",
+      "title": "Type-check over-each aggregate expressions",
+      "files": [
+        {
+          "path": "lib/check.ml",
+          "action": "modify",
+          "description": "Add type checking logic for aggregate combiners"
+        }
+      ],
+      "changes": [
+        "In the EEach type-checking branch: when combiner is None, use existing logic (body type T, result [T])",
+        "When combiner is Some CombAdd or CombMul: body must be numeric (Nat, Nat0, Int, or Real); result type = body type",
+        "When combiner is Some CombMin or CombMax: body must be numeric; result type = body type",
+        "When combiner is Some CombAnd or CombOr: body must be Bool; result type = Bool",
+        "Add error messages: 'aggregate combiner + requires numeric body, got T' etc.",
+        "Ensure existing each-without-combiner tests still pass"
+      ],
+      "testStubsIntroduced": [
+        "over-each typecheck > + over each with numeric body should return same numeric type",
+        "over-each typecheck > + over each with Bool body should be type error",
+        "over-each typecheck > and over each with Bool body should return Bool",
+        "over-each typecheck > and over each with numeric body should be type error",
+        "over-each typecheck > min over each with Nat body should return Nat",
+        "over-each typecheck > bare each behavior unchanged"
+      ],
+      "testStubsImplemented": [
+        "over-each > should lex OVER, MIN, MAX as distinct tokens",
+        "over-each > should parse '+ over each x: T | e' as EEach with CombAdd",
+        "over-each > should parse 'max over each x: T, g | e' with guards",
+        "over-each > should parse bare 'each x: T | e' as EEach with None combiner",
+        "over-each typecheck > + over each with numeric body should return same numeric type",
+        "over-each typecheck > + over each with Bool body should be type error",
+        "over-each typecheck > and over each with Bool body should return Bool",
+        "over-each typecheck > and over each with numeric body should be type error",
+        "over-each typecheck > min over each with Nat body should return Nat",
+        "over-each typecheck > bare each behavior unchanged"
+      ],
+      "spec": "module TS2PANT_PATCH_3.\n\n> Type checking rules for aggregate quantifiers.\n\nCombiner.\nType.\n\nnumeric? t: Type => Bool.\n\ncomb-add => Combiner.\ncomb-mul => Combiner.\ncomb-and => Combiner.\ncomb-or => Combiner.\ncomb-min => Combiner.\ncomb-max => Combiner.\n\nbool => Type.\n\nbody-type c: Combiner => Type.\nresult-type c: Combiner, t: Type => Type.\nrequires-numeric? c: Combiner => Bool.\nrequires-bool? c: Combiner => Bool.\n\n---\n\n> Arithmetic combiners require numeric body.\nall c: Combiner, requires-numeric? c |\n  cond numeric? (body-type c) => result-type c (body-type c) = body-type c,\n  true => false.\n\n> Logical combiners require Bool body.\nall c: Combiner, requires-bool? c |\n  body-type c = bool.\n\nrequires-numeric? comb-add.\nrequires-numeric? comb-mul.\nrequires-numeric? comb-min.\nrequires-numeric? comb-max.\nrequires-bool? comb-and.\nrequires-bool? comb-or.\n"
+    },
+    {
+      "number": 4,
+      "classification": "BEHAVIOR",
+      "title": "SMT encoding for over-each aggregates",
+      "files": [
+        {
+          "path": "lib/smt.ml",
+          "action": "modify",
+          "description": "Implement SMT translation for aggregate quantifiers"
+        },
+        {
+          "path": "test/test_smt.ml",
+          "action": "modify",
+          "description": "Add SMT generation tests for over-each"
+        }
+      ],
+      "changes": [
+        "Add translate_aggregate function: expand comprehension over domain elements (reusing expand_comprehension), then combine with SMT operation",
+        "For CombAdd: combine expanded values with (+ v0 v1 ... vN), applying guards via ite (guarded ? value : 0)",
+        "For CombMul: combine with (* ...), identity 1",
+        "For CombMin: combine with nested (ite (< a b) a b), or use SMT theory min if available",
+        "For CombMax: combine with nested (ite (> a b) a b)",
+        "For CombAnd: combine with (and ...) — note this should produce same result as translate_quantifier forall",
+        "For CombOr: combine with (or ...) — same as exists",
+        "In translate_expr EEach branch: dispatch to translate_aggregate when combiner is Some",
+        "Handle empty domain case: return identity element for the combiner",
+        "Add SMT tests: generate queries for simple aggregate expressions and verify they produce expected SMT-LIB2"
+      ],
+      "testStubsIntroduced": null,
+      "testStubsImplemented": null,
+      "spec": "module TS2PANT_PATCH_4.\n\n> SMT encoding: aggregates expand over finite domain elements.\n\nDomainElement.\nCombiner.\n\nelements d: DomainElement => [DomainElement].\n\n> The SMT encoding of an aggregate over a domain with N elements\n> produces a combination of N values (one per element, guarded by\n> the element's guard condition).\n\n---\n\n> For + combiner, unguarded elements contribute their value;\n> guarded-out elements contribute the identity (0).\n> Result: (+ (ite g0 v0 0) (ite g1 v1 0) ... (ite gN vN 0))\ntrue.\n"
+    },
+    {
+      "number": 5,
+      "classification": "INFRA",
+      "title": "Add over-each integration tests with pant --check",
+      "files": [
+        {
+          "path": "samples/smt-examples/over-each-ok.pant",
+          "action": "create",
+          "description": "SMT-checkable example using over-each aggregates"
+        },
+        {
+          "path": "samples/11-over-each.pant",
+          "action": "create",
+          "description": "Sample file demonstrating over-each syntax"
+        }
+      ],
+      "changes": [
+        "Create over-each-ok.pant: a banking spec where totalBalance is defined via + over each, with an invariant that total >= 0, verifiable by pant --check",
+        "Create 11-over-each.pant: a tutorial sample showing all six combiners with doc comments",
+        "Run pant --check on over-each-ok.pant to verify end-to-end SMT encoding works",
+        "Run dune test to verify all existing tests still pass"
+      ],
+      "testStubsIntroduced": null,
+      "testStubsImplemented": null,
+      "spec": "module TS2PANT_PATCH_5.\n\n> Integration verification. over-each works end-to-end with pant --check.\n\nAccount.\nbalance a: Account => Nat0.\n\n---\n\ntrue.\n"
+    },
+    {
+      "number": 6,
+      "classification": "INFRA",
+      "title": "Set up ts2pant project structure",
+      "files": [
+        {
+          "path": "tools/ts2pant/package.json",
+          "action": "create",
+          "description": "Node project with typescript dependency"
+        },
+        {
+          "path": "tools/ts2pant/tsconfig.json",
+          "action": "create",
+          "description": "TypeScript configuration"
+        },
+        {
+          "path": "tools/ts2pant/src/index.ts",
+          "action": "create",
+          "description": "CLI entry point: parse args, orchestrate pipeline"
+        },
+        {
+          "path": "tools/ts2pant/src/types.ts",
+          "action": "create",
+          "description": "Internal type definitions for the translator"
+        }
+      ],
+      "changes": [
+        "Create package.json with dependencies: typescript (peer + dev), @types/node",
+        "Create tsconfig.json targeting ES2022, strict mode",
+        "Create src/types.ts with PantDomain, PantRule, PantAction, PantProposition, PantDocument interfaces",
+        "Create src/index.ts with arg parsing (input .ts file path, function name, --check flag, --no-body flag, --numeric-type flag) and stub pipeline: extract -> translate -> emit"
+      ],
+      "testStubsIntroduced": null,
+      "testStubsImplemented": null,
+      "spec": "module TS2PANT_PATCH_6.\n\n> Project scaffolding. No behavior yet.\n\nTSFunction.\n\n---\n\ntrue.\n"
+    },
+    {
+      "number": 7,
+      "classification": "BEHAVIOR",
+      "title": "Extract TypeScript types as Pantagruel domains and rules",
+      "files": [
+        {
+          "path": "tools/ts2pant/src/extract.ts",
+          "action": "create",
+          "description": "Use TS compiler API to extract interfaces, type aliases, enums, and their fields"
+        },
+        {
+          "path": "tools/ts2pant/src/translate-types.ts",
+          "action": "create",
+          "description": "Map TS type nodes to Pantagruel domain declarations, type aliases, and field-accessor rules"
+        },
+        {
+          "path": "tools/ts2pant/tests/translate-types.test.ts",
+          "action": "create",
+          "description": "Tests for type extraction and translation"
+        }
+      ],
+      "changes": [
+        "In extract.ts: create a TS Program from a source file, walk the AST for InterfaceDeclaration, TypeAliasDeclaration, EnumDeclaration nodes",
+        "For each interface: extract name (-> PantDomain), properties (-> PantRule per property, e.g. `balance a: Account => Nat0`)",
+        "For type aliases: map `type Point = [number, number]` -> `Point = Int * Int.`; `type Result = Value | null` -> `Result = Value + Nothing.`",
+        "For enums: map to domain declaration",
+        "Map TS types via a NumericStrategy interface: { mapNumber(context): PantType }. Provide at least two implementations (IntStrategy, RealStrategy). Default selected by CLI flag --numeric-type (default: Int). string->String, boolean->Bool, null/undefined->Nothing, T[]->List, [A,B]->Product, A|B->Sum are fixed.",
+        "In translate-types.ts: produce PantDomain and PantRule arrays from extracted type info",
+        "Follow participating types: given a function, walk its parameter types and return type, recursively extracting all referenced interfaces/types",
+        "Tests: verify interface->domain+rules, type alias->alias, enum->domain, recursive type following"
+      ],
+      "testStubsIntroduced": null,
+      "testStubsImplemented": null,
+      "spec": "module TS2PANT_PATCH_7.\n\nTSType.\nPantDeclaration.\n\n> Every TS interface produces a domain and one rule per property.\ninterface-fields t: TSType => [PantDeclaration].\n\n---\n\n> Interfaces have at least one declaration (the domain itself).\nall t: TSType | #(interface-fields t) >= 1.\n"
+    },
+    {
+      "number": 8,
+      "classification": "BEHAVIOR",
+      "title": "Translate function signatures to rules or actions",
+      "files": [
+        {
+          "path": "tools/ts2pant/src/translate-signature.ts",
+          "action": "create",
+          "description": "Classify functions as pure/mutating and translate to rule or action declarations"
+        },
+        {
+          "path": "tools/ts2pant/tests/translate-signature.test.ts",
+          "action": "create",
+          "description": "Tests for signature translation"
+        }
+      ],
+      "changes": [
+        "Analyze function: pure (no assignments to parameters/properties, returns a value) -> PantRule; mutating (assigns to .prop, void return) -> PantAction",
+        "For pure functions: translate `function foo(a: Account, b: number): string` to `foo a: Account, b: Int => String.`",
+        "For mutating functions: translate `function deposit(a: Account, amount: number): void` to `~> Deposit @ a: Account, amount: Int.`",
+        "Handle methods: `account.withdraw(amount)` where `this` is the first parameter",
+        "For actions, detect guard patterns: `if (cond) { ... } else { throw }` -> declaration guard",
+        "Tests: pure function -> rule, void mutator -> action, guarded mutator -> action with guard"
+      ],
+      "testStubsIntroduced": null,
+      "testStubsImplemented": null,
+      "spec": "module TS2PANT_PATCH_8.\n\nTSFunction.\nPantDeclaration.\n\nclassification f: TSFunction => Kind.\npure => Kind.\nmutating => Kind.\n\nKind.\n\ntranslated f: TSFunction => PantDeclaration.\n\n---\n\n> Every function translates to exactly one declaration.\nall f: TSFunction | translated f in PantDeclaration.\n\n> Pure functions become rules; mutating functions become actions.\nall f: TSFunction, classification f = pure | is-rule? (translated f).\nall f: TSFunction, classification f = mutating | is-action? (translated f).\n\nwhere\n\nis-rule? d: PantDeclaration => Bool.\nis-action? d: PantDeclaration => Bool.\n\n---\n"
+    },
+    {
+      "number": 9,
+      "classification": "BEHAVIOR",
+      "title": "Translate function bodies to propositions",
+      "files": [
+        {
+          "path": "tools/ts2pant/src/translate-body.ts",
+          "action": "create",
+          "description": "Translate TS expression patterns to Pantagruel propositions"
+        },
+        {
+          "path": "tools/ts2pant/tests/translate-body.test.ts",
+          "action": "create",
+          "description": "Tests for body translation"
+        }
+      ],
+      "changes": [
+        "For pure functions: translate the return expression to a defining proposition `all params | f args = <translated return expr>`",
+        "Translate TS expression patterns: ternary -> cond, === -> =, !== -> !=, &&/|| -> and/or, ! -> ~, +/-/*// -> arithmetic ops",
+        "Translate property access: `a.balance` -> `balance a` (rule application)",
+        "Translate array operations: `.length` -> `#`, `.includes(x)` -> `x in`, `.filter(p).map(f)` -> `each x: T, p x | f x`",
+        "For mutating functions: translate each `obj.prop = val` to a primed proposition `prop' obj = val`",
+        "Generate frame conditions for actions: for each rule in scope not explicitly assigned, emit `all x: T | rule' x = rule x`",
+        "Translate conditionals in bodies: `if (g) return a; else return b` -> `cond g => a, true => b`",
+        "Handle unsupported patterns gracefully: emit a comment `> UNSUPPORTED: <pattern description>` and skip",
+        "Tests: return expression -> proposition, property access -> rule app, ternary -> cond, assignment -> primed, frame conditions generated"
+      ],
+      "testStubsIntroduced": null,
+      "testStubsImplemented": null,
+      "spec": "module TS2PANT_PATCH_9.\n\n> Body translation: TS expressions become Pantagruel propositions.\n\nTSExpression.\nPantProposition.\n\nsupported? e: TSExpression => Bool.\ntranslated e: TSExpression, supported? e => PantProposition.\n\n---\n\n> Supported expressions translate to propositions.\nall e: TSExpression, supported? e |\n  translated e in PantProposition.\n"
+    },
+    {
+      "number": 10,
+      "classification": "BEHAVIOR",
+      "title": "Parse @pant annotations from TypeScript comments",
+      "files": [
+        {
+          "path": "tools/ts2pant/src/annotations.ts",
+          "action": "create",
+          "description": "Extract @pant annotations from JSDoc comments preceding functions"
+        },
+        {
+          "path": "tools/ts2pant/tests/annotations.test.ts",
+          "action": "create",
+          "description": "Tests for annotation parsing"
+        }
+      ],
+      "changes": [
+        "Walk JSDoc comments attached to the target function node",
+        "Extract lines matching `@pant <proposition>` — each becomes a raw Pantagruel proposition string",
+        "Support multi-line annotations: @pant-begin / @pant-end blocks for complex propositions",
+        "Support @pant-type annotations for overriding TS->Pantagruel type mappings (e.g. `@pant-type amount: Nat` to override default Int)",
+        "Validate extracted propositions are non-empty strings (actual Pantagruel parsing happens when pant --check runs)",
+        "Tests: single @pant line, multiple @pant lines, multi-line block, @pant-type override, function with no annotations"
+      ],
+      "testStubsIntroduced": null,
+      "testStubsImplemented": null,
+      "spec": "module TS2PANT_PATCH_10.\n\nAnnotation.\nTSFunction.\n\nannotations f: TSFunction => [Annotation].\nraw-text a: Annotation => String.\nvalid? a: Annotation => Bool.\n\n---\n\n> Every annotation has a validity status.\nall a: Annotation | valid? a or ~valid? a.\n"
+    },
+    {
+      "number": 11,
+      "classification": "BEHAVIOR",
+      "title": "End-to-end: emit .pant and run pant --check",
+      "files": [
+        {
+          "path": "tools/ts2pant/src/emit.ts",
+          "action": "create",
+          "description": "Assemble translated declarations + propositions + annotations into a .pant file and invoke pant --check"
+        },
+        {
+          "path": "tools/ts2pant/tests/e2e.test.ts",
+          "action": "create",
+          "description": "End-to-end tests with sample TypeScript functions"
+        },
+        {
+          "path": "tools/ts2pant/tests/fixtures/deposit.ts",
+          "action": "create",
+          "description": "Sample: annotated mutating function"
+        },
+        {
+          "path": "tools/ts2pant/tests/fixtures/max.ts",
+          "action": "create",
+          "description": "Sample: annotated pure function"
+        }
+      ],
+      "changes": [
+        "In emit.ts: assemble PantDocument from translated domains, rules, actions, propositions, and annotation strings",
+        "Generate module header: `module <FUNCTION_NAME>.`",
+        "Emit chapter head: all domain declarations, type aliases, rule declarations, action declarations",
+        "Emit `---` separator",
+        "Emit chapter body: translated propositions from function body, followed by user's @pant assertions",
+        "Write to temp file, invoke `pant --check <file>` via child_process.execSync",
+        "Parse pant --check output: report pass/fail per check, surface counterexamples",
+        "In index.ts: wire up the full pipeline: extract types -> translate signature -> (optionally) translate body -> parse annotations -> emit -> check. When --no-body is set, skip body translation entirely — emit only the structural skeleton + user annotations.",
+        "E2E test with deposit.ts fixture: `@pant all a: Account | balance a >= 0` should be checkable",
+        "E2E test with max.ts fixture: `@pant all a: Int, b: Int | max a b >= a and max a b >= b` should pass"
+      ],
+      "testStubsIntroduced": null,
+      "testStubsImplemented": null,
+      "spec": "module TS2PANT_PATCH_11.\n\n> End-to-end: TS function + annotations -> .pant -> pant --check.\n\nTSFunction.\nPantDocument.\nCheckResult.\n\ngenerated-doc f: TSFunction => PantDocument.\ncheck-result f: TSFunction => CheckResult.\n\npassed? r: CheckResult => Bool.\n\n---\n\n> Every function with annotations produces a checkable document.\nall f: TSFunction, #(annotations f) > 0 |\n  generated-doc f in PantDocument.\n\n> Check result is determined by pant --check.\nall f: TSFunction, #(annotations f) > 0 |\n  check-result f in CheckResult.\n\nwhere\n\nannotations f: TSFunction => [Annotation].\nAnnotation.\n\n---\n"
+    }
+  ],
+
+  "testMap": [
+    {
+      "testName": "over-each > should lex OVER, MIN, MAX as distinct tokens",
+      "file": "test/test_lexer.ml",
+      "stubPatch": 1,
+      "implPatch": 3
+    },
+    {
+      "testName": "over-each > should parse '+ over each x: T | e' as EEach with CombAdd",
+      "file": "test/test_parser.ml",
+      "stubPatch": 1,
+      "implPatch": 3
+    },
+    {
+      "testName": "over-each > should parse 'max over each x: T, g | e' with guards",
+      "file": "test/test_parser.ml",
+      "stubPatch": 1,
+      "implPatch": 3
+    },
+    {
+      "testName": "over-each > should parse bare 'each x: T | e' as EEach with None combiner",
+      "file": "test/test_parser.ml",
+      "stubPatch": 1,
+      "implPatch": 3
+    },
+    {
+      "testName": "over-each typecheck > + over each with numeric body should return same numeric type",
+      "file": "test/test_check.ml",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "over-each typecheck > + over each with Bool body should be type error",
+      "file": "test/test_check.ml",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "over-each typecheck > and over each with Bool body should return Bool",
+      "file": "test/test_check.ml",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "over-each typecheck > and over each with numeric body should be type error",
+      "file": "test/test_check.ml",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "over-each typecheck > min over each with Nat body should return Nat",
+      "file": "test/test_check.ml",
+      "stubPatch": 3,
+      "implPatch": 3
+    },
+    {
+      "testName": "over-each typecheck > bare each behavior unchanged",
+      "file": "test/test_check.ml",
+      "stubPatch": 3,
+      "implPatch": 3
+    }
+  ],
+
+  "dependencyGraph": [
+    { "patch": 1, "classification": "INFRA", "dependsOn": [] },
+    { "patch": 2, "classification": "INFRA", "dependsOn": [1] },
+    { "patch": 3, "classification": "INFRA", "dependsOn": [2] },
+    { "patch": 4, "classification": "BEHAVIOR", "dependsOn": [3] },
+    { "patch": 5, "classification": "INFRA", "dependsOn": [4] },
+    { "patch": 6, "classification": "INFRA", "dependsOn": [] },
+    { "patch": 7, "classification": "BEHAVIOR", "dependsOn": [6] },
+    { "patch": 8, "classification": "BEHAVIOR", "dependsOn": [6, 7] },
+    { "patch": 9, "classification": "BEHAVIOR", "dependsOn": [8] },
+    { "patch": 10, "classification": "BEHAVIOR", "dependsOn": [6] },
+    { "patch": 11, "classification": "BEHAVIOR", "dependsOn": [5, 9, 10] }
+  ],
+
+  "mergabilityChecklist": {
+    "featureFlagStrategyDocumented": true,
+    "earlyPatchesNonFunctional": true,
+    "testStubsInInfraPatches": true,
+    "testImplsColocated": true,
+    "testMapComplete": true,
+    "testMapImplPatchMatchesCode": true,
+    "behaviorPatchesMinimal": true,
+    "dependencyGraphOrdered": true,
+    "behaviorPatchesJustified": true
+  },
+
+  "mergabilityInsight": "5 of 11 patches are INFRA. Patches 1-5 (Pantagruel language extension) and patches 6-11 (translator) form two independent tracks that can be developed in parallel until patch 11 joins them. The language extension is fully additive — no existing behavior changes.",
+
+  "finalStateSpec": "module TS2PANT.\n\n> ══════════════════════════════════════════\n> AGGREGATE QUANTIFIERS\n> ══════════════════════════════════════════\n> Pantagruel's quantifier family is extended with\n> arithmetic combiners: COMBINER over each GUARDS | BODY.\n\nCombiner.\nType.\nExpression.\n\ncomb-add => Combiner.\ncomb-mul => Combiner.\ncomb-and => Combiner.\ncomb-or => Combiner.\ncomb-min => Combiner.\ncomb-max => Combiner.\n\nhas-over? e: Expression => Bool.\nbody-type e: Expression => Type.\nresult-type e: Expression => Type.\nnumeric? t: Type => Bool.\nbool => Type.\n\n---\n\n> Arithmetic combiners require numeric body; result type = body type.\nall e: Expression, has-over? e, numeric? (body-type e) |\n  result-type e = body-type e.\n\nwhere\n\n> ══════════════════════════════════════════\n> TRANSLATION PIPELINE\n> ══════════════════════════════════════════\n> Given a TypeScript function and its participating types,\n> ts2pant produces a checkable Pantagruel document.\n\nTSFunction.\nTSType.\nPantDocument.\nPantDeclaration.\nPantProposition.\nAnnotation.\nCheckResult.\n\n> Extraction: every referenced TS type becomes declarations.\nreferenced-types f: TSFunction => [TSType].\ntranslated-types t: TSType => [PantDeclaration].\n\n> Classification: pure functions -> rules, mutating -> actions.\npure? f: TSFunction => Bool.\nmutating? f: TSFunction => Bool.\n\n> Translation: function -> declaration + propositions.\ntranslated-sig f: TSFunction => PantDeclaration.\ntranslated-body f: TSFunction => [PantProposition].\n\n> Annotations: user-provided assertions.\nannotations f: TSFunction => [Annotation].\n\n> Assembly: combined document.\ngenerated-doc f: TSFunction => PantDocument.\ncheck-result f: TSFunction => CheckResult.\npassed? r: CheckResult => Bool.\n\n---\n\n> Every function is either pure or mutating.\nall f: TSFunction | pure? f or mutating? f.\n~(some f: TSFunction | pure? f and mutating? f).\n\n> Every referenced type produces at least one declaration.\nall t: TSType | #(translated-types t) >= 1.\n\n> Every function with annotations produces a checkable document.\nall f: TSFunction, #(annotations f) > 0 |\n  generated-doc f in PantDocument.\n"
+}
