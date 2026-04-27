@@ -40,7 +40,7 @@ import { getAst } from "./pant-wasm.js";
 // --------------------------------------------------------------------------
 
 /** `IRBinop` → `OpaqueBinop`. One switch case per Pant op. */
-function lowerBinop(op: IRBinop): OpaqueBinop {
+export function lowerBinop(op: IRBinop): OpaqueBinop {
   const ast = getAst();
   switch (op) {
     case "and":

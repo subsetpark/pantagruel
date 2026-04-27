@@ -19,8 +19,8 @@ import {
   buildL1IfMutation,
   isUnsupported,
 } from "./ir1-build-body.js";
-import { lowerL1Body } from "./ir1-lower-body.js";
 import { lowerL1MuSearch, type MuSearchLowerCtx } from "./ir1-lower.js";
+import { lowerL1Body } from "./ir1-lower-body.js";
 import type {
   OpaqueCombiner,
   OpaqueExpr,
@@ -2455,7 +2455,7 @@ function nodeReferencesNames(node: ts.Node, names: Set<string>): boolean {
 }
 
 /** Unwrap parentheses, type assertions, and non-null assertions to get the inner expression. */
-function unwrapExpression(expr: ts.Expression): ts.Expression {
+export function unwrapExpression(expr: ts.Expression): ts.Expression {
   while (
     ts.isParenthesizedExpression(expr) ||
     ts.isAsExpression(expr) ||
@@ -3168,7 +3168,7 @@ function translateReduceCall(
 }
 
 /** Extract the root identifier of a chained property access (`a.b.c` → `a`). */
-function getRootIdentifier(expr: ts.Expression): string | null {
+export function getRootIdentifier(expr: ts.Expression): string | null {
   expr = unwrapExpression(expr);
   if (ts.isIdentifier(expr)) {
     return expr.text;

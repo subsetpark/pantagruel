@@ -135,6 +135,31 @@ export type IR1Expr =
  * - statement-position `cond-stmt` — M3 (conditional with statement body,
  *   e.g., `if (g) obj.p = v`)
  */
+/**
+ * One Shape B accumulator-fold leaf. Carried inside `foreach.foldLeaves`.
+ *
+ * Models `a.p OP= f(x)` (or `if (g(x)) a.p OP= f(x)`) inside an
+ * iteration body. The lower side emits one equation per leaf:
+ *
+ *     prop' target = prop target  OP  (combOP over each x in src[, g(x)] | rhs)
+ *
+ * `target` is the accumulator's receiver expression (e.g., `account`),
+ * pre-translated against the outer state. `prop` is the qualified
+ * rule name. `combiner` is the inner aggregate combiner (add/mul/and/
+ * or). `outerOp` is the binop combining the accumulator's prior value
+ * with the comprehension result. `rhs` is the per-iter contribution
+ * (translated against the iter scope at build time). `guard`, if
+ * present, folds into the comprehension's guard list.
+ */
+export interface IR1FoldLeaf {
+  target: IR1Expr;
+  prop: string;
+  combiner: "add" | "mul" | "and" | "or";
+  outerOp: IRBinop;
+  rhs: IR1Expr;
+  guard: IR1Expr | null;
+}
+
 export type IR1Stmt =
   /** Block of statements. Non-empty; single-statement blocks collapse. */
   | { kind: "block"; stmts: readonly [IR1Stmt, ...IR1Stmt[]] }
@@ -159,12 +184,24 @@ export type IR1Stmt =
       ];
       otherwise: IR1Stmt | null;
     }
-  /** Uniform iteration. Introduced in M3. */
+  /**
+   * Uniform iteration. Introduced in M3. Carries:
+   * - `body`: Shape A statements (per-iter property writes targeting
+   *   the iter binder), processed via a sub-state and emitted as
+   *   quantified equations. `null` when the body is pure Shape B
+   *   (accumulator-fold only) — there's no per-iteration mutation
+   *   to emit.
+   * - `foldLeaves`: Shape B accumulator-fold contributions (`a.p OP=
+   *   f(x)`), emitted as single equations with a comb-aggregate RHS.
+   *   Empty for pure-Shape-A bodies. Each leaf may carry an optional
+   *   guard from `if (g(x)) a.p OP= f(x)`.
+   */
   | {
       kind: "foreach";
       binder: string;
       source: IR1Expr;
-      body: IR1Stmt;
+      body: IR1Stmt | null;
+      foldLeaves: IR1FoldLeaf[];
     }
   /**
    * Generic counter-for; fallback when Foreach can't apply. Introduced
@@ -394,8 +431,9 @@ export const ir1CondStmt = (
 export const ir1Foreach = (
   binder: string,
   source: IR1Expr,
-  body: IR1Stmt,
-): IR1Stmt => ({ kind: "foreach", binder, source, body });
+  body: IR1Stmt | null,
+  foldLeaves: IR1FoldLeaf[] = [],
+): IR1Stmt => ({ kind: "foreach", binder, source, body, foldLeaves });
 
 export const ir1For = (
   init: IR1Stmt | null,

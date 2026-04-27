@@ -799,7 +799,7 @@ exports[`guards-if-throw.ts > guardWithLocals 1`] = `
 `;
 
 exports[`guards-if-throw.ts > notGuardSideEffects 1`] = `
-"module NotGuardSideEffects.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\n~> Not-guard-side-effects @ a: Account, amount: Int.\\n\\n---\\n\\n> UNSUPPORTED: side-effectful control-flow expression.\\n"
+"module NotGuardSideEffects.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\n~> Not-guard-side-effects @ a: Account, amount: Int.\\n\\n---\\n\\n> UNSUPPORTED: unsupported branch body kind: ThrowStatement.\\n"
 `;
 
 exports[`guards-if-throw.ts > withdraw 1`] = `

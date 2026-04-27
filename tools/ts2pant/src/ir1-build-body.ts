@@ -20,8 +20,12 @@
  */
 
 import ts from "typescript";
+import type { IRBinop } from "./ir.js";
 import { irWrap } from "./ir.js";
 import {
+  type IR1Expr,
+  type IR1FoldLeaf,
+  type IR1Stmt,
   ir1Assign,
   ir1Block,
   ir1CondStmt,
@@ -30,21 +34,26 @@ import {
   ir1MapEffect,
   ir1Member,
   ir1SetEffect,
-  type IR1Expr,
-  type IR1Stmt,
 } from "./ir1.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import {
+  addWrittenKey,
   ambiguousFieldMsg,
   bodyExpr,
   expressionHasSideEffects,
+  expressionReferencesNames,
+  getRootIdentifier,
   isBodyEffect,
   isBodyUnsupported,
+  makeSymbolicState,
+  putWrite,
   qualifyFieldAccess,
   type SymbolicState,
+  symbolicKey,
   translateBodyExpr,
   translateCallExpr,
   type UniqueSupply,
+  unwrapExpression,
 } from "./translate-body.js";
 import type { NumericStrategy } from "./translate-types.js";
 
@@ -71,9 +80,11 @@ export function isUnsupported<T>(
 
 /**
  * Recognize a TS `for (const x of arr) { body }` and build the
- * canonical L1 `foreach` form. Body statements are recognized via the
- * same `buildL1MutationBody` used for if-branches — property assigns,
- * Map/Set effects, nested ifs, etc.
+ * canonical L1 `foreach` form. Body statements are classified into
+ * Shape A (uniform iterator write — `x.p = e`) and Shape B
+ * (accumulator fold — `a.p OP= f(x)`) via `buildL1ForeachBody`. Shape A
+ * statements become L1 stmts in the foreach body; Shape B statements
+ * become `IR1FoldLeaf` entries.
  *
  * The iter binder is added to a copy of `paramNames` for the body's
  * sub-expression translation so reads of `x.p` resolve through
@@ -110,12 +121,7 @@ export function buildL1ForOfMutation(
     return { unsupported: sourceR.unsupported };
   }
   const source = ir1FromL2(irWrap(ctx.applyConst(bodyExpr(sourceR))));
-  const bodyCtx = withIterBinder(ctx, iterName);
-  const body = buildL1MutationBody(stmt.statement, bodyCtx);
-  if (isUnsupported(body)) {
-    return body;
-  }
-  return ir1Foreach(iterName, source, body);
+  return finishForeach(iterName, source, stmt.statement, ctx);
 }
 
 /**
@@ -143,8 +149,7 @@ export function buildL1ForEachCall(
     !ts.isIdentifier(arg.parameters[0]!.name)
   ) {
     return {
-      unsupported:
-        "forEach callback must take a single identifier parameter",
+      unsupported: "forEach callback must take a single identifier parameter",
     };
   }
   const iterName = arg.parameters[0]!.name.text;
@@ -160,21 +165,419 @@ export function buildL1ForEachCall(
     return { unsupported: sourceR.unsupported };
   }
   const source = ir1FromL2(irWrap(ctx.applyConst(bodyExpr(sourceR))));
-  const bodyCtx = withIterBinder(ctx, iterName);
   const bodyStmt = ts.isBlock(arg.body)
     ? arg.body
     : ts.factory.createBlock([ts.factory.createExpressionStatement(arg.body)]);
-  const body = buildL1MutationBody(bodyStmt, bodyCtx);
-  if (isUnsupported(body)) {
-    return body;
-  }
-  return ir1Foreach(iterName, source, body);
+  return finishForeach(iterName, source, bodyStmt, ctx);
 }
 
-function withIterBinder(ctx: BuildBodyCtx, iterName: string): BuildBodyCtx {
-  const next = new Map(ctx.paramNames);
-  next.set(iterName, iterName);
-  return { ...ctx, paramNames: next };
+function finishForeach(
+  iterName: string,
+  source: IR1Expr,
+  bodyStmt: ts.Statement,
+  ctx: BuildBodyCtx,
+): BuildResult<IR1Stmt> {
+  const r = buildL1ForeachBody(bodyStmt, iterName, ctx);
+  if (isUnsupported(r)) {
+    return r;
+  }
+  const { bodyStmts, foldLeaves } = r;
+  const body: IR1Stmt | null =
+    bodyStmts.length === 0
+      ? null
+      : bodyStmts.length === 1
+        ? bodyStmts[0]!
+        : ir1Block([bodyStmts[0]!, ...bodyStmts.slice(1)]);
+  if (body === null && foldLeaves.length === 0) {
+    return { unsupported: "empty foreach body" };
+  }
+  return ir1Foreach(iterName, source, body, foldLeaves);
+}
+
+interface ForeachBodyResult {
+  bodyStmts: IR1Stmt[];
+  foldLeaves: IR1FoldLeaf[];
+}
+
+interface ShapeBLeafTS {
+  /** Accumulator base expression (must not depend on iterator). */
+  target: ts.Expression;
+  /** Qualified rule name for the property. */
+  prop: string;
+  /** Inner combiner (add/mul/and/or). */
+  combiner: "add" | "mul" | "and" | "or";
+  /** Outer binary op joining prior state to the comprehension. */
+  outerOp: IRBinop;
+  /** Per-iter contribution (may reference iterator). */
+  rhs: ts.Expression;
+  /** Optional guard from a wrapping `if (g(x)) a.p OP= rhs`. */
+  guard: ts.Expression | null;
+}
+
+type ForeachStmtClass =
+  | { kind: "shapeA"; built: IR1Stmt }
+  | { kind: "shapeB"; leaves: ShapeBLeafTS[] };
+
+/**
+ * TS compound-assign operator → fold-info: inner combiner + outer op.
+ *
+ * `+=` / `-=` use `+` as combiner (additive identity 0). `-=` accumulates
+ * with `+` inside, then subtracts the aggregate outside (non-commutative
+ * outer `-` paired with commutative combiner `+` is sound).
+ *
+ * `*=` / `/=` similarly pair `*` combiner with `*`/`/` outer.
+ */
+const COMPOUND_ASSIGN_TO_FOLD: Map<
+  ts.SyntaxKind,
+  { combiner: "add" | "mul"; outerOp: IRBinop }
+> = new Map([
+  [ts.SyntaxKind.PlusEqualsToken, { combiner: "add", outerOp: "add" }],
+  [ts.SyntaxKind.MinusEqualsToken, { combiner: "add", outerOp: "sub" }],
+  [ts.SyntaxKind.AsteriskEqualsToken, { combiner: "mul", outerOp: "mul" }],
+  [ts.SyntaxKind.SlashEqualsToken, { combiner: "mul", outerOp: "div" }],
+]);
+
+/**
+ * Classify and build the body of a foreach loop. Each statement is
+ * either Shape A (per-iter property write on the iter binder) or Shape
+ * B (accumulator-fold contribution `a.p OP= f(x)`). Shape A items are
+ * built into IR1 stmts using a build-time subState that tracks
+ * accumulated Shape A property writes — so subsequent Shape B reads of
+ * the iter binder's properties resolve through the in-iter writes.
+ *
+ * Returns `{ bodyStmts, foldLeaves }`. The caller composes these into
+ * an `ir1Foreach`.
+ */
+function buildL1ForeachBody(
+  bodyStmt: ts.Statement,
+  iterName: string,
+  ctx: BuildBodyCtx,
+): BuildResult<ForeachBodyResult> {
+  const stmts = ts.isBlock(bodyStmt)
+    ? Array.from(bodyStmt.statements)
+    : [bodyStmt];
+  // Build-time subState: accumulates Shape A property writes so Shape B
+  // rhs/guard sub-expression translation observes them. The lower pass
+  // runs its own subState over the body statements; this one is purely
+  // local to the build pass.
+  const subState = makeSymbolicState(ctx.applyConst);
+  const subParams = new Map(ctx.paramNames);
+  subParams.set(iterName, iterName);
+  const subCtx: BuildBodyCtx = {
+    ...ctx,
+    state: subState,
+    paramNames: subParams,
+  };
+
+  const bodyStmts: IR1Stmt[] = [];
+  const foldLeaves: IR1FoldLeaf[] = [];
+
+  for (const s of stmts) {
+    const cls = classifyForeachStmt(s, iterName, subCtx, ctx, null);
+    if (isUnsupported(cls)) {
+      return cls;
+    }
+    if (cls.kind === "shapeA") {
+      bodyStmts.push(cls.built);
+      // Simulate the property write into subState. We re-translate the
+      // assign so subsequent Shape B reads observe the value computed
+      // against the in-iter scope.
+      const sim = simulateShapeA(s, subCtx);
+      if (isUnsupported(sim)) {
+        return sim;
+      }
+    } else {
+      for (const leaf of cls.leaves) {
+        const built = buildShapeBLeaf(leaf, ctx, subCtx);
+        if (isUnsupported(built)) {
+          return built;
+        }
+        foldLeaves.push(built);
+      }
+    }
+  }
+
+  return { bodyStmts, foldLeaves };
+}
+
+/**
+ * Decide whether a TS statement is Shape A or Shape B at the AST level.
+ * Drives both build-pass output (Shape A → L1 stmt; Shape B → fold leaf)
+ * and the compatibility check on nested ifs.
+ *
+ * `parentGuard` propagates from a wrapping `if (g(x)) a.p OP= …` —
+ * when present, the inner Shape B leaf folds the guard into its
+ * comprehension. Limited to a single level (per legacy
+ * classifyLoopStmt).
+ */
+function classifyForeachStmt(
+  stmt: ts.Statement,
+  iterName: string,
+  subCtx: BuildBodyCtx,
+  outerCtx: BuildBodyCtx,
+  parentGuard: ts.Expression | null,
+): BuildResult<ForeachStmtClass> {
+  if (
+    ts.isExpressionStatement(stmt) &&
+    ts.isBinaryExpression(unwrapExpression(stmt.expression))
+  ) {
+    const bin = unwrapExpression(stmt.expression) as ts.BinaryExpression;
+    if (!ts.isPropertyAccessExpression(bin.left)) {
+      return {
+        unsupported: "loop body assignment target must be a property access",
+      };
+    }
+    const rootName = getRootIdentifier(bin.left.expression);
+    const isSimpleAssign = bin.operatorToken.kind === ts.SyntaxKind.EqualsToken;
+    const compoundFold = COMPOUND_ASSIGN_TO_FOLD.get(bin.operatorToken.kind);
+
+    if (rootName === iterName) {
+      if (!isSimpleAssign) {
+        // Compound-assign on an iter property is allowed (Slice 3 desugar).
+        // Build via the standard assign builder against subCtx.
+        const built = buildL1AssignStmt(stmt as ts.ExpressionStatement, subCtx);
+        if (isUnsupported(built)) {
+          return built;
+        }
+        if (parentGuard !== null) {
+          return {
+            unsupported:
+              "Shape A iterator write under an if-guard is not supported in foreach",
+          };
+        }
+        return { kind: "shapeA", built };
+      }
+      const built = buildL1AssignStmt(stmt as ts.ExpressionStatement, subCtx);
+      if (isUnsupported(built)) {
+        return built;
+      }
+      if (parentGuard !== null) {
+        return {
+          unsupported:
+            "Shape A iterator write under an if-guard is not supported in foreach",
+        };
+      }
+      return { kind: "shapeA", built };
+    }
+    if (compoundFold === undefined) {
+      return {
+        unsupported:
+          "loop accumulator write must use a compound assignment (+=, -=, *=, /=)",
+      };
+    }
+    if (expressionReferencesNames(bin.left.expression, new Set([iterName]))) {
+      return { unsupported: "loop accumulator target depends on iterator" };
+    }
+    const receiverType = outerCtx.checker.getTypeAtLocation(
+      bin.left.expression,
+    );
+    const rawProp = bin.left.name.text;
+    const propName = qualifyFieldAccess(
+      receiverType,
+      rawProp,
+      outerCtx.checker,
+      outerCtx.strategy,
+      outerCtx.supply.synthCell,
+    );
+    if (propName === null) {
+      return { unsupported: ambiguousFieldMsg(rawProp) };
+    }
+    const leaf: ShapeBLeafTS = {
+      target: bin.left.expression,
+      prop: propName,
+      combiner: compoundFold.combiner,
+      outerOp: compoundFold.outerOp,
+      rhs: bin.right,
+      guard: parentGuard,
+    };
+    return { kind: "shapeB", leaves: [leaf] };
+  }
+
+  if (ts.isIfStatement(stmt)) {
+    if (expressionHasSideEffects(stmt.expression, outerCtx.checker)) {
+      return { unsupported: "impure if-condition in loop body" };
+    }
+    // Shape B singleton: `if (g(x)) { a.p OP= f(x) }` — single leaf,
+    // no else, no parent guard. Probe via classification on the inner
+    // body; if it's a Shape B leaf, fold the if-condition into its
+    // guard. Otherwise fall through to Shape A.
+    if (stmt.elseStatement === undefined && parentGuard === null) {
+      const thenStmts = ts.isBlock(stmt.thenStatement)
+        ? Array.from(stmt.thenStatement.statements)
+        : [stmt.thenStatement];
+      if (thenStmts.length === 1) {
+        const inner = classifyForeachStmt(
+          thenStmts[0]!,
+          iterName,
+          subCtx,
+          outerCtx,
+          stmt.expression,
+        );
+        if (!isUnsupported(inner) && inner.kind === "shapeB") {
+          return inner;
+        }
+        // Fall through — try Shape A.
+      }
+    }
+    if (parentGuard !== null) {
+      return {
+        unsupported:
+          "nested if inside a Shape B guard is not supported in foreach",
+      };
+    }
+    // Shape A: build the cond-stmt via the standard if-mutation builder
+    // against subCtx so the iter binder is in scope.
+    const built = buildL1IfMutation(stmt, subCtx);
+    if (isUnsupported(built)) {
+      return built;
+    }
+    return { kind: "shapeA", built };
+  }
+
+  return {
+    unsupported: `loop body statement: ${ts.SyntaxKind[stmt.kind]}`,
+  };
+}
+
+/**
+ * Build a Shape B fold leaf from its TS-level descriptor. `target`
+ * translates against the OUTER ctx (no iter dependence); `rhs` and
+ * `guard` translate against the SUB ctx (so they observe Shape A
+ * in-iter writes).
+ */
+function buildShapeBLeaf(
+  leaf: ShapeBLeafTS,
+  outerCtx: BuildBodyCtx,
+  subCtx: BuildBodyCtx,
+): BuildResult<IR1FoldLeaf> {
+  const targetR = translateBodyExpr(
+    leaf.target,
+    outerCtx.checker,
+    outerCtx.strategy,
+    outerCtx.paramNames,
+    outerCtx.state,
+    outerCtx.supply,
+  );
+  if (isBodyUnsupported(targetR)) {
+    return { unsupported: targetR.unsupported };
+  }
+  const target = ir1FromL2(irWrap(outerCtx.applyConst(bodyExpr(targetR))));
+
+  const rhsR = translateBodyExpr(
+    leaf.rhs,
+    subCtx.checker,
+    subCtx.strategy,
+    subCtx.paramNames,
+    subCtx.state,
+    subCtx.supply,
+  );
+  if (isBodyUnsupported(rhsR)) {
+    return { unsupported: rhsR.unsupported };
+  }
+  const rhs = ir1FromL2(irWrap(subCtx.applyConst(bodyExpr(rhsR))));
+
+  let guard: IR1Expr | null = null;
+  if (leaf.guard !== null) {
+    const gR = translateBodyExpr(
+      leaf.guard,
+      subCtx.checker,
+      subCtx.strategy,
+      subCtx.paramNames,
+      subCtx.state,
+      subCtx.supply,
+    );
+    if (isBodyUnsupported(gR)) {
+      return { unsupported: gR.unsupported };
+    }
+    guard = ir1FromL2(irWrap(subCtx.applyConst(bodyExpr(gR))));
+  }
+
+  return {
+    target,
+    prop: leaf.prop,
+    combiner: leaf.combiner,
+    outerOp: leaf.outerOp,
+    rhs,
+    guard,
+  };
+}
+
+/**
+ * Apply a Shape A property write to the build-time subState so
+ * subsequent Shape B leaves read the in-iter value. Re-translates the
+ * receiver / value sub-expressions against subCtx.state, mirroring
+ * what the lower pass would do under its own subState. The simulation
+ * is one-way — the L1 stmt has already been built and pushed by the
+ * caller; this just keeps the subState in sync.
+ */
+function simulateShapeA(
+  stmt: ts.Statement,
+  subCtx: BuildBodyCtx,
+): BuildResult<true> {
+  if (!ts.isExpressionStatement(stmt)) {
+    return true;
+  }
+  const expr = unwrapExpression(stmt.expression);
+  if (!ts.isBinaryExpression(expr)) {
+    return true;
+  }
+  const compoundOp = COMPOUND_ASSIGN_TO_BINOP.get(expr.operatorToken.kind);
+  const isSimple = expr.operatorToken.kind === ts.SyntaxKind.EqualsToken;
+  if (!isSimple && compoundOp === undefined) {
+    return true;
+  }
+  if (!ts.isPropertyAccessExpression(expr.left)) {
+    return true;
+  }
+  const rawProp = expr.left.name.text;
+  const receiverType = subCtx.checker.getTypeAtLocation(expr.left.expression);
+  const prop = qualifyFieldAccess(
+    receiverType,
+    rawProp,
+    subCtx.checker,
+    subCtx.strategy,
+    subCtx.supply.synthCell,
+  );
+  if (prop === null) {
+    return { unsupported: ambiguousFieldMsg(rawProp) };
+  }
+  const objR = translateBodyExpr(
+    expr.left.expression,
+    subCtx.checker,
+    subCtx.strategy,
+    subCtx.paramNames,
+    subCtx.state,
+    subCtx.supply,
+  );
+  if (isBodyUnsupported(objR)) {
+    return { unsupported: objR.unsupported };
+  }
+  const rhsNode =
+    compoundOp !== undefined
+      ? ts.factory.createBinaryExpression(expr.left, compoundOp, expr.right)
+      : expr.right;
+  const valR = translateBodyExpr(
+    rhsNode,
+    subCtx.checker,
+    subCtx.strategy,
+    subCtx.paramNames,
+    subCtx.state,
+    subCtx.supply,
+  );
+  if (isBodyUnsupported(valR)) {
+    return { unsupported: valR.unsupported };
+  }
+  const objExpr = subCtx.applyConst(bodyExpr(objR));
+  const value = subCtx.applyConst(bodyExpr(valR));
+  const key = symbolicKey(prop, objExpr);
+  subCtx.state.writes = putWrite(subCtx.state.writes, key, {
+    kind: "property",
+    prop,
+    objExpr,
+    value,
+  });
+  subCtx.state.writtenKeys = addWrittenKey(subCtx.state.writtenKeys, key);
+  return true;
 }
 
 /**
@@ -317,9 +720,7 @@ function buildL1EffectCall(
     s.ownerType,
     s.elemType,
     ir1FromL2(irWrap(ctx.applyConst(s.objExpr))),
-    s.elemExpr !== null
-      ? ir1FromL2(irWrap(ctx.applyConst(s.elemExpr)))
-      : null,
+    s.elemExpr !== null ? ir1FromL2(irWrap(ctx.applyConst(s.elemExpr))) : null,
   );
 }
 
@@ -384,8 +785,7 @@ function buildL1AssignStmt(
   // For compound `a.p OP= v`, desugar the rhs to `a.p OP v`. The new
   // `a.p` read goes through translateBodyExpr, which consults the
   // symbolic state and returns the prior-write value or the pre-state
-  // identity — same discipline as the top-level property-assign arm
-  // of `symbolicExecute` (see translate-body.ts:4378-4395).
+  // identity.
   const rhsNode =
     compoundOp !== undefined
       ? ts.factory.createBinaryExpression(expr.left, compoundOp, expr.right)

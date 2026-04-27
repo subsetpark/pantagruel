@@ -11,8 +11,8 @@
  * subsequent slices grow the dispatch as needed.
  */
 
-import { lowerExpr } from "./ir-emit.js";
-import type { IR1Expr, IR1Stmt } from "./ir1.js";
+import { lowerBinop, lowerExpr } from "./ir-emit.js";
+import type { IR1Expr, IR1FoldLeaf, IR1Stmt } from "./ir1.js";
 import { lowerL1Expr } from "./ir1-lower.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
@@ -22,16 +22,16 @@ import {
   cloneSymbolicState,
   installMapWrite,
   installSetWrite,
-  makeSymbolicState,
   type MapOverride,
   type MapRuleWriteEntry,
+  makeSymbolicState,
   mergeOverrides,
   type PropertyWriteEntry,
   putWrite,
   type SetOverride,
   type SetRuleWriteEntry,
-  symbolicKey,
   type SymbolicState,
+  symbolicKey,
 } from "./translate-body.js";
 import type { PropResult } from "./types.js";
 
@@ -183,53 +183,95 @@ function lowerForeach(
 ): boolean {
   const ast = getAst();
   const arrExpr = ctx.applyConst(lowerL1ExprToOpaque(stmt.source));
-  // Sub-state captures Shape A's per-iteration writes so they don't
-  // leak into the outer state. Mirrors legacy `subState` discipline at
-  // translate-body.ts:3383 (deleted in rip).
-  const subState = makeSymbolicState(ctx.applyConst);
-  if (!lowerL1Body(stmt.body, subState, propositions, ctx)) {
-    return false;
+
+  // Shape A: Sub-state captures the body's per-iteration writes so they
+  // don't leak into the outer state. Skipped when body is null (pure
+  // Shape B foreach).
+  if (stmt.body !== null) {
+    const subState = makeSymbolicState(ctx.applyConst);
+    if (!lowerL1Body(stmt.body, subState, propositions, ctx)) {
+      return false;
+    }
+    for (const [, entry] of subState.writes) {
+      if (entry.kind !== "property") {
+        propositions.push({
+          kind: "unsupported",
+          reason: `${entry.kind === "map" ? "Map" : "Set"} mutation inside foreach body is out of scope`,
+        });
+        return false;
+      }
+      // Universal-quantifier proposition:
+      //   `all binder in src | prop' obj = value`
+      propositions.push({
+        kind: "equation",
+        quantifiers: [],
+        guards: [ast.gIn(stmt.binder, arrExpr)],
+        lhs: ast.app(ast.primed(entry.prop), [entry.objExpr]),
+        rhs: entry.value,
+      });
+      state.modifiedProps = addModifiedProp(state.modifiedProps, entry.prop);
+    }
   }
-  // Iterate sub-state writes and emit per-iteration equations
-  // (Shape A). Matches legacy emission shape exactly:
-  //   `quantifiers: [], guards: [gIn(iter, src)], lhs: primed-rule, rhs`
-  // (translate-body.ts:3415-3421, deleted in rip).
-  //
-  // Slice 4 = Shape A only: the write's receiver must mention the
-  // iter binder as a free identifier. Writes whose receiver doesn't
-  // reference the iter (Shape B accumulator folds, Map/Set mutations)
-  // are deferred to later slices.
-  const iterRefRe = new RegExp(`\\b${escapeRegex(stmt.binder)}\\b`);
-  for (const [, entry] of subState.writes) {
-    if (entry.kind !== "property") {
-      propositions.push({
-        kind: "unsupported",
-        reason: `${entry.kind === "map" ? "Map" : "Set"} mutation inside foreach body is out of scope for this slice`,
-      });
+
+  // Shape B: Each fold leaf becomes one accumulator equation
+  //   prop' target = prior outerOp (combOP over each binder in src[, guard] | rhs)
+  // The leaf carries pre-translated `target`, `rhs`, `guard` (with `rhs`/
+  // `guard` already observing in-iter Shape A writes via the build-time
+  // subState).
+  for (const leaf of stmt.foldLeaves) {
+    if (!lowerFoldLeaf(leaf, stmt.binder, arrExpr, state, propositions, ctx)) {
       return false;
     }
-    if (!iterRefRe.test(ast.strExpr(entry.objExpr))) {
-      propositions.push({
-        kind: "unsupported",
-        reason:
-          "Shape B (accumulator fold inside foreach) is out of scope for this slice",
-      });
-      return false;
-    }
-    propositions.push({
-      kind: "equation",
-      quantifiers: [],
-      guards: [ast.gIn(stmt.binder, arrExpr)],
-      lhs: ast.app(ast.primed(entry.prop), [entry.objExpr]),
-      rhs: entry.value,
-    });
-    state.modifiedProps = addModifiedProp(state.modifiedProps, entry.prop);
   }
   return true;
 }
 
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function lowerFoldLeaf(
+  leaf: IR1FoldLeaf,
+  binder: string,
+  arrExpr: OpaqueExpr,
+  state: SymbolicState,
+  propositions: PropResult[],
+  ctx: LowerBodyCtx,
+): boolean {
+  const ast = getAst();
+  const target = ctx.applyConst(lowerL1ExprToOpaque(leaf.target));
+  const rhs = ctx.applyConst(lowerL1ExprToOpaque(leaf.rhs));
+  const guards = [ast.gIn(binder, arrExpr)];
+  if (leaf.guard !== null) {
+    guards.push(ast.gExpr(ctx.applyConst(lowerL1ExprToOpaque(leaf.guard))));
+  }
+  const comb =
+    leaf.combiner === "add"
+      ? ast.combAdd()
+      : leaf.combiner === "mul"
+        ? ast.combMul()
+        : leaf.combiner === "and"
+          ? ast.combAnd()
+          : ast.combOr();
+  const folded = ast.eachComb([], guards, comb, rhs);
+
+  const outerOp = lowerBinop(leaf.outerOp);
+  const key = symbolicKey(leaf.prop, target);
+  const priorEntry = state.writes.get(key);
+  if (priorEntry !== undefined && priorEntry.kind !== "property") {
+    propositions.push({
+      kind: "unsupported",
+      reason: "loop-fold accumulator over a non-property prior write",
+    });
+    return false;
+  }
+  const priorVal = priorEntry?.value ?? ast.app(ast.var(leaf.prop), [target]);
+  const newVal = ast.binop(outerOp, priorVal, folded);
+
+  state.writes = putWrite(state.writes, key, {
+    kind: "property",
+    prop: leaf.prop,
+    objExpr: target,
+    value: newVal,
+  });
+  state.writtenKeys = addWrittenKey(state.writtenKeys, key);
+  return true;
 }
 
 function lowerCondStmt(
@@ -264,10 +306,9 @@ function lowerCondStmt(
     }
   }
 
-  // Merge per write-key — mirror what legacy `symbolicExecute`'s
-  // if-statement arm did at translate-body.ts:5054-5170 (deleted in
-  // the rip). Slice 1 supports property writes only; Map/Set merge
-  // is Slice 2.
+  // Merge per write-key. Property writes use cond-fallback to the
+  // pre-state read; Map/Set writes merge their override lists via
+  // mergeOverrides.
   const touched = new Set<string>([...sT.writtenKeys, ...sE.writtenKeys]);
   for (const key of touched) {
     const entryT = sT.writes.get(key);
