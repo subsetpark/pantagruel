@@ -2,8 +2,8 @@
  * Layer 1 Imperative Intermediate Representation for ts2pant.
  *
  * This is the IRSC-faithful imperative IR layer that sits between the
- * TypeScript AST and ts2pant's existing Layer 2 IR (`IRExpr`/`IRStmt` in
- * `ir.ts`). Layer 1 preserves TS's actual control-flow shape; normalization
+ * TypeScript AST and ts2pant's expression IR (`IRExpr` in `ir.ts`,
+ * Layer 2). Layer 1 preserves TS's actual control-flow shape; normalization
  * passes against L1 collapse operationally-equivalent TS surface forms
  * (increment spellings, conditional families, iteration families) into a
  * small canonical vocabulary. Lowering passes target ONE canonical input
@@ -106,15 +106,18 @@ export type IR1Expr =
     }
   /**
    * Transitional delegation to a pre-built Layer 2 IRExpr. Used for
-   * sub-expressions outside the current milestone's normalization
-   * concern (e.g., M1 conditional guards/values whose internal
-   * structure is M2/M3 territory).
+   * sub-expressions whose internal structure is outside the current
+   * milestone's normalization concern (e.g., M1–M3 use it for guard
+   * expressions, receiver expressions, RHS values that arrive as
+   * OpaqueExpr from `translateBodyExpr`).
    *
    * Lowering: emits the wrapped L2 IRExpr verbatim.
    *
-   * **Lifetime**: shrinks at M3 (more sub-expressions reach L1
-   * natively); deleted at M6 (legacy cleanup). Do not introduce new
-   * uses outside the build pipeline's scoped sub-expression delegation.
+   * **Lifetime**: M3 grew its use (mutating-body sub-expressions
+   * arrive as OpaqueExpr and wrap via `from-l2` to embed cheaply in
+   * L1). Shrinks for real once M4 (equality/nullish) and M5
+   * (property access) bring sub-expressions onto L1 natively;
+   * deleted at M6.
    */
   | { kind: "from-l2"; expr: IRExpr };
 
@@ -135,6 +138,31 @@ export type IR1Expr =
  * - statement-position `cond-stmt` — M3 (conditional with statement body,
  *   e.g., `if (g) obj.p = v`)
  */
+/**
+ * One Shape B accumulator-fold leaf. Carried inside `foreach.foldLeaves`.
+ *
+ * Models `a.p OP= f(x)` (or `if (g(x)) a.p OP= f(x)`) inside an
+ * iteration body. The lower side emits one equation per leaf:
+ *
+ *     prop' target = prop target  OP  (combOP over each x in src[, g(x)] | rhs)
+ *
+ * `target` is the accumulator's receiver expression (e.g., `account`),
+ * pre-translated against the outer state. `prop` is the qualified
+ * rule name. `combiner` is the inner aggregate combiner (add/mul/and/
+ * or). `outerOp` is the binop combining the accumulator's prior value
+ * with the comprehension result. `rhs` is the per-iter contribution
+ * (translated against the iter scope at build time). `guard`, if
+ * present, folds into the comprehension's guard list.
+ */
+export interface IR1FoldLeaf {
+  target: IR1Expr;
+  prop: string;
+  combiner: "add" | "mul" | "and" | "or";
+  outerOp: IRBinop;
+  rhs: IR1Expr;
+  guard: IR1Expr | null;
+}
+
 export type IR1Stmt =
   /** Block of statements. Non-empty; single-statement blocks collapse. */
   | { kind: "block"; stmts: readonly [IR1Stmt, ...IR1Stmt[]] }
@@ -159,12 +187,26 @@ export type IR1Stmt =
       ];
       otherwise: IR1Stmt | null;
     }
-  /** Uniform iteration. Introduced in M3. */
+  /**
+   * Uniform iteration. Introduced in M3. Carries:
+   * - `body`: Shape A statements (per-iter property writes targeting
+   *   the iter binder), processed via a sub-state and emitted as
+   *   quantified equations. `null` when the body is pure Shape B
+   *   (accumulator-fold only) — there's no per-iteration mutation
+   *   to emit. Typed as `IR1ForeachBody` (subset of `IR1Stmt`) so
+   *   `return` / `throw` / nested loops cannot appear at the IR
+   *   construction site — see `IR1ForeachBody` below.
+   * - `foldLeaves`: Shape B accumulator-fold contributions (`a.p OP=
+   *   f(x)`), emitted as single equations with a comb-aggregate RHS.
+   *   Empty for pure-Shape-A bodies. Each leaf may carry an optional
+   *   guard from `if (g(x)) a.p OP= f(x)`.
+   */
   | {
       kind: "foreach";
       binder: string;
       source: IR1Expr;
-      body: IR1Stmt;
+      body: IR1ForeachBody | null;
+      foldLeaves: IR1FoldLeaf[];
     }
   /**
    * Generic counter-for; fallback when Foreach can't apply. Introduced
@@ -194,7 +236,107 @@ export type IR1Stmt =
    * Bare expression-as-statement (effect-bearing call, etc.). Introduced
    * in M3.
    */
-  | { kind: "expr-stmt"; expr: IR1Expr };
+  | { kind: "expr-stmt"; expr: IR1Expr }
+  /**
+   * Map mutation effect: `m.set(k, v)` or `m.delete(k)`. Carries the
+   * descriptor extracted by the build pass via `translateCallExpr`. The
+   * lower pass reconstructs a `MapMutation` and dispatches to the
+   * existing `installMapWrite` primitive.
+   *
+   * Structural equivalent of `translate-body.ts:MapMutation` — kept
+   * here so `ir1.ts` doesn't need to import from `translate-body.ts`
+   * (one-way dependency: translate-body imports ir1 types). The
+   * build/lower pair convert between the two representations.
+   *
+   * Discriminated on `op` so the payload invariant is encoded in the
+   * type: `set` carries a value, `delete` is value-less.
+   */
+  | {
+      kind: "map-effect";
+      op: "set";
+      ruleName: string;
+      keyPredName: string;
+      ownerType: string;
+      keyType: string;
+      objExpr: IR1Expr;
+      keyExpr: IR1Expr;
+      valueExpr: IR1Expr;
+    }
+  | {
+      kind: "map-effect";
+      op: "delete";
+      ruleName: string;
+      keyPredName: string;
+      ownerType: string;
+      keyType: string;
+      objExpr: IR1Expr;
+      keyExpr: IR1Expr;
+      valueExpr: null;
+    }
+  /**
+   * Set mutation effect: `s.add(e)`, `s.delete(e)`, `s.clear()`.
+   * Same translation discipline as `map-effect` — `add` / `delete`
+   * carry the affected element, `clear` is element-less.
+   */
+  | {
+      kind: "set-effect";
+      op: "add" | "delete";
+      ruleName: string;
+      ownerType: string;
+      elemType: string;
+      objExpr: IR1Expr;
+      elemExpr: IR1Expr;
+    }
+  | {
+      kind: "set-effect";
+      op: "clear";
+      ruleName: string;
+      ownerType: string;
+      elemType: string;
+      objExpr: IR1Expr;
+      elemExpr: null;
+    };
+
+/**
+ * `cond-stmt` variant restricted to `IR1ForeachBody` arms — the inner
+ * branches inherit the same Shape A subset, so a nested
+ * `cond-stmt(g, return …)` is unrepresentable. Distinct from the
+ * outer `cond-stmt` form (whose arms are general `IR1Stmt`) because
+ * the foreach-body invariant has to recurse all the way down.
+ */
+export type IR1ForeachCondStmt = {
+  kind: "cond-stmt";
+  arms: readonly [
+    readonly [IR1Expr, IR1ForeachBody],
+    ...ReadonlyArray<readonly [IR1Expr, IR1ForeachBody]>,
+  ];
+  otherwise: IR1ForeachBody | null;
+};
+
+/**
+ * Statement shapes admissible as the body of an `IR1Stmt.foreach` —
+ * the M3 Shape A contract: per-iter property writes (`assign` against
+ * `Member(iter, p)`), conditional writes (`cond-stmt`), and blocks
+ * composing those. Map/Set effects do not belong in the foreach body
+ * (the lower pass would reject them as out-of-scope); a `for (x of
+ * xs) { tags.add(x) }`-style write to an outer collection is not a
+ * Shape A iteration. Other forms (`return`, `throw`, nested `for` /
+ * `while`, `let`, `expr-stmt`) are also excluded — they have no
+ * meaning under per-iteration quantified emission.
+ *
+ * Block bodies and cond-stmt arms recurse via `IR1ForeachCondStmt` so
+ * the no-escape-hatch invariant holds at any depth at the type level.
+ * `ensureForeachBodyShape` in `ir1-build-body.ts` is a runtime check
+ * that bridges the gap when narrowing from a general `IR1Stmt`
+ * produced by `buildL1IfMutation` (whose return type is `IR1Stmt`).
+ */
+export type IR1ForeachBody =
+  | Extract<IR1Stmt, { kind: "assign" }>
+  | IR1ForeachCondStmt
+  | {
+      kind: "block";
+      stmts: readonly [IR1ForeachBody, ...IR1ForeachBody[]];
+    };
 
 // --------------------------------------------------------------------------
 // Type guards
@@ -279,8 +421,7 @@ export const ir1Cond = (
  * `ir1-build.ts` for sub-expressions whose normalization is not the
  * current milestone's concern, and in `translatePureBody`'s arm-cond
  * assembly where `inlineConstBindings` produces pre-translated
- * OpaqueExprs. See module doc for lifetime — shrinks at M3, deleted at
- * M6.
+ * OpaqueExprs. See module doc for lifetime.
  *
  * @deprecated transitional; do not introduce new call sites outside the
  * scoped sub-expression delegation in `ir1-build.ts` /
@@ -332,15 +473,20 @@ export const ir1Return = (expr: IR1Expr | null): IR1Stmt => ({
 
 /**
  * Assignment / read-modify-write. Canonical form for all increment and
- * compound-assignment surface spellings. M2 activates this form for the
- * μ-search counter step; broader mutation patterns land in M3.
+ * compound-assignment surface spellings.
  *
- * `target` is typically `Var(name)` (a counter) or `Member(receiver,
- * name)` (a property write); `value` is the new value, which for
- * increment forms is `BinOp(<op>, target, <k>)`. The L1 → L2 lowering
- * for `Assign` is *not* generic — only `recognizeAndLowerMuSearch` in
- * `ir1-lower.ts` introspects the surrounding L1 shape and produces L2
- * output for it. A standalone `Assign` reaching `lowerL1Stmt` rejects.
+ * `target` is typically `Var(name)` (a counter), or `Member(receiver,
+ * name)` (a property write). `value` is the new value — for increment
+ * forms `BinOp(<op>, target, <k>)`.
+ *
+ * Two consumers:
+ * - μ-search lowering: `lowerL1MuSearch` in `ir1-lower.ts` recognizes
+ *   the `Block([Let(c, init), While(p, Assign(c, c+1))])` shape and
+ *   produces an L2 `comb-typed`.
+ * - Mutating-body lowering: `lowerAssign` in `ir1-lower-body.ts`
+ *   handles property writes (`Assign(Member(...), v)`), threading the
+ *   write into `SymbolicState`. Var-target assigns outside a μ-search
+ *   shape reject.
  */
 export const ir1Assign = (target: IR1Expr, value: IR1Expr): IR1Stmt => ({
   kind: "assign",
@@ -359,8 +505,9 @@ export const ir1CondStmt = (
 export const ir1Foreach = (
   binder: string,
   source: IR1Expr,
-  body: IR1Stmt,
-): IR1Stmt => ({ kind: "foreach", binder, source, body });
+  body: IR1ForeachBody | null,
+  foldLeaves: IR1FoldLeaf[] = [],
+): IR1Stmt => ({ kind: "foreach", binder, source, body, foldLeaves });
 
 export const ir1For = (
   init: IR1Stmt | null,
@@ -370,13 +517,13 @@ export const ir1For = (
 ): IR1Stmt => ({ kind: "for", init, cond, step, body });
 
 /**
- * Bounded while loop. M2 activates this form to faithfully represent
- * the let/while/increment shape of a μ-search-shaped TS body —
- * `recognizeAndLowerMuSearch` in `ir1-lower.ts` introspects the
- * `Block([Let, While(_, Assign)])` shape and lowers to `Comb(min, Each)`.
- * General while-loop lowering (bounded fixed-point, accumulator
- * iteration) lands in M3; until then a standalone `While` reaching
- * `lowerL1Stmt` rejects.
+ * Bounded while loop. Used to faithfully represent the
+ * let/while/increment shape of a μ-search-shaped TS body —
+ * `lowerL1MuSearch` in `ir1-lower.ts` introspects the
+ * `Block([Let, While(_, Assign)])` shape and produces an L2
+ * `comb-typed`. General bounded-fixed-point / accumulator-iteration
+ * lowering is not implemented; a standalone `While` outside that
+ * pattern rejects.
  */
 export const ir1While = (cond: IR1Expr, body: IR1Stmt): IR1Stmt => ({
   kind: "while",
@@ -389,4 +536,86 @@ export const ir1Throw = (expr: IR1Expr): IR1Stmt => ({ kind: "throw", expr });
 export const ir1ExprStmt = (expr: IR1Expr): IR1Stmt => ({
   kind: "expr-stmt",
   expr,
+});
+
+/**
+ * Map mutation constructors. Split per `op` so the type system enforces
+ * the payload invariant (`set` always carries a value; `delete` never
+ * does). Build/lower call sites must dispatch on `op` before
+ * constructing — see `buildL1EffectCall` in `ir1-build-body.ts`.
+ */
+export const ir1MapSet = (
+  ruleName: string,
+  keyPredName: string,
+  ownerType: string,
+  keyType: string,
+  objExpr: IR1Expr,
+  keyExpr: IR1Expr,
+  valueExpr: IR1Expr,
+): IR1Stmt => ({
+  kind: "map-effect",
+  op: "set",
+  ruleName,
+  keyPredName,
+  ownerType,
+  keyType,
+  objExpr,
+  keyExpr,
+  valueExpr,
+});
+
+export const ir1MapDelete = (
+  ruleName: string,
+  keyPredName: string,
+  ownerType: string,
+  keyType: string,
+  objExpr: IR1Expr,
+  keyExpr: IR1Expr,
+): IR1Stmt => ({
+  kind: "map-effect",
+  op: "delete",
+  ruleName,
+  keyPredName,
+  ownerType,
+  keyType,
+  objExpr,
+  keyExpr,
+  valueExpr: null,
+});
+
+/**
+ * Set mutation constructors. Split per `op` for the same reason as
+ * `ir1MapSet` / `ir1MapDelete`: `add` / `delete` always carry an
+ * element; `clear` never does.
+ */
+export const ir1SetAddOrDelete = (
+  op: "add" | "delete",
+  ruleName: string,
+  ownerType: string,
+  elemType: string,
+  objExpr: IR1Expr,
+  elemExpr: IR1Expr,
+): IR1Stmt => ({
+  kind: "set-effect",
+  op,
+  ruleName,
+  ownerType,
+  elemType,
+  objExpr,
+  elemExpr,
+});
+
+export const ir1SetClear = (
+  ruleName: string,
+  ownerType: string,
+  elemType: string,
+  objExpr: IR1Expr,
+): IR1Stmt => ({
+  kind: "set-effect",
+  op: "clear",
+  ruleName,
+  ownerType,
+  elemType,
+  objExpr,
+  elemExpr: null,
 });

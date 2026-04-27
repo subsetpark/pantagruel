@@ -510,12 +510,24 @@ exports[`expressions-set-mutation-field.ts > tagAddTwo 1`] = `
 "module TagAddTwo.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-add-two @ c: Tagged, a: String, b: String.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> (cond y = a => true, y = b => true, true => y in tagged--tags c).\\n"
 `;
 
+exports[`expressions-set-mutation-field.ts > tagAddTwoReceivers 1`] = `
+"module TagAddTwoReceivers.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-add-two-receivers @ c1: Tagged, c2: Tagged, x: String, y: String.\\n\\n---\\n\\nall y1: String | y1 in tagged--tags' c1 <-> (cond y1 = x => true, true => y1 in tagged--tags c1).\\nall y2: String | y2 in tagged--tags' c2 <-> (cond y2 = y => true, true => y2 in tagged--tags c2).\\n"
+`;
+
 exports[`expressions-set-mutation-field.ts > tagClear 1`] = `
 "module TagClear.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-clear @ c: Tagged.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> false.\\n"
 `;
 
 exports[`expressions-set-mutation-field.ts > tagClearAndAdd 1`] = `
 "module TagClearAndAdd.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-clear-and-add @ c: Tagged, x: String.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> (cond y = x => true, true => false).\\n"
+`;
+
+exports[`expressions-set-mutation-field.ts > tagClearIf 1`] = `
+"module TagClearIf.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-clear-if @ c: Tagged, guard: Bool.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> (cond guard => false, true => y in tagged--tags c).\\n"
+`;
+
+exports[`expressions-set-mutation-field.ts > tagClearOrAdd 1`] = `
+"module TagClearOrAdd.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-clear-or-add @ c: Tagged, x: String, g: Bool.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> (cond y = x => (cond g => false, true => true), true => (cond g => false, true => y in tagged--tags c)).\\n"
 `;
 
 exports[`expressions-set-mutation-field.ts > tagRemove 1`] = `
@@ -687,19 +699,19 @@ exports[`functions-mutating-early-exit.ts > writeThenEarlyReturn 1`] = `
 `;
 
 exports[`functions-mutating-loop.ts > activateActive 1`] = `
-"module ActivateActive.\\n\\nUser.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\n~> Activate-active @ users: [User].\\n\\n---\\n\\nall u in users | user--active' u = (cond user--score u > 0 => true, true => user--active u).\\nuser--score' u = user--score u.\\n"
+"module ActivateActive.\\n\\nUser.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\n~> Activate-active @ users: [User].\\n\\n---\\n\\nall u1 in users | user--active' u1 = (cond user--score u1 > 0 => true, true => user--active u1).\\nuser--score' u = user--score u.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > activateAll 1`] = `
-"module ActivateAll.\\n\\nUser.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\n~> Activate-all @ users: [User].\\n\\n---\\n\\nall u in users | user--active' u = true.\\nuser--score' u = user--score u.\\n"
+"module ActivateAll.\\n\\nUser.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\n~> Activate-all @ users: [User].\\n\\n---\\n\\nall u1 in users | user--active' u1 = true.\\nuser--score' u = user--score u.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > deductFees 1`] = `
-"module DeductFees.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nFee.\\nfee--amount f: Fee => Int.\\n~> Deduct-fees @ a: Account, fees: [Fee].\\n\\n---\\n\\naccount--balance' a = account--balance a - (+ over each f in fees | fee--amount f).\\naccount--total' a1 = account--total a1.\\nfee--amount' f = fee--amount f.\\n"
+"module DeductFees.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nFee.\\nfee--amount f: Fee => Int.\\n~> Deduct-fees @ a: Account, fees: [Fee].\\n\\n---\\n\\naccount--balance' a = account--balance a - (+ over each f1 in fees | fee--amount f1).\\naccount--total' a1 = account--total a1.\\nfee--amount' f = fee--amount f.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > forEachActivate 1`] = `
-"module ForEachActivate.\\n\\nUser.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\n~> For-each-activate @ users: [User].\\n\\n---\\n\\nall u in users | user--active' u = true.\\nuser--score' u = user--score u.\\n"
+"module ForEachActivate.\\n\\nUser.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\n~> For-each-activate @ users: [User].\\n\\n---\\n\\nall u1 in users | user--active' u1 = true.\\nuser--score' u = user--score u.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > forEachSum 1`] = `
@@ -720,6 +732,14 @@ exports[`functions-mutating-loop.ts > sumIntoAnon 1`] = `
 
 exports[`functions-mutating-loop.ts > sumPositive 1`] = `
 "module SumPositive.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Sum-positive @ a: Account, items: [Item].\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each x in items, item--value x > 0 | item--value x).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\nitem--tagged' i = item--tagged i.\\n"
+`;
+
+exports[`functions-mutating-loop.ts > sumPositiveAssert 1`] = `
+"module SumPositiveAssert.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Sum-positive-assert @ a: Account, items: [Item].\\n\\n---\\n\\n> UNSUPPORTED: iterator-dependent guard inside a loop is not supported — lift the precondition over the iterable as a separate action guard.\\n"
+`;
+
+exports[`functions-mutating-loop.ts > sumScaledAssert 1`] = `
+"module SumScaledAssert.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Sum-scaled-assert @ a: Account, items: [Item], scale: Int, scale >= 0.\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each x in items | item--value x).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\nitem--tagged' i = item--tagged i.\\n"
 `;
 
 exports[`functions-mutating.ts > deposit 1`] = `
@@ -799,7 +819,7 @@ exports[`guards-if-throw.ts > guardWithLocals 1`] = `
 `;
 
 exports[`guards-if-throw.ts > notGuardSideEffects 1`] = `
-"module NotGuardSideEffects.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\n~> Not-guard-side-effects @ a: Account, amount: Int.\\n\\n---\\n\\n> UNSUPPORTED: side-effectful control-flow expression.\\n"
+"module NotGuardSideEffects.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\n~> Not-guard-side-effects @ a: Account, amount: Int.\\n\\n---\\n\\n> UNSUPPORTED: branch body must be a property assignment, Map/Set effect, or nested if.\\n"
 `;
 
 exports[`guards-if-throw.ts > withdraw 1`] = `

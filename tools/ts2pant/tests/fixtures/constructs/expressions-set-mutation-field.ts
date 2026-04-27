@@ -51,6 +51,16 @@ export function tagAddIf(c: Tagged, x: string, guard: boolean): void {
   }
 }
 
+// Conditional clear: the merge must guard the clear by the branch
+// condition, so the membership equation reads
+// `cond guard => false, true => y in tagged--tags c` — NOT an
+// unconditional clear (the bug `cleared: boolean` produced).
+export function tagClearIf(c: Tagged, guard: boolean): void {
+  if (guard) {
+    c.tags.clear();
+  }
+}
+
 // Conditional delete alongside an unconditional add on a different
 // element: two distinct override-element arms, with the delete merged
 // under its guard.
@@ -76,4 +86,37 @@ export function tagAddNonNull(c: Tagged, x: string): void {
 // Stage A detection.
 export function tagAddParen(c: Tagged, x: string): void {
   (c.tags).add(x);
+}
+
+// Two distinct receivers in the same path: each must get its own
+// membership equation. With the receiver omitted from the state-map
+// key, the second `.add` would coalesce into the first entry and the
+// constraint on `c2` would be silently dropped. Including the
+// canonicalized receiver in `setWriteKey` fans the writes out into
+// two entries, each emitting its own `all y | y in tags' c_i <-> …`.
+export function tagAddTwoReceivers(
+  c1: Tagged,
+  c2: Tagged,
+  x: string,
+  y: string,
+): void {
+  c1.tags.add(x);
+  c2.tags.add(y);
+}
+
+// Asymmetric branches: one side clears the set, the other adds an
+// element. The merge has to project each side's `cleared` predicate
+// when computing the missing-side fallback for the lone override on
+// the other branch — without that, element `x` only-in-else would
+// fall through to raw pre-state membership even on the then-branch
+// where the set was cleared. Expected RHS for `y = x`:
+// `cond g => false, true => true` (then-branch cleared the set, so
+// x is gone there; else-branch added x, so x is present). For
+// `y ≠ x`: `cond g => false, true => y in tags c`.
+export function tagClearOrAdd(c: Tagged, x: string, g: boolean): void {
+  if (g) {
+    c.tags.clear();
+  } else {
+    c.tags.add(x);
+  }
 }

@@ -4,10 +4,40 @@ import { createSourceFileFromSource } from "../src/extract.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import { translateBody } from "../src/translate-body.js";
 import { IntStrategy, RealStrategy } from "../src/translate-types.js";
+import type { PropResult } from "../src/types.js";
 
 before(async () => {
   await loadAst();
 });
+
+/**
+ * Assert that `props` contains an `unsupported` proposition whose
+ * `reason` matches `pattern`. The repeated `props.some(p => p.kind ===
+ * "unsupported" && /…/ .test(p.reason))` shape is concise on its own
+ * but adds up across the dozen-odd rejection tests; this helper unifies
+ * the failure message so a regression that fires the wrong rejection
+ * path produces a consistent diagnostic.
+ */
+function assertUnsupportedReason(
+  props: readonly PropResult[],
+  pattern: RegExp,
+  description: string,
+): void {
+  const matched = props.some(
+    (p) => p.kind === "unsupported" && pattern.test(p.reason),
+  );
+  if (matched) {
+    return;
+  }
+  const allReasons = props
+    .filter((p) => p.kind === "unsupported")
+    .map((p) => (p as { reason: string }).reason);
+  assert.fail(
+    `${description}: no unsupported prop matched ${pattern}\n  saw: ${
+      allReasons.length > 0 ? JSON.stringify(allReasons) : "(no unsupported props)"
+    }`,
+  );
+}
 
 // Tests for internal translateBody API edge cases not coverable via
 // exported fixture functions (see tests/fixtures/constructs/ for
@@ -555,6 +585,76 @@ describe("translateCallExpr", () => {
 });
 
 describe("conditional mutations (symbolic last-write)", () => {
+  // `m.set(k, v)` etc. return the receiver/boolean, but the
+  // translator categorizes them as effects (statement-only). Without
+  // a `rejectEffect` guard at the assignment handler, `bodyExpr(val)`
+  // would throw on the `{ effect }` shape; with the guard we get a
+  // clean `unsupported` reason instead. Cover both Map and Set
+  // mutation kinds so a regression in either's effect-recognition
+  // path doesn't slip through.
+  const collectionRhsCases = [
+    {
+      name: "Map.set",
+      source: `
+        interface A { p: Map<string, number>; }
+        function f(a: A, k: string, v: number): void {
+          a.p = a.p.set(k, v) as unknown as Map<string, number>;
+        }
+      `,
+    },
+    {
+      name: "Map.delete",
+      source: `
+        interface A { p: Map<string, number>; q: boolean; }
+        function f(a: A, k: string): void {
+          a.q = a.p.delete(k);
+        }
+      `,
+    },
+    {
+      name: "Set.add",
+      source: `
+        interface A { p: Set<string>; }
+        function f(a: A, x: string): void {
+          a.p = a.p.add(x) as unknown as Set<string>;
+        }
+      `,
+    },
+    {
+      name: "Set.delete",
+      source: `
+        interface A { p: Set<string>; q: boolean; }
+        function f(a: A, x: string): void {
+          a.q = a.p.delete(x);
+        }
+      `,
+    },
+    {
+      name: "Set.clear",
+      source: `
+        interface A { p: Set<string>; q: boolean; }
+        function f(a: A): void {
+          a.q = a.p.clear() as unknown as boolean;
+        }
+      `,
+    },
+  ];
+  for (const { name, source } of collectionRhsCases) {
+    it(`rejects an assignment whose RHS is a ${name} mutation effect`, () => {
+      const sourceFile = createSourceFileFromSource(source);
+      const props = translateBody({
+        sourceFile,
+        functionName: "f",
+        strategy: IntStrategy,
+      });
+      assertUnsupportedReason(
+        props,
+        /collection mutation outside statement position/,
+        `${name}: expected the rejectEffect rejection`,
+      );
+    });
+  }
+
   it("rejects conditional mutation when if-condition is impure", () => {
     const source = `
       interface Account { balance: number; }
@@ -814,8 +914,10 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       const rendered = ast.strExpr(
         ast.forall([], loopEq.guards ?? [], ast.var("__body__")),
       );
-      assert.match(rendered, /all u in us \| /);
-      assert.equal(ast.strExpr(loopEq.lhs), "user--active' u");
+      assert.match(rendered, /all (\$\d+) in us \| /);
+      const m = rendered.match(/all (\$\d+) in us \| /)!;
+      const binder = m[1]!;
+      assert.equal(ast.strExpr(loopEq.lhs), `user--active' ${binder}`);
       assert.equal(ast.strExpr(loopEq.rhs), "true");
     }
   });
@@ -842,9 +944,10 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     assert.ok(loopEq);
     if (loopEq?.kind === "equation") {
       const ast = getAst();
-      assert.equal(
-        ast.strExpr(loopEq.rhs),
-        "cond user--score u > 0 => true, true => user--active u",
+      const r = ast.strExpr(loopEq.rhs);
+      assert.match(
+        r,
+        /^cond user--score (\$\d+) > 0 => true, true => user--active \1$/,
       );
     }
   });
@@ -871,9 +974,9 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     assert.ok(totalEq);
     if (totalEq?.kind === "equation") {
       const ast = getAst();
-      assert.equal(
+      assert.match(
         ast.strExpr(totalEq.rhs),
-        "account--total a + (+ over each x in xs | item--value x)",
+        /^account--total a \+ \(\+ over each (\$\d+) in xs \| item--value \1\)$/,
       );
     }
   });
@@ -902,9 +1005,9 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     assert.ok(totalEq);
     if (totalEq?.kind === "equation") {
       const ast = getAst();
-      assert.equal(
+      assert.match(
         ast.strExpr(totalEq.rhs),
-        "account--total a + (+ over each x in xs, item--value x > 0 | item--value x)",
+        /^account--total a \+ \(\+ over each (\$\d+) in xs, item--value \1 > 0 \| item--value \1\)$/,
       );
     }
   });
@@ -931,8 +1034,343 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     const lhsStrings = eqs.map((e) =>
       e.kind === "equation" ? ast.strExpr(e.lhs) : "",
     );
-    assert.ok(lhsStrings.includes("item--tagged' x"));
+    assert.ok(lhsStrings.some((s) => /^item--tagged' \$\d+$/.test(s)));
     assert.ok(lhsStrings.includes("account--total' a"));
+  });
+
+  it("rejects guarded Shape A combined with a Shape B fold leaf", () => {
+    // The Shape A write `if (g) x.value = …` is a cond-stmt — the
+    // build-time `simulateShapeA` only models bare assigns into the
+    // subState, so the Shape B fold's `x.value` read would otherwise
+    // see the stale pre-iter value. Conservative refusal is correct
+    // per M3 policy 3(b).
+    const source = `
+      interface Item { value: number; tagged: boolean; }
+      interface Account { total: number; }
+      function f(a: Account, xs: Item[]): void {
+        for (const x of xs) {
+          if (x.tagged) { x.value = 1; }
+          a.total += x.value;
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assertUnsupportedReason(
+      props,
+      /guarded Shape A iterator write is not supported alongside a Shape B fold leaf/,
+      "expected the guarded-Shape-A + Shape-B-fold rejection",
+    );
+  });
+
+  it("rejects forEach with default-value parameter", () => {
+    // Default initializers run in the enclosing scope before the
+    // bound name takes effect — accepting `(x = fallback) => …` as
+    // if it were a bare iter binder would silently drop the default.
+    const source = `
+      interface User { active: boolean; }
+      function f(us: User[]): void {
+        us.forEach((u = us[0]!) => { u.active = true; });
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assertUnsupportedReason(
+      props,
+      /single plain identifier parameter/,
+      "expected the forEach plain-identifier rejection",
+    );
+  });
+
+  it("rejects forEach with rest parameter", () => {
+    const source = `
+      interface User { active: boolean; }
+      function f(us: User[]): void {
+        us.forEach((...u: User[]) => { u[0]!.active = true; });
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assertUnsupportedReason(
+      props,
+      /single plain identifier parameter/,
+      "expected the forEach plain-identifier rejection",
+    );
+  });
+
+  it("rejects forEach with optional parameter", () => {
+    // `(u?: User) => …` — the optional marker changes callback
+    // semantics (the runtime arity is variable). Build path doesn't
+    // model this, so reject explicitly.
+    const source = `
+      interface User { active: boolean; }
+      function f(us: User[]): void {
+        us.forEach((u?: User) => { if (u) u.active = true; });
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assertUnsupportedReason(
+      props,
+      /single plain identifier parameter/,
+      "expected the forEach plain-identifier rejection",
+    );
+  });
+
+  it("rejects accumulator-self-dependent Shape B fold rhs", () => {
+    // `a.total += a.total` — the rhs reads from the accumulator's
+    // own root. `buildShapeBLeaf` freezes the rhs against the
+    // pre-loop scope, so the lowered fold would read the pre-loop
+    // value of `a.total` rather than the recurrence. Conservative
+    // refusal until proper accumulator-state simulation lands.
+    const source = `
+      interface Account { total: number; }
+      interface Item { value: number; }
+      function f(a: Account, xs: Item[]): void {
+        for (const x of xs) {
+          a.total += a.total;
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assertUnsupportedReason(
+      props,
+      /accumulator rhs reads from the accumulator's own root/,
+      "expected the accumulator-self-dependent rhs rejection",
+    );
+  });
+
+  it("rejects accumulator-self-dependent Shape B fold guard", () => {
+    // `if (a.total > 0) a.total += x.value` — the guard reads from
+    // the accumulator. The if-condition would lower against the
+    // pre-loop value of `a.total` and gate the fold incorrectly.
+    const source = `
+      interface Account { total: number; }
+      interface Item { value: number; }
+      function f(a: Account, xs: Item[]): void {
+        for (const x of xs) {
+          if (a.total > 0) {
+            a.total += x.value;
+          }
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assertUnsupportedReason(
+      props,
+      /accumulator guard reads from the accumulator's own root/,
+      "expected the accumulator-self-dependent guard rejection",
+    );
+  });
+
+  it("accepts parenthesized branch-body assignment statements", () => {
+    // `(obj.p = 1);` is the same as `obj.p = 1;` — the build pass
+    // should canonicalize through `unwrapExpression` so redundant
+    // parens don't change classification.
+    const source = `
+      interface Account { total: number; }
+      function f(a: Account, g: boolean): void {
+        if (g) {
+          (a.total = 1);
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    // Lock the full conditional-mutation shape so a regression that
+    // accepts the parens but mistranslates the body (e.g., dropping
+    // the cond fallback or changing the value) still fails the test.
+    assert.equal(
+      props.some((p) => p.kind === "unsupported"),
+      false,
+      "did not expect any unsupported propositions",
+    );
+    const eq = props.find((p) => p.kind === "equation");
+    assert.ok(eq, "expected an equation");
+    if (eq?.kind === "equation") {
+      const ast = getAst();
+      assert.equal(ast.strExpr(eq.lhs), "account--total' a");
+      assert.equal(
+        ast.strExpr(eq.rhs),
+        "cond g => 1, true => account--total a",
+      );
+    }
+  });
+
+  it("rejects non-iterator-rooted assigns inside foreach branches", () => {
+    // Shape A means *uniform iterator writes* — `x.p = e` where `x`
+    // is the loop's iter binder. A nested `if (g) { acc.total =
+    // x.value; }` writes to `acc`, not the iter binder, so it's not
+    // a Shape A iteration. Without the per-AST root check threaded
+    // through `iterRefs`, the kind-only `ensureForeachBodyShape`
+    // would silently emit a per-element equation against `acc`.
+    const source = `
+      interface Item { value: number; }
+      interface Account { total: number; }
+      function f(a: Account, xs: Item[], g: boolean): void {
+        for (const x of xs) {
+          if (g) { a.total = x.value; }
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assertUnsupportedReason(
+      props,
+      /property rooted at the iterator binder/,
+      "expected the non-iter-rooted-assign rejection",
+    );
+  });
+
+  it("rejects iterator-dependent guards inside foreach branches", () => {
+    // The branch path `if (flag) { if (!(x.value > 0)) throw …;
+    // x.value = 1; }` routes through `buildL1IfMutation` →
+    // `buildL1MutationBody`, whose strip pass would silently drop the
+    // inner if-throw guard. Threading `iterRefs` through ctx lets the
+    // strip pass apply the same iter-dependent rejection that the
+    // top-level foreach builder does.
+    const source = `
+      interface Item { value: number; }
+      function f(xs: Item[], flag: boolean): void {
+        for (const x of xs) {
+          if (flag) {
+            if (!(x.value > 0)) {
+              throw new Error("non-positive value");
+            }
+            x.value = 1;
+          }
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assertUnsupportedReason(
+      props,
+      /iterator-dependent guard inside a loop/,
+      "expected the iter-dependent-guard rejection",
+    );
+  });
+
+  it("rejects Map/Set effects inside foreach body branches", () => {
+    // `foreach.body` is the M3 Shape A contract — assign-only.
+    // `if (g) tags.add(x)` would emit a `set-effect` inside the body,
+    // outside the contract; the build pass rejects via
+    // `ensureForeachBodyShape` rather than letting the lower pass
+    // surface "out of scope" later.
+    const source = `
+      interface Item { value: number; }
+      interface Tagged { tags: Set<string>; flag: boolean; }
+      function f(tag: Tagged, xs: Item[]): void {
+        for (const x of xs) {
+          if (tag.flag) { tag.tags.add("seen"); }
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assertUnsupportedReason(
+      props,
+      /foreach body cannot contain a set-effect statement/,
+      "expected the ensureForeachBodyShape rejection for set-effect",
+    );
+  });
+
+  it("rejects Map effects inside foreach body branches", () => {
+    // Mirrors the set-effect case above but for the `map-effect`
+    // sibling on the `ensureForeachBodyShape` rejection surface, so
+    // a regression in either path is pinned independently.
+    const source = `
+      interface Item { value: number; }
+      interface Tagged { tags: Map<string, boolean>; flag: boolean; }
+      function f(tag: Tagged, xs: Item[]): void {
+        for (const x of xs) {
+          if (tag.flag) { tag.tags.set("seen", true); }
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assertUnsupportedReason(
+      props,
+      /foreach body cannot contain a map-effect statement/,
+      "expected the ensureForeachBodyShape rejection for map-effect",
+    );
+  });
+
+  it("rejects a foreach inside an if-branch (build-pass rejection)", () => {
+    // The build pass's `buildL1MutationBody` already rejects branch
+    // bodies that aren't property assigns, Map/Set effects, or nested
+    // ifs — so a foreach inside an `if (g) { … }` is rejected before
+    // it reaches the lower pass. The lower pass nonetheless guards
+    // against this case in `lowerCondStmt` via branch-local proposition
+    // buffers (defense-in-depth: a hand-constructed IR or future build
+    // path that emits this combination would reject rather than
+    // silently dropping the branch guard).
+    const source = `
+      interface User { active: boolean; }
+      function f(g: boolean, us: User[]): void {
+        if (g) {
+          for (const u of us) { u.active = true; }
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assertUnsupportedReason(
+      props,
+      /branch body must be a property assignment, Map\/Set effect, or nested if/,
+      "expected the buildL1MutationBody branch-shape rejection",
+    );
   });
 
   it("rejects simple-assign fold (requires compound assignment)", () => {
@@ -974,9 +1412,9 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     assert.ok(totalEq);
     if (totalEq?.kind === "equation") {
       const ast = getAst();
-      assert.equal(
+      assert.match(
         ast.strExpr(totalEq.rhs),
-        "account--total a + (+ over each x in xs | item--value x)",
+        /^account--total a \+ \(\+ over each (\$\d+) in xs \| item--value \1\)$/,
       );
     }
   });
@@ -1110,10 +1548,39 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     if (totalEq?.kind === "equation") {
       // Shape B's `x.value` read must resolve through the in-iteration
       // Shape A write `value' x = value x + 1`, not the pre-state `value x`.
-      assert.equal(
+      assert.match(
         ast.strExpr(totalEq.rhs),
-        "account--total a + (+ over each x in xs | item--value x + 1)",
+        /^account--total a \+ \(\+ over each (\$\d+) in xs \| item--value \1 \+ 1\)$/,
       );
+    }
+  });
+
+  it("foreach body sees writes that happened before the loop", () => {
+    // Shape A write `a.total = 1` precedes the loop. Inside the loop,
+    // each iteration writes `x.value = a.total` — that read must
+    // resolve to the prior `1`, not the pre-state `account--total a`.
+    const source = `
+      interface Account { total: number; }
+      interface Item { value: number; }
+      function f(a: Account, xs: Item[]): void {
+        a.total = 1;
+        for (const x of xs) { x.value = a.total; }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    const ast = getAst();
+    const eqs = props.filter((p) => p.kind === "equation");
+    const loopEq = eqs.find(
+      (e) => e.kind === "equation" && (e.guards?.length ?? 0) > 0,
+    );
+    assert.ok(loopEq, "expected a Shape A loop equation");
+    if (loopEq?.kind === "equation") {
+      assert.equal(ast.strExpr(loopEq.rhs), "1");
     }
   });
 

@@ -33,8 +33,11 @@ import {
   ir1Var,
   ir1While,
 } from "../src/ir1.js";
-import { lowerL1Expr, lowerL1Stmt } from "../src/ir1-lower.js";
+import { lowerL1Expr } from "../src/ir1-lower.js";
+import { lowerL1Body } from "../src/ir1-lower-body.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
+import { makeSymbolicState } from "../src/translate-body.js";
+import type { PropResult } from "../src/types.js";
 
 before(async () => {
   await loadAst();
@@ -316,12 +319,11 @@ describe("M2: ir1Assign and ir1While constructors are active", () => {
   });
 });
 
-describe("M3 statement constructors are active (no longer NOT_IMPL)", () => {
+describe("M3 statement constructors are active", () => {
   // Constructors return IR1Stmt values of the appropriate kind.
-  // Lowering for these forms is provided by the new `lowerL1Body` fold
-  // (Patch R2) that operates on L1 statements. Until R2 lands,
-  // `lowerL1Stmt` (the M1/M2 expression-only entry point) still throws
-  // — the new fold has its own entry point.
+  // Lowering for these forms is provided by `lowerL1Body` (in
+  // `ir1-lower-body.ts`) which threads `SymbolicState` directly into
+  // `PropResult[]` — the L2 path is expression-only.
 
   it("ir1CondStmt builds a cond-stmt", () => {
     const stmt = ir1CondStmt(
@@ -332,7 +334,14 @@ describe("M3 statement constructors are active (no longer NOT_IMPL)", () => {
   });
 
   it("ir1Foreach builds a foreach", () => {
-    const stmt = ir1Foreach("x", ir1Var("xs"), ir1Return(ir1Var("x")));
+    // Body must be in `IR1ForeachBody` — Shape A iterator writes only.
+    // `ir1Assign(Member(x, "p"), v)` is a member-target assign, the
+    // canonical Shape A form.
+    const stmt = ir1Foreach(
+      "x",
+      ir1Var("xs"),
+      ir1Assign(ir1Member(ir1Var("x"), "p"), ir1LitNat(1)),
+    );
     assert.equal(stmt.kind, "foreach");
   });
 
@@ -349,11 +358,6 @@ describe("M3 statement constructors are active (no longer NOT_IMPL)", () => {
   it("ir1ExprStmt builds an expr-stmt", () => {
     const stmt = ir1ExprStmt(ir1Var("e"));
     assert.equal(stmt.kind, "expr-stmt");
-  });
-
-  it("lowerL1Stmt — statement lowering still throws (replaced by lowerL1Body)", () => {
-    const stmt = ir1Return(ir1Var("x"));
-    assert.throws(() => lowerL1Stmt(stmt), /M3/);
   });
 });
 
@@ -398,6 +402,85 @@ describe("active statement constructors (block, let, return)", () => {
     if (stmt.kind === "return") {
       assert.equal(stmt.expr, null);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// lowerL1Body — branch-local proposition isolation
+// ---------------------------------------------------------------------------
+
+describe("lowerL1Body — branch-local foreach equations", () => {
+  it("rejects a Shape A foreach inside a cond-stmt branch", () => {
+    // `lowerForeach` emits `all $0 in xs | active' $0 = true` directly
+    // into the propositions buffer. A foreach inside a branch would
+    // skip the conditional merge (foreach equations don't go through
+    // `state.writes` / `writtenKeys`), so the per-iter equation would
+    // become unconditional. `lowerCondStmt` runs each branch into a
+    // local buffer and rejects if any quantified prop appears, rather
+    // than silently dropping the guard. This direct test exercises the
+    // lower-pass guarantee — the build pass currently rejects the
+    // construct earlier, so this is defense-in-depth.
+    const stmt = ir1CondStmt(
+      [
+        [
+          ir1Var("g"),
+          ir1Foreach(
+            "$0",
+            ir1Var("xs"),
+            ir1Assign(ir1Member(ir1Var("$0"), "active"), ir1LitBool(true)),
+          ),
+        ],
+      ],
+      null,
+    );
+    const propositions: PropResult[] = [];
+    const ok = lowerL1Body(stmt, makeSymbolicState(), propositions, {
+      applyConst: (e) => e,
+    });
+    assert.equal(ok, false);
+    assert.ok(
+      propositions.some(
+        (p) =>
+          p.kind === "unsupported" &&
+          /escape the branch guard/.test(p.reason),
+      ),
+    );
+  });
+
+  it("rejects a nested proposition-emitting foreach body", () => {
+    // `lowerForeach` lowers its body into a local `bodyProps` buffer
+    // and rejects if any quantified prop appears, mirroring
+    // `lowerCondStmt`'s discipline. Today's `IR1ForeachBody` excludes
+    // `foreach`, so this is unreachable through the build pass —
+    // direct construction exercises the defense-in-depth guarantee.
+    // The inner foreach emits `all $1 in ys | active' $1 = true` which
+    // would otherwise leak past the outer iterator scope.
+    const inner = ir1Foreach(
+      "$1",
+      ir1Var("ys"),
+      ir1Assign(ir1Member(ir1Var("$1"), "active"), ir1LitBool(true)),
+    );
+    // Construct via cast since `IR1ForeachBody` rejects nested
+    // foreach at the type level — this test specifically exercises
+    // the runtime path that catches a hand-built (or future-IR)
+    // violation.
+    const outer = ir1Foreach(
+      "$0",
+      ir1Var("xs"),
+      inner as unknown as Parameters<typeof ir1Foreach>[2],
+    );
+    const propositions: PropResult[] = [];
+    const ok = lowerL1Body(outer, makeSymbolicState(), propositions, {
+      applyConst: (e) => e,
+    });
+    assert.equal(ok, false);
+    assert.ok(
+      propositions.some(
+        (p) =>
+          p.kind === "unsupported" &&
+          /escape the outer iterator scope/.test(p.reason),
+      ),
+    );
   });
 });
 

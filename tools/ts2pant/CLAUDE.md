@@ -544,17 +544,30 @@ live in §"Divergences from IRSC".
 
 ### Files
 
-- `src/ir.ts` — `IRExpr` / `IRStmt` / `IRBody` ADTs with constructor helpers.
-- `src/ir-build.ts` — TS-AST → IR (with `IRWrap` escape hatch during migration).
-- `src/ir-emit.ts` — IR → `OpaqueExpr` / `PropResult[]` lowering.
-- `src/ir-subst.ts` — IR-level capture-avoiding substitution.
+- `src/ir.ts` — `IRExpr` ADT with constructor helpers (Layer 2).
+- `src/ir-build.ts` — TS-AST → L2 IRExpr (pure-path, gated by
+  `--use-ir`).
+- `src/ir-emit.ts` — L2 IRExpr → `OpaqueExpr` lowering.
+- `src/ir1.ts`, `src/ir1-build.ts`, `src/ir1-build-body.ts`,
+  `src/ir1-lower.ts`, `src/ir1-lower-body.ts` — Layer 1 (TS-shape
+  imperative IR; see § "Imperative IR Workstream" below).
 
-### Two layers
+### Two paths, one Layer 1
 
-Pure / value-position uses **`IRExpr`**; effect / statement-position uses
-**`IRStmt`**. IRSC merges these via `u⟨e⟩` hole contexts; we keep them
-separate because Pantagruel's mutating output is a list of equations + frame
-conditions, not a unit-returning expression.
+Post-M3, mutating-body lowering bypasses L2 entirely:
+
+- **Pure / value-position** — TS → L1 expression → L2 `IRExpr` →
+  `OpaqueExpr`. The single-rooted `IRExpr` tree fits "one expression
+  out". Pure-path is currently routed via `--use-ir` (env
+  `TS2PANT_USE_IR=1`); always-on cutover is M6.
+- **Effect / statement-position** — TS → L1 statement →
+  `PropResult[]` directly via a single fold (`lowerL1Body`) over
+  `SymbolicState` (in `translate-body.ts`). The mutating output is a
+  list of equations + frame conditions; no L2 statement vocabulary.
+
+L2 is *expression-only* — there is no L2 `IRStmt` post-M3. The
+asymmetry is intentional; see `workstreams/ts2pant-imperative-ir.md`
+§ "Architectural Lessons" for the rationale.
 
 ### `IRExpr` — 10 forms
 
@@ -571,49 +584,38 @@ conditions, not a unit-returning expression.
 | `Exists(binder, type, guard?, body)` | `ast.exists` | `some x: T \| ...` quantifier emission |
 | `IRWrap(OpaqueExpr)` | identity | **migration-only escape hatch**; deleted at Stage 8 cutover |
 
-### `IRStmt` — 4 forms
+### Mutating-body output (no L2 IR)
 
-| Form | Lowers to | Notes |
-|------|-----------|-------|
-| `Write(target, value)` | one primed equation per modified rule | `target` is a descriptor (`property-field` / `map-entry` / `set-member`); op is on the descriptor |
-| `LetIf(φ-vars, cond, then, else, cont)` | branching mutation merge via cond-merge of overrides | **`φ-vars` are write-keys**, not program names — see §"Divergences from IRSC" |
-| `Seq(stmts)` | sequential composition | trivial |
-| `Assert(quants, body)` | `kind: "assertion"` `PropResult` | empty-Set / empty-Map field initializers |
+The mutating path emits `PropResult[]` directly:
 
-### Body output
+- One `kind: "equation"` per modified rule (per-iter for Shape A
+  foreach, accumulator-fold for Shape B, single-write for branched
+  property mutation).
+- One `kind: "assertion"` for empty-Set / empty-Map field
+  initializers.
+- One frame `kind: "equation"` per unmodified-but-in-scope rule
+  (identity equation `prop' obj = prop obj`).
 
-```text
-IRBody = {
-  equations: IREquation[];   // one per record-return field, or one for non-record return; in mutating mode, one per modified rule
-  assertions: IRAssertExit[]; // empty-Set / empty-Map initializers
-  frames: IREquation[];       // identity equations for unmodified rules
-}
-```
+The fold is `lowerL1Body` in `ir1-lower-body.ts`, threading
+`SymbolicState` from `translate-body.ts`. The state's primitives
+(`putWrite`, `mergeOverrides`, `installMapWrite`, `installSetWrite`)
+are reused from the legacy mutating path — frame-condition synthesis
+is identical pre/post-M3.
 
-### Divergences from IRSC
+### Divergence from IRSC
 
-Two deliberate divergences. Both are documented here so a future agent doesn't
-"fix" them back to paper-faithful IRSC.
+One deliberate divergence, documented so a future agent doesn't "fix"
+it back to paper-faithful IRSC.
 
-**1. No `FieldAccess` form.** ts2pant lowers `e.f` to `App(qualified-rule,
-[e])` at construction time via `qualifyFieldAccess`. Adding a `FieldAccess`
-form would force every consumer to check both shapes and reintroduces the
-cross-talk problem. The qualified-rule pattern is already the invariant at
-`translate-body.ts:2378`.
+**No `FieldAccess` form.** ts2pant lowers `e.f` to `App(qualified-rule,
+[e])` at construction time via `qualifyFieldAccess`. Adding a
+`FieldAccess` form would force every consumer to check both shapes
+and reintroduces the cross-talk problem.
 
-**2. Hybrid SSA scope.** IRSC uses SSA over program names for *all*
-assignments. We use ordinary `Let` (no φ) for const-bindings and `LetIf`
-only for branching mutation, with φ-vars as **write-keys** (rule-name +
-canonicalized receiver), not program-variable names. Three reasons:
-
-- `inlineConstBindings` (translate-body.ts) is already a working right-fold
-  substitution closure — the standard let-elimination algorithm. SSA-then-
-  de-SSA would replace a debugged algorithm with a redundant one.
-- Pantagruel has no `let` in the output. Full SSA means SSA-construct then
-  SSA-destruct via substitution — twice the substitution machinery.
-- The mutating path's existing φ-merge is already keyed by write-keys
-  (translate-body.ts merge loop). What we're calling `LetIf` is a renaming
-  of that merge, not a new SSA discipline.
+(IRSC's SSA-over-program-names discipline does *not* apply here —
+post-M3 there is no L2 statement vocabulary, and the mutating path's
+write-key φ-merge happens inside `SymbolicState` rather than as an
+L2 form.)
 
 ### Invariants
 
@@ -623,34 +625,39 @@ canonicalized receiver), not program-variable names. Three reasons:
 - **Hygienic binders.** IR binder names (`Let.name`, `Each.binder`,
   `Forall.binder`, `Exists.binder`) come from the document-wide
   `UniqueSupply` / `cellRegisterName`. They cannot collide with parameter
-  names or accessor rules. `ir-subst.ts` relies on this for straight
-  name-based rewriting without α-renaming.
-- **`Write` is statement-only.** Never appears in `IRExpr`. A method call
-  that lowers to a `Write` is a statement; one that lowers to an `App` is
-  an expression. The lowerer rejects Writes appearing in expression
-  position.
-- **`Cond` is value-position.** `LetIf` is statement-position with non-empty
-  φ-vars. The two never overlap; the rule prevents the recognizer-redundancy
-  bug that the IR is meant to eliminate.
+  names or accessor rules. `ast.substituteBinder` (Pant's
+  capture-avoiding substitution at the wasm layer) relies on this.
+- **L2 is expression-only.** `IRExpr` never carries a write. A method
+  call that produces a state mutation is an L1 `assign` / `map-effect`
+  / `set-effect` statement, not an L2 expression. The mutation only
+  appears as a side effect in `SymbolicState` / `PropResult[]`.
 
-### IR Migration Status
+### Pure-path expression-IR migration (legacy plan)
+
+The original IR migration plan (Stages 1–11) was partially superseded
+by the imperative-IR workstream. Pure-path expression normalization
+(Stages 1–8) survived as the L2 expression IR; the mutating-path
+work (former Stages 9–11) re-formed inside the workstream. This
+section documents the surviving Stage 1–8 status; the workstream
+docs (§ "Imperative IR Workstream" below) cover the rest.
 
 | Stage | Recognizer / scope | Status |
 |-------|---------------------|--------|
-| 1 | Foundation: types, build (Var/Lit/Identifier), emit, subst, `--use-ir` flag, anchor fixture | ✅ landed |
+| 1 | Foundation: types, build (Var/Lit/Identifier), emit, `--use-ir` flag, anchor fixture | ✅ landed |
 | 2 | Optional chaining `?.` → `Each` | ✅ landed |
 | 3 | Nullish coalescing `??` → `Cond` | ✅ landed |
-| 4 | μ-search → `Comb(min, Each)` | partial — substitution mechanism is on IR (Stage 6); the comprehension construction itself is still in `translateMuSearchInit` (legacy OpaqueExpr) and migrates to native `Comb(min, Each)` in a future stage |
+| 4 | μ-search → `Comb(min, Each)` | ✅ landed via workstream M2 (`comb-typed` lowering in `ir1-lower.ts`) |
 | 5 | `.length` / `.size` → `Unop(card, x)` | ✅ landed |
-| 6 | Const-binding inlining → `Let` (pure path) | ✅ landed (mutating-path const-bindings stay on legacy `applyTo` until workstream M3) |
+| 6 | Const-binding inlining → `Let` (pure path) | ✅ landed |
 | 7 | Chain fusion → `Each` composition | ✅ tracked via IRWrap (anchors locked); native IR construction deferred — see "Note on chain fusion" below |
-| 8 | Pure-path cutover — delete legacy code where possible (IRWrap survives for chain-fusion outputs) | pending |
-| 9–11 | **Superseded** by `workstreams/ts2pant-imperative-ir.md` — mutating-path SSA, frame conditions, and final cutover re-form on top of an IRSC-faithful imperative IR layer (Layer 1) with normalization passes. See workstream M1 (conditionals), M2 (assign + μ-search), M3 (iteration + mutation). | superseded |
+| 8 | Pure-path cutover — delete legacy code subsumed by IR | pending (re-forms inside workstream M6) |
+| 9–11 | **Superseded** by `workstreams/ts2pant-imperative-ir.md`; mutating-path SSA, frame conditions, and final cutover re-formed inside workstream M3 (which **bypasses** the originally-planned L2 statement vocabulary — see workstream § "Architectural Lessons"). | superseded |
 
-The `--use-ir` flag (env var `TS2PANT_USE_IR=1`) routes the pure path through
-the IR pipeline. Default off until Stage 8 cutover. Per-stage gate is the
-`tests/ir-equivalence.test.mts` smoke test (string-equal output between
-legacy and IR pipelines on the anchor fixtures).
+The `--use-ir` flag (env var `TS2PANT_USE_IR=1`) routes the pure path
+through the IR pipeline. Default off until workstream M6 makes it
+always-on. Per-stage gate is the `tests/ir-equivalence.test.mts`
+smoke test (string-equal output between legacy and IR pipelines on
+the anchor fixtures).
 
 **Note on chain fusion (Stage 7).** `.filter`/`.map`/`.reduce` chains
 already produce semantically-identical output through the `IRWrap`
@@ -660,24 +667,26 @@ wraps. Locked-in IR-equivalence anchors confirm byte-equality across all
 shapes (`activeNames`, `nameLengths`, `highScores` from
 `expressions-array.ts`; the full `expressions-reduce.ts` suite). Native
 IR construction (a real `Each` IR node assembled in `ir-build`) is
-**intentionally deferred** because the existing 300+ lines of TS-AST
-inspection in legacy would translate to ~200 lines of mechanical
-duplication producing identical output — the architectural payoff is
-only at Stage 8 cutover (deleting the legacy code). We keep `IRWrap`
-in place for chain-fusion outputs through Stage 8 and reconsider once
-the mutating-path work (workstream M3) settles the Layer 1 → Layer 2
-lowering shape.
+**intentionally deferred** until workstream M6 — the existing 300+
+lines of TS-AST inspection in legacy would translate to ~200 lines of
+mechanical duplication producing identical output, with the
+architectural payoff only at the always-on cutover.
 
-### Imperative IR Workstream (supersedes Stages 9–11)
+### Imperative IR Workstream
 
 ts2pant has a layered architecture: **Layer 1** is a TS-faithful imperative
 IR (`Block`, `Cond`, `Foreach`, `Assign`, `For`, `While`, `Return`, …) in
 `src/ir1.ts` where normalization passes collapse syntactic equivalences
 (increment spellings, conditional families, iteration families) into a
-small canonical vocabulary. **Layer 2** is today's `IRExpr`/`IRStmt` in
-`src/ir.ts` (Pant-shaped expression IR). **Layer 3** is `OpaqueExpr`.
-Lowering: TS AST → Layer 1 (`ir1-build.ts`) → Layer 2 (`ir1-lower.ts`) →
-OpaqueExpr (`ir-emit.ts`).
+small canonical vocabulary. **Layer 2** is `IRExpr` in `src/ir.ts` —
+Pant-shaped *expression* IR (post-M3, statement-position lowering bypasses
+L2; see § "Two paths, one Layer 1" above). **Layer 3** is `OpaqueExpr`.
+
+Lowering for value-position: TS AST → Layer 1 (`ir1-build.ts`) → Layer 2
+(`ir1-lower.ts`) → OpaqueExpr (`ir-emit.ts`).
+
+Lowering for effect-position: TS AST → Layer 1 (`ir1-build-body.ts`) →
+`PropResult[]` (`ir1-lower-body.ts`, threading `SymbolicState`).
 
 The full milestone breakdown lives in
 `workstreams/ts2pant-imperative-ir.md`. Decisions on canonical forms,
@@ -712,6 +721,31 @@ carries no Pantagruel-target awareness for μ-search. Three
 additional `+1` spellings now translate (was just `i++`/`++i`
 pre-M2).
 
+**M3 (imperative-ir-iteration-mutation): landed.** Branched mutation
+and iteration flow through Layer 1. The build pass (`ir1-build-body.ts`)
+produces canonical L1 statement forms — `cond-stmt` for `if`-with-
+mutation, `foreach` for `for-of` / `forEach` — and the lower pass
+(`ir1-lower-body.ts`) does a single fold over the L1, threading the
+existing `SymbolicState` from `translate-body.ts` and emitting
+`PropResult[]`. No L2 statement vocabulary; the existing `SymbolicState`
+primitives (`putWrite`, `mergeOverrides`, `installMapWrite`,
+`installSetWrite`) are reused so frame-condition synthesis is
+unchanged. `Foreach.body` (Shape A — uniform iterator writes) emits
+one universally-quantified per-iteration equation per modified rule
+(`all $N in src | prop' $N = …`), while `Foreach.foldLeaves` (Shape B
+— accumulator folds `a.p OP= f(x)`) emits one *aggregated* accumulator
+equation per leaf with a `comb over each $N in src[, guard] | rhs`
+right-hand side. Both flow through the same fold but produce
+distinct output shapes. Map/Set effects
+inside branches (`m.set(k, v)`, `s.add(e)`, etc.) are first-class L1
+forms (`map-effect`, `set-effect`). The legacy iteration recognizers
+(`translateForOfLoop`, `translateForOfLoopBody`, `translateForEachStmt`,
+`classifyLoopStmt`, `ShapeBLeaf`, `LoopStmtClass`, `FoldOps`) are
+deleted — `symbolicExecute`'s if-statement / for-of / forEach arms are
+thin dispatchers to the L1 path. Pure-path `.reduce` (chain fusion via
+`BodyResult.pendingComprehension`) is expression-position and
+architecturally separate; it stays on `translateReduceCall`.
+
 **Layering principle.** This is the architectural commitment that
 M2 ratifies and the M2 cleanup completes:
 
@@ -731,21 +765,23 @@ Deviations from this principle should be flagged in review and
 either justified explicitly or refactored.
 
 **The `from-l2` adapter** (`ir1.ts`'s `IR1Expr.from-l2`) is the explicit
-transitional mechanism for sub-expressions whose normalization is not
-the current milestone's concern (e.g., guard expressions inside an L1
-conditional — their internal structure is M2/M3 territory). The adapter
-wraps a pre-built Layer 2 `IRExpr` and lowers verbatim. Lifetime:
-shrinks at M3 (more sub-expressions reach L1 natively); deleted at M6.
-Do not introduce new uses outside the build pipeline's scoped
+transitional mechanism for sub-expressions whose internal structure is
+outside the current milestone's normalization concern. The adapter
+wraps a pre-built Layer 2 `IRExpr` and lowers verbatim. M3 grew its
+use (mutating-body sub-expressions like receivers, values, conditions
+all arrive as OpaqueExpr from `translateBodyExpr` and wrap via
+`from-l2`). Lifetime: shrinks once M4 (equality/nullish) and M5
+(property access) bring sub-expressions onto L1 natively; deleted at
+M6. Do not introduce new uses outside the build pipeline's scoped
 sub-expression delegation.
 
 **Locked decisions** (re-litigation requires explicit user sign-off):
 - Layer 1 vocabulary is locked at M1. Forms can be added in later
-  milestones (e.g., `IsNullish` primitive at M4) but the existing forms
-  cannot be changed. Forms unused in M1 (`assign`, `foreach`, `for`,
-  `while`, `throw`, `expr-stmt`, statement-position `cond-stmt`) are
-  declared at the type level; their constructors throw
-  `not-implemented` until the milestone that introduces them lands.
+  milestones (e.g., `IsNullish` primitive at M4, `IR1FoldLeaf` at M3)
+  but existing forms cannot be changed. M3 activated `assign`,
+  `foreach`, `cond-stmt`, `map-effect`, `set-effect`; `for`, `throw`,
+  `expr-stmt` remain declared but unused (constructors return them;
+  lowerers reject).
 - **No `IR1Wrap` form.** Layer 1 is not an escape-hatch layer — the
   build pass either produces L1 or rejects with `unsupported`. The
   `from-l2` form is *not* a wrap-anything escape hatch; it's a scoped
@@ -760,11 +796,13 @@ sub-expression delegation.
   one milestone. Half-migrated classes coexisting with legacy
   recognizers are forbidden — that is the cross-talk hazard the IR is
   meant to retire.
-- **Mutation lands with iteration in M3.** `Foreach` body must be a
-  *statement* admitting `Assign` to support Shape A (uniform iterator
-  write), Shape B (accumulator fold), and `.reduce` desugaring
-  uniformly. The former Stages 9–11 (mutating-path SSA, frame
-  conditions, mutating-path cutover) re-form inside M3.
+- **Mutating-body lowering bypasses L2** (post-M3 architectural
+  commitment). The L2 statement vocabulary that the original Stages
+  9–11 plan called for turned out to be a compatibility shim mirroring
+  `symbolicExecute` line-for-line. M3's `lowerL1Body` threads
+  `SymbolicState` directly into `PropResult[]`, reusing the existing
+  mutation primitives. See `workstreams/ts2pant-imperative-ir.md`
+  § "Architectural Lessons" for the full rationale.
 
 ## PR #84 Post-Mortem: Why Standard Algorithms Matter
 

@@ -97,3 +97,44 @@ export function sumIntoAnon(acc: { total: number }, items: number[]): void {
     acc.total += x;
   }
 }
+
+/** Iterator-INDEPENDENT guard inside a loop body — the inner
+ *  `if (!(scale >= 0)) throw …` is a *duplicate* of the same
+ *  precondition asserted before the loop, so stripping the inner copy
+ *  is sound (the top-level guard already constrains `scale` for any
+ *  items length, including 0). The build pass strips the duplicate
+ *  inner guard mirroring what `symbolicExecute` does at top level,
+ *  and the loop translates to its Shape B fold. Without guard-
+ *  filtering inside loop bodies, the inner ThrowStatement would
+ *  surface as an unsupported loop body even though it carries no
+ *  semantic content beyond the top-level guard. */
+export function sumScaledAssert(
+  a: Account,
+  items: Item[],
+  scale: number,
+): void {
+  if (!(scale >= 0)) {
+    throw new Error("scale must be non-negative");
+  }
+  for (const x of items) {
+    if (!(scale >= 0)) {
+      throw new Error("scale must be non-negative");
+    }
+    a.total += x.value;
+  }
+}
+
+/** Iterator-DEPENDENT guard inside a loop body — `if (!(x.value >= 0))
+ *  throw …` is a per-element precondition over the iterable. Stripping
+ *  it would emit an unguarded Shape B fold and silently accept inputs
+ *  the source program would reject; lifting it as a quantified action
+ *  precondition (`all $N in items | x.value >= 0`) is the correct
+ *  shape but out of scope for M3, so the build pass rejects. */
+export function sumPositiveAssert(a: Account, items: Item[]): void {
+  for (const x of items) {
+    if (!(x.value >= 0)) {
+      throw new Error("non-negative value required");
+    }
+    a.total += x.value;
+  }
+}

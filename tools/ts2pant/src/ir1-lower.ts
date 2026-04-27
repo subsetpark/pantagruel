@@ -1,13 +1,14 @@
 /**
- * Layer 1 → Layer 2 lowering.
+ * Layer 1 → Layer 2 expression lowering.
  *
- * Walks `IR1Expr` and produces L2 `IRExpr` (today's `ir.ts`). The downstream
- * lowering Layer 2 → OpaqueExpr lives in `ir-emit.ts` and is unchanged.
+ * Walks `IR1Expr` and produces L2 `IRExpr` (`ir.ts`). The downstream
+ * lowering Layer 2 → OpaqueExpr lives in `ir-emit.ts`.
  *
- * **M1 scope**: `var`, `lit`, `binop`, `unop`, `app`, `member`, `cond`, and
- * the transitional `from-l2` form. Statement lowering (`lowerL1Stmt`) is
- * declared but throws — it lands in M3 alongside iteration + mutation
- * normalization.
+ * Layer 1 *statement* lowering does not route through here — mutating
+ * bodies go through `ir1-lower-body.ts` which threads `SymbolicState`
+ * directly into `PropResult[]`. The single μ-search recognizer below
+ * is the one statement-shaped form that produces an L2 `IRExpr`
+ * (`comb-typed`); everything else is expression-position.
  *
  * **Cond lowering.** L1 `cond({arms, otherwise})` produces L2
  * `irCond([...arms, [litBool(true), otherwise]])`. The trailing
@@ -24,7 +25,6 @@
 
 import {
   type IRExpr,
-  type IRStmt,
   irAppExpr,
   irAppName,
   irBinop,
@@ -100,25 +100,6 @@ export function lowerL1Expr(e: IR1Expr): IRExpr {
       throw new Error("unreachable: IR1Expr");
     }
   }
-}
-
-/**
- * Lower a Layer 1 statement to a list of L2 `IRStmt`. **Not implemented
- * in M1** — statement lowering lands in M3 alongside iteration + mutation
- * normalization, where L2's `Write` / `LetIf` / `Seq` forms become the
- * targets. Until then, calling this function on any L1 statement is a
- * bug; M1 only constructs and lowers L1 *expressions*.
- *
- * The signature returns the eventual M3 type (`IRStmt[]`) so adding the
- * real implementation in M3 is not a public type break — the body throws
- * unconditionally until then.
- */
-export function lowerL1Stmt(s: IR1Stmt): IRStmt[] {
-  void s;
-  throw new Error(
-    "lowerL1Stmt: Layer 1 statement lowering is M3 (iteration + mutation); " +
-      "see workstreams/ts2pant-imperative-ir.md",
-  );
 }
 
 // ---------------------------------------------------------------------------

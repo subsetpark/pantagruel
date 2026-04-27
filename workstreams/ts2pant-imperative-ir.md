@@ -3,8 +3,8 @@
 ## Vision
 
 Build a TypeScript-faithful imperative intermediate representation layer
-(Layer 1) between the TS AST and ts2pant's existing functional IR (Layer 2,
-today's `IRExpr`/`IRStmt`). Normalization passes against Layer 1 collapse
+(Layer 1) between the TS AST and ts2pant's expression IR (Layer 2,
+`IRExpr` in `src/ir.ts`). Normalization passes against Layer 1 collapse
 operationally-equivalent TS surface forms — increment spellings, conditional
 families, iteration families — into a small canonical vocabulary. Lowering
 passes run against ONE canonical input shape per construct, so adding a new
@@ -15,26 +15,54 @@ Reference: Vekris/Cosman/Jhala, *Refinement Types for TypeScript* (PLDI
 SSA transformation is the precedent. ts2pant cited it but stopped short of
 building it. This workstream commits to it.
 
-## Current State
+**Two lowering targets, one IR.** L1 is shared, but its downstream targets
+differ by program position:
 
-After PR #128 lands (Stages 1–7 of the existing IR Migration Status table in
-`tools/ts2pant/CLAUDE.md`), ts2pant has a Pant-shaped expression IR
-(`IRExpr`: `Var`, `Lit`, `App`, `Cond`, `Let`, `Each`, `Comb`, `Forall`,
-`Exists`, `IRWrap`) plus a thin statement layer (`IRStmt`: `Write`, `LetIf`,
-`Seq`, `Assert`). TS-side recognizers in `tools/ts2pant/src/translate-body.ts`
-and `tools/ts2pant/src/ir-build.ts` build IR directly from TS-AST. Pure-path
-only.
+- **Expression position** (pure path, value returns): L1 expression →
+  L2 `IRExpr` → `OpaqueExpr`. Two-layer pipeline; L2 is the
+  Pant-shaped expression IR.
+- **Statement position** (mutating bodies, frame conditions): L1
+  statement → `PropResult[]` directly via a single fold (`lowerL1Body`)
+  that threads `SymbolicState`. No L2 statement vocabulary; the mutating
+  output is a list of equations, not a unit-returning expression.
 
-The proximate motivator for this workstream is PR #131
-(`recognizeMuSearch` accepting five surface spellings of the same `n ↦ n+1`
-step). Five recognizer cases for one semantic operation is the structural
-problem; this workstream retires it by moving normalization into a layer
-where syntactic variation collapses *before* recognition runs.
+This asymmetry is intentional and was hard-won — see § "Architectural
+Lessons" below.
 
-This workstream **supersedes Stages 9–11** of the existing IR Migration
-Status table (mutating-path SSA, frame conditions, mutating-path cutover).
-**Stage 8** (pure-path cutover, deleting legacy code subsumed by IR) is
-unchanged and lands as currently described.
+## Current State (post-M3)
+
+M1 (conditionals), M2 (assign + μ-search), and M3 (iteration + mutation)
+have landed. Layer 1 IR is the canonical input shape for every
+mutating-body construct ts2pant supports plus the conditional /
+assign / iteration expression forms.
+
+**What's on Layer 1**:
+
+- Expression forms: `var`, `lit`, `binop`, `unop`, `app`, `member`, `cond`,
+  `from-l2` (transitional adapter for sub-expressions outside the current
+  milestone's normalization concern).
+- Statement forms: `block`, `let`, `assign`, `cond-stmt`, `foreach`
+  (with optional `body` and `foldLeaves` for Shape A + Shape B), `for`
+  (declared, unused), `while` (μ-search only), `return`, `throw`
+  (declared, unused), `expr-stmt` (declared, unused), `map-effect`,
+  `set-effect`.
+
+**What's on Layer 2** (post-M3): `IRExpr` only. The L2 statement
+vocabulary (`IRStmt` with `Write`, `LetIf`, `Seq`, `Assert`) and its
+companion `src/ir-subst.ts` were the speculative target of the
+parallel-build PRs (#134/#135/#137) that got closed; PR #138 deleted
+them once M3 confirmed nothing built or lowered them.
+
+**What's still on the legacy path** (pre-M4/M5/M6):
+
+- Property access (`obj.f` / `obj["f"]`) — qualified at build time via
+  `qualifyFieldAccess`; no L1 `Member` normalization yet.
+- Equality / nullish (`==` vs `===`, `x == null` family) — no
+  `IsNullish` primitive yet.
+- Pure-path `.reduce` chain fusion — `translateReduceCall` builds an
+  L2 `eachComb` directly. Architecturally separate from M3's
+  mutating-body foreach.
+- `IRWrap` escape hatch in L2 — survives until M6.
 
 ## Key Challenges
 
@@ -44,21 +72,15 @@ unchanged and lands as currently described.
   `this` or returns from an enclosing scope; `&&`/`||` as expressions on
   non-Bool values. The normalizer must refuse to canonicalize when it
   can't prove equivalence. Conservative-refusal logic is itself nontrivial.
-- **Conservative-refusal cost.** Policy 3(b) — reject the function with
-  UNSUPPORTED at the normalizer when equivalence can't be proven. Real
-  fixtures will reveal whether this pessimism is acceptable or whether
-  some classes need pass-through-un-normalized as a fallback. Measured at
-  M1; policy may be revisited per equivalence class.
-- **Vocabulary lock-in at M1.** Layer 1 forms (`Foreach`, `Cond`, `Assign`,
-  etc.) are decided up front. Forms can be *added* later (e.g., `IsNullish`
-  primitive at M4) but not changed. Mid-stream re-litigation is the failure
+- **Vocabulary lock-in at M1.** Layer 1 forms were decided up front.
+  Forms can be *added* later (e.g., `IsNullish` at M4, `IR1FoldLeaf`
+  at M3) but not changed. Mid-stream re-litigation is the failure
   mode the workstream is meant to prevent.
-- **Iteration shapes mutation.** `Foreach(binder, source, body)` with a
-  *statement* body (admitting `Assign`) is the canonical iteration form.
-  Shape A (uniform iterator write), Shape B (accumulator fold), and
-  `.reduce` desugaring all require statement-body iteration. This forces
-  the former Stages 9–11 mutating-path work to land *with* iteration
-  normalization in M3, not as a separate milestone.
+- **Iteration shapes mutation.** `Foreach` with a *statement* body
+  (admitting `Assign`) is the canonical iteration form. Shape A (uniform
+  iterator write), Shape B (accumulator fold), and `.reduce` desugaring
+  all require statement-body iteration. This forced the former Stages
+  9–11 mutating-path work to land *with* iteration normalization in M3.
 - **Hard rule per equivalence class.** During migration, an entire
   equivalence class moves to the new path in one milestone — no
   half-migrated classes co-existing with legacy recognizers. Faster to
@@ -67,6 +89,105 @@ unchanged and lands as currently described.
 - **Opaque AST constraint unchanged.** All normalization happens on Layer 1
   before any `OpaqueExpr` exists. No syntactic peeking on `OpaqueExpr` from
   any normalization or lowering pass.
+
+## Architectural Lessons
+
+These lessons are written in retrospect after M3 absorbed three closed PRs
+worth of false starts. They are the load-bearing architectural commitments
+for any future milestone in this workstream.
+
+### Lesson 1: parallel L2 statement vocabulary is a compatibility shim, not architecture
+
+**The false start (PRs #134/#135/#137):** the obvious-looking next move
+after M2 was to build out L2's `IRStmt` vocabulary (`Write`, `LetIf`,
+`Seq`, `Assert`) as the lowering target for L1 mutating-body statements.
+That was the framing inherited from the original Stages 9–11 plan: "L1
+→ L2 → emit" symmetric with the expression pipeline.
+
+**Why it failed:** the L2 statement forms turned out to mirror
+`symbolicExecute`'s control-flow structure line-for-line. Building them
+was zero abstraction value — the L2 layer didn't *normalize* anything
+relative to L1 (the normalization had already happened at L1 build);
+it just renamed the legacy mutation logic into a new vocabulary,
+producing two parallel paths that did the same work. PRs #134/#135/#137
+each added more parallel infrastructure without retiring any legacy
+code, because retirement required *all* mutating constructs to land on
+the L2 path simultaneously (the hard rule).
+
+**The fix:** mutating-body lowering bypasses L2 entirely. `lowerL1Body`
+threads the existing `SymbolicState` directly into `PropResult[]`. The
+existing mutation primitives (`putWrite`, `mergeOverrides`,
+`installMapWrite`, `installSetWrite`) — already debugged, already
+producing correct frame conditions — are reused as-is.
+
+**Generalizable principle:** if a proposed IR layer's forms map 1-to-1
+to the legacy code's control-flow structure, you're building a shim,
+not an abstraction. Either find a canonical form that collapses
+multiple legacy forms into one, or skip the layer.
+
+### Lesson 2: rip-out-first beats parallel-build for retiring legacy
+
+**The false start:** all three closed PRs followed parallel-build
+discipline — build the new path, run both paths under a feature flag,
+verify byte-equality, then cut over. This is sound for *adding*
+capability but not for *retiring* it: the hard-rule constraint forbids
+half-migrated classes, so the parallel-build phase has to construct the
+*entire* L2 vocabulary before the cutover lands. That made each PR
+balloon while the test suite still ran the legacy path.
+
+**The fix:** rip the legacy code out first (commit `987eef3` deleted
+~700 LOC of mutating-body recognizers), watch what tests break, build
+the minimum L1 form needed to make each one pass, commit the slice.
+The 37 failing tests after the rip became the spec; each subsequent
+slice picked one and built minimum viable replacement. PR #138 landed
+in 5 slices over a single day, vs three closed PRs that never landed.
+
+**Generalizable principle:** when retiring legacy paths, delete first,
+let failing tests drive replacement. Tests are the spec; the legacy
+code is not. This works *only* under the hard-rule discipline (one
+class moves at a time), which sets a finite, knowable failure
+boundary.
+
+### Lesson 3: the pure/mutating asymmetry is real, not provisional
+
+**The misframing in the original plan:** "Layer 1 → Layer 2 → OpaqueExpr"
+was treated as a single uniform pipeline. Pure-path expression and
+mutating-body iteration would both flow through L2.
+
+**The reality:** the two paths produce different output shapes — pure
+path produces a single `OpaqueExpr` (the function's return value);
+mutating body produces a `PropResult[]` (one equation per modified
+rule plus frames). The L2 IR shape (single-rooted `IRExpr` tree) fits
+the first; it's a poor fit for the second.
+
+**The architectural commitment** post-M3:
+
+- Pure path: TS → L1 expr → L2 `IRExpr` → `OpaqueExpr`. L2 is Pant's
+  expression IR; the lowering is mechanical pattern-match.
+- Mutating body: TS → L1 stmt → `PropResult[]` via single fold over
+  `SymbolicState`. No L2 statement vocabulary. The fold *is* the
+  lowering.
+
+Future milestones (M4, M5, M6) inherit this asymmetry. M4 (equality /
+nullish) and M5 (property access) are expression-only and naturally
+extend the L1 → L2 expression path. M6 (cleanup) deletes the dead
+L2 statement vocabulary and the `IRWrap` escape hatch.
+
+### Lesson 4: `from-l2` is the deferred-normalization knob, and it grew at M3
+
+The `from-l2` adapter (an L1 expression form wrapping a pre-built L2
+`IRExpr`) was originally framed as transitional ("shrinks at M3 (more
+sub-expressions reach L1 natively); deleted at M6"). M3 *grew* its use
+because mutating-body sub-expressions (receiver, value, condition,
+iteration source) all translate through `translateBodyExpr` and arrive
+as OpaqueExpr — wrapping via `from-l2` is the cheap way to embed them
+in L1 without re-translating.
+
+This is fine. The `from-l2` adapter lets the build pass defer
+expression-level normalization (M4 / M5 territory) without blocking
+statement-level normalization (M1 / M2 / M3). Its lifetime is bounded
+by M4 + M5 landing — at that point sub-expressions reach L1 natively
+and `from-l2` shrinks for real, then deletes at M6.
 
 ## Milestones
 
@@ -253,37 +374,65 @@ re-forms on top of `Assign`.
 
 ---
 
-### Milestone 3: imperative-ir-iteration-mutation
+### Milestone 3: imperative-ir-iteration-mutation — ✅ landed
 
-**Definition of Done**:
-- `ir1-build.ts` extends to translate iteration surface forms:
-  `for (const x of arr) {body}`, `arr.forEach(x => {body})`,
-  `for (let i = 0; i < arr.length; i++) {body using arr[i]}` (when `arr[i]`
-  is read-only), `arr.reduce((a, x) => f(a, x), init)`. All collapse to
-  canonical `Foreach(binder, source, body)` with statement-body. `.reduce`
-  desugars into `Block([Let(acc, init), Foreach(x, arr,
-  Assign(acc, App(f, [Var(acc), Var(x)]))), Return(Var(acc))])`.
-- Strict reject (3(b)): `forEach` callback that captures `this` or returns
-  early through enclosing scope; for-loop with non-`.length` bound or
-  non-`++` step that can't normalize to Foreach (falls through to `For` or
-  rejection).
-- New `ir1-lower.ts` pass classifies `Foreach` bodies: pattern
-  `Foreach(x, src, Assign(Member(x, p), e))` → Shape A
-  (`all x in src | p' x = e`); pattern
-  `Foreach(x, src, Assign(Member(a, p), BinOp(op, Member(a, p), f(x))))` → Shape B
-  (`p' a = p a op (combOp over each x in src | f x)`); pattern
-  `Let(acc, init); Foreach(x, src, Assign(acc, body))` followed by
-  `Return(acc)` → fold (`init op (combOp over each x in src | step x)`).
-  Frame-condition synthesis runs on the Layer 1 → Layer 2 lowering output.
-- Layer 2 `Write` and `LetIf` (the mutating-path forms PR #128 introduced)
-  are now driven by the Layer 1 `Assign` lowering, not by direct TS-AST →
-  Layer 2 translation. The "write-key" SSA discipline lands here as a
-  Layer 1 → Layer 2 pass, not as a Layer 2 internal form.
-- Legacy iteration recognizers (`extractStructuredIteration`, the Shape A/B
-  branches in `translate-body.ts`, the chain-fusion handling for `.reduce`)
-  deleted. Hard rule honored.
-- Mutating-path cutover: every TS construct that produces a primed equation
-  now flows through Layer 1. The former Stages 9–11 are complete.
+**Status**: landed across one rip-out commit and five build-up slices on
+`zax--ts2pant-m3-rip` (PR #138).
+
+The iteration + mutation classes flow through Layer 1: iteration surface
+forms (`for (const x of arr) { … }`, `arr.forEach(x => { … })`) build to
+canonical `Foreach(binder, source, body, foldLeaves)`, branched mutation
+builds to canonical statement-position `CondStmt`. The mutating path
+**bypasses L2 entirely** — `lowerL1Body` in `ir1-lower-body.ts` walks
+the `IR1Stmt` tree and emits `PropResult[]` directly while threading
+the existing `SymbolicState` (the same primitives the legacy mutating
+path uses — `putWrite`, `mergeOverrides`, `installMapWrite`,
+`installSetWrite`) so frame-condition emission is unchanged.
+
+**Strategy:** rip-out-first. After two architectural false starts (the
+parallel-build PRs #134/#135/#137 produced an L2 statement vocabulary
+that mirrored `symbolicExecute` line-for-line — zero abstraction value),
+the strategy switched to deleting legacy mutation handling first and
+letting failing tests drive the minimum L1 build/lower needed to satisfy
+them. The 37 unit-test failures after the rip became the spec for each
+slice.
+
+**Slice breakdown:**
+
+- Rip (`987eef3`) — delete `translateForOfLoop`, `translateForOfLoopBody`,
+  `translateForEachStmt`, `classifyLoopStmt`, `ShapeBLeaf`, `LoopStmtClass`,
+  `FoldOps`, `COMPOUND_ASSIGN_TO_FOLD` (~700 LOC); replace
+  `symbolicExecute`'s if-statement / for-of / forEach arms with
+  `unsupported` stubs.
+- Slice 1 (`1a92203`) — `buildL1IfMutation` for `if (g) { obj.p = v }`
+  branched property writes; `lowerCondStmt` per write-key fork/merge.
+- Slice 2 (`4251819`) — Map/Set effect calls (`m.set/.delete`,
+  `s.add/.delete/.clear`) in if-branches via `ir1MapEffect` /
+  `ir1SetEffect`; `mergeOverrides`-based merge in `lowerCondStmt`.
+- Slice 3 (`504cb8d`) — nested ifs and compound assigns in branch
+  bodies via build-pass desugaring (`a.p OP= v` → `a.p = a.p OP v`).
+- Slice 4 (`caa86a7`) — Shape A iterator writes via `buildL1ForOfMutation`
+  / `buildL1ForEachCall`; `lowerForeach` runs the body through a subState
+  and emits per-iter `all binder in src | prop' obj = value` equations.
+- Slice 5 (`ff7892d`) — Shape B accumulator-fold via `IR1FoldLeaf`
+  carried alongside `Foreach.body`. Build-time subState lets Shape B
+  `rhs`/`guard` translations observe in-iter Shape A writes; lower pass
+  emits `prop' target = prior outerOp (combOP over each x in src[, guard]
+  | rhs)` per leaf.
+
+**Pure-path `.reduce` is unchanged.** It's expression-position (chain
+fusion via `BodyResult.pendingComprehension`), architecturally separate
+from the mutating-path foreach work — the existing `translateReduceCall`
+still owns it.
+
+**Outcome:**
+
+- `ir1-build-body.ts` — TS AST → L1 statements (mutating body).
+- `ir1-lower-body.ts` — L1 statements → `PropResult[]` via `SymbolicState`.
+- `translate-body.ts` no longer carries iteration / branched-mutation
+  recognizers; the if-statement / for-of / forEach arms in
+  `symbolicExecute` are thin dispatchers to the L1 path.
+- All 476 unit tests + 22 integration tests pass.
 
 **Why this is a safe pause point**: Iteration and mutation are a coherent
 unit (one shapes the other). Both pure-path and mutating-path now flow
@@ -298,15 +447,11 @@ optional, low-risk follow-ups. M6 (cleanup) deletes whatever legacy code
 remains in `translate-body.ts`.
 
 **Open Questions**:
-- Index-for over `.length` with mutating writes through `arr[i]`: today's
-  legacy code rejects this. Layer 1 normalization could handle it via
-  `Foreach(x, arr, Assign(Member(x, ...), ...))` if `arr[i] = …` is read
-  back during the same iteration. Risk of subtle aliasing semantics; deferred
-  unless a fixture demands it.
-- Frame-condition emission ordering: the Layer 1 → Layer 2 lowering pass
-  must produce frames in a stable order (deterministic across runs). Today's
-  `state.modifiedProps` is a Set with insertion-order iteration; the pass
-  needs the same guarantee.
+- Index-for over `.length` with mutating writes through `arr[i]`: legacy
+  code rejects this. L1 normalization could handle it via `Foreach(x,
+  arr, Assign(Member(x, ...), ...))` if `arr[i] = …` is read back during
+  the same iteration. Risk of subtle aliasing semantics; deferred unless
+  a fixture demands it.
 
 ---
 
@@ -362,24 +507,50 @@ self-contained equivalence class.
 ### Milestone 6: legacy-recognizer-cleanup
 
 **Definition of Done**:
-- `tools/ts2pant/src/translate-body.ts` slimmed to the Layer 1 → Layer 2
-  lowering plumbing only. All TS-AST → Layer 2 direct paths deleted.
-- `IRWrap` form deleted from `IRExpr` (the migration escape hatch is no
-  longer reachable).
-- IR Migration Status table in `tools/ts2pant/CLAUDE.md` removed (or
-  archived); replaced by a "Layer 1 → Layer 2 → Pant" architecture
-  description anchored on this workstream.
-- Single-pipeline default: `--use-ir` flag (env `TS2PANT_USE_IR=1`) deleted
-  or made always-on.
-- All snapshots stable; no behavioral change relative to M3 + (M4|M5 if
-  landed).
 
-**Why this is a safe pause point**: End state of the workstream. The
-codebase has one translation pipeline, one IR vocabulary, one normalization
-discipline. The recognizer-extension treadmill is retired.
+*Pure-path cutover (was Stage 8 in the legacy IR Migration Status
+table):*
+
+- Promote `--use-ir` from opt-in to always-on, then delete the flag
+  (env `TS2PANT_USE_IR=1`) and the `useIRPipeline()` predicate.
+- Delete pure-path code in `translate-body.ts` subsumed by the L1 path.
+
+*`IRWrap` removal:*
+
+- Delete `IRWrap` form from `IRExpr`. The escape hatch should be
+  unreachable once `from-l2` (its L1 counterpart) shrinks via M4 / M5.
+
+*`translate-body.ts` shape:*
+
+- Slim to: parameter / scope plumbing, sub-expression dispatch into
+  `translateBodyExpr`, `SymbolicState` primitives (still load-bearing
+  for `lowerL1Body`), and the thin `symbolicExecute` orchestrator that
+  dispatches statement kinds to the L1 build/lower pair.
+- All TS-AST → L2 direct expression paths consumed by L1 normalization.
+
+*Docs:*
+
+- Replace legacy IR Migration Status table in `tools/ts2pant/CLAUDE.md`
+  with a post-cleanup architecture description anchored on this
+  workstream.
+
+**Why this is a safe pause point**: End state of the workstream. One
+translation pipeline. L2 IRExpr is canonical for value-position; L1
+statements lower directly to `PropResult[]` for effect-position. No
+escape hatches. The recognizer-extension treadmill is retired.
 
 **Unlocks**: Future TS surface support is a normalization-pass extension
 (small, localized) instead of a recognizer addition.
+
+**Already done in PR #138** (folded into M3 cleanup once it became
+clear the L2 statement vocabulary was free to delete):
+
+- L2 `IRStmt` ADT (`Write`, `LetIf`, `Seq`, `Assert`) + constructors
+  removed.
+- `IRBody`, `IREquation`, `IRAssertExit` + `lowerEquation` /
+  `lowerAssert` helpers removed.
+- `src/ir-subst.ts` deleted.
+- `lowerL1Stmt` shell removed from `src/ir1-lower.ts`.
 
 ## Dependency Graph
 
@@ -401,25 +572,40 @@ parallel if both are needed.
 
 | Question | Notes | Resolve By |
 |----------|-------|------------|
-| Conservative-refusal pessimism rate | Measure during M1 on real fixtures. If high, M4 may need to land before M3 or policy may relax to pass-through-un-normalized for specific forms. | M1 |
-| `Reduce` as own L1 form vs desugared | Decided: desugared into `Let + Foreach + Assign`. IRSC-faithful. May revisit if downstream pattern recognition proves brittle. | Decided in design (this doc) |
-| M4 standalone vs absorbed into M3 | Depends on M1 pessimism measurement and how much equality/nullish lives inside iteration bodies. | Post-M2 |
-| M5 standalone vs absorbed | Property access likely absorbed into M3 (Foreach bodies need `Member`). | Post-M2 |
-| Decrement μ-search (`i--`) SMT encoding | Layer 1 admits it; SMT lowering needs verification on a fixture. | M2 |
-| Index-for with mutating `arr[i] = …` writes | Aliasing semantics non-trivial. Deferred unless a fixture demands it. | Post-M3 |
+| Decrement μ-search (`i--`) SMT encoding | Layer 1 admits it; SMT lowering for `max over each j: Int, j <= INIT, ~P(j) \| j` (the *greatest* `j ≤ INIT` satisfying `¬P` — dual of the increment case's `min over j ≥ INIT`) needs verification on a fixture. | When a fixture demands it |
+| Index-for with mutating `arr[i] = …` writes | Aliasing semantics non-trivial. Deferred unless a fixture demands it. | When a fixture demands it |
+| M4 standalone vs absorbed | Depends on real-fixture pressure on equality/nullish forms inside iteration bodies. | Pre-M4 |
+| M5 standalone vs absorbed | Property access likely absorbs into whichever earlier milestone first needs uniform `Member` shape. | Pre-M5 |
+
+Resolved questions (kept for history):
+
+| Resolved | Resolution |
+|----------|------------|
+| Conservative-refusal pessimism rate | M1, M2, M3 all measured 0% pessimism on existing fixtures. Policy 3(b) holds. |
+| `Reduce` as own L1 form vs desugared | Pure-path `.reduce` stays on `translateReduceCall` (chain-fusion via `BodyResult.pendingComprehension`); not absorbed into L1. The "desugared into `Let + Foreach + Assign`" framing in the original plan was wrong — chain fusion is expression-position, architecturally separate from M3's mutating foreach. |
+| Frame-condition emission ordering | Frames flow through `state.modifiedProps` (Set with insertion-order iteration) — same path as legacy. No L1 → L2 lowering pass for frames; M3's `lowerL1Body` reuses the existing primitive. |
 
 ## Decisions Made
 
+Foundational (pre-M1):
+
 | Decision | Rationale |
 |----------|-----------|
-| Layer 1 vocabulary locked at M1 | Mid-stream re-litigation of canonical forms is the failure mode the workstream is meant to prevent. Forms can be *added* later (e.g., `IsNullish` at M4) but not changed. |
+| Layer 1 vocabulary locked at M1 | Mid-stream re-litigation of canonical forms is the failure mode the workstream is meant to prevent. Forms can be *added* later (e.g., `IsNullish` at M4, `IR1FoldLeaf` at M3) but existing forms cannot be changed. |
 | Conservative refusal = reject the function (3(b)) | Cleaner architecturally; matches the "find equivalences that are actually equivalences" discipline. Pessimism measured per-class; policy revisitable per-class if real fixtures hurt. |
 | Hard rule per equivalence class (4) | Faster per milestone, prevents the cross-talk hazard the IR was meant to retire. No half-migrated classes coexisting with legacy recognizers. |
-| Mutation lands with iteration in M3 (5(b)) | `Foreach` body must be a *statement* (admit `Assign`) to support Shape A, Shape B, and `.reduce` desugaring uniformly. Iteration normalization without `Assign` would force splitting the form. The former Stages 9–11 re-form inside M3. |
-| First slice = conditionals, not increment-only (1(b)) | Richer demonstration of the architecture earning its keep. Touches more recognizer surface area than μ-search alone. M1 conditionals + M2 assign + M3 iteration is a steeper but more honest validation curve than three small increments. |
+| Mutation lands with iteration in M3 (5(b)) | `Foreach` body must be a *statement* (admit `Assign`) to support Shape A, Shape B, and `.reduce` desugaring uniformly. Iteration normalization without `Assign` would force splitting the form. |
 | No `If(cond, then, else)` separate from `Cond` | Single-armed if = `Cond([(g, body)], None)`. Multi-armed normalizes to the same form. One downstream pattern. |
 | No `Inc(target)` separate from `Assign` | `i++` builds as `Assign(i, BinOp(Add, Var(i), Lit(1)))`. The "+1 step" is a single arithmetic predicate at μ-search lowering, not a separate form. |
 | `&&`/`\|\|` normalized only when Bool-typed | Truthy/falsy semantics on non-Bool values diverge from `Cond`'s Boolean guards. Conservative refusal on non-Bool. |
 | `switch` fall-through rejected at L1 build | Each case must end in `break`/`return`/`throw`. Fall-through is a different control structure with no clean canonical form. |
-| `Reduce` desugared into `Let + Foreach + Assign` | IRSC-faithful (every iteration is `Foreach`; fold is a downstream pattern). Avoids a second iteration form. |
-| Workstream supersedes Stages 9–11 of `tools/ts2pant/CLAUDE.md` IR Migration Status; Stage 8 unchanged | Stage 8 (pure-path cutover, deleting legacy code subsumed by IR) depends only on PR #128 landing, not on this architecture. Stages 9–11 (mutating-path SSA, frame conditions, mutating-path cutover) re-form on the Layer 1 substrate inside M3. |
+
+Post-M3 (architectural lessons hardened into commitments):
+
+| Decision | Rationale |
+|----------|-----------|
+| Mutating-body lowering bypasses L2 (Lesson 1) | L2 statement vocabulary mirrored `symbolicExecute` line-for-line — zero abstraction value. `lowerL1Body` threads `SymbolicState` directly into `PropResult[]`, reusing existing mutation primitives. |
+| Rip-out-first for retiring legacy paths (Lesson 2) | Parallel-build under hard-rule discipline forces *all* of a class onto the new path before any cutover lands, ballooning PRs. Deleting legacy first lets failing tests drive minimum-viable replacement. |
+| Pure / mutating asymmetry is permanent (Lesson 3) | Pure path returns one `OpaqueExpr`; mutating body returns `PropResult[]`. L2 `IRExpr` (single-rooted tree) fits the first; the second is a fold over `SymbolicState`. The two paths share L1 but diverge at lowering. |
+| `from-l2` lifetime extends through M4 / M5 (Lesson 4) | The adapter grew at M3 (mutating-body sub-expressions arrive as OpaqueExpr from `translateBodyExpr` and wrap via `from-l2`). Shrinks for real once M4 / M5 bring sub-expressions onto L1 natively. |
+| Workstream supersedes Stages 9–11 of CLAUDE.md IR Migration Status | M3 absorbed mutating-path SSA, frame conditions, and mutating-path cutover. Stage 8 (pure-path cutover) re-forms inside M6 alongside the L2 statement vocabulary deletion and `IRWrap` removal. |

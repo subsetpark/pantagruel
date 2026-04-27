@@ -1,24 +1,22 @@
 /**
- * IR → OpaqueExpr lowering.
+ * IRExpr → OpaqueExpr lowering.
  *
  * Walks `IRExpr` and produces `OpaqueExpr` via `pant-ast.ts` constructors.
- * The IR is read-only here; build is in `ir-build.ts`.
+ * The IR is read-only here; build is in `ir-build.ts` (and L1 → L2 in
+ * `ir1-lower.ts`).
  *
- * Stage 1 scope: handles `Var`, `Lit`, `App` (all heads), `Cond`, `Each`,
- * `Comb`, `Forall`, `Exists`, and the migration-only `IRWrap` escape
- * hatch. `Let` substitutes inline at lowering time (Pant has no `let`).
+ * Handles `Var`, `Lit`, `App` (all heads), `Cond`, `Each`, `Comb`,
+ * `Forall`, `Exists`, and the migration-only `IRWrap` escape hatch.
+ * `Let` substitutes inline at lowering time (Pant has no `let`).
  *
- * Statement-layer lowering (Write, LetIf, Seq, Assert) is wired up in
- * Stage 9.
- *
- * See CLAUDE.md §IR for the form-by-form lowering rationale.
+ * Mutating-body lowering does NOT route through here — it goes through
+ * `ir1-lower-body.ts` directly into `PropResult[]`. See
+ * `workstreams/ts2pant-imperative-ir.md` § "Architectural Lessons".
  */
 
 import {
-  type IRAssertExit,
   type IRBinop,
   type IRCombiner,
-  type IREquation,
   type IRExpr,
   type IRFoldCombiner,
   type IRHead,
@@ -29,7 +27,6 @@ import type {
   OpaqueBinop,
   OpaqueCombiner,
   OpaqueExpr,
-  OpaqueGuard,
   OpaqueParam,
   OpaqueUnop,
 } from "./pant-ast.js";
@@ -40,7 +37,7 @@ import { getAst } from "./pant-wasm.js";
 // --------------------------------------------------------------------------
 
 /** `IRBinop` → `OpaqueBinop`. One switch case per Pant op. */
-function lowerBinop(op: IRBinop): OpaqueBinop {
+export function lowerBinop(op: IRBinop): OpaqueBinop {
   const ast = getAst();
   switch (op) {
     case "and":
@@ -130,11 +127,11 @@ function lowerCombiner(c: IRCombiner): OpaqueCombiner {
 /**
  * Lower an `IRExpr` to an `OpaqueExpr`.
  *
- * `Let` is inlined via capture-avoiding substitution at lowering time —
- * the let-elimination is a separate pass in `ir-subst.ts` that callers
- * may run before `lowerExpr`, but `lowerExpr` itself also handles `Let`
- * by substituting the value into the body (see `ir-subst.ts` for the
- * shared substitution discipline).
+ * `Let` is inlined via capture-avoiding substitution at lowering time
+ * (`ast.substituteBinder` — Pant's capture-avoiding substitution at
+ * the OpaqueExpr layer). Right-fold semantics drop out of recursive
+ * lowering: `Let(a, ea, Let(b, eb, body))` lowers the inner Let first
+ * (substituting b), then the outer (substituting a).
  */
 export function lowerExpr(e: IRExpr): OpaqueExpr {
   const ast = getAst();
@@ -167,15 +164,10 @@ export function lowerExpr(e: IRExpr): OpaqueExpr {
 
     case "let": {
       // Pant has no let — inline the value into the body via
-      // `substituteBinder` (Pant's capture-avoiding substitution at the
-      // OpaqueExpr layer). Right-fold semantics drop out of recursive
-      // lowering: `Let(a, ea, Let(b, eb, body))` lowers the inner Let
-      // first (substituting b), then the outer (substituting a) — so
-      // an `eb` that references `a` still gets resolved correctly. We
-      // intentionally call `substituteBinder` here rather than `substIR`
-      // because the body may contain `IRWrap(...)` (legacy fallback
-      // output) that ir-subst can't traverse, and `substituteBinder`
-      // operates uniformly on the lowered OpaqueExpr.
+      // `substituteBinder`. The body may contain `IRWrap(...)` (legacy
+      // fallback output) which is opaque at the IR layer, so the
+      // substitution operates on the lowered OpaqueExpr where Pant's
+      // capture-avoiding machinery handles all forms uniformly.
       return ast.substituteBinder(
         lowerExpr(e.body),
         e.name,
@@ -333,42 +325,4 @@ function isIdentityFor(c: IRFoldCombiner, init: IRExpr): boolean {
       return false;
     }
   }
-}
-
-// --------------------------------------------------------------------------
-// IREquation / IRAssertExit lowering
-// --------------------------------------------------------------------------
-
-/**
- * Lower an `IREquation` to a `PropResult`-shaped object suitable for
- * pushing into the propositions array. Caller wraps in `kind: "equation"`.
- */
-export function lowerEquation(eq: IREquation): {
-  quantifiers: OpaqueParam[];
-  guards: OpaqueGuard[];
-  lhs: OpaqueExpr;
-  rhs: OpaqueExpr;
-} {
-  const ast = getAst();
-  return {
-    quantifiers: eq.quantifiers.map((q) =>
-      ast.param(q.name, ast.tName(q.type)),
-    ),
-    guards: (eq.guards ?? []).map((g) => ast.gExpr(lowerExpr(g))),
-    lhs: lowerExpr(eq.lhs),
-    rhs: lowerExpr(eq.rhs),
-  };
-}
-
-export function lowerAssert(a: IRAssertExit): {
-  quantifiers: OpaqueParam[];
-  guards: OpaqueGuard[];
-  body: OpaqueExpr;
-} {
-  const ast = getAst();
-  return {
-    quantifiers: a.quantifiers.map((q) => ast.param(q.name, ast.tName(q.type))),
-    guards: (a.guards ?? []).map((g) => ast.gExpr(lowerExpr(g))),
-    body: lowerExpr(a.body),
-  };
 }
