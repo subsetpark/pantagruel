@@ -26,7 +26,9 @@ import {
   ir1Block,
   ir1CondStmt,
   ir1FromL2,
+  ir1MapEffect,
   ir1Member,
+  ir1SetEffect,
   type IR1Expr,
   type IR1Stmt,
 } from "./ir1.js";
@@ -35,10 +37,12 @@ import {
   ambiguousFieldMsg,
   bodyExpr,
   expressionHasSideEffects,
+  isBodyEffect,
   isBodyUnsupported,
   qualifyFieldAccess,
   type SymbolicState,
   translateBodyExpr,
+  translateCallExpr,
   type UniqueSupply,
 } from "./translate-body.js";
 import type { NumericStrategy } from "./translate-types.js";
@@ -133,11 +137,75 @@ function buildL1MutationBody(
     return ir1Block([head!, ...rest]);
   }
   if (ts.isExpressionStatement(stmt)) {
+    if (ts.isCallExpression(stmt.expression)) {
+      return buildL1EffectCall(stmt.expression, ctx);
+    }
     return buildL1AssignStmt(stmt, ctx);
   }
   return {
     unsupported: `unsupported branch body kind: ${ts.SyntaxKind[stmt.kind]}`,
   };
+}
+
+/**
+ * Build an L1 `map-effect` or `set-effect` from a Map/Set mutation
+ * call inside a branch body. Reuses the existing `translateCallExpr`
+ * recognizer which returns a `{ effect: CollectionMutation }` for
+ * recognized `.set/.delete/.add/.delete/.clear` calls on Map/Set
+ * receivers.
+ */
+function buildL1EffectCall(
+  call: ts.CallExpression,
+  ctx: BuildBodyCtx,
+): BuildResult<IR1Stmt> {
+  const result = translateCallExpr(
+    call,
+    ctx.checker,
+    ctx.strategy,
+    ctx.paramNames,
+    ctx.state,
+    ctx.supply,
+  );
+  if (isBodyUnsupported(result)) {
+    return { unsupported: result.unsupported };
+  }
+  if (!isBodyEffect(result)) {
+    return { unsupported: "branch call is not a recognized Map/Set effect" };
+  }
+  const effect = result.effect;
+  if (effect.op === "set" || (effect.op === "delete" && "keyExpr" in effect)) {
+    // Map mutation
+    const m = effect as Extract<typeof effect, { op: "set" | "delete" }> & {
+      keyExpr: OpaqueExpr;
+    };
+    return ir1MapEffect(
+      m.op,
+      m.ruleName,
+      m.keyPredName,
+      m.ownerType,
+      m.keyType,
+      ir1FromL2(irWrap(ctx.applyConst(m.objExpr))),
+      ir1FromL2(irWrap(ctx.applyConst(m.keyExpr))),
+      m.valueExpr !== null
+        ? ir1FromL2(irWrap(ctx.applyConst(m.valueExpr)))
+        : null,
+    );
+  }
+  // Set mutation: op ∈ {add, delete, clear}, no keyExpr field
+  const s = effect as Extract<
+    typeof effect,
+    { op: "add" | "delete" | "clear" }
+  > & { elemExpr: OpaqueExpr | null };
+  return ir1SetEffect(
+    s.op,
+    s.ruleName,
+    s.ownerType,
+    s.elemType,
+    ir1FromL2(irWrap(ctx.applyConst(s.objExpr))),
+    s.elemExpr !== null
+      ? ir1FromL2(irWrap(ctx.applyConst(s.elemExpr)))
+      : null,
+  );
 }
 
 /**

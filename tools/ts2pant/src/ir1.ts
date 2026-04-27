@@ -194,7 +194,42 @@ export type IR1Stmt =
    * Bare expression-as-statement (effect-bearing call, etc.). Introduced
    * in M3.
    */
-  | { kind: "expr-stmt"; expr: IR1Expr };
+  | { kind: "expr-stmt"; expr: IR1Expr }
+  /**
+   * Map mutation effect: `m.set(k, v)` or `m.delete(k)`. Carries the
+   * descriptor extracted by the build pass via `translateCallExpr`. The
+   * lower pass reconstructs a `MapMutation` and dispatches to the
+   * existing `installMapWrite` primitive.
+   *
+   * Structural equivalent of `translate-body.ts:MapMutation` — kept
+   * here so `ir1.ts` doesn't need to import from `translate-body.ts`
+   * (one-way dependency: translate-body imports ir1 types). The
+   * build/lower pair convert between the two representations.
+   */
+  | {
+      kind: "map-effect";
+      op: "set" | "delete";
+      ruleName: string;
+      keyPredName: string;
+      ownerType: string;
+      keyType: string;
+      objExpr: IR1Expr;
+      keyExpr: IR1Expr;
+      valueExpr: IR1Expr | null;
+    }
+  /**
+   * Set mutation effect: `s.add(e)`, `s.delete(e)`, `s.clear()`.
+   * Same translation discipline as `map-effect`.
+   */
+  | {
+      kind: "set-effect";
+      op: "add" | "delete" | "clear";
+      ruleName: string;
+      ownerType: string;
+      elemType: string;
+      objExpr: IR1Expr;
+      elemExpr: IR1Expr | null;
+    };
 
 // --------------------------------------------------------------------------
 // Type guards
@@ -389,4 +424,42 @@ export const ir1Throw = (expr: IR1Expr): IR1Stmt => ({ kind: "throw", expr });
 export const ir1ExprStmt = (expr: IR1Expr): IR1Stmt => ({
   kind: "expr-stmt",
   expr,
+});
+
+export const ir1MapEffect = (
+  op: "set" | "delete",
+  ruleName: string,
+  keyPredName: string,
+  ownerType: string,
+  keyType: string,
+  objExpr: IR1Expr,
+  keyExpr: IR1Expr,
+  valueExpr: IR1Expr | null,
+): IR1Stmt => ({
+  kind: "map-effect",
+  op,
+  ruleName,
+  keyPredName,
+  ownerType,
+  keyType,
+  objExpr,
+  keyExpr,
+  valueExpr,
+});
+
+export const ir1SetEffect = (
+  op: "add" | "delete" | "clear",
+  ruleName: string,
+  ownerType: string,
+  elemType: string,
+  objExpr: IR1Expr,
+  elemExpr: IR1Expr | null,
+): IR1Stmt => ({
+  kind: "set-effect",
+  op,
+  ruleName,
+  ownerType,
+  elemType,
+  objExpr,
+  elemExpr,
 });

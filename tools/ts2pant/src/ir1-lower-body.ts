@@ -19,8 +19,15 @@ import { getAst } from "./pant-wasm.js";
 import {
   addWrittenKey,
   cloneSymbolicState,
+  installMapWrite,
+  installSetWrite,
+  type MapOverride,
+  type MapRuleWriteEntry,
+  mergeOverrides,
   type PropertyWriteEntry,
   putWrite,
+  type SetOverride,
+  type SetRuleWriteEntry,
   symbolicKey,
   type SymbolicState,
 } from "./translate-body.js";
@@ -60,6 +67,10 @@ export function lowerL1Body(
       return lowerAssign(stmt, state, propositions, ctx);
     case "cond-stmt":
       return lowerCondStmt(stmt, state, propositions, ctx);
+    case "map-effect":
+      return lowerMapEffect(stmt, state, ctx);
+    case "set-effect":
+      return lowerSetEffect(stmt, state, ctx);
     case "let":
     case "return":
     case "throw":
@@ -112,6 +123,55 @@ function lowerAssign(
   return true;
 }
 
+function lowerMapEffect(
+  stmt: Extract<IR1Stmt, { kind: "map-effect" }>,
+  state: SymbolicState,
+  ctx: LowerBodyCtx,
+): boolean {
+  const objExpr = lowerL1ExprToOpaque(stmt.objExpr);
+  const keyExpr = lowerL1ExprToOpaque(stmt.keyExpr);
+  const valueExpr =
+    stmt.valueExpr !== null ? lowerL1ExprToOpaque(stmt.valueExpr) : null;
+  installMapWrite(
+    state,
+    {
+      op: stmt.op,
+      ruleName: stmt.ruleName,
+      keyPredName: stmt.keyPredName,
+      ownerType: stmt.ownerType,
+      keyType: stmt.keyType,
+      objExpr,
+      keyExpr,
+      valueExpr,
+    },
+    ctx.applyConst,
+  );
+  return true;
+}
+
+function lowerSetEffect(
+  stmt: Extract<IR1Stmt, { kind: "set-effect" }>,
+  state: SymbolicState,
+  ctx: LowerBodyCtx,
+): boolean {
+  const objExpr = lowerL1ExprToOpaque(stmt.objExpr);
+  const elemExpr =
+    stmt.elemExpr !== null ? lowerL1ExprToOpaque(stmt.elemExpr) : null;
+  installSetWrite(
+    state,
+    {
+      op: stmt.op,
+      ruleName: stmt.ruleName,
+      ownerType: stmt.ownerType,
+      elemType: stmt.elemType,
+      objExpr,
+      elemExpr,
+    },
+    ctx.applyConst,
+  );
+  return true;
+}
+
 function lowerCondStmt(
   stmt: Extract<IR1Stmt, { kind: "cond-stmt" }>,
   state: SymbolicState,
@@ -161,34 +221,98 @@ function lowerCondStmt(
       });
       return false;
     }
-    if (pick.kind !== "property") {
-      propositions.push({
-        kind: "unsupported",
-        reason: `branch ${pick.kind} mutation merge is out of scope for this slice`,
+    if (pick.kind === "property") {
+      const tP = entryT as PropertyWriteEntry | undefined;
+      const eP = entryE as PropertyWriteEntry | undefined;
+      const objExpr = pick.objExpr;
+      const prop = pick.prop;
+      // Identity fallback — pre-state read at this key. Used only when
+      // *neither* the outer state nor the branch's clone had any prior
+      // write for this key. If the outer had a prior write, the clone
+      // copied it so `entryT?.value`/`entryE?.value` will hold that
+      // outer value (and the merge will see it instead of the
+      // pre-state).
+      const identity = ast.app(ast.var(prop), [objExpr]);
+      const vT = tP?.value ?? identity;
+      const vE = eP?.value ?? identity;
+      state.writes = putWrite(state.writes, key, {
+        kind: "property",
+        prop,
+        objExpr,
+        value: ast.cond([
+          [gExpr, vT],
+          [ast.litBool(true), vE],
+        ]),
       });
-      return false;
+      state.writtenKeys = addWrittenKey(state.writtenKeys, key);
+      continue;
     }
-    const tP = entryT as PropertyWriteEntry | undefined;
-    const eP = entryE as PropertyWriteEntry | undefined;
-    const objExpr = pick.objExpr;
-    const prop = pick.prop;
-    // Identity fallback — pre-state read at this key. Used only when
-    // *neither* the outer state nor the branch's clone had any prior
-    // write for this key. If the outer had a prior write, the clone
-    // copied it, so `entryT?.value`/`entryE?.value` will hold that
-    // outer value (and the merge will see it instead of the
-    // pre-state).
-    const identity = ast.app(ast.var(prop), [objExpr]);
-    const vT = tP?.value ?? identity;
-    const vE = eP?.value ?? identity;
+
+    const combineCond = (vA: OpaqueExpr, vB: OpaqueExpr): OpaqueExpr =>
+      ast.cond([
+        [gExpr, vA],
+        [ast.litBool(true), vB],
+      ]);
+
+    if (pick.kind === "map") {
+      const tM = entryT as MapRuleWriteEntry | undefined;
+      const eM = entryE as MapRuleWriteEntry | undefined;
+      const base = tM ?? eM!;
+      const ruleVar = ast.var(base.ruleName);
+      const keyVar = ast.var(base.keyPredName);
+      const valueFallback = (o: MapOverride): OpaqueExpr =>
+        ast.app(ruleVar, [o.objExpr, o.keyExpr]);
+      const memberFallback = (o: MapOverride): OpaqueExpr =>
+        ast.app(keyVar, [o.objExpr, o.keyExpr]);
+      const mergedValue = mergeOverrides(
+        tM?.valueOverrides ?? [],
+        eM?.valueOverrides ?? [],
+        (o) => o.keyTuple,
+        valueFallback,
+        combineCond,
+      );
+      const mergedMember = mergeOverrides(
+        tM?.membershipOverrides ?? [],
+        eM?.membershipOverrides ?? [],
+        (o) => o.keyTuple,
+        memberFallback,
+        combineCond,
+      );
+      state.writes = putWrite(state.writes, key, {
+        kind: "map",
+        ruleName: base.ruleName,
+        keyPredName: base.keyPredName,
+        ownerType: base.ownerType,
+        keyType: base.keyType,
+        valueOverrides: mergedValue,
+        membershipOverrides: mergedMember,
+      });
+      state.writtenKeys = addWrittenKey(state.writtenKeys, key);
+      continue;
+    }
+
+    // pick.kind === "set"
+    const tS = entryT as SetRuleWriteEntry | undefined;
+    const eS = entryE as SetRuleWriteEntry | undefined;
+    const baseS = tS ?? eS!;
+    const setRuleVar = ast.var(baseS.ruleName);
+    const setFallback = (o: SetOverride): OpaqueExpr =>
+      ast.binop(ast.opIn(), o.elemExpr, ast.app(setRuleVar, [baseS.objExpr]));
+    const mergedSet = mergeOverrides(
+      tS?.memberOverrides ?? [],
+      eS?.memberOverrides ?? [],
+      (o) => o.elemExpr,
+      setFallback,
+      combineCond,
+    );
     state.writes = putWrite(state.writes, key, {
-      kind: "property",
-      prop,
-      objExpr,
-      value: ast.cond([
-        [gExpr, vT],
-        [ast.litBool(true), vE],
-      ]),
+      kind: "set",
+      ruleName: baseS.ruleName,
+      ownerType: baseS.ownerType,
+      elemType: baseS.elemType,
+      objExpr: baseS.objExpr,
+      memberOverrides: mergedSet,
+      cleared: (tS?.cleared ?? false) || (eS?.cleared ?? false),
     });
     state.writtenKeys = addWrittenKey(state.writtenKeys, key);
   }

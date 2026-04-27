@@ -170,7 +170,7 @@ interface PendingComprehension {
  * which installs a MapRuleWriteEntry in the symbolic state. Encountering an
  * effect in expression position is a translation failure.
  */
-interface MapMutation {
+export interface MapMutation {
   op: "set" | "delete";
   ruleName: string;
   keyPredName: string;
@@ -193,7 +193,7 @@ interface MapMutation {
  * rule, unlike Map's value+membership rule pair). `elemExpr` is null for
  * `.clear()`.
  */
-interface SetMutation {
+export interface SetMutation {
   op: "add" | "delete" | "clear";
   ruleName: string;
   ownerType: string;
@@ -532,7 +532,7 @@ export function mergeOverrides<O extends { value: OpaqueExpr }>(
  * — `m` is the receiver (so distinct receivers at the same key don't
  * collide), `k` is the key argument.
  */
-function installMapWrite(
+export function installMapWrite(
   state: SymbolicState,
   effect: MapMutation,
   applyConst: (e: OpaqueExpr) => OpaqueExpr,
@@ -730,7 +730,7 @@ function setWriteKey(
  * baseline; at emission the pre-state `y in tags c` fallthrough is
  * replaced with literal `false`.
  */
-function installSetWrite(
+export function installSetWrite(
   state: SymbolicState,
   effect: SetMutation,
   applyConst: (e: OpaqueExpr) => OpaqueExpr,
@@ -3174,7 +3174,7 @@ function getRootIdentifier(expr: ts.Expression): string | null {
   return null;
 }
 
-function translateCallExpr(
+export function translateCallExpr(
   expr: ts.CallExpression,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
