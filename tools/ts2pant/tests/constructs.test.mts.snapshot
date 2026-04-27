@@ -206,6 +206,26 @@ exports[`expressions-const-pure-calls.ts > constStringMethod 1`] = `
 "module ConstStringMethod.\\n\\nconst-string-method s: String => Int.\\n\\n---\\n\\nconst-string-method s = index-of s \\"x\\".\\n"
 `;
 
+exports[`expressions-equality-nullish.ts > disjunctionDifferentOperands 1`] = `
+"module DisjunctionDifferentOperands.\\n\\ndisjunction-different-operands a: [Int], b: [Int] => Bool.\\n\\n---\\n\\ndisjunction-different-operands a b = (#a = 0 or #b = 0).\\n"
+`;
+
+exports[`expressions-equality-nullish.ts > longFormNegated 1`] = `
+"module LongFormNegated.\\n\\nlong-form-negated x: [Int] => Bool.\\n\\n---\\n\\nlong-form-negated x = (~(#x = 0)).\\n"
+`;
+
+exports[`expressions-equality-nullish.ts > longFormPositive 1`] = `
+"module LongFormPositive.\\n\\nlong-form-positive x: [Int] => Bool.\\n\\n---\\n\\nlong-form-positive x = (#x = 0).\\n"
+`;
+
+exports[`expressions-equality-nullish.ts > looseNullEq 1`] = `
+"module LooseNullEq.\\n\\nloose-null-eq x: [Int] => Bool.\\n\\n---\\n\\nloose-null-eq x = (#x = 0).\\n"
+`;
+
+exports[`expressions-equality-nullish.ts > looseNullNeq 1`] = `
+"module LooseNullNeq.\\n\\nloose-null-neq x: [Int] => Bool.\\n\\n---\\n\\nloose-null-neq x = (~(#x = 0)).\\n"
+`;
+
 exports[`expressions-equality-nullish.ts > strictEqAgainstLit 1`] = `
 "module StrictEqAgainstLit.\\n\\nstrict-eq-against-lit n: Int => Bool.\\n\\n---\\n\\nstrict-eq-against-lit n = (n = 0).\\n"
 `;
@@ -224,6 +244,30 @@ exports[`expressions-equality-nullish.ts > strictNeqInArm 1`] = `
 
 exports[`expressions-equality-nullish.ts > strictNeqStrings 1`] = `
 "module StrictNeqStrings.\\n\\nstrict-neq-strings a: String, b: String => Bool.\\n\\n---\\n\\nstrict-neq-strings a b = (a ~= b).\\n"
+`;
+
+exports[`expressions-equality-nullish.ts > strictNullEq 1`] = `
+"module StrictNullEq.\\n\\nstrict-null-eq x: [Int] => Bool.\\n\\n---\\n\\nstrict-null-eq x = (#x = 0).\\n"
+`;
+
+exports[`expressions-equality-nullish.ts > strictNullNeq 1`] = `
+"module StrictNullNeq.\\n\\nstrict-null-neq x: [Int] => Bool.\\n\\n---\\n\\nstrict-null-neq x = (~(#x = 0)).\\n"
+`;
+
+exports[`expressions-equality-nullish.ts > strictUndefinedEq 1`] = `
+"module StrictUndefinedEq.\\n\\nstrict-undefined-eq x: [Int] => Bool.\\n\\n---\\n\\nstrict-undefined-eq x = (#x = 0).\\n"
+`;
+
+exports[`expressions-equality-nullish.ts > strictUndefinedNeq 1`] = `
+"module StrictUndefinedNeq.\\n\\nstrict-undefined-neq x: [Int] => Bool.\\n\\n---\\n\\nstrict-undefined-neq x = (~(#x = 0)).\\n"
+`;
+
+exports[`expressions-equality-nullish.ts > typeofUndefinedEq 1`] = `
+"module TypeofUndefinedEq.\\n\\ntypeof-undefined-eq x: [Int] => Bool.\\n\\n---\\n\\ntypeof-undefined-eq x = (#x = 0).\\n"
+`;
+
+exports[`expressions-equality-nullish.ts > typeofUndefinedNeq 1`] = `
+"module TypeofUndefinedNeq.\\n\\ntypeof-undefined-neq x: [Int] => Bool.\\n\\n---\\n\\ntypeof-undefined-neq x = (~(#x = 0)).\\n"
 `;
 
 exports[`expressions-if-early-return.ts > armBetweenBindings 1`] = `

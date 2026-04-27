@@ -6,22 +6,41 @@ on:
   pull_request:
     branches: [master]
 
+# Both jobs run inside the official `ocaml/opam` Docker image, which has opam
+# and the OCaml 5.4 switch baked in. This bypasses `ocaml/setup-ocaml` (which
+# does a live GitHub release lookup at job start) — that lookup has been
+# repeatedly broken by upstream opam release naming changes (see git log for
+# the chain of pin commits this replaces). Bump the image tag to upgrade OCaml.
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: ocaml/opam:ubuntu-24.04-ocaml-5.4
+      # Override the image's default `opam` (uid 1000) user — GHA mounts the
+      # workspace with ownership the in-image opam user can't write to, so
+      # `actions/checkout@v6` fails before any of our steps run.
+      options: --user root
+    env:
+      # Reuse the switch baked into the image (which lives under the opam
+      # user's home) instead of letting opam create a fresh one under /root.
+      OPAMROOT: /home/opam/.opam
+      # opam refuses to run as root by default; this overrides that check.
+      OPAMROOTISOK: "1"
+      OPAMYES: "1"
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set up OCaml
-        uses: ocaml/setup-ocaml@v3
-        with:
-          ocaml-compiler: "5.4.1"
+      - name: Trust workspace
+        # Without this, `git` invocations inside dune/opam subprocesses fail
+        # with "dubious ownership" because the workspace is mounted with
+        # ownership root doesn't recognize.
+        run: git config --global --add safe.directory '*'
 
-      - name: Use opam.ocaml.org archive cache
-        # erratique.ch (upstream for cmdliner, mtime, fpath, logs, uutf, ...)
-        # is frequently flaky; the community cache mirrors opam-repository
-        # archives behind a CDN, so opam only falls back to upstream on a miss.
-        run: opam option archive-mirrors='["https://opam.ocaml.org/cache"]'
+      - name: Diagnose opam
+        run: |
+          opam --version
+          opam switch list
+          opam config list
 
       - name: Install dependencies
         run: |
@@ -56,22 +75,39 @@ jobs:
 
   ts2pant:
     runs-on: ubuntu-latest
+    container:
+      image: ocaml/opam:ubuntu-24.04-ocaml-5.4
+      options: --user root
+    env:
+      OPAMROOT: /home/opam/.opam
+      OPAMROOTISOK: "1"
+      OPAMYES: "1"
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set up OCaml
-        uses: ocaml/setup-ocaml@v3
-        with:
-          ocaml-compiler: "5.4.1"
-
-      - name: Use opam.ocaml.org archive cache
-        run: opam option archive-mirrors='["https://opam.ocaml.org/cache"]'
-
-      - name: Install binaryen
-        run: npm install -g binaryen
+      - name: Trust workspace
+        run: git config --global --add safe.directory '*'
 
       - name: Install just
-        uses: extractions/setup-just@v3
+        # Install directly from the GitHub release tarball so we don't depend
+        # on `extractions/setup-just`'s release-lookup logic. Pinned for
+        # reproducibility; bump as needed.
+        run: |
+          curl -fsSL https://github.com/casey/just/releases/download/1.50.0/just-1.50.0-x86_64-unknown-linux-musl.tar.gz \
+            | tar -xz -C /usr/local/bin just
+          just --version
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: tools/ts2pant/package-lock.json
+
+      - name: Install binaryen
+        # `conf-binaryen` (pulled in by `wasm_of_ocaml-compiler`) probes for
+        # `wasm-opt` at opam install time, so binaryen must be on PATH before
+        # the next step. Also needed at link time by wasm_of_ocaml.
+        run: npm install -g binaryen
 
       - name: Install OCaml dependencies
         run: |
@@ -83,12 +119,6 @@ jobs:
 
       - name: Build wasm for ts2pant
         run: opam exec -- just ts2pant-build-wasm
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: tools/ts2pant/package-lock.json
 
       - name: Install ts2pant dependencies
         run: just ts2pant-install

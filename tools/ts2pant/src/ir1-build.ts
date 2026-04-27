@@ -53,6 +53,10 @@ import {
   ir1While,
 } from "./ir1.js";
 import { lowerL1Expr } from "./ir1-lower.js";
+import {
+  type NullishTranslate,
+  recognizeNullishForm,
+} from "./nullish-recognizer.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { isStaticallyBoolTyped } from "./purity.js";
 import type {
@@ -580,6 +584,26 @@ function buildFromShortCircuit(
   expr: ts.BinaryExpression,
   ctx: L1BuildContext,
 ): L1BuildResult {
+  // M4: try the long-form nullish recognizer first. The recognizer
+  // collapses `x === null || x === undefined` (and the negated `&&`
+  // variant) into a single `IsNullish(x)` rather than two equality
+  // tests joined by `or`. Operand-mismatch falls through and the
+  // chain is handled by the regular Bool-typed short-circuit below.
+  const nullishTranslate: NullishTranslate = (sub) => {
+    const result = buildSubExpr(sub, ctx);
+    if (isL1Unsupported(result)) {
+      return { unsupported: result.unsupported };
+    }
+    return result;
+  };
+  const recognized = recognizeNullishForm(expr, ctx.checker, nullishTranslate);
+  if (recognized !== null) {
+    if ("unsupported" in recognized) {
+      return { unsupported: recognized.unsupported };
+    }
+    return recognized;
+  }
+
   if (
     !isStaticallyBoolTyped(expr.left, ctx.checker) ||
     !isStaticallyBoolTyped(expr.right, ctx.checker)

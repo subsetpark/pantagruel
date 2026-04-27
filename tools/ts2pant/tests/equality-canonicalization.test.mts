@@ -220,18 +220,23 @@ describe("equality-canonicalization (signature/guard path)", () => {
     }
     assert.equal(r1.declaration.guard, undefined);
 
+    // The non-null assertion variant uses a non-nullish loose-eq
+    // (`amount != 0`) so Patch 2's nullish recognizer doesn't consume
+    // it — the test still verifies that the `!` wrapper routes the
+    // rejection back to the binary-expression handler instead of
+    // falling through to a raw-text fallback.
     const sourceBang = `
       function assert(condition: unknown): asserts condition {
         if (!condition) throw new Error();
       }
-      interface Account { value: number | null; }
-      function setIfPresent(account: Account, amount: number | null): void {
-        assert((amount != null)!);
+      interface Account { value: number; }
+      function setIfNonZero(account: Account, amount: number): void {
+        assert((amount != 0)!);
         account.value = amount;
       }
     `;
     const sf2 = createSourceFileFromSource(sourceBang);
-    const r2 = translateSignature(sf2, "setIfPresent", IntStrategy);
+    const r2 = translateSignature(sf2, "setIfNonZero", IntStrategy);
     assert.equal(r2.declaration.kind, "action");
     if (r2.declaration.kind !== "action") {
       return;
