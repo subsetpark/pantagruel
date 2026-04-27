@@ -4,8 +4,10 @@ import { irWrap } from "./ir.js";
 import { lowerExpr } from "./ir-emit.js";
 import { ir1FromL2 } from "./ir1.js";
 import {
+  type BuildL1MemberAccessOptions,
   buildL1MemberAccess,
   type L1BuildContext,
+  tryBuildL1Cardinality,
   unwrapParens,
 } from "./ir1-build.js";
 import { lowerL1Expr } from "./ir1-lower.js";
@@ -929,11 +931,16 @@ export function translateExpr(
 ): TranslateExprResult {
   const ast = getAst();
 
-  // M5: plain (non-optional) property access routes through L1 Member.
-  // The lowered shape is byte-equal to the legacy
-  // `app(var(qualifiedRule), [obj])` construction; this cutover
-  // canonicalizes the build path. Optional-chain access and
-  // ElementAccess fall through to the rest of the dispatch.
+  // M5: plain (non-optional) property access dispatches cardinality
+  // first (`xs.length` / `m.size` on list-shaped TS types → L1
+  // `Unop(card, x)`, lowered to `#x`), then falls through to L1
+  // Member. Pre-cutover the signature path emitted `length xs` /
+  // `size m` as opaque EUF rule applications — solver couldn't see
+  // them as cardinality. Routing through `tryBuildL1Cardinality`
+  // makes signature guards see the same `#x` primitive that body and
+  // pure paths now produce, satisfying spec invariant 8 universally.
+  // Optional-chain access and ElementAccess fall through to the rest
+  // of the dispatch.
   if (
     ts.isPropertyAccessExpression(expr) &&
     (expr.flags & ts.NodeFlags.OptionalChain) === 0
@@ -945,23 +952,18 @@ export function translateExpr(
       state: undefined,
       supply: { n: 0, synthCell },
     };
-    // Signature-side best-effort: ambiguous union/intersection owners
-    // fall back to the bare kebab'd field name rather than rejecting
-    // the entire translation. `translateExpr`'s callers
-    // (`extractAssertionGuard`, `buildSubstitutionMap`,
-    // `tryTranslateGuardExpr`) treat any `unsupported` as a hard bail
-    // of the *optional* analysis — so a strict reject here would
-    // unnecessarily skip surrounding guards that translate fine. The
-    // body-side path keeps the strict default.
-    //
-    // Receiver leaf (the non-property bottom of the chain) goes
-    // through `translateExpr` (signature-side) instead of
-    // `translateBodyExpr` so the receiver inherits signature-only
-    // operator surface — loose-eq rejection, transparent
-    // `as`/`!`/`satisfies` unwrapping — and skips body-only branches
-    // (chain fusion, Map/Set effects, optional-chain functor lift)
-    // that aren't appropriate inside guard analysis.
-    const member = buildL1MemberAccess(expr, l1Ctx, {
+    // Signature-side options shared between cardinality and Member:
+    // - `ambiguousOwnerFallback: "bare-kebab"` keeps optional analyses
+    //   (guard extraction, call-following) from bailing on a single
+    //   ambiguous union/intersection accessor; `translateExpr`'s
+    //   callers treat unsupported as a hard bail.
+    // - `translateReceiverLeaf` routes the non-property leaf through
+    //   `translateExpr` (signature-side) so the receiver inherits
+    //   signature-only operator surface — loose-eq rejection,
+    //   transparent `as`/`!`/`satisfies` unwrapping — and skips
+    //   body-only branches (chain fusion, Map/Set effects,
+    //   optional-chain functor lift) inappropriate inside guards.
+    const sigOptions: BuildL1MemberAccessOptions = {
       ambiguousOwnerFallback: "bare-kebab",
       translateReceiverLeaf: (e) => {
         const r = translateExpr(e, checker, _strategy, paramNames, synthCell);
@@ -970,7 +972,12 @@ export function translateExpr(
         }
         return { kind: "expr", expr: r };
       },
-    });
+    };
+    const card = tryBuildL1Cardinality(expr, l1Ctx, sigOptions);
+    if (card !== null) {
+      return lowerExpr(lowerL1Expr(card));
+    }
+    const member = buildL1MemberAccess(expr, l1Ctx, sigOptions);
     if ("unsupported" in member) {
       return member;
     }

@@ -157,10 +157,18 @@ function isSizeCardinalityType(t: ts.Type): boolean {
  * shaped TS type and whose property is the cardinality slot for that
  * type. Returns null when the node is not a cardinality form — caller
  * falls through to `buildL1MemberAccess`.
+ *
+ * `options` propagate through to the inner Member dispatch when the
+ * cardinality receiver is itself a property access (e.g.,
+ * `a.items.length`) and to the leaf-translator hook for non-property
+ * receivers. Signature-path callers pass the same options here that
+ * they pass to `buildL1MemberAccess` so cardinality and Member share
+ * the signature-style receiver leaf and ambiguous-owner fallback.
  */
 export function tryBuildL1Cardinality(
   node: ts.Expression,
   ctx: L1BuildContext,
+  options: BuildL1MemberAccessOptions = {},
 ): IR1Expr | null {
   const stripped = unwrapParens(node);
   if (!ts.isPropertyAccessExpression(stripped)) {
@@ -192,21 +200,29 @@ export function tryBuildL1Cardinality(
   // entire chain stays on the L1 path — no half-migration where the
   // outer `card` is L1 but the inner `.items` round-trips through L2
   // via `from-l2`. Other receiver shapes (Identifier, call, binop,
-  // etc.) translate through the legacy pipeline; those aren't
-  // property-access and are out of M5's equivalence class.
+  // etc.) translate through the supplied leaf translator (default
+  // `translateBodyExpr`); those aren't property-access and are out of
+  // M5's equivalence class.
   if (
     ts.isPropertyAccessExpression(receiverNode) &&
     (receiverNode.flags & ts.NodeFlags.OptionalChain) === 0
   ) {
-    const innerCard = tryBuildL1Cardinality(receiverNode, ctx);
+    const innerCard = tryBuildL1Cardinality(receiverNode, ctx, options);
     if (innerCard !== null) {
       return ir1Unop("card", innerCard);
     }
-    const inner = buildL1MemberAccess(receiverNode, ctx);
+    const inner = buildL1MemberAccess(receiverNode, ctx, options);
     if (isL1Unsupported(inner)) {
       return null;
     }
     return ir1Unop("card", inner);
+  }
+  if (options.translateReceiverLeaf !== undefined) {
+    const r = options.translateReceiverLeaf(receiverNode as ts.Expression, ctx);
+    if (r.kind === "unsupported") {
+      return null;
+    }
+    return ir1Unop("card", ir1FromL2(irWrap(r.expr)));
   }
   const r = translateBodyExpr(
     receiverNode as ts.Expression,
