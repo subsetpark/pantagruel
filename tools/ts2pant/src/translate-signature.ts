@@ -453,7 +453,8 @@ export function containsUnsupportedOperator(expr: ts.Expression): boolean {
   if (
     ts.isParenthesizedExpression(expr) ||
     ts.isAsExpression(expr) ||
-    ts.isNonNullExpression(expr)
+    ts.isNonNullExpression(expr) ||
+    ts.isSatisfiesExpression(expr)
   ) {
     return containsUnsupportedOperator(expr.expression);
   }
@@ -1044,8 +1045,19 @@ export function translateExpr(
     }
   }
 
-  // Parenthesized — unwrap (parens are a rendering concern)
-  if (ts.isParenthesizedExpression(expr)) {
+  // Transparent wrappers — unwrap before any translation, including
+  // before falling through to the raw-text fallback at the end of this
+  // function. Without this, `(x == 0) as boolean` and `(x == 0)!` would
+  // bypass the loose-equality rejection above and emit raw source text
+  // as a Pant variable name. Mirrors `unwrapExpression` in
+  // translate-body.ts and the wrapper handling in `isPureExpression` /
+  // `containsUnsupportedOperator`.
+  if (
+    ts.isParenthesizedExpression(expr) ||
+    ts.isAsExpression(expr) ||
+    ts.isNonNullExpression(expr) ||
+    ts.isSatisfiesExpression(expr)
+  ) {
     return translateExpr(
       expr.expression,
       checker,

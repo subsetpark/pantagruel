@@ -196,6 +196,49 @@ describe("equality-canonicalization (signature/guard path)", () => {
     );
   });
 
+  it("== wrapped in `as`/non-null assertion still rejects (no raw-text fallback)", () => {
+    // Without wrapper-unwrapping in translateExpr, `(amount == 0) as boolean`
+    // would bypass the loose-equality rejection in the binary branch and
+    // fall through to `ast.var(expr.getText())` — emitting raw source as
+    // a Pant variable name. Verify the wrappers route back through the
+    // binary-expression rejection.
+    const sourceAs = `
+      function assert(condition: unknown): asserts condition {
+        if (!condition) throw new Error();
+      }
+      interface Account { balance: number; }
+      function deposit(account: Account, amount: number): void {
+        assert((amount == 0) as boolean);
+        account.balance = account.balance + amount;
+      }
+    `;
+    const sf1 = createSourceFileFromSource(sourceAs);
+    const r1 = translateSignature(sf1, "deposit", IntStrategy);
+    assert.equal(r1.declaration.kind, "action");
+    if (r1.declaration.kind !== "action") {
+      return;
+    }
+    assert.equal(r1.declaration.guard, undefined);
+
+    const sourceBang = `
+      function assert(condition: unknown): asserts condition {
+        if (!condition) throw new Error();
+      }
+      interface Account { value: number | null; }
+      function setIfPresent(account: Account, amount: number | null): void {
+        assert((amount != null)!);
+        account.value = amount;
+      }
+    `;
+    const sf2 = createSourceFileFromSource(sourceBang);
+    const r2 = translateSignature(sf2, "setIfPresent", IntStrategy);
+    assert.equal(r2.declaration.kind, "action");
+    if (r2.declaration.kind !== "action") {
+      return;
+    }
+    assert.equal(r2.declaration.guard, undefined);
+  });
+
   it("nested == inside a strict-eq guard also bails", () => {
     // The unsupported result propagates through translateExpr's
     // internal recursion (binop branch) up to the entry-point caller.
