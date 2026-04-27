@@ -253,37 +253,63 @@ re-forms on top of `Assign`.
 
 ---
 
-### Milestone 3: imperative-ir-iteration-mutation
+### Milestone 3: imperative-ir-iteration-mutation — ✅ landed
 
-**Definition of Done**:
-- `ir1-build.ts` extends to translate iteration surface forms:
-  `for (const x of arr) {body}`, `arr.forEach(x => {body})`,
-  `for (let i = 0; i < arr.length; i++) {body using arr[i]}` (when `arr[i]`
-  is read-only), `arr.reduce((a, x) => f(a, x), init)`. All collapse to
-  canonical `Foreach(binder, source, body)` with statement-body. `.reduce`
-  desugars into `Block([Let(acc, init), Foreach(x, arr,
-  Assign(acc, App(f, [Var(acc), Var(x)]))), Return(Var(acc))])`.
-- Strict reject (3(b)): `forEach` callback that captures `this` or returns
-  early through enclosing scope; for-loop with non-`.length` bound or
-  non-`++` step that can't normalize to Foreach (falls through to `For` or
-  rejection).
-- New `ir1-lower.ts` pass classifies `Foreach` bodies: pattern
-  `Foreach(x, src, Assign(Member(x, p), e))` → Shape A
-  (`all x in src | p' x = e`); pattern
-  `Foreach(x, src, Assign(Member(a, p), BinOp(op, Member(a, p), f(x))))` → Shape B
-  (`p' a = p a op (combOp over each x in src | f x)`); pattern
-  `Let(acc, init); Foreach(x, src, Assign(acc, body))` followed by
-  `Return(acc)` → fold (`init op (combOp over each x in src | step x)`).
-  Frame-condition synthesis runs on the Layer 1 → Layer 2 lowering output.
-- Layer 2 `Write` and `LetIf` (the mutating-path forms PR #128 introduced)
-  are now driven by the Layer 1 `Assign` lowering, not by direct TS-AST →
-  Layer 2 translation. The "write-key" SSA discipline lands here as a
-  Layer 1 → Layer 2 pass, not as a Layer 2 internal form.
-- Legacy iteration recognizers (`extractStructuredIteration`, the Shape A/B
-  branches in `translate-body.ts`, the chain-fusion handling for `.reduce`)
-  deleted. Hard rule honored.
-- Mutating-path cutover: every TS construct that produces a primed equation
-  now flows through Layer 1. The former Stages 9–11 are complete.
+**Status**: landed across one rip-out commit and five build-up slices on
+`zax--ts2pant-m3-rip` (PR #138).
+
+The iteration + mutation classes flow through Layer 1: iteration surface
+forms (`for (const x of arr) { … }`, `arr.forEach(x => { … })`) build to
+canonical `Foreach(binder, source, body, foldLeaves)`, branched mutation
+builds to canonical statement-position `CondStmt`. The L1 → L2 lowering
+threads the existing `SymbolicState` (the same primitives the legacy
+mutating path uses — `putWrite`, `mergeOverrides`, `installMapWrite`,
+`installSetWrite`) so frame-condition emission is unchanged.
+
+**Strategy:** rip-out-first. After two architectural false starts (the
+parallel-build PRs #134/#135/#137 produced an L2 statement vocabulary
+that mirrored `symbolicExecute` line-for-line — zero abstraction value),
+the strategy switched to deleting legacy mutation handling first and
+letting failing tests drive the minimum L1 build/lower needed to satisfy
+them. The 37 unit-test failures after the rip became the spec for each
+slice.
+
+**Slice breakdown:**
+
+- Rip (`987eef3`) — delete `translateForOfLoop`, `translateForOfLoopBody`,
+  `translateForEachStmt`, `classifyLoopStmt`, `ShapeBLeaf`, `LoopStmtClass`,
+  `FoldOps`, `COMPOUND_ASSIGN_TO_FOLD` (~700 LOC); replace
+  `symbolicExecute`'s if-statement / for-of / forEach arms with
+  `unsupported` stubs.
+- Slice 1 (`1a92203`) — `buildL1IfMutation` for `if (g) { obj.p = v }`
+  branched property writes; `lowerCondStmt` per write-key fork/merge.
+- Slice 2 (`4251819`) — Map/Set effect calls (`m.set/.delete`,
+  `s.add/.delete/.clear`) in if-branches via `ir1MapEffect` /
+  `ir1SetEffect`; `mergeOverrides`-based merge in `lowerCondStmt`.
+- Slice 3 (`504cb8d`) — nested ifs and compound assigns in branch
+  bodies via build-pass desugaring (`a.p OP= v` → `a.p = a.p OP v`).
+- Slice 4 (`caa86a7`) — Shape A iterator writes via `buildL1ForOfMutation`
+  / `buildL1ForEachCall`; `lowerForeach` runs the body through a subState
+  and emits per-iter `all binder in src | prop' obj = value` equations.
+- Slice 5 (`ff7892d`) — Shape B accumulator-fold via `IR1FoldLeaf`
+  carried alongside `Foreach.body`. Build-time subState lets Shape B
+  `rhs`/`guard` translations observe in-iter Shape A writes; lower pass
+  emits `prop' target = prior outerOp (combOP over each x in src[, guard]
+  | rhs)` per leaf.
+
+**Pure-path `.reduce` is unchanged.** It's expression-position (chain
+fusion via `BodyResult.pendingComprehension`), architecturally separate
+from the mutating-path foreach work — the existing `translateReduceCall`
+still owns it.
+
+**Outcome:**
+
+- `ir1-build-body.ts` — TS AST → L1 statements (mutating body).
+- `ir1-lower-body.ts` — L1 statements → `PropResult[]` via `SymbolicState`.
+- `translate-body.ts` no longer carries iteration / branched-mutation
+  recognizers; the if-statement / for-of / forEach arms in
+  `symbolicExecute` are thin dispatchers to the L1 path.
+- All 476 unit tests + 22 integration tests pass.
 
 **Why this is a safe pause point**: Iteration and mutation are a coherent
 unit (one shapes the other). Both pure-path and mutating-path now flow

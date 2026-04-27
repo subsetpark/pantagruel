@@ -712,6 +712,27 @@ carries no Pantagruel-target awareness for μ-search. Three
 additional `+1` spellings now translate (was just `i++`/`++i`
 pre-M2).
 
+**M3 (imperative-ir-iteration-mutation): landed.** Branched mutation
+and iteration flow through Layer 1. The build pass (`ir1-build-body.ts`)
+produces canonical L1 statement forms — `cond-stmt` for `if`-with-
+mutation, `foreach` for `for-of` / `forEach` — and the lower pass
+(`ir1-lower-body.ts`) does a single fold over the L1, threading the
+existing `SymbolicState` from `translate-body.ts` and emitting
+`PropResult[]`. No L2 statement vocabulary; the existing `SymbolicState`
+primitives (`putWrite`, `mergeOverrides`, `installMapWrite`,
+`installSetWrite`) are reused so frame-condition synthesis is
+unchanged. Both `Foreach.body` (Shape A — uniform iterator writes)
+and `Foreach.foldLeaves` (Shape B — accumulator folds `a.p OP= f(x)`)
+emit per-iteration equations through this single fold. Map/Set effects
+inside branches (`m.set(k, v)`, `s.add(e)`, etc.) are first-class L1
+forms (`map-effect`, `set-effect`). The legacy iteration recognizers
+(`translateForOfLoop`, `translateForOfLoopBody`, `translateForEachStmt`,
+`classifyLoopStmt`, `ShapeBLeaf`, `LoopStmtClass`, `FoldOps`) are
+deleted — `symbolicExecute`'s if-statement / for-of / forEach arms are
+thin dispatchers to the L1 path. Pure-path `.reduce` (chain fusion via
+`BodyResult.pendingComprehension`) is expression-position and
+architecturally separate; it stays on `translateReduceCall`.
+
 **Layering principle.** This is the architectural commitment that
 M2 ratifies and the M2 cleanup completes:
 

@@ -1,14 +1,27 @@
 /**
  * L1 statement → mutating-body Pantagruel propositions.
  *
- * Single-fold lowering: walks an `IR1Stmt`, threads the existing legacy
- * `SymbolicState` from `translate-body.ts`, and pushes `PropResult[]`.
- * Mirrors the shape of legacy `symbolicExecute` but operates on
- * canonicalized L1 input.
+ * Single-fold lowering: walks an `IR1Stmt`, threads `SymbolicState`
+ * from `translate-body.ts`, and pushes `PropResult[]`. Reuses the
+ * existing mutation primitives (`putWrite`, `mergeOverrides`,
+ * `installMapWrite`, `installSetWrite`) so frame-condition synthesis
+ * is identical to the pre-L1 path.
  *
- * Slice 1: handles `block`, `assign(member, …)`, `cond-stmt` (single-arm,
- * property writes only). Other forms reject with a specific reason —
- * subsequent slices grow the dispatch as needed.
+ * Dispatches by `stmt.kind`:
+ * - `block` — sequential composition.
+ * - `assign(member, …)` — property write into the symbolic state.
+ * - `cond-stmt` — single-arm if-with-mutation; forks two state clones,
+ *   recurses, then merges per write-key (property writes use
+ *   cond-fallback; Map/Set merge their override lists).
+ * - `map-effect` / `set-effect` — Map/Set mutation effects.
+ * - `foreach` — Shape A body lowered through a sub-state and emitted
+ *   as `all binder in src | prop' obj = value` equations; Shape B
+ *   `foldLeaves` emit `prop' target = prior outerOp (combOP over each
+ *   binder in src[, guard] | rhs)` equations into the outer state.
+ *
+ * Other L1 forms (`let`, `return`, `throw`, `expr-stmt`, `while`,
+ * `for`) reject — they're either out of scope for mutating-body
+ * lowering or handled at higher layers (μ-search via `lowerL1MuSearch`).
  */
 
 import { lowerBinop, lowerExpr } from "./ir-emit.js";

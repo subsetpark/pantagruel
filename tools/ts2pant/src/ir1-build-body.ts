@@ -1,22 +1,27 @@
 /**
  * TS AST → L1 statements (mutating-body recognizers).
  *
- * Slice 1: `buildL1IfMutation` recognizes `if (g) { … }` / `if (g) { … }
- * else { … }` where each branch is a block (or single statement) of
- * simple property assignments `obj.p = v`. Anything more complex
- * (compound assigns, Map/Set effects in branches, nested ifs) returns
- * `{unsupported: …}` and the caller falls through to the legacy
- * rejection stub.
+ * Recognizes the mutating-body shapes ts2pant handles and produces
+ * canonical L1 forms:
  *
- * Sub-expressions (condition, receiver, value) translate via the
- * existing legacy `translateBodyExpr` and wrap as `ir1FromL2`. The
- * lower pass unwraps via `lowerL1Expr` (passes the OpaqueExpr through
- * verbatim).
+ * - `buildL1IfMutation` — `if (g) { … }` / `if (g) { … } else { … }`
+ *   where each branch is a sequence of property assignments,
+ *   compound assigns (desugared to `obj.p = obj.p OP v`), Map/Set
+ *   effect calls, or nested ifs (recursed). Builds an L1 `cond-stmt`.
+ * - `buildL1ForOfMutation` / `buildL1ForEachCall` — `for (const x of arr)
+ *   { … }` and `arr.forEach(x => { … })`. Body statements are classified
+ *   into Shape A (uniform iterator writes — `x.p = e`) and Shape B
+ *   (accumulator folds — `a.p OP= f(x)`); the latter become
+ *   `IR1FoldLeaf` entries on the foreach. A build-time subState lets
+ *   Shape B `rhs`/`guard` translations observe in-iter Shape A writes.
  *
- * Property names are qualified at build time via `qualifyFieldAccess`,
- * matching how the existing property-assign arm of `symbolicExecute`
- * does it. This keeps the canonicalized form consistent across L1
- * and legacy paths.
+ * Sub-expressions (conditions, receivers, values) translate via the
+ * existing `translateBodyExpr` and wrap as `ir1FromL2`. The lower pass
+ * unwraps via `lowerL1Expr` (passes the OpaqueExpr through verbatim).
+ *
+ * Property names are qualified at build time via `qualifyFieldAccess`
+ * so the L1 form carries the Pantagruel rule symbol, not the raw TS
+ * field name.
  */
 
 import ts from "typescript";
