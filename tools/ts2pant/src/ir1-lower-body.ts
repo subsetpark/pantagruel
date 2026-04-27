@@ -17,10 +17,12 @@ import { lowerL1Expr } from "./ir1-lower.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
 import {
+  addModifiedProp,
   addWrittenKey,
   cloneSymbolicState,
   installMapWrite,
   installSetWrite,
+  makeSymbolicState,
   type MapOverride,
   type MapRuleWriteEntry,
   mergeOverrides,
@@ -71,13 +73,14 @@ export function lowerL1Body(
       return lowerMapEffect(stmt, state, ctx);
     case "set-effect":
       return lowerSetEffect(stmt, state, ctx);
+    case "foreach":
+      return lowerForeach(stmt, state, propositions, ctx);
     case "let":
     case "return":
     case "throw":
     case "expr-stmt":
     case "while":
     case "for":
-    case "foreach":
       propositions.push({
         kind: "unsupported",
         reason: `lowerL1Body: '${stmt.kind}' out of scope for this slice`,
@@ -170,6 +173,63 @@ function lowerSetEffect(
     ctx.applyConst,
   );
   return true;
+}
+
+function lowerForeach(
+  stmt: Extract<IR1Stmt, { kind: "foreach" }>,
+  state: SymbolicState,
+  propositions: PropResult[],
+  ctx: LowerBodyCtx,
+): boolean {
+  const ast = getAst();
+  const arrExpr = ctx.applyConst(lowerL1ExprToOpaque(stmt.source));
+  // Sub-state captures Shape A's per-iteration writes so they don't
+  // leak into the outer state. Mirrors legacy `subState` discipline at
+  // translate-body.ts:3383 (deleted in rip).
+  const subState = makeSymbolicState(ctx.applyConst);
+  if (!lowerL1Body(stmt.body, subState, propositions, ctx)) {
+    return false;
+  }
+  // Iterate sub-state writes and emit per-iteration equations
+  // (Shape A). Matches legacy emission shape exactly:
+  //   `quantifiers: [], guards: [gIn(iter, src)], lhs: primed-rule, rhs`
+  // (translate-body.ts:3415-3421, deleted in rip).
+  //
+  // Slice 4 = Shape A only: the write's receiver must mention the
+  // iter binder as a free identifier. Writes whose receiver doesn't
+  // reference the iter (Shape B accumulator folds, Map/Set mutations)
+  // are deferred to later slices.
+  const iterRefRe = new RegExp(`\\b${escapeRegex(stmt.binder)}\\b`);
+  for (const [, entry] of subState.writes) {
+    if (entry.kind !== "property") {
+      propositions.push({
+        kind: "unsupported",
+        reason: `${entry.kind === "map" ? "Map" : "Set"} mutation inside foreach body is out of scope for this slice`,
+      });
+      return false;
+    }
+    if (!iterRefRe.test(ast.strExpr(entry.objExpr))) {
+      propositions.push({
+        kind: "unsupported",
+        reason:
+          "Shape B (accumulator fold inside foreach) is out of scope for this slice",
+      });
+      return false;
+    }
+    propositions.push({
+      kind: "equation",
+      quantifiers: [],
+      guards: [ast.gIn(stmt.binder, arrExpr)],
+      lhs: ast.app(ast.primed(entry.prop), [entry.objExpr]),
+      rhs: entry.value,
+    });
+    state.modifiedProps = addModifiedProp(state.modifiedProps, entry.prop);
+  }
+  return true;
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function lowerCondStmt(

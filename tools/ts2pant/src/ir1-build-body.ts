@@ -25,6 +25,7 @@ import {
   ir1Assign,
   ir1Block,
   ir1CondStmt,
+  ir1Foreach,
   ir1FromL2,
   ir1MapEffect,
   ir1Member,
@@ -66,6 +67,114 @@ export function isUnsupported<T>(
     x !== null &&
     "unsupported" in (x as Record<string, unknown>)
   );
+}
+
+/**
+ * Recognize a TS `for (const x of arr) { body }` and build the
+ * canonical L1 `foreach` form. Body statements are recognized via the
+ * same `buildL1MutationBody` used for if-branches — property assigns,
+ * Map/Set effects, nested ifs, etc.
+ *
+ * The iter binder is added to a copy of `paramNames` for the body's
+ * sub-expression translation so reads of `x.p` resolve through
+ * `qualifyFieldAccess` to the property's rule.
+ */
+export function buildL1ForOfMutation(
+  stmt: ts.ForOfStatement,
+  ctx: BuildBodyCtx,
+): BuildResult<IR1Stmt> {
+  const initList = stmt.initializer;
+  if (
+    !ts.isVariableDeclarationList(initList) ||
+    !(initList.flags & ts.NodeFlags.Const) ||
+    initList.declarations.length !== 1
+  ) {
+    return {
+      unsupported: "for-of initializer must be a single const binding",
+    };
+  }
+  const decl = initList.declarations[0]!;
+  if (!ts.isIdentifier(decl.name)) {
+    return { unsupported: "for-of destructuring pattern is not supported" };
+  }
+  const iterName = decl.name.text;
+  const sourceR = translateBodyExpr(
+    stmt.expression,
+    ctx.checker,
+    ctx.strategy,
+    ctx.paramNames,
+    ctx.state,
+    ctx.supply,
+  );
+  if (isBodyUnsupported(sourceR)) {
+    return { unsupported: sourceR.unsupported };
+  }
+  const source = ir1FromL2(irWrap(ctx.applyConst(bodyExpr(sourceR))));
+  const bodyCtx = withIterBinder(ctx, iterName);
+  const body = buildL1MutationBody(stmt.statement, bodyCtx);
+  if (isUnsupported(body)) {
+    return body;
+  }
+  return ir1Foreach(iterName, source, body);
+}
+
+/**
+ * Recognize a TS `arr.forEach(x => body)` call-statement and build
+ * the canonical L1 `foreach` form. Same structure as `buildL1ForOf`,
+ * just with the iter binder coming from the arrow callback.
+ */
+export function buildL1ForEachCall(
+  call: ts.CallExpression,
+  ctx: BuildBodyCtx,
+): BuildResult<IR1Stmt> {
+  if (
+    !ts.isPropertyAccessExpression(call.expression) ||
+    call.expression.name.text !== "forEach" ||
+    call.arguments.length !== 1
+  ) {
+    return { unsupported: "not a forEach call" };
+  }
+  const arg = call.arguments[0]!;
+  if (!ts.isArrowFunction(arg)) {
+    return { unsupported: "forEach callback must be an arrow function" };
+  }
+  if (
+    arg.parameters.length !== 1 ||
+    !ts.isIdentifier(arg.parameters[0]!.name)
+  ) {
+    return {
+      unsupported:
+        "forEach callback must take a single identifier parameter",
+    };
+  }
+  const iterName = arg.parameters[0]!.name.text;
+  const sourceR = translateBodyExpr(
+    call.expression.expression,
+    ctx.checker,
+    ctx.strategy,
+    ctx.paramNames,
+    ctx.state,
+    ctx.supply,
+  );
+  if (isBodyUnsupported(sourceR)) {
+    return { unsupported: sourceR.unsupported };
+  }
+  const source = ir1FromL2(irWrap(ctx.applyConst(bodyExpr(sourceR))));
+  const bodyCtx = withIterBinder(ctx, iterName);
+  const bodyStmt = ts.isBlock(arg.body)
+    ? arg.body
+    : ts.factory.createBlock([ts.factory.createExpressionStatement(arg.body)]);
+  const body = buildL1MutationBody(bodyStmt, bodyCtx);
+  if (isUnsupported(body)) {
+    return body;
+  }
+  return ir1Foreach(iterName, source, body);
+}
+
+function withIterBinder(ctx: BuildBodyCtx, iterName: string): BuildBodyCtx {
+  const next = new Map(ctx.paramNames);
+  next.set(iterName, iterName);
+  return { ...ctx, paramNames: next };
 }
 
 /**

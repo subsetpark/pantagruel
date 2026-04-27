@@ -13,7 +13,12 @@ import {
   isL1Unsupported,
   lowerL1ToOpaque,
 } from "./ir1-build.js";
-import { buildL1IfMutation, isUnsupported } from "./ir1-build-body.js";
+import {
+  buildL1ForEachCall,
+  buildL1ForOfMutation,
+  buildL1IfMutation,
+  isUnsupported,
+} from "./ir1-build-body.js";
 import { lowerL1Body } from "./ir1-lower-body.js";
 import { lowerL1MuSearch, type MuSearchLowerCtx } from "./ir1-lower.js";
 import type {
@@ -4409,10 +4414,9 @@ function symbolicExecute(
       }
     }
 
-    // forEach mutation deleted in M3 rip. The L1 path replaces it via
-    // `buildL1Body` recognizing `arr.forEach(x => body)` as an L1
-    // `foreach` statement and `lowerL1Body` emitting the per-iteration
-    // equation. Until that path is wired, forEach mutation rejects.
+    // `arr.forEach(x => { body })` as a top-level statement —
+    // recognized by the L1 build pass and lowered as a foreach
+    // (Shape A property writes; Shape B and other shapes deferred).
     if (
       ts.isExpressionStatement(stmt) &&
       ts.isCallExpression(unwrapExpression(stmt.expression)) &&
@@ -4423,11 +4427,25 @@ function symbolicExecute(
         ts.isPropertyAccessExpression(call.expression) &&
         call.expression.name.text === "forEach"
       ) {
-        propositions.push({
-          kind: "unsupported",
-          reason: "M3 rip: forEach mutation pending L1 cutover",
+        const built = buildL1ForEachCall(call, {
+          checker,
+          strategy,
+          paramNames,
+          state,
+          supply,
+          applyConst,
         });
-        ok = false;
+        if (isUnsupported(built)) {
+          propositions.push({
+            kind: "unsupported",
+            reason: built.unsupported,
+          });
+          ok = false;
+          continue;
+        }
+        if (!lowerL1Body(built, state, propositions, { applyConst })) {
+          ok = false;
+        }
         continue;
       }
     }
@@ -4544,14 +4562,27 @@ function symbolicExecute(
       continue;
     }
 
-    // M3 rip: for-of mutation deleted. Same story as forEach above —
-    // L1 path will recognize the for-of as an L1 `foreach`.
+    // `for (const x of arr) { body }` — same path as forEach.
     if (ts.isForOfStatement(stmt) && !insideBranch) {
-      propositions.push({
-        kind: "unsupported",
-        reason: "M3 rip: for-of mutation pending L1 cutover",
+      const built = buildL1ForOfMutation(stmt, {
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+        applyConst,
       });
-      ok = false;
+      if (isUnsupported(built)) {
+        propositions.push({
+          kind: "unsupported",
+          reason: built.unsupported,
+        });
+        ok = false;
+        continue;
+      }
+      if (!lowerL1Body(built, state, propositions, { applyConst })) {
+        ok = false;
+      }
       continue;
     }
 
