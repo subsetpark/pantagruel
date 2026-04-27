@@ -13,15 +13,19 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up OCaml
-        # Pinned to v3.6.0 — v3.6.1 (current `@v3` head) added a
-        # fallback-to-older-opam-release codepath that itself fails
-        # with "Failed to find any opam release that matches the
-        # specified version constraint." `allow-prerelease-opam: true`
-        # is not enough; the lookup itself is broken. Drop the pin
-        # once `@v3` is healthy again.
+        # Pinned to v3.6.0 + allow-prerelease-opam — v3.6.1 (current
+        # `@v3` head) added a broken fallback-to-older-opam-release
+        # codepath. v3.6.0 alone now also fails the lookup with
+        # "Failed to find any opam release that matches the specified
+        # version constraint" because the latest stable opam release
+        # falls outside the action's default version constraint.
+        # Allowing prereleases lets the lookup pick a matching opam
+        # build instead of failing the setup step. Drop the pin once
+        # `@v3` is healthy again.
         uses: ocaml/setup-ocaml@v3.6.0
         with:
           ocaml-compiler: "5.4.1"
+          allow-prerelease-opam: true
 
       - name: Use opam.ocaml.org archive cache
         # erratique.ch (upstream for cmdliner, mtime, fpath, logs, uutf, ...)
@@ -66,10 +70,11 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up OCaml
-        # Pinned to v3.6.0 — see rationale in the build job above.
+        # Pinned to v3.6.0 + allow-prerelease-opam — see rationale in the build job above.
         uses: ocaml/setup-ocaml@v3.6.0
         with:
           ocaml-compiler: "5.4.1"
+          allow-prerelease-opam: true
 
       - name: Use opam.ocaml.org archive cache
         run: opam option archive-mirrors='["https://opam.ocaml.org/cache"]'
