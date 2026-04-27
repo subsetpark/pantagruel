@@ -16,6 +16,13 @@ jobs:
         uses: ocaml/setup-ocaml@v3
         with:
           ocaml-compiler: "5.4.1"
+          # The action's default opam version constraint sometimes
+          # excludes the latest stable opam release ("Failed to find
+          # any opam release that matches the specified version
+          # constraint" — the error message itself suggests this
+          # toggle). Allowing prereleases lets the action pick a
+          # matching opam build instead of failing the setup step.
+          allow-prerelease-opam: true
 
       - name: Use opam.ocaml.org archive cache
         # erratique.ch (upstream for cmdliner, mtime, fpath, logs, uutf, ...)
@@ -63,6 +70,13 @@ jobs:
         uses: ocaml/setup-ocaml@v3
         with:
           ocaml-compiler: "5.4.1"
+          # The action's default opam version constraint sometimes
+          # excludes the latest stable opam release ("Failed to find
+          # any opam release that matches the specified version
+          # constraint" — the error message itself suggests this
+          # toggle). Allowing prereleases lets the action pick a
+          # matching opam build instead of failing the setup step.
+          allow-prerelease-opam: true
 
       - name: Use opam.ocaml.org archive cache
         run: opam option archive-mirrors='["https://opam.ocaml.org/cache"]'
