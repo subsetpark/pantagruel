@@ -298,6 +298,22 @@ export type IR1Stmt =
     };
 
 /**
+ * `cond-stmt` variant restricted to `IR1ForeachBody` arms — the inner
+ * branches inherit the same Shape A subset, so a nested
+ * `cond-stmt(g, return …)` is unrepresentable. Distinct from the
+ * outer `cond-stmt` form (whose arms are general `IR1Stmt`) because
+ * the foreach-body invariant has to recurse all the way down.
+ */
+export type IR1ForeachCondStmt = {
+  kind: "cond-stmt";
+  arms: readonly [
+    readonly [IR1Expr, IR1ForeachBody],
+    ...ReadonlyArray<readonly [IR1Expr, IR1ForeachBody]>,
+  ];
+  otherwise: IR1ForeachBody | null;
+};
+
+/**
  * Statement shapes admissible as the body of an `IR1Stmt.foreach` —
  * the M3 Shape A contract: per-iter property writes (`assign` against
  * `Member(iter, p)`), conditional writes (`cond-stmt`), and blocks
@@ -308,13 +324,15 @@ export type IR1Stmt =
  * `while`, `let`, `expr-stmt`) are also excluded — they have no
  * meaning under per-iteration quantified emission.
  *
- * Block bodies recurse so the no-escape-hatch invariant holds at any
- * depth. The `cond-stmt` variant's arms are still `IR1Stmt` (so the
- * type doesn't capture the nested invariant); the build pass closes
- * that gap at runtime via `ensureForeachBodyShape`.
+ * Block bodies and cond-stmt arms recurse via `IR1ForeachCondStmt` so
+ * the no-escape-hatch invariant holds at any depth at the type level.
+ * `ensureForeachBodyShape` in `ir1-build-body.ts` is a runtime check
+ * that bridges the gap when narrowing from a general `IR1Stmt`
+ * produced by `buildL1IfMutation` (whose return type is `IR1Stmt`).
  */
 export type IR1ForeachBody =
-  | Extract<IR1Stmt, { kind: "assign" | "cond-stmt" }>
+  | Extract<IR1Stmt, { kind: "assign" }>
+  | IR1ForeachCondStmt
   | {
       kind: "block";
       stmts: readonly [IR1ForeachBody, ...IR1ForeachBody[]];

@@ -90,6 +90,25 @@ export function isUnsupported<T>(
 }
 
 /**
+ * True if a guard statement (assert call or `if (g) throw`) mentions
+ * any name in `names` — used to flag iterator-dependent guards inside
+ * loop bodies, which can't be silently stripped (their elements
+ * constrain the iterable's contents) the way iterator-independent
+ * guards can.
+ */
+function guardReferencesNames(stmt: ts.Statement, names: Set<string>): boolean {
+  if (ts.isExpressionStatement(stmt) && ts.isCallExpression(stmt.expression)) {
+    return stmt.expression.arguments.some(
+      (a) => ts.isExpression(a) && expressionReferencesNames(a, names),
+    );
+  }
+  if (ts.isIfStatement(stmt)) {
+    return expressionReferencesNames(stmt.expression, names);
+  }
+  return false;
+}
+
+/**
  * Validate that a built `IR1Stmt` is admissible as a `foreach` body:
  * only `assign` (with `member` target), `cond-stmt`, and `block`s of
  * those. The cast to `IR1ForeachBody` is type-level only — `cond-stmt`
@@ -321,15 +340,39 @@ function buildL1ForeachBody(
   binder: string,
   ctx: BuildBodyCtx,
 ): BuildResult<ForeachBodyResult> {
-  // Strip guard statements (`assert(...)`, `if (g) throw …`) before
-  // classification, mirroring what `symbolicExecute` does for top-level
-  // bodies. Without this, a guarded loop body like
-  // `for (const x of xs) { assert(x.amount > 0); a.total += x.amount; }`
-  // would fail classification on the guard call.
+  // Strip iterator-INDEPENDENT guard statements (`assert(...)`,
+  // `if (g) throw …`) before classification, mirroring what
+  // `symbolicExecute` does for top-level bodies. Without this, a
+  // top-level precondition reasserted inside the loop (e.g.,
+  // `for (...) { assert(amount >= 0); a.total += x.value; }`) would
+  // fail classification on the guard call.
+  //
+  // Iterator-DEPENDENT guards are different — they constrain
+  // *elements* of the iterable, e.g. `if (!(x.value >= 0)) throw …`
+  // is a per-element precondition that's part of the action's
+  // semantics. Stripping it would emit an unconstrained Shape B fold
+  // and accept inputs the source program would reject. Lifting it
+  // into a quantified action precondition `all $N in xs | x.value >=
+  // 0` is the correct shape but out of scope for M3, so reject
+  // conservatively.
   const rawStmts = ts.isBlock(bodyStmt)
     ? Array.from(bodyStmt.statements)
     : [bodyStmt];
-  const stmts = rawStmts.filter((s) => !isGuardStatement(s, ctx.checker));
+  const stmts: ts.Statement[] = [];
+  const iterRefs = new Set([iterName]);
+  for (const s of rawStmts) {
+    if (!isGuardStatement(s, ctx.checker)) {
+      stmts.push(s);
+      continue;
+    }
+    if (guardReferencesNames(s, iterRefs)) {
+      return {
+        unsupported:
+          "iterator-dependent guard inside a loop is not supported — lift the precondition over the iterable as a separate action guard",
+      };
+    }
+    // iterator-independent guard — strip
+  }
   // Build-time subState: forks the outer state so prior writes are
   // visible during in-iter sub-expression translation, then accumulates
   // Shape A property writes so Shape B rhs/guard sub-expressions observe
@@ -866,11 +909,6 @@ function buildL1EffectCall(
 }
 
 /**
- * Build an L1 `assign` statement from a TS property-assignment
- * expression statement. Slice 1 supports simple `=` only; compound
- * assigns (`+=` etc.) return `{unsupported}` and are deferred.
- */
-/**
  * Map TS compound-assign operator kinds to their plain binary
  * counterparts. `+=` desugars to `lhs = lhs + rhs`, `-=` to `lhs =
  * lhs - rhs`, and so on.
@@ -884,6 +922,13 @@ const COMPOUND_ASSIGN_TO_BINOP: Map<ts.SyntaxKind, ts.BinaryOperator> = new Map(
   ],
 );
 
+/**
+ * Build an L1 `assign` statement from a TS property-assignment
+ * expression statement. Accepts simple `=` and compound assigns
+ * (`+=`, `-=`, `*=`, `/=`); the compound forms desugar to
+ * `lhs = lhs OP rhs` via `COMPOUND_ASSIGN_TO_BINOP` so the IR carries
+ * one canonical assign shape regardless of surface spelling.
+ */
 function buildL1AssignStmt(
   stmt: ts.ExpressionStatement,
   ctx: BuildBodyCtx,

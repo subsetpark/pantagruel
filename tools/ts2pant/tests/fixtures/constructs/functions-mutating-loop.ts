@@ -98,11 +98,32 @@ export function sumIntoAnon(acc: { total: number }, items: number[]): void {
   }
 }
 
-/** Shape B with a per-iteration guard call — the `if (...) throw …`
- *  precondition is filtered before classification, the same way
- *  `symbolicExecute` strips top-level guards, so the loop translates
- *  to its Shape B fold. Without the guard-filtering pass, the
+/** Iterator-INDEPENDENT guard inside a loop body — the
+ *  `if (!(scale >= 0)) throw …` reasserts a top-level precondition
+ *  on the (parameter) `scale` and doesn't constrain elements of
+ *  `items`. The build pass strips it (mirroring what
+ *  `symbolicExecute` does at top level) and the loop translates to
+ *  its Shape B fold. Without guard-filtering inside loop bodies, the
  *  ThrowStatement would surface as an unsupported loop body. */
+export function sumScaledAssert(
+  a: Account,
+  items: Item[],
+  scale: number,
+): void {
+  for (const x of items) {
+    if (!(scale >= 0)) {
+      throw new Error("scale must be non-negative");
+    }
+    a.total += x.value;
+  }
+}
+
+/** Iterator-DEPENDENT guard inside a loop body — `if (!(x.value >= 0))
+ *  throw …` is a per-element precondition over the iterable. Stripping
+ *  it would emit an unguarded Shape B fold and silently accept inputs
+ *  the source program would reject; lifting it as a quantified action
+ *  precondition (`all $N in items | x.value >= 0`) is the correct
+ *  shape but out of scope for M3, so the build pass rejects. */
 export function sumPositiveAssert(a: Account, items: Item[]): void {
   for (const x of items) {
     if (!(x.value >= 0)) {
