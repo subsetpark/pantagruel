@@ -73,6 +73,22 @@ export function structurallyEqualExpression(
   }
 
   if (ts.isCallExpression(ua) && ts.isCallExpression(ub)) {
+    // Bail on spread arguments — `f(...arr)` and `f(a, b)` may have
+    // matching `.arguments.length` (1 vs 1) but the spread expands at
+    // runtime to an unknown number of values, so structural equality
+    // here would be unsound. Pairwise comparison alone happens to
+    // catch most cases (a SpreadElement compares unequal to a non-
+    // spread Expression because the kind check fails), but be
+    // explicit so a future SpreadElement match doesn't silently
+    // accept `f(...a)` ≡ `f(...a)` as if the runtime expansions
+    // matched — the operand identity needed for nullish folding is
+    // about value identity, which spread expansions cannot guarantee.
+    if (
+      ua.arguments.some(ts.isSpreadElement) ||
+      ub.arguments.some(ts.isSpreadElement)
+    ) {
+      return false;
+    }
     if (!structurallyEqualExpression(ua.expression, ub.expression)) {
       return false;
     }

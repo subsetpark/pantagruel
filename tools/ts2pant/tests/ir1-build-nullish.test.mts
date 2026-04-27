@@ -20,7 +20,7 @@ import { before, describe, it } from "node:test";
 import ts from "typescript";
 import { irWrap } from "../src/ir.js";
 import { type IR1Expr, ir1FromL2 } from "../src/ir1.js";
-import { createSourceFileFromSource } from "../src/extract.js";
+import { createSourceFileFromSource, getChecker } from "../src/extract.js";
 import {
   type NullishTranslate,
   recognizeNullishForm,
@@ -32,16 +32,41 @@ before(async () => {
 });
 
 /**
- * Parse `expr` as a single binary expression. Wraps in `const _ = (<expr>);`
- * to give the parser a statement context, then unwraps the outer parens.
+ * Parse `expr` as a single binary expression. Declares ambient
+ * bindings for the names commonly used in tests (`x`, `y`, `a`, `b`,
+ * `other`) so the type checker has a real type at each operand
+ * location — the recognizer's nullability gate consults
+ * `checker.getTypeAtLocation` and would reject an operand whose type
+ * resolves to error/`any`.
+ *
+ * Pass an `overrides` map to override types for specific names — used
+ * by the negative tests (e.g. `x: number` to assert non-nullable
+ * operands fall through).
  */
-function parseBinExpr(source: string): ts.BinaryExpression {
-  const sf = createSourceFileFromSource(`const _ = (${source});`);
-  const stmt = sf.compilerNode.statements[0];
-  if (!stmt || !ts.isVariableStatement(stmt)) {
-    throw new Error("test helper: expected a variable statement");
+function parseBinExpr(
+  source: string,
+  overrides: Record<string, string> = {},
+): { expr: ts.BinaryExpression; checker: ts.TypeChecker } {
+  const types: Record<string, string> = {
+    x: "number | null | undefined",
+    y: "number | null | undefined",
+    a: "number | null | undefined",
+    b: "number | null | undefined",
+    other: "boolean",
+    ...overrides,
+  };
+  const decls = Object.entries(types)
+    .map(([name, ty]) => `declare const ${name}: ${ty};`)
+    .join("\n");
+  const wrapper = `${decls}\nconst _ = (${source});`;
+  const sf = createSourceFileFromSource(wrapper);
+  const checker = getChecker(sf);
+  const stmts = sf.compilerNode.statements;
+  const last = stmts[stmts.length - 1];
+  if (!last || !ts.isVariableStatement(last)) {
+    throw new Error("test helper: expected a trailing variable statement");
   }
-  const decl = stmt.declarationList.declarations[0];
+  const decl = last.declarationList.declarations[0];
   if (!decl || !decl.initializer) {
     throw new Error("test helper: expected an initializer");
   }
@@ -54,7 +79,7 @@ function parseBinExpr(source: string): ts.BinaryExpression {
       `test helper: expected a binary expression, got ${ts.SyntaxKind[expr.kind]}`,
     );
   }
-  return expr;
+  return { expr, checker };
 }
 
 /**
@@ -96,66 +121,96 @@ function expectNotIsNullish(l1: IR1Expr): IR1Expr {
   return expectIsNullish(l1.arg);
 }
 
+/**
+ * Verify that `operand` is the result of translating a TS expression
+ * with text `expectedText`. The synthetic translator builds
+ * `ir1FromL2(irWrap(ast.var(e.getText())))`, so the operand should be
+ * a `from-l2` wrapping a `var`-headed OpaqueExpr of that text.
+ */
+function expectOperandText(operand: IR1Expr, expectedText: string): void {
+  assert.equal(operand.kind, "from-l2");
+  if (operand.kind === "from-l2") {
+    assert.equal(operand.expr.kind, "ir-wrap");
+    if (operand.expr.kind === "ir-wrap") {
+      const ast = getAst();
+      assert.equal(ast.strExpr(operand.expr.expr), expectedText);
+    }
+  }
+}
+
 describe("ir1-build-nullish", () => {
   it("x == null builds is-nullish", () => {
-    const expr = parseBinExpr("x == null");
-    const l1 = asL1(recognizeNullishForm(expr, makeTranslate()));
-    expectIsNullish(l1);
+    const { expr, checker } = parseBinExpr("x == null");
+    const l1 = asL1(recognizeNullishForm(expr, checker, makeTranslate()));
+    const operand = expectIsNullish(l1);
+    expectOperandText(operand, "x");
   });
 
   it("x === null builds is-nullish", () => {
-    const expr = parseBinExpr("x === null");
-    const l1 = asL1(recognizeNullishForm(expr, makeTranslate()));
-    expectIsNullish(l1);
+    const { expr, checker } = parseBinExpr("x === null");
+    const l1 = asL1(recognizeNullishForm(expr, checker, makeTranslate()));
+    const operand = expectIsNullish(l1);
+    expectOperandText(operand, "x");
   });
 
   it("x === undefined builds is-nullish", () => {
-    const expr = parseBinExpr("x === undefined");
-    const l1 = asL1(recognizeNullishForm(expr, makeTranslate()));
-    expectIsNullish(l1);
+    const { expr, checker } = parseBinExpr("x === undefined");
+    const l1 = asL1(recognizeNullishForm(expr, checker, makeTranslate()));
+    const operand = expectIsNullish(l1);
+    expectOperandText(operand, "x");
   });
 
   it("x === null || x === undefined builds is-nullish (operand identity)", () => {
-    const expr = parseBinExpr("x === null || x === undefined");
-    const l1 = asL1(recognizeNullishForm(expr, makeTranslate()));
+    const { expr, checker } = parseBinExpr(
+      "x === null || x === undefined",
+    );
+    const l1 = asL1(recognizeNullishForm(expr, checker, makeTranslate()));
     // The recognizer folds the pair into one `is-nullish` (not nested
     // inside `or` — that's the point of the long-form recognizer).
-    expectIsNullish(l1);
+    const operand = expectIsNullish(l1);
+    expectOperandText(operand, "x");
   });
 
   it("typeof x === 'undefined' builds is-nullish", () => {
-    const expr = parseBinExpr("typeof x === 'undefined'");
-    const l1 = asL1(recognizeNullishForm(expr, makeTranslate()));
-    expectIsNullish(l1);
+    const { expr, checker } = parseBinExpr("typeof x === 'undefined'");
+    const l1 = asL1(recognizeNullishForm(expr, checker, makeTranslate()));
+    const operand = expectIsNullish(l1);
+    expectOperandText(operand, "x");
   });
 
   it("x != null builds not(is-nullish)", () => {
-    const expr = parseBinExpr("x != null");
-    const l1 = asL1(recognizeNullishForm(expr, makeTranslate()));
-    expectNotIsNullish(l1);
+    const { expr, checker } = parseBinExpr("x != null");
+    const l1 = asL1(recognizeNullishForm(expr, checker, makeTranslate()));
+    const operand = expectNotIsNullish(l1);
+    expectOperandText(operand, "x");
   });
 
   it("x !== null builds not(is-nullish)", () => {
-    const expr = parseBinExpr("x !== null");
-    const l1 = asL1(recognizeNullishForm(expr, makeTranslate()));
-    expectNotIsNullish(l1);
+    const { expr, checker } = parseBinExpr("x !== null");
+    const l1 = asL1(recognizeNullishForm(expr, checker, makeTranslate()));
+    const operand = expectNotIsNullish(l1);
+    expectOperandText(operand, "x");
   });
 
   it("x !== null && x !== undefined builds not(is-nullish)", () => {
-    const expr = parseBinExpr("x !== null && x !== undefined");
-    const l1 = asL1(recognizeNullishForm(expr, makeTranslate()));
-    expectNotIsNullish(l1);
+    const { expr, checker } = parseBinExpr(
+      "x !== null && x !== undefined",
+    );
+    const l1 = asL1(recognizeNullishForm(expr, checker, makeTranslate()));
+    const operand = expectNotIsNullish(l1);
+    expectOperandText(operand, "x");
   });
 
   it("typeof x !== 'undefined' builds not(is-nullish)", () => {
-    const expr = parseBinExpr("typeof x !== 'undefined'");
-    const l1 = asL1(recognizeNullishForm(expr, makeTranslate()));
-    expectNotIsNullish(l1);
+    const { expr, checker } = parseBinExpr("typeof x !== 'undefined'");
+    const l1 = asL1(recognizeNullishForm(expr, checker, makeTranslate()));
+    const operand = expectNotIsNullish(l1);
+    expectOperandText(operand, "x");
   });
 
   it("a === null || b === undefined falls through (operand mismatch)", () => {
-    const expr = parseBinExpr("a === null || b === undefined");
-    const l1 = recognizeNullishForm(expr, makeTranslate());
+    const { expr, checker } = parseBinExpr("a === null || b === undefined");
+    const l1 = recognizeNullishForm(expr, checker, makeTranslate());
     // No fold-eligible pair (different operands), so the long-form
     // recognizer returns null and the caller falls through to its
     // normal `||` handling. Each leaf would still be recognized
@@ -164,30 +219,44 @@ describe("ir1-build-nullish", () => {
   });
 
   it("x === null || x === undefined || other extracts is-nullish prefix", () => {
-    const expr = parseBinExpr("x === null || x === undefined || other");
-    const l1 = asL1(recognizeNullishForm(expr, makeTranslate()));
+    const { expr, checker } = parseBinExpr(
+      "x === null || x === undefined || other",
+    );
+    const l1 = asL1(recognizeNullishForm(expr, checker, makeTranslate()));
     // Expect: or(is-nullish(x), other)
     assert.equal(l1.kind, "binop");
     if (l1.kind === "binop") {
       assert.equal(l1.op, "or");
       assert.equal(l1.lhs.kind, "is-nullish");
+      if (l1.lhs.kind === "is-nullish") {
+        // Verify the folded operand is the translated `x`, not e.g.
+        // the `other` clause that incidentally has the right kind.
+        expectOperandText(l1.lhs.operand, "x");
+      }
     }
   });
 
   it("other || x === null || x === undefined extracts is-nullish suffix", () => {
-    const expr = parseBinExpr("other || x === null || x === undefined");
-    const l1 = asL1(recognizeNullishForm(expr, makeTranslate()));
+    const { expr, checker } = parseBinExpr(
+      "other || x === null || x === undefined",
+    );
+    const l1 = asL1(recognizeNullishForm(expr, checker, makeTranslate()));
     // Expect: or(other, is-nullish(x))
     assert.equal(l1.kind, "binop");
     if (l1.kind === "binop") {
       assert.equal(l1.op, "or");
       assert.equal(l1.rhs.kind, "is-nullish");
+      if (l1.rhs.kind === "is-nullish") {
+        expectOperandText(l1.rhs.operand, "x");
+      }
     }
   });
 
   it("other && x !== null && x !== undefined extracts not-is-nullish", () => {
-    const expr = parseBinExpr("other && x !== null && x !== undefined");
-    const l1 = asL1(recognizeNullishForm(expr, makeTranslate()));
+    const { expr, checker } = parseBinExpr(
+      "other && x !== null && x !== undefined",
+    );
+    const l1 = asL1(recognizeNullishForm(expr, checker, makeTranslate()));
     // Expect: and(other, not(is-nullish(x)))
     assert.equal(l1.kind, "binop");
     if (l1.kind === "binop") {
@@ -196,31 +265,55 @@ describe("ir1-build-nullish", () => {
       if (l1.rhs.kind === "unop") {
         assert.equal(l1.rhs.op, "not");
         assert.equal(l1.rhs.arg.kind, "is-nullish");
+        if (l1.rhs.arg.kind === "is-nullish") {
+          expectOperandText(l1.rhs.arg.operand, "x");
+        }
       }
     }
   });
 
   it("non-nullish equality (x === 5) falls through", () => {
-    const expr = parseBinExpr("x === 5");
-    const l1 = recognizeNullishForm(expr, makeTranslate());
+    const { expr, checker } = parseBinExpr("x === 5");
+    const l1 = recognizeNullishForm(expr, checker, makeTranslate());
     assert.equal(l1, null);
   });
 
   it("non-nullish disjunction (x > 0 || y < 0) falls through", () => {
-    const expr = parseBinExpr("x > 0 || y < 0");
-    const l1 = recognizeNullishForm(expr, makeTranslate());
+    const { expr, checker } = parseBinExpr("x > 0 || y < 0");
+    const l1 = recognizeNullishForm(expr, checker, makeTranslate());
     assert.equal(l1, null);
   });
 
   it("loose-eq with non-null literal (x == 5) falls through", () => {
-    const expr = parseBinExpr("x == 5");
-    const l1 = recognizeNullishForm(expr, makeTranslate());
+    const { expr, checker } = parseBinExpr("x == 5");
+    const l1 = recognizeNullishForm(expr, checker, makeTranslate());
     assert.equal(l1, null);
   });
 
   it("loose-eq with undefined (x == undefined) falls through (only null is recognized for ==)", () => {
-    const expr = parseBinExpr("x == undefined");
-    const l1 = recognizeNullishForm(expr, makeTranslate());
+    const { expr, checker } = parseBinExpr("x == undefined");
+    const l1 = recognizeNullishForm(expr, checker, makeTranslate());
+    assert.equal(l1, null);
+  });
+
+  it("non-nullable operand (n: number) falls through (nullability gate)", () => {
+    // Non-nullable `n` would lower to a scalar, not `[T]`, so `#n = 0`
+    // would be ill-typed. The recognizer must refuse to fold here.
+    const { expr, checker } = parseBinExpr("n === null", {
+      n: "number",
+    });
+    const l1 = recognizeNullishForm(expr, checker, makeTranslate());
+    assert.equal(l1, null);
+  });
+
+  it("shadowed `undefined` falls through (shadowing gate)", () => {
+    // A locally bound `undefined: number` doesn't resolve to the
+    // global undefined value. The recognizer's symbol-resolution
+    // gate keeps `x === undefined` from matching here.
+    const { expr, checker } = parseBinExpr("x === undefined", {
+      undefined: "number",
+    });
+    const l1 = recognizeNullishForm(expr, checker, makeTranslate());
     assert.equal(l1, null);
   });
 });

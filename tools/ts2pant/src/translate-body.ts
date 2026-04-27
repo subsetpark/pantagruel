@@ -2695,7 +2695,7 @@ export function translateBodyExpr(
       }
       return ir1FromL2(irWrap(bodyExpr(subResult)));
     };
-    const recognized = recognizeNullishForm(expr, translate);
+    const recognized = recognizeNullishForm(expr, checker, translate);
     if (recognized !== null) {
       if ("unsupported" in recognized) {
         return { unsupported: recognized.unsupported };

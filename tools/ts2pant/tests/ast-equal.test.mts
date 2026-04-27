@@ -81,6 +81,20 @@ describe("ast-equal", () => {
     );
   });
 
+  it("spread arguments cause calls to compare unequal (conservative)", () => {
+    // f(...arr) vs f(...arr) — same source text but spread expansion
+    // is runtime-determined; we cannot assert operand identity.
+    assert.equal(
+      structurallyEqualExpression(parseExpr("f(...a)"), parseExpr("f(...a)")),
+      false,
+    );
+    // f(...arr) vs f(a, b) — different argument shapes.
+    assert.equal(
+      structurallyEqualExpression(parseExpr("f(...a)"), parseExpr("f(a, b)")),
+      false,
+    );
+  });
+
   it("calls compare structurally including arguments", () => {
     assert.equal(
       structurallyEqualExpression(parseExpr("f(x)"), parseExpr("f(x)")),

@@ -14,6 +14,25 @@
  *
  * Negated leaves wrap as `unop(not, IsNullish(x))`.
  *
+ * **Nullability gate.** A leaf only folds when the matched operand's
+ * TS type at the AST location actually includes `null`, `undefined`,
+ * or `void`. This guards the list-lift encoding (`T | null → [T]`):
+ * if `x: number` is non-nullable, `#x = 0` would be ill-typed
+ * (cardinality applies to lists, not scalars). Non-nullable
+ * occurrences fall through and the surrounding TS-AST handler
+ * either rejects or emits the legacy shape. See
+ * `tools/ts2pant/CLAUDE.md` § "Option-Type Elimination" for the
+ * encoding rationale.
+ *
+ * **`undefined` shadowing.** `undefined` is not a reserved word in
+ * JavaScript — a parameter, local, or import named `undefined` is
+ * a legal binding that shadows the global. Identifier-only matching
+ * would fold `x === undefined` even when `undefined` resolves to a
+ * shadowed local of unrelated type. The leaf recognizer guards by
+ * asking the checker for the resolved type at the identifier's
+ * location and only matching when that type's flags include
+ * `Undefined`.
+ *
  * **Long-form recognizer is flat-aware.** For a chain
  * `a || b || c || …`, all `||` operands at the same level are
  * collected into a flat list. The recognizer scans for two operands
@@ -39,6 +58,28 @@ import { structurallyEqualExpression } from "./ast-equal.js";
 import { type IR1Expr, ir1Binop, ir1IsNullish, ir1Unop } from "./ir1.js";
 
 /**
+ * True when the TS type at this AST location includes `null`,
+ * `undefined`, or `void` — i.e., when the operand is list-lifted to
+ * `[T]` on the Pant side and `#operand = 0` is a well-typed nullish
+ * test. Mirrors `isNullableTsType` in `translate-body.ts`; defined
+ * locally to keep this module dependency-light.
+ */
+function isNullableType(type: ts.Type): boolean {
+  const mask = ts.TypeFlags.Null | ts.TypeFlags.Undefined | ts.TypeFlags.Void;
+  if (type.isUnion()) {
+    return type.types.some((t) => (t.flags & mask) !== 0);
+  }
+  return (type.flags & mask) !== 0;
+}
+
+function isOperandNullable(
+  operand: ts.Expression,
+  checker: ts.TypeChecker,
+): boolean {
+  return isNullableType(checker.getTypeAtLocation(operand));
+}
+
+/**
  * A nullish leaf match — one of the short-form binary expressions
  * (`x == null`, `x === undefined`, `typeof x === 'undefined'`, etc.).
  * `negated` is `true` for `!=` / `!==` forms.
@@ -60,9 +101,25 @@ function isNullKeyword(e: ts.Expression): boolean {
   return unwrapParens(e).kind === ts.SyntaxKind.NullKeyword;
 }
 
-function isUndefinedIdentifier(e: ts.Expression): boolean {
+/**
+ * True when `e` is a reference to the global `undefined` value (not a
+ * shadowed local with that name). Verifies via the checker because
+ * `undefined` is not a reserved word — a parameter, local variable,
+ * or import named `undefined` is a legal binding that hides the
+ * global. The resolved type's flags must include `Undefined`; a
+ * shadowed `undefined: number` resolves to `number` (no Undefined
+ * flag) and is rejected.
+ */
+function isUndefinedIdentifier(
+  e: ts.Expression,
+  checker: ts.TypeChecker,
+): boolean {
   const u = unwrapParens(e);
-  return ts.isIdentifier(u) && u.text === "undefined";
+  if (!ts.isIdentifier(u) || u.text !== "undefined") {
+    return false;
+  }
+  const type = checker.getTypeAtLocation(u);
+  return (type.flags & ts.TypeFlags.Undefined) !== 0;
 }
 
 function isUndefinedStringLiteral(e: ts.Expression): boolean {
@@ -89,11 +146,20 @@ function isTypeofExpression(e: ts.Expression): ts.Expression | null {
  * the `null` literal — `x == undefined` is unusual idiomatically and
  * is not part of the recognized leaf shapes.
  *
+ * The match also requires that `operand` has a nullable TS type at
+ * the AST location (includes `null`, `undefined`, or `void`). A
+ * non-nullable operand like `x: number` doesn't list-lift to `[T]`,
+ * so `#x = 0` would be ill-typed in Pant. Mismatched cases fall
+ * through (return `null`) and the surrounding handler decides what
+ * to do — typically reject as unsupported.
+ *
  * Returns `null` if the binary expression is not a nullish-equality
- * leaf (e.g., `x === 0`, `x + null`, `==` against a non-null literal).
+ * leaf (e.g., `x === 0`, `x + null`, `==` against a non-null literal,
+ * or operand whose TS type isn't nullable).
  */
 export function recognizeNullishLeaf(
   expr: ts.BinaryExpression,
+  checker: ts.TypeChecker,
 ): NullishLeafMatch | null {
   let negated: boolean;
   let strict: boolean;
@@ -118,22 +184,25 @@ export function recognizeNullishLeaf(
       return null;
   }
 
+  const matchIfNullable = (operand: ts.Expression): NullishLeafMatch | null =>
+    isOperandNullable(operand, checker) ? { operand, negated } : null;
+
   const leftIsNull = isNullKeyword(expr.left);
   const rightIsNull = isNullKeyword(expr.right);
   if (rightIsNull) {
-    return { operand: expr.left, negated };
+    return matchIfNullable(expr.left);
   }
   if (leftIsNull) {
-    return { operand: expr.right, negated };
+    return matchIfNullable(expr.right);
   }
   if (strict) {
-    const leftIsUndef = isUndefinedIdentifier(expr.left);
-    const rightIsUndef = isUndefinedIdentifier(expr.right);
+    const leftIsUndef = isUndefinedIdentifier(expr.left, checker);
+    const rightIsUndef = isUndefinedIdentifier(expr.right, checker);
     if (rightIsUndef) {
-      return { operand: expr.left, negated };
+      return matchIfNullable(expr.left);
     }
     if (leftIsUndef) {
-      return { operand: expr.right, negated };
+      return matchIfNullable(expr.right);
     }
   }
   return null;
@@ -146,11 +215,17 @@ export function recognizeNullishLeaf(
  * is also accepted because the legal TS coercion semantics for
  * `typeof x` are well-defined.
  *
+ * Like `recognizeNullishLeaf`, requires the operand inside `typeof`
+ * to have a nullable TS type — otherwise `#x = 0` would be ill-typed
+ * even though the surface syntax `typeof x === 'undefined'` is
+ * always-false-but-legal in TypeScript.
+ *
  * Returns `null` if the binary expression is not a typeof-undefined
- * leaf.
+ * leaf or the operand isn't nullable.
  */
 export function recognizeTypeofUndefined(
   expr: ts.BinaryExpression,
+  checker: ts.TypeChecker,
 ): NullishLeafMatch | null {
   let negated: boolean;
   switch (expr.operatorToken.kind) {
@@ -169,11 +244,14 @@ export function recognizeTypeofUndefined(
   const leftTypeofOperand = isTypeofExpression(expr.left);
   const rightTypeofOperand = isTypeofExpression(expr.right);
 
+  const matchIfNullable = (operand: ts.Expression): NullishLeafMatch | null =>
+    isOperandNullable(operand, checker) ? { operand, negated } : null;
+
   if (leftTypeofOperand !== null && isUndefinedStringLiteral(expr.right)) {
-    return { operand: leftTypeofOperand, negated };
+    return matchIfNullable(leftTypeofOperand);
   }
   if (rightTypeofOperand !== null && isUndefinedStringLiteral(expr.left)) {
-    return { operand: rightTypeofOperand, negated };
+    return matchIfNullable(rightTypeofOperand);
   }
   return null;
 }
@@ -182,8 +260,14 @@ export function recognizeTypeofUndefined(
  * Combined leaf matcher: tries `recognizeNullishLeaf` first, then
  * `recognizeTypeofUndefined`. Returns `null` if neither matches.
  */
-function recognizeAnyLeaf(expr: ts.BinaryExpression): NullishLeafMatch | null {
-  return recognizeNullishLeaf(expr) ?? recognizeTypeofUndefined(expr);
+function recognizeAnyLeaf(
+  expr: ts.BinaryExpression,
+  checker: ts.TypeChecker,
+): NullishLeafMatch | null {
+  return (
+    recognizeNullishLeaf(expr, checker) ??
+    recognizeTypeofUndefined(expr, checker)
+  );
 }
 
 /**
@@ -255,6 +339,7 @@ function flattenChain(
 function recognizeLongForm(
   expr: ts.BinaryExpression,
   combinator: "or" | "and",
+  checker: ts.TypeChecker,
   translate: NullishTranslate,
 ): IR1Expr | { unsupported: string } | null {
   const targetOp =
@@ -275,7 +360,7 @@ function recognizeLongForm(
     if (!ts.isBinaryExpression(u)) {
       return null;
     }
-    const leaf = recognizeAnyLeaf(u);
+    const leaf = recognizeAnyLeaf(u, checker);
     if (leaf === null || leaf.negated !== targetNegated) {
       return null;
     }
@@ -364,6 +449,10 @@ function recognizeLongForm(
  * `typeof x === 'undefined'`, etc.), then long-form chains
  * (`x === null || x === undefined`).
  *
+ * The checker is required for the nullability gate (see module
+ * doc) and for verifying that an `undefined` identifier resolves
+ * to the global value rather than a shadowed local.
+ *
  * Returns:
  * - An `IR1Expr` if recognized — the caller should lower it and use
  *   the result instead of the legacy translation path.
@@ -374,18 +463,19 @@ function recognizeLongForm(
  */
 export function recognizeNullishForm(
   expr: ts.BinaryExpression,
+  checker: ts.TypeChecker,
   translate: NullishTranslate,
 ): IR1Expr | { unsupported: string } | null {
-  const leaf = recognizeAnyLeaf(expr);
+  const leaf = recognizeAnyLeaf(expr, checker);
   if (leaf !== null) {
     return buildLeafL1(leaf, translate);
   }
 
   if (expr.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
-    return recognizeLongForm(expr, "or", translate);
+    return recognizeLongForm(expr, "or", checker, translate);
   }
   if (expr.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken) {
-    return recognizeLongForm(expr, "and", translate);
+    return recognizeLongForm(expr, "and", checker, translate);
   }
   return null;
 }

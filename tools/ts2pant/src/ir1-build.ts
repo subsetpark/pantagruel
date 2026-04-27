@@ -596,7 +596,7 @@ function buildFromShortCircuit(
     }
     return result;
   };
-  const recognized = recognizeNullishForm(expr, nullishTranslate);
+  const recognized = recognizeNullishForm(expr, ctx.checker, nullishTranslate);
   if (recognized !== null) {
     if ("unsupported" in recognized) {
       return { unsupported: recognized.unsupported };

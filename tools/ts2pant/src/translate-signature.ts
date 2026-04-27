@@ -990,8 +990,15 @@ export function translateExpr(
     // site in `translate-body.ts`.
     //
     // The translate callback unwraps `translateExpr`'s discriminated-
-    // union result; an upstream `{ unsupported }` propagates through
-    // the recognizer.
+    // union result (post-P3 `TranslateExprResult`); an upstream
+    // `{ unsupported }` propagates through the recognizer and is
+    // surfaced by the entry-point caller.
+    //
+    // The recognizer takes the checker for two soundness gates:
+    // (1) TS-type nullability — only fold when the operand's
+    // declared type includes `null`/`undefined`/`void`; (2)
+    // resolved-`undefined` — verify the `undefined` identifier
+    // resolves to the global symbol, not a shadowed local.
     const translate: NullishTranslate = (sub) => {
       const subResult = translateExpr(
         sub,
@@ -1005,7 +1012,7 @@ export function translateExpr(
       }
       return ir1FromL2(irWrap(subResult));
     };
-    const recognized = recognizeNullishForm(expr, translate);
+    const recognized = recognizeNullishForm(expr, checker, translate);
     if (recognized !== null && !("unsupported" in recognized)) {
       return lowerExpr(lowerL1Expr(recognized));
     }
