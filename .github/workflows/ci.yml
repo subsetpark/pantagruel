@@ -36,12 +36,6 @@ jobs:
         # ownership root doesn't recognize.
         run: git config --global --add safe.directory '*'
 
-      - name: Diagnose opam
-        run: |
-          opam --version
-          opam switch list
-          opam config list
-
       - name: Install dependencies
         run: |
           opam install ./pantagruel.opam --deps-only --with-test --with-doc
