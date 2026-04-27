@@ -222,6 +222,32 @@ describe("ast-equal", () => {
     );
   });
 
+  it("optional-chain access is distinct from plain access", () => {
+    // `a?.b` vs `a.b` must compare unequal so the nullish recognizer's
+    // operand-identity dedup doesn't fold a pair like
+    // `a?.b === null || a.b === undefined` into one `IsNullish`.
+    assert.equal(
+      structurallyEqualExpression(parseExpr("a?.b"), parseExpr("a.b")),
+      false,
+    );
+    assert.equal(
+      structurallyEqualExpression(parseExpr("a.b"), parseExpr("a?.b")),
+      false,
+    );
+    // Tail members of a chain (`a?.b.c`'s outer `.c`) carry
+    // NodeFlags.OptionalChain even without a `?.` token; that flag must
+    // also distinguish them from plain `.c` accesses.
+    assert.equal(
+      structurallyEqualExpression(parseExpr("a?.b.c"), parseExpr("a.b.c")),
+      false,
+    );
+    // Same-shape optional chains compare equal.
+    assert.equal(
+      structurallyEqualExpression(parseExpr("a?.b"), parseExpr("a?.b")),
+      true,
+    );
+  });
+
   it("`this` always equal to `this`", () => {
     assert.equal(
       structurallyEqualExpression(parseExpr("this"), parseExpr("this")),

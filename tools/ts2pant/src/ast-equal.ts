@@ -79,6 +79,23 @@ export function structurallyEqualExpression(
   }
 
   if (ts.isPropertyAccessExpression(ua) && ts.isPropertyAccessExpression(ub)) {
+    // `a?.b` vs `a.b` must compare unequal — otherwise the nullish
+    // recognizer's operand-identity dedup would fold a pair like
+    // `a?.b === null || a.b === undefined` into a single `IsNullish`,
+    // which is unsound (the optional chain short-circuits when `a` is
+    // nullish; the plain access throws). Check both `questionDotToken`
+    // (the `?.` itself, on the head of a chain) and `NodeFlags.OptionalChain`
+    // (on the *tail* members of a chain like the outer `.b` in `x?.a.b`,
+    // which carry the flag but no token).
+    if (Boolean(ua.questionDotToken) !== Boolean(ub.questionDotToken)) {
+      return false;
+    }
+    if (
+      (ua.flags & ts.NodeFlags.OptionalChain) !==
+      (ub.flags & ts.NodeFlags.OptionalChain)
+    ) {
+      return false;
+    }
     return (
       ua.name.text === ub.name.text &&
       structurallyEqualExpression(ua.expression, ub.expression)
