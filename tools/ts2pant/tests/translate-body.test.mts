@@ -555,6 +555,33 @@ describe("translateCallExpr", () => {
 });
 
 describe("conditional mutations (symbolic last-write)", () => {
+  it("rejects an assignment whose RHS is a Map/Set mutation effect", () => {
+    // `m.set(k, v)` returns the Map, but the translator categorizes
+    // it as an effect (statement-only). Without a `rejectEffect`
+    // guard at the assignment handler, `bodyExpr(val)` would throw on
+    // the `{ effect }` shape; with the guard we get a clean
+    // `unsupported` reason instead.
+    const source = `
+      interface A { p: Map<string, number>; }
+      function f(a: A, k: string, v: number): void {
+        a.p = a.p.set(k, v) as unknown as Map<string, number>;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.ok(
+      props.some(
+        (p) =>
+          p.kind === "unsupported" &&
+          /collection mutation outside statement position/.test(p.reason),
+      ),
+    );
+  });
+
   it("rejects conditional mutation when if-condition is impure", () => {
     const source = `
       interface Account { balance: number; }

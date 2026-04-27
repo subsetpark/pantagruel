@@ -510,6 +510,10 @@ exports[`expressions-set-mutation-field.ts > tagAddTwo 1`] = `
 "module TagAddTwo.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-add-two @ c: Tagged, a: String, b: String.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> (cond y = a => true, y = b => true, true => y in tagged--tags c).\\n"
 `;
 
+exports[`expressions-set-mutation-field.ts > tagAddTwoReceivers 1`] = `
+"module TagAddTwoReceivers.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-add-two-receivers @ c1: Tagged, c2: Tagged, x: String, y: String.\\n\\n---\\n\\nall y1: String | y1 in tagged--tags' c1 <-> (cond y1 = x => true, true => y1 in tagged--tags c1).\\nall y2: String | y2 in tagged--tags' c2 <-> (cond y2 = y => true, true => y2 in tagged--tags c2).\\n"
+`;
+
 exports[`expressions-set-mutation-field.ts > tagClear 1`] = `
 "module TagClear.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-clear @ c: Tagged.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> false.\\n"
 `;
@@ -520,6 +524,10 @@ exports[`expressions-set-mutation-field.ts > tagClearAndAdd 1`] = `
 
 exports[`expressions-set-mutation-field.ts > tagClearIf 1`] = `
 "module TagClearIf.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-clear-if @ c: Tagged, guard: Bool.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> (cond guard => false, true => y in tagged--tags c).\\n"
+`;
+
+exports[`expressions-set-mutation-field.ts > tagClearOrAdd 1`] = `
+"module TagClearOrAdd.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\n~> Tag-clear-or-add @ c: Tagged, x: String, g: Bool.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> (cond y = x => (cond g => false, true => true), true => (cond g => false, true => y in tagged--tags c)).\\n"
 `;
 
 exports[`expressions-set-mutation-field.ts > tagRemove 1`] = `

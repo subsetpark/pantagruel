@@ -493,7 +493,10 @@ function isStaticBoolLit(e: OpaqueExpr, value: boolean): boolean {
  * their existing emission shape; a non-literal `cleared` (a guarded clear
  * from a branch merge) emits `cond cleared => false, true => pre`.
  */
-function clearedFallback(cleared: OpaqueExpr, pre: OpaqueExpr): OpaqueExpr {
+export function clearedFallback(
+  cleared: OpaqueExpr,
+  pre: OpaqueExpr,
+): OpaqueExpr {
   const ast = getAst();
   if (isStaticBoolLit(cleared, false)) {
     return pre;
@@ -561,10 +564,17 @@ function mapWriteKey(
  * Collapse two arrays of overrides (from the two branches of an if, or
  * a branch vs. identity fallback) into a single array, keyed by canonical
  * position form. Per canonical key, the per-branch values are combined via
- * `combine`. Overrides that only exist in one side use the caller-supplied
- * `fallback` expression (pre-state `R m k` for value; pre-state `Rkey m k`
- * for membership; pre-state `y in s` for set membership) for the missing
- * side.
+ * `combine`.
+ *
+ * For overrides that only exist in one side, the caller supplies what
+ * the *other* side projects for that key. Map merges (where both sides
+ * fall through to the same pre-state lookup `R m k` / `Rkey m k`) pass
+ * one symmetric `fallback`. Set merges need asymmetric fallbacks because
+ * each side may have its own `cleared` predicate: an a-side-only
+ * override's b-fallback is `clearedFallback(b.cleared, baseIn)` and a
+ * b-side-only override's a-fallback uses `a.cleared` instead. The
+ * second positional `fallback` defaults to the first to preserve the
+ * symmetric Map call sites unchanged.
  *
  * Order is preserved from `aSide` first, then any `bSide` keys not already
  * seen. The canonical form comes from `ast.strExpr(keyOf(o))`. Generic over
@@ -575,8 +585,9 @@ export function mergeOverrides<O extends { value: OpaqueExpr }>(
   aSide: ReadonlyArray<O>,
   bSide: ReadonlyArray<O>,
   keyOf: (o: O) => OpaqueExpr,
-  fallback: (o: O) => OpaqueExpr,
+  fallbackForMissingB: (o: O) => OpaqueExpr,
   combine: (vA: OpaqueExpr, vB: OpaqueExpr) => OpaqueExpr,
+  fallbackForMissingA: (o: O) => OpaqueExpr = fallbackForMissingB,
 ): O[] {
   const ast = getAst();
   const canonical = (t: OpaqueExpr) => ast.strExpr(t);
@@ -589,7 +600,7 @@ export function mergeOverrides<O extends { value: OpaqueExpr }>(
   for (const o of aSide) {
     const k = canonical(keyOf(o));
     seen.add(k);
-    const vB = bByKey.get(k) ?? fallback(o);
+    const vB = bByKey.get(k) ?? fallbackForMissingB(o);
     out.push({ ...o, value: combine(o.value, vB) });
   }
   for (const o of bSide) {
@@ -597,7 +608,7 @@ export function mergeOverrides<O extends { value: OpaqueExpr }>(
     if (seen.has(k)) {
       continue;
     }
-    const vA = fallback(o);
+    const vA = fallbackForMissingA(o);
     out.push({ ...o, value: combine(vA, o.value) });
   }
   return out;
@@ -779,17 +790,25 @@ function readOverridesFor(
 }
 
 /**
- * State-map key for Set writes. Includes ownerType and elemType to
- * disambiguate two interfaces that happen to share a field name but with
- * different element types (analogous to `mapWriteKey`'s guard against
- * cross-interface collisions). Parallel to `mapWriteKey` at :310.
+ * State-map key for Set writes. Unlike Map (whose `MapOverride`s carry
+ * per-override `objExpr`/`keyExpr`), `SetRuleWriteEntry` stores a
+ * single receiver at the entry level — the membership equation
+ * `all y | y in tags' c <-> …` quantifies only over the element. So
+ * the key has to include the canonicalized receiver, otherwise two
+ * mutations on different receivers (e.g., `c1.tags.add(x);
+ * c2.tags.add(y);`) would coalesce into a single entry that emits
+ * exactly one equation and silently drops the other receiver's
+ * constraint. Parallel to `mapWriteKey` (which includes only rule
+ * identity since per-receiver fan-out is encoded in the override
+ * tuples).
  */
 function setWriteKey(
   ruleName: string,
   ownerType: string,
   elemType: string,
+  objExpr: OpaqueExpr,
 ): string {
-  return `set::${ruleName}::${ownerType}::${elemType}`;
+  return `set::${ruleName}::${ownerType}::${elemType}::${getAst().strExpr(objExpr)}`;
 }
 
 /**
@@ -814,8 +833,18 @@ export function installSetWrite(
   applyConst: (e: OpaqueExpr) => OpaqueExpr,
 ): void {
   const ast = getAst();
-  const key = setWriteKey(effect.ruleName, effect.ownerType, effect.elemType);
   const objExpr = applyConst(effect.objExpr);
+  // Canonicalize the receiver before keying so `const x = c; x.tags.add`
+  // and `c.tags.add` resolve to the same entry, the same way property
+  // writes canonicalize through `state.canonicalize`. Two genuinely
+  // distinct receivers fan out into separate entries, each emitting
+  // their own membership equation.
+  const key = setWriteKey(
+    effect.ruleName,
+    effect.ownerType,
+    effect.elemType,
+    state.canonicalize(objExpr),
+  );
 
   const prev = state.writes.get(key);
   const entry: SetRuleWriteEntry =
@@ -882,7 +911,9 @@ function readSetThroughWrites(
   }
   const canonObj = state.canonicalize(objExpr);
   const canonQuery = state.canonicalize(queryExpr);
-  const entry = state.writes.get(setWriteKey(ruleName, ownerType, elemType));
+  const entry = state.writes.get(
+    setWriteKey(ruleName, ownerType, elemType, canonObj),
+  );
   if (entry === undefined || entry.kind !== "set") {
     return baseIn(canonObj, canonQuery);
   }
@@ -4256,28 +4287,36 @@ function symbolicExecute(
           state.writtenKeys = addWrittenKey(state.writtenKeys, key);
           continue;
         }
-        // Set: fallback is the pre-state membership `y in s` at the
-        // canonical receiver + override element. `cleared` is symbolic
-        // and merges through `combineContCond` so a one-sided clear
-        // emerges as a guarded predicate rather than collapsing to an
-        // unconditional clear.
+        // Set: each side projects through its own `cleared` predicate,
+        // so the missing-on-prior fallback uses prior's `cleared` and
+        // missing-on-cont fallback uses entryR's. Without this, an
+        // element only-on-cont would fall through to raw pre-state
+        // membership even when prior cleared the set on the early-exit
+        // path (and vice versa). `cleared` itself merges through
+        // `combineContCond` so a one-sided clear emerges as a guarded
+        // predicate rather than collapsing to an unconditional clear.
         const priorSet =
           prior !== undefined && prior.kind === "set" ? prior : undefined;
         const setRuleVar = ast.var(entryR.ruleName);
-        const setFallback = (o: SetOverride): OpaqueExpr =>
+        const baseIn = (o: SetOverride): OpaqueExpr =>
           ast.binop(
             ast.opIn(),
             o.elemExpr,
             ast.app(setRuleVar, [entryR.objExpr]),
           );
+        const priorCleared = priorSet?.cleared ?? ast.litBool(false);
+        const fallbackForMissingPrior = (o: SetOverride): OpaqueExpr =>
+          clearedFallback(priorCleared, baseIn(o));
+        const fallbackForMissingCont = (o: SetOverride): OpaqueExpr =>
+          clearedFallback(entryR.cleared, baseIn(o));
         const mergedSet = mergeOverrides(
           entryR.memberOverrides,
           priorSet?.memberOverrides ?? [],
           (o) => o.elemExpr,
-          setFallback,
+          fallbackForMissingPrior,
           combineContCond,
+          fallbackForMissingCont,
         );
-        const priorCleared = priorSet?.cleared ?? ast.litBool(false);
         const mergedCleared =
           ast.strExpr(entryR.cleared) === ast.strExpr(priorCleared)
             ? entryR.cleared
@@ -4446,13 +4485,18 @@ function symbolicExecute(
           });
           continue;
         }
-        const obj = translateBodyExpr(
-          bin.left.expression,
-          checker,
-          strategy,
-          paramNames,
-          state,
-          supply,
+        // `rejectEffect` collapses a value-position Map/Set mutation
+        // (e.g. `a.p = m.set(k, v)`) into `unsupported` so `bodyExpr`
+        // never throws on the `{ effect }` shape downstream.
+        const obj = rejectEffect(
+          translateBodyExpr(
+            bin.left.expression,
+            checker,
+            strategy,
+            paramNames,
+            state,
+            supply,
+          ),
         );
         if (isBodyUnsupported(obj)) {
           ok = false;
@@ -4467,13 +4511,15 @@ function symbolicExecute(
           compoundOp !== undefined
             ? ts.factory.createBinaryExpression(bin.left, compoundOp, bin.right)
             : bin.right;
-        const val = translateBodyExpr(
-          rhsNode,
-          checker,
-          strategy,
-          paramNames,
-          state,
-          supply,
+        const val = rejectEffect(
+          translateBodyExpr(
+            rhsNode,
+            checker,
+            strategy,
+            paramNames,
+            state,
+            supply,
+          ),
         );
         if (isBodyUnsupported(val)) {
           ok = false;

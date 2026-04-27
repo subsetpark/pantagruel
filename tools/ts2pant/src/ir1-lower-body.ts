@@ -32,6 +32,7 @@ import { getAst } from "./pant-wasm.js";
 import {
   addModifiedProp,
   addWrittenKey,
+  clearedFallback,
   cloneSymbolicState,
   installMapWrite,
   installSetWrite,
@@ -477,22 +478,28 @@ function lowerCondStmt(
     const eS = entryE as SetRuleWriteEntry | undefined;
     const baseS = tS ?? eS!;
     const setRuleVar = ast.var(baseS.ruleName);
-    const setFallback = (o: SetOverride): OpaqueExpr =>
+    // Each side may have its own `cleared` predicate, so the projection
+    // for an element only-on-A vs. only-on-B differs: an A-only override
+    // falls through to B's residual `clearedFallback(eCleared, baseIn)`,
+    // and a B-only override falls through to A's residual.
+    // `mergeOverrides` accepts the asymmetric pair via its
+    // `fallbackForMissingA` parameter.
+    const tCleared = tS?.cleared ?? ast.litBool(false);
+    const eCleared = eS?.cleared ?? ast.litBool(false);
+    const baseIn = (o: SetOverride): OpaqueExpr =>
       ast.binop(ast.opIn(), o.elemExpr, ast.app(setRuleVar, [baseS.objExpr]));
+    const fallbackForMissingB = (o: SetOverride): OpaqueExpr =>
+      clearedFallback(eCleared, baseIn(o));
+    const fallbackForMissingA = (o: SetOverride): OpaqueExpr =>
+      clearedFallback(tCleared, baseIn(o));
     const mergedSet = mergeOverrides(
       tS?.memberOverrides ?? [],
       eS?.memberOverrides ?? [],
       (o) => o.elemExpr,
-      setFallback,
+      fallbackForMissingB,
       combineCond,
+      fallbackForMissingA,
     );
-    // Set `cleared` is symbolic so a one-sided `s.clear()` produces a
-    // guarded `cond gExpr => true, true => false` rather than collapsing
-    // to an unconditional clear. Both sides start as the outer state's
-    // `cleared` (via `cloneSymbolicState`) — `?? false` only fires when
-    // a branch lacks a Set entry entirely.
-    const tCleared = tS?.cleared ?? ast.litBool(false);
-    const eCleared = eS?.cleared ?? ast.litBool(false);
     state.writes = putWrite(state.writes, key, {
       kind: "set",
       ruleName: baseS.ruleName,
