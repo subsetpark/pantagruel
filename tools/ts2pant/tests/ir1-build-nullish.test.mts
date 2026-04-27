@@ -35,9 +35,13 @@ before(async () => {
  * Parse `expr` as a single binary expression. Declares ambient
  * bindings for the names commonly used in tests (`x`, `y`, `a`, `b`,
  * `other`) so the type checker has a real type at each operand
- * location — the recognizer's nullability gate consults
- * `checker.getTypeAtLocation` and would reject an operand whose type
- * resolves to error/`any`.
+ * location — the recognizer's nullability gate uses the *declared*
+ * type from the symbol's declaration (via
+ * `getOperandDeclaredType` / `checker.getTypeOfSymbolAtLocation`),
+ * not the flow-narrowed type at the use site, so leaves later in a
+ * long-form chain still see the parameter's full nullable union.
+ * Without ambient bindings the operand's symbol resolution would
+ * fall back to error/`any` and reject the fold.
  *
  * Pass an `overrides` map to override types for specific names — used
  * by the negative tests (e.g. `x: number` to assert non-nullable
@@ -167,6 +171,26 @@ describe("ir1-build-nullish", () => {
     const l1 = asL1(recognizeNullishForm(expr, checker, makeTranslate()));
     // The recognizer folds the pair into one `is-nullish` (not nested
     // inside `or` — that's the point of the long-form recognizer).
+    const operand = expectIsNullish(l1);
+    expectOperandText(operand, "x");
+  });
+
+  it("x: number | null still folds long-form nullish pair (declared-type gate)", () => {
+    // Regression for the declared-type vs location-type distinction:
+    // TS narrows `x` to non-nullable in later clauses of a long-form
+    // chain after prior negative comparisons. Without using
+    // `getOperandDeclaredType`, the third leaf would see `x: never`
+    // and the gate would reject the fold. Even when the declared
+    // type only includes `null` (no `undefined`), the recognizer
+    // should still fold the pair — comparing a `number | null` value
+    // against `undefined` is an always-false comparison in TS, but
+    // syntactically it's still part of the nullish pattern, and
+    // collapsing to `IsNullish(x)` lowers to a sound `#x = 0` test.
+    const { expr, checker } = parseBinExpr(
+      "x === null || x === undefined",
+      { x: "number | null" },
+    );
+    const l1 = asL1(recognizeNullishForm(expr, checker, makeTranslate()));
     const operand = expectIsNullish(l1);
     expectOperandText(operand, "x");
   });

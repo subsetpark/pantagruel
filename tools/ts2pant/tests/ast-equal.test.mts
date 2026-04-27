@@ -124,6 +124,36 @@ describe("ast-equal", () => {
     );
   });
 
+  it("transparent wrappers (as / !  / satisfies) are unwrapped", () => {
+    // Match `unwrapExpression` in translate-body.ts — these wrappers
+    // don't change runtime value, so two operands wrapped differently
+    // should still match for the long-form nullish recognizer to
+    // fold them.
+    assert.equal(
+      structurallyEqualExpression(parseExpr("(x as number)"), parseExpr("x")),
+      true,
+    );
+    assert.equal(
+      structurallyEqualExpression(parseExpr("x!"), parseExpr("x")),
+      true,
+    );
+    assert.equal(
+      structurallyEqualExpression(
+        parseExpr("x satisfies number"),
+        parseExpr("x"),
+      ),
+      true,
+    );
+    // Composed wrappers (paren around as, etc.).
+    assert.equal(
+      structurallyEqualExpression(
+        parseExpr("((x as number)!)"),
+        parseExpr("x"),
+      ),
+      true,
+    );
+  });
+
   it("parenthesized wrappers are unwrapped", () => {
     assert.equal(
       structurallyEqualExpression(parseExpr("(a.b)"), parseExpr("a.b")),

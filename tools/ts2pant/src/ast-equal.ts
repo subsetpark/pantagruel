@@ -22,7 +22,12 @@
  * - `PropertyAccessExpression` — recurse on `.expression`, compare `.name.text`
  * - `ElementAccessExpression` — recurse on `.expression` and `.argumentExpression`
  * - `CallExpression` — recurse on `.expression`, recurse pairwise on `.arguments`
- * - `ParenthesizedExpression` — unwrap and recurse
+ *   (spread arguments cause the comparison to bail conservatively)
+ * - `ParenthesizedExpression`, `AsExpression`, `NonNullExpression`,
+ *   `SatisfiesExpression` — unwrapped via `unwrapTransparentExpression`
+ *   to mirror `translate-body.ts`'s `unwrapExpression`. So
+ *   `(x as T) === null || x === undefined` matches operand identity
+ *   and folds to a single `IsNullish(x)`.
  * - `ThisExpression` — always equal
  * - `StringLiteral` — compare `.text` (so quote-style differences don't matter)
  * - `NumericLiteral` — compare `.text`
@@ -35,9 +40,24 @@
 
 import ts from "typescript";
 
-function unwrapParens(e: ts.Expression): ts.Expression {
+/**
+ * Strip transparent wrappers — parentheses, `as` casts, non-null
+ * assertions, and `satisfies` — to expose the underlying expression
+ * for structural comparison. Mirrors `unwrapExpression` in
+ * `translate-body.ts`: those wrappers don't change runtime value, so
+ * `(x as T) === null || x === undefined` should fold to one
+ * `IsNullish(x)` rather than miss the operand-identity match. The
+ * helper is recursive, peeling nested wrappers in any order
+ * (`(x as T)!`, `(x!) as T`, etc.).
+ */
+function unwrapTransparentExpression(e: ts.Expression): ts.Expression {
   let cur = e;
-  while (ts.isParenthesizedExpression(cur)) {
+  while (
+    ts.isParenthesizedExpression(cur) ||
+    ts.isAsExpression(cur) ||
+    ts.isNonNullExpression(cur) ||
+    ts.isSatisfiesExpression(cur)
+  ) {
     cur = cur.expression;
   }
   return cur;
@@ -47,8 +67,8 @@ export function structurallyEqualExpression(
   a: ts.Expression,
   b: ts.Expression,
 ): boolean {
-  const ua = unwrapParens(a);
-  const ub = unwrapParens(b);
+  const ua = unwrapTransparentExpression(a);
+  const ub = unwrapTransparentExpression(b);
 
   if (ua.kind !== ub.kind) {
     return false;
