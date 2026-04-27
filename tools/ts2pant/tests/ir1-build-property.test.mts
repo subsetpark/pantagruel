@@ -226,6 +226,29 @@ describe("ir1-build-property", () => {
     assert.equal(parenOpaque, bareOpaque);
   });
 
+  it("ambiguous receiver under signature-mode falls back to bare kebab", () => {
+    // The signature path consumes ambiguous-owner cases as best-effort
+    // (a deleted local `qualifyFieldAccess` in `translate-signature.ts`
+    // documented this asymmetry). Surface it on the helper itself via
+    // the `ambiguousOwnerFallback: "bare-kebab"` option so downstream
+    // optional analyses (guard extraction) don't bail the whole
+    // analysis on a single ambiguous accessor.
+    const { node, ctx } = setup(
+      `interface A { readonly id: number; }
+       interface B { readonly id: number; }
+       function f(x: A | B): number {
+         return x.id;
+       }`,
+    );
+    const result = buildL1MemberAccess(node, ctx, {
+      ambiguousOwnerFallback: "bare-kebab",
+    });
+    const { name } = expectMember(result);
+    // Bare kebab fallback — `id` -> `id` (no hyphenation needed) but
+    // the canonical reduction of `toPantTermName("id")` is `id`.
+    assert.equal(name, "id");
+  });
+
   it("type-erasure wrapper is not stripped", () => {
     // `(a as A).owner` must NOT strip the `as A` cast — the cast is
     // load-bearing for the TS-checker type used by `qualifyFieldAccess`.

@@ -84,6 +84,7 @@ import {
   isMapType,
   isSetType,
   type NumericStrategy,
+  toPantTermName,
 } from "./translate-types.js";
 
 /**
@@ -186,10 +187,27 @@ export function tryBuildL1Cardinality(
   if (!matches) {
     return null;
   }
-  // Receiver translates through the legacy pipeline so it picks up
-  // const-binding inlining, symbolic-state lookup, and any other
-  // body-level normalization. Wrap as `from-l2` for embedding under
-  // L1 `Unop`.
+  // Receiver translation. Property-access receivers (e.g.,
+  // `a.items.length`) route through `buildL1MemberAccess` so the
+  // entire chain stays on the L1 path — no half-migration where the
+  // outer `card` is L1 but the inner `.items` round-trips through L2
+  // via `from-l2`. Other receiver shapes (Identifier, call, binop,
+  // etc.) translate through the legacy pipeline; those aren't
+  // property-access and are out of M5's equivalence class.
+  if (
+    ts.isPropertyAccessExpression(receiverNode) &&
+    (receiverNode.flags & ts.NodeFlags.OptionalChain) === 0
+  ) {
+    const innerCard = tryBuildL1Cardinality(receiverNode, ctx);
+    if (innerCard !== null) {
+      return ir1Unop("card", innerCard);
+    }
+    const inner = buildL1MemberAccess(receiverNode, ctx);
+    if (isL1Unsupported(inner)) {
+      return null;
+    }
+    return ir1Unop("card", inner);
+  }
   const r = translateBodyExpr(
     receiverNode as ts.Expression,
     ctx.checker,
@@ -220,9 +238,32 @@ export function tryBuildL1Cardinality(
 // matching the legacy `App(qualified-rule, [receiver])` byte-for-byte.
 
 /**
+ * Options threaded through `buildL1MemberAccess`.
+ *
+ * - `ambiguousOwnerFallback: "reject"` — body-side default. Ambiguous
+ *   union/intersection owners surface as `{ unsupported }` because
+ *   the resulting accessor rule is load-bearing in emitted
+ *   propositions.
+ * - `ambiguousOwnerFallback: "bare-kebab"` — signature-side
+ *   best-effort. Ambiguous owners produce a Member with the bare
+ *   kebab'd field name. The signature path uses this in
+ *   `extractAssertionGuard` / `buildSubstitutionMap` /
+ *   `tryTranslateGuardExpr` where `translateExpr` failures bail the
+ *   *optional* analysis (the would-be guard never fires) — so a bare
+ *   fallback yields the same observable behavior as a hard reject
+ *   without preventing other guards in the same function from
+ *   extracting cleanly. Mirrors the asymmetry the deleted local
+ *   `qualifyFieldAccess` in `translate-signature.ts` carried.
+ */
+export interface BuildL1MemberAccessOptions {
+  ambiguousOwnerFallback?: "reject" | "bare-kebab";
+}
+
+/**
  * Build an L1 `Member(receiverL1, qualifiedName)` for a TS property
- * access. Returns an `{ unsupported }` descriptor on ambiguous owner,
- * unsupported access shape, or a sub-expression that itself rejects.
+ * access. Returns an `{ unsupported }` descriptor on ambiguous owner
+ * (under the body-side default), unsupported access shape, or a
+ * sub-expression that itself rejects.
  *
  * Receiver translation:
  *   - State-free contexts (pure path, unit tests) recurse on
@@ -244,7 +285,9 @@ export function tryBuildL1Cardinality(
 export function buildL1MemberAccess(
   node: ts.PropertyAccessExpression | ts.ElementAccessExpression,
   ctx: L1BuildContext,
+  options: BuildL1MemberAccessOptions = {},
 ): L1BuildResult {
+  const ambiguousMode = options.ambiguousOwnerFallback ?? "reject";
   const stripped = unwrapParens(node);
   if (!ts.isPropertyAccessExpression(stripped)) {
     // Patch 1 scope: ElementAccess lands in Patch 3 (string-literal key
@@ -266,16 +309,24 @@ export function buildL1MemberAccess(
   const receiverNode = unwrapParens(stripped.expression);
   const fieldName = stripped.name.text;
   const receiverType = ctx.checker.getTypeAtLocation(receiverNode);
-  const qualified = qualifyFieldAccess(
+  const qualifiedStrict = qualifyFieldAccess(
     receiverType,
     fieldName,
     ctx.checker,
     ctx.strategy,
     ctx.supply.synthCell,
   );
-  if (qualified === null) {
-    // Ambiguous owner — union/intersection members declare this field
-    // on multiple distinct types.
+  let qualified: string;
+  if (qualifiedStrict !== null) {
+    qualified = qualifiedStrict;
+  } else if (ambiguousMode === "bare-kebab") {
+    // Signature-side best-effort: ambiguous union/intersection
+    // owners fall back to the bare kebab'd field name so optional
+    // analyses (guard extraction, call-following) can continue past
+    // an inherently-ambiguous accessor instead of bailing the whole
+    // analysis on a single ambiguous read.
+    qualified = toPantTermName(fieldName);
+  } else {
     return {
       unsupported:
         `property access .${fieldName}: ambiguous owner — ` +
@@ -297,7 +348,7 @@ export function buildL1MemberAccess(
     if (card !== null) {
       receiverL1 = card;
     } else {
-      const inner = buildL1MemberAccess(receiverNode, ctx);
+      const inner = buildL1MemberAccess(receiverNode, ctx, options);
       if (isL1Unsupported(inner)) {
         return inner;
       }

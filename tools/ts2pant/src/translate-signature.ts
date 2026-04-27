@@ -945,7 +945,17 @@ export function translateExpr(
       state: undefined,
       supply: { n: 0, synthCell },
     };
-    const member = buildL1MemberAccess(expr, l1Ctx);
+    // Signature-side best-effort: ambiguous union/intersection owners
+    // fall back to the bare kebab'd field name rather than rejecting
+    // the entire translation. `translateExpr`'s callers
+    // (`extractAssertionGuard`, `buildSubstitutionMap`,
+    // `tryTranslateGuardExpr`) treat any `unsupported` as a hard bail
+    // of the *optional* analysis — so a strict reject here would
+    // unnecessarily skip surrounding guards that translate fine. The
+    // body-side path keeps the strict default.
+    const member = buildL1MemberAccess(expr, l1Ctx, {
+      ambiguousOwnerFallback: "bare-kebab",
+    });
     if ("unsupported" in member) {
       return member;
     }
