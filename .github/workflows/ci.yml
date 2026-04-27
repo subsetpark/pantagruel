@@ -76,8 +76,10 @@ jobs:
           # Pin a specific version so the action doesn't have to resolve
           # the latest release via the GitHub API on each run — that
           # resolution is intermittently flaky ("no release for just
-          # matching version specifier"). Bump as needed.
-          just-version: "1.50.0"
+          # matching version specifier"). 1.50.0 (April 19) was rejected
+          # by the action's manifest; use 1.49.0 which has been out long
+          # enough to be reliably cached. Bump as needed.
+          just-version: "1.49.0"
 
       - name: Install OCaml dependencies
         run: |
