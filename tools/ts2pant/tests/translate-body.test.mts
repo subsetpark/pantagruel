@@ -629,6 +629,15 @@ describe("conditional mutations (symbolic last-write)", () => {
         }
       `,
     },
+    {
+      name: "Set.clear",
+      source: `
+        interface A { p: Set<string>; q: boolean; }
+        function f(a: A): void {
+          a.q = a.p.clear() as unknown as boolean;
+        }
+      `,
+    },
   ];
   for (const { name, source } of collectionRhsCases) {
     it(`rejects an assignment whose RHS is a ${name} mutation effect`, () => {
