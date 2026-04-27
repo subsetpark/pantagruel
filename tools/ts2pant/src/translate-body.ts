@@ -2848,6 +2848,33 @@ export function translateBodyExpr(
     return { expr: lowerL1ToOpaque(member) };
   }
 
+  // M5 P3: string-literal element access (`obj["field"]`) collapses to
+  // the same canonical L1 Member as dotted access. Computed indices
+  // (`obj[k]`, `obj[1+1]`) reject with the
+  // `computed property access ...` reason returned by the helper.
+  // Optional-chain element access (`obj?.["f"]`) falls through to the
+  // raw-text fallback in `translateExpr`; the optional-chain functor
+  // lift recognizer in this dispatch only handles `?.` on
+  // PropertyAccess today, and adding the element-access variant is a
+  // separate concern.
+  if (
+    ts.isElementAccessExpression(expr) &&
+    (expr.flags & ts.NodeFlags.OptionalChain) === 0
+  ) {
+    const l1Ctx = {
+      checker,
+      strategy,
+      paramNames,
+      state,
+      supply,
+    };
+    const member = buildL1MemberAccess(expr, l1Ctx);
+    if ("unsupported" in member) {
+      return member;
+    }
+    return { expr: lowerL1ToOpaque(member) };
+  }
+
   // Call expression: handle .includes(), .filter().map(), etc.
   // A Map.set/delete call returns a `{ effect }` BodyResult which only
   // `symbolicExecute` consumes as a statement; in any expression context

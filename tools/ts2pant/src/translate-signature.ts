@@ -939,10 +939,15 @@ export function translateExpr(
   // them as cardinality. Routing through `tryBuildL1Cardinality`
   // makes signature guards see the same `#x` primitive that body and
   // pure paths now produce, satisfying spec invariant 8 universally.
-  // Optional-chain access and ElementAccess fall through to the rest
-  // of the dispatch.
+  //
+  // M5 P3 extends the same dispatch to string-literal element access
+  // (`obj["field"]`) — same canonical Member output as `obj.field`.
+  // Computed element access (`obj[k]`, `obj[1+1]`) is rejected by
+  // `buildL1MemberAccess` with a specific reason. Optional-chain
+  // access falls through to the rest of the dispatch.
   if (
-    ts.isPropertyAccessExpression(expr) &&
+    (ts.isPropertyAccessExpression(expr) ||
+      ts.isElementAccessExpression(expr)) &&
     (expr.flags & ts.NodeFlags.OptionalChain) === 0
   ) {
     const l1Ctx: L1BuildContext = {
@@ -985,11 +990,12 @@ export function translateExpr(
   }
   // Defensively unwrap parens for the paren-stripping invariant — a
   // paren-wrapped property access (`(a).b`) routes through the same
-  // Member dispatch as `a.b`.
+  // Member dispatch as `a.b`. Same for element access.
   const stripped = unwrapParens(expr) as ts.Expression;
   if (
     stripped !== expr &&
-    ts.isPropertyAccessExpression(stripped) &&
+    (ts.isPropertyAccessExpression(stripped) ||
+      ts.isElementAccessExpression(stripped)) &&
     (stripped.flags & ts.NodeFlags.OptionalChain) === 0
   ) {
     return translateExpr(stripped, checker, _strategy, paramNames, synthCell);
