@@ -572,7 +572,7 @@ parallel if both are needed.
 
 | Question | Notes | Resolve By |
 |----------|-------|------------|
-| Decrement μ-search (`i--`) SMT encoding | Layer 1 admits it; SMT lowering for `min over each j: Int, j <= INIT, ~P(j) \| j` needs verification on a fixture. | When a fixture demands it |
+| Decrement μ-search (`i--`) SMT encoding | Layer 1 admits it; SMT lowering for `max over each j: Int, j <= INIT, ~P(j) \| j` (the *greatest* `j ≤ INIT` satisfying `¬P` — dual of the increment case's `min over j ≥ INIT`) needs verification on a fixture. | When a fixture demands it |
 | Index-for with mutating `arr[i] = …` writes | Aliasing semantics non-trivial. Deferred unless a fixture demands it. | When a fixture demands it |
 | M4 standalone vs absorbed | Depends on real-fixture pressure on equality/nullish forms inside iteration bodies. | Pre-M4 |
 | M5 standalone vs absorbed | Property access likely absorbs into whichever earlier milestone first needs uniform `Member` shape. | Pre-M5 |

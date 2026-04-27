@@ -97,7 +97,7 @@ export function lowerL1Body(
     case "for":
       propositions.push({
         kind: "unsupported",
-        reason: `lowerL1Body: '${stmt.kind}' out of scope for this slice`,
+        reason: `${stmt.kind} statements are not supported in mutating bodies`,
       });
       return false;
     default: {
@@ -105,7 +105,7 @@ export function lowerL1Body(
       void _exhaustive;
       propositions.push({
         kind: "unsupported",
-        reason: "lowerL1Body: unknown form",
+        reason: "unsupported statement form in mutating body",
       });
       return false;
     }
@@ -339,17 +339,52 @@ function lowerCondStmt(
   const [guard, thenBody] = stmt.arms[0]!;
   const gExpr = ctx.applyConst(lowerL1ExprToOpaque(guard));
 
+  // Each branch lowers into its own `PropResult[]` buffer so a Shape A
+  // `foreach` inside the branch (which emits `all $N in src | …`
+  // equations directly via `lowerForeach`) can't escape the conditional
+  // and become an unconditional quantified write. The conditional merge
+  // below only re-guards entries that flow through `state.writes`;
+  // foreach-emitted equations bypass `writtenKeys`, so we conservatively
+  // reject them at the branch boundary rather than silently dropping the
+  // guard. (Lifting a per-iter equation past a guard would mean
+  // synthesizing `all $N in src, gExpr | …` — out of scope until a
+  // fixture demands it.)
+  const thenProps: PropResult[] = [];
   const sT = cloneSymbolicState(state);
-  if (!lowerL1Body(thenBody, sT, propositions, ctx)) {
+  if (!lowerL1Body(thenBody, sT, thenProps, ctx)) {
+    propositions.push(...thenProps);
     return false;
   }
 
+  const elseProps: PropResult[] = [];
   const sE = cloneSymbolicState(state);
   if (stmt.otherwise !== null) {
-    if (!lowerL1Body(stmt.otherwise, sE, propositions, ctx)) {
+    if (!lowerL1Body(stmt.otherwise, sE, elseProps, ctx)) {
+      propositions.push(...thenProps, ...elseProps);
       return false;
     }
   }
+
+  const branchProducesQuantifiedProp = (p: PropResult): boolean =>
+    p.kind === "equation" || p.kind === "assertion";
+  if (
+    thenProps.some(branchProducesQuantifiedProp) ||
+    elseProps.some(branchProducesQuantifiedProp)
+  ) {
+    propositions.push({
+      kind: "unsupported",
+      reason:
+        "loop with per-iteration writes inside an if-branch is not supported — the per-iter equation would escape the branch guard",
+    });
+    return false;
+  }
+
+  // Branch lowering produced no quantified equations — the only
+  // PropResults that could remain in either buffer are `unsupported`
+  // markers, but a successful return guarantees neither branch emitted
+  // any. Any per-element writes are inside `sT.writes` / `sE.writes`
+  // and get merged via `writtenKeys` below.
+  propositions.push(...thenProps, ...elseProps);
 
   // Merge per write-key. Property writes use cond-fallback to the
   // pre-state read; Map/Set writes merge their override lists via

@@ -34,7 +34,10 @@ import {
   ir1While,
 } from "../src/ir1.js";
 import { lowerL1Expr } from "../src/ir1-lower.js";
+import { lowerL1Body } from "../src/ir1-lower-body.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
+import { makeSymbolicState } from "../src/translate-body.js";
+import type { PropResult } from "../src/types.js";
 
 before(async () => {
   await loadAst();
@@ -399,6 +402,49 @@ describe("active statement constructors (block, let, return)", () => {
     if (stmt.kind === "return") {
       assert.equal(stmt.expr, null);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// lowerL1Body — branch-local proposition isolation
+// ---------------------------------------------------------------------------
+
+describe("lowerL1Body — branch-local foreach equations", () => {
+  it("rejects a Shape A foreach inside a cond-stmt branch", () => {
+    // `lowerForeach` emits `all $0 in xs | active' $0 = true` directly
+    // into the propositions buffer. A foreach inside a branch would
+    // skip the conditional merge (foreach equations don't go through
+    // `state.writes` / `writtenKeys`), so the per-iter equation would
+    // become unconditional. `lowerCondStmt` runs each branch into a
+    // local buffer and rejects if any quantified prop appears, rather
+    // than silently dropping the guard. This direct test exercises the
+    // lower-pass guarantee — the build pass currently rejects the
+    // construct earlier, so this is defense-in-depth.
+    const stmt = ir1CondStmt(
+      [
+        [
+          ir1Var("g"),
+          ir1Foreach(
+            "$0",
+            ir1Var("xs"),
+            ir1Assign(ir1Member(ir1Var("$0"), "active"), ir1LitBool(true)),
+          ),
+        ],
+      ],
+      null,
+    );
+    const propositions: PropResult[] = [];
+    const ok = lowerL1Body(stmt, makeSymbolicState(), propositions, {
+      applyConst: (e) => e,
+    });
+    assert.equal(ok, false);
+    assert.ok(
+      propositions.some(
+        (p) =>
+          p.kind === "unsupported" &&
+          /escape the branch guard/.test(p.reason),
+      ),
+    );
   });
 });
 

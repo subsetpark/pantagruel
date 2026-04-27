@@ -987,6 +987,32 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     assert.ok(props.some((p) => p.kind === "unsupported"));
   });
 
+  it("rejects a foreach inside an if-branch (build-pass rejection)", () => {
+    // The build pass's `buildL1MutationBody` already rejects branch
+    // bodies that aren't property assigns, Map/Set effects, or nested
+    // ifs — so a foreach inside an `if (g) { … }` is rejected before
+    // it reaches the lower pass. The lower pass nonetheless guards
+    // against this case in `lowerCondStmt` via branch-local proposition
+    // buffers (defense-in-depth: a hand-constructed IR or future build
+    // path that emits this combination would reject rather than
+    // silently dropping the branch guard).
+    const source = `
+      interface User { active: boolean; }
+      function f(g: boolean, us: User[]): void {
+        if (g) {
+          for (const u of us) { u.active = true; }
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.ok(props.some((p) => p.kind === "unsupported"));
+  });
+
   it("rejects simple-assign fold (requires compound assignment)", () => {
     const source = `
       interface Account { total: number; }
