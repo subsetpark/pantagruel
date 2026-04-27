@@ -1037,6 +1037,95 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     );
   });
 
+  it("rejects forEach with optional parameter", () => {
+    // `(u?: User) => …` — the optional marker changes callback
+    // semantics (the runtime arity is variable). Build path doesn't
+    // model this, so reject explicitly.
+    const source = `
+      interface User { active: boolean; }
+      function f(us: User[]): void {
+        us.forEach((u?: User) => { if (u) u.active = true; });
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.ok(
+      props.some(
+        (p) =>
+          p.kind === "unsupported" &&
+          /single plain identifier parameter/.test(p.reason),
+      ),
+    );
+  });
+
+  it("rejects accumulator-self-dependent Shape B fold rhs", () => {
+    // `a.total += a.total` — the rhs reads from the accumulator's
+    // own root. `buildShapeBLeaf` freezes the rhs against the
+    // pre-loop scope, so the lowered fold would read the pre-loop
+    // value of `a.total` rather than the recurrence. Conservative
+    // refusal until proper accumulator-state simulation lands.
+    const source = `
+      interface Account { total: number; }
+      interface Item { value: number; }
+      function f(a: Account, xs: Item[]): void {
+        for (const x of xs) {
+          a.total += a.total;
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.ok(
+      props.some(
+        (p) =>
+          p.kind === "unsupported" &&
+          /accumulator rhs reads from the accumulator's own root/.test(
+            p.reason,
+          ),
+      ),
+    );
+  });
+
+  it("rejects accumulator-self-dependent Shape B fold guard", () => {
+    // `if (a.total > 0) a.total += x.value` — the guard reads from
+    // the accumulator. The if-condition would lower against the
+    // pre-loop value of `a.total` and gate the fold incorrectly.
+    const source = `
+      interface Account { total: number; }
+      interface Item { value: number; }
+      function f(a: Account, xs: Item[]): void {
+        for (const x of xs) {
+          if (a.total > 0) {
+            a.total += x.value;
+          }
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.ok(
+      props.some(
+        (p) =>
+          p.kind === "unsupported" &&
+          /accumulator guard reads from the accumulator's own root/.test(
+            p.reason,
+          ),
+      ),
+    );
+  });
+
   it("accepts parenthesized branch-body assignment statements", () => {
     // `(obj.p = 1);` is the same as `obj.p = 1;` — the build pass
     // should canonicalize through `unwrapExpression` so redundant

@@ -562,6 +562,37 @@ function classifyForeachStmt(
     if (expressionReferencesNames(bin.left.expression, new Set([iterName]))) {
       return { unsupported: "loop accumulator target depends on iterator" };
     }
+    // The fold lowering threads the accumulator's evolving value
+    // through `priorVal` only — `buildShapeBLeaf` freezes the rhs
+    // and guard against the pre-loop scope. So a fold whose rhs or
+    // guard reads from the accumulator's own root (`a.total +=
+    // a.total`, or `if (a.total > 0) a.total += x.value`) would
+    // lower against the *pre-loop* value of `a.total` and produce
+    // the wrong recurrence. Reject conservatively until proper
+    // accumulator-state simulation lands.
+    const accRoot = getRootIdentifier(bin.left.expression);
+    if (accRoot === null) {
+      return {
+        unsupported:
+          "loop accumulator target has no extractable root identifier",
+      };
+    }
+    const accRefs = new Set([accRoot]);
+    if (expressionReferencesNames(bin.right, accRefs)) {
+      return {
+        unsupported:
+          "loop accumulator rhs reads from the accumulator's own root — would lower against the pre-loop value, not the recurrence",
+      };
+    }
+    if (
+      parentGuard !== null &&
+      expressionReferencesNames(parentGuard, accRefs)
+    ) {
+      return {
+        unsupported:
+          "loop accumulator guard reads from the accumulator's own root — would lower against the pre-loop value, not the recurrence",
+      };
+    }
     const receiverType = outerCtx.checker.getTypeAtLocation(
       bin.left.expression,
     );
@@ -608,6 +639,19 @@ function classifyForeachStmt(
           stmt.expression,
         );
         if (!isUnsupported(inner) && inner.kind === "shapeB") {
+          return inner;
+        }
+        // Inner classification recognized the body as Shape B but
+        // rejected on accumulator self-dependence — propagate the
+        // specific reason instead of silently falling through to
+        // Shape A (which would re-reject with a misleading message
+        // about the iterator-rooted-target check).
+        if (
+          isUnsupported(inner) &&
+          /^loop accumulator (rhs|guard) reads from the accumulator's own root/u.test(
+            inner.unsupported,
+          )
+        ) {
           return inner;
         }
         // Fall through — try Shape A.
