@@ -268,7 +268,7 @@ export function bodyExpr(r: BodyResult): OpaqueExpr {
 // for each branch and merge via `cond` at the join. Later reads of the same
 // property access see the accumulated value. See CLAUDE.md § Guarded Commands.
 
-interface PropertyWriteEntry {
+export interface PropertyWriteEntry {
   kind: "property";
   prop: string;
   objExpr: OpaqueExpr;
@@ -289,14 +289,14 @@ interface PropertyWriteEntry {
  * expression `R objExpr keyExpr` (pretty) instead of projecting off the
  * tuple (ugly but equivalent).
  */
-interface MapOverride {
+export interface MapOverride {
   keyTuple: OpaqueExpr;
   objExpr: OpaqueExpr;
   keyExpr: OpaqueExpr;
   value: OpaqueExpr;
 }
 
-interface MapRuleWriteEntry {
+export interface MapRuleWriteEntry {
   kind: "map";
   ruleName: string;
   keyPredName: string;
@@ -313,7 +313,7 @@ interface MapRuleWriteEntry {
  * merge. Parallel to `MapOverride` but scalar-keyed rather than tuple-
  * keyed — Sets have no separate key-and-value axis.
  */
-interface SetOverride {
+export interface SetOverride {
   elemExpr: OpaqueExpr;
   value: OpaqueExpr;
 }
@@ -334,7 +334,7 @@ interface SetOverride {
  * only over the element (type `elemType`), while the LHS applies the
  * primed rule to this receiver as a free term.
  */
-interface SetRuleWriteEntry {
+export interface SetRuleWriteEntry {
   kind: "set";
   ruleName: string;
   ownerType: string;
@@ -344,7 +344,10 @@ interface SetRuleWriteEntry {
   cleared: boolean;
 }
 
-type WriteEntry = PropertyWriteEntry | MapRuleWriteEntry | SetRuleWriteEntry;
+export type WriteEntry =
+  | PropertyWriteEntry
+  | MapRuleWriteEntry
+  | SetRuleWriteEntry;
 
 /**
  * Per-body symbolic-execution accumulator. Held as a cell of immutable
@@ -372,11 +375,11 @@ export interface SymbolicState {
   // Keys *written during the current branch* (reset on clone). Used by the
   // if-merge algorithm to determine which locations are "touched."
   writtenKeys: ReadonlySet<string>;
-  modifiedProps: Set<string>;
+  modifiedProps: ReadonlySet<string>;
   canonicalize: (e: OpaqueExpr) => OpaqueExpr;
 }
 
-function makeSymbolicState(
+export function makeSymbolicState(
   canonicalize: (e: OpaqueExpr) => OpaqueExpr = (e) => e,
 ): SymbolicState {
   return {
@@ -387,29 +390,60 @@ function makeSymbolicState(
   };
 }
 
-function cloneSymbolicState(s: SymbolicState): SymbolicState {
+export function cloneSymbolicState(s: SymbolicState): SymbolicState {
   return {
     writes: new Map(s.writes),
     writtenKeys: new Set(),
-    modifiedProps: s.modifiedProps,
+    // Sub-states get their own modifiedProps; merge logic is responsible
+    // for accumulating sub-state modifiedProps into the outer state at
+    // branch-merge time. Previously this was a shared mutable Set, but
+    // shared mutation across cloned cells doesn't dogfood well — the
+    // primed-rule semantics for an aliased Set is unclear and ts2pant
+    // can't translate it. Explicit accumulation is the cleaner answer.
+    modifiedProps: new Set(s.modifiedProps),
     canonicalize: s.canonicalize,
   };
 }
 
-function putWrite(state: SymbolicState, key: string, entry: WriteEntry): void {
-  const next = new Map(state.writes);
+/**
+ * Pure-style helpers: take the input collection, return a new
+ * collection with the element added. Callers reassign the state field:
+ *
+ *   state.writes = putWrite(state.writes, key, entry);
+ *   state.writtenKeys = addWrittenKey(state.writtenKeys, key);
+ *   state.modifiedProps = addModifiedProp(state.modifiedProps, prop);
+ *
+ * Pure inputs/outputs translate cleanly to Pantagruel rules
+ * (`putWrite m k v = …`) — easier to dogfood than the prior
+ * mutate-the-state-field shape.
+ */
+
+export function putWrite(
+  writes: ReadonlyMap<string, WriteEntry>,
+  key: string,
+  entry: WriteEntry,
+): ReadonlyMap<string, WriteEntry> {
+  const next = new Map(writes);
   next.set(key, entry);
-  state.writes = next;
+  return next;
 }
 
-function addWrittenKey(state: SymbolicState, key: string): void {
-  const next = new Set(state.writtenKeys);
+export function addWrittenKey(
+  keys: ReadonlySet<string>,
+  key: string,
+): ReadonlySet<string> {
+  const next = new Set(keys);
   next.add(key);
-  state.writtenKeys = next;
+  return next;
 }
 
-function addModifiedProp(state: SymbolicState, prop: string): void {
-  state.modifiedProps.add(prop);
+export function addModifiedProp(
+  props: ReadonlySet<string>,
+  prop: string,
+): ReadonlySet<string> {
+  const next = new Set(props);
+  next.add(prop);
+  return next;
 }
 
 function setCanonicalize(
@@ -419,7 +453,7 @@ function setCanonicalize(
   state.canonicalize = fn;
 }
 
-function symbolicKey(prop: string, objExpr: OpaqueExpr): string {
+export function symbolicKey(prop: string, objExpr: OpaqueExpr): string {
   return `${prop}::${getAst().strExpr(objExpr)}`;
 }
 
@@ -457,7 +491,7 @@ function mapWriteKey(
  * the override record so Map (tuple-keyed) and Set (element-keyed) writes
  * share the same merge plumbing.
  */
-function mergeOverrides<O extends { value: OpaqueExpr }>(
+export function mergeOverrides<O extends { value: OpaqueExpr }>(
   aSide: ReadonlyArray<O>,
   bSide: ReadonlyArray<O>,
   keyOf: (o: O) => OpaqueExpr,
@@ -565,10 +599,13 @@ function installMapWrite(
       { keyTuple, objExpr, keyExpr, value: ast.litBool(false) },
     ];
   }
-  putWrite(state, key, entry);
-  addWrittenKey(state, key);
-  state.modifiedProps.add(effect.ruleName);
-  state.modifiedProps.add(effect.keyPredName);
+  state.writes = putWrite(state.writes, key, entry);
+  state.writtenKeys = addWrittenKey(state.writtenKeys, key);
+  state.modifiedProps = addModifiedProp(state.modifiedProps, effect.ruleName);
+  state.modifiedProps = addModifiedProp(
+    state.modifiedProps,
+    effect.keyPredName,
+  );
 }
 
 /**
@@ -717,9 +754,9 @@ function installSetWrite(
   if (effect.op === "clear") {
     entry.memberOverrides = [];
     entry.cleared = true;
-    putWrite(state, key, entry);
-    addWrittenKey(state, key);
-    state.modifiedProps.add(effect.ruleName);
+    state.writes = putWrite(state.writes, key, entry);
+    state.writtenKeys = addWrittenKey(state.writtenKeys, key);
+    state.modifiedProps = addModifiedProp(state.modifiedProps, effect.ruleName);
     return;
   }
 
@@ -731,9 +768,9 @@ function installSetWrite(
     elemExpr,
     value: effect.op === "add" ? ast.litBool(true) : ast.litBool(false),
   });
-  putWrite(state, key, entry);
-  addWrittenKey(state, key);
-  state.modifiedProps.add(effect.ruleName);
+  state.writes = putWrite(state.writes, key, entry);
+  state.writtenKeys = addWrittenKey(state.writtenKeys, key);
+  state.modifiedProps = addModifiedProp(state.modifiedProps, effect.ruleName);
 }
 
 /**
@@ -821,7 +858,7 @@ function emitMapEquations(
         [ast.var(m1), ast.var(k1)],
       ),
     });
-    addModifiedProp(state, entry.ruleName);
+    state.modifiedProps = addModifiedProp(state.modifiedProps, entry.ruleName);
   }
   if (entry.membershipOverrides.length > 0) {
     const m1 = allocBinder("m");
@@ -843,7 +880,10 @@ function emitMapEquations(
         [ast.var(m1), ast.var(k1)],
       ),
     });
-    addModifiedProp(state, entry.keyPredName);
+    state.modifiedProps = addModifiedProp(
+      state.modifiedProps,
+      entry.keyPredName,
+    );
   }
 }
 
@@ -901,7 +941,7 @@ function emitSetMembershipEquation(
     quantifiers: [ast.param(y, ast.tName(entry.elemType))] as OpaqueParam[],
     body: ast.binop(ast.opIff(), memberIn(primedApp), rhs),
   });
-  addModifiedProp(state, entry.ruleName);
+  state.modifiedProps = addModifiedProp(state.modifiedProps, entry.ruleName);
 }
 
 /**
@@ -3905,7 +3945,7 @@ function translateMutatingBody(
           lhs: ast.app(ast.primed(entry.prop), [entry.objExpr]),
           rhs: entry.value,
         });
-        addModifiedProp(state, entry.prop);
+        state.modifiedProps = addModifiedProp(state.modifiedProps, entry.prop);
         break;
       case "map":
         emitMapEquations(entry, propositions, allocBinder, state);
@@ -4072,13 +4112,13 @@ function symbolicExecute(
                 [gExpr, vContinuation],
                 [ast.litBool(true), vEarlyReturn],
               ]);
-          putWrite(state, key, {
+          state.writes = putWrite(state.writes, key, {
             kind: "property",
             prop: entryR.prop,
             objExpr: entryR.objExpr,
             value: merged,
           });
-          addWrittenKey(state, key);
+          state.writtenKeys = addWrittenKey(state.writtenKeys, key);
           continue;
         }
         // Map / Set: continuation-side overrides are taken only when NOT
@@ -4122,7 +4162,7 @@ function symbolicExecute(
             memberFallback,
             combineContCond,
           );
-          putWrite(state, key, {
+          state.writes = putWrite(state.writes, key, {
             kind: "map",
             ruleName: entryR.ruleName,
             keyPredName: entryR.keyPredName,
@@ -4131,7 +4171,7 @@ function symbolicExecute(
             valueOverrides: mergedValue,
             membershipOverrides: mergedMember,
           });
-          addWrittenKey(state, key);
+          state.writtenKeys = addWrittenKey(state.writtenKeys, key);
           continue;
         }
         // Set: fallback is the pre-state membership `y in s` at the
@@ -4155,7 +4195,7 @@ function symbolicExecute(
           setFallback,
           combineContCond,
         );
-        putWrite(state, key, {
+        state.writes = putWrite(state.writes, key, {
           kind: "set",
           ruleName: entryR.ruleName,
           ownerType: entryR.ownerType,
@@ -4164,7 +4204,7 @@ function symbolicExecute(
           memberOverrides: mergedSet,
           cleared: entryR.cleared || (priorSet?.cleared ?? false),
         });
-        addWrittenKey(state, key);
+        state.writtenKeys = addWrittenKey(state.writtenKeys, key);
       }
       // Remaining stmts have been consumed by the continuation.
       break;
@@ -4356,13 +4396,13 @@ function symbolicExecute(
         const objExpr = applyConst(bodyExpr(obj));
         const valExpr = applyConst(bodyExpr(val));
         const key = symbolicKey(prop, objExpr);
-        putWrite(state, key, {
+        state.writes = putWrite(state.writes, key, {
           kind: "property",
           prop,
           objExpr,
           value: valExpr,
         });
-        addWrittenKey(state, key);
+        state.writtenKeys = addWrittenKey(state.writtenKeys, key);
         continue;
       }
     }
@@ -4572,7 +4612,7 @@ function symbolicExecute(
  * pre-wrapped with a local `all` here.
  */
 function generateFrameConditions(
-  modifiedRules: Set<string>,
+  modifiedRules: ReadonlySet<string>,
   declarations: PantDeclaration[],
 ): PropResult[] {
   const ast = getAst();
