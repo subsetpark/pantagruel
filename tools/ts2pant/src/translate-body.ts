@@ -36,6 +36,7 @@ import {
   isAssertionCall,
   isFollowableGuardCall,
   isPureExpression,
+  isTranslateExprUnsupported,
   shortParamName,
   translateExpr,
   translateOperator,
@@ -2939,15 +2940,17 @@ export function translateBodyExpr(
 
   // Fall through to base translateExpr for identifiers, literals, this, etc.
   if (ts.isExpression(expr)) {
-    return {
-      expr: translateExpr(
-        expr,
-        checker,
-        strategy,
-        paramNames,
-        supply.synthCell,
-      ),
-    };
+    const result = translateExpr(
+      expr,
+      checker,
+      strategy,
+      paramNames,
+      supply.synthCell,
+    );
+    if (isTranslateExprUnsupported(result)) {
+      return { unsupported: result.unsupported };
+    }
+    return { expr: result };
   }
 
   return { unsupported: "non-expression statement" };

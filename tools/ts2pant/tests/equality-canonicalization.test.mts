@@ -193,8 +193,8 @@ describe("equality-canonicalization (signature/guard path)", () => {
   });
 
   it("nested == inside a strict-eq guard also bails", () => {
-    // The throw is inside translateExpr's recursion; outer translateExpr
-    // catches it through the wrapped entry-point caller.
+    // The unsupported result propagates through translateExpr's
+    // internal recursion (binop branch) up to the entry-point caller.
     const source = `
       interface Account { balance: number; }
       function deposit(account: Account, amount: number): void {

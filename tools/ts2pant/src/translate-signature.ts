@@ -18,20 +18,27 @@ import type { PantAction, PantDeclaration, PantRule } from "./types.js";
 export type Classification = "pure" | "mutating";
 
 /**
- * Thrown by `translateExpr` when it encounters an operator that the
- * conservative-refusal policy explicitly rejects (today: loose equality
- * `==` / `!=`). Distinct from `translateOperator`'s `null` return — that
- * signals "operator not handled" and falls through to a raw-text
- * fallback (acceptable for genuinely-unknown operators that pant will
- * fail to parse downstream). This error signals "operator forbidden",
- * and entry-point callers in the signature/guard path catch it and bail
- * cleanly rather than emitting raw source text as a Pant variable.
+ * Result of translating a TS expression to a Pant `OpaqueExpr`.
+ * Either the translated expression, or an explicit `{ unsupported }`
+ * marker for operators the conservative-refusal policy rejects (today:
+ * loose equality `==` / `!=`). Distinct from `translateOperator`'s
+ * `null` return — that signals "operator not handled" and falls through
+ * to a raw-text fallback (acceptable for genuinely-unknown operators
+ * that pant will fail to parse downstream). This `{ unsupported }`
+ * signals "operator forbidden"; callers must check and bail cleanly
+ * rather than emit raw source text as a Pant variable.
+ *
+ * Mirrors the `L1BuildResult` shape in `ir1-build.ts` (and the
+ * `BodyResult` union in `translate-body.ts`) — the codebase convention
+ * for unsupported translations is an explicit discriminated-union
+ * result, never an exception.
  */
-export class UnsupportedOperatorError extends Error {
-  constructor(reason: string) {
-    super(reason);
-    this.name = "UnsupportedOperatorError";
-  }
+export type TranslateExprResult = OpaqueExpr | { unsupported: string };
+
+export function isTranslateExprUnsupported(
+  r: TranslateExprResult,
+): r is { unsupported: string } {
+  return typeof r === "object" && r !== null && "unsupported" in r;
 }
 
 export interface TranslatedSignature {
@@ -231,16 +238,13 @@ export function extractAssertionGuard(
     return undefined;
   }
   const arg = call.arguments[paramIndex]!;
-  try {
-    return translateExpr(arg, checker, strategy, paramNames, synthCell);
-  } catch (e) {
-    if (e instanceof UnsupportedOperatorError) {
-      // Assertion contains an explicitly-unsupported operator (loose
-      // equality). Skip the guard rather than emit raw text.
-      return undefined;
-    }
-    throw e;
+  const result = translateExpr(arg, checker, strategy, paramNames, synthCell);
+  if (isTranslateExprUnsupported(result)) {
+    // Assertion contains an explicitly-unsupported operator (loose
+    // equality). Skip the guard rather than emit raw text.
+    return undefined;
   }
+  return result;
 }
 
 /**
@@ -330,24 +334,20 @@ function buildSubstitutionMap(
       return null;
     }
 
-    let actual: OpaqueExpr;
-    try {
-      actual = translateExpr(
-        call.arguments[i]!,
-        checker,
-        strategy,
-        callerParamNames,
-        synthCell,
-      );
-    } catch (e) {
-      if (e instanceof UnsupportedOperatorError) {
-        // Argument contains an explicitly-unsupported operator. Bail
-        // the entire substitution rather than emit a partial map that
-        // would inline raw source text into a guard.
-        return null;
-      }
-      throw e;
+    const actualResult = translateExpr(
+      call.arguments[i]!,
+      checker,
+      strategy,
+      callerParamNames,
+      synthCell,
+    );
+    if (isTranslateExprUnsupported(actualResult)) {
+      // Argument contains an explicitly-unsupported operator. Bail the
+      // entire substitution rather than emit a partial map that would
+      // inline raw source text into a guard.
+      return null;
     }
+    const actual = actualResult;
     const rendered = ast.strExpr(actual);
     // Heuristic: if the rendered string contains spaces, it's compound and needs parens
     const safeRendered = /\s/u.test(rendered) ? `(${rendered})` : rendered;
@@ -665,8 +665,8 @@ function scanBodyForGuards(
  * Translate a guard expression, returning `null` when the expression
  * contains an explicitly-unsupported operator (today: loose equality).
  * Mirrors the bail behavior in `extractAssertionGuard` and
- * `buildSubstitutionMap` — a single helper centralizes the catch site so
- * all three guard-extraction paths reject identically.
+ * `buildSubstitutionMap` — one helper unifies the union check so all
+ * three guard-extraction paths reject identically.
  */
 function tryTranslateGuardExpr(
   expr: ts.Expression,
@@ -675,14 +675,11 @@ function tryTranslateGuardExpr(
   paramNames: ReadonlyMap<string, string>,
   synthCell: SynthCell | undefined,
 ): OpaqueExpr | null {
-  try {
-    return translateExpr(expr, checker, strategy, paramNames, synthCell);
-  } catch (e) {
-    if (e instanceof UnsupportedOperatorError) {
-      return null;
-    }
-    throw e;
+  const result = translateExpr(expr, checker, strategy, paramNames, synthCell);
+  if (isTranslateExprUnsupported(result)) {
+    return null;
   }
+  return result;
 }
 
 /**
@@ -853,7 +850,14 @@ function blockThrows(node: ts.Statement): boolean {
 }
 
 /**
- * Translate a TypeScript expression to an opaque Pantagruel AST node (best-effort).
+ * Translate a TypeScript expression to an opaque Pantagruel AST node
+ * (best-effort), or return `{ unsupported: reason }` for operators the
+ * conservative-refusal policy rejects (today: loose `==`/`!=`).
+ *
+ * Callers must check the result via `isTranslateExprUnsupported` and
+ * bail cleanly. This mirrors the `BodyResult` / `L1BuildResult`
+ * convention — the codebase signals unsupported translations through
+ * explicit discriminated-union results, never exceptions.
  */
 export function translateExpr(
   expr: ts.Expression,
@@ -861,7 +865,7 @@ export function translateExpr(
   _strategy: NumericStrategy,
   paramNames: ReadonlyMap<string, string>,
   synthCell?: SynthCell,
-): OpaqueExpr {
+): TranslateExprResult {
   const ast = getAst();
 
   // Property access: a.balance -> app(var("account-balance"), [obj])
@@ -873,6 +877,9 @@ export function translateExpr(
       paramNames,
       synthCell,
     );
+    if (isTranslateExprUnsupported(obj)) {
+      return obj;
+    }
     const ruleName = qualifyFieldAccess(
       checker.getTypeAtLocation(expr.expression),
       expr.name.text,
@@ -885,18 +892,19 @@ export function translateExpr(
 
   // Binary expression: a >= b -> binop(opGe(), a, b)
   if (ts.isBinaryExpression(expr)) {
-    // M4 P3: reject loose equality (== / !=) explicitly. Falling through
-    // to the `ast.var(expr.getText())` path below would emit raw source
-    // text as a Pant variable name, which violates conservative-refusal
-    // policy 3(b). Entry-point callers (extractAssertionGuard,
-    // buildSubstitutionMap, scanBodyForGuards) catch this error and bail.
+    // M4 P3: reject loose equality (== / !=) explicitly. Falling
+    // through to the `ast.var(expr.getText())` path below would emit
+    // raw source text as a Pant variable name, violating
+    // conservative-refusal policy 3(b). Return an explicit `unsupported`
+    // marker — entry-point callers (extractAssertionGuard,
+    // buildSubstitutionMap, scanBodyForGuards) propagate it and bail.
     if (
       expr.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken ||
       expr.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsToken
     ) {
-      throw new UnsupportedOperatorError(
-        "loose equality (== / !=) is unsupported; use === / !==",
-      );
+      return {
+        unsupported: "loose equality (== / !=) is unsupported; use === / !==",
+      };
     }
     const left = translateExpr(
       expr.left,
@@ -905,6 +913,9 @@ export function translateExpr(
       paramNames,
       synthCell,
     );
+    if (isTranslateExprUnsupported(left)) {
+      return left;
+    }
     const right = translateExpr(
       expr.right,
       checker,
@@ -912,6 +923,9 @@ export function translateExpr(
       paramNames,
       synthCell,
     );
+    if (isTranslateExprUnsupported(right)) {
+      return right;
+    }
     const op = translateOperator(expr.operatorToken.kind);
     if (op === null) {
       return ast.var(expr.getText());
@@ -922,16 +936,30 @@ export function translateExpr(
   // Prefix unary: !x -> unop(opNot(), x), -x -> unop(opNeg(), x)
   if (ts.isPrefixUnaryExpression(expr)) {
     if (expr.operator === ts.SyntaxKind.ExclamationToken) {
-      return ast.unop(
-        ast.opNot(),
-        translateExpr(expr.operand, checker, _strategy, paramNames, synthCell),
+      const operand = translateExpr(
+        expr.operand,
+        checker,
+        _strategy,
+        paramNames,
+        synthCell,
       );
+      if (isTranslateExprUnsupported(operand)) {
+        return operand;
+      }
+      return ast.unop(ast.opNot(), operand);
     }
     if (expr.operator === ts.SyntaxKind.MinusToken) {
-      return ast.unop(
-        ast.opNeg(),
-        translateExpr(expr.operand, checker, _strategy, paramNames, synthCell),
+      const operand = translateExpr(
+        expr.operand,
+        checker,
+        _strategy,
+        paramNames,
+        synthCell,
       );
+      if (isTranslateExprUnsupported(operand)) {
+        return operand;
+      }
+      return ast.unop(ast.opNeg(), operand);
     }
   }
 
