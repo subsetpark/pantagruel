@@ -33,7 +33,7 @@ import {
   ir1Var,
   ir1While,
 } from "../src/ir1.js";
-import { lowerL1Expr, lowerL1Stmt } from "../src/ir1-lower.js";
+import { lowerL1Expr } from "../src/ir1-lower.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 
 before(async () => {
@@ -316,12 +316,11 @@ describe("M2: ir1Assign and ir1While constructors are active", () => {
   });
 });
 
-describe("M3 statement constructors are active (no longer NOT_IMPL)", () => {
+describe("M3 statement constructors are active", () => {
   // Constructors return IR1Stmt values of the appropriate kind.
-  // Lowering for these forms is provided by the new `lowerL1Body` fold
-  // (Patch R2) that operates on L1 statements. Until R2 lands,
-  // `lowerL1Stmt` (the M1/M2 expression-only entry point) still throws
-  // — the new fold has its own entry point.
+  // Lowering for these forms is provided by `lowerL1Body` (in
+  // `ir1-lower-body.ts`) which threads `SymbolicState` directly into
+  // `PropResult[]` — the L2 path is expression-only.
 
   it("ir1CondStmt builds a cond-stmt", () => {
     const stmt = ir1CondStmt(
@@ -349,11 +348,6 @@ describe("M3 statement constructors are active (no longer NOT_IMPL)", () => {
   it("ir1ExprStmt builds an expr-stmt", () => {
     const stmt = ir1ExprStmt(ir1Var("e"));
     assert.equal(stmt.kind, "expr-stmt");
-  });
-
-  it("lowerL1Stmt — statement lowering still throws (replaced by lowerL1Body)", () => {
-    const stmt = ir1Return(ir1Var("x"));
-    assert.throws(() => lowerL1Stmt(stmt), /M3/);
   });
 });
 

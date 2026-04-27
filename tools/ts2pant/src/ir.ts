@@ -1,36 +1,26 @@
 /**
- * Intermediate Representation for ts2pant.
+ * Layer 2 Expression IR for ts2pant.
  *
  * This is a Pant-adapted variant of IRSC from Vekris, Cosman, Jhala
  * "Refinement Types for TypeScript" (PLDI 2016, arxiv:1604.02480). The IR
- * sits between the TypeScript AST and the Pantagruel emitter; surface-syntax
- * simplifiers (early-return if-conversion, optional chaining, nullish
- * coalescing, chain fusion, μ-search, etc.) land as TS→IR rewrites in
- * `ir-build.ts`, and the emitter in `ir-emit.ts` reads only IR forms.
+ * sits between Layer 1 (`ir1.ts`) and Pantagruel's `OpaqueExpr` emitter
+ * (`ir-emit.ts`).
  *
- * Two divergences from IRSC, both deliberate (see CLAUDE.md §IR):
+ * **Expression-only.** Post-M3, L2 has no statement vocabulary —
+ * mutating-body lowering bypasses L2 entirely (`ir1-lower-body.ts`
+ * threads `SymbolicState` from `translate-body.ts` directly into
+ * `PropResult[]`). The single-rooted `IRExpr` tree fits value-position
+ * lowering (one `OpaqueExpr` out); a fold over the symbolic state fits
+ * effect-position lowering (a list of equations + frame conditions
+ * out). The two paths share L1 but diverge here. See
+ * `workstreams/ts2pant-imperative-ir.md` § "Architectural Lessons".
  *
- * 1. **No FieldAccess form.** ts2pant lowers `e.f` to `App(qualified-rule,
- *    [e])` at construction time via `qualifyFieldAccess`. Preserving that
- *    invariant prevents a class of cross-talk bugs where consumers must
- *    check both shapes.
+ * One deliberate divergence from IRSC (see CLAUDE.md §IR):
  *
- * 2. **Hybrid SSA scope.** IRSC uses SSA over program names for *all*
- *    assignments. We use ordinary `Let` (no φ) for const-bindings and
- *    `LetIf` only for branching mutation, with φ-vars as **write-keys**
- *    (rule-name + canonicalized receiver), not program names. Three
- *    reasons: the existing right-fold substitution closure is already a
- *    debugged let-elimination algorithm; Pant has no `let` in the output,
- *    so SSA-construct + SSA-destruct would double the substitution
- *    machinery; the mutating path's existing φ-merge is already keyed by
- *    write-keys.
- *
- * The IR has two layers: `IRExpr` (pure, value-position) and `IRStmt`
- * (effect, statement-position). IRSC merges these via `u⟨e⟩` hole
- * contexts; we keep them separate because Pantagruel's mutating output is
- * a list of equations + frame conditions, not a unit-returning expression.
- *
- * **Migration status**: see CLAUDE.md §IR "IR Migration Status".
+ * - **No FieldAccess form.** ts2pant lowers `e.f` to `App(qualified-rule,
+ *   [e])` at construction time via `qualifyFieldAccess`. Preserving that
+ *   invariant prevents a class of cross-talk bugs where consumers must
+ *   check both shapes.
  */
 
 import type { OpaqueExpr } from "./pant-ast.js";
@@ -233,130 +223,6 @@ export type IRExprEach = Extract<IRExpr, { kind: "each" }>;
 // --------------------------------------------------------------------------
 // Statement forms (effect, statement-position)
 // --------------------------------------------------------------------------
-
-/**
- * Write target — what a `Write` modifies. A descriptor (not an expression)
- * because the Pant lowering for each kind is structurally different:
- *
- * - `property-field`: emits one primed equation `prop' obj = value`.
- * - `map-entry`: emits one tuple-keyed override on the value rule + one on
- *   the membership predicate (the "delete drops value override at same
- *   key" coupling lives in the lowering, not the IR).
- * - `set-member`: emits one element-keyed override on the membership rule;
- *   `op = "clear"` resets and uses `false` fallthrough.
- *
- * Stage 9 introduces this; Stage 1 only declares the type.
- */
-export type IRWriteTarget =
-  | {
-      kind: "property-field";
-      ruleName: string;
-      objExpr: IRExpr;
-    }
-  | {
-      kind: "map-entry";
-      ruleName: string;
-      keyPredName: string;
-      ownerType: string;
-      keyType: string;
-      objExpr: IRExpr;
-      keyExpr: IRExpr;
-      op: "set" | "delete";
-    }
-  | {
-      kind: "set-member";
-      ruleName: string;
-      ownerType: string;
-      elemType: string;
-      objExpr: IRExpr;
-      elemExpr: IRExpr | null;
-      op: "add" | "delete" | "clear";
-    };
-
-/**
- * Effect / statement-position IR. Four forms total. `Write` is statement-
- * only — never an `IRExpr` — because making it value-level reintroduces
- * the effect/value discriminant hazard at every traversal.
- */
-export type IRStmt =
-  /** Write to a target with a value (or null for `clear`-like ops). */
-  | { kind: "write"; target: IRWriteTarget; value: IRExpr | null }
-  /**
-   * Branching mutation merge. **`phiVars` are write-keys**, not program
-   * variable names — see ir.ts §"Hybrid SSA scope" rationale. The tuple
-   * type enforces non-empty φ-vars at the type level, mirroring the
-   * `LetIf` invariant from CLAUDE.md §IR — a `let-if` with no φ-vars
-   * is structurally a value-position `Cond`, and the discrimination
-   * between the two must hold statically.
-   * Stage 9 introduces this; Stage 1 only declares the type.
-   */
-  | {
-      kind: "let-if";
-      phiVars: [string, ...string[]];
-      cond: IRExpr;
-      then: IRStmt[];
-      else: IRStmt[];
-      continuation: IRStmt[];
-    }
-  /** Statement sequencing. */
-  | { kind: "seq"; stmts: IRStmt[] }
-  /**
-   * Universally-quantified Bool assertion exit form. Carries the
-   * empty-Set / empty-Map initializer emissions that aren't equations.
-   * Mirrors `PropResult`'s `kind: "assertion"`.
-   */
-  | {
-      kind: "assert";
-      quantifiers: Array<{ name: string; type: string }>;
-      body: IRExpr;
-    };
-
-// --------------------------------------------------------------------------
-// Body output
-// --------------------------------------------------------------------------
-
-/**
- * The result of translating a function body to IR. Not a single `IRExpr`
- * because surface bodies produce multiple propositions (record returns
- * decompose into one equation per field; mutating bodies produce
- * equations + frame conditions; empty-Set initializers produce
- * assertions).
- */
-export interface IRBody {
-  /**
-   * Pure-path equations. For non-record returns, exactly one entry;
-   * for record returns, one per declared return-type field; for
-   * mutating bodies, one per modified rule.
-   */
-  equations: IREquation[];
-  /** Universally-quantified assertions (empty-Set / empty-Map fields). */
-  assertions: IRAssertExit[];
-  /**
-   * Mutating-path identity equations for unmodified rules. Stage 10
-   * populates this; before then it's empty.
-   */
-  frames: IREquation[];
-}
-
-/**
- * One equation. `quantifiers` is empty for non-quantified equations;
- * non-empty for the `all m, k | R' m k = ...` shape from Map/Set
- * mutation.
- */
-export interface IREquation {
-  quantifiers: Array<{ name: string; type: string }>;
-  guards?: IRExpr[];
-  lhs: IRExpr;
-  rhs: IRExpr;
-}
-
-export interface IRAssertExit {
-  quantifiers: Array<{ name: string; type: string }>;
-  guards?: IRExpr[];
-  body: IRExpr;
-}
-
-// --------------------------------------------------------------------------
 // Constructors (terse helpers, all type-checked)
 // --------------------------------------------------------------------------
 
@@ -515,38 +381,6 @@ export const irExists = (
     : { kind: "exists", binder, binderType, body };
 
 export const irWrap = (expr: OpaqueExpr): IRExpr => ({ kind: "ir-wrap", expr });
-
-// IRStmt constructors. Stage 9 introduces the IRStmt layer; the helpers
-// here mirror each variant's shape so callers don't drift into hand-built
-// objects when statement-position forms start landing.
-
-export const irStmtWrite = (
-  target: IRWriteTarget,
-  value: IRExpr | null,
-): IRStmt => ({ kind: "write", target, value });
-
-export const irStmtLetIf = (
-  phiVars: [string, ...string[]],
-  cond: IRExpr,
-  thenBranch: IRStmt[],
-  elseBranch: IRStmt[],
-  continuation: IRStmt[],
-): IRStmt => ({
-  kind: "let-if",
-  phiVars,
-  cond,
-  // biome-ignore lint/suspicious/noThenProperty: IRStmt ADT shape uses `then`/`else` for branching mutation merge; matches IRSC discipline.
-  then: thenBranch,
-  else: elseBranch,
-  continuation,
-});
-
-export const irStmtSeq = (stmts: IRStmt[]): IRStmt => ({ kind: "seq", stmts });
-
-export const irStmtAssert = (
-  quantifiers: Array<{ name: string; type: string }>,
-  body: IRExpr,
-): IRStmt => ({ kind: "assert", quantifiers, body });
 
 // Type guards (small, useful for migration code)
 

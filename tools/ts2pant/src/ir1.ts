@@ -2,8 +2,8 @@
  * Layer 1 Imperative Intermediate Representation for ts2pant.
  *
  * This is the IRSC-faithful imperative IR layer that sits between the
- * TypeScript AST and ts2pant's existing Layer 2 IR (`IRExpr`/`IRStmt` in
- * `ir.ts`). Layer 1 preserves TS's actual control-flow shape; normalization
+ * TypeScript AST and ts2pant's expression IR (`IRExpr` in `ir.ts`,
+ * Layer 2). Layer 1 preserves TS's actual control-flow shape; normalization
  * passes against L1 collapse operationally-equivalent TS surface forms
  * (increment spellings, conditional families, iteration families) into a
  * small canonical vocabulary. Lowering passes target ONE canonical input
@@ -106,15 +106,18 @@ export type IR1Expr =
     }
   /**
    * Transitional delegation to a pre-built Layer 2 IRExpr. Used for
-   * sub-expressions outside the current milestone's normalization
-   * concern (e.g., M1 conditional guards/values whose internal
-   * structure is M2/M3 territory).
+   * sub-expressions whose internal structure is outside the current
+   * milestone's normalization concern (e.g., M1–M3 use it for guard
+   * expressions, receiver expressions, RHS values that arrive as
+   * OpaqueExpr from `translateBodyExpr`).
    *
    * Lowering: emits the wrapped L2 IRExpr verbatim.
    *
-   * **Lifetime**: shrinks at M3 (more sub-expressions reach L1
-   * natively); deleted at M6 (legacy cleanup). Do not introduce new
-   * uses outside the build pipeline's scoped sub-expression delegation.
+   * **Lifetime**: M3 grew its use (mutating-body sub-expressions
+   * arrive as OpaqueExpr and wrap via `from-l2` to embed cheaply in
+   * L1). Shrinks for real once M4 (equality/nullish) and M5
+   * (property access) bring sub-expressions onto L1 natively;
+   * deleted at M6.
    */
   | { kind: "from-l2"; expr: IRExpr };
 
@@ -351,8 +354,7 @@ export const ir1Cond = (
  * `ir1-build.ts` for sub-expressions whose normalization is not the
  * current milestone's concern, and in `translatePureBody`'s arm-cond
  * assembly where `inlineConstBindings` produces pre-translated
- * OpaqueExprs. See module doc for lifetime — shrinks at M3, deleted at
- * M6.
+ * OpaqueExprs. See module doc for lifetime.
  *
  * @deprecated transitional; do not introduce new call sites outside the
  * scoped sub-expression delegation in `ir1-build.ts` /
@@ -404,15 +406,20 @@ export const ir1Return = (expr: IR1Expr | null): IR1Stmt => ({
 
 /**
  * Assignment / read-modify-write. Canonical form for all increment and
- * compound-assignment surface spellings. M2 activates this form for the
- * μ-search counter step; broader mutation patterns land in M3.
+ * compound-assignment surface spellings.
  *
- * `target` is typically `Var(name)` (a counter) or `Member(receiver,
- * name)` (a property write); `value` is the new value, which for
- * increment forms is `BinOp(<op>, target, <k>)`. The L1 → L2 lowering
- * for `Assign` is *not* generic — only `recognizeAndLowerMuSearch` in
- * `ir1-lower.ts` introspects the surrounding L1 shape and produces L2
- * output for it. A standalone `Assign` reaching `lowerL1Stmt` rejects.
+ * `target` is typically `Var(name)` (a counter), or `Member(receiver,
+ * name)` (a property write). `value` is the new value — for increment
+ * forms `BinOp(<op>, target, <k>)`.
+ *
+ * Two consumers:
+ * - μ-search lowering: `lowerL1MuSearch` in `ir1-lower.ts` recognizes
+ *   the `Block([Let(c, init), While(p, Assign(c, c+1))])` shape and
+ *   produces an L2 `comb-typed`.
+ * - Mutating-body lowering: `lowerAssign` in `ir1-lower-body.ts`
+ *   handles property writes (`Assign(Member(...), v)`), threading the
+ *   write into `SymbolicState`. Var-target assigns outside a μ-search
+ *   shape reject.
  */
 export const ir1Assign = (target: IR1Expr, value: IR1Expr): IR1Stmt => ({
   kind: "assign",
@@ -443,13 +450,13 @@ export const ir1For = (
 ): IR1Stmt => ({ kind: "for", init, cond, step, body });
 
 /**
- * Bounded while loop. M2 activates this form to faithfully represent
- * the let/while/increment shape of a μ-search-shaped TS body —
- * `recognizeAndLowerMuSearch` in `ir1-lower.ts` introspects the
- * `Block([Let, While(_, Assign)])` shape and lowers to `Comb(min, Each)`.
- * General while-loop lowering (bounded fixed-point, accumulator
- * iteration) lands in M3; until then a standalone `While` reaching
- * `lowerL1Stmt` rejects.
+ * Bounded while loop. Used to faithfully represent the
+ * let/while/increment shape of a μ-search-shaped TS body —
+ * `lowerL1MuSearch` in `ir1-lower.ts` introspects the
+ * `Block([Let, While(_, Assign)])` shape and produces an L2
+ * `comb-typed`. General bounded-fixed-point / accumulator-iteration
+ * lowering is not implemented; a standalone `While` outside that
+ * pattern rejects.
  */
 export const ir1While = (cond: IR1Expr, body: IR1Stmt): IR1Stmt => ({
   kind: "while",
