@@ -258,12 +258,19 @@ describe("ir1-build-functor-lift", () => {
   // ------------------------------------------------------------------
 
   it("non-list-lifted result type does not lift (`number`)", () => {
+    // Use `null as number` for the empty branch so check (b)
+    // (`isEmptyEquivalent`) passes: the `null` keyword survives the
+    // transparent unwrap. Without the cast, `0` is not empty-equivalent
+    // and (b) would reject before (d) is consulted, masking a regression
+    // in `isListLiftedAtNode`. With this isolation, (a)/(b)/(c) all pass
+    // and only the result-type gate decides — function returns `number`,
+    // which is neither array-typed nor nullable-union, so (d) fails and
+    // the lift returns null.
     const { candidate, ctx } = setup(
       `function f(u: number | null): number {
-         return u == null ? 0 : u;
+         return u == null ? (null as number) : u;
        }`,
     );
-    // Return type `number` is not list-lifted — falls through.
     assert.equal(tryRecognizeFunctorLift(candidate, ctx), null);
   });
 
@@ -365,30 +372,44 @@ describe("ir1-build-functor-lift", () => {
 
   it("binder substitution avoids capture: param named `n` does not collide", () => {
     // The lift wants binder hint `n`. With a parameter also named `n`,
-    // `cellRegisterName` should pick a non-colliding suffix (`n1`) so
-    // the comprehension binder doesn't shadow the param. Building the
-    // L1 form succeeds; the resulting `from-l2`-wrapped each carries
-    // a non-`n` binder name.
+    // the production-style `setup()` already registers `n` against the
+    // shared `synthCell` (mirroring `translateSignature`'s parameter
+    // allocation). When the lift then calls `cellRegisterName(synthCell,
+    // "n")` for the comprehension binder, the registry must emit a
+    // suffixed alternative (`n1`) so the binder doesn't shadow the
+    // param.
+    //
+    // Inspect the lowered output to confirm the binder name actually
+    // rotated — proving the lift succeeded isn't sufficient because a
+    // collision regression could still produce a working `each` whose
+    // binder happens to alias the param at the Pant level (visible
+    // only if you read the output string).
     const { candidate, ctx } = setup(
       `interface Box { readonly v: number; }
        function f(n: Box | null, m: number): number[] {
          return n == null ? [] : [n.v];
        }`,
     );
-    // Pre-claim `n` in the synth cell registry to model the
-    // document-wide name conflict — `cellRegisterName` will see `n` is
-    // taken and yield `n1`.
     if (!ctx.supply.synthCell) {
-      assert.fail("test setup error: expected a synthCell");
+      throw new Error("test setup error: expected a synthCell");
     }
-    // Pre-register a few names to force a collision-free fresh binder.
-    // `cellRegisterName` is monotonic, so any name we register stays
-    // claimed for the rest of the test.
-    // (No explicit pre-register call needed: the lift will be the
-    // first to allocate via the cell, and the snapshot test elsewhere
-    // verifies the binder name is fresh against ts2pant's
-    // document-wide registry.)
-    expectLifted(tryRecognizeFunctorLift(candidate, ctx));
+    const lifted = expectLifted(tryRecognizeFunctorLift(candidate, ctx));
+    const out = getAst().strExpr(lowerL1ToOpaque(lifted));
+    // Match `each <binder> in ...`, extract the binder name.
+    const m = out.match(/\beach\s+(\S+)\s+in\b/);
+    if (!m) {
+      throw new Error(`could not parse binder from output: ${out}`);
+    }
+    const binder = m[1] as string;
+    const paramPantName = ctx.paramNames.get("n");
+    if (paramPantName === undefined) {
+      throw new Error("test setup error: paramNames missing `n`");
+    }
+    assert.notEqual(
+      binder,
+      paramPantName,
+      `binder ${binder} collides with param ${paramPantName} in: ${out}`,
+    );
   });
 
   it("camelCase parameter substitution doesn't kebab-mangle the binder target", () => {
