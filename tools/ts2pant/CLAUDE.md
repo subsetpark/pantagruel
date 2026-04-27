@@ -534,8 +534,18 @@ load-bearing; see `workstreams/ts2pant-imperative-ir.md`
    from the `ConditionalExpression` for ternaries; from the enclosing
    function's return type for if-conversion entry points.
 
-**Supported TS shapes** (operand restricted to a simple identifier;
-property-access operands defer to M5):
+**Supported TS shapes.** The operand may be a simple `Identifier`
+(`Var`) or a property-access / string-literal element-access chain
+(`Member`); paren-wrapped variants of either are accepted because L1
+build normalizes parens away before the operand is classified.
+Member-operand support landed in M5 P4 (lifting the M4 P5 simple-
+identifier restriction); the eligibility check is now expressed in
+L1 terms (`Var` or `Member`) rather than TS-AST terms. Member-
+operand projections must surface the operand structurally at the L1
+level — `ast.substituteBinder` substitutes by name and cannot target
+a `Member` subtree, so a Member-operand projection that buries the
+operand inside a non-Member sub-expression (e.g., a method call)
+falls through.
 
 ```ts
 // (a) Positive ternary, with array wrapper or bare projection.

@@ -44,6 +44,7 @@ import {
   ir1Block,
   ir1Cond,
   ir1FromL2,
+  ir1IsNullish,
   ir1Let,
   ir1LitBool,
   ir1LitNat,
@@ -701,16 +702,15 @@ function unwrapSingletonArray(expr: ts.Expression): ts.Expression {
 }
 
 /**
- * True when `expr` is a single-element-producing expression of
- * `operandName`. After stripping a single-element array wrapper, the
- * expression must reference the operand and not be a multi-element
- * construction (multi-element array literal, spread, or known
- * multi-producing array method like `.concat` / `.flat`).
+ * True when `expr` is a single-element-producing shape: not an array
+ * literal, not a spread, and not a known multi-producing array method
+ * (`.concat`, `.flat`, `.flatMap`, `.filter`, `.map`, `.slice`,
+ * `.splice`). The "references the operand" half of the eligibility
+ * check is operand-kind specific and lives at the recognizer level —
+ * `Var` operands use `expressionReferencesNames` against the operand
+ * text; `Member` operands defer to the L1 substitution-fired check.
  */
-function isSingleElementProducingOf(
-  expr: ts.Expression,
-  operandName: string,
-): boolean {
+function isSingleElementProducingShape(expr: ts.Expression): boolean {
   const u = unwrapTransparentExpression(expr);
   if (ts.isArrayLiteralExpression(u)) {
     return false;
@@ -723,7 +723,7 @@ function isSingleElementProducingOf(
       return false;
     }
   }
-  return expressionReferencesNames(u, new Set([operandName]));
+  return true;
 }
 
 /**
@@ -802,6 +802,193 @@ function allocateLiftBinder(ctx: L1BuildContext, hint: string): string {
 }
 
 /**
+ * Structural equality on L1 expressions, scoped to the shapes the
+ * functor-lift recognizer compares: `Var` (name + primed) and `Member`
+ * (name + receiver, recursing). Other forms compare false — the
+ * recognizer's eligibility check builds operand and projection through
+ * a pure-L1 path that produces only Var/Member trees, so any other
+ * form is a structural mismatch by construction. Parens and other
+ * source-level wrappers are normalized away by L1 build before this
+ * function ever sees the trees.
+ */
+function structuralEqualL1(a: IR1Expr, b: IR1Expr): boolean {
+  if (a === b) {
+    return true;
+  }
+  if (a.kind !== b.kind) {
+    return false;
+  }
+  if (a.kind === "var" && b.kind === "var") {
+    return a.name === b.name && (a.primed ?? false) === (b.primed ?? false);
+  }
+  if (a.kind === "member" && b.kind === "member") {
+    return a.name === b.name && structuralEqualL1(a.receiver, b.receiver);
+  }
+  return false;
+}
+
+/**
+ * Replace every subtree of `root` whose L1 form structurally equals
+ * `needle` with `replacement`. The walker recurses through every L1
+ * form but does not enter `from-l2` wraps — those expose only an
+ * opaque L2 tree to L1 callers, which the L1 walker has no handle on.
+ *
+ * Used by the functor-lift recognizer: the operand's L1 form (a `Var`
+ * or `Member` chain) is replaced by a fresh `Var(binder)` inside the
+ * projection's L1 form, so the comprehension body references the
+ * binder rather than the operand. For `Var` operands, post-lowering
+ * `ast.substituteBinder` catches references buried inside `from-l2`
+ * wraps; for `Member` operands, the projection must be in pure L1 for
+ * substitution to fire (no equivalent OpaqueExpr-level substitution
+ * exists for arbitrary subtrees).
+ */
+function substituteL1Subtree(
+  root: IR1Expr,
+  needle: IR1Expr,
+  replacement: IR1Expr,
+): IR1Expr {
+  if (structuralEqualL1(root, needle)) {
+    return replacement;
+  }
+  switch (root.kind) {
+    case "var":
+    case "lit":
+    case "from-l2":
+      return root;
+    case "binop":
+      return ir1Binop(
+        root.op,
+        substituteL1Subtree(root.lhs, needle, replacement),
+        substituteL1Subtree(root.rhs, needle, replacement),
+      );
+    case "unop":
+      return ir1Unop(
+        root.op,
+        substituteL1Subtree(root.arg, needle, replacement),
+      );
+    case "app":
+      return {
+        kind: "app",
+        callee: substituteL1Subtree(root.callee, needle, replacement),
+        args: root.args.map((a) => substituteL1Subtree(a, needle, replacement)),
+      };
+    case "member":
+      return ir1Member(
+        substituteL1Subtree(root.receiver, needle, replacement),
+        root.name,
+      );
+    case "cond": {
+      const armsRewritten = root.arms.map(
+        ([g, v]) =>
+          [
+            substituteL1Subtree(g, needle, replacement),
+            substituteL1Subtree(v, needle, replacement),
+          ] as const,
+      );
+      return ir1Cond(
+        armsRewritten as [
+          readonly [IR1Expr, IR1Expr],
+          ...ReadonlyArray<readonly [IR1Expr, IR1Expr]>,
+        ],
+        substituteL1Subtree(root.otherwise, needle, replacement),
+      );
+    }
+    case "is-nullish":
+      return ir1IsNullish(
+        substituteL1Subtree(root.operand, needle, replacement),
+      );
+    default: {
+      const _exhaustive: never = root;
+      void _exhaustive;
+      return root;
+    }
+  }
+}
+
+/**
+ * Build a pure-L1 representation of `node` for the functor-lift
+ * recognizer. Accepts only `Identifier` (→ `Var`) and member surface
+ * forms (`PropertyAccessExpression` / string-literal
+ * `ElementAccessExpression`, → `Member`); recursion bottoms out at a
+ * bare `Identifier`. Returns `null` for any other shape (calls,
+ * binops, optional chains, computed element access, ambiguous owner,
+ * etc.).
+ *
+ * Distinct from `buildL1MemberAccess`: the production helper falls
+ * back to `translateBodyExpr` for non-member receivers, producing
+ * `from-l2` wraps that the L1 walker can't see into. The lift's
+ * substitution requires the operand's structure to be visible at the
+ * L1 level, so this builder either produces a fully-native chain or
+ * rejects.
+ *
+ * Identifier names are looked up against `paramNames` to match the
+ * Pant name that `translateExpr` emits — for parameters,
+ * `paramNames.get(text)` (sanitized at signature translation via
+ * `toPantTermName` + `cellRegisterName`); for bare locals/captures,
+ * the raw TS text. The lowered operand and the lowered projection
+ * must reference the same Pant name for the substitution to fire.
+ */
+function buildL1MemberOrVarForLift(
+  node: ts.Expression,
+  ctx: L1BuildContext,
+): IR1Expr | null {
+  const stripped = unwrapParens(node) as ts.Expression;
+  if (ts.isIdentifier(stripped)) {
+    const pantName = ctx.paramNames.get(stripped.text) ?? stripped.text;
+    return ir1Var(pantName);
+  }
+  if (
+    ts.isPropertyAccessExpression(stripped) &&
+    (stripped.flags & ts.NodeFlags.OptionalChain) === 0
+  ) {
+    const receiverNode = unwrapParens(stripped.expression) as ts.Expression;
+    const receiverL1 = buildL1MemberOrVarForLift(receiverNode, ctx);
+    if (receiverL1 === null) {
+      return null;
+    }
+    const receiverType = ctx.checker.getTypeAtLocation(receiverNode);
+    const qualified = qualifyFieldAccess(
+      receiverType,
+      stripped.name.text,
+      ctx.checker,
+      ctx.strategy,
+      ctx.supply.synthCell,
+    );
+    if (qualified === null) {
+      return null;
+    }
+    return ir1Member(receiverL1, qualified);
+  }
+  if (
+    ts.isElementAccessExpression(stripped) &&
+    (stripped.flags & ts.NodeFlags.OptionalChain) === 0
+  ) {
+    const fieldName = elementAccessLiteralKey(stripped);
+    if (fieldName === null) {
+      return null;
+    }
+    const receiverNode = unwrapParens(stripped.expression) as ts.Expression;
+    const receiverL1 = buildL1MemberOrVarForLift(receiverNode, ctx);
+    if (receiverL1 === null) {
+      return null;
+    }
+    const receiverType = ctx.checker.getTypeAtLocation(receiverNode);
+    const qualified = qualifyFieldAccess(
+      receiverType,
+      fieldName,
+      ctx.checker,
+      ctx.strategy,
+      ctx.supply.synthCell,
+    );
+    if (qualified === null) {
+      return null;
+    }
+    return ir1Member(receiverL1, qualified);
+  }
+  return null;
+}
+
+/**
  * Functor-lift recognizer. Returns an L1 `from-l2(each n in x | proj
  * n)` when the four eligibility checks pass; returns `null` to fall
  * through to the standard L1 Cond build.
@@ -819,12 +1006,26 @@ function allocateLiftBinder(ctx: L1BuildContext, hint: string): string {
  *   (d) The conditional's static result type is list-lifted (`T[]`,
  *       `T | null`, `T | undefined`, …).
  *
- * Operand restriction: the leaf operand must be a simple identifier.
- * Substitution maps the operand's Pant name to the binder via
- * `ast.substituteBinder`, which only rewrites variable references.
- * Property-access operands (`obj.prop == null`) would require
- * generalizing substitution to arbitrary expressions and are out of
- * scope for Patch 5; they fall through to the standard Cond build.
+ * Operand eligibility (M5 P4): the operand's L1 form must be `Var`
+ * (a simple `Identifier`) or `Member` (a `PropertyAccessExpression`
+ * or string-literal `ElementAccessExpression` chain bottoming out at
+ * a `Var`). Anything else — calls, binops, computed indices, optional
+ * chains, type-erasure wrappers in the chain — falls through to the
+ * standard L1 Cond build. Source-level parens are normalized away
+ * by L1 build before eligibility is consulted.
+ *
+ * Substitution strategy. For `Var` operands the projection translates
+ * through the legacy pipeline (`buildSubExpr`, producing a `from-l2`
+ * wrap) and post-lowering `ast.substituteBinder` substitutes the
+ * operand's Pant name with the fresh comprehension binder — exactly
+ * the M4 P5 flow, preserved unchanged. For `Member` operands the
+ * projection must be a pure-L1 chain (built via
+ * `buildL1MemberOrVarForLift`); the L1 rewriter
+ * `substituteL1Subtree` then replaces operand-shape subtrees with the
+ * binder. `ast.substituteBinder` substitutes only by name and cannot
+ * target arbitrary subtrees, so a Member-operand projection that
+ * isn't pure L1 (e.g., a method call wrapping the operand) falls
+ * through.
  */
 export function tryRecognizeFunctorLift(
   cand: FunctorLiftCandidate,
@@ -839,11 +1040,29 @@ export function tryRecognizeFunctorLift(
   if (leaf === null) {
     return null;
   }
+
+  // M5 P4: classify operand by its L1 shape (Var or Member).
+  // `unwrapTransparentExpression` strips type-erasure wrappers from the
+  // outermost operand for the same reason M4 P5 did — those wrappers are
+  // type-level only and the runtime value is the inner expression. The
+  // recursive Member-chain build (`buildL1MemberOrVarForLift`) only strips
+  // parens, not type-erasure, so a wrapper *inside* the chain (e.g.,
+  // `(u as User).owner`) takes the chain off the pure-L1 path and the lift
+  // falls through.
   const operandNode = unwrapTransparentExpression(leaf.operand);
-  if (!ts.isIdentifier(operandNode)) {
-    return null;
+  let operandText: string | null = null;
+  let operandL1: IR1Expr;
+  if (ts.isIdentifier(operandNode)) {
+    operandText = operandNode.text;
+    const pantName = ctx.paramNames.get(operandText) ?? operandText;
+    operandL1 = ir1Var(pantName);
+  } else {
+    const memberOperand = buildL1MemberOrVarForLift(operandNode, ctx);
+    if (memberOperand === null || memberOperand.kind !== "member") {
+      return null;
+    }
+    operandL1 = memberOperand;
   }
-  const operandName = operandNode.text;
 
   // Polarity: a positive nullish guard (`x === null`) means the
   // then-branch is the empty side; a negated guard (`x !== null`)
@@ -856,70 +1075,107 @@ export function tryRecognizeFunctorLift(
     return null;
   }
 
-  // (c) Present side, after stripping a singleton array wrapper, is a
-  //     single-element-producing expression of `operandName`.
+  // (c) Present side, after stripping a singleton array wrapper, is
+  //     not a multi-element-producing shape and references the operand.
   const projection = unwrapSingletonArray(presentExpr);
-  if (!isSingleElementProducingOf(projection, operandName)) {
+  if (!isSingleElementProducingShape(projection)) {
     return null;
   }
+  if (operandText !== null) {
+    // Var operand: TS-AST text-walk catches references at any depth,
+    // including those buried inside non-Member sub-expressions
+    // (calls, binops, nested ternaries). The post-lower
+    // `ast.substituteBinder` will pick up the same references.
+    if (
+      !expressionReferencesNames(
+        unwrapTransparentExpression(projection),
+        new Set([operandText]),
+      )
+    ) {
+      return null;
+    }
+  }
+  // For Member operand, the L1 substitution-fired check below decides.
 
   // (d) Result type is list-lifted.
   if (!isListLiftedAtNode(cand.contextNode, ctx.checker)) {
     return null;
   }
 
-  // Build the lifted L1 expression.
-  //
-  // The operand and projection both translate through the legacy
-  // pipeline so embedded sub-expressions stay normalized exactly as
-  // they would on the standard Cond path. The substitution then
-  // rewrites references to the operand's Pant name with the fresh
-  // binder; `ast.substituteBinder` is Pant's capture-avoiding
-  // substitution, so a fresh hygienic binder is sufficient.
-  //
-  // Snapshot the hygienic supply counter so that a `buildSubExpr`
-  // failure (which can advance `supply.n` via deferred-comprehension
-  // allocations before returning unsupported) doesn't perturb the
-  // fallback Cond path's binder sequencing. The synthCell registration
-  // via `cellRegisterName` runs only after the last failure point, so
-  // it needs no rollback. Counter increments past the last failure
-  // point are the lift's real allocations and stay committed.
+  // Snapshot the hygienic supply counter so failure inside `buildSubExpr`
+  // (which can advance `supply.n` via deferred-comprehension allocations
+  // before returning unsupported) doesn't perturb the fallback Cond
+  // path's binder sequencing. The synthCell registration via
+  // `cellRegisterName` runs only after the last failure point, so it
+  // needs no rollback.
   const supplyCounterSnapshot = ctx.supply.n;
-  const operandSub = buildSubExpr(operandNode, ctx);
-  if (isL1Unsupported(operandSub)) {
-    ctx.supply.n = supplyCounterSnapshot;
-    return null;
-  }
-  const projectionSub = buildSubExpr(projection, ctx);
-  if (isL1Unsupported(projectionSub)) {
-    ctx.supply.n = supplyCounterSnapshot;
-    return null;
+
+  // Build the projection. Path differs by operand kind:
+  //   - Var: standard `buildSubExpr`. The projection comes back as
+  //     `from-l2(opaque)`; post-lower `ast.substituteBinder`
+  //     substitutes Var-name references at the OpaqueExpr level. This
+  //     is the M4 P5 flow.
+  //   - Member: pure-L1 chain via `buildL1MemberOrVarForLift`. The L1
+  //     rewriter then walks the projection and replaces operand-shape
+  //     subtrees with the comprehension binder. A non-pure-L1
+  //     projection (e.g., a method call wrapping the operand)
+  //     rejects.
+  let projectionL1: IR1Expr;
+  if (operandL1.kind === "var") {
+    const sub = buildSubExpr(projection, ctx);
+    if (isL1Unsupported(sub)) {
+      ctx.supply.n = supplyCounterSnapshot;
+      return null;
+    }
+    projectionL1 = sub;
+  } else {
+    const pure = buildL1MemberOrVarForLift(projection, ctx);
+    if (pure === null) {
+      ctx.supply.n = supplyCounterSnapshot;
+      return null;
+    }
+    projectionL1 = pure;
   }
 
-  const operandOpaque = lowerExpr(lowerL1Expr(operandSub));
-  const projectionOpaque = lowerExpr(lowerL1Expr(projectionSub));
-
-  // Mirror `translateExpr`'s identifier handling
-  // (`translate-signature.ts:1122` — `paramNames.get(expr.text) ?? expr.text`).
-  // Only *parameters* go through name sanitization on translation;
-  // bare identifiers (locals, captures from outer scope) are emitted
-  // as their raw TS text. Sanitizing here would produce
-  // `toPantTermName("maybeUser") = "maybe-user"`, which the lowered
-  // projection — which still references `maybeUser` — would never
-  // match, leaving the binder unsubstituted and the lift broken.
-  const operandPantName = ctx.paramNames.get(operandName) ?? operandName;
   const binderName = allocateLiftBinder(ctx, "n");
+  const binderVar = ir1Var(binderName);
+
+  // L1 rewriter: replace operand-shape subtrees with `Var(binder)`.
+  const substitutedL1 = substituteL1Subtree(projectionL1, operandL1, binderVar);
+
+  // For Member operand: the L1 rewriter is the only substitution
+  // mechanism — `ast.substituteBinder` substitutes by name and cannot
+  // target a Member subtree. If the rewriter didn't fire (the
+  // operand isn't structurally present in the projection's L1
+  // form), reject.
+  if (operandL1.kind === "member" && substitutedL1 === projectionL1) {
+    ctx.supply.n = supplyCounterSnapshot;
+    return null;
+  }
+
+  // Lower.
   const ast = getAst();
-  const substitutedProjection = ast.substituteBinder(
-    projectionOpaque,
-    operandPantName,
-    ast.var(binderName),
-  );
+  let projectionOpaque = lowerExpr(lowerL1Expr(substitutedL1));
+  const operandOpaque = lowerExpr(lowerL1Expr(operandL1));
+
+  // For Var operand: post-lower name substitution catches references
+  // buried inside `from-l2` wraps (which the L1 rewriter cannot enter).
+  // Mirror `translateExpr`'s identifier handling
+  // (`translate-signature.ts:1122` — `paramNames.get(text) ?? text`):
+  // params get sanitized; bare locals / captures emit as raw text.
+  if (operandL1.kind === "var" && operandText !== null) {
+    const operandPantName = ctx.paramNames.get(operandText) ?? operandText;
+    projectionOpaque = ast.substituteBinder(
+      projectionOpaque,
+      operandPantName,
+      ast.var(binderName),
+    );
+  }
 
   const opaqueEach = ast.each(
     [],
     [ast.gIn(binderName, operandOpaque)],
-    substitutedProjection,
+    projectionOpaque,
   );
   return ir1FromL2(irWrap(opaqueEach));
 }

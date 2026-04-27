@@ -316,15 +316,94 @@ describe("ir1-build-functor-lift", () => {
     assert.equal(tryRecognizeFunctorLift(candidate, ctx), null);
   });
 
-  it("non-identifier operand falls through (`u.next == null`)", () => {
+  it("Member operand (positive ternary) recognizes (`u.next == null`)", () => {
     const { candidate, ctx } = setup(
       `interface User { readonly name: string; readonly next: User | null; }
        function f(u: User): string[] {
          return u.next == null ? [] : [u.next.name];
        }`,
     );
-    // Operand restriction: only simple identifiers participate in the
-    // lift; property-access operands fall through.
+    // M5 P4: the operand restriction is lifted — property-access
+    // operands recognize via the L1 Member chain.
+    expectLifted(tryRecognizeFunctorLift(candidate, ctx));
+  });
+
+  it("Member operand (negated ternary) recognizes (`u.next !== null ? [u.next.name] : []`)", () => {
+    const { candidate, ctx } = setup(
+      `interface User { readonly name: string; readonly next: User | null; }
+       function f(u: User): string[] {
+         return u.next !== null ? [u.next.name] : [];
+       }`,
+    );
+    expectLifted(tryRecognizeFunctorLift(candidate, ctx));
+  });
+
+  it("Member operand (positive if-conversion) recognizes", () => {
+    const { candidate, ctx } = setup(
+      `interface User { readonly name: string; readonly next: User | null; }
+       function f(u: User): string[] {
+         if (u.next === null) return [];
+         return [u.next.name];
+       }`,
+    );
+    expectLifted(tryRecognizeFunctorLift(candidate, ctx));
+  });
+
+  it("Member operand (negated if-conversion) recognizes", () => {
+    const { candidate, ctx } = setup(
+      `interface User { readonly name: string; readonly next: User | null; }
+       function f(u: User): string[] {
+         if (u.next !== null) return [u.next.name];
+         return [];
+       }`,
+    );
+    expectLifted(tryRecognizeFunctorLift(candidate, ctx));
+  });
+
+  it("Member operand multi-element non-empty branch rejects", () => {
+    const { candidate, ctx } = setup(
+      `interface User { readonly name: string; readonly next: User | null; }
+       function f(u: User): string[] {
+         return u.next == null ? [] : [u.next.name, u.next.name];
+       }`,
+    );
+    // Multi-element array literal on the present branch is the same
+    // sound-rejection as the Var-operand case (`each` over a length-≤1
+    // list can't produce two output elements per input).
+    assert.equal(tryRecognizeFunctorLift(candidate, ctx), null);
+  });
+
+  it("Member operand string-literal element-access (`u[\"next\"] == null`) recognizes", () => {
+    const { candidate, ctx } = setup(
+      `interface User { readonly name: string; readonly next: User | null; }
+       function f(u: User): string[] {
+         return u["next"] == null ? [] : [u["next"].name];
+       }`,
+    );
+    // Member surface form covers both `obj.field` and `obj["field"]`.
+    expectLifted(tryRecognizeFunctorLift(candidate, ctx));
+  });
+
+  it("Member operand falls through when projection isn't a Member chain", () => {
+    // Projection is a method call that doesn't structurally surface
+    // the Member operand at the L1 level. `ast.substituteBinder`
+    // substitutes only by name and cannot replace a Member subtree;
+    // the L1 rewriter doesn't enter `from-l2` wraps; so the lift
+    // can't safely connect the operand to the comprehension binder
+    // and falls through. (Identifier-operand parallels of this shape
+    // — the existing nested-null-guard test — DO recognize because
+    // `ast.substituteBinder` handles Var-name references buried in
+    // any expression.)
+    const { candidate, ctx } = setup(
+      `interface User {
+         readonly name: string;
+         readonly next: User | null;
+         combine(arg: string | null): string;
+       }
+       function f(u: User, fallback: string | null): string | null {
+         return u.next == null ? null : u.next.combine(fallback);
+       }`,
+    );
     assert.equal(tryRecognizeFunctorLift(candidate, ctx), null);
   });
 
