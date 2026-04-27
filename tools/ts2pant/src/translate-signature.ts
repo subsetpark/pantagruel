@@ -953,8 +953,23 @@ export function translateExpr(
     // of the *optional* analysis — so a strict reject here would
     // unnecessarily skip surrounding guards that translate fine. The
     // body-side path keeps the strict default.
+    //
+    // Receiver leaf (the non-property bottom of the chain) goes
+    // through `translateExpr` (signature-side) instead of
+    // `translateBodyExpr` so the receiver inherits signature-only
+    // operator surface — loose-eq rejection, transparent
+    // `as`/`!`/`satisfies` unwrapping — and skips body-only branches
+    // (chain fusion, Map/Set effects, optional-chain functor lift)
+    // that aren't appropriate inside guard analysis.
     const member = buildL1MemberAccess(expr, l1Ctx, {
       ambiguousOwnerFallback: "bare-kebab",
+      translateReceiverLeaf: (e) => {
+        const r = translateExpr(e, checker, _strategy, paramNames, synthCell);
+        if (isTranslateExprUnsupported(r)) {
+          return { kind: "unsupported", reason: r.unsupported };
+        }
+        return { kind: "expr", expr: r };
+      },
     });
     if ("unsupported" in member) {
       return member;

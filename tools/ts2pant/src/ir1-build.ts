@@ -238,6 +238,17 @@ export function tryBuildL1Cardinality(
 // matching the legacy `App(qualified-rule, [receiver])` byte-for-byte.
 
 /**
+ * Receiver translation result — either an opaque expression or an
+ * upstream-rejection marker. Mirrors the convention of
+ * `TranslateExprResult` and the body-side `BodyResult` so signature
+ * and body translators can plug into `buildL1MemberAccess` through a
+ * single callback shape.
+ */
+export type MemberReceiverResult =
+  | { kind: "expr"; expr: OpaqueExpr }
+  | { kind: "unsupported"; reason: string };
+
+/**
  * Options threaded through `buildL1MemberAccess`.
  *
  * - `ambiguousOwnerFallback: "reject"` — body-side default. Ambiguous
@@ -254,9 +265,26 @@ export function tryBuildL1Cardinality(
  *   without preventing other guards in the same function from
  *   extracting cleanly. Mirrors the asymmetry the deleted local
  *   `qualifyFieldAccess` in `translate-signature.ts` carried.
+ *
+ * - `translateReceiverLeaf` — translator for the non-property leaf at
+ *   the bottom of the receiver chain (e.g., the `a` in `a.b.c.field`).
+ *   Defaults to `translateBodyExpr`, which is what body-position and
+ *   pure-path call sites want. The signature path passes a callback
+ *   that routes through `translateExpr` (signature) so the leaf gets
+ *   the same transparent-wrapper handling and signature-only operator
+ *   surface (loose-eq rejection, no body-only chain fusion or
+ *   Map/Set effect handling) as the rest of guard analysis.
+ *
+ *   The callback's input is already paren-stripped via `unwrapParens`;
+ *   it is responsible for any further unwrapping (`as T`, `!`, etc.)
+ *   that its respective layer applies.
  */
 export interface BuildL1MemberAccessOptions {
   ambiguousOwnerFallback?: "reject" | "bare-kebab";
+  translateReceiverLeaf?: (
+    expr: ts.Expression,
+    ctx: L1BuildContext,
+  ) => MemberReceiverResult;
 }
 
 /**
@@ -354,6 +382,18 @@ export function buildL1MemberAccess(
       }
       receiverL1 = inner;
     }
+  } else if (options.translateReceiverLeaf !== undefined) {
+    // Caller-supplied leaf translator (used by the signature path so
+    // the non-property leaf goes through `translateExpr` instead of
+    // `translateBodyExpr` — preserves signature-only operator surface
+    // like loose-eq rejection and avoids body-only branches like
+    // chain fusion / Map-Set effect handling that aren't appropriate
+    // in guard analysis).
+    const r = options.translateReceiverLeaf(receiverNode as ts.Expression, ctx);
+    if (r.kind === "unsupported") {
+      return { unsupported: r.reason };
+    }
+    receiverL1 = ir1FromL2(irWrap(r.expr));
   } else {
     const r = translateBodyExpr(
       receiverNode as ts.Expression,
