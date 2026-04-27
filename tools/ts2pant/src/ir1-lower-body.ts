@@ -334,6 +334,15 @@ function lowerFoldLeaf(
     value: newVal,
   });
   state.writtenKeys = addWrittenKey(state.writtenKeys, key);
+  // Mirror `lowerForeach`'s Shape A path so Shape B accumulator folds
+  // also flag their target rule as modified. The downstream
+  // `state.writes` → equation emission loop in `symbolicExecute` adds
+  // the same prop to `modifiedProps` after `lowerL1Body` returns, so
+  // this is idempotent in the standard top-level flow — but updating
+  // here prevents a future refactor from inadvertently letting an
+  // identity equation slip through `generateFrameConditions` for the
+  // accumulator rule.
+  state.modifiedProps = addModifiedProp(state.modifiedProps, leaf.prop);
   return true;
 }
 
