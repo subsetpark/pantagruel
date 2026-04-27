@@ -167,7 +167,17 @@ function expectLifted(result: IR1Expr | null): IR1Expr {
     throw new Error("expected a lifted L1 expression, got null (fall-through)");
   }
   // The lift wraps an opaque each via `from-l2(irWrap(opaqueEach))`.
+  // Verify the kind discriminator AND the lowered shape — a regression
+  // that returned a different wrapped L2 form (e.g., a `cond`) would
+  // still have `kind === "from-l2"`, so lower the expression and
+  // assert the emitted text contains an `each` comprehension.
   assert.equal(result.kind, "from-l2");
+  const out = getAst().strExpr(lowerL1ToOpaque(result));
+  assert.match(
+    out,
+    /\beach\s+\S+\s+in\b/,
+    `expected functor-lift lowering to emit an each-comprehension, got: ${out}`,
+  );
   return result;
 }
 
@@ -460,12 +470,34 @@ describe("ir1-build-functor-lift", () => {
     // branch — the standard sub-expression translation pipeline (which
     // the lift recurses through for the projection) handles the inner
     // ternary, lifting it independently.
+    //
+    // Both inner and outer need a simple-identifier operand: the outer
+    // is on `u`, the inner is on `v` (passed as an argument to a call
+    // that also references `u`, so the outer's present-side check (c)
+    // is satisfied via `u.combine(...)`). The inner's empty branch is
+    // `null`, present branch is `v.label` referencing the operand —
+    // all four eligibility checks fire on the inner and it lifts too.
+    //
+    // Verify by counting `each` occurrences in the lowered output:
+    // exactly 2 (one per lift). A regression that broke recursive
+    // recognition would produce 1 (outer-only) and the assertion
+    // would fail.
     const { candidate, ctx } = setup(
-      `interface User { readonly name: string | null; }
-       function f(u: User | null): string | null {
-         return u == null ? null : (u.name == null ? null : u.name);
+      `interface User {
+         combine(arg: string | null): string;
+       }
+       interface Box { readonly label: string; }
+       function f(u: User | null, v: Box | null): string | null {
+         return u == null ? null : u.combine(v == null ? null : v.label);
        }`,
     );
-    expectLifted(tryRecognizeFunctorLift(candidate, ctx));
+    const lifted = expectLifted(tryRecognizeFunctorLift(candidate, ctx));
+    const out = getAst().strExpr(lowerL1ToOpaque(lifted));
+    const matches = out.match(/\beach\s+\S+\s+in\b/g) ?? [];
+    assert.equal(
+      matches.length,
+      2,
+      `expected both outer and inner null-guards to lower as lifts, got: ${out}`,
+    );
   });
 });
