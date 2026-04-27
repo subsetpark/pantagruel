@@ -990,6 +990,72 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     assert.ok(props.some((p) => p.kind === "unsupported"));
   });
 
+  it("rejects non-iterator-rooted assigns inside foreach branches", () => {
+    // Shape A means *uniform iterator writes* — `x.p = e` where `x`
+    // is the loop's iter binder. A nested `if (g) { acc.total =
+    // x.value; }` writes to `acc`, not the iter binder, so it's not
+    // a Shape A iteration. Without the per-AST root check threaded
+    // through `iterRefs`, the kind-only `ensureForeachBodyShape`
+    // would silently emit a per-element equation against `acc`.
+    const source = `
+      interface Item { value: number; }
+      interface Account { total: number; }
+      function f(a: Account, xs: Item[], g: boolean): void {
+        for (const x of xs) {
+          if (g) { a.total = x.value; }
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.ok(
+      props.some(
+        (p) =>
+          p.kind === "unsupported" &&
+          /property rooted at the iterator binder/.test(p.reason),
+      ),
+    );
+  });
+
+  it("rejects iterator-dependent guards inside foreach branches", () => {
+    // The branch path `if (flag) { if (!(x.value > 0)) throw …;
+    // x.value = 1; }` routes through `buildL1IfMutation` →
+    // `buildL1MutationBody`, whose strip pass would silently drop the
+    // inner if-throw guard. Threading `iterRefs` through ctx lets the
+    // strip pass apply the same iter-dependent rejection that the
+    // top-level foreach builder does.
+    const source = `
+      interface Item { value: number; }
+      function f(xs: Item[], flag: boolean): void {
+        for (const x of xs) {
+          if (flag) {
+            if (!(x.value > 0)) {
+              throw new Error("non-positive value");
+            }
+            x.value = 1;
+          }
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.ok(
+      props.some(
+        (p) =>
+          p.kind === "unsupported" &&
+          /iterator-dependent guard inside a loop/.test(p.reason),
+      ),
+    );
+  });
+
   it("rejects Map/Set effects inside foreach body branches", () => {
     // `foreach.body` is the M3 Shape A contract — assign-only.
     // `if (g) tags.add(x)` would emit a `set-effect` inside the body,

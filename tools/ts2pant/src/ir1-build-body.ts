@@ -75,6 +75,24 @@ export interface BuildBodyCtx {
   state: SymbolicState;
   supply: UniqueSupply;
   applyConst: (e: OpaqueExpr) => OpaqueExpr;
+  /**
+   * When set, this build is inside a foreach loop body. Carries the
+   * TS names of iterator binders in scope so the recursive
+   * if-mutation path can enforce two Shape A invariants that don't
+   * apply to top-level branched mutation:
+   *
+   * - Guards inside nested `if`-branches that reference an iterator
+   *   binder are *iterator-dependent* preconditions — they constrain
+   *   elements of the iterable and can't be stripped (the strip pass
+   *   in `buildL1MutationBody` rejects them rather than silently
+   *   dropping their semantic content).
+   * - Property assignments inside nested `if`-branches must be rooted
+   *   at an iterator binder. `for (const x of xs) { if (g) acc.total
+   *   = x.value; }` is not Shape A; the write targets `acc`, not
+   *   `x`. `buildL1AssignStmt` rejects when the assign target's root
+   *   identifier isn't in `iterRefs`.
+   */
+  iterRefs?: ReadonlySet<string> | undefined;
 }
 
 export type BuildResult<T> = T | { unsupported: string };
@@ -96,14 +114,20 @@ export function isUnsupported<T>(
  * constrain the iterable's contents) the way iterator-independent
  * guards can.
  */
-function guardReferencesNames(stmt: ts.Statement, names: Set<string>): boolean {
+function guardReferencesNames(
+  stmt: ts.Statement,
+  names: ReadonlySet<string>,
+): boolean {
+  // `expressionReferencesNames` types `names` as the mutable `Set` but
+  // only ever reads from it; cast through to avoid copying.
+  const nameSet = names as Set<string>;
   if (ts.isExpressionStatement(stmt) && ts.isCallExpression(stmt.expression)) {
     return stmt.expression.arguments.some(
-      (a) => ts.isExpression(a) && expressionReferencesNames(a, names),
+      (a) => ts.isExpression(a) && expressionReferencesNames(a, nameSet),
     );
   }
   if (ts.isIfStatement(stmt)) {
-    return expressionReferencesNames(stmt.expression, names);
+    return expressionReferencesNames(stmt.expression, nameSet);
   }
   return false;
 }
@@ -398,6 +422,13 @@ function buildL1ForeachBody(
     ...ctx,
     state: subState,
     paramNames: subParams,
+    // Threading `iterRefs` into the sub-context lets the recursive
+    // `buildL1IfMutation` / `buildL1MutationBody` / `buildL1AssignStmt`
+    // path enforce the foreach-specific Shape A invariants on nested
+    // ifs (iter-dependent guards reject; assign targets must be
+    // iter-rooted). Without this, the same builders are reused for
+    // top-level branched mutation where neither invariant applies.
+    iterRefs,
   };
 
   const bodyStmts: IR1ForeachBody[] = [];
@@ -803,13 +834,30 @@ function buildL1MutationBody(
 ): BuildResult<IR1Stmt> {
   if (ts.isBlock(stmt)) {
     const stmts: IR1Stmt[] = [];
-    // Strip guard statements (`assert(...)`, `if (g) throw …`) so
-    // branch-local preconditions don't surface as unsupported branch
-    // bodies — same discipline as `symbolicExecute` and the foreach
-    // builder above.
-    const children = stmt.statements.filter(
-      (s) => !isGuardStatement(s, ctx.checker),
-    );
+    // Strip iterator-INDEPENDENT guard statements (`assert(...)`,
+    // `if (g) throw …`) so branch-local preconditions don't surface
+    // as unsupported branch bodies — same discipline as
+    // `symbolicExecute` and the top-level foreach builder. When this
+    // builder is called from a foreach context (`ctx.iterRefs` set),
+    // iterator-DEPENDENT guards reject instead, mirroring the same
+    // check `buildL1ForeachBody` does for top-level loop-body
+    // statements. Without this, a nested `if (flag) { assert(x.ok);
+    // x.value = 1; }` would silently drop `assert(x.ok)` even though
+    // it carries per-element semantic content.
+    const children: ts.Statement[] = [];
+    for (const child of stmt.statements) {
+      if (!isGuardStatement(child, ctx.checker)) {
+        children.push(child);
+        continue;
+      }
+      if (ctx.iterRefs && guardReferencesNames(child, ctx.iterRefs)) {
+        return {
+          unsupported:
+            "iterator-dependent guard inside a loop is not supported — lift the precondition over the iterable as a separate action guard",
+        };
+      }
+      // iterator-independent guard — strip
+    }
     for (const child of children) {
       const built = buildL1MutationBody(child, ctx);
       if (isUnsupported(built)) {
@@ -956,6 +1004,23 @@ function buildL1AssignStmt(
   }
   if (!ts.isPropertyAccessExpression(expr.left)) {
     return { unsupported: "assign target must be a property access" };
+  }
+  // Inside a foreach (`ctx.iterRefs` set), Shape A means *uniform
+  // iterator writes* — the assign target must be rooted at one of
+  // the iterator binders. `for (const x of xs) { if (g) acc.total =
+  // x.value; }` is not Shape A even if it slips past the kind-only
+  // check in `ensureForeachBodyShape`; the receiver in the IR is
+  // wrapped in `from-l2` and opaque to runtime introspection, so we
+  // catch it here at the TS-AST level where the root identifier is
+  // still visible.
+  if (ctx.iterRefs) {
+    const rootName = getRootIdentifier(expr.left.expression);
+    if (rootName === null || !ctx.iterRefs.has(rootName)) {
+      return {
+        unsupported:
+          "Shape A foreach branch must write to a property rooted at the iterator binder — non-iterator writes inside a loop are not supported",
+      };
+    }
   }
   const rawProp = expr.left.name.text;
   const receiverType = ctx.checker.getTypeAtLocation(expr.left.expression);
