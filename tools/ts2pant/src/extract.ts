@@ -1,7 +1,14 @@
 import { Project, type SourceFile } from "ts-morph";
 import ts from "typescript";
 
-import { isMapType, isSetType } from "./translate-types.js";
+import { translateSignature } from "./translate-signature.js";
+import {
+  isMapType,
+  isSetType,
+  type NumericStrategy,
+  newSynthCell,
+} from "./translate-types.js";
+import type { PantRule } from "./types.js";
 
 export type { SourceFile } from "ts-morph";
 
@@ -232,6 +239,104 @@ const BUILTIN_NAMES = new Set([
   "WeakMap",
   "WeakSet",
 ]);
+
+/**
+ * One ambient (`declare function`) declaration extracted from a source
+ * file. The declaration is the same `PantRule` shape `translateSignature`
+ * would produce for an exported function with the same name, params, and
+ * return type — only the body is omitted (declares have no body to
+ * translate).
+ */
+export interface AmbientFunctionDecl {
+  /** The function name as written in the TS source. */
+  tsName: string;
+  /** Pantagruel rule head (signature only, no body). */
+  declaration: PantRule;
+}
+
+/**
+ * Pure, deterministic Pantagruel module name for the ambient bundle of
+ * a source file. `expressions-calls.ts` → `EXPRESSIONS_CALLS_AMBIENT`.
+ * Every consumer translated from the same source file resolves to the
+ * same name, so multiple consumers can import the same module without
+ * collision (patch 11 plumbing relies on this property).
+ *
+ * The path is reduced to its basename — directory components are
+ * irrelevant — then the trailing extension (`.ts`, `.tsx`, `.d.ts`) is
+ * dropped, hyphens are mapped to underscores, the result is uppercased,
+ * and `_AMBIENT` is appended.
+ */
+export function ambientModuleName(sourceFile: SourceFile): string {
+  const baseName = sourceFile.getBaseName().replace(/\.[^.]+$/u, "");
+  return `${baseName.replace(/-/gu, "_").toUpperCase()}_AMBIENT`;
+}
+
+/**
+ * Extract the full set of `declare function` ambient declarations in a
+ * source file. Each is routed through the same `translateSignature`
+ * pipeline used for exported functions so the rule head matches what a
+ * consumer translation would emit. Body translation is implicitly
+ * skipped — declares have no body.
+ *
+ * Each ambient gets its own fresh `SynthCell` so per-ambient param
+ * names stay independent; the per-file scoping (so multiple consumers
+ * of the same source file see the same set) is implicit in the
+ * `sourceFile` argument and the determinism of `ambientModuleName`.
+ *
+ * Ambients with `void` return type translate to actions rather than
+ * rules and are filtered out — the ambient-module emission only
+ * produces rule heads.
+ */
+export function extractAmbientFunctions(
+  sourceFile: SourceFile,
+  strategy: NumericStrategy,
+): AmbientFunctionDecl[] {
+  const result: AmbientFunctionDecl[] = [];
+  for (const fn of sourceFile.getFunctions()) {
+    if (!fn.hasDeclareKeyword()) {
+      continue;
+    }
+    const tsName = fn.getName();
+    if (!tsName) {
+      continue;
+    }
+    const sig = translateSignature(
+      sourceFile,
+      tsName,
+      strategy,
+      newSynthCell(),
+    );
+    if (sig.declaration.kind !== "rule") {
+      continue;
+    }
+    result.push({ tsName, declaration: sig.declaration });
+  }
+  return result;
+}
+
+/**
+ * Emit a standalone Pantagruel module containing one rule head per
+ * ambient declaration. Module name comes from `ambientModuleName`. The
+ * body is `true.` so the module is well-formed even with zero ambients;
+ * this matches `emit.ts`'s convention for empty bodies.
+ */
+export function emitAmbientModule(
+  sourceFile: SourceFile,
+  decls: ReadonlyArray<AmbientFunctionDecl>,
+): string {
+  const moduleName = ambientModuleName(sourceFile);
+  const lines: string[] = [`module ${moduleName}.`, ""];
+  for (const { declaration: decl } of decls) {
+    const params = decl.params.map((p) => `${p.name}: ${p.type}`).join(", ");
+    if (decl.params.length === 0) {
+      lines.push(`${decl.name} => ${decl.returnType}.`);
+    } else {
+      lines.push(`${decl.name} ${params} => ${decl.returnType}.`);
+    }
+  }
+  lines.push("", "---", "", "true.", "");
+  return lines.join("\n");
+}
 
 function collectNamedTypes(
   type: ts.Type,
