@@ -241,6 +241,11 @@ describe("unsupported patterns", () => {
 
     assert.equal(props.length, 1);
     assert.equal(props[0]?.kind, "equation");
+    if (props[0]?.kind === "equation") {
+      const rhs = getAst().strExpr(props[0].rhs);
+      assert.match(rhs, /\bx\b/u);
+      assert.doesNotMatch(rhs, /\bx1\b/u);
+    }
     assert.ok(synthCell.registry.used.has("x"));
     assert.ok(!synthCell.registry.used.has("x1"));
   });
