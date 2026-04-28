@@ -206,6 +206,37 @@ describe("unsupported patterns", () => {
     assert.equal(props.length, 1);
     assert.equal(props[0]?.kind, "unsupported");
   });
+
+  it("unwraps AsExpression at the body translation entry", () => {
+    // The fixture-side `asNumber(x: number)` snapshots `as-number x =
+    // x.` whether `unwrapExpression` strips the `as number` cast or
+    // not — Pant has no cast notation, so the cast is observably
+    // erased even if the unwrap regresses to a fallthrough path.
+    // Exercise the unwrap directly by checking the inner emitted
+    // expression text against a `var`-only baseline. If the
+    // AsExpression strip in `translateBodyExpr` regressed, the cast
+    // would surface in the rhs (e.g. as a stringified call shape) and
+    // this test would fail.
+    const source = `
+      export function castedReturn(x: number): number {
+        return (x + 1) as number;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "castedReturn",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    const prop = props[0]!;
+    assert.equal(prop.kind, "equation");
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      assert.equal(ast.strExpr(prop.rhs), "x + 1");
+    }
+  });
 });
 
 describe("if-early-return prelude arms", () => {

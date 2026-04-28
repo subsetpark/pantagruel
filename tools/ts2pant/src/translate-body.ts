@@ -2742,17 +2742,25 @@ export function translateBodyExpr(
         return innerResult;
       }
       const receiverTsType = checker.getTypeAtLocation(innerExpr);
-      // CallExpression results bypass `mapTsType`-driven list-lift —
-      // `m.get(k)` (the only call shape today that yields a nullable TS
-      // type via a non-list-lifting Pant encoding) emits the unboxed
-      // guarded value directly. Pass through without singleton
-      // extraction; mapTsType-driven nullable shapes (parameter
-      // references, field accesses) wrap as `(x 1)`.
+      // The Map encoding is the one place where a TS-nullable receiver
+      // (`m.get(k)`'s `V | undefined`) lowers to an *unboxed* Pant
+      // value: the guarded-rule emission yields `entries c k` of type
+      // `V`, not `[V]`. Singleton-extracting that would be a type
+      // error. Every other nullable-typed expression (parameter refs,
+      // field accesses, user functions returning `T | null` whose
+      // mapped Pant return type is `[T]`) follows mapTsType's list-
+      // lift, so `!` lowers to singleton extraction `(x 1)`. The
+      // narrow carve-out matches the dispatch in `translateCallExpr`
+      // for `.get` on a Map type (line ~3777).
       const innerUnwrapped = unwrapExpression(innerExpr);
-      if (
-        isNullableTsType(receiverTsType) &&
-        !ts.isCallExpression(innerUnwrapped)
-      ) {
+      const isMapGetCall =
+        ts.isCallExpression(innerUnwrapped) &&
+        ts.isPropertyAccessExpression(innerUnwrapped.expression) &&
+        innerUnwrapped.expression.name.text === "get" &&
+        isMapType(
+          checker.getTypeAtLocation(innerUnwrapped.expression.expression),
+        );
+      if (isNullableTsType(receiverTsType) && !isMapGetCall) {
         return {
           expr: ast.app(bodyExpr(innerResult), [ast.litNat(1)]),
         };
