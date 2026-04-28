@@ -694,6 +694,17 @@ function classifyForeachStmt(
  * `applyConst` applied to the OpaqueExpr at build time, mirroring the
  * pre-M5 wrap behavior).
  *
+ * Transparent wrappers (`(...)`, `as T`, `<T>x`, `!`, `satisfies T`)
+ * are stripped from the *outer* sub-expression node so that
+ * `(a.b)`, `(a.b as T)`, `a.b!`, and `a.b satisfies T` all reach the
+ * Member fast-path. This is symmetric with the `unwrapExpression`
+ * applied at the top of `translateBodyExpr` and `translateExpr`. The
+ * gameplan's "type-erasure wrappers are load-bearing" opinion
+ * concerns wrappers around the *receiver* (e.g.,
+ * `(a as Account).balance` — `qualifyFieldAccess` sees the asserted
+ * type), and those are preserved because they live inside the inner
+ * `PropertyAccessExpression`'s `expression` field, untouched here.
+ *
  * M5 Patch 5: shrinks the documented `from-l2` wrap sites for
  * property-access sub-expressions in mutating-body recognizers
  * (assign-target receivers, fold-leaf targets / rhs / guards).
@@ -705,11 +716,12 @@ function buildL1SubExpr(
   node: ts.Expression,
   ctx: BuildBodyCtx,
 ): BuildResult<IR1Expr> {
+  const stripped = unwrapExpression(node);
   if (
-    ts.isPropertyAccessExpression(node) ||
-    ts.isElementAccessExpression(node)
+    ts.isPropertyAccessExpression(stripped) ||
+    ts.isElementAccessExpression(stripped)
   ) {
-    const memberR = buildL1MemberAccess(node, {
+    const memberR = buildL1MemberAccess(stripped, {
       checker: ctx.checker,
       strategy: ctx.strategy,
       paramNames: ctx.paramNames,
@@ -726,7 +738,7 @@ function buildL1SubExpr(
   }
   const r = rejectEffect(
     translateBodyExpr(
-      node,
+      stripped,
       ctx.checker,
       ctx.strategy,
       ctx.paramNames,
