@@ -39,7 +39,7 @@ These cover the full scope of ts2pant's translation work:
 | Primed variables, frame conditions | Lamport, [*Specifying Systems*](https://lamport.azurewebsites.net/tla/book.html), Addison-Wesley 2002 | TLA+ approach to next-state relations, `UNCHANGED`, and the frame problem |
 | Frame problem in specifications | Borgida et al., ["And Nothing Else Changes"](https://www.researchgate.net/publication/221555223_And_Nothing_Else_Changes_The_Frame_Problem_in_Procedure_Specifications), IEEE TSE 1995 | Definitive treatment of frame conditions in procedure specifications |
 | Capture-avoiding substitution | [Locally Nameless Representation](https://boarders.github.io/posts/locally-nameless/) (Charguéraud 2012) | Alternative to named substitution; useful background for understanding why hygiene matters |
-| Term rewriting | Baader & Nipkow, *Term Rewriting and All That*, Cambridge 1998 | Positions, subterms, first-order substitution; basis for the functor-lift's L1 operand-rewriting (`body[e := $n]`) and the structural matcher in `substituteL1Subtree` |
+| Term rewriting | Baader & Nipkow, *Term Rewriting and All That*, Cambridge 1998 | Positions, subterms, first-order substitution; basis for the functor-lift's L1 operand-rewriting (`body[e := n]`) and the structural matcher in `substituteL1Subtree` |
 | Partial functions / option types | [Dafny Reference Manual](https://dafny.org/dafny/DafnyRef/DafnyRef) | Nullable types, preconditions, `modifies` clauses — practical verification language patterns |
 | IRSC / SSA-based IR | Vekris, Cosman, Jhala, ["Refinement Types for TypeScript"](https://arxiv.org/pdf/1604.02480), PLDI 2016 | Lifting surface-syntax recognizers into a typed intermediate representation via SSA-style translation; precedent for the IR introduced in §"Intermediate Representation" |
 
@@ -232,8 +232,8 @@ without a recognizer: Pant has no list literal, so the alternative
 cardinality-dispatch lowering `cond #u = 0 => [], true => [name (u 1)]`
 has no expressible target. The functor-lift recognizer (M4 Patch 5) is
 the canonical handling for this family — see § "Functor-Lift Recognizer"
-below. The four supported TS shapes lower uniformly to `each $n in u |
-name $n`, the same comprehension shape `?.` already uses.
+below. The four supported TS shapes lower uniformly to `each n in u |
+name n`, the same comprehension shape `?.` already uses.
 
 ### Partial Rules (Map<K, V>)
 
@@ -487,8 +487,11 @@ ops require acc on the left.
 encoding makes `T | null` into `[T]` (length 0 or 1); the recognizer is
 exactly `fmap : (a -> b) -> Maybe a -> Maybe b` specialized to the
 list-as-Maybe representation. The substitution half of the
-transformation (`body[e := $n]`) is first-order term rewriting on the
-L1 IR — see § "Operand-Substitution Rule" below.
+transformation (`body[e := n]`) is first-order term rewriting on the
+L1 IR — see § "Operand-Substitution Rule" below. The metavariable `n`
+denotes a parser-roundtrippable comprehension binder allocated via
+`allocateLiftBinder` / `cellRegisterName` (`n`, `n1`, `n2`, …); it is
+*not* the `$N` internal-hygienic class which exists only pre-emission.
 **Reference:** Wadler, ["The Essence of Functional Programming"](https://homepages.inf.ed.ac.uk/wadler/papers/essence/essence.ps),
 POPL 1992, §2 (the Maybe monad and `fmap`); Hutton & Meijer,
 ["Monadic Parsing in Haskell"](https://www.cs.nott.ac.uk/~pszgmh/pearl.pdf), JFP 1998
@@ -498,7 +501,7 @@ projections); Baader & Nipkow, *Term Rewriting and All That* (Cambridge
 half of the transformation, described below).
 
 `if (x == null) return []; return [f(x)];` and the equivalent ternary /
-negated forms lower to `each $n in x | f $n`. This is *not* an
+negated forms lower to `each n in x | f n`. This is *not* an
 optimization — Pantagruel has no list literal, so the alternative
 cardinality-dispatch lowering `cond #x = 0 => [], true => [f (x 1)]`
 has no expressible Pant target. Without the recognizer these
@@ -569,8 +572,11 @@ if (u !== null) { return [u.name]; }
 return [];
 ```
 
-All four lower to `each $n in u | name $n` (or `age $n`, etc.). The
-fixture is `tests/fixtures/constructs/expressions-functor-lift.ts`.
+All four lower to `each n in u | name n` (or `age n`, etc.) — `n` is
+the emitted comprehension binder (a fresh kebab-cased name allocated
+through `cellRegisterName`, suffixed `n1`/`n2`/… on collision), not the
+internal `$N` hygienic class. The fixture is
+`tests/fixtures/constructs/expressions-functor-lift.ts`.
 
 **Deliberate rejection of multi-element non-empty branches.** A shape
 like `if (xs == null) return []; return [xs[0], xs[1]];` would require
@@ -582,12 +588,16 @@ translatable target). This is intentional under the steering principle's
 rule 1: the TS itself is fine, but ts2pant cannot translate
 "sometimes-multi-element" pattern-matching without misrepresenting it.
 
-**Operand-Substitution Rule (`body[e := $n]`).** The lift's right-hand
-side `each $n in e | body'` is built by replacing every syntactic
+**Operand-Substitution Rule (`body[e := n]`).** The lift's right-hand
+side `each n in e | body'` is built by replacing every syntactic
 occurrence of the operand subterm `e` inside `body` with the fresh
-binder `$n`. This is *first-order term rewriting* (Baader & Nipkow ch. 2):
+binder `n`. This is *first-order term rewriting* (Baader & Nipkow ch. 2):
 match the operand `e` as a needle, replace each match with the binder,
-return the rewritten haystack.
+return the rewritten haystack. The binder `n` here denotes the actual
+emitted name (`n`, `n1`, `n2`, … allocated through `allocateLiftBinder`
+→ `cellRegisterName`); it is *not* the `$N` internal-hygienic class,
+which is reserved for binders that disappear before emission and would
+not round-trip through Pantagruel's lexer.
 
 For Var operands (M4 P5) the substitution primitive is Pant's
 `ast.substituteBinder` post-lowering — the operand's Pant name is
@@ -601,9 +611,11 @@ directly.
 
 The four invariants the rewrite depends on, restated:
 
-1. **Hygiene.** `$n` is allocated via `cellRegisterName` against the
-   document-wide `NameRegistry` — Barendregt convention applied to
-   the comprehension binder.
+1. **Hygiene.** The comprehension binder is allocated via
+   `cellRegisterName` (through `allocateLiftBinder`) against the
+   document-wide `NameRegistry` — a parser-roundtrippable name (`n`,
+   `n1`, `n2`, …), not the `$N` internal class. Barendregt convention
+   applied at the emission layer.
 2. **Structural reachability.** The operand must occur as a syntactic
    subterm of the projection. Var operands are checked via
    `expressionReferencesNames` at the TS-AST level; Member operands
@@ -976,7 +988,7 @@ in the equality / nullish equivalence class flows through Layer 1.
   unconditionally from `===` / `!==`. The L1 form admits arbitrary
   operands; sub-expressions wrap via `from-l2` until M5 brings property
   access onto L1 natively.
-- Functor-lift `each $n in x | f $n` — the canonical lowering for
+- Functor-lift `each n in x | f n` — the canonical lowering for
   null-guarded list-lifted conditionals (see § "Functor-Lift
   Recognizer" above for the four soundness conditions). Combined-shape
   match crossing M1 (Cond) + M4 (IsNullish); load-bearing because
