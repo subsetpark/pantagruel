@@ -29,6 +29,15 @@ let smt_examples_dir =
       Filename.concat (Sys.getcwd ()) "samples/smt-examples";
     ]
 
+let js_stdlib_dir =
+  Test_util.find_dir
+    [
+      "samples/js-stdlib";
+      "../samples/js-stdlib";
+      "../../samples/js-stdlib";
+      Filename.concat (Sys.getcwd ()) "samples/js-stdlib";
+    ]
+
 let regression_dir =
   Test_util.find_dir
     [
@@ -281,7 +290,8 @@ let sample_cases () =
   in
   let main = match sample_dir with None -> [] | Some d -> from d in
   let smt = match smt_examples_dir with None -> [] | Some d -> from d in
-  main @ smt
+  let js = match js_stdlib_dir with None -> [] | Some d -> from d in
+  main @ smt @ js
 
 let regression_cases () =
   [
