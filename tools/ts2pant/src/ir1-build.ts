@@ -828,10 +828,30 @@ function structuralEqualL1(a: IR1Expr, b: IR1Expr): boolean {
 }
 
 /**
+ * Result of an `substituteL1Subtree` walk. `changed` reports whether
+ * any subtree structurally matched `needle` and was replaced. The
+ * Member-operand functor-lift path uses this to detect "operand not
+ * structurally referenced" — a reference-equality check on the
+ * returned tree is unreliable because the walker reconstructs every
+ * compound node it traverses (e.g., `ir1Member(rec, name)`) regardless
+ * of whether the recursive sub-call substituted. A projection like
+ * `v.next.name` against operand `u.next` would otherwise rebuild a
+ * fresh top-level Member tree even though no substitution fired,
+ * letting projections that don't reference the operand silently emit
+ * a comprehension body with a free variable.
+ */
+interface L1SubstResult {
+  result: IR1Expr;
+  changed: boolean;
+}
+
+/**
  * Replace every subtree of `root` whose L1 form structurally equals
  * `needle` with `replacement`. The walker recurses through every L1
  * form but does not enter `from-l2` wraps — those expose only an
  * opaque L2 tree to L1 callers, which the L1 walker has no handle on.
+ * Returns the rewritten tree plus a `changed` flag indicating whether
+ * substitution actually fired anywhere along the walk.
  *
  * Used by the functor-lift recognizer: the operand's L1 form (a `Var`
  * or `Member` chain) is replaced by a fresh `Var(binder)` inside the
@@ -846,61 +866,93 @@ function substituteL1Subtree(
   root: IR1Expr,
   needle: IR1Expr,
   replacement: IR1Expr,
-): IR1Expr {
+): L1SubstResult {
   if (structuralEqualL1(root, needle)) {
-    return replacement;
+    return { result: replacement, changed: true };
   }
   switch (root.kind) {
     case "var":
     case "lit":
     case "from-l2":
-      return root;
-    case "binop":
-      return ir1Binop(
-        root.op,
-        substituteL1Subtree(root.lhs, needle, replacement),
-        substituteL1Subtree(root.rhs, needle, replacement),
-      );
-    case "unop":
-      return ir1Unop(
-        root.op,
-        substituteL1Subtree(root.arg, needle, replacement),
-      );
-    case "app":
-      return {
-        kind: "app",
-        callee: substituteL1Subtree(root.callee, needle, replacement),
-        args: root.args.map((a) => substituteL1Subtree(a, needle, replacement)),
-      };
-    case "member":
-      return ir1Member(
-        substituteL1Subtree(root.receiver, needle, replacement),
-        root.name,
-      );
-    case "cond": {
-      const armsRewritten = root.arms.map(
-        ([g, v]) =>
-          [
-            substituteL1Subtree(g, needle, replacement),
-            substituteL1Subtree(v, needle, replacement),
-          ] as const,
-      );
-      return ir1Cond(
-        armsRewritten as [
-          readonly [IR1Expr, IR1Expr],
-          ...ReadonlyArray<readonly [IR1Expr, IR1Expr]>,
-        ],
-        substituteL1Subtree(root.otherwise, needle, replacement),
-      );
+      return { result: root, changed: false };
+    case "binop": {
+      const lhs = substituteL1Subtree(root.lhs, needle, replacement);
+      const rhs = substituteL1Subtree(root.rhs, needle, replacement);
+      const changed = lhs.changed || rhs.changed;
+      return changed
+        ? { result: ir1Binop(root.op, lhs.result, rhs.result), changed: true }
+        : { result: root, changed: false };
     }
-    case "is-nullish":
-      return ir1IsNullish(
-        substituteL1Subtree(root.operand, needle, replacement),
+    case "unop": {
+      const arg = substituteL1Subtree(root.arg, needle, replacement);
+      return arg.changed
+        ? { result: ir1Unop(root.op, arg.result), changed: true }
+        : { result: root, changed: false };
+    }
+    case "app": {
+      const callee = substituteL1Subtree(root.callee, needle, replacement);
+      const args = root.args.map((a) =>
+        substituteL1Subtree(a, needle, replacement),
       );
+      const changed = callee.changed || args.some((a) => a.changed);
+      return changed
+        ? {
+            result: {
+              kind: "app",
+              callee: callee.result,
+              args: args.map((a) => a.result),
+            },
+            changed: true,
+          }
+        : { result: root, changed: false };
+    }
+    case "member": {
+      const recv = substituteL1Subtree(root.receiver, needle, replacement);
+      return recv.changed
+        ? { result: ir1Member(recv.result, root.name), changed: true }
+        : { result: root, changed: false };
+    }
+    case "cond": {
+      const armsRewritten = root.arms.map(([g, v]) => {
+        const gr = substituteL1Subtree(g, needle, replacement);
+        const vr = substituteL1Subtree(v, needle, replacement);
+        return { gr, vr } as const;
+      });
+      const otherwise = substituteL1Subtree(
+        root.otherwise,
+        needle,
+        replacement,
+      );
+      const changed =
+        otherwise.changed ||
+        armsRewritten.some(({ gr, vr }) => gr.changed || vr.changed);
+      if (!changed) {
+        return { result: root, changed: false };
+      }
+      const newArms = armsRewritten.map(
+        ({ gr, vr }) => [gr.result, vr.result] as const,
+      );
+      return {
+        result: ir1Cond(
+          newArms as [
+            readonly [IR1Expr, IR1Expr],
+            ...ReadonlyArray<readonly [IR1Expr, IR1Expr]>,
+          ],
+          otherwise.result,
+        ),
+        changed: true,
+      };
+    }
+    case "is-nullish": {
+      const operand = substituteL1Subtree(root.operand, needle, replacement);
+      return operand.changed
+        ? { result: ir1IsNullish(operand.result), changed: true }
+        : { result: root, changed: false };
+    }
     default: {
       const _exhaustive: never = root;
       void _exhaustive;
-      return root;
+      return { result: root, changed: false };
     }
   }
 }
@@ -1183,14 +1235,20 @@ export function tryRecognizeFunctorLift(
   const binderVar = ir1Var(binderName);
 
   // L1 rewriter: replace operand-shape subtrees with `Var(binder)`.
-  const substitutedL1 = substituteL1Subtree(projectionL1, operandL1, binderVar);
+  const { result: substitutedL1, changed: substitutionFired } =
+    substituteL1Subtree(projectionL1, operandL1, binderVar);
 
   // For Member operand: the L1 rewriter is the only substitution
   // mechanism — `ast.substituteBinder` substitutes by name and cannot
   // target a Member subtree. If the rewriter didn't fire (the
   // operand isn't structurally present in the projection's L1
-  // form), reject.
-  if (operandL1.kind === "member" && substitutedL1 === projectionL1) {
+  // form, e.g., projection `v.next.name` against operand `u.next`),
+  // reject. Without the explicit `changed` flag the walker's
+  // unconditional parent reconstruction (`ir1Member(rec, name)` and
+  // siblings) breaks reference equality even when no substitution
+  // fired, letting projections that don't reference the operand emit
+  // a comprehension body with a free variable.
+  if (operandL1.kind === "member" && !substitutionFired) {
     return restore();
   }
 

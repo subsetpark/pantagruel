@@ -401,6 +401,24 @@ describe("ir1-build-functor-lift", () => {
     expectLifted(tryRecognizeFunctorLift(candidate, ctx));
   });
 
+  it("Member operand falls through when projection references a different receiver", () => {
+    // Projection `v.next.name` is a valid Member chain but doesn't
+    // reference the operand `u.next`. The L1 rewriter walks the chain
+    // structurally; if no subtree matches the operand, the
+    // substitution-fired check rejects the lift. Without that check
+    // (or with one that relies on reference equality after
+    // unconditional parent reconstruction), the lift would silently
+    // emit a comprehension whose body has a free variable —
+    // `each n in (next u) | name (next v)`.
+    const { candidate, ctx } = setup(
+      `interface User { readonly name: string; readonly next: User | null; }
+       function f(u: User, v: User): string[] {
+         return u.next == null ? [] : [v.next!.name];
+       }`,
+    );
+    assert.equal(tryRecognizeFunctorLift(candidate, ctx), null);
+  });
+
   it("Member operand falls through when projection isn't a Member chain", () => {
     // Projection is a method call that doesn't structurally surface
     // the Member operand at the L1 level. `ast.substituteBinder`
