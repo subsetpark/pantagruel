@@ -170,3 +170,88 @@ describe("Stage 1 IR-equivalence: legacy and IR produce identical output", () =>
     );
   });
 });
+
+describe("M6 pure-path cutover stubs", () => {
+  const CUTOVER_CASES: Array<{ file: string; functions: string[] }> = [
+    {
+      file: "expressions-arithmetic.ts",
+      functions: ["add", "double", "netBalance"],
+    },
+    {
+      file: "expressions-comparison.ts",
+      functions: ["lt", "gte"],
+    },
+    {
+      file: "expressions-calls.ts",
+      functions: ["freeCall", "nestedCalls", "callInArithmetic"],
+    },
+    {
+      file: "expressions-nullish.ts",
+      functions: ["maybeOwnerIdOptional", "defaultToZero"],
+    },
+    {
+      file: "expressions-array.ts",
+      functions: ["activeNames", "nameLengths", "highScores"],
+    },
+    {
+      file: "expressions-reduce.ts",
+      functions: ["sumAmounts", "allActive"],
+    },
+  ];
+
+  for (const { file, functions } of CUTOVER_CASES) {
+    const filePath = resolve(CONSTRUCTS_DIR, file);
+    for (const funcName of functions) {
+      // M6 Patch 3 unskips these after `translatePureBody` routes
+      // expression terminals through IR unconditionally and the
+      // `TS2PANT_USE_IR` migration flag is deleted.
+      it.skip(`${file} > ${funcName} emits the always-on IR snapshot`, async () => {
+        const prior = process.env.TS2PANT_USE_IR;
+        delete process.env.TS2PANT_USE_IR;
+        try {
+          const sf = createSourceFile(filePath);
+          const doc = await buildDocumentFromSourceFile(sf, funcName);
+          const output = emitDocument(doc);
+          assert.ok(
+            !containsUnsupportedLine(output),
+            `${funcName} should be supported by the native IR pure path`,
+          );
+          await assertWasmTypeChecks(output);
+        } finally {
+          if (prior === undefined) {
+            delete process.env.TS2PANT_USE_IR;
+          } else {
+            process.env.TS2PANT_USE_IR = prior;
+          }
+        }
+      });
+    }
+  }
+
+  // M6 Patch 3 unskips this as the direct flag-deletion tripwire: the
+  // environment setting must no longer affect pure return translation.
+  it.skip("translatePureBody uses pure IR path without TS2PANT_USE_IR", async () => {
+    const sourceFile = createSourceFile(
+      resolve(CONSTRUCTS_DIR, "expressions-arithmetic.ts"),
+    );
+    const prior = process.env.TS2PANT_USE_IR;
+    try {
+      delete process.env.TS2PANT_USE_IR;
+      const withoutFlag = emitDocument(
+        await buildDocumentFromSourceFile(sourceFile, "netBalance"),
+      );
+      process.env.TS2PANT_USE_IR = "1";
+      const withFlag = emitDocument(
+        await buildDocumentFromSourceFile(sourceFile, "netBalance"),
+      );
+      assert.equal(withoutFlag, withFlag);
+      await assertWasmTypeChecks(withoutFlag);
+    } finally {
+      if (prior === undefined) {
+        delete process.env.TS2PANT_USE_IR;
+      } else {
+        process.env.TS2PANT_USE_IR = prior;
+      }
+    }
+  });
+});
