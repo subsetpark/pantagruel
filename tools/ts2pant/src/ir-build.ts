@@ -17,8 +17,11 @@
 import ts from "typescript";
 import {
   type IRExpr,
-  irAppExpr,
+  type IRExprEach,
+  type IRFoldCombiner,
   irAppName,
+  irBinop,
+  irComb,
   irCond,
   irEach,
   irLitBool,
@@ -27,11 +30,13 @@ import {
   irVar,
   irWrap,
 } from "./ir.js";
-import { ir1FromL2, ir1IsNullish } from "./ir1.js";
 import {
   buildL1MemberAccess,
+  computedElementAccessUnsupportedReason,
+  elementAccessLiteralKey,
   type L1BuildContext,
   tryBuildL1Cardinality,
+  tryBuildL1PureSubExpression,
   unwrapParens,
 } from "./ir1-build.js";
 import { lowerL1Expr } from "./ir1-lower.js";
@@ -39,6 +44,8 @@ import {
   allocComprehensionBinder,
   ambiguousFieldMsg,
   bodyExpr,
+  expressionReferencesNames,
+  freshHygienicBinder,
   isBodyUnsupported,
   isNullableTsType,
   qualifyFieldAccess,
@@ -46,6 +53,541 @@ import {
   type UniqueSupply,
 } from "./translate-body.js";
 import type { NumericStrategy } from "./translate-types.js";
+
+interface PendingIRComprehension {
+  binder: string;
+  src: IRExpr;
+  guards: IRExpr[];
+  proj: IRExpr;
+}
+
+interface IRBuildValue {
+  expr: IRExpr;
+  pendingComprehension?: PendingIRComprehension;
+}
+
+interface ReduceOpInfo {
+  combiner: IRFoldCombiner;
+  outer: "add" | "sub" | "mul" | "div" | "and" | "or";
+  identityText: string | null;
+  commutative: boolean;
+}
+
+function binopToReduceInfo(kind: ts.SyntaxKind): ReduceOpInfo | null {
+  switch (kind) {
+    case ts.SyntaxKind.PlusToken:
+      return {
+        combiner: "add",
+        outer: "add",
+        identityText: "0",
+        commutative: true,
+      };
+    case ts.SyntaxKind.MinusToken:
+      return {
+        combiner: "add",
+        outer: "sub",
+        identityText: null,
+        commutative: false,
+      };
+    case ts.SyntaxKind.AsteriskToken:
+      return {
+        combiner: "mul",
+        outer: "mul",
+        identityText: "1",
+        commutative: true,
+      };
+    case ts.SyntaxKind.SlashToken:
+      return {
+        combiner: "mul",
+        outer: "div",
+        identityText: null,
+        commutative: false,
+      };
+    case ts.SyntaxKind.AmpersandAmpersandToken:
+      return {
+        combiner: "and",
+        outer: "and",
+        identityText: "true",
+        commutative: true,
+      };
+    case ts.SyntaxKind.BarBarToken:
+      return {
+        combiner: "or",
+        outer: "or",
+        identityText: "false",
+        commutative: true,
+      };
+    default:
+      return null;
+  }
+}
+
+function evaluateNumericLiteral(node: ts.Expression): number | null {
+  node = unwrapParens(node) as ts.Expression;
+  if (ts.isNumericLiteral(node)) {
+    const n = Number(node.text);
+    return Number.isFinite(n) ? n : null;
+  }
+  if (
+    ts.isPrefixUnaryExpression(node) &&
+    (node.operator === ts.SyntaxKind.PlusToken ||
+      node.operator === ts.SyntaxKind.MinusToken) &&
+    ts.isNumericLiteral(node.operand)
+  ) {
+    const n = Number(node.operand.text);
+    if (!Number.isFinite(n)) {
+      return null;
+    }
+    return node.operator === ts.SyntaxKind.MinusToken ? -n : n;
+  }
+  return null;
+}
+
+function isIdentityInit(node: ts.Expression, identityText: string): boolean {
+  const inner = unwrapParens(node) as ts.Expression;
+  if (identityText === "true") {
+    return inner.kind === ts.SyntaxKind.TrueKeyword;
+  }
+  if (identityText === "false") {
+    return inner.kind === ts.SyntaxKind.FalseKeyword;
+  }
+  const n = evaluateNumericLiteral(inner);
+  return n !== null && n === Number(identityText);
+}
+
+function getRootIdentifier(expr: ts.Expression): string | null {
+  expr = unwrapParens(expr) as ts.Expression;
+  if (ts.isIdentifier(expr)) {
+    return expr.text;
+  }
+  if (ts.isPropertyAccessExpression(expr)) {
+    return getRootIdentifier(expr.expression);
+  }
+  return null;
+}
+
+function substituteIR(expr: IRExpr, name: string, replacement: IRExpr): IRExpr {
+  switch (expr.kind) {
+    case "var":
+      return expr.name === name && !expr.primed ? replacement : expr;
+    case "lit":
+    case "ir-wrap":
+      return expr;
+    case "app":
+      return {
+        ...expr,
+        head:
+          expr.head.kind === "expr"
+            ? {
+                kind: "expr",
+                expr: substituteIR(expr.head.expr, name, replacement),
+              }
+            : expr.head,
+        args: expr.args.map((arg) => substituteIR(arg, name, replacement)),
+      };
+    case "cond":
+      return irCond(
+        expr.arms.map(([g, v]) => [
+          substituteIR(g, name, replacement),
+          substituteIR(v, name, replacement),
+        ]),
+      );
+    case "let":
+      return {
+        kind: "let",
+        name: expr.name,
+        value: substituteIR(expr.value, name, replacement),
+        body:
+          expr.name === name
+            ? expr.body
+            : substituteIR(expr.body, name, replacement),
+      };
+    case "each":
+      return {
+        ...expr,
+        src: substituteIR(expr.src, name, replacement),
+        guards:
+          expr.binder === name
+            ? expr.guards
+            : expr.guards.map((guard) =>
+                substituteIR(guard, name, replacement),
+              ),
+        proj:
+          expr.binder === name
+            ? expr.proj
+            : substituteIR(expr.proj, name, replacement),
+      };
+    case "comb":
+      if (expr.combiner === "min" || expr.combiner === "max") {
+        return {
+          kind: "comb",
+          combiner: expr.combiner,
+          each: substituteIR(expr.each, name, replacement) as IRExprEach,
+        };
+      }
+      if ("init" in expr && expr.init !== undefined) {
+        return {
+          kind: "comb",
+          combiner: expr.combiner,
+          init: substituteIR(expr.init, name, replacement),
+          each: substituteIR(expr.each, name, replacement) as IRExprEach,
+        };
+      }
+      return {
+        kind: "comb",
+        combiner: expr.combiner,
+        each: substituteIR(expr.each, name, replacement) as IRExprEach,
+      };
+    case "comb-typed":
+      return expr.binder === name
+        ? expr
+        : {
+            ...expr,
+            guards: expr.guards.map((guard) =>
+              substituteIR(guard, name, replacement),
+            ),
+            proj: substituteIR(expr.proj, name, replacement),
+          };
+    case "forall":
+    case "exists":
+      if (expr.binder === name) {
+        return expr;
+      }
+      if (expr.guard !== undefined) {
+        return {
+          ...expr,
+          guard: substituteIR(expr.guard, name, replacement),
+          body: substituteIR(expr.body, name, replacement),
+        };
+      }
+      return {
+        ...expr,
+        body: substituteIR(expr.body, name, replacement),
+      };
+    default: {
+      const _exhaustive: never = expr;
+      void _exhaustive;
+      throw new Error("unreachable: IRExpr");
+    }
+  }
+}
+
+function materializeBuildValue(value: IRBuildValue): IRExpr {
+  if (value.pendingComprehension === undefined) {
+    return value.expr;
+  }
+  const pending = value.pendingComprehension;
+  return irEach(pending.binder, pending.src, pending.guards, pending.proj);
+}
+
+function extractArrowExpressionBody(
+  fn: ts.Expression,
+  expectedParams: number,
+): ts.ArrowFunction | { unsupported: string } {
+  if (!ts.isArrowFunction(fn)) {
+    return { unsupported: "array callback must be an arrow function" };
+  }
+  if (fn.parameters.length !== expectedParams) {
+    return {
+      unsupported:
+        expectedParams === 1
+          ? "filter/map callback must have exactly one identifier parameter"
+          : "reduce callback must take exactly (acc, x)",
+    };
+  }
+  for (const param of fn.parameters) {
+    if (!ts.isIdentifier(param.name)) {
+      return { unsupported: "array callback parameters must be identifiers" };
+    }
+  }
+  if (ts.isBlock(fn.body)) {
+    const stmts = fn.body.statements;
+    if (
+      stmts.length !== 1 ||
+      !ts.isReturnStatement(stmts[0]!) ||
+      !stmts[0]!.expression
+    ) {
+      return {
+        unsupported: "array callback block body must be a single return",
+      };
+    }
+  }
+  return fn;
+}
+
+function callbackBody(fn: ts.ArrowFunction): ts.Expression {
+  if (ts.isBlock(fn.body)) {
+    return (fn.body.statements[0] as ts.ReturnStatement).expression!;
+  }
+  return fn.body;
+}
+
+function getArrayElementType(
+  tsExpr: ts.Expression,
+  checker: ts.TypeChecker,
+): ts.Type | null {
+  const sourceType = checker.getTypeAtLocation(tsExpr);
+  if (!checker.isArrayType(sourceType)) {
+    return null;
+  }
+  const typeArgs = checker.getTypeArguments(sourceType as ts.TypeReference);
+  return typeArgs.length === 1 ? typeArgs[0]! : null;
+}
+
+function buildIRValue(
+  expr: ts.Expression,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: ReadonlyMap<string, string>,
+  supply: UniqueSupply,
+): IRBuildValue | { unsupported: string } {
+  expr = unwrapParens(expr) as ts.Expression;
+  if (
+    ts.isCallExpression(expr) &&
+    ts.isPropertyAccessExpression(expr.expression)
+  ) {
+    const methodName = expr.expression.name.text;
+    if (
+      (methodName === "filter" || methodName === "map") &&
+      expr.arguments.length === 1
+    ) {
+      const result = buildArrayMapFilter(
+        methodName,
+        expr.expression.expression,
+        expr,
+        checker,
+        strategy,
+        paramNames,
+        supply,
+      );
+      if (result !== null) {
+        return result;
+      }
+    }
+    if (methodName === "reduce" || methodName === "reduceRight") {
+      const result = buildArrayReduce(
+        methodName,
+        expr.expression.expression,
+        expr,
+        checker,
+        strategy,
+        paramNames,
+        supply,
+      );
+      if (result !== null) {
+        return result;
+      }
+    }
+  }
+
+  const ir = buildIR(expr, checker, strategy, paramNames, supply);
+  if (isBuildUnsupported(ir)) {
+    return ir;
+  }
+  return { expr: ir };
+}
+
+function buildArrayMapFilter(
+  methodName: "filter" | "map",
+  tsReceiver: ts.Expression,
+  expr: ts.CallExpression,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: ReadonlyMap<string, string>,
+  supply: UniqueSupply,
+): IRBuildValue | { unsupported: string } | null {
+  if (getArrayElementType(tsReceiver, checker) === null) {
+    return null;
+  }
+  const receiver = buildIRValue(
+    tsReceiver,
+    checker,
+    strategy,
+    paramNames,
+    supply,
+  );
+  if ("unsupported" in receiver) {
+    return receiver;
+  }
+
+  const arrow = extractArrowExpressionBody(expr.arguments[0]!, 1);
+  if ("unsupported" in arrow) {
+    return arrow;
+  }
+  const pending = receiver.pendingComprehension;
+  const isComposing = pending !== undefined;
+  const sourceBinder = isComposing
+    ? pending.binder
+    : allocComprehensionBinder(supply, "x");
+  const callbackBinder = isComposing
+    ? freshHygienicBinder(supply)
+    : sourceBinder;
+  const arrowParams = new Map(paramNames);
+  arrowParams.set(
+    (arrow.parameters[0]!.name as ts.Identifier).text,
+    callbackBinder,
+  );
+
+  const rawBody = buildIR(
+    callbackBody(arrow),
+    checker,
+    strategy,
+    arrowParams,
+    supply,
+  );
+  if (isBuildUnsupported(rawBody)) {
+    return rawBody;
+  }
+  const body = isComposing
+    ? substituteIR(rawBody, callbackBinder, pending.proj)
+    : rawBody;
+
+  if (methodName === "filter") {
+    if (isComposing) {
+      return {
+        expr: pending.proj,
+        pendingComprehension: {
+          binder: pending.binder,
+          src: pending.src,
+          guards: [...pending.guards, body],
+          proj: pending.proj,
+        },
+      };
+    }
+    return {
+      expr: irVar(sourceBinder),
+      pendingComprehension: {
+        binder: sourceBinder,
+        src: receiver.expr,
+        guards: [body],
+        proj: irVar(sourceBinder),
+      },
+    };
+  }
+
+  if (isComposing) {
+    return {
+      expr: body,
+      pendingComprehension: {
+        ...pending,
+        proj: body,
+      },
+    };
+  }
+  return {
+    expr: body,
+    pendingComprehension: {
+      binder: sourceBinder,
+      src: receiver.expr,
+      guards: [],
+      proj: body,
+    },
+  };
+}
+
+function buildArrayReduce(
+  methodName: "reduce" | "reduceRight",
+  tsReceiver: ts.Expression,
+  expr: ts.CallExpression,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: ReadonlyMap<string, string>,
+  supply: UniqueSupply,
+): IRBuildValue | { unsupported: string } | null {
+  if (expr.arguments.length !== 2) {
+    return { unsupported: `.${methodName} requires an explicit initial value` };
+  }
+  if (getArrayElementType(tsReceiver, checker) === null) {
+    return null;
+  }
+  const receiver = buildIRValue(
+    tsReceiver,
+    checker,
+    strategy,
+    paramNames,
+    supply,
+  );
+  if ("unsupported" in receiver) {
+    return receiver;
+  }
+  const arrow = extractArrowExpressionBody(expr.arguments[0]!, 2);
+  if ("unsupported" in arrow) {
+    return arrow;
+  }
+  const accName = (arrow.parameters[0]!.name as ts.Identifier).text;
+  const xName = (arrow.parameters[1]!.name as ts.Identifier).text;
+  const body = unwrapParens(callbackBody(arrow)) as ts.Expression;
+  if (!ts.isBinaryExpression(body)) {
+    return {
+      unsupported: `.${methodName} callback body must be 'acc OP f(x)'`,
+    };
+  }
+  const info = binopToReduceInfo(body.operatorToken.kind);
+  if (info === null) {
+    return {
+      unsupported: `.${methodName} operator ${ts.SyntaxKind[body.operatorToken.kind]} has no combiner`,
+    };
+  }
+  if (methodName === "reduceRight" && !info.commutative) {
+    return { unsupported: ".reduceRight with non-commutative operator" };
+  }
+  const leftRoot = getRootIdentifier(body.left);
+  const rightRoot = getRootIdentifier(body.right);
+  let innerExpr: ts.Expression;
+  if (leftRoot === accName && rightRoot !== accName) {
+    innerExpr = body.right;
+  } else if (rightRoot === accName && leftRoot !== accName) {
+    if (!info.commutative) {
+      return {
+        unsupported: `.${methodName} with acc on the right of a non-commutative operator`,
+      };
+    }
+    innerExpr = body.left;
+  } else {
+    return {
+      unsupported: `.${methodName} callback must reference acc exactly once`,
+    };
+  }
+  if (expressionReferencesNames(innerExpr, new Set([accName]))) {
+    return {
+      unsupported: `.${methodName} inner expression must not reference acc`,
+    };
+  }
+
+  const pending = receiver.pendingComprehension;
+  const xBinder = pending
+    ? freshHygienicBinder(supply)
+    : allocComprehensionBinder(supply, "x");
+  const arrowParams = new Map(paramNames);
+  arrowParams.set(xName, xBinder);
+  const inner = buildIR(innerExpr, checker, strategy, arrowParams, supply);
+  if (isBuildUnsupported(inner)) {
+    return inner;
+  }
+  const proj = pending ? substituteIR(inner, xBinder, pending.proj) : inner;
+  const each = (
+    pending
+      ? irEach(pending.binder, pending.src, pending.guards, proj)
+      : irEach(xBinder, receiver.expr, [], proj)
+  ) as IRExprEach;
+  let folded = irComb(info.combiner, each);
+
+  const initNode = expr.arguments[1]!;
+  if (
+    info.identityText === null ||
+    !isIdentityInit(initNode, info.identityText)
+  ) {
+    const init = buildIR(initNode, checker, strategy, paramNames, supply);
+    if (isBuildUnsupported(init)) {
+      return init;
+    }
+    folded =
+      info.outer === info.combiner
+        ? irComb(info.combiner, each, init)
+        : irBinop(info.outer, init, folded);
+  }
+  return { expr: folded };
+}
 
 /**
  * Translate a TypeScript expression to IR.
@@ -80,6 +622,25 @@ export function buildIR(
     state: undefined,
     supply,
   };
+
+  if (
+    ts.isCallExpression(expr) &&
+    ts.isPropertyAccessExpression(expr.expression)
+  ) {
+    const methodName = expr.expression.name.text;
+    if (
+      methodName === "filter" ||
+      methodName === "map" ||
+      methodName === "reduce" ||
+      methodName === "reduceRight"
+    ) {
+      const built = buildIRValue(expr, checker, strategy, paramNames, supply);
+      if ("unsupported" in built) {
+        return built;
+      }
+      return materializeBuildValue(built);
+    }
+  }
 
   // Boolean keywords
   if (expr.kind === ts.SyntaxKind.TrueKeyword) {
@@ -119,10 +680,67 @@ export function buildIR(
   // EUF function distinct from the actual cardinality. Fires before the
   // Member dispatch below for the six list-shaped TS types.
   if (ts.isPropertyAccessExpression(expr)) {
-    const card = tryBuildL1Cardinality(expr, l1Ctx);
+    const card = tryBuildL1Cardinality(expr, l1Ctx, {
+      nativeReceiverLeaf: true,
+    });
     if (card !== null) {
       return lowerL1Expr(card);
     }
+  }
+
+  if (ts.isElementAccessExpression(expr)) {
+    const inOptionalChain = (expr.flags & ts.NodeFlags.OptionalChain) !== 0;
+    if (inOptionalChain) {
+      const prop = elementAccessLiteralKey(expr);
+      if (prop === null) {
+        return { unsupported: computedElementAccessUnsupportedReason };
+      }
+      let shouldLift = false;
+      if (expr.questionDotToken !== undefined) {
+        const receiverTsType = checker.getTypeAtLocation(expr.expression);
+        shouldLift = isNullableTsType(receiverTsType);
+      } else if (ts.isOptionalChain(expr.expression)) {
+        shouldLift = true;
+      }
+      if (shouldLift) {
+        const receiverTsType = checker.getTypeAtLocation(expr.expression);
+        const ruleName = qualifyFieldAccess(
+          receiverTsType,
+          prop,
+          checker,
+          strategy,
+          supply.synthCell,
+        );
+        if (ruleName === null) {
+          return { unsupported: ambiguousFieldMsg(prop) };
+        }
+        const innerIR = buildIR(
+          expr.expression,
+          checker,
+          strategy,
+          paramNames,
+          supply,
+        );
+        if (isBuildUnsupported(innerIR)) {
+          return innerIR;
+        }
+        const binderName = allocComprehensionBinder(supply, "n");
+        return irEach(
+          binderName,
+          innerIR,
+          [],
+          irAppName(ruleName, [irVar(binderName)]),
+        );
+      }
+    }
+  }
+
+  const nativeL1 = tryBuildL1PureSubExpression(expr, l1Ctx);
+  if (nativeL1 !== null) {
+    if ("unsupported" in nativeL1) {
+      return nativeL1;
+    }
+    return lowerL1Expr(nativeL1);
   }
 
   // Stage 2: Optional chain `x?.prop` (and tail of a chain marked by
@@ -185,49 +803,13 @@ export function buildIR(
     ts.isPropertyAccessExpression(expr) &&
     (expr.flags & ts.NodeFlags.OptionalChain) === 0
   ) {
-    const member = buildL1MemberAccess(expr, l1Ctx);
+    const member = buildL1MemberAccess(expr, l1Ctx, {
+      nativeReceiverLeaf: true,
+    });
     if ("unsupported" in member) {
       return member;
     }
     return lowerL1Expr(member);
-  }
-
-  // Stage 3: Nullish coalescing `x ?? y` under list-lift. With `x: [T]`
-  // on the Pant side, `#x = 0` is the null test:
-  //   - `y: T` (non-nullable default) → `cond #x = 0 => y, true => (x 1)`
-  //   - `y: [T]` (nested nullable) → `cond #x = 0 => y, true => x`
-  //   - `x` not nullable in TS → `??` degenerates to just `x`.
-  // See CLAUDE.md "Option-Type Elimination" for the broader encoding.
-  if (
-    ts.isBinaryExpression(expr) &&
-    expr.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken
-  ) {
-    const leftTsType = checker.getTypeAtLocation(expr.left);
-    const leftIR = buildIR(expr.left, checker, strategy, paramNames, supply);
-    if (isBuildUnsupported(leftIR)) {
-      return leftIR;
-    }
-    if (!isNullableTsType(leftTsType)) {
-      // LHS can never be nullish — `??` degenerates.
-      return leftIR;
-    }
-    const rightIR = buildIR(expr.right, checker, strategy, paramNames, supply);
-    if (isBuildUnsupported(rightIR)) {
-      return rightIR;
-    }
-    const rightTsType = checker.getTypeAtLocation(expr.right);
-    // Construct the cardinality-zero null test through L1 IsNullish so
-    // every nullish-shape lowering shares one source of truth (M4).
-    // The lowering chain `from-l2 → IsNullish → eq(card(_), 0)` is
-    // byte-identical to the inlined form, which is the cutover gate.
-    const cardZero = lowerL1Expr(ir1IsNullish(ir1FromL2(leftIR)));
-    const presentBranch: IRExpr = isNullableTsType(rightTsType)
-      ? leftIR
-      : irAppExpr(leftIR, [irLitNat(1)]);
-    return irCond([
-      [cardZero, rightIR],
-      [irLitBool(true), presentBranch],
-    ]);
   }
 
   // Fallback: translate via the legacy pipeline and wrap. Subsequent

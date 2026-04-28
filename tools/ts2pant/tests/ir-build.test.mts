@@ -87,7 +87,12 @@ function containsKind(expr: IRExpr, kind: IRExpr["kind"]): boolean {
         containsKind(expr.proj, kind)
       );
     case "comb":
-      return containsKind(expr.each, kind);
+      return (
+        containsKind(expr.each, kind) ||
+        ("init" in expr &&
+          expr.init !== undefined &&
+          containsKind(expr.init, kind))
+      );
     case "comb-typed":
       return (
         expr.guards.some((guard) => containsKind(guard, kind)) ||
@@ -113,7 +118,7 @@ function expectNoIRWrap(expr: IRExpr): void {
 describe("ir-build M6 native construction stubs", () => {
   // M6 Patch 2 unskips this after ordinary arithmetic/comparison
   // binary expressions build as native App(binop, ...) nodes.
-  it.skip("builds arithmetic and comparison without IRWrap", () => {
+  it("builds arithmetic and comparison without IRWrap", () => {
     const arithmetic = expectIR(`
       function f(a: number, b: number): number {
         return (a + b) * 2;
@@ -130,7 +135,7 @@ describe("ir-build M6 native construction stubs", () => {
 
   // M6 Patch 2 unskips this after general pure calls build as native
   // App nodes instead of delegating through `translateBodyExpr`.
-  it.skip("builds general calls without IRWrap", () => {
+  it("builds general calls without IRWrap", () => {
     const ir = expectIR(`
       function score(a: number, b: number): number {
         return a + b;
@@ -145,7 +150,7 @@ describe("ir-build M6 native construction stubs", () => {
 
   // M6 Patch 2 unskips this after optional/nullish lowering avoids
   // L1 `from-l2` and native IR carries the complete conditional shape.
-  it.skip("builds optional chains and nullish coalescing without IRWrap", () => {
+  it("builds optional chains and nullish coalescing without IRWrap", () => {
     const optional = expectIR(`
       interface Owner { readonly id: number; }
       interface Account { readonly owner?: Owner; }
@@ -164,7 +169,7 @@ describe("ir-build M6 native construction stubs", () => {
 
   // M6 Patch 2 unskips this after chain fusion constructs real Each
   // and Comb nodes rather than preserving legacy opaque comprehensions.
-  it.skip("builds filter/map/reduce chains as native Each/Comb", () => {
+  it("builds filter/map/reduce chains as native Each/Comb", () => {
     const each = expectIR(`
       interface User { readonly active: boolean; readonly name: string; }
       function f(users: User[]): string[] {
@@ -185,7 +190,7 @@ describe("ir-build M6 native construction stubs", () => {
 
   // M6 Patch 2 unskips the string-literal optional-element case; the
   // computed-key case should remain unsupported through M6.
-  it.skip("records optional element access boundary", () => {
+  it("records optional element access boundary", () => {
     const literalKey = expectIR(`
       interface User { readonly name: string; }
       function f(u: User | null): string[] {
@@ -208,7 +213,7 @@ describe("ir-build M6 native construction stubs", () => {
 
   // M6 Patch 2 keeps computed element access outside the cleanup
   // boundary unless the key is syntactically a string literal.
-  it.skip("keeps computed element access unsupported", () => {
+  it("keeps computed element access unsupported", () => {
     const result = buildFromSource(`
       interface User { readonly name: string; }
       function f(u: User, key: keyof User): unknown {
