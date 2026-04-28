@@ -1,13 +1,13 @@
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
-import { irWrap } from "./ir.js";
 import { lowerExpr } from "./ir-emit.js";
-import { ir1FromL2 } from "./ir1.js";
 import {
   type BuildL1MemberAccessOptions,
   buildL1MemberAccess,
+  isL1Unsupported,
   type L1BuildContext,
   tryBuildL1Cardinality,
+  tryBuildL1PureSubExpression,
   unwrapParens,
 } from "./ir1-build.js";
 import { lowerL1Expr } from "./ir1-lower.js";
@@ -973,13 +973,7 @@ export function translateExpr(
     //   optional-chain functor lift) inappropriate inside guards.
     const sigOptions: BuildL1MemberAccessOptions = {
       ambiguousOwnerFallback: "bare-kebab",
-      translateReceiverLeaf: (e) => {
-        const r = translateExpr(e, checker, _strategy, paramNames, synthCell);
-        if (isTranslateExprUnsupported(r)) {
-          return { kind: "unsupported", reason: r.unsupported };
-        }
-        return { kind: "expr", expr: r };
-      },
+      nativeReceiverLeaf: true,
     };
     const card = tryBuildL1Cardinality(expr, l1Ctx, sigOptions);
     if (card !== null) {
@@ -1024,17 +1018,22 @@ export function translateExpr(
     // resolved-`undefined` — verify the `undefined` identifier
     // resolves to the global symbol, not a shadowed local.
     const translate: NullishTranslate = (sub) => {
-      const subResult = translateExpr(
-        sub,
+      const subResult = tryBuildL1PureSubExpression(sub, {
         checker,
-        _strategy,
+        strategy: _strategy,
         paramNames,
-        synthCell,
-      );
-      if (isTranslateExprUnsupported(subResult)) {
+        state: undefined,
+        supply: { n: 0, synthCell },
+      });
+      if (subResult === null) {
+        return {
+          unsupported: `unsupported signature nullish operand: ${sub.getText()}`,
+        };
+      }
+      if (isL1Unsupported(subResult)) {
         return subResult;
       }
-      return ir1FromL2(irWrap(subResult));
+      return subResult;
     };
     const recognized = recognizeNullishForm(expr, checker, translate);
     if (recognized !== null && !("unsupported" in recognized)) {

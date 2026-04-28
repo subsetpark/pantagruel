@@ -83,9 +83,12 @@ import {
   translateBodyExpr,
 } from "./translate-body.js";
 import {
+  cellRegisterMap,
   cellRegisterName,
   isMapType,
   isSetType,
+  lookupMapKV,
+  mapTsType,
   type NumericStrategy,
   toPantTermName,
 } from "./translate-types.js";
@@ -258,6 +261,10 @@ export function tryBuildL1PureSubExpression(
   ctx: L1BuildContext,
 ): L1BuildResult | null {
   expr = unwrapParens(expr) as ts.Expression;
+  const transparent = unwrapTransparentExpression(expr);
+  if (transparent !== expr && ts.isExpression(transparent)) {
+    return tryBuildL1PureSubExpression(transparent, ctx);
+  }
 
   if (expr.kind === ts.SyntaxKind.TrueKeyword) {
     return ir1LitBool(true);
@@ -280,6 +287,9 @@ export function tryBuildL1PureSubExpression(
   }
   if (expr.kind === ts.SyntaxKind.ThisKeyword) {
     return ir1Var(ctx.paramNames.get("this") ?? "this");
+  }
+  if (isL1ConditionalForm(expr, ctx.checker)) {
+    return buildL1Conditional(expr, ctx);
   }
 
   if (
@@ -320,11 +330,18 @@ export function tryBuildL1PureSubExpression(
   }
 
   if (ts.isBinaryExpression(expr)) {
-    const nullishProbe = recognizeNullishForm(expr, ctx.checker, () =>
-      ir1Var("__nullish_probe"),
-    );
-    if (nullishProbe !== null) {
-      return null;
+    const nullishTranslate: NullishTranslate = (sub) => {
+      const built = tryBuildL1PureSubExpression(sub, ctx);
+      if (built === null) {
+        return {
+          unsupported: `unsupported nullish operand: ${sub.getText()}`,
+        };
+      }
+      return built;
+    };
+    const nullish = recognizeNullishForm(expr, ctx.checker, nullishTranslate);
+    if (nullish !== null) {
+      return nullish;
     }
     if (
       expr.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken ||
@@ -400,6 +417,94 @@ export function tryBuildL1PureSubExpression(
         expressionHasSideEffects(member.receiver, ctx.checker))
     ) {
       return null;
+    }
+    if (ts.isPropertyAccessExpression(expr.expression)) {
+      const methodName = expr.expression.name.text;
+      const receiverNode = expr.expression.expression;
+      const receiverType = ctx.checker.getTypeAtLocation(receiverNode);
+      if (
+        ((methodName === "set" || methodName === "delete") &&
+          isMapType(receiverType)) ||
+        ((methodName === "add" ||
+          methodName === "delete" ||
+          methodName === "clear") &&
+          isSetType(receiverType))
+      ) {
+        return {
+          unsupported: "collection mutation outside statement position",
+        };
+      }
+      if (
+        (methodName === "includes" || methodName === "has") &&
+        expr.arguments.length === 1
+      ) {
+        const isArray =
+          methodName === "includes" && ctx.checker.isArrayType(receiverType);
+        const isSet = methodName === "has" && isSetType(receiverType);
+        if (isArray || isSet) {
+          const elem = tryBuildL1PureSubExpression(expr.arguments[0]!, ctx);
+          if (elem === null || isL1Unsupported(elem)) {
+            return elem;
+          }
+          const source = tryBuildL1PureSubExpression(receiverNode, ctx);
+          if (source === null || isL1Unsupported(source)) {
+            return source;
+          }
+          return ir1Binop("in", elem, source);
+        }
+      }
+      if (
+        (methodName === "get" || methodName === "has") &&
+        expr.arguments.length === 1 &&
+        isMapType(receiverType)
+      ) {
+        const key = tryBuildL1PureSubExpression(expr.arguments[0]!, ctx);
+        if (key === null || isL1Unsupported(key)) {
+          return key;
+        }
+        const receiver = tryBuildL1PureSubExpression(receiverNode, ctx);
+        if (receiver === null || isL1Unsupported(receiver)) {
+          return receiver;
+        }
+        if (receiver.kind === "member") {
+          const ruleName = receiver.name;
+          const callee = methodName === "has" ? `${ruleName}-key` : ruleName;
+          return ir1App(ir1Var(callee), [receiver.receiver, key]);
+        }
+        const typeArgs = ctx.checker.getTypeArguments(
+          receiverType as ts.TypeReference,
+        );
+        if (typeArgs.length !== 2) {
+          return { unsupported: "Map with unexpected arity" };
+        }
+        const kType = mapTsType(
+          typeArgs[0]!,
+          ctx.checker,
+          ctx.strategy,
+          ctx.supply.synthCell,
+        );
+        const vType = mapTsType(
+          typeArgs[1]!,
+          ctx.checker,
+          ctx.strategy,
+          ctx.supply.synthCell,
+        );
+        let info = ctx.supply.synthCell
+          ? lookupMapKV(ctx.supply.synthCell.synth, kType, vType)
+          : undefined;
+        if (!info && ctx.supply.synthCell) {
+          cellRegisterMap(ctx.supply.synthCell, kType, vType);
+          info = lookupMapKV(ctx.supply.synthCell.synth, kType, vType);
+        }
+        if (!info) {
+          return {
+            unsupported: `Map<${kType}, ${vType}>: key or value type cannot be mangled into a synthesized domain name`,
+          };
+        }
+        const callee =
+          methodName === "has" ? info.names.keyPred : info.names.rule;
+        return ir1App(ir1Var(callee), [receiver, key]);
+      }
     }
     let callee: IR1Expr | null;
     let args: IR1Expr[];
@@ -546,14 +651,14 @@ export function tryBuildL1Cardinality(
     }
     return ir1Unop("card", ir1FromL2(irWrap(r.expr)));
   }
-  if (ctx.state === undefined && options.nativeReceiverLeaf === true) {
-    const nativeReceiver = tryBuildL1PureSubExpression(
-      receiverNode as ts.Expression,
-      ctx,
-    );
-    if (nativeReceiver !== null && !isL1Unsupported(nativeReceiver)) {
-      return ir1Unop("card", nativeReceiver);
-    }
+  const nativeReceiver = tryBuildL1PureSubExpression(
+    receiverNode as ts.Expression,
+    ctx,
+  );
+  if (nativeReceiver !== null && !isL1Unsupported(nativeReceiver)) {
+    return ir1Unop("card", nativeReceiver);
+  }
+  if (options.nativeReceiverLeaf === true) {
     const nativeReceiverIR = tryBuildNativeReceiverLeafIR(
       receiverNode as ts.Expression,
       ctx,
@@ -562,6 +667,7 @@ export function tryBuildL1Cardinality(
     if (nativeReceiverIR !== null && !isL1Unsupported(nativeReceiverIR)) {
       return ir1Unop("card", nativeReceiverIR);
     }
+    return null;
   }
   const r = translateBodyExpr(
     receiverNode as ts.Expression,
@@ -847,7 +953,7 @@ export function buildL1MemberAccess(
       return { unsupported: r.reason };
     }
     receiverL1 = ir1FromL2(irWrap(r.expr));
-  } else if (ctx.state === undefined && options.nativeReceiverLeaf === true) {
+  } else {
     const nativeReceiver = tryBuildL1PureSubExpression(
       receiverNode as ts.Expression,
       ctx,
@@ -857,6 +963,10 @@ export function buildL1MemberAccess(
         return nativeReceiver;
       }
       receiverL1 = nativeReceiver;
+    } else if (options.nativeReceiverLeaf === true || ctx.state !== undefined) {
+      return {
+        unsupported: `unsupported property-access receiver: ${(receiverNode as ts.Expression).getText()}`,
+      };
     } else {
       const nativeReceiverIR = tryBuildNativeReceiverLeafIR(
         receiverNode as ts.Expression,
@@ -888,24 +998,6 @@ export function buildL1MemberAccess(
         receiverL1 = ir1FromL2(irWrap(bodyExpr(r)));
       }
     }
-  } else {
-    const r = translateBodyExpr(
-      receiverNode as ts.Expression,
-      ctx.checker,
-      ctx.strategy,
-      ctx.paramNames,
-      ctx.state,
-      ctx.supply,
-    );
-    if (isBodyUnsupported(r)) {
-      return { unsupported: r.unsupported };
-    }
-    if ("effect" in r) {
-      return {
-        unsupported: "collection mutation as property-access receiver",
-      };
-    }
-    receiverL1 = ir1FromL2(irWrap(bodyExpr(r)));
   }
 
   // Symbolic-state lookup at the outer level (mirrors
@@ -969,18 +1061,15 @@ export function isL1ConditionalForm(
 }
 
 // ---------------------------------------------------------------------------
-// Sub-expression delegation: translate via legacy, wrap into L1 via from-l2
+// Sub-expression delegation: native L1 or explicit unsupported
 // ---------------------------------------------------------------------------
 
 /**
- * Translate a non-conditional sub-expression via the legacy pipeline and
- * wrap as L1. Used for guards, values, and switch discriminants inside
- * an L1 conditional during M1 — those positions receive arbitrary TS
- * expressions whose normalization isn't M1's concern.
+ * Translate a non-conditional sub-expression as native L1. Used for
+ * guards, values, and switch discriminants inside L1 conditionals.
  *
- * Rejects collection-mutation sub-expressions (the legacy result type
- * `BodyResult` admits an "effect" variant that's only valid in
- * statement position; an L1 expression cannot host one).
+ * Rejects unsupported shapes with an explicit reason instead of routing
+ * through the legacy opaque expression fallback.
  */
 function buildSubExpr(expr: ts.Expression, ctx: L1BuildContext): L1BuildResult {
   expr = unwrapParens(expr) as ts.Expression;
@@ -991,26 +1080,14 @@ function buildSubExpr(expr: ts.Expression, ctx: L1BuildContext): L1BuildResult {
   if (ts.isObjectLiteralExpression(expr)) {
     return { unsupported: "object literal in conditional arm" };
   }
-  const result = translateBodyExpr(
-    expr,
-    ctx.checker,
-    ctx.strategy,
-    ctx.paramNames,
-    ctx.state,
-    ctx.supply,
-  );
-  if (isBodyUnsupported(result)) {
-    return { unsupported: result.unsupported };
+  if (isL1ConditionalForm(expr, ctx.checker)) {
+    return buildL1Conditional(expr, ctx);
   }
-  if ("effect" in result) {
-    return {
-      unsupported: "collection mutation cannot appear in a conditional arm",
-    };
+  const native = tryBuildL1PureSubExpression(expr, ctx);
+  if (native !== null) {
+    return native;
   }
-  // Materialize any deferred .filter()/.map() chain into a flat each(...)
-  // before wrapping — using result.expr directly would drop the traversal
-  // and lower the bare projection body instead.
-  return ir1FromL2(irWrap(bodyExpr(result)));
+  return { unsupported: `unsupported L1 sub-expression: ${expr.getText()}` };
 }
 
 // ---------------------------------------------------------------------------
