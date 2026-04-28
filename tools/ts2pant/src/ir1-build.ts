@@ -195,18 +195,18 @@ export function tryBuildL1Cardinality(
   if (!matches) {
     return null;
   }
-  // Receiver translation. Property-access receivers (e.g.,
-  // `a.items.length`) route through `buildL1MemberAccess` so the
+  // Receiver translation. Member-surface receivers (`a.items.length`,
+  // `a["items"].length`) route through `buildL1MemberAccess` so the
   // entire chain stays on the L1 path — no half-migration where the
-  // outer `card` is L1 but the inner `.items` round-trips through L2
-  // via `from-l2`. Other receiver shapes (Identifier, call, binop,
-  // etc.) translate through the supplied leaf translator (default
-  // `translateBodyExpr`); those aren't property-access and are out of
-  // M5's equivalence class.
-  if (
-    ts.isPropertyAccessExpression(receiverNode) &&
-    (receiverNode.flags & ts.NodeFlags.OptionalChain) === 0
-  ) {
+  // outer `card` is L1 but the inner `.items` / `["items"]` round-trips
+  // through L2 via `from-l2`. Both PropertyAccess and string-literal
+  // ElementAccess belong to the property-access equivalence class
+  // (M5 hard rule), so the recursion gate is the shared
+  // `isMemberSurfaceForm` predicate. Other receiver shapes
+  // (Identifier, call, binop, etc.) translate through the supplied
+  // leaf translator (default `translateBodyExpr`); those aren't
+  // property-access and are out of M5's equivalence class.
+  if (isMemberSurfaceForm(receiverNode)) {
     const innerCard = tryBuildL1Cardinality(receiverNode, ctx, options);
     if (innerCard !== null) {
       return ir1Unop("card", innerCard);

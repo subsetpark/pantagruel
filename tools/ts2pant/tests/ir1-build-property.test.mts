@@ -434,4 +434,38 @@ describe("ir1-build-property", () => {
     );
     assert.equal(indexedOpaque, dottedOpaque);
   });
+
+  it("no-substitution template-literal ElementAccess builds Member", () => {
+    // ``obj[`field`]`` is the second accepted literal-key form
+    // (`elementAccessLiteralKey` accepts both `StringLiteral` and
+    // `NoSubstitutionTemplateLiteral`); its lowered output must match
+    // the dotted form byte-for-byte, locking the template-literal
+    // path against accidental regression.
+    const { node, ctx } = setupAccess(
+      "interface User { readonly name: string; }\n" +
+        "function f(u: User): string {\n" +
+        "  return u[`name`];\n" +
+        "}",
+    );
+    const result = buildL1MemberAccess(node, ctx);
+    const { receiver, name } = expectMember(result);
+    assert.equal(name, "user--name");
+    assert.equal(receiver.kind, "from-l2");
+
+    const dotted = setupAccess(
+      `interface User { readonly name: string; }
+       function f(u: User): string {
+         return u.name;
+       }`,
+    );
+    const dottedOpaque = getAst().strExpr(
+      lowerExpr(
+        lowerL1Expr(buildL1MemberAccess(dotted.node, dotted.ctx) as IR1Expr),
+      ),
+    );
+    const templateOpaque = getAst().strExpr(
+      lowerExpr(lowerL1Expr(result as IR1Expr)),
+    );
+    assert.equal(templateOpaque, dottedOpaque);
+  });
 });

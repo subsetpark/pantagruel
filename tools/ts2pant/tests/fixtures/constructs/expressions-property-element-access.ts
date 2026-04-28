@@ -31,8 +31,10 @@ export function effectiveBalanceByLiteral(a: Account): number {
 /**
  * Deliberate reject: computed element access (`obj[expr]`) cannot
  * resolve to a single qualified rule without literal-union narrowing,
- * which is deferred. The constructs runner skips functions whose
- * translation reports unsupported.
+ * which is deferred. The constructs runner snapshots the emitted
+ * `> UNSUPPORTED: ...` line for functions whose translation reports
+ * unsupported, so the rejection reason is locked into the fixture's
+ * snapshot rather than dropped.
  */
 export function getByDynamicKey(a: Account, k: keyof Account): unknown {
   return a[k];
