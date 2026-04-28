@@ -43,6 +43,7 @@ import {
   ir1SetAddOrDelete,
   ir1SetClear,
 } from "./ir1.js";
+import { buildL1MemberAccess, isL1Unsupported } from "./ir1-build.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import {
   addWrittenKey,
@@ -686,6 +687,60 @@ function classifyForeachStmt(
 }
 
 /**
+ * Translate a sub-expression into an L1 expression. Property-access
+ * forms (`PropertyAccessExpression`, `ElementAccessExpression`) build
+ * to canonical L1 `Member` via `buildL1MemberAccess`; other shapes
+ * fall through to legacy `translateBodyExpr` + `from-l2` wrap (with
+ * `applyConst` applied to the OpaqueExpr at build time, mirroring the
+ * pre-M5 wrap behavior).
+ *
+ * M5 Patch 5: shrinks the documented `from-l2` wrap sites for
+ * property-access sub-expressions in mutating-body recognizers
+ * (assign-target receivers, fold-leaf targets / rhs / guards).
+ * Non-property-access sub-expressions (binop chains, generic calls,
+ * etc.) still wrap via `from-l2`; full elimination of the adapter is
+ * M6 territory.
+ */
+function buildL1SubExpr(
+  node: ts.Expression,
+  ctx: BuildBodyCtx,
+): BuildResult<IR1Expr> {
+  if (
+    ts.isPropertyAccessExpression(node) ||
+    ts.isElementAccessExpression(node)
+  ) {
+    const memberR = buildL1MemberAccess(node, {
+      checker: ctx.checker,
+      strategy: ctx.strategy,
+      paramNames: ctx.paramNames,
+      state: ctx.state,
+      supply: ctx.supply,
+    });
+    if (!isL1Unsupported(memberR)) {
+      return memberR;
+    }
+    // Property-access form rejected (optional chain, ambiguous owner,
+    // or shape not yet routed through L1 Member). Fall through to the
+    // legacy from-l2 wrap so optional-chain functor-lift and other
+    // legacy-only paths still translate.
+  }
+  const r = rejectEffect(
+    translateBodyExpr(
+      node,
+      ctx.checker,
+      ctx.strategy,
+      ctx.paramNames,
+      ctx.state,
+      ctx.supply,
+    ),
+  );
+  if (isBodyUnsupported(r)) {
+    return { unsupported: r.unsupported };
+  }
+  return ir1FromL2(irWrap(ctx.applyConst(bodyExpr(r))));
+}
+
+/**
  * Build a Shape B fold leaf from its TS-level descriptor. `target`
  * translates against the OUTER ctx (no iter dependence); `rhs` and
  * `guard` translate against the SUB ctx (so they observe Shape A
@@ -696,52 +751,25 @@ function buildShapeBLeaf(
   outerCtx: BuildBodyCtx,
   subCtx: BuildBodyCtx,
 ): BuildResult<IR1FoldLeaf> {
-  const targetR = rejectEffect(
-    translateBodyExpr(
-      leaf.target,
-      outerCtx.checker,
-      outerCtx.strategy,
-      outerCtx.paramNames,
-      outerCtx.state,
-      outerCtx.supply,
-    ),
-  );
-  if (isBodyUnsupported(targetR)) {
-    return { unsupported: targetR.unsupported };
+  const targetR = buildL1SubExpr(leaf.target, outerCtx);
+  if (isUnsupported(targetR)) {
+    return targetR;
   }
-  const target = ir1FromL2(irWrap(outerCtx.applyConst(bodyExpr(targetR))));
+  const target = targetR;
 
-  const rhsR = rejectEffect(
-    translateBodyExpr(
-      leaf.rhs,
-      subCtx.checker,
-      subCtx.strategy,
-      subCtx.paramNames,
-      subCtx.state,
-      subCtx.supply,
-    ),
-  );
-  if (isBodyUnsupported(rhsR)) {
-    return { unsupported: rhsR.unsupported };
+  const rhsR = buildL1SubExpr(leaf.rhs, subCtx);
+  if (isUnsupported(rhsR)) {
+    return rhsR;
   }
-  const rhs = ir1FromL2(irWrap(subCtx.applyConst(bodyExpr(rhsR))));
+  const rhs = rhsR;
 
   let guard: IR1Expr | null = null;
   if (leaf.guard !== null) {
-    const gR = rejectEffect(
-      translateBodyExpr(
-        leaf.guard,
-        subCtx.checker,
-        subCtx.strategy,
-        subCtx.paramNames,
-        subCtx.state,
-        subCtx.supply,
-      ),
-    );
-    if (isBodyUnsupported(gR)) {
-      return { unsupported: gR.unsupported };
+    const gR = buildL1SubExpr(leaf.guard, subCtx);
+    if (isUnsupported(gR)) {
+      return gR;
     }
-    guard = ir1FromL2(irWrap(subCtx.applyConst(bodyExpr(gR))));
+    guard = gR;
   }
 
   return {
@@ -1100,19 +1128,11 @@ export function buildL1AssignStmt(
   if (prop === null) {
     return { unsupported: ambiguousFieldMsg(rawProp) };
   }
-  const objR = rejectEffect(
-    translateBodyExpr(
-      expr.left.expression,
-      ctx.checker,
-      ctx.strategy,
-      ctx.paramNames,
-      ctx.state,
-      ctx.supply,
-    ),
-  );
-  if (isBodyUnsupported(objR)) {
-    return { unsupported: objR.unsupported };
+  const objR = buildL1SubExpr(expr.left.expression, ctx);
+  if (isUnsupported(objR)) {
+    return objR;
   }
+  const obj = objR;
   // For compound `a.p OP= v`, desugar the rhs to `a.p OP v`. The new
   // `a.p` read goes through translateBodyExpr, which consults the
   // symbolic state and returns the prior-write value or the pre-state
@@ -1138,7 +1158,6 @@ export function buildL1AssignStmt(
   if (isBodyUnsupported(valR)) {
     return { unsupported: valR.unsupported };
   }
-  const obj = ir1FromL2(irWrap(ctx.applyConst(bodyExpr(objR))));
   const val = ir1FromL2(irWrap(ctx.applyConst(bodyExpr(valR))));
   return ir1Assign(ir1Member(obj, prop), val);
 }
