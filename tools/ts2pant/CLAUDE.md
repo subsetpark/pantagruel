@@ -1104,10 +1104,12 @@ access surface form ts2pant supports flows through Layer 1.
 
 - Dotted access (`obj.field`) — TS `PropertyAccessExpression` with an
   `Identifier` / `PrivateIdentifier` argument.
-- String-literal element access (`obj["field"]`) — TS
-  `ElementAccessExpression` whose argument expression is a
-  `StringLiteral`. Operationally equivalent to dotted access at the
-  TS-checker layer; one canonical L1 form.
+- String-literal element access (`obj["field"]`, ``obj[`field`]``) —
+  TS `ElementAccessExpression` whose argument expression is a
+  `StringLiteral` or `NoSubstitutionTemplateLiteral`. Operationally
+  equivalent to dotted access at the TS-checker layer; one canonical
+  L1 form. Templates with substitutions (e.g., ``obj[`f${i}`]``) are
+  not literal keys — they fall through to the computed-access reject.
 
 *Computed element access rejected.* `obj[expr]` for any non-literal
 `expr` rejects with a specific `unsupported` reason. The DoD's
