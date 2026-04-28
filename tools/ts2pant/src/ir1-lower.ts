@@ -211,7 +211,7 @@ export interface MuSearchLowerCtx {
    */
   counterPantName: string;
   /** Allocate a fresh binder name (e.g., `j`, `j1`, …). */
-  allocateBinder(hint: string): string;
+  allocateBinder: (hint: string) => string;
 }
 
 /**

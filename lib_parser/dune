@@ -41,3 +41,5 @@
 (copy_files ../lib/check.mli)
 
 (copy_files ../lib/error.ml)
+
+(copy_files ../lib/module.ml)
