@@ -544,16 +544,22 @@ load-bearing; see `workstreams/ts2pant-imperative-ir.md`
 
 **Supported TS shapes.** The operand may be a simple `Identifier`
 (`Var`) or a property-access / string-literal element-access chain
-(`Member`); paren-wrapped variants of either are accepted because L1
-build normalizes parens away before the operand is classified.
-Member-operand support landed in M5 P4 (lifting the M4 P5 simple-
-identifier restriction); the eligibility check is now expressed in
-L1 terms (`Var` or `Member`) rather than TS-AST terms. Member-
-operand projections must surface the operand structurally at the L1
-level — `ast.substituteBinder` substitutes by name and cannot target
-a `Member` subtree, so a Member-operand projection that buries the
-operand inside a non-Member sub-expression (e.g., a method call)
-falls through.
+(`Member`); transparently-wrapped variants of either are accepted
+because the recognizer's outer boundary (`unwrapTransparentExpression`)
+and the recursive Member-chain build (`buildL1MemberOrVarForLift`)
+both strip the same wrapper set — parens, `as` casts, non-null
+assertions (`!`), and `satisfies` — at every level of the chain, so
+eligibility is driven by the operand's L1 shape rather than its
+TS-AST spelling. `qualifyFieldAccess` is still given the parens-
+stripped (but type-erasure-preserving) receiver, so a user's `as T`
+cast continues to drive qualifier resolution. Member-operand support
+landed in M5 P4 (lifting the M4 P5 simple-identifier restriction);
+the eligibility check is now expressed in L1 terms (`Var` or `Member`)
+rather than TS-AST terms. Member-operand projections must surface
+the operand structurally at the L1 level — `ast.substituteBinder`
+substitutes by name and cannot target a `Member` subtree, so a
+Member-operand projection that buries the operand inside a non-
+Member sub-expression (e.g., a method call) falls through.
 
 ```ts
 // (a) Positive ternary, with array wrapper or bare projection.
@@ -575,8 +581,11 @@ return [];
 All four lower to `each n in u | name n` (or `age n`, etc.) — `n` is
 the emitted comprehension binder (a fresh kebab-cased name allocated
 through `cellRegisterName`, suffixed `n1`/`n2`/… on collision), not the
-internal `$N` hygienic class. The fixture is
-`tests/fixtures/constructs/expressions-functor-lift.ts`.
+internal `$N` hygienic class. Fixtures:
+`tests/fixtures/constructs/expressions-functor-lift.ts` (Var
+operand, M4 P5) and
+`tests/fixtures/constructs/expressions-functor-lift-property.ts`
+(Member operand, M5 P4).
 
 **Deliberate rejection of multi-element non-empty branches.** A shape
 like `if (xs == null) return []; return [xs[0], xs[1]];` would require
