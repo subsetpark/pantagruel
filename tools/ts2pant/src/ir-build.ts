@@ -24,11 +24,16 @@ import {
   irLitBool,
   irLitNat,
   irLitString,
-  irUnop,
   irVar,
   irWrap,
 } from "./ir.js";
 import { ir1FromL2, ir1IsNullish } from "./ir1.js";
+import {
+  buildL1MemberAccess,
+  type L1BuildContext,
+  tryBuildL1Cardinality,
+  unwrapParens,
+} from "./ir1-build.js";
 import { lowerL1Expr } from "./ir1-lower.js";
 import {
   ambiguousFieldMsg,
@@ -40,7 +45,7 @@ import {
   translateBodyExpr,
   type UniqueSupply,
 } from "./translate-body.js";
-import { isSetType, type NumericStrategy } from "./translate-types.js";
+import type { NumericStrategy } from "./translate-types.js";
 
 /**
  * Translate a TypeScript expression to IR.
@@ -59,6 +64,23 @@ export function buildIR(
   paramNames: ReadonlyMap<string, string>,
   supply: UniqueSupply,
 ): IRExpr | { unsupported: string } {
+  // Universal L1-layering: strip `(…)` wrappers at the build dispatch
+  // entry so downstream recognizers see canonical shapes. Type-erasure
+  // wrappers (`as T`, `!`, `<T>x`, `satisfies`) are NOT stripped — they
+  // change the TS-checker type of the inner node and are load-bearing
+  // for type-dependent dispatch like `qualifyFieldAccess`.
+  expr = unwrapParens(expr) as ts.Expression;
+
+  // L1 build context for sub-dispatchers (cardinality / Member). Pure
+  // path has no symbolic state.
+  const l1Ctx: L1BuildContext = {
+    checker,
+    strategy,
+    paramNames,
+    state: undefined,
+    supply,
+  };
+
   // Boolean keywords
   if (expr.kind === ts.SyntaxKind.TrueKeyword) {
     return irLitBool(true);
@@ -91,32 +113,15 @@ export function buildIR(
     return irVar(renamed);
   }
 
-  // Stage 5: `.length` (Array) / `.size` (Set) → `Unop(card, x)`. Plain
-  // property access on a non-optional, non-effectful receiver where the
-  // property is the cardinality slot. Falls through (to legacy / qualified
-  // field access) for property names other than `length`/`size`, and for
-  // receivers that are neither Array nor Set.
-  if (
-    ts.isPropertyAccessExpression(expr) &&
-    !(expr.flags & ts.NodeFlags.OptionalChain) &&
-    (expr.name.text === "length" || expr.name.text === "size")
-  ) {
-    const receiverTsType = checker.getTypeAtLocation(expr.expression);
-    const isArray =
-      expr.name.text === "length" && checker.isArrayType(receiverTsType);
-    const isSet = expr.name.text === "size" && isSetType(receiverTsType);
-    if (isArray || isSet) {
-      const objIR = buildIR(
-        expr.expression,
-        checker,
-        strategy,
-        paramNames,
-        supply,
-      );
-      if (isBuildUnsupported(objIR)) {
-        return objIR;
-      }
-      return irUnop("card", objIR);
+  // M5: cardinality dispatch (`.length` / `.size` → `Unop(card, x)`).
+  // Pant's primitive for list cardinality is `#x`, not a `length` / `size`
+  // rule application — routing through Member would produce a dangling
+  // EUF function distinct from the actual cardinality. Fires before the
+  // Member dispatch below for the six list-shaped TS types.
+  if (ts.isPropertyAccessExpression(expr)) {
+    const card = tryBuildL1Cardinality(expr, l1Ctx);
+    if (card !== null) {
+      return lowerL1Expr(card);
     }
   }
 
@@ -169,6 +174,22 @@ export function buildIR(
         );
       }
     }
+  }
+
+  // M5: plain (non-optional) property access → canonical L1 Member.
+  // The lowering at `ir1-lower.ts` produces `App(qualifiedName,
+  // [receiver])` — byte-equal to the legacy direct construction.
+  // Cardinality dispatch above already handled the `.length` / `.size`
+  // path, so anything reaching here is a genuine field accessor.
+  if (
+    ts.isPropertyAccessExpression(expr) &&
+    (expr.flags & ts.NodeFlags.OptionalChain) === 0
+  ) {
+    const member = buildL1MemberAccess(expr, l1Ctx);
+    if ("unsupported" in member) {
+      return member;
+    }
+    return lowerL1Expr(member);
   }
 
   // Stage 3: Nullish coalescing `x ?? y` under list-lift. With `x: [T]`

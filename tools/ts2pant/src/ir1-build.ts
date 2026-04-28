@@ -48,6 +48,7 @@ import {
   ir1LitBool,
   ir1LitNat,
   ir1LitString,
+  ir1Member,
   ir1Unop,
   ir1Var,
   ir1While,
@@ -74,9 +75,17 @@ import {
   extractReturnFromBranch,
   isBodyUnsupported,
   isNullableTsType,
+  qualifyFieldAccess,
+  symbolicKey,
   translateBodyExpr,
 } from "./translate-body.js";
-import { cellRegisterName, type NumericStrategy } from "./translate-types.js";
+import {
+  cellRegisterName,
+  isMapType,
+  isSetType,
+  type NumericStrategy,
+  toPantTermName,
+} from "./translate-types.js";
 
 /**
  * Context threaded through L1 build. Mirrors the parameter set of
@@ -97,6 +106,346 @@ export const isL1Unsupported = (
 ): r is { unsupported: string } =>
   typeof r === "object" && r !== null && "unsupported" in r;
 
+/**
+ * L1-layering primitive: strip operationally-equivalent syntactic
+ * wrappers at the L1 build boundary so downstream recognizers see
+ * canonical shapes without re-implementing the strip themselves.
+ *
+ * Only `ParenthesizedExpression` is normalized away — type-erasure
+ * wrappers (`as T`, `!`, `<T>x`, `satisfies`) change the TS-checker
+ * type of the inner node and are load-bearing for type-dependent
+ * dispatch (`qualifyFieldAccess`, nullability gates, etc.). They stay
+ * on the standard build path that consults the type-checker.
+ */
+export function unwrapParens(n: ts.Node): ts.Node {
+  while (ts.isParenthesizedExpression(n)) {
+    n = n.expression;
+  }
+  return n;
+}
+
+// ---------------------------------------------------------------------------
+// Cardinality dispatch (`.length` / `.size` → `Unop(card, x)`)
+// ---------------------------------------------------------------------------
+//
+// Pant's primitive for list cardinality is `#x` (`Unop(card, x)`), not a
+// `length` / `size` rule application. Routing `arr.length` through Member
+// would lower to `length arr` — an EUF uninterpreted function distinct
+// from `#arr`. Specs reasoning about list sizes would silently fail. So
+// the build pass attempts cardinality recognition before Member dispatch
+// for property access on the six list-shaped TS types: `Array`,
+// `ReadonlyArray`, `Set`, `ReadonlySet`, `Map`, `ReadonlyMap`. This is
+// a deliberate non-Member dispatch driven by the target language; see
+// `tools/ts2pant/CLAUDE.md` § "Divergence from IRSC".
+
+/**
+ * True when `t` is a TS type whose cardinality is exposed via `length`
+ * (arrays) or `size` (sets, maps). Centralizes the predicate so the
+ * cardinality dispatch and the Member fallback agree on coverage.
+ */
+function isLengthCardinalityType(t: ts.Type, checker: ts.TypeChecker): boolean {
+  return checker.isArrayType(t);
+}
+
+function isSizeCardinalityType(t: ts.Type): boolean {
+  return isSetType(t) || isMapType(t);
+}
+
+/**
+ * Try to build an L1 `Unop(card, receiver)` for `node` if it is a
+ * non-optional `PropertyAccessExpression` whose receiver is a list-
+ * shaped TS type and whose property is the cardinality slot for that
+ * type. Returns null when the node is not a cardinality form — caller
+ * falls through to `buildL1MemberAccess`.
+ *
+ * `options` propagate through to the inner Member dispatch when the
+ * cardinality receiver is itself a property access (e.g.,
+ * `a.items.length`) and to the leaf-translator hook for non-property
+ * receivers. Signature-path callers pass the same options here that
+ * they pass to `buildL1MemberAccess` so cardinality and Member share
+ * the signature-style receiver leaf and ambiguous-owner fallback.
+ */
+export function tryBuildL1Cardinality(
+  node: ts.Expression,
+  ctx: L1BuildContext,
+  options: BuildL1MemberAccessOptions = {},
+): IR1Expr | null {
+  const stripped = unwrapParens(node);
+  if (!ts.isPropertyAccessExpression(stripped)) {
+    return null;
+  }
+  // Optional-chain `.length` / `.size` (i.e., `xs?.length`) preserves
+  // `?.` semantics — when `xs` is null the chain short-circuits to
+  // `undefined`, which `#xs` would not encode. Defer to the optional-
+  // chain handler in legacy `translateBodyExpr` rather than collapsing
+  // to a cardinality.
+  if ((stripped.flags & ts.NodeFlags.OptionalChain) !== 0) {
+    return null;
+  }
+  const propName = stripped.name.text;
+  if (propName !== "length" && propName !== "size") {
+    return null;
+  }
+  const receiverNode = unwrapParens(stripped.expression);
+  const receiverType = ctx.checker.getTypeAtLocation(receiverNode);
+  const matches =
+    (propName === "length" &&
+      isLengthCardinalityType(receiverType, ctx.checker)) ||
+    (propName === "size" && isSizeCardinalityType(receiverType));
+  if (!matches) {
+    return null;
+  }
+  // Receiver translation. Property-access receivers (e.g.,
+  // `a.items.length`) route through `buildL1MemberAccess` so the
+  // entire chain stays on the L1 path — no half-migration where the
+  // outer `card` is L1 but the inner `.items` round-trips through L2
+  // via `from-l2`. Other receiver shapes (Identifier, call, binop,
+  // etc.) translate through the supplied leaf translator (default
+  // `translateBodyExpr`); those aren't property-access and are out of
+  // M5's equivalence class.
+  if (
+    ts.isPropertyAccessExpression(receiverNode) &&
+    (receiverNode.flags & ts.NodeFlags.OptionalChain) === 0
+  ) {
+    const innerCard = tryBuildL1Cardinality(receiverNode, ctx, options);
+    if (innerCard !== null) {
+      return ir1Unop("card", innerCard);
+    }
+    const inner = buildL1MemberAccess(receiverNode, ctx, options);
+    if (isL1Unsupported(inner)) {
+      return null;
+    }
+    return ir1Unop("card", inner);
+  }
+  if (options.translateReceiverLeaf !== undefined) {
+    const r = options.translateReceiverLeaf(receiverNode as ts.Expression, ctx);
+    if (r.kind === "unsupported") {
+      return null;
+    }
+    return ir1Unop("card", ir1FromL2(irWrap(r.expr)));
+  }
+  const r = translateBodyExpr(
+    receiverNode as ts.Expression,
+    ctx.checker,
+    ctx.strategy,
+    ctx.paramNames,
+    ctx.state,
+    ctx.supply,
+  );
+  if (isBodyUnsupported(r)) {
+    return null;
+  }
+  if ("effect" in r) {
+    return null;
+  }
+  return ir1Unop("card", ir1FromL2(irWrap(bodyExpr(r))));
+}
+
+// ---------------------------------------------------------------------------
+// Property access → L1 Member
+// ---------------------------------------------------------------------------
+//
+// Build the canonical L1 `Member(receiver, qualified-name)` form for a TS
+// `PropertyAccessExpression` (and, in M5 Patch 3, string-literal
+// `ElementAccessExpression`). The qualified name is resolved at build
+// time via `qualifyFieldAccess` — IRSC discipline preserves the
+// pre-qualification: L1 `Member` is a *normalization* form whose lowering
+// at `ir1-lower.ts` is mechanical (`Member(r, n) → App(n, [lower r])`),
+// matching the legacy `App(qualified-rule, [receiver])` byte-for-byte.
+
+/**
+ * Receiver translation result — either an opaque expression or an
+ * upstream-rejection marker. Mirrors the convention of
+ * `TranslateExprResult` and the body-side `BodyResult` so signature
+ * and body translators can plug into `buildL1MemberAccess` through a
+ * single callback shape.
+ */
+export type MemberReceiverResult =
+  | { kind: "expr"; expr: OpaqueExpr }
+  | { kind: "unsupported"; reason: string };
+
+/**
+ * Options threaded through `buildL1MemberAccess`.
+ *
+ * - `ambiguousOwnerFallback: "reject"` — body-side default. Ambiguous
+ *   union/intersection owners surface as `{ unsupported }` because
+ *   the resulting accessor rule is load-bearing in emitted
+ *   propositions.
+ * - `ambiguousOwnerFallback: "bare-kebab"` — signature-side
+ *   best-effort. Ambiguous owners produce a Member with the bare
+ *   kebab'd field name. The signature path uses this in
+ *   `extractAssertionGuard` / `buildSubstitutionMap` /
+ *   `tryTranslateGuardExpr` where `translateExpr` failures bail the
+ *   *optional* analysis (the would-be guard never fires) — so a bare
+ *   fallback yields the same observable behavior as a hard reject
+ *   without preventing other guards in the same function from
+ *   extracting cleanly. Mirrors the asymmetry the deleted local
+ *   `qualifyFieldAccess` in `translate-signature.ts` carried.
+ *
+ * - `translateReceiverLeaf` — translator for the non-property leaf at
+ *   the bottom of the receiver chain (e.g., the `a` in `a.b.c.field`).
+ *   Defaults to `translateBodyExpr`, which is what body-position and
+ *   pure-path call sites want. The signature path passes a callback
+ *   that routes through `translateExpr` (signature) so the leaf gets
+ *   the same transparent-wrapper handling and signature-only operator
+ *   surface (loose-eq rejection, no body-only chain fusion or
+ *   Map/Set effect handling) as the rest of guard analysis.
+ *
+ *   The callback's input is already paren-stripped via `unwrapParens`;
+ *   it is responsible for any further unwrapping (`as T`, `!`, etc.)
+ *   that its respective layer applies.
+ */
+export interface BuildL1MemberAccessOptions {
+  ambiguousOwnerFallback?: "reject" | "bare-kebab";
+  translateReceiverLeaf?: (
+    expr: ts.Expression,
+    ctx: L1BuildContext,
+  ) => MemberReceiverResult;
+}
+
+/**
+ * Build an L1 `Member(receiverL1, qualifiedName)` for a TS property
+ * access. Returns an `{ unsupported }` descriptor on ambiguous owner
+ * (under the body-side default), unsupported access shape, or a
+ * sub-expression that itself rejects.
+ *
+ * Receiver translation:
+ *   - State-free contexts (pure path, unit tests) recurse on
+ *     `PropertyAccessExpression` receivers, producing nested L1
+ *     `Member` trees. The recursion bottoms out at a non-property
+ *     receiver translated through the legacy pipeline and wrapped as
+ *     `from-l2`.
+ *   - State-bearing contexts (mutating-body path) translate the
+ *     receiver via the legacy pipeline so symbolic-state lookup at
+ *     each nested level fires identically to the pre-M5 path. This
+ *     preserves byte-equality with the legacy snapshots while still
+ *     routing the outer access through L1 `Member`.
+ *
+ * Patch 1 handles `PropertyAccessExpression` only; the
+ * `ElementAccessExpression` arm (string-literal element access lands
+ * on the same canonical Member; computed access rejects) is M5
+ * Patch 3.
+ */
+export function buildL1MemberAccess(
+  node: ts.PropertyAccessExpression | ts.ElementAccessExpression,
+  ctx: L1BuildContext,
+  options: BuildL1MemberAccessOptions = {},
+): L1BuildResult {
+  const ambiguousMode = options.ambiguousOwnerFallback ?? "reject";
+  const stripped = unwrapParens(node);
+  if (!ts.isPropertyAccessExpression(stripped)) {
+    // Patch 1 scope: ElementAccess lands in Patch 3 (string-literal key
+    // canonicalizes to the same Member; computed key rejects).
+    return {
+      unsupported:
+        "element access not yet routed through L1 Member (M5 Patch 3)",
+    };
+  }
+  // Optional-chain `.f` (`x?.f` and the chain tail) routes through the
+  // optional-chain functor-lift recognizer, not Member. Caller is
+  // expected to filter optional chains before invoking this helper.
+  if ((stripped.flags & ts.NodeFlags.OptionalChain) !== 0) {
+    return {
+      unsupported:
+        "optional-chain property access uses functor-lift, not Member",
+    };
+  }
+  const receiverNode = unwrapParens(stripped.expression);
+  const fieldName = stripped.name.text;
+  const receiverType = ctx.checker.getTypeAtLocation(receiverNode);
+  const qualifiedStrict = qualifyFieldAccess(
+    receiverType,
+    fieldName,
+    ctx.checker,
+    ctx.strategy,
+    ctx.supply.synthCell,
+  );
+  let qualified: string;
+  if (qualifiedStrict !== null) {
+    qualified = qualifiedStrict;
+  } else if (ambiguousMode === "bare-kebab") {
+    // Signature-side best-effort: ambiguous union/intersection
+    // owners fall back to the bare kebab'd field name so optional
+    // analyses (guard extraction, call-following) can continue past
+    // an inherently-ambiguous accessor instead of bailing the whole
+    // analysis on a single ambiguous read.
+    qualified = toPantTermName(fieldName);
+  } else {
+    return {
+      unsupported:
+        `property access .${fieldName}: ambiguous owner — ` +
+        `union/intersection members declare this field on multiple distinct ` +
+        `types, so no single qualified accessor rule applies`,
+    };
+  }
+
+  let receiverL1: IR1Expr;
+  if (
+    ctx.state === undefined &&
+    ts.isPropertyAccessExpression(receiverNode) &&
+    (receiverNode.flags & ts.NodeFlags.OptionalChain) === 0
+  ) {
+    // Pure path: prefer canonical nested Member trees. Cardinality
+    // dispatch fires first so a chain like `arr.length.foo` wouldn't
+    // silently route `arr.length` through Member.
+    const card = tryBuildL1Cardinality(receiverNode, ctx, options);
+    if (card !== null) {
+      receiverL1 = card;
+    } else {
+      const inner = buildL1MemberAccess(receiverNode, ctx, options);
+      if (isL1Unsupported(inner)) {
+        return inner;
+      }
+      receiverL1 = inner;
+    }
+  } else if (options.translateReceiverLeaf !== undefined) {
+    // Caller-supplied leaf translator (used by the signature path so
+    // the non-property leaf goes through `translateExpr` instead of
+    // `translateBodyExpr` — preserves signature-only operator surface
+    // like loose-eq rejection and avoids body-only branches like
+    // chain fusion / Map-Set effect handling that aren't appropriate
+    // in guard analysis).
+    const r = options.translateReceiverLeaf(receiverNode as ts.Expression, ctx);
+    if (r.kind === "unsupported") {
+      return { unsupported: r.reason };
+    }
+    receiverL1 = ir1FromL2(irWrap(r.expr));
+  } else {
+    const r = translateBodyExpr(
+      receiverNode as ts.Expression,
+      ctx.checker,
+      ctx.strategy,
+      ctx.paramNames,
+      ctx.state,
+      ctx.supply,
+    );
+    if (isBodyUnsupported(r)) {
+      return { unsupported: r.unsupported };
+    }
+    if ("effect" in r) {
+      return {
+        unsupported: "collection mutation as property-access receiver",
+      };
+    }
+    receiverL1 = ir1FromL2(irWrap(bodyExpr(r)));
+  }
+
+  // Symbolic-state lookup at the outer level (mirrors
+  // `translate-body.ts:2861`). When a prior write to this exact
+  // property exists at this canonicalized receiver, return the prior
+  // value rather than re-emitting the rule application.
+  if (ctx.state !== undefined) {
+    const objOpaque = lowerExpr(lowerL1Expr(receiverL1));
+    const key = symbolicKey(qualified, ctx.state.canonicalize(objOpaque));
+    const entry = ctx.state.writes.get(key);
+    if (entry !== undefined && entry.kind === "property") {
+      return ir1FromL2(irWrap(entry.value));
+    }
+  }
+
+  return ir1Member(receiverL1, qualified);
+}
+
 // ---------------------------------------------------------------------------
 // Recognizer entry — is this TS node a conditional shape M1 handles?
 // ---------------------------------------------------------------------------
@@ -115,6 +464,12 @@ export function isL1ConditionalForm(
   node: ts.Node,
   checker: ts.TypeChecker,
 ): boolean {
+  // Mirror `buildL1Conditional`'s entry-point paren-strip so a
+  // parenthesized conditional (`(c ? a : b)`, `(g && h)`) classifies
+  // identically to its unwrapped form. Body-side callers already
+  // pre-strip via `unwrapExpression`, but defensive normalization
+  // keeps the recognizer self-contained for any future caller.
+  node = unwrapParens(node);
   if (
     ts.isConditionalExpression(node) ||
     ts.isIfStatement(node) ||
@@ -150,6 +505,7 @@ export function isL1ConditionalForm(
  * statement position; an L1 expression cannot host one).
  */
 function buildSubExpr(expr: ts.Expression, ctx: L1BuildContext): L1BuildResult {
+  expr = unwrapParens(expr) as ts.Expression;
   // Object literals don't lower to a Pantagruel value — Pant has no
   // record-constructor expression syntax. Reject *before* translating
   // so the error message is precise (legacy translateBodyExpr would
@@ -515,6 +871,10 @@ export function buildL1Conditional(
   expr: ts.Expression | ts.IfStatement | ts.SwitchStatement,
   ctx: L1BuildContext,
 ): L1BuildResult {
+  expr = unwrapParens(expr) as
+    | ts.Expression
+    | ts.IfStatement
+    | ts.SwitchStatement;
   if (ts.isConditionalExpression(expr)) {
     return buildFromTernary(expr, ctx);
   }
@@ -555,6 +915,10 @@ export function buildL1ConditionalFromArms(
   terminal: ts.Expression | ts.IfStatement | ts.SwitchStatement,
   ctx: L1BuildContext,
 ): L1BuildResult {
+  terminal = unwrapParens(terminal) as
+    | ts.Expression
+    | ts.IfStatement
+    | ts.SwitchStatement;
   const builtArms: Array<readonly [IR1Expr, IR1Expr]> = [...preludeArms];
 
   const terminalIsConditional =
@@ -1044,6 +1408,7 @@ export function buildL1IncrementStep(
   counterName: string,
   ctx: L1BuildContext,
 ): L1StmtBuildResult {
+  expr = unwrapParens(expr) as ts.Expression;
   // `c++` / `++c` / `c--` / `--c`
   if (ts.isPostfixUnaryExpression(expr) || ts.isPrefixUnaryExpression(expr)) {
     if (!ts.isIdentifier(expr.operand) || expr.operand.text !== counterName) {

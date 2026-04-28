@@ -284,6 +284,49 @@ describe("guard expression structure", () => {
     );
   });
 
+  it("signature guard with .length lowers to # cardinality (not length-rule)", () => {
+    // Pre-M5 the signature path emitted `length xs` as an opaque
+    // EUF rule application; spec invariant 8 says cardinality is
+    // universal — the signature path now dispatches through
+    // `tryBuildL1Cardinality` so guards see the same `#x`
+    // primitive that body and pure paths produce.
+    const source = `
+      function assert(condition: unknown): asserts condition {
+        if (!condition) throw new Error();
+      }
+      interface Account { balance: number; }
+      function deposit(account: Account, xs: number[]): void {
+        assert(xs.length > 0);
+        account.balance = account.balance + 1;
+      }
+    `;
+    const result = translate(source, "deposit");
+    assert.equal(result.declaration.kind, "action");
+    if (result.declaration.kind !== "action") {
+      return;
+    }
+    assert.equal(getAst().strExpr(result.declaration.guard!), "#xs > 0");
+  });
+
+  it("signature guard with Set .size lowers to # cardinality", () => {
+    const source = `
+      function assert(condition: unknown): asserts condition {
+        if (!condition) throw new Error();
+      }
+      interface Account { balance: number; }
+      function deposit(account: Account, s: Set<number>): void {
+        assert(s.size !== 0);
+        account.balance = account.balance + 1;
+      }
+    `;
+    const result = translate(source, "deposit");
+    assert.equal(result.declaration.kind, "action");
+    if (result.declaration.kind !== "action") {
+      return;
+    }
+    assert.equal(getAst().strExpr(result.declaration.guard!), "#s ~= 0");
+  });
+
   it("ignores non-assertion calls (stops scanning)", () => {
     const source = `
       function log(msg: string): void { console.log(msg); }
