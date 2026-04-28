@@ -128,10 +128,6 @@ export function unwrapParens(n: ts.Node): ts.Node {
 
 function binaryOperatorToL1(kind: ts.SyntaxKind): IR1Binop | null {
   switch (kind) {
-    case ts.SyntaxKind.AmpersandAmpersandToken:
-      return "and";
-    case ts.SyntaxKind.BarBarToken:
-      return "or";
     case ts.SyntaxKind.EqualsEqualsEqualsToken:
       return "eq";
     case ts.SyntaxKind.ExclamationEqualsEqualsToken:
@@ -226,6 +222,12 @@ export function tryBuildL1PureSubExpression(
   }
 
   if (ts.isBinaryExpression(expr)) {
+    const nullishProbe = recognizeNullishForm(expr, ctx.checker, () =>
+      ir1Var("__nullish_probe"),
+    );
+    if (nullishProbe !== null) {
+      return null;
+    }
     if (
       expr.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken ||
       expr.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsToken
@@ -253,7 +255,22 @@ export function tryBuildL1PureSubExpression(
         : ir1App(left, [ir1LitNat(1)]);
       return ir1Cond([[ir1IsNullish(left), right]], present);
     }
-    const op = binaryOperatorToL1(expr.operatorToken.kind);
+    let op = binaryOperatorToL1(expr.operatorToken.kind);
+    if (
+      expr.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
+      expr.operatorToken.kind === ts.SyntaxKind.BarBarToken
+    ) {
+      if (
+        !isStaticallyBoolTyped(expr.left, ctx.checker) ||
+        !isStaticallyBoolTyped(expr.right, ctx.checker)
+      ) {
+        return null;
+      }
+      op =
+        expr.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken
+          ? "and"
+          : "or";
+    }
     if (op === null) {
       return null;
     }
@@ -280,16 +297,18 @@ export function tryBuildL1PureSubExpression(
         toPantTermName(expr.expression.text);
       callee = ir1Var(fnName);
       args = [];
-    } else if (ts.isPropertyAccessExpression(expr.expression)) {
-      callee = ir1Var(toPantTermName(expr.expression.name.text));
-      const receiver = tryBuildL1PureSubExpression(
-        expr.expression.expression,
-        ctx,
-      );
-      if (receiver === null || isL1Unsupported(receiver)) {
-        return receiver;
+    } else if (
+      ts.isPropertyAccessExpression(expr.expression) ||
+      ts.isElementAccessExpression(expr.expression)
+    ) {
+      const builtCallee = buildL1MemberAccess(expr.expression, ctx, {
+        nativeReceiverLeaf: true,
+      });
+      if (isL1Unsupported(builtCallee)) {
+        return builtCallee;
       }
-      args = [receiver];
+      callee = builtCallee;
+      args = [];
     } else {
       const builtCallee = tryBuildL1PureSubExpression(expr.expression, ctx);
       if (builtCallee === null || isL1Unsupported(builtCallee)) {

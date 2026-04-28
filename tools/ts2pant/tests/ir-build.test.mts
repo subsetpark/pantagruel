@@ -188,6 +188,54 @@ describe("ir-build M6 native construction stubs", () => {
     expectNoIRWrap(comb);
   });
 
+  it("preserves conditional otherwise during map-chain substitution", () => {
+    const ir = expectIR(`
+      interface Item { readonly amount: number | null; }
+      function f(items: Item[]): number[] {
+        return items
+          .map((item) => item.amount)
+          .map((amount) => amount ?? 0);
+      }
+    `);
+    assert.equal(ir.kind, "each");
+    if (ir.kind === "each") {
+      assert.equal(ir.proj.kind, "cond");
+      if (ir.proj.kind === "cond") {
+        assert.notEqual(ir.proj.otherwise, undefined);
+      }
+    }
+    expectNoIRWrap(ir);
+  });
+
+  it("normalizes dotted and string-literal method calls identically", () => {
+    const dotted = expectIR(`
+      interface Service { readonly run: (n: number) => number; }
+      function f(s: Service, n: number): number {
+        return s.run(n);
+      }
+    `);
+    const indexed = expectIR(`
+      interface Service { readonly run: (n: number) => number; }
+      function f(s: Service, n: number): number {
+        return s["run"](n);
+      }
+    `);
+    assert.deepEqual(indexed, dotted);
+    assert.equal(dotted.kind, "app");
+    if (dotted.kind === "app") {
+      assert.equal(dotted.head.kind, "expr");
+      if (dotted.head.kind === "expr") {
+        assert.equal(dotted.head.expr.kind, "app");
+        if (dotted.head.expr.kind === "app") {
+          assert.equal(dotted.head.expr.head.kind, "name");
+          if (dotted.head.expr.head.kind === "name") {
+            assert.equal(dotted.head.expr.head.name, "service--run");
+          }
+        }
+      }
+    }
+  });
+
   // M6 Patch 2 unskips the string-literal optional-element case; the
   // computed-key case should remain unsupported through M6.
   it("records optional element access boundary", () => {

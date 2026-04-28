@@ -159,8 +159,16 @@ export function lowerExpr(e: IRExpr): OpaqueExpr {
     case "app":
       return lowerApp(e.head, e.args.map(lowerExpr));
 
-    case "cond":
-      return ast.cond(e.arms.map(([g, v]) => [lowerExpr(g), lowerExpr(v)]));
+    case "cond": {
+      const arms: Array<[OpaqueExpr, OpaqueExpr]> = e.arms.map(([g, v]) => [
+        lowerExpr(g),
+        lowerExpr(v),
+      ]);
+      if (e.otherwise !== undefined) {
+        arms.push([ast.litBool(true), lowerExpr(e.otherwise)]);
+      }
+      return ast.cond(arms);
+    }
 
     case "let": {
       // Pant has no let — inline the value into the body via

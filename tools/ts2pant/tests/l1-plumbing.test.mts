@@ -209,19 +209,17 @@ describe("L1: conservative-refusal rejection cases", () => {
     assert.match(unsupported!, /literal/);
   });
 
-  it("non-Bool && stays on the legacy operator path (degraded but accepted)", () => {
-    // Non-Bool `&&` / `||` is *not* an L1 conditional form — `isL1ConditionalForm`
-    // requires both operands Bool-typed. So `a && b` with `a: number` falls
-    // through to the legacy `translateOperator` path and lowers to `a and b`
-    // as a binop. Translation succeeds.
+  it("non-Bool && rejects instead of lowering truthy/falsy semantics", () => {
+    // Non-Bool `&&` / `||` returns one operand in TS, not a boolean
+    // conjunction/disjunction. Reject instead of lowering to `and`/`or`.
     const source = `
       function combine(a: number, b: number): number {
         return a && b;
       }
     `;
-    const { unsupported, pant } = translate(source, "combine");
-    assert.equal(unsupported, null);
-    assert.match(pant!, /and/);
+    const { unsupported } = translate(source, "combine");
+    assert.notEqual(unsupported, null);
+    assert.match(unsupported!, /statically Bool-typed/u);
   });
 });
 

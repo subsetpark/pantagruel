@@ -185,13 +185,17 @@ function substituteIR(expr: IRExpr, name: string, replacement: IRExpr): IRExpr {
             : expr.head,
         args: expr.args.map((arg) => substituteIR(arg, name, replacement)),
       };
-    case "cond":
-      return irCond(
-        expr.arms.map(([g, v]) => [
-          substituteIR(g, name, replacement),
-          substituteIR(v, name, replacement),
-        ]),
-      );
+    case "cond": {
+      const arms: Array<[IRExpr, IRExpr]> = expr.arms.map(([g, v]) => [
+        substituteIR(g, name, replacement),
+        substituteIR(v, name, replacement),
+      ]);
+      const otherwise =
+        expr.otherwise === undefined
+          ? undefined
+          : substituteIR(expr.otherwise, name, replacement);
+      return irCond(arms, otherwise);
+    }
     case "let":
       return {
         kind: "let",

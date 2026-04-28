@@ -30,7 +30,6 @@ import {
   irBinop,
   irCombTyped,
   irCond,
-  irLitBool,
   irLitNat,
   irUnop,
   irVar,
@@ -88,8 +87,7 @@ export function lowerL1Expr(e: IR1Expr): IRExpr {
         lowerL1Expr(g),
         lowerL1Expr(v),
       ]);
-      armPairs.push([irLitBool(true), lowerL1Expr(e.otherwise)]);
-      return irCond(armPairs);
+      return irCond(armPairs, lowerL1Expr(e.otherwise));
     }
 
     case "is-nullish":
