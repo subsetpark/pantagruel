@@ -26,6 +26,7 @@ import {
 import { lowerL1MuSearch, type MuSearchLowerCtx } from "./ir1-lower.js";
 import { lowerL1Body } from "./ir1-lower-body.js";
 import {
+  getOperandDeclaredType,
   type NullishTranslate,
   recognizeNullishForm,
 } from "./nullish-recognizer.js";
@@ -2741,7 +2742,16 @@ export function translateBodyExpr(
       if (isBodyUnsupported(innerResult)) {
         return innerResult;
       }
-      const receiverTsType = checker.getTypeAtLocation(innerExpr);
+      // Use the operand's *declared* type (narrowing-free) so a `!`
+      // inside a flow-narrowed branch — `if (x != null) return x!;` —
+      // still sees `x` as nullable and lowers to singleton extraction.
+      // `checker.getTypeAtLocation` would return the narrowed `T` here
+      // and silently emit a no-op, but the Pant symbol for `x` is
+      // still the list-lifted `[T]` parameter, so the typecheck would
+      // fail. Same fix the nullish recognizer applied (PR for the
+      // long-form chain narrowing bug — see `getOperandDeclaredType`
+      // in nullish-recognizer.ts).
+      const receiverTsType = getOperandDeclaredType(innerExpr, checker);
       // The Map encoding is the one place where a TS-nullable receiver
       // (`m.get(k)`'s `V | undefined`) lowers to an *unboxed* Pant
       // value: the guarded-rule emission yields `entries c k` of type

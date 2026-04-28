@@ -237,6 +237,42 @@ describe("unsupported patterns", () => {
       assert.equal(ast.strExpr(prop.rhs), "x + 1");
     }
   });
+
+  it("lowers `!` inside flow-narrowed branch to singleton extraction", () => {
+    // The dispatch must use the operand's *declared* type, not the
+    // narrowed type at the `!` site. Inside `if (x != null) return
+    // x!;` TypeScript narrows `x` to `number`, but the Pant symbol
+    // `x` is still the list-lifted `[Int]` parameter — so `!` must
+    // still extract the singleton `(x 1)`. A regression that uses
+    // `getTypeAtLocation` would emit a bare `x` and fail Pant
+    // typechecking.
+    const source = `
+      export function pickWhenPresent(x: number | null): number {
+        if (x !== null) {
+          return x!;
+        }
+        return 0;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "pickWhenPresent",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 1);
+    const prop = props[0]!;
+    assert.equal(prop.kind, "equation");
+    if (prop.kind === "equation") {
+      const ast = getAst();
+      const rhs = ast.strExpr(prop.rhs);
+      assert.ok(
+        rhs.includes("x 1"),
+        `expected singleton extraction \`x 1\` in rhs, got: ${rhs}`,
+      );
+    }
+  });
 });
 
 describe("if-early-return prelude arms", () => {
