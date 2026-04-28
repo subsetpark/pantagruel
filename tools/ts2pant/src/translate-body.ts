@@ -68,17 +68,6 @@ import {
 } from "./translate-types.js";
 import type { PantDeclaration, PropResult } from "./types.js";
 
-/**
- * Read the `TS2PANT_USE_IR` env var safely from globalThis without
- * pulling in @types/node into the tsconfig. The flag routes the
- * pure-path return-expression translation through the IR pipeline
- * (Stage 1 — see CLAUDE.md §"Intermediate Representation").
- */
-function useIRPipeline(): boolean {
-  const g = globalThis as { process?: { env?: Record<string, string> } };
-  return g.process?.env?.["TS2PANT_USE_IR"] === "1";
-}
-
 // --- Const-binding inlining infrastructure (let-elimination) ---
 
 /**
@@ -1599,16 +1588,15 @@ function translatePureBody(
     ];
   }
 
-  // IR pipeline: when `TS2PANT_USE_IR=1` is set in the environment,
-  // route the return-expression translation through the IR (ir-build →
-  // ir-emit). See CLAUDE.md §"Intermediate Representation" for the
-  // migration roadmap.
+  // Pure expression terminals route through the IR unconditionally. The
+  // record, functor-lift, and L1 conditional cases above remain ordered
+  // ahead of this terminal expression path.
   let rhs: OpaqueExpr;
 
   // Layer 1 imperative-IR conditional pipeline (workstream M1).
   // Routes when the body has prelude arms (early-return if-conversion)
   // or a conditional terminal (if/switch/ternary/Bool-typed `&&`/`||`).
-  // Plain non-conditional returns fall through to the IR or legacy path.
+  // Plain non-conditional returns fall through to the pure IR path.
   const l1IsConditionalReturn =
     ts.isIfStatement(extracted.returnExpr) ||
     ts.isSwitchStatement(extracted.returnExpr) ||
@@ -1653,7 +1641,7 @@ function translatePureBody(
       bodyIR = irLet(tb.hygienicName, irWrap(tb.initExpr), bodyIR);
     }
     rhs = lowerExpr(bodyIR);
-  } else if (useIRPipeline() && ts.isExpression(extracted.returnExpr)) {
+  } else if (ts.isExpression(extracted.returnExpr)) {
     const ir = buildIR(
       extracted.returnExpr,
       checker,
@@ -1693,28 +1681,12 @@ function translatePureBody(
     }
     rhs = lowerExpr(bodyIR);
   } else {
-    const body = translateBodyExpr(
-      extracted.returnExpr,
-      checker,
-      strategy,
-      inlined.scopedParams,
-      undefined,
-      supply,
-    );
-
-    if (isBodyUnsupported(body)) {
-      return [{ kind: "unsupported", reason: body.unsupported }];
-    }
-
-    const terminal = bodyExpr(body);
-    const merged =
-      inlined.arms.length === 0
-        ? terminal
-        : ast.cond([
-            ...inlined.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
-            [ast.litBool(true), terminal] as [OpaqueExpr, OpaqueExpr],
-          ]);
-    rhs = inlined.applyTo(merged);
+    return [
+      {
+        kind: "unsupported",
+        reason: `${functionName} — unsupported pure return terminal`,
+      },
+    ];
   }
 
   const argExprs = params.map((p) => ast.var(p.name));

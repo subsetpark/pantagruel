@@ -16,27 +16,16 @@ before(async () => {
 });
 
 /**
- * Per-stage IR equivalence gate.
+ * Always-on pure IR regression gate.
  *
- * Translates each anchor function with `TS2PANT_USE_IR=0` (legacy
- * pipeline) and `TS2PANT_USE_IR=1` (IR pipeline), then asserts the
- * emitted strings are identical. This is the smoke-test gate; the
- * fuller cutover gate runs `pant --ast` on both outputs and structurally
- * compares the resulting OCaml AST. Snapshot equality is brittle for
- * binder-allocation orderings; for now string equality suffices because
- * Stage 1's IRWrap fallback is a true no-op.
- *
- * As stages migrate recognizers from legacy to IR, this test set grows
- * to cover the migrated forms. By Stage 8 (pure-path cutover) it covers
- * the entire pure path.
+ * The legacy pure-expression fallback is gone, so these tests translate
+ * each migrated anchor once and assert the emitted Pant is supported and
+ * type-checkable where the shared known-bad list allows it.
  */
 
 const CONSTRUCTS_DIR = resolve(import.meta.dirname, "fixtures/constructs");
 
-/**
- * Anchor fixtures the IR pipeline should produce identical output for at
- * the current stage. The list grows monotonically as stages migrate.
- */
+/** Anchor fixtures covered by the always-on pure IR path. */
 const ANCHORS: Array<{ file: string; functions: string[] }> = [
   {
     file: "expressions-ir-anchor.ts",
@@ -88,10 +77,7 @@ const ANCHORS: Array<{ file: string; functions: string[] }> = [
     file: "expressions-while-mu-search.ts",
     functions: ["firstUnusedSuffix", "nextSlotPlusOne", "offsetUnusedSuffix"],
   },
-  // Stage 7: chain fusion (.filter/.map/.reduce). These work via the
-  // IRWrap fallback today (legacy materialization produces an
-  // OpaqueExpr `each(...)` that ir-build wraps); native IR construction
-  // in ir-build replaces the fallback in Stage 7 itself.
+  // Chain fusion (.filter/.map/.reduce) now builds native IR nodes.
   {
     file: "expressions-array.ts",
     functions: ["activeNames", "nameLengths", "highScores"],
@@ -110,53 +96,25 @@ const ANCHORS: Array<{ file: string; functions: string[] }> = [
   },
 ];
 
-async function emitWithFlag(
-  filePath: string,
-  funcName: string,
-  useIR: boolean,
-): Promise<string> {
-  // Mutate the env var, build, then restore — the underlying
-  // translateBody reads `process.env.TS2PANT_USE_IR` per-call.
-  const g = globalThis as { process?: { env?: Record<string, string> } };
-  const env = g.process?.env;
-  if (!env) {
-    throw new Error("ir-equivalence test requires Node process.env");
-  }
-  const prior = env["TS2PANT_USE_IR"];
-  env["TS2PANT_USE_IR"] = useIR ? "1" : "0";
-  try {
-    const sf = createSourceFile(filePath);
-    const doc = await buildDocumentFromSourceFile(sf, funcName);
-    return emitDocument(doc);
-  } finally {
-    if (prior === undefined) {
-      delete env["TS2PANT_USE_IR"];
-    } else {
-      env["TS2PANT_USE_IR"] = prior;
-    }
-  }
+async function emitAlwaysOn(filePath: string, funcName: string): Promise<string> {
+  const sf = createSourceFile(filePath);
+  const doc = await buildDocumentFromSourceFile(sf, funcName);
+  return emitDocument(doc);
 }
 
-describe("Stage 1 IR-equivalence: legacy and IR produce identical output", () => {
+describe("pure IR path: always-on regression coverage", () => {
   for (const { file, functions } of ANCHORS) {
     const filePath = resolve(CONSTRUCTS_DIR, file);
     for (const funcName of functions) {
       const knownBad = KNOWN_TYPECHECK_FAILURES.get(`${file} > ${funcName}`);
       it(`${file} > ${funcName}`, async () => {
-        const legacy = await emitWithFlag(filePath, funcName, false);
-        const ir = await emitWithFlag(filePath, funcName, true);
-        assert.equal(
-          ir,
-          legacy,
-          `IR pipeline output differs from legacy for ${funcName}`,
+        const output = await emitAlwaysOn(filePath, funcName);
+        assert.ok(
+          !containsUnsupportedLine(output),
+          `${funcName} should be supported by the always-on pure IR path`,
         );
-        // Both pipelines produced the same string — also assert it's valid
-        // Pant. Skip for fixtures shared with the constructs.test.mts
-        // known-bad list (same emit bugs surface in both suites). Also
-        // skip on a `> UNSUPPORTED:` line — see helpers.emitAndCheck and
-        // CLAUDE.md § "Test layout".
-        if (!knownBad && !containsUnsupportedLine(ir)) {
-          await assertWasmTypeChecks(ir);
+        if (!knownBad) {
+          await assertWasmTypeChecks(output);
         }
       });
     }
@@ -202,56 +160,26 @@ describe("M6 pure-path cutover stubs", () => {
   for (const { file, functions } of CUTOVER_CASES) {
     const filePath = resolve(CONSTRUCTS_DIR, file);
     for (const funcName of functions) {
-      // M6 Patch 3 unskips these after `translatePureBody` routes
-      // expression terminals through IR unconditionally and the
-      // `TS2PANT_USE_IR` migration flag is deleted.
-      it.skip(`${file} > ${funcName} emits the always-on IR snapshot`, async () => {
-        const prior = process.env.TS2PANT_USE_IR;
-        delete process.env.TS2PANT_USE_IR;
-        try {
-          const sf = createSourceFile(filePath);
-          const doc = await buildDocumentFromSourceFile(sf, funcName);
-          const output = emitDocument(doc);
-          assert.ok(
-            !containsUnsupportedLine(output),
-            `${funcName} should be supported by the native IR pure path`,
-          );
+      const knownBad = KNOWN_TYPECHECK_FAILURES.get(`${file} > ${funcName}`);
+      it(`${file} > ${funcName} emits through the always-on IR path`, async () => {
+        const output = await emitAlwaysOn(filePath, funcName);
+        assert.ok(
+          !containsUnsupportedLine(output),
+          `${funcName} should be supported by the native IR pure path`,
+        );
+        if (!knownBad) {
           await assertWasmTypeChecks(output);
-        } finally {
-          if (prior === undefined) {
-            delete process.env.TS2PANT_USE_IR;
-          } else {
-            process.env.TS2PANT_USE_IR = prior;
-          }
         }
       });
     }
   }
 
-  // M6 Patch 3 unskips this as the direct flag-deletion tripwire: the
-  // environment setting must no longer affect pure return translation.
-  it.skip("translatePureBody uses pure IR path without TS2PANT_USE_IR", async () => {
-    const sourceFile = createSourceFile(
+  it("translatePureBody uses pure IR path without TS2PANT_USE_IR", async () => {
+    const output = await emitAlwaysOn(
       resolve(CONSTRUCTS_DIR, "expressions-arithmetic.ts"),
+      "netBalance",
     );
-    const prior = process.env.TS2PANT_USE_IR;
-    try {
-      delete process.env.TS2PANT_USE_IR;
-      const withoutFlag = emitDocument(
-        await buildDocumentFromSourceFile(sourceFile, "netBalance"),
-      );
-      process.env.TS2PANT_USE_IR = "1";
-      const withFlag = emitDocument(
-        await buildDocumentFromSourceFile(sourceFile, "netBalance"),
-      );
-      assert.equal(withoutFlag, withFlag);
-      await assertWasmTypeChecks(withoutFlag);
-    } finally {
-      if (prior === undefined) {
-        delete process.env.TS2PANT_USE_IR;
-      } else {
-        process.env.TS2PANT_USE_IR = prior;
-      }
-    }
+    assert.ok(!containsUnsupportedLine(output));
+    await assertWasmTypeChecks(output);
   });
 });

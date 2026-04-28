@@ -40,6 +40,10 @@ import {
   unwrapParens,
 } from "./ir1-build.js";
 import { lowerL1Expr } from "./ir1-lower.js";
+import {
+  type NullishTranslate,
+  recognizeNullishForm,
+} from "./nullish-recognizer.js";
 import { isStaticallyBoolTyped } from "./purity.js";
 import {
   allocComprehensionBinder,
@@ -53,7 +57,14 @@ import {
   translateBodyExpr,
   type UniqueSupply,
 } from "./translate-body.js";
-import type { NumericStrategy } from "./translate-types.js";
+import {
+  cellRegisterMap,
+  isMapType,
+  isSetType,
+  lookupMapKV,
+  mapTsType,
+  type NumericStrategy,
+} from "./translate-types.js";
 
 interface PendingIRComprehension {
   binder: string;
@@ -734,6 +745,103 @@ function buildArrayReduce(
   return { expr: folded };
 }
 
+function buildCollectionMembershipCall(
+  expr: ts.CallExpression,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: ReadonlyMap<string, string>,
+  supply: UniqueSupply,
+  l1Ctx: L1BuildContext,
+): IRExpr | { unsupported: string } | null {
+  if (
+    !ts.isPropertyAccessExpression(expr.expression) ||
+    expr.arguments.length !== 1
+  ) {
+    return null;
+  }
+
+  const methodName = expr.expression.name.text;
+  const tsReceiver = expr.expression.expression;
+  const receiverType = checker.getTypeAtLocation(tsReceiver);
+  const arg = buildIR(
+    expr.arguments[0]!,
+    checker,
+    strategy,
+    paramNames,
+    supply,
+  );
+  if (isBuildUnsupported(arg)) {
+    return arg;
+  }
+
+  if (methodName === "includes") {
+    if (!checker.isArrayType(receiverType)) {
+      return null;
+    }
+    const receiver = buildIR(tsReceiver, checker, strategy, paramNames, supply);
+    if (isBuildUnsupported(receiver)) {
+      return receiver;
+    }
+    return irBinop("in", arg, receiver);
+  }
+
+  if (methodName !== "has") {
+    return null;
+  }
+
+  if (isSetType(receiverType)) {
+    const receiver = buildIR(tsReceiver, checker, strategy, paramNames, supply);
+    if (isBuildUnsupported(receiver)) {
+      return receiver;
+    }
+    return irBinop("in", arg, receiver);
+  }
+
+  if (!isMapType(receiverType)) {
+    return null;
+  }
+
+  const normalizedReceiver = unwrapParens(tsReceiver) as ts.Expression;
+  if (ts.isPropertyAccessExpression(normalizedReceiver)) {
+    const member = buildL1MemberAccess(normalizedReceiver, l1Ctx, {
+      nativeReceiverLeaf: true,
+    });
+    if ("unsupported" in member) {
+      return member;
+    }
+    if (member.kind !== "member") {
+      return {
+        unsupported: "Map .has receiver did not resolve to canonical L1 Member",
+      };
+    }
+    return irAppName(`${member.name}-key`, [lowerL1Expr(member.receiver), arg]);
+  }
+
+  const typeArgs = checker.getTypeArguments(receiverType as ts.TypeReference);
+  if (typeArgs.length !== 2) {
+    return { unsupported: "Map with unexpected arity" };
+  }
+  const kType = mapTsType(typeArgs[0]!, checker, strategy, supply.synthCell);
+  const vType = mapTsType(typeArgs[1]!, checker, strategy, supply.synthCell);
+  let info = supply.synthCell
+    ? lookupMapKV(supply.synthCell.synth, kType, vType)
+    : undefined;
+  if (!info && supply.synthCell) {
+    cellRegisterMap(supply.synthCell, kType, vType);
+    info = lookupMapKV(supply.synthCell.synth, kType, vType);
+  }
+  if (!info) {
+    return {
+      unsupported: `Map<${kType}, ${vType}>: key or value type cannot be mangled into a synthesized domain name`,
+    };
+  }
+  const receiver = buildIR(tsReceiver, checker, strategy, paramNames, supply);
+  if (isBuildUnsupported(receiver)) {
+    return receiver;
+  }
+  return irAppName(info.names.keyPred, [receiver, arg]);
+}
+
 /**
  * Translate a TypeScript expression to IR.
  *
@@ -781,6 +889,20 @@ export function buildIR(
         return built;
       }
       return materializeBuildValue(built);
+    }
+  }
+
+  if (ts.isCallExpression(expr)) {
+    const membership = buildCollectionMembershipCall(
+      expr,
+      checker,
+      strategy,
+      paramNames,
+      supply,
+      l1Ctx,
+    );
+    if (membership !== null) {
+      return membership;
     }
   }
 
@@ -900,6 +1022,26 @@ export function buildIR(
       return member;
     }
     return lowerL1Expr(member);
+  }
+
+  if (ts.isBinaryExpression(expr)) {
+    const nullishTranslate: NullishTranslate = (sub) => {
+      const result = tryBuildL1PureSubExpression(sub, l1Ctx);
+      if (result === null) {
+        return { unsupported: "unsupported nullish operand" };
+      }
+      if ("unsupported" in result) {
+        return { unsupported: result.unsupported };
+      }
+      return result;
+    };
+    const recognized = recognizeNullishForm(expr, checker, nullishTranslate);
+    if (recognized !== null) {
+      if ("unsupported" in recognized) {
+        return { unsupported: recognized.unsupported };
+      }
+      return lowerL1Expr(recognized);
+    }
   }
 
   const nativeL1 = tryBuildL1PureSubExpression(expr, l1Ctx);

@@ -127,7 +127,7 @@ exports[`expressions-calls.ts > freeCall 1`] = `
 `;
 
 exports[`expressions-calls.ts > methodCall 1`] = `
-"module MethodCall.\\n\\nmethod-call s: String => String.\\n\\n---\\n\\nmethod-call s = to-upper-case s.\\n"
+"module MethodCall.\\n\\nmethod-call s: String => String.\\n\\n---\\n\\nmethod-call s = (to-upper-case s).\\n"
 `;
 
 exports[`expressions-calls.ts > nestedCalls 1`] = `
@@ -135,7 +135,7 @@ exports[`expressions-calls.ts > nestedCalls 1`] = `
 `;
 
 exports[`expressions-calls.ts > spreadCall 1`] = `
-"module SpreadCall.\\n\\nspread-call args: [Int] => Int.\\n\\n---\\n\\n> UNSUPPORTED: max(...args).\\n"
+"module SpreadCall.\\n\\nspread-call args: [Int] => Int.\\n\\n---\\n\\n> UNSUPPORTED: call with spread arguments is unsupported.\\n"
 `;
 
 exports[`expressions-calls.ts > zeroArityCall 1`] = `
@@ -995,11 +995,11 @@ exports[`types-primitives.ts > isActive 1`] = `
 `;
 
 exports[`unsupported.ts > arrowWithLocals 1`] = `
-"module ArrowWithLocals.\\n\\nUser.\\nuser--name u: User => String.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\narrow-with-locals users: [User] => [String].\\n\\n---\\n\\n> UNSUPPORTED: users.filter((u) => u.active).map((u) => { const s = u.score; return u.name; }).\\n"
+"module ArrowWithLocals.\\n\\nUser.\\nuser--name u: User => String.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\narrow-with-locals users: [User] => [String].\\n\\n---\\n\\n> UNSUPPORTED: array callback block body must be a single return.\\n"
 `;
 
 exports[`unsupported.ts > destructuredParam 1`] = `
-"module DestructuredParam.\\n\\nUser.\\nuser--name u: User => String.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\ndestructured-param users: [User] => [String].\\n\\n---\\n\\n> UNSUPPORTED: filter/map callback must have exactly one identifier parameter.\\n"
+"module DestructuredParam.\\n\\nUser.\\nuser--name u: User => String.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\ndestructured-param users: [User] => [String].\\n\\n---\\n\\n> UNSUPPORTED: array callback parameters must be plain identifiers (no defaults/rest/optional).\\n"
 `;
 
 exports[`unsupported.ts > impureGuardAssign 1`] = `
