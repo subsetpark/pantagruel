@@ -932,7 +932,17 @@ function buildL1MemberOrVarForLift(
   node: ts.Expression,
   ctx: L1BuildContext,
 ): IR1Expr | null {
-  const stripped = unwrapParens(node) as ts.Expression;
+  // Strip the same set of transparent wrappers the recognizer's
+  // outermost operand uses (`unwrapTransparentExpression`: parens +
+  // `as` + `!` + `satisfies`). Stripping inside the chain keeps
+  // member-lift eligibility driven by the operand's L1 shape rather
+  // than re-introducing TS-syntax sensitivity for wrappers the
+  // recognizer already treats as semantically neutral at the
+  // boundary. `qualifyFieldAccess` is still given the *unstripped*
+  // receiver via `getTypeAtLocation`, so a user's `as T` cast
+  // continues to drive the type-checker resolution that picks the
+  // qualified rule name.
+  const stripped = unwrapTransparentExpression(node);
   if (ts.isIdentifier(stripped)) {
     const pantName = ctx.paramNames.get(stripped.text) ?? stripped.text;
     return ir1Var(pantName);
@@ -941,12 +951,18 @@ function buildL1MemberOrVarForLift(
     ts.isPropertyAccessExpression(stripped) &&
     (stripped.flags & ts.NodeFlags.OptionalChain) === 0
   ) {
-    const receiverNode = unwrapParens(stripped.expression) as ts.Expression;
-    const receiverL1 = buildL1MemberOrVarForLift(receiverNode, ctx);
+    // For `getTypeAtLocation`, use the parens-stripped (but type-
+    // erasure-preserving) receiver so the user's `as T` cast still
+    // drives qualifier resolution. For the recursive L1 build, strip
+    // wrappers via `unwrapTransparentExpression` so the chain
+    // composes regardless of inner wrappers.
+    const receiverForType = unwrapParens(stripped.expression) as ts.Expression;
+    const receiverForRecurse = unwrapTransparentExpression(receiverForType);
+    const receiverL1 = buildL1MemberOrVarForLift(receiverForRecurse, ctx);
     if (receiverL1 === null) {
       return null;
     }
-    const receiverType = ctx.checker.getTypeAtLocation(receiverNode);
+    const receiverType = ctx.checker.getTypeAtLocation(receiverForType);
     const qualified = qualifyFieldAccess(
       receiverType,
       stripped.name.text,
@@ -967,12 +983,13 @@ function buildL1MemberOrVarForLift(
     if (fieldName === null) {
       return null;
     }
-    const receiverNode = unwrapParens(stripped.expression) as ts.Expression;
-    const receiverL1 = buildL1MemberOrVarForLift(receiverNode, ctx);
+    const receiverForType = unwrapParens(stripped.expression) as ts.Expression;
+    const receiverForRecurse = unwrapTransparentExpression(receiverForType);
+    const receiverL1 = buildL1MemberOrVarForLift(receiverForRecurse, ctx);
     if (receiverL1 === null) {
       return null;
     }
-    const receiverType = ctx.checker.getTypeAtLocation(receiverNode);
+    const receiverType = ctx.checker.getTypeAtLocation(receiverForType);
     const qualified = qualifyFieldAccess(
       receiverType,
       fieldName,
@@ -1010,9 +1027,13 @@ function buildL1MemberOrVarForLift(
  * (a simple `Identifier`) or `Member` (a `PropertyAccessExpression`
  * or string-literal `ElementAccessExpression` chain bottoming out at
  * a `Var`). Anything else — calls, binops, computed indices, optional
- * chains, type-erasure wrappers in the chain — falls through to the
- * standard L1 Cond build. Source-level parens are normalized away
- * by L1 build before eligibility is consulted.
+ * chains — falls through to the standard L1 Cond build. Transparent
+ * wrappers (parens, `as`, `!`, `satisfies`) are normalized away by
+ * `unwrapTransparentExpression` at every level of the chain build,
+ * so eligibility stays driven by the operand's L1 shape rather than
+ * its TS-AST spelling. Type-checker resolution for qualified rule
+ * names still consults the unstripped (cast-bearing) receiver, so a
+ * user's `as T` continues to drive qualifier picks.
  *
  * Substitution strategy. For `Var` operands the projection translates
  * through the legacy pipeline (`buildSubExpr`, producing a `from-l2`
@@ -1042,14 +1063,45 @@ export function tryRecognizeFunctorLift(
   }
 
   // M5 P4: classify operand by its L1 shape (Var or Member).
-  // `unwrapTransparentExpression` strips type-erasure wrappers from the
-  // outermost operand for the same reason M4 P5 did — those wrappers are
-  // type-level only and the runtime value is the inner expression. The
-  // recursive Member-chain build (`buildL1MemberOrVarForLift`) only strips
-  // parens, not type-erasure, so a wrapper *inside* the chain (e.g.,
-  // `(u as User).owner`) takes the chain off the pure-L1 path and the lift
-  // falls through.
+  // `unwrapTransparentExpression` strips type-erasure wrappers (parens,
+  // `as`, `!`, `satisfies`) from the outermost operand for the same
+  // reason M4 P5 did — those wrappers are type-level only and the
+  // runtime value is the inner expression. The recursive Member-chain
+  // build inside `buildL1MemberOrVarForLift` strips the same set of
+  // wrappers at every level so eligibility for the lift is driven by
+  // the operand's L1 shape, not its TS-AST spelling.
   const operandNode = unwrapTransparentExpression(leaf.operand);
+
+  // Snapshot supply counter and synth-cell state. Both the operand
+  // build (Member operand path → `qualifyFieldAccess` → anonymous-
+  // record synthesis can mutate `synthCell.recordSynth` /
+  // `synthCell.registry`) and the projection build (`buildSubExpr` for
+  // Var operand can advance `supply.n` via deferred-comprehension
+  // allocations) are reversible at this granularity: the inner
+  // synth-cell records are immutable, so saving the three field
+  // references and restoring them on failure undoes any registrations
+  // accumulated along the rejected path. Without this, eligibility-
+  // failure paths leak anonymous-record domains into the document
+  // even when the lift never fires.
+  const supplyCounterSnapshot = ctx.supply.n;
+  const synthCell = ctx.supply.synthCell;
+  const synthSnapshot = synthCell
+    ? {
+        synth: synthCell.synth,
+        recordSynth: synthCell.recordSynth,
+        registry: synthCell.registry,
+      }
+    : null;
+  const restore = (): null => {
+    ctx.supply.n = supplyCounterSnapshot;
+    if (synthCell && synthSnapshot) {
+      synthCell.synth = synthSnapshot.synth;
+      synthCell.recordSynth = synthSnapshot.recordSynth;
+      synthCell.registry = synthSnapshot.registry;
+    }
+    return null;
+  };
+
   let operandText: string | null = null;
   let operandL1: IR1Expr;
   if (ts.isIdentifier(operandNode)) {
@@ -1059,7 +1111,7 @@ export function tryRecognizeFunctorLift(
   } else {
     const memberOperand = buildL1MemberOrVarForLift(operandNode, ctx);
     if (memberOperand === null || memberOperand.kind !== "member") {
-      return null;
+      return restore();
     }
     operandL1 = memberOperand;
   }
@@ -1072,14 +1124,14 @@ export function tryRecognizeFunctorLift(
 
   // (b) Empty side is empty-equivalent.
   if (!isEmptyEquivalent(emptyExpr, ctx.checker)) {
-    return null;
+    return restore();
   }
 
   // (c) Present side, after stripping a singleton array wrapper, is
   //     not a multi-element-producing shape and references the operand.
   const projection = unwrapSingletonArray(presentExpr);
   if (!isSingleElementProducingShape(projection)) {
-    return null;
+    return restore();
   }
   if (operandText !== null) {
     // Var operand: TS-AST text-walk catches references at any depth,
@@ -1092,23 +1144,15 @@ export function tryRecognizeFunctorLift(
         new Set([operandText]),
       )
     ) {
-      return null;
+      return restore();
     }
   }
   // For Member operand, the L1 substitution-fired check below decides.
 
   // (d) Result type is list-lifted.
   if (!isListLiftedAtNode(cand.contextNode, ctx.checker)) {
-    return null;
+    return restore();
   }
-
-  // Snapshot the hygienic supply counter so failure inside `buildSubExpr`
-  // (which can advance `supply.n` via deferred-comprehension allocations
-  // before returning unsupported) doesn't perturb the fallback Cond
-  // path's binder sequencing. The synthCell registration via
-  // `cellRegisterName` runs only after the last failure point, so it
-  // needs no rollback.
-  const supplyCounterSnapshot = ctx.supply.n;
 
   // Build the projection. Path differs by operand kind:
   //   - Var: standard `buildSubExpr`. The projection comes back as
@@ -1124,15 +1168,13 @@ export function tryRecognizeFunctorLift(
   if (operandL1.kind === "var") {
     const sub = buildSubExpr(projection, ctx);
     if (isL1Unsupported(sub)) {
-      ctx.supply.n = supplyCounterSnapshot;
-      return null;
+      return restore();
     }
     projectionL1 = sub;
   } else {
     const pure = buildL1MemberOrVarForLift(projection, ctx);
     if (pure === null) {
-      ctx.supply.n = supplyCounterSnapshot;
-      return null;
+      return restore();
     }
     projectionL1 = pure;
   }
@@ -1149,8 +1191,7 @@ export function tryRecognizeFunctorLift(
   // operand isn't structurally present in the projection's L1
   // form), reject.
   if (operandL1.kind === "member" && substitutedL1 === projectionL1) {
-    ctx.supply.n = supplyCounterSnapshot;
-    return null;
+    return restore();
   }
 
   // Lower.

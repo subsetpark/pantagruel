@@ -373,6 +373,23 @@ describe("ir1-build-functor-lift", () => {
     assert.equal(tryRecognizeFunctorLift(candidate, ctx), null);
   });
 
+  it("Member operand recognizes through inner type-erasure wrappers (`(u as User).next == null`)", () => {
+    // The reviewer's example: a Member chain whose receiver carries an
+    // `as` cast must still recognize, since `tryRecognizeFunctorLift`
+    // already treats type-erasure wrappers as semantically neutral at
+    // the recognizer's outer boundary. `buildL1MemberOrVarForLift`
+    // strips the same wrapper set (`unwrapTransparentExpression`) at
+    // every level of the chain, so the inner cast doesn't take the
+    // operand off the pure-L1 path.
+    const { candidate, ctx } = setup(
+      `interface User { readonly name: string; readonly next: User | null; }
+       function f(u: User): string[] {
+         return (u as User).next == null ? [] : [(u as User).next!.name];
+       }`,
+    );
+    expectLifted(tryRecognizeFunctorLift(candidate, ctx));
+  });
+
   it("Member operand string-literal element-access (`u[\"next\"] == null`) recognizes", () => {
     const { candidate, ctx } = setup(
       `interface User { readonly name: string; readonly next: User | null; }
