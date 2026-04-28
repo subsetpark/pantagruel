@@ -8,6 +8,7 @@ import {
   getChecker,
 } from "../src/extract.js";
 import { assertWasmTypeChecks, loadAst } from "../src/pant-wasm.js";
+import { emptyNameRegistry, registerName } from "../src/name-registry.js";
 import {
   cellRegisterTupleConstructor,
   cellTupleShapes,
@@ -266,6 +267,104 @@ describe("mapTsType", () => {
       UNSUPPORTED_UNKNOWN,
     );
   });
+
+  it("propagates `unknown` through tuple element", () => {
+    const source = `interface Foo { val: [unknown, number]; }`;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = getChecker(sourceFile);
+    const extracted = extractAllTypes(sourceFile);
+    const prop = extracted.interfaces[0].properties[0];
+
+    assert.equal(
+      mapTsType(prop.type, checker, IntStrategy),
+      UNSUPPORTED_UNKNOWN,
+    );
+  });
+
+  it("propagates `unknown` through array element", () => {
+    const source = `interface Foo { val: unknown[]; }`;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = getChecker(sourceFile);
+    const extracted = extractAllTypes(sourceFile);
+    const prop = extracted.interfaces[0].properties[0];
+
+    assert.equal(
+      mapTsType(prop.type, checker, IntStrategy),
+      UNSUPPORTED_UNKNOWN,
+    );
+  });
+
+  it("propagates `unknown` through Set element", () => {
+    const source = `interface Foo { val: Set<unknown>; }`;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = getChecker(sourceFile);
+    const extracted = extractAllTypes(sourceFile);
+    const prop = extracted.interfaces[0].properties[0];
+
+    assert.equal(
+      mapTsType(prop.type, checker, IntStrategy),
+      UNSUPPORTED_UNKNOWN,
+    );
+  });
+
+  it("propagates `unknown` through Map K and V", () => {
+    // `Map<unknown, Int>` previously synthesized a domain like
+    // `__unsupported_unknown__ToIntMap` because the all-underscore
+    // sentinel happens to satisfy `manglePantTypeToFragment`'s
+    // identifier check. Reject before the synth registers.
+    const cellK = newSynthCell();
+    const sourceK = `interface Foo { val: Map<unknown, number>; }`;
+    const sfK = createSourceFileFromSource(sourceK);
+    const propK = extractAllTypes(sfK).interfaces[0].properties[0];
+    assert.equal(
+      mapTsType(propK.type, getChecker(sfK), IntStrategy, cellK),
+      UNSUPPORTED_UNKNOWN,
+    );
+    // No partial Map domain leaked into the synth state.
+    assert.equal(cellK.synth.byKV.size, 0);
+
+    const cellV = newSynthCell();
+    const sourceV = `interface Foo { val: Map<string, unknown>; }`;
+    const sfV = createSourceFileFromSource(sourceV);
+    const propV = extractAllTypes(sfV).interfaces[0].properties[0];
+    assert.equal(
+      mapTsType(propV.type, getChecker(sfV), IntStrategy, cellV),
+      UNSUPPORTED_UNKNOWN,
+    );
+    assert.equal(cellV.synth.byKV.size, 0);
+  });
+
+  it("propagates `unknown` through union members", () => {
+    const source = `interface Foo { val: string | unknown; }`;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = getChecker(sourceFile);
+    const extracted = extractAllTypes(sourceFile);
+    const prop = extracted.interfaces[0].properties[0];
+
+    // `string | unknown` collapses to `unknown` at the TS-checker
+    // layer, but the union branch must propagate the sentinel either
+    // way. Either pre-collapse (the union check fires) or post-collapse
+    // (the unknown short-circuit fires) — both surface the sentinel.
+    assert.equal(
+      mapTsType(prop.type, checker, IntStrategy),
+      UNSUPPORTED_UNKNOWN,
+    );
+  });
+
+  it("propagates `unknown` through anonymous record field", () => {
+    const cell = newSynthCell();
+    const source = `function f(): { x: unknown } { return { x: 1 }; }`;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = getChecker(sourceFile);
+    const fn = sourceFile.getFunctionOrThrow("f");
+    const returnType = fn.getReturnType().compilerType;
+    assert.equal(
+      mapTsType(returnType, checker, IntStrategy, cell),
+      UNSUPPORTED_UNKNOWN,
+    );
+    // No partial record domain leaked into the synth state.
+    assert.equal(cell.recordSynth.byShape.size, 0);
+  });
 });
 
 describe("cellRegisterTupleConstructor", () => {
@@ -325,6 +424,27 @@ describe("cellRegisterTupleConstructor", () => {
     assert.notEqual(r1.ctorRuleName, r2.ctorRuleName);
     assert.equal(r1.ctorRuleName, "make-int-int");
     assert.equal(r2.ctorRuleName, "make-string-int");
+  });
+
+  it("ctor names are isolated from the consumer registry", () => {
+    // Tuple ctors live in a separate dep module, so collisions in the
+    // consumer's NameRegistry must not perturb the canonical
+    // `make-<canonical>` form. A user-declared `make-int-int` in the
+    // consumer should leave the synthesized ctor name unchanged.
+    const consumerRegistry = registerName(
+      emptyNameRegistry(),
+      "make-int-int",
+    ).registry;
+    const cell = newSynthCell(consumerRegistry);
+    const ref = cellRegisterTupleConstructor(cell, {
+      elementPantTypes: ["Int", "Int"],
+    });
+    assert.ok(ref !== null);
+    // No suffix despite the consumer's prior registration.
+    assert.equal(ref.ctorRuleName, "make-int-int");
+    // Consumer registry untouched: still a single registration.
+    assert.equal(cell.registry.used.size, 1);
+    assert.ok(cell.registry.used.has("make-int-int"));
   });
 });
 
