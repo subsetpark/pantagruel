@@ -76,6 +76,7 @@ export async function buildPantDocument(
   const moduleName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
   let doc: PantDocument = {
     moduleName,
+    imports: [],
     declarations,
     propositions: [],
     checks: [],

@@ -63,12 +63,24 @@ export type PropResult =
   | { kind: "unsupported"; reason: string }
   | { kind: "raw"; text: string };
 
+/** A Pantagruel `import <Name>.` line. */
+export interface ImportSpec {
+  name: string;
+}
+
 /** A complete Pantagruel document ready for emission. */
 export interface PantDocument {
   moduleName: string;
+  imports: ImportSpec[];
   declarations: PantDeclaration[];
   propositions: PropResult[];
   checks: { text: string }[];
+  /**
+   * In-memory dependency module sources keyed by module name. Populated by
+   * later patches that synthesize / bundle dep modules; the wasm bridge's
+   * cross-module typecheck path resolves `imports` against this map.
+   */
+  bundleModules?: Map<string, string>;
 }
 
 /** CLI options parsed from command-line arguments. */
