@@ -1299,6 +1299,8 @@ The split exists for stability, not just performance. `getPantBin()` in `tests/h
 
 **Reintroducing the lazy-build pattern is forbidden.** If a new test needs the pant binary, route it through the integration suite — don't add an `execSync("dune build")` to `helpers.mts` or any `tests/*.test.mts` file.
 
+**`> UNSUPPORTED:` skip path.** An emitted line beginning with `> UNSUPPORTED:` is a deliberate-rejection signal recognised by `emitAndCheck` (and mirrored on the IR-equivalence path); the document is not wasm-typechecked, but the snapshot still captures the rejection message verbatim. This lets fixtures that exercise an `unsupported`-PropResult emission stay in the snapshot suite without polluting `KNOWN_TYPECHECK_FAILURES` (which is reserved for fixtures whose *non-rejection* output the wasm checker rejects).
+
 ### Snapshot files
 
 Each snapshot-based `*.test.mts` has a sibling `*.test.mts.snapshot` (Node test runner's snapshot format). When snapshot tests are moved between directories, their `.snapshot` files must move with them; the runner resolves snapshot paths from the test file's location, so a missing-snapshot error usually means a mismatched move.
