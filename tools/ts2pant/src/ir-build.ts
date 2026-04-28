@@ -36,9 +36,9 @@ import {
 } from "./ir1-build.js";
 import { lowerL1Expr } from "./ir1-lower.js";
 import {
+  allocComprehensionBinder,
   ambiguousFieldMsg,
   bodyExpr,
-  freshHygienicBinder,
   isBodyUnsupported,
   isNullableTsType,
   qualifyFieldAccess,
@@ -165,7 +165,7 @@ export function buildIR(
         if (isBuildUnsupported(innerIR)) {
           return innerIR;
         }
-        const binderName = freshHygienicBinder(supply);
+        const binderName = allocComprehensionBinder(supply, "n");
         return irEach(
           binderName,
           innerIR,
