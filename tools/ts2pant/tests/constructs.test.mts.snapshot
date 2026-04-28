@@ -11,7 +11,7 @@ exports[`annotations.ts > noAnnot 1`] = `
 `;
 
 exports[`annotations.ts > rangeCheck 1`] = `
-"module RangeCheck.\\n\\nrange-check x: Int => Bool.\\n\\n---\\n\\nrange-check x = (x >= 0).\\n\\ncheck\\n\\nall x: Int | range-check x >= 0.\\n"
+"module RangeCheck.\\n\\nrange-check x: Int => Bool.\\n\\n---\\n\\nrange-check x = (x >= 0).\\n\\ncheck\\n\\nall x: Int, x >= 0 | range-check x.\\n"
 `;
 
 exports[`annotations.ts > sum 1`] = `
