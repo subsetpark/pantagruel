@@ -23,3 +23,21 @@
 (copy_files ../lib/pretty.ml)
 
 (copy_files ../lib/parser.mly)
+
+(copy_files ../lib/types.ml)
+
+(copy_files ../lib/types.mli)
+
+(copy_files ../lib/env.ml)
+
+(copy_files ../lib/env.mli)
+
+(copy_files ../lib/collect.ml)
+
+(copy_files ../lib/collect.mli)
+
+(copy_files ../lib/check.ml)
+
+(copy_files ../lib/check.mli)
+
+(copy_files ../lib/error.ml)

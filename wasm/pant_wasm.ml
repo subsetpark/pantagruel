@@ -13,6 +13,47 @@ let parse_expr_string (text : string) : (Ast.expr, string) result =
   | Lexer.Lexer_error (_, msg) -> Error msg
   | _ -> Error (Printf.sprintf "Parse error in: %s" text)
 
+(** Parse a full document string. Returns an error message with location on
+    parse failure. *)
+let parse_document_string (filename : string) (text : string) :
+    (Ast.document, string) result =
+  try
+    let lexer = Lexer.create_from_string filename text in
+    Lexer.set_current lexer;
+    let supplier = Lexer.menhir_token lexer in
+    Ok
+      (MenhirLib.Convert.Simplified.traditional2revised Parser.document supplier)
+  with
+  | Lexer.Lexer_error (loc, msg) ->
+      Error
+        (Printf.sprintf "%s:%d:%d: error: %s" loc.Ast.file loc.Ast.line
+           loc.Ast.col msg)
+  | _ -> Error (Printf.sprintf "%s: error: parse error" filename)
+
+(** Type-check a full Pantagruel document string. Returns [None] on success or
+    [Some message] on failure. Documents with imports are rejected — the wasm
+    build has no module registry, so cross-module checking must go through the
+    [pant] CLI. *)
+let check_document_string (text : string) : string option =
+  match parse_document_string "<wasm-input>" text with
+  | Error msg -> Some msg
+  | Ok doc -> (
+      if doc.Ast.imports <> [] then
+        Some
+          "error: wasm typechecker does not support imports; use the pant CLI \
+           for cross-module checking"
+      else
+        let mod_name =
+          Option.fold ~none:"" ~some:Ast.upper_name doc.module_name
+        in
+        let base_env = Env.empty mod_name in
+        match Collect.collect_all ~base_env doc with
+        | Error e -> Some (Error.format_collect_error e)
+        | Ok env -> (
+            match Check.check_document env doc with
+            | Ok _warnings -> None
+            | Error e -> Some (Error.format_type_error e)))
+
 (** Collect names bound by guards (GIn introduces a binding). *)
 let bound_names_from_guards (guards : Ast.guard list) : string list =
   List.filter_map
@@ -234,6 +275,12 @@ let () =
          match parse_expr_string text with
          | Ok expr -> Js.some (Js.string (Pretty.str_expr expr))
          | Error _ -> Js.null
+
+       method checkDocument text =
+         let text = Js.to_string text in
+         match check_document_string text with
+         | None -> Js.null
+         | Some msg -> Js.some (Js.string msg)
     end)
 
 (** AST constructor exports: build Pantagruel AST nodes from JavaScript. *)

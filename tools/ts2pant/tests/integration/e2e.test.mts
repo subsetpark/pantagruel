@@ -10,7 +10,7 @@ import {
   PROJECT_ROOT,
   assertPantTypeChecks,
   buildDocument as buildDocumentFromPath,
-  emitDocument,
+  emitAndCheck,
   getPantBin,
 } from "../helpers.mjs";
 
@@ -42,7 +42,7 @@ function buildDocument(
 describe("emitDocument", () => {
   it("emits max.ts as valid Pantagruel", async () => {
     const doc = await buildDocument("max.ts", "larger");
-    const output = emitDocument(doc);
+    const output = await emitAndCheck(doc);
 
     assert.ok(output.includes("module Larger."));
     assert.ok(output.includes("larger a: Int, b: Int => Int."));
@@ -58,7 +58,7 @@ describe("emitDocument", () => {
 
   it("emits deposit.ts as valid Pantagruel", async () => {
     const doc = await buildDocument("deposit.ts", "deposit");
-    const output = emitDocument(doc);
+    const output = await emitAndCheck(doc);
 
     assert.ok(output.includes("module Deposit."));
     assert.ok(output.includes("Account."));
@@ -74,7 +74,7 @@ describe("emitDocument", () => {
 
   it("emits skeleton-only when noBody is set", async () => {
     const doc = await buildDocument("max.ts", "larger", { noBody: true });
-    const output = emitDocument(doc);
+    const output = await emitAndCheck(doc);
 
     assert.ok(output.includes("module Larger."));
     assert.ok(output.includes("larger a: Int, b: Int => Int."));
@@ -113,7 +113,7 @@ describe("extractFunctionAnnotations", () => {
 describe("full pipeline", () => {
   it("max.ts produces a checkable document", async () => {
     const doc = await buildDocument("max.ts", "larger");
-    const output = emitDocument(doc);
+    const output = await emitAndCheck(doc);
 
     const lines = output.split("\n").filter((l) => l.trim());
     assert.equal(lines[0], "module Larger.");
@@ -124,7 +124,7 @@ describe("full pipeline", () => {
 
   it("deposit.ts produces a checkable document", async () => {
     const doc = await buildDocument("deposit.ts", "deposit");
-    const output = emitDocument(doc);
+    const output = await emitAndCheck(doc);
 
     const lines = output.split("\n").filter((l) => l.trim());
     assert.equal(lines[0], "module Deposit.");
@@ -134,22 +134,24 @@ describe("full pipeline", () => {
 
   it("max.ts emitted .pant type-checks through pant", async () => {
     const doc = await buildDocument("max.ts", "larger");
-    const output = emitDocument(doc);
+    const output = await emitAndCheck(doc);
 
-    // Run through pant (no --check, just type-checking) — should exit 0
+    // Belt-and-braces: also exercise the `pant` binary end-to-end (the
+    // wasm checker shares the parse + collect + check passes but is built
+    // separately and could drift).
     assertPantTypeChecks(output);
   });
 
   it("deposit.ts emitted .pant type-checks through pant", async () => {
     const doc = await buildDocument("deposit.ts", "deposit");
-    const output = emitDocument(doc);
+    const output = await emitAndCheck(doc);
 
     assertPantTypeChecks(output);
   });
 
   it("apply-fee.ts emitted .pant type-checks through pant", async () => {
     const doc = await buildDocument("apply-fee.ts", "applyFee");
-    const output = emitDocument(doc);
+    const output = await emitAndCheck(doc);
 
     assertPantTypeChecks(output);
   });
@@ -160,27 +162,27 @@ describe("full pipeline", () => {
 describe("emission snapshots", () => {
   it("max.ts larger", async (t) => {
     const doc = await buildDocument("max.ts", "larger");
-    t.assert.snapshot(emitDocument(doc));
+    t.assert.snapshot(await emitAndCheck(doc));
   });
 
   it("max.ts larger (skeleton only)", async (t) => {
     const doc = await buildDocument("max.ts", "larger", { noBody: true });
-    t.assert.snapshot(emitDocument(doc));
+    t.assert.snapshot(await emitAndCheck(doc));
   });
 
   it("deposit.ts deposit", async (t) => {
     const doc = await buildDocument("deposit.ts", "deposit");
-    t.assert.snapshot(emitDocument(doc));
+    t.assert.snapshot(await emitAndCheck(doc));
   });
 
   it("assert-guard.ts deposit", async (t) => {
     const doc = await buildDocument("assert-guard.ts", "deposit");
-    t.assert.snapshot(emitDocument(doc));
+    t.assert.snapshot(await emitAndCheck(doc));
   });
 
   it("validate-helper.ts deposit", async (t) => {
     const doc = await buildDocument("validate-helper.ts", "deposit");
-    t.assert.snapshot(emitDocument(doc));
+    t.assert.snapshot(await emitAndCheck(doc));
   });
 });
 
@@ -193,7 +195,7 @@ describe("pant --check", () => {
     skip: !hasSolver ? "z3 not available" : undefined,
   }, async () => {
     const doc = await buildDocument("max.ts", "larger");
-    const output = emitDocument(doc);
+    const output = await emitAndCheck(doc);
     const result = runCheck(output, {
       projectRoot: PROJECT_ROOT,
       pantBin: getPantBin(),
@@ -208,7 +210,7 @@ describe("pant --check", () => {
     skip: !hasSolver ? "z3 not available" : undefined,
   }, async () => {
     const doc = await buildDocument("deposit.ts", "deposit");
-    const output = emitDocument(doc);
+    const output = await emitAndCheck(doc);
     const result = runCheck(output, {
       projectRoot: PROJECT_ROOT,
       pantBin: getPantBin(),
@@ -223,7 +225,7 @@ describe("pant --check", () => {
     skip: !hasSolver ? "z3 not available" : undefined,
   }, async () => {
     const doc = await buildDocument("apply-fee.ts", "applyFee");
-    const output = emitDocument(doc);
+    const output = await emitAndCheck(doc);
     const result = runCheck(output, {
       projectRoot: PROJECT_ROOT,
       pantBin: getPantBin(),

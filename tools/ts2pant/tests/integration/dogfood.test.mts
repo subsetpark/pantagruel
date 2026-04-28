@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import {
   assertPantTypeChecks,
   buildDocument as buildDocumentFromPath,
-  emitDocument,
+  emitAndCheck,
 } from "../helpers.mjs";
 
 // Dogfood: translate ts2pant's own source files with ts2pant itself.
@@ -22,14 +22,14 @@ describe("dogfood: src/name-registry.ts", () => {
 
   it("isUsed — translates and type-checks", async (t) => {
     const doc = await buildDocumentFromPath(filePath, "isUsed");
-    const output = emitDocument(doc);
+    const output = await emitAndCheck(doc);
     t.assert.snapshot(output);
     assertPantTypeChecks(output, PANT_TIMEOUT_MS);
   });
 
   it("emptyNameRegistry — translates and type-checks", async (t) => {
     const doc = await buildDocumentFromPath(filePath, "emptyNameRegistry");
-    const output = emitDocument(doc);
+    const output = await emitAndCheck(doc);
     t.assert.snapshot(output);
     assertPantTypeChecks(output, PANT_TIMEOUT_MS);
   });
@@ -40,7 +40,7 @@ describe("dogfood: src/translate-types.ts", () => {
 
   it("emptyMapSynth — translates and type-checks", async (t) => {
     const doc = await buildDocumentFromPath(filePath, "emptyMapSynth");
-    const output = emitDocument(doc);
+    const output = await emitAndCheck(doc);
     t.assert.snapshot(output);
     assertPantTypeChecks(output);
     // `MapSynth.byKV: ReadonlyMap<string, MapSynthEntry>` → Stage A
@@ -69,7 +69,7 @@ describe("dogfood: src/translate-types.ts", () => {
 
   it("emptyRecordSynth — translates and type-checks", async (t) => {
     const doc = await buildDocumentFromPath(filePath, "emptyRecordSynth");
-    const output = emitDocument(doc);
+    const output = await emitAndCheck(doc);
     t.assert.snapshot(output);
     assertPantTypeChecks(output);
     // Same three invariants on the sibling RecordSynth type. Paired with

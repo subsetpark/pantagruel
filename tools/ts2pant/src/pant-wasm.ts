@@ -14,6 +14,7 @@ import type { PantAstModule } from "./pant-ast.js";
 interface PantParserModule {
   parseAndRename: (text: string, renames: [string, string][]) => string | null;
   prettyPrint: (text: string) => string | null;
+  checkDocument: (text: string) => string | null;
 }
 
 let wasmLoadPromise: Promise<void> | null = null;
@@ -107,4 +108,36 @@ export function rewriteAnnotation(
     return text;
   }
   return result;
+}
+
+/**
+ * Type-check a full Pantagruel document string via the embedded wasm
+ * checker (parse + collect + check, same passes the `pant` CLI runs in
+ * its default mode). Returns `null` on success or an error message on
+ * failure. Documents with imports are unsupported in this path — the
+ * wasm build has no module registry; route those through the `pant`
+ * CLI in integration tests.
+ */
+export async function checkPantDocument(text: string): Promise<string | null> {
+  const parser = await loadParser();
+  return parser.checkDocument(text);
+}
+
+/**
+ * Assert that a Pantagruel document string type-checks via the wasm
+ * checker. Throws with the formatted error message on failure,
+ * including a bounded preview of the input for diagnostics.
+ */
+export async function assertWasmTypeChecks(text: string): Promise<void> {
+  const error = await checkPantDocument(text);
+  if (error !== null) {
+    const maxPreview = 4_000;
+    const preview =
+      text.length <= maxPreview
+        ? text
+        : `${text.slice(0, maxPreview)}\n...<truncated ${text.length - maxPreview} chars>`;
+    throw new Error(
+      `pant typecheck failed: ${error}\n--- input preview (total length: ${text.length}) ---\n${preview}`,
+    );
+  }
 }

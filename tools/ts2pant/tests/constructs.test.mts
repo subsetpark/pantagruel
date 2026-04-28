@@ -1,11 +1,14 @@
 import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, it } from "node:test";
+import { emitDocument } from "../src/emit.js";
 import type { SourceFile } from "../src/extract.js";
 import { createSourceFile } from "../src/extract.js";
-import { buildDocumentFromSourceFile, emitDocument } from "./helpers.mjs";
+import { buildDocumentFromSourceFile, emitAndCheck } from "./helpers.mjs";
 
 const CONSTRUCTS_DIR = resolve(import.meta.dirname, "fixtures/constructs");
+
+import { KNOWN_TYPECHECK_FAILURES } from "./known-typecheck-failures.mjs";
 
 /** Discover exported function names and class method names in a TS source file. */
 function discoverTestTargets(sourceFile: SourceFile): string[] {
@@ -49,9 +52,13 @@ for (const file of fixtureFiles) {
     }
 
     for (const funcName of targets) {
+      const key = `${file} > ${funcName}`;
+      const knownBad = KNOWN_TYPECHECK_FAILURES.get(key);
       it(funcName, async (t) => {
         const doc = await buildDocumentFromSourceFile(sourceFile, funcName);
-        const output = emitDocument(doc);
+        const output = knownBad
+          ? emitDocument(doc) // skip wasm typecheck — see KNOWN_TYPECHECK_FAILURES.
+          : await emitAndCheck(doc);
         t.assert.snapshot(output);
       });
     }

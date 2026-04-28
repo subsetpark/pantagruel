@@ -3,8 +3,9 @@ import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { before, describe, it } from "node:test";
 import { createSourceFile } from "../src/extract.js";
-import { loadAst } from "../src/pant-wasm.js";
+import { assertWasmTypeChecks, loadAst } from "../src/pant-wasm.js";
 import { buildDocumentFromSourceFile, emitDocument } from "./helpers.mjs";
+import { KNOWN_TYPECHECK_FAILURES } from "./known-typecheck-failures.mjs";
 
 before(async () => {
   await loadAst();
@@ -136,6 +137,7 @@ describe("Stage 1 IR-equivalence: legacy and IR produce identical output", () =>
   for (const { file, functions } of ANCHORS) {
     const filePath = resolve(CONSTRUCTS_DIR, file);
     for (const funcName of functions) {
+      const knownBad = KNOWN_TYPECHECK_FAILURES.get(`${file} > ${funcName}`);
       it(`${file} > ${funcName}`, async () => {
         const legacy = await emitWithFlag(filePath, funcName, false);
         const ir = await emitWithFlag(filePath, funcName, true);
@@ -144,6 +146,12 @@ describe("Stage 1 IR-equivalence: legacy and IR produce identical output", () =>
           legacy,
           `IR pipeline output differs from legacy for ${funcName}`,
         );
+        // Both pipelines produced the same string — also assert it's valid
+        // Pant. Skip for fixtures shared with the constructs.test.mts
+        // known-bad list (same emit bugs surface in both suites).
+        if (!knownBad) {
+          await assertWasmTypeChecks(ir);
+        }
       });
     }
   }
