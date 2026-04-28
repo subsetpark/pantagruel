@@ -3269,15 +3269,14 @@ function translateArrayMethod(
 
   const pending = receiver.pendingComprehension;
   const isComposing = pending !== undefined;
-  // Comprehension binders allocated through the document-wide name registry
-  // (when a synthCell is plumbed through) so they round-trip through Pant's
-  // parser and stay collision-free against user params and accessor rules.
-  // See `allocComprehensionBinder` and PR #84 post-mortem in CLAUDE.md.
+  // Binders that survive into emitted comprehensions go through the
+  // document-wide registry. In composing paths, callback-only binders are
+  // substituted away before emission and should stay hygienic.
   const sourceBinder = isComposing
     ? pending.binder
     : allocComprehensionBinder(supply, "x");
   const callbackBinder = isComposing
-    ? allocComprehensionBinder(supply, "x")
+    ? freshHygienicBinder(supply)
     : sourceBinder;
   const extendedParams = new Map(paramNames);
   extendedParams.set(callbackBinder, callbackBinder);
@@ -3468,11 +3467,11 @@ function translateReduceCall(
   }
 
   const pending = receiver.pendingComprehension;
-  // Comprehension binder for the callback's `x`; in the composing case we'll
-  // substitute it away with the prior projection so the outer guard binds
-  // `pending.binder`. Routes through `allocComprehensionBinder` so the name
-  // is parser-roundtrippable when a synthCell is in scope.
-  const xBinder = allocComprehensionBinder(supply, "x");
+  // In the composing case, the callback's `x` is substituted away with the
+  // prior projection, so it should not reserve a public registry name.
+  const xBinder = pending
+    ? freshHygienicBinder(supply)
+    : allocComprehensionBinder(supply, "x");
   const extendedParams = new Map(paramNames);
   extendedParams.set(xName, xBinder);
 

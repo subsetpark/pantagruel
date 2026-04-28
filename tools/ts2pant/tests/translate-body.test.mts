@@ -215,6 +215,36 @@ describe("unsupported patterns", () => {
     }
   });
 
+  it("composed array callbacks do not reserve public binder names", () => {
+    const source = `
+      interface User { name: string; active: boolean; }
+      function activeNames(users: User[]): string[] {
+        return users.filter((u) => u.active).map((u) => u.name);
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const synthCell = newSynthCell();
+    const { paramNameMap } = translateSignature(
+      sourceFile,
+      "activeNames",
+      IntStrategy,
+      synthCell,
+    );
+
+    const props = translateBody({
+      sourceFile,
+      functionName: "activeNames",
+      strategy: IntStrategy,
+      synthCell,
+      paramNameMap,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "equation");
+    assert.ok(synthCell.registry.used.has("x"));
+    assert.ok(!synthCell.registry.used.has("x1"));
+  });
+
   it("returns unsupported for single non-translatable statement", () => {
     const source = `
       function loop(x: number): number {
