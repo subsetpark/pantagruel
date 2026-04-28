@@ -6,7 +6,7 @@ export function parenAdd(a: number, b: number): number {
 }
 
 /** type assertion (unwrapped) */
-export function asNumber(x: unknown): number {
+export function asNumber(x: number): number {
   return x as number;
 }
 

@@ -2713,7 +2713,52 @@ export function translateBodyExpr(
   const ast = getAst();
 
   if (ts.isExpression(expr)) {
-    expr = unwrapExpression(expr);
+    // Strip transparent wrappers, but handle `!` separately: when the
+    // receiver's Pant emission is list-lifted `[T]` (Alloy `lone`
+    // multiplicity for a nullable `T | null`), `x!` lowers to singleton
+    // extraction `(x 1)` — the same shape `??` and `?.` produce. When the
+    // receiver's Pant emission is already unboxed `T` (e.g. `m.get(k)`,
+    // which the Map-encoding emits as a guarded rule application of type
+    // `V`), the `!` is structural and passes through. Mirrors the
+    // QuestionQuestionToken / questionDotToken handlers below.
+    while (
+      ts.isParenthesizedExpression(expr) ||
+      ts.isAsExpression(expr) ||
+      ts.isSatisfiesExpression(expr)
+    ) {
+      expr = expr.expression;
+    }
+    if (ts.isNonNullExpression(expr)) {
+      const innerExpr = expr.expression;
+      const innerResult = translateBodyExpr(
+        innerExpr,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
+      if (isBodyUnsupported(innerResult)) {
+        return innerResult;
+      }
+      const receiverTsType = checker.getTypeAtLocation(innerExpr);
+      // CallExpression results bypass `mapTsType`-driven list-lift —
+      // `m.get(k)` (the only call shape today that yields a nullable TS
+      // type via a non-list-lifting Pant encoding) emits the unboxed
+      // guarded value directly. Pass through without singleton
+      // extraction; mapTsType-driven nullable shapes (parameter
+      // references, field accesses) wrap as `(x 1)`.
+      const innerUnwrapped = unwrapExpression(innerExpr);
+      if (
+        isNullableTsType(receiverTsType) &&
+        !ts.isCallExpression(innerUnwrapped)
+      ) {
+        return {
+          expr: ast.app(bodyExpr(innerResult), [ast.litNat(1)]),
+        };
+      }
+      return innerResult;
+    }
   }
 
   // M4: nullish surface forms (`x == null`, `x === undefined`, the
