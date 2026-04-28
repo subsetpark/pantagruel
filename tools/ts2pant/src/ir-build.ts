@@ -155,17 +155,6 @@ function isIdentityInit(node: ts.Expression, identityText: string): boolean {
   return n !== null && n === Number(identityText);
 }
 
-function getRootIdentifier(expr: ts.Expression): string | null {
-  expr = unwrapParens(expr) as ts.Expression;
-  if (ts.isIdentifier(expr)) {
-    return expr.text;
-  }
-  if (ts.isPropertyAccessExpression(expr)) {
-    return getRootIdentifier(expr.expression);
-  }
-  return null;
-}
-
 function substituteIR(expr: IRExpr, name: string, replacement: IRExpr): IRExpr {
   switch (expr.kind) {
     case "var":
@@ -535,12 +524,14 @@ function buildArrayReduce(
   if (methodName === "reduceRight" && !info.commutative) {
     return { unsupported: ".reduceRight with non-commutative operator" };
   }
-  const leftRoot = getRootIdentifier(body.left);
-  const rightRoot = getRootIdentifier(body.right);
+  const leftExpr = unwrapParens(body.left) as ts.Expression;
+  const rightExpr = unwrapParens(body.right) as ts.Expression;
+  const leftIsAcc = ts.isIdentifier(leftExpr) && leftExpr.text === accName;
+  const rightIsAcc = ts.isIdentifier(rightExpr) && rightExpr.text === accName;
   let innerExpr: ts.Expression;
-  if (leftRoot === accName && rightRoot !== accName) {
+  if (leftIsAcc && !rightIsAcc) {
     innerExpr = body.right;
-  } else if (rightRoot === accName && leftRoot !== accName) {
+  } else if (rightIsAcc && !leftIsAcc) {
     if (!info.commutative) {
       return {
         unsupported: `.${methodName} with acc on the right of a non-commutative operator`,

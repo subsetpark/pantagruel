@@ -287,7 +287,7 @@ export function tryBuildL1PureSubExpression(
 
   if (ts.isCallExpression(expr)) {
     if (expr.arguments.some(ts.isSpreadElement)) {
-      return { unsupported: expr.getText() };
+      return { unsupported: "call with spread arguments is unsupported" };
     }
     let callee: IR1Expr | null;
     let args: IR1Expr[];

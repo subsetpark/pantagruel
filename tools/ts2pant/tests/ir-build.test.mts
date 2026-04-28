@@ -188,6 +188,21 @@ describe("ir-build M6 native construction stubs", () => {
     expectNoIRWrap(comb);
   });
 
+  it("rejects reduce callbacks that use a property access in the accumulator slot", () => {
+    for (const expr of ["sum.total + item.amount", "item.amount + sum.total"]) {
+      const result = buildFromSource(`
+        interface Item { readonly amount: number; }
+        function f(items: Item[]): number {
+          return items.reduce((sum, item) => ${expr}, 0);
+        }
+      `);
+      assert.ok(isBuildUnsupported(result));
+      if (isBuildUnsupported(result)) {
+        assert.match(result.unsupported, /callback must reference acc exactly once/u);
+      }
+    }
+  });
+
   it("preserves conditional otherwise during map-chain substitution", () => {
     const ir = expectIR(`
       interface Item { readonly amount: number | null; }
