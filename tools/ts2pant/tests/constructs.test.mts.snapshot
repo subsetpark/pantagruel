@@ -63,7 +63,7 @@ exports[`expressions-arithmetic.ts > remainder 1`] = `
 `;
 
 exports[`expressions-array.ts > activeNames 1`] = `
-"module ActiveNames.\\n\\nUser.\\nuser--name u: User => String.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\nactive-names users: [User] => [String].\\n\\n---\\n\\nactive-names users = (each $0 in users, user--active $0 | user--name $0).\\n"
+"module ActiveNames.\\n\\nUser.\\nuser--name u: User => String.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\nactive-names users: [User] => [String].\\n\\n---\\n\\nactive-names users = (each x in users, user--active x | user--name x).\\n"
 `;
 
 exports[`expressions-array.ts > contains 1`] = `
@@ -75,11 +75,11 @@ exports[`expressions-array.ts > count 1`] = `
 `;
 
 exports[`expressions-array.ts > highScores 1`] = `
-"module HighScores.\\n\\nUser.\\nuser--name u: User => String.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\nhigh-scores users: [User] => [Int].\\n\\n---\\n\\nhigh-scores users = (each $0 in users, user--score $0 > 0 | user--score $0).\\n"
+"module HighScores.\\n\\nUser.\\nuser--name u: User => String.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\nhigh-scores users: [User] => [Int].\\n\\n---\\n\\nhigh-scores users = (each x in users, user--score x > 0 | user--score x).\\n"
 `;
 
 exports[`expressions-array.ts > nameLengths 1`] = `
-"module NameLengths.\\n\\nUser.\\nuser--name u: User => String.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\nname-lengths users: [User] => [Int].\\n\\n---\\n\\nname-lengths users = (each $0 in users | length (user--name $0)).\\n"
+"module NameLengths.\\n\\nUser.\\nuser--name u: User => String.\\nuser--active u: User => Bool.\\nuser--score u: User => Int.\\nname-lengths users: [User] => [Int].\\n\\n---\\n\\nname-lengths users = (each x in users | length (user--name x)).\\n"
 `;
 
 exports[`expressions-boolean.ts > and 1`] = `
@@ -475,15 +475,15 @@ exports[`expressions-nullish.ts > defaultToZero 1`] = `
 `;
 
 exports[`expressions-nullish.ts > maybeBalance 1`] = `
-"module MaybeBalance.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => Owner.\\nOwner.\\nowner--id o: Owner => Int.\\nmaybe-balance a: [Account] => [Int].\\n\\n---\\n\\nmaybe-balance a = (each $0 in a | account--balance $0).\\n"
+"module MaybeBalance.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => Owner.\\nOwner.\\nowner--id o: Owner => Int.\\nmaybe-balance a: [Account] => [Int].\\n\\n---\\n\\nmaybe-balance a = (each n in a | account--balance n).\\n"
 `;
 
 exports[`expressions-nullish.ts > maybeOwnerId 1`] = `
-"module MaybeOwnerId.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => Owner.\\nOwner.\\nowner--id o: Owner => Int.\\nmaybe-owner-id a: [Account] => [Int].\\n\\n---\\n\\nmaybe-owner-id a = (each $1 in (each $0 in a | account--owner $0) | owner--id $1).\\n"
+"module MaybeOwnerId.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => Owner.\\nOwner.\\nowner--id o: Owner => Int.\\nmaybe-owner-id a: [Account] => [Int].\\n\\n---\\n\\nmaybe-owner-id a = (each n1 in (each n in a | account--owner n) | owner--id n1).\\n"
 `;
 
 exports[`expressions-nullish.ts > maybeOwnerIdOptional 1`] = `
-"module MaybeOwnerIdOptional.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => Owner.\\nOwner.\\nowner--id o: Owner => Int.\\nmaybe-owner-id-optional a: [Account] => [Int].\\n\\n---\\n\\nmaybe-owner-id-optional a = (each $1 in (each $0 in a | account--owner $0) | owner--id $1).\\n"
+"module MaybeOwnerIdOptional.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => Owner.\\nOwner.\\nowner--id o: Owner => Int.\\nmaybe-owner-id-optional a: [Account] => [Int].\\n\\n---\\n\\nmaybe-owner-id-optional a = (each n1 in (each n in a | account--owner n) | owner--id n1).\\n"
 `;
 
 exports[`expressions-nullish.ts > nonNullDefault 1`] = `
@@ -587,31 +587,31 @@ exports[`expressions-record-return.ts > translate 1`] = `
 `;
 
 exports[`expressions-reduce.ts > allActive 1`] = `
-"module AllActive.\\n\\nItem.\\nitem--value i: Item => Int.\\nitem--active i: Item => Bool.\\nall-active xs: [Item] => Bool.\\n\\n---\\n\\nall-active xs = (and over each $0 in xs | item--active $0).\\n"
+"module AllActive.\\n\\nItem.\\nitem--value i: Item => Int.\\nitem--active i: Item => Bool.\\nall-active xs: [Item] => Bool.\\n\\n---\\n\\nall-active xs = (and over each x in xs | item--active x).\\n"
 `;
 
 exports[`expressions-reduce.ts > anyActive 1`] = `
-"module AnyActive.\\n\\nItem.\\nitem--value i: Item => Int.\\nitem--active i: Item => Bool.\\nany-active xs: [Item] => Bool.\\n\\n---\\n\\nany-active xs = (or over each $0 in xs | item--active $0).\\n"
+"module AnyActive.\\n\\nItem.\\nitem--value i: Item => Int.\\nitem--active i: Item => Bool.\\nany-active xs: [Item] => Bool.\\n\\n---\\n\\nany-active xs = (or over each x in xs | item--active x).\\n"
 `;
 
 exports[`expressions-reduce.ts > productValues 1`] = `
-"module ProductValues.\\n\\nItem.\\nitem--value i: Item => Int.\\nitem--active i: Item => Bool.\\nproduct-values xs: [Item] => Int.\\n\\n---\\n\\nproduct-values xs = (* over each $0 in xs | item--value $0).\\n"
+"module ProductValues.\\n\\nItem.\\nitem--value i: Item => Int.\\nitem--active i: Item => Bool.\\nproduct-values xs: [Item] => Int.\\n\\n---\\n\\nproduct-values xs = (* over each x in xs | item--value x).\\n"
 `;
 
 exports[`expressions-reduce.ts > subtractAll 1`] = `
-"module SubtractAll.\\n\\nItem.\\nitem--value i: Item => Int.\\nitem--active i: Item => Bool.\\nsubtract-all xs: [Item] => Int.\\n\\n---\\n\\nsubtract-all xs = 1000 - (+ over each $0 in xs | item--value $0).\\n"
+"module SubtractAll.\\n\\nItem.\\nitem--value i: Item => Int.\\nitem--active i: Item => Bool.\\nsubtract-all xs: [Item] => Int.\\n\\n---\\n\\nsubtract-all xs = 1000 - (+ over each x in xs | item--value x).\\n"
 `;
 
 exports[`expressions-reduce.ts > sumAmounts 1`] = `
-"module SumAmounts.\\n\\nItem.\\nitem--value i: Item => Int.\\nitem--active i: Item => Bool.\\nsum-amounts xs: [Item] => Int.\\n\\n---\\n\\nsum-amounts xs = (+ over each $0 in xs | item--value $0).\\n"
+"module SumAmounts.\\n\\nItem.\\nitem--value i: Item => Int.\\nitem--active i: Item => Bool.\\nsum-amounts xs: [Item] => Int.\\n\\n---\\n\\nsum-amounts xs = (+ over each x in xs | item--value x).\\n"
 `;
 
 exports[`expressions-reduce.ts > sumAmountsRight 1`] = `
-"module SumAmountsRight.\\n\\nItem.\\nitem--value i: Item => Int.\\nitem--active i: Item => Bool.\\nsum-amounts-right xs: [Item] => Int.\\n\\n---\\n\\nsum-amounts-right xs = (+ over each $0 in xs | item--value $0).\\n"
+"module SumAmountsRight.\\n\\nItem.\\nitem--value i: Item => Int.\\nitem--active i: Item => Bool.\\nsum-amounts-right xs: [Item] => Int.\\n\\n---\\n\\nsum-amounts-right xs = (+ over each x in xs | item--value x).\\n"
 `;
 
 exports[`expressions-reduce.ts > sumFromBase 1`] = `
-"module SumFromBase.\\n\\nItem.\\nitem--value i: Item => Int.\\nitem--active i: Item => Bool.\\nsum-from-base xs: [Item] => Int.\\n\\n---\\n\\nsum-from-base xs = 100 + (+ over each $0 in xs | item--value $0).\\n"
+"module SumFromBase.\\n\\nItem.\\nitem--value i: Item => Int.\\nitem--active i: Item => Bool.\\nsum-from-base xs: [Item] => Int.\\n\\n---\\n\\nsum-from-base xs = 100 + (+ over each x in xs | item--value x).\\n"
 `;
 
 exports[`expressions-set-mutation-field.ts > tagAdd 1`] = `

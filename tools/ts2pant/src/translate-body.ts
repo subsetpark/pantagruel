@@ -111,6 +111,28 @@ export function freshHygienicBinder(supply: UniqueSupply): string {
 }
 
 /**
+ * Allocate a parser-roundtrippable comprehension binder. When a synthCell
+ * is plumbed through (the normal pipeline), routes through `cellRegisterName`
+ * so the name is collision-safe against the document-wide `NameRegistry`
+ * and emits as a real Pant identifier (`hint`, `hint1`, …). Standalone
+ * test paths without a synthCell fall back to `freshHygienicBinder`'s
+ * `$N` form, which the parser rejects but is acceptable in unit tests
+ * that assert on substituted output.
+ *
+ * Use this — not `freshHygienicBinder` directly — at any site that emits
+ * a binder into a quantifier or comprehension that survives to Pant text.
+ * See PR #84 post-mortem in `CLAUDE.md` for the bug class this prevents.
+ */
+export function allocComprehensionBinder(
+  supply: UniqueSupply,
+  hint: string,
+): string {
+  return supply.synthCell
+    ? cellRegisterName(supply.synthCell, hint)
+    : freshHygienicBinder(supply);
+}
+
+/**
  * True when a TypeScript type includes `null`, `undefined`, or `void` —
  * i.e., when `mapTsType` will list-lift it to `[T]`. Used at `??` and `?.`
  * sites to decide whether the receiver needs the cardinality-based lowering
@@ -2899,7 +2921,7 @@ export function translateBodyExpr(
         if (ruleName === null) {
           return { unsupported: ambiguousFieldMsg(prop) };
         }
-        const binderName = freshHygienicBinder(supply);
+        const binderName = allocComprehensionBinder(supply, "n");
         return {
           expr: ast.each(
             [],
@@ -3247,14 +3269,15 @@ function translateArrayMethod(
 
   const pending = receiver.pendingComprehension;
   const isComposing = pending !== undefined;
-  // Hygienic `$N` binders (Barendregt convention): they cannot clash with
-  // user-visible identifiers or with other fresh binders from the same
-  // translation session.
+  // Comprehension binders allocated through the document-wide name registry
+  // (when a synthCell is plumbed through) so they round-trip through Pant's
+  // parser and stay collision-free against user params and accessor rules.
+  // See `allocComprehensionBinder` and PR #84 post-mortem in CLAUDE.md.
   const sourceBinder = isComposing
     ? pending.binder
-    : freshHygienicBinder(supply);
+    : allocComprehensionBinder(supply, "x");
   const callbackBinder = isComposing
-    ? freshHygienicBinder(supply)
+    ? allocComprehensionBinder(supply, "x")
     : sourceBinder;
   const extendedParams = new Map(paramNames);
   extendedParams.set(callbackBinder, callbackBinder);
@@ -3445,10 +3468,11 @@ function translateReduceCall(
   }
 
   const pending = receiver.pendingComprehension;
-  // Hygienic `$N` binder for the callback's `x`; in the composing case we'll
+  // Comprehension binder for the callback's `x`; in the composing case we'll
   // substitute it away with the prior projection so the outer guard binds
-  // `pending.binder`.
-  const xBinder = freshHygienicBinder(supply);
+  // `pending.binder`. Routes through `allocComprehensionBinder` so the name
+  // is parser-roundtrippable when a synthCell is in scope.
+  const xBinder = allocComprehensionBinder(supply, "x");
   const extendedParams = new Map(paramNames);
   extendedParams.set(xName, xBinder);
 
@@ -4275,7 +4299,7 @@ function translateMutatingBody(
   // internal `freshHygienicBinder` which emits `$N` names that don't
   // round-trip through the Pantagruel parser.
   const allocBinder = (hint: string): string =>
-    synthCell ? cellRegisterName(synthCell, hint) : freshHygienicBinder(supply);
+    allocComprehensionBinder(supply, hint);
   for (const [, entry] of state.writes) {
     switch (entry.kind) {
       case "property":
