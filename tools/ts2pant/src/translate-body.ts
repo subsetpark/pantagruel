@@ -26,6 +26,7 @@ import {
 import { lowerL1MuSearch, type MuSearchLowerCtx } from "./ir1-lower.js";
 import { lowerL1Body } from "./ir1-lower-body.js";
 import {
+  getOperandDeclaredType,
   type NullishTranslate,
   recognizeNullishForm,
 } from "./nullish-recognizer.js";
@@ -2713,7 +2714,69 @@ export function translateBodyExpr(
   const ast = getAst();
 
   if (ts.isExpression(expr)) {
-    expr = unwrapExpression(expr);
+    // Strip transparent wrappers, but handle `!` separately: when the
+    // receiver's Pant emission is list-lifted `[T]` (Alloy `lone`
+    // multiplicity for a nullable `T | null`), `x!` lowers to singleton
+    // extraction `(x 1)` — the same shape `??` and `?.` produce. When the
+    // receiver's Pant emission is already unboxed `T` (e.g. `m.get(k)`,
+    // which the Map-encoding emits as a guarded rule application of type
+    // `V`), the `!` is structural and passes through. Mirrors the
+    // QuestionQuestionToken / questionDotToken handlers below.
+    while (
+      ts.isParenthesizedExpression(expr) ||
+      ts.isAsExpression(expr) ||
+      ts.isSatisfiesExpression(expr)
+    ) {
+      expr = expr.expression;
+    }
+    if (ts.isNonNullExpression(expr)) {
+      const innerExpr = expr.expression;
+      const innerResult = translateBodyExpr(
+        innerExpr,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
+      if (isBodyUnsupported(innerResult)) {
+        return innerResult;
+      }
+      // Use the operand's *declared* type (narrowing-free) so a `!`
+      // inside a flow-narrowed branch — `if (x != null) return x!;` —
+      // still sees `x` as nullable and lowers to singleton extraction.
+      // `checker.getTypeAtLocation` would return the narrowed `T` here
+      // and silently emit a no-op, but the Pant symbol for `x` is
+      // still the list-lifted `[T]` parameter, so the typecheck would
+      // fail. Same fix the nullish recognizer applied (PR for the
+      // long-form chain narrowing bug — see `getOperandDeclaredType`
+      // in nullish-recognizer.ts).
+      const receiverTsType = getOperandDeclaredType(innerExpr, checker);
+      // The Map encoding is the one place where a TS-nullable receiver
+      // (`m.get(k)`'s `V | undefined`) lowers to an *unboxed* Pant
+      // value: the guarded-rule emission yields `entries c k` of type
+      // `V`, not `[V]`. Singleton-extracting that would be a type
+      // error. Every other nullable-typed expression (parameter refs,
+      // field accesses, user functions returning `T | null` whose
+      // mapped Pant return type is `[T]`) follows mapTsType's list-
+      // lift, so `!` lowers to singleton extraction `(x 1)`. The
+      // narrow carve-out matches the dispatch in `translateCallExpr`
+      // for `.get` on a Map type (line ~3777).
+      const innerUnwrapped = unwrapExpression(innerExpr);
+      const isMapGetCall =
+        ts.isCallExpression(innerUnwrapped) &&
+        ts.isPropertyAccessExpression(innerUnwrapped.expression) &&
+        innerUnwrapped.expression.name.text === "get" &&
+        isMapType(
+          checker.getTypeAtLocation(innerUnwrapped.expression.expression),
+        );
+      if (isNullableTsType(receiverTsType) && !isMapGetCall) {
+        return {
+          expr: ast.app(bodyExpr(innerResult), [ast.litNat(1)]),
+        };
+      }
+      return innerResult;
+    }
   }
 
   // M4: nullish surface forms (`x == null`, `x === undefined`, the

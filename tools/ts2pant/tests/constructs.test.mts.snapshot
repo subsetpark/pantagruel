@@ -455,7 +455,7 @@ exports[`expressions-map.ts > lookupNonNull 1`] = `
 `;
 
 exports[`expressions-misc.ts > asNumber 1`] = `
-"module AsNumber.\\n\\nas-number x: unknown => Int.\\n\\n---\\n\\nas-number x = x.\\n"
+"module AsNumber.\\n\\nas-number x: Int => Int.\\n\\n---\\n\\nas-number x = x.\\n"
 `;
 
 exports[`expressions-misc.ts > negate 1`] = `
@@ -463,7 +463,7 @@ exports[`expressions-misc.ts > negate 1`] = `
 `;
 
 exports[`expressions-misc.ts > nonNull 1`] = `
-"module NonNull.\\n\\nnon-null x: [Int] => Int.\\n\\n---\\n\\nnon-null x = x.\\n"
+"module NonNull.\\n\\nnon-null x: [Int] => Int.\\n\\n---\\n\\nnon-null x = x 1.\\n"
 `;
 
 exports[`expressions-misc.ts > parenAdd 1`] = `

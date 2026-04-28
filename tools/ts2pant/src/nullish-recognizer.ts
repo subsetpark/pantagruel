@@ -89,7 +89,7 @@ function isNullableType(type: ts.Type): boolean {
  * etc.) we fall back to `getTypeAtLocation` — those are rarely
  * repeated in a chain, so the narrowing risk is low.
  */
-function getOperandDeclaredType(
+export function getOperandDeclaredType(
   operand: ts.Expression,
   checker: ts.TypeChecker,
 ): ts.Type {
