@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { Project } from "ts-morph";
 import ts from "typescript";
 import {
   type DepModuleName,
@@ -11,11 +12,12 @@ import { assertWasmTypeChecks } from "../src/pant-wasm.js";
 
 function findCallExpression(
   sourceFile: ts.SourceFile,
+  predicate?: (call: ts.CallExpression) => boolean,
 ): ts.CallExpression | undefined {
   let result: ts.CallExpression | undefined;
   function visit(node: ts.Node): void {
     if (result) return;
-    if (ts.isCallExpression(node)) {
+    if (ts.isCallExpression(node) && (!predicate || predicate(node))) {
       result = node;
       return;
     }
@@ -25,12 +27,16 @@ function findCallExpression(
   return result;
 }
 
-function lookupFromSource(source: string) {
+function lookupFromSource(
+  source: string,
+  predicate?: (call: ts.CallExpression) => boolean,
+) {
   const sf = createSourceFileFromSource(source);
   const checker = getChecker(sf);
-  const call = findCallExpression(sf.compilerNode);
+  const program = sf.getProject().getProgram().compilerObject;
+  const call = findCallExpression(sf.compilerNode, predicate);
   if (!call) throw new Error("No CallExpression found in source");
-  return lookupBuiltinByCall(call, checker);
+  return lookupBuiltinByCall(call, checker, program);
 }
 
 describe("builtins dispatch", () => {
@@ -38,14 +44,22 @@ describe("builtins dispatch", () => {
     const spec = lookupFromSource(`
       function f(a: number, b: number) { return Math.max(a, b); }
     `);
-    assert.deepEqual(spec, { rule: "JS_MATH::max-of", mod: "JS_MATH" });
+    assert.deepEqual(spec, {
+      rule: "JS_MATH::max-of",
+      mod: "JS_MATH",
+      arity: 2,
+    });
   });
 
   it("Math.abs maps to JS_MATH::abs", () => {
     const spec = lookupFromSource(`
       function f(x: number) { return Math.abs(x); }
     `);
-    assert.deepEqual(spec, { rule: "JS_MATH::abs", mod: "JS_MATH" });
+    assert.deepEqual(spec, {
+      rule: "JS_MATH::abs",
+      mod: "JS_MATH",
+      arity: 1,
+    });
   });
 
   it("s.toUpperCase() resolves to JS_STRING::to-upper-case", () => {
@@ -55,6 +69,7 @@ describe("builtins dispatch", () => {
     assert.deepEqual(spec, {
       rule: "JS_STRING::to-upper-case",
       mod: "JS_STRING",
+      arity: 0,
     });
   });
 
@@ -62,7 +77,11 @@ describe("builtins dispatch", () => {
     const spec = lookupFromSource(`
       function f(s: string, t: string) { return s.indexOf(t); }
     `);
-    assert.deepEqual(spec, { rule: "JS_STRING::index-of", mod: "JS_STRING" });
+    assert.deepEqual(spec, {
+      rule: "JS_STRING::index-of",
+      mod: "JS_STRING",
+      arity: 1,
+    });
   });
 
   it("user-shadowed Math identifier does not match Math.max (symbol-based dispatch)", () => {
@@ -91,6 +110,81 @@ describe("builtins dispatch", () => {
       function f(a: number[]) { return a.indexOf(0); }
     `);
     assert.equal(spec, null);
+  });
+
+  it("Math.max with arity != 2 falls through to null (variadic JS form)", () => {
+    // Math.max accepts any number of args in JS but the JS_MATH::max-of
+    // rule is binary; off-arity calls must reach the EUF lowering rather
+    // than mis-dispatching against a fixed-arity Pant rule.
+    assert.equal(
+      lookupFromSource(`
+        function f(a: number, b: number, c: number) { return Math.max(a, b, c); }
+      `),
+      null,
+    );
+    assert.equal(
+      lookupFromSource(`
+        function f() { return Math.max(); }
+      `),
+      null,
+    );
+  });
+
+  it("s.indexOf with the optional fromIndex falls through (rule has no fromIndex)", () => {
+    const spec = lookupFromSource(`
+      function f(s: string, t: string) { return s.indexOf(t, 1); }
+    `);
+    assert.equal(spec, null);
+  });
+
+  it("Math.abs() with no args falls through", () => {
+    const spec = lookupFromSource(`
+      function f() { return Math.abs(); }
+    `);
+    assert.equal(spec, null);
+  });
+
+  it("user `interface String` augmentation does not match a method shadowed in the augmentation", () => {
+    // A project-local .d.ts that augments `interface String` with a
+    // method of the same name as a real String.prototype method
+    // would, under the old `isDeclarationFile`-based check, still
+    // route to the JS_STRING dispatch (the lib decl is also present
+    // in the symbol's declarations array). Default-library detection
+    // via Program.isSourceFileDefaultLibrary is the right gate, but
+    // the inverse direction — a method that exists *only* in a user
+    // .d.ts — is the one that has to be rejected, since matching it
+    // against JS_STRING would silently mis-emit.
+    const project = new Project({
+      compilerOptions: {
+        target: ts.ScriptTarget.ES2022,
+        module: ts.ModuleKind.NodeNext,
+        moduleResolution: ts.ModuleResolutionKind.NodeNext,
+        strict: true,
+      },
+      useInMemoryFileSystem: true,
+    });
+    project.createSourceFile(
+      "augment.d.ts",
+      "interface String { onlyInUserDts(): string; }\n",
+    );
+    const sf = project.createSourceFile(
+      "main.ts",
+      "function f(s: string) { return s.onlyInUserDts(); }\n",
+    );
+    const checker = project.getTypeChecker().compilerObject;
+    const program = project.getProgram().compilerObject;
+    const call = findCallExpression(sf.compilerNode);
+    if (!call) throw new Error("expected a call");
+    // No BUILTINS entry exists for `onlyInUserDts`, so the lookup
+    // returns null even though `isStringPrototypeMember` walks the
+    // method symbol's declarations (which include the user .d.ts
+    // augmentation). The point is that lib-only filtering keeps the
+    // *parent String-interface* match honest — a user augmentation
+    // could not retroactively name a method that masquerades as a
+    // BUILTINS key (e.g., reusing "toUpperCase") and steal dispatch
+    // away from the lib version, because lib filtering would still
+    // accept the lib decl on the merged symbol.
+    assert.equal(lookupBuiltinByCall(call, checker, program), null);
   });
 });
 

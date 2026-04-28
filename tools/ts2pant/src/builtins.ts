@@ -24,13 +24,20 @@ import ts from "typescript";
 export type DepModuleName = "JS_MATH" | "JS_STRING";
 
 /**
- * Dispatch entry: `rule` is the qualified Pantagruel rule reference
- * a consumer module would use after `import JS_MATH.` (e.g.,
- * `JS_MATH::max-of`); `mod` is the dep module the rule lives in.
+ * Dispatch entry: `rule` is the qualified Pantagruel rule reference a
+ * consumer module would use after `import JS_MATH.` (e.g.,
+ * `JS_MATH::max-of`); `mod` is the dep module the rule lives in;
+ * `arity` is the JS-side argument count the rule's signature is sound
+ * for. The lookup gates on argument count because the Pantagruel
+ * rules are fixed-arity (`max-of` is binary; `Math.max(a, b, c)` would
+ * be a signature mismatch under EUF lowering — Kroening & Strichman
+ * Ch. 4 § Congruence). Calls outside the supported arity fall through
+ * to ts2pant's ordinary EUF path rather than mis-dispatching.
  */
 export interface BuiltinSpec {
   rule: string;
   mod: DepModuleName;
+  arity: number;
 }
 
 /**
@@ -42,15 +49,15 @@ export interface BuiltinSpec {
 type BuiltinKey = `Math.${string}` | `String.prototype.${string}`;
 
 const BUILTINS: Map<BuiltinKey, BuiltinSpec> = new Map([
-  ["Math.max", { rule: "JS_MATH::max-of", mod: "JS_MATH" }],
-  ["Math.abs", { rule: "JS_MATH::abs", mod: "JS_MATH" }],
+  ["Math.max", { rule: "JS_MATH::max-of", mod: "JS_MATH", arity: 2 }],
+  ["Math.abs", { rule: "JS_MATH::abs", mod: "JS_MATH", arity: 1 }],
   [
     "String.prototype.toUpperCase",
-    { rule: "JS_STRING::to-upper-case", mod: "JS_STRING" },
+    { rule: "JS_STRING::to-upper-case", mod: "JS_STRING", arity: 0 },
   ],
   [
     "String.prototype.indexOf",
-    { rule: "JS_STRING::index-of", mod: "JS_STRING" },
+    { rule: "JS_STRING::index-of", mod: "JS_STRING", arity: 1 },
   ],
 ]);
 
@@ -60,22 +67,36 @@ const BUILTINS: Map<BuiltinKey, BuiltinSpec> = new Map([
  *
  * Matching is symbol-based, not textual: a user-shadowed
  * `const Math = ...; Math.max(a, b)` resolves to a symbol declared in
- * the user's source file rather than a TS lib declaration file, so
+ * the user's source file rather than a TS default-library file, so
  * the lookup fails and the call falls through to ts2pant's regular
  * EUF lowering. This is the same robustness posture the nullish
  * recognizer takes (see `nullish-recognizer.ts` and CLAUDE.md M4
  * "structural-not-textual" rule).
  *
+ * Lib detection uses `Program.isSourceFileDefaultLibrary`, the public
+ * TS Compiler API for distinguishing `node_modules/typescript/lib/lib.*.d.ts`
+ * from arbitrary user-supplied `.d.ts` (ambient `declare const Math`
+ * shims, merged `interface String { … }` augmentations, etc.).
+ * `isDeclarationFile` alone would match the latter and silently re-bind
+ * a user augmentation to the dispatch table.
+ *
  * For `Math.<name>(...)` we resolve the symbol of the *receiver*
  * (the `Math` identifier) and accept it iff its declarations sit in
- * a TS lib `.d.ts` file. For `<receiver>.<name>(...)` where the
+ * a TS default-library file. For `<receiver>.<name>(...)` where the
  * method is on `String.prototype` (e.g., `s.toUpperCase()`) we
  * resolve the symbol of the *method* and accept it iff its parent
  * declaration is the lib `String` interface.
+ *
+ * Once the namespace+name match, the call's argument count must equal
+ * the dispatch entry's `arity` — see {@link BuiltinSpec}. Off-arity
+ * calls (`Math.max(a, b, c)`, `Math.abs()`) fall through to null so
+ * they reach the ordinary EUF lowering rather than mis-dispatching to
+ * a fixed-arity Pant rule.
  */
 export function lookupBuiltinByCall(
   expr: ts.CallExpression,
   checker: ts.TypeChecker,
+  program: ts.Program,
 ): BuiltinSpec | null {
   if (!ts.isPropertyAccessExpression(expr.expression)) {
     return null;
@@ -83,37 +104,52 @@ export function lookupBuiltinByCall(
   const propAccess = expr.expression;
   const memberName = propAccess.name.text;
 
+  let spec: BuiltinSpec | undefined;
   if (
     ts.isIdentifier(propAccess.expression) &&
     propAccess.expression.text === "Math" &&
-    isLibSymbol(checker.getSymbolAtLocation(propAccess.expression))
+    isDefaultLibSymbol(
+      checker.getSymbolAtLocation(propAccess.expression),
+      program,
+    )
   ) {
-    return BUILTINS.get(`Math.${memberName}`) ?? null;
+    spec = BUILTINS.get(`Math.${memberName}`);
+  } else {
+    const methodSymbol = checker.getSymbolAtLocation(propAccess.name);
+    if (methodSymbol && isStringPrototypeMember(methodSymbol, program)) {
+      spec = BUILTINS.get(`String.prototype.${memberName}`);
+    }
   }
 
-  const methodSymbol = checker.getSymbolAtLocation(propAccess.name);
-  if (methodSymbol && isStringPrototypeMember(methodSymbol)) {
-    return BUILTINS.get(`String.prototype.${memberName}`) ?? null;
+  if (!spec) {
+    return null;
   }
-
-  return null;
+  return expr.arguments.length === spec.arity ? spec : null;
 }
 
-function isLibSymbol(symbol: ts.Symbol | undefined): boolean {
+function isDefaultLibSymbol(
+  symbol: ts.Symbol | undefined,
+  program: ts.Program,
+): boolean {
   const decls = symbol?.declarations;
   if (!decls || decls.length === 0) {
     return false;
   }
-  return decls.some((d) => d.getSourceFile().isDeclarationFile);
+  return decls.some((d) =>
+    program.isSourceFileDefaultLibrary(d.getSourceFile()),
+  );
 }
 
-function isStringPrototypeMember(symbol: ts.Symbol): boolean {
+function isStringPrototypeMember(
+  symbol: ts.Symbol,
+  program: ts.Program,
+): boolean {
   const decls = symbol.declarations;
   if (!decls) {
     return false;
   }
   for (const decl of decls) {
-    if (!decl.getSourceFile().isDeclarationFile) {
+    if (!program.isSourceFileDefaultLibrary(decl.getSourceFile())) {
       continue;
     }
     const parent = decl.parent;
