@@ -426,6 +426,25 @@ describe("cellRegisterTupleConstructor", () => {
     assert.equal(r2.ctorRuleName, "make-string-int");
   });
 
+  it("does not collide nested tuple element shapes", () => {
+    // `[Int, Int * Int]` and `[Int * Int, Int]` are structurally
+    // distinct shapes; a delimiter-naive key (joining elements with
+    // `*`) would hash both to `Int*Int*Int` and merge the
+    // constructors. The canonical key must use a delimiter-safe
+    // encoding so the boundaries between elements stay unambiguous.
+    const cell = newSynthCell();
+    const r1 = cellRegisterTupleConstructor(cell, {
+      elementPantTypes: ["Int", "Int * Int"],
+    });
+    const r2 = cellRegisterTupleConstructor(cell, {
+      elementPantTypes: ["Int * Int", "Int"],
+    });
+    assert.ok(r1 !== null);
+    assert.ok(r2 !== null);
+    assert.notEqual(r1.ctorRuleName, r2.ctorRuleName);
+    assert.equal(cellTupleShapes(cell).length, 2);
+  });
+
   it("ctor names are isolated from the consumer registry", () => {
     // Tuple ctors live in a separate dep module, so collisions in the
     // consumer's NameRegistry must not perturb the canonical
@@ -542,5 +561,23 @@ describe("depModuleNameForFile", () => {
     // `cellRegisterTupleConstructor`.
     assert.equal(depModuleNameForFile(".ts"), "TUPLES");
     assert.equal(depModuleNameForFile(""), "TUPLES");
+  });
+
+  it("prefixes digit-leading basenames with F_", () => {
+    // `123_FOO_TUPLES` would also be rejected by the lexer. Prefix
+    // with `F_` (a stable letter, no semantics) so the result is a
+    // legal UPPER_IDENT.
+    assert.equal(
+      depModuleNameForFile("123-foo.ts"),
+      "F_123_FOO_TUPLES",
+    );
+    assert.equal(depModuleNameForFile("9.ts"), "F_9_TUPLES");
+  });
+
+  it("strips leading underscores so `_foo.ts` is well-formed", () => {
+    // Filenames like `_foo.ts` would otherwise yield `_FOO_TUPLES`.
+    // Strip the leading underscore-only prefix; the remaining
+    // letter-led stem is a legal UPPER_IDENT.
+    assert.equal(depModuleNameForFile("_foo.ts"), "FOO_TUPLES");
   });
 });

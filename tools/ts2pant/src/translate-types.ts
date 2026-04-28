@@ -518,13 +518,20 @@ export function emptyTupleSynth(): TupleSynth {
 }
 
 /**
- * Canonical key for tuple-shape dedup: element Pant types joined by `*`.
- * Joining whitespace-stripped strings prevents whitespace variance in
- * nested tuple types (e.g. `Int * Int` vs `Int*Int`) from producing
- * different keys — the canonical key is purely structural.
+ * Canonical key for tuple-shape dedup: a delimiter-safe encoding of
+ * the element Pant types. Each element is whitespace-stripped first
+ * so `Int * Int` and `Int*Int` hash identically (the canonical key
+ * is purely structural). The encoding uses `JSON.stringify` rather
+ * than a join because `*` is *also* legal inside an element type
+ * (a nested tuple like `Int*Int`), and a bare `*` join would collide
+ * `[Int, Int*Int]` with `[Int*Int, Int]` on the same `Int*Int*Int`
+ * key. JSON's quoting and escaping make the per-element boundaries
+ * unambiguous.
  */
 function tupleShapeKey(shape: TupleShape): string {
-  return shape.elementPantTypes.map((t) => t.replace(/\s+/gu, "")).join("*");
+  return JSON.stringify(
+    shape.elementPantTypes.map((t) => t.replace(/\s+/gu, "")),
+  );
 }
 
 /**
@@ -553,19 +560,26 @@ function tupleCtorBaseName(shape: TupleShape): string | null {
  * name in this codebase uses the screaming-snake convention (matches
  * the existing `samples/*.pant` corpus).
  *
- * Edge case: an extension-only or empty input (`.ts`, `""`) would
- * otherwise produce `_TUPLES`, which Pantagruel's lexer rejects as a
- * module name (`upper_start = 'A' .. 'Z'`, so an UPPER_IDENT cannot
- * begin with `_`). Fall back to the unprefixed `TUPLES`, matching the
- * no-sourceFile fallback in `cellRegisterTupleConstructor`.
+ * The result must be a legal Pantagruel UPPER_IDENT — the lexer's
+ * `upper_start = 'A' .. 'Z'` rules out:
+ *   - empty stems (`.ts`, `""` → `_TUPLES`),
+ *   - underscore-leading stems (`_foo.ts` → `_FOO_TUPLES`),
+ *   - digit-leading stems (`123-foo.ts` → `123_FOO_TUPLES`).
+ * Strip leading underscores; if the remaining stem starts with a
+ * digit, prefix `F_` (the `F` is just a stable letter — no semantics).
+ * If the stem is empty after stripping, fall back to the unprefixed
+ * `TUPLES`, matching the no-sourceFile fallback in
+ * `cellRegisterTupleConstructor`.
  */
 export function depModuleNameForFile(fileName: string): string {
   const base = fileName.replace(/^.*[/\\]/u, "").replace(/\.[^.]+$/u, "");
   const upper = base.replace(/[^A-Za-z0-9]+/gu, "_").toUpperCase();
-  if (upper.length === 0) {
+  const stem = upper.replace(/^_+/u, "");
+  if (stem.length === 0) {
     return "TUPLES";
   }
-  return `${upper}_TUPLES`;
+  const safeStem = /^[A-Z]/u.test(stem) ? stem : `F_${stem}`;
+  return `${safeStem}_TUPLES`;
 }
 
 /**
@@ -772,7 +786,19 @@ export function resolveRecordOwner(
   // preferring it here would break lockstep with the synth's emission.
   if (synthCell && isAnonymousRecord(type)) {
     const mapped = mapTsType(type, checker, strategy, synthCell);
-    if (mapped !== UNSUPPORTED_ANONYMOUS_RECORD) {
+    // Filter both unsupported sentinels — `mapped` may be
+    // `UNSUPPORTED_ANONYMOUS_RECORD` (synth failure / cell-less path)
+    // or `UNSUPPORTED_UNKNOWN` (a field typed `unknown` propagated up
+    // from `registerAnonymousRecord`). Either as a record-owner name
+    // would emit a bogus qualified accessor like
+    // `__unsupported_unknown__--name r`. Fall through to the named-
+    // symbol path; for an anonymous shape there is no meaningful
+    // fallback owner, so the resolver returns null and the caller
+    // rejects the field access.
+    if (
+      mapped !== UNSUPPORTED_ANONYMOUS_RECORD &&
+      !isUnsupportedUnknown(mapped)
+    ) {
       return mapped;
     }
   }
