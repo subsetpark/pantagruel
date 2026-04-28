@@ -42,6 +42,11 @@ interface PropertyAccessSetup {
   ctx: L1BuildContext;
 }
 
+interface AccessSetup {
+  node: ts.PropertyAccessExpression | ts.ElementAccessExpression;
+  ctx: L1BuildContext;
+}
+
 /**
  * Parse a function declaration, return the single property-access
  * expression in its `return` statement plus an L1 build context. The
@@ -49,6 +54,21 @@ interface PropertyAccessSetup {
  * registration so the test exercises real Pant-name lookups.
  */
 function setup(source: string): PropertyAccessSetup {
+  const r = setupAccess(source);
+  if (!ts.isPropertyAccessExpression(r.node)) {
+    throw new Error(
+      `setup: expected a PropertyAccessExpression, got ${ts.SyntaxKind[r.node.kind]}`,
+    );
+  }
+  return { node: r.node, ctx: r.ctx };
+}
+
+/**
+ * Like `setup` but returns either a PropertyAccess or ElementAccess.
+ * Used by Patch 3 tests that exercise the string-literal element-access
+ * arm of `buildL1MemberAccess`.
+ */
+function setupAccess(source: string): AccessSetup {
   const sourceFile = createSourceFileFromSource(source);
   const checker = getChecker(sourceFile);
   const fn = sourceFile.compilerNode.statements.find(ts.isFunctionDeclaration);
@@ -76,9 +96,12 @@ function setup(source: string): PropertyAccessSetup {
     throw new Error("setup: expected a return statement with an expression");
   }
   const expr = stmt.expression;
-  if (!ts.isPropertyAccessExpression(expr)) {
+  if (
+    !ts.isPropertyAccessExpression(expr) &&
+    !ts.isElementAccessExpression(expr)
+  ) {
     throw new Error(
-      `setup: expected a PropertyAccessExpression, got ${ts.SyntaxKind[expr.kind]}`,
+      `setup: expected a Property/ElementAccessExpression, got ${ts.SyntaxKind[expr.kind]}`,
     );
   }
   return { node: expr, ctx };
@@ -308,5 +331,141 @@ describe("ir1-build-property", () => {
     // bare `owner` name, observable as a divergent qualifier here.
     const { name } = expectMember(result);
     assert.equal(name, "document--owner");
+  });
+
+  // -------------------------------------------------------------------------
+  // M5 Patch 3: string-literal ElementAccess collapses to canonical Member;
+  // computed ElementAccess rejects with the specific reason.
+  // -------------------------------------------------------------------------
+
+  it("string-literal ElementAccess builds Member", () => {
+    const { node, ctx } = setupAccess(
+      `interface User { readonly name: string; }
+       function f(u: User): string {
+         return u["name"];
+       }`,
+    );
+    const result = buildL1MemberAccess(node, ctx);
+    const { receiver, name } = expectMember(result);
+    assert.equal(name, "user--name");
+    // Mirrors the dotted-access bottom-out: receiver is a non-property
+    // node translated through legacy and wrapped via from-l2.
+    assert.equal(receiver.kind, "from-l2");
+  });
+
+  it("nested string-literal ElementAccess composes", () => {
+    const { node, ctx } = setupAccess(
+      `interface Owner { readonly name: string; }
+       interface Document { readonly owner: Owner; }
+       function f(d: Document): string {
+         return d["owner"]["name"];
+       }`,
+    );
+    const result = buildL1MemberAccess(node, ctx);
+    const outer = expectMember(result);
+    assert.equal(outer.name, "owner--name");
+    // Inner Member proves the nested chain composes through the
+    // string-literal recursion gate, not flattens to one from-l2 wrap.
+    const inner = expectMember(outer.receiver);
+    assert.equal(inner.name, "document--owner");
+    assert.equal(inner.receiver.kind, "from-l2");
+  });
+
+  it("computed Identifier ElementAccess rejects with reason", () => {
+    const { node, ctx } = setupAccess(
+      `interface Account { readonly balance: number; }
+       function f(a: Account, k: keyof Account): unknown {
+         return a[k];
+       }`,
+    );
+    const result = buildL1MemberAccess(node, ctx);
+    assert.ok(
+      "unsupported" in result,
+      `expected unsupported, got Member: ${JSON.stringify(result)}`,
+    );
+    if ("unsupported" in result) {
+      assert.match(result.unsupported, /computed property access/u);
+    }
+  });
+
+  it("computed expression ElementAccess rejects with reason", () => {
+    const { node, ctx } = setupAccess(
+      `interface T { readonly f: number; }
+       function f(t: T): unknown {
+         return t[1 + 1];
+       }`,
+    );
+    const result = buildL1MemberAccess(node, ctx);
+    assert.ok(
+      "unsupported" in result,
+      `expected unsupported, got Member: ${JSON.stringify(result)}`,
+    );
+    if ("unsupported" in result) {
+      assert.match(result.unsupported, /computed property access/u);
+    }
+  });
+
+  it('obj.f and obj["f"] build identical Member trees', () => {
+    // Snapshot equivalence: the two surface forms collapse to the same
+    // canonical Member output. Compare the lowered OpaqueExpr
+    // serialization rather than IR structure so the test exercises the
+    // full lower-to-Pant pipeline.
+    const dotted = setupAccess(
+      `interface User { readonly name: string; }
+       function f(u: User): string {
+         return u.name;
+       }`,
+    );
+    const indexed = setupAccess(
+      `interface User { readonly name: string; }
+       function f(u: User): string {
+         return u["name"];
+       }`,
+    );
+    const dottedOpaque = getAst().strExpr(
+      lowerExpr(
+        lowerL1Expr(buildL1MemberAccess(dotted.node, dotted.ctx) as IR1Expr),
+      ),
+    );
+    const indexedOpaque = getAst().strExpr(
+      lowerExpr(
+        lowerL1Expr(buildL1MemberAccess(indexed.node, indexed.ctx) as IR1Expr),
+      ),
+    );
+    assert.equal(indexedOpaque, dottedOpaque);
+  });
+
+  it("no-substitution template-literal ElementAccess builds Member", () => {
+    // ``obj[`field`]`` is the second accepted literal-key form
+    // (`elementAccessLiteralKey` accepts both `StringLiteral` and
+    // `NoSubstitutionTemplateLiteral`); its lowered output must match
+    // the dotted form byte-for-byte, locking the template-literal
+    // path against accidental regression.
+    const { node, ctx } = setupAccess(
+      "interface User { readonly name: string; }\n" +
+        "function f(u: User): string {\n" +
+        "  return u[`name`];\n" +
+        "}",
+    );
+    const result = buildL1MemberAccess(node, ctx);
+    const { receiver, name } = expectMember(result);
+    assert.equal(name, "user--name");
+    assert.equal(receiver.kind, "from-l2");
+
+    const dotted = setupAccess(
+      `interface User { readonly name: string; }
+       function f(u: User): string {
+         return u.name;
+       }`,
+    );
+    const dottedOpaque = getAst().strExpr(
+      lowerExpr(
+        lowerL1Expr(buildL1MemberAccess(dotted.node, dotted.ctx) as IR1Expr),
+      ),
+    );
+    const templateOpaque = getAst().strExpr(
+      lowerExpr(lowerL1Expr(result as IR1Expr)),
+    );
+    assert.equal(templateOpaque, dottedOpaque);
   });
 });

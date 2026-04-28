@@ -195,18 +195,18 @@ export function tryBuildL1Cardinality(
   if (!matches) {
     return null;
   }
-  // Receiver translation. Property-access receivers (e.g.,
-  // `a.items.length`) route through `buildL1MemberAccess` so the
+  // Receiver translation. Member-surface receivers (`a.items.length`,
+  // `a["items"].length`) route through `buildL1MemberAccess` so the
   // entire chain stays on the L1 path — no half-migration where the
-  // outer `card` is L1 but the inner `.items` round-trips through L2
-  // via `from-l2`. Other receiver shapes (Identifier, call, binop,
-  // etc.) translate through the supplied leaf translator (default
-  // `translateBodyExpr`); those aren't property-access and are out of
-  // M5's equivalence class.
-  if (
-    ts.isPropertyAccessExpression(receiverNode) &&
-    (receiverNode.flags & ts.NodeFlags.OptionalChain) === 0
-  ) {
+  // outer `card` is L1 but the inner `.items` / `["items"]` round-trips
+  // through L2 via `from-l2`. Both PropertyAccess and string-literal
+  // ElementAccess belong to the property-access equivalence class
+  // (M5 hard rule), so the recursion gate is the shared
+  // `isMemberSurfaceForm` predicate. Other receiver shapes
+  // (Identifier, call, binop, etc.) translate through the supplied
+  // leaf translator (default `translateBodyExpr`); those aren't
+  // property-access and are out of M5's equivalence class.
+  if (isMemberSurfaceForm(receiverNode)) {
     const innerCard = tryBuildL1Cardinality(receiverNode, ctx, options);
     if (innerCard !== null) {
       return ir1Unop("card", innerCard);
@@ -246,12 +246,66 @@ export function tryBuildL1Cardinality(
 // ---------------------------------------------------------------------------
 //
 // Build the canonical L1 `Member(receiver, qualified-name)` form for a TS
-// `PropertyAccessExpression` (and, in M5 Patch 3, string-literal
-// `ElementAccessExpression`). The qualified name is resolved at build
-// time via `qualifyFieldAccess` — IRSC discipline preserves the
-// pre-qualification: L1 `Member` is a *normalization* form whose lowering
-// at `ir1-lower.ts` is mechanical (`Member(r, n) → App(n, [lower r])`),
-// matching the legacy `App(qualified-rule, [receiver])` byte-for-byte.
+// `PropertyAccessExpression` or string-literal `ElementAccessExpression`
+// (`obj["field"]`). The two surface forms collapse to the same canonical
+// Member — one canonical form per construct (IRSC discipline). The
+// qualified name is resolved at build time via `qualifyFieldAccess`:
+// L1 `Member` is a *normalization* form whose lowering at `ir1-lower.ts`
+// is mechanical (`Member(r, n) → App(n, [lower r])`), matching the
+// legacy `App(qualified-rule, [receiver])` byte-for-byte.
+
+/**
+ * Computed `obj[expr]` (non-literal index) is rejected unconditionally.
+ * The DoD's "unless the type system resolves to a known field set" path
+ * (literal-union narrowing) is deferred to a follow-up; uniform
+ * rejection is the conservative-refusal policy 3(b) answer.
+ */
+const COMPUTED_ELEMENT_ACCESS_UNSUPPORTED =
+  "computed property access (obj[expr]) is unsupported; " +
+  "use dotted property access or a string-literal index instead";
+
+/**
+ * Extract the literal field name from an `ElementAccessExpression`'s
+ * argument expression. Accepts both `StringLiteral` (`obj["f"]`) and
+ * `NoSubstitutionTemplateLiteral` (`` obj[`f`] ``) — both produce the
+ * same TS type-checker resolution and the same field name. Returns
+ * null for any other argument shape (identifier, computed expression,
+ * numeric literal, template with substitutions, etc.).
+ */
+function elementAccessLiteralKey(
+  node: ts.ElementAccessExpression,
+): string | null {
+  const arg = node.argumentExpression;
+  if (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg)) {
+    return arg.text;
+  }
+  return null;
+}
+
+/**
+ * True when `node` is one of the two surface forms that
+ * `buildL1MemberAccess` recognizes as a non-optional property access:
+ * dotted `obj.field` or string-literal `obj["field"]`. Used by the
+ * recursion gate so nested chains compose into nested Member trees
+ * regardless of which surface form spells each step.
+ */
+function isMemberSurfaceForm(
+  node: ts.Node,
+): node is ts.PropertyAccessExpression | ts.ElementAccessExpression {
+  if (
+    ts.isPropertyAccessExpression(node) &&
+    (node.flags & ts.NodeFlags.OptionalChain) === 0
+  ) {
+    return true;
+  }
+  if (
+    ts.isElementAccessExpression(node) &&
+    (node.flags & ts.NodeFlags.OptionalChain) === 0
+  ) {
+    return elementAccessLiteralKey(node) !== null;
+  }
+  return false;
+}
 
 /**
  * Receiver translation result — either an opaque expression or an
@@ -309,22 +363,25 @@ export interface BuildL1MemberAccessOptions {
  * (under the body-side default), unsupported access shape, or a
  * sub-expression that itself rejects.
  *
+ * Surface forms accepted (one canonical Member output for both):
+ *   - `PropertyAccessExpression` — `obj.field` (with `.field` token).
+ *   - `ElementAccessExpression` whose `argumentExpression` is a
+ *     `StringLiteral` or `NoSubstitutionTemplateLiteral` —
+ *     `obj["field"]` and `` obj[`field`] ``. Computed indices
+ *     (`obj[k]`, `obj[1+1]`) reject with the
+ *     `COMPUTED_ELEMENT_ACCESS_UNSUPPORTED` reason.
+ *
  * Receiver translation:
  *   - State-free contexts (pure path, unit tests) recurse on
- *     `PropertyAccessExpression` receivers, producing nested L1
- *     `Member` trees. The recursion bottoms out at a non-property
- *     receiver translated through the legacy pipeline and wrapped as
- *     `from-l2`.
+ *     property-access receivers (either surface form), producing
+ *     nested L1 `Member` trees. The recursion bottoms out at a
+ *     non-property receiver translated through the legacy pipeline
+ *     and wrapped as `from-l2`.
  *   - State-bearing contexts (mutating-body path) translate the
  *     receiver via the legacy pipeline so symbolic-state lookup at
  *     each nested level fires identically to the pre-M5 path. This
  *     preserves byte-equality with the legacy snapshots while still
  *     routing the outer access through L1 `Member`.
- *
- * Patch 1 handles `PropertyAccessExpression` only; the
- * `ElementAccessExpression` arm (string-literal element access lands
- * on the same canonical Member; computed access rejects) is M5
- * Patch 3.
  */
 export function buildL1MemberAccess(
   node: ts.PropertyAccessExpression | ts.ElementAccessExpression,
@@ -333,25 +390,38 @@ export function buildL1MemberAccess(
 ): L1BuildResult {
   const ambiguousMode = options.ambiguousOwnerFallback ?? "reject";
   const stripped = unwrapParens(node);
-  if (!ts.isPropertyAccessExpression(stripped)) {
-    // Patch 1 scope: ElementAccess lands in Patch 3 (string-literal key
-    // canonicalizes to the same Member; computed key rejects).
+  let receiverNode: ts.Node;
+  let fieldName: string;
+  if (ts.isPropertyAccessExpression(stripped)) {
+    // Optional-chain `.f` (`x?.f` and the chain tail) routes through
+    // the optional-chain functor-lift recognizer, not Member. Caller is
+    // expected to filter optional chains before invoking this helper.
+    if ((stripped.flags & ts.NodeFlags.OptionalChain) !== 0) {
+      return {
+        unsupported:
+          "optional-chain property access uses functor-lift, not Member",
+      };
+    }
+    receiverNode = unwrapParens(stripped.expression);
+    fieldName = stripped.name.text;
+  } else if (ts.isElementAccessExpression(stripped)) {
+    if ((stripped.flags & ts.NodeFlags.OptionalChain) !== 0) {
+      return {
+        unsupported:
+          "optional-chain element access uses functor-lift, not Member",
+      };
+    }
+    const literalKey = elementAccessLiteralKey(stripped);
+    if (literalKey === null) {
+      return { unsupported: COMPUTED_ELEMENT_ACCESS_UNSUPPORTED };
+    }
+    receiverNode = unwrapParens(stripped.expression);
+    fieldName = literalKey;
+  } else {
     return {
-      unsupported:
-        "element access not yet routed through L1 Member (M5 Patch 3)",
+      unsupported: "buildL1MemberAccess: unsupported access shape",
     };
   }
-  // Optional-chain `.f` (`x?.f` and the chain tail) routes through the
-  // optional-chain functor-lift recognizer, not Member. Caller is
-  // expected to filter optional chains before invoking this helper.
-  if ((stripped.flags & ts.NodeFlags.OptionalChain) !== 0) {
-    return {
-      unsupported:
-        "optional-chain property access uses functor-lift, not Member",
-    };
-  }
-  const receiverNode = unwrapParens(stripped.expression);
-  const fieldName = stripped.name.text;
   const receiverType = ctx.checker.getTypeAtLocation(receiverNode);
   const qualifiedStrict = qualifyFieldAccess(
     receiverType,
@@ -380,11 +450,7 @@ export function buildL1MemberAccess(
   }
 
   let receiverL1: IR1Expr;
-  if (
-    ctx.state === undefined &&
-    ts.isPropertyAccessExpression(receiverNode) &&
-    (receiverNode.flags & ts.NodeFlags.OptionalChain) === 0
-  ) {
+  if (ctx.state === undefined && isMemberSurfaceForm(receiverNode)) {
     // Pure path: prefer canonical nested Member trees. Cardinality
     // dispatch fires first so a chain like `arr.length.foo` wouldn't
     // silently route `arr.length` through Member.
