@@ -54,6 +54,69 @@ let check_document_string (text : string) : string option =
             | Ok _warnings -> None
             | Error e -> Some (Error.format_type_error e)))
 
+(** Format a [Module.module_error] into a human-readable string. The pant CLI
+    produces these via [Error.format_module_error]; we format inline here to
+    match the wasm-side error-string convention used by [check_document_string].
+*)
+let format_module_error : Module.module_error -> string = function
+  | Module.ModuleNotFound name ->
+      Printf.sprintf "error: module not found: %s" name
+  | Module.CyclicImport chain ->
+      Printf.sprintf "error: cyclic import: %s" (String.concat " -> " chain)
+  | Module.ParseError (_file, msg) ->
+      (* [msg] already carries file:line:col when sourced from a parse error;
+         pass through verbatim so callers see one error string, not a doubled
+         "file: file:line:col: ..." prefix. *)
+      msg
+
+(** Type-check a consumer document against an in-memory bundle of dep modules.
+    Each [(name, text)] pair is parsed and registered as a [module_entry] keyed
+    by [name] — the same key the consumer's [import NAME.] declarations resolve
+    against. Returns [None] on success or [Some message] on failure. Mirrors the
+    pant CLI's import semantics ([Module.check_with_imports]) by populating
+    [module_entry.ast] from in-memory text rather than reading a file. *)
+let check_document_with_deps (consumer_text : string)
+    (deps : (string * string) list) : string option =
+  match parse_document_string "<wasm-input>" consumer_text with
+  | Error msg -> Some msg
+  | Ok consumer_doc -> (
+      let parse_one_dep (name, text) =
+        match parse_document_string ("<dep:" ^ name ^ ">") text with
+        | Error msg -> Error msg
+        | Ok ast -> Ok (name, ast)
+      in
+      let rec parse_deps = function
+        | [] -> Ok []
+        | dep :: rest -> (
+            match parse_one_dep dep with
+            | Error msg -> Error msg
+            | Ok parsed -> (
+                match parse_deps rest with
+                | Error msg -> Error msg
+                | Ok rest' -> Ok (parsed :: rest')))
+      in
+      match parse_deps deps with
+      | Error msg -> Some msg
+      | Ok parsed_deps -> (
+          let modules =
+            List.fold_left
+              (fun acc (name, ast) ->
+                let entry : Module.module_entry =
+                  {
+                    name;
+                    path = "<in-memory:" ^ name ^ ">";
+                    ast = Some ast;
+                    env = None;
+                  }
+                in
+                Module.StringMap.add name entry acc)
+              Module.StringMap.empty parsed_deps
+          in
+          let registry = { Module.modules; loading = [] } in
+          match Module.check_with_imports registry consumer_doc with
+          | Ok _ -> None
+          | Error e -> Some (format_module_error e)))
+
 (** Collect names bound by guards (GIn introduces a binding). *)
 let bound_names_from_guards (guards : Ast.guard list) : string list =
   List.filter_map
@@ -279,6 +342,18 @@ let () =
        method checkDocument text =
          let text = Js.to_string text in
          match check_document_string text with
+         | None -> Js.null
+         | Some msg -> Js.some (Js.string msg)
+
+       method checkDocumentWithDeps consumer_text deps_array =
+         let consumer = Js.to_string consumer_text in
+         let deps =
+           Js.to_array deps_array |> Array.to_list
+           |> List.map (fun pair ->
+               let arr = Js.to_array pair in
+               (Js.to_string (Array.get arr 0), Js.to_string (Array.get arr 1)))
+         in
+         match check_document_with_deps consumer deps with
          | None -> Js.null
          | Some msg -> Js.some (Js.string msg)
     end)

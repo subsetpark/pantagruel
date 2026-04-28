@@ -15,6 +15,10 @@ interface PantParserModule {
   parseAndRename: (text: string, renames: [string, string][]) => string | null;
   prettyPrint: (text: string) => string | null;
   checkDocument: (text: string) => string | null;
+  checkDocumentWithDeps: (
+    consumer: string,
+    deps: [string, string][],
+  ) => string | null;
 }
 
 let wasmLoadPromise: Promise<void> | null = null;
@@ -114,9 +118,9 @@ export function rewriteAnnotation(
  * Type-check a full Pantagruel document string via the embedded wasm
  * checker (parse + collect + check, same passes the `pant` CLI runs in
  * its default mode). Returns `null` on success or an error message on
- * failure. Documents with imports are unsupported in this path — the
- * wasm build has no module registry; route those through the `pant`
- * CLI in integration tests.
+ * failure. For documents with imports, use {@link checkPantBundle} —
+ * this entry point routes through the legacy single-document path that
+ * rejects imports.
  */
 export async function checkPantDocument(text: string): Promise<string | null> {
   const parser = await loadParser();
@@ -124,12 +128,40 @@ export async function checkPantDocument(text: string): Promise<string | null> {
 }
 
 /**
+ * Type-check a consumer Pantagruel document together with an in-memory
+ * bundle of dep modules. Each entry of `deps` is `(module-name, text)`
+ * — the consumer's `import NAME.` declarations resolve against the
+ * module-name keys. Returns `null` on success or an error message on
+ * failure. Mirrors the `pant` CLI's import semantics (parse + collect +
+ * check across the full registry).
+ *
+ * With an empty `deps`, behaves as if the consumer were checked alone —
+ * any unresolved import in the consumer surfaces as a missing-module
+ * error.
+ */
+export async function checkPantBundle(
+  consumer: string,
+  deps: Map<string, string> = new Map(),
+): Promise<string | null> {
+  const parser = await loadParser();
+  const depsArray: [string, string][] = [...deps.entries()];
+  return parser.checkDocumentWithDeps(consumer, depsArray);
+}
+
+/**
  * Assert that a Pantagruel document string type-checks via the wasm
  * checker. Throws with the formatted error message on failure,
  * including a bounded preview of the input for diagnostics.
+ *
+ * Pass `deps` to resolve cross-module imports against an in-memory
+ * bundle (see {@link checkPantBundle}); the default empty map mirrors
+ * the legacy single-document behaviour.
  */
-export async function assertWasmTypeChecks(text: string): Promise<void> {
-  const error = await checkPantDocument(text);
+export async function assertWasmTypeChecks(
+  text: string,
+  deps: Map<string, string> = new Map(),
+): Promise<void> {
+  const error = await checkPantBundle(text, deps);
   if (error !== null) {
     const maxPreview = 4_000;
     const preview =
