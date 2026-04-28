@@ -111,13 +111,10 @@ export function freshHygienicBinder(supply: UniqueSupply): string {
 }
 
 /**
- * Allocate a parser-roundtrippable comprehension binder. When a synthCell
- * is plumbed through (the normal pipeline), routes through `cellRegisterName`
- * so the name is collision-safe against the document-wide `NameRegistry`
- * and emits as a real Pant identifier (`hint`, `hint1`, …). Standalone
- * test paths without a synthCell fall back to `freshHygienicBinder`'s
- * `$N` form, which the parser rejects but is acceptable in unit tests
- * that assert on substituted output.
+ * Allocate a parser-roundtrippable comprehension binder through
+ * `cellRegisterName`, so the name is collision-safe against the
+ * document-wide `NameRegistry` and emits as a real Pant identifier
+ * (`hint`, `hint1`, …).
  *
  * Use this — not `freshHygienicBinder` directly — at any site that emits
  * a binder into a quantifier or comprehension that survives to Pant text.
@@ -127,9 +124,12 @@ export function allocComprehensionBinder(
   supply: UniqueSupply,
   hint: string,
 ): string {
-  return supply.synthCell
-    ? cellRegisterName(supply.synthCell, hint)
-    : freshHygienicBinder(supply);
+  if (!supply.synthCell) {
+    throw new Error(
+      "allocComprehensionBinder requires synthCell for emitted binders",
+    );
+  }
+  return cellRegisterName(supply.synthCell, hint);
 }
 
 /**

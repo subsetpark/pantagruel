@@ -45,6 +45,26 @@ function assertUnsupportedReason(
   );
 }
 
+function translateBodyWithSynth(
+  sourceFile: ReturnType<typeof createSourceFileFromSource>,
+  functionName: string,
+): PropResult[] {
+  const synthCell = newSynthCell();
+  const { paramNameMap } = translateSignature(
+    sourceFile,
+    functionName,
+    IntStrategy,
+    synthCell,
+  );
+  return translateBody({
+    sourceFile,
+    functionName,
+    strategy: IntStrategy,
+    synthCell,
+    paramNameMap,
+  });
+}
+
 // Tests for internal translateBody API edge cases not coverable via
 // exported fixture functions (see tests/fixtures/constructs/ for
 // exhaustive construct coverage).
@@ -1590,18 +1610,14 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       }
     `;
     const sourceFile = createSourceFileFromSource(source);
-    const props = translateBody({
-      sourceFile,
-      functionName: "f",
-      strategy: IntStrategy,
-    });
+    const props = translateBodyWithSynth(sourceFile, "f");
     const eqs = props.filter((p) => p.kind === "equation");
     assert.equal(eqs.length, 1);
     const ast = getAst();
     if (eqs[0]?.kind === "equation") {
       assert.equal(
         ast.strExpr(eqs[0].rhs),
-        "+ over each $0 in xs | item--value $0",
+        "+ over each x in xs | item--value x",
       );
     }
   });
@@ -1614,17 +1630,13 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       }
     `;
     const sourceFile = createSourceFileFromSource(source);
-    const props = translateBody({
-      sourceFile,
-      functionName: "f",
-      strategy: IntStrategy,
-    });
+    const props = translateBodyWithSynth(sourceFile, "f");
     const eqs = props.filter((p) => p.kind === "equation");
     const ast = getAst();
     if (eqs[0]?.kind === "equation") {
       assert.equal(
         ast.strExpr(eqs[0].rhs),
-        "100 + (+ over each $0 in xs | item--value $0)",
+        "100 + (+ over each x in xs | item--value x)",
       );
     }
   });
@@ -1757,18 +1769,14 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
         }
       `;
       const sourceFile = createSourceFileFromSource(source);
-      const props = translateBody({
-        sourceFile,
-        functionName: "f",
-        strategy: IntStrategy,
-      });
+      const props = translateBodyWithSynth(sourceFile, "f");
       const eqs = props.filter((p) => p.kind === "equation");
       assert.equal(eqs.length, 1, `variant ${initText}: expected 1 equation`);
       const ast = getAst();
       if (eqs[0]?.kind === "equation") {
         assert.equal(
           ast.strExpr(eqs[0].rhs),
-          "+ over each $0 in xs | item--value $0",
+          "+ over each x in xs | item--value x",
           `variant ${initText}: init should have been elided`,
         );
       }
@@ -2275,11 +2283,7 @@ describe("Set mutation (Stage A: interface-field .add / .delete / .clear)", () =
       }
     `;
     const sourceFile = createSourceFileFromSource(source);
-    const props = translateBody({
-      sourceFile,
-      functionName: "f",
-      strategy: IntStrategy,
-    });
+    const props = translateBodyWithSynth(sourceFile, "f");
     const assertions = props.filter((p) => p.kind === "assertion");
     assert.equal(assertions.length, 1);
     const ast = getAst();
@@ -2306,11 +2310,7 @@ describe("Set mutation (Stage A: interface-field .add / .delete / .clear)", () =
       }
     `;
     const sourceFile = createSourceFileFromSource(source);
-    const props = translateBody({
-      sourceFile,
-      functionName: "f",
-      strategy: IntStrategy,
-    });
+    const props = translateBodyWithSynth(sourceFile, "f");
     const assertions = props.filter((p) => p.kind === "assertion");
     assert.equal(assertions.length, 1);
     const ast = getAst();
