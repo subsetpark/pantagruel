@@ -367,6 +367,80 @@ describe("mapTsType", () => {
   });
 });
 
+describe("translateTypes routes `unknown` through `unsupported` declaration", () => {
+  it("interface field with `unknown` type emits an unsupported decl", () => {
+    const { decls } = extractAndTranslate(
+      `interface Foo { val: unknown; }`,
+    );
+    // The `Foo` domain decl is still pushed; the field accessor rule
+    // is replaced by an `unsupported` decl carrying the user-facing
+    // reason, so the emitted Pant text never contains the sentinel.
+    assert.ok(decls.some((d) => d.kind === "domain" && d.name === "Foo"));
+    const unsupported = decls.find((d) => d.kind === "unsupported");
+    assert.ok(unsupported);
+    if (unsupported.kind !== "unsupported") {
+      throw new Error("expected unsupported decl");
+    }
+    assert.match(unsupported.reason, /Foo\.val/u);
+    assert.match(unsupported.reason, /TS unknown is not expressible/u);
+    // No rule decl referencing the sentinel string leaks through.
+    assert.ok(
+      !decls.some(
+        (d) =>
+          (d.kind === "rule" && d.returnType.includes("unsupported_unknown")) ||
+          (d.kind === "alias" && d.type.includes("unsupported_unknown")),
+      ),
+    );
+  });
+
+  it("alias `T = unknown` emits an unsupported decl", () => {
+    const { decls } = extractAndTranslate(`type Foo = unknown;`);
+    const unsupported = decls.find((d) => d.kind === "unsupported");
+    assert.ok(unsupported);
+    if (unsupported.kind !== "unsupported") {
+      throw new Error("expected unsupported decl");
+    }
+    assert.match(unsupported.reason, /alias Foo/u);
+  });
+});
+
+describe("cellRegisterMap / cellRegisterRecord / cellRegisterTupleConstructor reject `unknown` defensively", () => {
+  it("cellRegisterMap returns null when K is the sentinel", async () => {
+    const { cellRegisterMap, newSynthCell, UNSUPPORTED_UNKNOWN } = await import(
+      "../src/translate-types.js"
+    );
+    const cell = newSynthCell();
+    assert.equal(
+      cellRegisterMap(cell, UNSUPPORTED_UNKNOWN, "Int"),
+      null,
+    );
+    assert.equal(cell.synth.byKV.size, 0);
+  });
+
+  it("cellRegisterRecord returns null when a field type is the sentinel", async () => {
+    const { cellRegisterRecord, newSynthCell, UNSUPPORTED_UNKNOWN } =
+      await import("../src/translate-types.js");
+    const cell = newSynthCell();
+    assert.equal(
+      cellRegisterRecord(cell, [{ name: "x", type: UNSUPPORTED_UNKNOWN }]),
+      null,
+    );
+    assert.equal(cell.recordSynth.byShape.size, 0);
+  });
+
+  it("cellRegisterTupleConstructor returns null when an element is the sentinel", async () => {
+    const { UNSUPPORTED_UNKNOWN } = await import("../src/translate-types.js");
+    const cell = newSynthCell();
+    assert.equal(
+      cellRegisterTupleConstructor(cell, {
+        elementPantTypes: [UNSUPPORTED_UNKNOWN, "Int"],
+      }),
+      null,
+    );
+    assert.equal(cellTupleShapes(cell).length, 0);
+  });
+});
+
 describe("cellRegisterTupleConstructor", () => {
   it("dedupes by shape, not alias", () => {
     // Two TS aliases that share the same shape — `Point = [number,

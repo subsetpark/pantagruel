@@ -810,12 +810,20 @@ export function resolveRecordOwner(
   return null;
 }
 
-/** Cell-mutating wrapper around `registerMapKV` for the legacy call shape. */
+/** Cell-mutating wrapper around `registerMapKV` for the legacy call shape.
+ *  Defensively rejects either argument being the `unknown` sentinel — the
+ *  sentinel string passes `manglePantTypeToFragment`'s identifier-shape
+ *  check (it's all underscores+letters) so without this guard a body-level
+ *  call site that forwards the sentinel into `cellRegisterMap` would
+ *  synthesize a Map domain like `__unsupported_unknown__ToIntMap`. */
 export function cellRegisterMap(
   cell: SynthCell,
   kType: string,
   vType: string,
 ): string | null {
+  if (isUnsupportedUnknown(kType) || isUnsupportedUnknown(vType)) {
+    return null;
+  }
   const r = registerMapKV(cell.synth, cell.registry, kType, vType);
   cell.synth = r.synth;
   cell.registry = r.registry;
@@ -823,11 +831,16 @@ export function cellRegisterMap(
 }
 
 /** Cell-mutating wrapper around `registerRecordShape`. `fields` must be in
- *  canonical (alphabetically sorted) order. */
+ *  canonical (alphabetically sorted) order. Defensively rejects when any
+ *  field type is the `unknown` sentinel, for the same reason as
+ *  `cellRegisterMap`. */
 export function cellRegisterRecord(
   cell: SynthCell,
   fields: ReadonlyArray<RecordSynthField>,
 ): string | null {
+  if (fields.some((f) => isUnsupportedUnknown(f.type))) {
+    return null;
+  }
   const r = registerRecordShape(cell.recordSynth, cell.registry, fields);
   cell.recordSynth = r.synth;
   cell.registry = r.registry;
@@ -896,6 +909,13 @@ export function cellRegisterTupleConstructor(
   cell: SynthCell,
   shape: TupleShape,
 ): TupleCtorRef | null {
+  // Defensive: the `unknown` sentinel passes the identifier-shape check
+  // in `manglePantTypeToFragment`, so without this guard a tuple shape
+  // carrying it would synthesize a constructor name like
+  // `make-__unsupported_unknown__-int`.
+  if (shape.elementPantTypes.some(isUnsupportedUnknown)) {
+    return null;
+  }
   const depModuleName = cell.sourceFile
     ? depModuleNameForFile(cell.sourceFile.fileName)
     : "TUPLES";
@@ -1337,6 +1357,13 @@ export function translateTypes(
           // references it.
           const kType = mapTsType(typeArgs[0]!, checker, strategy, synthCell);
           const vType = mapTsType(typeArgs[1]!, checker, strategy, synthCell);
+          if (isUnsupportedUnknown(kType) || isUnsupportedUnknown(vType)) {
+            decls.push({
+              kind: "unsupported",
+              reason: `${iface.name}.${prop.name}: ${UNSUPPORTED_UNKNOWN_REASON}`,
+            });
+            continue;
+          }
           const kName = synthCell ? cellRegisterName(synthCell, "k") : "k";
           const keyPredName = `${ruleName}-key`;
           decls.push({
@@ -1365,20 +1392,36 @@ export function translateTypes(
           continue;
         }
       }
+      const fieldType = mapTsType(prop.type, checker, strategy, synthCell);
+      if (isUnsupportedUnknown(fieldType)) {
+        decls.push({
+          kind: "unsupported",
+          reason: `${iface.name}.${prop.name}: ${UNSUPPORTED_UNKNOWN_REASON}`,
+        });
+        continue;
+      }
       decls.push({
         kind: "rule",
         name: ruleName,
         params: [{ name: pName, type: iface.name }],
-        returnType: mapTsType(prop.type, checker, strategy, synthCell),
+        returnType: fieldType,
       });
     }
   }
 
   for (const alias of extracted.aliases) {
+    const aliasType = mapTsType(alias.type, checker, strategy, synthCell);
+    if (isUnsupportedUnknown(aliasType)) {
+      decls.push({
+        kind: "unsupported",
+        reason: `alias ${alias.name}: ${UNSUPPORTED_UNKNOWN_REASON}`,
+      });
+      continue;
+    }
     decls.push({
       kind: "alias",
       name: alias.name,
-      type: mapTsType(alias.type, checker, strategy, synthCell),
+      type: aliasType,
     });
   }
 

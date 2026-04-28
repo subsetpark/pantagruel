@@ -21,10 +21,12 @@ import {
   cellIsUsed,
   cellRegisterName,
   isMapType,
+  isUnsupportedUnknown,
   mapTsType,
   type NumericStrategy,
   type SynthCell,
   toPantTermName,
+  UNSUPPORTED_UNKNOWN_REASON,
 } from "./translate-types.js";
 import type { PantAction, PantDeclaration, PantRule } from "./types.js";
 
@@ -1258,6 +1260,21 @@ export function translateSignature(
     const symbolType = checker.getTypeOfSymbol(param);
     const defaultType = mapTsType(symbolType, checker, strategy, synthCell);
     const paramType = overrides?.get(param.name) ?? defaultType;
+    if (isUnsupportedUnknown(paramType)) {
+      // Don't let the sentinel reach the emitted rule head — route
+      // through the unsupported declaration variant so the document's
+      // surrounding text stays parseable and the user sees a clear
+      // reason. Mirrors the PropResult `unsupported` flow.
+      return {
+        declaration: {
+          kind: "unsupported",
+          reason: `${baseName} param '${param.name}': ${UNSUPPORTED_UNKNOWN_REASON}`,
+        },
+        classification,
+        paramNameMap,
+        synthCell,
+      };
+    }
     const pantName = synthCell
       ? cellRegisterName(synthCell, toPantTermName(param.name))
       : toPantTermName(param.name);
@@ -1274,6 +1291,17 @@ export function translateSignature(
       strategy,
       synthCell,
     );
+    if (isUnsupportedUnknown(returnType)) {
+      return {
+        declaration: {
+          kind: "unsupported",
+          reason: `${baseName} return: ${UNSUPPORTED_UNKNOWN_REASON}`,
+        },
+        classification,
+        paramNameMap,
+        synthCell,
+      };
+    }
     const decl: PantRule = {
       kind: "rule",
       name: baseName,

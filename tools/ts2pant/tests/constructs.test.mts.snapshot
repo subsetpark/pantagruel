@@ -511,7 +511,7 @@ exports[`expressions-property-element-access.ts > effectiveBalanceByLiteral 1`] 
 `;
 
 exports[`expressions-property-element-access.ts > getByDynamicKey 1`] = `
-"module GetByDynamicKey.\\n\\nUser.\\nuser--name u: User => String.\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => User.\\naccount--active a1: Account => Bool.\\nget-by-dynamic-key a: Account, k: String => __unsupported_unknown__.\\n\\n---\\n\\n> UNSUPPORTED: computed property access (obj[expr]) is unsupported; use dotted property access or a string-literal index instead.\\n"
+"module GetByDynamicKey.\\n\\nUser.\\nuser--name u: User => String.\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => User.\\naccount--active a1: Account => Bool.\\n> UNSUPPORTED: get-by-dynamic-key return: TS unknown is not expressible in Pantagruel; declare a specific type\\n\\n---\\n\\n> UNSUPPORTED: computed property access (obj[expr]) is unsupported; use dotted property access or a string-literal index instead.\\n"
 `;
 
 exports[`expressions-property-element-access.ts > getOwnerByLiteral 1`] = `

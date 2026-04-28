@@ -39,8 +39,26 @@ export interface PantAction {
   guard?: OpaqueExpr;
 }
 
+/** A declaration that could not be translated. Renders as
+ *  `> UNSUPPORTED: <reason>` (a doc-comment line) at emit time so the
+ *  document's surrounding Pant text stays parseable while still
+ *  surfacing the cause to the user. Mirrors `PropResult`'s
+ *  `unsupported` variant — the structural rejection path for
+ *  type/declaration emit sites that would otherwise embed an internal
+ *  sentinel string (e.g. `__unsupported_unknown__`) into generated
+ *  Pant. */
+export interface PantUnsupported {
+  kind: "unsupported";
+  reason: string;
+}
+
 /** A declaration in a Pantagruel document. */
-export type PantDeclaration = PantDomain | PantAlias | PantRule | PantAction;
+export type PantDeclaration =
+  | PantDomain
+  | PantAlias
+  | PantRule
+  | PantAction
+  | PantUnsupported;
 
 /**
  * Proposition result: either a structured equation, an unsupported

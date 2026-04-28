@@ -15,12 +15,14 @@ import {
   isAnonymousRecord,
   isMapType,
   isSetType,
+  isUnsupportedUnknown,
   lookupMapKV,
   mapTsType,
   type NumericStrategy,
   resolveRecordOwner,
   type SynthCell,
   UNSUPPORTED_ANONYMOUS_RECORD,
+  UNSUPPORTED_UNKNOWN_REASON,
 } from "./translate-types.js";
 import type { PropResult } from "./types.js";
 
@@ -136,8 +138,19 @@ export function translateRecordReturn(
     // actually succeeded for this shape. If a field type is unmangleable
     // the synth returns the failure sentinel rather than a domain name,
     // and the body emission below would otherwise reference accessor
-    // rules that were never declared.
+    // rules that were never declared. The `unknown` sentinel
+    // propagates separately (a field typed `unknown` short-circuits
+    // record synthesis with `UNSUPPORTED_UNKNOWN`); surface its
+    // user-facing reason explicitly.
     const mapped = mapTsType(returnType, checker, strategy, synthCell);
+    if (isUnsupportedUnknown(mapped)) {
+      return [
+        {
+          kind: "unsupported",
+          reason: `${functionName}: ${UNSUPPORTED_UNKNOWN_REASON}`,
+        },
+      ];
+    }
     if (mapped === UNSUPPORTED_ANONYMOUS_RECORD) {
       return [
         {

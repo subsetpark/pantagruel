@@ -103,6 +103,9 @@ export function emitDocument(doc: PantDocument): string {
         }
         break;
       }
+      case "unsupported":
+        lines.push(`> UNSUPPORTED: ${decl.reason}`);
+        break;
       default: {
         const _exhaustive: never = decl;
         throw new Error(
