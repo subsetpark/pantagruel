@@ -736,9 +736,15 @@ function buildL1SubExpr(
     // legacy from-l2 wrap so optional-chain functor-lift and other
     // legacy-only paths still translate.
   }
+  // Legacy fallback receives the original `node` so any future
+  // wrapper-aware preprocessing inside `translateBodyExpr` would still
+  // apply. Today `translateBodyExpr` strips the same wrappers at its
+  // entry via `unwrapExpression`, so the result is identical to passing
+  // `stripped` — but isolating the strip to the Member fast-path keeps
+  // the standard build path on its standard input.
   const r = rejectEffect(
     translateBodyExpr(
-      stripped,
+      node,
       ctx.checker,
       ctx.strategy,
       ctx.paramNames,
