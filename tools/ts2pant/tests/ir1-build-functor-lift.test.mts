@@ -316,15 +316,182 @@ describe("ir1-build-functor-lift", () => {
     assert.equal(tryRecognizeFunctorLift(candidate, ctx), null);
   });
 
-  it("non-identifier operand falls through (`u.next == null`)", () => {
+  it("Member operand (positive ternary) recognizes (`u.next == null`)", () => {
     const { candidate, ctx } = setup(
       `interface User { readonly name: string; readonly next: User | null; }
        function f(u: User): string[] {
          return u.next == null ? [] : [u.next.name];
        }`,
     );
-    // Operand restriction: only simple identifiers participate in the
-    // lift; property-access operands fall through.
+    // M5 P4: the operand restriction is lifted — property-access
+    // operands recognize via the L1 Member chain.
+    expectLifted(tryRecognizeFunctorLift(candidate, ctx));
+  });
+
+  it("Member operand (negated ternary) recognizes (`u.next !== null ? [u.next.name] : []`)", () => {
+    const { candidate, ctx } = setup(
+      `interface User { readonly name: string; readonly next: User | null; }
+       function f(u: User): string[] {
+         return u.next !== null ? [u.next.name] : [];
+       }`,
+    );
+    expectLifted(tryRecognizeFunctorLift(candidate, ctx));
+  });
+
+  it("Member operand (positive if-conversion) recognizes", () => {
+    const { candidate, ctx } = setup(
+      `interface User { readonly name: string; readonly next: User | null; }
+       function f(u: User): string[] {
+         if (u.next === null) return [];
+         return [u.next.name];
+       }`,
+    );
+    expectLifted(tryRecognizeFunctorLift(candidate, ctx));
+  });
+
+  it("Member operand (negated if-conversion) recognizes", () => {
+    const { candidate, ctx } = setup(
+      `interface User { readonly name: string; readonly next: User | null; }
+       function f(u: User): string[] {
+         if (u.next !== null) return [u.next.name];
+         return [];
+       }`,
+    );
+    expectLifted(tryRecognizeFunctorLift(candidate, ctx));
+  });
+
+  it("Member operand multi-element non-empty branch rejects", () => {
+    const { candidate, ctx } = setup(
+      `interface User { readonly name: string; readonly next: User | null; }
+       function f(u: User): string[] {
+         return u.next == null ? [] : [u.next.name, u.next.name];
+       }`,
+    );
+    // Multi-element array literal on the present branch is the same
+    // sound-rejection as the Var-operand case (`each` over a length-≤1
+    // list can't produce two output elements per input).
+    assert.equal(tryRecognizeFunctorLift(candidate, ctx), null);
+  });
+
+  it("Member operand recognizes through inner type-erasure wrappers (`(u as User).next == null`)", () => {
+    // The reviewer's example: a Member chain whose receiver carries an
+    // `as` cast must still recognize, since `tryRecognizeFunctorLift`
+    // already treats type-erasure wrappers as semantically neutral at
+    // the recognizer's outer boundary. `buildL1MemberOrVarForLift`
+    // strips the same wrapper set (`unwrapTransparentExpression`) at
+    // every level of the chain, so the inner cast doesn't take the
+    // operand off the pure-L1 path.
+    const { candidate, ctx } = setup(
+      `interface User { readonly name: string; readonly next: User | null; }
+       function f(u: User): string[] {
+         return (u as User).next == null ? [] : [(u as User).next!.name];
+       }`,
+    );
+    expectLifted(tryRecognizeFunctorLift(candidate, ctx));
+  });
+
+  it("Member operand string-literal element-access (`u[\"next\"] == null`) recognizes", () => {
+    const { candidate, ctx } = setup(
+      `interface User { readonly name: string; readonly next: User | null; }
+       function f(u: User): string[] {
+         return u["next"] == null ? [] : [u["next"].name];
+       }`,
+    );
+    // Member surface form covers both `obj.field` and `obj["field"]`.
+    expectLifted(tryRecognizeFunctorLift(candidate, ctx));
+  });
+
+  it("Member operand falls through when projection references a different receiver", () => {
+    // Projection `v.next.name` is a valid Member chain but doesn't
+    // reference the operand `u.next`. The L1 rewriter walks the chain
+    // structurally; if no subtree matches the operand, the
+    // substitution-fired check rejects the lift. Without that check
+    // (or with one that relies on reference equality after
+    // unconditional parent reconstruction), the lift would silently
+    // emit a comprehension whose body has a free variable —
+    // `each n in (next u) | name (next v)`.
+    const { candidate, ctx } = setup(
+      `interface User { readonly name: string; readonly next: User | null; }
+       function f(u: User, v: User): string[] {
+         return u.next == null ? [] : [v.next!.name];
+       }`,
+    );
+    assert.equal(tryRecognizeFunctorLift(candidate, ctx), null);
+  });
+
+  it("Member operand probe rolls back synthCell + supply on failure (anonymous record)", () => {
+    // The receiver type of the operand `u.next` is the anonymous record
+    // `{ next: { name: string } | null }`. Qualifying the field `next`
+    // routes through `qualifyFieldAccess → resolveFieldOwner →
+    // resolveRecordOwner → mapTsType → registerAnonymousRecord →
+    // cellRegisterRecord`, which mutates `synthCell.recordSynth` and
+    // `synthCell.registry`. The lift then fails the multi-element check
+    // on the present branch (`[u.next.name, u.next.name]`).
+    //
+    // Failed probes must restore `ctx.supply.n` AND the three synthCell
+    // field references, so the synthesized record domain doesn't leak
+    // into the document on the rejected path. Snapshotting the field
+    // references is sufficient because the inner synth records and
+    // registry are immutable values.
+    const { candidate, ctx } = setup(
+      `function f(u: { next: { name: string } | null }): string[] {
+         return u.next == null ? [] : [u.next.name, u.next.name];
+       }`,
+    );
+    const synthCell = ctx.supply.synthCell;
+    if (!synthCell) {
+      throw new Error("test setup: expected synthCell");
+    }
+    const supplyBefore = ctx.supply.n;
+    const synthBefore = synthCell.synth;
+    const recordSynthBefore = synthCell.recordSynth;
+    const registryBefore = synthCell.registry;
+
+    const result = tryRecognizeFunctorLift(candidate, ctx);
+
+    assert.equal(result, null);
+    assert.equal(
+      ctx.supply.n,
+      supplyBefore,
+      "supply.n leaked from failed probe",
+    );
+    assert.equal(
+      synthCell.synth,
+      synthBefore,
+      "synthCell.synth leaked",
+    );
+    assert.equal(
+      synthCell.recordSynth,
+      recordSynthBefore,
+      "synthCell.recordSynth leaked — anonymous-record domain registered during failed probe",
+    );
+    assert.equal(
+      synthCell.registry,
+      registryBefore,
+      "synthCell.registry leaked — name registered during failed probe",
+    );
+  });
+
+  it("Member operand falls through when projection isn't a Member chain", () => {
+    // Projection is a method call that doesn't structurally surface
+    // the Member operand at the L1 level. `ast.substituteBinder`
+    // substitutes only by name and cannot replace a Member subtree;
+    // the L1 rewriter doesn't enter `from-l2` wraps; so the lift
+    // can't safely connect the operand to the comprehension binder
+    // and falls through. (Identifier-operand parallels of this shape
+    // — the existing nested-null-guard test — DO recognize because
+    // `ast.substituteBinder` handles Var-name references buried in
+    // any expression.)
+    const { candidate, ctx } = setup(
+      `interface User {
+         readonly name: string;
+         readonly next: User | null;
+         combine(arg: string | null): string;
+       }
+       function f(u: User, fallback: string | null): string | null {
+         return u.next == null ? null : u.next.combine(fallback);
+       }`,
+    );
     assert.equal(tryRecognizeFunctorLift(candidate, ctx), null);
   });
 

@@ -39,6 +39,7 @@ These cover the full scope of ts2pant's translation work:
 | Primed variables, frame conditions | Lamport, [*Specifying Systems*](https://lamport.azurewebsites.net/tla/book.html), Addison-Wesley 2002 | TLA+ approach to next-state relations, `UNCHANGED`, and the frame problem |
 | Frame problem in specifications | Borgida et al., ["And Nothing Else Changes"](https://www.researchgate.net/publication/221555223_And_Nothing_Else_Changes_The_Frame_Problem_in_Procedure_Specifications), IEEE TSE 1995 | Definitive treatment of frame conditions in procedure specifications |
 | Capture-avoiding substitution | [Locally Nameless Representation](https://boarders.github.io/posts/locally-nameless/) (Charguéraud 2012) | Alternative to named substitution; useful background for understanding why hygiene matters |
+| Term rewriting | Baader & Nipkow, *Term Rewriting and All That*, Cambridge 1998 | Positions, subterms, first-order substitution; basis for the functor-lift's L1 operand-rewriting (`body[e := n]`) and the structural matcher in `substituteL1Subtree` |
 | Partial functions / option types | [Dafny Reference Manual](https://dafny.org/dafny/DafnyRef/DafnyRef) | Nullable types, preconditions, `modifies` clauses — practical verification language patterns |
 | IRSC / SSA-based IR | Vekris, Cosman, Jhala, ["Refinement Types for TypeScript"](https://arxiv.org/pdf/1604.02480), PLDI 2016 | Lifting surface-syntax recognizers into a typed intermediate representation via SSA-style translation; precedent for the IR introduced in §"Intermediate Representation" |
 
@@ -231,8 +232,8 @@ without a recognizer: Pant has no list literal, so the alternative
 cardinality-dispatch lowering `cond #u = 0 => [], true => [name (u 1)]`
 has no expressible target. The functor-lift recognizer (M4 Patch 5) is
 the canonical handling for this family — see § "Functor-Lift Recognizer"
-below. The four supported TS shapes lower uniformly to `each $n in u |
-name $n`, the same comprehension shape `?.` already uses.
+below. The four supported TS shapes lower uniformly to `each n in u |
+name n`, the same comprehension shape `?.` already uses.
 
 ### Partial Rules (Map<K, V>)
 
@@ -485,15 +486,22 @@ ops require acc on the left.
 **Standard name:** Functor lift / `Maybe` (option) `fmap`. The list-lift
 encoding makes `T | null` into `[T]` (length 0 or 1); the recognizer is
 exactly `fmap : (a -> b) -> Maybe a -> Maybe b` specialized to the
-list-as-Maybe representation.
+list-as-Maybe representation. The substitution half of the
+transformation (`body[e := n]`) is first-order term rewriting on the
+L1 IR — see § "Operand-Substitution Rule" below. The metavariable `n`
+denotes a parser-roundtrippable comprehension binder allocated via
+`allocateLiftBinder` / `cellRegisterName` (`n`, `n1`, `n2`, …); it is
+*not* the `$N` internal-hygienic class which exists only pre-emission.
 **Reference:** Wadler, ["The Essence of Functional Programming"](https://homepages.inf.ed.ac.uk/wadler/papers/essence/essence.ps),
 POPL 1992, §2 (the Maybe monad and `fmap`); Hutton & Meijer,
 ["Monadic Parsing in Haskell"](https://www.cs.nott.ac.uk/~pszgmh/pearl.pdf), JFP 1998
 (structural lift over `Maybe` as the canonical idiom for null-guarded
-projections).
+projections); Baader & Nipkow, *Term Rewriting and All That* (Cambridge
+1998), ch. 2 (positions, subterms, and substitution — the rewriting
+half of the transformation, described below).
 
 `if (x == null) return []; return [f(x)];` and the equivalent ternary /
-negated forms lower to `each $n in x | f $n`. This is *not* an
+negated forms lower to `each n in x | f n`. This is *not* an
 optimization — Pantagruel has no list literal, so the alternative
 cardinality-dispatch lowering `cond #x = 0 => [], true => [f (x 1)]`
 has no expressible Pant target. Without the recognizer these
@@ -534,8 +542,24 @@ load-bearing; see `workstreams/ts2pant-imperative-ir.md`
    from the `ConditionalExpression` for ternaries; from the enclosing
    function's return type for if-conversion entry points.
 
-**Supported TS shapes** (operand restricted to a simple identifier;
-property-access operands defer to M5):
+**Supported TS shapes.** The operand may be a simple `Identifier`
+(`Var`) or a property-access / string-literal element-access chain
+(`Member`); transparently-wrapped variants of either are accepted
+because the recognizer's outer boundary (`unwrapTransparentExpression`)
+and the recursive Member-chain build (`buildL1MemberOrVarForLift`)
+both strip the same wrapper set — parens, `as` casts, non-null
+assertions (`!`), and `satisfies` — at every level of the chain, so
+eligibility is driven by the operand's L1 shape rather than its
+TS-AST spelling. `qualifyFieldAccess` is still given the parens-
+stripped (but type-erasure-preserving) receiver, so a user's `as T`
+cast continues to drive qualifier resolution. Member-operand support
+landed in M5 P4 (lifting the M4 P5 simple-identifier restriction);
+the eligibility check is now expressed in L1 terms (`Var` or `Member`)
+rather than TS-AST terms. Member-operand projections must surface
+the operand structurally at the L1 level — `ast.substituteBinder`
+substitutes by name and cannot target a `Member` subtree, so a
+Member-operand projection that buries the operand inside a non-
+Member sub-expression (e.g., a method call) falls through.
 
 ```ts
 // (a) Positive ternary, with array wrapper or bare projection.
@@ -554,8 +578,14 @@ if (u !== null) { return [u.name]; }
 return [];
 ```
 
-All four lower to `each $n in u | name $n` (or `age $n`, etc.). The
-fixture is `tests/fixtures/constructs/expressions-functor-lift.ts`.
+All four lower to `each n in u | name n` (or `age n`, etc.) — `n` is
+the emitted comprehension binder (a fresh kebab-cased name allocated
+through `cellRegisterName`, suffixed `n1`/`n2`/… on collision), not the
+internal `$N` hygienic class. Fixtures:
+`tests/fixtures/constructs/expressions-functor-lift.ts` (Var
+operand, M4 P5) and
+`tests/fixtures/constructs/expressions-functor-lift-property.ts`
+(Member operand, M5 P4).
 
 **Deliberate rejection of multi-element non-empty branches.** A shape
 like `if (xs == null) return []; return [xs[0], xs[1]];` would require
@@ -566,6 +596,56 @@ refuses, and these forms fall through to the standard L1 Cond build
 translatable target). This is intentional under the steering principle's
 rule 1: the TS itself is fine, but ts2pant cannot translate
 "sometimes-multi-element" pattern-matching without misrepresenting it.
+
+**Operand-Substitution Rule (`body[e := n]`).** The lift's right-hand
+side `each n in e | body'` is built by replacing every syntactic
+occurrence of the operand subterm `e` inside `body` with the fresh
+binder `n`. This is *first-order term rewriting* (Baader & Nipkow ch. 2):
+match the operand `e` as a needle, replace each match with the binder,
+return the rewritten haystack. The binder `n` here denotes the actual
+emitted name (`n`, `n1`, `n2`, … allocated through `allocateLiftBinder`
+→ `cellRegisterName`); it is *not* the `$N` internal-hygienic class,
+which is reserved for binders that disappear before emission and would
+not round-trip through Pantagruel's lexer.
+
+For Var operands (M4 P5) the substitution primitive is Pant's
+`ast.substituteBinder` post-lowering — the operand's Pant name is
+known and the OpaqueExpr walker rewrites every reference. For Member
+operands (M5 P4), `ast.substituteBinder` cannot target a Member
+subtree (it substitutes only by Var name), so the substitution lives
+at the L1 level via `substituteL1Subtree` in `ir1-build.ts`. The
+operand and projection are both built into native L1 (no `from-l2`
+wraps along the chain) so the structural matcher can compare them
+directly.
+
+The four invariants the rewrite depends on, restated:
+
+1. **Hygiene.** The comprehension binder is allocated via
+   `cellRegisterName` (through `allocateLiftBinder`) against the
+   document-wide `NameRegistry` — a parser-roundtrippable name (`n`,
+   `n1`, `n2`, …), not the `$N` internal class. Barendregt convention
+   applied at the emission layer.
+2. **Structural reachability.** The operand must occur as a syntactic
+   subterm of the projection. Var operands are checked via
+   `expressionReferencesNames` at the TS-AST level; Member operands
+   are gated on the explicit `changed` flag returned by
+   `substituteL1Subtree` (a reference-equality check on the rewritten
+   tree is unreliable because the walker rebuilds compound parents
+   unconditionally).
+3. **Referential transparency at the operand position.** The
+   comprehension evaluates `e` once at its source position; each
+   in-`body` occurrence is replaced by the binder. Sound iff `e` has
+   no observable effects whose duplication or removal would change
+   semantics — implicitly enforced by the recognizer matching only
+   list-lifted nullable shapes that don't admit side effects.
+4. **Closed form on Var/Member.** `structuralEqualL1` only compares
+   `Var` and `Member` shapes; the pure-L1 builder
+   `buildL1MemberOrVarForLift` produces only those shapes. Extending
+   the eligible operand vocabulary (e.g., to `App`) requires
+   extending both the matcher and the accept-set together.
+
+Adding new operand shapes or comparable forms must re-verify all
+four invariants. Update this section when the rewrite changes.
 
 ### Chain Fusion (.filter / .map / .reduce)
 
@@ -917,7 +997,7 @@ in the equality / nullish equivalence class flows through Layer 1.
   unconditionally from `===` / `!==`. The L1 form admits arbitrary
   operands; sub-expressions wrap via `from-l2` until M5 brings property
   access onto L1 natively.
-- Functor-lift `each $n in x | f $n` — the canonical lowering for
+- Functor-lift `each n in x | f n` — the canonical lowering for
   null-guarded list-lifted conditionals (see § "Functor-Lift
   Recognizer" above for the four soundness conditions). Combined-shape
   match crossing M1 (Cond) + M4 (IsNullish); load-bearing because
