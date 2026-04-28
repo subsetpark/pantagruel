@@ -20,8 +20,8 @@ export function sum(a: number, b: number): number {
 /**
  * Multi-line annotation block.
  * @pant-begin
- * all x: Int |
- *   rangeCheck x >= 0
+ * all x: Int, x >= 0 |
+ *   rangeCheck x
  * @pant-end
  */
 export function rangeCheck(x: number): boolean {
