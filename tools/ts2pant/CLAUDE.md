@@ -831,13 +831,34 @@ is identical pre/post-M3.
 
 ### Divergence from IRSC
 
-One deliberate divergence, documented so a future agent doesn't "fix"
-it back to paper-faithful IRSC.
+Deliberate divergences, documented so a future agent doesn't "fix"
+them back to paper-faithful IRSC.
 
-**No `FieldAccess` form.** ts2pant lowers `e.f` to `App(qualified-rule,
-[e])` at construction time via `qualifyFieldAccess`. Adding a
-`FieldAccess` form would force every consumer to check both shapes
-and reintroduces the cross-talk problem.
+**No L2 `FieldAccess` form.** ts2pant lowers `e.f` to L2
+`App(qualified-rule, [e])` at construction time via
+`qualifyFieldAccess`. Adding a L2 `FieldAccess` form would force
+every L2 consumer to check both shapes and reintroduces the cross-
+talk problem. M5 reaffirmed this divergence: the L1 `Member(receiver,
+name)` form is *normalization*, not lowering — its job is to be the
+canonical input shape for the lowering pass, not a 1-to-1 mirror of
+L2. Member is L1-only; it lowers to `App(qualified-rule, [receiver])`
+in `ir1-lower.ts:77-84`. Pre-qualifying at build time keeps
+`qualifyFieldAccess`'s ambiguity-detection and inheritance-walking
+logic centralized in one place.
+
+**Cardinality dispatch is a non-Member path.** `.length` on Array /
+ReadonlyArray and `.size` on Set / ReadonlySet / Map / ReadonlyMap
+build to L1 `Unop(card, receiver)` via `tryBuildL1Cardinality` in
+`ir1-build.ts`, NOT through `buildL1MemberAccess`. The dispatch
+fires *before* Member during L1 build. Routing through Member would
+lower to `App("length", [arr])` — i.e., the Pant text `length arr`,
+an EUF uninterpreted function distinct from the actual list
+cardinality `#arr`. Specs reasoning about array sizes would silently
+fail under that lowering. Pant's primitive for cardinality is `#x`,
+which `Unop(card, x)` covers; there is no canonical-Member route
+that produces correct output. This is a target-language constraint,
+not a style choice — a sibling deliberate divergence to the
+no-`FieldAccess` rule.
 
 (IRSC's SSA-over-program-names discipline does *not* apply here —
 post-M3 there is no L2 statement vocabulary, and the mutating path's
@@ -995,8 +1016,9 @@ in the equality / nullish equivalence class flows through Layer 1.
   opportunistically — see § "Developer Steering Principles" rule 2.
 - `BinOp(eq | neq, lhs, rhs)` — canonical strict equality. Produced
   unconditionally from `===` / `!==`. The L1 form admits arbitrary
-  operands; sub-expressions wrap via `from-l2` until M5 brings property
-  access onto L1 natively.
+  operands; property-access sub-expressions reach L1 natively post-M5
+  via `Member`, while non-property sub-expressions wrap via `from-l2`
+  until M6 deletes the form.
 - Functor-lift `each n in x | f n` — the canonical lowering for
   null-guarded list-lifted conditionals (see § "Functor-Lift
   Recognizer" above for the four soundness conditions). Combined-shape
@@ -1035,9 +1057,9 @@ both sides; classifying conservatively keeps the if-statement intact.
 *from-l2 shrinkage scope.* Sub-expressions of nullish and equality
 forms now build natively on L1: the `IsNullish` operand is an
 arbitrary L1 expression, and `BinOp(eq | neq, …)` operands are L1.
-The `from-l2` adapter still wraps internal sub-expressions where
-those operands themselves come from `translateBodyExpr` (property
-access in particular) — full elimination is M5 territory.
+Property-access sub-expressions reach L1 natively post-M5 via
+`Member`; only non-property sub-expressions still wrap via `from-l2`,
+and full elimination is M6 territory.
 
 *Out of scope by design* (candidates for future milestones if real
 fixtures demand them):
@@ -1061,6 +1083,115 @@ fixtures + dogfood, all consumed by the nullish recognizer. 0 rejected.
 **0%.** No fixture or dogfood site exercises a non-nullish loose-eq
 that would surface the rejection path; rejection is exercised by
 synthetic cases in `tests/equality-canonicalization.test.mts`.
+
+**M5 (property-access-normalization): landed.** Every TS property-
+access surface form ts2pant supports flows through Layer 1.
+
+*Canonical form:*
+
+- `Member(receiver, name)` — the canonical L1 property-access form.
+  Receivers are arbitrary L1 expressions; `name` is pre-qualified at
+  build time via the existing `qualifyFieldAccess` (inheritance
+  walking, union/intersection ambiguity detection, anonymous synth-
+  cell fallback — all centralized in one place). Lowers mechanically
+  to L2 `App(qualified-rule, [receiver])` in `ir1-lower.ts` —
+  byte-identical to the pre-M5 hand-emitted shape on every fixture.
+  Built by `buildL1MemberAccess` in `ir1-build.ts`, called from all
+  9 documented build/translate sites in `translate-body.ts`,
+  `translate-signature.ts`, `ir-build.ts`, and `ir1-build-body.ts`.
+
+*Surface forms folded into Member:*
+
+- Dotted access (`obj.field`) — TS `PropertyAccessExpression` with an
+  `Identifier` / `PrivateIdentifier` argument.
+- String-literal element access (`obj["field"]`) — TS
+  `ElementAccessExpression` whose argument expression is a
+  `StringLiteral`. Operationally equivalent to dotted access at the
+  TS-checker layer; one canonical L1 form.
+
+*Computed element access rejected.* `obj[expr]` for any non-literal
+`expr` rejects with a specific `unsupported` reason. The DoD's
+"unless type system resolves to a known field set" carve-out (literal-
+union narrowing on the index expression) is deferred to a follow-up:
+the soundness conditions (partial unions, branded strings, generics-
+resolving-to-literal-types-only-at-call-site) are non-trivial enough
+to warrant their own slice.
+
+*Type-erasure wrappers preserved.* `(x as T).f`, `x!.f`, `<T>x.f`,
+`(x satisfies T).f` are **not** stripped at L1 build, despite being
+runtime-erased. They are load-bearing at the TS-checker layer that
+ts2pant translates against — `qualifyFieldAccess` calls
+`checker.getTypeAtLocation` on the asserted node to honor the user's
+contract that the receiver should be treated as the asserted type.
+Stripping would silently change the qualifier resolution. Symmetric
+strip-in-`buildL1SubExpr` (Patch 5) operates on *outer*-position
+wrappers around the sub-expression, not on wrappers inside the
+property-access receiver — those stay put.
+
+*Paren-stripping is universal.* `(x)` and `x` produce identical L1
+trees at every TS-AST → L1 dispatch entry point — `buildL1Expr`,
+`buildL1Stmt`, and the per-kind builders all unwrap parens before
+classifying. Downstream recognizers (functor-lift, cardinality, the
+nullish recognizer) do not re-implement paren-stripping; they
+classify against the unwrapped node uniformly.
+
+*Functor-lift operand restriction lifted (M5 Patch 4).* The
+recognizer's eligibility check is now expressed in L1 terms (`Var`
+or `Member`) rather than TS-AST terms (`Identifier` only — the M4 P5
+restriction). Idiomatic null-guards over Member operands —
+`if (obj.field == null) return []; return [obj.field.name];` — now
+translate. See § "Functor-Lift Recognizer" for the supported shapes.
+
+*Cardinality dispatch is a deliberate non-Member path.* `.length` /
+`.size` on the six list-shaped TS types (Array, ReadonlyArray, Set,
+ReadonlySet, Map, ReadonlyMap) build to L1 `Unop(card, receiver)`
+via `tryBuildL1Cardinality`, NOT Member. The dispatch fires *before*
+Member; routing through Member would lower to `App("length", [arr])`
+— EUF uninterpreted on a `length` rule, distinct from Pant's
+cardinality primitive `#x`. Specs reasoning about array sizes would
+silently fail. See § "Divergence from IRSC" below for the canonical
+record.
+
+*Mutating-body assignment targets.* The hard rule for the property-
+access equivalence class extends to statement-position writes:
+`buildL1AssignStmt` constructs `Assign(Member(receiver, name),
+value)` where the target is a canonical L1 Member. Compound-assign
+desugaring (`a.p OP= v` → `a.p = a.p OP v`) happens before Member
+construction, so the Member form is the same whether the source was
+a simple assign or compound assign.
+
+*from-l2 shrinkage scope.* The four documented property-access
+sub-expression wrap sites in mutating-body recognizers
+(`ir1-build-body.ts` Shape B fold target / rhs / guard,
+`buildL1AssignStmt` receiver) consolidate into one
+`buildL1SubExpr` helper that calls `buildL1MemberAccess` for
+property-access shapes and falls back to `from-l2` only for non-
+property sub-expressions. Wrap sites post-M5: 1 (down from 4); the
+remaining fallback fires only for non-property sub-expressions
+(binop chains, generic call results, etc.) awaiting M6 deletion of
+the form.
+
+*qualifyFieldAccess two-tier behavior preserved as-is.* Resolved-
+owner cases produce qualified rule names (`account-balance a`);
+unresolved-non-ambiguous cases (built-ins, type parameters,
+anonymous-without-synth) fall back to bare kebab'd field names
+(`to-fixed n 2`); ambiguous unions return null and reject. The
+asymmetry is a deliberate two-tier EUF separation — user-defined
+types get qualified rule names because translate-types emits
+accessor rules with bodies the SMT solver observes; built-in /
+parametric types fall back to bare names because the SMT solver
+treats them as EUF uninterpreted functions with congruence (the
+right modeling for `arr.indexOf(x)`, `s.charAt(0)`, `n.toFixed(2)`,
+etc.). Tightening to always-reject would break a substantial
+fraction of TS code that translates fine today; collapsing to
+always-qualify would pollute the namespace with bodyless synthesized
+rules and lose nothing semantically.
+
+*Pessimism rate (computed-access rejection):* 0 — fixtures and
+dogfood use dotted access exclusively; no fixture or dogfood site
+exercises computed `obj[expr]` that would surface the rejection
+path. **0%.** Rejection is exercised by the deliberate-reject
+`getByDynamicKey` fixture function plus unit tests.
 
 **Layering principle.** This is the architectural commitment that
 M2 ratifies and the M2 cleanup completes:
@@ -1086,9 +1217,11 @@ outside the current milestone's normalization concern. The adapter
 wraps a pre-built Layer 2 `IRExpr` and lowers verbatim. M3 grew its
 use (mutating-body sub-expressions like receivers, values, conditions
 all arrive as OpaqueExpr from `translateBodyExpr` and wrap via
-`from-l2`). Lifetime: shrinks once M4 (equality/nullish) and M5
-(property access) bring sub-expressions onto L1 natively; deleted at
-M6. Do not introduce new uses outside the build pipeline's scoped
+`from-l2`). Lifetime: M4 (equality/nullish) and M5 (property access)
+brought sub-expressions onto L1 natively, shrinking the property-
+access sub-expression wrap sites from 4 to 1 (consolidated into
+`buildL1SubExpr`'s fallback for non-property forms); deleted at M6.
+Do not introduce new uses outside the build pipeline's scoped
 sub-expression delegation.
 
 **Locked decisions** (re-litigation requires explicit user sign-off):
