@@ -71,8 +71,12 @@ function containsKind(expr: IRExpr, kind: IRExpr["kind"]): boolean {
         expr.args.some((arg) => containsKind(arg, kind))
       );
     case "cond":
-      return expr.arms.some(
-        ([guard, value]) => containsKind(guard, kind) || containsKind(value, kind),
+      return (
+        expr.arms.some(
+          ([guard, value]) =>
+            containsKind(guard, kind) || containsKind(value, kind),
+        ) ||
+        (expr.otherwise !== undefined && containsKind(expr.otherwise, kind))
       );
     case "let":
       return containsKind(expr.value, kind) || containsKind(expr.body, kind);
