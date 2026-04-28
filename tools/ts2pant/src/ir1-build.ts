@@ -801,6 +801,66 @@ function allocateLiftBinder(ctx: L1BuildContext, hint: string): string {
   return name;
 }
 
+// ---------------------------------------------------------------------------
+// Operand-substitution rule for the functor-lift recognizer
+// ---------------------------------------------------------------------------
+//
+// **Standard name:** First-order term rewriting / common-subexpression
+// abstraction. The lift transforms
+//   `if e == null then [] else [body]` → `each $n in e | body[e := $n]`
+// where `body[e := $n]` is the substitution of every syntactic
+// occurrence of the operand subterm `e` with the fresh binder `$n`.
+// The functor lift itself is structurally `Maybe` `fmap` — see
+// CLAUDE.md § "Functor-Lift Recognizer" (Wadler POPL 1992, Hutton &
+// Meijer JFP 1998). The substitution rule below is the term-rewriting
+// half of that transformation.
+//
+// **Reference:** Baader & Nipkow, *Term Rewriting and All That*
+// (Cambridge 1998), ch. 2 (basic notions of position, subterm, and
+// substitution); Peyton Jones & Marlow, "Secrets of the GHC Inliner"
+// JFP 2002 (hygienic-binder discipline / Barendregt convention).
+//
+// **Invariants justifying soundness:**
+//
+// 1. **Hygiene.** The replacement is a fresh `Var($n)` allocated via
+//    `cellRegisterName` against the document-wide `NameRegistry`, so
+//    the binder cannot collide with any other name in scope. This is
+//    the Barendregt convention applied to the comprehension binder.
+//
+// 2. **Structural reachability.** Soundness requires that the operand
+//    `e` actually occurs as a syntactic subterm of `body` — otherwise
+//    the comprehension would emit a body with `$n` as a free variable
+//    (substitution wouldn't fire) or, worse, with the operand still
+//    referenced free of the binder. The recognizer enforces this by
+//    gating on the explicit `changed` flag returned by
+//    `substituteL1Subtree` for Member operands; for Var operands, the
+//    TS-AST walk (`expressionReferencesNames`) is the precondition and
+//    post-lowering `ast.substituteBinder` is the substitution
+//    primitive.
+//
+// 3. **Referential transparency at the operand position.** The
+//    comprehension evaluates `e` once at its source position
+//    (`each $n in e | …`); each occurrence of `e` inside `body` is
+//    replaced by the binder. This is sound iff `e` has no observable
+//    effects whose duplication or removal would change semantics.
+//    M4 P5's eligibility check enforces this implicitly — list-
+//    lifted nullable types under TypeScript don't admit side effects
+//    in the comparison position the recognizer matches.
+//
+// 4. **Closed form on Var/Member.** `structuralEqualL1` only compares
+//    `Var` and `Member` shapes. The pure-L1 builder
+//    `buildL1MemberOrVarForLift` produces only those shapes, so
+//    operand and projection trees are exhaustively comparable along
+//    the Member-operand path. For `from-l2` and other compound forms
+//    the walker descends but the structural-match leaves never fire
+//    for a Member needle, falling out via `changed: false`.
+//
+// Future changes to this rewrite should re-verify these four
+// invariants. Adding new comparable forms (e.g., to support `App` as
+// an eligible operand) requires extending both `structuralEqualL1`
+// and the `buildL1MemberOrVarForLift` accept-set together; partial
+// extension breaks invariant 4.
+
 /**
  * Structural equality on L1 expressions, scoped to the shapes the
  * functor-lift recognizer compares: `Var` (name + primed) and `Member`
@@ -810,6 +870,10 @@ function allocateLiftBinder(ctx: L1BuildContext, hint: string): string {
  * form is a structural mismatch by construction. Parens and other
  * source-level wrappers are normalized away by L1 build before this
  * function ever sees the trees.
+ *
+ * See the comment block above for the underlying term-rewriting
+ * reference and the four soundness invariants this comparator
+ * supports.
  */
 function structuralEqualL1(a: IR1Expr, b: IR1Expr): boolean {
   if (a === b) {
@@ -852,6 +916,11 @@ interface L1SubstResult {
  * opaque L2 tree to L1 callers, which the L1 walker has no handle on.
  * Returns the rewritten tree plus a `changed` flag indicating whether
  * substitution actually fired anywhere along the walk.
+ *
+ * This is the term-rewriting primitive that backs the functor-lift's
+ * `body[e := $n]` substitution — see the comment block above
+ * `structuralEqualL1` for the algorithm reference (Baader & Nipkow ch. 2)
+ * and the four soundness invariants it depends on.
  *
  * Used by the functor-lift recognizer: the operand's L1 form (a `Var`
  * or `Member` chain) is replaced by a fresh `Var(binder)` inside the

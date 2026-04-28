@@ -419,6 +419,59 @@ describe("ir1-build-functor-lift", () => {
     assert.equal(tryRecognizeFunctorLift(candidate, ctx), null);
   });
 
+  it("Member operand probe rolls back synthCell + supply on failure (anonymous record)", () => {
+    // The receiver type of the operand `u.next` is the anonymous record
+    // `{ next: { name: string } | null }`. Qualifying the field `next`
+    // routes through `qualifyFieldAccess → resolveFieldOwner →
+    // resolveRecordOwner → mapTsType → registerAnonymousRecord →
+    // cellRegisterRecord`, which mutates `synthCell.recordSynth` and
+    // `synthCell.registry`. The lift then fails the multi-element check
+    // on the present branch (`[u.next.name, u.next.name]`).
+    //
+    // Failed probes must restore `ctx.supply.n` AND the three synthCell
+    // field references, so the synthesized record domain doesn't leak
+    // into the document on the rejected path. Snapshotting the field
+    // references is sufficient because the inner synth records and
+    // registry are immutable values.
+    const { candidate, ctx } = setup(
+      `function f(u: { next: { name: string } | null }): string[] {
+         return u.next == null ? [] : [u.next.name, u.next.name];
+       }`,
+    );
+    const synthCell = ctx.supply.synthCell;
+    if (!synthCell) {
+      throw new Error("test setup: expected synthCell");
+    }
+    const supplyBefore = ctx.supply.n;
+    const synthBefore = synthCell.synth;
+    const recordSynthBefore = synthCell.recordSynth;
+    const registryBefore = synthCell.registry;
+
+    const result = tryRecognizeFunctorLift(candidate, ctx);
+
+    assert.equal(result, null);
+    assert.equal(
+      ctx.supply.n,
+      supplyBefore,
+      "supply.n leaked from failed probe",
+    );
+    assert.equal(
+      synthCell.synth,
+      synthBefore,
+      "synthCell.synth leaked",
+    );
+    assert.equal(
+      synthCell.recordSynth,
+      recordSynthBefore,
+      "synthCell.recordSynth leaked — anonymous-record domain registered during failed probe",
+    );
+    assert.equal(
+      synthCell.registry,
+      registryBefore,
+      "synthCell.registry leaked — name registered during failed probe",
+    );
+  });
+
   it("Member operand falls through when projection isn't a Member chain", () => {
     // Projection is a method call that doesn't structurally surface
     // the Member operand at the L1 level. `ast.substituteBinder`

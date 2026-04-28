@@ -39,6 +39,7 @@ These cover the full scope of ts2pant's translation work:
 | Primed variables, frame conditions | Lamport, [*Specifying Systems*](https://lamport.azurewebsites.net/tla/book.html), Addison-Wesley 2002 | TLA+ approach to next-state relations, `UNCHANGED`, and the frame problem |
 | Frame problem in specifications | Borgida et al., ["And Nothing Else Changes"](https://www.researchgate.net/publication/221555223_And_Nothing_Else_Changes_The_Frame_Problem_in_Procedure_Specifications), IEEE TSE 1995 | Definitive treatment of frame conditions in procedure specifications |
 | Capture-avoiding substitution | [Locally Nameless Representation](https://boarders.github.io/posts/locally-nameless/) (Charguéraud 2012) | Alternative to named substitution; useful background for understanding why hygiene matters |
+| Term rewriting | Baader & Nipkow, *Term Rewriting and All That*, Cambridge 1998 | Positions, subterms, first-order substitution; basis for the functor-lift's L1 operand-rewriting (`body[e := $n]`) and the structural matcher in `substituteL1Subtree` |
 | Partial functions / option types | [Dafny Reference Manual](https://dafny.org/dafny/DafnyRef/DafnyRef) | Nullable types, preconditions, `modifies` clauses — practical verification language patterns |
 | IRSC / SSA-based IR | Vekris, Cosman, Jhala, ["Refinement Types for TypeScript"](https://arxiv.org/pdf/1604.02480), PLDI 2016 | Lifting surface-syntax recognizers into a typed intermediate representation via SSA-style translation; precedent for the IR introduced in §"Intermediate Representation" |
 
@@ -485,12 +486,16 @@ ops require acc on the left.
 **Standard name:** Functor lift / `Maybe` (option) `fmap`. The list-lift
 encoding makes `T | null` into `[T]` (length 0 or 1); the recognizer is
 exactly `fmap : (a -> b) -> Maybe a -> Maybe b` specialized to the
-list-as-Maybe representation.
+list-as-Maybe representation. The substitution half of the
+transformation (`body[e := $n]`) is first-order term rewriting on the
+L1 IR — see § "Operand-Substitution Rule" below.
 **Reference:** Wadler, ["The Essence of Functional Programming"](https://homepages.inf.ed.ac.uk/wadler/papers/essence/essence.ps),
 POPL 1992, §2 (the Maybe monad and `fmap`); Hutton & Meijer,
 ["Monadic Parsing in Haskell"](https://www.cs.nott.ac.uk/~pszgmh/pearl.pdf), JFP 1998
 (structural lift over `Maybe` as the canonical idiom for null-guarded
-projections).
+projections); Baader & Nipkow, *Term Rewriting and All That* (Cambridge
+1998), ch. 2 (positions, subterms, and substitution — the rewriting
+half of the transformation, described below).
 
 `if (x == null) return []; return [f(x)];` and the equivalent ternary /
 negated forms lower to `each $n in x | f $n`. This is *not* an
@@ -576,6 +581,50 @@ refuses, and these forms fall through to the standard L1 Cond build
 translatable target). This is intentional under the steering principle's
 rule 1: the TS itself is fine, but ts2pant cannot translate
 "sometimes-multi-element" pattern-matching without misrepresenting it.
+
+**Operand-Substitution Rule (`body[e := $n]`).** The lift's right-hand
+side `each $n in e | body'` is built by replacing every syntactic
+occurrence of the operand subterm `e` inside `body` with the fresh
+binder `$n`. This is *first-order term rewriting* (Baader & Nipkow ch. 2):
+match the operand `e` as a needle, replace each match with the binder,
+return the rewritten haystack.
+
+For Var operands (M4 P5) the substitution primitive is Pant's
+`ast.substituteBinder` post-lowering — the operand's Pant name is
+known and the OpaqueExpr walker rewrites every reference. For Member
+operands (M5 P4), `ast.substituteBinder` cannot target a Member
+subtree (it substitutes only by Var name), so the substitution lives
+at the L1 level via `substituteL1Subtree` in `ir1-build.ts`. The
+operand and projection are both built into native L1 (no `from-l2`
+wraps along the chain) so the structural matcher can compare them
+directly.
+
+The four invariants the rewrite depends on, restated:
+
+1. **Hygiene.** `$n` is allocated via `cellRegisterName` against the
+   document-wide `NameRegistry` — Barendregt convention applied to
+   the comprehension binder.
+2. **Structural reachability.** The operand must occur as a syntactic
+   subterm of the projection. Var operands are checked via
+   `expressionReferencesNames` at the TS-AST level; Member operands
+   are gated on the explicit `changed` flag returned by
+   `substituteL1Subtree` (a reference-equality check on the rewritten
+   tree is unreliable because the walker rebuilds compound parents
+   unconditionally).
+3. **Referential transparency at the operand position.** The
+   comprehension evaluates `e` once at its source position; each
+   in-`body` occurrence is replaced by the binder. Sound iff `e` has
+   no observable effects whose duplication or removal would change
+   semantics — implicitly enforced by the recognizer matching only
+   list-lifted nullable shapes that don't admit side effects.
+4. **Closed form on Var/Member.** `structuralEqualL1` only compares
+   `Var` and `Member` shapes; the pure-L1 builder
+   `buildL1MemberOrVarForLift` produces only those shapes. Extending
+   the eligible operand vocabulary (e.g., to `App`) requires
+   extending both the matcher and the accept-set together.
+
+Adding new operand shapes or comparable forms must re-verify all
+four invariants. Update this section when the rewrite changes.
 
 ### Chain Fusion (.filter / .map / .reduce)
 
