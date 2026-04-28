@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { emitDocument } from "../src/emit.js";
-import { type SourceFile, createSourceFile } from "../src/extract.js";
+import { createSourceFile, type SourceFile } from "../src/extract.js";
 import { assertWasmTypeChecks } from "../src/pant-wasm.js";
 import { buildPantDocument } from "../src/pipeline.js";
 import { IntStrategy } from "../src/translate-types.js";
@@ -102,11 +102,34 @@ export { emitDocument };
  * through this so we don't snapshot output that the OCaml typechecker
  * would reject.
  *
+ * If the emitted text contains a `> UNSUPPORTED:` line, the document
+ * is a deliberate-rejection signal and the wasm typecheck is skipped —
+ * the snapshot still captures the rejection message verbatim. See
+ * `tools/ts2pant/CLAUDE.md` § "Test layout".
+ *
+ * If the document carries a `bundleModules` map (added by the dep-
+ * module pipeline), it is forwarded as the in-memory dep registry so
+ * the consumer's `import` declarations resolve.
+ *
  * Returns the emitted text so the caller can still snapshot or assert
  * on it. Throws (with a snippet of the input) if checking fails.
  */
-export async function emitAndCheck(doc: PantDocument): Promise<string> {
+export async function emitAndCheck(
+  doc: PantDocument & { bundleModules?: Map<string, string> },
+): Promise<string> {
   const output = emitDocument(doc);
-  await assertWasmTypeChecks(output);
+  if (containsUnsupportedLine(output)) {
+    return output;
+  }
+  await assertWasmTypeChecks(output, doc.bundleModules);
   return output;
+}
+
+/**
+ * Detect a deliberate-rejection signal — an emitted line beginning with
+ * `> UNSUPPORTED:`. Mirrors the marker `emit.ts` writes for
+ * `kind: "unsupported"` PropResults.
+ */
+export function containsUnsupportedLine(output: string): boolean {
+  return /^> UNSUPPORTED:/mu.test(output);
 }
