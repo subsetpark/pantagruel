@@ -549,74 +549,61 @@ describe("if-early-return prelude arms", () => {
     }
   });
 
-  it("rejects empty Set record initializer when element type is unknown", () => {
-    const source = `
-      interface Bag { items: ReadonlySet<unknown> }
-      export function f(): Bag {
-        return { items: new Set() };
-      }
-    `;
-    const sourceFile = createSourceFileFromSource(source);
-    const props = translateBody({
-      sourceFile,
-      functionName: "f",
-      strategy: IntStrategy,
+  const unknownCollectionCases = [
+    {
+      testName:
+        "rejects empty Set record initializer when element type is unknown",
+      returnType: "Bag",
+      interfaceSnippet: "interface Bag { items: ReadonlySet<unknown> }",
+      returnExpression: "return { items: new Set() };",
+      expectedReason: /f\.items: TS unknown is not expressible/u,
+      reasonLabel: "empty Set record initializer with unknown element type",
+    },
+    {
+      testName: "rejects empty Map record initializer when key type is unknown",
+      returnType: "Registry",
+      interfaceSnippet:
+        "interface Registry { byId: ReadonlyMap<unknown, number> }",
+      returnExpression: "return { byId: new Map() };",
+      expectedReason: /f\.byId: TS unknown is not expressible/u,
+      reasonLabel: "empty Map record initializer with unknown key type",
+    },
+    {
+      testName:
+        "rejects empty Map record initializer when value type is unknown",
+      returnType: "Registry",
+      interfaceSnippet:
+        "interface Registry { byId: ReadonlyMap<string, unknown> }",
+      returnExpression: "return { byId: new Map() };",
+      expectedReason: /f\.byId: TS unknown is not expressible/u,
+      reasonLabel: "empty Map record initializer with unknown value type",
+    },
+  ] as const;
+
+  for (const tc of unknownCollectionCases) {
+    it(tc.testName, () => {
+      const source = `
+        ${tc.interfaceSnippet}
+        export function f(): ${tc.returnType} {
+          ${tc.returnExpression}
+        }
+      `;
+      const sourceFile = createSourceFileFromSource(source);
+      const props = translateBody({
+        sourceFile,
+        functionName: "f",
+        strategy: IntStrategy,
+      });
+
+      assert.equal(props.length, 1);
+      assertUnsupportedReason(
+        props,
+        tc.expectedReason,
+        tc.reasonLabel,
+      );
+      assert.doesNotMatch(JSON.stringify(props), /unsupported_unknown/u);
     });
-
-    assert.equal(props.length, 1);
-    assertUnsupportedReason(
-      props,
-      /f\.items: TS unknown is not expressible/u,
-      "empty Set record initializer with unknown element type",
-    );
-    assert.doesNotMatch(JSON.stringify(props), /unsupported_unknown/u);
-  });
-
-  it("rejects empty Map record initializer when key type is unknown", () => {
-    const source = `
-      interface Registry { byId: ReadonlyMap<unknown, number> }
-      export function f(): Registry {
-        return { byId: new Map() };
-      }
-    `;
-    const sourceFile = createSourceFileFromSource(source);
-    const props = translateBody({
-      sourceFile,
-      functionName: "f",
-      strategy: IntStrategy,
-    });
-
-    assert.equal(props.length, 1);
-    assertUnsupportedReason(
-      props,
-      /f\.byId: TS unknown is not expressible/u,
-      "empty Map record initializer with unknown key type",
-    );
-    assert.doesNotMatch(JSON.stringify(props), /unsupported_unknown/u);
-  });
-
-  it("rejects empty Map record initializer when value type is unknown", () => {
-    const source = `
-      interface Registry { byId: ReadonlyMap<string, unknown> }
-      export function f(): Registry {
-        return { byId: new Map() };
-      }
-    `;
-    const sourceFile = createSourceFileFromSource(source);
-    const props = translateBody({
-      sourceFile,
-      functionName: "f",
-      strategy: IntStrategy,
-    });
-
-    assert.equal(props.length, 1);
-    assertUnsupportedReason(
-      props,
-      /f\.byId: TS unknown is not expressible/u,
-      "empty Map record initializer with unknown value type",
-    );
-    assert.doesNotMatch(JSON.stringify(props), /unsupported_unknown/u);
-  });
+  }
 
   it("rejects anonymous record return with unknown field via public reason", () => {
     const source = `
