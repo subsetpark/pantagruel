@@ -1,0 +1,21 @@
+module JS_STRING.
+
+> EUF rule heads for the JavaScript String.prototype.* namespace.
+> ts2pant emits imports of this module from consumer specs that
+> call methods like s.toUpperCase() / s.indexOf(t); the dispatch
+> index in tools/ts2pant/src/builtins.ts maps TS surface forms to
+> qualified references against these rules.
+>
+> Reference: Kroening & Strichman, *Decision Procedures* Ch. 4
+> (Equality with Uninterpreted Functions; congruence is the only
+> built-in axiom for opaque calls).
+>
+> No body axioms — JS string semantics (locale-sensitive case
+> folding, surrogate-pair handling for indexOf, etc.) are brittle
+> enough that any addition risks unsoundness; downstream consumers
+> rely on EUF congruence alone.
+
+to-upper-case s: String => String.
+index-of s: String, t: String => Int.
+
+---
