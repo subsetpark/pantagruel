@@ -21,6 +21,24 @@ import type { PantDeclaration } from "./types.js";
 export const UNSUPPORTED_ANONYMOUS_RECORD = "__unsupported_anon_record__";
 
 /**
+ * Sentinel returned by `mapTsType` when the TypeScript type is `unknown`.
+ * Pantagruel is monomorphic over named domains; there is no polymorphism
+ * mechanism to absorb `unknown` into. Mapping it to a fresh domain per
+ * call site loses the TS author's intent ("I'll narrow this later") and
+ * silently lets type errors through. The translator rejects it explicitly
+ * so the user can declare a real type or interface (steering rule 1 —
+ * the TS itself is ambiguous, not the recognizer).
+ *
+ * The value is not a valid Pantagruel identifier so emission of a
+ * signature carrying it will fail visibly rather than reference an
+ * undeclared domain. The reason text is exported alongside so downstream
+ * "UNSUPPORTED-skip" infrastructure can surface it to the user.
+ */
+export const UNSUPPORTED_UNKNOWN = "__unsupported_unknown__";
+export const UNSUPPORTED_UNKNOWN_REASON =
+  "TS unknown is not expressible in Pantagruel; declare a specific type";
+
+/**
  * TypeScript type flags for `null` / `undefined` / `void`. Pantagruel
  * retired `Nothing` from the user-facing type surface — there is no
  * writable type for "absence". `mapTsType` handles these only inside a
@@ -422,26 +440,137 @@ export function emitRecordSynthDecls(
 }
 
 /**
- * Mutable 3-field cell bundling a `MapSynth`, `RecordSynth` and
- * `NameRegistry`. Used by deep call sites (mapTsType recursion, body
- * translation) that would otherwise have to thread state through every
- * return value. The fields are reassigned in place with freshly-computed
- * immutable records; the inner values remain pure. Cell-field assignment
- * is itself within ts2pant's self-translation envelope (translatable as
- * primed rules on the cell).
+ * Canonical tuple shape: the ordered Pantagruel element types that a
+ * tuple constructor builds. Two TS aliases that share the same shape
+ * — `Point = [number, number]` and `Vec2 = [number, number]` both map
+ * to `["Int", "Int"]` — must share one constructor. Otherwise the
+ * SMT solver cannot prove `make-point 0 0 = make-vec2 0 0` despite
+ * identical operands; EUF congruence (Kroening & Strichman, *Decision
+ * Procedures*, Ch. 8) requires dispatch on shape, not on alias.
+ */
+export interface TupleShape {
+  readonly elementPantTypes: readonly string[];
+}
+
+/**
+ * Reference to a synthesized tuple constructor returned by
+ * `cellRegisterTupleConstructor`. The `ctorRuleName` is the bare rule
+ * name in the dep module (e.g. `make-int-int`); the `depModuleName` is
+ * the per-source-file dep module that owns it (e.g. `FOO_TUPLES`).
+ * Consumers emit `import ${depModuleName}.` at the module head and
+ * reference the constructor as `${depModuleName}::${ctorRuleName}` at
+ * call sites, mirroring the cross-module shape Pantagruel's `import`
+ * machinery exercises in `lib/module.ml`.
+ */
+export interface TupleCtorRef {
+  readonly ctorRuleName: string;
+  readonly depModuleName: string;
+}
+
+interface TupleCtorEntry {
+  readonly shape: TupleShape;
+  readonly ctorRuleName: string;
+}
+
+/**
+ * Accumulates anonymous tuple-shape occurrences encountered anywhere in
+ * the module's expression positions and synthesizes one constructor rule
+ * + projection axioms per unique shape. Like `MapSynth` and `RecordSynth`,
+ * registration is idempotent on canonical shape: re-registering the same
+ * `elementPantTypes` returns the cached constructor name. The synthesized
+ * decls are emitted to a *separate* dep module via `emitTupleCtorModule`,
+ * not folded into the consumer document; that's the per-source-file scope
+ * decision (one `<FILE_BASE_NAME>_TUPLES` module per source file regardless
+ * of how many shapes it uses).
+ */
+export interface TupleSynth {
+  readonly byShape: ReadonlyMap<string, TupleCtorEntry>;
+}
+
+export function emptyTupleSynth(): TupleSynth {
+  return { byShape: new Map() };
+}
+
+/**
+ * Canonical key for tuple-shape dedup: element Pant types joined by `*`.
+ * Joining whitespace-stripped strings prevents whitespace variance in
+ * nested tuple types (e.g. `Int * Int` vs `Int*Int`) from producing
+ * different keys — the canonical key is purely structural.
+ */
+function tupleShapeKey(shape: TupleShape): string {
+  return shape.elementPantTypes.map((t) => t.replace(/\s+/gu, "")).join("*");
+}
+
+/**
+ * Compute the kebab-cased constructor name for a tuple shape. Each
+ * element type is mangled to a fragment (`[String]` → `ListString`,
+ * `A * B` → `AAndB`, etc.) and then kebab-cased; fragments are joined
+ * with `-` and prefixed with `make-`. Returns null if any element
+ * type is unmangleable (e.g. contains TS-compiler fallback text like
+ * `Map<string, number>`).
+ */
+function tupleCtorBaseName(shape: TupleShape): string | null {
+  const fragments: string[] = [];
+  for (const elem of shape.elementPantTypes) {
+    const frag = manglePantTypeToFragment(elem);
+    if (!frag) {
+      return null;
+    }
+    fragments.push(toPantTermName(frag));
+  }
+  return `make-${fragments.join("-")}`;
+}
+
+/**
+ * Derive the per-source-file dep module name for tuple constructors.
+ * `<FILE_BASE_NAME>_TUPLES` in ALL_CAPS_SNAKE — every emitted module
+ * name in this codebase uses the screaming-snake convention (matches
+ * the existing `samples/*.pant` corpus).
+ */
+export function depModuleNameForFile(fileName: string): string {
+  const base = fileName.replace(/^.*[/\\]/u, "").replace(/\.[^.]+$/u, "");
+  const upper = base.replace(/[^A-Za-z0-9]+/gu, "_").toUpperCase();
+  return `${upper}_TUPLES`;
+}
+
+/**
+ * Mutable cell bundling per-document synth state and the name registry.
+ * Used by deep call sites (mapTsType recursion, body translation) that
+ * would otherwise have to thread state through every return value. The
+ * fields are reassigned in place with freshly-computed immutable records;
+ * the inner values remain pure. Cell-field assignment is itself within
+ * ts2pant's self-translation envelope (translatable as primed rules on
+ * the cell).
+ *
+ * `sourceFile` is optional and carries the file currently being
+ * translated so per-file dep-module names (`<FILE_BASE_NAME>_TUPLES`,
+ * `<FILE_BASE_NAME>_AMBIENT`) can be derived without threading the file
+ * through every registration call. Tests and standalone callers may
+ * leave it undefined; tuple-constructor registration falls back to a
+ * generic `TUPLES` module name in that case.
  */
 export interface SynthCell {
   synth: MapSynth;
   recordSynth: RecordSynth;
   registry: NameRegistry;
+  tupleSynth: TupleSynth;
+  sourceFile?: ts.SourceFile;
 }
 
-export function newSynthCell(registry?: NameRegistry): SynthCell {
-  return {
+export function newSynthCell(
+  registry?: NameRegistry,
+  sourceFile?: ts.SourceFile,
+): SynthCell {
+  const cell: SynthCell = {
     synth: emptyMapSynth(),
     recordSynth: emptyRecordSynth(),
     registry: registry ?? emptyNameRegistry(),
+    tupleSynth: emptyTupleSynth(),
   };
+  if (sourceFile !== undefined) {
+    cell.sourceFile = sourceFile;
+  }
+  return cell;
 }
 
 /** Pantagruel rule symbol for an interface field. Qualified so two
@@ -667,7 +796,11 @@ export function cellIsUsed(cell: SynthCell, name: string): boolean {
 /** Cell-mutating wrapper that drains both Map and Record synth decls.
  *  Emits Maps first so Record accessor-rule return types can reference
  *  any Map domain registered bottom-up. Incremental: each call returns
- *  only the entries added since the previous drain. */
+ *  only the entries added since the previous drain.
+ *
+ *  Tuple-constructor synth is *not* drained here — tuple constructors
+ *  emit to a separate per-source-file dep module via
+ *  `emitTupleCtorModule`, not into the consumer document's head. */
 export function cellEmitSynth(cell: SynthCell): PantDeclaration[] {
   const mapR = emitSynthDecls(cell.synth, cell.registry);
   cell.synth = mapR.synth;
@@ -676,6 +809,118 @@ export function cellEmitSynth(cell: SynthCell): PantDeclaration[] {
   cell.recordSynth = recR.synth;
   cell.registry = recR.registry;
   return [...mapR.decls, ...recR.decls];
+}
+
+/**
+ * Register a tuple shape and return the constructor reference. Idempotent
+ * on canonical shape (whitespace-stripped element types joined by `*`):
+ * re-registering the same shape returns the cached constructor name and
+ * dep-module name. Returns null when any element type is unmangleable
+ * (e.g. contains TS-compiler fallback text from an unsupported type
+ * upstream); callers fall back to inline tuple emission or reject.
+ *
+ * The dep-module name is `<FILE_BASE_NAME>_TUPLES` (ALL_CAPS_SNAKE)
+ * derived from `cell.sourceFile`; if no source file is attached to the
+ * cell (test/standalone paths), it falls back to a generic `TUPLES`.
+ */
+export function cellRegisterTupleConstructor(
+  cell: SynthCell,
+  shape: TupleShape,
+): TupleCtorRef | null {
+  const depModuleName = cell.sourceFile
+    ? depModuleNameForFile(cell.sourceFile.fileName)
+    : "TUPLES";
+  const key = tupleShapeKey(shape);
+  const cached = cell.tupleSynth.byShape.get(key);
+  if (cached) {
+    return { ctorRuleName: cached.ctorRuleName, depModuleName };
+  }
+  const baseName = tupleCtorBaseName(shape);
+  if (!baseName) {
+    return null;
+  }
+  const reg1 = registerName(cell.registry, baseName);
+  const ctorRuleName = reg1.name;
+  const newByShape = new Map(cell.tupleSynth.byShape);
+  newByShape.set(key, {
+    shape: { elementPantTypes: [...shape.elementPantTypes] },
+    ctorRuleName,
+  });
+  cell.tupleSynth = { byShape: newByShape };
+  cell.registry = reg1.registry;
+  return { ctorRuleName, depModuleName };
+}
+
+/** Read-through accessor: return all registered tuple shapes (in
+ *  registration order) so the pipeline can pass them to
+ *  `emitTupleCtorModule` at the document-emit boundary. */
+export function cellTupleShapes(
+  cell: SynthCell,
+): ReadonlyArray<{ shape: TupleShape; ctorRuleName: string }> {
+  return [...cell.tupleSynth.byShape.values()];
+}
+
+/**
+ * Emit the standalone Pantagruel dep module for a source file's tuple
+ * constructors. Output structure:
+ *
+ *   module <FILE_BASE_NAME>_TUPLES.
+ *
+ *   <ctor> a1: T1, ..., aN: TN => T1 * ... * TN.
+ *   ...
+ *
+ *   ---
+ *   all a1: T1, ..., aN: TN | (<ctor> a1 ... aN).1 = a1.
+ *   ...
+ *
+ * One constructor rule head per registered shape, plus N projection
+ * axioms (one per element position) per shape. The axioms quantify
+ * over the constructor's parameters explicitly — Pantagruel propositions
+ * can't carry free variables, so the binders must be reintroduced at
+ * the proposition level (parser.mly: proposition is `expr DOT`, where
+ * `expr` may be a `quantified` form `all p:T,... | body`).
+ *
+ * Every shape used by any fixture in the source file aggregates into
+ * the single returned module — that's the per-source-file scope
+ * decision (one `import <FILE_BASE_NAME>_TUPLES.` per consumer
+ * regardless of how many tuple shapes the file uses).
+ */
+export function emitTupleCtorModule(
+  sourceFile: ts.SourceFile,
+  shapes: ReadonlyArray<{ shape: TupleShape; ctorRuleName: string }>,
+): string {
+  const moduleName = depModuleNameForFile(sourceFile.fileName);
+  const lines: string[] = [];
+  lines.push(`module ${moduleName}.`);
+  lines.push("");
+
+  for (const { shape, ctorRuleName } of shapes) {
+    const params = shape.elementPantTypes
+      .map((t, idx) => `a${idx + 1}: ${t}`)
+      .join(", ");
+    const tupleType = shape.elementPantTypes.join(" * ");
+    lines.push(`${ctorRuleName} ${params} => ${tupleType}.`);
+  }
+
+  lines.push("");
+  lines.push("---");
+  lines.push("");
+
+  for (const { shape, ctorRuleName } of shapes) {
+    const params = shape.elementPantTypes
+      .map((t, idx) => `a${idx + 1}: ${t}`)
+      .join(", ");
+    const argList = shape.elementPantTypes
+      .map((_, idx) => `a${idx + 1}`)
+      .join(" ");
+    for (let pos = 0; pos < shape.elementPantTypes.length; pos++) {
+      lines.push(
+        `all ${params} | (${ctorRuleName} ${argList}).${pos + 1} = a${pos + 1}.`,
+      );
+    }
+  }
+
+  return `${lines.join("\n")}\n`;
 }
 
 /** Strategy for mapping TS `number` to a Pantagruel numeric type. */
@@ -713,6 +958,14 @@ export function mapTsType(
   synthCell?: SynthCell,
 ): string {
   const flags = type.flags;
+
+  // Reject `unknown` explicitly. Pantagruel is monomorphic over named
+  // domains — there is no `Any`/`Unknown` top — so the only honest move is
+  // to refuse and steer the user toward a declared type. Mapping to a
+  // generic placeholder would silently let type errors through.
+  if (flags & ts.TypeFlags.Unknown) {
+    return UNSUPPORTED_UNKNOWN;
+  }
 
   if (flags & ts.TypeFlags.String || flags & ts.TypeFlags.StringLiteral) {
     return "String";
