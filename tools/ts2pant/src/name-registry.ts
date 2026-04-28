@@ -14,6 +14,34 @@ export interface NameRegistry {
   readonly used: ReadonlySet<string>;
 }
 
+/**
+ * Pant reserved keywords (mirrors lib/lexer.ml:101-122). A registered name
+ * matching any of these collides with the language grammar — sanitise by
+ * routing through the same numeric-suffix loop used for name collisions.
+ */
+const PANT_RESERVED_KEYWORDS = new Set<string>([
+  "module",
+  "import",
+  "where",
+  "true",
+  "false",
+  "and",
+  "or",
+  "all",
+  "some",
+  "each",
+  "in",
+  "subset",
+  "context",
+  "initially",
+  "closure",
+  "cond",
+  "over",
+  "min",
+  "max",
+  "check",
+]);
+
 export function emptyNameRegistry(): NameRegistry {
   return { used: new Set() };
 }
@@ -24,14 +52,16 @@ export function isUsed(registry: NameRegistry, name: string): boolean {
 }
 
 /**
- * Register a name. If already used, appends numeric suffixes (1, 2, ...)
- * until unique. Returns the chosen name and the updated registry.
+ * Register a name. If already used or a Pant reserved keyword, appends
+ * numeric suffixes (1, 2, ...) until unique. Returns the chosen name and
+ * the updated registry.
  */
 export function registerName(
   registry: NameRegistry,
   name: string,
 ): { name: string; registry: NameRegistry } {
-  if (!registry.used.has(name)) {
+  const isReserved = PANT_RESERVED_KEYWORDS.has(name);
+  if (!isReserved && !registry.used.has(name)) {
     const used = new Set(registry.used);
     used.add(name);
     return { name, registry: { used } };
