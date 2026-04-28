@@ -404,6 +404,14 @@ function emitRecordEquations(
 
     // `new Set()` → empty-set membership negation.
     if (isEmptySetConstruction(initializer)) {
+      if (!isSetType(field.type) && !checker.isArrayType(field.type)) {
+        return [
+          {
+            kind: "unsupported",
+            reason: `${functionName} — new Set() initializer on non-set field '${field.name}'`,
+          },
+        ];
+      }
       const elemType = getSetElementTypeName(
         field.type,
         checker,
@@ -414,7 +422,7 @@ function emitRecordEquations(
         return [
           {
             kind: "unsupported",
-            reason: `${functionName} — new Set() initializer on non-set field '${field.name}'`,
+            reason: `${functionName}.${field.name}: ${UNSUPPORTED_UNKNOWN_REASON}`,
           },
         ];
       }
@@ -455,11 +463,17 @@ function emitRecordEquations(
         strategy,
         synthCell,
       );
-      if (!keyType) {
+      const vType = getMapValueTypeName(
+        field.type,
+        checker,
+        strategy,
+        synthCell,
+      );
+      if (!keyType || !vType) {
         return [
           {
             kind: "unsupported",
-            reason: `${functionName} — new Map() initializer on non-map field '${field.name}'`,
+            reason: `${functionName}.${field.name}: ${UNSUPPORTED_UNKNOWN_REASON}`,
           },
         ];
       }
@@ -467,12 +481,6 @@ function emitRecordEquations(
       const binderParam = ast.param(binderName, ast.tName(keyType));
       let keyPredApp: OpaqueExpr;
       if (receiverIsAnon) {
-        const vType = getMapValueTypeName(
-          field.type,
-          checker,
-          strategy,
-          synthCell,
-        );
         const synthEntry =
           synthCell && vType
             ? lookupMapKV(synthCell.synth, keyType, vType)
@@ -602,7 +610,10 @@ function isEmptySetConstruction(expr: ts.Expression): boolean {
 }
 
 /** Return the Pantagruel type name of `T` in a `Set<T>` / `ReadonlySet<T>`
- * / `[T]` (array) field, or null if the field isn't set-shaped. */
+ * / `[T]` (array) field, or null if the field isn't set-shaped. Also
+ * returns null when the element type is the `unknown` sentinel — the
+ * caller's null-branch routes through the existing unsupported
+ * PropResult flow, keeping the sentinel out of `ast.tName(...)`. */
 function getSetElementTypeName(
   fieldType: ts.Type,
   checker: ts.TypeChecker,
@@ -612,7 +623,8 @@ function getSetElementTypeName(
   if (isSetType(fieldType) || checker.isArrayType(fieldType)) {
     const typeArgs = checker.getTypeArguments(fieldType as ts.TypeReference);
     if (typeArgs.length === 1) {
-      return mapTsType(typeArgs[0]!, checker, strategy, synthCell);
+      const mapped = mapTsType(typeArgs[0]!, checker, strategy, synthCell);
+      return isUnsupportedUnknown(mapped) ? null : mapped;
     }
   }
   return null;
@@ -630,7 +642,9 @@ function isEmptyMapConstruction(expr: ts.Expression): boolean {
 }
 
 /** Return the Pantagruel type name of `K` in a `Map<K, V>` /
- * `ReadonlyMap<K, V>` field, or null if the field isn't map-shaped. */
+ * `ReadonlyMap<K, V>` field, or null if the field isn't map-shaped or
+ * the key type is the `unknown` sentinel (the caller routes null
+ * through the existing unsupported PropResult flow). */
 function getMapKeyTypeName(
   fieldType: ts.Type,
   checker: ts.TypeChecker,
@@ -640,14 +654,16 @@ function getMapKeyTypeName(
   if (isMapType(fieldType)) {
     const typeArgs = checker.getTypeArguments(fieldType as ts.TypeReference);
     if (typeArgs.length === 2) {
-      return mapTsType(typeArgs[0]!, checker, strategy, synthCell);
+      const mapped = mapTsType(typeArgs[0]!, checker, strategy, synthCell);
+      return isUnsupportedUnknown(mapped) ? null : mapped;
     }
   }
   return null;
 }
 
 /** Return the Pantagruel type name of `V` in a `Map<K, V>` /
- * `ReadonlyMap<K, V>` field, or null if the field isn't map-shaped. */
+ * `ReadonlyMap<K, V>` field, or null if the field isn't map-shaped or
+ * the value type is the `unknown` sentinel. */
 function getMapValueTypeName(
   fieldType: ts.Type,
   checker: ts.TypeChecker,
@@ -657,7 +673,8 @@ function getMapValueTypeName(
   if (isMapType(fieldType)) {
     const typeArgs = checker.getTypeArguments(fieldType as ts.TypeReference);
     if (typeArgs.length === 2) {
-      return mapTsType(typeArgs[1]!, checker, strategy, synthCell);
+      const mapped = mapTsType(typeArgs[1]!, checker, strategy, synthCell);
+      return isUnsupportedUnknown(mapped) ? null : mapped;
     }
   }
   return null;
