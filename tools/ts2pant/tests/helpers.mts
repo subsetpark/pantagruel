@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { emitDocument } from "../src/emit.js";
 import { type SourceFile, createSourceFile } from "../src/extract.js";
+import { assertWasmTypeChecks } from "../src/pant-wasm.js";
 import { buildPantDocument } from "../src/pipeline.js";
 import { IntStrategy } from "../src/translate-types.js";
 import type { PantDocument } from "../src/types.js";
@@ -91,3 +92,21 @@ export async function buildDocumentFromSourceFile(
 }
 
 export { emitDocument };
+
+/**
+ * Emit a PantDocument and verify that the resulting Pantagruel text
+ * type-checks via the embedded wasm checker (parse + collect + check —
+ * the same passes the `pant` CLI runs in its default mode). This is
+ * the universal verification gate for any test that exercises the
+ * emit pipeline: every place ts2pant produces Pantagruel should run
+ * through this so we don't snapshot output that the OCaml typechecker
+ * would reject.
+ *
+ * Returns the emitted text so the caller can still snapshot or assert
+ * on it. Throws (with a snippet of the input) if checking fails.
+ */
+export async function emitAndCheck(doc: PantDocument): Promise<string> {
+  const output = emitDocument(doc);
+  await assertWasmTypeChecks(output);
+  return output;
+}
