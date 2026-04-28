@@ -1172,7 +1172,7 @@ remaining fallback fires only for non-property sub-expressions
 the form.
 
 *qualifyFieldAccess two-tier behavior preserved as-is.* Resolved-
-owner cases produce qualified rule names (`account-balance a`);
+owner cases produce qualified rule names (`account--balance a`);
 unresolved-non-ambiguous cases (built-ins, type parameters,
 anonymous-without-synth) fall back to bare kebab'd field names
 (`to-fixed n 2`); ambiguous unions return null and reject. The

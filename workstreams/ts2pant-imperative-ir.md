@@ -711,7 +711,7 @@ results, etc.) awaiting M6 deletion of the form.
 | M5 standalone vs absorbed into earlier milestone | Landed standalone post-M4. The architectural backbone (L1 `Member` form + `Member → App(qualified, [receiver])` lowering) was always present and waiting for the cutover; folding into M3 would have ballooned the rip-out-first slice (M3 absorbed iteration + mutation), and folding into M4 would have crossed two unrelated equivalence classes (equality/nullish vs property access) in one milestone — violating the hard-rule discipline at the milestone-naming level. Standalone M5 is a clean six-patch slice with reviewed-snapshot-diff as the gate. |
 | String-literal vs computed element-access scope | String-literal `obj["f"]` collapses to the same canonical Member form as `obj.f`. Computed `obj[expr]` rejected unconditionally — the type-system literal-union narrowing path is deferred to a follow-up (soundness conditions on partial unions, branded strings, generics-resolving-to-literal-types are non-trivial). |
 | Type-erasure wrappers (`as T`, `!`, `<T>x`, `satisfies T`) at L1 build | Not stripped. They are load-bearing at the TS-checker layer ts2pant translates against — `qualifyFieldAccess` calls `checker.getTypeAtLocation` on the asserted node to honor the user's contract that the receiver should be treated as the asserted type. Stripping would silently change the qualifier resolution. Symmetric `unwrapExpression` strip in `buildL1SubExpr` (Patch 5) is for *outer*-position wrappers around the sub-expression — wrappers around the receiver inside a property access stay put. |
-| `qualifyFieldAccess` two-tier behavior (qualified rule names vs bare kebab names vs null) | Preserved as-is in M5. Resolved-owner cases produce qualified rule names (e.g., `account-balance a`); unresolved-non-ambiguous cases (built-ins, type parameters, anonymous-without-synth) fall back to bare kebab'd field names (e.g., `to-fixed n 2`); ambiguous unions return null and reject. The asymmetry is a deliberate two-tier EUF separation, not an inconsistency — see § "Divergence from IRSC" in `tools/ts2pant/CLAUDE.md`. |
+| `qualifyFieldAccess` two-tier behavior (qualified rule names vs bare kebab names vs null) | Preserved as-is in M5. Resolved-owner cases produce qualified rule names (e.g., `account--balance a`); unresolved-non-ambiguous cases (built-ins, type parameters, anonymous-without-synth) fall back to bare kebab'd field names (e.g., `to-fixed n 2`); ambiguous unions return null and reject. The asymmetry is a deliberate two-tier EUF separation, not an inconsistency — see § "Divergence from IRSC" in `tools/ts2pant/CLAUDE.md`. |
 
 **Why this is a safe pause point**: Property access is a
 self-contained equivalence class. M6 (cleanup) can land
@@ -720,9 +720,10 @@ sub-expressions awaiting M6 deletion of the form.
 
 **Unlocks**: M6 cleanup of the last legacy expression handling.
 The `from-l2` adapter now wraps only non-property sub-expressions
-(binop chains, generic call results) which become unreachable once
-the L2 statement vocabulary is deleted alongside the `IRWrap`
-escape hatch.
+(binop chains, generic call results) and becomes unreachable at M6
+when `IRWrap` and remaining legacy expression-path fallbacks are
+removed. (The L2 *statement* vocabulary was already deleted in M3 —
+see "Already done in PR #138" under M6.)
 
 ---
 
