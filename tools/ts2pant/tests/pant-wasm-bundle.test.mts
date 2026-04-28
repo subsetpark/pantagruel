@@ -67,5 +67,6 @@ true.
       new Map([["BROKEN_DEP", dep]]),
     );
     assert.notEqual(error, null);
+    assert.match(error!, /Bogus/);
   });
 });
