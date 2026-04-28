@@ -107,16 +107,14 @@ export { emitDocument };
  * the snapshot still captures the rejection message verbatim. See
  * `tools/ts2pant/CLAUDE.md` § "Test layout".
  *
- * If the document carries a `bundleModules` map (added by the dep-
- * module pipeline), it is forwarded as the in-memory dep registry so
- * the consumer's `import` declarations resolve.
+ * If the document carries a `bundleModules` map, it is forwarded as
+ * the in-memory dep registry so the consumer's `import` declarations
+ * resolve.
  *
  * Returns the emitted text so the caller can still snapshot or assert
  * on it. Throws (with a snippet of the input) if checking fails.
  */
-export async function emitAndCheck(
-  doc: PantDocument & { bundleModules?: Map<string, string> },
-): Promise<string> {
+export async function emitAndCheck(doc: PantDocument): Promise<string> {
   const output = emitDocument(doc);
   if (containsUnsupportedLine(output)) {
     return output;

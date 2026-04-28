@@ -15,12 +15,14 @@ before(async () => {
  */
 function buildDoc(opts: {
   moduleName: string;
+  declarations?: PantDocument["declarations"];
   propositions: PantDocument["propositions"];
   bundleModules?: Map<string, string>;
-}): PantDocument & { bundleModules?: Map<string, string> } {
+}): PantDocument {
   return {
     moduleName: opts.moduleName,
-    declarations: [],
+    imports: [],
+    declarations: opts.declarations ?? [],
     propositions: opts.propositions,
     checks: [],
     bundleModules: opts.bundleModules,
@@ -70,12 +72,11 @@ describe("helpers > emitAndCheck", () => {
     // A clean doc with a single domain declaration and a trivial
     // `true.` proposition should round-trip through the wasm checker
     // without complaint.
-    const doc: PantDocument & { bundleModules?: Map<string, string> } = {
+    const doc = buildDoc({
       moduleName: "Clean",
       declarations: [{ kind: "domain", name: "Item" }],
       propositions: [{ kind: "raw", text: "true" }],
-      checks: [],
-    };
+    });
 
     const output = await emitAndCheck(doc);
 
