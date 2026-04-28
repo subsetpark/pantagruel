@@ -77,6 +77,25 @@ describe("extract", () => {
     await assertWasmTypeChecks(text);
   });
 
+  it("extractAmbientFunctions dedupes overloaded `declare function`s", () => {
+    const source = `
+      declare function f(x: number): number;
+      declare function f(x: string): string;
+      declare function g(x: number): number;
+    `;
+    const sf = createSourceFileFromSource(source, "overload.ts");
+    const decls = extractAmbientFunctions(sf, IntStrategy);
+    assert.deepEqual(
+      decls.map((d) => d.tsName),
+      ["f", "g"],
+    );
+    const text = emitAmbientModule(sf, decls);
+    const fHeadCount = text
+      .split("\n")
+      .filter((l) => l.startsWith("f ")).length;
+    assert.equal(fHeadCount, 1, "exactly one rule head per overloaded name");
+  });
+
   it("the same source file produces the same ambient module name from any consumer", () => {
     const source = `
       declare function f(x: number): number;

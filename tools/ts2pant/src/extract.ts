@@ -286,12 +286,23 @@ export function ambientModuleName(sourceFile: SourceFile): string {
  * Ambients with `void` return type translate to actions rather than
  * rules and are filtered out — the ambient-module emission only
  * produces rule heads.
+ *
+ * Overloaded `declare function`s collapse to a single rule head: the
+ * first overload's signature wins, later overloads with the same name
+ * are skipped. Pantagruel's positional coherence rejects two rules
+ * with the same `(name, arity)` and disagreeing types, so emitting one
+ * head per overload would either duplicate (when the underlying
+ * `translateSignature` resolves all overloads to the same first
+ * declaration — its current behavior) or unsoundly emit conflicting
+ * heads. The first-overload-wins choice matches the conventional TS
+ * pattern of declaring the canonical signature first.
  */
 export function extractAmbientFunctions(
   sourceFile: SourceFile,
   strategy: NumericStrategy,
 ): AmbientFunctionDecl[] {
   const result: AmbientFunctionDecl[] = [];
+  const seen = new Set<string>();
   for (const fn of sourceFile.getFunctions()) {
     if (!fn.hasDeclareKeyword()) {
       continue;
@@ -300,6 +311,10 @@ export function extractAmbientFunctions(
     if (!tsName) {
       continue;
     }
+    if (seen.has(tsName)) {
+      continue;
+    }
+    seen.add(tsName);
     const sig = translateSignature(
       sourceFile,
       tsName,
