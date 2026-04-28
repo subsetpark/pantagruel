@@ -57,12 +57,14 @@ import {
   fieldRuleName,
   isMapType,
   isSetType,
+  isUnsupportedUnknown,
   lookupMapKV,
   mapTsType,
   type NumericStrategy,
   resolveFieldOwner,
   type SynthCell,
   toPantTermName,
+  UNSUPPORTED_UNKNOWN_REASON,
 } from "./translate-types.js";
 import type { PantDeclaration, PropResult } from "./types.js";
 
@@ -1393,6 +1395,21 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
       // domain names (idempotent; the signature pass already registered
       // them, so this is a lookup rather than a fresh registration).
       const typeName = mapTsType(paramType, checker, strategy, synthCell);
+      // Body-level Forall quantifiers carry param Pant types in their
+      // binding heads (`all x: <typeName> | ...`); letting the unknown
+      // sentinel reach `paramList` would emit it inside emitted
+      // equations. The signature pass already returned an unsupported
+      // declaration for this case, so the right move here is to bail
+      // with a single unsupported PropResult rather than emit broken
+      // equations.
+      if (isUnsupportedUnknown(typeName)) {
+        return [
+          {
+            kind: "unsupported",
+            reason: `${functionName} param '${param.name}': ${UNSUPPORTED_UNKNOWN_REASON}`,
+          },
+        ];
+      }
       // With a `paramNameMap` we reuse the signature pass's allocations
       // exactly. Without (standalone / test callers with no synthCell),
       // we fall back to the pure kebab-case — no registry to collide

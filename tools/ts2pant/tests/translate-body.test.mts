@@ -3,7 +3,13 @@ import assert from "node:assert/strict";
 import { createSourceFileFromSource } from "../src/extract.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import { translateBody } from "../src/translate-body.js";
-import { IntStrategy, RealStrategy } from "../src/translate-types.js";
+import { translateSignature } from "../src/translate-signature.js";
+import {
+  IntStrategy,
+  newSynthCell,
+  RealStrategy,
+  UNSUPPORTED_UNKNOWN_REASON,
+} from "../src/translate-types.js";
 import type { PropResult } from "../src/types.js";
 
 before(async () => {
@@ -541,6 +547,96 @@ describe("if-early-return prelude arms", () => {
         /record return combined with early-return arms or if\/else branches/u,
       );
     }
+  });
+
+  const unknownCollectionCases = [
+    {
+      testName:
+        "rejects empty Set record initializer when element type is unknown",
+      returnType: "Bag",
+      interfaceSnippet: "interface Bag { items: ReadonlySet<unknown> }",
+      returnExpression: "return { items: new Set() };",
+      expectedReason: /f\.items: TS unknown is not expressible/u,
+      reasonLabel: "empty Set record initializer with unknown element type",
+    },
+    {
+      testName: "rejects empty Map record initializer when key type is unknown",
+      returnType: "Registry",
+      interfaceSnippet:
+        "interface Registry { byId: ReadonlyMap<unknown, number> }",
+      returnExpression: "return { byId: new Map() };",
+      expectedReason: /f\.byId: TS unknown is not expressible/u,
+      reasonLabel: "empty Map record initializer with unknown key type",
+    },
+    {
+      testName:
+        "rejects empty Map record initializer when value type is unknown",
+      returnType: "Registry",
+      interfaceSnippet:
+        "interface Registry { byId: ReadonlyMap<string, unknown> }",
+      returnExpression: "return { byId: new Map() };",
+      expectedReason: /f\.byId: TS unknown is not expressible/u,
+      reasonLabel: "empty Map record initializer with unknown value type",
+    },
+  ] as const;
+
+  for (const tc of unknownCollectionCases) {
+    it(tc.testName, () => {
+      const source = `
+        ${tc.interfaceSnippet}
+        export function f(): ${tc.returnType} {
+          ${tc.returnExpression}
+        }
+      `;
+      const sourceFile = createSourceFileFromSource(source);
+      const props = translateBody({
+        sourceFile,
+        functionName: "f",
+        strategy: IntStrategy,
+      });
+
+      assert.equal(props.length, 1);
+      assertUnsupportedReason(
+        props,
+        tc.expectedReason,
+        tc.reasonLabel,
+      );
+      assert.doesNotMatch(JSON.stringify(props), /unsupported_unknown/u);
+    });
+  }
+
+  it("rejects anonymous record return with unknown field via public reason", () => {
+    const source = `
+      function makeBox(): { value: unknown } {
+        return { value: 1 };
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const synthCell = newSynthCell();
+    const { paramNameMap } = translateSignature(
+      sourceFile,
+      "makeBox",
+      IntStrategy,
+      synthCell,
+    );
+
+    const props = translateBody({
+      sourceFile,
+      functionName: "makeBox",
+      strategy: IntStrategy,
+      synthCell,
+      paramNameMap,
+    });
+
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+    if (props[0]?.kind === "unsupported") {
+      assert.equal(
+        props[0].reason,
+        `make-box: ${UNSUPPORTED_UNKNOWN_REASON}`,
+      );
+    }
+    assert.doesNotMatch(JSON.stringify(props), /__unsupported_unknown__/u);
   });
 
   it("emits trailing-if diagnostic for single `if (P) return E;` body", () => {

@@ -21,6 +21,37 @@ import type { PantDeclaration } from "./types.js";
 export const UNSUPPORTED_ANONYMOUS_RECORD = "__unsupported_anon_record__";
 
 /**
+ * Sentinel returned by `mapTsType` when the TypeScript type is `unknown`.
+ * Pantagruel is monomorphic over named domains; there is no polymorphism
+ * mechanism to absorb `unknown` into. Mapping it to a fresh domain per
+ * call site loses the TS author's intent ("I'll narrow this later") and
+ * silently lets type errors through. The translator rejects it explicitly
+ * so the user can declare a real type or interface (steering rule 1 —
+ * the TS itself is ambiguous, not the recognizer).
+ *
+ * The value is not a valid Pantagruel identifier so emission of a
+ * signature carrying it will fail visibly rather than reference an
+ * undeclared domain. The reason text is exported alongside so downstream
+ * "UNSUPPORTED-skip" infrastructure can surface it to the user.
+ */
+export const UNSUPPORTED_UNKNOWN = "__unsupported_unknown__";
+export const UNSUPPORTED_UNKNOWN_REASON =
+  "TS unknown is not expressible in Pantagruel; declare a specific type";
+
+/**
+ * True if `pantType` is the `unknown` rejection sentinel. Composite
+ * type branches in `mapTsType` (tuple, array, set, Map K/V, union,
+ * anonymous record field) propagate the sentinel by checking each
+ * recursive result — otherwise nested shapes like `{ x: unknown }`,
+ * `Map<unknown, Int>`, or `[unknown, Int]` would synthesize broken
+ * declarations referencing `__unsupported_unknown__` as if it were a
+ * real Pantagruel type.
+ */
+export function isUnsupportedUnknown(pantType: string): boolean {
+  return pantType === UNSUPPORTED_UNKNOWN;
+}
+
+/**
  * TypeScript type flags for `null` / `undefined` / `void`. Pantagruel
  * retired `Nothing` from the user-facing type surface — there is no
  * writable type for "absence". `mapTsType` handles these only inside a
@@ -422,26 +453,173 @@ export function emitRecordSynthDecls(
 }
 
 /**
- * Mutable 3-field cell bundling a `MapSynth`, `RecordSynth` and
- * `NameRegistry`. Used by deep call sites (mapTsType recursion, body
- * translation) that would otherwise have to thread state through every
- * return value. The fields are reassigned in place with freshly-computed
- * immutable records; the inner values remain pure. Cell-field assignment
- * is itself within ts2pant's self-translation envelope (translatable as
- * primed rules on the cell).
+ * Canonical tuple shape: the ordered Pantagruel element types that a
+ * tuple constructor builds. Two TS aliases that share the same shape
+ * — `Point = [number, number]` and `Vec2 = [number, number]` both map
+ * to `["Int", "Int"]` — must share one constructor. Otherwise the
+ * SMT solver cannot prove `make-point 0 0 = make-vec2 0 0` despite
+ * identical operands; EUF congruence (Kroening & Strichman, *Decision
+ * Procedures*, Ch. 8) requires dispatch on shape, not on alias.
+ */
+export interface TupleShape {
+  readonly elementPantTypes: readonly string[];
+}
+
+/**
+ * Reference to a synthesized tuple constructor returned by
+ * `cellRegisterTupleConstructor`. The `ctorRuleName` is the bare rule
+ * name in the dep module (e.g. `make-int-int`); the `depModuleName` is
+ * the per-source-file dep module that owns it (e.g. `FOO_TUPLES`).
+ * Consumers emit `import ${depModuleName}.` at the module head and
+ * reference the constructor as `${depModuleName}::${ctorRuleName}` at
+ * call sites, mirroring the cross-module shape Pantagruel's `import`
+ * machinery exercises in `lib/module.ml`.
+ */
+export interface TupleCtorRef {
+  readonly ctorRuleName: string;
+  readonly depModuleName: string;
+}
+
+interface TupleCtorEntry {
+  readonly shape: TupleShape;
+  readonly ctorRuleName: string;
+}
+
+/**
+ * Accumulates anonymous tuple-shape occurrences encountered anywhere in
+ * the module's expression positions and synthesizes one constructor rule
+ * + projection axioms per unique shape. Like `MapSynth` and `RecordSynth`,
+ * registration is idempotent on canonical shape: re-registering the same
+ * `elementPantTypes` returns the cached constructor name. The synthesized
+ * decls are emitted to a *separate* dep module via `emitTupleCtorModule`,
+ * not folded into the consumer document; that's the per-source-file scope
+ * decision (one `<FILE_BASE_NAME>_TUPLES` module per source file regardless
+ * of how many shapes it uses).
+ *
+ * `ctorRegistry` is a *tuple-module-local* `NameRegistry` used to
+ * disambiguate constructor names within the dep module's namespace.
+ * Routing ctor allocation through the consumer's `cell.registry` would
+ * leak unrelated local declarations (e.g. a user function named
+ * `make-int-int`) into the suffixing chain — yielding `make-int-int1`
+ * even though the dep-module qualifier `FOO_TUPLES::` already isolates
+ * the namespace. The local registry produces stable canonical names
+ * (`make-int-int` regardless of what's registered in the consumer)
+ * while still resolving the rare case where two distinct shapes mangle
+ * to the same kebab fragment (e.g. element types whose canonical names
+ * collide after kebab normalization).
+ */
+export interface TupleSynth {
+  readonly byShape: ReadonlyMap<string, TupleCtorEntry>;
+  readonly ctorRegistry: NameRegistry;
+}
+
+export function emptyTupleSynth(): TupleSynth {
+  return { byShape: new Map(), ctorRegistry: emptyNameRegistry() };
+}
+
+/**
+ * Canonical key for tuple-shape dedup: a delimiter-safe encoding of
+ * the element Pant types. Each element is whitespace-stripped first
+ * so `Int * Int` and `Int*Int` hash identically (the canonical key
+ * is purely structural). The encoding uses `JSON.stringify` rather
+ * than a join because `*` is *also* legal inside an element type
+ * (a nested tuple like `Int*Int`), and a bare `*` join would collide
+ * `[Int, Int*Int]` with `[Int*Int, Int]` on the same `Int*Int*Int`
+ * key. JSON's quoting and escaping make the per-element boundaries
+ * unambiguous.
+ */
+function tupleShapeKey(shape: TupleShape): string {
+  return JSON.stringify(
+    shape.elementPantTypes.map((t) => t.replace(/\s+/gu, "")),
+  );
+}
+
+/**
+ * Compute the kebab-cased constructor name for a tuple shape. Each
+ * element type is mangled to a fragment (`[String]` → `ListString`,
+ * `A * B` → `AAndB`, etc.) and then kebab-cased; fragments are joined
+ * with `-` and prefixed with `make-`. Returns null if any element
+ * type is unmangleable (e.g. contains TS-compiler fallback text like
+ * `Map<string, number>`).
+ */
+function tupleCtorBaseName(shape: TupleShape): string | null {
+  const fragments: string[] = [];
+  for (const elem of shape.elementPantTypes) {
+    const frag = manglePantTypeToFragment(elem);
+    if (!frag) {
+      return null;
+    }
+    fragments.push(toPantTermName(frag));
+  }
+  return `make-${fragments.join("-")}`;
+}
+
+/**
+ * Derive the per-source-file dep module name for tuple constructors.
+ * `<FILE_BASE_NAME>_TUPLES` in ALL_CAPS_SNAKE — every emitted module
+ * name in this codebase uses the screaming-snake convention (matches
+ * the existing `samples/*.pant` corpus).
+ *
+ * The result must be a legal Pantagruel UPPER_IDENT — the lexer's
+ * `upper_start = 'A' .. 'Z'` rules out:
+ *   - empty stems (`.ts`, `""` → `_TUPLES`),
+ *   - underscore-leading stems (`_foo.ts` → `_FOO_TUPLES`),
+ *   - digit-leading stems (`123-foo.ts` → `123_FOO_TUPLES`).
+ * Strip leading underscores; if the remaining stem starts with a
+ * digit, prefix `F_` (the `F` is just a stable letter — no semantics).
+ * If the stem is empty after stripping, fall back to the unprefixed
+ * `TUPLES`, matching the no-sourceFile fallback in
+ * `cellRegisterTupleConstructor`.
+ */
+export function depModuleNameForFile(fileName: string): string {
+  const base = fileName.replace(/^.*[/\\]/u, "").replace(/\.[^.]+$/u, "");
+  const upper = base.replace(/[^A-Za-z0-9]+/gu, "_").toUpperCase();
+  const stem = upper.replace(/^_+/u, "");
+  if (stem.length === 0) {
+    return "TUPLES";
+  }
+  const safeStem = /^[A-Z]/u.test(stem) ? stem : `F_${stem}`;
+  return `${safeStem}_TUPLES`;
+}
+
+/**
+ * Mutable cell bundling per-document synth state and the name registry.
+ * Used by deep call sites (mapTsType recursion, body translation) that
+ * would otherwise have to thread state through every return value. The
+ * fields are reassigned in place with freshly-computed immutable records;
+ * the inner values remain pure. Cell-field assignment is itself within
+ * ts2pant's self-translation envelope (translatable as primed rules on
+ * the cell).
+ *
+ * `sourceFile` is optional and carries the file currently being
+ * translated so per-file dep-module names (`<FILE_BASE_NAME>_TUPLES`,
+ * `<FILE_BASE_NAME>_AMBIENT`) can be derived without threading the file
+ * through every registration call. Tests and standalone callers may
+ * leave it undefined; tuple-constructor registration falls back to a
+ * generic `TUPLES` module name in that case.
  */
 export interface SynthCell {
   synth: MapSynth;
   recordSynth: RecordSynth;
   registry: NameRegistry;
+  tupleSynth: TupleSynth;
+  sourceFile?: ts.SourceFile;
 }
 
-export function newSynthCell(registry?: NameRegistry): SynthCell {
-  return {
+export function newSynthCell(
+  registry?: NameRegistry,
+  sourceFile?: ts.SourceFile,
+): SynthCell {
+  const cell: SynthCell = {
     synth: emptyMapSynth(),
     recordSynth: emptyRecordSynth(),
     registry: registry ?? emptyNameRegistry(),
+    tupleSynth: emptyTupleSynth(),
   };
+  if (sourceFile !== undefined) {
+    cell.sourceFile = sourceFile;
+  }
+  return cell;
 }
 
 /** Pantagruel rule symbol for an interface field. Qualified so two
@@ -608,7 +786,19 @@ export function resolveRecordOwner(
   // preferring it here would break lockstep with the synth's emission.
   if (synthCell && isAnonymousRecord(type)) {
     const mapped = mapTsType(type, checker, strategy, synthCell);
-    if (mapped !== UNSUPPORTED_ANONYMOUS_RECORD) {
+    // Filter both unsupported sentinels — `mapped` may be
+    // `UNSUPPORTED_ANONYMOUS_RECORD` (synth failure / cell-less path)
+    // or `UNSUPPORTED_UNKNOWN` (a field typed `unknown` propagated up
+    // from `registerAnonymousRecord`). Either as a record-owner name
+    // would emit a bogus qualified accessor like
+    // `__unsupported_unknown__--name r`. Fall through to the named-
+    // symbol path; for an anonymous shape there is no meaningful
+    // fallback owner, so the resolver returns null and the caller
+    // rejects the field access.
+    if (
+      mapped !== UNSUPPORTED_ANONYMOUS_RECORD &&
+      !isUnsupportedUnknown(mapped)
+    ) {
       return mapped;
     }
   }
@@ -620,12 +810,20 @@ export function resolveRecordOwner(
   return null;
 }
 
-/** Cell-mutating wrapper around `registerMapKV` for the legacy call shape. */
+/** Cell-mutating wrapper around `registerMapKV` for the legacy call shape.
+ *  Defensively rejects either argument being the `unknown` sentinel — the
+ *  sentinel string passes `manglePantTypeToFragment`'s identifier-shape
+ *  check (it's all underscores+letters) so without this guard a body-level
+ *  call site that forwards the sentinel into `cellRegisterMap` would
+ *  synthesize a Map domain like `__unsupported_unknown__ToIntMap`. */
 export function cellRegisterMap(
   cell: SynthCell,
   kType: string,
   vType: string,
 ): string | null {
+  if (isUnsupportedUnknown(kType) || isUnsupportedUnknown(vType)) {
+    return null;
+  }
   const r = registerMapKV(cell.synth, cell.registry, kType, vType);
   cell.synth = r.synth;
   cell.registry = r.registry;
@@ -633,11 +831,16 @@ export function cellRegisterMap(
 }
 
 /** Cell-mutating wrapper around `registerRecordShape`. `fields` must be in
- *  canonical (alphabetically sorted) order. */
+ *  canonical (alphabetically sorted) order. Defensively rejects when any
+ *  field type is the `unknown` sentinel, for the same reason as
+ *  `cellRegisterMap`. */
 export function cellRegisterRecord(
   cell: SynthCell,
   fields: ReadonlyArray<RecordSynthField>,
 ): string | null {
+  if (fields.some((f) => isUnsupportedUnknown(f.type))) {
+    return null;
+  }
   const r = registerRecordShape(cell.recordSynth, cell.registry, fields);
   cell.recordSynth = r.synth;
   cell.registry = r.registry;
@@ -667,7 +870,11 @@ export function cellIsUsed(cell: SynthCell, name: string): boolean {
 /** Cell-mutating wrapper that drains both Map and Record synth decls.
  *  Emits Maps first so Record accessor-rule return types can reference
  *  any Map domain registered bottom-up. Incremental: each call returns
- *  only the entries added since the previous drain. */
+ *  only the entries added since the previous drain.
+ *
+ *  Tuple-constructor synth is *not* drained here — tuple constructors
+ *  emit to a separate per-source-file dep module via
+ *  `emitTupleCtorModule`, not into the consumer document's head. */
 export function cellEmitSynth(cell: SynthCell): PantDeclaration[] {
   const mapR = emitSynthDecls(cell.synth, cell.registry);
   cell.synth = mapR.synth;
@@ -676,6 +883,132 @@ export function cellEmitSynth(cell: SynthCell): PantDeclaration[] {
   cell.recordSynth = recR.synth;
   cell.registry = recR.registry;
   return [...mapR.decls, ...recR.decls];
+}
+
+/**
+ * Register a tuple shape and return the constructor reference. Idempotent
+ * on canonical shape (whitespace-stripped element types joined by `*`):
+ * re-registering the same shape returns the cached constructor name and
+ * dep-module name. Returns null when any element type is unmangleable
+ * (e.g. contains TS-compiler fallback text from an unsupported type
+ * upstream); callers fall back to inline tuple emission or reject.
+ *
+ * The dep-module name is `<FILE_BASE_NAME>_TUPLES` (ALL_CAPS_SNAKE)
+ * derived from `cell.sourceFile`; if no source file is attached to the
+ * cell (test/standalone paths), it falls back to a generic `TUPLES`.
+ *
+ * Constructor names resolve in the tuple module's *own* namespace
+ * (`cell.tupleSynth.ctorRegistry`) — not the consumer's `cell.registry`.
+ * The dep module's qualifier (`FOO_TUPLES::make-int-int`) already
+ * isolates the namespace; routing through the consumer registry would
+ * let unrelated local declarations turn `make-int-int` into
+ * `make-int-int1`. Keep `cell.registry` unchanged so the consumer's
+ * binder allocation is not perturbed by tuple-shape registration.
+ */
+export function cellRegisterTupleConstructor(
+  cell: SynthCell,
+  shape: TupleShape,
+): TupleCtorRef | null {
+  // Defensive: the `unknown` sentinel passes the identifier-shape check
+  // in `manglePantTypeToFragment`, so without this guard a tuple shape
+  // carrying it would synthesize a constructor name like
+  // `make-__unsupported_unknown__-int`.
+  if (shape.elementPantTypes.some(isUnsupportedUnknown)) {
+    return null;
+  }
+  const depModuleName = cell.sourceFile
+    ? depModuleNameForFile(cell.sourceFile.fileName)
+    : "TUPLES";
+  const key = tupleShapeKey(shape);
+  const cached = cell.tupleSynth.byShape.get(key);
+  if (cached) {
+    return { ctorRuleName: cached.ctorRuleName, depModuleName };
+  }
+  const baseName = tupleCtorBaseName(shape);
+  if (!baseName) {
+    return null;
+  }
+  const reg1 = registerName(cell.tupleSynth.ctorRegistry, baseName);
+  const ctorRuleName = reg1.name;
+  const newByShape = new Map(cell.tupleSynth.byShape);
+  newByShape.set(key, {
+    shape: { elementPantTypes: [...shape.elementPantTypes] },
+    ctorRuleName,
+  });
+  cell.tupleSynth = { byShape: newByShape, ctorRegistry: reg1.registry };
+  return { ctorRuleName, depModuleName };
+}
+
+/** Read-through accessor: return all registered tuple shapes (in
+ *  registration order) so the pipeline can pass them to
+ *  `emitTupleCtorModule` at the document-emit boundary. */
+export function cellTupleShapes(
+  cell: SynthCell,
+): ReadonlyArray<{ shape: TupleShape; ctorRuleName: string }> {
+  return [...cell.tupleSynth.byShape.values()];
+}
+
+/**
+ * Emit the standalone Pantagruel dep module for a source file's tuple
+ * constructors. Output structure:
+ *
+ *   module <FILE_BASE_NAME>_TUPLES.
+ *
+ *   <ctor> a1: T1, ..., aN: TN => T1 * ... * TN.
+ *   ...
+ *
+ *   ---
+ *   all a1: T1, ..., aN: TN | (<ctor> a1 ... aN).1 = a1.
+ *   ...
+ *
+ * One constructor rule head per registered shape, plus N projection
+ * axioms (one per element position) per shape. The axioms quantify
+ * over the constructor's parameters explicitly — Pantagruel propositions
+ * can't carry free variables, so the binders must be reintroduced at
+ * the proposition level (parser.mly: proposition is `expr DOT`, where
+ * `expr` may be a `quantified` form `all p:T,... | body`).
+ *
+ * Every shape used by any fixture in the source file aggregates into
+ * the single returned module — that's the per-source-file scope
+ * decision (one `import <FILE_BASE_NAME>_TUPLES.` per consumer
+ * regardless of how many tuple shapes the file uses).
+ */
+export function emitTupleCtorModule(
+  sourceFile: ts.SourceFile,
+  shapes: ReadonlyArray<{ shape: TupleShape; ctorRuleName: string }>,
+): string {
+  const moduleName = depModuleNameForFile(sourceFile.fileName);
+  const lines: string[] = [];
+  lines.push(`module ${moduleName}.`);
+  lines.push("");
+
+  for (const { shape, ctorRuleName } of shapes) {
+    const params = shape.elementPantTypes
+      .map((t, idx) => `a${idx + 1}: ${t}`)
+      .join(", ");
+    const tupleType = shape.elementPantTypes.join(" * ");
+    lines.push(`${ctorRuleName} ${params} => ${tupleType}.`);
+  }
+
+  lines.push("");
+  lines.push("---");
+  lines.push("");
+
+  for (const { shape, ctorRuleName } of shapes) {
+    const params = shape.elementPantTypes
+      .map((t, idx) => `a${idx + 1}: ${t}`)
+      .join(", ");
+    const argList = shape.elementPantTypes
+      .map((_, idx) => `a${idx + 1}`)
+      .join(" ");
+    for (let pos = 0; pos < shape.elementPantTypes.length; pos++) {
+      lines.push(
+        `all ${params} | (${ctorRuleName} ${argList}).${pos + 1} = a${pos + 1}.`,
+      );
+    }
+  }
+
+  return `${lines.join("\n")}\n`;
 }
 
 /** Strategy for mapping TS `number` to a Pantagruel numeric type. */
@@ -714,6 +1047,14 @@ export function mapTsType(
 ): string {
   const flags = type.flags;
 
+  // Reject `unknown` explicitly. Pantagruel is monomorphic over named
+  // domains — there is no `Any`/`Unknown` top — so the only honest move is
+  // to refuse and steer the user toward a declared type. Mapping to a
+  // generic placeholder would silently let type errors through.
+  if (flags & ts.TypeFlags.Unknown) {
+    return UNSUPPORTED_UNKNOWN;
+  }
+
   if (flags & ts.TypeFlags.String || flags & ts.TypeFlags.StringLiteral) {
     return "String";
   }
@@ -731,16 +1072,24 @@ export function mapTsType(
   // Tuple (check before array since tuples are also type references)
   if (checker.isTupleType(type)) {
     const typeArgs = checker.getTypeArguments(type as ts.TypeReference);
-    return typeArgs
-      .map((t) => mapTsType(t, checker, strategy, synthCell))
-      .join(" * ");
+    const elements = typeArgs.map((t) =>
+      mapTsType(t, checker, strategy, synthCell),
+    );
+    if (elements.some(isUnsupportedUnknown)) {
+      return UNSUPPORTED_UNKNOWN;
+    }
+    return elements.join(" * ");
   }
 
   // Array
   if (checker.isArrayType(type)) {
     const typeArgs = checker.getTypeArguments(type as ts.TypeReference);
     if (typeArgs.length === 1) {
-      return `[${mapTsType(typeArgs[0]!, checker, strategy, synthCell)}]`;
+      const elem = mapTsType(typeArgs[0]!, checker, strategy, synthCell);
+      if (isUnsupportedUnknown(elem)) {
+        return UNSUPPORTED_UNKNOWN;
+      }
+      return `[${elem}]`;
     }
     return checker.typeToString(type);
   }
@@ -751,7 +1100,11 @@ export function mapTsType(
   if (isSetType(type)) {
     const typeArgs = checker.getTypeArguments(type as ts.TypeReference);
     if (typeArgs.length === 1) {
-      return `[${mapTsType(typeArgs[0]!, checker, strategy, synthCell)}]`;
+      const elem = mapTsType(typeArgs[0]!, checker, strategy, synthCell);
+      if (isUnsupportedUnknown(elem)) {
+        return UNSUPPORTED_UNKNOWN;
+      }
+      return `[${elem}]`;
     }
     return checker.typeToString(type);
   }
@@ -765,6 +1118,13 @@ export function mapTsType(
     if (typeArgs.length === 2) {
       const kType = mapTsType(typeArgs[0]!, checker, strategy, synthCell);
       const vType = mapTsType(typeArgs[1]!, checker, strategy, synthCell);
+      // Propagate `unknown` rather than registering a Map keyed by or
+      // valued in the sentinel — that would synthesize a domain like
+      // `__unsupported_unknown__ToIntMap` (the underscore-only sentinel
+      // passes `manglePantTypeToFragment`'s identifier check).
+      if (isUnsupportedUnknown(kType) || isUnsupportedUnknown(vType)) {
+        return UNSUPPORTED_UNKNOWN;
+      }
       const domain = cellRegisterMap(synthCell, kType, vType);
       if (domain !== null) {
         return domain;
@@ -794,6 +1154,9 @@ export function mapTsType(
     const parts = nonNullTypes.map((t) =>
       mapTsType(t, checker, strategy, synthCell),
     );
+    if (parts.some(isUnsupportedUnknown)) {
+      return UNSUPPORTED_UNKNOWN;
+    }
     const unique = parts.filter((v, i, a) => a.indexOf(v) === i);
     if (hasNullish) {
       return `[${unique.join(" + ")}]`;
@@ -865,6 +1228,15 @@ function registerAnonymousRecord(
       return null;
     }
     const mapped = mapTsType(propType, checker, strategy, synthCell);
+    // Propagate `unknown` as the specific UNSUPPORTED_UNKNOWN sentinel
+    // so the outer `mapTsType` anonymous-record branch can pass it back
+    // to *its* caller — otherwise nested shapes like `[{ x: unknown },
+    // Int]` would mask the unknown cause as
+    // UNSUPPORTED_ANONYMOUS_RECORD, which the tuple/array/set branches
+    // do not propagate.
+    if (isUnsupportedUnknown(mapped)) {
+      return UNSUPPORTED_UNKNOWN;
+    }
     // Propagate failure from a nested anonymous-record synthesis.
     // Without this, the parent shape would register with the sentinel
     // string as a field type and emit invalid output.
@@ -985,6 +1357,13 @@ export function translateTypes(
           // references it.
           const kType = mapTsType(typeArgs[0]!, checker, strategy, synthCell);
           const vType = mapTsType(typeArgs[1]!, checker, strategy, synthCell);
+          if (isUnsupportedUnknown(kType) || isUnsupportedUnknown(vType)) {
+            decls.push({
+              kind: "unsupported",
+              reason: `${iface.name}.${prop.name}: ${UNSUPPORTED_UNKNOWN_REASON}`,
+            });
+            continue;
+          }
           const kName = synthCell ? cellRegisterName(synthCell, "k") : "k";
           const keyPredName = `${ruleName}-key`;
           decls.push({
@@ -1013,20 +1392,36 @@ export function translateTypes(
           continue;
         }
       }
+      const fieldType = mapTsType(prop.type, checker, strategy, synthCell);
+      if (isUnsupportedUnknown(fieldType)) {
+        decls.push({
+          kind: "unsupported",
+          reason: `${iface.name}.${prop.name}: ${UNSUPPORTED_UNKNOWN_REASON}`,
+        });
+        continue;
+      }
       decls.push({
         kind: "rule",
         name: ruleName,
         params: [{ name: pName, type: iface.name }],
-        returnType: mapTsType(prop.type, checker, strategy, synthCell),
+        returnType: fieldType,
       });
     }
   }
 
   for (const alias of extracted.aliases) {
+    const aliasType = mapTsType(alias.type, checker, strategy, synthCell);
+    if (isUnsupportedUnknown(aliasType)) {
+      decls.push({
+        kind: "unsupported",
+        reason: `alias ${alias.name}: ${UNSUPPORTED_UNKNOWN_REASON}`,
+      });
+      continue;
+    }
     decls.push({
       kind: "alias",
       name: alias.name,
-      type: mapTsType(alias.type, checker, strategy, synthCell),
+      type: aliasType,
     });
   }
 
