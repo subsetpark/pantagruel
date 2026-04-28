@@ -126,11 +126,18 @@ export async function checkPantDocument(text: string): Promise<string | null> {
 /**
  * Assert that a Pantagruel document string type-checks via the wasm
  * checker. Throws with the formatted error message on failure,
- * including a snippet of the input for diagnostics.
+ * including a bounded preview of the input for diagnostics.
  */
 export async function assertWasmTypeChecks(text: string): Promise<void> {
   const error = await checkPantDocument(text);
   if (error !== null) {
-    throw new Error(`pant typecheck failed: ${error}\n--- input ---\n${text}`);
+    const maxPreview = 4_000;
+    const preview =
+      text.length <= maxPreview
+        ? text
+        : `${text.slice(0, maxPreview)}\n...<truncated ${text.length - maxPreview} chars>`;
+    throw new Error(
+      `pant typecheck failed: ${error}\n--- input preview (total length: ${text.length}) ---\n${preview}`,
+    );
   }
 }

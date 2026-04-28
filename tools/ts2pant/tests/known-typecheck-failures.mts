@@ -1,27 +1,36 @@
 /**
  * Fixtures whose emitted Pantagruel does not currently parse / typecheck
  * through the wasm checker. Each entry is the `${file} > ${funcName}` key
- * the test reports, paired with a short tag identifying the bug class.
+ * the test reports, paired with a short tag identifying the cause.
  *
- * Wiring the wasm typechecker into snapshot tests surfaced these — they
- * are real bugs in the emit pipeline; previously the snapshots
- * stabilized invalid output. New fixtures must typecheck; entries here
- * are an explicit work list, not a permitted-failure mode.
+ * Wiring the wasm typechecker into snapshot tests surfaced these. Most
+ * are real bugs in the emit pipeline (previously the snapshots
+ * stabilized invalid output); a few are deliberate translation choices
+ * where a single-function fixture is not standalone-checkable. New
+ * fixtures must typecheck; entries here are an explicit work list, not
+ * a permitted-failure mode.
  *
  * Shared between `constructs.test.mts` (snapshot suite) and
- * `ir-equivalence.test.mts` (legacy/IR string-equality suite) so a bug
- * surfaced in one place is muted in both. When a bug is fixed, drop the
+ * `ir-equivalence.test.mts` (legacy/IR string-equality suite) so a
+ * failure surfaced in one place is muted in both. When a bug is fixed
+ * (or a fixture is reframed to be standalone-checkable), drop the
  * matching entries here and the corresponding tests pick up the
  * typecheck automatically.
  *
- * Bug classes:
+ * Failure classes:
  *   - "$-binder-leak"     hygienic `$N` names reach the emitted text
  *                         (Pant identifiers cannot contain `$`); needs
  *                         synthCell/cellRegisterName plumbing through
  *                         the offending lowering path.
- *   - "missing-class-decl" class-method translation skips the synthetic
- *                         domain declaration and per-field accessor
- *                         rules that the interface-method path emits.
+ *   - "requires-external-context"
+ *                         class-method fixtures translate to a single-
+ *                         method module and intentionally omit the
+ *                         synthetic class domain + per-field accessor
+ *                         rules — those belong to the surrounding
+ *                         module context (only interfaces are processed
+ *                         by `extractAllTypes`). Not a bug; these
+ *                         fixtures are not standalone-checkable in the
+ *                         wasm checker path.
  *   - "list-literal"      emits `[a, b]` for tuple/array initializers
  *                         where Pant has no list literal target.
  *   - "free-call-decl"    user calls a TS function that ts2pant doesn't
@@ -65,7 +74,7 @@ export const KNOWN_TYPECHECK_FAILURES = new Map<string, string>([
   ["expressions-reduce.ts > sumFromBase", "$-binder-leak"],
   ["expressions-reduce.ts > subtractAll", "$-binder-leak"],
   ["expressions-reduce.ts > sumAmountsRight", "$-binder-leak"],
-  ["functions-class.ts > Account.getBalance", "missing-class-decl"],
-  ["functions-class.ts > Account.deposit", "missing-class-decl"],
+  ["functions-class.ts > Account.getBalance", "requires-external-context"],
+  ["functions-class.ts > Account.deposit", "requires-external-context"],
   ["types-composite.ts > getPoint", "list-literal"],
 ]);
