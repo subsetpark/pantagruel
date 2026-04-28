@@ -464,6 +464,12 @@ export function isL1ConditionalForm(
   node: ts.Node,
   checker: ts.TypeChecker,
 ): boolean {
+  // Mirror `buildL1Conditional`'s entry-point paren-strip so a
+  // parenthesized conditional (`(c ? a : b)`, `(g && h)`) classifies
+  // identically to its unwrapped form. Body-side callers already
+  // pre-strip via `unwrapExpression`, but defensive normalization
+  // keeps the recognizer self-contained for any future caller.
+  node = unwrapParens(node);
   if (
     ts.isConditionalExpression(node) ||
     ts.isIfStatement(node) ||
