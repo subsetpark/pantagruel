@@ -70,6 +70,9 @@ function renderPropResult(prop: PropResult): string {
 export function emitDocument(doc: PantDocument): string {
   const lines: string[] = [];
   lines.push(`module ${doc.moduleName}.`);
+  for (const imp of doc.imports) {
+    lines.push(`import ${imp.name}.`);
+  }
   lines.push("");
 
   for (const decl of doc.declarations) {
