@@ -414,4 +414,13 @@ describe("depModuleNameForFile", () => {
   it("strips directory and extension", () => {
     assert.equal(depModuleNameForFile("foo.ts"), "FOO_TUPLES");
   });
+
+  it("falls back to TUPLES for extension-only or empty input", () => {
+    // `_TUPLES` would be rejected by Pantagruel's lexer — UPPER_IDENT
+    // requires an uppercase first character. Use the unprefixed
+    // `TUPLES` instead, matching the no-sourceFile fallback in
+    // `cellRegisterTupleConstructor`.
+    assert.equal(depModuleNameForFile(".ts"), "TUPLES");
+    assert.equal(depModuleNameForFile(""), "TUPLES");
+  });
 });

@@ -526,10 +526,19 @@ function tupleCtorBaseName(shape: TupleShape): string | null {
  * `<FILE_BASE_NAME>_TUPLES` in ALL_CAPS_SNAKE — every emitted module
  * name in this codebase uses the screaming-snake convention (matches
  * the existing `samples/*.pant` corpus).
+ *
+ * Edge case: an extension-only or empty input (`.ts`, `""`) would
+ * otherwise produce `_TUPLES`, which Pantagruel's lexer rejects as a
+ * module name (`upper_start = 'A' .. 'Z'`, so an UPPER_IDENT cannot
+ * begin with `_`). Fall back to the unprefixed `TUPLES`, matching the
+ * no-sourceFile fallback in `cellRegisterTupleConstructor`.
  */
 export function depModuleNameForFile(fileName: string): string {
   const base = fileName.replace(/^.*[/\\]/u, "").replace(/\.[^.]+$/u, "");
   const upper = base.replace(/[^A-Za-z0-9]+/gu, "_").toUpperCase();
+  if (upper.length === 0) {
+    return "TUPLES";
+  }
   return `${upper}_TUPLES`;
 }
 
