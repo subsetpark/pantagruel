@@ -53,10 +53,13 @@ The L1 vocabulary is closed — every `IR1Expr` is one of the
 canonical L1 constructors, and sub-expressions outside that
 vocabulary reject with a specific `unsupported` reason.
 
-**What's on Layer 2**: `IRExpr` only — nine canonical forms (`Var`,
-`Lit`, `App`, `Cond`, `Let`, `Each`, `Comb`, `Forall`, `Exists`).
-The L2 vocabulary is similarly closed; every `IRExpr` is one of
-those nine constructors. The L2 statement vocabulary (`IRStmt` with
+**What's on Layer 2**: `IRExpr` only — ten canonical forms (`Var`,
+`Lit`, `App`, `Cond`, `Let`, `Each`, `Comb`, `CombTyped`, `Forall`,
+`Exists`). `CombTyped` is the source-less typed comprehension added
+in M2 cleanup as μ-search's lowering target (`min over each j: T,
+guards | j`); see `ir1-lower.ts`'s `recognizeAndLowerMuSearch`. The
+L2 vocabulary is similarly closed; every `IRExpr` is one of those
+ten constructors. The L2 statement vocabulary (`IRStmt` with
 `Write`, `LetIf`, `Seq`, `Assert`) and its companion
 `src/ir-subst.ts` were the speculative target of the parallel-build
 PRs (#134/#135/#137) that got closed; PR #138 deleted them once M3

@@ -796,7 +796,7 @@ L2 is *expression-only* — there is no L2 `IRStmt`. The asymmetry is
 intentional; see `workstreams/ts2pant-imperative-ir.md`
 § "Architectural Lessons" for the rationale.
 
-### `IRExpr` — 9 forms
+### `IRExpr` — 10 forms
 
 | Form | Lowers to | TS shapes that produce it |
 |------|-----------|---------------------------|
@@ -806,12 +806,13 @@ intentional; see `workstreams/ts2pant-imperative-ir.md`
 | `Cond([(g, v)])` | `ast.cond` | ternary, early-return if-conversion, `??` lowering, conditional mutation merge |
 | `Let(name, value, body)` | substituted out at emit (Pant has no `let`) | `const x = e1; ... return e2` const-binding inlining |
 | `Each(binder, src, [g], proj)` | `ast.each` | for-of Shape A/B, `?.` lowering, `.filter`/`.map` chain |
-| `Comb(comb, init?, each)` | `ast.eachComb` (with optional binop fold for non-identity init) | `.reduce`, μ-search (`Comb(min, ...)`) |
+| `Comb(combiner, init?, each)` | `ast.eachComb` (with optional binop fold for non-identity init when the combiner is a fold; min/max take no init) | `.reduce` (fold combiners), source-iterating min/max comprehensions |
+| `CombTyped(combiner, binder, binderType, guards, proj)` | `ast.eachComb` over a typed binder (no source) | μ-search (`min over each j: T, guards \| j`) — the canonical lowering target produced by `recognizeAndLowerMuSearch` in `ir1-lower.ts` |
 | `Forall(binder, type, guard?, body)` | `ast.forall` | `all x: T \| ...` quantifier emission |
 | `Exists(binder, type, guard?, body)` | `ast.exists` | `some x: T \| ...` quantifier emission |
 
 Both layers are **closed vocabularies.** Every `IRExpr` is one of the
-nine canonical constructors above, and every `IR1Expr` is one of the
+ten canonical constructors above, and every `IR1Expr` is one of the
 canonical L1 constructors. Constructions that fall outside the
 canonical vocabulary reject as `unsupported`; there is no opaque
 catch-all that would smuggle uncanonicalized TS shapes through the
@@ -1205,7 +1206,7 @@ Deviations from this principle should be flagged in review and
 either justified explicitly or refactored.
 
 **Closed vocabularies on both layers.** Every `IR1Expr` is one of
-the canonical L1 constructors, and every `IRExpr` is one of the nine
+the canonical L1 constructors, and every `IRExpr` is one of the ten
 canonical L2 constructors. Sub-expressions outside the canonical
 vocabulary reject with a specific `unsupported` reason — there is no
 adapter that smuggles a foreign value into the IR.
