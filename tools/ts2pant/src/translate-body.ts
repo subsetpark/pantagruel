@@ -1702,10 +1702,45 @@ function translatePureBody(
       inlined.scopedParams,
       supply,
     );
+    let bodyOpaque: OpaqueExpr;
     if (isBuildUnsupported(ir)) {
-      return [{ kind: "unsupported", reason: ir.unsupported }];
+      // Native pure-IR construction did not cover this surface form.
+      // Fall back to `translateBodyExpr` for the OpaqueExpr —
+      // post-M6 this is a direct opaque-layer construction (no
+      // `irWrap` round-trip), so the IR pipeline remains the primary
+      // path and only specific shapes (`%`, `**`, raw array
+      // literals, etc.) reach the legacy emitter. When the legacy
+      // emitter also rejects, prefer the buildIR-side message —
+      // recognizer-specific reasons (e.g. "array callback block body
+      // must be a single return") are more actionable than the
+      // legacy fall-through that returns the source text verbatim.
+      const legacy = translateBodyExpr(
+        extracted.returnExpr,
+        checker,
+        strategy,
+        inlined.scopedParams,
+        undefined,
+        supply,
+      );
+      if (isBodyUnsupported(legacy) || "effect" in legacy) {
+        const reason = isBodyUnsupported(legacy)
+          ? legacy.unsupported
+          : `${functionName} — collection mutation in pure return position`;
+        return [
+          {
+            kind: "unsupported",
+            reason: ir.unsupported.startsWith(
+              "unsupported pure expression form",
+            )
+              ? reason
+              : ir.unsupported,
+          },
+        ];
+      }
+      bodyOpaque = bodyExpr(legacy);
+    } else {
+      bodyOpaque = lowerExpr(ir);
     }
-    let bodyOpaque = lowerExpr(ir);
     for (let i = inlined.translatedBindings.length - 1; i >= 0; i--) {
       const tb = inlined.translatedBindings[i]!;
       bodyOpaque = ast.substituteBinder(

@@ -1138,11 +1138,11 @@ export function buildIR(
 
   if (ts.isBinaryExpression(expr)) {
     const nullishTranslate: NullishTranslate = (sub) => {
-      const result = buildIR(sub, checker, strategy, paramNames, supply);
-      if (isBuildUnsupported(result)) {
-        return { unsupported: result.unsupported };
+      const subL1 = tryBuildL1PureSubExpression(sub, l1Ctx);
+      if (subL1 === null) {
+        return { unsupported: `unsupported nullish operand: ${sub.getText()}` };
       }
-      return ir1FromL2(result);
+      return subL1;
     };
     const recognized = recognizeNullishForm(expr, checker, nullishTranslate);
     if (recognized !== null) {
@@ -1212,29 +1212,15 @@ export function buildIR(
     }
   }
 
-  // Fallback: translate via the legacy pipeline and wrap. Subsequent
-  // stages migrate specific recognizers (Cond, App, Comb, Forall,
-  // Exists) into native IR construction here. `state` is undefined
-  // because pure-path bodies don't read symbolic state; mutating-path
-  // migration happens in Stage 9.
-  const legacy = translateBodyExpr(
-    expr,
-    checker,
-    strategy,
-    paramNames,
-    undefined,
-    supply,
-  );
-  if (isBodyUnsupported(legacy)) {
-    return { unsupported: legacy.unsupported };
-  }
-  if ("effect" in legacy) {
-    return {
-      unsupported:
-        "collection mutation in IR-build expression position (Stage 9)",
-    };
-  }
-  return irWrap(bodyExpr(legacy));
+  // Native expression construction has been exhausted. Post-M6 the
+  // pure path no longer falls back to a legacy `translateBodyExpr` +
+  // `irWrap` escape hatch — surface forms that don't match any
+  // recognizer above are reported as `unsupported` so future
+  // milestones can target a concrete failure rather than a hidden
+  // OpaqueExpr embedding.
+  return {
+    unsupported: `unsupported pure expression form: ${ts.SyntaxKind[expr.kind]}`,
+  };
 }
 
 export function isBuildUnsupported(
