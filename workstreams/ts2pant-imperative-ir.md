@@ -29,43 +29,53 @@ differ by program position:
 This asymmetry is intentional and was hard-won — see § "Architectural
 Lessons" below.
 
-## Current State (post-M5)
+## Current State (post-M6)
 
-M1 (conditionals), M2 (assign + μ-search), M3 (iteration + mutation),
-M4 (equality + nullish), and M5 (property access) have landed. Layer 1
-IR is the canonical input shape for every mutating-body construct
-ts2pant supports, plus the conditional / assign / iteration
-expression forms, plus the equality / nullish equivalence class,
-plus the property-access equivalence class.
+The workstream has landed in full. M1 (conditionals), M2 (assign +
+μ-search), M3 (iteration + mutation), M4 (equality + nullish), M5
+(property access), and M6 (legacy cleanup) are all in. Layer 1 IR is
+the canonical input shape for every TS construct ts2pant translates,
+in both pure / value-position and effect / statement-position. There
+is no opt-in flag, no parallel pipeline, and no escape-hatch IR form.
 
 **What's on Layer 1**:
 
 - Expression forms: `var`, `lit`, `binop`, `unop`, `app`, `member`
   (M5 canonical property-access form, pre-qualified at build time),
-  `cond`, `is-nullish` (M4 canonical Bool null/undefined test),
-  `from-l2` (transitional adapter for sub-expressions outside the
-  current milestone's normalization concern).
+  `cond`, `is-nullish` (M4 canonical Bool null/undefined test).
 - Statement forms: `block`, `let`, `assign`, `cond-stmt`, `foreach`
   (with optional `body` and `foldLeaves` for Shape A + Shape B), `for`
   (declared, unused), `while` (μ-search only), `return`, `throw`
   (declared, unused), `expr-stmt` (declared, unused), `map-effect`,
   `set-effect`.
 
-**What's on Layer 2** (post-M3): `IRExpr` only. The L2 statement
-vocabulary (`IRStmt` with `Write`, `LetIf`, `Seq`, `Assert`) and its
-companion `src/ir-subst.ts` were the speculative target of the
-parallel-build PRs (#134/#135/#137) that got closed; PR #138 deleted
-them once M3 confirmed nothing built or lowered them.
+The L1 vocabulary is closed — every `IR1Expr` is one of the
+canonical L1 constructors, and sub-expressions outside that
+vocabulary reject with a specific `unsupported` reason.
 
-**What's still on the legacy path** (pre-M6):
+**What's on Layer 2**: `IRExpr` only — ten canonical forms (`Var`,
+`Lit`, `App`, `Cond`, `Let`, `Each`, `Comb`, `CombTyped`, `Forall`,
+`Exists`). `CombTyped` is the source-less typed comprehension added
+in M2 cleanup as μ-search's lowering target (`min over each j: T,
+guards | j`); see `ir1-lower.ts`'s `recognizeAndLowerMuSearch`. The
+L2 vocabulary is similarly closed; every `IRExpr` is one of those
+ten constructors. The L2 statement vocabulary (`IRStmt` with
+`Write`, `LetIf`, `Seq`, `Assert`) and its companion
+`src/ir-subst.ts` were the speculative target of the parallel-build
+PRs (#134/#135/#137) that got closed; PR #138 deleted them once M3
+confirmed nothing built or lowered them.
 
-- Pure-path `.reduce` chain fusion — `translateReduceCall` builds an
-  L2 `eachComb` directly. Architecturally separate from M3's
-  mutating-body foreach.
-- `IRWrap` escape hatch in L2 — survives until M6.
-- `from-l2` adapter — shrunk at M5 (the four documented property-
-  access wrap sites consolidated into one `buildL1SubExpr` fallback
-  that fires only for non-property sub-expressions); deleted at M6.
+**What flows through which path**:
+
+- Pure / value position — TS AST → L1 expression → L2 `IRExpr` →
+  `OpaqueExpr`. Always-on; covers every value-position TS construct
+  ts2pant supports, including `.filter` / `.map` / `.reduce` chain
+  fusion (now constructed natively as L1 `Each` / `Comb` nodes
+  rather than wrapping a pre-built `OpaqueExpr`).
+- Effect / statement position — TS AST → L1 statement →
+  `PropResult[]` via `lowerL1Body` over `SymbolicState`. No L2
+  statement vocabulary; the fold reuses the existing mutation
+  primitives.
 
 **Combined-shape recognizer precedent (M4 Patch 5).** The functor-lift
 recognizer (`tryRecognizeFunctorLift` in `ir1-build.ts`) is the first
@@ -727,43 +737,76 @@ see "Already done in PR #138" under M6.)
 
 ---
 
-### Milestone 6: legacy-recognizer-cleanup
+### Milestone 6: legacy-recognizer-cleanup — ✅ landed
 
-**Definition of Done**:
+**Status**: landed across six stacked patches on
+`ts2pant-m6-legacy-cleanup`.
 
-*Pure-path cutover (was Stage 8 in the legacy IR Migration Status
-table):*
+The migration scaffolding that survived M5 — the migration flag, the
+two escape-hatch IR forms, the legacy pure-path expression fallback
+in `translate-body.ts`, and the residual sub-expression wrappers in
+mutating-body recognizers — has been deleted. The pure expression
+pipeline is unconditional: every value-position TS construct ts2pant
+supports flows TS → L1 → L2 → `OpaqueExpr` with no opt-in flag and
+no fallback.
 
-- Promote `--use-ir` from opt-in to always-on, then delete the flag
-  (env `TS2PANT_USE_IR=1`) and the `useIRPipeline()` predicate.
-- Delete pure-path code in `translate-body.ts` subsumed by the L1 path.
+**Slice breakdown:**
 
-*`IRWrap` removal:*
+- Patch 1 — Lock M6 cleanup tests and unsupported boundaries.
+  Captured the pre-cleanup behavior of the remaining fallback shapes
+  with skipped tests / stubs so that the subsequent slices' parity
+  invariants were enforced rather than asserted in commentary.
+- Patch 2 — Build remaining pure expression shapes natively. Moved
+  ordinary binary / unary / call expression coverage, optional /
+  nullish lowering, and `.filter` / `.map` / `.reduce` chain fusion
+  onto native L1 / L2 construction. Chain fusion now produces real
+  `Each` / `Comb` IR nodes rather than wrapping a pre-built
+  `OpaqueExpr`.
+- Patch 3 — Promote pure IR path to always-on. Deleted the migration
+  flag (env `TS2PANT_USE_IR`) and the `useIRPipeline()` predicate;
+  routed `translatePureBody` through IR unconditionally; deleted the
+  legacy pure-path fallback in `translate-body.ts`.
+- Patch 4 — Remove remaining mutating-body sub-expression wrappers.
+  Replaced the residual L2-wrapping fallbacks in `ir1-build-body.ts`
+  with explicit L1 builders (or, for shapes outside the canonical
+  vocabulary, targeted `unsupported` results).
+- Patch 5 — Delete the `IRWrap` form from `IRExpr` and the `from-l2`
+  variant from `IR1Expr`, plus their identity-lowering arms in
+  `ir-emit.ts` and `ir1-lower.ts`. Both layers are now closed
+  vocabularies.
+- Patch 6 — Docs (this commit). Replaced the legacy IR Migration
+  Status table in `tools/ts2pant/CLAUDE.md` with a post-cleanup
+  architecture description, removed Stage 8 / `IRWrap` / `--use-ir`
+  language, and marked this milestone landed.
 
-- Delete `IRWrap` form from `IRExpr`. The escape hatch should be
-  unreachable once `from-l2` (its L1 counterpart) shrinks via M4 / M5.
+**Verification**:
 
-*`translate-body.ts` shape:*
-
-- Slim to: parameter / scope plumbing, sub-expression dispatch into
-  `translateBodyExpr`, `SymbolicState` primitives (still load-bearing
-  for `lowerL1Body`), and the thin `symbolicExecute` orchestrator that
-  dispatches statement kinds to the L1 build/lower pair.
-- All TS-AST → L2 direct expression paths consumed by L1 normalization.
-
-*Docs:*
-
-- Replace legacy IR Migration Status table in `tools/ts2pant/CLAUDE.md`
-  with a post-cleanup architecture description anchored on this
-  workstream.
+- All 761 unit tests + 22 integration tests (19 pass, 3 skipped under
+  `# z3 not available`) pass via `just ts2pant-test`.
+- Dogfood: `just ts2pant-test-integration` includes the dogfood
+  fixtures (`src/name-registry.ts` `isUsed` / `emptyNameRegistry`,
+  `src/translate-types.ts` `emptyMapSynth` / `emptyRecordSynth`).
+  All four translate and type-check unchanged.
+- Final `rg` audit:
+  `rg "TS2PANT_USE_IR|useIRPipeline|--use-ir|IRWrap|ir-wrap|from-l2|irWrap|IR1Wrap"
+  tools/ts2pant/src tools/ts2pant/tests` returns no matches. Source
+  and test trees carry no migration-flag or escape-hatch references.
 
 **Why this is a safe pause point**: End state of the workstream. One
-translation pipeline. L2 IRExpr is canonical for value-position; L1
+translation pipeline. L2 `IRExpr` is canonical for value-position; L1
 statements lower directly to `PropResult[]` for effect-position. No
-escape hatches. The recognizer-extension treadmill is retired.
+escape hatches on either layer. The recognizer-extension treadmill
+is retired.
 
-**Unlocks**: Future TS surface support is a normalization-pass extension
-(small, localized) instead of a recognizer addition.
+**Unlocks**: Future TS surface support is a normalization-pass
+extension (small, localized) instead of a recognizer addition.
+
+**Out of scope (deferred to future milestones)**: the entries in the
+Open Questions table below — decrement μ-search SMT encoding,
+index-for with mutating writes, computed `obj[expr]` with literal-
+union narrowing, `.indexOf(x) === -1` absorption into `IsNullish`,
+enum-sentinel-as-nullish absorption, truthiness coercion. None
+blocked M6; each lands when a concrete fixture demands it.
 
 **Already done in PR #138** (folded into M3 cleanup once it became
 clear the L2 statement vocabulary was free to delete):

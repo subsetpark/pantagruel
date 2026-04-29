@@ -614,9 +614,8 @@ known and the OpaqueExpr walker rewrites every reference. For Member
 operands (M5 P4), `ast.substituteBinder` cannot target a Member
 subtree (it substitutes only by Var name), so the substitution lives
 at the L1 level via `substituteL1Subtree` in `ir1-build.ts`. The
-operand and projection are both built into native L1 (no `from-l2`
-wraps along the chain) so the structural matcher can compare them
-directly.
+operand and projection are both built into canonical L1 forms along
+the entire chain so the structural matcher can compare them directly.
 
 The four invariants the rewrite depends on, restated:
 
@@ -765,15 +764,15 @@ like assignment. To overcome this challenge we translate FRSC to a functional
 language IRSC through a Static Single Assignment (SSA) transformation"* — is
 exactly our situation.
 
-The IR is being introduced incrementally over 11 stages on a single branch.
-Stage status lives in §"IR Migration Status" below; deviations from IRSC
-live in §"Divergences from IRSC".
+The IR landed across the imperative-IR workstream's six milestones
+(M1–M6); see § "Imperative IR Workstream" below. Deviations from IRSC
+live in § "Divergence from IRSC".
 
 ### Files
 
 - `src/ir.ts` — `IRExpr` ADT with constructor helpers (Layer 2).
-- `src/ir-build.ts` — TS-AST → L2 IRExpr (pure-path, gated by
-  `--use-ir`).
+- `src/ir-build.ts` — TS-AST → L2 IRExpr (pure-path; always-on
+  post-M6).
 - `src/ir-emit.ts` — L2 IRExpr → `OpaqueExpr` lowering.
 - `src/ir1.ts`, `src/ir1-build.ts`, `src/ir1-build-body.ts`,
   `src/ir1-lower.ts`, `src/ir1-lower-body.ts` — Layer 1 (TS-shape
@@ -781,19 +780,20 @@ live in §"Divergences from IRSC".
 
 ### Two paths, one Layer 1
 
-Post-M3, mutating-body lowering bypasses L2 entirely:
+Post-workstream, ts2pant has exactly two translation paths and one
+shared Layer 1 IR:
 
 - **Pure / value-position** — TS → L1 expression → L2 `IRExpr` →
   `OpaqueExpr`. The single-rooted `IRExpr` tree fits "one expression
-  out". Pure-path is currently routed via `--use-ir` (env
-  `TS2PANT_USE_IR=1`); always-on cutover is M6.
+  out". Always-on; there is no opt-in flag and no legacy expression
+  fallback for this path.
 - **Effect / statement-position** — TS → L1 statement →
   `PropResult[]` directly via a single fold (`lowerL1Body`) over
   `SymbolicState` (in `translate-body.ts`). The mutating output is a
   list of equations + frame conditions; no L2 statement vocabulary.
 
-L2 is *expression-only* — there is no L2 `IRStmt` post-M3. The
-asymmetry is intentional; see `workstreams/ts2pant-imperative-ir.md`
+L2 is *expression-only* — there is no L2 `IRStmt`. The asymmetry is
+intentional; see `workstreams/ts2pant-imperative-ir.md`
 § "Architectural Lessons" for the rationale.
 
 ### `IRExpr` — 10 forms
@@ -804,12 +804,19 @@ asymmetry is intentional; see `workstreams/ts2pant-imperative-ir.md`
 | `Lit(literal)` | `ast.litNat` / `ast.litBool` / `ast.litString` | numeric / string / boolean literal |
 | `App(head, args)` | `ast.app` / `ast.binop` / `ast.unop` (head-dispatched) | binops, method calls (receiver as first arg), qualified field accessors, builtins (`in`, `#`, `=`, comparison) |
 | `Cond([(g, v)])` | `ast.cond` | ternary, early-return if-conversion, `??` lowering, conditional mutation merge |
-| `Let(name, value, body)` | substituted out at emit (Pant has no `let`) | `const x = e1; ... return e2` (Stage 6+) |
+| `Let(name, value, body)` | substituted out at emit (Pant has no `let`) | `const x = e1; ... return e2` const-binding inlining |
 | `Each(binder, src, [g], proj)` | `ast.each` | for-of Shape A/B, `?.` lowering, `.filter`/`.map` chain |
-| `Comb(comb, init?, each)` | `ast.eachComb` (with optional binop fold for non-identity init) | `.reduce`, μ-search (`Comb(min, ...)`) |
+| `Comb(combiner, init?, each)` | `ast.eachComb` (with optional binop fold for non-identity init when the combiner is a fold; min/max take no init) | `.reduce` (fold combiners), source-iterating min/max comprehensions |
+| `CombTyped(combiner, binder, binderType, guards, proj)` | `ast.eachComb` over a typed binder (no source) | μ-search (`min over each j: T, guards \| j`) — the canonical lowering target produced by `recognizeAndLowerMuSearch` in `ir1-lower.ts` |
 | `Forall(binder, type, guard?, body)` | `ast.forall` | `all x: T \| ...` quantifier emission |
 | `Exists(binder, type, guard?, body)` | `ast.exists` | `some x: T \| ...` quantifier emission |
-| `IRWrap(OpaqueExpr)` | identity | **migration-only escape hatch**; deleted at Stage 8 cutover |
+
+Both layers are **closed vocabularies.** Every `IRExpr` is one of the
+ten canonical constructors above, and every `IR1Expr` is one of the
+canonical L1 constructors. Constructions that fall outside the
+canonical vocabulary reject as `unsupported`; there is no opaque
+catch-all that would smuggle uncanonicalized TS shapes through the
+pipeline.
 
 ### Mutating-body output (no L2 IR)
 
@@ -880,45 +887,34 @@ L2 form.)
   / `set-effect` statement, not an L2 expression. The mutation only
   appears as a side effect in `SymbolicState` / `PropResult[]`.
 
-### Pure-path expression-IR migration (legacy plan)
+### Final architecture (post-M6)
 
-The original IR migration plan (Stages 1–11) was partially superseded
-by the imperative-IR workstream. Pure-path expression normalization
-(Stages 1–8) survived as the L2 expression IR; the mutating-path
-work (former Stages 9–11) re-formed inside the workstream. This
-section documents the surviving Stage 1–8 status; the workstream
-docs (§ "Imperative IR Workstream" below) cover the rest.
+The imperative-IR workstream replaced the original 11-stage migration
+plan. The end state is two translation paths sharing one Layer 1 IR,
+with no migration flags, no escape hatches, and no parallel pipelines:
 
-| Stage | Recognizer / scope | Status |
-|-------|---------------------|--------|
-| 1 | Foundation: types, build (Var/Lit/Identifier), emit, `--use-ir` flag, anchor fixture | ✅ landed |
-| 2 | Optional chaining `?.` → `Each` | ✅ landed |
-| 3 | Nullish coalescing `??` → `Cond` | ✅ landed |
-| 4 | μ-search → `Comb(min, Each)` | ✅ landed via workstream M2 (`comb-typed` lowering in `ir1-lower.ts`) |
-| 5 | `.length` / `.size` → `Unop(card, x)` | ✅ landed |
-| 6 | Const-binding inlining → `Let` (pure path) | ✅ landed |
-| 7 | Chain fusion → `Each` composition | ✅ tracked via IRWrap (anchors locked); native IR construction deferred — see "Note on chain fusion" below |
-| 8 | Pure-path cutover — delete legacy code subsumed by IR | pending (re-forms inside workstream M6) |
-| 9–11 | **Superseded** by `workstreams/ts2pant-imperative-ir.md`; mutating-path SSA, frame conditions, and final cutover re-formed inside workstream M3 (which **bypasses** the originally-planned L2 statement vocabulary — see workstream § "Architectural Lessons"). | superseded |
+- **Pure / value-position** (function returns, `.reduce` chain
+  results, conditional values, ternary arms, etc.) — TS AST → L1
+  expression (`ir1-build.ts`) → L2 `IRExpr` (`ir1-lower.ts`) →
+  `OpaqueExpr` (`ir-emit.ts`). Always-on; the `IRExpr` tree is the
+  canonical output of every value-position TS construct ts2pant
+  supports.
+- **Effect / statement-position** (mutating-body assignments, Map/Set
+  effect calls, branched mutation, iteration with statement bodies)
+  — TS AST → L1 statement (`ir1-build-body.ts`) → `PropResult[]`
+  via a single fold over `SymbolicState` (`ir1-lower-body.ts`). No
+  L2 statement vocabulary; the fold reuses the existing mutation
+  primitives (`putWrite`, `mergeOverrides`, `installMapWrite`,
+  `installSetWrite`).
 
-The `--use-ir` flag (env var `TS2PANT_USE_IR=1`) routes the pure path
-through the IR pipeline. Default off until workstream M6 makes it
-always-on. Per-stage gate is the `tests/ir-equivalence.test.mts`
-smoke test (string-equal output between legacy and IR pipelines on
-the anchor fixtures).
+Constructions outside the canonical L1 vocabulary reject with a
+specific `unsupported` reason. The build pass either produces a
+canonical L1 form or rejects — there is no opaque catch-all, no
+opt-in legacy pipeline, and no parallel translation path.
 
-**Note on chain fusion (Stage 7).** `.filter`/`.map`/`.reduce` chains
-already produce semantically-identical output through the `IRWrap`
-fallback path: legacy `translateArrayMethod` and `translateReduceCall`
-materialize an OpaqueExpr `each(...)` / `eachComb(...)`, which `ir-build`
-wraps. Locked-in IR-equivalence anchors confirm byte-equality across all
-shapes (`activeNames`, `nameLengths`, `highScores` from
-`expressions-array.ts`; the full `expressions-reduce.ts` suite). Native
-IR construction (a real `Each` IR node assembled in `ir-build`) is
-**intentionally deferred** until workstream M6 — the existing 300+
-lines of TS-AST inspection in legacy would translate to ~200 lines of
-mechanical duplication producing identical output, with the
-architectural payoff only at the always-on cutover.
+For the per-milestone breakdown of how this state was reached, see
+§ "Imperative IR Workstream" below and
+`workstreams/ts2pant-imperative-ir.md`.
 
 ### Imperative IR Workstream
 
@@ -1016,9 +1012,8 @@ in the equality / nullish equivalence class flows through Layer 1.
   opportunistically — see § "Developer Steering Principles" rule 2.
 - `BinOp(eq | neq, lhs, rhs)` — canonical strict equality. Produced
   unconditionally from `===` / `!==`. The L1 form admits arbitrary
-  operands; property-access sub-expressions reach L1 natively post-M5
-  via `Member`, while non-property sub-expressions wrap via `from-l2`
-  until M6 deletes the form.
+  operands; sub-expressions are built natively on L1 in every
+  position.
 - Functor-lift `each n in x | f n` — the canonical lowering for
   null-guarded list-lifted conditionals (see § "Functor-Lift
   Recognizer" above for the four soundness conditions). Combined-shape
@@ -1054,12 +1049,11 @@ The asymmetry is deliberate: a guard is a *factored-out* runtime check
 with no body, so misclassifying one would silently drop the check on
 both sides; classifying conservatively keeps the if-statement intact.
 
-*from-l2 shrinkage scope.* Sub-expressions of nullish and equality
-forms now build natively on L1: the `IsNullish` operand is an
-arbitrary L1 expression, and `BinOp(eq | neq, …)` operands are L1.
-Property-access sub-expressions reach L1 natively post-M5 via
-`Member`; only non-property sub-expressions still wrap via `from-l2`,
-and full elimination is M6 territory.
+*Sub-expression handling.* `IsNullish` operands and
+`BinOp(eq | neq, …)` operands are arbitrary L1 expressions, built
+natively in every position via the canonical L1 dispatch. There is
+no escape-hatch wrapper; sub-expressions outside the canonical L1
+vocabulary reject with a specific `unsupported` reason.
 
 *Out of scope by design* (candidates for future milestones if real
 fixtures demand them):
@@ -1162,16 +1156,14 @@ desugaring (`a.p OP= v` → `a.p = a.p OP v`) happens before Member
 construction, so the Member form is the same whether the source was
 a simple assign or compound assign.
 
-*from-l2 shrinkage scope.* The four documented property-access
-sub-expression wrap sites in mutating-body recognizers
+*Sub-expression handling.* The four documented property-access
+sub-expression sites in mutating-body recognizers
 (`ir1-build-body.ts` Shape B fold target / rhs / guard,
-`buildL1AssignStmt` receiver) consolidate into one
-`buildL1SubExpr` helper that calls `buildL1MemberAccess` for
-property-access shapes and falls back to `from-l2` only for non-
-property sub-expressions. Wrap sites post-M5: 1 (down from 4); the
-remaining fallback fires only for non-property sub-expressions
-(binop chains, generic call results, etc.) awaiting M6 deletion of
-the form.
+`buildL1AssignStmt` receiver) flow through one `buildL1SubExpr`
+helper that calls `buildL1MemberAccess` for property-access shapes
+and the canonical L1 dispatch for the rest. There is no escape-hatch
+wrapper for non-property sub-expressions — every sub-expression is
+either a canonical L1 form or an `unsupported` rejection.
 
 *qualifyFieldAccess two-tier behavior preserved as-is.* Resolved-
 owner cases produce qualified rule names (`account--balance a`);
@@ -1213,18 +1205,16 @@ M2 ratifies and the M2 cleanup completes:
 Deviations from this principle should be flagged in review and
 either justified explicitly or refactored.
 
-**The `from-l2` adapter** (`ir1.ts`'s `IR1Expr.from-l2`) is the explicit
-transitional mechanism for sub-expressions whose internal structure is
-outside the current milestone's normalization concern. The adapter
-wraps a pre-built Layer 2 `IRExpr` and lowers verbatim. M3 grew its
-use (mutating-body sub-expressions like receivers, values, conditions
-all arrive as OpaqueExpr from `translateBodyExpr` and wrap via
-`from-l2`). Lifetime: M4 (equality/nullish) and M5 (property access)
-brought sub-expressions onto L1 natively, shrinking the property-
-access sub-expression wrap sites from 4 to 1 (consolidated into
-`buildL1SubExpr`'s fallback for non-property forms); deleted at M6.
-Do not introduce new uses outside the build pipeline's scoped
-sub-expression delegation.
+**Closed vocabularies on both layers.** Every `IR1Expr` is one of
+the canonical L1 constructors, and every `IRExpr` is one of the ten
+canonical L2 constructors. Sub-expressions outside the canonical
+vocabulary reject with a specific `unsupported` reason — there is no
+adapter that smuggles a foreign value into the IR.
+
+**One pipeline, no flags.** The pure expression pipeline is
+unconditional; there is no opt-in environment variable or runtime
+predicate gating the canonical path. Every value-position TS
+construct ts2pant supports flows through L1 → L2 → OpaqueExpr.
 
 **Locked decisions** (re-litigation requires explicit user sign-off):
 - Layer 1 vocabulary is locked at M1. Forms can be added in later
@@ -1233,10 +1223,9 @@ sub-expression delegation.
   `foreach`, `cond-stmt`, `map-effect`, `set-effect`; `for`, `throw`,
   `expr-stmt` remain declared but unused (constructors return them;
   lowerers reject).
-- **No `IR1Wrap` form.** Layer 1 is not an escape-hatch layer — the
-  build pass either produces L1 or rejects with `unsupported`. The
-  `from-l2` form is *not* a wrap-anything escape hatch; it's a scoped
-  delegation point with a defined lifetime.
+- **Closed vocabularies on both layers.** Neither L1 nor L2 has an
+  escape-hatch form. The build pass either produces a canonical
+  L1/L2 value or rejects with `unsupported`.
 - **Conservative-refusal policy 3(b).** When the build pass cannot prove
   an equivalence (switch fall-through, `==`-on-non-Bool, default-not-last,
   non-Bool short-circuit, non-literal switch case label, object-literal
