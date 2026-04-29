@@ -190,6 +190,23 @@ describe("ir-build M6 native construction stubs", () => {
     expectNoIRWrap(comb);
   });
 
+  it("builds array-chain receivers natively before member/cardinality fallback", () => {
+    const length = expectIR(`
+      function f(xs: number[]): number {
+        return xs.filter((x) => x > 0).length;
+      }
+    `);
+    const indexedLength = expectIR(`
+      function f(xs: number[]): number {
+        return xs["filter"]((x) => x > 0)["length"];
+      }
+    `);
+    assert.equal(containsKind(length, "each"), true);
+    assert.equal(containsKind(indexedLength, "each"), true);
+    expectNoIRWrap(length);
+    expectNoIRWrap(indexedLength);
+  });
+
   it("recognizes string-literal array method calls", () => {
     const dotted = expectIR(`
       interface Item { readonly amount: number; }
@@ -239,6 +256,14 @@ describe("ir-build M6 native construction stubs", () => {
     `);
     assert.equal(isBuildUnsupported(method), false);
     assert.equal(isBuildUnsupported(indexed), false);
+    if (!isBuildUnsupported(method)) {
+      assert.equal(containsKind(method, "each"), false);
+      assert.equal(containsKind(method, "comb"), false);
+    }
+    if (!isBuildUnsupported(indexed)) {
+      assert.equal(containsKind(indexed, "each"), false);
+      assert.equal(containsKind(indexed, "comb"), false);
+    }
   });
 
   it("rejects async, defaulted, optional, and rest array callbacks", () => {

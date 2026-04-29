@@ -460,6 +460,13 @@ function buildIRValue(
   return { expr: ir };
 }
 
+function buildNativeReceiverLeafIR(
+  expr: ts.Expression,
+  ctx: L1BuildContext,
+): IRExpr | { unsupported: string } | null {
+  return buildIR(expr, ctx.checker, ctx.strategy, ctx.paramNames, ctx.supply);
+}
+
 function tryBuildArrayMethodValue(
   expr: ts.CallExpression,
   checker: ts.TypeChecker,
@@ -557,6 +564,9 @@ function buildArrayMapFilter(
   );
   if (isBuildUnsupported(rawBody)) {
     return rawBody;
+  }
+  if (isComposing && rawBody.kind === "ir-wrap") {
+    return null;
   }
   const body = isComposing
     ? substituteIR(rawBody, callbackBinder, pending.proj)
@@ -696,6 +706,9 @@ function buildArrayReduce(
   if (isBuildUnsupported(inner)) {
     return inner;
   }
+  if (pending !== undefined && inner.kind === "ir-wrap") {
+    return null;
+  }
   const proj = pending ? substituteIR(inner, xBinder, pending.proj) : inner;
   const each = (
     pending
@@ -811,6 +824,7 @@ export function buildIR(
   if (ts.isPropertyAccessExpression(expr)) {
     const card = tryBuildL1Cardinality(expr, l1Ctx, {
       nativeReceiverLeaf: true,
+      nativeReceiverLeafIR: buildNativeReceiverLeafIR,
     });
     if (card !== null) {
       return lowerL1Expr(card);
@@ -819,6 +833,15 @@ export function buildIR(
 
   if (ts.isElementAccessExpression(expr)) {
     const inOptionalChain = (expr.flags & ts.NodeFlags.OptionalChain) !== 0;
+    if (!inOptionalChain) {
+      const card = tryBuildL1Cardinality(expr, l1Ctx, {
+        nativeReceiverLeaf: true,
+        nativeReceiverLeafIR: buildNativeReceiverLeafIR,
+      });
+      if (card !== null) {
+        return lowerL1Expr(card);
+      }
+    }
     if (inOptionalChain) {
       const prop = elementAccessLiteralKey(expr);
       if (prop === null) {
@@ -862,6 +885,21 @@ export function buildIR(
         );
       }
     }
+  }
+
+  if (
+    (ts.isPropertyAccessExpression(expr) ||
+      ts.isElementAccessExpression(expr)) &&
+    (expr.flags & ts.NodeFlags.OptionalChain) === 0
+  ) {
+    const member = buildL1MemberAccess(expr, l1Ctx, {
+      nativeReceiverLeaf: true,
+      nativeReceiverLeafIR: buildNativeReceiverLeafIR,
+    });
+    if ("unsupported" in member) {
+      return member;
+    }
+    return lowerL1Expr(member);
   }
 
   const nativeL1 = tryBuildL1PureSubExpression(expr, l1Ctx);
@@ -921,24 +959,6 @@ export function buildIR(
         );
       }
     }
-  }
-
-  // M5: plain (non-optional) property access → canonical L1 Member.
-  // The lowering at `ir1-lower.ts` produces `App(qualifiedName,
-  // [receiver])` — byte-equal to the legacy direct construction.
-  // Cardinality dispatch above already handled the `.length` / `.size`
-  // path, so anything reaching here is a genuine field accessor.
-  if (
-    ts.isPropertyAccessExpression(expr) &&
-    (expr.flags & ts.NodeFlags.OptionalChain) === 0
-  ) {
-    const member = buildL1MemberAccess(expr, l1Ctx, {
-      nativeReceiverLeaf: true,
-    });
-    if ("unsupported" in member) {
-      return member;
-    }
-    return lowerL1Expr(member);
   }
 
   // Fallback: translate via the legacy pipeline and wrap. Subsequent

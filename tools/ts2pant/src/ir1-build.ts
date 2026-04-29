@@ -33,7 +33,7 @@
  */
 
 import ts from "typescript";
-import { irWrap } from "./ir.js";
+import { type IRExpr, irWrap } from "./ir.js";
 import { lowerExpr } from "./ir-emit.js";
 import {
   type IR1Binop,
@@ -550,6 +550,14 @@ export function tryBuildL1Cardinality(
     if (nativeReceiver !== null && !isL1Unsupported(nativeReceiver)) {
       return ir1Unop("card", nativeReceiver);
     }
+    const nativeReceiverIR = tryBuildNativeReceiverLeafIR(
+      receiverNode as ts.Expression,
+      ctx,
+      options,
+    );
+    if (nativeReceiverIR !== null && !isL1Unsupported(nativeReceiverIR)) {
+      return ir1Unop("card", nativeReceiverIR);
+    }
   }
   const r = translateBodyExpr(
     receiverNode as ts.Expression,
@@ -682,10 +690,38 @@ export type MemberReceiverResult =
 export interface BuildL1MemberAccessOptions {
   ambiguousOwnerFallback?: "reject" | "bare-kebab";
   nativeReceiverLeaf?: boolean;
+  nativeReceiverLeafIR?: (
+    expr: ts.Expression,
+    ctx: L1BuildContext,
+  ) => IRExpr | { unsupported: string } | null;
   translateReceiverLeaf?: (
     expr: ts.Expression,
     ctx: L1BuildContext,
   ) => MemberReceiverResult;
+}
+
+function tryBuildNativeReceiverLeafIR(
+  receiverNode: ts.Expression,
+  ctx: L1BuildContext,
+  options: BuildL1MemberAccessOptions,
+): IR1Expr | { unsupported: string } | null {
+  if (
+    ctx.state !== undefined ||
+    options.nativeReceiverLeaf !== true ||
+    options.nativeReceiverLeafIR === undefined ||
+    !ts.isCallExpression(receiverNode) ||
+    !isArrayChainCall(receiverNode, ctx.checker)
+  ) {
+    return null;
+  }
+  const nativeReceiver = options.nativeReceiverLeafIR(receiverNode, ctx);
+  if (nativeReceiver === null) {
+    return null;
+  }
+  if ("unsupported" in nativeReceiver) {
+    return nativeReceiver;
+  }
+  return ir1FromL2(nativeReceiver);
 }
 
 /**
@@ -818,23 +854,35 @@ export function buildL1MemberAccess(
       }
       receiverL1 = nativeReceiver;
     } else {
-      const r = translateBodyExpr(
+      const nativeReceiverIR = tryBuildNativeReceiverLeafIR(
         receiverNode as ts.Expression,
-        ctx.checker,
-        ctx.strategy,
-        ctx.paramNames,
-        ctx.state,
-        ctx.supply,
+        ctx,
+        options,
       );
-      if (isBodyUnsupported(r)) {
-        return { unsupported: r.unsupported };
+      if (nativeReceiverIR !== null) {
+        if (isL1Unsupported(nativeReceiverIR)) {
+          return nativeReceiverIR;
+        }
+        receiverL1 = nativeReceiverIR;
+      } else {
+        const r = translateBodyExpr(
+          receiverNode as ts.Expression,
+          ctx.checker,
+          ctx.strategy,
+          ctx.paramNames,
+          ctx.state,
+          ctx.supply,
+        );
+        if (isBodyUnsupported(r)) {
+          return { unsupported: r.unsupported };
+        }
+        if ("effect" in r) {
+          return {
+            unsupported: "collection mutation as property-access receiver",
+          };
+        }
+        receiverL1 = ir1FromL2(irWrap(bodyExpr(r)));
       }
-      if ("effect" in r) {
-        return {
-          unsupported: "collection mutation as property-access receiver",
-        };
-      }
-      receiverL1 = ir1FromL2(irWrap(bodyExpr(r)));
     }
   } else {
     const r = translateBodyExpr(
@@ -1077,8 +1125,12 @@ function isSingleElementProducingShape(expr: ts.Expression): boolean {
   if (ts.isSpreadElement(u)) {
     return false;
   }
-  if (ts.isCallExpression(u) && ts.isPropertyAccessExpression(u.expression)) {
-    if (ARRAY_MULTI_PRODUCING_METHODS.has(u.expression.name.text)) {
+  if (ts.isCallExpression(u)) {
+    const member = callMemberName(u.expression);
+    if (
+      member !== null &&
+      ARRAY_MULTI_PRODUCING_METHODS.has(member.methodName)
+    ) {
       return false;
     }
   }
