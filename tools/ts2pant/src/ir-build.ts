@@ -30,6 +30,7 @@ import {
   irVar,
   irWrap,
 } from "./ir.js";
+import { ir1FromL2 } from "./ir1.js";
 import {
   buildL1MemberAccess,
   computedElementAccessUnsupportedReason,
@@ -43,6 +44,7 @@ import { lowerL1Expr } from "./ir1-lower.js";
 import {
   type NullishTranslate,
   recognizeNullishForm,
+  unwrapTransparentExpression,
 } from "./nullish-recognizer.js";
 import { isStaticallyBoolTyped } from "./purity.js";
 import {
@@ -801,11 +803,21 @@ function buildCollectionMembershipCall(
     return null;
   }
 
-  const normalizedReceiver = unwrapParens(tsReceiver) as ts.Expression;
-  if (ts.isPropertyAccessExpression(normalizedReceiver)) {
-    const member = buildL1MemberAccess(normalizedReceiver, l1Ctx, {
-      nativeReceiverLeaf: true,
-    });
+  const normalizedReceiver = unwrapTransparentExpression(tsReceiver);
+  const isMemberSurface =
+    (ts.isPropertyAccessExpression(normalizedReceiver) &&
+      (normalizedReceiver.flags & ts.NodeFlags.OptionalChain) === 0) ||
+    (ts.isElementAccessExpression(normalizedReceiver) &&
+      (normalizedReceiver.flags & ts.NodeFlags.OptionalChain) === 0 &&
+      elementAccessLiteralKey(normalizedReceiver) !== null);
+  if (isMemberSurface) {
+    const member = buildL1MemberAccess(
+      normalizedReceiver as
+        | ts.PropertyAccessExpression
+        | ts.ElementAccessExpression,
+      l1Ctx,
+      { nativeReceiverLeaf: true },
+    );
     if ("unsupported" in member) {
       return member;
     }
@@ -1026,14 +1038,11 @@ export function buildIR(
 
   if (ts.isBinaryExpression(expr)) {
     const nullishTranslate: NullishTranslate = (sub) => {
-      const result = tryBuildL1PureSubExpression(sub, l1Ctx);
-      if (result === null) {
-        return { unsupported: "unsupported nullish operand" };
-      }
-      if ("unsupported" in result) {
+      const result = buildIR(sub, checker, strategy, paramNames, supply);
+      if (isBuildUnsupported(result)) {
         return { unsupported: result.unsupported };
       }
-      return result;
+      return ir1FromL2(result);
     };
     const recognized = recognizeNullishForm(expr, checker, nullishTranslate);
     if (recognized !== null) {
