@@ -763,22 +763,28 @@ function buildCollectionMembershipCall(
   }
 
   const methodName = expr.expression.name.text;
+  if (methodName !== "includes" && methodName !== "has") {
+    return null;
+  }
+
   const tsReceiver = expr.expression.expression;
   const receiverType = checker.getTypeAtLocation(tsReceiver);
-  const arg = buildIR(
-    expr.arguments[0]!,
-    checker,
-    strategy,
-    paramNames,
-    supply,
-  );
-  if (isBuildUnsupported(arg)) {
-    return arg;
-  }
+
+  // Probe-time `UniqueSupply` isolation: defer building `arg` and the
+  // receiver until the receiver shape commits this probe to a known
+  // membership lowering. Returning `null` from a non-matching probe
+  // must not advance `supply`, or deterministic-name allocation drifts
+  // for downstream callers.
+  const buildArg = (): IRExpr | { unsupported: string } =>
+    buildIR(expr.arguments[0]!, checker, strategy, paramNames, supply);
 
   if (methodName === "includes") {
     if (!checker.isArrayType(receiverType)) {
       return null;
+    }
+    const arg = buildArg();
+    if (isBuildUnsupported(arg)) {
+      return arg;
     }
     const receiver = buildIR(tsReceiver, checker, strategy, paramNames, supply);
     if (isBuildUnsupported(receiver)) {
@@ -787,11 +793,11 @@ function buildCollectionMembershipCall(
     return irBinop("in", arg, receiver);
   }
 
-  if (methodName !== "has") {
-    return null;
-  }
-
   if (isSetType(receiverType)) {
+    const arg = buildArg();
+    if (isBuildUnsupported(arg)) {
+      return arg;
+    }
     const receiver = buildIR(tsReceiver, checker, strategy, paramNames, supply);
     if (isBuildUnsupported(receiver)) {
       return receiver;
@@ -811,6 +817,10 @@ function buildCollectionMembershipCall(
       (normalizedReceiver.flags & ts.NodeFlags.OptionalChain) === 0 &&
       elementAccessLiteralKey(normalizedReceiver) !== null);
   if (isMemberSurface) {
+    const arg = buildArg();
+    if (isBuildUnsupported(arg)) {
+      return arg;
+    }
     const member = buildL1MemberAccess(
       normalizedReceiver as
         | ts.PropertyAccessExpression
@@ -846,6 +856,10 @@ function buildCollectionMembershipCall(
     return {
       unsupported: `Map<${kType}, ${vType}>: key or value type cannot be mangled into a synthesized domain name`,
     };
+  }
+  const arg = buildArg();
+  if (isBuildUnsupported(arg)) {
+    return arg;
   }
   const receiver = buildIR(tsReceiver, checker, strategy, paramNames, supply);
   if (isBuildUnsupported(receiver)) {
