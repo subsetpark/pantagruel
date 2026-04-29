@@ -907,17 +907,6 @@ function isMemberSurfaceForm(
 }
 
 /**
- * Receiver translation result — either an opaque expression or an
- * upstream-rejection marker. Mirrors the convention of
- * `TranslateExprResult` and the body-side `BodyResult` so signature
- * and body translators can plug into `buildL1MemberAccess` through a
- * single callback shape.
- */
-export type MemberReceiverResult =
-  | { kind: "expr"; expr: OpaqueExpr }
-  | { kind: "unsupported"; reason: string };
-
-/**
  * Options threaded through `buildL1MemberAccess`.
  *
  * - `ambiguousOwnerFallback: "reject"` — body-side default. Ambiguous
@@ -932,21 +921,13 @@ export type MemberReceiverResult =
  *   *optional* analysis (the would-be guard never fires) — so a bare
  *   fallback yields the same observable behavior as a hard reject
  *   without preventing other guards in the same function from
- *   extracting cleanly. Mirrors the asymmetry the deleted local
- *   `qualifyFieldAccess` in `translate-signature.ts` carried.
+ *   extracting cleanly.
  *
- * - `translateReceiverLeaf` — translator for the non-property leaf at
- *   the bottom of the receiver chain (e.g., the `a` in `a.b.c.field`).
- *   Defaults to `translateBodyExpr`, which is what body-position and
- *   pure-path call sites want. The signature path passes a callback
- *   that routes through `translateExpr` (signature) so the leaf gets
- *   the same transparent-wrapper handling and signature-only operator
- *   surface (loose-eq rejection, no body-only chain fusion or
- *   Map/Set effect handling) as the rest of guard analysis.
- *
- *   The callback's input is already paren-stripped via `unwrapParens`;
- *   it is responsible for any further unwrapping (`as T`, `!`, etc.)
- *   that its respective layer applies.
+ * - `nativeReceiverLeaf` — when true, the M6 dispatch fires before the
+ *   default `tryBuildL1PureSubExpression` fallthrough so the signature
+ *   path can layer specialized leaf handling on top of the standard L1
+ *   build without dragging in body-only branches (chain fusion, Map/Set
+ *   effects).
  */
 export interface BuildL1MemberAccessOptions {
   ambiguousOwnerFallback?: "reject" | "bare-kebab";
@@ -955,10 +936,6 @@ export interface BuildL1MemberAccessOptions {
     expr: ts.Expression,
     ctx: L1BuildContext,
   ) => IRExpr | { unsupported: string } | null;
-  translateReceiverLeaf?: (
-    expr: ts.Expression,
-    ctx: L1BuildContext,
-  ) => MemberReceiverResult;
 }
 
 function tryBuildNativeReceiverLeafIR(
@@ -1087,18 +1064,6 @@ export function buildL1MemberAccess(
       }
       receiverL1 = inner;
     }
-  } else if (options.translateReceiverLeaf !== undefined) {
-    // Caller-supplied leaf translator (used by the signature path so
-    // the non-property leaf goes through `translateExpr` instead of
-    // `translateBodyExpr` — preserves signature-only operator surface
-    // like loose-eq rejection and avoids body-only branches like
-    // chain fusion / Map-Set effect handling that aren't appropriate
-    // in guard analysis).
-    const r = options.translateReceiverLeaf(receiverNode as ts.Expression, ctx);
-    if (r.kind === "unsupported") {
-      return { unsupported: r.reason };
-    }
-    receiverL1 = ir1FromL2(irWrap(r.expr));
   } else {
     const nativeReceiver = tryBuildL1PureSubExpression(
       receiverNode as ts.Expression,
@@ -1109,57 +1074,19 @@ export function buildL1MemberAccess(
         return nativeReceiver;
       }
       receiverL1 = nativeReceiver;
-    } else if (ctx.state !== undefined) {
-      // Mutating-body path never falls back to the from-l2 escape
-      // hatch — non-pure receivers reject explicitly.
+    } else {
       return {
         unsupported: `unsupported property-access receiver: ${(receiverNode as ts.Expression).getText()}`,
       };
-    } else if (options.nativeReceiverLeaf === true) {
-      // Pure-path with the native-leaf flag: try the IR-returning
-      // leaf translator (covers array-chain receivers via
-      // `ir-build`'s `buildNativeReceiverLeafIR`). If it doesn't
-      // apply, refuse rather than fall back to `translateBodyExpr` —
-      // the flag's contract is "native L1 or explicit unsupported".
-      const nativeReceiverIR = tryBuildNativeReceiverLeafIR(
-        receiverNode as ts.Expression,
-        ctx,
-        options,
-      );
-      if (nativeReceiverIR === null) {
-        return {
-          unsupported: `unsupported property-access receiver: ${(receiverNode as ts.Expression).getText()}`,
-        };
-      }
-      if (isL1Unsupported(nativeReceiverIR)) {
-        return nativeReceiverIR;
-      }
-      receiverL1 = nativeReceiverIR;
-    } else {
-      const r = translateBodyExpr(
-        receiverNode as ts.Expression,
-        ctx.checker,
-        ctx.strategy,
-        ctx.paramNames,
-        ctx.state,
-        ctx.supply,
-      );
-      if (isBodyUnsupported(r)) {
-        return { unsupported: r.unsupported };
-      }
-      if ("effect" in r) {
-        return {
-          unsupported: "collection mutation as property-access receiver",
-        };
-      }
-      receiverL1 = ir1FromL2(irWrap(bodyExpr(r)));
     }
   }
 
-  // Symbolic-state lookup at the outer level (mirrors
-  // `translate-body.ts:2861`). When a prior write to this exact
-  // property exists at this canonicalized receiver, return the prior
-  // value rather than re-emitting the rule application.
+  // Symbolic-state lookup at the outer Member level: when a prior
+  // write to (qualified, canonicalized receiver) exists, return the
+  // recorded value rather than re-emitting the rule application.
+  // Unconditionally embedding the recorded `OpaqueExpr` back into the
+  // L1 IR is the one place a Layer 1 → OpaqueExpr leaf is genuinely
+  // needed in mutating-body sub-expression composition.
   if (ctx.state !== undefined) {
     const objOpaque = lowerExpr(lowerL1Expr(receiverL1));
     const key = symbolicKey(qualified, ctx.state.canonicalize(objOpaque));
