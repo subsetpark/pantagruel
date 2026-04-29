@@ -423,36 +423,15 @@ function buildIRValue(
 ): IRBuildValue | { unsupported: string } {
   expr = unwrapParens(expr) as ts.Expression;
   if (ts.isCallExpression(expr)) {
-    const arrayMethod = arrayMethodCall(expr);
-    if (arrayMethod !== null) {
-      const { methodName, receiver } = arrayMethod;
-      if (methodName === "filter" || methodName === "map") {
-        const result = buildArrayMapFilter(
-          methodName,
-          receiver,
-          expr,
-          checker,
-          strategy,
-          paramNames,
-          supply,
-        );
-        if (result !== null) {
-          return result;
-        }
-      } else {
-        const result = buildArrayReduce(
-          methodName,
-          receiver,
-          expr,
-          checker,
-          strategy,
-          paramNames,
-          supply,
-        );
-        if (result !== null) {
-          return result;
-        }
-      }
+    const arrayResult = tryBuildArrayMethodValue(
+      expr,
+      checker,
+      strategy,
+      paramNames,
+      supply,
+    );
+    if (arrayResult !== null) {
+      return arrayResult;
     }
   }
 
@@ -461,6 +440,48 @@ function buildIRValue(
     return ir;
   }
   return { expr: ir };
+}
+
+function tryBuildArrayMethodValue(
+  expr: ts.CallExpression,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: ReadonlyMap<string, string>,
+  supply: UniqueSupply,
+): IRBuildValue | { unsupported: string } | null {
+  const arrayMethod = arrayMethodCall(expr);
+  if (arrayMethod === null) {
+    return null;
+  }
+  const { methodName, receiver } = arrayMethod;
+  if (methodName === "filter" || methodName === "map") {
+    const result = buildArrayMapFilter(
+      methodName,
+      receiver,
+      expr,
+      checker,
+      strategy,
+      paramNames,
+      supply,
+    );
+    if (result !== null) {
+      return result;
+    }
+  } else {
+    const result = buildArrayReduce(
+      methodName,
+      receiver,
+      expr,
+      checker,
+      strategy,
+      paramNames,
+      supply,
+    );
+    if (result !== null) {
+      return result;
+    }
+  }
+  return null;
 }
 
 function buildArrayMapFilter(
@@ -717,9 +738,14 @@ export function buildIR(
   };
 
   if (ts.isCallExpression(expr)) {
-    const arrayMethod = arrayMethodCall(expr);
-    if (arrayMethod !== null) {
-      const built = buildIRValue(expr, checker, strategy, paramNames, supply);
+    const built = tryBuildArrayMethodValue(
+      expr,
+      checker,
+      strategy,
+      paramNames,
+      supply,
+    );
+    if (built !== null) {
       if ("unsupported" in built) {
         return built;
       }

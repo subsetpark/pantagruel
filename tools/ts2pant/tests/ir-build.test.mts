@@ -205,6 +205,23 @@ describe("ir-build M6 native construction stubs", () => {
     expectNoIRWrap(indexed);
   });
 
+  it("does not recurse on syntactic array method names for non-array receivers", () => {
+    const method = buildFromSource(`
+      interface Service { readonly map: (n: number) => number; }
+      function f(service: Service, n: number): number {
+        return service.map(n);
+      }
+    `);
+    const indexed = buildFromSource(`
+      interface Service { readonly reduce: (n: number, init: number) => number; }
+      function f(service: Service, n: number): number {
+        return service["reduce"](n, 0);
+      }
+    `);
+    assert.equal(isBuildUnsupported(method), false);
+    assert.equal(isBuildUnsupported(indexed), false);
+  });
+
   it("rejects async, defaulted, optional, and rest array callbacks", () => {
     const cases = [
       {

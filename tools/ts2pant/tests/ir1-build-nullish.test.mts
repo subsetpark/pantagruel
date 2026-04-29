@@ -22,10 +22,17 @@ import { irWrap } from "../src/ir.js";
 import { type IR1Expr, ir1FromL2 } from "../src/ir1.js";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
 import {
+  isL1Unsupported,
+  tryBuildL1PureSubExpression,
+  type L1BuildContext,
+} from "../src/ir1-build.js";
+import {
   type NullishTranslate,
   recognizeNullishForm,
 } from "../src/nullish-recognizer.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
+import type { UniqueSupply } from "../src/translate-body.js";
+import { IntStrategy, newSynthCell } from "../src/translate-types.js";
 
 before(async () => {
   await loadAst();
@@ -95,6 +102,45 @@ function parseBinExpr(
 function makeTranslate(): NullishTranslate {
   const ast = getAst();
   return (e) => ir1FromL2(irWrap(ast.var(e.getText())));
+}
+
+function parseNarrowedNullishReturn(source: string): {
+  expr: ts.Expression;
+  ctx: L1BuildContext;
+} {
+  const sourceFile = createSourceFileFromSource(source);
+  const checker = getChecker(sourceFile);
+  const fn = sourceFile.compilerNode.statements.find(ts.isFunctionDeclaration);
+  if (!fn?.body) {
+    throw new Error("test helper: expected function body");
+  }
+  const first = fn.body.statements[0];
+  if (!first || !ts.isIfStatement(first)) {
+    throw new Error("test helper: expected leading if statement");
+  }
+  const thenStmt = ts.isBlock(first.thenStatement)
+    ? first.thenStatement.statements[0]
+    : first.thenStatement;
+  if (!thenStmt || !ts.isReturnStatement(thenStmt) || !thenStmt.expression) {
+    throw new Error("test helper: expected return inside if");
+  }
+  const paramNames = new Map<string, string>();
+  for (const param of fn.parameters) {
+    if (ts.isIdentifier(param.name)) {
+      paramNames.set(param.name.text, param.name.text);
+    }
+  }
+  const supply: UniqueSupply = { n: 0, synthCell: newSynthCell() };
+  return {
+    expr: thenStmt.expression,
+    ctx: {
+      checker,
+      strategy: IntStrategy,
+      paramNames,
+      state: undefined,
+      supply,
+    },
+  };
 }
 
 function asL1(
@@ -441,6 +487,48 @@ describe("ir1-build-nullish", () => {
       if (l1.rhs.kind === "is-nullish") {
         expectOperandText(l1.rhs.operand, "y");
       }
+    }
+  });
+});
+
+describe("ir1-build nullish coalescing", () => {
+  it("uses declared left nullability when the left operand is flow-narrowed", () => {
+    const { expr, ctx } = parseNarrowedNullishReturn(`
+      function f(x: number | null, y: number): number {
+        if (x !== null) {
+          return x ?? y;
+        }
+        return y;
+      }
+    `);
+    const l1 = tryBuildL1PureSubExpression(expr, ctx);
+    assert.notEqual(l1, null);
+    if (l1 === null || isL1Unsupported(l1)) {
+      throw new Error("expected nullish coalescing to build");
+    }
+    assert.equal(l1.kind, "cond");
+    if (l1.kind === "cond") {
+      assert.equal(l1.otherwise.kind, "app");
+    }
+  });
+
+  it("uses declared right nullability when the right operand is flow-narrowed", () => {
+    const { expr, ctx } = parseNarrowedNullishReturn(`
+      function f(x: number | null, y: number | null): number | null {
+        if (y !== null) {
+          return x ?? y;
+        }
+        return x;
+      }
+    `);
+    const l1 = tryBuildL1PureSubExpression(expr, ctx);
+    assert.notEqual(l1, null);
+    if (l1 === null || isL1Unsupported(l1)) {
+      throw new Error("expected nullish coalescing to build");
+    }
+    assert.equal(l1.kind, "cond");
+    if (l1.kind === "cond") {
+      assert.equal(l1.otherwise.kind, "var");
     }
   });
 });

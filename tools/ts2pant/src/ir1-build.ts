@@ -57,6 +57,7 @@ import {
 } from "./ir1.js";
 import { lowerL1Expr } from "./ir1-lower.js";
 import {
+  getOperandDeclaredType,
   type NullishTranslate,
   recognizeAnyLeaf,
   recognizeNullishForm,
@@ -153,6 +154,71 @@ function binaryOperatorToL1(kind: ts.SyntaxKind): IR1Binop | null {
   }
 }
 
+const MUTATING_ARRAY_METHODS = new Set([
+  "copyWithin",
+  "fill",
+  "pop",
+  "push",
+  "reverse",
+  "shift",
+  "sort",
+  "splice",
+  "unshift",
+]);
+
+function callMemberName(
+  callee: ts.Expression,
+): { receiver: ts.Expression; methodName: string } | null {
+  if (ts.isPropertyAccessExpression(callee)) {
+    return {
+      receiver: callee.expression,
+      methodName: callee.name.text,
+    };
+  }
+  if (ts.isElementAccessExpression(callee)) {
+    const methodName = elementAccessLiteralKey(callee);
+    if (methodName !== null) {
+      return { receiver: callee.expression, methodName };
+    }
+  }
+  return null;
+}
+
+function isKnownEffectfulNativeCall(
+  expr: ts.CallExpression,
+  checker: ts.TypeChecker,
+): boolean {
+  const member = callMemberName(expr.expression);
+  if (member === null) {
+    return false;
+  }
+  const receiverType = checker.getTypeAtLocation(member.receiver);
+  if (
+    (member.methodName === "add" ||
+      member.methodName === "delete" ||
+      member.methodName === "clear") &&
+    isSetType(receiverType)
+  ) {
+    return true;
+  }
+  if (
+    (member.methodName === "set" ||
+      member.methodName === "delete" ||
+      member.methodName === "clear") &&
+    isMapType(receiverType)
+  ) {
+    return true;
+  }
+  return (
+    isArrayOrTupleType(receiverType, checker) &&
+    MUTATING_ARRAY_METHODS.has(member.methodName)
+  );
+}
+
+function isArrayOrTupleType(t: ts.Type, checker: ts.TypeChecker): boolean {
+  return checker.isArrayType(t) || checker.isTupleType(t);
+}
+
 /**
  * Native L1 construction for ordinary pure sub-expressions. Returns
  * `null` when the expression is outside this cleanup patch's native
@@ -245,7 +311,7 @@ export function tryBuildL1PureSubExpression(
       if (left === null || isL1Unsupported(left)) {
         return left;
       }
-      const leftTsType = ctx.checker.getTypeAtLocation(expr.left);
+      const leftTsType = getOperandDeclaredType(expr.left, ctx.checker);
       if (!isNullableTsType(leftTsType)) {
         return left;
       }
@@ -253,7 +319,7 @@ export function tryBuildL1PureSubExpression(
       if (right === null || isL1Unsupported(right)) {
         return right;
       }
-      const rightTsType = ctx.checker.getTypeAtLocation(expr.right);
+      const rightTsType = getOperandDeclaredType(expr.right, ctx.checker);
       const present = isNullableTsType(rightTsType)
         ? left
         : ir1App(left, [ir1LitNat(1)]);
@@ -292,6 +358,14 @@ export function tryBuildL1PureSubExpression(
   if (ts.isCallExpression(expr)) {
     if (expr.arguments.some(ts.isSpreadElement)) {
       return { unsupported: "call with spread arguments is unsupported" };
+    }
+    const member = callMemberName(expr.expression);
+    if (
+      isKnownEffectfulNativeCall(expr, ctx.checker) ||
+      (member !== null &&
+        expressionHasSideEffects(member.receiver, ctx.checker))
+    ) {
+      return null;
     }
     let callee: IR1Expr | null;
     let args: IR1Expr[];

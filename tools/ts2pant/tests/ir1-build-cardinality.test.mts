@@ -84,7 +84,7 @@ function setup(source: string): AccessSetup {
     !ts.isElementAccessExpression(stmt.expression)
   ) {
     throw new Error(
-      `setup: expected property access, got ${ts.SyntaxKind[stmt.expression.kind]}`,
+      `setup: expected property or element access, got ${ts.SyntaxKind[stmt.expression.kind]}`,
     );
   }
   return { node: stmt.expression, ctx };
@@ -149,8 +149,16 @@ describe("ir1-build-cardinality", () => {
     const size = setup(
       `function f(xs: Set<number>): number { return xs["size"]; }`,
     );
+    const lengthTpl = setup(
+      "function f(xs: number[]): number { return xs[`length`]; }",
+    );
+    const sizeTpl = setup(
+      "function f(xs: Set<number>): number { return xs[`size`]; }",
+    );
     expectCardUnop(tryBuildL1PureSubExpression(length.node, length.ctx));
     expectCardUnop(tryBuildL1PureSubExpression(size.node, size.ctx));
+    expectCardUnop(tryBuildL1PureSubExpression(lengthTpl.node, lengthTpl.ctx));
+    expectCardUnop(tryBuildL1PureSubExpression(sizeTpl.node, sizeTpl.ctx));
   });
 
   it("user-typed .length on a non-list interface falls through to Member", () => {
