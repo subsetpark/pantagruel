@@ -11,8 +11,8 @@
  *
  * Each test parses a function declaration containing a single ternary
  * or if-statement, runs the recognizer on the (guard, then, else)
- * triple, and asserts whether the result is a lifted `each` (via
- * `from-l2`) or a fall-through (`null`).
+ * triple, and asserts whether the result is a lifted L1 `each`
+ * comprehension or a fall-through (`null`).
  */
 
 import assert from "node:assert/strict";
@@ -168,12 +168,10 @@ function expectLifted(result: IR1Expr | null): IR1Expr {
   if (result === null) {
     throw new Error("expected a lifted L1 expression, got null (fall-through)");
   }
-  // The lift wraps an opaque each via `from-l2(irWrap(opaqueEach))`.
-  // Verify the kind discriminator AND the lowered shape — a regression
-  // that returned a different wrapped L2 form (e.g., a `cond`) would
-  // still have `kind === "from-l2"`, so lower the expression and
-  // assert the emitted text contains an `each` comprehension.
-  assert.equal(result.kind, "from-l2");
+  // Post-M6 the lift returns a native L1 `each` form. Assert the kind
+  // discriminator AND lower the expression to verify the emitted
+  // OpaqueExpr is still an each-comprehension.
+  assert.equal(result.kind, "each");
   const out = getAst().strExpr(lowerL1ToOpaque(result));
   assert.match(
     out,
@@ -474,14 +472,11 @@ describe("ir1-build-functor-lift", () => {
 
   it("Member operand falls through when projection isn't a Member chain", () => {
     // Projection is a method call that doesn't structurally surface
-    // the Member operand at the L1 level. `ast.substituteBinder`
-    // substitutes only by name and cannot replace a Member subtree;
-    // the L1 rewriter doesn't enter `from-l2` wraps; so the lift
-    // can't safely connect the operand to the comprehension binder
-    // and falls through. (Identifier-operand parallels of this shape
-    // — the existing nested-null-guard test — DO recognize because
-    // `ast.substituteBinder` handles Var-name references buried in
-    // any expression.)
+    // the Member operand at the L1 level. The L1 rewriter
+    // (`substituteL1Subtree`) needs the operand visible as a Var/
+    // Member subterm of the projection; when the lift can't
+    // structurally connect the operand to the comprehension binder it
+    // falls through.
     const { candidate, ctx } = setup(
       `interface User {
          readonly name: string;

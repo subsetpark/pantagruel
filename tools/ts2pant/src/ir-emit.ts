@@ -6,8 +6,9 @@
  * `ir1-lower.ts`).
  *
  * Handles `Var`, `Lit`, `App` (all heads), `Cond`, `Each`, `Comb`,
- * `Forall`, `Exists`, and the migration-only `IRWrap` escape hatch.
- * `Let` substitutes inline at lowering time (Pant has no `let`).
+ * `Forall`, and `Exists`. `Let` substitutes inline at lowering time
+ * (Pant has no `let`). Post-M6 cleanup, no escape-hatch form remains:
+ * every `IRExpr` corresponds to a native Pantagruel construct.
  *
  * Mutating-body lowering does NOT route through here — it goes through
  * `ir1-lower-body.ts` directly into `PropResult[]`. See
@@ -172,10 +173,8 @@ export function lowerExpr(e: IRExpr): OpaqueExpr {
 
     case "let": {
       // Pant has no let — inline the value into the body via
-      // `substituteBinder`. The body may contain `IRWrap(...)` (legacy
-      // fallback output) which is opaque at the IR layer, so the
-      // substitution operates on the lowered OpaqueExpr where Pant's
-      // capture-avoiding machinery handles all forms uniformly.
+      // `substituteBinder` (capture-avoiding substitution at the
+      // OpaqueExpr layer).
       return ast.substituteBinder(
         lowerExpr(e.body),
         e.name,
@@ -244,8 +243,6 @@ export function lowerExpr(e: IRExpr): OpaqueExpr {
       return ast.exists([param], guards, lowerExpr(e.body));
     }
 
-    case "ir-wrap":
-      return e.expr;
     default: {
       const _exhaustive: never = e;
       void _exhaustive;

@@ -83,9 +83,62 @@ import type { PantDeclaration, PropResult } from "./types.js";
 export interface UniqueSupply {
   n: number;
   synthCell?: SynthCell | undefined;
+  /**
+   * Side-channel registry of fresh hygienic names that bind a
+   * pre-built `OpaqueExpr` value. Populated by the symbolic-state
+   * fast-path inside `buildL1MemberAccess` when a property read
+   * resolves to a previously-recorded write — the build allocates a
+   * fresh `$N` name, registers `($N → OpaqueExpr)` here, and returns
+   * `Var($N)` in L1. This keeps L1 free of OpaqueExpr-bearing nodes
+   * while still surfacing read-after-write semantics.
+   *
+   * Lower sites apply these substitutions via `applyOpaqueAliases`
+   * (wrapped into the call-site `applyConst`), so the final
+   * Pantagruel text contains the recorded value rather than the
+   * `$N` reference.
+   */
+  opaqueAliases?: Map<string, OpaqueExpr>;
 }
 function makeUniqueSupply(synthCell?: SynthCell): UniqueSupply {
   return { n: 0, synthCell };
+}
+
+/**
+ * Register a fresh hygienic name as an alias for a pre-built
+ * `OpaqueExpr`. The alias is consumed by `applyOpaqueAliases` at
+ * lower-to-opaque sites and substituted out before Pantagruel
+ * emission, so the alias name never reaches the parser.
+ */
+export function registerOpaqueAlias(
+  supply: UniqueSupply,
+  name: string,
+  value: OpaqueExpr,
+): void {
+  if (supply.opaqueAliases === undefined) {
+    supply.opaqueAliases = new Map();
+  }
+  supply.opaqueAliases.set(name, value);
+}
+
+/**
+ * Apply every alias in `supply.opaqueAliases` to `expr` via Pant's
+ * capture-avoiding `substituteBinder`. Idempotent for fresh
+ * expressions that contain no alias references; otherwise replaces
+ * each `Var(aliasName)` occurrence with the registered OpaqueExpr.
+ */
+export function applyOpaqueAliases(
+  expr: OpaqueExpr,
+  supply: UniqueSupply | undefined,
+): OpaqueExpr {
+  if (supply?.opaqueAliases === undefined || supply.opaqueAliases.size === 0) {
+    return expr;
+  }
+  const ast = getAst();
+  let r = expr;
+  for (const [name, value] of supply.opaqueAliases) {
+    r = ast.substituteBinder(r, name, value);
+  }
+  return r;
 }
 
 function nextSupply(supply: UniqueSupply): number {
@@ -1704,13 +1757,12 @@ function translatePureBody(
     let bodyOpaque: OpaqueExpr;
     if (isBuildUnsupported(ir)) {
       // Native pure-IR construction did not cover this surface form.
-      // Fall back to `translateBodyExpr` for the OpaqueExpr —
-      // post-M6 this is a direct opaque-layer construction (no
-      // `irWrap` round-trip), so the IR pipeline remains the primary
-      // path and only specific shapes (`%`, `**`, raw array
-      // literals, etc.) reach the legacy emitter. When the legacy
-      // emitter also rejects, prefer the buildIR-side message —
-      // recognizer-specific reasons (e.g. "array callback block body
+      // Fall back to `translateBodyExpr` for the OpaqueExpr; the IR
+      // pipeline remains the primary path and only specific shapes
+      // (`%`, `**`, raw array literals, etc.) reach the legacy
+      // emitter. When the legacy emitter also rejects, prefer the
+      // buildIR-side message — recognizer-specific reasons (e.g.
+      // "array callback block body
       // must be a single return") are more actionable than the
       // legacy fall-through that returns the source text verbatim.
       const legacy = translateBodyExpr(
@@ -2158,10 +2210,10 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
  */
 /**
  * One translated const-binding: a hygienic name (`$N`) and the
- * already-translated initializer as an OpaqueExpr. Exposed so the IR
- * pipeline (Stage 6+) can wrap these in `IRWrap`-valued IR `Let` nodes
- * and let `lowerExpr`'s `substituteBinder` do the substitution at
- * lowering time, replacing the legacy `applyTo` closure.
+ * already-translated initializer as an OpaqueExpr. Consumed by the
+ * pure-path arm assembly in `translatePureBody`, which threads each
+ * binding through `ast.substituteBinder` at the OpaqueExpr layer
+ * rather than carrying the legacy `applyTo` closure.
  */
 export interface TranslatedBinding {
   hygienicName: string;
@@ -3128,8 +3180,8 @@ export function translateBodyExpr(
       };
     }
     // M4 P3: canonicalize strict equality through Layer 1
-    // `BinOp(eq | neq, ...)`. Sub-expressions wrap via `ir1FromL2`
-    // (M5 territory — sub-expressions reach L1 natively then).
+    // `BinOp(eq | neq, ...)`. Sub-expressions reach L1 natively
+    // (post-M5 / M6 — no escape-hatch wrap remains).
     if (
       expr.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken ||
       expr.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken
@@ -4410,7 +4462,18 @@ function symbolicExecute(
 ): boolean {
   const ast = getAst();
   let ok = true;
-  let applyConst = outerApply;
+  // `applyConstChain` is the const-binding-only substitution closure
+  // (extended each time a new const is inlined). `applyConst` wraps it
+  // with `applyOpaqueAliases`, which reads `supply.opaqueAliases`
+  // lazily on every invocation — so symbolic-state cache aliases
+  // registered after `applyConst` was first captured still apply.
+  // The L1 build pass's symbolic-state fast-path
+  // (`buildL1MemberAccess`) registers a `($N → recordedValue)` alias
+  // when it short-circuits a property read, and the substitution is
+  // resolved at every subsequent canonicalize / applyConst call.
+  let applyConstChain = outerApply;
+  const applyConst: (e: OpaqueExpr) => OpaqueExpr = (e) =>
+    applyOpaqueAliases(applyConstChain(e), supply);
   // Keep the state's canonicalize in sync with the frame's applyConst so
   // symbolic-state reads see the same normalization the write site uses.
   setCanonicalize(state, applyConst);
@@ -4683,8 +4746,8 @@ function symbolicExecute(
             for (const [key, value] of inlined.scopedParams) {
               paramNames.set(key, value);
             }
-            const prevApply = applyConst;
-            applyConst = (e) => prevApply(inlined.applyTo(e));
+            const prevChain = applyConstChain;
+            applyConstChain = (e) => prevChain(inlined.applyTo(e));
             setCanonicalize(state, applyConst);
           }
           continue;

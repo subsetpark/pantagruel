@@ -147,7 +147,7 @@ describe("ir1-build-property", () => {
     const outer = expectMember(result);
     assert.equal(outer.name, "owner--name");
     // Inner Member is the receiver — proves the chain composes as
-    // nested Member trees rather than a single flat from-l2 wrap.
+    // nested Member trees rather than a single flat embedded wrap.
     const inner = expectMember(outer.receiver);
     assert.equal(inner.name, "document--owner");
     assert.equal(inner.receiver.kind, "var");
@@ -330,7 +330,7 @@ describe("ir1-build-property", () => {
     const outer = expectMember(result);
     assert.equal(outer.name, "owner--name");
     // Inner Member proves the nested chain composes through the
-    // string-literal recursion gate, not flattens to one from-l2 wrap.
+    // string-literal recursion gate, not flattens to one bare leaf.
     const inner = expectMember(outer.receiver);
     assert.equal(inner.name, "document--owner");
     assert.equal(inner.receiver.kind, "var");

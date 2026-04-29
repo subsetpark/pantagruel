@@ -108,19 +108,14 @@ function containsKind(expr: IRExpr, kind: IRExpr["kind"]): boolean {
       );
     case "var":
     case "lit":
-    case "ir-wrap":
       return false;
   }
 }
 
-function expectNoIRWrap(expr: IRExpr): void {
-  assert.equal(containsKind(expr, "ir-wrap"), false);
-}
-
-describe("ir-build M6 native construction stubs", () => {
-  // M6 Patch 2 unskips this after ordinary arithmetic/comparison
-  // binary expressions build as native App(binop, ...) nodes.
-  it("builds arithmetic and comparison without IRWrap", () => {
+describe("ir-build native construction", () => {
+  // Ordinary arithmetic/comparison binary expressions build as native
+  // App(binop, ...) nodes.
+  it("builds arithmetic and comparison natively", () => {
     const arithmetic = expectIR(`
       function f(a: number, b: number): number {
         return (a + b) * 2;
@@ -131,13 +126,12 @@ describe("ir-build M6 native construction stubs", () => {
         return a <= b;
       }
     `);
-    expectNoIRWrap(arithmetic);
-    expectNoIRWrap(comparison);
+    assert.equal(arithmetic.kind, "app");
+    assert.equal(comparison.kind, "app");
   });
 
-  // M6 Patch 2 unskips this after general pure calls build as native
-  // App nodes instead of delegating through `translateBodyExpr`.
-  it("builds general calls without IRWrap", () => {
+  // General pure calls build as native App nodes.
+  it("builds general calls natively", () => {
     const ir = expectIR(`
       function score(a: number, b: number): number {
         return a + b;
@@ -147,30 +141,25 @@ describe("ir-build M6 native construction stubs", () => {
       }
     `);
     assert.equal(ir.kind, "app");
-    expectNoIRWrap(ir);
   });
 
-  // M6 Patch 2 unskips this after optional/nullish lowering avoids
-  // L1 `from-l2` and native IR carries the complete conditional shape.
-  it("builds optional chains and nullish coalescing without IRWrap", () => {
-    const optional = expectIR(`
+  // Optional/nullish lowering produces native conditional shape.
+  it("builds optional chains and nullish coalescing natively", () => {
+    expectIR(`
       interface Owner { readonly id: number; }
       interface Account { readonly owner?: Owner; }
       function f(a: Account): number[] {
         return a.owner?.id;
       }
     `);
-    const nullish = expectIR(`
+    expectIR(`
       function f(x: number | null | undefined): number {
         return x ?? 0;
       }
     `);
-    expectNoIRWrap(optional);
-    expectNoIRWrap(nullish);
   });
 
-  // M6 Patch 2 unskips this after chain fusion constructs real Each
-  // and Comb nodes rather than preserving legacy opaque comprehensions.
+  // Chain fusion constructs real Each and Comb nodes.
   it("builds filter/map/reduce chains as native Each/Comb", () => {
     const each = expectIR(`
       interface User { readonly active: boolean; readonly name: string; }
@@ -186,8 +175,6 @@ describe("ir-build M6 native construction stubs", () => {
     `);
     assert.equal(containsKind(each, "each"), true);
     assert.equal(containsKind(comb, "comb"), true);
-    expectNoIRWrap(each);
-    expectNoIRWrap(comb);
   });
 
   it("builds array-chain receivers natively before member/cardinality fallback", () => {
@@ -203,8 +190,6 @@ describe("ir-build M6 native construction stubs", () => {
     `);
     assert.equal(containsKind(length, "each"), true);
     assert.equal(containsKind(indexedLength, "each"), true);
-    expectNoIRWrap(length);
-    expectNoIRWrap(indexedLength);
   });
 
   it("recognizes string-literal array method calls", () => {
@@ -221,7 +206,6 @@ describe("ir-build M6 native construction stubs", () => {
       }
     `);
     assert.deepEqual(indexed, dotted);
-    expectNoIRWrap(indexed);
   });
 
   it("recognizes tuple and union array-method receivers", () => {
@@ -237,8 +221,6 @@ describe("ir-build M6 native construction stubs", () => {
     `);
     assert.equal(containsKind(tuple, "each"), true);
     assert.equal(containsKind(union, "each"), true);
-    expectNoIRWrap(tuple);
-    expectNoIRWrap(union);
   });
 
   it("does not recurse on syntactic array method names for non-array receivers", () => {
@@ -396,7 +378,6 @@ describe("ir-build M6 native construction stubs", () => {
         assert.notEqual(ir.proj.otherwise, undefined);
       }
     }
-    expectNoIRWrap(ir);
   });
 
   it("normalizes dotted and string-literal method calls identically", () => {
@@ -428,16 +409,15 @@ describe("ir-build M6 native construction stubs", () => {
     }
   });
 
-  // M6 Patch 2 unskips the string-literal optional-element case; the
-  // computed-key case should remain unsupported through M6.
+  // String-literal optional element access lowers the same way as
+  // dotted optional access; computed element access remains unsupported.
   it("records optional element access boundary", () => {
-    const literalKey = expectIR(`
+    expectIR(`
       interface User { readonly name: string; }
       function f(u: User | null): string[] {
         return u?.["name"];
       }
     `);
-    expectNoIRWrap(literalKey);
 
     const computedKey = buildFromSource(`
       interface User { readonly name: string; }
@@ -451,8 +431,8 @@ describe("ir-build M6 native construction stubs", () => {
     }
   });
 
-  // M6 Patch 2 keeps computed element access outside the cleanup
-  // boundary unless the key is syntactically a string literal.
+  // Computed element access stays unsupported unless the key is a
+  // string literal or no-substitution template literal.
   it("keeps computed element access unsupported", () => {
     const result = buildFromSource(`
       interface User { readonly name: string; }

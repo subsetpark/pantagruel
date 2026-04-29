@@ -15,10 +15,11 @@
  * references counter, step is `+1`, discrete numeric strategy) lives
  * entirely in `ir1-lower.ts`'s `recognizeAndLowerMuSearch`.
  *
- * Sub-expressions inside conditionals (the guard, the value, the switch
- * discriminant) are translated through the legacy `translateBodyExpr`
- * pipeline and wrapped via the L1 `from-l2` adapter — see `ir1.ts`
- * for the lifetime contract on that adapter.
+ * Sub-expressions inside conditionals (the guard, the value, the
+ * switch discriminant) are translated as native L1 via
+ * `tryBuildL1PureSubExpression` (or rejected with a specific
+ * `unsupported` reason) — there is no escape hatch into the legacy
+ * `translateBodyExpr` pipeline post-M6.
  *
  * **Conservative-refusal policy 3(b)**: when the build pass cannot prove
  * an equivalence (switch with possible fall-through, `==`/`===`-mixing
@@ -33,7 +34,7 @@
  */
 
 import ts from "typescript";
-import { type IRExpr, irWrap } from "./ir.js";
+import type { IRExpr } from "./ir.js";
 import { lowerExpr } from "./ir-emit.js";
 import {
   type IR1Binop,
@@ -44,7 +45,7 @@ import {
   ir1Binop,
   ir1Block,
   ir1Cond,
-  ir1FromL2,
+  ir1Each,
   ir1IsNullish,
   ir1Let,
   ir1LitBool,
@@ -64,7 +65,6 @@ import {
   unwrapTransparentExpression,
 } from "./nullish-recognizer.js";
 import type { OpaqueExpr } from "./pant-ast.js";
-import { getAst } from "./pant-wasm.js";
 import { isStaticallyBoolTyped } from "./purity.js";
 import type {
   MuSearch,
@@ -72,15 +72,14 @@ import type {
   UniqueSupply,
 } from "./translate-body.js";
 import {
-  bodyExpr,
   expressionHasSideEffects,
   expressionReferencesNames,
   extractReturnFromBranch,
-  isBodyUnsupported,
+  freshHygienicBinder,
   isNullableTsType,
   qualifyFieldAccess,
+  registerOpaqueAlias,
   symbolicKey,
-  translateBodyExpr,
 } from "./translate-body.js";
 import {
   cellRegisterMap,
@@ -797,10 +796,9 @@ export function tryBuildL1Cardinality(
   }
   // Receiver translation. Member-surface receivers (`a.items.length`,
   // `a["items"].length`) route through `buildL1MemberAccess` so the
-  // entire chain stays on the L1 path — no half-migration where the
-  // outer `card` is L1 but the inner `.items` / `["items"]` round-trips
-  // through L2 via `from-l2`. Both PropertyAccess and string-literal
-  // ElementAccess belong to the property-access equivalence class
+  // entire chain stays on the L1 path. Both PropertyAccess and
+  // string-literal ElementAccess belong to the property-access
+  // equivalence class
   // (M5 hard rule), so the recursion gate is the shared
   // `isMemberSurfaceForm` predicate. Other receiver shapes
   // (Identifier, call, binop, etc.) translate through the supplied
@@ -974,14 +972,15 @@ function tryBuildNativeReceiverLeafIR(
  * Receiver translation:
  *   - State-free contexts (pure path, unit tests) recurse on
  *     property-access receivers (either surface form), producing
- *     nested L1 `Member` trees. The recursion bottoms out at a
- *     non-property receiver translated through the legacy pipeline
- *     and wrapped as `from-l2`.
- *   - State-bearing contexts (mutating-body path) translate the
- *     receiver via the legacy pipeline so symbolic-state lookup at
- *     each nested level fires identically to the pre-M5 path. This
- *     preserves byte-equality with the legacy snapshots while still
- *     routing the outer access through L1 `Member`.
+ *     nested L1 `Member` trees. Non-property receivers route through
+ *     `tryBuildL1PureSubExpression`; if the recursion bottoms out at
+ *     a shape that has no native L1 representation, the build rejects
+ *     with a specific `unsupported` reason.
+ *   - State-bearing contexts (mutating-body path) build the receiver
+ *     as native L1 via `tryBuildL1PureSubExpression`. The outer-level
+ *     symbolic-state lookup surfaces a recorded write through the
+ *     `supply.opaqueAliases` side channel — see the call site in
+ *     `buildL1MemberAccess` for the alias mechanism.
  */
 export function buildL1MemberAccess(
   node: ts.PropertyAccessExpression | ts.ElementAccessExpression,
@@ -1082,17 +1081,24 @@ export function buildL1MemberAccess(
   }
 
   // Symbolic-state lookup at the outer Member level: when a prior
-  // write to (qualified, canonicalized receiver) exists, return the
-  // recorded value rather than re-emitting the rule application.
-  // Unconditionally embedding the recorded `OpaqueExpr` back into the
-  // L1 IR is the one place a Layer 1 → OpaqueExpr leaf is genuinely
-  // needed in mutating-body sub-expression composition.
+  // write to (qualified, canonicalized receiver) exists, surface the
+  // recorded value rather than re-emitting the rule application. The
+  // recorded value is already an `OpaqueExpr` (produced earlier in the
+  // body's symbolic execution), so we register it under a fresh
+  // hygienic name in `supply.opaqueAliases` and return an L1 `Var`
+  // referencing that name. The alias is substituted back into the
+  // OpaqueExpr at lower time via `applyOpaqueAliases` (wired into
+  // `applyConst` in `symbolicExecute`). This keeps L1 free of
+  // escape-hatch forms while preserving the read-after-write
+  // semantics required for mutating-body sub-expression composition.
   if (ctx.state !== undefined) {
     const objOpaque = lowerExpr(lowerL1Expr(receiverL1));
     const key = symbolicKey(qualified, ctx.state.canonicalize(objOpaque));
     const entry = ctx.state.writes.get(key);
     if (entry !== undefined && entry.kind === "property") {
-      return ir1FromL2(irWrap(entry.value));
+      const aliasName = freshHygienicBinder(ctx.supply);
+      registerOpaqueAlias(ctx.supply, aliasName, entry.value);
+      return ir1Var(aliasName);
     }
   }
 
@@ -1426,9 +1432,9 @@ function allocateLiftBinder(ctx: L1BuildContext, hint: string): string {
 //    `Var` and `Member` shapes. The pure-L1 builder
 //    `buildL1MemberOrVarForLift` produces only those shapes, so
 //    operand and projection trees are exhaustively comparable along
-//    the Member-operand path. For `from-l2` and other compound forms
-//    the walker descends but the structural-match leaves never fire
-//    for a Member needle, falling out via `changed: false`.
+//    the Member-operand path. For other compound forms the walker
+//    descends but the structural-match leaves never fire for a
+//    Member needle, falling out via `changed: false`.
 //
 // Future changes to this rewrite should re-verify these four
 // invariants. Adding new comparable forms (e.g., to support `App` as
@@ -1487,10 +1493,8 @@ interface L1SubstResult {
 /**
  * Replace every subtree of `root` whose L1 form structurally equals
  * `needle` with `replacement`. The walker recurses through every L1
- * form but does not enter `from-l2` wraps — those expose only an
- * opaque L2 tree to L1 callers, which the L1 walker has no handle on.
- * Returns the rewritten tree plus a `changed` flag indicating whether
- * substitution actually fired anywhere along the walk.
+ * form. Returns the rewritten tree plus a `changed` flag indicating
+ * whether substitution actually fired anywhere along the walk.
  *
  * This is the term-rewriting primitive that backs the functor-lift's
  * `body[e := $n]` substitution — see the comment block above
@@ -1500,11 +1504,9 @@ interface L1SubstResult {
  * Used by the functor-lift recognizer: the operand's L1 form (a `Var`
  * or `Member` chain) is replaced by a fresh `Var(binder)` inside the
  * projection's L1 form, so the comprehension body references the
- * binder rather than the operand. For `Var` operands, post-lowering
- * `ast.substituteBinder` catches references buried inside `from-l2`
- * wraps; for `Member` operands, the projection must be in pure L1 for
- * substitution to fire (no equivalent OpaqueExpr-level substitution
- * exists for arbitrary subtrees).
+ * binder rather than the operand. The projection must be in pure L1
+ * for substitution to fire (no equivalent OpaqueExpr-level
+ * substitution exists for arbitrary subtrees).
  */
 function substituteL1Subtree(
   root: IR1Expr,
@@ -1517,7 +1519,6 @@ function substituteL1Subtree(
   switch (root.kind) {
     case "var":
     case "lit":
-    case "from-l2":
       return { result: root, changed: false };
     case "binop": {
       const lhs = substituteL1Subtree(root.lhs, needle, replacement);
@@ -1593,6 +1594,36 @@ function substituteL1Subtree(
         ? { result: ir1IsNullish(operand.result), changed: true }
         : { result: root, changed: false };
     }
+    case "each": {
+      // Don't recurse into the comprehension binder's scope when the
+      // binder shadows a Var-needle: substitution stops at the binding
+      // boundary. Member-needles aren't shadowed by a binder name, so
+      // `each` always recurses on `proj` for those.
+      const src = substituteL1Subtree(root.src, needle, replacement);
+      const shadowed =
+        needle.kind === "var" && !needle.primed && needle.name === root.binder;
+      const guards = shadowed
+        ? root.guards.map((g) => ({ result: g, changed: false }))
+        : root.guards.map((g) => substituteL1Subtree(g, needle, replacement));
+      const proj = shadowed
+        ? { result: root.proj, changed: false }
+        : substituteL1Subtree(root.proj, needle, replacement);
+      const changed =
+        src.changed || guards.some((g) => g.changed) || proj.changed;
+      if (!changed) {
+        return { result: root, changed: false };
+      }
+      return {
+        result: {
+          kind: "each",
+          binder: root.binder,
+          src: src.result,
+          guards: guards.map((g) => g.result),
+          proj: proj.result,
+        },
+        changed: true,
+      };
+    }
     default: {
       const _exhaustive: never = root;
       void _exhaustive;
@@ -1610,12 +1641,11 @@ function substituteL1Subtree(
  * binops, optional chains, computed element access, ambiguous owner,
  * etc.).
  *
- * Distinct from `buildL1MemberAccess`: the production helper falls
- * back to `translateBodyExpr` for non-member receivers, producing
- * `from-l2` wraps that the L1 walker can't see into. The lift's
- * substitution requires the operand's structure to be visible at the
- * L1 level, so this builder either produces a fully-native chain or
- * rejects.
+ * Distinct from `buildL1MemberAccess`: this builder restricts the
+ * receiver-recursion target to the Var/Member subset accepted by the
+ * lift's structural matcher. The lift's substitution requires the
+ * operand's structure to be visible at the L1 level, so this builder
+ * either produces a fully-native chain or rejects.
  *
  * Identifier names are looked up against `paramNames` to match the
  * Pant name that `translateExpr` emits — for parameters,
@@ -1702,9 +1732,9 @@ function buildL1MemberOrVarForLift(
 }
 
 /**
- * Functor-lift recognizer. Returns an L1 `from-l2(each n in x | proj
- * n)` when the four eligibility checks pass; returns `null` to fall
- * through to the standard L1 Cond build.
+ * Functor-lift recognizer. Returns a native L1 `each n in x | proj n`
+ * comprehension when the four eligibility checks pass; returns `null`
+ * to fall through to the standard L1 Cond build.
  *
  * Eligibility:
  *   (a) Guard is a leaf nullish form (`x == null`, `x === null`,
@@ -1731,17 +1761,14 @@ function buildL1MemberOrVarForLift(
  * names still consults the unstripped (cast-bearing) receiver, so a
  * user's `as T` continues to drive qualifier picks.
  *
- * Substitution strategy. For `Var` operands the projection translates
- * through the legacy pipeline (`buildSubExpr`, producing a `from-l2`
- * wrap) and post-lowering `ast.substituteBinder` substitutes the
- * operand's Pant name with the fresh comprehension binder — exactly
- * the M4 P5 flow, preserved unchanged. For `Member` operands the
- * projection must be a pure-L1 chain (built via
- * `buildL1MemberOrVarForLift`); the L1 rewriter
- * `substituteL1Subtree` then replaces operand-shape subtrees with the
- * binder. `ast.substituteBinder` substitutes only by name and cannot
- * target arbitrary subtrees, so a Member-operand projection that
- * isn't pure L1 (e.g., a method call wrapping the operand) falls
+ * Substitution strategy. Both Var and Member operands route the
+ * projection through `buildSubExpr` (Var) or
+ * `buildL1MemberOrVarForLift` (Member); the result is fully native
+ * L1 since M6 deleted the L2-embedding adapter. The L1 rewriter
+ * `substituteL1Subtree` then replaces operand-shape subtrees with
+ * the comprehension binder via structural matching. A Member-operand
+ * projection that isn't pure L1 (e.g., a method call wrapping the
+ * operand) falls
  * through.
  */
 export function tryRecognizeFunctorLift(
@@ -1850,16 +1877,12 @@ export function tryRecognizeFunctorLift(
     return restore();
   }
 
-  // Build the projection. Path differs by operand kind:
-  //   - Var: standard `buildSubExpr`. The projection comes back as
-  //     `from-l2(opaque)`; post-lower `ast.substituteBinder`
-  //     substitutes Var-name references at the OpaqueExpr level. This
-  //     is the M4 P5 flow.
-  //   - Member: pure-L1 chain via `buildL1MemberOrVarForLift`. The L1
-  //     rewriter then walks the projection and replaces operand-shape
-  //     subtrees with the comprehension binder. A non-pure-L1
-  //     projection (e.g., a method call wrapping the operand)
-  //     rejects.
+  // Build the projection as native L1. Both Var and Member operands
+  // route through pure-L1 builders so the projection is structurally
+  // visible at the L1 level. The L1 rewriter (`substituteL1Subtree`)
+  // then replaces operand-shape subtrees with the comprehension
+  // binder. A projection shape that the pure-L1 builder cannot
+  // represent (e.g., a call expression wrapping the operand) rejects.
   let projectionL1: IR1Expr;
   if (operandL1.kind === "var") {
     const sub = buildSubExpr(projection, ctx);
@@ -1877,50 +1900,33 @@ export function tryRecognizeFunctorLift(
 
   const binderName = allocateLiftBinder(ctx, "n");
   const binderVar = ir1Var(binderName);
+  // The substitution needle: for a Var operand, the operand's L1 form
+  // is `Var(operandPantName)`. The structural matcher in
+  // `substituteL1Subtree` matches `Var` by name, so it catches
+  // operand references throughout the projection.
+  const needle: IR1Expr = operandL1;
 
   // L1 rewriter: replace operand-shape subtrees with `Var(binder)`.
   const { result: substitutedL1, changed: substitutionFired } =
-    substituteL1Subtree(projectionL1, operandL1, binderVar);
+    substituteL1Subtree(projectionL1, needle, binderVar);
 
-  // For Member operand: the L1 rewriter is the only substitution
-  // mechanism — `ast.substituteBinder` substitutes by name and cannot
-  // target a Member subtree. If the rewriter didn't fire (the
-  // operand isn't structurally present in the projection's L1
-  // form, e.g., projection `v.next.name` against operand `u.next`),
-  // reject. Without the explicit `changed` flag the walker's
-  // unconditional parent reconstruction (`ir1Member(rec, name)` and
-  // siblings) breaks reference equality even when no substitution
-  // fired, letting projections that don't reference the operand emit
-  // a comprehension body with a free variable.
-  if (operandL1.kind === "member" && !substitutionFired) {
+  // The L1 rewriter is the only substitution mechanism post-M6:
+  // `ast.substituteBinder` lives at the OpaqueExpr layer and cannot
+  // target Member subtrees; carrying it for Var operands would split
+  // the substitution discipline by operand kind. The explicit
+  // `changed` flag is required because the walker's unconditional
+  // parent reconstruction (`ir1Member(rec, name)` and siblings)
+  // breaks reference equality even when no substitution fired,
+  // letting projections that don't reference the operand silently
+  // emit a comprehension body with a free variable.
+  if (!substitutionFired) {
     return restore();
   }
+  // operandText is captured for parity with the legacy diagnostic
+  // surface; it's no longer the substitution mechanism.
+  void operandText;
 
-  // Lower.
-  const ast = getAst();
-  let projectionOpaque = lowerExpr(lowerL1Expr(substitutedL1));
-  const operandOpaque = lowerExpr(lowerL1Expr(operandL1));
-
-  // For Var operand: post-lower name substitution catches references
-  // buried inside `from-l2` wraps (which the L1 rewriter cannot enter).
-  // Mirror `translateExpr`'s identifier handling
-  // (`translate-signature.ts:1122` — `paramNames.get(text) ?? text`):
-  // params get sanitized; bare locals / captures emit as raw text.
-  if (operandL1.kind === "var" && operandText !== null) {
-    const operandPantName = ctx.paramNames.get(operandText) ?? operandText;
-    projectionOpaque = ast.substituteBinder(
-      projectionOpaque,
-      operandPantName,
-      ast.var(binderName),
-    );
-  }
-
-  const opaqueEach = ast.each(
-    [],
-    [ast.gIn(binderName, operandOpaque)],
-    projectionOpaque,
-  );
-  return ir1FromL2(irWrap(opaqueEach));
+  return ir1Each(binderName, operandL1, [], substitutedL1);
 }
 
 // ---------------------------------------------------------------------------
@@ -1962,12 +1968,10 @@ export function buildL1Conditional(
 /**
  * Compose an L1 cond from pre-built L1 arm pairs and a TS terminal.
  *
- * Caller responsibility: pre-built arms are typically wrapped via
- * `ir1FromL2(irWrap(opaqueExpr))` from `inlineConstBindings`'s
- * already-translated `arms: [OpaqueExpr, OpaqueExpr][]` list. Terminal
- * is translated by this function — either as an L1 conditional shape
- * (if it matches one) or as a plain expression delegated through the
- * `from-l2` adapter.
+ * Caller responsibility: pre-built arms are pure L1 expressions.
+ * Terminal is translated by this function — either as an L1
+ * conditional shape (if it matches one) or as a plain expression via
+ * `buildSubExpr`.
  *
  * The flattening rule: if the terminal is itself a conditional that
  * lowers to an L1 cond, its arms get appended to the prelude arms and
@@ -2282,9 +2286,8 @@ function buildFromSwitchStatement(
 /**
  * Switch case labels must be literal — number, string, or boolean.
  * Non-literal labels (computed expressions) reject. Literal nat are
- * built directly to avoid re-translating through the legacy pipeline,
- * which is mechanical for literals but adds a `from-l2` wrap that
- * doesn't simplify under structural equality.
+ * built directly via `tryBuildL1IntegerLiteral` so structural equality
+ * sees the canonical L1 shape.
  */
 function buildCaseLabel(
   label: ts.Expression,
@@ -2593,8 +2596,7 @@ export function buildL1IncrementStep(
  * Critical for canonical-form matching: when the increment step is
  * `i += 1` or `i = i + 1`, the `1` must lower to a native L1
  * `LitNat(1)` so `isCanonicalMuSearchForm` can pattern-match
- * `BinOp(add, Var(c), Lit(1))`. A `from-l2`-wrapped literal would
- * defeat the canonical-shape check.
+ * `BinOp(add, Var(c), Lit(1))`.
  */
 function tryBuildL1IntegerLiteral(expr: ts.Expression): IR1Expr | null {
   if (
@@ -2657,8 +2659,7 @@ function isCommutativeBinop(op: IR1Binop): boolean {
 // Build the canonical L1 representation of a let+while+increment μ-search
 // prelude pair: `Block([Let(c, init), While(p, <step-Assign>)])`. The step
 // is built via `buildL1IncrementStep`. Sub-expressions (init, predicate)
-// flow through the legacy `translateBodyExpr` pipeline and wrap as
-// `from-l2` — same scoped delegation pattern M1 conditionals use.
+// flow through the L1 sub-expression builder, same as M1 conditionals.
 //
 // The TS-AST recognizer (`recognizeMuSearch` in `translate-body.ts`)
 // has already validated structural acceptance (let-decl + while-stmt +
@@ -2683,9 +2684,8 @@ export function buildL1LetWhile(
   // Structural sanity: a let+while pair where the while predicate
   // doesn't reference the let-bound counter is either a no-op or
   // a divergent loop. Reject at build time on the TS expression
-  // (free-var walk is straightforward there); post-translation the
-  // predicate is wrapped in `from-l2(irWrap(OpaqueExpr))` and the
-  // equivalent check would need a wasm helper to introspect OpaqueExpr.
+  // (free-var walk is straightforward there); the equivalent check
+  // post-lower would require a wasm helper to introspect OpaqueExpr.
   if (
     !expressionReferencesNames(mu.predicateTsExpr, new Set([mu.counterName]))
   ) {

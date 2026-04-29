@@ -15,9 +15,11 @@
  *   `IR1FoldLeaf` entries on the foreach. A build-time subState lets
  *   Shape B `rhs`/`guard` translations observe in-iter Shape A writes.
  *
- * Sub-expressions (conditions, receivers, values) translate via the
- * existing `translateBodyExpr` and wrap as `ir1FromL2`. The lower pass
- * unwraps via `lowerL1Expr` (passes the OpaqueExpr through verbatim).
+ * Sub-expressions (conditions, receivers, values) translate as
+ * native L1 via `buildL1SubExpr`, which dispatches to
+ * `buildL1MemberAccess` for property-access shapes and
+ * `tryBuildL1PureSubExpression` for the rest, rejecting unsupported
+ * shapes with a specific reason.
  *
  * Property names are qualified at build time via `qualifyFieldAccess`
  * so the L1 form carries the Pantagruel rule symbol, not the raw TS
@@ -674,9 +676,8 @@ function classifyForeachStmt(
  * Translate a sub-expression into an L1 expression. Property-access
  * forms (`PropertyAccessExpression`, `ElementAccessExpression`) build
  * to canonical L1 `Member` via `buildL1MemberAccess`; other shapes
- * fall through to legacy `translateBodyExpr` + `from-l2` wrap (with
- * `applyConst` applied to the OpaqueExpr at build time, mirroring the
- * pre-M5 wrap behavior).
+ * route through `tryBuildL1PureSubExpression`. Unsupported shapes
+ * return an explicit `{ unsupported }` result.
  *
  * Transparent wrappers (`(...)`, `as T`, `<T>x`, `!`, `satisfies T`)
  * are stripped from the *outer* sub-expression node so that
@@ -688,13 +689,6 @@ function classifyForeachStmt(
  * `(a as Account).balance` — `qualifyFieldAccess` sees the asserted
  * type), and those are preserved because they live inside the inner
  * `PropertyAccessExpression`'s `expression` field, untouched here.
- *
- * M5 Patch 5: shrinks the documented `from-l2` wrap sites for
- * property-access sub-expressions in mutating-body recognizers
- * (assign-target receivers, fold-leaf targets / rhs / guards).
- * Non-property-access sub-expressions (binop chains, generic calls,
- * etc.) still wrap via `from-l2`; full elimination of the adapter is
- * M6 territory.
  */
 function buildL1SubExpr(
   node: ts.Expression,
@@ -708,11 +702,10 @@ function buildL1SubExpr(
     // `nativeReceiverLeaf: true` keeps the cardinality probe and
     // Member build inside the "native L1 or explicit unsupported"
     // boundary on the mutating-body path — without it the cardinality
-    // receiver would fall through to `translateBodyExpr` and re-wrap
-    // via `ir1FromL2`, defeating the M6 from-l2 elimination work.
-    // Member already gates non-pure receivers via its
-    // `ctx.state !== undefined` branch, but passing the option here
-    // keeps both probes consistent.
+    // receiver would fall through to a legacy embedding, defeating
+    // M6's escape-hatch elimination. Member already gates non-pure
+    // receivers via its `ctx.state !== undefined` branch, but passing
+    // the option here keeps both probes consistent.
     const l1Options = { nativeReceiverLeaf: true } as const;
     const ctxOptions = {
       checker: ctx.checker,
@@ -1163,10 +1156,8 @@ export function buildL1AssignStmt(
   // iterator writes* — the assign target must be rooted at one of
   // the iterator binders. `for (const x of xs) { if (g) acc.total =
   // x.value; }` is not Shape A even if it slips past the kind-only
-  // check in `ensureForeachBodyShape`; the receiver in the IR is
-  // wrapped in `from-l2` and opaque to runtime introspection, so we
-  // catch it here at the TS-AST level where the root identifier is
-  // still visible.
+  // check in `ensureForeachBodyShape`; we catch it here at the TS-AST
+  // level where the root identifier is still visible.
   if (ctx.iterRefs) {
     const rootName = getRootIdentifier(expr.left.expression);
     if (rootName === null || !ctx.iterRefs.has(rootName)) {

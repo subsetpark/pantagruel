@@ -23,8 +23,6 @@
  *   check both shapes.
  */
 
-import type { OpaqueExpr } from "./pant-ast.js";
-
 // --------------------------------------------------------------------------
 // Literals
 // --------------------------------------------------------------------------
@@ -205,18 +203,13 @@ export type IRExpr =
       binderType: string;
       guard?: IRExpr;
       body: IRExpr;
-    }
-  /**
-   * **Migration-only escape hatch.** Carries an already-translated
-   * `OpaqueExpr` so old-pipeline outputs are valid IR by construction.
-   * Removed at the Stage 8 pure-path cutover.
-   */
-  | { kind: "ir-wrap"; expr: OpaqueExpr };
+    };
 
 /**
  * `IRExpr` constrained to be a comprehension. Used as the
- * operand of `Comb` so we statically forbid `Comb(_, _, IRWrap(...))`
- * etc. — only an actual `each` form makes sense as a combiner argument.
+ * operand of `Comb` so we statically forbid `Comb(_, _, …)` arguments
+ * other than `each` — only an actual `each` form makes sense as a
+ * combiner argument.
  */
 export type IRExprEach = Extract<IRExpr, { kind: "each" }>;
 
@@ -382,14 +375,6 @@ export const irExists = (
   guard !== undefined
     ? { kind: "exists", binder, binderType, guard, body }
     : { kind: "exists", binder, binderType, body };
-
-export const irWrap = (expr: OpaqueExpr): IRExpr => ({ kind: "ir-wrap", expr });
-
-// Type guards (small, useful for migration code)
-
-export const isIRWrap = (
-  e: IRExpr,
-): e is Extract<IRExpr, { kind: "ir-wrap" }> => e.kind === "ir-wrap";
 
 /**
  * Narrow a `Comb(...)` to its foldable variant. TypeScript does not

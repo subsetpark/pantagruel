@@ -18,8 +18,7 @@
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
 import ts from "typescript";
-import { irWrap } from "../src/ir.js";
-import { type IR1Expr, ir1FromL2 } from "../src/ir1.js";
+import { type IR1Expr, ir1Var } from "../src/ir1.js";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
 import {
   isL1Unsupported,
@@ -30,7 +29,7 @@ import {
   type NullishTranslate,
   recognizeNullishForm,
 } from "../src/nullish-recognizer.js";
-import { getAst, loadAst } from "../src/pant-wasm.js";
+import { loadAst } from "../src/pant-wasm.js";
 import type { UniqueSupply } from "../src/translate-body.js";
 import { IntStrategy, newSynthCell } from "../src/translate-types.js";
 
@@ -94,14 +93,12 @@ function parseBinExpr(
 }
 
 /**
- * Synthetic translator: turns each TS expression into a `from-l2` that
- * wraps an opaque `var` named after the expression's source text. This
- * makes the structural assertions readable without a real binding
- * environment.
+ * Synthetic translator: turns each TS expression into an L1 `Var`
+ * whose name is the expression's source text. This makes the
+ * structural assertions readable without a real binding environment.
  */
 function makeTranslate(): NullishTranslate {
-  const ast = getAst();
-  return (e) => ir1FromL2(irWrap(ast.var(e.getText())));
+  return (e) => ir1Var(e.getText());
 }
 
 function parseNarrowedNullishReturn(source: string): {
@@ -174,18 +171,14 @@ function expectNotIsNullish(l1: IR1Expr): IR1Expr {
 
 /**
  * Verify that `operand` is the result of translating a TS expression
- * with text `expectedText`. The synthetic translator builds
- * `ir1FromL2(irWrap(ast.var(e.getText())))`, so the operand should be
- * a `from-l2` wrapping a `var`-headed OpaqueExpr of that text.
+ * with text `expectedText`. The synthetic translator returns
+ * `ir1Var(e.getText())`, so the operand should be a `var` whose name
+ * is that text.
  */
 function expectOperandText(operand: IR1Expr, expectedText: string): void {
-  assert.equal(operand.kind, "from-l2");
-  if (operand.kind === "from-l2") {
-    assert.equal(operand.expr.kind, "ir-wrap");
-    if (operand.expr.kind === "ir-wrap") {
-      const ast = getAst();
-      assert.equal(ast.strExpr(operand.expr.expr), expectedText);
-    }
+  assert.equal(operand.kind, "var");
+  if (operand.kind === "var") {
+    assert.equal(operand.name, expectedText);
   }
 }
 

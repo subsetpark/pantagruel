@@ -30,13 +30,13 @@ import {
   irBinop,
   irCombTyped,
   irCond,
+  irEach,
   irLitNat,
   irUnop,
   irVar,
 } from "./ir.js";
 import { substituteIR } from "./ir-build.js";
 import type { IR1Expr, IR1Stmt } from "./ir1.js";
-import { getAst } from "./pant-wasm.js";
 import type { NumericStrategy } from "./translate-types.js";
 
 /**
@@ -94,8 +94,16 @@ export function lowerL1Expr(e: IR1Expr): IRExpr {
       // "is nullish" is "list is empty", i.e. `#operand = 0`.
       return irBinop("eq", irUnop("card", lowerL1Expr(e.operand)), irLitNat(0));
 
-    case "from-l2":
-      return e.expr;
+    case "each": {
+      // Structural mirror to L2 `each`. Used by the functor-lift
+      // recognizer; mechanical lowering recurses on src/guards/proj.
+      return irEach(
+        e.binder,
+        lowerL1Expr(e.src),
+        e.guards.map(lowerL1Expr),
+        lowerL1Expr(e.proj),
+      );
+    }
 
     default: {
       const _exhaustive: never = e;
@@ -216,8 +224,8 @@ export interface MuSearchLowerCtx {
  * canonical shape, predicate-references-counter, and strategy.
  *
  * Caller responsibility: build the L1 form via `buildL1LetWhile`
- * (which translates init and predicate sub-expressions through the
- * legacy `translateBodyExpr` pipeline and wraps via `from-l2`).
+ * (which translates init and predicate sub-expressions as native L1
+ * via `buildSubExpr`).
  *
  * Returns `IRExpr` (an L2 `comb-typed`) on success, or
  * `{ unsupported }` with a specific reason.

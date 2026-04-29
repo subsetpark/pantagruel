@@ -21,7 +21,6 @@ import {
   ir1ExprStmt,
   ir1For,
   ir1Foreach,
-  ir1FromL2,
   ir1IsNullish,
   ir1Let,
   ir1LitBool,
@@ -230,39 +229,6 @@ describe("lowerL1Expr — is-nullish (M4 canonical nullish test)", () => {
     const l1Lowered = lowerExpr(lowerL1Expr(ir1IsNullish(ir1Var("x"))));
 
     assert.equal(ast.strExpr(l1Lowered), ast.strExpr(manual));
-  });
-});
-
-describe("lowerL1Expr — from-l2 transitional adapter", () => {
-  it("from-l2 unwraps to the held L2 expression", () => {
-    const l2Inner = irBinop("add", irVar("a", false), irLitNat(1));
-    const l1 = ir1FromL2(l2Inner);
-    const lowered = lowerL1Expr(l1);
-    assert.equal(lowered, l2Inner); // identity, not just deep equal
-  });
-
-  it("from-l2 inside a cond arm composes correctly", () => {
-    // cond [(g, from-l2(a + 1))] otherwise=0  →
-    //   cond [(g, a+1)] otherwise=0
-    const l1 = ir1Cond(
-      [
-        [
-          ir1Var("g"),
-          ir1FromL2(irBinop("add", irVar("a", false), irLitNat(1))),
-        ],
-      ],
-      ir1LitNat(0),
-    );
-    const l2 = lowerL1Expr(l1);
-    assert.deepEqual(
-      l2,
-      irCond([
-        [
-          irVar("g", false),
-          irBinop("add", irVar("a", false), irLitNat(1)),
-        ],
-      ], irLitNat(0)),
-    );
   });
 });
 

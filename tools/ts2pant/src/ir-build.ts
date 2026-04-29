@@ -1,15 +1,10 @@
 /**
- * TS-AST → IR construction.
+ * TS-AST → IR construction (pure path, value-position).
  *
- * Stages migrated to native IR construction (latest first):
- * - Stage 2: Optional chaining `x?.f` → `Each(t, x, [], App(qualified-rule, [t]))`.
- * - Stage 1: `Var` (Identifier), `Lit` (numeric / string / boolean
- *   literal). Trivial cases of `App` (free function call with all args
- *   themselves IR-buildable). Everything else falls back to legacy
- *   `translateBodyExpr` and wraps in `IRWrap`.
- *
- * Subsequent stages (3+) migrate one recognizer at a time. By Stage 8
- * (pure-path cutover) the `IRWrap` escape hatch is deleted entirely.
+ * Native IR construction is exhaustive: surface forms that don't
+ * match any recognizer below return an `unsupported` result so
+ * future milestones can target a concrete failure rather than a
+ * hidden OpaqueExpr embedding.
  *
  * See `ir.ts` and CLAUDE.md §IR for the form table.
  */
@@ -28,9 +23,7 @@ import {
   irLitNat,
   irLitString,
   irVar,
-  irWrap,
 } from "./ir.js";
-import { ir1FromL2 } from "./ir1.js";
 import {
   buildL1MemberAccess,
   computedElementAccessUnsupportedReason,
@@ -51,13 +44,10 @@ import { isStaticallyBoolTyped } from "./purity.js";
 import {
   allocComprehensionBinder,
   ambiguousFieldMsg,
-  bodyExpr,
   expressionReferencesNames,
   freshHygienicBinder,
-  isBodyUnsupported,
   isNullableTsType,
   qualifyFieldAccess,
-  translateBodyExpr,
   type UniqueSupply,
 } from "./translate-body.js";
 import {
@@ -186,7 +176,6 @@ export function substituteIR(
     case "var":
       return expr.name === name && !expr.primed ? replacement : expr;
     case "lit":
-    case "ir-wrap":
       return expr;
     case "app":
       return {
@@ -648,9 +637,6 @@ function buildArrayMapFilter(
   if (isBuildUnsupported(rawBody)) {
     return rawBody;
   }
-  if (isComposing && rawBody.kind === "ir-wrap") {
-    return null;
-  }
   const body = isComposing
     ? substituteIR(rawBody, callbackBinder, pending.proj)
     : rawBody;
@@ -788,9 +774,6 @@ function buildArrayReduce(
   const inner = buildIR(innerExpr, checker, strategy, arrowParams, supply);
   if (isBuildUnsupported(inner)) {
     return inner;
-  }
-  if (pending !== undefined && inner.kind === "ir-wrap") {
-    return null;
   }
   const proj = pending ? substituteIR(inner, xBinder, pending.proj) : inner;
   const each = (
@@ -944,9 +927,9 @@ function buildCollectionMembershipCall(
  * Returns either an `IRExpr` (success) or `{ unsupported: string }` to
  * propagate translation rejections through the existing convention.
  *
- * Non-natively-built forms fall back to `translateBodyExpr` + `IRWrap`
- * so the IR pipeline is end-to-end exercisable without committing to
- * full coverage in one stage.
+ * Surface forms that don't match any recognizer below are reported as
+ * `unsupported` — there is no legacy fallback into a wrapped
+ * `OpaqueExpr` after M6.
  */
 export function buildIR(
   expr: ts.Expression,
@@ -1010,9 +993,9 @@ export function buildIR(
     return irLitBool(false);
   }
 
-  // Non-negative numeric literal: nat (negative literals require `Unop(Neg,
-  // ...)` and aren't part of the Stage 1 scope; they fall through to
-  // IRWrap via the legacy path).
+  // Non-negative numeric literal: nat. Negative literals require
+  // `Unop(Neg, ...)` lowering; they fall through to the unsupported
+  // result below.
   if (ts.isNumericLiteral(expr)) {
     const n = Number(expr.text);
     if (Number.isFinite(n) && Number.isInteger(n) && n >= 0) {
@@ -1216,12 +1199,10 @@ export function buildIR(
     }
   }
 
-  // Native expression construction has been exhausted. Post-M6 the
-  // pure path no longer falls back to a legacy `translateBodyExpr` +
-  // `irWrap` escape hatch — surface forms that don't match any
-  // recognizer above are reported as `unsupported` so future
-  // milestones can target a concrete failure rather than a hidden
-  // OpaqueExpr embedding.
+  // Native expression construction has been exhausted. Surface forms
+  // that don't match any recognizer above are reported as `unsupported`
+  // so future milestones can target a concrete failure rather than a
+  // hidden OpaqueExpr embedding.
   return {
     unsupported: `unsupported pure expression form: ${ts.SyntaxKind[expr.kind]}`,
   };
