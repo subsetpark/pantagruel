@@ -15,30 +15,17 @@
  * canonicalized expressions); L2 (`ir.ts`) is the IRSC analog (Pant-shape
  * pure expressions).
  *
- * **Vocabulary lock at M1.** The forms declared here are the locked Layer
- * 1 vocabulary. Forms can be *added* in later milestones — the
- * `is-nullish` primitive landed at M4 — but existing forms cannot be
- * changed. Forms not yet active (`foreach`, `for`, `throw`,
- * `expr-stmt`, statement-position `cond-stmt`) are declared at the type
- * level; their constructors throw `not-implemented` until the milestone
- * that introduces them lands. M1 activated `block`, `let`, `return`,
- * and expression-position `cond`; M2 adds `assign` and `while`.
- *
- * **No `IR1Wrap` form.** Layer 1 is *not* an escape-hatch layer — the
- * build pass either produces L1 or rejects with `unsupported`. An L1
- * wrap-anything form would re-introduce the cross-talk problem the IR is
- * meant to retire. The `from-l2` form is *not* a wrap-anything escape
- * hatch — it is a scoped delegation point for sub-expressions whose
- * normalization isn't this milestone's concern (e.g., guard expressions
- * inside an L1 conditional during M1, when expression normalization
- * itself is M2/M3 territory). By M3 the form shrinks; by M6 (legacy
- * cleanup) it is deleted.
+ * Layer 1 is *not* an escape-hatch layer — the build pass either
+ * produces L1 or rejects with `unsupported`. Forms can be added in
+ * later milestones; the `is-nullish` primitive landed at M4 and the
+ * `each` comprehension form landed alongside the functor-lift native
+ * construction.
  *
  * **Migration status**: see `workstreams/ts2pant-imperative-ir.md` and
  * `tools/ts2pant/CLAUDE.md` §"Imperative IR Workstream".
  */
 
-import type { IRBinop, IRExpr, IRLiteral, IRUnop } from "./ir.js";
+import type { IRBinop, IRLiteral, IRUnop } from "./ir.js";
 
 // --------------------------------------------------------------------------
 // Literals, binops, unops
@@ -58,14 +45,13 @@ export type IR1Unop = IRUnop;
 // --------------------------------------------------------------------------
 
 /**
- * Layer 1 expressions. Eight forms preserve TS-shape canonicalization:
+ * Layer 1 expressions. Nine forms preserve TS-shape canonicalization:
  *
  * - `var`, `lit` — literal references
  * - `binop`, `unop` — arithmetic/logical/comparison operators
  * - `app` — function or method application (callee is itself an IR1Expr)
  * - `member` — property access; canonicalized so `obj.f` and `obj["f"]`
- *   both build as `Member(obj, "f")` (the build-time canonicalization will
- *   land in M5, but the form is locked here)
+ *   both build as `Member(obj, "f")`
  * - `cond` — multi-arm value-position conditional (M1 canonical form for
  *   if-with-returns, ternary chains, switch w/o fall-through, &&/||
  *   when Bool-typed)
@@ -73,12 +59,9 @@ export type IR1Unop = IRUnop;
  *   for `x == null`, `x === null`, `x === undefined`, the long
  *   `||`-form, and `typeof x === "undefined"`). Lowers to the
  *   cardinality-zero shape `#x = 0` under list-lift.
- *
- * Plus one transitional form:
- *
- * - `from-l2` — scoped delegation to an already-built Layer 2 IRExpr.
- *   See module doc for lifetime; this is *not* an IRWrap-style escape
- *   hatch.
+ * - `each` — list comprehension. Canonical form for the functor-lift
+ *   recognizer's `each n in operand | projection` output. Mirrors L2
+ *   `each` and lowers structurally.
  */
 export type IR1Expr =
   /** Variable / parameter reference. `primed = true` means next-state. */
@@ -119,21 +102,19 @@ export type IR1Expr =
    */
   | { kind: "is-nullish"; operand: IR1Expr }
   /**
-   * Transitional delegation to a pre-built Layer 2 IRExpr. Used for
-   * sub-expressions whose internal structure is outside the current
-   * milestone's normalization concern (e.g., M1–M3 use it for guard
-   * expressions, receiver expressions, RHS values that arrive as
-   * OpaqueExpr from `translateBodyExpr`).
-   *
-   * Lowering: emits the wrapped L2 IRExpr verbatim.
-   *
-   * **Lifetime**: M3 grew its use (mutating-body sub-expressions
-   * arrive as OpaqueExpr and wrap via `from-l2` to embed cheaply in
-   * L1). Shrinks for real once M4 (equality/nullish) and M5
-   * (property access) bring sub-expressions onto L1 natively;
-   * deleted at M6.
+   * List comprehension. Canonical L1 form for the functor-lift
+   * recognizer's `each n in operand | projection`. Mirrors L2 `each`
+   * one-to-one and lowers structurally in `lowerL1Expr`. M6 introduced
+   * this form so the lift could build natively at L1 instead of
+   * round-tripping through OpaqueExpr.
    */
-  | { kind: "from-l2"; expr: IRExpr };
+  | {
+      kind: "each";
+      binder: string;
+      src: IR1Expr;
+      guards: IR1Expr[];
+      proj: IR1Expr;
+    };
 
 // --------------------------------------------------------------------------
 // Statement forms (effect-position)
@@ -353,14 +334,6 @@ export type IR1ForeachBody =
     };
 
 // --------------------------------------------------------------------------
-// Type guards
-// --------------------------------------------------------------------------
-
-export const isIR1FromL2 = (
-  e: IR1Expr,
-): e is Extract<IR1Expr, { kind: "from-l2" }> => e.kind === "from-l2";
-
-// --------------------------------------------------------------------------
 // Expression constructors
 // --------------------------------------------------------------------------
 
@@ -445,20 +418,22 @@ export const ir1IsNullish = (operand: IR1Expr): IR1Expr => ({
 });
 
 /**
- * Transitional delegation to a pre-built Layer 2 IRExpr. Use only inside
- * `ir1-build.ts` for sub-expressions whose normalization is not the
- * current milestone's concern, and in `translatePureBody`'s arm-cond
- * assembly where `inlineConstBindings` produces pre-translated
- * OpaqueExprs. See module doc for lifetime.
- *
- * @deprecated transitional; do not introduce new call sites outside the
- * scoped sub-expression delegation in `ir1-build.ts` /
- * `translate-body.ts:translatePureBody`. Lifetime is bounded by the
- * workstream — see `workstreams/ts2pant-imperative-ir.md`.
+ * L1 list comprehension. Used by the functor-lift recognizer to build
+ * `each n in operand | projection` natively in L1. Mirrors L2 `each`
+ * one-to-one; `lowerL1Expr` recurses on `src`/`guards`/`proj` and
+ * constructs the L2 `each` form.
  */
-export const ir1FromL2 = (expr: IRExpr): IR1Expr => ({
-  kind: "from-l2",
-  expr,
+export const ir1Each = (
+  binder: string,
+  src: IR1Expr,
+  guards: IR1Expr[],
+  proj: IR1Expr,
+): IR1Expr => ({
+  kind: "each",
+  binder,
+  src,
+  guards,
+  proj,
 });
 
 // --------------------------------------------------------------------------

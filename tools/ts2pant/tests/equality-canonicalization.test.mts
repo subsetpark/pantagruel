@@ -99,9 +99,8 @@ describe("equality-canonicalization", () => {
   });
 
   it("=== preserves operand sub-expression translation", () => {
-    // The LHS `a + 1` and RHS `b * 2` must reach the L1 binop as their
-    // already-translated forms — the from-l2 wrap is the M5 territory
-    // mentioned in the workstream.
+    // The LHS `a + 1` and RHS `b * 2` must reach the L1 binop as native
+    // sub-expressions so the structural match still fires.
     const props = translateOne(
       `export function f(a: number, b: number): boolean {
         return a + 1 === b * 2;

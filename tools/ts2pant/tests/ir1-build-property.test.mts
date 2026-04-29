@@ -147,7 +147,7 @@ describe("ir1-build-property", () => {
     const outer = expectMember(result);
     assert.equal(outer.name, "owner--name");
     // Inner Member is the receiver — proves the chain composes as
-    // nested Member trees rather than a single flat from-l2 wrap.
+    // nested Member trees rather than a single flat embedded wrap.
     const inner = expectMember(outer.receiver);
     assert.equal(inner.name, "document--owner");
     assert.equal(inner.receiver.kind, "var");
@@ -272,41 +272,6 @@ describe("ir1-build-property", () => {
     assert.equal(name, "id");
   });
 
-  it("custom translateReceiverLeaf is honored over translateBodyExpr", () => {
-    // Signature path threads its own `translateExpr`-based leaf
-    // translator so `a.balance` in a guard goes through the
-    // signature-side dispatch rather than the body-side one.
-    // Verify the helper actually invokes the callback for the leaf
-    // (the non-property bottom of the receiver chain) — and not for
-    // intermediate Member levels, which still use Member recursion.
-    const { node, ctx } = setup(
-      `interface Account { readonly balance: number; }
-       function f(a: Account): number {
-         return a.balance;
-       }`,
-    );
-    const ast = getAst();
-    let calls = 0;
-    const result = buildL1MemberAccess(node, ctx, {
-      translateReceiverLeaf: (leaf) => {
-        calls++;
-        // Sanity: the leaf is the identifier `a`, not the whole
-        // `a.balance` expression.
-        assert.ok(ts.isIdentifier(leaf), "leaf should be the bare identifier");
-        return { kind: "expr", expr: ast.var("custom-leaf") };
-      },
-    });
-    assert.equal(calls, 1, "translateReceiverLeaf should fire exactly once");
-    const { receiver, name } = expectMember(result);
-    assert.equal(name, "account--balance");
-    // The receiver is the callback-produced expression. Lower and
-    // check the marker name.
-    const lowered = ast.strExpr(
-      lowerExpr(lowerL1Expr(receiver as IR1Expr)),
-    );
-    assert.equal(lowered, "custom-leaf");
-  });
-
   it("type-erasure wrapper is not stripped", () => {
     // `(a as A).owner` must NOT strip the `as A` cast — the cast is
     // load-bearing for the TS-checker type used by `qualifyFieldAccess`.
@@ -365,7 +330,7 @@ describe("ir1-build-property", () => {
     const outer = expectMember(result);
     assert.equal(outer.name, "owner--name");
     // Inner Member proves the nested chain composes through the
-    // string-literal recursion gate, not flattens to one from-l2 wrap.
+    // string-literal recursion gate, not flattens to one bare leaf.
     const inner = expectMember(outer.receiver);
     assert.equal(inner.name, "document--owner");
     assert.equal(inner.receiver.kind, "var");

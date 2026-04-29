@@ -1,12 +1,9 @@
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
-import { type IRExpr, irLet, irWrap } from "./ir.js";
 import { buildIR, isBuildUnsupported } from "./ir-build.js";
 import { lowerExpr } from "./ir-emit.js";
-import { type IR1Expr, ir1Binop, ir1FromL2, ir1IsNullish } from "./ir1.js";
 import {
   buildL1Conditional,
-  buildL1ConditionalFromArms,
   buildL1LetWhile,
   buildL1MemberAccess,
   isL1ConditionalForm,
@@ -14,6 +11,7 @@ import {
   isL1Unsupported,
   lowerL1ToOpaque,
   tryBuildL1Cardinality,
+  tryBuildL1PureSubExpression,
   tryRecognizeFunctorLift,
 } from "./ir1-build.js";
 import {
@@ -84,9 +82,75 @@ import type { PantDeclaration, PropResult } from "./types.js";
 export interface UniqueSupply {
   n: number;
   synthCell?: SynthCell | undefined;
+  /**
+   * Side-channel registry of fresh hygienic names that bind a
+   * pre-built `OpaqueExpr` value. Populated by the symbolic-state
+   * fast-path inside `buildL1MemberAccess` when a property read
+   * resolves to a previously-recorded write — the build allocates a
+   * fresh `$N` name, registers `($N → OpaqueExpr)` here, and returns
+   * `Var($N)` in L1. This keeps L1 free of OpaqueExpr-bearing nodes
+   * while still surfacing read-after-write semantics.
+   *
+   * Lower sites apply these substitutions via `applyOpaqueAliases`
+   * (wrapped into the call-site `applyConst`), so the final
+   * Pantagruel text contains the recorded value rather than the
+   * `$N` reference.
+   */
+  opaqueAliases?: Map<string, OpaqueExpr>;
 }
 function makeUniqueSupply(synthCell?: SynthCell): UniqueSupply {
   return { n: 0, synthCell };
+}
+
+/**
+ * Register a fresh hygienic name as an alias for a pre-built
+ * `OpaqueExpr`. The alias is consumed by `applyOpaqueAliases` at
+ * lower-to-opaque sites and substituted out before Pantagruel
+ * emission, so the alias name never reaches the parser.
+ *
+ * The stored value is *eagerly resolved* against any aliases already
+ * in the map: if `value` itself contains references to earlier
+ * aliases (because the recorded write was canonicalized through a
+ * stale `applyConst`), those get substituted out before insertion.
+ * This keeps the alias map flat — no `B → Var(A)` chain pointing at
+ * another alias — so `applyOpaqueAliases` can substitute in a single
+ * pass instead of running to fixpoint.
+ */
+export function registerOpaqueAlias(
+  supply: UniqueSupply,
+  name: string,
+  value: OpaqueExpr,
+): void {
+  if (supply.opaqueAliases === undefined) {
+    supply.opaqueAliases = new Map();
+  }
+  supply.opaqueAliases.set(name, applyOpaqueAliases(value, supply));
+}
+
+/**
+ * Apply every alias in `supply.opaqueAliases` to `expr` via Pant's
+ * capture-avoiding `substituteBinder`. Idempotent for fresh
+ * expressions that contain no alias references; otherwise replaces
+ * each `Var(aliasName)` occurrence with the registered OpaqueExpr.
+ *
+ * Single-pass — alias values are flattened at registration time
+ * (`registerOpaqueAlias` resolves prior aliases before storing), so
+ * the map never carries `B → Var(A)` chains that would require a
+ * fixpoint iteration here.
+ */
+export function applyOpaqueAliases(
+  expr: OpaqueExpr,
+  supply: UniqueSupply | undefined,
+): OpaqueExpr {
+  if (supply?.opaqueAliases === undefined || supply.opaqueAliases.size === 0) {
+    return expr;
+  }
+  const ast = getAst();
+  let r = expr;
+  for (const [name, value] of supply.opaqueAliases) {
+    r = ast.substituteBinder(r, name, value);
+  }
+  return r;
 }
 
 function nextSupply(supply: UniqueSupply): number {
@@ -1610,37 +1674,116 @@ function translatePureBody(
       state: undefined as SymbolicState | undefined,
       supply,
     };
-    // Wrap pre-translated arm OpaqueExprs as L1 from-l2 expressions so
-    // the L1 cond-builder can compose them with the L1-translated
-    // terminal. Each arm's guard and value are independent
-    // sub-expressions whose internal normalization isn't M1's concern;
-    // M2/M3 will progressively replace these wraps with native L1
-    // construction.
-    const preludeL1: Array<readonly [IR1Expr, IR1Expr]> = inlined.arms.map(
-      ([g, v]) => [ir1FromL2(irWrap(g)), ir1FromL2(irWrap(v))] as const,
-    );
-    const built = buildL1ConditionalFromArms(
-      preludeL1,
-      extracted.returnExpr,
-      l1Ctx,
-    );
-    if (isL1Unsupported(built)) {
-      return [
-        {
-          kind: "unsupported",
-          reason: `${functionName} — ${built.unsupported}`,
-        },
-      ];
+    let bodyOpaque: OpaqueExpr;
+    if (l1IsConditionalReturn) {
+      // Build the conditional terminal as L1 first, then merge prelude
+      // arms (already OpaqueExpr from `inlineConstBindings`) at the
+      // OpaqueExpr layer. When the L1 terminal is itself a cond we
+      // splice its arms in to keep the output flat (matching the
+      // legacy single-cond shape).
+      const terminalL1 = buildL1Conditional(extracted.returnExpr, l1Ctx);
+      if (isL1Unsupported(terminalL1)) {
+        return [
+          {
+            kind: "unsupported",
+            reason: `${functionName} — ${terminalL1.unsupported}`,
+          },
+        ];
+      }
+      if (terminalL1.kind === "cond") {
+        const armsOpaque: Array<[OpaqueExpr, OpaqueExpr]> = [
+          ...inlined.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
+          ...terminalL1.arms.map(
+            ([g, v]) =>
+              [lowerL1ToOpaque(g), lowerL1ToOpaque(v)] as [
+                OpaqueExpr,
+                OpaqueExpr,
+              ],
+          ),
+          [ast.litBool(true), lowerL1ToOpaque(terminalL1.otherwise)] as [
+            OpaqueExpr,
+            OpaqueExpr,
+          ],
+        ];
+        bodyOpaque = ast.cond(armsOpaque);
+      } else {
+        const terminalOpaque = lowerL1ToOpaque(terminalL1);
+        if (inlined.arms.length === 0) {
+          bodyOpaque = terminalOpaque;
+        } else {
+          bodyOpaque = ast.cond([
+            ...inlined.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
+            [ast.litBool(true), terminalOpaque] as [OpaqueExpr, OpaqueExpr],
+          ]);
+        }
+      }
+    } else {
+      // Arms-only path: terminal is a plain expression that we route
+      // through `buildIR` (the canonical pure path) and merge with the
+      // prelude arms at the OpaqueExpr layer. Mirror the plain-return
+      // path's legacy fallback so adding a prelude arm doesn't regress
+      // a function whose terminal expression only translates through
+      // `translateBodyExpr` (`%`, `**`, raw array literals, etc.).
+      if (!ts.isExpression(extracted.returnExpr)) {
+        return [
+          {
+            kind: "unsupported",
+            reason: `${functionName} — unsupported pure return terminal`,
+          },
+        ];
+      }
+      const ir = buildIR(
+        extracted.returnExpr,
+        checker,
+        strategy,
+        inlined.scopedParams,
+        supply,
+      );
+      let terminalOpaque: OpaqueExpr;
+      if (isBuildUnsupported(ir)) {
+        const legacy = translateBodyExpr(
+          extracted.returnExpr,
+          checker,
+          strategy,
+          inlined.scopedParams,
+          undefined,
+          supply,
+        );
+        if (isBodyUnsupported(legacy) || "effect" in legacy) {
+          const reason = isBodyUnsupported(legacy)
+            ? legacy.unsupported
+            : `${functionName} — collection mutation in pure return position`;
+          return [
+            {
+              kind: "unsupported",
+              reason: ir.unsupported.startsWith("unsupported pure expression")
+                ? reason
+                : ir.unsupported,
+            },
+          ];
+        }
+        terminalOpaque = bodyExpr(legacy);
+      } else {
+        terminalOpaque = lowerExpr(ir);
+      }
+      bodyOpaque = ast.cond([
+        ...inlined.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
+        [ast.litBool(true), terminalOpaque] as [OpaqueExpr, OpaqueExpr],
+      ]);
     }
-    // Wrap the lowered cond in IRWrap so the const-binding Let chain
-    // (Stage 6) can substitute hygienic-name references inside it via
-    // Pant's `substituteBinder`.
-    let bodyIR: IRExpr = irWrap(lowerL1ToOpaque(built));
+    // Apply const-binding substitutions at the OpaqueExpr layer via
+    // `substituteBinder` — semantically identical to the IR `Let`
+    // chain that lowered through the same primitive. Right-fold
+    // semantics: substitute the last binding first.
     for (let i = inlined.translatedBindings.length - 1; i >= 0; i--) {
       const tb = inlined.translatedBindings[i]!;
-      bodyIR = irLet(tb.hygienicName, irWrap(tb.initExpr), bodyIR);
+      bodyOpaque = ast.substituteBinder(
+        bodyOpaque,
+        tb.hygienicName,
+        tb.initExpr,
+      );
     }
-    rhs = lowerExpr(bodyIR);
+    rhs = bodyOpaque;
   } else if (ts.isExpression(extracted.returnExpr)) {
     const ir = buildIR(
       extracted.returnExpr,
@@ -1649,37 +1792,51 @@ function translatePureBody(
       inlined.scopedParams,
       supply,
     );
+    let bodyOpaque: OpaqueExpr;
     if (isBuildUnsupported(ir)) {
-      return [{ kind: "unsupported", reason: ir.unsupported }];
-    }
-    // Stage 6: build IR `Let` nodes around the body for each const-
-    // binding instead of applying the legacy `applyTo` substitution
-    // closure. lowerExpr's Let case calls Pant's `substituteBinder`,
-    // which is the same primitive `applyTo` used — so the result is
-    // semantically identical to the legacy path. Right-fold semantics
-    // are preserved: outermost Let is the first binding, innermost is
-    // the body.
-    //
-    // Early-return arms (PR #129 if-conversion) are already OpaqueExprs
-    // containing hygienic-name references. Lower the IR terminal, merge
-    // it with the arms into a `cond`, then wrap the result as IRWrap
-    // inside the Let chain — substituteBinder traverses opaque
-    // expressions, so hygienic names inside arms get substituted by the
-    // Let chain just like names inside the IR body.
-    let bodyIR = ir;
-    if (inlined.arms.length > 0) {
-      const terminalExpr = lowerExpr(bodyIR);
-      const mergedExpr = ast.cond([
-        ...inlined.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
-        [ast.litBool(true), terminalExpr] as [OpaqueExpr, OpaqueExpr],
-      ]);
-      bodyIR = { kind: "ir-wrap", expr: mergedExpr };
+      // Native pure-IR construction did not cover this surface form.
+      // Fall back to `translateBodyExpr` for the OpaqueExpr; the IR
+      // pipeline remains the primary path and only specific shapes
+      // (`%`, `**`, raw array literals, etc.) reach the legacy
+      // emitter. When the legacy emitter also rejects, prefer the
+      // buildIR-side message — recognizer-specific reasons (e.g.
+      // "array callback block body
+      // must be a single return") are more actionable than the
+      // legacy fall-through that returns the source text verbatim.
+      const legacy = translateBodyExpr(
+        extracted.returnExpr,
+        checker,
+        strategy,
+        inlined.scopedParams,
+        undefined,
+        supply,
+      );
+      if (isBodyUnsupported(legacy) || "effect" in legacy) {
+        const reason = isBodyUnsupported(legacy)
+          ? legacy.unsupported
+          : `${functionName} — collection mutation in pure return position`;
+        return [
+          {
+            kind: "unsupported",
+            reason: ir.unsupported.startsWith("unsupported pure expression")
+              ? reason
+              : ir.unsupported,
+          },
+        ];
+      }
+      bodyOpaque = bodyExpr(legacy);
+    } else {
+      bodyOpaque = lowerExpr(ir);
     }
     for (let i = inlined.translatedBindings.length - 1; i >= 0; i--) {
       const tb = inlined.translatedBindings[i]!;
-      bodyIR = irLet(tb.hygienicName, irWrap(tb.initExpr), bodyIR);
+      bodyOpaque = ast.substituteBinder(
+        bodyOpaque,
+        tb.hygienicName,
+        tb.initExpr,
+      );
     }
-    rhs = lowerExpr(bodyIR);
+    rhs = bodyOpaque;
   } else {
     return [
       {
@@ -2089,10 +2246,10 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
  */
 /**
  * One translated const-binding: a hygienic name (`$N`) and the
- * already-translated initializer as an OpaqueExpr. Exposed so the IR
- * pipeline (Stage 6+) can wrap these in `IRWrap`-valued IR `Let` nodes
- * and let `lowerExpr`'s `substituteBinder` do the substitution at
- * lowering time, replacing the legacy `applyTo` closure.
+ * already-translated initializer as an OpaqueExpr. Consumed by the
+ * pure-path arm assembly in `translatePureBody`, which threads each
+ * binding through `ast.substituteBinder` at the OpaqueExpr layer
+ * rather than carrying the legacy `applyTo` closure.
  */
 export interface TranslatedBinding {
   hygienicName: string;
@@ -2356,11 +2513,11 @@ function translateMuSearchInit(
   if (isLowerUnsupported(lowered)) {
     return { error: lowered.unsupported };
   }
-  return { value: lowerExpr(lowered) };
+  return { value: lowered };
 }
 
 function isLowerUnsupported(
-  r: IRExpr | { unsupported: string },
+  r: OpaqueExpr | { unsupported: string },
 ): r is { unsupported: string } {
   return typeof r === "object" && r !== null && "unsupported" in r;
 }
@@ -2804,19 +2961,19 @@ export function translateBodyExpr(
     // arm below), so the effect variant of `BodyResult` never
     // reaches us here — the surfaced rejection carries the upstream
     // "collection mutation outside statement position" message.
+    const l1Ctx = {
+      checker,
+      strategy,
+      paramNames,
+      state,
+      supply,
+    };
     const translate: NullishTranslate = (sub) => {
-      const subResult = translateBodyExpr(
-        sub,
-        checker,
-        strategy,
-        paramNames,
-        state,
-        supply,
-      );
-      if (isBodyUnsupported(subResult)) {
-        return subResult;
+      const subL1 = tryBuildL1PureSubExpression(sub, l1Ctx);
+      if (subL1 === null) {
+        return { unsupported: `unsupported nullish operand: ${sub.getText()}` };
       }
-      return ir1FromL2(irWrap(bodyExpr(subResult)));
+      return subL1;
     };
     const recognized = recognizeNullishForm(expr, checker, translate);
     if (recognized !== null) {
@@ -2996,7 +3153,16 @@ export function translateBodyExpr(
     // (Dafny Reference Manual §"Nullable Types"). See CLAUDE.md "Option-
     // Type Elimination" for the broader encoding.
     if (expr.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) {
-      const leftTsType = checker.getTypeAtLocation(expr.left);
+      // Use the operand's *declared* type (narrowing-free) for the
+      // nullability classifications. Inside a flow-narrowed branch
+      // — `if (x !== null) return x ?? y;` — `getTypeAtLocation`
+      // would return the narrowed `T` and silently emit a bare `x`,
+      // but the Pant symbol for `x` is still the list-lifted `[T]`
+      // parameter (ts2pant doesn't track flow narrowing on the Pant
+      // side), so the typecheck would fail. Same fix the
+      // `NonNullExpression` branch and the L1 `??` lowering use; see
+      // `getOperandDeclaredType` in nullish-recognizer.ts.
+      const leftTsType = getOperandDeclaredType(expr.left, checker);
       const leftResult = translateBodyExpr(
         expr.left,
         checker,
@@ -3025,12 +3191,16 @@ export function translateBodyExpr(
       }
       const xExpr = bodyExpr(leftResult);
       const yExpr = bodyExpr(rightResult);
-      const rightTsType = checker.getTypeAtLocation(expr.right);
-      // Construct the cardinality-zero null test through L1 IsNullish so
-      // every nullish-shape lowering shares one source of truth (M4).
-      // The lowering chain `from-l2 → IsNullish → eq(card(_), 0)` is
-      // byte-identical to the inlined form, which is the cutover gate.
-      const cardZero = lowerL1ToOpaque(ir1IsNullish(ir1FromL2(irWrap(xExpr))));
+      const rightTsType = getOperandDeclaredType(expr.right, checker);
+      // Cardinality-zero null test, byte-equivalent to the canonical
+      // L1 `IsNullish` lowering (`eq(card(_), 0)`) — built directly at
+      // the OpaqueExpr layer because the LHS `xExpr` was already
+      // translated through `translateBodyExpr`.
+      const cardZero = ast.binop(
+        ast.opEq(),
+        ast.unop(ast.opCard(), xExpr),
+        ast.litNat(0),
+      );
       const presentBranch = isNullableTsType(rightTsType)
         ? xExpr
         : ast.app(xExpr, [ast.litNat(1)]);
@@ -3055,8 +3225,8 @@ export function translateBodyExpr(
       };
     }
     // M4 P3: canonicalize strict equality through Layer 1
-    // `BinOp(eq | neq, ...)`. Sub-expressions wrap via `ir1FromL2`
-    // (M5 territory — sub-expressions reach L1 natively then).
+    // `BinOp(eq | neq, ...)`. Sub-expressions reach L1 natively
+    // (post-M5 / M6 — no escape-hatch wrap remains).
     if (
       expr.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken ||
       expr.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken
@@ -3083,13 +3253,14 @@ export function translateBodyExpr(
       if (isBodyUnsupported(right)) {
         return right;
       }
-      const l1Op =
+      // Build the strict-equality binop directly at the OpaqueExpr
+      // layer — both operands were translated through
+      // `translateBodyExpr` so they're already opaque.
+      const op =
         expr.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken
-          ? "eq"
-          : "neq";
-      const lhsL1 = ir1FromL2(irWrap(bodyExpr(left)));
-      const rhsL1 = ir1FromL2(irWrap(bodyExpr(right)));
-      return { expr: lowerL1ToOpaque(ir1Binop(l1Op, lhsL1, rhsL1)) };
+          ? ast.opEq()
+          : ast.opNeq();
+      return { expr: ast.binop(op, bodyExpr(left), bodyExpr(right)) };
     }
     if (
       (expr.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
@@ -3578,13 +3749,21 @@ export function translateCallExpr(
       // canonical L1 Member helper. It bundles `qualifyFieldAccess` +
       // receiver translation in one call and yields the rule name and
       // receiver L1 expression for the effect descriptor.
-      const memberR = buildL1MemberAccess(normalizedReceiver, {
-        checker,
-        strategy,
-        paramNames,
-        state,
-        supply,
-      });
+      // `requireMember` suppresses the symbolic-state alias substitution
+      // — Stage A Set effects compose through `installSetWrite` (not
+      // property writes), so the call site needs the canonical Member
+      // shape unconditionally.
+      const memberR = buildL1MemberAccess(
+        normalizedReceiver,
+        {
+          checker,
+          strategy,
+          paramNames,
+          state,
+          supply,
+        },
+        { requireMember: true },
+      );
       if (isL1Unsupported(memberR)) {
         return { unsupported: memberR.unsupported };
       }
@@ -3828,14 +4007,22 @@ export function translateCallExpr(
         const innerObj = normalizedReceiver.expression;
         // M5: Stage A receiver-property qualification through the L1
         // Member helper. The receiver L1 lowers to an OpaqueExpr for
-        // `readMapThroughWrites`.
-        const memberR = buildL1MemberAccess(normalizedReceiver, {
-          checker,
-          strategy,
-          paramNames,
-          state,
-          supply,
-        });
+        // `readMapThroughWrites`. `requireMember` suppresses the
+        // symbolic-state alias substitution so the canonical Member
+        // shape is always returned — Map reads route through
+        // `readMapThroughWrites`, which composes its own override
+        // history via `MapRuleWriteEntry`, not the property cache.
+        const memberR = buildL1MemberAccess(
+          normalizedReceiver,
+          {
+            checker,
+            strategy,
+            paramNames,
+            state,
+            supply,
+          },
+          { requireMember: true },
+        );
         if (isL1Unsupported(memberR)) {
           return { unsupported: memberR.unsupported };
         }
@@ -4021,13 +4208,21 @@ export function translateCallExpr(
           // Falls through to the generic membership construction below
           // if the helper rejects (ambiguous owner / non-Member result),
           // mirroring the legacy `fieldName === null` graceful fallback.
-          const memberR = buildL1MemberAccess(normalizedReceiver, {
-            checker,
-            strategy,
-            paramNames,
-            state,
-            supply,
-          });
+          // `requireMember` suppresses the symbolic-state alias
+          // substitution — Stage A Set membership reads compose through
+          // `readSetThroughWrites` (which threads `SetRuleWriteEntry`
+          // overrides), not the property cache.
+          const memberR = buildL1MemberAccess(
+            normalizedReceiver,
+            {
+              checker,
+              strategy,
+              paramNames,
+              state,
+              supply,
+            },
+            { requireMember: true },
+          );
           if (!isL1Unsupported(memberR) && memberR.kind === "member") {
             const fieldName = memberR.name;
             const ownerType = mapTsType(
@@ -4336,7 +4531,18 @@ function symbolicExecute(
 ): boolean {
   const ast = getAst();
   let ok = true;
-  let applyConst = outerApply;
+  // `applyConstChain` is the const-binding-only substitution closure
+  // (extended each time a new const is inlined). `applyConst` wraps it
+  // with `applyOpaqueAliases`, which reads `supply.opaqueAliases`
+  // lazily on every invocation — so symbolic-state cache aliases
+  // registered after `applyConst` was first captured still apply.
+  // The L1 build pass's symbolic-state fast-path
+  // (`buildL1MemberAccess`) registers a `($N → recordedValue)` alias
+  // when it short-circuits a property read, and the substitution is
+  // resolved at every subsequent canonicalize / applyConst call.
+  let applyConstChain = outerApply;
+  const applyConst: (e: OpaqueExpr) => OpaqueExpr = (e) =>
+    applyOpaqueAliases(applyConstChain(e), supply);
   // Keep the state's canonicalize in sync with the frame's applyConst so
   // symbolic-state reads see the same normalization the write site uses.
   setCanonicalize(state, applyConst);
@@ -4609,8 +4815,8 @@ function symbolicExecute(
             for (const [key, value] of inlined.scopedParams) {
               paramNames.set(key, value);
             }
-            const prevApply = applyConst;
-            applyConst = (e) => prevApply(inlined.applyTo(e));
+            const prevChain = applyConstChain;
+            applyConstChain = (e) => prevChain(inlined.applyTo(e));
             setCanonicalize(state, applyConst);
           }
           continue;

@@ -1,15 +1,10 @@
 /**
- * TS-AST → IR construction.
+ * TS-AST → IR construction (pure path, value-position).
  *
- * Stages migrated to native IR construction (latest first):
- * - Stage 2: Optional chaining `x?.f` → `Each(t, x, [], App(qualified-rule, [t]))`.
- * - Stage 1: `Var` (Identifier), `Lit` (numeric / string / boolean
- *   literal). Trivial cases of `App` (free function call with all args
- *   themselves IR-buildable). Everything else falls back to legacy
- *   `translateBodyExpr` and wraps in `IRWrap`.
- *
- * Subsequent stages (3+) migrate one recognizer at a time. By Stage 8
- * (pure-path cutover) the `IRWrap` escape hatch is deleted entirely.
+ * Native IR construction is exhaustive: surface forms that don't
+ * match any recognizer below return an `unsupported` result so
+ * future milestones can target a concrete failure rather than a
+ * hidden OpaqueExpr embedding.
  *
  * See `ir.ts` and CLAUDE.md §IR for the form table.
  */
@@ -28,13 +23,12 @@ import {
   irLitNat,
   irLitString,
   irVar,
-  irWrap,
 } from "./ir.js";
-import { ir1FromL2 } from "./ir1.js";
 import {
   buildL1MemberAccess,
   computedElementAccessUnsupportedReason,
   elementAccessLiteralKey,
+  isArrayChainCall,
   type L1BuildContext,
   tryBuildL1Cardinality,
   tryBuildL1PureSubExpression,
@@ -50,13 +44,10 @@ import { isStaticallyBoolTyped } from "./purity.js";
 import {
   allocComprehensionBinder,
   ambiguousFieldMsg,
-  bodyExpr,
   expressionReferencesNames,
   freshHygienicBinder,
-  isBodyUnsupported,
   isNullableTsType,
   qualifyFieldAccess,
-  translateBodyExpr,
   type UniqueSupply,
 } from "./translate-body.js";
 import {
@@ -181,7 +172,6 @@ function substituteIR(expr: IRExpr, name: string, replacement: IRExpr): IRExpr {
     case "var":
       return expr.name === name && !expr.primed ? replacement : expr;
     case "lit":
-    case "ir-wrap":
       return expr;
     case "app":
       return {
@@ -473,11 +463,98 @@ function buildIRValue(
   return { expr: ir };
 }
 
-function buildNativeReceiverLeafIR(
-  expr: ts.Expression,
-  ctx: L1BuildContext,
+/**
+ * Build `Unop(card, <arrayChainReceiver>)` directly at the L2 IR layer
+ * for `<arrayChain>.length` / `<arrayChain>["length"]` (and `.size`
+ * variants on Set chains). The L1 cardinality dispatch (`Unop(card, …)`
+ * over an `IR1Expr` receiver) cannot represent an array-chain receiver
+ * because L1 has no `each` form — `each` is L2-only. Building at L2
+ * sidesteps the layer mismatch.
+ *
+ * Returns `null` when the expression is not `<arrayChain>.length` /
+ * `<arrayChain>.size`, leaving the L1 cardinality / Member dispatch
+ * unaffected.
+ */
+function tryBuildArrayChainCardinality(
+  expr: ts.PropertyAccessExpression | ts.ElementAccessExpression,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: ReadonlyMap<string, string>,
+  supply: UniqueSupply,
 ): IRExpr | { unsupported: string } | null {
-  return buildIR(expr, ctx.checker, ctx.strategy, ctx.paramNames, ctx.supply);
+  if ((expr.flags & ts.NodeFlags.OptionalChain) !== 0) {
+    return null;
+  }
+  const propName = ts.isPropertyAccessExpression(expr)
+    ? expr.name.text
+    : elementAccessLiteralKey(expr);
+  if (propName !== "length" && propName !== "size") {
+    return null;
+  }
+  const receiverNode = unwrapParens(expr.expression) as ts.Expression;
+  if (!ts.isCallExpression(receiverNode)) {
+    return null;
+  }
+  if (!isArrayChainCall(receiverNode, checker)) {
+    return null;
+  }
+  // Snapshot `UniqueSupply` state before the receiver probe so a
+  // mid-build failure unwinds cleanly. `buildIR` can advance the
+  // hygienic-name counter, register synth-cell domains, and install
+  // `opaqueAliases` entries before bottoming out at `unsupported`;
+  // returning `{unsupported}` from this function leaves the failed
+  // probe's mutations stranded in the supply, and downstream retries
+  // (translate-body's `translateBodyExpr` fallback) observe the
+  // drift as deterministic-name desync between attempts. Mirrors the
+  // `tryRecognizeFunctorLift` rollback discipline in `ir1-build.ts`.
+  const supplyCounterSnapshot = supply.n;
+  const synthCell = supply.synthCell;
+  const synthSnapshot = synthCell
+    ? {
+        synth: synthCell.synth,
+        recordSynth: synthCell.recordSynth,
+        registry: synthCell.registry,
+      }
+    : null;
+  const opaqueAliasesSnapshot = supply.opaqueAliases
+    ? new Map(supply.opaqueAliases)
+    : null;
+  // Past this point we have committed to "this is an array-chain
+  // cardinality" — a receiver-build failure is a real rejection of
+  // the recognized form, not a "no match" shape. Propagate the
+  // specific `unsupported` reason instead of falling through to other
+  // dispatch branches (which would observe the same receiver-build
+  // failure with a less actionable message).
+  const receiverIR = buildIR(
+    receiverNode,
+    checker,
+    strategy,
+    paramNames,
+    supply,
+  );
+  if (isBuildUnsupported(receiverIR)) {
+    supply.n = supplyCounterSnapshot;
+    if (synthCell && synthSnapshot) {
+      synthCell.synth = synthSnapshot.synth;
+      synthCell.recordSynth = synthSnapshot.recordSynth;
+      synthCell.registry = synthSnapshot.registry;
+    }
+    if (opaqueAliasesSnapshot !== null) {
+      supply.opaqueAliases = new Map(opaqueAliasesSnapshot);
+    } else if (supply.opaqueAliases !== undefined) {
+      delete supply.opaqueAliases;
+    }
+    return receiverIR;
+  }
+  // Sanity check: cardinality only applies when the receiver lowers to
+  // something whose Pant type is a list-lifted form. The array-chain
+  // recognizer guarantees this — `each(...)` produces `[T]` — so we
+  // accept without re-checking the type.
+  return {
+    kind: "app",
+    head: { kind: "unop", op: "card" },
+    args: [receiverIR],
+  };
 }
 
 function tryBuildArrayMethodValue(
@@ -577,9 +654,6 @@ function buildArrayMapFilter(
   );
   if (isBuildUnsupported(rawBody)) {
     return rawBody;
-  }
-  if (isComposing && rawBody.kind === "ir-wrap") {
-    return null;
   }
   const body = isComposing
     ? substituteIR(rawBody, callbackBinder, pending.proj)
@@ -718,9 +792,6 @@ function buildArrayReduce(
   const inner = buildIR(innerExpr, checker, strategy, arrowParams, supply);
   if (isBuildUnsupported(inner)) {
     return inner;
-  }
-  if (pending !== undefined && inner.kind === "ir-wrap") {
-    return null;
   }
   const proj = pending ? substituteIR(inner, xBinder, pending.proj) : inner;
   const each = (
@@ -874,9 +945,9 @@ function buildCollectionMembershipCall(
  * Returns either an `IRExpr` (success) or `{ unsupported: string }` to
  * propagate translation rejections through the existing convention.
  *
- * Non-natively-built forms fall back to `translateBodyExpr` + `IRWrap`
- * so the IR pipeline is end-to-end exercisable without committing to
- * full coverage in one stage.
+ * Surface forms that don't match any recognizer below are reported as
+ * `unsupported` — there is no legacy fallback into a wrapped
+ * `OpaqueExpr` after M6.
  */
 export function buildIR(
   expr: ts.Expression,
@@ -940,9 +1011,9 @@ export function buildIR(
     return irLitBool(false);
   }
 
-  // Non-negative numeric literal: nat (negative literals require `Unop(Neg,
-  // ...)` and aren't part of the Stage 1 scope; they fall through to
-  // IRWrap via the legacy path).
+  // Non-negative numeric literal: nat. Negative literals require
+  // `Unop(Neg, ...)` lowering; they fall through to the unsupported
+  // result below.
   if (ts.isNumericLiteral(expr)) {
     const n = Number(expr.text);
     if (Number.isFinite(n) && Number.isInteger(n) && n >= 0) {
@@ -970,9 +1041,18 @@ export function buildIR(
   // EUF function distinct from the actual cardinality. Fires before the
   // Member dispatch below for the six list-shaped TS types.
   if (ts.isPropertyAccessExpression(expr)) {
+    const arrayChainCard = tryBuildArrayChainCardinality(
+      expr,
+      checker,
+      strategy,
+      paramNames,
+      supply,
+    );
+    if (arrayChainCard !== null) {
+      return arrayChainCard;
+    }
     const card = tryBuildL1Cardinality(expr, l1Ctx, {
       nativeReceiverLeaf: true,
-      nativeReceiverLeafIR: buildNativeReceiverLeafIR,
     });
     if (card !== null) {
       return lowerL1Expr(card);
@@ -982,9 +1062,18 @@ export function buildIR(
   if (ts.isElementAccessExpression(expr)) {
     const inOptionalChain = (expr.flags & ts.NodeFlags.OptionalChain) !== 0;
     if (!inOptionalChain) {
+      const arrayChainCard = tryBuildArrayChainCardinality(
+        expr,
+        checker,
+        strategy,
+        paramNames,
+        supply,
+      );
+      if (arrayChainCard !== null) {
+        return arrayChainCard;
+      }
       const card = tryBuildL1Cardinality(expr, l1Ctx, {
         nativeReceiverLeaf: true,
-        nativeReceiverLeafIR: buildNativeReceiverLeafIR,
       });
       if (card !== null) {
         return lowerL1Expr(card);
@@ -1042,7 +1131,6 @@ export function buildIR(
   ) {
     const member = buildL1MemberAccess(expr, l1Ctx, {
       nativeReceiverLeaf: true,
-      nativeReceiverLeafIR: buildNativeReceiverLeafIR,
     });
     if ("unsupported" in member) {
       return member;
@@ -1052,11 +1140,11 @@ export function buildIR(
 
   if (ts.isBinaryExpression(expr)) {
     const nullishTranslate: NullishTranslate = (sub) => {
-      const result = buildIR(sub, checker, strategy, paramNames, supply);
-      if (isBuildUnsupported(result)) {
-        return { unsupported: result.unsupported };
+      const subL1 = tryBuildL1PureSubExpression(sub, l1Ctx);
+      if (subL1 === null) {
+        return { unsupported: `unsupported nullish operand: ${sub.getText()}` };
       }
-      return ir1FromL2(result);
+      return subL1;
     };
     const recognized = recognizeNullishForm(expr, checker, nullishTranslate);
     if (recognized !== null) {
@@ -1126,29 +1214,15 @@ export function buildIR(
     }
   }
 
-  // Fallback: translate via the legacy pipeline and wrap. Subsequent
-  // stages migrate specific recognizers (Cond, App, Comb, Forall,
-  // Exists) into native IR construction here. `state` is undefined
-  // because pure-path bodies don't read symbolic state; mutating-path
-  // migration happens in Stage 9.
-  const legacy = translateBodyExpr(
-    expr,
-    checker,
-    strategy,
-    paramNames,
-    undefined,
-    supply,
-  );
-  if (isBodyUnsupported(legacy)) {
-    return { unsupported: legacy.unsupported };
-  }
-  if ("effect" in legacy) {
-    return {
-      unsupported:
-        "collection mutation in IR-build expression position (Stage 9)",
-    };
-  }
-  return irWrap(bodyExpr(legacy));
+  // Native expression construction has been exhausted. Surface forms
+  // that don't match any recognizer above are reported as `unsupported`
+  // so future milestones can target a concrete failure rather than a
+  // hidden OpaqueExpr embedding. Quote the original source rather than
+  // a compiler-internal `SyntaxKind` label so the message is
+  // actionable for users.
+  return {
+    unsupported: `unsupported pure expression: ${expr.getText()}`,
+  };
 }
 
 export function isBuildUnsupported(

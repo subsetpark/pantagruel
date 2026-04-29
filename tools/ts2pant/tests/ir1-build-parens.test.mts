@@ -7,9 +7,8 @@
  * Each test runs a paren-wrapped expression and an unwrapped reference
  * through the L1 build pipeline (or its surface-level entry point) and
  * asserts the lowered OpaqueExpr texts match. We compare lowered texts
- * rather than IR shape because some L1 paths route through legacy
- * via `from-l2`; the lowered text is the observable byte-for-byte
- * canonical form.
+ * rather than IR shape because the lowered text is the observable
+ * byte-for-byte canonical form, immune to internal IR shape drift.
  *
  * Type-erasure wrappers (`as T`, `!`, `<T>x`, `satisfies`) are NOT
  * paren-equivalent — they change the TS-checker type at the AST node

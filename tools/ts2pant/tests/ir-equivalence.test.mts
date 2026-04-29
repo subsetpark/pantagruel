@@ -57,13 +57,9 @@ const ANCHORS: Array<{ file: string; functions: string[] }> = [
     file: "expressions-set.ts",
     functions: ["cardinality"],
   },
-  // Stage 6: const-binding inlining via IR Let nodes (initializers are
-  // IRWrap of legacy-translated OpaqueExpr; substitution flows through
-  // lowerExpr's substituteBinder rather than the legacy `applyTo`
-  // closure). Includes μ-search bindings, which still go through
-  // `translateMuSearchInit` for the comprehension construction (the
-  // recognizer + lowering stay legacy; only the binding-substitution
-  // mechanism is on IR — see WORKING-NOTES Decisions deferred).
+  // Const-binding inlining via OpaqueExpr-layer `substituteBinder`.
+  // Includes μ-search bindings whose comprehension construction lives
+  // in `lowerL1MuSearch`.
   {
     file: "expressions-const-bindings.ts",
     functions: [
@@ -174,7 +170,7 @@ describe("M6 pure-path cutover stubs", () => {
     }
   }
 
-  it("translatePureBody uses pure IR path without TS2PANT_USE_IR", async () => {
+  it("translatePureBody routes through the always-on IR path", async () => {
     const output = await emitAlwaysOn(
       resolve(CONSTRUCTS_DIR, "expressions-arithmetic.ts"),
       "netBalance",
