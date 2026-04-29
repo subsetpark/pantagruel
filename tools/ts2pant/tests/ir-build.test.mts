@@ -145,18 +145,23 @@ describe("ir-build native construction", () => {
 
   // Optional/nullish lowering produces native conditional shape.
   it("builds optional chains and nullish coalescing natively", () => {
-    expectIR(`
+    const optional = expectIR(`
       interface Owner { readonly id: number; }
       interface Account { readonly owner?: Owner; }
       function f(a: Account): number[] {
         return a.owner?.id;
       }
     `);
-    expectIR(`
+    // `a.owner?.id` lowers to a list-lift functor map: `each n in a.owner | id n`.
+    assert.equal(optional.kind, "each");
+
+    const nullish = expectIR(`
       function f(x: number | null | undefined): number {
         return x ?? 0;
       }
     `);
+    // `x ?? 0` lowers to `cond #x = 0 => 0, true => (x 1)`.
+    assert.equal(nullish.kind, "cond");
   });
 
   // Chain fusion constructs real Each and Comb nodes.
@@ -412,12 +417,14 @@ describe("ir-build native construction", () => {
   // String-literal optional element access lowers the same way as
   // dotted optional access; computed element access remains unsupported.
   it("records optional element access boundary", () => {
-    expectIR(`
+    const literalKey = expectIR(`
       interface User { readonly name: string; }
       function f(u: User | null): string[] {
         return u?.["name"];
       }
     `);
+    // `u?.["name"]` lowers as the same functor lift as `u?.name`.
+    assert.equal(literalKey.kind, "each");
 
     const computedKey = buildFromSource(`
       interface User { readonly name: string; }

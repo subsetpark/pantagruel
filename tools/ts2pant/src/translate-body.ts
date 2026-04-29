@@ -1708,7 +1708,10 @@ function translatePureBody(
     } else {
       // Arms-only path: terminal is a plain expression that we route
       // through `buildIR` (the canonical pure path) and merge with the
-      // prelude arms at the OpaqueExpr layer.
+      // prelude arms at the OpaqueExpr layer. Mirror the plain-return
+      // path's legacy fallback so adding a prelude arm doesn't regress
+      // a function whose terminal expression only translates through
+      // `translateBodyExpr` (`%`, `**`, raw array literals, etc.).
       if (!ts.isExpression(extracted.returnExpr)) {
         return [
           {
@@ -1724,10 +1727,35 @@ function translatePureBody(
         inlined.scopedParams,
         supply,
       );
+      let terminalOpaque: OpaqueExpr;
       if (isBuildUnsupported(ir)) {
-        return [{ kind: "unsupported", reason: ir.unsupported }];
+        const legacy = translateBodyExpr(
+          extracted.returnExpr,
+          checker,
+          strategy,
+          inlined.scopedParams,
+          undefined,
+          supply,
+        );
+        if (isBodyUnsupported(legacy) || "effect" in legacy) {
+          const reason = isBodyUnsupported(legacy)
+            ? legacy.unsupported
+            : `${functionName} — collection mutation in pure return position`;
+          return [
+            {
+              kind: "unsupported",
+              reason: ir.unsupported.startsWith(
+                "unsupported pure expression form",
+              )
+                ? reason
+                : ir.unsupported,
+            },
+          ];
+        }
+        terminalOpaque = bodyExpr(legacy);
+      } else {
+        terminalOpaque = lowerExpr(ir);
       }
-      const terminalOpaque = lowerExpr(ir);
       bodyOpaque = ast.cond([
         ...inlined.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
         [ast.litBool(true), terminalOpaque] as [OpaqueExpr, OpaqueExpr],
