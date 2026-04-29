@@ -33,9 +33,8 @@ import {
   irLitNat,
   irUnop,
   irVar,
-  irWrap,
 } from "./ir.js";
-import { lowerExpr } from "./ir-emit.js";
+import { substituteIR } from "./ir-build.js";
 import type { IR1Expr, IR1Stmt } from "./ir1.js";
 import { getAst } from "./pant-wasm.js";
 import type { NumericStrategy } from "./translate-types.js";
@@ -261,18 +260,15 @@ export function lowerL1MuSearch(
   // build time (see `buildL1LetWhile` in `ir1-build.ts`). Skipping
   // here — the lowering trusts that the L1 form represents a
   // well-formed let+while pair.
-  const ast = getAst();
-  const predicateOpaque = lowerExpr(predicateL2);
   // Allocate the comprehension binder and substitute counter → binder
-  // on the lowered predicate. `substituteBinder` is Pant's
-  // capture-avoiding substitution at the wasm layer; it traverses
-  // OpaqueExpr correctly (the L2 IR cannot — `irWrap` holds an
-  // opaque expression that `substIR` refuses to enter).
+  // on the lowered predicate at the L2 IR layer (`substituteIR`
+  // walks the L2 ADT) so the μ-search lowering doesn't need to
+  // round-trip through OpaqueExpr.
   const binder = ctx.allocateBinder("j");
-  const substitutedPredicate = ast.substituteBinder(
-    predicateOpaque,
+  const substitutedPredicate = substituteIR(
+    predicateL2,
     ctx.counterPantName,
-    ast.var(binder),
+    irVar(binder),
   );
   // Build the L2 comb-typed:
   //   min over each j: T, j >= INIT, ¬P[c := j] | j
@@ -280,10 +276,7 @@ export function lowerL1MuSearch(
     "min",
     binder,
     counterType,
-    [
-      irBinop("ge", irVar(binder), initL2),
-      irUnop("not", irWrap(substitutedPredicate)),
-    ],
+    [irBinop("ge", irVar(binder), initL2), irUnop("not", substitutedPredicate)],
     irVar(binder),
   );
 }

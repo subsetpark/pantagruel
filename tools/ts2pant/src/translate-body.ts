@@ -1,9 +1,8 @@
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
-import { type IRExpr, irLet, irWrap } from "./ir.js";
+import type { IRExpr } from "./ir.js";
 import { buildIR, isBuildUnsupported } from "./ir-build.js";
 import { lowerExpr } from "./ir-emit.js";
-import { type IR1Expr, ir1Binop, ir1FromL2, ir1IsNullish } from "./ir1.js";
 import {
   buildL1Conditional,
   buildL1LetWhile,

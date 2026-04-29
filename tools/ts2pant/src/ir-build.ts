@@ -177,7 +177,11 @@ function isIdentityInit(node: ts.Expression, identityText: string): boolean {
   return n !== null && n === Number(identityText);
 }
 
-function substituteIR(expr: IRExpr, name: string, replacement: IRExpr): IRExpr {
+export function substituteIR(
+  expr: IRExpr,
+  name: string,
+  replacement: IRExpr,
+): IRExpr {
   switch (expr.kind) {
     case "var":
       return expr.name === name && !expr.primed ? replacement : expr;
