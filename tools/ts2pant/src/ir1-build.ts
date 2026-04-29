@@ -242,11 +242,17 @@ export function isCollectionMutationCall(
     return false;
   }
   const receiverType = checker.getTypeAtLocation(member.receiver);
+  // Use the union-aware predicates so receivers like
+  // `Map<K, V> | ReadonlyMap<K, V>` and `Set<T> | ReadonlySet<T>`
+  // surface the targeted "collection mutation outside statement
+  // position" diagnostic instead of falling through to the generic
+  // mutating-body fallback. Mirrors the union-aware checks the
+  // native call branches use.
   if (
     (member.methodName === "set" ||
       member.methodName === "delete" ||
       member.methodName === "clear") &&
-    isMapType(receiverType)
+    isMapUnionType(receiverType)
   ) {
     return true;
   }
@@ -254,7 +260,7 @@ export function isCollectionMutationCall(
     (member.methodName === "add" ||
       member.methodName === "delete" ||
       member.methodName === "clear") &&
-    isSetType(receiverType)
+    isSetUnionType(receiverType)
   ) {
     return true;
   }
@@ -304,24 +310,46 @@ function isMapUnionType(t: ts.Type): boolean {
 /**
  * Return a representative Map constituent for `getTypeArguments`
  * extraction. For a single Map type, returns it directly; for a union
- * of Maps, returns the first constituent. Caller must guarantee
- * `isMapUnionType(t)` is true. Returns `null` if `t` is neither.
+ * of Maps, returns the first constituent — but only after verifying
+ * every constituent has identical (K, V) type arguments. Returns
+ * `null` if `t` is not a Map (or a uniform Map union), or if any
+ * union constituent has different K or V from the first.
  *
- * Picking the first Map constituent is sound for the canonical case
- * (`Map<K, V> | ReadonlyMap<K, V>`): both constituents share the
- * same K/V, so any representative gives the same result. Pathological
- * unions with diverging K/V (`Map<string, int> | Map<number, string>`)
- * are unreachable in practice — TS's `.get` signature contraction
- * would already reject them at the call site.
+ * Validation guards against the pathological case
+ * `Map<string, int> | Map<number, string>` synthesizing a domain
+ * built only on the first constituent's K/V — using just one
+ * representative would produce incorrect Pantagruel for accesses
+ * that flow through the second branch. Caller treats `null` as the
+ * "non-uniform Map union" rejection.
  */
-function findMapRepresentative(t: ts.Type): ts.Type | null {
+function findMapRepresentative(
+  t: ts.Type,
+  checker: ts.TypeChecker,
+): ts.Type | null {
   if (isMapType(t)) {
     return t;
   }
-  if (t.isUnion() && t.types.every((member) => isMapType(member))) {
-    return t.types[0] ?? null;
+  if (!t.isUnion() || !t.types.every((member) => isMapType(member))) {
+    return null;
   }
-  return null;
+  const first = t.types[0];
+  if (first === undefined) {
+    return null;
+  }
+  const firstArgs = checker.getTypeArguments(first as ts.TypeReference);
+  if (firstArgs.length !== 2) {
+    return null;
+  }
+  for (let i = 1; i < t.types.length; i++) {
+    const args = checker.getTypeArguments(t.types[i]! as ts.TypeReference);
+    if (args.length !== 2) {
+      return null;
+    }
+    if (args[0] !== firstArgs[0] || args[1] !== firstArgs[1]) {
+      return null;
+    }
+  }
+  return first;
 }
 
 function isArrayChainCall(
@@ -368,9 +396,14 @@ export function tryBuildL1PureSubExpression(
     const innerMember = ts.isCallExpression(innerUnwrapped)
       ? callMemberName(innerUnwrapped.expression)
       : null;
+    // Use the union-aware `isMapUnionType` so receivers like
+    // `Map<K, V> | ReadonlyMap<K, V>` reach the same Map-get carve-out
+    // as a single Map. Without this, `m.get(k)!` for a union receiver
+    // would slip past and add a bogus singleton extraction around the
+    // already-unboxed Map lookup.
     const isMapGetCall =
       innerMember?.methodName === "get" &&
-      isMapType(ctx.checker.getTypeAtLocation(innerMember.receiver));
+      isMapUnionType(ctx.checker.getTypeAtLocation(innerMember.receiver));
     if (isNullableTsType(receiverTsType) && !isMapGetCall) {
       return ir1App(inner, [ir1LitNat(1)]);
     }
@@ -585,10 +618,12 @@ export function tryBuildL1PureSubExpression(
         // For union receivers (`Map<K, V> | ReadonlyMap<K, V>`), pick
         // a representative Map constituent for K/V extraction —
         // `getTypeArguments` only operates on `TypeReference`, not on
-        // union types directly. `findMapRepresentative` enforces the
-        // every-constituent-is-Map-like uniformity, so the union
-        // collapses cleanly to a single (K, V).
-        const mapRep = findMapRepresentative(receiverType);
+        // union types directly. `findMapRepresentative` enforces both
+        // every-constituent-is-Map-like AND identical (K, V) across
+        // constituents, so pathological unions like
+        // `Map<string, int> | Map<number, string>` reject instead of
+        // synthesizing a domain on just the first branch's K/V.
+        const mapRep = findMapRepresentative(receiverType, ctx.checker);
         if (mapRep === null) {
           return {
             unsupported:
