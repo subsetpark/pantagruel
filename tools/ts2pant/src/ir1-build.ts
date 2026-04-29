@@ -1028,40 +1028,50 @@ export function buildL1MemberAccess(
         return nativeReceiver;
       }
       receiverL1 = nativeReceiver;
-    } else if (options.nativeReceiverLeaf === true || ctx.state !== undefined) {
+    } else if (ctx.state !== undefined) {
+      // Mutating-body path never falls back to the from-l2 escape
+      // hatch — non-pure receivers reject explicitly.
       return {
         unsupported: `unsupported property-access receiver: ${(receiverNode as ts.Expression).getText()}`,
       };
-    } else {
+    } else if (options.nativeReceiverLeaf === true) {
+      // Pure-path with the native-leaf flag: try the IR-returning
+      // leaf translator (covers array-chain receivers via
+      // `ir-build`'s `buildNativeReceiverLeafIR`). If it doesn't
+      // apply, refuse rather than fall back to `translateBodyExpr` —
+      // the flag's contract is "native L1 or explicit unsupported".
       const nativeReceiverIR = tryBuildNativeReceiverLeafIR(
         receiverNode as ts.Expression,
         ctx,
         options,
       );
-      if (nativeReceiverIR !== null) {
-        if (isL1Unsupported(nativeReceiverIR)) {
-          return nativeReceiverIR;
-        }
-        receiverL1 = nativeReceiverIR;
-      } else {
-        const r = translateBodyExpr(
-          receiverNode as ts.Expression,
-          ctx.checker,
-          ctx.strategy,
-          ctx.paramNames,
-          ctx.state,
-          ctx.supply,
-        );
-        if (isBodyUnsupported(r)) {
-          return { unsupported: r.unsupported };
-        }
-        if ("effect" in r) {
-          return {
-            unsupported: "collection mutation as property-access receiver",
-          };
-        }
-        receiverL1 = ir1FromL2(irWrap(bodyExpr(r)));
+      if (nativeReceiverIR === null) {
+        return {
+          unsupported: `unsupported property-access receiver: ${(receiverNode as ts.Expression).getText()}`,
+        };
       }
+      if (isL1Unsupported(nativeReceiverIR)) {
+        return nativeReceiverIR;
+      }
+      receiverL1 = nativeReceiverIR;
+    } else {
+      const r = translateBodyExpr(
+        receiverNode as ts.Expression,
+        ctx.checker,
+        ctx.strategy,
+        ctx.paramNames,
+        ctx.state,
+        ctx.supply,
+      );
+      if (isBodyUnsupported(r)) {
+        return { unsupported: r.unsupported };
+      }
+      if ("effect" in r) {
+        return {
+          unsupported: "collection mutation as property-access receiver",
+        };
+      }
+      receiverL1 = ir1FromL2(irWrap(bodyExpr(r)));
     }
   }
 

@@ -1100,7 +1100,15 @@ export function translateExpr(
       return subResult;
     };
     const recognized = recognizeNullishForm(expr, checker, translate);
-    if (recognized !== null && !("unsupported" in recognized)) {
+    if (recognized !== null) {
+      // Recognizer fired. Propagate either the lowered L1 expression
+      // or the operand's `{ unsupported }` rejection — falling through
+      // to the binary-fallback below would silently swallow a real
+      // rejection (e.g., the strict-only gate's loose-equality refusal
+      // emitted by the translate callback for wrapped operands).
+      if ("unsupported" in recognized) {
+        return recognized;
+      }
       return lowerExpr(lowerL1Expr(recognized));
     }
     // M4 P3: reject any surviving loose equality (== / !=). The
