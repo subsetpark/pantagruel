@@ -60,6 +60,16 @@ function setupReturnExpr(source: string): {
 }
 
 describe("ir1-build call purity", () => {
+  it("lowers a known pure call when callee and receiver are pure", () => {
+    const pure = setupReturnExpr(`
+      function f(xs: Set<number>, x: number): boolean {
+        return xs.has(x);
+      }
+    `);
+
+    assert.notEqual(tryBuildL1PureSubExpression(pure.expr, pure.ctx), null);
+  });
+
   it("does not lower known collection mutations as pure native calls", () => {
     const setAdd = setupReturnExpr(`
       function f(xs: Set<number>, x: number): Set<number> {
