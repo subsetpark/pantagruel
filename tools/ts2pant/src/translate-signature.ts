@@ -14,6 +14,7 @@ import { lowerL1Expr } from "./ir1-lower.js";
 import {
   type NullishTranslate,
   recognizeNullishForm,
+  unwrapTransparentExpression,
 } from "./nullish-recognizer.js";
 import type { OpaqueBinop, OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
@@ -1038,12 +1039,18 @@ export function translateExpr(
       // equality (`==` / `!=`) is unsupported on the signature path
       // (`containsUnsupportedOperator` rejects it; CLAUDE.md § M4
       // documents the asymmetry against the body path). Walk up
-      // through parens / `typeof` to find the binary expression that
-      // claimed this operand and reject if loose.
+      // through transparent wrappers — parens, `as`, non-null `!`,
+      // `satisfies` — and `typeof` to find the binary expression
+      // that claimed this operand. Symmetric with `translateExpr`
+      // and `containsUnsupportedOperator` so wrapped operands like
+      // `(x as T) == null` route through the same rejection.
       let owner: ts.Node = sub;
       while (
         owner.parent &&
         (ts.isParenthesizedExpression(owner.parent) ||
+          ts.isAsExpression(owner.parent) ||
+          ts.isNonNullExpression(owner.parent) ||
+          ts.isSatisfiesExpression(owner.parent) ||
           ts.isTypeOfExpression(owner.parent))
       ) {
         owner = owner.parent;
@@ -1059,7 +1066,13 @@ export function translateExpr(
           unsupported: "loose equality (== / !=) is unsupported; use === / !==",
         };
       }
-      const strippedSub = unwrapParens(sub) as ts.Expression;
+      // Strip the same transparent wrappers (parens + `as` + `!` +
+      // `satisfies`) before classifying as Member surface. Without
+      // this, a wrapped property-access operand like
+      // `(account.owner as T) === null` would skip the signature-side
+      // bare-kebab fallback applied below and regress to a generic
+      // unsupported on ambiguous-owner shapes.
+      const strippedSub = unwrapTransparentExpression(sub);
       if (
         (ts.isPropertyAccessExpression(strippedSub) ||
           ts.isElementAccessExpression(strippedSub)) &&
