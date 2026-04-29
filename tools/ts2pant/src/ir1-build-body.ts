@@ -43,6 +43,7 @@ import {
 } from "./ir1.js";
 import {
   buildL1MemberAccess,
+  isCollectionMutationCall,
   isL1Unsupported,
   tryBuildL1Cardinality,
   tryBuildL1PureSubExpression,
@@ -734,6 +735,18 @@ function buildL1SubExpr(
   });
   if (native !== null) {
     return native;
+  }
+  // Surface Map/Set point-mutation calls in value position with a
+  // specific reason. `tryBuildL1PureSubExpression` returns null for
+  // these (they are not pure), and the generic fallback below would
+  // hide which idiom is unsupported.
+  if (
+    ts.isCallExpression(stripped) &&
+    isCollectionMutationCall(stripped, ctx.checker)
+  ) {
+    return {
+      unsupported: "collection mutation outside statement position",
+    };
   }
   return {
     unsupported: `unsupported mutating-body sub-expression: ${stripped.getText()}`,

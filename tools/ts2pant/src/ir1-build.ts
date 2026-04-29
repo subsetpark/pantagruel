@@ -224,6 +224,39 @@ function isKnownEffectfulNativeCall(
   );
 }
 
+/**
+ * True when `expr` is a Map/Set point-mutation call (.set/.delete on
+ * Map; .add/.delete/.clear on Set). Used by mutating-body sub-expression
+ * builders to surface a specific "collection mutation outside statement
+ * position" reason instead of the generic mutating-body fallback when a
+ * mutation call is observed in value position (e.g., `a.q = a.p.set(k, v)`).
+ */
+export function isCollectionMutationCall(
+  expr: ts.CallExpression,
+  checker: ts.TypeChecker,
+): boolean {
+  const member = callMemberName(expr.expression);
+  if (member === null) {
+    return false;
+  }
+  const receiverType = checker.getTypeAtLocation(member.receiver);
+  if (
+    (member.methodName === "set" || member.methodName === "delete") &&
+    isMapType(receiverType)
+  ) {
+    return true;
+  }
+  if (
+    (member.methodName === "add" ||
+      member.methodName === "delete" ||
+      member.methodName === "clear") &&
+    isSetType(receiverType)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function isArrayOrTupleType(t: ts.Type, checker: ts.TypeChecker): boolean {
   return checker.isArrayType(t) || checker.isTupleType(t);
 }
@@ -422,18 +455,6 @@ export function tryBuildL1PureSubExpression(
       const methodName = member.methodName;
       const receiverNode = member.receiver;
       const receiverType = ctx.checker.getTypeAtLocation(receiverNode);
-      if (
-        ((methodName === "set" || methodName === "delete") &&
-          isMapType(receiverType)) ||
-        ((methodName === "add" ||
-          methodName === "delete" ||
-          methodName === "clear") &&
-          isSetType(receiverType))
-      ) {
-        return {
-          unsupported: "collection mutation outside statement position",
-        };
-      }
       if (
         (methodName === "includes" || methodName === "has") &&
         expr.arguments.length === 1
