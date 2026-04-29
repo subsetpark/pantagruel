@@ -1018,13 +1018,37 @@ export function translateExpr(
     // resolved-`undefined` — verify the `undefined` identifier
     // resolves to the global symbol, not a shadowed local.
     const translate: NullishTranslate = (sub) => {
-      const subResult = tryBuildL1PureSubExpression(sub, {
+      const l1Ctx: L1BuildContext = {
         checker,
         strategy: _strategy,
         paramNames,
         state: undefined,
         supply: { n: 0, synthCell },
-      });
+      };
+      // Route property/element access operands through the same
+      // signature-side cardinality + Member dispatch that
+      // `translateExpr` uses for top-level accesses, so nullish
+      // operands like `account.owner === undefined` or
+      // `xs.length === 0` preserve signature semantics end-to-end
+      // (`ambiguousOwnerFallback: "bare-kebab"` for guard tolerance,
+      // `nativeReceiverLeaf: true` for the receiver leaf).
+      const strippedSub = unwrapParens(sub) as ts.Expression;
+      if (
+        (ts.isPropertyAccessExpression(strippedSub) ||
+          ts.isElementAccessExpression(strippedSub)) &&
+        (strippedSub.flags & ts.NodeFlags.OptionalChain) === 0
+      ) {
+        const sigOptions: BuildL1MemberAccessOptions = {
+          ambiguousOwnerFallback: "bare-kebab",
+          nativeReceiverLeaf: true,
+        };
+        const card = tryBuildL1Cardinality(strippedSub, l1Ctx, sigOptions);
+        if (card !== null) {
+          return card;
+        }
+        return buildL1MemberAccess(strippedSub, l1Ctx, sigOptions);
+      }
+      const subResult = tryBuildL1PureSubExpression(sub, l1Ctx);
       if (subResult === null) {
         return {
           unsupported: `unsupported signature nullish operand: ${sub.getText()}`,

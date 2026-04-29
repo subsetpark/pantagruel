@@ -418,9 +418,9 @@ export function tryBuildL1PureSubExpression(
     ) {
       return null;
     }
-    if (ts.isPropertyAccessExpression(expr.expression)) {
-      const methodName = expr.expression.name.text;
-      const receiverNode = expr.expression.expression;
+    if (member !== null) {
+      const methodName = member.methodName;
+      const receiverNode = member.receiver;
       const receiverType = ctx.checker.getTypeAtLocation(receiverNode);
       if (
         ((methodName === "set" || methodName === "delete") &&
