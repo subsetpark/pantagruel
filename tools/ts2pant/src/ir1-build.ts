@@ -295,6 +295,32 @@ export function tryBuildL1PureSubExpression(
   ctx: L1BuildContext,
 ): L1BuildResult | null {
   expr = unwrapParens(expr) as ts.Expression;
+  // Handle `x!` explicitly before the transparent-strip recursion: under
+  // list-lift, a `!` on a nullable receiver lowers to singleton
+  // extraction `(x 1)`, mirroring `translateBodyExpr`'s NonNull branch.
+  // Stripping it via `unwrapTransparentExpression` would silently drop
+  // the singleton extraction and emit just `x`, which is the wrong Pant
+  // type ([T] vs T).
+  if (ts.isNonNullExpression(expr)) {
+    const innerExpr = expr.expression;
+    const inner = tryBuildL1PureSubExpression(innerExpr, ctx);
+    if (inner === null || isL1Unsupported(inner)) {
+      return inner;
+    }
+    const receiverTsType = getOperandDeclaredType(innerExpr, ctx.checker);
+    const innerUnwrapped = unwrapTransparentExpression(innerExpr);
+    const isMapGetCall =
+      ts.isCallExpression(innerUnwrapped) &&
+      ts.isPropertyAccessExpression(innerUnwrapped.expression) &&
+      innerUnwrapped.expression.name.text === "get" &&
+      isMapType(
+        ctx.checker.getTypeAtLocation(innerUnwrapped.expression.expression),
+      );
+    if (isNullableTsType(receiverTsType) && !isMapGetCall) {
+      return ir1App(inner, [ir1LitNat(1)]);
+    }
+    return inner;
+  }
   const transparent = unwrapTransparentExpression(expr);
   if (transparent !== expr && ts.isExpression(transparent)) {
     return tryBuildL1PureSubExpression(transparent, ctx);
