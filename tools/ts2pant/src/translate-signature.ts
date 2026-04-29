@@ -471,7 +471,8 @@ export function containsUnsupportedOperator(expr: ts.Expression): boolean {
     ts.isParenthesizedExpression(expr) ||
     ts.isAsExpression(expr) ||
     ts.isNonNullExpression(expr) ||
-    ts.isSatisfiesExpression(expr)
+    ts.isSatisfiesExpression(expr) ||
+    ts.isTypeOfExpression(expr)
   ) {
     return containsUnsupportedOperator(expr.expression);
   }
@@ -524,7 +525,8 @@ export function isPureExpression(expr: ts.Expression): boolean {
     ts.isParenthesizedExpression(expr) ||
     ts.isAsExpression(expr) ||
     ts.isNonNullExpression(expr) ||
-    ts.isSatisfiesExpression(expr)
+    ts.isSatisfiesExpression(expr) ||
+    ts.isTypeOfExpression(expr)
   ) {
     return isPureExpression(expr.expression);
   }

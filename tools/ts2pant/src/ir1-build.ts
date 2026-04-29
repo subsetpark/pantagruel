@@ -275,6 +275,55 @@ function isArrayOrTupleUnionType(t: ts.Type, checker: ts.TypeChecker): boolean {
   );
 }
 
+/**
+ * True when `t` is `Set<T>` / `ReadonlySet<T>` or a union of them.
+ * Mirrors `isArrayOrTupleUnionType`'s `every`-based shape so a mixed
+ * union (`Set<T> | string`) rejects rather than silently picking the
+ * Set side. `Set<T> | ReadonlySet<T>` is the canonical case the
+ * reviewer flagged: both constituents are operationally one Set
+ * shape, so collapsing them is sound.
+ */
+function isSetUnionType(t: ts.Type): boolean {
+  if (isSetType(t)) {
+    return true;
+  }
+  return t.isUnion() && t.types.every((member) => isSetType(member));
+}
+
+/**
+ * True when `t` is `Map<K, V>` / `ReadonlyMap<K, V>` or a union of
+ * them. Same shape contract as `isSetUnionType` — mixed unions reject.
+ */
+function isMapUnionType(t: ts.Type): boolean {
+  if (isMapType(t)) {
+    return true;
+  }
+  return t.isUnion() && t.types.every((member) => isMapType(member));
+}
+
+/**
+ * Return a representative Map constituent for `getTypeArguments`
+ * extraction. For a single Map type, returns it directly; for a union
+ * of Maps, returns the first constituent. Caller must guarantee
+ * `isMapUnionType(t)` is true. Returns `null` if `t` is neither.
+ *
+ * Picking the first Map constituent is sound for the canonical case
+ * (`Map<K, V> | ReadonlyMap<K, V>`): both constituents share the
+ * same K/V, so any representative gives the same result. Pathological
+ * unions with diverging K/V (`Map<string, int> | Map<number, string>`)
+ * are unreachable in practice — TS's `.get` signature contraction
+ * would already reject them at the call site.
+ */
+function findMapRepresentative(t: ts.Type): ts.Type | null {
+  if (isMapType(t)) {
+    return t;
+  }
+  if (t.isUnion() && t.types.every((member) => isMapType(member))) {
+    return t.types[0] ?? null;
+  }
+  return null;
+}
+
 function isArrayChainCall(
   expr: ts.CallExpression,
   checker: ts.TypeChecker,
@@ -492,15 +541,17 @@ export function tryBuildL1PureSubExpression(
         (methodName === "includes" || methodName === "has") &&
         expr.arguments.length === 1
       ) {
-        // Use `isArrayOrTupleUnionType` so tuple receivers and array
-        // unions (`string[] | number[]`) take the same `x in xs`
-        // lowering as plain arrays, matching `isArrayChainCall`'s
-        // coverage. `checker.isArrayType` alone would miss tuples
-        // even though TS supports `.includes` on them.
+        // Use `isArrayOrTupleUnionType` / `isSetUnionType` so tuple
+        // receivers and union receivers (`string[] | number[]`,
+        // `Set<T> | ReadonlySet<T>`) take the same `x in xs`
+        // lowering as plain arrays/sets, matching `isArrayChainCall`'s
+        // coverage. `checker.isArrayType` / `isSetType` alone would
+        // miss the union case and let it fall through to a generic
+        // member-call lowering, silently changing semantics.
         const isArray =
           methodName === "includes" &&
           isArrayOrTupleUnionType(receiverType, ctx.checker);
-        const isSet = methodName === "has" && isSetType(receiverType);
+        const isSet = methodName === "has" && isSetUnionType(receiverType);
         if (isArray || isSet) {
           const elem = tryBuildL1PureSubExpression(expr.arguments[0]!, ctx);
           if (elem === null || isL1Unsupported(elem)) {
@@ -516,7 +567,7 @@ export function tryBuildL1PureSubExpression(
       if (
         (methodName === "get" || methodName === "has") &&
         expr.arguments.length === 1 &&
-        isMapType(receiverType)
+        isMapUnionType(receiverType)
       ) {
         const key = tryBuildL1PureSubExpression(expr.arguments[0]!, ctx);
         if (key === null || isL1Unsupported(key)) {
@@ -531,8 +582,21 @@ export function tryBuildL1PureSubExpression(
           const callee = methodName === "has" ? `${ruleName}-key` : ruleName;
           return ir1App(ir1Var(callee), [receiver.receiver, key]);
         }
+        // For union receivers (`Map<K, V> | ReadonlyMap<K, V>`), pick
+        // a representative Map constituent for K/V extraction —
+        // `getTypeArguments` only operates on `TypeReference`, not on
+        // union types directly. `findMapRepresentative` enforces the
+        // every-constituent-is-Map-like uniformity, so the union
+        // collapses cleanly to a single (K, V).
+        const mapRep = findMapRepresentative(receiverType);
+        if (mapRep === null) {
+          return {
+            unsupported:
+              "Map .get/.has receiver is not a uniform Map / ReadonlyMap shape",
+          };
+        }
         const typeArgs = ctx.checker.getTypeArguments(
-          receiverType as ts.TypeReference,
+          mapRep as ts.TypeReference,
         );
         if (typeArgs.length !== 2) {
           return { unsupported: "Map with unexpected arity" };
