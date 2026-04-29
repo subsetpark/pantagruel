@@ -1756,9 +1756,7 @@ function translatePureBody(
           return [
             {
               kind: "unsupported",
-              reason: ir.unsupported.startsWith(
-                "unsupported pure expression form",
-              )
+              reason: ir.unsupported.startsWith("unsupported pure expression")
                 ? reason
                 : ir.unsupported,
             },
@@ -1820,9 +1818,7 @@ function translatePureBody(
         return [
           {
             kind: "unsupported",
-            reason: ir.unsupported.startsWith(
-              "unsupported pure expression form",
-            )
+            reason: ir.unsupported.startsWith("unsupported pure expression")
               ? reason
               : ir.unsupported,
           },

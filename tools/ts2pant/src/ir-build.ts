@@ -1185,9 +1185,11 @@ export function buildIR(
   // Native expression construction has been exhausted. Surface forms
   // that don't match any recognizer above are reported as `unsupported`
   // so future milestones can target a concrete failure rather than a
-  // hidden OpaqueExpr embedding.
+  // hidden OpaqueExpr embedding. Quote the original source rather than
+  // a compiler-internal `SyntaxKind` label so the message is
+  // actionable for users.
   return {
-    unsupported: `unsupported pure expression form: ${ts.SyntaxKind[expr.kind]}`,
+    unsupported: `unsupported pure expression: ${expr.getText()}`,
   };
 }
 
