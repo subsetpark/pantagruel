@@ -312,13 +312,16 @@ export function tryBuildL1PureSubExpression(
     }
     const receiverTsType = getOperandDeclaredType(innerExpr, ctx.checker);
     const innerUnwrapped = unwrapTransparentExpression(innerExpr);
+    // Use `callMemberName` so string-literal element-access spellings
+    // (`m["get"](k)!`) follow the same Map-get carve-out as the dotted
+    // form (`m.get(k)!`) — both forms are operationally equivalent and
+    // should emit identical L1 (M5 property-access equivalence class).
+    const innerMember = ts.isCallExpression(innerUnwrapped)
+      ? callMemberName(innerUnwrapped.expression)
+      : null;
     const isMapGetCall =
-      ts.isCallExpression(innerUnwrapped) &&
-      ts.isPropertyAccessExpression(innerUnwrapped.expression) &&
-      innerUnwrapped.expression.name.text === "get" &&
-      isMapType(
-        ctx.checker.getTypeAtLocation(innerUnwrapped.expression.expression),
-      );
+      innerMember?.methodName === "get" &&
+      isMapType(ctx.checker.getTypeAtLocation(innerMember.receiver));
     if (isNullableTsType(receiverTsType) && !isMapGetCall) {
       return ir1App(inner, [ir1LitNat(1)]);
     }
@@ -489,8 +492,14 @@ export function tryBuildL1PureSubExpression(
         (methodName === "includes" || methodName === "has") &&
         expr.arguments.length === 1
       ) {
+        // Use `isArrayOrTupleUnionType` so tuple receivers and array
+        // unions (`string[] | number[]`) take the same `x in xs`
+        // lowering as plain arrays, matching `isArrayChainCall`'s
+        // coverage. `checker.isArrayType` alone would miss tuples
+        // even though TS supports `.includes` on them.
         const isArray =
-          methodName === "includes" && ctx.checker.isArrayType(receiverType);
+          methodName === "includes" &&
+          isArrayOrTupleUnionType(receiverType, ctx.checker);
         const isSet = methodName === "has" && isSetType(receiverType);
         if (isArray || isSet) {
           const elem = tryBuildL1PureSubExpression(expr.arguments[0]!, ctx);

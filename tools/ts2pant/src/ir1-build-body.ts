@@ -1023,7 +1023,10 @@ function buildL1EffectCall(
   // access (`m["set"](k, v)`) for the call's callee — they're equivalent
   // surface forms (M5 property-access equivalence class). Computed
   // element access (`m[expr]`) and other shapes still reject.
-  const callee = call.expression;
+  // `unwrapExpression` strips parens / `as` / `!` / `satisfies` from the
+  // callee so equivalent wrapped forms (`(m.set)(k, v)`,
+  // `(s["add"])(x)`) match the same gate.
+  const callee = unwrapExpression(call.expression);
   let receiverNode: ts.Expression;
   if (ts.isPropertyAccessExpression(callee)) {
     receiverNode = callee.expression;

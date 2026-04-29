@@ -523,7 +523,8 @@ export function isPureExpression(expr: ts.Expression): boolean {
   if (
     ts.isParenthesizedExpression(expr) ||
     ts.isAsExpression(expr) ||
-    ts.isNonNullExpression(expr)
+    ts.isNonNullExpression(expr) ||
+    ts.isSatisfiesExpression(expr)
   ) {
     return isPureExpression(expr.expression);
   }
