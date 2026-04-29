@@ -35,6 +35,7 @@ import {
   buildL1MemberAccess,
   computedElementAccessUnsupportedReason,
   elementAccessLiteralKey,
+  isArrayChainCall,
   type L1BuildContext,
   tryBuildL1Cardinality,
   tryBuildL1PureSubExpression,
@@ -478,6 +479,71 @@ function buildNativeReceiverLeafIR(
   ctx: L1BuildContext,
 ): IRExpr | { unsupported: string } | null {
   return buildIR(expr, ctx.checker, ctx.strategy, ctx.paramNames, ctx.supply);
+}
+
+/**
+ * Build `Unop(card, <arrayChainReceiver>)` directly at the L2 IR layer
+ * for `<arrayChain>.length` / `<arrayChain>["length"]` (and `.size`
+ * variants on Set chains). The L1 cardinality dispatch (`Unop(card, …)`
+ * over an `IR1Expr` receiver) cannot represent an array-chain receiver
+ * because L1 has no `each` form — `each` is L2-only. Building at L2
+ * sidesteps the layer mismatch.
+ *
+ * Returns `null` when the expression is not `<arrayChain>.length` /
+ * `<arrayChain>.size`, leaving the L1 cardinality / Member dispatch
+ * unaffected.
+ */
+function tryBuildArrayChainCardinality(
+  expr: ts.PropertyAccessExpression | ts.ElementAccessExpression,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: ReadonlyMap<string, string>,
+  supply: UniqueSupply,
+): IRExpr | null {
+  if ((expr.flags & ts.NodeFlags.OptionalChain) !== 0) {
+    return null;
+  }
+  const propName = ts.isPropertyAccessExpression(expr)
+    ? expr.name.text
+    : elementAccessLiteralKey(expr);
+  if (propName !== "length" && propName !== "size") {
+    return null;
+  }
+  const receiverNode = unwrapParens(expr.expression) as ts.Expression;
+  if (!ts.isCallExpression(receiverNode)) {
+    return null;
+  }
+  const l1Ctx: L1BuildContext = {
+    checker,
+    strategy,
+    paramNames,
+    state: undefined,
+    supply,
+  };
+  if (!isArrayChainCall(receiverNode, checker)) {
+    return null;
+  }
+  const receiverIR = buildIR(
+    receiverNode,
+    checker,
+    strategy,
+    paramNames,
+    supply,
+  );
+  if (isBuildUnsupported(receiverIR)) {
+    return null;
+  }
+  // Sanity check: cardinality only applies when the receiver lowers to
+  // something whose Pant type is a list-lifted form. The array-chain
+  // recognizer guarantees this — `each(...)` produces `[T]` — so we
+  // accept without re-checking the type. `l1Ctx` is unused here but
+  // kept for future expansion when more receiver shapes arrive.
+  void l1Ctx;
+  return {
+    kind: "app",
+    head: { kind: "unop", op: "card" },
+    args: [receiverIR],
+  };
 }
 
 function tryBuildArrayMethodValue(
@@ -970,6 +1036,16 @@ export function buildIR(
   // EUF function distinct from the actual cardinality. Fires before the
   // Member dispatch below for the six list-shaped TS types.
   if (ts.isPropertyAccessExpression(expr)) {
+    const arrayChainCard = tryBuildArrayChainCardinality(
+      expr,
+      checker,
+      strategy,
+      paramNames,
+      supply,
+    );
+    if (arrayChainCard !== null) {
+      return arrayChainCard;
+    }
     const card = tryBuildL1Cardinality(expr, l1Ctx, {
       nativeReceiverLeaf: true,
       nativeReceiverLeafIR: buildNativeReceiverLeafIR,
@@ -982,6 +1058,16 @@ export function buildIR(
   if (ts.isElementAccessExpression(expr)) {
     const inOptionalChain = (expr.flags & ts.NodeFlags.OptionalChain) !== 0;
     if (!inOptionalChain) {
+      const arrayChainCard = tryBuildArrayChainCardinality(
+        expr,
+        checker,
+        strategy,
+        paramNames,
+        supply,
+      );
+      if (arrayChainCard !== null) {
+        return arrayChainCard;
+      }
       const card = tryBuildL1Cardinality(expr, l1Ctx, {
         nativeReceiverLeaf: true,
         nativeReceiverLeafIR: buildNativeReceiverLeafIR,

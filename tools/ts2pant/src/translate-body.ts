@@ -6,7 +6,6 @@ import { lowerExpr } from "./ir-emit.js";
 import { type IR1Expr, ir1Binop, ir1FromL2, ir1IsNullish } from "./ir1.js";
 import {
   buildL1Conditional,
-  buildL1ConditionalFromArms,
   buildL1LetWhile,
   buildL1MemberAccess,
   isL1ConditionalForm,
@@ -14,6 +13,7 @@ import {
   isL1Unsupported,
   lowerL1ToOpaque,
   tryBuildL1Cardinality,
+  tryBuildL1PureSubExpression,
   tryRecognizeFunctorLift,
 } from "./ir1-build.js";
 import {
@@ -1610,37 +1610,90 @@ function translatePureBody(
       state: undefined as SymbolicState | undefined,
       supply,
     };
-    // Wrap pre-translated arm OpaqueExprs as L1 from-l2 expressions so
-    // the L1 cond-builder can compose them with the L1-translated
-    // terminal. Each arm's guard and value are independent
-    // sub-expressions whose internal normalization isn't M1's concern;
-    // M2/M3 will progressively replace these wraps with native L1
-    // construction.
-    const preludeL1: Array<readonly [IR1Expr, IR1Expr]> = inlined.arms.map(
-      ([g, v]) => [ir1FromL2(irWrap(g)), ir1FromL2(irWrap(v))] as const,
-    );
-    const built = buildL1ConditionalFromArms(
-      preludeL1,
-      extracted.returnExpr,
-      l1Ctx,
-    );
-    if (isL1Unsupported(built)) {
-      return [
-        {
-          kind: "unsupported",
-          reason: `${functionName} — ${built.unsupported}`,
-        },
-      ];
+    let bodyOpaque: OpaqueExpr;
+    if (l1IsConditionalReturn) {
+      // Build the conditional terminal as L1 first, then merge prelude
+      // arms (already OpaqueExpr from `inlineConstBindings`) at the
+      // OpaqueExpr layer. When the L1 terminal is itself a cond we
+      // splice its arms in to keep the output flat (matching the
+      // legacy single-cond shape).
+      const terminalL1 = buildL1Conditional(extracted.returnExpr, l1Ctx);
+      if (isL1Unsupported(terminalL1)) {
+        return [
+          {
+            kind: "unsupported",
+            reason: `${functionName} — ${terminalL1.unsupported}`,
+          },
+        ];
+      }
+      if (terminalL1.kind === "cond") {
+        const armsOpaque: Array<[OpaqueExpr, OpaqueExpr]> = [
+          ...inlined.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
+          ...terminalL1.arms.map(
+            ([g, v]) =>
+              [lowerL1ToOpaque(g), lowerL1ToOpaque(v)] as [
+                OpaqueExpr,
+                OpaqueExpr,
+              ],
+          ),
+          [ast.litBool(true), lowerL1ToOpaque(terminalL1.otherwise)] as [
+            OpaqueExpr,
+            OpaqueExpr,
+          ],
+        ];
+        bodyOpaque = ast.cond(armsOpaque);
+      } else {
+        const terminalOpaque = lowerL1ToOpaque(terminalL1);
+        if (inlined.arms.length === 0) {
+          bodyOpaque = terminalOpaque;
+        } else {
+          bodyOpaque = ast.cond([
+            ...inlined.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
+            [ast.litBool(true), terminalOpaque] as [OpaqueExpr, OpaqueExpr],
+          ]);
+        }
+      }
+    } else {
+      // Arms-only path: terminal is a plain expression that we route
+      // through `buildIR` (the canonical pure path) and merge with the
+      // prelude arms at the OpaqueExpr layer.
+      if (!ts.isExpression(extracted.returnExpr)) {
+        return [
+          {
+            kind: "unsupported",
+            reason: `${functionName} — unsupported pure return terminal`,
+          },
+        ];
+      }
+      const ir = buildIR(
+        extracted.returnExpr,
+        checker,
+        strategy,
+        inlined.scopedParams,
+        supply,
+      );
+      if (isBuildUnsupported(ir)) {
+        return [{ kind: "unsupported", reason: ir.unsupported }];
+      }
+      const terminalOpaque = lowerExpr(ir);
+      bodyOpaque = ast.cond([
+        ...inlined.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
+        [ast.litBool(true), terminalOpaque] as [OpaqueExpr, OpaqueExpr],
+      ]);
     }
-    // Wrap the lowered cond in IRWrap so the const-binding Let chain
-    // (Stage 6) can substitute hygienic-name references inside it via
-    // Pant's `substituteBinder`.
-    let bodyIR: IRExpr = irWrap(lowerL1ToOpaque(built));
+    // Apply const-binding substitutions at the OpaqueExpr layer via
+    // `substituteBinder` — semantically identical to the IR `Let`
+    // chain that lowered through the same primitive. Right-fold
+    // semantics: substitute the last binding first.
     for (let i = inlined.translatedBindings.length - 1; i >= 0; i--) {
       const tb = inlined.translatedBindings[i]!;
-      bodyIR = irLet(tb.hygienicName, irWrap(tb.initExpr), bodyIR);
+      bodyOpaque = ast.substituteBinder(
+        bodyOpaque,
+        tb.hygienicName,
+        tb.initExpr,
+      );
     }
-    rhs = lowerExpr(bodyIR);
+    rhs = bodyOpaque;
   } else if (ts.isExpression(extracted.returnExpr)) {
     const ir = buildIR(
       extracted.returnExpr,
@@ -1652,34 +1705,16 @@ function translatePureBody(
     if (isBuildUnsupported(ir)) {
       return [{ kind: "unsupported", reason: ir.unsupported }];
     }
-    // Stage 6: build IR `Let` nodes around the body for each const-
-    // binding instead of applying the legacy `applyTo` substitution
-    // closure. lowerExpr's Let case calls Pant's `substituteBinder`,
-    // which is the same primitive `applyTo` used — so the result is
-    // semantically identical to the legacy path. Right-fold semantics
-    // are preserved: outermost Let is the first binding, innermost is
-    // the body.
-    //
-    // Early-return arms (PR #129 if-conversion) are already OpaqueExprs
-    // containing hygienic-name references. Lower the IR terminal, merge
-    // it with the arms into a `cond`, then wrap the result as IRWrap
-    // inside the Let chain — substituteBinder traverses opaque
-    // expressions, so hygienic names inside arms get substituted by the
-    // Let chain just like names inside the IR body.
-    let bodyIR = ir;
-    if (inlined.arms.length > 0) {
-      const terminalExpr = lowerExpr(bodyIR);
-      const mergedExpr = ast.cond([
-        ...inlined.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
-        [ast.litBool(true), terminalExpr] as [OpaqueExpr, OpaqueExpr],
-      ]);
-      bodyIR = { kind: "ir-wrap", expr: mergedExpr };
-    }
+    let bodyOpaque = lowerExpr(ir);
     for (let i = inlined.translatedBindings.length - 1; i >= 0; i--) {
       const tb = inlined.translatedBindings[i]!;
-      bodyIR = irLet(tb.hygienicName, irWrap(tb.initExpr), bodyIR);
+      bodyOpaque = ast.substituteBinder(
+        bodyOpaque,
+        tb.hygienicName,
+        tb.initExpr,
+      );
     }
-    rhs = lowerExpr(bodyIR);
+    rhs = bodyOpaque;
   } else {
     return [
       {
@@ -2804,19 +2839,19 @@ export function translateBodyExpr(
     // arm below), so the effect variant of `BodyResult` never
     // reaches us here — the surfaced rejection carries the upstream
     // "collection mutation outside statement position" message.
+    const l1Ctx = {
+      checker,
+      strategy,
+      paramNames,
+      state,
+      supply,
+    };
     const translate: NullishTranslate = (sub) => {
-      const subResult = translateBodyExpr(
-        sub,
-        checker,
-        strategy,
-        paramNames,
-        state,
-        supply,
-      );
-      if (isBodyUnsupported(subResult)) {
-        return subResult;
+      const subL1 = tryBuildL1PureSubExpression(sub, l1Ctx);
+      if (subL1 === null) {
+        return { unsupported: `unsupported nullish operand: ${sub.getText()}` };
       }
-      return ir1FromL2(irWrap(bodyExpr(subResult)));
+      return subL1;
     };
     const recognized = recognizeNullishForm(expr, checker, translate);
     if (recognized !== null) {
@@ -3026,11 +3061,15 @@ export function translateBodyExpr(
       const xExpr = bodyExpr(leftResult);
       const yExpr = bodyExpr(rightResult);
       const rightTsType = checker.getTypeAtLocation(expr.right);
-      // Construct the cardinality-zero null test through L1 IsNullish so
-      // every nullish-shape lowering shares one source of truth (M4).
-      // The lowering chain `from-l2 → IsNullish → eq(card(_), 0)` is
-      // byte-identical to the inlined form, which is the cutover gate.
-      const cardZero = lowerL1ToOpaque(ir1IsNullish(ir1FromL2(irWrap(xExpr))));
+      // Cardinality-zero null test, byte-equivalent to the canonical
+      // L1 `IsNullish` lowering (`eq(card(_), 0)`) — built directly at
+      // the OpaqueExpr layer because the LHS `xExpr` was already
+      // translated through `translateBodyExpr`.
+      const cardZero = ast.binop(
+        ast.opEq(),
+        ast.unop(ast.opCard(), xExpr),
+        ast.litNat(0),
+      );
       const presentBranch = isNullableTsType(rightTsType)
         ? xExpr
         : ast.app(xExpr, [ast.litNat(1)]);
@@ -3083,13 +3122,14 @@ export function translateBodyExpr(
       if (isBodyUnsupported(right)) {
         return right;
       }
-      const l1Op =
+      // Build the strict-equality binop directly at the OpaqueExpr
+      // layer — both operands were translated through
+      // `translateBodyExpr` so they're already opaque.
+      const op =
         expr.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken
-          ? "eq"
-          : "neq";
-      const lhsL1 = ir1FromL2(irWrap(bodyExpr(left)));
-      const rhsL1 = ir1FromL2(irWrap(bodyExpr(right)));
-      return { expr: lowerL1ToOpaque(ir1Binop(l1Op, lhsL1, rhsL1)) };
+          ? ast.opEq()
+          : ast.opNeq();
+      return { expr: ast.binop(op, bodyExpr(left), bodyExpr(right)) };
     }
     if (
       (expr.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||

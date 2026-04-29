@@ -352,7 +352,7 @@ function findMapRepresentative(
   return first;
 }
 
-function isArrayChainCall(
+export function isArrayChainCall(
   expr: ts.CallExpression,
   checker: ts.TypeChecker,
 ): boolean {
@@ -817,13 +817,6 @@ export function tryBuildL1Cardinality(
     }
     return ir1Unop("card", inner);
   }
-  if (options.translateReceiverLeaf !== undefined) {
-    const r = options.translateReceiverLeaf(receiverNode as ts.Expression, ctx);
-    if (r.kind === "unsupported") {
-      return null;
-    }
-    return ir1Unop("card", ir1FromL2(irWrap(r.expr)));
-  }
   const nativeReceiver = tryBuildL1PureSubExpression(
     receiverNode as ts.Expression,
     ctx,
@@ -840,23 +833,8 @@ export function tryBuildL1Cardinality(
     if (nativeReceiverIR !== null && !isL1Unsupported(nativeReceiverIR)) {
       return ir1Unop("card", nativeReceiverIR);
     }
-    return null;
   }
-  const r = translateBodyExpr(
-    receiverNode as ts.Expression,
-    ctx.checker,
-    ctx.strategy,
-    ctx.paramNames,
-    ctx.state,
-    ctx.supply,
-  );
-  if (isBodyUnsupported(r)) {
-    return null;
-  }
-  if ("effect" in r) {
-    return null;
-  }
-  return ir1Unop("card", ir1FromL2(irWrap(bodyExpr(r))));
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -988,23 +966,18 @@ function tryBuildNativeReceiverLeafIR(
   ctx: L1BuildContext,
   options: BuildL1MemberAccessOptions,
 ): IR1Expr | { unsupported: string } | null {
-  if (
-    ctx.state !== undefined ||
-    options.nativeReceiverLeaf !== true ||
-    options.nativeReceiverLeafIR === undefined ||
-    !ts.isCallExpression(receiverNode) ||
-    !isArrayChainCall(receiverNode, ctx.checker)
-  ) {
-    return null;
-  }
-  const nativeReceiver = options.nativeReceiverLeafIR(receiverNode, ctx);
-  if (nativeReceiver === null) {
-    return null;
-  }
-  if ("unsupported" in nativeReceiver) {
-    return nativeReceiver;
-  }
-  return ir1FromL2(nativeReceiver);
+  // Removed in M6: array-chain receivers no longer flow through
+  // `buildL1MemberAccess`. The pure path handles array-chain receivers
+  // (e.g., `xs.filter(p).length`) directly at the L2 layer in
+  // `ir-build.ts`'s `tryBuildArrayChainCardinality`. For non-cardinality
+  // member access on an array chain (`xs.filter(p).first`), the
+  // canonical lowering would require an L1 form for `each`, which L1
+  // does not provide. Returning null lets the standard L1 dispatch
+  // fall through to the unsupported branch with a specific reason.
+  void receiverNode;
+  void ctx;
+  void options;
+  return null;
 }
 
 /**
