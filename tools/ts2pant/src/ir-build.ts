@@ -498,6 +498,27 @@ function tryBuildArrayChainCardinality(
   if (!isArrayChainCall(receiverNode, checker)) {
     return null;
   }
+  // Snapshot `UniqueSupply` state before the receiver probe so a
+  // mid-build failure unwinds cleanly. `buildIR` can advance the
+  // hygienic-name counter, register synth-cell domains, and install
+  // `opaqueAliases` entries before bottoming out at `unsupported`;
+  // returning `{unsupported}` from this function leaves the failed
+  // probe's mutations stranded in the supply, and downstream retries
+  // (translate-body's `translateBodyExpr` fallback) observe the
+  // drift as deterministic-name desync between attempts. Mirrors the
+  // `tryRecognizeFunctorLift` rollback discipline in `ir1-build.ts`.
+  const supplyCounterSnapshot = supply.n;
+  const synthCell = supply.synthCell;
+  const synthSnapshot = synthCell
+    ? {
+        synth: synthCell.synth,
+        recordSynth: synthCell.recordSynth,
+        registry: synthCell.registry,
+      }
+    : null;
+  const opaqueAliasesSnapshot = supply.opaqueAliases
+    ? new Map(supply.opaqueAliases)
+    : null;
   // Past this point we have committed to "this is an array-chain
   // cardinality" — a receiver-build failure is a real rejection of
   // the recognized form, not a "no match" shape. Propagate the
@@ -512,6 +533,17 @@ function tryBuildArrayChainCardinality(
     supply,
   );
   if (isBuildUnsupported(receiverIR)) {
+    supply.n = supplyCounterSnapshot;
+    if (synthCell && synthSnapshot) {
+      synthCell.synth = synthSnapshot.synth;
+      synthCell.recordSynth = synthSnapshot.recordSynth;
+      synthCell.registry = synthSnapshot.registry;
+    }
+    if (opaqueAliasesSnapshot !== null) {
+      supply.opaqueAliases = new Map(opaqueAliasesSnapshot);
+    } else if (supply.opaqueAliases !== undefined) {
+      delete supply.opaqueAliases;
+    }
     return receiverIR;
   }
   // Sanity check: cardinality only applies when the receiver lowers to

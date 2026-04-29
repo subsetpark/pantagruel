@@ -3153,7 +3153,16 @@ export function translateBodyExpr(
     // (Dafny Reference Manual §"Nullable Types"). See CLAUDE.md "Option-
     // Type Elimination" for the broader encoding.
     if (expr.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) {
-      const leftTsType = checker.getTypeAtLocation(expr.left);
+      // Use the operand's *declared* type (narrowing-free) for the
+      // nullability classifications. Inside a flow-narrowed branch
+      // — `if (x !== null) return x ?? y;` — `getTypeAtLocation`
+      // would return the narrowed `T` and silently emit a bare `x`,
+      // but the Pant symbol for `x` is still the list-lifted `[T]`
+      // parameter (ts2pant doesn't track flow narrowing on the Pant
+      // side), so the typecheck would fail. Same fix the
+      // `NonNullExpression` branch and the L1 `??` lowering use; see
+      // `getOperandDeclaredType` in nullish-recognizer.ts.
+      const leftTsType = getOperandDeclaredType(expr.left, checker);
       const leftResult = translateBodyExpr(
         expr.left,
         checker,
@@ -3182,7 +3191,7 @@ export function translateBodyExpr(
       }
       const xExpr = bodyExpr(leftResult);
       const yExpr = bodyExpr(rightResult);
-      const rightTsType = checker.getTypeAtLocation(expr.right);
+      const rightTsType = getOperandDeclaredType(expr.right, checker);
       // Cardinality-zero null test, byte-equivalent to the canonical
       // L1 `IsNullish` lowering (`eq(card(_), 0)`) — built directly at
       // the OpaqueExpr layer because the LHS `xExpr` was already
@@ -3740,13 +3749,21 @@ export function translateCallExpr(
       // canonical L1 Member helper. It bundles `qualifyFieldAccess` +
       // receiver translation in one call and yields the rule name and
       // receiver L1 expression for the effect descriptor.
-      const memberR = buildL1MemberAccess(normalizedReceiver, {
-        checker,
-        strategy,
-        paramNames,
-        state,
-        supply,
-      });
+      // `requireMember` suppresses the symbolic-state alias substitution
+      // — Stage A Set effects compose through `installSetWrite` (not
+      // property writes), so the call site needs the canonical Member
+      // shape unconditionally.
+      const memberR = buildL1MemberAccess(
+        normalizedReceiver,
+        {
+          checker,
+          strategy,
+          paramNames,
+          state,
+          supply,
+        },
+        { requireMember: true },
+      );
       if (isL1Unsupported(memberR)) {
         return { unsupported: memberR.unsupported };
       }
@@ -3990,14 +4007,22 @@ export function translateCallExpr(
         const innerObj = normalizedReceiver.expression;
         // M5: Stage A receiver-property qualification through the L1
         // Member helper. The receiver L1 lowers to an OpaqueExpr for
-        // `readMapThroughWrites`.
-        const memberR = buildL1MemberAccess(normalizedReceiver, {
-          checker,
-          strategy,
-          paramNames,
-          state,
-          supply,
-        });
+        // `readMapThroughWrites`. `requireMember` suppresses the
+        // symbolic-state alias substitution so the canonical Member
+        // shape is always returned — Map reads route through
+        // `readMapThroughWrites`, which composes its own override
+        // history via `MapRuleWriteEntry`, not the property cache.
+        const memberR = buildL1MemberAccess(
+          normalizedReceiver,
+          {
+            checker,
+            strategy,
+            paramNames,
+            state,
+            supply,
+          },
+          { requireMember: true },
+        );
         if (isL1Unsupported(memberR)) {
           return { unsupported: memberR.unsupported };
         }
@@ -4183,13 +4208,21 @@ export function translateCallExpr(
           // Falls through to the generic membership construction below
           // if the helper rejects (ambiguous owner / non-Member result),
           // mirroring the legacy `fieldName === null` graceful fallback.
-          const memberR = buildL1MemberAccess(normalizedReceiver, {
-            checker,
-            strategy,
-            paramNames,
-            state,
-            supply,
-          });
+          // `requireMember` suppresses the symbolic-state alias
+          // substitution — Stage A Set membership reads compose through
+          // `readSetThroughWrites` (which threads `SetRuleWriteEntry`
+          // overrides), not the property cache.
+          const memberR = buildL1MemberAccess(
+            normalizedReceiver,
+            {
+              checker,
+              strategy,
+              paramNames,
+              state,
+              supply,
+            },
+            { requireMember: true },
+          );
           if (!isL1Unsupported(memberR) && memberR.kind === "member") {
             const fieldName = memberR.name;
             const ownerType = mapTsType(

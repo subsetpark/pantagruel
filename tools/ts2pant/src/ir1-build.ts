@@ -916,10 +916,26 @@ function isMemberSurfaceForm(
  *   path can layer specialized leaf handling on top of the standard L1
  *   build without dragging in body-only branches (chain fusion, Map/Set
  *   effects).
+ *
+ * - `requireMember` — Stage A Map/Set call sites use this helper purely
+ *   for field qualification (qualified rule name + lowered receiver),
+ *   then route through their own override-aware readers
+ *   (`readMapThroughWrites`, `readSetThroughWrites`, `installMapWrite`,
+ *   `installSetWrite`). The default symbolic-state cache hit replaces a
+ *   prior-property-write Member with `Var($N)` referencing an opaque
+ *   alias, which would force those sites to reject (their downstream
+ *   APIs require the field name and receiver explicitly). Setting this
+ *   flag suppresses the alias substitution so callers always receive a
+ *   canonical `member` shape; correctness is preserved because Map.set
+ *   / .delete / Set.add / .delete write through `MapRuleWriteEntry` /
+ *   `SetRuleWriteEntry` (not property writes), so the cache entry
+ *   they'd skip would only fire on a direct field reassignment that
+ *   isn't part of the Map/Set surface anyway.
  */
 export interface BuildL1MemberAccessOptions {
   ambiguousOwnerFallback?: "reject" | "bare-kebab";
   nativeReceiverLeaf?: boolean;
+  requireMember?: boolean;
 }
 
 /**
@@ -1058,7 +1074,7 @@ export function buildL1MemberAccess(
   // `applyConst` in `symbolicExecute`). This keeps L1 free of
   // escape-hatch forms while preserving the read-after-write
   // semantics required for mutating-body sub-expression composition.
-  if (ctx.state !== undefined) {
+  if (ctx.state !== undefined && options.requireMember !== true) {
     const objOpaque = lowerExpr(lowerL1Expr(receiverL1));
     const key = symbolicKey(qualified, ctx.state.canonicalize(objOpaque));
     const entry = ctx.state.writes.get(key);
