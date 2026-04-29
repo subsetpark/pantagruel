@@ -188,6 +188,116 @@ describe("ir-build M6 native construction stubs", () => {
     expectNoIRWrap(comb);
   });
 
+  it("recognizes string-literal array method calls", () => {
+    const dotted = expectIR(`
+      interface Item { readonly amount: number; }
+      function f(items: Item[]): number[] {
+        return items.map((item) => item.amount);
+      }
+    `);
+    const indexed = expectIR(`
+      interface Item { readonly amount: number; }
+      function f(items: Item[]): number[] {
+        return items["map"]((item) => item.amount);
+      }
+    `);
+    assert.deepEqual(indexed, dotted);
+    expectNoIRWrap(indexed);
+  });
+
+  it("rejects async, defaulted, optional, and rest array callbacks", () => {
+    const cases = [
+      {
+        source: `
+          function f(xs: number[]): Promise<boolean>[] {
+            return xs.map(async (x) => x > 0);
+          }
+        `,
+        reason: /must not be async/u,
+      },
+      {
+        source: `
+          function f(xs: number[]): number[] {
+            return xs.map((x = 0) => x + 1);
+          }
+        `,
+        reason: /plain identifiers/u,
+      },
+      {
+        source: `
+          function f(xs: number[]): number[] {
+            return xs.map((x?: number) => x ?? 0);
+          }
+        `,
+        reason: /plain identifiers/u,
+      },
+      {
+        source: `
+          function f(xs: number[]): number[] {
+            return xs.map((...x) => x.length);
+          }
+        `,
+        reason: /plain identifiers/u,
+      },
+    ];
+    for (const { source, reason } of cases) {
+      const result = buildFromSource(source);
+      assert.ok(isBuildUnsupported(result));
+      if (isBuildUnsupported(result)) {
+        assert.match(result.unsupported, reason);
+      }
+    }
+  });
+
+  it("rejects array-method calls with unsupported signatures", () => {
+    const result = buildFromSource(`
+      function f(xs: number[]): number[] {
+        return xs["filter"]((x) => x > 0, undefined);
+      }
+    `);
+    assert.ok(isBuildUnsupported(result));
+    if (isBuildUnsupported(result)) {
+      assert.match(result.unsupported, /callback must have exactly one argument/u);
+    }
+  });
+
+  it("rejects non-boolean filter predicates", () => {
+    const result = buildFromSource(`
+      interface Item { readonly id: number; }
+      function f(items: Item[]): Item[] {
+        return items.filter((item) => item.id);
+      }
+    `);
+    assert.ok(isBuildUnsupported(result));
+    if (isBuildUnsupported(result)) {
+      assert.match(result.unsupported, /boolean predicate/u);
+    }
+  });
+
+  it("rejects reducer operators when operand types do not match the combiner", () => {
+    const stringConcat = buildFromSource(`
+      interface Item { readonly name: string; }
+      function f(items: Item[]): string {
+        return items.reduce((s, item) => s + item.name, "");
+      }
+    `);
+    assert.ok(isBuildUnsupported(stringConcat));
+    if (isBuildUnsupported(stringConcat)) {
+      assert.match(stringConcat.unsupported, /number combiner/u);
+    }
+
+    const truthyOr = buildFromSource(`
+      interface Item { readonly value: number; }
+      function f(items: Item[]): number {
+        return items.reduce((a, item) => a || item.value, 0);
+      }
+    `);
+    assert.ok(isBuildUnsupported(truthyOr));
+    if (isBuildUnsupported(truthyOr)) {
+      assert.match(truthyOr.unsupported, /boolean combiner/u);
+    }
+  });
+
   it("rejects reduce callbacks that use a property access in the accumulator slot", () => {
     for (const expr of ["sum.total + item.amount", "item.amount + sum.total"]) {
       const result = buildFromSource(`

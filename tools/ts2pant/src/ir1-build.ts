@@ -193,7 +193,11 @@ export function tryBuildL1PureSubExpression(
       ts.isElementAccessExpression(expr)) &&
     (expr.flags & ts.NodeFlags.OptionalChain) === 0
   ) {
-    if (ts.isPropertyAccessExpression(expr)) {
+    if (
+      ts.isPropertyAccessExpression(expr) ||
+      elementAccessLiteralKey(expr) === "length" ||
+      elementAccessLiteralKey(expr) === "size"
+    ) {
       const card = tryBuildL1Cardinality(expr, ctx, {
         nativeReceiverLeaf: true,
       });
@@ -293,8 +297,7 @@ export function tryBuildL1PureSubExpression(
     let args: IR1Expr[];
     if (ts.isIdentifier(expr.expression)) {
       const fnName =
-        ctx.paramNames.get(expr.expression.text) ??
-        toPantTermName(expr.expression.text);
+        ctx.paramNames.get(expr.expression.text) ?? expr.expression.text;
       callee = ir1Var(fnName);
       args = [];
     } else if (
@@ -359,10 +362,10 @@ function isSizeCardinalityType(t: ts.Type): boolean {
 
 /**
  * Try to build an L1 `Unop(card, receiver)` for `node` if it is a
- * non-optional `PropertyAccessExpression` whose receiver is a list-
- * shaped TS type and whose property is the cardinality slot for that
- * type. Returns null when the node is not a cardinality form — caller
- * falls through to `buildL1MemberAccess`.
+ * non-optional property access (`xs.length` or `xs["length"]`) whose
+ * receiver is a list-shaped TS type and whose property is the cardinality
+ * slot for that type. Returns null when the node is not a cardinality
+ * form — caller falls through to `buildL1MemberAccess`.
  *
  * `options` propagate through to the inner Member dispatch when the
  * cardinality receiver is itself a property access (e.g.,
@@ -377,7 +380,10 @@ export function tryBuildL1Cardinality(
   options: BuildL1MemberAccessOptions = {},
 ): IR1Expr | null {
   const stripped = unwrapParens(node);
-  if (!ts.isPropertyAccessExpression(stripped)) {
+  if (
+    !ts.isPropertyAccessExpression(stripped) &&
+    !ts.isElementAccessExpression(stripped)
+  ) {
     return null;
   }
   // Optional-chain `.length` / `.size` (i.e., `xs?.length`) preserves
@@ -388,7 +394,9 @@ export function tryBuildL1Cardinality(
   if ((stripped.flags & ts.NodeFlags.OptionalChain) !== 0) {
     return null;
   }
-  const propName = stripped.name.text;
+  const propName = ts.isPropertyAccessExpression(stripped)
+    ? stripped.name.text
+    : elementAccessLiteralKey(stripped);
   if (propName !== "length" && propName !== "size") {
     return null;
   }

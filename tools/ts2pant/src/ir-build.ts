@@ -40,6 +40,7 @@ import {
   unwrapParens,
 } from "./ir1-build.js";
 import { lowerL1Expr } from "./ir1-lower.js";
+import { isStaticallyBoolTyped } from "./purity.js";
 import {
   allocComprehensionBinder,
   ambiguousFieldMsg,
@@ -71,6 +72,7 @@ interface ReduceOpInfo {
   outer: "add" | "sub" | "mul" | "div" | "and" | "or";
   identityText: string | null;
   commutative: boolean;
+  operandType: "number" | "boolean";
 }
 
 function binopToReduceInfo(kind: ts.SyntaxKind): ReduceOpInfo | null {
@@ -81,6 +83,7 @@ function binopToReduceInfo(kind: ts.SyntaxKind): ReduceOpInfo | null {
         outer: "add",
         identityText: "0",
         commutative: true,
+        operandType: "number",
       };
     case ts.SyntaxKind.MinusToken:
       return {
@@ -88,6 +91,7 @@ function binopToReduceInfo(kind: ts.SyntaxKind): ReduceOpInfo | null {
         outer: "sub",
         identityText: null,
         commutative: false,
+        operandType: "number",
       };
     case ts.SyntaxKind.AsteriskToken:
       return {
@@ -95,6 +99,7 @@ function binopToReduceInfo(kind: ts.SyntaxKind): ReduceOpInfo | null {
         outer: "mul",
         identityText: "1",
         commutative: true,
+        operandType: "number",
       };
     case ts.SyntaxKind.SlashToken:
       return {
@@ -102,6 +107,7 @@ function binopToReduceInfo(kind: ts.SyntaxKind): ReduceOpInfo | null {
         outer: "div",
         identityText: null,
         commutative: false,
+        operandType: "number",
       };
     case ts.SyntaxKind.AmpersandAmpersandToken:
       return {
@@ -109,6 +115,7 @@ function binopToReduceInfo(kind: ts.SyntaxKind): ReduceOpInfo | null {
         outer: "and",
         identityText: "true",
         commutative: true,
+        operandType: "boolean",
       };
     case ts.SyntaxKind.BarBarToken:
       return {
@@ -116,6 +123,7 @@ function binopToReduceInfo(kind: ts.SyntaxKind): ReduceOpInfo | null {
         outer: "or",
         identityText: "false",
         commutative: true,
+        operandType: "boolean",
       };
     default:
       return null;
@@ -280,6 +288,9 @@ function extractArrowExpressionBody(
   if (!ts.isArrowFunction(fn)) {
     return { unsupported: "array callback must be an arrow function" };
   }
+  if (fn.modifiers?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword)) {
+    return { unsupported: "array callback must not be async" };
+  }
   if (fn.parameters.length !== expectedParams) {
     return {
       unsupported:
@@ -289,8 +300,16 @@ function extractArrowExpressionBody(
     };
   }
   for (const param of fn.parameters) {
-    if (!ts.isIdentifier(param.name)) {
-      return { unsupported: "array callback parameters must be identifiers" };
+    if (
+      !ts.isIdentifier(param.name) ||
+      param.initializer !== undefined ||
+      param.dotDotDotToken !== undefined ||
+      param.questionToken !== undefined
+    ) {
+      return {
+        unsupported:
+          "array callback parameters must be plain identifiers (no defaults/rest/optional)",
+      };
     }
   }
   if (ts.isBlock(fn.body)) {
@@ -327,6 +346,74 @@ function getArrayElementType(
   return typeArgs.length === 1 ? typeArgs[0]! : null;
 }
 
+function arrayMethodCall(expr: ts.CallExpression): {
+  methodName: "filter" | "map" | "reduce" | "reduceRight";
+  receiver: ts.Expression;
+} | null {
+  const callee = expr.expression;
+  if (ts.isPropertyAccessExpression(callee)) {
+    const methodName = callee.name.text;
+    if (
+      methodName === "filter" ||
+      methodName === "map" ||
+      methodName === "reduce" ||
+      methodName === "reduceRight"
+    ) {
+      return { methodName, receiver: callee.expression };
+    }
+    return null;
+  }
+  if (ts.isElementAccessExpression(callee)) {
+    const arg = callee.argumentExpression;
+    if (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg)) {
+      const methodName = arg.text;
+      if (
+        methodName === "filter" ||
+        methodName === "map" ||
+        methodName === "reduce" ||
+        methodName === "reduceRight"
+      ) {
+        return { methodName, receiver: callee.expression };
+      }
+    }
+  }
+  return null;
+}
+
+function isStaticallyNumberTyped(
+  expr: ts.Expression,
+  checker: ts.TypeChecker,
+): boolean {
+  const isAllNumber = (type: ts.Type): boolean => {
+    if (type.isUnion()) {
+      return type.types.every(isAllNumber);
+    }
+    if (type.isIntersection()) {
+      return type.types.every(isAllNumber);
+    }
+    return (type.flags & ts.TypeFlags.NumberLike) !== 0;
+  };
+  return isAllNumber(checker.getTypeAtLocation(expr));
+}
+
+function reduceOperandsMatchCombiner(
+  left: ts.Expression,
+  right: ts.Expression,
+  info: ReduceOpInfo,
+  checker: ts.TypeChecker,
+): boolean {
+  if (info.operandType === "boolean") {
+    return (
+      isStaticallyBoolTyped(left, checker) &&
+      isStaticallyBoolTyped(right, checker)
+    );
+  }
+  return (
+    isStaticallyNumberTyped(left, checker) &&
+    isStaticallyNumberTyped(right, checker)
+  );
+}
+
 function buildIRValue(
   expr: ts.Expression,
   checker: ts.TypeChecker,
@@ -335,40 +422,36 @@ function buildIRValue(
   supply: UniqueSupply,
 ): IRBuildValue | { unsupported: string } {
   expr = unwrapParens(expr) as ts.Expression;
-  if (
-    ts.isCallExpression(expr) &&
-    ts.isPropertyAccessExpression(expr.expression)
-  ) {
-    const methodName = expr.expression.name.text;
-    if (
-      (methodName === "filter" || methodName === "map") &&
-      expr.arguments.length === 1
-    ) {
-      const result = buildArrayMapFilter(
-        methodName,
-        expr.expression.expression,
-        expr,
-        checker,
-        strategy,
-        paramNames,
-        supply,
-      );
-      if (result !== null) {
-        return result;
-      }
-    }
-    if (methodName === "reduce" || methodName === "reduceRight") {
-      const result = buildArrayReduce(
-        methodName,
-        expr.expression.expression,
-        expr,
-        checker,
-        strategy,
-        paramNames,
-        supply,
-      );
-      if (result !== null) {
-        return result;
+  if (ts.isCallExpression(expr)) {
+    const arrayMethod = arrayMethodCall(expr);
+    if (arrayMethod !== null) {
+      const { methodName, receiver } = arrayMethod;
+      if (methodName === "filter" || methodName === "map") {
+        const result = buildArrayMapFilter(
+          methodName,
+          receiver,
+          expr,
+          checker,
+          strategy,
+          paramNames,
+          supply,
+        );
+        if (result !== null) {
+          return result;
+        }
+      } else {
+        const result = buildArrayReduce(
+          methodName,
+          receiver,
+          expr,
+          checker,
+          strategy,
+          paramNames,
+          supply,
+        );
+        if (result !== null) {
+          return result;
+        }
       }
     }
   }
@@ -391,6 +474,11 @@ function buildArrayMapFilter(
 ): IRBuildValue | { unsupported: string } | null {
   if (getArrayElementType(tsReceiver, checker) === null) {
     return null;
+  }
+  if (expr.arguments.length !== 1) {
+    return {
+      unsupported: `.${methodName} callback must have exactly one argument`,
+    };
   }
   const receiver = buildIRValue(
     tsReceiver,
@@ -436,6 +524,11 @@ function buildArrayMapFilter(
     : rawBody;
 
   if (methodName === "filter") {
+    if (!isStaticallyBoolTyped(callbackBody(arrow), checker)) {
+      return {
+        unsupported: ".filter callback must return a boolean predicate",
+      };
+    }
     if (isComposing) {
       return {
         expr: pending.proj,
@@ -543,6 +636,11 @@ function buildArrayReduce(
       unsupported: `.${methodName} callback must reference acc exactly once`,
     };
   }
+  if (!reduceOperandsMatchCombiner(body.left, body.right, info, checker)) {
+    return {
+      unsupported: `.${methodName} operator ${ts.SyntaxKind[body.operatorToken.kind]} operands do not match ${info.operandType} combiner`,
+    };
+  }
   if (expressionReferencesNames(innerExpr, new Set([accName]))) {
     return {
       unsupported: `.${methodName} inner expression must not reference acc`,
@@ -618,17 +716,9 @@ export function buildIR(
     supply,
   };
 
-  if (
-    ts.isCallExpression(expr) &&
-    ts.isPropertyAccessExpression(expr.expression)
-  ) {
-    const methodName = expr.expression.name.text;
-    if (
-      methodName === "filter" ||
-      methodName === "map" ||
-      methodName === "reduce" ||
-      methodName === "reduceRight"
-    ) {
+  if (ts.isCallExpression(expr)) {
+    const arrayMethod = arrayMethodCall(expr);
+    if (arrayMethod !== null) {
       const built = buildIRValue(expr, checker, strategy, paramNames, supply);
       if ("unsupported" in built) {
         return built;
