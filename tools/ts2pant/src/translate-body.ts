@@ -1,6 +1,5 @@
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
-import type { IRExpr } from "./ir.js";
 import { buildIR, isBuildUnsupported } from "./ir-build.js";
 import { lowerExpr } from "./ir-emit.js";
 import {
@@ -2505,11 +2504,11 @@ function translateMuSearchInit(
   if (isLowerUnsupported(lowered)) {
     return { error: lowered.unsupported };
   }
-  return { value: lowerExpr(lowered) };
+  return { value: lowered };
 }
 
 function isLowerUnsupported(
-  r: IRExpr | { unsupported: string },
+  r: OpaqueExpr | { unsupported: string },
 ): r is { unsupported: string } {
   return typeof r === "object" && r !== null && "unsupported" in r;
 }

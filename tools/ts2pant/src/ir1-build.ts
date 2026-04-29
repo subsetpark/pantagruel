@@ -34,7 +34,6 @@
  */
 
 import ts from "typescript";
-import type { IRExpr } from "./ir.js";
 import { lowerExpr } from "./ir-emit.js";
 import {
   type IR1Binop,
@@ -798,12 +797,13 @@ export function tryBuildL1Cardinality(
   // `a["items"].length`) route through `buildL1MemberAccess` so the
   // entire chain stays on the L1 path. Both PropertyAccess and
   // string-literal ElementAccess belong to the property-access
-  // equivalence class
-  // (M5 hard rule), so the recursion gate is the shared
-  // `isMemberSurfaceForm` predicate. Other receiver shapes
-  // (Identifier, call, binop, etc.) translate through the supplied
-  // leaf translator (default `translateBodyExpr`); those aren't
-  // property-access and are out of M5's equivalence class.
+  // equivalence class (M5 hard rule), so the recursion gate is the
+  // shared `isMemberSurfaceForm` predicate. Other receiver shapes
+  // (Identifier, call, binop, etc.) translate via
+  // `tryBuildL1PureSubExpression`; array-chain receivers like
+  // `xs.filter(p).length` are not handled here — the pure path's
+  // `tryBuildArrayChainCardinality` in `ir-build.ts` catches them at
+  // the L2 layer before the L1 cardinality dispatch fires.
   if (isMemberSurfaceForm(receiverNode)) {
     const innerCard = tryBuildL1Cardinality(receiverNode, ctx, options);
     if (innerCard !== null) {
@@ -821,16 +821,6 @@ export function tryBuildL1Cardinality(
   );
   if (nativeReceiver !== null && !isL1Unsupported(nativeReceiver)) {
     return ir1Unop("card", nativeReceiver);
-  }
-  if (options.nativeReceiverLeaf === true) {
-    const nativeReceiverIR = tryBuildNativeReceiverLeafIR(
-      receiverNode as ts.Expression,
-      ctx,
-      options,
-    );
-    if (nativeReceiverIR !== null && !isL1Unsupported(nativeReceiverIR)) {
-      return ir1Unop("card", nativeReceiverIR);
-    }
   }
   return null;
 }
@@ -930,29 +920,6 @@ function isMemberSurfaceForm(
 export interface BuildL1MemberAccessOptions {
   ambiguousOwnerFallback?: "reject" | "bare-kebab";
   nativeReceiverLeaf?: boolean;
-  nativeReceiverLeafIR?: (
-    expr: ts.Expression,
-    ctx: L1BuildContext,
-  ) => IRExpr | { unsupported: string } | null;
-}
-
-function tryBuildNativeReceiverLeafIR(
-  receiverNode: ts.Expression,
-  ctx: L1BuildContext,
-  options: BuildL1MemberAccessOptions,
-): IR1Expr | { unsupported: string } | null {
-  // Removed in M6: array-chain receivers no longer flow through
-  // `buildL1MemberAccess`. The pure path handles array-chain receivers
-  // (e.g., `xs.filter(p).length`) directly at the L2 layer in
-  // `ir-build.ts`'s `tryBuildArrayChainCardinality`. For non-cardinality
-  // member access on an array chain (`xs.filter(p).first`), the
-  // canonical lowering would require an L1 form for `each`, which L1
-  // does not provide. Returning null lets the standard L1 dispatch
-  // fall through to the unsupported branch with a specific reason.
-  void receiverNode;
-  void ctx;
-  void options;
-  return null;
 }
 
 /**

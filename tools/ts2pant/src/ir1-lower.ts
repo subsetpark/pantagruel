@@ -28,15 +28,16 @@ import {
   irAppExpr,
   irAppName,
   irBinop,
-  irCombTyped,
   irCond,
   irEach,
   irLitNat,
   irUnop,
   irVar,
 } from "./ir.js";
-import { substituteIR } from "./ir-build.js";
+import { lowerExpr } from "./ir-emit.js";
 import type { IR1Expr, IR1Stmt } from "./ir1.js";
+import type { OpaqueExpr } from "./pant-ast.js";
+import { getAst } from "./pant-wasm.js";
 import type { NumericStrategy } from "./translate-types.js";
 
 /**
@@ -182,20 +183,21 @@ export function isCanonicalMuSearchForm(
 }
 
 // ---------------------------------------------------------------------------
-// μ-search L1 → L2 lowering (M2 cleanup)
+// μ-search L1 → OpaqueExpr lowering (M2 cleanup)
 //
 // `lowerL1MuSearch` is the single source of μ-search semantics. It
 // pattern-matches the canonical L1 form, validates the predicate
 // references the counter and the strategy is discrete, and produces
-// an L2 `comb-typed` expression. The L2 → OpaqueExpr step in
-// `ir-emit.ts` produces the same `min over each j: T, j >= INIT,
-// ¬P(j) | j` shape today's legacy `translateMuSearchInit` emits —
-// byte-equality is the cutover gate.
+// an `OpaqueExpr` with shape `min over each j: T, j >= INIT, ¬P(j) | j`
+// — byte-equal to the pre-M2 legacy `translateMuSearchInit` emission.
 //
 // The substitution counter→binder happens on the lowered OpaqueExpr
 // via `ast.substituteBinder` (Pant's capture-avoiding substitution
-// at the wasm layer) rather than re-translating the predicate under
-// a new scope. One translation per sub-expression — no double work.
+// at the wasm layer). Doing it post-emit (rather than via an L2
+// rewriter) preserves the Barendregt-convention guarantee even if
+// the predicate happens to bind the same name as the fresh
+// μ-search binder, which a non-capture-avoiding L2 walker would
+// silently mishandle.
 // ---------------------------------------------------------------------------
 
 /**
@@ -220,21 +222,26 @@ export interface MuSearchLowerCtx {
 }
 
 /**
- * Lower an L1 μ-search-shaped form to an L2 `comb-typed`. Validates
+ * Lower an L1 μ-search-shaped form to an `OpaqueExpr`. Validates
  * canonical shape, predicate-references-counter, and strategy.
  *
  * Caller responsibility: build the L1 form via `buildL1LetWhile`
  * (which translates init and predicate sub-expressions as native L1
  * via `buildSubExpr`).
  *
- * Returns `IRExpr` (an L2 `comb-typed`) on success, or
- * `{ unsupported }` with a specific reason.
+ * Returns the lowered `OpaqueExpr` on success or `{ unsupported }`
+ * with a specific reason. Returning `OpaqueExpr` (rather than an
+ * L2 `IRExpr`) lets the substitution counter→binder use Pant's
+ * capture-avoiding `ast.substituteBinder` at the wasm layer; an L2
+ * walker would only be shadow-aware, not capture-avoiding, and
+ * could silently mis-substitute when the predicate binds the same
+ * name as the fresh μ-search binder.
  */
 export function lowerL1MuSearch(
   form: IR1Stmt,
   counterName: string,
   ctx: MuSearchLowerCtx,
-): IRExpr | { unsupported: string } {
+): OpaqueExpr | { unsupported: string } {
   const rejection = isCanonicalMuSearchForm(form, counterName);
   if (rejection !== null) {
     return rejection;
@@ -268,23 +275,36 @@ export function lowerL1MuSearch(
   // build time (see `buildL1LetWhile` in `ir1-build.ts`). Skipping
   // here — the lowering trusts that the L1 form represents a
   // well-formed let+while pair.
-  // Allocate the comprehension binder and substitute counter → binder
-  // on the lowered predicate at the L2 IR layer (`substituteIR`
-  // walks the L2 ADT) so the μ-search lowering doesn't need to
-  // round-trip through OpaqueExpr.
+  //
+  // Substitute counter → binder on the *predicate alone* via Pant's
+  // wasm-level `ast.substituteBinder`. Substituting on the predicate
+  // before it is wrapped in the outer comb-typed sidesteps Pant's
+  // refuse-on-capture behavior — were we to substitute on the
+  // already-wrapped form, `substituteBinder` would see the comb-
+  // typed's `binder` parameter, observe that `binder` ∈ free-vars of
+  // the replacement (`Var(binder)` itself), and decline to substitute.
+  // Substituting on the bare predicate keeps the substitution
+  // capture-avoiding for any *inner* binders within the predicate
+  // (the documented hygienic-binder invariant guarantees the fresh
+  // `binder` never collides with predicate-internal binders, but
+  // this layer enforces it independently).
   const binder = ctx.allocateBinder("j");
-  const substitutedPredicate = substituteIR(
-    predicateL2,
+  const ast = getAst();
+  const predicateOpaque = ast.substituteBinder(
+    lowerExpr(predicateL2),
     ctx.counterPantName,
-    irVar(binder),
+    ast.var(binder),
   );
-  // Build the L2 comb-typed:
-  //   min over each j: T, j >= INIT, ¬P[c := j] | j
-  return irCombTyped(
-    "min",
-    binder,
-    counterType,
-    [irBinop("ge", irVar(binder), initL2), irUnop("not", substitutedPredicate)],
-    irVar(binder),
+  const initOpaque = lowerExpr(initL2);
+  // Emit `min over each binder: T, binder >= INIT, ~P | binder`
+  // directly at the OpaqueExpr layer.
+  return ast.eachComb(
+    [ast.param(binder, ast.tName(counterType))],
+    [
+      ast.gExpr(ast.binop(ast.opGe(), ast.var(binder), initOpaque)),
+      ast.gExpr(ast.unop(ast.opNot(), predicateOpaque)),
+    ],
+    ast.combMin(),
+    ast.var(binder),
   );
 }

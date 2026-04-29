@@ -167,11 +167,7 @@ function isIdentityInit(node: ts.Expression, identityText: string): boolean {
   return n !== null && n === Number(identityText);
 }
 
-export function substituteIR(
-  expr: IRExpr,
-  name: string,
-  replacement: IRExpr,
-): IRExpr {
+function substituteIR(expr: IRExpr, name: string, replacement: IRExpr): IRExpr {
   switch (expr.kind) {
     case "var":
       return expr.name === name && !expr.primed ? replacement : expr;
@@ -467,13 +463,6 @@ function buildIRValue(
   return { expr: ir };
 }
 
-function buildNativeReceiverLeafIR(
-  expr: ts.Expression,
-  ctx: L1BuildContext,
-): IRExpr | { unsupported: string } | null {
-  return buildIR(expr, ctx.checker, ctx.strategy, ctx.paramNames, ctx.supply);
-}
-
 /**
  * Build `Unop(card, <arrayChainReceiver>)` directly at the L2 IR layer
  * for `<arrayChain>.length` / `<arrayChain>["length"]` (and `.size`
@@ -506,13 +495,6 @@ function tryBuildArrayChainCardinality(
   if (!ts.isCallExpression(receiverNode)) {
     return null;
   }
-  const l1Ctx: L1BuildContext = {
-    checker,
-    strategy,
-    paramNames,
-    state: undefined,
-    supply,
-  };
   if (!isArrayChainCall(receiverNode, checker)) {
     return null;
   }
@@ -529,9 +511,7 @@ function tryBuildArrayChainCardinality(
   // Sanity check: cardinality only applies when the receiver lowers to
   // something whose Pant type is a list-lifted form. The array-chain
   // recognizer guarantees this — `each(...)` produces `[T]` — so we
-  // accept without re-checking the type. `l1Ctx` is unused here but
-  // kept for future expansion when more receiver shapes arrive.
-  void l1Ctx;
+  // accept without re-checking the type.
   return {
     kind: "app",
     head: { kind: "unop", op: "card" },
@@ -1035,7 +1015,6 @@ export function buildIR(
     }
     const card = tryBuildL1Cardinality(expr, l1Ctx, {
       nativeReceiverLeaf: true,
-      nativeReceiverLeafIR: buildNativeReceiverLeafIR,
     });
     if (card !== null) {
       return lowerL1Expr(card);
@@ -1057,7 +1036,6 @@ export function buildIR(
       }
       const card = tryBuildL1Cardinality(expr, l1Ctx, {
         nativeReceiverLeaf: true,
-        nativeReceiverLeafIR: buildNativeReceiverLeafIR,
       });
       if (card !== null) {
         return lowerL1Expr(card);
@@ -1115,7 +1093,6 @@ export function buildIR(
   ) {
     const member = buildL1MemberAccess(expr, l1Ctx, {
       nativeReceiverLeaf: true,
-      nativeReceiverLeafIR: buildNativeReceiverLeafIR,
     });
     if ("unsupported" in member) {
       return member;
