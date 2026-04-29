@@ -481,7 +481,7 @@ function tryBuildArrayChainCardinality(
   strategy: NumericStrategy,
   paramNames: ReadonlyMap<string, string>,
   supply: UniqueSupply,
-): IRExpr | null {
+): IRExpr | { unsupported: string } | null {
   if ((expr.flags & ts.NodeFlags.OptionalChain) !== 0) {
     return null;
   }
@@ -498,6 +498,12 @@ function tryBuildArrayChainCardinality(
   if (!isArrayChainCall(receiverNode, checker)) {
     return null;
   }
+  // Past this point we have committed to "this is an array-chain
+  // cardinality" — a receiver-build failure is a real rejection of
+  // the recognized form, not a "no match" shape. Propagate the
+  // specific `unsupported` reason instead of falling through to other
+  // dispatch branches (which would observe the same receiver-build
+  // failure with a less actionable message).
   const receiverIR = buildIR(
     receiverNode,
     checker,
@@ -506,7 +512,7 @@ function tryBuildArrayChainCardinality(
     supply,
   );
   if (isBuildUnsupported(receiverIR)) {
-    return null;
+    return receiverIR;
   }
   // Sanity check: cardinality only applies when the receiver lowers to
   // something whose Pant type is a list-lifted form. The array-chain

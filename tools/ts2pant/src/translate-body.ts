@@ -107,6 +107,14 @@ function makeUniqueSupply(synthCell?: SynthCell): UniqueSupply {
  * `OpaqueExpr`. The alias is consumed by `applyOpaqueAliases` at
  * lower-to-opaque sites and substituted out before Pantagruel
  * emission, so the alias name never reaches the parser.
+ *
+ * The stored value is *eagerly resolved* against any aliases already
+ * in the map: if `value` itself contains references to earlier
+ * aliases (because the recorded write was canonicalized through a
+ * stale `applyConst`), those get substituted out before insertion.
+ * This keeps the alias map flat — no `B → Var(A)` chain pointing at
+ * another alias — so `applyOpaqueAliases` can substitute in a single
+ * pass instead of running to fixpoint.
  */
 export function registerOpaqueAlias(
   supply: UniqueSupply,
@@ -116,7 +124,7 @@ export function registerOpaqueAlias(
   if (supply.opaqueAliases === undefined) {
     supply.opaqueAliases = new Map();
   }
-  supply.opaqueAliases.set(name, value);
+  supply.opaqueAliases.set(name, applyOpaqueAliases(value, supply));
 }
 
 /**
@@ -124,6 +132,11 @@ export function registerOpaqueAlias(
  * capture-avoiding `substituteBinder`. Idempotent for fresh
  * expressions that contain no alias references; otherwise replaces
  * each `Var(aliasName)` occurrence with the registered OpaqueExpr.
+ *
+ * Single-pass — alias values are flattened at registration time
+ * (`registerOpaqueAlias` resolves prior aliases before storing), so
+ * the map never carries `B → Var(A)` chains that would require a
+ * fixpoint iteration here.
  */
 export function applyOpaqueAliases(
   expr: OpaqueExpr,

@@ -1782,12 +1782,31 @@ export function tryRecognizeFunctorLift(
         registry: synthCell.registry,
       }
     : null;
+  // The mutating-body symbolic-state fast-path inside
+  // `buildL1MemberAccess` registers `($N → recordedValue)` aliases on
+  // `supply.opaqueAliases` (see `translate-body.ts` for the
+  // mechanism). A failed probe must un-register any aliases the
+  // probe registered; otherwise the supply.n rewind below makes the
+  // same `$N` re-allocatable, and an alias from a discarded probe
+  // tree could shadow the next allocation. Snapshot the map's
+  // entries (shallow Map copy is enough — the alias values are
+  // already-built `OpaqueExpr`s, never mutated in place).
+  const opaqueAliasesSnapshot = ctx.supply.opaqueAliases
+    ? new Map(ctx.supply.opaqueAliases)
+    : null;
   const restore = (): null => {
     ctx.supply.n = supplyCounterSnapshot;
     if (synthCell && synthSnapshot) {
       synthCell.synth = synthSnapshot.synth;
       synthCell.recordSynth = synthSnapshot.recordSynth;
       synthCell.registry = synthSnapshot.registry;
+    }
+    if (opaqueAliasesSnapshot !== null) {
+      ctx.supply.opaqueAliases = new Map(opaqueAliasesSnapshot);
+    } else if (ctx.supply.opaqueAliases !== undefined) {
+      // Probe registered the first alias; no pre-probe map existed.
+      // Drop the field so the post-probe state matches pre-probe.
+      delete ctx.supply.opaqueAliases;
     }
     return null;
   };
