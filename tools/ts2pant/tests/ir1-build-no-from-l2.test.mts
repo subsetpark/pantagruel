@@ -167,7 +167,7 @@ function expectNoFromL2(stmt: IR1Stmt): void {
 describe("ir1-build-body M6 no-from-l2 stubs", () => {
   // M6 Patch 4 unskips this after mutating if guards use native L1
   // builders or return targeted unsupported results.
-  it.skip("builds if guards without from-l2", () => {
+  it("builds if guards without from-l2", () => {
     const { stmt, ctx } = firstStatement(
       `
       interface Account { balance: number; }
@@ -188,7 +188,7 @@ describe("ir1-build-body M6 no-from-l2 stubs", () => {
 
   // M6 Patch 4 unskips this after foreach sources build as native L1
   // expressions instead of `from-l2(ir-wrap(...))`.
-  it.skip("builds foreach sources without from-l2", () => {
+  it("builds foreach sources without from-l2", () => {
     const { stmt, ctx } = firstStatement(
       `
       interface Item { value: number; }
@@ -210,7 +210,7 @@ describe("ir1-build-body M6 no-from-l2 stubs", () => {
 
   // M6 Patch 4 unskips this after Shape B rhs/guard sub-expressions
   // build natively under the per-iteration L1 context.
-  it.skip("builds Shape B rhs and guard without from-l2", () => {
+  it("builds Shape B rhs and guard without from-l2", () => {
     const { stmt, ctx } = firstStatement(
       `
       interface Item { value: number; active: boolean; }
@@ -235,7 +235,7 @@ describe("ir1-build-body M6 no-from-l2 stubs", () => {
 
   // M6 Patch 4 unskips this after assignment RHS construction stops
   // delegating through `translateBodyExpr` for supported expressions.
-  it.skip("builds Shape A rhs without from-l2", () => {
+  it("builds Shape A rhs without from-l2", () => {
     const { stmt, ctx } = firstStatement(
       `
       interface Account { balance: number; }
@@ -254,7 +254,7 @@ describe("ir1-build-body M6 no-from-l2 stubs", () => {
 
   // M6 Patch 4 unskips this after Map mutation object/key/value
   // payloads build as native L1 forms or reject explicitly.
-  it.skip("builds map object/key/value payloads without from-l2", () => {
+  it("builds map object/key/value payloads without from-l2", () => {
     const { stmt, ctx } = firstStatement(
       `
       function f(m: Map<string, number>, suffix: string, value: number): void {
@@ -274,12 +274,13 @@ describe("ir1-build-body M6 no-from-l2 stubs", () => {
 
   // M6 Patch 4 unskips this after Set mutation object/element payloads
   // build as native L1 forms or reject explicitly.
-  it.skip("builds set object/element payloads without from-l2", () => {
+  it("builds set object/element payloads without from-l2", () => {
     const { stmt, ctx } = firstStatement(
       `
-      function f(s: Set<string>, suffix: string): void {
+      interface Bag { tags: Set<string>; }
+      function f(bag: Bag, suffix: string): void {
         if (suffix !== "") {
-          s.add("k" + suffix);
+          bag.tags.add("k" + suffix);
         }
       }
       `,

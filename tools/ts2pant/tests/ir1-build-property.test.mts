@@ -131,9 +131,8 @@ describe("ir1-build-property", () => {
     const result = buildL1MemberAccess(node, ctx);
     const { receiver, name } = expectMember(result);
     assert.equal(name, "user--name");
-    // Receiver bottoms out at a non-property node, translated through
-    // legacy and wrapped via from-l2.
-    assert.equal(receiver.kind, "from-l2");
+    assert.equal(receiver.kind, "var");
+    assert.equal(receiver.name, "u");
   });
 
   it("nested PropertyAccess chain builds nested Member", () => {
@@ -151,7 +150,8 @@ describe("ir1-build-property", () => {
     // nested Member trees rather than a single flat from-l2 wrap.
     const inner = expectMember(outer.receiver);
     assert.equal(inner.name, "document--owner");
-    assert.equal(inner.receiver.kind, "from-l2");
+    assert.equal(inner.receiver.kind, "var");
+    assert.equal(inner.receiver.name, "d");
   });
 
   it("ambiguous receiver returns unsupported", () => {
@@ -299,8 +299,8 @@ describe("ir1-build-property", () => {
     assert.equal(calls, 1, "translateReceiverLeaf should fire exactly once");
     const { receiver, name } = expectMember(result);
     assert.equal(name, "account--balance");
-    // The receiver is the from-l2-wrapped opaque produced by the
-    // callback. Lower and check the marker name.
+    // The receiver is the callback-produced expression. Lower and
+    // check the marker name.
     const lowered = ast.strExpr(
       lowerExpr(lowerL1Expr(receiver as IR1Expr)),
     );
@@ -349,8 +349,8 @@ describe("ir1-build-property", () => {
     const { receiver, name } = expectMember(result);
     assert.equal(name, "user--name");
     // Mirrors the dotted-access bottom-out: receiver is a non-property
-    // node translated through legacy and wrapped via from-l2.
-    assert.equal(receiver.kind, "from-l2");
+    assert.equal(receiver.kind, "var");
+    assert.equal(receiver.name, "u");
   });
 
   it("nested string-literal ElementAccess composes", () => {
@@ -368,7 +368,8 @@ describe("ir1-build-property", () => {
     // string-literal recursion gate, not flattens to one from-l2 wrap.
     const inner = expectMember(outer.receiver);
     assert.equal(inner.name, "document--owner");
-    assert.equal(inner.receiver.kind, "from-l2");
+    assert.equal(inner.receiver.kind, "var");
+    assert.equal(inner.receiver.name, "d");
   });
 
   it("computed Identifier ElementAccess rejects with reason", () => {
@@ -450,7 +451,8 @@ describe("ir1-build-property", () => {
     const result = buildL1MemberAccess(node, ctx);
     const { receiver, name } = expectMember(result);
     assert.equal(name, "user--name");
-    assert.equal(receiver.kind, "from-l2");
+    assert.equal(receiver.kind, "var");
+    assert.equal(receiver.name, "u");
 
     const dotted = setupAccess(
       `interface User { readonly name: string; }

@@ -213,14 +213,6 @@ export interface MuSearchLowerCtx {
 }
 
 /**
- * Extract the L2 IRExpr from an L1 `from-l2` wrap, or return null if
- * the L1 expression is not a `from-l2`.
- */
-function extractFromL2(e: IR1Expr): IRExpr | null {
-  return e.kind === "from-l2" ? e.expr : null;
-}
-
-/**
  * Lower an L1 μ-search-shaped form to an L2 `comb-typed`. Validates
  * canonical shape, predicate-references-counter, and strategy.
  *
@@ -263,22 +255,8 @@ export function lowerL1MuSearch(
   if (letStmt.kind !== "let" || whileStmt.kind !== "while") {
     return { unsupported: "μ-search prelude shape changed unexpectedly" };
   }
-  // The init and predicate are wrapped in `from-l2` by
-  // `buildL1LetWhile` because their internal structure is not L1's
-  // concern (M1 / M2 architectural commitment). Unwrap them here.
-  const initL2 = extractFromL2(letStmt.value);
-  if (initL2 === null) {
-    return {
-      unsupported: "μ-search init is not a from-l2 wrap (build pipeline error)",
-    };
-  }
-  const predicateL2 = extractFromL2(whileStmt.cond);
-  if (predicateL2 === null) {
-    return {
-      unsupported:
-        "μ-search predicate is not a from-l2 wrap (build pipeline error)",
-    };
-  }
+  const initL2 = lowerL1Expr(letStmt.value);
+  const predicateL2 = lowerL1Expr(whileStmt.cond);
   // Predicate-references-counter is a precondition checked at L1
   // build time (see `buildL1LetWhile` in `ir1-build.ts`). Skipping
   // here — the lowering trusts that the L1 form represents a

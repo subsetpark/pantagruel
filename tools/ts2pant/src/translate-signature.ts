@@ -1,19 +1,20 @@
 import type { SourceFile } from "ts-morph";
 import ts from "typescript";
-import { irWrap } from "./ir.js";
 import { lowerExpr } from "./ir-emit.js";
-import { ir1FromL2 } from "./ir1.js";
 import {
   type BuildL1MemberAccessOptions,
   buildL1MemberAccess,
+  isL1Unsupported,
   type L1BuildContext,
   tryBuildL1Cardinality,
+  tryBuildL1PureSubExpression,
   unwrapParens,
 } from "./ir1-build.js";
 import { lowerL1Expr } from "./ir1-lower.js";
 import {
   type NullishTranslate,
   recognizeNullishForm,
+  unwrapTransparentExpression,
 } from "./nullish-recognizer.js";
 import type { OpaqueBinop, OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
@@ -470,7 +471,8 @@ export function containsUnsupportedOperator(expr: ts.Expression): boolean {
     ts.isParenthesizedExpression(expr) ||
     ts.isAsExpression(expr) ||
     ts.isNonNullExpression(expr) ||
-    ts.isSatisfiesExpression(expr)
+    ts.isSatisfiesExpression(expr) ||
+    ts.isTypeOfExpression(expr)
   ) {
     return containsUnsupportedOperator(expr.expression);
   }
@@ -522,7 +524,9 @@ export function isPureExpression(expr: ts.Expression): boolean {
   if (
     ts.isParenthesizedExpression(expr) ||
     ts.isAsExpression(expr) ||
-    ts.isNonNullExpression(expr)
+    ts.isNonNullExpression(expr) ||
+    ts.isSatisfiesExpression(expr) ||
+    ts.isTypeOfExpression(expr)
   ) {
     return isPureExpression(expr.expression);
   }
@@ -973,13 +977,7 @@ export function translateExpr(
     //   optional-chain functor lift) inappropriate inside guards.
     const sigOptions: BuildL1MemberAccessOptions = {
       ambiguousOwnerFallback: "bare-kebab",
-      translateReceiverLeaf: (e) => {
-        const r = translateExpr(e, checker, _strategy, paramNames, synthCell);
-        if (isTranslateExprUnsupported(r)) {
-          return { kind: "unsupported", reason: r.unsupported };
-        }
-        return { kind: "expr", expr: r };
-      },
+      nativeReceiverLeaf: true,
     };
     const card = tryBuildL1Cardinality(expr, l1Ctx, sigOptions);
     if (card !== null) {
@@ -1024,20 +1022,96 @@ export function translateExpr(
     // resolved-`undefined` — verify the `undefined` identifier
     // resolves to the global symbol, not a shadowed local.
     const translate: NullishTranslate = (sub) => {
-      const subResult = translateExpr(
-        sub,
+      const l1Ctx: L1BuildContext = {
         checker,
-        _strategy,
+        strategy: _strategy,
         paramNames,
-        synthCell,
-      );
-      if (isTranslateExprUnsupported(subResult)) {
+        state: undefined,
+        supply: { n: 0, synthCell },
+      };
+      // Route property/element access operands through the same
+      // signature-side cardinality + Member dispatch that
+      // `translateExpr` uses for top-level accesses, so nullish
+      // operands like `account.owner === undefined` or
+      // `xs.length === 0` preserve signature semantics end-to-end
+      // (`ambiguousOwnerFallback: "bare-kebab"` for guard tolerance,
+      // `nativeReceiverLeaf: true` for the receiver leaf).
+      //
+      // Strict-only gate: signature-side nullish operands must come
+      // from `===` / `!==` (or `typeof x === 'undefined'`). Loose
+      // equality (`==` / `!=`) is unsupported on the signature path
+      // (`containsUnsupportedOperator` rejects it; CLAUDE.md § M4
+      // documents the asymmetry against the body path). Walk up
+      // through transparent wrappers — parens, `as`, non-null `!`,
+      // `satisfies` — and `typeof` to find the binary expression
+      // that claimed this operand. Symmetric with `translateExpr`
+      // and `containsUnsupportedOperator` so wrapped operands like
+      // `(x as T) == null` route through the same rejection.
+      let owner: ts.Node = sub;
+      while (
+        owner.parent &&
+        (ts.isParenthesizedExpression(owner.parent) ||
+          ts.isAsExpression(owner.parent) ||
+          ts.isNonNullExpression(owner.parent) ||
+          ts.isSatisfiesExpression(owner.parent) ||
+          ts.isTypeOfExpression(owner.parent))
+      ) {
+        owner = owner.parent;
+      }
+      if (
+        owner.parent &&
+        ts.isBinaryExpression(owner.parent) &&
+        (owner.parent.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken ||
+          owner.parent.operatorToken.kind ===
+            ts.SyntaxKind.ExclamationEqualsToken)
+      ) {
+        return {
+          unsupported: "loose equality (== / !=) is unsupported; use === / !==",
+        };
+      }
+      // Strip the same transparent wrappers (parens + `as` + `!` +
+      // `satisfies`) before classifying as Member surface. Without
+      // this, a wrapped property-access operand like
+      // `(account.owner as T) === null` would skip the signature-side
+      // bare-kebab fallback applied below and regress to a generic
+      // unsupported on ambiguous-owner shapes.
+      const strippedSub = unwrapTransparentExpression(sub);
+      if (
+        (ts.isPropertyAccessExpression(strippedSub) ||
+          ts.isElementAccessExpression(strippedSub)) &&
+        (strippedSub.flags & ts.NodeFlags.OptionalChain) === 0
+      ) {
+        const sigOptions: BuildL1MemberAccessOptions = {
+          ambiguousOwnerFallback: "bare-kebab",
+          nativeReceiverLeaf: true,
+        };
+        const card = tryBuildL1Cardinality(strippedSub, l1Ctx, sigOptions);
+        if (card !== null) {
+          return card;
+        }
+        return buildL1MemberAccess(strippedSub, l1Ctx, sigOptions);
+      }
+      const subResult = tryBuildL1PureSubExpression(sub, l1Ctx);
+      if (subResult === null) {
+        return {
+          unsupported: `unsupported signature nullish operand: ${sub.getText()}`,
+        };
+      }
+      if (isL1Unsupported(subResult)) {
         return subResult;
       }
-      return ir1FromL2(irWrap(subResult));
+      return subResult;
     };
     const recognized = recognizeNullishForm(expr, checker, translate);
-    if (recognized !== null && !("unsupported" in recognized)) {
+    if (recognized !== null) {
+      // Recognizer fired. Propagate either the lowered L1 expression
+      // or the operand's `{ unsupported }` rejection — falling through
+      // to the binary-fallback below would silently swallow a real
+      // rejection (e.g., the strict-only gate's loose-equality refusal
+      // emitted by the translate callback for wrapped operands).
+      if ("unsupported" in recognized) {
+        return recognized;
+      }
       return lowerExpr(lowerL1Expr(recognized));
     }
     // M4 P3: reject any surviving loose equality (== / !=). The

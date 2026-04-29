@@ -26,7 +26,6 @@
 
 import ts from "typescript";
 import type { IRBinop } from "./ir.js";
-import { irWrap } from "./ir.js";
 import {
   type IR1Expr,
   type IR1FoldLeaf,
@@ -36,14 +35,20 @@ import {
   ir1Block,
   ir1CondStmt,
   ir1Foreach,
-  ir1FromL2,
   ir1MapDelete,
   ir1MapSet,
   ir1Member,
   ir1SetAddOrDelete,
   ir1SetClear,
 } from "./ir1.js";
-import { buildL1MemberAccess, isL1Unsupported } from "./ir1-build.js";
+import {
+  buildL1MemberAccess,
+  elementAccessLiteralKey,
+  isCollectionMutationCall,
+  isL1Unsupported,
+  tryBuildL1Cardinality,
+  tryBuildL1PureSubExpression,
+} from "./ir1-build.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import {
   addWrittenKey,
@@ -54,7 +59,6 @@ import {
   expressionReferencesNames,
   freshHygienicBinder,
   getRootIdentifier,
-  isBodyEffect,
   isBodyUnsupported,
   isGuardStatement,
   putWrite,
@@ -207,20 +211,10 @@ export function buildL1ForOfMutation(
     return { unsupported: "for-of destructuring pattern is not supported" };
   }
   const iterName = decl.name.text;
-  const sourceR = rejectEffect(
-    translateBodyExpr(
-      stmt.expression,
-      ctx.checker,
-      ctx.strategy,
-      ctx.paramNames,
-      ctx.state,
-      ctx.supply,
-    ),
-  );
-  if (isBodyUnsupported(sourceR)) {
-    return { unsupported: sourceR.unsupported };
+  const source = buildL1SubExpr(stmt.expression, ctx);
+  if (isUnsupported(source)) {
+    return source;
   }
-  const source = ir1FromL2(irWrap(ctx.applyConst(bodyExpr(sourceR))));
   return finishForeach(iterName, source, stmt.statement, ctx);
 }
 
@@ -267,20 +261,10 @@ export function buildL1ForEachCall(
     };
   }
   const iterName = param.name.text;
-  const sourceR = rejectEffect(
-    translateBodyExpr(
-      call.expression.expression,
-      ctx.checker,
-      ctx.strategy,
-      ctx.paramNames,
-      ctx.state,
-      ctx.supply,
-    ),
-  );
-  if (isBodyUnsupported(sourceR)) {
-    return { unsupported: sourceR.unsupported };
+  const source = buildL1SubExpr(call.expression.expression, ctx);
+  if (isUnsupported(source)) {
+    return source;
   }
-  const source = ir1FromL2(irWrap(ctx.applyConst(bodyExpr(sourceR))));
   const bodyStmt = ts.isBlock(arg.body)
     ? arg.body
     : ts.factory.createBlock([ts.factory.createExpressionStatement(arg.body)]);
@@ -721,41 +705,57 @@ function buildL1SubExpr(
     ts.isPropertyAccessExpression(stripped) ||
     ts.isElementAccessExpression(stripped)
   ) {
-    const memberR = buildL1MemberAccess(stripped, {
+    // `nativeReceiverLeaf: true` keeps the cardinality probe and
+    // Member build inside the "native L1 or explicit unsupported"
+    // boundary on the mutating-body path — without it the cardinality
+    // receiver would fall through to `translateBodyExpr` and re-wrap
+    // via `ir1FromL2`, defeating the M6 from-l2 elimination work.
+    // Member already gates non-pure receivers via its
+    // `ctx.state !== undefined` branch, but passing the option here
+    // keeps both probes consistent.
+    const l1Options = { nativeReceiverLeaf: true } as const;
+    const ctxOptions = {
       checker: ctx.checker,
       strategy: ctx.strategy,
       paramNames: ctx.paramNames,
       state: ctx.state,
       supply: ctx.supply,
-    });
+    };
+    const card = tryBuildL1Cardinality(stripped, ctxOptions, l1Options);
+    if (card !== null) {
+      return card;
+    }
+    const memberR = buildL1MemberAccess(stripped, ctxOptions, l1Options);
     if (!isL1Unsupported(memberR)) {
       return memberR;
     }
-    // Property-access form rejected (optional chain, ambiguous owner,
-    // or shape not yet routed through L1 Member). Fall through to the
-    // legacy from-l2 wrap so optional-chain functor-lift and other
-    // legacy-only paths still translate.
+    return memberR;
   }
-  // Legacy fallback receives the original `node` so any future
-  // wrapper-aware preprocessing inside `translateBodyExpr` would still
-  // apply. Today `translateBodyExpr` strips the same wrappers at its
-  // entry via `unwrapExpression`, so the result is identical to passing
-  // `stripped` — but isolating the strip to the Member fast-path keeps
-  // the standard build path on its standard input.
-  const r = rejectEffect(
-    translateBodyExpr(
-      node,
-      ctx.checker,
-      ctx.strategy,
-      ctx.paramNames,
-      ctx.state,
-      ctx.supply,
-    ),
-  );
-  if (isBodyUnsupported(r)) {
-    return { unsupported: r.unsupported };
+  const native = tryBuildL1PureSubExpression(stripped, {
+    checker: ctx.checker,
+    strategy: ctx.strategy,
+    paramNames: ctx.paramNames,
+    state: ctx.state,
+    supply: ctx.supply,
+  });
+  if (native !== null) {
+    return native;
   }
-  return ir1FromL2(irWrap(ctx.applyConst(bodyExpr(r))));
+  // Surface Map/Set point-mutation calls in value position with a
+  // specific reason. `tryBuildL1PureSubExpression` returns null for
+  // these (they are not pure), and the generic fallback below would
+  // hide which idiom is unsupported.
+  if (
+    ts.isCallExpression(stripped) &&
+    isCollectionMutationCall(stripped, ctx.checker)
+  ) {
+    return {
+      unsupported: "collection mutation outside statement position",
+    };
+  }
+  return {
+    unsupported: `unsupported mutating-body sub-expression: ${stripped.getText()}`,
+  };
 }
 
 /**
@@ -897,18 +897,10 @@ export function buildL1IfMutation(
   if (expressionHasSideEffects(stmt.expression, ctx.checker)) {
     return { unsupported: "impure if-condition in mutating body" };
   }
-  const gResult = translateBodyExpr(
-    stmt.expression,
-    ctx.checker,
-    ctx.strategy,
-    ctx.paramNames,
-    ctx.state,
-    ctx.supply,
-  );
-  if (isBodyUnsupported(gResult)) {
-    return { unsupported: gResult.unsupported };
+  const guard = buildL1SubExpr(stmt.expression, ctx);
+  if (isUnsupported(guard)) {
+    return guard;
   }
-  const guard: IR1Expr = ir1FromL2(irWrap(ctx.applyConst(bodyExpr(gResult))));
 
   const thenBody = buildL1MutationBody(stmt.thenStatement, ctx);
   if (isUnsupported(thenBody)) {
@@ -1023,29 +1015,70 @@ function buildL1EffectCall(
   if (isBodyUnsupported(result)) {
     return { unsupported: result.unsupported };
   }
-  if (!isBodyEffect(result)) {
+  if (!("effect" in result)) {
     return { unsupported: "branch call is not a recognized Map/Set effect" };
   }
   const effect = result.effect;
+  // Accept both dotted access (`m.set(k, v)`) and string-literal element
+  // access (`m["set"](k, v)`) for the call's callee — they're equivalent
+  // surface forms (M5 property-access equivalence class). Computed
+  // element access (`m[expr]`) and other shapes still reject.
+  // `unwrapExpression` strips parens / `as` / `!` / `satisfies` from the
+  // callee so equivalent wrapped forms (`(m.set)(k, v)`,
+  // `(s["add"])(x)`) match the same gate.
+  const callee = unwrapExpression(call.expression);
+  let receiverNode: ts.Expression;
+  if (ts.isPropertyAccessExpression(callee)) {
+    receiverNode = callee.expression;
+  } else if (
+    ts.isElementAccessExpression(callee) &&
+    elementAccessLiteralKey(callee) !== null
+  ) {
+    receiverNode = callee.expression;
+  } else {
+    return {
+      unsupported:
+        "Map/Set effect callee must use dotted access or string-literal element access",
+    };
+  }
+  const objExpr = buildL1SubExpr(receiverNode, ctx);
+  if (isUnsupported(objExpr)) {
+    return objExpr;
+  }
+  const effectObjExpr = objExpr.kind === "member" ? objExpr.receiver : objExpr;
   if (effect.op === "set" || (effect.op === "delete" && "keyExpr" in effect)) {
     // Map mutation
     const m = effect as Extract<typeof effect, { op: "set" | "delete" }> & {
       keyExpr: OpaqueExpr;
     };
-    const objExpr = ir1FromL2(irWrap(ctx.applyConst(m.objExpr)));
-    const keyExpr = ir1FromL2(irWrap(ctx.applyConst(m.keyExpr)));
+    const keyArg = call.arguments[0];
+    if (keyArg === undefined) {
+      return { unsupported: "Map mutation is missing a key argument" };
+    }
+    const keyExpr = buildL1SubExpr(keyArg, ctx);
+    if (isUnsupported(keyExpr)) {
+      return keyExpr;
+    }
     if (m.op === "set") {
       // Upstream MapMutation still types valueExpr as nullable; for op
       // "set" it's invariably non-null (translateCallExpr guarantees it),
       // so assert here at the boundary into the discriminated IR1 form.
+      const valueArg = call.arguments[1];
+      if (valueArg === undefined) {
+        return { unsupported: "Map.set mutation is missing a value argument" };
+      }
+      const valueExpr = buildL1SubExpr(valueArg, ctx);
+      if (isUnsupported(valueExpr)) {
+        return valueExpr;
+      }
       return ir1MapSet(
         m.ruleName,
         m.keyPredName,
         m.ownerType,
         m.keyType,
-        objExpr,
+        effectObjExpr,
         keyExpr,
-        ir1FromL2(irWrap(ctx.applyConst(m.valueExpr!))),
+        valueExpr,
       );
     }
     return ir1MapDelete(
@@ -1053,7 +1086,7 @@ function buildL1EffectCall(
       m.keyPredName,
       m.ownerType,
       m.keyType,
-      objExpr,
+      effectObjExpr,
       keyExpr,
     );
   }
@@ -1062,9 +1095,18 @@ function buildL1EffectCall(
     typeof effect,
     { op: "add" | "delete" | "clear" }
   > & { elemExpr: OpaqueExpr | null };
-  const objExpr = ir1FromL2(irWrap(ctx.applyConst(s.objExpr)));
   if (s.op === "clear") {
-    return ir1SetClear(s.ruleName, s.ownerType, s.elemType, objExpr);
+    return ir1SetClear(s.ruleName, s.ownerType, s.elemType, effectObjExpr);
+  }
+  const elemArg = call.arguments[0];
+  if (elemArg === undefined) {
+    return {
+      unsupported: `Set.${s.op} mutation is missing an element argument`,
+    };
+  }
+  const elemExpr = buildL1SubExpr(elemArg, ctx);
+  if (isUnsupported(elemExpr)) {
+    return elemExpr;
   }
   // add / delete — elemExpr is non-null per translateCallExpr.
   return ir1SetAddOrDelete(
@@ -1072,8 +1114,8 @@ function buildL1EffectCall(
     s.ruleName,
     s.ownerType,
     s.elemType,
-    objExpr,
-    ir1FromL2(irWrap(ctx.applyConst(s.elemExpr!))),
+    effectObjExpr,
+    elemExpr,
   );
 }
 
@@ -1159,23 +1201,9 @@ export function buildL1AssignStmt(
     compoundOp !== undefined
       ? ts.factory.createBinaryExpression(expr.left, compoundOp, expr.right)
       : expr.right;
-  // `rejectEffect` turns a Map/Set mutation result into `unsupported`
-  // — without this, a value-position `m.set(k, v)` (or `s.add(x)`)
-  // would slip past `isBodyUnsupported` and `bodyExpr` would throw
-  // when called on the `{ effect }` shape downstream.
-  const valR = rejectEffect(
-    translateBodyExpr(
-      rhsNode,
-      ctx.checker,
-      ctx.strategy,
-      ctx.paramNames,
-      ctx.state,
-      ctx.supply,
-    ),
-  );
-  if (isBodyUnsupported(valR)) {
-    return { unsupported: valR.unsupported };
+  const val = buildL1SubExpr(rhsNode, ctx);
+  if (isUnsupported(val)) {
+    return val;
   }
-  const val = ir1FromL2(irWrap(ctx.applyConst(bodyExpr(valR))));
   return ir1Assign(ir1Member(obj, prop), val);
 }

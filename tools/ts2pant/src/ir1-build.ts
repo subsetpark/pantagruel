@@ -83,9 +83,13 @@ import {
   translateBodyExpr,
 } from "./translate-body.js";
 import {
+  cellRegisterMap,
   cellRegisterName,
   isMapType,
   isSetType,
+  isUnsupportedUnknown,
+  lookupMapKV,
+  mapTsType,
   type NumericStrategy,
   toPantTermName,
 } from "./translate-types.js";
@@ -221,6 +225,48 @@ function isKnownEffectfulNativeCall(
   );
 }
 
+/**
+ * True when `expr` is a Map/Set mutation call (.set/.delete/.clear on
+ * Map; .add/.delete/.clear on Set). Used by mutating-body sub-expression
+ * builders to surface a specific "collection mutation outside statement
+ * position" reason instead of the generic mutating-body fallback when a
+ * mutation call is observed in value position (e.g., `a.q = a.p.set(k, v)`).
+ * Mirrors the Map/Set coverage in `isKnownEffectfulNativeCall`.
+ */
+export function isCollectionMutationCall(
+  expr: ts.CallExpression,
+  checker: ts.TypeChecker,
+): boolean {
+  const member = callMemberName(expr.expression);
+  if (member === null) {
+    return false;
+  }
+  const receiverType = checker.getTypeAtLocation(member.receiver);
+  // Use the union-aware predicates so receivers like
+  // `Map<K, V> | ReadonlyMap<K, V>` and `Set<T> | ReadonlySet<T>`
+  // surface the targeted "collection mutation outside statement
+  // position" diagnostic instead of falling through to the generic
+  // mutating-body fallback. Mirrors the union-aware checks the
+  // native call branches use.
+  if (
+    (member.methodName === "set" ||
+      member.methodName === "delete" ||
+      member.methodName === "clear") &&
+    isMapUnionType(receiverType)
+  ) {
+    return true;
+  }
+  if (
+    (member.methodName === "add" ||
+      member.methodName === "delete" ||
+      member.methodName === "clear") &&
+    isSetUnionType(receiverType)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function isArrayOrTupleType(t: ts.Type, checker: ts.TypeChecker): boolean {
   return checker.isArrayType(t) || checker.isTupleType(t);
 }
@@ -233,6 +279,77 @@ function isArrayOrTupleUnionType(t: ts.Type, checker: ts.TypeChecker): boolean {
     t.isUnion() &&
     t.types.every((member) => isArrayOrTupleType(member, checker))
   );
+}
+
+/**
+ * True when `t` is `Set<T>` / `ReadonlySet<T>` or a union of them.
+ * Mirrors `isArrayOrTupleUnionType`'s `every`-based shape so a mixed
+ * union (`Set<T> | string`) rejects rather than silently picking the
+ * Set side. `Set<T> | ReadonlySet<T>` is the canonical case the
+ * reviewer flagged: both constituents are operationally one Set
+ * shape, so collapsing them is sound.
+ */
+function isSetUnionType(t: ts.Type): boolean {
+  if (isSetType(t)) {
+    return true;
+  }
+  return t.isUnion() && t.types.every((member) => isSetType(member));
+}
+
+/**
+ * True when `t` is `Map<K, V>` / `ReadonlyMap<K, V>` or a union of
+ * them. Same shape contract as `isSetUnionType` — mixed unions reject.
+ */
+function isMapUnionType(t: ts.Type): boolean {
+  if (isMapType(t)) {
+    return true;
+  }
+  return t.isUnion() && t.types.every((member) => isMapType(member));
+}
+
+/**
+ * Return a representative Map constituent for `getTypeArguments`
+ * extraction. For a single Map type, returns it directly; for a union
+ * of Maps, returns the first constituent — but only after verifying
+ * every constituent has identical (K, V) type arguments. Returns
+ * `null` if `t` is not a Map (or a uniform Map union), or if any
+ * union constituent has different K or V from the first.
+ *
+ * Validation guards against the pathological case
+ * `Map<string, int> | Map<number, string>` synthesizing a domain
+ * built only on the first constituent's K/V — using just one
+ * representative would produce incorrect Pantagruel for accesses
+ * that flow through the second branch. Caller treats `null` as the
+ * "non-uniform Map union" rejection.
+ */
+function findMapRepresentative(
+  t: ts.Type,
+  checker: ts.TypeChecker,
+): ts.Type | null {
+  if (isMapType(t)) {
+    return t;
+  }
+  if (!t.isUnion() || !t.types.every((member) => isMapType(member))) {
+    return null;
+  }
+  const first = t.types[0];
+  if (first === undefined) {
+    return null;
+  }
+  const firstArgs = checker.getTypeArguments(first as ts.TypeReference);
+  if (firstArgs.length !== 2) {
+    return null;
+  }
+  for (let i = 1; i < t.types.length; i++) {
+    const args = checker.getTypeArguments(t.types[i]! as ts.TypeReference);
+    if (args.length !== 2) {
+      return null;
+    }
+    if (args[0] !== firstArgs[0] || args[1] !== firstArgs[1]) {
+      return null;
+    }
+  }
+  return first;
 }
 
 function isArrayChainCall(
@@ -258,6 +375,44 @@ export function tryBuildL1PureSubExpression(
   ctx: L1BuildContext,
 ): L1BuildResult | null {
   expr = unwrapParens(expr) as ts.Expression;
+  // Handle `x!` explicitly before the transparent-strip recursion: under
+  // list-lift, a `!` on a nullable receiver lowers to singleton
+  // extraction `(x 1)`, mirroring `translateBodyExpr`'s NonNull branch.
+  // Stripping it via `unwrapTransparentExpression` would silently drop
+  // the singleton extraction and emit just `x`, which is the wrong Pant
+  // type ([T] vs T).
+  if (ts.isNonNullExpression(expr)) {
+    const innerExpr = expr.expression;
+    const inner = tryBuildL1PureSubExpression(innerExpr, ctx);
+    if (inner === null || isL1Unsupported(inner)) {
+      return inner;
+    }
+    const receiverTsType = getOperandDeclaredType(innerExpr, ctx.checker);
+    const innerUnwrapped = unwrapTransparentExpression(innerExpr);
+    // Use `callMemberName` so string-literal element-access spellings
+    // (`m["get"](k)!`) follow the same Map-get carve-out as the dotted
+    // form (`m.get(k)!`) — both forms are operationally equivalent and
+    // should emit identical L1 (M5 property-access equivalence class).
+    const innerMember = ts.isCallExpression(innerUnwrapped)
+      ? callMemberName(innerUnwrapped.expression)
+      : null;
+    // Use the union-aware `isMapUnionType` so receivers like
+    // `Map<K, V> | ReadonlyMap<K, V>` reach the same Map-get carve-out
+    // as a single Map. Without this, `m.get(k)!` for a union receiver
+    // would slip past and add a bogus singleton extraction around the
+    // already-unboxed Map lookup.
+    const isMapGetCall =
+      innerMember?.methodName === "get" &&
+      isMapUnionType(ctx.checker.getTypeAtLocation(innerMember.receiver));
+    if (isNullableTsType(receiverTsType) && !isMapGetCall) {
+      return ir1App(inner, [ir1LitNat(1)]);
+    }
+    return inner;
+  }
+  const transparent = unwrapTransparentExpression(expr);
+  if (transparent !== expr && ts.isExpression(transparent)) {
+    return tryBuildL1PureSubExpression(transparent, ctx);
+  }
 
   if (expr.kind === ts.SyntaxKind.TrueKeyword) {
     return ir1LitBool(true);
@@ -280,6 +435,9 @@ export function tryBuildL1PureSubExpression(
   }
   if (expr.kind === ts.SyntaxKind.ThisKeyword) {
     return ir1Var(ctx.paramNames.get("this") ?? "this");
+  }
+  if (isL1ConditionalForm(expr, ctx.checker)) {
+    return buildL1Conditional(expr, ctx);
   }
 
   if (
@@ -320,11 +478,18 @@ export function tryBuildL1PureSubExpression(
   }
 
   if (ts.isBinaryExpression(expr)) {
-    const nullishProbe = recognizeNullishForm(expr, ctx.checker, () =>
-      ir1Var("__nullish_probe"),
-    );
-    if (nullishProbe !== null) {
-      return null;
+    const nullishTranslate: NullishTranslate = (sub) => {
+      const built = tryBuildL1PureSubExpression(sub, ctx);
+      if (built === null) {
+        return {
+          unsupported: `unsupported nullish operand: ${sub.getText()}`,
+        };
+      }
+      return built;
+    };
+    const nullish = recognizeNullishForm(expr, ctx.checker, nullishTranslate);
+    if (nullish !== null) {
+      return nullish;
     }
     if (
       expr.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken ||
@@ -400,6 +565,119 @@ export function tryBuildL1PureSubExpression(
         expressionHasSideEffects(member.receiver, ctx.checker))
     ) {
       return null;
+    }
+    if (member !== null) {
+      const methodName = member.methodName;
+      const receiverNode = member.receiver;
+      const receiverType = ctx.checker.getTypeAtLocation(receiverNode);
+      if (
+        (methodName === "includes" || methodName === "has") &&
+        expr.arguments.length === 1
+      ) {
+        // Use `isArrayOrTupleUnionType` / `isSetUnionType` so tuple
+        // receivers and union receivers (`string[] | number[]`,
+        // `Set<T> | ReadonlySet<T>`) take the same `x in xs`
+        // lowering as plain arrays/sets, matching `isArrayChainCall`'s
+        // coverage. `checker.isArrayType` / `isSetType` alone would
+        // miss the union case and let it fall through to a generic
+        // member-call lowering, silently changing semantics.
+        const isArray =
+          methodName === "includes" &&
+          isArrayOrTupleUnionType(receiverType, ctx.checker);
+        const isSet = methodName === "has" && isSetUnionType(receiverType);
+        if (isArray || isSet) {
+          const elem = tryBuildL1PureSubExpression(expr.arguments[0]!, ctx);
+          if (elem === null || isL1Unsupported(elem)) {
+            return elem;
+          }
+          const source = tryBuildL1PureSubExpression(receiverNode, ctx);
+          if (source === null || isL1Unsupported(source)) {
+            return source;
+          }
+          return ir1Binop("in", elem, source);
+        }
+      }
+      if (
+        (methodName === "get" || methodName === "has") &&
+        expr.arguments.length === 1 &&
+        isMapUnionType(receiverType)
+      ) {
+        const key = tryBuildL1PureSubExpression(expr.arguments[0]!, ctx);
+        if (key === null || isL1Unsupported(key)) {
+          return key;
+        }
+        const receiver = tryBuildL1PureSubExpression(receiverNode, ctx);
+        if (receiver === null || isL1Unsupported(receiver)) {
+          return receiver;
+        }
+        if (receiver.kind === "member") {
+          const ruleName = receiver.name;
+          const callee = methodName === "has" ? `${ruleName}-key` : ruleName;
+          return ir1App(ir1Var(callee), [receiver.receiver, key]);
+        }
+        // For union receivers (`Map<K, V> | ReadonlyMap<K, V>`), pick
+        // a representative Map constituent for K/V extraction —
+        // `getTypeArguments` only operates on `TypeReference`, not on
+        // union types directly. `findMapRepresentative` enforces both
+        // every-constituent-is-Map-like AND identical (K, V) across
+        // constituents, so pathological unions like
+        // `Map<string, int> | Map<number, string>` reject instead of
+        // synthesizing a domain on just the first branch's K/V.
+        const mapRep = findMapRepresentative(receiverType, ctx.checker);
+        if (mapRep === null) {
+          return {
+            unsupported:
+              "Map .get/.has receiver is not a uniform Map / ReadonlyMap shape",
+          };
+        }
+        const typeArgs = ctx.checker.getTypeArguments(
+          mapRep as ts.TypeReference,
+        );
+        if (typeArgs.length !== 2) {
+          return { unsupported: "Map with unexpected arity" };
+        }
+        const kType = mapTsType(
+          typeArgs[0]!,
+          ctx.checker,
+          ctx.strategy,
+          ctx.supply.synthCell,
+        );
+        const vType = mapTsType(
+          typeArgs[1]!,
+          ctx.checker,
+          ctx.strategy,
+          ctx.supply.synthCell,
+        );
+        // mapTsType returns the unsupported-unknown sentinel for
+        // unresolvable TS types (e.g., raw `unknown`). Bail before
+        // lookupMapKV / cellRegisterMap so we don't synthesize a domain
+        // built on the sentinel — translate-types.ts already guards this
+        // path elsewhere.
+        if (isUnsupportedUnknown(kType) || isUnsupportedUnknown(vType)) {
+          return {
+            unsupported:
+              "Map key or value type is unsupported in native call lowering",
+          };
+        }
+        // `cellRegisterMap` is idempotent (returns the cached entry on
+        // re-registration), so always-register-then-lookup is the
+        // simplest safe shape. `lookupMapKV` returns `undefined`
+        // (Map.get) rather than throwing, but the conditional-register
+        // form was conflating "missing" with "registration failure".
+        let info: ReturnType<typeof lookupMapKV>;
+        if (ctx.supply.synthCell) {
+          cellRegisterMap(ctx.supply.synthCell, kType, vType);
+          info = lookupMapKV(ctx.supply.synthCell.synth, kType, vType);
+        }
+        if (!info) {
+          return {
+            unsupported: `Map<${kType}, ${vType}>: key or value type cannot be mangled into a synthesized domain name`,
+          };
+        }
+        const callee =
+          methodName === "has" ? info.names.keyPred : info.names.rule;
+        return ir1App(ir1Var(callee), [receiver, key]);
+      }
     }
     let callee: IR1Expr | null;
     let args: IR1Expr[];
@@ -546,14 +824,14 @@ export function tryBuildL1Cardinality(
     }
     return ir1Unop("card", ir1FromL2(irWrap(r.expr)));
   }
-  if (ctx.state === undefined && options.nativeReceiverLeaf === true) {
-    const nativeReceiver = tryBuildL1PureSubExpression(
-      receiverNode as ts.Expression,
-      ctx,
-    );
-    if (nativeReceiver !== null && !isL1Unsupported(nativeReceiver)) {
-      return ir1Unop("card", nativeReceiver);
-    }
+  const nativeReceiver = tryBuildL1PureSubExpression(
+    receiverNode as ts.Expression,
+    ctx,
+  );
+  if (nativeReceiver !== null && !isL1Unsupported(nativeReceiver)) {
+    return ir1Unop("card", nativeReceiver);
+  }
+  if (options.nativeReceiverLeaf === true) {
     const nativeReceiverIR = tryBuildNativeReceiverLeafIR(
       receiverNode as ts.Expression,
       ctx,
@@ -562,6 +840,7 @@ export function tryBuildL1Cardinality(
     if (nativeReceiverIR !== null && !isL1Unsupported(nativeReceiverIR)) {
       return ir1Unop("card", nativeReceiverIR);
     }
+    return null;
   }
   const r = translateBodyExpr(
     receiverNode as ts.Expression,
@@ -847,7 +1126,7 @@ export function buildL1MemberAccess(
       return { unsupported: r.reason };
     }
     receiverL1 = ir1FromL2(irWrap(r.expr));
-  } else if (ctx.state === undefined && options.nativeReceiverLeaf === true) {
+  } else {
     const nativeReceiver = tryBuildL1PureSubExpression(
       receiverNode as ts.Expression,
       ctx,
@@ -857,55 +1136,51 @@ export function buildL1MemberAccess(
         return nativeReceiver;
       }
       receiverL1 = nativeReceiver;
-    } else {
+    } else if (ctx.state !== undefined) {
+      // Mutating-body path never falls back to the from-l2 escape
+      // hatch — non-pure receivers reject explicitly.
+      return {
+        unsupported: `unsupported property-access receiver: ${(receiverNode as ts.Expression).getText()}`,
+      };
+    } else if (options.nativeReceiverLeaf === true) {
+      // Pure-path with the native-leaf flag: try the IR-returning
+      // leaf translator (covers array-chain receivers via
+      // `ir-build`'s `buildNativeReceiverLeafIR`). If it doesn't
+      // apply, refuse rather than fall back to `translateBodyExpr` —
+      // the flag's contract is "native L1 or explicit unsupported".
       const nativeReceiverIR = tryBuildNativeReceiverLeafIR(
         receiverNode as ts.Expression,
         ctx,
         options,
       );
-      if (nativeReceiverIR !== null) {
-        if (isL1Unsupported(nativeReceiverIR)) {
-          return nativeReceiverIR;
-        }
-        receiverL1 = nativeReceiverIR;
-      } else {
-        const r = translateBodyExpr(
-          receiverNode as ts.Expression,
-          ctx.checker,
-          ctx.strategy,
-          ctx.paramNames,
-          ctx.state,
-          ctx.supply,
-        );
-        if (isBodyUnsupported(r)) {
-          return { unsupported: r.unsupported };
-        }
-        if ("effect" in r) {
-          return {
-            unsupported: "collection mutation as property-access receiver",
-          };
-        }
-        receiverL1 = ir1FromL2(irWrap(bodyExpr(r)));
+      if (nativeReceiverIR === null) {
+        return {
+          unsupported: `unsupported property-access receiver: ${(receiverNode as ts.Expression).getText()}`,
+        };
       }
+      if (isL1Unsupported(nativeReceiverIR)) {
+        return nativeReceiverIR;
+      }
+      receiverL1 = nativeReceiverIR;
+    } else {
+      const r = translateBodyExpr(
+        receiverNode as ts.Expression,
+        ctx.checker,
+        ctx.strategy,
+        ctx.paramNames,
+        ctx.state,
+        ctx.supply,
+      );
+      if (isBodyUnsupported(r)) {
+        return { unsupported: r.unsupported };
+      }
+      if ("effect" in r) {
+        return {
+          unsupported: "collection mutation as property-access receiver",
+        };
+      }
+      receiverL1 = ir1FromL2(irWrap(bodyExpr(r)));
     }
-  } else {
-    const r = translateBodyExpr(
-      receiverNode as ts.Expression,
-      ctx.checker,
-      ctx.strategy,
-      ctx.paramNames,
-      ctx.state,
-      ctx.supply,
-    );
-    if (isBodyUnsupported(r)) {
-      return { unsupported: r.unsupported };
-    }
-    if ("effect" in r) {
-      return {
-        unsupported: "collection mutation as property-access receiver",
-      };
-    }
-    receiverL1 = ir1FromL2(irWrap(bodyExpr(r)));
   }
 
   // Symbolic-state lookup at the outer level (mirrors
@@ -969,18 +1244,15 @@ export function isL1ConditionalForm(
 }
 
 // ---------------------------------------------------------------------------
-// Sub-expression delegation: translate via legacy, wrap into L1 via from-l2
+// Sub-expression delegation: native L1 or explicit unsupported
 // ---------------------------------------------------------------------------
 
 /**
- * Translate a non-conditional sub-expression via the legacy pipeline and
- * wrap as L1. Used for guards, values, and switch discriminants inside
- * an L1 conditional during M1 — those positions receive arbitrary TS
- * expressions whose normalization isn't M1's concern.
+ * Translate a non-conditional sub-expression as native L1. Used for
+ * guards, values, and switch discriminants inside L1 conditionals.
  *
- * Rejects collection-mutation sub-expressions (the legacy result type
- * `BodyResult` admits an "effect" variant that's only valid in
- * statement position; an L1 expression cannot host one).
+ * Rejects unsupported shapes with an explicit reason instead of routing
+ * through the legacy opaque expression fallback.
  */
 function buildSubExpr(expr: ts.Expression, ctx: L1BuildContext): L1BuildResult {
   expr = unwrapParens(expr) as ts.Expression;
@@ -991,26 +1263,14 @@ function buildSubExpr(expr: ts.Expression, ctx: L1BuildContext): L1BuildResult {
   if (ts.isObjectLiteralExpression(expr)) {
     return { unsupported: "object literal in conditional arm" };
   }
-  const result = translateBodyExpr(
-    expr,
-    ctx.checker,
-    ctx.strategy,
-    ctx.paramNames,
-    ctx.state,
-    ctx.supply,
-  );
-  if (isBodyUnsupported(result)) {
-    return { unsupported: result.unsupported };
+  if (isL1ConditionalForm(expr, ctx.checker)) {
+    return buildL1Conditional(expr, ctx);
   }
-  if ("effect" in result) {
-    return {
-      unsupported: "collection mutation cannot appear in a conditional arm",
-    };
+  const native = tryBuildL1PureSubExpression(expr, ctx);
+  if (native !== null) {
+    return native;
   }
-  // Materialize any deferred .filter()/.map() chain into a flat each(...)
-  // before wrapping — using result.expr directly would drop the traversal
-  // and lower the bare projection body instead.
-  return ir1FromL2(irWrap(bodyExpr(result)));
+  return { unsupported: `unsupported L1 sub-expression: ${expr.getText()}` };
 }
 
 // ---------------------------------------------------------------------------
