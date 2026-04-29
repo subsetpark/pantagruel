@@ -87,6 +87,7 @@ import {
   cellRegisterName,
   isMapType,
   isSetType,
+  isUnsupportedUnknown,
   lookupMapKV,
   mapTsType,
   type NumericStrategy,
@@ -510,6 +511,17 @@ export function tryBuildL1PureSubExpression(
           ctx.strategy,
           ctx.supply.synthCell,
         );
+        // mapTsType returns the unsupported-unknown sentinel for
+        // unresolvable TS types (e.g., raw `unknown`). Bail before
+        // lookupMapKV / cellRegisterMap so we don't synthesize a domain
+        // built on the sentinel — translate-types.ts already guards this
+        // path elsewhere.
+        if (isUnsupportedUnknown(kType) || isUnsupportedUnknown(vType)) {
+          return {
+            unsupported:
+              "Map key or value type is unsupported in native call lowering",
+          };
+        }
         let info = ctx.supply.synthCell
           ? lookupMapKV(ctx.supply.synthCell.synth, kType, vType)
           : undefined;

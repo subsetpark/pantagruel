@@ -1032,6 +1032,33 @@ export function translateExpr(
       // `xs.length === 0` preserve signature semantics end-to-end
       // (`ambiguousOwnerFallback: "bare-kebab"` for guard tolerance,
       // `nativeReceiverLeaf: true` for the receiver leaf).
+      //
+      // Strict-only gate: signature-side nullish operands must come
+      // from `===` / `!==` (or `typeof x === 'undefined'`). Loose
+      // equality (`==` / `!=`) is unsupported on the signature path
+      // (`containsUnsupportedOperator` rejects it; CLAUDE.md § M4
+      // documents the asymmetry against the body path). Walk up
+      // through parens / `typeof` to find the binary expression that
+      // claimed this operand and reject if loose.
+      let owner: ts.Node = sub;
+      while (
+        owner.parent &&
+        (ts.isParenthesizedExpression(owner.parent) ||
+          ts.isTypeOfExpression(owner.parent))
+      ) {
+        owner = owner.parent;
+      }
+      if (
+        owner.parent &&
+        ts.isBinaryExpression(owner.parent) &&
+        (owner.parent.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken ||
+          owner.parent.operatorToken.kind ===
+            ts.SyntaxKind.ExclamationEqualsToken)
+      ) {
+        return {
+          unsupported: "loose equality (== / !=) is unsupported; use === / !==",
+        };
+      }
       const strippedSub = unwrapParens(sub) as ts.Expression;
       if (
         (ts.isPropertyAccessExpression(strippedSub) ||
