@@ -195,11 +195,14 @@ function isKnownEffectfulNativeCall(
     return false;
   }
   const receiverType = checker.getTypeAtLocation(member.receiver);
+  const receiverTypes = receiverType.isUnion()
+    ? receiverType.types
+    : [receiverType];
   if (
     (member.methodName === "add" ||
       member.methodName === "delete" ||
       member.methodName === "clear") &&
-    isSetType(receiverType)
+    receiverTypes.some((t) => isSetType(t))
   ) {
     return true;
   }
@@ -207,13 +210,14 @@ function isKnownEffectfulNativeCall(
     (member.methodName === "set" ||
       member.methodName === "delete" ||
       member.methodName === "clear") &&
-    isMapType(receiverType)
+    receiverTypes.some((t) => isMapType(t))
   ) {
     return true;
   }
-  return (
-    isArrayOrTupleType(receiverType, checker) &&
-    MUTATING_ARRAY_METHODS.has(member.methodName)
+  return receiverTypes.some(
+    (t) =>
+      MUTATING_ARRAY_METHODS.has(member.methodName) &&
+      isArrayOrTupleType(t, checker),
   );
 }
 

@@ -96,6 +96,36 @@ describe("ir1-build call purity", () => {
     );
   });
 
+  it("does not lower union-typed collection mutations as pure native calls", () => {
+    const arrayPushUnion = setupReturnExpr(`
+      function f(xs: number[] | string[]): number {
+        return xs.push();
+      }
+    `);
+    const setClearUnion = setupReturnExpr(`
+      function f(xs: Set<number> | Set<string>): void {
+        return xs.clear();
+      }
+    `);
+    const mapClearUnion = setupReturnExpr(`
+      function f(xs: Map<string, number> | Map<number, string>): void {
+        return xs.clear();
+      }
+    `);
+    assert.equal(
+      tryBuildL1PureSubExpression(arrayPushUnion.expr, arrayPushUnion.ctx),
+      null,
+    );
+    assert.equal(
+      tryBuildL1PureSubExpression(setClearUnion.expr, setClearUnion.ctx),
+      null,
+    );
+    assert.equal(
+      tryBuildL1PureSubExpression(mapClearUnion.expr, mapClearUnion.ctx),
+      null,
+    );
+  });
+
   it("does not lower a member call whose receiver has unknown effects", () => {
     const { expr, ctx } = setupReturnExpr(`
       declare function makeSet(): Set<number>;
