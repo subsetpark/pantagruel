@@ -22,6 +22,7 @@ import { createSourceFileFromSource, getChecker } from "../src/extract.js";
 import {
   type L1BuildContext,
   tryBuildL1Cardinality,
+  tryBuildL1PureSubExpression,
 } from "../src/ir1-build.js";
 import type { IR1Expr } from "../src/ir1.js";
 import { loadAst } from "../src/pant-wasm.js";
@@ -40,7 +41,7 @@ before(async () => {
 });
 
 interface AccessSetup {
-  node: ts.PropertyAccessExpression;
+  node: ts.Expression;
   ctx: L1BuildContext;
 }
 
@@ -78,9 +79,12 @@ function setup(source: string): AccessSetup {
   if (!stmt || !ts.isReturnStatement(stmt) || !stmt.expression) {
     throw new Error("setup: expected return statement");
   }
-  if (!ts.isPropertyAccessExpression(stmt.expression)) {
+  if (
+    !ts.isPropertyAccessExpression(stmt.expression) &&
+    !ts.isElementAccessExpression(stmt.expression)
+  ) {
     throw new Error(
-      `setup: expected PropertyAccess, got ${ts.SyntaxKind[stmt.expression.kind]}`,
+      `setup: expected property or element access, got ${ts.SyntaxKind[stmt.expression.kind]}`,
     );
   }
   return { node: stmt.expression, ctx };
@@ -136,6 +140,25 @@ describe("ir1-build-cardinality", () => {
       `function f(m: ReadonlyMap<string, number>): number { return m.size; }`,
     );
     expectCardUnop(tryBuildL1Cardinality(node, ctx));
+  });
+
+  it('string-literal "length" and "size" build Unop(card)', () => {
+    const length = setup(
+      `function f(xs: number[]): number { return xs["length"]; }`,
+    );
+    const size = setup(
+      `function f(xs: Set<number>): number { return xs["size"]; }`,
+    );
+    const lengthTpl = setup(
+      "function f(xs: number[]): number { return xs[`length`]; }",
+    );
+    const sizeTpl = setup(
+      "function f(xs: Set<number>): number { return xs[`size`]; }",
+    );
+    expectCardUnop(tryBuildL1PureSubExpression(length.node, length.ctx));
+    expectCardUnop(tryBuildL1PureSubExpression(size.node, size.ctx));
+    expectCardUnop(tryBuildL1PureSubExpression(lengthTpl.node, lengthTpl.ctx));
+    expectCardUnop(tryBuildL1PureSubExpression(sizeTpl.node, sizeTpl.ctx));
   });
 
   it("user-typed .length on a non-list interface falls through to Member", () => {

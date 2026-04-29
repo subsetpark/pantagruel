@@ -31,7 +31,9 @@ function setupReturnExpr(source: string, functionName = "f"): ExprSetup {
   }
   const stmt = fn.body.statements.find(ts.isReturnStatement);
   if (!stmt?.expression) {
-    throw new Error(`expected function ${functionName} to return an expression`);
+    throw new Error(
+      `expected function ${functionName} to return an expression`,
+    );
   }
   const paramNames = new Map<string, string>();
   for (const param of fn.parameters) {
@@ -87,7 +89,12 @@ function containsKind(expr: IRExpr, kind: IRExpr["kind"]): boolean {
         containsKind(expr.proj, kind)
       );
     case "comb":
-      return containsKind(expr.each, kind);
+      return (
+        containsKind(expr.each, kind) ||
+        ("init" in expr &&
+          expr.init !== undefined &&
+          containsKind(expr.init, kind))
+      );
     case "comb-typed":
       return (
         expr.guards.some((guard) => containsKind(guard, kind)) ||
@@ -113,7 +120,7 @@ function expectNoIRWrap(expr: IRExpr): void {
 describe("ir-build M6 native construction stubs", () => {
   // M6 Patch 2 unskips this after ordinary arithmetic/comparison
   // binary expressions build as native App(binop, ...) nodes.
-  it.skip("builds arithmetic and comparison without IRWrap", () => {
+  it("builds arithmetic and comparison without IRWrap", () => {
     const arithmetic = expectIR(`
       function f(a: number, b: number): number {
         return (a + b) * 2;
@@ -130,7 +137,7 @@ describe("ir-build M6 native construction stubs", () => {
 
   // M6 Patch 2 unskips this after general pure calls build as native
   // App nodes instead of delegating through `translateBodyExpr`.
-  it.skip("builds general calls without IRWrap", () => {
+  it("builds general calls without IRWrap", () => {
     const ir = expectIR(`
       function score(a: number, b: number): number {
         return a + b;
@@ -145,7 +152,7 @@ describe("ir-build M6 native construction stubs", () => {
 
   // M6 Patch 2 unskips this after optional/nullish lowering avoids
   // L1 `from-l2` and native IR carries the complete conditional shape.
-  it.skip("builds optional chains and nullish coalescing without IRWrap", () => {
+  it("builds optional chains and nullish coalescing without IRWrap", () => {
     const optional = expectIR(`
       interface Owner { readonly id: number; }
       interface Account { readonly owner?: Owner; }
@@ -164,7 +171,7 @@ describe("ir-build M6 native construction stubs", () => {
 
   // M6 Patch 2 unskips this after chain fusion constructs real Each
   // and Comb nodes rather than preserving legacy opaque comprehensions.
-  it.skip("builds filter/map/reduce chains as native Each/Comb", () => {
+  it("builds filter/map/reduce chains as native Each/Comb", () => {
     const each = expectIR(`
       interface User { readonly active: boolean; readonly name: string; }
       function f(users: User[]): string[] {
@@ -183,9 +190,247 @@ describe("ir-build M6 native construction stubs", () => {
     expectNoIRWrap(comb);
   });
 
+  it("builds array-chain receivers natively before member/cardinality fallback", () => {
+    const length = expectIR(`
+      function f(xs: number[]): number {
+        return xs.filter((x) => x > 0).length;
+      }
+    `);
+    const indexedLength = expectIR(`
+      function f(xs: number[]): number {
+        return xs["filter"]((x) => x > 0)["length"];
+      }
+    `);
+    assert.equal(containsKind(length, "each"), true);
+    assert.equal(containsKind(indexedLength, "each"), true);
+    expectNoIRWrap(length);
+    expectNoIRWrap(indexedLength);
+  });
+
+  it("recognizes string-literal array method calls", () => {
+    const dotted = expectIR(`
+      interface Item { readonly amount: number; }
+      function f(items: Item[]): number[] {
+        return items.map((item) => item.amount);
+      }
+    `);
+    const indexed = expectIR(`
+      interface Item { readonly amount: number; }
+      function f(items: Item[]): number[] {
+        return items["map"]((item) => item.amount);
+      }
+    `);
+    assert.deepEqual(indexed, dotted);
+    expectNoIRWrap(indexed);
+  });
+
+  it("recognizes tuple and union array-method receivers", () => {
+    const tuple = expectIR(`
+      function f(items: readonly [number, number]): number[] {
+        return items.map((item) => item + 1);
+      }
+    `);
+    const union = expectIR(`
+      function f(items: number[] | readonly number[]): number[] {
+        return items.map((item) => item + 1);
+      }
+    `);
+    assert.equal(containsKind(tuple, "each"), true);
+    assert.equal(containsKind(union, "each"), true);
+    expectNoIRWrap(tuple);
+    expectNoIRWrap(union);
+  });
+
+  it("does not recurse on syntactic array method names for non-array receivers", () => {
+    const method = buildFromSource(`
+      interface Service { readonly map: (n: number) => number; }
+      function f(service: Service, n: number): number {
+        return service.map(n);
+      }
+    `);
+    const indexed = buildFromSource(`
+      interface Service { readonly reduce: (n: number, init: number) => number; }
+      function f(service: Service, n: number): number {
+        return service["reduce"](n, 0);
+      }
+    `);
+    assert.equal(isBuildUnsupported(method), false);
+    assert.equal(isBuildUnsupported(indexed), false);
+    if (!isBuildUnsupported(method)) {
+      assert.equal(containsKind(method, "each"), false);
+      assert.equal(containsKind(method, "comb"), false);
+    }
+    if (!isBuildUnsupported(indexed)) {
+      assert.equal(containsKind(indexed, "each"), false);
+      assert.equal(containsKind(indexed, "comb"), false);
+    }
+  });
+
+  it("rejects async, defaulted, optional, and rest array callbacks", () => {
+    const cases = [
+      {
+        source: `
+          function f(xs: number[]): Promise<boolean>[] {
+            return xs.map(async (x) => x > 0);
+          }
+        `,
+        reason: /must not be async/u,
+      },
+      {
+        source: `
+          function f(xs: number[]): number[] {
+            return xs.map((x = 0) => x + 1);
+          }
+        `,
+        reason: /plain identifiers/u,
+      },
+      {
+        source: `
+          function f(xs: number[]): number[] {
+            return xs.map((x?: number) => x ?? 0);
+          }
+        `,
+        reason: /plain identifiers/u,
+      },
+      {
+        source: `
+          function f(xs: number[]): number[] {
+            return xs.map((...x) => x.length);
+          }
+        `,
+        reason: /plain identifiers/u,
+      },
+    ];
+    for (const { source, reason } of cases) {
+      const result = buildFromSource(source);
+      assert.ok(isBuildUnsupported(result));
+      if (isBuildUnsupported(result)) {
+        assert.match(result.unsupported, reason);
+      }
+    }
+  });
+
+  it("rejects array-method calls with unsupported signatures", () => {
+    const result = buildFromSource(`
+      function f(xs: number[]): number[] {
+        return xs["filter"]((x) => x > 0, undefined);
+      }
+    `);
+    assert.ok(isBuildUnsupported(result));
+    if (isBuildUnsupported(result)) {
+      assert.match(
+        result.unsupported,
+        /callback must have exactly one argument/u,
+      );
+    }
+  });
+
+  it("rejects non-boolean filter predicates", () => {
+    const result = buildFromSource(`
+      interface Item { readonly id: number; }
+      function f(items: Item[]): Item[] {
+        return items.filter((item) => item.id);
+      }
+    `);
+    assert.ok(isBuildUnsupported(result));
+    if (isBuildUnsupported(result)) {
+      assert.match(result.unsupported, /boolean predicate/u);
+    }
+  });
+
+  it("rejects reducer operators when operand types do not match the combiner", () => {
+    const stringConcat = buildFromSource(`
+      interface Item { readonly name: string; }
+      function f(items: Item[]): string {
+        return items.reduce((s, item) => s + item.name, "");
+      }
+    `);
+    assert.ok(isBuildUnsupported(stringConcat));
+    if (isBuildUnsupported(stringConcat)) {
+      assert.match(stringConcat.unsupported, /number combiner/u);
+    }
+
+    const truthyOr = buildFromSource(`
+      interface Item { readonly value: number; }
+      function f(items: Item[]): number {
+        return items.reduce((a, item) => a || item.value, 0);
+      }
+    `);
+    assert.ok(isBuildUnsupported(truthyOr));
+    if (isBuildUnsupported(truthyOr)) {
+      assert.match(truthyOr.unsupported, /boolean combiner/u);
+    }
+  });
+
+  it("rejects reduce callbacks that use a property access in the accumulator slot", () => {
+    for (const expr of ["sum.total + item.amount", "item.amount + sum.total"]) {
+      const result = buildFromSource(`
+        interface Item { readonly amount: number; }
+        function f(items: Item[]): number {
+          return items.reduce((sum, item) => ${expr}, 0);
+        }
+      `);
+      assert.ok(isBuildUnsupported(result));
+      if (isBuildUnsupported(result)) {
+        assert.match(
+          result.unsupported,
+          /callback must reference acc exactly once/u,
+        );
+      }
+    }
+  });
+
+  it("preserves conditional otherwise during map-chain substitution", () => {
+    const ir = expectIR(`
+      interface Item { readonly amount: number | null; }
+      function f(items: Item[]): number[] {
+        return items
+          .map((item) => item.amount)
+          .map((amount) => amount ?? 0);
+      }
+    `);
+    assert.equal(ir.kind, "each");
+    if (ir.kind === "each") {
+      assert.equal(ir.proj.kind, "cond");
+      if (ir.proj.kind === "cond") {
+        assert.notEqual(ir.proj.otherwise, undefined);
+      }
+    }
+    expectNoIRWrap(ir);
+  });
+
+  it("normalizes dotted and string-literal method calls identically", () => {
+    const dotted = expectIR(`
+      interface Service { readonly run: (n: number) => number; }
+      function f(s: Service, n: number): number {
+        return s.run(n);
+      }
+    `);
+    const indexed = expectIR(`
+      interface Service { readonly run: (n: number) => number; }
+      function f(s: Service, n: number): number {
+        return s["run"](n);
+      }
+    `);
+    assert.deepEqual(indexed, dotted);
+    assert.equal(dotted.kind, "app");
+    if (dotted.kind === "app") {
+      assert.equal(dotted.head.kind, "expr");
+      if (dotted.head.kind === "expr") {
+        assert.equal(dotted.head.expr.kind, "app");
+        if (dotted.head.expr.kind === "app") {
+          assert.equal(dotted.head.expr.head.kind, "name");
+          if (dotted.head.expr.head.kind === "name") {
+            assert.equal(dotted.head.expr.head.name, "service--run");
+          }
+        }
+      }
+    }
+  });
+
   // M6 Patch 2 unskips the string-literal optional-element case; the
   // computed-key case should remain unsupported through M6.
-  it.skip("records optional element access boundary", () => {
+  it("records optional element access boundary", () => {
     const literalKey = expectIR(`
       interface User { readonly name: string; }
       function f(u: User | null): string[] {
@@ -208,7 +453,7 @@ describe("ir-build M6 native construction stubs", () => {
 
   // M6 Patch 2 keeps computed element access outside the cleanup
   // boundary unless the key is syntactically a string literal.
-  it.skip("keeps computed element access unsupported", () => {
+  it("keeps computed element access unsupported", () => {
     const result = buildFromSource(`
       interface User { readonly name: string; }
       function f(u: User, key: keyof User): unknown {

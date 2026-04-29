@@ -495,6 +495,15 @@ describe("ir1-build-functor-lift", () => {
     assert.equal(tryRecognizeFunctorLift(candidate, ctx), null);
   });
 
+  it("string-literal multi-producing calls are not single-element lift projections", () => {
+    const { candidate, ctx } = setup(
+      `function f(maybeXs: number[] | null): number[] {
+         return maybeXs == null ? [] : maybeXs["map"]((x) => x + 1);
+       }`,
+    );
+    assert.equal(tryRecognizeFunctorLift(candidate, ctx), null);
+  });
+
   it("present side does not reference the operand falls through", () => {
     const { candidate, ctx } = setup(
       `interface User { readonly name: string; }

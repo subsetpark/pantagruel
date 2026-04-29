@@ -146,20 +146,17 @@ describe("lowerL1Expr — applications", () => {
 });
 
 describe("lowerL1Expr — cond (byte-equality with legacy ast.cond)", () => {
-  it("single-arm cond produces L2 cond with literal-true tail", () => {
-    // cond [(g, v)] otherwise=d  →  irCond [(g, v), (true, d)]
+  it("single-arm cond preserves L2 otherwise", () => {
+    // cond [(g, v)] otherwise=d  →  irCond [(g, v)] otherwise=d
     const l1 = ir1Cond([[ir1Var("g"), ir1Var("v")]], ir1Var("d"));
     const l2 = lowerL1Expr(l1);
     assert.deepEqual(
       l2,
-      irCond([
-        [irVar("g", false), irVar("v", false)],
-        [irLitBool(true), irVar("d", false)],
-      ]),
+      irCond([[irVar("g", false), irVar("v", false)]], irVar("d", false)),
     );
   });
 
-  it("multi-arm cond preserves arm order and emits literal-true tail", () => {
+  it("multi-arm cond preserves arm order and otherwise", () => {
     // cond [(g1, v1), (g2, v2), (g3, v3)] otherwise=d
     const l1 = ir1Cond(
       [
@@ -176,8 +173,7 @@ describe("lowerL1Expr — cond (byte-equality with legacy ast.cond)", () => {
         [irVar("g1", false), irVar("v1", false)],
         [irVar("g2", false), irVar("v2", false)],
         [irVar("g3", false), irVar("v3", false)],
-        [irLitBool(true), irVar("d", false)],
-      ]),
+      ], irVar("d", false)),
     );
   });
 
@@ -186,16 +182,13 @@ describe("lowerL1Expr — cond (byte-equality with legacy ast.cond)", () => {
     const inner = ir1Cond([[ir1Var("h"), ir1Var("x")]], ir1Var("y"));
     const outer = ir1Cond([[ir1Var("g"), inner]], ir1Var("z"));
     const l2 = lowerL1Expr(outer);
-    const expectedInner = irCond([
-      [irVar("h", false), irVar("x", false)],
-      [irLitBool(true), irVar("y", false)],
-    ]);
+    const expectedInner = irCond(
+      [[irVar("h", false), irVar("x", false)]],
+      irVar("y", false),
+    );
     assert.deepEqual(
       l2,
-      irCond([
-        [irVar("g", false), expectedInner],
-        [irLitBool(true), irVar("z", false)],
-      ]),
+      irCond([[irVar("g", false), expectedInner]], irVar("z", false)),
     );
   });
 });
@@ -250,7 +243,7 @@ describe("lowerL1Expr — from-l2 transitional adapter", () => {
 
   it("from-l2 inside a cond arm composes correctly", () => {
     // cond [(g, from-l2(a + 1))] otherwise=0  →
-    //   cond [(g, a+1), (true, 0)]
+    //   cond [(g, a+1)] otherwise=0
     const l1 = ir1Cond(
       [
         [
@@ -268,8 +261,7 @@ describe("lowerL1Expr — from-l2 transitional adapter", () => {
           irVar("g", false),
           irBinop("add", irVar("a", false), irLitNat(1)),
         ],
-        [irLitBool(true), irLitNat(0)],
-      ]),
+      ], irLitNat(0)),
     );
   });
 });

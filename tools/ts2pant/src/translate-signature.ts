@@ -17,6 +17,7 @@ import {
 } from "./nullish-recognizer.js";
 import type { OpaqueBinop, OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
+import { isStaticallyBoolTyped } from "./purity.js";
 import {
   cellIsUsed,
   cellRegisterName,
@@ -1054,6 +1055,17 @@ export function translateExpr(
     ) {
       return {
         unsupported: "loose equality (== / !=) is unsupported; use === / !==",
+      };
+    }
+    if (
+      (expr.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
+        expr.operatorToken.kind === ts.SyntaxKind.BarBarToken) &&
+      (!isStaticallyBoolTyped(expr.left, checker) ||
+        !isStaticallyBoolTyped(expr.right, checker))
+    ) {
+      return {
+        unsupported:
+          "&&/|| requires both operands to be statically Bool-typed (workstream conservative-refusal 3(b))",
       };
     }
     const left = translateExpr(

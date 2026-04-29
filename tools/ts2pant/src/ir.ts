@@ -123,11 +123,11 @@ export type IRExpr =
    */
   | { kind: "app"; head: IRHead; args: IRExpr[] }
   /**
-   * Multi-armed conditional (value position). Last arm canonically
-   * `(true, default)`. Mirrors Pant's `cond` constructor and the
-   * existing `ast.cond([[g, v], [true, d]])` invariant.
+   * Multi-armed conditional (value position). `otherwise` carries the
+   * default branch when the source layer has one; lowering appends it as
+   * Pant's canonical trailing `(true, default)` arm.
    */
-  | { kind: "cond"; arms: Array<[IRExpr, IRExpr]> }
+  | { kind: "cond"; arms: Array<[IRExpr, IRExpr]>; otherwise?: IRExpr }
   /**
    * Hygienic let-binding. Substituted out at emission (Pant has no
    * `let`). Names come from the document-wide `UniqueSupply` /
@@ -298,10 +298,13 @@ export const irUnop = (op: IRUnop, arg: IRExpr): IRExpr => ({
   args: [arg],
 });
 
-export const irCond = (arms: Array<[IRExpr, IRExpr]>): IRExpr => ({
-  kind: "cond",
-  arms,
-});
+export const irCond = (
+  arms: Array<[IRExpr, IRExpr]>,
+  otherwise?: IRExpr,
+): IRExpr =>
+  otherwise === undefined
+    ? { kind: "cond", arms }
+    : { kind: "cond", arms, otherwise };
 
 export const irLet = (name: string, value: IRExpr, body: IRExpr): IRExpr => ({
   kind: "let",

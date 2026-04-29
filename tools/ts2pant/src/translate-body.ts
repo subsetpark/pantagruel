@@ -37,7 +37,7 @@ import type {
   OpaqueParam,
 } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
-import { isKnownPureCall } from "./purity.js";
+import { isKnownPureCall, isStaticallyBoolTyped } from "./purity.js";
 import { translateRecordReturn } from "./translate-record.js";
 import {
   classifyFunction,
@@ -3118,6 +3118,17 @@ export function translateBodyExpr(
       const lhsL1 = ir1FromL2(irWrap(bodyExpr(left)));
       const rhsL1 = ir1FromL2(irWrap(bodyExpr(right)));
       return { expr: lowerL1ToOpaque(ir1Binop(l1Op, lhsL1, rhsL1)) };
+    }
+    if (
+      (expr.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
+        expr.operatorToken.kind === ts.SyntaxKind.BarBarToken) &&
+      (!isStaticallyBoolTyped(expr.left, checker) ||
+        !isStaticallyBoolTyped(expr.right, checker))
+    ) {
+      return {
+        unsupported:
+          "&&/|| requires both operands to be statically Bool-typed (workstream conservative-refusal 3(b))",
+      };
     }
     const op = translateOperator(expr.operatorToken.kind);
     if (op === null) {

@@ -22,10 +22,17 @@ import { irWrap } from "../src/ir.js";
 import { type IR1Expr, ir1FromL2 } from "../src/ir1.js";
 import { createSourceFileFromSource, getChecker } from "../src/extract.js";
 import {
+  isL1Unsupported,
+  tryBuildL1PureSubExpression,
+  type L1BuildContext,
+} from "../src/ir1-build.js";
+import {
   type NullishTranslate,
   recognizeNullishForm,
 } from "../src/nullish-recognizer.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
+import type { UniqueSupply } from "../src/translate-body.js";
+import { IntStrategy, newSynthCell } from "../src/translate-types.js";
 
 before(async () => {
   await loadAst();
@@ -97,23 +104,63 @@ function makeTranslate(): NullishTranslate {
   return (e) => ir1FromL2(irWrap(ast.var(e.getText())));
 }
 
-function asL1(
-  result: IR1Expr | { unsupported: string } | null,
-): IR1Expr {
+function parseNarrowedNullishReturn(source: string): {
+  expr: ts.Expression;
+  ctx: L1BuildContext;
+} {
+  const sourceFile = createSourceFileFromSource(source);
+  const checker = getChecker(sourceFile);
+  const fn = sourceFile.compilerNode.statements.find(
+    (stmt): stmt is ts.FunctionDeclaration =>
+      ts.isFunctionDeclaration(stmt) && stmt.body !== undefined,
+  );
+  if (!fn) {
+    throw new Error("test helper: expected function body");
+  }
+  const first = fn.body.statements[0];
+  if (!first || !ts.isIfStatement(first)) {
+    throw new Error("test helper: expected leading if statement");
+  }
+  const thenStmt = ts.isBlock(first.thenStatement)
+    ? first.thenStatement.statements[0]
+    : first.thenStatement;
+  if (!thenStmt || !ts.isReturnStatement(thenStmt) || !thenStmt.expression) {
+    throw new Error("test helper: expected return inside if");
+  }
+  const paramNames = new Map<string, string>();
+  for (const param of fn.parameters) {
+    if (ts.isIdentifier(param.name)) {
+      paramNames.set(param.name.text, param.name.text);
+    }
+  }
+  const supply: UniqueSupply = { n: 0, synthCell: newSynthCell() };
+  return {
+    expr: thenStmt.expression,
+    ctx: {
+      checker,
+      strategy: IntStrategy,
+      paramNames,
+      state: undefined,
+      supply,
+    },
+  };
+}
+
+function asL1(result: IR1Expr | { unsupported: string } | null): IR1Expr {
   if (result === null) {
     throw new Error("expected an L1 expression, got null (no match)");
   }
   if ("unsupported" in result) {
-    throw new Error(`expected an L1 expression, got unsupported: ${result.unsupported}`);
+    throw new Error(
+      `expected an L1 expression, got unsupported: ${result.unsupported}`,
+    );
   }
   return result;
 }
 
 function expectIsNullish(l1: IR1Expr): IR1Expr {
   if (l1.kind !== "is-nullish") {
-    throw new Error(
-      `expected is-nullish at top level, got ${l1.kind}`,
-    );
+    throw new Error(`expected is-nullish at top level, got ${l1.kind}`);
   }
   return l1.operand;
 }
@@ -165,9 +212,7 @@ describe("ir1-build-nullish", () => {
   });
 
   it("x === null || x === undefined builds is-nullish (operand identity)", () => {
-    const { expr, checker } = parseBinExpr(
-      "x === null || x === undefined",
-    );
+    const { expr, checker } = parseBinExpr("x === null || x === undefined");
     const l1 = asL1(recognizeNullishForm(expr, checker, makeTranslate()));
     // The recognizer folds the pair into one `is-nullish` (not nested
     // inside `or` — that's the point of the long-form recognizer).
@@ -186,10 +231,9 @@ describe("ir1-build-nullish", () => {
     // against `undefined` is an always-false comparison in TS, but
     // syntactically it's still part of the nullish pattern, and
     // collapsing to `IsNullish(x)` lowers to a sound `#x = 0` test.
-    const { expr, checker } = parseBinExpr(
-      "x === null || x === undefined",
-      { x: "number | null" },
-    );
+    const { expr, checker } = parseBinExpr("x === null || x === undefined", {
+      x: "number | null",
+    });
     const l1 = asL1(recognizeNullishForm(expr, checker, makeTranslate()));
     const operand = expectIsNullish(l1);
     expectOperandText(operand, "x");
@@ -217,9 +261,7 @@ describe("ir1-build-nullish", () => {
   });
 
   it("x !== null && x !== undefined builds not(is-nullish)", () => {
-    const { expr, checker } = parseBinExpr(
-      "x !== null && x !== undefined",
-    );
+    const { expr, checker } = parseBinExpr("x !== null && x !== undefined");
     const l1 = asL1(recognizeNullishForm(expr, checker, makeTranslate()));
     const operand = expectNotIsNullish(l1);
     expectOperandText(operand, "x");
@@ -441,6 +483,48 @@ describe("ir1-build-nullish", () => {
       if (l1.rhs.kind === "is-nullish") {
         expectOperandText(l1.rhs.operand, "y");
       }
+    }
+  });
+});
+
+describe("ir1-build nullish coalescing", () => {
+  it("uses declared left nullability when the left operand is flow-narrowed", () => {
+    const { expr, ctx } = parseNarrowedNullishReturn(`
+      function f(x: number | null, y: number): number {
+        if (x !== null) {
+          return x ?? y;
+        }
+        return y;
+      }
+    `);
+    const l1 = tryBuildL1PureSubExpression(expr, ctx);
+    assert.notEqual(l1, null);
+    if (l1 === null || isL1Unsupported(l1)) {
+      throw new Error("expected nullish coalescing to build");
+    }
+    assert.equal(l1.kind, "cond");
+    if (l1.kind === "cond") {
+      assert.equal(l1.otherwise.kind, "app");
+    }
+  });
+
+  it("uses declared right nullability when the right operand is flow-narrowed", () => {
+    const { expr, ctx } = parseNarrowedNullishReturn(`
+      function f(x: number | null, y: number | null): number | null {
+        if (y !== null) {
+          return x ?? y;
+        }
+        return x;
+      }
+    `);
+    const l1 = tryBuildL1PureSubExpression(expr, ctx);
+    assert.notEqual(l1, null);
+    if (l1 === null || isL1Unsupported(l1)) {
+      throw new Error("expected nullish coalescing to build");
+    }
+    assert.equal(l1.kind, "cond");
+    if (l1.kind === "cond") {
+      assert.equal(l1.otherwise.kind, "var");
     }
   });
 });

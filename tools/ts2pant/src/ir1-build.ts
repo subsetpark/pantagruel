@@ -33,12 +33,13 @@
  */
 
 import ts from "typescript";
-import { irWrap } from "./ir.js";
+import { type IRExpr, irWrap } from "./ir.js";
 import { lowerExpr } from "./ir-emit.js";
 import {
   type IR1Binop,
   type IR1Expr,
   type IR1Stmt,
+  ir1App,
   ir1Assign,
   ir1Binop,
   ir1Block,
@@ -56,6 +57,7 @@ import {
 } from "./ir1.js";
 import { lowerL1Expr } from "./ir1-lower.js";
 import {
+  getOperandDeclaredType,
   type NullishTranslate,
   recognizeAnyLeaf,
   recognizeNullishForm,
@@ -125,6 +127,320 @@ export function unwrapParens(n: ts.Node): ts.Node {
   return n;
 }
 
+function binaryOperatorToL1(kind: ts.SyntaxKind): IR1Binop | null {
+  switch (kind) {
+    case ts.SyntaxKind.EqualsEqualsEqualsToken:
+      return "eq";
+    case ts.SyntaxKind.ExclamationEqualsEqualsToken:
+      return "neq";
+    case ts.SyntaxKind.LessThanToken:
+      return "lt";
+    case ts.SyntaxKind.GreaterThanToken:
+      return "gt";
+    case ts.SyntaxKind.LessThanEqualsToken:
+      return "le";
+    case ts.SyntaxKind.GreaterThanEqualsToken:
+      return "ge";
+    case ts.SyntaxKind.PlusToken:
+      return "add";
+    case ts.SyntaxKind.MinusToken:
+      return "sub";
+    case ts.SyntaxKind.AsteriskToken:
+      return "mul";
+    case ts.SyntaxKind.SlashToken:
+      return "div";
+    default:
+      return null;
+  }
+}
+
+const MUTATING_ARRAY_METHODS = new Set([
+  "copyWithin",
+  "fill",
+  "pop",
+  "push",
+  "reverse",
+  "shift",
+  "sort",
+  "splice",
+  "unshift",
+]);
+
+const ARRAY_CHAIN_METHODS = new Set(["filter", "map", "reduce", "reduceRight"]);
+
+function callMemberName(
+  callee: ts.Expression,
+): { receiver: ts.Expression; methodName: string } | null {
+  if (ts.isPropertyAccessExpression(callee)) {
+    return {
+      receiver: callee.expression,
+      methodName: callee.name.text,
+    };
+  }
+  if (ts.isElementAccessExpression(callee)) {
+    const methodName = elementAccessLiteralKey(callee);
+    if (methodName !== null) {
+      return { receiver: callee.expression, methodName };
+    }
+  }
+  return null;
+}
+
+function isKnownEffectfulNativeCall(
+  expr: ts.CallExpression,
+  checker: ts.TypeChecker,
+): boolean {
+  const member = callMemberName(expr.expression);
+  if (member === null) {
+    return false;
+  }
+  const receiverType = checker.getTypeAtLocation(member.receiver);
+  const receiverTypes = receiverType.isUnion()
+    ? receiverType.types
+    : [receiverType];
+  if (
+    (member.methodName === "add" ||
+      member.methodName === "delete" ||
+      member.methodName === "clear") &&
+    receiverTypes.some((t) => isSetType(t))
+  ) {
+    return true;
+  }
+  if (
+    (member.methodName === "set" ||
+      member.methodName === "delete" ||
+      member.methodName === "clear") &&
+    receiverTypes.some((t) => isMapType(t))
+  ) {
+    return true;
+  }
+  return receiverTypes.some(
+    (t) =>
+      MUTATING_ARRAY_METHODS.has(member.methodName) &&
+      isArrayOrTupleType(t, checker),
+  );
+}
+
+function isArrayOrTupleType(t: ts.Type, checker: ts.TypeChecker): boolean {
+  return checker.isArrayType(t) || checker.isTupleType(t);
+}
+
+function isArrayOrTupleUnionType(t: ts.Type, checker: ts.TypeChecker): boolean {
+  if (isArrayOrTupleType(t, checker)) {
+    return true;
+  }
+  return (
+    t.isUnion() &&
+    t.types.every((member) => isArrayOrTupleType(member, checker))
+  );
+}
+
+function isArrayChainCall(
+  expr: ts.CallExpression,
+  checker: ts.TypeChecker,
+): boolean {
+  const member = callMemberName(expr.expression);
+  if (member === null || !ARRAY_CHAIN_METHODS.has(member.methodName)) {
+    return false;
+  }
+  const receiverType = checker.getTypeAtLocation(member.receiver);
+  return isArrayOrTupleUnionType(receiverType, checker);
+}
+
+/**
+ * Native L1 construction for ordinary pure sub-expressions. Returns
+ * `null` when the expression is outside this cleanup patch's native
+ * coverage and should continue to the temporary legacy safety net.
+ * Explicitly unsupported boundaries still return `{ unsupported }`.
+ */
+export function tryBuildL1PureSubExpression(
+  expr: ts.Expression,
+  ctx: L1BuildContext,
+): L1BuildResult | null {
+  expr = unwrapParens(expr) as ts.Expression;
+
+  if (expr.kind === ts.SyntaxKind.TrueKeyword) {
+    return ir1LitBool(true);
+  }
+  if (expr.kind === ts.SyntaxKind.FalseKeyword) {
+    return ir1LitBool(false);
+  }
+  if (ts.isNumericLiteral(expr)) {
+    const n = Number(expr.text);
+    if (Number.isFinite(n) && Number.isInteger(n) && n >= 0) {
+      return ir1LitNat(n);
+    }
+    return null;
+  }
+  if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) {
+    return ir1LitString(expr.text);
+  }
+  if (ts.isIdentifier(expr)) {
+    return ir1Var(ctx.paramNames.get(expr.text) ?? expr.text);
+  }
+  if (expr.kind === ts.SyntaxKind.ThisKeyword) {
+    return ir1Var(ctx.paramNames.get("this") ?? "this");
+  }
+
+  if (
+    (ts.isPropertyAccessExpression(expr) ||
+      ts.isElementAccessExpression(expr)) &&
+    (expr.flags & ts.NodeFlags.OptionalChain) === 0
+  ) {
+    if (
+      ts.isPropertyAccessExpression(expr) ||
+      elementAccessLiteralKey(expr) === "length" ||
+      elementAccessLiteralKey(expr) === "size"
+    ) {
+      const card = tryBuildL1Cardinality(expr, ctx, {
+        nativeReceiverLeaf: true,
+      });
+      if (card !== null) {
+        return card;
+      }
+    }
+    return buildL1MemberAccess(expr, ctx, { nativeReceiverLeaf: true });
+  }
+
+  if (ts.isPrefixUnaryExpression(expr)) {
+    const op =
+      expr.operator === ts.SyntaxKind.ExclamationToken
+        ? "not"
+        : expr.operator === ts.SyntaxKind.MinusToken
+          ? "neg"
+          : null;
+    if (op === null) {
+      return null;
+    }
+    const operand = tryBuildL1PureSubExpression(expr.operand, ctx);
+    if (operand === null || isL1Unsupported(operand)) {
+      return operand;
+    }
+    return ir1Unop(op, operand);
+  }
+
+  if (ts.isBinaryExpression(expr)) {
+    const nullishProbe = recognizeNullishForm(expr, ctx.checker, () =>
+      ir1Var("__nullish_probe"),
+    );
+    if (nullishProbe !== null) {
+      return null;
+    }
+    if (
+      expr.operatorToken.kind === ts.SyntaxKind.EqualsEqualsToken ||
+      expr.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsToken
+    ) {
+      return {
+        unsupported: "loose equality (== / !=) is unsupported; use === / !==",
+      };
+    }
+    if (expr.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) {
+      const left = tryBuildL1PureSubExpression(expr.left, ctx);
+      if (left === null || isL1Unsupported(left)) {
+        return left;
+      }
+      const leftTsType = getOperandDeclaredType(expr.left, ctx.checker);
+      if (!isNullableTsType(leftTsType)) {
+        return left;
+      }
+      const right = tryBuildL1PureSubExpression(expr.right, ctx);
+      if (right === null || isL1Unsupported(right)) {
+        return right;
+      }
+      const rightTsType = getOperandDeclaredType(expr.right, ctx.checker);
+      const present = isNullableTsType(rightTsType)
+        ? left
+        : ir1App(left, [ir1LitNat(1)]);
+      return ir1Cond([[ir1IsNullish(left), right]], present);
+    }
+    let op = binaryOperatorToL1(expr.operatorToken.kind);
+    if (
+      expr.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken ||
+      expr.operatorToken.kind === ts.SyntaxKind.BarBarToken
+    ) {
+      if (
+        !isStaticallyBoolTyped(expr.left, ctx.checker) ||
+        !isStaticallyBoolTyped(expr.right, ctx.checker)
+      ) {
+        return null;
+      }
+      op =
+        expr.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken
+          ? "and"
+          : "or";
+    }
+    if (op === null) {
+      return null;
+    }
+    const left = tryBuildL1PureSubExpression(expr.left, ctx);
+    if (left === null || isL1Unsupported(left)) {
+      return left;
+    }
+    const right = tryBuildL1PureSubExpression(expr.right, ctx);
+    if (right === null || isL1Unsupported(right)) {
+      return right;
+    }
+    return ir1Binop(op, left, right);
+  }
+
+  if (ts.isCallExpression(expr)) {
+    if (expr.arguments.some(ts.isSpreadElement)) {
+      return { unsupported: "call with spread arguments is unsupported" };
+    }
+    if (expressionHasSideEffects(expr.expression, ctx.checker)) {
+      return null;
+    }
+    if (isArrayChainCall(expr, ctx.checker)) {
+      return null;
+    }
+    const member = callMemberName(expr.expression);
+    if (
+      isKnownEffectfulNativeCall(expr, ctx.checker) ||
+      (member !== null &&
+        expressionHasSideEffects(member.receiver, ctx.checker))
+    ) {
+      return null;
+    }
+    let callee: IR1Expr | null;
+    let args: IR1Expr[];
+    if (ts.isIdentifier(expr.expression)) {
+      const fnName =
+        ctx.paramNames.get(expr.expression.text) ?? expr.expression.text;
+      callee = ir1Var(fnName);
+      args = [];
+    } else if (
+      ts.isPropertyAccessExpression(expr.expression) ||
+      ts.isElementAccessExpression(expr.expression)
+    ) {
+      const builtCallee = buildL1MemberAccess(expr.expression, ctx, {
+        nativeReceiverLeaf: true,
+      });
+      if (isL1Unsupported(builtCallee)) {
+        return builtCallee;
+      }
+      callee = builtCallee;
+      args = [];
+    } else {
+      const builtCallee = tryBuildL1PureSubExpression(expr.expression, ctx);
+      if (builtCallee === null || isL1Unsupported(builtCallee)) {
+        return builtCallee;
+      }
+      callee = builtCallee;
+      args = [];
+    }
+    for (const arg of expr.arguments) {
+      const builtArg = tryBuildL1PureSubExpression(arg, ctx);
+      if (builtArg === null || isL1Unsupported(builtArg)) {
+        return builtArg;
+      }
+      args.push(builtArg);
+    }
+    return ir1App(callee, args);
+  }
+
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Cardinality dispatch (`.length` / `.size` → `Unop(card, x)`)
 // ---------------------------------------------------------------------------
@@ -154,10 +470,10 @@ function isSizeCardinalityType(t: ts.Type): boolean {
 
 /**
  * Try to build an L1 `Unop(card, receiver)` for `node` if it is a
- * non-optional `PropertyAccessExpression` whose receiver is a list-
- * shaped TS type and whose property is the cardinality slot for that
- * type. Returns null when the node is not a cardinality form — caller
- * falls through to `buildL1MemberAccess`.
+ * non-optional property access (`xs.length` or `xs["length"]`) whose
+ * receiver is a list-shaped TS type and whose property is the cardinality
+ * slot for that type. Returns null when the node is not a cardinality
+ * form — caller falls through to `buildL1MemberAccess`.
  *
  * `options` propagate through to the inner Member dispatch when the
  * cardinality receiver is itself a property access (e.g.,
@@ -172,7 +488,10 @@ export function tryBuildL1Cardinality(
   options: BuildL1MemberAccessOptions = {},
 ): IR1Expr | null {
   const stripped = unwrapParens(node);
-  if (!ts.isPropertyAccessExpression(stripped)) {
+  if (
+    !ts.isPropertyAccessExpression(stripped) &&
+    !ts.isElementAccessExpression(stripped)
+  ) {
     return null;
   }
   // Optional-chain `.length` / `.size` (i.e., `xs?.length`) preserves
@@ -183,7 +502,9 @@ export function tryBuildL1Cardinality(
   if ((stripped.flags & ts.NodeFlags.OptionalChain) !== 0) {
     return null;
   }
-  const propName = stripped.name.text;
+  const propName = ts.isPropertyAccessExpression(stripped)
+    ? stripped.name.text
+    : elementAccessLiteralKey(stripped);
   if (propName !== "length" && propName !== "size") {
     return null;
   }
@@ -225,6 +546,23 @@ export function tryBuildL1Cardinality(
     }
     return ir1Unop("card", ir1FromL2(irWrap(r.expr)));
   }
+  if (ctx.state === undefined && options.nativeReceiverLeaf === true) {
+    const nativeReceiver = tryBuildL1PureSubExpression(
+      receiverNode as ts.Expression,
+      ctx,
+    );
+    if (nativeReceiver !== null && !isL1Unsupported(nativeReceiver)) {
+      return ir1Unop("card", nativeReceiver);
+    }
+    const nativeReceiverIR = tryBuildNativeReceiverLeafIR(
+      receiverNode as ts.Expression,
+      ctx,
+      options,
+    );
+    if (nativeReceiverIR !== null && !isL1Unsupported(nativeReceiverIR)) {
+      return ir1Unop("card", nativeReceiverIR);
+    }
+  }
   const r = translateBodyExpr(
     receiverNode as ts.Expression,
     ctx.checker,
@@ -265,6 +603,9 @@ const COMPUTED_ELEMENT_ACCESS_UNSUPPORTED =
   "computed property access (obj[expr]) is unsupported; " +
   "use dotted property access or a string-literal index instead";
 
+export const computedElementAccessUnsupportedReason =
+  COMPUTED_ELEMENT_ACCESS_UNSUPPORTED;
+
 /**
  * Extract the literal field name from an `ElementAccessExpression`'s
  * argument expression. Accepts both `StringLiteral` (`obj["f"]`) and
@@ -273,7 +614,7 @@ const COMPUTED_ELEMENT_ACCESS_UNSUPPORTED =
  * null for any other argument shape (identifier, computed expression,
  * numeric literal, template with substitutions, etc.).
  */
-function elementAccessLiteralKey(
+export function elementAccessLiteralKey(
   node: ts.ElementAccessExpression,
 ): string | null {
   const arg = node.argumentExpression;
@@ -352,10 +693,39 @@ export type MemberReceiverResult =
  */
 export interface BuildL1MemberAccessOptions {
   ambiguousOwnerFallback?: "reject" | "bare-kebab";
+  nativeReceiverLeaf?: boolean;
+  nativeReceiverLeafIR?: (
+    expr: ts.Expression,
+    ctx: L1BuildContext,
+  ) => IRExpr | { unsupported: string } | null;
   translateReceiverLeaf?: (
     expr: ts.Expression,
     ctx: L1BuildContext,
   ) => MemberReceiverResult;
+}
+
+function tryBuildNativeReceiverLeafIR(
+  receiverNode: ts.Expression,
+  ctx: L1BuildContext,
+  options: BuildL1MemberAccessOptions,
+): IR1Expr | { unsupported: string } | null {
+  if (
+    ctx.state !== undefined ||
+    options.nativeReceiverLeaf !== true ||
+    options.nativeReceiverLeafIR === undefined ||
+    !ts.isCallExpression(receiverNode) ||
+    !isArrayChainCall(receiverNode, ctx.checker)
+  ) {
+    return null;
+  }
+  const nativeReceiver = options.nativeReceiverLeafIR(receiverNode, ctx);
+  if (nativeReceiver === null) {
+    return null;
+  }
+  if ("unsupported" in nativeReceiver) {
+    return nativeReceiver;
+  }
+  return ir1FromL2(nativeReceiver);
 }
 
 /**
@@ -477,6 +847,47 @@ export function buildL1MemberAccess(
       return { unsupported: r.reason };
     }
     receiverL1 = ir1FromL2(irWrap(r.expr));
+  } else if (ctx.state === undefined && options.nativeReceiverLeaf === true) {
+    const nativeReceiver = tryBuildL1PureSubExpression(
+      receiverNode as ts.Expression,
+      ctx,
+    );
+    if (nativeReceiver !== null) {
+      if (isL1Unsupported(nativeReceiver)) {
+        return nativeReceiver;
+      }
+      receiverL1 = nativeReceiver;
+    } else {
+      const nativeReceiverIR = tryBuildNativeReceiverLeafIR(
+        receiverNode as ts.Expression,
+        ctx,
+        options,
+      );
+      if (nativeReceiverIR !== null) {
+        if (isL1Unsupported(nativeReceiverIR)) {
+          return nativeReceiverIR;
+        }
+        receiverL1 = nativeReceiverIR;
+      } else {
+        const r = translateBodyExpr(
+          receiverNode as ts.Expression,
+          ctx.checker,
+          ctx.strategy,
+          ctx.paramNames,
+          ctx.state,
+          ctx.supply,
+        );
+        if (isBodyUnsupported(r)) {
+          return { unsupported: r.unsupported };
+        }
+        if ("effect" in r) {
+          return {
+            unsupported: "collection mutation as property-access receiver",
+          };
+        }
+        receiverL1 = ir1FromL2(irWrap(bodyExpr(r)));
+      }
+    }
   } else {
     const r = translateBodyExpr(
       receiverNode as ts.Expression,
@@ -718,8 +1129,12 @@ function isSingleElementProducingShape(expr: ts.Expression): boolean {
   if (ts.isSpreadElement(u)) {
     return false;
   }
-  if (ts.isCallExpression(u) && ts.isPropertyAccessExpression(u.expression)) {
-    if (ARRAY_MULTI_PRODUCING_METHODS.has(u.expression.name.text)) {
+  if (ts.isCallExpression(u)) {
+    const member = callMemberName(u.expression);
+    if (
+      member !== null &&
+      ARRAY_MULTI_PRODUCING_METHODS.has(member.methodName)
+    ) {
       return false;
     }
   }
