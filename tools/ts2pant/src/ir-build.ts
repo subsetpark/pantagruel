@@ -334,16 +334,34 @@ function callbackBody(fn: ts.ArrowFunction): ts.Expression {
   return fn.body;
 }
 
-function getArrayElementType(
+function getArrayElementTypesFromType(
+  sourceType: ts.Type,
+  checker: ts.TypeChecker,
+): readonly ts.Type[] | null {
+  if (sourceType.isUnion()) {
+    const elementTypes: ts.Type[] = [];
+    for (const member of sourceType.types) {
+      const memberElementTypes = getArrayElementTypesFromType(member, checker);
+      if (memberElementTypes === null) {
+        return null;
+      }
+      elementTypes.push(...memberElementTypes);
+    }
+    return elementTypes.length > 0 ? elementTypes : null;
+  }
+  if (checker.isArrayType(sourceType) || checker.isTupleType(sourceType)) {
+    const typeArgs = checker.getTypeArguments(sourceType as ts.TypeReference);
+    return typeArgs.length > 0 ? typeArgs : null;
+  }
+  return null;
+}
+
+function getArrayElementTypes(
   tsExpr: ts.Expression,
   checker: ts.TypeChecker,
-): ts.Type | null {
+): readonly ts.Type[] | null {
   const sourceType = checker.getTypeAtLocation(tsExpr);
-  if (!checker.isArrayType(sourceType)) {
-    return null;
-  }
-  const typeArgs = checker.getTypeArguments(sourceType as ts.TypeReference);
-  return typeArgs.length === 1 ? typeArgs[0]! : null;
+  return getArrayElementTypesFromType(sourceType, checker);
 }
 
 function arrayMethodCall(expr: ts.CallExpression): {
@@ -493,7 +511,7 @@ function buildArrayMapFilter(
   paramNames: ReadonlyMap<string, string>,
   supply: UniqueSupply,
 ): IRBuildValue | { unsupported: string } | null {
-  if (getArrayElementType(tsReceiver, checker) === null) {
+  if (getArrayElementTypes(tsReceiver, checker) === null) {
     return null;
   }
   if (expr.arguments.length !== 1) {
@@ -604,7 +622,7 @@ function buildArrayReduce(
   if (expr.arguments.length !== 2) {
     return { unsupported: `.${methodName} requires an explicit initial value` };
   }
-  if (getArrayElementType(tsReceiver, checker) === null) {
+  if (getArrayElementTypes(tsReceiver, checker) === null) {
     return null;
   }
   const receiver = buildIRValue(

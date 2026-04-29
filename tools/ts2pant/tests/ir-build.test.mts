@@ -31,7 +31,9 @@ function setupReturnExpr(source: string, functionName = "f"): ExprSetup {
   }
   const stmt = fn.body.statements.find(ts.isReturnStatement);
   if (!stmt?.expression) {
-    throw new Error(`expected function ${functionName} to return an expression`);
+    throw new Error(
+      `expected function ${functionName} to return an expression`,
+    );
   }
   const paramNames = new Map<string, string>();
   for (const param of fn.parameters) {
@@ -205,6 +207,23 @@ describe("ir-build M6 native construction stubs", () => {
     expectNoIRWrap(indexed);
   });
 
+  it("recognizes tuple and union array-method receivers", () => {
+    const tuple = expectIR(`
+      function f(items: readonly [number, number]): number[] {
+        return items.map((item) => item + 1);
+      }
+    `);
+    const union = expectIR(`
+      function f(items: number[] | readonly number[]): number[] {
+        return items.map((item) => item + 1);
+      }
+    `);
+    assert.equal(containsKind(tuple, "each"), true);
+    assert.equal(containsKind(union, "each"), true);
+    expectNoIRWrap(tuple);
+    expectNoIRWrap(union);
+  });
+
   it("does not recurse on syntactic array method names for non-array receivers", () => {
     const method = buildFromSource(`
       interface Service { readonly map: (n: number) => number; }
@@ -274,7 +293,10 @@ describe("ir-build M6 native construction stubs", () => {
     `);
     assert.ok(isBuildUnsupported(result));
     if (isBuildUnsupported(result)) {
-      assert.match(result.unsupported, /callback must have exactly one argument/u);
+      assert.match(
+        result.unsupported,
+        /callback must have exactly one argument/u,
+      );
     }
   });
 
@@ -325,7 +347,10 @@ describe("ir-build M6 native construction stubs", () => {
       `);
       assert.ok(isBuildUnsupported(result));
       if (isBuildUnsupported(result)) {
-        assert.match(result.unsupported, /callback must reference acc exactly once/u);
+        assert.match(
+          result.unsupported,
+          /callback must reference acc exactly once/u,
+        );
       }
     }
   });

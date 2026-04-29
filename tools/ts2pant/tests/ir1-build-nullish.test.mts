@@ -110,8 +110,11 @@ function parseNarrowedNullishReturn(source: string): {
 } {
   const sourceFile = createSourceFileFromSource(source);
   const checker = getChecker(sourceFile);
-  const fn = sourceFile.compilerNode.statements.find(ts.isFunctionDeclaration);
-  if (!fn?.body) {
+  const fn = sourceFile.compilerNode.statements.find(
+    (stmt): stmt is ts.FunctionDeclaration =>
+      ts.isFunctionDeclaration(stmt) && stmt.body !== undefined,
+  );
+  if (!fn) {
     throw new Error("test helper: expected function body");
   }
   const first = fn.body.statements[0];
@@ -143,23 +146,21 @@ function parseNarrowedNullishReturn(source: string): {
   };
 }
 
-function asL1(
-  result: IR1Expr | { unsupported: string } | null,
-): IR1Expr {
+function asL1(result: IR1Expr | { unsupported: string } | null): IR1Expr {
   if (result === null) {
     throw new Error("expected an L1 expression, got null (no match)");
   }
   if ("unsupported" in result) {
-    throw new Error(`expected an L1 expression, got unsupported: ${result.unsupported}`);
+    throw new Error(
+      `expected an L1 expression, got unsupported: ${result.unsupported}`,
+    );
   }
   return result;
 }
 
 function expectIsNullish(l1: IR1Expr): IR1Expr {
   if (l1.kind !== "is-nullish") {
-    throw new Error(
-      `expected is-nullish at top level, got ${l1.kind}`,
-    );
+    throw new Error(`expected is-nullish at top level, got ${l1.kind}`);
   }
   return l1.operand;
 }
@@ -211,9 +212,7 @@ describe("ir1-build-nullish", () => {
   });
 
   it("x === null || x === undefined builds is-nullish (operand identity)", () => {
-    const { expr, checker } = parseBinExpr(
-      "x === null || x === undefined",
-    );
+    const { expr, checker } = parseBinExpr("x === null || x === undefined");
     const l1 = asL1(recognizeNullishForm(expr, checker, makeTranslate()));
     // The recognizer folds the pair into one `is-nullish` (not nested
     // inside `or` — that's the point of the long-form recognizer).
@@ -232,10 +231,9 @@ describe("ir1-build-nullish", () => {
     // against `undefined` is an always-false comparison in TS, but
     // syntactically it's still part of the nullish pattern, and
     // collapsing to `IsNullish(x)` lowers to a sound `#x = 0` test.
-    const { expr, checker } = parseBinExpr(
-      "x === null || x === undefined",
-      { x: "number | null" },
-    );
+    const { expr, checker } = parseBinExpr("x === null || x === undefined", {
+      x: "number | null",
+    });
     const l1 = asL1(recognizeNullishForm(expr, checker, makeTranslate()));
     const operand = expectIsNullish(l1);
     expectOperandText(operand, "x");
@@ -263,9 +261,7 @@ describe("ir1-build-nullish", () => {
   });
 
   it("x !== null && x !== undefined builds not(is-nullish)", () => {
-    const { expr, checker } = parseBinExpr(
-      "x !== null && x !== undefined",
-    );
+    const { expr, checker } = parseBinExpr("x !== null && x !== undefined");
     const l1 = asL1(recognizeNullishForm(expr, checker, makeTranslate()));
     const operand = expectNotIsNullish(l1);
     expectOperandText(operand, "x");

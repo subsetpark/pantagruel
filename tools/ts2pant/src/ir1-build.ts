@@ -166,6 +166,8 @@ const MUTATING_ARRAY_METHODS = new Set([
   "unshift",
 ]);
 
+const ARRAY_CHAIN_METHODS = new Set(["filter", "map", "reduce", "reduceRight"]);
+
 function callMemberName(
   callee: ts.Expression,
 ): { receiver: ts.Expression; methodName: string } | null {
@@ -217,6 +219,28 @@ function isKnownEffectfulNativeCall(
 
 function isArrayOrTupleType(t: ts.Type, checker: ts.TypeChecker): boolean {
   return checker.isArrayType(t) || checker.isTupleType(t);
+}
+
+function isArrayOrTupleUnionType(t: ts.Type, checker: ts.TypeChecker): boolean {
+  if (isArrayOrTupleType(t, checker)) {
+    return true;
+  }
+  return (
+    t.isUnion() &&
+    t.types.every((member) => isArrayOrTupleType(member, checker))
+  );
+}
+
+function isArrayChainCall(
+  expr: ts.CallExpression,
+  checker: ts.TypeChecker,
+): boolean {
+  const member = callMemberName(expr.expression);
+  if (member === null || !ARRAY_CHAIN_METHODS.has(member.methodName)) {
+    return false;
+  }
+  const receiverType = checker.getTypeAtLocation(member.receiver);
+  return isArrayOrTupleUnionType(receiverType, checker);
 }
 
 /**
@@ -358,6 +382,12 @@ export function tryBuildL1PureSubExpression(
   if (ts.isCallExpression(expr)) {
     if (expr.arguments.some(ts.isSpreadElement)) {
       return { unsupported: "call with spread arguments is unsupported" };
+    }
+    if (expressionHasSideEffects(expr.expression, ctx.checker)) {
+      return null;
+    }
+    if (isArrayChainCall(expr, ctx.checker)) {
+      return null;
     }
     const member = callMemberName(expr.expression);
     if (

@@ -71,9 +71,27 @@ describe("ir1-build call purity", () => {
         return xs.push(x);
       }
     `);
+    const setAddBracket = setupReturnExpr(`
+      function f(xs: Set<number>, x: number): Set<number> {
+        return xs["add"](x);
+      }
+    `);
+    const arrayPushBracket = setupReturnExpr(`
+      function f(xs: number[], x: number): number {
+        return xs["push"](x);
+      }
+    `);
     assert.equal(tryBuildL1PureSubExpression(setAdd.expr, setAdd.ctx), null);
     assert.equal(
       tryBuildL1PureSubExpression(arrayPush.expr, arrayPush.ctx),
+      null,
+    );
+    assert.equal(
+      tryBuildL1PureSubExpression(setAddBracket.expr, setAddBracket.ctx),
+      null,
+    );
+    assert.equal(
+      tryBuildL1PureSubExpression(arrayPushBracket.expr, arrayPushBracket.ctx),
       null,
     );
   });
@@ -83,6 +101,24 @@ describe("ir1-build call purity", () => {
       declare function makeSet(): Set<number>;
       function f(x: number): boolean {
         return makeSet().has(x);
+      }
+    `);
+    assert.equal(tryBuildL1PureSubExpression(expr, ctx), null);
+
+    const bracket = setupReturnExpr(`
+      declare function makeSet(): Set<number>;
+      function f(x: number): boolean {
+        return makeSet()["has"](x);
+      }
+    `);
+    assert.equal(tryBuildL1PureSubExpression(bracket.expr, bracket.ctx), null);
+  });
+
+  it("does not lower a higher-order call with an effectful callee", () => {
+    const { expr, ctx } = setupReturnExpr(`
+      declare function makeFn(): (x: number) => number;
+      function f(x: number): number {
+        return (makeFn())(x);
       }
     `);
     assert.equal(tryBuildL1PureSubExpression(expr, ctx), null);
