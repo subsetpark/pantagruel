@@ -522,10 +522,13 @@ export function tryBuildL1PureSubExpression(
               "Map key or value type is unsupported in native call lowering",
           };
         }
-        let info = ctx.supply.synthCell
-          ? lookupMapKV(ctx.supply.synthCell.synth, kType, vType)
-          : undefined;
-        if (!info && ctx.supply.synthCell) {
+        // `cellRegisterMap` is idempotent (returns the cached entry on
+        // re-registration), so always-register-then-lookup is the
+        // simplest safe shape. `lookupMapKV` returns `undefined`
+        // (Map.get) rather than throwing, but the conditional-register
+        // form was conflating "missing" with "registration failure".
+        let info: ReturnType<typeof lookupMapKV>;
+        if (ctx.supply.synthCell) {
           cellRegisterMap(ctx.supply.synthCell, kType, vType);
           info = lookupMapKV(ctx.supply.synthCell.synth, kType, vType);
         }

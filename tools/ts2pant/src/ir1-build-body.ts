@@ -704,23 +704,27 @@ function buildL1SubExpr(
     ts.isPropertyAccessExpression(stripped) ||
     ts.isElementAccessExpression(stripped)
   ) {
-    const card = tryBuildL1Cardinality(stripped, {
+    // `nativeReceiverLeaf: true` keeps the cardinality probe and
+    // Member build inside the "native L1 or explicit unsupported"
+    // boundary on the mutating-body path — without it the cardinality
+    // receiver would fall through to `translateBodyExpr` and re-wrap
+    // via `ir1FromL2`, defeating the M6 from-l2 elimination work.
+    // Member already gates non-pure receivers via its
+    // `ctx.state !== undefined` branch, but passing the option here
+    // keeps both probes consistent.
+    const l1Options = { nativeReceiverLeaf: true } as const;
+    const ctxOptions = {
       checker: ctx.checker,
       strategy: ctx.strategy,
       paramNames: ctx.paramNames,
       state: ctx.state,
       supply: ctx.supply,
-    });
+    };
+    const card = tryBuildL1Cardinality(stripped, ctxOptions, l1Options);
     if (card !== null) {
       return card;
     }
-    const memberR = buildL1MemberAccess(stripped, {
-      checker: ctx.checker,
-      strategy: ctx.strategy,
-      paramNames: ctx.paramNames,
-      state: ctx.state,
-      supply: ctx.supply,
-    });
+    const memberR = buildL1MemberAccess(stripped, ctxOptions, l1Options);
     if (!isL1Unsupported(memberR)) {
       return memberR;
     }
