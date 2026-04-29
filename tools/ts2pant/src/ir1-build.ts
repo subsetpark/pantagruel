@@ -226,11 +226,12 @@ function isKnownEffectfulNativeCall(
 }
 
 /**
- * True when `expr` is a Map/Set point-mutation call (.set/.delete on
+ * True when `expr` is a Map/Set mutation call (.set/.delete/.clear on
  * Map; .add/.delete/.clear on Set). Used by mutating-body sub-expression
  * builders to surface a specific "collection mutation outside statement
  * position" reason instead of the generic mutating-body fallback when a
  * mutation call is observed in value position (e.g., `a.q = a.p.set(k, v)`).
+ * Mirrors the Map/Set coverage in `isKnownEffectfulNativeCall`.
  */
 export function isCollectionMutationCall(
   expr: ts.CallExpression,
@@ -242,7 +243,9 @@ export function isCollectionMutationCall(
   }
   const receiverType = checker.getTypeAtLocation(member.receiver);
   if (
-    (member.methodName === "set" || member.methodName === "delete") &&
+    (member.methodName === "set" ||
+      member.methodName === "delete" ||
+      member.methodName === "clear") &&
     isMapType(receiverType)
   ) {
     return true;

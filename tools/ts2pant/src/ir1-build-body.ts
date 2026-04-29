@@ -43,6 +43,7 @@ import {
 } from "./ir1.js";
 import {
   buildL1MemberAccess,
+  elementAccessLiteralKey,
   isCollectionMutationCall,
   isL1Unsupported,
   tryBuildL1Cardinality,
@@ -1018,10 +1019,26 @@ function buildL1EffectCall(
     return { unsupported: "branch call is not a recognized Map/Set effect" };
   }
   const effect = result.effect;
-  if (!ts.isPropertyAccessExpression(call.expression)) {
-    return { unsupported: "Map/Set effect receiver must be a property access" };
+  // Accept both dotted access (`m.set(k, v)`) and string-literal element
+  // access (`m["set"](k, v)`) for the call's callee — they're equivalent
+  // surface forms (M5 property-access equivalence class). Computed
+  // element access (`m[expr]`) and other shapes still reject.
+  const callee = call.expression;
+  let receiverNode: ts.Expression;
+  if (ts.isPropertyAccessExpression(callee)) {
+    receiverNode = callee.expression;
+  } else if (
+    ts.isElementAccessExpression(callee) &&
+    elementAccessLiteralKey(callee) !== null
+  ) {
+    receiverNode = callee.expression;
+  } else {
+    return {
+      unsupported:
+        "Map/Set effect callee must use dotted access or string-literal element access",
+    };
   }
-  const objExpr = buildL1SubExpr(call.expression.expression, ctx);
+  const objExpr = buildL1SubExpr(receiverNode, ctx);
   if (isUnsupported(objExpr)) {
     return objExpr;
   }
