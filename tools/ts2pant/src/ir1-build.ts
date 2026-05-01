@@ -521,6 +521,9 @@ export function tryBuildL1PureSubExpression(
   if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) {
     return ir1LitString(expr.text);
   }
+  if (ts.isTemplateExpression(expr)) {
+    return tryBuildL1TemplateExpression(expr, ctx);
+  }
   if (ts.isIdentifier(expr)) {
     return ir1Var(ctx.paramNames.get(expr.text) ?? expr.text);
   }
@@ -866,6 +869,116 @@ export function tryBuildL1PureSubExpression(
   }
 
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Template literals (`` `head${e1}mid${e2}tail` ``)
+// ---------------------------------------------------------------------------
+//
+// Lowering target: a left-folded `+` chain over the head, each substitution
+// (stringified per static type), and each span literal. Empty static
+// segments are dropped. String-typed substitutions inline directly; Int /
+// Real substitutions wrap in `int-to-string` / `real-to-string` (declared
+// in `samples/js-stdlib/TS_PRELUDE.pant`); Bool inlines a
+// `cond b => "true", true => "false"` (no prelude rule because Pantagruel
+// rejects Bool params on rules — see TS_PRELUDE.pant header).
+//
+// Pantagruel intentionally has no implicit-coercion `to-string` primitive,
+// so all stringification routes through these explicit dispatches. The
+// consumer document picks up `import TS_PRELUDE.` whenever an Int / Real
+// substitution fires; pipeline.ts drains `synthCell.imports` into
+// `doc.imports` + `doc.bundleModules` after body translation.
+
+const STRINGIFIABLE_PRIMITIVES = new Set(["String", "Int", "Real", "Bool"]);
+
+function buildL1Stringification(
+  expr: ts.Expression,
+  ctx: L1BuildContext,
+): L1BuildResult | null {
+  const inner = tryBuildL1PureSubExpression(expr, ctx);
+  if (inner === null || isL1Unsupported(inner)) {
+    return inner;
+  }
+  // Use the *narrowed* type to pick the stringification dispatch and the
+  // *declared* type to detect when control-flow narrowing has hidden a
+  // list-lifted Pant shape. A guarded reference like `${n}` inside
+  // `if (n !== undefined)` narrows to `number` at the use site but the
+  // emitted Pant symbol is still `[Int]` — without the singleton
+  // extraction `(n 1)`, the lowering would feed a `[Int]` to
+  // `int-to-string` (an `Int -> String` rule), mirroring the bug the
+  // `??` and `!` paths already avoid via `getOperandDeclaredType`.
+  const declaredTsType = getOperandDeclaredType(expr, ctx.checker);
+  const tsType = ctx.checker.getTypeAtLocation(expr);
+  const value =
+    isNullableTsType(declaredTsType) && !isNullableTsType(tsType)
+      ? ir1App(inner, [ir1LitNat(1)])
+      : inner;
+  const pantType = mapTsType(
+    tsType,
+    ctx.checker,
+    ctx.strategy,
+    ctx.supply.synthCell,
+  );
+  if (!STRINGIFIABLE_PRIMITIVES.has(pantType)) {
+    return {
+      unsupported: `template literal substitution has unsupported type "${pantType}" — only String, Int, Real, Bool are stringifiable`,
+    };
+  }
+  if (pantType === "String") {
+    return value;
+  }
+  if (pantType === "Bool") {
+    // Inline `cond b => "true", true => "false"` — no prelude rule
+    // because Pantagruel warns on Bool params (Bool params on rules are
+    // a code smell). The cond directly encodes the lookup table.
+    return ir1Cond([[value, ir1LitString("true")]], ir1LitString("false"));
+  }
+  // Int / Real route through the TS_PRELUDE EUF rules. Both halves of
+  // the registration must succeed: we need a synthCell to record the
+  // import on, and the consumer needs to carry the import + bundled
+  // module text through to typecheck. Reject if synthCell is absent.
+  if (ctx.supply.synthCell === undefined) {
+    return {
+      unsupported:
+        "template literal: cannot route non-string substitution through TS_PRELUDE without a synthCell",
+    };
+  }
+  ctx.supply.synthCell.imports.add("TS_PRELUDE");
+  const ruleName = pantType === "Int" ? "int-to-string" : "real-to-string";
+  return ir1App(ir1Var(ruleName), [value]);
+}
+
+function tryBuildL1TemplateExpression(
+  expr: ts.TemplateExpression,
+  ctx: L1BuildContext,
+): L1BuildResult {
+  const parts: IR1Expr[] = [];
+  if (expr.head.text.length > 0) {
+    parts.push(ir1LitString(expr.head.text));
+  }
+  for (const span of expr.templateSpans) {
+    const sub = buildL1Stringification(span.expression, ctx);
+    if (sub === null) {
+      return {
+        unsupported:
+          "template literal: substitution expression is not a supported L1 form",
+      };
+    }
+    if (isL1Unsupported(sub)) {
+      return sub;
+    }
+    parts.push(sub);
+    if (span.literal.text.length > 0) {
+      parts.push(ir1LitString(span.literal.text));
+    }
+  }
+  if (parts.length === 0) {
+    // Degenerate `` `` `` — head is empty, no spans. Lower to "".
+    return ir1LitString("");
+  }
+  // Left-fold `+` chain. With Pant's `(String, String) → String` overload
+  // landed (PR #170), each `add` lowers to `(str.++ a b)` in SMT.
+  return parts.reduce((acc, p) => ir1Binop("add", acc, p));
 }
 
 // ---------------------------------------------------------------------------
@@ -1983,6 +2096,13 @@ export function tryRecognizeFunctorLift(
         synth: synthCell.synth,
         recordSynth: synthCell.recordSynth,
         registry: synthCell.registry,
+        // `imports` is mutated in place via `add(...)` (e.g., the
+        // template-literal recognizer registering `TS_PRELUDE` when it
+        // lowers a non-string substitution). A probe that descends into
+        // a stringification before failing a later check must not leak
+        // the request into the consumer document — shallow-copy the set
+        // here and `synthCell.imports = new Set(snapshot)` on restore.
+        imports: new Set(synthCell.imports),
       }
     : null;
   // The mutating-body symbolic-state fast-path inside
@@ -2003,6 +2123,7 @@ export function tryRecognizeFunctorLift(
       synthCell.synth = synthSnapshot.synth;
       synthCell.recordSynth = synthSnapshot.recordSynth;
       synthCell.registry = synthSnapshot.registry;
+      synthCell.imports = new Set(synthSnapshot.imports);
     }
     if (opaqueAliasesSnapshot !== null) {
       ctx.supply.opaqueAliases = new Map(opaqueAliasesSnapshot);

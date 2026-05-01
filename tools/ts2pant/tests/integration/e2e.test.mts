@@ -44,7 +44,7 @@ describe("emitDocument", () => {
     const doc = await buildDocument("max.ts", "larger");
     const output = await emitAndCheck(doc);
 
-    assert.ok(output.includes("module Larger."));
+    assert.ok(output.includes("module LARGER."));
     assert.ok(output.includes("larger a: Int, b: Int => Int."));
     assert.ok(output.includes("---"));
     // Annotation should be in the check block
@@ -60,7 +60,7 @@ describe("emitDocument", () => {
     const doc = await buildDocument("deposit.ts", "deposit");
     const output = await emitAndCheck(doc);
 
-    assert.ok(output.includes("module Deposit."));
+    assert.ok(output.includes("module DEPOSIT."));
     assert.ok(output.includes("Account."));
     assert.ok(output.includes("account--balance a: Account => Int."));
     assert.ok(output.includes("~> Deposit @"));
@@ -76,7 +76,7 @@ describe("emitDocument", () => {
     const doc = await buildDocument("max.ts", "larger", { noBody: true });
     const output = await emitAndCheck(doc);
 
-    assert.ok(output.includes("module Larger."));
+    assert.ok(output.includes("module LARGER."));
     assert.ok(output.includes("larger a: Int, b: Int => Int."));
     // Skeleton output should NOT contain checks (no body to entail from)
     assert.ok(!output.includes("check"));
@@ -116,7 +116,7 @@ describe("full pipeline", () => {
     const output = await emitAndCheck(doc);
 
     const lines = output.split("\n").filter((l) => l.trim());
-    assert.equal(lines[0], "module Larger.");
+    assert.equal(lines[0], "module LARGER.");
     assert.ok(lines.includes("---"));
     assert.ok(doc.propositions.length >= 1);
     assert.ok(doc.checks.length >= 1);
@@ -127,7 +127,7 @@ describe("full pipeline", () => {
     const output = await emitAndCheck(doc);
 
     const lines = output.split("\n").filter((l) => l.trim());
-    assert.equal(lines[0], "module Deposit.");
+    assert.equal(lines[0], "module DEPOSIT.");
     assert.ok(lines.includes("---"));
     assert.ok(doc.checks.length >= 1);
   });

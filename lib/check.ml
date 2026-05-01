@@ -377,7 +377,15 @@ and check_binop ctx op e1 e2 =
           else Error (TypeMismatch (t1, t2, ctx.loc))
       | TyList _, _ -> Error (NotAList (t2, ctx.loc))
       | _, _ -> Error (NotAList (t1, ctx.loc)))
-  | OpAdd | OpSub | OpMul | OpDiv -> (
+  | OpAdd -> (
+      if equal_ty t1 TyString && equal_ty t2 TyString then Ok TyString
+      else
+        match lub_numeric t1 t2 with
+        | Some lub -> Ok lub
+        | None ->
+            if not (is_numeric t1) then Error (NotNumeric (t1, ctx.loc))
+            else Error (NotNumeric (t2, ctx.loc)))
+  | OpSub | OpMul | OpDiv -> (
       match lub_numeric t1 t2 with
       | Some lub -> Ok lub
       | None ->

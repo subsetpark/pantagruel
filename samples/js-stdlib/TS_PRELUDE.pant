@@ -1,0 +1,30 @@
+module TS_PRELUDE.
+
+> EUF rule heads for ts2pant's stringification prelude. Pantagruel
+> intentionally does not provide an implicit-coercion `to-string`
+> primitive: explicit-coercion-only is part of the language design.
+> ts2pant therefore imports this module from any consumer spec whose
+> TypeScript source contains a stringification site (template literal
+> with non-string substitutions, `String(x)` cast, `+`-concat with a
+> non-string operand). The dispatch is managed entirely by ts2pant;
+> Pantagruel itself is unaware of TS_PRELUDE.
+>
+> Reference: Kroening & Strichman, *Decision Procedures* Ch. 4
+> (Equality with Uninterpreted Functions; congruence is the only
+> built-in axiom for opaque calls).
+>
+> Naming: distinct rule names per source type rather than arity-
+> overloaded `to-string` because Pantagruel rules can be arity-
+> overloaded but not type-overloaded at the same arity.
+>
+> Bool stringification is intentionally absent. Pantagruel warns on
+> Bool parameters (Bool params on rules are usually a code smell —
+> use a predicate, a two-element domain, or split). ts2pant should
+> lower `String(b)` / `${b}` for `b: boolean` inline as
+> `cond b => "true", true => "false"` rather than route through an
+> EUF rule.
+
+int-to-string n: Int => String.
+real-to-string r: Real => String.
+
+---

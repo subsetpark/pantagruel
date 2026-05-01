@@ -1,6 +1,12 @@
 import type { SourceFile } from "ts-morph";
 import { extractFunctionAnnotationsAndOverrides } from "./annotations.js";
-import { extractReferencedTypes, getChecker } from "./extract.js";
+import { loadBuiltinDepModule } from "./builtins.js";
+import {
+  extractModuleConsts,
+  extractReferencedFunctions,
+  extractReferencedTypes,
+  getChecker,
+} from "./extract.js";
 import { loadAst, loadParser, rewriteAnnotation } from "./pant-wasm.js";
 import { translateBody } from "./translate-body.js";
 import { translateSignature } from "./translate-signature.js";
@@ -9,6 +15,7 @@ import {
   fieldRuleName,
   type NumericStrategy,
   newSynthCell,
+  toPantTermName,
   translateTypes,
 } from "./translate-types.js";
 import type { PantDocument } from "./types.js";
@@ -71,14 +78,83 @@ export async function buildPantDocument(
   // decls (one domain + membership predicate + guarded value rule per
   // unique (K, V)). Splice before sigDecl so the sig's references resolve.
   const synthDecls = cellEmitSynth(synthCell);
-  const declarations = [...typeDecls, ...synthDecls, sigDecl];
 
-  const moduleName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
+  // Module-level `const NAME = <literal>` declarations map onto 0-arity
+  // rules + body equations. Done after `translateSignature` so the
+  // function's params claim names first; constant names pick up
+  // collision suffixes via the registry. The TS->Pant rename is
+  // threaded into `paramNameMap` so identifier references inside the
+  // function body resolve to the kebab'd Pant name.
+  const moduleConsts = extractModuleConsts(
+    sourceFile,
+    functionName,
+    strategy,
+    synthCell,
+  );
+  // Only the first entry per underlying const declaration carries
+  // `declaration` + `equation` payloads — additional entries with the
+  // same `pantName` exist solely to plumb call-site alias spellings
+  // (e.g. `import { ERR, ERR as Err }`) into `paramNameMap`. Drop the
+  // alias entries from the decl/equation lists to avoid emitting one
+  // rule head and one value equation per spelling.
+  const constDecls = moduleConsts
+    .map((c) => c.declaration)
+    .filter((d): d is NonNullable<typeof d> => d !== undefined);
+  const constEquations = moduleConsts
+    .map((c) => c.equation)
+    .filter((e): e is NonNullable<typeof e> => e !== undefined);
+  for (const c of moduleConsts) {
+    paramNameMap.set(c.tsName, c.pantName);
+  }
+
+  // Sibling / cross-file functions called from the consumer's body
+  // get rule heads emitted (signature only — body stays opaque under
+  // EUF). Without these, the call site's `App(Var("kebab-name"), …)`
+  // would dangle. Same `paramNameMap` rename plumbing as module
+  // constants so the call dispatcher resolves the un-kebab'd TS name
+  // through to the kebab'd rule head.
+  const refFns = extractReferencedFunctions(
+    sourceFile,
+    functionName,
+    strategy,
+    synthCell,
+  );
+  // Only the first entry per underlying function declaration carries a
+  // `declaration` payload — additional entries with the same `pantName`
+  // exist solely to plumb call-site alias spellings (e.g. `import { foo
+  // as bar }; bar();`) into `paramNameMap`. Drop the alias entries from
+  // the decls list to avoid emitting one rule head per spelling.
+  const fnDecls = refFns
+    .map((f) => f.declaration)
+    .filter((d): d is NonNullable<typeof d> => d !== undefined);
+  for (const f of refFns) {
+    paramNameMap.set(f.tsName, f.pantName);
+  }
+
+  const declarations = [
+    ...typeDecls,
+    ...synthDecls,
+    ...constDecls,
+    ...fnDecls,
+    sigDecl,
+  ];
+
+  // Module names are SHOUTING_SNAKE_CASE — same convention as the
+  // ambient module (`expressions-calls.ts -> EXPRESSIONS_CALLS_AMBIENT`)
+  // and the hand-written stdlib bundles (`JS_MATH`, `TS_PRELUDE`). Reuse
+  // `toPantTermName`'s camelCase/punctuation-splitting and shift to
+  // underscore-uppercase so `isUnsupportedUnknown -> IS_UNSUPPORTED_UNKNOWN`.
+  const moduleName = toPantTermName(baseName).replace(/-/gu, "_").toUpperCase();
+  // Const-body equations are body-position propositions and must follow
+  // the same `noBody` gate that suppresses translateBody output —
+  // skeleton builds (e.g., `extract.ts`'s sibling-rule emission) declare
+  // the const heads so call sites resolve, but their value equations
+  // belong to the consumer document, not the skeleton.
   let doc: PantDocument = {
     moduleName,
     imports: [],
     declarations,
-    propositions: [],
+    propositions: noBody ? [] : [...constEquations],
     checks: [],
   };
 
@@ -105,6 +181,27 @@ export async function buildPantDocument(
         declarations: [...doc.declarations, ...extraSynthDecls],
       };
     }
+  }
+
+  // Drain dep-module imports requested during build (template-literal
+  // recognizer, future stdlib dispatchers). Each entry becomes one
+  // `import M.` line and one bundleModules entry so the wasm bridge's
+  // cross-module typecheck path can resolve qualified references.
+  if (synthCell.imports.size > 0) {
+    const newImports = [...synthCell.imports]
+      .filter((name) => !doc.imports.some((imp) => imp.name === name))
+      .map((name) => ({ name }));
+    const bundle = new Map(doc.bundleModules ?? []);
+    for (const name of synthCell.imports) {
+      if (!bundle.has(name)) {
+        bundle.set(name, loadBuiltinDepModule(name));
+      }
+    }
+    doc = {
+      ...doc,
+      imports: [...doc.imports, ...newImports],
+      bundleModules: bundle,
+    };
   }
 
   // Annotations go to checks (entailment goals) — skip for skeleton docs

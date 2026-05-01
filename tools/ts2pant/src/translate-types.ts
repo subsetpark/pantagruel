@@ -1,4 +1,5 @@
 import ts from "typescript";
+import type { DepModuleName } from "./builtins.js";
 import type { ExtractedTypes } from "./extract.js";
 import {
   emptyNameRegistry,
@@ -46,6 +47,9 @@ export const UNSUPPORTED_UNKNOWN_REASON =
  * `Map<unknown, Int>`, or `[unknown, Int]` would synthesize broken
  * declarations referencing `__unsupported_unknown__` as if it were a
  * real Pantagruel type.
+ *
+ * @pant isUnsupportedUnknown UNSUPPORTED_UNKNOWN.
+ * @pant ~(isUnsupportedUnknown "Int").
  */
 export function isUnsupportedUnknown(pantType: string): boolean {
   return pantType === UNSUPPORTED_UNKNOWN;
@@ -122,6 +126,9 @@ export interface MapSynth {
   readonly emitted: ReadonlySet<string>;
 }
 
+/**
+ * @pant all s: String | ~(s in emitted emptyMapSynth).
+ */
 export function emptyMapSynth(): MapSynth {
   return { byKV: new Map(), emitted: new Set() };
 }
@@ -166,6 +173,9 @@ export function registerMapKV(
   };
 }
 
+/**
+ * @pant lookupMapKV synth kType vType = byKV synth (kType + "|" + vType).
+ */
 export function lookupMapKV(
   synth: MapSynth,
   kType: string,
@@ -268,6 +278,9 @@ export interface RecordSynth {
   readonly emitted: ReadonlySet<string>;
 }
 
+/**
+ * @pant all s: String | ~(s in emitted emptyRecordSynth).
+ */
 export function emptyRecordSynth(): RecordSynth {
   return { byShape: new Map(), emitted: new Set() };
 }
@@ -402,6 +415,9 @@ export function registerRecordShape(
   };
 }
 
+/**
+ * @pant lookupRecordShape synth fields = byShape synth (recordShapeKey fields).
+ */
 export function lookupRecordShape(
   synth: RecordSynth,
   fields: ReadonlyArray<RecordSynthField>,
@@ -513,6 +529,9 @@ export interface TupleSynth {
   readonly ctorRegistry: NameRegistry;
 }
 
+/**
+ * @pant ctorRegistry emptyTupleSynth = emptyNameRegistry.
+ */
 export function emptyTupleSynth(): TupleSynth {
   return { byShape: new Map(), ctorRegistry: emptyNameRegistry() };
 }
@@ -604,6 +623,22 @@ export interface SynthCell {
   registry: NameRegistry;
   tupleSynth: TupleSynth;
   sourceFile?: ts.SourceFile;
+  /**
+   * Dep modules that build sites have requested at translation time.
+   * Populated by recognizers that emit references against bundled
+   * stdlib modules (e.g., the template-literal recognizer registering
+   * `TS_PRELUDE` when it lowers a non-string substitution through
+   * `int-to-string` / `real-to-string`). The pipeline drains this set
+   * into `doc.imports` + `doc.bundleModules` after body translation.
+   *
+   * Typed as `Set<DepModuleName>` so registrations are constrained to
+   * the closed bundled-stdlib enum and `pipeline.ts`'s consumer can
+   * skip the `as DepModuleName` widening cast. Snapshotted in
+   * `tryRecognizeFunctorLift`'s rollback path so a probe that fires a
+   * stringification (and registers `TS_PRELUDE`) before failing later
+   * checks doesn't leak the import into the consumer document.
+   */
+  imports: Set<DepModuleName>;
 }
 
 export function newSynthCell(
@@ -615,6 +650,7 @@ export function newSynthCell(
     recordSynth: emptyRecordSynth(),
     registry: registry ?? emptyNameRegistry(),
     tupleSynth: emptyTupleSynth(),
+    imports: new Set(),
   };
   if (sourceFile !== undefined) {
     cell.sourceFile = sourceFile;
@@ -640,6 +676,9 @@ export function newSynthCell(
  *  the result on the first `--` recovers the exact `(owner, field)`
  *  pair. Pantagruel's lexer accepts `-` in identifier continuations,
  *  so `foo--bar` is a single legal rule name. */
+/**
+ * @pant fieldRuleName interfaceName fieldName = (toPantTermName interfaceName) + "--" + (toPantTermName fieldName).
+ */
 export function fieldRuleName(
   interfaceName: string,
   fieldName: string,
@@ -847,7 +886,11 @@ export function cellRegisterRecord(
   return r.domain;
 }
 
-/** Cell read-through for `lookupRecordShape`. `fields` must be canonical. */
+/**
+ * Cell read-through for `lookupRecordShape`. `fields` must be canonical.
+ *
+ * @pant cellLookupRecord cell fields = lookupRecordShape (recordSynth cell) fields.
+ */
 export function cellLookupRecord(
   cell: SynthCell,
   fields: ReadonlyArray<RecordSynthField>,
@@ -862,7 +905,12 @@ export function cellRegisterName(cell: SynthCell, name: string): string {
   return r.name;
 }
 
-/** Cell read-through for `isUsed`. */
+/**
+ * Cell read-through for `isUsed`.
+ *
+ * @pant cellIsUsed cell name <-> (toPantTermName name) in used (registry cell).
+ * @pant (cellIsUsed cell name) or ~(cellIsUsed cell name).
+ */
 export function cellIsUsed(cell: SynthCell, name: string): boolean {
   return cell.registry.used.has(toPantTermName(name));
 }

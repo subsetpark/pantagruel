@@ -186,6 +186,107 @@ function hasMutation(node: ts.Node, checker: ts.TypeChecker): boolean {
 }
 
 /**
+ * Detect when a function's body is exactly `return m.get(k);` (with
+ * optional `!`, `as`, paren, and `satisfies` wrappers around the call).
+ * Used to align the signature's return type with the body's emission
+ * for the Map-partial case.
+ *
+ * Background: Pantagruel's Map encoding (`Map<K, V>` reads via the
+ * partial-rule pattern in `samples/js-stdlib/`-style or inline synth)
+ * emits `m.get(k)` as a guarded value-rule application of type `V` —
+ * the declaration guard provides the membership antecedent for SMT
+ * queries, and the rule itself returns bare `V`, NOT list-lifted `[V]`.
+ *
+ * TS-side, `Map<K, V>::get` returns `V | undefined`, which `mapTsType`
+ * list-lifts to `[V]` (Alloy `lone` multiplicity). When the body is
+ * exactly a bare `m.get(k)` return, the signature ends up declaring
+ * `=> [V]` while the emitted equation produces a bare `V`, which the
+ * Pantagruel typechecker rightly rejects as a type mismatch.
+ *
+ * The fix is to recognize this shape and narrow the signature's return
+ * type to bare `V`, mirroring the body's emission. The function then
+ * inherits the Map's partial-function semantics: the absent-key case
+ * is uninterpreted at the SMT layer (consistent with how Pant treats
+ * partial-rule lookups generally — see CLAUDE.md § "Partial Rules
+ * (Map<K, V>)" for the encoding rationale). A future change could
+ * propagate the membership predicate into the function's own
+ * declaration guard for tighter soundness; for now, type alignment is
+ * what unblocks dogfood translation.
+ *
+ * Multi-statement bodies, `m.get(k) ?? default`, and `m.get(k)?.field`
+ * deliberately fall through. Those forms have well-defined non-bare
+ * lowerings (cardinality dispatch, functor lift) that already produce
+ * `[V]`-shaped output, so the signature's list-lift is correct.
+ */
+function bodyIsBareMapGet(
+  node: ts.FunctionDeclaration | ts.MethodDeclaration,
+  checker: ts.TypeChecker,
+  visited: Set<ts.FunctionDeclaration | ts.MethodDeclaration> = new Set(),
+): boolean {
+  if (visited.has(node)) {
+    // Mutually-recursive partial-shape walk — guard against
+    // infinite recursion. Treating a cycle as non-partial is sound:
+    // we'd rather miss a narrow than emit a wrong one.
+    return false;
+  }
+  visited.add(node);
+  const body = node.body;
+  if (!body || body.statements.length !== 1) {
+    return false;
+  }
+  const stmt = body.statements[0]!;
+  if (!ts.isReturnStatement(stmt) || !stmt.expression) {
+    return false;
+  }
+  // Strip transparent wrappers — `m.get(k)!`, `(m.get(k))`,
+  // `m.get(k) as V`, `m.get(k) satisfies V` all produce the same Pant
+  // emission as the bare call.
+  const expr = unwrapTransparentExpression(stmt.expression);
+  if (!ts.isCallExpression(expr)) {
+    return false;
+  }
+  // Direct `m.get(k)` shape.
+  if (
+    expr.arguments.length === 1 &&
+    ts.isPropertyAccessExpression(expr.expression) &&
+    expr.expression.name.text === "get"
+  ) {
+    const receiverType = checker.getTypeAtLocation(expr.expression.expression);
+    if (isMapType(receiverType)) {
+      return true;
+    }
+    // `Map<K, V> | ReadonlyMap<K, V>` union receivers reach the same
+    // partial-rule encoding via the union-aware Map dispatch.
+    if (receiverType.isUnion() && receiverType.types.every(isMapType)) {
+      return true;
+    }
+  }
+  // Cascade: bare `return fn(args)` where `fn` itself has a bare
+  // Map-get body. The Pant emission of the call returns the same
+  // bare V the partial-rule encoding produced inside `fn`, so this
+  // function is also "partial-shape" and its signature should
+  // narrow too. Cellular utilities like
+  // `cellLookupRecord(cell, fields)` returning
+  // `lookupRecordShape(cell.recordSynth, fields)` exercise this
+  // shape. Follow import aliases so a cross-file call resolves to
+  // the actual declaration rather than the import specifier.
+  if (ts.isIdentifier(expr.expression)) {
+    let sym = checker.getSymbolAtLocation(expr.expression);
+    if (sym && sym.flags & ts.SymbolFlags.Alias) {
+      sym = checker.getAliasedSymbol(sym);
+    }
+    const decl = sym?.declarations?.find(
+      (d): d is ts.FunctionDeclaration =>
+        ts.isFunctionDeclaration(d) && d.body !== undefined,
+    );
+    if (decl && decl !== node) {
+      return bodyIsBareMapGet(decl, checker, visited);
+    }
+  }
+  return false;
+}
+
+/**
  * Check if a call expression targets a function with an `asserts` return type.
  * Returns the assertion's parameter index if so (the parameter being asserted).
  */
@@ -1236,9 +1337,25 @@ export function translateExpr(
     return ast.litNat(Number(expr.text));
   }
 
-  // String literal
-  if (ts.isStringLiteral(expr)) {
+  // String literal — accepts both `"foo"` and `` `foo` `` (the latter
+  // is `NoSubstitutionTemplateLiteral`, operationally equivalent at
+  // the TS-checker level).
+  if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) {
     return ast.litString(expr.text);
+  }
+
+  // Template literals with substitutions are handled by the L1 path
+  // (`tryBuildL1TemplateExpression` in `ir1-build.ts`). If a template
+  // reaches here it means the L1 recognizer rejected (e.g., a
+  // substitution with an unsupported type — only String, Int, Real,
+  // and Bool are stringifiable). Surface the unsupported reason rather
+  // than falling through to the raw-text fallback, which would emit
+  // the literal backticks as a Pant identifier and produce an
+  // unparseable equation.
+  if (ts.isTemplateExpression(expr)) {
+    return {
+      unsupported: `unsupported template literal: ${expr.getText()}`,
+    };
   }
 
   // Fallback
@@ -1371,12 +1488,14 @@ export function translateSignature(
   const guard = detectGuard(node, checker, strategy, paramNameMap, synthCell);
 
   if (classification === "pure") {
-    const returnType = mapTsType(
-      sig.getReturnType(),
-      checker,
-      strategy,
-      synthCell,
-    );
+    // Map-partial signature alignment: when the body is exactly a
+    // bare `m.get(k)` return, narrow `V | undefined` to `V` so the
+    // signature matches the unboxed Pant emission. See
+    // `bodyIsBareMapGet` for the rationale.
+    const tsReturnType = bodyIsBareMapGet(node, checker)
+      ? checker.getNonNullableType(sig.getReturnType())
+      : sig.getReturnType();
+    const returnType = mapTsType(tsReturnType, checker, strategy, synthCell);
     if (isUnsupportedUnknown(returnType)) {
       return {
         declaration: {
