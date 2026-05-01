@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { before, describe, it } from "node:test";
+import { Project } from "ts-morph";
 import {
   ambientModuleName,
   createSourceFile,
   createSourceFileFromSource,
   emitAmbientModule,
   extractAmbientFunctions,
+  extractReferencedTypes,
 } from "../src/extract.js";
 import { assertWasmTypeChecks, loadAst } from "../src/pant-wasm.js";
 import { IntStrategy } from "../src/translate-types.js";
@@ -106,5 +108,96 @@ describe("extract", () => {
     const sf2 = createSourceFileFromSource(source, "shared.ts");
     assert.equal(ambientModuleName(sf1), "SHARED_AMBIENT");
     assert.equal(ambientModuleName(sf1), ambientModuleName(sf2));
+  });
+
+  describe("extractReferencedTypes — cross-file", () => {
+    function buildTwoFileProject(consumerSource: string, depSource: string) {
+      const project = new Project({
+        compilerOptions: {
+          target: 99, // ESNext
+          module: 99, // NodeNext
+          moduleResolution: 99,
+          strict: true,
+        },
+        useInMemoryFileSystem: true,
+      });
+      project.createSourceFile("dep.ts", depSource);
+      return project.createSourceFile("consumer.ts", consumerSource);
+    }
+
+    it("follows imports into a sibling file for an interface reference", () => {
+      const consumer = buildTwoFileProject(
+        `
+          import type { Profile } from "./dep.js";
+          export function getName(p: Profile): string { return p.name; }
+        `,
+        `
+          export interface Profile {
+            name: string;
+            age: number;
+          }
+        `,
+      );
+      const types = extractReferencedTypes(consumer, "getName");
+      const names = types.interfaces.map((i) => i.name);
+      assert.deepEqual(names, ["Profile"]);
+    });
+
+    it("follows transitive imports through a nested interface field", () => {
+      const project = new Project({
+        compilerOptions: {
+          target: 99,
+          module: 99,
+          moduleResolution: 99,
+          strict: true,
+        },
+        useInMemoryFileSystem: true,
+      });
+      project.createSourceFile(
+        "leaf.ts",
+        `export interface Leaf { value: string; }`,
+      );
+      project.createSourceFile(
+        "mid.ts",
+        `
+          import type { Leaf } from "./leaf.js";
+          export interface Mid { leaf: Leaf; }
+        `,
+      );
+      const consumer = project.createSourceFile(
+        "consumer.ts",
+        `
+          import type { Mid } from "./mid.js";
+          export function read(m: Mid): string { return m.leaf.value; }
+        `,
+      );
+      const types = extractReferencedTypes(consumer, "read");
+      const names = types.interfaces.map((i) => i.name).sort();
+      assert.deepEqual(names, ["Leaf", "Mid"]);
+    });
+
+    it("skips interface fields whose type resolves only to TS-lib declarations", () => {
+      // `SynthCell.sourceFile?: ts.SourceFile` in the real ts2pant src/
+      // is the canonical case: `ts.SourceFile` is declared only in
+      // typescript.d.ts (filtered as an external library). The accessor
+      // rule for `sourceFile` would dangle, so the extractor drops the
+      // field. Run against the actual source rather than a synthetic
+      // fixture because the in-memory filesystem doesn't carry the real
+      // `typescript` package, which makes synthetic foreign-symbol
+      // setup unreliable.
+      const filePath = resolve(
+        import.meta.dirname,
+        "../src/translate-types.ts",
+      );
+      const sf = createSourceFile(filePath);
+      const types = extractReferencedTypes(sf, "cellIsUsed");
+      const synthCell = types.interfaces.find((i) => i.name === "SynthCell");
+      assert.ok(synthCell, "SynthCell interface should be extracted");
+      const fieldNames = synthCell.properties.map((p) => p.name);
+      assert.ok(
+        !fieldNames.includes("sourceFile"),
+        `sourceFile should be filtered as foreign-only; got ${fieldNames.join(", ")}`,
+      );
+    });
   });
 });

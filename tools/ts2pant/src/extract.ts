@@ -83,10 +83,11 @@ export function getChecker(sourceFile: SourceFile): ts.TypeChecker {
 /** Extract all interfaces, type aliases, and enums from a source file. */
 export function extractAllTypes(sourceFile: SourceFile): ExtractedTypes {
   const checker = getChecker(sourceFile);
+  const program = sourceFile.getProject().getProgram().compilerObject;
 
   const interfaces = sourceFile
     .getInterfaces()
-    .map((node) => extractInterface(node.compilerNode, checker));
+    .map((node) => extractInterface(node.compilerNode, checker, program));
 
   const aliases = sourceFile
     .getTypeAliases()
@@ -97,6 +98,107 @@ export function extractAllTypes(sourceFile: SourceFile): ExtractedTypes {
     .map((node) => extractEnum(node.compilerNode));
 
   return { interfaces, aliases, enums };
+}
+
+/**
+ * True when every declaration of `symbol` lives in a source file the
+ * extractor filters out — TS stdlib (`lib.*.d.ts`) or a node_modules
+ * package. Used to drop interface fields whose type resolves only to
+ * a foreign declaration: emitting an accessor rule against such a
+ * type produces a dangling reference (the type itself is excluded
+ * from `extractReferencedTypes`'s aggregate, so its declaration
+ * never lands in the consumer document).
+ *
+ * Concrete trigger: `SynthCell.sourceFile?: ts.SourceFile` — the
+ * `ts.SourceFile` symbol declares only inside `typescript.d.ts`. The
+ * TS compiler API's own types are pure infrastructure on the ts2pant
+ * side, never appear in user spec semantics, and should be invisible
+ * to the consumer document.
+ */
+function isSymbolFromFilteredSourceOnly(
+  symbol: ts.Symbol,
+  program: ts.Program,
+): boolean {
+  const decls = symbol.declarations;
+  if (!decls || decls.length === 0) {
+    return false;
+  }
+  return decls.every((d) => {
+    const sf = d.getSourceFile();
+    return (
+      program.isSourceFileDefaultLibrary(sf) ||
+      program.isSourceFileFromExternalLibrary(sf)
+    );
+  });
+}
+
+/**
+ * Walk a TS type to determine whether its named-type leaves all
+ * resolve to foreign declarations. Used to skip interface fields
+ * whose Pant emission would dangle.
+ *
+ * Unions strip nullish members (`null`, `undefined`, `void`) before
+ * checking — those are handled by `mapTsType`'s list-lift and don't
+ * count toward foreignness. So `ts.SourceFile | undefined` correctly
+ * registers as foreign-only because the only non-nullish member is
+ * the foreign `ts.SourceFile`.
+ *
+ * Returns false for primitives, literal types, and types with no
+ * symbol — none of those produce dangling references.
+ */
+function typeRefsOnlyForeign(
+  type: ts.Type,
+  program: ts.Program,
+  checker: ts.TypeChecker,
+): boolean {
+  const PRIMITIVE_FLAGS =
+    ts.TypeFlags.String |
+    ts.TypeFlags.Number |
+    ts.TypeFlags.Boolean |
+    ts.TypeFlags.StringLiteral |
+    ts.TypeFlags.NumberLiteral |
+    ts.TypeFlags.BooleanLiteral;
+  const NULLISH_FLAGS =
+    ts.TypeFlags.Null | ts.TypeFlags.Undefined | ts.TypeFlags.Void;
+  if (type.flags & PRIMITIVE_FLAGS) {
+    return false;
+  }
+  if (type.flags & NULLISH_FLAGS) {
+    return false;
+  }
+  if (type.isUnion() || type.isIntersection()) {
+    const nonNullish = type.types.filter(
+      (t) => (t.flags & NULLISH_FLAGS) === 0,
+    );
+    if (nonNullish.length === 0) {
+      return false;
+    }
+    return nonNullish.every((t) => typeRefsOnlyForeign(t, program, checker));
+  }
+  // Built-in containers (Array, ReadonlyArray, Set, ReadonlySet, Map,
+  // ReadonlyMap, tuples) are handled natively by `mapTsType`. Their
+  // symbols declare in TS lib, but the lowering doesn't fall through
+  // to the symbol-name path — it produces `[T]` / `T * U` / etc. So
+  // these are NOT foreign-only even though the constructor symbol is
+  // from `lib.*.d.ts`. Recurse into the type arguments to check the
+  // inner element types instead.
+  if (
+    checker.isTupleType(type) ||
+    checker.isArrayType(type) ||
+    isSetType(type) ||
+    isMapType(type)
+  ) {
+    const args = checker.getTypeArguments(type as ts.TypeReference);
+    if (args.length === 0) {
+      return false;
+    }
+    return args.every((a) => typeRefsOnlyForeign(a, program, checker));
+  }
+  const symbol = type.aliasSymbol ?? type.symbol;
+  if (!symbol) {
+    return false;
+  }
+  return isSymbolFromFilteredSourceOnly(symbol, program);
 }
 
 /**
@@ -175,17 +277,59 @@ export function extractReferencedTypes(
   }
   collectNamedTypes(signature.getReturnType(), checker, visited);
 
-  const allTypes = extractAllTypes(sourceFile);
+  // Aggregate types from every project source file the consumer's
+  // import graph reaches.
+  //
+  // `createSourceFile` adds only the one file the caller named; the
+  // TS Program builds source-file objects for transitive imports
+  // during type checking, but ts-morph's `getSourceFiles()` returns
+  // only files explicitly added or resolved into the Project wrapper.
+  // `resolveSourceFileDependencies()` is the canonical knob for
+  // pulling those in — idempotent, so calling it here is safe even if
+  // the caller pre-resolved.
+  //
+  // `collectNamedTypes` already walks the TS type graph via symbols,
+  // so cross-file type names are already in `visited` — the bug
+  // before this change was purely on the lookup side: the previous
+  // `extractAllTypes(sourceFile)` only saw the consumer's file, so
+  // any visited name whose declaration lives elsewhere got dropped.
+  //
+  // Filter out TS stdlib (`lib.*.d.ts`) and node_modules using TS's
+  // own predicates so we don't pull in `Array`, `Promise`, etc.
+  // declarations from `lib.es2022.d.ts`. The pattern mirrors
+  // `src/builtins.ts:130-141`'s use of `isSourceFileDefaultLibrary`.
+  const project = sourceFile.getProject();
+  project.resolveSourceFileDependencies();
+  const program = project.getProgram().compilerObject;
+  const aggregated: ExtractedTypes = {
+    interfaces: [],
+    aliases: [],
+    enums: [],
+  };
+  for (const sf of project.getSourceFiles()) {
+    const compilerSf = sf.compilerNode;
+    if (program.isSourceFileDefaultLibrary(compilerSf)) {
+      continue;
+    }
+    if (program.isSourceFileFromExternalLibrary(compilerSf)) {
+      continue;
+    }
+    const types = extractAllTypes(sf);
+    aggregated.interfaces.push(...types.interfaces);
+    aggregated.aliases.push(...types.aliases);
+    aggregated.enums.push(...types.enums);
+  }
   return {
-    interfaces: allTypes.interfaces.filter((i) => visited.has(i.name)),
-    aliases: allTypes.aliases.filter((a) => visited.has(a.name)),
-    enums: allTypes.enums.filter((e) => visited.has(e.name)),
+    interfaces: aggregated.interfaces.filter((i) => visited.has(i.name)),
+    aliases: aggregated.aliases.filter((a) => visited.has(a.name)),
+    enums: aggregated.enums.filter((e) => visited.has(e.name)),
   };
 }
 
 function extractInterface(
   node: ts.InterfaceDeclaration,
   checker: ts.TypeChecker,
+  program: ts.Program,
 ): ExtractedInterface {
   const name = node.name.text;
   const properties: ExtractedProperty[] = [];
@@ -197,12 +341,21 @@ function extractInterface(
       ts.isIdentifier(member.name)
     ) {
       const symbol = checker.getSymbolAtLocation(member.name);
-      if (symbol) {
-        properties.push({
-          name: member.name.text,
-          type: checker.getTypeOfSymbol(symbol),
-        });
+      if (!symbol) {
+        continue;
       }
+      const type = checker.getTypeOfSymbol(symbol);
+      // Skip properties whose type resolves only to foreign declarations
+      // (TS stdlib / node_modules). The accessor rule for such a property
+      // would emit a return type with no declaration in the consumer
+      // document. ts2pant has no encoding for opaque foreign types, and
+      // most fields like this (`SynthCell.sourceFile?: ts.SourceFile`)
+      // are translation-time infrastructure that shouldn't be visible
+      // in the spec semantics anyway.
+      if (typeRefsOnlyForeign(type, program, checker)) {
+        continue;
+      }
+      properties.push({ name: member.name.text, type });
     }
   }
 
