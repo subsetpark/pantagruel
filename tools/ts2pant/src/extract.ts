@@ -111,6 +111,25 @@ export function extractAllTypes(sourceFile: SourceFile): ExtractedTypes {
 }
 
 /**
+ * Resolve `import { X }` / `export { X }` re-export chains to the
+ * underlying declaration symbol. TypeScript's type checker normally
+ * inlines these when computing `type.symbol` (so `import { Foo as Bar }`
+ * still gives `Foo_symbol`), but we apply this defensively at every
+ * symbol-keying site so a future TS upgrade or edge case can't sneak
+ * an import-binding symbol into the visited set under a different
+ * identity than the one `extractInterface`/`extractAlias`/`extractEnum`
+ * stash via `getSymbolAtLocation`.
+ *
+ * `SymbolFlags.Alias` is the import/export kind — distinct from
+ * `SymbolFlags.TypeAlias` (`type X = ...`), which `getAliasedSymbol`
+ * does NOT follow and which already canonicalizes through `type.symbol`
+ * resolution.
+ */
+function canonicalSymbol(sym: ts.Symbol, checker: ts.TypeChecker): ts.Symbol {
+  return sym.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(sym) : sym;
+}
+
+/**
  * True when every declaration of `symbol` lives in a source file the
  * extractor filters out — TS stdlib (`lib.*.d.ts`) or a node_modules
  * package. Used to drop interface fields whose type resolves only to
@@ -214,10 +233,11 @@ function typeRefsOnlyForeign(
     }
     return namedArgs.every((a) => typeRefsOnlyForeign(a, program, checker));
   }
-  const symbol = type.aliasSymbol ?? type.symbol;
-  if (!symbol) {
+  const rawSymbol = type.aliasSymbol ?? type.symbol;
+  if (!rawSymbol) {
     return false;
   }
+  const symbol = canonicalSymbol(rawSymbol, checker);
   return isSymbolFromFilteredSourceOnly(symbol, program);
 }
 
@@ -298,7 +318,7 @@ export function extractReferencedTypes(
     if (ts.isClassDeclaration(classDecl) && classDecl.name) {
       const classSymbol = checker.getSymbolAtLocation(classDecl.name);
       if (classSymbol) {
-        visited.add(classSymbol);
+        visited.add(canonicalSymbol(classSymbol, checker));
       }
     }
   }
@@ -396,7 +416,8 @@ function extractInterface(
     }
   }
 
-  const symbol = checker.getSymbolAtLocation(node.name);
+  const rawSymbol = checker.getSymbolAtLocation(node.name);
+  const symbol = rawSymbol ? canonicalSymbol(rawSymbol, checker) : undefined;
   return symbol ? { name, properties, symbol } : { name, properties };
 }
 
@@ -406,7 +427,8 @@ function extractAlias(
 ): ExtractedAlias {
   const name = node.name.text;
   const type = checker.getTypeFromTypeNode(node.type);
-  const symbol = checker.getSymbolAtLocation(node.name);
+  const rawSymbol = checker.getSymbolAtLocation(node.name);
+  const symbol = rawSymbol ? canonicalSymbol(rawSymbol, checker) : undefined;
   return symbol ? { name, type, symbol } : { name, type };
 }
 
@@ -421,7 +443,8 @@ function extractEnum(
       members.push(member.name.text);
     }
   }
-  const symbol = checker.getSymbolAtLocation(node.name);
+  const rawSymbol = checker.getSymbolAtLocation(node.name);
+  const symbol = rawSymbol ? canonicalSymbol(rawSymbol, checker) : undefined;
   return symbol ? { name, members, symbol } : { name, members };
 }
 
@@ -600,17 +623,24 @@ function translateConstInitializer(init: ts.Expression): OpaqueExpr | null {
 }
 
 /**
- * Walk a source file's top-level statements for `const NAME = <literal>`
- * declarations referenced from `functionName`'s body. Each match
- * becomes an {@link ExtractedConst} carrying the 0-arity rule head +
- * value equation. The pipeline runs this after `translateSignature` so
- * the registry's already claimed the function's param names —
- * collisions resolve via numeric suffixing.
+ * Walk top-level `const NAME = <literal>` declarations referenced from
+ * `functionName`'s body — both *local* (same file) and *imported*
+ * (another in-project file). Each match becomes an
+ * {@link ExtractedConst} carrying the 0-arity rule head + value
+ * equation. The pipeline runs this after `translateSignature` so the
+ * registry's already claimed the function's param names — collisions
+ * resolve via numeric suffixing.
  *
- * Filtering by reference (rather than emitting every top-level const)
- * keeps the output focused: a function that uses one constant doesn't
- * pull in the other dozen consts that happen to live in the same
- * source file.
+ * Cross-file resolution mirrors `extractReferencedFunctions`: we walk
+ * the body for free-form `Identifier` references, follow alias chains
+ * via `getAliasedSymbol`, and accept any resolved value declaration
+ * that points at a top-level `const` with a translatable initializer.
+ * Without this, an `import { ERR } from "./dep"; return ERR;` body
+ * fell through to a raw `ERR` Pant identifier and dangled.
+ *
+ * Filtering by *reference* (rather than emitting every top-level const)
+ * keeps the output focused. Foreign declarations (TS lib, node_modules)
+ * are skipped — those are EUF uninterpreted at the SMT layer.
  */
 export function extractModuleConsts(
   sourceFile: SourceFile,
@@ -618,50 +648,60 @@ export function extractModuleConsts(
   strategy: NumericStrategy,
   synthCell?: SynthCell,
 ): ExtractedConst[] {
+  const project = sourceFile.getProject();
+  project.resolveSourceFileDependencies();
   const checker = getChecker(sourceFile);
+  const program = project.getProgram().compilerObject;
   const ast = getAst();
 
-  // Pre-pass: gather candidate top-level `const NAME = <literal>` decls
-  // keyed by TS name. Skipped if the initializer is non-literal.
-  const candidates = new Map<string, ts.VariableDeclaration>();
-  for (const stmt of sourceFile.compilerNode.statements) {
-    if (!ts.isVariableStatement(stmt)) {
-      continue;
-    }
-    const flags = ts.getCombinedNodeFlags(stmt.declarationList);
-    if ((flags & ts.NodeFlags.Const) === 0) {
-      continue;
-    }
-    for (const decl of stmt.declarationList.declarations) {
-      if (!ts.isIdentifier(decl.name) || !decl.initializer) {
-        continue;
-      }
-      if (translateConstInitializer(decl.initializer) === null) {
-        continue;
-      }
-      candidates.set(decl.name.text, decl);
-    }
-  }
-  if (candidates.size === 0) {
-    return [];
-  }
-
-  // Find the consumer function and walk its body for identifier
-  // references that name a candidate const. Symbol-resolve each match
-  // against the candidate's declaration so a shadowing local variable
-  // (a parameter / `const x = ...` inside the body that happens to
-  // share a top-level name) doesn't pull in the wrong const.
   const fnNode = findFunctionNode(sourceFile, functionName);
   if (!fnNode?.body) {
     return [];
   }
-  const referenced = new Set<string>();
+
+  // Walk the body for identifier references that resolve through the
+  // TS symbol resolver to a top-level `const` with a translatable
+  // initializer. Map keys are the resolved declarations so duplicate
+  // call sites (same const referenced from multiple positions)
+  // collapse into a single rule head; the value carries the call-site
+  // identifier text — the spelling that must land in `paramNameMap`
+  // for body translation to resolve the use site.
+  const referenced = new Map<ts.VariableDeclaration, string>();
   function visit(n: ts.Node): void {
-    if (ts.isIdentifier(n) && candidates.has(n.text)) {
-      const candidate = candidates.get(n.text)!;
-      const sym = checker.getSymbolAtLocation(n);
-      if (sym?.valueDeclaration === candidate) {
-        referenced.add(n.text);
+    if (ts.isIdentifier(n)) {
+      let sym = checker.getSymbolAtLocation(n);
+      // Follow `import { X }` / `export { X }` chains to the
+      // underlying declaration's symbol — same pattern as
+      // `extractReferencedFunctions`.
+      if (sym && sym.flags & ts.SymbolFlags.Alias) {
+        sym = checker.getAliasedSymbol(sym);
+      }
+      const decl = sym?.valueDeclaration;
+      if (
+        decl &&
+        ts.isVariableDeclaration(decl) &&
+        ts.isIdentifier(decl.name) &&
+        decl.initializer &&
+        !referenced.has(decl)
+      ) {
+        // Top-level `const` discipline: declaration must sit under a
+        // VariableStatement directly inside a SourceFile, with the
+        // `const` flag set on its declarationList. Body-local `const`s
+        // are handled by the let-elimination machinery, not here.
+        const stmt = decl.parent.parent;
+        if (ts.isVariableStatement(stmt) && ts.isSourceFile(stmt.parent)) {
+          const declFlags = ts.getCombinedNodeFlags(stmt.declarationList);
+          const isConst = (declFlags & ts.NodeFlags.Const) !== 0;
+          const declSf = stmt.parent;
+          if (
+            isConst &&
+            !program.isSourceFileDefaultLibrary(declSf) &&
+            !program.isSourceFileFromExternalLibrary(declSf) &&
+            translateConstInitializer(decl.initializer) !== null
+          ) {
+            referenced.set(decl, n.text);
+          }
+        }
       }
     }
     ts.forEachChild(n, visit);
@@ -669,15 +709,18 @@ export function extractModuleConsts(
   visit(fnNode.body);
 
   const result: ExtractedConst[] = [];
-  for (const tsName of referenced) {
-    const decl = candidates.get(tsName)!;
+  for (const [decl, localName] of referenced) {
     const valueExpr = translateConstInitializer(decl.initializer!);
     if (valueExpr === null) {
       continue;
     }
     const tsType = checker.getTypeAtLocation(decl);
     const pantType = mapTsType(tsType, checker, strategy, synthCell);
-    const baseName = toPantTermName(tsName);
+    // Kebab from the call-site spelling — body translation looks up by
+    // call-site identifier text via `paramNameMap`. With
+    // `import { ERR as Err }`, the body wrote `Err`, so the rename
+    // must key on `Err`.
+    const baseName = toPantTermName(localName);
     const pantName = synthCell
       ? cellRegisterName(synthCell, baseName)
       : baseName;
@@ -693,7 +736,7 @@ export function extractModuleConsts(
       lhs: ast.var(pantName),
       rhs: valueExpr,
     };
-    result.push({ tsName, pantName, declaration, equation });
+    result.push({ tsName: localName, pantName, declaration, equation });
   }
   return result;
 }
@@ -987,8 +1030,9 @@ function collectNamedTypes(
     return;
   }
 
-  const symbol = type.aliasSymbol ?? type.symbol;
-  if (symbol && !BUILTIN_NAMES.has(symbol.name)) {
+  const rawSymbol = type.aliasSymbol ?? type.symbol;
+  if (rawSymbol && !BUILTIN_NAMES.has(rawSymbol.name)) {
+    const symbol = canonicalSymbol(rawSymbol, checker);
     if (visited.has(symbol)) {
       return;
     }
