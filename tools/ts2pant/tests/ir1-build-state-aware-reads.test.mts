@@ -191,6 +191,22 @@ describe("ir1-build state-aware Map/Set reads", () => {
       assert.equal(built.ownerType, "StringToIntMap");
     });
 
+    it("Stage B `.has` builds map-read with op=has against the synthesized rule", () => {
+      const { expr, ctx } = setupReturn(
+        `function f(m: Map<string, number>, k: string): boolean {
+           return m.has(k);
+         }`,
+        true,
+      );
+      const built = expectIR(tryBuildL1PureSubExpression(expr, ctx));
+      assert.equal(built.kind, "map-read");
+      if (built.kind !== "map-read") return;
+      assert.equal(built.op, "has");
+      assert.equal(built.ruleName, "string-to-int-map");
+      assert.equal(built.keyPredName, "string-to-int-map-key");
+      assert.equal(built.ownerType, "StringToIntMap");
+    });
+
     it("Stage A Map receiver keeps bare App when ctx.state is undefined", () => {
       const { expr, ctx } = setupReturn(
         `interface Cache { readonly entries: Map<string, number>; }
@@ -321,7 +337,7 @@ describe("end-to-end: branched Map/Set read observes prior staged write", () => 
       );
       // The Stage B value rule's primed form. Match either kebab or
       // CamelCase to avoid coupling to current name format.
-      return /string-to-int-map'/u.test(lhsStr);
+      return /(?:string-to-int-map|StringToIntMap)'/u.test(lhsStr);
     });
     assert.ok(
       valueEq,
