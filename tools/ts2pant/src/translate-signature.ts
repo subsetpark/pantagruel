@@ -1236,9 +1236,25 @@ export function translateExpr(
     return ast.litNat(Number(expr.text));
   }
 
-  // String literal
-  if (ts.isStringLiteral(expr)) {
+  // String literal — accepts both `"foo"` and `` `foo` `` (the latter
+  // is `NoSubstitutionTemplateLiteral`, operationally equivalent at
+  // the TS-checker level).
+  if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) {
     return ast.litString(expr.text);
+  }
+
+  // Template literals with substitutions are handled by the L1 path
+  // (`tryBuildL1TemplateExpression` in `ir1-build.ts`). If a template
+  // reaches here it means the L1 recognizer rejected (e.g., a
+  // substitution with an unsupported type — only String, Int, Real,
+  // and Bool are stringifiable). Surface the unsupported reason rather
+  // than falling through to the raw-text fallback, which would emit
+  // the literal backticks as a Pant identifier and produce an
+  // unparseable equation.
+  if (ts.isTemplateExpression(expr)) {
+    return {
+      unsupported: `unsupported template literal: ${expr.getText()}`,
+    };
   }
 
   // Fallback

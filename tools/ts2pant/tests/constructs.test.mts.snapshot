@@ -694,6 +694,34 @@ exports[`expressions-state-aware-reads.ts > tagThenCheck 1`] = `
 "module TagThenCheck.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\ntagged--flag t: Tagged => Bool.\\n~> Tag-then-check @ c: Tagged, x: String, gate: Bool.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> (cond y = x => (cond gate => true, true => x in tagged--tags c), true => y in tagged--tags c).\\ntagged--flag' c = (cond gate => (cond (cond x = x => true, true => x in tagged--tags c) => true, true => tagged--flag c), true => tagged--flag c).\\n"
 `;
 
+exports[`expressions-template-literal.ts > concatTwo 1`] = `
+"module ConcatTwo.\\n\\nconcat-two a: String, b: String => String.\\n\\n---\\n\\nconcat-two a b = a + b.\\n"
+`;
+
+exports[`expressions-template-literal.ts > flagLine 1`] = `
+"module FlagLine.\\n\\nflag-line active: Bool => String.\\n\\n---\\n\\nflag-line active = \\"flag=\\" + (cond active => \\"true\\", true => \\"false\\").\\n"
+`;
+
+exports[`expressions-template-literal.ts > fmtPair 1`] = `
+"module FmtPair.\\nimport TS_PRELUDE.\\n\\nfmt-pair label: String, n: Int => String.\\n\\n---\\n\\nfmt-pair label n = \\"[\\" + label + \\"=\\" + int-to-string n + \\"]\\".\\n"
+`;
+
+exports[`expressions-template-literal.ts > joinKey 1`] = `
+"module JoinKey.\\n\\njoin-key k: String, v: String => String.\\n\\n---\\n\\njoin-key k v = k + \\"|\\" + v.\\n"
+`;
+
+exports[`expressions-template-literal.ts > labelCount 1`] = `
+"module LabelCount.\\nimport TS_PRELUDE.\\n\\nlabel-count n: Int => String.\\n\\n---\\n\\nlabel-count n = \\"count: \\" + int-to-string n.\\n"
+`;
+
+exports[`expressions-template-literal.ts > rejectListSubstitution 1`] = `
+"module RejectListSubstitution.\\n\\nreject-list-substitution xs: [Int] => String.\\n\\n---\\n\\n> UNSUPPORTED: template literal substitution has unsupported type \\"[Int]\\" — only String, Int, Real, Bool are stringifiable.\\n"
+`;
+
+exports[`expressions-template-literal.ts > wrapId 1`] = `
+"module WrapId.\\n\\nwrap-id s: String => String.\\n\\n---\\n\\nwrap-id s = s.\\n"
+`;
+
 exports[`expressions-while-mu-search.ts > compoundIncrementStep 1`] = `
 "module CompoundIncrementStep.\\n\\ncompound-increment-step used: [Int] => Int.\\n\\n---\\n\\ncompound-increment-step used = (min over each j: Int, j >= 1, ~(j in used) | j).\\n"
 `;

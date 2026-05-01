@@ -1,5 +1,6 @@
 import type { SourceFile } from "ts-morph";
 import { extractFunctionAnnotationsAndOverrides } from "./annotations.js";
+import { type DepModuleName, loadBuiltinDepModule } from "./builtins.js";
 import { extractReferencedTypes, getChecker } from "./extract.js";
 import { loadAst, loadParser, rewriteAnnotation } from "./pant-wasm.js";
 import { translateBody } from "./translate-body.js";
@@ -105,6 +106,27 @@ export async function buildPantDocument(
         declarations: [...doc.declarations, ...extraSynthDecls],
       };
     }
+  }
+
+  // Drain dep-module imports requested during build (template-literal
+  // recognizer, future stdlib dispatchers). Each entry becomes one
+  // `import M.` line and one bundleModules entry so the wasm bridge's
+  // cross-module typecheck path can resolve qualified references.
+  if (synthCell.imports.size > 0) {
+    const newImports = [...synthCell.imports]
+      .filter((name) => !doc.imports.some((imp) => imp.name === name))
+      .map((name) => ({ name }));
+    const bundle = new Map(doc.bundleModules ?? []);
+    for (const name of synthCell.imports) {
+      if (!bundle.has(name)) {
+        bundle.set(name, loadBuiltinDepModule(name as DepModuleName));
+      }
+    }
+    doc = {
+      ...doc,
+      imports: [...doc.imports, ...newImports],
+      bundleModules: bundle,
+    };
   }
 
   // Annotations go to checks (entailment goals) — skip for skeleton docs

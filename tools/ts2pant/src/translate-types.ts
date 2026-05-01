@@ -604,6 +604,15 @@ export interface SynthCell {
   registry: NameRegistry;
   tupleSynth: TupleSynth;
   sourceFile?: ts.SourceFile;
+  /**
+   * Dep modules that build sites have requested at translation time.
+   * Populated by recognizers that emit references against bundled
+   * stdlib modules (e.g., the template-literal recognizer registering
+   * `TS_PRELUDE` when it lowers a non-string substitution through
+   * `int-to-string` / `real-to-string`). The pipeline drains this set
+   * into `doc.imports` + `doc.bundleModules` after body translation.
+   */
+  imports: Set<string>;
 }
 
 export function newSynthCell(
@@ -615,6 +624,7 @@ export function newSynthCell(
     recordSynth: emptyRecordSynth(),
     registry: registry ?? emptyNameRegistry(),
     tupleSynth: emptyTupleSynth(),
+    imports: new Set(),
   };
   if (sourceFile !== undefined) {
     cell.sourceFile = sourceFile;
