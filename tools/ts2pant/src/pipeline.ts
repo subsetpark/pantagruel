@@ -121,7 +121,15 @@ export async function buildPantDocument(
     sigDecl,
   ];
 
-  const moduleName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
+  // Module names are SHOUTING_SNAKE_CASE — same convention as the
+  // ambient module name (`expressions-calls.ts -> EXPRESSIONS_CALLS_AMBIENT`)
+  // and the hand-written stdlib bundles (`JS_MATH`, `TS_PRELUDE`).
+  // camelCase TS function names fold to underscore-separated uppercase:
+  // `isUnsupportedUnknown -> IS_UNSUPPORTED_UNKNOWN`.
+  const moduleName = baseName
+    .replace(/([a-z0-9])([A-Z])/gu, "$1_$2")
+    .replace(/([A-Z]+)([A-Z][a-z])/gu, "$1_$2")
+    .toUpperCase();
   let doc: PantDocument = {
     moduleName,
     imports: [],

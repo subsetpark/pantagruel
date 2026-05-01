@@ -46,7 +46,12 @@ export function emptyNameRegistry(): NameRegistry {
   return { used: new Set() };
 }
 
-/** Check whether a name is already registered. */
+/**
+ * Check whether a name is already registered.
+ *
+ * @pant isUsed registry name <-> name in used registry.
+ * @pant (isUsed registry name) or ~(isUsed registry name).
+ */
 export function isUsed(registry: NameRegistry, name: string): boolean {
   return registry.used.has(name);
 }

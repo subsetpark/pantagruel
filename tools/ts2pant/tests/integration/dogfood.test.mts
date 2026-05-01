@@ -1,10 +1,24 @@
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { describe, it } from "node:test";
+import { runCheck } from "../../src/emit.js";
 import {
   assertPantTypeChecks,
   buildDocument as buildDocumentFromPath,
   emitAndCheck,
+  getPantBin,
+  PROJECT_ROOT,
 } from "../helpers.mjs";
+
+function solverAvailable(): boolean {
+  try {
+    execFileSync("z3", ["-version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // Dogfood: translate ts2pant's own source files with ts2pant itself.
 // Depth-first — one target module at a time, smallest function first.
@@ -231,4 +245,54 @@ describe("dogfood: src/translate-types.ts", () => {
       /tuple-synth--ctor-registry empty-tuple-synth = empty-name-registry\./u,
     );
   });
+});
+
+// `@pant <proposition>` JSDoc annotations on dogfood functions become
+// entailment goals in the emitted document's `check` block. This suite
+// runs `pant --check` (z3-backed) against each annotated function to
+// verify the body actually entails its asserted properties — the
+// translation pipeline alone (the `translates and type-checks` suite
+// above) only verifies the document parses and the equation is
+// well-typed; entailment is what makes annotations load-bearing.
+describe("dogfood: @pant annotations entail", () => {
+  const hasSolver = solverAvailable();
+
+  const annotated: Array<{ file: string; fn: string; minChecks: number }> = [
+    { file: "name-registry.ts", fn: "isUsed", minChecks: 2 },
+    { file: "translate-types.ts", fn: "isUnsupportedUnknown", minChecks: 2 },
+    { file: "translate-types.ts", fn: "emptyMapSynth", minChecks: 1 },
+    { file: "translate-types.ts", fn: "cellIsUsed", minChecks: 2 },
+  ];
+
+  for (const { file, fn, minChecks } of annotated) {
+    it(
+      `${fn} — annotations are entailed by the body`,
+      { skip: !hasSolver ? "z3 not available" : undefined },
+      async () => {
+        const doc = await buildDocumentFromPath(resolve(SRC, file), fn);
+        const output = await emitAndCheck(doc);
+        const result = runCheck(output, {
+          projectRoot: PROJECT_ROOT,
+          pantBin: getPantBin(),
+        });
+        // `OK: Invariants are jointly satisfiable` always lands as the
+        // first OK; entailment results follow as one OK per check
+        // proposition. Filter out the satisfiability gate so the
+        // count reflects user-written annotations.
+        const entailments = result.checks.filter((c) =>
+          c.message.startsWith("OK: Entailed:") ||
+          c.message.startsWith("FAIL: Not entailed:"),
+        );
+        assert.ok(
+          entailments.length >= minChecks,
+          `expected ≥ ${minChecks} entailment results, got ${entailments.length}`,
+        );
+        assert.ok(
+          result.passed,
+          `pant --check failed:\n${result.output}`,
+        );
+        assert.ok(entailments.every((c) => c.passed));
+      },
+    );
+  }
 });

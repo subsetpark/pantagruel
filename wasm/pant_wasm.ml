@@ -139,6 +139,25 @@ let rec rename_expr (renames : (string * string) list) (e : Ast.expr) : Ast.expr
   match e with
   | EVar (Lower name) -> EVar (Lower (rename_var name))
   | EPrimed (Lower name) -> EPrimed (Lower (rename_var name))
+  | EDomain (Upper name) -> (
+      match(* User annotations carry TS-cased identifiers — including
+         UPPER_CASE constants like `UNSUPPORTED_UNKNOWN` — that the Pant
+         parser routes to [EDomain] because uppercase identifiers lex
+         as [UPPER_IDENT]. The rename layer carries
+         `UNSUPPORTED_UNKNOWN -> unsupported-unknown` (the kebab'd name
+         of a 0-arity rule emitted by ts2pant's module-const extractor),
+         and the rewrite has to switch the AST constructor too: the new
+         lowercase name is a term reference [EVar (Lower _)], not a
+         domain. Names that don't downcase under the rename remain
+         [EDomain]. *)
+           [@warning "-4"]
+        List.assoc_opt name renames
+      with
+      | Some new_name when String.length new_name > 0 ->
+          let first = new_name.[0] in
+          if first >= 'a' && first <= 'z' then EVar (Lower new_name)
+          else EDomain (Upper new_name)
+      | Some _ | None -> EDomain (Upper name))
   | EApp (f, args) -> EApp (r f, List.map r args)
   | EBinop (op, e1, e2) -> EBinop (op, r e1, r e2)
   | EUnop (op, e1) -> EUnop (op, r e1)
@@ -195,9 +214,7 @@ let rec rename_expr (renames : (string * string) list) (e : Ast.expr) : Ast.expr
       EOverride
         (Lower (rename_var name), List.map (fun (k, v) -> (r k, r v)) pairs)
   | EInitially e1 -> EInitially (r e1)
-  | EDomain _ | EQualified _ | ELitNat _ | ELitReal _ | ELitString _
-  | ELitBool _ ->
-      e
+  | EQualified _ | ELitNat _ | ELitReal _ | ELitString _ | ELitBool _ -> e
 
 and rename_guard renames = function
   | Ast.GParam p -> Ast.GParam p

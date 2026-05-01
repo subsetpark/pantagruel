@@ -46,6 +46,9 @@ export const UNSUPPORTED_UNKNOWN_REASON =
  * `Map<unknown, Int>`, or `[unknown, Int]` would synthesize broken
  * declarations referencing `__unsupported_unknown__` as if it were a
  * real Pantagruel type.
+ *
+ * @pant isUnsupportedUnknown UNSUPPORTED_UNKNOWN.
+ * @pant ~(isUnsupportedUnknown "Int").
  */
 export function isUnsupportedUnknown(pantType: string): boolean {
   return pantType === UNSUPPORTED_UNKNOWN;
@@ -122,6 +125,9 @@ export interface MapSynth {
   readonly emitted: ReadonlySet<string>;
 }
 
+/**
+ * @pant all s: String | ~(s in emitted emptyMapSynth).
+ */
 export function emptyMapSynth(): MapSynth {
   return { byKV: new Map(), emitted: new Set() };
 }
@@ -872,7 +878,12 @@ export function cellRegisterName(cell: SynthCell, name: string): string {
   return r.name;
 }
 
-/** Cell read-through for `isUsed`. */
+/**
+ * Cell read-through for `isUsed`.
+ *
+ * @pant cellIsUsed cell name <-> (toPantTermName name) in used (registry cell).
+ * @pant (cellIsUsed cell name) or ~(cellIsUsed cell name).
+ */
 export function cellIsUsed(cell: SynthCell, name: string): boolean {
   return cell.registry.used.has(toPantTermName(name));
 }
