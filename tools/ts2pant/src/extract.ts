@@ -781,20 +781,17 @@ export function extractReferencedFunctions(
     return [];
   }
 
+  // Pre-build the compiler-SF -> ts-morph-SF map once. ts-morph has no
+  // public reverse-lookup API, but each referenced sibling needs one
+  // resolution; without the cache, the inner loop would re-scan
+  // `getSourceFiles()` per sibling — O(siblings × files).
+  const declSfMap = new Map<ts.SourceFile, SourceFile>();
+  for (const sf of project.getSourceFiles()) {
+    declSfMap.set(sf.compilerNode, sf);
+  }
   const result: ReferencedFunctionDecl[] = [];
   for (const [tsName, decl] of referenced) {
-    // Find the ts-morph SourceFile wrapping this declaration's
-    // compiler SourceFile so we can hand it to translateSignature.
-    // Iterate `getSourceFiles()` because there's no public method to
-    // map compiler -> ts-morph SourceFile directly.
-    const declSf = decl.getSourceFile();
-    let tsMorphSf: SourceFile | undefined;
-    for (const sf of project.getSourceFiles()) {
-      if (sf.compilerNode === declSf) {
-        tsMorphSf = sf;
-        break;
-      }
-    }
+    const tsMorphSf = declSfMap.get(decl.getSourceFile());
     if (!tsMorphSf) {
       continue;
     }

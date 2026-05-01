@@ -238,18 +238,10 @@ function bodyIsBareMapGet(
   if (!ts.isReturnStatement(stmt) || !stmt.expression) {
     return false;
   }
-  let expr: ts.Expression = stmt.expression;
   // Strip transparent wrappers — `m.get(k)!`, `(m.get(k))`,
   // `m.get(k) as V`, `m.get(k) satisfies V` all produce the same Pant
   // emission as the bare call.
-  while (
-    ts.isParenthesizedExpression(expr) ||
-    ts.isNonNullExpression(expr) ||
-    ts.isAsExpression(expr) ||
-    ts.isSatisfiesExpression(expr)
-  ) {
-    expr = expr.expression;
-  }
+  const expr = unwrapTransparentExpression(stmt.expression);
   if (!ts.isCallExpression(expr)) {
     return false;
   }
