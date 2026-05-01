@@ -337,7 +337,26 @@ and translate_binop config env op e1 e2 =
       | OpGt -> Printf.sprintf "(> %s %s)" t1 t2
       | OpLe -> Printf.sprintf "(<= %s %s)" t1 t2
       | OpGe -> Printf.sprintf "(>= %s %s)" t1 t2
-      | OpAdd -> Printf.sprintf "(+ %s %s)" t1 t2
+      | OpAdd ->
+          let is_string_ty = function
+            | Ok TyString -> true
+            | Ok
+                ( TyBool | TyNat | TyNat0 | TyInt | TyReal | TyNothing
+                | TyDomain _ | TyList _ | TyProduct _ | TySum _ | TyFunc _ )
+            | Error _ ->
+                false
+          in
+          let inferred = Check.infer_type { Check.env; loc = dummy_loc } e1 in
+          let is_string =
+            if is_string_ty inferred then true
+            else
+              is_string_ty
+                (Check.infer_type
+                   { Check.env; loc = dummy_loc }
+                   (unprime_expr e1))
+          in
+          if is_string then Printf.sprintf "(str.++ %s %s)" t1 t2
+          else Printf.sprintf "(+ %s %s)" t1 t2
       | OpSub -> Printf.sprintf "(- %s %s)" t1 t2
       | OpMul -> Printf.sprintf "(* %s %s)" t1 t2
       | OpDiv -> Printf.sprintf "(div %s %s)" t1 t2

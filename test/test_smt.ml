@@ -89,6 +89,19 @@ let test_binop_arith () =
     (Smt.translate_expr config env
        (Ast.EBinop (OpDiv, EVar (Lower "x"), EVar (Lower "y"))))
 
+let test_binop_string_concat () =
+  let env =
+    Env.empty ""
+    |> Env.add_var "s" Types.TyString
+    |> Env.add_var "t" Types.TyString
+  in
+  check string "string concat" "(str.++ s t)"
+    (Smt.translate_expr config env
+       (Ast.EBinop (OpAdd, EVar (Lower "s"), EVar (Lower "t"))));
+  check string "string concat with literal" {|(str.++ s "x")|}
+    (Smt.translate_expr config env
+       (Ast.EBinop (OpAdd, EVar (Lower "s"), ELitString "x")))
+
 let test_unop_not () =
   let env = Env.empty "" in
   check string "not" "(not x)"
@@ -1121,6 +1134,7 @@ let expression_tests =
     test_case "gt" `Quick test_binop_gt;
     test_case "le" `Quick test_binop_le;
     test_case "arithmetic" `Quick test_binop_arith;
+    test_case "string concat" `Quick test_binop_string_concat;
     test_case "not" `Quick test_unop_not;
     test_case "negation" `Quick test_unop_neg;
     test_case "application" `Quick test_app;

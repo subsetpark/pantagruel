@@ -211,7 +211,11 @@ describe("loadBuiltinDepModule", () => {
 });
 
 describe("hand-written js-stdlib modules typecheck", () => {
-  for (const name of ["JS_MATH", "JS_STRING"] satisfies DepModuleName[]) {
+  for (const name of [
+    "JS_MATH",
+    "JS_STRING",
+    "TS_PRELUDE",
+  ] satisfies DepModuleName[]) {
     it(`samples/js-stdlib/${name}.pant typechecks standalone via wasm`, async () => {
       await assertWasmTypeChecks(loadBuiltinDepModule(name));
     });
