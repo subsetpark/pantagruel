@@ -191,7 +191,11 @@ function typeRefsOnlyForeign(
   // to the symbol-name path — it produces `[T]` / `T * U` / etc. So
   // these are NOT foreign-only even though the constructor symbol is
   // from `lib.*.d.ts`. Recurse into the type arguments to check the
-  // inner element types instead.
+  // inner element types instead — but only the args that can carry a
+  // named-type leaf. Primitive / nullish args (`string` in
+  // `Map<string, ts.SourceFile>`) introduce no Pant references and so
+  // shouldn't sink the foreign-only check; if every named-leaf-bearing
+  // arg is foreign, the container's emitted shape still dangles.
   if (
     checker.isTupleType(type) ||
     checker.isArrayType(type) ||
@@ -202,7 +206,13 @@ function typeRefsOnlyForeign(
     if (args.length === 0) {
       return false;
     }
-    return args.every((a) => typeRefsOnlyForeign(a, program, checker));
+    const namedArgs = args.filter(
+      (a) => (a.flags & (PRIMITIVE_FLAGS | NULLISH_FLAGS)) === 0,
+    );
+    if (namedArgs.length === 0) {
+      return false;
+    }
+    return namedArgs.every((a) => typeRefsOnlyForeign(a, program, checker));
   }
   const symbol = type.aliasSymbol ?? type.symbol;
   if (!symbol) {
