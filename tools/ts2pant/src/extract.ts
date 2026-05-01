@@ -26,16 +26,26 @@ export interface ExtractedProperty {
 export interface ExtractedInterface {
   name: string;
   properties: ExtractedProperty[];
+  /**
+   * The TS symbol for this interface declaration. Optional because the
+   * legacy single-file path doesn't need it; the cross-file aggregator
+   * in `extractReferencedTypes` populates it so the visited filter can
+   * compare by symbol identity instead of bare name (two files
+   * exporting `interface Foo` resolve to distinct symbols).
+   */
+  symbol?: ts.Symbol;
 }
 
 export interface ExtractedAlias {
   name: string;
   type: ts.Type;
+  symbol?: ts.Symbol;
 }
 
 export interface ExtractedEnum {
   name: string;
   members: string[];
+  symbol?: ts.Symbol;
 }
 
 export interface ExtractedTypes {
@@ -95,7 +105,7 @@ export function extractAllTypes(sourceFile: SourceFile): ExtractedTypes {
 
   const enums = sourceFile
     .getEnums()
-    .map((node) => extractEnum(node.compilerNode));
+    .map((node) => extractEnum(node.compilerNode, checker));
 
   return { interfaces, aliases, enums };
 }
@@ -218,7 +228,6 @@ export function extractReferencedTypes(
 
   // Find the function or class method, preferring implementations with bodies
   let funcNode: ts.FunctionDeclaration | ts.MethodDeclaration | undefined;
-  let className: string | undefined;
 
   if (!classHint) {
     const funcs = sourceFile
@@ -242,7 +251,6 @@ export function extractReferencedTypes(
       const method = methods.find((m) => m.hasBody()) ?? methods[0];
       if (method) {
         funcNode = method.compilerNode;
-        className = cls.getName();
         methodMatches += 1;
         if (classHint) {
           break;
@@ -265,11 +273,24 @@ export function extractReferencedTypes(
     throw new Error(`Cannot get signature for: ${functionName}`);
   }
 
-  const visited = new Set<string>();
+  // Track visited types by *symbol identity* rather than bare name so
+  // two files exporting the same type name (e.g. `interface Options` in
+  // unrelated modules) don't collide in the cross-file aggregator
+  // below — visiting one would otherwise pull both into the consumer
+  // document and emit duplicate Pant declarations.
+  const visited = new Set<ts.Symbol>();
 
-  // For class methods, collect the class type (implicit `this` parameter)
-  if (className) {
-    visited.add(className);
+  // For class methods, the implicit `this` parameter is the enclosing
+  // class type — collect its symbol the same way `collectNamedTypes`
+  // would for a referenced parameter type.
+  if (funcNode && ts.isMethodDeclaration(funcNode)) {
+    const classDecl = funcNode.parent;
+    if (ts.isClassDeclaration(classDecl) && classDecl.name) {
+      const classSymbol = checker.getSymbolAtLocation(classDecl.name);
+      if (classSymbol) {
+        visited.add(classSymbol);
+      }
+    }
   }
 
   for (const param of signature.getParameters()) {
@@ -320,9 +341,15 @@ export function extractReferencedTypes(
     aggregated.enums.push(...types.enums);
   }
   return {
-    interfaces: aggregated.interfaces.filter((i) => visited.has(i.name)),
-    aliases: aggregated.aliases.filter((a) => visited.has(a.name)),
-    enums: aggregated.enums.filter((e) => visited.has(e.name)),
+    interfaces: aggregated.interfaces.filter(
+      (i) => i.symbol !== undefined && visited.has(i.symbol),
+    ),
+    aliases: aggregated.aliases.filter(
+      (a) => a.symbol !== undefined && visited.has(a.symbol),
+    ),
+    enums: aggregated.enums.filter(
+      (e) => e.symbol !== undefined && visited.has(e.symbol),
+    ),
   };
 }
 
@@ -359,7 +386,8 @@ function extractInterface(
     }
   }
 
-  return { name, properties };
+  const symbol = checker.getSymbolAtLocation(node.name);
+  return symbol ? { name, properties, symbol } : { name, properties };
 }
 
 function extractAlias(
@@ -368,10 +396,14 @@ function extractAlias(
 ): ExtractedAlias {
   const name = node.name.text;
   const type = checker.getTypeFromTypeNode(node.type);
-  return { name, type };
+  const symbol = checker.getSymbolAtLocation(node.name);
+  return symbol ? { name, type, symbol } : { name, type };
 }
 
-function extractEnum(node: ts.EnumDeclaration): ExtractedEnum {
+function extractEnum(
+  node: ts.EnumDeclaration,
+  checker: ts.TypeChecker,
+): ExtractedEnum {
   const name = node.name.text;
   const members: string[] = [];
   for (const member of node.members) {
@@ -379,7 +411,8 @@ function extractEnum(node: ts.EnumDeclaration): ExtractedEnum {
       members.push(member.name.text);
     }
   }
-  return { name, members };
+  const symbol = checker.getSymbolAtLocation(node.name);
+  return symbol ? { name, members, symbol } : { name, members };
 }
 
 const BUILTIN_NAMES = new Set([
@@ -520,11 +553,23 @@ export interface ExtractedConst {
 
 /**
  * Translate a TS expression to a Pant `OpaqueExpr` if it's a
- * recognized literal. Returns null for non-literal initializers, which
- * are silently filtered out of the module-const extraction.
+ * recognized literal. Transparently unwraps surface wrappers that
+ * don't change the runtime value — `(expr)`, `expr as T`,
+ * `<T>expr`, `expr satisfies T` — so idiomatic spellings like
+ * `("hello")` or `"a" as const` reach the same literal target as
+ * the bare form. Returns null for any other shape; the caller
+ * silently filters those out of the module-const extraction.
  */
 function translateConstInitializer(init: ts.Expression): OpaqueExpr | null {
   const ast = getAst();
+  while (
+    ts.isParenthesizedExpression(init) ||
+    ts.isAsExpression(init) ||
+    ts.isTypeAssertionExpression(init) ||
+    ts.isSatisfiesExpression(init)
+  ) {
+    init = init.expression;
+  }
   if (ts.isStringLiteral(init) || ts.isNoSubstitutionTemplateLiteral(init)) {
     return ast.litString(init.text);
   }
@@ -667,6 +712,13 @@ function findFunctionNode(
       return func.compilerNode;
     }
   }
+  // Mirror `extractReferencedTypes`'s ambiguity check: when no class
+  // hint was supplied and more than one class declares a method with
+  // the requested name, refuse to bind to an arbitrary first match.
+  // Otherwise const extraction could attach to the wrong method body
+  // and pull in unrelated module consts.
+  let matched: ts.MethodDeclaration | null = null;
+  let methodMatches = 0;
   for (const cls of sourceFile.getClasses()) {
     if (classHint && cls.getName() !== classHint) {
       continue;
@@ -674,10 +726,19 @@ function findFunctionNode(
     const methods = cls.getMethods().filter((m) => m.getName() === memberName);
     const method = methods.find((m) => m.hasBody()) ?? methods[0];
     if (method) {
-      return method.compilerNode;
+      matched = method.compilerNode;
+      methodMatches += 1;
+      if (classHint) {
+        return matched;
+      }
     }
   }
-  return null;
+  if (!classHint && methodMatches > 1) {
+    throw new Error(
+      `Ambiguous method name: ${memberName}. Use ClassName.methodName`,
+    );
+  }
+  return matched;
 }
 
 /**
@@ -690,12 +751,24 @@ function findFunctionNode(
  * sufficient to make `pant --check` accept the consumer's document.
  */
 export interface ReferencedFunctionDecl {
-  /** The function name as written in the TS source. */
+  /**
+   * The call-site identifier text — what the consumer body wrote at
+   * the use site. With `import { foo as bar } from ...`, a single
+   * declaration can be referenced by multiple local names (`foo`,
+   * `bar`); each entry carries one local name so `paramNameMap` can
+   * route every spelling to the same kebab'd Pant rule.
+   */
   tsName: string;
   /** Kebab'd Pant name — what the call site emits. */
   pantName: string;
-  /** Pantagruel rule head (signature only, no body). */
-  declaration: PantRule;
+  /**
+   * Pantagruel rule head (signature only, no body). Populated on the
+   * first entry per underlying declaration; subsequent entries
+   * (additional local-name aliases for the same declaration) leave
+   * this undefined so the consumer pipeline emits one rule head, not
+   * one per alias.
+   */
+  declaration?: PantRule;
 }
 
 /**
@@ -741,13 +814,19 @@ export function extractReferencedFunctions(
     return [];
   }
 
-  // Collect (tsName, declaration) pairs for in-project free-function
-  // calls reached from the consumer's body. Map keys are TS names so
-  // duplicate calls (e.g., two `toPantTermName(...)` sites) collapse
-  // into a single rule head.
-  const referenced = new Map<string, ts.FunctionDeclaration>();
+  // Collect (declaration, callSiteNames) pairs for in-project free-
+  // function calls reached from the consumer's body. Keying by the
+  // resolved declaration deduplicates aliased imports — `import {
+  // foo as bar }; bar(); foo();` collapses to one rule head — while
+  // the value (a Set of local identifiers) preserves every call-site
+  // spelling so each one gets its own `paramNameMap` rename. Without
+  // the alias spelling, body translation looks up `bar` and falls
+  // through to a raw TS identifier, emitting an undeclared Pant
+  // symbol.
+  const referenced = new Map<ts.FunctionDeclaration, Set<string>>();
   function visit(n: ts.Node): void {
     if (ts.isCallExpression(n) && ts.isIdentifier(n.expression)) {
+      const localCalleeName = n.expression.text;
       let sym = checker.getSymbolAtLocation(n.expression);
       // Follow import aliases. For an `import { foo } from "./mod.js"`
       // followed by `foo()`, `getSymbolAtLocation` returns the import
@@ -770,7 +849,9 @@ export function extractReferencedFunctions(
           // don't double-emit them as consumer-local rule heads.
           !decl.modifiers?.some((m) => m.kind === ts.SyntaxKind.DeclareKeyword)
         ) {
-          referenced.set(decl.name!.text, decl);
+          const localNames = referenced.get(decl) ?? new Set<string>();
+          localNames.add(localCalleeName);
+          referenced.set(decl, localNames);
         }
       }
     }
@@ -790,20 +871,35 @@ export function extractReferencedFunctions(
     declSfMap.set(sf.compilerNode, sf);
   }
   const result: ReferencedFunctionDecl[] = [];
-  for (const [tsName, decl] of referenced) {
+  for (const [decl, localNames] of referenced) {
     const tsMorphSf = declSfMap.get(decl.getSourceFile());
     if (!tsMorphSf) {
       continue;
     }
-    const sig = translateSignature(tsMorphSf, tsName, strategy, synthCell);
+    // `translateSignature` looks up the function by its declared name
+    // (the spelling in its source file); `localNames` are the call-
+    // site spellings the consumer used.
+    const declName = decl.name!.text;
+    const sig = translateSignature(tsMorphSf, declName, strategy, synthCell);
     if (sig.declaration.kind !== "rule") {
       continue;
     }
-    result.push({
-      tsName,
-      pantName: sig.declaration.name,
-      declaration: sig.declaration,
-    });
+    let first = true;
+    for (const localName of localNames) {
+      result.push(
+        first
+          ? {
+              tsName: localName,
+              pantName: sig.declaration.name,
+              declaration: sig.declaration,
+            }
+          : {
+              tsName: localName,
+              pantName: sig.declaration.name,
+            },
+      );
+      first = false;
+    }
   }
   return result;
 }
@@ -835,7 +931,7 @@ export function emitAmbientModule(
 function collectNamedTypes(
   type: ts.Type,
   checker: ts.TypeChecker,
-  visited: Set<string>,
+  visited: Set<ts.Symbol>,
 ): void {
   const flags = type.flags;
 
@@ -883,11 +979,10 @@ function collectNamedTypes(
 
   const symbol = type.aliasSymbol ?? type.symbol;
   if (symbol && !BUILTIN_NAMES.has(symbol.name)) {
-    const name = symbol.name;
-    if (visited.has(name)) {
+    if (visited.has(symbol)) {
       return;
     }
-    visited.add(name);
+    visited.add(symbol);
 
     for (const prop of type.getProperties()) {
       const propType = checker.getTypeOfSymbol(prop);

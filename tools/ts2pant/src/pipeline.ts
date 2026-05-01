@@ -1,6 +1,6 @@
 import type { SourceFile } from "ts-morph";
 import { extractFunctionAnnotationsAndOverrides } from "./annotations.js";
-import { type DepModuleName, loadBuiltinDepModule } from "./builtins.js";
+import { loadBuiltinDepModule } from "./builtins.js";
 import {
   extractModuleConsts,
   extractReferencedFunctions,
@@ -109,7 +109,14 @@ export async function buildPantDocument(
     strategy,
     synthCell,
   );
-  const fnDecls = refFns.map((f) => f.declaration);
+  // Only the first entry per underlying function declaration carries a
+  // `declaration` payload — additional entries with the same `pantName`
+  // exist solely to plumb call-site alias spellings (e.g. `import { foo
+  // as bar }; bar();`) into `paramNameMap`. Drop the alias entries from
+  // the decls list to avoid emitting one rule head per spelling.
+  const fnDecls = refFns
+    .map((f) => f.declaration)
+    .filter((d): d is NonNullable<typeof d> => d !== undefined);
   for (const f of refFns) {
     paramNameMap.set(f.tsName, f.pantName);
   }
@@ -128,11 +135,16 @@ export async function buildPantDocument(
   // `toPantTermName`'s camelCase/punctuation-splitting and shift to
   // underscore-uppercase so `isUnsupportedUnknown -> IS_UNSUPPORTED_UNKNOWN`.
   const moduleName = toPantTermName(baseName).replace(/-/gu, "_").toUpperCase();
+  // Const-body equations are body-position propositions and must follow
+  // the same `noBody` gate that suppresses translateBody output —
+  // skeleton builds (e.g., `extract.ts`'s sibling-rule emission) declare
+  // the const heads so call sites resolve, but their value equations
+  // belong to the consumer document, not the skeleton.
   let doc: PantDocument = {
     moduleName,
     imports: [],
     declarations,
-    propositions: [...constEquations],
+    propositions: noBody ? [] : [...constEquations],
     checks: [],
   };
 
@@ -172,7 +184,7 @@ export async function buildPantDocument(
     const bundle = new Map(doc.bundleModules ?? []);
     for (const name of synthCell.imports) {
       if (!bundle.has(name)) {
-        bundle.set(name, loadBuiltinDepModule(name as DepModuleName));
+        bundle.set(name, loadBuiltinDepModule(name));
       }
     }
     doc = {

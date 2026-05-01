@@ -1,4 +1,5 @@
 import ts from "typescript";
+import type { DepModuleName } from "./builtins.js";
 import type { ExtractedTypes } from "./extract.js";
 import {
   emptyNameRegistry,
@@ -629,8 +630,15 @@ export interface SynthCell {
    * `TS_PRELUDE` when it lowers a non-string substitution through
    * `int-to-string` / `real-to-string`). The pipeline drains this set
    * into `doc.imports` + `doc.bundleModules` after body translation.
+   *
+   * Typed as `Set<DepModuleName>` so registrations are constrained to
+   * the closed bundled-stdlib enum and `pipeline.ts`'s consumer can
+   * skip the `as DepModuleName` widening cast. Snapshotted in
+   * `tryRecognizeFunctorLift`'s rollback path so a probe that fires a
+   * stringification (and registers `TS_PRELUDE`) before failing later
+   * checks doesn't leak the import into the consumer document.
    */
-  imports: Set<string>;
+  imports: Set<DepModuleName>;
 }
 
 export function newSynthCell(

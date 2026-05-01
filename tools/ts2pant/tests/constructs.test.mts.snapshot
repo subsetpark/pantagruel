@@ -714,6 +714,10 @@ exports[`expressions-template-literal.ts > labelCount 1`] = `
 "module LABEL_COUNT.\\nimport TS_PRELUDE.\\n\\nlabel-count n: Int => String.\\n\\n---\\n\\nlabel-count n = \\"count: \\" + int-to-string n.\\n"
 `;
 
+exports[`expressions-template-literal.ts > labelGuarded 1`] = `
+"module LABEL_GUARDED.\\nimport TS_PRELUDE.\\n\\nlabel-guarded n: [Int] => String.\\n\\n---\\n\\nlabel-guarded n = (cond #n = 0 => \\"missing\\", true => \\"count: \\" + int-to-string (n 1)).\\n"
+`;
+
 exports[`expressions-template-literal.ts > rejectListSubstitution 1`] = `
 "module REJECT_LIST_SUBSTITUTION.\\n\\nreject-list-substitution xs: [Int] => String.\\n\\n---\\n\\n> UNSUPPORTED: template literal substitution has unsupported type \\"[Int]\\" — only String, Int, Real, Bool are stringifiable.\\n"
 `;

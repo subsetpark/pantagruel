@@ -94,13 +94,21 @@ let test_binop_string_concat () =
     Env.empty ""
     |> Env.add_var "s" Types.TyString
     |> Env.add_var "t" Types.TyString
+    |> Env.add_rule "name" Types.TyString Ast.dummy_loc ~chapter:0
   in
   check string "string concat" "(str.++ s t)"
     (Smt.translate_expr config env
        (Ast.EBinop (OpAdd, EVar (Lower "s"), EVar (Lower "t"))));
   check string "string concat with literal" {|(str.++ s "x")|}
     (Smt.translate_expr config env
-       (Ast.EBinop (OpAdd, EVar (Lower "s"), ELitString "x")))
+       (Ast.EBinop (OpAdd, EVar (Lower "s"), ELitString "x")));
+  (* Primed string ref must hit the [unprime_expr] fallback so concat lowers
+     to [str.++] rather than [+]. The direct [Check.infer_type e1] sees a
+     primed nullary rule and returns an error; the fallback unprimes to the
+     base rule and recovers [TyString]. *)
+  check string "primed string concat" {|(str.++ name_prime "x")|}
+    (Smt.translate_expr config env
+       (Ast.EBinop (OpAdd, EPrimed (Lower "name"), ELitString "x")))
 
 let test_unop_not () =
   let env = Env.empty "" in

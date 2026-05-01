@@ -41,3 +41,17 @@ export function wrapId(s: string): string {
 export function rejectListSubstitution(xs: number[]): string {
   return `count: ${xs}`;
 }
+
+/** Guarded nullable substitution: the declared TS type is
+ * `number | undefined` (list-lifted to `[Int]`), but a control-flow
+ * narrow on the terminal-return path refines it to `number`. The
+ * stringification must singleton-extract `(n 1)` before routing to
+ * `int-to-string` — without it, the `[Int]`-typed Pant symbol would
+ * be passed to a rule expecting `Int`. Mirrors the `??` and `!`
+ * paths' `getOperandDeclaredType` discipline. */
+export function labelGuarded(n: number | undefined): string {
+  if (n === undefined) {
+    return "missing";
+  }
+  return `count: ${n}`;
+}

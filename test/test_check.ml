@@ -1418,6 +1418,25 @@ s + 1 = s.
       ->
         false)
 
+let test_string_concat_type_mismatch_rhs () =
+  check_error {|module TEST.
+
+Foo.
+s => String.
+---
+1 + s = s.
+|} (function
+    | Check.NotNumeric _ -> true
+    | UnboundVariable _ | UnboundType _ | TypeMismatch _ | ArityMismatch _
+    | NotAFunction _ | NotAList _ | NotAProduct _ | ExpectedBool _
+    | PrimedNonRule _ | PrimeOutsideActionContext _ | OverrideKeyArityMismatch _
+    | ProjectionOutOfBounds _ | PropositionNotBool _ | ShadowingTypeMismatch _
+    | AmbiguousName _ | UnboundQualified _ | PrimedExtracontextual _
+    | BoolParam _ | NullaryRuleShadowedByVar _ | ComprehensionNeedEach _
+    | AggregateRequiresNumeric _ | AggregateRequiresBool _ | CheckWithoutBody _
+      ->
+        false)
+
 let test_numeric_promotion () =
   (* Nat + Nat0 should yield Nat0 *)
   check_ok {|module TEST.
@@ -2078,6 +2097,8 @@ let () =
             test_arithmetic_type_mismatch;
           test_case "string concat type mismatch" `Quick
             test_string_concat_type_mismatch;
+          test_case "string concat type mismatch rhs" `Quick
+            test_string_concat_type_mismatch_rhs;
           test_case "list search numeric forbidden" `Quick
             test_list_search_numeric_forbidden;
         ] );

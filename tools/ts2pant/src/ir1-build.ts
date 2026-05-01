@@ -899,7 +899,20 @@ function buildL1Stringification(
   if (inner === null || isL1Unsupported(inner)) {
     return inner;
   }
+  // Use the *narrowed* type to pick the stringification dispatch and the
+  // *declared* type to detect when control-flow narrowing has hidden a
+  // list-lifted Pant shape. A guarded reference like `${n}` inside
+  // `if (n !== undefined)` narrows to `number` at the use site but the
+  // emitted Pant symbol is still `[Int]` — without the singleton
+  // extraction `(n 1)`, the lowering would feed a `[Int]` to
+  // `int-to-string` (an `Int -> String` rule), mirroring the bug the
+  // `??` and `!` paths already avoid via `getOperandDeclaredType`.
+  const declaredTsType = getOperandDeclaredType(expr, ctx.checker);
   const tsType = ctx.checker.getTypeAtLocation(expr);
+  const value =
+    isNullableTsType(declaredTsType) && !isNullableTsType(tsType)
+      ? ir1App(inner, [ir1LitNat(1)])
+      : inner;
   const pantType = mapTsType(
     tsType,
     ctx.checker,
@@ -912,13 +925,13 @@ function buildL1Stringification(
     };
   }
   if (pantType === "String") {
-    return inner;
+    return value;
   }
   if (pantType === "Bool") {
     // Inline `cond b => "true", true => "false"` — no prelude rule
     // because Pantagruel warns on Bool params (Bool params on rules are
     // a code smell). The cond directly encodes the lookup table.
-    return ir1Cond([[inner, ir1LitString("true")]], ir1LitString("false"));
+    return ir1Cond([[value, ir1LitString("true")]], ir1LitString("false"));
   }
   // Int / Real route through the TS_PRELUDE EUF rules. Both halves of
   // the registration must succeed: we need a synthCell to record the
@@ -932,7 +945,7 @@ function buildL1Stringification(
   }
   ctx.supply.synthCell.imports.add("TS_PRELUDE");
   const ruleName = pantType === "Int" ? "int-to-string" : "real-to-string";
-  return ir1App(ir1Var(ruleName), [inner]);
+  return ir1App(ir1Var(ruleName), [value]);
 }
 
 function tryBuildL1TemplateExpression(
@@ -2083,6 +2096,13 @@ export function tryRecognizeFunctorLift(
         synth: synthCell.synth,
         recordSynth: synthCell.recordSynth,
         registry: synthCell.registry,
+        // `imports` is mutated in place via `add(...)` (e.g., the
+        // template-literal recognizer registering `TS_PRELUDE` when it
+        // lowers a non-string substitution). A probe that descends into
+        // a stringification before failing a later check must not leak
+        // the request into the consumer document — shallow-copy the set
+        // here and `synthCell.imports = new Set(snapshot)` on restore.
+        imports: new Set(synthCell.imports),
       }
     : null;
   // The mutating-body symbolic-state fast-path inside
@@ -2103,6 +2123,7 @@ export function tryRecognizeFunctorLift(
       synthCell.synth = synthSnapshot.synth;
       synthCell.recordSynth = synthSnapshot.recordSynth;
       synthCell.registry = synthSnapshot.registry;
+      synthCell.imports = new Set(synthSnapshot.imports);
     }
     if (opaqueAliasesSnapshot !== null) {
       ctx.supply.opaqueAliases = new Map(opaqueAliasesSnapshot);
