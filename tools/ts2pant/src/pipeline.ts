@@ -91,8 +91,18 @@ export async function buildPantDocument(
     strategy,
     synthCell,
   );
-  const constDecls = moduleConsts.map((c) => c.declaration);
-  const constEquations = moduleConsts.map((c) => c.equation);
+  // Only the first entry per underlying const declaration carries
+  // `declaration` + `equation` payloads — additional entries with the
+  // same `pantName` exist solely to plumb call-site alias spellings
+  // (e.g. `import { ERR, ERR as Err }`) into `paramNameMap`. Drop the
+  // alias entries from the decl/equation lists to avoid emitting one
+  // rule head and one value equation per spelling.
+  const constDecls = moduleConsts
+    .map((c) => c.declaration)
+    .filter((d): d is NonNullable<typeof d> => d !== undefined);
+  const constEquations = moduleConsts
+    .map((c) => c.equation)
+    .filter((e): e is NonNullable<typeof e> => e !== undefined);
   for (const c of moduleConsts) {
     paramNameMap.set(c.tsName, c.pantName);
   }

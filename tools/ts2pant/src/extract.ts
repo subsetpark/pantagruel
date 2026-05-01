@@ -578,10 +578,29 @@ export function extractAmbientFunctions(
  * so a module's other constants still emit.
  */
 export interface ExtractedConst {
+  /**
+   * The call-site identifier text — what the consumer body wrote at
+   * the use site. With `import { ERR, ERR as Err }`, a single
+   * declaration can be referenced by multiple local names; each
+   * entry carries one local name so `paramNameMap` can route every
+   * spelling to the same kebab'd Pant rule.
+   */
   tsName: string;
+  /** Kebab'd Pant name — what the call site emits. */
   pantName: string;
-  declaration: PantRule;
-  equation: PropResult;
+  /**
+   * Pantagruel rule head (signature only). Populated on the first
+   * entry per underlying declaration; subsequent entries (additional
+   * local-name aliases for the same declaration) leave this undefined
+   * so the consumer pipeline emits one rule head, not one per alias.
+   */
+  declaration?: PantRule;
+  /**
+   * Value equation binding the const to its initializer. Populated on
+   * the first entry per underlying declaration alongside `declaration`;
+   * alias entries leave this undefined.
+   */
+  equation?: PropResult;
 }
 
 /**
@@ -662,13 +681,16 @@ export function extractModuleConsts(
   // Walk the body for identifier references that resolve through the
   // TS symbol resolver to a top-level `const` with a translatable
   // initializer. Map keys are the resolved declarations so duplicate
-  // call sites (same const referenced from multiple positions)
-  // collapse into a single rule head; the value carries the call-site
-  // identifier text — the spelling that must land in `paramNameMap`
-  // for body translation to resolve the use site.
-  const referenced = new Map<ts.VariableDeclaration, string>();
+  // call sites collapse into a single rule head; the value (a Set of
+  // local identifiers) preserves every call-site spelling so each one
+  // gets its own `paramNameMap` rename. Without the alias spellings,
+  // `import { ERR, ERR as Err }; ...ERR...; ...Err...` would only wire
+  // up the first encountered name and the second would fall through to
+  // a raw Pant identifier — same pattern as `extractReferencedFunctions`.
+  const referenced = new Map<ts.VariableDeclaration, Set<string>>();
   function visit(n: ts.Node): void {
     if (ts.isIdentifier(n)) {
+      const localCalleeName = n.text;
       let sym = checker.getSymbolAtLocation(n);
       // Follow `import { X }` / `export { X }` chains to the
       // underlying declaration's symbol — same pattern as
@@ -681,8 +703,7 @@ export function extractModuleConsts(
         decl &&
         ts.isVariableDeclaration(decl) &&
         ts.isIdentifier(decl.name) &&
-        decl.initializer &&
-        !referenced.has(decl)
+        decl.initializer
       ) {
         // Top-level `const` discipline: declaration must sit under a
         // VariableStatement directly inside a SourceFile, with the
@@ -699,7 +720,9 @@ export function extractModuleConsts(
             !program.isSourceFileFromExternalLibrary(declSf) &&
             translateConstInitializer(decl.initializer) !== null
           ) {
-            referenced.set(decl, n.text);
+            const localNames = referenced.get(decl) ?? new Set<string>();
+            localNames.add(localCalleeName);
+            referenced.set(decl, localNames);
           }
         }
       }
@@ -709,18 +732,21 @@ export function extractModuleConsts(
   visit(fnNode.body);
 
   const result: ExtractedConst[] = [];
-  for (const [decl, localName] of referenced) {
+  for (const [decl, localNames] of referenced) {
+    if (!ts.isIdentifier(decl.name)) {
+      continue;
+    }
     const valueExpr = translateConstInitializer(decl.initializer!);
     if (valueExpr === null) {
       continue;
     }
     const tsType = checker.getTypeAtLocation(decl);
     const pantType = mapTsType(tsType, checker, strategy, synthCell);
-    // Kebab from the call-site spelling — body translation looks up by
-    // call-site identifier text via `paramNameMap`. With
-    // `import { ERR as Err }`, the body wrote `Err`, so the rename
-    // must key on `Err`.
-    const baseName = toPantTermName(localName);
+    // Kebab from the *declaration's* name (not any local alias spelling)
+    // so all aliases route to the same Pant rule. With
+    // `import { ERR, ERR as Err }`, both `ERR` and `Err` should resolve
+    // to one canonical kebab name, not two collision-suffixed copies.
+    const baseName = toPantTermName(decl.name.text);
     const pantName = synthCell
       ? cellRegisterName(synthCell, baseName)
       : baseName;
@@ -736,7 +762,15 @@ export function extractModuleConsts(
       lhs: ast.var(pantName),
       rhs: valueExpr,
     };
-    result.push({ tsName: localName, pantName, declaration, equation });
+    let first = true;
+    for (const localName of localNames) {
+      result.push(
+        first
+          ? { tsName: localName, pantName, declaration, equation }
+          : { tsName: localName, pantName },
+      );
+      first = false;
+    }
   }
   return result;
 }
