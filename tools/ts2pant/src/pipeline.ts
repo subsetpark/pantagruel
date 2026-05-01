@@ -3,6 +3,7 @@ import { extractFunctionAnnotationsAndOverrides } from "./annotations.js";
 import { type DepModuleName, loadBuiltinDepModule } from "./builtins.js";
 import {
   extractModuleConsts,
+  extractReferencedFunctions,
   extractReferencedTypes,
   getChecker,
 } from "./extract.js";
@@ -95,7 +96,30 @@ export async function buildPantDocument(
     paramNameMap.set(c.tsName, c.pantName);
   }
 
-  const declarations = [...typeDecls, ...synthDecls, ...constDecls, sigDecl];
+  // Sibling / cross-file functions called from the consumer's body
+  // get rule heads emitted (signature only — body stays opaque under
+  // EUF). Without these, the call site's `App(Var("kebab-name"), …)`
+  // would dangle. Same `paramNameMap` rename plumbing as module
+  // constants so the call dispatcher resolves the un-kebab'd TS name
+  // through to the kebab'd rule head.
+  const refFns = extractReferencedFunctions(
+    sourceFile,
+    functionName,
+    strategy,
+    synthCell,
+  );
+  const fnDecls = refFns.map((f) => f.declaration);
+  for (const f of refFns) {
+    paramNameMap.set(f.tsName, f.pantName);
+  }
+
+  const declarations = [
+    ...typeDecls,
+    ...synthDecls,
+    ...constDecls,
+    ...fnDecls,
+    sigDecl,
+  ];
 
   const moduleName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
   let doc: PantDocument = {

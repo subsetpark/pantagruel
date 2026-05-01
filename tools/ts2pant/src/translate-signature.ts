@@ -221,7 +221,15 @@ function hasMutation(node: ts.Node, checker: ts.TypeChecker): boolean {
 function bodyIsBareMapGet(
   node: ts.FunctionDeclaration | ts.MethodDeclaration,
   checker: ts.TypeChecker,
+  visited: Set<ts.FunctionDeclaration | ts.MethodDeclaration> = new Set(),
 ): boolean {
+  if (visited.has(node)) {
+    // Mutually-recursive partial-shape walk — guard against
+    // infinite recursion. Treating a cycle as non-partial is sound:
+    // we'd rather miss a narrow than emit a wrong one.
+    return false;
+  }
+  visited.add(node);
   const body = node.body;
   if (!body || body.statements.length !== 1) {
     return false;
@@ -242,23 +250,48 @@ function bodyIsBareMapGet(
   ) {
     expr = expr.expression;
   }
-  if (!ts.isCallExpression(expr) || expr.arguments.length !== 1) {
+  if (!ts.isCallExpression(expr)) {
     return false;
   }
-  if (!ts.isPropertyAccessExpression(expr.expression)) {
-    return false;
+  // Direct `m.get(k)` shape.
+  if (
+    expr.arguments.length === 1 &&
+    ts.isPropertyAccessExpression(expr.expression) &&
+    expr.expression.name.text === "get"
+  ) {
+    const receiverType = checker.getTypeAtLocation(expr.expression.expression);
+    if (isMapType(receiverType)) {
+      return true;
+    }
+    // `Map<K, V> | ReadonlyMap<K, V>` union receivers reach the same
+    // partial-rule encoding via the union-aware Map dispatch.
+    if (receiverType.isUnion() && receiverType.types.every(isMapType)) {
+      return true;
+    }
   }
-  if (expr.expression.name.text !== "get") {
-    return false;
+  // Cascade: bare `return fn(args)` where `fn` itself has a bare
+  // Map-get body. The Pant emission of the call returns the same
+  // bare V the partial-rule encoding produced inside `fn`, so this
+  // function is also "partial-shape" and its signature should
+  // narrow too. Cellular utilities like
+  // `cellLookupRecord(cell, fields)` returning
+  // `lookupRecordShape(cell.recordSynth, fields)` exercise this
+  // shape. Follow import aliases so a cross-file call resolves to
+  // the actual declaration rather than the import specifier.
+  if (ts.isIdentifier(expr.expression)) {
+    let sym = checker.getSymbolAtLocation(expr.expression);
+    if (sym && sym.flags & ts.SymbolFlags.Alias) {
+      sym = checker.getAliasedSymbol(sym);
+    }
+    const decl = sym?.declarations?.find(
+      (d): d is ts.FunctionDeclaration =>
+        ts.isFunctionDeclaration(d) && d.body !== undefined,
+    );
+    if (decl && decl !== node) {
+      return bodyIsBareMapGet(decl, checker, visited);
+    }
   }
-  const receiverType = checker.getTypeAtLocation(expr.expression.expression);
-  if (isMapType(receiverType)) {
-    return true;
-  }
-  // `Map<K, V> | ReadonlyMap<K, V>` union receivers reach the same
-  // partial-rule encoding via the union-aware Map dispatch — accept
-  // them too so the signature narrowing fires consistently.
-  return receiverType.isUnion() && receiverType.types.every(isMapType);
+  return false;
 }
 
 /**

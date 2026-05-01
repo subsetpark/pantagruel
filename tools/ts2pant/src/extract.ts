@@ -681,6 +681,137 @@ function findFunctionNode(
 }
 
 /**
+ * One user-defined function the consumer's body calls — extracted as
+ * a Pant rule head (signature only, no body). The consumer's
+ * translation needs the head declared so the call site's emitted
+ * `App(Var("kebab-name"), args)` resolves; the function's body itself
+ * stays opaque under EUF semantics. A future change could opt to also
+ * translate the body for richer SMT reasoning, but signature-only is
+ * sufficient to make `pant --check` accept the consumer's document.
+ */
+export interface ReferencedFunctionDecl {
+  /** The function name as written in the TS source. */
+  tsName: string;
+  /** Kebab'd Pant name — what the call site emits. */
+  pantName: string;
+  /** Pantagruel rule head (signature only, no body). */
+  declaration: PantRule;
+}
+
+/**
+ * Walk a consumer function's body for free-function call expressions
+ * (`fn(args)` where the callee is a bare Identifier) and resolve each
+ * to its declaration via the TS symbol resolver. For each in-project
+ * `FunctionDeclaration` (i.e., not in TS stdlib or node_modules and
+ * not the consumer itself), translate its signature into a Pant rule
+ * head via the existing `translateSignature` pipeline.
+ *
+ * Filters that drop a candidate:
+ * - Method calls (`obj.method(...)`) — handled by the existing
+ *   property-access dispatch and the JS_MATH / JS_STRING builtins.
+ * - The consumer function itself — already emitted by the pipeline's
+ *   primary signature pass (recursive calls are pre-existing rules).
+ * - Ambient `declare function` decls — those flow through
+ *   `extractAmbientFunctions` and the `*_AMBIENT` module path.
+ * - Foreign declarations (TS stdlib, node_modules) — those are EUF
+ *   uninterpreted at the SMT layer, or they go through builtins.ts.
+ * - `translateSignature` returning unsupported / action — only pure
+ *   rule shapes get emitted; mutating callees would need their own
+ *   plumbing and aren't a dogfood concern today.
+ *
+ * Names are kebab'd at translation time (consistent with the call
+ * dispatcher's `paramNames.get(...) ?? text` lookup), and the
+ * pipeline thread the `tsName -> pantName` rename into
+ * `paramNameMap` so call sites emit the kebab'd name. The rename
+ * routing matches how `extractModuleConsts` already plumbs renames
+ * for module-level constants.
+ */
+export function extractReferencedFunctions(
+  sourceFile: SourceFile,
+  consumerName: string,
+  strategy: NumericStrategy,
+  synthCell?: SynthCell,
+): ReferencedFunctionDecl[] {
+  const project = sourceFile.getProject();
+  project.resolveSourceFileDependencies();
+  const checker = getChecker(sourceFile);
+  const program = project.getProgram().compilerObject;
+  const consumerNode = findFunctionNode(sourceFile, consumerName);
+  if (!consumerNode?.body) {
+    return [];
+  }
+
+  // Collect (tsName, declaration) pairs for in-project free-function
+  // calls reached from the consumer's body. Map keys are TS names so
+  // duplicate calls (e.g., two `toPantTermName(...)` sites) collapse
+  // into a single rule head.
+  const referenced = new Map<string, ts.FunctionDeclaration>();
+  function visit(n: ts.Node): void {
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression)) {
+      let sym = checker.getSymbolAtLocation(n.expression);
+      // Follow import aliases. For an `import { foo } from "./mod.js"`
+      // followed by `foo()`, `getSymbolAtLocation` returns the import
+      // specifier symbol, not the underlying function declaration. The
+      // alias chain ends at the original declaration's symbol.
+      if (sym && sym.flags & ts.SymbolFlags.Alias) {
+        sym = checker.getAliasedSymbol(sym);
+      }
+      const decl = sym?.declarations?.find(
+        (d): d is ts.FunctionDeclaration =>
+          ts.isFunctionDeclaration(d) && !!d.name,
+      );
+      if (decl && decl !== consumerNode) {
+        const sf = decl.getSourceFile();
+        if (
+          !program.isSourceFileDefaultLibrary(sf) &&
+          !program.isSourceFileFromExternalLibrary(sf) &&
+          // Ambient `declare function` decls flow through
+          // extractAmbientFunctions and the *_AMBIENT module path —
+          // don't double-emit them as consumer-local rule heads.
+          !decl.modifiers?.some((m) => m.kind === ts.SyntaxKind.DeclareKeyword)
+        ) {
+          referenced.set(decl.name!.text, decl);
+        }
+      }
+    }
+    ts.forEachChild(n, visit);
+  }
+  visit(consumerNode.body);
+  if (referenced.size === 0) {
+    return [];
+  }
+
+  const result: ReferencedFunctionDecl[] = [];
+  for (const [tsName, decl] of referenced) {
+    // Find the ts-morph SourceFile wrapping this declaration's
+    // compiler SourceFile so we can hand it to translateSignature.
+    // Iterate `getSourceFiles()` because there's no public method to
+    // map compiler -> ts-morph SourceFile directly.
+    const declSf = decl.getSourceFile();
+    let tsMorphSf: SourceFile | undefined;
+    for (const sf of project.getSourceFiles()) {
+      if (sf.compilerNode === declSf) {
+        tsMorphSf = sf;
+        break;
+      }
+    }
+    if (!tsMorphSf) {
+      continue;
+    }
+    const sig = translateSignature(tsMorphSf, tsName, strategy, synthCell);
+    if (sig.declaration.kind !== "rule") {
+      continue;
+    }
+    result.push({
+      tsName,
+      pantName: sig.declaration.name,
+      declaration: sig.declaration,
+    });
+  }
+  return result;
+}
+
+/**
  * Emit a standalone Pantagruel module containing one rule head per
  * ambient declaration. Module name comes from `ambientModuleName`. The
  * body is `true.` so the module is well-formed even with zero ambients;

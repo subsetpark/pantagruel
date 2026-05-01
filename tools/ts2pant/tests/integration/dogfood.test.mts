@@ -142,4 +142,93 @@ describe("dogfood: src/translate-types.ts", () => {
       /is-unsupported-unknown pant-type = \(pant-type = unsupported-unknown\)\./u,
     );
   });
+
+  it("fieldRuleName — translates and type-checks", async (t) => {
+    const doc = await buildDocumentFromPath(filePath, "fieldRuleName");
+    const output = await emitAndCheck(doc);
+    t.assert.snapshot(output);
+    assertPantTypeChecks(output, PANT_TIMEOUT_MS);
+    // Body calls a sibling `toPantTermName` (declared in the same
+    // file) twice, with `+` between String operands. The cross-file
+    // function extractor pulls in the `to-pant-term-name` rule head;
+    // without it the consumer's body would dangle on the call.
+    t.assert.match(
+      output,
+      /to-pant-term-name [a-z]+\d*: String => String\./u,
+    );
+  });
+
+  it("lookupRecordShape — translates and type-checks", async (t) => {
+    const doc = await buildDocumentFromPath(filePath, "lookupRecordShape");
+    const output = await emitAndCheck(doc);
+    t.assert.snapshot(output);
+    assertPantTypeChecks(output, PANT_TIMEOUT_MS);
+    // Same-file sibling call (`recordShapeKey(fields)`) gets a rule
+    // head emitted via `extractReferencedFunctions`. Map.get on the
+    // RecordSynth Stage A encoding still narrows to bare V.
+    t.assert.match(
+      output,
+      /record-shape-key fields\d*: \[RecordSynthField\] => String\./u,
+    );
+    t.assert.match(
+      output,
+      /lookup-record-shape synth: RecordSynth, fields\d*: \[RecordSynthField\] => RecordSynthEntry\./u,
+    );
+  });
+
+  it("cellIsUsed — translates and type-checks", async (t) => {
+    const doc = await buildDocumentFromPath(filePath, "cellIsUsed");
+    const output = await emitAndCheck(doc);
+    t.assert.snapshot(output);
+    assertPantTypeChecks(output, PANT_TIMEOUT_MS);
+    // Combines cross-file types (NameRegistry from name-registry.ts
+    // reached via SynthCell.registry) with same-file sibling fn
+    // extraction (`toPantTermName`). The body is a single Set
+    // membership test against the kebab'd term name.
+    t.assert.match(output, /^NameRegistry\.$/mu);
+    t.assert.match(
+      output,
+      /to-pant-term-name [a-z]+\d*: String => String\./u,
+    );
+    t.assert.match(
+      output,
+      /cell-is-used cell name = \(to-pant-term-name name in name-registry--used \(synth-cell--registry cell\)\)\./u,
+    );
+  });
+
+  it("cellLookupRecord — translates and type-checks", async (t) => {
+    const doc = await buildDocumentFromPath(filePath, "cellLookupRecord");
+    const output = await emitAndCheck(doc);
+    t.assert.snapshot(output);
+    assertPantTypeChecks(output, PANT_TIMEOUT_MS);
+    // Cascade narrow: the body returns `lookupRecordShape(...)`.
+    // `lookupRecordShape`'s body is itself a bare Map.get, so its
+    // signature narrows from `[RecordSynthEntry]` to bare V. The
+    // cascade then narrows `cellLookupRecord` too — without it, the
+    // bare V from the call wouldn't match the list-lifted return
+    // declared from `RecordSynthEntry | undefined`.
+    t.assert.match(
+      output,
+      /cell-lookup-record cell: SynthCell, fields\d*: \[RecordSynthField\] => RecordSynthEntry\./u,
+    );
+  });
+
+  it("emptyTupleSynth — translates and type-checks", async (t) => {
+    const doc = await buildDocumentFromPath(filePath, "emptyTupleSynth");
+    const output = await emitAndCheck(doc);
+    t.assert.snapshot(output);
+    assertPantTypeChecks(output, PANT_TIMEOUT_MS);
+    // Cross-file sibling: `emptyNameRegistry()` from name-registry.ts.
+    // Symbol resolution follows the import alias to the actual
+    // declaration. Body is an object-literal record return whose
+    // `ctorRegistry` field is the call.
+    t.assert.match(
+      output,
+      /empty-name-registry\s+=> NameRegistry\./u,
+    );
+    t.assert.match(
+      output,
+      /tuple-synth--ctor-registry empty-tuple-synth = empty-name-registry\./u,
+    );
+  });
 });
