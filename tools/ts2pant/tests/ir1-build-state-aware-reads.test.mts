@@ -268,13 +268,20 @@ describe("end-to-end: branched Map/Set read observes prior staged write", () => 
         (flagEq as { rhs: import("../src/pant-ast.js").OpaqueExpr }).rhs,
       );
       // The inner guard's `c.tags.has(x)` lowered through
-      // `readSetThroughWrites` should resolve to a cond that, given
-      // the prior `.add(x)`, has at least one `=> true` arm — even if
-      // the outer merge folds it, the inline equality on the staged
-      // element appears in the produced text.
-      assert.ok(
-        /=\s*x/u.test(rhsStr) || /true/u.test(rhsStr),
-        `flag' rhs should contain the staged add equality or a true arm: ${rhsStr}`,
+      // `readSetThroughWrites` resolves to a cond whose first arm is
+      // the equality `x = x => true` produced by the prior staged
+      // `.add(x)`. With the pre-fix bare read, the guard would have
+      // been the bare pre-state membership `x in tagged--tags c`
+      // rather than the staged equality arm.
+      assert.match(
+        rhsStr,
+        /cond\s+x\s*=\s*x\s*=>\s*true/u,
+        `flag' rhs should include the staged Set-read equality arm: ${rhsStr}`,
+      );
+      assert.doesNotMatch(
+        rhsStr,
+        /cond\s+x\s+in\s+tagged--tags\s+c\s*=>\s*true/u,
+        `flag' rhs should not be guarded by bare pre-state membership: ${rhsStr}`,
       );
     }
   });
@@ -324,9 +331,19 @@ describe("end-to-end: branched Map/Set read observes prior staged write", () => 
       const rhsStr = ast.strExpr(
         (valueEq as { rhs: import("../src/pant-ast.js").OpaqueExpr }).rhs,
       );
-      assert.ok(
-        /\bv\b/u.test(rhsStr),
-        `Map value-rule rhs should reference the staged \`v\`: ${rhsStr}`,
+      // The inner `m.get(k)!` lowered through `readMapThroughWrites`
+      // sees the prior staged `.set(k, v)`, so it reads through the
+      // override `string-to-int-map[(m, k) |-> v] m k + 1` rather
+      // than the bare pre-state rule `string-to-int-map m k + 1`.
+      assert.match(
+        rhsStr,
+        /string-to-int-map\[\(m,\s*k\)\s*\|->\s*v\]\s*m\s*k\s*\+\s*1/u,
+        `Map value-rule rhs should read through the staged override: ${rhsStr}`,
+      );
+      assert.doesNotMatch(
+        rhsStr,
+        /string-to-int-map\s+m\s+k\s*\+\s*1/u,
+        `Map value-rule rhs should not use bare pre-state \`m.get(k)\`: ${rhsStr}`,
       );
     }
   });
