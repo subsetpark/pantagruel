@@ -43,6 +43,8 @@ import {
   mergeOverrides,
   type PropertyWriteEntry,
   putWrite,
+  readMapThroughWrites,
+  readSetThroughWrites,
   type SetOverride,
   type SetRuleWriteEntry,
   type SymbolicState,
@@ -54,9 +56,151 @@ export interface LowerBodyCtx {
   applyConst: (e: OpaqueExpr) => OpaqueExpr;
 }
 
-/** Lower an L1 expression all the way to OpaqueExpr (L1 → L2 → Opaque). */
-function lowerL1ExprToOpaque(e: IR1Expr): OpaqueExpr {
-  return lowerExpr(lowerL1Expr(e));
+/**
+ * Quick syntactic predicate: does the L1 expression contain a
+ * `map-read` / `set-read` form? Drives the fast-path in
+ * `lowerL1ExprToOpaque` — a tree without state-aware reads can take
+ * the standard `lowerExpr(lowerL1Expr(e))` pipeline unchanged.
+ */
+function containsStateAwareRead(e: IR1Expr): boolean {
+  switch (e.kind) {
+    case "map-read":
+    case "set-read":
+      return true;
+    case "var":
+    case "lit":
+      return false;
+    case "binop":
+      return containsStateAwareRead(e.lhs) || containsStateAwareRead(e.rhs);
+    case "unop":
+      return containsStateAwareRead(e.arg);
+    case "app":
+      return (
+        containsStateAwareRead(e.callee) || e.args.some(containsStateAwareRead)
+      );
+    case "member":
+      return containsStateAwareRead(e.receiver);
+    case "cond":
+      return (
+        containsStateAwareRead(e.otherwise) ||
+        e.arms.some(
+          ([g, v]) => containsStateAwareRead(g) || containsStateAwareRead(v),
+        )
+      );
+    case "is-nullish":
+      return containsStateAwareRead(e.operand);
+    case "each":
+      return (
+        containsStateAwareRead(e.src) ||
+        e.guards.some(containsStateAwareRead) ||
+        containsStateAwareRead(e.proj)
+      );
+    default: {
+      const _exhaustive: never = e;
+      void _exhaustive;
+      return false;
+    }
+  }
+}
+
+/**
+ * Lower an L1 expression to OpaqueExpr with state awareness for
+ * `map-read` / `set-read`. The body lower path uses this so a Map/Set
+ * `.get` / `.has` inside a branched body observes prior staged writes
+ * accumulated through the same path (issue #168). For trees without
+ * state-aware reads, defers to the standard `lowerExpr(lowerL1Expr)`
+ * pipeline — byte-identical to the pre-existing fast-path output.
+ */
+function lowerL1ExprToOpaque(
+  e: IR1Expr,
+  state: SymbolicState | undefined,
+): OpaqueExpr {
+  if (!containsStateAwareRead(e)) {
+    return lowerExpr(lowerL1Expr(e));
+  }
+  const ast = getAst();
+  switch (e.kind) {
+    case "map-read":
+      return readMapThroughWrites(
+        state,
+        e.op,
+        e.ruleName,
+        e.keyPredName,
+        e.ownerType,
+        e.keyType,
+        lowerL1ExprToOpaque(e.receiver, state),
+        lowerL1ExprToOpaque(e.key, state),
+      );
+    case "set-read":
+      return readSetThroughWrites(
+        state,
+        e.ruleName,
+        e.ownerType,
+        e.elemType,
+        lowerL1ExprToOpaque(e.receiver, state),
+        lowerL1ExprToOpaque(e.elem, state),
+      );
+    case "binop":
+      return ast.binop(
+        lowerBinop(e.op),
+        lowerL1ExprToOpaque(e.lhs, state),
+        lowerL1ExprToOpaque(e.rhs, state),
+      );
+    case "unop": {
+      const op =
+        e.op === "not"
+          ? ast.opNot()
+          : e.op === "neg"
+            ? ast.opNeg()
+            : ast.opCard();
+      return ast.unop(op, lowerL1ExprToOpaque(e.arg, state));
+    }
+    case "app": {
+      const args = e.args.map((a) => lowerL1ExprToOpaque(a, state));
+      if (e.callee.kind === "var" && !e.callee.primed) {
+        return ast.app(ast.var(e.callee.name), args);
+      }
+      return ast.app(lowerL1ExprToOpaque(e.callee, state), args);
+    }
+    case "member":
+      // Member already-qualified at L1 build; lowers to `App(name,
+      // [receiver])` — symmetric to `lowerL1Expr`'s member arm but
+      // built in OpaqueExpr layer here so the receiver may carry a
+      // state-aware sub-tree.
+      return ast.app(ast.var(e.name), [lowerL1ExprToOpaque(e.receiver, state)]);
+    case "cond": {
+      const arms: Array<[OpaqueExpr, OpaqueExpr]> = e.arms.map(([g, v]) => [
+        lowerL1ExprToOpaque(g, state),
+        lowerL1ExprToOpaque(v, state),
+      ]);
+      arms.push([ast.litBool(true), lowerL1ExprToOpaque(e.otherwise, state)]);
+      return ast.cond(arms);
+    }
+    case "is-nullish":
+      // Mirrors `lowerL1Expr`'s lowering: `#x = 0` under list-lift.
+      return ast.binop(
+        ast.opEq(),
+        ast.unop(ast.opCard(), lowerL1ExprToOpaque(e.operand, state)),
+        ast.litNat(0),
+      );
+    case "each": {
+      const guards = [
+        ast.gIn(e.binder, lowerL1ExprToOpaque(e.src, state)),
+        ...e.guards.map((g) => ast.gExpr(lowerL1ExprToOpaque(g, state))),
+      ];
+      return ast.each([], guards, lowerL1ExprToOpaque(e.proj, state));
+    }
+    case "var":
+    case "lit":
+      // Unreachable — `containsStateAwareRead` returned false above
+      // would have taken the fast-path. Defensive fallthrough.
+      return lowerExpr(lowerL1Expr(e));
+    default: {
+      const _exhaustive: never = e;
+      void _exhaustive;
+      throw new Error("unreachable: IR1Expr in lowerL1ExprToOpaque");
+    }
+  }
 }
 
 /**
@@ -127,8 +271,10 @@ function lowerAssign(
     });
     return false;
   }
-  const objExpr = ctx.applyConst(lowerL1ExprToOpaque(stmt.target.receiver));
-  const value = ctx.applyConst(lowerL1ExprToOpaque(stmt.value));
+  const objExpr = ctx.applyConst(
+    lowerL1ExprToOpaque(stmt.target.receiver, state),
+  );
+  const value = ctx.applyConst(lowerL1ExprToOpaque(stmt.value, state));
   const prop = stmt.target.name;
   const key = symbolicKey(prop, objExpr);
   state.writes = putWrite(state.writes, key, {
@@ -146,8 +292,8 @@ function lowerMapEffect(
   state: SymbolicState,
   ctx: LowerBodyCtx,
 ): boolean {
-  const objExpr = lowerL1ExprToOpaque(stmt.objExpr);
-  const keyExpr = lowerL1ExprToOpaque(stmt.keyExpr);
+  const objExpr = lowerL1ExprToOpaque(stmt.objExpr, state);
+  const keyExpr = lowerL1ExprToOpaque(stmt.keyExpr, state);
   // The discriminated union encodes the op/payload invariant: `set`
   // carries a value, `delete` is value-less.
   if (stmt.op === "set") {
@@ -161,7 +307,7 @@ function lowerMapEffect(
         keyType: stmt.keyType,
         objExpr,
         keyExpr,
-        valueExpr: lowerL1ExprToOpaque(stmt.valueExpr),
+        valueExpr: lowerL1ExprToOpaque(stmt.valueExpr, state),
       },
       ctx.applyConst,
     );
@@ -189,7 +335,7 @@ function lowerSetEffect(
   state: SymbolicState,
   ctx: LowerBodyCtx,
 ): boolean {
-  const objExpr = lowerL1ExprToOpaque(stmt.objExpr);
+  const objExpr = lowerL1ExprToOpaque(stmt.objExpr, state);
   // Discriminated: `add`/`delete` carry an element, `clear` is element-less.
   if (stmt.op === "clear") {
     installSetWrite(
@@ -213,7 +359,7 @@ function lowerSetEffect(
         ownerType: stmt.ownerType,
         elemType: stmt.elemType,
         objExpr,
-        elemExpr: lowerL1ExprToOpaque(stmt.elemExpr),
+        elemExpr: lowerL1ExprToOpaque(stmt.elemExpr, state),
       },
       ctx.applyConst,
     );
@@ -228,7 +374,7 @@ function lowerForeach(
   ctx: LowerBodyCtx,
 ): boolean {
   const ast = getAst();
-  const arrExpr = ctx.applyConst(lowerL1ExprToOpaque(stmt.source));
+  const arrExpr = ctx.applyConst(lowerL1ExprToOpaque(stmt.source, state));
 
   // Shape A: Sub-state captures the body's per-iteration writes so they
   // don't leak into the outer state. Skipped when body is null (pure
@@ -298,11 +444,13 @@ function lowerFoldLeaf(
   ctx: LowerBodyCtx,
 ): boolean {
   const ast = getAst();
-  const target = ctx.applyConst(lowerL1ExprToOpaque(leaf.target));
-  const rhs = ctx.applyConst(lowerL1ExprToOpaque(leaf.rhs));
+  const target = ctx.applyConst(lowerL1ExprToOpaque(leaf.target, state));
+  const rhs = ctx.applyConst(lowerL1ExprToOpaque(leaf.rhs, state));
   const guards = [ast.gIn(binder, arrExpr)];
   if (leaf.guard !== null) {
-    guards.push(ast.gExpr(ctx.applyConst(lowerL1ExprToOpaque(leaf.guard))));
+    guards.push(
+      ast.gExpr(ctx.applyConst(lowerL1ExprToOpaque(leaf.guard, state))),
+    );
   }
   const comb =
     leaf.combiner === "add"
@@ -364,7 +512,7 @@ function lowerCondStmt(
   }
   const ast = getAst();
   const [guard, thenBody] = stmt.arms[0]!;
-  const gExpr = ctx.applyConst(lowerL1ExprToOpaque(guard));
+  const gExpr = ctx.applyConst(lowerL1ExprToOpaque(guard, state));
 
   // Each branch lowers into its own `PropResult[]` buffer so a Shape A
   // `foreach` inside the branch (which emits `all $N in src | …`

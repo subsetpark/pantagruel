@@ -45,7 +45,7 @@ export type IR1Unop = IRUnop;
 // --------------------------------------------------------------------------
 
 /**
- * Layer 1 expressions. Nine forms preserve TS-shape canonicalization:
+ * Layer 1 expressions. Eleven forms preserve TS-shape canonicalization:
  *
  * - `var`, `lit` — literal references
  * - `binop`, `unop` — arithmetic/logical/comparison operators
@@ -62,6 +62,14 @@ export type IR1Unop = IRUnop;
  * - `each` — list comprehension. Canonical form for the functor-lift
  *   recognizer's `each n in operand | projection` output. Mirrors L2
  *   `each` and lowers structurally.
+ * - `map-read`, `set-read` — state-aware Map/Set reads (`.get`/`.has`
+ *   on a Map, `.has` on a Set). Symmetric to the write-side
+ *   `map-effect` / `set-effect` statement forms; the body lower path
+ *   dispatches them to `readMapThroughWrites` /
+ *   `readSetThroughWrites` so prior staged writes in the same path
+ *   are observed inline. Pure / read-only callers lower these forms
+ *   to the bare `App` / `Binop(in, ...)` shapes the legacy fast-path
+ *   used to emit (issue #168).
  */
 export type IR1Expr =
   /** Variable / parameter reference. `primed = true` means next-state. */
@@ -114,6 +122,46 @@ export type IR1Expr =
       src: IR1Expr;
       guards: IR1Expr[];
       proj: IR1Expr;
+    }
+  /**
+   * State-aware Map read: `m.get(k)` (`op = "get"`) or `m.has(k)`
+   * (`op = "has"`). Symmetric to the write-side `map-effect` form —
+   * carries the Stage A / Stage B descriptor (`ruleName`,
+   * `keyPredName`, `ownerType`, `keyType`) so the body lower path can
+   * dispatch to `readMapThroughWrites`, observing prior staged writes
+   * inside the same path. The pure / read-only lower path (`lowerL1Expr`
+   * in `ir1-lower.ts`) emits the bare `App(rule, [receiver, key])`
+   * form — byte-identical to the pre-existing fast-path output when
+   * no state is in play.
+   *
+   * Built only when `ctx.state !== undefined` in
+   * `tryBuildL1PureSubExpression`; pure callers keep emitting the bare
+   * `App` form because there is no state to thread.
+   */
+  | {
+      kind: "map-read";
+      op: "get" | "has";
+      ruleName: string;
+      keyPredName: string;
+      ownerType: string;
+      keyType: string;
+      receiver: IR1Expr;
+      key: IR1Expr;
+    }
+  /**
+   * State-aware Set read: `s.has(x)`. Symmetric to the write-side
+   * `set-effect` form — body lower dispatches to
+   * `readSetThroughWrites` so prior `.add` / `.delete` / `.clear` in
+   * the same path are observed. Pure lower emits the bare
+   * `Binop(in, elem, App(rule, [receiver]))` form.
+   */
+  | {
+      kind: "set-read";
+      ruleName: string;
+      ownerType: string;
+      elemType: string;
+      receiver: IR1Expr;
+      elem: IR1Expr;
     };
 
 // --------------------------------------------------------------------------
@@ -434,6 +482,52 @@ export const ir1Each = (
   src,
   guards,
   proj,
+});
+
+/**
+ * State-aware Map read. The body lower path (`ir1-lower-body.ts`)
+ * dispatches this form to `readMapThroughWrites`; the pure /
+ * read-only lower path (`ir1-lower.ts`) emits the bare
+ * `App(callee, [receiver, key])` form (`callee = ruleName` for `get`,
+ * `keyPredName` for `has`).
+ */
+export const ir1MapRead = (
+  op: "get" | "has",
+  ruleName: string,
+  keyPredName: string,
+  ownerType: string,
+  keyType: string,
+  receiver: IR1Expr,
+  key: IR1Expr,
+): IR1Expr => ({
+  kind: "map-read",
+  op,
+  ruleName,
+  keyPredName,
+  ownerType,
+  keyType,
+  receiver,
+  key,
+});
+
+/**
+ * State-aware Set read. The body lower path dispatches this form to
+ * `readSetThroughWrites`; the pure / read-only lower path emits the
+ * bare `Binop(in, elem, App(ruleName, [receiver]))` form.
+ */
+export const ir1SetRead = (
+  ruleName: string,
+  ownerType: string,
+  elemType: string,
+  receiver: IR1Expr,
+  elem: IR1Expr,
+): IR1Expr => ({
+  kind: "set-read",
+  ruleName,
+  ownerType,
+  elemType,
+  receiver,
+  elem,
 });
 
 // --------------------------------------------------------------------------

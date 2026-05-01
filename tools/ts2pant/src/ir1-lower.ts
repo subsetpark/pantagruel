@@ -106,6 +106,28 @@ export function lowerL1Expr(e: IR1Expr): IRExpr {
       );
     }
 
+    case "map-read": {
+      // Pure / read-only path: emit the bare `App(callee, [receiver,
+      // key])` form — byte-identical to the legacy fast-path output
+      // when no symbolic state is in play. The body lower path
+      // (`ir1-lower-body.ts`) intercepts `map-read` before reaching
+      // here and dispatches to `readMapThroughWrites` so prior staged
+      // writes are observed.
+      const callee = e.op === "has" ? e.keyPredName : e.ruleName;
+      return irAppName(callee, [lowerL1Expr(e.receiver), lowerL1Expr(e.key)]);
+    }
+
+    case "set-read": {
+      // Pure / read-only path: emit the bare `Binop(in, elem,
+      // App(rule, [receiver]))` form. The body lower path dispatches
+      // this form to `readSetThroughWrites` before reaching here.
+      return irBinop(
+        "in",
+        lowerL1Expr(e.elem),
+        irAppName(e.ruleName, [lowerL1Expr(e.receiver)]),
+      );
+    }
+
     default: {
       const _exhaustive: never = e;
       void _exhaustive;

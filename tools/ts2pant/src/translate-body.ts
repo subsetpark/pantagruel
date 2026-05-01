@@ -806,7 +806,7 @@ export function installMapWrite(
  * partial function), but an inline override application has no such guard,
  * so the filter is explicit at the read site.
  */
-function readMapThroughWrites(
+export function readMapThroughWrites(
   state: SymbolicState | undefined,
   methodName: "get" | "has",
   ruleName: string,
@@ -983,7 +983,7 @@ export function installSetWrite(
  * with `ast.opIn` and a cond over equality arms. `ast.override` would be
  * invalid on a list-valued field accessor.
  */
-function readSetThroughWrites(
+export function readSetThroughWrites(
   state: SymbolicState | undefined,
   ruleName: string,
   ownerType: string,

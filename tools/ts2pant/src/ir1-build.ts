@@ -50,7 +50,9 @@ import {
   ir1LitBool,
   ir1LitNat,
   ir1LitString,
+  ir1MapRead,
   ir1Member,
+  ir1SetRead,
   ir1Unop,
   ir1Var,
   ir1While,
@@ -363,6 +365,97 @@ export function isArrayChainCall(
 }
 
 /**
+ * Resolve the `(ownerType, elemType)` strings for a Stage A Set read
+ * (`c.tags.has(x)`) so the L1 build pass can emit `set-read` carrying
+ * the type info `readSetThroughWrites` needs at lower time. Mirrors
+ * the Stage A lookup in `translateCallExpr`'s Set-effect arm — the
+ * inner TS receiver becomes the owner; the Set's element type comes
+ * from `getTypeArguments(receiverType)`. Returns `null` if the
+ * receiver shape isn't a recognizable property/element-access (so the
+ * caller falls back to the bare `Binop(in, ...)` form, which is
+ * sound for non-Stage-A receivers — only Stage A Sets accumulate
+ * staged writes).
+ */
+function resolveStageASetReadType(
+  receiverNode: ts.Expression,
+  ctx: L1BuildContext,
+): { ownerType: string; elemType: string } | null {
+  const unwrapped = unwrapTransparentExpression(receiverNode);
+  if (
+    !ts.isPropertyAccessExpression(unwrapped) &&
+    !ts.isElementAccessExpression(unwrapped)
+  ) {
+    return null;
+  }
+  const innerObj = unwrapped.expression;
+  const ownerType = mapTsType(
+    ctx.checker.getTypeAtLocation(innerObj),
+    ctx.checker,
+    ctx.strategy,
+    ctx.supply.synthCell,
+  );
+  const setType = ctx.checker.getTypeAtLocation(unwrapped);
+  const setTypeArgs = ctx.checker.getTypeArguments(setType as ts.TypeReference);
+  if (setTypeArgs.length !== 1) {
+    return null;
+  }
+  const elemType = mapTsType(
+    setTypeArgs[0]!,
+    ctx.checker,
+    ctx.strategy,
+    ctx.supply.synthCell,
+  );
+  if (isUnsupportedUnknown(ownerType) || isUnsupportedUnknown(elemType)) {
+    return null;
+  }
+  return { ownerType, elemType };
+}
+
+/**
+ * Resolve the `(ownerType, keyType)` strings for a Stage A Map read.
+ * Stage A receivers are property accesses on a declared interface
+ * field; the inner TS receiver supplies the owner sort, and the
+ * Map's K type arg supplies the key sort. Stage B has its own
+ * synthesized owner/key resolution at the call site.
+ */
+function resolveStageAMapReadType(
+  receiverNode: ts.Expression,
+  receiverType: ts.Type,
+  ctx: L1BuildContext,
+): { ownerType: string; keyType: string } | null {
+  const unwrapped = unwrapTransparentExpression(receiverNode);
+  if (
+    !ts.isPropertyAccessExpression(unwrapped) &&
+    !ts.isElementAccessExpression(unwrapped)
+  ) {
+    return null;
+  }
+  const innerObj = unwrapped.expression;
+  const typeArgs = ctx.checker.getTypeArguments(
+    receiverType as ts.TypeReference,
+  );
+  if (typeArgs.length !== 2) {
+    return null;
+  }
+  const ownerType = mapTsType(
+    ctx.checker.getTypeAtLocation(innerObj),
+    ctx.checker,
+    ctx.strategy,
+    ctx.supply.synthCell,
+  );
+  const keyType = mapTsType(
+    typeArgs[0]!,
+    ctx.checker,
+    ctx.strategy,
+    ctx.supply.synthCell,
+  );
+  if (isUnsupportedUnknown(ownerType) || isUnsupportedUnknown(keyType)) {
+    return null;
+  }
+  return { ownerType, keyType };
+}
+
+/**
  * Native L1 construction for ordinary pure sub-expressions. Returns
  * `null` when the expression is outside this cleanup patch's native
  * coverage and should continue to the temporary legacy safety net.
@@ -592,6 +685,26 @@ export function tryBuildL1PureSubExpression(
           if (source === null || isL1Unsupported(source)) {
             return source;
           }
+          // State-aware Stage A: `c.tags.has(x)` inside a mutating body
+          // must observe prior `.add` / `.delete` / `.clear` writes
+          // staged on the same receiver (issue #168). Emit a
+          // `set-read` form so the body lower path dispatches to
+          // `readSetThroughWrites`. Pure-path callers keep the bare
+          // `Binop(in, elem, source)` shape — there is no state to
+          // thread, and `set-read` lowers byte-identically on the
+          // read-only path.
+          if (isSet && ctx.state !== undefined && source.kind === "member") {
+            const setStageInfo = resolveStageASetReadType(receiverNode, ctx);
+            if (setStageInfo !== null) {
+              return ir1SetRead(
+                source.name,
+                setStageInfo.ownerType,
+                setStageInfo.elemType,
+                source.receiver,
+                elem,
+              );
+            }
+          }
           return ir1Binop("in", elem, source);
         }
       }
@@ -610,7 +723,30 @@ export function tryBuildL1PureSubExpression(
         }
         if (receiver.kind === "member") {
           const ruleName = receiver.name;
-          const callee = methodName === "has" ? `${ruleName}-key` : ruleName;
+          const keyPredName = `${ruleName}-key`;
+          // State-aware Stage A Map read: emit `map-read` so the body
+          // lower path dispatches to `readMapThroughWrites` and observes
+          // prior staged `.set` / `.delete` (issue #168). Pure-path keeps
+          // the bare `App` form.
+          if (ctx.state !== undefined) {
+            const stageInfo = resolveStageAMapReadType(
+              receiverNode,
+              receiverType,
+              ctx,
+            );
+            if (stageInfo !== null) {
+              return ir1MapRead(
+                methodName as "get" | "has",
+                ruleName,
+                keyPredName,
+                stageInfo.ownerType,
+                stageInfo.keyType,
+                receiver.receiver,
+                key,
+              );
+            }
+          }
+          const callee = methodName === "has" ? keyPredName : ruleName;
           return ir1App(ir1Var(callee), [receiver.receiver, key]);
         }
         // For union receivers (`Map<K, V> | ReadonlyMap<K, V>`), pick
@@ -671,6 +807,21 @@ export function tryBuildL1PureSubExpression(
           return {
             unsupported: `Map<${kType}, ${vType}>: key or value type cannot be mangled into a synthesized domain name`,
           };
+        }
+        // State-aware Stage B Map read: emit `map-read` so the body
+        // lower path observes prior staged writes through the
+        // synthesized rule (issue #168). The bare `App` form is kept on
+        // the pure read-only path.
+        if (ctx.state !== undefined) {
+          return ir1MapRead(
+            methodName as "get" | "has",
+            info.names.rule,
+            info.names.keyPred,
+            info.names.domain,
+            kType,
+            receiver,
+            key,
+          );
         }
         const callee =
           methodName === "has" ? info.names.keyPred : info.names.rule;
@@ -1606,6 +1757,42 @@ function substituteL1Subtree(
         },
         changed: true,
       };
+    }
+    case "map-read": {
+      const recv = substituteL1Subtree(root.receiver, needle, replacement);
+      const key = substituteL1Subtree(root.key, needle, replacement);
+      const changed = recv.changed || key.changed;
+      return changed
+        ? {
+            result: ir1MapRead(
+              root.op,
+              root.ruleName,
+              root.keyPredName,
+              root.ownerType,
+              root.keyType,
+              recv.result,
+              key.result,
+            ),
+            changed: true,
+          }
+        : { result: root, changed: false };
+    }
+    case "set-read": {
+      const recv = substituteL1Subtree(root.receiver, needle, replacement);
+      const elem = substituteL1Subtree(root.elem, needle, replacement);
+      const changed = recv.changed || elem.changed;
+      return changed
+        ? {
+            result: ir1SetRead(
+              root.ruleName,
+              root.ownerType,
+              root.elemType,
+              recv.result,
+              elem.result,
+            ),
+            changed: true,
+          }
+        : { result: root, changed: false };
     }
     default: {
       const _exhaustive: never = root;
