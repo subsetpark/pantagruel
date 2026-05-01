@@ -42,6 +42,9 @@ const PANT_RESERVED_KEYWORDS = new Set<string>([
   "check",
 ]);
 
+/**
+ * @pant all s: String | ~(s in used emptyNameRegistry).
+ */
 export function emptyNameRegistry(): NameRegistry {
   return { used: new Set() };
 }

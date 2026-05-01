@@ -259,9 +259,16 @@ describe("dogfood: @pant annotations entail", () => {
 
   const annotated: Array<{ file: string; fn: string; minChecks: number }> = [
     { file: "name-registry.ts", fn: "isUsed", minChecks: 2 },
+    { file: "name-registry.ts", fn: "emptyNameRegistry", minChecks: 1 },
     { file: "translate-types.ts", fn: "isUnsupportedUnknown", minChecks: 2 },
     { file: "translate-types.ts", fn: "emptyMapSynth", minChecks: 1 },
+    { file: "translate-types.ts", fn: "emptyRecordSynth", minChecks: 1 },
+    { file: "translate-types.ts", fn: "lookupMapKV", minChecks: 1 },
+    { file: "translate-types.ts", fn: "fieldRuleName", minChecks: 1 },
+    { file: "translate-types.ts", fn: "lookupRecordShape", minChecks: 1 },
     { file: "translate-types.ts", fn: "cellIsUsed", minChecks: 2 },
+    { file: "translate-types.ts", fn: "cellLookupRecord", minChecks: 1 },
+    { file: "translate-types.ts", fn: "emptyTupleSynth", minChecks: 1 },
   ];
 
   for (const { file, fn, minChecks } of annotated) {

@@ -172,6 +172,9 @@ export function registerMapKV(
   };
 }
 
+/**
+ * @pant lookupMapKV synth kType vType = byKV synth (kType + "|" + vType).
+ */
 export function lookupMapKV(
   synth: MapSynth,
   kType: string,
@@ -274,6 +277,9 @@ export interface RecordSynth {
   readonly emitted: ReadonlySet<string>;
 }
 
+/**
+ * @pant all s: String | ~(s in emitted emptyRecordSynth).
+ */
 export function emptyRecordSynth(): RecordSynth {
   return { byShape: new Map(), emitted: new Set() };
 }
@@ -408,6 +414,9 @@ export function registerRecordShape(
   };
 }
 
+/**
+ * @pant lookupRecordShape synth fields = byShape synth (recordShapeKey fields).
+ */
 export function lookupRecordShape(
   synth: RecordSynth,
   fields: ReadonlyArray<RecordSynthField>,
@@ -519,6 +528,9 @@ export interface TupleSynth {
   readonly ctorRegistry: NameRegistry;
 }
 
+/**
+ * @pant ctorRegistry emptyTupleSynth = emptyNameRegistry.
+ */
 export function emptyTupleSynth(): TupleSynth {
   return { byShape: new Map(), ctorRegistry: emptyNameRegistry() };
 }
@@ -656,6 +668,9 @@ export function newSynthCell(
  *  the result on the first `--` recovers the exact `(owner, field)`
  *  pair. Pantagruel's lexer accepts `-` in identifier continuations,
  *  so `foo--bar` is a single legal rule name. */
+/**
+ * @pant fieldRuleName interfaceName fieldName = (toPantTermName interfaceName) + "--" + (toPantTermName fieldName).
+ */
 export function fieldRuleName(
   interfaceName: string,
   fieldName: string,
@@ -863,7 +878,11 @@ export function cellRegisterRecord(
   return r.domain;
 }
 
-/** Cell read-through for `lookupRecordShape`. `fields` must be canonical. */
+/**
+ * Cell read-through for `lookupRecordShape`. `fields` must be canonical.
+ *
+ * @pant cellLookupRecord cell fields = lookupRecordShape (recordSynth cell) fields.
+ */
 export function cellLookupRecord(
   cell: SynthCell,
   fields: ReadonlyArray<RecordSynthField>,
