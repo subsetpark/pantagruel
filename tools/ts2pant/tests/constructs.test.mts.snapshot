@@ -678,6 +678,22 @@ exports[`expressions-set.ts > contains 1`] = `
 "module Contains.\\n\\ncontains xs: [String], x: String => Bool.\\n\\n---\\n\\ncontains xs x = (x in xs).\\n"
 `;
 
+exports[`expressions-state-aware-reads.ts > bumpInBranch 1`] = `
+"module BumpInBranch.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k1: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k1: String, string-to-int-map-key m1 k1 => Int.\\n~> Bump-in-branch @ m: StringToIntMap, k: String, v: Int, gate: Bool.\\n\\n---\\n\\nall m2: StringToIntMap, k2: String | string-to-int-map' m2 k2 = string-to-int-map[(m, k) |-> cond gate => string-to-int-map[(m, k) |-> v] m k + 1, true => string-to-int-map m k] m2 k2.\\nall m3: StringToIntMap, k3: String | string-to-int-map-key' m3 k3 = string-to-int-map-key[(m, k) |-> cond gate => true, true => string-to-int-map-key m k] m3 k3.\\n"
+`;
+
+exports[`expressions-state-aware-reads.ts > entrySetThenCheck 1`] = `
+"module EntrySetThenCheck.\\n\\nCache.\\ncache--entries-key c1: Cache, k1: String => Bool.\\ncache--entries c1: Cache, k1: String, cache--entries-key c1 k1 => Int.\\ncache--hits c1: Cache => Int.\\n~> Entry-set-then-check @ c: Cache, k: String, v: Int, gate: Bool.\\n\\n---\\n\\nall m: Cache, k2: String | cache--entries' m k2 = cache--entries[(c, k) |-> cond gate => v, true => cache--entries c k] m k2.\\nall m1: Cache, k3: String | cache--entries-key' m1 k3 = cache--entries-key[(c, k) |-> cond gate => true, true => cache--entries-key c k] m1 k3.\\ncache--hits' c = (cond gate => (cond cache--entries-key[(c, k) |-> true] c k => cache--hits c + 1, true => cache--hits c), true => cache--hits c).\\n"
+`;
+
+exports[`expressions-state-aware-reads.ts > setIfThenBump 1`] = `
+"module SetIfThenBump.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k1: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k1: String, string-to-int-map-key m1 k1 => Int.\\n~> Set-if-then-bump @ m: StringToIntMap, k: String, v: Int, gate: Bool.\\n\\n---\\n\\nall m2: StringToIntMap, k2: String | string-to-int-map' m2 k2 = string-to-int-map[(m, k) |-> cond gate => (cond string-to-int-map-key[(m, k) |-> true] m k => string-to-int-map[(m, k) |-> v] m k + 1, true => v), true => string-to-int-map m k] m2 k2.\\nall m3: StringToIntMap, k3: String | string-to-int-map-key' m3 k3 = string-to-int-map-key[(m, k) |-> cond gate => (cond string-to-int-map-key[(m, k) |-> true] m k => true, true => true), true => string-to-int-map-key m k] m3 k3.\\n"
+`;
+
+exports[`expressions-state-aware-reads.ts > tagThenCheck 1`] = `
+"module TagThenCheck.\\n\\nTagged.\\ntagged--tags t: Tagged => [String].\\ntagged--flag t: Tagged => Bool.\\n~> Tag-then-check @ c: Tagged, x: String, gate: Bool.\\n\\n---\\n\\nall y: String | y in tagged--tags' c <-> (cond y = x => (cond gate => true, true => x in tagged--tags c), true => y in tagged--tags c).\\ntagged--flag' c = (cond gate => (cond (cond x = x => true, true => x in tagged--tags c) => true, true => tagged--flag c), true => tagged--flag c).\\n"
+`;
+
 exports[`expressions-while-mu-search.ts > compoundIncrementStep 1`] = `
 "module CompoundIncrementStep.\\n\\ncompound-increment-step used: [Int] => Int.\\n\\n---\\n\\ncompound-increment-step used = (min over each j: Int, j >= 1, ~(j in used) | j).\\n"
 `;
