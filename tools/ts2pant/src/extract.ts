@@ -1,14 +1,20 @@
 import { Project, type SourceFile } from "ts-morph";
 import ts from "typescript";
 
+import type { OpaqueExpr } from "./pant-ast.js";
+import { getAst } from "./pant-wasm.js";
 import { translateSignature } from "./translate-signature.js";
 import {
+  cellRegisterName,
   isMapType,
   isSetType,
+  mapTsType,
   type NumericStrategy,
   newSynthCell,
+  type SynthCell,
+  toPantTermName,
 } from "./translate-types.js";
-import type { PantRule } from "./types.js";
+import type { PantRule, PropResult } from "./types.js";
 
 export type { SourceFile } from "ts-morph";
 
@@ -327,6 +333,198 @@ export function extractAmbientFunctions(
     result.push({ tsName, declaration: sig.declaration });
   }
   return result;
+}
+
+/**
+ * One module-level `const NAME = <literal>` declaration, translated
+ * into a 0-arity Pantagruel rule + an equation binding its value.
+ *
+ * Pantagruel has no top-level value-binding syntax — module constants
+ * map onto rules with empty params and an equation in the body. A TS
+ * `const X: T = lit` becomes:
+ *
+ *   {pant-name X} => {pant T}.
+ *   ---
+ *   {pant-name X} = {pant lit}.
+ *
+ * The kebab-cased Pant name is also threaded into the consumer
+ * function's `paramNameMap` so identifier references inside bodies
+ * resolve correctly (`UNSUPPORTED_UNKNOWN` → `unsupported-unknown`).
+ *
+ * Scope: only literal initializers (string, numeric, boolean, no-sub
+ * template) translate. Compound expressions (object literals, calls,
+ * arithmetic) are out of scope — they'd require running the full body
+ * pipeline at module-load time, and most useful TS-side constants are
+ * just literals anyway. Unsupported initializers are silently skipped
+ * so a module's other constants still emit.
+ */
+export interface ExtractedConst {
+  tsName: string;
+  pantName: string;
+  declaration: PantRule;
+  equation: PropResult;
+}
+
+/**
+ * Translate a TS expression to a Pant `OpaqueExpr` if it's a
+ * recognized literal. Returns null for non-literal initializers, which
+ * are silently filtered out of the module-const extraction.
+ */
+function translateConstInitializer(init: ts.Expression): OpaqueExpr | null {
+  const ast = getAst();
+  if (ts.isStringLiteral(init) || ts.isNoSubstitutionTemplateLiteral(init)) {
+    return ast.litString(init.text);
+  }
+  if (init.kind === ts.SyntaxKind.TrueKeyword) {
+    return ast.litBool(true);
+  }
+  if (init.kind === ts.SyntaxKind.FalseKeyword) {
+    return ast.litBool(false);
+  }
+  if (ts.isNumericLiteral(init)) {
+    const n = Number(init.text);
+    if (Number.isFinite(n) && Number.isInteger(n) && n >= 0) {
+      return ast.litNat(n);
+    }
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Walk a source file's top-level statements for `const NAME = <literal>`
+ * declarations referenced from `functionName`'s body. Each match
+ * becomes an {@link ExtractedConst} carrying the 0-arity rule head +
+ * value equation. The pipeline runs this after `translateSignature` so
+ * the registry's already claimed the function's param names —
+ * collisions resolve via numeric suffixing.
+ *
+ * Filtering by reference (rather than emitting every top-level const)
+ * keeps the output focused: a function that uses one constant doesn't
+ * pull in the other dozen consts that happen to live in the same
+ * source file.
+ */
+export function extractModuleConsts(
+  sourceFile: SourceFile,
+  functionName: string,
+  strategy: NumericStrategy,
+  synthCell?: SynthCell,
+): ExtractedConst[] {
+  const checker = getChecker(sourceFile);
+  const ast = getAst();
+
+  // Pre-pass: gather candidate top-level `const NAME = <literal>` decls
+  // keyed by TS name. Skipped if the initializer is non-literal.
+  const candidates = new Map<string, ts.VariableDeclaration>();
+  for (const stmt of sourceFile.compilerNode.statements) {
+    if (!ts.isVariableStatement(stmt)) {
+      continue;
+    }
+    const flags = ts.getCombinedNodeFlags(stmt.declarationList);
+    if ((flags & ts.NodeFlags.Const) === 0) {
+      continue;
+    }
+    for (const decl of stmt.declarationList.declarations) {
+      if (!ts.isIdentifier(decl.name) || !decl.initializer) {
+        continue;
+      }
+      if (translateConstInitializer(decl.initializer) === null) {
+        continue;
+      }
+      candidates.set(decl.name.text, decl);
+    }
+  }
+  if (candidates.size === 0) {
+    return [];
+  }
+
+  // Find the consumer function and walk its body for identifier
+  // references that name a candidate const. Symbol-resolve each match
+  // against the candidate's declaration so a shadowing local variable
+  // (a parameter / `const x = ...` inside the body that happens to
+  // share a top-level name) doesn't pull in the wrong const.
+  const fnNode = findFunctionNode(sourceFile, functionName);
+  if (!fnNode?.body) {
+    return [];
+  }
+  const referenced = new Set<string>();
+  function visit(n: ts.Node): void {
+    if (ts.isIdentifier(n) && candidates.has(n.text)) {
+      const candidate = candidates.get(n.text)!;
+      const sym = checker.getSymbolAtLocation(n);
+      if (sym?.valueDeclaration === candidate) {
+        referenced.add(n.text);
+      }
+    }
+    ts.forEachChild(n, visit);
+  }
+  visit(fnNode.body);
+
+  const result: ExtractedConst[] = [];
+  for (const tsName of referenced) {
+    const decl = candidates.get(tsName)!;
+    const valueExpr = translateConstInitializer(decl.initializer!);
+    if (valueExpr === null) {
+      continue;
+    }
+    const tsType = checker.getTypeAtLocation(decl);
+    const pantType = mapTsType(tsType, checker, strategy, synthCell);
+    const baseName = toPantTermName(tsName);
+    const pantName = synthCell
+      ? cellRegisterName(synthCell, baseName)
+      : baseName;
+    const declaration: PantRule = {
+      kind: "rule",
+      name: pantName,
+      params: [],
+      returnType: pantType,
+    };
+    const equation: PropResult = {
+      kind: "equation",
+      quantifiers: [],
+      lhs: ast.var(pantName),
+      rhs: valueExpr,
+    };
+    result.push({ tsName, pantName, declaration, equation });
+  }
+  return result;
+}
+
+/**
+ * Resolve a function-or-method name to its TS AST node, mirroring the
+ * lookup logic in `extractReferencedTypes`. Returns null when no match
+ * is found rather than throwing — `extractModuleConsts` falls through
+ * gracefully when invoked on a source file/function pair that doesn't
+ * resolve.
+ */
+function findFunctionNode(
+  sourceFile: SourceFile,
+  functionName: string,
+): ts.FunctionDeclaration | ts.MethodDeclaration | null {
+  const [classHint, memberName] = functionName.includes(".")
+    ? (functionName.split(".", 2) as [string, string])
+    : [undefined, functionName];
+
+  if (!classHint) {
+    const funcs = sourceFile
+      .getFunctions()
+      .filter((f) => f.getName() === memberName);
+    const func = funcs.find((f) => f.hasBody()) ?? funcs[0];
+    if (func) {
+      return func.compilerNode;
+    }
+  }
+  for (const cls of sourceFile.getClasses()) {
+    if (classHint && cls.getName() !== classHint) {
+      continue;
+    }
+    const methods = cls.getMethods().filter((m) => m.getName() === memberName);
+    const method = methods.find((m) => m.hasBody()) ?? methods[0];
+    if (method) {
+      return method.compilerNode;
+    }
+  }
+  return null;
 }
 
 /**

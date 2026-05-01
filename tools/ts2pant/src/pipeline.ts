@@ -1,7 +1,11 @@
 import type { SourceFile } from "ts-morph";
 import { extractFunctionAnnotationsAndOverrides } from "./annotations.js";
 import { type DepModuleName, loadBuiltinDepModule } from "./builtins.js";
-import { extractReferencedTypes, getChecker } from "./extract.js";
+import {
+  extractModuleConsts,
+  extractReferencedTypes,
+  getChecker,
+} from "./extract.js";
 import { loadAst, loadParser, rewriteAnnotation } from "./pant-wasm.js";
 import { translateBody } from "./translate-body.js";
 import { translateSignature } from "./translate-signature.js";
@@ -72,14 +76,33 @@ export async function buildPantDocument(
   // decls (one domain + membership predicate + guarded value rule per
   // unique (K, V)). Splice before sigDecl so the sig's references resolve.
   const synthDecls = cellEmitSynth(synthCell);
-  const declarations = [...typeDecls, ...synthDecls, sigDecl];
+
+  // Module-level `const NAME = <literal>` declarations map onto 0-arity
+  // rules + body equations. Done after `translateSignature` so the
+  // function's params claim names first; constant names pick up
+  // collision suffixes via the registry. The TS->Pant rename is
+  // threaded into `paramNameMap` so identifier references inside the
+  // function body resolve to the kebab'd Pant name.
+  const moduleConsts = extractModuleConsts(
+    sourceFile,
+    functionName,
+    strategy,
+    synthCell,
+  );
+  const constDecls = moduleConsts.map((c) => c.declaration);
+  const constEquations = moduleConsts.map((c) => c.equation);
+  for (const c of moduleConsts) {
+    paramNameMap.set(c.tsName, c.pantName);
+  }
+
+  const declarations = [...typeDecls, ...synthDecls, ...constDecls, sigDecl];
 
   const moduleName = baseName.charAt(0).toUpperCase() + baseName.slice(1);
   let doc: PantDocument = {
     moduleName,
     imports: [],
     declarations,
-    propositions: [],
+    propositions: [...constEquations],
     checks: [],
   };
 

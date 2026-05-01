@@ -1496,6 +1496,21 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
     }
   }
 
+  // Merge non-parameter renames from `paramNameMap` (e.g., module-level
+  // `const NAME = <literal>` declarations registered by the pipeline)
+  // into the body's local `paramNames` map. The L1 build dispatcher
+  // resolves identifier references through this map, so without the
+  // merge the body would emit raw TS names (`UNSUPPORTED_UNKNOWN`)
+  // instead of the kebab'd 0-arity rule references
+  // (`unsupported-unknown`) the document declares.
+  if (paramNameMap) {
+    for (const [tsName, pantName] of paramNameMap) {
+      if (!paramNames.has(tsName)) {
+        paramNames.set(tsName, pantName);
+      }
+    }
+  }
+
   if (!node.body) {
     return [];
   }

@@ -115,4 +115,31 @@ describe("dogfood: src/translate-types.ts", () => {
       /lookup-map-kv synth: MapSynth, k-type: String, v-type: String => MapSynthEntry\./u,
     );
   });
+
+  it("isUnsupportedUnknown — translates and type-checks", async (t) => {
+    const doc = await buildDocumentFromPath(filePath, "isUnsupportedUnknown");
+    const output = await emitAndCheck(doc);
+    t.assert.snapshot(output);
+    assertPantTypeChecks(output, PANT_TIMEOUT_MS);
+    // Module-level `const UNSUPPORTED_UNKNOWN = "__unsupported_unknown__"`
+    // emits as a 0-arity rule + value equation (extractModuleConsts).
+    // Reference-filtered: the sibling `UNSUPPORTED_ANONYMOUS_RECORD` /
+    // `UNSUPPORTED_UNKNOWN_REASON` consts in the same module are NOT
+    // pulled in because `isUnsupportedUnknown`'s body doesn't reference
+    // them.
+    t.assert.match(output, /unsupported-unknown\s+=> String\./u);
+    t.assert.match(
+      output,
+      /unsupported-unknown = "__unsupported_unknown__"\./u,
+    );
+    t.assert.doesNotMatch(output, /unsupported-anonymous-record/u);
+    t.assert.doesNotMatch(output, /unsupported-unknown-reason/u);
+    // Body equation rewrites the identifier reference through
+    // `paramNameMap` so `UNSUPPORTED_UNKNOWN` resolves to the kebab'd
+    // 0-arity rule, not the raw TS-cased name.
+    t.assert.match(
+      output,
+      /is-unsupported-unknown pant-type = \(pant-type = unsupported-unknown\)\./u,
+    );
+  });
 });
