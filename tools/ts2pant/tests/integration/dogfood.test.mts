@@ -87,4 +87,32 @@ describe("dogfood: src/translate-types.ts", () => {
     );
     t.assert.match(output, /^RecordSynthEntry\.$/mu);
   });
+
+  it("lookupMapKV — translates and type-checks", async (t) => {
+    const doc = await buildDocumentFromPath(filePath, "lookupMapKV");
+    const output = await emitAndCheck(doc);
+    t.assert.snapshot(output);
+    assertPantTypeChecks(output, PANT_TIMEOUT_MS);
+    // Body composes two pieces that landed across recent PRs: the
+    // template literal `` `${kType}|${vType}` `` lowers to a `+` chain
+    // (TS_PRELUDE wiring in the same module is unused here because both
+    // operands are String), and `synth.byKV.get(...)` lowers to the
+    // partial-rule value application against the synthesized
+    // MapSynth domain.
+    t.assert.match(
+      output,
+      /lookup-map-kv synth k-type v-type = map-synth--by-kv synth \(k-type \+ "\|" \+ v-type\)\./u,
+    );
+    // Map-partial signature alignment: the body emits a bare `V`
+    // (Pant's Map encoding is unboxed under the partial-rule guard),
+    // so the signature's return type narrows from `[MapSynthEntry]` to
+    // bare `MapSynthEntry`. Without `bodyIsBareMapGet`'s
+    // narrow, the equation type-mismatches against the list-lifted
+    // declaration. Don't anchor on `^...$` because the synth-decl run
+    // emits other `=> MapSynthEntry` rules that share the suffix.
+    t.assert.match(
+      output,
+      /lookup-map-kv synth: MapSynth, k-type: String, v-type: String => MapSynthEntry\./u,
+    );
+  });
 });

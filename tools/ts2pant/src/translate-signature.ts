@@ -186,6 +186,82 @@ function hasMutation(node: ts.Node, checker: ts.TypeChecker): boolean {
 }
 
 /**
+ * Detect when a function's body is exactly `return m.get(k);` (with
+ * optional `!`, `as`, paren, and `satisfies` wrappers around the call).
+ * Used to align the signature's return type with the body's emission
+ * for the Map-partial case.
+ *
+ * Background: Pantagruel's Map encoding (`Map<K, V>` reads via the
+ * partial-rule pattern in `samples/js-stdlib/`-style or inline synth)
+ * emits `m.get(k)` as a guarded value-rule application of type `V` —
+ * the declaration guard provides the membership antecedent for SMT
+ * queries, and the rule itself returns bare `V`, NOT list-lifted `[V]`.
+ *
+ * TS-side, `Map<K, V>::get` returns `V | undefined`, which `mapTsType`
+ * list-lifts to `[V]` (Alloy `lone` multiplicity). When the body is
+ * exactly a bare `m.get(k)` return, the signature ends up declaring
+ * `=> [V]` while the emitted equation produces a bare `V`, which the
+ * Pantagruel typechecker rightly rejects as a type mismatch.
+ *
+ * The fix is to recognize this shape and narrow the signature's return
+ * type to bare `V`, mirroring the body's emission. The function then
+ * inherits the Map's partial-function semantics: the absent-key case
+ * is uninterpreted at the SMT layer (consistent with how Pant treats
+ * partial-rule lookups generally — see CLAUDE.md § "Partial Rules
+ * (Map<K, V>)" for the encoding rationale). A future change could
+ * propagate the membership predicate into the function's own
+ * declaration guard for tighter soundness; for now, type alignment is
+ * what unblocks dogfood translation.
+ *
+ * Multi-statement bodies, `m.get(k) ?? default`, and `m.get(k)?.field`
+ * deliberately fall through. Those forms have well-defined non-bare
+ * lowerings (cardinality dispatch, functor lift) that already produce
+ * `[V]`-shaped output, so the signature's list-lift is correct.
+ */
+function bodyIsBareMapGet(
+  node: ts.FunctionDeclaration | ts.MethodDeclaration,
+  checker: ts.TypeChecker,
+): boolean {
+  const body = node.body;
+  if (!body || body.statements.length !== 1) {
+    return false;
+  }
+  const stmt = body.statements[0]!;
+  if (!ts.isReturnStatement(stmt) || !stmt.expression) {
+    return false;
+  }
+  let expr: ts.Expression = stmt.expression;
+  // Strip transparent wrappers — `m.get(k)!`, `(m.get(k))`,
+  // `m.get(k) as V`, `m.get(k) satisfies V` all produce the same Pant
+  // emission as the bare call.
+  while (
+    ts.isParenthesizedExpression(expr) ||
+    ts.isNonNullExpression(expr) ||
+    ts.isAsExpression(expr) ||
+    ts.isSatisfiesExpression(expr)
+  ) {
+    expr = expr.expression;
+  }
+  if (!ts.isCallExpression(expr) || expr.arguments.length !== 1) {
+    return false;
+  }
+  if (!ts.isPropertyAccessExpression(expr.expression)) {
+    return false;
+  }
+  if (expr.expression.name.text !== "get") {
+    return false;
+  }
+  const receiverType = checker.getTypeAtLocation(expr.expression.expression);
+  if (isMapType(receiverType)) {
+    return true;
+  }
+  // `Map<K, V> | ReadonlyMap<K, V>` union receivers reach the same
+  // partial-rule encoding via the union-aware Map dispatch — accept
+  // them too so the signature narrowing fires consistently.
+  return receiverType.isUnion() && receiverType.types.every(isMapType);
+}
+
+/**
  * Check if a call expression targets a function with an `asserts` return type.
  * Returns the assertion's parameter index if so (the parameter being asserted).
  */
@@ -1387,12 +1463,14 @@ export function translateSignature(
   const guard = detectGuard(node, checker, strategy, paramNameMap, synthCell);
 
   if (classification === "pure") {
-    const returnType = mapTsType(
-      sig.getReturnType(),
-      checker,
-      strategy,
-      synthCell,
-    );
+    // Map-partial signature alignment: when the body is exactly a
+    // bare `m.get(k)` return, narrow `V | undefined` to `V` so the
+    // signature matches the unboxed Pant emission. See
+    // `bodyIsBareMapGet` for the rationale.
+    const tsReturnType = bodyIsBareMapGet(node, checker)
+      ? checker.getNonNullableType(sig.getReturnType())
+      : sig.getReturnType();
+    const returnType = mapTsType(tsReturnType, checker, strategy, synthCell);
     if (isUnsupportedUnknown(returnType)) {
       return {
         declaration: {
