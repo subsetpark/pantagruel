@@ -873,17 +873,6 @@ const ir1SsaAssertWriteValueCompatible = (
   }
 };
 
-const ir1SsaAssertWriteValueCompatible = (
-  location: IR1SsaLocation,
-  value: IR1SsaValue,
-): void => {
-  if (location.kind !== value.kind) {
-    throw new Error(
-      `IR1 SSA write value/location kind mismatch: location=${location.kind}, value=${value.kind}`,
-    );
-  }
-};
-
 // --------------------------------------------------------------------------
 // Expression constructors
 // --------------------------------------------------------------------------
