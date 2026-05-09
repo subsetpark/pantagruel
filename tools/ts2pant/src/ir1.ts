@@ -382,6 +382,303 @@ export type IR1ForeachBody =
     };
 
 // --------------------------------------------------------------------------
+// SSA contract forms
+// --------------------------------------------------------------------------
+//
+// Milestone 1 exposes the IR1 SSA vocabulary without wiring production
+// builders or lowerers to emit it yet. Versions are opaque identities that
+// carry their location metadata; callers compare version objects by identity
+// and inspect `location` when checking structural compatibility.
+
+const IR1_SSA_VERSION: unique symbol = Symbol("IR1_SSA_VERSION");
+
+export type IR1SsaRuleName = string;
+
+export type IR1SsaLocation =
+  | {
+      kind: "property";
+      ruleName: IR1SsaRuleName;
+      receiver: IR1Expr;
+      property: string;
+    }
+  | {
+      kind: "map-value";
+      ruleName: IR1SsaRuleName;
+      keyPredName: string;
+      ownerType: string;
+      keyType: string;
+      receiver: IR1Expr;
+      key: IR1Expr;
+    }
+  | {
+      kind: "map-membership";
+      ruleName: IR1SsaRuleName;
+      keyPredName: string;
+      ownerType: string;
+      keyType: string;
+      receiver: IR1Expr;
+      key: IR1Expr;
+    }
+  | {
+      kind: "set-membership";
+      ruleName: IR1SsaRuleName;
+      ownerType: string;
+      elemType: string;
+      receiver: IR1Expr;
+    };
+
+export interface IR1SsaVersion {
+  readonly kind: "ssa-version";
+  readonly id: symbol;
+  readonly location: IR1SsaLocation;
+  readonly origin: "initial" | "write" | "join" | "loop-summary";
+  readonly [IR1_SSA_VERSION]: true;
+}
+
+export type IR1SsaMapValue = {
+  kind: "map-value";
+  op: "set";
+  value: IR1Expr;
+};
+
+export type IR1SsaMapMembershipValue = {
+  kind: "map-membership";
+  op: "set" | "delete";
+};
+
+export type IR1SsaSetMembershipValue =
+  | {
+      kind: "set-membership";
+      op: "add" | "delete";
+      elem: IR1Expr;
+    }
+  | {
+      kind: "set-membership";
+      op: "clear";
+      elem: null;
+    };
+
+export type IR1SsaPropertyValue = {
+  kind: "property";
+  value: IR1Expr;
+};
+
+export type IR1SsaValue =
+  | IR1SsaPropertyValue
+  | IR1SsaMapValue
+  | IR1SsaMapMembershipValue
+  | IR1SsaSetMembershipValue;
+
+export interface IR1SsaRead {
+  readonly kind: "ssa-read";
+  readonly location: IR1SsaLocation;
+  readonly version: IR1SsaVersion;
+  readonly dominated: boolean;
+}
+
+export interface IR1SsaWrite {
+  readonly kind: "ssa-write";
+  readonly location: IR1SsaLocation;
+  readonly version: IR1SsaVersion;
+  readonly value: IR1SsaValue;
+}
+
+export interface IR1SsaJoin {
+  readonly kind: "ssa-join";
+  readonly location: IR1SsaLocation;
+  readonly thenVersion: IR1SsaVersion;
+  readonly elseVersion: IR1SsaVersion;
+  readonly joinVersion: IR1SsaVersion;
+}
+
+export interface IR1SsaLoopSummary {
+  readonly kind: "ssa-loop-summary";
+  readonly shape: "foreach-shape-a" | "foreach-shape-b";
+  readonly location: IR1SsaLocation;
+  readonly summaryVersion: IR1SsaVersion;
+}
+
+export interface IR1SsaProgram {
+  readonly reads: IR1SsaRead[];
+  readonly writes: IR1SsaWrite[];
+  readonly joins: IR1SsaJoin[];
+  readonly loopSummaries: IR1SsaLoopSummary[];
+  readonly declaredRules: IR1SsaRuleName[];
+  readonly modifiedRules: IR1SsaRuleName[];
+  readonly framedRules: IR1SsaRuleName[];
+}
+
+export const ir1SsaPropertyLocation = (
+  ruleName: IR1SsaRuleName,
+  receiver: IR1Expr,
+  property: string,
+): IR1SsaLocation => ({
+  kind: "property",
+  ruleName,
+  receiver,
+  property,
+});
+
+export const ir1SsaMapValueLocation = (
+  ruleName: IR1SsaRuleName,
+  keyPredName: string,
+  ownerType: string,
+  keyType: string,
+  receiver: IR1Expr,
+  key: IR1Expr,
+): IR1SsaLocation => ({
+  kind: "map-value",
+  ruleName,
+  keyPredName,
+  ownerType,
+  keyType,
+  receiver,
+  key,
+});
+
+export const ir1SsaMapMembershipLocation = (
+  ruleName: IR1SsaRuleName,
+  keyPredName: string,
+  ownerType: string,
+  keyType: string,
+  receiver: IR1Expr,
+  key: IR1Expr,
+): IR1SsaLocation => ({
+  kind: "map-membership",
+  ruleName,
+  keyPredName,
+  ownerType,
+  keyType,
+  receiver,
+  key,
+});
+
+export const ir1SsaSetMembershipLocation = (
+  ruleName: IR1SsaRuleName,
+  ownerType: string,
+  elemType: string,
+  receiver: IR1Expr,
+): IR1SsaLocation => ({
+  kind: "set-membership",
+  ruleName,
+  ownerType,
+  elemType,
+  receiver,
+});
+
+export const ir1SsaRuleOfLocation = (
+  location: IR1SsaLocation,
+): IR1SsaRuleName =>
+  location.kind === "map-membership" ? location.keyPredName : location.ruleName;
+
+const ir1SsaVersion = (
+  location: IR1SsaLocation,
+  origin: IR1SsaVersion["origin"],
+): IR1SsaVersion => ({
+  kind: "ssa-version",
+  id: Symbol(`ir1-ssa:${origin}`),
+  location,
+  origin,
+  [IR1_SSA_VERSION]: true,
+});
+
+export const ir1SsaInitialVersion = (location: IR1SsaLocation): IR1SsaVersion =>
+  ir1SsaVersion(location, "initial");
+
+export const ir1SsaWrite = (
+  location: IR1SsaLocation,
+  value: IR1SsaValue,
+): IR1SsaWrite => ({
+  kind: "ssa-write",
+  location,
+  version: ir1SsaVersion(location, "write"),
+  value,
+});
+
+export const ir1SsaRead = (
+  location: IR1SsaLocation,
+  version: IR1SsaVersion,
+  dominated = true,
+): IR1SsaRead => {
+  ir1SsaAssertLocationCompatible(location, version.location);
+  return { kind: "ssa-read", location, version, dominated };
+};
+
+export const ir1SsaJoin = (
+  location: IR1SsaLocation,
+  thenVersion: IR1SsaVersion,
+  elseVersion: IR1SsaVersion,
+): IR1SsaJoin | IR1SsaVersion => {
+  ir1SsaAssertLocationCompatible(location, thenVersion.location);
+  ir1SsaAssertLocationCompatible(location, elseVersion.location);
+  if (thenVersion === elseVersion) {
+    return thenVersion;
+  }
+  return {
+    kind: "ssa-join",
+    location,
+    thenVersion,
+    elseVersion,
+    joinVersion: ir1SsaVersion(location, "join"),
+  };
+};
+
+export const ir1SsaLoopSummary = (
+  shape: IR1SsaLoopSummary["shape"],
+  location: IR1SsaLocation,
+): IR1SsaLoopSummary => ({
+  kind: "ssa-loop-summary",
+  shape,
+  location,
+  summaryVersion: ir1SsaVersion(location, "loop-summary"),
+});
+
+export const ir1SsaPropertyValue = (value: IR1Expr): IR1SsaPropertyValue => ({
+  kind: "property",
+  value,
+});
+
+export const ir1SsaMapSetValue = (value: IR1Expr): IR1SsaMapValue => ({
+  kind: "map-value",
+  op: "set",
+  value,
+});
+
+export const ir1SsaMapMembershipValue = (
+  op: "set" | "delete",
+): IR1SsaMapMembershipValue => ({
+  kind: "map-membership",
+  op,
+});
+
+export const ir1SsaSetMembershipValue = (
+  op: "add" | "delete",
+  elem: IR1Expr,
+): IR1SsaSetMembershipValue => ({
+  kind: "set-membership",
+  op,
+  elem,
+});
+
+export const ir1SsaSetClearValue = (): IR1SsaSetMembershipValue => ({
+  kind: "set-membership",
+  op: "clear",
+  elem: null,
+});
+
+const ir1SsaAssertLocationCompatible = (
+  expected: IR1SsaLocation,
+  actual: IR1SsaLocation,
+): void => {
+  if (!ir1SsaLocationEquals(expected, actual)) {
+    throw new Error("IR1 SSA version location mismatch");
+  }
+};
+
+const ir1SsaLocationEquals = (a: IR1SsaLocation, b: IR1SsaLocation): boolean =>
+  JSON.stringify(a) === JSON.stringify(b);
+
+// --------------------------------------------------------------------------
 // Expression constructors
 // --------------------------------------------------------------------------
 
