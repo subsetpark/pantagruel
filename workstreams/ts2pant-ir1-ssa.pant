@@ -1,0 +1,140 @@
+module IR1_SSA.
+
+> First-pass architecture spec for the ts2pant IR1 SSA workstream.
+>
+> The spec describes the target shape, not a migration sequence:
+> supported TypeScript constructs build directly into IR1 SSA, reads resolve
+> through SSA versions, joins are explicit, loop-like constructs use summaries,
+> and lowering derives frame conditions from modified rules.
+
+IR1Program.
+Construct.
+Location.
+Version.
+Read.
+Write.
+Join.
+LoopSummary.
+Rule.
+PropResult.
+Diagnostic.
+
+supported-constructs p: IR1Program => [Construct].
+lowered-constructs p: IR1Program => [Construct].
+diagnostics p: IR1Program => [Diagnostic].
+diagnostic-construct d: Diagnostic => Construct.
+
+writes p: IR1Program => [Write].
+reads p: IR1Program => [Read].
+joins p: IR1Program => [Join].
+loop-summaries p: IR1Program => [LoopSummary].
+
+write-location w: Write => Location.
+write-version w: Write => Version.
+
+read-location r: Read => Location.
+read-version r: Read => Version.
+read-dominated? p: IR1Program, r: Read => Bool.
+
+join-location j: Join => Location.
+then-version j: Join => Version.
+else-version j: Join => Version.
+join-version j: Join => Version.
+
+summary-location s: LoopSummary => Location.
+summary-version s: LoopSummary => Version.
+
+initial-version l: Location => Version.
+version-location v: Version => Location.
+rule-of-location l: Location => Rule.
+
+declared-rules p: IR1Program => [Rule].
+modified-rules p: IR1Program => [Rule].
+framed-rules p: IR1Program => [Rule].
+emitted-props p: IR1Program => [PropResult].
+
+---
+
+> Every supported construct in an IR1 program is lowered by the SSA path.
+> Unsupported syntax may still produce diagnostics, but diagnostics do not
+> explain constructs claimed to be supported.
+all p: IR1Program, c in supported-constructs p |
+  c in lowered-constructs p.
+
+all p: IR1Program, d in diagnostics p |
+  ~(diagnostic-construct d in supported-constructs p).
+
+> Write versions, summary versions, and initial versions belong to their
+> locations. This is the core location-SSA invariant.
+all p: IR1Program, w in writes p |
+  version-location (write-version w) = write-location w.
+
+all p: IR1Program, s in loop-summaries p |
+  version-location (summary-version s) = summary-location s.
+
+all l: Location |
+  version-location (initial-version l) = l.
+
+> Every write in one IR1 program produces a fresh version. This intentionally
+> treats versions as globally unique inside a program; if the implementation
+> chooses location-scoped numeric ids, the builder should still expose a
+> globally unique version identity at the IR boundary.
+all p: IR1Program, w1 in writes p, w2 in writes p |
+  write-version w1 = write-version w2 -> w1 = w2.
+
+> A read resolves to the initial version for its location, a write version for
+> its location, or a loop-summary version for its location.
+all p: IR1Program, r in reads p |
+  read-dominated? p r and
+  version-location (read-version r) = read-location r and
+  (
+    read-version r = initial-version (read-location r) or
+    (some w in writes p |
+      write-version w = read-version r and
+      write-location w = read-location r) or
+    (some s in loop-summaries p |
+      summary-version s = read-version r and
+      summary-location s = read-location r)
+  ).
+
+> Branch joins are phi-like IR nodes over one state location. Both incoming
+> versions and the result version must belong to that location.
+all p: IR1Program, j in joins p |
+  version-location (then-version j) = join-location j and
+  version-location (else-version j) = join-location j and
+  version-location (join-version j) = join-location j.
+
+> Degenerate joins are structurally invalid in final IR1 SSA. If both incoming
+> branches already have the same version, or if the join result would be one of
+> the inputs, the builder should reuse the existing version instead.
+all p: IR1Program, j in joins p |
+  then-version j != else-version j and
+  join-version j != then-version j and
+  join-version j != else-version j.
+
+> Final lowering derives frame rules from declared rules and modified rules.
+> A rule is either modified by the SSA program or framed, but never both.
+all p: IR1Program, rule in modified-rules p |
+  rule in declared-rules p and
+  ~(rule in framed-rules p).
+
+all p: IR1Program, rule in framed-rules p |
+  rule in declared-rules p and
+  ~(rule in modified-rules p).
+
+all p: IR1Program, rule in declared-rules p |
+  rule in modified-rules p or rule in framed-rules p.
+
+> Every written or summarized location marks its underlying Pantagruel rule as
+> modified. This prevents identity frame equations from being emitted for rules
+> that the SSA program updates through either ordinary writes or loop summaries.
+all p: IR1Program, w in writes p |
+  rule-of-location (write-location w) in modified-rules p.
+
+all p: IR1Program, s in loop-summaries p |
+  rule-of-location (summary-location s) in modified-rules p.
+
+> A program that lowers any construct emits at least one proposition. This is a
+> weak sanity condition; later specs can refine PropResult shapes directly.
+all p: IR1Program |
+  #(lowered-constructs p) > 0 -> #(emitted-props p) > 0.
