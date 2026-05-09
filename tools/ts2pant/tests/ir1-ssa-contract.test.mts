@@ -125,6 +125,10 @@ describe("ir1-ssa-contract", () => {
     assert.equal(valueWrite.version.location, valueLocation);
     assert.equal(membershipWrite.version.location, membershipLocation);
     assert.deepEqual(program.modifiedRules, ["Score_value", "Score_hasKey"]);
+    assert.throws(
+      () => ir1SsaWrite(valueLocation, ir1SsaMapMembershipValue("delete")),
+      /write value\/location kind mismatch: location=map-value, value=map-membership/u,
+    );
   });
 
   it("models Set clear inside membership SSA value", () => {

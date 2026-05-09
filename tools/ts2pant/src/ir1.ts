@@ -588,12 +588,15 @@ export const ir1SsaInitialVersion = (location: IR1SsaLocation): IR1SsaVersion =>
 export const ir1SsaWrite = (
   location: IR1SsaLocation,
   value: IR1SsaValue,
-): IR1SsaWrite => ({
-  kind: "ssa-write",
-  location,
-  version: ir1SsaVersion(location, "write"),
-  value,
-});
+): IR1SsaWrite => {
+  ir1SsaAssertWriteValueCompatible(location, value);
+  return {
+    kind: "ssa-write",
+    location,
+    version: ir1SsaVersion(location, "write"),
+    value,
+  };
+};
 
 export const ir1SsaRead = (
   location: IR1SsaLocation,
@@ -677,6 +680,17 @@ const ir1SsaAssertLocationCompatible = (
 
 const ir1SsaLocationEquals = (a: IR1SsaLocation, b: IR1SsaLocation): boolean =>
   JSON.stringify(a) === JSON.stringify(b);
+
+const ir1SsaAssertWriteValueCompatible = (
+  location: IR1SsaLocation,
+  value: IR1SsaValue,
+): void => {
+  if (location.kind !== value.kind) {
+    throw new Error(
+      `IR1 SSA write value/location kind mismatch: location=${location.kind}, value=${value.kind}`,
+    );
+  }
+};
 
 // --------------------------------------------------------------------------
 // Expression constructors
