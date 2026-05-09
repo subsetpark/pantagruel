@@ -55,14 +55,26 @@ folds all live as special paths in the lowering code.
 ### Milestone 1: ir1-ssa-contract
 
 **Definition of Done**:
-`tools/ts2pant/src/ir1.ts` defines IR1 as the SSA-bearing semantic IR for both
-value and effect positions. The type vocabulary includes explicit state
-locations, SSA versions, reads, writes, branch joins, Map effects, Set effects,
-frameable modified-rule tracking, and loop-summary forms for existing foreach
-Shape A / Shape B and μ-search outputs. The document comments in `ir1.ts`,
-`tools/ts2pant/CLAUDE.md`, and this workstream agree on the new IR1 contract.
-No production builder is required to emit the new forms yet, but the new types
-compile and unit tests can construct representative IR1 SSA values.
+`tools/ts2pant/src/ir1.ts` now defines IR1 as the SSA-bearing semantic IR for
+both value and effect positions. The exported contract surface includes:
+
+- SSA data types: `IR1SsaLocation`, `IR1SsaVersion`, `IR1SsaRead`,
+  `IR1SsaWrite`, `IR1SsaJoin`, `IR1SsaLoopSummary`, `IR1SsaProgram`,
+  `IR1SsaValue`.
+- Location helpers: `ir1SsaPropertyLocation`, `ir1SsaMapValueLocation`,
+  `ir1SsaMapMembershipLocation`, `ir1SsaSetMembershipLocation`,
+  `ir1SsaRuleOfLocation`.
+- Version helper: `ir1SsaInitialVersion`.
+- SSA constructors: `ir1SsaRead`, `ir1SsaWrite`, `ir1SsaJoin`,
+  `ir1SsaLoopSummary`.
+- SSA value helpers: `ir1SsaPropertyValue`, `ir1SsaMapSetValue`,
+  `ir1SsaMapMembershipValue`, `ir1SsaSetMembershipValue`,
+  `ir1SsaSetClearValue`.
+
+The document comments in `ir1.ts`, `tools/ts2pant/CLAUDE.md`, and this
+workstream all describe the same contract. Milestone 1 stays additive and
+type-level: the existing production builder and lowerer paths remain in place,
+and no translation behavior changes yet.
 
 **Why this is a safe pause point**:
 The milestone is type-level and documentation-level. Existing translation
@@ -73,10 +85,16 @@ contract is reviewed in isolation.
 Implementation of the new builder and lowerer against a stable vocabulary.
 
 **Open Questions**:
-None. Version identity is settled: IR1 SSA uses opaque version symbols, with
-`version-location` / equivalent metadata linking each version back to its
-location. Degenerate joins are structurally invalid in final IR1 SSA; shared
-builder helpers should simplify them away before constructing join nodes.
+Beyond Milestone 1, the remaining questions are implementation sequencing, not
+contract shape:
+
+- When the builder begins emitting SSA writes for scalar bodies, should it
+  reuse the existing L1 statement forms or introduce a dedicated SSA builder
+  helper layer first?
+- Which later milestone will retire `SymbolicState` as the production
+  mutating-body model?
+- How should map/set and loop-summary lowering reuse the M1 vocabulary without
+  widening the public contract again?
 
 ---
 

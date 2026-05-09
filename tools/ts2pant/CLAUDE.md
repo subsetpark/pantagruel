@@ -764,8 +764,11 @@ like assignment. To overcome this challenge we translate FRSC to a functional
 language IRSC through a Static Single Assignment (SSA) transformation"* — is
 exactly our situation.
 
-The IR landed across the imperative-IR workstream's six milestones
-(M1–M6); see § "Imperative IR Workstream" below. Deviations from IRSC
+The IR1 SSA workstream supersedes `SymbolicState` as the long-term
+semantic model for mutating bodies. Milestone 1 is additive and
+type-level: it reviews the IR contract in `src/ir1.ts` without changing
+production builder or lowerer behavior yet. The existing translation
+path still runs until later milestones replace it. Deviations from IRSC
 live in § "Divergence from IRSC".
 
 ### Files
@@ -776,7 +779,9 @@ live in § "Divergence from IRSC".
 - `src/ir-emit.ts` — L2 IRExpr → `OpaqueExpr` lowering.
 - `src/ir1.ts`, `src/ir1-build.ts`, `src/ir1-build-body.ts`,
   `src/ir1-lower.ts`, `src/ir1-lower-body.ts` — Layer 1 (TS-shape
-  imperative IR; see § "Imperative IR Workstream" below).
+  imperative IR today; the SSA-bearing contract now lives in
+  `src/ir1.ts`, while production lowering continues through
+  `SymbolicState` until later milestones).
 
 ### Two paths, one Layer 1
 
@@ -789,7 +794,9 @@ shared Layer 1 IR:
   fallback for this path.
 - **Effect / statement-position** — TS → L1 statement →
   `PropResult[]` directly via a single fold (`lowerL1Body`) over
-  `SymbolicState` (in `translate-body.ts`). The mutating output is a
+  `SymbolicState` (in `translate-body.ts`) for now. The IR1 SSA
+  contract is already present in `src/ir1.ts`, but Milestone 1 keeps
+  production lowering on the existing path. The mutating output is a
   list of equations + frame conditions; no L2 statement vocabulary.
 
 L2 is *expression-only* — there is no L2 `IRStmt`. The asymmetry is
@@ -817,6 +824,29 @@ canonical L1 constructors. Constructions that fall outside the
 canonical vocabulary reject as `unsupported`; there is no opaque
 catch-all that would smuggle uncanonicalized TS shapes through the
 pipeline.
+
+### `IR1` SSA contract surface
+
+Milestone 1 adds the SSA-bearing type vocabulary and constructor helpers
+in `src/ir1.ts`. The key exported names are:
+
+- Types: `IR1SsaLocation`, `IR1SsaVersion`, `IR1SsaRead`,
+  `IR1SsaWrite`, `IR1SsaJoin`, `IR1SsaLoopSummary`, `IR1SsaProgram`,
+  `IR1SsaValue`.
+- Location helpers: `ir1SsaPropertyLocation`,
+  `ir1SsaMapValueLocation`, `ir1SsaMapMembershipLocation`,
+  `ir1SsaSetMembershipLocation`, `ir1SsaRuleOfLocation`.
+- Version helpers: `ir1SsaInitialVersion`.
+- Read / write / join helpers: `ir1SsaRead`, `ir1SsaWrite`,
+  `ir1SsaJoin`, `ir1SsaLoopSummary`.
+- Value helpers: `ir1SsaPropertyValue`, `ir1SsaMapSetValue`,
+  `ir1SsaMapMembershipValue`, `ir1SsaSetMembershipValue`,
+  `ir1SsaSetClearValue`.
+
+These helpers establish the contract surface and enforce structural
+choices like location-compatible versions and degenerate-join
+simplification. They do not change the production builder/lowerer path
+yet.
 
 ### Mutating-body output (no L2 IR)
 
@@ -926,11 +956,17 @@ small canonical vocabulary. **Layer 2** is `IRExpr` in `src/ir.ts` —
 Pant-shaped *expression* IR (post-M3, statement-position lowering bypasses
 L2; see § "Two paths, one Layer 1" above). **Layer 3** is `OpaqueExpr`.
 
+The IR1 SSA workstream does not replace this Layer 1 shape all at once.
+Milestone 1 adds the SSA contract alongside the existing Layer 1
+constructors so later milestones can migrate the builder and lowerer
+without changing the surface review now.
+
 Lowering for value-position: TS AST → Layer 1 (`ir1-build.ts`) → Layer 2
 (`ir1-lower.ts`) → OpaqueExpr (`ir-emit.ts`).
 
 Lowering for effect-position: TS AST → Layer 1 (`ir1-build-body.ts`) →
-`PropResult[]` (`ir1-lower-body.ts`, threading `SymbolicState`).
+`PropResult[]` (`ir1-lower-body.ts`, threading `SymbolicState` for the
+current production path).
 
 The full milestone breakdown lives in
 `workstreams/ts2pant-imperative-ir.md`. Decisions on canonical forms,
