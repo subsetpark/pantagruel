@@ -730,8 +730,10 @@ const ir1SsaLocationEquals = (
         ir1SsaExprEquals(a.receiver, b.receiver)
       );
     }
-    default:
-      return false;
+    default: {
+      const _exhaustive: never = a;
+      return _exhaustive;
+    }
   }
 };
 
@@ -832,8 +834,10 @@ const ir1SsaExprEquals = (a: IR1Expr, b: IR1Expr): boolean => {
         ir1SsaExprEquals(a.elem, b.elem)
       );
     }
-    default:
-      return false;
+    default: {
+      const _exhaustive: never = a;
+      return _exhaustive;
+    }
   }
 };
 
