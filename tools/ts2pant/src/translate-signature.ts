@@ -207,7 +207,7 @@ function hasMutation(node: ts.Node, checker: ts.TypeChecker): boolean {
  * type to bare `V`, mirroring the body's emission. The function then
  * inherits the Map's partial-function semantics: the absent-key case
  * is uninterpreted at the SMT layer (consistent with how Pant treats
- * partial-rule lookups generally — see CLAUDE.md § "Partial Rules
+ * partial-rule lookups generally — see AGENTS.md § "Partial Rules
  * (Map<K, V>)" for the encoding rationale). A future change could
  * propagate the membership predicate into the function's own
  * declaration guard for tighter soundness; for now, type alignment is
@@ -1141,7 +1141,7 @@ export function translateExpr(
       // Strict-only gate: signature-side nullish operands must come
       // from `===` / `!==` (or `typeof x === 'undefined'`). Loose
       // equality (`==` / `!=`) is unsupported on the signature path
-      // (`containsUnsupportedOperator` rejects it; CLAUDE.md § M4
+      // (`containsUnsupportedOperator` rejects it; AGENTS.md § M4
       // documents the asymmetry against the body path). Walk up
       // through transparent wrappers — parens, `as`, non-null `!`,
       // `satisfies` — and `typeof` to find the binary expression

@@ -78,7 +78,7 @@ both value and effect positions. The exported contract surface includes:
   `ir1SsaMapMembershipValue`, `ir1SsaSetMembershipValue`,
   `ir1SsaSetClearValue`.
 
-The document comments in `ir1.ts`, `tools/ts2pant/CLAUDE.md`, and this
+The document comments in `ir1.ts`, `tools/ts2pant/AGENTS.md`, and this
 workstream all describe the same contract. Milestone 1 stays additive and
 type-level: the existing production builder and lowerer paths remain in place,
 and no translation behavior changes yet.
@@ -246,7 +246,7 @@ small pure utilities:
   `installSetWrite`, `readMapThroughWrites`, and `readSetThroughWrites` are
   deleted, renamed, or moved behind IR1 SSA lowering if still genuinely useful.
 - `translate-body.ts` no longer contains parallel mutation paths.
-- Comments in `tools/ts2pant/CLAUDE.md` and the old imperative-IR workstream
+- Comments in `tools/ts2pant/AGENTS.md` and the old imperative-IR workstream
   are updated to mark `SymbolicState` as superseded.
 - Full ts2pant unit and integration suites pass.
 

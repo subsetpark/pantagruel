@@ -6,7 +6,7 @@
  * future milestones can target a concrete failure rather than a
  * hidden OpaqueExpr embedding.
  *
- * See `ir.ts` and CLAUDE.md §IR for the form table.
+ * See `ir.ts` and AGENTS.md §IR for the form table.
  */
 
 import ts from "typescript";

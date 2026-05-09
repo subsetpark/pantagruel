@@ -22,7 +22,7 @@
  * construction.
  *
  * **Migration status**: see `workstreams/ts2pant-imperative-ir.md` and
- * `tools/ts2pant/CLAUDE.md` §"Imperative IR Workstream".
+ * `tools/ts2pant/AGENTS.md` §"Imperative IR Workstream".
  */
 
 import type { IRBinop, IRLiteral, IRUnop } from "./ir.js";

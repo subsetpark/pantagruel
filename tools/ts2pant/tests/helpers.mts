@@ -105,7 +105,7 @@ export { emitDocument };
  * If the emitted text contains a `> UNSUPPORTED:` line, the document
  * is a deliberate-rejection signal and the wasm typecheck is skipped —
  * the snapshot still captures the rejection message verbatim. See
- * `tools/ts2pant/CLAUDE.md` § "Test layout".
+ * `tools/ts2pant/AGENTS.md` § "Test layout".
  *
  * If the document carries a `bundleModules` map, it is forwarded as
  * the in-memory dep registry so the consumer's `import` declarations

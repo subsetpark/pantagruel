@@ -2,7 +2,7 @@
 //   `arr.reduce((a, x) => a OP f(x), init)`
 //   → `init OP (combOP over each x: T | f(x))`
 // `init` is elided when it equals the combiner's identity (0 for +, 1 for *,
-// true for &&, false for ||). See CLAUDE.md § Structured Iteration.
+// true for &&, false for ||). See AGENTS.md § Structured Iteration.
 
 interface Item {
   value: number;

@@ -2,7 +2,7 @@
 // decomposes into one equation per field of the return type. Return types
 // may be named interfaces (accessor rules are already declared) or
 // anonymous object shapes (a domain is synthesized per shape). See
-// CLAUDE.md § Record Returns.
+// AGENTS.md § Record Returns.
 
 export interface Point {
   x: number;

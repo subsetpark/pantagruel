@@ -26,7 +26,7 @@
  * default-not-last, non-Bool short-circuit, non-literal switch case,
  * object-literal arms in a value-position cond), the function rejects
  * with an `unsupported` reason. Lifting any of these is a follow-up
- * within the workstream — see CLAUDE.md §"Imperative IR".
+ * within the workstream — see AGENTS.md §"Imperative IR".
  *
  * **Hard rule per equivalence class** (workstream decision 4): every
  * conditional-value-shaped TS construct goes through this builder. There
@@ -993,7 +993,7 @@ function tryBuildL1TemplateExpression(
 // for property access on the six list-shaped TS types: `Array`,
 // `ReadonlyArray`, `Set`, `ReadonlySet`, `Map`, `ReadonlyMap`. This is
 // a deliberate non-Member dispatch driven by the target language; see
-// `tools/ts2pant/CLAUDE.md` § "Divergence from IRSC".
+// `tools/ts2pant/AGENTS.md` § "Divergence from IRSC".
 
 /**
  * True when `t` is a TS type whose cardinality is exposed via `length`
@@ -1639,7 +1639,7 @@ function allocateLiftBinder(ctx: L1BuildContext, hint: string): string {
 // where `body[e := $n]` is the substitution of every syntactic
 // occurrence of the operand subterm `e` with the fresh binder `$n`.
 // The functor lift itself is structurally `Maybe` `fmap` — see
-// CLAUDE.md § "Functor-Lift Recognizer" (Wadler POPL 1992, Hutton &
+// AGENTS.md § "Functor-Lift Recognizer" (Wadler POPL 1992, Hutton &
 // Meijer JFP 1998). The substitution rule below is the term-rewriting
 // half of that transformation.
 //

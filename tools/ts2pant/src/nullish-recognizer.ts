@@ -21,7 +21,7 @@
  * (cardinality applies to lists, not scalars). Non-nullable
  * occurrences fall through and the surrounding TS-AST handler
  * either rejects or emits the legacy shape. See
- * `tools/ts2pant/CLAUDE.md` § "Option-Type Elimination" for the
+ * `tools/ts2pant/AGENTS.md` § "Option-Type Elimination" for the
  * encoding rationale.
  *
  * **`undefined` shadowing.** `undefined` is not a reserved word in

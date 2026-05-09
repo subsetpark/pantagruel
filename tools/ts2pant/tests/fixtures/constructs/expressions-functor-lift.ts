@@ -4,7 +4,7 @@
 // ternary forms lower to `each $n in x | f $n`. Pant has no list
 // literal, so the alternative cardinality-dispatch lowering for these
 // shapes is untranslatable — without the recognizer these functions
-// reject. See `tools/ts2pant/CLAUDE.md` "Option-Type Elimination" and
+// reject. See `tools/ts2pant/AGENTS.md` "Option-Type Elimination" and
 // `workstreams/ts2pant-imperative-ir.md` § "M4".
 
 interface User {

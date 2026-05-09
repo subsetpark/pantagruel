@@ -70,7 +70,7 @@ const BUILTINS: Map<BuiltinKey, BuiltinSpec> = new Map([
  * the user's source file rather than a TS default-library file, so
  * the lookup fails and the call falls through to ts2pant's regular
  * EUF lowering. This is the same robustness posture the nullish
- * recognizer takes (see `nullish-recognizer.ts` and CLAUDE.md M4
+ * recognizer takes (see `nullish-recognizer.ts` and AGENTS.md M4
  * "structural-not-textual" rule).
  *
  * Lib detection uses `Program.isSourceFileDefaultLibrary`, the public
