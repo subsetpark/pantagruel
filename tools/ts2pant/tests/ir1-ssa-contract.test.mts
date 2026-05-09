@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  type IR1Expr,
   type IR1SsaProgram,
   ir1LitBool,
   ir1LitNat,
@@ -76,6 +77,22 @@ describe("ir1-ssa-contract", () => {
         ir1SsaJoin(location, left.version, ir1SsaInitialVersion(otherLocation)),
       /location mismatch/u,
     );
+
+    const receiverWithoutDefaultPrimed: IR1Expr = {
+      kind: "var",
+      name: "account",
+    };
+    const equivalentLocation = ir1SsaPropertyLocation(
+      "Account_balance",
+      receiverWithoutDefaultPrimed,
+      "balance",
+    );
+    const compatibleJoin = ir1SsaJoin(
+      equivalentLocation,
+      left.version,
+      right.version,
+    );
+    assert.equal(compatibleJoin.kind, "ssa-join");
   });
 
   it("models Map state as coordinated value and membership locations", () => {

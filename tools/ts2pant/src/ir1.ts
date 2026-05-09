@@ -678,8 +678,185 @@ const ir1SsaAssertLocationCompatible = (
   }
 };
 
-const ir1SsaLocationEquals = (a: IR1SsaLocation, b: IR1SsaLocation): boolean =>
-  JSON.stringify(a) === JSON.stringify(b);
+const ir1SsaLocationEquals = (
+  a: IR1SsaLocation,
+  b: IR1SsaLocation,
+): boolean => {
+  switch (a.kind) {
+    case "property": {
+      if (b.kind !== "property") {
+        return false;
+      }
+      return (
+        a.ruleName === b.ruleName &&
+        a.property === b.property &&
+        ir1SsaExprEquals(a.receiver, b.receiver)
+      );
+    }
+    case "map-value": {
+      if (b.kind !== "map-value") {
+        return false;
+      }
+      return (
+        a.ruleName === b.ruleName &&
+        a.keyPredName === b.keyPredName &&
+        a.ownerType === b.ownerType &&
+        a.keyType === b.keyType &&
+        ir1SsaExprEquals(a.receiver, b.receiver) &&
+        ir1SsaExprEquals(a.key, b.key)
+      );
+    }
+    case "map-membership": {
+      if (b.kind !== "map-membership") {
+        return false;
+      }
+      return (
+        a.ruleName === b.ruleName &&
+        a.keyPredName === b.keyPredName &&
+        a.ownerType === b.ownerType &&
+        a.keyType === b.keyType &&
+        ir1SsaExprEquals(a.receiver, b.receiver) &&
+        ir1SsaExprEquals(a.key, b.key)
+      );
+    }
+    case "set-membership": {
+      if (b.kind !== "set-membership") {
+        return false;
+      }
+      return (
+        a.ruleName === b.ruleName &&
+        a.ownerType === b.ownerType &&
+        a.elemType === b.elemType &&
+        ir1SsaExprEquals(a.receiver, b.receiver)
+      );
+    }
+    default:
+      return false;
+  }
+};
+
+const ir1SsaExprEquals = (a: IR1Expr, b: IR1Expr): boolean => {
+  switch (a.kind) {
+    case "var": {
+      if (b.kind !== "var") {
+        return false;
+      }
+      return a.name === b.name && (a.primed ?? false) === (b.primed ?? false);
+    }
+    case "lit": {
+      if (b.kind !== "lit") {
+        return false;
+      }
+      return a.value.kind === b.value.kind && a.value.value === b.value.value;
+    }
+    case "binop": {
+      if (b.kind !== "binop") {
+        return false;
+      }
+      return (
+        a.op === b.op &&
+        ir1SsaExprEquals(a.lhs, b.lhs) &&
+        ir1SsaExprEquals(a.rhs, b.rhs)
+      );
+    }
+    case "unop": {
+      if (b.kind !== "unop") {
+        return false;
+      }
+      return a.op === b.op && ir1SsaExprEquals(a.arg, b.arg);
+    }
+    case "app": {
+      if (b.kind !== "app") {
+        return false;
+      }
+      return (
+        ir1SsaExprEquals(a.callee, b.callee) &&
+        ir1SsaArrayEquals(a.args, b.args, ir1SsaExprEquals)
+      );
+    }
+    case "member": {
+      if (b.kind !== "member") {
+        return false;
+      }
+      return a.name === b.name && ir1SsaExprEquals(a.receiver, b.receiver);
+    }
+    case "cond": {
+      if (b.kind !== "cond") {
+        return false;
+      }
+      return (
+        ir1SsaArrayEquals(a.arms, b.arms, ir1SsaCondArmEquals) &&
+        ir1SsaExprEquals(a.otherwise, b.otherwise)
+      );
+    }
+    case "is-nullish": {
+      if (b.kind !== "is-nullish") {
+        return false;
+      }
+      return ir1SsaExprEquals(a.operand, b.operand);
+    }
+    case "each": {
+      if (b.kind !== "each") {
+        return false;
+      }
+      return (
+        a.binder === b.binder &&
+        ir1SsaExprEquals(a.src, b.src) &&
+        ir1SsaArrayEquals(a.guards, b.guards, ir1SsaExprEquals) &&
+        ir1SsaExprEquals(a.proj, b.proj)
+      );
+    }
+    case "map-read": {
+      if (b.kind !== "map-read") {
+        return false;
+      }
+      return (
+        a.op === b.op &&
+        a.ruleName === b.ruleName &&
+        a.keyPredName === b.keyPredName &&
+        a.ownerType === b.ownerType &&
+        a.keyType === b.keyType &&
+        ir1SsaExprEquals(a.receiver, b.receiver) &&
+        ir1SsaExprEquals(a.key, b.key)
+      );
+    }
+    case "set-read": {
+      if (b.kind !== "set-read") {
+        return false;
+      }
+      return (
+        a.ruleName === b.ruleName &&
+        a.ownerType === b.ownerType &&
+        a.elemType === b.elemType &&
+        ir1SsaExprEquals(a.receiver, b.receiver) &&
+        ir1SsaExprEquals(a.elem, b.elem)
+      );
+    }
+    default:
+      return false;
+  }
+};
+
+const ir1SsaCondArmEquals = (
+  a: readonly [IR1Expr, IR1Expr],
+  b: readonly [IR1Expr, IR1Expr],
+): boolean => ir1SsaExprEquals(a[0], b[0]) && ir1SsaExprEquals(a[1], b[1]);
+
+const ir1SsaArrayEquals = <T>(
+  a: ReadonlyArray<T>,
+  b: ReadonlyArray<T>,
+  eq: (a: T, b: T) => boolean,
+): boolean => {
+  if (a.length !== b.length) {
+    return false;
+  }
+  for (let i = 0; i < a.length; i += 1) {
+    if (!eq(a[i] as T, b[i] as T)) {
+      return false;
+    }
+  }
+  return true;
+};
 
 const ir1SsaAssertWriteValueCompatible = (
   location: IR1SsaLocation,
