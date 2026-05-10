@@ -394,8 +394,8 @@ export function setMembershipLocationForReadOrWrite(
   key: string;
   location: Extract<IR1SsaLocation, { kind: "set-membership" }>;
 } {
-  const receiverKey = collectionSsaCanonicalExprKey(input.receiver, state);
   const receiver = collectionSsaCanonicalExpr(input.receiver, state);
+  const receiverKey = collectionSsaExprKey(receiver);
   const key = setMembershipLocationKey(
     input.ruleName,
     input.ownerType,
@@ -744,13 +744,6 @@ function setMembershipLocationKey(
     elemType,
     receiverKey,
   ]);
-}
-
-function collectionSsaCanonicalExprKey(
-  expr: IR1Expr,
-  state: Pick<CollectionSsaLocationState, "canonicalize">,
-): string {
-  return collectionSsaExprKey(collectionSsaCanonicalExpr(expr, state));
 }
 
 function collectionSsaCanonicalExpr(
