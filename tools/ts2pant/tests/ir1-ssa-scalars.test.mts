@@ -19,6 +19,7 @@ import {
   isScalarSsaL1Body,
   lowerScalarSsaToProps,
 } from "../src/ir1-ssa-scalars.js";
+import type { OpaqueExpr } from "../src/pant-ast.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import { buildDocumentFromSourceFile, emitAndCheck } from "./helpers.mjs";
 
@@ -97,6 +98,39 @@ describe("ir1-ssa-scalars", () => {
     assert.equal(read.dominated, true);
     assert.equal(secondWrite!.version.location, firstWrite!.location);
     assert.equal(scalarEquationRhs(stmt), "1 + 2");
+  });
+
+  it("resolves initial property values through normalized receivers", () => {
+    const ast = getAst();
+    const balance = ir1Member(ir1Var("x"), "Account_balance");
+    const lowerOpaque = (expr: OpaqueExpr): OpaqueExpr => {
+      switch (ast.strExpr(expr)) {
+        case "x":
+          return ast.var("a");
+        case "Account_balance x":
+          return ast.app(ast.var("Account_balance"), [ast.var("a")]);
+        default:
+          return expr;
+      }
+    };
+    const result = lowerScalarSsaToProps(
+      ir1Assign(balance, ir1Binop("add", balance, ir1LitNat(2))),
+      {
+        lowerOpaque,
+        initialPropertyValues: new Map([
+          ["Account_balance::a", ast.litNat(10)],
+        ]),
+      },
+    );
+
+    assert.deepEqual(result.diagnostics, []);
+    assert.equal(result.propositions.length, 1);
+    const [eq] = result.propositions;
+    assert.equal(eq?.kind, "equation");
+    if (eq?.kind !== "equation") {
+      assert.fail("expected a scalar SSA equation");
+    }
+    assert.equal(ast.strExpr(eq.rhs), "10 + 2");
   });
 
   it("joins a single-arm if against the initial property version", () => {
@@ -228,7 +262,7 @@ describe("ir1-ssa-scalars", () => {
 
     assert.match(
       output,
-      /account--balance' a = \(cond g => 10 \+ 5, true => 10\)\./,
+      /account--balance' a = \(cond g => 10 \+ 5, true => 10\)\./u,
     );
   });
 
@@ -240,11 +274,11 @@ describe("ir1-ssa-scalars", () => {
 
     assert.match(
       output,
-      /account--balance' a = \(cond g => 0, true => account--balance a\)\./,
+      /account--balance' a = \(cond g => 0, true => account--balance a\)\./u,
     );
     assert.match(
       output,
-      /account--owner' a = \(cond g => account--owner a, true => new-owner\)\./,
+      /account--owner' a = \(cond g => account--owner a, true => new-owner\)\./u,
     );
   });
 

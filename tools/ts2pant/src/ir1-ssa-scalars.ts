@@ -595,9 +595,12 @@ function resolveScalarSsaVersionExpr(
   if (version.origin !== "initial" || version.location.kind !== "property") {
     throw new Error("scalar SSA lowering expected a property initial version");
   }
+  const receiver = state.lowerOpaque(
+    lowerScalarOpaqueExpr(version.location.receiver, state.canonicalize),
+  );
   const initialKey = scalarOpaquePropertyKey(
     version.location.ruleName,
-    lowerScalarOpaqueExpr(version.location.receiver, state.canonicalize),
+    receiver,
   );
   const initialValue = state.initialPropertyValues.get(initialKey);
   if (initialValue !== undefined) {
@@ -607,9 +610,7 @@ function resolveScalarSsaVersionExpr(
   }
   const ast = getAst();
   const identity = state.lowerOpaque(
-    ast.app(ast.var(version.location.ruleName), [
-      lowerScalarOpaqueExpr(version.location.receiver, state.canonicalize),
-    ]),
+    ast.app(ast.var(version.location.ruleName), [receiver]),
   );
   state.versionExprs.set(version, identity);
   return identity;
