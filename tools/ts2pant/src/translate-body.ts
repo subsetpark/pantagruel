@@ -29,26 +29,6 @@ import {
   type ScalarSsaEarlyExitPropertyInput,
 } from "./ir1-ssa-scalars.js";
 import {
-  isScalarSsaL1Body,
-  lowerScalarSsaEarlyExitMerge,
-  type ScalarSsaEarlyExitPropertyInput,
-} from "./ir1-ssa-scalars.js";
-import {
-  isScalarSsaL1Body,
-  lowerScalarSsaEarlyExitMerge,
-  type ScalarSsaEarlyExitPropertyInput,
-} from "./ir1-ssa-scalars.js";
-import {
-  isScalarSsaL1Body,
-  lowerScalarSsaEarlyExitMerge,
-  type ScalarSsaEarlyExitPropertyInput,
-} from "./ir1-ssa-scalars.js";
-import {
-  isScalarSsaL1Body,
-  lowerScalarSsaEarlyExitMerge,
-  type ScalarSsaEarlyExitPropertyInput,
-} from "./ir1-ssa-scalars.js";
-import {
   getOperandDeclaredType,
   type NullishTranslate,
   recognizeNullishForm,
