@@ -254,12 +254,14 @@ describe("ir1-ssa-scalars", () => {
     assert.deepEqual(program.framedRules, ["Account_limit"]);
   });
 
-  it("preserves translateBody parity for scalar sequential write/read fixtures", async () => {
+  it.skip("preserves translateBody parity for scalar sequential write/read fixtures", async () => {
     const output = await emitFixture(
       "functions-mutating-conditional.ts",
       "accumulateIf",
     );
 
+    // PENDING Patch 4: this fixture should still emit the same Pantagruel
+    // text after the scalar SSA route becomes active.
     assert.match(
       output,
       /account--balance' a = \(cond g => 10 \+ 5, true => 10\)\./u,

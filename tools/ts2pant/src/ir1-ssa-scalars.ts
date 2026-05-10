@@ -1,4 +1,3 @@
-import { lowerExpr } from "./ir-emit.js";
 import {
   type IR1Expr,
   type IR1SsaJoin,
