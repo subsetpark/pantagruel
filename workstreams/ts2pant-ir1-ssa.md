@@ -15,16 +15,18 @@ extend later.
 
 IR1 is currently a TypeScript-shaped canonical layer. Value-position code
 lowers through `IR1Expr -> IRExpr -> OpaqueExpr`; mutating bodies lower
-directly through `lowerL1Body` in `tools/ts2pant/src/ir1-lower-body.ts`, which
-threads `SymbolicState` from `tools/ts2pant/src/translate-body.ts` and emits
+directly through `lowerL1Body` in `tools/ts2pant/src/ir1-lower-body.ts`, with
+scalar property mutation routed through `tools/ts2pant/src/ir1-ssa-scalars.ts`
+and the remaining Map/Set and foreach paths still threading
+`SymbolicState` from `tools/ts2pant/src/translate-body.ts` to emit
 `PropResult[]`.
 
-That design is SSA-like but not SSA. IR1 still contains `assign`, `while`,
-`for`, `foreach`, `cond-stmt`, `map-effect`, and `set-effect` statement forms.
-Branch joins are encoded by mutating cloned `SymbolicState` values and merging
-write keys with `cond` expressions. Map/Set semantics, `Set.clear()`, staged
-read-through-write behavior, Shape A foreach equations, and Shape B accumulator
-folds all live as special paths in the lowering code.
+That design is now partially SSA. Scalar property mutation, read-after-write,
+branch joins, and supported early-exit continuation merges are represented by
+IR1 SSA. IR1 still contains `assign`, `while`, `for`, `foreach`, `cond-stmt`,
+`map-effect`, and `set-effect` statement forms. Map/Set semantics, `Set.clear()`,
+and foreach / loop-summary behavior still live as special paths in the
+lowering code until the later milestones take them over.
 
 ## Key Challenges
 
@@ -112,17 +114,18 @@ simple branch mutation:
 - early-exit guard patterns that are currently supported
 
 The old `SymbolicState` path remains available only as a fallback for Map/Set
-and foreach constructs not migrated in this milestone. Property mutation
-fixtures are validated through snapshots and wasm typechecking.
+mutation until M3 and foreach / loop-summary constructs until M4. Property
+mutation fixtures are validated through snapshots and wasm typechecking.
 
 **Why this is a safe pause point**:
-The codebase supports all previous scalar property-mutation behavior. Unsupported
-or not-yet-migrated state classes still use the old path, so no existing
-supported syntax is lost.
+The codebase supports all previous scalar property-mutation behavior. The
+scalar route is now SSA-backed in production, while the later state classes
+still use the old path, so no existing supported syntax is lost.
 
 **Unlocks**:
-Removal of scalar property logic from `SymbolicState` and a concrete proof that
-IR1 can own SSA generation directly.
+Removal of scalar property logic from `SymbolicState` in a later milestone and
+a concrete proof that IR1 can own SSA generation directly for the scalar
+subset.
 
 ---
 

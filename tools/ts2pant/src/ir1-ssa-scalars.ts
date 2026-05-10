@@ -130,16 +130,15 @@ export function lowerScalarSsaToProps(
 ): ScalarSsaLowerResult {
   if (!isScalarSsaL1Body(stmt)) {
     const reason = "statement is not supported by scalar SSA lowering";
-    const declared = [...new Set(options.declaredRules ?? [])];
     return {
       program: {
         reads: [],
         writes: [],
         joins: [],
         loopSummaries: [],
-        declaredRules: declared,
+        declaredRules: [...new Set(options.declaredRules ?? [])],
         modifiedRules: [],
-        framedRules: declared,
+        framedRules: [...new Set(options.declaredRules ?? [])],
       },
       finalProperties: [],
       propositions: [],
@@ -567,10 +566,6 @@ function lowerScalarSsaCondToVersions(
     const elseVersion =
       elseState.currentVersions.get(key) ??
       initialVersionFor(key, location, elseState);
-    // Defensive fast-path: today `touched` implies at least one branch wrote,
-    // but future version reuse or caching could still leave both branches with
-    // the same version object. In that case we keep the shared version as the
-    // final one and still propagate the location/key through the outer state.
     if (thenVersion === elseVersion) {
       state.currentVersions.set(key, thenVersion);
       state.locations.set(key, location);
@@ -742,8 +737,6 @@ function cloneScalarSsaLowerStateForBranch(
     writeIndex: state.writeIndex,
     joinIndex: state.joinIndex,
     currentVersions: new Map(state.currentVersions),
-    // Shared, not cloned: initial versions represent pre-function state,
-    // the same regardless of which branch is taken.
     initialVersions: state.initialVersions,
     locations: new Map(state.locations),
     versionExprs: new Map(state.versionExprs),
@@ -785,129 +778,6 @@ function nextScalarSsaJoin(
     throw new Error("scalar SSA join sequence did not match the source order");
   }
   return join;
-}
-
-function lowerScalarOpaqueExpr(
-  expr: IR1Expr,
-  canonicalize: (e: IR1Expr) => IR1Expr,
-): OpaqueExpr {
-  return lowerExpr(lowerL1Expr(canonicalize(expr)));
-}
-
-function sameScalarSsaLocation(
-  left: IR1SsaLocation,
-  right: IR1SsaLocation,
-  canonicalize: (e: IR1Expr) => IR1Expr,
-): boolean {
-  if (left.kind !== right.kind) {
-    return false;
-  }
-  switch (left.kind) {
-    case "property":
-      return (
-        right.kind === "property" &&
-        left.ruleName === right.ruleName &&
-        left.property === right.property &&
-        scalarSsaCanonicalReceiverKey(left.receiver, { canonicalize }) ===
-          scalarSsaCanonicalReceiverKey(right.receiver, { canonicalize })
-      );
-    case "map-value":
-      return (
-        right.kind === "map-value" &&
-        left.ruleName === right.ruleName &&
-        left.ownerType === right.ownerType &&
-        left.keyType === right.keyType &&
-        scalarSsaCanonicalReceiverKey(left.receiver, { canonicalize }) ===
-          scalarSsaCanonicalReceiverKey(right.receiver, { canonicalize }) &&
-        scalarSsaCanonicalReceiverKey(left.key, { canonicalize }) ===
-          scalarSsaCanonicalReceiverKey(right.key, { canonicalize })
-      );
-    case "map-membership":
-      return (
-        right.kind === "map-membership" &&
-        left.ruleName === right.ruleName &&
-        left.keyPredName === right.keyPredName &&
-        left.ownerType === right.ownerType &&
-        left.keyType === right.keyType &&
-        scalarSsaCanonicalReceiverKey(left.receiver, { canonicalize }) ===
-          scalarSsaCanonicalReceiverKey(right.receiver, { canonicalize }) &&
-        scalarSsaCanonicalReceiverKey(left.key, { canonicalize }) ===
-          scalarSsaCanonicalReceiverKey(right.key, { canonicalize })
-      );
-    case "set-membership":
-      return (
-        right.kind === "set-membership" &&
-        left.ruleName === right.ruleName &&
-        left.ownerType === right.ownerType &&
-        left.elemType === right.elemType &&
-        scalarSsaCanonicalReceiverKey(left.receiver, { canonicalize }) ===
-          scalarSsaCanonicalReceiverKey(right.receiver, { canonicalize })
-      );
-    default: {
-      const _exhaustive: never = left;
-      void _exhaustive;
-      return false;
-    }
-  }
-}
-
-function sameScalarSsaVersion(
-  left: IR1SsaVersion,
-  right: IR1SsaVersion,
-  canonicalize: (e: IR1Expr) => IR1Expr,
-): boolean {
-  return (
-    left.origin === right.origin &&
-    sameScalarSsaLocation(left.location, right.location, canonicalize)
-  );
-}
-
-function lowerScalarBinop(op: Extract<IR1Expr, { kind: "binop" }>["op"]) {
-  const ast = getAst();
-  switch (op) {
-    case "add":
-      return ast.opAdd();
-    case "sub":
-      return ast.opSub();
-    case "mul":
-      return ast.opMul();
-    case "div":
-      return ast.opDiv();
-    case "eq":
-      return ast.opEq();
-    case "neq":
-      return ast.opNeq();
-    case "lt":
-      return ast.opLt();
-    case "le":
-      return ast.opLe();
-    case "gt":
-      return ast.opGt();
-    case "ge":
-      return ast.opGe();
-    case "and":
-      return ast.opAnd();
-    case "or":
-      return ast.opOr();
-    case "in":
-      return ast.opIn();
-    default:
-      throw new Error(`unsupported scalar SSA binop: ${String(op)}`);
-  }
-}
-
-function lowerScalarUnop(op: Extract<IR1Expr, { kind: "unop" }>["op"]) {
-  const ast = getAst();
-  switch (op) {
-    case "not":
-      return ast.opNot();
-    case "neg":
-      return ast.opNeg();
-    case "card":
-      return ast.opCard();
-    default:
-      throw new Error(`unsupported scalar SSA unop: ${String(op)}`);
-  }
 }
 
 function lowerScalarCondStmt(
@@ -1098,6 +968,129 @@ function scalarSsaExprKey(expr: IR1Expr): string {
       void _exhaustive;
       return "";
     }
+  }
+}
+
+function lowerScalarOpaqueExpr(
+  expr: IR1Expr,
+  canonicalize: (e: IR1Expr) => IR1Expr,
+): OpaqueExpr {
+  return lowerExpr(lowerL1Expr(canonicalize(expr)));
+}
+
+function sameScalarSsaLocation(
+  left: IR1SsaLocation,
+  right: IR1SsaLocation,
+  canonicalize: (e: IR1Expr) => IR1Expr,
+): boolean {
+  if (left.kind !== right.kind) {
+    return false;
+  }
+  switch (left.kind) {
+    case "property":
+      return (
+        right.kind === "property" &&
+        left.ruleName === right.ruleName &&
+        left.property === right.property &&
+        scalarSsaCanonicalReceiverKey(left.receiver, { canonicalize }) ===
+          scalarSsaCanonicalReceiverKey(right.receiver, { canonicalize })
+      );
+    case "map-value":
+      return (
+        right.kind === "map-value" &&
+        left.ruleName === right.ruleName &&
+        left.ownerType === right.ownerType &&
+        left.keyType === right.keyType &&
+        scalarSsaCanonicalReceiverKey(left.receiver, { canonicalize }) ===
+          scalarSsaCanonicalReceiverKey(right.receiver, { canonicalize }) &&
+        scalarSsaCanonicalReceiverKey(left.key, { canonicalize }) ===
+          scalarSsaCanonicalReceiverKey(right.key, { canonicalize })
+      );
+    case "map-membership":
+      return (
+        right.kind === "map-membership" &&
+        left.ruleName === right.ruleName &&
+        left.keyPredName === right.keyPredName &&
+        left.ownerType === right.ownerType &&
+        left.keyType === right.keyType &&
+        scalarSsaCanonicalReceiverKey(left.receiver, { canonicalize }) ===
+          scalarSsaCanonicalReceiverKey(right.receiver, { canonicalize }) &&
+        scalarSsaCanonicalReceiverKey(left.key, { canonicalize }) ===
+          scalarSsaCanonicalReceiverKey(right.key, { canonicalize })
+      );
+    case "set-membership":
+      return (
+        right.kind === "set-membership" &&
+        left.ruleName === right.ruleName &&
+        left.ownerType === right.ownerType &&
+        left.elemType === right.elemType &&
+        scalarSsaCanonicalReceiverKey(left.receiver, { canonicalize }) ===
+          scalarSsaCanonicalReceiverKey(right.receiver, { canonicalize })
+      );
+    default: {
+      const _exhaustive: never = left;
+      void _exhaustive;
+      return false;
+    }
+  }
+}
+
+function sameScalarSsaVersion(
+  left: IR1SsaVersion,
+  right: IR1SsaVersion,
+  canonicalize: (e: IR1Expr) => IR1Expr,
+): boolean {
+  return (
+    left.origin === right.origin &&
+    sameScalarSsaLocation(left.location, right.location, canonicalize)
+  );
+}
+
+function lowerScalarBinop(op: Extract<IR1Expr, { kind: "binop" }>["op"]) {
+  const ast = getAst();
+  switch (op) {
+    case "add":
+      return ast.opAdd();
+    case "sub":
+      return ast.opSub();
+    case "mul":
+      return ast.opMul();
+    case "div":
+      return ast.opDiv();
+    case "eq":
+      return ast.opEq();
+    case "neq":
+      return ast.opNeq();
+    case "lt":
+      return ast.opLt();
+    case "le":
+      return ast.opLe();
+    case "gt":
+      return ast.opGt();
+    case "ge":
+      return ast.opGe();
+    case "and":
+      return ast.opAnd();
+    case "or":
+      return ast.opOr();
+    case "in":
+      return ast.opIn();
+    default:
+      throw new Error(`unsupported scalar SSA binop: ${String(op)}`);
+  }
+}
+
+function lowerScalarUnop(op: Extract<IR1Expr, { kind: "unop" }>["op"]) {
+  const ast = getAst();
+  switch (op) {
+    case "not":
+      return ast.opNot();
+    case "neg":
+      return ast.opNeg();
+    case "card":
+      return ast.opCard();
+    default:
+      throw new Error(`unsupported scalar SSA unop: ${String(op)}`);
   }
 }
 

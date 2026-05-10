@@ -778,9 +778,11 @@ live in § "Divergence from IRSC".
   post-M6).
 - `src/ir-emit.ts` — L2 IRExpr → `OpaqueExpr` lowering.
 - `src/ir1.ts`, `src/ir1-build.ts`, `src/ir1-build-body.ts`,
-  `src/ir1-lower.ts`, `src/ir1-lower-body.ts` — Layer 1 (TS-shape
-  imperative IR today; the SSA-bearing contract now lives in
-  `src/ir1.ts`, while production lowering continues through
+  `src/ir1-lower.ts`, `src/ir1-lower-body.ts`,
+  `src/ir1-ssa-scalars.ts` — Layer 1 (TS-shape imperative IR today;
+  the SSA-bearing contract now lives in `src/ir1.ts`, while the
+  scalar SSA builder/lowerer helper owns scalar property mutation and
+  the production fallback still routes Map/Set and foreach through
   `SymbolicState` until later milestones).
 
 ### Two paths, one Layer 1
@@ -795,9 +797,13 @@ shared Layer 1 IR:
 - **Effect / statement-position** — TS → L1 statement →
   `PropResult[]` directly via a single fold (`lowerL1Body`) over
   `SymbolicState` (in `translate-body.ts`) for now. The IR1 SSA
-  contract is already present in `src/ir1.ts`, but Milestone 1 keeps
-  production lowering on the existing path. The mutating output is a
-  list of equations + frame conditions; no L2 statement vocabulary.
+  contract is already present in `src/ir1.ts`, and Milestone 2 routes
+  scalar property mutation, read-after-write, branch joins, and
+  scalar early-exit merges through `src/ir1-ssa-scalars.ts`. Map/Set
+  mutation stays on the existing `SymbolicState` path until M3, and
+  foreach / loop-summary lowering stays there until M4. The mutating
+  output is a list of equations + frame conditions; no L2 statement
+  vocabulary.
 
 L2 is *expression-only* — there is no L2 `IRStmt`. The asymmetry is
 intentional; see `workstreams/ts2pant-imperative-ir.md`
@@ -861,10 +867,13 @@ The mutating path emits `PropResult[]` directly:
   (identity equation `prop' obj = prop obj`).
 
 The fold is `lowerL1Body` in `ir1-lower-body.ts`, threading
-`SymbolicState` from `translate-body.ts`. The state's primitives
-(`putWrite`, `mergeOverrides`, `installMapWrite`, `installSetWrite`)
-are reused from the legacy mutating path — frame-condition synthesis
-is identical pre/post-M3.
+`SymbolicState` from `translate-body.ts`. Scalar property writes now
+flow through the dedicated SSA helper in `src/ir1-ssa-scalars.ts`,
+which records property reads, writes, joins, and final versions before
+lowering them back to the same primed equations the old path emitted.
+The legacy `SymbolicState` primitives (`putWrite`, `mergeOverrides`,
+`installMapWrite`, `installSetWrite`) remain in use for Map/Set and
+foreach until the later milestones that own those migrations.
 
 ### Divergence from IRSC
 
@@ -917,6 +926,23 @@ L2 form.)
   / `set-effect` statement, not an L2 expression. The mutation only
   appears as a side effect in `SymbolicState` / `PropResult[]`.
 
+### Scalar SSA routing boundary
+
+Milestone 2 introduces a dedicated scalar SSA helper module,
+`src/ir1-ssa-scalars.ts`, instead of broadening `ir1.ts` or moving the
+entire mutating-body path at once. The helper is responsible for the
+scalar-only cases that now execute in production:
+
+- direct and compound property assignment
+- property read-after-write
+- supported `if` branch joins over scalar properties
+- scalar early-exit continuation merges
+
+Those cases lower through IR1 SSA and then emit the same primed
+equations as before. Map/Set mutation still uses `SymbolicState` until
+M3, and foreach / loop-summary lowering still uses `SymbolicState`
+until M4.
+
 ### Final architecture (post-M6)
 
 The imperative-IR workstream replaced the original 11-stage migration
@@ -931,9 +957,11 @@ with no migration flags, no escape hatches, and no parallel pipelines:
   supports.
 - **Effect / statement-position** (mutating-body assignments, Map/Set
   effect calls, branched mutation, iteration with statement bodies)
-  — TS AST → L1 statement (`ir1-build-body.ts`) → `PropResult[]`
-  via a single fold over `SymbolicState` (`ir1-lower-body.ts`). No
-  L2 statement vocabulary; the fold reuses the existing mutation
+  — TS AST → L1 statement (`ir1-build-body.ts`) → `PropResult[]`.
+  Scalar property mutation now routes through the dedicated SSA helper
+  (`src/ir1-ssa-scalars.ts`), while Map/Set and foreach still lower
+  through `SymbolicState` (`ir1-lower-body.ts`) until M3/M4. No L2
+  statement vocabulary; the fallback fold reuses the existing mutation
   primitives (`putWrite`, `mergeOverrides`, `installMapWrite`,
   `installSetWrite`).
 
@@ -966,7 +994,8 @@ Lowering for value-position: TS AST → Layer 1 (`ir1-build.ts`) → Layer 2
 
 Lowering for effect-position: TS AST → Layer 1 (`ir1-build-body.ts`) →
 `PropResult[]` (`ir1-lower-body.ts`, threading `SymbolicState` for the
-current production path).
+Map/Set and foreach fallback paths, with scalar property mutation
+handled by `src/ir1-ssa-scalars.ts`).
 
 The full milestone breakdown lives in
 `workstreams/ts2pant-imperative-ir.md`. Decisions on canonical forms,
