@@ -282,43 +282,39 @@ describe("ir1-ssa-scalars", () => {
     );
   });
 
-  it.skip("preserves translateBody parity for chained early-return fixtures", async () => {
+  it("preserves translateBody parity for chained early-return fixtures", async () => {
     const output = await emitFixture(
       "functions-mutating-early-exit.ts",
       "chainedEarlyReturns",
     );
-    void output;
 
-    // PENDING Patch 5: continuation merges after chained early exits should
-    // remain byte-stable at the Pantagruel boundary.
-    assert.fail("PENDING: chained early-return parity is not implemented yet");
+    assert.match(
+      output,
+      /account--balance' a = \(cond g => account--balance a, true => \(cond h => account--balance a, true => 1\)\)\./u,
+    );
   });
 
-  it.skip("preserves translateBody parity for else-branch early-return fixtures", async () => {
+  it("preserves translateBody parity for else-branch early-return fixtures", async () => {
     const output = await emitFixture(
       "functions-mutating-early-exit.ts",
       "elseBranchReturn",
     );
-    void output;
 
-    // PENDING Patch 5: else-branch early returns should keep the current
-    // continuation-matching output after SSA routing lands.
-    assert.fail(
-      "PENDING: else-branch early-return parity is not implemented yet",
+    assert.match(
+      output,
+      /account--balance' a = \(cond g => v, true => account--balance a\)\./u,
     );
   });
 
-  it.skip("preserves translateBody parity for write-then-early-return fixtures", async () => {
+  it("preserves translateBody parity for write-then-early-return fixtures", async () => {
     const output = await emitFixture(
       "functions-mutating-early-exit.ts",
       "writeThenEarlyReturn",
     );
-    void output;
 
-    // PENDING Patch 5: the post-return write path should stay output-stable
-    // once early-exit merges are routed through scalar SSA.
-    assert.fail(
-      "PENDING: write-then-early-return parity is not implemented yet",
+    assert.match(
+      output,
+      /account--balance' a = \(cond g => 10, true => 10 \+ 5\)\./u,
     );
   });
 });
