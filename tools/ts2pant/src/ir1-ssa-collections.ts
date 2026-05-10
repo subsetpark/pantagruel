@@ -106,6 +106,21 @@ interface CollectionSsaInitialVersionState {
   initialVersions: Map<string, IR1SsaVersion>;
 }
 
+interface SetMembershipOverride {
+  elemExpr: OpaqueExpr;
+  value: OpaqueExpr;
+}
+
+interface LoweredSetMembershipVersion {
+  kind: "set-membership";
+  ruleName: string;
+  ownerType: string;
+  elemType: string;
+  receiver: OpaqueExpr;
+  memberOverrides: SetMembershipOverride[];
+  cleared: OpaqueExpr;
+}
+
 export function makeCollectionSsaState(
   options: CollectionSsaBuildOptions = {},
 ): CollectionSsaState {
@@ -164,11 +179,18 @@ export function lowerCollectionSsaToResult(
   lowerState.initialVersions = new Map(state.initialVersions);
   lowerCollectionSsaStmtToVersions(stmt, lowerState);
   const finalEntries = collectionSsaLowerFinalEntries(lowerState);
+  const propositions = lowerMapFinalEntriesToProps(finalEntries);
+  for (const entry of finalEntries) {
+    if (entry.kind === "set-membership") {
+      const value = resolveSetMembershipVersion(entry.version, lowerState);
+      emitSetMembershipSsaEquation(value, propositions);
+    }
+  }
 
   return {
     program,
     finalEntries,
-    propositions: lowerMapFinalEntriesToProps(finalEntries),
+    propositions,
     modifiedRules: [...program.modifiedRules],
     diagnostics: [],
   };
@@ -530,6 +552,279 @@ function lowerCollectionSetEffect(
   recordCollectionWrite(location.key, write, state);
 }
 
+function lowerSetMembershipElementWrite(
+  value: Extract<
+    IR1SsaWrite["value"],
+    { kind: "set-membership"; op: "add" | "delete" }
+  >,
+  previous: LoweredSetMembershipVersion,
+  state: CollectionSsaLowerState,
+): LoweredSetMembershipVersion {
+  const ast = getAst();
+  const elemExpr = lowerCollectionSsaExprToOpaque(value.elem, state);
+  const elemText = ast.strExpr(elemExpr);
+  const memberOverrides = previous.memberOverrides.filter(
+    (o) => ast.strExpr(o.elemExpr) !== elemText,
+  );
+  memberOverrides.push({
+    elemExpr,
+    value: ast.litBool(value.op === "add"),
+  });
+  return {
+    ...previous,
+    memberOverrides,
+  };
+}
+
+function joinSetMembershipVersions(
+  guardExpr: OpaqueExpr,
+  thenValue: LoweredSetMembershipVersion,
+  elseValue: LoweredSetMembershipVersion,
+): LoweredSetMembershipVersion {
+  const ast = getAst();
+  const combine = (a: OpaqueExpr, b: OpaqueExpr): OpaqueExpr =>
+    ast.cond([
+      [guardExpr, a],
+      [ast.litBool(true), b],
+    ]);
+  const baseIn = (o: SetMembershipOverride): OpaqueExpr =>
+    ast.binop(
+      ast.opIn(),
+      o.elemExpr,
+      ast.app(ast.var(thenValue.ruleName), [thenValue.receiver]),
+    );
+  const thenCleared = thenValue.cleared;
+  const elseCleared = elseValue.cleared;
+  const mergedOverrides = mergeSetMembershipOverrides(
+    thenValue.memberOverrides,
+    elseValue.memberOverrides,
+    (o) => clearedSetFallback(elseCleared, baseIn(o)),
+    combine,
+    (o) => clearedSetFallback(thenCleared, baseIn(o)),
+  );
+  return {
+    ...thenValue,
+    memberOverrides: mergedOverrides,
+    cleared: mergeSetClearedCond(guardExpr, thenCleared, elseCleared),
+  };
+}
+
+function mergeSetMembershipOverrides(
+  aSide: readonly SetMembershipOverride[],
+  bSide: readonly SetMembershipOverride[],
+  fallbackForMissingB: (o: SetMembershipOverride) => OpaqueExpr,
+  combine: (vA: OpaqueExpr, vB: OpaqueExpr) => OpaqueExpr,
+  fallbackForMissingA: (o: SetMembershipOverride) => OpaqueExpr,
+): SetMembershipOverride[] {
+  const ast = getAst();
+  const canonical = (t: OpaqueExpr) => ast.strExpr(t);
+  const bByKey = new Map<string, OpaqueExpr>();
+  for (const o of bSide) {
+    bByKey.set(canonical(o.elemExpr), o.value);
+  }
+  const seen = new Set<string>();
+  const out: SetMembershipOverride[] = [];
+  for (const o of aSide) {
+    const key = canonical(o.elemExpr);
+    seen.add(key);
+    out.push({
+      ...o,
+      value: combine(o.value, bByKey.get(key) ?? fallbackForMissingB(o)),
+    });
+  }
+  for (const o of bSide) {
+    const key = canonical(o.elemExpr);
+    if (seen.has(key)) {
+      continue;
+    }
+    out.push({
+      ...o,
+      value: combine(fallbackForMissingA(o), o.value),
+    });
+  }
+  return out;
+}
+
+function readSetMembershipVersion(
+  version: IR1SsaVersion,
+  queryExpr: OpaqueExpr,
+  state: CollectionSsaLowerState,
+): OpaqueExpr {
+  const value = resolveSetMembershipVersion(version, state);
+  return projectSetMembershipValue(value, queryExpr);
+}
+
+function projectSetMembershipValue(
+  value: LoweredSetMembershipVersion,
+  queryExpr: OpaqueExpr,
+): OpaqueExpr {
+  const ast = getAst();
+  const preState = ast.binop(
+    ast.opIn(),
+    queryExpr,
+    ast.app(ast.var(value.ruleName), [value.receiver]),
+  );
+  const tail = clearedSetFallback(value.cleared, preState);
+  if (value.memberOverrides.length === 0) {
+    return tail;
+  }
+  return ast.cond([
+    ...value.memberOverrides.map(
+      (o) =>
+        [ast.binop(ast.opEq(), queryExpr, o.elemExpr), o.value] as [
+          OpaqueExpr,
+          OpaqueExpr,
+        ],
+    ),
+    [ast.litBool(true), tail],
+  ]);
+}
+
+function resolveSetMembershipVersion(
+  version: IR1SsaVersion,
+  state: CollectionSsaLowerState,
+): LoweredSetMembershipVersion {
+  const existing = state.versionValues.get(version);
+  if (existing !== undefined) {
+    return existing;
+  }
+  if (
+    version.origin !== "initial" ||
+    version.location.kind !== "set-membership"
+  ) {
+    throw new Error(
+      "collection SSA lowering expected a Set membership version",
+    );
+  }
+  const initial: LoweredSetMembershipVersion = {
+    kind: "set-membership",
+    ruleName: version.location.ruleName,
+    ownerType: version.location.ownerType,
+    elemType: version.location.elemType,
+    receiver: state.lowerOpaque(
+      lowerExpr(lowerL1Expr(state.canonicalize(version.location.receiver))),
+    ),
+    memberOverrides: [],
+    cleared: getAst().litBool(false),
+  };
+  state.versionValues.set(version, initial);
+  return initial;
+}
+
+function emitSetMembershipSsaEquation(
+  value: LoweredSetMembershipVersion,
+  propositions: PropResult[],
+): void {
+  if (
+    value.memberOverrides.length === 0 &&
+    isStaticBoolLit(value.cleared, false)
+  ) {
+    return;
+  }
+  const ast = getAst();
+  const y = freshSetMembershipBinder(value, "y");
+  const yVar = ast.var(y);
+  const memberIn = (rule: OpaqueExpr) => ast.binop(ast.opIn(), yVar, rule);
+  const primedApp = ast.app(ast.primed(value.ruleName), [value.receiver]);
+  const preApp = ast.app(ast.var(value.ruleName), [value.receiver]);
+  const tail = clearedSetFallback(value.cleared, memberIn(preApp));
+  const condArms = value.memberOverrides.map(
+    (o) =>
+      [ast.binop(ast.opEq(), yVar, o.elemExpr), o.value] as [
+        OpaqueExpr,
+        OpaqueExpr,
+      ],
+  );
+  const rhs =
+    condArms.length === 0
+      ? tail
+      : ast.cond([...condArms, [ast.litBool(true), tail]]);
+  propositions.push({
+    kind: "assertion",
+    quantifiers: [ast.param(y, ast.tName(value.elemType))] as OpaqueParam[],
+    body: ast.binop(ast.opIff(), memberIn(primedApp), rhs),
+  });
+}
+
+function freshSetMembershipBinder(
+  value: LoweredSetMembershipVersion,
+  hint: string,
+): string {
+  const ast = getAst();
+  const usedText = [
+    ast.strExpr(value.receiver),
+    ast.strExpr(value.cleared),
+    ...value.memberOverrides.flatMap((o) => [
+      ast.strExpr(o.elemExpr),
+      ast.strExpr(o.value),
+    ]),
+  ].join("\n");
+  let candidate = hint;
+  let i = 1;
+  while (nameAppearsInOpaqueText(candidate, usedText)) {
+    candidate = `${hint}${i}`;
+    i += 1;
+  }
+  return candidate;
+}
+
+function nameAppearsInOpaqueText(name: string, text: string): boolean {
+  return new RegExp(
+    `(^|[^A-Za-z0-9_])${escapeRegExp(name)}([^A-Za-z0-9_]|$)`,
+    "u",
+  ).test(text);
+}
+
+function escapeRegExp(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function clearedSetFallback(cleared: OpaqueExpr, pre: OpaqueExpr): OpaqueExpr {
+  const ast = getAst();
+  if (isStaticBoolLit(cleared, false)) {
+    return pre;
+  }
+  if (isStaticBoolLit(cleared, true)) {
+    return ast.litBool(false);
+  }
+  return ast.cond([
+    [cleared, ast.litBool(false)],
+    [ast.litBool(true), pre],
+  ]);
+}
+
+function mergeSetClearedCond(
+  guardExpr: OpaqueExpr,
+  thenCleared: OpaqueExpr,
+  elseCleared: OpaqueExpr,
+): OpaqueExpr {
+  const ast = getAst();
+  if (ast.strExpr(thenCleared) === ast.strExpr(elseCleared)) {
+    return thenCleared;
+  }
+  if (
+    isStaticBoolLit(thenCleared, true) &&
+    isStaticBoolLit(elseCleared, false)
+  ) {
+    return guardExpr;
+  }
+  if (
+    isStaticBoolLit(thenCleared, false) &&
+    isStaticBoolLit(elseCleared, true)
+  ) {
+    return ast.unop(ast.opNot(), guardExpr);
+  }
+  return ast.cond([
+    [guardExpr, thenCleared],
+    [ast.litBool(true), elseCleared],
+  ]);
+}
+
+function isStaticBoolLit(expr: OpaqueExpr, value: boolean): boolean {
+  const ast = getAst();
+  return ast.strExpr(expr) === ast.strExpr(ast.litBool(value));
+}
+
 function recordCollectionWrite(
   key: string,
   write: IR1SsaWrite,
@@ -550,6 +845,7 @@ interface CollectionSsaLowerState {
   initialVersions: Map<string, IR1SsaVersion>;
   locations: Map<string, CollectionSsaLocation>;
   versionExprs: Map<IR1SsaVersion, OpaqueExpr>;
+  versionValues: Map<IR1SsaVersion, LoweredSetMembershipVersion>;
   writtenKeys: Set<string>;
   canonicalize: (e: IR1Expr) => IR1Expr;
   lowerOpaque: (e: OpaqueExpr) => OpaqueExpr;
@@ -569,6 +865,7 @@ function makeCollectionSsaLowerState(
     initialVersions: new Map(),
     locations: new Map(),
     versionExprs: new Map(),
+    versionValues: new Map(),
     writtenKeys: new Set(),
     canonicalize: canonicalize ?? ((e) => e),
     lowerOpaque: lowerOpaque ?? ((e) => e),
@@ -667,9 +964,6 @@ function lowerCollectionSsaSetEffectToVersions(
   state: CollectionSsaLowerState,
 ): void {
   lowerCollectionSsaExprToOpaque(stmt.objExpr, state);
-  if (stmt.op !== "clear") {
-    lowerCollectionSsaExprToOpaque(stmt.elemExpr, state);
-  }
   const write = nextCollectionSsaWrite(state, "set-membership");
   const { key, location } = setMembershipLocationForReadOrWrite(
     {
@@ -683,9 +977,24 @@ function lowerCollectionSsaSetEffectToVersions(
   if (!sameCollectionSsaLocation(write.location, location, state)) {
     throw new Error("collection SSA set-membership write order mismatch");
   }
+  if (write.value.kind !== "set-membership") {
+    throw new Error("collection SSA Set effect lowered to a non-Set write");
+  }
+  const previous =
+    state.currentVersions.get(key) ??
+    initialCollectionVersionFor(key, location, state);
+  const previousValue = resolveSetMembershipVersion(previous, state);
+  const nextValue: LoweredSetMembershipVersion =
+    write.value.op === "clear"
+      ? {
+          ...previousValue,
+          memberOverrides: [],
+          cleared: getAst().litBool(true),
+        }
+      : lowerSetMembershipElementWrite(write.value, previousValue, state);
   state.currentVersions.set(key, write.version);
   state.locations.set(key, location);
-  state.versionExprs.set(write.version, setMembershipWriteExpr(stmt));
+  state.versionValues.set(write.version, nextValue);
   state.writtenKeys.add(key);
 }
 
@@ -744,17 +1053,26 @@ function lowerCollectionSsaCondToVersions(
         "collection SSA join order did not match branch versions",
       );
     }
-    const thenExpr = resolveCollectionSsaVersionExpr(thenVersion, thenState);
-    const elseExpr = resolveCollectionSsaVersionExpr(elseVersion, elseState);
-    const joinExpr = state.lowerOpaque(
-      ast.cond([
-        [guardExpr, thenExpr],
-        [ast.litBool(true), elseExpr],
-      ]),
-    );
+    if (location.kind === "set-membership") {
+      const thenValue = resolveSetMembershipVersion(thenVersion, thenState);
+      const elseValue = resolveSetMembershipVersion(elseVersion, elseState);
+      state.versionValues.set(
+        join.joinVersion,
+        joinSetMembershipVersions(guardExpr, thenValue, elseValue),
+      );
+    } else {
+      const thenExpr = resolveCollectionSsaVersionExpr(thenVersion, thenState);
+      const elseExpr = resolveCollectionSsaVersionExpr(elseVersion, elseState);
+      const joinExpr = state.lowerOpaque(
+        ast.cond([
+          [guardExpr, thenExpr],
+          [ast.litBool(true), elseExpr],
+        ]),
+      );
+      state.versionExprs.set(join.joinVersion, joinExpr);
+    }
     state.currentVersions.set(key, join.joinVersion);
     state.locations.set(key, location);
-    state.versionExprs.set(join.joinVersion, joinExpr);
     state.writtenKeys.add(key);
   }
 }
@@ -916,12 +1234,21 @@ function lowerCollectionSsaSetReadToOpaque(
   expr: Extract<IR1Expr, { kind: "set-read" }>,
   state: CollectionSsaLowerState,
 ): OpaqueExpr {
-  const ast = getAst();
-  const receiver = lowerCollectionSsaExprToOpaque(expr.receiver, state);
+  lowerCollectionSsaExprToOpaque(expr.receiver, state);
   const elem = lowerCollectionSsaExprToOpaque(expr.elem, state);
-  return state.lowerOpaque(
-    ast.binop(ast.opIn(), elem, ast.app(ast.var(expr.ruleName), [receiver])),
+  const loc = setMembershipLocationForReadOrWrite(
+    {
+      ruleName: expr.ruleName,
+      ownerType: expr.ownerType,
+      elemType: expr.elemType,
+      receiver: expr.receiver,
+    },
+    state,
   );
+  const version =
+    state.currentVersions.get(loc.key) ??
+    initialCollectionVersionFor(loc.key, loc.location, state);
+  return readSetMembershipVersion(version, elem, state);
 }
 
 function mapOverrideApp(
@@ -936,16 +1263,6 @@ function mapOverrideApp(
     receiver,
     keyExpr,
   ]);
-}
-
-function setMembershipWriteExpr(
-  stmt: Extract<IR1Stmt, { kind: "set-effect" }>,
-): OpaqueExpr {
-  const ast = getAst();
-  if (stmt.op === "clear") {
-    return ast.litBool(false);
-  }
-  return ast.litBool(stmt.op === "add");
 }
 
 function resolveCollectionSsaVersionExpr(
@@ -1015,6 +1332,7 @@ function cloneCollectionSsaLowerStateForBranch(
     initialVersions: state.initialVersions,
     locations: new Map(state.locations),
     versionExprs: new Map(state.versionExprs),
+    versionValues: new Map(state.versionValues),
     writtenKeys: new Set(),
     canonicalize: state.canonicalize,
     lowerOpaque: state.lowerOpaque,

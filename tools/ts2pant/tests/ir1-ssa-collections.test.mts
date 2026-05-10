@@ -11,16 +11,19 @@ import {
   ir1MapSet,
   ir1Member,
   ir1SetAddOrDelete,
+  ir1SetClear,
   ir1SetRead,
   ir1SsaMapMembershipValue,
   ir1SsaMapSetValue,
   ir1SsaSetClearValue,
+  ir1SsaSetMembershipValue,
   ir1Var,
 } from "../src/ir1.js";
 import {
   buildCollectionSsaProgram,
   isCollectionSsaL1Body,
   lowerCollectionSsaToResult,
+  lowerCollectionSsaToProps,
 } from "../src/ir1-ssa-collections.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 
@@ -717,20 +720,158 @@ describe("ir1-ssa-collections", () => {
     );
   });
 
-  it.skip("records Set.add delete and clear as membership SSA writes", () => {
+  it("records Set.add delete and clear as membership SSA writes", () => {
     const clear = ir1SsaSetClearValue();
+    const add = ir1SsaSetMembershipValue("add", ir1Var("x"));
+    const del = ir1SsaSetMembershipValue("delete", ir1Var("y"));
+    const stmt = ir1Block([
+      ir1SetAddOrDelete(
+        "add",
+        "Owner_tags",
+        "Owner",
+        "Tag",
+        ir1Var("owner"),
+        ir1Var("x"),
+      ),
+      ir1SetAddOrDelete(
+        "delete",
+        "Owner_tags",
+        "Owner",
+        "Tag",
+        ir1Var("owner"),
+        ir1Var("y"),
+      ),
+      ir1SetClear("Owner_tags", "Owner", "Tag", ir1Var("owner")),
+    ]);
 
+    assert.equal(add.kind, "set-membership");
+    assert.equal(add.op, "add");
+    assert.deepEqual(add.elem, ir1Var("x"));
+    assert.equal(del.kind, "set-membership");
+    assert.equal(del.op, "delete");
+    assert.deepEqual(del.elem, ir1Var("y"));
     assert.equal(clear.kind, "set-membership");
     assert.equal(clear.op, "clear");
-    // PENDING Patch 4: build collection SSA for `.add`, `.delete`, and
-    // `.clear()` and assert all writes target set-membership locations, with
-    // clear represented by `ir1SsaSetClearValue()`.
+    assert.equal(clear.elem, null);
+
+    const program = mustBuildCollectionSsaProgram(stmt);
+
+    assert.equal(program.writes.length, 3);
+    assert.equal(program.reads.length, 0);
+    assert.deepEqual(program.modifiedRules, ["Owner_tags"]);
+    assert.deepEqual(
+      program.writes.map((w) => w.location.kind),
+      ["set-membership", "set-membership", "set-membership"],
+    );
+    assert.deepEqual(
+      program.writes.map((w) => w.value),
+      [add, del, clear],
+    );
+    for (const write of program.writes) {
+      assert.equal(write.version.location, write.location);
+      if (write.value.kind === "set-membership" && write.value.op === "clear") {
+        assert.equal(write.value.elem, null);
+      } else if (write.value.kind === "set-membership") {
+        assert.notEqual(write.value.elem, null);
+      }
+    }
   });
 
-  it.skip("resolves Set.has through staged membership and clear versions", () => {
-    // PENDING Patch 4: lower `add/delete/clear -> has` bodies and assert
-    // reads observe later-wins membership versions plus clear fallthrough,
-    // matching the existing `readSetThroughWrites` semantics.
+  it("resolves Set.has through staged membership and clear versions", () => {
+    const ast = getAst();
+    const stmt = ir1Block([
+      ir1SetAddOrDelete(
+        "add",
+        "Owner_tags",
+        "Owner",
+        "Tag",
+        ir1Var("owner"),
+        ir1Var("x"),
+      ),
+      ir1SetAddOrDelete(
+        "delete",
+        "Owner_tags",
+        "Owner",
+        "Tag",
+        ir1Var("owner"),
+        ir1Var("x"),
+      ),
+      ir1SetClear("Owner_tags", "Owner", "Tag", ir1Var("owner")),
+      ir1SetAddOrDelete(
+        "add",
+        "Owner_tags",
+        "Owner",
+        "Tag",
+        ir1Var("owner"),
+        ir1Var("y"),
+      ),
+      ir1Assign(
+        ir1Member(ir1Var("owner"), "Owner_hasTag"),
+        ir1SetRead("Owner_tags", "Owner", "Tag", ir1Var("owner"), ir1Var("x")),
+      ),
+      ir1Assign(
+        ir1Member(ir1Var("owner"), "Owner_hasTag"),
+        ir1SetRead("Owner_tags", "Owner", "Tag", ir1Var("owner"), ir1Var("y")),
+      ),
+    ]);
+
+    const result = lowerCollectionSsaToProps(stmt);
+
+    assert.equal(result.program.writes.length, 4);
+    assert.equal(result.program.reads.length, 2);
+    assert.equal(
+      result.program.reads[0]!.version,
+      result.program.writes[3]!.version,
+    );
+    assert.equal(
+      result.program.reads[1]!.version,
+      result.program.writes[3]!.version,
+    );
+    assert.equal(result.propositions.length, 1);
+    const assertion = result.propositions[0]!;
+    assert.equal(assertion.kind, "assertion");
+    if (assertion.kind !== "assertion") {
+      return;
+    }
+    assert.equal(
+      ast.strExpr(assertion.body),
+      "y1 in Owner_tags' owner <-> (cond y1 = y => true, true => false)",
+    );
+  });
+
+  it("lowers Set branch joins with asymmetric clear fallbacks", () => {
+    const ast = getAst();
+    const stmt = ir1CondStmt(
+      [
+        [
+          ir1Var("gate"),
+          ir1SetClear("Owner_tags", "Owner", "Tag", ir1Var("owner")),
+        ],
+      ],
+      ir1SetAddOrDelete(
+        "add",
+        "Owner_tags",
+        "Owner",
+        "Tag",
+        ir1Var("owner"),
+        ir1Var("x"),
+      ),
+    );
+
+    const result = lowerCollectionSsaToProps(stmt);
+
+    assert.equal(result.program.writes.length, 2);
+    assert.equal(result.program.joins.length, 1);
+    assert.equal(result.propositions.length, 1);
+    const assertion = result.propositions[0]!;
+    assert.equal(assertion.kind, "assertion");
+    if (assertion.kind !== "assertion") {
+      return;
+    }
+    assert.equal(
+      ast.strExpr(assertion.body),
+      "y in Owner_tags' owner <-> (cond y = x => (cond gate => false, true => true), true => (cond gate => false, true => y in Owner_tags owner))",
+    );
   });
 
   it.skip("preserves production parity for Map and Set mutation fixtures", async () => {
