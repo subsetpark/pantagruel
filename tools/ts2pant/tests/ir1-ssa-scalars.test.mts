@@ -149,7 +149,7 @@ describe("ir1-ssa-scalars", () => {
     assert.equal(outerJoin!.joinVersion.location, innerJoin!.location);
     assert.equal(
       scalarEquationRhs(outer),
-      "cond x => cond y => 1, true => 2, true => 3",
+      "cond x => (cond y => 1, true => 2), true => 3",
     );
   });
 
