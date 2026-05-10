@@ -35,6 +35,7 @@ export interface CollectionSsaState {
   reads: IR1SsaRead[];
   writes: IR1SsaWrite[];
   joins: IR1SsaJoin[];
+  diagnostics: Array<Extract<PropResult, { kind: "unsupported" }>>;
   writtenKeys: Set<string>;
   declaredRules: Set<string>;
   modifiedRules: Set<string>;
@@ -97,6 +98,7 @@ export function makeCollectionSsaState(
     reads: [],
     writes: [],
     joins: [],
+    diagnostics: [],
     writtenKeys: new Set(),
     declaredRules: new Set(options.declaredRules ?? []),
     modifiedRules: new Set(),
@@ -110,6 +112,28 @@ export function buildCollectionSsaProgram(
 ): IR1SsaProgram {
   const state = makeCollectionSsaState(options);
   lowerCollectionSsaL1Body(stmt, state);
+  return collectionSsaProgramFromState(state);
+}
+
+export function lowerCollectionSsaToResult(
+  stmt: IR1Stmt,
+  options: CollectionSsaBuildOptions = {},
+): CollectionSsaLowerResult {
+  const state = makeCollectionSsaState(options);
+  lowerCollectionSsaL1Body(stmt, state);
+  const program = collectionSsaProgramFromState(state);
+  return {
+    program,
+    finalEntries: collectionSsaFinalEntries(state),
+    propositions: [],
+    modifiedRules: [...program.modifiedRules],
+    diagnostics: state.diagnostics,
+  };
+}
+
+function collectionSsaProgramFromState(
+  state: CollectionSsaState,
+): IR1SsaProgram {
   const declaredRules = new Set(state.declaredRules);
   for (const rule of state.modifiedRules) {
     declaredRules.add(rule);
@@ -199,9 +223,11 @@ export function lowerCollectionSsaL1Body(
   switch (stmt.kind) {
     case "assign":
       if (stmt.target.kind !== "member") {
-        throw new Error(
+        collectionSsaUnsupported(
+          state,
           "collection SSA assignment target must be a property member",
         );
+        return;
       }
       collectionSsaReadExpr(stmt.target.receiver, state);
       collectionSsaReadExpr(stmt.value, state);
@@ -215,6 +241,9 @@ export function lowerCollectionSsaL1Body(
     case "block":
       for (const child of stmt.stmts) {
         lowerCollectionSsaL1Body(child, state);
+        if (state.diagnostics.length > 0) {
+          return;
+        }
       }
       return;
     case "cond-stmt":
@@ -227,11 +256,19 @@ export function lowerCollectionSsaL1Body(
     case "throw":
     case "let":
     case "expr-stmt":
-      throw new Error(`${stmt.kind} is not supported by collection SSA`);
+      collectionSsaUnsupported(
+        state,
+        `collection SSA does not support ${stmt.kind} in this pass`,
+      );
+      return;
     default: {
       const _exhaustive: never = stmt;
       void _exhaustive;
-      throw new Error("unsupported IR1 statement in collection SSA lowering");
+      collectionSsaUnsupported(
+        state,
+        "collection SSA does not support this IR1 statement in this pass",
+      );
+      return;
     }
   }
 }
@@ -339,6 +376,7 @@ export function setMembershipLocationForReadOrWrite(
   location: Extract<IR1SsaLocation, { kind: "set-membership" }>;
 } {
   const receiverKey = collectionSsaCanonicalExprKey(input.receiver, state);
+  const receiver = collectionSsaCanonicalExpr(input.receiver, state);
   const key = setMembershipLocationKey(
     input.ruleName,
     input.ownerType,
@@ -356,7 +394,7 @@ export function setMembershipLocationForReadOrWrite(
     input.ruleName,
     input.ownerType,
     input.elemType,
-    input.receiver,
+    receiver,
   ) as Extract<IR1SsaLocation, { kind: "set-membership" }>;
   state.locations.set(key, location);
   state.declaredRules?.add(ir1SsaRuleOfLocation(location));
@@ -482,17 +520,29 @@ function lowerCollectionCondStmt(
   state: CollectionSsaState,
 ): void {
   if (stmt.arms.length !== 1) {
-    throw new Error("multi-armed cond-stmt is not supported by collection SSA");
+    collectionSsaUnsupported(
+      state,
+      "collection SSA does not support multi-armed cond-stmt in this pass",
+    );
+    return;
   }
   const [guard, thenBody] = stmt.arms[0]!;
   collectionSsaReadExpr(guard, state);
 
   const thenState = cloneCollectionSsaStateForBranch(state);
   lowerCollectionSsaL1Body(thenBody, thenState);
+  if (thenState.diagnostics.length > 0) {
+    state.diagnostics.push(...thenState.diagnostics);
+    return;
+  }
 
   const elseState = cloneCollectionSsaStateForBranch(state);
   if (stmt.otherwise !== null) {
     lowerCollectionSsaL1Body(stmt.otherwise, elseState);
+    if (elseState.diagnostics.length > 0) {
+      state.diagnostics.push(...elseState.diagnostics);
+      return;
+    }
   }
 
   state.reads.push(...thenState.reads, ...elseState.reads);
@@ -539,6 +589,7 @@ function cloneCollectionSsaStateForBranch(
     reads: [],
     writes: [],
     joins: [],
+    diagnostics: [],
     writtenKeys: new Set(),
     declaredRules: new Set(state.declaredRules),
     modifiedRules: new Set(),
@@ -598,8 +649,10 @@ function mapLocationForInput<K extends "map-value" | "map-membership">(
   key: string;
   location: Extract<IR1SsaLocation, { kind: K }>;
 } {
-  const receiverKey = collectionSsaCanonicalExprKey(input.receiver, state);
-  const elementKey = collectionSsaCanonicalExprKey(input.key, state);
+  const receiver = collectionSsaCanonicalExpr(input.receiver, state);
+  const element = collectionSsaCanonicalExpr(input.key, state);
+  const receiverKey = collectionSsaExprKey(receiver);
+  const elementKey = collectionSsaExprKey(element);
   const key = mapLocationKey(
     kind,
     input.ruleName,
@@ -623,16 +676,16 @@ function mapLocationForInput<K extends "map-value" | "map-membership">(
           input.keyPredName,
           input.ownerType,
           input.keyType,
-          input.receiver,
-          input.key,
+          receiver,
+          element,
         )
       : ir1SsaMapMembershipLocation(
           input.ruleName,
           input.keyPredName,
           input.ownerType,
           input.keyType,
-          input.receiver,
-          input.key,
+          receiver,
+          element,
         );
   state.locations.set(key, location as CollectionSsaLocation);
   state.declaredRules?.add(ir1SsaRuleOfLocation(location));
@@ -648,7 +701,7 @@ function mapLocationKey(
   receiverKey: string,
   keyExprKey: string,
 ): string {
-  return [
+  return JSON.stringify([
     kind,
     ruleName,
     keyPredName,
@@ -656,7 +709,7 @@ function mapLocationKey(
     keyType,
     receiverKey,
     keyExprKey,
-  ].join("::");
+  ]);
 }
 
 function setMembershipLocationKey(
@@ -665,64 +718,119 @@ function setMembershipLocationKey(
   elemType: string,
   receiverKey: string,
 ): string {
-  return ["set-membership", ruleName, ownerType, elemType, receiverKey].join(
-    "::",
-  );
+  return JSON.stringify([
+    "set-membership",
+    ruleName,
+    ownerType,
+    elemType,
+    receiverKey,
+  ]);
 }
 
 function collectionSsaCanonicalExprKey(
   expr: IR1Expr,
   state: Pick<CollectionSsaLocationState, "canonicalize">,
 ): string {
+  return collectionSsaExprKey(collectionSsaCanonicalExpr(expr, state));
+}
+
+function collectionSsaCanonicalExpr(
+  expr: IR1Expr,
+  state: Pick<CollectionSsaLocationState, "canonicalize">,
+): IR1Expr {
   try {
-    return collectionSsaExprKey(state.canonicalize(expr));
+    return state.canonicalize(expr);
   } catch (err) {
     if (err instanceof Error) {
-      return collectionSsaExprKey(expr);
+      return expr;
     }
     throw err;
   }
 }
 
 function collectionSsaExprKey(expr: IR1Expr): string {
+  return JSON.stringify(collectionSsaExprKeyData(expr));
+}
+
+function collectionSsaExprKeyData(expr: IR1Expr): unknown {
   switch (expr.kind) {
     case "var":
-      return `var:${expr.name}:${expr.primed ?? false}`;
+      return ["var", expr.name, expr.primed ?? false];
     case "lit":
-      return `lit:${expr.value.kind}:${"value" in expr.value ? expr.value.value : ""}`;
+      return [
+        "lit",
+        expr.value.kind,
+        "value" in expr.value ? expr.value.value : null,
+      ];
     case "member":
-      return `member:${collectionSsaExprKey(expr.receiver)}:${expr.name}`;
+      return ["member", collectionSsaExprKeyData(expr.receiver), expr.name];
     case "binop":
-      return `binop:${expr.op}:${collectionSsaExprKey(expr.lhs)}:${collectionSsaExprKey(expr.rhs)}`;
+      return [
+        "binop",
+        expr.op,
+        collectionSsaExprKeyData(expr.lhs),
+        collectionSsaExprKeyData(expr.rhs),
+      ];
     case "unop":
-      return `unop:${expr.op}:${collectionSsaExprKey(expr.arg)}`;
+      return ["unop", expr.op, collectionSsaExprKeyData(expr.arg)];
     case "app":
-      return `app:${collectionSsaExprKey(expr.callee)}(${expr.args
-        .map(collectionSsaExprKey)
-        .join(",")})`;
+      return [
+        "app",
+        collectionSsaExprKeyData(expr.callee),
+        expr.args.map(collectionSsaExprKeyData),
+      ];
     case "cond":
-      return `cond:${expr.arms
-        .map(
-          ([guard, value]) =>
-            `${collectionSsaExprKey(guard)}=>${collectionSsaExprKey(value)}`,
-        )
-        .join("|")}:${collectionSsaExprKey(expr.otherwise)}`;
+      return [
+        "cond",
+        expr.arms.map(([guard, value]) => [
+          collectionSsaExprKeyData(guard),
+          collectionSsaExprKeyData(value),
+        ]),
+        collectionSsaExprKeyData(expr.otherwise),
+      ];
     case "is-nullish":
-      return `is-nullish:${collectionSsaExprKey(expr.operand)}`;
+      return ["is-nullish", collectionSsaExprKeyData(expr.operand)];
     case "each":
-      return `each:${expr.binder}:${collectionSsaExprKey(expr.src)}:${expr.guards
-        .map(collectionSsaExprKey)
-        .join(",")}:${collectionSsaExprKey(expr.proj)}`;
+      return [
+        "each",
+        expr.binder,
+        collectionSsaExprKeyData(expr.src),
+        expr.guards.map(collectionSsaExprKeyData),
+        collectionSsaExprKeyData(expr.proj),
+      ];
     case "map-read":
-      return `map-read:${expr.op}:${expr.ruleName}:${expr.keyPredName}:${expr.ownerType}:${expr.keyType}:${collectionSsaExprKey(expr.receiver)}:${collectionSsaExprKey(expr.key)}`;
+      return [
+        "map-read",
+        expr.op,
+        expr.ruleName,
+        expr.keyPredName,
+        expr.ownerType,
+        expr.keyType,
+        collectionSsaExprKeyData(expr.receiver),
+        collectionSsaExprKeyData(expr.key),
+      ];
     case "set-read":
-      return `set-read:${expr.ruleName}:${expr.ownerType}:${expr.elemType}:${collectionSsaExprKey(expr.receiver)}:${collectionSsaExprKey(expr.elem)}`;
+      return [
+        "set-read",
+        expr.ruleName,
+        expr.ownerType,
+        expr.elemType,
+        collectionSsaExprKeyData(expr.receiver),
+        collectionSsaExprKeyData(expr.elem),
+      ];
     default: {
       const _exhaustive: never = expr;
       void _exhaustive;
-      return "";
+      return ["unknown"];
     }
   }
+}
+
+function collectionSsaUnsupported(
+  state: CollectionSsaState,
+  reason: string,
+): void {
+  state.diagnostics.push({ kind: "unsupported", reason });
 }
 
 function isCollectionSsaExpr(expr: IR1Expr): boolean {

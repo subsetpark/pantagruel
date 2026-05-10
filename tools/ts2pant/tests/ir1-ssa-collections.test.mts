@@ -19,6 +19,7 @@ import {
 import {
   buildCollectionSsaProgram,
   isCollectionSsaL1Body,
+  lowerCollectionSsaToResult,
 } from "../src/ir1-ssa-collections.js";
 
 describe("ir1-ssa-collections", () => {
@@ -114,6 +115,8 @@ describe("ir1-ssa-collections", () => {
     assert.equal(program.reads.length, 2);
     const [valueWrite, membershipWrite] = program.writes;
     const [valueRead, membershipRead] = program.reads;
+    assert.deepEqual(valueWrite!.location.receiver, ir1Var("cache"));
+    assert.deepEqual(membershipWrite!.location.receiver, ir1Var("cache"));
     assert.equal(valueRead!.location, valueWrite!.location);
     assert.equal(valueRead!.version, valueWrite!.version);
     assert.equal(valueRead!.dominated, true);
@@ -204,6 +207,40 @@ describe("ir1-ssa-collections", () => {
     assert.equal(program.reads[0]!.dominated, true);
   });
 
+  it("keeps collection location keys unambiguous for delimiter-bearing names", () => {
+    const stmt = ir1Block([
+      ir1MapSet(
+        "Cache",
+        "Has::Key",
+        "Owner",
+        "Key",
+        ir1Var("cache"),
+        ir1Var("key"),
+        ir1LitNat(1),
+      ),
+      ir1MapSet(
+        "Cache::Has",
+        "Key",
+        "Owner",
+        "Key",
+        ir1Var("cache"),
+        ir1Var("key"),
+        ir1LitNat(2),
+      ),
+    ]);
+
+    const program = buildCollectionSsaProgram(stmt);
+    const valueRules = program.writes
+      .filter((write) => write.location.kind === "map-value")
+      .map((write) => write.location.ruleName);
+    const membershipRules = program.writes
+      .filter((write) => write.location.kind === "map-membership")
+      .map((write) => write.location.keyPredName);
+
+    assert.deepEqual(valueRules, ["Cache", "Cache::Has"]);
+    assert.deepEqual(membershipRules, ["Has::Key", "Key"]);
+  });
+
   it("rejects loop and expression statement routing shapes", () => {
     assert.equal(
       isCollectionSsaL1Body({
@@ -227,6 +264,57 @@ describe("ir1-ssa-collections", () => {
       }),
       false,
     );
+
+    const result = lowerCollectionSsaToResult({
+      kind: "expr-stmt",
+      expr: ir1Var("x"),
+    });
+    assert.deepEqual(result.diagnostics, [
+      {
+        kind: "unsupported",
+        reason: "collection SSA does not support expr-stmt in this pass",
+      },
+    ]);
+  });
+
+  it("reports unsupported multi-arm conditionals as diagnostics", () => {
+    const result = lowerCollectionSsaToResult(
+      ir1CondStmt(
+        [
+          [
+            ir1Var("g"),
+            ir1MapDelete(
+              "Cache_value",
+              "Cache_hasKey",
+              "Owner",
+              "Key",
+              ir1Var("cache"),
+              ir1Var("key"),
+            ),
+          ],
+          [
+            ir1Var("h"),
+            ir1MapDelete(
+              "Cache_value",
+              "Cache_hasKey",
+              "Owner",
+              "Key",
+              ir1Var("cache"),
+              ir1Var("key"),
+            ),
+          ],
+        ],
+        null,
+      ),
+    );
+
+    assert.deepEqual(result.diagnostics, [
+      {
+        kind: "unsupported",
+        reason:
+          "collection SSA does not support multi-armed cond-stmt in this pass",
+      },
+    ]);
   });
 
   it.skip("records Set.add delete and clear as membership SSA writes", () => {
