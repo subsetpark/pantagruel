@@ -220,28 +220,32 @@ describe("ir1-ssa-scalars", () => {
     assert.deepEqual(program.framedRules, ["Account_limit"]);
   });
 
-  it.skip("preserves translateBody parity for scalar sequential write/read fixtures", async () => {
+  it("preserves translateBody parity for scalar sequential write/read fixtures", async () => {
     const output = await emitFixture(
       "functions-mutating-conditional.ts",
       "accumulateIf",
     );
-    void output;
 
-    // PENDING Patch 4: this fixture should still emit the same Pantagruel
-    // text after the scalar SSA route becomes active.
-    assert.fail("PENDING: scalar translateBody parity is not implemented yet");
+    assert.match(
+      output,
+      /account--balance' a = \(cond g => 10 \+ 5, true => 10\)\./,
+    );
   });
 
-  it.skip("preserves translateBody parity for asymmetric branch write fixtures", async () => {
+  it("preserves translateBody parity for asymmetric branch write fixtures", async () => {
     const output = await emitFixture(
       "functions-mutating-conditional.ts",
       "asymmetric",
     );
-    void output;
 
-    // PENDING Patch 4: asymmetric branch writes should keep the current
-    // output while switching the scalar mutation path to SSA internally.
-    assert.fail("PENDING: asymmetric branch parity is not implemented yet");
+    assert.match(
+      output,
+      /account--balance' a = \(cond g => 0, true => account--balance a\)\./,
+    );
+    assert.match(
+      output,
+      /account--owner' a = \(cond g => account--owner a, true => new-owner\)\./,
+    );
   });
 
   it.skip("preserves translateBody parity for chained early-return fixtures", async () => {
