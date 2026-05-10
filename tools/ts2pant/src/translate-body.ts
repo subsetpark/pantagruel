@@ -23,7 +23,11 @@ import {
 } from "./ir1-build-body.js";
 import { lowerL1MuSearch, type MuSearchLowerCtx } from "./ir1-lower.js";
 import { lowerL1Body } from "./ir1-lower-body.js";
-import { isScalarSsaL1Body } from "./ir1-ssa-scalars.js";
+import {
+  isScalarSsaL1Body,
+  lowerScalarSsaEarlyExitMerge,
+  type ScalarSsaEarlyExitPropertyInput,
+} from "./ir1-ssa-scalars.js";
 import {
   getOperandDeclaredType,
   type NullishTranslate,
@@ -4647,6 +4651,60 @@ function symbolicExecute(
           reason:
             "loop with per-iteration writes cannot appear after an early-exit guard",
         });
+        break;
+      }
+
+      const scalarEarlyExitInputs: ScalarSsaEarlyExitPropertyInput[] = [];
+      let scalarEarlyExitOnly = true;
+      for (const key of sR.writtenKeys) {
+        const entryR = sR.writes.get(key)!;
+        const prior = state.writes.get(key);
+        if (prior !== undefined && prior.kind !== entryR.kind) {
+          ok = false;
+          propositions.push({
+            kind: "unsupported",
+            reason:
+              "branches wrote the same key with different kinds (property / map / set mismatch)",
+          });
+          scalarEarlyExitOnly = false;
+          break;
+        }
+        if (entryR.kind !== "property") {
+          scalarEarlyExitOnly = false;
+          break;
+        }
+        const priorP = prior as PropertyWriteEntry | undefined;
+        scalarEarlyExitInputs.push({
+          key,
+          prop: entryR.prop,
+          objExpr: entryR.objExpr,
+          priorValue: priorP?.value,
+          continuationValue: entryR.value,
+        });
+      }
+      if (!ok) {
+        break;
+      }
+      if (scalarEarlyExitOnly) {
+        const merged = lowerScalarSsaEarlyExitMerge(scalarEarlyExitInputs, {
+          guardExpr: gExpr,
+          earlyExitWhenTrue: exit.earlyExitWhenTrue,
+          canonicalize: applyConst,
+        });
+        for (const [index, entry] of merged.finalProperties.entries()) {
+          const input = scalarEarlyExitInputs[index]!;
+          state.writes = putWrite(state.writes, input.key, {
+            kind: "property",
+            prop: entry.location.ruleName,
+            objExpr: entry.objExpr,
+            value: entry.rhs,
+          });
+          state.writtenKeys = addWrittenKey(state.writtenKeys, input.key);
+          state.modifiedProps = addModifiedProp(
+            state.modifiedProps,
+            entry.location.ruleName,
+          );
+        }
         break;
       }
 

@@ -16,6 +16,7 @@ import {
   ir1SsaRead,
   ir1SsaRuleOfLocation,
   ir1SsaWrite,
+  ir1Var,
 } from "./ir1.js";
 import { lowerL1Expr } from "./ir1-lower.js";
 import type { OpaqueExpr } from "./pant-ast.js";
@@ -56,6 +57,20 @@ export interface ScalarSsaLowerResult {
   propositions: PropResult[];
   modifiedRules: IR1SsaRuleName[];
   diagnostics: Array<Extract<PropResult, { kind: "unsupported" }>>;
+}
+
+export interface ScalarSsaEarlyExitPropertyInput {
+  key: string;
+  prop: string;
+  objExpr: OpaqueExpr;
+  priorValue: OpaqueExpr | undefined;
+  continuationValue: OpaqueExpr;
+}
+
+export interface ScalarSsaEarlyExitMergeOptions {
+  guardExpr: OpaqueExpr;
+  earlyExitWhenTrue: boolean;
+  canonicalize?: (e: OpaqueExpr) => OpaqueExpr;
 }
 
 interface ScalarSsaLocationState {
@@ -174,6 +189,108 @@ export function lowerScalarSsaToProps(
     finalProperties,
     propositions,
     modifiedRules: [...program.modifiedRules],
+    diagnostics: [],
+  };
+}
+
+export function lowerScalarSsaEarlyExitMerge(
+  inputs: readonly ScalarSsaEarlyExitPropertyInput[],
+  options: ScalarSsaEarlyExitMergeOptions,
+): ScalarSsaLowerResult {
+  const ast = getAst();
+  const canonicalize = options.canonicalize ?? ((e: OpaqueExpr) => e);
+  const reads: IR1SsaRead[] = [];
+  const writes: IR1SsaWrite[] = [];
+  const joins: IR1SsaJoin[] = [];
+  const finalProperties: ScalarSsaFinalPropertyEntry[] = [];
+  const propositions: PropResult[] = [];
+  const modifiedRules = new Set<IR1SsaRuleName>();
+
+  for (const [index, input] of inputs.entries()) {
+    const location = ir1SsaPropertyLocation(
+      input.prop,
+      ir1Var(`early_exit_${index}`),
+      input.prop,
+    ) as Extract<IR1SsaLocation, { kind: "property" }>;
+    const initialVersion = ir1SsaInitialVersion(location);
+    const initialValue = canonicalize(
+      ast.app(ast.var(input.prop), [input.objExpr]),
+    );
+
+    let priorVersion = initialVersion;
+    if (input.priorValue !== undefined) {
+      const priorWrite = ir1SsaWrite(
+        location,
+        ir1SsaPropertyValue(ir1Var(`early_exit_prior_${index}`)),
+      );
+      writes.push(priorWrite);
+      priorVersion = priorWrite.version;
+    }
+
+    const continuationWrite = ir1SsaWrite(
+      location,
+      ir1SsaPropertyValue(ir1Var(`early_exit_continuation_${index}`)),
+    );
+    writes.push(continuationWrite);
+
+    const thenVersion = options.earlyExitWhenTrue
+      ? priorVersion
+      : continuationWrite.version;
+    const elseVersion = options.earlyExitWhenTrue
+      ? continuationWrite.version
+      : priorVersion;
+    const joined = ir1SsaJoin(location, thenVersion, elseVersion);
+    const finalVersion =
+      joined.kind === "ssa-join" ? joined.joinVersion : joined;
+    if (joined.kind === "ssa-join") {
+      joins.push(joined);
+    }
+
+    const priorValue = input.priorValue ?? initialValue;
+    const thenValue = options.earlyExitWhenTrue
+      ? priorValue
+      : input.continuationValue;
+    const elseValue = options.earlyExitWhenTrue
+      ? input.continuationValue
+      : priorValue;
+    const rhs = canonicalize(
+      ast.cond([
+        [options.guardExpr, thenValue],
+        [ast.litBool(true), elseValue],
+      ]),
+    );
+    const lhs = ast.app(ast.primed(input.prop), [input.objExpr]);
+    finalProperties.push({
+      location,
+      version: finalVersion,
+      objExpr: input.objExpr,
+      lhs,
+      rhs,
+    });
+    propositions.push({
+      kind: "equation",
+      quantifiers: [],
+      lhs,
+      rhs,
+    });
+    modifiedRules.add(input.prop);
+  }
+
+  const program: IR1SsaProgram = {
+    reads,
+    writes,
+    joins,
+    loopSummaries: [],
+    declaredRules: [...modifiedRules],
+    modifiedRules: [...modifiedRules],
+    framedRules: [],
+  };
+
+  return {
+    program,
+    finalProperties,
+    propositions,
+    modifiedRules: [...modifiedRules],
     diagnostics: [],
   };
 }
