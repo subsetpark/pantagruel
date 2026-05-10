@@ -23,7 +23,11 @@ import {
 } from "./ir1-build-body.js";
 import { lowerL1MuSearch, type MuSearchLowerCtx } from "./ir1-lower.js";
 import { lowerL1Body } from "./ir1-lower-body.js";
-import { isScalarSsaL1Body } from "./ir1-ssa-scalars.js";
+import {
+  isScalarSsaL1Body,
+  lowerScalarSsaEarlyExitMerge,
+  type ScalarSsaEarlyExitPropertyInput,
+} from "./ir1-ssa-scalars.js";
 import {
   isScalarSsaL1Body,
   lowerScalarSsaEarlyExitMerge,
