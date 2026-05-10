@@ -1,8 +1,23 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
 import { resolve } from "node:path";
+import { describe, it } from "node:test";
 
 import { createSourceFile } from "../src/extract.js";
+import {
+  type IR1Expr,
+  ir1Assign,
+  ir1Binop,
+  ir1Block,
+  ir1CondStmt,
+  ir1LitBool,
+  ir1LitNat,
+  ir1Member,
+  ir1Var,
+} from "../src/ir1.js";
+import {
+  buildScalarSsaProgram,
+  isScalarSsaL1Body,
+} from "../src/ir1-ssa-scalars.js";
 import { buildDocumentFromSourceFile, emitAndCheck } from "./helpers.mjs";
 
 const CONSTRUCTS_DIR = resolve(import.meta.dirname, "fixtures/constructs");
@@ -17,153 +32,227 @@ async function emitFixture(fileName: string, functionName: string) {
   return emitAndCheck(doc);
 }
 
-describe.skip("ir1-ssa-scalars", () => {
+describe("ir1-ssa-scalars", () => {
   // PENDING Patch 2: add the scalar SSA builder state and write/version recording.
   // PENDING Patch 3: lower final scalar versions back into the current Pant equations.
   // PENDING Patch 4: route scalar assignments and scalar if-mutation through SSA.
   // PENDING Patch 5: route early-exit continuation merges through SSA.
 
-  it.skip("records direct property assignment as an SSA write", async () => {
-    const sourceFile = loadFixture("functions-mutating.ts");
-    void sourceFile;
+  it("records direct property assignment as an SSA write", () => {
+    const target = ir1Member(ir1Var("a"), "Account_balance");
+    const stmt = ir1Assign(target, ir1LitNat(1));
 
-    // `reset` is the minimal scalar write shape: one property assignment
-    // whose lowered output should ultimately expose a single SSA write and
-    // the corresponding final property version.
-    assert.fail("PENDING: scalar SSA write/version assertions are not wired yet");
+    assert.equal(isScalarSsaL1Body(stmt), true);
+    const program = buildScalarSsaProgram(stmt);
+
+    assert.equal(program.reads.length, 0);
+    assert.equal(program.writes.length, 1);
+    assert.equal(program.joins.length, 0);
+    assert.deepEqual(program.modifiedRules, ["Account_balance"]);
+    assert.deepEqual(program.framedRules, []);
+
+    const write = program.writes[0]!;
+    assert.equal(write.location.kind, "property");
+    assert.equal(write.location.ruleName, "Account_balance");
+    assert.equal(write.location.property, "Account_balance");
+    assert.equal(write.version.location, write.location);
+    assert.deepEqual(write.value, { kind: "property", value: ir1LitNat(1) });
   });
 
-  it.skip("resolves compound property assignment through the dominating prior version", async () => {
-    const source = `
-      interface Account {
-        balance: number;
-      }
-      export function f(a: Account): void {
-        a.balance = 1;
-        a.balance += 2;
-      }
-    `;
-    void source;
+  it("resolves compound property assignment through the dominating prior version", () => {
+    const balance = ir1Member(ir1Var("a"), "Account_balance");
+    const stmt = ir1Block([
+      ir1Assign(balance, ir1LitNat(1)),
+      ir1Assign(balance, ir1Binop("add", balance, ir1LitNat(2))),
+    ]);
 
-    // PENDING Patch 2 + Patch 3: this should assert that the compound write
-    // reads the dominating scalar version rather than the pre-state value.
-    assert.fail("PENDING: compound scalar SSA read dominance is not implemented yet");
+    assert.equal(isScalarSsaL1Body(stmt), true);
+    const program = buildScalarSsaProgram(stmt);
+
+    assert.equal(program.writes.length, 2);
+    assert.equal(program.reads.length, 1);
+    const [firstWrite, secondWrite] = program.writes;
+    const read = program.reads[0]!;
+    assert.equal(read.location, firstWrite!.location);
+    assert.equal(read.version, firstWrite!.version);
+    assert.equal(read.dominated, true);
+    assert.equal(secondWrite!.version.location, firstWrite!.location);
   });
 
-  it.skip("joins a single-arm if against the initial property version", async () => {
-    const source = `
-      interface Account {
-        balance: number;
-      }
-      export function f(a: Account, g: boolean): void {
-        if (g) {
-          a.balance = 1;
-        }
-      }
-    `;
-    void source;
+  it("joins a single-arm if against the initial property version", () => {
+    const balance = ir1Member(ir1Var("a"), "Account_balance");
+    const stmt = ir1CondStmt(
+      [[ir1Var("g"), ir1Assign(balance, ir1LitNat(1))]],
+      null,
+    );
 
-    // PENDING Patch 4: the scalar SSA route should build a join against the
-    // pre-state initial version for the else-free arm.
-    assert.fail("PENDING: single-arm scalar join lowering is not implemented yet");
+    assert.equal(isScalarSsaL1Body(stmt), true);
+    const program = buildScalarSsaProgram(stmt);
+
+    assert.equal(program.writes.length, 1);
+    assert.equal(program.joins.length, 1);
+    const write = program.writes[0]!;
+    const join = program.joins[0]!;
+    assert.equal(join.location, write.location);
+    assert.equal(join.thenVersion, write.version);
+    assert.equal(join.elseVersion.origin, "initial");
+    assert.equal(join.elseVersion.location, write.location);
+    assert.equal(join.joinVersion.location, write.location);
+    assert.notEqual(join.thenVersion, join.elseVersion);
   });
 
-  it.skip("lowers nested scalar if bodies through SSA joins", async () => {
-    const source = `
-      interface Account {
-        balance: number;
-      }
-      export function f(a: Account, x: boolean, y: boolean): void {
-        if (x) {
-          if (y) {
-            a.balance = 1;
-          } else {
-            a.balance = 2;
-          }
-        } else {
-          a.balance = 3;
-        }
-      }
-    `;
-    void source;
+  it("lowers nested scalar if bodies through SSA joins", () => {
+    const balance = ir1Member(ir1Var("a"), "Account_balance");
+    const inner = ir1CondStmt(
+      [[ir1Var("y"), ir1Assign(balance, ir1LitNat(1))]],
+      ir1Assign(balance, ir1LitNat(2)),
+    );
+    const outer = ir1CondStmt(
+      [[ir1Var("x"), inner]],
+      ir1Assign(balance, ir1LitNat(3)),
+    );
 
-    // PENDING Patch 4: nested scalar conditionals should lower as nested SSA
-    // joins or equivalent nested cond output, preserving the current output shape.
-    assert.fail("PENDING: nested scalar SSA joins are not implemented yet");
+    assert.equal(isScalarSsaL1Body(outer), true);
+    const program = buildScalarSsaProgram(outer);
+
+    assert.equal(program.writes.length, 3);
+    assert.equal(program.joins.length, 2);
+    const [innerJoin, outerJoin] = program.joins;
+    assert.equal(innerJoin!.thenVersion, program.writes[0]!.version);
+    assert.equal(innerJoin!.elseVersion, program.writes[1]!.version);
+    assert.equal(outerJoin!.thenVersion, innerJoin!.joinVersion);
+    assert.equal(outerJoin!.elseVersion, program.writes[2]!.version);
+    assert.equal(outerJoin!.joinVersion.location, innerJoin!.location);
   });
 
-  it.skip(
-    "preserves translateBody parity for scalar sequential write/read fixtures",
-    async () => {
-      const output = await emitFixture(
-        "functions-mutating-conditional.ts",
-        "accumulateIf",
-      );
-      void output;
+  it("rejects non-scalar routing shapes", () => {
+    const mapReadReceiver: IR1Expr = {
+      kind: "map-read",
+      op: "get",
+      ruleName: "Cache_value",
+      keyPredName: "Cache_hasKey",
+      ownerType: "Owner",
+      keyType: "Key",
+      receiver: ir1Var("cache"),
+      key: ir1Var("key"),
+    };
 
-      // PENDING Patch 4: this fixture should still emit the same Pantagruel
-      // text after the scalar SSA route becomes active.
-      assert.fail("PENDING: scalar translateBody parity is not implemented yet");
-    },
-  );
+    assert.equal(
+      isScalarSsaL1Body(ir1Assign(ir1Var("x"), ir1LitNat(1))),
+      false,
+    );
+    assert.equal(
+      isScalarSsaL1Body(
+        ir1Assign(ir1Member(mapReadReceiver, "Account_balance"), ir1LitNat(1)),
+      ),
+      false,
+    );
+    assert.equal(
+      isScalarSsaL1Body(
+        ir1CondStmt(
+          [
+            [
+              ir1Var("g"),
+              ir1Assign(ir1Member(ir1Var("a"), "A_x"), ir1LitNat(1)),
+            ],
+            [
+              ir1Var("h"),
+              ir1Assign(ir1Member(ir1Var("a"), "A_x"), ir1LitNat(2)),
+            ],
+          ],
+          null,
+        ),
+      ),
+      false,
+    );
+    assert.equal(
+      isScalarSsaL1Body({
+        kind: "expr-stmt",
+        expr: ir1LitBool(true),
+      }),
+      false,
+    );
+  });
 
-  it.skip(
-    "preserves translateBody parity for asymmetric branch write fixtures",
-    async () => {
-      const output = await emitFixture(
-        "functions-mutating-conditional.ts",
-        "asymmetric",
-      );
-      void output;
+  it("preserves declared frame rules first seen inside scalar branches", () => {
+    const balance = ir1Member(ir1Var("a"), "Account_balance");
+    const limit = ir1Member(ir1Var("a"), "Account_limit");
+    const stmt = ir1CondStmt(
+      [[ir1Var("g"), ir1Assign(balance, ir1Binop("add", limit, ir1LitNat(1)))]],
+      null,
+    );
 
-      // PENDING Patch 4: asymmetric branch writes should keep the current
-      // output while switching the scalar mutation path to SSA internally.
-      assert.fail("PENDING: asymmetric branch parity is not implemented yet");
-    },
-  );
+    const program = buildScalarSsaProgram(stmt);
 
-  it.skip(
-    "preserves translateBody parity for chained early-return fixtures",
-    async () => {
-      const output = await emitFixture(
-        "functions-mutating-early-exit.ts",
-        "chainedEarlyReturns",
-      );
-      void output;
+    assert.deepEqual(
+      new Set(program.declaredRules),
+      new Set(["Account_balance", "Account_limit"]),
+    );
+    assert.deepEqual(program.modifiedRules, ["Account_balance"]);
+    assert.deepEqual(program.framedRules, ["Account_limit"]);
+  });
 
-      // PENDING Patch 5: continuation merges after chained early exits should
-      // remain byte-stable at the Pantagruel boundary.
-      assert.fail("PENDING: chained early-return parity is not implemented yet");
-    },
-  );
+  it.skip("preserves translateBody parity for scalar sequential write/read fixtures", async () => {
+    const output = await emitFixture(
+      "functions-mutating-conditional.ts",
+      "accumulateIf",
+    );
+    void output;
 
-  it.skip(
-    "preserves translateBody parity for else-branch early-return fixtures",
-    async () => {
-      const output = await emitFixture(
-        "functions-mutating-early-exit.ts",
-        "elseBranchReturn",
-      );
-      void output;
+    // PENDING Patch 4: this fixture should still emit the same Pantagruel
+    // text after the scalar SSA route becomes active.
+    assert.fail("PENDING: scalar translateBody parity is not implemented yet");
+  });
 
-      // PENDING Patch 5: else-branch early returns should keep the current
-      // continuation-matching output after SSA routing lands.
-      assert.fail("PENDING: else-branch early-return parity is not implemented yet");
-    },
-  );
+  it.skip("preserves translateBody parity for asymmetric branch write fixtures", async () => {
+    const output = await emitFixture(
+      "functions-mutating-conditional.ts",
+      "asymmetric",
+    );
+    void output;
 
-  it.skip(
-    "preserves translateBody parity for write-then-early-return fixtures",
-    async () => {
-      const output = await emitFixture(
-        "functions-mutating-early-exit.ts",
-        "writeThenEarlyReturn",
-      );
-      void output;
+    // PENDING Patch 4: asymmetric branch writes should keep the current
+    // output while switching the scalar mutation path to SSA internally.
+    assert.fail("PENDING: asymmetric branch parity is not implemented yet");
+  });
 
-      // PENDING Patch 5: the post-return write path should stay output-stable
-      // once early-exit merges are routed through scalar SSA.
-      assert.fail("PENDING: write-then-early-return parity is not implemented yet");
-    },
-  );
+  it.skip("preserves translateBody parity for chained early-return fixtures", async () => {
+    const output = await emitFixture(
+      "functions-mutating-early-exit.ts",
+      "chainedEarlyReturns",
+    );
+    void output;
+
+    // PENDING Patch 5: continuation merges after chained early exits should
+    // remain byte-stable at the Pantagruel boundary.
+    assert.fail("PENDING: chained early-return parity is not implemented yet");
+  });
+
+  it.skip("preserves translateBody parity for else-branch early-return fixtures", async () => {
+    const output = await emitFixture(
+      "functions-mutating-early-exit.ts",
+      "elseBranchReturn",
+    );
+    void output;
+
+    // PENDING Patch 5: else-branch early returns should keep the current
+    // continuation-matching output after SSA routing lands.
+    assert.fail(
+      "PENDING: else-branch early-return parity is not implemented yet",
+    );
+  });
+
+  it.skip("preserves translateBody parity for write-then-early-return fixtures", async () => {
+    const output = await emitFixture(
+      "functions-mutating-early-exit.ts",
+      "writeThenEarlyReturn",
+    );
+    void output;
+
+    // PENDING Patch 5: the post-return write path should stay output-stable
+    // once early-exit merges are routed through scalar SSA.
+    assert.fail(
+      "PENDING: write-then-early-return parity is not implemented yet",
+    );
+  });
 });
