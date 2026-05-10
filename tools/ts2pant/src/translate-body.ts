@@ -23,6 +23,7 @@ import {
 } from "./ir1-build-body.js";
 import { lowerL1MuSearch, type MuSearchLowerCtx } from "./ir1-lower.js";
 import { lowerL1Body } from "./ir1-lower-body.js";
+import { isScalarSsaL1Body } from "./ir1-ssa-scalars.js";
 import {
   getOperandDeclaredType,
   type NullishTranslate,
@@ -4908,10 +4909,9 @@ function symbolicExecute(
 
     // Property assignment: obj.prop = rhs. Routes through L1: build
     // canonical `Assign(Member(receiver, name), value)` via
-    // `buildL1AssignStmt`, then `lowerL1Body` installs the write into
-    // `SymbolicState`. Output is byte-equal to the legacy direct
-    // construction (M5 hard-rule cutover for the property-access
-    // equivalence class — assignment targets are L1 Member).
+    // `buildL1AssignStmt`, then scalar-only bodies are resolved by IR1
+    // SSA inside `lowerL1Body` before installing final writes into
+    // `SymbolicState`. Non-scalar L1 forms still use the legacy lowerer.
     if (
       ts.isExpressionStatement(stmt) &&
       ts.isBinaryExpression(unwrapExpression(stmt.expression))
@@ -4938,6 +4938,12 @@ function symbolicExecute(
             kind: "unsupported",
             reason: built.unsupported,
           });
+          continue;
+        }
+        if (isScalarSsaL1Body(built)) {
+          if (!lowerL1Body(built, state, propositions, { applyConst })) {
+            ok = false;
+          }
           continue;
         }
         if (!lowerL1Body(built, state, propositions, { applyConst })) {
@@ -5067,11 +5073,9 @@ function symbolicExecute(
       continue;
     }
 
-    // Branched mutation: build L1 cond-stmt, lower via lowerL1Body
-    // (single-fold over L1 statements; threads SymbolicState).
-    // Slice 1 handles simple property assigns; richer branch shapes
-    // (Map/Set effects, compound assigns, etc.) reject from the build
-    // pass and fall through to the legacy unsupported below.
+    // Branched mutation: build L1 cond-stmt, lower via lowerL1Body. Scalar
+    // cond-stmts resolve through IR1 SSA; Map/Set and foreach-containing
+    // branches stay on the existing SymbolicState fallback.
     if (ts.isIfStatement(stmt)) {
       const built = buildL1IfMutation(stmt, {
         checker,
@@ -5087,6 +5091,12 @@ function symbolicExecute(
           reason: built.unsupported,
         });
         ok = false;
+        continue;
+      }
+      if (isScalarSsaL1Body(built)) {
+        if (!lowerL1Body(built, state, propositions, { applyConst })) {
+          ok = false;
+        }
         continue;
       }
       if (!lowerL1Body(built, state, propositions, { applyConst })) {

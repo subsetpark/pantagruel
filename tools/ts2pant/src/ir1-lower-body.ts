@@ -27,6 +27,7 @@
 import { lowerBinop, lowerExpr } from "./ir-emit.js";
 import type { IR1Expr, IR1FoldLeaf, IR1Stmt } from "./ir1.js";
 import { lowerL1Expr } from "./ir1-lower.js";
+import { isScalarSsaL1Body, lowerScalarSsaToProps } from "./ir1-ssa-scalars.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
 import {
@@ -214,6 +215,10 @@ export function lowerL1Body(
   propositions: PropResult[],
   ctx: LowerBodyCtx,
 ): boolean {
+  if (isScalarSsaL1Body(stmt)) {
+    return lowerScalarL1BodyToSsa(stmt, state, propositions, ctx);
+  }
+
   switch (stmt.kind) {
     case "block": {
       let ok = true;
@@ -255,6 +260,62 @@ export function lowerL1Body(
       return false;
     }
   }
+}
+
+function lowerScalarL1BodyToSsa(
+  stmt: IR1Stmt,
+  state: SymbolicState,
+  propositions: PropResult[],
+  ctx: LowerBodyCtx,
+): boolean {
+  let result: ReturnType<typeof lowerScalarSsaToProps>;
+  try {
+    result = lowerScalarSsaToProps(stmt, {
+      lowerOpaque: ctx.applyConst,
+      initialPropertyValues: scalarInitialPropertyValues(state),
+    });
+  } catch (err) {
+    propositions.push({
+      kind: "unsupported",
+      reason:
+        err instanceof Error
+          ? err.message
+          : "scalar SSA lowering rejected the body",
+    });
+    return false;
+  }
+
+  if (result.diagnostics.length > 0) {
+    propositions.push(...result.diagnostics);
+    return false;
+  }
+
+  for (const entry of result.finalProperties) {
+    const prop = entry.location.ruleName;
+    const key = symbolicKey(prop, entry.objExpr);
+    state.writes = putWrite(state.writes, key, {
+      kind: "property",
+      prop,
+      objExpr: entry.objExpr,
+      value: entry.rhs,
+    });
+    state.writtenKeys = addWrittenKey(state.writtenKeys, key);
+    state.modifiedProps = addModifiedProp(state.modifiedProps, prop);
+  }
+
+  return true;
+}
+
+function scalarInitialPropertyValues(
+  state: SymbolicState,
+): ReadonlyMap<string, OpaqueExpr> {
+  const initialValues = new Map<string, OpaqueExpr>();
+  for (const [key, entry] of state.writes) {
+    if (entry.kind === "property") {
+      initialValues.set(key, entry.value);
+    }
+  }
+  return initialValues;
 }
 
 function lowerAssign(

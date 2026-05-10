@@ -38,11 +38,14 @@ export interface ScalarSsaState {
 export interface ScalarSsaBuildOptions {
   declaredRules?: Iterable<string>;
   canonicalize?: (e: IR1Expr) => IR1Expr;
+  lowerOpaque?: (e: OpaqueExpr) => OpaqueExpr;
+  initialPropertyValues?: ReadonlyMap<string, OpaqueExpr>;
 }
 
 export interface ScalarSsaFinalPropertyEntry {
   location: Extract<IR1SsaLocation, { kind: "property" }>;
   version: IR1SsaVersion;
+  objExpr: OpaqueExpr;
   lhs: OpaqueExpr;
   rhs: OpaqueExpr;
 }
@@ -131,7 +134,12 @@ export function lowerScalarSsaToProps(
   }
 
   const program = buildScalarSsaProgram(stmt, options);
-  const lowerState = makeScalarSsaLowerState(program, options.canonicalize);
+  const lowerState = makeScalarSsaLowerState(
+    program,
+    options.canonicalize,
+    options.lowerOpaque,
+    options.initialPropertyValues,
+  );
   lowerScalarSsaStmtToVersions(stmt, lowerState);
 
   const ast = getAst();
@@ -148,10 +156,11 @@ export function lowerScalarSsaToProps(
         "missing lowered expression for final scalar SSA version",
       );
     }
-    const lhs = ast.app(ast.primed(location.ruleName), [
+    const objExpr = lowerState.lowerOpaque(
       lowerScalarOpaqueExpr(location.receiver, lowerState.canonicalize),
-    ]);
-    finalProperties.push({ location, version, lhs, rhs });
+    );
+    const lhs = ast.app(ast.primed(location.ruleName), [objExpr]);
+    finalProperties.push({ location, version, objExpr, lhs, rhs });
     propositions.push({
       kind: "equation",
       quantifiers: [],
@@ -319,11 +328,15 @@ interface ScalarSsaLowerState {
   versionExprs: Map<IR1SsaVersion, OpaqueExpr>;
   writtenKeys: Set<string>;
   canonicalize: (e: IR1Expr) => IR1Expr;
+  lowerOpaque: (e: OpaqueExpr) => OpaqueExpr;
+  initialPropertyValues: ReadonlyMap<string, OpaqueExpr>;
 }
 
 function makeScalarSsaLowerState(
   program: IR1SsaProgram,
   canonicalize?: (e: IR1Expr) => IR1Expr,
+  lowerOpaque?: (e: OpaqueExpr) => OpaqueExpr,
+  initialPropertyValues: ReadonlyMap<string, OpaqueExpr> = new Map(),
 ): ScalarSsaLowerState {
   return {
     writes: program.writes,
@@ -336,6 +349,8 @@ function makeScalarSsaLowerState(
     versionExprs: new Map(),
     writtenKeys: new Set(),
     canonicalize: canonicalize ?? ((e) => e),
+    lowerOpaque: lowerOpaque ?? ((e) => e),
+    initialPropertyValues,
   };
 }
 
@@ -463,10 +478,12 @@ function lowerScalarSsaCondToVersions(
     }
     const thenExpr = resolveScalarSsaVersionExpr(thenVersion, thenState);
     const elseExpr = resolveScalarSsaVersionExpr(elseVersion, elseState);
-    const joinExpr = ast.cond([
-      [guardExpr, thenExpr],
-      [ast.litBool(true), elseExpr],
-    ]);
+    const joinExpr = state.lowerOpaque(
+      ast.cond([
+        [guardExpr, thenExpr],
+        [ast.litBool(true), elseExpr],
+      ]),
+    );
     state.currentVersions.set(key, join.joinVersion);
     state.locations.set(key, location);
     state.versionExprs.set(join.joinVersion, joinExpr);
@@ -489,24 +506,28 @@ function lowerScalarSsaExprToOpaque(
     }
     case "var":
     case "lit":
-      return lowerScalarOpaqueExpr(expr, state.canonicalize);
+      return state.lowerOpaque(lowerScalarOpaqueExpr(expr, state.canonicalize));
     case "binop":
-      return ast.binop(
-        lowerScalarBinop(expr.op),
-        lowerScalarSsaExprToOpaque(expr.lhs, state),
-        lowerScalarSsaExprToOpaque(expr.rhs, state),
+      return state.lowerOpaque(
+        ast.binop(
+          lowerScalarBinop(expr.op),
+          lowerScalarSsaExprToOpaque(expr.lhs, state),
+          lowerScalarSsaExprToOpaque(expr.rhs, state),
+        ),
       );
     case "unop":
-      return ast.unop(
-        lowerScalarUnop(expr.op),
-        lowerScalarSsaExprToOpaque(expr.arg, state),
+      return state.lowerOpaque(
+        ast.unop(
+          lowerScalarUnop(expr.op),
+          lowerScalarSsaExprToOpaque(expr.arg, state),
+        ),
       );
     case "app": {
       const callee = lowerScalarSsaExprToOpaque(expr.callee, state);
       const args = expr.args.map((arg) =>
         lowerScalarSsaExprToOpaque(arg, state),
       );
-      return ast.app(callee, args);
+      return state.lowerOpaque(ast.app(callee, args));
     }
     case "cond": {
       const arms: Array<[OpaqueExpr, OpaqueExpr]> = expr.arms.map(
@@ -515,27 +536,39 @@ function lowerScalarSsaExprToOpaque(
           lowerScalarSsaExprToOpaque(value, state),
         ],
       );
-      return ast.cond([
-        ...arms,
-        [ast.litBool(true), lowerScalarSsaExprToOpaque(expr.otherwise, state)],
-      ]);
+      return state.lowerOpaque(
+        ast.cond([
+          ...arms,
+          [
+            ast.litBool(true),
+            lowerScalarSsaExprToOpaque(expr.otherwise, state),
+          ],
+        ]),
+      );
     }
     case "is-nullish":
-      return ast.binop(
-        ast.opEq(),
-        ast.unop(ast.opCard(), lowerScalarSsaExprToOpaque(expr.operand, state)),
-        ast.litNat(0),
+      return state.lowerOpaque(
+        ast.binop(
+          ast.opEq(),
+          ast.unop(
+            ast.opCard(),
+            lowerScalarSsaExprToOpaque(expr.operand, state),
+          ),
+          ast.litNat(0),
+        ),
       );
     case "each":
-      return ast.each(
-        [],
-        [
-          ast.gIn(expr.binder, lowerScalarSsaExprToOpaque(expr.src, state)),
-          ...expr.guards.map((guard) =>
-            ast.gExpr(lowerScalarSsaExprToOpaque(guard, state)),
-          ),
-        ],
-        lowerScalarSsaExprToOpaque(expr.proj, state),
+      return state.lowerOpaque(
+        ast.each(
+          [],
+          [
+            ast.gIn(expr.binder, lowerScalarSsaExprToOpaque(expr.src, state)),
+            ...expr.guards.map((guard) =>
+              ast.gExpr(lowerScalarSsaExprToOpaque(guard, state)),
+            ),
+          ],
+          lowerScalarSsaExprToOpaque(expr.proj, state),
+        ),
       );
     case "map-read":
     case "set-read":
@@ -550,7 +583,10 @@ function lowerScalarSsaExprToOpaque(
 
 function resolveScalarSsaVersionExpr(
   version: IR1SsaVersion,
-  state: Pick<ScalarSsaLowerState, "versionExprs" | "canonicalize">,
+  state: Pick<
+    ScalarSsaLowerState,
+    "versionExprs" | "canonicalize" | "lowerOpaque" | "initialPropertyValues"
+  >,
 ): OpaqueExpr {
   const existing = state.versionExprs.get(version);
   if (existing !== undefined) {
@@ -559,10 +595,23 @@ function resolveScalarSsaVersionExpr(
   if (version.origin !== "initial" || version.location.kind !== "property") {
     throw new Error("scalar SSA lowering expected a property initial version");
   }
-  const ast = getAst();
-  const identity = ast.app(ast.var(version.location.ruleName), [
+  const receiver = state.lowerOpaque(
     lowerScalarOpaqueExpr(version.location.receiver, state.canonicalize),
-  ]);
+  );
+  const initialKey = scalarOpaquePropertyKey(
+    version.location.ruleName,
+    receiver,
+  );
+  const initialValue = state.initialPropertyValues.get(initialKey);
+  if (initialValue !== undefined) {
+    const loweredInitialValue = state.lowerOpaque(initialValue);
+    state.versionExprs.set(version, loweredInitialValue);
+    return loweredInitialValue;
+  }
+  const ast = getAst();
+  const identity = state.lowerOpaque(
+    ast.app(ast.var(version.location.ruleName), [receiver]),
+  );
   state.versionExprs.set(version, identity);
   return identity;
 }
@@ -583,6 +632,8 @@ function cloneScalarSsaLowerStateForBranch(
     versionExprs: new Map(state.versionExprs),
     writtenKeys: new Set(),
     canonicalize: state.canonicalize,
+    lowerOpaque: state.lowerOpaque,
+    initialPropertyValues: state.initialPropertyValues,
   };
 }
 
@@ -873,6 +924,10 @@ function initialVersionFor(
 
 function scalarPropertyKey(prop: string, receiver: string): string {
   return `${prop}::${receiver}`;
+}
+
+function scalarOpaquePropertyKey(prop: string, receiver: OpaqueExpr): string {
+  return `${prop}::${getAst().strExpr(receiver)}`;
 }
 
 function scalarSsaCanonicalReceiverKey(
