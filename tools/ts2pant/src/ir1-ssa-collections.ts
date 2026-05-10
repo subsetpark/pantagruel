@@ -309,7 +309,8 @@ function finishCollectionSsaLowering(
   const propositions: PropResult[] = [];
   for (const [key, location] of lowerState.locations) {
     const version =
-      lowerState.currentVersions.get(key) ?? lowerState.initialVersions.get(key);
+      lowerState.currentVersions.get(key) ??
+      lowerState.initialVersions.get(key);
     if (version === undefined) {
       continue;
     }
@@ -747,7 +748,9 @@ function lowerCollectionSsaAssignToVersions(
   state: CollectionSsaLowerState,
 ): void {
   if (stmt.target.kind !== "member") {
-    throw new Error("collection SSA assignment target must be a property member");
+    throw new Error(
+      "collection SSA assignment target must be a property member",
+    );
   }
   const objExpr = lowerCollectionSsaExprToOpaque(stmt.target.receiver, state);
   const value = lowerCollectionSsaExprToOpaque(stmt.value, state);
@@ -1169,7 +1172,10 @@ function lowerCollectionSsaMapRead(
     state.currentVersions.get(location.key) ??
     initialCollectionVersionFor(location.key, location.location, state);
   if (expr.op === "get") {
-    const membershipLocation = mapMembershipLocationForReadOrWrite(input, state);
+    const membershipLocation = mapMembershipLocationForReadOrWrite(
+      input,
+      state,
+    );
     const membershipVersion =
       state.currentVersions.get(membershipLocation.key) ??
       initialCollectionVersionFor(
@@ -1381,10 +1387,7 @@ function emitMapSsaEquations(
           ast.param(m, ast.tName(group.ownerType)),
           ast.param(k, ast.tName(group.keyType)),
         ] as OpaqueParam[],
-        lhs: ast.app(ast.primed(group.keyPredName), [
-          ast.var(m),
-          ast.var(k),
-        ]),
+        lhs: ast.app(ast.primed(group.keyPredName), [ast.var(m), ast.var(k)]),
         rhs: ast.app(
           ast.override(
             group.keyPredName,
@@ -1407,10 +1410,7 @@ function freshMapBinder(
   hint: string,
 ): string {
   const ast = getAst();
-  const usedText = [
-    ...group.valueOverrides,
-    ...group.membershipOverrides,
-  ]
+  const usedText = [...group.valueOverrides, ...group.membershipOverrides]
     .flatMap((o) => [
       ast.strExpr(o.objExpr),
       ast.strExpr(o.keyExpr),
