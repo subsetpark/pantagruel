@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { before, describe, it } from "node:test";
 import {
   type IR1SsaProgram,
   ir1Assign,
@@ -22,6 +22,11 @@ import {
   isCollectionSsaL1Body,
   lowerCollectionSsaToResult,
 } from "../src/ir1-ssa-collections.js";
+import { getAst, loadAst } from "../src/pant-wasm.js";
+
+before(async () => {
+  await loadAst();
+});
 
 function mustBuildCollectionSsaProgram(
   ...args: Parameters<typeof buildCollectionSsaProgram>
@@ -179,9 +184,96 @@ describe("ir1-ssa-collections", () => {
     const [valueWrite, , membershipDeleteWrite] = program.writes;
     const [valueRead, membershipRead] = program.reads;
     assert.equal(valueRead!.location, valueWrite!.location);
-    assert.equal(valueRead!.version, valueWrite!.version);
+    assert.equal(valueRead!.version.origin, "initial");
+    assert.notEqual(valueRead!.version, valueWrite!.version);
     assert.equal(membershipRead!.location, membershipDeleteWrite!.location);
     assert.equal(membershipRead!.version, membershipDeleteWrite!.version);
+  });
+
+  it("records Map.delete as membership-only SSA write", () => {
+    const stmt = ir1MapDelete(
+      "Cache_value",
+      "Cache_hasKey",
+      "Owner",
+      "Key",
+      ir1Var("cache"),
+      ir1Var("key"),
+    );
+
+    const program = mustBuildCollectionSsaProgram(stmt);
+
+    assert.equal(program.writes.length, 1);
+    const [membershipWrite] = program.writes;
+    assert.equal(membershipWrite!.location.kind, "map-membership");
+    assert.deepEqual(
+      membershipWrite!.value,
+      ir1SsaMapMembershipValue("delete"),
+    );
+    assert.deepEqual(
+      new Set(program.modifiedRules),
+      new Set(["Cache_hasKey"]),
+    );
+  });
+
+  it("filters Map.get value reads after literal delete membership", () => {
+    const stmt = ir1Block([
+      ir1MapSet(
+        "Cache_value",
+        "Cache_hasKey",
+        "Owner",
+        "Key",
+        ir1Var("cache"),
+        ir1Var("key"),
+        ir1LitNat(7),
+      ),
+      ir1MapDelete(
+        "Cache_value",
+        "Cache_hasKey",
+        "Owner",
+        "Key",
+        ir1Var("cache"),
+        ir1Var("key"),
+      ),
+      ir1Assign(
+        ir1Member(ir1Var("owner"), "Owner_seen"),
+        ir1MapRead(
+          "get",
+          "Cache_value",
+          "Cache_hasKey",
+          "Owner",
+          "Key",
+          ir1Var("cache"),
+          ir1Var("key"),
+        ),
+      ),
+      ir1Assign(
+        ir1Member(ir1Var("owner"), "Owner_has"),
+        ir1MapRead(
+          "has",
+          "Cache_value",
+          "Cache_hasKey",
+          "Owner",
+          "Key",
+          ir1Var("cache"),
+          ir1Var("key"),
+        ),
+      ),
+    ]);
+
+    const program = mustBuildCollectionSsaProgram(stmt);
+
+    assert.equal(program.writes.length, 3);
+    assert.equal(program.reads.length, 3);
+    const [valueWrite, , membershipDeleteWrite] = program.writes;
+    const [valueRead, getMembershipRead, hasMembershipRead] = program.reads;
+    assert.equal(valueWrite!.location.kind, "map-value");
+    assert.equal(valueRead!.location, valueWrite!.location);
+    assert.equal(valueRead!.version.origin, "initial");
+    assert.notEqual(valueRead!.version, valueWrite!.version);
+    assert.equal(getMembershipRead!.location, membershipDeleteWrite!.location);
+    assert.equal(getMembershipRead!.version, membershipDeleteWrite!.version);
+    assert.equal(hasMembershipRead!.location, membershipDeleteWrite!.location);
+    assert.equal(hasMembershipRead!.version, membershipDeleteWrite!.version);
   });
 
   it("joins Map value and membership versions across branches", () => {
@@ -286,6 +378,87 @@ describe("ir1-ssa-collections", () => {
     assert.equal(valueRead!.version, program.writes[0]!.version);
     assert.equal(membershipRead!.location, membershipJoin.location);
     assert.equal(membershipRead!.version, membershipJoin.joinVersion);
+  });
+
+  it("lowers final Map versions to value and membership override equations", () => {
+    const stmt = ir1Block([
+      ir1MapSet(
+        "Cache_value",
+        "Cache_hasKey",
+        "Owner",
+        "Key",
+        ir1Var("cache"),
+        ir1Var("key"),
+        ir1LitNat(7),
+      ),
+      ir1MapDelete(
+        "Cache_value",
+        "Cache_hasKey",
+        "Owner",
+        "Key",
+        ir1Var("cache"),
+        ir1Var("otherKey"),
+      ),
+    ]);
+
+    const result = lowerCollectionSsaToResult(stmt);
+    const ast = getAst();
+
+    assert.equal(result.diagnostics.length, 0);
+    assert.equal(result.propositions.length, 2);
+    const valueEq = result.propositions.find(
+      (p) => p.kind === "equation" && ast.strExpr(p.lhs).startsWith("Cache_value'"),
+    );
+    const membershipEq = result.propositions.find(
+      (p) =>
+        p.kind === "equation" && ast.strExpr(p.lhs).startsWith("Cache_hasKey'"),
+    );
+    assert.ok(valueEq);
+    assert.ok(membershipEq);
+    assert.match(ast.strExpr(valueEq.rhs), /Cache_value.*->\s*7/u);
+    assert.match(ast.strExpr(membershipEq.rhs), /Cache_hasKey.*->\s*true/u);
+    assert.match(ast.strExpr(membershipEq.rhs), /Cache_hasKey.*->\s*false/u);
+  });
+
+  it("lowers Map branch joins to conditional override values", () => {
+    const stmt = ir1CondStmt(
+      [
+        [
+          ir1Var("gate"),
+          ir1MapSet(
+            "Cache_value",
+            "Cache_hasKey",
+            "Owner",
+            "Key",
+            ir1Var("cache"),
+            ir1Var("key"),
+            ir1LitNat(7),
+          ),
+        ],
+      ],
+      null,
+    );
+
+    const result = lowerCollectionSsaToResult(stmt);
+    const ast = getAst();
+    const valueEq = result.propositions.find(
+      (p) => p.kind === "equation" && ast.strExpr(p.lhs).startsWith("Cache_value'"),
+    );
+    const membershipEq = result.propositions.find(
+      (p) =>
+        p.kind === "equation" && ast.strExpr(p.lhs).startsWith("Cache_hasKey'"),
+    );
+
+    assert.ok(valueEq);
+    assert.ok(membershipEq);
+    assert.match(
+      ast.strExpr(valueEq.rhs),
+      /cond gate => 7, true => Cache_value cache key/u,
+    );
+    assert.match(
+      ast.strExpr(membershipEq.rhs),
+      /cond gate => true, true => Cache_hasKey cache key/u,
+    );
   });
 
   it("resolves Set.has through the current membership version", () => {
