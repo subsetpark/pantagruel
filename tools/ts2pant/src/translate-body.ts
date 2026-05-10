@@ -611,6 +611,10 @@ export function clearedFallback(
  * - then-only clear (`true`/`false`) → `gExpr`
  * - else-only clear (`false`/`true`) → `~gExpr`
  * - mixed → `cond gExpr => tCleared, true => eCleared`
+ *
+ * M3 note: non-looping Set branch merges now route through collection SSA.
+ * This fallback merge remains for foreach/unsupported loop-era collection
+ * lowering until M4.
  */
 export function mergeClearedCond(
   gExpr: OpaqueExpr,
@@ -673,6 +677,10 @@ function mapWriteKey(
  * seen. The canonical form comes from `ast.strExpr(keyOf(o))`. Generic over
  * the override record so Map (tuple-keyed) and Set (element-keyed) writes
  * share the same merge plumbing.
+ *
+ * M3 note: non-looping Map/Set branch merges now route through collection
+ * SSA. This fallback merge remains for foreach/unsupported loop-era
+ * collection lowering until M4.
  */
 export function mergeOverrides<O extends { value: OpaqueExpr }>(
   aSide: ReadonlyArray<O>,
@@ -713,6 +721,10 @@ export function mergeOverrides<O extends { value: OpaqueExpr }>(
  * rule append their (tuple |-> value) overrides. The key tuple is `(m, k)`
  * — `m` is the receiver (so distinct receivers at the same key don't
  * collide), `k` is the key argument.
+ *
+ * M3 note: non-looping Map bodies route through collection SSA before this
+ * fallback. Keep this helper for foreach and unsupported-shape fallback
+ * until M4 moves loop-era collection lowering over as well.
  */
 export function installMapWrite(
   state: SymbolicState,
@@ -810,6 +822,10 @@ export function installMapWrite(
  * this at emission time (vacuous value under false membership — Dafny-style
  * partial function), but an inline override application has no such guard,
  * so the filter is explicit at the read site.
+ *
+ * M3 note: non-looping Map reads route through collection SSA before this
+ * fallback. Keep this helper for foreach and unsupported-shape fallback
+ * until M4 moves loop-era collection lowering over as well.
  */
 export function readMapThroughWrites(
   state: SymbolicState | undefined,
@@ -862,6 +878,9 @@ export function readMapThroughWrites(
  * any earlier staged `.set` at that tuple. Conditional membership (e.g.
  * `cond g => false, true => true` after a branch-merged `.delete`) is not
  * filtered; only literal `false` is detected here.
+ *
+ * M3 note: used by `readMapThroughWrites`, which is now a loop/fallback
+ * helper rather than the normal non-looping Map production path.
  */
 function readOverridesFor(
   entry: MapRuleWriteEntry,
@@ -919,6 +938,10 @@ function setWriteKey(
  * receiver in the same path accumulate normally on top of the cleared
  * baseline; at emission the pre-state `y in tags c` fallthrough is
  * replaced with literal `false`.
+ *
+ * M3 note: non-looping Set bodies route through collection SSA before this
+ * fallback. Keep this helper for foreach and unsupported-shape fallback
+ * until M4 moves loop-era collection lowering over as well.
  */
 export function installSetWrite(
   state: SymbolicState,
@@ -987,6 +1010,10 @@ export function installSetWrite(
  * applied to the receiver+key), Set membership goes through `ast.binop`
  * with `ast.opIn` and a cond over equality arms. `ast.override` would be
  * invalid on a list-valued field accessor.
+ *
+ * M3 note: non-looping Set reads route through collection SSA before this
+ * fallback. Keep this helper for foreach and unsupported-shape fallback
+ * until M4 moves loop-era collection lowering over as well.
  */
 export function readSetThroughWrites(
   state: SymbolicState | undefined,

@@ -347,13 +347,12 @@ describe("end-to-end: branched Map/Set read observes prior staged write", () => 
       const rhsStr = ast.strExpr(
         (valueEq as { rhs: import("../src/pant-ast.js").OpaqueExpr }).rhs,
       );
-      // The inner `m.get(k)!` lowered through `readMapThroughWrites`
-      // sees the prior staged `.set(k, v)`, so it reads through the
-      // override `string-to-int-map[(m, k) |-> v] m k + 1` rather
-      // than the bare pre-state rule `string-to-int-map m k + 1`.
+      // The inner `m.get(k)!` now lowers through collection SSA and sees
+      // the prior staged `.set(k, v)`, so the nested branch writes `v + 1`
+      // rather than the bare pre-state rule `string-to-int-map m k + 1`.
       assert.match(
         rhsStr,
-        /string-to-int-map\[\(m,\s*k\)\s*\|->\s*v\]\s*m\s*k\s*\+\s*1/u,
+        /(?:string-to-int-map\[\(m,\s*k\)\s*\|->\s*v\]\s*m\s*k|v)\s*\+\s*1/u,
         `Map value-rule rhs should read through the staged override: ${rhsStr}`,
       );
       assert.doesNotMatch(

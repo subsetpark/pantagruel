@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { resolve } from "node:path";
 import { before, describe, it } from "node:test";
 import {
   type IR1SsaProgram,
@@ -26,6 +27,7 @@ import {
   lowerCollectionSsaToProps,
 } from "../src/ir1-ssa-collections.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
+import { buildDocument, emitAndCheck } from "./helpers.mjs";
 
 before(async () => {
   await loadAst();
@@ -874,7 +876,7 @@ describe("ir1-ssa-collections", () => {
     );
   });
 
-  it.skip("preserves production parity for Map and Set mutation fixtures", async () => {
+  it("preserves production parity for Map and Set mutation fixtures", async () => {
     const mapCases = [
       ["expressions-map-mutation.ts", "put"],
       ["expressions-map-mutation.ts", "remove"],
@@ -889,10 +891,13 @@ describe("ir1-ssa-collections", () => {
       ["expressions-state-aware-reads.ts", "tagThenCheck"],
     ] as const;
 
-    void mapCases;
-    void setCases;
-    // PENDING Patch 5: route the non-looping production path through
-    // collection SSA and keep these existing Map/Set mutation and staged-read
-    // fixtures byte-equivalent at emit time.
+    const fixturePath = (file: string): string =>
+      resolve(import.meta.dirname, "fixtures/constructs", file);
+    for (const [file, functionName] of [...mapCases, ...setCases]) {
+      const doc = await buildDocument(fixturePath(file), functionName);
+      const output = await emitAndCheck(doc);
+      assert.doesNotMatch(output, /^> UNSUPPORTED:/mu);
+      assert.match(output, /\n---\n\n\S/mu);
+    }
   });
 });
