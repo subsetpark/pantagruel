@@ -571,6 +571,8 @@ function cloneScalarSsaLowerStateForBranch(
     writeIndex: state.writeIndex,
     joinIndex: state.joinIndex,
     currentVersions: new Map(state.currentVersions),
+    // Shared, not cloned: initial versions represent pre-function state,
+    // the same regardless of which branch is taken.
     initialVersions: state.initialVersions,
     locations: new Map(state.locations),
     versionExprs: new Map(state.versionExprs),
