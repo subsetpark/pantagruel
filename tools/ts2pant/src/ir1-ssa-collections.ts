@@ -510,10 +510,11 @@ export function collectionSsaReadExpr(
       );
       return expr;
     case "cond":
-      collectionSsaUnsupported(
-        state,
-        "collection SSA does not support value-position conditionals in this pass",
-      );
+      for (const [guard, value] of expr.arms) {
+        collectionSsaReadExpr(guard, state);
+        collectionSsaReadExpr(value, state);
+      }
+      collectionSsaReadExpr(expr.otherwise, state);
       return expr;
     case "is-nullish":
       collectionSsaReadExpr(expr.operand, state);
@@ -1051,12 +1052,16 @@ function lowerCollectionSsaExprToOpaque(
     }
     case "map-read":
       return lowerCollectionSsaMapRead(expr, state);
-    case "member":
-      return state.lowerOpaque(
-        ast.app(ast.var(expr.name), [
-          lowerCollectionSsaExprToOpaque(expr.receiver, state),
-        ]),
+    case "member": {
+      const receiver = lowerCollectionSsaExprToOpaque(expr.receiver, state);
+      const staged = state.propertyWrites.get(
+        propertyWriteKey(expr.name, receiver),
       );
+      if (staged !== undefined) {
+        return staged.value;
+      }
+      return state.lowerOpaque(ast.app(ast.var(expr.name), [receiver]));
+    }
     case "var":
     case "lit":
       return state.lowerOpaque(
@@ -2057,8 +2062,14 @@ function isCollectionSsaExpr(expr: IR1Expr): boolean {
       return isCollectionSsaExpr(expr.lhs) && isCollectionSsaExpr(expr.rhs);
     case "unop":
       return isCollectionSsaExpr(expr.arg);
-    case "app":
     case "cond":
+      return (
+        expr.arms.every(
+          ([guard, value]) =>
+            isCollectionSsaExpr(guard) && isCollectionSsaExpr(value),
+        ) && isCollectionSsaExpr(expr.otherwise)
+      );
+    case "app":
       return false;
     case "is-nullish":
       return isCollectionSsaExpr(expr.operand);

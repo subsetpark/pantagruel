@@ -214,10 +214,7 @@ describe("ir1-ssa-collections", () => {
       membershipWrite!.value,
       ir1SsaMapMembershipValue("delete"),
     );
-    assert.deepEqual(
-      new Set(program.modifiedRules),
-      new Set(["Cache_hasKey"]),
-    );
+    assert.deepEqual(new Set(program.modifiedRules), new Set(["Cache_hasKey"]));
   });
 
   it("filters Map.get value reads after literal delete membership", () => {
@@ -412,7 +409,8 @@ describe("ir1-ssa-collections", () => {
     assert.equal(result.diagnostics.length, 0);
     assert.equal(result.propositions.length, 2);
     const valueEq = result.propositions.find(
-      (p) => p.kind === "equation" && ast.strExpr(p.lhs).startsWith("Cache_value'"),
+      (p) =>
+        p.kind === "equation" && ast.strExpr(p.lhs).startsWith("Cache_value'"),
     );
     const membershipEq = result.propositions.find(
       (p) =>
@@ -447,7 +445,8 @@ describe("ir1-ssa-collections", () => {
     const result = lowerCollectionSsaToResult(stmt);
     const ast = getAst();
     const valueEq = result.propositions.find(
-      (p) => p.kind === "equation" && ast.strExpr(p.lhs).startsWith("Cache_value'"),
+      (p) =>
+        p.kind === "equation" && ast.strExpr(p.lhs).startsWith("Cache_value'"),
     );
     const membershipEq = result.propositions.find(
       (p) =>
@@ -622,7 +621,7 @@ describe("ir1-ssa-collections", () => {
     ]);
   });
 
-  it("rejects call and value-position conditional expressions", () => {
+  it("rejects call expressions and accepts value-position conditionals", () => {
     const target = ir1Member(ir1Var("owner"), "Owner_seen");
     const callAssign = ir1Assign(target, {
       kind: "app",
@@ -663,14 +662,40 @@ describe("ir1-ssa-collections", () => {
         reason: "collection SSA does not support call expressions in this pass",
       },
     ]);
-    assert.equal(isCollectionSsaL1Body(condAssign), false);
-    assert.deepEqual(lowerCollectionSsaToResult(condAssign).diagnostics, [
-      {
-        kind: "unsupported",
-        reason:
-          "collection SSA does not support value-position conditionals in this pass",
-      },
+    assert.equal(isCollectionSsaL1Body(condAssign), true);
+    const result = lowerCollectionSsaToResult(condAssign);
+    const ast = getAst();
+    assert.deepEqual(result.diagnostics, []);
+    assert.equal(result.program.reads.length, 4);
+    assert.equal(result.finalProperties.length, 1);
+    assert.match(ast.strExpr(result.finalProperties[0]!.rhs), /cond gate/u);
+  });
+
+  it("preserves staged property reads inside collection SSA map values", () => {
+    const stmt = ir1Block([
+      ir1Assign(ir1Member(ir1Var("owner"), "Owner_count"), ir1LitNat(1)),
+      ir1MapSet(
+        "Cache_value",
+        "Cache_hasKey",
+        "Owner",
+        "Key",
+        ir1Var("cache"),
+        ir1Var("key"),
+        ir1Member(ir1Var("owner"), "Owner_count"),
+      ),
     ]);
+
+    const result = lowerCollectionSsaToProps(stmt);
+    const ast = getAst();
+    const valueEq = result.propositions.find(
+      (p) =>
+        p.kind === "equation" && ast.strExpr(p.lhs).startsWith("Cache_value'"),
+    );
+
+    assert.deepEqual(result.diagnostics, []);
+    assert.ok(valueEq);
+    assert.match(ast.strExpr(valueEq.rhs), /->\s*1/u);
+    assert.doesNotMatch(ast.strExpr(valueEq.rhs), /Owner_count owner/u);
   });
 
   it("includes read-only collection locations in final entries", () => {
