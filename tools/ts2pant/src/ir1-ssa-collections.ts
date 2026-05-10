@@ -78,6 +78,15 @@ export interface CollectionSsaLowerResult {
   diagnostics: Array<Extract<PropResult, { kind: "unsupported" }>>;
 }
 
+export interface CollectionSsaUnsupportedResult {
+  unsupported: string;
+  diagnostics: Array<Extract<PropResult, { kind: "unsupported" }>>;
+}
+
+export type CollectionSsaProgramBuildResult =
+  | IR1SsaProgram
+  | CollectionSsaUnsupportedResult;
+
 interface CollectionSsaLocationState {
   locations: Map<string, CollectionSsaLocation>;
   declaredRules?: Set<string>;
@@ -109,9 +118,15 @@ export function makeCollectionSsaState(
 export function buildCollectionSsaProgram(
   stmt: IR1Stmt,
   options: CollectionSsaBuildOptions = {},
-): IR1SsaProgram {
+): CollectionSsaProgramBuildResult {
   const state = makeCollectionSsaState(options);
   lowerCollectionSsaL1Body(stmt, state);
+  if (state.diagnostics.length > 0) {
+    return {
+      unsupported: state.diagnostics[0]!.reason,
+      diagnostics: state.diagnostics,
+    };
+  }
   return collectionSsaProgramFromState(state);
 }
 
@@ -153,12 +168,16 @@ function collectionSsaProgramFromState(
 }
 
 export function collectionSsaFinalEntries(
-  state: Pick<CollectionSsaState, "currentVersions" | "locations">,
+  state: Pick<
+    CollectionSsaState,
+    "currentVersions" | "initialVersions" | "locations"
+  >,
 ): CollectionSsaFinalEntry[] {
   const entries: CollectionSsaFinalEntry[] = [];
-  for (const [key, version] of state.currentVersions) {
-    const location = state.locations.get(key);
-    if (location === undefined) {
+  for (const [key, location] of state.locations) {
+    const version =
+      state.currentVersions.get(key) ?? state.initialVersions.get(key);
+    if (version === undefined) {
       continue;
     }
     entries.push({
@@ -738,14 +757,7 @@ function collectionSsaCanonicalExpr(
   expr: IR1Expr,
   state: Pick<CollectionSsaLocationState, "canonicalize">,
 ): IR1Expr {
-  try {
-    return state.canonicalize(expr);
-  } catch (err) {
-    if (err instanceof Error) {
-      return expr;
-    }
-    throw err;
-  }
+  return state.canonicalize(expr);
 }
 
 function collectionSsaExprKey(expr: IR1Expr): string {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  type IR1SsaProgram,
   ir1Assign,
   ir1Block,
   ir1CondStmt,
@@ -21,6 +22,16 @@ import {
   isCollectionSsaL1Body,
   lowerCollectionSsaToResult,
 } from "../src/ir1-ssa-collections.js";
+
+function mustBuildCollectionSsaProgram(
+  ...args: Parameters<typeof buildCollectionSsaProgram>
+): IR1SsaProgram {
+  const result = buildCollectionSsaProgram(...args);
+  if ("unsupported" in result) {
+    assert.fail(result.unsupported);
+  }
+  return result;
+}
 
 describe("ir1-ssa-collections", () => {
   // PENDING Patch 2: introduce shared collection SSA state for coordinated
@@ -48,7 +59,7 @@ describe("ir1-ssa-collections", () => {
     assert.equal(membership.kind, "map-membership");
     assert.equal(isCollectionSsaL1Body(stmt), true);
 
-    const program = buildCollectionSsaProgram(stmt);
+    const program = mustBuildCollectionSsaProgram(stmt);
 
     assert.equal(program.writes.length, 2);
     assert.equal(program.reads.length, 0);
@@ -106,7 +117,7 @@ describe("ir1-ssa-collections", () => {
       ),
     ]);
 
-    const program = buildCollectionSsaProgram(stmt, {
+    const program = mustBuildCollectionSsaProgram(stmt, {
       canonicalize: (expr) =>
         expr.kind === "var" && expr.name === "alias" ? ir1Var("cache") : expr,
     });
@@ -151,7 +162,7 @@ describe("ir1-ssa-collections", () => {
       ),
     );
 
-    const program = buildCollectionSsaProgram(stmt);
+    const program = mustBuildCollectionSsaProgram(stmt);
 
     assert.equal(program.writes.length, 3);
     assert.equal(program.joins.length, 2);
@@ -197,7 +208,7 @@ describe("ir1-ssa-collections", () => {
       ),
     ]);
 
-    const program = buildCollectionSsaProgram(stmt);
+    const program = mustBuildCollectionSsaProgram(stmt);
 
     assert.equal(program.writes.length, 1);
     assert.equal(program.reads.length, 1);
@@ -229,7 +240,7 @@ describe("ir1-ssa-collections", () => {
       ),
     ]);
 
-    const program = buildCollectionSsaProgram(stmt);
+    const program = mustBuildCollectionSsaProgram(stmt);
     const valueRules = program.writes
       .filter((write) => write.location.kind === "map-value")
       .map((write) => write.location.ruleName);
@@ -275,6 +286,20 @@ describe("ir1-ssa-collections", () => {
         reason: "collection SSA does not support expr-stmt in this pass",
       },
     ]);
+
+    const buildResult = buildCollectionSsaProgram({
+      kind: "expr-stmt",
+      expr: ir1Var("x"),
+    });
+    assert.deepEqual(buildResult, {
+      unsupported: "collection SSA does not support expr-stmt in this pass",
+      diagnostics: [
+        {
+          kind: "unsupported",
+          reason: "collection SSA does not support expr-stmt in this pass",
+        },
+      ],
+    });
   });
 
   it("reports unsupported multi-arm conditionals as diagnostics", () => {
@@ -315,6 +340,55 @@ describe("ir1-ssa-collections", () => {
           "collection SSA does not support multi-armed cond-stmt in this pass",
       },
     ]);
+  });
+
+  it("includes read-only collection locations in final entries", () => {
+    const result = lowerCollectionSsaToResult(
+      ir1Assign(
+        ir1Member(ir1Var("owner"), "Owner_has"),
+        ir1MapRead(
+          "has",
+          "Cache_value",
+          "Cache_hasKey",
+          "Owner",
+          "Key",
+          ir1Var("cache"),
+          ir1Var("key"),
+        ),
+      ),
+    );
+
+    assert.deepEqual(result.diagnostics, []);
+    assert.equal(result.program.reads.length, 1);
+    assert.equal(result.program.writes.length, 0);
+    assert.equal(result.finalEntries.length, 1);
+    assert.equal(result.finalEntries[0]!.kind, "map-membership");
+    assert.equal(result.finalEntries[0]!.version.origin, "initial");
+    assert.equal(
+      result.finalEntries[0]!.version,
+      result.program.reads[0]!.version,
+    );
+  });
+
+  it("propagates canonicalizer failures", () => {
+    const stmt = ir1MapDelete(
+      "Cache_value",
+      "Cache_hasKey",
+      "Owner",
+      "Key",
+      ir1Var("cache"),
+      ir1Var("key"),
+    );
+
+    assert.throws(
+      () =>
+        buildCollectionSsaProgram(stmt, {
+          canonicalize: () => {
+            throw new Error("canonicalize failed");
+          },
+        }),
+      /canonicalize failed/,
+    );
   });
 
   it.skip("records Set.add delete and clear as membership SSA writes", () => {
