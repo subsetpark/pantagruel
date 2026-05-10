@@ -143,12 +143,13 @@ export function lowerScalarSsaToProps(
     }
     const rhs = lowerState.versionExprs.get(version);
     if (rhs === undefined) {
-      throw new Error("missing lowered expression for final scalar SSA version");
+      throw new Error(
+        "missing lowered expression for final scalar SSA version",
+      );
     }
-    const lhs = ast.app(
-      ast.primed(location.ruleName),
-      [lowerScalarOpaqueExpr(location.receiver, lowerState.canonicalize)],
-    );
+    const lhs = ast.app(ast.primed(location.ruleName), [
+      lowerScalarOpaqueExpr(location.receiver, lowerState.canonicalize),
+    ]);
     finalProperties.push({ location, version, lhs, rhs });
     propositions.push({
       kind: "equation",
@@ -384,7 +385,9 @@ function lowerScalarSsaAssignToVersions(
   }
   const { key, location } = scalarLocationForMember(stmt.target, state);
   if (!sameScalarSsaLocation(write.location, location, state.canonicalize)) {
-    throw new Error("scalar SSA write order did not match its property location");
+    throw new Error(
+      "scalar SSA write order did not match its property location",
+    );
   }
   const rhs = lowerScalarSsaExprToOpaque(stmt.value, state);
   state.currentVersions.set(key, write.version);
@@ -439,8 +442,16 @@ function lowerScalarSsaCondToVersions(
     }
     const join = nextScalarSsaJoin(state, location);
     if (
-      !sameScalarSsaVersion(join.thenVersion, thenVersion, state.canonicalize) ||
-      !sameScalarSsaVersion(join.elseVersion, elseVersion, state.canonicalize) ||
+      !sameScalarSsaVersion(
+        join.thenVersion,
+        thenVersion,
+        state.canonicalize,
+      ) ||
+      !sameScalarSsaVersion(
+        join.elseVersion,
+        elseVersion,
+        state.canonicalize,
+      ) ||
       !sameScalarSsaLocation(join.location, location, state.canonicalize)
     ) {
       throw new Error("scalar SSA join order did not match branch versions");
@@ -467,7 +478,8 @@ function lowerScalarSsaExprToOpaque(
     case "member": {
       const { key, location } = scalarLocationForMember(expr, state);
       const version =
-        state.currentVersions.get(key) ?? initialVersionFor(key, location, state);
+        state.currentVersions.get(key) ??
+        initialVersionFor(key, location, state);
       return resolveScalarSsaVersionExpr(version, state);
     }
     case "var":
@@ -486,7 +498,9 @@ function lowerScalarSsaExprToOpaque(
       );
     case "app": {
       const callee = lowerScalarSsaExprToOpaque(expr.callee, state);
-      const args = expr.args.map((arg) => lowerScalarSsaExprToOpaque(arg, state));
+      const args = expr.args.map((arg) =>
+        lowerScalarSsaExprToOpaque(arg, state),
+      );
       return ast.app(callee, args);
     }
     case "cond": {
@@ -504,10 +518,7 @@ function lowerScalarSsaExprToOpaque(
     case "is-nullish":
       return ast.binop(
         ast.opEq(),
-        ast.unop(
-          ast.opCard(),
-          lowerScalarSsaExprToOpaque(expr.operand, state),
-        ),
+        ast.unop(ast.opCard(), lowerScalarSsaExprToOpaque(expr.operand, state)),
         ast.litNat(0),
       );
     case "each":
@@ -534,10 +545,7 @@ function lowerScalarSsaExprToOpaque(
 
 function resolveScalarSsaVersionExpr(
   version: IR1SsaVersion,
-  state: Pick<
-    ScalarSsaLowerState,
-    "versionExprs" | "canonicalize"
-  >,
+  state: Pick<ScalarSsaLowerState, "versionExprs" | "canonicalize">,
 ): OpaqueExpr {
   const existing = state.versionExprs.get(version);
   if (existing !== undefined) {
@@ -547,10 +555,9 @@ function resolveScalarSsaVersionExpr(
     throw new Error("scalar SSA lowering expected a property initial version");
   }
   const ast = getAst();
-  const identity = ast.app(
-    ast.var(version.location.ruleName),
-    [lowerScalarOpaqueExpr(version.location.receiver, state.canonicalize)],
-  );
+  const identity = ast.app(ast.var(version.location.ruleName), [
+    lowerScalarOpaqueExpr(version.location.receiver, state.canonicalize),
+  ]);
   state.versionExprs.set(version, identity);
   return identity;
 }
@@ -581,7 +588,10 @@ function nextScalarSsaWrite(
     throw new Error("scalar SSA lowering ran out of writes");
   }
   state.writeIndex += 1;
-  if (expectedRule !== undefined && ir1SsaRuleOfLocation(write.location) !== expectedRule) {
+  if (
+    expectedRule !== undefined &&
+    ir1SsaRuleOfLocation(write.location) !== expectedRule
+  ) {
     throw new Error("scalar SSA write sequence did not match the source order");
   }
   return write;
