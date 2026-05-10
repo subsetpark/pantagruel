@@ -27,10 +27,7 @@
 import { lowerBinop, lowerExpr } from "./ir-emit.js";
 import type { IR1Expr, IR1FoldLeaf, IR1Stmt } from "./ir1.js";
 import { lowerL1Expr } from "./ir1-lower.js";
-import {
-  isScalarSsaL1Body,
-  lowerScalarSsaToProps,
-} from "./ir1-ssa-scalars.js";
+import { isScalarSsaL1Body, lowerScalarSsaToProps } from "./ir1-ssa-scalars.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
 import {

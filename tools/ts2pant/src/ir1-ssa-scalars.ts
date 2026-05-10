@@ -157,10 +157,7 @@ export function lowerScalarSsaToProps(
       );
     }
     const objExpr = lowerState.lowerOpaque(
-      lowerScalarOpaqueExpr(
-        location.receiver,
-        lowerState.canonicalize,
-      ),
+      lowerScalarOpaqueExpr(location.receiver, lowerState.canonicalize),
     );
     const lhs = ast.app(ast.primed(location.ruleName), [objExpr]);
     finalProperties.push({ location, version, objExpr, lhs, rhs });
@@ -527,7 +524,9 @@ function lowerScalarSsaExprToOpaque(
       );
     case "app": {
       const callee = lowerScalarSsaExprToOpaque(expr.callee, state);
-      const args = expr.args.map((arg) => lowerScalarSsaExprToOpaque(arg, state));
+      const args = expr.args.map((arg) =>
+        lowerScalarSsaExprToOpaque(arg, state),
+      );
       return state.lowerOpaque(ast.app(callee, args));
     }
     case "cond": {
@@ -540,7 +539,10 @@ function lowerScalarSsaExprToOpaque(
       return state.lowerOpaque(
         ast.cond([
           ...arms,
-          [ast.litBool(true), lowerScalarSsaExprToOpaque(expr.otherwise, state)],
+          [
+            ast.litBool(true),
+            lowerScalarSsaExprToOpaque(expr.otherwise, state),
+          ],
         ]),
       );
     }
@@ -605,10 +607,9 @@ function resolveScalarSsaVersionExpr(
   }
   const ast = getAst();
   const identity = state.lowerOpaque(
-    ast.app(
-      ast.var(version.location.ruleName),
-      [lowerScalarOpaqueExpr(version.location.receiver, state.canonicalize)],
-    ),
+    ast.app(ast.var(version.location.ruleName), [
+      lowerScalarOpaqueExpr(version.location.receiver, state.canonicalize),
+    ]),
   );
   state.versionExprs.set(version, identity);
   return identity;
