@@ -112,15 +112,16 @@ export function lowerScalarSsaToProps(
 ): ScalarSsaLowerResult {
   if (!isScalarSsaL1Body(stmt)) {
     const reason = "statement is not supported by scalar SSA lowering";
+    const declared = [...new Set(options.declaredRules ?? [])];
     return {
       program: {
         reads: [],
         writes: [],
         joins: [],
         loopSummaries: [],
-        declaredRules: [...new Set(options.declaredRules ?? [])],
+        declaredRules: declared,
         modifiedRules: [],
-        framedRules: [...new Set(options.declaredRules ?? [])],
+        framedRules: declared,
       },
       finalProperties: [],
       propositions: [],
@@ -434,6 +435,10 @@ function lowerScalarSsaCondToVersions(
     const elseVersion =
       elseState.currentVersions.get(key) ??
       initialVersionFor(key, location, elseState);
+    // Defensive fast-path: today `touched` implies at least one branch wrote,
+    // but future version reuse or caching could still leave both branches with
+    // the same version object. In that case we keep the shared version as the
+    // final one and still propagate the location/key through the outer state.
     if (thenVersion === elseVersion) {
       state.currentVersions.set(key, thenVersion);
       state.locations.set(key, location);
