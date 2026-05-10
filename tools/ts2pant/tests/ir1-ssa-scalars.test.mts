@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
-import { describe, it } from "node:test";
+import { before, describe, it } from "node:test";
 
 import { createSourceFile } from "../src/extract.js";
 import {
@@ -17,7 +17,9 @@ import {
 import {
   buildScalarSsaProgram,
   isScalarSsaL1Body,
+  lowerScalarSsaToProps,
 } from "../src/ir1-ssa-scalars.js";
+import { getAst, loadAst } from "../src/pant-wasm.js";
 import { buildDocumentFromSourceFile, emitAndCheck } from "./helpers.mjs";
 
 const CONSTRUCTS_DIR = resolve(import.meta.dirname, "fixtures/constructs");
@@ -31,6 +33,22 @@ async function emitFixture(fileName: string, functionName: string) {
   const doc = await buildDocumentFromSourceFile(sourceFile, functionName);
   return emitAndCheck(doc);
 }
+
+function scalarEquationRhs(stmt: Parameters<typeof lowerScalarSsaToProps>[0]) {
+  const result = lowerScalarSsaToProps(stmt);
+  assert.deepEqual(result.diagnostics, []);
+  assert.equal(result.propositions.length, 1);
+  const [eq] = result.propositions;
+  assert.equal(eq?.kind, "equation");
+  if (eq?.kind !== "equation") {
+    assert.fail("expected a scalar SSA equation");
+  }
+  return getAst().strExpr(eq.rhs);
+}
+
+before(async () => {
+  await loadAst();
+});
 
 describe("ir1-ssa-scalars", () => {
   // PENDING Patch 2: add the scalar SSA builder state and write/version recording.
@@ -57,6 +75,7 @@ describe("ir1-ssa-scalars", () => {
     assert.equal(write.location.property, "Account_balance");
     assert.equal(write.version.location, write.location);
     assert.deepEqual(write.value, { kind: "property", value: ir1LitNat(1) });
+    assert.equal(scalarEquationRhs(stmt), "1");
   });
 
   it("resolves compound property assignment through the dominating prior version", () => {
@@ -77,6 +96,7 @@ describe("ir1-ssa-scalars", () => {
     assert.equal(read.version, firstWrite!.version);
     assert.equal(read.dominated, true);
     assert.equal(secondWrite!.version.location, firstWrite!.location);
+    assert.equal(scalarEquationRhs(stmt), "1 + 2");
   });
 
   it("joins a single-arm if against the initial property version", () => {
@@ -99,6 +119,10 @@ describe("ir1-ssa-scalars", () => {
     assert.equal(join.elseVersion.location, write.location);
     assert.equal(join.joinVersion.location, write.location);
     assert.notEqual(join.thenVersion, join.elseVersion);
+    assert.equal(
+      scalarEquationRhs(stmt),
+      "cond g => 1, true => Account_balance a",
+    );
   });
 
   it("lowers nested scalar if bodies through SSA joins", () => {
@@ -123,6 +147,10 @@ describe("ir1-ssa-scalars", () => {
     assert.equal(outerJoin!.thenVersion, innerJoin!.joinVersion);
     assert.equal(outerJoin!.elseVersion, program.writes[2]!.version);
     assert.equal(outerJoin!.joinVersion.location, innerJoin!.location);
+    assert.equal(
+      scalarEquationRhs(outer),
+      "cond x => cond y => 1, true => 2, true => 3",
+    );
   });
 
   it("rejects non-scalar routing shapes", () => {

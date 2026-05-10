@@ -1,9 +1,11 @@
+import { lowerExpr } from "./ir-emit.js";
 import {
   type IR1Expr,
   type IR1SsaJoin,
   type IR1SsaLocation,
   type IR1SsaProgram,
   type IR1SsaRead,
+  type IR1SsaRuleName,
   type IR1SsaVersion,
   type IR1SsaWrite,
   type IR1Stmt,
@@ -15,6 +17,10 @@ import {
   ir1SsaRuleOfLocation,
   ir1SsaWrite,
 } from "./ir1.js";
+import { lowerL1Expr } from "./ir1-lower.js";
+import type { OpaqueExpr } from "./pant-ast.js";
+import { getAst } from "./pant-wasm.js";
+import type { PropResult } from "./types.js";
 
 export interface ScalarSsaState {
   currentVersions: Map<string, IR1SsaVersion>;
@@ -32,6 +38,31 @@ export interface ScalarSsaState {
 export interface ScalarSsaBuildOptions {
   declaredRules?: Iterable<string>;
   canonicalize?: (e: IR1Expr) => IR1Expr;
+}
+
+export interface ScalarSsaFinalPropertyEntry {
+  location: Extract<IR1SsaLocation, { kind: "property" }>;
+  version: IR1SsaVersion;
+  lhs: OpaqueExpr;
+  rhs: OpaqueExpr;
+}
+
+export interface ScalarSsaLowerResult {
+  program: IR1SsaProgram;
+  finalProperties: ScalarSsaFinalPropertyEntry[];
+  propositions: PropResult[];
+  modifiedRules: IR1SsaRuleName[];
+  diagnostics: Array<Extract<PropResult, { kind: "unsupported" }>>;
+}
+
+interface ScalarSsaLocationState {
+  locations: Map<string, IR1SsaLocation>;
+  declaredRules?: Set<string>;
+  canonicalize: (e: IR1Expr) => IR1Expr;
+}
+
+interface ScalarSsaInitialVersionState {
+  initialVersions: Map<string, IR1SsaVersion>;
 }
 
 export function makeScalarSsaState(
@@ -72,6 +103,67 @@ export function buildScalarSsaProgram(
     declaredRules: [...declaredRules],
     modifiedRules: [...state.modifiedRules],
     framedRules,
+  };
+}
+
+export function lowerScalarSsaToProps(
+  stmt: IR1Stmt,
+  options: ScalarSsaBuildOptions = {},
+): ScalarSsaLowerResult {
+  if (!isScalarSsaL1Body(stmt)) {
+    const reason = "statement is not supported by scalar SSA lowering";
+    return {
+      program: {
+        reads: [],
+        writes: [],
+        joins: [],
+        loopSummaries: [],
+        declaredRules: [...new Set(options.declaredRules ?? [])],
+        modifiedRules: [],
+        framedRules: [...new Set(options.declaredRules ?? [])],
+      },
+      finalProperties: [],
+      propositions: [],
+      modifiedRules: [],
+      diagnostics: [{ kind: "unsupported", reason }],
+    };
+  }
+
+  const program = buildScalarSsaProgram(stmt, options);
+  const lowerState = makeScalarSsaLowerState(program, options.canonicalize);
+  lowerScalarSsaStmtToVersions(stmt, lowerState);
+
+  const ast = getAst();
+  const finalProperties: ScalarSsaFinalPropertyEntry[] = [];
+  const propositions: PropResult[] = [];
+  for (const [key, version] of lowerState.currentVersions) {
+    const location = lowerState.locations.get(key);
+    if (location === undefined || location.kind !== "property") {
+      continue;
+    }
+    const rhs = lowerState.versionExprs.get(version);
+    if (rhs === undefined) {
+      throw new Error("missing lowered expression for final scalar SSA version");
+    }
+    const lhs = ast.app(
+      ast.primed(location.ruleName),
+      [lowerScalarOpaqueExpr(location.receiver, lowerState.canonicalize)],
+    );
+    finalProperties.push({ location, version, lhs, rhs });
+    propositions.push({
+      kind: "equation",
+      quantifiers: [],
+      lhs,
+      rhs,
+    });
+  }
+
+  return {
+    program,
+    finalProperties,
+    propositions,
+    modifiedRules: [...program.modifiedRules],
+    diagnostics: [],
   };
 }
 
@@ -214,6 +306,425 @@ function lowerScalarAssign(
   state.modifiedRules.add(ir1SsaRuleOfLocation(location));
 }
 
+interface ScalarSsaLowerState {
+  writes: readonly IR1SsaWrite[];
+  joins: readonly IR1SsaJoin[];
+  writeIndex: number;
+  joinIndex: number;
+  currentVersions: Map<string, IR1SsaVersion>;
+  initialVersions: Map<string, IR1SsaVersion>;
+  locations: Map<string, IR1SsaLocation>;
+  versionExprs: Map<IR1SsaVersion, OpaqueExpr>;
+  writtenKeys: Set<string>;
+  canonicalize: (e: IR1Expr) => IR1Expr;
+}
+
+function makeScalarSsaLowerState(
+  program: IR1SsaProgram,
+  canonicalize?: (e: IR1Expr) => IR1Expr,
+): ScalarSsaLowerState {
+  return {
+    writes: program.writes,
+    joins: program.joins,
+    writeIndex: 0,
+    joinIndex: 0,
+    currentVersions: new Map(),
+    initialVersions: new Map(),
+    locations: new Map(),
+    versionExprs: new Map(),
+    writtenKeys: new Set(),
+    canonicalize: canonicalize ?? ((e) => e),
+  };
+}
+
+function lowerScalarSsaStmtToVersions(
+  stmt: IR1Stmt,
+  state: ScalarSsaLowerState,
+): void {
+  switch (stmt.kind) {
+    case "assign":
+      lowerScalarSsaAssignToVersions(stmt, state);
+      return;
+    case "block":
+      for (const child of stmt.stmts) {
+        lowerScalarSsaStmtToVersions(child, state);
+      }
+      return;
+    case "cond-stmt":
+      lowerScalarSsaCondToVersions(stmt, state);
+      return;
+    case "map-effect":
+    case "set-effect":
+    case "foreach":
+    case "for":
+    case "while":
+    case "return":
+    case "throw":
+    case "let":
+    case "expr-stmt":
+      throw new Error(`${stmt.kind} is not supported by scalar SSA lowering`);
+    default: {
+      const _exhaustive: never = stmt;
+      void _exhaustive;
+      throw new Error("unsupported IR1 statement in scalar SSA lowering");
+    }
+  }
+}
+
+function lowerScalarSsaAssignToVersions(
+  stmt: Extract<IR1Stmt, { kind: "assign" }>,
+  state: ScalarSsaLowerState,
+): void {
+  if (stmt.target.kind !== "member") {
+    throw new Error("scalar SSA assignment target must be a property member");
+  }
+  const write = nextScalarSsaWrite(state, stmt.target.name);
+  if (write.location.kind !== "property") {
+    throw new Error("scalar SSA write lowered to a non-property location");
+  }
+  const { key, location } = scalarLocationForMember(stmt.target, state);
+  if (!sameScalarSsaLocation(write.location, location, state.canonicalize)) {
+    throw new Error("scalar SSA write order did not match its property location");
+  }
+  const rhs = lowerScalarSsaExprToOpaque(stmt.value, state);
+  state.currentVersions.set(key, write.version);
+  state.locations.set(key, location);
+  state.versionExprs.set(write.version, rhs);
+  state.writtenKeys.add(key);
+}
+
+function lowerScalarSsaCondToVersions(
+  stmt: Extract<IR1Stmt, { kind: "cond-stmt" }>,
+  state: ScalarSsaLowerState,
+): void {
+  if (stmt.arms.length !== 1) {
+    throw new Error("multi-armed cond-stmt is not supported by scalar SSA");
+  }
+  const ast = getAst();
+  const [guard, thenBody] = stmt.arms[0]!;
+  const guardExpr = lowerScalarSsaExprToOpaque(guard, state);
+  const thenState = cloneScalarSsaLowerStateForBranch(state);
+  lowerScalarSsaStmtToVersions(thenBody, thenState);
+
+  const elseState = cloneScalarSsaLowerStateForBranch(state);
+  elseState.writeIndex = thenState.writeIndex;
+  elseState.joinIndex = thenState.joinIndex;
+  if (stmt.otherwise !== null) {
+    lowerScalarSsaStmtToVersions(stmt.otherwise, elseState);
+  }
+
+  state.writeIndex = elseState.writeIndex;
+  state.joinIndex = elseState.joinIndex;
+
+  const touched = new Set([...thenState.writtenKeys, ...elseState.writtenKeys]);
+  for (const key of touched) {
+    const location =
+      thenState.locations.get(key) ??
+      elseState.locations.get(key) ??
+      state.locations.get(key);
+    if (location === undefined) {
+      throw new Error("scalar SSA branch touched an unknown location");
+    }
+    const thenVersion =
+      thenState.currentVersions.get(key) ??
+      initialVersionFor(key, location, thenState);
+    const elseVersion =
+      elseState.currentVersions.get(key) ??
+      initialVersionFor(key, location, elseState);
+    if (thenVersion === elseVersion) {
+      state.currentVersions.set(key, thenVersion);
+      state.locations.set(key, location);
+      state.writtenKeys.add(key);
+      continue;
+    }
+    const join = nextScalarSsaJoin(state, location);
+    if (
+      !sameScalarSsaVersion(join.thenVersion, thenVersion, state.canonicalize) ||
+      !sameScalarSsaVersion(join.elseVersion, elseVersion, state.canonicalize) ||
+      !sameScalarSsaLocation(join.location, location, state.canonicalize)
+    ) {
+      throw new Error("scalar SSA join order did not match branch versions");
+    }
+    const thenExpr = resolveScalarSsaVersionExpr(thenVersion, thenState);
+    const elseExpr = resolveScalarSsaVersionExpr(elseVersion, elseState);
+    const joinExpr = ast.cond([
+      [guardExpr, thenExpr],
+      [ast.litBool(true), elseExpr],
+    ]);
+    state.currentVersions.set(key, join.joinVersion);
+    state.locations.set(key, location);
+    state.versionExprs.set(join.joinVersion, joinExpr);
+    state.writtenKeys.add(key);
+  }
+}
+
+function lowerScalarSsaExprToOpaque(
+  expr: IR1Expr,
+  state: ScalarSsaLowerState,
+): OpaqueExpr {
+  const ast = getAst();
+  switch (expr.kind) {
+    case "member": {
+      const { key, location } = scalarLocationForMember(expr, state);
+      const version =
+        state.currentVersions.get(key) ?? initialVersionFor(key, location, state);
+      return resolveScalarSsaVersionExpr(version, state);
+    }
+    case "var":
+    case "lit":
+      return lowerScalarOpaqueExpr(expr, state.canonicalize);
+    case "binop":
+      return ast.binop(
+        lowerScalarBinop(expr.op),
+        lowerScalarSsaExprToOpaque(expr.lhs, state),
+        lowerScalarSsaExprToOpaque(expr.rhs, state),
+      );
+    case "unop":
+      return ast.unop(
+        lowerScalarUnop(expr.op),
+        lowerScalarSsaExprToOpaque(expr.arg, state),
+      );
+    case "app": {
+      const callee = lowerScalarSsaExprToOpaque(expr.callee, state);
+      const args = expr.args.map((arg) => lowerScalarSsaExprToOpaque(arg, state));
+      return ast.app(callee, args);
+    }
+    case "cond": {
+      const arms: Array<[OpaqueExpr, OpaqueExpr]> = expr.arms.map(
+        ([armGuard, value]) => [
+          lowerScalarSsaExprToOpaque(armGuard, state),
+          lowerScalarSsaExprToOpaque(value, state),
+        ],
+      );
+      return ast.cond([
+        ...arms,
+        [ast.litBool(true), lowerScalarSsaExprToOpaque(expr.otherwise, state)],
+      ]);
+    }
+    case "is-nullish":
+      return ast.binop(
+        ast.opEq(),
+        ast.unop(
+          ast.opCard(),
+          lowerScalarSsaExprToOpaque(expr.operand, state),
+        ),
+        ast.litNat(0),
+      );
+    case "each":
+      return ast.each(
+        [],
+        [
+          ast.gIn(expr.binder, lowerScalarSsaExprToOpaque(expr.src, state)),
+          ...expr.guards.map((guard) =>
+            ast.gExpr(lowerScalarSsaExprToOpaque(guard, state)),
+          ),
+        ],
+        lowerScalarSsaExprToOpaque(expr.proj, state),
+      );
+    case "map-read":
+    case "set-read":
+      throw new Error(`${expr.kind} is not a scalar SSA expression`);
+    default: {
+      const _exhaustive: never = expr;
+      void _exhaustive;
+      throw new Error("unsupported IR1 expression in scalar SSA lowering");
+    }
+  }
+}
+
+function resolveScalarSsaVersionExpr(
+  version: IR1SsaVersion,
+  state: Pick<
+    ScalarSsaLowerState,
+    "versionExprs" | "canonicalize"
+  >,
+): OpaqueExpr {
+  const existing = state.versionExprs.get(version);
+  if (existing !== undefined) {
+    return existing;
+  }
+  if (version.origin !== "initial" || version.location.kind !== "property") {
+    throw new Error("scalar SSA lowering expected a property initial version");
+  }
+  const ast = getAst();
+  const identity = ast.app(
+    ast.var(version.location.ruleName),
+    [lowerScalarOpaqueExpr(version.location.receiver, state.canonicalize)],
+  );
+  state.versionExprs.set(version, identity);
+  return identity;
+}
+
+function cloneScalarSsaLowerStateForBranch(
+  state: ScalarSsaLowerState,
+): ScalarSsaLowerState {
+  return {
+    writes: state.writes,
+    joins: state.joins,
+    writeIndex: state.writeIndex,
+    joinIndex: state.joinIndex,
+    currentVersions: new Map(state.currentVersions),
+    initialVersions: state.initialVersions,
+    locations: new Map(state.locations),
+    versionExprs: new Map(state.versionExprs),
+    writtenKeys: new Set(),
+    canonicalize: state.canonicalize,
+  };
+}
+
+function nextScalarSsaWrite(
+  state: ScalarSsaLowerState,
+  expectedRule?: string,
+): IR1SsaWrite {
+  const write = state.writes[state.writeIndex];
+  if (write === undefined) {
+    throw new Error("scalar SSA lowering ran out of writes");
+  }
+  state.writeIndex += 1;
+  if (expectedRule !== undefined && ir1SsaRuleOfLocation(write.location) !== expectedRule) {
+    throw new Error("scalar SSA write sequence did not match the source order");
+  }
+  return write;
+}
+
+function nextScalarSsaJoin(
+  state: ScalarSsaLowerState,
+  location: IR1SsaLocation,
+): IR1SsaJoin {
+  const join = state.joins[state.joinIndex];
+  if (join === undefined) {
+    throw new Error("scalar SSA lowering ran out of joins");
+  }
+  state.joinIndex += 1;
+  if (!sameScalarSsaLocation(join.location, location, state.canonicalize)) {
+    throw new Error("scalar SSA join sequence did not match the source order");
+  }
+  return join;
+}
+
+function lowerScalarOpaqueExpr(
+  expr: IR1Expr,
+  canonicalize: (e: IR1Expr) => IR1Expr,
+): OpaqueExpr {
+  return lowerExpr(lowerL1Expr(canonicalize(expr)));
+}
+
+function sameScalarSsaLocation(
+  left: IR1SsaLocation,
+  right: IR1SsaLocation,
+  canonicalize: (e: IR1Expr) => IR1Expr,
+): boolean {
+  if (left.kind !== right.kind) {
+    return false;
+  }
+  switch (left.kind) {
+    case "property":
+      return (
+        right.kind === "property" &&
+        left.ruleName === right.ruleName &&
+        left.property === right.property &&
+        scalarSsaCanonicalReceiverKey(left.receiver, { canonicalize }) ===
+          scalarSsaCanonicalReceiverKey(right.receiver, { canonicalize })
+      );
+    case "map-value":
+      return (
+        right.kind === "map-value" &&
+        left.ruleName === right.ruleName &&
+        left.ownerType === right.ownerType &&
+        left.keyType === right.keyType &&
+        scalarSsaCanonicalReceiverKey(left.receiver, { canonicalize }) ===
+          scalarSsaCanonicalReceiverKey(right.receiver, { canonicalize }) &&
+        scalarSsaCanonicalReceiverKey(left.key, { canonicalize }) ===
+          scalarSsaCanonicalReceiverKey(right.key, { canonicalize })
+      );
+    case "map-membership":
+      return (
+        right.kind === "map-membership" &&
+        left.ruleName === right.ruleName &&
+        left.keyPredName === right.keyPredName &&
+        left.ownerType === right.ownerType &&
+        left.keyType === right.keyType &&
+        scalarSsaCanonicalReceiverKey(left.receiver, { canonicalize }) ===
+          scalarSsaCanonicalReceiverKey(right.receiver, { canonicalize }) &&
+        scalarSsaCanonicalReceiverKey(left.key, { canonicalize }) ===
+          scalarSsaCanonicalReceiverKey(right.key, { canonicalize })
+      );
+    case "set-membership":
+      return (
+        right.kind === "set-membership" &&
+        left.ruleName === right.ruleName &&
+        left.ownerType === right.ownerType &&
+        left.elemType === right.elemType &&
+        scalarSsaCanonicalReceiverKey(left.receiver, { canonicalize }) ===
+          scalarSsaCanonicalReceiverKey(right.receiver, { canonicalize })
+      );
+    default: {
+      const _exhaustive: never = left;
+      void _exhaustive;
+      return false;
+    }
+  }
+}
+
+function sameScalarSsaVersion(
+  left: IR1SsaVersion,
+  right: IR1SsaVersion,
+  canonicalize: (e: IR1Expr) => IR1Expr,
+): boolean {
+  return (
+    left.origin === right.origin &&
+    sameScalarSsaLocation(left.location, right.location, canonicalize)
+  );
+}
+
+function lowerScalarBinop(op: Extract<IR1Expr, { kind: "binop" }>["op"]) {
+  const ast = getAst();
+  switch (op) {
+    case "add":
+      return ast.opAdd();
+    case "sub":
+      return ast.opSub();
+    case "mul":
+      return ast.opMul();
+    case "div":
+      return ast.opDiv();
+    case "eq":
+      return ast.opEq();
+    case "neq":
+      return ast.opNeq();
+    case "lt":
+      return ast.opLt();
+    case "le":
+      return ast.opLe();
+    case "gt":
+      return ast.opGt();
+    case "ge":
+      return ast.opGe();
+    case "and":
+      return ast.opAnd();
+    case "or":
+      return ast.opOr();
+    case "in":
+      return ast.opIn();
+    default:
+      throw new Error(`unsupported scalar SSA binop: ${String(op)}`);
+  }
+}
+
+function lowerScalarUnop(op: Extract<IR1Expr, { kind: "unop" }>["op"]) {
+  const ast = getAst();
+  switch (op) {
+    case "not":
+      return ast.opNot();
+    case "neg":
+      return ast.opNeg();
+    case "card":
+      return ast.opCard();
+    default:
+      throw new Error(`unsupported scalar SSA unop: ${String(op)}`);
+  }
+}
+
 function lowerScalarCondStmt(
   stmt: Extract<IR1Stmt, { kind: "cond-stmt" }>,
   state: ScalarSsaState,
@@ -311,7 +822,7 @@ function scalarSsaReadMember(
 
 function scalarLocationForMember(
   member: Extract<IR1Expr, { kind: "member" }>,
-  state: ScalarSsaState,
+  state: ScalarSsaLocationState,
 ): { key: string; location: IR1SsaLocation } {
   const receiver = scalarSsaCanonicalReceiverKey(member.receiver, state);
   const key = scalarPropertyKey(member.name, receiver);
@@ -325,14 +836,14 @@ function scalarLocationForMember(
     member.name,
   );
   state.locations.set(key, location);
-  state.declaredRules.add(ir1SsaRuleOfLocation(location));
+  state.declaredRules?.add(ir1SsaRuleOfLocation(location));
   return { key, location };
 }
 
 function initialVersionFor(
   key: string,
   location: IR1SsaLocation,
-  state: ScalarSsaState,
+  state: ScalarSsaInitialVersionState,
 ): IR1SsaVersion {
   const existing = state.initialVersions.get(key);
   if (existing !== undefined) {
@@ -349,7 +860,7 @@ function scalarPropertyKey(prop: string, receiver: string): string {
 
 function scalarSsaCanonicalReceiverKey(
   receiver: IR1Expr,
-  state: ScalarSsaState,
+  state: Pick<ScalarSsaLocationState, "canonicalize">,
 ): string {
   try {
     return scalarSsaExprKey(state.canonicalize(receiver));
