@@ -249,6 +249,9 @@ export function lowerCollectionSsaL1Body(
         return;
       }
       collectionSsaReadExpr(stmt.target.receiver, state);
+      if (state.diagnostics.length > 0) {
+        return;
+      }
       collectionSsaReadExpr(stmt.value, state);
       return;
     case "map-effect":
@@ -318,17 +321,16 @@ export function collectionSsaReadExpr(
       collectionSsaReadExpr(expr.arg, state);
       return expr;
     case "app":
-      collectionSsaReadExpr(expr.callee, state);
-      for (const arg of expr.args) {
-        collectionSsaReadExpr(arg, state);
-      }
+      collectionSsaUnsupported(
+        state,
+        "collection SSA does not support call expressions in this pass",
+      );
       return expr;
     case "cond":
-      for (const [guard, value] of expr.arms) {
-        collectionSsaReadExpr(guard, state);
-        collectionSsaReadExpr(value, state);
-      }
-      collectionSsaReadExpr(expr.otherwise, state);
+      collectionSsaUnsupported(
+        state,
+        "collection SSA does not support value-position conditionals in this pass",
+      );
       return expr;
     case "is-nullish":
       collectionSsaReadExpr(expr.operand, state);
@@ -425,7 +427,13 @@ function lowerCollectionMapEffect(
   state: CollectionSsaState,
 ): void {
   collectionSsaReadExpr(stmt.objExpr, state);
+  if (state.diagnostics.length > 0) {
+    return;
+  }
   collectionSsaReadExpr(stmt.keyExpr, state);
+  if (state.diagnostics.length > 0) {
+    return;
+  }
   const input = {
     ruleName: stmt.ruleName,
     keyPredName: stmt.keyPredName,
@@ -437,6 +445,9 @@ function lowerCollectionMapEffect(
 
   if (stmt.op === "set") {
     collectionSsaReadExpr(stmt.valueExpr, state);
+    if (state.diagnostics.length > 0) {
+      return;
+    }
     const valueLocation = mapValueLocationForReadOrWrite(input, state);
     const valueWrite = ir1SsaWrite(
       valueLocation.location,
@@ -458,6 +469,9 @@ function lowerCollectionSetEffect(
   state: CollectionSsaState,
 ): void {
   collectionSsaReadExpr(stmt.objExpr, state);
+  if (state.diagnostics.length > 0) {
+    return;
+  }
   const location = setMembershipLocationForReadOrWrite(
     {
       ruleName: stmt.ruleName,
@@ -473,6 +487,9 @@ function lowerCollectionSetEffect(
       : ir1SsaSetMembershipValue(stmt.op, stmt.elemExpr);
   if (stmt.op !== "clear") {
     collectionSsaReadExpr(stmt.elemExpr, state);
+    if (state.diagnostics.length > 0) {
+      return;
+    }
   }
   const write = ir1SsaWrite(location.location, value);
   recordCollectionWrite(location.key, write, state);
@@ -862,16 +879,8 @@ function isCollectionSsaExpr(expr: IR1Expr): boolean {
     case "unop":
       return isCollectionSsaExpr(expr.arg);
     case "app":
-      return (
-        isCollectionSsaExpr(expr.callee) && expr.args.every(isCollectionSsaExpr)
-      );
     case "cond":
-      return (
-        expr.arms.every(
-          ([guard, value]) =>
-            isCollectionSsaExpr(guard) && isCollectionSsaExpr(value),
-        ) && isCollectionSsaExpr(expr.otherwise)
-      );
+      return false;
     case "is-nullish":
       return isCollectionSsaExpr(expr.operand);
     case "each":

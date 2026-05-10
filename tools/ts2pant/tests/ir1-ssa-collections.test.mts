@@ -444,6 +444,57 @@ describe("ir1-ssa-collections", () => {
     ]);
   });
 
+  it("rejects call and value-position conditional expressions", () => {
+    const target = ir1Member(ir1Var("owner"), "Owner_seen");
+    const callAssign = ir1Assign(target, {
+      kind: "app",
+      callee: ir1Var("maybeMutates"),
+      args: [ir1Var("cache")],
+    });
+    const condAssign = ir1Assign(target, {
+      kind: "cond",
+      arms: [
+        [
+          ir1Var("gate"),
+          ir1MapRead(
+            "get",
+            "Cache_value",
+            "Cache_hasKey",
+            "Owner",
+            "Key",
+            ir1Var("cache"),
+            ir1Var("a"),
+          ),
+        ],
+      ],
+      otherwise: ir1MapRead(
+        "get",
+        "Cache_value",
+        "Cache_hasKey",
+        "Owner",
+        "Key",
+        ir1Var("cache"),
+        ir1Var("b"),
+      ),
+    });
+
+    assert.equal(isCollectionSsaL1Body(callAssign), false);
+    assert.deepEqual(lowerCollectionSsaToResult(callAssign).diagnostics, [
+      {
+        kind: "unsupported",
+        reason: "collection SSA does not support call expressions in this pass",
+      },
+    ]);
+    assert.equal(isCollectionSsaL1Body(condAssign), false);
+    assert.deepEqual(lowerCollectionSsaToResult(condAssign).diagnostics, [
+      {
+        kind: "unsupported",
+        reason:
+          "collection SSA does not support value-position conditionals in this pass",
+      },
+    ]);
+  });
+
   it("includes read-only collection locations in final entries", () => {
     const result = lowerCollectionSsaToResult(
       ir1Assign(
