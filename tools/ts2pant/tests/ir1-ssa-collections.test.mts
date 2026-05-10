@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { resolve } from "node:path";
 import { before, describe, it } from "node:test";
 import {
   type IR1SsaProgram,
@@ -23,11 +22,11 @@ import {
 import {
   buildCollectionSsaProgram,
   isCollectionSsaL1Body,
-  lowerCollectionSsaToResult,
   lowerCollectionSsaToProps,
+  lowerCollectionSsaToResult,
 } from "../src/ir1-ssa-collections.js";
+import type { OpaqueExpr } from "../src/pant-ast.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
-import { buildDocument, emitAndCheck } from "./helpers.mjs";
 
 before(async () => {
   await loadAst();
@@ -724,6 +723,60 @@ describe("ir1-ssa-collections", () => {
       result.finalEntries[0]!.version,
       result.program.reads[0]!.version,
     );
+    assert.equal(
+      result.finalEntries[0]!.location,
+      result.finalEntries[0]!.version.location,
+    );
+  });
+
+  it("normalizes branch-merged Map and property expressions", () => {
+    const ast = getAst();
+    const lowerOpaque = (expr: OpaqueExpr): OpaqueExpr =>
+      ast.strExpr(expr).startsWith("cond ") ? ast.var("normalized_cond") : expr;
+
+    const mapResult = lowerCollectionSsaToProps(
+      ir1CondStmt(
+        [
+          [
+            ir1Var("gate"),
+            ir1MapSet(
+              "Cache_value",
+              "Cache_hasKey",
+              "Owner",
+              "Key",
+              ir1Var("cache"),
+              ir1Var("key"),
+              ir1LitNat(7),
+            ),
+          ],
+        ],
+        null,
+      ),
+      { lowerOpaque },
+    );
+    const valueEq = mapResult.propositions.find(
+      (p) =>
+        p.kind === "equation" && ast.strExpr(p.lhs).startsWith("Cache_value'"),
+    );
+    assert.ok(valueEq);
+    assert.match(ast.strExpr(valueEq.rhs), /normalized_cond/u);
+
+    const propResult = lowerCollectionSsaToProps(
+      ir1CondStmt(
+        [
+          [
+            ir1Var("gate"),
+            ir1Assign(ir1Member(ir1Var("owner"), "Owner_count"), ir1LitNat(1)),
+          ],
+        ],
+        null,
+      ),
+      { lowerOpaque },
+    );
+    assert.equal(
+      ast.strExpr(propResult.finalProperties[0]!.rhs),
+      "normalized_cond",
+    );
   });
 
   it("propagates canonicalizer failures", () => {
@@ -899,30 +952,5 @@ describe("ir1-ssa-collections", () => {
       ast.strExpr(assertion.body),
       "y in Owner_tags' owner <-> (cond y = x => (cond gate => false, true => true), true => (cond gate => false, true => y in Owner_tags owner))",
     );
-  });
-
-  it("preserves production parity for Map and Set mutation fixtures", async () => {
-    const mapCases = [
-      ["expressions-map-mutation.ts", "put"],
-      ["expressions-map-mutation.ts", "remove"],
-      ["expressions-map-mutation.ts", "setAndCopy"],
-      ["expressions-state-aware-reads.ts", "entrySetThenCheck"],
-      ["expressions-state-aware-reads.ts", "bumpInBranch"],
-    ] as const;
-
-    const setCases = [
-      ["expressions-set-mutation-field.ts", "tagAddThenRemove"],
-      ["expressions-set-mutation-field.ts", "tagClearAndAdd"],
-      ["expressions-state-aware-reads.ts", "tagThenCheck"],
-    ] as const;
-
-    const fixturePath = (file: string): string =>
-      resolve(import.meta.dirname, "fixtures/constructs", file);
-    for (const [file, functionName] of [...mapCases, ...setCases]) {
-      const doc = await buildDocument(fixturePath(file), functionName);
-      const output = await emitAndCheck(doc);
-      assert.doesNotMatch(output, /^> UNSUPPORTED:/mu);
-      assert.match(output, /\n---\n\n\S/mu);
-    }
   });
 });

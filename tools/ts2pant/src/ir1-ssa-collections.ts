@@ -307,19 +307,20 @@ function finishCollectionSsaLowering(
 ): Omit<CollectionSsaLowerResult, "diagnostics"> {
   const finalEntries: CollectionSsaFinalEntry[] = [];
   const propositions: PropResult[] = [];
-  for (const [key, location] of lowerState.locations) {
+  for (const key of lowerState.locations.keys()) {
     const version =
       lowerState.currentVersions.get(key) ??
       lowerState.initialVersions.get(key);
     if (version === undefined) {
       continue;
     }
+    const finalLocation = version.location as CollectionSsaLocation;
     finalEntries.push({
-      kind: location.kind,
-      location,
+      kind: finalLocation.kind,
+      location: finalLocation,
       version,
     } as CollectionSsaFinalEntry);
-    if (location.kind === "set-membership") {
+    if (finalLocation.kind === "set-membership") {
       const value = resolveSetMembershipVersion(version, lowerState);
       emitSetMembershipSsaEquation(value, propositions);
     }
@@ -924,10 +925,12 @@ function lowerCollectionSsaCondToVersions(
     } else {
       state.versionValues.set(
         join.joinVersion,
-        getAst().cond([
-          [guardExpr, resolveMapVersion(thenVersion, thenState)],
-          [getAst().litBool(true), resolveMapVersion(elseVersion, elseState)],
-        ]),
+        state.lowerOpaque(
+          getAst().cond([
+            [guardExpr, resolveMapVersion(thenVersion, thenState)],
+            [getAst().litBool(true), resolveMapVersion(elseVersion, elseState)],
+          ]),
+        ),
       );
     }
     state.currentVersions.set(key, join.joinVersion);
@@ -943,14 +946,18 @@ function lowerCollectionSsaCondToVersions(
     const thenEntry = thenState.propertyWrites.get(key);
     const elseEntry = elseState.propertyWrites.get(key);
     const pick = (thenEntry ?? elseEntry)!;
-    const identity = getAst().app(getAst().var(pick.prop), [pick.objExpr]);
+    const identity = state.lowerOpaque(
+      getAst().app(getAst().var(pick.prop), [pick.objExpr]),
+    );
     state.propertyWrites.set(key, {
       prop: pick.prop,
       objExpr: pick.objExpr,
-      value: getAst().cond([
-        [guardExpr, thenEntry?.value ?? identity],
-        [getAst().litBool(true), elseEntry?.value ?? identity],
-      ]),
+      value: state.lowerOpaque(
+        getAst().cond([
+          [guardExpr, thenEntry?.value ?? identity],
+          [getAst().litBool(true), elseEntry?.value ?? identity],
+        ]),
+      ),
     });
     state.propertyWrittenKeys.add(key);
   }
