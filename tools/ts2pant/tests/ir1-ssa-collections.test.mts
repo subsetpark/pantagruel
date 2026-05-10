@@ -22,9 +22,10 @@ import {
 import {
   buildCollectionSsaProgram,
   isCollectionSsaL1Body,
-  lowerCollectionSsaToResult,
   lowerCollectionSsaToProps,
+  lowerCollectionSsaToResult,
 } from "../src/ir1-ssa-collections.js";
+import type { OpaqueExpr } from "../src/pant-ast.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 
 before(async () => {
@@ -212,10 +213,7 @@ describe("ir1-ssa-collections", () => {
       membershipWrite!.value,
       ir1SsaMapMembershipValue("delete"),
     );
-    assert.deepEqual(
-      new Set(program.modifiedRules),
-      new Set(["Cache_hasKey"]),
-    );
+    assert.deepEqual(new Set(program.modifiedRules), new Set(["Cache_hasKey"]));
   });
 
   it("filters Map.get value reads after literal delete membership", () => {
@@ -410,7 +408,8 @@ describe("ir1-ssa-collections", () => {
     assert.equal(result.diagnostics.length, 0);
     assert.equal(result.propositions.length, 2);
     const valueEq = result.propositions.find(
-      (p) => p.kind === "equation" && ast.strExpr(p.lhs).startsWith("Cache_value'"),
+      (p) =>
+        p.kind === "equation" && ast.strExpr(p.lhs).startsWith("Cache_value'"),
     );
     const membershipEq = result.propositions.find(
       (p) =>
@@ -445,7 +444,8 @@ describe("ir1-ssa-collections", () => {
     const result = lowerCollectionSsaToResult(stmt);
     const ast = getAst();
     const valueEq = result.propositions.find(
-      (p) => p.kind === "equation" && ast.strExpr(p.lhs).startsWith("Cache_value'"),
+      (p) =>
+        p.kind === "equation" && ast.strExpr(p.lhs).startsWith("Cache_value'"),
     );
     const membershipEq = result.propositions.find(
       (p) =>
@@ -620,7 +620,7 @@ describe("ir1-ssa-collections", () => {
     ]);
   });
 
-  it("rejects call and value-position conditional expressions", () => {
+  it("rejects call expressions and accepts value-position conditionals", () => {
     const target = ir1Member(ir1Var("owner"), "Owner_seen");
     const callAssign = ir1Assign(target, {
       kind: "app",
@@ -661,14 +661,40 @@ describe("ir1-ssa-collections", () => {
         reason: "collection SSA does not support call expressions in this pass",
       },
     ]);
-    assert.equal(isCollectionSsaL1Body(condAssign), false);
-    assert.deepEqual(lowerCollectionSsaToResult(condAssign).diagnostics, [
-      {
-        kind: "unsupported",
-        reason:
-          "collection SSA does not support value-position conditionals in this pass",
-      },
+    assert.equal(isCollectionSsaL1Body(condAssign), true);
+    const result = lowerCollectionSsaToResult(condAssign);
+    const ast = getAst();
+    assert.deepEqual(result.diagnostics, []);
+    assert.equal(result.program.reads.length, 4);
+    assert.equal(result.finalProperties.length, 1);
+    assert.match(ast.strExpr(result.finalProperties[0]!.rhs), /cond gate/u);
+  });
+
+  it("preserves staged property reads inside collection SSA map values", () => {
+    const stmt = ir1Block([
+      ir1Assign(ir1Member(ir1Var("owner"), "Owner_count"), ir1LitNat(1)),
+      ir1MapSet(
+        "Cache_value",
+        "Cache_hasKey",
+        "Owner",
+        "Key",
+        ir1Var("cache"),
+        ir1Var("key"),
+        ir1Member(ir1Var("owner"), "Owner_count"),
+      ),
     ]);
+
+    const result = lowerCollectionSsaToProps(stmt);
+    const ast = getAst();
+    const valueEq = result.propositions.find(
+      (p) =>
+        p.kind === "equation" && ast.strExpr(p.lhs).startsWith("Cache_value'"),
+    );
+
+    assert.deepEqual(result.diagnostics, []);
+    assert.ok(valueEq);
+    assert.match(ast.strExpr(valueEq.rhs), /->\s*1/u);
+    assert.doesNotMatch(ast.strExpr(valueEq.rhs), /Owner_count owner/u);
   });
 
   it("includes read-only collection locations in final entries", () => {
@@ -696,6 +722,60 @@ describe("ir1-ssa-collections", () => {
     assert.equal(
       result.finalEntries[0]!.version,
       result.program.reads[0]!.version,
+    );
+    assert.equal(
+      result.finalEntries[0]!.location,
+      result.finalEntries[0]!.version.location,
+    );
+  });
+
+  it("normalizes branch-merged Map and property expressions", () => {
+    const ast = getAst();
+    const lowerOpaque = (expr: OpaqueExpr): OpaqueExpr =>
+      ast.strExpr(expr).startsWith("cond ") ? ast.var("normalized_cond") : expr;
+
+    const mapResult = lowerCollectionSsaToProps(
+      ir1CondStmt(
+        [
+          [
+            ir1Var("gate"),
+            ir1MapSet(
+              "Cache_value",
+              "Cache_hasKey",
+              "Owner",
+              "Key",
+              ir1Var("cache"),
+              ir1Var("key"),
+              ir1LitNat(7),
+            ),
+          ],
+        ],
+        null,
+      ),
+      { lowerOpaque },
+    );
+    const valueEq = mapResult.propositions.find(
+      (p) =>
+        p.kind === "equation" && ast.strExpr(p.lhs).startsWith("Cache_value'"),
+    );
+    assert.ok(valueEq);
+    assert.match(ast.strExpr(valueEq.rhs), /normalized_cond/u);
+
+    const propResult = lowerCollectionSsaToProps(
+      ir1CondStmt(
+        [
+          [
+            ir1Var("gate"),
+            ir1Assign(ir1Member(ir1Var("owner"), "Owner_count"), ir1LitNat(1)),
+          ],
+        ],
+        null,
+      ),
+      { lowerOpaque },
+    );
+    assert.equal(
+      ast.strExpr(propResult.finalProperties[0]!.rhs),
+      "normalized_cond",
     );
   });
 
@@ -872,27 +952,5 @@ describe("ir1-ssa-collections", () => {
       ast.strExpr(assertion.body),
       "y in Owner_tags' owner <-> (cond y = x => (cond gate => false, true => true), true => (cond gate => false, true => y in Owner_tags owner))",
     );
-  });
-
-  it.skip("preserves production parity for Map and Set mutation fixtures", async () => {
-    const mapCases = [
-      ["expressions-map-mutation.ts", "put"],
-      ["expressions-map-mutation.ts", "remove"],
-      ["expressions-map-mutation.ts", "setAndCopy"],
-      ["expressions-state-aware-reads.ts", "entrySetThenCheck"],
-      ["expressions-state-aware-reads.ts", "bumpInBranch"],
-    ] as const;
-
-    const setCases = [
-      ["expressions-set-mutation-field.ts", "tagAddThenRemove"],
-      ["expressions-set-mutation-field.ts", "tagClearAndAdd"],
-      ["expressions-state-aware-reads.ts", "tagThenCheck"],
-    ] as const;
-
-    void mapCases;
-    void setCases;
-    // PENDING Patch 5: route the non-looping production path through
-    // collection SSA and keep these existing Map/Set mutation and staged-read
-    // fixtures byte-equivalent at emit time.
   });
 });
