@@ -83,31 +83,6 @@ interface ScalarSsaInitialVersionState {
   initialVersions: Map<string, IR1SsaVersion>;
 }
 
-export interface ScalarSsaFinalPropertyEntry {
-  location: Extract<IR1SsaLocation, { kind: "property" }>;
-  version: IR1SsaVersion;
-  lhs: OpaqueExpr;
-  rhs: OpaqueExpr;
-}
-
-export interface ScalarSsaLowerResult {
-  program: IR1SsaProgram;
-  finalProperties: ScalarSsaFinalPropertyEntry[];
-  propositions: PropResult[];
-  modifiedRules: IR1SsaRuleName[];
-  diagnostics: Array<Extract<PropResult, { kind: "unsupported" }>>;
-}
-
-interface ScalarSsaLocationState {
-  locations: Map<string, IR1SsaLocation>;
-  declaredRules?: Set<string>;
-  canonicalize: (e: IR1Expr) => IR1Expr;
-}
-
-interface ScalarSsaInitialVersionState {
-  initialVersions: Map<string, IR1SsaVersion>;
-}
-
 export function makeScalarSsaState(
   options: ScalarSsaBuildOptions = {},
 ): ScalarSsaState {
