@@ -501,10 +501,22 @@ function collectionSsaReadMap(
     receiver: expr.receiver,
     key: expr.key,
   };
-  const { key, location } =
-    expr.op === "has"
-      ? mapMembershipLocationForReadOrWrite(input, state)
-      : mapValueLocationForReadOrWrite(input, state);
+  if (expr.op === "has") {
+    const membership = mapMembershipLocationForReadOrWrite(input, state);
+    return recordCollectionRead(membership.key, membership.location, state);
+  }
+  const value = mapValueLocationForReadOrWrite(input, state);
+  const valueRead = recordCollectionRead(value.key, value.location, state);
+  const membership = mapMembershipLocationForReadOrWrite(input, state);
+  recordCollectionRead(membership.key, membership.location, state);
+  return valueRead;
+}
+
+function recordCollectionRead(
+  key: string,
+  location: CollectionSsaLocation,
+  state: CollectionSsaState,
+): IR1SsaRead {
   const version =
     state.currentVersions.get(key) ??
     initialCollectionVersionFor(key, location, state);

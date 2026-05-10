@@ -123,17 +123,65 @@ describe("ir1-ssa-collections", () => {
     });
 
     assert.equal(program.writes.length, 2);
-    assert.equal(program.reads.length, 2);
+    assert.equal(program.reads.length, 3);
     const [valueWrite, membershipWrite] = program.writes;
-    const [valueRead, membershipRead] = program.reads;
+    const [valueRead, getMembershipRead, hasMembershipRead] = program.reads;
     assert.deepEqual(valueWrite!.location.receiver, ir1Var("cache"));
     assert.deepEqual(membershipWrite!.location.receiver, ir1Var("cache"));
     assert.equal(valueRead!.location, valueWrite!.location);
     assert.equal(valueRead!.version, valueWrite!.version);
     assert.equal(valueRead!.dominated, true);
-    assert.equal(membershipRead!.location, membershipWrite!.location);
-    assert.equal(membershipRead!.version, membershipWrite!.version);
-    assert.equal(membershipRead!.dominated, true);
+    assert.equal(getMembershipRead!.location, membershipWrite!.location);
+    assert.equal(getMembershipRead!.version, membershipWrite!.version);
+    assert.equal(getMembershipRead!.dominated, true);
+    assert.equal(hasMembershipRead!.location, membershipWrite!.location);
+    assert.equal(hasMembershipRead!.version, membershipWrite!.version);
+    assert.equal(hasMembershipRead!.dominated, true);
+  });
+
+  it("tracks Map.get membership after delete-like effects", () => {
+    const stmt = ir1Block([
+      ir1MapSet(
+        "Cache_value",
+        "Cache_hasKey",
+        "Owner",
+        "Key",
+        ir1Var("cache"),
+        ir1Var("key"),
+        ir1LitNat(7),
+      ),
+      ir1MapDelete(
+        "Cache_value",
+        "Cache_hasKey",
+        "Owner",
+        "Key",
+        ir1Var("cache"),
+        ir1Var("key"),
+      ),
+      ir1Assign(
+        ir1Member(ir1Var("owner"), "Owner_seen"),
+        ir1MapRead(
+          "get",
+          "Cache_value",
+          "Cache_hasKey",
+          "Owner",
+          "Key",
+          ir1Var("cache"),
+          ir1Var("key"),
+        ),
+      ),
+    ]);
+
+    const program = mustBuildCollectionSsaProgram(stmt);
+
+    assert.equal(program.writes.length, 3);
+    assert.equal(program.reads.length, 2);
+    const [valueWrite, , membershipDeleteWrite] = program.writes;
+    const [valueRead, membershipRead] = program.reads;
+    assert.equal(valueRead!.location, valueWrite!.location);
+    assert.equal(valueRead!.version, valueWrite!.version);
+    assert.equal(membershipRead!.location, membershipDeleteWrite!.location);
+    assert.equal(membershipRead!.version, membershipDeleteWrite!.version);
   });
 
   it("joins Map value and membership versions across branches", () => {
@@ -184,6 +232,60 @@ describe("ir1-ssa-collections", () => {
     assert.equal(membershipJoin.thenVersion, membershipSetWrite!.version);
     assert.equal(membershipJoin.elseVersion, membershipDeleteWrite!.version);
     assert.equal(membershipJoin.joinVersion.location, membershipJoin.location);
+  });
+
+  it("tracks Map.get membership joins after branch-local delete", () => {
+    const stmt = ir1Block([
+      ir1MapSet(
+        "Cache_value",
+        "Cache_hasKey",
+        "Owner",
+        "Key",
+        ir1Var("cache"),
+        ir1Var("key"),
+        ir1LitNat(7),
+      ),
+      ir1CondStmt(
+        [
+          [
+            ir1Var("gate"),
+            ir1MapDelete(
+              "Cache_value",
+              "Cache_hasKey",
+              "Owner",
+              "Key",
+              ir1Var("cache"),
+              ir1Var("key"),
+            ),
+          ],
+        ],
+        null,
+      ),
+      ir1Assign(
+        ir1Member(ir1Var("owner"), "Owner_seen"),
+        ir1MapRead(
+          "get",
+          "Cache_value",
+          "Cache_hasKey",
+          "Owner",
+          "Key",
+          ir1Var("cache"),
+          ir1Var("key"),
+        ),
+      ),
+    ]);
+
+    const program = mustBuildCollectionSsaProgram(stmt);
+
+    assert.equal(program.joins.length, 1);
+    const membershipJoin = program.joins[0]!;
+    assert.equal(membershipJoin.location.kind, "map-membership");
+    assert.equal(program.reads.length, 2);
+    const [valueRead, membershipRead] = program.reads;
+    assert.equal(valueRead!.location.kind, "map-value");
+    assert.equal(valueRead!.version, program.writes[0]!.version);
+    assert.equal(membershipRead!.location, membershipJoin.location);
+    assert.equal(membershipRead!.version, membershipJoin.joinVersion);
   });
 
   it("resolves Set.has through the current membership version", () => {
