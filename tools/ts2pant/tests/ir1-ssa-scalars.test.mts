@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 
 import { createSourceFile } from "../src/extract.js";
 import {
+  type IR1Expr,
   ir1Assign,
   ir1Binop,
   ir1Block,
@@ -125,8 +126,43 @@ describe("ir1-ssa-scalars", () => {
   });
 
   it("rejects non-scalar routing shapes", () => {
+    const mapReadReceiver: IR1Expr = {
+      kind: "map-read",
+      op: "get",
+      ruleName: "Cache_value",
+      keyPredName: "Cache_hasKey",
+      ownerType: "Owner",
+      keyType: "Key",
+      receiver: ir1Var("cache"),
+      key: ir1Var("key"),
+    };
+
     assert.equal(
       isScalarSsaL1Body(ir1Assign(ir1Var("x"), ir1LitNat(1))),
+      false,
+    );
+    assert.equal(
+      isScalarSsaL1Body(
+        ir1Assign(ir1Member(mapReadReceiver, "Account_balance"), ir1LitNat(1)),
+      ),
+      false,
+    );
+    assert.equal(
+      isScalarSsaL1Body(
+        ir1CondStmt(
+          [
+            [
+              ir1Var("g"),
+              ir1Assign(ir1Member(ir1Var("a"), "A_x"), ir1LitNat(1)),
+            ],
+            [
+              ir1Var("h"),
+              ir1Assign(ir1Member(ir1Var("a"), "A_x"), ir1LitNat(2)),
+            ],
+          ],
+          null,
+        ),
+      ),
       false,
     );
     assert.equal(
@@ -136,6 +172,24 @@ describe("ir1-ssa-scalars", () => {
       }),
       false,
     );
+  });
+
+  it("preserves declared frame rules first seen inside scalar branches", () => {
+    const balance = ir1Member(ir1Var("a"), "Account_balance");
+    const limit = ir1Member(ir1Var("a"), "Account_limit");
+    const stmt = ir1CondStmt(
+      [[ir1Var("g"), ir1Assign(balance, ir1Binop("add", limit, ir1LitNat(1)))]],
+      null,
+    );
+
+    const program = buildScalarSsaProgram(stmt);
+
+    assert.deepEqual(
+      new Set(program.declaredRules),
+      new Set(["Account_balance", "Account_limit"]),
+    );
+    assert.deepEqual(program.modifiedRules, ["Account_balance"]);
+    assert.deepEqual(program.framedRules, ["Account_limit"]);
   });
 
   it.skip("preserves translateBody parity for scalar sequential write/read fixtures", async () => {

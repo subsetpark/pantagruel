@@ -1,4 +1,3 @@
-import { lowerExpr } from "./ir-emit.js";
 import {
   type IR1Expr,
   type IR1SsaJoin,
@@ -16,9 +15,6 @@ import {
   ir1SsaRuleOfLocation,
   ir1SsaWrite,
 } from "./ir1.js";
-import { lowerL1Expr } from "./ir1-lower.js";
-import type { OpaqueExpr } from "./pant-ast.js";
-import { getAst } from "./pant-wasm.js";
 
 export interface ScalarSsaState {
   currentVersions: Map<string, IR1SsaVersion>;
@@ -30,12 +26,12 @@ export interface ScalarSsaState {
   writtenKeys: Set<string>;
   declaredRules: Set<string>;
   modifiedRules: Set<string>;
-  canonicalize: (e: OpaqueExpr) => OpaqueExpr;
+  canonicalize: (e: IR1Expr) => IR1Expr;
 }
 
 export interface ScalarSsaBuildOptions {
   declaredRules?: Iterable<string>;
-  canonicalize?: (e: OpaqueExpr) => OpaqueExpr;
+  canonicalize?: (e: IR1Expr) => IR1Expr;
 }
 
 export function makeScalarSsaState(
@@ -82,11 +78,16 @@ export function buildScalarSsaProgram(
 export function isScalarSsaL1Body(stmt: IR1Stmt): boolean {
   switch (stmt.kind) {
     case "assign":
-      return stmt.target.kind === "member" && isScalarSsaExpr(stmt.value);
+      return (
+        stmt.target.kind === "member" &&
+        isScalarSsaExpr(stmt.target.receiver) &&
+        isScalarSsaExpr(stmt.value)
+      );
     case "block":
       return stmt.stmts.every(isScalarSsaL1Body);
     case "cond-stmt":
       return (
+        stmt.arms.length === 1 &&
         stmt.arms.every(
           ([guard, body]) => isScalarSsaExpr(guard) && isScalarSsaL1Body(body),
         ) &&
@@ -242,6 +243,12 @@ function lowerScalarCondStmt(
       state.locations.set(key, location);
     }
   }
+  for (const rule of thenState.declaredRules) {
+    state.declaredRules.add(rule);
+  }
+  for (const rule of elseState.declaredRules) {
+    state.declaredRules.add(rule);
+  }
   for (const rule of thenState.modifiedRules) {
     state.modifiedRules.add(rule);
   }
@@ -345,13 +352,9 @@ function scalarSsaCanonicalReceiverKey(
   state: ScalarSsaState,
 ): string {
   try {
-    const ast = getAst();
-    return ast.strExpr(state.canonicalize(lowerExpr(lowerL1Expr(receiver))));
+    return scalarSsaExprKey(state.canonicalize(receiver));
   } catch (err) {
-    if (
-      err instanceof Error &&
-      /AST module not loaded|Cannot find module/u.test(err.message)
-    ) {
+    if (err instanceof Error) {
       return scalarSsaExprKey(receiver);
     }
     throw err;
