@@ -493,7 +493,7 @@ export interface IR1SsaJoin {
 
 export interface IR1SsaLoopSummary {
   readonly kind: "ssa-loop-summary";
-  readonly shape: "foreach-shape-a" | "foreach-shape-b";
+  readonly shape: "mu-search" | "foreach-shape-a" | "foreach-shape-b";
   readonly location: IR1SsaLocation;
   readonly summaryVersion: IR1SsaVersion;
 }
