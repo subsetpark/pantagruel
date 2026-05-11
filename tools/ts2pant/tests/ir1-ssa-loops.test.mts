@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { resolve } from "node:path";
 import { before, describe, it } from "node:test";
 
+import { createSourceFile } from "../src/extract.js";
 import {
   ir1Assign,
   ir1Binop,
@@ -14,9 +16,15 @@ import {
 import {
   buildLoopSsaProgram,
   lowerForeachShapeASummaries,
+  lowerForeachShapeBSummaries,
   lowerForeachSummary,
 } from "../src/ir1-ssa-loops.js";
-import { getAst, loadAst } from "../src/pant-wasm.js";
+import { assertWasmTypeChecks, getAst, loadAst } from "../src/pant-wasm.js";
+import {
+  buildDocumentFromSourceFile,
+  containsUnsupportedLine,
+  emitDocument,
+} from "./helpers.mjs";
 
 before(async () => {
   await loadAst();
@@ -80,31 +88,47 @@ describe("ir1-ssa-loops", () => {
   });
 
   it("records foreach Shape B accumulator folds as loop summaries", () => {
-    const location = ir1SsaPropertyLocation(
-      "Account_total",
-      ir1Var("account"),
-      "total",
-    );
-    const proposition = { kind: "raw" as const, text: "accumulator-fold" };
-
-    const result = lowerForeachSummary({
-      input: {
-        kind: "foreach-shape-b",
-        location,
-        propositions: [proposition],
-      },
+    const ast = getAst();
+    const account = ir1Var("account");
+    const item = ir1Var("$item");
+    const value = ir1Member(item, "Item_value");
+    const result = lowerForeachShapeBSummaries({
+      binder: "$item",
+      source: ast.var("items"),
+      foldLeaves: [
+        {
+          target: account,
+          prop: "Account_total",
+          combiner: "add",
+          outerOp: "add",
+          rhs: value,
+          guard: ir1Binop("gt", value, ir1LitNat(0)),
+        },
+      ],
+      priorAccumulatorValues: new Map([
+        ["Account_total::account", ast.litNat(10)],
+      ]),
       declaredRules: ["Account_limit"],
     });
 
     assert.deepEqual(result.diagnostics, []);
-    assert.equal(result.summary?.shape, "foreach-shape-b");
-    assert.equal(result.summary?.location, location);
-    assert.equal(result.summary?.summaryVersion.origin, "loop-summary");
-    assert.equal(result.summary?.summaryVersion.location, location);
-    assert.deepEqual(result.propositions, [proposition]);
-    assert.deepEqual(result.program.modifiedRules, [
-      ir1SsaRuleOfLocation(location),
-    ]);
+    assert.equal(result.summaries.length, 1);
+    const [summary] = result.summaries;
+    assert.equal(summary!.shape, "foreach-shape-b");
+    assert.equal(summary!.location.ruleName, "Account_total");
+    assert.equal(summary!.summaryVersion.origin, "loop-summary");
+    assert.equal(summary!.summaryVersion.location, summary!.location);
+    assert.equal(result.propositions.length, 1);
+    const [prop] = result.propositions;
+    assert.equal(prop!.kind, "equation");
+    if (prop?.kind === "equation") {
+      assert.equal(ast.strExpr(prop.lhs), "Account_total' account");
+      assert.match(
+        ast.strExpr(prop.rhs),
+        /^10 \+ \(\+ over each \$item in items, Item_value \$item > 0 \| Item_value \$item\)$/u,
+      );
+    }
+    assert.deepEqual(result.program.modifiedRules, ["Account_total"]);
     assert.deepEqual(
       new Set(result.program.declaredRules),
       new Set(["Account_total", "Account_limit"]),
@@ -237,12 +261,55 @@ describe("ir1-ssa-loops", () => {
     );
   });
 
-  it.skip("preserves production parity for foreach and mu-search fixtures", async () => {
-    // PENDING Patch 4: pin parity for `functions-mutating-loop.ts`
-    // (for example `forEachActivate`, `forEachSum`, or `mixedUpdates`) once
-    // foreach lowering routes through the loop-summary helper.
-    // PENDING Patch 3: pin parity for `expressions-while-mu-search.ts`
-    // (for example `firstUnusedSuffix`) once mu-search lowering routes through
-    // the loop-summary helper.
+  it("preserves production parity for foreach and mu-search fixtures", async () => {
+    const constructsDir = resolve(import.meta.dirname, "fixtures/constructs");
+    const cases = [
+      {
+        file: "functions-mutating-loop.ts",
+        functionName: "sumAmounts",
+        expected:
+          /account--total' a = account--total a \+ \(\+ over each \w+ in items \| item--value \w+\)\./u,
+      },
+      {
+        file: "functions-mutating-loop.ts",
+        functionName: "sumPositive",
+        expected:
+          /account--total' a = account--total a \+ \(\+ over each \w+ in items, item--value \w+ > 0 \| item--value \w+\)\./u,
+      },
+      {
+        file: "functions-mutating-loop.ts",
+        functionName: "mixedUpdates",
+        expected: /item--tagged' \w+ = true\./u,
+      },
+      {
+        file: "functions-mutating-loop.ts",
+        functionName: "forEachSum",
+        expected:
+          /account--total' a = account--total a \+ \(\+ over each \w+ in items \| item--value \w+\)\./u,
+      },
+      {
+        file: "functions-mutating-loop.ts",
+        functionName: "sumIntoAnon",
+        expected:
+          /total-rec--total' acc = total-rec--total acc \+ \(\+ over each \w+ in items \| \w+\)\./u,
+      },
+      {
+        file: "expressions-while-mu-search.ts",
+        functionName: "firstUnusedSuffix",
+        expected: /min over each/u,
+      },
+    ];
+
+    for (const { file, functionName, expected } of cases) {
+      const sourceFile = createSourceFile(resolve(constructsDir, file));
+      const doc = await buildDocumentFromSourceFile(sourceFile, functionName);
+      const output = emitDocument(doc);
+      assert.ok(
+        !containsUnsupportedLine(output),
+        `${file} > ${functionName} should stay supported`,
+      );
+      assert.match(output, expected, `${file} > ${functionName}`);
+      await assertWasmTypeChecks(output, doc.bundleModules);
+    }
   });
 });
