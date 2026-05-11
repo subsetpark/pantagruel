@@ -665,7 +665,8 @@ function lowerForeach(
       binder: stmt.binder,
       source: arrExpr,
       foldLeaves: stmt.foldLeaves,
-      lowerExpr: (expr) => ctx.applyConst(lowerL1ExprToOpaque(expr, state)),
+      lowerExpr: (expr: IR1Expr) =>
+        ctx.applyConst(lowerL1ExprToOpaque(expr, state)),
       priorAccumulatorValues,
     });
     if (result.diagnostics.length > 0) {

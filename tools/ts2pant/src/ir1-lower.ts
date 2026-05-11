@@ -41,7 +41,10 @@ import {
   type IR1Stmt,
   ir1Var,
 } from "./ir1.js";
-import { lowerMuSearchSummary } from "./ir1-ssa-loops.js";
+import {
+  lowerMuSearchSummary,
+  type MuSearchCounterType,
+} from "./ir1-ssa-loops.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import type { NumericStrategy } from "./translate-types.js";
 
@@ -325,7 +328,7 @@ export function lowerL1MuSearch(
       receiver: ir1Var(ctx.counterPantName),
       property: ctx.counterPantName,
     },
-    counterType,
+    counterType: counterType as MuSearchCounterType,
     counterPantName: ctx.counterPantName,
     binder,
     initExpr: lowerExpr(initL2),

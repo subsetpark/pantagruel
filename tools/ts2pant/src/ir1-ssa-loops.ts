@@ -1,6 +1,7 @@
 import { lowerBinop, lowerExpr } from "./ir-emit.js";
 import {
   type IR1Expr,
+  type IR1FoldLeaf,
   type IR1ForeachBody,
   type IR1SsaLocation,
   type IR1SsaLoopSummary,
@@ -63,6 +64,14 @@ export interface ForeachShapeASummaryOptions extends LoopSsaBuildOptions {
   body: IR1ForeachBody;
   lowerOpaque?: (e: OpaqueExpr) => OpaqueExpr;
   initialPropertyValues?: ReadonlyMap<string, OpaqueExpr>;
+}
+
+export interface ForeachShapeBSummaryOptions extends LoopSsaBuildOptions {
+  binder: string;
+  source: OpaqueExpr;
+  foldLeaves: readonly IR1FoldLeaf[];
+  lowerExpr?: (e: IR1Expr) => OpaqueExpr;
+  priorAccumulatorValues?: ReadonlyMap<string, OpaqueExpr>;
 }
 
 export interface ForeachSummaryLowerResult {
@@ -251,6 +260,61 @@ export function lowerForeachShapeASummaries(
     propositions: result.propositions,
     modifiedRules: result.program.modifiedRules,
     diagnostics: result.diagnostics,
+  };
+}
+
+export function lowerForeachShapeBSummaries(
+  options: ForeachShapeBSummaryOptions,
+): ForeachShapeBSummaryResult {
+  const ast = getAst();
+  const lower = options.lowerExpr ?? ((e) => lowerExpr(lowerL1Expr(e)));
+  const accumulatorKeys: string[] = [];
+  const inputs: ForeachShapeBSummaryInput[] = options.foldLeaves.map((leaf) => {
+    const target = lower(leaf.target);
+    const rhs = lower(leaf.rhs);
+    const guards = [ast.gIn(options.binder, options.source)];
+    if (leaf.guard !== null) {
+      guards.push(ast.gExpr(lower(leaf.guard)));
+    }
+
+    const comb =
+      leaf.combiner === "add"
+        ? ast.combAdd()
+        : leaf.combiner === "mul"
+          ? ast.combMul()
+          : leaf.combiner === "and"
+            ? ast.combAnd()
+            : ast.combOr();
+    const folded = ast.eachComb([], guards, comb, rhs);
+    const key = foreachShapeBAccumulatorKey(leaf.prop, target);
+    accumulatorKeys.push(key);
+    const prior =
+      options.priorAccumulatorValues?.get(key) ??
+      ast.app(ast.var(leaf.prop), [target]);
+
+    const location = ir1SsaPropertyLocation(leaf.prop, leaf.target, leaf.prop);
+    return {
+      kind: "foreach-shape-b",
+      location,
+      propositions: [
+        {
+          kind: "equation",
+          quantifiers: [],
+          lhs: ast.app(ast.primed(leaf.prop), [target]),
+          rhs: ast.binop(lowerBinop(leaf.outerOp), prior, folded),
+        },
+      ],
+    };
+  });
+
+  const result = buildLoopSsaProgram(inputs, options);
+  return {
+    program: result.program,
+    summaries: result.program.loopSummaries,
+    propositions: result.propositions,
+    modifiedRules: result.program.modifiedRules,
+    diagnostics: result.diagnostics,
+    accumulatorKeys,
   };
 }
 
@@ -471,6 +535,13 @@ function lowerShapeAExpr(expr: IR1Expr, state: ShapeASummaryState): OpaqueExpr {
 }
 
 function shapeAKey(prop: string, objExpr: OpaqueExpr): string {
+  return `${prop}::${getAst().strExpr(objExpr)}`;
+}
+
+export function foreachShapeBAccumulatorKey(
+  prop: string,
+  objExpr: OpaqueExpr,
+): string {
   return `${prop}::${getAst().strExpr(objExpr)}`;
 }
 
