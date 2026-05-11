@@ -35,9 +35,17 @@ import {
   irVar,
 } from "./ir.js";
 import { lowerExpr } from "./ir-emit.js";
-import type { IR1Expr, IR1Stmt } from "./ir1.js";
+import {
+  type IR1Expr,
+  type IR1SsaLocation,
+  type IR1Stmt,
+  ir1Var,
+} from "./ir1.js";
+import {
+  lowerMuSearchSummary,
+  type MuSearchCounterType,
+} from "./ir1-ssa-loops.js";
 import type { OpaqueExpr } from "./pant-ast.js";
-import { getAst } from "./pant-wasm.js";
 import type { NumericStrategy } from "./translate-types.js";
 
 /**
@@ -241,6 +249,8 @@ export interface MuSearchLowerCtx {
   counterPantName: string;
   /** Allocate a fresh binder name (e.g., `j`, `j1`, …). */
   allocateBinder: (hint: string) => string;
+  /** Optional SSA summary location for the μ-search result. */
+  summaryLocation?: IR1SsaLocation;
 }
 
 /**
@@ -278,6 +288,7 @@ export function lowerL1MuSearch(
         "μ-search is only supported for discrete numeric strategies (got Real)",
     };
   }
+  const discreteCounterType: MuSearchCounterType = "Int";
   // After `isCanonicalMuSearchForm` has validated, we know the form
   // shape: Block([Let(c, init), While(p, Assign(c, c + 1))]).
   // Re-destructure to extract the init and predicate sub-expressions.
@@ -311,22 +322,23 @@ export function lowerL1MuSearch(
   // `binder` never collides with predicate-internal binders, but
   // this layer enforces it independently).
   const binder = ctx.allocateBinder("j");
-  const ast = getAst();
-  const predicateOpaque = ast.substituteBinder(
-    lowerExpr(predicateL2),
-    ctx.counterPantName,
-    ast.var(binder),
-  );
-  const initOpaque = lowerExpr(initL2);
-  // Emit `min over each binder: T, binder >= INIT, ~P | binder`
-  // directly at the OpaqueExpr layer.
-  return ast.eachComb(
-    [ast.param(binder, ast.tName(counterType))],
-    [
-      ast.gExpr(ast.binop(ast.opGe(), ast.var(binder), initOpaque)),
-      ast.gExpr(ast.unop(ast.opNot(), predicateOpaque)),
-    ],
-    ast.combMin(),
-    ast.var(binder),
-  );
+  const lowered = lowerMuSearchSummary({
+    location: ctx.summaryLocation ?? {
+      kind: "property",
+      ruleName: ctx.counterPantName,
+      receiver: ir1Var(ctx.counterPantName),
+      property: ctx.counterPantName,
+    },
+    counterType: discreteCounterType,
+    counterPantName: ctx.counterPantName,
+    binder,
+    initExpr: lowerExpr(initL2),
+    predicateExpr: lowerExpr(predicateL2),
+  });
+  if (lowered.loweredExpr === null) {
+    return {
+      unsupported: "μ-search summary lowering did not produce an expression",
+    };
+  }
+  return lowered.loweredExpr;
 }

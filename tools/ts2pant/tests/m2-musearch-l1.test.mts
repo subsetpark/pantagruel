@@ -17,15 +17,30 @@
  */
 
 import assert from "node:assert/strict";
+import { resolve } from "node:path";
 import { before, describe, it } from "node:test";
-import { createSourceFileFromSource } from "../src/extract.js";
+import { emitDocument } from "../src/emit.js";
+import {
+  createSourceFile,
+  createSourceFileFromSource,
+} from "../src/extract.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import { translateBody } from "../src/translate-body.js";
 import { IntStrategy } from "../src/translate-types.js";
+import { buildDocumentFromSourceFile } from "./helpers.mts";
 
 before(async () => {
   await loadAst();
 });
+
+function extractEquationRhs(output: string, entryName: string): string {
+  const equationLine = output
+    .trim()
+    .split("\n")
+    .find((line) => line.startsWith(`${entryName} `) && line.includes(" = "));
+  assert.ok(equationLine, "expected an emitted equation line");
+  return equationLine.slice(equationLine.indexOf(" = ") + 3);
+}
 
 function translate(
   source: string,
@@ -65,7 +80,7 @@ describe("M2 μ-search L1: existing shapes translate", () => {
     `;
     const { unsupported, pant } = translate(source, "firstUnused");
     assert.equal(unsupported, null);
-    assert.match(pant!, /min over each j\d*: Int/);
+    assert.match(pant!, /min over each j\d*: Int/u);
   });
 
   it("μ-search counter referenced post-loop", () => {
@@ -78,8 +93,8 @@ describe("M2 μ-search L1: existing shapes translate", () => {
     `;
     const { unsupported, pant } = translate(source, "nextSlotPlusOne");
     assert.equal(unsupported, null);
-    assert.match(pant!, /min over each j\d*: Int/);
-    assert.match(pant!, /\+ 1/);
+    assert.match(pant!, /min over each j\d*: Int/u);
+    assert.match(pant!, /\+ 1/u);
   });
 
   it("μ-search interleaved with const binding", () => {
@@ -121,13 +136,48 @@ describe("M2 μ-search L1: all five +1 spellings produce identical Pant", () => 
     // binder allocation is deterministic per call. The five spellings
     // must produce byte-identical Pant — the M2 architectural promise.
     const baseline = translateForm("i++");
-    assert.match(baseline, /min over each j\d*: Int/);
-    assert.match(baseline, /~\(j\d* in used\)/);
+    assert.match(baseline, /min over each j\d*: Int/u);
+    assert.match(baseline, /~\(j\d* in used\)/u);
 
     assert.equal(translateForm("++i"), baseline);
     assert.equal(translateForm("i += 1"), baseline);
     assert.equal(translateForm("i = i + 1"), baseline);
     assert.equal(translateForm("i = 1 + i"), baseline);
+  });
+
+  it("fixture spellings still emit identical Pant through loop summaries", async () => {
+    const filePath = resolve(
+      import.meta.dirname,
+      "fixtures/constructs/expressions-while-mu-search.ts",
+    );
+    const sourceFile = createSourceFile(filePath);
+    const funcs = [
+      "firstUnusedSuffix",
+      "unbracedWhileBody",
+      "compoundIncrementStep",
+      "explicitIncrementStep",
+      "explicitIncrementStepFlipped",
+    ];
+    const outputs: Array<{ funcName: string; output: string }> = [];
+    for (const funcName of funcs) {
+      const doc = await buildDocumentFromSourceFile(sourceFile, funcName);
+      outputs.push({ funcName, output: emitDocument(doc) });
+    }
+
+    const rhsOutputs = outputs.map(({ funcName, output }) =>
+      extractEquationRhs(
+        output,
+        funcName
+          .replace(/[A-Z]/gu, (c) => `-${c.toLowerCase()}`)
+          .replace(/^-/, ""),
+      ),
+    );
+    for (const rhs of rhsOutputs) {
+      assert.match(rhs, /min over each j\d*: Int/u);
+    }
+    for (const rhs of rhsOutputs.slice(1)) {
+      assert.equal(rhs, rhsOutputs[0]);
+    }
   });
 });
 
@@ -163,7 +213,7 @@ describe("M2 μ-search L1: rejection cases", () => {
     `;
     const { unsupported } = translate(source, "nonUnit");
     assert.notEqual(unsupported, null);
-    assert.match(unsupported!, /canonical|step/);
+    assert.match(unsupported!, /canonical|step/u);
   });
 
   it("predicate not referencing counter rejects", () => {
