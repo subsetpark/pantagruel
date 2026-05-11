@@ -2,7 +2,7 @@
 // .set(k, v) and .delete(k) on a Map parameter emit one override pair
 // per modified rule (value rule + membership predicate), quantified
 // over (m, k) with frame semantics implicit in the override's ite
-// expansion. See CLAUDE.md § Partial Rules / Mutation.
+// expansion. See AGENTS.md § Partial Rules / Mutation.
 
 /** Single .set, unconditional. */
 export function put(m: Map<string, number>, k: string, v: number): void {

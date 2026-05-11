@@ -2,7 +2,7 @@
 // list-lift encoding. An optional TS type `T | null` translates to `[T]`,
 // so `#x = 0` is the null test and `(x 1)` extracts the singleton.
 //
-// See CLAUDE.md "Option-Type Elimination" for the encoding; REFERENCE.md
+// See AGENTS.md "Option-Type Elimination" for the encoding; REFERENCE.md
 // (Pantagruel core) documents the `[T]` + cardinality-invariant idiom as
 // Alloy `lone` multiplicity.
 

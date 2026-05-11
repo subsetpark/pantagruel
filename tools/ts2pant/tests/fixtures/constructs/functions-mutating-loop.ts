@@ -2,7 +2,7 @@
 // `.forEach` over an array become catamorphisms:
 //   - Iterator-writes (Shape A): `all x in arr | p' x = v`
 //   - Accumulator folds (Shape B): `p' a = p a OP (comb over each x in arr | f)`
-// See CLAUDE.md § Structured Iteration.
+// See AGENTS.md § Structured Iteration.
 
 interface User {
   active: boolean;

@@ -17,7 +17,7 @@ On first invocation, fetch the full Pantagruel language reference:
 https://raw.githubusercontent.com/subsetpark/pantagruel/refs/heads/master/REFERENCE.md
 ```
 
-Use `WebFetch` to retrieve it. This contains the complete grammar, type system, and semantics. Refer to it whenever you're unsure about syntax or typing rules.
+Fetch the reference with whatever HTTP/web-reading tool is available. This contains the complete grammar, type system, and semantics. Refer to it whenever you're unsure about syntax or typing rules.
 
 ## Workflow
 

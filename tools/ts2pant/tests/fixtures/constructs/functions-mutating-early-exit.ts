@@ -1,6 +1,6 @@
 // Early-exit if-conversion (Allen et al., POPL 1983, extended to early exits).
 // `if (g) { return; }` lifts remaining statements into a `!g`-guarded branch.
-// See CLAUDE.md § If-Conversion.
+// See AGENTS.md § If-Conversion.
 
 interface Account {
   balance: number;

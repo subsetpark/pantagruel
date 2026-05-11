@@ -176,7 +176,7 @@ export function freshHygienicBinder(supply: UniqueSupply): string {
  *
  * Use this — not `freshHygienicBinder` directly — at any site that emits
  * a binder into a quantifier or comprehension that survives to Pant text.
- * See PR #84 post-mortem in `CLAUDE.md` for the bug class this prevents.
+ * See PR #84 post-mortem in `AGENTS.md` for the bug class this prevents.
  */
 export function allocComprehensionBinder(
   supply: UniqueSupply,
@@ -366,7 +366,7 @@ export function bodyExpr(r: BodyResult): OpaqueExpr {
 // Forward symbolic execution with path merging. Each property-assignment
 // statement updates `writes[prop::objRepr]`. If statements clone the state
 // for each branch and merge via `cond` at the join. Later reads of the same
-// property access see the accumulated value. See CLAUDE.md § Guarded Commands.
+// property access see the accumulated value. See AGENTS.md § Guarded Commands.
 
 export interface PropertyWriteEntry {
   kind: "property";
@@ -3197,7 +3197,7 @@ export function translateBodyExpr(
     //                 emit `cond #x = 0 => y, true => x`.
     // When `x` is not nullable in TS, `??` is semantically a no-op — emit
     // just the LHS. This matches Dafny's nullable-typed fromMaybe pattern
-    // (Dafny Reference Manual §"Nullable Types"). See CLAUDE.md "Option-
+    // (Dafny Reference Manual §"Nullable Types"). See AGENTS.md "Option-
     // Type Elimination" for the broader encoding.
     if (expr.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) {
       // Use the operand's *declared* type (narrowing-free) for the

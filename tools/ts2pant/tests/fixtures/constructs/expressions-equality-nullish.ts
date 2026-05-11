@@ -12,7 +12,7 @@
 //     runner skips functions that fail to translate, so rejected
 //     forms can't be snapshot-tested here.
 //
-// See `workstreams/ts2pant-m4-equality-nullish.md` and CLAUDE.md
+// See `workstreams/ts2pant-m4-equality-nullish.md` and AGENTS.md
 // "Option-Type Elimination" for the encoding rationale.
 
 // ─── Strict equality canonicalization (M4 Patch 3) ─────────────────

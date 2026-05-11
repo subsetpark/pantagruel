@@ -15,7 +15,7 @@
  * out). The two paths share L1 but diverge here. See
  * `workstreams/ts2pant-imperative-ir.md` § "Architectural Lessons".
  *
- * One deliberate divergence from IRSC (see CLAUDE.md §IR):
+ * One deliberate divergence from IRSC (see AGENTS.md §IR):
  *
  * - **No FieldAccess form.** ts2pant lowers `e.f` to `App(qualified-rule,
  *   [e])` at construction time via `qualifyFieldAccess`. Preserving that
@@ -106,7 +106,7 @@ export type IRCombiner = IRFoldCombiner | "min" | "max";
 /**
  * Pure value-position IR. Ten forms total. Each form's invariants are
  * documented inline; do not add forms ad-hoc — additions go through
- * CLAUDE.md §IR review.
+ * AGENTS.md §IR review.
  */
 export type IRExpr =
   /** Variable / parameter reference. `primed = true` means next-state. */
