@@ -25,13 +25,17 @@
  */
 
 import { lowerBinop, lowerExpr } from "./ir-emit.js";
-import type { IR1Expr, IR1FoldLeaf, IR1Stmt } from "./ir1.js";
+import type { IR1Expr, IR1Stmt } from "./ir1.js";
 import { lowerL1Expr } from "./ir1-lower.js";
 import {
   isCollectionSsaL1Body,
   lowerCollectionSsaToProps,
 } from "./ir1-ssa-collections.js";
-import { lowerForeachShapeASummaries } from "./ir1-ssa-loops.js";
+import {
+  foreachShapeBAccumulatorKey,
+  lowerForeachShapeASummaries,
+  lowerForeachShapeBSummaries,
+} from "./ir1-ssa-loops.js";
 import { isScalarSsaL1Body, lowerScalarSsaToProps } from "./ir1-ssa-scalars.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
@@ -636,14 +640,60 @@ function lowerForeach(
     }
   }
 
-  // Shape B: Each fold leaf becomes one accumulator equation
-  //   prop' target = prior outerOp (combOP over each binder in src[, guard] | rhs)
-  // The leaf carries pre-translated `target`, `rhs`, `guard` (with `rhs`/
-  // `guard` already observing in-iter Shape A writes via the build-time
-  // subState).
-  for (const leaf of stmt.foldLeaves) {
-    if (!lowerFoldLeaf(leaf, stmt.binder, arrExpr, state, propositions, ctx)) {
+  // Shape B: summarize each fold leaf as an accumulator equation with
+  // the prior accumulator value supplied explicitly to the helper.
+  if (stmt.foldLeaves.length > 0) {
+    const priorAccumulatorValues = new Map<string, OpaqueExpr>();
+    for (const leaf of stmt.foldLeaves) {
+      const target = ctx.applyConst(lowerL1ExprToOpaque(leaf.target, state));
+      const key = foreachShapeBAccumulatorKey(leaf.prop, target);
+      const priorEntry = state.writes.get(key);
+      if (priorEntry !== undefined && priorEntry.kind !== "property") {
+        propositions.push({
+          kind: "unsupported",
+          reason: "loop-fold accumulator over a non-property prior write",
+        });
+        return false;
+      }
+      priorAccumulatorValues.set(
+        key,
+        priorEntry?.value ?? getAst().app(getAst().var(leaf.prop), [target]),
+      );
+    }
+
+    const result = lowerForeachShapeBSummaries({
+      binder: stmt.binder,
+      source: arrExpr,
+      foldLeaves: stmt.foldLeaves,
+      lowerExpr: (expr) => ctx.applyConst(lowerL1ExprToOpaque(expr, state)),
+      priorAccumulatorValues,
+    });
+    if (result.diagnostics.length > 0) {
+      propositions.push(...result.diagnostics);
       return false;
+    }
+    for (const rule of result.modifiedRules) {
+      state.modifiedProps = addModifiedProp(state.modifiedProps, rule);
+    }
+    for (let i = 0; i < stmt.foldLeaves.length; i++) {
+      const leaf = stmt.foldLeaves[i]!;
+      const prop = result.propositions[i];
+      if (prop?.kind !== "equation") {
+        propositions.push({
+          kind: "unsupported",
+          reason: "foreach Shape B summary did not lower to an equation",
+        });
+        return false;
+      }
+      const target = ctx.applyConst(lowerL1ExprToOpaque(leaf.target, state));
+      const key = foreachShapeBAccumulatorKey(leaf.prop, target);
+      state.writes = putWrite(state.writes, key, {
+        kind: "property",
+        prop: leaf.prop,
+        objExpr: target,
+        value: prop.rhs,
+      });
+      state.writtenKeys = addWrittenKey(state.writtenKeys, key);
     }
   }
   return true;
@@ -659,65 +709,6 @@ function shapeAInitialPropertyValues(
     }
   }
   return initialValues;
-}
-
-function lowerFoldLeaf(
-  leaf: IR1FoldLeaf,
-  binder: string,
-  arrExpr: OpaqueExpr,
-  state: SymbolicState,
-  propositions: PropResult[],
-  ctx: LowerBodyCtx,
-): boolean {
-  const ast = getAst();
-  const target = ctx.applyConst(lowerL1ExprToOpaque(leaf.target, state));
-  const rhs = ctx.applyConst(lowerL1ExprToOpaque(leaf.rhs, state));
-  const guards = [ast.gIn(binder, arrExpr)];
-  if (leaf.guard !== null) {
-    guards.push(
-      ast.gExpr(ctx.applyConst(lowerL1ExprToOpaque(leaf.guard, state))),
-    );
-  }
-  const comb =
-    leaf.combiner === "add"
-      ? ast.combAdd()
-      : leaf.combiner === "mul"
-        ? ast.combMul()
-        : leaf.combiner === "and"
-          ? ast.combAnd()
-          : ast.combOr();
-  const folded = ast.eachComb([], guards, comb, rhs);
-
-  const outerOp = lowerBinop(leaf.outerOp);
-  const key = symbolicKey(leaf.prop, target);
-  const priorEntry = state.writes.get(key);
-  if (priorEntry !== undefined && priorEntry.kind !== "property") {
-    propositions.push({
-      kind: "unsupported",
-      reason: "loop-fold accumulator over a non-property prior write",
-    });
-    return false;
-  }
-  const priorVal = priorEntry?.value ?? ast.app(ast.var(leaf.prop), [target]);
-  const newVal = ast.binop(outerOp, priorVal, folded);
-
-  state.writes = putWrite(state.writes, key, {
-    kind: "property",
-    prop: leaf.prop,
-    objExpr: target,
-    value: newVal,
-  });
-  state.writtenKeys = addWrittenKey(state.writtenKeys, key);
-  // Mirror `lowerForeach`'s Shape A path so Shape B accumulator folds
-  // also flag their target rule as modified. The downstream
-  // `state.writes` → equation emission loop in `symbolicExecute` adds
-  // the same prop to `modifiedProps` after `lowerL1Body` returns, so
-  // this is idempotent in the standard top-level flow — but updating
-  // here prevents a future refactor from inadvertently letting an
-  // identity equation slip through `generateFrameConditions` for the
-  // accumulator rule.
-  state.modifiedProps = addModifiedProp(state.modifiedProps, leaf.prop);
-  return true;
 }
 
 function lowerCondStmt(
