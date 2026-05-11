@@ -497,7 +497,7 @@
       ],
       "testStubsIntroduced": null,
       "testStubsImplemented": null,
-      "spec": "module TS2PANT_M4_PATCH_5.\n\n> Patch 5 — documentation + dogfood verification. No new code paths.\n>\n> Updates `tools/ts2pant/AGENTS.md` and\n> `workstreams/ts2pant-imperative-ir.md` to reflect M4 landed status.\n> Adds a fixture covering all supported equality/nullish surface\n> shapes. Confirms `pant --check` and dogfood remain green.\n\nDoc.\nFixture.\n\nm4-status-recorded? d: Doc => Bool.\nfixture-covers-equality-nullish? f: Fixture => Bool.\n\n---\n\ntrue.\n"
+      "spec": "module TS2PANT_M4_PATCH_6.\n\n> Patch 6 — documentation + dogfood verification. No new code paths.\n>\n> Updates `tools/ts2pant/AGENTS.md` and\n> `workstreams/ts2pant-imperative-ir.md` to reflect M4 landed status.\n> Adds a fixture covering all supported equality/nullish surface\n> shapes. Confirms `pant --check` and dogfood remain green.\n\nDoc.\nFixture.\n\nm4-status-recorded? d: Doc => Bool.\nfixture-covers-equality-nullish? f: Fixture => Bool.\n\n---\n\ntrue.\n"
     }
   ],
   "testMap": [
