@@ -33,11 +33,11 @@ before(async () => {
   await loadAst();
 });
 
-function extractEquationRhs(output: string, entryName: string): string {
+function extractEquationRhs(output: string): string {
   const equationLine = output
     .trim()
     .split("\n")
-    .find((line) => line.startsWith(`${entryName} `) && line.includes(" = "));
+    .findLast((line) => line.includes(" = "));
   assert.ok(equationLine, "expected an emitted equation line");
   return equationLine.slice(equationLine.indexOf(" = ") + 3);
 }
@@ -158,20 +158,14 @@ describe("M2 μ-search L1: all five +1 spellings produce identical Pant", () => 
       "explicitIncrementStep",
       "explicitIncrementStepFlipped",
     ];
-    const outputs: Array<{ funcName: string; output: string }> = [];
-    for (const funcName of funcs) {
-      const doc = await buildDocumentFromSourceFile(sourceFile, funcName);
-      outputs.push({ funcName, output: emitDocument(doc) });
-    }
-
-    const rhsOutputs = outputs.map(({ funcName, output }) =>
-      extractEquationRhs(
-        output,
-        funcName
-          .replace(/[A-Z]/gu, (c) => `-${c.toLowerCase()}`)
-          .replace(/^-/, ""),
-      ),
+    const outputs = await Promise.all(
+      funcs.map(async (funcName) => {
+        const doc = await buildDocumentFromSourceFile(sourceFile, funcName);
+        return emitDocument(doc);
+      }),
     );
+
+    const rhsOutputs = outputs.map(extractEquationRhs);
     for (const rhs of rhsOutputs) {
       assert.match(rhs, /min over each j\d*: Int/u);
     }

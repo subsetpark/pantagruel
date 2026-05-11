@@ -99,17 +99,9 @@ export interface ForeachShapeBSummaryResult {
   accumulatorKeys: string[];
 }
 
-export type MuSearchCounterType = "Int";
-
-/**
- * Preconditions:
- * - caller already validated canonical μ-search form
- * - `binder` is fresh with respect to `predicateExpr`
- * - `counterType` is a discrete well-ordered numeric type
- */
 export interface MuSearchSummaryLowerOptions extends LoopSsaBuildOptions {
   location: IR1SsaLocation;
-  counterType: MuSearchCounterType;
+  counterType: string;
   counterPantName: string;
   binder: string;
   initExpr: OpaqueExpr;
