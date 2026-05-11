@@ -14,7 +14,7 @@
  *   recurses, then merges per write-key (property writes use
  *   cond-fallback; Map/Set merge their override lists).
  * - `map-effect` / `set-effect` — Map/Set mutation effects.
- * - `foreach` — Shape A body lowered through a sub-state and emitted
+ * - `foreach` — Shape A body lowered through loop summaries and emitted
  *   as `all binder in src | prop' obj = value` equations; Shape B
  *   `foldLeaves` emit `prop' target = prior outerOp (combOP over each
  *   binder in src[, guard] | rhs)` equations into the outer state.
@@ -31,6 +31,7 @@ import {
   isCollectionSsaL1Body,
   lowerCollectionSsaToProps,
 } from "./ir1-ssa-collections.js";
+import { lowerForeachShapeASummaries } from "./ir1-ssa-loops.js";
 import { isScalarSsaL1Body, lowerScalarSsaToProps } from "./ir1-ssa-scalars.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
@@ -43,7 +44,6 @@ import {
   installSetWrite,
   type MapOverride,
   type MapRuleWriteEntry,
-  makeSymbolicState,
   mergeClearedCond,
   mergeOverrides,
   type PropertyWriteEntry,
@@ -613,52 +613,26 @@ function lowerForeach(
   propositions: PropResult[],
   ctx: LowerBodyCtx,
 ): boolean {
-  const ast = getAst();
   const arrExpr = ctx.applyConst(lowerL1ExprToOpaque(stmt.source, state));
 
-  // Shape A: Sub-state captures the body's per-iteration writes so they
-  // don't leak into the outer state. Skipped when body is null (pure
-  // Shape B foreach). The body lowers into a *local* `bodyProps`
-  // buffer (mirroring `lowerCondStmt`) so a nested
-  // proposition-emitting form — a future `for-of` inside a
-  // `cond-stmt` arm, or anything else that pushes `equation` /
-  // `assertion` directly — can't escape the outer iterator scope.
-  // Today `IR1ForeachBody` is narrow enough that this can only fire as
-  // defense-in-depth, but keeping the buffer isolated means future IR
-  // additions don't silently leak.
+  // Shape A: loop-summary SSA captures the body's per-iteration writes
+  // without mutating a SymbolicState substate. Skipped when body is null
+  // (pure Shape B foreach).
   if (stmt.body !== null) {
-    const subState = makeSymbolicState(ctx.applyConst);
-    const bodyProps: PropResult[] = [];
-    if (!lowerL1Body(stmt.body, subState, bodyProps, ctx)) {
-      propositions.push(...bodyProps);
+    const result = lowerForeachShapeASummaries({
+      binder: stmt.binder,
+      source: arrExpr,
+      body: stmt.body,
+      lowerOpaque: ctx.applyConst,
+      initialPropertyValues: shapeAInitialPropertyValues(state),
+    });
+    if (result.diagnostics.length > 0) {
+      propositions.push(...result.diagnostics);
       return false;
     }
-    if (bodyProps.length > 0) {
-      propositions.push({
-        kind: "unsupported",
-        reason:
-          "nested proposition-emitting loop body is not supported — the inner proposition would escape the outer iterator scope",
-      });
-      return false;
-    }
-    for (const [, entry] of subState.writes) {
-      if (entry.kind !== "property") {
-        propositions.push({
-          kind: "unsupported",
-          reason: `${entry.kind === "map" ? "Map" : "Set"} mutation inside foreach body is out of scope`,
-        });
-        return false;
-      }
-      // Universal-quantifier proposition:
-      //   `all binder in src | prop' obj = value`
-      propositions.push({
-        kind: "equation",
-        quantifiers: [],
-        guards: [ast.gIn(stmt.binder, arrExpr)],
-        lhs: ast.app(ast.primed(entry.prop), [entry.objExpr]),
-        rhs: entry.value,
-      });
-      state.modifiedProps = addModifiedProp(state.modifiedProps, entry.prop);
+    propositions.push(...result.propositions);
+    for (const rule of result.modifiedRules) {
+      state.modifiedProps = addModifiedProp(state.modifiedProps, rule);
     }
   }
 
@@ -673,6 +647,18 @@ function lowerForeach(
     }
   }
   return true;
+}
+
+function shapeAInitialPropertyValues(
+  state: SymbolicState,
+): ReadonlyMap<string, OpaqueExpr> {
+  const initialValues = new Map<string, OpaqueExpr>();
+  for (const [key, entry] of state.writes) {
+    if (entry.kind === "property") {
+      initialValues.set(key, entry.value);
+    }
+  }
+  return initialValues;
 }
 
 function lowerFoldLeaf(
