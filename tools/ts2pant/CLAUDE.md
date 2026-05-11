@@ -779,12 +779,14 @@ live in § "Divergence from IRSC".
 - `src/ir-emit.ts` — L2 IRExpr → `OpaqueExpr` lowering.
 - `src/ir1.ts`, `src/ir1-build.ts`, `src/ir1-build-body.ts`,
   `src/ir1-lower.ts`, `src/ir1-lower-body.ts`,
-  `src/ir1-ssa-scalars.ts`, `src/ir1-ssa-collections.ts` — Layer 1 (TS-shape imperative IR today;
+  `src/ir1-ssa-scalars.ts`, `src/ir1-ssa-collections.ts`,
+  `src/ir1-ssa-loops.ts` — Layer 1 (TS-shape imperative IR today;
   the SSA-bearing contract now lives in `src/ir1.ts`, while the
-  scalar SSA builder/lowerer helper owns scalar property mutation and
-  the collection SSA helper owns Map/Set mutation; the production
-  fallback still routes foreach and loop-summary shapes through
-  `SymbolicState` until later milestones).
+  scalar SSA builder/lowerer helper owns scalar property mutation,
+  the collection SSA helper owns Map/Set mutation, and the loop
+  summary helper owns μ-search plus supported foreach summaries.
+  `SymbolicState` still exists for later cleanup, but it is no longer
+  the backing model for the supported loop-summary forms after M4).
 
 ### Two paths, one Layer 1
 
@@ -802,9 +804,11 @@ shared Layer 1 IR:
   scalar property mutation, read-after-write, branch joins, and
   scalar early-exit merges through `src/ir1-ssa-scalars.ts`. Map/Set
   mutation now routes through `src/ir1-ssa-collections.ts`, while
-  foreach / loop-summary lowering stays on the `SymbolicState` fallback
-  path until M4. The mutating output is a list of equations + frame
-  conditions; no L2 statement vocabulary.
+  μ-search and supported foreach summaries route through
+  `src/ir1-ssa-loops.ts`. General loop SSA remains out of scope, and
+  the later M5 lowering pass owns the unified `PropResult[]`
+  emission for the supported summary forms. The mutating output is a
+  list of equations + frame conditions; no L2 statement vocabulary.
 
 L2 is *expression-only* — there is no L2 `IRStmt`. The asymmetry is
 intentional; see `workstreams/ts2pant-imperative-ir.md`
@@ -941,7 +945,8 @@ scalar-only cases that now execute in production:
 
 Those cases lower through IR1 SSA and then emit the same primed
 equations as before. Map/Set mutation now uses `src/ir1-ssa-collections.ts`;
-foreach / loop-summary lowering still uses `SymbolicState` until M4.
+loop-summary lowering now uses `src/ir1-ssa-loops.ts`, while
+`SymbolicState` remains available for later cleanup.
 
 ### Final architecture (post-M6)
 
@@ -960,8 +965,10 @@ with no migration flags, no escape hatches, and no parallel pipelines:
   — TS AST → L1 statement (`ir1-build-body.ts`) → `PropResult[]`.
   Scalar property mutation now routes through the dedicated SSA helper
   (`src/ir1-ssa-scalars.ts`), while Map/Set now routes through the
-  collection SSA helper (`src/ir1-ssa-collections.ts`) and foreach
-  still lowers through `SymbolicState` (`ir1-lower-body.ts`) until M4.
+  collection SSA helper (`src/ir1-ssa-collections.ts`) and loop
+  summaries route through `src/ir1-ssa-loops.ts`. `SymbolicState`
+  still exists in `ir1-lower-body.ts` for later cleanup, but it is not
+  the semantic backing for the supported loop-summary forms after M4.
   No L2 statement vocabulary; the fallback fold reuses the existing
   mutation primitives (`putWrite`, `mergeOverrides`, `installMapWrite`,
   `installSetWrite`).
@@ -995,8 +1002,9 @@ Lowering for value-position: TS AST → Layer 1 (`ir1-build.ts`) → Layer 2
 
 Lowering for effect-position: TS AST → Layer 1 (`ir1-build-body.ts`) →
 `PropResult[]` (`ir1-lower-body.ts`, threading `SymbolicState` for the
-Map/Set and foreach fallback paths, with scalar property mutation
-handled by `src/ir1-ssa-scalars.ts`).
+Map/Set fallback paths, with scalar property mutation handled by
+`src/ir1-ssa-scalars.ts` and loop summaries handled by
+`src/ir1-ssa-loops.ts`).
 
 The full milestone breakdown lives in
 `workstreams/ts2pant-imperative-ir.md`. Decisions on canonical forms,
@@ -1037,12 +1045,13 @@ produces canonical L1 statement forms — `cond-stmt` for `if`-with-
 mutation, `foreach` for `for-of` / `forEach` — and the lower pass
 (`ir1-lower-body.ts`) does a single fold over the L1, threading the
 collection SSA from `src/ir1-ssa-collections.ts` for Map/Set effects,
-and the remaining `SymbolicState` fallback from `translate-body.ts` for
-foreach / loop-summary shapes, then emitting `PropResult[]`. No L2
-statement vocabulary; the retained `SymbolicState` primitives
-(`putWrite`, `mergeOverrides`, `installMapWrite`, `installSetWrite`)
-are fallback-only and remain in place for the M4 loop-summary pause
-point. `Foreach.body` (Shape A — uniform iterator writes) emits one
+and the loop-summary helper from `src/ir1-ssa-loops.ts` for μ-search
+and supported foreach / accumulator-fold shapes, then emitting
+`PropResult[]`. No L2 statement vocabulary; the retained
+`SymbolicState` primitives (`putWrite`, `mergeOverrides`,
+`installMapWrite`, `installSetWrite`) remain in place for later
+cleanup and are no longer the semantic backing for the M4 loop-summary
+pause point. `Foreach.body` (Shape A — uniform iterator writes) emits one
 universally-quantified per-iteration equation per modified rule
 (`all $N in src | prop' $N = …`), while `Foreach.foldLeaves` (Shape B
 — accumulator folds `a.p OP= f(x)`) emits one *aggregated* accumulator

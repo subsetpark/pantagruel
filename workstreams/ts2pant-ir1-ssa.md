@@ -17,18 +17,20 @@ IR1 is currently a TypeScript-shaped canonical layer. Value-position code
 lowers through `IR1Expr -> IRExpr -> OpaqueExpr`; mutating bodies lower
 directly through `lowerL1Body` in `tools/ts2pant/src/ir1-lower-body.ts`, with
 scalar property mutation routed through `tools/ts2pant/src/ir1-ssa-scalars.ts`
-and collection mutation routed through `tools/ts2pant/src/ir1-ssa-collections.ts`.
-The remaining foreach and loop-summary paths still thread `SymbolicState`
-from `tools/ts2pant/src/translate-body.ts` as fallback-only helpers to emit
-`PropResult[]`.
+collection mutation routed through `tools/ts2pant/src/ir1-ssa-collections.ts`,
+and loop-summary mutation routed through `tools/ts2pant/src/ir1-ssa-loops.ts`.
+`SymbolicState` still exists in `tools/ts2pant/src/translate-body.ts`, but it
+is no longer the backing model for the supported foreach and μ-search summary
+forms after M4.
 
 That design is now partially SSA. Scalar property mutation, read-after-write,
 branch joins, and supported early-exit continuation merges are represented by
 IR1 SSA. IR1 still contains `assign`, `while`, `for`, `foreach`, `cond-stmt`,
 `map-effect`, and `set-effect` statement forms. Map/Set semantics, including
-`Set.clear()`, now lower through the collection SSA module, while foreach /
-loop-summary behavior still lives in the fallback lowering code until the later
-milestones take them over.
+`Set.clear()`, now lower through the collection SSA module, while μ-search and
+supported foreach loop summaries lower through the dedicated loop-summary
+helper. General `for` / `while` SSA remains out of scope for this workstream,
+and the remaining `SymbolicState` cleanup is deferred to the M5/M6 transition.
 
 ## Key Challenges
 
@@ -49,7 +51,8 @@ milestones take them over.
   this workstream because general loop syntax is not currently supported.
   Existing support consists of μ-search, Shape A foreach, and Shape B
   accumulator folds. SSA must represent those summaries explicitly without
-  promising arbitrary loop fixed points.
+  promising arbitrary loop fixed points, and the later M5 lowering pass owns
+  the unified `PropResult[]` emission for those summaries.
 - **Rip-and-replace risk**: Byte-for-byte compatibility is not required, but
   semantic parity for currently supported fixtures is required. Test coverage
   must compare behavior at the Pantagruel/wasm-check level, not only snapshots.
@@ -184,12 +187,15 @@ loop SSA:
   clear a diagnostic as today.
 
 Existing foreach, forEach, accumulator-fold, and μ-search fixtures pass
-snapshots and wasm typechecking.
+snapshots and wasm typechecking, using the loop-summary helper rather than a
+general loop SSA model.
 
 **Why this is a safe pause point**:
 All currently supported non-looping mutation now flows through IR1 SSA.
 General `for` / `while` support remains explicitly out of scope, so the
-codebase does not imply support it cannot provide.
+codebase does not imply support it cannot provide. `SymbolicState` remains in
+the tree for later cleanup, but it is no longer the semantic backing for the
+supported foreach and μ-search summary forms.
 
 **Unlocks**:
 Full removal of `lowerL1Body`'s old `SymbolicState` execution model.
@@ -197,7 +203,8 @@ Full removal of `lowerL1Body`'s old `SymbolicState` execution model.
 **Open Questions**:
 None. Loop summaries produce distinct summary versions. They can satisfy reads
 and mark rules modified, but they lower through quantified/fold-specific paths
-rather than ordinary point-write paths.
+rather than ordinary point-write paths, with M5 responsible for collapsing
+those outputs into the unified `PropResult[]` lowering path.
 
 ---
 
