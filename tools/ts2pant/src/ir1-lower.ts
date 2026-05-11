@@ -288,7 +288,6 @@ export function lowerL1MuSearch(
         "μ-search is only supported for discrete numeric strategies (got Real)",
     };
   }
-  const discreteCounterType: MuSearchCounterType = "Int";
   // After `isCanonicalMuSearchForm` has validated, we know the form
   // shape: Block([Let(c, init), While(p, Assign(c, c + 1))]).
   // Re-destructure to extract the init and predicate sub-expressions.
@@ -329,7 +328,7 @@ export function lowerL1MuSearch(
       receiver: ir1Var(ctx.counterPantName),
       property: ctx.counterPantName,
     },
-    counterType: discreteCounterType,
+    counterType: counterType as MuSearchCounterType,
     counterPantName: ctx.counterPantName,
     binder,
     initExpr: lowerExpr(initL2),
