@@ -779,10 +779,11 @@ live in § "Divergence from IRSC".
 - `src/ir-emit.ts` — L2 IRExpr → `OpaqueExpr` lowering.
 - `src/ir1.ts`, `src/ir1-build.ts`, `src/ir1-build-body.ts`,
   `src/ir1-lower.ts`, `src/ir1-lower-body.ts`,
-  `src/ir1-ssa-scalars.ts` — Layer 1 (TS-shape imperative IR today;
+  `src/ir1-ssa-scalars.ts`, `src/ir1-ssa-collections.ts` — Layer 1 (TS-shape imperative IR today;
   the SSA-bearing contract now lives in `src/ir1.ts`, while the
   scalar SSA builder/lowerer helper owns scalar property mutation and
-  the production fallback still routes Map/Set and foreach through
+  the collection SSA helper owns Map/Set mutation; the production
+  fallback still routes foreach and loop-summary shapes through
   `SymbolicState` until later milestones).
 
 ### Two paths, one Layer 1
@@ -800,10 +801,10 @@ shared Layer 1 IR:
   contract is already present in `src/ir1.ts`, and Milestone 2 routes
   scalar property mutation, read-after-write, branch joins, and
   scalar early-exit merges through `src/ir1-ssa-scalars.ts`. Map/Set
-  mutation stays on the existing `SymbolicState` path until M3, and
-  foreach / loop-summary lowering stays there until M4. The mutating
-  output is a list of equations + frame conditions; no L2 statement
-  vocabulary.
+  mutation now routes through `src/ir1-ssa-collections.ts`, while
+  foreach / loop-summary lowering stays on the `SymbolicState` fallback
+  path until M4. The mutating output is a list of equations + frame
+  conditions; no L2 statement vocabulary.
 
 L2 is *expression-only* — there is no L2 `IRStmt`. The asymmetry is
 intentional; see `workstreams/ts2pant-imperative-ir.md`
@@ -939,9 +940,8 @@ scalar-only cases that now execute in production:
 - scalar early-exit continuation merges
 
 Those cases lower through IR1 SSA and then emit the same primed
-equations as before. Map/Set mutation still uses `SymbolicState` until
-M3, and foreach / loop-summary lowering still uses `SymbolicState`
-until M4.
+equations as before. Map/Set mutation now uses `src/ir1-ssa-collections.ts`;
+foreach / loop-summary lowering still uses `SymbolicState` until M4.
 
 ### Final architecture (post-M6)
 
@@ -959,10 +959,11 @@ with no migration flags, no escape hatches, and no parallel pipelines:
   effect calls, branched mutation, iteration with statement bodies)
   — TS AST → L1 statement (`ir1-build-body.ts`) → `PropResult[]`.
   Scalar property mutation now routes through the dedicated SSA helper
-  (`src/ir1-ssa-scalars.ts`), while Map/Set and foreach still lower
-  through `SymbolicState` (`ir1-lower-body.ts`) until M3/M4. No L2
-  statement vocabulary; the fallback fold reuses the existing mutation
-  primitives (`putWrite`, `mergeOverrides`, `installMapWrite`,
+  (`src/ir1-ssa-scalars.ts`), while Map/Set now routes through the
+  collection SSA helper (`src/ir1-ssa-collections.ts`) and foreach
+  still lowers through `SymbolicState` (`ir1-lower-body.ts`) until M4.
+  No L2 statement vocabulary; the fallback fold reuses the existing
+  mutation primitives (`putWrite`, `mergeOverrides`, `installMapWrite`,
   `installSetWrite`).
 
 Constructions outside the canonical L1 vocabulary reject with a
@@ -1035,12 +1036,14 @@ and iteration flow through Layer 1. The build pass (`ir1-build-body.ts`)
 produces canonical L1 statement forms — `cond-stmt` for `if`-with-
 mutation, `foreach` for `for-of` / `forEach` — and the lower pass
 (`ir1-lower-body.ts`) does a single fold over the L1, threading the
-existing `SymbolicState` from `translate-body.ts` and emitting
-`PropResult[]`. No L2 statement vocabulary; the existing `SymbolicState`
-primitives (`putWrite`, `mergeOverrides`, `installMapWrite`,
-`installSetWrite`) are reused so frame-condition synthesis is
-unchanged. `Foreach.body` (Shape A — uniform iterator writes) emits
-one universally-quantified per-iteration equation per modified rule
+collection SSA from `src/ir1-ssa-collections.ts` for Map/Set effects,
+and the remaining `SymbolicState` fallback from `translate-body.ts` for
+foreach / loop-summary shapes, then emitting `PropResult[]`. No L2
+statement vocabulary; the retained `SymbolicState` primitives
+(`putWrite`, `mergeOverrides`, `installMapWrite`, `installSetWrite`)
+are fallback-only and remain in place for the M4 loop-summary pause
+point. `Foreach.body` (Shape A — uniform iterator writes) emits one
+universally-quantified per-iteration equation per modified rule
 (`all $N in src | prop' $N = …`), while `Foreach.foldLeaves` (Shape B
 — accumulator folds `a.p OP= f(x)`) emits one *aggregated* accumulator
 equation per leaf with a `comb over each $N in src[, guard] | rhs`

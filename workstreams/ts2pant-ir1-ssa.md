@@ -17,16 +17,18 @@ IR1 is currently a TypeScript-shaped canonical layer. Value-position code
 lowers through `IR1Expr -> IRExpr -> OpaqueExpr`; mutating bodies lower
 directly through `lowerL1Body` in `tools/ts2pant/src/ir1-lower-body.ts`, with
 scalar property mutation routed through `tools/ts2pant/src/ir1-ssa-scalars.ts`
-and the remaining Map/Set and foreach paths still threading
-`SymbolicState` from `tools/ts2pant/src/translate-body.ts` to emit
+and collection mutation routed through `tools/ts2pant/src/ir1-ssa-collections.ts`.
+The remaining foreach and loop-summary paths still thread `SymbolicState`
+from `tools/ts2pant/src/translate-body.ts` as fallback-only helpers to emit
 `PropResult[]`.
 
 That design is now partially SSA. Scalar property mutation, read-after-write,
 branch joins, and supported early-exit continuation merges are represented by
 IR1 SSA. IR1 still contains `assign`, `while`, `for`, `foreach`, `cond-stmt`,
-`map-effect`, and `set-effect` statement forms. Map/Set semantics, `Set.clear()`,
-and foreach / loop-summary behavior still live as special paths in the
-lowering code until the later milestones take them over.
+`map-effect`, and `set-effect` statement forms. Map/Set semantics, including
+`Set.clear()`, now lower through the collection SSA module, while foreach /
+loop-summary behavior still lives in the fallback lowering code until the later
+milestones take them over.
 
 ## Key Challenges
 
@@ -113,9 +115,10 @@ simple branch mutation:
 - nested supported `if` bodies
 - early-exit guard patterns that are currently supported
 
-The old `SymbolicState` path remains available only as a fallback for Map/Set
-mutation until M3 and foreach / loop-summary constructs until M4. Property
-mutation fixtures are validated through snapshots and wasm typechecking.
+The old `SymbolicState` path remains available only as a fallback for foreach /
+loop-summary constructs until M4. Map/Set mutation is routed through the
+collection SSA module as of M3. Property mutation fixtures are validated
+through snapshots and wasm typechecking.
 
 **Why this is a safe pause point**:
 The codebase supports all previous scalar property-mutation behavior. The
@@ -145,12 +148,13 @@ Map and Set mutation semantics move into IR1 SSA:
 - Existing Map/Set mutating fixtures pass snapshots and wasm typechecking.
 
 The old Map/Set-specific mutation primitives in `translate-body.ts` are either
-deleted or reduced to pure helper functions used by IR1 lowering.
+deleted or reduced to pure fallback helper functions used only by the
+non-collection IR1 lowering path.
 
 **Why this is a safe pause point**:
-All currently supported non-looping mutation classes are represented in the new
-IR1 SSA architecture. Remaining old-path usage is limited to loop summaries and
-special forms.
+All currently supported non-looping Map/Set mutation classes are represented in
+the new IR1 SSA architecture. Remaining old-path usage is limited to foreach
+and loop summaries, which stay deferred until M4.
 
 **Unlocks**:
 A single SSA read/write/join model for scalar properties, Maps, and Sets.
@@ -183,9 +187,9 @@ Existing foreach, forEach, accumulator-fold, and μ-search fixtures pass
 snapshots and wasm typechecking.
 
 **Why this is a safe pause point**:
-All currently supported mutation and loop-summary behavior now flows through
-IR1 SSA. General `for` / `while` support remains explicitly out of scope, so
-the codebase does not imply support it cannot provide.
+All currently supported non-looping mutation now flows through IR1 SSA.
+General `for` / `while` support remains explicitly out of scope, so the
+codebase does not imply support it cannot provide.
 
 **Unlocks**:
 Full removal of `lowerL1Body`'s old `SymbolicState` execution model.
