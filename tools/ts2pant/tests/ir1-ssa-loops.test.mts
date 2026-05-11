@@ -1,15 +1,26 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { before, describe, it } from "node:test";
 
 import {
+  ir1Assign,
+  ir1Binop,
+  ir1Block,
+  ir1LitNat,
+  ir1Member,
   ir1SsaPropertyLocation,
   ir1SsaRuleOfLocation,
   ir1Var,
 } from "../src/ir1.js";
 import {
   buildLoopSsaProgram,
+  lowerForeachShapeASummaries,
   lowerForeachSummary,
 } from "../src/ir1-ssa-loops.js";
+import { getAst, loadAst } from "../src/pant-wasm.js";
+
+before(async () => {
+  await loadAst();
+});
 
 describe("ir1-ssa-loops", () => {
   // PENDING Patch 2: introduce the dedicated loop-summary SSA helper and
@@ -157,16 +168,73 @@ describe("ir1-ssa-loops", () => {
     ]);
   });
 
-  it.skip("represents supported in-iteration read-after-write without subState mutation", async () => {
-    // PENDING Patch 4: cover the currently supported loop-body read semantics
-    // so the helper proves read-after-write behavior without executing the
-    // body inside a SymbolicState subState.
+  it("represents supported in-iteration read-after-write without subState mutation", () => {
+    const item = ir1Var("$item");
+    const value = ir1Member(item, "Item_value");
+    const score = ir1Member(item, "Item_score");
+    const result = lowerForeachShapeASummaries({
+      binder: "$item",
+      source: getAst().var("items"),
+      body: ir1Block([
+        ir1Assign(value, ir1Binop("add", value, ir1LitNat(1))),
+        ir1Assign(score, value),
+      ]),
+    });
+
+    assert.deepEqual(result.diagnostics, []);
+    assert.equal(result.summaries.length, 2);
+    assert.deepEqual(
+      result.summaries.map((s) => s.shape),
+      ["foreach-shape-a", "foreach-shape-a"],
+    );
+    assert.deepEqual(
+      new Set(result.modifiedRules),
+      new Set(["Item_value", "Item_score"]),
+    );
+
+    const ast = getAst();
+    const scoreEq = result.propositions.find(
+      (p) =>
+        p.kind === "equation" && ast.strExpr(p.lhs) === "Item_score' $item",
+    );
+    assert.ok(scoreEq, "expected a quantified score write");
+    if (scoreEq?.kind === "equation") {
+      assert.equal(ast.strExpr(scoreEq.rhs), "Item_value $item + 1");
+      assert.equal(scoreEq.guards?.length, 1);
+      assert.equal(
+        ast.strExpr(ast.forall([], scoreEq.guards ?? [], ast.var("__body__"))),
+        "all $item in items | __body__",
+      );
+    }
   });
 
-  it.skip("preserves unsupported diagnostics for out-of-scope loops", async () => {
-    // PENDING Patch 2: pin current unsupported boundaries for general loops,
-    // proposition-emitting nested loop bodies, and unsupported in-loop
-    // collection mutation with clear diagnostic reasons.
+  it("preserves unsupported diagnostics for out-of-scope loops", () => {
+    const result = buildLoopSsaProgram([
+      {
+        kind: "unsupported",
+        reason: "general loops are not supported by loop-summary SSA",
+      },
+      {
+        kind: "unsupported",
+        reason:
+          "nested proposition-emitting loop body is not supported — the inner proposition would escape the outer iterator scope",
+      },
+      {
+        kind: "unsupported",
+        reason: "Map mutation inside foreach body is out of scope",
+      },
+    ]);
+
+    assert.equal(result.program.loopSummaries.length, 0);
+    assert.deepEqual(result.program.modifiedRules, []);
+    assert.deepEqual(
+      result.diagnostics.map((d) => d.reason),
+      [
+        "general loops are not supported by loop-summary SSA",
+        "nested proposition-emitting loop body is not supported — the inner proposition would escape the outer iterator scope",
+        "Map mutation inside foreach body is out of scope",
+      ],
+    );
   });
 
   it.skip("preserves production parity for foreach and mu-search fixtures", async () => {
