@@ -99,6 +99,23 @@ export interface ForeachShapeBSummaryResult {
   accumulatorKeys: string[];
 }
 
+export interface MuSearchSummaryLowerOptions extends LoopSsaBuildOptions {
+  location: IR1SsaLocation;
+  counterType: string;
+  counterPantName: string;
+  binder: string;
+  initExpr: OpaqueExpr;
+  predicateExpr: OpaqueExpr;
+}
+
+export interface MuSearchSummaryLowerResult {
+  program: IR1SsaProgram;
+  summary: IR1SsaLoopSummary | null;
+  loweredExpr: OpaqueExpr | null;
+  modifiedRules: IR1SsaRuleName[];
+  diagnostics: UnsupportedDiagnostic[];
+}
+
 export interface LoopSsaBuildResult {
   program: IR1SsaProgram;
   loweredExpr: OpaqueExpr[];
@@ -518,4 +535,42 @@ export function foreachShapeBAccumulatorKey(
   objExpr: OpaqueExpr,
 ): string {
   return `${prop}::${getAst().strExpr(objExpr)}`;
+}
+
+export function lowerMuSearchSummary(
+  options: MuSearchSummaryLowerOptions,
+): MuSearchSummaryLowerResult {
+  const result = buildLoopSsaProgram(
+    {
+      kind: "mu-search",
+      location: options.location,
+    },
+    options,
+  );
+
+  const ast = getAst();
+  const predicateOpaque = ast.substituteBinder(
+    options.predicateExpr,
+    options.counterPantName,
+    ast.var(options.binder),
+  );
+  const loweredExpr = ast.eachComb(
+    [ast.param(options.binder, ast.tName(options.counterType))],
+    [
+      ast.gExpr(
+        ast.binop(ast.opGe(), ast.var(options.binder), options.initExpr),
+      ),
+      ast.gExpr(ast.unop(ast.opNot(), predicateOpaque)),
+    ],
+    ast.combMin(),
+    ast.var(options.binder),
+  );
+
+  return {
+    program: result.program,
+    summary: result.program.loopSummaries[0] ?? null,
+    loweredExpr,
+    modifiedRules: result.program.modifiedRules,
+    diagnostics: result.diagnostics,
+  };
 }
