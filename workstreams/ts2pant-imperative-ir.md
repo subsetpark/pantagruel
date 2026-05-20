@@ -23,8 +23,9 @@ differ by program position:
   Pant-shaped expression IR.
 - **Statement position** (mutating bodies, frame conditions): L1
   statement → `PropResult[]` directly via a single fold (`lowerL1Body`)
-  that threads `SymbolicState`. No L2 statement vocabulary; the mutating
-  output is a list of equations, not a unit-returning expression.
+  that threaded `SymbolicState` in the historical M3 implementation. No
+  L2 statement vocabulary; the mutating output is a list of equations,
+  not a unit-returning expression.
 
 This asymmetry is intentional and was hard-won — see § "Architectural
 Lessons" below.
@@ -73,9 +74,9 @@ confirmed nothing built or lowered them.
   fusion (now constructed natively as L1 `Each` / `Comb` nodes
   rather than wrapping a pre-built `OpaqueExpr`).
 - Effect / statement position — TS AST → L1 statement →
-  `PropResult[]` via `lowerL1Body` over `SymbolicState`. No L2
-  statement vocabulary; the fold reuses the existing mutation
-  primitives.
+  `PropResult[]` via `lowerL1Body` over `SymbolicState` in the
+  historical M3 implementation. No L2 statement vocabulary; the fold
+  reused the existing mutation primitives.
 
 **Combined-shape recognizer precedent (M4 Patch 5).** The functor-lift
 recognizer (`tryRecognizeFunctorLift` in `ir1-build.ts`) is the first
@@ -137,11 +138,12 @@ each added more parallel infrastructure without retiring any legacy
 code, because retirement required *all* mutating constructs to land on
 the L2 path simultaneously (the hard rule).
 
-**The fix:** mutating-body lowering bypasses L2 entirely. `lowerL1Body`
-threads the existing `SymbolicState` directly into `PropResult[]`. The
-existing mutation primitives (`putWrite`, `mergeOverrides`,
-`installMapWrite`, `installSetWrite`) — already debugged, already
-producing correct frame conditions — are reused as-is.
+**The fix (historical M3 implementation note):** mutating-body lowering
+bypassed L2 entirely. `lowerL1Body` threaded the existing
+`SymbolicState` directly into `PropResult[]`. The existing mutation
+primitives (`putWrite`, `mergeOverrides`, `installMapWrite`,
+`installSetWrite`) — already debugged, already producing correct frame
+conditions — were reused as-is.
 
 **Generalizable principle:** if a proposed IR layer's forms map 1-to-1
 to the legacy code's control-flow structure, you're building a shim,
@@ -183,12 +185,12 @@ mutating body produces a `PropResult[]` (one equation per modified
 rule plus frames). The L2 IR shape (single-rooted `IRExpr` tree) fits
 the first; it's a poor fit for the second.
 
-**The architectural commitment** post-M3:
+**The architectural commitment** post-M3 (historical note):
 
 - Pure path: TS → L1 expr → L2 `IRExpr` → `OpaqueExpr`. L2 is Pant's
   expression IR; the lowering is mechanical pattern-match.
 - Mutating body: TS → L1 stmt → `PropResult[]` via single fold over
-  `SymbolicState`. No L2 statement vocabulary. The fold *is* the
+  `SymbolicState`. No L2 statement vocabulary. The fold *was* the
   lowering.
 
 Future milestones (M4, M5, M6) inherit this asymmetry. M4 (equality /
@@ -439,17 +441,19 @@ re-forms on top of `Assign`.
 ### Milestone 3: imperative-ir-iteration-mutation — ✅ landed
 
 **Status**: landed across one rip-out commit and five build-up slices on
-`zax--ts2pant-m3-rip` (PR #138).
+`zax--ts2pant-m3-rip` (PR #138). Historical M3 note: this section
+describes the implementation state at the time, not current architecture
+guidance.
 
-The iteration + mutation classes flow through Layer 1: iteration surface
-forms (`for (const x of arr) { … }`, `arr.forEach(x => { … })`) build to
-canonical `Foreach(binder, source, body, foldLeaves)`, branched mutation
-builds to canonical statement-position `CondStmt`. The mutating path
-**bypasses L2 entirely** — `lowerL1Body` in `ir1-lower-body.ts` walks
-the `IR1Stmt` tree and emits `PropResult[]` directly while threading
+The iteration + mutation classes flowed through Layer 1: iteration
+surface forms (`for (const x of arr) { … }`, `arr.forEach(x => { … })`)
+built to canonical `Foreach(binder, source, body, foldLeaves)`, branched
+mutation built to canonical statement-position `CondStmt`. The mutating
+path bypassed L2 entirely — `lowerL1Body` in `ir1-lower-body.ts` walked
+the `IR1Stmt` tree and emitted `PropResult[]` directly while threading
 the existing `SymbolicState` (the same primitives the legacy mutating
-path uses — `putWrite`, `mergeOverrides`, `installMapWrite`,
-`installSetWrite`) so frame-condition emission is unchanged.
+path used — `putWrite`, `mergeOverrides`, `installMapWrite`,
+`installSetWrite`) so frame-condition emission was unchanged.
 
 **Strategy:** rip-out-first. After two architectural false starts (the
 parallel-build PRs #134/#135/#137 produced an L2 statement vocabulary
