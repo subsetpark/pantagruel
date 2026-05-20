@@ -80,7 +80,7 @@ function exportedSymbolNames(sourceText: string): Set<string> {
 }
 
 describe("ir1-ssa-ripout", () => {
-  it.skip(
+  it(
     "lowers fallback-era supported mutating fixtures through SSA",
     async () => {
       const fixtures = [
@@ -107,7 +107,7 @@ describe("ir1-ssa-ripout", () => {
     },
   );
 
-  it.skip(
+  it(
     "const aliases and state-aware reads survive without symbolic fallback",
     async () => {
       const fixtures = [
