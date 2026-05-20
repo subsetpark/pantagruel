@@ -981,6 +981,30 @@ describe("conditional mutations (symbolic last-write)", () => {
     assert.equal(ast.strExpr(eq.rhs), "1");
   });
 
+  it("nested tail early-exit block preserves prior writes", () => {
+    const source = `
+      interface Account { balance: number; }
+      function writeThenNestedTailGuard(a: Account, g: boolean): void {
+        a.balance = 1;
+        { if (g) { return; } }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "writeThenNestedTailGuard",
+      strategy: IntStrategy,
+    });
+
+    const equations = props.filter((p) => p.kind === "equation");
+    assert.equal(equations.length, 1);
+    const eq = equations[0]!;
+    if (eq.kind !== "equation") return;
+    const ast = getAst();
+    assert.equal(ast.strExpr(eq.lhs), "account--balance' a");
+    assert.equal(ast.strExpr(eq.rhs), "1");
+  });
+
   it("sequential composition: later conditional reads earlier unconditional write", () => {
     const source = `
       interface Account { balance: number; }

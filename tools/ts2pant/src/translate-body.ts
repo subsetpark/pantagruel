@@ -4668,6 +4668,9 @@ function buildSupportedSsaMutatingBody(
       applyConst,
     });
     if (isUnsupported(built)) {
+      if (built.unsupported === "empty mutating body" && stmts.length > 0) {
+        continue;
+      }
       return built;
     }
     stmts.push(built);
