@@ -859,6 +859,11 @@ choices like location-compatible versions and degenerate-join
 simplification. They do not change the production builder/lowerer path
 yet.
 
+The runtime contract for this abstraction is
+`tools/ts2pant/tests/ir1-ssa-invariants.test.mts`, which directly checks
+fresh versions, location-compatible joins, dominating reads, frame
+partitioning, and unsupported-construct rejection.
+
 ### Mutating-body output (no L2 IR)
 
 The mutating path emits `PropResult[]` directly:
@@ -972,6 +977,11 @@ Constructions outside the canonical L1 vocabulary reject with a
 specific `unsupported` reason. The build pass either produces a
 canonical L1 form or rejects — there is no opaque catch-all, no
 opt-in legacy pipeline, and no parallel translation path.
+
+Milestone 7 is the runtime-contract layer for this architecture:
+`tools/ts2pant/tests/ir1-ssa-invariants.test.mts` is the authoritative
+suite for SSA freshness, join compatibility, dominating reads, frame
+partitioning, and unsupported-construct diagnostics.
 
 For the per-milestone breakdown of how this state was reached, see
 § "Imperative IR Workstream" below and
