@@ -35,6 +35,9 @@ import {
   ir1Binop,
   ir1Block,
   ir1CondStmt,
+  ir1For,
+  ir1Foreach,
+  ir1LitBool,
   ir1LitNat,
   ir1MapRead,
   ir1MapSet,
@@ -49,6 +52,7 @@ import {
   ir1SetAddOrDelete,
   ir1SetClear,
   ir1Var,
+  ir1While,
 } from "../src/ir1.js";
 import { lowerExpr } from "../src/ir-emit.js";
 import { lowerL1Expr } from "../src/ir1-lower.js";
@@ -531,6 +535,289 @@ function frameRuleNames(result: IR1SsaBodyLowerResult): string[] {
     });
 }
 
+function assertSupportedRepresentativeResult(
+  representativeName: string,
+  result: IR1SsaBodyLowerResult,
+): void {
+  assert.equal(
+    result.diagnostics.length,
+    0,
+    `${representativeName} should lower without diagnostics`,
+  );
+  assert.ok(
+    result.programs.length > 0,
+    `${representativeName} should emit at least one SSA program`,
+  );
+}
+
+function assertFreshVersionsAndJoinLocations(
+  representativeName: string,
+  result: IR1SsaBodyLowerResult,
+): void {
+  assertSupportedRepresentativeResult(representativeName, result);
+
+  for (const [programIndex, program] of result.programs.entries()) {
+    const seenVersionIds = new Map<string, symbol[]>();
+
+    const trackFreshVersion = (
+      occurrence:
+        | { version: IR1SsaWrite["version"]; location: IR1SsaWrite["location"] }
+        | { version: IR1SsaJoin["joinVersion"]; location: IR1SsaJoin["location"] }
+        | {
+            version: IR1SsaLoopSummary["summaryVersion"];
+            location: IR1SsaLoopSummary["location"];
+          },
+      detail: string,
+    ): void => {
+      assert.equal(
+        locationSignature(occurrence.version.location),
+        locationSignature(occurrence.location),
+        `${representativeName} [program ${programIndex}] ${detail} should keep its version at the same location`,
+      );
+      const signature = locationSignature(occurrence.location);
+      const priorIds = seenVersionIds.get(signature) ?? [
+        ir1SsaInitialVersion(occurrence.location).id,
+      ];
+      for (const priorId of priorIds) {
+        assert.notEqual(
+          occurrence.version.id,
+          priorId,
+          `${representativeName} [program ${programIndex}] ${detail} should allocate a fresh SSA version`,
+        );
+      }
+      seenVersionIds.set(signature, [...priorIds, occurrence.version.id]);
+    };
+
+    walkSsaProgram(program, {
+      onWrite(write, index) {
+        trackFreshVersion(
+          { version: write.version, location: write.location },
+          `write #${index}`,
+        );
+      },
+      onJoin(join, index) {
+        assert.equal(
+          locationSignature(join.thenVersion.location),
+          locationSignature(join.location),
+          `${representativeName} [program ${programIndex}] join #${index} then-version should stay at the join location`,
+        );
+        assert.equal(
+          locationSignature(join.elseVersion.location),
+          locationSignature(join.location),
+          `${representativeName} [program ${programIndex}] join #${index} else-version should stay at the join location`,
+        );
+        assert.notEqual(
+          join.thenVersion.id,
+          join.elseVersion.id,
+          `${representativeName} [program ${programIndex}] join #${index} should merge distinct incoming versions`,
+        );
+        trackFreshVersion(
+          { version: join.joinVersion, location: join.location },
+          `join #${index}`,
+        );
+        assert.notEqual(
+          join.joinVersion.id,
+          join.thenVersion.id,
+          `${representativeName} [program ${programIndex}] join #${index} should allocate a fresh result version`,
+        );
+        assert.notEqual(
+          join.joinVersion.id,
+          join.elseVersion.id,
+          `${representativeName} [program ${programIndex}] join #${index} should allocate a fresh result version`,
+        );
+      },
+      onSummary(summary, index) {
+        trackFreshVersion(
+          {
+            version: summary.summaryVersion,
+            location: summary.location,
+          },
+          `loop summary #${index} (${summary.shape})`,
+        );
+      },
+    });
+  }
+}
+
+function assertDominatingReads(
+  representativeName: string,
+  result: IR1SsaBodyLowerResult,
+): void {
+  assertSupportedRepresentativeResult(representativeName, result);
+
+  for (const [programIndex, program] of result.programs.entries()) {
+    walkSsaProgram(program, {
+      onRead(read, readIndex) {
+        const readDetail = [
+          `${representativeName} [program ${programIndex}]`,
+          `read #${readIndex}: ${readSignature(read)}`,
+        ].join(" ");
+        assert.equal(
+          locationSignature(read.version.location),
+          locationSignature(read.location),
+          `${readDetail} should keep its version at the read location`,
+        );
+        assert.equal(
+          read.dominated,
+          true,
+          `${readDetail} should be marked as dominated`,
+        );
+
+        const location = locationSignature(read.location);
+        const initial = ir1SsaInitialVersion(read.location);
+        const resolvesToInitial =
+          read.version.origin === initial.origin &&
+          locationSignature(read.version.location) ===
+            locationSignature(initial.location);
+        const resolvesToWrite = program.writes.some(
+          (write) =>
+            write.version === read.version &&
+            locationSignature(write.location) === location,
+        );
+        const resolvesToJoin = program.joins.some(
+          (join) =>
+            join.joinVersion === read.version &&
+            locationSignature(join.location) === location,
+        );
+        const resolvesToLoopSummary = program.loopSummaries.some(
+          (summary) =>
+            summary.summaryVersion === read.version &&
+            locationSignature(summary.location) === location,
+        );
+
+        assert.ok(
+          resolvesToInitial ||
+            resolvesToWrite ||
+            resolvesToJoin ||
+            resolvesToLoopSummary,
+          `${readDetail} did not resolve to an initial, write, join, or loop-summary version at its own location`,
+        );
+      },
+    });
+  }
+}
+
+function assertFrameSuppression(
+  detail: string,
+  result: IR1SsaBodyLowerResult,
+  declaredRules: readonly string[],
+): void {
+  assert.equal(
+    result.diagnostics.length,
+    0,
+    `${detail} should lower without diagnostics`,
+  );
+
+  const modifiedRules = result.modifiedRules;
+  assert.equal(
+    new Set(modifiedRules).size,
+    modifiedRules.length,
+    `${detail} should list each modified rule at most once`,
+  );
+
+  const declaredRuleSet = new Set(declaredRules);
+  const modifiedRuleSet = new Set(modifiedRules);
+  const expectedFramedRules = declaredRules.filter(
+    (rule) => !modifiedRuleSet.has(rule),
+  );
+  const actualFramedRules = frameRuleNames(result);
+  const actualFramedRuleSet = new Set(actualFramedRules);
+
+  assert.deepEqual(
+    actualFramedRules,
+    expectedFramedRules,
+    `${detail} should append exactly one identity frame for each declared but unmodified rule`,
+  );
+  assert.equal(
+    actualFramedRuleSet.size,
+    actualFramedRules.length,
+    `${detail} should append each frame at most once`,
+  );
+
+  for (const rule of modifiedRuleSet) {
+    assert.ok(
+      declaredRuleSet.has(rule),
+      `${detail} should only mark declared rules as modified`,
+    );
+    assert.ok(
+      !actualFramedRuleSet.has(rule),
+      `${detail} should not frame a modified rule`,
+    );
+  }
+
+  for (const rule of expectedFramedRules) {
+    assert.ok(
+      declaredRuleSet.has(rule),
+      `${detail} should only frame declared rules`,
+    );
+    assert.ok(
+      !modifiedRuleSet.has(rule),
+      `${detail} should keep framed rules disjoint from modified rules`,
+    );
+  }
+
+  for (const [programIndex, program] of result.programs.entries()) {
+    const programDetail = `${detail} [program ${programIndex}]`;
+    const programModifiedRules = new Set(program.modifiedRules);
+    const programRuleSources = new Set([
+      ...program.writes.map((write) => ir1SsaRuleOfLocation(write.location)),
+      ...program.loopSummaries.map((summary) =>
+        ir1SsaRuleOfLocation(summary.location)
+      ),
+    ]);
+
+    for (const modifiedRule of program.modifiedRules) {
+      assert.ok(
+        programRuleSources.has(modifiedRule),
+        `${programDetail} should only mark rules modified when a write or loop summary produced them`,
+      );
+    }
+
+    for (const [writeIndex, write] of program.writes.entries()) {
+      const rule = ir1SsaRuleOfLocation(write.location);
+      assert.ok(
+        programModifiedRules.has(rule),
+        `${programDetail} write #${writeIndex} should mark ${rule} as modified`,
+      );
+    }
+
+    for (const [summaryIndex, summary] of program.loopSummaries.entries()) {
+      const rule = ir1SsaRuleOfLocation(summary.location);
+      assert.ok(
+        programModifiedRules.has(rule),
+        `${programDetail} loop summary #${summaryIndex} should mark ${rule} as modified`,
+      );
+    }
+  }
+}
+
+function assertUnsupportedDiagnosticShape(
+  detail: string,
+  result: IR1SsaBodyLowerResult,
+  reason: RegExp,
+): void {
+  assert.equal(
+    result.diagnostics.length,
+    1,
+    `${detail} should emit exactly one unsupported diagnostic`,
+  );
+  assert.match(
+    result.diagnostics[0]!.reason,
+    reason,
+    `${detail} should emit the targeted unsupported reason family`,
+  );
+  assert.equal(
+    result.propositions.filter((prop) => prop.kind === "equation").length,
+    0,
+    `${detail} should emit no equations after rejection`,
+  );
+  assert.deepEqual(
+    frameRuleNames(result),
+    [],
+    `${detail} should emit no frames after rejection`,
+  );
+}
+
 before(async () => {
   await loadAst();
 });
@@ -546,99 +833,7 @@ describe("ir1-ssa-invariants", () => {
     async () => {
       for (const representative of representativePrograms()) {
         const result = await representative.build();
-        assert.equal(
-          result.diagnostics.length,
-          0,
-          `${representative.name} should lower without diagnostics`,
-        );
-        assert.ok(
-          result.programs.length > 0,
-          `${representative.name} should emit at least one SSA program`,
-        );
-
-        for (const [programIndex, program] of result.programs.entries()) {
-          const seenVersionIds = new Map<string, symbol[]>();
-
-          const trackFreshVersion = (
-            occurrence:
-              | { kind: "write"; version: IR1SsaWrite["version"]; location: IR1SsaWrite["location"] }
-              | { kind: "join"; version: IR1SsaJoin["joinVersion"]; location: IR1SsaJoin["location"] }
-              | {
-                  kind: "loop-summary";
-                  version: IR1SsaLoopSummary["summaryVersion"];
-                  location: IR1SsaLoopSummary["location"];
-                },
-            detail: string,
-          ): void => {
-            assert.equal(
-              locationSignature(occurrence.version.location),
-              locationSignature(occurrence.location),
-              `${representative.name} [program ${programIndex}] ${detail} should keep its version at the same location`,
-            );
-            const signature = locationSignature(occurrence.location);
-            const priorIds = seenVersionIds.get(signature) ?? [
-              ir1SsaInitialVersion(occurrence.location).id,
-            ];
-            for (const priorId of priorIds) {
-              assert.notEqual(
-                occurrence.version.id,
-                priorId,
-                `${representative.name} [program ${programIndex}] ${detail} should allocate a fresh SSA version`,
-              );
-            }
-            seenVersionIds.set(signature, [...priorIds, occurrence.version.id]);
-          };
-
-          walkSsaProgram(program, {
-            onWrite(write, index) {
-              trackFreshVersion(
-                { kind: "write", version: write.version, location: write.location },
-                `write #${index}`,
-              );
-            },
-            onJoin(join, index) {
-              assert.equal(
-                locationSignature(join.thenVersion.location),
-                locationSignature(join.location),
-                `${representative.name} [program ${programIndex}] join #${index} then-version should stay at the join location`,
-              );
-              assert.equal(
-                locationSignature(join.elseVersion.location),
-                locationSignature(join.location),
-                `${representative.name} [program ${programIndex}] join #${index} else-version should stay at the join location`,
-              );
-              assert.notEqual(
-                join.thenVersion.id,
-                join.elseVersion.id,
-                `${representative.name} [program ${programIndex}] join #${index} should merge distinct incoming versions`,
-              );
-              trackFreshVersion(
-                { kind: "join", version: join.joinVersion, location: join.location },
-                `join #${index}`,
-              );
-              assert.notEqual(
-                join.joinVersion.id,
-                join.thenVersion.id,
-                `${representative.name} [program ${programIndex}] join #${index} should allocate a fresh result version`,
-              );
-              assert.notEqual(
-                join.joinVersion.id,
-                join.elseVersion.id,
-                `${representative.name} [program ${programIndex}] join #${index} should allocate a fresh result version`,
-              );
-            },
-            onSummary(summary, index) {
-              trackFreshVersion(
-                {
-                  kind: "loop-summary",
-                  version: summary.summaryVersion,
-                  location: summary.location,
-                },
-                `loop summary #${index} (${summary.shape})`,
-              );
-            },
-          });
-        }
+        assertFreshVersionsAndJoinLocations(representative.name, result);
       }
     },
   );
@@ -720,66 +915,7 @@ describe("ir1-ssa-invariants", () => {
     async () => {
       for (const representative of representativePrograms()) {
         const result = await representative.build();
-        assert.equal(
-          result.diagnostics.length,
-          0,
-          `${representative.name} should lower without diagnostics`,
-        );
-        assert.ok(
-          result.programs.length > 0,
-          `${representative.name} should emit at least one SSA program`,
-        );
-
-        for (const [programIndex, program] of result.programs.entries()) {
-          walkSsaProgram(program, {
-            onRead(read, readIndex) {
-              const readDetail = [
-                `${representative.name} [program ${programIndex}]`,
-                `read #${readIndex}: ${readSignature(read)}`,
-              ].join(" ");
-              assert.equal(
-                locationSignature(read.version.location),
-                locationSignature(read.location),
-                `${readDetail} should keep its version at the read location`,
-              );
-              assert.equal(
-                read.dominated,
-                true,
-                `${readDetail} should be marked as dominated`,
-              );
-
-              const location = locationSignature(read.location);
-              const initial = ir1SsaInitialVersion(read.location);
-              const resolvesToInitial =
-                read.version.origin === initial.origin &&
-                locationSignature(read.version.location) ===
-                  locationSignature(initial.location);
-              const resolvesToWrite = program.writes.some(
-                (write) =>
-                  write.version === read.version &&
-                  locationSignature(write.location) === location,
-              );
-              const resolvesToJoin = program.joins.some(
-                (join) =>
-                  join.joinVersion === read.version &&
-                  locationSignature(join.location) === location,
-              );
-              const resolvesToLoopSummary = program.loopSummaries.some(
-                (summary) =>
-                  summary.summaryVersion === read.version &&
-                  locationSignature(summary.location) === location,
-              );
-
-              assert.ok(
-                resolvesToInitial ||
-                  resolvesToWrite ||
-                  resolvesToJoin ||
-                  resolvesToLoopSummary,
-                `${readDetail} did not resolve to an initial, write, join, or loop-summary version at its own location`,
-              );
-            },
-          });
-        }
+        assertDominatingReads(representative.name, result);
       }
     },
   );
@@ -789,110 +925,147 @@ describe("ir1-ssa-invariants", () => {
     async () => {
       for (const representative of bodyLoweredRepresentativePrograms()) {
         const { result, declaredRules } = await representative.build();
-        const detail = representative.name;
-
-        assert.equal(
-          result.diagnostics.length,
-          0,
-          `${detail} should lower without diagnostics`,
-        );
-
-        const modifiedRules = result.modifiedRules;
-        assert.equal(
-          new Set(modifiedRules).size,
-          modifiedRules.length,
-          `${detail} should list each modified rule at most once`,
-        );
-
-        const declaredRuleSet = new Set(declaredRules);
-        const modifiedRuleSet = new Set(modifiedRules);
-        const expectedFramedRules = declaredRules.filter(
-          (rule) => !modifiedRuleSet.has(rule),
-        );
-        const actualFramedRules = frameRuleNames(result);
-        const actualFramedRuleSet = new Set(actualFramedRules);
-
-        assert.deepEqual(
-          actualFramedRules,
-          expectedFramedRules,
-          `${detail} should append exactly one identity frame for each declared but unmodified rule`,
-        );
-        assert.equal(
-          actualFramedRuleSet.size,
-          actualFramedRules.length,
-          `${detail} should append each frame at most once`,
-        );
-
-        for (const rule of modifiedRuleSet) {
-          assert.ok(
-            declaredRuleSet.has(rule),
-            `${detail} should only mark declared rules as modified`,
-          );
-          assert.ok(
-            !actualFramedRuleSet.has(rule),
-            `${detail} should not frame a modified rule`,
-          );
-        }
-
-        for (const rule of expectedFramedRules) {
-          assert.ok(
-            declaredRuleSet.has(rule),
-            `${detail} should only frame declared rules`,
-          );
-          assert.ok(
-            !modifiedRuleSet.has(rule),
-            `${detail} should keep framed rules disjoint from modified rules`,
-          );
-        }
-
-        for (const [programIndex, program] of result.programs.entries()) {
-          const programDetail = `${detail} [program ${programIndex}]`;
-          const programModifiedRules = new Set(program.modifiedRules);
-          const programRuleSources = new Set([
-            ...program.writes.map((write) => ir1SsaRuleOfLocation(write.location)),
-            ...program.loopSummaries.map((summary) =>
-              ir1SsaRuleOfLocation(summary.location)
-            ),
-          ]);
-
-          for (const modifiedRule of program.modifiedRules) {
-            assert.ok(
-              programRuleSources.has(modifiedRule),
-              `${programDetail} should only mark rules modified when a write or loop summary produced them`,
-            );
-          }
-
-          for (const [writeIndex, write] of program.writes.entries()) {
-            const rule = ir1SsaRuleOfLocation(write.location);
-            assert.ok(
-              programModifiedRules.has(rule),
-              `${programDetail} write #${writeIndex} should mark ${rule} as modified`,
-            );
-          }
-
-          for (const [summaryIndex, summary] of program.loopSummaries.entries()) {
-            const rule = ir1SsaRuleOfLocation(summary.location);
-            assert.ok(
-              programModifiedRules.has(rule),
-              `${programDetail} loop summary #${summaryIndex} should mark ${rule} as modified`,
-            );
-          }
-        }
+        assertFrameSuppression(representative.name, result, declaredRules);
       }
     },
   );
 
-  it.skip(
+  it(
     "unsupported loops and branch shapes return targeted diagnostics with no equations or frames",
-    () => {
-      // PENDING Patch 5: unsupported loops and branch shapes return targeted diagnostics with no equations or frames
+    async () => {
+      const mutatingSourceFile = loadFixture("functions-mutating.ts");
+      const mutatingDoc = await buildDocumentFromSourceFile(
+        mutatingSourceFile,
+        "deposit",
+      );
+      const loopDeclarations = mutatingDoc.declarations;
+      const balance = ir1Member(ir1Var("account"), "Account_balance");
+
+      const unsupportedCases: Array<{
+        name: string;
+        build: () => IR1SsaBodyLowerResult;
+        reason: RegExp;
+      }> = [
+        {
+          name: "while loop on property",
+          build: () =>
+            scalarSsaBodyLowerResult(
+              lowerScalarSsaToProps(
+                ir1While(ir1LitBool(true), ir1Assign(balance, ir1LitNat(1))),
+              ),
+            ),
+          reason: /scalar SSA lowering/u,
+        },
+        {
+          name: "for loop on property",
+          build: () =>
+            scalarSsaBodyLowerResult(
+              lowerScalarSsaToProps(
+                ir1For(
+                  null,
+                  ir1LitBool(true),
+                  null,
+                  ir1Assign(balance, ir1LitNat(1)),
+                ),
+              ),
+            ),
+          reason: /scalar SSA lowering/u,
+        },
+        {
+          name: "multi-arm scalar cond-stmt",
+          build: () =>
+            scalarSsaBodyLowerResult(
+              lowerScalarSsaToProps(
+                ir1CondStmt(
+                  [
+                    [ir1Var("g1"), ir1Assign(balance, ir1LitNat(1))],
+                    [ir1Var("g2"), ir1Assign(balance, ir1LitNat(2))],
+                  ],
+                  ir1Assign(balance, ir1LitNat(3)),
+                ),
+              ),
+            ),
+          reason: /scalar SSA lowering/u,
+        },
+        {
+          name: "foreach Shape A assignment to non-property target",
+          build: () =>
+            lowerL1BodyToSsaProps(
+              ir1Foreach(
+                "$0",
+                ir1Var("xs"),
+                ir1Assign(ir1Var("acc"), ir1LitBool(true)),
+              ),
+              loopDeclarations,
+              { applyConst: (expr) => expr },
+            ),
+            reason:
+              /foreach Shape A summary assignment target must be a property/u,
+        },
+        {
+          name: "nested proposition-emitting loop body",
+          build: () => {
+            const inner = ir1Foreach(
+              "$1",
+              ir1Var("ys"),
+              ir1Assign(ir1Member(ir1Var("$1"), "active"), ir1LitBool(true)),
+            );
+            // Deliberately bypass the foreach-body type to verify malformed nested loops fail closed.
+            const outer = ir1Foreach(
+              "$0",
+              ir1Var("xs"),
+              inner as unknown as Parameters<typeof ir1Foreach>[2],
+            );
+            return lowerL1BodyToSsaProps(outer, loopDeclarations, {
+              applyConst: (expr) => expr,
+            });
+          },
+          reason: /nested proposition-emitting loop body/u,
+        },
+      ];
+
+      for (const unsupportedCase of unsupportedCases) {
+        assertUnsupportedDiagnosticShape(
+          unsupportedCase.name,
+          unsupportedCase.build(),
+          unsupportedCase.reason,
+        );
+      }
     },
   );
 
-  it.skip(
+  it(
     "the table-driven corpus satisfies all SSA invariants for scalar, Map, Set, branch, foreach Shape A, foreach Shape B, and μ-search programs",
-    () => {
-      // PENDING Patch 5: the table-driven corpus satisfies all SSA invariants for scalar, Map, Set, branch, foreach Shape A, foreach Shape B, and μ-search programs
+    async () => {
+      const representatives = representativePrograms();
+      const presentKinds = new Set(representatives.map((r) => r.kind));
+
+      for (const kind of [
+        "scalar",
+        "map",
+        "set",
+        "branch",
+        "foreach-shape-a",
+        "foreach-shape-b",
+        "mu-search",
+      ] satisfies RepresentativeProgramKind[]) {
+        assert.ok(
+          presentKinds.has(kind),
+          `representativePrograms() should cover ${kind}`,
+        );
+      }
+
+      for (const representative of representatives) {
+        const result = await representative.build();
+        assertSupportedRepresentativeResult(representative.name, result);
+        assertFreshVersionsAndJoinLocations(representative.name, result);
+        assertDominatingReads(representative.name, result);
+      }
+
+      for (const representative of bodyLoweredRepresentativePrograms()) {
+        const { result, declaredRules } = await representative.build();
+        assertFrameSuppression(representative.name, result, declaredRules);
+      }
     },
   );
 });
