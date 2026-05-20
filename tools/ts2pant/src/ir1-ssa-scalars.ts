@@ -246,16 +246,13 @@ export function lowerScalarSsaEarlyExitMerge(
     }
 
     const priorValue = input.priorValue ?? initialValue;
-    const thenValue = options.earlyExitWhenTrue
-      ? priorValue
-      : input.continuationValue;
-    const elseValue = options.earlyExitWhenTrue
-      ? input.continuationValue
-      : priorValue;
+    const armGuard = options.earlyExitWhenTrue
+      ? ast.unop(ast.opNot(), options.guardExpr)
+      : options.guardExpr;
     const rhs = canonicalize(
       ast.cond([
-        [options.guardExpr, thenValue],
-        [ast.litBool(true), elseValue],
+        [armGuard, input.continuationValue],
+        [ast.litBool(true), priorValue],
       ]),
     );
     const lhs = ast.app(ast.primed(input.prop), [input.objExpr]);
