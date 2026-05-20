@@ -34,6 +34,7 @@ import {
   ir1SsaBodyLowerUnsupported,
 } from "./ir1-ssa-lower.js";
 import {
+  isScalarSsaL1Body,
   lowerScalarSsaEarlyExitMerge,
   type ScalarSsaEarlyExitPropertyInput,
 } from "./ir1-ssa-scalars.js";
@@ -780,6 +781,128 @@ function readSetThroughWrites(
 }
 
 /**
+ * Emit quantified equations for a Map rule pair (value rule +
+ * membership predicate). Extracted from the previous inline emission so
+ * the outer loop can dispatch uniformly across Property / Map / Set
+ * entries. `valueOverrides` empty (pure `.delete`) — skip the value
+ * rule; the membership going false makes the rule-guard vacuous.
+ */
+function emitMapEquations(
+  entry: MapRuleWriteEntry,
+  propositions: PropResult[],
+  allocBinder: (hint: string) => string,
+  state: SymbolicState,
+): void {
+  const ast = getAst();
+  if (entry.valueOverrides.length > 0) {
+    const m1 = allocBinder("m");
+    const k1 = allocBinder("k");
+    propositions.push({
+      kind: "equation",
+      quantifiers: [
+        ast.param(m1, ast.tName(entry.ownerType)),
+        ast.param(k1, ast.tName(entry.keyType)),
+      ] as OpaqueParam[],
+      lhs: ast.app(ast.primed(entry.ruleName), [ast.var(m1), ast.var(k1)]),
+      rhs: ast.app(
+        ast.override(
+          entry.ruleName,
+          entry.valueOverrides.map(
+            (o) => [o.keyTuple, o.value] as [OpaqueExpr, OpaqueExpr],
+          ),
+        ),
+        [ast.var(m1), ast.var(k1)],
+      ),
+    });
+    state.modifiedProps = addModifiedProp(state.modifiedProps, entry.ruleName);
+  }
+  if (entry.membershipOverrides.length > 0) {
+    const m1 = allocBinder("m");
+    const k1 = allocBinder("k");
+    propositions.push({
+      kind: "equation",
+      quantifiers: [
+        ast.param(m1, ast.tName(entry.ownerType)),
+        ast.param(k1, ast.tName(entry.keyType)),
+      ] as OpaqueParam[],
+      lhs: ast.app(ast.primed(entry.keyPredName), [ast.var(m1), ast.var(k1)]),
+      rhs: ast.app(
+        ast.override(
+          entry.keyPredName,
+          entry.membershipOverrides.map(
+            (o) => [o.keyTuple, o.value] as [OpaqueExpr, OpaqueExpr],
+          ),
+        ),
+        [ast.var(m1), ast.var(k1)],
+      ),
+    });
+    state.modifiedProps = addModifiedProp(
+      state.modifiedProps,
+      entry.keyPredName,
+    );
+  }
+}
+
+/**
+ * Emit the one universally-quantified Bool equation for a Set
+ * membership write:
+ *   all y: T | y in tags' c <=> cond <per-elem arms>, true => <tail>.
+ *
+ * The tail is `y in tags c` (pre-state membership) for normal
+ * accumulated writes, or literal `false` when a `.clear()` reset the
+ * overrides. An empty override list with `cleared = true` collapses the
+ * cond to `all y | ~(y in tags' c)` because every arm degenerates.
+ *
+ * Parallel in role to `emitMapEquations`, but emits one equation (Sets
+ * have no separate value-rule / membership-predicate split) and uses
+ * `<=>` over `in` rather than `=` over `ast.override`. The receiver is
+ * carried on the entry itself; the quantifier runs only over the
+ * element.
+ */
+function emitSetMembershipEquation(
+  entry: SetRuleWriteEntry,
+  propositions: PropResult[],
+  allocBinder: (hint: string) => string,
+  state: SymbolicState,
+): void {
+  const ast = getAst();
+  if (
+    entry.memberOverrides.length === 0 &&
+    isStaticBoolLit(entry.cleared, false)
+  ) {
+    return;
+  }
+  const y = allocBinder("y");
+  const yVar = ast.var(y);
+  const memberIn = (rule: OpaqueExpr) => ast.binop(ast.opIn(), yVar, rule);
+  const primedApp = ast.app(ast.primed(entry.ruleName), [entry.objExpr]);
+  const preApp = ast.app(ast.var(entry.ruleName), [entry.objExpr]);
+  const tail = clearedFallback(entry.cleared, memberIn(preApp));
+  const condArms: [OpaqueExpr, OpaqueExpr][] = entry.memberOverrides.map(
+    (o) =>
+      [ast.binop(ast.opEq(), yVar, o.elemExpr), o.value] as [
+        OpaqueExpr,
+        OpaqueExpr,
+      ],
+  );
+  const rhs =
+    condArms.length === 0
+      ? tail
+      : ast.cond([...condArms, [ast.litBool(true), tail]]);
+  // Emitted as an assertion (a quantified Bool formula), not an equation:
+  // Pantagruel's equation kind is LHS = RHS (`=`), but Set membership
+  // writes require `<=>` over `in`, which is structurally a Bool
+  // biconditional. Mirrors how the empty-Set initializer in
+  // translate-record.ts emits its `~(y in f_i (f <args>))` assertion
+  // rather than an equation.
+  propositions.push({
+    kind: "assertion",
+    quantifiers: [ast.param(y, ast.tName(entry.elemType))] as OpaqueParam[],
+    body: ast.binop(ast.opIff(), memberIn(primedApp), rhs),
+  });
+  state.modifiedProps = addModifiedProp(state.modifiedProps, entry.ruleName);
+}
+
  * Return a fresh Map equal to `m` plus the binding `k -> v`. Used instead of
  * `m.set(k, v)` so the immutable-record discipline holds: callers either
  * thread the returned map or assign it into a cell field.
@@ -4171,10 +4294,6 @@ function lowerSupportedSsaMutatingStatements(
     return ir1SsaBodyLowerUnsupported(gResult.unsupported);
   }
   const guardExpr = applyOpaqueAliases(bodyExpr(gResult), ctx.supply);
-  const continuationGuardExpr = exit.earlyExitWhenTrue
-    ? getAst().unop(getAst().opNot(), guardExpr)
-    : guardExpr;
-
   const continuation = [
     ...exit.continuationPrefix,
     ...stmts.slice(firstEarlyExit + 1),
@@ -4213,8 +4332,8 @@ function lowerSupportedSsaMutatingStatements(
   }
 
   const merged = lowerScalarSsaEarlyExitMerge(inputs, {
-    guardExpr: continuationGuardExpr,
-    earlyExitWhenTrue: false,
+    guardExpr,
+    earlyExitWhenTrue: exit.earlyExitWhenTrue,
     canonicalize: (e) => applyOpaqueAliases(e, ctx.supply),
   });
   const prefixOnly = (prefix.finalProperties ?? []).filter((entry) => {
@@ -4506,11 +4625,1523 @@ function buildSupportedSsaStatement(
     ts.isWhileStatement(stmt) ||
     ts.isDoStatement(stmt)
   ) {
-    return {
-      unsupported: `statement is not supported by unified SSA body lowering: ${ts.SyntaxKind[stmt.kind]}`,
-    };
+    return { unsupported: "loop assignment" };
   }
   return {
     unsupported: `statement is not supported by unified SSA body lowering: ${ts.SyntaxKind[stmt.kind]}`,
   };
+}
+/**
+ * Forward symbolic execution with path merging (Dijkstra CACM 1975;
+ * Allen POPL 1983 if-conversion). Updates `state.writes` for each property
+ * assignment; merges `if`/`else` via `cond` at the join point. Returns
+ * `false` when an unsupported construct was encountered; unsupported
+ * markers are pushed into `propositions` for the caller to inspect.
+ */
+function symbolicExecute(
+  body: ts.Block | ts.Statement,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: Map<string, string>,
+  state: SymbolicState,
+  propositions: PropResult[],
+  outerApply: (e: OpaqueExpr) => OpaqueExpr = (e) => e,
+  supply: UniqueSupply = makeUniqueSupply(),
+  insideBranch: boolean = false,
+): boolean {
+  const ast = getAst();
+  let ok = true;
+  // `applyConstChain` is the const-binding-only substitution closure
+  // (extended each time a new const is inlined). `applyConst` wraps it
+  // with `applyOpaqueAliases`, which reads `supply.opaqueAliases`
+  // lazily on every invocation — so symbolic-state cache aliases
+  // registered after `applyConst` was first captured still apply.
+  // The L1 build pass's symbolic-state fast-path
+  // (`buildL1MemberAccess`) registers a `($N → recordedValue)` alias
+  // when it short-circuits a property read, and the substitution is
+  // resolved at every subsequent canonicalize / applyConst call.
+  let applyConstChain = outerApply;
+  const applyConst: (e: OpaqueExpr) => OpaqueExpr = (e) =>
+    applyOpaqueAliases(applyConstChain(e), supply);
+  // Keep the state's canonicalize in sync with the frame's applyConst so
+  // symbolic-state reads see the same normalization the write site uses.
+  setCanonicalize(state, applyConst);
+  const stmts = ts.isBlock(body) ? Array.from(body.statements) : [body];
+
+  for (const [i, stmt] of stmts.entries()) {
+    // Skip guard statements (if-throw patterns and assertion calls)
+    if (isGuardStatement(stmt, checker)) {
+      continue;
+    }
+
+    // Early-exit if-conversion (Allen et al., POPL 1983, extended to
+    // early exits). Any `if` with a bare-return branch lifts the remaining
+    // statements — plus the other branch's statements when present — into
+    // a single continuation conditioned on the non-early-exit path.
+    const exit = !insideBranch ? detectEarlyExit(stmt) : null;
+    if (exit !== null) {
+      if (expressionHasSideEffects(exit.condition, checker)) {
+        ok = false;
+        propositions.push({
+          kind: "unsupported",
+          reason: "impure if-condition in mutating body",
+        });
+        break;
+      }
+      const gResult = translateBodyExpr(
+        exit.condition,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
+      if (isBodyUnsupported(gResult)) {
+        ok = false;
+        propositions.push({
+          kind: "unsupported",
+          reason: gResult.unsupported,
+        });
+        break;
+      }
+      const gExpr = applyConst(bodyExpr(gResult));
+
+      // Continuation = (other-branch's stmts if any) ++ post-if stmts.
+      // The continuation is the fall-through path at the same logical scope
+      // as the current statement list, so preserve the caller's `insideBranch`
+      // flag rather than forcing it. This lets a chain of top-level guards
+      // like `if (g) return; if (h) return; a.balance = 1` flatten into
+      // nested conds via successive if-conversion passes (Allen et al.,
+      // POPL 1983); forcing `true` would instead reject the second guard as
+      // `return in mutating branch`.
+      const continuation = [...exit.continuationPrefix, ...stmts.slice(i + 1)];
+      const sR = cloneSymbolicState(state);
+      const remainingProps: PropResult[] = [];
+      const continuationBlock = ts.factory.createBlock(continuation, true);
+      const okR = symbolicExecute(
+        continuationBlock,
+        checker,
+        strategy,
+        new Map(paramNames),
+        sR,
+        remainingProps,
+        applyConst,
+        supply,
+        insideBranch,
+      );
+      if (!okR) {
+        ok = false;
+        propositions.push(...remainingProps);
+        break;
+      }
+
+      // Shape A loop equations emit directly into `propositions` rather than
+      // flowing through `state.writes`, so they'd be silently dropped by the
+      // merge-only path below. Reject when the continuation produced such
+      // equations — we'd need to thread `gExpr` into each rhs (and reconcile
+      // `state.modifiedProps`) to preserve the early-exit semantics, which
+      // isn't yet implemented.
+      const directEquations = remainingProps.filter(
+        (p) => p.kind === "equation",
+      );
+      if (directEquations.length > 0) {
+        ok = false;
+        propositions.push({
+          kind: "unsupported",
+          reason:
+            "loop with per-iteration writes cannot appear after an early-exit guard",
+        });
+        break;
+      }
+
+      const scalarEarlyExitInputs: ScalarSsaEarlyExitPropertyInput[] = [];
+      let scalarEarlyExitOnly = true;
+      for (const key of sR.writtenKeys) {
+        const entryR = sR.writes.get(key)!;
+        const prior = state.writes.get(key);
+        if (prior !== undefined && prior.kind !== entryR.kind) {
+          ok = false;
+          propositions.push({
+            kind: "unsupported",
+            reason:
+              "branches wrote the same key with different kinds (property / map / set mismatch)",
+          });
+          scalarEarlyExitOnly = false;
+          break;
+        }
+        if (entryR.kind !== "property") {
+          scalarEarlyExitOnly = false;
+          break;
+        }
+        const priorP = prior as PropertyWriteEntry | undefined;
+        scalarEarlyExitInputs.push({
+          key,
+          prop: entryR.prop,
+          objExpr: entryR.objExpr,
+          priorValue: priorP?.value,
+          continuationValue: entryR.value,
+        });
+      }
+      if (!ok) {
+        break;
+      }
+      if (scalarEarlyExitOnly) {
+        const merged = lowerScalarSsaEarlyExitMerge(scalarEarlyExitInputs, {
+          guardExpr: gExpr,
+          earlyExitWhenTrue: exit.earlyExitWhenTrue,
+          canonicalize: applyConst,
+        });
+        for (const [index, entry] of merged.finalProperties.entries()) {
+          const input = scalarEarlyExitInputs[index]!;
+          state.writes = putWrite(state.writes, input.key, {
+            kind: "property",
+            prop: entry.location.ruleName,
+            objExpr: entry.objExpr,
+            value: entry.rhs,
+          });
+          state.writtenKeys = addWrittenKey(state.writtenKeys, input.key);
+          state.modifiedProps = addModifiedProp(
+            state.modifiedProps,
+            entry.location.ruleName,
+          );
+        }
+        break;
+      }
+
+      // Merge: for each key touched by the continuation, emit a cond
+      // selecting the pre-state value when we take the early exit and
+      // the continuation's value otherwise. `earlyExitWhenTrue` picks
+      // which arm of the cond the condition guards.
+      for (const key of sR.writtenKeys) {
+        const entryR = sR.writes.get(key)!;
+        const prior = state.writes.get(key);
+        if (prior !== undefined && prior.kind !== entryR.kind) {
+          ok = false;
+          propositions.push({
+            kind: "unsupported",
+            reason:
+              "branches wrote the same key with different kinds (property / map / set mismatch)",
+          });
+          break;
+        }
+        if (entryR.kind === "property") {
+          const priorP = prior as PropertyWriteEntry | undefined;
+          const identity = ast.app(ast.var(entryR.prop), [entryR.objExpr]);
+          const vEarlyReturn = priorP?.value ?? identity;
+          const vContinuation = entryR.value;
+          const merged = exit.earlyExitWhenTrue
+            ? ast.cond([
+                [gExpr, vEarlyReturn],
+                [ast.litBool(true), vContinuation],
+              ])
+            : ast.cond([
+                [gExpr, vContinuation],
+                [ast.litBool(true), vEarlyReturn],
+              ]);
+          state.writes = putWrite(state.writes, key, {
+            kind: "property",
+            prop: entryR.prop,
+            objExpr: entryR.objExpr,
+            value: merged,
+          });
+          state.writtenKeys = addWrittenKey(state.writtenKeys, key);
+          continue;
+        }
+        // Map / Set: continuation-side overrides are taken only when NOT
+        // on the early-exit arm. The early-exit fallback for each
+        // override is the accumulated outer-state value if the outer
+        // state had a prior write there, else the pre-state lookup — so
+        // outer writes persist across the exit arm.
+        const combineContCond = (
+          vCont: OpaqueExpr,
+          vExit: OpaqueExpr,
+        ): OpaqueExpr =>
+          exit.earlyExitWhenTrue
+            ? ast.cond([
+                [gExpr, vExit],
+                [ast.litBool(true), vCont],
+              ])
+            : ast.cond([
+                [gExpr, vCont],
+                [ast.litBool(true), vExit],
+              ]);
+        if (entryR.kind === "map") {
+          const priorMap =
+            prior !== undefined && prior.kind === "map" ? prior : undefined;
+          const ruleVar = ast.var(entryR.ruleName);
+          const keyVar = ast.var(entryR.keyPredName);
+          const valueFallback = (o: MapOverride): OpaqueExpr =>
+            ast.app(ruleVar, [o.objExpr, o.keyExpr]);
+          const memberFallback = (o: MapOverride): OpaqueExpr =>
+            ast.app(keyVar, [o.objExpr, o.keyExpr]);
+          const mergedValue = mergeOverrides(
+            entryR.valueOverrides,
+            priorMap?.valueOverrides ?? [],
+            (o) => o.keyTuple,
+            valueFallback,
+            combineContCond,
+          );
+          const mergedMember = mergeOverrides(
+            entryR.membershipOverrides,
+            priorMap?.membershipOverrides ?? [],
+            (o) => o.keyTuple,
+            memberFallback,
+            combineContCond,
+          );
+          state.writes = putWrite(state.writes, key, {
+            kind: "map",
+            ruleName: entryR.ruleName,
+            keyPredName: entryR.keyPredName,
+            ownerType: entryR.ownerType,
+            keyType: entryR.keyType,
+            valueOverrides: mergedValue,
+            membershipOverrides: mergedMember,
+          });
+          state.writtenKeys = addWrittenKey(state.writtenKeys, key);
+          continue;
+        }
+        // Set: each side projects through its own `cleared` predicate,
+        // so the missing-on-prior fallback uses prior's `cleared` and
+        // missing-on-cont fallback uses entryR's. Without this, an
+        // element only-on-cont would fall through to raw pre-state
+        // membership even when prior cleared the set on the early-exit
+        // path (and vice versa). `cleared` itself merges through
+        // `combineContCond` so a one-sided clear emerges as a guarded
+        // predicate rather than collapsing to an unconditional clear.
+        const priorSet =
+          prior !== undefined && prior.kind === "set" ? prior : undefined;
+        const setRuleVar = ast.var(entryR.ruleName);
+        const baseIn = (o: SetOverride): OpaqueExpr =>
+          ast.binop(
+            ast.opIn(),
+            o.elemExpr,
+            ast.app(setRuleVar, [entryR.objExpr]),
+          );
+        const priorCleared = priorSet?.cleared ?? ast.litBool(false);
+        const fallbackForMissingPrior = (o: SetOverride): OpaqueExpr =>
+          clearedFallback(priorCleared, baseIn(o));
+        const fallbackForMissingCont = (o: SetOverride): OpaqueExpr =>
+          clearedFallback(entryR.cleared, baseIn(o));
+        const mergedSet = mergeOverrides(
+          entryR.memberOverrides,
+          priorSet?.memberOverrides ?? [],
+          (o) => o.elemExpr,
+          fallbackForMissingPrior,
+          combineContCond,
+          fallbackForMissingCont,
+        );
+        const mergedCleared =
+          ast.strExpr(entryR.cleared) === ast.strExpr(priorCleared)
+            ? entryR.cleared
+            : combineContCond(entryR.cleared, priorCleared);
+        state.writes = putWrite(state.writes, key, {
+          kind: "set",
+          ruleName: entryR.ruleName,
+          ownerType: entryR.ownerType,
+          elemType: entryR.elemType,
+          objExpr: entryR.objExpr,
+          memberOverrides: mergedSet,
+          cleared: mergedCleared,
+        });
+        state.writtenKeys = addWrittenKey(state.writtenKeys, key);
+      }
+      // Remaining stmts have been consumed by the continuation.
+      break;
+    }
+
+    // Handle const bindings via shared inlineConstBindings
+    if (ts.isVariableStatement(stmt)) {
+      const declList = stmt.declarationList;
+      if (declList.flags & ts.NodeFlags.Const) {
+        const bindings: ConstBinding[] = [];
+        let allPure = true;
+        for (const decl of declList.declarations) {
+          if (
+            !ts.isIdentifier(decl.name) ||
+            !decl.initializer ||
+            expressionHasSideEffects(decl.initializer, checker)
+          ) {
+            allPure = false;
+            break;
+          }
+          bindings.push({
+            kind: "const",
+            tsName: decl.name.text,
+            initializer: decl.initializer,
+          });
+        }
+        if (allPure) {
+          const inlined = inlineConstBindings(
+            bindings,
+            checker,
+            strategy,
+            paramNames,
+            supply,
+            state,
+          );
+          if ("error" in inlined) {
+            ok = false;
+            propositions.push({
+              kind: "unsupported",
+              reason: inlined.error,
+            });
+          } else {
+            for (const [key, value] of inlined.scopedParams) {
+              paramNames.set(key, value);
+            }
+            const prevChain = applyConstChain;
+            applyConstChain = (e) => prevChain(inlined.applyTo(e));
+            setCanonicalize(state, applyConst);
+          }
+          continue;
+        }
+      }
+      ok = false;
+      propositions.push({
+        kind: "unsupported",
+        reason: "local variable declaration (let/var or effectful const)",
+      });
+      continue;
+    }
+
+    // Map mutation: `m.set(k, v)` or `m.delete(k)` as a statement.
+    // translateCallExpr returns a `{ effect }` result for these calls; the
+    // write is installed via installMapWrite, which coalesces multiple
+    // writes to the same rule into one MapRuleWriteEntry.
+    if (
+      ts.isExpressionStatement(stmt) &&
+      ts.isCallExpression(unwrapExpression(stmt.expression))
+    ) {
+      const call = unwrapExpression(stmt.expression) as ts.CallExpression;
+      const callResult = translateCallExpr(
+        call,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
+      if (isBodyEffect(callResult)) {
+        if (isMapEffect(callResult.effect)) {
+          installMapWrite(state, callResult.effect, applyConst);
+        } else {
+          installSetWrite(state, callResult.effect, applyConst);
+        }
+        continue;
+      }
+      // If the call *looks like* a Map.set/Map.delete or a
+      // Set.add/Set.delete/Set.clear (right method name, arity, and
+      // receiver type) but translateCallExpr returned an unsupported
+      // marker, propagate the specific reason rather than falling through
+      // to the generic "side-effectful expression" error. Other
+      // unsupported results (non-Map/Set calls the EUF encoder rejected
+      // because of an arrow-function argument, etc.) still fall through
+      // so the forEach handler below gets its chance.
+      if (
+        isBodyUnsupported(callResult) &&
+        ts.isPropertyAccessExpression(call.expression)
+      ) {
+        const mName = call.expression.name.text;
+        const argc = call.arguments.length;
+        const recvType = checker.getTypeAtLocation(call.expression.expression);
+        const looksLikeMapMutation =
+          ((mName === "set" && argc === 2) ||
+            (mName === "delete" && argc === 1)) &&
+          isMapType(recvType);
+        const looksLikeSetMutation =
+          ((mName === "add" && argc === 1) ||
+            (mName === "delete" && argc === 1) ||
+            (mName === "clear" && argc === 0)) &&
+          isSetType(recvType);
+        if (looksLikeMapMutation || looksLikeSetMutation) {
+          ok = false;
+          propositions.push({
+            kind: "unsupported",
+            reason: callResult.unsupported,
+          });
+          continue;
+        }
+      }
+      // Otherwise fall through to forEach / side-effect handling below.
+    }
+
+    // Property assignment: obj.prop = rhs. Routes through L1: build
+    // canonical `Assign(Member(receiver, name), value)` via
+    // `buildL1AssignStmt`, then scalar-only bodies are resolved by IR1
+    // SSA inside `lowerL1Body` before installing final writes into
+    // `SymbolicState`. Non-scalar L1 forms still use the legacy lowerer.
+    if (
+      ts.isExpressionStatement(stmt) &&
+      ts.isBinaryExpression(unwrapExpression(stmt.expression))
+    ) {
+      const bin = unwrapExpression(stmt.expression) as ts.BinaryExpression;
+      const compoundOp = COMPOUND_ASSIGN_TO_BINOP.get(bin.operatorToken.kind);
+      const isSimpleAssign =
+        bin.operatorToken.kind === ts.SyntaxKind.EqualsToken;
+      if (
+        (isSimpleAssign || compoundOp !== undefined) &&
+        ts.isPropertyAccessExpression(bin.left)
+      ) {
+        const built = buildL1AssignStmt(stmt, {
+          checker,
+          strategy,
+          paramNames,
+          state,
+          supply,
+          applyConst,
+        });
+        if (isUnsupported(built)) {
+          ok = false;
+          propositions.push({
+            kind: "unsupported",
+            reason: built.unsupported,
+          });
+          continue;
+        }
+        if (isScalarSsaL1Body(built)) {
+          if (!lowerL1Body(built, state, propositions, { applyConst })) {
+            ok = false;
+          }
+          continue;
+        }
+        if (!lowerL1Body(built, state, propositions, { applyConst })) {
+          ok = false;
+        }
+        continue;
+      }
+    }
+
+    // `arr.forEach(x => { body })` as a top-level statement —
+    // recognized by the L1 build pass and lowered as a foreach
+    // (Shape A property writes; Shape B and other shapes deferred).
+    if (
+      ts.isExpressionStatement(stmt) &&
+      ts.isCallExpression(unwrapExpression(stmt.expression)) &&
+      !insideBranch
+    ) {
+      const call = unwrapExpression(stmt.expression) as ts.CallExpression;
+      if (
+        ts.isPropertyAccessExpression(call.expression) &&
+        call.expression.name.text === "forEach"
+      ) {
+        const built = buildL1ForEachCall(call, {
+          checker,
+          strategy,
+          paramNames,
+          state,
+          supply,
+          applyConst,
+        });
+        if (isUnsupported(built)) {
+          propositions.push({
+            kind: "unsupported",
+            reason: built.unsupported,
+          });
+          ok = false;
+          continue;
+        }
+        if (!lowerL1Body(built, state, propositions, { applyConst })) {
+          ok = false;
+        }
+        continue;
+      }
+    }
+
+    if (
+      ts.isExpressionStatement(stmt) &&
+      expressionHasSideEffects(stmt.expression, checker)
+    ) {
+      propositions.push({
+        kind: "unsupported",
+        reason: "side-effectful expression",
+      });
+      ok = false;
+      continue;
+    }
+
+    if (
+      ts.isVariableStatement(stmt) &&
+      stmt.declarationList.declarations.some(
+        (d) =>
+          d.initializer && expressionHasSideEffects(d.initializer, checker),
+      )
+    ) {
+      propositions.push({
+        kind: "unsupported",
+        reason: "side-effectful variable initializer",
+      });
+      ok = false;
+      continue;
+    }
+
+    if (
+      (ts.isReturnStatement(stmt) || ts.isThrowStatement(stmt)) &&
+      stmt.expression &&
+      expressionHasSideEffects(stmt.expression, checker)
+    ) {
+      propositions.push({
+        kind: "unsupported",
+        reason: "side-effectful control-flow expression",
+      });
+      ok = false;
+      continue;
+    }
+
+    // Bare `return;` at top level is a no-op (void function). Inside a
+    // branch it's unsound — symbolic execution assumes each branch reaches
+    // the join point with a well-defined state. Early exit would leave
+    // later writes conditionally unreachable, which the merge cannot encode.
+    if (ts.isReturnStatement(stmt) && !stmt.expression) {
+      if (insideBranch) {
+        propositions.push({
+          kind: "unsupported",
+          reason: "return in mutating branch",
+        });
+        ok = false;
+      }
+      continue;
+    }
+
+    // `return expr;` or `throw;` always break the path-merging model.
+    if (ts.isReturnStatement(stmt) || ts.isThrowStatement(stmt)) {
+      propositions.push({
+        kind: "unsupported",
+        reason: "return/throw in mutating body",
+      });
+      ok = false;
+      continue;
+    }
+
+    // Nested block — flow state through sequentially
+    if (ts.isBlock(stmt)) {
+      const inner = symbolicExecute(
+        stmt,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        propositions,
+        applyConst,
+        supply,
+        insideBranch,
+      );
+      if (!inner) {
+        ok = false;
+      }
+      continue;
+    }
+
+    // Branched mutation: build L1 cond-stmt, lower via lowerL1Body. Scalar
+    // cond-stmts resolve through IR1 SSA; Map/Set and foreach-containing
+    // branches stay on the existing SymbolicState fallback.
+    if (ts.isIfStatement(stmt)) {
+      const built = buildL1IfMutation(stmt, {
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+        applyConst,
+      });
+      if (isUnsupported(built)) {
+        propositions.push({
+          kind: "unsupported",
+          reason: built.unsupported,
+        });
+        ok = false;
+        continue;
+      }
+      if (isScalarSsaL1Body(built)) {
+        if (!lowerL1Body(built, state, propositions, { applyConst })) {
+          ok = false;
+        }
+        continue;
+      }
+      if (!lowerL1Body(built, state, propositions, { applyConst })) {
+        ok = false;
+      }
+      continue;
+    }
+
+    // `for (const x of arr) { body }` — same path as forEach.
+    if (ts.isForOfStatement(stmt) && !insideBranch) {
+      const built = buildL1ForOfMutation(stmt, {
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+        applyConst,
+      });
+      if (isUnsupported(built)) {
+        propositions.push({
+          kind: "unsupported",
+          reason: built.unsupported,
+        });
+        ok = false;
+        continue;
+      }
+      if (!lowerL1Body(built, state, propositions, { applyConst })) {
+        ok = false;
+      }
+      continue;
+    }
+
+    if (
+      ts.isForStatement(stmt) ||
+      ts.isForOfStatement(stmt) ||
+      ts.isForInStatement(stmt) ||
+      ts.isWhileStatement(stmt) ||
+      ts.isDoStatement(stmt)
+    ) {
+      propositions.push({ kind: "unsupported", reason: "loop assignment" });
+      ok = false;
+      continue;
+    }
+
+    if (ts.isTryStatement(stmt)) {
+      if (stmt.catchClause) {
+        propositions.push({
+          kind: "unsupported",
+          reason: "try/catch assignment",
+        });
+        ok = false;
+      } else {
+        const inner = symbolicExecute(
+          stmt.tryBlock,
+          checker,
+          strategy,
+          paramNames,
+          state,
+          propositions,
+          applyConst,
+          supply,
+          insideBranch,
+        );
+        if (!inner) {
+          ok = false;
+        }
+      }
+      if (stmt.finallyBlock) {
+        const inner = symbolicExecute(
+          stmt.finallyBlock,
+          checker,
+          strategy,
+          paramNames,
+          state,
+          propositions,
+          applyConst,
+          supply,
+          insideBranch,
+        );
+        if (!inner) {
+          ok = false;
+        }
+      }
+      continue;
+    }
+
+    if (ts.isSwitchStatement(stmt)) {
+      propositions.push({ kind: "unsupported", reason: "switch assignment" });
+      ok = false;
+    }
+  }
+
+  return ok;
+}
+
+/**
+ * Generate frame conditions: for each rule in declarations not explicitly
+ * modified, emit `rule' x = rule x` using the rule's own parameter names
+ * as free variable references. Pantagruel's SMT translator auto-quantifies
+ * free rule-param references in action-body propositions via
+ * [bind_head_params] (see `lib/smt_doc.ml`), so the emission stays flat.
+ * This also preserves declaration guards through pant's guard-injection
+ * machinery on the quantified form, which would be lost if ts2pant
+ * pre-wrapped with a local `all` here.
+ */
+function generateFrameConditions(
+  modifiedRules: ReadonlySet<string>,
+  declarations: PantDeclaration[],
+): PropResult[] {
+  const ast = getAst();
+  const frames: PropResult[] = [];
+
+  for (const decl of declarations) {
+    if (decl.kind !== "rule") {
+      continue;
+    }
+    if (modifiedRules.has(decl.name)) {
+      continue;
+    }
+
+    const paramArgs = decl.params.map((p) => ast.var(p.name));
+    const lhs = ast.app(ast.primed(decl.name), paramArgs);
+    const rhs = ast.app(ast.var(decl.name), paramArgs);
+    frames.push({
+      kind: "equation",
+      quantifiers: [] as OpaqueParam[],
+      lhs,
+      rhs,
+    });
+  }
+
+  return frames;
+}
+/**
+ * Forward symbolic execution with path merging (Dijkstra CACM 1975;
+ * Allen POPL 1983 if-conversion). Updates `state.writes` for each property
+ * assignment; merges `if`/`else` via `cond` at the join point. Returns
+ * `false` when an unsupported construct was encountered; unsupported
+ * markers are pushed into `propositions` for the caller to inspect.
+ */
+function _symbolicExecute(
+  body: ts.Block | ts.Statement,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: Map<string, string>,
+  state: SymbolicState,
+  propositions: PropResult[],
+  outerApply: (e: OpaqueExpr) => OpaqueExpr = (e) => e,
+  supply: UniqueSupply = makeUniqueSupply(),
+  insideBranch: boolean = false,
+): boolean {
+  const ast = getAst();
+  let ok = true;
+  // `applyConstChain` is the const-binding-only substitution closure
+  // (extended each time a new const is inlined). `applyConst` wraps it
+  // with `applyOpaqueAliases`, which reads `supply.opaqueAliases`
+  // lazily on every invocation — so symbolic-state cache aliases
+  // registered after `applyConst` was first captured still apply.
+  // The L1 build pass's symbolic-state fast-path
+  // (`buildL1MemberAccess`) registers a `($N → recordedValue)` alias
+  // when it short-circuits a property read, and the substitution is
+  // resolved at every subsequent canonicalize / applyConst call.
+  let applyConstChain = outerApply;
+  const applyConst: (e: OpaqueExpr) => OpaqueExpr = (e) =>
+    applyOpaqueAliases(applyConstChain(e), supply);
+  // Keep the state's canonicalize in sync with the frame's applyConst so
+  // symbolic-state reads see the same normalization the write site uses.
+  setCanonicalize(state, applyConst);
+  const stmts = ts.isBlock(body) ? Array.from(body.statements) : [body];
+
+  for (const [i, stmt] of stmts.entries()) {
+    // Skip guard statements (if-throw patterns and assertion calls)
+    if (isGuardStatement(stmt, checker)) {
+      continue;
+    }
+
+    // Early-exit if-conversion (Allen et al., POPL 1983, extended to
+    // early exits). Any `if` with a bare-return branch lifts the remaining
+    // statements — plus the other branch's statements when present — into
+    // a single continuation conditioned on the non-early-exit path.
+    const exit = !insideBranch ? detectEarlyExit(stmt) : null;
+    if (exit !== null) {
+      if (expressionHasSideEffects(exit.condition, checker)) {
+        ok = false;
+        propositions.push({
+          kind: "unsupported",
+          reason: "impure if-condition in mutating body",
+        });
+        break;
+      }
+      const gResult = translateBodyExpr(
+        exit.condition,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
+      if (isBodyUnsupported(gResult)) {
+        ok = false;
+        propositions.push({
+          kind: "unsupported",
+          reason: gResult.unsupported,
+        });
+        break;
+      }
+      const gExpr = applyConst(bodyExpr(gResult));
+
+      // Continuation = (other-branch's stmts if any) ++ post-if stmts.
+      // The continuation is the fall-through path at the same logical scope
+      // as the current statement list, so preserve the caller's `insideBranch`
+      // flag rather than forcing it. This lets a chain of top-level guards
+      // like `if (g) return; if (h) return; a.balance = 1` flatten into
+      // nested conds via successive if-conversion passes (Allen et al.,
+      // POPL 1983); forcing `true` would instead reject the second guard as
+      // `return in mutating branch`.
+      const continuation = [...exit.continuationPrefix, ...stmts.slice(i + 1)];
+      const sR = cloneSymbolicState(state);
+      const remainingProps: PropResult[] = [];
+      const continuationBlock = ts.factory.createBlock(continuation, true);
+      const okR = _symbolicExecute(
+        continuationBlock,
+        checker,
+        strategy,
+        new Map(paramNames),
+        sR,
+        remainingProps,
+        applyConst,
+        supply,
+        insideBranch,
+      );
+      if (!okR) {
+        ok = false;
+        propositions.push(...remainingProps);
+        break;
+      }
+
+      // Shape A loop equations emit directly into `propositions` rather than
+      // flowing through `state.writes`, so they'd be silently dropped by the
+      // merge-only path below. Reject when the continuation produced such
+      // equations — we'd need to thread `gExpr` into each rhs (and reconcile
+      // `state.modifiedProps`) to preserve the early-exit semantics, which
+      // isn't yet implemented.
+      const directEquations = remainingProps.filter(
+        (p) => p.kind === "equation",
+      );
+      if (directEquations.length > 0) {
+        ok = false;
+        propositions.push({
+          kind: "unsupported",
+          reason:
+            "loop with per-iteration writes cannot appear after an early-exit guard",
+        });
+        break;
+      }
+
+      const scalarEarlyExitInputs: ScalarSsaEarlyExitPropertyInput[] = [];
+      let scalarEarlyExitOnly = true;
+      for (const key of sR.writtenKeys) {
+        const entryR = sR.writes.get(key)!;
+        const prior = state.writes.get(key);
+        if (prior !== undefined && prior.kind !== entryR.kind) {
+          ok = false;
+          propositions.push({
+            kind: "unsupported",
+            reason:
+              "branches wrote the same key with different kinds (property / map / set mismatch)",
+          });
+          scalarEarlyExitOnly = false;
+          break;
+        }
+        if (entryR.kind !== "property") {
+          scalarEarlyExitOnly = false;
+          break;
+        }
+        const priorP = prior as PropertyWriteEntry | undefined;
+        scalarEarlyExitInputs.push({
+          key,
+          prop: entryR.prop,
+          objExpr: entryR.objExpr,
+          priorValue: priorP?.value,
+          continuationValue: entryR.value,
+        });
+      }
+      if (!ok) {
+        break;
+      }
+      if (scalarEarlyExitOnly) {
+        const merged = lowerScalarSsaEarlyExitMerge(scalarEarlyExitInputs, {
+          guardExpr: gExpr,
+          earlyExitWhenTrue: exit.earlyExitWhenTrue,
+          canonicalize: applyConst,
+        });
+        for (const [index, entry] of merged.finalProperties.entries()) {
+          const input = scalarEarlyExitInputs[index]!;
+          state.writes = putWrite(state.writes, input.key, {
+            kind: "property",
+            prop: entry.location.ruleName,
+            objExpr: entry.objExpr,
+            value: entry.rhs,
+          });
+          state.writtenKeys = addWrittenKey(state.writtenKeys, input.key);
+          state.modifiedProps = addModifiedProp(
+            state.modifiedProps,
+            entry.location.ruleName,
+          );
+        }
+        break;
+      }
+
+      // Merge: for each key touched by the continuation, emit a cond
+      // selecting the pre-state value when we take the early exit and
+      // the continuation's value otherwise. `earlyExitWhenTrue` picks
+      // which arm of the cond the condition guards.
+      for (const key of sR.writtenKeys) {
+        const entryR = sR.writes.get(key)!;
+        const prior = state.writes.get(key);
+        if (prior !== undefined && prior.kind !== entryR.kind) {
+          ok = false;
+          propositions.push({
+            kind: "unsupported",
+            reason:
+              "branches wrote the same key with different kinds (property / map / set mismatch)",
+          });
+          break;
+        }
+        if (entryR.kind === "property") {
+          const priorP = prior as PropertyWriteEntry | undefined;
+          const identity = ast.app(ast.var(entryR.prop), [entryR.objExpr]);
+          const vEarlyReturn = priorP?.value ?? identity;
+          const vContinuation = entryR.value;
+          const merged = exit.earlyExitWhenTrue
+            ? ast.cond([
+                [gExpr, vEarlyReturn],
+                [ast.litBool(true), vContinuation],
+              ])
+            : ast.cond([
+                [gExpr, vContinuation],
+                [ast.litBool(true), vEarlyReturn],
+              ]);
+          state.writes = putWrite(state.writes, key, {
+            kind: "property",
+            prop: entryR.prop,
+            objExpr: entryR.objExpr,
+            value: merged,
+          });
+          state.writtenKeys = addWrittenKey(state.writtenKeys, key);
+          continue;
+        }
+        // Map / Set: continuation-side overrides are taken only when NOT
+        // on the early-exit arm. The early-exit fallback for each
+        // override is the accumulated outer-state value if the outer
+        // state had a prior write there, else the pre-state lookup — so
+        // outer writes persist across the exit arm.
+        const combineContCond = (
+          vCont: OpaqueExpr,
+          vExit: OpaqueExpr,
+        ): OpaqueExpr =>
+          exit.earlyExitWhenTrue
+            ? ast.cond([
+                [gExpr, vExit],
+                [ast.litBool(true), vCont],
+              ])
+            : ast.cond([
+                [gExpr, vCont],
+                [ast.litBool(true), vExit],
+              ]);
+        if (entryR.kind === "map") {
+          const priorMap =
+            prior !== undefined && prior.kind === "map" ? prior : undefined;
+          const ruleVar = ast.var(entryR.ruleName);
+          const keyVar = ast.var(entryR.keyPredName);
+          const valueFallback = (o: MapOverride): OpaqueExpr =>
+            ast.app(ruleVar, [o.objExpr, o.keyExpr]);
+          const memberFallback = (o: MapOverride): OpaqueExpr =>
+            ast.app(keyVar, [o.objExpr, o.keyExpr]);
+          const mergedValue = mergeOverrides(
+            entryR.valueOverrides,
+            priorMap?.valueOverrides ?? [],
+            (o) => o.keyTuple,
+            valueFallback,
+            combineContCond,
+          );
+          const mergedMember = mergeOverrides(
+            entryR.membershipOverrides,
+            priorMap?.membershipOverrides ?? [],
+            (o) => o.keyTuple,
+            memberFallback,
+            combineContCond,
+          );
+          state.writes = putWrite(state.writes, key, {
+            kind: "map",
+            ruleName: entryR.ruleName,
+            keyPredName: entryR.keyPredName,
+            ownerType: entryR.ownerType,
+            keyType: entryR.keyType,
+            valueOverrides: mergedValue,
+            membershipOverrides: mergedMember,
+          });
+          state.writtenKeys = addWrittenKey(state.writtenKeys, key);
+          continue;
+        }
+        // Set: each side projects through its own `cleared` predicate,
+        // so the missing-on-prior fallback uses prior's `cleared` and
+        // missing-on-cont fallback uses entryR's. Without this, an
+        // element only-on-cont would fall through to raw pre-state
+        // membership even when prior cleared the set on the early-exit
+        // path (and vice versa). `cleared` itself merges through
+        // `combineContCond` so a one-sided clear emerges as a guarded
+        // predicate rather than collapsing to an unconditional clear.
+        const priorSet =
+          prior !== undefined && prior.kind === "set" ? prior : undefined;
+        const setRuleVar = ast.var(entryR.ruleName);
+        const baseIn = (o: SetOverride): OpaqueExpr =>
+          ast.binop(
+            ast.opIn(),
+            o.elemExpr,
+            ast.app(setRuleVar, [entryR.objExpr]),
+          );
+        const priorCleared = priorSet?.cleared ?? ast.litBool(false);
+        const fallbackForMissingPrior = (o: SetOverride): OpaqueExpr =>
+          clearedFallback(priorCleared, baseIn(o));
+        const fallbackForMissingCont = (o: SetOverride): OpaqueExpr =>
+          clearedFallback(entryR.cleared, baseIn(o));
+        const mergedSet = mergeOverrides(
+          entryR.memberOverrides,
+          priorSet?.memberOverrides ?? [],
+          (o) => o.elemExpr,
+          fallbackForMissingPrior,
+          combineContCond,
+          fallbackForMissingCont,
+        );
+        const mergedCleared =
+          ast.strExpr(entryR.cleared) === ast.strExpr(priorCleared)
+            ? entryR.cleared
+            : combineContCond(entryR.cleared, priorCleared);
+        state.writes = putWrite(state.writes, key, {
+          kind: "set",
+          ruleName: entryR.ruleName,
+          ownerType: entryR.ownerType,
+          elemType: entryR.elemType,
+          objExpr: entryR.objExpr,
+          memberOverrides: mergedSet,
+          cleared: mergedCleared,
+        });
+        state.writtenKeys = addWrittenKey(state.writtenKeys, key);
+      }
+      // Remaining stmts have been consumed by the continuation.
+      break;
+    }
+
+    // Handle const bindings via shared inlineConstBindings
+    if (ts.isVariableStatement(stmt)) {
+      const declList = stmt.declarationList;
+      if (declList.flags & ts.NodeFlags.Const) {
+        const bindings: ConstBinding[] = [];
+        let allPure = true;
+        for (const decl of declList.declarations) {
+          if (
+            !ts.isIdentifier(decl.name) ||
+            !decl.initializer ||
+            expressionHasSideEffects(decl.initializer, checker)
+          ) {
+            allPure = false;
+            break;
+          }
+          bindings.push({
+            kind: "const",
+            tsName: decl.name.text,
+            initializer: decl.initializer,
+          });
+        }
+        if (allPure) {
+          const inlined = inlineConstBindings(
+            bindings,
+            checker,
+            strategy,
+            paramNames,
+            supply,
+            state,
+          );
+          if ("error" in inlined) {
+            ok = false;
+            propositions.push({
+              kind: "unsupported",
+              reason: inlined.error,
+            });
+          } else {
+            for (const [key, value] of inlined.scopedParams) {
+              paramNames.set(key, value);
+            }
+            const prevChain = applyConstChain;
+            applyConstChain = (e) => prevChain(inlined.applyTo(e));
+            setCanonicalize(state, applyConst);
+          }
+          continue;
+        }
+      }
+      ok = false;
+      propositions.push({
+        kind: "unsupported",
+        reason: "local variable declaration (let/var or effectful const)",
+      });
+      continue;
+    }
+
+    // Map mutation: `m.set(k, v)` or `m.delete(k)` as a statement.
+    // translateCallExpr returns a `{ effect }` result for these calls; the
+    // write is installed via installMapWrite, which coalesces multiple
+    // writes to the same rule into one MapRuleWriteEntry.
+    if (
+      ts.isExpressionStatement(stmt) &&
+      ts.isCallExpression(unwrapExpression(stmt.expression))
+    ) {
+      const call = unwrapExpression(stmt.expression) as ts.CallExpression;
+      const callResult = translateCallExpr(
+        call,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+      );
+      if (isBodyEffect(callResult)) {
+        if (isMapEffect(callResult.effect)) {
+          installMapWrite(state, callResult.effect, applyConst);
+        } else {
+          installSetWrite(state, callResult.effect, applyConst);
+        }
+        continue;
+      }
+      // If the call *looks like* a Map.set/Map.delete or a
+      // Set.add/Set.delete/Set.clear (right method name, arity, and
+      // receiver type) but translateCallExpr returned an unsupported
+      // marker, propagate the specific reason rather than falling through
+      // to the generic "side-effectful expression" error. Other
+      // unsupported results (non-Map/Set calls the EUF encoder rejected
+      // because of an arrow-function argument, etc.) still fall through
+      // so the forEach handler below gets its chance.
+      if (
+        isBodyUnsupported(callResult) &&
+        ts.isPropertyAccessExpression(call.expression)
+      ) {
+        const mName = call.expression.name.text;
+        const argc = call.arguments.length;
+        const recvType = checker.getTypeAtLocation(call.expression.expression);
+        const looksLikeMapMutation =
+          ((mName === "set" && argc === 2) ||
+            (mName === "delete" && argc === 1)) &&
+          isMapType(recvType);
+        const looksLikeSetMutation =
+          ((mName === "add" && argc === 1) ||
+            (mName === "delete" && argc === 1) ||
+            (mName === "clear" && argc === 0)) &&
+          isSetType(recvType);
+        if (looksLikeMapMutation || looksLikeSetMutation) {
+          ok = false;
+          propositions.push({
+            kind: "unsupported",
+            reason: callResult.unsupported,
+          });
+          continue;
+        }
+      }
+      // Otherwise fall through to forEach / side-effect handling below.
+    }
+
+    // Property assignment: obj.prop = rhs. Routes through L1: build
+    // canonical `Assign(Member(receiver, name), value)` via
+    // `buildL1AssignStmt`, then scalar-only bodies are resolved by IR1
+    // SSA inside `lowerL1Body` before installing final writes into
+    // `SymbolicState`. Non-scalar L1 forms still use the legacy lowerer.
+    if (
+      ts.isExpressionStatement(stmt) &&
+      ts.isBinaryExpression(unwrapExpression(stmt.expression))
+    ) {
+      const bin = unwrapExpression(stmt.expression) as ts.BinaryExpression;
+      const compoundOp = COMPOUND_ASSIGN_TO_BINOP.get(bin.operatorToken.kind);
+      const isSimpleAssign =
+        bin.operatorToken.kind === ts.SyntaxKind.EqualsToken;
+      if (
+        (isSimpleAssign || compoundOp !== undefined) &&
+        ts.isPropertyAccessExpression(bin.left)
+      ) {
+        const built = buildL1AssignStmt(stmt, {
+          checker,
+          strategy,
+          paramNames,
+          state,
+          supply,
+          applyConst,
+        });
+        if (isUnsupported(built)) {
+          ok = false;
+          propositions.push({
+            kind: "unsupported",
+            reason: built.unsupported,
+          });
+          continue;
+        }
+        if (isScalarSsaL1Body(built)) {
+          if (!lowerL1Body(built, state, propositions, { applyConst })) {
+            ok = false;
+          }
+          continue;
+        }
+        if (!lowerL1Body(built, state, propositions, { applyConst })) {
+          ok = false;
+        }
+        continue;
+      }
+    }
+
+    // `arr.forEach(x => { body })` as a top-level statement —
+    // recognized by the L1 build pass and lowered as a foreach
+    // (Shape A property writes; Shape B and other shapes deferred).
+    if (
+      ts.isExpressionStatement(stmt) &&
+      ts.isCallExpression(unwrapExpression(stmt.expression)) &&
+      !insideBranch
+    ) {
+      const call = unwrapExpression(stmt.expression) as ts.CallExpression;
+      if (
+        ts.isPropertyAccessExpression(call.expression) &&
+        call.expression.name.text === "forEach"
+      ) {
+        const built = buildL1ForEachCall(call, {
+          checker,
+          strategy,
+          paramNames,
+          state,
+          supply,
+          applyConst,
+        });
+        if (isUnsupported(built)) {
+          propositions.push({
+            kind: "unsupported",
+            reason: built.unsupported,
+          });
+          ok = false;
+          continue;
+        }
+        if (!lowerL1Body(built, state, propositions, { applyConst })) {
+          ok = false;
+        }
+        continue;
+      }
+    }
+
+    if (
+      ts.isExpressionStatement(stmt) &&
+      expressionHasSideEffects(stmt.expression, checker)
+    ) {
+      propositions.push({
+        kind: "unsupported",
+        reason: "side-effectful expression",
+      });
+      ok = false;
+      continue;
+    }
+
+    if (
+      ts.isVariableStatement(stmt) &&
+      stmt.declarationList.declarations.some(
+        (d) =>
+          d.initializer && expressionHasSideEffects(d.initializer, checker),
+      )
+    ) {
+      propositions.push({
+        kind: "unsupported",
+        reason: "side-effectful variable initializer",
+      });
+      ok = false;
+      continue;
+    }
+
+    if (
+      (ts.isReturnStatement(stmt) || ts.isThrowStatement(stmt)) &&
+      stmt.expression &&
+      expressionHasSideEffects(stmt.expression, checker)
+    ) {
+      propositions.push({
+        kind: "unsupported",
+        reason: "side-effectful control-flow expression",
+      });
+      ok = false;
+      continue;
+    }
+
+    // Bare `return;` at top level is a no-op (void function). Inside a
+    // branch it's unsound — symbolic execution assumes each branch reaches
+    // the join point with a well-defined state. Early exit would leave
+    // later writes conditionally unreachable, which the merge cannot encode.
+    if (ts.isReturnStatement(stmt) && !stmt.expression) {
+      if (insideBranch) {
+        propositions.push({
+          kind: "unsupported",
+          reason: "return in mutating branch",
+        });
+        ok = false;
+      }
+      continue;
+    }
+
+    // `return expr;` or `throw;` always break the path-merging model.
+    if (ts.isReturnStatement(stmt) || ts.isThrowStatement(stmt)) {
+      propositions.push({
+        kind: "unsupported",
+        reason: "return/throw in mutating body",
+      });
+      ok = false;
+      continue;
+    }
+
+    // Nested block — flow state through sequentially
+    if (ts.isBlock(stmt)) {
+      const inner = _symbolicExecute(
+        stmt,
+        checker,
+        strategy,
+        paramNames,
+        state,
+        propositions,
+        applyConst,
+        supply,
+        insideBranch,
+      );
+      if (!inner) {
+        ok = false;
+      }
+      continue;
+    }
+
+    // Branched mutation: build L1 cond-stmt, lower via lowerL1Body. Scalar
+    // cond-stmts resolve through IR1 SSA; Map/Set and foreach-containing
+    // branches stay on the existing SymbolicState fallback.
+    if (ts.isIfStatement(stmt)) {
+      const built = buildL1IfMutation(stmt, {
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+        applyConst,
+      });
+      if (isUnsupported(built)) {
+        propositions.push({
+          kind: "unsupported",
+          reason: built.unsupported,
+        });
+        ok = false;
+        continue;
+      }
+      if (isScalarSsaL1Body(built)) {
+        if (!lowerL1Body(built, state, propositions, { applyConst })) {
+          ok = false;
+        }
+        continue;
+      }
+      if (!lowerL1Body(built, state, propositions, { applyConst })) {
+        ok = false;
+      }
+      continue;
+    }
+
+    // `for (const x of arr) { body }` — same path as forEach.
+    if (ts.isForOfStatement(stmt) && !insideBranch) {
+      const built = buildL1ForOfMutation(stmt, {
+        checker,
+        strategy,
+        paramNames,
+        state,
+        supply,
+        applyConst,
+      });
+      if (isUnsupported(built)) {
+        propositions.push({
+          kind: "unsupported",
+          reason: built.unsupported,
+        });
+        ok = false;
+        continue;
+      }
+      if (!lowerL1Body(built, state, propositions, { applyConst })) {
+        ok = false;
+      }
+      continue;
+    }
+
+    if (
+      ts.isForStatement(stmt) ||
+      ts.isForOfStatement(stmt) ||
+      ts.isForInStatement(stmt) ||
+      ts.isWhileStatement(stmt) ||
+      ts.isDoStatement(stmt)
+    ) {
+      propositions.push({ kind: "unsupported", reason: "loop assignment" });
+      ok = false;
+      continue;
+    }
+
+    if (ts.isTryStatement(stmt)) {
+      if (stmt.catchClause) {
+        propositions.push({
+          kind: "unsupported",
+          reason: "try/catch assignment",
+        });
+        ok = false;
+      } else {
+        const inner = _symbolicExecute(
+          stmt.tryBlock,
+          checker,
+          strategy,
+          paramNames,
+          state,
+          propositions,
+          applyConst,
+          supply,
+          insideBranch,
+        );
+        if (!inner) {
+          ok = false;
+        }
+      }
+      if (stmt.finallyBlock) {
+        const inner = _symbolicExecute(
+          stmt.finallyBlock,
+          checker,
+          strategy,
+          paramNames,
+          state,
+          propositions,
+          applyConst,
+          supply,
+          insideBranch,
+        );
+        if (!inner) {
+          ok = false;
+        }
+      }
+      continue;
+    }
+
+    if (ts.isSwitchStatement(stmt)) {
+      propositions.push({ kind: "unsupported", reason: "switch assignment" });
+      ok = false;
+    }
+  }
+
+  return ok;
+}
+
+/**
+ * Generate frame conditions: for each rule in declarations not explicitly
+ * modified, emit `rule' x = rule x` using the rule's own parameter names
+ * as free variable references. Pantagruel's SMT translator auto-quantifies
+ * free rule-param references in action-body propositions via
+ * [bind_head_params] (see `lib/smt_doc.ml`), so the emission stays flat.
+ * This also preserves declaration guards through pant's guard-injection
+ * machinery on the quantified form, which would be lost if ts2pant
+ * pre-wrapped with a local `all` here.
+ */
+function _generateFrameConditions(
+  modifiedRules: ReadonlySet<string>,
+  declarations: PantDeclaration[],
+): PropResult[] {
+  const ast = getAst();
+  const frames: PropResult[] = [];
+
+  for (const decl of declarations) {
+    if (decl.kind !== "rule") {
+      continue;
+    }
+    if (modifiedRules.has(decl.name)) {
+      continue;
+    }
+
+    const paramArgs = decl.params.map((p) => ast.var(p.name));
+    const lhs = ast.app(ast.primed(decl.name), paramArgs);
+    const rhs = ast.app(ast.var(decl.name), paramArgs);
+    frames.push({
+      kind: "equation",
+      quantifiers: [] as OpaqueParam[],
+      lhs,
+      rhs,
+    });
+  }
+
+  return frames;
 }
