@@ -1055,7 +1055,7 @@ exports[`unsupported.ts > impureGuardAssign 1`] = `
 `;
 
 exports[`unsupported.ts > loopAssign 1`] = `
-"module LOOP_ASSIGN.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Loop-assign @ a: Account.\\n\\n---\\n\\n> UNSUPPORTED: loop assignment.\\n"
+"module LOOP_ASSIGN.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Loop-assign @ a: Account.\\n\\n---\\n\\n> UNSUPPORTED: statement is not supported by unified SSA body lowering: ForStatement.\\n"
 `;
 
 exports[`unsupported.ts > multiParamCallback 1`] = `
