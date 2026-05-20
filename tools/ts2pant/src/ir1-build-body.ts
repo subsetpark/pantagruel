@@ -53,7 +53,6 @@ import {
 } from "./ir1-build.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import {
-  addWrittenKey,
   ambiguousFieldMsg,
   bodyExpr,
   cloneSymbolicState,
@@ -63,7 +62,6 @@ import {
   getRootIdentifier,
   isBodyUnsupported,
   isGuardStatement,
-  putWrite,
   qualifyFieldAccess,
   rejectEffect,
   type SymbolicState,
@@ -72,8 +70,28 @@ import {
   translateCallExpr,
   type UniqueSupply,
   unwrapExpression,
+  type WriteEntry,
 } from "./translate-body.js";
 import { cellRegisterName, type NumericStrategy } from "./translate-types.js";
+
+function putCompatWrite(
+  writes: ReadonlyMap<string, WriteEntry>,
+  key: string,
+  entry: WriteEntry,
+): ReadonlyMap<string, WriteEntry> {
+  const next = new Map(writes);
+  next.set(key, entry);
+  return next;
+}
+
+function addCompatWrittenKey(
+  keys: ReadonlySet<string>,
+  key: string,
+): ReadonlySet<string> {
+  const next = new Set(keys);
+  next.add(key);
+  return next;
+}
 
 export interface BuildBodyCtx {
   checker: ts.TypeChecker;
@@ -378,8 +396,8 @@ function buildL1ForeachBody(
   ctx: BuildBodyCtx,
 ): BuildResult<ForeachBodyResult> {
   // Strip iterator-INDEPENDENT guard statements (`assert(...)`,
-  // `if (g) throw …`) before classification, mirroring what
-  // `symbolicExecute` does for top-level bodies. Without this, a
+  // `if (g) throw …`) before classification, mirroring the top-level
+  // SSA mutating-body builder. Without this, a
   // top-level precondition reasserted inside the loop (e.g.,
   // `for (...) { assert(amount >= 0); a.total += x.value; }`) would
   // fail classification on the guard call.
@@ -869,13 +887,13 @@ function simulateShapeA(
   const objExpr = subCtx.applyConst(bodyExpr(objR));
   const value = subCtx.applyConst(bodyExpr(valR));
   const key = symbolicKey(prop, objExpr);
-  subCtx.state.writes = putWrite(subCtx.state.writes, key, {
+  subCtx.state.writes = putCompatWrite(subCtx.state.writes, key, {
     kind: "property",
     prop,
     objExpr,
     value,
   });
-  subCtx.state.writtenKeys = addWrittenKey(subCtx.state.writtenKeys, key);
+  subCtx.state.writtenKeys = addCompatWrittenKey(subCtx.state.writtenKeys, key);
   return true;
 }
 
@@ -925,8 +943,8 @@ function buildL1MutationBody(
     const stmts: IR1Stmt[] = [];
     // Strip iterator-INDEPENDENT guard statements (`assert(...)`,
     // `if (g) throw …`) so branch-local preconditions don't surface
-    // as unsupported branch bodies — same discipline as
-    // `symbolicExecute` and the top-level foreach builder. When this
+    // as unsupported branch bodies; this matches the top-level SSA
+    // builder and foreach classifier. When this
     // builder is called from a foreach context (`ctx.iterRefs` set),
     // iterator-DEPENDENT guards reject instead, mirroring the same
     // check `buildL1ForeachBody` does for top-level loop-body

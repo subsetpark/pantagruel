@@ -7,10 +7,9 @@
  * (`ir-emit.ts`).
  *
  * **Expression-only.** Post-M3, L2 has no statement vocabulary —
- * mutating-body lowering bypasses L2 entirely (`ir1-lower-body.ts`
- * threads `SymbolicState` from `translate-body.ts` directly into
- * `PropResult[]`). The single-rooted `IRExpr` tree fits value-position
- * lowering (one `OpaqueExpr` out); a fold over the symbolic state fits
+ * mutating-body lowering bypasses L2 entirely and lowers L1 through
+ * IR1 SSA into `PropResult[]`. The single-rooted `IRExpr` tree fits
+ * value-position lowering (one `OpaqueExpr` out); IR1 SSA fits
  * effect-position lowering (a list of equations + frame conditions
  * out). The two paths share L1 but diverge here. See
  * `workstreams/ts2pant-imperative-ir.md` § "Architectural Lessons".

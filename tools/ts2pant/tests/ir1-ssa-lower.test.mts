@@ -17,7 +17,6 @@ import {
   adaptLoopSummaryLowerResult,
   adaptScalarSsaLowerResult,
   lowerCollectionL1BodyToSsaResult,
-  lowerL1Body,
   lowerScalarL1BodyToSsaResult,
 } from "../src/ir1-lower-body.js";
 import { lowerCollectionSsaToProps } from "../src/ir1-ssa-collections.js";
@@ -34,7 +33,6 @@ import {
 } from "../src/ir1-ssa-loops.js";
 import { lowerScalarSsaToProps } from "../src/ir1-ssa-scalars.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
-import { makeSymbolicState } from "../src/translate-body.js";
 
 before(async () => {
   await loadAst();
@@ -250,30 +248,24 @@ describe("ir1-ssa-lower", () => {
     assert.ok(lowered.some((lhs) => lhs.startsWith("Cache_value'")));
   });
 
-  it("production scalar SSA emission does not stage final writes", () => {
-    const scalarState = makeSymbolicState();
-    const scalarProps = [];
-    assert.equal(
-      lowerL1Body(
-        ir1Block([
-          ir1Assign(
-            ir1Member(ir1Var("account"), "Account_balance"),
-            ir1LitNat(1),
-          ),
-          ir1Assign(
-            ir1Member(ir1Var("account"), "Account_balance"),
-            ir1LitNat(2),
-          ),
-        ]),
-        scalarState,
-        scalarProps,
-        { applyConst: (e) => e },
-      ),
-      true,
+  it("production scalar SSA emission returns final properties without staged state", () => {
+    const result = lowerScalarL1BodyToSsaResult(
+      ir1Block([
+        ir1Assign(
+          ir1Member(ir1Var("account"), "Account_balance"),
+          ir1LitNat(1),
+        ),
+        ir1Assign(
+          ir1Member(ir1Var("account"), "Account_balance"),
+          ir1LitNat(2),
+        ),
+      ]),
+      { applyConst: (e) => e },
     );
-    assert.equal(scalarState.writes.size, 0);
-    assert.deepEqual([...scalarState.modifiedProps], ["Account_balance"]);
-    assert.equal(scalarProps.length, 1);
+    assert.deepEqual(result.diagnostics, []);
+    assert.deepEqual(result.modifiedRules, ["Account_balance"]);
+    assert.equal(result.finalProperties?.length, 1);
+    assert.equal(result.propositions.length, 1);
   });
 
   it("preserves helper diagnostics through adapters", () => {

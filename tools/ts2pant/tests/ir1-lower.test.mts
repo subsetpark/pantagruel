@@ -34,10 +34,8 @@ import {
   ir1While,
 } from "../src/ir1.js";
 import { lowerL1Expr } from "../src/ir1-lower.js";
-import { lowerL1Body } from "../src/ir1-lower-body.js";
+import { lowerL1BodyToSsaProps } from "../src/ir1-lower-body.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
-import { makeSymbolicState } from "../src/translate-body.js";
-import type { PropResult } from "../src/types.js";
 
 before(async () => {
   await loadAst();
@@ -320,9 +318,9 @@ describe("M2: ir1Assign and ir1While constructors are active", () => {
 
 describe("M3 statement constructors are active", () => {
   // Constructors return IR1Stmt values of the appropriate kind.
-  // Lowering for these forms is provided by `lowerL1Body` (in
-  // `ir1-lower-body.ts`) which threads `SymbolicState` directly into
-  // `PropResult[]` — the L2 path is expression-only.
+  // Mutating-body lowering for these forms is provided by
+  // `lowerL1BodyToSsaProps` (in `ir1-lower-body.ts`), which lowers IR1
+  // SSA directly into `PropResult[]`; the L2 path is expression-only.
 
   it("ir1CondStmt builds a cond-stmt", () => {
     const stmt = ir1CondStmt(
@@ -405,10 +403,10 @@ describe("active statement constructors (block, let, return)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// lowerL1Body — branch-local proposition isolation
+// lowerL1BodyToSsaProps — branch-local proposition isolation
 // ---------------------------------------------------------------------------
 
-describe("lowerL1Body — branch-local foreach equations", () => {
+describe("lowerL1BodyToSsaProps — branch-local foreach equations", () => {
   it("rejects a Shape A foreach inside a cond-stmt branch", () => {
     // `lowerForeach` emits `all $0 in xs | active' $0 = true` directly
     // into the propositions buffer. A foreach inside a branch would
@@ -432,16 +430,14 @@ describe("lowerL1Body — branch-local foreach equations", () => {
       ],
       null,
     );
-    const propositions: PropResult[] = [];
-    const ok = lowerL1Body(stmt, makeSymbolicState(), propositions, {
+    const result = lowerL1BodyToSsaProps(stmt, [], {
       applyConst: (e) => e,
     });
-    assert.equal(ok, false);
     assert.ok(
-      propositions.some(
+      result.diagnostics.some(
         (p) =>
           p.kind === "unsupported" &&
-          /escape the branch guard/.test(p.reason),
+          /not supported by unified SSA body lowering/.test(p.reason),
       ),
     );
   });
@@ -468,13 +464,11 @@ describe("lowerL1Body — branch-local foreach equations", () => {
       ir1Var("xs"),
       inner as unknown as Parameters<typeof ir1Foreach>[2],
     );
-    const propositions: PropResult[] = [];
-    const ok = lowerL1Body(outer, makeSymbolicState(), propositions, {
+    const result = lowerL1BodyToSsaProps(outer, [], {
       applyConst: (e) => e,
     });
-    assert.equal(ok, false);
     assert.ok(
-      propositions.some(
+      result.diagnostics.some(
         (p) =>
           p.kind === "unsupported" &&
           /escape the outer iterator scope/.test(p.reason),
