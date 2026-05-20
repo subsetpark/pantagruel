@@ -11,6 +11,9 @@ and loop summaries are explicit IR concepts rather than behavior hidden inside
 support; it makes the currently supported subset more regular and easier to
 extend later.
 
+Milestone 7 is landed, so the workstream is complete and guarded by
+`tools/ts2pant/tests/ir1-ssa-invariants.test.mts`.
+
 ## Current State
 
 IR1 is now a TypeScript-shaped canonical layer with SSA as the production
@@ -30,6 +33,8 @@ IR1 SSA. IR1 still contains `assign`, `while`, `for`, `foreach`, `cond-stmt`,
 `Set.clear()`, lower through the collection SSA module, while μ-search and
 supported foreach loop summaries lower through the dedicated loop-summary
 helper. General `for` / `while` SSA remains out of scope for this workstream.
+
+Milestone 7 is landed, and the workstream is complete.
 
 ## Key Challenges
 
@@ -267,10 +272,14 @@ symbolic-execution paths.
 
 ### Milestone 7: ir1-ssa-invariants
 
+**Status**: landed.
+
 **Definition of Done**:
 The new architecture has direct invariant tests over IR1 SSA itself and
 developer-facing documentation:
 
+- `tools/ts2pant/tests/ir1-ssa-invariants.test.mts` is the runtime
+  contract for the SSA abstraction
 - unit tests assert each write produces a fresh SSA version
 - branch joins require compatible location kinds
 - every read resolves to a dominating version, initial version, or explicit
