@@ -44,6 +44,7 @@ import {
   ir1SsaMapMembershipLocation,
   ir1SsaMapValueLocation,
   ir1SsaPropertyLocation,
+  ir1SsaRuleOfLocation,
   ir1SsaSetMembershipLocation,
   ir1SetAddOrDelete,
   ir1SetClear,
@@ -78,6 +79,14 @@ interface RepresentativeProgram {
   name: string;
   kind: RepresentativeProgramKind;
   build: () => Promise<IR1SsaBodyLowerResult>;
+}
+
+interface BodyLoweredRepresentativeProgram {
+  name: string;
+  build: () => Promise<{
+    result: IR1SsaBodyLowerResult;
+    declaredRules: string[];
+  }>;
 }
 
 interface SsaProgramVisitor {
@@ -379,6 +388,107 @@ function representativePrograms(): RepresentativeProgram[] {
   ];
 }
 
+function bodyLoweredRepresentativePrograms(): BodyLoweredRepresentativeProgram[] {
+  return [
+    {
+      name: "functions-mutating.ts > deposit",
+      build: async () => {
+        const sourceFile = loadFixture("functions-mutating.ts");
+        const doc = await buildDocumentFromSourceFile(sourceFile, "deposit");
+        return {
+          result: await buildFixtureBodyLowerResult("functions-mutating.ts", "deposit"),
+          declaredRules: doc.declarations
+            .filter((decl) => decl.kind === "rule")
+            .map((decl) => decl.name),
+        };
+      },
+    },
+    {
+      name: "expressions-state-aware-reads.ts > entrySetThenCheck",
+      build: async () => {
+        const sourceFile = loadFixture("expressions-state-aware-reads.ts");
+        const doc = await buildDocumentFromSourceFile(
+          sourceFile,
+          "entrySetThenCheck",
+        );
+        return {
+          result: await buildFixtureBodyLowerResult(
+            "expressions-state-aware-reads.ts",
+            "entrySetThenCheck",
+          ),
+          declaredRules: doc.declarations
+            .filter((decl) => decl.kind === "rule")
+            .map((decl) => decl.name),
+        };
+      },
+    },
+    {
+      name: "expressions-state-aware-reads.ts > tagThenCheck",
+      build: async () => {
+        const sourceFile = loadFixture("expressions-state-aware-reads.ts");
+        const doc = await buildDocumentFromSourceFile(sourceFile, "tagThenCheck");
+        return {
+          result: await buildFixtureBodyLowerResult(
+            "expressions-state-aware-reads.ts",
+            "tagThenCheck",
+          ),
+          declaredRules: doc.declarations
+            .filter((decl) => decl.kind === "rule")
+            .map((decl) => decl.name),
+        };
+      },
+    },
+    {
+      name: "functions-mutating-conditional.ts > asymmetric",
+      build: async () => {
+        const sourceFile = loadFixture("functions-mutating-conditional.ts");
+        const doc = await buildDocumentFromSourceFile(sourceFile, "asymmetric");
+        return {
+          result: await buildFixtureBodyLowerResult(
+            "functions-mutating-conditional.ts",
+            "asymmetric",
+          ),
+          declaredRules: doc.declarations
+            .filter((decl) => decl.kind === "rule")
+            .map((decl) => decl.name),
+        };
+      },
+    },
+    {
+      name: "functions-mutating-loop.ts > forEachActivate",
+      build: async () => {
+        const sourceFile = loadFixture("functions-mutating-loop.ts");
+        const doc = await buildDocumentFromSourceFile(sourceFile, "forEachActivate");
+        return {
+          result: await buildFixtureBodyLowerResult(
+            "functions-mutating-loop.ts",
+            "forEachActivate",
+          ),
+          declaredRules: doc.declarations
+            .filter((decl) => decl.kind === "rule")
+            .map((decl) => decl.name),
+        };
+      },
+    },
+    {
+      name: "functions-mutating-loop.ts > forEachSum",
+      build: async () => {
+        const sourceFile = loadFixture("functions-mutating-loop.ts");
+        const doc = await buildDocumentFromSourceFile(sourceFile, "forEachSum");
+        return {
+          result: await buildFixtureBodyLowerResult(
+            "functions-mutating-loop.ts",
+            "forEachSum",
+          ),
+          declaredRules: doc.declarations
+            .filter((decl) => decl.kind === "rule")
+            .map((decl) => decl.name),
+        };
+      },
+    },
+  ];
+}
+
 function walkSsaProgram(program: IR1SsaProgram, visit: SsaProgramVisitor): void {
   for (const [index, write] of program.writes.entries()) {
     visit.onWrite?.(write, index);
@@ -403,6 +513,22 @@ function readSignature(read: IR1SsaRead): string {
     `${read.location.kind} read at ${locationSignature(read.location)}`,
     `using ${read.version.origin} version ${String(read.version.id)}`,
   ].join(" ");
+}
+
+function frameRuleNames(result: IR1SsaBodyLowerResult): string[] {
+  const ast = getAst();
+  return result.propositions
+    .filter((prop) => prop.kind === "equation")
+    .flatMap((prop) => {
+      const lhs = ast.strExpr(prop.lhs);
+      const rhs = ast.strExpr(prop.rhs);
+      const match = /^([^'\s]+)'(?:\s|$)/u.exec(lhs);
+      if (match === null) {
+        return [];
+      }
+      const rule = match[1]!;
+      return rhs === lhs.replace("'", "") ? [rule] : [];
+    });
 }
 
 before(async () => {
@@ -658,10 +784,101 @@ describe("ir1-ssa-invariants", () => {
     },
   );
 
-  it.skip(
+  it(
     "every modified rule suppresses frame generation exactly once and every framed rule is unmodified",
-    () => {
-      // PENDING Patch 4: every modified rule suppresses frame generation exactly once and every framed rule is unmodified
+    async () => {
+      for (const representative of bodyLoweredRepresentativePrograms()) {
+        const { result, declaredRules } = await representative.build();
+        const detail = representative.name;
+
+        assert.equal(
+          result.diagnostics.length,
+          0,
+          `${detail} should lower without diagnostics`,
+        );
+
+        const modifiedRules = result.modifiedRules;
+        assert.equal(
+          new Set(modifiedRules).size,
+          modifiedRules.length,
+          `${detail} should list each modified rule at most once`,
+        );
+
+        const declaredRuleSet = new Set(declaredRules);
+        const modifiedRuleSet = new Set(modifiedRules);
+        const expectedFramedRules = declaredRules.filter(
+          (rule) => !modifiedRuleSet.has(rule),
+        );
+        const actualFramedRules = frameRuleNames(result);
+        const actualFramedRuleSet = new Set(actualFramedRules);
+
+        assert.deepEqual(
+          actualFramedRules,
+          expectedFramedRules,
+          `${detail} should append exactly one identity frame for each declared but unmodified rule`,
+        );
+        assert.equal(
+          actualFramedRuleSet.size,
+          actualFramedRules.length,
+          `${detail} should append each frame at most once`,
+        );
+
+        for (const rule of modifiedRuleSet) {
+          assert.ok(
+            declaredRuleSet.has(rule),
+            `${detail} should only mark declared rules as modified`,
+          );
+          assert.ok(
+            !actualFramedRuleSet.has(rule),
+            `${detail} should not frame a modified rule`,
+          );
+        }
+
+        for (const rule of expectedFramedRules) {
+          assert.ok(
+            declaredRuleSet.has(rule),
+            `${detail} should only frame declared rules`,
+          );
+          assert.ok(
+            !modifiedRuleSet.has(rule),
+            `${detail} should keep framed rules disjoint from modified rules`,
+          );
+        }
+
+        for (const [programIndex, program] of result.programs.entries()) {
+          const programDetail = `${detail} [program ${programIndex}]`;
+          const programModifiedRules = new Set(program.modifiedRules);
+          const programRuleSources = new Set([
+            ...program.writes.map((write) => ir1SsaRuleOfLocation(write.location)),
+            ...program.loopSummaries.map((summary) =>
+              ir1SsaRuleOfLocation(summary.location)
+            ),
+          ]);
+
+          for (const modifiedRule of program.modifiedRules) {
+            assert.ok(
+              programRuleSources.has(modifiedRule),
+              `${programDetail} should only mark rules modified when a write or loop summary produced them`,
+            );
+          }
+
+          for (const [writeIndex, write] of program.writes.entries()) {
+            const rule = ir1SsaRuleOfLocation(write.location);
+            assert.ok(
+              programModifiedRules.has(rule),
+              `${programDetail} write #${writeIndex} should mark ${rule} as modified`,
+            );
+          }
+
+          for (const [summaryIndex, summary] of program.loopSummaries.entries()) {
+            const rule = ir1SsaRuleOfLocation(summary.location);
+            assert.ok(
+              programModifiedRules.has(rule),
+              `${programDetail} loop summary #${summaryIndex} should mark ${rule} as modified`,
+            );
+          }
+        }
+      }
     },
   );
 
