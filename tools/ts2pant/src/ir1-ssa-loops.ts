@@ -177,6 +177,8 @@ export function buildLoopSsaProgram(
       writes: [],
       joins: [],
       loopSummaries,
+      loopHeaderJoins: [],
+      loopBodies: [],
       declaredRules: [...declaredRules],
       modifiedRules: [...modifiedRules],
       framedRules,

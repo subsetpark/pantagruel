@@ -128,6 +128,8 @@ describe("ir1-ssa-contract", () => {
       writes: [valueWrite, membershipWrite],
       joins: [],
       loopSummaries: [],
+      loopHeaderJoins: [],
+      loopBodies: [],
       declaredRules: ["Score_value", "Score_hasKey"],
       modifiedRules: [
         ir1SsaRuleOfLocation(valueLocation),
