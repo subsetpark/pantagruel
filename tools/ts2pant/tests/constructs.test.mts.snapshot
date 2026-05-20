@@ -375,11 +375,11 @@ exports[`expressions-map-mutation-field.ts > cachePutNonNull 1`] = `
 `;
 
 exports[`expressions-map-mutation.ts > bump 1`] = `
-"module BUMP.\\n\\nStringToIntMap.\\nstring-to-int-map-key m: StringToIntMap, k1: String => Bool.\\nstring-to-int-map m: StringToIntMap, k1: String, string-to-int-map-key m k1 => Int.\\n~> Bump @ counts: StringToIntMap, k: String.\\n\\n---\\n\\nall m1: StringToIntMap, k2: String | string-to-int-map' m1 k2 = string-to-int-map[(counts, k) |-> string-to-int-map counts k + 1] m1 k2.\\nall m2: StringToIntMap, k3: String | string-to-int-map-key' m2 k3 = string-to-int-map-key[(counts, k) |-> true] m2 k3.\\n"
+"module BUMP.\\n\\nStringToIntMap.\\nstring-to-int-map-key m: StringToIntMap, k1: String => Bool.\\nstring-to-int-map m: StringToIntMap, k1: String, string-to-int-map-key m k1 => Int.\\n~> Bump @ counts: StringToIntMap, k: String.\\n\\n---\\n\\nall m: StringToIntMap, k1: String | string-to-int-map' m k1 = string-to-int-map[(counts, k) |-> string-to-int-map counts k + 1] m k1.\\nall m: StringToIntMap, k1: String | string-to-int-map-key' m k1 = string-to-int-map-key[(counts, k) |-> true] m k1.\\n"
 `;
 
 exports[`expressions-map-mutation.ts > deleteThenCopy 1`] = `
-"module DELETE_THEN_COPY.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\n~> Delete-then-copy @ m: StringToIntMap, k-a: String, k-b: String, v: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k1: String | string-to-int-map' m2 k1 = string-to-int-map[(m, k-b) |-> string-to-int-map m k-a] m2 k1.\\nall m3: StringToIntMap, k2: String | string-to-int-map-key' m3 k2 = string-to-int-map-key[(m, k-a) |-> false, (m, k-b) |-> true] m3 k2.\\n"
+"module DELETE_THEN_COPY.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\n~> Delete-then-copy @ m: StringToIntMap, k-a: String, k-b: String, v: Int.\\n\\n---\\n\\nall m1: StringToIntMap, k1: String | string-to-int-map' m1 k1 = string-to-int-map[(m, k-a) |-> v, (m, k-b) |-> string-to-int-map m k-a] m1 k1.\\nall m1: StringToIntMap, k1: String | string-to-int-map-key' m1 k1 = string-to-int-map-key[(m, k-a) |-> false, (m, k-b) |-> true] m1 k1.\\n"
 `;
 
 exports[`expressions-map-mutation.ts > put 1`] = `
@@ -387,7 +387,7 @@ exports[`expressions-map-mutation.ts > put 1`] = `
 `;
 
 exports[`expressions-map-mutation.ts > putIfAbsent 1`] = `
-"module PUT_IF_ABSENT.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k1: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k1: String, string-to-int-map-key m1 k1 => Int.\\n~> Put-if-absent @ m: StringToIntMap, k: String, v: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k2: String | string-to-int-map' m2 k2 = string-to-int-map[(m, k) |-> cond ~(string-to-int-map-key m k) => v, true => string-to-int-map m k] m2 k2.\\nall m3: StringToIntMap, k3: String | string-to-int-map-key' m3 k3 = string-to-int-map-key[(m, k) |-> cond ~(string-to-int-map-key m k) => true, true => string-to-int-map-key m k] m3 k3.\\n"
+"module PUT_IF_ABSENT.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k1: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k1: String, string-to-int-map-key m1 k1 => Int.\\n~> Put-if-absent @ m: StringToIntMap, k: String, v: Int.\\n\\n---\\n\\nall m1: StringToIntMap, k1: String | string-to-int-map' m1 k1 = string-to-int-map[(m, k) |-> cond ~(string-to-int-map-key m k) => v, true => string-to-int-map m k] m1 k1.\\nall m1: StringToIntMap, k1: String | string-to-int-map-key' m1 k1 = string-to-int-map-key[(m, k) |-> cond ~(string-to-int-map-key m k) => true, true => string-to-int-map-key m k] m1 k1.\\n"
 `;
 
 exports[`expressions-map-mutation.ts > putPair 1`] = `
@@ -399,7 +399,7 @@ exports[`expressions-map-mutation.ts > remove 1`] = `
 `;
 
 exports[`expressions-map-mutation.ts > setAndCopy 1`] = `
-"module SET_AND_COPY.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\n~> Set-and-copy @ m: StringToIntMap, k-src: String, k-dst: String, v: Int.\\n\\n---\\n\\nall m2: StringToIntMap, k1: String | string-to-int-map' m2 k1 = string-to-int-map[(m, k-src) |-> v, (m, k-dst) |-> string-to-int-map[(m, k-src) |-> v] m k-src] m2 k1.\\nall m3: StringToIntMap, k2: String | string-to-int-map-key' m3 k2 = string-to-int-map-key[(m, k-src) |-> true, (m, k-dst) |-> true] m3 k2.\\n"
+"module SET_AND_COPY.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\n~> Set-and-copy @ m: StringToIntMap, k-src: String, k-dst: String, v: Int.\\n\\n---\\n\\nall m1: StringToIntMap, k1: String | string-to-int-map' m1 k1 = string-to-int-map[(m, k-src) |-> v, (m, k-dst) |-> v] m1 k1.\\nall m1: StringToIntMap, k1: String | string-to-int-map-key' m1 k1 = string-to-int-map-key[(m, k-src) |-> true, (m, k-dst) |-> true] m1 k1.\\n"
 `;
 
 exports[`expressions-map-mutation.ts > setThenDelete 1`] = `
@@ -679,15 +679,15 @@ exports[`expressions-set.ts > contains 1`] = `
 `;
 
 exports[`expressions-state-aware-reads.ts > bumpInBranch 1`] = `
-"module BUMP_IN_BRANCH.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k1: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k1: String, string-to-int-map-key m1 k1 => Int.\\n~> Bump-in-branch @ m: StringToIntMap, k: String, v: Int, gate: Bool.\\n\\n---\\n\\nall m2: StringToIntMap, k2: String | string-to-int-map' m2 k2 = string-to-int-map[(m, k) |-> cond gate => string-to-int-map[(m, k) |-> v] m k + 1, true => string-to-int-map m k] m2 k2.\\nall m3: StringToIntMap, k3: String | string-to-int-map-key' m3 k3 = string-to-int-map-key[(m, k) |-> cond gate => true, true => string-to-int-map-key m k] m3 k3.\\n"
+"module BUMP_IN_BRANCH.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k1: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k1: String, string-to-int-map-key m1 k1 => Int.\\n~> Bump-in-branch @ m: StringToIntMap, k: String, v: Int, gate: Bool.\\n\\n---\\n\\nall m1: StringToIntMap, k1: String | string-to-int-map' m1 k1 = string-to-int-map[(m, k) |-> cond gate => v + 1, true => string-to-int-map m k] m1 k1.\\nall m1: StringToIntMap, k1: String | string-to-int-map-key' m1 k1 = string-to-int-map-key[(m, k) |-> cond gate => true, true => string-to-int-map-key m k] m1 k1.\\n"
 `;
 
 exports[`expressions-state-aware-reads.ts > entrySetThenCheck 1`] = `
-"module ENTRY_SET_THEN_CHECK.\\n\\nCache.\\ncache--entries-key c1: Cache, k1: String => Bool.\\ncache--entries c1: Cache, k1: String, cache--entries-key c1 k1 => Int.\\ncache--hits c1: Cache => Int.\\n~> Entry-set-then-check @ c: Cache, k: String, v: Int, gate: Bool.\\n\\n---\\n\\nall m: Cache, k2: String | cache--entries' m k2 = cache--entries[(c, k) |-> cond gate => v, true => cache--entries c k] m k2.\\nall m1: Cache, k3: String | cache--entries-key' m1 k3 = cache--entries-key[(c, k) |-> cond gate => true, true => cache--entries-key c k] m1 k3.\\ncache--hits' c = (cond gate => (cond cache--entries-key[(c, k) |-> true] c k => cache--hits c + 1, true => cache--hits c), true => cache--hits c).\\n"
+"module ENTRY_SET_THEN_CHECK.\\n\\nCache.\\ncache--entries-key c1: Cache, k1: String => Bool.\\ncache--entries c1: Cache, k1: String, cache--entries-key c1 k1 => Int.\\ncache--hits c1: Cache => Int.\\n~> Entry-set-then-check @ c: Cache, k: String, v: Int, gate: Bool.\\n\\n---\\n\\nall m: Cache, k1: String | cache--entries' m k1 = cache--entries[(c, k) |-> cond gate => v, true => cache--entries c k] m k1.\\nall m: Cache, k1: String | cache--entries-key' m k1 = cache--entries-key[(c, k) |-> cond gate => true, true => cache--entries-key c k] m k1.\\ncache--hits' c = (cond gate => (cond true => cache--hits c + 1, true => cache--hits c), true => cache--hits c).\\n"
 `;
 
 exports[`expressions-state-aware-reads.ts > setIfThenBump 1`] = `
-"module SET_IF_THEN_BUMP.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k1: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k1: String, string-to-int-map-key m1 k1 => Int.\\n~> Set-if-then-bump @ m: StringToIntMap, k: String, v: Int, gate: Bool.\\n\\n---\\n\\nall m2: StringToIntMap, k2: String | string-to-int-map' m2 k2 = string-to-int-map[(m, k) |-> cond gate => (cond string-to-int-map-key[(m, k) |-> true] m k => string-to-int-map[(m, k) |-> v] m k + 1, true => v), true => string-to-int-map m k] m2 k2.\\nall m3: StringToIntMap, k3: String | string-to-int-map-key' m3 k3 = string-to-int-map-key[(m, k) |-> cond gate => (cond string-to-int-map-key[(m, k) |-> true] m k => true, true => true), true => string-to-int-map-key m k] m3 k3.\\n"
+"module SET_IF_THEN_BUMP.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k1: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k1: String, string-to-int-map-key m1 k1 => Int.\\n~> Set-if-then-bump @ m: StringToIntMap, k: String, v: Int, gate: Bool.\\n\\n---\\n\\nall m1: StringToIntMap, k1: String | string-to-int-map' m1 k1 = string-to-int-map[(m, k) |-> cond gate => (cond true => v + 1, true => v), true => string-to-int-map m k] m1 k1.\\nall m1: StringToIntMap, k1: String | string-to-int-map-key' m1 k1 = string-to-int-map-key[(m, k) |-> cond gate => (cond true => true, true => true), true => string-to-int-map-key m k] m1 k1.\\n"
 `;
 
 exports[`expressions-state-aware-reads.ts > tagThenCheck 1`] = `
@@ -843,23 +843,23 @@ exports[`functions-mutating-const.ts > multiConstMutating 1`] = `
 `;
 
 exports[`functions-mutating-early-exit.ts > chainedEarlyReturns 1`] = `
-"module CHAINED_EARLY_RETURNS.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Chained-early-returns @ a: Account, g: Bool, h: Bool.\\n\\n---\\n\\naccount--balance' a = (cond g => account--balance a, true => (cond h => account--balance a, true => 1)).\\naccount--owner' a1 = account--owner a1.\\n"
+"module CHAINED_EARLY_RETURNS.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Chained-early-returns @ a: Account, g: Bool, h: Bool.\\n\\n---\\n\\naccount--balance' a = (cond ~g => (cond ~h => 1, true => account--balance a), true => account--balance a).\\naccount--owner' a1 = account--owner a1.\\n"
 `;
 
 exports[`functions-mutating-early-exit.ts > earlyReturnMulti 1`] = `
-"module EARLY_RETURN_MULTI.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Early-return-multi @ a: Account, g: Bool, v: Int, who: String.\\n\\n---\\n\\naccount--balance' a = (cond g => account--balance a, true => v).\\naccount--owner' a = (cond g => account--owner a, true => who).\\n"
+"module EARLY_RETURN_MULTI.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Early-return-multi @ a: Account, g: Bool, v: Int, who: String.\\n\\n---\\n\\naccount--balance' a = (cond ~g => v, true => account--balance a).\\naccount--owner' a = (cond ~g => who, true => account--owner a).\\n"
 `;
 
 exports[`functions-mutating-early-exit.ts > earlyReturnNoBraces 1`] = `
-"module EARLY_RETURN_NO_BRACES.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Early-return-no-braces @ a: Account, g: Bool.\\n\\n---\\n\\naccount--balance' a = (cond g => account--balance a, true => 0).\\naccount--owner' a1 = account--owner a1.\\n"
+"module EARLY_RETURN_NO_BRACES.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Early-return-no-braces @ a: Account, g: Bool.\\n\\n---\\n\\naccount--balance' a = (cond ~g => 0, true => account--balance a).\\naccount--owner' a1 = account--owner a1.\\n"
 `;
 
 exports[`functions-mutating-early-exit.ts > earlyReturnSimple 1`] = `
-"module EARLY_RETURN_SIMPLE.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Early-return-simple @ a: Account, g: Bool.\\n\\n---\\n\\naccount--balance' a = (cond g => account--balance a, true => 1).\\naccount--owner' a1 = account--owner a1.\\n"
+"module EARLY_RETURN_SIMPLE.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Early-return-simple @ a: Account, g: Bool.\\n\\n---\\n\\naccount--balance' a = (cond ~g => 1, true => account--balance a).\\naccount--owner' a1 = account--owner a1.\\n"
 `;
 
 exports[`functions-mutating-early-exit.ts > earlyReturnThenCond 1`] = `
-"module EARLY_RETURN_THEN_COND.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Early-return-then-cond @ a: Account, g: Bool, h: Bool.\\n\\n---\\n\\naccount--balance' a = (cond g => account--balance a, true => (cond h => 1, true => 2)).\\naccount--owner' a1 = account--owner a1.\\n"
+"module EARLY_RETURN_THEN_COND.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Early-return-then-cond @ a: Account, g: Bool, h: Bool.\\n\\n---\\n\\naccount--balance' a = (cond ~g => (cond h => 1, true => 2), true => account--balance a).\\naccount--owner' a1 = account--owner a1.\\n"
 `;
 
 exports[`functions-mutating-early-exit.ts > elseBranchReturn 1`] = `
@@ -871,7 +871,7 @@ exports[`functions-mutating-early-exit.ts > elseReturnThenMore 1`] = `
 `;
 
 exports[`functions-mutating-early-exit.ts > writeThenEarlyReturn 1`] = `
-"module WRITE_THEN_EARLY_RETURN.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Write-then-early-return @ a: Account, g: Bool.\\n\\n---\\n\\naccount--balance' a = (cond g => 10, true => 10 + 5).\\naccount--owner' a1 = account--owner a1.\\n"
+"module WRITE_THEN_EARLY_RETURN.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Write-then-early-return @ a: Account, g: Bool.\\n\\n---\\n\\naccount--balance' a = (cond ~g => 10 + 5, true => 10).\\naccount--owner' a1 = account--owner a1.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > activateActive 1`] = `
@@ -883,7 +883,7 @@ exports[`functions-mutating-loop.ts > activateAll 1`] = `
 `;
 
 exports[`functions-mutating-loop.ts > deductFees 1`] = `
-"module DEDUCT_FEES.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nFee.\\nfee--amount f: Fee => Int.\\n~> Deduct-fees @ a: Account, fees: [Fee].\\n\\n---\\n\\naccount--balance' a = account--balance a - (+ over each f2 in fees | fee--amount f2).\\naccount--total' a1 = account--total a1.\\nfee--amount' f = fee--amount f.\\n"
+"module DEDUCT_FEES.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nFee.\\nfee--amount f: Fee => Int.\\n~> Deduct-fees @ a: Account, fees: [Fee].\\n\\n---\\n\\naccount--balance' a = account--balance a - (+ over each f1 in fees | fee--amount f1).\\naccount--total' a1 = account--total a1.\\nfee--amount' f = fee--amount f.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > forEachActivate 1`] = `
@@ -891,23 +891,23 @@ exports[`functions-mutating-loop.ts > forEachActivate 1`] = `
 `;
 
 exports[`functions-mutating-loop.ts > forEachSum 1`] = `
-"module FOR_EACH_SUM.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> For-each-sum @ a: Account, items: [Item].\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each x1 in items | item--value x1).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\nitem--tagged' i = item--tagged i.\\n"
+"module FOR_EACH_SUM.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> For-each-sum @ a: Account, items: [Item].\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each x in items | item--value x).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\nitem--tagged' i = item--tagged i.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > mixedUpdates 1`] = `
-"module MIXED_UPDATES.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Mixed-updates @ a: Account, items: [Item].\\n\\n---\\n\\nall x1 in items | item--tagged' x1 = true.\\naccount--total' a = account--total a + (+ over each x1 in items | item--value x1).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\n"
+"module MIXED_UPDATES.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Mixed-updates @ a: Account, items: [Item].\\n\\n---\\n\\nall x in items | item--tagged' x = true.\\naccount--total' a = account--total a + (+ over each x in items | item--value x).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > sumAmounts 1`] = `
-"module SUM_AMOUNTS.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Sum-amounts @ a: Account, items: [Item].\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each x1 in items | item--value x1).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\nitem--tagged' i = item--tagged i.\\n"
+"module SUM_AMOUNTS.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Sum-amounts @ a: Account, items: [Item].\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each x in items | item--value x).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\nitem--tagged' i = item--tagged i.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > sumIntoAnon 1`] = `
-"module SUM_INTO_ANON.\\n\\nTotalRec.\\ntotal-rec--total r: TotalRec => Int.\\n~> Sum-into-anon @ acc: TotalRec, items: [Int].\\n\\n---\\n\\ntotal-rec--total' acc = total-rec--total acc + (+ over each x1 in items | x1).\\n"
+"module SUM_INTO_ANON.\\n\\nTotalRec.\\ntotal-rec--total r: TotalRec => Int.\\n~> Sum-into-anon @ acc: TotalRec, items: [Int].\\n\\n---\\n\\ntotal-rec--total' acc = total-rec--total acc + (+ over each x in items | x).\\n"
 `;
 
 exports[`functions-mutating-loop.ts > sumPositive 1`] = `
-"module SUM_POSITIVE.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Sum-positive @ a: Account, items: [Item].\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each x1 in items, item--value x1 > 0 | item--value x1).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\nitem--tagged' i = item--tagged i.\\n"
+"module SUM_POSITIVE.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Sum-positive @ a: Account, items: [Item].\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each x in items, item--value x > 0 | item--value x).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\nitem--tagged' i = item--tagged i.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > sumPositiveAssert 1`] = `
@@ -915,7 +915,7 @@ exports[`functions-mutating-loop.ts > sumPositiveAssert 1`] = `
 `;
 
 exports[`functions-mutating-loop.ts > sumScaledAssert 1`] = `
-"module SUM_SCALED_ASSERT.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Sum-scaled-assert @ a: Account, items: [Item], scale: Int, scale >= 0.\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each x1 in items | item--value x1).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\nitem--tagged' i = item--tagged i.\\n"
+"module SUM_SCALED_ASSERT.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--balance a1: Account => Int.\\nItem.\\nitem--value i: Item => Int.\\nitem--tagged i: Item => Bool.\\n~> Sum-scaled-assert @ a: Account, items: [Item], scale: Int, scale >= 0.\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each x in items | item--value x).\\naccount--balance' a1 = account--balance a1.\\nitem--value' i = item--value i.\\nitem--tagged' i = item--tagged i.\\n"
 `;
 
 exports[`functions-mutating.ts > deposit 1`] = `
@@ -1055,7 +1055,7 @@ exports[`unsupported.ts > impureGuardAssign 1`] = `
 `;
 
 exports[`unsupported.ts > loopAssign 1`] = `
-"module LOOP_ASSIGN.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Loop-assign @ a: Account.\\n\\n---\\n\\n> UNSUPPORTED: loop assignment.\\n"
+"module LOOP_ASSIGN.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Loop-assign @ a: Account.\\n\\n---\\n\\n> UNSUPPORTED: statement is not supported by unified SSA body lowering: ForStatement.\\n"
 `;
 
 exports[`unsupported.ts > multiParamCallback 1`] = `

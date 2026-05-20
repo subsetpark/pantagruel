@@ -80,7 +80,7 @@ function exportedSymbolNames(sourceText: string): Set<string> {
 }
 
 describe("ir1-ssa-ripout", () => {
-  it.skip(
+  it(
     "lowers fallback-era supported mutating fixtures through SSA",
     async () => {
       const fixtures = [
@@ -107,7 +107,7 @@ describe("ir1-ssa-ripout", () => {
     },
   );
 
-  it.skip(
+  it(
     "const aliases and state-aware reads survive without symbolic fallback",
     async () => {
       const fixtures = [
@@ -133,7 +133,7 @@ describe("ir1-ssa-ripout", () => {
     },
   );
 
-  it.skip("unsupported SSA build failure emits no frames", () => {
+  it("unsupported SSA build failure emits no frames", () => {
     const props = translateMutatingSource(
       `
         interface Account {
@@ -163,7 +163,7 @@ describe("ir1-ssa-ripout", () => {
     );
   });
 
-  it.skip("translate-body has no symbolicExecute fallback", () => {
+  it("translate-body has no symbolicExecute fallback", () => {
     const sourceText = readFileSync(resolve(SRC_DIR, "translate-body.ts"), "utf8");
     const translateMutatingBodySource =
       extractTranslateMutatingBodySource(sourceText);

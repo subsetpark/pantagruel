@@ -936,8 +936,73 @@ describe("conditional mutations (symbolic last-write)", () => {
     if (eq.kind !== "equation") return;
     const ast = getAst();
     assert.equal(ast.strExpr(eq.lhs), "account--balance' a");
-    // Early return path keeps pre-state identity; fall-through path writes 1.
-    assert.equal(ast.strExpr(eq.rhs), "cond g => account--balance a, true => 1");
+    // Fall-through path writes 1; early return path keeps pre-state identity.
+    assert.equal(ast.strExpr(eq.rhs), "cond ~g => 1, true => account--balance a");
+  });
+
+  it("tail early-exit guard with no prior writes is a no-op", () => {
+    const source = `
+      interface Account { balance: number; }
+      function tailGuard(a: Account, g: boolean): void {
+        if (g) { return; }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "tailGuard",
+      strategy: IntStrategy,
+    });
+
+    assert.equal(props.length, 0);
+  });
+
+  it("tail early-exit guard preserves prior writes", () => {
+    const source = `
+      interface Account { balance: number; }
+      function writeThenTailGuard(a: Account, g: boolean): void {
+        a.balance = 1;
+        if (g) { return; }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "writeThenTailGuard",
+      strategy: IntStrategy,
+    });
+
+    const equations = props.filter((p) => p.kind === "equation");
+    assert.equal(equations.length, 1);
+    const eq = equations[0]!;
+    if (eq.kind !== "equation") return;
+    const ast = getAst();
+    assert.equal(ast.strExpr(eq.lhs), "account--balance' a");
+    assert.equal(ast.strExpr(eq.rhs), "1");
+  });
+
+  it("nested tail early-exit block preserves prior writes", () => {
+    const source = `
+      interface Account { balance: number; }
+      function writeThenNestedTailGuard(a: Account, g: boolean): void {
+        a.balance = 1;
+        { if (g) { return; } }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "writeThenNestedTailGuard",
+      strategy: IntStrategy,
+    });
+
+    const equations = props.filter((p) => p.kind === "equation");
+    assert.equal(equations.length, 1);
+    const eq = equations[0]!;
+    if (eq.kind !== "equation") return;
+    const ast = getAst();
+    assert.equal(ast.strExpr(eq.lhs), "account--balance' a");
+    assert.equal(ast.strExpr(eq.rhs), "1");
   });
 
   it("sequential composition: later conditional reads earlier unconditional write", () => {

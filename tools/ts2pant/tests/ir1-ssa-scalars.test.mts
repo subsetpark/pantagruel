@@ -292,7 +292,7 @@ describe("ir1-ssa-scalars", () => {
 
     assert.match(
       output,
-      /account--balance' a = \(cond g => account--balance a, true => \(cond h => account--balance a, true => 1\)\)\./u,
+      /account--balance' a = \(cond ~g => \(cond ~h => 1, true => account--balance a\), true => account--balance a\)\./u,
     );
   });
 
@@ -316,7 +316,7 @@ describe("ir1-ssa-scalars", () => {
 
     assert.match(
       output,
-      /account--balance' a = \(cond g => 10, true => 10 \+ 5\)\./u,
+      /account--balance' a = \(cond ~g => 10 \+ 5, true => 10\)\./u,
     );
   });
 });
