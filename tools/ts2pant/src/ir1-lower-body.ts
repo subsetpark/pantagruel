@@ -36,6 +36,12 @@ import {
   lowerForeachShapeASummaries,
   lowerForeachShapeBSummaries,
 } from "./ir1-ssa-loops.js";
+import {
+  collectionSsaBodyLowerResult,
+  type IR1SsaBodyLowerResult,
+  loopSsaBodyLowerResult,
+  scalarSsaBodyLowerResult,
+} from "./ir1-ssa-lower.js";
 import { isScalarSsaL1Body, lowerScalarSsaToProps } from "./ir1-ssa-scalars.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
@@ -63,6 +69,32 @@ import type { PropResult } from "./types.js";
 
 export interface LowerBodyCtx {
   applyConst: (e: OpaqueExpr) => OpaqueExpr;
+}
+
+export function adaptCollectionSsaLowerResult(
+  result: ReturnType<typeof lowerCollectionSsaToProps>,
+): IR1SsaBodyLowerResult {
+  return collectionSsaBodyLowerResult(result);
+}
+
+export function adaptScalarSsaLowerResult(
+  result: ReturnType<typeof lowerScalarSsaToProps>,
+): IR1SsaBodyLowerResult {
+  return scalarSsaBodyLowerResult(result);
+}
+
+export function adaptLoopSummaryLowerResult(
+  result: ReturnType<typeof lowerForeachShapeASummaries>,
+): IR1SsaBodyLowerResult;
+export function adaptLoopSummaryLowerResult(
+  result: ReturnType<typeof lowerForeachShapeBSummaries>,
+): IR1SsaBodyLowerResult;
+export function adaptLoopSummaryLowerResult(
+  result:
+    | ReturnType<typeof lowerForeachShapeASummaries>
+    | ReturnType<typeof lowerForeachShapeBSummaries>,
+): IR1SsaBodyLowerResult {
+  return loopSsaBodyLowerResult(result);
 }
 
 /**

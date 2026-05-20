@@ -1,0 +1,239 @@
+import assert from "node:assert/strict";
+import { before, describe, it } from "node:test";
+
+import {
+  ir1Assign,
+  ir1LitBool,
+  ir1LitNat,
+  ir1MapSet,
+  ir1Member,
+  ir1SsaPropertyLocation,
+  ir1Var,
+} from "../src/ir1.js";
+import { adaptCollectionSsaLowerResult, adaptLoopSummaryLowerResult, adaptScalarSsaLowerResult } from "../src/ir1-lower-body.js";
+import {
+  appendFramesForUnmodifiedRules,
+  combineIR1SsaBodyLowerResults,
+  ir1SsaBodyLowerSuccess,
+  ir1SsaBodyLowerUnsupported,
+} from "../src/ir1-ssa-lower.js";
+import { lowerCollectionSsaToProps } from "../src/ir1-ssa-collections.js";
+import { lowerForeachShapeASummaries } from "../src/ir1-ssa-loops.js";
+import { lowerScalarSsaToProps } from "../src/ir1-ssa-scalars.js";
+import { getAst, loadAst } from "../src/pant-wasm.js";
+
+before(async () => {
+  await loadAst();
+});
+
+describe("ir1-ssa-lower", () => {
+  it("combines body-lowering results with proposition order and deduped modified rules", () => {
+    const programA = {
+      reads: [],
+      writes: [],
+      joins: [],
+      loopSummaries: [],
+      declaredRules: ["Account_balance", "Account_limit"],
+      modifiedRules: ["Account_balance"],
+      framedRules: ["Account_limit"],
+    };
+    const programB = {
+      reads: [],
+      writes: [],
+      joins: [],
+      loopSummaries: [],
+      declaredRules: ["Account_balance", "Account_seen"],
+      modifiedRules: ["Account_seen", "Account_balance"],
+      framedRules: [],
+    };
+    const result = combineIR1SsaBodyLowerResults(
+      ir1SsaBodyLowerSuccess({
+        propositions: [
+          { kind: "raw", text: "first" },
+          { kind: "raw", text: "second" },
+        ],
+        modifiedRules: ["Account_balance"],
+        programs: [programA],
+        finalProperties: [
+          {
+            kind: "property",
+            prop: "Account_balance",
+            objExpr: getAst().var("a"),
+            rhs: getAst().litNat(1),
+          },
+        ],
+      }),
+      ir1SsaBodyLowerUnsupported("unsupported loop", {
+        diagnostics: [{ kind: "unsupported", reason: "unsupported map" }],
+        propositions: [{ kind: "raw", text: "third" }],
+        modifiedRules: ["Account_seen", "Account_balance"],
+        programs: [programB],
+      }),
+    );
+
+    assert.deepEqual(
+      result.propositions.map((prop) =>
+        prop.kind === "raw" ? prop.text : prop.kind,
+      ),
+      ["first", "second", "third"],
+    );
+    assert.deepEqual(result.modifiedRules, [
+      "Account_balance",
+      "Account_seen",
+    ]);
+    assert.deepEqual(result.diagnostics, [
+      { kind: "unsupported", reason: "unsupported loop" },
+      { kind: "unsupported", reason: "unsupported map" },
+    ]);
+    assert.deepEqual(result.programs, [programA, programB]);
+    assert.equal(result.finalProperties?.length, 1);
+  });
+
+  it("appends frames only for unmodified rules when diagnostics are absent", () => {
+    const ast = getAst();
+    const result = appendFramesForUnmodifiedRules(
+      ir1SsaBodyLowerSuccess({
+        propositions: [{ kind: "raw", text: "body" }],
+        modifiedRules: ["Account_balance"],
+      }),
+      [
+        {
+          kind: "rule",
+          name: "Account_balance",
+          params: [{ name: "a", type: "Account" }],
+          returnType: "Nat",
+        },
+        {
+          kind: "rule",
+          name: "Account_limit",
+          params: [{ name: "a", type: "Account" }],
+          returnType: "Nat",
+        },
+      ],
+    );
+
+    assert.equal(result.propositions.length, 2);
+    const frame = result.propositions[1];
+    assert.equal(frame?.kind, "equation");
+    if (frame?.kind !== "equation") {
+      assert.fail("expected a frame equation");
+    }
+    assert.equal(ast.strExpr(frame.lhs), "Account_limit' a");
+    assert.equal(ast.strExpr(frame.rhs), "Account_limit a");
+    assert.ok(!result.modifiedRules.includes("Account_limit"));
+  });
+
+  it("suppresses frame emission when diagnostics are present", () => {
+    const result = appendFramesForUnmodifiedRules(
+      ir1SsaBodyLowerUnsupported("unsupported path", {
+        propositions: [{ kind: "raw", text: "body" }],
+      }),
+      [
+        {
+          kind: "rule",
+          name: "Account_limit",
+          params: [{ name: "a", type: "Account" }],
+          returnType: "Nat",
+        },
+      ],
+    );
+
+    assert.deepEqual(result.propositions, [{ kind: "raw", text: "body" }]);
+  });
+
+  it("adapts scalar, collection, and loop summary helpers into the unified shape", () => {
+    const scalar = adaptScalarSsaLowerResult(
+      lowerScalarSsaToProps(
+        ir1Assign(
+          ir1Member(ir1Var("a"), "Account_balance"),
+          ir1LitNat(1),
+        ),
+      ),
+    );
+    const collection = adaptCollectionSsaLowerResult(
+      lowerCollectionSsaToProps(
+        ir1MapSet(
+          "Cache_value",
+          "Cache_hasKey",
+          "Owner",
+          "Key",
+          ir1Var("cache"),
+          ir1Var("key"),
+          ir1LitNat(7),
+        ),
+      ),
+    );
+    const loop = adaptLoopSummaryLowerResult(
+      lowerForeachShapeASummaries({
+        binder: "$item",
+        source: getAst().var("items"),
+        body: ir1Assign(
+          ir1Member(ir1Var("$item"), "Item_seen"),
+          ir1LitBool(true),
+        ),
+      }),
+    );
+
+    assert.equal(scalar.programs.length, 1);
+    assert.deepEqual(scalar.modifiedRules, ["Account_balance"]);
+    assert.equal(scalar.finalProperties?.length, 1);
+    assert.equal(scalar.diagnostics.length, 0);
+
+    assert.equal(collection.programs.length, 1);
+    assert.deepEqual(
+      new Set(collection.modifiedRules),
+      new Set(["Cache_value", "Cache_hasKey"]),
+    );
+    assert.equal(collection.finalProperties?.length, 0);
+    assert.equal(collection.diagnostics.length, 0);
+
+    assert.equal(loop.programs.length, 1);
+    assert.deepEqual(loop.modifiedRules, ["Item_seen"]);
+    assert.equal(loop.finalProperties, undefined);
+    assert.equal(loop.diagnostics.length, 0);
+  });
+
+  it("preserves helper diagnostics through adapters", () => {
+    const scalar = adaptScalarSsaLowerResult(
+      lowerScalarSsaToProps({
+        kind: "expr-stmt",
+        expr: ir1LitBool(true),
+      }),
+    );
+    const location = ir1SsaPropertyLocation(
+      "Account_balance",
+      ir1Var("a"),
+      "balance",
+    );
+    const loop = adaptLoopSummaryLowerResult(
+      {
+        program: {
+          reads: [],
+          writes: [],
+          joins: [],
+          loopSummaries: [],
+          declaredRules: ["Account_balance"],
+          modifiedRules: [],
+          framedRules: ["Account_balance"],
+        },
+        summary: null,
+        propositions: [],
+        modifiedRules: [],
+        diagnostics: [
+          { kind: "unsupported", reason: "general loops are not supported" },
+        ],
+      },
+    );
+
+    assert.deepEqual(scalar.diagnostics, [
+      {
+        kind: "unsupported",
+        reason: "statement is not supported by scalar SSA lowering",
+      },
+    ]);
+    assert.equal(location.kind, "property");
+    assert.deepEqual(loop.diagnostics, [
+      { kind: "unsupported", reason: "general loops are not supported" },
+    ]);
+  });
+});
