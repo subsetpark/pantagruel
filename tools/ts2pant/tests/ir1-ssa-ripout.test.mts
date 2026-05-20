@@ -34,14 +34,14 @@ function translateMutatingSource(
 function extractTranslateMutatingBodySource(sourceText: string): string {
   const start = sourceText.indexOf("function translateMutatingBody(");
   const end = sourceText.indexOf(
-    "\nfunction containsDeferredSsaFastPathShape(",
+    "\nfunction buildSupportedSsaMutatingBody(",
     start,
   );
   assert.notEqual(start, -1, "expected translateMutatingBody in translate-body.ts");
   assert.notEqual(
     end,
     -1,
-    "expected containsDeferredSsaFastPathShape to delimit translateMutatingBody",
+    "expected buildSupportedSsaMutatingBody to delimit translateMutatingBody",
   );
   return sourceText.slice(start, end);
 }
