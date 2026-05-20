@@ -6,13 +6,23 @@ cd "$ONTON_WORKTREE_PATH"
 # Ensure opam environment is available.
 # The main repo has a local opam switch (created with `opam switch create .`).
 # Worktrees must use that switch — do NOT create per-worktree switches (each
-# is ~2GB). We find the main repo root via git and point opam at its switch.
-main_repo=$(dirname "$(git -C "$ONTON_WORKTREE_PATH" rev-parse --path-format=absolute --git-common-dir)")
-if opam switch list --short 2>/dev/null | grep -qx "$main_repo"; then
+# is ~2GB). We can't derive the switch path from git --git-common-dir because
+# onton creates its own internal clone (~/.local/share/onton/...), which is
+# not where the user's opam switch lives. Instead, scan registered switches
+# for one containing pantagruel.opam.
+main_repo=""
+while IFS= read -r candidate; do
+  if [ -f "$candidate/pantagruel.opam" ]; then
+    main_repo="$candidate"
+    break
+  fi
+done < <(opam switch list --short 2>/dev/null)
+
+if [ -n "$main_repo" ]; then
   echo "Using opam switch at '$main_repo'..."
   eval "$(opam env --switch="$main_repo" --set-switch)"
 else
-  echo "ERROR: No opam switch found at '$main_repo'. Run 'opam switch create . 5.4.1' from the main repo."
+  echo "ERROR: No opam switch found containing pantagruel.opam. Run 'opam switch create . 5.4.1' from the main repo."
   exit 1
 fi
 
