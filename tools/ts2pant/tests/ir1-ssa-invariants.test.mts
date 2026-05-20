@@ -1010,6 +1010,7 @@ describe("ir1-ssa-invariants", () => {
               ir1Var("ys"),
               ir1Assign(ir1Member(ir1Var("$1"), "active"), ir1LitBool(true)),
             );
+            // Deliberately bypass the foreach-body type to verify malformed nested loops fail closed.
             const outer = ir1Foreach(
               "$0",
               ir1Var("xs"),
