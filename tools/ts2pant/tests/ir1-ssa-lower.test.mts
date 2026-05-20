@@ -20,13 +20,13 @@ import {
   lowerL1Body,
   lowerScalarL1BodyToSsaResult,
 } from "../src/ir1-lower-body.js";
+import { lowerCollectionSsaToProps } from "../src/ir1-ssa-collections.js";
 import {
   appendFramesForUnmodifiedRules,
   combineIR1SsaBodyLowerResults,
   ir1SsaBodyLowerSuccess,
   ir1SsaBodyLowerUnsupported,
 } from "../src/ir1-ssa-lower.js";
-import { lowerCollectionSsaToProps } from "../src/ir1-ssa-collections.js";
 import {
   lowerForeachShapeASummaries,
   lowerForeachShapeBSummaries,

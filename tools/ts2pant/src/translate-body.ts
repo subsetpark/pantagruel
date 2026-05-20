@@ -2,6 +2,7 @@ import type { SourceFile } from "ts-morph";
 import ts from "typescript";
 import { buildIR, isBuildUnsupported } from "./ir-build.js";
 import { lowerExpr } from "./ir-emit.js";
+import { type IR1Expr, type IR1Stmt, ir1Block } from "./ir1.js";
 import {
   buildL1Conditional,
   buildL1LetWhile,
@@ -16,13 +17,14 @@ import {
 } from "./ir1-build.js";
 import {
   buildL1AssignStmt,
+  buildL1EffectCall,
   buildL1ForEachCall,
   buildL1ForOfMutation,
   buildL1IfMutation,
   isUnsupported,
 } from "./ir1-build-body.js";
 import { lowerL1MuSearch, type MuSearchLowerCtx } from "./ir1-lower.js";
-import { lowerL1Body } from "./ir1-lower-body.js";
+import { lowerL1Body, lowerL1BodyToSsaProps } from "./ir1-lower-body.js";
 import {
   isScalarSsaL1Body,
   lowerScalarSsaEarlyExitMerge,
@@ -4497,9 +4499,27 @@ function translateMutatingBody(
 
   const ast = getAst();
   const propositions: PropResult[] = [];
+  const ssaState = makeSymbolicState();
+  const ssaSupply = makeUniqueSupply(synthCell);
+  const ssaBody = buildSupportedSsaMutatingBody(
+    node.body,
+    checker,
+    strategy,
+    paramNames,
+    ssaState,
+    ssaSupply,
+  );
+  if (!isUnsupported(ssaBody) && !containsDeferredSsaFastPathShape(ssaBody)) {
+    const lowered = lowerL1BodyToSsaProps(ssaBody, declarations, {
+      applyConst: (e) => applyOpaqueAliases(e, ssaSupply),
+    });
+    if (lowered.diagnostics.length === 0) {
+      return lowered.propositions;
+    }
+  }
+
   const state = makeSymbolicState();
   const supply = makeUniqueSupply(synthCell);
-
   const ok = symbolicExecute(
     node.body,
     checker,
@@ -4556,6 +4576,188 @@ function translateMutatingBody(
   propositions.push(...frames);
 
   return propositions;
+}
+
+function containsDeferredSsaFastPathShape(stmt: IR1Stmt): boolean {
+  switch (stmt.kind) {
+    case "foreach":
+      return stmt.foldLeaves.length > 0 || containsStateAwareRead(stmt.source);
+    case "assign":
+      return (
+        containsStateAwareRead(stmt.target) ||
+        containsStateAwareRead(stmt.value)
+      );
+    case "map-effect":
+      return (
+        containsStateAwareRead(stmt.objExpr) ||
+        containsStateAwareRead(stmt.keyExpr) ||
+        (stmt.valueExpr !== null && containsStateAwareRead(stmt.valueExpr))
+      );
+    case "set-effect":
+      return (
+        containsStateAwareRead(stmt.objExpr) ||
+        (stmt.elemExpr !== null && containsStateAwareRead(stmt.elemExpr))
+      );
+    case "cond-stmt":
+      return (
+        stmt.arms.some(
+          ([guard, body]) =>
+            containsStateAwareRead(guard) ||
+            containsDeferredSsaFastPathShape(body),
+        ) ||
+        (stmt.otherwise !== null &&
+          containsDeferredSsaFastPathShape(stmt.otherwise))
+      );
+    case "block":
+      return stmt.stmts.some(containsDeferredSsaFastPathShape);
+    case "let":
+      return containsStateAwareRead(stmt.value);
+    case "return":
+    case "throw":
+    case "expr-stmt":
+      return stmt.expr !== null && containsStateAwareRead(stmt.expr);
+    case "while":
+    case "for":
+      return true;
+    default: {
+      const _exhaustive: never = stmt;
+      void _exhaustive;
+      return true;
+    }
+  }
+}
+
+function containsStateAwareRead(expr: IR1Expr): boolean {
+  switch (expr.kind) {
+    case "map-read":
+    case "set-read":
+      return true;
+    case "var":
+    case "lit":
+      return false;
+    case "member":
+      return containsStateAwareRead(expr.receiver);
+    case "binop":
+      return (
+        containsStateAwareRead(expr.lhs) || containsStateAwareRead(expr.rhs)
+      );
+    case "unop":
+      return containsStateAwareRead(expr.arg);
+    case "app":
+      return (
+        containsStateAwareRead(expr.callee) ||
+        expr.args.some(containsStateAwareRead)
+      );
+    case "cond":
+      return (
+        expr.arms.some(
+          ([guard, value]) =>
+            containsStateAwareRead(guard) || containsStateAwareRead(value),
+        ) || containsStateAwareRead(expr.otherwise)
+      );
+    case "is-nullish":
+      return containsStateAwareRead(expr.operand);
+    case "each":
+      return (
+        containsStateAwareRead(expr.src) ||
+        expr.guards.some(containsStateAwareRead) ||
+        containsStateAwareRead(expr.proj)
+      );
+    default: {
+      const _exhaustive: never = expr;
+      void _exhaustive;
+      return true;
+    }
+  }
+}
+
+function buildSupportedSsaMutatingBody(
+  body: ts.Block,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  paramNames: Map<string, string>,
+  state: SymbolicState,
+  supply: UniqueSupply,
+): IR1Stmt | { unsupported: string } {
+  const stmts: IR1Stmt[] = [];
+  const applyConst = (e: OpaqueExpr): OpaqueExpr =>
+    applyOpaqueAliases(e, supply);
+  for (const stmt of body.statements) {
+    if (isGuardStatement(stmt, checker)) {
+      continue;
+    }
+    if (ts.isReturnStatement(stmt) && !stmt.expression) {
+      continue;
+    }
+    const built = buildSupportedSsaStatement(stmt, {
+      checker,
+      strategy,
+      paramNames,
+      state,
+      supply,
+      applyConst,
+    });
+    if (isUnsupported(built)) {
+      return built;
+    }
+    stmts.push(built);
+  }
+  if (stmts.length === 0) {
+    return { unsupported: "empty mutating body" };
+  }
+  if (stmts.length === 1) {
+    return stmts[0]!;
+  }
+  return ir1Block(stmts as [IR1Stmt, ...IR1Stmt[]]);
+}
+
+function buildSupportedSsaStatement(
+  stmt: ts.Statement,
+  ctx: {
+    checker: ts.TypeChecker;
+    strategy: NumericStrategy;
+    paramNames: Map<string, string>;
+    state: SymbolicState;
+    supply: UniqueSupply;
+    applyConst: (e: OpaqueExpr) => OpaqueExpr;
+  },
+): IR1Stmt | { unsupported: string } {
+  if (ts.isBlock(stmt)) {
+    const body = buildSupportedSsaMutatingBody(
+      stmt,
+      ctx.checker,
+      ctx.strategy,
+      ctx.paramNames,
+      ctx.state,
+      ctx.supply,
+    );
+    return body;
+  }
+  if (ts.isIfStatement(stmt)) {
+    return buildL1IfMutation(stmt, ctx);
+  }
+  if (ts.isForOfStatement(stmt)) {
+    return buildL1ForOfMutation(stmt, ctx);
+  }
+  if (ts.isExpressionStatement(stmt)) {
+    const expr = unwrapExpression(stmt.expression);
+    if (
+      ts.isCallExpression(expr) &&
+      ts.isPropertyAccessExpression(expr.expression) &&
+      expr.expression.name.text === "forEach"
+    ) {
+      return buildL1ForEachCall(expr, ctx);
+    }
+    if (ts.isCallExpression(expr)) {
+      return buildL1EffectCall(expr, ctx);
+    }
+    if (ts.isBinaryExpression(expr)) {
+      return buildL1AssignStmt(stmt, ctx);
+    }
+  }
+  return {
+    unsupported: `statement is not supported by unified SSA body lowering: ${ts.SyntaxKind[stmt.kind]}`,
+  };
 }
 
 /**

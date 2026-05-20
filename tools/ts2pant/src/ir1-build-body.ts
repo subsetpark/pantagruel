@@ -993,7 +993,7 @@ function buildL1MutationBody(
  * recognized `.set/.delete/.add/.delete/.clear` calls on Map/Set
  * receivers.
  */
-function buildL1EffectCall(
+export function buildL1EffectCall(
   call: ts.CallExpression,
   ctx: BuildBodyCtx,
 ): BuildResult<IR1Stmt> {

@@ -125,11 +125,17 @@ export function appendFramesForUnmodifiedRules(
   const ast = getAst();
   const frames: PropResult[] = [];
   const modifiedRules = new Set(result.modifiedRules);
+  const framedRules = new Set<IR1SsaRuleName>();
 
   for (const decl of declarations) {
-    if (decl.kind !== "rule" || modifiedRules.has(decl.name)) {
+    if (
+      decl.kind !== "rule" ||
+      modifiedRules.has(decl.name) ||
+      framedRules.has(decl.name)
+    ) {
       continue;
     }
+    framedRules.add(decl.name);
     const paramArgs = decl.params.map((p) => ast.var(p.name));
     frames.push({
       kind: "equation",

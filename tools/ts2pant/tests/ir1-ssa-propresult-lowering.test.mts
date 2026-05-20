@@ -14,6 +14,10 @@ import {
   ir1Var,
 } from "../src/ir1.js";
 import { lowerCollectionSsaToResult } from "../src/ir1-ssa-collections.js";
+import {
+  appendFramesForUnmodifiedRules,
+  ir1SsaBodyLowerSuccess,
+} from "../src/ir1-ssa-lower.js";
 import { lowerForeachSummary } from "../src/ir1-ssa-loops.js";
 import { lowerScalarSsaToProps } from "../src/ir1-ssa-scalars.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
@@ -238,27 +242,74 @@ describe("ir1-ssa-propresult-lowering", () => {
     },
   );
 
-  it.skip("frames derive from result modified rules", () => {
-    const result = pendingUnifiedLowerResult({
-      declaredRules: ["Account_balance", "Account_limit", "Account_limit"],
-      modifiedRules: ["Account_balance", "Account_balance"],
-      diagnostics: [],
-    });
+  it("frames derive from result modified rules", () => {
+    const result = appendFramesForUnmodifiedRules(
+      ir1SsaBodyLowerSuccess({
+        modifiedRules: ["Account_balance", "Account_balance"],
+      }),
+      [
+        {
+          kind: "rule",
+          name: "Account_balance",
+          params: [{ name: "account", type: "Account" }],
+          returnType: "Nat",
+        },
+        {
+          kind: "rule",
+          name: "Account_limit",
+          params: [{ name: "account", type: "Account" }],
+          returnType: "Nat",
+        },
+        {
+          kind: "rule",
+          name: "Account_limit",
+          params: [{ name: "account", type: "Account" }],
+          returnType: "Nat",
+        },
+      ],
+    );
+    const ast = getAst();
+    const framedRules = result.propositions
+      .filter((p) => p.kind === "equation")
+      .map((p) => ast.strExpr(p.lhs).replace(/'.*/u, ""));
 
     assert.deepEqual(result.modifiedRules, ["Account_balance"]);
-    assert.deepEqual(result.framedRules, ["Account_limit"]);
+    assert.deepEqual(framedRules, ["Account_limit"]);
     assert.equal(
-      result.framedRules.filter((rule) => rule === "Account_limit").length,
+      framedRules.filter((rule) => rule === "Account_limit").length,
       1,
     );
   });
 
-  it.skip("unsupported diagnostics suppress frame emission", () => {
+  it("unsupported diagnostics suppress frame emission", () => {
     const unsupported = lowerCollectionSsaToResult(
       ir1Assign(ir1Var("x"), ir1LitNat(1)),
       { declaredRules: ["Account_balance", "Account_limit"] },
     );
-    const result = pendingUnifiedLowerResult({
+    const result = appendFramesForUnmodifiedRules(
+      {
+        programs: [unsupported.program],
+        finalProperties: unsupported.finalProperties,
+        propositions: unsupported.propositions,
+        modifiedRules: unsupported.modifiedRules,
+        diagnostics: unsupported.diagnostics,
+      },
+      [
+        {
+          kind: "rule",
+          name: "Account_balance",
+          params: [{ name: "account", type: "Account" }],
+          returnType: "Nat",
+        },
+        {
+          kind: "rule",
+          name: "Account_limit",
+          params: [{ name: "account", type: "Account" }],
+          returnType: "Nat",
+        },
+      ],
+    );
+    const pendingEquivalent = pendingUnifiedLowerResult({
       declaredRules: unsupported.program.declaredRules,
       propositions: unsupported.propositions,
       modifiedRules: unsupported.modifiedRules,
@@ -268,10 +319,10 @@ describe("ir1-ssa-propresult-lowering", () => {
     assert.equal(result.diagnostics.length, 1);
     assert.deepEqual(result.modifiedRules, []);
     assert.deepEqual(result.propositions, []);
-    assert.deepEqual(result.framedRules, []);
+    assert.deepEqual(pendingEquivalent.framedRules, []);
     assert.equal(
       result.diagnostics[0]?.reason,
-      "statement is not supported by collection SSA lowering",
+      "collection SSA assignment target must be a property member",
     );
   });
 });
