@@ -5,8 +5,8 @@
  * lowering Layer 2 → OpaqueExpr lives in `ir-emit.ts`.
  *
  * Layer 1 *statement* lowering does not route through here — mutating
- * bodies go through `ir1-lower-body.ts` which threads `SymbolicState`
- * directly into `PropResult[]`. The single μ-search recognizer below
+ * bodies go through `ir1-lower-body.ts`, which lowers IR1 SSA into
+ * `PropResult[]`. The single μ-search recognizer below
  * is the one statement-shaped form that produces an L2 `IRExpr`
  * (`comb-typed`); everything else is expression-position.
  *
@@ -116,19 +116,16 @@ export function lowerL1Expr(e: IR1Expr): IRExpr {
 
     case "map-read": {
       // Pure / read-only path: emit the bare `App(callee, [receiver,
-      // key])` form — byte-identical to the legacy fast-path output
-      // when no symbolic state is in play. The body lower path
-      // (`ir1-lower-body.ts`) intercepts `map-read` before reaching
-      // here and dispatches to `readMapThroughWrites` so prior staged
-      // writes are observed.
+      // key])` form. Mutating bodies resolve Map reads through IR1 SSA
+      // before this pure lowering path is used.
       const callee = e.op === "has" ? e.keyPredName : e.ruleName;
       return irAppName(callee, [lowerL1Expr(e.receiver), lowerL1Expr(e.key)]);
     }
 
     case "set-read": {
       // Pure / read-only path: emit the bare `Binop(in, elem,
-      // App(rule, [receiver]))` form. The body lower path dispatches
-      // this form to `readSetThroughWrites` before reaching here.
+      // App(rule, [receiver]))` form. Mutating bodies resolve Set reads
+      // through IR1 SSA before this pure lowering path is used.
       return irBinop(
         "in",
         lowerL1Expr(e.elem),

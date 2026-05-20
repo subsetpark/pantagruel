@@ -367,7 +367,7 @@ export function isArrayChainCall(
 /**
  * Resolve the `(ownerType, elemType)` strings for a Stage A Set read
  * (`c.tags.has(x)`) so the L1 build pass can emit `set-read` carrying
- * the type info `readSetThroughWrites` needs at lower time. Mirrors
+ * the type info the SSA lowerer needs. Mirrors
  * the Stage A lookup in `translateCallExpr`'s Set-effect arm — the
  * inner TS receiver becomes the owner; the Set's element type comes
  * from `getTypeArguments(receiverType)`. Returns `null` if the
@@ -691,11 +691,10 @@ export function tryBuildL1PureSubExpression(
           // State-aware Stage A: `c.tags.has(x)` inside a mutating body
           // must observe prior `.add` / `.delete` / `.clear` writes
           // staged on the same receiver (issue #168). Emit a
-          // `set-read` form so the body lower path dispatches to
-          // `readSetThroughWrites`. Pure-path callers keep the bare
-          // `Binop(in, elem, source)` shape — there is no state to
-          // thread, and `set-read` lowers byte-identically on the
-          // read-only path.
+          // `set-read` form so the body lower path resolves it through
+          // SSA. Pure-path callers keep the bare `Binop(in, elem,
+          // source)` shape — there is no state to thread, and `set-read`
+          // lowers byte-identically on the read-only path.
           if (isSet && ctx.state !== undefined && source.kind === "member") {
             const setStageInfo = resolveStageASetReadType(receiverNode, ctx);
             if (setStageInfo !== null) {
@@ -728,9 +727,9 @@ export function tryBuildL1PureSubExpression(
           const ruleName = receiver.name;
           const keyPredName = `${ruleName}-key`;
           // State-aware Stage A Map read: emit `map-read` so the body
-          // lower path dispatches to `readMapThroughWrites` and observes
-          // prior staged `.set` / `.delete` (issue #168). Pure-path keeps
-          // the bare `App` form.
+          // lower path resolves it through SSA and observes prior staged
+          // `.set` / `.delete` (issue #168). Pure-path keeps the bare
+          // `App` form.
           if (ctx.state !== undefined) {
             const stageInfo = resolveStageAMapReadType(
               receiverNode,
@@ -1182,19 +1181,10 @@ function isMemberSurfaceForm(
  *   effects).
  *
  * - `requireMember` — Stage A Map/Set call sites use this helper purely
- *   for field qualification (qualified rule name + lowered receiver),
- *   then route through their own override-aware readers
- *   (`readMapThroughWrites`, `readSetThroughWrites`, `installMapWrite`,
- *   `installSetWrite`). The default symbolic-state cache hit replaces a
- *   prior-property-write Member with `Var($N)` referencing an opaque
- *   alias, which would force those sites to reject (their downstream
- *   APIs require the field name and receiver explicitly). Setting this
- *   flag suppresses the alias substitution so callers always receive a
- *   canonical `member` shape; correctness is preserved because Map.set
- *   / .delete / Set.add / .delete write through `MapRuleWriteEntry` /
- *   `SetRuleWriteEntry` (not property writes), so the cache entry
- *   they'd skip would only fire on a direct field reassignment that
- *   isn't part of the Map/Set surface anyway.
+ *   for field qualification (qualified rule name + lowered receiver).
+ *   Setting this flag suppresses property-write alias substitution so
+ *   callers always receive a canonical `member` shape for SSA collection
+ *   writes and reads.
  */
 export interface BuildL1MemberAccessOptions {
   ambiguousOwnerFallback?: "reject" | "bare-kebab";
@@ -1224,9 +1214,9 @@ export interface BuildL1MemberAccessOptions {
  *     a shape that has no native L1 representation, the build rejects
  *     with a specific `unsupported` reason.
  *   - State-bearing contexts (mutating-body path) build the receiver
- *     as native L1 via `tryBuildL1PureSubExpression`. The outer-level
- *     symbolic-state lookup surfaces a recorded write through the
- *     `supply.opaqueAliases` side channel — see the call site in
+ *     as native L1 via `tryBuildL1PureSubExpression`. The compatibility
+ *     property-write cache surfaces a recorded write through the
+ *     `supply.opaqueAliases` side channel; see the call site in
  *     `buildL1MemberAccess` for the alias mechanism.
  */
 export function buildL1MemberAccess(
@@ -1330,12 +1320,12 @@ export function buildL1MemberAccess(
   // Symbolic-state lookup at the outer Member level: when a prior
   // write to (qualified, canonicalized receiver) exists, surface the
   // recorded value rather than re-emitting the rule application. The
-  // recorded value is already an `OpaqueExpr` (produced earlier in the
-  // body's symbolic execution), so we register it under a fresh
+  // recorded value is already an `OpaqueExpr` (produced earlier by the
+  // SSA builder's compatibility context), so we register it under a fresh
   // hygienic name in `supply.opaqueAliases` and return an L1 `Var`
   // referencing that name. The alias is substituted back into the
   // OpaqueExpr at lower time via `applyOpaqueAliases` (wired into
-  // `applyConst` in `symbolicExecute`). This keeps L1 free of
+  // `applyConst` in the SSA builder). This keeps L1 free of
   // escape-hatch forms while preserving the read-after-write
   // semantics required for mutating-body sub-expression composition.
   if (ctx.state !== undefined && options.requireMember !== true) {
@@ -2105,8 +2095,8 @@ export function tryRecognizeFunctorLift(
         imports: new Set(synthCell.imports),
       }
     : null;
-  // The mutating-body symbolic-state fast-path inside
-  // `buildL1MemberAccess` registers `($N → recordedValue)` aliases on
+  // The mutating-body property-write cache inside `buildL1MemberAccess`
+  // registers `($N → recordedValue)` aliases on
   // `supply.opaqueAliases` (see `translate-body.ts` for the
   // mechanism). A failed probe must un-register any aliases the
   // probe registered; otherwise the supply.n rewind below makes the

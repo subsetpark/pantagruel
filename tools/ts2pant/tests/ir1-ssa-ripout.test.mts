@@ -185,7 +185,7 @@ describe("ir1-ssa-ripout", () => {
     );
   });
 
-  it.skip("obsolete symbolic-state helpers are not exported", () => {
+  it("obsolete symbolic-state helpers are not exported", () => {
     const forbiddenExports = new Set([
       "putWrite",
       "addWrittenKey",

@@ -64,12 +64,10 @@ export type IR1Unop = IRUnop;
  *   `each` and lowers structurally.
  * - `map-read`, `set-read` — state-aware Map/Set reads (`.get`/`.has`
  *   on a Map, `.has` on a Set). Symmetric to the write-side
- *   `map-effect` / `set-effect` statement forms; the body lower path
- *   dispatches them to `readMapThroughWrites` /
- *   `readSetThroughWrites` so prior staged writes in the same path
- *   are observed inline. Pure / read-only callers lower these forms
- *   to the bare `App` / `Binop(in, ...)` shapes the legacy fast-path
- *   used to emit (issue #168).
+ *   `map-effect` / `set-effect` statement forms; mutating bodies resolve
+ *   these reads through IR1 SSA so prior writes in the same path are
+ *   observed. Pure / read-only callers lower these forms to the bare
+ *   `App` / `Binop(in, ...)` shapes.
  */
 export type IR1Expr =
   /** Variable / parameter reference. `primed = true` means next-state. */
@@ -128,11 +126,9 @@ export type IR1Expr =
    * (`op = "has"`). Symmetric to the write-side `map-effect` form —
    * carries the Stage A / Stage B descriptor (`ruleName`,
    * `keyPredName`, `ownerType`, `keyType`) so the body lower path can
-   * dispatch to `readMapThroughWrites`, observing prior staged writes
-   * inside the same path. The pure / read-only lower path (`lowerL1Expr`
-   * in `ir1-lower.ts`) emits the bare `App(rule, [receiver, key])`
-   * form — byte-identical to the pre-existing fast-path output when
-   * no state is in play.
+   * resolve it through IR1 SSA and observe prior writes inside the same
+   * path. The pure / read-only lower path (`lowerL1Expr` in
+   * `ir1-lower.ts`) emits the bare `App(rule, [receiver, key])` form.
    *
    * Built only when `ctx.state !== undefined` in
    * `tryBuildL1PureSubExpression`; pure callers keep emitting the bare
@@ -150,9 +146,9 @@ export type IR1Expr =
     }
   /**
    * State-aware Set read: `s.has(x)`. Symmetric to the write-side
-   * `set-effect` form — body lower dispatches to
-   * `readSetThroughWrites` so prior `.add` / `.delete` / `.clear` in
-   * the same path are observed. Pure lower emits the bare
+   * `set-effect` form; mutating bodies resolve it through IR1 SSA so
+   * prior `.add` / `.delete` / `.clear` in the same path are observed.
+   * Pure lower emits the bare
    * `Binop(in, elem, App(rule, [receiver]))` form.
    */
   | {
@@ -282,9 +278,8 @@ export type IR1Stmt =
   | { kind: "expr-stmt"; expr: IR1Expr }
   /**
    * Map mutation effect: `m.set(k, v)` or `m.delete(k)`. Carries the
-   * descriptor extracted by the build pass via `translateCallExpr`. The
-   * lower pass reconstructs a `MapMutation` and dispatches to the
-   * existing `installMapWrite` primitive.
+   * descriptor extracted by the build pass via `translateCallExpr`; the
+   * mutating-body lower path turns it into IR1 SSA collection writes.
    *
    * Structural equivalent of `translate-body.ts:MapMutation` — kept
    * here so `ir1.ts` doesn't need to import from `translate-body.ts`
@@ -977,9 +972,8 @@ export const ir1Each = (
 });
 
 /**
- * State-aware Map read. The body lower path (`ir1-lower-body.ts`)
- * dispatches this form to `readMapThroughWrites`; the pure /
- * read-only lower path (`ir1-lower.ts`) emits the bare
+ * State-aware Map read. Mutating-body lowering resolves this form
+ * through IR1 SSA; the pure / read-only lower path (`ir1-lower.ts`) emits the bare
  * `App(callee, [receiver, key])` form (`callee = ruleName` for `get`,
  * `keyPredName` for `has`).
  */
@@ -1003,9 +997,9 @@ export const ir1MapRead = (
 });
 
 /**
- * State-aware Set read. The body lower path dispatches this form to
- * `readSetThroughWrites`; the pure / read-only lower path emits the
- * bare `Binop(in, elem, App(ruleName, [receiver]))` form.
+ * State-aware Set read. Mutating-body lowering resolves this form
+ * through IR1 SSA; the pure / read-only lower path emits the bare
+ * `Binop(in, elem, App(ruleName, [receiver]))` form.
  */
 export const ir1SetRead = (
   ruleName: string,
@@ -1072,10 +1066,9 @@ export const ir1Return = (expr: IR1Expr | null): IR1Stmt => ({
  * - μ-search lowering: `lowerL1MuSearch` in `ir1-lower.ts` recognizes
  *   the `Block([Let(c, init), While(p, Assign(c, c+1))])` shape and
  *   produces an L2 `comb-typed`.
- * - Mutating-body lowering: `lowerAssign` in `ir1-lower-body.ts`
- *   handles property writes (`Assign(Member(...), v)`), threading the
- *   write into `SymbolicState`. Var-target assigns outside a μ-search
- *   shape reject.
+ * - Mutating-body lowering: `ir1-lower-body.ts` handles property writes
+ *   (`Assign(Member(...), v)`) through IR1 SSA. Var-target assigns
+ *   outside a μ-search shape reject.
  */
 export const ir1Assign = (target: IR1Expr, value: IR1Expr): IR1Stmt => ({
   kind: "assign",
