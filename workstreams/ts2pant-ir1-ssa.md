@@ -13,26 +13,23 @@ extend later.
 
 ## Current State
 
-IR1 is currently a TypeScript-shaped canonical layer. Value-position code
-lowers through `IR1Expr -> IRExpr -> OpaqueExpr`; mutating bodies lower
-directly through `lowerL1Body` in `tools/ts2pant/src/ir1-lower-body.ts`, with
-scalar property mutation routed through `tools/ts2pant/src/ir1-ssa-scalars.ts`
-collection mutation routed through `tools/ts2pant/src/ir1-ssa-collections.ts`,
-and loop-summary mutation routed through `tools/ts2pant/src/ir1-ssa-loops.ts`.
-M5 added the body-level `lowerL1BodyToSsaProps` boundary, so successful
-supported mutating bodies now return final propositions, modified rules, and
-frames from IR1 SSA lowering rather than from `SymbolicState.modifiedProps`.
-`SymbolicState` still exists in `tools/ts2pant/src/translate-body.ts`, but it
-is fallback-only for shapes intentionally left to M6 cleanup.
+IR1 is now a TypeScript-shaped canonical layer with SSA as the production
+mutating-body boundary. Value-position code lowers through
+`IR1Expr -> IRExpr -> OpaqueExpr`; mutating bodies build through
+`buildSupportedSsaMutatingBody` in `tools/ts2pant/src/translate-body.ts` and
+lower through `lowerL1BodyToSsaProps` in
+`tools/ts2pant/src/ir1-lower-body.ts`, with scalar property mutation routed
+through `tools/ts2pant/src/ir1-ssa-scalars.ts`, collection mutation routed
+through `tools/ts2pant/src/ir1-ssa-collections.ts`, and loop-summary mutation
+routed through `tools/ts2pant/src/ir1-ssa-loops.ts`.
 
-That design is now partially SSA. Scalar property mutation, read-after-write,
+That design is now SSA-backed. Scalar property mutation, read-after-write,
 branch joins, and supported early-exit continuation merges are represented by
 IR1 SSA. IR1 still contains `assign`, `while`, `for`, `foreach`, `cond-stmt`,
 `map-effect`, and `set-effect` statement forms. Map/Set semantics, including
-`Set.clear()`, now lower through the collection SSA module, while μ-search and
+`Set.clear()`, lower through the collection SSA module, while μ-search and
 supported foreach loop summaries lower through the dedicated loop-summary
-helper. General `for` / `while` SSA remains out of scope for this workstream,
-and the remaining `SymbolicState` cleanup is deferred to M6.
+helper. General `for` / `while` SSA remains out of scope for this workstream.
 
 ## Key Challenges
 
@@ -100,8 +97,6 @@ contract shape:
 - When the builder begins emitting SSA writes for scalar bodies, should it
   reuse the existing L1 statement forms or introduce a dedicated SSA builder
   helper layer first?
-- Which later milestone will retire `SymbolicState` as the production
-  mutating-body model?
 - How should map/set and loop-summary lowering reuse the M1 vocabulary without
   widening the public contract again?
 
@@ -120,20 +115,18 @@ simple branch mutation:
 - nested supported `if` bodies
 - early-exit guard patterns that are currently supported
 
-The old `SymbolicState` path remains available only as a fallback for foreach /
-loop-summary constructs until M4. Map/Set mutation is routed through the
-collection SSA module as of M3. Property mutation fixtures are validated
-through snapshots and wasm typechecking.
+The old `SymbolicState` path was a fallback for foreach / loop-summary
+constructs until M4. Map/Set mutation is routed through the collection SSA
+module as of M3. Property mutation fixtures are validated through snapshots
+and wasm typechecking.
 
 **Why this is a safe pause point**:
 The codebase supports all previous scalar property-mutation behavior. The
-scalar route is now SSA-backed in production, while the later state classes
-still use the old path, so no existing supported syntax is lost.
+scalar route is SSA-backed in production, so no existing supported syntax is
+lost.
 
 **Unlocks**:
-Removal of scalar property logic from `SymbolicState` in a later milestone and
-a concrete proof that IR1 can own SSA generation directly for the scalar
-subset.
+Concrete proof that IR1 can own SSA generation directly for the scalar subset.
 
 ---
 
@@ -195,9 +188,9 @@ general loop SSA model.
 **Why this is a safe pause point**:
 All currently supported non-looping mutation now flows through IR1 SSA.
 General `for` / `while` support remains explicitly out of scope, so the
-codebase does not imply support it cannot provide. `SymbolicState` remains in
-the tree for later cleanup, but it is no longer the semantic backing for the
-supported foreach and μ-search summary forms.
+codebase does not imply support it cannot provide. `SymbolicState` is now
+historical context rather than the semantic backing for the supported foreach
+and μ-search summary forms.
 
 **Unlocks**:
 Full removal of `lowerL1Body`'s old `SymbolicState` execution model.
@@ -226,15 +219,16 @@ IR1 SSA has one lowering path to `PropResult[]` for supported mutating bodies:
   `SymbolicState.modifiedProps`
 
 `tools/ts2pant/src/ir1-lower-body.ts` now exposes `lowerL1BodyToSsaProps`,
-which appends frames from the unified `modifiedRules` set. `translate-body.ts`
-tries that boundary for supported SSA-backed bodies and falls back only when
-the unified lowerer rejects a shape that M6 still needs to delete or migrate.
+which appends frames from the unified `modifiedRules` set.
+`translate-body.ts` builds supported mutating bodies through
+`buildSupportedSsaMutatingBody` and lowers them through that boundary;
+unsupported shapes now fail closed with explicit diagnostics.
 
 **Why this is a safe pause point**:
 The new IR1 SSA architecture is end-to-end for the currently supported
-SSA-backed syntax. The old lowering machinery still exists as fallback code for
-deferred shapes, but supported scalar, collection, and loop-summary final
-emission no longer belongs to `translate-body.ts`.
+SSA-backed syntax. Supported scalar, collection, and loop-summary final
+emission now belongs to `buildSupportedSsaMutatingBody` plus
+`lowerL1BodyToSsaProps`, and unsupported shapes fail closed.
 
 **Unlocks**:
 Code deletion and simplification.
@@ -243,15 +237,17 @@ Code deletion and simplification.
 
 ### Milestone 6: ir1-ssa-ripout
 
+**Status**: landed in patch 5.
+
 **Definition of Done**:
 The obsolete symbolic-state execution machinery is removed or narrowed to
 small pure utilities:
 
-- Remove the fallback paths that still execute mutating bodies through
-  `SymbolicState`.
+- Mutating bodies lower through `buildSupportedSsaMutatingBody` and
+  `lowerL1BodyToSsaProps` only.
 - `putWrite`, `addWrittenKey`, `mergeOverrides`, `installMapWrite`,
-  `installSetWrite`, `readMapThroughWrites`, and `readSetThroughWrites` are
-  deleted, renamed, or moved behind IR1 SSA lowering if still genuinely useful.
+  `installSetWrite`, `readMapThroughWrites`, and `readSetThroughWrites` are no
+  longer part of the production mutating-body architecture.
 - `translate-body.ts` no longer contains parallel mutation paths or final
   emission fallback code.
 - Comments in `tools/ts2pant/AGENTS.md` and the old imperative-IR workstream
@@ -272,8 +268,8 @@ symbolic-execution paths.
 ### Milestone 7: ir1-ssa-invariants
 
 **Definition of Done**:
-The new architecture has direct invariant tests and developer-facing
-documentation:
+The new architecture has direct invariant tests over IR1 SSA itself and
+developer-facing documentation:
 
 - unit tests assert each write produces a fresh SSA version
 - branch joins require compatible location kinds

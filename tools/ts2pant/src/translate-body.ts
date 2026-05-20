@@ -2,7 +2,7 @@ import type { SourceFile } from "ts-morph";
 import ts from "typescript";
 import { buildIR, isBuildUnsupported } from "./ir-build.js";
 import { lowerExpr } from "./ir-emit.js";
-import { type IR1Stmt, ir1Block, ir1CondStmt, ir1Unop } from "./ir1.js";
+import { type IR1Stmt, ir1Block } from "./ir1.js";
 import {
   buildL1Conditional,
   buildL1LetWhile,
@@ -21,7 +21,6 @@ import {
   buildL1ForEachCall,
   buildL1ForOfMutation,
   buildL1IfMutation,
-  buildL1SubExpr,
   isUnsupported,
 } from "./ir1-build-body.js";
 import { lowerL1MuSearch, type MuSearchLowerCtx } from "./ir1-lower.js";
@@ -4171,9 +4170,6 @@ function lowerSupportedSsaMutatingStatements(
     return ir1SsaBodyLowerUnsupported(gResult.unsupported);
   }
   const guardExpr = applyOpaqueAliases(bodyExpr(gResult), ctx.supply);
-  const continuationGuardExpr = exit.earlyExitWhenTrue
-    ? getAst().unop(getAst().opNot(), guardExpr)
-    : guardExpr;
 
   const continuation = [
     ...exit.continuationPrefix,
@@ -4213,8 +4209,8 @@ function lowerSupportedSsaMutatingStatements(
   }
 
   const merged = lowerScalarSsaEarlyExitMerge(inputs, {
-    guardExpr: continuationGuardExpr,
-    earlyExitWhenTrue: false,
+    guardExpr,
+    earlyExitWhenTrue: exit.earlyExitWhenTrue,
     canonicalize: (e) => applyOpaqueAliases(e, ctx.supply),
   });
   const prefixOnly = (prefix.finalProperties ?? []).filter((entry) => {
@@ -4323,68 +4319,19 @@ function buildSupportedSsaMutatingBody(
   paramNames: Map<string, string>,
   state: SymbolicState,
   supply: UniqueSupply,
-  outerApplyConstChain: (e: OpaqueExpr) => OpaqueExpr = (e) => e,
 ): IR1Stmt | { unsupported: string } {
   const stmts: IR1Stmt[] = [];
   const scopedParamNames = new Map(paramNames);
-  let applyConstChain = outerApplyConstChain;
+  let applyConstChain: (e: OpaqueExpr) => OpaqueExpr = (e) => e;
   const applyConst = (e: OpaqueExpr): OpaqueExpr =>
     applyOpaqueAliases(applyConstChain(e), supply);
   setCanonicalize(state, applyConst);
-  const bodyStmts = Array.from(body.statements);
-  for (const [index, stmt] of bodyStmts.entries()) {
+  for (const stmt of body.statements) {
     if (isGuardStatement(stmt, checker)) {
       continue;
     }
     if (ts.isReturnStatement(stmt) && !stmt.expression) {
       continue;
-    }
-    const exit = detectEarlyExit(stmt);
-    if (exit !== null) {
-      if (expressionHasSideEffects(exit.condition, checker)) {
-        return { unsupported: "impure if-condition in mutating body" };
-      }
-      const guard = buildL1SubExpr(exit.condition, {
-        checker,
-        strategy,
-        paramNames: scopedParamNames,
-        state,
-        supply,
-        applyConst,
-      });
-      if (isUnsupported(guard)) {
-        return guard;
-      }
-      const continuation = ts.factory.createBlock(
-        [...exit.continuationPrefix, ...bodyStmts.slice(index + 1)],
-        true,
-      );
-      const continuationBody = buildSupportedSsaMutatingBody(
-        continuation,
-        checker,
-        strategy,
-        scopedParamNames,
-        state,
-        supply,
-        applyConstChain,
-      );
-      if (isUnsupported(continuationBody)) {
-        return continuationBody;
-      }
-      const continuationGuard = exit.earlyExitWhenTrue
-        ? ir1Unop("not", guard)
-        : guard;
-      const prefix =
-        stmts.length === 0
-          ? null
-          : stmts.length === 1
-            ? stmts[0]!
-            : ir1Block(stmts as [IR1Stmt, ...IR1Stmt[]]);
-      const gated = ir1CondStmt([[continuationGuard, continuationBody]], null);
-      if (prefix === null) {
-        return gated;
-      }
-      return ir1Block([prefix, gated]);
     }
     if (ts.isVariableStatement(stmt)) {
       const declList = stmt.declarationList;
@@ -4506,9 +4453,7 @@ function buildSupportedSsaStatement(
     ts.isWhileStatement(stmt) ||
     ts.isDoStatement(stmt)
   ) {
-    return {
-      unsupported: `statement is not supported by unified SSA body lowering: ${ts.SyntaxKind[stmt.kind]}`,
-    };
+    return { unsupported: "loop assignment" };
   }
   return {
     unsupported: `statement is not supported by unified SSA body lowering: ${ts.SyntaxKind[stmt.kind]}`,
