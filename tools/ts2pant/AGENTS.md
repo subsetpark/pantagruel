@@ -864,6 +864,47 @@ The runtime contract for this abstraction is
 fresh versions, location-compatible joins, dominating reads, frame
 partitioning, and unsupported-construct rejection.
 
+### General-loop SSA contract surface (L1)
+
+The general-loop SSA contract milestone extends the dormant IR1 SSA
+vocabulary in `src/ir1.ts`. The new exported names are:
+
+- Types: `IR1SsaLoopHeaderJoin`, `IR1SsaLoopBody`,
+  `IR1SsaTerminationMetric`, `IR1SsaBreakHandle`,
+  `IR1SsaContinueHandle`.
+- Constructor helpers: `ir1SsaOpenLoopHeader`,
+  `ir1SsaCloseLoopHeader`, `ir1SsaLoopBody`,
+  `ir1SsaTerminationMetric`, `ir1SsaBreakHandle`,
+  `ir1SsaContinueHandle`.
+
+Loop-header joins use a Cytron-style two-pass protocol. Builders call
+`ir1SsaOpenLoopHeader` before emitting the loop body, producing a header
+with a placeholder `loopBackVersion: null` and a fresh `joinVersion`.
+Body emission should make reads of the mutated location observe that
+`joinVersion`. Once the body has emitted its back-edge version, builders
+call `ir1SsaCloseLoopHeader` to back-patch `loopBackVersion` and mark the
+header closed. Closing validates location compatibility and double-close
+throws.
+
+`IR1SsaLoopBody.terminationMetric` is the bounded-vs-fixed-point
+discriminant. A non-null metric marks a bounded loop; downstream lowering
+will produce quantified equations. A null metric marks a fixed-point loop;
+downstream lowering will produce recursive Pant rule definitions. This
+milestone defines the vocabulary only and does not implement either
+lowering path.
+
+Break and continue handles are version snapshots at early-exit sites.
+Later milestones will merge break snapshots at the post-loop join and
+continue snapshots into the next iteration's header. The handle
+constructors reuse the existing version object and validate that the
+snapshot version is location-compatible.
+
+These helpers establish the contract surface for general-loop SSA and
+enforce structural choices like closed loop bodies, location-compatible
+back-patches, and early-exit version snapshots. They do not change the
+production builder/lowerer path yet; production builders and lowerers do
+not construct or consume this new vocabulary in this milestone.
+
 ### Mutating-body output (no L2 IR)
 
 The mutating path emits `PropResult[]` directly:

@@ -85,6 +85,8 @@ restructuring; no expression-path cleanup is a prerequisite.
 
 ### Milestone 1: general-loop-contract
 
+**Status**: Landed in `ts2pant-general-loop-contract`.
+
 **Definition of Done**:
 `tools/ts2pant/src/ir1.ts` exports the SSA vocabulary needed for general
 loops:
@@ -99,8 +101,9 @@ Constructors follow the M1 style of the prior workstream: opaque versions
 allocated centrally; locations carried explicitly; no implicit Pant phi shapes
 leak into the public surface. Documentation in `ir1.ts`,
 `tools/ts2pant/AGENTS.md`, and this workstream describes the vocabulary
-consistently. The existing `for` / `while` rejection in `ir1-lower-body.ts`
-remains in place.
+consistently (see `### General-loop SSA contract surface (L1)` in
+`tools/ts2pant/AGENTS.md`). The existing `for` / `while` rejection in
+`ir1-lower-body.ts` remains in place.
 
 **Why this is a safe pause point**:
 Type-level and documentation-level only, mirroring M1 of the prior workstream.
