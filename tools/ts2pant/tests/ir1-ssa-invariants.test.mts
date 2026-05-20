@@ -292,6 +292,24 @@ function representativePrograms(): RepresentativeProgram[] {
         ),
     },
     {
+      name: "expressions-state-aware-reads.ts > entrySetThenCheck",
+      kind: "map",
+      build: () =>
+        buildFixtureBodyLowerResult(
+          "expressions-state-aware-reads.ts",
+          "entrySetThenCheck",
+        ),
+    },
+    {
+      name: "expressions-state-aware-reads.ts > tagThenCheck",
+      kind: "set",
+      build: () =>
+        buildFixtureBodyLowerResult(
+          "expressions-state-aware-reads.ts",
+          "tagThenCheck",
+        ),
+    },
+    {
       name: "expressions-state-aware-reads.ts > bumpInBranch",
       kind: "branch",
       build: async () =>
@@ -316,6 +334,27 @@ function representativePrograms(): RepresentativeProgram[] {
             ),
           ),
         ),
+    },
+    {
+      name: "scalar branch join continuation read",
+      kind: "branch",
+      build: async () => {
+        const balance = ir1Member(ir1Var("account"), "Account_balance");
+        return buildScalarResult(
+          ir1Block([
+            ir1CondStmt(
+              [
+                [
+                  ir1Var("g"),
+                  ir1Assign(balance, ir1LitNat(1)),
+                ],
+              ],
+              ir1Assign(balance, ir1LitNat(2)),
+            ),
+            ir1Assign(balance, ir1Binop("add", balance, ir1LitNat(1))),
+          ]),
+        );
+      },
     },
     {
       name: "functions-mutating-loop.ts > forEachActivate",
@@ -357,6 +396,13 @@ function walkSsaProgram(program: IR1SsaProgram, visit: SsaProgramVisitor): void 
 
 function locationSignature(location: IR1SsaLocation): string {
   return JSON.stringify(location);
+}
+
+function readSignature(read: IR1SsaRead): string {
+  return [
+    `${read.location.kind} read at ${locationSignature(read.location)}`,
+    `using ${read.version.origin} version ${String(read.version.id)}`,
+  ].join(" ");
 }
 
 before(async () => {
@@ -543,10 +589,72 @@ describe("ir1-ssa-invariants", () => {
     },
   );
 
-  it.skip(
+  it(
     "every read resolves to a dominating version, initial version, or explicit loop summary at its own location",
-    () => {
-      // PENDING Patch 3: every read resolves to a dominating version, initial version, or explicit loop summary at its own location
+    async () => {
+      for (const representative of representativePrograms()) {
+        const result = await representative.build();
+        assert.equal(
+          result.diagnostics.length,
+          0,
+          `${representative.name} should lower without diagnostics`,
+        );
+        assert.ok(
+          result.programs.length > 0,
+          `${representative.name} should emit at least one SSA program`,
+        );
+
+        for (const [programIndex, program] of result.programs.entries()) {
+          walkSsaProgram(program, {
+            onRead(read, readIndex) {
+              const readDetail = [
+                `${representative.name} [program ${programIndex}]`,
+                `read #${readIndex}: ${readSignature(read)}`,
+              ].join(" ");
+              assert.equal(
+                locationSignature(read.version.location),
+                locationSignature(read.location),
+                `${readDetail} should keep its version at the read location`,
+              );
+              assert.equal(
+                read.dominated,
+                true,
+                `${readDetail} should be marked as dominated`,
+              );
+
+              const location = locationSignature(read.location);
+              const initial = ir1SsaInitialVersion(read.location);
+              const resolvesToInitial =
+                read.version.origin === initial.origin &&
+                locationSignature(read.version.location) ===
+                  locationSignature(initial.location);
+              const resolvesToWrite = program.writes.some(
+                (write) =>
+                  write.version === read.version &&
+                  locationSignature(write.location) === location,
+              );
+              const resolvesToJoin = program.joins.some(
+                (join) =>
+                  join.joinVersion === read.version &&
+                  locationSignature(join.location) === location,
+              );
+              const resolvesToLoopSummary = program.loopSummaries.some(
+                (summary) =>
+                  summary.summaryVersion === read.version &&
+                  locationSignature(summary.location) === location,
+              );
+
+              assert.ok(
+                resolvesToInitial ||
+                  resolvesToWrite ||
+                  resolvesToJoin ||
+                  resolvesToLoopSummary,
+                `${readDetail} did not resolve to an initial, write, join, or loop-summary version at its own location`,
+              );
+            },
+          });
+        }
+      }
     },
   );
 
