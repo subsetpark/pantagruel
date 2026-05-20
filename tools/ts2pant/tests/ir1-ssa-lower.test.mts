@@ -165,10 +165,10 @@ describe("ir1-ssa-lower", () => {
     );
     const loop = adaptLoopSummaryLowerResult(
       lowerForeachShapeASummaries({
-        binder: "$item",
+        binder: "item0",
         source: getAst().var("items"),
         body: ir1Assign(
-          ir1Member(ir1Var("$item"), "Item_seen"),
+          ir1Member(ir1Var("item0"), "Item_seen"),
           ir1LitBool(true),
         ),
       }),
