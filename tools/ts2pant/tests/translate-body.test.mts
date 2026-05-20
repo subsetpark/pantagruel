@@ -936,8 +936,8 @@ describe("conditional mutations (symbolic last-write)", () => {
     if (eq.kind !== "equation") return;
     const ast = getAst();
     assert.equal(ast.strExpr(eq.lhs), "account--balance' a");
-    // Early return path keeps pre-state identity; fall-through path writes 1.
-    assert.equal(ast.strExpr(eq.rhs), "cond g => account--balance a, true => 1");
+    // Fall-through path writes 1; early return path keeps pre-state identity.
+    assert.equal(ast.strExpr(eq.rhs), "cond ~g => 1, true => account--balance a");
   });
 
   it("sequential composition: later conditional reads earlier unconditional write", () => {

@@ -843,23 +843,23 @@ exports[`functions-mutating-const.ts > multiConstMutating 1`] = `
 `;
 
 exports[`functions-mutating-early-exit.ts > chainedEarlyReturns 1`] = `
-"module CHAINED_EARLY_RETURNS.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Chained-early-returns @ a: Account, g: Bool, h: Bool.\\n\\n---\\n\\naccount--balance' a = (cond g => account--balance a, true => (cond h => account--balance a, true => 1)).\\naccount--owner' a1 = account--owner a1.\\n"
+"module CHAINED_EARLY_RETURNS.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Chained-early-returns @ a: Account, g: Bool, h: Bool.\\n\\n---\\n\\naccount--balance' a = (cond ~g => (cond ~h => 1, true => account--balance a), true => account--balance a).\\naccount--owner' a1 = account--owner a1.\\n"
 `;
 
 exports[`functions-mutating-early-exit.ts > earlyReturnMulti 1`] = `
-"module EARLY_RETURN_MULTI.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Early-return-multi @ a: Account, g: Bool, v: Int, who: String.\\n\\n---\\n\\naccount--balance' a = (cond g => account--balance a, true => v).\\naccount--owner' a = (cond g => account--owner a, true => who).\\n"
+"module EARLY_RETURN_MULTI.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Early-return-multi @ a: Account, g: Bool, v: Int, who: String.\\n\\n---\\n\\naccount--balance' a = (cond ~g => v, true => account--balance a).\\naccount--owner' a = (cond ~g => who, true => account--owner a).\\n"
 `;
 
 exports[`functions-mutating-early-exit.ts > earlyReturnNoBraces 1`] = `
-"module EARLY_RETURN_NO_BRACES.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Early-return-no-braces @ a: Account, g: Bool.\\n\\n---\\n\\naccount--balance' a = (cond g => account--balance a, true => 0).\\naccount--owner' a1 = account--owner a1.\\n"
+"module EARLY_RETURN_NO_BRACES.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Early-return-no-braces @ a: Account, g: Bool.\\n\\n---\\n\\naccount--balance' a = (cond ~g => 0, true => account--balance a).\\naccount--owner' a1 = account--owner a1.\\n"
 `;
 
 exports[`functions-mutating-early-exit.ts > earlyReturnSimple 1`] = `
-"module EARLY_RETURN_SIMPLE.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Early-return-simple @ a: Account, g: Bool.\\n\\n---\\n\\naccount--balance' a = (cond g => account--balance a, true => 1).\\naccount--owner' a1 = account--owner a1.\\n"
+"module EARLY_RETURN_SIMPLE.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Early-return-simple @ a: Account, g: Bool.\\n\\n---\\n\\naccount--balance' a = (cond ~g => 1, true => account--balance a).\\naccount--owner' a1 = account--owner a1.\\n"
 `;
 
 exports[`functions-mutating-early-exit.ts > earlyReturnThenCond 1`] = `
-"module EARLY_RETURN_THEN_COND.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Early-return-then-cond @ a: Account, g: Bool, h: Bool.\\n\\n---\\n\\naccount--balance' a = (cond g => account--balance a, true => (cond h => 1, true => 2)).\\naccount--owner' a1 = account--owner a1.\\n"
+"module EARLY_RETURN_THEN_COND.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Early-return-then-cond @ a: Account, g: Bool, h: Bool.\\n\\n---\\n\\naccount--balance' a = (cond ~g => (cond h => 1, true => 2), true => account--balance a).\\naccount--owner' a1 = account--owner a1.\\n"
 `;
 
 exports[`functions-mutating-early-exit.ts > elseBranchReturn 1`] = `
@@ -871,7 +871,7 @@ exports[`functions-mutating-early-exit.ts > elseReturnThenMore 1`] = `
 `;
 
 exports[`functions-mutating-early-exit.ts > writeThenEarlyReturn 1`] = `
-"module WRITE_THEN_EARLY_RETURN.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Write-then-early-return @ a: Account, g: Bool.\\n\\n---\\n\\naccount--balance' a = (cond g => 10, true => 10 + 5).\\naccount--owner' a1 = account--owner a1.\\n"
+"module WRITE_THEN_EARLY_RETURN.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Write-then-early-return @ a: Account, g: Bool.\\n\\n---\\n\\naccount--balance' a = (cond ~g => 10 + 5, true => 10).\\naccount--owner' a1 = account--owner a1.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > activateActive 1`] = `
@@ -1055,7 +1055,7 @@ exports[`unsupported.ts > impureGuardAssign 1`] = `
 `;
 
 exports[`unsupported.ts > loopAssign 1`] = `
-"module LOOP_ASSIGN.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Loop-assign @ a: Account.\\n\\n---\\n\\n> UNSUPPORTED: loop assignment.\\n"
+"module LOOP_ASSIGN.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Loop-assign @ a: Account.\\n\\n---\\n\\n> UNSUPPORTED: statement is not supported by unified SSA body lowering: ForStatement.\\n"
 `;
 
 exports[`unsupported.ts > multiParamCallback 1`] = `

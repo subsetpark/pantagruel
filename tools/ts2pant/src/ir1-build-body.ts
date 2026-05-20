@@ -690,7 +690,7 @@ function classifyForeachStmt(
  * type), and those are preserved because they live inside the inner
  * `PropertyAccessExpression`'s `expression` field, untouched here.
  */
-function buildL1SubExpr(
+export function buildL1SubExpr(
   node: ts.Expression,
   ctx: BuildBodyCtx,
 ): BuildResult<IR1Expr> {

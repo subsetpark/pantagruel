@@ -2,7 +2,7 @@ import type { SourceFile } from "ts-morph";
 import ts from "typescript";
 import { buildIR, isBuildUnsupported } from "./ir-build.js";
 import { lowerExpr } from "./ir-emit.js";
-import { type IR1Stmt, ir1Block } from "./ir1.js";
+import { type IR1Stmt, ir1Block, ir1CondStmt, ir1Unop } from "./ir1.js";
 import {
   buildL1Conditional,
   buildL1LetWhile,
@@ -21,6 +21,7 @@ import {
   buildL1ForEachCall,
   buildL1ForOfMutation,
   buildL1IfMutation,
+  buildL1SubExpr,
   isUnsupported,
 } from "./ir1-build-body.js";
 import { lowerL1MuSearch, type MuSearchLowerCtx } from "./ir1-lower.js";
@@ -4497,8 +4498,6 @@ function translateMutatingBody(
     return [];
   }
 
-  const ast = getAst();
-  const propositions: PropResult[] = [];
   const ssaState = makeSymbolicState();
   const ssaSupply = makeUniqueSupply(synthCell);
   const ssaBody = buildSupportedSsaMutatingBody(
@@ -4510,73 +4509,28 @@ function translateMutatingBody(
     ssaSupply,
   );
 
-  if (!isUnsupported(ssaBody) && !containsDeferredSsaFastPathShape(ssaBody)) {
-    const lowered = lowerL1BodyToSsaProps(ssaBody, declarations, {
-      applyConst: (e) => applyOpaqueAliases(e, ssaSupply),
-    });
-    if (lowered.diagnostics.length === 0) {
-      return lowered.propositions;
+  if (isUnsupported(ssaBody)) {
+    if (ssaBody.unsupported === "empty mutating body") {
+      return [];
     }
+    return [{ kind: "unsupported", reason: ssaBody.unsupported }];
   }
 
-  const state = makeSymbolicState();
-  const supply = makeUniqueSupply(synthCell);
-  const ok = symbolicExecute(
-    node.body,
-    checker,
-    strategy,
-    paramNames,
-    state,
-    propositions,
-    (e) => e,
-    supply,
-  );
-
-  // Only emit state equations + frames when the whole body was translatable;
-  // partial emission would be unsound (frames would mask unhandled writes).
-  if (!ok) {
-    return propositions;
+  if (containsDeferredSsaFastPathShape(ssaBody)) {
+    return [
+      {
+        kind: "unsupported",
+        reason: "statement is not supported by unified SSA body lowering",
+      },
+    ];
   }
 
-  // Quantifier binders allocated through the document-wide name registry
-  // (inside synthCell) so they don't collide with the function's own
-  // params or with type-derived accessor rule binders — unlike the
-  // internal `freshHygienicBinder` which emits `$N` names that don't
-  // round-trip through the Pantagruel parser.
-  const allocBinder = (hint: string): string =>
-    allocComprehensionBinder(supply, hint);
-  for (const [, entry] of state.writes) {
-    switch (entry.kind) {
-      case "property":
-        propositions.push({
-          kind: "equation",
-          quantifiers: [] as OpaqueParam[],
-          lhs: ast.app(ast.primed(entry.prop), [entry.objExpr]),
-          rhs: entry.value,
-        });
-        state.modifiedProps = addModifiedProp(state.modifiedProps, entry.prop);
-        break;
-      case "map":
-        emitMapEquations(entry, propositions, allocBinder, state);
-        break;
-      case "set":
-        emitSetMembershipEquation(entry, propositions, allocBinder, state);
-        break;
-      default: {
-        // Exhaustiveness guard: `entry.kind` is discriminated across
-        // property / map / set. If a new kind is added without updating
-        // this switch, the `_exhaustive: never` assignment will fail to
-        // compile — TS's standard exhaustive-switch pattern.
-        const _exhaustive: never = entry;
-        void _exhaustive;
-      }
-    }
-  }
-
-  const frames = generateFrameConditions(state.modifiedProps, declarations);
-  propositions.push(...frames);
-
-  return propositions;
+  const lowered = lowerL1BodyToSsaProps(ssaBody, declarations, {
+    applyConst: (e) => applyOpaqueAliases(e, ssaSupply),
+  });
+  return lowered.diagnostics.length === 0
+    ? lowered.propositions
+    : lowered.diagnostics;
 }
 
 function containsDeferredSsaFastPathShape(stmt: IR1Stmt): boolean {
@@ -4591,19 +4545,68 @@ function buildSupportedSsaMutatingBody(
   paramNames: Map<string, string>,
   state: SymbolicState,
   supply: UniqueSupply,
+  outerApplyConstChain: (e: OpaqueExpr) => OpaqueExpr = (e) => e,
 ): IR1Stmt | { unsupported: string } {
   const stmts: IR1Stmt[] = [];
   const scopedParamNames = new Map(paramNames);
-  let applyConstChain: (e: OpaqueExpr) => OpaqueExpr = (e) => e;
+  let applyConstChain = outerApplyConstChain;
   const applyConst = (e: OpaqueExpr): OpaqueExpr =>
     applyOpaqueAliases(applyConstChain(e), supply);
   setCanonicalize(state, applyConst);
-  for (const stmt of body.statements) {
+  const bodyStmts = Array.from(body.statements);
+  for (const [index, stmt] of bodyStmts.entries()) {
     if (isGuardStatement(stmt, checker)) {
       continue;
     }
     if (ts.isReturnStatement(stmt) && !stmt.expression) {
       continue;
+    }
+    const exit = detectEarlyExit(stmt);
+    if (exit !== null) {
+      if (expressionHasSideEffects(exit.condition, checker)) {
+        return { unsupported: "impure if-condition in mutating body" };
+      }
+      const guard = buildL1SubExpr(exit.condition, {
+        checker,
+        strategy,
+        paramNames: scopedParamNames,
+        state,
+        supply,
+        applyConst,
+      });
+      if (isUnsupported(guard)) {
+        return guard;
+      }
+      const continuation = ts.factory.createBlock(
+        [...exit.continuationPrefix, ...bodyStmts.slice(index + 1)],
+        true,
+      );
+      const continuationBody = buildSupportedSsaMutatingBody(
+        continuation,
+        checker,
+        strategy,
+        scopedParamNames,
+        state,
+        supply,
+        applyConstChain,
+      );
+      if (isUnsupported(continuationBody)) {
+        return continuationBody;
+      }
+      const continuationGuard = exit.earlyExitWhenTrue
+        ? ir1Unop("not", guard)
+        : guard;
+      const prefix =
+        stmts.length === 0
+          ? null
+          : stmts.length === 1
+            ? stmts[0]!
+            : ir1Block(stmts as [IR1Stmt, ...IR1Stmt[]]);
+      const gated = ir1CondStmt([[continuationGuard, continuationBody]], null);
+      if (prefix === null) {
+        return gated;
+      }
+      return ir1Block([prefix, gated]);
     }
     if (ts.isVariableStatement(stmt)) {
       const declList = stmt.declarationList;
