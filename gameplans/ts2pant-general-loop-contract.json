@@ -1,0 +1,391 @@
+{
+  "projectName": "ts2pant-general-loop-contract",
+  "owner": "subsetpark",
+  "repo": "pantagruel",
+  "specFile": null,
+  "workstream": {
+    "name": "ts2pant General-Loop SSA",
+    "milestone": "1: general-loop-contract",
+    "priorMilestones": [],
+    "unlocks": "L2 (bounded-counter-loop-lowering) can implement the bounded-counter SSA builder against a stable IR1 SSA vocabulary; subsequent milestones extend or consume the same surface without expanding the public contract again."
+  },
+  "problemStatement": "The IR1 SSA workstream (M1-M7) shipped an SSA-bearing IR for scalar property mutation, Map/Set semantics, and the existing summary-based loops (μ-search, foreach Shape A/B). General `for` and `while` loops, fixed-point unbounded `while`, and `break`/`continue` early exits are not represented in IR1 today — `ir1-lower-body.ts` rejects them. The follow-on general-loop SSA workstream needs a stable vocabulary for loop-header phi nodes (with Cytron-style two-pass back-patching), loop body regions, termination metrics, and break/continue continuation handles before any production code can construct or lower general loops.",
+  "solutionSummary": "This milestone is type-level only. It adds the IR1 SSA vocabulary needed for general-loop work as new exports of `tools/ts2pant/src/ir1.ts`, with constructors that follow the existing M1 style (opaque versions allocated centrally, locations carried explicitly, structural invariants enforced at construction). Loop-header joins use a two-pass discipline: opened with a placeholder loop-back input, closed via a back-patch helper once the body has been emitted. A new contract test file exercises the constructors and their invariants. Production builders and lowerers remain unchanged; existing `for`/`while` rejection in `ir1-lower-body.ts` stays in place.",
+  "currentStateAnalysis": "`tools/ts2pant/src/ir1.ts` already exports the M1 SSA vocabulary (`IR1SsaLocation`, `IR1SsaVersion`, `IR1SsaWrite`, `IR1SsaJoin`, `IR1SsaLoopSummary`, `IR1SsaProgram`, plus constructors). `IR1SsaVersion[\"origin\"]` is a union of `\"initial\" | \"write\" | \"join\" | \"loop-summary\"`. `IR1Stmt` already admits `for`, `while`, and `foreach` shapes; `buildSupportedSsaMutatingBody` in `tools/ts2pant/src/translate-body.ts` constructs them, but `lowerL1BodyToSsaResult` in `tools/ts2pant/src/ir1-lower-body.ts` at line 132 routes them to `ir1SsaBodyLowerUnsupported`. The existing contract test `tools/ts2pant/tests/ir1-ssa-contract.test.mts` is the style template: direct constructor calls, identity-based version checks, location-mismatch rejection assertions. `tools/ts2pant/AGENTS.md` has an `### IR1 SSA contract surface` subsection at line 839 that this milestone mirrors for the new vocabulary.",
+  "operationalConsiderations": {
+    "externalSystemAccess": "Not applicable. This gameplan only adds TypeScript type exports and a contract test file in `tools/ts2pant/src/ir1.ts` and `tools/ts2pant/tests/ir1-ssa-loop-contract.test.mts`. The ts2pant translator runs locally as a build-time tool; no new external system is reached.",
+    "crossRuntimeContracts": "Not applicable. The new IR1 SSA vocabulary is internal to the ts2pant translator. It crosses no runtime boundary: the types are consumed in-process by `translate-body.ts` and `ir1-lower-body.ts` (later milestones), not serialised over a wire or persisted on disk.",
+    "failureBehavior": "The new constructors throw synchronously on contract violations: `ir1SsaCloseLoopHeader` rejects double-close and rejects loop-back versions whose location does not match the header location; `ir1SsaLoopBody` rejects header joins that are still open; break/continue handle constructors reject version-location mismatches via the same `ir1SsaAssertLocationCompatible` helper used by existing constructors. Throws are intentional — they catch builder bugs at construction time rather than allowing inconsistent IR to flow into lowering. No new I/O path; no retry contract.",
+    "concurrencyAndIdempotency": "Not applicable. The ts2pant translator is single-threaded, build-time-only, and processes one source file at a time. Constructors are pure (apart from the deliberate mutable back-patch field on the loop-header join). No retried or concurrently entered code path is introduced.",
+    "rollbackStrategy": "Forward-only. The gameplan is all-additive: new exports in `ir1.ts`, a new test file, new documentation prose in `AGENTS.md` and `workstreams/ts2pant-general-loop-ssa.md`. Reverting the gameplan is `git revert` of the three patches — no data is written, no schema migrated, no external state mutated. Downstream code is unchanged, so revert is safe in any order between the three patches."
+  },
+  "mergabilityStrategy": {
+    "featureFlagStrategy": "No feature flag. The gameplan is type-level only and changes no observable runtime behavior: production builders and lowerers do not construct or consume the new vocabulary in this milestone. The new exports are dormant API surface that subsequent milestones (L2 onward) will use.",
+    "featureFlags": [],
+    "patchOrderingStrategy": "All three patches are INFRA. Patch 1 (test stubs) lands the scaffolding with `it.skip` markers naming Patch 2. Patch 2 lands the vocabulary in `ir1.ts` and unskips the tests in the same patch (test-impl colocation). Patch 3 lands the documentation describing what Patch 2 added. Strictly sequential: 1 → 2 → 3."
+  },
+  "requiredChanges": [
+    {
+      "file": "tools/ts2pant/tests/ir1-ssa-loop-contract.test.mts",
+      "line": null,
+      "description": "Create the contract test file with `describe(\"ir1-ssa-loop-contract\", ...)` and `it.skip` stubs for each invariant family. Each stub carries a PENDING Patch 2 comment. The file imports only symbols that exist before Patch 2 (no compile-time references to the new vocabulary).",
+      "signature": null
+    },
+    {
+      "file": "tools/ts2pant/src/ir1.ts",
+      "line": 429,
+      "description": "Extend `IR1SsaVersion[\"origin\"]` to include `\"loop-header\"` and `\"break-handle\"` / `\"continue-handle\"` discriminants; existing call sites are unaffected because the new variants are only allocated by the new constructors.",
+      "signature": "readonly origin: \"initial\" | \"write\" | \"join\" | \"loop-summary\" | \"loop-header\" | \"break-handle\" | \"continue-handle\""
+    },
+    {
+      "file": "tools/ts2pant/src/ir1.ts",
+      "line": 494,
+      "description": "Add `IR1SsaLoopHeaderJoin` interface with `kind: \"ssa-loop-header-join\"`, `location`, `preheaderVersion`, mutable `loopBackVersion: IR1SsaVersion | null`, `joinVersion`, and mutable `closed: boolean`. Two-pass Cytron-style protocol: opened with `loopBackVersion: null, closed: false`; back-patched by `ir1SsaCloseLoopHeader`.",
+      "signature": "export interface IR1SsaLoopHeaderJoin { readonly kind: \"ssa-loop-header-join\"; readonly location: IR1SsaLocation; readonly preheaderVersion: IR1SsaVersion; loopBackVersion: IR1SsaVersion | null; readonly joinVersion: IR1SsaVersion; closed: boolean; }"
+    },
+    {
+      "file": "tools/ts2pant/src/ir1.ts",
+      "line": 494,
+      "description": "Add `IR1SsaLoopBody` interface aggregating `headerJoins`, `writes`, `joins`, `breakHandles`, `continueHandles`, and `terminationMetric: IR1SsaTerminationMetric | null` (null ↔ fixed-point loop). Built from a record argument; constructor asserts all header joins are closed and all break/continue handle versions are location-compatible with their declared locations.",
+      "signature": "export interface IR1SsaLoopBody { readonly kind: \"ssa-loop-body\"; readonly headerJoins: readonly IR1SsaLoopHeaderJoin[]; readonly writes: readonly IR1SsaWrite[]; readonly joins: readonly IR1SsaJoin[]; readonly breakHandles: readonly IR1SsaBreakHandle[]; readonly continueHandles: readonly IR1SsaContinueHandle[]; readonly terminationMetric: IR1SsaTerminationMetric | null; }"
+    },
+    {
+      "file": "tools/ts2pant/src/ir1.ts",
+      "line": 494,
+      "description": "Add `IR1SsaTerminationMetric` interface carrying `expr: IR1Expr` (the strictly-decreasing value) and `lowerBound: IR1Expr | null` (null ⇒ default lower bound 0). Constructor `ir1SsaTerminationMetric(expr, lowerBound = null)`.",
+      "signature": "export interface IR1SsaTerminationMetric { readonly kind: \"ssa-termination-metric\"; readonly expr: IR1Expr; readonly lowerBound: IR1Expr | null; }"
+    },
+    {
+      "file": "tools/ts2pant/src/ir1.ts",
+      "line": 494,
+      "description": "Add `IR1SsaBreakHandle` and `IR1SsaContinueHandle` interfaces. Each carries `location: IR1SsaLocation` and `version: IR1SsaVersion`. Constructors snapshot the current SSA version at the early-exit site and assert version-location compatibility via the existing `ir1SsaAssertLocationCompatible` helper.",
+      "signature": "export interface IR1SsaBreakHandle { readonly kind: \"ssa-break-handle\"; readonly location: IR1SsaLocation; readonly version: IR1SsaVersion; } export interface IR1SsaContinueHandle { readonly kind: \"ssa-continue-handle\"; readonly location: IR1SsaLocation; readonly version: IR1SsaVersion; }"
+    },
+    {
+      "file": "tools/ts2pant/src/ir1.ts",
+      "line": 504,
+      "description": "Extend `IR1SsaProgram` with `readonly loopHeaderJoins: IR1SsaLoopHeaderJoin[]` and `readonly loopBodies: IR1SsaLoopBody[]`. Both default to empty in any existing initialization; no production builder currently constructs IR1SsaProgram with non-empty values for these arrays in this milestone.",
+      "signature": "export interface IR1SsaProgram { readonly reads: IR1SsaRead[]; readonly writes: IR1SsaWrite[]; readonly joins: IR1SsaJoin[]; readonly loopSummaries: IR1SsaLoopSummary[]; readonly loopHeaderJoins: IR1SsaLoopHeaderJoin[]; readonly loopBodies: IR1SsaLoopBody[]; readonly declaredRules: IR1SsaRuleName[]; readonly modifiedRules: IR1SsaRuleName[]; readonly framedRules: IR1SsaRuleName[]; }"
+    },
+    {
+      "file": "tools/ts2pant/src/ir1.ts",
+      "line": 632,
+      "description": "Add constructors: `ir1SsaOpenLoopHeader(location, preheaderVersion) => IR1SsaLoopHeaderJoin` (returns open header with placeholder loopBackVersion=null, closed=false, fresh joinVersion); `ir1SsaCloseLoopHeader(header, loopBackVersion): void` (asserts header.closed===false; asserts loopBackVersion.location matches header.location via `ir1SsaAssertLocationCompatible`; sets header.loopBackVersion and header.closed=true; throws on double-close). The joinVersion's origin tag is `\"loop-header\"`.",
+      "signature": "export const ir1SsaOpenLoopHeader = (location: IR1SsaLocation, preheaderVersion: IR1SsaVersion) => IR1SsaLoopHeaderJoin; export const ir1SsaCloseLoopHeader = (header: IR1SsaLoopHeaderJoin, loopBackVersion: IR1SsaVersion) => void"
+    },
+    {
+      "file": "tools/ts2pant/src/ir1.ts",
+      "line": 632,
+      "description": "Add `ir1SsaLoopBody` constructor taking a record `{ headerJoins, writes?, joins?, breakHandles?, continueHandles?, terminationMetric? }` with defaults of empty arrays / null. Validates every header join is closed (throws `\"loop body cannot wrap an open loop-header join\"` otherwise). Validates every break/continue handle's version location matches its declared location.",
+      "signature": "export const ir1SsaLoopBody = (input: { headerJoins: readonly IR1SsaLoopHeaderJoin[]; writes?: readonly IR1SsaWrite[]; joins?: readonly IR1SsaJoin[]; breakHandles?: readonly IR1SsaBreakHandle[]; continueHandles?: readonly IR1SsaContinueHandle[]; terminationMetric?: IR1SsaTerminationMetric | null; }) => IR1SsaLoopBody"
+    },
+    {
+      "file": "tools/ts2pant/src/ir1.ts",
+      "line": 632,
+      "description": "Add `ir1SsaTerminationMetric`, `ir1SsaBreakHandle`, `ir1SsaContinueHandle` constructors. Break/continue constructors assert version-location compatibility via existing helper.",
+      "signature": "export const ir1SsaTerminationMetric = (expr: IR1Expr, lowerBound?: IR1Expr | null) => IR1SsaTerminationMetric; export const ir1SsaBreakHandle = (location: IR1SsaLocation, version: IR1SsaVersion) => IR1SsaBreakHandle; export const ir1SsaContinueHandle = (location: IR1SsaLocation, version: IR1SsaVersion) => IR1SsaContinueHandle"
+    },
+    {
+      "file": "tools/ts2pant/AGENTS.md",
+      "line": 839,
+      "description": "Add a new subsection `### General-loop SSA contract surface (L1)` after the existing `### IR1 SSA contract surface` block. Mirror the existing section's listing style: enumerate the new types, the back-patching protocol for loop-header joins, the bounded↔fixed-point distinction via termination metric, and the role of break/continue handles. Note that production builders/lowerers are unchanged; the surface is dormant until L2.",
+      "signature": null
+    },
+    {
+      "file": "workstreams/ts2pant-general-loop-ssa.md",
+      "line": null,
+      "description": "Mark Milestone 1 (`general-loop-contract`) as landed, noting the gameplan project name `ts2pant-general-loop-contract` so future readers can find this gameplan. Cross-reference the AGENTS.md contract-surface section.",
+      "signature": null
+    }
+  ],
+  "functionalChanges": [
+    {
+      "id": "FC-1",
+      "description": "`tools/ts2pant/src/ir1.ts` exports `IR1SsaLoopHeaderJoin`, `ir1SsaOpenLoopHeader`, and `ir1SsaCloseLoopHeader`. Opening returns a header with `loopBackVersion: null` and `closed: false` plus a fresh `joinVersion` whose `origin` tag is `\"loop-header\"`. Closing back-patches the loop-back version exactly once; double-close and location-mismatched loop-back versions throw synchronously.",
+      "ownedBy": 2
+    },
+    {
+      "id": "FC-2",
+      "description": "`tools/ts2pant/src/ir1.ts` exports `IR1SsaLoopBody` and `ir1SsaLoopBody`. The constructor accepts header joins, writes, joins, break/continue handles, and an optional termination metric (null ⇒ fixed-point); it throws when given any open header join, and throws when any break/continue handle's snapshotted version disagrees with its declared location.",
+      "ownedBy": 2
+    },
+    {
+      "id": "FC-3",
+      "description": "`tools/ts2pant/src/ir1.ts` exports `IR1SsaTerminationMetric` and `ir1SsaTerminationMetric`. The constructor stores the strictly-decreasing expression and an optional lower bound (null ⇒ default 0). The presence of a metric on a loop body is the bounded/fixed-point discriminant later milestones consume.",
+      "ownedBy": 2
+    },
+    {
+      "id": "FC-4",
+      "description": "`tools/ts2pant/src/ir1.ts` exports `IR1SsaBreakHandle`, `IR1SsaContinueHandle`, `ir1SsaBreakHandle`, and `ir1SsaContinueHandle`. Each handle snapshots the current SSA version at the early-exit site and asserts the version's location matches the handle's declared location.",
+      "ownedBy": 2
+    },
+    {
+      "id": "FC-5",
+      "description": "`IR1SsaProgram` carries `loopHeaderJoins` and `loopBodies` arrays alongside the existing reads/writes/joins/loopSummaries arrays. Both default to empty; no production builder constructs non-empty values for them in this milestone.",
+      "ownedBy": 2
+    },
+    {
+      "id": "FC-6",
+      "description": "`tools/ts2pant/AGENTS.md` documents the new general-loop SSA contract surface in a subsection mirroring the existing `### IR1 SSA contract surface`. `workstreams/ts2pant-general-loop-ssa.md` marks Milestone 1 as landed and references the gameplan project name.",
+      "ownedBy": 3
+    }
+  ],
+  "contextResources": [
+    {
+      "id": "general-loop-workstream",
+      "kind": "contract",
+      "paths": ["workstreams/ts2pant-general-loop-ssa.md"],
+      "why": "The workstream document is the authoritative source for what L1 must deliver: the Definition of Done enumerates the vocabulary additions (loop-header join, loop body region, termination metric, break/continue handles), the Cytron-style two-pass back-patching protocol, and the explicit constraint that production builders/lowerers remain unchanged.",
+      "consumedBy": [1, 2, 3]
+    },
+    {
+      "id": "existing-ir1-ssa-contract",
+      "kind": "existing-implementation",
+      "paths": [
+        "tools/ts2pant/src/ir1.ts",
+        "tools/ts2pant/tests/ir1-ssa-contract.test.mts"
+      ],
+      "why": "The existing M1 SSA contract (types, constructors, location-compatibility assertions, opaque-version allocation, degenerate-join simplification) is the style template the new vocabulary must mirror. New constructors should reuse the existing private helpers (`ir1SsaAssertLocationCompatible`, the private `ir1SsaVersion` allocator) rather than inventing parallel ones. The existing contract test is the template for the new test file's shape and assertion style.",
+      "consumedBy": [1, 2]
+    },
+    {
+      "id": "cytron-ssa",
+      "kind": "external-reference",
+      "paths": ["https://doi.org/10.1145/115372.115320"],
+      "why": "Cytron, Ferrante, Rosen, Wegman, Zadeck — `Efficiently Computing Static Single Assignment Form and the Control Dependence Graph` (ACM TOPLAS 1991). The canonical reference for SSA construction with loop-header phi nodes via dominance-frontier placement. The two-pass discipline (place header phi with placeholder back-edge; emit body; back-patch back-edge) is what `ir1SsaOpenLoopHeader` / `ir1SsaCloseLoopHeader` encode.",
+      "consumedBy": [2]
+    },
+    {
+      "id": "existing-agents-md-contract-section",
+      "kind": "reference-doc",
+      "paths": ["tools/ts2pant/AGENTS.md"],
+      "why": "The existing `### IR1 SSA contract surface` subsection (line 839 onward) is the prose template the new `### General-loop SSA contract surface (L1)` subsection mirrors. Style, listing convention, and the explicit statement that the surface does not change the production builder/lowerer path should carry over.",
+      "consumedBy": [3]
+    }
+  ],
+  "acceptanceCriteria": [
+    "`tools/ts2pant/src/ir1.ts` exports `IR1SsaLoopHeaderJoin`, `IR1SsaLoopBody`, `IR1SsaTerminationMetric`, `IR1SsaBreakHandle`, `IR1SsaContinueHandle`, and the corresponding constructors `ir1SsaOpenLoopHeader`, `ir1SsaCloseLoopHeader`, `ir1SsaLoopBody`, `ir1SsaTerminationMetric`, `ir1SsaBreakHandle`, `ir1SsaContinueHandle`.",
+    "`ir1SsaOpenLoopHeader` returns an open header (`closed: false`, `loopBackVersion: null`) with a fresh `joinVersion` whose `origin` is `\"loop-header\"`.",
+    "`ir1SsaCloseLoopHeader` back-patches a single time: it throws on second close, throws when the loop-back version's location does not match the header's location, and sets `closed: true` on success.",
+    "`ir1SsaLoopBody` rejects any open header join with a targeted error message.",
+    "`ir1SsaBreakHandle` and `ir1SsaContinueHandle` reject version-location mismatches via the existing `ir1SsaAssertLocationCompatible` helper.",
+    "`IR1SsaProgram` declares `loopHeaderJoins` and `loopBodies` arrays alongside the existing arrays.",
+    "`tools/ts2pant/tests/ir1-ssa-loop-contract.test.mts` exists, runs under the existing `node:test` runner, and asserts every invariant in the Definition of Done.",
+    "`tools/ts2pant/AGENTS.md` documents the new contract surface in a `### General-loop SSA contract surface (L1)` subsection.",
+    "`workstreams/ts2pant-general-loop-ssa.md` marks Milestone 1 as landed and cites this gameplan's project name.",
+    "Production code under `tools/ts2pant/src/` other than `ir1.ts` is unchanged. `lowerL1BodyToSsaResult` in `ir1-lower-body.ts` still rejects `for` and `while` statements as `ir1SsaBodyLowerUnsupported`.",
+    "Full ts2pant test suite passes (existing tests unchanged in behavior; new contract test file passes its assertions)."
+  ],
+  "openQuestions": [],
+  "explicitOpinions": [
+    {
+      "opinion": "Mirror the M1 contract style precisely: use the existing private `ir1SsaVersion` allocator and `ir1SsaAssertLocationCompatible` helper rather than inventing parallel infrastructure.",
+      "rationale": "The whole point of L1's contract-mirroring is to keep the SSA surface coherent across milestones. Duplicating the version-allocation or location-compatibility logic would fragment the abstraction and invite drift."
+    },
+    {
+      "opinion": "Land the entire vocabulary in one source patch (Patch 2) rather than splitting across `IR1SsaLoopHeaderJoin`/`IR1SsaLoopBody`/`IR1SsaTerminationMetric`/`IR1SsaBreakHandle` patches.",
+      "rationale": "All four type families touch a single file (`tools/ts2pant/src/ir1.ts`) and they cross-reference each other (body holds header joins and termination metric; break/continue handles use the same version-location compatibility helper). Splitting would force sequential patches with conflicting edits to the same file and would not enable parallelism."
+    },
+    {
+      "opinion": "Encode loop-header back-patching as mutable `loopBackVersion: IR1SsaVersion | null` and `closed: boolean` fields on a single `IR1SsaLoopHeaderJoin` type. `ir1SsaOpenLoopHeader` returns an open header; `ir1SsaCloseLoopHeader` mutates the same object to closed and rejects double-close.",
+      "rationale": "Matches the workstream's wording (`place the header join first with a placeholder loop-back input, then back-patch`) and the Cytron 1991 SSA construction algorithm shape. The two-type alternative (`PendingLoopHeader` -> `LoopHeaderJoin` consumed by the close helper) was considered and rejected because it forces every caller to thread the new object through their bookkeeping, and the body builder would need to track which pending header maps to which closed one. Deliberate, scoped mutation is preferable to that bookkeeping burden."
+    },
+    {
+      "opinion": "`IR1SsaLoopBody` carries an explicit `readonly headerJoins: readonly IR1SsaLoopHeaderJoin[]` array. The builder allocates the headers before body emission (the Cytron protocol requires this), and storing them on the body lets lowering iterate mutated locations directly without re-walking the body.",
+      "rationale": "The mutated-location set is already known to the builder by construction. The deferred-discovery alternative (matching the existing scalar/collection SSA's `modifiedRules` derivation) would force lowering to walk the body's writes/joins to recover information the builder already had. The body's contract is more local and self-describing when the header set is explicit, and the per-body `headerJoins -> body-bounded? + lowering equation` mapping at L2 becomes a direct iteration rather than a derivation."
+    },
+    {
+      "opinion": "The termination metric attaches to the loop body as a single `terminationMetric: IR1SsaTerminationMetric | null` field. A non-null metric marks the loop bounded (L2/L3 will lower it to quantified equations); a null metric marks it fixed-point (L4 will lower it to recursive Pant rule definitions).",
+      "rationale": "The bounded↔fixed-point distinction is a property of the loop as a whole, not of each location it mutates. The per-header-join alternative would have allowed different locations in one loop to declare different bounds, but lowering still has to pick a single shape per loop body, so the extra granularity would be unused. The standalone `IR1SsaProgram` index would have introduced a side lookup without an obvious benefit. One metric per body is the natural granularity."
+    },
+    {
+      "opinion": "Extend `IR1SsaProgram` with `loopHeaderJoins` and `loopBodies` arrays at this milestone. Both default to empty in any existing initialization; no production builder emits non-empty values yet.",
+      "rationale": "The prior workstream's M1 set the precedent: `loopSummaries` was added to `IR1SsaProgram` ahead of any builder that emitted them, so the contract surface was complete at the milestone boundary. Following that precedent here keeps L2's gameplan free to focus on behavior (the bounded-counter builder) without simultaneously broadening the public surface. The cost — a few existing initializations that must include empty array defaults — is mechanical and localised."
+    },
+    {
+      "opinion": "Extend `IR1SsaVersion[\"origin\"]` with `\"loop-header\"` only. Break and continue handles snapshot existing write/join versions rather than allocating fresh ones, so they reuse their snapshot's origin tag.",
+      "rationale": "Loop-header joins allocate a fresh `joinVersion` (the synthesised header value that body reads observe), so they need a distinct origin tag for invariants like `every loop-header join-version is reachable from a header join` to be expressible. Break/continue handles, by contrast, are pointer-like snapshots: the handle's `version` is the same object that was already produced by a write or branch join elsewhere in the program. Re-tagging it with a synthetic `\"break-handle\"` origin would force the handle constructor to clone the version object, breaking identity-based comparisons (which the existing M1 contract relies on, e.g. degenerate-join simplification via `thenVersion === elseVersion`)."
+    }
+  ],
+  "patches": [
+    {
+      "number": 1,
+      "classification": "INFRA",
+      "complexity": 1,
+      "title": "Pending contract tests for general-loop SSA vocabulary",
+      "files": [
+        {
+          "path": "tools/ts2pant/tests/ir1-ssa-loop-contract.test.mts",
+          "action": "create",
+          "description": "New contract test file with `describe(\"ir1-ssa-loop-contract\", ...)` and `it.skip` stubs for each invariant family. Imports only existing IR1 SSA symbols. Each stub carries a `// PENDING Patch 2: <invariant>` comment naming the implementing patch."
+        }
+      ],
+      "changes": [
+        "Create `tools/ts2pant/tests/ir1-ssa-loop-contract.test.mts` modeled on `tools/ts2pant/tests/ir1-ssa-contract.test.mts`'s shape (describe block, direct constructor calls, `node:assert/strict` for assertions).",
+        "Import existing IR1 symbols from `../src/ir1.js` that the stub file legitimately uses for setup (`ir1Var`, `ir1LitNat`, `ir1SsaPropertyLocation`, `ir1SsaInitialVersion`, `ir1SsaWrite`, `ir1SsaPropertyValue`). Do NOT import the new vocabulary symbols — they don't exist yet.",
+        "Add `it.skip(\"opens a loop-header join with a placeholder loop-back input\", () => { /* PENDING Patch 2: ir1SsaOpenLoopHeader returns open header (closed=false, loopBackVersion=null) with fresh joinVersion whose origin is loop-header */ });` and equivalent skipped stubs for: closing the header (single back-patch, double-close rejection, location-mismatch rejection); building a loop body that rejects open header joins; termination metric construction (null lowerBound default); break/continue handle construction with location-compatibility assertions; IR1SsaProgram now declares loopHeaderJoins and loopBodies arrays.",
+        "Ensure the file compiles and `bun run test` (or equivalent) reports the stubs as skipped rather than failing.",
+        "Do not modify any other file in this patch."
+      ],
+      "requiredContext": ["general-loop-workstream", "existing-ir1-ssa-contract"],
+      "testStubsIntroduced": [
+        "ir1-ssa-loop-contract > opens a loop-header join with a placeholder loop-back input",
+        "ir1-ssa-loop-contract > closes a loop-header join via back-patch and rejects double-close",
+        "ir1-ssa-loop-contract > rejects loop-back versions whose location does not match the header",
+        "ir1-ssa-loop-contract > rejects a loop body containing an open header join",
+        "ir1-ssa-loop-contract > constructs a termination metric with optional lower bound",
+        "ir1-ssa-loop-contract > snapshots break and continue handle versions with location compatibility",
+        "ir1-ssa-loop-contract > IR1SsaProgram declares loopHeaderJoins and loopBodies arrays"
+      ],
+      "testStubsImplemented": null,
+      "spec": "module TS2PANT_GENERAL_LOOP_CONTRACT_PATCH_1.\n\n> Patch 1 introduces the test scaffolding for the general-loop\n> SSA vocabulary. No invariants are asserted at runtime yet; the\n> contribution is the named stubs consumed by Patch 2.\n\nTestStub.\nInvariantFamily.\nloop-header-open => InvariantFamily.\nloop-header-close => InvariantFamily.\nloop-header-location => InvariantFamily.\nloop-body-open-header-rejection => InvariantFamily.\ntermination-metric-shape => InvariantFamily.\nbreak-continue-handle-shape => InvariantFamily.\nprogram-extension => InvariantFamily.\n\nstub-for f: InvariantFamily => TestStub.\n---\ntrue."
+    },
+    {
+      "number": 2,
+      "classification": "INFRA",
+      "complexity": 2,
+      "title": "Add general-loop SSA vocabulary to ir1.ts",
+      "files": [
+        {
+          "path": "tools/ts2pant/src/ir1.ts",
+          "action": "modify",
+          "description": "Extend `IR1SsaVersion[\"origin\"]` with `\"loop-header\"`. Add `IR1SsaLoopHeaderJoin`, `IR1SsaLoopBody`, `IR1SsaTerminationMetric`, `IR1SsaBreakHandle`, `IR1SsaContinueHandle` interfaces. Extend `IR1SsaProgram` with `loopHeaderJoins` and `loopBodies` arrays. Add constructors: `ir1SsaOpenLoopHeader`, `ir1SsaCloseLoopHeader`, `ir1SsaLoopBody`, `ir1SsaTerminationMetric`, `ir1SsaBreakHandle`, `ir1SsaContinueHandle`. Reuse the existing private `ir1SsaVersion` allocator and `ir1SsaAssertLocationCompatible` helper."
+        },
+        {
+          "path": "tools/ts2pant/tests/ir1-ssa-loop-contract.test.mts",
+          "action": "modify",
+          "description": "Remove `.skip` from every `it.skip` stub introduced in Patch 1; replace each `PENDING Patch 2` body with the actual assertion. Tests cover the seven invariant families enumerated in Patch 1's `testStubsIntroduced`."
+        }
+      ],
+      "changes": [
+        "Extend `IR1SsaVersion[\"origin\"]` (currently `\"initial\" | \"write\" | \"join\" | \"loop-summary\"`) with `\"loop-header\"`. Existing call sites are unaffected because no current code branches on the union exhaustively.",
+        "Add `IR1SsaLoopHeaderJoin` interface with `kind: \"ssa-loop-header-join\"`, readonly `location: IR1SsaLocation`, readonly `preheaderVersion: IR1SsaVersion`, mutable `loopBackVersion: IR1SsaVersion | null`, readonly `joinVersion: IR1SsaVersion`, mutable `closed: boolean`.",
+        "Add `IR1SsaLoopBody` interface with `kind: \"ssa-loop-body\"`, readonly arrays of `headerJoins`, `writes`, `joins`, `breakHandles`, `continueHandles`, and `terminationMetric: IR1SsaTerminationMetric | null`.",
+        "Add `IR1SsaTerminationMetric` interface with `kind: \"ssa-termination-metric\"`, readonly `expr: IR1Expr`, readonly `lowerBound: IR1Expr | null`.",
+        "Add `IR1SsaBreakHandle` and `IR1SsaContinueHandle` interfaces, each with `kind`, readonly `location: IR1SsaLocation`, readonly `version: IR1SsaVersion`.",
+        "Extend `IR1SsaProgram` with `readonly loopHeaderJoins: IR1SsaLoopHeaderJoin[]` and `readonly loopBodies: IR1SsaLoopBody[]`. No production builders are updated in this patch — no existing call site constructs `IR1SsaProgram` literals that this milestone needs to keep compiling, since the type's existing consumers treat it as opaque.",
+        "Add `ir1SsaOpenLoopHeader(location, preheaderVersion)` constructor. Uses the existing private `ir1SsaVersion(location, \"loop-header\")` to allocate `joinVersion`. Returns `{ kind: \"ssa-loop-header-join\", location, preheaderVersion, loopBackVersion: null, joinVersion, closed: false }`. Asserts `preheaderVersion.location` matches `location` via `ir1SsaAssertLocationCompatible`.",
+        "Add `ir1SsaCloseLoopHeader(header, loopBackVersion)` mutator. Throws `\"loop-header already closed\"` if `header.closed === true`. Calls `ir1SsaAssertLocationCompatible(header.location, loopBackVersion.location)`. Sets `header.loopBackVersion = loopBackVersion` and `header.closed = true`.",
+        "Add `ir1SsaLoopBody(input)` constructor. Iterates `input.headerJoins` and throws `\"loop body cannot wrap an open loop-header join\"` if any has `closed === false`. Iterates `input.breakHandles` and `input.continueHandles` and asserts each handle's version-location compatibility via the existing helper. Returns the frozen body with empty-array defaults for omitted optional fields and null default for `terminationMetric`.",
+        "Add `ir1SsaTerminationMetric(expr, lowerBound = null)` constructor — trivial record builder.",
+        "Add `ir1SsaBreakHandle(location, version)` and `ir1SsaContinueHandle(location, version)` constructors — each asserts version-location compatibility before returning.",
+        "In `tools/ts2pant/tests/ir1-ssa-loop-contract.test.mts`, replace every `it.skip(...)` with `it(...)` and replace the PENDING-comment bodies with concrete assertions covering the seven invariant families. Use `node:assert/strict` and the same identity-equality / throws-matching patterns the existing `ir1-ssa-contract.test.mts` uses."
+      ],
+      "requiredContext": [
+        "general-loop-workstream",
+        "existing-ir1-ssa-contract",
+        "cytron-ssa"
+      ],
+      "testStubsIntroduced": null,
+      "testStubsImplemented": [
+        "ir1-ssa-loop-contract > opens a loop-header join with a placeholder loop-back input",
+        "ir1-ssa-loop-contract > closes a loop-header join via back-patch and rejects double-close",
+        "ir1-ssa-loop-contract > rejects loop-back versions whose location does not match the header",
+        "ir1-ssa-loop-contract > rejects a loop body containing an open header join",
+        "ir1-ssa-loop-contract > constructs a termination metric with optional lower bound",
+        "ir1-ssa-loop-contract > snapshots break and continue handle versions with location compatibility",
+        "ir1-ssa-loop-contract > IR1SsaProgram declares loopHeaderJoins and loopBodies arrays"
+      ],
+      "spec": "module TS2PANT_GENERAL_LOOP_CONTRACT_PATCH_2.\n\n> Patch 2 lands the general-loop SSA vocabulary in ir1.ts. The\n> contract is structural: opaque versions carry their location;\n> loop-header joins follow a two-pass open/close protocol;\n> loop body regions reject open headers; termination metrics\n> discriminate bounded from fixed-point loops; break and\n> continue handles snapshot versions location-compatibly.\n\nLocation.\nVersion.\nExpr.\nLoopHeaderJoin.\nLoopBody.\nTerminationMetric.\nBreakHandle.\nContinueHandle.\nClosedStatus.\nopen => ClosedStatus.\nclosed => ClosedStatus.\n\nheader-location h: LoopHeaderJoin => Location.\npreheader-version h: LoopHeaderJoin => Version.\nloop-back-version h: LoopHeaderJoin => Version.\nheader-join-version h: LoopHeaderJoin => Version.\nheader-status h: LoopHeaderJoin => ClosedStatus.\nbody-header-joins b: LoopBody => [LoopHeaderJoin].\nbody-break-handles b: LoopBody => [BreakHandle].\nbody-continue-handles b: LoopBody => [ContinueHandle].\nbody-has-metric? b: LoopBody => Bool.\nmetric-expr m: TerminationMetric => Expr.\nbreak-location bh: BreakHandle => Location.\nbreak-version bh: BreakHandle => Version.\ncontinue-location ch: ContinueHandle => Location.\ncontinue-version ch: ContinueHandle => Version.\nversion-location v: Version => Location.\n---\n\n> Every version reachable from a loop-header join lives at the\n> header's location.\nall h: LoopHeaderJoin |\n  version-location (preheader-version h) = header-location h and\n  version-location (header-join-version h) = header-location h.\n\n> A closed header's loop-back version also lives at the header's\n> location.\nall h: LoopHeaderJoin |\n  header-status h = closed ->\n    version-location (loop-back-version h) = header-location h.\n\n> The header join's join-version is distinct from the preheader\n> and (once closed) the loop-back.\nall h: LoopHeaderJoin |\n  header-join-version h != preheader-version h.\n\nall h: LoopHeaderJoin |\n  header-status h = closed ->\n    header-join-version h != loop-back-version h.\n\n> A loop body's header joins are all closed.\nall b: LoopBody, h in body-header-joins b |\n  header-status h = closed.\n\n> Every break / continue handle is location-compatible.\nall b: LoopBody, bh in body-break-handles b |\n  version-location (break-version bh) = break-location bh.\n\nall b: LoopBody, ch in body-continue-handles b |\n  version-location (continue-version ch) = continue-location ch."
+    },
+    {
+      "number": 3,
+      "classification": "INFRA",
+      "complexity": 1,
+      "title": "Document general-loop SSA contract surface",
+      "files": [
+        {
+          "path": "tools/ts2pant/AGENTS.md",
+          "action": "modify",
+          "description": "Add a `### General-loop SSA contract surface (L1)` subsection after the existing `### IR1 SSA contract surface` block. Enumerate the new exported types, the two-pass open/close protocol for loop-header joins, the bounded↔fixed-point distinction via the termination metric, and the role of break/continue handles. Note that the surface is dormant in this milestone (no production builder/lowerer change)."
+        },
+        {
+          "path": "workstreams/ts2pant-general-loop-ssa.md",
+          "action": "modify",
+          "description": "Add a `**Status**: Landed in `ts2pant-general-loop-contract`.` line near the top of the Milestone 1 block. Cross-reference the AGENTS.md subsection so a future reader can navigate from workstream → contract docs."
+        }
+      ],
+      "changes": [
+        "In `tools/ts2pant/AGENTS.md`, insert a new subsection titled `### General-loop SSA contract surface (L1)` immediately after the existing `### IR1 SSA contract surface` block (currently ending around line 860).",
+        "List the new exported types and constructors (`IR1SsaLoopHeaderJoin`, `IR1SsaLoopBody`, `IR1SsaTerminationMetric`, `IR1SsaBreakHandle`, `IR1SsaContinueHandle`, `ir1SsaOpenLoopHeader`, `ir1SsaCloseLoopHeader`, `ir1SsaLoopBody`, `ir1SsaTerminationMetric`, `ir1SsaBreakHandle`, `ir1SsaContinueHandle`).",
+        "Document the two-pass Cytron-style protocol: open with a placeholder loop-back input, emit the loop body so its reads observe the header's `joinVersion`, then call `ir1SsaCloseLoopHeader` to back-patch the loop-back version. Note that double-close throws.",
+        "Document the bounded↔fixed-point discriminant: `LoopBody.terminationMetric` is non-null for bounded loops (downstream lowering will produce quantified equations) and null for fixed-point loops (lowering will produce recursive Pant rule definitions). This milestone does not implement either lowering.",
+        "Document the role of break/continue handles as version snapshots at early-exit sites, to be merged by later milestones at the post-loop join (break) or next iteration's header (continue).",
+        "Close the subsection with the standard `These helpers establish the contract surface...` paragraph noting that production builders/lowerers do not yet construct or consume the new vocabulary.",
+        "In `workstreams/ts2pant-general-loop-ssa.md`, add `**Status**: Landed in `ts2pant-general-loop-contract`.` immediately under the `### Milestone 1: general-loop-contract` heading. Add a parenthetical pointer to the new AGENTS.md subsection in the Definition of Done."
+      ],
+      "requiredContext": [
+        "general-loop-workstream",
+        "existing-agents-md-contract-section"
+      ],
+      "testStubsIntroduced": null,
+      "testStubsImplemented": null,
+      "spec": "module TS2PANT_GENERAL_LOOP_CONTRACT_PATCH_3.\n\n> Patch 3 lands documentation. No runtime invariants change.\n> AGENTS.md gains the L1 contract-surface subsection;\n> the workstream doc marks Milestone 1 as landed.\n\nDocument.\nMilestoneStatus.\nDocumentKind.\npending => MilestoneStatus.\nlanded => MilestoneStatus.\nagents-md => DocumentKind.\nworkstream-doc => DocumentKind.\n\ndocument-kind d: Document => DocumentKind.\ndocument-mentions-loop-contract? d: Document => Bool.\nworkstream-milestone-1-status => MilestoneStatus.\n---\n\n> After Patch 3, both target documents mention the L1 loop\n> contract surface and the workstream marks Milestone 1 as\n> landed.\nall d: Document |\n  document-kind d = agents-md ->\n    document-mentions-loop-contract? d.\n\nall d: Document |\n  document-kind d = workstream-doc ->\n    document-mentions-loop-contract? d.\n\nworkstream-milestone-1-status = landed."
+    }
+  ],
+  "testMap": [
+    {
+      "testName": "ir1-ssa-loop-contract > opens a loop-header join with a placeholder loop-back input",
+      "file": "tools/ts2pant/tests/ir1-ssa-loop-contract.test.mts",
+      "stubPatch": 1,
+      "implPatch": 2
+    },
+    {
+      "testName": "ir1-ssa-loop-contract > closes a loop-header join via back-patch and rejects double-close",
+      "file": "tools/ts2pant/tests/ir1-ssa-loop-contract.test.mts",
+      "stubPatch": 1,
+      "implPatch": 2
+    },
+    {
+      "testName": "ir1-ssa-loop-contract > rejects loop-back versions whose location does not match the header",
+      "file": "tools/ts2pant/tests/ir1-ssa-loop-contract.test.mts",
+      "stubPatch": 1,
+      "implPatch": 2
+    },
+    {
+      "testName": "ir1-ssa-loop-contract > rejects a loop body containing an open header join",
+      "file": "tools/ts2pant/tests/ir1-ssa-loop-contract.test.mts",
+      "stubPatch": 1,
+      "implPatch": 2
+    },
+    {
+      "testName": "ir1-ssa-loop-contract > constructs a termination metric with optional lower bound",
+      "file": "tools/ts2pant/tests/ir1-ssa-loop-contract.test.mts",
+      "stubPatch": 1,
+      "implPatch": 2
+    },
+    {
+      "testName": "ir1-ssa-loop-contract > snapshots break and continue handle versions with location compatibility",
+      "file": "tools/ts2pant/tests/ir1-ssa-loop-contract.test.mts",
+      "stubPatch": 1,
+      "implPatch": 2
+    },
+    {
+      "testName": "ir1-ssa-loop-contract > IR1SsaProgram declares loopHeaderJoins and loopBodies arrays",
+      "file": "tools/ts2pant/tests/ir1-ssa-loop-contract.test.mts",
+      "stubPatch": 1,
+      "implPatch": 2
+    }
+  ],
+  "dependencyGraph": [
+    { "patch": 1, "classification": "INFRA", "dependsOn": [] },
+    { "patch": 2, "classification": "INFRA", "dependsOn": [1] },
+    { "patch": 3, "classification": "INFRA", "dependsOn": [2] }
+  ],
+  "mergabilityChecklist": {
+    "featureFlagStrategyDocumented": true,
+    "earlyPatchesNonFunctional": true,
+    "testStubsInInfraPatches": true,
+    "testImplsColocated": true,
+    "testMapComplete": true,
+    "testMapImplPatchMatchesCode": true,
+    "behaviorPatchesMinimal": true,
+    "dependencyGraphOrdered": true,
+    "behaviorPatchesJustified": true,
+    "functionalChangesOwnedByExactlyOnePatch": true,
+    "operationalConsiderationsSubstantive": true,
+    "gameplanIsAtomicAndAutonomous": true
+  },
+  "mergabilityInsight": "All 3 of 3 patches are INFRA. Patch 1 lands skipped test stubs. Patch 2 adds the new vocabulary to `ir1.ts` and unskips the tests in-place. Patch 3 documents the contract. Production builders, lowerers, and observable translator behavior are unchanged in this milestone; the new exports are dormant API surface that L2 onward will consume.",
+  "finalStateSpec": "module TS2PANT_GENERAL_LOOP_CONTRACT.\n\n> ════════════════════════════════════════\n> Milestone 1 of the ts2pant general-loop SSA workstream.\n> ════════════════════════════════════════\n> After this milestone, ir1.ts exports the IR1 SSA vocabulary\n> for general for/while loops: loop-header joins with the\n> Cytron-style two-pass open/close protocol, loop body regions\n> aggregating writes/joins/handles/metric, termination metrics\n> discriminating bounded vs fixed-point loops, and\n> break/continue continuation handles. Production builders\n> and lowerers are unchanged; the surface is dormant.\n\nLocation.\nVersion.\nExpr.\nLoopHeaderJoin.\nLoopBody.\nTerminationMetric.\nBreakHandle.\nContinueHandle.\nIR1Program.\nClosedStatus.\nDocument.\nDocumentKind.\nMilestoneStatus.\nopen => ClosedStatus.\nclosed => ClosedStatus.\nagents-md => DocumentKind.\nworkstream-doc => DocumentKind.\npending => MilestoneStatus.\nlanded => MilestoneStatus.\n\nheader-location h: LoopHeaderJoin => Location.\npreheader-version h: LoopHeaderJoin => Version.\nloop-back-version h: LoopHeaderJoin => Version.\nheader-join-version h: LoopHeaderJoin => Version.\nheader-status h: LoopHeaderJoin => ClosedStatus.\nbody-header-joins b: LoopBody => [LoopHeaderJoin].\nbody-writes b: LoopBody => [Version].\nbody-break-handles b: LoopBody => [BreakHandle].\nbody-continue-handles b: LoopBody => [ContinueHandle].\nbody-has-metric? b: LoopBody => Bool.\nmetric-expr m: TerminationMetric => Expr.\nbreak-location bh: BreakHandle => Location.\nbreak-version bh: BreakHandle => Version.\ncontinue-location ch: ContinueHandle => Location.\ncontinue-version ch: ContinueHandle => Version.\nversion-location v: Version => Location.\nprogram-loop-header-joins p: IR1Program => [LoopHeaderJoin].\nprogram-loop-bodies p: IR1Program => [LoopBody].\ndocument-kind d: Document => DocumentKind.\ndocument-mentions-loop-contract? d: Document => Bool.\nworkstream-milestone-1-status => MilestoneStatus.\n---\n\n> Loop-header structural invariants.\nall h: LoopHeaderJoin |\n  version-location (preheader-version h) = header-location h and\n  version-location (header-join-version h) = header-location h.\n\nall h: LoopHeaderJoin |\n  header-status h = closed ->\n    version-location (loop-back-version h) = header-location h.\n\n> The join version is distinct from the merged inputs.\nall h: LoopHeaderJoin |\n  header-join-version h != preheader-version h.\n\nall h: LoopHeaderJoin |\n  header-status h = closed ->\n    header-join-version h != loop-back-version h.\n\n> Loop body invariants.\nall b: LoopBody, h in body-header-joins b |\n  header-status h = closed.\n\nall b: LoopBody, bh in body-break-handles b |\n  version-location (break-version bh) = break-location bh.\n\nall b: LoopBody, ch in body-continue-handles b |\n  version-location (continue-version ch) = continue-location ch.\n\n> Program-level aggregator carries the new arrays.\nall p: IR1Program, b in program-loop-bodies p, h in body-header-joins b |\n  header-status h = closed.\n\n> Documentation invariants.\nall d: Document |\n  document-kind d = agents-md ->\n    document-mentions-loop-contract? d.\n\nall d: Document |\n  document-kind d = workstream-doc ->\n    document-mentions-loop-contract? d.\n\nworkstream-milestone-1-status = landed."
+}
