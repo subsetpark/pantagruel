@@ -18,21 +18,41 @@ import {
   adaptLoopSummaryLowerResult,
 } from "../src/ir1-lower-body.js";
 import { lowerL1BodyToSsaProps } from "../src/ir1-lower-body.js";
-import type { IR1SsaBodyLowerResult } from "../src/ir1-ssa-lower.js";
+import {
+  scalarSsaBodyLowerResult,
+  collectionSsaBodyLowerResult,
+  type IR1SsaBodyLowerResult,
+} from "../src/ir1-ssa-lower.js";
 import {
   type IR1SsaJoin,
+  type IR1SsaLocation,
   type IR1SsaLoopSummary,
   type IR1SsaProgram,
   type IR1SsaRead,
   type IR1SsaWrite,
   type IR1Stmt,
+  ir1Assign,
   ir1Binop,
   ir1Block,
+  ir1CondStmt,
+  ir1LitNat,
+  ir1MapRead,
+  ir1MapSet,
+  ir1Member,
+  ir1SsaInitialVersion,
+  ir1SsaJoin,
+  ir1SsaMapMembershipLocation,
+  ir1SsaMapValueLocation,
   ir1SsaPropertyLocation,
+  ir1SsaSetMembershipLocation,
+  ir1SetAddOrDelete,
+  ir1SetClear,
   ir1Var,
 } from "../src/ir1.js";
 import { lowerExpr } from "../src/ir-emit.js";
 import { lowerL1Expr } from "../src/ir1-lower.js";
+import { lowerCollectionSsaToResult } from "../src/ir1-ssa-collections.js";
+import { lowerScalarSsaToProps } from "../src/ir1-ssa-scalars.js";
 import {
   lowerForeachShapeASummaries,
   lowerForeachShapeBSummaries,
@@ -203,6 +223,14 @@ async function buildMuSearchFixtureResult(): Promise<IR1SsaBodyLowerResult> {
   );
 }
 
+function buildCollectionResult(stmt: IR1Stmt): IR1SsaBodyLowerResult {
+  return collectionSsaBodyLowerResult(lowerCollectionSsaToResult(stmt));
+}
+
+function buildScalarResult(stmt: IR1Stmt): IR1SsaBodyLowerResult {
+  return scalarSsaBodyLowerResult(lowerScalarSsaToProps(stmt));
+}
+
 function representativePrograms(): RepresentativeProgram[] {
   return [
     {
@@ -213,25 +241,80 @@ function representativePrograms(): RepresentativeProgram[] {
     {
       name: "expressions-map-mutation.ts > setAndCopy",
       kind: "map",
-      build: () =>
-        buildFixtureBodyLowerResult("expressions-map-mutation.ts", "setAndCopy"),
+      build: async () =>
+        buildCollectionResult(
+          ir1Block([
+            ir1MapSet(
+              "stringToIntMap",
+              "stringToIntMapKey",
+              "MapStringInt",
+              "String",
+              ir1Var("m"),
+              ir1Var("kSrc"),
+              ir1Var("v"),
+            ),
+            ir1MapSet(
+              "stringToIntMap",
+              "stringToIntMapKey",
+              "MapStringInt",
+              "String",
+              ir1Var("m"),
+              ir1Var("kDst"),
+              ir1MapRead(
+                "get",
+                "stringToIntMap",
+                "stringToIntMapKey",
+                "MapStringInt",
+                "String",
+                ir1Var("m"),
+                ir1Var("kSrc"),
+              ),
+            ),
+          ]),
+        ),
     },
     {
       name: "expressions-set-mutation-field.ts > tagClearAndAdd",
       kind: "set",
-      build: () =>
-        buildFixtureBodyLowerResult(
-          "expressions-set-mutation-field.ts",
-          "tagClearAndAdd",
+      build: async () =>
+        buildCollectionResult(
+          ir1Block([
+            ir1SetClear("Tagged_tags", "Tagged", "String", ir1Var("c")),
+            ir1SetAddOrDelete(
+              "add",
+              "Tagged_tags",
+              "Tagged",
+              "String",
+              ir1Var("c"),
+              ir1Var("x"),
+            ),
+          ]),
         ),
     },
     {
       name: "expressions-state-aware-reads.ts > bumpInBranch",
       kind: "branch",
-      build: () =>
-        buildFixtureBodyLowerResult(
-          "expressions-state-aware-reads.ts",
-          "bumpInBranch",
+      build: async () =>
+        buildScalarResult(
+          ir1CondStmt(
+            [
+              [
+                ir1Var("g"),
+                ir1Assign(
+                  ir1Member(ir1Var("account"), "Account_balance"),
+                  ir1Binop(
+                    "add",
+                    ir1Member(ir1Var("account"), "Account_balance"),
+                    ir1LitNat(1),
+                  ),
+                ),
+              ],
+            ],
+            ir1Assign(
+              ir1Member(ir1Var("account"), "Account_balance"),
+              ir1LitNat(2),
+            ),
+          ),
         ),
     },
     {
@@ -272,6 +355,10 @@ function walkSsaProgram(program: IR1SsaProgram, visit: SsaProgramVisitor): void 
   }
 }
 
+function locationSignature(location: IR1SsaLocation): string {
+  return JSON.stringify(location);
+}
+
 before(async () => {
   await loadAst();
 });
@@ -282,17 +369,177 @@ describe("ir1-ssa-invariants", () => {
   void lowerForeachShapeASummaries;
   void lowerForeachShapeBSummaries;
 
-  it.skip(
+  it(
     "each write, join, and summary produces a fresh SSA version at its location",
-    () => {
-      // PENDING Patch 2: each write/join/summary produces a fresh SSA version at its location
+    async () => {
+      for (const representative of representativePrograms()) {
+        const result = await representative.build();
+        assert.equal(
+          result.diagnostics.length,
+          0,
+          `${representative.name} should lower without diagnostics`,
+        );
+        assert.ok(
+          result.programs.length > 0,
+          `${representative.name} should emit at least one SSA program`,
+        );
+
+        for (const [programIndex, program] of result.programs.entries()) {
+          const seenVersionIds = new Map<string, symbol[]>();
+
+          const trackFreshVersion = (
+            occurrence:
+              | { kind: "write"; version: IR1SsaWrite["version"]; location: IR1SsaWrite["location"] }
+              | { kind: "join"; version: IR1SsaJoin["joinVersion"]; location: IR1SsaJoin["location"] }
+              | {
+                  kind: "loop-summary";
+                  version: IR1SsaLoopSummary["summaryVersion"];
+                  location: IR1SsaLoopSummary["location"];
+                },
+            detail: string,
+          ): void => {
+            assert.equal(
+              locationSignature(occurrence.version.location),
+              locationSignature(occurrence.location),
+              `${representative.name} [program ${programIndex}] ${detail} should keep its version at the same location`,
+            );
+            const signature = locationSignature(occurrence.location);
+            const priorIds = seenVersionIds.get(signature) ?? [
+              ir1SsaInitialVersion(occurrence.location).id,
+            ];
+            for (const priorId of priorIds) {
+              assert.notEqual(
+                occurrence.version.id,
+                priorId,
+                `${representative.name} [program ${programIndex}] ${detail} should allocate a fresh SSA version`,
+              );
+            }
+            seenVersionIds.set(signature, [...priorIds, occurrence.version.id]);
+          };
+
+          walkSsaProgram(program, {
+            onWrite(write, index) {
+              trackFreshVersion(
+                { kind: "write", version: write.version, location: write.location },
+                `write #${index}`,
+              );
+            },
+            onJoin(join, index) {
+              assert.equal(
+                locationSignature(join.thenVersion.location),
+                locationSignature(join.location),
+                `${representative.name} [program ${programIndex}] join #${index} then-version should stay at the join location`,
+              );
+              assert.equal(
+                locationSignature(join.elseVersion.location),
+                locationSignature(join.location),
+                `${representative.name} [program ${programIndex}] join #${index} else-version should stay at the join location`,
+              );
+              assert.notEqual(
+                join.thenVersion.id,
+                join.elseVersion.id,
+                `${representative.name} [program ${programIndex}] join #${index} should merge distinct incoming versions`,
+              );
+              trackFreshVersion(
+                { kind: "join", version: join.joinVersion, location: join.location },
+                `join #${index}`,
+              );
+              assert.notEqual(
+                join.joinVersion.id,
+                join.thenVersion.id,
+                `${representative.name} [program ${programIndex}] join #${index} should allocate a fresh result version`,
+              );
+              assert.notEqual(
+                join.joinVersion.id,
+                join.elseVersion.id,
+                `${representative.name} [program ${programIndex}] join #${index} should allocate a fresh result version`,
+              );
+            },
+            onSummary(summary, index) {
+              trackFreshVersion(
+                {
+                  kind: "loop-summary",
+                  version: summary.summaryVersion,
+                  location: summary.location,
+                },
+                `loop summary #${index} (${summary.shape})`,
+              );
+            },
+          });
+        }
+      }
     },
   );
 
-  it.skip(
+  it(
     "ir1SsaJoin rejects mismatched-location inputs across all four location kinds",
     () => {
-      // PENDING Patch 2: ir1SsaJoin rejects mismatched-location inputs across all four location kinds
+      const propertyBalance = ir1SsaPropertyLocation(
+        "Account_balance",
+        ir1Var("account"),
+        "balance",
+      );
+      const propertyLimit = ir1SsaPropertyLocation(
+        "Account_limit",
+        ir1Var("account"),
+        "limit",
+      );
+      const mapValue = ir1SsaMapValueLocation(
+        "Account_score",
+        "Account_hasScore",
+        "Account",
+        "User",
+        ir1Var("account"),
+        ir1Var("user"),
+      );
+      const mapMembership = ir1SsaMapMembershipLocation(
+        "Account_score",
+        "Account_hasScore",
+        "Account",
+        "User",
+        ir1Var("account"),
+        ir1Var("user"),
+      );
+      const setMembership = ir1SsaSetMembershipLocation(
+        "Account_tags",
+        "Account",
+        "Tag",
+        ir1Var("account"),
+      );
+      const otherSetMembership = ir1SsaSetMembershipLocation(
+        "Account_tags",
+        "Account",
+        "Tag",
+        ir1Var("otherAccount"),
+      );
+
+      const mismatchedPairs: ReadonlyArray<
+        readonly [name: string, expected: IR1SsaLocation, actual: IR1SsaLocation]
+      > = [
+        ["property vs property", propertyLimit, propertyBalance],
+        ["property vs map-value", propertyBalance, mapValue],
+        ["property vs set-membership", propertyBalance, setMembership],
+        ["map-value vs map-membership", mapValue, mapMembership],
+        [
+          "set-membership vs set-membership receiver mismatch",
+          setMembership,
+          otherSetMembership,
+        ],
+      ];
+
+      for (const [name, expected, actual] of mismatchedPairs) {
+        const initial = ir1SsaInitialVersion(actual);
+        assert.throws(
+          () => ir1SsaJoin(expected, initial, initial),
+          /location mismatch/u,
+          `${name} should reject incompatible locations`,
+        );
+      }
+
+      const version = ir1SsaInitialVersion(propertyBalance);
+      const degenerate = ir1SsaJoin(propertyBalance, version, version);
+      assert.equal(degenerate, version);
+      assert.notEqual(degenerate.kind, "ssa-join");
     },
   );
 
