@@ -426,7 +426,12 @@ export interface IR1SsaVersion {
   readonly kind: "ssa-version";
   readonly id: symbol;
   readonly location: IR1SsaLocation;
-  readonly origin: "initial" | "write" | "join" | "loop-summary";
+  readonly origin:
+    | "initial"
+    | "write"
+    | "join"
+    | "loop-summary"
+    | "loop-header";
   readonly [IR1_SSA_VERSION]: true;
 }
 
@@ -493,11 +498,50 @@ export interface IR1SsaLoopSummary {
   readonly summaryVersion: IR1SsaVersion;
 }
 
+export interface IR1SsaLoopHeaderJoin {
+  readonly kind: "ssa-loop-header-join";
+  readonly location: IR1SsaLocation;
+  readonly preheaderVersion: IR1SsaVersion;
+  loopBackVersion: IR1SsaVersion | null;
+  readonly joinVersion: IR1SsaVersion;
+  closed: boolean;
+}
+
+export interface IR1SsaTerminationMetric {
+  readonly kind: "ssa-termination-metric";
+  readonly expr: IR1Expr;
+  readonly lowerBound: IR1Expr | null;
+}
+
+export interface IR1SsaBreakHandle {
+  readonly kind: "ssa-break-handle";
+  readonly location: IR1SsaLocation;
+  readonly version: IR1SsaVersion;
+}
+
+export interface IR1SsaContinueHandle {
+  readonly kind: "ssa-continue-handle";
+  readonly location: IR1SsaLocation;
+  readonly version: IR1SsaVersion;
+}
+
+export interface IR1SsaLoopBody {
+  readonly kind: "ssa-loop-body";
+  readonly headerJoins: readonly IR1SsaLoopHeaderJoin[];
+  readonly writes: readonly IR1SsaWrite[];
+  readonly joins: readonly IR1SsaJoin[];
+  readonly breakHandles: readonly IR1SsaBreakHandle[];
+  readonly continueHandles: readonly IR1SsaContinueHandle[];
+  readonly terminationMetric: IR1SsaTerminationMetric | null;
+}
+
 export interface IR1SsaProgram {
   readonly reads: IR1SsaRead[];
   readonly writes: IR1SsaWrite[];
   readonly joins: IR1SsaJoin[];
   readonly loopSummaries: IR1SsaLoopSummary[];
+  readonly loopHeaderJoins: IR1SsaLoopHeaderJoin[];
+  readonly loopBodies: IR1SsaLoopBody[];
   readonly declaredRules: IR1SsaRuleName[];
   readonly modifiedRules: IR1SsaRuleName[];
   readonly framedRules: IR1SsaRuleName[];
@@ -630,6 +674,95 @@ export const ir1SsaLoopSummary = (
   location,
   summaryVersion: ir1SsaVersion(location, "loop-summary"),
 });
+
+export const ir1SsaOpenLoopHeader = (
+  location: IR1SsaLocation,
+  preheaderVersion: IR1SsaVersion,
+): IR1SsaLoopHeaderJoin => {
+  ir1SsaAssertLocationCompatible(location, preheaderVersion.location);
+  return {
+    kind: "ssa-loop-header-join",
+    location,
+    preheaderVersion,
+    loopBackVersion: null,
+    joinVersion: ir1SsaVersion(location, "loop-header"),
+    closed: false,
+  };
+};
+
+export const ir1SsaCloseLoopHeader = (
+  header: IR1SsaLoopHeaderJoin,
+  loopBackVersion: IR1SsaVersion,
+): void => {
+  if (header.closed) {
+    throw new Error("loop-header already closed");
+  }
+  ir1SsaAssertLocationCompatible(header.location, loopBackVersion.location);
+  header.loopBackVersion = loopBackVersion;
+  header.closed = true;
+};
+
+export const ir1SsaTerminationMetric = (
+  expr: IR1Expr,
+  lowerBound: IR1Expr | null = null,
+): IR1SsaTerminationMetric => ({
+  kind: "ssa-termination-metric",
+  expr,
+  lowerBound,
+});
+
+export const ir1SsaBreakHandle = (
+  location: IR1SsaLocation,
+  version: IR1SsaVersion,
+): IR1SsaBreakHandle => {
+  ir1SsaAssertLocationCompatible(location, version.location);
+  return { kind: "ssa-break-handle", location, version };
+};
+
+export const ir1SsaContinueHandle = (
+  location: IR1SsaLocation,
+  version: IR1SsaVersion,
+): IR1SsaContinueHandle => {
+  ir1SsaAssertLocationCompatible(location, version.location);
+  return { kind: "ssa-continue-handle", location, version };
+};
+
+export const ir1SsaLoopBody = (input: {
+  readonly headerJoins?: readonly IR1SsaLoopHeaderJoin[];
+  readonly writes?: readonly IR1SsaWrite[];
+  readonly joins?: readonly IR1SsaJoin[];
+  readonly breakHandles?: readonly IR1SsaBreakHandle[];
+  readonly continueHandles?: readonly IR1SsaContinueHandle[];
+  readonly terminationMetric?: IR1SsaTerminationMetric | null;
+}): IR1SsaLoopBody => {
+  const headerJoins = input.headerJoins ?? [];
+  const writes = input.writes ?? [];
+  const joins = input.joins ?? [];
+  const breakHandles = input.breakHandles ?? [];
+  const continueHandles = input.continueHandles ?? [];
+
+  for (const header of headerJoins) {
+    if (!header.closed) {
+      throw new Error("loop body cannot wrap an open loop-header join");
+    }
+  }
+  for (const handle of breakHandles) {
+    ir1SsaAssertLocationCompatible(handle.location, handle.version.location);
+  }
+  for (const handle of continueHandles) {
+    ir1SsaAssertLocationCompatible(handle.location, handle.version.location);
+  }
+
+  return Object.freeze({
+    kind: "ssa-loop-body",
+    headerJoins,
+    writes,
+    joins,
+    breakHandles,
+    continueHandles,
+    terminationMetric: input.terminationMetric ?? null,
+  });
+};
 
 export const ir1SsaPropertyValue = (value: IR1Expr): IR1SsaPropertyValue => ({
   kind: "property",
