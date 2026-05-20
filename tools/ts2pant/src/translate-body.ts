@@ -4581,6 +4581,12 @@ function buildSupportedSsaMutatingBody(
         [...exit.continuationPrefix, ...bodyStmts.slice(index + 1)],
         true,
       );
+      const prefix =
+        stmts.length === 0
+          ? null
+          : stmts.length === 1
+            ? stmts[0]!
+            : ir1Block(stmts as [IR1Stmt, ...IR1Stmt[]]);
       const continuationBody = buildSupportedSsaMutatingBody(
         continuation,
         checker,
@@ -4591,17 +4597,14 @@ function buildSupportedSsaMutatingBody(
         applyConstChain,
       );
       if (isUnsupported(continuationBody)) {
+        if (continuationBody.unsupported === "empty mutating body") {
+          return prefix ?? { unsupported: "empty mutating body" };
+        }
         return continuationBody;
       }
       const continuationGuard = exit.earlyExitWhenTrue
         ? ir1Unop("not", guard)
         : guard;
-      const prefix =
-        stmts.length === 0
-          ? null
-          : stmts.length === 1
-            ? stmts[0]!
-            : ir1Block(stmts as [IR1Stmt, ...IR1Stmt[]]);
       const gated = ir1CondStmt([[continuationGuard, continuationBody]], null);
       if (prefix === null) {
         return gated;
