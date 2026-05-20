@@ -27,6 +27,13 @@ import {
 import { lowerL1MuSearch, type MuSearchLowerCtx } from "./ir1-lower.js";
 import { lowerL1Body, lowerL1BodyToSsaProps } from "./ir1-lower-body.js";
 import {
+  appendFramesForUnmodifiedRules,
+  type IR1SsaBodyLowerResult,
+  type IR1SsaFinalProperty,
+  ir1SsaBodyLowerSuccess,
+  ir1SsaBodyLowerUnsupported,
+} from "./ir1-ssa-lower.js";
+import {
   isScalarSsaL1Body,
   lowerScalarSsaEarlyExitMerge,
   type ScalarSsaEarlyExitPropertyInput,
@@ -1064,7 +1071,7 @@ export function readSetThroughWrites(
  * entries. `valueOverrides` empty (pure `.delete`) — skip the value
  * rule; the membership going false makes the rule-guard vacuous.
  */
-function emitMapEquations(
+function _emitMapEquations(
   entry: MapRuleWriteEntry,
   propositions: PropResult[],
   allocBinder: (hint: string) => string,
@@ -1136,7 +1143,7 @@ function emitMapEquations(
  * carried on the entry itself; the quantifier runs only over the
  * element.
  */
-function emitSetMembershipEquation(
+function _emitSetMembershipEquation(
   entry: SetRuleWriteEntry,
   propositions: PropResult[],
   allocBinder: (hint: string) => string,
@@ -4502,44 +4509,248 @@ function translateMutatingBody(
     return [];
   }
 
-  const ssaState = makeSymbolicState();
-  const ssaSupply = makeUniqueSupply(synthCell);
+  const lowered = appendFramesForUnmodifiedRules(
+    lowerSupportedSsaMutatingStatements(Array.from(node.body.statements), {
+      checker,
+      strategy,
+      paramNames,
+      state: makeSymbolicState(),
+      supply: makeUniqueSupply(synthCell),
+      initialPropertyValues: new Map(),
+    }),
+    declarations,
+  );
+  if (lowered.diagnostics.length > 0) {
+    return lowered.diagnostics;
+  }
+  return lowered.propositions;
+}
+
+function lowerSupportedSsaMutatingStatements(
+  stmts: readonly ts.Statement[],
+  ctx: {
+    checker: ts.TypeChecker;
+    strategy: NumericStrategy;
+    paramNames: Map<string, string>;
+    state: SymbolicState;
+    supply: UniqueSupply;
+    initialPropertyValues: ReadonlyMap<string, OpaqueExpr>;
+  },
+): IR1SsaBodyLowerResult {
+  const firstEarlyExit = stmts.findIndex(
+    (stmt) => detectEarlyExit(stmt) !== null,
+  );
+  if (firstEarlyExit === -1) {
+    return lowerSupportedSsaMutatingBlock(stmts, ctx);
+  }
+
+  const exitStmt = stmts[firstEarlyExit]!;
+  const exit = detectEarlyExit(exitStmt);
+  if (exit === null) {
+    return ir1SsaBodyLowerUnsupported("internal early-exit detection mismatch");
+  }
+  if (expressionHasSideEffects(exit.condition, ctx.checker)) {
+    return ir1SsaBodyLowerUnsupported("impure if-condition in mutating body");
+  }
+
+  const prefix = lowerSupportedSsaMutatingBlock(
+    stmts.slice(0, firstEarlyExit),
+    {
+      ...ctx,
+    },
+  );
+  if (prefix.diagnostics.length > 0) {
+    return prefix;
+  }
+  if (hasDirectNonFinalEmission(prefix)) {
+    return ir1SsaBodyLowerUnsupported(
+      "early-exit prefixes must lower to final SSA properties only",
+    );
+  }
+
+  const propertyValues = new Map(ctx.initialPropertyValues);
+  for (const entry of prefix.finalProperties ?? []) {
+    const property = finalPropertyParts(entry);
+    if (property === null) {
+      return ir1SsaBodyLowerUnsupported(
+        "early-exit prefixes only support scalar property writes",
+      );
+    }
+    propertyValues.set(
+      symbolicKey(property.prop, property.objExpr),
+      property.rhs,
+    );
+    ctx.state.writes = putWrite(
+      ctx.state.writes,
+      symbolicKey(property.prop, property.objExpr),
+      {
+        kind: "property",
+        prop: property.prop,
+        objExpr: property.objExpr,
+        value: property.rhs,
+      },
+    );
+    ctx.state.writtenKeys = addWrittenKey(
+      ctx.state.writtenKeys,
+      symbolicKey(property.prop, property.objExpr),
+    );
+  }
+
+  const gResult = translateBodyExpr(
+    exit.condition,
+    ctx.checker,
+    ctx.strategy,
+    ctx.paramNames,
+    ctx.state,
+    ctx.supply,
+  );
+  if (isBodyUnsupported(gResult)) {
+    return ir1SsaBodyLowerUnsupported(gResult.unsupported);
+  }
+  const guardExpr = applyOpaqueAliases(bodyExpr(gResult), ctx.supply);
+  const continuationGuardExpr = exit.earlyExitWhenTrue
+    ? getAst().unop(getAst().opNot(), guardExpr)
+    : guardExpr;
+
+  const continuation = [
+    ...exit.continuationPrefix,
+    ...stmts.slice(firstEarlyExit + 1),
+  ];
+  const continuationResult = lowerSupportedSsaMutatingStatements(continuation, {
+    ...ctx,
+    initialPropertyValues: propertyValues,
+  });
+  if (continuationResult.diagnostics.length > 0) {
+    return continuationResult;
+  }
+  if (hasDirectNonFinalEmission(continuationResult)) {
+    return ir1SsaBodyLowerUnsupported(
+      "loop with per-iteration writes cannot appear after an early-exit guard",
+    );
+  }
+
+  const continuationKeys = new Set<string>();
+  const inputs: ScalarSsaEarlyExitPropertyInput[] = [];
+  for (const entry of continuationResult.finalProperties ?? []) {
+    const property = finalPropertyParts(entry);
+    if (property === null) {
+      return ir1SsaBodyLowerUnsupported(
+        "early-exit continuations only support scalar property writes",
+      );
+    }
+    const key = symbolicKey(property.prop, property.objExpr);
+    continuationKeys.add(key);
+    inputs.push({
+      key,
+      prop: property.prop,
+      objExpr: property.objExpr,
+      priorValue: propertyValues.get(key),
+      continuationValue: property.rhs,
+    });
+  }
+
+  const merged = lowerScalarSsaEarlyExitMerge(inputs, {
+    guardExpr: continuationGuardExpr,
+    earlyExitWhenTrue: false,
+    canonicalize: (e) => applyOpaqueAliases(e, ctx.supply),
+  });
+  const prefixOnly = (prefix.finalProperties ?? []).filter((entry) => {
+    const property = finalPropertyParts(entry);
+    return property === null
+      ? false
+      : !continuationKeys.has(symbolicKey(property.prop, property.objExpr));
+  });
+
+  return ir1SsaBodyLowerSuccess({
+    propositions: [
+      ...prefixOnly.map((entry) => finalPropertyEquation(entry)),
+      ...merged.propositions,
+    ],
+    modifiedRules: [
+      ...prefixOnly.map((entry) => finalPropertyRuleName(entry)),
+      ...merged.modifiedRules,
+    ],
+    programs: [
+      ...prefix.programs,
+      ...continuationResult.programs,
+      merged.program,
+    ],
+    finalProperties: [...prefixOnly, ...merged.finalProperties],
+  });
+}
+
+function lowerSupportedSsaMutatingBlock(
+  stmts: readonly ts.Statement[],
+  ctx: {
+    checker: ts.TypeChecker;
+    strategy: NumericStrategy;
+    paramNames: Map<string, string>;
+    state: SymbolicState;
+    supply: UniqueSupply;
+    initialPropertyValues: ReadonlyMap<string, OpaqueExpr>;
+  },
+): IR1SsaBodyLowerResult {
+  const body = ts.factory.createBlock(stmts, true);
   const ssaBody = buildSupportedSsaMutatingBody(
-    node.body,
-    checker,
-    strategy,
-    paramNames,
-    ssaState,
-    ssaSupply,
+    body,
+    ctx.checker,
+    ctx.strategy,
+    ctx.paramNames,
+    ctx.state,
+    ctx.supply,
   );
 
   if (isUnsupported(ssaBody)) {
-    if (ssaBody.unsupported === "empty mutating body") {
-      return [];
-    }
-    return [{ kind: "unsupported", reason: ssaBody.unsupported }];
+    return ssaBody.unsupported === "empty mutating body"
+      ? ir1SsaBodyLowerSuccess()
+      : ir1SsaBodyLowerUnsupported(ssaBody.unsupported);
   }
 
-  if (containsDeferredSsaFastPathShape(ssaBody)) {
-    return [
-      {
-        kind: "unsupported",
-        reason: "statement is not supported by unified SSA body lowering",
-      },
-    ];
-  }
-
-  const lowered = lowerL1BodyToSsaProps(ssaBody, declarations, {
-    applyConst: (e) => applyOpaqueAliases(e, ssaSupply),
+  return lowerL1BodyToSsaProps(ssaBody, [], {
+    applyConst: (e) => applyOpaqueAliases(e, ctx.supply),
+    initialPropertyValues: ctx.initialPropertyValues,
   });
-  return lowered.diagnostics.length === 0
-    ? lowered.propositions
-    : lowered.diagnostics;
 }
 
-function containsDeferredSsaFastPathShape(stmt: IR1Stmt): boolean {
-  void stmt;
-  return false;
+function hasDirectNonFinalEmission(result: IR1SsaBodyLowerResult): boolean {
+  return result.propositions.length !== (result.finalProperties?.length ?? 0);
+}
+
+function finalPropertyParts(
+  entry: IR1SsaFinalProperty,
+): { prop: string; objExpr: OpaqueExpr; rhs: OpaqueExpr } | null {
+  if ("kind" in entry && entry.kind === "property") {
+    return { prop: entry.prop, objExpr: entry.objExpr, rhs: entry.rhs };
+  }
+  if ("location" in entry && entry.location.kind === "property") {
+    return {
+      prop: entry.location.ruleName,
+      objExpr: entry.objExpr,
+      rhs: entry.rhs,
+    };
+  }
+  return null;
+}
+
+function finalPropertyRuleName(entry: IR1SsaFinalProperty): string {
+  const property = finalPropertyParts(entry);
+  if (property === null) {
+    throw new Error("expected scalar property final entry");
+  }
+  return property.prop;
+}
+
+function finalPropertyEquation(entry: IR1SsaFinalProperty): PropResult {
+  const property = finalPropertyParts(entry);
+  if (property === null) {
+    throw new Error("expected scalar property final entry");
+  }
+  return {
+    kind: "equation",
+    quantifiers: [] as OpaqueParam[],
+    lhs: getAst().app(getAst().primed(property.prop), [property.objExpr]),
+    rhs: property.rhs,
+  };
 }
 
 function buildSupportedSsaMutatingBody(
@@ -4726,6 +4937,14 @@ function buildSupportedSsaStatement(
       return buildL1AssignStmt(stmt, ctx);
     }
   }
+  if (
+    ts.isForStatement(stmt) ||
+    ts.isForInStatement(stmt) ||
+    ts.isWhileStatement(stmt) ||
+    ts.isDoStatement(stmt)
+  ) {
+    return { unsupported: "loop assignment" };
+  }
   return {
     unsupported: `statement is not supported by unified SSA body lowering: ${ts.SyntaxKind[stmt.kind]}`,
   };
@@ -4738,7 +4957,7 @@ function buildSupportedSsaStatement(
  * `false` when an unsupported construct was encountered; unsupported
  * markers are pushed into `propositions` for the caller to inspect.
  */
-function symbolicExecute(
+function _symbolicExecute(
   body: ts.Block | ts.Statement,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
@@ -4818,7 +5037,7 @@ function symbolicExecute(
       const sR = cloneSymbolicState(state);
       const remainingProps: PropResult[] = [];
       const continuationBlock = ts.factory.createBlock(continuation, true);
-      const okR = symbolicExecute(
+      const okR = _symbolicExecute(
         continuationBlock,
         checker,
         strategy,
@@ -5314,7 +5533,7 @@ function symbolicExecute(
 
     // Nested block — flow state through sequentially
     if (ts.isBlock(stmt)) {
-      const inner = symbolicExecute(
+      const inner = _symbolicExecute(
         stmt,
         checker,
         strategy,
@@ -5407,7 +5626,7 @@ function symbolicExecute(
         });
         ok = false;
       } else {
-        const inner = symbolicExecute(
+        const inner = _symbolicExecute(
           stmt.tryBlock,
           checker,
           strategy,
@@ -5423,7 +5642,7 @@ function symbolicExecute(
         }
       }
       if (stmt.finallyBlock) {
-        const inner = symbolicExecute(
+        const inner = _symbolicExecute(
           stmt.finallyBlock,
           checker,
           strategy,
@@ -5460,7 +5679,7 @@ function symbolicExecute(
  * machinery on the quantified form, which would be lost if ts2pant
  * pre-wrapped with a local `all` here.
  */
-function generateFrameConditions(
+function _generateFrameConditions(
   modifiedRules: ReadonlySet<string>,
   declarations: PantDeclaration[],
 ): PropResult[] {
