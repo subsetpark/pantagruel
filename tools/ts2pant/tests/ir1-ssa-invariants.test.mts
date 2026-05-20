@@ -39,6 +39,7 @@ import {
   lowerMuSearchSummary,
 } from "../src/ir1-ssa-loops.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
+import { freshHygienicBinder, type UniqueSupply } from "../src/translate-body.js";
 import { IntStrategy } from "../src/translate-types.js";
 import { buildDocumentFromSourceFile } from "./helpers.mts";
 
@@ -182,6 +183,8 @@ function buildSupportedFixtureStatement(
 async function buildMuSearchFixtureResult(): Promise<IR1SsaBodyLowerResult> {
   const sourceFile = loadFixture("expressions-while-mu-search.ts");
   await buildDocumentFromSourceFile(sourceFile, "firstUnusedSuffix");
+  const supply: UniqueSupply = { n: 0 };
+  const binder = freshHygienicBinder(supply);
   return adaptLoopSummaryLowerResult(
     lowerMuSearchSummary({
       location: ir1SsaPropertyLocation(
@@ -191,10 +194,10 @@ async function buildMuSearchFixtureResult(): Promise<IR1SsaBodyLowerResult> {
       ),
       counterType: "Int",
       counterPantName: "i",
-      binder: "j1",
+      binder,
       initExpr: getAst().litNat(1),
       predicateExpr: lowerExpr(
-        lowerL1Expr(ir1Binop("in", ir1Var("j1"), ir1Var("used"))),
+        lowerL1Expr(ir1Binop("in", ir1Var(binder), ir1Var("used"))),
       ),
     }),
   );
