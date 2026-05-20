@@ -6,6 +6,15 @@
  * lowers them through the dedicated SSA helpers, and appends frames from
  * the resulting `modifiedRules` set. Unsupported statements fail closed
  * with diagnostics; there is no symbolic-state reducer fallback here.
+ *
+ * SSA reference: Cytron, Ferrante, Rosen, Wegman, and Zadeck,
+ * "Efficiently Computing Static Single Assignment Form and the Control
+ * Dependence Graph", ACM TOPLAS 13(4), 1991,
+ * https://doi.org/10.1145/115372.115320. The boundary functions in this
+ * file preserve the SSA-style invariants used by the lowerers: each emitted
+ * write has one versioned definition, branch/loop helpers report explicit
+ * joins or summaries before equation emission, and `modifiedRules` remains
+ * the set of definitions that suppresses frame generation.
  */
 
 import { lowerExpr } from "./ir-emit.js";
