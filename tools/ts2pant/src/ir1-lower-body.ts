@@ -27,7 +27,10 @@
 import { lowerBinop, lowerExpr } from "./ir-emit.js";
 import type { IR1Expr, IR1Stmt } from "./ir1.js";
 import { lowerL1Expr } from "./ir1-lower.js";
-import { lowerCollectionSsaToProps } from "./ir1-ssa-collections.js";
+import {
+  isCollectionSsaL1Body,
+  lowerCollectionSsaToProps,
+} from "./ir1-ssa-collections.js";
 import {
   foreachShapeBAccumulatorKey,
   lowerForeachShapeASummaries,
@@ -35,7 +38,9 @@ import {
   type MuSearchSummaryLowerResult,
 } from "./ir1-ssa-loops.js";
 import {
+  appendFramesForUnmodifiedRules,
   collectionSsaBodyLowerResult,
+  combineIR1SsaBodyLowerResults,
   type IR1SsaBodyLowerResult,
   ir1SsaBodyLowerUnsupported,
   loopSsaBodyLowerResult,
@@ -64,7 +69,7 @@ import {
   type SymbolicState,
   symbolicKey,
 } from "./translate-body.js";
-import type { PropResult } from "./types.js";
+import type { PantDeclaration, PropResult } from "./types.js";
 
 export interface LowerBodyCtx {
   applyConst: (e: OpaqueExpr) => OpaqueExpr;
@@ -103,6 +108,58 @@ export function adaptLoopSummaryLowerResult(
 
 export interface ScalarSsaBodyLowerOptions extends LowerBodyCtx {
   initialPropertyValues?: ReadonlyMap<string, OpaqueExpr>;
+}
+
+export interface SsaBodyLowerOptions extends LowerBodyCtx {
+  initialPropertyValues?: ReadonlyMap<string, OpaqueExpr>;
+}
+
+export function lowerL1BodyToSsaProps(
+  stmt: IR1Stmt,
+  declarations: readonly PantDeclaration[],
+  options: SsaBodyLowerOptions,
+): IR1SsaBodyLowerResult {
+  return appendFramesForUnmodifiedRules(
+    lowerL1BodyToSsaResult(stmt, options),
+    declarations,
+  );
+}
+
+function lowerL1BodyToSsaResult(
+  stmt: IR1Stmt,
+  options: SsaBodyLowerOptions,
+): IR1SsaBodyLowerResult {
+  if (isCollectionSsaL1Body(stmt)) {
+    return lowerCollectionL1BodyToSsaResult(stmt, options);
+  }
+  if (isScalarSsaL1Body(stmt)) {
+    return lowerScalarL1BodyToSsaResult(stmt, options);
+  }
+  if (stmt.kind === "foreach") {
+    return lowerForeachL1BodyToSsaResult(stmt, options);
+  }
+  if (stmt.kind === "block") {
+    const results: IR1SsaBodyLowerResult[] = [];
+    const initialPropertyValues = new Map(options.initialPropertyValues);
+    for (const child of stmt.stmts) {
+      const result = lowerL1BodyToSsaResult(child, {
+        ...options,
+        initialPropertyValues,
+      });
+      results.push(result);
+      if (result.diagnostics.length > 0) {
+        continue;
+      }
+      for (const entry of result.finalProperties ?? []) {
+        const prop = "location" in entry ? entry.location.ruleName : entry.prop;
+        initialPropertyValues.set(symbolicKey(prop, entry.objExpr), entry.rhs);
+      }
+    }
+    return combineIR1SsaBodyLowerResults(...results);
+  }
+  return ir1SsaBodyLowerUnsupported(
+    "statement is not supported by unified SSA body lowering",
+  );
 }
 
 export function lowerCollectionL1BodyToSsaResult(
@@ -144,6 +201,49 @@ export function lowerScalarL1BodyToSsaResult(
         : "scalar SSA lowering rejected the body",
     );
   }
+}
+
+function lowerForeachL1BodyToSsaResult(
+  stmt: Extract<IR1Stmt, { kind: "foreach" }>,
+  options: SsaBodyLowerOptions,
+): IR1SsaBodyLowerResult {
+  const arrExpr = options.applyConst(lowerExpr(lowerL1Expr(stmt.source)));
+  const results: IR1SsaBodyLowerResult[] = [];
+
+  if (stmt.body !== null) {
+    results.push(
+      adaptLoopSummaryLowerResult(
+        lowerForeachShapeASummaries({
+          binder: stmt.binder,
+          source: arrExpr,
+          body: stmt.body,
+          lowerOpaque: options.applyConst,
+          ...(options.initialPropertyValues === undefined
+            ? {}
+            : { initialPropertyValues: options.initialPropertyValues }),
+        }),
+      ),
+    );
+  }
+
+  if (stmt.foldLeaves.length > 0) {
+    results.push(
+      adaptLoopSummaryLowerResult(
+        lowerForeachShapeBSummaries({
+          binder: stmt.binder,
+          source: arrExpr,
+          foldLeaves: stmt.foldLeaves,
+          lowerExpr: (expr) => options.applyConst(lowerExpr(lowerL1Expr(expr))),
+          priorAccumulatorValues: new Map(),
+        }),
+      ),
+    );
+  }
+
+  if (results.length === 0) {
+    return ir1SsaBodyLowerUnsupported("empty foreach body");
+  }
+  return combineIR1SsaBodyLowerResults(...results);
 }
 
 /**

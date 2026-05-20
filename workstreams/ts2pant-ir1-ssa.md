@@ -19,9 +19,11 @@ directly through `lowerL1Body` in `tools/ts2pant/src/ir1-lower-body.ts`, with
 scalar property mutation routed through `tools/ts2pant/src/ir1-ssa-scalars.ts`
 collection mutation routed through `tools/ts2pant/src/ir1-ssa-collections.ts`,
 and loop-summary mutation routed through `tools/ts2pant/src/ir1-ssa-loops.ts`.
+M5 added the body-level `lowerL1BodyToSsaProps` boundary, so successful
+supported mutating bodies now return final propositions, modified rules, and
+frames from IR1 SSA lowering rather than from `SymbolicState.modifiedProps`.
 `SymbolicState` still exists in `tools/ts2pant/src/translate-body.ts`, but it
-is no longer the backing model for the supported foreach and μ-search summary
-forms after M4.
+is fallback-only for shapes intentionally left to M6 cleanup.
 
 That design is now partially SSA. Scalar property mutation, read-after-write,
 branch joins, and supported early-exit continuation merges are represented by
@@ -30,7 +32,7 @@ IR1 SSA. IR1 still contains `assign`, `while`, `for`, `foreach`, `cond-stmt`,
 `Set.clear()`, now lower through the collection SSA module, while μ-search and
 supported foreach loop summaries lower through the dedicated loop-summary
 helper. General `for` / `while` SSA remains out of scope for this workstream,
-and the remaining `SymbolicState` cleanup is deferred to the M5/M6 transition.
+and the remaining `SymbolicState` cleanup is deferred to M6.
 
 ## Key Challenges
 
@@ -210,8 +212,10 @@ those outputs into the unified `PropResult[]` lowering path.
 
 ### Milestone 5: ir1-ssa-propresult-lowering
 
+**Status**: Landed in patch 5.
+
 **Definition of Done**:
-IR1 SSA has one lowering path to `PropResult[]`:
+IR1 SSA has one lowering path to `PropResult[]` for supported mutating bodies:
 
 - property SSA final versions lower to primed equations
 - Map SSA final versions lower to value and membership override equations
@@ -221,14 +225,16 @@ IR1 SSA has one lowering path to `PropResult[]`:
 - frame conditions derive from IR1's modified-rule set, not from
   `SymbolicState.modifiedProps`
 
-`tools/ts2pant/src/ir1-lower-body.ts` is either rewritten as the IR1 SSA lowerer
-or replaced by a clearly named module. `translate-body.ts` no longer owns
-mutation semantics beyond orchestration and helper utilities.
+`tools/ts2pant/src/ir1-lower-body.ts` now exposes `lowerL1BodyToSsaProps`,
+which appends frames from the unified `modifiedRules` set. `translate-body.ts`
+tries that boundary for supported SSA-backed bodies and falls back only when
+the unified lowerer rejects a shape that M6 still needs to delete or migrate.
 
 **Why this is a safe pause point**:
-The new IR1 SSA architecture is end-to-end for all currently supported syntax.
-The old lowering machinery may still exist as dead code, but the production path
-does not depend on it.
+The new IR1 SSA architecture is end-to-end for the currently supported
+SSA-backed syntax. The old lowering machinery still exists as fallback code for
+deferred shapes, but supported scalar, collection, and loop-summary final
+emission no longer belongs to `translate-body.ts`.
 
 **Unlocks**:
 Code deletion and simplification.
@@ -241,11 +247,13 @@ Code deletion and simplification.
 The obsolete symbolic-state execution machinery is removed or narrowed to
 small pure utilities:
 
-- `SymbolicState` no longer serves as the semantic model for mutating bodies.
+- Remove the fallback paths that still execute mutating bodies through
+  `SymbolicState`.
 - `putWrite`, `addWrittenKey`, `mergeOverrides`, `installMapWrite`,
   `installSetWrite`, `readMapThroughWrites`, and `readSetThroughWrites` are
   deleted, renamed, or moved behind IR1 SSA lowering if still genuinely useful.
-- `translate-body.ts` no longer contains parallel mutation paths.
+- `translate-body.ts` no longer contains parallel mutation paths or final
+  emission fallback code.
 - Comments in `tools/ts2pant/AGENTS.md` and the old imperative-IR workstream
   are updated to mark `SymbolicState` as superseded.
 - Full ts2pant unit and integration suites pass.
