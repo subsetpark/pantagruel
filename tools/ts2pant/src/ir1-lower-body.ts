@@ -35,6 +35,7 @@ import {
   foreachShapeBAccumulatorKey,
   lowerForeachShapeASummaries,
   lowerForeachShapeBSummaries,
+  type MuSearchSummaryLowerResult,
 } from "./ir1-ssa-loops.js";
 import {
   collectionSsaBodyLowerResult,
@@ -90,9 +91,13 @@ export function adaptLoopSummaryLowerResult(
   result: ReturnType<typeof lowerForeachShapeBSummaries>,
 ): IR1SsaBodyLowerResult;
 export function adaptLoopSummaryLowerResult(
+  result: MuSearchSummaryLowerResult,
+): IR1SsaBodyLowerResult;
+export function adaptLoopSummaryLowerResult(
   result:
     | ReturnType<typeof lowerForeachShapeASummaries>
-    | ReturnType<typeof lowerForeachShapeBSummaries>,
+    | ReturnType<typeof lowerForeachShapeBSummaries>
+    | MuSearchSummaryLowerResult,
 ): IR1SsaBodyLowerResult {
   return loopSsaBodyLowerResult(result);
 }
@@ -662,12 +667,13 @@ function lowerForeach(
       lowerOpaque: ctx.applyConst,
       initialPropertyValues: shapeAInitialPropertyValues(state),
     });
-    if (result.diagnostics.length > 0) {
-      propositions.push(...result.diagnostics);
+    const lowered = adaptLoopSummaryLowerResult(result);
+    if (lowered.diagnostics.length > 0) {
+      propositions.push(...lowered.diagnostics);
       return false;
     }
-    propositions.push(...result.propositions);
-    for (const rule of result.modifiedRules) {
+    propositions.push(...lowered.propositions);
+    for (const rule of lowered.modifiedRules) {
       state.modifiedProps = addModifiedProp(state.modifiedProps, rule);
     }
   }
@@ -701,16 +707,17 @@ function lowerForeach(
         ctx.applyConst(lowerL1ExprToOpaque(expr, state)),
       priorAccumulatorValues,
     });
-    if (result.diagnostics.length > 0) {
-      propositions.push(...result.diagnostics);
+    const lowered = adaptLoopSummaryLowerResult(result);
+    if (lowered.diagnostics.length > 0) {
+      propositions.push(...lowered.diagnostics);
       return false;
     }
-    for (const rule of result.modifiedRules) {
+    for (const rule of lowered.modifiedRules) {
       state.modifiedProps = addModifiedProp(state.modifiedProps, rule);
     }
     for (let i = 0; i < stmt.foldLeaves.length; i++) {
       const leaf = stmt.foldLeaves[i]!;
-      const prop = result.propositions[i];
+      const prop = lowered.propositions[i];
       if (prop?.kind !== "equation") {
         propositions.push({
           kind: "unsupported",

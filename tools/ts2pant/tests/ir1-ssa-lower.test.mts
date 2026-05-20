@@ -3,6 +3,7 @@ import { before, describe, it } from "node:test";
 
 import {
   ir1Assign,
+  ir1Binop,
   ir1LitBool,
   ir1LitNat,
   ir1MapSet,
@@ -10,7 +11,11 @@ import {
   ir1SsaPropertyLocation,
   ir1Var,
 } from "../src/ir1.js";
-import { adaptCollectionSsaLowerResult, adaptLoopSummaryLowerResult, adaptScalarSsaLowerResult } from "../src/ir1-lower-body.js";
+import {
+  adaptCollectionSsaLowerResult,
+  adaptLoopSummaryLowerResult,
+  adaptScalarSsaLowerResult,
+} from "../src/ir1-lower-body.js";
 import {
   appendFramesForUnmodifiedRules,
   combineIR1SsaBodyLowerResults,
@@ -18,7 +23,11 @@ import {
   ir1SsaBodyLowerUnsupported,
 } from "../src/ir1-ssa-lower.js";
 import { lowerCollectionSsaToProps } from "../src/ir1-ssa-collections.js";
-import { lowerForeachShapeASummaries } from "../src/ir1-ssa-loops.js";
+import {
+  lowerForeachShapeASummaries,
+  lowerForeachShapeBSummaries,
+  lowerMuSearchSummary,
+} from "../src/ir1-ssa-loops.js";
 import { lowerScalarSsaToProps } from "../src/ir1-ssa-scalars.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 
@@ -235,5 +244,85 @@ describe("ir1-ssa-lower", () => {
     assert.deepEqual(loop.diagnostics, [
       { kind: "unsupported", reason: "general loops are not supported" },
     ]);
+  });
+
+  it("loop summaries report propositions and modified rules through one result", () => {
+    const ast = getAst();
+    const shapeA = adaptLoopSummaryLowerResult(
+      lowerForeachShapeASummaries({
+        binder: "item0",
+        source: ast.var("items"),
+        body: ir1Assign(
+          ir1Member(ir1Var("item0"), "Item_seen"),
+          ir1LitBool(true),
+        ),
+      }),
+    );
+    const shapeB = adaptLoopSummaryLowerResult(
+      lowerForeachShapeBSummaries({
+        binder: "item0",
+        source: ast.var("items"),
+        foldLeaves: [
+          {
+            target: ir1Var("account"),
+            prop: "Account_total",
+            combiner: "add",
+            outerOp: "add",
+            rhs: ir1Member(ir1Var("item0"), "Item_value"),
+            guard: ir1Binop(
+              "gt",
+              ir1Member(ir1Var("item0"), "Item_value"),
+              ir1LitNat(0),
+            ),
+          },
+        ],
+      }),
+    );
+    const muSearch = adaptLoopSummaryLowerResult(
+      lowerMuSearchSummary({
+        location: ir1SsaPropertyLocation(
+          "Name_firstUnusedSuffix",
+          ir1Var("name"),
+          "firstUnusedSuffix",
+        ),
+        counterType: "Int",
+        counterPantName: "i",
+        binder: "j1",
+        initExpr: ast.litNat(1),
+        predicateExpr: ast.binop(ast.opIn(), ast.var("i"), ast.var("used")),
+      }),
+    );
+    const result = combineIR1SsaBodyLowerResults(shapeA, shapeB, muSearch);
+
+    assert.equal(result.diagnostics.length, 0);
+    assert.equal(result.propositions.length, 2);
+    assert.deepEqual(
+      new Set(result.modifiedRules),
+      new Set(["Item_seen", "Account_total", "Name_firstUnusedSuffix"]),
+    );
+    assert.equal(result.programs.length, 3);
+    assert.deepEqual(
+      result.programs.flatMap((program) =>
+        program.loopSummaries.map((summary) => summary.shape),
+      ),
+      ["foreach-shape-a", "foreach-shape-b", "mu-search"],
+    );
+
+    const shapeAProp = result.propositions[0];
+    assert.equal(shapeAProp?.kind, "equation");
+    if (shapeAProp?.kind === "equation") {
+      assert.equal(ast.strExpr(shapeAProp.lhs), "Item_seen' item0");
+      assert.equal(ast.strExpr(shapeAProp.rhs), "true");
+    }
+
+    const shapeBProp = result.propositions[1];
+    assert.equal(shapeBProp?.kind, "equation");
+    if (shapeBProp?.kind === "equation") {
+      assert.equal(ast.strExpr(shapeBProp.lhs), "Account_total' account");
+      assert.equal(
+        ast.strExpr(shapeBProp.rhs),
+        "Account_total account + (+ over each item0 in items, Item_value item0 > 0 | Item_value item0)",
+      );
+    }
   });
 });

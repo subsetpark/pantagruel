@@ -312,9 +312,39 @@ describe("ir1-ssa-loops", () => {
     }
   });
 
-  it.skip("preserves production parity for foreach fixtures", async () => {
-    // PENDING Patch 4: pin parity for `functions-mutating-loop.ts`
-    // (for example `forEachActivate`, `forEachSum`, or `mixedUpdates`) once
-    // foreach lowering routes through the loop-summary helper.
+  it("preserves production parity for foreach fixtures", async () => {
+    const filePath = resolve(
+      import.meta.dirname,
+      "fixtures/constructs/functions-mutating-loop.ts",
+    );
+    const sourceFile = createSourceFile(filePath);
+    const funcs = ["forEachActivate", "forEachSum", "mixedUpdates"];
+
+    const outputs = await Promise.all(
+      funcs.map(async (funcName) => {
+        const doc = await buildDocumentFromSourceFile(sourceFile, funcName);
+        return emitDocument(doc);
+      }),
+    );
+
+    for (const output of outputs) {
+      assert.doesNotMatch(output, /UNSUPPORTED/u);
+    }
+    assert.match(
+      outputs[0]!,
+      /all ([\w$]+) in users \| user--active' \1 = true/u,
+    );
+    assert.match(
+      outputs[1]!,
+      /account--total' a = account--total a \+ \(\+ over each ([\w$]+) in items \| item--value \1\)/u,
+    );
+    assert.match(
+      outputs[2]!,
+      /all ([\w$]+) in items \| item--tagged' \1 = true/u,
+    );
+    assert.match(
+      outputs[2]!,
+      /account--total' a = account--total a \+ \(\+ over each ([\w$]+) in items \| item--value \1\)/u,
+    );
   });
 });
