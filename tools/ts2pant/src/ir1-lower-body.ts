@@ -27,10 +27,7 @@
 import { lowerBinop, lowerExpr } from "./ir-emit.js";
 import type { IR1Expr, IR1Stmt } from "./ir1.js";
 import { lowerL1Expr } from "./ir1-lower.js";
-import {
-  isCollectionSsaL1Body,
-  lowerCollectionSsaToProps,
-} from "./ir1-ssa-collections.js";
+import { lowerCollectionSsaToProps } from "./ir1-ssa-collections.js";
 import {
   foreachShapeBAccumulatorKey,
   lowerForeachShapeASummaries,
@@ -40,6 +37,7 @@ import {
 import {
   collectionSsaBodyLowerResult,
   type IR1SsaBodyLowerResult,
+  ir1SsaBodyLowerUnsupported,
   loopSsaBodyLowerResult,
   scalarSsaBodyLowerResult,
 } from "./ir1-ssa-lower.js";
@@ -70,6 +68,7 @@ import type { PropResult } from "./types.js";
 
 export interface LowerBodyCtx {
   applyConst: (e: OpaqueExpr) => OpaqueExpr;
+  ssaResultBoundary?: boolean;
 }
 
 export function adaptCollectionSsaLowerResult(
@@ -100,6 +99,51 @@ export function adaptLoopSummaryLowerResult(
     | MuSearchSummaryLowerResult,
 ): IR1SsaBodyLowerResult {
   return loopSsaBodyLowerResult(result);
+}
+
+export interface ScalarSsaBodyLowerOptions extends LowerBodyCtx {
+  initialPropertyValues?: ReadonlyMap<string, OpaqueExpr>;
+}
+
+export function lowerCollectionL1BodyToSsaResult(
+  stmt: IR1Stmt,
+  ctx: LowerBodyCtx,
+): IR1SsaBodyLowerResult {
+  try {
+    return adaptCollectionSsaLowerResult(
+      lowerCollectionSsaToProps(stmt, {
+        lowerOpaque: ctx.applyConst,
+      }),
+    );
+  } catch (err) {
+    return ir1SsaBodyLowerUnsupported(
+      err instanceof Error
+        ? err.message
+        : "collection SSA lowering rejected the body",
+    );
+  }
+}
+
+export function lowerScalarL1BodyToSsaResult(
+  stmt: IR1Stmt,
+  options: ScalarSsaBodyLowerOptions,
+): IR1SsaBodyLowerResult {
+  try {
+    return adaptScalarSsaLowerResult(
+      lowerScalarSsaToProps(stmt, {
+        lowerOpaque: options.applyConst,
+        ...(options.initialPropertyValues === undefined
+          ? {}
+          : { initialPropertyValues: options.initialPropertyValues }),
+      }),
+    );
+  } catch (err) {
+    return ir1SsaBodyLowerUnsupported(
+      err instanceof Error
+        ? err.message
+        : "scalar SSA lowering rejected the body",
+    );
+  }
 }
 
 /**
@@ -147,126 +191,6 @@ function containsStateAwareRead(e: IR1Expr): boolean {
       return false;
     }
   }
-}
-
-function containsCollectionSsaForm(stmt: IR1Stmt): boolean {
-  switch (stmt.kind) {
-    case "map-effect":
-    case "set-effect":
-      return true;
-    case "assign":
-      return (
-        (stmt.target.kind === "member" &&
-          containsStateAwareRead(stmt.target.receiver)) ||
-        containsStateAwareRead(stmt.value)
-      );
-    case "block":
-      return stmt.stmts.some(containsCollectionSsaForm);
-    case "cond-stmt":
-      return (
-        stmt.arms.some(
-          ([guard, body]) =>
-            containsStateAwareRead(guard) || containsCollectionSsaForm(body),
-        ) ||
-        (stmt.otherwise !== null && containsCollectionSsaForm(stmt.otherwise))
-      );
-    case "foreach":
-    case "let":
-    case "return":
-    case "throw":
-    case "expr-stmt":
-    case "while":
-    case "for":
-      return false;
-    default: {
-      const _exhaustive: never = stmt;
-      void _exhaustive;
-      return false;
-    }
-  }
-}
-
-function containsCollectionEffect(stmt: IR1Stmt): boolean {
-  switch (stmt.kind) {
-    case "map-effect":
-    case "set-effect":
-      return true;
-    case "block":
-      return stmt.stmts.some(containsCollectionEffect);
-    case "cond-stmt":
-      return (
-        stmt.arms.some(([, body]) => containsCollectionEffect(body)) ||
-        (stmt.otherwise !== null && containsCollectionEffect(stmt.otherwise))
-      );
-    case "assign":
-    case "foreach":
-    case "let":
-    case "return":
-    case "throw":
-    case "expr-stmt":
-    case "while":
-    case "for":
-      return false;
-    default: {
-      const _exhaustive: never = stmt;
-      void _exhaustive;
-      return false;
-    }
-  }
-}
-
-function containsCollectionRead(stmt: IR1Stmt): boolean {
-  switch (stmt.kind) {
-    case "assign":
-      return (
-        (stmt.target.kind === "member" &&
-          containsStateAwareRead(stmt.target.receiver)) ||
-        containsStateAwareRead(stmt.value)
-      );
-    case "map-effect":
-      return (
-        containsStateAwareRead(stmt.objExpr) ||
-        containsStateAwareRead(stmt.keyExpr) ||
-        (stmt.valueExpr !== null && containsStateAwareRead(stmt.valueExpr))
-      );
-    case "set-effect":
-      return (
-        containsStateAwareRead(stmt.objExpr) ||
-        (stmt.elemExpr !== null && containsStateAwareRead(stmt.elemExpr))
-      );
-    case "block":
-      return stmt.stmts.some(containsCollectionRead);
-    case "cond-stmt":
-      return (
-        stmt.arms.some(
-          ([guard, body]) =>
-            containsStateAwareRead(guard) || containsCollectionRead(body),
-        ) ||
-        (stmt.otherwise !== null && containsCollectionRead(stmt.otherwise))
-      );
-    case "foreach":
-    case "let":
-    case "return":
-    case "throw":
-    case "expr-stmt":
-    case "while":
-    case "for":
-      return false;
-    default: {
-      const _exhaustive: never = stmt;
-      void _exhaustive;
-      return false;
-    }
-  }
-}
-
-function stateHasCollectionWrites(state: SymbolicState): boolean {
-  for (const entry of state.writes.values()) {
-    if (entry.kind === "map" || entry.kind === "set") {
-      return true;
-    }
-  }
-  return false;
 }
 
 /**
@@ -381,24 +305,19 @@ export function lowerL1Body(
   ctx: LowerBodyCtx,
 ): boolean {
   if (
-    containsCollectionSsaForm(stmt) &&
-    containsCollectionEffect(stmt) &&
-    containsCollectionRead(stmt) &&
-    !stateHasCollectionWrites(state) &&
-    isCollectionSsaL1Body(stmt)
+    ctx.ssaResultBoundary !== false &&
+    stmt.kind === "block" &&
+    isScalarSsaL1Body(stmt)
   ) {
-    return lowerCollectionL1BodyToSsa(stmt, state, propositions, ctx);
-  }
-
-  if (isScalarSsaL1Body(stmt)) {
     return lowerScalarL1BodyToSsa(stmt, state, propositions, ctx);
   }
 
   switch (stmt.kind) {
     case "block": {
       let ok = true;
+      const childCtx = { ...ctx, ssaResultBoundary: false };
       for (const child of stmt.stmts) {
-        if (!lowerL1Body(child, state, propositions, ctx)) {
+        if (!lowerL1Body(child, state, propositions, childCtx)) {
           ok = false;
         }
       }
@@ -437,92 +356,25 @@ export function lowerL1Body(
   }
 }
 
-function lowerCollectionL1BodyToSsa(
-  stmt: IR1Stmt,
-  state: SymbolicState,
-  propositions: PropResult[],
-  ctx: LowerBodyCtx,
-): boolean {
-  let result: ReturnType<typeof lowerCollectionSsaToProps>;
-  try {
-    result = lowerCollectionSsaToProps(stmt, {
-      lowerOpaque: ctx.applyConst,
-    });
-  } catch (err) {
-    propositions.push({
-      kind: "unsupported",
-      reason:
-        err instanceof Error
-          ? err.message
-          : "collection SSA lowering rejected the body",
-    });
-    return false;
-  }
-
-  if (result.diagnostics.length > 0) {
-    propositions.push(...result.diagnostics);
-    return false;
-  }
-
-  for (const entry of result.finalProperties) {
-    const key = symbolicKey(entry.prop, entry.objExpr);
-    state.writes = putWrite(state.writes, key, {
-      kind: "property",
-      prop: entry.prop,
-      objExpr: entry.objExpr,
-      value: entry.rhs,
-    });
-    state.writtenKeys = addWrittenKey(state.writtenKeys, key);
-  }
-
-  propositions.push(...result.propositions);
-  for (const rule of result.modifiedRules) {
-    state.modifiedProps = addModifiedProp(state.modifiedProps, rule);
-  }
-  return true;
-}
-
 function lowerScalarL1BodyToSsa(
   stmt: IR1Stmt,
   state: SymbolicState,
   propositions: PropResult[],
   ctx: LowerBodyCtx,
 ): boolean {
-  let result: ReturnType<typeof lowerScalarSsaToProps>;
-  try {
-    result = lowerScalarSsaToProps(stmt, {
-      lowerOpaque: ctx.applyConst,
-      initialPropertyValues: scalarInitialPropertyValues(state),
-    });
-  } catch (err) {
-    propositions.push({
-      kind: "unsupported",
-      reason:
-        err instanceof Error
-          ? err.message
-          : "scalar SSA lowering rejected the body",
-    });
-    return false;
-  }
-
+  const result = lowerScalarL1BodyToSsaResult(stmt, {
+    ...ctx,
+    initialPropertyValues: scalarInitialPropertyValues(state),
+  });
   if (result.diagnostics.length > 0) {
     propositions.push(...result.diagnostics);
     return false;
   }
 
-  for (const entry of result.finalProperties) {
-    const prop = entry.location.ruleName;
-    const key = symbolicKey(prop, entry.objExpr);
-    state.writes = putWrite(state.writes, key, {
-      kind: "property",
-      prop,
-      objExpr: entry.objExpr,
-      value: entry.rhs,
-    });
-    state.writtenKeys = addWrittenKey(state.writtenKeys, key);
-    state.modifiedProps = addModifiedProp(state.modifiedProps, prop);
+  propositions.push(...result.propositions);
+  for (const rule of result.modifiedRules) {
+    state.modifiedProps = addModifiedProp(state.modifiedProps, rule);
   }
-
   return true;
 }
 
@@ -783,7 +635,8 @@ function lowerCondStmt(
   // fixture demands it.)
   const thenProps: PropResult[] = [];
   const sT = cloneSymbolicState(state);
-  if (!lowerL1Body(thenBody, sT, thenProps, ctx)) {
+  const branchCtx = { ...ctx, ssaResultBoundary: false };
+  if (!lowerL1Body(thenBody, sT, thenProps, branchCtx)) {
     propositions.push(...thenProps);
     return false;
   }
@@ -791,7 +644,7 @@ function lowerCondStmt(
   const elseProps: PropResult[] = [];
   const sE = cloneSymbolicState(state);
   if (stmt.otherwise !== null) {
-    if (!lowerL1Body(stmt.otherwise, sE, elseProps, ctx)) {
+    if (!lowerL1Body(stmt.otherwise, sE, elseProps, branchCtx)) {
       propositions.push(...thenProps, ...elseProps);
       return false;
     }

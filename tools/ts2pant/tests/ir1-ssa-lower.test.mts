@@ -4,6 +4,7 @@ import { before, describe, it } from "node:test";
 import {
   ir1Assign,
   ir1Binop,
+  ir1Block,
   ir1LitBool,
   ir1LitNat,
   ir1MapSet,
@@ -15,6 +16,9 @@ import {
   adaptCollectionSsaLowerResult,
   adaptLoopSummaryLowerResult,
   adaptScalarSsaLowerResult,
+  lowerCollectionL1BodyToSsaResult,
+  lowerL1Body,
+  lowerScalarL1BodyToSsaResult,
 } from "../src/ir1-lower-body.js";
 import {
   appendFramesForUnmodifiedRules,
@@ -30,6 +34,7 @@ import {
 } from "../src/ir1-ssa-loops.js";
 import { lowerScalarSsaToProps } from "../src/ir1-ssa-scalars.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
+import { makeSymbolicState } from "../src/translate-body.js";
 
 before(async () => {
   await loadAst();
@@ -86,10 +91,7 @@ describe("ir1-ssa-lower", () => {
       ),
       ["first", "second", "third"],
     );
-    assert.deepEqual(result.modifiedRules, [
-      "Account_balance",
-      "Account_seen",
-    ]);
+    assert.deepEqual(result.modifiedRules, ["Account_balance", "Account_seen"]);
     assert.deepEqual(result.diagnostics, [
       { kind: "unsupported", reason: "unsupported loop" },
       { kind: "unsupported", reason: "unsupported map" },
@@ -153,10 +155,7 @@ describe("ir1-ssa-lower", () => {
   it("adapts scalar, collection, and loop summary helpers into the unified shape", () => {
     const scalar = adaptScalarSsaLowerResult(
       lowerScalarSsaToProps(
-        ir1Assign(
-          ir1Member(ir1Var("a"), "Account_balance"),
-          ir1LitNat(1),
-        ),
+        ir1Assign(ir1Member(ir1Var("a"), "Account_balance"), ir1LitNat(1)),
       ),
     );
     const collection = adaptCollectionSsaLowerResult(
@@ -202,6 +201,81 @@ describe("ir1-ssa-lower", () => {
     assert.equal(loop.diagnostics.length, 0);
   });
 
+  it("scalar properties lower through one result", () => {
+    const ast = getAst();
+    const stmt = ir1Block([
+      ir1Assign(ir1Member(ir1Var("account"), "Account_balance"), ir1LitNat(1)),
+      ir1Assign(ir1Member(ir1Var("account"), "Account_balance"), ir1LitNat(2)),
+    ]);
+    const result = lowerScalarL1BodyToSsaResult(stmt, { applyConst: (e) => e });
+
+    assert.deepEqual(result.diagnostics, []);
+    assert.deepEqual(result.modifiedRules, ["Account_balance"]);
+    assert.equal(result.finalProperties?.length, 1);
+    assert.equal(result.propositions.length, 1);
+    const [equation] = result.propositions;
+    assert.equal(equation?.kind, "equation");
+    if (equation?.kind !== "equation") {
+      assert.fail("expected scalar final equation");
+    }
+    assert.equal(ast.strExpr(equation.lhs), "Account_balance' account");
+    assert.equal(ast.strExpr(equation.rhs), "2");
+  });
+
+  it("collections lower value and membership props through one result", () => {
+    const ast = getAst();
+    const result = lowerCollectionL1BodyToSsaResult(
+      ir1MapSet(
+        "Cache_value",
+        "Cache_hasKey",
+        "Owner",
+        "Key",
+        ir1Var("cache"),
+        ir1Var("key"),
+        ir1LitNat(7),
+      ),
+      { applyConst: (e) => e },
+    );
+
+    assert.deepEqual(result.diagnostics, []);
+    assert.deepEqual(
+      new Set(result.modifiedRules),
+      new Set(["Cache_value", "Cache_hasKey"]),
+    );
+    assert.equal(result.propositions.length, 2);
+    const lowered = result.propositions
+      .filter((p) => p.kind === "equation")
+      .map((p) => ast.strExpr(p.lhs));
+    assert.ok(lowered.some((lhs) => lhs.startsWith("Cache_hasKey'")));
+    assert.ok(lowered.some((lhs) => lhs.startsWith("Cache_value'")));
+  });
+
+  it("production scalar SSA emission does not stage final writes", () => {
+    const scalarState = makeSymbolicState();
+    const scalarProps = [];
+    assert.equal(
+      lowerL1Body(
+        ir1Block([
+          ir1Assign(
+            ir1Member(ir1Var("account"), "Account_balance"),
+            ir1LitNat(1),
+          ),
+          ir1Assign(
+            ir1Member(ir1Var("account"), "Account_balance"),
+            ir1LitNat(2),
+          ),
+        ]),
+        scalarState,
+        scalarProps,
+        { applyConst: (e) => e },
+      ),
+      true,
+    );
+    assert.equal(scalarState.writes.size, 0);
+    assert.deepEqual([...scalarState.modifiedProps], ["Account_balance"]);
+    assert.equal(scalarProps.length, 1);
+  });
+
   it("preserves helper diagnostics through adapters", () => {
     const scalar = adaptScalarSsaLowerResult(
       lowerScalarSsaToProps({
@@ -214,25 +288,23 @@ describe("ir1-ssa-lower", () => {
       ir1Var("a"),
       "balance",
     );
-    const loop = adaptLoopSummaryLowerResult(
-      {
-        program: {
-          reads: [],
-          writes: [],
-          joins: [],
-          loopSummaries: [],
-          declaredRules: ["Account_balance"],
-          modifiedRules: [],
-          framedRules: ["Account_balance"],
-        },
-        summary: null,
-        propositions: [],
+    const loop = adaptLoopSummaryLowerResult({
+      program: {
+        reads: [],
+        writes: [],
+        joins: [],
+        loopSummaries: [],
+        declaredRules: ["Account_balance"],
         modifiedRules: [],
-        diagnostics: [
-          { kind: "unsupported", reason: "general loops are not supported" },
-        ],
+        framedRules: ["Account_balance"],
       },
-    );
+      summary: null,
+      propositions: [],
+      modifiedRules: [],
+      diagnostics: [
+        { kind: "unsupported", reason: "general loops are not supported" },
+      ],
+    });
 
     assert.deepEqual(scalar.diagnostics, [
       {
