@@ -796,7 +796,7 @@ describe("ir1-ssa-collections", () => {
             throw new Error("canonicalize failed");
           },
         }),
-      /canonicalize failed/,
+      /canonicalize failed/u,
     );
   });
 
@@ -907,8 +907,8 @@ describe("ir1-ssa-collections", () => {
       result.program.reads[1]!.version,
       result.program.writes[3]!.version,
     );
-    assert.equal(result.propositions.length, 1);
-    const assertion = result.propositions[0]!;
+    const assertion = result.propositions.find((p) => p.kind === "assertion");
+    assert.ok(assertion);
     assert.equal(assertion.kind, "assertion");
     if (assertion.kind !== "assertion") {
       return;

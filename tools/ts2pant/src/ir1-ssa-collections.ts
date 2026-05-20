@@ -335,6 +335,15 @@ function finishCollectionSsaLowering(
         rhs: entry.value,
       }) satisfies CollectionSsaFinalPropertyEntry,
   );
+  const ast = getAst();
+  for (const entry of finalProperties) {
+    propositions.push({
+      kind: "equation",
+      quantifiers: [],
+      lhs: ast.app(ast.primed(entry.prop), [entry.objExpr]),
+      rhs: entry.rhs,
+    });
+  }
   const modifiedRules = [
     ...new Set([
       ...program.modifiedRules,
