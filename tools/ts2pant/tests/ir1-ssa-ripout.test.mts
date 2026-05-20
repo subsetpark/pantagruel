@@ -12,6 +12,19 @@ import { buildDocument, emitAndCheck } from "./helpers.mts";
 const CONSTRUCTS_DIR = resolve(import.meta.dirname, "fixtures/constructs");
 const SRC_DIR = resolve(import.meta.dirname, "../src");
 
+function sourceFilesUnder(dir: string): string[] {
+  const files: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = resolve(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...sourceFilesUnder(path));
+    } else if (entry.isFile() && entry.name.endsWith(".ts")) {
+      files.push(path);
+    }
+  }
+  return files;
+}
+
 async function emitFixture(fileName: string, functionName: string): Promise<string> {
   const doc = await buildDocument(
     resolve(CONSTRUCTS_DIR, fileName),
@@ -197,11 +210,8 @@ describe("ir1-ssa-ripout", () => {
     ]);
     const exported = new Set<string>();
 
-    for (const entry of readdirSync(SRC_DIR)) {
-      if (!entry.endsWith(".ts")) {
-        continue;
-      }
-      const sourceText = readFileSync(resolve(SRC_DIR, entry), "utf8");
+    for (const file of sourceFilesUnder(SRC_DIR)) {
+      const sourceText = readFileSync(file, "utf8");
       for (const name of exportedSymbolNames(sourceText)) {
         exported.add(name);
       }

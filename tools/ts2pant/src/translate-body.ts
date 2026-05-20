@@ -3502,13 +3502,17 @@ export function translateCallExpr(
         // M5: Stage A receiver-property qualification through the
         // canonical L1 Member helper. The qualified rule + receiver
         // OpaqueExpr feed the Map effect descriptor.
-        const memberR = buildL1MemberAccess(normalizedReceiver, {
-          checker,
-          strategy,
-          paramNames,
-          state,
-          supply,
-        });
+        const memberR = buildL1MemberAccess(
+          normalizedReceiver,
+          {
+            checker,
+            strategy,
+            paramNames,
+            state,
+            supply,
+          },
+          { requireMember: true },
+        );
         if (isL1Unsupported(memberR)) {
           return { unsupported: memberR.unsupported };
         }
