@@ -8,7 +8,7 @@ import {
   recognizeFixedPointLoopShape,
 } from "../src/ir1-ssa-fixed-point.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
-import { newSynthCell } from "../src/translate-types.js";
+import { newSynthCell, RealStrategy } from "../src/translate-types.js";
 
 const aVar: IR1Expr = { kind: "var", name: "a" };
 const balanceMember: IR1Expr = {
@@ -155,5 +155,37 @@ describe("ir1-ssa-fixed-point", () => {
       /fn--loop s: Nat0, step: Nat0, target: Nat0 => Nat0\./u,
     );
     assert.match(source, /balance' a = fn--loop \(balance a\) step target\./u);
+  });
+
+  it("allocates a fresh state binder when s is a loop invariant", () => {
+    const ast = getAst();
+    const sVar: IR1Expr = { kind: "var", name: "s" };
+    const result = lowerFixedPointLoopL1Body({
+      ...fixedPointWhile(),
+      cond: { kind: "binop", op: "lt", lhs: balanceMember, rhs: sVar },
+    });
+    const ruleDecl = result.propositions[0]!;
+
+    assert.equal(ruleDecl.kind, "rule-decl");
+    assert.deepEqual(
+      ruleDecl.params.map((p) => p.name),
+      ["s1", "s", "step"],
+    );
+    assert.match(ast.strExpr(ruleDecl.body), /cond s1 < s =>/u);
+  });
+
+  it("uses the configured numeric strategy for default helper types", () => {
+    const ast = getAst();
+    const result = lowerFixedPointLoopL1Body(fixedPointWhile(), {
+      strategy: RealStrategy,
+    });
+    const ruleDecl = result.propositions[0]!;
+
+    assert.equal(ruleDecl.kind, "rule-decl");
+    assert.equal(ast.strTypeExpr(ruleDecl.returnType), "Real");
+    assert.deepEqual(
+      ruleDecl.params.map((p) => ast.strTypeExpr(p.type)),
+      ["Real", "Real", "Real"],
+    );
   });
 });

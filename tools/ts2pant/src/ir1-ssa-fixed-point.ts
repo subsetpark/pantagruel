@@ -27,7 +27,11 @@ import {
 import { registerName } from "./name-registry.js";
 import type { OpaqueExpr, OpaqueTypeExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
-import type { SynthCell } from "./translate-types.js";
+import {
+  IntStrategy,
+  type NumericStrategy,
+  type SynthCell,
+} from "./translate-types.js";
 import type { PropResult } from "./types.js";
 
 export interface FixedPointLoopLowerOptions extends LoopSsaBuildOptions {
@@ -36,6 +40,7 @@ export interface FixedPointLoopLowerOptions extends LoopSsaBuildOptions {
   synthCell?: SynthCell;
   locationType?: OpaqueTypeExpr | string;
   invariantTypes?: ReadonlyMap<string, OpaqueTypeExpr | string>;
+  strategy?: NumericStrategy;
 }
 
 export interface FixedPointLoopShape {
@@ -112,7 +117,14 @@ export function lowerFixedPointLoopL1Body(
     targetInfo.location,
   );
   const header = ir1SsaOpenLoopHeader(targetInfo.location, preheaderVersion);
-  const stateVar = ir1Var("s");
+  const invariantNames = collectLoopInvariantNames(
+    [shape.guardExpr, writeBody.value],
+    writeBody.target,
+  );
+  const stateName = allocateFreshStateName(
+    stateAvoidanceNames([shape.guardExpr, writeBody.value], writeBody.target),
+  );
+  const stateVar = ir1Var(stateName);
   const effectExpr = substituteMemberReads(
     writeBody.value,
     writeBody.target,
@@ -134,14 +146,10 @@ export function lowerFixedPointLoopL1Body(
   });
 
   const ruleName = allocateLoopRuleName(options.synthCell);
-  const locationType = typeExpr(options.locationType);
-  const invariantNames = collectLoopInvariantNames(
-    [shape.guardExpr, writeBody.value],
-    writeBody.target,
-  );
+  const locationType = typeExpr(options.locationType, options.strategy);
   const invariantParams = invariantNames.map((name) => ({
     name,
-    type: typeExpr(options.invariantTypes?.get(name)),
+    type: typeExpr(options.invariantTypes?.get(name), options.strategy),
   }));
   const effect = lowerOpaque(lowerExpr(lowerL1Expr(effectExpr)));
   const loweredGuard = lowerOpaque(
@@ -157,12 +165,12 @@ export function lowerFixedPointLoopL1Body(
   ]);
   const helperBody = ast.cond([
     [loweredGuard, helperCallOnEffect],
-    [ast.litBool(true), ast.var("s")],
+    [ast.litBool(true), ast.var(stateName)],
   ]);
   const ruleDecl: PropResult = {
     kind: "rule-decl",
     ruleName,
-    params: [{ name: "s", type: locationType }, ...invariantParams],
+    params: [{ name: stateName, type: locationType }, ...invariantParams],
     returnType: locationType,
     body: helperBody,
   };
@@ -231,11 +239,14 @@ function buildTargetInfo(
   return { target, location, objExpr, lhs, prior, key };
 }
 
-function typeExpr(type: OpaqueTypeExpr | string | undefined): OpaqueTypeExpr {
+function typeExpr(
+  type: OpaqueTypeExpr | string | undefined,
+  strategy: NumericStrategy = IntStrategy,
+): OpaqueTypeExpr {
   const ast = getAst();
   return typeof type === "string"
     ? ast.tName(type)
-    : (type ?? ast.tName("Nat0"));
+    : (type ?? ast.tName(strategy.mapNumber()));
 }
 
 function allocateLoopRuleName(synthCell: SynthCell | undefined): string {
@@ -244,6 +255,11 @@ function allocateLoopRuleName(synthCell: SynthCell | undefined): string {
   }
   const registered = registerName(synthCell.registry, "fn--loop");
   synthCell.registry = registered.registry;
+  return registered.name;
+}
+
+function allocateFreshStateName(forbidden: ReadonlySet<string>): string {
+  const registered = registerName({ used: new Set(forbidden) }, "s");
   return registered.name;
 }
 
@@ -423,7 +439,7 @@ function collectLoopInvariantNames(
   target: Extract<IR1Expr, { kind: "member" }>,
 ): string[] {
   const names = new Set<string>();
-  const excluded = new Set<string>(["s"]);
+  const excluded = new Set<string>();
   const receiverRoot = rootName(target.receiver);
   if (receiverRoot !== null) {
     excluded.add(receiverRoot);
@@ -432,6 +448,77 @@ function collectLoopInvariantNames(
     collectFreeVars(expr, names, excluded);
   }
   return [...names].sort();
+}
+
+function stateAvoidanceNames(
+  exprs: readonly IR1Expr[],
+  target: Extract<IR1Expr, { kind: "member" }>,
+): ReadonlySet<string> {
+  const names = new Set<string>();
+  const receiverRoot = rootName(target.receiver);
+  if (receiverRoot !== null) {
+    names.add(receiverRoot);
+  }
+  for (const expr of exprs) {
+    collectAllNames(expr, names);
+  }
+  return names;
+}
+
+function collectAllNames(expr: IR1Expr, out: Set<string>): void {
+  switch (expr.kind) {
+    case "var":
+      out.add(expr.name);
+      break;
+    case "lit":
+      break;
+    case "binop":
+      collectAllNames(expr.lhs, out);
+      collectAllNames(expr.rhs, out);
+      break;
+    case "unop":
+      collectAllNames(expr.arg, out);
+      break;
+    case "app":
+      collectAllNames(expr.callee, out);
+      for (const arg of expr.args) {
+        collectAllNames(arg, out);
+      }
+      break;
+    case "member":
+      collectAllNames(expr.receiver, out);
+      break;
+    case "cond":
+      for (const [guard, value] of expr.arms) {
+        collectAllNames(guard, out);
+        collectAllNames(value, out);
+      }
+      collectAllNames(expr.otherwise, out);
+      break;
+    case "is-nullish":
+      collectAllNames(expr.operand, out);
+      break;
+    case "each":
+      out.add(expr.binder);
+      collectAllNames(expr.src, out);
+      for (const guard of expr.guards) {
+        collectAllNames(guard, out);
+      }
+      collectAllNames(expr.proj, out);
+      break;
+    case "map-read":
+      collectAllNames(expr.receiver, out);
+      collectAllNames(expr.key, out);
+      break;
+    case "set-read":
+      collectAllNames(expr.receiver, out);
+      collectAllNames(expr.elem, out);
+      break;
+    default: {
+      const _exhaustive: never = expr;
+      void _exhaustive;
+    }
+  }
 }
 
 function collectFreeVars(
