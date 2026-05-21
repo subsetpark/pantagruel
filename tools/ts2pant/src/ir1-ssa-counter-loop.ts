@@ -639,6 +639,23 @@ function exprReferencesVar(expr: IR1Expr, name: string): boolean {
         expr.guards.some((guard) => exprReferencesVar(guard, name)) ||
         exprReferencesVar(expr.proj, name)
       );
+    case "comb-typed":
+      if (expr.binder === name) {
+        return false;
+      }
+      return (
+        expr.guards.some((guard) => exprReferencesVar(guard, name)) ||
+        exprReferencesVar(expr.proj, name)
+      );
+    case "forall":
+    case "exists":
+      if (expr.binder === name) {
+        return false;
+      }
+      return (
+        (expr.guard !== undefined && exprReferencesVar(expr.guard, name)) ||
+        exprReferencesVar(expr.body, name)
+      );
     case "map-read":
       return (
         exprReferencesVar(expr.receiver, name) ||
@@ -705,6 +722,22 @@ function countMemberReads(
           0,
         ) +
         countMemberReads(expr.proj, member)
+      );
+    case "comb-typed":
+      return (
+        self +
+        expr.guards.reduce(
+          (n, guard) => n + countMemberReads(guard, member),
+          0,
+        ) +
+        countMemberReads(expr.proj, member)
+      );
+    case "forall":
+    case "exists":
+      return (
+        self +
+        (expr.guard === undefined ? 0 : countMemberReads(expr.guard, member)) +
+        countMemberReads(expr.body, member)
       );
     case "map-read":
       return (
@@ -799,6 +832,31 @@ function ir1ExprEqual(a: IR1Expr, b: IR1Expr): boolean {
         ir1ExprArrayEqual(a.guards, b.guards) &&
         ir1ExprEqual(a.proj, b.proj)
       );
+    case "comb-typed":
+      return (
+        b.kind === "comb-typed" &&
+        a.combiner === b.combiner &&
+        a.binder === b.binder &&
+        a.binderType === b.binderType &&
+        ir1ExprArrayEqual(a.guards, b.guards) &&
+        ir1ExprEqual(a.proj, b.proj)
+      );
+    case "forall":
+      return (
+        b.kind === "forall" &&
+        a.binder === b.binder &&
+        a.binderType === b.binderType &&
+        optionalIr1ExprEqual(a.guard, b.guard) &&
+        ir1ExprEqual(a.body, b.body)
+      );
+    case "exists":
+      return (
+        b.kind === "exists" &&
+        a.binder === b.binder &&
+        a.binderType === b.binderType &&
+        optionalIr1ExprEqual(a.guard, b.guard) &&
+        ir1ExprEqual(a.body, b.body)
+      );
     case "map-read":
       return (
         b.kind === "map-read" &&
@@ -835,6 +893,15 @@ function ir1ExprArrayEqual(
     a.length === b.length &&
     a.every((expr, index) => ir1ExprEqual(expr, b[index]!))
   );
+}
+
+function optionalIr1ExprEqual(
+  a: IR1Expr | undefined,
+  b: IR1Expr | undefined,
+): boolean {
+  return a === undefined || b === undefined
+    ? a === undefined && b === undefined
+    : ir1ExprEqual(a, b);
 }
 
 function rootName(expr: IR1Expr): string | null {

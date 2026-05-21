@@ -510,6 +510,35 @@ function lowerShapeAExpr(expr: IR1Expr, state: ShapeASummaryState): OpaqueExpr {
         ],
         lowerShapeAExpr(expr.proj, state),
       );
+    case "comb-typed":
+      return ast.eachComb(
+        [ast.param(expr.binder, ast.tName(expr.binderType))],
+        expr.guards.map((guard) => ast.gExpr(lowerShapeAExpr(guard, state))),
+        expr.combiner === "min" ? ast.combMin() : ast.combMax(),
+        lowerShapeAExpr(expr.proj, state),
+      );
+    case "forall": {
+      const guards =
+        expr.guard === undefined
+          ? []
+          : [ast.gExpr(lowerShapeAExpr(expr.guard, state))];
+      return ast.forall(
+        [ast.param(expr.binder, ast.tName(expr.binderType))],
+        guards,
+        lowerShapeAExpr(expr.body, state),
+      );
+    }
+    case "exists": {
+      const guards =
+        expr.guard === undefined
+          ? []
+          : [ast.gExpr(lowerShapeAExpr(expr.guard, state))];
+      return ast.exists(
+        [ast.param(expr.binder, ast.tName(expr.binderType))],
+        guards,
+        lowerShapeAExpr(expr.body, state),
+      );
+    }
     case "map-read": {
       const callee = expr.op === "has" ? expr.keyPredName : expr.ruleName;
       return ast.app(ast.var(callee), [

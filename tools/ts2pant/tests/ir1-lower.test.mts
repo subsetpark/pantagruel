@@ -5,6 +5,8 @@ import {
   irBinop,
   irCombTyped,
   irCond,
+  irExists,
+  irForall,
   irLitBool,
   irLitNat,
   irUnop,
@@ -16,11 +18,14 @@ import {
   ir1Assign,
   ir1Binop,
   ir1Block,
+  ir1CombTyped,
   ir1Cond,
   ir1CondStmt,
   ir1ExprStmt,
+  ir1Exists,
   ir1For,
   ir1Foreach,
+  ir1Forall,
   ir1IsNullish,
   ir1Let,
   ir1LitBool,
@@ -231,24 +236,52 @@ describe("lowerL1Expr — is-nullish (M4 canonical nullish test)", () => {
 });
 
 describe("lowering new L1 forms", () => {
-  it.skip("comb-typed lowers via irCombTyped", () => {
-    // PENDING Patch 2.
+  it("comb-typed lowers via irCombTyped", () => {
+    const l1 = ir1CombTyped(
+      "min",
+      "j",
+      "Int",
+      [ir1Binop("ge", ir1Var("j"), ir1LitNat(0))],
+      ir1Var("j"),
+    );
+    assert.deepEqual(
+      lowerL1Expr(l1),
+      irCombTyped(
+        "min",
+        "j",
+        "Int",
+        [irBinop("ge", irVar("j", false), irLitNat(0))],
+        irVar("j", false),
+      ),
+    );
   });
 
-  it.skip("forall lowers via irForall with guard", () => {
-    // PENDING Patch 2.
+  it("forall lowers via irForall with guard", () => {
+    assert.deepEqual(
+      lowerL1Expr(ir1Forall("x", "Nat0", ir1Var("body"), ir1Var("guard"))),
+      irForall("x", "Nat0", irVar("body", false), irVar("guard", false)),
+    );
   });
 
-  it.skip("forall lowers via irForall without guard", () => {
-    // PENDING Patch 2.
+  it("forall lowers via irForall without guard", () => {
+    assert.deepEqual(
+      lowerL1Expr(ir1Forall("x", "Nat0", ir1Var("body"))),
+      irForall("x", "Nat0", irVar("body", false)),
+    );
   });
 
-  it.skip("exists lowers via irExists with guard", () => {
-    // PENDING Patch 2.
+  it("exists lowers via irExists with guard", () => {
+    assert.deepEqual(
+      lowerL1Expr(ir1Exists("x", "Nat0", ir1Var("body"), ir1Var("guard"))),
+      irExists("x", "Nat0", irVar("body", false), irVar("guard", false)),
+    );
   });
 
-  it.skip("exists lowers via irExists without guard", () => {
-    // PENDING Patch 2.
+  it("exists lowers via irExists without guard", () => {
+    assert.deepEqual(
+      lowerL1Expr(ir1Exists("x", "Nat0", ir1Var("body"))),
+      irExists("x", "Nat0", irVar("body", false)),
+    );
   });
 });
 

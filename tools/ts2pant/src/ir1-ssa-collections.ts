@@ -542,6 +542,19 @@ export function collectionSsaReadExpr(
       }
       collectionSsaReadExpr(expr.proj, state);
       return expr;
+    case "comb-typed":
+      for (const guard of expr.guards) {
+        collectionSsaReadExpr(guard, state);
+      }
+      collectionSsaReadExpr(expr.proj, state);
+      return expr;
+    case "forall":
+    case "exists":
+      if (expr.guard !== undefined) {
+        collectionSsaReadExpr(expr.guard, state);
+      }
+      collectionSsaReadExpr(expr.body, state);
+      return expr;
     case "var":
     case "lit":
       return expr;
@@ -1162,6 +1175,43 @@ function lowerCollectionSsaExprToOpaque(
           lowerCollectionSsaExprToOpaque(expr.proj, state),
         ),
       );
+    case "comb-typed":
+      return state.lowerOpaque(
+        ast.eachComb(
+          [ast.param(expr.binder, ast.tName(expr.binderType))],
+          expr.guards.map((guard) =>
+            ast.gExpr(lowerCollectionSsaExprToOpaque(guard, state)),
+          ),
+          expr.combiner === "min" ? ast.combMin() : ast.combMax(),
+          lowerCollectionSsaExprToOpaque(expr.proj, state),
+        ),
+      );
+    case "forall": {
+      const guards =
+        expr.guard === undefined
+          ? []
+          : [ast.gExpr(lowerCollectionSsaExprToOpaque(expr.guard, state))];
+      return state.lowerOpaque(
+        ast.forall(
+          [ast.param(expr.binder, ast.tName(expr.binderType))],
+          guards,
+          lowerCollectionSsaExprToOpaque(expr.body, state),
+        ),
+      );
+    }
+    case "exists": {
+      const guards =
+        expr.guard === undefined
+          ? []
+          : [ast.gExpr(lowerCollectionSsaExprToOpaque(expr.guard, state))];
+      return state.lowerOpaque(
+        ast.exists(
+          [ast.param(expr.binder, ast.tName(expr.binderType))],
+          guards,
+          lowerCollectionSsaExprToOpaque(expr.body, state),
+        ),
+      );
+    }
     default: {
       const _exhaustive: never = expr;
       void _exhaustive;
@@ -1991,6 +2041,24 @@ function collectionSsaExprKeyData(expr: IR1Expr): unknown {
         expr.guards.map(collectionSsaExprKeyData),
         collectionSsaExprKeyData(expr.proj),
       ];
+    case "comb-typed":
+      return [
+        "comb-typed",
+        expr.combiner,
+        expr.binder,
+        expr.binderType,
+        expr.guards.map(collectionSsaExprKeyData),
+        collectionSsaExprKeyData(expr.proj),
+      ];
+    case "forall":
+    case "exists":
+      return [
+        expr.kind,
+        expr.binder,
+        expr.binderType,
+        expr.guard === undefined ? null : collectionSsaExprKeyData(expr.guard),
+        collectionSsaExprKeyData(expr.body),
+      ];
     case "map-read":
       return [
         "map-read",
@@ -2100,6 +2168,16 @@ function isCollectionSsaExpr(expr: IR1Expr): boolean {
         isCollectionSsaExpr(expr.src) &&
         expr.guards.every(isCollectionSsaExpr) &&
         isCollectionSsaExpr(expr.proj)
+      );
+    case "comb-typed":
+      return (
+        expr.guards.every(isCollectionSsaExpr) && isCollectionSsaExpr(expr.proj)
+      );
+    case "forall":
+    case "exists":
+      return (
+        (expr.guard === undefined || isCollectionSsaExpr(expr.guard)) &&
+        isCollectionSsaExpr(expr.body)
       );
     case "map-read":
       return (

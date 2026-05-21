@@ -43,6 +43,22 @@ export function formatIR1Expr(expr: IR1Expr): string {
       );
       return `each ${expr.binder} in ${formatIR1Expr(expr.src)} | ${formatIR1Expr(expr.proj)}${guards.join("")}`;
     }
+    case "comb-typed": {
+      const guards = expr.guards.map(
+        (guard) => `, when ${formatIR1Expr(guard)}`,
+      );
+      return `${expr.combiner} over each ${expr.binder}: ${expr.binderType} | ${formatIR1Expr(expr.proj)}${guards.join("")}`;
+    }
+    case "forall": {
+      const guard =
+        expr.guard === undefined ? "" : `, when ${formatIR1Expr(expr.guard)}`;
+      return `all ${expr.binder}: ${expr.binderType}${guard} | ${formatIR1Expr(expr.body)}`;
+    }
+    case "exists": {
+      const guard =
+        expr.guard === undefined ? "" : `, when ${formatIR1Expr(expr.guard)}`;
+      return `some ${expr.binder}: ${expr.binderType}${guard} | ${formatIR1Expr(expr.body)}`;
+    }
     case "map-read": {
       const ruleName = expr.op === "get" ? expr.ruleName : expr.keyPredName;
       return `${ruleName} ${formatAsAppArg(expr.receiver)} ${formatAsAppArg(expr.key)}`;
@@ -387,6 +403,41 @@ function consumeScalarReadsForExpr(
         readLabels,
         labeller,
       );
+    case "comb-typed":
+      for (const guard of expr.guards) {
+        cursor = consumeScalarReadsForExpr(
+          guard,
+          reads,
+          cursor,
+          readLabels,
+          labeller,
+        );
+      }
+      return consumeScalarReadsForExpr(
+        expr.proj,
+        reads,
+        cursor,
+        readLabels,
+        labeller,
+      );
+    case "forall":
+    case "exists":
+      if (expr.guard !== undefined) {
+        cursor = consumeScalarReadsForExpr(
+          expr.guard,
+          reads,
+          cursor,
+          readLabels,
+          labeller,
+        );
+      }
+      return consumeScalarReadsForExpr(
+        expr.body,
+        reads,
+        cursor,
+        readLabels,
+        labeller,
+      );
     case "var":
     case "lit":
       return cursor;
@@ -476,6 +527,29 @@ function formatIR1ExprWithSsaReads(
         expr.src,
         readLabels,
       )} | ${formatIR1ExprWithSsaReads(expr.proj, readLabels)}${guards.join("")}`;
+    }
+    case "comb-typed": {
+      const guards = expr.guards.map(
+        (guard) => `, when ${formatIR1ExprWithSsaReads(guard, readLabels)}`,
+      );
+      return `${expr.combiner} over each ${expr.binder}: ${expr.binderType} | ${formatIR1ExprWithSsaReads(
+        expr.proj,
+        readLabels,
+      )}${guards.join("")}`;
+    }
+    case "forall": {
+      const guard =
+        expr.guard === undefined
+          ? ""
+          : `, when ${formatIR1ExprWithSsaReads(expr.guard, readLabels)}`;
+      return `all ${expr.binder}: ${expr.binderType}${guard} | ${formatIR1ExprWithSsaReads(expr.body, readLabels)}`;
+    }
+    case "exists": {
+      const guard =
+        expr.guard === undefined
+          ? ""
+          : `, when ${formatIR1ExprWithSsaReads(expr.guard, readLabels)}`;
+      return `some ${expr.binder}: ${expr.binderType}${guard} | ${formatIR1ExprWithSsaReads(expr.body, readLabels)}`;
     }
     case "map-read": {
       const keyPrefix =
