@@ -275,6 +275,17 @@ The refactored implementation using `inlineConstBindings()` with `UniqueSupply` 
 right-fold substitution makes all 5 structurally impossible. If you find yourself
 inventing workarounds for similar issues, stop and find the standard algorithm.
 
+**PR #226 (IR1-layer instance, 2026-05).** Per-site hand-rolled IR1 substitution
+walkers (`substituteL1Subtree` in `ir1-build.ts`; `substituteMemberReads` in
+`ir1-ssa-fixed-point.ts`) each carried the same capture-avoidance discipline as
+separate per-site code, surfaced for review repeatedly. The fix mirrors PR #84's:
+extract one centralised primitive (`tools/ts2pant/src/ir1-substitute.ts`) and
+delete the per-site walkers. The canonical discipline is documented in
+`tools/ts2pant/docs/intermediate-representation.md`. Standard algorithm:
+capture-avoiding substitution with binder-site enumeration (Barendregt convention;
+Baader & Nipkow Ch. 2). Future IR1 substitution sites consume the primitive instead
+of rolling their own.
+
 ## Testing
 
 Always invoke tests through `just` from the workspace root. The `package.json` `test:*` scripts are implementation detail (just dispatches to them) and skip the cross-language dep ordering — running `npm run test:integration` directly will fail with "pant binary not found" unless you've separately built it.
