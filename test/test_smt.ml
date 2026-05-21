@@ -196,6 +196,18 @@ let test_function_declarations () =
   check bool "has balance_prime decl" true
     (contains decls "(declare-fun balance_prime (Account) Int)")
 
+let test_is_rule_recursive_detects_self_reference () =
+  (* PENDING Patch 2: implement Smt.is_rule_recursive for self-referential rule bodies. *)
+  () [@tags "pending"]
+
+let test_recursive_rule_emits_define_fun_rec () =
+  (* PENDING Patch 2: emit define-fun-rec and suppress declare-fun for recursive rules. *)
+  () [@tags "pending"]
+
+let test_non_recursive_rule_emits_existing_shape () =
+  (* PENDING Patch 2: preserve declare-fun plus universal-axiom emission for non-recursive rules. *)
+  () [@tags "pending"]
+
 let test_nullary_rule () =
   let env =
     Env.empty ""
@@ -1297,6 +1309,14 @@ let integration_tests =
   [
     test_case "domain preamble" `Quick test_preamble_domains_simple;
     test_case "function declarations" `Quick test_function_declarations;
+    test_case "is_rule_recursive detects self-referential rule body" `Quick
+      test_is_rule_recursive_detects_self_reference;
+    test_case
+      "recursive rule emits define-fun-rec form with body and skips \
+       declare-fun line"
+      `Quick test_recursive_rule_emits_define_fun_rec;
+    test_case "non-recursive rule emits declare-fun + universal-axiom unchanged"
+      `Quick test_non_recursive_rule_emits_existing_shape;
     test_case "nullary rule" `Quick test_nullary_rule;
     test_case "classify chapters" `Quick test_classify_chapters;
     test_case "generate queries" `Quick test_generate_queries;
