@@ -46,6 +46,7 @@ export interface FixedPointLoopLowerOptions extends LoopSsaBuildOptions {
 export interface FixedPointLoopShape {
   guardExpr: IR1Expr;
   bodyStmt: IR1Stmt;
+  localLets: ReadonlyMap<string, IR1Expr>;
   mutatedLocation: Extract<IR1SsaLocation, { kind: "property" }>;
 }
 
@@ -59,8 +60,33 @@ interface TargetInfo {
 }
 
 export function recognizeFixedPointLoopShape(
-  stmt: Extract<IR1Stmt, { kind: "while" }>,
+  stmt:
+    | Extract<IR1Stmt, { kind: "while" }>
+    | Extract<IR1Stmt, { kind: "block" }>,
 ): FixedPointLoopShape | { unsupported: string } {
+  if (stmt.kind === "block") {
+    const children = stmt.stmts;
+    const last = children.at(-1);
+    if (last?.kind !== "while") {
+      return { unsupported: "fixed-point block must end in a while loop" };
+    }
+    const localLets = new Map<string, IR1Expr>();
+    for (const child of children.slice(0, -1)) {
+      if (child.kind !== "let") {
+        return {
+          unsupported:
+            "fixed-point while prelude must contain let bindings only",
+        };
+      }
+      localLets.set(child.name, child.value);
+    }
+    const recognized = recognizeFixedPointLoopShape(last);
+    if ("unsupported" in recognized) {
+      return recognized;
+    }
+    return { ...recognized, localLets };
+  }
+
   if (
     stmt.cond.kind === "lit" &&
     stmt.cond.value.kind === "bool" &&
@@ -87,12 +113,15 @@ export function recognizeFixedPointLoopShape(
   return {
     guardExpr: stmt.cond,
     bodyStmt: stmt.body,
+    localLets: new Map(),
     mutatedLocation,
   };
 }
 
 export function lowerFixedPointLoopL1Body(
-  stmt: Extract<IR1Stmt, { kind: "while" }>,
+  stmt:
+    | Extract<IR1Stmt, { kind: "while" }>
+    | Extract<IR1Stmt, { kind: "block" }>,
   options: FixedPointLoopLowerOptions = {},
 ): IR1SsaBodyLowerResult {
   const shape = recognizeFixedPointLoopShape(stmt);
@@ -109,6 +138,21 @@ export function lowerFixedPointLoopL1Body(
       "fixed-point while lowering could not match the mutated location to the loop body write",
     );
   }
+  const guardExpr = substituteLocalLets(shape.guardExpr, shape.localLets);
+  const valueExpr = substituteLocalLets(writeBody.value, shape.localLets);
+  if (
+    containsNonTargetMemberRead(guardExpr, writeBody.target) ||
+    containsNonTargetMemberRead(valueExpr, writeBody.target)
+  ) {
+    return ir1SsaBodyLowerUnsupported(
+      "fixed-point while lowering supports guards and updates over the mutated property only",
+    );
+  }
+  if (!containsTargetMemberRead(guardExpr, writeBody.target)) {
+    return ir1SsaBodyLowerUnsupported(
+      "fixed-point while guard must depend on the mutated property",
+    );
+  }
 
   const lowerOpaque = options.lowerOpaque ?? ((e: OpaqueExpr) => e);
   const ast = getAst();
@@ -118,15 +162,15 @@ export function lowerFixedPointLoopL1Body(
   );
   const header = ir1SsaOpenLoopHeader(targetInfo.location, preheaderVersion);
   const invariantNames = collectLoopInvariantNames(
-    [shape.guardExpr, writeBody.value],
+    [guardExpr, valueExpr],
     writeBody.target,
   );
   const stateName = allocateFreshStateName(
-    stateAvoidanceNames([shape.guardExpr, writeBody.value], writeBody.target),
+    stateAvoidanceNames([guardExpr, valueExpr], writeBody.target),
   );
   const stateVar = ir1Var(stateName);
   const effectExpr = substituteMemberReads(
-    writeBody.value,
+    valueExpr,
     writeBody.target,
     stateVar,
   );
@@ -154,9 +198,7 @@ export function lowerFixedPointLoopL1Body(
   const effect = lowerOpaque(lowerExpr(lowerL1Expr(effectExpr)));
   const loweredGuard = lowerOpaque(
     lowerExpr(
-      lowerL1Expr(
-        substituteMemberReads(shape.guardExpr, writeBody.target, stateVar),
-      ),
+      lowerL1Expr(substituteMemberReads(guardExpr, writeBody.target, stateVar)),
     ),
   );
   const helperCallOnEffect = ast.app(ast.var(ruleName), [
@@ -351,6 +393,296 @@ function walkStmt(stmt: IR1Stmt, visit: (stmt: IR1Stmt) => void): void {
     default: {
       const _exhaustive: never = stmt;
       void _exhaustive;
+    }
+  }
+}
+
+function substituteLocalLets(
+  expr: IR1Expr,
+  localLets: ReadonlyMap<string, IR1Expr>,
+  bound: ReadonlySet<string> = new Set(),
+  resolving: ReadonlySet<string> = new Set(),
+): IR1Expr {
+  if (localLets.size === 0) {
+    return expr;
+  }
+  if (
+    expr.kind === "var" &&
+    !expr.primed &&
+    !bound.has(expr.name) &&
+    localLets.has(expr.name) &&
+    !resolving.has(expr.name)
+  ) {
+    return substituteLocalLets(
+      localLets.get(expr.name)!,
+      localLets,
+      bound,
+      new Set([...resolving, expr.name]),
+    );
+  }
+  switch (expr.kind) {
+    case "var":
+    case "lit":
+      return expr;
+    case "binop":
+      return {
+        ...expr,
+        lhs: substituteLocalLets(expr.lhs, localLets, bound, resolving),
+        rhs: substituteLocalLets(expr.rhs, localLets, bound, resolving),
+      };
+    case "unop":
+      return {
+        ...expr,
+        arg: substituteLocalLets(expr.arg, localLets, bound, resolving),
+      };
+    case "app":
+      return {
+        ...expr,
+        callee: substituteLocalLets(expr.callee, localLets, bound, resolving),
+        args: expr.args.map((arg) =>
+          substituteLocalLets(arg, localLets, bound, resolving),
+        ),
+      };
+    case "member":
+      return {
+        ...expr,
+        receiver: substituteLocalLets(
+          expr.receiver,
+          localLets,
+          bound,
+          resolving,
+        ),
+      };
+    case "cond":
+      return {
+        ...expr,
+        arms: expr.arms.map(([guard, value]) => [
+          substituteLocalLets(guard, localLets, bound, resolving),
+          substituteLocalLets(value, localLets, bound, resolving),
+        ]),
+        otherwise: substituteLocalLets(
+          expr.otherwise,
+          localLets,
+          bound,
+          resolving,
+        ),
+      };
+    case "is-nullish":
+      return {
+        ...expr,
+        operand: substituteLocalLets(expr.operand, localLets, bound, resolving),
+      };
+    case "each": {
+      const localFreeVars = localLetValueFreeVars(localLets);
+      const binder =
+        localFreeVars.has(expr.binder) &&
+        (expr.guards.length > 0 || expr.proj !== undefined)
+          ? freshIr1Name(expr.binder, [
+              expr,
+              ...localLets.values(),
+              ...[...bound].map((name) => ir1Var(name)),
+            ])
+          : expr.binder;
+      const guards =
+        binder === expr.binder
+          ? expr.guards
+          : expr.guards.map((guard) =>
+              renameBoundVarRefs(guard, expr.binder, binder),
+            );
+      const proj =
+        binder === expr.binder
+          ? expr.proj
+          : renameBoundVarRefs(expr.proj, expr.binder, binder);
+      const nextBound = new Set(bound);
+      nextBound.add(binder);
+      return {
+        ...expr,
+        binder,
+        src: substituteLocalLets(expr.src, localLets, bound, resolving),
+        guards: guards.map((guard) =>
+          substituteLocalLets(guard, localLets, nextBound, resolving),
+        ),
+        proj: substituteLocalLets(proj, localLets, nextBound, resolving),
+      };
+    }
+    case "map-read":
+      return {
+        ...expr,
+        receiver: substituteLocalLets(
+          expr.receiver,
+          localLets,
+          bound,
+          resolving,
+        ),
+        key: substituteLocalLets(expr.key, localLets, bound, resolving),
+      };
+    case "set-read":
+      return {
+        ...expr,
+        receiver: substituteLocalLets(
+          expr.receiver,
+          localLets,
+          bound,
+          resolving,
+        ),
+        elem: substituteLocalLets(expr.elem, localLets, bound, resolving),
+      };
+    default: {
+      const _exhaustive: never = expr;
+      void _exhaustive;
+      return expr;
+    }
+  }
+}
+
+function localLetValueFreeVars(
+  localLets: ReadonlyMap<string, IR1Expr>,
+): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const value of localLets.values()) {
+    collectIr1FreeVars(value, out);
+  }
+  return out;
+}
+
+function collectIr1FreeVars(
+  expr: IR1Expr,
+  out: Set<string>,
+  bound: ReadonlySet<string> = new Set(),
+): void {
+  switch (expr.kind) {
+    case "var":
+      if (!expr.primed && !bound.has(expr.name)) {
+        out.add(expr.name);
+      }
+      break;
+    case "lit":
+      break;
+    case "binop":
+      collectIr1FreeVars(expr.lhs, out, bound);
+      collectIr1FreeVars(expr.rhs, out, bound);
+      break;
+    case "unop":
+      collectIr1FreeVars(expr.arg, out, bound);
+      break;
+    case "app":
+      collectIr1FreeVars(expr.callee, out, bound);
+      for (const arg of expr.args) {
+        collectIr1FreeVars(arg, out, bound);
+      }
+      break;
+    case "member":
+      collectIr1FreeVars(expr.receiver, out, bound);
+      break;
+    case "cond":
+      for (const [guard, value] of expr.arms) {
+        collectIr1FreeVars(guard, out, bound);
+        collectIr1FreeVars(value, out, bound);
+      }
+      collectIr1FreeVars(expr.otherwise, out, bound);
+      break;
+    case "is-nullish":
+      collectIr1FreeVars(expr.operand, out, bound);
+      break;
+    case "each": {
+      collectIr1FreeVars(expr.src, out, bound);
+      const nextBound = new Set(bound);
+      nextBound.add(expr.binder);
+      for (const guard of expr.guards) {
+        collectIr1FreeVars(guard, out, nextBound);
+      }
+      collectIr1FreeVars(expr.proj, out, nextBound);
+      break;
+    }
+    case "map-read":
+      collectIr1FreeVars(expr.receiver, out, bound);
+      collectIr1FreeVars(expr.key, out, bound);
+      break;
+    case "set-read":
+      collectIr1FreeVars(expr.receiver, out, bound);
+      collectIr1FreeVars(expr.elem, out, bound);
+      break;
+    default: {
+      const _exhaustive: never = expr;
+      void _exhaustive;
+    }
+  }
+}
+
+function freshIr1Name(base: string, exprs: Iterable<IR1Expr>): string {
+  const used = new Set<string>();
+  for (const expr of exprs) {
+    collectAllNames(expr, used);
+  }
+  let candidate = `${base}1`;
+  for (let i = 2; used.has(candidate); i++) {
+    candidate = `${base}${i}`;
+  }
+  return candidate;
+}
+
+function renameBoundVarRefs(expr: IR1Expr, from: string, to: string): IR1Expr {
+  switch (expr.kind) {
+    case "var":
+      return !expr.primed && expr.name === from ? { ...expr, name: to } : expr;
+    case "lit":
+      return expr;
+    case "binop":
+      return {
+        ...expr,
+        lhs: renameBoundVarRefs(expr.lhs, from, to),
+        rhs: renameBoundVarRefs(expr.rhs, from, to),
+      };
+    case "unop":
+      return { ...expr, arg: renameBoundVarRefs(expr.arg, from, to) };
+    case "app":
+      return {
+        ...expr,
+        callee: renameBoundVarRefs(expr.callee, from, to),
+        args: expr.args.map((arg) => renameBoundVarRefs(arg, from, to)),
+      };
+    case "member":
+      return { ...expr, receiver: renameBoundVarRefs(expr.receiver, from, to) };
+    case "cond":
+      return {
+        ...expr,
+        arms: expr.arms.map(([guard, value]) => [
+          renameBoundVarRefs(guard, from, to),
+          renameBoundVarRefs(value, from, to),
+        ]),
+        otherwise: renameBoundVarRefs(expr.otherwise, from, to),
+      };
+    case "is-nullish":
+      return { ...expr, operand: renameBoundVarRefs(expr.operand, from, to) };
+    case "each":
+      if (expr.binder === from) {
+        return {
+          ...expr,
+          src: renameBoundVarRefs(expr.src, from, to),
+        };
+      }
+      return {
+        ...expr,
+        src: renameBoundVarRefs(expr.src, from, to),
+        guards: expr.guards.map((guard) => renameBoundVarRefs(guard, from, to)),
+        proj: renameBoundVarRefs(expr.proj, from, to),
+      };
+    case "map-read":
+      return {
+        ...expr,
+        receiver: renameBoundVarRefs(expr.receiver, from, to),
+        key: renameBoundVarRefs(expr.key, from, to),
+      };
+    case "set-read":
+      return {
+        ...expr,
+        receiver: renameBoundVarRefs(expr.receiver, from, to),
+        elem: renameBoundVarRefs(expr.elem, from, to),
+      };
+    default: {
+      const _exhaustive: never = expr;
+      void _exhaustive;
+      return expr;
     }
   }
 }
@@ -609,6 +941,86 @@ function sameMemberExpr(
     expr.name === member.name &&
     ir1ExprEqual(expr.receiver, member.receiver)
   );
+}
+
+function containsNonTargetMemberRead(
+  expr: IR1Expr,
+  target: Extract<IR1Expr, { kind: "member" }>,
+): boolean {
+  let found = false;
+  walkExpr(expr, (node) => {
+    if (node.kind === "member" && !sameMemberExpr(node, target)) {
+      found = true;
+    }
+  });
+  return found;
+}
+
+function containsTargetMemberRead(
+  expr: IR1Expr,
+  target: Extract<IR1Expr, { kind: "member" }>,
+): boolean {
+  let found = false;
+  walkExpr(expr, (node) => {
+    if (sameMemberExpr(node, target)) {
+      found = true;
+    }
+  });
+  return found;
+}
+
+function walkExpr(expr: IR1Expr, visit: (expr: IR1Expr) => void): void {
+  visit(expr);
+  switch (expr.kind) {
+    case "var":
+    case "lit":
+      break;
+    case "binop":
+      walkExpr(expr.lhs, visit);
+      walkExpr(expr.rhs, visit);
+      break;
+    case "unop":
+      walkExpr(expr.arg, visit);
+      break;
+    case "app":
+      walkExpr(expr.callee, visit);
+      for (const arg of expr.args) {
+        walkExpr(arg, visit);
+      }
+      break;
+    case "member":
+      walkExpr(expr.receiver, visit);
+      break;
+    case "cond":
+      for (const [guard, value] of expr.arms) {
+        walkExpr(guard, visit);
+        walkExpr(value, visit);
+      }
+      walkExpr(expr.otherwise, visit);
+      break;
+    case "is-nullish":
+      walkExpr(expr.operand, visit);
+      break;
+    case "each":
+      walkExpr(expr.src, visit);
+      for (const guard of expr.guards) {
+        walkExpr(guard, visit);
+      }
+      walkExpr(expr.proj, visit);
+      break;
+    case "map-read":
+      walkExpr(expr.receiver, visit);
+      walkExpr(expr.key, visit);
+      break;
+    case "set-read":
+      walkExpr(expr.receiver, visit);
+      walkExpr(expr.elem, visit);
+      break;
+    default: {
+      const _exhaustive: never = expr;
+      void _exhaustive;
+    }
+  }
 }
 
 function ir1ExprEqual(a: IR1Expr, b: IR1Expr): boolean {

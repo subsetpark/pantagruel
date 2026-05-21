@@ -152,7 +152,7 @@ describe("ir1-ssa-fixed-point", () => {
     });
     assert.match(
       source,
-      /fn--loop s: Nat0, step: Nat0, target: Nat0 => Nat0\./u,
+      /fn--loop s: Nat0, step: Nat0, target: Nat0 => Nat0 = cond/u,
     );
     assert.match(source, /balance' a = fn--loop \(balance a\) step target\./u);
   });
@@ -172,6 +172,48 @@ describe("ir1-ssa-fixed-point", () => {
       ["s1", "s", "step"],
     );
     assert.match(ast.strExpr(ruleDecl.body), /cond s1 < s =>/u);
+  });
+
+  it("inlines let-then-while preludes transitively before collecting invariants", () => {
+    const ast = getAst();
+    const result = lowerFixedPointLoopL1Body({
+      kind: "block",
+      stmts: [
+        {
+          kind: "let",
+          name: "limit",
+          value: { kind: "binop", op: "add", lhs: targetVar, rhs: stepVar },
+        },
+        {
+          kind: "let",
+          name: "cap",
+          value: {
+            kind: "binop",
+            op: "add",
+            lhs: { kind: "var", name: "limit" },
+            rhs: stepVar,
+          },
+        },
+        {
+          ...fixedPointWhile(),
+          cond: {
+            kind: "binop",
+            op: "lt",
+            lhs: balanceMember,
+            rhs: { kind: "var", name: "cap" },
+          },
+        },
+      ],
+    });
+    const ruleDecl = result.propositions[0]!;
+
+    assert.equal(ruleDecl.kind, "rule-decl");
+    assert.deepEqual(
+      ruleDecl.params.map((p) => p.name),
+      ["s", "step", "target"],
+    );
+    assert.doesNotMatch(ast.strExpr(ruleDecl.body), /\b(limit|cap)\b/u);
+    assert.match(ast.strExpr(ruleDecl.body), /target \+ step \+ step/u);
   });
 
   it("uses the configured numeric strategy for default helper types", () => {

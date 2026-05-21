@@ -3,7 +3,6 @@ import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { describe, it } from "node:test";
 import { extractFunctionAnnotations } from "../../src/annotations.js";
-import { runCheck } from "../../src/emit.js";
 import { createSourceFile } from "../../src/extract.js";
 import type { PantDocument } from "../../src/types.js";
 import {
@@ -12,6 +11,7 @@ import {
   buildDocument as buildDocumentFromPath,
   emitAndCheck,
   getPantBin,
+  runCheck,
 } from "../helpers.mjs";
 
 const FIXTURES = resolve(import.meta.dirname, "../fixtures");
@@ -190,6 +190,7 @@ describe("emission snapshots", () => {
 
 describe("pant --check", () => {
   const hasSolver = solverAvailable();
+  const KNOWN_SLOW_CHECKS: Set<string> = new Set();
 
   it("max.ts assertions pass", {
     skip: !hasSolver ? "z3 not available" : undefined,
@@ -307,6 +308,26 @@ describe("pant --check", () => {
       const result = runCheck(output, {
         projectRoot: PROJECT_ROOT,
         pantBin: getPantBin(),
+      });
+
+      assert.equal(result.passed, true);
+      assert.ok(result.checks.length > 0);
+      assert.ok(result.checks.every((c) => c.passed));
+    });
+  }
+
+  for (const fn of ["adjustBalanceTo", "fillUpTo", "drainTo"]) {
+    const fixture = `constructs/functions-mutating-fixed-point-while.ts:${fn}`;
+    it(`functions-mutating-fixed-point-while.ts ${fn} is checkable`, {
+      skip: !hasSolver ? "z3 not available" : undefined,
+    }, async () => {
+      const doc = await buildDocument(
+        "constructs/functions-mutating-fixed-point-while.ts",
+        fn,
+      );
+      const output = await emitAndCheck(doc);
+      const result = runCheck(output, {
+        timeoutMs: KNOWN_SLOW_CHECKS.has(fixture) ? 60_000 : 3_000,
       });
 
       assert.equal(result.passed, true);

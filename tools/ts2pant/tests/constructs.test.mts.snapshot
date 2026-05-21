@@ -783,7 +783,7 @@ exports[`functions-mutating-bounded-while.ts > sumFirstNWhile 1`] = `
 `;
 
 exports[`functions-mutating-bounded-while.ts > unboundedWhile 1`] = `
-"module UNBOUNDED_WHILE.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--last-index a1: Account => Int.\\n~> Unbounded-while @ a: Account, n: Int.\\n\\n---\\n\\n> UNSUPPORTED: while loop is not a recognized bounded-counter shape; lift to L4 fixed-point lowering when that milestone ships.\\n"
+"module UNBOUNDED_WHILE.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--last-index a1: Account => Int.\\n~> Unbounded-while @ a: Account, n: Int.\\n\\n---\\n\\n> UNSUPPORTED: fixed-point while lowering supports guards and updates over the mutated property only.\\n"
 `;
 
 exports[`functions-mutating-compound.ts > addAmount 1`] = `
@@ -904,6 +904,22 @@ exports[`functions-mutating-early-exit.ts > elseReturnThenMore 1`] = `
 
 exports[`functions-mutating-early-exit.ts > writeThenEarlyReturn 1`] = `
 "module WRITE_THEN_EARLY_RETURN.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Write-then-early-return @ a: Account, g: Bool.\\n\\n---\\n\\naccount--balance' a = (cond ~g => 10 + 5, true => 10).\\naccount--owner' a1 = account--owner a1.\\n"
+`;
+
+exports[`functions-mutating-fixed-point-while.ts > adjustBalanceTo 1`] = `
+"module ADJUST_BALANCE_TO.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--size a1: Account => Int.\\naccount--tick-count a1: Account => Int.\\nfn--loop s: Int, step: Int, target: Int => Int = cond s < target => fn--loop (s + step) step target, true => s.\\n~> Adjust-balance-to @ a: Account, target: Int, step: Int.\\n\\n---\\n\\naccount--balance' a = fn--loop (account--balance a) step target.\\naccount--size' a1 = account--size a1.\\naccount--tick-count' a1 = account--tick-count a1.\\n"
+`;
+
+exports[`functions-mutating-fixed-point-while.ts > drainTo 1`] = `
+"module DRAIN_TO.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--size a1: Account => Int.\\naccount--tick-count a1: Account => Int.\\nfn--loop s: Int, floor: Int => Int = cond s > floor => fn--loop (s - 1) floor, true => s.\\n~> Drain-to @ a: Account, floor: Int.\\n\\n---\\n\\naccount--balance' a = fn--loop (account--balance a) floor.\\naccount--size' a1 = account--size a1.\\naccount--tick-count' a1 = account--tick-count a1.\\n"
+`;
+
+exports[`functions-mutating-fixed-point-while.ts > fillUpTo 1`] = `
+"module FILL_UP_TO.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--size a1: Account => Int.\\naccount--tick-count a1: Account => Int.\\nfn--loop s: Int, cap: Int => Int = cond s < cap => fn--loop (s + 1) cap, true => s.\\n~> Fill-up-to @ a: Account, cap: Int.\\n\\n---\\n\\naccount--size' a = fn--loop (account--size a) cap.\\naccount--balance' a1 = account--balance a1.\\naccount--tick-count' a1 = account--tick-count a1.\\n"
+`;
+
+exports[`functions-mutating-fixed-point-while.ts > spin 1`] = `
+"module SPIN.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--size a1: Account => Int.\\naccount--tick-count a1: Account => Int.\\n~> Spin @ a: Account.\\n\\n---\\n\\n> UNSUPPORTED: while loop has no observable termination condition (literal-true guard); rewrite with a guard that depends on mutated state.\\n"
 `;
 
 exports[`functions-mutating-loop.ts > activateActive 1`] = `
