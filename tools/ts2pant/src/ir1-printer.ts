@@ -62,7 +62,7 @@ export function formatIR1SsaLocation(loc: IR1SsaLocation): string {
     case "property":
       return `${loc.ruleName} ${formatAsAppArg(loc.receiver)}`;
     case "map-value":
-      return `${loc.keyPredName} ${formatAsAppArg(loc.receiver)} ${formatAsAppArg(loc.key)}`;
+      return `${loc.ruleName} ${formatAsAppArg(loc.receiver)} ${formatAsAppArg(loc.key)}`;
     case "map-membership":
       return `${formatIR1Expr(loc.key)} in ${formatIR1Expr(loc.receiver)}`;
     case "set-membership":
@@ -341,7 +341,7 @@ function locationAsPrimedRule(loc: IR1SsaLocation): string {
     case "property":
       return `${loc.ruleName}' ${formatAsAppArg(loc.receiver)}`;
     case "map-value":
-      return `${loc.keyPredName}' ${formatAsAppArg(loc.receiver)} ${formatAsAppArg(loc.key)}`;
+      return `${loc.ruleName}' ${formatAsAppArg(loc.receiver)} ${formatAsAppArg(loc.key)}`;
     case "map-membership":
       return `(${formatIR1Expr(loc.key)} in ${formatIR1Expr(loc.receiver)})'`;
     case "set-membership":
