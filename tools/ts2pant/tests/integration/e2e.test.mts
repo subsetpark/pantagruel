@@ -312,4 +312,28 @@ describe("pant --check", () => {
       assert.ok(result.checks.every((c) => c.passed));
     });
   }
+
+  for (const [file, fn] of [
+    ["functions-mutating-loop-break.ts", "addUntilLimit"],
+    ["functions-mutating-loop-continue.ts", "setPositiveLastIndex"],
+    ["functions-mutating-bounded-while-break.ts", "addWhileBelowLimit"],
+    ["functions-mutating-fixed-point-break.ts", "climbUntilBreak"],
+    ["functions-mutating-fixed-point-continue.ts", "climbUnlessZeroStep"],
+    ["functions-mutating-fixed-point-return-bare.ts", "climbUntilReturn"],
+    ["functions-mutating-fixed-point-return-value.ts", "climbAndReturn"],
+    ["functions-mutating-fixed-point-throw.ts", "climbUnlessInvalid"],
+    ["functions-mutating-while-true-break.ts", "eventLoopUntilLimit"],
+  ] as const) {
+    it(`${file} ${fn} is checkable`, {
+      skip: !hasSolver ? "z3 not available" : undefined,
+    }, async () => {
+      const doc = await buildDocument(`constructs/${file}`, fn);
+      const output = await emitAndCheck(doc);
+      const result = runCheck(output);
+
+      assert.equal(result.passed, true);
+      assert.ok(result.checks.length > 0);
+      assert.ok(result.checks.every((c) => c.passed));
+    });
+  }
 });

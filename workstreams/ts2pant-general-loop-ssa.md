@@ -394,14 +394,26 @@ folding existing summaries.
 
 ### Milestone 5: loop-break-continue
 
+**Status**: Landed in `ts2pant-loop-break-continue`.
+
 **Definition of Done**:
-IR1 SSA loop bodies admit `break` and `continue` statements, represented via
-the continuation handles from L1. Both bounded-quantified and fixed-point
-lowering paths emit Pant output consistent with the early-exit semantics the
-gameplan settles on. The continuation-merge model extends the prior
-workstream's M2 branch-continuation work without regressing M2 tests. At least
-two break-bearing and two continue-bearing fixtures pass `pant` and (where
-applicable) `pant --check`.
+IR1 SSA loop bodies admit `break`, `continue`, `return` (bare and value), and
+`throw` statements, represented via the continuation handles from L1. The
+fixed-point lowering path consumes all four handle lists: `break` emits a
+post-loop `cond`, `continue` feeds the header phi loop-back input, `return`
+feeds the function-level return-value `cond`, and `throw` contributes an
+iteration-precondition guard. Bounded loops containing `break` or `return`
+bump to fixed-point lowering; bounded loops containing only `continue` stay on
+the quantified L2/L3 route. Labeled `break` and `continue` reject with the M7
+future-work diagnostic.
+
+At least nine fixtures cover counter break, counter continue, bounded-while
+break, fixed-point break, fixed-point continue, fixed-point bare return,
+fixed-point value return, fixed-point throw, and `while (true)` plus break.
+Each fixture passes `pant` typecheck and either passes `pant --check` or
+carries a documented acceptable-timeout rationale under L4's fixture policy.
+Snapshot generation confirms prior-shipping fixture output remains
+byte-identical.
 
 **`while (true) + break` event-loop idiom in scope.** L4 rejects literal-true
 guards with a "no observable termination condition" diagnostic because the
@@ -410,10 +422,10 @@ SMT verification (infinitely many models, no further constraint). L5 unlocks
 this idiom: when the body contains a reachable `break` (or `throw` / `return`)
 guarded by a state-dependent condition, the early-exit becomes the loop's
 observable termination condition. The fixed-point lowering encodes it as
-`fix (λs. if ¬break(s) then body(s) else s)` (or the continuation-handle
-equivalent — see Open Questions below). At least one of L5's break-bearing
-fixtures must be a `while (true) { ...; if (cond) break; }` shape so the
-diagnostic L4 surfaced for this idiom resolves to a translating fixture in L5.
+the continuation-handle equivalent of `fix (λs. if ¬break(s) then body(s)
+else s)`. At least one of L5's break-bearing fixtures is a `while (true) {
+...; if (cond) break; }` shape so the diagnostic L4 surfaced for this idiom
+resolves to a translating fixture in L5.
 
 **Why this is a safe pause point**:
 Loop-shape coverage is feature-complete for this workstream's terminal scope.
@@ -432,9 +444,19 @@ Existing summary-based μ-search and foreach lowering remains unchanged.
   (`fix (λs. if guard(s) ∧ ¬break(s) then body(s) else s)`) or as a
   continuation handle consumed by the post-loop join. Affects the L4
   fixed-point encoding retroactively if the latter is chosen.
+  Resolved: continuation handles are consumed by the post-loop join.
 - Whether `continue` is represented as a body-internal goto-to-header or as
   a body-internal short-circuit. Both encodings exist in the SSA literature.
+  Resolved: continue is a short-circuit to the loop-header back-edge value.
 - How nested loops scope their break/continue targets.
+  Resolved: unlabeled exits target the innermost loop body; labeled exits are
+  deferred to M7 and rejected in M5.
+- Whether return values require a separate function-output contract.
+  Resolved: mutating bodies synthesize a per-function `return-value`
+  `IR1SsaLocation`, and lowering emits a function-level return-value equation.
+- Whether loop-internal throw is a terminal abort or a precondition.
+  Resolved: throw lowers as an iteration-precondition guard conjoined with
+  the recursive rule guard.
 
 **Unlocks**:
 Summary unification (L6) can target the now-complete general-loop machinery.
