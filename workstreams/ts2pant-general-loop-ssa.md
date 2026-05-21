@@ -342,6 +342,12 @@ A single bounded-lowering family. L4 introduces a parallel fixed-point family.
 
 ### Milestone 4: fixed-point-while-lowering
 
+**Status**: Landed in `ts2pant-fixed-point-while-lowering`. See
+`tools/ts2pant/docs/intermediate-representation.md` section
+`## Fixed-point while loop lowering (L4)` for the recursive-rule lowering
+shape, the two build-path routes, and the documented per-fixture timeout
+policy.
+
 **Definition of Done**:
 The mutating-body build path emits IR1 SSA for `while` loops without
 extractable ranking functions, routing them to the fixed-point lowering
@@ -360,7 +366,9 @@ All currently-shippable `while` shapes lower. break/continue is still deferred
 **Operator Actions Before Next Milestone**:
 - Validate the recursive-rule output style with at least one external reviewer
   familiar with Pant. The recursive-rule idiom is novel for this project;
-  spec readability is a first-class concern.
+  spec readability is a first-class concern. This remains required
+  post-merge as an out-of-band review action; it is not gated by this
+  gameplan patch.
 - Confirm `pant --check` SMT performance is acceptable across the full corpus.
   If solver timeouts become routine, pause the workstream and revisit
   ranking-function extraction in L3 — the bound-extraction net may need to

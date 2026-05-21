@@ -111,18 +111,15 @@ without any language extension:
 - Recursive Bool rules (a predicate that references itself in its
   body) close the inductive case of a CHC encoding.
 
-ts2pant does not currently exploit this beyond standard EUF dispatch
+Historically, ts2pant did not exploit this beyond standard EUF dispatch
 (which is the special case of "uninterpreted predicate with no
-recursive constraints"). Two future workstream targets do:
+recursive constraints"). L4 fixed-point unbounded-while lowering
+(general-loop SSA workstream, `workstreams/ts2pant-general-loop-ssa.md`)
+now realizes the pattern directly: the synthesized recursive Pant helper rule
+is the implicitly defined predicate/function, the loop-body iteration is the
+constraint system, and the SMT backend's `define-fun-rec` emission asks Z3 or
+CVC5 to compute the fixed point. A future workstream target also fits:
 
-- **L4 fixed-point unbounded-while lowering** (general-loop SSA
-  workstream, `workstreams/ts2pant-general-loop-ssa.md`). The recursive
-  Pant rule definition that lowers an unbounded `while` is, semantically,
-  an uninterpreted predicate constrained by the loop body's
-  base + inductive clauses. SMT dispatch via `define-fun-rec`
-  (Z3/CVC5 induction) or CHC mode (Spacer) is a backend choice;
-  the Pant source is identical. See the workstream's "Established
-  Precedents" section for the full landscape of L4 candidate encodings.
 - **Compositional under-specification.** A future Pant pattern for
   specifying a component's contract without supplying an
   implementation — declare the contract as a bodyless `=> Bool` rule,
@@ -136,15 +133,15 @@ Whenever you see a bodyless rule declared `=> Bool` and the
 surrounding propositions constrain it via universal Horn clauses
 (`all x: T | premise(x) -> rule(x).`), you are looking at this pattern.
 The current ts2pant emitter does not produce this shape (post-M6
-mutating bodies emit equations + frames, not Horn clauses), but L4
-will, and hand-written Pant specs that exercise modular verification
-already could.
+mutating bodies emit equations + frames, not Horn clauses), but L4 now
+produces the recursive-rule variant of the same fixed-point technique, and
+hand-written Pant specs that exercise modular verification already could.
 
 **Why this section exists.** The grounding for L4 is not "we are
 inventing a recursive-rule lowering for `while`" — it is "we are
 applying one of the most established techniques in formal methods to
 a translation target that already supports it syntactically." A
-future agent extending ts2pant past L3 should recognise the technique
+future agent extending ts2pant past L4 should recognise the technique
 by name and pick the encoding (recursive `define-fun-rec`, CHC,
 k-induction, BMC unfolding) from the established prior art catalogued
 in the workstream rather than reinventing from first principles.
@@ -254,10 +251,10 @@ Read that file before extending the IR or touching SSA-bearing code:
 - **Imperative IR Workstream.** M1–M5 of the workstream landed; the doc
   records what each milestone delivered and the locked decisions.
 - **General-loop SSA Workstream.** L1 (loop SSA contract), L2 (bounded
-  counter `for` lowering), and L3 (bounded `let`+`while` desugar covering
-  ascending and descending counters) have landed. L4 (fixed-point unbounded
-  while) is the next milestone — see
-  `workstreams/ts2pant-general-loop-ssa.md`.
+  counter `for` lowering), L3 (bounded `let`+`while` desugar covering
+  ascending and descending counters), and L4 (fixed-point unbounded `while`
+  lowering through recursive Pant helpers emitted as `define-fun-rec`) have
+  landed — see `workstreams/ts2pant-general-loop-ssa.md`.
 
 ## PR #84 Post-Mortem: Why Standard Algorithms Matter
 
