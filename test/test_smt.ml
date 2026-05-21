@@ -1888,105 +1888,90 @@ let test_card_nat_comprehension_error () =
   check bool "refined diagnostic mentions μ-search or upper bound" true
     raised_with_hint
 
-module Pending_bounded_numeric_over_each = struct
-  let test_bounded_sum_over_nat0_symbolic_bound () =
-    (* PENDING Patch 2: bounded Nat0 add-over-each with symbolic upper bound. *)
-    let env = Env.empty "" |> Env.add_var "n" Types.TyNat0 in
-    let expr =
-      Ast.make_each
-        [ { param_name = Lower "j"; param_type = TName (Upper "Nat0") } ]
-        [ GExpr (EBinop (OpLt, EVar (Lower "j"), EVar (Lower "n"))) ]
-        (Some CombAdd) (EVar (Lower "j"))
-    in
-    let result = Smt.translate_expr config env expr in
-    check bool "has +" true (contains result "(+")
+let test_bounded_sum_over_nat0_symbolic_bound () =
+  let env = Env.empty "" |> Env.add_var "n" Types.TyNat0 in
+  let expr =
+    Ast.make_each
+      [ { param_name = Lower "j"; param_type = TName (Upper "Nat0") } ]
+      [ GExpr (EBinop (OpLt, EVar (Lower "j"), EVar (Lower "n"))) ]
+      (Some CombAdd) (EVar (Lower "j"))
+  in
+  let result = Smt.translate_expr config env expr in
+  check string "symbolic bound unrolled with ite guards"
+    "(+ (ite (< 0 n) 0 0) (ite (< 1 n) 1 0) (ite (< 2 n) 2 0))" result
 
-  let test_bounded_sum_over_nat0_concrete_bound () =
-    (* PENDING Patch 2: bounded Nat0 add-over-each with concrete upper bound. *)
-    let env = Env.empty "" in
-    let expr =
-      Ast.make_each
-        [ { param_name = Lower "j"; param_type = TName (Upper "Nat0") } ]
-        [ GExpr (EBinop (OpLt, EVar (Lower "j"), ELitNat 5)) ]
-        (Some CombAdd) (EVar (Lower "j"))
-    in
-    let result = Smt.translate_expr config env expr in
-    check bool "has +" true (contains result "(+")
+let test_bounded_sum_over_nat0_concrete_bound () =
+  let env = Env.empty "" in
+  let expr =
+    Ast.make_each
+      [ { param_name = Lower "j"; param_type = TName (Upper "Nat0") } ]
+      [ GExpr (EBinop (OpLt, EVar (Lower "j"), ELitNat 5)) ]
+      (Some CombAdd) (EVar (Lower "j"))
+  in
+  let result = Smt.translate_expr config env expr in
+  check string "concrete bound unrolled exactly" "(+ 0 1 2 3 4)" result
 
-  let test_bounded_and_over_nat0_bool_body () =
-    (* PENDING Patch 2: bounded Nat0 and-over-each with Bool body. *)
-    let env =
-      Env.empty ""
-      |> Env.add_var "n" Types.TyNat0
-      |> Env.add_rule "p?"
-           (Types.TyFunc ([ Types.TyNat0 ], Some Types.TyBool))
-           Ast.dummy_loc ~chapter:0
-    in
-    let expr =
-      Ast.make_each
-        [ { param_name = Lower "j"; param_type = TName (Upper "Nat0") } ]
-        [ GExpr (EBinop (OpLt, EVar (Lower "j"), EVar (Lower "n"))) ]
-        (Some CombAnd)
-        (EApp (EVar (Lower "p?"), [ EVar (Lower "j") ]))
-    in
-    let result = Smt.translate_expr config env expr in
-    check bool "has and" true (contains result "(and");
-    check bool "has predicate body" true (contains result "(pp")
+let test_bounded_and_over_nat0_bool_body () =
+  let env =
+    Env.empty ""
+    |> Env.add_var "n" Types.TyNat0
+    |> Env.add_rule "p?"
+         (Types.TyFunc ([ Types.TyNat0 ], Some Types.TyBool))
+         Ast.dummy_loc ~chapter:0
+  in
+  let expr =
+    Ast.make_each
+      [ { param_name = Lower "j"; param_type = TName (Upper "Nat0") } ]
+      [ GExpr (EBinop (OpLt, EVar (Lower "j"), EVar (Lower "n"))) ]
+      (Some CombAnd)
+      (EApp (EVar (Lower "p?"), [ EVar (Lower "j") ]))
+  in
+  let result = Smt.translate_expr config env expr in
+  check string "and neutral true gating"
+    "(and (ite (< 0 n) (pp 0) true) (ite (< 1 n) (pp 1) true) (ite (< 2 n) (pp \
+     2) true))"
+    result
 
-  let test_bounded_over_each_rejects_no_bound () =
-    (* PENDING Patch 2: bounded numeric over-each keeps the no-bound rejection. *)
-    let env = Env.empty "" in
-    let expr =
-      Ast.make_each
-        [ { param_name = Lower "j"; param_type = TName (Upper "Nat0") } ]
-        [] (Some CombAdd) (EVar (Lower "j"))
-    in
-    let raised_with_hint =
-      try
-        let _ = Smt.translate_expr config env expr in
-        false
-      with Failure msg ->
-        contains msg "unbounded Nat0" && contains msg "upper-bound guard"
-    in
-    check bool "unbounded numeric comprehension is rejected" true
-      raised_with_hint
+let test_bounded_over_each_rejects_no_bound () =
+  let env = Env.empty "" in
+  let expr =
+    Ast.make_each
+      [ { param_name = Lower "j"; param_type = TName (Upper "Nat0") } ]
+      [] (Some CombAdd) (EVar (Lower "j"))
+  in
+  let raised_with_hint =
+    try
+      let _ = Smt.translate_expr config env expr in
+      false
+    with Failure msg ->
+      contains msg "unbounded Nat0" && contains msg "upper-bound guard"
+  in
+  check bool "unbounded numeric comprehension is rejected" true raised_with_hint
 
-  let test_bounded_over_each_rejects_binder_in_bound () =
-    (* PENDING Patch 2: upper-bound guard must not mention the numeric binder. *)
-    let env = Env.empty "" in
-    let expr =
-      Ast.make_each
-        [ { param_name = Lower "j"; param_type = TName (Upper "Nat0") } ]
-        [
-          GExpr
-            (EBinop
-               ( OpLt,
-                 EVar (Lower "j"),
-                 EBinop (OpAdd, EVar (Lower "j"), ELitNat 1) ));
-        ]
-        (Some CombAdd) (EVar (Lower "j"))
-    in
-    let raised_with_refined_hint =
-      try
-        let _ = Smt.translate_expr config env expr in
-        false
-      with Failure msg ->
-        contains msg "upper-bound" && contains msg "binder"
-        && not (contains msg "unbounded Nat0")
-    in
-    check bool "binder-mentioning upper bound is rejected" true
-      raised_with_refined_hint
-end
-
-let _pending_bounded_numeric_over_each_stubs =
-  let module P = Pending_bounded_numeric_over_each in
-  [
-    P.test_bounded_sum_over_nat0_symbolic_bound;
-    P.test_bounded_sum_over_nat0_concrete_bound;
-    P.test_bounded_and_over_nat0_bool_body;
-    P.test_bounded_over_each_rejects_no_bound;
-    P.test_bounded_over_each_rejects_binder_in_bound;
-  ]
+let test_bounded_over_each_rejects_binder_in_bound () =
+  let env = Env.empty "" in
+  let expr =
+    Ast.make_each
+      [ { param_name = Lower "j"; param_type = TName (Upper "Nat0") } ]
+      [
+        GExpr
+          (EBinop
+             ( OpLt,
+               EVar (Lower "j"),
+               EBinop (OpAdd, EVar (Lower "j"), ELitNat 1) ));
+      ]
+      (Some CombAdd) (EVar (Lower "j"))
+  in
+  let raised_with_refined_hint =
+    try
+      let _ = Smt.translate_expr config env expr in
+      false
+    with Failure msg ->
+      contains msg "upper-bound" && contains msg "binder"
+      && not (contains msg "unbounded Nat0")
+  in
+  check bool "binder-mentioning upper bound is rejected" true
+    raised_with_refined_hint
 
 let comprehension_tests =
   [
@@ -2017,6 +2002,16 @@ let comprehension_tests =
     test_case "μ-search max rejected" `Quick test_mu_search_max_rejected;
     test_case "card nat comprehension error" `Quick
       test_card_nat_comprehension_error;
+    test_case "bounded sum over Nat0 symbolic bound" `Quick
+      test_bounded_sum_over_nat0_symbolic_bound;
+    test_case "bounded sum over Nat0 concrete bound" `Quick
+      test_bounded_sum_over_nat0_concrete_bound;
+    test_case "bounded and over Nat0 bool body" `Quick
+      test_bounded_and_over_nat0_bool_body;
+    test_case "bounded over-each rejects no bound" `Quick
+      test_bounded_over_each_rejects_no_bound;
+    test_case "bounded over-each rejects binder in bound" `Quick
+      test_bounded_over_each_rejects_binder_in_bound;
   ]
 
 (* --- Closure tests --- *)

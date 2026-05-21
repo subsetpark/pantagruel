@@ -674,12 +674,17 @@ and translate_aggregate config env (comb : combiner) params guards body =
         match resolve_numeric_comprehension_binding env params with
         | Error _ -> None
         | Ok (binder_name, binder_ty, bindings) -> (
+            let has_upper_bound =
+              match params with
+              | [ p ] -> Option.is_some (extract_upper_bound p guards)
+              | _ -> false
+            in
             let all_gexpr =
               List.for_all
                 (function GExpr _ -> true | GIn _ | GParam _ -> false)
                 guards
             in
-            if not all_gexpr then None
+            if has_upper_bound || not all_gexpr then None
             else
               match[@warning "-4"] body with
               | EVar (Lower n) when n = binder_name ->
@@ -772,8 +777,47 @@ and translate_aggregate_finite config env inner_config (comb : combiner) params
           | GExpr _ -> [])
         guards
   in
+  (* Infer body type to choose correct SMT sort for identity values *)
+  let body_is_real =
+    match resolve_comprehension_binding env params guards with
+    | Ok (Domain { bindings; _ } | Numeric { bindings; _ }) -> (
+        let env_inner = Env.with_vars bindings env in
+        match
+          Check.infer_type { Check.env = env_inner; loc = dummy_loc } body
+        with
+        | Ok TyReal -> true
+        | Ok
+            ( TyBool | TyNat | TyNat0 | TyInt | TyString | TyNothing
+            | TyDomain _ | TyList _ | TyProduct _ | TySum _ | TyFunc _ )
+        | Error _ ->
+            false)
+    | Error _ -> false
+  in
+  let aggregate_neutral =
+    match comb with
+    | CombAdd -> Some (if body_is_real then "0.0" else "0")
+    | CombMul -> Some (if body_is_real then "1.0" else "1")
+    | CombAnd -> Some "true"
+    | CombOr -> Some "false"
+    | CombMin -> Some "2147483648"
+    | CombMax -> Some "(- 2147483648)"
+  in
+  let guards_for_expand =
+    if not config.inject_guards then guards
+    else
+      match resolve_comprehension_binding env params guards with
+      | Ok (Numeric { bindings; _ }) ->
+          let env_inner = Env.with_vars bindings env in
+          let bound_names = local_bound @ config.quant_bound in
+          let app_guards =
+            collect_body_guards ~bound:bound_names env_inner body
+          in
+          guards @ List.map (fun e -> GExpr e) app_guards
+      | Ok (Domain _) | Error _ -> guards
+  in
   let expanded =
-    expand_comprehension translate_expr inner_config env params guards body
+    expand_comprehension ?numeric_neutral:aggregate_neutral translate_expr
+      inner_config env params guards_for_expand body
   in
   (* Inject declaration guards from guarded rule applications in the body *)
   let expanded =
@@ -781,7 +825,8 @@ and translate_aggregate_finite config env inner_config (comb : combiner) params
     else
       match resolve_comprehension_binding env params guards with
       | Error _ -> expanded
-      | Ok (var_name, dname, _, bindings) ->
+      | Ok (Numeric _) -> expanded
+      | Ok (Domain { name = var_name; domain = dname; bindings; _ }) ->
           let env_inner = Env.with_vars bindings env in
           let bound_names = local_bound @ config.quant_bound in
           let app_guards =
@@ -812,22 +857,10 @@ and translate_aggregate_finite config env inner_config (comb : combiner) params
                 (merged, value_str))
               expanded elems
   in
-  (* Infer body type to choose correct SMT sort for identity values *)
-  let body_is_real =
-    match resolve_comprehension_binding env params guards with
-    | Ok (_, _, _, bindings) -> (
-        let env_inner = Env.with_vars bindings env in
-        match
-          Check.infer_type { Check.env = env_inner; loc = dummy_loc } body
-        with
-        | Ok TyReal -> true
-        | Ok
-            ( TyBool | TyNat | TyNat0 | TyInt | TyString | TyNothing
-            | TyDomain _ | TyList _ | TyProduct _ | TySum _ | TyFunc _ )
-        | Error _ ->
-            false)
-    | Error _ -> false
-  in
+  (* Aggregate identities / numeric neutrals:
+      + -> 0, * -> 1, and -> true, or -> false, min -> large positive
+      sentinel, max -> large negative sentinel. Numeric comprehensions use
+      these as the inactive branch for config-bounded ite enumeration. *)
   let smt_op_and_identity =
     match comb with
     | CombAdd -> Some ("+", if body_is_real then "0.0" else "0")
