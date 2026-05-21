@@ -1308,9 +1308,8 @@ export const ir1Return = (expr: IR1Expr | null): IR1Stmt => ({
  * forms `BinOp(<op>, target, <k>)`.
  *
  * Two consumers:
- * - μ-search lowering: `lowerL1MuSearch` in `ir1-lower.ts` recognizes
- *   the `Block([Let(c, init), While(p, Assign(c, c+1))])` shape and
- *   produces an L2 `comb-typed`.
+ * - μ-search L1 construction: `buildL1MuSearchCombTyped` validates the
+ *   canonical `Assign(c, c+1)` shape before building L1 `comb-typed`.
  * - Mutating-body lowering: `ir1-lower-body.ts` handles property writes
  *   (`Assign(Member(...), v)`) through IR1 SSA. Var-target assigns
  *   outside a μ-search shape reject.
@@ -1344,13 +1343,10 @@ export const ir1For = (
 ): IR1Stmt => ({ kind: "for", init, cond, step, body });
 
 /**
- * Bounded while loop. Used to faithfully represent the
- * let/while/increment shape of a μ-search-shaped TS body —
- * `lowerL1MuSearch` in `ir1-lower.ts` introspects the
- * `Block([Let, While(_, Assign)])` shape and produces an L2
- * `comb-typed`. General bounded-fixed-point / accumulator-iteration
- * lowering is not implemented; a standalone `While` outside that
- * pattern rejects.
+ * Bounded while loop. Used to faithfully represent loop-shaped TS bodies
+ * for the mutating-body pipeline and statement-level tests. Pure μ-search
+ * prelude recognition builds L1 `comb-typed` directly upstream; general
+ * bounded-fixed-point / accumulator-iteration lowering is not implemented.
  */
 export const ir1While = (cond: IR1Expr, body: IR1Stmt): IR1Stmt => ({
   kind: "while",
