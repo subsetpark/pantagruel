@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { before, describe, it } from "node:test";
 import { emitDocument } from "../src/emit.js";
+import { getAst, loadAst } from "../src/pant-wasm.js";
 import type { PantDocument } from "../src/types.js";
 
 function emptyDoc(overrides: Partial<PantDocument> = {}): PantDocument {
@@ -13,6 +14,10 @@ function emptyDoc(overrides: Partial<PantDocument> = {}): PantDocument {
     ...overrides,
   };
 }
+
+before(async () => {
+  await loadAst();
+});
 
 describe("emit", () => {
   it("document with no imports is byte-stable vs. pre-patch snapshot", () => {
@@ -33,5 +38,22 @@ describe("emit", () => {
     assert.equal(lines[1], "import JS_MATH.");
     assert.equal(lines[2], "import FOO_AMBIENT.");
     assert.equal(lines[3], "");
+  });
+
+  it("preserves guards on zero-parameter action declarations", () => {
+    const out = emitDocument(
+      emptyDoc({
+        declarations: [
+          {
+            kind: "action",
+            label: "Tick",
+            params: [],
+            guard: getAst().var("ready"),
+          },
+        ],
+      }),
+    );
+
+    assert.match(out, /~> Tick @ ready\./u);
   });
 });

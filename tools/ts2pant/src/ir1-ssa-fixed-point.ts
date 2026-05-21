@@ -735,8 +735,9 @@ function substituteMemberReads(
   expr: IR1Expr,
   member: Extract<IR1Expr, { kind: "member" }>,
   replacement: IR1Expr,
+  bound: ReadonlySet<string> = new Set(),
 ): IR1Expr {
-  if (sameMemberExpr(expr, member)) {
+  if (sameUnshadowedMemberExpr(expr, member, bound)) {
     return replacement;
   }
   switch (expr.kind) {
@@ -746,61 +747,89 @@ function substituteMemberReads(
     case "binop":
       return {
         ...expr,
-        lhs: substituteMemberReads(expr.lhs, member, replacement),
-        rhs: substituteMemberReads(expr.rhs, member, replacement),
+        lhs: substituteMemberReads(expr.lhs, member, replacement, bound),
+        rhs: substituteMemberReads(expr.rhs, member, replacement, bound),
       };
     case "unop":
       return {
         ...expr,
-        arg: substituteMemberReads(expr.arg, member, replacement),
+        arg: substituteMemberReads(expr.arg, member, replacement, bound),
       };
     case "app":
       return {
         ...expr,
-        callee: substituteMemberReads(expr.callee, member, replacement),
+        callee: substituteMemberReads(expr.callee, member, replacement, bound),
         args: expr.args.map((arg) =>
-          substituteMemberReads(arg, member, replacement),
+          substituteMemberReads(arg, member, replacement, bound),
         ),
       };
     case "member":
       return {
         ...expr,
-        receiver: substituteMemberReads(expr.receiver, member, replacement),
+        receiver: substituteMemberReads(
+          expr.receiver,
+          member,
+          replacement,
+          bound,
+        ),
       };
     case "cond":
       return {
         ...expr,
         arms: expr.arms.map(([guard, value]) => [
-          substituteMemberReads(guard, member, replacement),
-          substituteMemberReads(value, member, replacement),
+          substituteMemberReads(guard, member, replacement, bound),
+          substituteMemberReads(value, member, replacement, bound),
         ]),
-        otherwise: substituteMemberReads(expr.otherwise, member, replacement),
+        otherwise: substituteMemberReads(
+          expr.otherwise,
+          member,
+          replacement,
+          bound,
+        ),
       };
     case "is-nullish":
       return {
         ...expr,
-        operand: substituteMemberReads(expr.operand, member, replacement),
+        operand: substituteMemberReads(
+          expr.operand,
+          member,
+          replacement,
+          bound,
+        ),
       };
-    case "each":
+    case "each": {
+      const nextBound = new Set(bound);
+      nextBound.add(expr.binder);
       return {
         ...expr,
-        src: substituteMemberReads(expr.src, member, replacement),
+        src: substituteMemberReads(expr.src, member, replacement, bound),
         guards: expr.guards.map((guard) =>
-          substituteMemberReads(guard, member, replacement),
+          substituteMemberReads(guard, member, replacement, nextBound),
         ),
-        proj: substituteMemberReads(expr.proj, member, replacement),
+        proj: substituteMemberReads(expr.proj, member, replacement, nextBound),
       };
+    }
     case "map-read":
       return {
         ...expr,
-        receiver: substituteMemberReads(expr.receiver, member, replacement),
-        key: substituteMemberReads(expr.key, member, replacement),
+        receiver: substituteMemberReads(
+          expr.receiver,
+          member,
+          replacement,
+          bound,
+        ),
+        key: substituteMemberReads(expr.key, member, replacement, bound),
       };
     case "set-read":
       return {
         ...expr,
-        receiver: substituteMemberReads(expr.receiver, member, replacement),
-        elem: substituteMemberReads(expr.elem, member, replacement),
+        receiver: substituteMemberReads(
+          expr.receiver,
+          member,
+          replacement,
+          bound,
+        ),
+        elem: substituteMemberReads(expr.elem, member, replacement, bound),
       };
     default: {
       const _exhaustive: never = expr;
@@ -992,8 +1021,11 @@ function containsNonTargetMemberRead(
   target: Extract<IR1Expr, { kind: "member" }>,
 ): boolean {
   let found = false;
-  walkExpr(expr, (node) => {
-    if (node.kind === "member" && !sameMemberExpr(node, target)) {
+  walkExpr(expr, (node, bound) => {
+    if (
+      node.kind === "member" &&
+      !sameUnshadowedMemberExpr(node, target, bound)
+    ) {
       found = true;
     }
   });
@@ -1005,66 +1037,93 @@ function containsTargetMemberRead(
   target: Extract<IR1Expr, { kind: "member" }>,
 ): boolean {
   let found = false;
-  walkExpr(expr, (node) => {
-    if (sameMemberExpr(node, target)) {
+  walkExpr(expr, (node, bound) => {
+    if (sameUnshadowedMemberExpr(node, target, bound)) {
       found = true;
     }
   });
   return found;
 }
 
-function walkExpr(expr: IR1Expr, visit: (expr: IR1Expr) => void): void {
-  visit(expr);
+function walkExpr(
+  expr: IR1Expr,
+  visit: (expr: IR1Expr, bound: ReadonlySet<string>) => void,
+  bound: ReadonlySet<string> = new Set(),
+): void {
+  visit(expr, bound);
   switch (expr.kind) {
     case "var":
     case "lit":
       break;
     case "binop":
-      walkExpr(expr.lhs, visit);
-      walkExpr(expr.rhs, visit);
+      walkExpr(expr.lhs, visit, bound);
+      walkExpr(expr.rhs, visit, bound);
       break;
     case "unop":
-      walkExpr(expr.arg, visit);
+      walkExpr(expr.arg, visit, bound);
       break;
     case "app":
-      walkExpr(expr.callee, visit);
+      walkExpr(expr.callee, visit, bound);
       for (const arg of expr.args) {
-        walkExpr(arg, visit);
+        walkExpr(arg, visit, bound);
       }
       break;
     case "member":
-      walkExpr(expr.receiver, visit);
+      walkExpr(expr.receiver, visit, bound);
       break;
     case "cond":
       for (const [guard, value] of expr.arms) {
-        walkExpr(guard, visit);
-        walkExpr(value, visit);
+        walkExpr(guard, visit, bound);
+        walkExpr(value, visit, bound);
       }
-      walkExpr(expr.otherwise, visit);
+      walkExpr(expr.otherwise, visit, bound);
       break;
     case "is-nullish":
-      walkExpr(expr.operand, visit);
+      walkExpr(expr.operand, visit, bound);
       break;
-    case "each":
-      walkExpr(expr.src, visit);
+    case "each": {
+      walkExpr(expr.src, visit, bound);
+      const nextBound = new Set(bound);
+      nextBound.add(expr.binder);
       for (const guard of expr.guards) {
-        walkExpr(guard, visit);
+        walkExpr(guard, visit, nextBound);
       }
-      walkExpr(expr.proj, visit);
+      walkExpr(expr.proj, visit, nextBound);
       break;
+    }
     case "map-read":
-      walkExpr(expr.receiver, visit);
-      walkExpr(expr.key, visit);
+      walkExpr(expr.receiver, visit, bound);
+      walkExpr(expr.key, visit, bound);
       break;
     case "set-read":
-      walkExpr(expr.receiver, visit);
-      walkExpr(expr.elem, visit);
+      walkExpr(expr.receiver, visit, bound);
+      walkExpr(expr.elem, visit, bound);
       break;
     default: {
       const _exhaustive: never = expr;
       void _exhaustive;
     }
   }
+}
+
+function sameUnshadowedMemberExpr(
+  expr: IR1Expr,
+  member: Extract<IR1Expr, { kind: "member" }>,
+  bound: ReadonlySet<string>,
+): boolean {
+  return (
+    expr.kind === "member" &&
+    !memberReceiverRootIsBound(expr, bound) &&
+    sameMemberExpr(expr, member)
+  );
+}
+
+function memberReceiverRootIsBound(
+  expr: Extract<IR1Expr, { kind: "member" }>,
+  bound: ReadonlySet<string>,
+): boolean {
+  const root = rootName(expr.receiver);
+  return root !== null && bound.has(root);
 }
 
 function ir1ExprEqual(a: IR1Expr, b: IR1Expr): boolean {

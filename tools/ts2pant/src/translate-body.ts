@@ -4653,6 +4653,10 @@ function buildL1LetWhileFixedPointMutation(
     return null;
   }
 
+  if (!ts.isBlock(whileStmt.statement)) {
+    return null;
+  }
+
   const initExpr = buildL1SubExpr(decl.initializer, ctx);
   if (isUnsupported(initExpr)) {
     return initExpr;
@@ -4667,9 +4671,6 @@ function buildL1LetWhileFixedPointMutation(
   const cond = buildL1SubExpr(whileStmt.expression, ctx);
   if (isUnsupported(cond)) {
     return cond;
-  }
-  if (!ts.isBlock(whileStmt.statement)) {
-    return null;
   }
   const bodyStmt = buildSupportedSsaMutatingBody(
     whileStmt.statement,

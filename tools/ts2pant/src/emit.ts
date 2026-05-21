@@ -135,7 +135,8 @@ function renderDeclaration(decl: PantDocument["declarations"][number]): string {
     }
     case "action": {
       if (decl.params.length === 0) {
-        return `~> ${decl.label}.`;
+        const guard = decl.guard ? ` @ ${getAst().strExpr(decl.guard)}` : "";
+        return `~> ${decl.label}${guard}.`;
       }
       const params = decl.params.map((p) => `${p.name}: ${p.type}`).join(", ");
       const guard = decl.guard ? `, ${getAst().strExpr(decl.guard)}` : "";

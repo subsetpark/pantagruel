@@ -217,6 +217,41 @@ describe("ir1-ssa-fixed-point", () => {
     assert.match(ast.strExpr(ruleDecl.body), /target \+ step \+ step/u);
   });
 
+  it("does not treat target-shaped member reads under each binders as the loop target", () => {
+    const result = lowerFixedPointLoopL1Body({
+      ...fixedPointWhile(),
+      body: {
+        kind: "assign",
+        target: balanceMember,
+        value: {
+          kind: "binop",
+          op: "add",
+          lhs: balanceMember,
+          rhs: {
+            kind: "unop",
+            op: "card",
+            arg: {
+              kind: "each",
+              binder: "a",
+              src: { kind: "var", name: "accounts" },
+              guards: [],
+              proj: {
+                kind: "member",
+                receiver: { kind: "var", name: "a" },
+                name: "balance",
+              },
+            },
+          },
+        },
+      },
+    });
+
+    assert.match(
+      result.diagnostics[0]?.reason ?? "",
+      /supports guards and updates over the mutated property only/u,
+    );
+  });
+
   it("uses the configured numeric strategy for default helper types", () => {
     const ast = getAst();
     const result = lowerFixedPointLoopL1Body(fixedPointWhile(), {
