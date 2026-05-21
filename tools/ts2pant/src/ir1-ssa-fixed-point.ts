@@ -18,6 +18,7 @@ import {
   ir1Var,
 } from "./ir1.js";
 import { lowerL1Expr } from "./ir1-lower.js";
+import { substituteIR1ExprSubtree } from "./ir1-substitute.js";
 import type { LoopSsaBuildOptions } from "./ir1-ssa-loops.js";
 import {
   type IR1SsaBodyLowerResult,
@@ -170,7 +171,7 @@ export function lowerFixedPointLoopL1Body(
     stateAvoidanceNames([guardExpr, valueExpr], writeBody.target),
   );
   const stateVar = ir1Var(stateName);
-  const effectExpr = substituteMemberReads(
+  const effectExpr = substituteIR1ExprSubtree(
     valueExpr,
     writeBody.target,
     stateVar,
@@ -210,7 +211,9 @@ export function lowerFixedPointLoopL1Body(
   const effect = lowerOpaque(lowerExpr(lowerL1Expr(effectExpr)));
   const loweredGuard = lowerOpaque(
     lowerExpr(
-      lowerL1Expr(substituteMemberReads(guardExpr, writeBody.target, stateVar)),
+      lowerL1Expr(
+        substituteIR1ExprSubtree(guardExpr, writeBody.target, stateVar),
+      ),
     ),
   );
   const helperCallOnEffect = ast.app(ast.var(ruleName), [
@@ -722,114 +725,6 @@ function renameBoundVarRefs(expr: IR1Expr, from: string, to: string): IR1Expr {
         ...expr,
         receiver: renameBoundVarRefs(expr.receiver, from, to),
         elem: renameBoundVarRefs(expr.elem, from, to),
-      };
-    default: {
-      const _exhaustive: never = expr;
-      void _exhaustive;
-      return expr;
-    }
-  }
-}
-
-function substituteMemberReads(
-  expr: IR1Expr,
-  member: Extract<IR1Expr, { kind: "member" }>,
-  replacement: IR1Expr,
-  bound: ReadonlySet<string> = new Set(),
-): IR1Expr {
-  if (sameUnshadowedMemberExpr(expr, member, bound)) {
-    return replacement;
-  }
-  switch (expr.kind) {
-    case "var":
-    case "lit":
-      return expr;
-    case "binop":
-      return {
-        ...expr,
-        lhs: substituteMemberReads(expr.lhs, member, replacement, bound),
-        rhs: substituteMemberReads(expr.rhs, member, replacement, bound),
-      };
-    case "unop":
-      return {
-        ...expr,
-        arg: substituteMemberReads(expr.arg, member, replacement, bound),
-      };
-    case "app":
-      return {
-        ...expr,
-        callee: substituteMemberReads(expr.callee, member, replacement, bound),
-        args: expr.args.map((arg) =>
-          substituteMemberReads(arg, member, replacement, bound),
-        ),
-      };
-    case "member":
-      return {
-        ...expr,
-        receiver: substituteMemberReads(
-          expr.receiver,
-          member,
-          replacement,
-          bound,
-        ),
-      };
-    case "cond":
-      return {
-        ...expr,
-        arms: expr.arms.map(([guard, value]) => [
-          substituteMemberReads(guard, member, replacement, bound),
-          substituteMemberReads(value, member, replacement, bound),
-        ]),
-        otherwise: substituteMemberReads(
-          expr.otherwise,
-          member,
-          replacement,
-          bound,
-        ),
-      };
-    case "is-nullish":
-      return {
-        ...expr,
-        operand: substituteMemberReads(
-          expr.operand,
-          member,
-          replacement,
-          bound,
-        ),
-      };
-    case "each": {
-      const nextBound = new Set(bound);
-      nextBound.add(expr.binder);
-      return {
-        ...expr,
-        src: substituteMemberReads(expr.src, member, replacement, bound),
-        guards: expr.guards.map((guard) =>
-          substituteMemberReads(guard, member, replacement, nextBound),
-        ),
-        proj: substituteMemberReads(expr.proj, member, replacement, nextBound),
-      };
-    }
-    case "map-read":
-      return {
-        ...expr,
-        receiver: substituteMemberReads(
-          expr.receiver,
-          member,
-          replacement,
-          bound,
-        ),
-        key: substituteMemberReads(expr.key, member, replacement, bound),
-      };
-    case "set-read":
-      return {
-        ...expr,
-        receiver: substituteMemberReads(
-          expr.receiver,
-          member,
-          replacement,
-          bound,
-        ),
-        elem: substituteMemberReads(expr.elem, member, replacement, bound),
       };
     default: {
       const _exhaustive: never = expr;
