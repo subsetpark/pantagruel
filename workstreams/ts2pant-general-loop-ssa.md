@@ -125,6 +125,8 @@ Later milestones implement against the same surface without expanding it.
 
 ### Milestone 2: bounded-counter-loop-lowering
 
+**Status**: Landed in `ts2pant-bounded-counter-loop-lowering`.
+
 **Definition of Done**:
 The mutating-body build path emits IR1 SSA for bounded counter loops:
 
@@ -140,6 +142,11 @@ quantified Pant equations. At least three representative counter-loop fixtures
 exist in the test corpus; each passes `pant` typecheck and `pant --check` SMT
 verification. Non-bounded-counter loops continue to reject with diagnostics at
 least as clear as today.
+
+(Pant SMT bounded-numeric over-each support was bundled with this milestone so
+the emitted quantified equations verify end-to-end.) The concrete lowering
+contract is documented in `### Bounded counter loop lowering (L2)` in
+`tools/ts2pant/AGENTS.md`.
 
 **Why this is a safe pause point**:
 One new TS loop class is supported end-to-end. The summary-based μ-search and
