@@ -4095,6 +4095,7 @@ function translateMutatingBody(
       supply: makeUniqueSupply(synthCell),
       initialPropertyValues: new Map(),
       helperNameBase: functionName,
+      declarations,
     }),
     declarations,
   );
@@ -4114,6 +4115,7 @@ function lowerSupportedSsaMutatingStatements(
     supply: UniqueSupply;
     initialPropertyValues: ReadonlyMap<string, OpaqueExpr>;
     helperNameBase: string;
+    declarations: readonly PantDeclaration[];
   },
 ): IR1SsaBodyLowerResult {
   const firstEarlyExit = stmts.findIndex(
@@ -4266,6 +4268,7 @@ function lowerSupportedSsaMutatingBlock(
     supply: UniqueSupply;
     initialPropertyValues: ReadonlyMap<string, OpaqueExpr>;
     helperNameBase: string;
+    declarations: readonly PantDeclaration[];
   },
 ): IR1SsaBodyLowerResult {
   const body = ts.factory.createBlock(stmts, true);
@@ -4288,6 +4291,7 @@ function lowerSupportedSsaMutatingBlock(
     applyConst: (e) => applyOpaqueAliases(e, ctx.supply),
     initialPropertyValues: ctx.initialPropertyValues,
     strategy: ctx.strategy,
+    declarations: ctx.declarations,
     ...(ctx.supply.synthCell === undefined
       ? {}
       : { synthCell: ctx.supply.synthCell }),

@@ -89,6 +89,7 @@ export interface SsaBodyLowerOptions extends LowerBodyCtx {
   initialPropertyValues?: ReadonlyMap<string, OpaqueExpr>;
   synthCell?: SynthCell;
   strategy?: NumericStrategy;
+  declarations?: readonly PantDeclaration[];
 }
 
 export function lowerL1BodyToSsaProps(
@@ -96,8 +97,12 @@ export function lowerL1BodyToSsaProps(
   declarations: readonly PantDeclaration[],
   options: SsaBodyLowerOptions,
 ): IR1SsaBodyLowerResult {
+  const lowerDeclarations = options.declarations ?? declarations;
   return appendFramesForUnmodifiedRules(
-    lowerL1BodyToSsaResult(stmt, options),
+    lowerL1BodyToSsaResult(stmt, {
+      ...options,
+      declarations: lowerDeclarations,
+    }),
     declarations,
   );
 }
@@ -169,6 +174,9 @@ function lowerFixedPointL1BodyToSsaResult(
         ? {}
         : { synthCell: options.synthCell }),
       ...(options.strategy === undefined ? {} : { strategy: options.strategy }),
+      ...(options.declarations === undefined
+        ? {}
+        : { declarations: options.declarations }),
     });
   } catch (err) {
     return ir1SsaBodyLowerUnsupported(

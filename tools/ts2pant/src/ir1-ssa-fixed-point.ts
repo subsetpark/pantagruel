@@ -32,7 +32,7 @@ import {
   type NumericStrategy,
   type SynthCell,
 } from "./translate-types.js";
-import type { PropResult } from "./types.js";
+import type { PantDeclaration, PropResult } from "./types.js";
 
 export interface FixedPointLoopLowerOptions extends LoopSsaBuildOptions {
   lowerOpaque?: (e: OpaqueExpr) => OpaqueExpr;
@@ -40,6 +40,7 @@ export interface FixedPointLoopLowerOptions extends LoopSsaBuildOptions {
   synthCell?: SynthCell;
   locationType?: OpaqueTypeExpr | string;
   invariantTypes?: ReadonlyMap<string, OpaqueTypeExpr | string>;
+  declarations?: readonly PantDeclaration[];
   strategy?: NumericStrategy;
 }
 
@@ -190,10 +191,21 @@ export function lowerFixedPointLoopL1Body(
   });
 
   const ruleName = allocateLoopRuleName(options.synthCell);
-  const locationType = typeExpr(options.locationType, options.strategy);
+  const inferredInvariantTypes = inferInvariantTypes(
+    invariantNames,
+    options.declarations,
+  );
+  const locationType = typeExpr(
+    options.locationType ??
+      inferLocationType(targetInfo.location.ruleName, options.declarations),
+    options.strategy,
+  );
   const invariantParams = invariantNames.map((name) => ({
     name,
-    type: typeExpr(options.invariantTypes?.get(name), options.strategy),
+    type: typeExpr(
+      options.invariantTypes?.get(name) ?? inferredInvariantTypes.get(name),
+      options.strategy,
+    ),
   }));
   const effect = lowerOpaque(lowerExpr(lowerL1Expr(effectExpr)));
   const loweredGuard = lowerOpaque(
@@ -289,6 +301,38 @@ function typeExpr(
   return typeof type === "string"
     ? ast.tName(type)
     : (type ?? ast.tName(strategy.mapNumber()));
+}
+
+function inferLocationType(
+  ruleName: string,
+  declarations: readonly PantDeclaration[] | undefined,
+): string | undefined {
+  return declarations?.find(
+    (decl): decl is Extract<PantDeclaration, { kind: "rule" }> =>
+      decl.kind === "rule" && decl.name === ruleName,
+  )?.returnType;
+}
+
+function inferInvariantTypes(
+  names: readonly string[],
+  declarations: readonly PantDeclaration[] | undefined,
+): ReadonlyMap<string, string> {
+  const wanted = new Set(names);
+  const out = new Map<string, string>();
+  if (wanted.size === 0 || declarations === undefined) {
+    return out;
+  }
+  for (const decl of declarations) {
+    if (decl.kind !== "action") {
+      continue;
+    }
+    for (const param of decl.params) {
+      if (wanted.has(param.name) && !out.has(param.name)) {
+        out.set(param.name, param.type);
+      }
+    }
+  }
+  return out;
 }
 
 function allocateLoopRuleName(synthCell: SynthCell | undefined): string {

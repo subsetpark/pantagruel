@@ -7,6 +7,7 @@ import {
   lowerFixedPointLoopL1Body,
   recognizeFixedPointLoopShape,
 } from "../src/ir1-ssa-fixed-point.js";
+import { lowerL1BodyToSsaProps } from "../src/ir1-lower-body.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import { newSynthCell, RealStrategy } from "../src/translate-types.js";
 
@@ -228,6 +229,101 @@ describe("ir1-ssa-fixed-point", () => {
     assert.deepEqual(
       ruleDecl.params.map((p) => ast.strTypeExpr(p.type)),
       ["Real", "Real", "Real"],
+    );
+  });
+
+  it("infers helper state and invariant types from declarations", () => {
+    const ast = getAst();
+    const flagMember: IR1Expr = {
+      kind: "member",
+      receiver: aVar,
+      name: "flag",
+    };
+    const result = lowerFixedPointLoopL1Body(
+      {
+        kind: "while",
+        cond: {
+          kind: "binop",
+          op: "and",
+          lhs: flagMember,
+          rhs: { kind: "var", name: "enabled" },
+        },
+        body: {
+          kind: "assign",
+          target: flagMember,
+          value: { kind: "lit", value: { kind: "bool", value: false } },
+        },
+      },
+      {
+        declarations: [
+          { kind: "domain", name: "Account" },
+          {
+            kind: "rule",
+            name: "flag",
+            params: [{ name: "a", type: "Account" }],
+            returnType: "Bool",
+          },
+          {
+            kind: "action",
+            label: "Run",
+            params: [
+              { name: "a", type: "Account" },
+              { name: "enabled", type: "Bool" },
+            ],
+          },
+        ],
+      },
+    );
+    const ruleDecl = result.propositions[0]!;
+
+    assert.equal(ruleDecl.kind, "rule-decl");
+    assert.equal(ast.strTypeExpr(ruleDecl.returnType), "Bool");
+    assert.deepEqual(
+      ruleDecl.params.map((p) => ast.strTypeExpr(p.type)),
+      ["Bool", "Bool"],
+    );
+  });
+
+  it("threads declaration-derived types through the body-level adapter", () => {
+    const ast = getAst();
+    const flagMember: IR1Expr = {
+      kind: "member",
+      receiver: aVar,
+      name: "flag",
+    };
+    const result = lowerL1BodyToSsaProps(
+      {
+        kind: "while",
+        cond: flagMember,
+        body: {
+          kind: "assign",
+          target: flagMember,
+          value: { kind: "lit", value: { kind: "bool", value: false } },
+        },
+      },
+      [
+        { kind: "domain", name: "Account" },
+        {
+          kind: "rule",
+          name: "flag",
+          params: [{ name: "a", type: "Account" }],
+          returnType: "Bool",
+        },
+        {
+          kind: "action",
+          label: "Run",
+          params: [{ name: "a", type: "Account" }],
+        },
+      ],
+      { applyConst: (e) => e },
+    );
+    const ruleDecl = result.propositions[0]!;
+
+    assert.equal(ruleDecl.kind, "rule-decl");
+    assert.equal(ast.strTypeExpr(ruleDecl.returnType), "Bool");
+    assert.deepEqual(
+      ruleDecl.params.map((p) => ast.strTypeExpr(p.type)),
+      ["Bool"],
     );
   });
 });
