@@ -11,6 +11,75 @@ open Types
 open Smt_types
 open Smt_preamble
 
+(** A comprehension binding can enumerate a finite domain, or a bounded numeric
+    range. Numeric ranges use [config.bound] for symbolic upper bounds because
+    there is no domain-specific [bound_for] key; concrete literal upper bounds
+    are enumerated exactly. *)
+type comprehension_binding =
+  | Domain of {
+      name : string;
+      domain : string;
+      membership : expr option;
+      bindings : (string * ty) list;
+    }
+  | Numeric of {
+      name : string;
+      ty : ty;
+      bound : expr;
+      inclusive : bool;
+      bound_guard : guard;
+      bindings : (string * ty) list;
+    }
+
+type upper_bound_result =
+  | UpperBound of { bound : expr; inclusive : bool; guard : guard }
+  | UpperBoundMentionsBinder
+  | NoUpperBound
+
+let expr_mentions_name name e = Smt_doc.StringSet.mem name (Smt_doc.free_vars e)
+
+let upper_bound_candidate binder = function
+  | GExpr (EBinop (((OpLt | OpLe) as op), EVar (Lower n), bound))
+    when n = binder ->
+      Some (bound, op = OpLe)
+  | GExpr (EBinop (((OpGt | OpGe) as op), bound, EVar (Lower n)))
+    when n = binder ->
+      Some (bound, op = OpGe)
+  | GExpr _ | GIn _ | GParam _ -> None
+[@@warning "-4"]
+
+(** Extract a strict or inclusive upper-bound guard for a numeric binder. A
+    valid bound has exactly one guard of shape [j < bound], [bound > j],
+    [j <= bound], or [bound >= j], and the bound expression must not mention
+    [j]. Ambiguous / missing bounds are reported as [NoUpperBound]; a
+    binder-dependent bound is reported separately for a refined diagnostic. *)
+let classify_upper_bound (p : param) guards =
+  let binder = Ast.lower_name p.param_name in
+  let candidates =
+    List.filter_map
+      (fun g ->
+        match upper_bound_candidate binder g with
+        | Some (bound, inclusive) -> Some (g, bound, inclusive)
+        | None -> None)
+      guards
+  in
+  match candidates with
+  | [ (guard, bound, inclusive) ] ->
+      if expr_mentions_name binder bound then UpperBoundMentionsBinder
+      else UpperBound { bound; inclusive; guard }
+  | _ ->
+      if
+        List.exists
+          (fun (_guard, bound, _inclusive) -> expr_mentions_name binder bound)
+          candidates
+      then UpperBoundMentionsBinder
+      else NoUpperBound
+
+let extract_upper_bound p guards =
+  match classify_upper_bound p guards with
+  | UpperBound { bound; _ } -> Some bound
+  | UpperBoundMentionsBinder | NoUpperBound -> None
+
 (** Resolve the iteration variable, domain name, and any implicit guard for a
     comprehension. Supports two forms:
     - Typed binding: [all x: D, guards | body] — params = [x:D], iterates over D
@@ -23,15 +92,42 @@ let resolve_comprehension_binding env params guards =
       match Collect.resolve_type env p.param_type dummy_loc with
       | Ok (TyDomain dname) ->
           let pn = Ast.lower_name p.param_name in
-          Ok (pn, dname, None, [ (pn, TyDomain dname) ])
-      | Ok ((TyNat | TyNat0 | TyInt) as ty) ->
-          Error
-            (Printf.sprintf
-               "SMT translation: comprehension over unbounded %s is only \
-                supported as μ-search (`min over each j: %s, … | j`); add an \
-                explicit upper-bound guard (e.g. `j < N`) to enable general \
-                enumeration"
-               (format_ty ty) (format_ty ty))
+          Ok
+            (Domain
+               {
+                 name = pn;
+                 domain = dname;
+                 membership = None;
+                 bindings = [ (pn, TyDomain dname) ];
+               })
+      | Ok ((TyNat | TyNat0 | TyInt) as ty) -> (
+          let pn = Ast.lower_name p.param_name in
+          match classify_upper_bound p guards with
+          | UpperBound { bound; inclusive; guard } ->
+              Ok
+                (Numeric
+                   {
+                     name = pn;
+                     ty;
+                     bound;
+                     inclusive;
+                     bound_guard = guard;
+                     bindings = [ (pn, ty) ];
+                   })
+          | UpperBoundMentionsBinder ->
+              Error
+                (Printf.sprintf
+                   "SMT translation: numeric comprehension upper-bound guard \
+                    for `%s` must not mention the binder"
+                   pn)
+          | NoUpperBound ->
+              Error
+                (Printf.sprintf
+                   "SMT translation: comprehension over unbounded %s is only \
+                    supported as μ-search (`min over each j: %s, … | j`); add \
+                    an explicit upper-bound guard (e.g. `j < N`) to enable \
+                    general enumeration"
+                   (format_ty ty) (format_ty ty)))
       | Ok TyReal ->
           Error
             "SMT translation: comprehension over unbounded Real is not \
@@ -51,7 +147,14 @@ let resolve_comprehension_binding env params guards =
             Check.infer_type { Check.env; loc = dummy_loc } list_expr
           with
           | Ok (TyList (TyDomain dname)) ->
-              Ok (name, dname, Some list_expr, [ (name, TyDomain dname) ])
+              Ok
+                (Domain
+                   {
+                     name;
+                     domain = dname;
+                     membership = Some list_expr;
+                     bindings = [ (name, TyDomain dname) ];
+                   })
           | _ ->
               Error
                 "SMT translation: membership comprehension requires a domain \
@@ -84,14 +187,18 @@ let resolve_numeric_comprehension_binding env params =
           Error "comprehension binder is not numeric")
   | _ -> Error "comprehension binder is not numeric"
 
-(** Expand a comprehension over finite domain elements. Returns a list of
-    (guard_str option, value_str) pairs for each domain element substitution.
-    [translate] is the expression translator (passed to break mutual recursion).
-*)
-let expand_comprehension translate config env params guards body =
+(** Expand a comprehension over finite domain elements or bounded numeric
+    values. Returns [(guard_str option, value_str)] pairs. Domain binders use
+    [bound_for config domain_name]. Numeric binders fall back to [config.bound]
+    for symbolic bounds; concrete literal bounds enumerate the exact literal
+    range. Numeric expansion requires [numeric_neutral] because each enumerated
+    value is gated as [(ite (< k bound) body NEUTRAL)] (or [<=] for inclusive
+    bounds) and returned as an unconditional value. *)
+let expand_comprehension ?numeric_neutral translate config env params guards
+    body =
   match resolve_comprehension_binding env params guards with
   | Error msg -> failwith msg
-  | Ok (var_name, dname, membership_expr, bindings) ->
+  | Ok (Domain { name = var_name; domain = dname; membership; bindings }) ->
       let env_inner = Env.with_vars bindings env in
       let elems = domain_elements dname (bound_for config dname) in
       let pname = sanitize_ident var_name in
@@ -108,7 +215,7 @@ let expand_comprehension translate config env params guards body =
       in
       (* For GIn bindings, add implicit membership guard *)
       let membership_template =
-        match membership_expr with
+        match membership with
         | Some list_e ->
             let list_str = translate config env list_e in
             Some (Printf.sprintf "(select %s %s)" list_str pname)
@@ -130,6 +237,74 @@ let expand_comprehension translate config env params guards body =
           in
           (guard_str, value_str))
         elems
+  | Ok
+      (Numeric { name = var_name; ty; bound; inclusive; bound_guard; bindings })
+    ->
+      let neutral =
+        match numeric_neutral with
+        | Some neutral -> neutral
+        | None ->
+            failwith
+              "SMT translation: bounded numeric comprehension requires an \
+               aggregate neutral element"
+      in
+      let env_inner = Env.with_vars bindings env in
+      let pname = sanitize_ident var_name in
+      let numeric_values =
+        match[@warning "-4"] (ty, bound) with
+        | TyNat, ELitNat n when inclusive ->
+            List.init (max 0 n) (fun i -> i + 1)
+        | TyNat, ELitNat n -> List.init (max 0 (n - 1)) (fun i -> i + 1)
+        | (TyNat0 | TyInt), ELitNat n when inclusive ->
+            List.init (max 0 (n + 1)) Fun.id
+        | (TyNat0 | TyInt), ELitNat n -> List.init (max 0 n) Fun.id
+        | TyNat, _ -> List.init config.bound (fun i -> i + 1)
+        | (TyNat0 | TyInt), _ -> List.init config.bound Fun.id
+        | ( ( TyBool | TyReal | TyString | TyNothing | TyDomain _ | TyList _
+            | TyProduct _ | TySum _ | TyFunc _ ),
+            _ ) ->
+            []
+      in
+      let concrete_bound =
+        match[@warning "-4"] bound with ELitNat _ -> true | _ -> false
+      in
+      let body_template = translate config env_inner body in
+      let non_bound_guard_templates =
+        List.filter_map
+          (fun g ->
+            if g = bound_guard then None
+            else
+              match g with
+              | GExpr e -> Some (translate config env_inner e)
+              | GIn _ | GParam _ -> None)
+          guards
+      in
+      let bound_template = translate config env_inner bound in
+      List.map
+        (fun k ->
+          let k_s = string_of_int k in
+          let sub s = replace_word ~from:pname ~to_:k_s s in
+          let body_str = sub body_template in
+          let guard_strs = List.map sub non_bound_guard_templates in
+          let guarded_body =
+            match guard_strs with
+            | [] -> body_str
+            | [ g ] -> Printf.sprintf "(ite %s %s %s)" g body_str neutral
+            | gs ->
+                Printf.sprintf "(ite (and %s) %s %s)" (String.concat " " gs)
+                  body_str neutral
+          in
+          let op = if inclusive then "<=" else "<" in
+          let bound_guard =
+            Printf.sprintf "(%s %s %s)" op k_s (sub bound_template)
+          in
+          let value_str =
+            if concrete_bound then guarded_body
+            else
+              Printf.sprintf "(ite %s %s %s)" bound_guard guarded_body neutral
+          in
+          (None, value_str))
+        numeric_values
 
 (** Capture-avoiding substitution: replace EVar names according to the mapping.
     When the substitution's range contains a free name that matches a quantifier
