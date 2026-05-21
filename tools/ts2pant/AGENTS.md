@@ -961,6 +961,88 @@ expressions, conditions other than `COUNTER < BOUND_EXPR` or
 `COUNTER <= BOUND_EXPR`, and bounds that mention the counter. Recurrences are
 explicitly deferred to L4 fixed-point lowering.
 
+### Bounded while loop lowering (L3)
+
+The bounded while milestone reuses the L2 counter-loop SSA and lowering path
+for counter loops spelled as adjacent `let` plus `while` statements. The
+mutating-body builder recognizes the pair and desugars it to an `ir1For`, so
+`src/ir1-ssa-counter-loop.ts` remains the single lowering source for bounded
+counter loops regardless of source spelling.
+
+Accepted ascending forms are the structural twin of L2:
+
+```ts
+let i = 0;
+while (i < n) {
+  body;
+  i++;
+}
+```
+
+The `<=` condition variant is accepted as well. The initializer must be a
+numeric literal, the bound expression must be loop-invariant with respect to
+the counter, and the trailing body step must canonicalize to `COUNTER =
+COUNTER + 1`.
+
+L3 also accepts the symmetric descending forms:
+
+```ts
+let i = n;
+while (i > 0) {
+  body;
+  i--;
+}
+```
+
+The `>=` condition variant is accepted as well. For descending loops, the
+bound expression must be a numeric literal, the init expression must be
+loop-invariant with respect to the counter, and the trailing body step must
+canonicalize to `COUNTER = COUNTER - 1`. The emitted termination metric is
+`COUNTER - BOUND_EXPR` with lower bound `0`; this is the descending mirror of
+L2's ascending `BOUND_EXPR - COUNTER` metric.
+
+Descending accumulator folds lower to one Pant equation per mutated property
+with the counter range encoded as over-each guards:
+
+```pant
+acc--p' obj = acc--p obj OUTER_OP
+  (COMB over each i: Nat0, i <= INIT, i > BOUND | F(i))
+```
+
+For `>=`, the final guard uses `i >= BOUND`. Optional TS body guards become
+additional over-each guards, as in L2. Descending simple assignments lower to
+last-iteration-wins `cond` equations. For the strict `>` form, the selected
+last counter value is `BOUND + 1`:
+
+```pant
+p' obj = cond INIT > BOUND => F(BOUND + 1), true => p obj
+```
+
+For `>=`, the selected last counter value is `BOUND`. Ascending simple
+assignments keep the L2 last-iteration convention with the comparison and
+endpoint determined by `<` versus `<=`.
+
+The let-then-while peephole lives in `buildSupportedSsaMutatingBody`, where
+the statement-list iterator can look ahead and consume two adjacent
+statements. It matches a side-effect-free counter `let`, a following
+`while`, and a trailing counter step in the while body. The builder removes
+that trailing step from the body and emits `ir1For(initStmt, cond, step,
+bodyWithoutTrailingStep)`. These shapes fall through unchanged and continue
+to reject through the ordinary statement path: `let` with an effectful
+initializer, `let` without a matching following `while`, `while` without a
+preceding matched `let`, and `while` whose body does not end in a recognized
+counter step.
+
+Unsupported `while` loops reject with one diagnostic:
+
+```text
+while loop is not a recognized bounded-counter shape; lift to L4 fixed-point lowering when that milestone ships
+```
+
+This message replaces the previous generic `loop assignment` diagnostic for
+`WhileStatement` specifically. `ForInStatement` and `DoStatement` still reject
+with the older generic loop-assignment message.
+
 ### Mutating-body output (no L2 IR)
 
 The mutating path emits `PropResult[]` directly:

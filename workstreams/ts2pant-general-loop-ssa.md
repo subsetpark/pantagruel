@@ -178,6 +178,11 @@ L2's quantification path.
 
 ### Milestone 3: bounded-while-lowering
 
+**Status**: Landed in `ts2pant-bounded-while-lowering`. See
+`tools/ts2pant/AGENTS.md` section `### Bounded while loop lowering (L3)` for
+the accepted ascending and descending counter-desugar surface, peephole, and
+rejection contract.
+
 **Definition of Done**:
 The mutating-body build path emits IR1 SSA for bounded `while` loops — those
 whose guard expression admits ranking-function extraction. Lowering reuses
@@ -389,7 +394,7 @@ machinery to be feature-complete before they touch it.
 
 | Question | Notes | Resolve By |
 |----------|-------|------------|
-| L2/L3 merge | Whether bounded counter and bounded while are distinct enough to be separate milestones, or whether L2's gameplan reveals they should be one. | After L2 |
+| L2/L3 merge | Resolved: keep separate. The recognizer surface is structurally different between `for` and `let`-then-`while` shapes; the statement-list peephole is the only new build-pass machinery and does not merge cleanly with `buildL1ForCounterMutation`. See `tools/ts2pant/AGENTS.md` section `### Bounded while loop lowering (L3)`. | Resolved in L3 |
 
 Other design questions are scoped to specific milestones and resolved during
 their respective `write-gameplan` invocations. See each milestone's
