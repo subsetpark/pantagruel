@@ -235,4 +235,58 @@ describe("pant --check", () => {
     assert.ok(result.checks.length > 0);
     assert.ok(result.checks.every((c) => c.passed));
   });
+
+  it("functions-mutating-counter-loop.ts sumFirstN is checkable", {
+    skip: !hasSolver ? "z3 not available" : undefined,
+  }, async () => {
+    const doc = await buildDocument(
+      "constructs/functions-mutating-counter-loop.ts",
+      "sumFirstN",
+    );
+    const output = await emitAndCheck(doc);
+    const result = runCheck(output, {
+      projectRoot: PROJECT_ROOT,
+      pantBin: getPantBin(),
+    });
+
+    assert.equal(result.passed, true);
+    assert.ok(result.checks.length > 0);
+    assert.ok(result.checks.every((c) => c.passed));
+  });
+
+  it("functions-mutating-counter-loop.ts sumIfPositiveFirstN is checkable", {
+    skip: !hasSolver ? "z3 not available" : undefined,
+  }, async () => {
+    const doc = await buildDocument(
+      "constructs/functions-mutating-counter-loop.ts",
+      "sumIfPositiveFirstN",
+    );
+    const output = await emitAndCheck(doc);
+    const result = runCheck(output, {
+      projectRoot: PROJECT_ROOT,
+      pantBin: getPantBin(),
+    });
+
+    assert.equal(result.passed, true);
+    assert.ok(result.checks.length > 0);
+    assert.ok(result.checks.every((c) => c.passed));
+  });
+
+  it("functions-mutating-counter-loop.ts setLastIndex is checkable", {
+    skip: !hasSolver ? "z3 not available" : undefined,
+  }, async () => {
+    const doc = await buildDocument(
+      "constructs/functions-mutating-counter-loop.ts",
+      "setLastIndex",
+    );
+    const output = await emitAndCheck(doc);
+    const result = runCheck(output, {
+      projectRoot: PROJECT_ROOT,
+      pantBin: getPantBin(),
+    });
+
+    assert.equal(result.passed, true);
+    assert.ok(result.checks.length > 0);
+    assert.ok(result.checks.every((c) => c.passed));
+  });
 });
