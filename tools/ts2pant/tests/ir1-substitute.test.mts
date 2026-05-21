@@ -1,14 +1,16 @@
+import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import * as fc from "fast-check";
 
 import {
+  type IR1Expr,
+  type IR1Stmt,
   ir1App,
   ir1Assign,
   ir1Binop,
   ir1Block,
   ir1Cond,
-  ir1CondStmt,
   ir1Each,
   ir1ExprStmt,
   ir1For,
@@ -23,101 +25,445 @@ import {
   ir1Unop,
   ir1Var,
   ir1While,
-  type IR1Expr,
-  type IR1Stmt,
 } from "../src/ir1.js";
-
-void fc;
-void ir1App;
-void ir1Assign;
-void ir1Binop;
-void ir1Block;
-void ir1Cond;
-void ir1CondStmt;
-void ir1Each;
-void ir1ExprStmt;
-void ir1For;
-void ir1Foreach;
-void ir1IsNullish;
-void ir1Let;
-void ir1LitBool;
-void ir1LitNat;
-void ir1Member;
-void ir1Return;
-void ir1Throw;
-void ir1Unop;
-void ir1Var;
-void ir1While;
+import {
+  CaptureRiskError,
+  freeVarsIR1Expr,
+  freeVarsIR1Stmt,
+  substituteIR1ExprSubtree,
+  substituteIR1StmtSubtree,
+} from "../src/ir1-substitute.js";
 
 type _IR1Expr = IR1Expr;
 type _IR1Stmt = IR1Stmt;
 
 describe("ir1-substitute", () => {
   describe("unit", () => {
-    it.skip("freeVarsIR1Expr returns vars from a leaf var", () => {
-      // PENDING Patch 3: assert leaf var free-var behavior.
+    it("freeVarsIR1Expr returns vars from a leaf var", () => {
+      assertSetEqual(freeVarsIR1Expr(ir1Var("x")), ["x"]);
     });
 
-    it.skip("freeVarsIR1Expr ignores literals", () => {
-      // PENDING Patch 3: assert literal expressions have no free vars.
+    it("freeVarsIR1Expr ignores literals", () => {
+      assertSetEqual(freeVarsIR1Expr(ir1LitNat(1)), []);
     });
 
-    it.skip("freeVarsIR1Expr respects each binder", () => {
-      // PENDING Patch 3: assert each-binder free-var behavior.
+    it("freeVarsIR1Expr respects each binder", () => {
+      const expr = ir1Each(
+        "x",
+        ir1Var("src"),
+        [ir1Var("x"), ir1Var("g")],
+        ir1Var("x"),
+      );
+      assertSetEqual(freeVarsIR1Expr(expr), ["g", "src"]);
     });
 
-    it.skip("freeVarsIR1Stmt respects block / let / foreach / for binders", () => {
-      // PENDING Patch 3: assert statement-level free vars across block, let, foreach, and for-init binders.
+    it("freeVarsIR1Stmt respects block / let / foreach / for binders", () => {
+      const stmt = ir1Block([
+        ir1Let("x", ir1Var("seed")),
+        ir1Foreach(
+          "y",
+          ir1Var("xs"),
+          ir1Assign(ir1Member(ir1Var("y"), "p"), ir1Var("x")),
+          [
+            {
+              target: ir1Var("acc"),
+              prop: "total",
+              combiner: "add",
+              outerOp: "add",
+              rhs: ir1Var("y"),
+              guard: ir1Var("x"),
+            },
+          ],
+        ),
+        ir1For(
+          ir1Let("i", ir1Var("start")),
+          ir1Var("i"),
+          ir1Assign(ir1Var("i"), ir1Var("x")),
+          ir1Return(ir1Var("i")),
+        ),
+      ]);
+      assertSetEqual(freeVarsIR1Stmt(stmt), ["acc", "seed", "start", "xs"]);
     });
 
-    it.skip("substituteIR1ExprSubtree replaces a leaf Var", () => {
-      // PENDING Patch 3: assert leaf Var replacement through the expression primitive.
+    it("substituteIR1ExprSubtree replaces a leaf Var", () => {
+      assert.deepEqual(
+        substituteIR1ExprSubtree(ir1Var("x"), ir1Var("x"), ir1LitNat(1)),
+        ir1LitNat(1),
+      );
     });
 
-    it.skip("substituteIR1ExprSubtree replaces a Member subtree", () => {
-      // PENDING Patch 3: assert Member subtree replacement through the expression primitive.
+    it("substituteIR1ExprSubtree replaces a Member subtree", () => {
+      const haystack = ir1Member(ir1Member(ir1Var("u"), "profile"), "name");
+      const needle = ir1Member(ir1Var("u"), "profile");
+      assert.deepEqual(
+        substituteIR1ExprSubtree(haystack, needle, ir1Var("p")),
+        ir1Member(ir1Var("p"), "name"),
+      );
     });
 
-    it.skip("substituteIR1ExprSubtree halts at a shadowing each binder", () => {
-      // PENDING Patch 3: assert Var-needle substitution does not descend under a shadowing each binder.
+    it("substituteIR1ExprSubtree halts at a shadowing each binder", () => {
+      const expr = ir1Each(
+        "x",
+        ir1Var("xs"),
+        [ir1Var("x")],
+        ir1Member(ir1Var("x"), "p"),
+      );
+      assert.deepEqual(
+        substituteIR1ExprSubtree(expr, ir1Var("x"), ir1LitNat(0)),
+        ir1Each("x", ir1Var("xs"), [ir1Var("x")], ir1Member(ir1Var("x"), "p")),
+      );
     });
 
-    it.skip("substituteIR1ExprSubtree throws CaptureRiskError on capture risk", () => {
-      // PENDING Patch 3: assert replacement free vars captured by haystack binders throw CaptureRiskError.
+    it("substituteIR1ExprSubtree throws CaptureRiskError on capture risk", () => {
+      assert.throws(
+        () =>
+          substituteIR1ExprSubtree(
+            ir1Each("x", ir1Var("xs"), [], ir1Var("y")),
+            ir1Var("y"),
+            ir1Var("x"),
+          ),
+        CaptureRiskError,
+      );
     });
 
-    it.skip("substituteIR1ExprSubtree preserves shape outside replacement sites", () => {
-      // PENDING Patch 3: assert unrelated expression structure is preserved while matching subtrees are replaced.
+    it("substituteIR1ExprSubtree preserves shape outside replacement sites", () => {
+      const expr = ir1Cond(
+        [[ir1Var("g"), ir1Binop("add", ir1Var("x"), ir1LitNat(1))]],
+        ir1Unop("not", ir1Var("done")),
+      );
+      assert.deepEqual(
+        substituteIR1ExprSubtree(expr, ir1Var("x"), ir1Var("z")),
+        ir1Cond(
+          [[ir1Var("g"), ir1Binop("add", ir1Var("z"), ir1LitNat(1))]],
+          ir1Unop("not", ir1Var("done")),
+        ),
+      );
     });
 
-    it.skip("substituteIR1StmtSubtree threads block-scope let binders", () => {
-      // PENDING Patch 3: assert let binders affect only subsequent block statements during statement substitution.
+    it("substituteIR1StmtSubtree threads block-scope let binders", () => {
+      const stmt = ir1Block([ir1Let("x", ir1Var("x")), ir1Return(ir1Var("x"))]);
+      assert.deepEqual(
+        substituteIR1StmtSubtree(stmt, ir1Var("x"), ir1LitNat(1)),
+        ir1Block([ir1Let("x", ir1LitNat(1)), ir1Return(ir1Var("x"))]),
+      );
     });
 
-    it.skip("substituteIR1StmtSubtree handles foreach binder scope", () => {
-      // PENDING Patch 3: assert foreach binder scope covers body and fold leaves but not source.
+    it("substituteIR1StmtSubtree handles foreach binder scope", () => {
+      const stmt = ir1Foreach(
+        "x",
+        ir1Var("x"),
+        ir1Assign(ir1Member(ir1Var("x"), "p"), ir1Var("x")),
+        [
+          {
+            target: ir1Var("x"),
+            prop: "q",
+            combiner: "add",
+            outerOp: "add",
+            rhs: ir1Var("x"),
+            guard: null,
+          },
+        ],
+      );
+      assert.deepEqual(
+        substituteIR1StmtSubtree(stmt, ir1Var("x"), ir1LitNat(7)),
+        ir1Foreach(
+          "x",
+          ir1LitNat(7),
+          ir1Assign(ir1Member(ir1Var("x"), "p"), ir1Var("x")),
+          [
+            {
+              target: ir1Var("x"),
+              prop: "q",
+              combiner: "add",
+              outerOp: "add",
+              rhs: ir1Var("x"),
+              guard: null,
+            },
+          ],
+        ),
+      );
     });
 
-    it.skip("substituteIR1StmtSubtree handles for-init let scope", () => {
-      // PENDING Patch 3: assert for-init let binders scope over cond, step, and body.
+    it("substituteIR1StmtSubtree handles for-init let scope", () => {
+      const stmt = ir1For(
+        ir1Let("i", ir1Var("i")),
+        ir1Var("i"),
+        ir1Assign(ir1Var("i"), ir1Var("i")),
+        ir1Return(ir1Var("i")),
+      );
+      assert.deepEqual(
+        substituteIR1StmtSubtree(stmt, ir1Var("i"), ir1LitNat(0)),
+        ir1For(
+          ir1Let("i", ir1LitNat(0)),
+          ir1Var("i"),
+          ir1Assign(ir1Var("i"), ir1Var("i")),
+          ir1Return(ir1Var("i")),
+        ),
+      );
     });
   });
 
   describe("properties", () => {
-    it.skip("free vars compose under substitution", () => {
-      // PENDING Patch 3: generator skeleton uses fc.letrec for IR1Expr / IR1Stmt trees, name arbitraries from a small identifier set, and filters to no-capture cases before asserting FV(substitute(h, n, r)) = (FV(h) minus the Var needle name when applicable) union FV(r).
+    it("free vars compose under substitution", () => {
+      fc.assert(
+        fc.property(arbIR1Expr(), (expr) => {
+          const rewritten = substituteIR1ExprSubtree(
+            expr,
+            ir1Var("a"),
+            ir1LitNat(0),
+          );
+          const expected = freeVarsIR1Expr(expr);
+          expected.delete("a");
+          assertSetEqual(freeVarsIR1Expr(rewritten), [...expected]);
+        }),
+      );
     });
 
-    it.skip("substitution is idempotent when needle does not occur", () => {
-      // PENDING Patch 3: generator skeleton uses fc.letrec recursive IR1Expr / IR1Stmt trees plus a needle arbitrary filtered so the needle is absent from the haystack, then asserts substitution returns the original tree.
+    it("substitution is idempotent when needle does not occur", () => {
+      fc.assert(
+        fc.property(arbIR1Expr(), arbIR1Stmt(), (expr, stmt) => {
+          const needle = ir1Var("z");
+          assert(!exprContainsNeedle(expr, needle));
+          assert.deepEqual(
+            substituteIR1ExprSubtree(expr, needle, ir1LitNat(0)),
+            expr,
+          );
+          assert.deepEqual(
+            substituteIR1StmtSubtree(stmt, needle, ir1LitNat(0)),
+            stmt,
+          );
+        }),
+      );
     });
 
-    it.skip("substitution under shadowing binder is identity", () => {
-      // PENDING Patch 3: generator skeleton builds each / let / foreach / for-init binder wrappers around recursive IR1Expr / IR1Stmt haystacks with a Var needle matching the binder, then asserts descent halts at the binder boundary.
+    it("substitution under shadowing binder is identity", () => {
+      fc.assert(
+        fc.property(arbIR1Expr(), (body) => {
+          const expr = ir1Each("a", ir1Var("src"), [body], body);
+          assert.deepEqual(
+            substituteIR1ExprSubtree(expr, ir1Var("a"), ir1LitNat(0)),
+            expr,
+          );
+        }),
+      );
     });
 
-    it.skip("capture-risk inputs throw", () => {
-      // PENDING Patch 3: generator skeleton builds haystacks with binder names drawn from replacement free vars via fc.letrec expression / statement trees, then asserts CaptureRiskError is thrown.
+    it("capture-risk inputs throw", () => {
+      fc.assert(
+        fc.property(nameArb, (name) => {
+          assert.throws(
+            () =>
+              substituteIR1ExprSubtree(
+                ir1Each(name, ir1Var("src"), [], ir1Var("target")),
+                ir1Var("target"),
+                ir1Var(name),
+              ),
+            CaptureRiskError,
+          );
+          assert.throws(
+            () =>
+              substituteIR1StmtSubtree(
+                ir1Foreach(name, ir1Var("src"), ir1Return(ir1Var("target"))),
+                ir1Var("target"),
+                ir1Var(name),
+              ),
+            CaptureRiskError,
+          );
+        }),
+      );
     });
   });
 });
+
+const names = ["a", "b", "c", "d", "e", "f"] as const;
+const nameArb = fc.constantFrom(...names);
+
+function arbIR1Expr(depth = 4): fc.Arbitrary<IR1Expr> {
+  return fc.letrec<{ expr: IR1Expr }>(() => ({
+    expr:
+      depth <= 0
+        ? arbLeafExpr()
+        : fc.oneof(
+            arbLeafExpr(),
+            fc
+              .tuple(arbIR1Expr(depth - 1), fc.constantFrom("p", "q"))
+              .map(([receiver, name]) => ir1Member(receiver, name)),
+            fc
+              .tuple(arbIR1Expr(depth - 1), arbIR1Expr(depth - 1))
+              .map(([lhs, rhs]) => ir1Binop("add", lhs, rhs)),
+            arbIR1Expr(depth - 1).map((arg) => ir1Unop("not", arg)),
+            fc
+              .tuple(
+                arbIR1Expr(depth - 1),
+                fc.array(arbIR1Expr(depth - 1), { maxLength: 2 }),
+              )
+              .map(([callee, args]) => ir1App(callee, args)),
+            arbIR1Expr(depth - 1).map((operand) => ir1IsNullish(operand)),
+            fc
+              .tuple(
+                arbIR1Expr(depth - 1),
+                arbIR1Expr(depth - 1),
+                arbIR1Expr(depth - 1),
+              )
+              .map(([guard, value, otherwise]) =>
+                ir1Cond([[guard, value]], otherwise),
+              ),
+            fc
+              .tuple(
+                nameArb,
+                arbIR1Expr(depth - 1),
+                fc.array(arbIR1Expr(depth - 1), { maxLength: 2 }),
+                arbIR1Expr(depth - 1),
+              )
+              .map(([binder, src, guards, proj]) =>
+                ir1Each(binder, src, guards, proj),
+              ),
+          ),
+  })).expr;
+}
+
+function arbIR1Stmt(depth = 4): fc.Arbitrary<IR1Stmt> {
+  return fc.letrec<{ stmt: IR1Stmt }>(() => ({
+    stmt:
+      depth <= 0
+        ? arbLeafStmt()
+        : fc.oneof(
+            arbLeafStmt(),
+            fc
+              .tuple(nameArb, arbIR1Expr(depth - 1))
+              .map(([name, value]) => ir1Let(name, value)),
+            fc
+              .tuple(arbIR1Expr(depth - 1), arbIR1Expr(depth - 1))
+              .map(([target, value]) => ir1Assign(target, value)),
+            fc
+              .array(arbIR1Stmt(depth - 1), { minLength: 2, maxLength: 3 })
+              .map((stmts) => ir1Block(stmts as [IR1Stmt, ...IR1Stmt[]])),
+            fc
+              .tuple(nameArb, arbIR1Expr(depth - 1), arbIR1Stmt(depth - 1))
+              .map(([binder, source, body]) =>
+                ir1Foreach(
+                  binder,
+                  source,
+                  body as Extract<IR1Stmt, { kind: "assign" }>,
+                  [],
+                ),
+              ),
+            fc
+              .tuple(
+                nameArb,
+                arbIR1Expr(depth - 1),
+                arbIR1Expr(depth - 1),
+                arbIR1Stmt(depth - 1),
+              )
+              .map(([binder, initValue, cond, body]) =>
+                ir1For(ir1Let(binder, initValue), cond, null, body),
+              ),
+            fc
+              .tuple(arbIR1Expr(depth - 1), arbIR1Stmt(depth - 1))
+              .map(([cond, body]) => ir1While(cond, body)),
+          ),
+  })).stmt;
+}
+
+function arbLeafExpr(): fc.Arbitrary<IR1Expr> {
+  return fc.oneof(
+    nameArb.map((name) => ir1Var(name)),
+    fc.boolean().map(ir1LitBool),
+    fc.nat(10).map(ir1LitNat),
+  );
+}
+
+function arbLeafStmt(): fc.Arbitrary<IR1Stmt> {
+  return fc.oneof(
+    arbIR1Expr(0).map(ir1Return),
+    arbIR1Expr(0).map(ir1Throw),
+    arbIR1Expr(0).map(ir1ExprStmt),
+  );
+}
+
+function assertSetEqual(actual: Set<string>, expected: Iterable<string>): void {
+  assert.deepEqual([...actual].sort(), [...expected].sort());
+}
+
+function exprContainsNeedle(
+  expr: IR1Expr,
+  needle: Extract<IR1Expr, { kind: "var" | "member" }>,
+): boolean {
+  if (exprNeedleEqual(expr, needle)) {
+    return true;
+  }
+  switch (expr.kind) {
+    case "var":
+    case "lit":
+      return false;
+    case "binop":
+      return (
+        exprContainsNeedle(expr.lhs, needle) ||
+        exprContainsNeedle(expr.rhs, needle)
+      );
+    case "unop":
+      return exprContainsNeedle(expr.arg, needle);
+    case "app":
+      return (
+        exprContainsNeedle(expr.callee, needle) ||
+        expr.args.some((arg) => exprContainsNeedle(arg, needle))
+      );
+    case "member":
+      return exprContainsNeedle(expr.receiver, needle);
+    case "cond":
+      return (
+        expr.arms.some(
+          ([guard, value]) =>
+            exprContainsNeedle(guard, needle) ||
+            exprContainsNeedle(value, needle),
+        ) || exprContainsNeedle(expr.otherwise, needle)
+      );
+    case "is-nullish":
+      return exprContainsNeedle(expr.operand, needle);
+    case "each":
+      return (
+        exprContainsNeedle(expr.src, needle) ||
+        expr.guards.some((guard) => exprContainsNeedle(guard, needle)) ||
+        exprContainsNeedle(expr.proj, needle)
+      );
+    case "map-read":
+      return (
+        exprContainsNeedle(expr.receiver, needle) ||
+        exprContainsNeedle(expr.key, needle)
+      );
+    case "set-read":
+      return (
+        exprContainsNeedle(expr.receiver, needle) ||
+        exprContainsNeedle(expr.elem, needle)
+      );
+    default: {
+      const _exhaustive: never = expr;
+      return _exhaustive;
+    }
+  }
+}
+
+function exprNeedleEqual(
+  expr: IR1Expr,
+  needle: Extract<IR1Expr, { kind: "var" | "member" }>,
+): boolean {
+  if (expr.kind !== needle.kind) {
+    return false;
+  }
+  if (expr.kind === "var" && needle.kind === "var") {
+    return (
+      expr.name === needle.name &&
+      (expr.primed ?? false) === (needle.primed ?? false)
+    );
+  }
+  if (expr.kind === "member" && needle.kind === "member") {
+    return (
+      expr.name === needle.name &&
+      exprNeedleEqual(
+        expr.receiver,
+        needle.receiver as Extract<IR1Expr, { kind: "var" | "member" }>,
+      )
+    );
+  }
+  return false;
+}
