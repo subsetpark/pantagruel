@@ -69,6 +69,7 @@ let fold_expr (f : 'a -> expr -> 'a) (acc : 'a) (e : expr) : 'a =
 
 let expr_applies_name name e =
   let rec go bound = function[@warning "-4"]
+    | EVar (Lower n) when n = name && not (List.mem n bound) -> true
     | EApp (EVar (Lower n), _) when n = name && not (List.mem n bound) -> true
     | EApp (func, args) -> List.exists (go bound) (func :: args)
     | EBinop (_, e1, e2) -> go bound e1 || go bound e2

@@ -150,6 +150,7 @@ let arity_of_ty (ty : ty) : int =
 
 let expr_applies_name target e =
   let rec go bound = function[@warning "-4"]
+    | EVar (Lower n) when n = target && not (List.mem n bound) -> true
     | Ast.EApp (Ast.EVar (Ast.Lower n), args)
       when n = target && not (List.mem n bound) ->
         let _ = args in

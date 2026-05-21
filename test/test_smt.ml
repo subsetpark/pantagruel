@@ -210,6 +210,16 @@ let test_is_rule_recursive_detects_self_reference () =
         (Smt.is_rule_recursive decl.value)
   | [] -> fail "expected rule declaration"
 
+let test_is_rule_recursive_detects_nullary_self_reference () =
+  let _env, doc =
+    parse_and_collect "module Test.\nloop => Bool = loop.\n---\nloop.\n"
+  in
+  match (List.hd doc.chapters).head with
+  | decl :: _ ->
+      check bool "nullary recursive rule detected" true
+        (Smt.is_rule_recursive decl.value)
+  | [] -> fail "expected nullary rule declaration"
+
 let test_recursive_rule_emits_define_fun_rec () =
   let env, _doc =
     parse_and_collect
@@ -225,7 +235,9 @@ let test_recursive_rule_emits_define_fun_rec () =
   check bool "skips current declare-fun" false
     (contains smt "(declare-fun loop (Int) Int)");
   check bool "keeps primed declare-fun" true
-    (contains smt "(declare-fun loop_prime (Int) Int)")
+    (contains smt "(declare-fun loop_prime (Int) Int)");
+  check bool "no legacy forall axiom for recursive rule" false
+    (contains smt "(assert (forall ((x Int)) (= (loop x)")
 
 let test_non_recursive_rule_emits_existing_shape () =
   let env, doc =
@@ -1348,6 +1360,8 @@ let integration_tests =
     test_case "function declarations" `Quick test_function_declarations;
     test_case "is_rule_recursive detects self-referential rule body" `Quick
       test_is_rule_recursive_detects_self_reference;
+    test_case "is_rule_recursive detects nullary self-referential rule body"
+      `Quick test_is_rule_recursive_detects_nullary_self_reference;
     test_case
       "recursive rule emits define-fun-rec form with body and skips \
        declare-fun line"
