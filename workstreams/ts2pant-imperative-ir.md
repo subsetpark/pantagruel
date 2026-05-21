@@ -43,7 +43,8 @@ is no opt-in flag, no parallel pipeline, and no escape-hatch IR form.
 
 - Expression forms: `var`, `lit`, `binop`, `unop`, `app`, `member`
   (M5 canonical property-access form, pre-qualified at build time),
-  `cond`, `is-nullish` (M4 canonical Bool null/undefined test).
+  `cond`, `is-nullish` (M4 canonical Bool null/undefined test),
+  `each`, `comb-typed`, `forall`, `exists`, `map-read`, `set-read`.
 - Statement forms: `block`, `let`, `assign`, `cond-stmt`, `foreach`
   (with optional `body` and `foldLeaves` for Shape A + Shape B), `for`
   (declared, unused), `while` (μ-search only), `return`, `throw`
@@ -56,11 +57,11 @@ vocabulary reject with a specific `unsupported` reason.
 
 **What's on Layer 2**: `IRExpr` only — ten canonical forms (`Var`,
 `Lit`, `App`, `Cond`, `Let`, `Each`, `Comb`, `CombTyped`, `Forall`,
-`Exists`). `CombTyped` is the source-less typed comprehension added
-in M2 cleanup as μ-search's lowering target (`min over each j: T,
-guards | j`); see `ir1-lower.ts`'s `recognizeAndLowerMuSearch`. The
-L2 vocabulary is similarly closed; every `IRExpr` is one of those
-ten constructors. The L2 statement vocabulary (`IRStmt` with
+`Exists`). `CombTyped` is the source-less typed comprehension mirrored
+from L1 `comb-typed` after TS-AST → L1 μ-search recognition (`min over
+each j: T, guards | j`). The L2 vocabulary is similarly closed; every
+`IRExpr` is one of those ten constructors. The L2 statement vocabulary
+(`IRStmt` with
 `Write`, `LetIf`, `Seq`, `Assert`) and its companion
 `src/ir-subst.ts` were the speculative target of the parallel-build
 PRs (#134/#135/#137) that got closed; PR #138 deleted them once M3
@@ -341,14 +342,14 @@ exploratory.
   `buildL1IncrementStep` covering all five `+1` spellings + non-`+1`
   forms; new unit tests for vocabulary activation and step
   normalization.
-- Patch 2 (`ea32328`) — L1 builder (`buildL1LetWhile`) + L1 recognizer
-  (`isCanonicalMuSearchForm`); plumb behind `TS2PANT_USE_L1_MUSEARCH`.
+- Patch 2 (`ea32328`) — L1 builder (`buildL1LetWhile`) + then-current
+  L1 μ-search recognizer; plumb behind `TS2PANT_USE_L1_MUSEARCH`.
   Validation: byte-identical output across all 463 existing tests
   under both flag states.
 - Patch 3 (`c3dc24b`) — hard-rule cutover. Flag deleted.
   `recognizeMuSearch` renamed to `recognizeLetWhilePair` and stripped
   of all μ-search semantics (step shape, predicate-references-counter)
-  — those checks now live in `isCanonicalMuSearchForm` and the
+  — those checks moved into the then-current L1 recognizer and the
   unified `translateMuSearchInit`. Legacy `translateMuSearchInitLegacy`
   deleted. Three new fixtures (`compoundIncrementStep`,
   `explicitIncrementStep`, `explicitIncrementStepFlipped`) verify the
@@ -370,30 +371,30 @@ recognized μ-search" (now "predicate does not reference the counter"
 or "predicate has side effects") and tests were updated.
 
 **M2 cleanup (post-cutover follow-up)**: in the same PR, four
-additional commits move μ-search lowering entirely out of
-`translate-body.ts`. Articulated principle: *"L1 should be entirely
-concerned with the syntax of TypeScript; it should be completely
-unopinionated and ignorant about how TypeScript's semantics are
-translated into specific lowerings."* Concretely:
+additional commits moved μ-search lowering entirely out of
+`translate-body.ts`. A later typed-mirror refactor sharpened the
+layering principle: L1 is the canonical form after all source-level
+recognition and may carry Pant-target forms such as `comb-typed`; L1 →
+L2 is mechanical; L2 is a typed mirror of `OpaqueExpr`, not a
+transformation IR. Concretely:
 
-- L2 gains a new `comb-typed` form for source-less typed
-  comprehension — the missing vocabulary that legacy
-  `translateMuSearchInit` worked around by going directly to
-  OpaqueExpr.
-- `lowerL1MuSearch` lands in `ir1-lower.ts` carrying all μ-search
-  semantics: canonical-shape pattern match, strategy validation,
-  binder allocation (via callback), counter-binder substitution
-  (via Pant's `substituteBinder` on the lowered OpaqueExpr).
-- `buildL1LetWhile` adds the predicate-references-counter check
-  as a structural sanity check on the let+while pair.
-- `translateMuSearchInit` shrinks to a thin orchestrator that
-  wires the lowering context and delegates to the L1 → L2 →
-  OpaqueExpr pipeline. No Pantagruel-target awareness.
+- L1 and L2 both carry `comb-typed` for source-less typed comprehension
+  — the vocabulary that legacy `translateMuSearchInit` worked around by
+  going directly to OpaqueExpr.
+- μ-search recognition fires at TS-AST → L1. The recognizer validates the
+  canonical shape, strategy, binder allocation, and counter-binder
+  substitution before constructing L1 `comb-typed`.
+- `buildL1LetWhile` adds the predicate-references-counter check as a
+  structural sanity check on the let+while pair.
+- `translateMuSearchInit` remains a thin orchestrator that wires the
+  lowering context and delegates to the L1 → L2 → OpaqueExpr pipeline.
+  L1 → L2 carries no recognition decisions.
 
 Snapshot byte-equality preserved across all 8 μ-search fixtures.
 translate-body.ts net −60 lines. Side benefit: predicate is now
 translated once at L1 build (rather than twice as in pre-cleanup
-M2) — substitution happens on the lowered OpaqueExpr.
+M2) — substitution happens through the IR1 substitution primitive before
+mechanical L1 → L2 lowering.
 
 **Definition of Done**:
 - `ir1-build.ts` extends to translate increment surface forms: `i++`, `++i`,

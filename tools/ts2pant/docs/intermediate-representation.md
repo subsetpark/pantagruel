@@ -8,11 +8,14 @@
 > `workstreams/ts2pant-general-loop-ssa.md`.
 
 ts2pant lowers TypeScript through a two-layer IR before emission:
-**Layer 1** (`src/ir1.ts`) is a TS-shape imperative IR where
-normalization passes collapse syntactically equivalent surface forms
-(increment spellings, conditional families, iteration families) into a
-small canonical vocabulary, and **Layer 2** (`src/ir.ts`) is a
-Pant-shape expression IR. The pure / value-position path goes
+**Layer 1** (`src/ir1.ts`) is the canonical form after all source-level
+recognition. Normalization passes collapse syntactically equivalent
+surface forms (increment spellings, conditional families, iteration
+families) into a small canonical vocabulary, including Pant-target forms
+when source-level recognition needs them. **Layer 2** (`src/ir.ts`) is
+L1's expression subset packaged as a typed `OpaqueExpr` mirror. Its
+purpose is type-safe construction and snapshot-testable inspection, not
+transformation. The pure / value-position path goes
 TS → L1 → L2 → `OpaqueExpr`; the effect / statement-position path
 goes TS → L1 statement → IR1 SSA → `PropResult[]` (no L2 statement
 vocabulary by design).
@@ -97,7 +100,7 @@ intentional; see `workstreams/ts2pant-imperative-ir.md`
 | `Let(name, value, body)` | substituted out at emit (Pant has no `let`) | `const x = e1; ... return e2` const-binding inlining |
 | `Each(binder, src, [g], proj)` | `ast.each` | for-of Shape A/B, `?.` lowering, `.filter`/`.map` chain |
 | `Comb(combiner, init?, each)` | `ast.eachComb` (with optional binop fold for non-identity init when the combiner is a fold; min/max take no init) | `.reduce` (fold combiners), source-iterating min/max comprehensions |
-| `CombTyped(combiner, binder, binderType, guards, proj)` | `ast.eachComb` over a typed binder (no source) | μ-search (`min over each j: T, guards \| j`) — the canonical lowering target produced by `recognizeAndLowerMuSearch` in `ir1-lower.ts` |
+| `CombTyped(combiner, binder, binderType, guards, proj)` | `ast.eachComb` over a typed binder (no source) | μ-search (`min over each j: T, guards \| j`) — mirrored from L1 `comb-typed` after TS-AST → L1 recognition |
 | `Forall(binder, type, guard?, body)` | `ast.forall` | `all x: T \| ...` quantifier emission |
 | `Exists(binder, type, guard?, body)` | `ast.exists` | `some x: T \| ...` quantifier emission |
 
@@ -721,14 +724,11 @@ every union/intersection constituent to satisfy `BooleanLike`).
 via `buildL1IncrementStep` in `ir1-build.ts`. The five `+1` spellings
 (`i++`, `++i`, `i += 1`, `i = i + 1`, `i = 1 + i`) produce *byte-
 identical* L1 output — that's the M2 architectural promise. μ-search
-recognition and lowering live entirely in the L1/L2 layers
-(`isCanonicalMuSearchForm` and `lowerL1MuSearch` in `ir1-lower.ts`,
-producing an L2 `comb-typed` expression that emits to OpaqueExpr in
-`ir-emit.ts`). The TS-AST `recognizeLetWhilePair` is purely
-structural (consumes the let + while pair) — `translate-body.ts`
-carries no Pantagruel-target awareness for μ-search. Three
-additional `+1` spellings now translate (was just `i++`/`++i`
-pre-M2).
+recognition now fires upstream while building L1: `recognizeLetWhilePair`
+consumes the let + while pair and constructs L1 `comb-typed` through
+`buildL1MuSearchCombTyped`. L1 → L2 then lowers that form mechanically to
+L2 `comb-typed`, which emits to `OpaqueExpr` in `ir-emit.ts`. Three
+additional `+1` spellings now translate (was just `i++`/`++i` pre-M2).
 
 **M3 (imperative-ir-iteration-mutation): landed.** Historical M3 note:
 branched mutation and iteration flow through Layer 1. The build pass
@@ -956,23 +956,44 @@ exercises computed `obj[expr]` that would surface the rejection
 path. **0%.** Rejection is exercised by the deliberate-reject
 `getByDynamicKey` fixture function plus unit tests.
 
-**Layering principle.** This is the architectural commitment that
-M2 ratifies and the M2 cleanup completes:
+**Layering principle.** L1 is the canonical form after all source-level
+recognition. L2 is L1's expression subset packaged as a typed
+`OpaqueExpr` mirror; its purpose is type-safe construction and
+snapshot-testable inspection, not transformation. All recognition and
+target-shape decisions happen at TS-AST → L1; L1 → L2 is a mechanical
+1:1 lowering.
 
-1. **L1** (`ir1.ts`, `ir1-build.ts`) — canonicalized TypeScript
-   syntax. No Pantagruel-target awareness.
-2. **L1 → L2 lowering** (`ir1-lower.ts`) — the *only* layer that
-   knows Pantagruel-target patterns (μ-search recognition,
-   counter-binder substitution).
-3. **L2** (`ir.ts`) — Pantagruel-shaped expression IR. Includes
-   `comb-typed` for source-less typed comprehension (μ-search's
-   target).
+1. **TS-AST → L1** (`ir1-build.ts`, `ir1-build-body.ts`) — source-level
+   recognition, canonicalization, and target-shape decisions. This is
+   where recognizers build canonical L1 forms such as `is-nullish`,
+   `each`, or `comb-typed`.
+2. **L1 → L2 lowering** (`ir1-lower.ts`) — mechanical expression mapping
+   from canonical L1 forms to their L2 mirrors or to structural L2 shapes
+   for already-canonical L1 forms.
+3. **L2** (`ir.ts`) — typed mirror of the `OpaqueExpr` construction
+   surface. Includes `comb-typed`, `forall`, and `exists` because L1 has
+   matching canonical forms; excludes transformation-only machinery.
 4. **L2 → OpaqueExpr** (`ir-emit.ts`) — mechanical emission.
 5. **`translate-body.ts`** — TS-AST orchestrator. Wires lowering
    contexts; no target-language semantics.
 
-Deviations from this principle should be flagged in review and
-either justified explicitly or refactored.
+### L1 → L2 Recognition Discipline
+
+L1 → L2 carries no recognition decisions. New recognizers must fire at
+TS-AST → L1 and produce canonical L1 forms (for example, `comb-typed`).
+Review will reject any L1 → L2 transformation that is not a 1:1
+mechanical mapping or a structural rewrite of an already-canonical L1
+form.
+
+### L2 Is Not A Substitution Target
+
+L2 is not a substitution target. Any transformation that wants to rewrite
+an L2 expression is asking the wrong question: either build the canonical
+L1 form upstream and substitute there using the IR1 substitution primitive
+from `workstreams/ts2pant-ir1-substitution.md`, or lower to `OpaqueExpr`
+and use `ast.substituteBinder`. The typed-mirror principle has no
+exceptions; substitution-disguised-as-construction is still a
+transformation.
 
 **Closed vocabularies on both layers.** Every `IR1Expr` is one of
 the canonical L1 constructors, and every `IRExpr` is one of the ten

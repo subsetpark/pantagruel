@@ -248,6 +248,12 @@ Read that file before extending the IR or touching SSA-bearing code:
   (indirect-memory SSA), Knobe-Sarkar 1998 (Array SSA), and IRSC. ts2pant
   diverges from IRSC's variable SSA to location SSA — see the IR doc for the
   rationale.
+- **IRSC divergence.** IRSC's separation between FRSC (TS-shape) and IRSC
+  (SSA-pure) serves a verification-soundness purpose because IRSC has a
+  downstream consumer: the refinement-type checker. ts2pant has no
+  L2-reading verifier; the FRSC/IRSC-style separation here is for type
+  safety and inspectability only. L2 is a typed mirror of `OpaqueExpr`, not a
+  transformation IR.
 - **Imperative IR Workstream.** M1–M5 of the workstream landed; the doc
   records what each milestone delivered and the locked decisions.
 - **General-loop SSA Workstream.** L1 (loop SSA contract), L2 (bounded
