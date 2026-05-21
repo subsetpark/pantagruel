@@ -81,6 +81,127 @@ restructuring; no expression-path cleanup is a prerequisite.
   remain IRSC-faithful: location SSA (not local-variable SSA), opaque versions
   allocated centrally, rule-oriented frames.
 
+- **foundational mathematics — Tarski–Knaster fixed-point theorem** —
+  https://doi.org/10.2140/pjm.1955.5.285
+  Tarski, "A Lattice-Theoretical Fixpoint Theorem and Its Applications"
+  (Pacific J. Math. 1955). The unifying theory behind L4's recursive
+  Pant rule, the Cousot & Cousot fixed-point loop semantics already
+  cited, abstract interpretation domains, inductive/coinductive
+  predicates, Hoare loop invariants, Liquid Types refinement variables,
+  Skolemization, and bisimulation. Every monotone operator on a
+  complete lattice has a least and a greatest fixed point; the
+  "uninterpreted invariant predicate" is the unknown in such an
+  equation, the constraint system is the operator, the SMT solver
+  computes the fixpoint. Knowing this is what makes the
+  `define-fun-rec` / CHC / k-induction / BMC trade-off legible —
+  they are four solvers over the same constraint system, differing
+  in automation strength and predictability rather than in the
+  underlying problem they solve. See
+  `tools/ts2pant/AGENTS.md` § "Foundational Pattern: Uninterpreted
+  Predicates and Implicit Definition" for the broader specialisation
+  landscape and the Pantagruel-specific manifestation.
+
+- **SMT spec — SMT-LIB recursive function definitions (`define-fun-rec`)** —
+  https://smt-lib.org/papers/smt-lib-reference-v2.6-r2021-05-12.pdf
+  Reynolds, Iosif, Tinelli et al.'s mechanism (SMT-LIB 2.5+) for declaring
+  recursive functions in SMT. Z3 supports it with limited automation
+  (built-in induction on select shapes only); CVC5 has stronger automation
+  via DRAT-based induction. Direct encoding target for L4's "recursive
+  Pant rule definitions": `loop-result s = cond guard(s) => loop-result
+  (body s), true => s.` becomes one `define-fun-rec` in the lowered SMT.
+
+- **technique — Constrained Horn Clauses (CHC) for program verification** —
+  https://doi.org/10.1007/978-3-319-23534-9_2
+  Bjørner, Gurfinkel, McMillan, Rybalchenko, "Horn Clause Solvers for
+  Program Verification" (Fields of Logic and Computation II, 2015). Encode
+  each loop as a recursive predicate over (pre-state, post-state) tuples;
+  dispatch to Spacer (built into Z3) or Eldarica. The dominant modern
+  technique for unbounded loop verification; substantially stronger
+  automation than direct `define-fun-rec`. L4's encoding alternative if
+  recursive-function dispatch proves too weak in practice — relevant
+  to L4's open question on naming vs. inlining the recursive rule.
+
+- **algorithm — k-induction** —
+  https://doi.org/10.1007/3-540-40922-X_8
+  Sheeran, Singh, Stålmarck, "Checking Safety Properties Using Induction
+  and a SAT-Solver" (FMCAD 2000). Prove `P` holds at the initial state
+  and that `P` at depths `n..n+k-1` implies `P` at `n+k`. Practical
+  fallback when induction over the recursive function fails; routinely
+  shipped behind a depth flag. Donaldson et al. (2011) refined the
+  technique for software model checking. Relevant to L4's documented-
+  timeout policy — k-induction at modest k is a reasonable acceptance
+  criterion for fixtures whose direct recursive encoding times out.
+
+- **algorithm — Bounded Model Checking (BMC)** —
+  https://doi.org/10.1007/3-540-49059-0_14
+  Clarke, Biere, Cimatti, Zhu, "Symbolic Model Checking without BDDs"
+  (TACAS 1999). Unroll the loop N times and check the unrolled program.
+  Pantagruel's existing `--bound N` flag is the natural surface. Directly
+  relevant to L4's open question "unfold N iterations into a `cond` chain
+  before falling back to a recursive tail rule" — that *is* BMC, named.
+  The SMT-performance vs spec-readability trade-off the open question
+  identifies is the same trade-off BMC literature has spent twenty years
+  on; existing benchmarks (SV-COMP) are the empirical baseline.
+
+- **spec-language design — Dafny invariant + variant** —
+  https://doi.org/10.1007/978-3-642-17511-4_20
+  Leino, "Dafny: An Automatic Program Verifier for Functional Correctness"
+  (LPAR 2010). Reviewable spec-source surface for `while`: explicit
+  `invariant I` clauses for partial correctness, `decreases V` for
+  termination. Relevant to L4's operator-action requirement that "the
+  recursive-rule output style is reviewable" — Dafny's convention is
+  the closest peer to what a hand-written Pant spec for an unbounded
+  loop would look like. External reviewer familiar with Pant should be
+  given a Dafny-equivalent fixture to compare side-by-side.
+
+- **spec-language design — Why3** —
+  https://doi.org/10.1007/978-3-642-37036-6_8
+  Filliâtre & Paskevich, "Why3 — Where Programs Meet Provers" (ESOP
+  2013). Same invariant/variant shape as Dafny; dispatches to multiple
+  SMT back-ends including Z3 via `define-fun-rec`. Useful as a
+  cross-check for L4's encoding tractability — a Why3+Z3 baseline on a
+  candidate fixture indicates whether `pant --check` should reasonably
+  succeed on the same shape, or whether the recursive encoding alone
+  is insufficient and a CHC backend is needed.
+
+- **refinement system — Liquid Haskell refinement reflection** —
+  https://doi.org/10.1145/3158141
+  Vazou, Tondwalkar, Choudhury, Vekris, Newton, Jhala, "Refinement
+  Reflection: Complete Verification with SMT" (POPL 2018). The closest
+  existing system to what L4 will do: make recursive function bodies
+  visible to the SMT solver as logical relations rather than
+  uninterpreted symbols. The reflection mechanics (definitional
+  axioms, β-normalisation in the SMT theory, PLE / proof-by-logical-
+  evaluation) inform what Pant's recursive-rule lowering must surface
+  to remain decidable. Co-authored by Jhala, also an IRSC author —
+  the L4 encoding shape inherits both the IRSC SSA discipline and
+  the refinement-reflection unfolding discipline.
+
+- **technique — tail-recursive desugaring of `while`** —
+  https://doi.org/10.1016/0304-3975(75)90017-1
+  Plotkin, "Call-by-name, call-by-value and the λ-calculus" (TCS 1975).
+  The standard CPS-style desugar: `while P body` ≡ `let rec loop s =
+  if P(s) then loop(body(s)) else s`. Mechanical bridge from
+  `IR1Stmt.while` to a recursive Pant rule definition; cited
+  explicitly so L4's build pass doesn't reinvent the bridge. Composes
+  with the SSA loop-header join from Cytron — the recursion's
+  argument carries the location-SSA versions, and the call site
+  is the back-edge.
+
+- **recursion scheme — hylomorphism** —
+  https://maartenfokkinga.github.io/utwente/mmf91m.pdf
+  Meijer, Fokkinga, Paterson, "Functional Programming with Bananas,
+  Lenses, Envelopes and Barbed Wire" (FPCA 1991). Already cited in
+  `tools/ts2pant/docs/transformations.md` § "Structured Iteration"
+  for the foreach handling (Shape A / Shape B / .reduce). L4 inherits the same paper for the
+  unfold-then-fold framing — bounded loops are catamorphisms (fold
+  side; cataphorism = the `foldr` already in use), unbounded loops
+  are hylomorphisms (`unfold` via the loop guard, fold via state
+  combination). Restating the connection at L4 keeps the
+  recursion-scheme vocabulary consistent across the bounded and
+  unbounded fork; useful when L6 unifies the summary path with the
+  general-loop path.
+
 ## Milestones
 
 ### Milestone 1: general-loop-contract
@@ -179,9 +300,9 @@ L2's quantification path.
 ### Milestone 3: bounded-while-lowering
 
 **Status**: Landed in `ts2pant-bounded-while-lowering`. See
-`tools/ts2pant/AGENTS.md` section `### Bounded while loop lowering (L3)` for
-the accepted ascending and descending counter-desugar surface, peephole, and
-rejection contract.
+`tools/ts2pant/docs/intermediate-representation.md` section
+`## Bounded while loop lowering (L3)` for the accepted ascending and
+descending counter-desugar surface, peephole, and rejection contract.
 
 **Definition of Done**:
 The mutating-body build path emits IR1 SSA for bounded `while` loops — those
@@ -394,7 +515,7 @@ machinery to be feature-complete before they touch it.
 
 | Question | Notes | Resolve By |
 |----------|-------|------------|
-| L2/L3 merge | Resolved: keep separate. The recognizer surface is structurally different between `for` and `let`-then-`while` shapes; the statement-list peephole is the only new build-pass machinery and does not merge cleanly with `buildL1ForCounterMutation`. See `tools/ts2pant/AGENTS.md` section `### Bounded while loop lowering (L3)`. | Resolved in L3 |
+| L2/L3 merge | Resolved: keep separate. The recognizer surface is structurally different between `for` and `let`-then-`while` shapes; the statement-list peephole is the only new build-pass machinery and does not merge cleanly with `buildL1ForCounterMutation`. See `tools/ts2pant/docs/intermediate-representation.md` section `## Bounded while loop lowering (L3)`. | Resolved in L3 |
 
 Other design questions are scoped to specific milestones and resolved during
 their respective `write-gameplan` invocations. See each milestone's
