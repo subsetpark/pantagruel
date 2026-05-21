@@ -18,13 +18,13 @@ import {
   ir1Var,
 } from "./ir1.js";
 import { lowerL1Expr } from "./ir1-lower.js";
-import { substituteIR1ExprSubtree } from "./ir1-substitute.js";
 import type { LoopSsaBuildOptions } from "./ir1-ssa-loops.js";
 import {
   type IR1SsaBodyLowerResult,
   ir1SsaBodyLowerSuccess,
   ir1SsaBodyLowerUnsupported,
 } from "./ir1-ssa-lower.js";
+import { substituteIR1ExprSubtree } from "./ir1-substitute.js";
 import { registerName } from "./name-registry.js";
 import type { OpaqueExpr, OpaqueTypeExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
