@@ -7,6 +7,7 @@ import {
   ir1Assign,
   ir1Binop,
   ir1Block,
+  ir1CondStmt,
   ir1LitNat,
   ir1Member,
   ir1SsaInitialVersion,
@@ -167,5 +168,86 @@ describe("formatIR1SsaProgram", () => {
 
     assert.equal(program.writes.length, 4);
     t.assert.snapshot(formatIR1SsaProgram(program));
+  });
+
+  // Regression: an if/else mutation merge where both arms read and write
+  // the same property. The printer used to label the else-branch's RHS
+  // read against the then-branch's write version (a flat
+  // `currentVersions` snapshot leaked across the branch boundary). The
+  // fix walks `program.reads` in lockstep with `program.writes`, so
+  // each branch's RHS read resolves to the pre-cond initial. The
+  // observable contract: the else-write's RHS labels v1 (the initial),
+  // not v2 (the then-write).
+  it("renders else-branch RHS reads against the pre-cond initial", (t) => {
+    const balance = ir1Member(ir1Var("a"), "Account_balance");
+    const stmt = ir1CondStmt(
+      [
+        [
+          ir1Binop("gt", ir1Var("amount"), ir1LitNat(0)),
+          ir1Assign(balance, ir1Binop("add", balance, ir1Var("amount"))),
+        ],
+      ],
+      ir1Assign(balance, ir1Binop("sub", balance, ir1LitNat(1))),
+    );
+    const program = buildScalarSsaProgram(stmt);
+    const output = formatIR1SsaProgram(program);
+    assert.equal(program.writes.length, 2);
+    assert.equal(program.joins.length, 1);
+    // Then-write reads the initial.
+    assert.match(output, /v2 = \(v1 \+ amount\)\./u);
+    // Else-write also reads the initial — v1, not v2.
+    assert.match(output, /v3 = \(v1 - 1\)\./u);
+    // Phi joins the two candidate post-states.
+    assert.match(output, /v4 = phi v2 v3\./u);
+    t.assert.snapshot(output);
+  });
+
+  // Regression: a cond-stmt that touches a location whose RHS has no
+  // read (e.g., `a.status = 1`) — the falsy arm's contribution to the
+  // join is the location's initial version, but no `program.reads`
+  // entry references it (the body never read `a.status`). The printer
+  // used to label the initial at first reference inside the phi line,
+  // producing an undeclared `v_N = ... > initial` reference. The fix
+  // walks joins + loop-header joins for additional initial sources.
+  it("emits initial lines for join-referenced initials without reads", (t) => {
+    const status = ir1Member(ir1Var("a"), "Account_status");
+    const stmt = ir1CondStmt(
+      [[ir1Binop("gt", ir1Var("amount"), ir1LitNat(0)),
+        ir1Assign(status, ir1LitNat(1))]],
+      null,
+    );
+    const program = buildScalarSsaProgram(stmt);
+    const output = formatIR1SsaProgram(program);
+    // The initial must be emitted before it's referenced in the phi.
+    const lines = output.split("\n");
+    const initialIdx = lines.findIndex((l) =>
+      /^v\d+ = Account_status a\.\s+> initial$/u.test(l),
+    );
+    const phiIdx = lines.findIndex((l) => /^v\d+ = phi /u.test(l));
+    assert.notEqual(initialIdx, -1, "initial line was not emitted");
+    assert.notEqual(phiIdx, -1, "phi line was not emitted");
+    assert.ok(
+      initialIdx < phiIdx,
+      `initial line (${initialIdx}) must precede phi line (${phiIdx})`,
+    );
+    // Every v-label referenced on the RHS of any line must be defined
+    // on the LHS of a preceding line.
+    const defined = new Set<string>();
+    for (const line of lines) {
+      const lhsMatch = line.match(/^(v\d+) = /u);
+      const rhsMatches = line.match(/(?<![A-Za-z_])v\d+/gu) ?? [];
+      if (lhsMatch) {
+        const lhs = lhsMatch[1]!;
+        for (const ref of rhsMatches) {
+          if (ref === lhs) continue;
+          assert.ok(
+            defined.has(ref),
+            `${ref} referenced before definition in line: ${line}`,
+          );
+        }
+        defined.add(lhs);
+      }
+    }
+    t.assert.snapshot(output);
   });
 });
