@@ -472,11 +472,10 @@ describe("ir1-build-functor-lift", () => {
 
   it("Member operand falls through when projection isn't a Member chain", () => {
     // Projection is a method call that doesn't structurally surface
-    // the Member operand at the L1 level. The L1 rewriter
-    // (`substituteL1Subtree`) needs the operand visible as a Var/
-    // Member subterm of the projection; when the lift can't
-    // structurally connect the operand to the comprehension binder it
-    // falls through.
+    // the Member operand at the L1 level. The shared IR1 substitution
+    // primitive needs the operand visible as a Var/Member subterm of
+    // the projection; when the lift can't structurally connect the
+    // operand to the comprehension binder it falls through.
     const { candidate, ctx } = setup(
       `interface User {
          readonly name: string;

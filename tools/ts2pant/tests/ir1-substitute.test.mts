@@ -140,6 +140,18 @@ describe("ir1-substitute", () => {
       );
     });
 
+    it("substituteIR1ExprSubtree preserves root identity when unchanged", () => {
+      const expr = ir1Member(ir1Member(ir1Var("u"), "profile"), "name");
+      assert.equal(
+        substituteIR1ExprSubtree(
+          expr,
+          ir1Member(ir1Var("v"), "profile"),
+          ir1Var("p"),
+        ),
+        expr,
+      );
+    });
+
     it("substituteIR1StmtSubtree threads block-scope let binders", () => {
       const stmt = ir1Block([ir1Let("x", ir1Var("x")), ir1Return(ir1Var("x"))]);
       assert.deepEqual(

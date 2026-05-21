@@ -58,6 +58,7 @@ import {
   ir1While,
 } from "./ir1.js";
 import { lowerL1Expr } from "./ir1-lower.js";
+import { substituteIR1ExprSubtree } from "./ir1-substitute.js";
 import {
   getOperandDeclaredType,
   type NullishTranslate,
@@ -1651,10 +1652,9 @@ function allocateLiftBinder(ctx: L1BuildContext, hint: string): string {
 //    (substitution wouldn't fire) or, worse, with the operand still
 //    referenced free of the binder. The recognizer enforces this by
 //    gating on the explicit `changed` flag returned by
-//    `substituteL1Subtree` for Member operands; for Var operands, the
-//    TS-AST walk (`expressionReferencesNames`) is the precondition and
-//    post-lowering `ast.substituteBinder` is the substitution
-//    primitive.
+//    `substituteIR1ExprSubtree`'s reference-preserving result for
+//    Member operands; for Var operands, the TS-AST walk
+//    (`expressionReferencesNames`) is an early precondition.
 //
 // 3. **Referential transparency at the operand position.** The
 //    comprehension evaluates `e` once at its source position
@@ -1665,245 +1665,16 @@ function allocateLiftBinder(ctx: L1BuildContext, hint: string): string {
 //    lifted nullable types under TypeScript don't admit side effects
 //    in the comparison position the recognizer matches.
 //
-// 4. **Closed form on Var/Member.** `structuralEqualL1` only compares
-//    `Var` and `Member` shapes. The pure-L1 builder
+// 4. **Closed form on Var/Member.** `substituteIR1ExprSubtree` supports
+//    `Var` and `Member` needles. The pure-L1 builder
 //    `buildL1MemberOrVarForLift` produces only those shapes, so
 //    operand and projection trees are exhaustively comparable along
-//    the Member-operand path. For other compound forms the walker
-//    descends but the structural-match leaves never fire for a
-//    Member needle, falling out via `changed: false`.
+//    the Member-operand path.
 //
 // Future changes to this rewrite should re-verify these four
 // invariants. Adding new comparable forms (e.g., to support `App` as
-// an eligible operand) requires extending both `structuralEqualL1`
-// and the `buildL1MemberOrVarForLift` accept-set together; partial
-// extension breaks invariant 4.
-
-/**
- * Structural equality on L1 expressions, scoped to the shapes the
- * functor-lift recognizer compares: `Var` (name + primed) and `Member`
- * (name + receiver, recursing). Other forms compare false — the
- * recognizer's eligibility check builds operand and projection through
- * a pure-L1 path that produces only Var/Member trees, so any other
- * form is a structural mismatch by construction. Parens and other
- * source-level wrappers are normalized away by L1 build before this
- * function ever sees the trees.
- *
- * See the comment block above for the underlying term-rewriting
- * reference and the four soundness invariants this comparator
- * supports.
- */
-function structuralEqualL1(a: IR1Expr, b: IR1Expr): boolean {
-  if (a === b) {
-    return true;
-  }
-  if (a.kind !== b.kind) {
-    return false;
-  }
-  if (a.kind === "var" && b.kind === "var") {
-    return a.name === b.name && (a.primed ?? false) === (b.primed ?? false);
-  }
-  if (a.kind === "member" && b.kind === "member") {
-    return a.name === b.name && structuralEqualL1(a.receiver, b.receiver);
-  }
-  return false;
-}
-
-/**
- * Result of an `substituteL1Subtree` walk. `changed` reports whether
- * any subtree structurally matched `needle` and was replaced. The
- * Member-operand functor-lift path uses this to detect "operand not
- * structurally referenced" — a reference-equality check on the
- * returned tree is unreliable because the walker reconstructs every
- * compound node it traverses (e.g., `ir1Member(rec, name)`) regardless
- * of whether the recursive sub-call substituted. A projection like
- * `v.next.name` against operand `u.next` would otherwise rebuild a
- * fresh top-level Member tree even though no substitution fired,
- * letting projections that don't reference the operand silently emit
- * a comprehension body with a free variable.
- */
-interface L1SubstResult {
-  result: IR1Expr;
-  changed: boolean;
-}
-
-/**
- * Replace every subtree of `root` whose L1 form structurally equals
- * `needle` with `replacement`. The walker recurses through every L1
- * form. Returns the rewritten tree plus a `changed` flag indicating
- * whether substitution actually fired anywhere along the walk.
- *
- * This is the term-rewriting primitive that backs the functor-lift's
- * `body[e := $n]` substitution — see the comment block above
- * `structuralEqualL1` for the algorithm reference (Baader & Nipkow ch. 2)
- * and the four soundness invariants it depends on.
- *
- * Used by the functor-lift recognizer: the operand's L1 form (a `Var`
- * or `Member` chain) is replaced by a fresh `Var(binder)` inside the
- * projection's L1 form, so the comprehension body references the
- * binder rather than the operand. The projection must be in pure L1
- * for substitution to fire (no equivalent OpaqueExpr-level
- * substitution exists for arbitrary subtrees).
- */
-function substituteL1Subtree(
-  root: IR1Expr,
-  needle: IR1Expr,
-  replacement: IR1Expr,
-): L1SubstResult {
-  if (structuralEqualL1(root, needle)) {
-    return { result: replacement, changed: true };
-  }
-  switch (root.kind) {
-    case "var":
-    case "lit":
-      return { result: root, changed: false };
-    case "binop": {
-      const lhs = substituteL1Subtree(root.lhs, needle, replacement);
-      const rhs = substituteL1Subtree(root.rhs, needle, replacement);
-      const changed = lhs.changed || rhs.changed;
-      return changed
-        ? { result: ir1Binop(root.op, lhs.result, rhs.result), changed: true }
-        : { result: root, changed: false };
-    }
-    case "unop": {
-      const arg = substituteL1Subtree(root.arg, needle, replacement);
-      return arg.changed
-        ? { result: ir1Unop(root.op, arg.result), changed: true }
-        : { result: root, changed: false };
-    }
-    case "app": {
-      const callee = substituteL1Subtree(root.callee, needle, replacement);
-      const args = root.args.map((a) =>
-        substituteL1Subtree(a, needle, replacement),
-      );
-      const changed = callee.changed || args.some((a) => a.changed);
-      return changed
-        ? {
-            result: {
-              kind: "app",
-              callee: callee.result,
-              args: args.map((a) => a.result),
-            },
-            changed: true,
-          }
-        : { result: root, changed: false };
-    }
-    case "member": {
-      const recv = substituteL1Subtree(root.receiver, needle, replacement);
-      return recv.changed
-        ? { result: ir1Member(recv.result, root.name), changed: true }
-        : { result: root, changed: false };
-    }
-    case "cond": {
-      const armsRewritten = root.arms.map(([g, v]) => {
-        const gr = substituteL1Subtree(g, needle, replacement);
-        const vr = substituteL1Subtree(v, needle, replacement);
-        return { gr, vr } as const;
-      });
-      const otherwise = substituteL1Subtree(
-        root.otherwise,
-        needle,
-        replacement,
-      );
-      const changed =
-        otherwise.changed ||
-        armsRewritten.some(({ gr, vr }) => gr.changed || vr.changed);
-      if (!changed) {
-        return { result: root, changed: false };
-      }
-      const newArms = armsRewritten.map(
-        ({ gr, vr }) => [gr.result, vr.result] as const,
-      );
-      return {
-        result: ir1Cond(
-          newArms as [
-            readonly [IR1Expr, IR1Expr],
-            ...ReadonlyArray<readonly [IR1Expr, IR1Expr]>,
-          ],
-          otherwise.result,
-        ),
-        changed: true,
-      };
-    }
-    case "is-nullish": {
-      const operand = substituteL1Subtree(root.operand, needle, replacement);
-      return operand.changed
-        ? { result: ir1IsNullish(operand.result), changed: true }
-        : { result: root, changed: false };
-    }
-    case "each": {
-      // Don't recurse into the comprehension binder's scope when the
-      // binder shadows a Var-needle: substitution stops at the binding
-      // boundary. Member-needles aren't shadowed by a binder name, so
-      // `each` always recurses on `proj` for those.
-      const src = substituteL1Subtree(root.src, needle, replacement);
-      const shadowed =
-        needle.kind === "var" && !needle.primed && needle.name === root.binder;
-      const guards = shadowed
-        ? root.guards.map((g) => ({ result: g, changed: false }))
-        : root.guards.map((g) => substituteL1Subtree(g, needle, replacement));
-      const proj = shadowed
-        ? { result: root.proj, changed: false }
-        : substituteL1Subtree(root.proj, needle, replacement);
-      const changed =
-        src.changed || guards.some((g) => g.changed) || proj.changed;
-      if (!changed) {
-        return { result: root, changed: false };
-      }
-      return {
-        result: {
-          kind: "each",
-          binder: root.binder,
-          src: src.result,
-          guards: guards.map((g) => g.result),
-          proj: proj.result,
-        },
-        changed: true,
-      };
-    }
-    case "map-read": {
-      const recv = substituteL1Subtree(root.receiver, needle, replacement);
-      const key = substituteL1Subtree(root.key, needle, replacement);
-      const changed = recv.changed || key.changed;
-      return changed
-        ? {
-            result: ir1MapRead(
-              root.op,
-              root.ruleName,
-              root.keyPredName,
-              root.ownerType,
-              root.keyType,
-              recv.result,
-              key.result,
-            ),
-            changed: true,
-          }
-        : { result: root, changed: false };
-    }
-    case "set-read": {
-      const recv = substituteL1Subtree(root.receiver, needle, replacement);
-      const elem = substituteL1Subtree(root.elem, needle, replacement);
-      const changed = recv.changed || elem.changed;
-      return changed
-        ? {
-            result: ir1SetRead(
-              root.ruleName,
-              root.ownerType,
-              root.elemType,
-              recv.result,
-              elem.result,
-            ),
-            changed: true,
-          }
-        : { result: root, changed: false };
-    }
-    default: {
-      const _exhaustive: never = root;
-      void _exhaustive;
-      return { result: root, changed: false };
-    }
-  }
-}
+// an eligible operand) requires extending the shared IR1 substitution
+// primitive and the `buildL1MemberOrVarForLift` accept-set together.
 
 /**
  * Build a pure-L1 representation of `node` for the functor-lift
@@ -2037,12 +1808,11 @@ function buildL1MemberOrVarForLift(
  * Substitution strategy. Both Var and Member operands route the
  * projection through `buildSubExpr` (Var) or
  * `buildL1MemberOrVarForLift` (Member); the result is fully native
- * L1 since M6 deleted the L2-embedding adapter. The L1 rewriter
- * `substituteL1Subtree` then replaces operand-shape subtrees with
+ * L1 since M6 deleted the L2-embedding adapter. The shared IR1
+ * substitution primitive then replaces operand-shape subtrees with
  * the comprehension binder via structural matching. A Member-operand
  * projection that isn't pure L1 (e.g., a method call wrapping the
- * operand) falls
- * through.
+ * operand) falls through.
  */
 export function tryRecognizeFunctorLift(
   cand: FunctorLiftCandidate,
@@ -2179,10 +1949,10 @@ export function tryRecognizeFunctorLift(
 
   // Build the projection as native L1. Both Var and Member operands
   // route through pure-L1 builders so the projection is structurally
-  // visible at the L1 level. The L1 rewriter (`substituteL1Subtree`)
-  // then replaces operand-shape subtrees with the comprehension
-  // binder. A projection shape that the pure-L1 builder cannot
-  // represent (e.g., a call expression wrapping the operand) rejects.
+  // visible at the L1 level. The shared IR1 substitution primitive
+  // then replaces operand-shape subtrees with the comprehension binder.
+  // A projection shape that the pure-L1 builder cannot represent
+  // (e.g., a call expression wrapping the operand) rejects.
   let projectionL1: IR1Expr;
   if (operandL1.kind === "var") {
     const sub = buildSubExpr(projection, ctx);
@@ -2201,24 +1971,25 @@ export function tryRecognizeFunctorLift(
   const binderName = allocateLiftBinder(ctx, "n");
   const binderVar = ir1Var(binderName);
   // The substitution needle: for a Var operand, the operand's L1 form
-  // is `Var(operandPantName)`. The structural matcher in
-  // `substituteL1Subtree` matches `Var` by name, so it catches
-  // operand references throughout the projection.
+  // is `Var(operandPantName)`. The shared structural matcher matches
+  // `Var` by name, so it catches operand references throughout the
+  // projection.
   const needle: IR1Expr = operandL1;
 
-  // L1 rewriter: replace operand-shape subtrees with `Var(binder)`.
-  const { result: substitutedL1, changed: substitutionFired } =
-    substituteL1Subtree(projectionL1, needle, binderVar);
+  // IR1 rewriter: replace operand-shape subtrees with `Var(binder)`.
+  const substitutedL1 = substituteIR1ExprSubtree(
+    projectionL1,
+    needle,
+    binderVar,
+  );
+  const substitutionFired = substitutedL1 !== projectionL1;
 
   // The L1 rewriter is the only substitution mechanism post-M6:
   // `ast.substituteBinder` lives at the OpaqueExpr layer and cannot
   // target Member subtrees; carrying it for Var operands would split
-  // the substitution discipline by operand kind. The explicit
-  // `changed` flag is required because the walker's unconditional
-  // parent reconstruction (`ir1Member(rec, name)` and siblings)
-  // breaks reference equality even when no substitution fired,
-  // letting projections that don't reference the operand silently
-  // emit a comprehension body with a free variable.
+  // the substitution discipline by operand kind. The primitive returns
+  // the original root when no substitution fires, so reference identity
+  // is the reachability check.
   if (!substitutionFired) {
     return restore();
   }
