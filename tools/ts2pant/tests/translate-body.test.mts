@@ -2478,3 +2478,17 @@ describe("Set mutation (Stage A: interface-field .add / .delete / .clear)", () =
     }
   });
 });
+
+describe("fixed-point while lowering", () => {
+  it.skip("desugars let-then-while pair that fails L3 bounded recognition to ir1While", () => {
+    // PENDING Patch 4: route failed L3 let-while recognition into ir1While.
+  });
+
+  it.skip("builds ir1While for a bare while loop with non-literal guard", () => {
+    // PENDING Patch 4: build ir1While for supported bare while statements.
+  });
+
+  it.skip("rejects while (true) with no-observable-termination diagnostic", () => {
+    // PENDING Patch 4: reject literal-true while guards in the build pass.
+  });
+});
