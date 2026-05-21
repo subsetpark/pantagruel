@@ -7,10 +7,13 @@ import {
   type IR1Stmt,
   ir1Binop,
   ir1Block,
+  ir1Break,
+  ir1Continue,
   ir1For,
   ir1Let,
   ir1LitNat,
   ir1Return,
+  ir1Throw,
   ir1Var,
   ir1While,
 } from "./ir1.js";
@@ -4346,6 +4349,7 @@ function lowerSupportedSsaMutatingBlock(
     initialPropertyValues: ctx.initialPropertyValues,
     strategy: ctx.strategy,
     declarations: ctx.declarations,
+    returnRuleName: ctx.helperNameBase,
     ...(ctx.supply.synthCell === undefined
       ? {}
       : { synthCell: ctx.supply.synthCell }),
@@ -4412,7 +4416,7 @@ function buildSupportedSsaMutatingBody(
   setCanonicalize(state, applyConst);
   for (let i = 0; i < body.statements.length; i++) {
     const stmt = body.statements[i]!;
-    if (isGuardStatement(stmt, checker)) {
+    if (isGuardStatement(stmt, checker) && !isInsideLoopBody(stmt)) {
       continue;
     }
     if (
@@ -4559,6 +4563,12 @@ function buildSupportedSsaStatement(
         "labeled loop early-exit is M7 future work; remove the label or restructure",
     };
   }
+  if (ts.isBreakStatement(stmt)) {
+    return ir1Break();
+  }
+  if (ts.isContinueStatement(stmt)) {
+    return ir1Continue();
+  }
   if (ts.isLabeledStatement(stmt)) {
     return buildSupportedSsaStatement(stmt.statement, ctx);
   }
@@ -4585,6 +4595,13 @@ function buildSupportedSsaStatement(
       return expr;
     }
     return ir1Return(expr);
+  }
+  if (ts.isThrowStatement(stmt)) {
+    const expr = buildL1SubExpr(stmt.expression, ctx);
+    if (isUnsupported(expr)) {
+      return expr;
+    }
+    return ir1Throw(expr);
   }
   if (ts.isForOfStatement(stmt)) {
     return buildL1ForOfMutation(stmt, ctx);
@@ -4628,7 +4645,10 @@ function buildL1BareWhileMutation(
   ctx: BuildBodyCtx & { paramNames: Map<string, string> },
 ): IR1Stmt | { unsupported: string } {
   const expr = unwrapExpression(stmt.expression);
-  if (expr.kind === ts.SyntaxKind.TrueKeyword) {
+  if (
+    expr.kind === ts.SyntaxKind.TrueKeyword &&
+    !containsReachableLoopExit(stmt.statement)
+  ) {
     return {
       unsupported:
         "while loop has no observable termination condition (literal-true guard); rewrite with a guard that depends on mutated state",
@@ -4745,7 +4765,10 @@ function buildL1LetWhileFixedPointMutation(
     return initExpr;
   }
   const expr = unwrapExpression(whileStmt.expression);
-  if (expr.kind === ts.SyntaxKind.TrueKeyword) {
+  if (
+    expr.kind === ts.SyntaxKind.TrueKeyword &&
+    !containsReachableLoopExit(whileStmt.statement)
+  ) {
     return {
       unsupported:
         "while loop has no observable termination condition (literal-true guard); rewrite with a guard that depends on mutated state",
@@ -4767,6 +4790,31 @@ function buildL1LetWhileFixedPointMutation(
     return bodyStmt;
   }
   return ir1Block([ir1Let(decl.name.text, initExpr), ir1While(cond, bodyStmt)]);
+}
+
+function containsReachableLoopExit(stmt: ts.Statement): boolean {
+  let found = false;
+  function visit(node: ts.Node): void {
+    if (found) {
+      return;
+    }
+    if (node !== stmt && (ts.isFunctionLike(node) || ts.isClassLike(node))) {
+      return;
+    }
+    if (
+      node !== stmt &&
+      (ts.isForStatement(node) || ts.isWhileStatement(node))
+    ) {
+      return;
+    }
+    if (ts.isBreakStatement(node) || ts.isReturnStatement(node)) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(stmt);
+  return found;
 }
 
 function buildL1LetWhileMutation(

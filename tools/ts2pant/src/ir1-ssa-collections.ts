@@ -422,6 +422,8 @@ export function isCollectionSsaL1Body(stmt: IR1Stmt): boolean {
     case "for":
     case "while":
     case "return":
+    case "break":
+    case "continue":
     case "throw":
     case "let":
     case "expr-stmt":
@@ -474,6 +476,8 @@ export function lowerCollectionSsaL1Body(
     case "for":
     case "while":
     case "return":
+    case "break":
+    case "continue":
     case "throw":
     case "let":
     case "expr-stmt":
@@ -761,6 +765,8 @@ function lowerCollectionSsaStmtToVersions(
     case "for":
     case "while":
     case "return":
+    case "break":
+    case "continue":
     case "throw":
     case "let":
     case "expr-stmt":

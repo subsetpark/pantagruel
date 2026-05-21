@@ -272,6 +272,9 @@ function freeVarsStmtWithScope(stmt: IR1Stmt, bound: Set<string>): Set<string> {
       return stmt.expr === null
         ? new Set()
         : without(freeVarsIR1Expr(stmt.expr), bound);
+    case "break":
+    case "continue":
+      return new Set();
     case "throw":
       return without(freeVarsIR1Expr(stmt.expr), bound);
     case "expr-stmt":
@@ -760,6 +763,9 @@ function substituteStmt(
               scopedBinders,
             ),
       );
+    case "break":
+    case "continue":
+      return stmt;
     case "throw":
       return ir1Throw(
         substituteExprRespectingScope(

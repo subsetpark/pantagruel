@@ -90,6 +90,7 @@ export interface SsaBodyLowerOptions extends LowerBodyCtx {
   synthCell?: SynthCell;
   strategy?: NumericStrategy;
   declarations?: readonly PantDeclaration[];
+  returnRuleName?: string;
 }
 
 export function lowerL1BodyToSsaProps(
@@ -124,6 +125,30 @@ function lowerL1BodyToSsaResult(
     return lowerFixedPointL1BodyToSsaResult(stmt, options);
   }
   if (stmt.kind === "for") {
+    if (hasBreakOrReturn(stmt.body)) {
+      const whileStmt: IR1Stmt = {
+        kind: "while",
+        cond: stmt.cond ?? {
+          kind: "lit",
+          value: { kind: "bool", value: true },
+        },
+        body:
+          stmt.step === null
+            ? stmt.body
+            : { kind: "block", stmts: [stmt.body, stmt.step] },
+      };
+      const stmts =
+        stmt.init === null
+          ? ([whileStmt] as [IR1Stmt])
+          : ([stmt.init, whileStmt] as [IR1Stmt, IR1Stmt]);
+      return lowerFixedPointL1BodyToSsaResult(
+        {
+          kind: "block",
+          stmts,
+        },
+        options,
+      );
+    }
     return lowerCounterLoopL1BodyToSsaResult(stmt, options);
   }
   if (
@@ -158,6 +183,38 @@ function lowerL1BodyToSsaResult(
   );
 }
 
+function hasBreakOrReturn(stmt: IR1Stmt): boolean {
+  switch (stmt.kind) {
+    case "break":
+    case "return":
+      return true;
+    case "block":
+      return stmt.stmts.some(hasBreakOrReturn);
+    case "cond-stmt":
+      return (
+        stmt.arms.some(([, body]) => hasBreakOrReturn(body)) ||
+        (stmt.otherwise !== null && hasBreakOrReturn(stmt.otherwise))
+      );
+    case "while":
+    case "for":
+    case "foreach":
+      return false;
+    case "let":
+    case "assign":
+    case "continue":
+    case "throw":
+    case "expr-stmt":
+    case "map-effect":
+    case "set-effect":
+      return false;
+    default: {
+      const _exhaustive: never = stmt;
+      void _exhaustive;
+      return false;
+    }
+  }
+}
+
 function lowerFixedPointL1BodyToSsaResult(
   stmt:
     | Extract<IR1Stmt, { kind: "while" }>
@@ -177,6 +234,9 @@ function lowerFixedPointL1BodyToSsaResult(
       ...(options.declarations === undefined
         ? {}
         : { declarations: options.declarations }),
+      ...(options.returnRuleName === undefined
+        ? {}
+        : { returnRuleName: options.returnRuleName }),
     });
   } catch (err) {
     return ir1SsaBodyLowerUnsupported(

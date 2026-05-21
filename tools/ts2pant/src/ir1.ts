@@ -301,6 +301,10 @@ export type IR1Stmt =
   | { kind: "while"; cond: IR1Expr; body: IR1Stmt }
   /** Return statement. Optional expression for void-returning bodies. */
   | { kind: "return"; expr: IR1Expr | null }
+  /** Unlabelled loop break. Labeled forms reject in the TS build pass. */
+  | { kind: "break" }
+  /** Unlabelled loop continue. Labeled forms reject in the TS build pass. */
+  | { kind: "continue" }
   /**
    * Throw statement. Used as guard pattern (if-throw assertions).
    * Introduced in M3.
@@ -1348,6 +1352,10 @@ export const ir1Return = (expr: IR1Expr | null): IR1Stmt => ({
   kind: "return",
   expr,
 });
+
+export const ir1Break = (): IR1Stmt => ({ kind: "break" });
+
+export const ir1Continue = (): IR1Stmt => ({ kind: "continue" });
 
 // --------------------------------------------------------------------------
 // Statement constructors for forms beyond M1's active set.
