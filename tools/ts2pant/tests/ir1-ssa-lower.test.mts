@@ -397,16 +397,102 @@ describe("ir1-ssa-lower", () => {
   });
 
   describe("returnValue emission", () => {
-    it.skip("null returnValue emits no extra equation", () => {
-      // PENDING Patch 2.
+    it("null returnValue emits no extra equation", () => {
+      const result = appendFramesForUnmodifiedRules(
+        ir1SsaBodyLowerSuccess({
+          propositions: [{ kind: "raw", text: "body" }],
+          modifiedRules: ["Account_balance"],
+          returnValue: null,
+        }),
+        [
+          {
+            kind: "rule",
+            name: "Account_balance",
+            params: [{ name: "account", type: "Account" }],
+            returnType: "Nat",
+          },
+        ],
+      );
+
+      assert.deepEqual(result.propositions, [{ kind: "raw", text: "body" }]);
     });
 
-    it.skip("non-null returnValue emits function-level equation", () => {
-      // PENDING Patch 2.
+    it("non-null returnValue emits function-level equation", () => {
+      const ast = getAst();
+      const result = appendFramesForUnmodifiedRules(
+        ir1SsaBodyLowerSuccess({
+          returnValue: {
+            ruleName: "withdraw",
+            expression: ast.var("new-balance"),
+          },
+        }),
+        [
+          {
+            kind: "rule",
+            name: "withdraw",
+            params: [{ name: "account", type: "Account" }],
+            returnType: "Nat",
+          },
+        ],
+      );
+
+      assert.equal(result.propositions.length, 1);
+      const equation = result.propositions[0];
+      assert.equal(equation?.kind, "equation");
+      if (equation?.kind !== "equation") {
+        assert.fail("expected return-value equation");
+      }
+      assert.equal(ast.strExpr(equation.lhs), "withdraw account");
+      assert.equal(ast.strExpr(equation.rhs), "new-balance");
     });
 
-    it.skip("equation ordering is rule-modifying then return-value then frames", () => {
-      // PENDING Patch 2.
+    it("equation ordering is rule-modifying then return-value then frames", () => {
+      const ast = getAst();
+      const result = appendFramesForUnmodifiedRules(
+        ir1SsaBodyLowerSuccess({
+          propositions: [
+            {
+              kind: "equation",
+              quantifiers: [],
+              lhs: ast.app(ast.primed("Account_balance"), [ast.var("account")]),
+              rhs: ast.litNat(7),
+            },
+          ],
+          modifiedRules: ["Account_balance"],
+          returnValue: {
+            ruleName: "withdraw",
+            expression: ast.var("new-balance"),
+          },
+        }),
+        [
+          {
+            kind: "rule",
+            name: "Account_balance",
+            params: [{ name: "account", type: "Account" }],
+            returnType: "Nat",
+          },
+          {
+            kind: "rule",
+            name: "withdraw",
+            params: [{ name: "account", type: "Account" }],
+            returnType: "Nat",
+          },
+          {
+            kind: "rule",
+            name: "Account_limit",
+            params: [{ name: "account", type: "Account" }],
+            returnType: "Nat",
+          },
+        ],
+      );
+
+      assert.deepEqual(
+        result.propositions.map((prop) => {
+          assert.equal(prop.kind, "equation");
+          return ast.strExpr(prop.lhs);
+        }),
+        ["Account_balance' account", "withdraw account", "Account_limit' account"],
+      );
     });
   });
 });
