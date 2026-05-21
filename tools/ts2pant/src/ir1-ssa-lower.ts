@@ -13,7 +13,7 @@ import type {
   ScalarSsaFinalPropertyEntry,
   ScalarSsaLowerResult,
 } from "./ir1-ssa-scalars.js";
-import type { OpaqueParam } from "./pant-ast.js";
+import type { OpaqueExpr, OpaqueParam } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
 import type { PantDeclaration, PropResult } from "./types.js";
 
@@ -28,13 +28,20 @@ export interface IR1SsaBodyLowerResult {
   modifiedRules: IR1SsaRuleName[];
   diagnostics: UnsupportedDiagnostic[];
   programs: IR1SsaProgram[];
+  returnValue: IR1SsaReturnValueEmission | null;
   finalProperties?: IR1SsaFinalProperty[];
+}
+
+export interface IR1SsaReturnValueEmission {
+  ruleName: IR1SsaRuleName;
+  expression: OpaqueExpr;
 }
 
 export interface IR1SsaBodyLowerSuccessOptions {
   propositions?: Iterable<PropResult>;
   modifiedRules?: Iterable<IR1SsaRuleName>;
   programs?: Iterable<IR1SsaProgram>;
+  returnValue?: IR1SsaReturnValueEmission | null;
   finalProperties?: Iterable<IR1SsaFinalProperty>;
 }
 
@@ -43,6 +50,7 @@ export interface IR1SsaBodyLowerUnsupportedOptions {
   programs?: Iterable<IR1SsaProgram>;
   propositions?: Iterable<PropResult>;
   modifiedRules?: Iterable<IR1SsaRuleName>;
+  returnValue?: IR1SsaReturnValueEmission | null;
   finalProperties?: Iterable<IR1SsaFinalProperty>;
 }
 
@@ -54,6 +62,7 @@ export function ir1SsaBodyLowerSuccess(
     modifiedRules: dedupeRules(options.modifiedRules),
     diagnostics: [],
     programs: [...(options.programs ?? [])],
+    returnValue: options.returnValue ?? null,
     ...(options.finalProperties === undefined
       ? {}
       : { finalProperties: [...options.finalProperties] }),
@@ -76,6 +85,9 @@ export function ir1SsaBodyLowerUnsupported(
       ? {}
       : { modifiedRules: options.modifiedRules }),
     ...(options.programs === undefined ? {} : { programs: options.programs }),
+    ...(options.returnValue === undefined
+      ? {}
+      : { returnValue: options.returnValue }),
     ...(options.finalProperties === undefined
       ? {}
       : { finalProperties: options.finalProperties }),
@@ -90,6 +102,7 @@ export function combineIR1SsaBodyLowerResults(
   const diagnostics: UnsupportedDiagnostic[] = [];
   const programs: IR1SsaProgram[] = [];
   const finalProperties: IR1SsaFinalProperty[] = [];
+  let returnValue: IR1SsaReturnValueEmission | null = null;
   let hasFinalProperties = false;
 
   for (const result of results) {
@@ -98,6 +111,16 @@ export function combineIR1SsaBodyLowerResults(
     programs.push(...result.programs);
     for (const rule of result.modifiedRules) {
       modifiedRules.add(rule);
+    }
+    if (result.returnValue !== null) {
+      if (returnValue !== null) {
+        diagnostics.push({
+          kind: "unsupported",
+          reason: "multiple return-value emissions in one SSA body",
+        });
+      } else {
+        returnValue = result.returnValue;
+      }
     }
     if (result.finalProperties !== undefined) {
       hasFinalProperties = true;
@@ -110,6 +133,7 @@ export function combineIR1SsaBodyLowerResults(
     modifiedRules: [...modifiedRules],
     diagnostics,
     programs,
+    returnValue,
     ...(hasFinalProperties ? { finalProperties } : {}),
   };
 }
@@ -123,21 +147,49 @@ export function appendFramesForUnmodifiedRules(
   }
 
   const ast = getAst();
-  const frames: PropResult[] = [];
+  const extraEquations: PropResult[] = [];
   const modifiedRules = new Set(result.modifiedRules);
   const framedRules = new Set<IR1SsaRuleName>();
+
+  if (result.returnValue !== null) {
+    const returnDecl = declarations.find(
+      (decl) =>
+        decl.kind === "rule" && decl.name === result.returnValue?.ruleName,
+    );
+    const actionDecl = declarations.find(
+      (decl) =>
+        decl.kind === "action" &&
+        decl.label === actionLabelForRuleName(result.returnValue!.ruleName),
+    );
+    const params =
+      returnDecl?.kind === "rule"
+        ? returnDecl.params
+        : actionDecl?.kind === "action"
+          ? actionDecl.params
+          : [];
+    extraEquations.push({
+      kind: "equation",
+      quantifiers: [] as OpaqueParam[],
+      lhs: ast.app(
+        ast.primed(result.returnValue.ruleName),
+        params.map((p) => ast.var(p.name)),
+      ),
+      rhs: result.returnValue.expression,
+    });
+  }
 
   for (const decl of declarations) {
     if (
       decl.kind !== "rule" ||
       modifiedRules.has(decl.name) ||
+      result.returnValue?.ruleName === decl.name ||
       framedRules.has(decl.name)
     ) {
       continue;
     }
     framedRules.add(decl.name);
     const paramArgs = decl.params.map((p) => ast.var(p.name));
-    frames.push({
+    extraEquations.push({
       kind: "equation",
       quantifiers: [] as OpaqueParam[],
       lhs: ast.app(ast.primed(decl.name), paramArgs),
@@ -145,13 +197,13 @@ export function appendFramesForUnmodifiedRules(
     });
   }
 
-  if (frames.length === 0) {
+  if (extraEquations.length === 0) {
     return result;
   }
 
   return {
     ...result,
-    propositions: [...result.propositions, ...frames],
+    propositions: [...result.propositions, ...extraEquations],
   };
 }
 
@@ -163,6 +215,7 @@ export function scalarSsaBodyLowerResult(
     modifiedRules: result.modifiedRules,
     diagnostics: result.diagnostics,
     programs: [result.program],
+    returnValue: null,
     finalProperties: result.finalProperties,
   });
 }
@@ -175,6 +228,7 @@ export function collectionSsaBodyLowerResult(
     modifiedRules: result.modifiedRules,
     diagnostics: result.diagnostics,
     programs: [result.program],
+    returnValue: null,
     finalProperties: result.finalProperties,
   });
 }
@@ -191,6 +245,7 @@ export function loopSsaBodyLowerResult(
     modifiedRules: result.modifiedRules,
     diagnostics: result.diagnostics,
     programs: [result.program],
+    returnValue: null,
   });
 }
 
@@ -202,6 +257,7 @@ function ir1SsaBodyLowerResult(
     modifiedRules: dedupeRules(options.modifiedRules),
     diagnostics: [...(options.diagnostics ?? [])],
     programs: [...(options.programs ?? [])],
+    returnValue: options.returnValue ?? null,
     ...(options.finalProperties === undefined
       ? {}
       : { finalProperties: [...options.finalProperties] }),
@@ -212,4 +268,8 @@ function dedupeRules(
   rules: Iterable<IR1SsaRuleName> | undefined,
 ): IR1SsaRuleName[] {
   return rules === undefined ? [] : [...new Set(rules)];
+}
+
+function actionLabelForRuleName(ruleName: IR1SsaRuleName): string {
+  return ruleName.charAt(0).toUpperCase() + ruleName.slice(1);
 }

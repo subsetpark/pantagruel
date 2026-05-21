@@ -1,4 +1,5 @@
 import type { SourceFile } from "ts-morph";
+import ts from "typescript";
 import { extractFunctionAnnotationsAndOverrides } from "./annotations.js";
 import { loadBuiltinDepModule } from "./builtins.js";
 import {
@@ -9,22 +10,70 @@ import {
 } from "./extract.js";
 import { loadAst, loadParser, rewriteAnnotation } from "./pant-wasm.js";
 import { translateBody } from "./translate-body.js";
-import { translateSignature } from "./translate-signature.js";
+import { findFunction, translateSignature } from "./translate-signature.js";
 import {
   cellEmitSynth,
   fieldRuleName,
+  isUnsupportedUnknown,
+  mapTsType,
   type NumericStrategy,
   newSynthCell,
   toPantTermName,
   translateTypes,
+  UNSUPPORTED_UNKNOWN_REASON,
 } from "./translate-types.js";
-import type { PantDocument } from "./types.js";
+import type { PantDeclaration, PantDocument, PantRule } from "./types.js";
 
 export interface PipelineOptions {
   sourceFile: SourceFile;
   functionName: string;
   strategy: NumericStrategy;
   noBody?: boolean;
+}
+
+function mutatingReturnValueDeclarations(
+  sourceFile: SourceFile,
+  functionName: string,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  synthCell: ReturnType<typeof newSynthCell>,
+  sigDecl: PantDeclaration,
+): PantDeclaration[] {
+  if (sigDecl.kind !== "action") {
+    return [];
+  }
+
+  const { node } = findFunction(sourceFile, functionName);
+  const sig = checker.getSignatureFromDeclaration(node);
+  if (!sig) {
+    return [];
+  }
+
+  const tsReturnType = sig.getReturnType();
+  if (tsReturnType.flags & ts.TypeFlags.Void) {
+    return [];
+  }
+
+  const baseName = toPantTermName(
+    functionName.includes(".") ? functionName.split(".", 2)[1]! : functionName,
+  );
+  const returnType = mapTsType(tsReturnType, checker, strategy, synthCell);
+  if (isUnsupportedUnknown(returnType)) {
+    return [
+      {
+        kind: "unsupported",
+        reason: `${baseName} return: ${UNSUPPORTED_UNKNOWN_REASON}`,
+      },
+    ];
+  }
+
+  const returnDecl: PantRule = {
+    kind: "rule",
+    name: baseName,
+    params: sigDecl.params,
+    returnType,
+  };
+  return [returnDecl];
 }
 
 /**
@@ -68,6 +117,17 @@ export async function buildPantDocument(
     strategy,
     synthCell,
     overrides,
+  );
+  const returnValueDecls = mutatingReturnValueDeclarations(
+    sourceFile,
+    functionName,
+    checker,
+    strategy,
+    synthCell,
+    sigDecl,
+  );
+  const returnValueRuleUnavailable = returnValueDecls.some(
+    (decl) => decl.kind === "unsupported",
   );
 
   // Extract and translate types (type-derived param names adapt to registry).
@@ -137,6 +197,7 @@ export async function buildPantDocument(
     ...constDecls,
     ...fnDecls,
     sigDecl,
+    ...returnValueDecls,
   ];
 
   // Module names are SHOUTING_SNAKE_CASE — same convention as the
@@ -159,7 +220,7 @@ export async function buildPantDocument(
   };
 
   // Body translation
-  if (!noBody) {
+  if (!noBody && !returnValueRuleUnavailable) {
     const bodyProps = translateBody({
       sourceFile,
       functionName,

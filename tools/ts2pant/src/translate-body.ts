@@ -4077,6 +4077,35 @@ function lowerSupportedSsaMutatingStatements(
     declarations: readonly PantDeclaration[];
   },
 ): IR1SsaBodyLowerResult {
+  const tailReturnValue = extractTailReturnValue(stmts, ctx.checker);
+  if (tailReturnValue !== null) {
+    const prefix = lowerSupportedSsaMutatingBlock(
+      tailReturnValue.prefixStmts,
+      ctx,
+    );
+    if (prefix.diagnostics.length > 0) {
+      return prefix;
+    }
+    const returnExpr = translateBodyExpr(
+      tailReturnValue.expression,
+      ctx.checker,
+      ctx.strategy,
+      ctx.paramNames,
+      ctx.state,
+      ctx.supply,
+    );
+    if (isBodyUnsupported(returnExpr)) {
+      return ir1SsaBodyLowerUnsupported(returnExpr.unsupported);
+    }
+    return {
+      ...prefix,
+      returnValue: {
+        ruleName: ctx.helperNameBase,
+        expression: applyOpaqueAliases(bodyExpr(returnExpr), ctx.supply),
+      },
+    };
+  }
+
   const firstEarlyExit = stmts.findIndex(
     (stmt) => detectEarlyExit(stmt) !== null,
   );
@@ -4217,6 +4246,53 @@ function lowerSupportedSsaMutatingStatements(
   });
 }
 
+function extractTailReturnValue(
+  stmts: readonly ts.Statement[],
+  checker: ts.TypeChecker,
+): { expression: ts.Expression; prefixStmts: readonly ts.Statement[] } | null {
+  const relevant = stmts.filter((stmt) => !isGuardStatement(stmt, checker));
+  const last = relevant[relevant.length - 1];
+  if (
+    last === undefined ||
+    !ts.isReturnStatement(last) ||
+    last.expression === undefined
+  ) {
+    return null;
+  }
+  const prefixStmts = relevant.slice(0, -1);
+  if (prefixStmts.some((stmt) => containsEarlyExitStatement(stmt))) {
+    return null;
+  }
+  return { expression: last.expression, prefixStmts };
+}
+
+function containsEarlyExitStatement(node: ts.Node): boolean {
+  let found = false;
+  function visit(current: ts.Node): void {
+    if (found) {
+      return;
+    }
+    if (ts.isFunctionLike(current) && current !== node) {
+      return;
+    }
+    if (ts.isClassDeclaration(current) || ts.isClassExpression(current)) {
+      return;
+    }
+    if (
+      ts.isReturnStatement(current) ||
+      ts.isBreakStatement(current) ||
+      ts.isContinueStatement(current) ||
+      ts.isThrowStatement(current)
+    ) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(current, visit);
+  }
+  visit(node);
+  return found;
+}
+
 function lowerSupportedSsaMutatingBlock(
   stmts: readonly ts.Statement[],
   ctx: {
@@ -4258,7 +4334,10 @@ function lowerSupportedSsaMutatingBlock(
 }
 
 function hasDirectNonFinalEmission(result: IR1SsaBodyLowerResult): boolean {
-  return result.propositions.length !== (result.finalProperties?.length ?? 0);
+  return (
+    result.returnValue !== null ||
+    result.propositions.length !== (result.finalProperties?.length ?? 0)
+  );
 }
 
 function finalPropertyParts(
