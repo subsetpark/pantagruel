@@ -196,4 +196,32 @@ describe("ir1-ssa-counter-loop", () => {
       /step must be a canonical \+1 increment/u,
     );
   });
+
+  it.skip("recognizes descending counter loop shape (`>` + `-1` step)", () => {
+    // PENDING Patch 2: implement descending counter-loop recognition.
+  });
+
+  it.skip("attaches counter - bound termination metric for desc loops", () => {
+    // PENDING Patch 2: implement descending counter-loop metrics.
+  });
+
+  it.skip("emits desc over-each accumulator fold equation", () => {
+    // PENDING Patch 2: implement descending accumulator-fold lowering.
+  });
+
+  it.skip("emits desc cond simple-assign equation", () => {
+    // PENDING Patch 2: implement descending simple-assign lowering.
+  });
+
+  it.skip("rejects asc cmp with -1 step as mixed-direction", () => {
+    // PENDING Patch 2: implement mixed-direction counter-loop rejection.
+  });
+
+  it.skip("rejects desc shape with non-literal bound", () => {
+    // PENDING Patch 2: implement descending bound literal validation.
+  });
+
+  it.skip("accepts non-literal init for desc shape", () => {
+    // PENDING Patch 2: implement descending init validation.
+  });
 });

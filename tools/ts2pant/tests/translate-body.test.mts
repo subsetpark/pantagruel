@@ -268,6 +268,22 @@ describe("unsupported patterns", () => {
     assert.equal(props[0]?.kind, "unsupported");
   });
 
+  it.skip("desugars let-then-while ascending counter into ir1For", () => {
+    // PENDING Patch 3: implement let-then-while ascending counter desugar.
+  });
+
+  it.skip("desugars let-then-while descending counter into ir1For", () => {
+    // PENDING Patch 3: implement let-then-while descending counter desugar.
+  });
+
+  it.skip("falls through to let-rejection on non-matching let-then-while pair", () => {
+    // PENDING Patch 3: implement non-matching let-then-while fallthrough coverage.
+  });
+
+  it.skip("rejects bare while loop with L4 fixed-point pointer", () => {
+    // PENDING Patch 3: implement bare while L4 fixed-point diagnostic.
+  });
+
   it("unwraps AsExpression at the body translation entry", () => {
     // The fixture-side `asNumber(x: number)` snapshots `as-number x =
     // x.` whether `unwrapExpression` strips the `as number` cast or
