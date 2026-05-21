@@ -10,6 +10,7 @@ import {
   ir1For,
   ir1Let,
   ir1LitNat,
+  ir1Return,
   ir1Var,
   ir1While,
 } from "./ir1.js";
@@ -4293,6 +4294,24 @@ function containsEarlyExitStatement(node: ts.Node): boolean {
   return found;
 }
 
+function isInsideLoopBody(node: ts.Node): boolean {
+  let current: ts.Node | undefined = node.parent;
+  while (current !== undefined) {
+    if (
+      ts.isForStatement(current) ||
+      ts.isWhileStatement(current) ||
+      ts.isDoStatement(current)
+    ) {
+      return true;
+    }
+    if (ts.isFunctionLike(current)) {
+      return false;
+    }
+    current = current.parent;
+  }
+  return false;
+}
+
 function lowerSupportedSsaMutatingBlock(
   stmts: readonly ts.Statement[],
   ctx: {
@@ -4396,7 +4415,11 @@ function buildSupportedSsaMutatingBody(
     if (isGuardStatement(stmt, checker)) {
       continue;
     }
-    if (ts.isReturnStatement(stmt) && !stmt.expression) {
+    if (
+      ts.isReturnStatement(stmt) &&
+      !stmt.expression &&
+      !isInsideLoopBody(stmt)
+    ) {
       continue;
     }
     if (
@@ -4527,6 +4550,18 @@ function buildSupportedSsaStatement(
     applyConst: (e: OpaqueExpr) => OpaqueExpr;
   },
 ): IR1Stmt | { unsupported: string } {
+  if (
+    (ts.isBreakStatement(stmt) || ts.isContinueStatement(stmt)) &&
+    stmt.label !== undefined
+  ) {
+    return {
+      unsupported:
+        "labeled loop early-exit is M7 future work; remove the label or restructure",
+    };
+  }
+  if (ts.isLabeledStatement(stmt)) {
+    return buildSupportedSsaStatement(stmt.statement, ctx);
+  }
   if (ts.isBlock(stmt)) {
     const body = buildSupportedSsaMutatingBody(
       stmt,
@@ -4540,6 +4575,16 @@ function buildSupportedSsaStatement(
   }
   if (ts.isIfStatement(stmt)) {
     return buildL1IfMutation(stmt, ctx);
+  }
+  if (ts.isReturnStatement(stmt)) {
+    if (stmt.expression === undefined) {
+      return ir1Return(null);
+    }
+    const expr = buildL1SubExpr(stmt.expression, ctx);
+    if (isUnsupported(expr)) {
+      return expr;
+    }
+    return ir1Return(expr);
   }
   if (ts.isForOfStatement(stmt)) {
     return buildL1ForOfMutation(stmt, ctx);
