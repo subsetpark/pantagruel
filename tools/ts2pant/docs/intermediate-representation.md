@@ -260,11 +260,13 @@ vocabulary in `src/ir1.ts`. The new exported names are:
 
 - Types: `IR1SsaLoopHeaderJoin`, `IR1SsaLoopBody`,
   `IR1SsaTerminationMetric`, `IR1SsaBreakHandle`,
-  `IR1SsaContinueHandle`.
+  `IR1SsaContinueHandle`, `IR1SsaReturnHandle`,
+  `IR1SsaThrowHandle`.
 - Constructor helpers: `ir1SsaOpenLoopHeader`,
   `ir1SsaCloseLoopHeader`, `ir1SsaLoopBody`,
   `ir1SsaTerminationMetric`, `ir1SsaBreakHandle`,
-  `ir1SsaContinueHandle`.
+  `ir1SsaContinueHandle`, `ir1SsaReturnHandle`,
+  `ir1SsaThrowHandle`, `ir1SsaReturnValueLocation`.
 
 Loop-header joins use a Cytron-style two-pass protocol. Builders call
 `ir1SsaOpenLoopHeader` before emitting the loop body, producing a header
@@ -282,11 +284,15 @@ downstream lowering will produce recursive Pant rule definitions. This
 milestone defines the vocabulary only and does not implement either
 lowering path.
 
-Break and continue handles are version snapshots at early-exit sites.
-Later milestones will merge break snapshots at the post-loop join and
-continue snapshots into the next iteration's header. The handle
-constructors reuse the existing version object and validate that the
-snapshot version is location-compatible.
+Break, continue, return, and throw handles are version snapshots at
+early-exit sites. Break snapshots merge at the post-loop join, continue
+snapshots feed the next iteration's header, return snapshots feed the
+function return-value continuation, and throw snapshots become
+iteration-precondition guards. The handle constructors reuse the existing
+version object and validate that the snapshot version is
+location-compatible. Return values use a synthesized per-function
+`return-value` location so return handles keep the same per-location shape
+as break and continue handles.
 
 These helpers establish the contract surface for general-loop SSA and
 enforce structural choices like closed loop bodies, location-compatible
@@ -551,6 +557,49 @@ documented timeout rationale explaining why direct recursive-function solving
 is currently acceptable for that loop shape. A fixture timeout is a solver
 automation limitation, not permission to change the lowering to bounded
 unrolling in this milestone.
+
+## Loop early-exit semantics (L5)
+
+L5 consumes the L1 handle lists for loop-internal `break`, `continue`,
+`return` (bare and value), and `throw`. The lowering keeps the L4
+recursive-rule shape for fixed-point loops and the L2/L3 quantified shape
+for continue-only bounded loops; early exits are represented as
+continuation snapshots rather than reconstructed from source positions.
+
+Handle consumption is fixed by handle kind:
+
+- `break` snapshots synthesize a post-loop `cond` over the captured
+  location versions. For fixed-point loops, the recursive helper from
+  § "Fixed-point while loop lowering (L4)" returns the break snapshot when
+  the break guard fires; otherwise it follows the ordinary recursive step.
+- `continue` snapshots thread into the loop-header phi's loop-back input.
+  In the L2/L3 quantified route this is the "skip this iteration" case:
+  the projection uses the previous accumulator value under the continue
+  guard and the ordinary body value otherwise.
+- `return` snapshots feed a function-level return-value `cond`. Bare
+  returns carry only the function-exit guard; value returns also write the
+  synthesized `return-value` location before the function-level emission.
+- `throw` snapshots emit as iteration-precondition guards, conjoined with
+  the recursive rule's existing guard. This matches the existing TS
+  `if (bad) throw ...` precondition pattern outside loops; try/catch remains
+  out of scope.
+
+Routing is intentionally conservative. Any bounded counter or bounded while
+loop containing `break` or `return` bumps to the L4 fixed-point route so
+there is one termination-handling path. Continue-only bounded loops stay on
+the L2/L3 quantified route because "skip this iteration" composes with the
+existing over-each/fold shape. Throw is handled in the fixed-point route as
+an iteration precondition.
+
+The L4 literal-true rejection narrows accordingly: `while (true)` still
+rejects when the body has no reachable `break` or `return`, but the common
+event-loop shape `while (true) { ...; if (cond) break; }` now translates
+because the break guard is the observable termination condition.
+
+Labeled `break LABEL` and `continue LABEL` remain future work. They require
+a label table and target-resolution pass that the L5 handle lists do not
+need for unlabeled, innermost-loop exits, so the builder rejects labeled
+forms with the M7 diagnostic.
 
 ## Mutating-body output (no L2 IR)
 

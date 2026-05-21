@@ -258,9 +258,38 @@ Read that file before extending the IR or touching SSA-bearing code:
   records what each milestone delivered and the locked decisions.
 - **General-loop SSA Workstream.** L1 (loop SSA contract), L2 (bounded
   counter `for` lowering), L3 (bounded `let`+`while` desugar covering
-  ascending and descending counters), and L4 (fixed-point unbounded `while`
-  lowering through recursive Pant helpers emitted as `define-fun-rec`) have
+  ascending and descending counters), L4 (fixed-point unbounded `while`
+  lowering through recursive Pant helpers emitted as `define-fun-rec`), and
+  L5 (loop early-exit lowering) have
   landed — see `workstreams/ts2pant-general-loop-ssa.md`.
+
+### General-loop SSA contract surface (L1)
+
+The L1 contract lives in `src/ir1.ts` and is documented in
+`docs/intermediate-representation.md` § "General-loop SSA contract surface
+(L1)". The exported loop SSA surface includes `IR1SsaLoopHeaderJoin`,
+`IR1SsaLoopBody`, `IR1SsaTerminationMetric`, `IR1SsaBreakHandle`,
+`IR1SsaContinueHandle`, `IR1SsaReturnHandle`, `IR1SsaThrowHandle`, and the
+constructor helpers `ir1SsaOpenLoopHeader`, `ir1SsaCloseLoopHeader`,
+`ir1SsaLoopBody`, `ir1SsaTerminationMetric`, `ir1SsaBreakHandle`,
+`ir1SsaContinueHandle`, `ir1SsaReturnHandle`, `ir1SsaThrowHandle`, and
+`ir1SsaReturnValueLocation`.
+
+`IR1SsaLoopBody` carries the loop-header joins, body writes, ordinary joins,
+`breakHandles`, `continueHandles`, `returnHandles`, `throwHandles`, and the
+optional `terminationMetric`. Non-null metrics route to bounded lowering;
+null metrics route to fixed-point lowering.
+
+### Loop early-exit lowering (L5)
+
+Loop-internal early exits use the L1 handle lists. `break` handles are
+consumed by the post-loop `cond`, `continue` handles feed the header phi
+loop-back input, `return` handles feed the function-level return-value
+`cond`, and `throw` handles become iteration-precondition guards conjoined
+with the recursive rule guard. Bounded loops containing `break` or `return`
+bump to fixed-point lowering; continue-only bounded loops stay on the L2/L3
+quantified route. Labeled `break` / `continue` is deferred to M7 and must
+reject with the explicit future-work diagnostic.
 
 ## PR #84 Post-Mortem: Why Standard Algorithms Matter
 
