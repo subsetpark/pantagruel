@@ -905,6 +905,62 @@ back-patches, and early-exit version snapshots. They do not change the
 production builder/lowerer path yet; production builders and lowerers do
 not construct or consume this new vocabulary in this milestone.
 
+### Bounded counter loop lowering (L2)
+
+The bounded counter loop milestone activates the L1 loop SSA vocabulary for
+the canonical TS counter-loop surface implemented in
+`src/ir1-ssa-counter-loop.ts`.
+
+The quantified accumulator-fold path accepts loops of the form
+`for (let COUNTER = INIT_LITERAL; COUNTER CMP BOUND_EXPR; COUNTER++) { BODY }`,
+where:
+
+- `CMP` is `<` or `<=`.
+- `INIT_LITERAL` is a numeric literal.
+- `BOUND_EXPR` is loop-invariant with respect to `COUNTER`.
+- `BODY` is a single Shape B-like accumulator-fold assignment to a property
+  location, optionally guarded by a single counter-dependent `if` without an
+  `else`.
+
+The TS builder may canonicalize equivalent `+1` counter steps before this
+module sees them, but the SSA recognizer only accepts the canonical IR1 step
+`COUNTER = COUNTER + 1`. Non-canonical init, condition, or step shapes remain
+unsupported and should produce diagnostics instead of falling through to an
+incorrect lowering.
+
+SSA construction creates one `IR1SsaLoopHeaderJoin` per mutated location. The
+builder opens each header with `ir1SsaOpenLoopHeader` before classifying the
+body, makes the loop-body write observe the header's `joinVersion`, then
+closes the header with `ir1SsaCloseLoopHeader` after the back-edge write
+version is known. The emitted `IR1SsaLoopBody.terminationMetric` is the
+explicit expression `BOUND_EXPR - COUNTER` with lower bound `0`, encoded with
+`ir1SsaTerminationMetric`.
+
+Accumulator folds lower to one Pant equation per mutated property:
+
+```pant
+acc--p' obj = acc--p obj OUTER_OP
+  (COMB over each i: Nat0, i >= INIT, i CMP_OP BOUND | F(i))
+```
+
+The counter binder is the `over each` binder, the init and bound checks are
+guards, and an optional TS `if (g(COUNTER))` body guard becomes an additional
+over-each guard. Compound assignments use the same Shape B combiner intuition
+as foreach accumulator folds: `+=`/`-=` use `+ over`, `*=`/`/=` use `* over`,
+and boolean `&&=`/`||=` use `and`/`or` over. Simple counter-only assignments
+that do not read their own target location are also accepted by this module;
+they lower to last-iteration-wins `cond` equations rather than over-each
+aggregates.
+
+The recognizer rejects body shapes that cannot be represented by a single
+quantified fold or last-iteration assignment: true recurrences that read the
+target location through the loop-header value, multiple body mutations,
+guarded bodies with `else`, side-effecting or non-counter steps, assignment
+through the counter, unsupported accumulator operators, non-literal init
+expressions, conditions other than `COUNTER < BOUND_EXPR` or
+`COUNTER <= BOUND_EXPR`, and bounds that mention the counter. Recurrences are
+explicitly deferred to L4 fixed-point lowering.
+
 ### Mutating-body output (no L2 IR)
 
 The mutating path emits `PropResult[]` directly:
