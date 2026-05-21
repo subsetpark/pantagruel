@@ -403,6 +403,18 @@ workstream's M2 branch-continuation work without regressing M2 tests. At least
 two break-bearing and two continue-bearing fixtures pass `pant` and (where
 applicable) `pant --check`.
 
+**`while (true) + break` event-loop idiom in scope.** L4 rejects literal-true
+guards with a "no observable termination condition" diagnostic because the
+recursive Pant equation `loop(s) = loop(body(s))` is non-informative under
+SMT verification (infinitely many models, no further constraint). L5 unlocks
+this idiom: when the body contains a reachable `break` (or `throw` / `return`)
+guarded by a state-dependent condition, the early-exit becomes the loop's
+observable termination condition. The fixed-point lowering encodes it as
+`fix (λs. if ¬break(s) then body(s) else s)` (or the continuation-handle
+equivalent — see Open Questions below). At least one of L5's break-bearing
+fixtures must be a `while (true) { ...; if (cond) break; }` shape so the
+diagnostic L4 surfaced for this idiom resolves to a translating fixture in L5.
+
 **Why this is a safe pause point**:
 Loop-shape coverage is feature-complete for this workstream's terminal scope.
 Existing summary-based μ-search and foreach lowering remains unchanged.
