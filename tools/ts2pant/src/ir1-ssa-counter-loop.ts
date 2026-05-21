@@ -68,12 +68,14 @@ interface AccumulatorFoldBody {
   guard: IR1Expr | null;
   combiner: FoldCombiner;
   outerOp: "add" | "sub" | "mul" | "div" | "and" | "or";
+  continueGuards: IR1Expr[];
 }
 
 interface SimpleAssignBody {
   kind: "simple-assign";
   target: Extract<IR1Expr, { kind: "member" }>;
   rhs: IR1Expr;
+  continueGuards: IR1Expr[];
 }
 
 type CounterLoopBody = AccumulatorFoldBody | SimpleAssignBody;
@@ -164,7 +166,11 @@ export function lowerCounterLoopL1Body(
     writes: [write],
     joins: [],
     breakHandles: [],
-    continueHandles: [],
+    continueHandles: body.continueGuards.map(() => ({
+      kind: "ssa-continue-handle",
+      location: targetInfo.location,
+      version: write.version,
+    })),
     returnHandles: [],
     throwHandles: [],
     terminationMetric,
@@ -314,13 +320,29 @@ function classifyCounterLoopBody(
   counterName: string,
 ): CounterLoopBody | { unsupported: string } {
   if (stmt.kind === "block") {
-    if (stmt.stmts.length !== 1) {
+    const continueGuards: IR1Expr[] = [];
+    const rest = stmt.stmts.filter((child) => {
+      const guard = recognizeContinueGuard(child);
+      if (guard === null) {
+        return true;
+      }
+      continueGuards.push(guard);
+      return false;
+    });
+    if (rest.length !== 1) {
       return {
         unsupported:
           "bounded counter loop body must contain exactly one supported mutation",
       };
     }
-    return classifyCounterLoopBody(stmt.stmts[0]!, counterName);
+    const classified = classifyCounterLoopBody(rest[0]!, counterName);
+    if ("unsupported" in classified) {
+      return classified;
+    }
+    return {
+      ...classified,
+      continueGuards: [...classified.continueGuards, ...continueGuards],
+    };
   }
   if (stmt.kind === "cond-stmt") {
     if (
@@ -379,12 +401,18 @@ function classifyCounterLoopBody(
       guard: null,
       combiner: fold.combiner,
       outerOp: fold.outerOp,
+      continueGuards: [],
     };
   }
   if (selfReads > 0) {
     return recurrenceUnsupported();
   }
-  return { kind: "simple-assign", target: stmt.target, rhs: stmt.value };
+  return {
+    kind: "simple-assign",
+    target: stmt.target,
+    rhs: stmt.value,
+    continueGuards: [],
+  };
 }
 
 function buildTargetInfo(
@@ -433,6 +461,16 @@ function emitAccumulatorFold(
       ast.gExpr(lowerWithCounter(body.guard, shape, binderExpr, lowerOpaque)),
     );
   }
+  for (const continueGuard of body.continueGuards) {
+    guards.push(
+      ast.gExpr(
+        ast.unop(
+          ast.opNot(),
+          lowerWithCounter(continueGuard, shape, binderExpr, lowerOpaque),
+        ),
+      ),
+    );
+  }
   const folded = ast.eachComb(
     [ast.param(shape.counterPantBinder, ast.tName("Nat0"))],
     guards,
@@ -458,20 +496,63 @@ function emitSimpleAssign(
   const bound = lowerOpaque(lowerExpr(lowerL1Expr(shape.boundExpr)));
   const lastCounter = lastCounterValue(shape, bound);
   const rhs = lowerWithCounter(body.rhs, shape, lastCounter, lowerOpaque);
+  const continueGuard = lowerContinueGuardAt(
+    body.continueGuards,
+    shape,
+    lastCounter,
+    lowerOpaque,
+  );
   const loopExecutes = ast.binop(
     boundCmpToOpaque(shape.boundCmpOp),
     init,
     bound,
   );
+  const executedRhs =
+    continueGuard === null
+      ? rhs
+      : ast.cond([
+          [continueGuard, target.prior],
+          [ast.litBool(true), rhs],
+        ]);
   return {
     kind: "equation",
     quantifiers: [],
     lhs: target.lhs,
     rhs: ast.cond([
-      [loopExecutes, rhs],
+      [loopExecutes, executedRhs],
       [ast.litBool(true), target.prior],
     ]),
   };
+}
+
+function recognizeContinueGuard(stmt: IR1Stmt): IR1Expr | null {
+  if (stmt.kind === "continue") {
+    return { kind: "lit", value: { kind: "bool", value: true } };
+  }
+  if (
+    stmt.kind === "cond-stmt" &&
+    stmt.arms.length === 1 &&
+    stmt.otherwise === null &&
+    stmt.arms[0]?.[1].kind === "continue"
+  ) {
+    return stmt.arms[0][0];
+  }
+  return null;
+}
+
+function lowerContinueGuardAt(
+  guards: readonly IR1Expr[],
+  shape: CounterLoopShape,
+  counter: OpaqueExpr,
+  lowerOpaque: (e: OpaqueExpr) => OpaqueExpr,
+): OpaqueExpr | null {
+  const ast = getAst();
+  if (guards.length === 0) {
+    return null;
+  }
+  return guards
+    .map((guard) => lowerWithCounter(guard, shape, counter, lowerOpaque))
+    .reduce((lhs, rhs) => ast.binop(ast.opOr(), lhs, rhs));
 }
 
 function lastCounterValue(

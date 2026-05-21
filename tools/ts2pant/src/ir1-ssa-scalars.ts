@@ -321,6 +321,8 @@ export function isScalarSsaL1Body(stmt: IR1Stmt): boolean {
     case "for":
     case "while":
     case "return":
+    case "break":
+    case "continue":
     case "throw":
     case "let":
     case "expr-stmt":
@@ -355,6 +357,8 @@ export function lowerScalarSsaL1Body(
     case "for":
     case "while":
     case "return":
+    case "break":
+    case "continue":
     case "throw":
     case "let":
     case "expr-stmt":
@@ -508,6 +512,8 @@ function lowerScalarSsaStmtToVersions(
     case "for":
     case "while":
     case "return":
+    case "break":
+    case "continue":
     case "throw":
     case "let":
     case "expr-stmt":

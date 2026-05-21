@@ -43,6 +43,7 @@ export interface FixedPointLoopLowerOptions extends LoopSsaBuildOptions {
   invariantTypes?: ReadonlyMap<string, OpaqueTypeExpr | string>;
   declarations?: readonly PantDeclaration[];
   strategy?: NumericStrategy;
+  returnRuleName?: string;
 }
 
 export interface FixedPointLoopShape {
@@ -92,7 +93,8 @@ export function recognizeFixedPointLoopShape(
   if (
     stmt.cond.kind === "lit" &&
     stmt.cond.value.kind === "bool" &&
-    stmt.cond.value.value === true
+    stmt.cond.value.value === true &&
+    !hasReachableBreakOrReturn(stmt.body)
   ) {
     return {
       unsupported:
@@ -142,6 +144,7 @@ export function lowerFixedPointLoopL1Body(
   }
   const guardExpr = substituteLocalLets(shape.guardExpr, shape.localLets);
   const valueExpr = substituteLocalLets(writeBody.value, shape.localLets);
+  const loopExits = collectLoopExits(shape.bodyStmt);
   if (
     containsNonTargetMemberRead(guardExpr, writeBody.target) ||
     containsNonTargetMemberRead(valueExpr, writeBody.target)
@@ -150,7 +153,11 @@ export function lowerFixedPointLoopL1Body(
       "fixed-point while lowering supports guards and updates over the mutated property only",
     );
   }
-  if (!containsTargetMemberRead(guardExpr, writeBody.target)) {
+  if (
+    !containsTargetMemberRead(guardExpr, writeBody.target) &&
+    loopExits.breaks.length === 0 &&
+    loopExits.returns.length === 0
+  ) {
     return ir1SsaBodyLowerUnsupported(
       "fixed-point while guard must depend on the mutated property",
     );
@@ -163,8 +170,16 @@ export function lowerFixedPointLoopL1Body(
     targetInfo.location,
   );
   const header = ir1SsaOpenLoopHeader(targetInfo.location, preheaderVersion);
+  const exitExprs = [
+    ...loopExits.breaks.map((exit) => exit.guard),
+    ...loopExits.continues.map((exit) => exit.guard),
+    ...loopExits.returns.flatMap((exit) =>
+      exit.expr === null ? [exit.guard] : [exit.guard, exit.expr],
+    ),
+    ...loopExits.throws.map((exit) => exit.guard),
+  ];
   const invariantNames = collectLoopInvariantNames(
-    [guardExpr, valueExpr],
+    [guardExpr, valueExpr, ...exitExprs],
     writeBody.target,
   );
   const stateName = allocateFreshStateName(
@@ -186,10 +201,27 @@ export function lowerFixedPointLoopL1Body(
     headerJoins: [header],
     writes: [write],
     joins: [],
-    breakHandles: [],
-    continueHandles: [],
-    returnHandles: [],
-    throwHandles: [],
+    breakHandles: loopExits.breaks.map(() => ({
+      kind: "ssa-break-handle",
+      location: targetInfo.location,
+      version: write.version,
+    })),
+    continueHandles: loopExits.continues.map(() => ({
+      kind: "ssa-continue-handle",
+      location: targetInfo.location,
+      version: write.version,
+    })),
+    returnHandles: loopExits.returns.map(() => ({
+      kind: "ssa-return-handle",
+      location: targetInfo.location,
+      version: write.version,
+    })),
+    throwHandles: loopExits.throws.map((exit) => ({
+      kind: "ssa-throw-handle",
+      location: targetInfo.location,
+      version: write.version,
+      guard: exit.guard,
+    })),
     terminationMetric: null,
   });
 
@@ -218,14 +250,53 @@ export function lowerFixedPointLoopL1Body(
       ),
     ),
   );
-  const helperCallOnEffect = ast.app(ast.var(ruleName), [
-    effect,
+  const lowerExitGuard = (guard: IR1Expr): OpaqueExpr =>
+    lowerOpaque(
+      lowerExpr(
+        lowerL1Expr(
+          substituteIR1ExprSubtree(guard, writeBody.target, stateVar),
+        ),
+      ),
+    );
+  const orOpaque = (guards: OpaqueExpr[]): OpaqueExpr | null =>
+    guards.length === 0
+      ? null
+      : guards.reduce((lhs, rhs) => ast.binop(ast.opOr(), lhs, rhs));
+  const andOpaque = (lhs: OpaqueExpr, rhs: OpaqueExpr): OpaqueExpr =>
+    ast.binop(ast.opAnd(), lhs, rhs);
+  const continueGuard = orOpaque(
+    loopExits.continues.map((exit) => lowerExitGuard(exit.guard)),
+  );
+  const loopBack =
+    continueGuard === null
+      ? effect
+      : ast.cond([
+          [continueGuard, ast.var(stateName)],
+          [ast.litBool(true), effect],
+        ]);
+  const helperCallOnLoopBack = ast.app(ast.var(ruleName), [
+    loopBack,
     ...invariantNames.map((name) => ast.var(name)),
   ]);
-  const helperBody = ast.cond([
-    [loweredGuard, helperCallOnEffect],
-    [ast.litBool(true), ast.var(stateName)],
-  ]);
+  const guardedLoopCondition = loopExits.throws
+    .map((exit) => ast.unop(ast.opNot(), lowerExitGuard(exit.guard)))
+    .reduce((acc, guard) => andOpaque(acc, guard), loweredGuard);
+  const helperArms: [OpaqueExpr, OpaqueExpr][] = [];
+  for (const exit of loopExits.breaks) {
+    helperArms.push([
+      andOpaque(guardedLoopCondition, lowerExitGuard(exit.guard)),
+      effect,
+    ]);
+  }
+  for (const exit of loopExits.returns) {
+    helperArms.push([
+      andOpaque(guardedLoopCondition, lowerExitGuard(exit.guard)),
+      effect,
+    ]);
+  }
+  helperArms.push([guardedLoopCondition, helperCallOnLoopBack]);
+  helperArms.push([ast.litBool(true), ast.var(stateName)]);
+  const helperBody = ast.cond(helperArms);
   const ruleDecl: PropResult = {
     kind: "rule-decl",
     ruleName,
@@ -266,6 +337,23 @@ export function lowerFixedPointLoopL1Body(
     programs: [program],
     propositions: [ruleDecl, callerEquation],
     modifiedRules,
+    ...(options.returnRuleName === undefined ||
+    !loopExits.returns.some((exit) => exit.expr !== null)
+      ? {}
+      : {
+          returnValue: {
+            ruleName: options.returnRuleName,
+            expression: ast.cond([
+              ...loopExits.returns
+                .filter((exit) => exit.expr !== null)
+                .map((exit): [OpaqueExpr, OpaqueExpr] => [
+                  lowerOpaque(lowerExpr(lowerL1Expr(exit.guard))),
+                  lowerOpaque(lowerExpr(lowerL1Expr(exit.expr!))),
+                ]),
+              [ast.litBool(true), callerEquation.rhs],
+            ]),
+          },
+        }),
     finalProperties: [
       {
         location: targetInfo.location,
@@ -276,6 +364,95 @@ export function lowerFixedPointLoopL1Body(
       },
     ],
   });
+}
+
+interface LoopExitInfo {
+  breaks: Array<{ guard: IR1Expr }>;
+  continues: Array<{ guard: IR1Expr }>;
+  returns: Array<{ guard: IR1Expr; expr: IR1Expr | null }>;
+  throws: Array<{ guard: IR1Expr }>;
+}
+
+function collectLoopExits(stmt: IR1Stmt): LoopExitInfo {
+  const exits: LoopExitInfo = {
+    breaks: [],
+    continues: [],
+    returns: [],
+    throws: [],
+  };
+  const trueExpr: IR1Expr = {
+    kind: "lit",
+    value: { kind: "bool", value: true },
+  };
+  const combineGuard = (outer: IR1Expr, inner: IR1Expr): IR1Expr =>
+    isTrueExpr(outer)
+      ? inner
+      : isTrueExpr(inner)
+        ? outer
+        : {
+            kind: "binop",
+            op: "and",
+            lhs: outer,
+            rhs: inner,
+          };
+  const visit = (node: IR1Stmt, guard: IR1Expr): void => {
+    switch (node.kind) {
+      case "block":
+        for (const child of node.stmts) {
+          visit(child, guard);
+        }
+        return;
+      case "cond-stmt":
+        for (const [armGuard, body] of node.arms) {
+          visit(body, combineGuard(guard, armGuard));
+        }
+        if (node.otherwise !== null) {
+          visit(node.otherwise, guard);
+        }
+        return;
+      case "break":
+        exits.breaks.push({ guard });
+        return;
+      case "continue":
+        exits.continues.push({ guard });
+        return;
+      case "return":
+        exits.returns.push({ guard, expr: node.expr });
+        return;
+      case "throw":
+        exits.throws.push({ guard });
+        return;
+      case "while":
+      case "for":
+      case "foreach":
+        return;
+      case "let":
+      case "assign":
+      case "expr-stmt":
+      case "map-effect":
+      case "set-effect":
+        return;
+      default: {
+        const _exhaustive: never = node;
+        void _exhaustive;
+      }
+    }
+  };
+  visit(stmt, trueExpr);
+  return exits;
+}
+
+function hasReachableBreakOrReturn(stmt: IR1Stmt): boolean {
+  const exits = collectLoopExits(stmt);
+  return exits.breaks.length > 0 || exits.returns.length > 0;
+}
+
+function isTrueExpr(expr: IR1Expr): boolean {
+  return (
+    expr.kind === "lit" &&
+    expr.value.kind === "bool" &&
+    expr.value.value === true
+  );
 }
 
 function buildTargetInfo(
@@ -434,6 +611,8 @@ function walkStmt(stmt: IR1Stmt, visit: (stmt: IR1Stmt) => void): void {
     case "assign":
     case "foreach":
     case "return":
+    case "break":
+    case "continue":
     case "throw":
     case "expr-stmt":
     case "map-effect":

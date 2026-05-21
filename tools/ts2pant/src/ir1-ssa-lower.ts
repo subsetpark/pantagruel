@@ -166,16 +166,18 @@ export function appendFramesForUnmodifiedRules(
         ? returnDecl.params
         : actionDecl?.kind === "action"
           ? actionDecl.params
-          : [];
-    extraEquations.push({
-      kind: "equation",
-      quantifiers: [] as OpaqueParam[],
-      lhs: ast.app(
-        ast.primed(result.returnValue.ruleName),
-        params.map((p) => ast.var(p.name)),
-      ),
-      rhs: result.returnValue.expression,
-    });
+          : null;
+    if (params !== null) {
+      extraEquations.push({
+        kind: "equation",
+        quantifiers: [] as OpaqueParam[],
+        lhs: ast.app(
+          ast.primed(result.returnValue.ruleName),
+          params.map((p) => ast.var(p.name)),
+        ),
+        rhs: result.returnValue.expression,
+      });
+    }
   }
 
   for (const decl of declarations) {

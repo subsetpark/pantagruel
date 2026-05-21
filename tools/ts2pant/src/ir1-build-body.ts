@@ -35,13 +35,17 @@ import {
   type IR1Stmt,
   ir1Assign,
   ir1Block,
+  ir1Break,
   ir1CondStmt,
+  ir1Continue,
   ir1Foreach,
   ir1MapDelete,
   ir1MapSet,
   ir1Member,
+  ir1Return,
   ir1SetAddOrDelete,
   ir1SetClear,
+  ir1Throw,
 } from "./ir1.js";
 import {
   buildL1MemberAccess,
@@ -1032,6 +1036,29 @@ function buildL1MutationBody(
     // Handles `else if` chains (TS parses these as nested IfStatement)
     // and inner ifs in the then-branch.
     return buildL1IfMutation(stmt, ctx);
+  }
+  if (ts.isBreakStatement(stmt)) {
+    return ir1Break();
+  }
+  if (ts.isContinueStatement(stmt)) {
+    return ir1Continue();
+  }
+  if (ts.isReturnStatement(stmt)) {
+    if (stmt.expression === undefined) {
+      return ir1Return(null);
+    }
+    const expr = buildL1SubExpr(stmt.expression, ctx);
+    return isUnsupported(expr) ? expr : ir1Return(expr);
+  }
+  if (ts.isThrowStatement(stmt)) {
+    if (expressionHasSideEffects(stmt.expression, ctx.checker)) {
+      return {
+        unsupported:
+          "branch body must be a property assignment, Map/Set effect, or nested if",
+      };
+    }
+    const expr = buildL1SubExpr(stmt.expression, ctx);
+    return isUnsupported(expr) ? expr : ir1Throw(expr);
   }
   if (ts.isExpressionStatement(stmt)) {
     // Unwrap parenthesized expressions so `(obj.p = 1);` and

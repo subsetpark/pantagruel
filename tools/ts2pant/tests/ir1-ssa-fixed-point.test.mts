@@ -363,26 +363,174 @@ describe("ir1-ssa-fixed-point", () => {
   });
 
   describe("handle-list consumption", () => {
-    it.skip("break-handle merge produces post-loop cond per location", () => {
-      // PENDING Patch 5.
+    it("break-handle merge produces post-loop cond per location", () => {
+      const ast = getAst();
+      const result = lowerFixedPointLoopL1Body({
+        ...fixedPointWhile(),
+        body: {
+          kind: "block",
+          stmts: [
+            fixedPointWhile().body,
+            {
+              kind: "cond-stmt",
+              arms: [
+                [
+                  {
+                    kind: "binop",
+                    op: "ge",
+                    lhs: balanceMember,
+                    rhs: targetVar,
+                  },
+                  { kind: "break" },
+                ],
+              ],
+              otherwise: null,
+            },
+          ],
+        },
+      });
+
+      assert.deepEqual(result.diagnostics, []);
+      assert.equal(result.programs[0]!.loopBodies[0]!.breakHandles.length, 1);
+      const ruleDecl = result.propositions[0]!;
+      assert.equal(ruleDecl.kind, "rule-decl");
+      assert.match(ast.strExpr(ruleDecl.body), /cond .* >= target =>/u);
     });
 
-    it.skip("continue-handle threads into header phi loop-back input", () => {
-      // PENDING Patch 5.
+    it("continue-handle threads into header phi loop-back input", () => {
+      const ast = getAst();
+      const result = lowerFixedPointLoopL1Body({
+        ...fixedPointWhile(),
+        body: {
+          kind: "block",
+          stmts: [
+            {
+              kind: "cond-stmt",
+              arms: [
+                [
+                  {
+                    kind: "binop",
+                    op: "eq",
+                    lhs: stepVar,
+                    rhs: { kind: "lit", value: { kind: "nat", value: 0 } },
+                  },
+                  { kind: "continue" },
+                ],
+              ],
+              otherwise: null,
+            },
+            fixedPointWhile().body,
+          ],
+        },
+      });
+
+      assert.deepEqual(result.diagnostics, []);
+      assert.equal(
+        result.programs[0]!.loopBodies[0]!.continueHandles.length,
+        1,
+      );
+      const ruleDecl = result.propositions[0]!;
+      assert.equal(ruleDecl.kind, "rule-decl");
+      assert.match(ast.strExpr(ruleDecl.body), /cond step = 0 => s/u);
     });
 
-    it.skip("return-handle produces function-level return-value cond", () => {
-      // PENDING Patch 5.
+    it("return-handle produces function-level return-value cond", () => {
+      const ast = getAst();
+      const result = lowerFixedPointLoopL1Body(
+        {
+          ...fixedPointWhile(),
+          body: {
+            kind: "block",
+            stmts: [
+              fixedPointWhile().body,
+              {
+                kind: "cond-stmt",
+                arms: [
+                  [
+                    {
+                      kind: "binop",
+                      op: "ge",
+                      lhs: balanceMember,
+                      rhs: targetVar,
+                    },
+                    { kind: "return", expr: balanceMember },
+                  ],
+                ],
+                otherwise: null,
+              },
+            ],
+          },
+        },
+        { returnRuleName: "update" },
+      );
+
+      assert.deepEqual(result.diagnostics, []);
+      assert.equal(result.programs[0]!.loopBodies[0]!.returnHandles.length, 1);
+      assert.equal(result.returnValue?.ruleName, "update");
+      assert.match(
+        ast.strExpr(result.returnValue!.expression),
+        /cond balance a >= target => balance a/u,
+      );
     });
 
-    it.skip("throw-handle conjoins precondition with recursive-rule guard", () => {
-      // PENDING Patch 5.
+    it("throw-handle conjoins precondition with recursive-rule guard", () => {
+      const ast = getAst();
+      const result = lowerFixedPointLoopL1Body({
+        ...fixedPointWhile(),
+        body: {
+          kind: "block",
+          stmts: [
+            {
+              kind: "cond-stmt",
+              arms: [
+                [
+                  {
+                    kind: "binop",
+                    op: "eq",
+                    lhs: stepVar,
+                    rhs: { kind: "lit", value: { kind: "nat", value: 0 } },
+                  },
+                  {
+                    kind: "throw",
+                    expr: {
+                      kind: "lit",
+                      value: { kind: "string", value: "bad" },
+                    },
+                  },
+                ],
+              ],
+              otherwise: null,
+            },
+            fixedPointWhile().body,
+          ],
+        },
+      });
+
+      assert.deepEqual(result.diagnostics, []);
+      assert.equal(result.programs[0]!.loopBodies[0]!.throwHandles.length, 1);
+      const ruleDecl = result.propositions[0]!;
+      assert.equal(ruleDecl.kind, "rule-decl");
+      assert.match(ast.strExpr(ruleDecl.body), /~\(step = 0\)/u);
     });
   });
 
   describe("literal-true rejection", () => {
-    it.skip("narrows to while(true) with no reachable break/return", () => {
-      // PENDING Patch 5.
+    it("narrows to while(true) with no reachable break/return", () => {
+      const rejected = recognizeFixedPointLoopShape({
+        ...fixedPointWhile(),
+        cond: { kind: "lit", value: { kind: "bool", value: true } },
+      });
+      assert.ok("unsupported" in rejected);
+
+      const accepted = recognizeFixedPointLoopShape({
+        ...fixedPointWhile(),
+        cond: { kind: "lit", value: { kind: "bool", value: true } },
+        body: {
+          kind: "block",
+          stmts: [fixedPointWhile().body, { kind: "break" }],
+        },
+      });
+      assert.ok(!("unsupported" in accepted));
     });
   });
 });
