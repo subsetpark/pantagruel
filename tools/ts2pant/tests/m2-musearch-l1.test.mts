@@ -23,11 +23,18 @@ import { emitDocument } from "../src/emit.js";
 import {
   createSourceFile,
   createSourceFileFromSource,
+  getChecker,
 } from "../src/extract.js";
+import {
+  buildL1MuSearchCombTyped,
+  isL1Unsupported,
+  lowerL1ToOpaque,
+} from "../src/ir1-build.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import { translateBody } from "../src/translate-body.js";
 import { IntStrategy } from "../src/translate-types.js";
 import { buildDocumentFromSourceFile } from "./helpers.mts";
+import ts from "typescript";
 
 before(async () => {
   await loadAst();
@@ -63,6 +70,42 @@ function translate(
     return { unsupported: `non-equation: ${p.kind}`, pant: null };
   }
   return { unsupported: null, pant: getAst().strExpr(p.rhs) };
+}
+
+function buildFirstLetWhileCombTyped(source: string, name: string) {
+  const sourceFile = createSourceFileFromSource(source);
+  const checker = getChecker(sourceFile);
+  const fn = sourceFile.getFunctionOrThrow(name).compilerNode;
+  assert.ok(fn.body, "expected function body");
+  const letStmt = fn.body.statements[0];
+  const whileStmt = fn.body.statements[1];
+  assert.ok(letStmt && ts.isVariableStatement(letStmt));
+  assert.ok(whileStmt && ts.isWhileStatement(whileStmt));
+  const decl = letStmt.declarationList.declarations[0];
+  assert.ok(decl && ts.isIdentifier(decl.name) && decl.initializer);
+  const body = whileStmt.statement;
+  const stepStmt = ts.isBlock(body) ? body.statements[0] : body;
+  assert.ok(stepStmt && ts.isExpressionStatement(stepStmt));
+
+  const l1 = buildL1MuSearchCombTyped(
+    {
+      counterName: decl.name.text,
+      initTsExpr: decl.initializer,
+      predicateTsExpr: whileStmt.expression,
+      stepExpr: stepStmt.expression,
+    },
+    {
+      checker,
+      strategy: IntStrategy,
+      paramNames: new Map(),
+      state: undefined,
+      supply: { n: 0 },
+    },
+  );
+  if (isL1Unsupported(l1)) {
+    throw new Error(l1.unsupported);
+  }
+  return l1;
 }
 
 // ---------------------------------------------------------------------------
@@ -182,16 +225,59 @@ describe("M2 μ-search L1: all five +1 spellings produce identical Pant", () => 
 });
 
 describe("post-migration recognizer placement", () => {
-  it.skip("recognizeLetWhilePair produces L1 comb-typed", () => {
-    // PENDING Patch 3.
+  it("recognizeLetWhilePair produces L1 comb-typed", () => {
+    const l1 = buildFirstLetWhileCombTyped(
+      `
+        function firstUnused(used: ReadonlySet<number>): number {
+          let i = 1;
+          while (used.has(i)) i++;
+          return i;
+        }
+      `,
+      "firstUnused",
+    );
+
+    assert.equal(l1.kind, "comb-typed");
+    assert.equal(l1.combiner, "min");
+    assert.equal(l1.binderType, "Int");
+    assert.equal(l1.guards.length, 2);
+    assert.equal(l1.proj.kind, "var");
+    assert.equal(l1.proj.name, l1.binder);
   });
 
-  it.skip("canonical post-recognizer shape is comb-typed", () => {
-    // PENDING Patch 3.
+  it("canonical post-recognizer shape is comb-typed", () => {
+    const l1 = buildFirstLetWhileCombTyped(
+      `
+        function firstUnused(used: ReadonlySet<number>): number {
+          let i = 1;
+          while (used.has(i)) { i = 1 + i; }
+          return i;
+        }
+      `,
+      "firstUnused",
+    );
+
+    const pant = getAst().strExpr(lowerL1ToOpaque(l1));
+    assert.equal(l1.kind, "comb-typed");
+    assert.match(pant, /^min over each j\d*: Int/u);
+    assert.match(pant, /j\d* >= 1/u);
+    assert.match(pant, /~\(j\d* in used\)/u);
   });
 
-  it.skip("μ-search fixtures snapshot-equivalent", () => {
-    // PENDING Patch 3.
+  it("μ-search fixtures snapshot-equivalent", async () => {
+    const filePath = resolve(
+      import.meta.dirname,
+      "fixtures/constructs/expressions-while-mu-search.ts",
+    );
+    const sourceFile = createSourceFile(filePath);
+    const doc = await buildDocumentFromSourceFile(
+      sourceFile,
+      "firstUnusedSuffix",
+    );
+    assert.equal(
+      emitDocument(doc),
+      "module FIRST_UNUSED_SUFFIX.\n\nfirst-unused-suffix used: [Int] => Int.\n\n---\n\nfirst-unused-suffix used = (min over each j: Int, j >= 1, ~(j in used) | j).\n",
+    );
   });
 });
 

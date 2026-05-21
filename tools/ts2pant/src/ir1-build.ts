@@ -9,11 +9,10 @@
  * **M2 scope** (workstream M2: imperative-ir-assign-mu-search): increment
  * surface forms (`i++`, `++i`, `i += k`, `i -= k`, `i = i ⊕ k`,
  * `i = k ⊕ i`) build to canonical L1 `Assign(target, BinOp(<op>, target, <k>))`.
- * The five `+1` spellings produce identical L1 output. The TS-AST level
- * does NOT carry μ-search semantics — it only provides structural
- * acceptance for the let+while pair; semantic recognition (predicate
- * references counter, step is `+1`, discrete numeric strategy) lives
- * entirely in `ir1-lower.ts`'s `recognizeAndLowerMuSearch`.
+ * The five `+1` spellings produce identical L1 output. The TS-AST → L1
+ * boundary carries μ-search recognition for pure prelude `let; while`
+ * pairs: canonical shape, discrete numeric strategy, counter→binder
+ * substitution, and L1 `comb-typed` construction happen before L1 → L2.
  *
  * Sub-expressions inside conditionals (the guard, the value, the
  * switch discriminant) are translated as native L1 via
@@ -43,6 +42,7 @@ import {
   ir1Assign,
   ir1Binop,
   ir1Block,
+  ir1CombTyped,
   ir1Cond,
   ir1Each,
   ir1IsNullish,
@@ -2507,11 +2507,8 @@ function buildFromShortCircuit(
 // commutative explicit forms (`i = k * i`) build to the same Assign
 // shape with the appropriate op and operand.
 //
-// The TS-AST level here is purely structural — it does NOT validate
-// that the step is `+1`, that the step matches a μ-search shape, or
-// anything semantic about the surrounding context. The L1 recognizer in
-// `ir1-lower.ts:recognizeAndLowerMuSearch` is responsible for those
-// checks.
+// The increment-step builder itself is context-free. μ-search validates
+// that the normalized step is exactly `+1` in `buildL1MuSearchCombTyped`.
 // ---------------------------------------------------------------------------
 
 export type L1StmtBuildResult = IR1Stmt | { unsupported: string };
@@ -2666,7 +2663,7 @@ export function buildL1IncrementStep(
  *
  * Critical for canonical-form matching: when the increment step is
  * `i += 1` or `i = i + 1`, the `1` must lower to a native L1
- * `LitNat(1)` so `isCanonicalMuSearchForm` can pattern-match
+ * `LitNat(1)` so `buildL1MuSearchCombTyped` can validate
  * `BinOp(add, Var(c), Lit(1))`.
  */
 function tryBuildL1IntegerLiteral(expr: ts.Expression): IR1Expr | null {
@@ -2728,15 +2725,14 @@ function isCommutativeBinop(op: IR1Binop): boolean {
 // μ-search L1 form construction (M2)
 //
 // Build the canonical L1 representation of a let+while+increment μ-search
-// prelude pair: `Block([Let(c, init), While(p, <step-Assign>)])`. The step
-// is built via `buildL1IncrementStep`. Sub-expressions (init, predicate)
-// flow through the L1 sub-expression builder, same as M1 conditionals.
+// prelude pair. `buildL1LetWhile` remains as a statement-shaped mirror used
+// by loop tests. The production pure-body path uses
+// `buildL1MuSearchCombTyped` so recognition fires at TS-AST → L1 and L1 → L2
+// stays a mechanical expression mapping.
 //
 // The TS-AST recognizer (`recognizeMuSearch` in `translate-body.ts`)
 // has already validated structural acceptance (let-decl + while-stmt +
-// expression-statement body) before this builder runs. Semantic
-// recognition (canonical step shape, predicate references counter,
-// strategy is discrete) lives in `ir1-lower.ts:isCanonicalMuSearchForm`.
+// expression-statement body) before these builders run.
 // ---------------------------------------------------------------------------
 
 /**
@@ -2777,4 +2773,96 @@ export function buildL1LetWhile(
     return step;
   }
   return ir1Block([ir1Let(mu.counterName, init), ir1While(predicate, step)]);
+}
+
+/**
+ * Build the canonical L1 expression for a μ-search-shaped TS prelude:
+ *
+ *   `min over each j: T, j >= init, ~P(j) | j`
+ *
+ * This is the production recognizer target. It preserves the checks that used
+ * to live in `ir1-lower.ts`: predicate references the counter, the step is
+ * exactly `+1`, and the numeric strategy is discrete.
+ */
+export function buildL1MuSearchCombTyped(
+  mu: MuSearch,
+  ctx: L1BuildContext,
+): L1BuildResult {
+  if (
+    !expressionReferencesNames(mu.predicateTsExpr, new Set([mu.counterName]))
+  ) {
+    return {
+      unsupported: "while predicate does not reference the let-bound counter",
+    };
+  }
+
+  const counterType = ctx.strategy.mapNumber();
+  if (counterType === "Real") {
+    return {
+      unsupported:
+        "μ-search is only supported for discrete numeric strategies (got Real)",
+    };
+  }
+
+  const init = buildSubExpr(mu.initTsExpr, ctx);
+  if (isL1Unsupported(init)) {
+    return init;
+  }
+  const predicate = buildSubExpr(mu.predicateTsExpr, ctx);
+  if (isL1Unsupported(predicate)) {
+    return predicate;
+  }
+  const step = buildL1IncrementStep(mu.stepExpr, mu.counterName, ctx);
+  if (isL1StmtUnsupported(step)) {
+    return step;
+  }
+  const stepRejection = validateCanonicalMuSearchStep(step, mu.counterName);
+  if (stepRejection !== null) {
+    return stepRejection;
+  }
+
+  const binder = allocateLiftBinder(ctx, "j");
+  const counterPantName = ctx.paramNames.get(mu.counterName) ?? mu.counterName;
+  const binderVar = ir1Var(binder);
+  const predicateWithBinder = substituteIR1ExprSubtree(
+    predicate,
+    ir1Var(counterPantName),
+    binderVar,
+  );
+
+  return ir1CombTyped(
+    "min",
+    binder,
+    counterType,
+    [
+      ir1Binop("ge", binderVar, init),
+      ir1Unop("not", predicateWithBinder),
+    ],
+    binderVar,
+  );
+}
+
+function validateCanonicalMuSearchStep(
+  step: IR1Stmt,
+  counterName: string,
+): { unsupported: string } | null {
+  if (step.kind !== "assign") {
+    return { unsupported: "while body must be a single Assign step" };
+  }
+  if (step.target.kind !== "var" || step.target.name !== counterName) {
+    return { unsupported: "Assign target is not the counter" };
+  }
+  const value = step.value;
+  if (
+    value.kind !== "binop" ||
+    value.op !== "add" ||
+    value.lhs.kind !== "var" ||
+    value.lhs.name !== counterName ||
+    value.rhs.kind !== "lit" ||
+    value.rhs.value.kind !== "nat" ||
+    value.rhs.value.value !== 1
+  ) {
+    return { unsupported: "step is not a canonical `+1` increment" };
+  }
+  return null;
 }

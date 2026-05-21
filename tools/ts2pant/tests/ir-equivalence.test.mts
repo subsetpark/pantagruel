@@ -58,8 +58,8 @@ const ANCHORS: Array<{ file: string; functions: string[] }> = [
     functions: ["cardinality"],
   },
   // Const-binding inlining via OpaqueExpr-layer `substituteBinder`.
-  // Includes μ-search bindings whose comprehension construction lives
-  // in `lowerL1MuSearch`.
+  // Includes μ-search bindings whose comprehension is built as L1
+  // `comb-typed`.
   {
     file: "expressions-const-bindings.ts",
     functions: [

@@ -16,7 +16,7 @@ import {
 import {
   buildL1Conditional,
   buildL1IncrementStep,
-  buildL1LetWhile,
+  buildL1MuSearchCombTyped,
   buildL1MemberAccess,
   isL1ConditionalForm,
   isL1StmtUnsupported,
@@ -36,7 +36,6 @@ import {
   buildL1SubExpr,
   isUnsupported,
 } from "./ir1-build-body.js";
-import { lowerL1MuSearch, type MuSearchLowerCtx } from "./ir1-lower.js";
 import { lowerL1BodyToSsaProps } from "./ir1-lower-body.js";
 import {
   appendFramesForUnmodifiedRules,
@@ -256,8 +255,7 @@ export interface MuSearch {
   /**
    * The expression-statement body of the while loop — the increment
    * step. Used by the L1 builder to construct the canonical
-   * `Block([Let, While(_, Assign)])` form for `isCanonicalMuSearchForm`
-   * to pattern-match against.
+   * L1 `comb-typed` form after canonical step validation.
    */
   stepExpr: ts.Expression;
 }
@@ -1603,8 +1601,8 @@ function isInterfaceFieldAccess(
  * Returns `{ counterName, initTsExpr, predicateTsExpr }` if the pair at
  * `stmts[idx]` and `stmts[idx + 1]` matches; null otherwise. Shape-only
  * match: counter must be a single identifier with any initializer, and the
- * loop body must be exactly `counter++` or `++counter` on the same
- * identifier (no compound bodies, no other writes). Purity of the
+ * loop body must be exactly one expression statement. The L1 builder
+ * validates the canonical `+1` counter step. Purity of the
  * initializer and predicate is screened in `inlineConstBindings`'s TDZ
  * phase (alongside the sibling forward-reference check) rather than here —
  * `translateBodyExpr` has no handler for bare `++`/`--` expressions, so a
@@ -1618,10 +1616,9 @@ function isInterfaceFieldAccess(
  * Recognize a `let + while` pair as one prelude unit. Purely structural:
  * the let must have a single identifier declarator with an initializer,
  * the while body must be a single expression-statement (or a single-stmt
- * block thereof). No μ-search-specific semantics here — those live at
- * `ir1-lower.ts:isCanonicalMuSearchForm` and the L1 path in
- * `translateMuSearchInit`. This recognizer's only job is to consume
- * the pair structurally so `extractReturnExpression` can keep walking.
+ * block thereof). μ-search semantics are applied by the L1 builder called
+ * from `translateMuSearchInit`; this recognizer consumes the pair
+ * structurally so `extractReturnExpression` can keep walking.
  */
 function recognizeLetWhilePair(
   stmts: readonly ts.Statement[],
@@ -2102,17 +2099,8 @@ function translateBindingInit(
 
 /**
  * Translate a recognized μ-search prelude binding to an OpaqueExpr.
- * Pure orchestrator — builds the canonical L1 form, hands off to
- * `lowerL1MuSearch` for the L1 → L2 lowering (which carries all
- * μ-search semantics), and lowers the L2 result to OpaqueExpr.
- *
- * Per the layering principle (workstream `ts2pant-imperative-ir.md`):
- * `translate-body.ts` has no Pantagruel-target awareness for μ-search.
- * The canonical-shape check, strategy validation, binder allocation,
- * predicate substitution, and `comb-typed` construction all live in
- * `ir1-lower.ts:lowerL1MuSearch`. This function only wires the
- * lowering context — including the synthCell-aware binder allocator
- * that needs translate-body's internal supply / scopedParams state.
+ * The recognizer constructs L1 `comb-typed` directly; L1 → L2 lowering is
+ * the mechanical `comb-typed` arm in `lowerL1Expr`.
  */
 function translateMuSearchInit(
   mu: MuSearch,
@@ -2129,40 +2117,11 @@ function translateMuSearchInit(
     state,
     supply,
   };
-  const form = buildL1LetWhile(mu, buildCtx);
-  if (isL1StmtUnsupported(form)) {
-    return { error: form.unsupported };
+  const combTyped = buildL1MuSearchCombTyped(mu, buildCtx);
+  if (isL1Unsupported(combTyped)) {
+    return { error: combTyped.unsupported };
   }
-  const lowerCtx: MuSearchLowerCtx = {
-    strategy,
-    counterPantName: scopedParams.get(mu.counterName) ?? mu.counterName,
-    allocateBinder: (hint) => {
-      // synthCell path: document-wide NameRegistry (kebab-cased,
-      // numeric-suffixed) — collision-safe across the document.
-      if (supply.synthCell) {
-        return cellRegisterName(supply.synthCell, hint);
-      }
-      // Standalone fallback: avoid colliding with the current frame's
-      // Pant names so predicate substitution can't alias a param.
-      const usedNames = new Set(scopedParams.values());
-      let name: string;
-      do {
-        name = `${hint}${nextSupply(supply)}`;
-      } while (usedNames.has(name));
-      return name;
-    },
-  };
-  const lowered = lowerL1MuSearch(form, mu.counterName, lowerCtx);
-  if (isLowerUnsupported(lowered)) {
-    return { error: lowered.unsupported };
-  }
-  return { value: lowered };
-}
-
-function isLowerUnsupported(
-  r: OpaqueExpr | { unsupported: string },
-): r is { unsupported: string } {
-  return typeof r === "object" && r !== null && "unsupported" in r;
+  return { value: lowerL1ToOpaque(combTyped) };
 }
 
 export function isGuardStatement(
