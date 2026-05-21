@@ -231,49 +231,86 @@ function substituteExpr(
     case "var":
     case "lit":
       return expr;
-    case "binop":
-      return ir1Binop(
-        expr.op,
-        substituteExpr(expr.lhs, needle, replacement, replacementFreeVars),
-        substituteExpr(expr.rhs, needle, replacement, replacementFreeVars),
+    case "binop": {
+      const lhs = substituteExpr(
+        expr.lhs,
+        needle,
+        replacement,
+        replacementFreeVars,
       );
-    case "unop":
-      return ir1Unop(
-        expr.op,
-        substituteExpr(expr.arg, needle, replacement, replacementFreeVars),
+      const rhs = substituteExpr(
+        expr.rhs,
+        needle,
+        replacement,
+        replacementFreeVars,
       );
-    case "app":
-      return ir1App(
-        substituteExpr(expr.callee, needle, replacement, replacementFreeVars),
-        expr.args.map((arg) =>
-          substituteExpr(arg, needle, replacement, replacementFreeVars),
-        ),
+      return lhs === expr.lhs && rhs === expr.rhs
+        ? expr
+        : ir1Binop(expr.op, lhs, rhs);
+    }
+    case "unop": {
+      const arg = substituteExpr(
+        expr.arg,
+        needle,
+        replacement,
+        replacementFreeVars,
       );
-    case "member":
-      return ir1Member(
-        substituteExpr(expr.receiver, needle, replacement, replacementFreeVars),
-        expr.name,
+      return arg === expr.arg ? expr : ir1Unop(expr.op, arg);
+    }
+    case "app": {
+      const callee = substituteExpr(
+        expr.callee,
+        needle,
+        replacement,
+        replacementFreeVars,
       );
-    case "cond":
-      return ir1Cond(
-        expr.arms.map(([guard, value]) => [
-          substituteExpr(guard, needle, replacement, replacementFreeVars),
-          substituteExpr(value, needle, replacement, replacementFreeVars),
-        ]) as unknown as [
-          readonly [IR1Expr, IR1Expr],
-          ...ReadonlyArray<readonly [IR1Expr, IR1Expr]>,
-        ],
-        substituteExpr(
-          expr.otherwise,
-          needle,
-          replacement,
-          replacementFreeVars,
-        ),
+      const args = expr.args.map((arg) =>
+        substituteExpr(arg, needle, replacement, replacementFreeVars),
       );
-    case "is-nullish":
-      return ir1IsNullish(
-        substituteExpr(expr.operand, needle, replacement, replacementFreeVars),
+      return callee === expr.callee && arrayRefEqual(args, expr.args)
+        ? expr
+        : ir1App(callee, args);
+    }
+    case "member": {
+      const receiver = substituteExpr(
+        expr.receiver,
+        needle,
+        replacement,
+        replacementFreeVars,
       );
+      return receiver === expr.receiver ? expr : ir1Member(receiver, expr.name);
+    }
+    case "cond": {
+      const arms = expr.arms.map(([guard, value]) => [
+        substituteExpr(guard, needle, replacement, replacementFreeVars),
+        substituteExpr(value, needle, replacement, replacementFreeVars),
+      ]) as unknown as [
+        readonly [IR1Expr, IR1Expr],
+        ...ReadonlyArray<readonly [IR1Expr, IR1Expr]>,
+      ];
+      const otherwise = substituteExpr(
+        expr.otherwise,
+        needle,
+        replacement,
+        replacementFreeVars,
+      );
+      const armsUnchanged = arms.every(
+        ([guard, value], index) =>
+          guard === expr.arms[index]![0] && value === expr.arms[index]![1],
+      );
+      return armsUnchanged && otherwise === expr.otherwise
+        ? expr
+        : ir1Cond(arms, otherwise);
+    }
+    case "is-nullish": {
+      const operand = substituteExpr(
+        expr.operand,
+        needle,
+        replacement,
+        replacementFreeVars,
+      );
+      return operand === expr.operand ? expr : ir1IsNullish(operand);
+    }
     case "each": {
       throwIfCaptureRisk(expr.binder, replacementFreeVars);
       const src = substituteExpr(
@@ -283,44 +320,67 @@ function substituteExpr(
         replacementFreeVars,
       );
       if (shadowsNeedle(expr.binder, needle)) {
-        return ir1Each(expr.binder, src, expr.guards, expr.proj);
+        return src === expr.src
+          ? expr
+          : ir1Each(expr.binder, src, expr.guards, expr.proj);
       }
-      return ir1Each(
-        expr.binder,
-        src,
-        expr.guards.map((guard) =>
-          substituteExpr(guard, needle, replacement, replacementFreeVars),
-        ),
-        substituteExpr(expr.proj, needle, replacement, replacementFreeVars),
+      const guards = expr.guards.map((guard) =>
+        substituteExpr(guard, needle, replacement, replacementFreeVars),
       );
+      const proj = substituteExpr(
+        expr.proj,
+        needle,
+        replacement,
+        replacementFreeVars,
+      );
+      return src === expr.src &&
+        arrayRefEqual(guards, expr.guards) &&
+        proj === expr.proj
+        ? expr
+        : ir1Each(expr.binder, src, guards, proj);
     }
-    case "map-read":
-      return {
-        ...expr,
-        receiver: substituteExpr(
-          expr.receiver,
-          needle,
-          replacement,
-          replacementFreeVars,
-        ),
-        key: substituteExpr(expr.key, needle, replacement, replacementFreeVars),
-      };
-    case "set-read":
-      return {
-        ...expr,
-        receiver: substituteExpr(
-          expr.receiver,
-          needle,
-          replacement,
-          replacementFreeVars,
-        ),
-        elem: substituteExpr(
-          expr.elem,
-          needle,
-          replacement,
-          replacementFreeVars,
-        ),
-      };
+    case "map-read": {
+      const receiver = substituteExpr(
+        expr.receiver,
+        needle,
+        replacement,
+        replacementFreeVars,
+      );
+      const key = substituteExpr(
+        expr.key,
+        needle,
+        replacement,
+        replacementFreeVars,
+      );
+      return receiver === expr.receiver && key === expr.key
+        ? expr
+        : {
+            ...expr,
+            receiver,
+            key,
+          };
+    }
+    case "set-read": {
+      const receiver = substituteExpr(
+        expr.receiver,
+        needle,
+        replacement,
+        replacementFreeVars,
+      );
+      const elem = substituteExpr(
+        expr.elem,
+        needle,
+        replacement,
+        replacementFreeVars,
+      );
+      return receiver === expr.receiver && elem === expr.elem
+        ? expr
+        : {
+            ...expr,
+            receiver,
+            elem,
+          };
+    }
     default: {
       const _exhaustive: never = expr;
       return _exhaustive;
@@ -734,4 +794,8 @@ function addName(source: Set<string>, name: string): Set<string> {
   const out = new Set(source);
   out.add(name);
   return out;
+}
+
+function arrayRefEqual<T>(a: readonly T[], b: readonly T[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
 }
