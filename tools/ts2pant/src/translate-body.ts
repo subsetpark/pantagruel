@@ -26,6 +26,7 @@ import {
   tryRecognizeFunctorLift,
 } from "./ir1-build.js";
 import {
+  type BuildBodyCtx,
   buildL1AssignStmt,
   buildL1EffectCall,
   buildL1ForEachCall,
@@ -4337,12 +4338,40 @@ function buildSupportedSsaMutatingBody(
   const applyConst = (e: OpaqueExpr): OpaqueExpr =>
     applyOpaqueAliases(applyConstChain(e), supply);
   setCanonicalize(state, applyConst);
-  for (const stmt of body.statements) {
+  for (let i = 0; i < body.statements.length; i++) {
+    const stmt = body.statements[i]!;
     if (isGuardStatement(stmt, checker)) {
       continue;
     }
     if (ts.isReturnStatement(stmt) && !stmt.expression) {
       continue;
+    }
+    if (
+      ts.isVariableStatement(stmt) &&
+      stmt.declarationList.flags & ts.NodeFlags.Let &&
+      stmt.declarationList.declarations.length === 1 &&
+      ts.isIdentifier(stmt.declarationList.declarations[0]!.name) &&
+      stmt.declarationList.declarations[0]!.initializer !== undefined &&
+      i + 1 < body.statements.length &&
+      ts.isWhileStatement(body.statements[i + 1]!)
+    ) {
+      const built = buildL1LetWhileMutation(
+        stmt,
+        body.statements[i + 1]! as ts.WhileStatement,
+        {
+          checker,
+          strategy,
+          paramNames: scopedParamNames,
+          state,
+          supply,
+          applyConst,
+        },
+      );
+      if (built !== null) {
+        stmts.push(built);
+        i += 1;
+        continue;
+      }
     }
     if (ts.isVariableStatement(stmt)) {
       const declList = stmt.declarationList;
@@ -4461,11 +4490,13 @@ function buildSupportedSsaStatement(
       return buildL1AssignStmt(stmt, ctx);
     }
   }
-  if (
-    ts.isForInStatement(stmt) ||
-    ts.isWhileStatement(stmt) ||
-    ts.isDoStatement(stmt)
-  ) {
+  if (ts.isWhileStatement(stmt)) {
+    return {
+      unsupported:
+        "while loop is not a recognized bounded-counter shape; lift to L4 fixed-point lowering when that milestone ships",
+    };
+  }
+  if (ts.isForInStatement(stmt) || ts.isDoStatement(stmt)) {
     return { unsupported: "loop assignment" };
   }
   return {
@@ -4535,6 +4566,136 @@ function buildL1ForCounterMutation(
   }
 
   return ir1For(init.initStmt, cond, step, bodyStmt);
+}
+
+function buildL1LetWhileMutation(
+  letStmt: ts.VariableStatement,
+  whileStmt: ts.WhileStatement,
+  ctx: BuildBodyCtx & { paramNames: Map<string, string> },
+): IR1Stmt | null {
+  const declList = letStmt.declarationList;
+  if (
+    !(declList.flags & ts.NodeFlags.Let) ||
+    declList.declarations.length !== 1
+  ) {
+    return null;
+  }
+
+  const decl = declList.declarations[0]!;
+  if (!ts.isIdentifier(decl.name) || decl.initializer === undefined) {
+    return null;
+  }
+
+  const counterName = decl.name.text;
+  const initExpr = buildL1SubExpr(decl.initializer, ctx);
+  if (isUnsupported(initExpr)) {
+    return null;
+  }
+
+  const cond = buildL1LetWhileCounterCondition(
+    whileStmt.expression,
+    counterName,
+    ctx,
+  );
+  if (cond === null) {
+    return null;
+  }
+
+  if (!ts.isBlock(whileStmt.statement)) {
+    return null;
+  }
+  const bodyStatements = [...whileStmt.statement.statements];
+  const trailingStep = bodyStatements.at(-1);
+  if (
+    trailingStep === undefined ||
+    !ts.isExpressionStatement(trailingStep) ||
+    counterStepHasEffectfulOperand(trailingStep.expression, counterName, ctx)
+  ) {
+    return null;
+  }
+
+  const step = buildL1IncrementStep(trailingStep.expression, counterName, ctx);
+  if (isL1StmtUnsupported(step)) {
+    return null;
+  }
+  if (!isCanonicalUnitCounterStep(step, counterName)) {
+    return null;
+  }
+
+  const bodyWithoutStep = ts.factory.updateBlock(
+    whileStmt.statement,
+    bodyStatements.slice(0, -1),
+  );
+  const bodyStmt = buildSupportedSsaMutatingBody(
+    bodyWithoutStep,
+    ctx.checker,
+    ctx.strategy,
+    ctx.paramNames,
+    ctx.state,
+    ctx.supply,
+  );
+  if (isUnsupported(bodyStmt)) {
+    return null;
+  }
+
+  return ir1For(ir1Let(counterName, initExpr), cond, step, bodyStmt);
+}
+
+function isCanonicalUnitCounterStep(
+  step: IR1Stmt,
+  counterName: string,
+): boolean {
+  return (
+    step.kind === "assign" &&
+    step.target.kind === "var" &&
+    step.target.name === counterName &&
+    step.value.kind === "binop" &&
+    (step.value.op === "add" || step.value.op === "sub") &&
+    step.value.lhs.kind === "var" &&
+    step.value.lhs.name === counterName &&
+    step.value.rhs.kind === "lit" &&
+    step.value.rhs.value.kind === "nat" &&
+    step.value.rhs.value.value === 1
+  );
+}
+
+function buildL1LetWhileCounterCondition(
+  condition: ts.Expression,
+  counterName: string,
+  ctx: BuildBodyCtx,
+): IR1Expr | null {
+  const cond = unwrapExpression(condition);
+  if (
+    !ts.isBinaryExpression(cond) ||
+    (cond.operatorToken.kind !== ts.SyntaxKind.LessThanToken &&
+      cond.operatorToken.kind !== ts.SyntaxKind.LessThanEqualsToken &&
+      cond.operatorToken.kind !== ts.SyntaxKind.GreaterThanToken &&
+      cond.operatorToken.kind !== ts.SyntaxKind.GreaterThanEqualsToken) ||
+    !ts.isIdentifier(cond.left) ||
+    cond.left.text !== counterName
+  ) {
+    return null;
+  }
+  if (
+    expressionReferencesNames(cond.right, new Set([counterName])) ||
+    expressionHasSideEffects(cond.right, ctx.checker)
+  ) {
+    return null;
+  }
+  const bound = buildL1SubExpr(cond.right, { ...ctx, applyConst: (e) => e });
+  if (isUnsupported(bound)) {
+    return null;
+  }
+
+  const op =
+    cond.operatorToken.kind === ts.SyntaxKind.LessThanToken
+      ? "lt"
+      : cond.operatorToken.kind === ts.SyntaxKind.LessThanEqualsToken
+        ? "le"
+        : cond.operatorToken.kind === ts.SyntaxKind.GreaterThanToken
+          ? "gt"
+          : "ge";
+  return ir1Binop(op, ir1Var(counterName), bound);
 }
 
 function buildL1ForCounterInit(
