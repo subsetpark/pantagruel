@@ -330,6 +330,14 @@ describe("ir1-substitute", () => {
         ),
       );
     });
+
+    it.skip("freeVarsIR1Expr handles throw-handle guard expression", () => {
+      // PENDING Patch 3.
+    });
+
+    it.skip("walker arms exhaustive over new IR1SsaLocation kind", () => {
+      // PENDING Patch 3.
+    });
   });
 
   describe("properties", () => {

@@ -395,4 +395,18 @@ describe("ir1-ssa-lower", () => {
       );
     }
   });
+
+  describe("returnValue emission", () => {
+    it.skip("null returnValue emits no extra equation", () => {
+      // PENDING Patch 2.
+    });
+
+    it.skip("non-null returnValue emits function-level equation", () => {
+      // PENDING Patch 2.
+    });
+
+    it.skip("equation ordering is rule-modifying then return-value then frames", () => {
+      // PENDING Patch 2.
+    });
+  });
 });
