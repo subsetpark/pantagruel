@@ -230,6 +230,28 @@ describe("lowerL1Expr — is-nullish (M4 canonical nullish test)", () => {
   });
 });
 
+describe("lowering new L1 forms", () => {
+  it.skip("comb-typed lowers via irCombTyped", () => {
+    // PENDING Patch 2.
+  });
+
+  it.skip("forall lowers via irForall with guard", () => {
+    // PENDING Patch 2.
+  });
+
+  it.skip("forall lowers via irForall without guard", () => {
+    // PENDING Patch 2.
+  });
+
+  it.skip("exists lowers via irExists with guard", () => {
+    // PENDING Patch 2.
+  });
+
+  it.skip("exists lowers via irExists without guard", () => {
+    // PENDING Patch 2.
+  });
+});
+
 describe("L1 → L2 → OpaqueExpr — full pipeline byte-equality with legacy", () => {
   // Verifies that lowering a hand-built L1 cond through L1 → L2 → OpaqueExpr
   // produces the same Pantagruel string as a hand-built legacy `ast.cond`.
