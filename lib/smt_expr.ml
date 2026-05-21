@@ -38,6 +38,71 @@ type upper_bound_result =
 
 let expr_mentions_name name e = Smt_doc.StringSet.mem name (Smt_doc.free_vars e)
 
+(** Binder-aware fold over expression nodes. Quantifier binders are unbound via
+    the AST/Bindlib helper before folding their guards and body. *)
+let fold_expr (f : 'a -> expr -> 'a) (acc : 'a) (e : expr) : 'a =
+  let rec go acc e =
+    let acc = f acc e in
+    match e with
+    | EApp (func, args) -> List.fold_left go (go acc func) args
+    | EBinop (_, e1, e2) -> go (go acc e1) e2
+    | EUnop (_, e1) | EProj (e1, _) | EInitially e1 -> go acc e1
+    | ETuple es -> List.fold_left go acc es
+    | EOverride (_, pairs) ->
+        List.fold_left (fun acc (k, v) -> go (go acc k) v) acc pairs
+    | ECond arms -> List.fold_left (fun acc (g, c) -> go (go acc g) c) acc arms
+    | EForall (mb, metas) | EExists (mb, metas) ->
+        let _, guards, body = Ast.unbind_quant mb metas in
+        go_guards (go acc body) guards
+    | EEach (mb, metas, _) ->
+        let _, guards, body = Ast.unbind_quant mb metas in
+        go_guards (go acc body) guards
+    | EVar _ | EPrimed _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _
+    | ELitString _ | ELitBool _ ->
+        acc
+  and go_guards acc guards =
+    List.fold_left
+      (fun acc -> function GExpr e | GIn (_, e) -> go acc e | GParam _ -> acc)
+      acc guards
+  in
+  go acc e
+
+let expr_applies_name name e =
+  let rec go bound = function[@warning "-4"]
+    | EApp (EVar (Lower n), _) when n = name && not (List.mem n bound) -> true
+    | EApp (func, args) -> List.exists (go bound) (func :: args)
+    | EBinop (_, e1, e2) -> go bound e1 || go bound e2
+    | EUnop (_, e1) | EProj (e1, _) | EInitially e1 -> go bound e1
+    | ETuple es -> List.exists (go bound) es
+    | EOverride (_, pairs) ->
+        List.exists (fun (k, v) -> go bound k || go bound v) pairs
+    | ECond arms -> List.exists (fun (g, c) -> go bound g || go bound c) arms
+    | EForall (mb, metas) | EExists (mb, metas) ->
+        let params, guards, body = Ast.unbind_quant mb metas in
+        go_quant bound params guards body
+    | EEach (mb, metas, _) ->
+        let params, guards, body = Ast.unbind_quant mb metas in
+        go_quant bound params guards body
+    | EVar _ | EPrimed _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _
+    | ELitString _ | ELitBool _ ->
+        false
+  and go_quant bound params guards body =
+    let bound =
+      List.map (fun (p : Ast.param) -> Ast.lower_name p.param_name) params
+      @ bound
+    in
+    let bound, guard_hit =
+      List.fold_left
+        (fun (bound, hit) -> function
+          | GParam p -> (Ast.lower_name p.param_name :: bound, hit)
+          | GIn (Lower n, list_expr) -> (n :: bound, hit || go bound list_expr)
+          | GExpr e -> (bound, hit || go bound e))
+        (bound, false) guards
+    in
+    guard_hit || go bound body
+  in
+  go [] e
+
 let upper_bound_candidate binder = function
   | GExpr (EBinop (((OpLt | OpLe) as op), EVar (Lower n), bound))
     when n = binder ->

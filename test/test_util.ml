@@ -320,6 +320,7 @@ let gen_chapter (world : gen_world) : Ast.chapter QCheck2.Gen.t =
                  params;
                  guards = [];
                  return_type = ret;
+                 body = None;
                  contexts = [];
                }))
         world.rules

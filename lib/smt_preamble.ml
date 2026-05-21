@@ -169,6 +169,23 @@ let declare_functions env =
              (sort_of_ty ret))
     | None -> ()
   in
+  let emit_primed_rule sname ty =
+    match decompose_func_ty ty with
+    | Some ([], ret) ->
+        Buffer.add_string buf
+          (Printf.sprintf "(declare-const %s_prime %s)\n" sname (sort_of_ty ret))
+    | Some (params, ret) ->
+        let param_sorts = String.concat " " (List.map sort_of_ty params) in
+        Buffer.add_string buf
+          (Printf.sprintf "(declare-fun %s_prime (%s) %s)\n" sname param_sorts
+             (sort_of_ty ret))
+    | None -> ()
+  in
+  let rule_is_recursive name arity =
+    match Env.lookup_rule_body_arity name arity env with
+    | Some (_, _, recursive) -> recursive
+    | None -> false
+  in
   Env.iter_terms
     (fun name entry ->
       match entry.Env.kind with
@@ -178,7 +195,13 @@ let declare_functions env =
             | Some (params, _) -> List.length params
             | None -> 0
           in
-          emit_rule (smt_rule_name env name arity) ty
+          let sname = smt_rule_name env name arity in
+          if
+            match entry.Env.kind with
+            | Env.KRule _ -> rule_is_recursive name arity
+            | Env.KClosure _ | Env.KDomain | Env.KAlias _ | Env.KVar _ -> false
+          then emit_primed_rule sname ty
+          else emit_rule sname ty
       | Env.KDomain | Env.KAlias _ | Env.KVar _ -> ())
     env;
   (* Emit declarations for qualified-only imports. When a (name, arity) is in

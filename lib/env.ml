@@ -1,6 +1,7 @@
 (** Type environment for Pantagruel *)
 
 open Types
+open Ast
 
 (** What kind of binding is this? *)
 type entry_kind =
@@ -72,6 +73,8 @@ type t = {
           [(name, arity)] don't clobber each other's declaration guards.
           Qualified guard lookup reads directly from this index; flat
           [rule_guards] only promotes single-origin entries. *)
+  rule_bodies : (Ast.declaration * Ast.expr * bool) TermMap.t;
+      (** Optional local rule bodies keyed by (rule name, arity). *)
   action : string option;  (** Action in current chapter (for prime checking) *)
   action_contexts : string list;
       (** Active contexts for current action (for primed-in-context enforcement)
@@ -92,6 +95,7 @@ let empty module_name =
     contexts = StringMap.empty;
     rule_guards = TermMap.empty;
     imported_rule_guards = TermMap.empty;
+    rule_bodies = TermMap.empty;
     action = None;
     action_contexts = [];
     local_vars = [];
@@ -144,12 +148,60 @@ let arity_of_ty (ty : ty) : int =
   | TyFunc (params, _) -> List.length params
   | _ -> 0
 
+let expr_applies_name target e =
+  let rec go bound = function[@warning "-4"]
+    | Ast.EApp (Ast.EVar (Ast.Lower n), args)
+      when n = target && not (List.mem n bound) ->
+        let _ = args in
+        true
+    | EApp (func, args) -> List.exists (go bound) (func :: args)
+    | EBinop (_, e1, e2) -> go bound e1 || go bound e2
+    | EUnop (_, e1) | EProj (e1, _) | EInitially e1 -> go bound e1
+    | ETuple es -> List.exists (go bound) es
+    | EOverride (_, pairs) ->
+        List.exists (fun (k, v) -> go bound k || go bound v) pairs
+    | ECond arms -> List.exists (fun (g, c) -> go bound g || go bound c) arms
+    | EForall (mb, metas) | EExists (mb, metas) ->
+        let params, guards, body = Ast.unbind_quant mb metas in
+        go_quant bound params guards body
+    | EEach (mb, metas, _) ->
+        let params, guards, body = Ast.unbind_quant mb metas in
+        go_quant bound params guards body
+    | EVar _ | EPrimed _ | EDomain _ | EQualified _ | ELitNat _ | ELitReal _
+    | ELitString _ | ELitBool _ ->
+        false
+  and go_quant bound params guards body =
+    let bound =
+      List.map (fun (p : Ast.param) -> Ast.lower_name p.param_name) params
+      @ bound
+    in
+    let bound, guard_hit =
+      List.fold_left
+        (fun (bound, hit) -> function
+          | Ast.GParam p -> (Ast.lower_name p.param_name :: bound, hit)
+          | GIn (Lower n, list_expr) -> (n :: bound, hit || go bound list_expr)
+          | GExpr e -> (bound, hit || go bound e))
+        (bound, false) guards
+    in
+    guard_hit || go bound body
+  in
+  go [] e
+
 (** Add a rule to the term namespace, keyed by [(name, arity)]. *)
-let add_rule name ty loc ~chapter env =
+let add_rule ?body name ty loc ~chapter env =
   let entry =
     { kind = KRule ty; loc; module_origin = None; decl_chapter = chapter }
   in
-  { env with terms = TermMap.add (name, arity_of_ty ty) entry env.terms }
+  let arity = arity_of_ty ty in
+  let rule_bodies =
+    match body with
+    | None -> env.rule_bodies
+    | Some (decl, expr) ->
+        TermMap.add (name, arity)
+          (decl, expr, expr_applies_name name expr)
+          env.rule_bodies
+  in
+  { env with terms = TermMap.add (name, arity) entry env.terms; rule_bodies }
 
 (** Add a closure rule to the term namespace, keyed by [(name, arity)]. *)
 let add_closure name ty target loc ~chapter env =
@@ -240,6 +292,14 @@ let lookup_rule_guards name env =
 (** Lookup rule guards by [(name, arity)]. *)
 let lookup_rule_guards_arity name arity env =
   TermMap.find_opt (name, arity) env.rule_guards
+
+let lookup_rule_body_arity name arity env =
+  TermMap.find_opt (name, arity) env.rule_bodies
+
+let fold_rule_bodies f env acc =
+  TermMap.fold
+    (fun (name, arity) body acc -> f name arity body acc)
+    env.rule_bodies acc
 
 (** Lookup rule guards by module, name, AND arity in the import index. Returns
     exactly the overload's guards exported by [mod_name]. *)
@@ -481,6 +541,7 @@ let add_import env other origin_module =
     terms = flat_of_term_index imported_terms;
     contexts = merged_contexts;
     rule_guards = flat_of_guards_index imported_rule_guards;
+    rule_bodies = TermMap.empty;
   }
 
 (** Lookup a type by module and name in the import index *)
@@ -556,6 +617,13 @@ let visible_in_head chapter_idx env =
     types = filter_string_map env.types;
     terms = filter_term_map env.terms;
     vars = filter_string_map env.vars;
+    rule_bodies =
+      TermMap.filter
+        (fun key _ ->
+          match TermMap.find_opt key env.terms with
+          | Some entry -> entry.decl_chapter <= chapter_idx
+          | None -> false)
+        env.rule_bodies;
   }
 
 (** Filter environment for visibility in a chapter body. Declaration in chapter
@@ -573,4 +641,11 @@ let visible_in_body chapter_idx env =
     types = filter_string_map env.types;
     terms = filter_term_map env.terms;
     vars = filter_string_map env.vars;
+    rule_bodies =
+      TermMap.filter
+        (fun key _ ->
+          match TermMap.find_opt key env.terms with
+          | Some entry -> entry.decl_chapter <= chapter_idx + 1
+          | None -> false)
+        env.rule_bodies;
   }
