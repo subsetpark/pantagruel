@@ -24,6 +24,11 @@ import {
   ir1LitNat,
   ir1Member,
   ir1Return,
+  ir1SsaInitialVersion,
+  ir1SsaLoopBody,
+  ir1SsaPropertyLocation,
+  ir1SsaReturnValueLocation,
+  ir1SsaThrowHandle,
   ir1Throw,
   ir1Unop,
   ir1Var,
@@ -32,6 +37,8 @@ import {
 import {
   CaptureRiskError,
   freeVarsIR1Expr,
+  freeVarsIR1SsaLocation,
+  freeVarsIR1SsaLoopBody,
   freeVarsIR1Stmt,
   substituteIR1ExprSubtree,
   substituteIR1StmtSubtree,
@@ -331,12 +338,24 @@ describe("ir1-substitute", () => {
       );
     });
 
-    it.skip("freeVarsIR1Expr handles throw-handle guard expression", () => {
-      // PENDING Patch 3.
+    it("freeVarsIR1Expr handles throw-handle guard expression", () => {
+      const location = ir1SsaPropertyLocation("value", ir1Var("obj"), "value");
+      const version = ir1SsaInitialVersion(location);
+      const body = ir1SsaLoopBody({
+        throwHandles: [
+          ir1SsaThrowHandle(
+            location,
+            version,
+            ir1Binop("eq", ir1Var("err"), ir1Var("limit")),
+          ),
+        ],
+      });
+
+      assertSetEqual(freeVarsIR1SsaLoopBody(body), ["err", "limit", "obj"]);
     });
 
-    it.skip("walker arms exhaustive over new IR1SsaLocation kind", () => {
-      // PENDING Patch 3.
+    it("walker arms exhaustive over new IR1SsaLocation kind", () => {
+      assertSetEqual(freeVarsIR1SsaLocation(ir1SsaReturnValueLocation("f")), []);
     });
   });
 

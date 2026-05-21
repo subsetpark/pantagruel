@@ -455,6 +455,10 @@ export type IR1SsaLocation =
       ownerType: string;
       elemType: string;
       receiver: IR1Expr;
+    }
+  | {
+      kind: "return-value";
+      ruleName: IR1SsaRuleName;
     };
 
 export interface IR1SsaVersion {
@@ -560,6 +564,19 @@ export interface IR1SsaContinueHandle {
   readonly version: IR1SsaVersion;
 }
 
+export interface IR1SsaReturnHandle {
+  readonly kind: "ssa-return-handle";
+  readonly location: IR1SsaLocation;
+  readonly version: IR1SsaVersion;
+}
+
+export interface IR1SsaThrowHandle {
+  readonly kind: "ssa-throw-handle";
+  readonly location: IR1SsaLocation;
+  readonly version: IR1SsaVersion;
+  readonly guard: IR1Expr;
+}
+
 export interface IR1SsaLoopBody {
   readonly kind: "ssa-loop-body";
   readonly headerJoins: readonly IR1SsaLoopHeaderJoin[];
@@ -567,6 +584,8 @@ export interface IR1SsaLoopBody {
   readonly joins: readonly IR1SsaJoin[];
   readonly breakHandles: readonly IR1SsaBreakHandle[];
   readonly continueHandles: readonly IR1SsaContinueHandle[];
+  readonly returnHandles: readonly IR1SsaReturnHandle[];
+  readonly throwHandles: readonly IR1SsaThrowHandle[];
   readonly terminationMetric: IR1SsaTerminationMetric | null;
 }
 
@@ -638,6 +657,13 @@ export const ir1SsaSetMembershipLocation = (
   ownerType,
   elemType,
   receiver,
+});
+
+export const ir1SsaReturnValueLocation = (
+  ruleName: IR1SsaRuleName,
+): IR1SsaLocation => ({
+  kind: "return-value",
+  ruleName,
 });
 
 export const ir1SsaRuleOfLocation = (
@@ -762,12 +788,31 @@ export const ir1SsaContinueHandle = (
   return { kind: "ssa-continue-handle", location, version };
 };
 
+export const ir1SsaReturnHandle = (
+  location: IR1SsaLocation,
+  version: IR1SsaVersion,
+): IR1SsaReturnHandle => {
+  ir1SsaAssertLocationCompatible(location, version.location);
+  return { kind: "ssa-return-handle", location, version };
+};
+
+export const ir1SsaThrowHandle = (
+  location: IR1SsaLocation,
+  version: IR1SsaVersion,
+  guard: IR1Expr,
+): IR1SsaThrowHandle => {
+  ir1SsaAssertLocationCompatible(location, version.location);
+  return { kind: "ssa-throw-handle", location, version, guard };
+};
+
 export const ir1SsaLoopBody = (input: {
   readonly headerJoins?: readonly IR1SsaLoopHeaderJoin[];
   readonly writes?: readonly IR1SsaWrite[];
   readonly joins?: readonly IR1SsaJoin[];
   readonly breakHandles?: readonly IR1SsaBreakHandle[];
   readonly continueHandles?: readonly IR1SsaContinueHandle[];
+  readonly returnHandles?: readonly IR1SsaReturnHandle[];
+  readonly throwHandles?: readonly IR1SsaThrowHandle[];
   readonly terminationMetric?: IR1SsaTerminationMetric | null;
 }): IR1SsaLoopBody => {
   const headerJoins = input.headerJoins ?? [];
@@ -775,6 +820,8 @@ export const ir1SsaLoopBody = (input: {
   const joins = input.joins ?? [];
   const breakHandles = input.breakHandles ?? [];
   const continueHandles = input.continueHandles ?? [];
+  const returnHandles = input.returnHandles ?? [];
+  const throwHandles = input.throwHandles ?? [];
 
   for (const header of headerJoins) {
     if (!header.closed) {
@@ -787,6 +834,12 @@ export const ir1SsaLoopBody = (input: {
   for (const handle of continueHandles) {
     ir1SsaAssertLocationCompatible(handle.location, handle.version.location);
   }
+  for (const handle of returnHandles) {
+    ir1SsaAssertLocationCompatible(handle.location, handle.version.location);
+  }
+  for (const handle of throwHandles) {
+    ir1SsaAssertLocationCompatible(handle.location, handle.version.location);
+  }
 
   return Object.freeze({
     kind: "ssa-loop-body",
@@ -795,6 +848,8 @@ export const ir1SsaLoopBody = (input: {
     joins,
     breakHandles,
     continueHandles,
+    returnHandles,
+    throwHandles,
     terminationMetric: input.terminationMetric ?? null,
   });
 };
@@ -892,6 +947,12 @@ const ir1SsaLocationEquals = (
         a.elemType === b.elemType &&
         ir1SsaExprEquals(a.receiver, b.receiver)
       );
+    }
+    case "return-value": {
+      if (b.kind !== "return-value") {
+        return false;
+      }
+      return a.ruleName === b.ruleName;
     }
     default: {
       const _exhaustive: never = a;

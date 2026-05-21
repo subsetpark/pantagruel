@@ -84,6 +84,8 @@ export function formatIR1SsaLocation(loc: IR1SsaLocation): string {
       return `${formatIR1Expr(loc.key)} in ${formatIR1Expr(loc.receiver)}`;
     case "set-membership":
       return formatIR1Expr(loc.receiver);
+    case "return-value":
+      return `return-value ${loc.ruleName}`;
     default: {
       const _exhaustive: never = loc;
       throw new Error(
@@ -466,6 +468,8 @@ function readExpressionKey(loc: IR1SsaLocation): string {
       return `map-membership:${loc.keyPredName} ${formatAsAppArg(loc.receiver)} ${formatAsAppArg(loc.key)}`;
     case "set-membership":
       return `set-membership:${formatIR1Expr(loc.receiver)}`;
+    case "return-value":
+      return `return-value:${loc.ruleName}`;
     default: {
       const _exhaustive: never = loc;
       throw new Error(
@@ -619,6 +623,8 @@ function locationAsPrimedRule(loc: IR1SsaLocation): string {
       return `(${formatIR1Expr(loc.key)} in ${formatIR1Expr(loc.receiver)})'`;
     case "set-membership":
       return `${formatIR1Expr(loc.receiver)}'`;
+    case "return-value":
+      return `return-value' ${loc.ruleName}`;
     default: {
       const _exhaustive: never = loc;
       throw new Error(

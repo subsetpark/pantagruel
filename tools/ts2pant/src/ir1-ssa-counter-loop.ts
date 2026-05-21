@@ -165,6 +165,8 @@ export function lowerCounterLoopL1Body(
     joins: [],
     breakHandles: [],
     continueHandles: [],
+    returnHandles: [],
+    throwHandles: [],
     terminationMetric,
   });
 

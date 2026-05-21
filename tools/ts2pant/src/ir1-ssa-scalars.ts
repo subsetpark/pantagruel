@@ -1089,6 +1089,8 @@ function sameScalarSsaLocation(
         scalarSsaCanonicalReceiverKey(left.receiver, { canonicalize }) ===
           scalarSsaCanonicalReceiverKey(right.receiver, { canonicalize })
       );
+    case "return-value":
+      return right.kind === "return-value" && left.ruleName === right.ruleName;
     default: {
       const _exhaustive: never = left;
       void _exhaustive;
