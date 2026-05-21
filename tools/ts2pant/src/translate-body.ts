@@ -2,9 +2,19 @@ import type { SourceFile } from "ts-morph";
 import ts from "typescript";
 import { buildIR, isBuildUnsupported } from "./ir-build.js";
 import { lowerExpr } from "./ir-emit.js";
-import { type IR1Stmt, ir1Block } from "./ir1.js";
+import {
+  type IR1Expr,
+  type IR1Stmt,
+  ir1Binop,
+  ir1Block,
+  ir1For,
+  ir1Let,
+  ir1LitNat,
+  ir1Var,
+} from "./ir1.js";
 import {
   buildL1Conditional,
+  buildL1IncrementStep,
   buildL1LetWhile,
   buildL1MemberAccess,
   isL1ConditionalForm,
@@ -21,6 +31,7 @@ import {
   buildL1ForEachCall,
   buildL1ForOfMutation,
   buildL1IfMutation,
+  buildL1SubExpr,
   isUnsupported,
 } from "./ir1-build-body.js";
 import { lowerL1MuSearch, type MuSearchLowerCtx } from "./ir1-lower.js";
@@ -4431,6 +4442,9 @@ function buildSupportedSsaStatement(
   if (ts.isForOfStatement(stmt)) {
     return buildL1ForOfMutation(stmt, ctx);
   }
+  if (ts.isForStatement(stmt)) {
+    return buildL1ForCounterMutation(stmt, ctx);
+  }
   if (ts.isExpressionStatement(stmt)) {
     const expr = unwrapExpression(stmt.expression);
     if (
@@ -4448,7 +4462,6 @@ function buildSupportedSsaStatement(
     }
   }
   if (
-    ts.isForStatement(stmt) ||
     ts.isForInStatement(stmt) ||
     ts.isWhileStatement(stmt) ||
     ts.isDoStatement(stmt)
@@ -4458,4 +4471,184 @@ function buildSupportedSsaStatement(
   return {
     unsupported: `statement is not supported by unified SSA body lowering: ${ts.SyntaxKind[stmt.kind]}`,
   };
+}
+
+function buildL1ForCounterMutation(
+  stmt: ts.ForStatement,
+  ctx: {
+    checker: ts.TypeChecker;
+    strategy: NumericStrategy;
+    paramNames: Map<string, string>;
+    state: SymbolicState;
+    supply: UniqueSupply;
+    applyConst: (e: OpaqueExpr) => OpaqueExpr;
+  },
+): IR1Stmt | { unsupported: string } {
+  const init = buildL1ForCounterInit(stmt.initializer);
+  if (isUnsupported(init)) {
+    return init;
+  }
+
+  if (stmt.condition === undefined) {
+    return { unsupported: "counter loop condition is missing" };
+  }
+  const cond = buildL1ForCounterCondition(
+    stmt.condition,
+    init.counterName,
+    ctx,
+  );
+  if (isUnsupported(cond)) {
+    return cond;
+  }
+
+  if (stmt.incrementor === undefined) {
+    return { unsupported: "counter loop step is missing" };
+  }
+  if (counterStepHasEffectfulOperand(stmt.incrementor, init.counterName, ctx)) {
+    return {
+      unsupported: "counter loop step expression has side effects",
+    };
+  }
+  const step = buildL1IncrementStep(stmt.incrementor, init.counterName, {
+    checker: ctx.checker,
+    strategy: ctx.strategy,
+    paramNames: ctx.paramNames,
+    state: ctx.state,
+    supply: ctx.supply,
+  });
+  if (isL1StmtUnsupported(step)) {
+    return { unsupported: step.unsupported };
+  }
+
+  const bodyStmt = ts.isBlock(stmt.statement)
+    ? buildSupportedSsaMutatingBody(
+        stmt.statement,
+        ctx.checker,
+        ctx.strategy,
+        ctx.paramNames,
+        ctx.state,
+        ctx.supply,
+      )
+    : buildSupportedSsaStatement(stmt.statement, ctx);
+  if (isUnsupported(bodyStmt)) {
+    return bodyStmt;
+  }
+
+  return ir1For(init.initStmt, cond, step, bodyStmt);
+}
+
+function buildL1ForCounterInit(
+  initializer: ts.ForInitializer | undefined,
+): { counterName: string; initStmt: IR1Stmt } | { unsupported: string } {
+  if (
+    initializer === undefined ||
+    !ts.isVariableDeclarationList(initializer) ||
+    !(initializer.flags & ts.NodeFlags.Let) ||
+    initializer.declarations.length !== 1
+  ) {
+    return {
+      unsupported: "counter loop initializer must be a single let binding",
+    };
+  }
+  const decl = initializer.declarations[0]!;
+  if (!ts.isIdentifier(decl.name)) {
+    return { unsupported: "counter loop initializer must bind an identifier" };
+  }
+  if (decl.initializer === undefined) {
+    return { unsupported: "counter loop initializer is missing" };
+  }
+  const initExpr = unwrapExpression(decl.initializer);
+  if (!ts.isNumericLiteral(initExpr)) {
+    return {
+      unsupported: "counter loop initializer must be a numeric literal",
+    };
+  }
+  const value = Number(initExpr.text);
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
+    return {
+      unsupported:
+        "counter loop initializer must be a non-negative integer literal",
+    };
+  }
+  return {
+    counterName: decl.name.text,
+    initStmt: ir1Let(decl.name.text, ir1LitNat(value)),
+  };
+}
+
+function buildL1ForCounterCondition(
+  condition: ts.Expression,
+  counterName: string,
+  ctx: {
+    checker: ts.TypeChecker;
+    strategy: NumericStrategy;
+    paramNames: Map<string, string>;
+    state: SymbolicState;
+    supply: UniqueSupply;
+  },
+): IR1Expr | { unsupported: string } {
+  const cond = unwrapExpression(condition);
+  if (
+    !ts.isBinaryExpression(cond) ||
+    (cond.operatorToken.kind !== ts.SyntaxKind.LessThanToken &&
+      cond.operatorToken.kind !== ts.SyntaxKind.LessThanEqualsToken) ||
+    !ts.isIdentifier(cond.left) ||
+    cond.left.text !== counterName
+  ) {
+    return {
+      unsupported:
+        "counter loop condition must be `counter < bound` or `counter <= bound`",
+    };
+  }
+  if (expressionReferencesNames(cond.right, new Set([counterName]))) {
+    return { unsupported: "counter loop bound must not reference the counter" };
+  }
+  if (expressionHasSideEffects(cond.right, ctx.checker)) {
+    return { unsupported: "counter loop bound expression has side effects" };
+  }
+  const bound = buildL1SubExpr(cond.right, { ...ctx, applyConst: (e) => e });
+  if (isUnsupported(bound)) {
+    return bound;
+  }
+  return ir1Binop(
+    cond.operatorToken.kind === ts.SyntaxKind.LessThanToken ? "lt" : "le",
+    ir1Var(counterName),
+    bound,
+  );
+}
+
+function counterStepHasEffectfulOperand(
+  step: ts.Expression,
+  counterName: string,
+  ctx: { checker: ts.TypeChecker },
+): boolean {
+  const expr = unwrapExpression(step);
+  if (ts.isPostfixUnaryExpression(expr) || ts.isPrefixUnaryExpression(expr)) {
+    return false;
+  }
+  if (!ts.isBinaryExpression(expr)) {
+    return expressionHasSideEffects(expr, ctx.checker);
+  }
+  if (
+    expr.operatorToken.kind === ts.SyntaxKind.PlusEqualsToken ||
+    expr.operatorToken.kind === ts.SyntaxKind.MinusEqualsToken ||
+    expr.operatorToken.kind === ts.SyntaxKind.AsteriskEqualsToken ||
+    expr.operatorToken.kind === ts.SyntaxKind.SlashEqualsToken
+  ) {
+    return expressionHasSideEffects(expr.right, ctx.checker);
+  }
+  if (expr.operatorToken.kind !== ts.SyntaxKind.EqualsToken) {
+    return expressionHasSideEffects(expr, ctx.checker);
+  }
+  if (!ts.isBinaryExpression(expr.right)) {
+    return expressionHasSideEffects(expr.right, ctx.checker);
+  }
+  const { left, right } = expr.right;
+  if (ts.isIdentifier(left) && left.text === counterName) {
+    return expressionHasSideEffects(right, ctx.checker);
+  }
+  if (ts.isIdentifier(right) && right.text === counterName) {
+    return expressionHasSideEffects(left, ctx.checker);
+  }
+  return expressionHasSideEffects(expr.right, ctx.checker);
 }

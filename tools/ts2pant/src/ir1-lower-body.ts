@@ -24,6 +24,7 @@ import {
   isCollectionSsaL1Body,
   lowerCollectionSsaToProps,
 } from "./ir1-ssa-collections.js";
+import { lowerCounterLoopL1Body } from "./ir1-ssa-counter-loop.js";
 import {
   lowerForeachShapeASummaries,
   lowerForeachShapeBSummaries,
@@ -110,6 +111,9 @@ function lowerL1BodyToSsaResult(
   if (stmt.kind === "foreach") {
     return lowerForeachL1BodyToSsaResult(stmt, options);
   }
+  if (stmt.kind === "for") {
+    return lowerCounterLoopL1BodyToSsaResult(stmt, options);
+  }
   if (stmt.kind === "block") {
     const results: IR1SsaBodyLowerResult[] = [];
     const initialPropertyValues = new Map(options.initialPropertyValues);
@@ -132,6 +136,26 @@ function lowerL1BodyToSsaResult(
   return ir1SsaBodyLowerUnsupported(
     "statement is not supported by unified SSA body lowering",
   );
+}
+
+function lowerCounterLoopL1BodyToSsaResult(
+  stmt: Extract<IR1Stmt, { kind: "for" }>,
+  options: SsaBodyLowerOptions,
+): IR1SsaBodyLowerResult {
+  try {
+    return lowerCounterLoopL1Body(stmt, {
+      lowerOpaque: options.applyConst,
+      ...(options.initialPropertyValues === undefined
+        ? {}
+        : { initialPropertyValues: options.initialPropertyValues }),
+    });
+  } catch (err) {
+    return ir1SsaBodyLowerUnsupported(
+      err instanceof Error
+        ? err.message
+        : "counter loop SSA lowering rejected the body",
+    );
+  }
 }
 
 export function lowerCollectionL1BodyToSsaResult(
