@@ -340,12 +340,12 @@ describe("unsupported patterns", () => {
 
     assertUnsupportedReason(
       props,
-      /local variable declaration \(let\/var or effectful const\)/u,
-      "non-matching let-then-while should fall through to let rejection",
+      /assign target must be a property access/u,
+      "non-matching let-then-while should preserve the fixed-point body rejection",
     );
   });
 
-  it("rejects bare while loop with L4 fixed-point pointer", () => {
+  it("rejects bare while loop whose guard reads a different property", () => {
     const source = `
       interface Account { total: number; lastIndex: number }
       export function bareWhile(a: Account, n: number): void {
@@ -359,8 +359,8 @@ describe("unsupported patterns", () => {
 
     assertUnsupportedReason(
       props,
-      /while loop is not a recognized bounded-counter shape; lift to L4 fixed-point lowering when that milestone ships/u,
-      "bare while should reject with L4 pointer",
+      /fixed-point while lowering supports guards and updates over the mutated property only/u,
+      "bare while should reject when guard reads outside the mutated property",
     );
   });
 
@@ -1236,6 +1236,36 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     }
   });
 
+  it("Shape A: unary iterator property increment desugars through foreach", () => {
+    const source = `
+      interface User { score: number; }
+      function f(us: User[]): void {
+        for (const u of us) { u.score++; }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    const ast = getAst();
+    const eqs = props.filter((p) => p.kind === "equation");
+    const loopEq = eqs.find(
+      (e) => e.kind === "equation" && (e.guards?.length ?? 0) > 0,
+    );
+    assert.ok(loopEq, "expected one loop equation with a guard");
+    if (loopEq?.kind === "equation") {
+      const rendered = ast.strExpr(
+        ast.forall([], loopEq.guards ?? [], ast.var("__body__")),
+      );
+      const binder = rendered.match(/all (\$\d+) in us \| /)?.[1];
+      assert.ok(binder);
+      assert.equal(ast.strExpr(loopEq.lhs), `user--score' ${binder}`);
+      assert.equal(ast.strExpr(loopEq.rhs), `user--score ${binder} + 1`);
+    }
+  });
+
   it("Shape A: conditional iterator write delegates to symbolic-execute", () => {
     const source = `
       interface User { active: boolean; score: number; }
@@ -1854,6 +1884,37 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
     if (totalEq?.kind === "equation") {
       // Shape B's `x.value` read must resolve through the in-iteration
       // Shape A write `value' x = value x + 1`, not the pre-state `value x`.
+      assert.match(
+        ast.strExpr(totalEq.rhs),
+        /^account--total a \+ \(\+ over each (\$\d+) in xs \| item--value \1 \+ 1\)$/,
+      );
+    }
+  });
+
+  it("Shape B reads observe unary Shape A writes in the same iteration", () => {
+    const source = `
+      interface Account { total: number; }
+      interface Item { value: number; }
+      function f(a: Account, xs: Item[]): void {
+        for (const x of xs) {
+          x.value++;
+          a.total += x.value;
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    const ast = getAst();
+    const eqs = props.filter((p) => p.kind === "equation");
+    const totalEq = eqs.find(
+      (e) => e.kind === "equation" && ast.strExpr(e.lhs) === "account--total' a",
+    );
+    assert.ok(totalEq, "expected a Shape B equation for total");
+    if (totalEq?.kind === "equation") {
       assert.match(
         ast.strExpr(totalEq.rhs),
         /^account--total a \+ \(\+ over each (\$\d+) in xs \| item--value \1 \+ 1\)$/,
@@ -2480,15 +2541,58 @@ describe("Set mutation (Stage A: interface-field .add / .delete / .clear)", () =
 });
 
 describe("fixed-point while lowering", () => {
-  it.skip("desugars let-then-while pair that fails L3 bounded recognition to ir1While", () => {
-    // PENDING Patch 4: route failed L3 let-while recognition into ir1While.
+  it("desugars let-then-while pair that fails L3 bounded recognition to ir1While", () => {
+    const source = `
+      interface Account { total: number }
+      export function growFromSeed(a: Account, seed: number, target: number): void {
+        let i = seed;
+        while (a.total < target) {
+          a.total += 1;
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBodyWithSynth(sourceFile, "growFromSeed");
+
+    assert.ok(props.some((p) => p.kind === "rule-decl"));
+    assert.ok(props.some((p) => p.kind === "equation"));
   });
 
-  it.skip("builds ir1While for a bare while loop with non-literal guard", () => {
-    // PENDING Patch 4: build ir1While for supported bare while statements.
+  it("builds ir1While for a bare while loop with non-literal guard", () => {
+    const source = `
+      interface Account { total: number }
+      export function grow(a: Account, target: number): void {
+        while (a.total < target) {
+          a.total += 1;
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBodyWithSynth(sourceFile, "grow");
+
+    const helper = props.find((p) => p.kind === "rule-decl");
+    assert.ok(helper);
+    if (helper?.kind === "rule-decl") {
+      assert.match(helper.ruleName, /^fn--loop/u);
+    }
   });
 
-  it.skip("rejects while (true) with no-observable-termination diagnostic", () => {
-    // PENDING Patch 4: reject literal-true while guards in the build pass.
+  it("rejects while (true) with no-observable-termination diagnostic", () => {
+    const source = `
+      interface Account { total: number }
+      export function spin(a: Account): void {
+        while (true) {
+          a.total += 1;
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBodyWithSynth(sourceFile, "spin");
+
+    assertUnsupportedReason(
+      props,
+      /while loop has no observable termination condition \(literal-true guard\)/u,
+      "literal-true while guard should reject in the build pass",
+    );
   });
 });

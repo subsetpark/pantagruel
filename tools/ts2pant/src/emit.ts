@@ -33,6 +33,7 @@ export interface CheckOptions {
    * `dune exec pant --` from {@link projectRoot}.
    */
   pantBin?: string;
+  timeoutMs?: number;
 }
 
 function renderPropResult(prop: PropResult): string {
@@ -54,15 +55,10 @@ function renderPropResult(prop: PropResult): string {
       return ast.strExpr(ast.forall(prop.quantifiers, guards, prop.body));
     }
     case "rule-decl": {
-      const params = prop.params.map((p) => ast.param(p.name, p.type));
-      const decl = ast.strDecl(
-        ast.declRule(prop.ruleName, params, [], prop.returnType),
-      );
-      const lhs = ast.app(
-        ast.var(prop.ruleName),
-        prop.params.map((p) => ast.var(p.name)),
-      );
-      return `${decl}\n${ast.strExpr(ast.binop(ast.opEq(), lhs, prop.body))}`;
+      const params = prop.params
+        .map((p) => `${p.name}: ${ast.strTypeExpr(p.type)}`)
+        .join(", ");
+      return `${prop.ruleName} ${params} => ${ast.strTypeExpr(prop.returnType)} = ${ast.strExpr(prop.body)}`;
     }
     case "unsupported":
       return `> UNSUPPORTED: ${prop.reason}`;
@@ -80,61 +76,35 @@ function renderPropResult(prop: PropResult): string {
  */
 export function emitDocument(doc: PantDocument): string {
   const lines: string[] = [];
+  const ruleDeclProps = doc.propositions.filter((p) => p.kind === "rule-decl");
+  const bodyProps = doc.propositions.filter((p) => p.kind !== "rule-decl");
+  const actionDecls = doc.declarations.filter((d) => d.kind === "action");
+  const nonActionDecls = doc.declarations.filter((d) => d.kind !== "action");
   lines.push(`module ${doc.moduleName}.`);
   for (const imp of doc.imports) {
     lines.push(`import ${imp.name}.`);
   }
   lines.push("");
 
-  for (const decl of doc.declarations) {
-    switch (decl.kind) {
-      case "domain":
-        lines.push(`${decl.name}.`);
-        break;
-      case "alias":
-        lines.push(`${decl.name} = ${decl.type}.`);
-        break;
-      case "rule": {
-        const params = decl.params
-          .map((p) => `${p.name}: ${p.type}`)
-          .join(", ");
-        const guard = decl.guard ? `, ${getAst().strExpr(decl.guard)}` : "";
-        lines.push(`${decl.name} ${params}${guard} => ${decl.returnType}.`);
-        break;
-      }
-      case "action": {
-        if (decl.params.length === 0) {
-          lines.push(`~> ${decl.label}.`);
-        } else {
-          const params = decl.params
-            .map((p) => `${p.name}: ${p.type}`)
-            .join(", ");
-          const guard = decl.guard ? `, ${getAst().strExpr(decl.guard)}` : "";
-          lines.push(`~> ${decl.label} @ ${params}${guard}.`);
-        }
-        break;
-      }
-      case "unsupported":
-        lines.push(`> UNSUPPORTED: ${decl.reason}`);
-        break;
-      default: {
-        const _exhaustive: never = decl;
-        throw new Error(
-          `Unhandled declaration kind: ${JSON.stringify(_exhaustive)}`,
-        );
-      }
-    }
+  for (const decl of nonActionDecls) {
+    lines.push(renderDeclaration(decl));
+  }
+  for (const prop of ruleDeclProps) {
+    lines.push(`${renderPropResult(prop)}.`);
+  }
+  for (const decl of actionDecls) {
+    lines.push(renderDeclaration(decl));
   }
 
   lines.push("");
   lines.push("---");
   lines.push("");
 
-  if (doc.propositions.length === 0) {
+  if (bodyProps.length === 0) {
     // Keep chapter body non-empty (required when a check block is present).
     lines.push("true.");
   } else {
-    for (const prop of doc.propositions) {
+    for (const prop of bodyProps) {
       lines.push(`${renderPropResult(prop)}.`);
     }
   }
@@ -152,6 +122,37 @@ export function emitDocument(doc: PantDocument): string {
   return lines.join("\n");
 }
 
+function renderDeclaration(decl: PantDocument["declarations"][number]): string {
+  switch (decl.kind) {
+    case "domain":
+      return `${decl.name}.`;
+    case "alias":
+      return `${decl.name} = ${decl.type}.`;
+    case "rule": {
+      const params = decl.params.map((p) => `${p.name}: ${p.type}`).join(", ");
+      const guard = decl.guard ? `, ${getAst().strExpr(decl.guard)}` : "";
+      return `${decl.name} ${params}${guard} => ${decl.returnType}.`;
+    }
+    case "action": {
+      if (decl.params.length === 0) {
+        const guard = decl.guard ? ` @ ${getAst().strExpr(decl.guard)}` : "";
+        return `~> ${decl.label}${guard}.`;
+      }
+      const params = decl.params.map((p) => `${p.name}: ${p.type}`).join(", ");
+      const guard = decl.guard ? `, ${getAst().strExpr(decl.guard)}` : "";
+      return `~> ${decl.label} @ ${params}${guard}.`;
+    }
+    case "unsupported":
+      return `> UNSUPPORTED: ${decl.reason}`;
+    default: {
+      const _exhaustive: never = decl;
+      throw new Error(
+        `Unhandled declaration kind: ${JSON.stringify(_exhaustive)}`,
+      );
+    }
+  }
+}
+
 /**
  * Write a .pant source string to a temp file, invoke `pant --check`,
  * and parse the output.
@@ -167,12 +168,12 @@ export function runCheck(pantSource: string, opts?: CheckOptions): CheckResult {
     const output = opts?.pantBin
       ? execFileSync(opts.pantBin, ["--check", filePath], {
           encoding: "utf-8",
-          timeout: 60_000,
+          timeout: opts.timeoutMs ?? 60_000,
           cwd,
         })
       : execSync(`dune exec pant -- --check "${filePath}"`, {
           encoding: "utf-8",
-          timeout: 60_000,
+          timeout: opts?.timeoutMs ?? 60_000,
           cwd,
         });
 

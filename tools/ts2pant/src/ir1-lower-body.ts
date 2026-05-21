@@ -25,6 +25,7 @@ import {
   lowerCollectionSsaToProps,
 } from "./ir1-ssa-collections.js";
 import { lowerCounterLoopL1Body } from "./ir1-ssa-counter-loop.js";
+import { lowerFixedPointLoopL1Body } from "./ir1-ssa-fixed-point.js";
 import {
   lowerForeachShapeASummaries,
   lowerForeachShapeBSummaries,
@@ -42,6 +43,7 @@ import {
 import { isScalarSsaL1Body, lowerScalarSsaToProps } from "./ir1-ssa-scalars.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { symbolicKey } from "./translate-body.js";
+import type { NumericStrategy, SynthCell } from "./translate-types.js";
 import type { PantDeclaration } from "./types.js";
 
 export interface LowerBodyCtx {
@@ -85,6 +87,9 @@ export interface ScalarSsaBodyLowerOptions extends LowerBodyCtx {
 
 export interface SsaBodyLowerOptions extends LowerBodyCtx {
   initialPropertyValues?: ReadonlyMap<string, OpaqueExpr>;
+  synthCell?: SynthCell;
+  strategy?: NumericStrategy;
+  declarations?: readonly PantDeclaration[];
 }
 
 export function lowerL1BodyToSsaProps(
@@ -92,8 +97,12 @@ export function lowerL1BodyToSsaProps(
   declarations: readonly PantDeclaration[],
   options: SsaBodyLowerOptions,
 ): IR1SsaBodyLowerResult {
+  const lowerDeclarations = options.declarations ?? declarations;
   return appendFramesForUnmodifiedRules(
-    lowerL1BodyToSsaResult(stmt, options),
+    lowerL1BodyToSsaResult(stmt, {
+      ...options,
+      declarations: lowerDeclarations,
+    }),
     declarations,
   );
 }
@@ -111,8 +120,19 @@ function lowerL1BodyToSsaResult(
   if (stmt.kind === "foreach") {
     return lowerForeachL1BodyToSsaResult(stmt, options);
   }
+  if (stmt.kind === "while") {
+    return lowerFixedPointL1BodyToSsaResult(stmt, options);
+  }
   if (stmt.kind === "for") {
     return lowerCounterLoopL1BodyToSsaResult(stmt, options);
+  }
+  if (
+    stmt.kind === "block" &&
+    stmt.stmts.length > 0 &&
+    stmt.stmts.at(-1)?.kind === "while" &&
+    stmt.stmts.slice(0, -1).every((child) => child.kind === "let")
+  ) {
+    return lowerFixedPointL1BodyToSsaResult(stmt, options);
   }
   if (stmt.kind === "block") {
     const results: IR1SsaBodyLowerResult[] = [];
@@ -136,6 +156,35 @@ function lowerL1BodyToSsaResult(
   return ir1SsaBodyLowerUnsupported(
     "statement is not supported by unified SSA body lowering",
   );
+}
+
+function lowerFixedPointL1BodyToSsaResult(
+  stmt:
+    | Extract<IR1Stmt, { kind: "while" }>
+    | Extract<IR1Stmt, { kind: "block" }>,
+  options: SsaBodyLowerOptions,
+): IR1SsaBodyLowerResult {
+  try {
+    return lowerFixedPointLoopL1Body(stmt, {
+      lowerOpaque: options.applyConst,
+      ...(options.initialPropertyValues === undefined
+        ? {}
+        : { initialPropertyValues: options.initialPropertyValues }),
+      ...(options.synthCell === undefined
+        ? {}
+        : { synthCell: options.synthCell }),
+      ...(options.strategy === undefined ? {} : { strategy: options.strategy }),
+      ...(options.declarations === undefined
+        ? {}
+        : { declarations: options.declarations }),
+    });
+  } catch (err) {
+    return ir1SsaBodyLowerUnsupported(
+      err instanceof Error
+        ? err.message
+        : "fixed-point while SSA lowering rejected the body",
+    );
+  }
 }
 
 function lowerCounterLoopL1BodyToSsaResult(

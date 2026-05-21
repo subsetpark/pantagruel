@@ -516,6 +516,37 @@ function classifyForeachStmt(
 ): BuildResult<ForeachStmtClass> {
   if (
     ts.isExpressionStatement(stmt) &&
+    isUnaryPropertyIncrement(unwrapExpression(stmt.expression))
+  ) {
+    const expr = unwrapExpression(stmt.expression) as
+      | ts.PrefixUnaryExpression
+      | ts.PostfixUnaryExpression;
+    const unary = unaryPropertyIncrementParts(expr);
+    if (isUnsupported(unary)) {
+      return unary;
+    }
+    const rootName = getRootIdentifier(unary.target.expression);
+    if (rootName !== iterName) {
+      return {
+        unsupported:
+          "loop accumulator write must use a compound assignment (+=, -=, *=, /=)",
+      };
+    }
+    const built = buildL1AssignStmt(stmt, subCtx);
+    if (isUnsupported(built)) {
+      return built;
+    }
+    if (parentGuard !== null) {
+      return {
+        unsupported:
+          "Shape A iterator write under an if-guard is not supported in foreach",
+      };
+    }
+    return { kind: "shapeA", built: built as IR1ForeachBody };
+  }
+
+  if (
+    ts.isExpressionStatement(stmt) &&
     ts.isBinaryExpression(unwrapExpression(stmt.expression))
   ) {
     const bin = unwrapExpression(stmt.expression) as ts.BinaryExpression;
@@ -827,6 +858,13 @@ function simulateShapeA(
     return true;
   }
   const expr = unwrapExpression(stmt.expression);
+  if (isUnaryPropertyIncrement(expr)) {
+    const unary = unaryPropertyIncrementParts(expr);
+    if (isUnsupported(unary)) {
+      return unary;
+    }
+    return simulateShapeAPropertyWrite(unary.target, unary.rhs, subCtx);
+  }
   if (!ts.isBinaryExpression(expr)) {
     return true;
   }
@@ -838,8 +876,20 @@ function simulateShapeA(
   if (!ts.isPropertyAccessExpression(expr.left)) {
     return true;
   }
-  const rawProp = expr.left.name.text;
-  const receiverType = subCtx.checker.getTypeAtLocation(expr.left.expression);
+  const rhsNode =
+    compoundOp !== undefined
+      ? ts.factory.createBinaryExpression(expr.left, compoundOp, expr.right)
+      : expr.right;
+  return simulateShapeAPropertyWrite(expr.left, rhsNode, subCtx);
+}
+
+function simulateShapeAPropertyWrite(
+  target: ts.PropertyAccessExpression,
+  rhsNode: ts.Expression,
+  subCtx: BuildBodyCtx,
+): BuildResult<true> {
+  const rawProp = target.name.text;
+  const receiverType = subCtx.checker.getTypeAtLocation(target.expression);
   const prop = qualifyFieldAccess(
     receiverType,
     rawProp,
@@ -856,7 +906,7 @@ function simulateShapeA(
   // `buildL1AssignStmt`.
   const objR = rejectEffect(
     translateBodyExpr(
-      expr.left.expression,
+      target.expression,
       subCtx.checker,
       subCtx.strategy,
       subCtx.paramNames,
@@ -867,10 +917,6 @@ function simulateShapeA(
   if (isBodyUnsupported(objR)) {
     return { unsupported: objR.unsupported };
   }
-  const rhsNode =
-    compoundOp !== undefined
-      ? ts.factory.createBinaryExpression(expr.left, compoundOp, expr.right)
-      : expr.right;
   const valR = rejectEffect(
     translateBodyExpr(
       rhsNode,
@@ -1159,6 +1205,13 @@ export function buildL1AssignStmt(
   // way as `obj.p = 1;`, mirroring the canonicalization the
   // `classifyForeachStmt` outer dispatch already does.
   const expr = unwrapExpression(stmt.expression);
+  if (ts.isPrefixUnaryExpression(expr) || ts.isPostfixUnaryExpression(expr)) {
+    const unary = unaryPropertyIncrementParts(expr);
+    if (isUnsupported(unary)) {
+      return unary;
+    }
+    return buildL1PropertyAssignment(unary.target, unary.rhs, ctx);
+  }
   if (!ts.isBinaryExpression(expr)) {
     return { unsupported: "branch statement must be an assignment" };
   }
@@ -1170,6 +1223,57 @@ export function buildL1AssignStmt(
   if (!ts.isPropertyAccessExpression(expr.left)) {
     return { unsupported: "assign target must be a property access" };
   }
+  const rhsNode =
+    compoundOp !== undefined
+      ? ts.factory.createBinaryExpression(expr.left, compoundOp, expr.right)
+      : expr.right;
+  return buildL1PropertyAssignment(expr.left, rhsNode, ctx);
+}
+
+function isUnaryPropertyIncrement(
+  expr: ts.Expression,
+): expr is ts.PrefixUnaryExpression | ts.PostfixUnaryExpression {
+  return (
+    (ts.isPrefixUnaryExpression(expr) || ts.isPostfixUnaryExpression(expr)) &&
+    (expr.operator === ts.SyntaxKind.PlusPlusToken ||
+      expr.operator === ts.SyntaxKind.MinusMinusToken) &&
+    ts.isPropertyAccessExpression(expr.operand)
+  );
+}
+
+function unaryPropertyIncrementParts(
+  expr: ts.PrefixUnaryExpression | ts.PostfixUnaryExpression,
+): BuildResult<{
+  target: ts.PropertyAccessExpression;
+  rhs: ts.BinaryExpression;
+}> {
+  const op = expr.operator;
+  if (
+    op !== ts.SyntaxKind.PlusPlusToken &&
+    op !== ts.SyntaxKind.MinusMinusToken
+  ) {
+    return { unsupported: "unsupported assignment operator" };
+  }
+  if (!ts.isPropertyAccessExpression(expr.operand)) {
+    return { unsupported: "assign target must be a property access" };
+  }
+  return {
+    target: expr.operand,
+    rhs: ts.factory.createBinaryExpression(
+      expr.operand,
+      op === ts.SyntaxKind.PlusPlusToken
+        ? ts.SyntaxKind.PlusToken
+        : ts.SyntaxKind.MinusToken,
+      ts.factory.createNumericLiteral(1),
+    ),
+  };
+}
+
+function buildL1PropertyAssignment(
+  target: ts.PropertyAccessExpression,
+  rhsNode: ts.Expression,
+  ctx: BuildBodyCtx,
+): BuildResult<IR1Stmt> {
   // Inside a foreach (`ctx.iterRefs` set), Shape A means *uniform
   // iterator writes* — the assign target must be rooted at one of
   // the iterator binders. `for (const x of xs) { if (g) acc.total =
@@ -1177,7 +1281,7 @@ export function buildL1AssignStmt(
   // check in `ensureForeachBodyShape`; we catch it here at the TS-AST
   // level where the root identifier is still visible.
   if (ctx.iterRefs) {
-    const rootName = getRootIdentifier(expr.left.expression);
+    const rootName = getRootIdentifier(target.expression);
     if (rootName === null || !ctx.iterRefs.has(rootName)) {
       return {
         unsupported:
@@ -1185,8 +1289,8 @@ export function buildL1AssignStmt(
       };
     }
   }
-  const rawProp = expr.left.name.text;
-  const receiverType = ctx.checker.getTypeAtLocation(expr.left.expression);
+  const rawProp = target.name.text;
+  const receiverType = ctx.checker.getTypeAtLocation(target.expression);
   const prop = qualifyFieldAccess(
     receiverType,
     rawProp,
@@ -1197,19 +1301,11 @@ export function buildL1AssignStmt(
   if (prop === null) {
     return { unsupported: ambiguousFieldMsg(rawProp) };
   }
-  const objR = buildL1SubExpr(expr.left.expression, ctx);
+  const objR = buildL1SubExpr(target.expression, ctx);
   if (isUnsupported(objR)) {
     return objR;
   }
   const obj = objR;
-  // For compound `a.p OP= v`, desugar the rhs to `a.p OP v`. The new
-  // `a.p` read goes through translateBodyExpr, which consults the
-  // symbolic state and returns the prior-write value or the pre-state
-  // identity.
-  const rhsNode =
-    compoundOp !== undefined
-      ? ts.factory.createBinaryExpression(expr.left, compoundOp, expr.right)
-      : expr.right;
   const val = buildL1SubExpr(rhsNode, ctx);
   if (isUnsupported(val)) {
     return val;

@@ -1,7 +1,11 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { emitDocument } from "../src/emit.js";
+import {
+  emitDocument,
+  runCheck as runCheckWithOptions,
+  type CheckOptions,
+} from "../src/emit.js";
 import { createSourceFile, type SourceFile } from "../src/extract.js";
 import { assertWasmTypeChecks } from "../src/pant-wasm.js";
 import { buildPantDocument } from "../src/pipeline.js";
@@ -92,6 +96,17 @@ export async function buildDocumentFromSourceFile(
 }
 
 export { emitDocument };
+
+export function runCheck(
+  output: string,
+  opts: Omit<CheckOptions, "projectRoot" | "pantBin"> = {},
+) {
+  return runCheckWithOptions(output, {
+    projectRoot: PROJECT_ROOT,
+    pantBin: getPantBin(),
+    ...opts,
+  });
+}
 
 /**
  * Emit a PantDocument and verify that the resulting Pantagruel text

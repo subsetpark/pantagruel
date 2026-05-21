@@ -11,6 +11,7 @@ import {
   ir1Let,
   ir1LitNat,
   ir1Var,
+  ir1While,
 } from "./ir1.js";
 import {
   buildL1Conditional,
@@ -1154,6 +1155,7 @@ export function translateBody(opts: TranslateBodyOptions): PropResult[] {
   } else {
     return translateMutatingBody(
       node,
+      baseName,
       checker,
       strategy,
       paramNames,
@@ -4073,6 +4075,7 @@ function extractArrowBody(
 
 function translateMutatingBody(
   node: ts.FunctionDeclaration | ts.MethodDeclaration,
+  functionName: string,
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   paramNames: Map<string, string>,
@@ -4091,6 +4094,8 @@ function translateMutatingBody(
       state: makeSymbolicState(),
       supply: makeUniqueSupply(synthCell),
       initialPropertyValues: new Map(),
+      helperNameBase: functionName,
+      declarations,
     }),
     declarations,
   );
@@ -4109,6 +4114,8 @@ function lowerSupportedSsaMutatingStatements(
     state: SymbolicState;
     supply: UniqueSupply;
     initialPropertyValues: ReadonlyMap<string, OpaqueExpr>;
+    helperNameBase: string;
+    declarations: readonly PantDeclaration[];
   },
 ): IR1SsaBodyLowerResult {
   const firstEarlyExit = stmts.findIndex(
@@ -4190,6 +4197,7 @@ function lowerSupportedSsaMutatingStatements(
   const continuationResult = lowerSupportedSsaMutatingStatements(continuation, {
     ...ctx,
     initialPropertyValues: propertyValues,
+    helperNameBase: ctx.helperNameBase,
   });
   if (continuationResult.diagnostics.length > 0) {
     return continuationResult;
@@ -4259,6 +4267,8 @@ function lowerSupportedSsaMutatingBlock(
     state: SymbolicState;
     supply: UniqueSupply;
     initialPropertyValues: ReadonlyMap<string, OpaqueExpr>;
+    helperNameBase: string;
+    declarations: readonly PantDeclaration[];
   },
 ): IR1SsaBodyLowerResult {
   const body = ts.factory.createBlock(stmts, true);
@@ -4280,6 +4290,11 @@ function lowerSupportedSsaMutatingBlock(
   return lowerL1BodyToSsaProps(ssaBody, [], {
     applyConst: (e) => applyOpaqueAliases(e, ctx.supply),
     initialPropertyValues: ctx.initialPropertyValues,
+    strategy: ctx.strategy,
+    declarations: ctx.declarations,
+    ...(ctx.supply.synthCell === undefined
+      ? {}
+      : { synthCell: ctx.supply.synthCell }),
   });
 }
 
@@ -4369,6 +4384,26 @@ function buildSupportedSsaMutatingBody(
       );
       if (built !== null) {
         stmts.push(built);
+        i += 1;
+        continue;
+      }
+      const fixedPointBuilt = buildL1LetWhileFixedPointMutation(
+        stmt,
+        body.statements[i + 1]! as ts.WhileStatement,
+        {
+          checker,
+          strategy,
+          paramNames: scopedParamNames,
+          state,
+          supply,
+          applyConst,
+        },
+      );
+      if (isUnsupported(fixedPointBuilt)) {
+        return fixedPointBuilt;
+      }
+      if (fixedPointBuilt !== null) {
+        stmts.push(fixedPointBuilt);
         i += 1;
         continue;
       }
@@ -4486,15 +4521,16 @@ function buildSupportedSsaStatement(
     if (ts.isCallExpression(expr)) {
       return buildL1EffectCall(expr, ctx);
     }
-    if (ts.isBinaryExpression(expr)) {
+    if (
+      ts.isBinaryExpression(expr) ||
+      ts.isPrefixUnaryExpression(expr) ||
+      ts.isPostfixUnaryExpression(expr)
+    ) {
       return buildL1AssignStmt(stmt, ctx);
     }
   }
   if (ts.isWhileStatement(stmt)) {
-    return {
-      unsupported:
-        "while loop is not a recognized bounded-counter shape; lift to L4 fixed-point lowering when that milestone ships",
-    };
+    return buildL1BareWhileMutation(stmt, ctx);
   }
   if (ts.isForInStatement(stmt) || ts.isDoStatement(stmt)) {
     return { unsupported: "loop assignment" };
@@ -4502,6 +4538,37 @@ function buildSupportedSsaStatement(
   return {
     unsupported: `statement is not supported by unified SSA body lowering: ${ts.SyntaxKind[stmt.kind]}`,
   };
+}
+
+function buildL1BareWhileMutation(
+  stmt: ts.WhileStatement,
+  ctx: BuildBodyCtx & { paramNames: Map<string, string> },
+): IR1Stmt | { unsupported: string } {
+  const expr = unwrapExpression(stmt.expression);
+  if (expr.kind === ts.SyntaxKind.TrueKeyword) {
+    return {
+      unsupported:
+        "while loop has no observable termination condition (literal-true guard); rewrite with a guard that depends on mutated state",
+    };
+  }
+  const cond = buildL1SubExpr(stmt.expression, ctx);
+  if (isUnsupported(cond)) {
+    return cond;
+  }
+  const bodyStmt = ts.isBlock(stmt.statement)
+    ? buildSupportedSsaMutatingBody(
+        stmt.statement,
+        ctx.checker,
+        ctx.strategy,
+        ctx.paramNames,
+        ctx.state,
+        ctx.supply,
+      )
+    : buildSupportedSsaStatement(stmt.statement, ctx);
+  if (isUnsupported(bodyStmt)) {
+    return bodyStmt;
+  }
+  return ir1While(cond, bodyStmt);
 }
 
 function buildL1ForCounterMutation(
@@ -4566,6 +4633,57 @@ function buildL1ForCounterMutation(
   }
 
   return ir1For(init.initStmt, cond, step, bodyStmt);
+}
+
+function buildL1LetWhileFixedPointMutation(
+  letStmt: ts.VariableStatement,
+  whileStmt: ts.WhileStatement,
+  ctx: BuildBodyCtx & { paramNames: Map<string, string> },
+): IR1Stmt | { unsupported: string } | null {
+  const declList = letStmt.declarationList;
+  if (
+    !(declList.flags & ts.NodeFlags.Let) ||
+    declList.declarations.length !== 1
+  ) {
+    return null;
+  }
+
+  const decl = declList.declarations[0]!;
+  if (!ts.isIdentifier(decl.name) || decl.initializer === undefined) {
+    return null;
+  }
+
+  if (!ts.isBlock(whileStmt.statement)) {
+    return null;
+  }
+
+  const initExpr = buildL1SubExpr(decl.initializer, ctx);
+  if (isUnsupported(initExpr)) {
+    return initExpr;
+  }
+  const expr = unwrapExpression(whileStmt.expression);
+  if (expr.kind === ts.SyntaxKind.TrueKeyword) {
+    return {
+      unsupported:
+        "while loop has no observable termination condition (literal-true guard); rewrite with a guard that depends on mutated state",
+    };
+  }
+  const cond = buildL1SubExpr(whileStmt.expression, ctx);
+  if (isUnsupported(cond)) {
+    return cond;
+  }
+  const bodyStmt = buildSupportedSsaMutatingBody(
+    whileStmt.statement,
+    ctx.checker,
+    ctx.strategy,
+    ctx.paramNames,
+    ctx.state,
+    ctx.supply,
+  );
+  if (isUnsupported(bodyStmt)) {
+    return bodyStmt;
+  }
+  return ir1Block([ir1Let(decl.name.text, initExpr), ir1While(cond, bodyStmt)]);
 }
 
 function buildL1LetWhileMutation(

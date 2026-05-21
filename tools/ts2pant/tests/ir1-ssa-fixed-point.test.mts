@@ -7,6 +7,7 @@ import {
   lowerFixedPointLoopL1Body,
   recognizeFixedPointLoopShape,
 } from "../src/ir1-ssa-fixed-point.js";
+import { lowerL1BodyToSsaProps } from "../src/ir1-lower-body.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import { newSynthCell, RealStrategy } from "../src/translate-types.js";
 
@@ -152,7 +153,7 @@ describe("ir1-ssa-fixed-point", () => {
     });
     assert.match(
       source,
-      /fn--loop s: Nat0, step: Nat0, target: Nat0 => Nat0\./u,
+      /fn--loop s: Nat0, step: Nat0, target: Nat0 => Nat0 = cond/u,
     );
     assert.match(source, /balance' a = fn--loop \(balance a\) step target\./u);
   });
@@ -174,6 +175,83 @@ describe("ir1-ssa-fixed-point", () => {
     assert.match(ast.strExpr(ruleDecl.body), /cond s1 < s =>/u);
   });
 
+  it("inlines let-then-while preludes transitively before collecting invariants", () => {
+    const ast = getAst();
+    const result = lowerFixedPointLoopL1Body({
+      kind: "block",
+      stmts: [
+        {
+          kind: "let",
+          name: "limit",
+          value: { kind: "binop", op: "add", lhs: targetVar, rhs: stepVar },
+        },
+        {
+          kind: "let",
+          name: "cap",
+          value: {
+            kind: "binop",
+            op: "add",
+            lhs: { kind: "var", name: "limit" },
+            rhs: stepVar,
+          },
+        },
+        {
+          ...fixedPointWhile(),
+          cond: {
+            kind: "binop",
+            op: "lt",
+            lhs: balanceMember,
+            rhs: { kind: "var", name: "cap" },
+          },
+        },
+      ],
+    });
+    const ruleDecl = result.propositions[0]!;
+
+    assert.equal(ruleDecl.kind, "rule-decl");
+    assert.deepEqual(
+      ruleDecl.params.map((p) => p.name),
+      ["s", "step", "target"],
+    );
+    assert.doesNotMatch(ast.strExpr(ruleDecl.body), /\b(limit|cap)\b/u);
+    assert.match(ast.strExpr(ruleDecl.body), /target \+ step \+ step/u);
+  });
+
+  it("does not treat target-shaped member reads under each binders as the loop target", () => {
+    const result = lowerFixedPointLoopL1Body({
+      ...fixedPointWhile(),
+      body: {
+        kind: "assign",
+        target: balanceMember,
+        value: {
+          kind: "binop",
+          op: "add",
+          lhs: balanceMember,
+          rhs: {
+            kind: "unop",
+            op: "card",
+            arg: {
+              kind: "each",
+              binder: "a",
+              src: { kind: "var", name: "accounts" },
+              guards: [],
+              proj: {
+                kind: "member",
+                receiver: { kind: "var", name: "a" },
+                name: "balance",
+              },
+            },
+          },
+        },
+      },
+    });
+
+    assert.match(
+      result.diagnostics[0]?.reason ?? "",
+      /supports guards and updates over the mutated property only/u,
+    );
+  });
+
   it("uses the configured numeric strategy for default helper types", () => {
     const ast = getAst();
     const result = lowerFixedPointLoopL1Body(fixedPointWhile(), {
@@ -186,6 +264,101 @@ describe("ir1-ssa-fixed-point", () => {
     assert.deepEqual(
       ruleDecl.params.map((p) => ast.strTypeExpr(p.type)),
       ["Real", "Real", "Real"],
+    );
+  });
+
+  it("infers helper state and invariant types from declarations", () => {
+    const ast = getAst();
+    const flagMember: IR1Expr = {
+      kind: "member",
+      receiver: aVar,
+      name: "flag",
+    };
+    const result = lowerFixedPointLoopL1Body(
+      {
+        kind: "while",
+        cond: {
+          kind: "binop",
+          op: "and",
+          lhs: flagMember,
+          rhs: { kind: "var", name: "enabled" },
+        },
+        body: {
+          kind: "assign",
+          target: flagMember,
+          value: { kind: "lit", value: { kind: "bool", value: false } },
+        },
+      },
+      {
+        declarations: [
+          { kind: "domain", name: "Account" },
+          {
+            kind: "rule",
+            name: "flag",
+            params: [{ name: "a", type: "Account" }],
+            returnType: "Bool",
+          },
+          {
+            kind: "action",
+            label: "Run",
+            params: [
+              { name: "a", type: "Account" },
+              { name: "enabled", type: "Bool" },
+            ],
+          },
+        ],
+      },
+    );
+    const ruleDecl = result.propositions[0]!;
+
+    assert.equal(ruleDecl.kind, "rule-decl");
+    assert.equal(ast.strTypeExpr(ruleDecl.returnType), "Bool");
+    assert.deepEqual(
+      ruleDecl.params.map((p) => ast.strTypeExpr(p.type)),
+      ["Bool", "Bool"],
+    );
+  });
+
+  it("threads declaration-derived types through the body-level adapter", () => {
+    const ast = getAst();
+    const flagMember: IR1Expr = {
+      kind: "member",
+      receiver: aVar,
+      name: "flag",
+    };
+    const result = lowerL1BodyToSsaProps(
+      {
+        kind: "while",
+        cond: flagMember,
+        body: {
+          kind: "assign",
+          target: flagMember,
+          value: { kind: "lit", value: { kind: "bool", value: false } },
+        },
+      },
+      [
+        { kind: "domain", name: "Account" },
+        {
+          kind: "rule",
+          name: "flag",
+          params: [{ name: "a", type: "Account" }],
+          returnType: "Bool",
+        },
+        {
+          kind: "action",
+          label: "Run",
+          params: [{ name: "a", type: "Account" }],
+        },
+      ],
+      { applyConst: (e) => e },
+    );
+    const ruleDecl = result.propositions[0]!;
+
+    assert.equal(ruleDecl.kind, "rule-decl");
+    assert.equal(ast.strTypeExpr(ruleDecl.returnType), "Bool");
+    assert.deepEqual(
+      ruleDecl.params.map((p) => ast.strTypeExpr(p.type)),
+      ["Bool"],
     );
   });
 });
