@@ -108,4 +108,28 @@ describe("ir1", () => {
       );
     });
   });
+
+  describe("new early-exit handles", () => {
+    it.skip("ir1SsaReturnHandle constructs return-handle shape", () => {
+      // PENDING Patch 3.
+    });
+
+    it.skip("ir1SsaThrowHandle constructs throw-handle shape with guard", () => {
+      // PENDING Patch 3.
+    });
+
+    it.skip("ir1SsaReturnValueLocation constructs return-value location kind", () => {
+      // PENDING Patch 3.
+    });
+  });
+
+  describe("IR1SsaLoopBody field defaults", () => {
+    it.skip("returnHandles defaults to empty", () => {
+      // PENDING Patch 3.
+    });
+
+    it.skip("throwHandles defaults to empty", () => {
+      // PENDING Patch 3.
+    });
+  });
 });

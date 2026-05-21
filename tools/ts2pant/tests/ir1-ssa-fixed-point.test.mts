@@ -361,4 +361,28 @@ describe("ir1-ssa-fixed-point", () => {
       ["Bool"],
     );
   });
+
+  describe("handle-list consumption", () => {
+    it.skip("break-handle merge produces post-loop cond per location", () => {
+      // PENDING Patch 5.
+    });
+
+    it.skip("continue-handle threads into header phi loop-back input", () => {
+      // PENDING Patch 5.
+    });
+
+    it.skip("return-handle produces function-level return-value cond", () => {
+      // PENDING Patch 5.
+    });
+
+    it.skip("throw-handle conjoins precondition with recursive-rule guard", () => {
+      // PENDING Patch 5.
+    });
+  });
+
+  describe("literal-true rejection", () => {
+    it.skip("narrows to while(true) with no reachable break/return", () => {
+      // PENDING Patch 5.
+    });
+  });
 });
