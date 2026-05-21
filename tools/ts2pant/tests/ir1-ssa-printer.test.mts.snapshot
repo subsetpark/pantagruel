@@ -1,9 +1,17 @@
+exports[`formatIR1SsaProgram > emits initial lines for join-referenced initials without reads 1`] = `
+"> rules: declared = [Account_status]; modified = [Account_status]; framed = []\\n\\nv1 = Account_status a.    > initial\\nv2 = 1.    > Account_status' a\\nv3 = phi v2 v1.    > join Account_status a"
+`;
+
 exports[`formatIR1SsaProgram > renders a buildScalarSsaProgram output 1`] = `
 "> rules: declared = [Account_balance]; modified = [Account_balance]; framed = []\\n\\nv1 = 1.    > Account_balance' a\\nv2 = (v1 + 2).    > Account_balance' a"
 `;
 
 exports[`formatIR1SsaProgram > renders a phi-function from a then/else mutation merge 1`] = `
 "> rules: declared = [Account_balance]; modified = [Account_balance]; framed = []\\n\\nv1 = Account_balance a.    > initial\\nv2 = 1.    > Account_balance' a\\nv3 = phi v2 v1.    > join Account_balance a"
+`;
+
+exports[`formatIR1SsaProgram > renders else-branch RHS reads against the pre-cond initial 1`] = `
+"> rules: declared = [Account_balance]; modified = [Account_balance]; framed = []\\n\\nv1 = Account_balance a.    > initial\\nv2 = (v1 + amount).    > Account_balance' a\\nv3 = (v1 - 1).    > Account_balance' a\\nv4 = phi v2 v3.    > join Account_balance a"
 `;
 
 exports[`formatIR1SsaProgram > renders map-membership and set-membership locations 1`] = `

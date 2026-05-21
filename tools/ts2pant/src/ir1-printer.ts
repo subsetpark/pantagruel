@@ -4,6 +4,7 @@ import type {
   IR1Literal,
   IR1SsaLocation,
   IR1SsaProgram,
+  IR1SsaRead,
   IR1SsaValue,
   IR1SsaVersion,
   IR1Unop,
@@ -85,24 +86,71 @@ export function formatIR1SsaProgram(program: IR1SsaProgram): string {
   const emittedInitials = new Set<symbol>();
   const currentVersions = new Map<string, IR1SsaVersion>();
 
-  for (const read of program.reads) {
-    if (read.version.origin !== "initial") {
-      continue;
+  // Emit `> initial` lines for every initial version referenced
+  // anywhere in the program. Reads aren't the only source — a
+  // cond-stmt that touches a location in one arm but not the other
+  // produces a join whose untouched-side `elseVersion` (or
+  // `thenVersion`) is the initial, with no corresponding read entry.
+  // Loop header joins carry an initial as `preheaderVersion`. Walking
+  // reads + joins + loop-header joins covers every site an initial can
+  // surface from.
+  const emitInitial = (version: IR1SsaVersion) => {
+    if (version.origin !== "initial") {
+      return;
     }
-    currentVersions.set(locationKey(read.location), read.version);
-    if (emittedInitials.has(read.version.id)) {
-      continue;
+    if (emittedInitials.has(version.id)) {
+      return;
     }
-    emittedInitials.add(read.version.id);
+    emittedInitials.add(version.id);
     lines.push(
-      `${labeller.labelOf(read.version)} = ${formatIR1SsaLocation(read.location)}.    > initial`,
+      `${labeller.labelOf(version)} = ${formatIR1SsaLocation(version.location)}.    > initial`,
     );
+  };
+  for (const read of program.reads) {
+    if (read.version.origin === "initial") {
+      currentVersions.set(locationKey(read.location), read.version);
+    }
+    emitInitial(read.version);
+  }
+  for (const join of program.joins) {
+    emitInitial(join.thenVersion);
+    emitInitial(join.elseVersion);
+  }
+  for (const headerJoin of program.loopHeaderJoins) {
+    emitInitial(headerJoin.preheaderVersion);
   }
 
+  // For scalar property writes, derive per-write `readLabels` by
+  // consuming entries from `program.reads` in the same order
+  // `scalarSsaReadExpr` pushed them at build time — one read per
+  // `member` subtree of the value expression. This preserves
+  // branch-local read versions across cond-stmt boundaries: both
+  // branches read from the pre-cond state, not from each other's
+  // writes, even though the flat `program.writes` array interleaves
+  // them as `[...thenWrites, ...elseWrites]`.
+  //
+  // Collection writes (map/set effects) keep the snapshot-of-
+  // `currentVersions` shape: scalar SSA never emits them, and the
+  // collection SSA build doesn't push Member-derived reads, so the
+  // cursor approach has nothing to consume for those values.
+  let readCursor = 0;
   for (const write of program.writes) {
     const key = locationKey(write.location);
     const priorVersion = currentVersions.get(key) ?? null;
-    const readLabels = readExpressionLabels(currentVersions.values(), labeller);
+    let readLabels: ReadonlyMap<string, string>;
+    if (write.value.kind === "property") {
+      const built = new Map<string, string>();
+      readCursor = consumeScalarReadsForExpr(
+        write.value.value,
+        program.reads,
+        readCursor,
+        built,
+        labeller,
+      );
+      readLabels = built;
+    } else {
+      readLabels = readExpressionLabels(currentVersions.values(), labeller);
+    }
     lines.push(
       `${labeller.labelOf(write.version)} = ${formatSsaWriteRhs(
         write.value,
@@ -204,6 +252,157 @@ function readExpressionLabels(
     labels.set(readExpressionKey(version.location), labeller.labelOf(version));
   }
   return labels;
+}
+
+/**
+ * Walk a scalar SSA property-write's value expression in the same order
+ * `scalarSsaReadExpr` pushed reads at build time (one read per `member`
+ * subtree, traversed left-to-right), populating `readLabels` from the
+ * corresponding entries in `program.reads`. Returns the new cursor.
+ *
+ * The build emits all then-branch reads + writes followed by all
+ * else-branch reads + writes for a cond-stmt, so walking writes in
+ * lockstep with reads pairs each write with the reads its RHS consulted
+ * — including across branches where a flat `currentVersions` snapshot
+ * would over-write the pre-cond state.
+ */
+function consumeScalarReadsForExpr(
+  expr: IR1Expr,
+  reads: readonly IR1SsaRead[],
+  cursor: number,
+  readLabels: Map<string, string>,
+  labeller: VersionLabeller,
+): number {
+  switch (expr.kind) {
+    case "member": {
+      const read = reads[cursor];
+      if (read !== undefined && read.location.kind === "property") {
+        readLabels.set(
+          readExpressionKey(read.location),
+          labeller.labelOf(read.version),
+        );
+      }
+      return consumeScalarReadsForExpr(
+        expr.receiver,
+        reads,
+        cursor + 1,
+        readLabels,
+        labeller,
+      );
+    }
+    case "binop":
+      cursor = consumeScalarReadsForExpr(
+        expr.lhs,
+        reads,
+        cursor,
+        readLabels,
+        labeller,
+      );
+      return consumeScalarReadsForExpr(
+        expr.rhs,
+        reads,
+        cursor,
+        readLabels,
+        labeller,
+      );
+    case "unop":
+      return consumeScalarReadsForExpr(
+        expr.arg,
+        reads,
+        cursor,
+        readLabels,
+        labeller,
+      );
+    case "app":
+      cursor = consumeScalarReadsForExpr(
+        expr.callee,
+        reads,
+        cursor,
+        readLabels,
+        labeller,
+      );
+      for (const arg of expr.args) {
+        cursor = consumeScalarReadsForExpr(
+          arg,
+          reads,
+          cursor,
+          readLabels,
+          labeller,
+        );
+      }
+      return cursor;
+    case "cond":
+      for (const [g, v] of expr.arms) {
+        cursor = consumeScalarReadsForExpr(
+          g,
+          reads,
+          cursor,
+          readLabels,
+          labeller,
+        );
+        cursor = consumeScalarReadsForExpr(
+          v,
+          reads,
+          cursor,
+          readLabels,
+          labeller,
+        );
+      }
+      return consumeScalarReadsForExpr(
+        expr.otherwise,
+        reads,
+        cursor,
+        readLabels,
+        labeller,
+      );
+    case "is-nullish":
+      return consumeScalarReadsForExpr(
+        expr.operand,
+        reads,
+        cursor,
+        readLabels,
+        labeller,
+      );
+    case "each":
+      cursor = consumeScalarReadsForExpr(
+        expr.src,
+        reads,
+        cursor,
+        readLabels,
+        labeller,
+      );
+      for (const guard of expr.guards) {
+        cursor = consumeScalarReadsForExpr(
+          guard,
+          reads,
+          cursor,
+          readLabels,
+          labeller,
+        );
+      }
+      return consumeScalarReadsForExpr(
+        expr.proj,
+        reads,
+        cursor,
+        readLabels,
+        labeller,
+      );
+    case "var":
+    case "lit":
+      return cursor;
+    case "map-read":
+    case "set-read":
+      // Scalar SSA programs never put these forms in a property write's
+      // value expression (`scalarSsaReadExpr` throws on them). Defensive
+      // no-op — keep the cursor steady so a malformed input doesn't
+      // mis-attribute a downstream read.
+      return cursor;
+    default: {
+      const _exhaustive: never = expr;
+      void _exhaustive;
+      return cursor;
+    }
+  }
 }
 
 function readExpressionKey(loc: IR1SsaLocation): string {

@@ -80,18 +80,25 @@ ts2pant-typecheck:
     cd tools/ts2pant && npx tsc --noEmit
 
 # Run ts2pant unit tests (no pant binary needed)
-ts2pant-test-unit:
+#
+# Depends on `ts2pant-build-wasm` so a stale bundle can't survive a
+# `wasm/pant_wasm.ml` edit. The wasm-side rename/parse path is exercised
+# by tests via the embedded checker — if the source is updated but the
+# consumer bundle isn't rebuilt, tests run against last-build behaviour
+# and surface as confusing test failures. Dune is incremental, so a
+# no-op rebuild is cheap.
+ts2pant-test-unit: ts2pant-build-wasm
     cd tools/ts2pant && npm run test:unit
 
-# Run ts2pant integration tests (e2e + dogfood); builds pant first
-ts2pant-test-integration: build-pant
+# Run ts2pant integration tests (e2e + dogfood); builds pant + wasm first
+ts2pant-test-integration: build-pant ts2pant-build-wasm
     cd tools/ts2pant && npm run test:integration
 
 # Run all ts2pant tests (unit then integration)
 ts2pant-test: ts2pant-test-unit ts2pant-test-integration
 
-# Update snapshot expectations for ts2pant tests; rebuilds pant first
-ts2pant-test-update-snapshots: build-pant
+# Update snapshot expectations for ts2pant tests; rebuilds pant + wasm first
+ts2pant-test-update-snapshots: build-pant ts2pant-build-wasm
     cd tools/ts2pant && npm run test:update-snapshots
 
 # Run what the pre-commit hook runs for ts2pant
