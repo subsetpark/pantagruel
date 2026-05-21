@@ -126,6 +126,9 @@ export async function buildPantDocument(
     synthCell,
     sigDecl,
   );
+  const returnValueRuleUnavailable = returnValueDecls.some(
+    (decl) => decl.kind === "unsupported",
+  );
 
   // Extract and translate types (type-derived param names adapt to registry).
   // Pass the synthesizer so nested Maps inside interface-field V register too.
@@ -217,7 +220,7 @@ export async function buildPantDocument(
   };
 
   // Body translation
-  if (!noBody) {
+  if (!noBody && !returnValueRuleUnavailable) {
     const bodyProps = translateBody({
       sourceFile,
       functionName,

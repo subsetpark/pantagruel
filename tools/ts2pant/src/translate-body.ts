@@ -4077,14 +4077,17 @@ function lowerSupportedSsaMutatingStatements(
     declarations: readonly PantDeclaration[];
   },
 ): IR1SsaBodyLowerResult {
-  const tailReturnValue = extractTailReturnValue(stmts);
+  const tailReturnValue = extractTailReturnValue(stmts, ctx.checker);
   if (tailReturnValue !== null) {
-    const prefix = lowerSupportedSsaMutatingBlock(stmts.slice(0, -1), ctx);
+    const prefix = lowerSupportedSsaMutatingBlock(
+      tailReturnValue.prefixStmts,
+      ctx,
+    );
     if (prefix.diagnostics.length > 0) {
       return prefix;
     }
     const returnExpr = translateBodyExpr(
-      tailReturnValue,
+      tailReturnValue.expression,
       ctx.checker,
       ctx.strategy,
       ctx.paramNames,
@@ -4245,8 +4248,10 @@ function lowerSupportedSsaMutatingStatements(
 
 function extractTailReturnValue(
   stmts: readonly ts.Statement[],
-): ts.Expression | null {
-  const last = stmts[stmts.length - 1];
+  checker: ts.TypeChecker,
+): { expression: ts.Expression; prefixStmts: readonly ts.Statement[] } | null {
+  const relevant = stmts.filter((stmt) => !isGuardStatement(stmt, checker));
+  const last = relevant[relevant.length - 1];
   if (
     last === undefined ||
     !ts.isReturnStatement(last) ||
@@ -4254,10 +4259,11 @@ function extractTailReturnValue(
   ) {
     return null;
   }
-  if (stmts.slice(0, -1).some((stmt) => containsEarlyExitStatement(stmt))) {
+  const prefixStmts = relevant.slice(0, -1);
+  if (prefixStmts.some((stmt) => containsEarlyExitStatement(stmt))) {
     return null;
   }
-  return last.expression;
+  return { expression: last.expression, prefixStmts };
 }
 
 function containsEarlyExitStatement(node: ts.Node): boolean {

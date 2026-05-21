@@ -171,7 +171,7 @@ export function appendFramesForUnmodifiedRules(
       kind: "equation",
       quantifiers: [] as OpaqueParam[],
       lhs: ast.app(
-        ast.var(result.returnValue.ruleName),
+        ast.primed(result.returnValue.ruleName),
         params.map((p) => ast.var(p.name)),
       ),
       rhs: result.returnValue.expression,

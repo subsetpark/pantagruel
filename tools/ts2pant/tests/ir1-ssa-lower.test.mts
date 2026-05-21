@@ -442,7 +442,7 @@ describe("ir1-ssa-lower", () => {
       if (equation?.kind !== "equation") {
         assert.fail("expected return-value equation");
       }
-      assert.equal(ast.strExpr(equation.lhs), "withdraw account");
+      assert.equal(ast.strExpr(equation.lhs), "withdraw' account");
       assert.equal(ast.strExpr(equation.rhs), "new-balance");
     });
 
@@ -491,7 +491,11 @@ describe("ir1-ssa-lower", () => {
           assert.equal(prop.kind, "equation");
           return ast.strExpr(prop.lhs);
         }),
-        ["Account_balance' account", "withdraw account", "Account_limit' account"],
+        [
+          "Account_balance' account",
+          "withdraw' account",
+          "Account_limit' account",
+        ],
       );
     });
   });
