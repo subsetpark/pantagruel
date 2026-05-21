@@ -406,6 +406,19 @@ export function scalarSsaReadExpr(
       }
       scalarSsaReadExpr(expr.proj, state);
       return expr;
+    case "comb-typed":
+      for (const guard of expr.guards) {
+        scalarSsaReadExpr(guard, state);
+      }
+      scalarSsaReadExpr(expr.proj, state);
+      return expr;
+    case "forall":
+    case "exists":
+      if (expr.guard !== undefined) {
+        scalarSsaReadExpr(expr.guard, state);
+      }
+      scalarSsaReadExpr(expr.body, state);
+      return expr;
     case "var":
     case "lit":
       return expr;
@@ -685,6 +698,43 @@ function lowerScalarSsaExprToOpaque(
           lowerScalarSsaExprToOpaque(expr.proj, state),
         ),
       );
+    case "comb-typed":
+      return state.lowerOpaque(
+        ast.eachComb(
+          [ast.param(expr.binder, ast.tName(expr.binderType))],
+          expr.guards.map((guard) =>
+            ast.gExpr(lowerScalarSsaExprToOpaque(guard, state)),
+          ),
+          expr.combiner === "min" ? ast.combMin() : ast.combMax(),
+          lowerScalarSsaExprToOpaque(expr.proj, state),
+        ),
+      );
+    case "forall": {
+      const guards =
+        expr.guard === undefined
+          ? []
+          : [ast.gExpr(lowerScalarSsaExprToOpaque(expr.guard, state))];
+      return state.lowerOpaque(
+        ast.forall(
+          [ast.param(expr.binder, ast.tName(expr.binderType))],
+          guards,
+          lowerScalarSsaExprToOpaque(expr.body, state),
+        ),
+      );
+    }
+    case "exists": {
+      const guards =
+        expr.guard === undefined
+          ? []
+          : [ast.gExpr(lowerScalarSsaExprToOpaque(expr.guard, state))];
+      return state.lowerOpaque(
+        ast.exists(
+          [ast.param(expr.binder, ast.tName(expr.binderType))],
+          guards,
+          lowerScalarSsaExprToOpaque(expr.body, state),
+        ),
+      );
+    }
     case "map-read":
     case "set-read":
       throw new Error(`${expr.kind} is not a scalar SSA expression`);
@@ -963,6 +1013,15 @@ function scalarSsaExprKey(expr: IR1Expr): string {
       return `each:${expr.binder}:${scalarSsaExprKey(expr.src)}:${expr.guards
         .map(scalarSsaExprKey)
         .join(",")}:${scalarSsaExprKey(expr.proj)}`;
+    case "comb-typed":
+      return `comb-typed:${expr.combiner}:${expr.binder}:${expr.binderType}:${expr.guards
+        .map(scalarSsaExprKey)
+        .join(",")}:${scalarSsaExprKey(expr.proj)}`;
+    case "forall":
+    case "exists":
+      return `${expr.kind}:${expr.binder}:${expr.binderType}:${
+        expr.guard === undefined ? "" : scalarSsaExprKey(expr.guard)
+      }:${scalarSsaExprKey(expr.body)}`;
     case "map-read":
     case "set-read":
       throw new Error(`${expr.kind} is not a scalar SSA expression`);
@@ -1123,6 +1182,14 @@ function isScalarSsaExpr(expr: IR1Expr): boolean {
         isScalarSsaExpr(expr.src) &&
         expr.guards.every(isScalarSsaExpr) &&
         isScalarSsaExpr(expr.proj)
+      );
+    case "comb-typed":
+      return expr.guards.every(isScalarSsaExpr) && isScalarSsaExpr(expr.proj);
+    case "forall":
+    case "exists":
+      return (
+        (expr.guard === undefined || isScalarSsaExpr(expr.guard)) &&
+        isScalarSsaExpr(expr.body)
       );
     case "map-read":
     case "set-read":

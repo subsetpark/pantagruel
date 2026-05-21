@@ -45,7 +45,7 @@ export type IR1Unop = IRUnop;
 // --------------------------------------------------------------------------
 
 /**
- * Layer 1 expressions. Eleven forms preserve TS-shape canonicalization:
+ * Layer 1 expressions. Fourteen forms preserve TS-shape canonicalization:
  *
  * - `var`, `lit` — literal references
  * - `binop`, `unop` — arithmetic/logical/comparison operators
@@ -62,6 +62,9 @@ export type IR1Unop = IRUnop;
  * - `each` — list comprehension. Canonical form for the functor-lift
  *   recognizer's `each n in operand | projection` output. Mirrors L2
  *   `each` and lowers structurally.
+ * - `comb-typed`, `forall`, `exists` — Pant-target binder forms.
+ *   Mirror L2's typed comprehension / quantifier vocabulary and lower
+ *   structurally.
  * - `map-read`, `set-read` — state-aware Map/Set reads (`.get`/`.has`
  *   on a Map, `.has` on a Set). Symmetric to the write-side
  *   `map-effect` / `set-effect` statement forms; mutating bodies resolve
@@ -120,6 +123,38 @@ export type IR1Expr =
       src: IR1Expr;
       guards: IR1Expr[];
       proj: IR1Expr;
+    }
+  /**
+   * Aggregate over a typed comprehension with no source. Mirrors L2
+   * `comb-typed` one-to-one and lowers structurally in `lowerL1Expr`.
+   */
+  | {
+      kind: "comb-typed";
+      combiner: "min" | "max";
+      binder: string;
+      binderType: string;
+      guards: IR1Expr[];
+      proj: IR1Expr;
+    }
+  /**
+   * Universal quantifier. Mirrors L2 `forall` one-to-one.
+   */
+  | {
+      kind: "forall";
+      binder: string;
+      binderType: string;
+      guard?: IR1Expr;
+      body: IR1Expr;
+    }
+  /**
+   * Existential quantifier. Mirrors L2 `exists` one-to-one.
+   */
+  | {
+      kind: "exists";
+      binder: string;
+      binderType: string;
+      guard?: IR1Expr;
+      body: IR1Expr;
     }
   /**
    * State-aware Map read: `m.get(k)` (`op = "get"`) or `m.has(k)`
@@ -865,7 +900,7 @@ const ir1SsaLocationEquals = (
   }
 };
 
-const ir1SsaExprEquals = (a: IR1Expr, b: IR1Expr): boolean => {
+export const ir1SsaExprEquals = (a: IR1Expr, b: IR1Expr): boolean => {
   switch (a.kind) {
     case "var": {
       if (b.kind !== "var") {
@@ -936,6 +971,40 @@ const ir1SsaExprEquals = (a: IR1Expr, b: IR1Expr): boolean => {
         ir1SsaExprEquals(a.proj, b.proj)
       );
     }
+    case "comb-typed": {
+      if (b.kind !== "comb-typed") {
+        return false;
+      }
+      return (
+        a.combiner === b.combiner &&
+        a.binder === b.binder &&
+        a.binderType === b.binderType &&
+        ir1SsaArrayEquals(a.guards, b.guards, ir1SsaExprEquals) &&
+        ir1SsaExprEquals(a.proj, b.proj)
+      );
+    }
+    case "forall": {
+      if (b.kind !== "forall") {
+        return false;
+      }
+      return (
+        a.binder === b.binder &&
+        a.binderType === b.binderType &&
+        optionalIr1SsaExprEquals(a.guard, b.guard) &&
+        ir1SsaExprEquals(a.body, b.body)
+      );
+    }
+    case "exists": {
+      if (b.kind !== "exists") {
+        return false;
+      }
+      return (
+        a.binder === b.binder &&
+        a.binderType === b.binderType &&
+        optionalIr1SsaExprEquals(a.guard, b.guard) &&
+        ir1SsaExprEquals(a.body, b.body)
+      );
+    }
     case "map-read": {
       if (b.kind !== "map-read") {
         return false;
@@ -973,6 +1042,14 @@ const ir1SsaCondArmEquals = (
   a: readonly [IR1Expr, IR1Expr],
   b: readonly [IR1Expr, IR1Expr],
 ): boolean => ir1SsaExprEquals(a[0], b[0]) && ir1SsaExprEquals(a[1], b[1]);
+
+const optionalIr1SsaExprEquals = (
+  a: IR1Expr | undefined,
+  b: IR1Expr | undefined,
+): boolean =>
+  a === undefined || b === undefined
+    ? a === undefined && b === undefined
+    : ir1SsaExprEquals(a, b);
 
 const ir1SsaArrayEquals = <T>(
   a: ReadonlyArray<T>,
@@ -1103,6 +1180,41 @@ export const ir1Each = (
   guards,
   proj,
 });
+
+export const ir1CombTyped = (
+  combiner: "min" | "max",
+  binder: string,
+  binderType: string,
+  guards: IR1Expr[],
+  proj: IR1Expr,
+): IR1Expr => ({
+  kind: "comb-typed",
+  combiner,
+  binder,
+  binderType,
+  guards,
+  proj,
+});
+
+export const ir1Forall = (
+  binder: string,
+  binderType: string,
+  body: IR1Expr,
+  guard?: IR1Expr,
+): IR1Expr =>
+  guard !== undefined
+    ? { kind: "forall", binder, binderType, guard, body }
+    : { kind: "forall", binder, binderType, body };
+
+export const ir1Exists = (
+  binder: string,
+  binderType: string,
+  body: IR1Expr,
+  guard?: IR1Expr,
+): IR1Expr =>
+  guard !== undefined
+    ? { kind: "exists", binder, binderType, guard, body }
+    : { kind: "exists", binder, binderType, body };
 
 /**
  * State-aware Map read. Mutating-body lowering resolves this form

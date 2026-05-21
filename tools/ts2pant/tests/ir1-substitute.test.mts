@@ -10,11 +10,14 @@ import {
   ir1Assign,
   ir1Binop,
   ir1Block,
+  ir1CombTyped,
   ir1Cond,
   ir1Each,
+  ir1Exists,
   ir1ExprStmt,
   ir1For,
   ir1Foreach,
+  ir1Forall,
   ir1IsNullish,
   ir1Let,
   ir1LitBool,
@@ -57,16 +60,30 @@ describe("ir1-substitute", () => {
       assertSetEqual(freeVarsIR1Expr(expr), ["g", "src"]);
     });
 
-    it.skip("freeVarsIR1Expr scopes comb-typed binder", () => {
-      // PENDING Patch 2.
+    it("freeVarsIR1Expr scopes comb-typed binder", () => {
+      const expr = ir1CombTyped(
+        "min",
+        "x",
+        "Int",
+        [ir1Var("x"), ir1Var("g")],
+        ir1Binop("add", ir1Var("x"), ir1Var("y")),
+      );
+      assertSetEqual(freeVarsIR1Expr(expr), ["g", "y"]);
     });
 
-    it.skip("freeVarsIR1Expr scopes forall binder", () => {
-      // PENDING Patch 2.
+    it("freeVarsIR1Expr scopes forall binder", () => {
+      const expr = ir1Forall(
+        "x",
+        "Int",
+        ir1Binop("gt", ir1Var("x"), ir1Var("z")),
+        ir1Binop("ge", ir1Var("x"), ir1Var("lower")),
+      );
+      assertSetEqual(freeVarsIR1Expr(expr), ["lower", "z"]);
     });
 
-    it.skip("freeVarsIR1Expr scopes exists binder", () => {
-      // PENDING Patch 2.
+    it("freeVarsIR1Expr scopes exists binder", () => {
+      const expr = ir1Exists("x", "Int", ir1Binop("eq", ir1Var("x"), ir1Var("z")));
+      assertSetEqual(freeVarsIR1Expr(expr), ["z"]);
     });
 
     it("freeVarsIR1Stmt respects block / let / foreach / for binders", () => {
@@ -138,32 +155,92 @@ describe("ir1-substitute", () => {
       );
     });
 
-    it.skip("substituteIR1ExprSubtree throws under comb-typed capture", () => {
-      // PENDING Patch 2.
+    it("substituteIR1ExprSubtree throws under comb-typed capture", () => {
+      assert.throws(
+        () =>
+          substituteIR1ExprSubtree(
+            ir1CombTyped("min", "x", "Int", [], ir1Var("target")),
+            ir1Var("target"),
+            ir1Var("x"),
+          ),
+        CaptureRiskError,
+      );
     });
 
-    it.skip("substituteIR1ExprSubtree throws under forall capture", () => {
-      // PENDING Patch 2.
+    it("substituteIR1ExprSubtree throws under forall capture", () => {
+      assert.throws(
+        () =>
+          substituteIR1ExprSubtree(
+            ir1Forall("x", "Int", ir1Var("target")),
+            ir1Var("target"),
+            ir1Var("x"),
+          ),
+        CaptureRiskError,
+      );
     });
 
-    it.skip("substituteIR1ExprSubtree throws under exists capture", () => {
-      // PENDING Patch 2.
+    it("substituteIR1ExprSubtree throws under exists capture", () => {
+      assert.throws(
+        () =>
+          substituteIR1ExprSubtree(
+            ir1Exists("x", "Int", ir1Var("target")),
+            ir1Var("target"),
+            ir1Var("x"),
+          ),
+        CaptureRiskError,
+      );
     });
 
-    it.skip("substituteIR1ExprSubtree halts at shadowing comb-typed", () => {
-      // PENDING Patch 2.
+    it("substituteIR1ExprSubtree halts at shadowing comb-typed", () => {
+      const expr = ir1CombTyped(
+        "min",
+        "x",
+        "Int",
+        [ir1Var("x")],
+        ir1Member(ir1Var("x"), "p"),
+      );
+      assert.deepEqual(
+        substituteIR1ExprSubtree(expr, ir1Var("x"), ir1LitNat(0)),
+        expr,
+      );
     });
 
-    it.skip("substituteIR1ExprSubtree halts at shadowing forall", () => {
-      // PENDING Patch 2.
+    it("substituteIR1ExprSubtree halts at shadowing forall", () => {
+      const expr = ir1Forall(
+        "x",
+        "Int",
+        ir1Member(ir1Var("x"), "p"),
+        ir1Var("x"),
+      );
+      assert.deepEqual(
+        substituteIR1ExprSubtree(expr, ir1Var("x"), ir1LitNat(0)),
+        expr,
+      );
     });
 
-    it.skip("substituteIR1ExprSubtree halts at shadowing exists", () => {
-      // PENDING Patch 2.
+    it("substituteIR1ExprSubtree halts at shadowing exists", () => {
+      const expr = ir1Exists(
+        "x",
+        "Int",
+        ir1Member(ir1Var("x"), "p"),
+        ir1Var("x"),
+      );
+      assert.deepEqual(
+        substituteIR1ExprSubtree(expr, ir1Var("x"), ir1LitNat(0)),
+        expr,
+      );
     });
 
-    it.skip("arbIR1Expr includes new L1 binder forms", () => {
-      // PENDING Patch 2.
+    it("arbIR1Expr includes new L1 binder forms", () => {
+      const seen = new Set<string>();
+      for (let seed = 1; seed <= 20; seed += 1) {
+        for (const expr of fc.sample(arbIR1Expr(3), { seed, numRuns: 200 })) {
+          seen.add(expr.kind);
+        }
+      }
+      assert.equal(seen.has("comb-typed"), true);
+      assert.equal(seen.has("forall"), true);
+      assert.equal(seen.has("exists"), true);
     });
 
     it("substituteIR1ExprSubtree preserves shape outside replacement sites", () => {
@@ -370,6 +447,37 @@ function arbIR1Expr(depth = 4): fc.Arbitrary<IR1Expr> {
               .map(([binder, src, guards, proj]) =>
                 ir1Each(binder, src, guards, proj),
               ),
+            fc
+              .tuple(
+                fc.constantFrom("min", "max" as const),
+                nameArb,
+                fc.constantFrom("Nat0", "Int", "Real"),
+                fc.array(arbIR1Expr(depth - 1), { maxLength: 2 }),
+                arbIR1Expr(depth - 1),
+              )
+              .map(([combiner, binder, binderType, guards, proj]) =>
+                ir1CombTyped(combiner, binder, binderType, guards, proj),
+              ),
+            fc
+              .tuple(
+                nameArb,
+                fc.constantFrom("Nat0", "Int", "Real"),
+                arbIR1Expr(depth - 1),
+                fc.option(arbIR1Expr(depth - 1), { nil: undefined }),
+              )
+              .map(([binder, binderType, body, guard]) =>
+                ir1Forall(binder, binderType, body, guard),
+              ),
+            fc
+              .tuple(
+                nameArb,
+                fc.constantFrom("Nat0", "Int", "Real"),
+                arbIR1Expr(depth - 1),
+                fc.option(arbIR1Expr(depth - 1), { nil: undefined }),
+              )
+              .map(([binder, binderType, body, guard]) =>
+                ir1Exists(binder, binderType, body, guard),
+              ),
           ),
   })).expr;
 }
@@ -477,6 +585,17 @@ function exprContainsNeedle(
         exprContainsNeedle(expr.src, needle) ||
         expr.guards.some((guard) => exprContainsNeedle(guard, needle)) ||
         exprContainsNeedle(expr.proj, needle)
+      );
+    case "comb-typed":
+      return (
+        expr.guards.some((guard) => exprContainsNeedle(guard, needle)) ||
+        exprContainsNeedle(expr.proj, needle)
+      );
+    case "forall":
+    case "exists":
+      return (
+        (expr.guard !== undefined && exprContainsNeedle(expr.guard, needle)) ||
+        exprContainsNeedle(expr.body, needle)
       );
     case "map-read":
       return (

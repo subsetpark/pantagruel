@@ -552,6 +552,72 @@ function substituteLocalLets(
         proj: substituteLocalLets(proj, localLets, nextBound, resolving),
       };
     }
+    case "comb-typed": {
+      const localFreeVars = localLetValueFreeVars(localLets);
+      const binder = localFreeVars.has(expr.binder)
+        ? freshIr1Name(expr.binder, [
+            expr,
+            ...localLets.values(),
+            ...[...bound].map((name) => ir1Var(name)),
+          ])
+        : expr.binder;
+      const guards =
+        binder === expr.binder
+          ? expr.guards
+          : expr.guards.map((guard) =>
+              renameBoundVarRefs(guard, expr.binder, binder),
+            );
+      const proj =
+        binder === expr.binder
+          ? expr.proj
+          : renameBoundVarRefs(expr.proj, expr.binder, binder);
+      const nextBound = new Set(bound);
+      nextBound.add(binder);
+      return {
+        ...expr,
+        binder,
+        guards: guards.map((guard) =>
+          substituteLocalLets(guard, localLets, nextBound, resolving),
+        ),
+        proj: substituteLocalLets(proj, localLets, nextBound, resolving),
+      };
+    }
+    case "forall":
+    case "exists": {
+      const localFreeVars = localLetValueFreeVars(localLets);
+      const binder = localFreeVars.has(expr.binder)
+        ? freshIr1Name(expr.binder, [
+            expr,
+            ...localLets.values(),
+            ...[...bound].map((name) => ir1Var(name)),
+          ])
+        : expr.binder;
+      const guard =
+        expr.guard === undefined || binder === expr.binder
+          ? expr.guard
+          : renameBoundVarRefs(expr.guard, expr.binder, binder);
+      const body =
+        binder === expr.binder
+          ? expr.body
+          : renameBoundVarRefs(expr.body, expr.binder, binder);
+      const nextBound = new Set(bound);
+      nextBound.add(binder);
+      return {
+        ...expr,
+        binder,
+        ...(guard === undefined
+          ? {}
+          : {
+              guard: substituteLocalLets(
+                guard,
+                localLets,
+                nextBound,
+                resolving,
+              ),
+            }),
+        body: substituteLocalLets(body, localLets, nextBound, resolving),
+      };
+    }
     case "map-read":
       return {
         ...expr,
@@ -641,6 +707,25 @@ function collectIr1FreeVars(
       collectIr1FreeVars(expr.proj, out, nextBound);
       break;
     }
+    case "comb-typed": {
+      const nextBound = new Set(bound);
+      nextBound.add(expr.binder);
+      for (const guard of expr.guards) {
+        collectIr1FreeVars(guard, out, nextBound);
+      }
+      collectIr1FreeVars(expr.proj, out, nextBound);
+      break;
+    }
+    case "forall":
+    case "exists": {
+      const nextBound = new Set(bound);
+      nextBound.add(expr.binder);
+      if (expr.guard !== undefined) {
+        collectIr1FreeVars(expr.guard, out, nextBound);
+      }
+      collectIr1FreeVars(expr.body, out, nextBound);
+      break;
+    }
     case "map-read":
       collectIr1FreeVars(expr.receiver, out, bound);
       collectIr1FreeVars(expr.key, out, bound);
@@ -713,6 +798,27 @@ function renameBoundVarRefs(expr: IR1Expr, from: string, to: string): IR1Expr {
         src: renameBoundVarRefs(expr.src, from, to),
         guards: expr.guards.map((guard) => renameBoundVarRefs(guard, from, to)),
         proj: renameBoundVarRefs(expr.proj, from, to),
+      };
+    case "comb-typed":
+      if (expr.binder === from) {
+        return expr;
+      }
+      return {
+        ...expr,
+        guards: expr.guards.map((guard) => renameBoundVarRefs(guard, from, to)),
+        proj: renameBoundVarRefs(expr.proj, from, to),
+      };
+    case "forall":
+    case "exists":
+      if (expr.binder === from) {
+        return expr;
+      }
+      return {
+        ...expr,
+        ...(expr.guard === undefined
+          ? {}
+          : { guard: renameBoundVarRefs(expr.guard, from, to) }),
+        body: renameBoundVarRefs(expr.body, from, to),
       };
     case "map-read":
       return {
@@ -806,6 +912,21 @@ function collectAllNames(expr: IR1Expr, out: Set<string>): void {
       }
       collectAllNames(expr.proj, out);
       break;
+    case "comb-typed":
+      out.add(expr.binder);
+      for (const guard of expr.guards) {
+        collectAllNames(guard, out);
+      }
+      collectAllNames(expr.proj, out);
+      break;
+    case "forall":
+    case "exists":
+      out.add(expr.binder);
+      if (expr.guard !== undefined) {
+        collectAllNames(expr.guard, out);
+      }
+      collectAllNames(expr.body, out);
+      break;
     case "map-read":
       collectAllNames(expr.receiver, out);
       collectAllNames(expr.key, out);
@@ -872,6 +993,25 @@ function collectFreeVars(
         collectFreeVars(guard, out, excluded, nextBound);
       }
       collectFreeVars(expr.proj, out, excluded, nextBound);
+      break;
+    }
+    case "comb-typed": {
+      const nextBound = new Set(bound);
+      nextBound.add(expr.binder);
+      for (const guard of expr.guards) {
+        collectFreeVars(guard, out, excluded, nextBound);
+      }
+      collectFreeVars(expr.proj, out, excluded, nextBound);
+      break;
+    }
+    case "forall":
+    case "exists": {
+      const nextBound = new Set(bound);
+      nextBound.add(expr.binder);
+      if (expr.guard !== undefined) {
+        collectFreeVars(expr.guard, out, excluded, nextBound);
+      }
+      collectFreeVars(expr.body, out, excluded, nextBound);
       break;
     }
     case "map-read":
@@ -984,6 +1124,25 @@ function walkExpr(
         walkExpr(guard, visit, nextBound);
       }
       walkExpr(expr.proj, visit, nextBound);
+      break;
+    }
+    case "comb-typed": {
+      const nextBound = new Set(bound);
+      nextBound.add(expr.binder);
+      for (const guard of expr.guards) {
+        walkExpr(guard, visit, nextBound);
+      }
+      walkExpr(expr.proj, visit, nextBound);
+      break;
+    }
+    case "forall":
+    case "exists": {
+      const nextBound = new Set(bound);
+      nextBound.add(expr.binder);
+      if (expr.guard !== undefined) {
+        walkExpr(expr.guard, visit, nextBound);
+      }
+      walkExpr(expr.body, visit, nextBound);
       break;
     }
     case "map-read":

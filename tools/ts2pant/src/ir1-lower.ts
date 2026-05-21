@@ -28,8 +28,11 @@ import {
   irAppExpr,
   irAppName,
   irBinop,
+  irCombTyped,
   irCond,
   irEach,
+  irExists,
+  irForall,
   irLitNat,
   irUnop,
   irVar,
@@ -113,6 +116,31 @@ export function lowerL1Expr(e: IR1Expr): IRExpr {
         lowerL1Expr(e.proj),
       );
     }
+
+    case "comb-typed":
+      return irCombTyped(
+        e.combiner,
+        e.binder,
+        e.binderType,
+        e.guards.map(lowerL1Expr),
+        lowerL1Expr(e.proj),
+      );
+
+    case "forall":
+      return irForall(
+        e.binder,
+        e.binderType,
+        lowerL1Expr(e.body),
+        e.guard === undefined ? undefined : lowerL1Expr(e.guard),
+      );
+
+    case "exists":
+      return irExists(
+        e.binder,
+        e.binderType,
+        lowerL1Expr(e.body),
+        e.guard === undefined ? undefined : lowerL1Expr(e.guard),
+      );
 
     case "map-read": {
       // Pure / read-only path: emit the bare `App(callee, [receiver,

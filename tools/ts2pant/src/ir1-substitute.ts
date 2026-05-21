@@ -6,11 +6,14 @@ import {
   ir1Assign,
   ir1Binop,
   ir1Block,
+  ir1CombTyped,
   ir1Cond,
   ir1CondStmt,
   ir1Each,
+  ir1Exists,
   ir1ExprStmt,
   ir1For,
+  ir1Forall,
   ir1Foreach,
   ir1IsNullish,
   ir1Member,
@@ -70,6 +73,23 @@ export function freeVarsIR1Expr(expr: IR1Expr): Set<string> {
       );
       scoped.delete(expr.binder);
       return union(freeVarsIR1Expr(expr.src), scoped);
+    }
+    case "comb-typed": {
+      const scoped = union(
+        ...expr.guards.map(freeVarsIR1Expr),
+        freeVarsIR1Expr(expr.proj),
+      );
+      scoped.delete(expr.binder);
+      return scoped;
+    }
+    case "forall":
+    case "exists": {
+      const scoped = union(
+        ...(expr.guard === undefined ? [] : [freeVarsIR1Expr(expr.guard)]),
+        freeVarsIR1Expr(expr.body),
+      );
+      scoped.delete(expr.binder);
+      return scoped;
     }
     case "map-read":
       return union(freeVarsIR1Expr(expr.receiver), freeVarsIR1Expr(expr.key));
@@ -338,6 +358,78 @@ function substituteExpr(
         proj === expr.proj
         ? expr
         : ir1Each(expr.binder, src, guards, proj);
+    }
+    case "comb-typed": {
+      throwIfCaptureRisk(expr.binder, replacementFreeVars);
+      if (shadowsNeedle(expr.binder, needle)) {
+        return expr;
+      }
+      const guards = expr.guards.map((guard) =>
+        substituteExpr(guard, needle, replacement, replacementFreeVars),
+      );
+      const proj = substituteExpr(
+        expr.proj,
+        needle,
+        replacement,
+        replacementFreeVars,
+      );
+      return arrayRefEqual(guards, expr.guards) && proj === expr.proj
+        ? expr
+        : ir1CombTyped(
+            expr.combiner,
+            expr.binder,
+            expr.binderType,
+            guards,
+            proj,
+          );
+    }
+    case "forall": {
+      throwIfCaptureRisk(expr.binder, replacementFreeVars);
+      if (shadowsNeedle(expr.binder, needle)) {
+        return expr;
+      }
+      const guard =
+        expr.guard === undefined
+          ? undefined
+          : substituteExpr(
+              expr.guard,
+              needle,
+              replacement,
+              replacementFreeVars,
+            );
+      const body = substituteExpr(
+        expr.body,
+        needle,
+        replacement,
+        replacementFreeVars,
+      );
+      return guard === expr.guard && body === expr.body
+        ? expr
+        : ir1Forall(expr.binder, expr.binderType, body, guard);
+    }
+    case "exists": {
+      throwIfCaptureRisk(expr.binder, replacementFreeVars);
+      if (shadowsNeedle(expr.binder, needle)) {
+        return expr;
+      }
+      const guard =
+        expr.guard === undefined
+          ? undefined
+          : substituteExpr(
+              expr.guard,
+              needle,
+              replacement,
+              replacementFreeVars,
+            );
+      const body = substituteExpr(
+        expr.body,
+        needle,
+        replacement,
+        replacementFreeVars,
+      );
+      return guard === expr.guard && body === expr.body
+        ? expr
+        : ir1Exists(expr.binder, expr.binderType, body, guard);
     }
     case "map-read": {
       const receiver = substituteExpr(
