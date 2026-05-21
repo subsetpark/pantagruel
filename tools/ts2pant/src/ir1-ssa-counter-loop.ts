@@ -41,7 +41,8 @@ export interface CounterLoopShape {
   counterPantBinder: string;
   initExpr: IR1Expr;
   boundExpr: IR1Expr;
-  boundCmpOp: "lt" | "le";
+  boundCmpOp: "lt" | "le" | "gt" | "ge";
+  direction: "asc" | "desc";
   body: IR1Stmt;
 }
 
@@ -96,11 +97,19 @@ export function recognizeCounterLoopShape(
   if ("unsupported" in cond) {
     return cond;
   }
+  const checkedInit = recognizeCounterInit(stmt.init, cond.direction);
+  if ("unsupported" in checkedInit) {
+    return checkedInit;
+  }
 
   if (stmt.step === null) {
     return { unsupported: "counter loop step is missing" };
   }
-  const step = recognizeCounterStep(stmt.step, init.counterName);
+  const step = recognizeCounterStep(
+    stmt.step,
+    init.counterName,
+    cond.direction,
+  );
   if ("unsupported" in step) {
     return step;
   }
@@ -108,9 +117,10 @@ export function recognizeCounterLoopShape(
   return {
     counterName: init.counterName,
     counterPantBinder: ctx.counterPantBinder ?? init.counterName,
-    initExpr: init.initExpr,
+    initExpr: checkedInit.initExpr,
     boundExpr: cond.boundExpr,
     boundCmpOp: cond.boundCmpOp,
+    direction: cond.direction,
     body: stmt.body,
   };
 }
@@ -141,8 +151,12 @@ export function lowerCounterLoopL1Body(
   );
   ir1SsaCloseLoopHeader(header, write.version);
 
+  const terminationMetricExpr =
+    shape.direction === "asc"
+      ? ir1Binop("sub", shape.boundExpr, ir1Var(shape.counterName))
+      : ir1Binop("sub", ir1Var(shape.counterName), shape.boundExpr);
   const terminationMetric = ir1SsaTerminationMetric(
-    ir1Binop("sub", shape.boundExpr, ir1Var(shape.counterName)),
+    terminationMetricExpr,
     ir1LitNat(0),
   );
   const loopBody: IR1SsaLoopBody = ir1SsaLoopBody({
@@ -195,19 +209,33 @@ export function lowerCounterLoopL1Body(
 
 function recognizeCounterInit(
   stmt: IR1Stmt,
+  direction?: "asc" | "desc",
 ): { counterName: string; initExpr: IR1Expr } | { unsupported: string } {
   if (stmt.kind === "let") {
-    if (!isNumericLiteral(stmt.value)) {
+    if (direction === "asc" && !isNumericLiteral(stmt.value)) {
       return {
         unsupported: "counter loop initializer must be a numeric literal",
+      };
+    }
+    if (direction === "desc" && exprReferencesVar(stmt.value, stmt.name)) {
+      return {
+        unsupported: "counter loop initializer must not reference the counter",
       };
     }
     return { counterName: stmt.name, initExpr: stmt.value };
   }
   if (stmt.kind === "assign" && stmt.target.kind === "var") {
-    if (!isNumericLiteral(stmt.value)) {
+    if (direction === "asc" && !isNumericLiteral(stmt.value)) {
       return {
         unsupported: "counter loop initializer must be a numeric literal",
+      };
+    }
+    if (
+      direction === "desc" &&
+      exprReferencesVar(stmt.value, stmt.target.name)
+    ) {
+      return {
+        unsupported: "counter loop initializer must not reference the counter",
       };
     }
     return { counterName: stmt.target.name, initExpr: stmt.value };
@@ -220,42 +248,61 @@ function recognizeCounterInit(
 function recognizeCounterCondition(
   cond: IR1Expr,
   counterName: string,
-): { boundExpr: IR1Expr; boundCmpOp: "lt" | "le" } | { unsupported: string } {
+):
+  | {
+      boundExpr: IR1Expr;
+      boundCmpOp: "lt" | "le" | "gt" | "ge";
+      direction: "asc" | "desc";
+    }
+  | { unsupported: string } {
   if (
     cond.kind !== "binop" ||
-    (cond.op !== "lt" && cond.op !== "le") ||
+    !isCounterBoundCmpOp(cond.op) ||
     cond.lhs.kind !== "var" ||
     cond.lhs.name !== counterName
   ) {
     return {
       unsupported:
-        "counter loop condition must be `counter < bound` or `counter <= bound`",
+        "counter loop condition must be `counter < bound`, `counter <= bound`, `counter > bound`, or `counter >= bound`",
     };
   }
   if (exprReferencesVar(cond.rhs, counterName)) {
     return { unsupported: "counter loop bound must not reference the counter" };
   }
-  return { boundExpr: cond.rhs, boundCmpOp: cond.op };
+  const direction = cond.op === "lt" || cond.op === "le" ? "asc" : "desc";
+  if (direction === "desc" && !isNumericLiteral(cond.rhs)) {
+    return {
+      unsupported: "descending counter loop bound must be a numeric literal",
+    };
+  }
+  return { boundExpr: cond.rhs, boundCmpOp: cond.op, direction };
 }
 
 function recognizeCounterStep(
   step: IR1Stmt,
   counterName: string,
+  direction: "asc" | "desc",
 ): { ok: true } | { unsupported: string } {
   if (
     step.kind !== "assign" ||
     step.target.kind !== "var" ||
     step.target.name !== counterName ||
     step.value.kind !== "binop" ||
-    step.value.op !== "add" ||
+    (step.value.op !== "add" && step.value.op !== "sub") ||
     step.value.lhs.kind !== "var" ||
     step.value.lhs.name !== counterName ||
     !isNatLiteral(step.value.rhs, 1)
   ) {
     return {
       unsupported:
-        "counter loop step must be a canonical +1 increment on the counter",
+        "counter loop step must be a canonical +1 increment or -1 decrement on the counter",
     };
+  }
+  if (
+    (direction === "asc" && step.value.op !== "add") ||
+    (direction === "desc" && step.value.op !== "sub")
+  ) {
+    return { unsupported: "counter loop direction is inconsistent" };
   }
   return { ok: true };
 }
@@ -370,14 +417,14 @@ function emitAccumulatorFold(
   const bound = lowerOpaque(lowerExpr(lowerL1Expr(shape.boundExpr)));
   const rhs = lowerWithCounter(body.rhs, shape, binderExpr, lowerOpaque);
   const guards = [
-    ast.gExpr(ast.binop(ast.opGe(), binderExpr, init)),
     ast.gExpr(
       ast.binop(
-        shape.boundCmpOp === "lt" ? ast.opLt() : ast.opLe(),
+        shape.direction === "asc" ? ast.opGe() : ast.opLe(),
         binderExpr,
-        bound,
+        init,
       ),
     ),
+    ast.gExpr(ast.binop(boundCmpToOpaque(shape.boundCmpOp), binderExpr, bound)),
   ];
   if (body.guard !== null) {
     guards.push(
@@ -407,13 +454,10 @@ function emitSimpleAssign(
   const ast = getAst();
   const init = lowerOpaque(lowerExpr(lowerL1Expr(shape.initExpr)));
   const bound = lowerOpaque(lowerExpr(lowerL1Expr(shape.boundExpr)));
-  const lastCounter =
-    shape.boundCmpOp === "lt"
-      ? ast.binop(ast.opSub(), bound, ast.litNat(1))
-      : bound;
+  const lastCounter = lastCounterValue(shape, bound);
   const rhs = lowerWithCounter(body.rhs, shape, lastCounter, lowerOpaque);
   const loopExecutes = ast.binop(
-    shape.boundCmpOp === "lt" ? ast.opLt() : ast.opLe(),
+    boundCmpToOpaque(shape.boundCmpOp),
     init,
     bound,
   );
@@ -426,6 +470,46 @@ function emitSimpleAssign(
       [ast.litBool(true), target.prior],
     ]),
   };
+}
+
+function lastCounterValue(
+  shape: CounterLoopShape,
+  bound: OpaqueExpr,
+): OpaqueExpr {
+  const ast = getAst();
+  switch (shape.boundCmpOp) {
+    case "lt":
+      return ast.binop(ast.opSub(), bound, ast.litNat(1));
+    case "le":
+    case "ge":
+      return bound;
+    case "gt":
+      return ast.binop(ast.opAdd(), bound, ast.litNat(1));
+    default: {
+      const _exhaustive: never = shape.boundCmpOp;
+      void _exhaustive;
+      throw new Error("unsupported counter loop comparison");
+    }
+  }
+}
+
+function boundCmpToOpaque(cmp: CounterLoopShape["boundCmpOp"]) {
+  const ast = getAst();
+  switch (cmp) {
+    case "lt":
+      return ast.opLt();
+    case "le":
+      return ast.opLe();
+    case "gt":
+      return ast.opGt();
+    case "ge":
+      return ast.opGe();
+    default: {
+      const _exhaustive: never = cmp;
+      void _exhaustive;
+      throw new Error("unsupported counter loop comparison");
+    }
+  }
 }
 
 function lowerWithCounter(
@@ -512,6 +596,10 @@ function isNatLiteral(expr: IR1Expr, value: number): boolean {
     expr.value.kind === "nat" &&
     expr.value.value === value
   );
+}
+
+function isCounterBoundCmpOp(op: string): op is CounterLoopShape["boundCmpOp"] {
+  return op === "lt" || op === "le" || op === "gt" || op === "ge";
 }
 
 function exprReferencesVar(expr: IR1Expr, name: string): boolean {
