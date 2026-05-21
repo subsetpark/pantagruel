@@ -65,7 +65,7 @@ describe("ir1-ssa-counter-loop", () => {
 
     const metric = result.programs[0]?.loopBodies[0]?.terminationMetric;
     assert.equal(metric?.kind, "ssa-termination-metric");
-    assert.equal(metric?.lowerBound, metric?.lowerBound);
+    assert.deepEqual(metric?.lowerBound, ir1LitNat(0));
     assert.equal(metric?.expr.kind, "binop");
     if (metric?.expr.kind === "binop") {
       assert.equal(metric.expr.op, "sub");
@@ -87,7 +87,27 @@ describe("ir1-ssa-counter-loop", () => {
       assert.equal(ast.strExpr(prop.lhs), "Account_total' account");
       assert.equal(
         ast.strExpr(prop.rhs),
-        "Account_total account + (+ over each i: Nat0, i < n | i)",
+        "Account_total account + (+ over each i: Nat0, i >= 0, i < n | i)",
+      );
+    }
+  });
+
+  it("emits an init lower-bound guard for non-zero accumulator folds", () => {
+    const ast = getAst();
+    const result = lower(
+      counterFor(
+        ir1Assign(total, ir1Binop("add", total, ir1Var("i"))),
+        ir1LitNat(3),
+      ),
+    );
+
+    assert.deepEqual(result.diagnostics, []);
+    const prop = result.propositions[0];
+    assert.equal(prop?.kind, "equation");
+    if (prop?.kind === "equation") {
+      assert.equal(
+        ast.strExpr(prop.rhs),
+        "Account_total account + (+ over each i: Nat0, i >= 3, i < n | i)",
       );
     }
   });
@@ -103,7 +123,24 @@ describe("ir1-ssa-counter-loop", () => {
       assert.equal(ast.strExpr(prop.lhs), "Account_total' account");
       assert.equal(
         ast.strExpr(prop.rhs),
-        "cond n > 0 => n - 1, true => Account_total account",
+        "cond 0 < n => n - 1, true => Account_total account",
+      );
+    }
+  });
+
+  it("uses init-vs-bound to detect simple-assign zero-iteration loops", () => {
+    const ast = getAst();
+    const result = lower(
+      counterFor(ir1Assign(total, ir1Var("i")), ir1LitNat(5)),
+    );
+
+    assert.deepEqual(result.diagnostics, []);
+    const prop = result.propositions[0];
+    assert.equal(prop?.kind, "equation");
+    if (prop?.kind === "equation") {
+      assert.equal(
+        ast.strExpr(prop.rhs),
+        "cond 5 < n => n - 1, true => Account_total account",
       );
     }
   });

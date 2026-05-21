@@ -366,9 +366,11 @@ function emitAccumulatorFold(
 ): Extract<PropResult, { kind: "equation" }> {
   const ast = getAst();
   const binderExpr = ast.var(shape.counterPantBinder);
+  const init = lowerOpaque(lowerExpr(lowerL1Expr(shape.initExpr)));
   const bound = lowerOpaque(lowerExpr(lowerL1Expr(shape.boundExpr)));
   const rhs = lowerWithCounter(body.rhs, shape, binderExpr, lowerOpaque);
   const guards = [
+    ast.gExpr(ast.binop(ast.opGe(), binderExpr, init)),
     ast.gExpr(
       ast.binop(
         shape.boundCmpOp === "lt" ? ast.opLt() : ast.opLe(),
@@ -403,18 +405,24 @@ function emitSimpleAssign(
   lowerOpaque: (e: OpaqueExpr) => OpaqueExpr,
 ): Extract<PropResult, { kind: "equation" }> {
   const ast = getAst();
+  const init = lowerOpaque(lowerExpr(lowerL1Expr(shape.initExpr)));
   const bound = lowerOpaque(lowerExpr(lowerL1Expr(shape.boundExpr)));
   const lastCounter =
     shape.boundCmpOp === "lt"
       ? ast.binop(ast.opSub(), bound, ast.litNat(1))
       : bound;
   const rhs = lowerWithCounter(body.rhs, shape, lastCounter, lowerOpaque);
+  const loopExecutes = ast.binop(
+    shape.boundCmpOp === "lt" ? ast.opLt() : ast.opLe(),
+    init,
+    bound,
+  );
   return {
     kind: "equation",
     quantifiers: [],
     lhs: target.lhs,
     rhs: ast.cond([
-      [ast.binop(ast.opGt(), bound, ast.litNat(0)), rhs],
+      [loopExecutes, rhs],
       [ast.litBool(true), target.prior],
     ]),
   };
@@ -495,12 +503,7 @@ function recurrenceUnsupported(): { unsupported: string } {
 }
 
 function isNumericLiteral(expr: IR1Expr): boolean {
-  return (
-    expr.kind === "lit" &&
-    (expr.value.kind === "nat" ||
-      (expr.value.kind as string) === "int" ||
-      (expr.value.kind as string) === "real")
-  );
+  return expr.kind === "lit" && expr.value.kind === "nat";
 }
 
 function isNatLiteral(expr: IR1Expr, value: number): boolean {
@@ -642,8 +645,107 @@ function sameMember(
   return (
     expr.kind === "member" &&
     expr.name === member.name &&
-    getAst().strExpr(lowerExpr(lowerL1Expr(expr.receiver))) ===
-      getAst().strExpr(lowerExpr(lowerL1Expr(member.receiver)))
+    ir1ExprEqual(expr.receiver, member.receiver)
+  );
+}
+
+function ir1ExprEqual(a: IR1Expr, b: IR1Expr): boolean {
+  if (a.kind !== b.kind) {
+    return false;
+  }
+  switch (a.kind) {
+    case "var":
+      return (
+        b.kind === "var" &&
+        a.name === b.name &&
+        (a.primed ?? false) === (b.primed ?? false)
+      );
+    case "lit":
+      return (
+        b.kind === "lit" &&
+        a.value.kind === b.value.kind &&
+        "value" in a.value &&
+        "value" in b.value &&
+        a.value.value === b.value.value
+      );
+    case "binop":
+      return (
+        b.kind === "binop" &&
+        a.op === b.op &&
+        ir1ExprEqual(a.lhs, b.lhs) &&
+        ir1ExprEqual(a.rhs, b.rhs)
+      );
+    case "unop":
+      return b.kind === "unop" && a.op === b.op && ir1ExprEqual(a.arg, b.arg);
+    case "app":
+      return (
+        b.kind === "app" &&
+        ir1ExprEqual(a.callee, b.callee) &&
+        ir1ExprArrayEqual(a.args, b.args)
+      );
+    case "member":
+      return (
+        b.kind === "member" &&
+        a.name === b.name &&
+        ir1ExprEqual(a.receiver, b.receiver)
+      );
+    case "cond":
+      return (
+        b.kind === "cond" &&
+        a.arms.length === b.arms.length &&
+        a.arms.every(
+          ([guard, value], index) =>
+            b.arms[index] !== undefined &&
+            ir1ExprEqual(guard, b.arms[index][0]) &&
+            ir1ExprEqual(value, b.arms[index][1]),
+        ) &&
+        ir1ExprEqual(a.otherwise, b.otherwise)
+      );
+    case "is-nullish":
+      return b.kind === "is-nullish" && ir1ExprEqual(a.operand, b.operand);
+    case "each":
+      return (
+        b.kind === "each" &&
+        a.binder === b.binder &&
+        ir1ExprEqual(a.src, b.src) &&
+        ir1ExprArrayEqual(a.guards, b.guards) &&
+        ir1ExprEqual(a.proj, b.proj)
+      );
+    case "map-read":
+      return (
+        b.kind === "map-read" &&
+        a.op === b.op &&
+        a.ruleName === b.ruleName &&
+        a.keyPredName === b.keyPredName &&
+        a.ownerType === b.ownerType &&
+        a.keyType === b.keyType &&
+        ir1ExprEqual(a.receiver, b.receiver) &&
+        ir1ExprEqual(a.key, b.key)
+      );
+    case "set-read":
+      return (
+        b.kind === "set-read" &&
+        a.ruleName === b.ruleName &&
+        a.ownerType === b.ownerType &&
+        a.elemType === b.elemType &&
+        ir1ExprEqual(a.receiver, b.receiver) &&
+        ir1ExprEqual(a.elem, b.elem)
+      );
+    default: {
+      const _exhaustive: never = a;
+      void _exhaustive;
+      return false;
+    }
+  }
+}
+
+function ir1ExprArrayEqual(
+  a: readonly IR1Expr[],
+  b: readonly IR1Expr[],
+): boolean {
+  return (
+    a.length === b.length &&
+    a.every((expr, index) => ir1ExprEqual(expr, b[index]!))
   );
 }
 

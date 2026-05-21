@@ -1055,7 +1055,7 @@ exports[`unsupported.ts > impureGuardAssign 1`] = `
 `;
 
 exports[`unsupported.ts > loopAssign 1`] = `
-"module LOOP_ASSIGN.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Loop-assign @ a: Account.\\n\\n---\\n\\naccount--balance' a = account--balance a + (+ over each i: Nat0, i < 3 | 1).\\naccount--owner' a1 = account--owner a1.\\n"
+"module LOOP_ASSIGN.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Loop-assign @ a: Account.\\n\\n---\\n\\naccount--balance' a = account--balance a + (+ over each i: Nat0, i >= 0, i < 3 | 1).\\naccount--owner' a1 = account--owner a1.\\n"
 `;
 
 exports[`unsupported.ts > multiParamCallback 1`] = `
