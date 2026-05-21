@@ -1,0 +1,11 @@
+exports[`formatIR1SsaProgram > renders a buildScalarSsaProgram output 1`] = `
+"> rules: declared = [Account_balance]; modified = [Account_balance]; framed = []\\n\\nv1 = 1.    > Account_balance' a\\nv2 = (v1 + 2).    > Account_balance' a"
+`;
+
+exports[`formatIR1SsaProgram > renders a phi-function from a then/else mutation merge 1`] = `
+"> rules: declared = [Account_balance]; modified = [Account_balance]; framed = []\\n\\nv1 = Account_balance a.    > initial\\nv2 = 1.    > Account_balance' a\\nv3 = phi v2 v1.    > join Account_balance a"
+`;
+
+exports[`formatIR1SsaProgram > renders map-membership and set-membership locations 1`] = `
+"> rules: declared = [Account_balance, Cache_value, Cache_hasKey, Owner_tags]; modified = [Account_balance, Cache_value, Cache_hasKey, Owner_tags]; framed = []\\n\\nv1 = ownerTags.    > initial\\nv2 = 10.    > Account_balance' a\\nv3 = 7.    > Cache_hasKey' cache key\\nv4 = false.    > (key in cache)'\\nv5 = v1 with tag.    > ownerTags'"
+`;
