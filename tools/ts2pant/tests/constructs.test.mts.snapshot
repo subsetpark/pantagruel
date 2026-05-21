@@ -842,6 +842,18 @@ exports[`functions-mutating-const.ts > multiConstMutating 1`] = `
 "module MULTI_CONST_MUTATING.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\n~> Multi-const-mutating @ a: Account, amount: Int, rate: Int.\\n\\n---\\n\\naccount--balance' a = account--balance a - amount * rate.\\n"
 `;
 
+exports[`functions-mutating-counter-loop.ts > setLastIndex 1`] = `
+"module SET_LAST_INDEX.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--last-index a1: Account => Int.\\n~> Set-last-index @ a: Account, n: Int.\\n\\n---\\n\\naccount--last-index' a = (cond 0 < n => n - 1, true => account--last-index a).\\naccount--total' a1 = account--total a1.\\n"
+`;
+
+exports[`functions-mutating-counter-loop.ts > sumFirstN 1`] = `
+"module SUM_FIRST_N.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--last-index a1: Account => Int.\\n~> Sum-first-n @ a: Account, n: Int.\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each i: Nat0, i >= 0, i < n | i).\\naccount--last-index' a1 = account--last-index a1.\\n"
+`;
+
+exports[`functions-mutating-counter-loop.ts > sumIfPositiveFirstN 1`] = `
+"module SUM_IF_POSITIVE_FIRST_N.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--last-index a1: Account => Int.\\n~> Sum-if-positive-first-n @ a: Account, n: Int.\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each i: Nat0, i >= 0, i < n, i > 0 | i).\\naccount--last-index' a1 = account--last-index a1.\\n"
+`;
+
 exports[`functions-mutating-early-exit.ts > chainedEarlyReturns 1`] = `
 "module CHAINED_EARLY_RETURNS.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\n~> Chained-early-returns @ a: Account, g: Bool, h: Bool.\\n\\n---\\n\\naccount--balance' a = (cond ~g => (cond ~h => 1, true => account--balance a), true => account--balance a).\\naccount--owner' a1 = account--owner a1.\\n"
 `;
