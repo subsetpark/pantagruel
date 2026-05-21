@@ -53,6 +53,17 @@ function renderPropResult(prop: PropResult): string {
       }
       return ast.strExpr(ast.forall(prop.quantifiers, guards, prop.body));
     }
+    case "rule-decl": {
+      const params = prop.params.map((p) => ast.param(p.name, p.type));
+      const decl = ast.strDecl(
+        ast.declRule(prop.ruleName, params, [], prop.returnType),
+      );
+      const lhs = ast.app(
+        ast.var(prop.ruleName),
+        prop.params.map((p) => ast.var(p.name)),
+      );
+      return `${decl}\n${ast.strExpr(ast.binop(ast.opEq(), lhs, prop.body))}`;
+    }
     case "unsupported":
       return `> UNSUPPORTED: ${prop.reason}`;
     case "raw":
