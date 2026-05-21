@@ -188,6 +188,8 @@ export function lowerFixedPointLoopL1Body(
     joins: [],
     breakHandles: [],
     continueHandles: [],
+    returnHandles: [],
+    throwHandles: [],
     terminationMetric: null,
   });
 

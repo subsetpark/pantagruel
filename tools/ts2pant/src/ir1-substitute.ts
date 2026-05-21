@@ -1,6 +1,9 @@
 import {
   type IR1Expr,
   type IR1FoldLeaf,
+  type IR1SsaLocation,
+  type IR1SsaLoopBody,
+  type IR1SsaValue,
   type IR1Stmt,
   ir1App,
   ir1Assign,
@@ -104,6 +107,73 @@ export function freeVarsIR1Expr(expr: IR1Expr): Set<string> {
 
 export function freeVarsIR1Stmt(stmt: IR1Stmt): Set<string> {
   return freeVarsStmtWithScope(stmt, new Set());
+}
+
+export function freeVarsIR1SsaLocation(location: IR1SsaLocation): Set<string> {
+  switch (location.kind) {
+    case "property":
+      return freeVarsIR1Expr(location.receiver);
+    case "map-value":
+    case "map-membership":
+      return union(
+        freeVarsIR1Expr(location.receiver),
+        freeVarsIR1Expr(location.key),
+      );
+    case "set-membership":
+      return freeVarsIR1Expr(location.receiver);
+    case "return-value":
+      return new Set();
+    default: {
+      const _exhaustive: never = location;
+      return _exhaustive;
+    }
+  }
+}
+
+export function freeVarsIR1SsaLoopBody(body: IR1SsaLoopBody): Set<string> {
+  return union(
+    ...body.headerJoins.flatMap((header) => [
+      freeVarsIR1SsaLocation(header.location),
+      freeVarsIR1SsaLocation(header.preheaderVersion.location),
+      ...(header.loopBackVersion === null
+        ? []
+        : [freeVarsIR1SsaLocation(header.loopBackVersion.location)]),
+    ]),
+    ...body.writes.flatMap((write) => [
+      freeVarsIR1SsaLocation(write.location),
+      freeVarsIR1SsaValue(write.value),
+    ]),
+    ...body.joins.flatMap((join) => [
+      freeVarsIR1SsaLocation(join.location),
+      freeVarsIR1SsaLocation(join.thenVersion.location),
+      freeVarsIR1SsaLocation(join.elseVersion.location),
+    ]),
+    ...body.breakHandles.flatMap((handle) => [
+      freeVarsIR1SsaLocation(handle.location),
+      freeVarsIR1SsaLocation(handle.version.location),
+    ]),
+    ...body.continueHandles.flatMap((handle) => [
+      freeVarsIR1SsaLocation(handle.location),
+      freeVarsIR1SsaLocation(handle.version.location),
+    ]),
+    ...body.returnHandles.flatMap((handle) => [
+      freeVarsIR1SsaLocation(handle.location),
+      freeVarsIR1SsaLocation(handle.version.location),
+    ]),
+    ...body.throwHandles.flatMap((handle) => [
+      freeVarsIR1SsaLocation(handle.location),
+      freeVarsIR1SsaLocation(handle.version.location),
+      freeVarsIR1Expr(handle.guard),
+    ]),
+    ...(body.terminationMetric === null
+      ? []
+      : [
+          freeVarsIR1Expr(body.terminationMetric.expr),
+          ...(body.terminationMetric.lowerBound === null
+            ? []
+            : [freeVarsIR1Expr(body.terminationMetric.lowerBound)]),
+        ]),
+  );
 }
 
 export function substituteIR1ExprSubtree(
@@ -236,6 +306,22 @@ function freeVarsFoldLeaf(leaf: IR1FoldLeaf, bound: Set<string>): Set<string> {
       ? []
       : [without(freeVarsIR1Expr(leaf.guard), bound)]),
   );
+}
+
+function freeVarsIR1SsaValue(value: IR1SsaValue): Set<string> {
+  switch (value.kind) {
+    case "property":
+    case "map-value":
+      return freeVarsIR1Expr(value.value);
+    case "map-membership":
+      return new Set();
+    case "set-membership":
+      return value.elem === null ? new Set() : freeVarsIR1Expr(value.elem);
+    default: {
+      const _exhaustive: never = value;
+      return _exhaustive;
+    }
+  }
 }
 
 function substituteExpr(

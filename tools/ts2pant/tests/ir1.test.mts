@@ -6,6 +6,15 @@ import {
   ir1Exists,
   ir1Forall,
   ir1LitBool,
+  ir1LitNat,
+  ir1SsaInitialVersion,
+  ir1SsaLoopBody,
+  ir1SsaPropertyLocation,
+  ir1SsaPropertyValue,
+  ir1SsaReturnHandle,
+  ir1SsaReturnValueLocation,
+  ir1SsaThrowHandle,
+  ir1SsaWrite,
   ir1SsaExprEquals,
   ir1Var,
 } from "../src/ir1.js";
@@ -110,26 +119,55 @@ describe("ir1", () => {
   });
 
   describe("new early-exit handles", () => {
-    it.skip("ir1SsaReturnHandle constructs return-handle shape", () => {
-      // PENDING Patch 3.
+    it("ir1SsaReturnHandle constructs return-handle shape", () => {
+      const location = ir1SsaPropertyLocation("value", ir1Var("obj"), "value");
+      const version = ir1SsaWrite(
+        location,
+        ir1SsaPropertyValue(ir1LitNat(1)),
+      ).version;
+      const handle = ir1SsaReturnHandle(location, version);
+
+      assert.equal(handle.kind, "ssa-return-handle");
+      assert.equal(handle.location, location);
+      assert.equal(handle.version, version);
+      assert.throws(
+        () => ir1SsaReturnHandle(ir1SsaReturnValueLocation("f"), version),
+        /location mismatch/u,
+      );
     });
 
-    it.skip("ir1SsaThrowHandle constructs throw-handle shape with guard", () => {
-      // PENDING Patch 3.
+    it("ir1SsaThrowHandle constructs throw-handle shape with guard", () => {
+      const location = ir1SsaPropertyLocation("value", ir1Var("obj"), "value");
+      const version = ir1SsaInitialVersion(location);
+      const guard = ir1Var("shouldThrow");
+      const handle = ir1SsaThrowHandle(location, version, guard);
+
+      assert.equal(handle.kind, "ssa-throw-handle");
+      assert.equal(handle.location, location);
+      assert.equal(handle.version, version);
+      assert.equal(handle.guard, guard);
+      assert.throws(
+        () =>
+          ir1SsaThrowHandle(ir1SsaReturnValueLocation("f"), version, guard),
+        /location mismatch/u,
+      );
     });
 
-    it.skip("ir1SsaReturnValueLocation constructs return-value location kind", () => {
-      // PENDING Patch 3.
+    it("ir1SsaReturnValueLocation constructs return-value location kind", () => {
+      assert.deepEqual(ir1SsaReturnValueLocation("compute"), {
+        kind: "return-value",
+        ruleName: "compute",
+      });
     });
   });
 
   describe("IR1SsaLoopBody field defaults", () => {
-    it.skip("returnHandles defaults to empty", () => {
-      // PENDING Patch 3.
+    it("returnHandles defaults to empty", () => {
+      assert.deepEqual(ir1SsaLoopBody({}).returnHandles, []);
     });
 
-    it.skip("throwHandles defaults to empty", () => {
-      // PENDING Patch 3.
+    it("throwHandles defaults to empty", () => {
+      assert.deepEqual(ir1SsaLoopBody({}).throwHandles, []);
     });
   });
 });
