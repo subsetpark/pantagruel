@@ -1172,6 +1172,130 @@ let translate_proposition config env (e : expr) =
             in
             Printf.sprintf "(=> %s %s)" guard_conj smt_expr)
 
+let is_rule_recursive (decl : Ast.declaration) : bool =
+  match decl with
+  | DeclRule { name = Lower name; body = Some body; _ } ->
+      Smt_expr.expr_applies_name name body
+  | DeclRule { body = None; _ }
+  | DeclDomain _ | DeclAlias _ | DeclAction _ | DeclClosure _ ->
+      false
+
+let emit_rule_recursive config (env : Env.t) (decl : Ast.declaration) : string =
+  match decl with
+  | DeclRule { name = Lower name; params; return_type; body = Some body; _ } ->
+      let args =
+        List.map
+          (fun (p : Ast.param) ->
+            let sort =
+              match Collect.resolve_type env p.param_type dummy_loc with
+              | Ok ty -> sort_of_ty ty
+              | Error _ ->
+                  failwith
+                    (Printf.sprintf
+                       "SMT translation: cannot resolve type for parameter `%s`"
+                       (Ast.lower_name p.param_name))
+            in
+            Printf.sprintf "(%s %s)"
+              (sanitize_ident (Ast.lower_name p.param_name))
+              sort)
+          params
+      in
+      let ret =
+        match Collect.resolve_type env return_type dummy_loc with
+        | Ok ty -> sort_of_ty ty
+        | Error _ ->
+            failwith
+              (Printf.sprintf
+                 "SMT translation: cannot resolve return type for recursive \
+                  rule `%s`"
+                 name)
+      in
+      let bindings =
+        List.filter_map
+          (fun (p : Ast.param) ->
+            match Collect.resolve_type env p.param_type dummy_loc with
+            | Ok ty -> Some (Ast.lower_name p.param_name, ty)
+            | Error _ -> None)
+          params
+      in
+      let env_body = Env.with_vars bindings env in
+      let body_smt = translate_expr config env_body body in
+      Printf.sprintf "(define-fun-rec %s (%s) %s %s)"
+        (smt_rule_name env name (List.length params))
+        (String.concat " " args) ret body_smt
+  | DeclRule { body = None; _ }
+  | DeclDomain _ | DeclAlias _ | DeclAction _ | DeclClosure _ ->
+      invalid_arg "emit_rule_recursive: expected a rule declaration with a body"
+
+let emit_rule_axiom config env (decl : Ast.declaration) body : string =
+  match decl with
+  | DeclRule { name = Lower name; params; _ } -> (
+      let args =
+        List.map
+          (fun (p : Ast.param) ->
+            let sort =
+              match Collect.resolve_type env p.param_type dummy_loc with
+              | Ok ty -> sort_of_ty ty
+              | Error _ -> "Int"
+            in
+            Printf.sprintf "(%s %s)"
+              (sanitize_ident (Ast.lower_name p.param_name))
+              sort)
+          params
+      in
+      let arg_names =
+        List.map
+          (fun (p : Ast.param) -> sanitize_ident (Ast.lower_name p.param_name))
+          params
+      in
+      let bindings =
+        List.filter_map
+          (fun (p : Ast.param) ->
+            match Collect.resolve_type env p.param_type dummy_loc with
+            | Ok ty -> Some (Ast.lower_name p.param_name, ty)
+            | Error _ -> None)
+          params
+      in
+      let env_body = Env.with_vars bindings env in
+      let lhs =
+        match arg_names with
+        | [] -> smt_rule_name env name 0
+        | _ ->
+            Printf.sprintf "(%s %s)"
+              (smt_rule_name env name (List.length params))
+              (String.concat " " arg_names)
+      in
+      let eq =
+        Printf.sprintf "(= %s %s)" lhs (translate_expr config env_body body)
+      in
+      match args with
+      | [] -> Printf.sprintf "(assert %s)" eq
+      | _ ->
+          Printf.sprintf "(assert (forall (%s) %s))" (String.concat " " args) eq
+      )
+  | DeclDomain _ | DeclAlias _ | DeclAction _ | DeclClosure _ ->
+      invalid_arg "emit_rule_axiom: expected a rule declaration"
+
+let emit_rule_definitions config env =
+  Env.fold_rule_bodies
+    (fun _name _arity (decl, body, recursive) acc ->
+      let line =
+        if recursive then emit_rule_recursive config env decl
+        else emit_rule_axiom config env decl body
+      in
+      line :: acc)
+    env []
+  |> List.rev |> String.concat "\n"
+
+let generate_preamble_with_rule_bodies ?(constrain_primed = true)
+    ?(include_type_constraints = true) config env =
+  let base =
+    generate_preamble ~constrain_primed ~include_type_constraints config env
+  in
+  let defs = emit_rule_definitions config env in
+  if defs = "" then base
+  else base ^ "\n; --- Rule definitions ---\n" ^ defs ^ "\n"
+
 (** Translate a list of propositions into a conjunction *)
 let conjoin_propositions config env props =
   match props with
@@ -1367,7 +1491,8 @@ let generate_contradiction_query config env action =
     (Printf.sprintf "; Contradiction check: %s\n" action.a_label);
   Buffer.add_string buf "(set-option :produce-unsat-cores true)\n";
   Buffer.add_string buf
-    (generate_preamble ~include_type_constraints:false config env);
+    (generate_preamble_with_rule_bodies ~include_type_constraints:false config
+       env);
   Buffer.add_string buf "\n; --- Action parameters ---\n";
   Buffer.add_string buf (declare_action_params env action.a_params);
   declare_domain_membership config buf action.a_params env;
@@ -1427,7 +1552,8 @@ let generate_invariant_query config env ~all_invariants ~index
   Buffer.add_string buf
     (Printf.sprintf "; Invariant preservation: %s / %s\n" action.a_label
        inv_text);
-  Buffer.add_string buf (generate_preamble ~constrain_primed:false config env);
+  Buffer.add_string buf
+    (generate_preamble_with_rule_bodies ~constrain_primed:false config env);
   Buffer.add_string buf "\n; --- Action parameters ---\n";
   Buffer.add_string buf (declare_action_params env action.a_params);
   Buffer.add_string buf (declare_param_constraints env action.a_params);
@@ -1477,7 +1603,8 @@ let generate_precondition_query config env invariant_props action =
     (Printf.sprintf "; Precondition satisfiability: %s\n" action.a_label);
   Buffer.add_string buf "(set-option :produce-unsat-cores true)\n";
   Buffer.add_string buf
-    (generate_preamble ~include_type_constraints:false config env);
+    (generate_preamble_with_rule_bodies ~include_type_constraints:false config
+       env);
   Buffer.add_string buf "\n; --- Action parameters ---\n";
   Buffer.add_string buf (declare_action_params env action.a_params);
   declare_domain_membership config buf action.a_params env;
@@ -1555,8 +1682,8 @@ let generate_invariant_consistency_query config env invariant_props =
   Buffer.add_string buf "; Invariant consistency check\n";
   Buffer.add_string buf "(set-option :produce-unsat-cores true)\n";
   Buffer.add_string buf
-    (generate_preamble ~constrain_primed:false ~include_type_constraints:false
-       config env);
+    (generate_preamble_with_rule_bodies ~constrain_primed:false
+       ~include_type_constraints:false config env);
   Buffer.add_string buf "\n; --- Type constraints ---\n";
   let type_exprs =
     collect_type_constraint_exprs ~constrain_primed:false config env
@@ -1593,8 +1720,8 @@ let generate_init_consistency_query config env init_props =
   Buffer.add_string buf "; Initial state consistency check\n";
   Buffer.add_string buf "(set-option :produce-unsat-cores true)\n";
   Buffer.add_string buf
-    (generate_preamble ~constrain_primed:false ~include_type_constraints:false
-       config env);
+    (generate_preamble_with_rule_bodies ~constrain_primed:false
+       ~include_type_constraints:false config env);
   Buffer.add_string buf "\n; --- Type constraints ---\n";
   let type_exprs =
     collect_type_constraint_exprs ~constrain_primed:false config env
@@ -1631,7 +1758,8 @@ let generate_init_invariant_query config env init_props ~index
   let inv_text = Pretty.str_expr inv.value in
   Buffer.add_string buf
     (Printf.sprintf "; Initial state satisfies invariant: %s\n" inv_text);
-  Buffer.add_string buf (generate_preamble ~constrain_primed:false config env);
+  Buffer.add_string buf
+    (generate_preamble_with_rule_bodies ~constrain_primed:false config env);
   Buffer.add_string buf
     (declare_type_constraints ~constrain_primed:false config env);
   (* Assert init props *)
@@ -2204,7 +2332,8 @@ let generate_exhaustiveness_query config env ~all_invariants:_ ~index cond =
   let buf = Buffer.create 1024 in
   Buffer.add_string buf
     (Printf.sprintf "; Cond exhaustiveness check: %s\n" cond.cond_text);
-  Buffer.add_string buf (generate_preamble ~constrain_primed:false config env);
+  Buffer.add_string buf
+    (generate_preamble_with_rule_bodies ~constrain_primed:false config env);
   Buffer.add_string buf
     (declare_type_constraints ~constrain_primed:false config env);
   (* Build the disjunction of all arms *)
@@ -2247,7 +2376,8 @@ let generate_invariant_entailment_query config env invariant_props ~index
   let goal_text = Pretty.str_expr goal.value in
   Buffer.add_string buf
     (Printf.sprintf "; Entailment check (invariant): %s\n" goal_text);
-  Buffer.add_string buf (generate_preamble ~constrain_primed:false config env);
+  Buffer.add_string buf
+    (generate_preamble_with_rule_bodies ~constrain_primed:false config env);
   (* Assert all invariants as assumptions *)
   if invariant_props <> [] then begin
     Buffer.add_string buf "\n; --- Invariants (assumptions) ---\n";
@@ -2281,7 +2411,8 @@ let generate_action_entailment_query config env ~all_invariants ~index
   Buffer.add_string buf
     (Printf.sprintf "; Entailment check (action %s): %s\n" action.a_label
        goal_text);
-  Buffer.add_string buf (generate_preamble ~constrain_primed:false config env);
+  Buffer.add_string buf
+    (generate_preamble_with_rule_bodies ~constrain_primed:false config env);
   Buffer.add_string buf "\n; --- Action parameters ---\n";
   Buffer.add_string buf (declare_action_params env action.a_params);
   Buffer.add_string buf (declare_param_constraints env action.a_params);

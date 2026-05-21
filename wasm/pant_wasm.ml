@@ -462,6 +462,7 @@ let () =
              params = js_array_to_list params;
              guards = js_array_to_list guards;
              return_type = returnType;
+             body = None;
              contexts = [];
            }
 

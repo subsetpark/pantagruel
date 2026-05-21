@@ -197,16 +197,65 @@ let test_function_declarations () =
     (contains decls "(declare-fun balance_prime (Account) Int)")
 
 let test_is_rule_recursive_detects_self_reference () =
-  (* PENDING Patch 2: implement Smt.is_rule_recursive for self-referential rule bodies. *)
-  () [@tags "pending"]
+  let _env, doc =
+    parse_and_collect
+      "module Test.\n\
+       loop x: Int => Int = cond x > 0 => loop (x - 1), true => x.\n\
+       ---\n\
+       loop 0 = 0.\n"
+  in
+  match (List.hd doc.chapters).head with
+  | decl :: _ ->
+      check bool "recursive rule detected" true
+        (Smt.is_rule_recursive decl.value)
+  | [] -> fail "expected rule declaration"
+
+let test_is_rule_recursive_detects_nullary_self_reference () =
+  let _env, doc =
+    parse_and_collect "module Test.\nloop => Bool = loop.\n---\nloop.\n"
+  in
+  match (List.hd doc.chapters).head with
+  | decl :: _ ->
+      check bool "nullary recursive rule detected" true
+        (Smt.is_rule_recursive decl.value)
+  | [] -> fail "expected nullary rule declaration"
 
 let test_recursive_rule_emits_define_fun_rec () =
-  (* PENDING Patch 2: emit define-fun-rec and suppress declare-fun for recursive rules. *)
-  () [@tags "pending"]
+  let env, _doc =
+    parse_and_collect
+      "module Test.\n\
+       loop x: Int => Int = cond x > 0 => loop (x - 1), true => x.\n\
+       ---\n\
+       loop 0 = 0.\n"
+  in
+  let smt = Smt.generate_preamble_with_rule_bodies config env in
+  check bool "has define-fun-rec" true
+    (contains smt "(define-fun-rec loop ((x Int)) Int");
+  check bool "has recursive call in body" true (contains smt "(loop (- x 1))");
+  check bool "skips current declare-fun" false
+    (contains smt "(declare-fun loop (Int) Int)");
+  check bool "keeps primed declare-fun" true
+    (contains smt "(declare-fun loop_prime (Int) Int)");
+  check bool "no legacy forall axiom for recursive rule" false
+    (contains smt "(assert (forall ((x Int)) (= (loop x)")
 
 let test_non_recursive_rule_emits_existing_shape () =
-  (* PENDING Patch 2: preserve declare-fun plus universal-axiom emission for non-recursive rules. *)
-  () [@tags "pending"]
+  let env, doc =
+    parse_and_collect
+      "module Test.\nnext x: Int => Int = x + 1.\n---\nnext 0 = 1.\n"
+  in
+  (match (List.hd doc.chapters).head with
+  | decl :: _ ->
+      check bool "non-recursive rule not detected" false
+        (Smt.is_rule_recursive decl.value)
+  | [] -> fail "expected rule declaration");
+  let smt = Smt.generate_preamble_with_rule_bodies config env in
+  check bool "has declare-fun" true
+    (contains smt "(declare-fun next (Int) Int)");
+  check bool "has universal axiom" true
+    (contains smt "(assert (forall ((x Int)) (= (next x) (+ x 1))))");
+  check bool "does not use define-fun-rec" false
+    (contains smt "(define-fun-rec next")
 
 let test_nullary_rule () =
   let env =
@@ -1311,6 +1360,8 @@ let integration_tests =
     test_case "function declarations" `Quick test_function_declarations;
     test_case "is_rule_recursive detects self-referential rule body" `Quick
       test_is_rule_recursive_detects_self_reference;
+    test_case "is_rule_recursive detects nullary self-referential rule body"
+      `Quick test_is_rule_recursive_detects_nullary_self_reference;
     test_case
       "recursive rule emits define-fun-rec form with body and skips \
        declare-fun line"
