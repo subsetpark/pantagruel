@@ -766,6 +766,26 @@ exports[`functions-class.ts > Account.getBalance 1`] = `
 "module GET_BALANCE.\\n\\nget-balance a: Account => Int.\\n\\n---\\n\\nget-balance a = account--balance a.\\n"
 `;
 
+exports[`functions-mutating-bounded-while.ts > setLastIndexDescending 1`] = `
+"module SET_LAST_INDEX_DESCENDING.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--last-index a1: Account => Int.\\n~> Set-last-index-descending @ a: Account, n: Int.\\n\\n---\\n\\naccount--last-index' a = (cond n > 0 => 0 + 1, true => account--last-index a).\\naccount--total' a1 = account--total a1.\\n"
+`;
+
+exports[`functions-mutating-bounded-while.ts > setLastIndexWhile 1`] = `
+"module SET_LAST_INDEX_WHILE.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--last-index a1: Account => Int.\\n~> Set-last-index-while @ a: Account, n: Int.\\n\\n---\\n\\naccount--last-index' a = (cond 0 < n => n - 1, true => account--last-index a).\\naccount--total' a1 = account--total a1.\\n"
+`;
+
+exports[`functions-mutating-bounded-while.ts > sumFirstNDescending 1`] = `
+"module SUM_FIRST_N_DESCENDING.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--last-index a1: Account => Int.\\n~> Sum-first-n-descending @ a: Account, n: Int.\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each i: Nat0, i <= n, i > 0 | i).\\naccount--last-index' a1 = account--last-index a1.\\n"
+`;
+
+exports[`functions-mutating-bounded-while.ts > sumFirstNWhile 1`] = `
+"module SUM_FIRST_N_WHILE.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--last-index a1: Account => Int.\\n~> Sum-first-n-while @ a: Account, n: Int.\\n\\n---\\n\\naccount--total' a = account--total a + (+ over each i: Nat0, i >= 0, i < n | i).\\naccount--last-index' a1 = account--last-index a1.\\n"
+`;
+
+exports[`functions-mutating-bounded-while.ts > unboundedWhile 1`] = `
+"module UNBOUNDED_WHILE.\\n\\nAccount.\\naccount--total a1: Account => Int.\\naccount--last-index a1: Account => Int.\\n~> Unbounded-while @ a: Account, n: Int.\\n\\n---\\n\\n> UNSUPPORTED: while loop is not a recognized bounded-counter shape; lift to L4 fixed-point lowering when that milestone ships.\\n"
+`;
+
 exports[`functions-mutating-compound.ts > addAmount 1`] = `
 "module ADD_AMOUNT.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--count a1: Account => Int.\\n~> Add-amount @ a: Account, amount: Int.\\n\\n---\\n\\naccount--balance' a = account--balance a + amount.\\naccount--count' a1 = account--count a1.\\n"
 `;

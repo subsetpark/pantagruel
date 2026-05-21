@@ -268,20 +268,100 @@ describe("unsupported patterns", () => {
     assert.equal(props[0]?.kind, "unsupported");
   });
 
-  it.skip("desugars let-then-while ascending counter into ir1For", () => {
-    // PENDING Patch 3: implement let-then-while ascending counter desugar.
+  it("desugars let-then-while ascending counter into ir1For", () => {
+    const source = `
+      interface Account { total: number; lastIndex: number }
+      export function sumFirstNWhile(a: Account, n: number): void {
+        let i = 0;
+        while (i < n) {
+          a.total += i;
+          i++;
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBodyWithSynth(sourceFile, "sumFirstNWhile");
+
+    assert.equal(props.some((p) => p.kind === "unsupported"), false);
+    const equations = props.filter((p) => p.kind === "equation");
+    assert.ok(equations.length > 0);
+    const ast = getAst();
+    const totalEq = equations.find(
+      (p) => p.kind === "equation" && ast.strExpr(p.lhs) === "account--total' a",
+    );
+    assert.ok(totalEq);
+    assert.equal(
+      ast.strExpr(totalEq.rhs),
+      "account--total a + (+ over each i: Nat0, i >= 0, i < n | i)",
+    );
   });
 
-  it.skip("desugars let-then-while descending counter into ir1For", () => {
-    // PENDING Patch 3: implement let-then-while descending counter desugar.
+  it("desugars let-then-while descending counter into ir1For", () => {
+    const source = `
+      interface Account { total: number; lastIndex: number }
+      export function sumFirstNDescending(a: Account, n: number): void {
+        let i = n;
+        while (i > 0) {
+          a.total += i;
+          i--;
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBodyWithSynth(sourceFile, "sumFirstNDescending");
+
+    assert.equal(props.some((p) => p.kind === "unsupported"), false);
+    const equations = props.filter((p) => p.kind === "equation");
+    assert.ok(equations.length > 0);
+    const ast = getAst();
+    const totalEq = equations.find(
+      (p) => p.kind === "equation" && ast.strExpr(p.lhs) === "account--total' a",
+    );
+    assert.ok(totalEq);
+    assert.equal(
+      ast.strExpr(totalEq.rhs),
+      "account--total a + (+ over each i: Nat0, i <= n, i > 0 | i)",
+    );
   });
 
-  it.skip("falls through to let-rejection on non-matching let-then-while pair", () => {
-    // PENDING Patch 3: implement non-matching let-then-while fallthrough coverage.
+  it("falls through to let-rejection on non-matching let-then-while pair", () => {
+    const source = `
+      interface Account { total: number }
+      export function badStep(a: Account, n: number): void {
+        let i = 0;
+        while (i < n) {
+          a.total += i;
+          i += 2;
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBodyWithSynth(sourceFile, "badStep");
+
+    assertUnsupportedReason(
+      props,
+      /local variable declaration \(let\/var or effectful const\)/u,
+      "non-matching let-then-while should fall through to let rejection",
+    );
   });
 
-  it.skip("rejects bare while loop with L4 fixed-point pointer", () => {
-    // PENDING Patch 3: implement bare while L4 fixed-point diagnostic.
+  it("rejects bare while loop with L4 fixed-point pointer", () => {
+    const source = `
+      interface Account { total: number; lastIndex: number }
+      export function bareWhile(a: Account, n: number): void {
+        while (a.lastIndex < n) {
+          a.total += 1;
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBodyWithSynth(sourceFile, "bareWhile");
+
+    assertUnsupportedReason(
+      props,
+      /while loop is not a recognized bounded-counter shape; lift to L4 fixed-point lowering when that milestone ships/u,
+      "bare while should reject with L4 pointer",
+    );
   });
 
   it("unwraps AsExpression at the body translation entry", () => {

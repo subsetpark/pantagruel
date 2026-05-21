@@ -289,4 +289,29 @@ describe("pant --check", () => {
     assert.ok(result.checks.length > 0);
     assert.ok(result.checks.every((c) => c.passed));
   });
+
+  for (const fn of [
+    "sumFirstNWhile",
+    "setLastIndexWhile",
+    "sumFirstNDescending",
+    "setLastIndexDescending",
+  ]) {
+    it(`functions-mutating-bounded-while.ts ${fn} is checkable`, {
+      skip: !hasSolver ? "z3 not available" : undefined,
+    }, async () => {
+      const doc = await buildDocument(
+        "constructs/functions-mutating-bounded-while.ts",
+        fn,
+      );
+      const output = await emitAndCheck(doc);
+      const result = runCheck(output, {
+        projectRoot: PROJECT_ROOT,
+        pantBin: getPantBin(),
+      });
+
+      assert.equal(result.passed, true);
+      assert.ok(result.checks.length > 0);
+      assert.ok(result.checks.every((c) => c.passed));
+    });
+  }
 });
