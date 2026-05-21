@@ -404,15 +404,135 @@ initializer, `let` without a matching following `while`, `while` without a
 preceding matched `let`, and `while` whose body does not end in a recognized
 counter step.
 
-Unsupported `while` loops reject with one diagnostic:
+At the L3 milestone, unsupported `while` loops rejected with one diagnostic:
 
 ```text
 while loop is not a recognized bounded-counter shape; lift to L4 fixed-point lowering when that milestone ships
 ```
 
-This message replaces the previous generic `loop assignment` diagnostic for
-`WhileStatement` specifically. `ForInStatement` and `DoStatement` still reject
-with the older generic loop-assignment message.
+That message replaced the previous generic `loop assignment` diagnostic for
+`WhileStatement` specifically. L4 now routes accepted unbounded `while` loops
+to fixed-point lowering and uses the targeted diagnostics below for the
+remaining rejected shapes. `ForInStatement` and `DoStatement` still reject with
+the older generic loop-assignment message.
+
+## Fixed-point while loop lowering (L4)
+
+The fixed-point while milestone activates the L1 loop SSA vocabulary for
+unbounded mutating `while` loops: loops whose termination depends on dynamic
+state and whose ranking function cannot be recovered by the L2/L3 bounded
+counter recognizers. L4 has two source routes:
+
+- Adjacent `let` plus `while` pairs still try the L3 bounded-counter peephole
+  first. If the pair is not a recognized ascending or descending counter loop,
+  it falls through to fixed-point lowering instead of rejecting as an
+  unsupported `let`.
+- Bare `while (P) { BODY }` statements route directly to fixed-point lowering.
+
+`do while`, labelled loops, `break`, and `continue` remain outside this
+milestone. Pure expression-position `let` plus `while` μ-search lowering is a
+separate expression path and is not changed by L4.
+
+The recognizer is intentionally scalar. It accepts exactly one mutated property
+location, requires the guard and update to be expressible over that location's
+current value plus loop-invariant parameters, and rejects multi-location loop
+bodies. Literal `while (true)` rejects in the build pass with:
+
+```text
+while loop has no observable termination condition (literal-true guard); rewrite with a guard that depends on mutated state
+```
+
+Multi-location bodies reject with:
+
+```text
+fixed-point while lowering supports single-location bodies only; this loop modifies N rules
+```
+
+Guards or updates that read outside the mutated property reject with:
+
+```text
+fixed-point while lowering supports guards and updates over the mutated property only
+```
+
+Successful lowering constructs an `IR1SsaLoopBody` with
+`terminationMetric: null`. That null metric is the L1 discriminant for the
+fixed-point family; bounded loops continue to carry a non-null
+`IR1SsaTerminationMetric` and lower through quantified `over each` equations.
+The fixed-point lowerer emits two `PropResult`s: a top-level
+`kind: "rule-decl"` for the synthesized recursive helper, and a normal
+`kind: "equation"` for the primed caller location.
+
+The helper is named from the enclosing function with the `fn--loop-N` pattern,
+using the shared name registry for collision suffixes. Its first parameter is
+the current value of the mutated property; remaining parameters are the
+loop-invariant values captured from the guard and update. The body is one
+Pant `cond`: if the guard still holds, call the helper recursively on the
+single-step updated value; otherwise return the current value.
+
+Counter-like fixed-point increment:
+
+```ts
+while (a.size < cap) {
+  a.size = a.size + 1;
+}
+```
+
+```pant
+fill-up-to--loop-0 value: Int, cap: Int => Int =
+  cond value < cap => fill-up-to--loop-0 (value + 1) cap,
+       true => value.
+
+account--size' a = fill-up-to--loop-0 (account--size a) cap.
+```
+
+Decrement:
+
+```ts
+while (a.balance > floor) {
+  a.balance = a.balance - 1;
+}
+```
+
+```pant
+drain-to--loop-0 value: Int, floor: Int => Int =
+  cond value > floor => drain-to--loop-0 (value - 1) floor,
+       true => value.
+
+account--balance' a = drain-to--loop-0 (account--balance a) floor.
+```
+
+Accumulator-style update:
+
+```ts
+while (a.balance < target) {
+  a.balance = a.balance + step;
+}
+```
+
+```pant
+adjust-balance-to--loop-0 value: Int, target: Int, step: Int => Int =
+  cond value < target => adjust-balance-to--loop-0 (value + step) target step,
+       true => value.
+
+account--balance' a = adjust-balance-to--loop-0 (account--balance a) target step.
+```
+
+These examples deliberately use the same recursive-rule shape. L4 does not
+pre-unroll a bounded number of iterations into a `cond` chain before falling
+back to recursion.
+
+Pant's SMT backend detects a rule whose body syntactically applies the same
+rule and emits that declaration as SMT-LIB `define-fun-rec`. Non-recursive
+rules keep the existing `declare-fun` plus universal defining-axiom emission.
+This preserves the Pant surface while giving Z3 and CVC5 native recursive
+function hooks for `pant --check`.
+
+The fixture policy is per case: every accepted fixed-point fixture must pass
+Pant typecheck, and each `pant --check` must either succeed or carry a
+documented timeout rationale explaining why direct recursive-function solving
+is currently acceptable for that loop shape. A fixture timeout is a solver
+automation limitation, not permission to change the lowering to bounded
+unrolling in this milestone.
 
 ## Mutating-body output (no L2 IR)
 
