@@ -16,8 +16,8 @@ import {
 import {
   buildL1Conditional,
   buildL1IncrementStep,
-  buildL1MuSearchCombTyped,
   buildL1MemberAccess,
+  buildL1MuSearchCombTyped,
   isL1ConditionalForm,
   isL1StmtUnsupported,
   isL1Unsupported,

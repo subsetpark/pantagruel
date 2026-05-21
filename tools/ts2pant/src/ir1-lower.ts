@@ -36,7 +36,7 @@ import {
   irUnop,
   irVar,
 } from "./ir.js";
-import { type IR1Expr } from "./ir1.js";
+import type { IR1Expr } from "./ir1.js";
 
 /**
  * Lower a Layer 1 expression to Layer 2 `IRExpr`.

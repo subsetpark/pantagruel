@@ -2834,10 +2834,7 @@ export function buildL1MuSearchCombTyped(
     "min",
     binder,
     counterType,
-    [
-      ir1Binop("ge", binderVar, init),
-      ir1Unop("not", predicateWithBinder),
-    ],
+    [ir1Binop("ge", binderVar, init), ir1Unop("not", predicateWithBinder)],
     binderVar,
   );
 }
