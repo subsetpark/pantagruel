@@ -41,7 +41,9 @@ export function formatIR1Expr(expr: IR1Expr): string {
       return `${formatIR1Expr(expr.elem)} in ${formatIR1Expr(expr.receiver)}`;
     default: {
       const _exhaustive: never = expr;
-      throw new Error(`Unhandled IR1 expression kind: ${String(_exhaustive)}`);
+      throw new Error(
+        `Unhandled IR1 expression kind: ${JSON.stringify(_exhaustive)}`,
+      );
     }
   }
 }
@@ -56,7 +58,9 @@ function formatIR1Literal(literal: IR1Literal): string {
       return JSON.stringify(literal.value);
     default: {
       const _exhaustive: never = literal;
-      throw new Error(`Unhandled IR1 literal kind: ${String(_exhaustive)}`);
+      throw new Error(
+        `Unhandled IR1 literal kind: ${JSON.stringify(_exhaustive)}`,
+      );
     }
   }
 }
@@ -71,7 +75,9 @@ function formatUnop(op: IR1Unop, arg: IR1Expr): string {
       return `${unopGlyph(op)}${formatAsTightPrefixArg(arg)}`;
     default: {
       const _exhaustive: never = op;
-      throw new Error(`Unhandled IR1 unary operator: ${String(_exhaustive)}`);
+      throw new Error(
+        `Unhandled IR1 unary operator: ${JSON.stringify(_exhaustive)}`,
+      );
     }
   }
 }
@@ -112,7 +118,9 @@ function binopGlyph(op: IR1Binop): string {
       return "/";
     default: {
       const _exhaustive: never = op;
-      throw new Error(`Unhandled IR1 binary operator: ${String(_exhaustive)}`);
+      throw new Error(
+        `Unhandled IR1 binary operator: ${JSON.stringify(_exhaustive)}`,
+      );
     }
   }
 }
@@ -127,7 +135,9 @@ function unopGlyph(op: IR1Unop): string {
       return "#";
     default: {
       const _exhaustive: never = op;
-      throw new Error(`Unhandled IR1 unary operator: ${String(_exhaustive)}`);
+      throw new Error(
+        `Unhandled IR1 unary operator: ${JSON.stringify(_exhaustive)}`,
+      );
     }
   }
 }
