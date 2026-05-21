@@ -181,6 +181,20 @@ describe("M2 μ-search L1: all five +1 spellings produce identical Pant", () => 
   });
 });
 
+describe("post-migration recognizer placement", () => {
+  it.skip("recognizeLetWhilePair produces L1 comb-typed", () => {
+    // PENDING Patch 3.
+  });
+
+  it.skip("canonical post-recognizer shape is comb-typed", () => {
+    // PENDING Patch 3.
+  });
+
+  it.skip("μ-search fixtures snapshot-equivalent", () => {
+    // PENDING Patch 3.
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Conservative rejections
 // ---------------------------------------------------------------------------

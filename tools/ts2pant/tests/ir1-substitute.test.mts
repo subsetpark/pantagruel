@@ -57,6 +57,18 @@ describe("ir1-substitute", () => {
       assertSetEqual(freeVarsIR1Expr(expr), ["g", "src"]);
     });
 
+    it.skip("freeVarsIR1Expr scopes comb-typed binder", () => {
+      // PENDING Patch 2.
+    });
+
+    it.skip("freeVarsIR1Expr scopes forall binder", () => {
+      // PENDING Patch 2.
+    });
+
+    it.skip("freeVarsIR1Expr scopes exists binder", () => {
+      // PENDING Patch 2.
+    });
+
     it("freeVarsIR1Stmt respects block / let / foreach / for binders", () => {
       const stmt = ir1Block([
         ir1Let("x", ir1Var("seed")),
@@ -124,6 +136,34 @@ describe("ir1-substitute", () => {
           ),
         CaptureRiskError,
       );
+    });
+
+    it.skip("substituteIR1ExprSubtree throws under comb-typed capture", () => {
+      // PENDING Patch 2.
+    });
+
+    it.skip("substituteIR1ExprSubtree throws under forall capture", () => {
+      // PENDING Patch 2.
+    });
+
+    it.skip("substituteIR1ExprSubtree throws under exists capture", () => {
+      // PENDING Patch 2.
+    });
+
+    it.skip("substituteIR1ExprSubtree halts at shadowing comb-typed", () => {
+      // PENDING Patch 2.
+    });
+
+    it.skip("substituteIR1ExprSubtree halts at shadowing forall", () => {
+      // PENDING Patch 2.
+    });
+
+    it.skip("substituteIR1ExprSubtree halts at shadowing exists", () => {
+      // PENDING Patch 2.
+    });
+
+    it.skip("arbIR1Expr includes new L1 binder forms", () => {
+      // PENDING Patch 2.
     });
 
     it("substituteIR1ExprSubtree preserves shape outside replacement sites", () => {
