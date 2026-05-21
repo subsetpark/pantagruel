@@ -207,6 +207,21 @@ write helpers would fail to register in `modifiedRules` and the
 over-strict frame would contradict the actual write — that's the
 failure mode the contract is defending against.
 
+## IR1 Substitution Discipline
+
+All IR1-level substitution goes through `substituteIR1ExprSubtree` /
+`substituteIR1StmtSubtree` in `tools/ts2pant/src/ir1-substitute.ts`.
+Hand-rolled walkers in this layer are forbidden — review will reject
+any IR1 substitution that does not use the primitive.
+
+When a future patch introduces a new IR1 binder form, the same patch
+must extend the primitive's binder-site enumeration so capture-checking
+remains exhaustive. The OCaml-backed `ast.substituteBinder` covers the
+L3 lowered `OpaqueExpr` Var-by-name case; the TS-side primitive covers
+IR1's Var and Member subtree cases. Together they enforce
+capture-avoidance discipline across every substitution surface in
+ts2pant.
+
 ## `IR1` SSA contract surface
 
 Milestone 1 adds the SSA-bearing type vocabulary and constructor helpers
