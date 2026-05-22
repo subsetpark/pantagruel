@@ -83,6 +83,12 @@ let run_smt_check env doc =
     2
   end
   else begin
+    (* Promote split-form rule definitions (declaration in chapter head +
+       matching equation in chapter body) into the same [define-fun-rec] /
+       axiom dispatch the inline body form uses. Recognised equations
+       move from chapter bodies into [env.rule_bodies]; unrecognised
+       propositions pass through unchanged. *)
+    let env, doc = Pantagruel.Collect.recognize_split_form_bodies env doc in
     let domain_bounds = Pantagruel.Smt.compute_domain_bounds !check_bound env in
     let config =
       Pantagruel.Smt.make_config ~bound:!check_bound ~steps:!check_steps

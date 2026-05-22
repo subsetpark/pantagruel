@@ -402,6 +402,82 @@ let collect_chapter_head ~chapter ~doc_contexts env
 
   Ok final_env
 
+(** Try to recognize a chapter-body proposition as a split-form rule definition
+    equation: `<rule-name> <param-name>* = <body>`. The LHS must be an
+    application of a declared rule (in [chapter_head], same chapter) to bare
+    variable references that exactly match the rule's parameter names in order —
+    equivalent to the inline form `<name> <params> => <type> = <body>.` modulo
+    the chapter divider. Returns [Some (decl, body)] if matched, [None]
+    otherwise. *)
+let recognize_rule_definition_eq
+    (chapter_head : Ast.declaration Ast.located list) (e : Ast.expr) :
+    (Ast.declaration * Ast.expr) option =
+  let arg_to_name (e : Ast.expr) : string option =
+    match[@warning "-4"] e with EVar (Lower an) -> Some an | _ -> None
+  in
+  let match_lhs (e : Ast.expr) : (string * string list) option =
+    match[@warning "-4"] e with
+    | EApp (EVar (Lower n), args) ->
+        let arg_names = List.filter_map arg_to_name args in
+        if List.length arg_names = List.length args then Some (n, arg_names)
+        else None
+    | EVar (Lower n) -> Some (n, [])
+    | _ -> None
+  in
+  match[@warning "-4"] e with
+  | EBinop (OpEq, lhs, rhs) -> (
+      match match_lhs lhs with
+      | None -> None
+      | Some (rule_name, arg_names) ->
+          List.find_map
+            (fun (decl : Ast.declaration Ast.located) ->
+              match[@warning "-4"] decl.value with
+              | DeclRule { name = Lower dn; params; body = None; _ }
+                when dn = rule_name
+                     && List.length params = List.length arg_names
+                     && List.equal String.equal arg_names
+                          (List.map
+                             (fun (p : Ast.param) ->
+                               Ast.lower_name p.param_name)
+                             params) ->
+                  Some (decl.value, rhs)
+              | _ -> None)
+            chapter_head)
+  | _ -> None
+
+(** Walk each chapter's body looking for split-form rule definition equations.
+    Matched equations are registered as rule bodies in [env.rule_bodies] (so the
+    SMT layer routes recursive ones to [define-fun-rec] exactly as inline bodies
+    do) and removed from the chapter body (so the same equation is not also
+    re-emitted as a quantified axiom). Returns the updated [env] and document.
+*)
+let recognize_split_form_bodies (env : Env.t) (doc : Ast.document) :
+    Env.t * Ast.document =
+  let process_chapter env (chapter : Ast.chapter) =
+    let body', env =
+      List.fold_left
+        (fun (acc, env) (prop : Ast.expr Ast.located) ->
+          match[@warning "-4"]
+            recognize_rule_definition_eq chapter.head prop.value
+          with
+          | Some ((DeclRule { name = Lower name; params; _ } as decl), body) ->
+              let arity = List.length params in
+              let env = Env.attach_rule_body name arity decl body env in
+              (acc, env)
+          | Some _ | None -> (prop :: acc, env))
+        ([], env) chapter.body
+    in
+    ({ chapter with body = List.rev body' }, env)
+  in
+  let chapters', env =
+    List.fold_left
+      (fun (acc, env) chapter ->
+        let chapter', env = process_chapter env chapter in
+        (chapter' :: acc, env))
+      ([], env) doc.chapters
+  in
+  (env, { doc with chapters = List.rev chapters' })
+
 (** Collect all declarations from document (Pass 1) *)
 let collect_all ~base_env (doc : document) : (Env.t, collect_error) result =
   let mod_name = Option.fold ~none:"" ~some:Ast.upper_name doc.module_name in

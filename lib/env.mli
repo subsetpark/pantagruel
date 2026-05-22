@@ -43,6 +43,14 @@ val add_rule :
 val add_closure :
   string -> Types.ty -> string -> Ast.loc -> chapter:int -> t -> t
 
+val attach_rule_body : string -> int -> Ast.declaration -> Ast.expr -> t -> t
+(** Attach a body expression to an already-declared rule, populating the
+    [rule_bodies] map. The recursive-self-reference flag is computed by scanning
+    [body] for applications of [name]. Used by the SMT pipeline to route
+    split-form rule definitions (declaration in the chapter head
+    + matching equation in the body) through the same [define-fun-rec] / axiom
+      dispatch as inline-body rule declarations. *)
+
 val add_var : string -> Types.ty -> t -> t
 val with_action : string -> t -> t
 val clear_action : t -> t

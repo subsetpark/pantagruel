@@ -55,10 +55,15 @@ function renderPropResult(prop: PropResult): string {
       return ast.strExpr(ast.forall(prop.quantifiers, guards, prop.body));
     }
     case "rule-decl": {
+      // Header form only: `<name> <params> => <returnType>`. The
+      // equation `<name> <args> = <body>.` is emitted separately into
+      // the chapter body by `emitDocument` — the Pantagruel grammar
+      // production for rules has no body slot; rule definitions must
+      // live below the `---` divider as equations.
       const params = prop.params
         .map((p) => `${p.name}: ${ast.strTypeExpr(p.type)}`)
         .join(", ");
-      return `${prop.ruleName} ${params} => ${ast.strTypeExpr(prop.returnType)} = ${ast.strExpr(prop.body)}`;
+      return `${prop.ruleName} ${params} => ${ast.strTypeExpr(prop.returnType)}`;
     }
     case "unsupported":
       return `> UNSUPPORTED: ${prop.reason}`;
@@ -100,10 +105,24 @@ export function emitDocument(doc: PantDocument): string {
   lines.push("---");
   lines.push("");
 
-  if (bodyProps.length === 0) {
+  // For each `rule-decl` PropResult emitted in the head as a bare
+  // declaration, emit the corresponding equation `<name> <args> = <body>.`
+  // in the chapter body. Splitting the rule's declaration and definition
+  // across the `---` divider matches the Pantagruel grammar — see the
+  // `rule-decl` arm of `renderPropResult` for the rationale.
+  const ruleDeclEquations = ruleDeclProps.map((prop) => {
+    const argList = prop.params.map((p) => p.name).join(" ");
+    const argPart = argList.length > 0 ? ` ${argList}` : "";
+    return `${prop.ruleName}${argPart} = ${getAst().strExpr(prop.body)}.`;
+  });
+
+  if (bodyProps.length === 0 && ruleDeclEquations.length === 0) {
     // Keep chapter body non-empty (required when a check block is present).
     lines.push("true.");
   } else {
+    for (const line of ruleDeclEquations) {
+      lines.push(line);
+    }
     for (const prop of bodyProps) {
       lines.push(`${renderPropResult(prop)}.`);
     }

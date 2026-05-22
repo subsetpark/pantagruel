@@ -767,7 +767,7 @@ exports[`functions-class.ts > Account.getBalance 1`] = `
 `;
 
 exports[`functions-mutating-bounded-while-break.ts > addWhileBelowLimit 1`] = `
-"module ADD_WHILE_BELOW_LIMIT.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nfn--loop s: Int, n: Int => Int = cond 0 < n and s >= n => s + 1, 0 < n => fn--loop (s + 1) n, true => s.\\n~> Add-while-below-limit @ a: Account, n: Int.\\n\\n---\\n\\naccount--balance' a = fn--loop (account--balance a) n.\\n"
+"module ADD_WHILE_BELOW_LIMIT.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nfn--loop s: Int, n: Int => Int.\\n~> Add-while-below-limit @ a: Account, n: Int.\\n\\n---\\n\\nfn--loop s n = cond 0 < n and s >= n => s + 1, 0 < n => fn--loop (s + 1) n, true => s.\\naccount--balance' a = fn--loop (account--balance a) n.\\n"
 `;
 
 exports[`functions-mutating-bounded-while.ts > setLastIndexDescending 1`] = `
@@ -911,35 +911,35 @@ exports[`functions-mutating-early-exit.ts > writeThenEarlyReturn 1`] = `
 `;
 
 exports[`functions-mutating-fixed-point-break.ts > climbUntilBreak 1`] = `
-"module CLIMB_UNTIL_BREAK.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nfn--loop s: Int, n: Int => Int = cond s < n and s >= n => s + 1, s < n => fn--loop (s + 1) n, true => s.\\n~> Climb-until-break @ a: Account, n: Int.\\n\\n---\\n\\naccount--balance' a = fn--loop (account--balance a) n.\\n"
+"module CLIMB_UNTIL_BREAK.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nfn--loop s: Int, n: Int => Int.\\n~> Climb-until-break @ a: Account, n: Int.\\n\\n---\\n\\nfn--loop s n = cond s < n and s >= n => s + 1, s < n => fn--loop (s + 1) n, true => s.\\naccount--balance' a = fn--loop (account--balance a) n.\\n"
 `;
 
 exports[`functions-mutating-fixed-point-continue.ts > climbUnlessZeroStep 1`] = `
-"module CLIMB_UNLESS_ZERO_STEP.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nfn--loop s: Int, n: Int => Int = cond s < n => fn--loop (cond n = 0 => s, true => s + 1) n, true => s.\\n~> Climb-unless-zero-step @ a: Account, n: Int.\\n\\n---\\n\\naccount--balance' a = fn--loop (account--balance a) n.\\n"
+"module CLIMB_UNLESS_ZERO_STEP.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nfn--loop s: Int, n: Int => Int.\\n~> Climb-unless-zero-step @ a: Account, n: Int.\\n\\n---\\n\\nfn--loop s n = cond s < n => fn--loop (cond n = 0 => s, true => s + 1) n, true => s.\\naccount--balance' a = fn--loop (account--balance a) n.\\n"
 `;
 
 exports[`functions-mutating-fixed-point-return-bare.ts > climbUntilReturn 1`] = `
-"module CLIMB_UNTIL_RETURN.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nfn--loop s: Int, n: Int => Int = cond s < n and s >= n => s + 1, s < n => fn--loop (s + 1) n, true => s.\\n~> Climb-until-return @ a: Account, n: Int.\\n\\n---\\n\\naccount--balance' a = fn--loop (account--balance a) n.\\n"
+"module CLIMB_UNTIL_RETURN.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nfn--loop s: Int, n: Int => Int.\\n~> Climb-until-return @ a: Account, n: Int.\\n\\n---\\n\\nfn--loop s n = cond s < n and s >= n => s + 1, s < n => fn--loop (s + 1) n, true => s.\\naccount--balance' a = fn--loop (account--balance a) n.\\n"
 `;
 
 exports[`functions-mutating-fixed-point-return-value.ts > climbAndReturn 1`] = `
-"module CLIMB_AND_RETURN.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nclimb-and-return a: Account, n: Int => Int.\\nfn--loop s: Int, n: Int => Int = cond s < n and s >= n => s + 1, s < n => fn--loop (s + 1) n, true => s.\\n~> Climb-and-return @ a: Account, n: Int.\\n\\n---\\n\\naccount--balance' a = fn--loop (account--balance a) n.\\nclimb-and-return' a n = (cond account--balance a >= n => account--balance a, true => fn--loop (account--balance a) n).\\n"
+"module CLIMB_AND_RETURN.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nclimb-and-return a: Account, n: Int => Int.\\nfn--loop s: Int, n: Int => Int.\\n~> Climb-and-return @ a: Account, n: Int.\\n\\n---\\n\\nfn--loop s n = cond s < n and s >= n => s + 1, s < n => fn--loop (s + 1) n, true => s.\\naccount--balance' a = fn--loop (account--balance a) n.\\nclimb-and-return' a n = (cond account--balance a >= n => account--balance a, true => fn--loop (account--balance a) n).\\n"
 `;
 
 exports[`functions-mutating-fixed-point-throw.ts > climbUnlessInvalid 1`] = `
-"module CLIMB_UNLESS_INVALID.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nfn--loop s: Int, n: Int => Int = cond s < n and ~(n = 0) => fn--loop (s + 1) n, true => s.\\n~> Climb-unless-invalid @ a: Account, n: Int.\\n\\n---\\n\\naccount--balance' a = fn--loop (account--balance a) n.\\n"
+"module CLIMB_UNLESS_INVALID.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nfn--loop s: Int, n: Int => Int.\\n~> Climb-unless-invalid @ a: Account, n: Int.\\n\\n---\\n\\nfn--loop s n = cond s < n and ~(n = 0) => fn--loop (s + 1) n, true => s.\\naccount--balance' a = fn--loop (account--balance a) n.\\n"
 `;
 
 exports[`functions-mutating-fixed-point-while.ts > adjustBalanceTo 1`] = `
-"module ADJUST_BALANCE_TO.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--size a1: Account => Int.\\naccount--tick-count a1: Account => Int.\\nfn--loop s: Int, step: Int, target: Int => Int = cond s < target => fn--loop (s + step) step target, true => s.\\n~> Adjust-balance-to @ a: Account, target: Int, step: Int.\\n\\n---\\n\\naccount--balance' a = fn--loop (account--balance a) step target.\\naccount--size' a1 = account--size a1.\\naccount--tick-count' a1 = account--tick-count a1.\\n"
+"module ADJUST_BALANCE_TO.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--size a1: Account => Int.\\naccount--tick-count a1: Account => Int.\\nfn--loop s: Int, step: Int, target: Int => Int.\\n~> Adjust-balance-to @ a: Account, target: Int, step: Int.\\n\\n---\\n\\nfn--loop s step target = cond s < target => fn--loop (s + step) step target, true => s.\\naccount--balance' a = fn--loop (account--balance a) step target.\\naccount--size' a1 = account--size a1.\\naccount--tick-count' a1 = account--tick-count a1.\\n"
 `;
 
 exports[`functions-mutating-fixed-point-while.ts > drainTo 1`] = `
-"module DRAIN_TO.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--size a1: Account => Int.\\naccount--tick-count a1: Account => Int.\\nfn--loop s: Int, floor: Int => Int = cond s > floor => fn--loop (s - 1) floor, true => s.\\n~> Drain-to @ a: Account, floor: Int.\\n\\n---\\n\\naccount--balance' a = fn--loop (account--balance a) floor.\\naccount--size' a1 = account--size a1.\\naccount--tick-count' a1 = account--tick-count a1.\\n"
+"module DRAIN_TO.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--size a1: Account => Int.\\naccount--tick-count a1: Account => Int.\\nfn--loop s: Int, floor: Int => Int.\\n~> Drain-to @ a: Account, floor: Int.\\n\\n---\\n\\nfn--loop s floor = cond s > floor => fn--loop (s - 1) floor, true => s.\\naccount--balance' a = fn--loop (account--balance a) floor.\\naccount--size' a1 = account--size a1.\\naccount--tick-count' a1 = account--tick-count a1.\\n"
 `;
 
 exports[`functions-mutating-fixed-point-while.ts > fillUpTo 1`] = `
-"module FILL_UP_TO.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--size a1: Account => Int.\\naccount--tick-count a1: Account => Int.\\nfn--loop s: Int, cap: Int => Int = cond s < cap => fn--loop (s + 1) cap, true => s.\\n~> Fill-up-to @ a: Account, cap: Int.\\n\\n---\\n\\naccount--size' a = fn--loop (account--size a) cap.\\naccount--balance' a1 = account--balance a1.\\naccount--tick-count' a1 = account--tick-count a1.\\n"
+"module FILL_UP_TO.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--size a1: Account => Int.\\naccount--tick-count a1: Account => Int.\\nfn--loop s: Int, cap: Int => Int.\\n~> Fill-up-to @ a: Account, cap: Int.\\n\\n---\\n\\nfn--loop s cap = cond s < cap => fn--loop (s + 1) cap, true => s.\\naccount--size' a = fn--loop (account--size a) cap.\\naccount--balance' a1 = account--balance a1.\\naccount--tick-count' a1 = account--tick-count a1.\\n"
 `;
 
 exports[`functions-mutating-fixed-point-while.ts > spin 1`] = `
@@ -947,7 +947,7 @@ exports[`functions-mutating-fixed-point-while.ts > spin 1`] = `
 `;
 
 exports[`functions-mutating-loop-break.ts > addUntilLimit 1`] = `
-"module ADD_UNTIL_LIMIT.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nfn--loop s: Int, n: Int => Int = cond 0 < n and s >= n => s + 1, 0 < n => fn--loop (s + 1) n, true => s.\\n~> Add-until-limit @ a: Account, n: Int.\\n\\n---\\n\\naccount--balance' a = fn--loop (account--balance a) n.\\n"
+"module ADD_UNTIL_LIMIT.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nfn--loop s: Int, n: Int => Int.\\n~> Add-until-limit @ a: Account, n: Int.\\n\\n---\\n\\nfn--loop s n = cond 0 < n and s >= n => s + 1, 0 < n => fn--loop (s + 1) n, true => s.\\naccount--balance' a = fn--loop (account--balance a) n.\\n"
 `;
 
 exports[`functions-mutating-loop-continue.ts > setPositiveLastIndex 1`] = `
@@ -999,7 +999,7 @@ exports[`functions-mutating-loop.ts > sumScaledAssert 1`] = `
 `;
 
 exports[`functions-mutating-while-true-break.ts > eventLoopUntilLimit 1`] = `
-"module EVENT_LOOP_UNTIL_LIMIT.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nfn--loop s: Int, n: Int => Int = cond true and s >= n => s + 1, true => fn--loop (s + 1) n, true => s.\\n~> Event-loop-until-limit @ a: Account, n: Int.\\n\\n---\\n\\naccount--balance' a = fn--loop (account--balance a) n.\\n"
+"module EVENT_LOOP_UNTIL_LIMIT.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nfn--loop s: Int, n: Int => Int.\\n~> Event-loop-until-limit @ a: Account, n: Int.\\n\\n---\\n\\nfn--loop s n = cond true and s >= n => s + 1, true => fn--loop (s + 1) n, true => s.\\naccount--balance' a = fn--loop (account--balance a) n.\\n"
 `;
 
 exports[`functions-mutating.ts > deposit 1`] = `
