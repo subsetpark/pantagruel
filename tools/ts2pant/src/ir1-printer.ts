@@ -86,6 +86,8 @@ export function formatIR1SsaLocation(loc: IR1SsaLocation): string {
       return formatIR1Expr(loc.receiver);
     case "return-value":
       return `return-value ${loc.ruleName}`;
+    case "local-binding":
+      return loc.name;
     default: {
       const _exhaustive: never = loc;
       throw new Error(
@@ -156,7 +158,10 @@ export function formatIR1SsaProgram(program: IR1SsaProgram): string {
     const key = locationKey(write.location);
     const priorVersion = currentVersions.get(key) ?? null;
     let readLabels: ReadonlyMap<string, string>;
-    if (write.value.kind === "property") {
+    if (
+      write.value.kind === "property" ||
+      write.value.kind === "local-binding"
+    ) {
       const built = new Map<string, string>();
       readCursor = consumeScalarReadsForExpr(
         write.value.value,
@@ -168,6 +173,18 @@ export function formatIR1SsaProgram(program: IR1SsaProgram): string {
       readLabels = built;
     } else {
       readLabels = readExpressionLabels(currentVersions.values(), labeller);
+    }
+    if (write.location.kind === "local-binding") {
+      lines.push(
+        `${formatIR1SsaLocation(write.location)} = ${formatSsaWriteRhs(
+          write.value,
+          write.location,
+          priorVersion === null ? null : labeller.labelOf(priorVersion),
+          readLabels,
+        )}.    > local-binding`,
+      );
+      currentVersions.set(key, write.version);
+      continue;
     }
     lines.push(
       `${labeller.labelOf(write.version)} = ${formatSsaWriteRhs(
@@ -241,6 +258,8 @@ function formatSsaWriteRhs(
   switch (value.kind) {
     case "property":
       return formatIR1ExprWithSsaReads(value.value, readLabels);
+    case "local-binding":
+      return formatIR1ExprWithSsaReads(value.value, readLabels);
     case "map-value":
       return formatIR1ExprWithSsaReads(value.value, readLabels);
     case "map-membership":
@@ -276,7 +295,12 @@ function readExpressionLabels(
 ): Map<string, string> {
   const labels = new Map<string, string>();
   for (const version of versions) {
-    labels.set(readExpressionKey(version.location), labeller.labelOf(version));
+    labels.set(
+      readExpressionKey(version.location),
+      version.location.kind === "local-binding"
+        ? formatIR1SsaLocation(version.location)
+        : labeller.labelOf(version),
+    );
   }
   return labels;
 }
@@ -449,7 +473,17 @@ function consumeScalarReadsForExpr(
         readLabels,
         labeller,
       );
-    case "var":
+    case "var": {
+      const read = reads[cursor];
+      if (read !== undefined && read.location.kind === "local-binding") {
+        readLabels.set(
+          readExpressionKey(read.location),
+          formatIR1SsaLocation(read.location),
+        );
+        return cursor + 1;
+      }
+      return cursor;
+    }
     case "lit":
       return cursor;
     case "map-read":
@@ -479,6 +513,8 @@ function readExpressionKey(loc: IR1SsaLocation): string {
       return `set-membership:${formatIR1Expr(loc.receiver)}`;
     case "return-value":
       return `return-value:${loc.ruleName}`;
+    case "local-binding":
+      return `local-binding:${loc.name}`;
     default: {
       const _exhaustive: never = loc;
       throw new Error(
@@ -494,7 +530,10 @@ function formatIR1ExprWithSsaReads(
 ): string {
   switch (expr.kind) {
     case "var":
-      return `${expr.name}${expr.primed === true ? "'" : ""}`;
+      return (
+        readLabels.get(`local-binding:${expr.name}`) ??
+        `${expr.name}${expr.primed === true ? "'" : ""}`
+      );
     case "lit":
       return formatIR1Literal(expr.value);
     case "binop":
@@ -634,6 +673,8 @@ function locationAsPrimedRule(loc: IR1SsaLocation): string {
       return `${formatIR1Expr(loc.receiver)}'`;
     case "return-value":
       return `return-value' ${loc.ruleName}`;
+    case "local-binding":
+      return loc.name;
     default: {
       const _exhaustive: never = loc;
       throw new Error(

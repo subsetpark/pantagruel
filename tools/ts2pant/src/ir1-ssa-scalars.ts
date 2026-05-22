@@ -11,6 +11,8 @@ import {
   type IR1Stmt,
   ir1SsaInitialVersion,
   ir1SsaJoin,
+  ir1SsaLocalBindingLocation,
+  ir1SsaLocalBindingValue,
   ir1SsaPropertyLocation,
   ir1SsaPropertyValue,
   ir1SsaRead,
@@ -161,6 +163,23 @@ export function lowerScalarSsaToProps(
   const ast = getAst();
   const finalProperties: ScalarSsaFinalPropertyEntry[] = [];
   const propositions: PropResult[] = [];
+  for (const write of program.writes) {
+    if (write.location.kind !== "local-binding") {
+      continue;
+    }
+    const rhs = lowerState.versionExprs.get(write.version);
+    if (rhs === undefined) {
+      throw new Error(
+        "missing lowered expression for local-binding SSA version",
+      );
+    }
+    propositions.push({
+      kind: "equation",
+      quantifiers: [],
+      lhs: ast.var(write.location.name),
+      rhs,
+    });
+  }
   for (const [key, version] of lowerState.currentVersions) {
     const location = lowerState.locations.get(key);
     if (location === undefined || location.kind !== "property") {
@@ -184,7 +203,6 @@ export function lowerScalarSsaToProps(
       rhs,
     });
   }
-
   return {
     program,
     finalProperties,
@@ -312,6 +330,8 @@ export function isScalarSsaL1Body(stmt: IR1Stmt): boolean {
         ) &&
         (stmt.otherwise === null || isScalarSsaL1Body(stmt.otherwise))
       );
+    case "let":
+      return isScalarSsaExpr(stmt.value);
     case "map-effect":
     case "set-effect":
     case "foreach":
@@ -321,7 +341,6 @@ export function isScalarSsaL1Body(stmt: IR1Stmt): boolean {
     case "break":
     case "continue":
     case "throw":
-    case "let":
     case "expr-stmt":
       return false;
     default: {
@@ -348,6 +367,9 @@ export function lowerScalarSsaL1Body(
     case "cond-stmt":
       lowerScalarCondStmt(stmt, state);
       return;
+    case "let":
+      lowerScalarLet(stmt, state);
+      return;
     case "map-effect":
     case "set-effect":
     case "foreach":
@@ -357,7 +379,6 @@ export function lowerScalarSsaL1Body(
     case "break":
     case "continue":
     case "throw":
-    case "let":
     case "expr-stmt":
       throw new Error(`${stmt.kind} is not supported by scalar SSA lowering`);
     default: {
@@ -421,6 +442,8 @@ export function scalarSsaReadExpr(
       scalarSsaReadExpr(expr.body, state);
       return expr;
     case "var":
+      scalarSsaReadLocalBinding(expr.name, state);
+      return expr;
     case "lit":
       return expr;
     case "map-read":
@@ -448,6 +471,20 @@ function lowerScalarAssign(
   state.currentVersions.set(key, write.version);
   state.writtenKeys.add(key);
   state.modifiedRules.add(ir1SsaRuleOfLocation(location));
+}
+
+function lowerScalarLet(
+  stmt: Extract<IR1Stmt, { kind: "let" }>,
+  state: ScalarSsaState,
+): void {
+  const value = scalarSsaReadExpr(stmt.value, state);
+  const location = ir1SsaLocalBindingLocation(stmt.name);
+  const key = scalarLocalBindingKey(stmt.name);
+  state.locations.set(key, location);
+  initialVersionFor(key, location, state);
+  const write = ir1SsaWrite(location, ir1SsaLocalBindingValue(value));
+  state.writes.push(write);
+  state.currentVersions.set(key, write.version);
 }
 
 interface ScalarSsaLowerState {
@@ -503,6 +540,9 @@ function lowerScalarSsaStmtToVersions(
     case "cond-stmt":
       lowerScalarSsaCondToVersions(stmt, state);
       return;
+    case "let":
+      lowerScalarSsaLetToVersions(stmt, state);
+      return;
     case "map-effect":
     case "set-effect":
     case "foreach":
@@ -512,7 +552,6 @@ function lowerScalarSsaStmtToVersions(
     case "break":
     case "continue":
     case "throw":
-    case "let":
     case "expr-stmt":
       throw new Error(`${stmt.kind} is not supported by scalar SSA lowering`);
     default: {
@@ -547,6 +586,25 @@ function lowerScalarSsaAssignToVersions(
   state.writtenKeys.add(key);
 }
 
+function lowerScalarSsaLetToVersions(
+  stmt: Extract<IR1Stmt, { kind: "let" }>,
+  state: ScalarSsaLowerState,
+): void {
+  const write = nextScalarSsaWrite(state);
+  const location = ir1SsaLocalBindingLocation(stmt.name);
+  if (!sameScalarSsaLocation(write.location, location, state.canonicalize)) {
+    throw new Error(
+      "scalar SSA write order did not match its local-binding location",
+    );
+  }
+  const rhs = lowerScalarSsaExprToOpaque(stmt.value, state);
+  const key = scalarLocalBindingKey(stmt.name);
+  state.locations.set(key, location);
+  initialVersionFor(key, location, state);
+  state.currentVersions.set(key, write.version);
+  state.versionExprs.set(write.version, rhs);
+}
+
 function lowerScalarSsaCondToVersions(
   stmt: Extract<IR1Stmt, { kind: "cond-stmt" }>,
   state: ScalarSsaLowerState,
@@ -578,6 +636,9 @@ function lowerScalarSsaCondToVersions(
       state.locations.get(key);
     if (location === undefined) {
       throw new Error("scalar SSA branch touched an unknown location");
+    }
+    if (location.kind === "local-binding") {
+      continue;
     }
     const thenVersion =
       thenState.currentVersions.get(key) ??
@@ -635,7 +696,13 @@ function lowerScalarSsaExprToOpaque(
         initialVersionFor(key, location, state);
       return resolveScalarSsaVersionExpr(version, state);
     }
-    case "var":
+    case "var": {
+      const local = scalarSsaLocalBindingVersion(expr.name, state);
+      if (local !== null) {
+        return resolveScalarSsaVersionExpr(local.version, state);
+      }
+      return state.lowerOpaque(lowerScalarOpaqueExpr(expr, state.canonicalize));
+    }
     case "lit":
       return state.lowerOpaque(lowerScalarOpaqueExpr(expr, state.canonicalize));
     case "binop":
@@ -814,6 +881,7 @@ function nextScalarSsaWrite(
   state.writeIndex += 1;
   if (
     expectedRule !== undefined &&
+    write.location.kind !== "local-binding" &&
     ir1SsaRuleOfLocation(write.location) !== expectedRule
   ) {
     throw new Error("scalar SSA write sequence did not match the source order");
@@ -858,9 +926,15 @@ function lowerScalarCondStmt(
   state.writes.push(...thenState.writes, ...elseState.writes);
   state.joins.push(...thenState.joins, ...elseState.joins);
   for (const [key, location] of thenState.locations) {
+    if (location.kind === "local-binding") {
+      continue;
+    }
     state.locations.set(key, location);
   }
   for (const [key, location] of elseState.locations) {
+    if (location.kind === "local-binding") {
+      continue;
+    }
     if (!state.locations.has(key)) {
       state.locations.set(key, location);
     }
@@ -886,6 +960,9 @@ function lowerScalarCondStmt(
       state.locations.get(key);
     if (location === undefined) {
       throw new Error("scalar SSA branch touched an unknown location");
+    }
+    if (location.kind === "local-binding") {
+      continue;
     }
     const thenVersion =
       thenState.currentVersions.get(key) ??
@@ -931,6 +1008,39 @@ function scalarSsaReadMember(
   return read;
 }
 
+function scalarSsaReadLocalBinding(
+  name: string,
+  state: ScalarSsaState,
+): IR1SsaRead | null {
+  const local = scalarSsaLocalBindingVersion(name, state);
+  if (local === null) {
+    return null;
+  }
+  const read = ir1SsaRead(local.location, local.version, true);
+  state.reads.push(read);
+  return read;
+}
+
+function scalarSsaLocalBindingVersion(
+  name: string,
+  state: ScalarSsaInitialVersionState & {
+    currentVersions: Map<string, IR1SsaVersion>;
+    locations: Map<string, IR1SsaLocation>;
+  },
+): { key: string; location: IR1SsaLocation; version: IR1SsaVersion } | null {
+  const key = scalarLocalBindingKey(name);
+  const location = state.locations.get(key);
+  if (location === undefined) {
+    return null;
+  }
+  if (location.kind !== "local-binding") {
+    throw new Error("local binding key resolved to a non-local SSA location");
+  }
+  const version =
+    state.currentVersions.get(key) ?? initialVersionFor(key, location, state);
+  return { key, location, version };
+}
+
 function scalarLocationForMember(
   member: Extract<IR1Expr, { kind: "member" }>,
   state: ScalarSsaLocationState,
@@ -967,6 +1077,10 @@ function initialVersionFor(
 
 function scalarPropertyKey(prop: string, receiver: string): string {
   return `${prop}::${receiver}`;
+}
+
+function scalarLocalBindingKey(name: string): string {
+  return `local-binding::${name}`;
 }
 
 function scalarOpaquePropertyKey(prop: string, receiver: OpaqueExpr): string {
@@ -1094,6 +1208,8 @@ function sameScalarSsaLocation(
       );
     case "return-value":
       return right.kind === "return-value" && left.ruleName === right.ruleName;
+    case "local-binding":
+      return right.kind === "local-binding" && left.name === right.name;
     default: {
       const _exhaustive: never = left;
       void _exhaustive;
