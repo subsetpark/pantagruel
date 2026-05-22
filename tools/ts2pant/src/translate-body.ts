@@ -120,10 +120,9 @@ export interface UniqueSupply {
    * `Var($N)` in L1. This keeps L1 free of OpaqueExpr-bearing nodes
    * while still surfacing read-after-write semantics.
    *
-   * Lower sites apply these substitutions via `applyOpaqueAliases`
-   * (wrapped into the call-site `applyConst`), so the final
-   * Pantagruel text contains the recorded value rather than the
-   * `$N` reference.
+   * Lower sites apply these substitutions via `applyOpaqueAliases`, so the
+   * final Pantagruel text contains the recorded value rather than the `$N`
+   * reference.
    */
   opaqueAliases?: Map<string, OpaqueExpr>;
 }
@@ -139,8 +138,7 @@ function makeUniqueSupply(synthCell?: SynthCell): UniqueSupply {
  *
  * The stored value is *eagerly resolved* against any aliases already
  * in the map: if `value` itself contains references to earlier
- * aliases (because the recorded write was canonicalized through a
- * stale `applyConst`), those get substituted out before insertion.
+ * aliases, those get substituted out before insertion.
  * This keeps the alias map flat — no `B → Var(A)` chain pointing at
  * another alias — so `applyOpaqueAliases` can substitute in a single
  * pass instead of running to fixpoint.
@@ -479,12 +477,9 @@ export type WriteEntry =
  * `modifiedProps` remains for compatibility with builder contexts that clone
  * state, but frame conditions now derive from IR1 SSA lowering results.
  *
- * `canonicalize` applies the ambient const-binding substitution to an
- * expression before it is used as a state key. Writes store keys under the
- * post-substitution form so `const x = a; x.balance = 1` and a later
- * `x.balance` read resolve to the same key. The SSA builder updates this
- * when a new const binding is inlined so the in-flight `applyConst` stays
- * in sync with the state.
+ * `canonicalize` applies ambient opaque aliases to an expression before it is
+ * used as a state key. Writes store keys under that canonical form so
+ * state-aware reads and later writes resolve to the same key.
  */
 export interface SymbolicState {
   writes: ReadonlyMap<string, WriteEntry>;
@@ -1234,17 +1229,30 @@ function translatePureBody(
     }
   }
 
-  const inlined = inlineConstBindings(
+  const prelude = lowerPreludeBindings(
     extracted.bindings,
     checker,
     strategy,
     paramNames,
     supply,
   );
-  if ("error" in inlined) {
+  if ("error" in prelude) {
     return [
-      { kind: "unsupported", reason: `${functionName} — ${inlined.error}` },
+      { kind: "unsupported", reason: `${functionName} — ${prelude.error}` },
     ];
+  }
+  const loweredLets =
+    prelude.letStmts.length === 0
+      ? ir1SsaBodyLowerSuccess()
+      : lowerL1BodyToSsaProps(
+          ir1Block(prelude.letStmts as [IR1Stmt, ...IR1Stmt[]]),
+          [],
+          {
+            applyConst: (e) => applyOpaqueAliases(e, supply),
+          },
+        );
+  if (loweredLets.diagnostics.length > 0) {
+    return loweredLets.diagnostics;
   }
 
   // Record returns: when the function returns an object literal, decompose
@@ -1271,7 +1279,7 @@ function translatePureBody(
     ts.isIfStatement(extracted.returnExpr) &&
     ifTerminalHasObjLitBranch(extracted.returnExpr, checker);
 
-  if (terminalIsObjLit && inlined.arms.length === 0) {
+  if (terminalIsObjLit && prelude.arms.length === 0) {
     return translateRecordReturn(
       extracted.returnExpr as ts.ObjectLiteralExpression,
       functionName,
@@ -1279,10 +1287,10 @@ function translatePureBody(
       node,
       checker,
       strategy,
-      inlined.scopedParams,
+      prelude.scopedParams,
       supply,
       synthCell,
-      inlined.applyTo,
+      (e) => applyOpaqueAliases(e, supply),
     );
   }
 
@@ -1311,19 +1319,19 @@ function translatePureBody(
     ts.isSwitchStatement(extracted.returnExpr) ||
     (ts.isExpression(extracted.returnExpr) &&
       isL1ConditionalForm(extracted.returnExpr, checker));
-  if (inlined.arms.length > 0 || l1IsConditionalReturn) {
+  if (prelude.arms.length > 0 || l1IsConditionalReturn) {
     const l1Ctx = {
       checker,
       strategy,
-      paramNames: inlined.scopedParams,
+      paramNames: prelude.scopedParams,
       state: undefined as SymbolicState | undefined,
       supply,
     };
     let bodyOpaque: OpaqueExpr;
     if (l1IsConditionalReturn) {
       // Build the conditional terminal as L1 first, then merge prelude
-      // arms (already OpaqueExpr from `inlineConstBindings`) at the
-      // OpaqueExpr layer. When the L1 terminal is itself a cond we
+      // early-return arms at the OpaqueExpr layer. When the L1 terminal is
+      // itself a cond we
       // splice its arms in to keep the output flat (matching the
       // legacy single-cond shape).
       const terminalL1 = buildL1Conditional(extracted.returnExpr, l1Ctx);
@@ -1337,7 +1345,7 @@ function translatePureBody(
       }
       if (terminalL1.kind === "cond") {
         const armsOpaque: Array<[OpaqueExpr, OpaqueExpr]> = [
-          ...inlined.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
+          ...prelude.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
           ...terminalL1.arms.map(
             ([g, v]) =>
               [lowerL1ToOpaque(g), lowerL1ToOpaque(v)] as [
@@ -1353,11 +1361,11 @@ function translatePureBody(
         bodyOpaque = ast.cond(armsOpaque);
       } else {
         const terminalOpaque = lowerL1ToOpaque(terminalL1);
-        if (inlined.arms.length === 0) {
+        if (prelude.arms.length === 0) {
           bodyOpaque = terminalOpaque;
         } else {
           bodyOpaque = ast.cond([
-            ...inlined.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
+            ...prelude.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
             [ast.litBool(true), terminalOpaque] as [OpaqueExpr, OpaqueExpr],
           ]);
         }
@@ -1381,7 +1389,7 @@ function translatePureBody(
         extracted.returnExpr,
         checker,
         strategy,
-        inlined.scopedParams,
+        prelude.scopedParams,
         supply,
       );
       let terminalOpaque: OpaqueExpr;
@@ -1390,7 +1398,7 @@ function translatePureBody(
           extracted.returnExpr,
           checker,
           strategy,
-          inlined.scopedParams,
+          prelude.scopedParams,
           undefined,
           supply,
         );
@@ -1412,21 +1420,9 @@ function translatePureBody(
         terminalOpaque = lowerExpr(ir);
       }
       bodyOpaque = ast.cond([
-        ...inlined.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
+        ...prelude.arms.map(([g, v]) => [g, v] as [OpaqueExpr, OpaqueExpr]),
         [ast.litBool(true), terminalOpaque] as [OpaqueExpr, OpaqueExpr],
       ]);
-    }
-    // Apply const-binding substitutions at the OpaqueExpr layer via
-    // `substituteBinder` — semantically identical to the IR `Let`
-    // chain that lowered through the same primitive. Right-fold
-    // semantics: substitute the last binding first.
-    for (let i = inlined.translatedBindings.length - 1; i >= 0; i--) {
-      const tb = inlined.translatedBindings[i]!;
-      bodyOpaque = ast.substituteBinder(
-        bodyOpaque,
-        tb.hygienicName,
-        tb.initExpr,
-      );
     }
     rhs = bodyOpaque;
   } else if (ts.isExpression(extracted.returnExpr)) {
@@ -1434,7 +1430,7 @@ function translatePureBody(
       extracted.returnExpr,
       checker,
       strategy,
-      inlined.scopedParams,
+      prelude.scopedParams,
       supply,
     );
     let bodyOpaque: OpaqueExpr;
@@ -1452,7 +1448,7 @@ function translatePureBody(
         extracted.returnExpr,
         checker,
         strategy,
-        inlined.scopedParams,
+        prelude.scopedParams,
         undefined,
         supply,
       );
@@ -1473,14 +1469,6 @@ function translatePureBody(
     } else {
       bodyOpaque = lowerExpr(ir);
     }
-    for (let i = inlined.translatedBindings.length - 1; i >= 0; i--) {
-      const tb = inlined.translatedBindings[i]!;
-      bodyOpaque = ast.substituteBinder(
-        bodyOpaque,
-        tb.hygienicName,
-        tb.initExpr,
-      );
-    }
     rhs = bodyOpaque;
   } else {
     return [
@@ -1494,6 +1482,8 @@ function translatePureBody(
   const argExprs = params.map((p) => ast.var(p.name));
   const lhs = ast.app(ast.var(functionName), argExprs);
   return [
+    ...prelude.ruleDecls,
+    ...loweredLets.propositions,
     {
       kind: "equation",
       quantifiers: [] as OpaqueParam[],
@@ -1590,12 +1580,12 @@ function isInterfaceFieldAccess(
 
 /**
  * Extract the return expression from a function body, collecting any leading
- * const bindings with pure initializers for inline substitution.
+ * const bindings for IR1Let lowering.
  * Handles:
  *   - Single return statement
  *   - Leading const bindings + return statement
  *   - if/else with returns in both branches (produces a synthetic conditional)
- * Returns null if the body contains let/var bindings or effectful const initializers.
+ * Returns null if the body contains unsupported prelude statements.
  */
 /**
  * Recognize the Kleene μ-minimization pattern as a `let counter = init;`
@@ -1607,7 +1597,7 @@ function isInterfaceFieldAccess(
  * match: counter must be a single identifier with any initializer, and the
  * loop body must be exactly one expression statement. The L1 builder
  * validates the canonical `+1` counter step. Purity of the
- * initializer and predicate is screened in `inlineConstBindings`'s TDZ
+ * initializer and predicate is screened in `lowerPreludeBindings`'s TDZ
  * phase (alongside the sibling forward-reference check) rather than here —
  * `translateBodyExpr` has no handler for bare `++`/`--` expressions, so a
  * side-effectful init or predicate would otherwise lower silently.
@@ -1621,7 +1611,7 @@ function isInterfaceFieldAccess(
  * the let must have a single identifier declarator with an initializer,
  * the while body must be a single expression-statement (or a single-stmt
  * block thereof). μ-search semantics are applied by the L1 builder called
- * from `translateMuSearchInit`; this recognizer consumes the pair
+ * from `lowerPreludeBindings`; this recognizer consumes the pair
  * structurally so `extractReturnExpression` can keep walking.
  */
 function recognizeLetWhilePair(
@@ -1760,9 +1750,6 @@ function extractReturnExpression(
       if (!ts.isIdentifier(decl.name) || !decl.initializer) {
         return null;
       }
-      if (expressionHasSideEffects(decl.initializer, checker)) {
-        return null;
-      }
       bindings.push({
         kind: "const",
         tsName: decl.name.text,
@@ -1834,14 +1821,6 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
         if (!(declList.flags & ts.NodeFlags.Const)) {
           return "let/var bindings not supported";
         }
-        for (const decl of declList.declarations) {
-          if (
-            decl.initializer &&
-            expressionHasSideEffects(decl.initializer, checker)
-          ) {
-            return "const binding with side-effectful initializer";
-          }
-        }
       }
       if (ts.isExpressionStatement(stmt)) {
         return "expression statement before return (only const / μ-search / if-early-return allowed)";
@@ -1876,31 +1855,14 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
   return "non-translatable control flow";
 }
 
-/**
- * Shared const-binding inlining (let-elimination) for both pure and mutating paths.
- *
- * Three phases:
- *   1. TDZ validation on TS AST (rejects forward/self references)
- *   2. Translate initializers forward, building scopedParams incrementally
- *   3. Return a right-fold substitution closure
- *
- * The right-fold means substitutions are applied inside-out: the last binding
- * is substituted first, so each step naturally resolves references to earlier
- * bindings that are already embedded in the result.
- */
-/**
- * One translated const-binding: a hygienic name (`$N`) and the
- * already-translated initializer as an OpaqueExpr. Consumed by the
- * pure-path arm assembly in `translatePureBody`, which threads each
- * binding through `ast.substituteBinder` at the OpaqueExpr layer
- * rather than carrying the legacy `applyTo` closure.
- */
-export interface TranslatedBinding {
-  hygienicName: string;
-  initExpr: OpaqueExpr;
+interface LoweredPreludeBindings {
+  letStmts: IR1Stmt[];
+  ruleDecls: PropResult[];
+  scopedParams: ReadonlyMap<string, string>;
+  arms: ReadonlyArray<readonly [OpaqueExpr, OpaqueExpr]>;
 }
 
-export function inlineConstBindings(
+function lowerPreludeBindings(
   bindings: ConstBinding[],
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
@@ -1908,21 +1870,14 @@ export function inlineConstBindings(
   supply: UniqueSupply,
   state?: SymbolicState,
 ):
-  | {
-      applyTo: (expr: OpaqueExpr) => OpaqueExpr;
-      translatedBindings: ReadonlyArray<TranslatedBinding>;
-      scopedParams: ReadonlyMap<string, string>;
-      arms: ReadonlyArray<readonly [OpaqueExpr, OpaqueExpr]>;
-    }
+  | LoweredPreludeBindings
   | { error: string } {
-  const ast = getAst();
-
   // Phase 1: TDZ validation — reject forward/self references on TS AST.
   // For μ-search bindings, validate both the init and the predicate; the
   // predicate may reference its own counter (that's the loop), so the
   // counter is removed from the blocked set when checking the predicate.
-  // Side-effectful init or predicate (assignments, ++/--, unknown-pure
-  // calls) are also rejected here: translateBodyExpr has no explicit
+  // Side-effectful μ-search init/predicate and early-return predicate/value
+  // are also rejected here: translateBodyExpr has no explicit
   // handler for ++/-- and silently falls through to `ast.var(getText())`,
   // so without this screen a loop like `while (used.has(i++)) i++;`
   // would lower to a Pant expression containing a bogus var `"i++"`.
@@ -1970,21 +1925,14 @@ export function inlineConstBindings(
   }
 
   // Phase 2: translate initializers as a left fold, threading scopedParams
-  // and translatedBindings through the accumulator. Early-return arms are
-  // accumulated alongside (they don't introduce a name, but their predicate
-  // and value are translated under the scope visible at their position so
-  // references to earlier bindings resolve to the correct hygienic `$N`
-  // names). Errors short-circuit subsequent work via the `tag: "error"`
-  // discriminant; successful steps return a fresh map via `withParam` so no
-  // `.set`-style mutation remains.
+  // through the accumulator. Const and μ-search bindings become IR1Let
+  // statements; early-return arms are accumulated alongside.
   type Acc =
     | {
         tag: "ok";
         scopedParams: ReadonlyMap<string, string>;
-        translatedBindings: ReadonlyArray<{
-          hygienicName: string;
-          initExpr: OpaqueExpr;
-        }>;
+        letStmts: IR1Stmt[];
+        ruleDecls: PropResult[];
         arms: ReadonlyArray<readonly [OpaqueExpr, OpaqueExpr]>;
       }
     | { tag: "error"; error: string };
@@ -2020,61 +1968,94 @@ export function inlineConstBindings(
         return {
           tag: "ok",
           scopedParams: acc.scopedParams,
-          translatedBindings: acc.translatedBindings,
+          letStmts: acc.letStmts,
+          ruleDecls: acc.ruleDecls,
           arms: [...acc.arms, [predRes.value, valRes.value] as const],
         };
       }
-      const hygienicName = `$${nextSupply(supply)}`;
+      const localName = toPantTermName(binding.tsName);
+      const returnType =
+        binding.kind === "const"
+          ? mapTsType(
+              checker.getTypeAtLocation(binding.initializer),
+              checker,
+              strategy,
+              supply.synthCell,
+            )
+          : strategy.mapNumber();
+      if (isUnsupportedUnknown(returnType)) {
+        return {
+          tag: "error",
+          error: `${binding.tsName}: ${UNSUPPORTED_UNKNOWN_REASON}`,
+        };
+      }
       const initExpr =
         binding.kind === "const"
-          ? translateBindingInit(
-              binding.initializer,
+          ? state === undefined
+            ? tryBuildL1PureSubExpression(binding.initializer, {
+                checker,
+                strategy,
+                paramNames: acc.scopedParams,
+                state,
+                supply,
+              })
+            : buildL1SubExpr(binding.initializer, {
+                checker,
+                strategy,
+                paramNames: acc.scopedParams,
+                state,
+                supply,
+              })
+          : buildL1MuSearchCombTyped(binding.mu, {
               checker,
               strategy,
-              acc.scopedParams,
+              paramNames: acc.scopedParams,
               state,
               supply,
-            )
-          : translateMuSearchInit(
-              binding.mu,
-              checker,
-              strategy,
-              acc.scopedParams,
-              state,
-              supply,
-            );
-      if ("error" in initExpr) {
-        return { tag: "error", error: initExpr.error };
+            });
+      if (initExpr === null) {
+        return {
+          tag: "error",
+          error: "unsupported pure expression in const initializer",
+        };
+      }
+      if (isUnsupported(initExpr) || isL1Unsupported(initExpr)) {
+        return { tag: "error", error: initExpr.unsupported };
       }
       return {
         tag: "ok",
-        scopedParams: withParam(acc.scopedParams, binding.tsName, hygienicName),
-        translatedBindings: [
-          ...acc.translatedBindings,
-          { hygienicName, initExpr: initExpr.value },
+        scopedParams: withParam(acc.scopedParams, binding.tsName, localName),
+        ruleDecls: [
+          ...acc.ruleDecls,
+          {
+            kind: "rule-decl",
+            ruleName: localName,
+            params: [],
+            returnType: getAst().tName(returnType),
+          },
         ],
+        letStmts: [...acc.letStmts, ir1Let(localName, initExpr)],
         arms: acc.arms,
       };
     },
-    { tag: "ok", scopedParams: baseParams, translatedBindings: [], arms: [] },
+    {
+      tag: "ok",
+      scopedParams: baseParams,
+      letStmts: [],
+      ruleDecls: [],
+      arms: [],
+    },
   );
 
   if (folded.tag === "error") {
     return { error: folded.error };
   }
-
-  // Phase 3: right-fold substitution closure. `reduceRight` applies the last
-  // binding first so references to earlier bindings inside its init remain
-  // unresolved — they get substituted in subsequent iterations.
-  const { scopedParams, translatedBindings, arms } = folded;
-  const applyTo = (expr: OpaqueExpr): OpaqueExpr =>
-    translatedBindings.reduceRight(
-      (acc, { hygienicName, initExpr }) =>
-        ast.substituteBinder(acc, hygienicName, initExpr),
-      expr,
-    );
-
-  return { applyTo, translatedBindings, scopedParams, arms };
+  return {
+    letStmts: folded.letStmts,
+    ruleDecls: folded.ruleDecls,
+    scopedParams: folded.scopedParams,
+    arms: folded.arms,
+  };
 }
 
 type BindingInitResult = { value: OpaqueExpr } | { error: string };
@@ -2099,33 +2080,6 @@ function translateBindingInit(
     return { error: result.unsupported };
   }
   return { value: bodyExpr(result) };
-}
-
-/**
- * Translate a recognized μ-search prelude binding to an OpaqueExpr.
- * The recognizer constructs L1 `comb-typed` directly; L1 → L2 lowering is
- * the mechanical `comb-typed` arm in `lowerL1Expr`.
- */
-function translateMuSearchInit(
-  mu: MuSearch,
-  checker: ts.TypeChecker,
-  strategy: NumericStrategy,
-  scopedParams: ReadonlyMap<string, string>,
-  state: SymbolicState | undefined,
-  supply: UniqueSupply,
-): BindingInitResult {
-  const buildCtx = {
-    checker,
-    strategy,
-    paramNames: scopedParams,
-    state,
-    supply,
-  };
-  const combTyped = buildL1MuSearchCombTyped(mu, buildCtx);
-  if (isL1Unsupported(combTyped)) {
-    return { error: combTyped.unsupported };
-  }
-  return { value: lowerL1ToOpaque(combTyped) };
 }
 
 export function isGuardStatement(
@@ -4048,6 +4002,7 @@ function translateMutatingBody(
   if (!node.body) {
     return [];
   }
+  const localRuleDecls: PropResult[] = [];
 
   const lowered = appendFramesForUnmodifiedRules(
     lowerSupportedSsaMutatingStatements(Array.from(node.body.statements), {
@@ -4059,13 +4014,14 @@ function translateMutatingBody(
       initialPropertyValues: new Map(),
       helperNameBase: functionName,
       declarations,
+      localRuleDecls,
     }),
     declarations,
   );
   if (lowered.diagnostics.length > 0) {
     return lowered.diagnostics;
   }
-  return lowered.propositions;
+  return [...localRuleDecls, ...lowered.propositions];
 }
 
 function lowerSupportedSsaMutatingStatements(
@@ -4079,6 +4035,7 @@ function lowerSupportedSsaMutatingStatements(
     initialPropertyValues: ReadonlyMap<string, OpaqueExpr>;
     helperNameBase: string;
     declarations: readonly PantDeclaration[];
+    localRuleDecls: PropResult[];
   },
 ): IR1SsaBodyLowerResult {
   const tailReturnValue = extractTailReturnValue(stmts, ctx.checker);
@@ -4326,6 +4283,7 @@ function lowerSupportedSsaMutatingBlock(
     initialPropertyValues: ReadonlyMap<string, OpaqueExpr>;
     helperNameBase: string;
     declarations: readonly PantDeclaration[];
+    localRuleDecls: PropResult[];
   },
 ): IR1SsaBodyLowerResult {
   const body = ts.factory.createBlock(stmts, true);
@@ -4336,6 +4294,7 @@ function lowerSupportedSsaMutatingBlock(
     ctx.paramNames,
     ctx.state,
     ctx.supply,
+    ctx.localRuleDecls,
   );
 
   if (isUnsupported(ssaBody)) {
@@ -4407,13 +4366,13 @@ function buildSupportedSsaMutatingBody(
   paramNames: Map<string, string>,
   state: SymbolicState,
   supply: UniqueSupply,
+  localRuleDecls?: PropResult[],
 ): IR1Stmt | { unsupported: string } {
   const stmts: IR1Stmt[] = [];
   const scopedParamNames = new Map(paramNames);
-  let applyConstChain: (e: OpaqueExpr) => OpaqueExpr = (e) => e;
-  const applyConst = (e: OpaqueExpr): OpaqueExpr =>
-    applyOpaqueAliases(applyConstChain(e), supply);
-  setCanonicalize(state, applyConst);
+  const canonicalizeAliases = (e: OpaqueExpr): OpaqueExpr =>
+    applyOpaqueAliases(e, supply);
+  setCanonicalize(state, canonicalizeAliases);
   for (let i = 0; i < body.statements.length; i++) {
     const stmt = body.statements[i]!;
     if (isGuardStatement(stmt, checker) && !isInsideLoopBody(stmt)) {
@@ -4444,7 +4403,6 @@ function buildSupportedSsaMutatingBody(
           paramNames: scopedParamNames,
           state,
           supply,
-          applyConst,
         },
       );
       if (built !== null) {
@@ -4458,12 +4416,11 @@ function buildSupportedSsaMutatingBody(
         {
           checker,
           strategy,
-          paramNames: scopedParamNames,
-          state,
-          supply,
-          applyConst,
-        },
-      );
+            paramNames: scopedParamNames,
+            state,
+            supply,
+          },
+        );
       if (isUnsupported(fixedPointBuilt)) {
         return fixedPointBuilt;
       }
@@ -4477,14 +4434,8 @@ function buildSupportedSsaMutatingBody(
       const declList = stmt.declarationList;
       if (declList.flags & ts.NodeFlags.Const) {
         const bindings: ConstBinding[] = [];
-        let allPure = true;
         for (const decl of declList.declarations) {
-          if (
-            !ts.isIdentifier(decl.name) ||
-            !decl.initializer ||
-            expressionHasSideEffects(decl.initializer, checker)
-          ) {
-            allPure = false;
+          if (!ts.isIdentifier(decl.name) || !decl.initializer) {
             break;
           }
           bindings.push({
@@ -4493,8 +4444,8 @@ function buildSupportedSsaMutatingBody(
             initializer: decl.initializer,
           });
         }
-        if (allPure) {
-          const inlined = inlineConstBindings(
+        if (bindings.length === declList.declarations.length) {
+          const lowered = lowerPreludeBindings(
             bindings,
             checker,
             strategy,
@@ -4502,18 +4453,17 @@ function buildSupportedSsaMutatingBody(
             supply,
             state,
           );
-          if ("error" in inlined) {
-            return { unsupported: inlined.error };
+          if ("error" in lowered) {
+            return { unsupported: lowered.error };
           }
-          for (const binding of inlined.translatedBindings) {
-            registerOpaqueAlias(supply, binding.hygienicName, binding.initExpr);
+          if (localRuleDecls !== undefined) {
+            localRuleDecls.push(...lowered.ruleDecls);
           }
-          for (const [key, value] of inlined.scopedParams) {
+          stmts.push(...lowered.letStmts);
+          for (const [key, value] of lowered.scopedParams) {
             scopedParamNames.set(key, value);
           }
-          const prevChain = applyConstChain;
-          applyConstChain = (e) => prevChain(inlined.applyTo(e));
-          setCanonicalize(state, applyConst);
+          setCanonicalize(state, canonicalizeAliases);
           continue;
         }
       }
@@ -4527,7 +4477,7 @@ function buildSupportedSsaMutatingBody(
       paramNames: scopedParamNames,
       state,
       supply,
-      applyConst,
+      ...(localRuleDecls === undefined ? {} : { localRuleDecls }),
     });
     if (isUnsupported(built)) {
       return built;
@@ -4551,7 +4501,7 @@ function buildSupportedSsaStatement(
     paramNames: Map<string, string>;
     state: SymbolicState;
     supply: UniqueSupply;
-    applyConst: (e: OpaqueExpr) => OpaqueExpr;
+    localRuleDecls?: PropResult[];
   },
 ): IR1Stmt | { unsupported: string } {
   if (
@@ -4580,6 +4530,7 @@ function buildSupportedSsaStatement(
       ctx.paramNames,
       ctx.state,
       ctx.supply,
+      ctx.localRuleDecls,
     );
     return body;
   }
@@ -4642,7 +4593,10 @@ function buildSupportedSsaStatement(
 
 function buildL1BareWhileMutation(
   stmt: ts.WhileStatement,
-  ctx: BuildBodyCtx & { paramNames: Map<string, string> },
+  ctx: BuildBodyCtx & {
+    paramNames: Map<string, string>;
+    localRuleDecls?: PropResult[];
+  },
 ): IR1Stmt | { unsupported: string } {
   const expr = unwrapExpression(stmt.expression);
   if (
@@ -4666,6 +4620,7 @@ function buildL1BareWhileMutation(
         ctx.paramNames,
         ctx.state,
         ctx.supply,
+        ctx.localRuleDecls,
       )
     : buildSupportedSsaStatement(stmt.statement, ctx);
   if (isUnsupported(bodyStmt)) {
@@ -4682,7 +4637,7 @@ function buildL1ForCounterMutation(
     paramNames: Map<string, string>;
     state: SymbolicState;
     supply: UniqueSupply;
-    applyConst: (e: OpaqueExpr) => OpaqueExpr;
+    localRuleDecls?: PropResult[];
   },
 ): IR1Stmt | { unsupported: string } {
   const init = buildL1ForCounterInit(stmt.initializer);
@@ -4729,6 +4684,7 @@ function buildL1ForCounterMutation(
         ctx.paramNames,
         ctx.state,
         ctx.supply,
+        ctx.localRuleDecls,
       )
     : buildSupportedSsaStatement(stmt.statement, ctx);
   if (isUnsupported(bodyStmt)) {
@@ -4741,7 +4697,10 @@ function buildL1ForCounterMutation(
 function buildL1LetWhileFixedPointMutation(
   letStmt: ts.VariableStatement,
   whileStmt: ts.WhileStatement,
-  ctx: BuildBodyCtx & { paramNames: Map<string, string> },
+  ctx: BuildBodyCtx & {
+    paramNames: Map<string, string>;
+    localRuleDecls?: PropResult[];
+  },
 ): IR1Stmt | { unsupported: string } | null {
   const declList = letStmt.declarationList;
   if (
@@ -4785,6 +4744,7 @@ function buildL1LetWhileFixedPointMutation(
     ctx.paramNames,
     ctx.state,
     ctx.supply,
+    ctx.localRuleDecls,
   );
   if (isUnsupported(bodyStmt)) {
     return bodyStmt;
@@ -4820,7 +4780,10 @@ function containsReachableLoopExit(stmt: ts.Statement): boolean {
 function buildL1LetWhileMutation(
   letStmt: ts.VariableStatement,
   whileStmt: ts.WhileStatement,
-  ctx: BuildBodyCtx & { paramNames: Map<string, string> },
+  ctx: BuildBodyCtx & {
+    paramNames: Map<string, string>;
+    localRuleDecls?: PropResult[];
+  },
 ): IR1Stmt | null {
   const declList = letStmt.declarationList;
   if (
@@ -4882,6 +4845,7 @@ function buildL1LetWhileMutation(
     ctx.paramNames,
     ctx.state,
     ctx.supply,
+    ctx.localRuleDecls,
   );
   if (isUnsupported(bodyStmt)) {
     return null;
@@ -4931,7 +4895,7 @@ function buildL1LetWhileCounterCondition(
   ) {
     return null;
   }
-  const bound = buildL1SubExpr(cond.right, { ...ctx, applyConst: (e) => e });
+  const bound = buildL1SubExpr(cond.right, ctx);
   if (isUnsupported(bound)) {
     return null;
   }
@@ -5016,7 +4980,7 @@ function buildL1ForCounterCondition(
   if (expressionHasSideEffects(cond.right, ctx.checker)) {
     return { unsupported: "counter loop bound expression has side effects" };
   }
-  const bound = buildL1SubExpr(cond.right, { ...ctx, applyConst: (e) => e });
+  const bound = buildL1SubExpr(cond.right, ctx);
   if (isUnsupported(bound)) {
     return bound;
   }

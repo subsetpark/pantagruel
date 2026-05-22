@@ -62,14 +62,18 @@ function translate(
   if (props.length === 0) {
     return { unsupported: "no propositions", pant: null };
   }
-  const p = props[0]!;
-  if (p.kind === "unsupported") {
-    return { unsupported: p.reason, pant: null };
+  const unsupported = props.find((prop) => prop.kind === "unsupported");
+  if (unsupported !== undefined) {
+    return { unsupported: unsupported.reason, pant: null };
   }
-  if (p.kind !== "equation") {
-    return { unsupported: `non-equation: ${p.kind}`, pant: null };
+  const equations = props.filter((prop) => prop.kind === "equation");
+  if (equations.length === 0) {
+    return { unsupported: "no equation proposition", pant: null };
   }
-  return { unsupported: null, pant: getAst().strExpr(p.rhs) };
+  return {
+    unsupported: null,
+    pant: equations.map((p) => getAst().strExpr(p.rhs)).join(" ; "),
+  };
 }
 
 function buildFirstLetWhileCombTyped(source: string, name: string) {
@@ -207,14 +211,15 @@ describe("M2 μ-search L1: all five +1 spellings produce identical Pant", () => 
       outputs.push({ funcName, output: emitDocument(doc) });
     }
 
-    const rhsOutputs = outputs.map(({ funcName, output }) =>
-      extractEquationRhs(
+    const rhsOutputs = outputs.map(({ funcName, output }) => {
+      const functionRhs = extractEquationRhs(
         output,
         funcName
           .replace(/[A-Z]/gu, (c) => `-${c.toLowerCase()}`)
           .replace(/^-/, ""),
-      ),
-    );
+      );
+      return functionRhs === "i." ? extractEquationRhs(output, "i") : functionRhs;
+    });
     for (const rhs of rhsOutputs) {
       assert.match(rhs, /min over each j\d*: Int/u);
     }
@@ -274,10 +279,13 @@ describe("post-migration recognizer placement", () => {
       sourceFile,
       "firstUnusedSuffix",
     );
-    assert.equal(
-      emitDocument(doc),
-      "module FIRST_UNUSED_SUFFIX.\n\nfirst-unused-suffix used: [Int] => Int.\n\n---\n\nfirst-unused-suffix used = (min over each j: Int, j >= 1, ~(j in used) | j).\n",
+    const output = emitDocument(doc);
+    assert.match(output, /i\s+=> Int/u);
+    assert.match(
+      output,
+      /i = \(min over each j: Int, j >= 1, ~\(j in used\) \| j\)\./u,
     );
+    assert.match(output, /first-unused-suffix used = i\./u);
   });
 });
 

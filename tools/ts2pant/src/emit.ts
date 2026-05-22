@@ -110,10 +110,13 @@ export function emitDocument(doc: PantDocument): string {
   // in the chapter body. Splitting the rule's declaration and definition
   // across the `---` divider matches the Pantagruel grammar — see the
   // `rule-decl` arm of `renderPropResult` for the rationale.
-  const ruleDeclEquations = ruleDeclProps.map((prop) => {
+  const ruleDeclEquations = ruleDeclProps.flatMap((prop) => {
+    if (prop.body === undefined) {
+      return [];
+    }
     const argList = prop.params.map((p) => p.name).join(" ");
     const argPart = argList.length > 0 ? ` ${argList}` : "";
-    return `${prop.ruleName}${argPart} = ${getAst().strExpr(prop.body)}.`;
+    return [`${prop.ruleName}${argPart} = ${getAst().strExpr(prop.body)}.`];
   });
 
   if (bodyProps.length === 0 && ruleDeclEquations.length === 0) {

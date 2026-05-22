@@ -1325,8 +1325,8 @@ export function buildL1MemberAccess(
   // SSA builder's compatibility context), so we register it under a fresh
   // hygienic name in `supply.opaqueAliases` and return an L1 `Var`
   // referencing that name. The alias is substituted back into the
-  // OpaqueExpr at lower time via `applyOpaqueAliases` (wired into
-  // `applyConst` in the SSA builder). This keeps L1 free of
+  // OpaqueExpr at lower time via `applyOpaqueAliases` in the SSA lowerer.
+  // This keeps L1 free of
   // escape-hatch forms while preserving the read-after-write
   // semantics required for mutating-body sub-expression composition.
   if (ctx.state !== undefined && options.requireMember !== true) {

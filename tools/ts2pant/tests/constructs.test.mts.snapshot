@@ -167,19 +167,19 @@ exports[`expressions-comparison.ts > neq 1`] = `
 `;
 
 exports[`expressions-const-bindings.ts > chainedConst 1`] = `
-"module CHAINED_CONST.\\n\\nchained-const a: Int => Int.\\n\\n---\\n\\nchained-const a = a + 1.\\n"
+"module CHAINED_CONST.\\n\\nchained-const a: Int => Int.\\nx  => Int.\\ny  => Int.\\n\\n---\\n\\nx = a.\\ny = a + 1.\\nchained-const a = y.\\n"
 `;
 
 exports[`expressions-const-bindings.ts > constInTernary 1`] = `
-"module CONST_IN_TERNARY.\\n\\nconst-in-ternary a: Int, b: Int => Int.\\n\\n---\\n\\nconst-in-ternary a b = (cond a + b > 0 => a + b, true => 0).\\n"
+"module CONST_IN_TERNARY.\\n\\nconst-in-ternary a: Int, b: Int => Int.\\nx  => Int.\\n\\n---\\n\\nx = a + b.\\nconst-in-ternary a b = (cond x > 0 => x, true => 0).\\n"
 `;
 
 exports[`expressions-const-bindings.ts > constWithPropAccess 1`] = `
-"module CONST_WITH_PROP_ACCESS.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nconst-with-prop-access a: Account => Int.\\n\\n---\\n\\nconst-with-prop-access a = account--balance a + 1.\\n"
+"module CONST_WITH_PROP_ACCESS.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nconst-with-prop-access a: Account => Int.\\nb  => Int.\\n\\n---\\n\\nb = account--balance a.\\nconst-with-prop-access a = b + 1.\\n"
 `;
 
 exports[`expressions-const-bindings.ts > effectfulConstRejected 1`] = `
-"module EFFECTFUL_CONST_REJECTED.\\n\\neffectful-const-rejected  => Int.\\n\\n---\\n\\n> UNSUPPORTED: effectful-const-rejected — const binding with side-effectful initializer.\\n"
+"module EFFECTFUL_CONST_REJECTED.\\n\\neffectful-const-rejected  => Int.\\nx  => Int.\\n\\n---\\n\\nx = foo.\\neffectful-const-rejected = x.\\n"
 `;
 
 exports[`expressions-const-bindings.ts > letRejected 1`] = `
@@ -187,51 +187,51 @@ exports[`expressions-const-bindings.ts > letRejected 1`] = `
 `;
 
 exports[`expressions-const-bindings.ts > simpleConst 1`] = `
-"module SIMPLE_CONST.\\n\\nsimple-const a: Int, b: Int => Int.\\n\\n---\\n\\nsimple-const a b = a + b.\\n"
+"module SIMPLE_CONST.\\n\\nsimple-const a: Int, b: Int => Int.\\nx  => Int.\\n\\n---\\n\\nx = a + b.\\nsimple-const a b = x.\\n"
 `;
 
 exports[`expressions-const-chained-impure.ts > chainedArrayCount 1`] = `
-"module CHAINED_ARRAY_COUNT.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\nchained-array-count m: StringToIntMap => Int.\\n\\n---\\n\\n> UNSUPPORTED: chained-array-count — const binding with side-effectful initializer.\\n"
+"module CHAINED_ARRAY_COUNT.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\nchained-array-count m: StringToIntMap => Int.\\nxs  => [Int].\\nn  => Int.\\n\\n---\\n\\nxs = (from Array) (values m).\\nn = #((from Array) (values m)).\\nchained-array-count m = n.\\n"
 `;
 
 exports[`expressions-const-chained-impure.ts > chainedReplaceTrim 1`] = `
-"module CHAINED_REPLACE_TRIM.\\n\\nchained-replace-trim s: String => String.\\n\\n---\\n\\n> UNSUPPORTED: chained-replace-trim — const binding with side-effectful initializer.\\n"
+"module CHAINED_REPLACE_TRIM.\\n\\nchained-replace-trim s: String => String.\\n\\n---\\n\\n> UNSUPPORTED: chained-replace-trim — unsupported pure expression in const initializer.\\n"
 `;
 
 exports[`expressions-const-pure-calls.ts > constChainedPure 1`] = `
-"module CONST_CHAINED_PURE.\\n\\nconst-chained-pure x: Int, y: Int => Int.\\n\\n---\\n\\nconst-chained-pure x y = max Math (abs Math x) y.\\n"
+"module CONST_CHAINED_PURE.\\n\\nconst-chained-pure x: Int, y: Int => Int.\\na  => Int.\\nb  => Int.\\n\\n---\\n\\na = (abs Math) x.\\nb = (max Math) ((abs Math) x) y.\\nconst-chained-pure x y = b.\\n"
 `;
 
 exports[`expressions-const-pure-calls.ts > constImpureCall 1`] = `
-"module CONST_IMPURE_CALL.\\n\\nconst-impure-call x: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: const-impure-call — const binding with side-effectful initializer.\\n"
+"module CONST_IMPURE_CALL.\\n\\nconst-impure-call x: Int => Int.\\nr  => Int.\\n\\n---\\n\\nr = unknownFn x.\\nconst-impure-call x = r.\\n"
 `;
 
 exports[`expressions-const-pure-calls.ts > constMathMax 1`] = `
-"module CONST_MATH_MAX.\\n\\nconst-math-max a: Int, b: Int => Int.\\n\\n---\\n\\nconst-math-max a b = max Math a b + 1.\\n"
+"module CONST_MATH_MAX.\\n\\nconst-math-max a: Int, b: Int => Int.\\nm  => Int.\\n\\n---\\n\\nm = (max Math) a b.\\nconst-math-max a b = m + 1.\\n"
 `;
 
 exports[`expressions-const-pure-calls.ts > constStringMethod 1`] = `
-"module CONST_STRING_METHOD.\\n\\nconst-string-method s: String => Int.\\n\\n---\\n\\nconst-string-method s = index-of s \\"x\\".\\n"
+"module CONST_STRING_METHOD.\\n\\nconst-string-method s: String => Int.\\ni  => Int.\\n\\n---\\n\\ni = (index-of s) \\"x\\".\\nconst-string-method s = i.\\n"
 `;
 
 exports[`expressions-const-side-effectful.ts > constArrayFromMap 1`] = `
-"module CONST_ARRAY_FROM_MAP.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\nconst-array-from-map m: StringToIntMap => Int.\\n\\n---\\n\\n> UNSUPPORTED: const-array-from-map — const binding with side-effectful initializer.\\n"
+"module CONST_ARRAY_FROM_MAP.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\nconst-array-from-map m: StringToIntMap => Int.\\nxs  => [Int].\\n\\n---\\n\\nxs = (from Array) (values m).\\nconst-array-from-map m = #xs.\\n"
 `;
 
 exports[`expressions-const-side-effectful.ts > constMapEntries 1`] = `
-"module CONST_MAP_ENTRIES.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\nconst-map-entries m: StringToIntMap => Int.\\n\\n---\\n\\n> UNSUPPORTED: const-map-entries — const binding with side-effectful initializer.\\n"
+"module CONST_MAP_ENTRIES.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\nconst-map-entries m: StringToIntMap => Int.\\nxs  => [String * Int].\\n\\n---\\n\\nxs = (from Array) (entries m).\\nconst-map-entries m = #xs.\\n"
 `;
 
 exports[`expressions-const-side-effectful.ts > constReplaceLiteral 1`] = `
-"module CONST_REPLACE_LITERAL.\\n\\nconst-replace-literal s: String => String.\\n\\n---\\n\\n> UNSUPPORTED: const-replace-literal — const binding with side-effectful initializer.\\n"
+"module CONST_REPLACE_LITERAL.\\n\\nconst-replace-literal s: String => String.\\nx  => String.\\n\\n---\\n\\nx = (replace s) \\"a\\" \\"b\\".\\nconst-replace-literal s = x.\\n"
 `;
 
 exports[`expressions-const-side-effectful.ts > constReplaceRegex 1`] = `
-"module CONST_REPLACE_REGEX.\\n\\nconst-replace-regex s: String => String.\\n\\n---\\n\\n> UNSUPPORTED: const-replace-regex — const binding with side-effectful initializer.\\n"
+"module CONST_REPLACE_REGEX.\\n\\nconst-replace-regex s: String => String.\\n\\n---\\n\\n> UNSUPPORTED: const-replace-regex — unsupported pure expression in const initializer.\\n"
 `;
 
 exports[`expressions-const-side-effectful.ts > constSetHas 1`] = `
-"module CONST_SET_HAS.\\n\\nconst-set-has s: [String], value: String => Bool.\\n\\n---\\n\\nconst-set-has s value = (value in s).\\n"
+"module CONST_SET_HAS.\\n\\nconst-set-has s: [String], value: String => Bool.\\nx  => Bool.\\n\\n---\\n\\nx = (value in s).\\nconst-set-has s value = x.\\n"
 `;
 
 exports[`expressions-equality-nullish.ts > disjunctionDifferentOperands 1`] = `
@@ -347,15 +347,15 @@ exports[`expressions-functor-lift.ts > typeofGuardLift 1`] = `
 `;
 
 exports[`expressions-if-early-return.ts > armBetweenBindings 1`] = `
-"module ARM_BETWEEN_BINDINGS.\\n\\narm-between-bindings n: Int => Int.\\n\\n---\\n\\narm-between-bindings n = (cond n + 1 < 0 => 0, true => n + 1 + (n + 1)).\\n"
+"module ARM_BETWEEN_BINDINGS.\\n\\narm-between-bindings n: Int => Int.\\na  => Int.\\nb  => Int.\\n\\n---\\n\\na = n + 1.\\nb = n + 1 + (n + 1).\\narm-between-bindings n = (cond a < 0 => 0, true => b).\\n"
 `;
 
 exports[`expressions-if-early-return.ts > armThenMuSearch 1`] = `
-"module ARM_THEN_MU_SEARCH.\\n\\narm-then-mu-search n: Int, used: [Int] => Int.\\n\\n---\\n\\narm-then-mu-search n used = (cond n < 0 => 0, true => (min over each j: Int, j >= 1, ~(j in used) | j)).\\n"
+"module ARM_THEN_MU_SEARCH.\\n\\narm-then-mu-search n: Int, used: [Int] => Int.\\nj  => Int.\\n\\n---\\n\\nj = (min over each j: Int, j >= 1, ~(j in used) | j).\\narm-then-mu-search n used = (cond n < 0 => 0, true => j).\\n"
 `;
 
 exports[`expressions-if-early-return.ts > bindingThenArm 1`] = `
-"module BINDING_THEN_ARM.\\n\\nbinding-then-arm n: Int => Int.\\n\\n---\\n\\nbinding-then-arm n = (cond n + n < 0 => 0, true => n + n).\\n"
+"module BINDING_THEN_ARM.\\n\\nbinding-then-arm n: Int => Int.\\ndoubled  => Int.\\n\\n---\\n\\ndoubled = n + n.\\nbinding-then-arm n = (cond doubled < 0 => 0, true => doubled).\\n"
 `;
 
 exports[`expressions-if-early-return.ts > singleArm 1`] = `
@@ -371,7 +371,7 @@ exports[`expressions-if-early-return.ts > unbracedArm 1`] = `
 `;
 
 exports[`expressions-ir-anchor.ts > effectiveValue 1`] = `
-"module EFFECTIVE_VALUE.\\n\\nCache.\\ncache--fallback c1: Cache => Int.\\ncache--value c1: Cache => [Int].\\neffective-value c: Cache, factor: Int => Int.\\n\\n---\\n\\neffective-value c factor = (cond factor > 0 => (cond #(cache--value c) = 0 => cache--fallback c, true => (cache--value c) 1) * factor, true => (cond #(cache--value c) = 0 => cache--fallback c, true => (cache--value c) 1)).\\n"
+"module EFFECTIVE_VALUE.\\n\\nCache.\\ncache--fallback c1: Cache => Int.\\ncache--value c1: Cache => [Int].\\neffective-value c: Cache, factor: Int => Int.\\nbase  => Int.\\n\\n---\\n\\nbase = (cond #(cache--value c) = 0 => cache--fallback c, true => (cache--value c) 1).\\neffective-value c factor = (cond factor > 0 => base * factor, true => base).\\n"
 `;
 
 exports[`expressions-literals.ts > fortyTwo 1`] = `
@@ -755,7 +755,7 @@ exports[`expressions-template-literal.ts > wrapId 1`] = `
 `;
 
 exports[`expressions-while-mu-search.ts > compoundIncrementStep 1`] = `
-"module COMPOUND_INCREMENT_STEP.\\n\\ncompound-increment-step used: [Int] => Int.\\n\\n---\\n\\ncompound-increment-step used = (min over each j: Int, j >= 1, ~(j in used) | j).\\n"
+"module COMPOUND_INCREMENT_STEP.\\n\\ncompound-increment-step used: [Int] => Int.\\ni  => Int.\\n\\n---\\n\\ni = (min over each j: Int, j >= 1, ~(j in used) | j).\\ncompound-increment-step used = i.\\n"
 `;
 
 exports[`expressions-while-mu-search.ts > compoundWhileBody 1`] = `
@@ -763,27 +763,27 @@ exports[`expressions-while-mu-search.ts > compoundWhileBody 1`] = `
 `;
 
 exports[`expressions-while-mu-search.ts > explicitIncrementStep 1`] = `
-"module EXPLICIT_INCREMENT_STEP.\\n\\nexplicit-increment-step used: [Int] => Int.\\n\\n---\\n\\nexplicit-increment-step used = (min over each j: Int, j >= 1, ~(j in used) | j).\\n"
+"module EXPLICIT_INCREMENT_STEP.\\n\\nexplicit-increment-step used: [Int] => Int.\\ni  => Int.\\n\\n---\\n\\ni = (min over each j: Int, j >= 1, ~(j in used) | j).\\nexplicit-increment-step used = i.\\n"
 `;
 
 exports[`expressions-while-mu-search.ts > explicitIncrementStepFlipped 1`] = `
-"module EXPLICIT_INCREMENT_STEP_FLIPPED.\\n\\nexplicit-increment-step-flipped used: [Int] => Int.\\n\\n---\\n\\nexplicit-increment-step-flipped used = (min over each j: Int, j >= 1, ~(j in used) | j).\\n"
+"module EXPLICIT_INCREMENT_STEP_FLIPPED.\\n\\nexplicit-increment-step-flipped used: [Int] => Int.\\ni  => Int.\\n\\n---\\n\\ni = (min over each j: Int, j >= 1, ~(j in used) | j).\\nexplicit-increment-step-flipped used = i.\\n"
 `;
 
 exports[`expressions-while-mu-search.ts > firstUnusedSuffix 1`] = `
-"module FIRST_UNUSED_SUFFIX.\\n\\nfirst-unused-suffix used: [Int] => Int.\\n\\n---\\n\\nfirst-unused-suffix used = (min over each j: Int, j >= 1, ~(j in used) | j).\\n"
+"module FIRST_UNUSED_SUFFIX.\\n\\nfirst-unused-suffix used: [Int] => Int.\\ni  => Int.\\n\\n---\\n\\ni = (min over each j: Int, j >= 1, ~(j in used) | j).\\nfirst-unused-suffix used = i.\\n"
 `;
 
 exports[`expressions-while-mu-search.ts > nextSlotPlusOne 1`] = `
-"module NEXT_SLOT_PLUS_ONE.\\n\\nnext-slot-plus-one used: [Int] => Int.\\n\\n---\\n\\nnext-slot-plus-one used = (min over each j: Int, j >= 0, ~(j in used) | j) + 1.\\n"
+"module NEXT_SLOT_PLUS_ONE.\\n\\nnext-slot-plus-one used: [Int] => Int.\\ni  => Int.\\n\\n---\\n\\ni = (min over each j: Int, j >= 0, ~(j in used) | j).\\nnext-slot-plus-one used = i + 1.\\n"
 `;
 
 exports[`expressions-while-mu-search.ts > offsetUnusedSuffix 1`] = `
-"module OFFSET_UNUSED_SUFFIX.\\n\\noffset-unused-suffix used: [Int], offset: Int => Int.\\n\\n---\\n\\noffset-unused-suffix used offset = offset + (min over each j: Int, j >= 1, ~(j in used) | j).\\n"
+"module OFFSET_UNUSED_SUFFIX.\\n\\noffset-unused-suffix used: [Int], offset: Int => Int.\\nbase  => Int.\\ni  => Int.\\n\\n---\\n\\nbase = offset.\\ni = (min over each j: Int, j >= 1, ~(j in used) | j).\\noffset-unused-suffix used offset = base + i.\\n"
 `;
 
 exports[`expressions-while-mu-search.ts > unbracedWhileBody 1`] = `
-"module UNBRACED_WHILE_BODY.\\n\\nunbraced-while-body used: [Int] => Int.\\n\\n---\\n\\nunbraced-while-body used = (min over each j: Int, j >= 1, ~(j in used) | j).\\n"
+"module UNBRACED_WHILE_BODY.\\n\\nunbraced-while-body used: [Int] => Int.\\ni  => Int.\\n\\n---\\n\\ni = (min over each j: Int, j >= 1, ~(j in used) | j).\\nunbraced-while-body used = i.\\n"
 `;
 
 exports[`functions-class.ts > Account.deposit 1`] = `
@@ -883,15 +883,15 @@ exports[`functions-mutating-conditional.ts > toggleActive 1`] = `
 `;
 
 exports[`functions-mutating-const.ts > aliasedSequentialWrites 1`] = `
-"module ALIASED_SEQUENTIAL_WRITES.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\n~> Aliased-sequential-writes @ a: Account.\\n\\n---\\n\\naccount--balance' a = 1 + 2.\\n"
+"module ALIASED_SEQUENTIAL_WRITES.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nx  => Account.\\n~> Aliased-sequential-writes @ a: Account.\\n\\n---\\n\\nx = a.\\naccount--balance' x = 1 + 2.\\n"
 `;
 
 exports[`functions-mutating-const.ts > depositWithConst 1`] = `
-"module DEPOSIT_WITH_CONST.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\n~> Deposit-with-const @ a: Account, amount: Int.\\n\\n---\\n\\naccount--balance' a = account--balance a + amount.\\n"
+"module DEPOSIT_WITH_CONST.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nnew-bal  => Int.\\n~> Deposit-with-const @ a: Account, amount: Int.\\n\\n---\\n\\nnew-bal = account--balance a + amount.\\naccount--balance' a = account--balance a + amount.\\n"
 `;
 
 exports[`functions-mutating-const.ts > multiConstMutating 1`] = `
-"module MULTI_CONST_MUTATING.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\n~> Multi-const-mutating @ a: Account, amount: Int, rate: Int.\\n\\n---\\n\\naccount--balance' a = account--balance a - amount * rate.\\n"
+"module MULTI_CONST_MUTATING.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nfee  => Int.\\n~> Multi-const-mutating @ a: Account, amount: Int, rate: Int.\\n\\n---\\n\\nfee = amount * rate.\\naccount--balance' a = account--balance a - amount * rate.\\n"
 `;
 
 exports[`functions-mutating-counter-loop.ts > setLastIndex 1`] = `

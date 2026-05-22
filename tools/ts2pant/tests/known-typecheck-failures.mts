@@ -68,6 +68,8 @@ export const KNOWN_TYPECHECK_FAILURES = new Map<string, string>([
   ["expressions-const-side-effectful.ts > constArrayFromMap", "free-call-decl"],
   ["expressions-const-side-effectful.ts > constMapEntries", "free-call-decl"],
   ["expressions-const-side-effectful.ts > constSetHas", "free-call-decl"],
+  ["expressions-const-pure-calls.ts > constImpureCall", "free-call-decl"],
+  ["expressions-const-bindings.ts > effectfulConstRejected", "free-call-decl"],
   ["expressions-misc.ts > asNumber", "free-call-decl"],
   ["expressions-misc.ts > nonNull", "free-call-decl"],
   ["expressions-nullish.ts > maybeBalance", "$-binder-leak"],

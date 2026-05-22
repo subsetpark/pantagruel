@@ -558,7 +558,7 @@ describe("L2 comb-typed form (typed comprehension)", () => {
 
   it("byte-equality with a hand-built legacy eachComb", () => {
     const ast = getAst();
-    // Hand-built legacy form — what today's translateMuSearchInit emits.
+    // Hand-built legacy form kept as a byte-equality anchor.
     const legacy = ast.eachComb(
       [ast.param("j", ast.tName("Int"))],
       [

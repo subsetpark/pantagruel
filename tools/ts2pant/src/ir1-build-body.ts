@@ -103,7 +103,6 @@ export interface BuildBodyCtx {
   paramNames: ReadonlyMap<string, string>;
   state: SymbolicState;
   supply: UniqueSupply;
-  applyConst: (e: OpaqueExpr) => OpaqueExpr;
   /**
    * When set, this build is inside a foreach loop body. Carries the
    * TS names of iterator binders in scope so the recursive
@@ -934,8 +933,8 @@ function simulateShapeAPropertyWrite(
   if (isBodyUnsupported(valR)) {
     return { unsupported: valR.unsupported };
   }
-  const objExpr = subCtx.applyConst(bodyExpr(objR));
-  const value = subCtx.applyConst(bodyExpr(valR));
+  const objExpr = bodyExpr(objR);
+  const value = bodyExpr(valR);
   const key = symbolicKey(prop, objExpr);
   subCtx.state.writes = putCompatWrite(subCtx.state.writes, key, {
     kind: "property",

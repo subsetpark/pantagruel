@@ -65,6 +65,22 @@ function translateBodyWithSynth(
   });
 }
 
+function finalEquation(props: readonly PropResult[]): Extract<
+  PropResult,
+  { kind: "equation" }
+> {
+  const prop = [...props].reverse().find((p) => p.kind === "equation");
+  assert.ok(prop, "expected at least one equation");
+  return prop;
+}
+
+function equationRhsText(props: readonly PropResult[]): string {
+  return props
+    .filter((p) => p.kind === "equation")
+    .map((p) => getAst().strExpr(p.rhs))
+    .join(" ; ");
+}
+
 // Tests for internal translateBody API edge cases not coverable via
 // exported fixture functions (see tests/fixtures/constructs/ for
 // exhaustive construct coverage).
@@ -84,7 +100,7 @@ describe("unsupported patterns", () => {
     assert.equal(props.length, 0);
   });
 
-  it("translates function with leading const bindings via inline substitution", () => {
+  it("translates function with leading const bindings via local equations", () => {
     const source = `
       function multi(x: number): number {
         const a = x + 1;
@@ -99,12 +115,10 @@ describe("unsupported patterns", () => {
       strategy: IntStrategy,
     });
 
-    assert.equal(props.length, 1);
-    const prop = props[0]!;
-    assert.equal(prop.kind, "equation");
+    const prop = finalEquation(props);
     if (prop.kind === "equation") {
       const ast = getAst();
-      assert.equal(ast.strExpr(prop.rhs), "(x + 1) * 2");
+      assert.equal(ast.strExpr(prop.rhs), "b");
     }
   });
 
@@ -146,7 +160,7 @@ describe("unsupported patterns", () => {
     assert.equal(props.length, 0);
   });
 
-  it("inlines triple-chained const bindings via right-fold", () => {
+  it("routes triple-chained const bindings through local equations", () => {
     const source = `
       function triple(x: number): number {
         const a = x;
@@ -162,12 +176,10 @@ describe("unsupported patterns", () => {
       strategy: IntStrategy,
     });
 
-    assert.equal(props.length, 1);
-    const prop = props[0]!;
-    assert.equal(prop.kind, "equation");
+    const prop = finalEquation(props);
     if (prop.kind === "equation") {
       const ast = getAst();
-      assert.equal(ast.strExpr(prop.rhs), "(x + 1) * x");
+      assert.equal(ast.strExpr(prop.rhs), "c");
     }
   });
 
@@ -189,7 +201,7 @@ describe("unsupported patterns", () => {
     assert.equal(props[0]?.kind, "unsupported");
   });
 
-  it("hygienic names don't collide with property accessors", () => {
+  it("local binding names don't collide with property accessors", () => {
     // Regression: const named `balance` must not collide with the
     // property accessor head `balance` in `a.balance`.
     const source = `
@@ -206,12 +218,10 @@ describe("unsupported patterns", () => {
       strategy: IntStrategy,
     });
 
-    assert.equal(props.length, 1);
-    const prop = props[0]!;
-    assert.equal(prop.kind, "equation");
+    const prop = finalEquation(props);
     if (prop.kind === "equation") {
       const ast = getAst();
-      assert.equal(ast.strExpr(prop.rhs), "account--balance a + 10");
+      assert.equal(ast.strExpr(prop.rhs), "balance + 10");
     }
   });
 
@@ -386,9 +396,7 @@ describe("unsupported patterns", () => {
       strategy: IntStrategy,
     });
 
-    assert.equal(props.length, 1);
-    const prop = props[0]!;
-    assert.equal(prop.kind, "equation");
+    const prop = finalEquation(props);
     if (prop.kind === "equation") {
       const ast = getAst();
       assert.equal(ast.strExpr(prop.rhs), "x + 1");
@@ -418,9 +426,7 @@ describe("unsupported patterns", () => {
       strategy: IntStrategy,
     });
 
-    assert.equal(props.length, 1);
-    const prop = props[0]!;
-    assert.equal(prop.kind, "equation");
+    const prop = finalEquation(props);
     if (prop.kind === "equation") {
       const ast = getAst();
       const rhs = ast.strExpr(prop.rhs);
@@ -446,9 +452,7 @@ describe("if-early-return prelude arms", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
-    assert.equal(props.length, 1);
-    const prop = props[0]!;
-    assert.equal(prop.kind, "equation");
+    const prop = finalEquation(props);
     if (prop.kind === "equation") {
       const ast = getAst();
       assert.equal(ast.strExpr(prop.rhs), "cond n < 0 => 0, true => n + 1");
@@ -469,14 +473,12 @@ describe("if-early-return prelude arms", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
-    assert.equal(props.length, 1);
-    const prop = props[0]!;
-    assert.equal(prop.kind, "equation");
+    const prop = finalEquation(props);
     if (prop.kind === "equation") {
       const ast = getAst();
       assert.equal(
         ast.strExpr(prop.rhs),
-        "cond n + n < 0 => 0, true => n + n",
+        "cond doubled < 0 => 0, true => doubled",
       );
     }
   });
@@ -496,14 +498,12 @@ describe("if-early-return prelude arms", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
-    assert.equal(props.length, 1);
-    const prop = props[0]!;
-    assert.equal(prop.kind, "equation");
+    const prop = finalEquation(props);
     if (prop.kind === "equation") {
       const ast = getAst();
       assert.equal(
         ast.strExpr(prop.rhs),
-        "cond n + 1 < 0 => 0, true => n + 1 + (n + 1)",
+        "cond a < 0 => 0, true => b",
       );
     }
   });
@@ -522,9 +522,7 @@ describe("if-early-return prelude arms", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
-    assert.equal(props.length, 1);
-    const prop = props[0]!;
-    assert.equal(prop.kind, "equation");
+    const prop = finalEquation(props);
     if (prop.kind === "equation") {
       const ast = getAst();
       assert.equal(
@@ -549,13 +547,11 @@ describe("if-early-return prelude arms", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
-    assert.equal(props.length, 1);
-    const prop = props[0]!;
-    assert.equal(prop.kind, "equation");
+    const prop = finalEquation(props);
     if (prop.kind === "equation") {
       const ast = getAst();
       assert.match(ast.strExpr(prop.rhs), /^cond n < 0 => 0, true => /u);
-      assert.match(ast.strExpr(prop.rhs), /min over each j\d*: Int/u);
+      assert.match(equationRhsText(props), /min over each j\d*: Int/u);
     }
   });
 
@@ -825,9 +821,7 @@ describe("translateCallExpr", () => {
       strategy: IntStrategy,
     });
 
-    assert.equal(props.length, 1);
-    const prop = props[0]!;
-    assert.equal(prop.kind, "equation");
+    const prop = finalEquation(props);
     if (prop.kind === "equation") {
       const ast = getAst();
       assert.equal(ast.strExpr(prop.rhs), "max a b");
@@ -847,9 +841,7 @@ describe("translateCallExpr", () => {
       strategy: IntStrategy,
     });
 
-    assert.equal(props.length, 1);
-    const prop = props[0]!;
-    assert.equal(prop.kind, "equation");
+    const prop = finalEquation(props);
     if (prop.kind === "equation") {
       const ast = getAst();
       assert.equal(ast.strExpr(prop.rhs), "(to-upper-case s)");
@@ -870,9 +862,7 @@ describe("translateCallExpr", () => {
       strategy: IntStrategy,
     });
 
-    assert.equal(props.length, 1);
-    const prop = props[0]!;
-    assert.equal(prop.kind, "equation");
+    const prop = finalEquation(props);
     if (prop.kind === "equation") {
       const ast = getAst();
       assert.equal(ast.strExpr(prop.rhs), "now");
@@ -1994,17 +1984,15 @@ describe("Kleene μ-search (while-loop minimum)", () => {
       strategy: IntStrategy,
     });
 
-    assert.equal(props.length, 1);
-    const prop = props[0]!;
-    assert.equal(prop.kind, "equation");
+    const prop = finalEquation(props);
     if (prop.kind === "equation") {
       const ast = getAst();
       // Match any `jN` binder and assert consistent use throughout the
       // comprehension. The specific `N` depends on UniqueSupply slot
       // consumption and shouldn't break hygiene refactors.
       assert.match(
-        ast.strExpr(prop.rhs),
-        /^min over each (j\d+): Int, \1 >= 1, ~\(\1 in used\) \| \1$/,
+        equationRhsText(props),
+        /min over each (j\d+): Int, \1 >= 1, ~\(\1 in used\) \| \1/u,
       );
     }
   });
@@ -2026,19 +2014,17 @@ describe("Kleene μ-search (while-loop minimum)", () => {
       strategy: IntStrategy,
     });
 
-    assert.equal(props.length, 1);
-    const prop = props[0]!;
-    assert.equal(prop.kind, "equation");
+    const prop = finalEquation(props);
     if (prop.kind === "equation") {
       const ast = getAst();
       assert.match(
-        ast.strExpr(prop.rhs),
-        /^\(min over each (j\d+): Int, \1 >= 0, ~\(\1 in used\) \| \1\) \+ 1$/,
+        equationRhsText(props),
+        /min over each (j\d+): Int, \1 >= 0, ~\(\1 in used\) \| \1.*i \+ 1/u,
       );
     }
   });
 
-  it("composes μ-search with leading const bindings via shared inlining", () => {
+  it("composes μ-search with leading const bindings via local equations", () => {
     const source = `
       export function offset(used: ReadonlySet<number>, k: number): number {
         const base = k;
@@ -2056,14 +2042,12 @@ describe("Kleene μ-search (while-loop minimum)", () => {
       strategy: IntStrategy,
     });
 
-    assert.equal(props.length, 1);
-    const prop = props[0]!;
-    assert.equal(prop.kind, "equation");
+    const prop = finalEquation(props);
     if (prop.kind === "equation") {
       const ast = getAst();
       assert.match(
         ast.strExpr(prop.rhs),
-        /^k \+ \(min over each (j\d+): Int, \1 >= 1, ~\(\1 in used\) \| \1\)$/,
+        /^base \+ i$/,
       );
     }
   });
@@ -2170,14 +2154,12 @@ describe("Kleene μ-search (while-loop minimum)", () => {
       strategy: IntStrategy,
     });
 
-    assert.equal(props.length, 1);
-    const prop = props[0]!;
-    assert.equal(prop.kind, "equation");
+    const prop = finalEquation(props);
     if (prop.kind === "equation") {
       const ast = getAst();
       assert.match(
-        ast.strExpr(prop.rhs),
-        /^min over each (j\d+): Int, \1 >= 1, ~\(\1 in used\) \| \1$/,
+        equationRhsText(props),
+        /min over each (j\d+): Int, \1 >= 1, ~\(\1 in used\) \| \1/u,
       );
     }
   });
@@ -2185,7 +2167,7 @@ describe("Kleene μ-search (while-loop minimum)", () => {
   it("rejects when the initializer has side effects", () => {
     // `start++` in the init would otherwise lower to a bogus var since
     // `translateBodyExpr` has no handler for bare `++`/`--`. The TDZ
-    // phase in inlineConstBindings catches this explicitly.
+    // phase in lowerPreludeBindings catches this explicitly.
     const source = `
       export function bogusInit(used: ReadonlySet<number>, start: number): number {
         let i = start++;
