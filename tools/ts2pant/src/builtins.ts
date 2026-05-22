@@ -62,10 +62,7 @@ const BUILTINS: Map<BuiltinKey, { arity: number }> = new Map([
   ["String.prototype.indexOf", { arity: 1 }],
 ]);
 
-export function deriveBuiltinSpec(
-  key: BuiltinKey,
-  arity: number,
-): BuiltinSpec {
+export function deriveBuiltinSpec(key: BuiltinKey, arity: number): BuiltinSpec {
   const namespace = key.startsWith("Math.") ? "Math" : "String.prototype";
   const method =
     namespace === "Math"
@@ -73,9 +70,9 @@ export function deriveBuiltinSpec(
       : key.slice("String.prototype.".length);
   const mod: DepModuleName = namespace === "Math" ? "JS_MATH" : "JS_STRING";
   const kebab = method
-    .replace(/([A-Z])/g, "-$1")
+    .replace(/([A-Z])/gu, "-$1")
     .toLowerCase()
-    .replace(/^-/, "");
+    .replace(/^-/u, "");
   const ruleName = RESERVED_RULE_NAMES.has(kebab) ? `${kebab}-of` : kebab;
   return { rule: `${mod}::${ruleName}`, mod, arity };
 }
