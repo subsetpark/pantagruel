@@ -157,6 +157,13 @@ describe("dogfood: src/translate-types.ts", () => {
     );
   });
 
+  it("manglePantTypeToFragment — translates and type-checks", async (t) => {
+    const doc = await buildDocumentFromPath(filePath, "manglePantTypeToFragment");
+    const output = await emitAndCheck(doc);
+    t.assert.snapshot(output);
+    assertPantTypeChecks(output, PANT_TIMEOUT_MS);
+  });
+
   it("fieldRuleName — translates and type-checks", async (t) => {
     const doc = await buildDocumentFromPath(filePath, "fieldRuleName");
     const output = await emitAndCheck(doc);
@@ -227,6 +234,13 @@ describe("dogfood: src/translate-types.ts", () => {
     );
   });
 
+  it("depModuleNameForFile — translates and type-checks", async (t) => {
+    const doc = await buildDocumentFromPath(filePath, "depModuleNameForFile");
+    const output = await emitAndCheck(doc);
+    t.assert.snapshot(output);
+    assertPantTypeChecks(output, PANT_TIMEOUT_MS);
+  });
+
   it("emptyTupleSynth — translates and type-checks", async (t) => {
     const doc = await buildDocumentFromPath(filePath, "emptyTupleSynth");
     const output = await emitAndCheck(doc);
@@ -261,6 +275,7 @@ describe("dogfood: @pant annotations entail", () => {
     { file: "name-registry.ts", fn: "isUsed", minChecks: 2 },
     { file: "name-registry.ts", fn: "emptyNameRegistry", minChecks: 1 },
     { file: "translate-types.ts", fn: "isUnsupportedUnknown", minChecks: 2 },
+    { file: "translate-types.ts", fn: "manglePantTypeToFragment", minChecks: 2 },
     { file: "translate-types.ts", fn: "emptyMapSynth", minChecks: 1 },
     { file: "translate-types.ts", fn: "emptyRecordSynth", minChecks: 1 },
     { file: "translate-types.ts", fn: "lookupMapKV", minChecks: 1 },
@@ -268,6 +283,7 @@ describe("dogfood: @pant annotations entail", () => {
     { file: "translate-types.ts", fn: "lookupRecordShape", minChecks: 1 },
     { file: "translate-types.ts", fn: "cellIsUsed", minChecks: 2 },
     { file: "translate-types.ts", fn: "cellLookupRecord", minChecks: 1 },
+    { file: "translate-types.ts", fn: "depModuleNameForFile", minChecks: 2 },
     { file: "translate-types.ts", fn: "emptyTupleSynth", minChecks: 1 },
   ];
 

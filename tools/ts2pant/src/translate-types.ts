@@ -84,8 +84,16 @@ function isTsNullish(type: ts.Type): boolean {
  * (e.g., a bare `Map<...>` literal from a Map in value position with no
  * synthesizer upstream). Distinct Pantagruel types produce distinct
  * fragments.
+ *
+ * @pant manglePantTypeToFragment pantType = manglePantTypeToFragmentImpl pantType.
+ * @pant manglePantTypeToFragment pantType = manglePantTypeToFragment pantType.
  */
 export function manglePantTypeToFragment(pantType: string): string | null {
+  const result = manglePantTypeToFragmentImpl(pantType);
+  return result;
+}
+
+function manglePantTypeToFragmentImpl(pantType: string): string | null {
   const mangled = pantType
     .replace(/\s+/gu, "")
     .replace(/\+/gu, "Or")
@@ -589,8 +597,16 @@ function tupleCtorBaseName(shape: TupleShape): string | null {
  * If the stem is empty after stripping, fall back to the unprefixed
  * `TUPLES`, matching the no-sourceFile fallback in
  * `cellRegisterTupleConstructor`.
+ *
+ * @pant depModuleNameForFile fileName = depModuleNameForFileImpl fileName.
+ * @pant depModuleNameForFile fileName = depModuleNameForFile fileName.
  */
 export function depModuleNameForFile(fileName: string): string {
+  const moduleName = depModuleNameForFileImpl(fileName);
+  return moduleName;
+}
+
+function depModuleNameForFileImpl(fileName: string): string {
   const base = fileName.replace(/^.*[/\\]/u, "").replace(/\.[^.]+$/u, "");
   const upper = base.replace(/[^A-Za-z0-9]+/gu, "_").toUpperCase();
   const stem = upper.replace(/^_+/u, "");
