@@ -190,6 +190,14 @@ exports[`expressions-const-bindings.ts > simpleConst 1`] = `
 "module SIMPLE_CONST.\\n\\nsimple-const a: Int, b: Int => Int.\\n\\n---\\n\\nsimple-const a b = a + b.\\n"
 `;
 
+exports[`expressions-const-chained-impure.ts > chainedArrayCount 1`] = `
+"module CHAINED_ARRAY_COUNT.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\nchained-array-count m: StringToIntMap => Int.\\n\\n---\\n\\n> UNSUPPORTED: chained-array-count — const binding with side-effectful initializer.\\n"
+`;
+
+exports[`expressions-const-chained-impure.ts > chainedReplaceTrim 1`] = `
+"module CHAINED_REPLACE_TRIM.\\n\\nchained-replace-trim s: String => String.\\n\\n---\\n\\n> UNSUPPORTED: chained-replace-trim — const binding with side-effectful initializer.\\n"
+`;
+
 exports[`expressions-const-pure-calls.ts > constChainedPure 1`] = `
 "module CONST_CHAINED_PURE.\\n\\nconst-chained-pure x: Int, y: Int => Int.\\n\\n---\\n\\nconst-chained-pure x y = max Math (abs Math x) y.\\n"
 `;
@@ -204,6 +212,26 @@ exports[`expressions-const-pure-calls.ts > constMathMax 1`] = `
 
 exports[`expressions-const-pure-calls.ts > constStringMethod 1`] = `
 "module CONST_STRING_METHOD.\\n\\nconst-string-method s: String => Int.\\n\\n---\\n\\nconst-string-method s = index-of s \\"x\\".\\n"
+`;
+
+exports[`expressions-const-side-effectful.ts > constArrayFromMap 1`] = `
+"module CONST_ARRAY_FROM_MAP.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\nconst-array-from-map m: StringToIntMap => Int.\\n\\n---\\n\\n> UNSUPPORTED: const-array-from-map — const binding with side-effectful initializer.\\n"
+`;
+
+exports[`expressions-const-side-effectful.ts > constMapEntries 1`] = `
+"module CONST_MAP_ENTRIES.\\n\\nStringToIntMap.\\nstring-to-int-map-key m1: StringToIntMap, k: String => Bool.\\nstring-to-int-map m1: StringToIntMap, k: String, string-to-int-map-key m1 k => Int.\\nconst-map-entries m: StringToIntMap => Int.\\n\\n---\\n\\n> UNSUPPORTED: const-map-entries — const binding with side-effectful initializer.\\n"
+`;
+
+exports[`expressions-const-side-effectful.ts > constReplaceLiteral 1`] = `
+"module CONST_REPLACE_LITERAL.\\n\\nconst-replace-literal s: String => String.\\n\\n---\\n\\n> UNSUPPORTED: const-replace-literal — const binding with side-effectful initializer.\\n"
+`;
+
+exports[`expressions-const-side-effectful.ts > constReplaceRegex 1`] = `
+"module CONST_REPLACE_REGEX.\\n\\nconst-replace-regex s: String => String.\\n\\n---\\n\\n> UNSUPPORTED: const-replace-regex — const binding with side-effectful initializer.\\n"
+`;
+
+exports[`expressions-const-side-effectful.ts > constSetHas 1`] = `
+"module CONST_SET_HAS.\\n\\nconst-set-has s: [String], value: String => Bool.\\n\\n---\\n\\nconst-set-has s value = (value in s).\\n"
 `;
 
 exports[`expressions-equality-nullish.ts > disjunctionDifferentOperands 1`] = `
