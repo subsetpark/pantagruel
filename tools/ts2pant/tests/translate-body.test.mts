@@ -183,6 +183,45 @@ describe("unsupported patterns", () => {
     }
   });
 
+  it("allocates collision-safe local binding names", () => {
+    const source = `
+      function collision(x: number): number {
+        const foo_bar = x;
+        const fooBar = foo_bar + 1;
+        return fooBar + foo_bar;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBodyWithSynth(sourceFile, "collision");
+    const ast = getAst();
+    const localDecls = props
+      .filter((p) => p.kind === "rule-decl")
+      .map((p) => p.ruleName);
+
+    assert.deepEqual(localDecls, ["foo-bar", "foo-bar1"]);
+    assert.equal(ast.strExpr(finalEquation(props).rhs), "foo-bar1 + foo-bar");
+  });
+
+  it("lowers member and cardinality const initializers through L1", () => {
+    const source = `
+      interface Account { balance: number }
+      function summarize(a: Account, xs: number[]): number {
+        const balance = a.balance;
+        const count = xs.length;
+        return balance + count;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBodyWithSynth(sourceFile, "summarize");
+    const ast = getAst();
+    const rhsText = equationRhsText(props);
+
+    assert.doesNotMatch(rhsText, /unsupported/u);
+    assert.match(rhsText, /account--balance a/u);
+    assert.match(rhsText, /#xs/u);
+    assert.equal(ast.strExpr(finalEquation(props).rhs), "balance + count");
+  });
+
   it("rejects self-referencing const (TDZ)", () => {
     const source = `
       function selfRef(x: number): number {

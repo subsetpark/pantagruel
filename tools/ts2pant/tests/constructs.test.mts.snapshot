@@ -351,7 +351,7 @@ exports[`expressions-if-early-return.ts > armBetweenBindings 1`] = `
 `;
 
 exports[`expressions-if-early-return.ts > armThenMuSearch 1`] = `
-"module ARM_THEN_MU_SEARCH.\\n\\narm-then-mu-search n: Int, used: [Int] => Int.\\nj  => Int.\\n\\n---\\n\\nj = (min over each j: Int, j >= 1, ~(j in used) | j).\\narm-then-mu-search n used = (cond n < 0 => 0, true => j).\\n"
+"module ARM_THEN_MU_SEARCH.\\n\\narm-then-mu-search n: Int, used: [Int] => Int.\\nj  => Int.\\n\\n---\\n\\nj = (min over each j1: Int, j1 >= 1, ~(j1 in used) | j1).\\narm-then-mu-search n used = (cond n < 0 => 0, true => j).\\n"
 `;
 
 exports[`expressions-if-early-return.ts > bindingThenArm 1`] = `

@@ -212,6 +212,25 @@ export function allocComprehensionBinder(
   return cellRegisterName(supply.synthCell, hint);
 }
 
+function allocLocalBindingName(
+  supply: UniqueSupply,
+  hint: string,
+  scopedParams: ReadonlyMap<string, string>,
+): string {
+  if (supply.synthCell) {
+    return cellRegisterName(supply.synthCell, hint);
+  }
+  const used = new Set(scopedParams.values());
+  if (!used.has(hint)) {
+    return hint;
+  }
+  let name: string;
+  do {
+    name = `${hint}${nextSupply(supply)}`;
+  } while (used.has(name));
+  return name;
+}
+
 /**
  * True when a TypeScript type includes `null`, `undefined`, or `void` —
  * i.e., when `mapTsType` will list-lift it to `[T]`. Used at `??` and `?.`
@@ -1971,7 +1990,11 @@ function lowerPreludeBindings(
           arms: [...acc.arms, [predRes.value, valRes.value] as const],
         };
       }
-      const localName = toPantTermName(binding.tsName);
+      const localName = allocLocalBindingName(
+        supply,
+        toPantTermName(binding.tsName),
+        acc.scopedParams,
+      );
       const returnType =
         binding.kind === "const"
           ? mapTsType(
@@ -1989,21 +2012,13 @@ function lowerPreludeBindings(
       }
       const initExpr =
         binding.kind === "const"
-          ? state === undefined
-            ? tryBuildL1PureSubExpression(binding.initializer, {
-                checker,
-                strategy,
-                paramNames: acc.scopedParams,
-                state,
-                supply,
-              })
-            : buildL1SubExpr(binding.initializer, {
-                checker,
-                strategy,
-                paramNames: acc.scopedParams,
-                state,
-                supply,
-              })
+          ? buildL1SubExpr(binding.initializer, {
+              checker,
+              strategy,
+              paramNames: acc.scopedParams,
+              state: state ?? makeSymbolicState(),
+              supply,
+            })
           : buildL1MuSearchCombTyped(binding.mu, {
               checker,
               strategy,
@@ -2011,13 +2026,19 @@ function lowerPreludeBindings(
               state,
               supply,
             });
-      if (initExpr === null) {
-        return {
-          tag: "error",
-          error: "unsupported pure expression in const initializer",
-        };
-      }
       if (isUnsupported(initExpr) || isL1Unsupported(initExpr)) {
+        if (
+          binding.kind === "const" &&
+          state === undefined &&
+          initExpr.unsupported.startsWith(
+            "unsupported mutating-body sub-expression:",
+          )
+        ) {
+          return {
+            tag: "error",
+            error: "unsupported pure expression in const initializer",
+          };
+        }
         return { tag: "error", error: initExpr.unsupported };
       }
       return {
