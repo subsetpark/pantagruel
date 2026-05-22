@@ -463,6 +463,10 @@ export type IR1SsaLocation =
   | {
       kind: "return-value";
       ruleName: IR1SsaRuleName;
+    }
+  | {
+      kind: "local-binding";
+      name: string;
     };
 
 export interface IR1SsaVersion {
@@ -506,8 +510,14 @@ export type IR1SsaPropertyValue = {
   value: IR1Expr;
 };
 
+export type IR1SsaLocalBindingValue = {
+  kind: "local-binding";
+  value: IR1Expr;
+};
+
 export type IR1SsaValue =
   | IR1SsaPropertyValue
+  | IR1SsaLocalBindingValue
   | IR1SsaMapValue
   | IR1SsaMapMembershipValue
   | IR1SsaSetMembershipValue;
@@ -667,10 +677,32 @@ export const ir1SsaReturnValueLocation = (
   ruleName,
 });
 
+export const ir1SsaLocalBindingLocation = (
+  name: string,
+): Extract<IR1SsaLocation, { kind: "local-binding" }> => ({
+  kind: "local-binding",
+  name,
+});
+
 export const ir1SsaRuleOfLocation = (
   location: IR1SsaLocation,
-): IR1SsaRuleName =>
-  location.kind === "map-membership" ? location.keyPredName : location.ruleName;
+): IR1SsaRuleName => {
+  switch (location.kind) {
+    case "property":
+    case "map-value":
+    case "set-membership":
+    case "return-value":
+      return location.ruleName;
+    case "map-membership":
+      return location.keyPredName;
+    case "local-binding":
+      throw new Error("local-binding SSA locations do not have a rule name");
+    default: {
+      const _exhaustive: never = location;
+      return _exhaustive;
+    }
+  }
+};
 
 const ir1SsaVersion = (
   location: IR1SsaLocation,
@@ -857,6 +889,13 @@ export const ir1SsaPropertyValue = (value: IR1Expr): IR1SsaPropertyValue => ({
   value,
 });
 
+export const ir1SsaLocalBindingValue = (
+  value: IR1Expr,
+): IR1SsaLocalBindingValue => ({
+  kind: "local-binding",
+  value,
+});
+
 export const ir1SsaMapSetValue = (value: IR1Expr): IR1SsaMapValue => ({
   kind: "map-value",
   op: "set",
@@ -951,6 +990,12 @@ const ir1SsaLocationEquals = (
         return false;
       }
       return a.ruleName === b.ruleName;
+    }
+    case "local-binding": {
+      if (b.kind !== "local-binding") {
+        return false;
+      }
+      return a.name === b.name;
     }
     default: {
       const _exhaustive: never = a;

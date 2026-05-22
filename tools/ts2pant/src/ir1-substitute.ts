@@ -122,6 +122,7 @@ export function freeVarsIR1SsaLocation(location: IR1SsaLocation): Set<string> {
     case "set-membership":
       return freeVarsIR1Expr(location.receiver);
     case "return-value":
+    case "local-binding":
       return new Set();
     default: {
       const _exhaustive: never = location;
@@ -316,6 +317,7 @@ function freeVarsFoldLeaf(leaf: IR1FoldLeaf, bound: Set<string>): Set<string> {
 function freeVarsIR1SsaValue(value: IR1SsaValue): Set<string> {
   switch (value.kind) {
     case "property":
+    case "local-binding":
     case "map-value":
       return freeVarsIR1Expr(value.value);
     case "map-membership":

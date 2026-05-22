@@ -11,13 +11,16 @@ import {
   ir1CondStmt,
   ir1LitBool,
   ir1LitNat,
+  ir1Let,
   ir1Member,
   ir1Var,
 } from "../src/ir1.js";
 import {
   buildScalarSsaProgram,
   isScalarSsaL1Body,
+  lowerScalarSsaL1Body,
   lowerScalarSsaToProps,
+  makeScalarSsaState,
 } from "../src/ir1-ssa-scalars.js";
 import type { OpaqueExpr } from "../src/pant-ast.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
@@ -77,6 +80,32 @@ describe("ir1-ssa-scalars", () => {
     assert.equal(write.version.location, write.location);
     assert.deepEqual(write.value, { kind: "property", value: ir1LitNat(1) });
     assert.equal(scalarEquationRhs(stmt), "1");
+  });
+
+  it("versions let bindings as local-binding writes and resolves later reads", () => {
+    const stmt = ir1Block([
+      ir1Let("x", ir1LitNat(5)),
+      ir1Assign(ir1Member(ir1Var("a"), "Account_balance"), ir1Var("x")),
+    ]);
+    const state = makeScalarSsaState();
+
+    assert.equal(isScalarSsaL1Body(stmt), true);
+    lowerScalarSsaL1Body(stmt, state);
+
+    assert.equal(state.writes.length, 2);
+    assert.equal(state.reads.length, 1);
+    const [letWrite, propertyWrite] = state.writes;
+    assert.equal(letWrite!.location.kind, "local-binding");
+    assert.equal(letWrite!.location.name, "x");
+    assert.equal(letWrite!.version.location, letWrite!.location);
+    assert.deepEqual(letWrite!.value, {
+      kind: "local-binding",
+      value: ir1LitNat(5),
+    });
+    assert.equal(state.reads[0]!.location, letWrite!.location);
+    assert.equal(state.reads[0]!.version, letWrite!.version);
+    assert.equal(state.reads[0]!.dominated, true);
+    assert.equal(propertyWrite!.location.kind, "property");
   });
 
   it("resolves compound property assignment through the dominating prior version", () => {
