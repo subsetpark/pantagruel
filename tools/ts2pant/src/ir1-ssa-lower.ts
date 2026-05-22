@@ -234,7 +234,7 @@ export function loopSsaBodyLowerResult(
   result: ForeachAsGeneralLoopResult,
 ): IR1SsaBodyLowerResult {
   return ir1SsaBodyLowerResult({
-    propositions: "propositions" in result ? result.propositions : [],
+    propositions: result.propositions,
     modifiedRules: result.modifiedRules,
     diagnostics: result.diagnostics,
     programs: [result.program],

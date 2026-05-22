@@ -14,22 +14,22 @@ import {
 } from "../src/ir1.js";
 import {
   adaptCollectionSsaLowerResult,
-  adaptLoopSummaryLowerResult,
+  adaptLoopSsaLowerResult,
   adaptScalarSsaLowerResult,
   lowerCollectionL1BodyToSsaResult,
   lowerScalarL1BodyToSsaResult,
 } from "../src/ir1-lower-body.js";
 import { lowerCollectionSsaToProps } from "../src/ir1-ssa-collections.js";
 import {
+  lowerForeachShapeAAsGeneralLoop,
+  lowerForeachShapeBAsGeneralLoop,
+} from "../src/ir1-ssa-foreach.js";
+import {
   appendFramesForUnmodifiedRules,
   combineIR1SsaBodyLowerResults,
   ir1SsaBodyLowerSuccess,
   ir1SsaBodyLowerUnsupported,
 } from "../src/ir1-ssa-lower.js";
-import {
-  lowerForeachShapeAAsGeneralLoop,
-  lowerForeachShapeBAsGeneralLoop,
-} from "../src/ir1-ssa-foreach.js";
 import { lowerScalarSsaToProps } from "../src/ir1-ssa-scalars.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 
@@ -43,7 +43,6 @@ describe("ir1-ssa-lower", () => {
       reads: [],
       writes: [],
       joins: [],
-      loopSummaries: [],
       loopHeaderJoins: [],
       loopBodies: [],
       declaredRules: ["Account_balance", "Account_limit"],
@@ -54,7 +53,6 @@ describe("ir1-ssa-lower", () => {
       reads: [],
       writes: [],
       joins: [],
-      loopSummaries: [],
       loopHeaderJoins: [],
       loopBodies: [],
       declaredRules: ["Account_balance", "Account_seen"],
@@ -153,7 +151,7 @@ describe("ir1-ssa-lower", () => {
     assert.deepEqual(result.propositions, [{ kind: "raw", text: "body" }]);
   });
 
-  it("adapts scalar, collection, and loop summary helpers into the unified shape", () => {
+  it("adapts scalar, collection, and loop helpers into the unified shape", () => {
     const scalar = adaptScalarSsaLowerResult(
       lowerScalarSsaToProps(
         ir1Assign(ir1Member(ir1Var("a"), "Account_balance"), ir1LitNat(1)),
@@ -172,7 +170,7 @@ describe("ir1-ssa-lower", () => {
         ),
       ),
     );
-    const loop = adaptLoopSummaryLowerResult(
+    const loop = adaptLoopSsaLowerResult(
       lowerForeachShapeAAsGeneralLoop({
         binder: "item0",
         source: ir1Var("items"),
@@ -283,12 +281,11 @@ describe("ir1-ssa-lower", () => {
       ir1Var("a"),
       "balance",
     );
-    const loop = adaptLoopSummaryLowerResult({
+    const loop = adaptLoopSsaLowerResult({
       program: {
         reads: [],
         writes: [],
         joins: [],
-        loopSummaries: [],
         loopHeaderJoins: [],
         loopBodies: [],
         declaredRules: ["Account_balance"],
@@ -314,9 +311,9 @@ describe("ir1-ssa-lower", () => {
     ]);
   });
 
-  it("loop summaries report propositions and modified rules through one result", () => {
+  it("foreach general loops report propositions and modified rules through one result", () => {
     const ast = getAst();
-    const shapeA = adaptLoopSummaryLowerResult(
+    const shapeA = adaptLoopSsaLowerResult(
       lowerForeachShapeAAsGeneralLoop({
         binder: "item0",
         source: ir1Var("items"),
@@ -326,7 +323,7 @@ describe("ir1-ssa-lower", () => {
         ),
       }),
     );
-    const shapeB = adaptLoopSummaryLowerResult(
+    const shapeB = adaptLoopSsaLowerResult(
       lowerForeachShapeBAsGeneralLoop({
         binder: "item0",
         source: ir1Var("items"),
@@ -356,13 +353,11 @@ describe("ir1-ssa-lower", () => {
     );
     assert.equal(result.programs.length, 2);
     assert.deepEqual(
-      result.programs.flatMap((program) =>
-        program.loopSummaries.map((summary) => summary.shape),
-      ),
-      [],
+      result.programs.map((program) => program.loopBodies.length),
+      [1, 1],
     );
-    assert.equal(result.programs[0]?.loopHeaderJoins.length, 1);
-    assert.equal(result.programs[0]?.loopBodies.length, 1);
+    assert.equal(shapeA.programs[0]?.loopHeaderJoins.length, 1);
+    assert.equal(shapeA.programs[0]?.loopBodies.length, 1);
     assert.equal(shapeB.programs[0]?.loopHeaderJoins.length, 1);
     assert.equal(shapeB.programs[0]?.loopBodies.length, 1);
 

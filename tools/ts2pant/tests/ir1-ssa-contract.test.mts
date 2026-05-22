@@ -4,11 +4,9 @@ import { describe, it } from "node:test";
 import {
   type IR1Expr,
   type IR1SsaProgram,
-  ir1LitBool,
   ir1LitNat,
   ir1SsaInitialVersion,
   ir1SsaJoin,
-  ir1SsaLoopSummary,
   ir1SsaMapMembershipLocation,
   ir1SsaMapMembershipValue,
   ir1SsaMapSetValue,
@@ -127,7 +125,6 @@ describe("ir1-ssa-contract", () => {
       reads: [],
       writes: [valueWrite, membershipWrite],
       joins: [],
-      loopSummaries: [],
       loopHeaderJoins: [],
       loopBodies: [],
       declaredRules: ["Score_value", "Score_hasKey"],
@@ -166,29 +163,4 @@ describe("ir1-ssa-contract", () => {
     assert.equal(write.value.elem, null);
   });
 
-  it("exposes distinct loop-summary versions", () => {
-    const shapeALocation = ir1SsaPropertyLocation(
-      "Item_seen",
-      ir1Var("$item"),
-      "seen",
-    );
-    const shapeBLocation = ir1SsaPropertyLocation(
-      "Account_total",
-      ir1Var("account"),
-      "total",
-    );
-    const ordinaryWrite = ir1SsaWrite(
-      shapeALocation,
-      ir1SsaPropertyValue(ir1LitBool(true)),
-    );
-    const shapeASummary = ir1SsaLoopSummary("foreach-shape-a", shapeALocation);
-    const shapeBSummary = ir1SsaLoopSummary("foreach-shape-b", shapeBLocation);
-
-    assert.equal(shapeASummary.summaryVersion.location, shapeALocation);
-    assert.equal(shapeBSummary.summaryVersion.location, shapeBLocation);
-    assert.equal(shapeASummary.summaryVersion.origin, "loop-summary");
-    assert.equal(shapeBSummary.summaryVersion.origin, "loop-summary");
-    assert.notEqual(shapeASummary.summaryVersion, ordinaryWrite.version);
-    assert.notEqual(shapeASummary.summaryVersion.id, ordinaryWrite.version.id);
-  });
 });

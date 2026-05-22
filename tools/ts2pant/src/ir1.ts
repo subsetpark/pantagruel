@@ -534,13 +534,6 @@ export interface IR1SsaJoin {
   readonly joinVersion: IR1SsaVersion;
 }
 
-export interface IR1SsaLoopSummary {
-  readonly kind: "ssa-loop-summary";
-  readonly shape: "mu-search" | "foreach-shape-a" | "foreach-shape-b";
-  readonly location: IR1SsaLocation;
-  readonly summaryVersion: IR1SsaVersion;
-}
-
 export interface IR1SsaLoopHeaderJoin {
   readonly kind: "ssa-loop-header-join";
   readonly location: IR1SsaLocation;
@@ -602,7 +595,6 @@ export interface IR1SsaProgram {
   readonly reads: IR1SsaRead[];
   readonly writes: IR1SsaWrite[];
   readonly joins: IR1SsaJoin[];
-  readonly loopSummaries: IR1SsaLoopSummary[];
   readonly loopHeaderJoins: IR1SsaLoopHeaderJoin[];
   readonly loopBodies: IR1SsaLoopBody[];
   readonly declaredRules: IR1SsaRuleName[];
@@ -734,16 +726,6 @@ export const ir1SsaJoin = (
     joinVersion: ir1SsaVersion(location, "join"),
   };
 };
-
-export const ir1SsaLoopSummary = (
-  shape: IR1SsaLoopSummary["shape"],
-  location: IR1SsaLocation,
-): IR1SsaLoopSummary => ({
-  kind: "ssa-loop-summary",
-  shape,
-  location,
-  summaryVersion: ir1SsaVersion(location, "loop-summary"),
-});
 
 export const ir1SsaOpenLoopHeader = (
   location: IR1SsaLocation,

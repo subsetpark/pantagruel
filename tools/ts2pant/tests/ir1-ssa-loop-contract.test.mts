@@ -210,7 +210,6 @@ describe("ir1-ssa-loop-contract", () => {
       reads: [],
       writes: [write],
       joins: [],
-      loopSummaries: [],
       loopHeaderJoins: [header],
       loopBodies: [body],
       declaredRules: ["Account_balance"],

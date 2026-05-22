@@ -23,7 +23,6 @@ import {
 import {
   type IR1SsaJoin,
   type IR1SsaLocation,
-  type IR1SsaLoopSummary,
   type IR1SsaProgram,
   type IR1SsaRead,
   type IR1SsaWrite,
@@ -85,7 +84,6 @@ interface SsaProgramVisitor {
   onWrite?: (write: IR1SsaWrite, index: number) => void;
   onRead?: (read: IR1SsaRead, index: number) => void;
   onJoin?: (join: IR1SsaJoin, index: number) => void;
-  onSummary?: (summary: IR1SsaLoopSummary, index: number) => void;
 }
 
 function loadFixture(fileName: string) {
@@ -463,9 +461,6 @@ function walkSsaProgram(program: IR1SsaProgram, visit: SsaProgramVisitor): void 
   for (const [index, join] of program.joins.entries()) {
     visit.onJoin?.(join, index);
   }
-  for (const [index, summary] of program.loopSummaries.entries()) {
-    visit.onSummary?.(summary, index);
-  }
 }
 
 function locationSignature(location: IR1SsaLocation): string {
@@ -522,10 +517,9 @@ function assertFreshVersionsAndJoinLocations(
     const trackFreshVersion = (
       occurrence:
         | { version: IR1SsaWrite["version"]; location: IR1SsaWrite["location"] }
-        | { version: IR1SsaJoin["joinVersion"]; location: IR1SsaJoin["location"] }
         | {
-            version: IR1SsaLoopSummary["summaryVersion"];
-            location: IR1SsaLoopSummary["location"];
+            version: IR1SsaJoin["joinVersion"];
+            location: IR1SsaJoin["location"];
           },
       detail: string,
     ): void => {
@@ -586,15 +580,6 @@ function assertFreshVersionsAndJoinLocations(
           `${representativeName} [program ${programIndex}] join #${index} should allocate a fresh result version`,
         );
       },
-      onSummary(summary, index) {
-        trackFreshVersion(
-          {
-            version: summary.summaryVersion,
-            location: summary.location,
-          },
-          `loop summary #${index} (${summary.shape})`,
-        );
-      },
     });
   }
 }
@@ -639,18 +624,9 @@ function assertDominatingReads(
             join.joinVersion === read.version &&
             locationSignature(join.location) === location,
         );
-        const resolvesToLoopSummary = program.loopSummaries.some(
-          (summary) =>
-            summary.summaryVersion === read.version &&
-            locationSignature(summary.location) === location,
-        );
-
         assert.ok(
-          resolvesToInitial ||
-            resolvesToWrite ||
-            resolvesToJoin ||
-            resolvesToLoopSummary,
-          `${readDetail} did not resolve to an initial, write, join, or loop-summary version at its own location`,
+          resolvesToInitial || resolvesToWrite || resolvesToJoin,
+          `${readDetail} did not resolve to an initial, write, or join version at its own location`,
         );
       },
     });
@@ -721,15 +697,12 @@ function assertFrameSuppression(
     const programModifiedRules = new Set(program.modifiedRules);
     const programRuleSources = new Set([
       ...program.writes.map((write) => ir1SsaRuleOfLocation(write.location)),
-      ...program.loopSummaries.map((summary) =>
-        ir1SsaRuleOfLocation(summary.location)
-      ),
     ]);
 
     for (const modifiedRule of program.modifiedRules) {
       assert.ok(
         programRuleSources.has(modifiedRule),
-        `${programDetail} should only mark rules modified when a write or loop summary produced them`,
+        `${programDetail} should only mark rules modified when a write produced them`,
       );
     }
 
@@ -738,14 +711,6 @@ function assertFrameSuppression(
       assert.ok(
         programModifiedRules.has(rule),
         `${programDetail} write #${writeIndex} should mark ${rule} as modified`,
-      );
-    }
-
-    for (const [summaryIndex, summary] of program.loopSummaries.entries()) {
-      const rule = ir1SsaRuleOfLocation(summary.location);
-      assert.ok(
-        programModifiedRules.has(rule),
-        `${programDetail} loop summary #${summaryIndex} should mark ${rule} as modified`,
       );
     }
   }
@@ -787,7 +752,7 @@ describe("ir1-ssa-invariants", () => {
   void walkSsaProgram;
 
   it(
-    "each write, join, and summary produces a fresh SSA version at its location",
+    "each write and join produces a fresh SSA version at its location",
     async () => {
       for (const representative of representativePrograms()) {
         const result = await representative.build();
@@ -869,7 +834,7 @@ describe("ir1-ssa-invariants", () => {
   );
 
   it(
-    "every read resolves to a dominating version, initial version, or explicit loop summary at its own location",
+    "every read resolves to a dominating version or initial version at its own location",
     async () => {
       for (const representative of representativePrograms()) {
         const result = await representative.build();

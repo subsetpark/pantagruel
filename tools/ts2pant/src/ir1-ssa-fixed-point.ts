@@ -18,7 +18,7 @@ import {
   ir1Var,
 } from "./ir1.js";
 import { lowerL1Expr } from "./ir1-lower.js";
-import type { LoopSsaBuildOptions } from "./ir1-ssa-loops.js";
+import type { LoopSsaBuildOptions } from "./ir1-ssa-foreach.js";
 import {
   type IR1SsaBodyLowerResult,
   ir1SsaBodyLowerSuccess,
@@ -323,7 +323,6 @@ export function lowerFixedPointLoopL1Body(
     reads: [],
     writes: [write],
     joins: [],
-    loopSummaries: [],
     loopHeaderJoins: [header],
     loopBodies: [loopBody],
     declaredRules: [...declaredRules],
