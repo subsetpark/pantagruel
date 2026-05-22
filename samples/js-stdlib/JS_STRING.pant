@@ -17,5 +17,11 @@ module JS_STRING.
 
 to-upper-case s: String => String.
 index-of s: String, t: String => Int.
+to-lower-case s: String => String.
+trim s: String => String.
+includes s: String, t: String => Bool.
+starts-with s: String, prefix: String => Bool.
+ends-with s: String, suffix: String => Bool.
+last-index-of s: String, t: String => Int.
 
 ---
