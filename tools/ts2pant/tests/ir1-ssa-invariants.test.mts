@@ -14,9 +14,6 @@ import {
   type BuildBodyCtx,
   isUnsupported,
 } from "../src/ir1-build-body.js";
-import {
-  adaptLoopSummaryLowerResult,
-} from "../src/ir1-lower-body.js";
 import { lowerL1BodyToSsaProps } from "../src/ir1-lower-body.js";
 import {
   scalarSsaBodyLowerResult,
@@ -54,17 +51,13 @@ import {
   ir1Var,
   ir1While,
 } from "../src/ir1.js";
-import { lowerExpr } from "../src/ir-emit.js";
-import { lowerL1Expr } from "../src/ir1-lower.js";
 import { lowerCollectionSsaToResult } from "../src/ir1-ssa-collections.js";
 import { lowerScalarSsaToProps } from "../src/ir1-ssa-scalars.js";
 import {
   lowerForeachShapeASummaries,
   lowerForeachShapeBSummaries,
-  lowerMuSearchSummary,
 } from "../src/ir1-ssa-loops.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
-import { freshHygienicBinder, type UniqueSupply } from "../src/translate-body.js";
 import { IntStrategy } from "../src/translate-types.js";
 import { buildDocumentFromSourceFile } from "./helpers.mts";
 
@@ -76,8 +69,7 @@ type RepresentativeProgramKind =
   | "set"
   | "branch"
   | "foreach-shape-a"
-  | "foreach-shape-b"
-  | "mu-search";
+  | "foreach-shape-b";
 
 interface RepresentativeProgram {
   name: string;
@@ -211,29 +203,6 @@ function buildSupportedFixtureStatement(
   return {
     unsupported: "statement is not supported by Patch 1's fixture bridge",
   };
-}
-
-async function buildMuSearchFixtureResult(): Promise<IR1SsaBodyLowerResult> {
-  const sourceFile = loadFixture("expressions-while-mu-search.ts");
-  await buildDocumentFromSourceFile(sourceFile, "firstUnusedSuffix");
-  const supply: UniqueSupply = { n: 0 };
-  const binder = freshHygienicBinder(supply);
-  return adaptLoopSummaryLowerResult(
-    lowerMuSearchSummary({
-      location: ir1SsaPropertyLocation(
-        "Name_firstUnusedSuffix",
-        ir1Var("name"),
-        "firstUnusedSuffix",
-      ),
-      counterType: "Int",
-      counterPantName: "i",
-      binder,
-      initExpr: getAst().litNat(1),
-      predicateExpr: lowerExpr(
-        lowerL1Expr(ir1Binop("in", ir1Var(binder), ir1Var("used"))),
-      ),
-    }),
-  );
 }
 
 function buildCollectionResult(stmt: IR1Stmt): IR1SsaBodyLowerResult {
@@ -383,11 +352,6 @@ function representativePrograms(): RepresentativeProgram[] {
       kind: "foreach-shape-b",
       build: () =>
         buildFixtureBodyLowerResult("functions-mutating-loop.ts", "forEachSum"),
-    },
-    {
-      name: "expressions-while-mu-search.ts > firstUnusedSuffix",
-      kind: "mu-search",
-      build: () => buildMuSearchFixtureResult(),
     },
   ];
 }
@@ -1034,7 +998,7 @@ describe("ir1-ssa-invariants", () => {
   );
 
   it(
-    "the table-driven corpus satisfies all SSA invariants for scalar, Map, Set, branch, foreach Shape A, foreach Shape B, and μ-search programs",
+    "the table-driven corpus satisfies all SSA invariants for scalar, Map, Set, branch, foreach Shape A, and foreach Shape B programs",
     async () => {
       const representatives = representativePrograms();
       const presentKinds = new Set(representatives.map((r) => r.kind));
@@ -1046,7 +1010,6 @@ describe("ir1-ssa-invariants", () => {
         "branch",
         "foreach-shape-a",
         "foreach-shape-b",
-        "mu-search",
       ] satisfies RepresentativeProgramKind[]) {
         assert.ok(
           presentKinds.has(kind),

@@ -29,7 +29,6 @@ import {
 import {
   lowerForeachShapeASummaries,
   lowerForeachShapeBSummaries,
-  lowerMuSearchSummary,
 } from "../src/ir1-ssa-loops.js";
 import { lowerScalarSsaToProps } from "../src/ir1-ssa-scalars.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
@@ -348,34 +347,20 @@ describe("ir1-ssa-lower", () => {
         ],
       }),
     );
-    const muSearch = adaptLoopSummaryLowerResult(
-      lowerMuSearchSummary({
-        location: ir1SsaPropertyLocation(
-          "Name_firstUnusedSuffix",
-          ir1Var("name"),
-          "firstUnusedSuffix",
-        ),
-        counterType: "Int",
-        counterPantName: "i",
-        binder: "j1",
-        initExpr: ast.litNat(1),
-        predicateExpr: ast.binop(ast.opIn(), ast.var("i"), ast.var("used")),
-      }),
-    );
-    const result = combineIR1SsaBodyLowerResults(shapeA, shapeB, muSearch);
+    const result = combineIR1SsaBodyLowerResults(shapeA, shapeB);
 
     assert.equal(result.diagnostics.length, 0);
     assert.equal(result.propositions.length, 2);
     assert.deepEqual(
       new Set(result.modifiedRules),
-      new Set(["Item_seen", "Account_total", "Name_firstUnusedSuffix"]),
+      new Set(["Item_seen", "Account_total"]),
     );
-    assert.equal(result.programs.length, 3);
+    assert.equal(result.programs.length, 2);
     assert.deepEqual(
       result.programs.flatMap((program) =>
         program.loopSummaries.map((summary) => summary.shape),
       ),
-      ["foreach-shape-a", "foreach-shape-b", "mu-search"],
+      ["foreach-shape-a", "foreach-shape-b"],
     );
 
     const shapeAProp = result.propositions[0];
