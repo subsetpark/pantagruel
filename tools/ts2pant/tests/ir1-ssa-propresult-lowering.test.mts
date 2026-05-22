@@ -10,7 +10,6 @@ import {
   ir1Member,
   ir1SetAddOrDelete,
   ir1SetClear,
-  ir1SsaPropertyLocation,
   ir1Var,
 } from "../src/ir1.js";
 import { lowerCollectionSsaToResult } from "../src/ir1-ssa-collections.js";
@@ -18,7 +17,6 @@ import {
   appendFramesForUnmodifiedRules,
   ir1SsaBodyLowerSuccess,
 } from "../src/ir1-ssa-lower.js";
-import { lowerForeachSummary } from "../src/ir1-ssa-loops.js";
 import { lowerScalarSsaToProps } from "../src/ir1-ssa-scalars.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import type { PropResult } from "../src/types.js";
@@ -186,59 +184,6 @@ describe("ir1-ssa-propresult-lowering", () => {
           "y1 in Owner_tags' owner <-> (cond y1 = y => true, true => false)",
         );
       }
-    },
-  );
-
-  it.skip(
-    "loop summaries report propositions and modified rules through one result",
-    () => {
-      const shapeA = lowerForeachSummary({
-        input: {
-          kind: "foreach-shape-a",
-          location: ir1SsaPropertyLocation(
-            "Item_seen",
-            ir1Var("$item"),
-            "seen",
-          ),
-          propositions: [{ kind: "raw", text: "quantified-write" }],
-        },
-      });
-      const shapeB = lowerForeachSummary({
-        input: {
-          kind: "foreach-shape-b",
-          location: ir1SsaPropertyLocation(
-            "Account_total",
-            ir1Var("account"),
-            "total",
-          ),
-          propositions: [{ kind: "raw", text: "accumulator-fold" }],
-        },
-        declaredRules: ["Account_limit"],
-      });
-      const result = pendingUnifiedLowerResult({
-        declaredRules: [
-          ...shapeA.program.declaredRules,
-          ...shapeB.program.declaredRules,
-        ],
-        propositions: [...shapeA.propositions, ...shapeB.propositions],
-        modifiedRules: [...shapeA.modifiedRules, ...shapeB.modifiedRules],
-        diagnostics: [...shapeA.diagnostics, ...shapeB.diagnostics],
-      });
-
-      assert.deepEqual(result.diagnostics, []);
-      assert.deepEqual(
-        [shapeA.summary?.shape, shapeB.summary?.shape],
-        ["foreach-shape-a", "foreach-shape-b"],
-      );
-      assert.deepEqual(
-        new Set(result.modifiedRules),
-        new Set(["Item_seen", "Account_total"]),
-      );
-      assert.deepEqual(result.framedRules, ["Account_limit"]);
-      assert.deepEqual(result.propositions, [
-        { kind: "raw", text: "quantified-write" },
-        { kind: "raw", text: "accumulator-fold" },
-      ]);
     },
   );
 

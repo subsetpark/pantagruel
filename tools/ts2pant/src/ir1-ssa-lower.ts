@@ -5,10 +5,6 @@ import type {
 } from "./ir1-ssa-collections.js";
 import type { ForeachAsGeneralLoopResult } from "./ir1-ssa-foreach.js";
 import type {
-  ForeachShapeBSummaryResult,
-  ForeachSummaryLowerResult,
-} from "./ir1-ssa-loops.js";
-import type {
   ScalarSsaFinalPropertyEntry,
   ScalarSsaLowerResult,
 } from "./ir1-ssa-scalars.js";
@@ -235,10 +231,7 @@ export function collectionSsaBodyLowerResult(
 }
 
 export function loopSsaBodyLowerResult(
-  result:
-    | ForeachSummaryLowerResult
-    | ForeachAsGeneralLoopResult
-    | ForeachShapeBSummaryResult,
+  result: ForeachAsGeneralLoopResult,
 ): IR1SsaBodyLowerResult {
   return ir1SsaBodyLowerResult({
     propositions: "propositions" in result ? result.propositions : [],
