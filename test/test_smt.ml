@@ -237,11 +237,25 @@ let test_duplicate_split_form_equation_kept_in_body () =
        next x = x + 2.\n"
   in
   let env, doc = Collect.recognize_split_form_bodies env doc in
-  (match Env.lookup_rule_body_arity "next" 1 env with
-  | Some _ -> ()
+  (match[@warning "-4"] Env.lookup_rule_body_arity "next" 1 env with
+  | Some (_decl, EBinop (OpAdd, EVar (Lower "x"), ELitNat 1), _recursive) -> ()
+  | Some (_decl, body, _recursive) ->
+      fail
+        (Printf.sprintf "expected attached x + 1 body, got %s"
+           (Ast.show_expr body))
   | None -> fail "expected first rule body in env");
   let chapter = List.hd doc.chapters in
-  check int "duplicate equation remains in body" 1 (List.length chapter.body)
+  check int "duplicate equation remains in body" 1 (List.length chapter.body);
+  match[@warning "-4"] (List.hd chapter.body).value with
+  | EBinop
+      ( OpEq,
+        EApp (EVar (Lower "next"), [ EVar (Lower "x") ]),
+        EBinop (OpAdd, EVar (Lower "x"), ELitNat 2) ) ->
+      ()
+  | prop ->
+      fail
+        (Printf.sprintf "expected retained x + 2 equation, got %s"
+           (Ast.show_expr prop))
 
 let test_recursive_rule_emits_define_fun_rec () =
   let env, doc =
