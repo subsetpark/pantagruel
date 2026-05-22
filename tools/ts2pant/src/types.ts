@@ -82,7 +82,7 @@ export type PropResult =
       ruleName: string;
       params: Array<{ name: string; type: OpaqueTypeExpr }>;
       returnType: OpaqueTypeExpr;
-      body: OpaqueExpr;
+      body?: OpaqueExpr;
     }
   | {
       kind: "assertion";
