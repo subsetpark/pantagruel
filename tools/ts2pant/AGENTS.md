@@ -259,9 +259,12 @@ Read that file before extending the IR or touching SSA-bearing code:
 - **General-loop SSA Workstream.** L1 (loop SSA contract), L2 (bounded
   counter `for` lowering), L3 (bounded `let`+`while` desugar covering
   ascending and descending counters), L4 (fixed-point unbounded `while`
-  lowering through recursive Pant helpers emitted as `define-fun-rec`), and
-  L5 (loop early-exit lowering) have
-  landed — see `workstreams/ts2pant-general-loop-ssa.md`.
+  lowering through recursive Pant helpers emitted as `define-fun-rec`), L5
+  (loop early-exit lowering), L6 (foreach-as-general-loop unification), and
+  L7 (legacy ripout plus invariants) have landed. The workstream is
+  complete; substantive loop lowering lives in `src/ir1-ssa-counter-loop.ts`,
+  `src/ir1-ssa-fixed-point.ts`, and `src/ir1-ssa-foreach.ts`. See
+  `workstreams/ts2pant-general-loop-ssa.md`.
 
 ### General-loop SSA contract surface (L1)
 
@@ -337,7 +340,7 @@ just ts2pant-precommit                 # mirror what lefthook runs
 
 Tests are split into two suites by their dependency on the pant OCaml binary:
 
-- **`tests/*.test.mts` — unit suite.** Pure translation-logic tests. No pant binary, no dune, runs in a few seconds. Coverage is organised by translation layer: TS-AST recognizers (`translate-body`, `translate-signature`, `translate-types`, `annotations`, `purity`), L1 build (`ir1-build-*`, including `cardinality`, `functor-lift`, `increment`, `nullish`, `parens`, `property`, `state-aware-reads`, `call-purity`), L1 lower (`ir1-lower`, `ir1-printer`), IR1 SSA helpers (`ir1-ssa-scalars`, `ir1-ssa-collections`, `ir1-ssa-loops`, `ir1-ssa-counter-loop`, `ir1-ssa-lower`, `ir1-ssa-propresult-lowering`), IR1 SSA contracts and invariants (`ir1-ssa-contract`, `ir1-ssa-loop-contract`, `ir1-ssa-invariants`, `ir1-ssa-ripout`, `ir1-ssa-printer`), L2 build/lower (`ir-build`, `ir-equivalence`, `emit`), and snapshot/cross-cutting (`constructs`, `m2-musearch-l1`, `l1-plumbing`, `equality-canonicalization`, `name-registry`, `pant-wasm-bundle`, `ast-equal`, `builtins`, `extract`).
+- **`tests/*.test.mts` — unit suite.** Pure translation-logic tests. No pant binary, no dune, runs in a few seconds. Coverage is organised by translation layer: TS-AST recognizers (`translate-body`, `translate-signature`, `translate-types`, `annotations`, `purity`), L1 build (`ir1-build-*`, including `cardinality`, `functor-lift`, `increment`, `nullish`, `parens`, `property`, `state-aware-reads`, `call-purity`), L1 lower (`ir1-lower`, `ir1-printer`), IR1 SSA helpers (`ir1-ssa-scalars`, `ir1-ssa-collections`, `ir1-ssa-counter-loop`, `ir1-ssa-fixed-point`, `ir1-ssa-foreach`, `ir1-ssa-lower`, `ir1-ssa-propresult-lowering`), IR1 SSA contracts and invariants (`ir1-ssa-contract`, `ir1-ssa-loop-contract`, `ir1-ssa-invariants`, `ir1-ssa-ripout`, `ir1-ssa-printer`), L2 build/lower (`ir-build`, `ir-equivalence`, `emit`), and snapshot/cross-cutting (`constructs`, `m2-musearch-l1`, `l1-plumbing`, `equality-canonicalization`, `name-registry`, `pant-wasm-bundle`, `ast-equal`, `builtins`, `extract`).
 - **`tests/integration/*.test.mts` — integration suite.** Each test invokes the `pant` binary (via `assertPantTypeChecks` or `runCheck` from `tests/helpers.mts`): `e2e` (per-fixture end-to-end including `pant --check` SMT verification) and `dogfood` (translates ts2pant's own source with ts2pant).
 
 The split exists for stability, not just performance. `getPantBin()` in `tests/helpers.mts` is **pure** — it never invokes a build. It reads `process.env.PANT_BIN` if set, otherwise checks that `${PROJECT_ROOT}/_build/default/bin/main.exe` exists, and throws with an actionable error otherwise. The build is the responsibility of the workspace-level `just build-pant` recipe (which `just ts2pant-test-integration` depends on). Stale-lock recovery + the `dune build` invocation live in the `build-pant` recipe in the root `justfile`, not in JS — orchestration belongs to the orchestrator.

@@ -2,7 +2,7 @@
 
 ## Vision
 
-Extend IR1 SSA from today's summary-based loop handling (μ-search, foreach
+Extend IR1 SSA from the former summary-based loop handling (μ-search, foreach
 Shape A/B) to a unified treatment of general `for` and `while` loops. Bounded
 loops lower to quantified Pantagruel equations; unbounded `while` lowers to
 fixed-point / recursive rule definitions; `break` and `continue` are
@@ -14,16 +14,15 @@ specialisations of general-loop SSA rather than separate code paths.
 
 The IR1 SSA workstream (`workstreams/ts2pant-ir1-ssa.md`, M1–M7) is complete.
 IR1 SSA is the production mutating-body boundary for scalar property mutation,
-Map/Set semantics, and the three existing supported loop summaries. Loop
-handling today consists of three dedicated paths in
-`tools/ts2pant/src/ir1-ssa-loops.ts`: μ-search, foreach Shape A (quantified
-writes), and foreach Shape B (accumulator folds). The IR1 statement vocabulary
-already admits `for` and `while` shapes (constructed in
-`buildSupportedSsaMutatingBody` in `tools/ts2pant/src/translate-body.ts`), but
-`tools/ts2pant/src/ir1-lower-body.ts` rejects them with a diagnostic. An audit
-of the `IR1Expr → IRExpr → OpaqueExpr` expression pipeline confirmed it
+Map/Set semantics, and supported loop lowering. This workstream is also
+complete: bounded counter loops, bounded while loops, fixed-point while loops,
+loop early exits, and foreach Shape A/B now all lower through the general-loop
+SSA vocabulary. μ-search recognition moved upstream to L1 through
+`buildL1MuSearchCombTyped`; it is no longer a loop-summary lowering path. The
+deleted legacy summary module is recorded here only as historical context. An
+audit of the `IR1Expr → IRExpr → OpaqueExpr` expression pipeline confirmed it
 already carries loop guards, counter steps, and bound expressions without
-restructuring; no expression-path cleanup is a prerequisite.
+restructuring; no expression-path cleanup was a prerequisite.
 
 ## Key Challenges
 
@@ -465,24 +464,27 @@ Summary unification (L6) can target the now-complete general-loop machinery.
 
 ### Milestone 6: loop-summary-unification
 
+**Status**: Landed in `ts2pant-loop-summary-unification`, which collapsed L7
+into L6. See `tools/ts2pant/docs/intermediate-representation.md` section
+`## Loop summary unification (L6+L7)`.
+
 **Definition of Done**:
-The existing μ-search summary lowering in `tools/ts2pant/src/ir1-ssa-loops.ts`
-is recharacterised as a specialisation of the general-loop machinery (bounded,
-with the μ-search ranking metric and a single-equation body shape). foreach
-Shape A and Shape B summaries are similarly recharacterised. The corresponding
-builder paths in `translate-body.ts` route through the unified general-loop
-builder. All prior μ-search and foreach fixtures pass with semantically
-equivalent Pant output. Where output differs byte-for-byte, the change is
-documented in the gameplan and explicitly reviewed; semantic equivalence is
-verified by `pant --check` parity on the old and new output for each affected
-fixture.
+The former foreach Shape A and Shape B summary lowering is recharacterised as
+ordinary general-loop SSA. Both shapes build `IR1SsaLoopHeaderJoin` +
+`IR1SsaLoopBody` records in `tools/ts2pant/src/ir1-ssa-foreach.ts`; Shape A
+uses the degenerate-close discipline and Shape B uses the standard inductive
+loop-back. Foreach bodies carry the iterating-source termination metric
+variant. μ-search is not reintroduced as loop SSA: the production recognizer is
+the upstream L1 `buildL1MuSearchCombTyped` path, so the dead summary lowering
+is deleted. All prior μ-search and foreach fixtures pass; existing foreach Pant
+output remains byte-equivalent and is gated by snapshot tests.
 
 No new TS loop classes become supported or unsupported by this milestone.
 
 **Why this is a safe pause point**:
-One unified loop machinery exists. The prior dedicated summary paths still
-physically exist as thin adapters atop the general machinery, ready to be
-removed in L7. Reverting to the L5 state is a one-patch rollback.
+One unified loop machinery exists and the legacy summary paths are gone in the
+same gameplan. Reverting to the L5 state would be a one-branch rollback rather
+than a piecemeal adapter toggle.
 
 **Operator Actions Before Next Milestone**:
 - Walk the full ts2pant corpus. Confirm zero semantic regressions in
@@ -494,25 +496,32 @@ removed in L7. Reverting to the L5 state is a one-patch rollback.
   rework L6 to preserve semantically equivalent output for that fixture.
 
 **Open Questions** (resolved during `write-gameplan` for this milestone):
-- The exact recharacterisation mapping: μ-search → which general-loop shape;
-  foreach Shape A → which; foreach Shape B → which. Each mapping must be
-  exhibited on at least one existing fixture before the gameplan executes.
-- Whether byte-equivalent output is a hard requirement or whether
-  semantically equivalent output (`pant --check` parity) is sufficient.
+- Recharacterisation mapping: μ-search remains on the upstream L1 typed
+  comprehension path; foreach Shape A lowers through
+  `lowerForeachShapeAAsGeneralLoop`; foreach Shape B lowers through
+  `lowerForeachShapeBAsGeneralLoop`. The mapping is documented in the IR doc's
+  `## Loop summary unification (L6+L7)` section.
+- Byte-equivalent output is a hard requirement for existing foreach fixtures.
+  Snapshot tests enforce the byte-equivalence gate; implementers do not update
+  snapshots to accept drift in this milestone.
 
 **Unlocks**:
-Code removal in L7.
+The L7 code removal and invariant coverage were folded into the same
+gameplan, so there is no intermediate adapter-only state.
 
 ---
 
 ### Milestone 7: legacy-rip-and-invariants
 
+**Status**: Landed in `ts2pant-loop-summary-unification`, collapsed into L6.
+See `tools/ts2pant/docs/intermediate-representation.md` section
+`## Loop summary unification (L6+L7)`.
+
 **Definition of Done**:
-The thin adapters left in place at the end of L6 are removed from
-`tools/ts2pant/src/ir1-ssa-loops.ts`. The file is either deleted entirely or
-retains only general-loop helpers. `tools/ts2pant/AGENTS.md` and
-`workstreams/ts2pant-ir1-ssa.md` are updated to note that μ-search and foreach
-summaries are now general-loop SSA specialisations.
+The thin adapters left in place by the old design are removed. The legacy loop
+summary file and symbols are deleted, and `tools/ts2pant/AGENTS.md` is updated
+to note that foreach is now a general-loop SSA specialisation while μ-search
+stays on the upstream L1 typed-comprehension path.
 
 New invariant tests cover the general-loop machinery:
 
@@ -551,7 +560,9 @@ paths.
 Strictly sequential. The lowering family changes between L3 (bounded) and L4
 (fixed-point), so L4 cannot start without L3's quantification machinery to
 inherit. L5 (break/continue) and L6 (unification) both require the loop
-machinery to be feature-complete before they touch it.
+machinery to be feature-complete before they touch it. In execution, L6 and L7
+landed in one `ts2pant-loop-summary-unification` gameplan after L5, so the
+dependency edge remained conceptual but no adapter-only pause point shipped.
 
 ## Open Questions
 
@@ -572,5 +583,5 @@ their respective `write-gameplan` invocations. See each milestone's
 | break/continue is in scope, not deferred | Real TS code uses early exits routinely; deferring substantially limits the workstream's value. The continuation-merge machinery from the prior workstream's M2 provides the foundation. |
 | No standalone design-doc milestone | The workstream itself is the design document. Design decisions that gate a specific milestone live in that milestone's "Open Questions" subsection and are resolved during `write-gameplan`'s open-question dialogue. Worked-example `.pant` files are test fixtures introduced by their owning milestone, not standalone artifacts. |
 | Sequential, not parallel, milestone graph | Each milestone validates or extends the loop machinery's lowering surface. Parallel work risks landing inconsistent design assumptions in different milestones. |
-| Carry forward IR1 SSA decisions | Location SSA (not local-variable SSA), opaque versions, rule-oriented frames, semantic parity rather than byte-for-byte output parity — all inherit from `workstreams/ts2pant-ir1-ssa.md` and are not relitigated. |
+| Carry forward IR1 SSA decisions | Location SSA (not local-variable SSA), opaque versions, and rule-oriented frames inherit from `workstreams/ts2pant-ir1-ssa.md` and are not relitigated. Semantic parity remains the default compatibility bar, but L6+L7 made byte-equivalent output a hard gate for existing foreach fixtures because the recharacterisation was intended to be internal-only. |
 | No expression-path cleanup as a prerequisite | The audit confirmed `IR1Expr → IRExpr → OpaqueExpr` accepts loop guards, counter steps, and bound expressions without restructuring. Loop work pulls on the expression path as needed. |
