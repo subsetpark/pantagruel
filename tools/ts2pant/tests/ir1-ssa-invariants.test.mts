@@ -53,9 +53,6 @@ import {
 } from "../src/ir1.js";
 import { lowerCollectionSsaToResult } from "../src/ir1-ssa-collections.js";
 import { lowerScalarSsaToProps } from "../src/ir1-ssa-scalars.js";
-import {
-  lowerForeachShapeBSummaries,
-} from "../src/ir1-ssa-loops.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import { IntStrategy } from "../src/translate-types.js";
 import { buildDocumentFromSourceFile } from "./helpers.mts";
@@ -788,7 +785,6 @@ before(async () => {
 describe("ir1-ssa-invariants", () => {
   void representativePrograms;
   void walkSsaProgram;
-  void lowerForeachShapeBSummaries;
 
   it(
     "each write, join, and summary produces a fresh SSA version at its location",

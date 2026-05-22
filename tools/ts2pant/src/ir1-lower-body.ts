@@ -29,8 +29,8 @@ import { lowerFixedPointLoopL1Body } from "./ir1-ssa-fixed-point.js";
 import {
   type ForeachAsGeneralLoopResult,
   lowerForeachShapeAAsGeneralLoop,
+  lowerForeachShapeBAsGeneralLoop,
 } from "./ir1-ssa-foreach.js";
-import { lowerForeachShapeBSummaries } from "./ir1-ssa-loops.js";
 import {
   appendFramesForUnmodifiedRules,
   collectionSsaBodyLowerResult,
@@ -67,12 +67,7 @@ export function adaptLoopSummaryLowerResult(
   result: ForeachAsGeneralLoopResult,
 ): IR1SsaBodyLowerResult;
 export function adaptLoopSummaryLowerResult(
-  result: ReturnType<typeof lowerForeachShapeBSummaries>,
-): IR1SsaBodyLowerResult;
-export function adaptLoopSummaryLowerResult(
-  result:
-    | ForeachAsGeneralLoopResult
-    | ReturnType<typeof lowerForeachShapeBSummaries>,
+  result: ForeachAsGeneralLoopResult,
 ): IR1SsaBodyLowerResult {
   return loopSsaBodyLowerResult(result);
 }
@@ -308,7 +303,6 @@ function lowerForeachL1BodyToSsaResult(
   stmt: Extract<IR1Stmt, { kind: "foreach" }>,
   options: SsaBodyLowerOptions,
 ): IR1SsaBodyLowerResult {
-  const arrExpr = options.applyConst(lowerExpr(lowerL1Expr(stmt.source)));
   const results: IR1SsaBodyLowerResult[] = [];
 
   if (stmt.body !== null) {
@@ -330,9 +324,9 @@ function lowerForeachL1BodyToSsaResult(
   if (stmt.foldLeaves.length > 0) {
     results.push(
       adaptLoopSummaryLowerResult(
-        lowerForeachShapeBSummaries({
+        lowerForeachShapeBAsGeneralLoop({
           binder: stmt.binder,
-          source: arrExpr,
+          source: stmt.source,
           foldLeaves: stmt.foldLeaves,
           lowerExpr: (expr) => options.applyConst(lowerExpr(lowerL1Expr(expr))),
           priorAccumulatorValues: new Map(),

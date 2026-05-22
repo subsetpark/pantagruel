@@ -26,8 +26,10 @@ import {
   ir1SsaBodyLowerSuccess,
   ir1SsaBodyLowerUnsupported,
 } from "../src/ir1-ssa-lower.js";
-import { lowerForeachShapeAAsGeneralLoop } from "../src/ir1-ssa-foreach.js";
-import { lowerForeachShapeBSummaries } from "../src/ir1-ssa-loops.js";
+import {
+  lowerForeachShapeAAsGeneralLoop,
+  lowerForeachShapeBAsGeneralLoop,
+} from "../src/ir1-ssa-foreach.js";
 import { lowerScalarSsaToProps } from "../src/ir1-ssa-scalars.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 
@@ -293,7 +295,6 @@ describe("ir1-ssa-lower", () => {
         modifiedRules: [],
         framedRules: ["Account_balance"],
       },
-      summary: null,
       propositions: [],
       modifiedRules: [],
       diagnostics: [
@@ -326,9 +327,9 @@ describe("ir1-ssa-lower", () => {
       }),
     );
     const shapeB = adaptLoopSummaryLowerResult(
-      lowerForeachShapeBSummaries({
+      lowerForeachShapeBAsGeneralLoop({
         binder: "item0",
-        source: ast.var("items"),
+        source: ir1Var("items"),
         foldLeaves: [
           {
             target: ir1Var("account"),
@@ -358,10 +359,12 @@ describe("ir1-ssa-lower", () => {
       result.programs.flatMap((program) =>
         program.loopSummaries.map((summary) => summary.shape),
       ),
-      ["foreach-shape-b"],
+      [],
     );
     assert.equal(result.programs[0]?.loopHeaderJoins.length, 1);
     assert.equal(result.programs[0]?.loopBodies.length, 1);
+    assert.equal(shapeB.programs[0]?.loopHeaderJoins.length, 1);
+    assert.equal(shapeB.programs[0]?.loopBodies.length, 1);
 
     const shapeAProp = result.propositions[0];
     assert.equal(shapeAProp?.kind, "equation");
