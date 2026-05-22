@@ -196,6 +196,22 @@ export function formatIR1SsaProgram(program: IR1SsaProgram): string {
     currentVersions.set(locationKey(summary.location), summary.summaryVersion);
   }
 
+  for (const body of program.loopBodies) {
+    const metric =
+      body.terminationMetric === null
+        ? "none"
+        : body.terminationMetric.kind === "ssa-termination-metric"
+          ? `remaining ${formatIR1Expr(body.terminationMetric.expr)}${
+              body.terminationMetric.lowerBound === null
+                ? ""
+                : ` >= ${formatIR1Expr(body.terminationMetric.lowerBound)}`
+            }`
+          : `iterating-source ${formatIR1Expr(body.terminationMetric.source)}`;
+    lines.push(
+      `> loop-body: headers = ${body.headerJoins.length}; writes = ${body.writes.length}; metric = ${metric}`,
+    );
+  }
+
   return lines.join("\n");
 }
 

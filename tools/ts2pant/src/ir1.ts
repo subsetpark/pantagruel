@@ -550,11 +550,16 @@ export interface IR1SsaLoopHeaderJoin {
   closed: boolean;
 }
 
-export interface IR1SsaTerminationMetric {
-  readonly kind: "ssa-termination-metric";
-  readonly expr: IR1Expr;
-  readonly lowerBound: IR1Expr | null;
-}
+export type IR1SsaTerminationMetric =
+  | {
+      readonly kind: "ssa-termination-metric";
+      readonly expr: IR1Expr;
+      readonly lowerBound: IR1Expr | null;
+    }
+  | {
+      readonly kind: "ssa-iterating-source-metric";
+      readonly source: IR1Expr;
+    };
 
 export interface IR1SsaBreakHandle {
   readonly kind: "ssa-break-handle";
@@ -774,6 +779,13 @@ export const ir1SsaTerminationMetric = (
   kind: "ssa-termination-metric",
   expr,
   lowerBound,
+});
+
+export const ir1SsaIteratingSourceMetric = (
+  source: IR1Expr,
+): IR1SsaTerminationMetric => ({
+  kind: "ssa-iterating-source-metric",
+  source,
 });
 
 export const ir1SsaBreakHandle = (
