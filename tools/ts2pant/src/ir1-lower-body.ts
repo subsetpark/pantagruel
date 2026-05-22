@@ -29,7 +29,6 @@ import { lowerFixedPointLoopL1Body } from "./ir1-ssa-fixed-point.js";
 import {
   lowerForeachShapeASummaries,
   lowerForeachShapeBSummaries,
-  type MuSearchSummaryLowerResult,
 } from "./ir1-ssa-loops.js";
 import {
   appendFramesForUnmodifiedRules,
@@ -70,13 +69,9 @@ export function adaptLoopSummaryLowerResult(
   result: ReturnType<typeof lowerForeachShapeBSummaries>,
 ): IR1SsaBodyLowerResult;
 export function adaptLoopSummaryLowerResult(
-  result: MuSearchSummaryLowerResult,
-): IR1SsaBodyLowerResult;
-export function adaptLoopSummaryLowerResult(
   result:
     | ReturnType<typeof lowerForeachShapeASummaries>
-    | ReturnType<typeof lowerForeachShapeBSummaries>
-    | MuSearchSummaryLowerResult,
+    | ReturnType<typeof lowerForeachShapeBSummaries>,
 ): IR1SsaBodyLowerResult {
   return loopSsaBodyLowerResult(result);
 }

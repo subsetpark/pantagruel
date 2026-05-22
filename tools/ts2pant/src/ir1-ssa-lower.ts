@@ -7,7 +7,6 @@ import type {
   ForeachShapeASummaryResult,
   ForeachShapeBSummaryResult,
   ForeachSummaryLowerResult,
-  MuSearchSummaryLowerResult,
 } from "./ir1-ssa-loops.js";
 import type {
   ScalarSsaFinalPropertyEntry,
@@ -239,8 +238,7 @@ export function loopSsaBodyLowerResult(
   result:
     | ForeachSummaryLowerResult
     | ForeachShapeASummaryResult
-    | ForeachShapeBSummaryResult
-    | MuSearchSummaryLowerResult,
+    | ForeachShapeBSummaryResult,
 ): IR1SsaBodyLowerResult {
   return ir1SsaBodyLowerResult({
     propositions: "propositions" in result ? result.propositions : [],

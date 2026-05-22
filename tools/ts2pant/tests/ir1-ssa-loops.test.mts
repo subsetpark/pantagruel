@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { before, describe, it } from "node:test";
 
 import { emitDocument } from "../src/emit.js";
 import { createSourceFile } from "../src/extract.js";
-import { lowerExpr } from "../src/ir-emit.js";
 import {
   ir1Assign,
   ir1Binop,
@@ -15,12 +15,10 @@ import {
   ir1SsaRuleOfLocation,
   ir1Var,
 } from "../src/ir1.js";
-import { lowerL1Expr } from "../src/ir1-lower.js";
 import {
   buildLoopSsaProgram,
   lowerForeachShapeASummaries,
   lowerForeachSummary,
-  lowerMuSearchSummary,
 } from "../src/ir1-ssa-loops.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import { buildDocumentFromSourceFile } from "./helpers.mts";
@@ -44,60 +42,6 @@ describe("ir1-ssa-loops", () => {
   // PENDING Patch 3: route canonical mu-search lowering through loop summaries.
   // PENDING Patch 4: route foreach Shape A lowering through loop summaries.
   // PENDING Patch 5: route foreach Shape B lowering through loop summaries.
-
-  it("records canonical mu-search as a loop summary", () => {
-    const location = ir1SsaPropertyLocation(
-      "Name_firstUnusedSuffix",
-      ir1Var("name"),
-      "firstUnusedSuffix",
-    );
-
-    const result = buildLoopSsaProgram({
-      kind: "mu-search",
-      location,
-    });
-
-    assert.deepEqual(result.diagnostics, []);
-    assert.equal(result.program.loopSummaries.length, 1);
-    assert.deepEqual(result.program.modifiedRules, [
-      ir1SsaRuleOfLocation(location),
-    ]);
-
-    const [summary] = result.program.loopSummaries;
-    assert.equal(summary!.shape, "mu-search");
-    assert.equal(summary!.location, location);
-    assert.equal(summary!.summaryVersion.origin, "loop-summary");
-    assert.equal(summary!.summaryVersion.location, location);
-  });
-
-  it("lowers mu-search summaries to the existing min-over-each shape", () => {
-    const location = ir1SsaPropertyLocation(
-      "Name_firstUnusedSuffix",
-      ir1Var("name"),
-      "firstUnusedSuffix",
-    );
-
-    const result = lowerMuSearchSummary({
-      location,
-      counterType: "Int",
-      counterPantName: "i",
-      binder: "j1",
-      initExpr: lowerExpr(lowerL1Expr(ir1LitNat(1))),
-      predicateExpr: lowerExpr(
-        lowerL1Expr(ir1Binop("in", ir1Var("i"), ir1Var("used"))),
-      ),
-    });
-
-    assert.deepEqual(result.diagnostics, []);
-    assert.equal(result.summary?.shape, "mu-search");
-    assert.equal(result.summary?.location, location);
-    assert.equal(result.summary?.summaryVersion.location, location);
-    assert.ok(result.loweredExpr !== null);
-    assert.equal(
-      getAst().strExpr(result.loweredExpr!),
-      "min over each j1: Int, j1 >= 1, ~(j1 in used) | j1",
-    );
-  });
 
   it("records foreach Shape A quantified writes as loop summaries", () => {
     const location = ir1SsaPropertyLocation(
@@ -362,7 +306,13 @@ describe("ir1-ssa-loops", () => {
     },
   );
 
-  it.skip("μ-search summary symbols are deleted from ir1-ssa-loops.ts", () => {
-    // PENDING Patch 5: verify the dead μ-search summary path is gone.
+  it("μ-search summary symbols are deleted from ir1-ssa-loops.ts", () => {
+    const source = readFileSync(
+      resolve(import.meta.dirname, "../src/ir1-ssa-loops.ts"),
+      "utf8",
+    );
+
+    assert.doesNotMatch(source, /lowerMuSearchSummary/u);
+    assert.doesNotMatch(source, /MuSearchSummaryInput/u);
   });
 });

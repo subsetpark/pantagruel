@@ -24,11 +24,6 @@ interface LoopSummaryInputBase {
   location: IR1SsaLocation;
 }
 
-export interface MuSearchSummaryInput extends LoopSummaryInputBase {
-  kind: "mu-search";
-  loweredExpr?: OpaqueExpr;
-}
-
 export interface ForeachShapeASummaryInput extends LoopSummaryInputBase {
   kind: "foreach-shape-a";
   propositions?: readonly PropResult[];
@@ -45,7 +40,6 @@ export interface UnsupportedLoopSummaryInput {
 }
 
 export type IR1LoopSsaInput =
-  | MuSearchSummaryInput
   | ForeachShapeASummaryInput
   | ForeachShapeBSummaryInput
   | UnsupportedLoopSummaryInput;
@@ -99,31 +93,6 @@ export interface ForeachShapeBSummaryResult {
   accumulatorKeys: string[];
 }
 
-export type MuSearchCounterType = "Int";
-
-/**
- * Preconditions:
- * - caller already validated canonical μ-search form
- * - `binder` is fresh with respect to `predicateExpr`
- * - `counterType` is a discrete well-ordered numeric type
- */
-export interface MuSearchSummaryLowerOptions extends LoopSsaBuildOptions {
-  location: IR1SsaLocation;
-  counterType: MuSearchCounterType;
-  counterPantName: string;
-  binder: string;
-  initExpr: OpaqueExpr;
-  predicateExpr: OpaqueExpr;
-}
-
-export interface MuSearchSummaryLowerResult {
-  program: IR1SsaProgram;
-  summary: IR1SsaLoopSummary | null;
-  loweredExpr: OpaqueExpr | null;
-  modifiedRules: IR1SsaRuleName[];
-  diagnostics: UnsupportedDiagnostic[];
-}
-
 export interface LoopSsaBuildResult {
   program: IR1SsaProgram;
   loweredExpr: OpaqueExpr[];
@@ -155,13 +124,6 @@ export function buildLoopSsaProgram(
     const modifiedRule = ir1SsaRuleOfLocation(input.location);
     modifiedRules.add(modifiedRule);
     declaredRules.add(modifiedRule);
-
-    if (input.kind === "mu-search") {
-      if (input.loweredExpr !== undefined) {
-        loweredExpr.push(input.loweredExpr);
-      }
-      continue;
-    }
 
     if (input.propositions !== undefined) {
       propositions.push(...input.propositions);
@@ -574,42 +536,4 @@ export function foreachShapeBAccumulatorKey(
   objExpr: OpaqueExpr,
 ): string {
   return `${prop}::${getAst().strExpr(objExpr)}`;
-}
-
-export function lowerMuSearchSummary(
-  options: MuSearchSummaryLowerOptions,
-): MuSearchSummaryLowerResult {
-  const result = buildLoopSsaProgram(
-    {
-      kind: "mu-search",
-      location: options.location,
-    },
-    options,
-  );
-
-  const ast = getAst();
-  const predicateOpaque = ast.substituteBinder(
-    options.predicateExpr,
-    options.counterPantName,
-    ast.var(options.binder),
-  );
-  const loweredExpr = ast.eachComb(
-    [ast.param(options.binder, ast.tName(options.counterType))],
-    [
-      ast.gExpr(
-        ast.binop(ast.opGe(), ast.var(options.binder), options.initExpr),
-      ),
-      ast.gExpr(ast.unop(ast.opNot(), predicateOpaque)),
-    ],
-    ast.combMin(),
-    ast.var(options.binder),
-  );
-
-  return {
-    program: result.program,
-    summary: result.program.loopSummaries[0] ?? null,
-    loweredExpr,
-    modifiedRules: result.program.modifiedRules,
-    diagnostics: result.diagnostics,
-  };
 }
