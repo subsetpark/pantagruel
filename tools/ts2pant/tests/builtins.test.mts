@@ -123,6 +123,17 @@ describe("builtins dispatch", () => {
     });
   });
 
+  it("Math.min maps to JS_MATH::min-of", () => {
+    const spec = lookupFromSource(`
+      function f(a: number, b: number) { return Math.min(a, b); }
+    `);
+    assert.deepEqual(spec, {
+      rule: "JS_MATH::min-of",
+      mod: "JS_MATH",
+      arity: 2,
+    });
+  });
+
   it("Math.abs maps to JS_MATH::abs", () => {
     const spec = lookupFromSource(`
       function f(x: number) { return Math.abs(x); }
@@ -331,6 +342,7 @@ describe("loadBuiltinDepModule", () => {
     const text = loadBuiltinDepModule("JS_MATH");
     assert.match(text, /^module JS_MATH\./m);
     assert.match(text, /max-of a: Int, b: Int => Int\./);
+    assert.match(text, /min-of a: Int, b: Int => Int\./);
     assert.match(text, /abs x: Int => Int\./);
   });
 

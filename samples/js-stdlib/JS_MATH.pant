@@ -15,11 +15,15 @@ module JS_MATH.
 > qualified consumer-side reference is `JS_MATH::max-of`.
 
 max-of a: Int, b: Int => Int.
+min-of a: Int, b: Int => Int.
 abs x: Int => Int.
 
 ---
 > Commutativity of max — Math.max(a, b) === Math.max(b, a) for finite Int.
 all a: Int, b: Int | max-of a b = max-of b a.
+
+> Commutativity of min — Math.min(a, b) === Math.min(b, a) for finite Int.
+all a: Int, b: Int | min-of a b = min-of b a.
 
 > Idempotence of abs — Math.abs(Math.abs(x)) === Math.abs(x).
 all x: Int | abs (abs x) = abs x.
