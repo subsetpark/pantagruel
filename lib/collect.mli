@@ -36,3 +36,12 @@ val resolve_type :
 val collect_all :
   base_env:Env.t -> Ast.document -> (Env.t, collect_error) result
 (** Collect all declarations from a document *)
+
+val recognize_split_form_bodies : Env.t -> Ast.document -> Env.t * Ast.document
+(** Recognize and consume chapter-body equations that define rules declared in
+    the same chapter's head. Each matched equation `<rule-name> <param-names> =
+    <body>.` is attached to its declaration via [Env.attach_rule_body] and
+    removed from the chapter body, so the SMT layer routes it through the same
+    [define-fun-rec] / quantified axiom dispatch as inline rule-body
+    declarations. Equations that do not match a declaration (or whose arguments
+    do not exactly mirror the declared parameter names) are left in place. *)

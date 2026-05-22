@@ -188,21 +188,27 @@ let expr_applies_name target e =
   in
   go [] e
 
-(** Add a rule to the term namespace, keyed by [(name, arity)]. *)
-let add_rule ?body name ty loc ~chapter env =
+(** Add a rule to the term namespace, keyed by [(name, arity)]. Rule bodies are
+    attached separately, after Pass 1, by [Collect.recognize_split_form_bodies]
+    via [attach_rule_body] — the parser no longer accepts an inline body in the
+    declaration. *)
+let add_rule name ty loc ~chapter env =
   let entry =
     { kind = KRule ty; loc; module_origin = None; decl_chapter = chapter }
   in
   let arity = arity_of_ty ty in
-  let rule_bodies =
-    match body with
-    | None -> env.rule_bodies
-    | Some (decl, expr) ->
-        TermMap.add (name, arity)
-          (decl, expr, expr_applies_name name expr)
-          env.rule_bodies
-  in
-  { env with terms = TermMap.add (name, arity) entry env.terms; rule_bodies }
+  { env with terms = TermMap.add (name, arity) entry env.terms }
+
+(** Attach a body to an already-declared rule. The rule must have been
+    registered via [add_rule] (without a body) earlier in the same pass; this
+    function is the counterpart for split-form definitions where the declaration
+    sits in the chapter head and the equation in the chapter body. The
+    recursive-self-reference flag is computed identically to [add_rule]'s
+    inline-body path so downstream SMT emission cannot distinguish the two
+    forms. *)
+let attach_rule_body name arity decl body env =
+  let entry = (decl, body, expr_applies_name name body) in
+  { env with rule_bodies = TermMap.add (name, arity) entry env.rule_bodies }
 
 (** Add a closure rule to the term namespace, keyed by [(name, arity)]. *)
 let add_closure name ty target loc ~chapter env =

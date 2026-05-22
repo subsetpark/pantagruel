@@ -607,24 +607,7 @@ let check_rule_guards ctx (decl : declaration located) =
     Ok ()
   in
   match decl.value with
-  | DeclRule { params; guards; return_type; body; _ } -> (
-      let* () = check_guards params guards in
-      match body with
-      | None -> Ok ()
-      | Some body ->
-          let* param_bindings =
-            map_result (resolve_param_type ctx.env decl.loc) params
-          in
-          let env' = Env.with_vars param_bindings ctx.env in
-          let ctx' = { env = env'; loc = decl.loc } in
-          let* expected =
-            resolve_param_type ctx.env decl.loc
-              { param_name = Lower "_return"; param_type = return_type }
-          in
-          let _, expected_ty = expected in
-          let* actual_ty = infer_type ctx' body in
-          if is_subtype actual_ty expected_ty then Ok ()
-          else Error (TypeMismatch (expected_ty, actual_ty, decl.loc)))
+  | DeclRule { params; guards; _ } -> check_guards params guards
   | DeclAction { params; guards; _ } -> check_guards params guards
   | DeclClosure _ -> Ok () (* Closures have no guards *)
   | DeclDomain _ | DeclAlias _ -> Ok ()

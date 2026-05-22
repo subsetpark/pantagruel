@@ -247,7 +247,7 @@ let decl_to_json env (decl_loc : declaration located) =
             ("type", type_expr_to_json te);
           ]
         @ match resolved with Some t -> [ ("resolved", t) ] | None -> [])
-  | DeclRule { name; params; guards; return_type; body; contexts } ->
+  | DeclRule { name; params; guards; return_type; contexts } ->
       let name = Ast.lower_name name in
       (* Look up resolved type for the specific overload whose arity matches
          this declaration's param count. *)
@@ -278,9 +278,6 @@ let decl_to_json env (decl_loc : declaration located) =
                );
              ]
            else [])
-        @ (match body with
-          | Some e -> [ ("body", expr_to_json e) ]
-          | None -> [])
         @ match resolved with Some t -> [ ("resolved", t) ] | None -> [])
   | DeclAction { label; params; guards; contexts } ->
       let param_tys =

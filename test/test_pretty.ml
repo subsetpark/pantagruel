@@ -181,7 +181,6 @@ let test_decl_rule () =
               [ { param_name = Lower "x"; param_type = TName (Upper "Nat") } ];
             guards = [];
             return_type = TName (Upper "Bool");
-            body = None;
             contexts = [];
           }))
 
@@ -195,7 +194,6 @@ let test_decl_rule_with_guards () =
               [ { param_name = Lower "x"; param_type = TName (Upper "Nat") } ];
             guards = [ GExpr (EBinop (OpGt, EVar (Lower "x"), ELitNat 0)) ];
             return_type = TName (Upper "Bool");
-            body = None;
             contexts = [];
           }))
 
@@ -209,7 +207,6 @@ let test_decl_rule_with_context () =
               [ { param_name = Lower "x"; param_type = TName (Upper "Nat") } ];
             guards = [];
             return_type = TName (Upper "Bool");
-            body = None;
             contexts = [ Upper "Ctx" ];
           }))
 

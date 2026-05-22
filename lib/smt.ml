@@ -1172,17 +1172,10 @@ let translate_proposition config env (e : expr) =
             in
             Printf.sprintf "(=> %s %s)" guard_conj smt_expr)
 
-let is_rule_recursive (decl : Ast.declaration) : bool =
+let emit_rule_recursive config (env : Env.t) (decl : Ast.declaration)
+    (body : Ast.expr) : string =
   match decl with
-  | DeclRule { name = Lower name; body = Some body; _ } ->
-      Smt_expr.expr_applies_name name body
-  | DeclRule { body = None; _ }
-  | DeclDomain _ | DeclAlias _ | DeclAction _ | DeclClosure _ ->
-      false
-
-let emit_rule_recursive config (env : Env.t) (decl : Ast.declaration) : string =
-  match decl with
-  | DeclRule { name = Lower name; params; return_type; body = Some body; _ } ->
+  | DeclRule { name = Lower name; params; return_type; _ } ->
       let args =
         List.map
           (fun (p : Ast.param) ->
@@ -1223,9 +1216,8 @@ let emit_rule_recursive config (env : Env.t) (decl : Ast.declaration) : string =
       Printf.sprintf "(define-fun-rec %s (%s) %s %s)"
         (smt_rule_name env name (List.length params))
         (String.concat " " args) ret body_smt
-  | DeclRule { body = None; _ }
   | DeclDomain _ | DeclAlias _ | DeclAction _ | DeclClosure _ ->
-      invalid_arg "emit_rule_recursive: expected a rule declaration with a body"
+      invalid_arg "emit_rule_recursive: expected a rule declaration"
 
 let emit_rule_axiom config env (decl : Ast.declaration) body : string =
   match decl with
@@ -1280,7 +1272,7 @@ let emit_rule_definitions config env =
   Env.fold_rule_bodies
     (fun _name _arity (decl, body, recursive) acc ->
       let line =
-        if recursive then emit_rule_recursive config env decl
+        if recursive then emit_rule_recursive config env decl body
         else emit_rule_axiom config env decl body
       in
       line :: acc)

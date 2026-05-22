@@ -120,18 +120,6 @@ declaration:
         params;
         guards;
         return_type = ret;
-        body = None;
-        contexts = List.map (fun c -> Upper c) ctxs;
-      }) }
-  | LBRACE ctxs=separated_nonempty_list(COMMA, UPPER_IDENT) RBRACE
-    name=LOWER_IDENT pg=rule_params_guards DARROW ret=type_expr EQ body=expr DOT
-    { let (params, guards) = pg in
-      located_with_doc $startpos $endpos (DeclRule {
-        name = Lower name;
-        params;
-        guards;
-        return_type = ret;
-        body = Some body;
         contexts = List.map (fun c -> Upper c) ctxs;
       }) }
   | name=LOWER_IDENT pg=rule_params_guards DARROW ret=type_expr DOT
@@ -141,17 +129,6 @@ declaration:
         params;
         guards;
         return_type = ret;
-        body = None;
-        contexts = [];
-      }) }
-  | name=LOWER_IDENT pg=rule_params_guards DARROW ret=type_expr EQ body=expr DOT
-    { let (params, guards) = pg in
-      located_with_doc $startpos $endpos (DeclRule {
-        name = Lower name;
-        params;
-        guards;
-        return_type = ret;
-        body = Some body;
         contexts = [];
       }) }
   | name=LOWER_IDENT pg=rule_params_guards DARROW ret=type_expr EQ CLOSURE target=LOWER_IDENT DOT

@@ -196,38 +196,76 @@ let test_function_declarations () =
   check bool "has balance_prime decl" true
     (contains decls "(declare-fun balance_prime (Account) Int)")
 
-let test_is_rule_recursive_detects_self_reference () =
-  let _env, doc =
+(* Recursion is detected at [Env.attach_rule_body] time by scanning the
+   equation's RHS for references to the rule's own name. The flag rides
+   in the [rule_bodies] triple and drives the [define-fun-rec] vs.
+   [(assert (forall ...))] dispatch in [emit_rule_definitions]. *)
+let lookup_recursive env name arity =
+  match Env.lookup_rule_body_arity name arity env with
+  | Some (_decl, _body, recursive) -> Some recursive
+  | None -> None
+
+let test_split_form_recursive_self_reference () =
+  let env, doc =
     parse_and_collect
       "module Test.\n\
-       loop x: Int => Int = cond x > 0 => loop (x - 1), true => x.\n\
+       loop x: Int => Int.\n\
        ---\n\
-       loop 0 = 0.\n"
+       loop x = cond x > 0 => loop (x - 1), true => x.\n"
   in
-  match (List.hd doc.chapters).head with
-  | decl :: _ ->
-      check bool "recursive rule detected" true
-        (Smt.is_rule_recursive decl.value)
-  | [] -> fail "expected rule declaration"
+  let env, _doc = Collect.recognize_split_form_bodies env doc in
+  match lookup_recursive env "loop" 1 with
+  | Some r -> check bool "recursive rule detected" true r
+  | None -> fail "expected rule body in env"
 
-let test_is_rule_recursive_detects_nullary_self_reference () =
-  let _env, doc =
-    parse_and_collect "module Test.\nloop => Bool = loop.\n---\nloop.\n"
+let test_split_form_nullary_self_reference () =
+  let env, doc =
+    parse_and_collect "module Test.\nloop => Bool.\n---\nloop = loop.\n"
   in
-  match (List.hd doc.chapters).head with
-  | decl :: _ ->
-      check bool "nullary recursive rule detected" true
-        (Smt.is_rule_recursive decl.value)
-  | [] -> fail "expected nullary rule declaration"
+  let env, _doc = Collect.recognize_split_form_bodies env doc in
+  match lookup_recursive env "loop" 0 with
+  | Some r -> check bool "nullary recursive rule detected" true r
+  | None -> fail "expected nullary rule body in env"
+
+let test_duplicate_split_form_equation_kept_in_body () =
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       next x: Int => Int.\n\
+       ---\n\
+       next x = x + 1.\n\
+       next x = x + 2.\n"
+  in
+  let env, doc = Collect.recognize_split_form_bodies env doc in
+  (match[@warning "-4"] Env.lookup_rule_body_arity "next" 1 env with
+  | Some (_decl, EBinop (OpAdd, EVar (Lower "x"), ELitNat 1), _recursive) -> ()
+  | Some (_decl, body, _recursive) ->
+      fail
+        (Printf.sprintf "expected attached x + 1 body, got %s"
+           (Ast.show_expr body))
+  | None -> fail "expected first rule body in env");
+  let chapter = List.hd doc.chapters in
+  check int "duplicate equation remains in body" 1 (List.length chapter.body);
+  match[@warning "-4"] (List.hd chapter.body).value with
+  | EBinop
+      ( OpEq,
+        EApp (EVar (Lower "next"), [ EVar (Lower "x") ]),
+        EBinop (OpAdd, EVar (Lower "x"), ELitNat 2) ) ->
+      ()
+  | prop ->
+      fail
+        (Printf.sprintf "expected retained x + 2 equation, got %s"
+           (Ast.show_expr prop))
 
 let test_recursive_rule_emits_define_fun_rec () =
-  let env, _doc =
+  let env, doc =
     parse_and_collect
       "module Test.\n\
-       loop x: Int => Int = cond x > 0 => loop (x - 1), true => x.\n\
+       loop x: Int => Int.\n\
        ---\n\
-       loop 0 = 0.\n"
+       loop x = cond x > 0 => loop (x - 1), true => x.\n"
   in
+  let env, _doc = Collect.recognize_split_form_bodies env doc in
   let smt = Smt.generate_preamble_with_rule_bodies config env in
   check bool "has define-fun-rec" true
     (contains smt "(define-fun-rec loop ((x Int)) Int");
@@ -242,13 +280,12 @@ let test_recursive_rule_emits_define_fun_rec () =
 let test_non_recursive_rule_emits_existing_shape () =
   let env, doc =
     parse_and_collect
-      "module Test.\nnext x: Int => Int = x + 1.\n---\nnext 0 = 1.\n"
+      "module Test.\nnext x: Int => Int.\n---\nnext x = x + 1.\n"
   in
-  (match (List.hd doc.chapters).head with
-  | decl :: _ ->
-      check bool "non-recursive rule not detected" false
-        (Smt.is_rule_recursive decl.value)
-  | [] -> fail "expected rule declaration");
+  let env, _doc = Collect.recognize_split_form_bodies env doc in
+  (match lookup_recursive env "next" 1 with
+  | Some r -> check bool "non-recursive rule not detected" false r
+  | None -> fail "expected rule body in env");
   let smt = Smt.generate_preamble_with_rule_bodies config env in
   check bool "has declare-fun" true
     (contains smt "(declare-fun next (Int) Int)");
@@ -1358,10 +1395,13 @@ let integration_tests =
   [
     test_case "domain preamble" `Quick test_preamble_domains_simple;
     test_case "function declarations" `Quick test_function_declarations;
-    test_case "is_rule_recursive detects self-referential rule body" `Quick
-      test_is_rule_recursive_detects_self_reference;
-    test_case "is_rule_recursive detects nullary self-referential rule body"
-      `Quick test_is_rule_recursive_detects_nullary_self_reference;
+    test_case "split-form recursive rule detected at attach_rule_body time"
+      `Quick test_split_form_recursive_self_reference;
+    test_case
+      "split-form nullary recursive rule detected at attach_rule_body time"
+      `Quick test_split_form_nullary_self_reference;
+    test_case "duplicate split-form equation remains in chapter body" `Quick
+      test_duplicate_split_form_equation_kept_in_body;
     test_case
       "recursive rule emits define-fun-rec form with body and skips \
        declare-fun line"

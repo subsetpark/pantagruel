@@ -446,7 +446,6 @@ type declaration =
       params : param list;
       guards : guard list;
       return_type : type_expr;
-      body : expr option;
       contexts : upper_ident list;
           (** Context footprint: "{Accounts} balance ..." *)
     }
@@ -470,15 +469,11 @@ let pp_declaration fmt = function
   | DeclDomain (Upper n) -> Format.fprintf fmt "DeclDomain (Upper %S)" n
   | DeclAlias (Upper n, t) ->
       Format.fprintf fmt "DeclAlias (Upper %S, %a)" n pp_type_expr t
-  | DeclRule { name = Lower n; params; guards; return_type; body; contexts } ->
+  | DeclRule { name = Lower n; params; guards; return_type; contexts } ->
       Format.fprintf fmt
         "DeclRule {@[name = Lower %S;@ params = %a;@ guards = %a;@ return_type \
-         = %a;@ body = %a;@ contexts = [@[%a@]]@]}"
+         = %a;@ contexts = [@[%a@]]@]}"
         n pp_params params pp_guards guards pp_type_expr return_type
-        (fun fmt -> function
-          | None -> Format.fprintf fmt "None"
-          | Some e -> Format.fprintf fmt "Some (%a)" pp_expr e)
-        body
         (Format.pp_print_list
            ~pp_sep:(fun fmt () -> Format.fprintf fmt ";@ ")
            (fun fmt (Upper u) -> Format.fprintf fmt "Upper %S" u))
@@ -506,27 +501,13 @@ let equal_declaration (d1 : declaration) (d2 : declaration) : bool =
   | DeclAlias (a, t1), DeclAlias (b, t2) ->
       equal_upper_ident a b && equal_type_expr t1 t2
   | ( DeclRule
-        {
-          name = n1;
-          params = p1;
-          guards = g1;
-          return_type = r1;
-          body = b1;
-          contexts = c1;
-        },
+        { name = n1; params = p1; guards = g1; return_type = r1; contexts = c1 },
       DeclRule
-        {
-          name = n2;
-          params = p2;
-          guards = g2;
-          return_type = r2;
-          body = b2;
-          contexts = c2;
-        } ) ->
+        { name = n2; params = p2; guards = g2; return_type = r2; contexts = c2 }
+    ) ->
       equal_lower_ident n1 n2 && equal_params p1 p2
       && List.equal equal_guard g1 g2
       && equal_type_expr r1 r2
-      && Option.equal equal_expr b1 b2
       && List.equal equal_upper_ident c1 c2
   | ( DeclAction { label = l1; params = p1; guards = g1; contexts = c1 },
       DeclAction { label = l2; params = p2; guards = g2; contexts = c2 } ) ->

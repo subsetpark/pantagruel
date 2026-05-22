@@ -151,10 +151,13 @@ describe("ir1-ssa-fixed-point", () => {
       propositions: result.propositions,
       checks: [],
     });
+    // Header (above `---`): bare rule declaration, no body.
     assert.match(
       source,
-      /fn--loop s: Nat0, step: Nat0, target: Nat0 => Nat0 = cond/u,
+      /fn--loop s: Nat0, step: Nat0, target: Nat0 => Nat0\./u,
     );
+    // Body (below `---`): equation form with the cond body.
+    assert.match(source, /fn--loop s step target = cond/u);
     assert.match(source, /balance' a = fn--loop \(balance a\) step target\./u);
   });
 
