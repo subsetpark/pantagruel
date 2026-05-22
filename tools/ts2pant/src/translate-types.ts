@@ -89,8 +89,7 @@ function isTsNullish(type: ts.Type): boolean {
  * @pant manglePantTypeToFragment pantType = manglePantTypeToFragment pantType.
  */
 export function manglePantTypeToFragment(pantType: string): string | null {
-  const result = manglePantTypeToFragmentImpl(pantType);
-  return result;
+  return manglePantTypeToFragmentImpl(pantType);
 }
 
 function manglePantTypeToFragmentImpl(pantType: string): string | null {
@@ -602,8 +601,7 @@ function tupleCtorBaseName(shape: TupleShape): string | null {
  * @pant depModuleNameForFile fileName = depModuleNameForFile fileName.
  */
 export function depModuleNameForFile(fileName: string): string {
-  const moduleName = depModuleNameForFileImpl(fileName);
-  return moduleName;
+  return depModuleNameForFileImpl(fileName);
 }
 
 function depModuleNameForFileImpl(fileName: string): string {
