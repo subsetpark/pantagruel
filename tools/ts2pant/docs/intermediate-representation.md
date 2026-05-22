@@ -56,11 +56,13 @@ variable SSA.
 - `src/ir1.ts`, `src/ir1-build.ts`, `src/ir1-build-body.ts`,
   `src/ir1-lower.ts`, `src/ir1-lower-body.ts`,
   `src/ir1-ssa-scalars.ts`, `src/ir1-ssa-collections.ts`,
-  `src/ir1-ssa-loops.ts` — Layer 1 (TS-shape imperative IR today;
+  `src/ir1-ssa-counter-loop.ts`, `src/ir1-ssa-fixed-point.ts`,
+  `src/ir1-ssa-foreach.ts` — Layer 1 (TS-shape imperative IR today;
   the SSA-bearing contract now lives in `src/ir1.ts`, while the
   scalar SSA builder/lowerer helper owns scalar property mutation,
   the collection SSA helper owns Map/Set mutation, and the loop
-  summary helper owns μ-search plus supported foreach summaries.
+  helpers own bounded counters, fixed-point while, and supported
+  foreach lowering.
   `translate-body.ts` builds supported mutating bodies through
   `buildSupportedSsaMutatingBody` and lowers them through
   `lowerL1BodyToSsaProps`, which returns final propositions plus frames
@@ -80,9 +82,10 @@ shared Layer 1 IR:
   `PropResult[]` for supported SSA-backed bodies. Scalar property
   mutation, read-after-write, branch joins, and scalar early-exit merges
   route through `src/ir1-ssa-scalars.ts`; Map/Set mutation routes
-  through `src/ir1-ssa-collections.ts`; and μ-search plus supported
-  foreach summaries route through `src/ir1-ssa-loops.ts`. General loop
-  SSA remains out of scope. The mutating output is a list of equations +
+  through `src/ir1-ssa-collections.ts`; bounded counter loops route
+  through `src/ir1-ssa-counter-loop.ts`; fixed-point while loops route
+  through `src/ir1-ssa-fixed-point.ts`; and supported foreach loops route
+  through `src/ir1-ssa-foreach.ts`. The mutating output is a list of equations +
   frame conditions; no L2 statement vocabulary.
 
 L2 is *expression-only* — there is no L2 `IRStmt`. The asymmetry is
@@ -231,14 +234,13 @@ Milestone 1 adds the SSA-bearing type vocabulary and constructor helpers
 in `src/ir1.ts`. The key exported names are:
 
 - Types: `IR1SsaLocation`, `IR1SsaVersion`, `IR1SsaRead`,
-  `IR1SsaWrite`, `IR1SsaJoin`, `IR1SsaLoopSummary`, `IR1SsaProgram`,
-  `IR1SsaValue`.
+  `IR1SsaWrite`, `IR1SsaJoin`, `IR1SsaProgram`, `IR1SsaValue`.
 - Location helpers: `ir1SsaPropertyLocation`,
   `ir1SsaMapValueLocation`, `ir1SsaMapMembershipLocation`,
   `ir1SsaSetMembershipLocation`, `ir1SsaRuleOfLocation`.
 - Version helpers: `ir1SsaInitialVersion`.
 - Read / write / join helpers: `ir1SsaRead`, `ir1SsaWrite`,
-  `ir1SsaJoin`, `ir1SsaLoopSummary`.
+  `ir1SsaJoin`.
 - Value helpers: `ir1SsaPropertyValue`, `ir1SsaMapSetValue`,
   `ir1SsaMapMembershipValue`, `ir1SsaSetMembershipValue`,
   `ir1SsaSetClearValue`.
@@ -601,6 +603,67 @@ a label table and target-resolution pass that the L5 handle lists do not
 need for unlabeled, innermost-loop exits, so the builder rejects labeled
 forms with the M7 diagnostic.
 
+## Loop summary unification (L6+L7)
+
+L6 and L7 landed as one terminal milestone for the general-loop SSA
+workstream. Foreach Shape A and Shape B no longer lower through a parallel
+summary record; they now build ordinary `IR1SsaLoopHeaderJoin` +
+`IR1SsaLoopBody` structures through `lowerForeachShapeAAsGeneralLoop` and
+`lowerForeachShapeBAsGeneralLoop` in `src/ir1-ssa-foreach.ts`.
+
+The `IR1SsaTerminationMetric` type is now a discriminated union. Counter
+loops and bounded-while loops keep the numeric
+`{ kind: "ssa-termination-metric"; expr; lowerBound }` variant. Foreach
+uses `{ kind: "ssa-iterating-source-metric"; source }`, which records the
+finite iteration source directly instead of inventing a counter binder.
+Fixed-point while loops continue to carry `terminationMetric: null`.
+
+Shape A remains the per-element quantified equation:
+
+```pant
+all x in arr | p' x = e x.
+```
+
+Each mutated location still gets a loop-header join so the loop-body
+contract is uniform, but the close is degenerate: the header join's
+`loopBackVersion` is the same SSA version as the per-iteration write. The
+write does not feed a next iteration's value; the source-level meaning is
+Pant's native `all x in arr` quantification.
+
+Shape B remains the accumulator-fold equation:
+
+```pant
+p' a = p a + (+ over each x in arr | f x).
+```
+
+Here the write is the standard Cytron inductive case: the accumulator's
+body write feeds back through the loop-header join, and lowering emits the
+same combiner-over-each right-hand side as before. Shape B keeps the outer
+operator and the comprehension combiner separate so non-commutative outer
+updates remain explicit.
+
+The legacy summary path is gone. `IR1SsaLoopSummary`,
+`ir1SsaLoopSummary`, `IR1SsaProgram.loopSummaries`,
+`lowerMuSearchSummary`, the foreach summary adapters, and the old loop
+summary module were deleted. μ-search is recognized upstream while
+building L1 (`buildL1MuSearchCombTyped`) and lowers as a typed
+comprehension expression, not through loop SSA.
+
+The terminal invariant suite now guards the unified abstraction:
+
+- every loop-header join has one preheader input, one loop-back input, and
+  is closed;
+- every loop body resolves its break and continue handles to the expected
+  join target;
+- bounded counters and bounded while loops carry the counter metric,
+  foreach Shape A/B carry the iterating-source metric, and fixed-point
+  while carries no metric;
+- every rule modified by a loop body appears in `modifiedRules` exactly
+  once, so frame generation is suppressed exactly once.
+
+Existing foreach fixture output stayed byte-equivalent across the
+recharacterisation; the snapshot suite is the gate for that promise.
+
 ## Mutating-body output (no L2 IR)
 
 The mutating path emits `PropResult[]` directly:
@@ -615,7 +678,7 @@ The mutating path emits `PropResult[]` directly:
 
 The supported path is `lowerL1BodyToSsaProps` in
 `ir1-lower-body.ts`. It combines scalar, collection, and supported
-loop-summary lowering results, carries final property writes and
+loop lowering results, carries final property writes and
 modified rules, and appends frames for declared rules that were not
 modified. Production mutating-body lowering is
 `buildSupportedSsaMutatingBody` plus `lowerL1BodyToSsaProps`.
@@ -685,7 +748,8 @@ scalar-only cases that now execute in production:
 
 Those cases lower through IR1 SSA and then emit the same primed
 equations as before. Map/Set mutation now uses `src/ir1-ssa-collections.ts`;
-loop-summary lowering now uses `src/ir1-ssa-loops.ts`.
+loop lowering now uses `src/ir1-ssa-counter-loop.ts`,
+`src/ir1-ssa-fixed-point.ts`, and `src/ir1-ssa-foreach.ts`.
 
 ## Final architecture (post-M6)
 
@@ -704,8 +768,9 @@ with no migration flags, no escape hatches, and no parallel pipelines:
   — TS AST → L1 statement (`ir1-build-body.ts`) → `PropResult[]`.
   Scalar property mutation now routes through the dedicated SSA helper
   (`src/ir1-ssa-scalars.ts`), while Map/Set now routes through the
-  collection SSA helper (`src/ir1-ssa-collections.ts`) and loop
-  summaries route through `src/ir1-ssa-loops.ts`.
+  collection SSA helper (`src/ir1-ssa-collections.ts`); bounded counter
+  loops, fixed-point while loops, and foreach loops route through their
+  dedicated general-loop helpers.
   `buildSupportedSsaMutatingBody` and `lowerL1BodyToSsaProps` are the
   production builder/lowerer pair for final emission and frame
   derivation. No L2 statement vocabulary.
@@ -746,8 +811,10 @@ Lowering for effect-position: TS AST → Layer 1 (`ir1-build-body.ts`) →
 `buildSupportedSsaMutatingBody` → `lowerL1BodyToSsaProps` →
 `PropResult[]` (with scalar property mutation handled by
 `src/ir1-ssa-scalars.ts`, Map/Set mutation handled by
-`src/ir1-ssa-collections.ts`, and loop summaries handled by
-`src/ir1-ssa-loops.ts`).
+`src/ir1-ssa-collections.ts`, bounded counters handled by
+`src/ir1-ssa-counter-loop.ts`, fixed-point while handled by
+`src/ir1-ssa-fixed-point.ts`, and foreach handled by
+`src/ir1-ssa-foreach.ts`).
 
 The full milestone breakdown lives in
 `workstreams/ts2pant-imperative-ir.md`. Decisions on canonical forms,
@@ -785,8 +852,8 @@ branched mutation and iteration flow through Layer 1. The build pass
 `cond-stmt` for `if`-with-mutation, `foreach` for `for-of` / `forEach`
 — and the lower pass (`ir1-lower-body.ts`) does a single fold over the
 L1, threading the collection SSA from `src/ir1-ssa-collections.ts` for
-Map/Set effects and the loop-summary helper from `src/ir1-ssa-loops.ts`
-for μ-search and supported foreach / accumulator-fold shapes, then
+Map/Set effects and the foreach general-loop helper from
+`src/ir1-ssa-foreach.ts` for supported foreach / accumulator-fold shapes, then
 emitting `PropResult[]`. No L2 statement vocabulary. `Foreach.body`
 (Shape A — uniform iterator writes) emits one
 universally-quantified per-iteration equation per modified rule
@@ -803,7 +870,7 @@ pre-IR1-SSA mutating-body dispatcher (`symbolicExecute`) are all
 deleted; the production path is `buildSupportedSsaMutatingBody` +
 `buildSupportedSsaStatement` building canonical L1 forms, then
 `lowerL1BodyToSsaProps` lowering them through the SSA helpers
-(scalars / collections / loop-summary). Pure-path `.reduce` (chain
+(scalars / collections / loops). Pure-path `.reduce` (chain
 fusion via `BodyResult.pendingComprehension`) is expression-position
 and architecturally separate; it stays on `translateReduceCall`.
 

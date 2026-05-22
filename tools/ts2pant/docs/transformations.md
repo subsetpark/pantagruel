@@ -377,22 +377,34 @@ with `init` elided when it equals the combiner identity (0 for `+`, 1 for `*`, `
 `false` for `||`). `reduceRight` is accepted only for commutative combiners; non-commutative
 ops require acc on the left.
 
+The unified loop milestone keeps the recursion-scheme framing explicit:
+bounded loops are catamorphisms and lower through `IR1SsaLoopBody` with a
+non-null `IR1SsaTerminationMetric` (counter metrics for counter/while,
+iterating-source metrics for foreach Shape A/B). Fixed-point while loops are
+hylomorphisms: the guard unfolds the state space and the recursive helper
+folds it back to the post-state, so those loop bodies carry
+`terminationMetric: null`. L6+L7 closed both halves under the same loop-body
+contract.
+
 **Invariants** (post-IR1-SSA):
-- Shape A and Shape B both lower through `lowerForeachShapeASummaries` /
-  `lowerForeachShapeBSummaries` in `src/ir1-ssa-loops.ts`, each returning an
-  `IR1SsaLoopSummary` plus the emitted equation. The loop-summary helper is the
-  single source of truth for both shapes; per-iter writes for Shape A and
-  accumulator-fold writes for Shape B share `IR1SsaProgram.modifiedRules`
-  bookkeeping.
+- Shape A and Shape B both lower through
+  `lowerForeachShapeAAsGeneralLoop` / `lowerForeachShapeBAsGeneralLoop` in
+  `src/ir1-ssa-foreach.ts`. The old `IR1SsaLoopSummary` path is gone; both
+  shapes now produce `IR1SsaLoopHeaderJoin` + `IR1SsaLoopBody` records plus
+  the same emitted equations as before.
+- Shape A's per-iteration writes degenerately close their header join:
+  the `loopBackVersion` is the write's own version, because the per-element
+  equation does not feed an accumulator into the next iteration.
+- Shape B's accumulator-fold writes use the ordinary inductive close:
+  the body write feeds back through the loop header and lowering emits
+  `prop' target = prop target OP (combOP over each x in src[, guard] | rhs)`.
 - Iter-binder writes scoped inside the iteration cannot leak past the
   comprehension — enforced structurally by `IR1ForeachBody` typing
   (Shape A bodies are a restricted subset of `IR1Stmt` that excludes
   `return`/`throw`/nested loops/`let`/`expr-stmt`).
 - Shape B `foldLeaves` carry the `outerOp` binop and the comprehension
-  `combiner` separately; lowering emits
-  `prop' target = prop target OP (combOP over each x in src[, guard] | rhs)`
-  so frame conditions for untouched properties still fire via the
-  modified-rules set.
+  `combiner` separately, so frame conditions for untouched properties still
+  fire via the modified-rules set.
 
 ## Functor-Lift Recognizer
 
