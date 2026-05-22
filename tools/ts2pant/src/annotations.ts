@@ -45,49 +45,52 @@ export interface AnnotationResult {
 export function extractAnnotations(node: ts.Node): AnnotationResult {
   const propositions: PantAnnotation[] = [];
   const typeOverrides: PantTypeOverride[] = [];
-  let openBlockText: string | null = null;
 
-  for (const tag of jsDocTags(node)) {
-    const name = tag.tagName.text;
-    if (openBlockText !== null) {
-      if (name === "pant-end") {
-        const text = openBlockText.trim();
-        if (text.length > 0) {
-          propositions.push({ text });
-        }
-        openBlockText = null;
-      }
-      // Any other tag while a block is open is silently dropped —
-      // mixing additional tags inside a `@pant-begin`/`@pant-end`
-      // block is not part of the supported grammar.
-      continue;
-    }
+  for (const tags of jsDocTagBlocks(node)) {
+    let openBlockText: string | null = null;
 
-    switch (name) {
-      case "pant": {
-        const text = tagComment(tag).trim();
-        if (text.length > 0) {
-          propositions.push({ text });
+    for (const tag of tags) {
+      const name = tag.tagName.text;
+      if (openBlockText !== null) {
+        if (name === "pant-end") {
+          const text = openBlockText.trim();
+          if (text.length > 0) {
+            propositions.push({ text });
+          }
+          openBlockText = null;
         }
-        break;
+        // Any other tag while a block is open is silently dropped —
+        // mixing additional tags inside a `@pant-begin`/`@pant-end`
+        // block is not part of the supported grammar.
+        continue;
       }
-      case "pant-begin":
-        openBlockText = tagComment(tag);
-        break;
-      case "pant-end":
-        // Stray `@pant-end` without a matching `@pant-begin`: drop.
-        break;
-      case "pant-type": {
-        const override = parseTypeOverride(tagComment(tag));
-        if (override !== null) {
-          typeOverrides.push(override);
+
+      switch (name) {
+        case "pant": {
+          const text = tagComment(tag).trim();
+          if (text.length > 0) {
+            propositions.push({ text });
+          }
+          break;
         }
-        break;
+        case "pant-begin":
+          openBlockText = tagComment(tag);
+          break;
+        case "pant-end":
+          // Stray `@pant-end` without a matching `@pant-begin`: drop.
+          break;
+        case "pant-type": {
+          const override = parseTypeOverride(tagComment(tag));
+          if (override !== null) {
+            typeOverrides.push(override);
+          }
+          break;
+        }
+        default:
+          // Foreign JSDoc tags (@param, @returns, etc.) are not part of
+          // this module's surface and pass through untouched.
+          break;
       }
-      default:
-        // Foreign JSDoc tags (@param, @returns, etc.) are not part of
-        // this module's surface and pass through untouched.
-        break;
     }
   }
 
@@ -136,14 +139,14 @@ function tagComment(tag: ts.JSDocTag): string {
  * `@inheritDoc`, which is not behaviour we want here — each annotated
  * function owns its own propositions.
  */
-function jsDocTags(node: ts.Node): readonly ts.JSDocTag[] {
-  const tags: ts.JSDocTag[] = [];
+function jsDocTagBlocks(node: ts.Node): readonly (readonly ts.JSDocTag[])[] {
+  const blocks: ts.JSDocTag[][] = [];
   for (const child of ts.getJSDocCommentsAndTags(node)) {
     if (ts.isJSDoc(child) && child.tags !== undefined) {
-      tags.push(...child.tags);
+      blocks.push([...child.tags]);
     }
   }
-  return tags;
+  return blocks;
 }
 
 // ===========================================================================

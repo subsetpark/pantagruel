@@ -458,10 +458,17 @@ let recognize_split_form_bodies (env : Env.t) (doc : Ast.document) :
           match[@warning "-4"]
             recognize_rule_definition_eq chapter.head prop.value
           with
-          | Some ((DeclRule { name = Lower name; params; _ } as decl), body) ->
+          | Some ((DeclRule { name = Lower name; params; _ } as decl), body)
+            -> (
               let arity = List.length params in
-              let env = Env.attach_rule_body name arity decl body env in
-              (acc, env)
+              match Env.lookup_rule_body_arity name arity env with
+              | Some _ ->
+                  (* Keep duplicate equations in the body so they are not
+                     silently discarded by overwriting [rule_bodies]. *)
+                  (prop :: acc, env)
+              | None ->
+                  let env = Env.attach_rule_body name arity decl body env in
+                  (acc, env))
           | Some _ | None -> (prop :: acc, env))
         ([], env) chapter.body
     in

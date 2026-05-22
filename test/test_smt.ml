@@ -227,6 +227,22 @@ let test_split_form_nullary_self_reference () =
   | Some r -> check bool "nullary recursive rule detected" true r
   | None -> fail "expected nullary rule body in env"
 
+let test_duplicate_split_form_equation_kept_in_body () =
+  let env, doc =
+    parse_and_collect
+      "module Test.\n\
+       next x: Int => Int.\n\
+       ---\n\
+       next x = x + 1.\n\
+       next x = x + 2.\n"
+  in
+  let env, doc = Collect.recognize_split_form_bodies env doc in
+  (match Env.lookup_rule_body_arity "next" 1 env with
+  | Some _ -> ()
+  | None -> fail "expected first rule body in env");
+  let chapter = List.hd doc.chapters in
+  check int "duplicate equation remains in body" 1 (List.length chapter.body)
+
 let test_recursive_rule_emits_define_fun_rec () =
   let env, doc =
     parse_and_collect
@@ -1370,6 +1386,8 @@ let integration_tests =
     test_case
       "split-form nullary recursive rule detected at attach_rule_body time"
       `Quick test_split_form_nullary_self_reference;
+    test_case "duplicate split-form equation remains in chapter body" `Quick
+      test_duplicate_split_form_equation_kept_in_body;
     test_case
       "recursive rule emits define-fun-rec form with body and skips \
        declare-fun line"

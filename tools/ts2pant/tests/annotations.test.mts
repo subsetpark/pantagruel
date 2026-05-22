@@ -73,6 +73,26 @@ describe("extractAnnotations", () => {
     assert.deepEqual(result.typeOverrides[1], { name: "rate", type: "Real" });
   });
 
+  it("resets @pant-begin state for each JSDoc block", () => {
+    const node = firstFunction(
+      "/**\n" +
+        " * @pant-begin\n" +
+        " * unterminated block\n" +
+        " */\n" +
+        "/**\n" +
+        " * @pant result subject = 1\n" +
+        " * @pant-type value: Nat\n" +
+        " */\n" +
+        "function subject(): void {}\n",
+    );
+    const result = extractAnnotations(node);
+    assert.deepEqual(
+      result.propositions.map((p) => p.text),
+      ["result subject = 1"],
+    );
+    assert.deepEqual(result.typeOverrides, [{ name: "value", type: "Nat" }]);
+  });
+
   it("returns empty result for JSDoc without @pant tags", () => {
     const node = functionWithJsDoc(
       " * Just a regular JSDoc comment.\n" +
