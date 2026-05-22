@@ -244,7 +244,7 @@ property writes but with no primed counterpart and no frame obligation.
 Emission renders each binding as a chapter-body equation and later
 references that equation instead of duplicating the initializer. The old
 `inlineConstBindings` path and its prelude purity gate are gone; `let` and
-`var` still reject until the M2 mutable-let work. Newly accepted builtin-call
+`var` still reject until the M2 mutable-let work. Newly accepted built-in call
 shapes that survive to Pant as undeclared free calls remain tracked in
 `tests/known-typecheck-failures.mts` under `free-call-decl` until the
 separate Pant standard-library / free-call declaration workstream lands.
