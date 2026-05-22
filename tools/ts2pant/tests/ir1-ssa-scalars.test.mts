@@ -108,6 +108,25 @@ describe("ir1-ssa-scalars", () => {
     assert.equal(propertyWrite!.location.kind, "property");
   });
 
+  it("keeps branch-local let bindings out of scalar joins", () => {
+    const stmt = ir1CondStmt([[ir1Var("g"), ir1Let("x", ir1LitNat(5))]], null);
+    const state = makeScalarSsaState();
+
+    assert.equal(isScalarSsaL1Body(stmt), true);
+    lowerScalarSsaL1Body(stmt, state);
+
+    assert.equal(state.writes.length, 1);
+    assert.equal(state.writes[0]!.location.kind, "local-binding");
+    assert.equal(state.joins.length, 0);
+    assert.equal(state.writtenKeys.size, 0);
+    assert.equal(
+      [...state.locations.values()].some(
+        (location) => location.kind === "local-binding",
+      ),
+      false,
+    );
+  });
+
   it("resolves compound property assignment through the dominating prior version", () => {
     const balance = ir1Member(ir1Var("a"), "Account_balance");
     const stmt = ir1Block([

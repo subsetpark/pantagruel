@@ -637,6 +637,9 @@ function lowerScalarSsaCondToVersions(
     if (location === undefined) {
       throw new Error("scalar SSA branch touched an unknown location");
     }
+    if (location.kind === "local-binding") {
+      continue;
+    }
     const thenVersion =
       thenState.currentVersions.get(key) ??
       initialVersionFor(key, location, thenState);
@@ -957,6 +960,9 @@ function lowerScalarCondStmt(
       state.locations.get(key);
     if (location === undefined) {
       throw new Error("scalar SSA branch touched an unknown location");
+    }
+    if (location.kind === "local-binding") {
+      continue;
     }
     const thenVersion =
       thenState.currentVersions.get(key) ??
