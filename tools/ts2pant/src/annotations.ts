@@ -20,64 +20,74 @@ export interface AnnotationResult {
 }
 
 /**
- * Parse @pant annotations from raw JSDoc comment text (the content
- * between the opening and closing delimiters).
+ * Three line-oriented forms are recognised inside a `/** ... *\/` block
+ * attached to a function declaration:
  *
- * Recognises three forms:
- *   @pant <proposition>           — single-line proposition
- *   @pant-begin ... @pant-end     — multi-line proposition block
- *   @pant-type name: Type         — numeric type override
+ *   `\@pant <proposition>`        — Pantagruel proposition (may span
+ *                                    multiple continuation lines; the
+ *                                    JSDoc parser folds them into the
+ *                                    tag's comment field naturally).
+ *   `\@pant-begin ... \@pant-end` — Equivalent to a multi-line `\@pant`;
+ *                                    retained for source-level
+ *                                    readability. Lexically the
+ *                                    `\@pant-begin` tag's comment field
+ *                                    already carries the block body;
+ *                                    `\@pant-end` is a closing marker
+ *                                    with no payload.
+ *   `\@pant-type name: Type`      — type override for a TS parameter.
+ *
+ * All lexical concerns (comment-range scanning, `* ` decorator strip,
+ * tag-name tokenisation, continuation-line folding) are delegated to
+ * the TypeScript compiler's JSDoc parser. The only grammar this module
+ * owns is the `name: Type` split for `\@pant-type` and the trivial
+ * dispatch between the four tag kinds.
  */
-export function parseAnnotations(text: string): AnnotationResult {
+export function extractAnnotations(node: ts.Node): AnnotationResult {
   const propositions: PantAnnotation[] = [];
   const typeOverrides: PantTypeOverride[] = [];
+  let openBlockText: string | null = null;
 
-  // Strip leading `*` and whitespace from each line (JSDoc formatting).
-  const lines = text.split("\n").map((l) => l.replace(/^\s*\*?\s?/u, ""));
-
-  let inBlock = false;
-  let blockLines: string[] = [];
-
-  for (const line of lines) {
-    const trimmed = line.trimEnd();
-
-    if (inBlock) {
-      if (/^@pant-end\b/u.test(trimmed.trimStart())) {
-        const blockText = blockLines.join("\n").trim();
-        if (blockText) {
-          propositions.push({ text: blockText });
+  for (const tag of jsDocTags(node)) {
+    const name = tag.tagName.text;
+    if (openBlockText !== null) {
+      if (name === "pant-end") {
+        const text = openBlockText.trim();
+        if (text.length > 0) {
+          propositions.push({ text });
         }
-        inBlock = false;
-        blockLines = [];
-      } else {
-        blockLines.push(trimmed);
+        openBlockText = null;
       }
+      // Any other tag while a block is open is silently dropped —
+      // mixing additional tags inside a `@pant-begin`/`@pant-end`
+      // block is not part of the supported grammar.
       continue;
     }
 
-    if (/^@pant-begin\b/u.test(trimmed.trimStart())) {
-      inBlock = true;
-      blockLines = [];
-      continue;
-    }
-
-    // @pant-type name: Type
-    const typeMatch = trimmed.match(/^\s*@pant-type\s+(\w+)\s*:\s*(.+)$/u);
-    if (typeMatch) {
-      const typeName = typeMatch[2]?.trim();
-      if (typeName) {
-        typeOverrides.push({ name: typeMatch[1]!, type: typeName });
+    switch (name) {
+      case "pant": {
+        const text = tagComment(tag).trim();
+        if (text.length > 0) {
+          propositions.push({ text });
+        }
+        break;
       }
-      continue;
-    }
-
-    // @pant <proposition>  (but not @pant-begin, @pant-end, @pant-type)
-    const pantMatch = trimmed.match(/^\s*@pant\s+(.+)$/u);
-    if (pantMatch) {
-      const propText = pantMatch[1]?.trim();
-      if (propText) {
-        propositions.push({ text: propText });
+      case "pant-begin":
+        openBlockText = tagComment(tag);
+        break;
+      case "pant-end":
+        // Stray `@pant-end` without a matching `@pant-begin`: drop.
+        break;
+      case "pant-type": {
+        const override = parseTypeOverride(tagComment(tag));
+        if (override !== null) {
+          typeOverrides.push(override);
+        }
+        break;
       }
+      default:
+        // Foreign JSDoc tags (@param, @returns, etc.) are not part of
+        // this module's surface and pass through untouched.
+        break;
     }
   }
 
@@ -85,44 +95,60 @@ export function parseAnnotations(text: string): AnnotationResult {
 }
 
 /**
- * Extract @pant annotations from JSDoc comments attached to a TypeScript
- * AST node. Walks all leading comment ranges and parses any that are
- * JSDoc-style (`/** ... *​/`).
+ * Split a `@pant-type` tag's comment into `name` and `type`. Returns
+ * `null` when the shape doesn't match `<name>:<type>` with non-empty
+ * halves after trimming.
  */
-export function extractAnnotations(
-  node: ts.Node,
-  sourceFile: ts.SourceFile,
-): AnnotationResult {
-  const result: AnnotationResult = { propositions: [], typeOverrides: [] };
-
-  const fullText = sourceFile.getFullText();
-  const commentRanges = ts.getLeadingCommentRanges(
-    fullText,
-    node.getFullStart(),
-  );
-
-  if (!commentRanges) {
-    return result;
+function parseTypeOverride(comment: string): PantTypeOverride | null {
+  const colonIdx = comment.indexOf(":");
+  if (colonIdx < 0) {
+    return null;
   }
-
-  for (const range of commentRanges) {
-    const commentText = fullText.slice(range.pos, range.end);
-
-    // Only process JSDoc-style comments.
-    if (!commentText.startsWith("/**")) {
-      continue;
-    }
-
-    // Strip /** and */ delimiters.
-    const inner = commentText.slice(3, -2);
-    const parsed = parseAnnotations(inner);
-
-    result.propositions.push(...parsed.propositions);
-    result.typeOverrides.push(...parsed.typeOverrides);
+  const name = comment.slice(0, colonIdx).trim();
+  const type = comment.slice(colonIdx + 1).trim();
+  if (name.length === 0 || type.length === 0) {
+    return null;
   }
-
-  return result;
+  return { name, type };
 }
+
+/**
+ * Extract the plain-text comment payload of a JSDoc tag. The compiler
+ * represents tag comments as either a flat string or a `NodeArray` of
+ * `JSDocComment` parts (when the comment contains embedded constructs
+ * like `{@link ...}`); both shapes flatten to a single string by
+ * concatenating the parts' `.text`.
+ */
+function tagComment(tag: ts.JSDocTag): string {
+  const c = tag.comment;
+  if (c === undefined) {
+    return "";
+  }
+  if (typeof c === "string") {
+    return c;
+  }
+  return c.map((part) => part.text).join("");
+}
+
+/**
+ * Collect every JSDoc tag declared on `node` itself (not on its
+ * ancestors). `ts.getJSDocTags` walks the inheritance chain to support
+ * `@inheritDoc`, which is not behaviour we want here — each annotated
+ * function owns its own propositions.
+ */
+function jsDocTags(node: ts.Node): readonly ts.JSDocTag[] {
+  const tags: ts.JSDocTag[] = [];
+  for (const child of ts.getJSDocCommentsAndTags(node)) {
+    if (ts.isJSDoc(child) && child.tags !== undefined) {
+      tags.push(...child.tags);
+    }
+  }
+  return tags;
+}
+
+// ===========================================================================
+// Function-by-name extraction (unchanged surface)
+// ===========================================================================
 
 /** Combined proposition texts + type overrides from a function's JSDoc. */
 export interface FunctionAnnotations {
@@ -131,15 +157,15 @@ export interface FunctionAnnotations {
 }
 
 /**
- * Find a function by name and extract both @pant propositions and
- * @pant-type overrides in a single JSDoc pass.
+ * Find a function by name and extract both \@pant propositions and
+ * \@pant-type overrides in a single JSDoc pass.
  */
 export function extractFunctionAnnotationsAndOverrides(
   sourceFile: SourceFile,
   functionName: string,
 ): FunctionAnnotations {
   const { node } = findFunction(sourceFile, functionName);
-  const result = extractAnnotations(node, sourceFile.compilerNode);
+  const result = extractAnnotations(node);
   return {
     propositionTexts: result.propositions.map((p) => p.text),
     typeOverrides: new Map(result.typeOverrides.map((o) => [o.name, o.type])),
@@ -147,7 +173,7 @@ export function extractFunctionAnnotationsAndOverrides(
 }
 
 /**
- * Convenience wrapper: find a function by name and extract its @pant
+ * Convenience wrapper: find a function by name and extract its \@pant
  * proposition texts as plain strings.
  */
 export function extractFunctionAnnotations(
@@ -159,7 +185,7 @@ export function extractFunctionAnnotations(
 }
 
 /**
- * Convenience wrapper: find a function by name and extract its @pant-type
+ * Convenience wrapper: find a function by name and extract its \@pant-type
  * overrides as a Map from TS parameter name to Pantagruel type string.
  */
 export function extractFunctionTypeOverrides(
