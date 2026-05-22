@@ -27,9 +27,10 @@ import {
 import { lowerCounterLoopL1Body } from "./ir1-ssa-counter-loop.js";
 import { lowerFixedPointLoopL1Body } from "./ir1-ssa-fixed-point.js";
 import {
-  lowerForeachShapeASummaries,
-  lowerForeachShapeBSummaries,
-} from "./ir1-ssa-loops.js";
+  type ForeachAsGeneralLoopResult,
+  lowerForeachShapeAAsGeneralLoop,
+} from "./ir1-ssa-foreach.js";
+import { lowerForeachShapeBSummaries } from "./ir1-ssa-loops.js";
 import {
   appendFramesForUnmodifiedRules,
   collectionSsaBodyLowerResult,
@@ -63,14 +64,14 @@ export function adaptScalarSsaLowerResult(
 }
 
 export function adaptLoopSummaryLowerResult(
-  result: ReturnType<typeof lowerForeachShapeASummaries>,
+  result: ForeachAsGeneralLoopResult,
 ): IR1SsaBodyLowerResult;
 export function adaptLoopSummaryLowerResult(
   result: ReturnType<typeof lowerForeachShapeBSummaries>,
 ): IR1SsaBodyLowerResult;
 export function adaptLoopSummaryLowerResult(
   result:
-    | ReturnType<typeof lowerForeachShapeASummaries>
+    | ForeachAsGeneralLoopResult
     | ReturnType<typeof lowerForeachShapeBSummaries>,
 ): IR1SsaBodyLowerResult {
   return loopSsaBodyLowerResult(result);
@@ -313,9 +314,9 @@ function lowerForeachL1BodyToSsaResult(
   if (stmt.body !== null) {
     results.push(
       adaptLoopSummaryLowerResult(
-        lowerForeachShapeASummaries({
+        lowerForeachShapeAAsGeneralLoop({
           binder: stmt.binder,
-          source: arrExpr,
+          source: stmt.source,
           body: stmt.body,
           lowerOpaque: options.applyConst,
           ...(options.initialPropertyValues === undefined

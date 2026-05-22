@@ -54,7 +54,6 @@ import {
 import { lowerCollectionSsaToResult } from "../src/ir1-ssa-collections.js";
 import { lowerScalarSsaToProps } from "../src/ir1-ssa-scalars.js";
 import {
-  lowerForeachShapeASummaries,
   lowerForeachShapeBSummaries,
 } from "../src/ir1-ssa-loops.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
@@ -789,7 +788,6 @@ before(async () => {
 describe("ir1-ssa-invariants", () => {
   void representativePrograms;
   void walkSsaProgram;
-  void lowerForeachShapeASummaries;
   void lowerForeachShapeBSummaries;
 
   it(
