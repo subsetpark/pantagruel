@@ -167,12 +167,14 @@ export function freeVarsIR1SsaLoopBody(body: IR1SsaLoopBody): Set<string> {
     ]),
     ...(body.terminationMetric === null
       ? []
-      : [
-          freeVarsIR1Expr(body.terminationMetric.expr),
-          ...(body.terminationMetric.lowerBound === null
-            ? []
-            : [freeVarsIR1Expr(body.terminationMetric.lowerBound)]),
-        ]),
+      : body.terminationMetric.kind === "ssa-termination-metric"
+        ? [
+            freeVarsIR1Expr(body.terminationMetric.expr),
+            ...(body.terminationMetric.lowerBound === null
+              ? []
+              : [freeVarsIR1Expr(body.terminationMetric.lowerBound)]),
+          ]
+        : [freeVarsIR1Expr(body.terminationMetric.source)]),
   );
 }
 
