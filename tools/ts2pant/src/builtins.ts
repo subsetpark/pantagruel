@@ -57,6 +57,7 @@ const RESERVED_RULE_NAMES: ReadonlySet<string> = new Set([
 
 const BUILTINS: Map<BuiltinKey, { arity: number }> = new Map([
   ["Math.max", { arity: 2 }],
+  ["Math.min", { arity: 2 }],
   ["Math.abs", { arity: 1 }],
   ["String.prototype.toUpperCase", { arity: 0 }],
   ["String.prototype.indexOf", { arity: 1 }],
