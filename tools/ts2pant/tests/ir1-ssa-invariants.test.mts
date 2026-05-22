@@ -6,23 +6,11 @@ import ts from "typescript";
 
 import { createSourceFile, getChecker } from "../src/extract.js";
 import {
-  buildL1AssignStmt,
-  buildL1EffectCall,
-  buildL1ForEachCall,
-  buildL1ForOfMutation,
-  buildL1IfMutation,
-  type BuildBodyCtx,
-  isUnsupported,
-} from "../src/ir1-build-body.js";
-import { lowerL1BodyToSsaProps } from "../src/ir1-lower-body.js";
-import {
-  scalarSsaBodyLowerResult,
-  collectionSsaBodyLowerResult,
-  type IR1SsaBodyLowerResult,
-} from "../src/ir1-ssa-lower.js";
-import {
+  type IR1FoldLeaf,
   type IR1SsaJoin,
   type IR1SsaLocation,
+  type IR1SsaLoopBody,
+  type IR1SsaLoopHeaderJoin,
   type IR1SsaProgram,
   type IR1SsaRead,
   type IR1SsaWrite,
@@ -30,14 +18,20 @@ import {
   ir1Assign,
   ir1Binop,
   ir1Block,
+  ir1Break,
   ir1CondStmt,
+  ir1Continue,
   ir1For,
   ir1Foreach,
+  ir1Let,
   ir1LitBool,
   ir1LitNat,
   ir1MapRead,
   ir1MapSet,
   ir1Member,
+  ir1Return,
+  ir1SetAddOrDelete,
+  ir1SetClear,
   ir1SsaInitialVersion,
   ir1SsaJoin,
   ir1SsaMapMembershipLocation,
@@ -45,12 +39,32 @@ import {
   ir1SsaPropertyLocation,
   ir1SsaRuleOfLocation,
   ir1SsaSetMembershipLocation,
-  ir1SetAddOrDelete,
-  ir1SetClear,
+  ir1Throw,
   ir1Var,
   ir1While,
 } from "../src/ir1.js";
+import {
+  type BuildBodyCtx,
+  buildL1AssignStmt,
+  buildL1EffectCall,
+  buildL1ForEachCall,
+  buildL1ForOfMutation,
+  buildL1IfMutation,
+  isUnsupported,
+} from "../src/ir1-build-body.js";
+import { lowerL1BodyToSsaProps } from "../src/ir1-lower-body.js";
 import { lowerCollectionSsaToResult } from "../src/ir1-ssa-collections.js";
+import { lowerCounterLoopL1Body } from "../src/ir1-ssa-counter-loop.js";
+import { lowerFixedPointLoopL1Body } from "../src/ir1-ssa-fixed-point.js";
+import {
+  lowerForeachShapeAAsGeneralLoop,
+  lowerForeachShapeBAsGeneralLoop,
+} from "../src/ir1-ssa-foreach.js";
+import {
+  collectionSsaBodyLowerResult,
+  type IR1SsaBodyLowerResult,
+  scalarSsaBodyLowerResult,
+} from "../src/ir1-ssa-lower.js";
 import { lowerScalarSsaToProps } from "../src/ir1-ssa-scalars.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 import { IntStrategy } from "../src/translate-types.js";
@@ -146,7 +160,9 @@ function buildFixtureSupportedSsaBody(
   }
 
   assert.ok(stmts.length > 0, `${functionName} should produce an SSA body`);
-  return stmts.length === 1 ? stmts[0]! : ir1Block([stmts[0]!, ...stmts.slice(1)]);
+  return stmts.length === 1
+    ? stmts[0]!
+    : ir1Block([stmts[0]!, ...stmts.slice(1)]);
 }
 
 function buildSupportedFixtureStatement(
@@ -212,7 +228,8 @@ function representativePrograms(): RepresentativeProgram[] {
     {
       name: "functions-mutating.ts > deposit",
       kind: "scalar",
-      build: () => buildFixtureBodyLowerResult("functions-mutating.ts", "deposit"),
+      build: () =>
+        buildFixtureBodyLowerResult("functions-mutating.ts", "deposit"),
     },
     {
       name: "expressions-map-mutation.ts > setAndCopy",
@@ -319,12 +336,7 @@ function representativePrograms(): RepresentativeProgram[] {
         return buildScalarResult(
           ir1Block([
             ir1CondStmt(
-              [
-                [
-                  ir1Var("g"),
-                  ir1Assign(balance, ir1LitNat(1)),
-                ],
-              ],
+              [[ir1Var("g"), ir1Assign(balance, ir1LitNat(1))]],
               ir1Assign(balance, ir1LitNat(2)),
             ),
             ir1Assign(balance, ir1Binop("add", balance, ir1LitNat(1))),
@@ -358,7 +370,10 @@ function bodyLoweredRepresentativePrograms(): BodyLoweredRepresentativeProgram[]
         const sourceFile = loadFixture("functions-mutating.ts");
         const doc = await buildDocumentFromSourceFile(sourceFile, "deposit");
         return {
-          result: await buildFixtureBodyLowerResult("functions-mutating.ts", "deposit"),
+          result: await buildFixtureBodyLowerResult(
+            "functions-mutating.ts",
+            "deposit",
+          ),
           declaredRules: doc.declarations
             .filter((decl) => decl.kind === "rule")
             .map((decl) => decl.name),
@@ -388,7 +403,10 @@ function bodyLoweredRepresentativePrograms(): BodyLoweredRepresentativeProgram[]
       name: "expressions-state-aware-reads.ts > tagThenCheck",
       build: async () => {
         const sourceFile = loadFixture("expressions-state-aware-reads.ts");
-        const doc = await buildDocumentFromSourceFile(sourceFile, "tagThenCheck");
+        const doc = await buildDocumentFromSourceFile(
+          sourceFile,
+          "tagThenCheck",
+        );
         return {
           result: await buildFixtureBodyLowerResult(
             "expressions-state-aware-reads.ts",
@@ -420,7 +438,10 @@ function bodyLoweredRepresentativePrograms(): BodyLoweredRepresentativeProgram[]
       name: "functions-mutating-loop.ts > forEachActivate",
       build: async () => {
         const sourceFile = loadFixture("functions-mutating-loop.ts");
-        const doc = await buildDocumentFromSourceFile(sourceFile, "forEachActivate");
+        const doc = await buildDocumentFromSourceFile(
+          sourceFile,
+          "forEachActivate",
+        );
         return {
           result: await buildFixtureBodyLowerResult(
             "functions-mutating-loop.ts",
@@ -451,7 +472,10 @@ function bodyLoweredRepresentativePrograms(): BodyLoweredRepresentativeProgram[]
   ];
 }
 
-function walkSsaProgram(program: IR1SsaProgram, visit: SsaProgramVisitor): void {
+function walkSsaProgram(
+  program: IR1SsaProgram,
+  visit: SsaProgramVisitor,
+): void {
   for (const [index, write] of program.writes.entries()) {
     visit.onWrite?.(write, index);
   }
@@ -743,6 +767,324 @@ function assertUnsupportedDiagnosticShape(
   );
 }
 
+type LoopClass =
+  | "counter"
+  | "bounded-while"
+  | "fixed-point-while"
+  | "foreach-shape-a"
+  | "foreach-shape-b";
+
+interface LoopInvariantCase {
+  name: string;
+  loopClass: LoopClass;
+  result: IR1SsaBodyLowerResult;
+}
+
+const loopAccount = ir1Var("loopAccount");
+const loopItems = ir1Var("loopItems");
+const loopItem = ir1Var("loopItem");
+const loopTotal = ir1Member(loopAccount, "Loop_total");
+
+function counterLoopStmt(): Extract<IR1Stmt, { kind: "for" }> {
+  return ir1For(
+    ir1Let("i", ir1LitNat(0)),
+    ir1Binop("lt", ir1Var("i"), ir1Var("n")),
+    ir1Assign(ir1Var("i"), ir1Binop("add", ir1Var("i"), ir1LitNat(1))),
+    ir1Assign(loopTotal, ir1Binop("add", loopTotal, ir1Var("i"))),
+  ) as Extract<IR1Stmt, { kind: "for" }>;
+}
+
+function boundedWhileLoopStmt(): Extract<IR1Stmt, { kind: "for" }> {
+  return ir1For(
+    ir1Let("j", ir1LitNat(0)),
+    ir1Binop("lt", ir1Var("j"), ir1Var("limit")),
+    ir1Assign(ir1Var("j"), ir1Binop("add", ir1Var("j"), ir1LitNat(1))),
+    ir1Assign(loopTotal, ir1Var("j")),
+  ) as Extract<IR1Stmt, { kind: "for" }>;
+}
+
+function fixedPointLoopStmt(
+  body: IR1Stmt = ir1Assign(
+    loopTotal,
+    ir1Binop("add", loopTotal, ir1Var("step")),
+  ),
+): Extract<IR1Stmt, { kind: "while" }> {
+  return ir1While(ir1Binop("lt", loopTotal, ir1Var("target")), body) as Extract<
+    IR1Stmt,
+    { kind: "while" }
+  >;
+}
+
+function foreachShapeBFoldLeaves(): IR1FoldLeaf[] {
+  return [
+    {
+      target: loopAccount,
+      prop: "Loop_total",
+      combiner: "add",
+      outerOp: "add",
+      rhs: ir1Member(loopItem, "Item_amount"),
+      guard: null,
+    },
+  ];
+}
+
+function loopInvariantCases(): LoopInvariantCase[] {
+  const shapeA = lowerForeachShapeAAsGeneralLoop({
+    binder: "loopItem",
+    source: loopItems,
+    body: ir1Assign(ir1Member(loopItem, "Item_seen"), ir1LitBool(true)),
+  });
+  const shapeB = lowerForeachShapeBAsGeneralLoop({
+    binder: "loopItem",
+    source: loopItems,
+    foldLeaves: foreachShapeBFoldLeaves(),
+  });
+
+  return [
+    {
+      name: "counter loop",
+      loopClass: "counter",
+      result: lowerCounterLoopL1Body(counterLoopStmt()),
+    },
+    {
+      name: "bounded while loop normalized to counter SSA",
+      loopClass: "bounded-while",
+      result: lowerCounterLoopL1Body(boundedWhileLoopStmt()),
+    },
+    {
+      name: "fixed-point while loop",
+      loopClass: "fixed-point-while",
+      result: lowerFixedPointLoopL1Body(fixedPointLoopStmt()),
+    },
+    {
+      name: "foreach Shape A",
+      loopClass: "foreach-shape-a",
+      result: {
+        programs: [shapeA.program],
+        propositions: shapeA.propositions,
+        diagnostics: shapeA.diagnostics,
+        modifiedRules: shapeA.modifiedRules,
+      },
+    },
+    {
+      name: "foreach Shape B",
+      loopClass: "foreach-shape-b",
+      result: {
+        programs: [shapeB.program],
+        propositions: shapeB.propositions,
+        diagnostics: shapeB.diagnostics,
+        modifiedRules: shapeB.modifiedRules,
+      },
+    },
+  ];
+}
+
+function continuationLoopCases(): LoopInvariantCase[] {
+  const breakStmt = ir1CondStmt(
+    [[ir1Var("shouldBreak"), ir1Break()]],
+    ir1Assign(loopTotal, ir1Binop("add", loopTotal, ir1Var("step"))),
+  );
+  const continueStmt = ir1Block([
+    ir1CondStmt([[ir1Var("shouldContinue"), ir1Continue()]], null),
+    ir1Assign(loopTotal, ir1Binop("add", loopTotal, ir1Var("step"))),
+  ]);
+  const returnStmt = ir1Block([
+    ir1CondStmt([[ir1Var("shouldReturn"), ir1Return(loopTotal)]], null),
+    ir1Assign(loopTotal, ir1Binop("add", loopTotal, ir1Var("step"))),
+  ]);
+  const throwStmt = ir1Block([
+    ir1CondStmt([[ir1Var("shouldThrow"), ir1Throw(ir1Var("err"))]], null),
+    ir1Assign(loopTotal, ir1Binop("add", loopTotal, ir1Var("step"))),
+  ]);
+
+  return [
+    ...loopInvariantCases(),
+    {
+      name: "fixed-point while loop with break",
+      loopClass: "fixed-point-while",
+      result: lowerFixedPointLoopL1Body(fixedPointLoopStmt(breakStmt)),
+    },
+    {
+      name: "fixed-point while loop with continue",
+      loopClass: "fixed-point-while",
+      result: lowerFixedPointLoopL1Body(fixedPointLoopStmt(continueStmt)),
+    },
+    {
+      name: "fixed-point while loop with valued return",
+      loopClass: "fixed-point-while",
+      result: lowerFixedPointLoopL1Body(fixedPointLoopStmt(returnStmt), {
+        returnRuleName: "fn_result",
+      }),
+    },
+    {
+      name: "fixed-point while loop with throw",
+      loopClass: "fixed-point-while",
+      result: lowerFixedPointLoopL1Body(fixedPointLoopStmt(throwStmt)),
+    },
+  ];
+}
+
+function assertLoopInvariantCaseSupported(testCase: LoopInvariantCase): void {
+  assert.equal(
+    testCase.result.diagnostics.length,
+    0,
+    `${testCase.name} should lower without diagnostics`,
+  );
+  assert.ok(
+    testCase.result.programs.length > 0,
+    `${testCase.name} should emit at least one SSA program`,
+  );
+}
+
+function assertClosedLoopHeaderJoin(
+  detail: string,
+  header: IR1SsaLoopHeaderJoin,
+): void {
+  assert.equal(
+    header.kind,
+    "ssa-loop-header-join",
+    `${detail} should be a loop-header join`,
+  );
+  assert.equal(
+    locationSignature(header.preheaderVersion.location),
+    locationSignature(header.location),
+    `${detail} preheader version should match the header location`,
+  );
+  assert.ok(
+    header.loopBackVersion !== null,
+    `${detail} should have a loop-back`,
+  );
+  assert.equal(
+    locationSignature(header.loopBackVersion.location),
+    locationSignature(header.location),
+    `${detail} loop-back version should match the header location`,
+  );
+  assert.equal(header.closed, true, `${detail} should be closed`);
+}
+
+function assertLoopBodyContinuationsResolved(
+  detail: string,
+  body: IR1SsaLoopBody,
+): void {
+  const headersByLocation = new Map(
+    body.headerJoins.map((header) => [
+      locationSignature(header.location),
+      header,
+    ]),
+  );
+  const writeVersions = new Set(body.writes.map((write) => write.version));
+
+  for (const [index, handle] of body.breakHandles.entries()) {
+    const header = headersByLocation.get(locationSignature(handle.location));
+    assert.ok(
+      header !== undefined,
+      `${detail} break #${index} should match a header location`,
+    );
+    assert.ok(
+      writeVersions.has(handle.version),
+      `${detail} break #${index} should resolve to a body write reaching the post-loop join`,
+    );
+  }
+
+  for (const [index, handle] of body.continueHandles.entries()) {
+    const header = headersByLocation.get(locationSignature(handle.location));
+    assert.ok(
+      header !== undefined,
+      `${detail} continue #${index} should match a header location`,
+    );
+    assert.equal(
+      handle.version,
+      header.loopBackVersion,
+      `${detail} continue #${index} should resolve to the header loop-back version`,
+    );
+  }
+
+  for (const [index, handle] of body.returnHandles.entries()) {
+    const header = headersByLocation.get(locationSignature(handle.location));
+    assert.ok(
+      header !== undefined,
+      `${detail} return #${index} should match a header location`,
+    );
+    assert.ok(
+      writeVersions.has(handle.version),
+      `${detail} return #${index} should resolve to a body write before the function return continuation`,
+    );
+  }
+
+  for (const [index, handle] of body.throwHandles.entries()) {
+    const header = headersByLocation.get(locationSignature(handle.location));
+    assert.ok(
+      header !== undefined,
+      `${detail} throw #${index} should match a header location`,
+    );
+    assert.ok(
+      writeVersions.has(handle.version),
+      `${detail} throw #${index} should resolve to a body write guarded by the iteration precondition`,
+    );
+    assert.ok(
+      handle.guard !== null,
+      `${detail} throw #${index} should carry a guard`,
+    );
+  }
+}
+
+function assertMetricMatchesLoopClass(
+  detail: string,
+  loopClass: LoopClass,
+  body: IR1SsaLoopBody,
+): void {
+  switch (loopClass) {
+    case "counter":
+    case "bounded-while":
+      assert.equal(
+        body.terminationMetric?.kind,
+        "ssa-termination-metric",
+        `${detail} should use a counter-style termination metric`,
+      );
+      break;
+    case "foreach-shape-a":
+    case "foreach-shape-b":
+      assert.equal(
+        body.terminationMetric?.kind,
+        "ssa-iterating-source-metric",
+        `${detail} should use an iterating-source termination metric`,
+      );
+      break;
+    case "fixed-point-while":
+      assert.equal(
+        body.terminationMetric,
+        null,
+        `${detail} should not carry a termination metric`,
+      );
+      break;
+    default: {
+      const _exhaustive: never = loopClass;
+      void _exhaustive;
+    }
+  }
+}
+
+function assertLoopModifiedRulesAppearOnce(
+  detail: string,
+  program: IR1SsaProgram,
+): void {
+  const counts = new Map<string, number>();
+  for (const rule of program.modifiedRules) {
+    counts.set(rule, (counts.get(rule) ?? 0) + 1);
+  }
+
+  for (const [bodyIndex, body] of program.loopBodies.entries()) {
+    for (const [writeIndex, write] of body.writes.entries()) {
+      const rule = ir1SsaRuleOfLocation(write.location);
+      assert.equal(
+        counts.get(rule),
+        1,
+        `${detail} body #${bodyIndex} write #${writeIndex} should list ${rule} exactly once in modifiedRules`,
+      );
+    }
+  }
+}
+
 before(async () => {
   await loadAst();
 });
@@ -751,270 +1093,352 @@ describe("ir1-ssa-invariants", () => {
   void representativePrograms;
   void walkSsaProgram;
 
-  it(
-    "each write and join produces a fresh SSA version at its location",
-    async () => {
-      for (const representative of representativePrograms()) {
-        const result = await representative.build();
-        assertFreshVersionsAndJoinLocations(representative.name, result);
-      }
-    },
-  );
+  it("each write and join produces a fresh SSA version at its location", async () => {
+    for (const representative of representativePrograms()) {
+      const result = await representative.build();
+      assertFreshVersionsAndJoinLocations(representative.name, result);
+    }
+  });
 
-  it(
-    "ir1SsaJoin rejects mismatched-location inputs across all four location kinds",
-    () => {
-      const propertyBalance = ir1SsaPropertyLocation(
-        "Account_balance",
-        ir1Var("account"),
-        "balance",
+  it("ir1SsaJoin rejects mismatched-location inputs across all four location kinds", () => {
+    const propertyBalance = ir1SsaPropertyLocation(
+      "Account_balance",
+      ir1Var("account"),
+      "balance",
+    );
+    const propertyLimit = ir1SsaPropertyLocation(
+      "Account_limit",
+      ir1Var("account"),
+      "limit",
+    );
+    const mapValue = ir1SsaMapValueLocation(
+      "Account_score",
+      "Account_hasScore",
+      "Account",
+      "User",
+      ir1Var("account"),
+      ir1Var("user"),
+    );
+    const mapMembership = ir1SsaMapMembershipLocation(
+      "Account_score",
+      "Account_hasScore",
+      "Account",
+      "User",
+      ir1Var("account"),
+      ir1Var("user"),
+    );
+    const setMembership = ir1SsaSetMembershipLocation(
+      "Account_tags",
+      "Account",
+      "Tag",
+      ir1Var("account"),
+    );
+    const otherSetMembership = ir1SsaSetMembershipLocation(
+      "Account_tags",
+      "Account",
+      "Tag",
+      ir1Var("otherAccount"),
+    );
+
+    const mismatchedPairs: ReadonlyArray<
+      readonly [name: string, expected: IR1SsaLocation, actual: IR1SsaLocation]
+    > = [
+      ["property vs property", propertyLimit, propertyBalance],
+      ["property vs map-value", propertyBalance, mapValue],
+      ["property vs set-membership", propertyBalance, setMembership],
+      ["map-value vs map-membership", mapValue, mapMembership],
+      [
+        "set-membership vs set-membership receiver mismatch",
+        setMembership,
+        otherSetMembership,
+      ],
+    ];
+
+    for (const [name, expected, actual] of mismatchedPairs) {
+      const initial = ir1SsaInitialVersion(actual);
+      assert.throws(
+        () => ir1SsaJoin(expected, initial, initial),
+        /location mismatch/u,
+        `${name} should reject incompatible locations`,
       );
-      const propertyLimit = ir1SsaPropertyLocation(
-        "Account_limit",
-        ir1Var("account"),
-        "limit",
-      );
-      const mapValue = ir1SsaMapValueLocation(
-        "Account_score",
-        "Account_hasScore",
-        "Account",
-        "User",
-        ir1Var("account"),
-        ir1Var("user"),
-      );
-      const mapMembership = ir1SsaMapMembershipLocation(
-        "Account_score",
-        "Account_hasScore",
-        "Account",
-        "User",
-        ir1Var("account"),
-        ir1Var("user"),
-      );
-      const setMembership = ir1SsaSetMembershipLocation(
-        "Account_tags",
-        "Account",
-        "Tag",
-        ir1Var("account"),
-      );
-      const otherSetMembership = ir1SsaSetMembershipLocation(
-        "Account_tags",
-        "Account",
-        "Tag",
-        ir1Var("otherAccount"),
-      );
+    }
 
-      const mismatchedPairs: ReadonlyArray<
-        readonly [name: string, expected: IR1SsaLocation, actual: IR1SsaLocation]
-      > = [
-        ["property vs property", propertyLimit, propertyBalance],
-        ["property vs map-value", propertyBalance, mapValue],
-        ["property vs set-membership", propertyBalance, setMembership],
-        ["map-value vs map-membership", mapValue, mapMembership],
-        [
-          "set-membership vs set-membership receiver mismatch",
-          setMembership,
-          otherSetMembership,
-        ],
-      ];
+    const version = ir1SsaInitialVersion(propertyBalance);
+    const degenerate = ir1SsaJoin(propertyBalance, version, version);
+    assert.equal(degenerate, version);
+    assert.notEqual(degenerate.kind, "ssa-join");
+  });
 
-      for (const [name, expected, actual] of mismatchedPairs) {
-        const initial = ir1SsaInitialVersion(actual);
-        assert.throws(
-          () => ir1SsaJoin(expected, initial, initial),
-          /location mismatch/u,
-          `${name} should reject incompatible locations`,
-        );
-      }
+  it("every read resolves to a dominating version or initial version at its own location", async () => {
+    for (const representative of representativePrograms()) {
+      const result = await representative.build();
+      assertDominatingReads(representative.name, result);
+    }
+  });
 
-      const version = ir1SsaInitialVersion(propertyBalance);
-      const degenerate = ir1SsaJoin(propertyBalance, version, version);
-      assert.equal(degenerate, version);
-      assert.notEqual(degenerate.kind, "ssa-join");
-    },
-  );
+  it("every modified rule suppresses frame generation exactly once and every framed rule is unmodified", async () => {
+    for (const representative of bodyLoweredRepresentativePrograms()) {
+      const { result, declaredRules } = await representative.build();
+      assertFrameSuppression(representative.name, result, declaredRules);
+    }
+  });
 
-  it(
-    "every read resolves to a dominating version or initial version at its own location",
-    async () => {
-      for (const representative of representativePrograms()) {
-        const result = await representative.build();
-        assertDominatingReads(representative.name, result);
-      }
-    },
-  );
+  it("unsupported loops and branch shapes return targeted diagnostics with no equations or frames", async () => {
+    const mutatingSourceFile = loadFixture("functions-mutating.ts");
+    const mutatingDoc = await buildDocumentFromSourceFile(
+      mutatingSourceFile,
+      "deposit",
+    );
+    const loopDeclarations = mutatingDoc.declarations;
+    const balance = ir1Member(ir1Var("account"), "Account_balance");
 
-  it(
-    "every modified rule suppresses frame generation exactly once and every framed rule is unmodified",
-    async () => {
-      for (const representative of bodyLoweredRepresentativePrograms()) {
-        const { result, declaredRules } = await representative.build();
-        assertFrameSuppression(representative.name, result, declaredRules);
-      }
-    },
-  );
-
-  it(
-    "unsupported loops and branch shapes return targeted diagnostics with no equations or frames",
-    async () => {
-      const mutatingSourceFile = loadFixture("functions-mutating.ts");
-      const mutatingDoc = await buildDocumentFromSourceFile(
-        mutatingSourceFile,
-        "deposit",
-      );
-      const loopDeclarations = mutatingDoc.declarations;
-      const balance = ir1Member(ir1Var("account"), "Account_balance");
-
-      const unsupportedCases: Array<{
-        name: string;
-        build: () => IR1SsaBodyLowerResult;
-        reason: RegExp;
-      }> = [
-        {
-          name: "while loop on property",
-          build: () =>
-            scalarSsaBodyLowerResult(
-              lowerScalarSsaToProps(
-                ir1While(ir1LitBool(true), ir1Assign(balance, ir1LitNat(1))),
+    const unsupportedCases: Array<{
+      name: string;
+      build: () => IR1SsaBodyLowerResult;
+      reason: RegExp;
+    }> = [
+      {
+        name: "while loop on property",
+        build: () =>
+          scalarSsaBodyLowerResult(
+            lowerScalarSsaToProps(
+              ir1While(ir1LitBool(true), ir1Assign(balance, ir1LitNat(1))),
+            ),
+          ),
+        reason: /scalar SSA lowering/u,
+      },
+      {
+        name: "for loop on property",
+        build: () =>
+          scalarSsaBodyLowerResult(
+            lowerScalarSsaToProps(
+              ir1For(
+                null,
+                ir1LitBool(true),
+                null,
+                ir1Assign(balance, ir1LitNat(1)),
               ),
             ),
-          reason: /scalar SSA lowering/u,
-        },
-        {
-          name: "for loop on property",
-          build: () =>
-            scalarSsaBodyLowerResult(
-              lowerScalarSsaToProps(
-                ir1For(
-                  null,
-                  ir1LitBool(true),
-                  null,
-                  ir1Assign(balance, ir1LitNat(1)),
-                ),
+          ),
+        reason: /scalar SSA lowering/u,
+      },
+      {
+        name: "multi-arm scalar cond-stmt",
+        build: () =>
+          scalarSsaBodyLowerResult(
+            lowerScalarSsaToProps(
+              ir1CondStmt(
+                [
+                  [ir1Var("g1"), ir1Assign(balance, ir1LitNat(1))],
+                  [ir1Var("g2"), ir1Assign(balance, ir1LitNat(2))],
+                ],
+                ir1Assign(balance, ir1LitNat(3)),
               ),
             ),
-          reason: /scalar SSA lowering/u,
-        },
-        {
-          name: "multi-arm scalar cond-stmt",
-          build: () =>
-            scalarSsaBodyLowerResult(
-              lowerScalarSsaToProps(
-                ir1CondStmt(
-                  [
-                    [ir1Var("g1"), ir1Assign(balance, ir1LitNat(1))],
-                    [ir1Var("g2"), ir1Assign(balance, ir1LitNat(2))],
-                  ],
-                  ir1Assign(balance, ir1LitNat(3)),
-                ),
-              ),
-            ),
-          reason: /scalar SSA lowering/u,
-        },
-        {
-          name: "foreach Shape A assignment to non-property target",
-          build: () =>
-            lowerL1BodyToSsaProps(
-              ir1Foreach(
-                "$0",
-                ir1Var("xs"),
-                ir1Assign(ir1Var("acc"), ir1LitBool(true)),
-              ),
-              loopDeclarations,
-              { applyConst: (expr) => expr },
-            ),
-            reason:
-              /foreach Shape A summary assignment target must be a property/u,
-        },
-        {
-          name: "nested proposition-emitting loop body",
-          build: () => {
-            const inner = ir1Foreach(
-              "$1",
-              ir1Var("ys"),
-              ir1Assign(ir1Member(ir1Var("$1"), "active"), ir1LitBool(true)),
-            );
-            const outer = ir1Foreach(
+          ),
+        reason: /scalar SSA lowering/u,
+      },
+      {
+        name: "foreach Shape A assignment to non-property target",
+        build: () =>
+          lowerL1BodyToSsaProps(
+            ir1Foreach(
               "$0",
               ir1Var("xs"),
-              inner as unknown as Parameters<typeof ir1Foreach>[2],
-            );
-            return lowerL1BodyToSsaProps(outer, loopDeclarations, {
-              applyConst: (expr) => expr,
-            });
-          },
-          reason: /nested proposition-emitting loop body/u,
+              ir1Assign(ir1Var("acc"), ir1LitBool(true)),
+            ),
+            loopDeclarations,
+            { applyConst: (expr) => expr },
+          ),
+        reason: /foreach Shape A summary assignment target must be a property/u,
+      },
+      {
+        name: "nested proposition-emitting loop body",
+        build: () => {
+          const inner = ir1Foreach(
+            "$1",
+            ir1Var("ys"),
+            ir1Assign(ir1Member(ir1Var("$1"), "active"), ir1LitBool(true)),
+          );
+          const outer = ir1Foreach(
+            "$0",
+            ir1Var("xs"),
+            inner as unknown as Parameters<typeof ir1Foreach>[2],
+          );
+          return lowerL1BodyToSsaProps(outer, loopDeclarations, {
+            applyConst: (expr) => expr,
+          });
         },
-      ];
+        reason: /nested proposition-emitting loop body/u,
+      },
+    ];
 
-      for (const unsupportedCase of unsupportedCases) {
-        assertUnsupportedDiagnosticShape(
-          unsupportedCase.name,
-          unsupportedCase.build(),
-          unsupportedCase.reason,
+    for (const unsupportedCase of unsupportedCases) {
+      assertUnsupportedDiagnosticShape(
+        unsupportedCase.name,
+        unsupportedCase.build(),
+        unsupportedCase.reason,
+      );
+    }
+  });
+
+  it("the table-driven corpus satisfies all SSA invariants for scalar, Map, Set, branch, foreach Shape A, and foreach Shape B programs", async () => {
+    const representatives = representativePrograms();
+    const presentKinds = new Set(representatives.map((r) => r.kind));
+
+    for (const kind of [
+      "scalar",
+      "map",
+      "set",
+      "branch",
+      "foreach-shape-a",
+      "foreach-shape-b",
+    ] satisfies RepresentativeProgramKind[]) {
+      assert.ok(
+        presentKinds.has(kind),
+        `representativePrograms() should cover ${kind}`,
+      );
+    }
+
+    for (const representative of representatives) {
+      const result = await representative.build();
+      assertSupportedRepresentativeResult(representative.name, result);
+      assertFreshVersionsAndJoinLocations(representative.name, result);
+      assertDominatingReads(representative.name, result);
+    }
+
+    for (const representative of bodyLoweredRepresentativePrograms()) {
+      const { result, declaredRules } = await representative.build();
+      assertFrameSuppression(representative.name, result, declaredRules);
+    }
+  });
+
+  it("L7 invariant: every loop-header join has exactly one preheader and one loop-back input", () => {
+    for (const testCase of loopInvariantCases()) {
+      assertLoopInvariantCaseSupported(testCase);
+      for (const [
+        programIndex,
+        program,
+      ] of testCase.result.programs.entries()) {
+        for (const [headerIndex, header] of program.loopHeaderJoins.entries()) {
+          assertClosedLoopHeaderJoin(
+            `${testCase.name} [program ${programIndex}] header #${headerIndex}`,
+            header,
+          );
+        }
+        for (const [bodyIndex, body] of program.loopBodies.entries()) {
+          for (const [headerIndex, header] of body.headerJoins.entries()) {
+            assertClosedLoopHeaderJoin(
+              `${testCase.name} [program ${programIndex}] body #${bodyIndex} header #${headerIndex}`,
+              header,
+            );
+            assert.ok(
+              program.loopHeaderJoins.includes(header),
+              `${testCase.name} [program ${programIndex}] body #${bodyIndex} header #${headerIndex} should be registered on the program`,
+            );
+          }
+        }
+      }
+    }
+  });
+
+  it("L7 invariant: every loop body resolves break/continue continuations to the correct join", () => {
+    let observedBreak = false;
+    let observedContinue = false;
+    let observedReturn = false;
+    let observedThrow = false;
+
+    for (const testCase of continuationLoopCases()) {
+      assertLoopInvariantCaseSupported(testCase);
+      for (const [
+        programIndex,
+        program,
+      ] of testCase.result.programs.entries()) {
+        for (const [bodyIndex, body] of program.loopBodies.entries()) {
+          assertLoopBodyContinuationsResolved(
+            `${testCase.name} [program ${programIndex}] body #${bodyIndex}`,
+            body,
+          );
+          observedBreak ||= body.breakHandles.length > 0;
+          observedContinue ||= body.continueHandles.length > 0;
+          observedReturn ||= body.returnHandles.length > 0;
+          observedThrow ||= body.throwHandles.length > 0;
+        }
+      }
+      if (testCase.name.includes("valued return")) {
+        assert.ok(
+          testCase.result.returnValue !== undefined,
+          `${testCase.name} should expose the function-level return-value continuation`,
         );
       }
-    },
-  );
+    }
 
-  it(
-    "the table-driven corpus satisfies all SSA invariants for scalar, Map, Set, branch, foreach Shape A, and foreach Shape B programs",
-    async () => {
-      const representatives = representativePrograms();
-      const presentKinds = new Set(representatives.map((r) => r.kind));
+    assert.equal(
+      observedBreak,
+      true,
+      "continuation fixtures should cover break",
+    );
+    assert.equal(
+      observedContinue,
+      true,
+      "continuation fixtures should cover continue",
+    );
+    assert.equal(
+      observedReturn,
+      true,
+      "continuation fixtures should cover return",
+    );
+    assert.equal(
+      observedThrow,
+      true,
+      "continuation fixtures should cover throw",
+    );
+  });
 
-      for (const kind of [
-        "scalar",
-        "map",
-        "set",
-        "branch",
+  it("L7 invariant: every bounded loop carries a non-null termination metric, every fixed-point loop does not", () => {
+    const observed = new Set<LoopClass>();
+
+    for (const testCase of loopInvariantCases()) {
+      assertLoopInvariantCaseSupported(testCase);
+      for (const [
+        programIndex,
+        program,
+      ] of testCase.result.programs.entries()) {
+        for (const [bodyIndex, body] of program.loopBodies.entries()) {
+          observed.add(testCase.loopClass);
+          assertMetricMatchesLoopClass(
+            `${testCase.name} [program ${programIndex}] body #${bodyIndex}`,
+            testCase.loopClass,
+            body,
+          );
+        }
+      }
+    }
+
+    assert.deepEqual(
+      [...observed].sort(),
+      [
+        "bounded-while",
+        "counter",
+        "fixed-point-while",
         "foreach-shape-a",
         "foreach-shape-b",
-      ] satisfies RepresentativeProgramKind[]) {
-        assert.ok(
-          presentKinds.has(kind),
-          `representativePrograms() should cover ${kind}`,
+      ].sort(),
+    );
+  });
+
+  it("L7 invariant: every modified rule appears in IR1SsaProgram.modifiedRules exactly once", () => {
+    for (const testCase of loopInvariantCases()) {
+      assertLoopInvariantCaseSupported(testCase);
+      for (const [
+        programIndex,
+        program,
+      ] of testCase.result.programs.entries()) {
+        assertLoopModifiedRulesAppearOnce(
+          `${testCase.name} [program ${programIndex}]`,
+          program,
         );
       }
-
-      for (const representative of representatives) {
-        const result = await representative.build();
-        assertSupportedRepresentativeResult(representative.name, result);
-        assertFreshVersionsAndJoinLocations(representative.name, result);
-        assertDominatingReads(representative.name, result);
-      }
-
-      for (const representative of bodyLoweredRepresentativePrograms()) {
-        const { result, declaredRules } = await representative.build();
-        assertFrameSuppression(representative.name, result, declaredRules);
-      }
-    },
-  );
-
-  it.skip(
-    "L7 invariant: every loop-header join has exactly one preheader and one loop-back input",
-    () => {
-      // PENDING Patch 7: verify loop-header join preheader and loop-back uniqueness.
-    },
-  );
-
-  it.skip(
-    "L7 invariant: every loop body resolves break/continue continuations to the correct join",
-    () => {
-      // PENDING Patch 7: verify loop-body continuation handle resolution.
-    },
-  );
-
-  it.skip(
-    "L7 invariant: every bounded loop carries a non-null termination metric, every fixed-point loop does not",
-    () => {
-      // PENDING Patch 7: verify metric presence by loop class.
-    },
-  );
-
-  it.skip(
-    "L7 invariant: every modified rule appears in IR1SsaProgram.modifiedRules exactly once",
-    () => {
-      // PENDING Patch 7: verify loop-modified rule frame suppression.
-    },
-  );
+    }
+  });
 });
