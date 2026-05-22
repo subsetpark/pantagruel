@@ -17,6 +17,13 @@
  * matching entries here and the corresponding tests pick up the
  * typecheck automatically.
  *
+ * Const-binding SSA deliberately moved several fixtures from prelude
+ * rejection into emitted Pant that can fail later at the free-call-decl
+ * boundary. Keep those entries only while the emitted document really
+ * fails the wasm typecheck because a surviving call lacks a Pant
+ * declaration; outputs that now typecheck, including parseable
+ * `> UNSUPPORTED:` comments, should not stay on this list.
+ *
  * Failure classes:
  *   - "$-binder-leak"     hygienic `$N` names reach the emitted text
  *                         (Pant identifiers cannot contain `$`); needs
@@ -41,11 +48,8 @@
  *                         (e.g. comparing a Bool result to an Int).
  */
 export const KNOWN_TYPECHECK_FAILURES = new Map<string, string>([
-  ["annotations.ts > rangeCheck", "annotation-types"],
   ["control-flow.ts > max", "$-binder-leak"],
-  ["expressions-array.ts > activeNames", "$-binder-leak"],
   ["expressions-array.ts > nameLengths", "$-binder-leak"],
-  ["expressions-array.ts > highScores", "$-binder-leak"],
   ["expressions-boolean.ts > and", "$-binder-leak"],
   ["expressions-boolean.ts > or", "$-binder-leak"],
   ["expressions-calls.ts > freeCall", "free-call-decl"],
@@ -58,31 +62,15 @@ export const KNOWN_TYPECHECK_FAILURES = new Map<string, string>([
   ["expressions-calls.ts > callInReturn", "free-call-decl"],
   ["expressions-calls.ts > bubbleNegation", "free-call-decl"],
   ["expressions-calls.ts > bubbleCondition", "free-call-decl"],
-  ["expressions-const-chained-impure.ts > chainedReplaceTrim", "free-call-decl"],
   ["expressions-const-chained-impure.ts > chainedArrayCount", "free-call-decl"],
   ["expressions-const-pure-calls.ts > constMathMax", "free-call-decl"],
   ["expressions-const-pure-calls.ts > constStringMethod", "free-call-decl"],
   ["expressions-const-pure-calls.ts > constChainedPure", "free-call-decl"],
   ["expressions-const-side-effectful.ts > constReplaceLiteral", "free-call-decl"],
-  ["expressions-const-side-effectful.ts > constReplaceRegex", "free-call-decl"],
   ["expressions-const-side-effectful.ts > constArrayFromMap", "free-call-decl"],
   ["expressions-const-side-effectful.ts > constMapEntries", "free-call-decl"],
-  ["expressions-const-side-effectful.ts > constSetHas", "free-call-decl"],
   ["expressions-const-pure-calls.ts > constImpureCall", "free-call-decl"],
   ["expressions-const-bindings.ts > effectfulConstRejected", "free-call-decl"],
-  ["expressions-misc.ts > asNumber", "free-call-decl"],
-  ["expressions-misc.ts > nonNull", "free-call-decl"],
-  ["expressions-nullish.ts > maybeBalance", "$-binder-leak"],
-  ["expressions-nullish.ts > maybeOwnerId", "$-binder-leak"],
-  ["expressions-nullish.ts > maybeOwnerIdOptional", "$-binder-leak"],
-  ["expressions-property-element-access.ts > getByDynamicKey", "free-call-decl"],
-  ["expressions-reduce.ts > sumAmounts", "$-binder-leak"],
-  ["expressions-reduce.ts > productValues", "$-binder-leak"],
-  ["expressions-reduce.ts > allActive", "$-binder-leak"],
-  ["expressions-reduce.ts > anyActive", "$-binder-leak"],
-  ["expressions-reduce.ts > sumFromBase", "$-binder-leak"],
-  ["expressions-reduce.ts > subtractAll", "$-binder-leak"],
-  ["expressions-reduce.ts > sumAmountsRight", "$-binder-leak"],
   ["functions-class.ts > Account.getBalance", "requires-external-context"],
   ["functions-class.ts > Account.deposit", "requires-external-context"],
   ["types-composite.ts > getPoint", "list-literal"],

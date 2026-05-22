@@ -237,6 +237,18 @@ ground the design choices, and the per-milestone history of the
 imperative-IR workstream all live in
 **[`docs/intermediate-representation.md`](docs/intermediate-representation.md)**.
 
+M1 of the local-binding SSA workstream is landed: TypeScript `const`
+bindings in pure-function preludes lower to `IR1Let`, then scalar SSA
+versions them as `{ kind: "local-binding"; name }` locations, parallel to
+property writes but with no primed counterpart and no frame obligation.
+Emission renders each binding as a chapter-body equation and later
+references that equation instead of duplicating the initializer. The old
+`inlineConstBindings` path and its prelude purity gate are gone; `let` and
+`var` still reject until the M2 mutable-let work. Newly accepted builtin-call
+shapes that survive to Pant as undeclared free calls remain tracked in
+`tests/known-typecheck-failures.mts` under `free-call-decl` until the
+separate Pant standard-library / free-call declaration workstream lands.
+
 Read that file before extending the IR or touching SSA-bearing code:
 
 - **Two paths, one Layer 1.** Pure → TS → L1 → L2 → `OpaqueExpr`; Effect →
