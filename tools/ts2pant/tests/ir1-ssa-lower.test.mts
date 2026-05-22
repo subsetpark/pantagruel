@@ -26,10 +26,8 @@ import {
   ir1SsaBodyLowerSuccess,
   ir1SsaBodyLowerUnsupported,
 } from "../src/ir1-ssa-lower.js";
-import {
-  lowerForeachShapeASummaries,
-  lowerForeachShapeBSummaries,
-} from "../src/ir1-ssa-loops.js";
+import { lowerForeachShapeAAsGeneralLoop } from "../src/ir1-ssa-foreach.js";
+import { lowerForeachShapeBSummaries } from "../src/ir1-ssa-loops.js";
 import { lowerScalarSsaToProps } from "../src/ir1-ssa-scalars.js";
 import { getAst, loadAst } from "../src/pant-wasm.js";
 
@@ -173,9 +171,9 @@ describe("ir1-ssa-lower", () => {
       ),
     );
     const loop = adaptLoopSummaryLowerResult(
-      lowerForeachShapeASummaries({
+      lowerForeachShapeAAsGeneralLoop({
         binder: "item0",
-        source: getAst().var("items"),
+        source: ir1Var("items"),
         body: ir1Assign(
           ir1Member(ir1Var("item0"), "Item_seen"),
           ir1LitBool(true),
@@ -318,9 +316,9 @@ describe("ir1-ssa-lower", () => {
   it("loop summaries report propositions and modified rules through one result", () => {
     const ast = getAst();
     const shapeA = adaptLoopSummaryLowerResult(
-      lowerForeachShapeASummaries({
+      lowerForeachShapeAAsGeneralLoop({
         binder: "item0",
-        source: ast.var("items"),
+        source: ir1Var("items"),
         body: ir1Assign(
           ir1Member(ir1Var("item0"), "Item_seen"),
           ir1LitBool(true),
@@ -360,8 +358,10 @@ describe("ir1-ssa-lower", () => {
       result.programs.flatMap((program) =>
         program.loopSummaries.map((summary) => summary.shape),
       ),
-      ["foreach-shape-a", "foreach-shape-b"],
+      ["foreach-shape-b"],
     );
+    assert.equal(result.programs[0]?.loopHeaderJoins.length, 1);
+    assert.equal(result.programs[0]?.loopBodies.length, 1);
 
     const shapeAProp = result.propositions[0];
     assert.equal(shapeAProp?.kind, "equation");

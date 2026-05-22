@@ -7,20 +7,19 @@ import { emitDocument } from "../src/emit.js";
 import { createSourceFile } from "../src/extract.js";
 import {
   ir1Assign,
-  ir1Binop,
-  ir1Block,
-  ir1LitNat,
+  ir1Foreach,
+  ir1LitBool,
   ir1Member,
   ir1SsaPropertyLocation,
   ir1SsaRuleOfLocation,
   ir1Var,
 } from "../src/ir1.js";
+import { lowerL1BodyToSsaProps } from "../src/ir1-lower-body.js";
 import {
   buildLoopSsaProgram,
-  lowerForeachShapeASummaries,
   lowerForeachSummary,
 } from "../src/ir1-ssa-loops.js";
-import { getAst, loadAst } from "../src/pant-wasm.js";
+import { loadAst } from "../src/pant-wasm.js";
 import { buildDocumentFromSourceFile } from "./helpers.mts";
 
 before(async () => {
@@ -39,34 +38,7 @@ function extractEquationRhs(output: string): string {
 describe("ir1-ssa-loops", () => {
   // PENDING Patch 2: introduce the dedicated loop-summary SSA helper and
   // summary/version bookkeeping for supported loop-like constructs.
-  // PENDING Patch 3: route canonical mu-search lowering through loop summaries.
-  // PENDING Patch 4: route foreach Shape A lowering through loop summaries.
-  // PENDING Patch 5: route foreach Shape B lowering through loop summaries.
-
-  it("records foreach Shape A quantified writes as loop summaries", () => {
-    const location = ir1SsaPropertyLocation(
-      "Item_seen",
-      ir1Var("$item"),
-      "seen",
-    );
-    const proposition = { kind: "raw" as const, text: "quantified-write" };
-
-    const result = lowerForeachSummary({
-      input: {
-        kind: "foreach-shape-a",
-        location,
-        propositions: [proposition],
-      },
-    });
-
-    assert.deepEqual(result.diagnostics, []);
-    assert.equal(result.summary?.shape, "foreach-shape-a");
-    assert.equal(result.summary?.location, location);
-    assert.equal(result.summary?.summaryVersion.origin, "loop-summary");
-    assert.equal(result.summary?.summaryVersion.location, location);
-    assert.deepEqual(result.propositions, [proposition]);
-    assert.deepEqual(result.modifiedRules, [ir1SsaRuleOfLocation(location)]);
-  });
+  // PENDING Patch 4: route foreach Shape B lowering through general-loop SSA.
 
   it("records foreach Shape B accumulator folds as loop summaries", () => {
     const location = ir1SsaPropertyLocation(
@@ -102,39 +74,42 @@ describe("ir1-ssa-loops", () => {
   });
 
   it("creates distinct summary versions and tracks modified rules", () => {
-    const shapeALocation = ir1SsaPropertyLocation(
-      "Item_seen",
-      ir1Var("$item"),
-      "seen",
-    );
-    const shapeBLocation = ir1SsaPropertyLocation(
+    const shapeBTotalLocation = ir1SsaPropertyLocation(
       "Account_total",
       ir1Var("account"),
       "total",
     );
+    const shapeBLimitLocation = ir1SsaPropertyLocation(
+      "Account_limit",
+      ir1Var("account"),
+      "limit",
+    );
 
     const result = buildLoopSsaProgram(
       [
-        { kind: "foreach-shape-a", location: shapeALocation },
-        { kind: "foreach-shape-b", location: shapeBLocation },
+        { kind: "foreach-shape-b", location: shapeBTotalLocation },
+        { kind: "foreach-shape-b", location: shapeBLimitLocation },
       ],
-      { declaredRules: ["Account_limit"] },
+      { declaredRules: ["Account_seen"] },
     );
 
-    const [shapeA, shapeB] = result.program.loopSummaries;
-    assert.notEqual(shapeA!.summaryVersion, shapeB!.summaryVersion);
-    assert.notEqual(shapeA!.summaryVersion.id, shapeB!.summaryVersion.id);
-    assert.equal(shapeA!.summaryVersion.location, shapeALocation);
-    assert.equal(shapeB!.summaryVersion.location, shapeBLocation);
+    const [shapeBTotal, shapeBLimit] = result.program.loopSummaries;
+    assert.notEqual(shapeBTotal!.summaryVersion, shapeBLimit!.summaryVersion);
+    assert.notEqual(
+      shapeBTotal!.summaryVersion.id,
+      shapeBLimit!.summaryVersion.id,
+    );
+    assert.equal(shapeBTotal!.summaryVersion.location, shapeBTotalLocation);
+    assert.equal(shapeBLimit!.summaryVersion.location, shapeBLimitLocation);
     assert.deepEqual(
       new Set(result.program.modifiedRules),
-      new Set(["Item_seen", "Account_total"]),
+      new Set(["Account_total", "Account_limit"]),
     );
     assert.deepEqual(
       new Set(result.program.declaredRules),
-      new Set(["Item_seen", "Account_total", "Account_limit"]),
+      new Set(["Account_total", "Account_limit", "Account_seen"]),
     );
-    assert.deepEqual(result.program.framedRules, ["Account_limit"]);
+    assert.deepEqual(result.program.framedRules, ["Account_seen"]);
   });
 
   it("reports unsupported loop summary inputs without summaries", () => {
@@ -155,46 +130,6 @@ describe("ir1-ssa-loops", () => {
         reason: "general loops are not supported by loop-summary SSA",
       },
     ]);
-  });
-
-  it("represents supported in-iteration read-after-write without subState mutation", () => {
-    const item = ir1Var("$item");
-    const value = ir1Member(item, "Item_value");
-    const score = ir1Member(item, "Item_score");
-    const result = lowerForeachShapeASummaries({
-      binder: "$item",
-      source: getAst().var("items"),
-      body: ir1Block([
-        ir1Assign(value, ir1Binop("add", value, ir1LitNat(1))),
-        ir1Assign(score, value),
-      ]),
-    });
-
-    assert.deepEqual(result.diagnostics, []);
-    assert.equal(result.summaries.length, 2);
-    assert.deepEqual(
-      result.summaries.map((s) => s.shape),
-      ["foreach-shape-a", "foreach-shape-a"],
-    );
-    assert.deepEqual(
-      new Set(result.modifiedRules),
-      new Set(["Item_value", "Item_score"]),
-    );
-
-    const ast = getAst();
-    const scoreEq = result.propositions.find(
-      (p) =>
-        p.kind === "equation" && ast.strExpr(p.lhs) === "Item_score' $item",
-    );
-    assert.ok(scoreEq, "expected a quantified score write");
-    if (scoreEq?.kind === "equation") {
-      assert.equal(ast.strExpr(scoreEq.rhs), "Item_value $item + 1");
-      assert.equal(scoreEq.guards?.length, 1);
-      assert.equal(
-        ast.strExpr(ast.forall([], scoreEq.guards ?? [], ast.var("__body__"))),
-        "all $item in items | __body__",
-      );
-    }
   });
 
   it("preserves unsupported diagnostics for out-of-scope loops", () => {
@@ -292,10 +227,41 @@ describe("ir1-ssa-loops", () => {
     );
   });
 
-  it.skip(
+  it(
     "foreach Shape A call site emits IR1SsaProgram with populated loopHeaderJoins and loopBodies",
     () => {
-      // PENDING Patch 3: verify the Shape A production call site uses general-loop SSA.
+      const result = lowerL1BodyToSsaProps(
+        ir1Foreach(
+          "item0",
+          ir1Var("items"),
+          ir1Assign(
+            ir1Member(ir1Var("item0"), "Item_seen"),
+            ir1LitBool(true),
+          ),
+        ),
+        [
+          {
+            kind: "rule",
+            name: "Item_seen",
+            params: [{ name: "item0", type: "Item" }],
+            returnType: "Bool",
+          },
+        ],
+        { applyConst: (expr) => expr },
+      );
+
+      assert.deepEqual(result.diagnostics, []);
+      assert.equal(result.programs.length, 1);
+      const [program] = result.programs;
+      assert.ok(program, "expected a Shape A SSA program");
+      assert.equal(program.loopSummaries.length, 0);
+      assert.ok(program.loopHeaderJoins.length > 0);
+      assert.ok(program.loopBodies.length > 0);
+      assert.deepEqual(program.modifiedRules, ["Item_seen"]);
+      assert.equal(
+        program.loopBodies[0]?.terminationMetric?.kind,
+        "ssa-iterating-source-metric",
+      );
     },
   );
 

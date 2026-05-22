@@ -3,8 +3,8 @@ import type {
   CollectionSsaFinalPropertyEntry,
   CollectionSsaLowerResult,
 } from "./ir1-ssa-collections.js";
+import type { ForeachAsGeneralLoopResult } from "./ir1-ssa-foreach.js";
 import type {
-  ForeachShapeASummaryResult,
   ForeachShapeBSummaryResult,
   ForeachSummaryLowerResult,
 } from "./ir1-ssa-loops.js";
@@ -237,7 +237,7 @@ export function collectionSsaBodyLowerResult(
 export function loopSsaBodyLowerResult(
   result:
     | ForeachSummaryLowerResult
-    | ForeachShapeASummaryResult
+    | ForeachAsGeneralLoopResult
     | ForeachShapeBSummaryResult,
 ): IR1SsaBodyLowerResult {
   return ir1SsaBodyLowerResult({
