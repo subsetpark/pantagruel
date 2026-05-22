@@ -273,8 +273,7 @@ let pp_guard fmt = function
 let pp_declaration fmt = function
   | DeclDomain (Upper name) -> fprintf fmt "%s." name
   | DeclAlias (Upper name, te) -> fprintf fmt "%s = %a." name pp_type_expr te
-  | DeclRule { name = Lower name; params; guards; return_type; body; contexts }
-    ->
+  | DeclRule { name = Lower name; params; guards; return_type; contexts } ->
       if contexts <> [] then
         fprintf fmt "{%a} "
           (pp_print_list ~pp_sep:pp_sep_comma (fun fmt c ->
@@ -286,7 +285,6 @@ let pp_declaration fmt = function
       if guards <> [] then
         fprintf fmt ", %a" (pp_print_list ~pp_sep:pp_sep_comma pp_guard) guards;
       fprintf fmt " => %a" pp_type_expr return_type;
-      Option.iter (fun body -> fprintf fmt " = %a" pp_expr body) body;
       fprintf fmt "."
   | DeclAction { label; params; guards; contexts } ->
       (match contexts with

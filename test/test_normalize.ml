@@ -20,7 +20,6 @@ let test_decl_name () =
             params = [];
             guards = [];
             return_type = TName (Upper "Bool");
-            body = None;
             contexts = [];
           }));
   check string "action" "Do thing"
@@ -53,7 +52,6 @@ let test_is_type_decl () =
             params = [];
             guards = [];
             return_type = TName (Upper "Bool");
-            body = None;
             contexts = [];
           }));
   check bool "action" false
@@ -84,7 +82,6 @@ let test_is_action () =
             params = [];
             guards = [];
             return_type = TName (Upper "Bool");
-            body = None;
             contexts = [];
           }))
 

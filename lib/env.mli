@@ -30,15 +30,7 @@ val add_type_entry : string -> entry -> t -> t
 val add_term_entry : string -> entry -> t -> t
 val add_domain : string -> Ast.loc -> chapter:int -> t -> t
 val add_alias : string -> Types.ty -> Ast.loc -> chapter:int -> t -> t
-
-val add_rule :
-  ?body:Ast.declaration * Ast.expr ->
-  string ->
-  Types.ty ->
-  Ast.loc ->
-  chapter:int ->
-  t ->
-  t
+val add_rule : string -> Types.ty -> Ast.loc -> chapter:int -> t -> t
 
 val add_closure :
   string -> Types.ty -> string -> Ast.loc -> chapter:int -> t -> t

@@ -239,8 +239,7 @@ let collect_chapter_head ~chapter ~doc_contexts env
   (* Pass 3: Add rules/actions and register context footprints *)
   let add_rule env (decl : declaration located) =
     match decl.value with
-    | DeclRule
-        { name = Lower name; params; guards; return_type; body; contexts } ->
+    | DeclRule { name = Lower name; params; guards; return_type; contexts } ->
         let* param_types =
           map_result (fun p -> resolve_type env p.param_type decl.loc) params
         in
@@ -271,8 +270,7 @@ let collect_chapter_head ~chapter ~doc_contexts env
                 check_overload_coherence name params param_types ret_ty decl.loc
                   env
               in
-              let body = Option.map (fun body -> (decl.value, body)) body in
-              Ok (Env.add_rule ?body name proc_ty decl.loc ~chapter env)
+              Ok (Env.add_rule name proc_ty decl.loc ~chapter env)
         in
         let env = Env.add_rule_guards name params guards env in
         (* Add rule to each context's member list *)
@@ -432,7 +430,7 @@ let recognize_rule_definition_eq
           List.find_map
             (fun (decl : Ast.declaration Ast.located) ->
               match[@warning "-4"] decl.value with
-              | DeclRule { name = Lower dn; params; body = None; _ }
+              | DeclRule { name = Lower dn; params; _ }
                 when dn = rule_name
                      && List.length params = List.length arg_names
                      && List.equal String.equal arg_names

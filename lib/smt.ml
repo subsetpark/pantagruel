@@ -1172,14 +1172,6 @@ let translate_proposition config env (e : expr) =
             in
             Printf.sprintf "(=> %s %s)" guard_conj smt_expr)
 
-let is_rule_recursive (decl : Ast.declaration) : bool =
-  match decl with
-  | DeclRule { name = Lower name; body = Some body; _ } ->
-      Smt_expr.expr_applies_name name body
-  | DeclRule { body = None; _ }
-  | DeclDomain _ | DeclAlias _ | DeclAction _ | DeclClosure _ ->
-      false
-
 let emit_rule_recursive config (env : Env.t) (decl : Ast.declaration)
     (body : Ast.expr) : string =
   match decl with
