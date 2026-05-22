@@ -255,6 +255,66 @@ The runtime contract for this abstraction is
 fresh versions, location-compatible joins, dominating reads, frame
 partitioning, and unsupported-construct rejection.
 
+## Local-binding SSA
+
+Const bindings in pure-function preludes now use the same scalar SSA
+pipeline as property writes. The prelude scanner accepts each
+`VariableDeclaration` in a `const` statement, preserves declaration order,
+and emits one `IR1Let` per declaration. The `inlineConstBindings`
+substitution path is gone: initializers are no longer duplicated into the
+return expression, so `extractReturnExpression` no longer asks
+`expressionHasSideEffects` whether a binding is safe to inline. `let` and
+`var` remain unsupported here; mutable local-variable SSA is the next
+workstream step.
+
+`IR1SsaLocation` includes a local binding variant:
+
+```ts
+{ kind: "local-binding"; name: string }
+```
+
+This location is versioned like `property`, `map-value`, and
+`set-membership`, but it has no rule name, no primed counterpart, and no
+framing obligation. A local-binding write records an
+`IR1SsaLocalBindingValue`; reads of `IR1Var(name)` resolve to the current
+version when `name` has a local-binding location in the scalar SSA state.
+Branch joins deliberately skip local bindings because M1 only admits
+straight-line `const` preludes; rebinding and mutable `let` joins are
+deferred.
+
+Lowering emits one body equation per versioned binding before the function's
+return equation. A TypeScript chain like:
+
+```ts
+export function scorePlusOne(account: Account): number {
+  const balance = account.balance;
+  const next = balance + 1;
+  return next;
+}
+```
+
+lowers through:
+
+```ts
+IR1Let("balance", Member(Var("account"), "account--balance"))
+IR1Let("next", Binop("+", Var("balance"), Lit(1)))
+Return(Var("next"))
+```
+
+and emits the split Pant shape:
+
+```pant
+balance = account--balance account.
+next = balance + 1.
+score-plus-one account = next.
+```
+
+That split form is intentionally visible in snapshots. Existing
+const-binding fixtures gain intermediate equations instead of preserving the
+old inlined shape, and newly accepted call initializers that still lack Pant
+declarations fail later as `free-call-decl` rather than as prelude purity
+rejections.
+
 ## General-loop SSA contract surface (L1)
 
 The general-loop SSA contract milestone extends the dormant IR1 SSA
