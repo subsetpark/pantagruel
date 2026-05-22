@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { Project } from "ts-morph";
 import ts from "typescript";
 import {
+  deriveBuiltinSpec,
   type DepModuleName,
   loadBuiltinDepModule,
   lookupBuiltinByCall,
@@ -38,6 +39,77 @@ function lookupFromSource(
   if (!call) throw new Error("No CallExpression found in source");
   return lookupBuiltinByCall(call, checker, program);
 }
+
+describe("deriveBuiltinSpec", () => {
+  it("maps Math.* keys to JS_MATH", () => {
+    assert.deepEqual(deriveBuiltinSpec("Math.foo", 1), {
+      rule: "JS_MATH::foo",
+      mod: "JS_MATH",
+      arity: 1,
+    });
+  });
+
+  it("maps String.prototype.* keys to JS_STRING", () => {
+    assert.deepEqual(deriveBuiltinSpec("String.prototype.foo", 1), {
+      rule: "JS_STRING::foo",
+      mod: "JS_STRING",
+      arity: 1,
+    });
+  });
+
+  it("lowers toUpperCase to kebab-case", () => {
+    assert.deepEqual(deriveBuiltinSpec("String.prototype.toUpperCase", 0), {
+      rule: "JS_STRING::to-upper-case",
+      mod: "JS_STRING",
+      arity: 0,
+    });
+  });
+
+  it("lowers indexOf to kebab-case", () => {
+    assert.deepEqual(deriveBuiltinSpec("String.prototype.indexOf", 1), {
+      rule: "JS_STRING::index-of",
+      mod: "JS_STRING",
+      arity: 1,
+    });
+  });
+
+  it("lowers lastIndexOf to kebab-case", () => {
+    assert.deepEqual(deriveBuiltinSpec("String.prototype.lastIndexOf", 1), {
+      rule: "JS_STRING::last-index-of",
+      mod: "JS_STRING",
+      arity: 1,
+    });
+  });
+
+  it("suffixes reserved max rule name", () => {
+    assert.deepEqual(deriveBuiltinSpec("Math.max", 2), {
+      rule: "JS_MATH::max-of",
+      mod: "JS_MATH",
+      arity: 2,
+    });
+  });
+
+  it("suffixes reserved min rule name", () => {
+    assert.deepEqual(deriveBuiltinSpec("Math.min", 2), {
+      rule: "JS_MATH::min-of",
+      mod: "JS_MATH",
+      arity: 2,
+    });
+  });
+
+  it("composes the full spec for existing entries", () => {
+    assert.deepEqual(deriveBuiltinSpec("Math.abs", 1), {
+      rule: "JS_MATH::abs",
+      mod: "JS_MATH",
+      arity: 1,
+    });
+    assert.deepEqual(deriveBuiltinSpec("String.prototype.indexOf", 1), {
+      rule: "JS_STRING::index-of",
+      mod: "JS_STRING",
+      arity: 1,
+    });
+  });
+});
 
 describe("builtins dispatch", () => {
   it("Math.max maps to JS_MATH::max-of in JS_MATH", () => {

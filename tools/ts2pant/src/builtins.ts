@@ -46,20 +46,39 @@ export interface BuiltinSpec {
  * uses "String.prototype.<name>") so the lookup logic can route by
  * which symbol-kind it just resolved.
  */
-type BuiltinKey = `Math.${string}` | `String.prototype.${string}`;
+export type BuiltinKey = `Math.${string}` | `String.prototype.${string}`;
 
-const BUILTINS: Map<BuiltinKey, BuiltinSpec> = new Map([
-  ["Math.max", { rule: "JS_MATH::max-of", mod: "JS_MATH", arity: 2 }],
-  ["Math.abs", { rule: "JS_MATH::abs", mod: "JS_MATH", arity: 1 }],
-  [
-    "String.prototype.toUpperCase",
-    { rule: "JS_STRING::to-upper-case", mod: "JS_STRING", arity: 0 },
-  ],
-  [
-    "String.prototype.indexOf",
-    { rule: "JS_STRING::index-of", mod: "JS_STRING", arity: 1 },
-  ],
+const RESERVED_RULE_NAMES: ReadonlySet<string> = new Set([
+  "max",
+  "min",
+  "cond",
+  "over",
 ]);
+
+const BUILTINS: Map<BuiltinKey, { arity: number }> = new Map([
+  ["Math.max", { arity: 2 }],
+  ["Math.abs", { arity: 1 }],
+  ["String.prototype.toUpperCase", { arity: 0 }],
+  ["String.prototype.indexOf", { arity: 1 }],
+]);
+
+export function deriveBuiltinSpec(
+  key: BuiltinKey,
+  arity: number,
+): BuiltinSpec {
+  const namespace = key.startsWith("Math.") ? "Math" : "String.prototype";
+  const method =
+    namespace === "Math"
+      ? key.slice("Math.".length)
+      : key.slice("String.prototype.".length);
+  const mod: DepModuleName = namespace === "Math" ? "JS_MATH" : "JS_STRING";
+  const kebab = method
+    .replace(/([A-Z])/g, "-$1")
+    .toLowerCase()
+    .replace(/^-/, "");
+  const ruleName = RESERVED_RULE_NAMES.has(kebab) ? `${kebab}-of` : kebab;
+  return { rule: `${mod}::${ruleName}`, mod, arity };
+}
 
 /**
  * Resolve a `ts.CallExpression` to a {@link BuiltinSpec} when its
@@ -104,7 +123,7 @@ export function lookupBuiltinByCall(
   const propAccess = expr.expression;
   const memberName = propAccess.name.text;
 
-  let spec: BuiltinSpec | undefined;
+  let key: BuiltinKey | undefined;
   if (
     ts.isIdentifier(propAccess.expression) &&
     propAccess.expression.text === "Math" &&
@@ -113,18 +132,23 @@ export function lookupBuiltinByCall(
       program,
     )
   ) {
-    spec = BUILTINS.get(`Math.${memberName}`);
+    key = `Math.${memberName}`;
   } else {
     const methodSymbol = checker.getSymbolAtLocation(propAccess.name);
     if (methodSymbol && isStringPrototypeMember(methodSymbol, program)) {
-      spec = BUILTINS.get(`String.prototype.${memberName}`);
+      key = `String.prototype.${memberName}`;
     }
   }
 
-  if (!spec) {
+  if (!key) {
     return null;
   }
-  return expr.arguments.length === spec.arity ? spec : null;
+  const entry = BUILTINS.get(key);
+  if (!entry) {
+    return null;
+  }
+  const fullSpec = deriveBuiltinSpec(key, entry.arity);
+  return expr.arguments.length === fullSpec.arity ? fullSpec : null;
 }
 
 function isDefaultLibSymbol(
