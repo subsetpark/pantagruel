@@ -60,6 +60,12 @@ const BUILTINS: Map<BuiltinKey, { arity: number }> = new Map([
   ["Math.abs", { arity: 1 }],
   ["String.prototype.toUpperCase", { arity: 0 }],
   ["String.prototype.indexOf", { arity: 1 }],
+  ["String.prototype.endsWith", { arity: 1 }],
+  ["String.prototype.includes", { arity: 1 }],
+  ["String.prototype.lastIndexOf", { arity: 1 }],
+  ["String.prototype.startsWith", { arity: 1 }],
+  ["String.prototype.toLowerCase", { arity: 0 }],
+  ["String.prototype.trim", { arity: 0 }],
 ]);
 
 export function deriveBuiltinSpec(key: BuiltinKey, arity: number): BuiltinSpec {

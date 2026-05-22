@@ -156,6 +156,72 @@ describe("builtins dispatch", () => {
     });
   });
 
+  it("s.endsWith(q) resolves to JS_STRING::ends-with", () => {
+    const spec = lookupFromSource(`
+      function f(s: string, q: string) { return s.endsWith(q); }
+    `);
+    assert.deepEqual(spec, {
+      rule: "JS_STRING::ends-with",
+      mod: "JS_STRING",
+      arity: 1,
+    });
+  });
+
+  it("s.includes(t) resolves to JS_STRING::includes", () => {
+    const spec = lookupFromSource(`
+      function f(s: string, t: string) { return s.includes(t); }
+    `);
+    assert.deepEqual(spec, {
+      rule: "JS_STRING::includes",
+      mod: "JS_STRING",
+      arity: 1,
+    });
+  });
+
+  it("s.lastIndexOf(t) resolves to JS_STRING::last-index-of", () => {
+    const spec = lookupFromSource(`
+      function f(s: string, t: string) { return s.lastIndexOf(t); }
+    `);
+    assert.deepEqual(spec, {
+      rule: "JS_STRING::last-index-of",
+      mod: "JS_STRING",
+      arity: 1,
+    });
+  });
+
+  it("s.startsWith(p) resolves to JS_STRING::starts-with", () => {
+    const spec = lookupFromSource(`
+      function f(s: string, p: string) { return s.startsWith(p); }
+    `);
+    assert.deepEqual(spec, {
+      rule: "JS_STRING::starts-with",
+      mod: "JS_STRING",
+      arity: 1,
+    });
+  });
+
+  it("s.toLowerCase() resolves to JS_STRING::to-lower-case", () => {
+    const spec = lookupFromSource(`
+      function f(s: string) { return s.toLowerCase(); }
+    `);
+    assert.deepEqual(spec, {
+      rule: "JS_STRING::to-lower-case",
+      mod: "JS_STRING",
+      arity: 0,
+    });
+  });
+
+  it("s.trim() resolves to JS_STRING::trim", () => {
+    const spec = lookupFromSource(`
+      function f(s: string) { return s.trim(); }
+    `);
+    assert.deepEqual(spec, {
+      rule: "JS_STRING::trim",
+      mod: "JS_STRING",
+      arity: 0,
+    });
+  });
+
   it("user-shadowed Math identifier does not match Math.max (symbol-based dispatch)", () => {
     // The shadowing `const Math` declares a fresh symbol whose declaration
     // sits in the user's source file, not in a TS lib .d.ts. The lookup
@@ -273,6 +339,12 @@ describe("loadBuiltinDepModule", () => {
     assert.match(text, /^module JS_STRING\./m);
     assert.match(text, /to-upper-case s: String => String\./);
     assert.match(text, /index-of s: String, t: String => Int\./);
+    assert.match(text, /to-lower-case s: String => String\./);
+    assert.match(text, /trim s: String => String\./);
+    assert.match(text, /includes s: String, t: String => Bool\./);
+    assert.match(text, /starts-with s: String, prefix: String => Bool\./);
+    assert.match(text, /ends-with s: String, suffix: String => Bool\./);
+    assert.match(text, /last-index-of s: String, t: String => Int\./);
   });
 
   it("caches the loaded module text across calls", () => {
