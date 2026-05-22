@@ -347,4 +347,22 @@ describe("ir1-ssa-loops", () => {
       /account--total' a = account--total a \+ \(\+ over each ([\w$]+) in items \| item--value \1\)/u,
     );
   });
+
+  it.skip(
+    "foreach Shape A call site emits IR1SsaProgram with populated loopHeaderJoins and loopBodies",
+    () => {
+      // PENDING Patch 3: verify the Shape A production call site uses general-loop SSA.
+    },
+  );
+
+  it.skip(
+    "foreach Shape B call site emits IR1SsaProgram with populated loopHeaderJoins and loopBodies",
+    () => {
+      // PENDING Patch 4: verify the Shape B production call site uses general-loop SSA.
+    },
+  );
+
+  it.skip("μ-search summary symbols are deleted from ir1-ssa-loops.ts", () => {
+    // PENDING Patch 5: verify the dead μ-search summary path is gone.
+  });
 });

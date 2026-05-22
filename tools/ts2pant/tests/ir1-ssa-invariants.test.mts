@@ -1067,4 +1067,32 @@ describe("ir1-ssa-invariants", () => {
       }
     },
   );
+
+  it.skip(
+    "L7 invariant: every loop-header join has exactly one preheader and one loop-back input",
+    () => {
+      // PENDING Patch 7: verify loop-header join preheader and loop-back uniqueness.
+    },
+  );
+
+  it.skip(
+    "L7 invariant: every loop body resolves break/continue continuations to the correct join",
+    () => {
+      // PENDING Patch 7: verify loop-body continuation handle resolution.
+    },
+  );
+
+  it.skip(
+    "L7 invariant: every bounded loop carries a non-null termination metric, every fixed-point loop does not",
+    () => {
+      // PENDING Patch 7: verify metric presence by loop class.
+    },
+  );
+
+  it.skip(
+    "L7 invariant: every modified rule appears in IR1SsaProgram.modifiedRules exactly once",
+    () => {
+      // PENDING Patch 7: verify loop-modified rule frame suppression.
+    },
+  );
 });
