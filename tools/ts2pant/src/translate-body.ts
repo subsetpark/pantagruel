@@ -1869,9 +1869,7 @@ function lowerPreludeBindings(
   baseParams: ReadonlyMap<string, string>,
   supply: UniqueSupply,
   state?: SymbolicState,
-):
-  | LoweredPreludeBindings
-  | { error: string } {
+): LoweredPreludeBindings | { error: string } {
   // Phase 1: TDZ validation — reject forward/self references on TS AST.
   // For μ-search bindings, validate both the init and the predicate; the
   // predicate may reference its own counter (that's the loop), so the
@@ -4416,11 +4414,11 @@ function buildSupportedSsaMutatingBody(
         {
           checker,
           strategy,
-            paramNames: scopedParamNames,
-            state,
-            supply,
-          },
-        );
+          paramNames: scopedParamNames,
+          state,
+          supply,
+        },
+      );
       if (isUnsupported(fixedPointBuilt)) {
         return fixedPointBuilt;
       }
