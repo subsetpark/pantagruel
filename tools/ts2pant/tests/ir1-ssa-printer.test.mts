@@ -82,7 +82,6 @@ describe("formatIR1SsaProgram", () => {
           joinVersion: vJoin,
         },
       ],
-      loopSummaries: [],
       loopHeaderJoins: [],
       loopBodies: [],
       declaredRules: ["Account_balance"],
@@ -148,7 +147,6 @@ describe("formatIR1SsaProgram", () => {
       reads: [ir1SsaRead(setMembershipLocation, setInitial, false)],
       writes,
       joins: [],
-      loopSummaries: [],
       loopHeaderJoins: [],
       loopBodies: [],
       declaredRules: [

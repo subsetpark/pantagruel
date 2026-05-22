@@ -25,12 +25,15 @@ import {
   ir1SsaWrite,
 } from "./ir1.js";
 import { lowerL1Expr } from "./ir1-lower.js";
-import type { LoopSsaBuildOptions } from "./ir1-ssa-loops.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
 import type { PropResult } from "./types.js";
 
 type UnsupportedDiagnostic = Extract<PropResult, { kind: "unsupported" }>;
+
+export interface LoopSsaBuildOptions {
+  declaredRules?: Iterable<IR1SsaRuleName>;
+}
 
 export interface ShapeAAsGeneralLoopOptions extends LoopSsaBuildOptions {
   binder: string;
@@ -218,7 +221,6 @@ function buildForeachProgram(
     reads: [],
     writes: loopParts.map((part) => part.write),
     joins: [],
-    loopSummaries: [],
     loopHeaderJoins: loopParts.map((part) => part.header),
     loopBodies: loopParts.map((part) => part.body),
     declaredRules: [...declaredRules],

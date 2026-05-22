@@ -189,13 +189,6 @@ export function formatIR1SsaProgram(program: IR1SsaProgram): string {
     currentVersions.set(locationKey(join.location), join.joinVersion);
   }
 
-  for (const summary of program.loopSummaries) {
-    lines.push(
-      `${labeller.labelOf(summary.summaryVersion)} = summarize-${summary.shape} ${formatIR1SsaLocation(summary.location)}.    > loop`,
-    );
-    currentVersions.set(locationKey(summary.location), summary.summaryVersion);
-  }
-
   for (const body of program.loopBodies) {
     const metric =
       body.terminationMetric === null

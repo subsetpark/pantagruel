@@ -2,7 +2,7 @@
  * L1 statement -> mutating-body Pantagruel propositions.
  *
  * This module is the body-level IR1 SSA result boundary. It recognizes
- * supported scalar, collection, and loop-summary L1 statement shapes,
+ * supported scalar, collection, and loop L1 statement shapes,
  * lowers them through the dedicated SSA helpers, and appends frames from
  * the resulting `modifiedRules` set. Unsupported statements fail closed
  * with diagnostics; there is no symbolic-state reducer fallback here.
@@ -13,7 +13,7 @@
  * https://doi.org/10.1145/115372.115320. The boundary functions in this
  * file preserve the SSA-style invariants used by the lowerers: each emitted
  * write has one versioned definition, branch/loop helpers report explicit
- * joins or summaries before equation emission, and `modifiedRules` remains
+ * joins before equation emission, and `modifiedRules` remains
  * the set of definitions that suppresses frame generation.
  */
 
@@ -63,10 +63,7 @@ export function adaptScalarSsaLowerResult(
   return scalarSsaBodyLowerResult(result);
 }
 
-export function adaptLoopSummaryLowerResult(
-  result: ForeachAsGeneralLoopResult,
-): IR1SsaBodyLowerResult;
-export function adaptLoopSummaryLowerResult(
+export function adaptLoopSsaLowerResult(
   result: ForeachAsGeneralLoopResult,
 ): IR1SsaBodyLowerResult {
   return loopSsaBodyLowerResult(result);
@@ -307,7 +304,7 @@ function lowerForeachL1BodyToSsaResult(
 
   if (stmt.body !== null) {
     results.push(
-      adaptLoopSummaryLowerResult(
+      adaptLoopSsaLowerResult(
         lowerForeachShapeAAsGeneralLoop({
           binder: stmt.binder,
           source: stmt.source,
@@ -323,7 +320,7 @@ function lowerForeachL1BodyToSsaResult(
 
   if (stmt.foldLeaves.length > 0) {
     results.push(
-      adaptLoopSummaryLowerResult(
+      adaptLoopSsaLowerResult(
         lowerForeachShapeBAsGeneralLoop({
           binder: stmt.binder,
           source: stmt.source,
