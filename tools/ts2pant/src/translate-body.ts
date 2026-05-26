@@ -2413,6 +2413,30 @@ function findReassignedNamesInBody(
     }
   };
 
+  const collectBlockScopedNames = (
+    stmt: ts.VariableStatement,
+    out: Set<string>,
+  ): void => {
+    const flags = stmt.declarationList.flags;
+    if (!(flags & ts.NodeFlags.Let) && !(flags & ts.NodeFlags.Const)) {
+      return;
+    }
+    for (const decl of stmt.declarationList.declarations) {
+      collectBindingNames(decl.name, out);
+    }
+  };
+
+  const walkVariableInitializers = (
+    declList: ts.VariableDeclarationList,
+    shadowed: ReadonlySet<string>,
+  ): void => {
+    for (const decl of declList.declarations) {
+      if (decl.initializer) {
+        walk(decl.initializer, shadowed);
+      }
+    }
+  };
+
   const walk = (node: ts.Node, shadowed: ReadonlySet<string>): void => {
     if (reassigned.size === targetNames.size) {
       return;
@@ -2427,6 +2451,20 @@ function findReassignedNamesInBody(
       ts.isConstructorDeclaration(node)
     ) {
       walkFunctionLike(node, shadowed);
+      return;
+    }
+    if (ts.isBlock(node)) {
+      const blockShadowed = new Set(shadowed);
+      for (const stmt of node.statements) {
+        walk(stmt, blockShadowed);
+        if (ts.isVariableStatement(stmt)) {
+          collectBlockScopedNames(stmt, blockShadowed);
+        }
+      }
+      return;
+    }
+    if (ts.isVariableStatement(node)) {
+      walkVariableInitializers(node.declarationList, shadowed);
       return;
     }
     if (ts.isVariableDeclaration(node)) {
