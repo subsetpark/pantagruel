@@ -107,15 +107,17 @@ describe("dogfood: src/translate-types.ts", () => {
     const output = await emitAndCheck(doc);
     t.assert.snapshot(output);
     assertPantTypeChecks(output, PANT_TIMEOUT_MS);
-    // Body composes two pieces that landed across recent PRs: the
-    // template literal `` `${kType}|${vType}` `` lowers to a `+` chain
-    // (TS_PRELUDE wiring in the same module is unused here because both
-    // operands are String), and `synth.byKV.get(...)` lowers to the
-    // partial-rule value application against the synthesized
-    // MapSynth domain.
+    // Body composes two pieces: same-file helper extraction for
+    // `mapSynthKey(kType, vType)`, and `synth.byKV.get(...)` lowering to
+    // the partial-rule value application against the synthesized MapSynth
+    // domain.
     t.assert.match(
       output,
-      /lookup-map-kv synth k-type v-type = map-synth--by-kv synth \(k-type \+ "\|" \+ v-type\)\./u,
+      /map-synth-key k-type1: String, v-type1: String => String\./u,
+    );
+    t.assert.match(
+      output,
+      /lookup-map-kv synth k-type v-type = map-synth--by-kv synth \(map-synth-key k-type v-type\)\./u,
     );
     // Map-partial signature alignment: the body emits a bare `V`
     // (Pant's Map encoding is unboxed under the partial-rule guard),
@@ -127,6 +129,20 @@ describe("dogfood: src/translate-types.ts", () => {
     t.assert.match(
       output,
       /lookup-map-kv synth: MapSynth, k-type: String, v-type: String => MapSynthEntry\./u,
+    );
+  });
+
+  it("mapSynthKey — translates and type-checks", async (t) => {
+    const doc = await buildDocumentFromPath(filePath, "mapSynthKey");
+    const output = await emitAndCheck(doc);
+    t.assert.snapshot(output);
+    assertPantTypeChecks(output, PANT_TIMEOUT_MS);
+    // Immutable `let separator = "|"` routes through local-binding SSA
+    // and stays as a body equation before the formatted key equation.
+    t.assert.match(output, /^separator = "\|"\.$/mu);
+    t.assert.match(
+      output,
+      /map-synth-key k-type v-type = k-type \+ separator \+ v-type\./u,
     );
   });
 
@@ -197,6 +213,20 @@ describe("dogfood: src/translate-types.ts", () => {
     );
   });
 
+  it("recordFieldShapeKey — translates and type-checks", async (t) => {
+    const doc = await buildDocumentFromPath(filePath, "recordFieldShapeKey");
+    const output = await emitAndCheck(doc);
+    t.assert.snapshot(output);
+    assertPantTypeChecks(output, PANT_TIMEOUT_MS);
+    // Exercises field accessor lowering plus immutable-let SSA for the
+    // record-shape delimiter used by `recordShapeKey`.
+    t.assert.match(output, /^separator = ":"\.$/mu);
+    t.assert.match(
+      output,
+      /record-field-shape-key field = record-synth-field--name field \+ separator \+ record-synth-field--type field\./u,
+    );
+  });
+
   it("cellIsUsed — translates and type-checks", async (t) => {
     const doc = await buildDocumentFromPath(filePath, "cellIsUsed");
     const output = await emitAndCheck(doc);
@@ -241,6 +271,36 @@ describe("dogfood: src/translate-types.ts", () => {
     assertPantTypeChecks(output, PANT_TIMEOUT_MS);
   });
 
+  it("prefixedDigitStem — translates and type-checks", async (t) => {
+    const doc = await buildDocumentFromPath(filePath, "prefixedDigitStem");
+    const output = await emitAndCheck(doc);
+    t.assert.snapshot(output);
+    assertPantTypeChecks(output, PANT_TIMEOUT_MS);
+    // The digit-leading filename repair path is now factored into a
+    // let-backed helper, so the emitted equation preserves the stable
+    // "F_" prefix as a versioned local binding.
+    t.assert.match(output, /^prefix = "F_"\.$/mu);
+    t.assert.match(
+      output,
+      /prefixed-digit-stem stem = prefix \+ stem\./u,
+    );
+  });
+
+  it("tupleDepModuleName — translates and type-checks", async (t) => {
+    const doc = await buildDocumentFromPath(filePath, "tupleDepModuleName");
+    const output = await emitAndCheck(doc);
+    t.assert.snapshot(output);
+    assertPantTypeChecks(output, PANT_TIMEOUT_MS);
+    // Dep module names all end with the tuple-module suffix; the helper
+    // is intentionally tiny but verifies immutable-let lowering on a
+    // production naming invariant.
+    t.assert.match(output, /^suffix = "_TUPLES"\.$/mu);
+    t.assert.match(
+      output,
+      /tuple-dep-module-name safe-stem = safe-stem \+ suffix\./u,
+    );
+  });
+
   it("emptyTupleSynth — translates and type-checks", async (t) => {
     const doc = await buildDocumentFromPath(filePath, "emptyTupleSynth");
     const output = await emitAndCheck(doc);
@@ -279,11 +339,15 @@ describe("dogfood: @pant annotations entail", () => {
     { file: "translate-types.ts", fn: "emptyMapSynth", minChecks: 1 },
     { file: "translate-types.ts", fn: "emptyRecordSynth", minChecks: 1 },
     { file: "translate-types.ts", fn: "lookupMapKV", minChecks: 1 },
+    { file: "translate-types.ts", fn: "mapSynthKey", minChecks: 1 },
     { file: "translate-types.ts", fn: "fieldRuleName", minChecks: 1 },
     { file: "translate-types.ts", fn: "lookupRecordShape", minChecks: 1 },
+    { file: "translate-types.ts", fn: "recordFieldShapeKey", minChecks: 1 },
     { file: "translate-types.ts", fn: "cellIsUsed", minChecks: 2 },
     { file: "translate-types.ts", fn: "cellLookupRecord", minChecks: 1 },
     { file: "translate-types.ts", fn: "depModuleNameForFile", minChecks: 2 },
+    { file: "translate-types.ts", fn: "prefixedDigitStem", minChecks: 1 },
+    { file: "translate-types.ts", fn: "tupleDepModuleName", minChecks: 1 },
     { file: "translate-types.ts", fn: "emptyTupleSynth", minChecks: 1 },
   ];
 

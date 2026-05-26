@@ -257,15 +257,15 @@ partitioning, and unsupported-construct rejection.
 
 ## Local-binding SSA
 
-Const bindings in pure-function preludes now use the same scalar SSA
-pipeline as property writes. The prelude scanner accepts each
-`VariableDeclaration` in a `const` statement, preserves declaration order,
-and emits one `IR1Let` per declaration. The `inlineConstBindings`
-substitution path is gone: initializers are no longer duplicated into the
-return expression, so `extractReturnExpression` no longer asks
-`expressionHasSideEffects` whether a binding is safe to inline. `let` and
-`var` remain unsupported here; mutable local-variable SSA is the next
-workstream step.
+Local bindings in pure-function preludes and supported mutating bodies use
+the same scalar SSA pipeline as property writes. The prelude scanner accepts
+each `VariableDeclaration` in a `const` or `let` statement, preserves
+declaration order, and emits one `IR1Let` per declaration. The
+`inlineConstBindings` substitution path is gone: initializers are no longer
+duplicated into the return expression, so `extractReturnExpression` no
+longer asks `expressionHasSideEffects` whether a binding is safe to inline.
+`var` remains rejected by design because its hoisting and function-scope
+semantics do not match the block-local SSA model.
 
 `IR1SsaLocation` includes a local binding variant:
 
@@ -278,9 +278,29 @@ This location is versioned like `property`, `map-value`, and
 framing obligation. A local-binding write records an
 `IR1SsaLocalBindingValue`; reads of `IR1Var(name)` resolve to the current
 version when `name` has a local-binding location in the scalar SSA state.
-Branch joins deliberately skip local bindings because M1 only admits
-straight-line `const` preludes; rebinding and mutable `let` joins are
-deferred.
+
+Mutable `let` reassignment lowers to `IR1Stmt.assign` whose target is
+`IR1Var(name)`. `lowerScalarAssign` treats that target as a write to the
+same `{ kind: "local-binding"; name }` location allocated by the declaration,
+so every `x = e`, compound assignment, and `++`/`--` step bumps the local
+binding's version exactly as property writes bump property-location
+versions. Destructuring assignment lowers as a sequence of ordinary
+var-target assigns, one per bound name, so it uses the same versioning
+protocol after the TS binding pattern has been flattened.
+
+Control-flow joins are shared with the rest of scalar SSA. Branch
+reassignment flows through the cond-stmt machinery: each arm writes its own
+local-binding version, and the join introduces the version selected by the
+condition. Loop-bodied reassignment flows through the general-loop SSA
+pipeline with the location class set to `local-binding`, so the loop summary
+versions the local variable alongside property, map-value, and
+set-membership locations without a separate loop mechanism.
+
+Closure-captured reassignment is deliberately outside this pipeline. The
+reassignment recognizer classifies it separately and rejects it before IR1
+lowering with a dedicated diagnostic. The recognizer under-accepts
+conservatively: ambiguous writes are treated as mutation candidates rather
+than risking an incorrectly immutable local binding.
 
 Lowering emits one body equation per versioned binding before the function's
 return equation. A TypeScript chain like:

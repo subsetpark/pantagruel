@@ -43,9 +43,6 @@
  *   - "free-call-decl"    user calls a TS function that ts2pant doesn't
  *                         translate; the call survives but no Pant
  *                         declaration is synthesized for the callee.
- *   - "let-rejected"      local `let` binding fixture reserved for the
- *                         let-mutation SSA workstream; currently rejected
- *                         before emission.
  *   - "var-rejected"      local `var` binding fixture; `var` remains out of
  *                         scope and should keep a dedicated diagnostic.
  *   - "closure-captured-reassignment"

@@ -39,7 +39,7 @@ exports[`dogfood: src/translate-types.ts > isUnsupportedUnknown — translates a
 `;
 
 exports[`dogfood: src/translate-types.ts > lookupMapKV — translates and type-checks 1`] = `
-"module LOOKUP_MAP_KV.\\n\\nMapSynthNames.\\nmap-synth-names--domain m: MapSynthNames => String.\\nmap-synth-names--rule m: MapSynthNames => String.\\nmap-synth-names--key-pred m: MapSynthNames => String.\\nMapSynthEntry.\\nmap-synth-entry--names m1: MapSynthEntry => MapSynthNames.\\nmap-synth-entry--k-type m1: MapSynthEntry => String.\\nmap-synth-entry--v-type m1: MapSynthEntry => String.\\nMapSynth.\\nmap-synth--by-kv-key m2: MapSynth, k: String => Bool.\\nmap-synth--by-kv m2: MapSynth, k: String, map-synth--by-kv-key m2 k => MapSynthEntry.\\nmap-synth--emitted m2: MapSynth => [String].\\nlookup-map-kv synth: MapSynth, k-type: String, v-type: String => MapSynthEntry.\\n\\n---\\n\\nlookup-map-kv synth k-type v-type = map-synth--by-kv synth (k-type + \\"|\\" + v-type).\\n\\ncheck\\n\\nlookup-map-kv synth k-type v-type = map-synth--by-kv synth (k-type + \\"|\\" + v-type).\\n"
+"module LOOKUP_MAP_KV.\\n\\nMapSynthNames.\\nmap-synth-names--domain m: MapSynthNames => String.\\nmap-synth-names--rule m: MapSynthNames => String.\\nmap-synth-names--key-pred m: MapSynthNames => String.\\nMapSynthEntry.\\nmap-synth-entry--names m1: MapSynthEntry => MapSynthNames.\\nmap-synth-entry--k-type m1: MapSynthEntry => String.\\nmap-synth-entry--v-type m1: MapSynthEntry => String.\\nMapSynth.\\nmap-synth--by-kv-key m2: MapSynth, k: String => Bool.\\nmap-synth--by-kv m2: MapSynth, k: String, map-synth--by-kv-key m2 k => MapSynthEntry.\\nmap-synth--emitted m2: MapSynth => [String].\\nmap-synth-key k-type1: String, v-type1: String => String.\\nlookup-map-kv synth: MapSynth, k-type: String, v-type: String => MapSynthEntry.\\n\\n---\\n\\nlookup-map-kv synth k-type v-type = map-synth--by-kv synth (map-synth-key k-type v-type).\\n\\ncheck\\n\\nlookup-map-kv synth k-type v-type = map-synth--by-kv synth (map-synth-key k-type v-type).\\n"
 `;
 
 exports[`dogfood: src/translate-types.ts > lookupRecordShape — translates and type-checks 1`] = `
@@ -48,4 +48,20 @@ exports[`dogfood: src/translate-types.ts > lookupRecordShape — translates and 
 
 exports[`dogfood: src/translate-types.ts > manglePantTypeToFragment — translates and type-checks 1`] = `
 "module MANGLE_PANT_TYPE_TO_FRAGMENT.\\n\\nmangle-pant-type-to-fragment-impl pant-type1: String => [String].\\nmangle-pant-type-to-fragment pant-type: String => [String].\\n\\n---\\n\\nmangle-pant-type-to-fragment pant-type = mangle-pant-type-to-fragment-impl pant-type.\\n\\ncheck\\n\\nmangle-pant-type-to-fragment pant-type = mangle-pant-type-to-fragment-impl pant-type.\\nmangle-pant-type-to-fragment pant-type = mangle-pant-type-to-fragment pant-type.\\n"
+`;
+
+exports[`dogfood: src/translate-types.ts > mapSynthKey — translates and type-checks 1`] = `
+"module MAP_SYNTH_KEY.\\n\\nmap-synth-key k-type: String, v-type: String => String.\\nseparator  => String.\\n\\n---\\n\\nseparator = \\"|\\".\\nmap-synth-key k-type v-type = k-type + separator + v-type.\\n\\ncheck\\n\\nmap-synth-key k-type v-type = k-type + \\"|\\" + v-type.\\n"
+`;
+
+exports[`dogfood: src/translate-types.ts > prefixedDigitStem — translates and type-checks 1`] = `
+"module PREFIXED_DIGIT_STEM.\\n\\nprefixed-digit-stem stem: String => String.\\nprefix  => String.\\n\\n---\\n\\nprefix = \\"F_\\".\\nprefixed-digit-stem stem = prefix + stem.\\n\\ncheck\\n\\nprefixed-digit-stem stem = \\"F_\\" + stem.\\n"
+`;
+
+exports[`dogfood: src/translate-types.ts > recordFieldShapeKey — translates and type-checks 1`] = `
+"module RECORD_FIELD_SHAPE_KEY.\\n\\nRecordSynthField.\\nrecord-synth-field--name r: RecordSynthField => String.\\nrecord-synth-field--type r: RecordSynthField => String.\\nrecord-field-shape-key field: RecordSynthField => String.\\nseparator  => String.\\n\\n---\\n\\nseparator = \\":\\".\\nrecord-field-shape-key field = record-synth-field--name field + separator + record-synth-field--type field.\\n\\ncheck\\n\\nrecord-field-shape-key field = record-synth-field--name field + \\":\\" + record-synth-field--type field.\\n"
+`;
+
+exports[`dogfood: src/translate-types.ts > tupleDepModuleName — translates and type-checks 1`] = `
+"module TUPLE_DEP_MODULE_NAME.\\n\\ntuple-dep-module-name safe-stem: String => String.\\nsuffix  => String.\\n\\n---\\n\\nsuffix = \\"_TUPLES\\".\\ntuple-dep-module-name safe-stem = safe-stem + suffix.\\n\\ncheck\\n\\ntuple-dep-module-name safe-stem = safe-stem + \\"_TUPLES\\".\\n"
 `;

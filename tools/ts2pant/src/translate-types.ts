@@ -115,6 +115,15 @@ export interface MapSynthEntry {
 }
 
 /**
+ * @pant mapSynthKey kType vType = kType + "|" + vType.
+ */
+function mapSynthKey(kType: string, vType: string): string {
+  // biome-ignore lint/style/useConst: deliberate immutable-let dogfood fixture
+  let separator = "|";
+  return `${kType}${separator}${vType}`;
+}
+
+/**
  * Accumulates `Map<K, V>` occurrences encountered anywhere in the module's
  * type positions (parameters, return types, nested inside another Map's V,
  * inside arrays / tuples / unions) and synthesizes one domain + guarded-rule
@@ -152,7 +161,7 @@ export function registerMapKV(
   kType: string,
   vType: string,
 ): { domain: string | null; synth: MapSynth; registry: NameRegistry } {
-  const key = `${kType}|${vType}`;
+  const key = mapSynthKey(kType, vType);
   const cached = synth.byKV.get(key);
   if (cached) {
     return { domain: cached.names.domain, synth, registry };
@@ -181,14 +190,14 @@ export function registerMapKV(
 }
 
 /**
- * @pant lookupMapKV synth kType vType = byKV synth (kType + "|" + vType).
+ * @pant lookupMapKV synth kType vType = byKV synth (mapSynthKey kType vType).
  */
 export function lookupMapKV(
   synth: MapSynth,
   kType: string,
   vType: string,
 ): MapSynthEntry | undefined {
-  return synth.byKV.get(`${kType}|${vType}`);
+  return synth.byKV.get(mapSynthKey(kType, vType));
 }
 
 /**
@@ -286,6 +295,15 @@ export interface RecordSynth {
 }
 
 /**
+ * @pant recordFieldShapeKey field = (name field) + ":" + (type field).
+ */
+function recordFieldShapeKey(field: RecordSynthField): string {
+  // biome-ignore lint/style/useConst: deliberate immutable-let dogfood fixture
+  let separator = ":";
+  return `${field.name}${separator}${field.type}`;
+}
+
+/**
  * @pant all s: String | ~(s in emitted emptyRecordSynth).
  */
 export function emptyRecordSynth(): RecordSynth {
@@ -294,7 +312,7 @@ export function emptyRecordSynth(): RecordSynth {
 
 /** Canonical shape string: sorted `<name>:<type>|<name>:<type>|...`. */
 function recordShapeKey(fields: ReadonlyArray<RecordSynthField>): string {
-  return fields.map((f) => `${f.name}:${f.type}`).join("|");
+  return fields.map(recordFieldShapeKey).join("|");
 }
 
 /** Capitalize first letter. `"name"` → `"Name"`. */
@@ -581,6 +599,24 @@ function tupleCtorBaseName(shape: TupleShape): string | null {
 }
 
 /**
+ * @pant prefixedDigitStem stem = "F_" + stem.
+ */
+function prefixedDigitStem(stem: string): string {
+  // biome-ignore lint/style/useConst: deliberate immutable-let dogfood fixture
+  let prefix = "F_";
+  return `${prefix}${stem}`;
+}
+
+/**
+ * @pant tupleDepModuleName safeStem = safeStem + "_TUPLES".
+ */
+function tupleDepModuleName(safeStem: string): string {
+  // biome-ignore lint/style/useConst: deliberate immutable-let dogfood fixture
+  let suffix = "_TUPLES";
+  return `${safeStem}${suffix}`;
+}
+
+/**
  * Derive the per-source-file dep module name for tuple constructors.
  * `<FILE_BASE_NAME>_TUPLES` in ALL_CAPS_SNAKE — every emitted module
  * name in this codebase uses the screaming-snake convention (matches
@@ -611,8 +647,8 @@ function depModuleNameForFileImpl(fileName: string): string {
   if (stem.length === 0) {
     return "TUPLES";
   }
-  const safeStem = /^[A-Z]/u.test(stem) ? stem : `F_${stem}`;
-  return `${safeStem}_TUPLES`;
+  const safeStem = /^[A-Z]/u.test(stem) ? stem : prefixedDigitStem(stem);
+  return tupleDepModuleName(safeStem);
 }
 
 /**

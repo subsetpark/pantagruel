@@ -237,15 +237,20 @@ ground the design choices, and the per-milestone history of the
 imperative-IR workstream all live in
 **[`docs/intermediate-representation.md`](docs/intermediate-representation.md)**.
 
-M1 of the local-binding SSA workstream is landed: TypeScript `const`
-bindings in pure-function preludes lower to `IR1Let`, then scalar SSA
-versions them as `{ kind: "local-binding"; name }` locations, parallel to
-property writes but with no primed counterpart and no frame obligation.
-Emission renders each binding as a chapter-body equation and later
-references that equation instead of duplicating the initializer. The old
-`inlineConstBindings` path and its prelude purity gate are gone; `let` and
-`var` still reject until the M2 mutable-let work. Newly accepted built-in call
-shapes that survive to Pant as undeclared free calls remain tracked in
+The local-binding SSA workstream is landed for TypeScript `const` and
+`let`. Declarations in pure-function preludes and supported mutating bodies
+lower to `IR1Let`, then scalar SSA versions them as
+`{ kind: "local-binding"; name }` locations, parallel to property writes but
+with no primed counterpart and no frame obligation. Reassignment to `let`
+bindings lowers to `IR1Stmt.assign` with an `IR1Var(name)` target; the same
+location SSA protocol handles straight-line writes, cond-stmt branch joins,
+general-loop SSA writes, and destructuring assignment as a sequence of
+var-target assigns. Closure-captured reassignment is out of scope and rejects
+with its own diagnostic. `var` is rejected by design because hoisting and
+function scope do not fit the block-local SSA discipline. The reassignment
+recognizer under-accepts conservatively: ambiguous syntax must be treated as
+mutation rather than silently collapsing versions. Newly accepted built-in
+call shapes that survive to Pant as undeclared free calls remain tracked in
 `tests/known-typecheck-failures.mts` under `free-call-decl` until the
 separate Pant standard-library / free-call declaration workstream lands.
 
