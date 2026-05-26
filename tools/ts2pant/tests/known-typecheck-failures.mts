@@ -40,9 +40,11 @@
  *                         wasm checker path.
  *   - "list-literal"      emits `[a, b]` for tuple/array initializers
  *                         where Pant has no list literal target.
- *   - "free-call-decl"    user calls a TS function that ts2pant doesn't
- *                         translate; the call survives but no Pant
- *                         declaration is synthesized for the callee.
+ *   - "free-call-decl"    surviving M2 gaps where a method/stdlib or
+ *                         dispatch-incomplete call reaches Pant without
+ *                         the needed declaration/import. Bare-identifier
+ *                         ambient and non-builtin free calls should not
+ *                         appear here; they get synthesized EUF heads.
  *   - "var-rejected"      local `var` binding fixture; `var` remains out of
  *                         scope and should keep a dedicated diagnostic.
  *   - "closure-captured-reassignment"

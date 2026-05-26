@@ -517,6 +517,8 @@ export interface OpaqueSynth {
 
 /**
  * @pant all s: String | ~(s in emitted emptyOpaqueSynth).
+ * @pant ~(needsDomain emptyOpaqueSynth).
+ * @pant ~(domainEmitted emptyOpaqueSynth).
  */
 export function emptyOpaqueSynth(): OpaqueSynth {
   return {

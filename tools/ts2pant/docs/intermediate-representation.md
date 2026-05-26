@@ -114,6 +114,37 @@ canonical vocabulary reject as `unsupported`; there is no opaque
 catch-all that would smuggle uncanonicalized TS shapes through the
 pipeline.
 
+## Bare Free-Call Floor
+
+Bare-identifier TypeScript calls that are not dispatched to a known
+builtin are lowered as pure EUF applications. The consumer document must
+therefore carry a typed Pantagruel rule head for the callee; otherwise a
+body like `return max(a, b)` emits `max a b` with no declaration and the
+wasm checker correctly rejects the dangling identifier.
+
+`extractReferencedFunctions` owns that floor. It now synthesizes rule
+heads for both in-project declarations and bare ambient / other
+non-builtin free functions, using `translateSignature` plus the same
+`paramNameMap` rename threading as ordinary function extraction. These
+heads are declarations only: no body propositions and no axioms are
+emitted, so the semantics are exactly EUF congruence (Kroening &
+Strichman, *Decision Procedures*, Ch. 4).
+
+When the resolved TypeScript signature contains `any` or `unknown` in a
+parameter or return position, the free-call floor maps that position to
+the shared `Opaque` domain and registers the minimal opaque vocabulary
+through `SynthCell` (`emptyOpaqueSynth`, `cellRegisterOpaqueDomain`,
+`cellRegisterOpaqueValue`, `emitOpaqueSynthDecls` in
+`src/translate-types.ts`, with names from `src/opaque.ts`). The domain is
+therefore emitted only on use and remains local to the same synth-drain
+discipline as Map, Record, and Tuple synth output.
+
+This floor is deliberately narrow. Method calls (`s.replace(...)`,
+`m.entries()`), stdlib receiver forms, and calls that are present in the
+builtin table but miss dispatch/import plumbing remain M2 work. They must
+stay visible as method/stdlib or dispatch-completion failures rather than
+being papered over by a bare free-call declaration.
+
 ## SSA Foundations
 
 ts2pant's mutating-body lowering builds an SSA form **over memory

@@ -102,6 +102,29 @@ describe("dogfood: src/translate-types.ts", () => {
     t.assert.match(output, /^RecordSynthEntry\.$/mu);
   });
 
+  it("emptyOpaqueSynth — translates and type-checks", async (t) => {
+    const doc = await buildDocumentFromPath(filePath, "emptyOpaqueSynth");
+    const output = await emitAndCheck(doc);
+    t.assert.snapshot(output);
+    assertPantTypeChecks(output, PANT_TIMEOUT_MS);
+    // The opaque synth starts inert: no registered ids, no domain need,
+    // and no prior domain emission. These are the local invariants that
+    // make the any/unknown fallback an on-use vocabulary rather than a
+    // globally injected domain.
+    t.assert.match(
+      output,
+      /all k\d*: String \| ~\(opaque-synth--by-id-key empty-opaque-synth k\d*\)\./u,
+    );
+    t.assert.match(
+      output,
+      /opaque-synth--needs-domain empty-opaque-synth = false\./u,
+    );
+    t.assert.match(
+      output,
+      /opaque-synth--domain-emitted empty-opaque-synth = false\./u,
+    );
+  });
+
   it("lookupMapKV — translates and type-checks", async (t) => {
     const doc = await buildDocumentFromPath(filePath, "lookupMapKV");
     const output = await emitAndCheck(doc);
@@ -213,6 +236,20 @@ describe("dogfood: src/translate-types.ts", () => {
     );
   });
 
+  it("lookupOpaqueValue — translates and type-checks", async (t) => {
+    const doc = await buildDocumentFromPath(filePath, "lookupOpaqueValue");
+    const output = await emitAndCheck(doc);
+    t.assert.snapshot(output);
+    assertPantTypeChecks(output, PANT_TIMEOUT_MS);
+    // Opaque value lookup is the sibling of the Map/Record lookup helpers:
+    // the optional Map.get return narrows to the guarded value rule that
+    // backs OpaqueSynth.byId.
+    t.assert.match(
+      output,
+      /lookup-opaque-value synth id = opaque-synth--by-id synth id\./u,
+    );
+  });
+
   it("recordFieldShapeKey — translates and type-checks", async (t) => {
     const doc = await buildDocumentFromPath(filePath, "recordFieldShapeKey");
     const output = await emitAndCheck(doc);
@@ -261,6 +298,24 @@ describe("dogfood: src/translate-types.ts", () => {
     t.assert.match(
       output,
       /cell-lookup-record cell: SynthCell, fields\d*: \[RecordSynthField\] => RecordSynthEntry\./u,
+    );
+  });
+
+  it("cellLookupOpaqueValue — translates and type-checks", async (t) => {
+    const doc = await buildDocumentFromPath(filePath, "cellLookupOpaqueValue");
+    const output = await emitAndCheck(doc);
+    t.assert.snapshot(output);
+    assertPantTypeChecks(output, PANT_TIMEOUT_MS);
+    // This is the opaque-synth dogfood case for the M1 free-call floor:
+    // the body calls a bare helper (`lookupOpaqueValue`) and the consumer
+    // document now gets a typed EUF rule head instead of dangling.
+    t.assert.match(
+      output,
+      /lookup-opaque-value synth: OpaqueSynth, id\d*: String => OpaqueSynthEntry\./u,
+    );
+    t.assert.match(
+      output,
+      /cell-lookup-opaque-value cell id = lookup-opaque-value \(synth-cell--opaque-synth cell\) id\./u,
     );
   });
 
@@ -338,13 +393,16 @@ describe("dogfood: @pant annotations entail", () => {
     { file: "translate-types.ts", fn: "manglePantTypeToFragment", minChecks: 2 },
     { file: "translate-types.ts", fn: "emptyMapSynth", minChecks: 1 },
     { file: "translate-types.ts", fn: "emptyRecordSynth", minChecks: 1 },
+    { file: "translate-types.ts", fn: "emptyOpaqueSynth", minChecks: 3 },
     { file: "translate-types.ts", fn: "lookupMapKV", minChecks: 1 },
     { file: "translate-types.ts", fn: "mapSynthKey", minChecks: 1 },
     { file: "translate-types.ts", fn: "fieldRuleName", minChecks: 1 },
     { file: "translate-types.ts", fn: "lookupRecordShape", minChecks: 1 },
+    { file: "translate-types.ts", fn: "lookupOpaqueValue", minChecks: 1 },
     { file: "translate-types.ts", fn: "recordFieldShapeKey", minChecks: 1 },
     { file: "translate-types.ts", fn: "cellIsUsed", minChecks: 2 },
     { file: "translate-types.ts", fn: "cellLookupRecord", minChecks: 1 },
+    { file: "translate-types.ts", fn: "cellLookupOpaqueValue", minChecks: 1 },
     { file: "translate-types.ts", fn: "depModuleNameForFile", minChecks: 2 },
     { file: "translate-types.ts", fn: "prefixedDigitStem", minChecks: 1 },
     { file: "translate-types.ts", fn: "tupleDepModuleName", minChecks: 1 },
