@@ -9,7 +9,11 @@ import {
 } from "../src/extract.js";
 import { assertWasmTypeChecks, loadAst } from "../src/pant-wasm.js";
 import { emptyNameRegistry, registerName } from "../src/name-registry.js";
+import { OPAQUE_DOMAIN, opaqueValueRuleName } from "../src/opaque.js";
 import {
+  cellEmitSynth,
+  cellLookupOpaqueValue,
+  cellRegisterOpaqueValue,
   cellRegisterTupleConstructor,
   cellTupleShapes,
   depModuleNameForFile,
@@ -438,6 +442,53 @@ describe("cellRegisterMap / cellRegisterRecord / cellRegisterTupleConstructor re
       null,
     );
     assert.equal(cellTupleShapes(cell).length, 0);
+  });
+});
+
+describe("cellRegisterOpaqueValue / cellEmitSynth", () => {
+  it("emits nothing while no opaque id is registered", async () => {
+    await loadAst();
+    const cell = newSynthCell();
+    assert.deepEqual(cellEmitSynth(cell), []);
+  });
+
+  it("emits the Opaque domain and one nullary constant per id on use", async () => {
+    await loadAst();
+    const cell = newSynthCell();
+    const first = cellRegisterOpaqueValue(cell, "foo.ts:1");
+    const firstAgain = cellRegisterOpaqueValue(cell, "foo.ts:1");
+    const second = cellRegisterOpaqueValue(cell, "foo.ts:2");
+
+    assert.equal(first.rule, opaqueValueRuleName("foo.ts:1"));
+    assert.equal(firstAgain.rule, first.rule);
+    assert.equal(cellLookupOpaqueValue(cell, "foo.ts:2"), second);
+
+    assert.deepEqual(cellEmitSynth(cell), [
+      { kind: "domain", name: OPAQUE_DOMAIN },
+      {
+        kind: "rule",
+        name: opaqueValueRuleName("foo.ts:1"),
+        params: [],
+        returnType: OPAQUE_DOMAIN,
+      },
+      {
+        kind: "rule",
+        name: opaqueValueRuleName("foo.ts:2"),
+        params: [],
+        returnType: OPAQUE_DOMAIN,
+      },
+    ]);
+    assert.deepEqual(cellEmitSynth(cell), []);
+
+    cellRegisterOpaqueValue(cell, "foo.ts:3");
+    assert.deepEqual(cellEmitSynth(cell), [
+      {
+        kind: "rule",
+        name: opaqueValueRuleName("foo.ts:3"),
+        params: [],
+        returnType: OPAQUE_DOMAIN,
+      },
+    ]);
   });
 });
 

@@ -6,6 +6,7 @@ import {
   type NameRegistry,
   registerName,
 } from "./name-registry.js";
+import { OPAQUE_DOMAIN, opaqueValueRuleName } from "./opaque.js";
 import { getAst } from "./pant-wasm.js";
 import type { PantDeclaration } from "./types.js";
 
@@ -494,6 +495,92 @@ export function emitRecordSynthDecls(
   };
 }
 
+export interface OpaqueSynthEntry {
+  readonly id: string;
+  readonly rule: string;
+}
+
+/**
+ * Accumulates opaque-value identities used by a module and synthesizes the
+ * shared `Opaque` domain plus one nullary constant per identity. Like the
+ * other synths, registration is idempotent and emission is incremental.
+ *
+ * No distinctness axiom is emitted: different ids receive different rule
+ * names, but the solver remains free to unify or separate their values.
+ */
+export interface OpaqueSynth {
+  readonly byId: ReadonlyMap<string, OpaqueSynthEntry>;
+  readonly emitted: ReadonlySet<string>;
+}
+
+/**
+ * @pant all s: String | ~(s in emitted emptyOpaqueSynth).
+ */
+export function emptyOpaqueSynth(): OpaqueSynth {
+  return { byId: new Map(), emitted: new Set() };
+}
+
+export function registerOpaqueValue(
+  synth: OpaqueSynth,
+  id: string,
+): { entry: OpaqueSynthEntry; synth: OpaqueSynth } {
+  const cached = synth.byId.get(id);
+  if (cached) {
+    return { entry: cached, synth };
+  }
+  const entry: OpaqueSynthEntry = { id, rule: opaqueValueRuleName(id) };
+  const newById = new Map(synth.byId);
+  newById.set(id, entry);
+  return { entry, synth: { byId: newById, emitted: synth.emitted } };
+}
+
+/**
+ * @pant lookupOpaqueValue synth id = byId synth id.
+ */
+export function lookupOpaqueValue(
+  synth: OpaqueSynth,
+  id: string,
+): OpaqueSynthEntry | undefined {
+  return synth.byId.get(id);
+}
+
+/**
+ * Materialize accumulated opaque decls in registration order. The `Opaque`
+ * domain is emitted only when at least one id has been registered, and only
+ * on the first non-empty drain. Each registered id emits one nullary
+ * constant `opaqueValueRuleName(id) => Opaque.`.
+ */
+export function emitOpaqueSynthDecls(
+  synth: OpaqueSynth,
+  registry: NameRegistry,
+): { decls: PantDeclaration[]; synth: OpaqueSynth; registry: NameRegistry } {
+  const decls: PantDeclaration[] = [];
+  const newEmitted = new Set(synth.emitted);
+  const shouldEmitDomain = synth.emitted.size === 0;
+  let emittedAny = false;
+  for (const [id, entry] of synth.byId) {
+    if (newEmitted.has(id)) {
+      continue;
+    }
+    if (shouldEmitDomain && !emittedAny) {
+      decls.push({ kind: "domain", name: OPAQUE_DOMAIN });
+    }
+    emittedAny = true;
+    newEmitted.add(id);
+    decls.push({
+      kind: "rule",
+      name: entry.rule,
+      params: [],
+      returnType: OPAQUE_DOMAIN,
+    });
+  }
+  return {
+    decls,
+    synth: { byId: synth.byId, emitted: newEmitted },
+    registry,
+  };
+}
+
 /**
  * Canonical tuple shape: the ordered Pantagruel element types that a
  * tuple constructor builds. Two TS aliases that share the same shape
@@ -671,6 +758,7 @@ function depModuleNameForFileImpl(fileName: string): string {
 export interface SynthCell {
   synth: MapSynth;
   recordSynth: RecordSynth;
+  opaqueSynth: OpaqueSynth;
   registry: NameRegistry;
   tupleSynth: TupleSynth;
   sourceFile?: ts.SourceFile;
@@ -699,6 +787,7 @@ export function newSynthCell(
   const cell: SynthCell = {
     synth: emptyMapSynth(),
     recordSynth: emptyRecordSynth(),
+    opaqueSynth: emptyOpaqueSynth(),
     registry: registry ?? emptyNameRegistry(),
     tupleSynth: emptyTupleSynth(),
     imports: new Set(),
@@ -949,6 +1038,28 @@ export function cellLookupRecord(
   return lookupRecordShape(cell.recordSynth, fields);
 }
 
+/** Cell-mutating wrapper around `registerOpaqueValue`. */
+export function cellRegisterOpaqueValue(
+  cell: SynthCell,
+  id: string,
+): OpaqueSynthEntry {
+  const r = registerOpaqueValue(cell.opaqueSynth, id);
+  cell.opaqueSynth = r.synth;
+  return r.entry;
+}
+
+/**
+ * Cell read-through for `lookupOpaqueValue`.
+ *
+ * @pant cellLookupOpaqueValue cell id = lookupOpaqueValue (opaqueSynth cell) id.
+ */
+export function cellLookupOpaqueValue(
+  cell: SynthCell,
+  id: string,
+): OpaqueSynthEntry | undefined {
+  return lookupOpaqueValue(cell.opaqueSynth, id);
+}
+
 /** Cell-mutating wrapper around `registerName`. */
 export function cellRegisterName(cell: SynthCell, name: string): string {
   const r = registerName(cell.registry, toPantTermName(name));
@@ -981,7 +1092,10 @@ export function cellEmitSynth(cell: SynthCell): PantDeclaration[] {
   const recR = emitRecordSynthDecls(cell.recordSynth, cell.registry);
   cell.recordSynth = recR.synth;
   cell.registry = recR.registry;
-  return [...mapR.decls, ...recR.decls];
+  const opaqueR = emitOpaqueSynthDecls(cell.opaqueSynth, cell.registry);
+  cell.opaqueSynth = opaqueR.synth;
+  cell.registry = opaqueR.registry;
+  return [...mapR.decls, ...recR.decls, ...opaqueR.decls];
 }
 
 /**
