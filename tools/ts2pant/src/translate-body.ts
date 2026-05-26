@@ -269,6 +269,10 @@ function bindingNames(b: ConstBinding): readonly string[] {
   return b.kind === "earlyReturn" ? [] : [b.tsName];
 }
 
+const VAR_BINDINGS_UNSUPPORTED =
+  "var bindings are not supported (use let or const)";
+const LET_REASSIGNMENT_UNSUPPORTED = "let with reassignment not yet supported";
+
 export interface MuSearch {
   counterName: string;
   initTsExpr: ts.Expression;
@@ -1760,21 +1764,11 @@ function extractReturnExpression(
     if (!ts.isVariableStatement(stmt)) {
       return null;
     }
-    const declList = stmt.declarationList;
-    if (!(declList.flags & ts.NodeFlags.Const)) {
+    const loweredBindings = constLikeBindingsFromVariableStatement(stmt, body);
+    if (loweredBindings === null) {
       return null;
     }
-
-    for (const decl of declList.declarations) {
-      if (!ts.isIdentifier(decl.name) || !decl.initializer) {
-        return null;
-      }
-      bindings.push({
-        kind: "const",
-        tsName: decl.name.text,
-        initializer: decl.initializer,
-      });
-    }
+    bindings.push(...loweredBindings);
     i += 1;
   }
 
@@ -1837,8 +1831,16 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
       }
       if (ts.isVariableStatement(stmt)) {
         const declList = stmt.declarationList;
-        if (!(declList.flags & ts.NodeFlags.Const)) {
-          return "let/var bindings not supported";
+        if (declList.flags & ts.NodeFlags.Let) {
+          const declaredNames = declaredIdentifierNames(declList);
+          if (
+            declaredNames === null ||
+            findReassignedNamesInBody(body, declaredNames).size > 0
+          ) {
+            return LET_REASSIGNMENT_UNSUPPORTED;
+          }
+        } else if (!(declList.flags & ts.NodeFlags.Const)) {
+          return VAR_BINDINGS_UNSUPPORTED;
         }
       }
       if (ts.isExpressionStatement(stmt)) {
@@ -1872,6 +1874,57 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
     return "if-without-else as final statement (use `if (P) return E` for early-return arms or add an else branch)";
   }
   return "non-translatable control flow";
+}
+
+function constLikeBindingsFromVariableStatement(
+  stmt: ts.VariableStatement,
+  body: ts.Block,
+): ConstBinding[] | null {
+  const declList = stmt.declarationList;
+  if (declList.flags & ts.NodeFlags.Const) {
+    return constBindingsFromDeclarationList(declList);
+  }
+  if (declList.flags & ts.NodeFlags.Let) {
+    const declaredNames = declaredIdentifierNames(declList);
+    if (
+      declaredNames === null ||
+      findReassignedNamesInBody(body, declaredNames).size > 0
+    ) {
+      return null;
+    }
+    return constBindingsFromDeclarationList(declList);
+  }
+  return null;
+}
+
+function constBindingsFromDeclarationList(
+  declList: ts.VariableDeclarationList,
+): ConstBinding[] | null {
+  const bindings: ConstBinding[] = [];
+  for (const decl of declList.declarations) {
+    if (!ts.isIdentifier(decl.name) || !decl.initializer) {
+      return null;
+    }
+    bindings.push({
+      kind: "const",
+      tsName: decl.name.text,
+      initializer: decl.initializer,
+    });
+  }
+  return bindings;
+}
+
+function declaredIdentifierNames(
+  declList: ts.VariableDeclarationList,
+): ReadonlySet<string> | null {
+  const names = new Set<string>();
+  for (const decl of declList.declarations) {
+    if (!ts.isIdentifier(decl.name) || !decl.initializer) {
+      return null;
+    }
+    names.add(decl.name.text);
+  }
+  return names;
 }
 
 interface LoweredPreludeBindings {
@@ -2250,6 +2303,200 @@ function collectBindingNames(name: ts.BindingName, out: Set<string>): void {
       collectBindingNames(element.name, out);
     }
   }
+}
+
+const ASSIGNMENT_OPERATORS = new Set<ts.SyntaxKind>([
+  ts.SyntaxKind.EqualsToken,
+  ts.SyntaxKind.PlusEqualsToken,
+  ts.SyntaxKind.MinusEqualsToken,
+  ts.SyntaxKind.AsteriskEqualsToken,
+  ts.SyntaxKind.AsteriskAsteriskEqualsToken,
+  ts.SyntaxKind.SlashEqualsToken,
+  ts.SyntaxKind.PercentEqualsToken,
+  ts.SyntaxKind.LessThanLessThanEqualsToken,
+  ts.SyntaxKind.GreaterThanGreaterThanEqualsToken,
+  ts.SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken,
+  ts.SyntaxKind.AmpersandEqualsToken,
+  ts.SyntaxKind.BarEqualsToken,
+  ts.SyntaxKind.CaretEqualsToken,
+  ts.SyntaxKind.BarBarEqualsToken,
+  ts.SyntaxKind.AmpersandAmpersandEqualsToken,
+  ts.SyntaxKind.QuestionQuestionEqualsToken,
+]);
+
+function isAssignmentOperator(kind: ts.SyntaxKind): boolean {
+  return ASSIGNMENT_OPERATORS.has(kind);
+}
+
+/**
+ * Conservative reassignment recognizer for local `let` stepping-stone support.
+ * Any write to one of `declaredNames`, including inside nested closures, marks
+ * that binding as mutated so Patch 2 can keep it on the explicit stopgap path.
+ */
+function findReassignedNamesInBody(
+  body: ts.Block,
+  declaredNames: ReadonlySet<string>,
+): ReadonlySet<string> {
+  const reassigned = new Set<string>();
+  const targetNames = new Set(declaredNames);
+
+  const addIfTarget = (name: string, shadowed: ReadonlySet<string>): void => {
+    if (targetNames.has(name) && !shadowed.has(name)) {
+      reassigned.add(name);
+    }
+  };
+
+  const collectAssignmentTarget = (
+    node: ts.Node,
+    shadowed: ReadonlySet<string>,
+  ): void => {
+    node = ts.isExpression(node) ? unwrapExpression(node) : node;
+    if (ts.isIdentifier(node)) {
+      addIfTarget(node.text, shadowed);
+      return;
+    }
+    if (ts.isArrayLiteralExpression(node)) {
+      for (const element of node.elements) {
+        if (ts.isSpreadElement(element)) {
+          collectAssignmentTarget(element.expression, shadowed);
+        } else {
+          collectAssignmentTarget(element, shadowed);
+        }
+      }
+      return;
+    }
+    if (ts.isObjectLiteralExpression(node)) {
+      for (const prop of node.properties) {
+        if (ts.isShorthandPropertyAssignment(prop)) {
+          addIfTarget(prop.name.text, shadowed);
+          continue;
+        }
+        if (ts.isPropertyAssignment(prop)) {
+          collectAssignmentTarget(prop.initializer, shadowed);
+          continue;
+        }
+        if (ts.isSpreadAssignment(prop)) {
+          collectAssignmentTarget(prop.expression, shadowed);
+        }
+      }
+    }
+  };
+
+  const walkFunctionLike = (
+    node:
+      | ts.ArrowFunction
+      | ts.FunctionExpression
+      | ts.FunctionDeclaration
+      | ts.MethodDeclaration
+      | ts.GetAccessorDeclaration
+      | ts.SetAccessorDeclaration
+      | ts.ConstructorDeclaration,
+    shadowed: ReadonlySet<string>,
+  ): void => {
+    for (const param of node.parameters) {
+      if (param.initializer) {
+        walk(param.initializer, shadowed);
+      }
+    }
+    const innerShadowed = new Set(shadowed);
+    for (const param of node.parameters) {
+      collectBindingNames(param.name, innerShadowed);
+    }
+    if (
+      (ts.isFunctionExpression(node) || ts.isFunctionDeclaration(node)) &&
+      node.name
+    ) {
+      innerShadowed.add(node.name.text);
+    }
+    if (node.body) {
+      walk(node.body, innerShadowed);
+    }
+  };
+
+  const collectBlockScopedNames = (
+    stmt: ts.VariableStatement,
+    out: Set<string>,
+  ): void => {
+    const flags = stmt.declarationList.flags;
+    if (!(flags & ts.NodeFlags.Let) && !(flags & ts.NodeFlags.Const)) {
+      return;
+    }
+    for (const decl of stmt.declarationList.declarations) {
+      collectBindingNames(decl.name, out);
+    }
+  };
+
+  const walkVariableInitializers = (
+    declList: ts.VariableDeclarationList,
+    shadowed: ReadonlySet<string>,
+  ): void => {
+    for (const decl of declList.declarations) {
+      if (decl.initializer) {
+        walk(decl.initializer, shadowed);
+      }
+    }
+  };
+
+  const walk = (node: ts.Node, shadowed: ReadonlySet<string>): void => {
+    if (reassigned.size === targetNames.size) {
+      return;
+    }
+    if (
+      ts.isArrowFunction(node) ||
+      ts.isFunctionExpression(node) ||
+      ts.isFunctionDeclaration(node) ||
+      ts.isMethodDeclaration(node) ||
+      ts.isGetAccessorDeclaration(node) ||
+      ts.isSetAccessorDeclaration(node) ||
+      ts.isConstructorDeclaration(node)
+    ) {
+      walkFunctionLike(node, shadowed);
+      return;
+    }
+    if (ts.isBlock(node)) {
+      const blockShadowed = new Set(shadowed);
+      for (const stmt of node.statements) {
+        walk(stmt, blockShadowed);
+        if (ts.isVariableStatement(stmt)) {
+          collectBlockScopedNames(stmt, blockShadowed);
+        }
+      }
+      return;
+    }
+    if (ts.isVariableStatement(node)) {
+      walkVariableInitializers(node.declarationList, shadowed);
+      return;
+    }
+    if (ts.isVariableDeclaration(node)) {
+      if (node.initializer) {
+        walk(node.initializer, shadowed);
+      }
+      return;
+    }
+    if (
+      ts.isBinaryExpression(node) &&
+      isAssignmentOperator(node.operatorToken.kind)
+    ) {
+      collectAssignmentTarget(node.left, shadowed);
+      walk(node.right, shadowed);
+      return;
+    }
+    if (ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) {
+      if (
+        node.operator === ts.SyntaxKind.PlusPlusToken ||
+        node.operator === ts.SyntaxKind.MinusMinusToken
+      ) {
+        collectAssignmentTarget(node.operand, shadowed);
+        return;
+      }
+    }
+    ts.forEachChild(node, (child) => walk(child, shadowed));
+  };
+
+  for (const stmt of body.statements) {
+    walk(stmt, new Set());
+  }
+  return reassigned;
 }
 
 /** Collect sub-expressions of a binding pattern that are evaluated in the
@@ -4451,19 +4698,12 @@ function buildSupportedSsaMutatingBody(
     }
     if (ts.isVariableStatement(stmt)) {
       const declList = stmt.declarationList;
-      if (declList.flags & ts.NodeFlags.Const) {
-        const bindings: ConstBinding[] = [];
-        for (const decl of declList.declarations) {
-          if (!ts.isIdentifier(decl.name) || !decl.initializer) {
-            break;
-          }
-          bindings.push({
-            kind: "const",
-            tsName: decl.name.text,
-            initializer: decl.initializer,
-          });
-        }
-        if (bindings.length === declList.declarations.length) {
+      if (
+        declList.flags & ts.NodeFlags.Const ||
+        declList.flags & ts.NodeFlags.Let
+      ) {
+        const bindings = constLikeBindingsFromVariableStatement(stmt, body);
+        if (bindings !== null) {
           const lowered = lowerPreludeBindings(
             bindings,
             checker,
@@ -4485,9 +4725,18 @@ function buildSupportedSsaMutatingBody(
           setCanonicalize(state, canonicalizeAliases);
           continue;
         }
+        if (declList.flags & ts.NodeFlags.Let) {
+          return { unsupported: LET_REASSIGNMENT_UNSUPPORTED };
+        }
+      }
+      if (
+        !(declList.flags & ts.NodeFlags.Const) &&
+        !(declList.flags & ts.NodeFlags.Let)
+      ) {
+        return { unsupported: VAR_BINDINGS_UNSUPPORTED };
       }
       return {
-        unsupported: "local variable declaration (let/var or effectful const)",
+        unsupported: "local variable declaration (effectful const)",
       };
     }
     const built = buildSupportedSsaStatement(stmt, {
