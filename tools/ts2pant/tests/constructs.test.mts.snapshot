@@ -183,7 +183,7 @@ exports[`expressions-const-bindings.ts > effectfulConstRejected 1`] = `
 `;
 
 exports[`expressions-const-bindings.ts > letRejected 1`] = `
-"module LET_REJECTED.\\n\\nlet-rejected  => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-rejected — let/var bindings not supported.\\n"
+"module LET_REJECTED.\\n\\nlet-rejected  => Int.\\nx  => Int.\\n\\n---\\n\\nx = 1.\\nlet-rejected = x.\\n"
 `;
 
 exports[`expressions-const-bindings.ts > simpleConst 1`] = `
@@ -375,51 +375,51 @@ exports[`expressions-ir-anchor.ts > effectiveValue 1`] = `
 `;
 
 exports[`expressions-let-closure-captured.ts > letForEachCapturedTotal 1`] = `
-"module LET_FOR_EACH_CAPTURED_TOTAL.\\n\\nlet-for-each-captured-total xs: [Int] => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-for-each-captured-total — let/var bindings not supported.\\n"
+"module LET_FOR_EACH_CAPTURED_TOTAL.\\n\\nlet-for-each-captured-total xs: [Int] => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-for-each-captured-total — let with reassignment not yet supported.\\n"
 `;
 
 exports[`expressions-let-closure-captured.ts > letMapCapturedCount 1`] = `
-"module LET_MAP_CAPTURED_COUNT.\\n\\nlet-map-captured-count xs: [Int] => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-map-captured-count — let/var bindings not supported.\\n"
+"module LET_MAP_CAPTURED_COUNT.\\n\\nlet-map-captured-count xs: [Int] => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-map-captured-count — let with reassignment not yet supported.\\n"
 `;
 
 exports[`expressions-let-immutable.ts > chainedLet 1`] = `
-"module CHAINED_LET.\\n\\nchained-let a: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: chained-let — let/var bindings not supported.\\n"
+"module CHAINED_LET.\\n\\nchained-let a: Int => Int.\\nx  => Int.\\ny  => Int.\\n\\n---\\n\\nx = a.\\ny = a + 1.\\nchained-let a = y.\\n"
 `;
 
 exports[`expressions-let-immutable.ts > letInTernary 1`] = `
-"module LET_IN_TERNARY.\\n\\nlet-in-ternary a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-in-ternary — let/var bindings not supported.\\n"
+"module LET_IN_TERNARY.\\n\\nlet-in-ternary a: Int, b: Int => Int.\\nx  => Int.\\n\\n---\\n\\nx = a + b.\\nlet-in-ternary a b = (cond x > 0 => x, true => 0).\\n"
 `;
 
 exports[`expressions-let-immutable.ts > letMathMax 1`] = `
-"module LET_MATH_MAX.\\n\\nlet-math-max a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-math-max — let/var bindings not supported.\\n"
+"module LET_MATH_MAX.\\n\\nlet-math-max a: Int, b: Int => Int.\\nm  => Int.\\n\\n---\\n\\nm = (max Math) a b.\\nlet-math-max a b = m + 1.\\n"
 `;
 
 exports[`expressions-let-immutable.ts > letWithPropAccess 1`] = `
-"module LET_WITH_PROP_ACCESS.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nlet-with-prop-access a: Account => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-with-prop-access — let/var bindings not supported.\\n"
+"module LET_WITH_PROP_ACCESS.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\nlet-with-prop-access a: Account => Int.\\nb  => Int.\\n\\n---\\n\\nb = account--balance a.\\nlet-with-prop-access a = b + 1.\\n"
 `;
 
 exports[`expressions-let-immutable.ts > simpleLet 1`] = `
-"module SIMPLE_LET.\\n\\nsimple-let a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: simple-let — let/var bindings not supported.\\n"
+"module SIMPLE_LET.\\n\\nsimple-let a: Int, b: Int => Int.\\nx  => Int.\\n\\n---\\n\\nx = a + b.\\nsimple-let a b = x.\\n"
 `;
 
 exports[`expressions-let-mutation-branch.ts > letNestedBranch 1`] = `
-"module LET_NESTED_BRANCH.\\n\\nlet-nested-branch a: Int, b: Int, c: Int, outer: Bool, inner: Bool => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-nested-branch — let/var bindings not supported.\\n"
+"module LET_NESTED_BRANCH.\\n\\nlet-nested-branch a: Int, b: Int, c: Int, outer: Bool, inner: Bool => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-nested-branch — let with reassignment not yet supported.\\n"
 `;
 
 exports[`expressions-let-mutation-branch.ts > letThenElseBranch 1`] = `
-"module LET_THEN_ELSE_BRANCH.\\n\\nlet-then-else-branch a: Int, b: Int, c: Int, cond1: Bool => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-then-else-branch — let/var bindings not supported.\\n"
+"module LET_THEN_ELSE_BRANCH.\\n\\nlet-then-else-branch a: Int, b: Int, c: Int, cond1: Bool => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-then-else-branch — let with reassignment not yet supported.\\n"
 `;
 
 exports[`expressions-let-mutation-branch.ts > letThenOnlyBranch 1`] = `
-"module LET_THEN_ONLY_BRANCH.\\n\\nlet-then-only-branch a: Int, b: Int, cond1: Bool => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-then-only-branch — let/var bindings not supported.\\n"
+"module LET_THEN_ONLY_BRANCH.\\n\\nlet-then-only-branch a: Int, b: Int, cond1: Bool => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-then-only-branch — let with reassignment not yet supported.\\n"
 `;
 
 exports[`expressions-let-mutation-loop.ts > letForLoopAccumulator 1`] = `
-"module LET_FOR_LOOP_ACCUMULATOR.\\n\\nlet-for-loop-accumulator n: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-for-loop-accumulator — let/var bindings not supported.\\n"
+"module LET_FOR_LOOP_ACCUMULATOR.\\n\\nlet-for-loop-accumulator n: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-for-loop-accumulator — let with reassignment not yet supported.\\n"
 `;
 
 exports[`expressions-let-mutation-loop.ts > letWhileAccumulator 1`] = `
-"module LET_WHILE_ACCUMULATOR.\\n\\nlet-while-accumulator limit: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-while-accumulator — let/var bindings not supported.\\n"
+"module LET_WHILE_ACCUMULATOR.\\n\\nlet-while-accumulator limit: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-while-accumulator — let with reassignment not yet supported.\\n"
 `;
 
 exports[`expressions-let-mutation-loop.ts > letWhileCounter 1`] = `
@@ -427,31 +427,31 @@ exports[`expressions-let-mutation-loop.ts > letWhileCounter 1`] = `
 `;
 
 exports[`expressions-let-mutation-straight.ts > letArrayDestructure 1`] = `
-"module LET_ARRAY_DESTRUCTURE.\\n\\nlet-array-destructure a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-array-destructure — let/var bindings not supported.\\n"
+"module LET_ARRAY_DESTRUCTURE.\\n\\nlet-array-destructure a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-array-destructure — let with reassignment not yet supported.\\n"
 `;
 
 exports[`expressions-let-mutation-straight.ts > letCompoundAdd 1`] = `
-"module LET_COMPOUND_ADD.\\n\\nlet-compound-add a: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-compound-add — let/var bindings not supported.\\n"
+"module LET_COMPOUND_ADD.\\n\\nlet-compound-add a: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-compound-add — let with reassignment not yet supported.\\n"
 `;
 
 exports[`expressions-let-mutation-straight.ts > letCompoundMultiply 1`] = `
-"module LET_COMPOUND_MULTIPLY.\\n\\nlet-compound-multiply a: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-compound-multiply — let/var bindings not supported.\\n"
+"module LET_COMPOUND_MULTIPLY.\\n\\nlet-compound-multiply a: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-compound-multiply — let with reassignment not yet supported.\\n"
 `;
 
 exports[`expressions-let-mutation-straight.ts > letObjectDestructure 1`] = `
-"module LET_OBJECT_DESTRUCTURE.\\n\\nlet-object-destructure a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-object-destructure — let/var bindings not supported.\\n"
+"module LET_OBJECT_DESTRUCTURE.\\n\\nlet-object-destructure a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-object-destructure — let with reassignment not yet supported.\\n"
 `;
 
 exports[`expressions-let-mutation-straight.ts > letOneReassignment 1`] = `
-"module LET_ONE_REASSIGNMENT.\\n\\nlet-one-reassignment a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-one-reassignment — let/var bindings not supported.\\n"
+"module LET_ONE_REASSIGNMENT.\\n\\nlet-one-reassignment a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-one-reassignment — let with reassignment not yet supported.\\n"
 `;
 
 exports[`expressions-let-mutation-straight.ts > letPrefixPostfix 1`] = `
-"module LET_PREFIX_POSTFIX.\\n\\nlet-prefix-postfix a: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-prefix-postfix — let/var bindings not supported.\\n"
+"module LET_PREFIX_POSTFIX.\\n\\nlet-prefix-postfix a: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-prefix-postfix — let with reassignment not yet supported.\\n"
 `;
 
 exports[`expressions-let-mutation-straight.ts > letSeveralReassignments 1`] = `
-"module LET_SEVERAL_REASSIGNMENTS.\\n\\nlet-several-reassignments a: Int, b: Int, c: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-several-reassignments — let/var bindings not supported.\\n"
+"module LET_SEVERAL_REASSIGNMENTS.\\n\\nlet-several-reassignments a: Int, b: Int, c: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: let-several-reassignments — let with reassignment not yet supported.\\n"
 `;
 
 exports[`expressions-literals.ts > fortyTwo 1`] = `
@@ -835,11 +835,11 @@ exports[`expressions-template-literal.ts > wrapId 1`] = `
 `;
 
 exports[`expressions-var-rejected.ts > varBinding 1`] = `
-"module VAR_BINDING.\\n\\nvar-binding a: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: var-binding — let/var bindings not supported.\\n"
+"module VAR_BINDING.\\n\\nvar-binding a: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: var-binding — var bindings are not supported (use let or const).\\n"
 `;
 
 exports[`expressions-var-rejected.ts > varReassignment 1`] = `
-"module VAR_REASSIGNMENT.\\n\\nvar-reassignment a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: var-reassignment — let/var bindings not supported.\\n"
+"module VAR_REASSIGNMENT.\\n\\nvar-reassignment a: Int, b: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: var-reassignment — var bindings are not supported (use let or const).\\n"
 `;
 
 exports[`expressions-while-mu-search.ts > compoundIncrementStep 1`] = `
@@ -1063,15 +1063,15 @@ exports[`functions-mutating-fixed-point-while.ts > spin 1`] = `
 `;
 
 exports[`functions-mutating-let.ts > depositWithBranchLet 1`] = `
-"module DEPOSIT_WITH_BRANCH_LET.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--fee a1: Account => Int.\\n~> Deposit-with-branch-let @ a: Account, amount: Int, charge-fee: Bool.\\n\\n---\\n\\n> UNSUPPORTED: local variable declaration (let/var or effectful const).\\n"
+"module DEPOSIT_WITH_BRANCH_LET.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--fee a1: Account => Int.\\n~> Deposit-with-branch-let @ a: Account, amount: Int, charge-fee: Bool.\\n\\n---\\n\\n> UNSUPPORTED: let with reassignment not yet supported.\\n"
 `;
 
 exports[`functions-mutating-let.ts > depositWithImmutableLet 1`] = `
-"module DEPOSIT_WITH_IMMUTABLE_LET.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--fee a1: Account => Int.\\n~> Deposit-with-immutable-let @ a: Account, amount: Int.\\n\\n---\\n\\n> UNSUPPORTED: local variable declaration (let/var or effectful const).\\n"
+"module DEPOSIT_WITH_IMMUTABLE_LET.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--fee a1: Account => Int.\\nnew-bal  => Int.\\n~> Deposit-with-immutable-let @ a: Account, amount: Int.\\n\\n---\\n\\nnew-bal = account--balance a + amount.\\naccount--balance' a = account--balance a + amount.\\naccount--fee' a1 = account--fee a1.\\n"
 `;
 
 exports[`functions-mutating-let.ts > depositWithReassignedLet 1`] = `
-"module DEPOSIT_WITH_REASSIGNED_LET.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--fee a1: Account => Int.\\n~> Deposit-with-reassigned-let @ a: Account, amount: Int.\\n\\n---\\n\\n> UNSUPPORTED: local variable declaration (let/var or effectful const).\\n"
+"module DEPOSIT_WITH_REASSIGNED_LET.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--fee a1: Account => Int.\\n~> Deposit-with-reassigned-let @ a: Account, amount: Int.\\n\\n---\\n\\n> UNSUPPORTED: let with reassignment not yet supported.\\n"
 `;
 
 exports[`functions-mutating-loop-break.ts > addUntilLimit 1`] = `
