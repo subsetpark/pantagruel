@@ -5,7 +5,7 @@
  * The IR is read-only here; build is in `ir-build.ts` (and L1 → L2 in
  * `ir1-lower.ts`).
  *
- * Handles `Var`, `Lit`, `App` (all heads), `Cond`, `Each`, `Comb`,
+ * Handles `Var`, `Lit`, `Opaque`, `App` (all heads), `Cond`, `Each`, `Comb`,
  * `Forall`, and `Exists`. `Let` substitutes inline at lowering time
  * (Pant has no `let`). Post-M6 cleanup, no escape-hatch form remains:
  * every `IRExpr` corresponds to a native Pantagruel construct.
@@ -24,6 +24,7 @@ import {
   type IRUnop,
   isFoldComb,
 } from "./ir.js";
+import { opaqueValueRuleName } from "./opaque.js";
 import type {
   OpaqueBinop,
   OpaqueCombiner,
@@ -156,6 +157,9 @@ export function lowerExpr(e: IRExpr): OpaqueExpr {
         }
       }
     }
+
+    case "opaque":
+      return ast.var(opaqueValueRuleName(e.id));
 
     case "app":
       return lowerApp(e.head, e.args.map(lowerExpr));

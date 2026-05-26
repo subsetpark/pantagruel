@@ -103,7 +103,7 @@ export type IRCombiner = IRFoldCombiner | "min" | "max";
 // --------------------------------------------------------------------------
 
 /**
- * Pure value-position IR. Ten forms total. Each form's invariants are
+ * Pure value-position IR. Twelve forms total. Each form's invariants are
  * documented inline; do not add forms ad-hoc — additions go through
  * AGENTS.md §IR review.
  */
@@ -112,6 +112,12 @@ export type IRExpr =
   | { kind: "var"; name: string; primed?: boolean }
   /** Literal value (nat, bool, string). */
   | { kind: "lit"; value: IRLiteral }
+  /**
+   * Typed mirror of an opaque-sorted `OpaqueExpr`: value-position,
+   * one-OpaqueExpr-out. `id` is the per-value identity, so distinct opaque
+   * values emit distinct nullary constants without asserting distinctness.
+   */
+  | { kind: "opaque"; sort: string; id: string }
   /**
    * Function or operator application. `head` selects the lowering
    * (named ref, binop, unop). Method calls lower with the receiver as
@@ -247,6 +253,12 @@ export const irLitBool = (value: boolean): IRExpr => ({
 export const irLitString = (value: string): IRExpr => ({
   kind: "lit",
   value: { kind: "string", value },
+});
+
+export const irOpaque = (sort: string, id: string): IRExpr => ({
+  kind: "opaque",
+  sort,
+  id,
 });
 
 export const irApp = (head: IRHead, args: IRExpr[]): IRExpr => ({
