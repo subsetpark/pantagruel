@@ -1110,25 +1110,26 @@ export function cellIsUsed(cell: SynthCell, name: string): boolean {
   return cell.registry.used.has(toPantTermName(name));
 }
 
-/** Cell-mutating wrapper that drains both Map and Record synth decls.
- *  Emits Maps first so Record accessor-rule return types can reference
- *  any Map domain registered bottom-up. Incremental: each call returns
+/** Cell-mutating wrapper that drains Opaque, Map, and Record synth decls.
+ *  Emits Opaque first so Map/Record decls can reference it, then Maps so
+ *  Record accessor-rule return types can reference any Map domain registered
+ *  bottom-up. Incremental: each call returns
  *  only the entries added since the previous drain.
  *
  *  Tuple-constructor synth is *not* drained here — tuple constructors
  *  emit to a separate per-source-file dep module via
  *  `emitTupleCtorModule`, not into the consumer document's head. */
 export function cellEmitSynth(cell: SynthCell): PantDeclaration[] {
+  const opaqueR = emitOpaqueSynthDecls(cell.opaqueSynth, cell.registry);
+  cell.opaqueSynth = opaqueR.synth;
+  cell.registry = opaqueR.registry;
   const mapR = emitSynthDecls(cell.synth, cell.registry);
   cell.synth = mapR.synth;
   cell.registry = mapR.registry;
   const recR = emitRecordSynthDecls(cell.recordSynth, cell.registry);
   cell.recordSynth = recR.synth;
   cell.registry = recR.registry;
-  const opaqueR = emitOpaqueSynthDecls(cell.opaqueSynth, cell.registry);
-  cell.opaqueSynth = opaqueR.synth;
-  cell.registry = opaqueR.registry;
-  return [...mapR.decls, ...recR.decls, ...opaqueR.decls];
+  return [...opaqueR.decls, ...mapR.decls, ...recR.decls];
 }
 
 /**
@@ -1304,9 +1305,10 @@ export function mapTsType(
   // to a generic placeholder would silently let type errors through.
   if (flags & ts.TypeFlags.Any || flags & ts.TypeFlags.Unknown) {
     if (opts?.opaqueFallback) {
-      if (synthCell) {
-        cellRegisterOpaqueDomain(synthCell);
+      if (!synthCell) {
+        return UNSUPPORTED_UNKNOWN;
       }
+      cellRegisterOpaqueDomain(synthCell);
       return OPAQUE_DOMAIN;
     }
     return UNSUPPORTED_UNKNOWN;
