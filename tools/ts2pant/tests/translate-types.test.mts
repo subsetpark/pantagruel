@@ -215,6 +215,184 @@ describe("recursive type following", () => {
 });
 
 describe("mapTsType", () => {
+  it("opaque fallback maps `any` to the shared Opaque sort", async () => {
+    await loadAst();
+    const cell = newSynthCell();
+    const source = `interface Foo { val: any; }`;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = getChecker(sourceFile);
+    const prop = extractAllTypes(sourceFile).interfaces[0].properties[0];
+
+    assert.equal(
+      mapTsType(prop.type, checker, IntStrategy, cell, {
+        opaqueFallback: true,
+      }),
+      OPAQUE_DOMAIN,
+    );
+    assert.deepEqual(cellEmitSynth(cell), [
+      { kind: "domain", name: OPAQUE_DOMAIN },
+    ]);
+    assert.deepEqual(cellEmitSynth(cell), []);
+  });
+
+  it("opaque fallback maps `unknown` to the shared Opaque sort", async () => {
+    await loadAst();
+    const cell = newSynthCell();
+    const source = `interface Foo { val: unknown; }`;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = getChecker(sourceFile);
+    const prop = extractAllTypes(sourceFile).interfaces[0].properties[0];
+
+    assert.equal(
+      mapTsType(prop.type, checker, IntStrategy, cell, {
+        opaqueFallback: true,
+      }),
+      OPAQUE_DOMAIN,
+    );
+    assert.deepEqual(cellEmitSynth(cell), [
+      { kind: "domain", name: OPAQUE_DOMAIN },
+    ]);
+  });
+
+  it("opaque fallback leaves concrete types unchanged", async () => {
+    await loadAst();
+    const cell = newSynthCell();
+    const source = `interface Foo { val: number; }`;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = getChecker(sourceFile);
+    const prop = extractAllTypes(sourceFile).interfaces[0].properties[0];
+
+    assert.equal(
+      mapTsType(prop.type, checker, IntStrategy, cell, {
+        opaqueFallback: true,
+      }),
+      "Int",
+    );
+    assert.deepEqual(cellEmitSynth(cell), []);
+  });
+
+  it("opaque fallback disabled keeps `any` and `unknown` unsupported", () => {
+    const source = `interface Foo { anyVal: any; unknownVal: unknown; }`;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = getChecker(sourceFile);
+    const [anyProp, unknownProp] = extractAllTypes(
+      sourceFile,
+    ).interfaces[0].properties;
+
+    assert.equal(
+      mapTsType(anyProp.type, checker, IntStrategy),
+      UNSUPPORTED_UNKNOWN,
+    );
+    assert.equal(
+      mapTsType(unknownProp.type, checker, IntStrategy),
+      UNSUPPORTED_UNKNOWN,
+    );
+  });
+
+  it("opaque fallback without a synth cell keeps `any` unsupported", () => {
+    const source = `interface Foo { val: any; }`;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = getChecker(sourceFile);
+    const prop = extractAllTypes(sourceFile).interfaces[0].properties[0];
+
+    assert.equal(
+      mapTsType(prop.type, checker, IntStrategy, undefined, {
+        opaqueFallback: true,
+      }),
+      UNSUPPORTED_UNKNOWN,
+    );
+  });
+
+  it("opaque fallback domain emission dedupes with opaque value emission", async () => {
+    await loadAst();
+    const cell = newSynthCell();
+    const source = `interface Foo { val: any; }`;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = getChecker(sourceFile);
+    const prop = extractAllTypes(sourceFile).interfaces[0].properties[0];
+
+    assert.equal(
+      mapTsType(prop.type, checker, IntStrategy, cell, {
+        opaqueFallback: true,
+      }),
+      OPAQUE_DOMAIN,
+    );
+    cellRegisterOpaqueValue(cell, "foo.ts:1");
+
+    assert.deepEqual(cellEmitSynth(cell), [
+      { kind: "domain", name: OPAQUE_DOMAIN },
+      {
+        kind: "rule",
+        name: opaqueValueRuleName("foo.ts:1"),
+        params: [],
+        returnType: OPAQUE_DOMAIN,
+      },
+    ]);
+
+    cellRegisterOpaqueValue(cell, "foo.ts:2");
+    assert.deepEqual(cellEmitSynth(cell), [
+      {
+        kind: "rule",
+        name: opaqueValueRuleName("foo.ts:2"),
+        params: [],
+        returnType: OPAQUE_DOMAIN,
+      },
+    ]);
+  });
+
+  it("opaque fallback propagates through nested composite positions", async () => {
+    await loadAst();
+    const cell = newSynthCell();
+    const source = `interface Foo { val: Map<string, any[]>; }`;
+    const sourceFile = createSourceFileFromSource(source);
+    const checker = getChecker(sourceFile);
+    const prop = extractAllTypes(sourceFile).interfaces[0].properties[0];
+
+    assert.equal(
+      mapTsType(prop.type, checker, IntStrategy, cell, {
+        opaqueFallback: true,
+      }),
+      "StringToListOpaqueMap",
+    );
+
+    const decls = cellEmitSynth(cell);
+    assert.equal(decls.length, 4);
+    assert.deepEqual(decls[0], { kind: "domain", name: OPAQUE_DOMAIN });
+    assert.deepEqual(decls[1], {
+      kind: "domain",
+      name: "StringToListOpaqueMap",
+    });
+    assert.deepEqual(decls[2], {
+      kind: "rule",
+      name: "string-to-list-opaque-map-key",
+      params: [
+        { name: "m", type: "StringToListOpaqueMap" },
+        { name: "k", type: "String" },
+      ],
+      returnType: "Bool",
+    });
+    assert.equal(decls[3].kind, "rule");
+    if (decls[3].kind !== "rule") {
+      throw new Error("expected map value rule");
+    }
+    assert.equal(decls[3].name, "string-to-list-opaque-map");
+    assert.deepEqual(decls[3].params, [
+      { name: "m", type: "StringToListOpaqueMap" },
+      { name: "k", type: "String" },
+    ]);
+    assert.equal(decls[3].returnType, "[Opaque]");
+
+    cellRegisterOpaqueValue(cell, "foo.ts:2");
+    assert.deepEqual(cellEmitSynth(cell), [
+      {
+        kind: "rule",
+        name: opaqueValueRuleName("foo.ts:2"),
+        params: [],
+        returnType: OPAQUE_DOMAIN,
+      },
+    ]);
+  });
+
   it("top-level undefined falls through to checker.typeToString", () => {
     // Lone null/undefined/void has no Pantagruel encoding. mapTsType no
     // longer returns an internal sentinel; it falls through to
