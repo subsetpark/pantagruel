@@ -1269,7 +1269,7 @@ export function buildL1AssignStmt(
       return { unsupported: "assign target must be a property access" };
     }
     const target = ir1Var(localName);
-    const irOp =
+    const irOp: IRBinop | null =
       compoundOp === ts.SyntaxKind.PlusToken
         ? "add"
         : compoundOp === ts.SyntaxKind.MinusToken
@@ -1282,15 +1282,14 @@ export function buildL1AssignStmt(
     if (compoundOp !== undefined && irOp === null) {
       return { unsupported: "unsupported assignment operator" };
     }
-    const rhs =
+    const rhsExpr = buildL1SubExpr(expr.right, ctx);
+    if (isUnsupported(rhsExpr)) {
+      return rhsExpr;
+    }
+    const rhs: IR1Expr =
       compoundOp !== undefined
-        ? {
-            kind: "binop" as const,
-            op: irOp!,
-            lhs: target,
-            rhs: buildL1SubExpr(expr.right, ctx),
-          }
-        : buildL1SubExpr(expr.right, ctx);
+        ? { kind: "binop", op: irOp!, lhs: target, rhs: rhsExpr }
+        : rhsExpr;
     if (isUnsupported(rhs)) {
       return rhs;
     }
