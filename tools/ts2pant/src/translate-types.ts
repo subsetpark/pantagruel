@@ -511,13 +511,27 @@ export interface OpaqueSynthEntry {
 export interface OpaqueSynth {
   readonly byId: ReadonlyMap<string, OpaqueSynthEntry>;
   readonly emitted: ReadonlySet<string>;
+  readonly needsDomain: boolean;
+  readonly domainEmitted: boolean;
 }
 
 /**
  * @pant all s: String | ~(s in emitted emptyOpaqueSynth).
  */
 export function emptyOpaqueSynth(): OpaqueSynth {
-  return { byId: new Map(), emitted: new Set() };
+  return {
+    byId: new Map(),
+    emitted: new Set(),
+    needsDomain: false,
+    domainEmitted: false,
+  };
+}
+
+export function registerOpaqueDomain(synth: OpaqueSynth): OpaqueSynth {
+  if (synth.needsDomain) {
+    return synth;
+  }
+  return { ...synth, needsDomain: true };
 }
 
 export function registerOpaqueValue(
@@ -531,7 +545,10 @@ export function registerOpaqueValue(
   const entry: OpaqueSynthEntry = { id, rule: opaqueValueRuleName(id) };
   const newById = new Map(synth.byId);
   newById.set(id, entry);
-  return { entry, synth: { byId: newById, emitted: synth.emitted } };
+  return {
+    entry,
+    synth: { ...synth, byId: newById, needsDomain: true },
+  };
 }
 
 /**
@@ -556,16 +573,18 @@ export function emitOpaqueSynthDecls(
 ): { decls: PantDeclaration[]; synth: OpaqueSynth; registry: NameRegistry } {
   const decls: PantDeclaration[] = [];
   const newEmitted = new Set(synth.emitted);
-  const shouldEmitDomain = synth.emitted.size === 0;
-  let emittedAny = false;
+  const hasUnemittedValue = [...synth.byId.keys()].some(
+    (id) => !newEmitted.has(id),
+  );
+  let domainEmitted = synth.domainEmitted;
+  if (!domainEmitted && (synth.needsDomain || hasUnemittedValue)) {
+    decls.push({ kind: "domain", name: OPAQUE_DOMAIN });
+    domainEmitted = true;
+  }
   for (const [id, entry] of synth.byId) {
     if (newEmitted.has(id)) {
       continue;
     }
-    if (shouldEmitDomain && !emittedAny) {
-      decls.push({ kind: "domain", name: OPAQUE_DOMAIN });
-    }
-    emittedAny = true;
     newEmitted.add(id);
     decls.push({
       kind: "rule",
@@ -576,7 +595,7 @@ export function emitOpaqueSynthDecls(
   }
   return {
     decls,
-    synth: { byId: synth.byId, emitted: newEmitted },
+    synth: { ...synth, emitted: newEmitted, domainEmitted },
     registry,
   };
 }
@@ -1048,6 +1067,11 @@ export function cellRegisterOpaqueValue(
   return r.entry;
 }
 
+/** Cell-mutating wrapper around `registerOpaqueDomain`. */
+export function cellRegisterOpaqueDomain(cell: SynthCell): void {
+  cell.opaqueSynth = registerOpaqueDomain(cell.opaqueSynth);
+}
+
 /**
  * Cell read-through for `lookupOpaqueValue`.
  *
@@ -1235,6 +1259,10 @@ export const IntStrategy: NumericStrategy = {
   },
 };
 
+export interface MapTsTypeOptions {
+  readonly opaqueFallback?: boolean;
+}
+
 export const RealStrategy: NumericStrategy = {
   mapNumber() {
     return "Real";
@@ -1257,6 +1285,7 @@ export function mapTsType(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   synthCell?: SynthCell,
+  opts?: MapTsTypeOptions,
 ): string {
   const flags = type.flags;
 
@@ -1265,6 +1294,12 @@ export function mapTsType(
   // move is to refuse and steer the user toward a declared type. Mapping
   // to a generic placeholder would silently let type errors through.
   if (flags & ts.TypeFlags.Any || flags & ts.TypeFlags.Unknown) {
+    if (opts?.opaqueFallback) {
+      if (synthCell) {
+        cellRegisterOpaqueDomain(synthCell);
+      }
+      return OPAQUE_DOMAIN;
+    }
     return UNSUPPORTED_UNKNOWN;
   }
 
@@ -1286,7 +1321,7 @@ export function mapTsType(
   if (checker.isTupleType(type)) {
     const typeArgs = checker.getTypeArguments(type as ts.TypeReference);
     const elements = typeArgs.map((t) =>
-      mapTsType(t, checker, strategy, synthCell),
+      mapTsType(t, checker, strategy, synthCell, opts),
     );
     if (elements.some(isUnsupportedUnknown)) {
       return UNSUPPORTED_UNKNOWN;
@@ -1298,7 +1333,7 @@ export function mapTsType(
   if (checker.isArrayType(type)) {
     const typeArgs = checker.getTypeArguments(type as ts.TypeReference);
     if (typeArgs.length === 1) {
-      const elem = mapTsType(typeArgs[0]!, checker, strategy, synthCell);
+      const elem = mapTsType(typeArgs[0]!, checker, strategy, synthCell, opts);
       if (isUnsupportedUnknown(elem)) {
         return UNSUPPORTED_UNKNOWN;
       }
@@ -1313,7 +1348,7 @@ export function mapTsType(
   if (isSetType(type)) {
     const typeArgs = checker.getTypeArguments(type as ts.TypeReference);
     if (typeArgs.length === 1) {
-      const elem = mapTsType(typeArgs[0]!, checker, strategy, synthCell);
+      const elem = mapTsType(typeArgs[0]!, checker, strategy, synthCell, opts);
       if (isUnsupportedUnknown(elem)) {
         return UNSUPPORTED_UNKNOWN;
       }
@@ -1329,8 +1364,8 @@ export function mapTsType(
   if (isMapType(type) && synthCell) {
     const typeArgs = checker.getTypeArguments(type as ts.TypeReference);
     if (typeArgs.length === 2) {
-      const kType = mapTsType(typeArgs[0]!, checker, strategy, synthCell);
-      const vType = mapTsType(typeArgs[1]!, checker, strategy, synthCell);
+      const kType = mapTsType(typeArgs[0]!, checker, strategy, synthCell, opts);
+      const vType = mapTsType(typeArgs[1]!, checker, strategy, synthCell, opts);
       // Propagate `unknown` rather than registering a Map keyed by or
       // valued in the sentinel — that would synthesize a domain like
       // `__unsupported_unknown__ToIntMap` (the underscore-only sentinel
@@ -1365,7 +1400,7 @@ export function mapTsType(
       return checker.typeToString(type);
     }
     const parts = nonNullTypes.map((t) =>
-      mapTsType(t, checker, strategy, synthCell),
+      mapTsType(t, checker, strategy, synthCell, opts),
     );
     if (parts.some(isUnsupportedUnknown)) {
       return UNSUPPORTED_UNKNOWN;
@@ -1393,6 +1428,7 @@ export function mapTsType(
         checker,
         strategy,
         synthCell,
+        opts,
       );
       if (domain !== null) {
         return domain;
@@ -1423,6 +1459,7 @@ function registerAnonymousRecord(
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   synthCell: SynthCell,
+  opts?: MapTsTypeOptions,
 ): string | null {
   const properties = type.getProperties();
   const fields: RecordSynthField[] = [];
@@ -1440,7 +1477,7 @@ function registerAnonymousRecord(
     if (!propType) {
       return null;
     }
-    const mapped = mapTsType(propType, checker, strategy, synthCell);
+    const mapped = mapTsType(propType, checker, strategy, synthCell, opts);
     // Propagate `unknown` as the specific UNSUPPORTED_UNKNOWN sentinel
     // so the outer `mapTsType` anonymous-record branch can pass it back
     // to *its* caller — otherwise nested shapes like `[{ x: unknown },
