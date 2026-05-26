@@ -511,27 +511,21 @@ export interface OpaqueSynthEntry {
 export interface OpaqueSynth {
   readonly byId: ReadonlyMap<string, OpaqueSynthEntry>;
   readonly emitted: ReadonlySet<string>;
-  readonly needsDomain: boolean;
-  readonly domainEmitted: boolean;
 }
+
+const opaqueSynthNeedsDomain = new WeakSet<OpaqueSynth>();
+const opaqueSynthDomainEmitted = new WeakSet<OpaqueSynth>();
 
 /**
  * @pant all s: String | ~(s in emitted emptyOpaqueSynth).
  */
 export function emptyOpaqueSynth(): OpaqueSynth {
-  return {
-    byId: new Map(),
-    emitted: new Set(),
-    needsDomain: false,
-    domainEmitted: false,
-  };
+  return { byId: new Map(), emitted: new Set() };
 }
 
 export function registerOpaqueDomain(synth: OpaqueSynth): OpaqueSynth {
-  if (synth.needsDomain) {
-    return synth;
-  }
-  return { ...synth, needsDomain: true };
+  opaqueSynthNeedsDomain.add(synth);
+  return synth;
 }
 
 export function registerOpaqueValue(
@@ -545,9 +539,14 @@ export function registerOpaqueValue(
   const entry: OpaqueSynthEntry = { id, rule: opaqueValueRuleName(id) };
   const newById = new Map(synth.byId);
   newById.set(id, entry);
+  const next = { byId: newById, emitted: synth.emitted };
+  opaqueSynthNeedsDomain.add(next);
+  if (opaqueSynthDomainEmitted.has(synth)) {
+    opaqueSynthDomainEmitted.add(next);
+  }
   return {
     entry,
-    synth: { ...synth, byId: newById, needsDomain: true },
+    synth: next,
   };
 }
 
@@ -576,8 +575,11 @@ export function emitOpaqueSynthDecls(
   const hasUnemittedValue = [...synth.byId.keys()].some(
     (id) => !newEmitted.has(id),
   );
-  let domainEmitted = synth.domainEmitted;
-  if (!domainEmitted && (synth.needsDomain || hasUnemittedValue)) {
+  let domainEmitted = opaqueSynthDomainEmitted.has(synth);
+  if (
+    !domainEmitted &&
+    (opaqueSynthNeedsDomain.has(synth) || hasUnemittedValue)
+  ) {
     decls.push({ kind: "domain", name: OPAQUE_DOMAIN });
     domainEmitted = true;
   }
@@ -593,9 +595,16 @@ export function emitOpaqueSynthDecls(
       returnType: OPAQUE_DOMAIN,
     });
   }
+  const next = { byId: synth.byId, emitted: newEmitted };
+  if (opaqueSynthNeedsDomain.has(synth)) {
+    opaqueSynthNeedsDomain.add(next);
+  }
+  if (domainEmitted) {
+    opaqueSynthDomainEmitted.add(next);
+  }
   return {
     decls,
-    synth: { ...synth, emitted: newEmitted, domainEmitted },
+    synth: next,
     registry,
   };
 }
