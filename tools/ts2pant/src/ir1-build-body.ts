@@ -1290,9 +1290,6 @@ export function buildL1AssignStmt(
       compoundOp !== undefined
         ? { kind: "binop", op: irOp!, lhs: target, rhs: rhsExpr }
         : rhsExpr;
-    if (isUnsupported(rhs)) {
-      return rhs;
-    }
     return ir1Assign(target, rhs);
   }
   if (!ts.isPropertyAccessExpression(expr.left)) {

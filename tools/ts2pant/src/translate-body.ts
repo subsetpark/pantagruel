@@ -2082,6 +2082,9 @@ function reassignmentsFromExpressionStatement(
   return null;
 }
 
+// The returned ForStatement is factory-created and has no parent pointers.
+// That is safe because buildSupportedSsaStatement consumes its child structure
+// only; if that changes, this synthetic node needs parent wiring.
 function recognizeLocalAccumulatorWhileAsFor(
   counterDeclStmt: ts.VariableStatement,
   whileStmt: ts.WhileStatement,
@@ -2154,6 +2157,8 @@ function simpleReassignmentsFromAssignment(
       if (!ts.isIdentifier(element) || !letNames.has(element.text)) {
         return null;
       }
+      // toPantTermName turns these ASCII temp names into Pant identifiers like
+      // `ts2pant-destructure-0-x`; snapshots pin that emitted form.
       const tempName = `__ts2pant_destructure_${i}_${element.text}`;
       temps.push({
         kind: "const",
@@ -2182,6 +2187,8 @@ function simpleReassignmentsFromAssignment(
         if (!letNames.has(prop.name.text)) {
           return null;
         }
+        // toPantTermName turns these ASCII temp names into Pant identifiers like
+        // `ts2pant-destructure-0-x`; snapshots pin that emitted form.
         const tempName = `__ts2pant_destructure_${i}_${prop.name.text}`;
         temps.push({
           kind: "const",
@@ -2204,6 +2211,8 @@ function simpleReassignmentsFromAssignment(
         letNames.has(prop.initializer.text) &&
         (ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name))
       ) {
+        // toPantTermName turns these ASCII temp names into Pant identifiers like
+        // `ts2pant-destructure-0-x`; snapshots pin that emitted form.
         const tempName = `__ts2pant_destructure_${i}_${prop.initializer.text}`;
         temps.push({
           kind: "const",
