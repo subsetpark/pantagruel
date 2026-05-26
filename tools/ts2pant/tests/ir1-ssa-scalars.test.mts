@@ -376,6 +376,7 @@ describe("ir1-ssa-scalars", () => {
       key: ir1Var("key"),
     };
 
+    assert.equal(isScalarSsaL1Body(ir1Assign(ir1Var("x"), ir1LitNat(1))), true);
     assert.equal(
       isScalarSsaL1Body(
         ir1Assign(ir1Member(mapReadReceiver, "Account_balance"), ir1LitNat(1)),

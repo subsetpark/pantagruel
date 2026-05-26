@@ -46,6 +46,7 @@ import {
   ir1SetAddOrDelete,
   ir1SetClear,
   ir1Throw,
+  ir1Var,
 } from "./ir1.js";
 import {
   buildL1MemberAccess,
@@ -1232,6 +1233,22 @@ export function buildL1AssignStmt(
   // `classifyForeachStmt` outer dispatch already does.
   const expr = unwrapExpression(stmt.expression);
   if (ts.isPrefixUnaryExpression(expr) || ts.isPostfixUnaryExpression(expr)) {
+    if (ts.isIdentifier(expr.operand)) {
+      const localName = ctx.paramNames.get(expr.operand.text);
+      if (
+        localName !== undefined &&
+        (expr.operator === ts.SyntaxKind.PlusPlusToken ||
+          expr.operator === ts.SyntaxKind.MinusMinusToken)
+      ) {
+        const target = ir1Var(localName);
+        return ir1Assign(target, {
+          kind: "binop",
+          op: expr.operator === ts.SyntaxKind.PlusPlusToken ? "add" : "sub",
+          lhs: target,
+          rhs: { kind: "lit", value: { kind: "nat", value: 1 } },
+        });
+      }
+    }
     const unary = unaryPropertyIncrementParts(expr);
     if (isUnsupported(unary)) {
       return unary;
@@ -1245,6 +1262,35 @@ export function buildL1AssignStmt(
   const compoundOp = COMPOUND_ASSIGN_TO_BINOP.get(expr.operatorToken.kind);
   if (!isSimpleAssign && compoundOp === undefined) {
     return { unsupported: "unsupported assignment operator" };
+  }
+  if (ts.isIdentifier(expr.left)) {
+    const localName = ctx.paramNames.get(expr.left.text);
+    if (localName === undefined) {
+      return { unsupported: "assign target must be a property access" };
+    }
+    const target = ir1Var(localName);
+    const irOp: IRBinop | null =
+      compoundOp === ts.SyntaxKind.PlusToken
+        ? "add"
+        : compoundOp === ts.SyntaxKind.MinusToken
+          ? "sub"
+          : compoundOp === ts.SyntaxKind.AsteriskToken
+            ? "mul"
+            : compoundOp === ts.SyntaxKind.SlashToken
+              ? "div"
+              : null;
+    if (compoundOp !== undefined && irOp === null) {
+      return { unsupported: "unsupported assignment operator" };
+    }
+    const rhsExpr = buildL1SubExpr(expr.right, ctx);
+    if (isUnsupported(rhsExpr)) {
+      return rhsExpr;
+    }
+    const rhs: IR1Expr =
+      compoundOp !== undefined
+        ? { kind: "binop", op: irOp!, lhs: target, rhs: rhsExpr }
+        : rhsExpr;
+    return ir1Assign(target, rhs);
   }
   if (!ts.isPropertyAccessExpression(expr.left)) {
     return { unsupported: "assign target must be a property access" };

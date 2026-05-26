@@ -163,11 +163,12 @@ export function lowerScalarSsaToProps(
   const ast = getAst();
   const finalProperties: ScalarSsaFinalPropertyEntry[] = [];
   const propositions: PropResult[] = [];
-  for (const write of program.writes) {
-    if (write.location.kind !== "local-binding") {
+  for (const [key, version] of lowerState.currentVersions) {
+    const location = lowerState.locations.get(key);
+    if (location === undefined || location.kind !== "local-binding") {
       continue;
     }
-    const rhs = lowerState.versionExprs.get(write.version);
+    const rhs = lowerState.versionExprs.get(version);
     if (rhs === undefined) {
       throw new Error(
         "missing lowered expression for local-binding SSA version",
@@ -176,7 +177,7 @@ export function lowerScalarSsaToProps(
     propositions.push({
       kind: "equation",
       quantifiers: [],
-      lhs: ast.var(write.location.name),
+      lhs: ast.var(location.name),
       rhs,
     });
   }
@@ -679,6 +680,7 @@ function lowerScalarSsaCondToVersions(
     state.versionExprs.set(version, expr);
   }
 
+  const entryKeys = new Set(state.locations.keys());
   const touched = new Set([...thenState.writtenKeys, ...elseState.writtenKeys]);
   for (const key of touched) {
     const location =
@@ -687,6 +689,9 @@ function lowerScalarSsaCondToVersions(
       state.locations.get(key);
     if (location === undefined) {
       throw new Error("scalar SSA branch touched an unknown location");
+    }
+    if (location.kind === "local-binding" && !entryKeys.has(key)) {
+      continue;
     }
     const thenVersion =
       thenState.currentVersions.get(key) ??
@@ -973,14 +978,15 @@ function lowerScalarCondStmt(
   state.reads.push(...thenState.reads, ...elseState.reads);
   state.writes.push(...thenState.writes, ...elseState.writes);
   state.joins.push(...thenState.joins, ...elseState.joins);
+  const entryKeys = new Set(state.locations.keys());
   for (const [key, location] of thenState.locations) {
-    if (location.kind === "local-binding") {
+    if (location.kind === "local-binding" && !entryKeys.has(key)) {
       continue;
     }
     state.locations.set(key, location);
   }
   for (const [key, location] of elseState.locations) {
-    if (location.kind === "local-binding") {
+    if (location.kind === "local-binding" && !entryKeys.has(key)) {
       continue;
     }
     if (!state.locations.has(key)) {
@@ -1008,6 +1014,9 @@ function lowerScalarCondStmt(
       state.locations.get(key);
     if (location === undefined) {
       throw new Error("scalar SSA branch touched an unknown location");
+    }
+    if (location.kind === "local-binding" && !entryKeys.has(key)) {
+      continue;
     }
     const thenVersion =
       thenState.currentVersions.get(key) ??

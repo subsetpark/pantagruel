@@ -5,6 +5,7 @@ import { lowerExpr } from "./ir-emit.js";
 import {
   type IR1Expr,
   type IR1Stmt,
+  ir1Assign,
   ir1Binop,
   ir1Block,
   ir1Break,
@@ -255,9 +256,11 @@ export function isNullableTsType(type: ts.Type): boolean {
  *     binding whose value is `min over each $j: Nat, $j >= init, ~P($j) | $j`.
  *     See `recognizeLetWhilePair` and `emitMuSearch`.
  */
-type ConstBinding =
+type PreludeStmt =
   | { kind: "const"; tsName: string; initializer: ts.Expression }
   | { kind: "muSearch"; tsName: string; mu: MuSearch }
+  | { kind: "reassign"; tsName: string; valueExpr: ts.Expression }
+  | { kind: "stmt"; stmt: ts.Statement }
   | {
       kind: "earlyReturn";
       predicateExpr: ts.Expression;
@@ -265,13 +268,14 @@ type ConstBinding =
     };
 
 /** Names a binding introduces into scope (none for an early-return arm). */
-function bindingNames(b: ConstBinding): readonly string[] {
-  return b.kind === "earlyReturn" ? [] : [b.tsName];
+function bindingNames(b: PreludeStmt): readonly string[] {
+  return b.kind === "const" || b.kind === "muSearch" ? [b.tsName] : [];
 }
 
 const VAR_BINDINGS_UNSUPPORTED =
   "var bindings are not supported (use let or const)";
-const LET_REASSIGNMENT_UNSUPPORTED = "let with reassignment not yet supported";
+const LET_CLOSURE_REASSIGNMENT_UNSUPPORTED =
+  "let captured by closure that reassigns it is not supported";
 
 export interface MuSearch {
   counterName: string;
@@ -1219,7 +1223,7 @@ function translatePureBody(
     ts.isExpression(extracted.returnExpr)
   ) {
     const arm = extracted.bindings[0] as Extract<
-      ConstBinding,
+      PreludeStmt,
       { kind: "earlyReturn" }
     >;
     const lifted = tryRecognizeFunctorLift(
@@ -1517,7 +1521,7 @@ function translatePureBody(
 }
 
 interface ExtractedBody {
-  bindings: ConstBinding[];
+  bindings: PreludeStmt[];
   returnExpr: ts.Expression | ts.IfStatement | ts.SwitchStatement;
 }
 
@@ -1737,7 +1741,9 @@ function extractReturnExpression(
     return null;
   }
 
-  const bindings: ConstBinding[] = [];
+  const bindings: PreludeStmt[] = [];
+  const letNames = new Set<string>();
+  let lastLetDeclNames = new Set<string>();
 
   // Every statement before the last must be either a const binding or a
   // recognized μ-search pair (`let counter = init; while (P) counter++`).
@@ -1761,12 +1767,70 @@ function extractReturnExpression(
     }
 
     const stmt = stmts[i]!;
+    if (ts.isExpressionStatement(stmt)) {
+      const reassigned = reassignmentsFromExpressionStatement(stmt, letNames);
+      if (reassigned === null) {
+        return null;
+      }
+      bindings.push(...reassigned);
+      i += 1;
+      lastLetDeclNames = new Set();
+      continue;
+    }
+    if (
+      ts.isIfStatement(stmt) ||
+      ts.isForStatement(stmt) ||
+      ts.isWhileStatement(stmt)
+    ) {
+      const writtenLetNames = writtenLetNamesInStatement(stmt, letNames);
+      if (writtenLetNames.size === 0) {
+        return null;
+      }
+      if (
+        ts.isWhileStatement(stmt) &&
+        [...writtenLetNames].every((name) => lastLetDeclNames.has(name))
+      ) {
+        return null;
+      }
+      bindings.push({ kind: "stmt", stmt });
+      i += 1;
+      lastLetDeclNames = new Set();
+      continue;
+    }
     if (!ts.isVariableStatement(stmt)) {
       return null;
+    }
+    if (
+      stmt.declarationList.flags & ts.NodeFlags.Let &&
+      i + 1 < lastIdx &&
+      ts.isWhileStatement(stmts[i + 1]!)
+    ) {
+      const counterFor = recognizeLocalAccumulatorWhileAsFor(
+        stmt,
+        stmts[i + 1]! as ts.WhileStatement,
+        letNames,
+      );
+      if (counterFor !== null) {
+        bindings.push({ kind: "stmt", stmt: counterFor });
+        i += 2;
+        lastLetDeclNames = new Set();
+        continue;
+      }
     }
     const loweredBindings = constLikeBindingsFromVariableStatement(stmt, body);
     if (loweredBindings === null) {
       return null;
+    }
+    if (stmt.declarationList.flags & ts.NodeFlags.Let) {
+      lastLetDeclNames = new Set();
+      for (const name of bindingNamesFromDeclarationList(
+        stmt.declarationList,
+      )) {
+        letNames.add(name);
+        lastLetDeclNames.add(name);
+      }
+    } else {
+      lastLetDeclNames = new Set();
     }
     bindings.push(...loweredBindings);
     i += 1;
@@ -1835,9 +1899,10 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
           const declaredNames = declaredIdentifierNames(declList);
           if (
             declaredNames === null ||
-            findReassignedNamesInBody(body, declaredNames).size > 0
+            findClosureCapturedReassignedNamesInBody(body, declaredNames).size >
+              0
           ) {
-            return LET_REASSIGNMENT_UNSUPPORTED;
+            return LET_CLOSURE_REASSIGNMENT_UNSUPPORTED;
           }
         } else if (!(declList.flags & ts.NodeFlags.Const)) {
           return VAR_BINDINGS_UNSUPPORTED;
@@ -1879,7 +1944,7 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
 function constLikeBindingsFromVariableStatement(
   stmt: ts.VariableStatement,
   body: ts.Block,
-): ConstBinding[] | null {
+): PreludeStmt[] | null {
   const declList = stmt.declarationList;
   if (declList.flags & ts.NodeFlags.Const) {
     return constBindingsFromDeclarationList(declList);
@@ -1888,7 +1953,7 @@ function constLikeBindingsFromVariableStatement(
     const declaredNames = declaredIdentifierNames(declList);
     if (
       declaredNames === null ||
-      findReassignedNamesInBody(body, declaredNames).size > 0
+      findClosureCapturedReassignedNamesInBody(body, declaredNames).size > 0
     ) {
       return null;
     }
@@ -1899,8 +1964,8 @@ function constLikeBindingsFromVariableStatement(
 
 function constBindingsFromDeclarationList(
   declList: ts.VariableDeclarationList,
-): ConstBinding[] | null {
-  const bindings: ConstBinding[] = [];
+): PreludeStmt[] | null {
+  const bindings: PreludeStmt[] = [];
   for (const decl of declList.declarations) {
     if (!ts.isIdentifier(decl.name) || !decl.initializer) {
       return null;
@@ -1912,6 +1977,339 @@ function constBindingsFromDeclarationList(
     });
   }
   return bindings;
+}
+
+function bindingNamesFromDeclarationList(
+  declList: ts.VariableDeclarationList,
+): readonly string[] {
+  const names: string[] = [];
+  for (const decl of declList.declarations) {
+    if (ts.isIdentifier(decl.name)) {
+      names.push(decl.name.text);
+    }
+  }
+  return names;
+}
+
+const COMPOUND_ASSIGN_TO_BINARY = new Map<ts.SyntaxKind, ts.BinaryOperator>([
+  [ts.SyntaxKind.PlusEqualsToken, ts.SyntaxKind.PlusToken],
+  [ts.SyntaxKind.MinusEqualsToken, ts.SyntaxKind.MinusToken],
+  [ts.SyntaxKind.AsteriskEqualsToken, ts.SyntaxKind.AsteriskToken],
+  [ts.SyntaxKind.SlashEqualsToken, ts.SyntaxKind.SlashToken],
+  [ts.SyntaxKind.PercentEqualsToken, ts.SyntaxKind.PercentToken],
+  [
+    ts.SyntaxKind.AsteriskAsteriskEqualsToken,
+    ts.SyntaxKind.AsteriskAsteriskToken,
+  ],
+  [
+    ts.SyntaxKind.LessThanLessThanEqualsToken,
+    ts.SyntaxKind.LessThanLessThanToken,
+  ],
+  [
+    ts.SyntaxKind.GreaterThanGreaterThanEqualsToken,
+    ts.SyntaxKind.GreaterThanGreaterThanToken,
+  ],
+  [
+    ts.SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken,
+    ts.SyntaxKind.GreaterThanGreaterThanGreaterThanToken,
+  ],
+  [ts.SyntaxKind.AmpersandEqualsToken, ts.SyntaxKind.AmpersandToken],
+  [ts.SyntaxKind.BarEqualsToken, ts.SyntaxKind.BarToken],
+  [ts.SyntaxKind.CaretEqualsToken, ts.SyntaxKind.CaretToken],
+  [ts.SyntaxKind.BarBarEqualsToken, ts.SyntaxKind.BarBarToken],
+  [
+    ts.SyntaxKind.AmpersandAmpersandEqualsToken,
+    ts.SyntaxKind.AmpersandAmpersandToken,
+  ],
+  [
+    ts.SyntaxKind.QuestionQuestionEqualsToken,
+    ts.SyntaxKind.QuestionQuestionToken,
+  ],
+]);
+
+function reassignmentsFromExpressionStatement(
+  stmt: ts.ExpressionStatement,
+  letNames: ReadonlySet<string>,
+): PreludeStmt[] | null {
+  const expr = unwrapExpression(stmt.expression);
+  if (ts.isBinaryExpression(expr)) {
+    if (expr.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      return simpleReassignmentsFromAssignment(expr.left, expr.right, letNames);
+    }
+    const op = COMPOUND_ASSIGN_TO_BINARY.get(expr.operatorToken.kind);
+    if (
+      op !== undefined &&
+      ts.isIdentifier(expr.left) &&
+      letNames.has(expr.left.text)
+    ) {
+      return [
+        {
+          kind: "reassign",
+          tsName: expr.left.text,
+          valueExpr: ts.factory.createBinaryExpression(
+            expr.left,
+            op,
+            expr.right,
+          ),
+        },
+      ];
+    }
+    return null;
+  }
+  if (ts.isPrefixUnaryExpression(expr) || ts.isPostfixUnaryExpression(expr)) {
+    if (
+      (expr.operator !== ts.SyntaxKind.PlusPlusToken &&
+        expr.operator !== ts.SyntaxKind.MinusMinusToken) ||
+      !ts.isIdentifier(expr.operand) ||
+      !letNames.has(expr.operand.text)
+    ) {
+      return null;
+    }
+    return [
+      {
+        kind: "reassign",
+        tsName: expr.operand.text,
+        valueExpr: ts.factory.createBinaryExpression(
+          expr.operand,
+          expr.operator === ts.SyntaxKind.PlusPlusToken
+            ? ts.SyntaxKind.PlusToken
+            : ts.SyntaxKind.MinusToken,
+          ts.factory.createNumericLiteral(1),
+        ),
+      },
+    ];
+  }
+  return null;
+}
+
+// The returned ForStatement is factory-created and has no parent pointers.
+// That is safe because buildSupportedSsaStatement consumes its child structure
+// only; if that changes, this synthetic node needs parent wiring.
+function recognizeLocalAccumulatorWhileAsFor(
+  counterDeclStmt: ts.VariableStatement,
+  whileStmt: ts.WhileStatement,
+  letNames: ReadonlySet<string>,
+): ts.ForStatement | null {
+  const declList = counterDeclStmt.declarationList;
+  if (
+    declList.declarations.length !== 1 ||
+    !ts.isIdentifier(declList.declarations[0]!.name) ||
+    declList.declarations[0]!.initializer === undefined
+  ) {
+    return null;
+  }
+  const counterName = declList.declarations[0]!.name.text;
+  const body = ts.isBlock(whileStmt.statement)
+    ? [...whileStmt.statement.statements]
+    : [whileStmt.statement];
+  if (body.length !== 2 || !ts.isExpressionStatement(body[0]!)) {
+    return null;
+  }
+  const stepStmt = body[1]!;
+  if (!ts.isExpressionStatement(stepStmt)) {
+    return null;
+  }
+  const step = unwrapExpression(stepStmt.expression);
+  if (
+    !(
+      (ts.isPostfixUnaryExpression(step) || ts.isPrefixUnaryExpression(step)) &&
+      step.operator === ts.SyntaxKind.PlusPlusToken &&
+      ts.isIdentifier(step.operand) &&
+      step.operand.text === counterName
+    )
+  ) {
+    return null;
+  }
+  const assignment = unwrapExpression(body[0]!.expression);
+  if (
+    !ts.isBinaryExpression(assignment) ||
+    assignment.operatorToken.kind !== ts.SyntaxKind.PlusEqualsToken ||
+    !ts.isIdentifier(assignment.left) ||
+    !letNames.has(assignment.left.text)
+  ) {
+    return null;
+  }
+  const forBody = ts.factory.createBlock([body[0]!], true);
+  return ts.factory.createForStatement(
+    declList,
+    whileStmt.expression,
+    stepStmt.expression,
+    forBody,
+  );
+}
+
+function simpleReassignmentsFromAssignment(
+  lhs: ts.Expression,
+  rhs: ts.Expression,
+  letNames: ReadonlySet<string>,
+): PreludeStmt[] | null {
+  const target = unwrapExpression(lhs);
+  if (ts.isIdentifier(target)) {
+    return letNames.has(target.text)
+      ? [{ kind: "reassign", tsName: target.text, valueExpr: rhs }]
+      : null;
+  }
+  if (ts.isArrayLiteralExpression(target)) {
+    const temps: PreludeStmt[] = [];
+    const assigns: PreludeStmt[] = [];
+    for (let i = 0; i < target.elements.length; i++) {
+      const element = target.elements[i]!;
+      if (!ts.isIdentifier(element) || !letNames.has(element.text)) {
+        return null;
+      }
+      // toPantTermName turns these ASCII temp names into Pant identifiers like
+      // `ts2pant-destructure-0-x`; snapshots pin that emitted form.
+      const tempName = `__ts2pant_destructure_${i}_${element.text}`;
+      temps.push({
+        kind: "const",
+        tsName: tempName,
+        initializer: ts.isArrayLiteralExpression(rhs)
+          ? (rhs.elements[i] as ts.Expression)
+          : ts.factory.createElementAccessExpression(
+              rhs,
+              ts.factory.createNumericLiteral(i),
+            ),
+      });
+      assigns.push({
+        kind: "reassign",
+        tsName: element.text,
+        valueExpr: ts.factory.createIdentifier(tempName),
+      });
+    }
+    return [...temps, ...assigns];
+  }
+  if (ts.isObjectLiteralExpression(target)) {
+    const temps: PreludeStmt[] = [];
+    const assigns: PreludeStmt[] = [];
+    let i = 0;
+    for (const prop of target.properties) {
+      if (ts.isShorthandPropertyAssignment(prop)) {
+        if (!letNames.has(prop.name.text)) {
+          return null;
+        }
+        // toPantTermName turns these ASCII temp names into Pant identifiers like
+        // `ts2pant-destructure-0-x`; snapshots pin that emitted form.
+        const tempName = `__ts2pant_destructure_${i}_${prop.name.text}`;
+        temps.push({
+          kind: "const",
+          tsName: tempName,
+          initializer:
+            objectLiteralPropertyValue(rhs, prop.name.text) ??
+            ts.factory.createPropertyAccessExpression(rhs, prop.name),
+        });
+        assigns.push({
+          kind: "reassign",
+          tsName: prop.name.text,
+          valueExpr: ts.factory.createIdentifier(tempName),
+        });
+        i += 1;
+        continue;
+      }
+      if (
+        ts.isPropertyAssignment(prop) &&
+        ts.isIdentifier(prop.initializer) &&
+        letNames.has(prop.initializer.text) &&
+        (ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name))
+      ) {
+        // toPantTermName turns these ASCII temp names into Pant identifiers like
+        // `ts2pant-destructure-0-x`; snapshots pin that emitted form.
+        const tempName = `__ts2pant_destructure_${i}_${prop.initializer.text}`;
+        temps.push({
+          kind: "const",
+          tsName: tempName,
+          initializer:
+            objectLiteralPropertyValue(rhs, prop.name.text) ??
+            ts.factory.createPropertyAccessExpression(rhs, prop.name.text),
+        });
+        assigns.push({
+          kind: "reassign",
+          tsName: prop.initializer.text,
+          valueExpr: ts.factory.createIdentifier(tempName),
+        });
+        i += 1;
+        continue;
+      }
+      return null;
+    }
+    return [...temps, ...assigns];
+  }
+  return null;
+}
+
+function objectLiteralPropertyValue(
+  expr: ts.Expression,
+  name: string,
+): ts.Expression | null {
+  if (!ts.isObjectLiteralExpression(expr)) {
+    return null;
+  }
+  for (const prop of expr.properties) {
+    if (ts.isShorthandPropertyAssignment(prop) && prop.name.text === name) {
+      return prop.name;
+    }
+    if (
+      ts.isPropertyAssignment(prop) &&
+      ((ts.isIdentifier(prop.name) && prop.name.text === name) ||
+        (ts.isStringLiteral(prop.name) && prop.name.text === name)) &&
+      ts.isExpression(prop.initializer)
+    ) {
+      return prop.initializer;
+    }
+  }
+  return null;
+}
+
+function writtenLetNamesInStatement(
+  stmt: ts.Statement,
+  letNames: ReadonlySet<string>,
+): Set<string> {
+  const found = new Set<string>();
+  const visitTarget = (node: ts.Node): void => {
+    node = ts.isExpression(node) ? unwrapExpression(node) : node;
+    if (ts.isIdentifier(node) && letNames.has(node.text)) {
+      found.add(node.text);
+      return;
+    }
+    if (ts.isArrayLiteralExpression(node)) {
+      for (const element of node.elements) {
+        visitTarget(ts.isSpreadElement(element) ? element.expression : element);
+      }
+      return;
+    }
+    if (ts.isObjectLiteralExpression(node)) {
+      for (const prop of node.properties) {
+        if (ts.isShorthandPropertyAssignment(prop)) {
+          if (letNames.has(prop.name.text)) {
+            found.add(prop.name.text);
+          }
+        } else if (ts.isPropertyAssignment(prop)) {
+          visitTarget(prop.initializer);
+        }
+      }
+    }
+  };
+  const walk = (node: ts.Node): void => {
+    if (
+      ts.isBinaryExpression(node) &&
+      isAssignmentOperator(node.operatorToken.kind)
+    ) {
+      visitTarget(node.left);
+      walk(node.right);
+      return;
+    }
+    if (ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) {
+      if (
+        node.operator === ts.SyntaxKind.PlusPlusToken ||
+        node.operator === ts.SyntaxKind.MinusMinusToken
+      ) {
+        visitTarget(node.operand);
+        return;
+      }
+    }
+    ts.forEachChild(node, walk);
+  };
+  walk(stmt);
+  return found;
 }
 
 function declaredIdentifierNames(
@@ -1935,7 +2333,7 @@ interface LoweredPreludeBindings {
 }
 
 function lowerPreludeBindings(
-  bindings: ConstBinding[],
+  bindings: PreludeStmt[],
   checker: ts.TypeChecker,
   strategy: NumericStrategy,
   baseParams: ReadonlyMap<string, string>,
@@ -1958,6 +2356,14 @@ function lowerPreludeBindings(
     if (binding.kind === "const") {
       if (expressionReferencesNames(binding.initializer, blockedNames)) {
         return { error: "const initializer references a later binding" };
+      }
+    } else if (binding.kind === "reassign") {
+      if (expressionReferencesNames(binding.valueExpr, blockedNames)) {
+        return { error: "reassignment value references a later binding" };
+      }
+    } else if (binding.kind === "stmt") {
+      if (nodeReferencesNames(binding.stmt, blockedNames)) {
+        return { error: "statement before return references a later binding" };
       }
     } else if (binding.kind === "muSearch") {
       if (expressionHasSideEffects(binding.mu.initTsExpr, checker)) {
@@ -2041,6 +2447,52 @@ function lowerPreludeBindings(
           letStmts: acc.letStmts,
           ruleDecls: acc.ruleDecls,
           arms: [...acc.arms, [predRes.value, valRes.value] as const],
+        };
+      }
+      if (binding.kind === "reassign") {
+        const value = buildL1SubExpr(binding.valueExpr, {
+          checker,
+          strategy,
+          paramNames: acc.scopedParams,
+          state: state ?? makeSymbolicState(),
+          supply,
+        });
+        if (isUnsupported(value)) {
+          return { tag: "error", error: value.unsupported };
+        }
+        const localName = acc.scopedParams.get(binding.tsName);
+        if (localName === undefined) {
+          return {
+            tag: "error",
+            error: `assignment to unknown local binding ${binding.tsName}`,
+          };
+        }
+        return {
+          tag: "ok",
+          scopedParams: acc.scopedParams,
+          letStmts: [...acc.letStmts, ir1Assign(ir1Var(localName), value)],
+          ruleDecls: acc.ruleDecls,
+          arms: acc.arms,
+        };
+      }
+      if (binding.kind === "stmt") {
+        const scopedParams = new Map(acc.scopedParams);
+        const built = buildSupportedSsaStatement(binding.stmt, {
+          checker,
+          strategy,
+          paramNames: scopedParams,
+          state: state ?? makeSymbolicState(),
+          supply,
+        });
+        if (isUnsupported(built)) {
+          return { tag: "error", error: built.unsupported };
+        }
+        return {
+          tag: "ok",
+          scopedParams,
+          letStmts: [...acc.letStmts, built],
+          ruleDecls: acc.ruleDecls,
+          arms: acc.arms,
         };
       }
       const localName = allocLocalBindingName(
@@ -2328,117 +2780,62 @@ function isAssignmentOperator(kind: ts.SyntaxKind): boolean {
   return ASSIGNMENT_OPERATORS.has(kind);
 }
 
-/**
- * Conservative reassignment recognizer for local `let` stepping-stone support.
- * Any write to one of `declaredNames`, including inside nested closures, marks
- * that binding as mutated so Patch 2 can keep it on the explicit stopgap path.
- */
-function findReassignedNamesInBody(
+function findClosureCapturedReassignedNamesInBody(
   body: ts.Block,
   declaredNames: ReadonlySet<string>,
 ): ReadonlySet<string> {
-  const reassigned = new Set<string>();
+  const captured = new Set<string>();
   const targetNames = new Set(declaredNames);
 
-  const addIfTarget = (name: string, shadowed: ReadonlySet<string>): void => {
-    if (targetNames.has(name) && !shadowed.has(name)) {
-      reassigned.add(name);
+  const addIfTarget = (
+    name: string,
+    shadowed: ReadonlySet<string>,
+    inClosure: boolean,
+  ): void => {
+    if (inClosure && targetNames.has(name) && !shadowed.has(name)) {
+      captured.add(name);
     }
   };
 
   const collectAssignmentTarget = (
     node: ts.Node,
     shadowed: ReadonlySet<string>,
+    inClosure: boolean,
   ): void => {
     node = ts.isExpression(node) ? unwrapExpression(node) : node;
     if (ts.isIdentifier(node)) {
-      addIfTarget(node.text, shadowed);
+      addIfTarget(node.text, shadowed, inClosure);
       return;
     }
     if (ts.isArrayLiteralExpression(node)) {
       for (const element of node.elements) {
-        if (ts.isSpreadElement(element)) {
-          collectAssignmentTarget(element.expression, shadowed);
-        } else {
-          collectAssignmentTarget(element, shadowed);
-        }
+        collectAssignmentTarget(
+          ts.isSpreadElement(element) ? element.expression : element,
+          shadowed,
+          inClosure,
+        );
       }
       return;
     }
     if (ts.isObjectLiteralExpression(node)) {
       for (const prop of node.properties) {
         if (ts.isShorthandPropertyAssignment(prop)) {
-          addIfTarget(prop.name.text, shadowed);
-          continue;
-        }
-        if (ts.isPropertyAssignment(prop)) {
-          collectAssignmentTarget(prop.initializer, shadowed);
-          continue;
-        }
-        if (ts.isSpreadAssignment(prop)) {
-          collectAssignmentTarget(prop.expression, shadowed);
+          addIfTarget(prop.name.text, shadowed, inClosure);
+        } else if (ts.isPropertyAssignment(prop)) {
+          collectAssignmentTarget(prop.initializer, shadowed, inClosure);
+        } else if (ts.isSpreadAssignment(prop)) {
+          collectAssignmentTarget(prop.expression, shadowed, inClosure);
         }
       }
     }
   };
 
-  const walkFunctionLike = (
-    node:
-      | ts.ArrowFunction
-      | ts.FunctionExpression
-      | ts.FunctionDeclaration
-      | ts.MethodDeclaration
-      | ts.GetAccessorDeclaration
-      | ts.SetAccessorDeclaration
-      | ts.ConstructorDeclaration,
+  const walk = (
+    node: ts.Node,
     shadowed: ReadonlySet<string>,
+    inClosure: boolean,
   ): void => {
-    for (const param of node.parameters) {
-      if (param.initializer) {
-        walk(param.initializer, shadowed);
-      }
-    }
-    const innerShadowed = new Set(shadowed);
-    for (const param of node.parameters) {
-      collectBindingNames(param.name, innerShadowed);
-    }
-    if (
-      (ts.isFunctionExpression(node) || ts.isFunctionDeclaration(node)) &&
-      node.name
-    ) {
-      innerShadowed.add(node.name.text);
-    }
-    if (node.body) {
-      walk(node.body, innerShadowed);
-    }
-  };
-
-  const collectBlockScopedNames = (
-    stmt: ts.VariableStatement,
-    out: Set<string>,
-  ): void => {
-    const flags = stmt.declarationList.flags;
-    if (!(flags & ts.NodeFlags.Let) && !(flags & ts.NodeFlags.Const)) {
-      return;
-    }
-    for (const decl of stmt.declarationList.declarations) {
-      collectBindingNames(decl.name, out);
-    }
-  };
-
-  const walkVariableInitializers = (
-    declList: ts.VariableDeclarationList,
-    shadowed: ReadonlySet<string>,
-  ): void => {
-    for (const decl of declList.declarations) {
-      if (decl.initializer) {
-        walk(decl.initializer, shadowed);
-      }
-    }
-  };
-
-  const walk = (node: ts.Node, shadowed: ReadonlySet<string>): void => {
-    if (reassigned.size === targetNames.size) {
+    if (captured.size === targetNames.size) {
       return;
     }
     if (
@@ -2450,26 +2847,52 @@ function findReassignedNamesInBody(
       ts.isSetAccessorDeclaration(node) ||
       ts.isConstructorDeclaration(node)
     ) {
-      walkFunctionLike(node, shadowed);
+      for (const param of node.parameters) {
+        if (param.initializer) {
+          walk(param.initializer, shadowed, inClosure);
+        }
+      }
+      const innerShadowed = new Set(shadowed);
+      for (const param of node.parameters) {
+        collectBindingNames(param.name, innerShadowed);
+      }
+      if (
+        (ts.isFunctionExpression(node) || ts.isFunctionDeclaration(node)) &&
+        node.name
+      ) {
+        innerShadowed.add(node.name.text);
+      }
+      if (node.body) {
+        walk(node.body, innerShadowed, true);
+      }
       return;
     }
     if (ts.isBlock(node)) {
       const blockShadowed = new Set(shadowed);
       for (const stmt of node.statements) {
-        walk(stmt, blockShadowed);
+        walk(stmt, blockShadowed, inClosure);
         if (ts.isVariableStatement(stmt)) {
-          collectBlockScopedNames(stmt, blockShadowed);
+          const flags = stmt.declarationList.flags;
+          if (flags & ts.NodeFlags.Let || flags & ts.NodeFlags.Const) {
+            for (const decl of stmt.declarationList.declarations) {
+              collectBindingNames(decl.name, blockShadowed);
+            }
+          }
         }
       }
       return;
     }
     if (ts.isVariableStatement(node)) {
-      walkVariableInitializers(node.declarationList, shadowed);
+      for (const decl of node.declarationList.declarations) {
+        if (decl.initializer) {
+          walk(decl.initializer, shadowed, inClosure);
+        }
+      }
       return;
     }
     if (ts.isVariableDeclaration(node)) {
       if (node.initializer) {
-        walk(node.initializer, shadowed);
+        walk(node.initializer, shadowed, inClosure);
       }
       return;
     }
@@ -2477,8 +2900,8 @@ function findReassignedNamesInBody(
       ts.isBinaryExpression(node) &&
       isAssignmentOperator(node.operatorToken.kind)
     ) {
-      collectAssignmentTarget(node.left, shadowed);
-      walk(node.right, shadowed);
+      collectAssignmentTarget(node.left, shadowed, inClosure);
+      walk(node.right, shadowed, inClosure);
       return;
     }
     if (ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) {
@@ -2486,17 +2909,17 @@ function findReassignedNamesInBody(
         node.operator === ts.SyntaxKind.PlusPlusToken ||
         node.operator === ts.SyntaxKind.MinusMinusToken
       ) {
-        collectAssignmentTarget(node.operand, shadowed);
+        collectAssignmentTarget(node.operand, shadowed, inClosure);
         return;
       }
     }
-    ts.forEachChild(node, (child) => walk(child, shadowed));
+    ts.forEachChild(node, (child) => walk(child, shadowed, inClosure));
   };
 
   for (const stmt of body.statements) {
-    walk(stmt, new Set());
+    walk(stmt, new Set(), false);
   }
-  return reassigned;
+  return captured;
 }
 
 /** Collect sub-expressions of a binding pattern that are evaluated in the
@@ -4636,6 +5059,7 @@ function buildSupportedSsaMutatingBody(
 ): IR1Stmt | { unsupported: string } {
   const stmts: IR1Stmt[] = [];
   const scopedParamNames = new Map(paramNames);
+  const letNames = new Set<string>();
   const canonicalizeAliases = (e: OpaqueExpr): OpaqueExpr =>
     applyOpaqueAliases(e, supply);
   setCanonicalize(state, canonicalizeAliases);
@@ -4722,11 +5146,16 @@ function buildSupportedSsaMutatingBody(
           for (const [key, value] of lowered.scopedParams) {
             scopedParamNames.set(key, value);
           }
+          if (declList.flags & ts.NodeFlags.Let) {
+            for (const name of bindingNamesFromDeclarationList(declList)) {
+              letNames.add(name);
+            }
+          }
           setCanonicalize(state, canonicalizeAliases);
           continue;
         }
         if (declList.flags & ts.NodeFlags.Let) {
-          return { unsupported: LET_REASSIGNMENT_UNSUPPORTED };
+          return { unsupported: LET_CLOSURE_REASSIGNMENT_UNSUPPORTED };
         }
       }
       if (
@@ -4738,6 +5167,27 @@ function buildSupportedSsaMutatingBody(
       return {
         unsupported: "local variable declaration (effectful const)",
       };
+    }
+    if (ts.isExpressionStatement(stmt)) {
+      const reassignments = reassignmentsFromExpressionStatement(
+        stmt,
+        letNames,
+      );
+      if (reassignments !== null) {
+        const lowered = lowerPreludeBindings(
+          reassignments,
+          checker,
+          strategy,
+          scopedParamNames,
+          supply,
+          state,
+        );
+        if ("error" in lowered) {
+          return { unsupported: lowered.error };
+        }
+        stmts.push(...lowered.letStmts);
+        continue;
+      }
     }
     const built = buildSupportedSsaStatement(stmt, {
       checker,

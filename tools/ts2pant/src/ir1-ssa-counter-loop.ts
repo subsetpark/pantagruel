@@ -11,6 +11,8 @@ import {
   ir1LitNat,
   ir1SsaCloseLoopHeader,
   ir1SsaInitialVersion,
+  ir1SsaLocalBindingLocation,
+  ir1SsaLocalBindingValue,
   ir1SsaLoopBody,
   ir1SsaOpenLoopHeader,
   ir1SsaPropertyLocation,
@@ -51,9 +53,9 @@ interface CounterLoopCtx {
 }
 
 interface TargetInfo {
-  target: Extract<IR1Expr, { kind: "member" }>;
-  location: Extract<IR1SsaLocation, { kind: "property" }>;
-  objExpr: OpaqueExpr;
+  target: Extract<IR1Expr, { kind: "member" | "var" }>;
+  location: Extract<IR1SsaLocation, { kind: "property" | "local-binding" }>;
+  objExpr?: OpaqueExpr;
   lhs: OpaqueExpr;
   prior: OpaqueExpr;
   key: string;
@@ -63,7 +65,7 @@ type FoldCombiner = "add" | "mul" | "and" | "or";
 
 interface AccumulatorFoldBody {
   kind: "accumulator-fold";
-  target: Extract<IR1Expr, { kind: "member" }>;
+  target: Extract<IR1Expr, { kind: "member" | "var" }>;
   rhs: IR1Expr;
   guard: IR1Expr | null;
   combiner: FoldCombiner;
@@ -73,7 +75,7 @@ interface AccumulatorFoldBody {
 
 interface SimpleAssignBody {
   kind: "simple-assign";
-  target: Extract<IR1Expr, { kind: "member" }>;
+  target: Extract<IR1Expr, { kind: "member" | "var" }>;
   rhs: IR1Expr;
   continueGuards: IR1Expr[];
 }
@@ -149,7 +151,9 @@ export function lowerCounterLoopL1Body(
   const header = ir1SsaOpenLoopHeader(targetInfo.location, preheaderVersion);
   const write: IR1SsaWrite = ir1SsaWrite(
     targetInfo.location,
-    ir1SsaPropertyValue(body.rhs),
+    targetInfo.location.kind === "local-binding"
+      ? ir1SsaLocalBindingValue(body.rhs)
+      : ir1SsaPropertyValue(body.rhs),
   );
   ir1SsaCloseLoopHeader(header, write.version);
 
@@ -180,7 +184,10 @@ export function lowerCounterLoopL1Body(
     body.kind === "accumulator-fold"
       ? emitAccumulatorFold(shape, body, targetInfo, lowerOpaque)
       : emitSimpleAssign(shape, body, targetInfo, lowerOpaque);
-  const modifiedRules = [ir1SsaRuleOfLocation(targetInfo.location)];
+  const modifiedRules =
+    targetInfo.location.kind === "local-binding"
+      ? []
+      : [ir1SsaRuleOfLocation(targetInfo.location)];
   const declaredRules = new Set([
     ...(options.declaredRules ?? []),
     ...modifiedRules,
@@ -202,15 +209,19 @@ export function lowerCounterLoopL1Body(
     programs: [program],
     propositions: [proposition],
     modifiedRules,
-    finalProperties: [
-      {
-        location: targetInfo.location,
-        version: write.version,
-        objExpr: targetInfo.objExpr,
-        lhs: targetInfo.lhs,
-        rhs: proposition.rhs,
-      },
-    ],
+    ...(targetInfo.location.kind === "local-binding"
+      ? {}
+      : {
+          finalProperties: [
+            {
+              location: targetInfo.location,
+              version: write.version,
+              objExpr: targetInfo.objExpr!,
+              lhs: targetInfo.lhs,
+              rhs: proposition.rhs,
+            },
+          ],
+        }),
   });
 }
 
@@ -367,20 +378,26 @@ function classifyCounterLoopBody(
     }
     return { ...classified, guard };
   }
-  if (stmt.kind !== "assign" || stmt.target.kind !== "member") {
+  if (
+    stmt.kind !== "assign" ||
+    (stmt.target.kind !== "member" && stmt.target.kind !== "var")
+  ) {
     return {
       unsupported:
-        "bounded counter loop body must be an accumulator fold or simple property assignment",
+        "bounded counter loop body must be an accumulator fold or simple assignment",
     };
   }
-  if (rootName(stmt.target.receiver) === counterName) {
+  if (
+    stmt.target.kind === "member" &&
+    rootName(stmt.target.receiver) === counterName
+  ) {
     return {
       unsupported: "counter loop body cannot assign through the counter",
     };
   }
 
-  const selfReads = countMemberReads(stmt.value, stmt.target);
-  if (stmt.value.kind === "binop" && sameMember(stmt.value.lhs, stmt.target)) {
+  const selfReads = countTargetReads(stmt.value, stmt.target);
+  if (stmt.value.kind === "binop" && sameTarget(stmt.value.lhs, stmt.target)) {
     const fold = isAccumulatorOuterOp(stmt.value.op)
       ? foldForBinop(stmt.value.op)
       : null;
@@ -390,7 +407,7 @@ function classifyCounterLoopBody(
           "bounded counter loop accumulator fold uses an unsupported operator",
       };
     }
-    if (countMemberReads(stmt.value.rhs, stmt.target) > 0 || selfReads > 1) {
+    if (countTargetReads(stmt.value.rhs, stmt.target) > 0 || selfReads > 1) {
       return recurrenceUnsupported();
     }
     return {
@@ -415,11 +432,22 @@ function classifyCounterLoopBody(
 }
 
 function buildTargetInfo(
-  target: Extract<IR1Expr, { kind: "member" }>,
+  target: Extract<IR1Expr, { kind: "member" | "var" }>,
   lowerOpaque: (e: OpaqueExpr) => OpaqueExpr,
   options: CounterLoopLowerOptions,
 ): TargetInfo {
   const ast = getAst();
+  if (target.kind === "var") {
+    const location = ir1SsaLocalBindingLocation(target.name);
+    const lhs = ast.var(target.name);
+    return {
+      target,
+      location,
+      lhs,
+      prior: ast.var(target.name),
+      key: `local-binding::${target.name}`,
+    };
+  }
   const objExpr = lowerOpaque(lowerExpr(lowerL1Expr(target.receiver)));
   const location = ir1SsaPropertyLocation(
     target.name,
@@ -756,30 +784,30 @@ function exprReferencesVar(expr: IR1Expr, name: string): boolean {
   }
 }
 
-function countMemberReads(
+function countTargetReads(
   expr: IR1Expr,
-  member: Extract<IR1Expr, { kind: "member" }>,
+  target: Extract<IR1Expr, { kind: "member" | "var" }>,
 ): number {
-  const self = sameMember(expr, member) ? 1 : 0;
+  const self = sameTarget(expr, target) ? 1 : 0;
   switch (expr.kind) {
     case "var":
     case "lit":
       return self;
     case "member":
-      return self + countMemberReads(expr.receiver, member);
+      return self + countTargetReads(expr.receiver, target);
     case "binop":
       return (
         self +
-        countMemberReads(expr.lhs, member) +
-        countMemberReads(expr.rhs, member)
+        countTargetReads(expr.lhs, target) +
+        countTargetReads(expr.rhs, target)
       );
     case "unop":
-      return self + countMemberReads(expr.arg, member);
+      return self + countTargetReads(expr.arg, target);
     case "app":
       return (
         self +
-        countMemberReads(expr.callee, member) +
-        expr.args.reduce((n, arg) => n + countMemberReads(arg, member), 0)
+        countTargetReads(expr.callee, target) +
+        expr.args.reduce((n, arg) => n + countTargetReads(arg, target), 0)
       );
     case "cond":
       return (
@@ -787,51 +815,51 @@ function countMemberReads(
         expr.arms.reduce(
           (n, [guard, value]) =>
             n +
-            countMemberReads(guard, member) +
-            countMemberReads(value, member),
+            countTargetReads(guard, target) +
+            countTargetReads(value, target),
           0,
         ) +
-        countMemberReads(expr.otherwise, member)
+        countTargetReads(expr.otherwise, target)
       );
     case "is-nullish":
-      return self + countMemberReads(expr.operand, member);
+      return self + countTargetReads(expr.operand, target);
     case "each":
       return (
         self +
-        countMemberReads(expr.src, member) +
+        countTargetReads(expr.src, target) +
         expr.guards.reduce(
-          (n, guard) => n + countMemberReads(guard, member),
+          (n, guard) => n + countTargetReads(guard, target),
           0,
         ) +
-        countMemberReads(expr.proj, member)
+        countTargetReads(expr.proj, target)
       );
     case "comb-typed":
       return (
         self +
         expr.guards.reduce(
-          (n, guard) => n + countMemberReads(guard, member),
+          (n, guard) => n + countTargetReads(guard, target),
           0,
         ) +
-        countMemberReads(expr.proj, member)
+        countTargetReads(expr.proj, target)
       );
     case "forall":
     case "exists":
       return (
         self +
-        (expr.guard === undefined ? 0 : countMemberReads(expr.guard, member)) +
-        countMemberReads(expr.body, member)
+        (expr.guard === undefined ? 0 : countTargetReads(expr.guard, target)) +
+        countTargetReads(expr.body, target)
       );
     case "map-read":
       return (
         self +
-        countMemberReads(expr.receiver, member) +
-        countMemberReads(expr.key, member)
+        countTargetReads(expr.receiver, target) +
+        countTargetReads(expr.key, target)
       );
     case "set-read":
       return (
         self +
-        countMemberReads(expr.receiver, member) +
-        countMemberReads(expr.elem, member)
+        countTargetReads(expr.receiver, target) +
+        countTargetReads(expr.elem, target)
       );
     default: {
       const _exhaustive: never = expr;
@@ -841,14 +869,17 @@ function countMemberReads(
   }
 }
 
-function sameMember(
+function sameTarget(
   expr: IR1Expr,
-  member: Extract<IR1Expr, { kind: "member" }>,
+  target: Extract<IR1Expr, { kind: "member" | "var" }>,
 ): boolean {
+  if (target.kind === "var") {
+    return expr.kind === "var" && expr.name === target.name;
+  }
   return (
     expr.kind === "member" &&
-    expr.name === member.name &&
-    ir1ExprEqual(expr.receiver, member.receiver)
+    expr.name === target.name &&
+    ir1ExprEqual(expr.receiver, target.receiver)
   );
 }
 
