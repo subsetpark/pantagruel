@@ -172,6 +172,7 @@ function substituteIR(expr: IRExpr, name: string, replacement: IRExpr): IRExpr {
     case "var":
       return expr.name === name && !expr.primed ? replacement : expr;
     case "lit":
+    case "opaque":
       return expr;
     case "app":
       return {
