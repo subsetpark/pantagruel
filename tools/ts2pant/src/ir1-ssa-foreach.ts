@@ -491,6 +491,7 @@ export function lowerShapeAExpr(
       );
     case "var":
     case "lit":
+    case "opaque":
       return lowerExpr(lowerL1Expr(expr));
     default: {
       const _exhaustive: never = expr;

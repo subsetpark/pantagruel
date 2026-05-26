@@ -40,14 +40,24 @@ export type IR1Literal = IRLiteral;
 export type IR1Binop = IRBinop;
 export type IR1Unop = IRUnop;
 
+export interface SourceRef {
+  file: string;
+  line: number;
+}
+
+export function ir1OpaqueOriginId(origin: SourceRef): string {
+  return `${origin.file}:${origin.line}`;
+}
+
 // --------------------------------------------------------------------------
 // Expression forms (value-position)
 // --------------------------------------------------------------------------
 
 /**
- * Layer 1 expressions. Fourteen forms preserve TS-shape canonicalization:
+ * Layer 1 expressions. Fifteen forms preserve TS-shape canonicalization:
  *
  * - `var`, `lit` — literal references
+ * - `opaque` — value with erased structure, carrying sort + source origin
  * - `binop`, `unop` — arithmetic/logical/comparison operators
  * - `app` — function or method application (callee is itself an IR1Expr)
  * - `member` — property access; canonicalized so `obj.f` and `obj["f"]`
@@ -77,6 +87,8 @@ export type IR1Expr =
   | { kind: "var"; name: string; primed?: boolean }
   /** Literal value (nat, bool, string). */
   | { kind: "lit"; value: IR1Literal }
+  /** Opaque value with erased structure. Closed leaf. */
+  | { kind: "opaque"; sort: string; origin: SourceRef }
   /** Binary operator application. */
   | { kind: "binop"; op: IR1Binop; lhs: IR1Expr; rhs: IR1Expr }
   /** Unary operator application. */
@@ -1018,6 +1030,15 @@ export const ir1SsaExprEquals = (a: IR1Expr, b: IR1Expr): boolean => {
       }
       return a.value.kind === b.value.kind && a.value.value === b.value.value;
     }
+    case "opaque": {
+      if (b.kind !== "opaque") {
+        return false;
+      }
+      return (
+        a.sort === b.sort &&
+        ir1OpaqueOriginId(a.origin) === ir1OpaqueOriginId(b.origin)
+      );
+    }
     case "binop": {
       if (b.kind !== "binop") {
         return false;
@@ -1205,6 +1226,12 @@ export const ir1LitBool = (value: boolean): IR1Expr => ({
 export const ir1LitString = (value: string): IR1Expr => ({
   kind: "lit",
   value: { kind: "string", value },
+});
+
+export const ir1Opaque = (sort: string, origin: SourceRef): IR1Expr => ({
+  kind: "opaque",
+  sort,
+  origin,
 });
 
 export const ir1Binop = (

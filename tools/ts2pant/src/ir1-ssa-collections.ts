@@ -9,6 +9,7 @@ import {
   type IR1SsaVersion,
   type IR1SsaWrite,
   type IR1Stmt,
+  ir1OpaqueOriginId,
   ir1SsaInitialVersion,
   ir1SsaJoin,
   ir1SsaMapMembershipLocation,
@@ -558,6 +559,7 @@ export function collectionSsaReadExpr(
       return expr;
     case "var":
     case "lit":
+    case "opaque":
       return expr;
     default: {
       const _exhaustive: never = expr;
@@ -1102,6 +1104,7 @@ function lowerCollectionSsaExprToOpaque(
     }
     case "var":
     case "lit":
+    case "opaque":
       return state.lowerOpaque(
         lowerExpr(lowerL1Expr(state.canonicalize(expr))),
       );
@@ -2008,6 +2011,8 @@ function collectionSsaExprKeyData(expr: IR1Expr): unknown {
         expr.value.kind,
         "value" in expr.value ? expr.value.value : null,
       ];
+    case "opaque":
+      return ["opaque", expr.sort, ir1OpaqueOriginId(expr.origin)];
     case "member":
       return ["member", collectionSsaExprKeyData(expr.receiver), expr.name];
     case "binop":
@@ -2148,6 +2153,7 @@ function isCollectionSsaExpr(expr: IR1Expr): boolean {
   switch (expr.kind) {
     case "var":
     case "lit":
+    case "opaque":
       return true;
     case "member":
       return isCollectionSsaExpr(expr.receiver);

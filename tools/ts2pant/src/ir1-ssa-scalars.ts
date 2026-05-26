@@ -9,6 +9,7 @@ import {
   type IR1SsaVersion,
   type IR1SsaWrite,
   type IR1Stmt,
+  ir1OpaqueOriginId,
   ir1SsaInitialVersion,
   ir1SsaJoin,
   ir1SsaLocalBindingLocation,
@@ -447,6 +448,7 @@ export function scalarSsaReadExpr(
       scalarSsaReadLocalBinding(expr.name, state);
       return expr;
     case "lit":
+    case "opaque":
       return expr;
     case "map-read":
     case "set-read":
@@ -757,6 +759,7 @@ function lowerScalarSsaExprToOpaque(
       return state.lowerOpaque(lowerScalarOpaqueExpr(expr, state.canonicalize));
     }
     case "lit":
+    case "opaque":
       return state.lowerOpaque(lowerScalarOpaqueExpr(expr, state.canonicalize));
     case "binop":
       return state.lowerOpaque(
@@ -1161,6 +1164,8 @@ function scalarSsaExprKey(expr: IR1Expr): string {
       return `var:${expr.name}:${expr.primed ?? false}`;
     case "lit":
       return `lit:${expr.value.kind}:${"value" in expr.value ? expr.value.value : ""}`;
+    case "opaque":
+      return `opaque:${expr.sort}:${ir1OpaqueOriginId(expr.origin)}`;
     case "member":
       return `member:${scalarSsaExprKey(expr.receiver)}:${expr.name}`;
     case "binop":
@@ -1335,6 +1340,7 @@ function isScalarSsaExpr(expr: IR1Expr): boolean {
   switch (expr.kind) {
     case "var":
     case "lit":
+    case "opaque":
       return true;
     case "member":
       return isScalarSsaExpr(expr.receiver);

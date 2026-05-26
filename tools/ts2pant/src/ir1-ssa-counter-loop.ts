@@ -9,6 +9,7 @@ import {
   type IR1Stmt,
   ir1Binop,
   ir1LitNat,
+  ir1OpaqueOriginId,
   ir1SsaCloseLoopHeader,
   ir1SsaInitialVersion,
   ir1SsaLocalBindingLocation,
@@ -717,6 +718,7 @@ function exprReferencesVar(expr: IR1Expr, name: string): boolean {
     case "var":
       return expr.name === name;
     case "lit":
+    case "opaque":
       return false;
     case "binop":
       return (
@@ -792,6 +794,7 @@ function countTargetReads(
   switch (expr.kind) {
     case "var":
     case "lit":
+    case "opaque":
       return self;
     case "member":
       return self + countTargetReads(expr.receiver, target);
@@ -901,6 +904,12 @@ function ir1ExprEqual(a: IR1Expr, b: IR1Expr): boolean {
         "value" in a.value &&
         "value" in b.value &&
         a.value.value === b.value.value
+      );
+    case "opaque":
+      return (
+        b.kind === "opaque" &&
+        a.sort === b.sort &&
+        ir1OpaqueOriginId(a.origin) === ir1OpaqueOriginId(b.origin)
       );
     case "binop":
       return (
