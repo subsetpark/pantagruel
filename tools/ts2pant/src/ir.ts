@@ -103,7 +103,7 @@ export type IRCombiner = IRFoldCombiner | "min" | "max";
 // --------------------------------------------------------------------------
 
 /**
- * Pure value-position IR. Eleven forms total. Each form's invariants are
+ * Pure value-position IR. Twelve forms total. Each form's invariants are
  * documented inline; do not add forms ad-hoc — additions go through
  * AGENTS.md §IR review.
  */
