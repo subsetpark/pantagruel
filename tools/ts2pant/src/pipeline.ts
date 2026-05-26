@@ -76,6 +76,36 @@ function mutatingReturnValueDeclarations(
   return [returnDecl];
 }
 
+function ruleKey(decl: PantDeclaration): string | null {
+  if (decl.kind !== "rule") {
+    return null;
+  }
+  return `${decl.name}/${decl.params.length}`;
+}
+
+function filterRuleCollisions(
+  candidates: ReadonlyArray<PantRule>,
+  existingDecls: ReadonlyArray<PantDeclaration>,
+): PantRule[] {
+  const seen = new Set<string>();
+  for (const decl of existingDecls) {
+    const key = ruleKey(decl);
+    if (key) {
+      seen.add(key);
+    }
+  }
+  const kept: PantRule[] = [];
+  for (const decl of candidates) {
+    const key = ruleKey(decl);
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    kept.push(decl);
+  }
+  return kept;
+}
+
 /**
  * Build a PantDocument from a parsed SourceFile and function name.
  * Shared by the CLI entry point and the test helpers.
@@ -190,12 +220,27 @@ export async function buildPantDocument(
   for (const f of refFns) {
     paramNameMap.set(f.tsName, f.pantName);
   }
+  // Referenced free-call signatures can register synth declarations
+  // (notably the shared Opaque domain for any/unknown fallback) after the
+  // initial signature/type drain above. Drain once more before building
+  // the declaration list so those rule heads have their domains in the
+  // same document even if body translation does not register anything new.
+  const refFnSynthDecls = cellEmitSynth(synthCell);
+  const collisionSafeFnDecls = filterRuleCollisions(fnDecls, [
+    ...typeDecls,
+    ...synthDecls,
+    ...refFnSynthDecls,
+    ...constDecls,
+    sigDecl,
+    ...returnValueDecls,
+  ]);
 
   const declarations = [
     ...typeDecls,
     ...synthDecls,
+    ...refFnSynthDecls,
     ...constDecls,
-    ...fnDecls,
+    ...collisionSafeFnDecls,
     sigDecl,
     ...returnValueDecls,
   ];
