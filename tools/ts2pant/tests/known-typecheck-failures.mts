@@ -43,6 +43,14 @@
  *   - "free-call-decl"    user calls a TS function that ts2pant doesn't
  *                         translate; the call survives but no Pant
  *                         declaration is synthesized for the callee.
+ *   - "let-rejected"      local `let` binding fixture reserved for the
+ *                         let-mutation SSA workstream; currently rejected
+ *                         before emission.
+ *   - "var-rejected"      local `var` binding fixture; `var` remains out of
+ *                         scope and should keep a dedicated diagnostic.
+ *   - "closure-captured-reassignment"
+ *                         reassignment through a closure-captured `let`;
+ *                         deliberately out of M2 scope.
  *   - "annotation-types"  the user's `@pant` annotation is itself
  *                         ill-typed against the emitted signature
  *                         (e.g. comparing a Bool result to an Int).
@@ -71,6 +79,31 @@ export const KNOWN_TYPECHECK_FAILURES = new Map<string, string>([
   ["expressions-const-side-effectful.ts > constMapEntries", "free-call-decl"],
   ["expressions-const-pure-calls.ts > constImpureCall", "free-call-decl"],
   ["expressions-const-bindings.ts > effectfulConstRejected", "free-call-decl"],
+  ["expressions-let-closure-captured.ts > letForEachCapturedTotal", "closure-captured-reassignment"],
+  ["expressions-let-closure-captured.ts > letMapCapturedCount", "closure-captured-reassignment"],
+  ["expressions-let-immutable.ts > simpleLet", "let-rejected"],
+  ["expressions-let-immutable.ts > chainedLet", "let-rejected"],
+  ["expressions-let-immutable.ts > letWithPropAccess", "let-rejected"],
+  ["expressions-let-immutable.ts > letInTernary", "let-rejected"],
+  ["expressions-let-immutable.ts > letMathMax", "free-call-decl"],
+  ["expressions-let-mutation-branch.ts > letThenOnlyBranch", "let-rejected"],
+  ["expressions-let-mutation-branch.ts > letThenElseBranch", "let-rejected"],
+  ["expressions-let-mutation-branch.ts > letNestedBranch", "let-rejected"],
+  ["expressions-let-mutation-loop.ts > letForLoopAccumulator", "let-rejected"],
+  ["expressions-let-mutation-loop.ts > letWhileAccumulator", "let-rejected"],
+  ["expressions-let-mutation-loop.ts > letWhileCounter", "let-rejected"],
+  ["expressions-let-mutation-straight.ts > letOneReassignment", "let-rejected"],
+  ["expressions-let-mutation-straight.ts > letSeveralReassignments", "let-rejected"],
+  ["expressions-let-mutation-straight.ts > letCompoundAdd", "let-rejected"],
+  ["expressions-let-mutation-straight.ts > letCompoundMultiply", "let-rejected"],
+  ["expressions-let-mutation-straight.ts > letPrefixPostfix", "let-rejected"],
+  ["expressions-let-mutation-straight.ts > letArrayDestructure", "let-rejected"],
+  ["expressions-let-mutation-straight.ts > letObjectDestructure", "let-rejected"],
+  ["expressions-var-rejected.ts > varBinding", "var-rejected"],
+  ["expressions-var-rejected.ts > varReassignment", "var-rejected"],
+  ["functions-mutating-let.ts > depositWithImmutableLet", "let-rejected"],
+  ["functions-mutating-let.ts > depositWithReassignedLet", "let-rejected"],
+  ["functions-mutating-let.ts > depositWithBranchLet", "let-rejected"],
   ["functions-class.ts > Account.getBalance", "requires-external-context"],
   ["functions-class.ts > Account.deposit", "requires-external-context"],
   ["types-composite.ts > getPoint", "list-literal"],
