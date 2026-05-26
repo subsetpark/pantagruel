@@ -22,13 +22,14 @@ import type { PantDeclaration } from "./types.js";
 export const UNSUPPORTED_ANONYMOUS_RECORD = "__unsupported_anon_record__";
 
 /**
- * Sentinel returned by `mapTsType` when the TypeScript type is `unknown`.
+ * Sentinel returned by `mapTsType` when the TypeScript type is `unknown`
+ * or `any`.
  * Pantagruel is monomorphic over named domains; there is no polymorphism
- * mechanism to absorb `unknown` into. Mapping it to a fresh domain per
- * call site loses the TS author's intent ("I'll narrow this later") and
- * silently lets type errors through. The translator rejects it explicitly
- * so the user can declare a real type or interface (steering rule 1 —
- * the TS itself is ambiguous, not the recognizer).
+ * mechanism to absorb a dynamic top type into. Mapping it to a fresh
+ * domain per call site loses the TS author's intent ("I'll narrow this
+ * later") and silently lets type errors through. The translator rejects
+ * it explicitly so the user can declare a real type or interface
+ * (steering rule 1 — the TS itself is ambiguous, not the recognizer).
  *
  * The value is not a valid Pantagruel identifier so emission of a
  * signature carrying it will fail visibly rather than reference an
@@ -1145,11 +1146,11 @@ export function mapTsType(
 ): string {
   const flags = type.flags;
 
-  // Reject `unknown` explicitly. Pantagruel is monomorphic over named
-  // domains — there is no `Any`/`Unknown` top — so the only honest move is
-  // to refuse and steer the user toward a declared type. Mapping to a
-  // generic placeholder would silently let type errors through.
-  if (flags & ts.TypeFlags.Unknown) {
+  // Reject `any` / `unknown` explicitly. Pantagruel is monomorphic over
+  // named domains — there is no `Any`/`Unknown` top — so the only honest
+  // move is to refuse and steer the user toward a declared type. Mapping
+  // to a generic placeholder would silently let type errors through.
+  if (flags & ts.TypeFlags.Any || flags & ts.TypeFlags.Unknown) {
     return UNSUPPORTED_UNKNOWN;
   }
 

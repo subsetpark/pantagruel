@@ -86,16 +86,16 @@ describe("numeric strategy", () => {
 describe("overloaded functions", () => {
   it("prefers implementation over overload signature", () => {
     const source = `
-      function add(a: number, b: number): number;
-      function add(a: string, b: string): string;
-      function add(a: any, b: any): any {
-        return a + b;
+      function add(a: number): number;
+      function add(a: number, b?: number): number {
+        return a + (b ?? 0);
       }
     `;
     const sourceFile = createSourceFileFromSource(source);
     const { node } = findFunction(sourceFile, "add");
     assert.ok(node.body !== undefined);
-    // Verify translateSignature uses the implementation (any params), not the first overload
+    // Verify translateSignature uses the implementation (two params), not the
+    // one-parameter overload signature.
     const result = translateSignature(sourceFile, "add", IntStrategy);
     assert.equal(result.declaration.params.length, 2);
   });
@@ -553,4 +553,3 @@ describe("@pant-type override", () => {
     assert.equal(result.declaration.params[0]?.type, "Int");
   });
 });
-
