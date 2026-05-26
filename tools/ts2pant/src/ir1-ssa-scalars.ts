@@ -316,8 +316,9 @@ export function isScalarSsaL1Body(stmt: IR1Stmt): boolean {
   switch (stmt.kind) {
     case "assign":
       return (
-        stmt.target.kind === "member" &&
-        isScalarSsaExpr(stmt.target.receiver) &&
+        ((stmt.target.kind === "member" &&
+          isScalarSsaExpr(stmt.target.receiver)) ||
+          stmt.target.kind === "var") &&
         isScalarSsaExpr(stmt.value)
       );
     case "block":
@@ -461,6 +462,24 @@ function lowerScalarAssign(
   stmt: Extract<IR1Stmt, { kind: "assign" }>,
   state: ScalarSsaState,
 ): void {
+  if (stmt.target.kind === "var") {
+    const value = scalarSsaReadExpr(stmt.value, state);
+    const key = scalarLocalBindingKey(stmt.target.name);
+    const location = state.locations.get(key);
+    if (location === undefined) {
+      throw new Error(
+        `scalar SSA: assignment to undeclared local var ${stmt.target.name}`,
+      );
+    }
+    if (location.kind !== "local-binding") {
+      throw new Error("local binding key resolved to a non-local SSA location");
+    }
+    const write = ir1SsaWrite(location, ir1SsaLocalBindingValue(value));
+    state.writes.push(write);
+    state.currentVersions.set(key, write.version);
+    state.writtenKeys.add(key);
+    return;
+  }
   if (stmt.target.kind !== "member") {
     throw new Error("scalar SSA assignment target must be a property member");
   }
@@ -566,6 +585,32 @@ function lowerScalarSsaAssignToVersions(
   stmt: Extract<IR1Stmt, { kind: "assign" }>,
   state: ScalarSsaLowerState,
 ): void {
+  if (stmt.target.kind === "var") {
+    const write = nextScalarSsaWrite(state);
+    const location = ir1SsaLocalBindingLocation(stmt.target.name);
+    if (!sameScalarSsaLocation(write.location, location, state.canonicalize)) {
+      throw new Error(
+        "scalar SSA write order did not match its local-binding location",
+      );
+    }
+    const rhs = lowerScalarSsaExprToOpaque(stmt.value, state);
+    const key = scalarLocalBindingKey(stmt.target.name);
+    const existingLocation = state.locations.get(key);
+    if (existingLocation === undefined) {
+      throw new Error(
+        `scalar SSA: assignment to undeclared local var ${stmt.target.name}`,
+      );
+    }
+    if (
+      !sameScalarSsaLocation(existingLocation, location, state.canonicalize)
+    ) {
+      throw new Error("local binding key resolved to a non-local SSA location");
+    }
+    state.currentVersions.set(key, write.version);
+    state.versionExprs.set(write.version, rhs);
+    state.writtenKeys.add(key);
+    return;
+  }
   if (stmt.target.kind !== "member") {
     throw new Error("scalar SSA assignment target must be a property member");
   }
@@ -627,6 +672,12 @@ function lowerScalarSsaCondToVersions(
 
   state.writeIndex = elseState.writeIndex;
   state.joinIndex = elseState.joinIndex;
+  for (const [version, expr] of thenState.versionExprs) {
+    state.versionExprs.set(version, expr);
+  }
+  for (const [version, expr] of elseState.versionExprs) {
+    state.versionExprs.set(version, expr);
+  }
 
   const touched = new Set([...thenState.writtenKeys, ...elseState.writtenKeys]);
   for (const key of touched) {
@@ -636,9 +687,6 @@ function lowerScalarSsaCondToVersions(
       state.locations.get(key);
     if (location === undefined) {
       throw new Error("scalar SSA branch touched an unknown location");
-    }
-    if (location.kind === "local-binding") {
-      continue;
     }
     const thenVersion =
       thenState.currentVersions.get(key) ??
@@ -960,9 +1008,6 @@ function lowerScalarCondStmt(
       state.locations.get(key);
     if (location === undefined) {
       throw new Error("scalar SSA branch touched an unknown location");
-    }
-    if (location.kind === "local-binding") {
-      continue;
     }
     const thenVersion =
       thenState.currentVersions.get(key) ??

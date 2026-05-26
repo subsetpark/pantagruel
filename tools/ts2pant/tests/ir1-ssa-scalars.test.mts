@@ -50,6 +50,19 @@ function scalarEquationRhs(stmt: Parameters<typeof lowerScalarSsaToProps>[0]) {
   return getAst().strExpr(eq.rhs);
 }
 
+function finalScalarPropertyRhs(
+  stmt: Parameters<typeof lowerScalarSsaToProps>[0],
+  ruleName: string,
+) {
+  const result = lowerScalarSsaToProps(stmt);
+  assert.deepEqual(result.diagnostics, []);
+  const entry = result.finalProperties.find(
+    (property) => property.location.ruleName === ruleName,
+  );
+  assert.notEqual(entry, undefined);
+  return getAst().strExpr(entry!.rhs);
+}
+
 before(async () => {
   await loadAst();
 });
@@ -108,6 +121,53 @@ describe("ir1-ssa-scalars", () => {
     assert.equal(propertyWrite!.location.kind, "property");
   });
 
+  it("versions a single var-target assign as a local-binding write", () => {
+    const stmt = ir1Block([
+      ir1Let("x", ir1LitNat(0)),
+      ir1Assign(ir1Var("x"), ir1LitNat(1)),
+    ]);
+
+    assert.equal(isScalarSsaL1Body(stmt), true);
+    const program = buildScalarSsaProgram(stmt);
+
+    assert.equal(program.writes.length, 2);
+    assert.equal(program.joins.length, 0);
+    assert.deepEqual(program.modifiedRules, []);
+    const [initialWrite, assignWrite] = program.writes;
+    assert.equal(initialWrite!.location.kind, "local-binding");
+    assert.equal(initialWrite!.location.name, "x");
+    assert.equal(assignWrite!.location, initialWrite!.location);
+    assert.notEqual(assignWrite!.version, initialWrite!.version);
+    assert.deepEqual(assignWrite!.value, {
+      kind: "local-binding",
+      value: ir1LitNat(1),
+    });
+  });
+
+  it("versions a chain of var-target reassignments", () => {
+    const stmt = ir1Block([
+      ir1Let("x", ir1LitNat(0)),
+      ir1Assign(ir1Var("x"), ir1LitNat(1)),
+      ir1Assign(ir1Var("x"), ir1Binop("add", ir1Var("x"), ir1LitNat(2))),
+    ]);
+    const state = makeScalarSsaState();
+
+    assert.equal(isScalarSsaL1Body(stmt), true);
+    lowerScalarSsaL1Body(stmt, state);
+
+    assert.equal(state.writes.length, 3);
+    assert.equal(state.reads.length, 1);
+    const [initialWrite, firstAssign, secondAssign] = state.writes;
+    assert.equal(firstAssign!.location, initialWrite!.location);
+    assert.equal(secondAssign!.location, initialWrite!.location);
+    assert.equal(state.reads[0]!.location, initialWrite!.location);
+    assert.equal(state.reads[0]!.version, firstAssign!.version);
+    assert.equal(
+      state.currentVersions.get("local-binding::x"),
+      secondAssign!.version,
+    );
+  });
+
   it("keeps branch-local let bindings out of scalar joins", () => {
     const stmt = ir1CondStmt([[ir1Var("g"), ir1Let("x", ir1LitNat(5))]], null);
     const state = makeScalarSsaState();
@@ -124,6 +184,75 @@ describe("ir1-ssa-scalars", () => {
         (location) => location.kind === "local-binding",
       ),
       false,
+    );
+  });
+
+  it("joins var-target assigns across cond-stmt arms", () => {
+    const balance = ir1Member(ir1Var("a"), "Account_balance");
+    const stmt = ir1Block([
+      ir1Let("x", ir1LitNat(0)),
+      ir1CondStmt(
+        [[ir1Var("g"), ir1Assign(ir1Var("x"), ir1LitNat(1))]],
+        ir1Assign(ir1Var("x"), ir1LitNat(2)),
+      ),
+      ir1Assign(balance, ir1Var("x")),
+    ]);
+
+    assert.equal(isScalarSsaL1Body(stmt), true);
+    const program = buildScalarSsaProgram(stmt);
+
+    assert.equal(program.writes.length, 4);
+    assert.equal(program.joins.length, 1);
+    const [initialWrite, thenWrite, elseWrite, propertyWrite] = program.writes;
+    const join = program.joins[0]!;
+    assert.equal(thenWrite!.location, initialWrite!.location);
+    assert.equal(elseWrite!.location, initialWrite!.location);
+    assert.equal(join.location, initialWrite!.location);
+    assert.equal(join.thenVersion, thenWrite!.version);
+    assert.equal(join.elseVersion, elseWrite!.version);
+    assert.equal(propertyWrite!.location.kind, "property");
+    assert.equal(
+      finalScalarPropertyRhs(stmt, "Account_balance"),
+      "cond g => 1, true => 2",
+    );
+  });
+
+  it("joins var-target assign against the unchanged else-arm version", () => {
+    const balance = ir1Member(ir1Var("a"), "Account_balance");
+    const stmt = ir1Block([
+      ir1Let("x", ir1LitNat(0)),
+      ir1CondStmt(
+        [[ir1Var("g"), ir1Assign(ir1Var("x"), ir1LitNat(1))]],
+        null,
+      ),
+      ir1Assign(balance, ir1Var("x")),
+    ]);
+
+    assert.equal(isScalarSsaL1Body(stmt), true);
+    const program = buildScalarSsaProgram(stmt);
+
+    assert.equal(program.writes.length, 3);
+    assert.equal(program.joins.length, 1);
+    const [initialWrite, thenWrite, propertyWrite] = program.writes;
+    const join = program.joins[0]!;
+    assert.equal(thenWrite!.location, initialWrite!.location);
+    assert.equal(join.location, initialWrite!.location);
+    assert.equal(join.thenVersion, thenWrite!.version);
+    assert.equal(join.elseVersion, initialWrite!.version);
+    assert.equal(propertyWrite!.location.kind, "property");
+    assert.equal(
+      finalScalarPropertyRhs(stmt, "Account_balance"),
+      "cond g => 1, true => 0",
+    );
+  });
+
+  it("rejects assign to an undeclared var during scalar SSA lowering", () => {
+    const stmt = ir1Assign(ir1Var("x"), ir1LitNat(1));
+
+    assert.equal(isScalarSsaL1Body(stmt), true);
+    assert.throws(
+      () => buildScalarSsaProgram(stmt),
+      /scalar SSA: assignment to undeclared local var x/u,
     );
   });
 
@@ -247,10 +376,6 @@ describe("ir1-ssa-scalars", () => {
       key: ir1Var("key"),
     };
 
-    assert.equal(
-      isScalarSsaL1Body(ir1Assign(ir1Var("x"), ir1LitNat(1))),
-      false,
-    );
     assert.equal(
       isScalarSsaL1Body(
         ir1Assign(ir1Member(mapReadReceiver, "Account_balance"), ir1LitNat(1)),
