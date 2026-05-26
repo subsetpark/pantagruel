@@ -45,6 +45,10 @@ export interface SourceRef {
   line: number;
 }
 
+export function ir1OpaqueOriginId(origin: SourceRef): string {
+  return `${origin.file}:${origin.line}`;
+}
+
 // --------------------------------------------------------------------------
 // Expression forms (value-position)
 // --------------------------------------------------------------------------
@@ -1032,8 +1036,7 @@ export const ir1SsaExprEquals = (a: IR1Expr, b: IR1Expr): boolean => {
       }
       return (
         a.sort === b.sort &&
-        a.origin.file === b.origin.file &&
-        a.origin.line === b.origin.line
+        ir1OpaqueOriginId(a.origin) === ir1OpaqueOriginId(b.origin)
       );
     }
     case "binop": {

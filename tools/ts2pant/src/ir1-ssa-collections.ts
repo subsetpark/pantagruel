@@ -9,6 +9,7 @@ import {
   type IR1SsaVersion,
   type IR1SsaWrite,
   type IR1Stmt,
+  ir1OpaqueOriginId,
   ir1SsaInitialVersion,
   ir1SsaJoin,
   ir1SsaMapMembershipLocation,
@@ -2011,7 +2012,7 @@ function collectionSsaExprKeyData(expr: IR1Expr): unknown {
         "value" in expr.value ? expr.value.value : null,
       ];
     case "opaque":
-      return ["opaque", expr.sort, expr.origin.file, expr.origin.line];
+      return ["opaque", expr.sort, ir1OpaqueOriginId(expr.origin)];
     case "member":
       return ["member", collectionSsaExprKeyData(expr.receiver), expr.name];
     case "binop":

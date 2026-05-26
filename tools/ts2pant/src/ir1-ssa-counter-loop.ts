@@ -9,6 +9,7 @@ import {
   type IR1Stmt,
   ir1Binop,
   ir1LitNat,
+  ir1OpaqueOriginId,
   ir1SsaCloseLoopHeader,
   ir1SsaInitialVersion,
   ir1SsaLocalBindingLocation,
@@ -908,8 +909,7 @@ function ir1ExprEqual(a: IR1Expr, b: IR1Expr): boolean {
       return (
         b.kind === "opaque" &&
         a.sort === b.sort &&
-        a.origin.file === b.origin.file &&
-        a.origin.line === b.origin.line
+        ir1OpaqueOriginId(a.origin) === ir1OpaqueOriginId(b.origin)
       );
     case "binop":
       return (

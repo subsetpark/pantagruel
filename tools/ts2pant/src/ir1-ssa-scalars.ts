@@ -9,6 +9,7 @@ import {
   type IR1SsaVersion,
   type IR1SsaWrite,
   type IR1Stmt,
+  ir1OpaqueOriginId,
   ir1SsaInitialVersion,
   ir1SsaJoin,
   ir1SsaLocalBindingLocation,
@@ -1164,7 +1165,7 @@ function scalarSsaExprKey(expr: IR1Expr): string {
     case "lit":
       return `lit:${expr.value.kind}:${"value" in expr.value ? expr.value.value : ""}`;
     case "opaque":
-      return `opaque:${expr.sort}:${expr.origin.file}:${expr.origin.line}`;
+      return `opaque:${expr.sort}:${ir1OpaqueOriginId(expr.origin)}`;
     case "member":
       return `member:${scalarSsaExprKey(expr.receiver)}:${expr.name}`;
     case "binop":
