@@ -1214,6 +1214,26 @@ exports[`guards-if-throw.ts > withdraw 1`] = `
 "module WITHDRAW.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\n~> Withdraw @ a: Account, amount: Int, account--balance a >= amount.\\n\\n---\\n\\naccount--balance' a = account--balance a - amount.\\n"
 `;
 
+exports[`opaque-any-unknown.ts > anyArrayReturn 1`] = `
+"module ANY_ARRAY_RETURN.\\n\\n> UNSUPPORTED: any-array-return return: TS unknown is not expressible in Pantagruel; declare a specific type\\n\\n---\\n\\nany-array-return value = [value].\\n"
+`;
+
+exports[`opaque-any-unknown.ts > anyParam 1`] = `
+"module ANY_PARAM.\\n\\n> UNSUPPORTED: any-param param 'value': TS unknown is not expressible in Pantagruel; declare a specific type\\n\\n---\\n\\n> UNSUPPORTED: anyParam param 'value': TS unknown is not expressible in Pantagruel; declare a specific type.\\n"
+`;
+
+exports[`opaque-any-unknown.ts > anyReturn 1`] = `
+"module ANY_RETURN.\\n\\n> UNSUPPORTED: any-return return: TS unknown is not expressible in Pantagruel; declare a specific type\\n\\n---\\n\\nany-return value = value.\\n"
+`;
+
+exports[`opaque-any-unknown.ts > unknownParam 1`] = `
+"module UNKNOWN_PARAM.\\n\\n> UNSUPPORTED: unknown-param param 'value': TS unknown is not expressible in Pantagruel; declare a specific type\\n\\n---\\n\\n> UNSUPPORTED: unknownParam param 'value': TS unknown is not expressible in Pantagruel; declare a specific type.\\n"
+`;
+
+exports[`opaque-any-unknown.ts > unknownReturn 1`] = `
+"module UNKNOWN_RETURN.\\n\\n> UNSUPPORTED: unknown-return return: TS unknown is not expressible in Pantagruel; declare a specific type\\n\\n---\\n\\nunknown-return value = value.\\n"
+`;
+
 exports[`types-composite.ts > getBooks 1`] = `
 "module GET_BOOKS.\\n\\nLibrary.\\nlibrary--books l: Library => [String].\\nget-books lib: Library => [String].\\n\\n---\\n\\nget-books lib = library--books lib.\\n"
 `;
