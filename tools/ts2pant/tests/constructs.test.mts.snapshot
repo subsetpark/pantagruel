@@ -99,31 +99,31 @@ exports[`expressions-boolean.ts > or 1`] = `
 `;
 
 exports[`expressions-calls.ts > bubbleCondition 1`] = `
-"module BUBBLE_CONDITION.\\n\\nbubble-condition  => Int.\\n\\n---\\n\\nbubble-condition = (cond bar => 1, true => 2).\\n"
+"module BUBBLE_CONDITION.\\n\\nbar  => Bool.\\nbubble-condition  => Int.\\n\\n---\\n\\nbubble-condition = (cond bar => 1, true => 2).\\n"
 `;
 
 exports[`expressions-calls.ts > bubbleNegation 1`] = `
-"module BUBBLE_NEGATION.\\n\\nbubble-negation  => Bool.\\n\\n---\\n\\nbubble-negation = (~bar).\\n"
+"module BUBBLE_NEGATION.\\n\\nbar  => Bool.\\nbubble-negation  => Bool.\\n\\n---\\n\\nbubble-negation = (~bar).\\n"
 `;
 
 exports[`expressions-calls.ts > callInArithmetic 1`] = `
-"module CALL_IN_ARITHMETIC.\\n\\ncall-in-arithmetic a: Int, b: Int => Int.\\n\\n---\\n\\ncall-in-arithmetic a b = max a b + 1.\\n"
+"module CALL_IN_ARITHMETIC.\\n\\nmax1 a1: Int, b1: Int => Int.\\ncall-in-arithmetic a: Int, b: Int => Int.\\n\\n---\\n\\ncall-in-arithmetic a b = max1 a b + 1.\\n"
 `;
 
 exports[`expressions-calls.ts > callInComparison 1`] = `
-"module CALL_IN_COMPARISON.\\n\\ncall-in-comparison a: Int, b: Int => Bool.\\n\\n---\\n\\ncall-in-comparison a b = (max a b > 0).\\n"
+"module CALL_IN_COMPARISON.\\n\\nmax1 a1: Int, b1: Int => Int.\\ncall-in-comparison a: Int, b: Int => Bool.\\n\\n---\\n\\ncall-in-comparison a b = (max1 a b > 0).\\n"
 `;
 
 exports[`expressions-calls.ts > callInReturn 1`] = `
-"module CALL_IN_RETURN.\\n\\ncall-in-return  => Int.\\n\\n---\\n\\ncall-in-return = #foo.\\n"
+"module CALL_IN_RETURN.\\n\\nfoo  => [String].\\ncall-in-return  => Int.\\n\\n---\\n\\ncall-in-return = #foo.\\n"
 `;
 
 exports[`expressions-calls.ts > callWithPropArg 1`] = `
-"module CALL_WITH_PROP_ARG.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\ncall-with-prop-arg a: Account => Bool.\\n\\n---\\n\\ncall-with-prop-arg a = validate (account--balance a).\\n"
+"module CALL_WITH_PROP_ARG.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--owner a1: Account => String.\\nvalidate balance: Int => Bool.\\ncall-with-prop-arg a: Account => Bool.\\n\\n---\\n\\ncall-with-prop-arg a = validate (account--balance a).\\n"
 `;
 
 exports[`expressions-calls.ts > freeCall 1`] = `
-"module FREE_CALL.\\n\\nfree-call a: Int, b: Int => Int.\\n\\n---\\n\\nfree-call a b = max a b.\\n"
+"module FREE_CALL.\\n\\nmax1 a1: Int, b1: Int => Int.\\nfree-call a: Int, b: Int => Int.\\n\\n---\\n\\nfree-call a b = max1 a b.\\n"
 `;
 
 exports[`expressions-calls.ts > methodCall 1`] = `
@@ -131,7 +131,7 @@ exports[`expressions-calls.ts > methodCall 1`] = `
 `;
 
 exports[`expressions-calls.ts > nestedCalls 1`] = `
-"module NESTED_CALLS.\\n\\nnested-calls x: Int, a: Int, b: Int => Int.\\n\\n---\\n\\nnested-calls x a b = clamp x 0 (max a b).\\n"
+"module NESTED_CALLS.\\n\\nclamp x1: Int, lo: Int, hi: Int => Int.\\nmax1 a1: Int, b1: Int => Int.\\nnested-calls x: Int, a: Int, b: Int => Int.\\n\\n---\\n\\nnested-calls x a b = clamp x 0 (max1 a b).\\n"
 `;
 
 exports[`expressions-calls.ts > spreadCall 1`] = `
@@ -139,7 +139,7 @@ exports[`expressions-calls.ts > spreadCall 1`] = `
 `;
 
 exports[`expressions-calls.ts > zeroArityCall 1`] = `
-"module ZERO_ARITY_CALL.\\n\\nzero-arity-call  => Int.\\n\\n---\\n\\nzero-arity-call = now.\\n"
+"module ZERO_ARITY_CALL.\\n\\nnow  => Int.\\nzero-arity-call  => Int.\\n\\n---\\n\\nzero-arity-call = now.\\n"
 `;
 
 exports[`expressions-comparison.ts > eq 1`] = `
@@ -179,7 +179,7 @@ exports[`expressions-const-bindings.ts > constWithPropAccess 1`] = `
 `;
 
 exports[`expressions-const-bindings.ts > effectfulConstRejected 1`] = `
-"module EFFECTFUL_CONST_REJECTED.\\n\\neffectful-const-rejected  => Int.\\nx  => Int.\\n\\n---\\n\\nx = foo.\\neffectful-const-rejected = x.\\n"
+"module EFFECTFUL_CONST_REJECTED.\\n\\nfoo  => Int.\\neffectful-const-rejected  => Int.\\nx  => Int.\\n\\n---\\n\\nx = foo.\\neffectful-const-rejected = x.\\n"
 `;
 
 exports[`expressions-const-bindings.ts > letRejected 1`] = `
@@ -203,7 +203,7 @@ exports[`expressions-const-pure-calls.ts > constChainedPure 1`] = `
 `;
 
 exports[`expressions-const-pure-calls.ts > constImpureCall 1`] = `
-"module CONST_IMPURE_CALL.\\n\\nconst-impure-call x: Int => Int.\\nr  => Int.\\n\\n---\\n\\nr = unknownFn x.\\nconst-impure-call x = r.\\n"
+"module CONST_IMPURE_CALL.\\n\\nunknown-fn x1: Int => Int.\\nconst-impure-call x: Int => Int.\\nr  => Int.\\n\\n---\\n\\nr = unknown-fn x.\\nconst-impure-call x = r.\\n"
 `;
 
 exports[`expressions-const-pure-calls.ts > constMathMax 1`] = `
@@ -296,6 +296,22 @@ exports[`expressions-equality-nullish.ts > typeofUndefinedEq 1`] = `
 
 exports[`expressions-equality-nullish.ts > typeofUndefinedNeq 1`] = `
 "module TYPEOF_UNDEFINED_NEQ.\\n\\ntypeof-undefined-neq x: [Int] => Bool.\\n\\n---\\n\\ntypeof-undefined-neq x = (~(#x = 0)).\\n"
+`;
+
+exports[`expressions-free-call-typed.ts > ambientAnyParam 1`] = `
+"module AMBIENT_ANY_PARAM.\\n\\nOpaque.\\nconsume-any x: Opaque => Int.\\nopaque-value  => Opaque.\\nambient-any-param  => Int.\\n\\n---\\n\\nambient-any-param = consume-any opaque-value.\\n"
+`;
+
+exports[`expressions-free-call-typed.ts > ambientConcrete 1`] = `
+"module AMBIENT_CONCRETE.\\n\\nmix a1: Int, b1: Int, label1: String => Int.\\nambient-concrete a: Int, b: Int, label: String => Int.\\n\\n---\\n\\nambient-concrete a b label = mix a b label.\\n"
+`;
+
+exports[`expressions-free-call-typed.ts > ambientReturnsInterface 1`] = `
+"module AMBIENT_RETURNS_INTERFACE.\\n\\nProfile.\\nprofile--name p: Profile => String.\\nprofile--score p: Profile => Int.\\nlookup-profile id1: String => Profile.\\nambient-returns-interface id: String => String.\\n\\n---\\n\\nambient-returns-interface id = profile--name (lookup-profile id).\\n"
+`;
+
+exports[`expressions-free-call-typed.ts > ambientUnknownReturn 1`] = `
+"module AMBIENT_UNKNOWN_RETURN.\\n\\nOpaque.\\nconsume-unknown x: Opaque => Int.\\nmystery-value  => Opaque.\\nambient-unknown-return  => Int.\\n\\n---\\n\\nambient-unknown-return = consume-unknown mystery-value.\\n"
 `;
 
 exports[`expressions-functor-lift-property.ts > userName 1`] = `

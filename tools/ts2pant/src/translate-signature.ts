@@ -24,6 +24,7 @@ import {
   cellRegisterName,
   isMapType,
   isUnsupportedUnknown,
+  type MapTsTypeOptions,
   mapTsType,
   type NumericStrategy,
   type SynthCell,
@@ -70,6 +71,10 @@ export interface TranslatedSignature {
    * Maps in the same table. Present only when a `synthCell` was supplied.
    */
   synthCell?: SynthCell | undefined;
+}
+
+export interface TranslateSignatureOptions {
+  readonly typeMapping?: MapTsTypeOptions;
 }
 
 /**
@@ -1435,6 +1440,7 @@ export function translateSignature(
   strategy: NumericStrategy,
   synthCell?: SynthCell,
   overrides?: Map<string, string>,
+  opts?: TranslateSignatureOptions,
 ): TranslatedSignature {
   const checker = sourceFile.getProject().getTypeChecker().compilerObject;
   const { node, className } = findFunction(sourceFile, functionName);
@@ -1461,7 +1467,13 @@ export function translateSignature(
 
   for (const param of sig.getParameters()) {
     const symbolType = checker.getTypeOfSymbol(param);
-    const defaultType = mapTsType(symbolType, checker, strategy, synthCell);
+    const defaultType = mapTsType(
+      symbolType,
+      checker,
+      strategy,
+      synthCell,
+      opts?.typeMapping,
+    );
     const paramType = overrides?.get(param.name) ?? defaultType;
     if (isUnsupportedUnknown(paramType)) {
       // Don't let the sentinel reach the emitted rule head — route
@@ -1495,7 +1507,13 @@ export function translateSignature(
     const tsReturnType = bodyIsBareMapGet(node, checker)
       ? checker.getNonNullableType(sig.getReturnType())
       : sig.getReturnType();
-    const returnType = mapTsType(tsReturnType, checker, strategy, synthCell);
+    const returnType = mapTsType(
+      tsReturnType,
+      checker,
+      strategy,
+      synthCell,
+      opts?.typeMapping,
+    );
     if (isUnsupportedUnknown(returnType)) {
       return {
         declaration: {

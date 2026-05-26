@@ -1,9 +1,10 @@
 import { Project, type SourceFile } from "ts-morph";
 import ts from "typescript";
 
+import { lookupBuiltinByCall } from "./builtins.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
-import { translateSignature } from "./translate-signature.js";
+import { classifyFunction, translateSignature } from "./translate-signature.js";
 import {
   cellRegisterName,
   isMapType,
@@ -250,6 +251,9 @@ export function extractReferencedTypes(
   functionName: string,
 ): ExtractedTypes {
   const checker = getChecker(sourceFile);
+  const project = sourceFile.getProject();
+  project.resolveSourceFileDependencies();
+  const program = project.getProgram().compilerObject;
 
   // Support "ClassName.methodName" for disambiguating methods
   const [classHint, memberName] = functionName.includes(".")
@@ -327,6 +331,9 @@ export function extractReferencedTypes(
     collectNamedTypes(checker.getTypeOfSymbol(param), checker, visited);
   }
   collectNamedTypes(signature.getReturnType(), checker, visited);
+  if (classifyFunction(funcNode, checker) === "pure") {
+    collectFreeCallSignatureTypes(funcNode, checker, program, visited);
+  }
 
   // Aggregate types from every project source file the consumer's
   // import graph reaches.
@@ -349,9 +356,6 @@ export function extractReferencedTypes(
   // own predicates so we don't pull in `Array`, `Promise`, etc.
   // declarations from `lib.es2022.d.ts`. The pattern mirrors
   // `src/builtins.ts:130-141`'s use of `isSourceFileDefaultLibrary`.
-  const project = sourceFile.getProject();
-  project.resolveSourceFileDependencies();
-  const program = project.getProgram().compilerObject;
   const aggregated: ExtractedTypes = {
     interfaces: [],
     aliases: [],
@@ -381,6 +385,36 @@ export function extractReferencedTypes(
       (e) => e.symbol !== undefined && visited.has(e.symbol),
     ),
   };
+}
+
+function collectFreeCallSignatureTypes(
+  funcNode: ts.FunctionDeclaration | ts.MethodDeclaration,
+  checker: ts.TypeChecker,
+  program: ts.Program,
+  visited: Set<ts.Symbol>,
+): void {
+  if (!funcNode.body) {
+    return;
+  }
+  function visit(n: ts.Node): void {
+    if (
+      ts.isCallExpression(n) &&
+      ts.isIdentifier(n.expression) &&
+      !n.arguments.some(ts.isSpreadElement)
+    ) {
+      if (lookupBuiltinByCall(n, checker, program) === null) {
+        const sig = checker.getResolvedSignature(n);
+        if (sig?.declaration && sig.declaration !== funcNode) {
+          for (const param of sig.getParameters()) {
+            collectNamedTypes(checker.getTypeOfSymbol(param), checker, visited);
+          }
+          collectNamedTypes(sig.getReturnType(), checker, visited);
+        }
+      }
+    }
+    ts.forEachChild(n, visit);
+  }
+  visit(funcNode.body);
 }
 
 function extractInterface(
@@ -861,20 +895,17 @@ export interface ReferencedFunctionDecl {
 /**
  * Walk a consumer function's body for free-function call expressions
  * (`fn(args)` where the callee is a bare Identifier) and resolve each
- * to its declaration via the TS symbol resolver. For each in-project
- * `FunctionDeclaration` (i.e., not in TS stdlib or node_modules and
- * not the consumer itself), translate its signature into a Pant rule
- * head via the existing `translateSignature` pipeline.
+ * to its declaration via the TS symbol resolver. For each non-builtin
+ * callable declaration outside the consumer itself, translate its
+ * signature into a Pant rule head.
  *
  * Filters that drop a candidate:
  * - Method calls (`obj.method(...)`) — handled by the existing
  *   property-access dispatch and the JS_MATH / JS_STRING builtins.
  * - The consumer function itself — already emitted by the pipeline's
  *   primary signature pass (recursive calls are pre-existing rules).
- * - Ambient `declare function` decls — those flow through
- *   `extractAmbientFunctions` and the `*_AMBIENT` module path.
- * - Foreign declarations (TS stdlib, node_modules) — those are EUF
- *   uninterpreted at the SMT layer, or they go through builtins.ts.
+ * - Builtin-dispatched calls — those go through builtins.ts and M2 owns
+ *   dispatch coverage gaps.
  * - `translateSignature` returning unsupported / action — only pure
  *   rule shapes get emitted; mutating callees would need their own
  *   plumbing and aren't a dogfood concern today.
@@ -900,9 +931,12 @@ export function extractReferencedFunctions(
   if (!consumerNode?.body) {
     return [];
   }
+  if (classifyFunction(consumerNode, checker) !== "pure") {
+    return [];
+  }
 
-  // Collect (declaration, callSiteNames) pairs for in-project free-
-  // function calls reached from the consumer's body. Keying by the
+  // Collect (declaration, callSiteNames) pairs for free-function calls
+  // reached from the consumer's body. Keying by the
   // resolved declaration deduplicates aliased imports — `import {
   // foo as bar }; bar(); foo();` collapses to one rule head — while
   // the value (a Set of local identifiers) preserves every call-site
@@ -910,9 +944,17 @@ export function extractReferencedFunctions(
   // the alias spelling, body translation looks up `bar` and falls
   // through to a raw TS identifier, emitting an undeclared Pant
   // symbol.
-  const referenced = new Map<ts.FunctionDeclaration, Set<string>>();
+  const referenced = new Map<ts.Declaration, Set<string>>();
   function visit(n: ts.Node): void {
-    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression)) {
+    if (
+      ts.isCallExpression(n) &&
+      ts.isIdentifier(n.expression) &&
+      !n.arguments.some(ts.isSpreadElement)
+    ) {
+      if (lookupBuiltinByCall(n, checker, program) !== null) {
+        ts.forEachChild(n, visit);
+        return;
+      }
       const localCalleeName = n.expression.text;
       let sym = checker.getSymbolAtLocation(n.expression);
       // Follow import aliases. For an `import { foo } from "./mod.js"`
@@ -922,19 +964,22 @@ export function extractReferencedFunctions(
       if (sym && sym.flags & ts.SymbolFlags.Alias) {
         sym = checker.getAliasedSymbol(sym);
       }
-      const decl = sym?.declarations?.find(
-        (d): d is ts.FunctionDeclaration =>
-          ts.isFunctionDeclaration(d) && !!d.name,
+      const sig = checker.getResolvedSignature(n);
+      const decl = [
+        sig?.declaration,
+        sym?.valueDeclaration,
+        ...(sym?.declarations ?? []),
+      ].find(
+        (d): d is ts.Declaration =>
+          d !== undefined &&
+          isCallableDeclaration(d) &&
+          isNamedCallableDeclaration(d),
       );
-      if (decl && decl !== consumerNode) {
+      if (decl && decl !== consumerNode && isNamedCallableDeclaration(decl)) {
         const sf = decl.getSourceFile();
         if (
           !program.isSourceFileDefaultLibrary(sf) &&
-          !program.isSourceFileFromExternalLibrary(sf) &&
-          // Ambient `declare function` decls flow through
-          // extractAmbientFunctions and the *_AMBIENT module path —
-          // don't double-emit them as consumer-local rule heads.
-          !decl.modifiers?.some((m) => m.kind === ts.SyntaxKind.DeclareKeyword)
+          !(ts.isFunctionDeclaration(decl) && decl === consumerNode)
         ) {
           const localNames = referenced.get(decl) ?? new Set<string>();
           localNames.add(localCalleeName);
@@ -959,16 +1004,14 @@ export function extractReferencedFunctions(
   }
   const result: ReferencedFunctionDecl[] = [];
   for (const [decl, localNames] of referenced) {
-    const tsMorphSf = declSfMap.get(decl.getSourceFile());
-    if (!tsMorphSf) {
-      continue;
-    }
-    // `translateSignature` looks up the function by its declared name
-    // (the spelling in its source file); `localNames` are the call-
-    // site spellings the consumer used.
-    const declName = decl.name!.text;
-    const sig = translateSignature(tsMorphSf, declName, strategy, synthCell);
-    if (sig.declaration.kind !== "rule") {
+    const sig = translateReferencedCallable(
+      decl,
+      checker,
+      strategy,
+      synthCell,
+      declSfMap,
+    );
+    if (!sig) {
       continue;
     }
     let first = true;
@@ -977,18 +1020,123 @@ export function extractReferencedFunctions(
         first
           ? {
               tsName: localName,
-              pantName: sig.declaration.name,
-              declaration: sig.declaration,
+              pantName: sig.name,
+              declaration: sig,
             }
           : {
               tsName: localName,
-              pantName: sig.declaration.name,
+              pantName: sig.name,
             },
       );
       first = false;
     }
   }
   return result;
+}
+
+function isCallableDeclaration(d: ts.Declaration): boolean {
+  return (
+    ts.isFunctionDeclaration(d) ||
+    ts.isMethodDeclaration(d) ||
+    ts.isFunctionExpression(d) ||
+    ts.isArrowFunction(d) ||
+    ts.isVariableDeclaration(d)
+  );
+}
+
+function isNamedCallableDeclaration(d: ts.Declaration): boolean {
+  if (ts.isFunctionDeclaration(d)) {
+    return d.name !== undefined;
+  }
+  if (ts.isMethodDeclaration(d)) {
+    return d.name !== undefined && ts.isIdentifier(d.name);
+  }
+  if (ts.isVariableDeclaration(d)) {
+    return ts.isIdentifier(d.name);
+  }
+  return false;
+}
+
+function declarationName(d: ts.Declaration): string | null {
+  if (ts.isFunctionDeclaration(d) && d.name !== undefined) {
+    return d.name.text;
+  }
+  if (
+    ts.isMethodDeclaration(d) &&
+    d.name !== undefined &&
+    ts.isIdentifier(d.name)
+  ) {
+    return d.name.text;
+  }
+  if (ts.isVariableDeclaration(d) && ts.isIdentifier(d.name)) {
+    return d.name.text;
+  }
+  return null;
+}
+
+function translateReferencedCallable(
+  decl: ts.Declaration,
+  checker: ts.TypeChecker,
+  strategy: NumericStrategy,
+  synthCell: SynthCell | undefined,
+  declSfMap: ReadonlyMap<ts.SourceFile, SourceFile>,
+): PantRule | null {
+  const declName = declarationName(decl);
+  if (!declName) {
+    return null;
+  }
+  if (ts.isFunctionDeclaration(decl) || ts.isMethodDeclaration(decl)) {
+    const tsMorphSf = declSfMap.get(decl.getSourceFile());
+    if (!tsMorphSf) {
+      return null;
+    }
+    const sig = translateSignature(
+      tsMorphSf,
+      declName,
+      strategy,
+      synthCell,
+      undefined,
+      { typeMapping: { opaqueFallback: true } },
+    );
+    if (sig.declaration.kind !== "rule") {
+      return null;
+    }
+    const name = synthCell
+      ? cellRegisterName(synthCell, sig.declaration.name)
+      : sig.declaration.name;
+    return { ...sig.declaration, name };
+  }
+
+  const sig = checker.getTypeAtLocation(decl).getCallSignatures()[0];
+  if (!sig) {
+    return null;
+  }
+  const returnType = sig.getReturnType();
+  if (returnType.flags & ts.TypeFlags.Void) {
+    return null;
+  }
+  const params = sig.getParameters().map((param) => {
+    const paramDecl = param.valueDeclaration ?? decl;
+    const paramType = checker.getTypeOfSymbolAtLocation(param, paramDecl);
+    const pantType = mapTsType(paramType, checker, strategy, synthCell, {
+      opaqueFallback: true,
+    });
+    const pantName = synthCell
+      ? cellRegisterName(synthCell, toPantTermName(param.name))
+      : toPantTermName(param.name);
+    return { name: pantName, type: pantType };
+  });
+  const pantReturnType = mapTsType(returnType, checker, strategy, synthCell, {
+    opaqueFallback: true,
+  });
+  return {
+    kind: "rule",
+    name: synthCell
+      ? cellRegisterName(synthCell, toPantTermName(declName))
+      : toPantTermName(declName),
+    params,
+    returnType: pantReturnType,
+  };
 }
 
 /**
