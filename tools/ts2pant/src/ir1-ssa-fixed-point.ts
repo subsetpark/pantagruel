@@ -650,6 +650,7 @@ function substituteLocalLets(
   switch (expr.kind) {
     case "var":
     case "lit":
+    case "opaque":
       return expr;
     case "binop":
       return {
@@ -850,6 +851,7 @@ function collectIr1FreeVars(
       }
       break;
     case "lit":
+    case "opaque":
       break;
     case "binop":
       collectIr1FreeVars(expr.lhs, out, bound);
@@ -938,6 +940,7 @@ function renameBoundVarRefs(expr: IR1Expr, from: string, to: string): IR1Expr {
     case "var":
       return !expr.primed && expr.name === from ? { ...expr, name: to } : expr;
     case "lit":
+    case "opaque":
       return expr;
     case "binop":
       return {
@@ -1057,6 +1060,7 @@ function collectAllNames(expr: IR1Expr, out: Set<string>): void {
       out.add(expr.name);
       break;
     case "lit":
+    case "opaque":
       break;
     case "binop":
       collectAllNames(expr.lhs, out);
@@ -1135,6 +1139,7 @@ function collectFreeVars(
       }
       break;
     case "lit":
+    case "opaque":
       break;
     case "binop":
       collectFreeVars(expr.lhs, out, excluded, bound);
@@ -1269,6 +1274,7 @@ function walkExpr(
   switch (expr.kind) {
     case "var":
     case "lit":
+    case "opaque":
       break;
     case "binop":
       walkExpr(expr.lhs, visit, bound);

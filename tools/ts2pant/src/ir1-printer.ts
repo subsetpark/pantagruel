@@ -16,6 +16,8 @@ export function formatIR1Expr(expr: IR1Expr): string {
       return `${expr.name}${expr.primed === true ? "'" : ""}`;
     case "lit":
       return formatIR1Literal(expr.value);
+    case "opaque":
+      return `<opaque:${expr.sort}>`;
     case "binop":
       return `(${formatIR1Expr(expr.lhs)} ${binopGlyph(expr.op)} ${formatIR1Expr(expr.rhs)})`;
     case "unop":
@@ -485,6 +487,7 @@ function consumeScalarReadsForExpr(
       return cursor;
     }
     case "lit":
+    case "opaque":
       return cursor;
     case "map-read":
     case "set-read":
@@ -536,6 +539,8 @@ function formatIR1ExprWithSsaReads(
       );
     case "lit":
       return formatIR1Literal(expr.value);
+    case "opaque":
+      return `<opaque:${expr.sort}>`;
     case "binop":
       return `(${formatIR1ExprWithSsaReads(expr.lhs, readLabels)} ${binopGlyph(expr.op)} ${formatIR1ExprWithSsaReads(expr.rhs, readLabels)})`;
     case "unop":

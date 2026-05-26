@@ -47,6 +47,7 @@ export function freeVarsIR1Expr(expr: IR1Expr): Set<string> {
     case "var":
       return new Set([expr.name]);
     case "lit":
+    case "opaque":
       return new Set();
     case "binop":
       return union(freeVarsIR1Expr(expr.lhs), freeVarsIR1Expr(expr.rhs));
@@ -343,6 +344,7 @@ function substituteExpr(
   switch (expr.kind) {
     case "var":
     case "lit":
+    case "opaque":
       return expr;
     case "binop": {
       const lhs = substituteExpr(

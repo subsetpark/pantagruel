@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { irOpaque } from "../src/ir.js";
 import { lowerExpr } from "../src/ir-emit.js";
+import { lowerL1Expr } from "../src/ir1-lower.js";
+import { formatIR1Expr } from "../src/ir1-printer.js";
+import {
+  freeVarsIR1Expr,
+  substituteIR1ExprSubtree,
+} from "../src/ir1-substitute.js";
+import { ir1LitNat, ir1Opaque, ir1Var } from "../src/ir1.js";
 import { OPAQUE_DOMAIN, opaqueValueRuleName } from "../src/opaque.js";
 import { loadAst } from "../src/pant-wasm.js";
 
@@ -29,7 +36,39 @@ describe("opaque vocabulary", async () => {
     assert.notEqual(sameA, other);
   });
 
-  it.skip("L1 OpaqueValue is a closed leaf across all walkers and lowers to L2 opaque", () => {
-    // TODO(ts2pant-opaque-vocabulary patch 2): implement once L1 OpaqueValue exists.
+  it("L1 OpaqueValue is a closed leaf across all walkers and lowers to L2 opaque", () => {
+    const expr = ir1Opaque(OPAQUE_DOMAIN, {
+      file: "src/example.ts",
+      line: 12,
+    });
+    const other = ir1Opaque(OPAQUE_DOMAIN, {
+      file: "src/example.ts",
+      line: 13,
+    });
+
+    assert.deepEqual([...freeVarsIR1Expr(expr)], []);
+    assert.equal(
+      substituteIR1ExprSubtree(expr, ir1Var("x"), ir1LitNat(1)),
+      expr,
+    );
+    assert.equal(formatIR1Expr(expr), "<opaque:Opaque>");
+
+    const lowered = lowerL1Expr(expr);
+    const loweredOther = lowerL1Expr(other);
+
+    assert.deepEqual(lowered, {
+      kind: "opaque",
+      sort: OPAQUE_DOMAIN,
+      id: "src/example.ts:12",
+    });
+    assert.deepEqual(loweredOther, {
+      kind: "opaque",
+      sort: OPAQUE_DOMAIN,
+      id: "src/example.ts:13",
+    });
+    if (lowered.kind !== "opaque" || loweredOther.kind !== "opaque") {
+      assert.fail("expected L1 opaque values to lower to L2 opaque values");
+    }
+    assert.notEqual(lowered.id, loweredOther.id);
   });
 });

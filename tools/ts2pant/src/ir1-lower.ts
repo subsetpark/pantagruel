@@ -33,10 +33,11 @@ import {
   irExists,
   irForall,
   irLitNat,
+  irOpaque,
   irUnop,
   irVar,
 } from "./ir.js";
-import type { IR1Expr } from "./ir1.js";
+import type { IR1Expr, SourceRef } from "./ir1.js";
 
 /**
  * Lower a Layer 1 expression to Layer 2 `IRExpr`.
@@ -50,6 +51,9 @@ export function lowerL1Expr(e: IR1Expr): IRExpr {
       // L1 `lit` and L2 `lit` share the same shape (`IR1Literal = IRLiteral`),
       // so the variant is structurally a valid `IRExpr`. Pass through.
       return e;
+
+    case "opaque":
+      return irOpaque(e.sort, originId(e.origin));
 
     case "binop":
       return irBinop(e.op, lowerL1Expr(e.lhs), lowerL1Expr(e.rhs));
@@ -154,4 +158,8 @@ export function lowerL1Expr(e: IR1Expr): IRExpr {
       throw new Error("unreachable: IR1Expr");
     }
   }
+}
+
+function originId(origin: SourceRef): string {
+  return `${origin.file}:${origin.line}`;
 }

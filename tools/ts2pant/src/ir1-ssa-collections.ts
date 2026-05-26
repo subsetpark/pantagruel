@@ -558,6 +558,7 @@ export function collectionSsaReadExpr(
       return expr;
     case "var":
     case "lit":
+    case "opaque":
       return expr;
     default: {
       const _exhaustive: never = expr;
@@ -1102,6 +1103,7 @@ function lowerCollectionSsaExprToOpaque(
     }
     case "var":
     case "lit":
+    case "opaque":
       return state.lowerOpaque(
         lowerExpr(lowerL1Expr(state.canonicalize(expr))),
       );
@@ -2008,6 +2010,8 @@ function collectionSsaExprKeyData(expr: IR1Expr): unknown {
         expr.value.kind,
         "value" in expr.value ? expr.value.value : null,
       ];
+    case "opaque":
+      return ["opaque", expr.sort, expr.origin.file, expr.origin.line];
     case "member":
       return ["member", collectionSsaExprKeyData(expr.receiver), expr.name];
     case "binop":
@@ -2148,6 +2152,7 @@ function isCollectionSsaExpr(expr: IR1Expr): boolean {
   switch (expr.kind) {
     case "var":
     case "lit":
+    case "opaque":
       return true;
     case "member":
       return isCollectionSsaExpr(expr.receiver);
