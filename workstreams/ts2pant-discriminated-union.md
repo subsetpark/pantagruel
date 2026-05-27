@@ -188,7 +188,8 @@ invariants to add first).
   encoding does not entail even with the guard assumed, do NOT start M3 — open an
   encoding-fix follow-up first.
 - **Confirm the guard-analysis dependency is ready.** M3 consumes the
-  guard-analysis workstream's flow-narrowing layer; verify that milestone has
+  guard-analysis workstream's **M3a `du-discriminant-narrowing-layer`** (the
+  discriminant-narrowing fact `<property> === <literal>`); verify that milestone has
   landed (or sequence M3 after it). If it has not, M3 is blocked — do not start.
 - **Abort condition**: if the survey shows the dominant blocker is
   cross-call/assertion narrowing (out of scope), reduce M3 to the intra-function
@@ -279,9 +280,9 @@ non-discriminated unions) is a separate effort with its own encoding question.
 ```
 
 **Note**: Strictly sequential. M1–M2 can proceed immediately. M3 is additionally
-**gated on the guard-analysis workstream** delivering a flow-narrowing /
-predicate-following layer (Decisions, below); if that workstream has not landed
-when M2 completes, M3 waits. M4 depends on M3's narrowing being proven.
+**gated on the guard-analysis workstream's M3a `du-discriminant-narrowing-layer`**
+(the discriminant-narrowing fact); if that milestone has not landed when M2
+completes, M3 waits. M4 depends on M3's narrowing being proven.
 
 ## Open Questions
 
