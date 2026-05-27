@@ -98,7 +98,7 @@ import {
 } from "./translate-types.js";
 import {
   type ExtractedBlockConstBinding,
-  extractBlockReturnFromStatements,
+  extractBlockReturn,
 } from "./ts-ast-block-return.js";
 import type { PantDeclaration, PropResult } from "./types.js";
 
@@ -1719,10 +1719,7 @@ function recognizeLetWhilePair(
  * branch shapes. An if with an `else` falls through to the existing
  * terminal-position handling unchanged.
  */
-function recognizeEarlyReturnArm(
-  stmt: ts.Statement,
-  checker: ts.TypeChecker,
-): {
+function recognizeEarlyReturnArm(stmt: ts.Statement): {
   predicateExpr: ts.Expression;
   valueExpr: ts.Expression;
   blockBindings: readonly ExtractedBlockConstBinding[];
@@ -1747,9 +1744,7 @@ function recognizeEarlyReturnArm(
   if (!ts.isBlock(body)) {
     return null;
   }
-  const extracted = extractBlockReturnFromStatements(
-    body.statements.filter((s) => !isGuardStatement(s, checker)),
-  );
+  const extracted = extractBlockReturn(body);
   if (extracted === null) {
     return null;
   }
@@ -1789,7 +1784,7 @@ function extractReturnExpression(
       continue;
     }
 
-    const arm = recognizeEarlyReturnArm(stmts[i]!, checker);
+    const arm = recognizeEarlyReturnArm(stmts[i]!);
     if (arm) {
       bindings.push({ kind: "earlyReturn", ...arm });
       i += 1;
@@ -1901,7 +1896,7 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
         continue;
       }
       const stmt = stmts[i]!;
-      if (recognizeEarlyReturnArm(stmt, checker)) {
+      if (recognizeEarlyReturnArm(stmt)) {
         i += 1;
         continue;
       }
@@ -1964,7 +1959,7 @@ function describeRejectedBody(body: ts.Block, checker: ts.TypeChecker): string {
   if (
     ts.isIfStatement(stmt) &&
     !stmt.elseStatement &&
-    recognizeEarlyReturnArm(stmt, checker) !== null
+    recognizeEarlyReturnArm(stmt) !== null
   ) {
     return "if-without-else as final statement (use `if (P) return E` for early-return arms or add an else branch)";
   }

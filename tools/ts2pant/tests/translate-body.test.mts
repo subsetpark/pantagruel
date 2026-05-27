@@ -597,7 +597,7 @@ describe("if-early-return prelude arms", () => {
     }
   });
 
-  it("pure block-bodied early-return arm strips branch-local guards", () => {
+  it("rejects pure block-bodied early-return arms with branch-local guards", () => {
     const source = `
       function assert(condition: unknown): asserts condition {
         if (!condition) throw new Error("no");
@@ -617,12 +617,12 @@ describe("if-early-return prelude arms", () => {
       functionName: "f",
       strategy: IntStrategy,
     });
-    const prop = finalEquation(props);
-    if (prop.kind === "equation") {
-      const ast = getAst();
-      assert.equal(
-        ast.strExpr(prop.rhs),
-        "cond n < 0 => 0 - n, true => n + 1",
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+    if (props[0]?.kind === "unsupported") {
+      assert.match(
+        props[0].reason,
+        /only const bindings followed by a return/u,
       );
     }
   });
