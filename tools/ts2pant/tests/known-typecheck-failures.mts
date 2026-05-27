@@ -55,6 +55,14 @@ export const KNOWN_TYPECHECK_FAILURES = new Map<string, string>([
   ["expressions-boolean.ts > or", "$-binder-leak"],
   ["expressions-let-closure-captured.ts > letForEachCapturedTotal", "closure-captured-reassignment"],
   ["expressions-let-closure-captured.ts > letMapCapturedCount", "closure-captured-reassignment"],
+  [
+    "expressions-pure-call-predicate.ts > pureCallEarlyReturn",
+    "pure-call-predicate",
+  ],
+  [
+    "expressions-pure-call-predicate.ts > pureCallMutatingIf",
+    "pure-call-predicate",
+  ],
   ["expressions-var-rejected.ts > varBinding", "var-rejected"],
   ["expressions-var-rejected.ts > varReassignment", "var-rejected"],
   ["functions-class.ts > Account.getBalance", "requires-external-context"],
