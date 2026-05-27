@@ -536,6 +536,93 @@ function isKnownPureCallInner(
   return false;
 }
 
+/**
+ * Canonical checker-aware effect oracle for TypeScript expressions.
+ *
+ * Returns true only when evaluating `expr` is known not to produce observable
+ * side effects. Unknown calls and unknown syntax stay effectful by default.
+ */
+export function isEffectFree(
+  expr: ts.Expression,
+  checker: ts.TypeChecker,
+): boolean {
+  return !expressionHasSideEffects(expr, checker);
+}
+
+/**
+ * Compatibility spelling for existing body-lowering callers. New purity
+ * decisions should prefer `isEffectFree` so the positive predicate is shared
+ * across signature and body stages.
+ */
+export function expressionHasSideEffects(
+  expr: ts.Expression,
+  checker: ts.TypeChecker,
+): boolean {
+  expr = unwrapEffectExpression(expr);
+
+  if (ts.isDeleteExpression(expr)) {
+    return true;
+  }
+
+  if (ts.isBinaryExpression(expr)) {
+    return (
+      isAssignmentOperator(expr.operatorToken.kind) ||
+      expressionHasSideEffects(expr.left, checker) ||
+      expressionHasSideEffects(expr.right, checker)
+    );
+  }
+
+  if (ts.isCallExpression(expr)) {
+    if (isKnownPureCall(expr, checker)) {
+      // Known-pure callees still require pure receiver/callee and arguments:
+      // e.g. `makeString().trim()` matches the String method allowlist, but
+      // the receiver call itself has unknown effects.
+      return (
+        expressionHasSideEffects(expr.expression, checker) ||
+        expr.arguments.some((arg) => expressionHasSideEffects(arg, checker))
+      );
+    }
+    return true;
+  }
+
+  if (ts.isNewExpression(expr) || ts.isAwaitExpression(expr)) {
+    return true;
+  }
+
+  if (ts.isPrefixUnaryExpression(expr) || ts.isPostfixUnaryExpression(expr)) {
+    const op = expr.operator;
+    return (
+      op === ts.SyntaxKind.PlusPlusToken ||
+      op === ts.SyntaxKind.MinusMinusToken ||
+      expressionHasSideEffects(expr.operand, checker)
+    );
+  }
+
+  return (
+    ts.forEachChild(expr, (child) =>
+      ts.isExpression(child) ? expressionHasSideEffects(child, checker) : false,
+    ) ?? false
+  );
+}
+
+function unwrapEffectExpression(expr: ts.Expression): ts.Expression {
+  while (
+    ts.isParenthesizedExpression(expr) ||
+    ts.isAsExpression(expr) ||
+    ts.isSatisfiesExpression(expr) ||
+    ts.isNonNullExpression(expr)
+  ) {
+    expr = expr.expression;
+  }
+  return expr;
+}
+
+function isAssignmentOperator(kind: ts.SyntaxKind): boolean {
+  return (
+    kind >= ts.SyntaxKind.EqualsToken && kind <= ts.SyntaxKind.CaretEqualsToken
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------

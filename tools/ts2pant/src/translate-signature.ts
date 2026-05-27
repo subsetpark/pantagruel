@@ -669,8 +669,13 @@ export function isPureExpression(expr: ts.Expression): boolean {
  * so extracting the condition as a guard won't silently discard
  * meaningful work.  Aligned with isGuardStatement in translate-body.ts.
  */
-function isSafeGuardThenBranch(stmt: ts.Statement): boolean {
-  return guardBranchHasNoSideEffects(stmt) && !guardBranchReturns(stmt);
+function isSafeGuardThenBranch(
+  stmt: ts.Statement,
+  checker: ts.TypeChecker,
+): boolean {
+  return (
+    guardBranchHasNoSideEffects(stmt, checker) && !guardBranchReturns(stmt)
+  );
 }
 
 function guardBranchReturns(node: ts.Statement): boolean {
@@ -680,9 +685,14 @@ function guardBranchReturns(node: ts.Statement): boolean {
   return ts.isReturnStatement(node);
 }
 
-function guardBranchHasNoSideEffects(node: ts.Statement): boolean {
+function guardBranchHasNoSideEffects(
+  node: ts.Statement,
+  _checker: ts.TypeChecker,
+): boolean {
   if (ts.isBlock(node)) {
-    return node.statements.every((s) => guardBranchHasNoSideEffects(s));
+    return node.statements.every((s) =>
+      guardBranchHasNoSideEffects(s, _checker),
+    );
   }
   if (ts.isExpressionStatement(node)) {
     return isPureExpression(node.expression);
@@ -709,7 +719,10 @@ function guardBranchHasNoSideEffects(node: ts.Statement): boolean {
  * The then-branch acceptance must stay aligned with isGuardStatement in
  * translate-body.ts — both accept side-effect-free, non-returning then-blocks.
  */
-function classifyGuardIf(stmt: ts.IfStatement): "positive" | "negative" | null {
+function classifyGuardIf(
+  stmt: ts.IfStatement,
+  checker: ts.TypeChecker,
+): "positive" | "negative" | null {
   if (!isPureExpression(stmt.expression)) {
     return null;
   }
@@ -724,12 +737,12 @@ function classifyGuardIf(stmt: ts.IfStatement): "positive" | "negative" | null {
   }
   if (
     stmt.elseStatement &&
-    isSafeGuardThenBranch(stmt.thenStatement) &&
-    blockThrows(stmt.elseStatement)
+    isSafeGuardThenBranch(stmt.thenStatement, checker) &&
+    blockThrows(stmt.elseStatement, checker)
   ) {
     return "positive";
   }
-  if (!stmt.elseStatement && blockThrows(stmt.thenStatement)) {
+  if (!stmt.elseStatement && blockThrows(stmt.thenStatement, checker)) {
     return "negative";
   }
   return null;
@@ -803,7 +816,7 @@ function scanBodyForGuards(
       break;
     }
 
-    const guardKind = classifyGuardIf(stmt);
+    const guardKind = classifyGuardIf(stmt, checker);
     if (guardKind === "positive") {
       const g = tryTranslateGuardExpr(
         stmt.expression,
@@ -954,7 +967,7 @@ export function isFollowableGuardCall(
     }
     // classifyGuardIf already rejects untranslatable conditions —
     // this is the same check scanBodyForGuards relies on.
-    return classifyGuardIf(stmt) !== null;
+    return classifyGuardIf(stmt, checker) !== null;
   });
   visited.delete(target.body);
   return result;
@@ -998,7 +1011,7 @@ export function detectGuard(
   return guards.reduce((acc, g) => ast.binop(ast.opAnd(), acc, g));
 }
 
-function blockThrows(node: ts.Statement): boolean {
+function blockThrows(node: ts.Statement, _checker: ts.TypeChecker): boolean {
   if (ts.isThrowStatement(node)) {
     return true;
   }
