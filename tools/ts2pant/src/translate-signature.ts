@@ -18,7 +18,7 @@ import {
 } from "./nullish-recognizer.js";
 import type { OpaqueBinop, OpaqueExpr } from "./pant-ast.js";
 import { getAst } from "./pant-wasm.js";
-import { isStaticallyBoolTyped } from "./purity.js";
+import { isEffectFree, isStaticallyBoolTyped } from "./purity.js";
 import {
   cellIsUsed,
   cellRegisterName,
@@ -299,10 +299,10 @@ export function isAssertionCall(
   checker: ts.TypeChecker,
   call: ts.CallExpression,
 ): number | null {
-  if (!isPureExpression(call.expression)) {
+  if (!isEffectFree(call.expression, checker)) {
     return null;
   }
-  if (!call.arguments.every(isPureExpression)) {
+  if (!call.arguments.every((arg) => isEffectFree(arg, checker))) {
     return null;
   }
 
@@ -352,6 +352,7 @@ export function extractAssertionGuard(
   strategy: NumericStrategy,
   paramNames: ReadonlyMap<string, string>,
   synthCell?: SynthCell,
+  program?: ts.Program,
 ): OpaqueExpr | undefined {
   const paramIndex = isAssertionCall(checker, call);
   if (paramIndex === null) {
@@ -361,7 +362,14 @@ export function extractAssertionGuard(
     return undefined;
   }
   const arg = call.arguments[paramIndex]!;
-  const result = translateExpr(arg, checker, strategy, paramNames, synthCell);
+  const result = translateExpr(
+    arg,
+    checker,
+    strategy,
+    paramNames,
+    synthCell,
+    program,
+  );
   if (isTranslateExprUnsupported(result)) {
     // Assertion contains an explicitly-unsupported operator (loose
     // equality). Skip the guard rather than emit raw text.
@@ -440,6 +448,7 @@ function buildSubstitutionMap(
   strategy: NumericStrategy,
   callerParamNames: ReadonlyMap<string, string>,
   synthCell?: SynthCell,
+  program?: ts.Program,
 ): Map<string, string> | null {
   const ast = getAst();
 
@@ -463,6 +472,7 @@ function buildSubstitutionMap(
       strategy,
       callerParamNames,
       synthCell,
+      program,
     );
     if (isTranslateExprUnsupported(actualResult)) {
       // Argument contains an explicitly-unsupported operator. Bail the
@@ -490,6 +500,7 @@ function followGuards(
   callerParamNames: ReadonlyMap<string, string>,
   visited: Set<ts.Node>,
   synthCell?: SynthCell,
+  program?: ts.Program,
 ): OpaqueExpr[] {
   const target = resolveCallTarget(call, checker);
   if (!target) {
@@ -508,6 +519,7 @@ function followGuards(
     strategy,
     callerParamNames,
     synthCell,
+    program,
   );
   if (!innerParamNames) {
     return [];
@@ -521,30 +533,12 @@ function followGuards(
     innerParamNames,
     visited,
     synthCell,
+    program,
   );
   visited.delete(target.body);
 
   return guards;
 }
-
-const ASSIGNMENT_OPERATORS = new Set([
-  ts.SyntaxKind.EqualsToken,
-  ts.SyntaxKind.PlusEqualsToken,
-  ts.SyntaxKind.MinusEqualsToken,
-  ts.SyntaxKind.AsteriskEqualsToken,
-  ts.SyntaxKind.SlashEqualsToken,
-  ts.SyntaxKind.PercentEqualsToken,
-  ts.SyntaxKind.AsteriskAsteriskEqualsToken,
-  ts.SyntaxKind.LessThanLessThanEqualsToken,
-  ts.SyntaxKind.GreaterThanGreaterThanEqualsToken,
-  ts.SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken,
-  ts.SyntaxKind.AmpersandEqualsToken,
-  ts.SyntaxKind.BarEqualsToken,
-  ts.SyntaxKind.CaretEqualsToken,
-  ts.SyntaxKind.BarBarEqualsToken,
-  ts.SyntaxKind.AmpersandAmpersandEqualsToken,
-  ts.SyntaxKind.QuestionQuestionEqualsToken,
-]);
 
 /**
  * Walk an expression looking for operators that `translateExpr` /
@@ -611,60 +605,6 @@ export function containsUnsupportedOperator(expr: ts.Expression): boolean {
 }
 
 /**
- * Check whether an expression is side-effect-free (identifiers, literals,
- * property access, operators — no calls, assignments, or increments).
- */
-export function isPureExpression(expr: ts.Expression): boolean {
-  if (
-    ts.isIdentifier(expr) ||
-    ts.isNumericLiteral(expr) ||
-    ts.isStringLiteral(expr) ||
-    ts.isNoSubstitutionTemplateLiteral(expr) ||
-    expr.kind === ts.SyntaxKind.TrueKeyword ||
-    expr.kind === ts.SyntaxKind.FalseKeyword ||
-    expr.kind === ts.SyntaxKind.NullKeyword ||
-    expr.kind === ts.SyntaxKind.ThisKeyword
-  ) {
-    return true;
-  }
-  if (
-    ts.isParenthesizedExpression(expr) ||
-    ts.isAsExpression(expr) ||
-    ts.isNonNullExpression(expr) ||
-    ts.isSatisfiesExpression(expr) ||
-    ts.isTypeOfExpression(expr)
-  ) {
-    return isPureExpression(expr.expression);
-  }
-  if (ts.isPropertyAccessExpression(expr)) {
-    return isPureExpression(expr.expression);
-  }
-  if (ts.isElementAccessExpression(expr)) {
-    return (
-      isPureExpression(expr.expression) &&
-      isPureExpression(expr.argumentExpression)
-    );
-  }
-  if (ts.isPrefixUnaryExpression(expr)) {
-    if (
-      expr.operator === ts.SyntaxKind.PlusPlusToken ||
-      expr.operator === ts.SyntaxKind.MinusMinusToken
-    ) {
-      return false;
-    }
-    return isPureExpression(expr.operand);
-  }
-  if (ts.isBinaryExpression(expr)) {
-    if (ASSIGNMENT_OPERATORS.has(expr.operatorToken.kind)) {
-      return false;
-    }
-    return isPureExpression(expr.left) && isPureExpression(expr.right);
-  }
-  // Calls, new, await, template expressions, etc. are not pure
-  return false;
-}
-
-/**
  * Check whether a then-branch is side-effect-free and non-returning,
  * so extracting the condition as a guard won't silently discard
  * meaningful work.  Aligned with isGuardStatement in translate-body.ts.
@@ -687,19 +627,19 @@ function guardBranchReturns(node: ts.Statement): boolean {
 
 function guardBranchHasNoSideEffects(
   node: ts.Statement,
-  _checker: ts.TypeChecker,
+  checker: ts.TypeChecker,
 ): boolean {
   if (ts.isBlock(node)) {
     return node.statements.every((s) =>
-      guardBranchHasNoSideEffects(s, _checker),
+      guardBranchHasNoSideEffects(s, checker),
     );
   }
   if (ts.isExpressionStatement(node)) {
-    return isPureExpression(node.expression);
+    return isEffectFree(node.expression, checker);
   }
   if (ts.isVariableStatement(node)) {
     return node.declarationList.declarations.every(
-      (d) => !d.initializer || isPureExpression(d.initializer),
+      (d) => !d.initializer || isEffectFree(d.initializer, checker),
     );
   }
   if (ts.isReturnStatement(node) || ts.isThrowStatement(node)) {
@@ -723,7 +663,7 @@ function classifyGuardIf(
   stmt: ts.IfStatement,
   checker: ts.TypeChecker,
 ): "positive" | "negative" | null {
-  if (!isPureExpression(stmt.expression)) {
+  if (!isEffectFree(stmt.expression, checker)) {
     return null;
   }
   // M4 P3: a guard whose condition contains a forbidden operator (loose
@@ -760,6 +700,7 @@ function scanBodyForGuards(
   paramNames: ReadonlyMap<string, string>,
   visited: Set<ts.Node>,
   synthCell?: SynthCell,
+  program?: ts.Program,
 ): OpaqueExpr[] {
   const ast = getAst();
   const guards: OpaqueExpr[] = [];
@@ -772,10 +713,12 @@ function scanBodyForGuards(
     ) {
       // Skip extraction if callee or arguments contain side effects
       // (e.g. makeValidator().assertPositive(x) or assert(loadAmount() > 0))
-      if (!isPureExpression(stmt.expression.expression)) {
+      if (!isEffectFree(stmt.expression.expression, checker)) {
         break;
       }
-      const argsArePure = stmt.expression.arguments.every(isPureExpression);
+      const argsArePure = stmt.expression.arguments.every((arg) =>
+        isEffectFree(arg, checker),
+      );
       if (!argsArePure) {
         break;
       }
@@ -787,6 +730,7 @@ function scanBodyForGuards(
         strategy,
         paramNames,
         synthCell,
+        program,
       );
       if (g !== undefined) {
         guards.push(g);
@@ -801,6 +745,7 @@ function scanBodyForGuards(
         paramNames,
         visited,
         synthCell,
+        program,
       );
       if (followed.length > 0) {
         guards.push(...followed);
@@ -824,6 +769,7 @@ function scanBodyForGuards(
         strategy,
         paramNames,
         synthCell,
+        program,
       );
       if (g === null) {
         // Guard contains explicitly-unsupported operator — stop scanning
@@ -844,6 +790,7 @@ function scanBodyForGuards(
           strategy,
           paramNames,
           synthCell,
+          program,
         );
         if (g === null) {
           break;
@@ -857,6 +804,7 @@ function scanBodyForGuards(
         strategy,
         paramNames,
         synthCell,
+        program,
       );
       if (g === null) {
         break;
@@ -885,8 +833,16 @@ function tryTranslateGuardExpr(
   strategy: NumericStrategy,
   paramNames: ReadonlyMap<string, string>,
   synthCell: SynthCell | undefined,
+  program: ts.Program | undefined,
 ): OpaqueExpr | null {
-  const result = translateExpr(expr, checker, strategy, paramNames, synthCell);
+  const result = translateExpr(
+    expr,
+    checker,
+    strategy,
+    paramNames,
+    synthCell,
+    program,
+  );
   if (isTranslateExprUnsupported(result)) {
     return null;
   }
@@ -935,10 +891,12 @@ export function isFollowableGuardCall(
       ts.isExpressionStatement(stmt) &&
       ts.isCallExpression(stmt.expression)
     ) {
-      if (!isPureExpression(stmt.expression.expression)) {
+      if (!isEffectFree(stmt.expression.expression, checker)) {
         return false;
       }
-      if (!stmt.expression.arguments.every(isPureExpression)) {
+      if (
+        !stmt.expression.arguments.every((arg) => isEffectFree(arg, checker))
+      ) {
         return false;
       }
       // M4 P3: an assertion call whose argument contains a forbidden
@@ -987,6 +945,7 @@ export function detectGuard(
   strategy: NumericStrategy,
   paramNames: ReadonlyMap<string, string>,
   synthCell?: SynthCell,
+  program?: ts.Program,
 ): OpaqueExpr | undefined {
   const ast = getAst();
 
@@ -1003,6 +962,7 @@ export function detectGuard(
     paramNames,
     visited,
     synthCell,
+    program,
   );
 
   if (guards.length === 0) {
@@ -1031,7 +991,7 @@ function blockThrows(node: ts.Statement, _checker: ts.TypeChecker): boolean {
         (s) =>
           ts.isVariableStatement(s) &&
           s.declarationList.declarations.every(
-            (d) => !d.initializer || isPureExpression(d.initializer),
+            (d) => !d.initializer || isEffectFree(d.initializer, _checker),
           ),
       );
   }
@@ -1054,8 +1014,16 @@ export function translateExpr(
   _strategy: NumericStrategy,
   paramNames: ReadonlyMap<string, string>,
   synthCell?: SynthCell,
+  program?: ts.Program,
 ): TranslateExprResult {
   const ast = getAst();
+  const l1Ctx: L1BuildContext = {
+    checker,
+    strategy: _strategy,
+    paramNames,
+    state: undefined,
+    supply: { n: 0, synthCell, program },
+  };
 
   // M5: plain (non-optional) property access dispatches cardinality
   // first (`xs.length` / `m.size` on list-shaped TS types → L1
@@ -1076,13 +1044,6 @@ export function translateExpr(
       ts.isElementAccessExpression(expr)) &&
     (expr.flags & ts.NodeFlags.OptionalChain) === 0
   ) {
-    const l1Ctx: L1BuildContext = {
-      checker,
-      strategy: _strategy,
-      paramNames,
-      state: undefined,
-      supply: { n: 0, synthCell },
-    };
     // Signature-side options shared between cardinality and Member:
     // - `ambiguousOwnerFallback: "bare-kebab"` keeps optional analyses
     //   (guard extraction, call-following) from bailing on a single
@@ -1118,7 +1079,24 @@ export function translateExpr(
       ts.isElementAccessExpression(stripped)) &&
     (stripped.flags & ts.NodeFlags.OptionalChain) === 0
   ) {
-    return translateExpr(stripped, checker, _strategy, paramNames, synthCell);
+    return translateExpr(
+      stripped,
+      checker,
+      _strategy,
+      paramNames,
+      synthCell,
+      program,
+    );
+  }
+
+  if (ts.isCallExpression(expr)) {
+    const call = tryBuildL1PureSubExpression(expr, l1Ctx);
+    if (call !== null) {
+      if (isL1Unsupported(call)) {
+        return call;
+      }
+      return lowerExpr(lowerL1Expr(call));
+    }
   }
 
   // Binary expression: a >= b -> binop(opGe(), a, b)
@@ -1267,6 +1245,7 @@ export function translateExpr(
       _strategy,
       paramNames,
       synthCell,
+      program,
     );
     if (isTranslateExprUnsupported(left)) {
       return left;
@@ -1277,6 +1256,7 @@ export function translateExpr(
       _strategy,
       paramNames,
       synthCell,
+      program,
     );
     if (isTranslateExprUnsupported(right)) {
       return right;
@@ -1297,6 +1277,7 @@ export function translateExpr(
         _strategy,
         paramNames,
         synthCell,
+        program,
       );
       if (isTranslateExprUnsupported(operand)) {
         return operand;
@@ -1310,6 +1291,7 @@ export function translateExpr(
         _strategy,
         paramNames,
         synthCell,
+        program,
       );
       if (isTranslateExprUnsupported(operand)) {
         return operand;
@@ -1323,7 +1305,7 @@ export function translateExpr(
   // function. Without this, `(x == 0) as boolean` and `(x == 0)!` would
   // bypass the loose-equality rejection above and emit raw source text
   // as a Pant variable name. Mirrors `unwrapExpression` in
-  // translate-body.ts and the wrapper handling in `isPureExpression` /
+  // translate-body.ts and the wrapper handling in the shared effect oracle /
   // `containsUnsupportedOperator`.
   if (
     ts.isParenthesizedExpression(expr) ||
@@ -1337,6 +1319,7 @@ export function translateExpr(
       _strategy,
       paramNames,
       synthCell,
+      program,
     );
   }
 
@@ -1455,7 +1438,9 @@ export function translateSignature(
   overrides?: Map<string, string>,
   opts?: TranslateSignatureOptions,
 ): TranslatedSignature {
-  const checker = sourceFile.getProject().getTypeChecker().compilerObject;
+  const project = sourceFile.getProject();
+  const checker = project.getTypeChecker().compilerObject;
+  const program = project.getProgram().compilerObject;
   const { node, className } = findFunction(sourceFile, functionName);
   // Strip class qualifier for use in Pantagruel identifiers
   const baseName = toPantTermName(
@@ -1510,7 +1495,14 @@ export function translateSignature(
     paramNameMap.set(param.name, pantName);
   }
 
-  const guard = detectGuard(node, checker, strategy, paramNameMap, synthCell);
+  const guard = detectGuard(
+    node,
+    checker,
+    strategy,
+    paramNameMap,
+    synthCell,
+    program,
+  );
 
   if (classification === "pure") {
     // Map-partial signature alignment: when the body is exactly a
