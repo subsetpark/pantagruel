@@ -571,9 +571,7 @@ describe("if-early-return prelude arms", () => {
     }
   });
 
-  it.skip("pure block-bodied early-return arm lowers to cond with inlined bindings", () => {
-    // PENDING Patch 2: recognize block arms containing const bindings
-    // ending in `return`, inline the bindings, and feed the existing cond.
+  it("pure block-bodied early-return arm lowers to cond with inlined bindings", () => {
     const source = `
       export function f(n: number): number {
         if (n < 0) {
@@ -595,6 +593,36 @@ describe("if-early-return prelude arms", () => {
       assert.equal(
         ast.strExpr(prop.rhs),
         "cond n < 0 => 0 - n, true => n + 1",
+      );
+    }
+  });
+
+  it("rejects pure block-bodied early-return arms with branch-local guards", () => {
+    const source = `
+      function assert(condition: unknown): asserts condition {
+        if (!condition) throw new Error("no");
+      }
+      export function f(n: number, ok: boolean): number {
+        if (n < 0) {
+          assert(ok);
+          const z = 0 - n;
+          return z;
+        }
+        return n + 1;
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assert.equal(props.length, 1);
+    assert.equal(props[0]?.kind, "unsupported");
+    if (props[0]?.kind === "unsupported") {
+      assert.match(
+        props[0].reason,
+        /only const bindings followed by a return/u,
       );
     }
   });
@@ -622,11 +650,11 @@ describe("if-early-return prelude arms", () => {
     }
   });
 
-  it("rejects an if-with-multi-statement body in prelude position", () => {
+  it("rejects a block early-return arm with non-const local bindings", () => {
     const source = `
       export function f(n: number): number {
         if (n < 0) {
-          const x = 1;
+          let x = 1;
           return x;
         }
         return n;
@@ -641,7 +669,7 @@ describe("if-early-return prelude arms", () => {
     assert.equal(props.length, 1);
     assert.equal(props[0]?.kind, "unsupported");
     if (props[0]?.kind === "unsupported") {
-      assert.match(props[0].reason, /single return statement/u);
+      assert.match(props[0].reason, /only const bindings followed by a return/u);
     }
   });
 
@@ -874,9 +902,7 @@ describe("if-early-return prelude arms", () => {
 });
 
 describe("body-lowering completeness pending stubs", () => {
-  it.skip("mutating block-bodied arm lowers to cond post-state with inlined binding", () => {
-    // PENDING Patch 2: buildL1MutationBody accepts guarded blocks with
-    // const bindings before terminal property assignments.
+  it("mutating block-bodied arm lowers to cond post-state with inlined binding", () => {
     const source = `
       interface Account { balance: number; }
       export function f(a: Account, g: boolean, amount: number): void {
@@ -1720,6 +1746,32 @@ describe("structured iteration (for-of, forEach, reduce)", () => {
       props,
       /property rooted at the iterator binder/,
       "expected the non-iter-rooted-assign rejection",
+    );
+  });
+
+  it("rejects const bindings that shadow foreach iterators inside branches", () => {
+    const source = `
+      interface Item { total: number; }
+      interface Account { total: number; }
+      function f(xs: Item[], acc: Account, g: boolean): void {
+        for (const x of xs) {
+          if (g) {
+            const x = acc;
+            x.total = 1;
+          }
+        }
+      }
+    `;
+    const sourceFile = createSourceFileFromSource(source);
+    const props = translateBody({
+      sourceFile,
+      functionName: "f",
+      strategy: IntStrategy,
+    });
+    assertUnsupportedReason(
+      props,
+      /cannot shadow the foreach iterator binder/,
+      "expected the foreach iterator shadowing rejection",
     );
   });
 

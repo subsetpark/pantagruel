@@ -83,31 +83,31 @@ exports[`expressions-array.ts > nameLengths 1`] = `
 `;
 
 exports[`expressions-block-early-return.ts > blockEarlyReturnBindingReferencesParam 1`] = `
-"module BLOCK_EARLY_RETURN_BINDING_REFERENCES_PARAM.\\n\\nblock-early-return-binding-references-param n: Int, offset: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: block-early-return-binding-references-param — if-with-return body must be a single return statement.\\n"
+"module BLOCK_EARLY_RETURN_BINDING_REFERENCES_PARAM.\\n\\nblock-early-return-binding-references-param n: Int, offset: Int => Int.\\n\\n---\\n\\nblock-early-return-binding-references-param n offset = (cond n < offset => offset - n, true => n + offset).\\n"
 `;
 
 exports[`expressions-block-early-return.ts > blockEarlyReturnEffectfulConstRejected 1`] = `
-"module BLOCK_EARLY_RETURN_EFFECTFUL_CONST_REJECTED.\\n\\ncompute n1: Int => Int.\\nblock-early-return-effectful-const-rejected n: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: block-early-return-effectful-const-rejected — if-with-return body must be a single return statement.\\n"
+"module BLOCK_EARLY_RETURN_EFFECTFUL_CONST_REJECTED.\\n\\ncompute n1: Int => Int.\\nblock-early-return-effectful-const-rejected n: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: block-early-return-effectful-const-rejected — early-return block const has side effects.\\n"
 `;
 
 exports[`expressions-block-early-return.ts > blockEarlyReturnMultipleBindings 1`] = `
-"module BLOCK_EARLY_RETURN_MULTIPLE_BINDINGS.\\n\\nblock-early-return-multiple-bindings n: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: block-early-return-multiple-bindings — if-with-return body must be a single return statement.\\n"
+"module BLOCK_EARLY_RETURN_MULTIPLE_BINDINGS.\\n\\nblock-early-return-multiple-bindings n: Int => Int.\\n\\n---\\n\\nblock-early-return-multiple-bindings n = (cond n < 0 => (0 - n) * 2, true => n).\\n"
 `;
 
 exports[`expressions-block-early-return.ts > blockEarlyReturnMutatingMultipleBindings 1`] = `
-"module BLOCK_EARLY_RETURN_MUTATING_MULTIPLE_BINDINGS.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--limit a1: Account => Int.\\n~> Block-early-return-mutating-multiple-bindings @ a: Account, g: Bool, amount: Int.\\n\\n---\\n\\n> UNSUPPORTED: branch body must be a property assignment, Map/Set effect, or nested if.\\n"
+"module BLOCK_EARLY_RETURN_MUTATING_MULTIPLE_BINDINGS.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--limit a1: Account => Int.\\n~> Block-early-return-mutating-multiple-bindings @ a: Account, g: Bool, amount: Int.\\n\\n---\\n\\naccount--balance' a = (cond g => (cond account--balance a + amount < account--limit a => account--balance a + amount, true => account--limit a), true => account--balance a).\\naccount--limit' a1 = account--limit a1.\\n"
 `;
 
 exports[`expressions-block-early-return.ts > blockEarlyReturnMutatingSingleBinding 1`] = `
-"module BLOCK_EARLY_RETURN_MUTATING_SINGLE_BINDING.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--limit a1: Account => Int.\\n~> Block-early-return-mutating-single-binding @ a: Account, g: Bool, amount: Int.\\n\\n---\\n\\n> UNSUPPORTED: branch body must be a property assignment, Map/Set effect, or nested if.\\n"
+"module BLOCK_EARLY_RETURN_MUTATING_SINGLE_BINDING.\\n\\nAccount.\\naccount--balance a1: Account => Int.\\naccount--limit a1: Account => Int.\\n~> Block-early-return-mutating-single-binding @ a: Account, g: Bool, amount: Int.\\n\\n---\\n\\naccount--balance' a = (cond g => account--balance a + amount, true => account--balance a).\\naccount--limit' a1 = account--limit a1.\\n"
 `;
 
 exports[`expressions-block-early-return.ts > blockEarlyReturnNestedArms 1`] = `
-"module BLOCK_EARLY_RETURN_NESTED_ARMS.\\n\\nblock-early-return-nested-arms n: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: block-early-return-nested-arms — if-with-return body must be a single return statement.\\n"
+"module BLOCK_EARLY_RETURN_NESTED_ARMS.\\n\\nblock-early-return-nested-arms n: Int => Int.\\n\\n---\\n\\nblock-early-return-nested-arms n = (cond n < 0 => 0 - n, n = 0 => n + 1, true => n).\\n"
 `;
 
 exports[`expressions-block-early-return.ts > blockEarlyReturnSingleBinding 1`] = `
-"module BLOCK_EARLY_RETURN_SINGLE_BINDING.\\n\\nblock-early-return-single-binding n: Int => Int.\\n\\n---\\n\\n> UNSUPPORTED: block-early-return-single-binding — if-with-return body must be a single return statement.\\n"
+"module BLOCK_EARLY_RETURN_SINGLE_BINDING.\\n\\nblock-early-return-single-binding n: Int => Int.\\n\\n---\\n\\nblock-early-return-single-binding n = (cond n < 0 => 0 - n, true => n + 1).\\n"
 `;
 
 exports[`expressions-boolean.ts > and 1`] = `

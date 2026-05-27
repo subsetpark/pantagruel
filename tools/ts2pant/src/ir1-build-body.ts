@@ -56,6 +56,7 @@ import {
   tryBuildL1Cardinality,
   tryBuildL1PureSubExpression,
 } from "./ir1-build.js";
+import { substituteIR1StmtSubtree } from "./ir1-substitute.js";
 import type { OpaqueExpr } from "./pant-ast.js";
 import {
   ambiguousFieldMsg,
@@ -990,7 +991,6 @@ function buildL1MutationBody(
   ctx: BuildBodyCtx,
 ): BuildResult<IR1Stmt> {
   if (ts.isBlock(stmt)) {
-    const stmts: IR1Stmt[] = [];
     // Strip iterator-INDEPENDENT guard statements (`assert(...)`,
     // `if (g) throw …`) so branch-local preconditions don't surface
     // as unsupported branch bodies; this matches the top-level SSA
@@ -1015,12 +1015,9 @@ function buildL1MutationBody(
       }
       // iterator-independent guard — strip
     }
-    for (const child of children) {
-      const built = buildL1MutationBody(child, ctx);
-      if (isUnsupported(built)) {
-        return built;
-      }
-      stmts.push(built);
+    const stmts = buildL1MutationBlockChildren(children, ctx);
+    if (isUnsupported(stmts)) {
+      return stmts;
     }
     if (stmts.length === 0) {
       return { unsupported: "empty branch body" };
@@ -1075,6 +1072,119 @@ function buildL1MutationBody(
     unsupported:
       "branch body must be a property assignment, Map/Set effect, or nested if",
   };
+}
+
+function buildL1MutationBlockChildren(
+  children: readonly ts.Statement[],
+  ctx: BuildBodyCtx,
+): BuildResult<IR1Stmt[]> {
+  const hasConstBinding = children.some(
+    (child) =>
+      ts.isVariableStatement(child) &&
+      (child.declarationList.flags & ts.NodeFlags.Const) !== 0,
+  );
+  if (!hasConstBinding) {
+    const stmts: IR1Stmt[] = [];
+    for (const child of children) {
+      const built = buildL1MutationBody(child, ctx);
+      if (isUnsupported(built)) {
+        return built;
+      }
+      stmts.push(built);
+    }
+    return stmts;
+  }
+
+  let scopedParams = new Map(ctx.paramNames);
+  const substitutions: Array<{ localName: string; value: IR1Expr }> = [];
+  const built: IR1Stmt[] = [];
+  let seenNonConst = false;
+
+  for (const [idx, child] of children.entries()) {
+    if (
+      ts.isVariableStatement(child) &&
+      (child.declarationList.flags & ts.NodeFlags.Const) !== 0
+    ) {
+      if (seenNonConst) {
+        return {
+          unsupported:
+            "branch const bindings must precede property assignments or return",
+        };
+      }
+      for (const [
+        declIdx,
+        decl,
+      ] of child.declarationList.declarations.entries()) {
+        if (!ts.isIdentifier(decl.name) || decl.initializer === undefined) {
+          return {
+            unsupported:
+              "branch const bindings must use identifier declarations with initializers",
+          };
+        }
+        if (ctx.iterRefs?.has(decl.name.text)) {
+          return {
+            unsupported:
+              "branch const binding cannot shadow the foreach iterator binder",
+          };
+        }
+        if (expressionHasSideEffects(decl.initializer, ctx.checker)) {
+          return { unsupported: "branch const initializer has side effects" };
+        }
+        const laterNames = new Set(
+          [
+            ...child.declarationList.declarations.slice(declIdx),
+            ...children
+              .slice(idx + 1)
+              .flatMap((s) =>
+                ts.isVariableStatement(s)
+                  ? [...s.declarationList.declarations]
+                  : [],
+              ),
+          ]
+            .map((d) => (ts.isIdentifier(d.name) ? d.name.text : null))
+            .filter((name): name is string => name !== null),
+        );
+        if (expressionReferencesNames(decl.initializer, laterNames)) {
+          return {
+            unsupported: "branch const initializer references a later binding",
+          };
+        }
+        const value = buildL1SubExpr(decl.initializer, {
+          ...ctx,
+          paramNames: scopedParams,
+        });
+        if (isUnsupported(value) || isL1Unsupported(value)) {
+          return { unsupported: value.unsupported };
+        }
+        const localName = freshHygienicBinder(ctx.supply);
+        substitutions.push({ localName, value });
+        scopedParams = new Map(scopedParams);
+        scopedParams.set(decl.name.text, localName);
+      }
+      continue;
+    }
+
+    seenNonConst = true;
+    if (ts.isReturnStatement(child) && idx !== children.length - 1) {
+      return { unsupported: "return in branch block must be final" };
+    }
+    const lowered = buildL1MutationBody(child, {
+      ...ctx,
+      paramNames: scopedParams,
+    });
+    if (isUnsupported(lowered)) {
+      return lowered;
+    }
+    built.push(lowered);
+  }
+
+  return built.map((stmt) =>
+    substitutions.reduceRight(
+      (acc, binding) =>
+        substituteIR1StmtSubtree(acc, ir1Var(binding.localName), binding.value),
+      stmt,
+    ),
+  );
 }
 
 /**
