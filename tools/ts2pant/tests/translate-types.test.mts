@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { emitDocument } from "../src/emit.js";
 import {
   createSourceFileFromSource,
   type ExtractedInterface,
@@ -7,15 +8,14 @@ import {
   extractReferencedTypes,
   getChecker,
 } from "../src/extract.js";
-import { assertWasmTypeChecks, loadAst } from "../src/pant-wasm.js";
 import { emptyNameRegistry, registerName } from "../src/name-registry.js";
 import { OPAQUE_DOMAIN, opaqueValueRuleName } from "../src/opaque.js";
-import { emitDocument } from "../src/emit.js";
+import { assertWasmTypeChecks, loadAst } from "../src/pant-wasm.js";
 import {
   cellEmitSynth,
   cellLookupOpaqueValue,
-  cellRegisterOpaqueValue,
   cellRegisterDiscriminatedUnion,
+  cellRegisterOpaqueValue,
   cellRegisterTupleConstructor,
   cellTupleShapes,
   depModuleNameForFile,
@@ -25,8 +25,9 @@ import {
   mapTsType,
   newSynthCell,
   RealStrategy,
-  translateTypes,
+  resolveFieldOwner,
   type TupleShape,
+  translateTypes,
   UNSUPPORTED_UNKNOWN,
 } from "../src/translate-types.js";
 import type { PantDeclaration } from "../src/types.js";
@@ -315,9 +316,54 @@ describe("emitDiscriminatedUnionSynthDecls", () => {
     );
   });
 
-  it("leaves field-access wiring pending for Patch 2", { skip: true }, () => {
-    // PENDING Patch 2: mapTsType and field-owner resolution will consume
-    // this synth so `x.kind`, `x.r`, and shared fields resolve.
+  it("maps discriminated unions to one domain and resolves field access", () => {
+    const { alias, checker } = extractFirstAlias(`
+      type Shape =
+        | { kind: "circle"; r: number; shared: string }
+        | { kind: "square"; s: number; shared: string };
+    `);
+    const cell = newSynthCell();
+
+    assert.equal(mapTsType(alias.type, checker, IntStrategy, cell), "Shape");
+    assert.deepEqual(
+      ["kind", "r", "shared"].map((field) =>
+        resolveFieldOwner(alias.type, field, checker, IntStrategy, cell),
+      ),
+      [
+        { kind: "resolved", owner: "Shape" },
+        { kind: "resolved", owner: "Shape" },
+        { kind: "resolved", owner: "Shape" },
+      ],
+    );
+
+    const decls = cellEmitSynth(cell);
+    assert.ok(
+      decls.some(
+        (decl) =>
+          decl.kind === "rule" &&
+          decl.name === "shape--r" &&
+          decl.guard !== undefined,
+      ),
+    );
+  });
+
+  it("keeps non-discriminated union field access ambiguous", () => {
+    const { alias, checker } = extractFirstAlias(`
+      type NonDiscriminated =
+        | { owner: string; left: number }
+        | { owner: string; right: number };
+    `);
+    const cell = newSynthCell();
+    const mapped = mapTsType(alias.type, checker, IntStrategy, cell);
+
+    assert.equal(mapped, "LeftOwnerRec + OwnerRightRec");
+    assert.deepEqual(
+      resolveFieldOwner(alias.type, "owner", checker, IntStrategy, cell),
+      {
+        kind: "ambiguous",
+        owners: mapped.split(" + "),
+      },
+    );
   });
 });
 
@@ -382,9 +428,8 @@ describe("mapTsType", () => {
     const source = `interface Foo { anyVal: any; unknownVal: unknown; }`;
     const sourceFile = createSourceFileFromSource(source);
     const checker = getChecker(sourceFile);
-    const [anyProp, unknownProp] = extractAllTypes(
-      sourceFile,
-    ).interfaces[0].properties;
+    const [anyProp, unknownProp] =
+      extractAllTypes(sourceFile).interfaces[0].properties;
 
     assert.equal(
       mapTsType(anyProp.type, checker, IntStrategy),
@@ -658,9 +703,7 @@ describe("mapTsType", () => {
 
 describe("translateTypes routes `unknown` through `unsupported` declaration", () => {
   it("interface field with `unknown` type emits an unsupported decl", () => {
-    const { decls } = extractAndTranslate(
-      `interface Foo { val: unknown; }`,
-    );
+    const { decls } = extractAndTranslate(`interface Foo { val: unknown; }`);
     // The `Foo` domain decl is still pushed; the field accessor rule
     // is replaced by an `unsupported` decl carrying the user-facing
     // reason, so the emitted Pant text never contains the sentinel.
@@ -699,10 +742,7 @@ describe("cellRegisterMap / cellRegisterRecord / cellRegisterTupleConstructor re
       "../src/translate-types.js"
     );
     const cell = newSynthCell();
-    assert.equal(
-      cellRegisterMap(cell, UNSUPPORTED_UNKNOWN, "Int"),
-      null,
-    );
+    assert.equal(cellRegisterMap(cell, UNSUPPORTED_UNKNOWN, "Int"), null);
     assert.equal(cell.synth.byKV.size, 0);
   });
 
@@ -894,10 +934,7 @@ describe("emitTupleCtorModule", () => {
     // Module header uses the ALL_CAPS_SNAKE convention.
     assert.match(text, /^module TUPLE_SHAPES_TUPLES\.\n/u);
     // Constructor rule head present.
-    assert.match(
-      text,
-      /make-int-int a1: Int, a2: Int => Int \* Int\./u,
-    );
+    assert.match(text, /make-int-int a1: Int, a2: Int => Int \* Int\./u);
     // The wasm checker accepts the standalone module.
     await assertWasmTypeChecks(text);
   });
@@ -977,10 +1014,7 @@ describe("depModuleNameForFile", () => {
     // `123_FOO_TUPLES` would also be rejected by the lexer. Prefix
     // with `F_` (a stable letter, no semantics) so the result is a
     // legal UPPER_IDENT.
-    assert.equal(
-      depModuleNameForFile("123-foo.ts"),
-      "F_123_FOO_TUPLES",
-    );
+    assert.equal(depModuleNameForFile("123-foo.ts"), "F_123_FOO_TUPLES");
     assert.equal(depModuleNameForFile("9.ts"), "F_9_TUPLES");
   });
 

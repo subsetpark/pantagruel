@@ -267,15 +267,15 @@ exports[`expressions-discriminated-union.ts > ambiguousOwner 1`] = `
 `;
 
 exports[`expressions-discriminated-union.ts > readDiscriminant 1`] = `
-"module READ_DISCRIMINANT.\\n\\nKindRSharedRec.\\nkind-r-shared-rec--kind r: KindRSharedRec => String.\\nkind-r-shared-rec--r r: KindRSharedRec => Int.\\nkind-r-shared-rec--shared r: KindRSharedRec => String.\\nKindSSharedRec.\\nkind-s-shared-rec--kind r1: KindSSharedRec => String.\\nkind-s-shared-rec--s r1: KindSSharedRec => Int.\\nkind-s-shared-rec--shared r1: KindSSharedRec => String.\\nread-discriminant x: KindRSharedRec + KindSSharedRec => String.\\n\\n---\\n\\n> UNSUPPORTED: property access .kind: ambiguous owner — union/intersection members declare this field on multiple distinct types, so no single qualified accessor rule applies.\\n"
+"module READ_DISCRIMINANT.\\n\\nShape.\\nshape--kind s: Shape => String.\\nshape--r s: Shape, shape--kind s = \\"circle\\" => Int.\\nshape--s s: Shape, shape--kind s = \\"square\\" => Int.\\nshape--shared s: Shape, shape--kind s = \\"circle\\" or shape--kind s = \\"square\\" => String.\\nread-discriminant x: Shape => String.\\n\\n---\\n\\nread-discriminant x = shape--kind x.\\n"
 `;
 
 exports[`expressions-discriminated-union.ts > readSharedField 1`] = `
-"module READ_SHARED_FIELD.\\n\\nKindRSharedRec.\\nkind-r-shared-rec--kind r: KindRSharedRec => String.\\nkind-r-shared-rec--r r: KindRSharedRec => Int.\\nkind-r-shared-rec--shared r: KindRSharedRec => String.\\nKindSSharedRec.\\nkind-s-shared-rec--kind r1: KindSSharedRec => String.\\nkind-s-shared-rec--s r1: KindSSharedRec => Int.\\nkind-s-shared-rec--shared r1: KindSSharedRec => String.\\nread-shared-field x: KindRSharedRec + KindSSharedRec => String.\\n\\n---\\n\\n> UNSUPPORTED: property access .shared: ambiguous owner — union/intersection members declare this field on multiple distinct types, so no single qualified accessor rule applies.\\n"
+"module READ_SHARED_FIELD.\\n\\nShape.\\nshape--kind s: Shape => String.\\nshape--r s: Shape, shape--kind s = \\"circle\\" => Int.\\nshape--s s: Shape, shape--kind s = \\"square\\" => Int.\\nshape--shared s: Shape, shape--kind s = \\"circle\\" or shape--kind s = \\"square\\" => String.\\nread-shared-field x: Shape => String.\\n\\n---\\n\\nread-shared-field x = shape--shared x.\\n"
 `;
 
 exports[`expressions-discriminated-union.ts > readVariantField 1`] = `
-"module READ_VARIANT_FIELD.\\n\\nKindRSharedRec.\\nkind-r-shared-rec--kind r: KindRSharedRec => String.\\nkind-r-shared-rec--r r: KindRSharedRec => Int.\\nkind-r-shared-rec--shared r: KindRSharedRec => String.\\nKindSSharedRec.\\nkind-s-shared-rec--kind r1: KindSSharedRec => String.\\nkind-s-shared-rec--s r1: KindSSharedRec => Int.\\nkind-s-shared-rec--shared r1: KindSSharedRec => String.\\nread-variant-field x: KindRSharedRec + KindSSharedRec => Int.\\n\\n---\\n\\nread-variant-field x = kind-r-shared-rec--r x.\\n"
+"module READ_VARIANT_FIELD.\\n\\nShape.\\nshape--kind s: Shape => String.\\nshape--r s: Shape, shape--kind s = \\"circle\\" => Int.\\nshape--s s: Shape, shape--kind s = \\"square\\" => Int.\\nshape--shared s: Shape, shape--kind s = \\"circle\\" or shape--kind s = \\"square\\" => String.\\nread-variant-field x: Shape => Int.\\n\\n---\\n\\nread-variant-field x = shape--r x.\\n"
 `;
 
 exports[`expressions-equality-nullish.ts > disjunctionDifferentOperands 1`] = `

@@ -1296,6 +1296,29 @@ function collectFieldOwners(
     }
   }
 
+  if (synthCell && ty.isUnion()) {
+    const detection = detectDiscriminatedUnion(ty, checker);
+    if (
+      detection &&
+      (fieldName === detection.discriminant ||
+        detection.variants.some((variant) =>
+          variant.fields.some((field) => field.name === fieldName),
+        ))
+    ) {
+      const owner = cellRegisterDiscriminatedUnion(
+        synthCell,
+        detection,
+        checker,
+        strategy,
+        discriminatedUnionPreferredDomain(ty),
+      );
+      if (owner) {
+        out.add(owner);
+        return;
+      }
+    }
+  }
+
   if (ty.isUnionOrIntersection()) {
     for (const sub of ty.types) {
       collectFieldOwners(sub, fieldName, checker, strategy, synthCell, out);
@@ -1317,6 +1340,14 @@ function collectFieldOwners(
       out.add(owner);
     }
   }
+}
+
+function discriminatedUnionPreferredDomain(type: ts.Type): string {
+  return (
+    type.aliasSymbol?.getName() ??
+    type.symbol?.getName() ??
+    "DiscriminatedUnion"
+  );
 }
 
 function ownerFromDeclaration(decl: ts.Declaration): string | null {
@@ -1785,6 +1816,21 @@ export function mapTsType(
     // Boolean is represented as true | false union
     if (type.types.every((t) => t.flags & ts.TypeFlags.BooleanLiteral)) {
       return "Bool";
+    }
+    if (synthCell) {
+      const detection = detectDiscriminatedUnion(type, checker);
+      if (detection) {
+        const domain = cellRegisterDiscriminatedUnion(
+          synthCell,
+          detection,
+          checker,
+          strategy,
+          discriminatedUnionPreferredDomain(type),
+        );
+        if (domain !== null) {
+          return domain;
+        }
+      }
     }
     // List-lift encoding for optionality: strip null/undefined/void before
     // recursing so the internal "nothing" marker never escapes to callers.

@@ -53,21 +53,15 @@ export const KNOWN_TYPECHECK_FAILURES = new Map<string, string>([
   ["expressions-array.ts > nameLengths", "$-binder-leak"],
   ["expressions-boolean.ts > and", "$-binder-leak"],
   ["expressions-boolean.ts > or", "$-binder-leak"],
-  [
-    "expressions-discriminated-union.ts > readDiscriminant",
-    "discriminated-union",
-  ],
-  [
-    "expressions-discriminated-union.ts > readVariantField",
-    "discriminated-union",
-  ],
-  [
-    "expressions-discriminated-union.ts > readSharedField",
-    "discriminated-union",
-  ],
   ["expressions-discriminated-union.ts > ambiguousOwner", "ambiguous-owner"],
-  ["expressions-let-closure-captured.ts > letForEachCapturedTotal", "closure-captured-reassignment"],
-  ["expressions-let-closure-captured.ts > letMapCapturedCount", "closure-captured-reassignment"],
+  [
+    "expressions-let-closure-captured.ts > letForEachCapturedTotal",
+    "closure-captured-reassignment",
+  ],
+  [
+    "expressions-let-closure-captured.ts > letMapCapturedCount",
+    "closure-captured-reassignment",
+  ],
   ["expressions-var-rejected.ts > varBinding", "var-rejected"],
   ["expressions-var-rejected.ts > varReassignment", "var-rejected"],
   ["functions-class.ts > Account.getBalance", "requires-external-context"],
